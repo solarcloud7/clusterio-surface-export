@@ -1,0 +1,47 @@
+# Factorio API documentation (local reference only)
+factorioAPI/
+/clusterio/
+build/
+src.old/
+
+# Docker volumes and generated files
+docker/clusterio-containers/*
+!docker/clusterio-containers/controller/
+!docker/clusterio-containers/hosts/
+docker/clusterio-containers/controller/*
+!docker/clusterio-containers/controller/.gitkeep
+docker/clusterio-containers/hosts/*
+!docker/clusterio-containers/hosts/.gitkeep
+docker/seed-data/mods/*
+!docker/seed-data/mods/.gitkeep
+docker/seed-data/saves/*
+!docker/seed-data/saves/.gitkeep
+docker/saves/
+docker/logs/
+docker/script-output/*.json
+docker/config/
+docker/server-settings.json
+
+# IDE
+.vscode/*
+!.vscode/settings.json
+!.vscode/extensions.json
+.vscode
+.claude
+
+# Mod packaging
+*.zip
+
+# Node dependencies
+**/node_modules/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Temporary files
+*.tmp
+*.log
+
+# Environment variables
+.env

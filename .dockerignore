@@ -1,0 +1,5 @@
+**/node_modules
+docker/clusterio-containers
+.vscode
+.git
+.gitignore

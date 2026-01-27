@@ -1,0 +1,25 @@
+{
+  "name": "@clusterio/plugin-surface-export",
+  "version": "1.0.324",
+  "description": "Clusterio plugin for exporting and importing Factorio space platforms",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"No tests yet\" && exit 0"
+  },
+  "keywords": [
+    "clusterio",
+    "factorio",
+    "platform",
+    "surface",
+    "export",
+    "clusterio-plugin"
+  ],
+  "author": "Solarcloud7",
+  "license": "MIT",
+  "peerDependencies": {
+    "@clusterio/controller": "^2.0.0",
+    "@clusterio/host": "^2.0.0",
+    "@clusterio/ctl": "^2.0.0",
+    "@clusterio/lib": "^2.0.0"
+  }
+}

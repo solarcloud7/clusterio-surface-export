@@ -1,0 +1,50 @@
+{
+  "version": "1.0.0",
+  "description": "Platform transfer roundtrip integration tests",
+  "defaultSourceHost": 1,
+  "defaultDestHost": 2,
+  "sourcePlatform": "test",
+  "tests": [
+    {
+      "id": "test-platform-basic",
+      "name": "Basic platform transfer",
+      "category": "platform",
+      "description": "Clone and transfer the 'test' platform from host 1 to host 2",
+      "expect": {
+        "validation_success": true,
+        "itemCountMatch": true,
+        "fluidCountMatch": true
+      }
+    },
+    {
+      "id": "test-platform-entity-count",
+      "name": "Platform entity count preserved",
+      "category": "platform",
+      "description": "Verify source and destination entity counts match (allows -1 for auto-created hub)",
+      "expect": {
+        "validation_success": true,
+        "entityCountMatchWithHubTolerance": true
+      }
+    },
+    {
+      "id": "test-platform-items-total",
+      "name": "Platform total items preserved",
+      "category": "items",
+      "description": "Verify item counts match via validation result",
+      "expect": {
+        "validation_success": true,
+        "itemCountMatch": true
+      }
+    },
+    {
+      "id": "test-platform-fluids-total",
+      "name": "Platform total fluids preserved",
+      "category": "fluids",
+      "description": "Verify fluid counts match via validation result",
+      "expect": {
+        "validation_success": true,
+        "fluidCountMatch": true
+      }
+    }
+  ]
+}

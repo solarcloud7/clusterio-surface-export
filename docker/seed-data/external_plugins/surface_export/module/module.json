@@ -1,0 +1,10 @@
+{
+  "name": "surface_export",
+  "version": "1.0.324",
+  "dependencies": {
+    "clusterio": "*"
+  },
+  "load": [
+    "control.lua"
+  ]
+}

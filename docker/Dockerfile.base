@@ -1,0 +1,93 @@
+# Shared base image for Clusterio controller and host containers
+# Contains Factorio headless bits (with Space Age DLC), Node.js 20, and shared Clusterio deps
+
+FROM debian:bookworm-slim
+
+ARG FACTORIO_HEADLESS_TAG=stable
+ARG CLUSTERIO_VERSION=2.0.0-alpha.22
+ARG SURFACE_EXPORT_MOD_VERSION=1.0.0
+
+ENV FACTORIO_HOME=/opt/factorio \
+    FACTORIO_VERSION_TAG=${FACTORIO_HEADLESS_TAG} \
+    NODE_PATH=/usr/lib/node_modules:/opt/seed-plugins/node_modules \
+    CLUSTERIO_SUPPRESS_DEV_WARNING=1 \
+    NPM_CONFIG_UPDATE_NOTIFIER=false
+
+# Base OS dependencies + NodeSource setup requirements
+RUN apt-get update \ 
+  && apt-get install -y --no-install-recommends \ 
+    ca-certificates \ 
+    curl \ 
+    gnupg \ 
+    xz-utils \ 
+    unzip \ 
+    python3 \ 
+    zip \ 
+  && rm -rf /var/lib/apt/lists/*
+
+# Install Node.js 20 (Clusterio runtime)
+RUN curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \ 
+  && apt-get update \ 
+  && apt-get install -y --no-install-recommends nodejs \ 
+  && rm -rf /var/lib/apt/lists/* \
+  && npm install -g npm@latest
+
+SHELL ["/bin/bash", "-o", "pipefail", "-c"]
+
+# Download Factorio headless server (includes Space Age assets) and create factorio user
+RUN set -xeuo pipefail \
+  && mkdir -p /opt \
+  && curl -fsSL "https://factorio.com/get-download/${FACTORIO_HEADLESS_TAG}/headless/linux64" -o /tmp/factorio-headless.tar.xz \
+  && tar -xJf /tmp/factorio-headless.tar.xz -C /opt \
+  && rm /tmp/factorio-headless.tar.xz \
+  && ln -s /opt/factorio /factorio \
+  && groupadd -r factorio \
+  && useradd -r -g factorio -d /opt/factorio factorio \
+  && chown -R factorio:factorio /opt/factorio
+
+# Seed directories shared by controller/host images
+RUN mkdir -p /opt/seed-mods /opt/seed-saves /opt/seed-plugins /opt/scripts
+
+# Package built-in DLC directories as zips so they can be uploaded to controller
+# The headless server ships with space-age, quality, and elevated-rails as unpacked directories
+RUN cd /opt/factorio/data && \
+    for dlc in space-age quality elevated-rails; do \
+      if [ -d "$dlc" ]; then \
+        version=$(grep -oP '(?<="version": ")[^"]+' "$dlc/info.json" | head -1); \
+        zip -rq "/opt/seed-mods/${dlc}_${version}.zip" "$dlc"; \
+        echo "Packaged $dlc $version"; \
+      fi; \
+    done && \
+    chown -R factorio:factorio /opt/seed-mods
+
+# Install shared Clusterio packages so controller/host inherit the same dependency tree
+RUN npm install -g --save \ 
+      @clusterio/lib@${CLUSTERIO_VERSION} \ 
+      @clusterio/controller@${CLUSTERIO_VERSION} \ 
+      @clusterio/host@${CLUSTERIO_VERSION} \ 
+      @clusterio/ctl@${CLUSTERIO_VERSION} \ 
+        @clusterio/plugin-global_chat@${CLUSTERIO_VERSION} \ 
+        @clusterio/plugin-inventory_sync@${CLUSTERIO_VERSION} \ 
+        @clusterio/plugin-player_auth@${CLUSTERIO_VERSION} \ 
+        @clusterio/plugin-research_sync@${CLUSTERIO_VERSION} \ 
+        @clusterio/plugin-statistics_exporter@${CLUSTERIO_VERSION} \ 
+        @clusterio/plugin-subspace_storage@${CLUSTERIO_VERSION}
+  
+# Copy repo seed assets so derived images do not need to duplicate work
+# (each destination differs: mods, saves, config templates, plugin list, helper scripts)
+COPY docker/seed-data/mods/ /opt/seed-mods/
+COPY docker/seed-data/saves/ /opt/seed-saves/
+COPY docker/seed-data/config /opt/seed-config
+COPY docker/seed-data/scripts /opt/scripts
+COPY docker/seed-data/clusterio_modules /opt/clusterio_modules
+
+# Bundle our custom Clusterio plugin (includes Node.js code and module/ directory for save patching)
+COPY docker/seed-data/external_plugins/surface_export /opt/seed-plugins/surface-export
+
+# Ensure helper scripts are executable
+RUN chmod -R a+rx /opt/scripts
+
+WORKDIR /opt
+
+# Derived images provide their own CMD/ENTRYPOINT
+CMD ["/bin/bash"]

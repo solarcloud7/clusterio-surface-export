@@ -1,0 +1,442 @@
+{
+  "version": "1.0.0",
+  "description": "Entity/tile/inventory roundtrip integration tests",
+  "basePosition": { "x": 100, "y": 100 },
+  "positionIncrement": 5,
+  "tests": [
+    {
+      "id": "iron-chest-basic",
+      "name": "Iron Chest with mixed items",
+      "category": "containers",
+      "type": "entity",
+      "input": {
+        "name": "iron-chest",
+        "direction": 0,
+        "specific_data": {
+          "inventories": [{
+            "type": "chest",
+            "items": [
+              { "name": "iron-plate", "count": 50 },
+              { "name": "copper-plate", "count": 30 }
+            ]
+          }]
+        }
+      },
+      "expect": { "success": true }
+    },
+    {
+      "id": "steel-chest-quality",
+      "name": "Steel Chest with quality items",
+      "category": "containers",
+      "type": "entity",
+      "input": {
+        "name": "steel-chest",
+        "direction": 0,
+        "specific_data": {
+          "inventories": [{
+            "type": "chest",
+            "items": [
+              { "name": "iron-gear-wheel", "count": 20, "quality": "uncommon" }
+            ]
+          }]
+        }
+      },
+      "expect": { "success": true }
+    },
+    {
+      "id": "wooden-chest-empty",
+      "name": "Wooden Chest (empty)",
+      "category": "containers",
+      "type": "entity",
+      "input": {
+        "name": "wooden-chest",
+        "direction": 0,
+        "specific_data": {}
+      },
+      "expect": { "success": true }
+    },
+    {
+      "id": "transport-belt-two-lanes",
+      "name": "Transport Belt with items on both lanes",
+      "category": "belts",
+      "type": "entity",
+      "input": {
+        "name": "transport-belt",
+        "direction": 4,
+        "specific_data": {
+          "items": [
+            { "line": 1, "items": [{ "name": "iron-plate", "count": 1, "quality": "normal" }] },
+            { "line": 2, "items": [{ "name": "copper-plate", "count": 1, "quality": "normal" }] }
+          ]
+        }
+      },
+      "expect": { "success": true }
+    },
+    {
+      "id": "fast-transport-belt",
+      "name": "Fast Transport Belt with single lane",
+      "category": "belts",
+      "type": "entity",
+      "input": {
+        "name": "fast-transport-belt",
+        "direction": 0,
+        "specific_data": {
+          "items": [
+            { "line": 1, "items": [{ "name": "electronic-circuit", "count": 1, "quality": "normal" }] }
+          ]
+        }
+      },
+      "expect": { "success": true }
+    },
+    {
+      "id": "underground-belt-input",
+      "name": "Underground Belt (input)",
+      "category": "belts",
+      "type": "entity",
+      "input": {
+        "name": "underground-belt",
+        "direction": 0,
+        "type": "input",
+        "specific_data": {
+          "belt_to_ground_type": "input",
+          "items": []
+        }
+      },
+      "expect": { "success": true }
+    },
+    {
+      "id": "splitter-basic",
+      "name": "Splitter (no filter)",
+      "category": "belts",
+      "type": "entity",
+      "input": {
+        "name": "splitter",
+        "direction": 0,
+        "specific_data": {
+          "items": []
+        }
+      },
+      "expect": { "success": true }
+    },
+    {
+      "id": "gun-turret-ammo",
+      "name": "Gun Turret with ammo",
+      "category": "turrets",
+      "type": "entity",
+      "input": {
+        "name": "gun-turret",
+        "direction": 0,
+        "specific_data": {
+          "inventories": [{
+            "type": "turret_ammo",
+            "items": [{ "name": "firearm-magazine", "count": 10 }]
+          }]
+        }
+      },
+      "expect": { "success": true }
+    },
+    {
+      "id": "gun-turret-priorities",
+      "name": "Gun Turret with priority targets",
+      "category": "turrets",
+      "type": "entity",
+      "input": {
+        "name": "gun-turret",
+        "direction": 0,
+        "specific_data": {
+          "priority_targets": [
+            { "index": 1, "name": "small-biter" },
+            { "index": 2, "name": "medium-biter" }
+          ],
+          "ignore_unprioritised_targets": true,
+          "inventories": [{
+            "type": "turret_ammo",
+            "items": [{ "name": "piercing-rounds-magazine", "count": 5 }]
+          }]
+        }
+      },
+      "expect": { "success": true }
+    },
+    {
+      "id": "laser-turret-basic",
+      "name": "Laser Turret",
+      "category": "turrets",
+      "type": "entity",
+      "input": {
+        "name": "laser-turret",
+        "direction": 0,
+        "specific_data": {
+          "ignore_unprioritised_targets": false
+        }
+      },
+      "expect": { "success": true }
+    },
+    {
+      "id": "inserter-basic",
+      "name": "Inserter at rest",
+      "category": "inserters",
+      "type": "entity",
+      "input": {
+        "name": "inserter",
+        "direction": 0,
+        "specific_data": {}
+      },
+      "expect": { "success": true }
+    },
+    {
+      "id": "burner-inserter-fuel",
+      "name": "Burner Inserter with fuel",
+      "category": "inserters",
+      "type": "entity",
+      "input": {
+        "name": "burner-inserter",
+        "direction": 0,
+        "specific_data": {
+          "inventories": [{
+            "type": "fuel",
+            "items": [{ "name": "coal", "count": 2 }]
+          }]
+        }
+      },
+      "expect": { "success": true }
+    },
+    {
+      "id": "storage-tank-water",
+      "name": "Storage Tank with water",
+      "category": "fluids",
+      "type": "entity",
+      "input": {
+        "name": "storage-tank",
+        "direction": 0,
+        "specific_data": {
+          "fluids": [{ "name": "water", "amount": 10000, "temperature": 15 }]
+        }
+      },
+      "expect": { "success": true }
+    },
+    {
+      "id": "storage-tank-petroleum",
+      "name": "Storage Tank with petroleum gas",
+      "category": "fluids",
+      "type": "entity",
+      "input": {
+        "name": "storage-tank",
+        "direction": 2,
+        "specific_data": {
+          "fluids": [{ "name": "petroleum-gas", "amount": 5000, "temperature": 25 }]
+        }
+      },
+      "expect": { "success": true }
+    },
+    {
+      "id": "assembler-with-recipe",
+      "name": "Assembling Machine with recipe and inputs",
+      "category": "production",
+      "type": "entity",
+      "input": {
+        "name": "assembling-machine-2",
+        "direction": 0,
+        "specific_data": {
+          "recipe": "iron-gear-wheel",
+          "inventories": [{
+            "type": "assembling_machine_input",
+            "items": [{ "name": "iron-plate", "count": 10 }]
+          }]
+        }
+      },
+      "expect": { "success": true }
+    },
+    {
+      "id": "stone-furnace-smelting",
+      "name": "Stone Furnace with ore and fuel",
+      "category": "production",
+      "type": "entity",
+      "input": {
+        "name": "stone-furnace",
+        "direction": 0,
+        "specific_data": {
+          "inventories": [
+            { "type": "fuel", "items": [{ "name": "coal", "count": 5 }] },
+            { "type": "furnace_source", "items": [{ "name": "iron-ore", "count": 10 }] }
+          ]
+        }
+      },
+      "expect": { "success": true }
+    },
+    {
+      "id": "chemical-plant-recipe",
+      "name": "Chemical Plant with fluid recipe",
+      "category": "production",
+      "type": "entity",
+      "input": {
+        "name": "chemical-plant",
+        "direction": 0,
+        "specific_data": {
+          "recipe": "sulfuric-acid"
+        }
+      },
+      "expect": { "success": true }
+    },
+    {
+      "id": "lab-with-packs",
+      "name": "Lab with science packs",
+      "category": "production",
+      "type": "entity",
+      "input": {
+        "name": "lab",
+        "direction": 0,
+        "specific_data": {
+          "inventories": [{
+            "type": "lab_input",
+            "items": [
+              { "name": "automation-science-pack", "count": 10 },
+              { "name": "logistic-science-pack", "count": 10 }
+            ]
+          }]
+        }
+      },
+      "expect": { "success": true }
+    },
+    {
+      "id": "accumulator-charged",
+      "name": "Accumulator with stored energy",
+      "category": "power",
+      "type": "entity",
+      "input": {
+        "name": "accumulator",
+        "direction": 0,
+        "specific_data": {
+          "energy": 2500000
+        }
+      },
+      "expect": { "success": true }
+    },
+    {
+      "id": "boiler-fuel",
+      "name": "Boiler with fuel",
+      "category": "power",
+      "type": "entity",
+      "input": {
+        "name": "boiler",
+        "direction": 0,
+        "specific_data": {
+          "inventories": [{
+            "type": "fuel",
+            "items": [{ "name": "coal", "count": 10 }]
+          }]
+        }
+      },
+      "expect": { "success": true }
+    },
+    {
+      "id": "roboport-with-bots",
+      "name": "Roboport with robots",
+      "category": "logistics",
+      "type": "entity",
+      "input": {
+        "name": "roboport",
+        "direction": 0,
+        "specific_data": {
+          "inventories": [
+            {
+              "type": "roboport_robot",
+              "items": [
+                { "name": "logistic-robot", "count": 5 },
+                { "name": "construction-robot", "count": 3 }
+              ]
+            },
+            {
+              "type": "roboport_material",
+              "items": [{ "name": "repair-pack", "count": 10 }]
+            }
+          ]
+        }
+      },
+      "expect": { "success": true }
+    },
+    {
+      "id": "radar-basic",
+      "name": "Radar",
+      "category": "logistics",
+      "type": "entity",
+      "input": {
+        "name": "radar",
+        "direction": 0,
+        "specific_data": {}
+      },
+      "expect": { "success": true }
+    },
+    {
+      "id": "constant-combinator",
+      "name": "Constant Combinator",
+      "category": "combinators",
+      "type": "entity",
+      "input": {
+        "name": "constant-combinator",
+        "direction": 0,
+        "specific_data": {}
+      },
+      "expect": { "success": true }
+    },
+    {
+      "id": "decider-combinator",
+      "name": "Decider Combinator",
+      "category": "combinators",
+      "type": "entity",
+      "input": {
+        "name": "decider-combinator",
+        "direction": 0,
+        "specific_data": {}
+      },
+      "expect": { "success": true }
+    },
+    {
+      "id": "arithmetic-combinator",
+      "name": "Arithmetic Combinator",
+      "category": "combinators",
+      "type": "entity",
+      "input": {
+        "name": "arithmetic-combinator",
+        "direction": 4,
+        "specific_data": {}
+      },
+      "expect": { "success": true }
+    },
+    {
+      "id": "lamp-basic",
+      "name": "Lamp",
+      "category": "combinators",
+      "type": "entity",
+      "input": {
+        "name": "small-lamp",
+        "direction": 0,
+        "specific_data": {}
+      },
+      "expect": { "success": true }
+    },
+    {
+      "id": "speaker-basic",
+      "name": "Programmable Speaker",
+      "category": "combinators",
+      "type": "entity",
+      "input": {
+        "name": "programmable-speaker",
+        "direction": 0,
+        "specific_data": {}
+      },
+      "expect": { "success": true }
+    },
+    {
+      "id": "electric-mining-drill",
+      "name": "Electric Mining Drill",
+      "category": "production",
+      "type": "entity",
+      "input": {
+        "name": "electric-mining-drill",
+        "direction": 0,
+        "specific_data": {}
+      },
+      "expect": { "success": true }
+    }
+  ]
+}

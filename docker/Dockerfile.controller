@@ -1,0 +1,24 @@
+ARG BASE_IMAGE=factorio-surface-export/base:latest
+FROM ${BASE_IMAGE}
+
+WORKDIR /clusterio
+RUN mkdir -p /clusterio
+
+# Suppress the noisy development branch warning banner that ships with Clusterio (best-effort)
+RUN if [ -f /opt/scripts/suppress-dev-warning.js ]; then \
+    node /opt/scripts/suppress-dev-warning.js || true; \
+  fi
+
+# Create startup script that:
+# 1. Initializes controller configuration on first run
+# 2. Creates admin user via bootstrap BEFORE starting controller (fixes auth issue)
+# 3. Starts the controller with admin user already loaded
+COPY docker/seed-data/scripts/controller-entrypoint.sh /start.sh
+RUN chmod +x /start.sh
+
+# Note: Ports are configured via environment variables in docker-compose.yml
+# See .env file for port configuration
+# Note: In Clusterio 2.0, WebSocket runs on the same port as HTTP
+EXPOSE 8080
+
+CMD ["/start.sh"]

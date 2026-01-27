@@ -1,0 +1,218 @@
+{
+  "folders": [
+    {
+      "name": "Factorio Surface Export",
+      "path": "."
+    }
+  ],
+  "settings": {
+    "workbench.tree.renderIndentGuides":"onHover",
+    "files.exclude": {
+    },
+    "Lua.diagnostics.globals": [
+      "data",
+      "game",
+      "script",
+      "remote",
+      "commands",
+      "settings",
+      "defines",
+      "serpent",
+      "util",
+      "table_size",
+      "log"
+    ],
+    "Lua.runtime.version": "Lua 5.2",
+    "Lua.workspace.library": [
+      "${workspaceFolder:Factorio Mod - Surface Export}/factorioAPI"
+    ],
+    "Lua.diagnostics.disable": [
+      "lowercase-global"
+    ],
+    "files.associations": {
+      "*.cfg": "ini",
+      "*.json": "jsonc"
+    },
+    "editor.tabSize": 2,
+    "editor.insertSpaces": true,
+    "[lua]": {
+      "editor.defaultFormatter": "sumneko.lua"
+    },
+    "[javascript]": {
+      "editor.tabSize": 4
+    },
+    "[typescript]": {
+      "editor.tabSize": 4
+    },
+    "search.exclude": {
+      "**/node_modules": true,
+      "**/factorioAPI": true,
+      "docker/clusterio-containers/**/logs": true,
+      "docker/clusterio-containers/**/instances": true
+    },
+    "chat.tools.terminal.autoApprove": {
+      "docker ps": true,
+      "&": true,
+      "C:\\Users\\Solar\\source\\FactorioSurfaceExport\\tools\\deploy-cluster.ps1": true,
+      ".\\deploy-cluster.ps1": true,
+      "rc11": true,
+      "game.table_to_json(status)": true,
+      "status": true,
+      ".\\tools\\create-test-platform.ps1": true,
+      ".\\tools\\test-e2e-transfer.ps1": true,
+      ".\\tools\\deploy-cluster.ps1": true
+    }
+  },
+  "extensions": {
+    "recommendations": [
+      "sumneko.lua",
+      "ms-azuretools.vscode-docker",
+      "redhat.vscode-yaml"
+    ]
+  },
+  "launch": {
+    "version": "0.2.0",
+    "configurations": []
+  },
+  "tasks": {
+    "version": "2.0.0",
+    "tasks": [
+      {
+        "label": "Deploy: Increment Version & Rebuild Cluster",
+        "type": "shell",
+        "command": ".\\tools\\deploy-cluster.ps1",
+        "args": [],
+        "group": "build",
+        "problemMatcher": [],
+        "presentation": {
+          "reveal": "always",
+          "panel": "dedicated"
+        }
+      },
+      {
+        "label": "Cluster: Show Status",
+        "type": "shell",
+        "command": ".\\tools\\show-cluster-status.ps1",
+        "args": [],
+        "group": "none",
+        "problemMatcher": []
+      },
+      {
+        "label": "Cluster: Display Logs",
+        "type": "shell",
+        "command": ".\\tools\\check-cluster-logs.ps1",
+        "args": [],
+        "group": "none",
+        "problemMatcher": []
+      },
+      {
+        "label": "Docker: Build Base Image",
+        "type": "shell",
+        "command": "docker build -t factorio-surface-export/base:latest -f docker/Dockerfile.base .",
+        "group": "build",
+        "problemMatcher": [],
+        "presentation": {
+          "reveal": "always",
+          "panel": "shared"
+        }
+      },
+      {
+        "label": "Docker: Get Admin Token",
+        "type": "shell",
+        "command": "docker exec clusterio-controller npx clusteriocontroller --log-level error bootstrap generate-user-token admin",
+        "group": "none",
+        "problemMatcher": [],
+        "presentation": {
+          "reveal": "always",
+          "panel": "shared"
+        }
+      },
+      {
+        "label": "Clusterio: Start All Instances",
+        "type": "shell",
+        "command": "docker exec clusterio-controller npx clusterioctl --log-level error instance start-all",
+        "group": "none",
+        "problemMatcher": []
+      },
+      {
+        "label": "Clusterio: Stop All Instances",
+        "type": "shell",
+        "command": "docker exec clusterio-controller npx clusterioctl --log-level error instance stop --all",
+        "group": "none",
+        "problemMatcher": []
+      },
+      {
+        "label": "List Transaction Logs",
+        "type": "shell",
+        "command": ".\\tools\\list-transaction-logs.ps1",
+        "group": "none",
+        "problemMatcher": [],
+        "presentation": {
+          "echo": true,
+          "reveal": "always",
+          "focus": false,
+          "panel": "shared",
+          "showReuseMessage": true,
+          "clear": false
+        }
+      },
+      {
+        "label": "Get Latest Transaction Log",
+        "type": "shell",
+        "command": ".\\tools\\get-transaction-log.ps1",
+        "group": "none",
+        "problemMatcher": [],
+        "presentation": {
+          "echo": true,
+          "reveal": "always",
+          "focus": false,
+          "panel": "shared",
+          "showReuseMessage": true,
+          "clear": false
+        }
+      },
+      {
+        "label": "Get Transaction Log (Specific)",
+        "type": "shell",
+        "command": ".\\tools\\get-transaction-log.ps1",
+        "args": [
+          "-TransferId",
+          "${input:transferId}"
+        ],
+        "group": "none",
+        "problemMatcher": [],
+        "presentation": {
+          "echo": true,
+          "reveal": "always",
+          "focus": false,
+          "panel": "shared",
+          "showReuseMessage": true,
+          "clear": false
+        }
+      },
+      {
+        "label": "Patch and Reset (Hot Reload)",
+        "type": "shell",
+        "command": ".\\tools\\patch-and-reset.ps1",
+        "group": "none",
+        "problemMatcher": [],
+        "presentation": {
+          "echo": true,
+          "reveal": "always",
+          "focus": true,
+          "panel": "shared",
+          "showReuseMessage": true,
+          "clear": false
+        }
+      }
+    ],
+    "inputs": [
+      {
+        "id": "transferId",
+        "type": "promptString",
+        "description": "Enter Transfer ID",
+        "default": "latest"
+      }
+    ]
+  }
+}

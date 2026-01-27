@@ -1,6 +1,40 @@
-d# Factorio Surface Export - Clusterio Integration
+# Factorio Surface Export - Clusterio Integration
 
 A Clusterio plugin and Factorio mod that serializes complete Space Age platform state for cluster-wide platform transfer. Captures every entity, item, fluid, **and tile** on a platform with **zero loss or duplication**.
+
+## Table of Contents
+
+1. [Features](#features)
+2. [Performance](#performance)
+3. [Installation](#installation)
+   - [For Clusterio Clusters (Recommended)](#for-clusterio-clusters-recommended)
+   - [For Development](#for-development)
+4. [Usage](#usage)
+   - [Export a Platform](#export-a-platform)
+   - [Import a Platform](#import-a-platform)
+   - [Clusterio Integration](#clusterio-integration)
+5. [Data Format](#data-format)
+6. [What Gets Exported](#what-gets-exported)
+   - [Entities](#entities)
+   - [Items](#items)
+   - [Fluids](#fluids)
+   - [Entity Settings](#entity-settings)
+7. [Verification](#verification)
+8. [Development](#development)
+   - [Docker Workflow](#docker-workflow)
+   - [VS Code Tasks](#vs-code-tasks)
+   - [PowerShell Shortcuts for Clusterio](#powershell-shortcuts-for-clusterio)
+   - [Project Structure](#project-structure)
+   - [Creating Your Own Plugin](#creating-your-own-plugin)
+9. [Troubleshooting](#troubleshooting)
+10. [Contributing](#contributing)
+11. [License](#license)
+12. [Credits](#credits)
+13. [Support](#support)
+14. [Version History](#version-history)
+15. [Useful Commands](#useful-commands)
+
+---
 
 ## Features
 

@@ -1,0 +1,21 @@
+{
+	"diagnostics": {
+		"globals": [
+			"game",
+			"script",
+			"defines",
+			"global",
+			"settings",
+			"remote",
+			"commands",
+			"rcon",
+			"rendering"
+		]
+	},
+	"runtime": {
+		"version": "Lua 5.2"
+	},
+	"workspace": {
+		"library": []
+	}
+}

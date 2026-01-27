@@ -1,0 +1,220 @@
+---------------------------------------------------------------------------------------------------
+Version: 1.0.98
+Date: 2026-01-17
+  Features:
+    - Ghost entities now fully preserved (blueprinted buildings not yet constructed)
+    - Tile ghosts preserved (blueprinted tiles/flooring not yet placed)
+    - Item request proxies preserved (construction material delivery requests)
+    - Complete construction planning state now exported and restored
+  Technical:
+    - Added entity-ghost handler: captures ghost_name, ghost_type, item_requests, quality
+    - Added tile-ghost handler: captures ghost_name for planned tiles
+    - Added item-request-proxy handler: captures requests, insert_plan, target position
+    - Updated deserializer to create ghosts with inner_name parameter
+  Impact:
+    - Blueprint planning work is not lost during platform transfer
+    - Construction bots will resume building from blueprints after import
+    - Upgrade planner markings and deconstruction orders preserved
+---------------------------------------------------------------------------------------------------
+Version: 1.0.97
+Date: 2026-01-17
+  Features:
+    - CRITICAL: Space platform schedule now exported and restored (stations, wait conditions, interrupts)
+    - Platform thrust mode preserved (automatic vs paused)
+    - Complete platform navigation state restored
+  Technical:
+    - Extract platform.schedule (PlatformSchedule with records and interrupts)
+    - Extract platform.paused (thrust control)
+    - Restore settings after platform creation in remote-interface
+  Impact:
+    - Platforms retain their travel routes (to planets/space locations)
+    - Thrust settings preserved (won't unexpectedly start/stop)
+    - Schedule interrupts and wait conditions fully restored
+    - Request groups for platform schedule preserved
+  Data Structure:
+    - Platform schedule: stations, wait_conditions, interrupts, temporary_stops
+    - Thrust mode: boolean (true = paused, false = automatic)
+---------------------------------------------------------------------------------------------------
+Version: 1.0.96
+Date: 2026-01-17
+  Features:
+    - Belt lane separation: Items on left vs right lanes now tracked separately
+    - Accurate belt balancer restoration (lane information preserved)
+    - Quality tracking for belt items (per-lane quality support)
+  Technical:
+    - extract_belt_items() now returns per-lane array structure
+    - Deserializer updated to restore items to correct lanes (line 1 vs line 2)
+    - Backward compatibility maintained for old export format
+  Impact:
+    - Belt balancers restore accurately (items return to correct lanes)
+    - Lane-specific designs preserved (left/right lane separation)
+    - Quality belts work correctly (quality tracked per lane)
+  Data Structure:
+    - OLD: {item_name = total_count} (combined lanes)
+    - NEW: [{line=1, items=[{name, count, quality}]}, {line=2, items=[...]}] (separate lanes)
+---------------------------------------------------------------------------------------------------
+Version: 1.0.95
+Date: 2026-01-17
+  Features:
+    - CRITICAL: Vehicle equipment grids now extracted (cars, tanks, spidertrons, locomotives)
+    - Equipment in vehicle grids fully preserved (exoskeletons, shields, reactors, etc.)
+    - Equipment with inventories preserved (burner equipment fuel)
+    - Spidertron autopilot destination preserved
+  Technical:
+    - Added car handler with equipment grid extraction
+    - Added spider-vehicle handler with equipment grid and autopilot
+    - Enhanced train handler with equipment grid support (Space Age locomotives)
+    - Equipment grid restoration for entity grids (not just item grids)
+  Impact:
+    - Vehicles with equipment no longer lose their equipment on export
+    - Space Age locomotive equipment preserved
+    - Spidertron exoskeletons, shields, reactors fully tracked
+    - Equipment burner fuel inventories recursively captured
+  Bugfixes:
+    - Fixed missing equipment grid export for entity-based grids (was only capturing item-based)
+---------------------------------------------------------------------------------------------------
+Version: 1.0.94
+Date: 2026-01-17
+  Bugfixes:
+    - CRITICAL: Added missing defines.inventory.cargo_bay (Space Age platform cargo)
+    - Without this fix, all items in space platform cargo bays would be lost on export!
+  Technical:
+    - Now scanning 69 inventory types (was 68)
+    - Complete inventory coverage verified for Space Age
+  Impact:
+    - Space platform cargo bay items now properly exported/imported
+    - Zero item loss guarantee restored for platform cargo
+---------------------------------------------------------------------------------------------------
+Version: 1.0.93
+Date: 2026-01-17
+  Features:
+    - CRITICAL: Spoilage tracking for Space Age items (spoil_percent, spoil_result)
+    - Agricultural science packs preserve spoilage state
+    - Yumako, jelly nuts, nutrients preserve freshness
+    - Bioflux and other spoilable items fully tracked
+  Technical:
+    - Added spoil_percent (0.0 = fresh, 1.0 = about to spoil)
+    - Added spoil_result (what item becomes when spoiled)
+    - Spoilage restored in both main and nested inventories
+  Impact:
+    - Space Age biological items now preserve freshness across platform transfers
+    - No more losing spoilage progress on import
+    - Agricultural science production timing accurate
+  Notes:
+    - Fluids already capture temperature (steam, cryogenic fluids) ✅
+    - All 68 inventory types covered (comprehensive) ✅
+    - Item state fully preserved (health, durability, ammo, spoilage) ✅
+---------------------------------------------------------------------------------------------------
+Version: 1.0.92
+Date: 2026-01-17
+  Features:
+    - CRITICAL: Complete circuit network preservation (red/green wires)
+    - CRITICAL: Power network preservation (copper cables between poles)
+    - CRITICAL: Complete control behavior settings (all circuit conditions, filters, signals)
+    - CRITICAL: Logistic requests preservation (requester/buffer chests)
+    - CRITICAL: Entity filters preservation (filter inserters, splitters, cargo wagons, loaders)
+    - Train station custom names (backer_name)
+    - Rocket silo auto-launch setting
+    - Gate open state
+    - Agricultural tower planting position (Space Age)
+    - Entity tags (custom mod data)
+    - Infinity container filters (creative mode)
+  Architecture:
+    - New module: scanners/connection-scanner.lua (wire connections, control behavior extraction)
+    - Import now 14-step process (added control behavior, filters, connections restoration)
+    - Connection restoration after entity creation (proper entity_map lookup)
+  Technical:
+    - Circuit connections use entity_id with position fallback
+    - Power connections restored for electric poles only
+    - Control behavior safely sets all properties with pcall
+    - Constant combinator signals fully preserved
+    - Selector combinator support (2.0+)
+  Impact:
+    - Circuit logic now fully preserved (was 100% lost)
+    - Power grids automatically reconnect (was manual rewiring)
+    - All entity configurations preserved (filters, conditions, signals)
+    - 60-70% functionality improvement for complex factories
+---------------------------------------------------------------------------------------------------
+Version: 1.0.91
+Date: 2026-01-17
+  Features:
+    - MAJOR: Complete item metadata serialization (blueprint strings, health, ammo, labels)
+    - Added blueprint/book export string support (slot.export_stack() → slot.import_stack())
+    - Added nested inventory support (spidertron remotes, items-with-inventory)
+    - Added item health tracking (damaged armor, vehicles)
+    - Added ammo count tracking (partial magazines)
+    - Added item label and color support (custom-labeled items)
+    - Added custom description support (tagged items)
+    - Enhanced equipment grid serialization (burner fuel state, grid dimensions)
+  Improvements:
+    - Recursive inventory scanning for deeply nested items
+    - Equipment burner inventories now fully serialized
+    - Blueprint planners, upgrade planners, and deconstruction planners fully preserved
+    - Import now restores all item metadata (was only restoring name/count/quality)
+  Technical:
+    - New function: InventoryScanner.extract_nested_inventory() (recursive)
+    - New function: Deserializer.restore_nested_inventory() (recursive)
+    - Enhanced equipment grid format: {width, height, equipment[]}
+    - Backward compatible with old equipment grid format (array only)
+  Impact:
+    - Blueprints in chests now preserve their designs (was blank blueprints)
+    - Damaged items preserve health values
+    - Partially-used magazines preserve ammo counts
+    - Spidertron remotes preserve waypoints
+---------------------------------------------------------------------------------------------------
+Version: 1.0.90
+Date: 2026-01-17
+  Refactoring:
+    - MAJOR: Complete code reorganization into hierarchical structure
+    - Split control.lua (936 lines → 49 lines + 4 new files)
+    - Split util.lua (441 lines → 40 lines + 4 focused modules)
+    - Created directory structure: interfaces/, core/, scanners/, utils/, validators/
+    - Moved 15 files to appropriate categories
+    - Updated 20+ require() statements (scripts.X → category.X)
+  Documentation:
+    - Created comprehensive README.md with architecture guide
+    - Documents module responsibilities, data formats, usage examples
+    - Includes development guide and troubleshooting section
+  Code Quality:
+    - Reduced largest file from 936 lines to 635 lines (async-processor.lua)
+    - All modules now 40-323 lines (focused, maintainable)
+    - Clear separation of concerns (interfaces, core logic, scanners, utilities)
+---------------------------------------------------------------------------------------------------
+Version: 1.0.88
+Date: 2026-01-16
+  Features:
+    - Added tile support for platform imports/exports
+    - Added file-based async import API (import_platform_file_async)
+    - Optimized chunked import RCON output (suppressed plugin load messages)
+    - Added progress indicators for chunk uploads (every 10 chunks)
+  Bugfixes:
+    - Fixed quality property read-only error (now set during entity creation)
+    - Fixed productivity_bonus read-only error (wrapped in pcall)
+    - Fixed unknown item crashes during import (graceful skip with logging)
+    - Fixed platform surface validation in async export/import
+    - Fixed platform activation with apply_starter_pack() on import
+  Performance:
+    - Tiles now placed in single batch operation (faster than per-tile)
+    - Reduced RCON spam from 59+ messages to progress indicators only
+  Technical:
+    - Async processor now validates surfaces before operations
+    - Import places tiles before entities (correct layer order)
+    - Enhanced debug logging for tile placement operations
+---------------------------------------------------------------------------------------------------
+Version: 1.0.0
+Date: 2025-12-26
+  Features:
+    - Initial release
+    - Complete platform state serialization to JSON
+    - Export all entities with positions, orientations, and settings
+    - Export all items from inventories, belts, inserters, and ground
+    - Export all fluids with amounts and temperatures
+    - Item verification system to ensure zero loss/duplication
+    - Import/restore platforms from JSON
+    - Clustorio remote interface integration
+    - Docker testing environment for development
+  Major Features:
+    - Zero item loss guarantee with verification checksums
+    - Support for quality items and fluid temperatures
+    - Complete entity state preservation (recipes, schedules, settings)
+    - Atomic export/import operations with error handling
