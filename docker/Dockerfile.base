@@ -77,7 +77,6 @@ RUN npm install -g --save \
 # (each destination differs: mods, saves, config templates, plugin list, helper scripts)
 COPY docker/seed-data/mods/ /opt/seed-mods/
 COPY docker/seed-data/saves/ /opt/seed-saves/
-COPY docker/seed-data/config /opt/seed-config
 COPY docker/seed-data/scripts /opt/scripts
 COPY docker/seed-data/clusterio_modules /opt/clusterio_modules
 

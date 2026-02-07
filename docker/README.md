@@ -196,7 +196,7 @@ docker exec clusterio-controller npx clusterioctl instance start clusterio-host-
 | File | Purpose |
 | --- | --- |
 | `.env` | Central configuration for ports, RCON password, Factorio credentials, and the comma-separated `FACTORIO_ADMINS` list. Copy from `.env.template` and keep it out of source control. |
-| `docker/seed-data/config/plugin-list.controller.json` | First-run plugin roster copied into `/clusterio/plugin-list.json` when the controller volume is empty. Ensures all core Clusterio plugins plus `surface_export` load before `clusterio-init` touches the cluster. |
+
 | `docker/seed-data/scripts/install-space-age.sh` | Historical helper for downloading a licensed Space Age archive during the base build. It’s now dormant (assets are bundled with Factorio), but kept around so advanced users can re-enable it if they ever need offline DLC provisioning. |
 | `docker/seed-data/scripts/suppress-dev-warning.js` | Best-effort patch that rewrites the noisy 2.0 alpha warning banner in `clusteriocontroller`/`clusterioctl`. The controller image runs it once, gated by `CLUSTERIO_SUPPRESS_DEV_WARNING`. |
 | `docker/seed-data/scripts/host-entrypoint.sh` | Runtime entrypoint for host containers. Handles plugin syncing, admin list generation from `FACTORIO_ADMINS`, and launches `clusteriohost`. Clusterio manages mod and save synchronization automatically. |

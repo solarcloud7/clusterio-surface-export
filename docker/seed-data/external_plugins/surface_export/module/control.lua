@@ -72,37 +72,8 @@ script.on_event(defines.events.on_tick, function()
 	
 	-- Process pending platform imports (waiting for surface initialization)
 	-- Initialize storage.pending_platform_imports if it doesn't exist (for save compatibility)
-	if not storage.pending_platform_imports then
-		storage.pending_platform_imports = {}
-	end
-	
-	if #storage.pending_platform_imports > 0 then
-		for i = #storage.pending_platform_imports, 1, -1 do
-		local pending = storage.pending_platform_imports[i]
-			
-			-- Check for timeout
-			if game.tick > pending.timeout_tick then
-				log(string.format("[FactorioSurfaceExport ERROR] Platform import timeout: %s", pending.platform_name))
-				table.remove(storage.pending_platform_imports, i)
-			else
-				-- Try to find the platform and check if surface is ready
-				for _, platform in pairs(game.forces.player.platforms) do
-					if platform.name == pending.platform_name and platform.surface and platform.surface.valid then
-						log(string.format("[FactorioSurfaceExport] Platform '%s' surface ready, starting import", pending.platform_name))
-						local Safety = require("modules/surface_export/core/safety")
-						local result, error_msg = Safety.atomic_import(pending.filename, platform.surface)
-						if result then
-							log(string.format("[FactorioSurfaceExport] Platform '%s' import completed successfully", pending.platform_name))
-						else
-							log(string.format("[FactorioSurfaceExport ERROR] Platform '%s' import failed: %s", pending.platform_name, error_msg or "Unknown error"))
-						end
-						table.remove(storage.pending_platform_imports, i)
-						break
-					end
-				end
-			end
-		end
-	end
+	-- Legacy pending_platform_imports system removed - async imports handle this via AsyncProcessor
+	-- Platform surface waiting is handled automatically in the async import job
 end)
 
 -- ============================================================================

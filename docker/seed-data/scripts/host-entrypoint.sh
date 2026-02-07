@@ -92,5 +92,5 @@ echo "Starting Clusterio Host..."
 echo "Host will connect to controller and wait for instance assignment."
 echo "========================================"
 
-exec npx clusteriohost --log-level error run
+exec npx clusteriohost --log-level verbose run
 FACTORIO_USER

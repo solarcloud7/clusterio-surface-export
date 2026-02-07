@@ -1,5 +1,5 @@
 param (
-    [switch]$SkipBuild,
+    [switch]$ForceBaseBuild,
     [switch]$SkipIncrement
 )
 
@@ -61,13 +61,15 @@ if (-not $SkipIncrement) {
 Write-Host "Using save-patched module architecture (no mod zip needed)" -ForegroundColor Cyan
 Write-Host "Lua code in module/ directory will be patched into saves by Clusterio" -ForegroundColor Green
 
-# 2. Build Base Image
-if (-not $SkipBuild) {
+# 2. Build Base Image (skip if exists unless -ForceBaseBuild)
+Set-Location $DockerDir
+$imageExists = docker image inspect factorio-surface-export/base:latest 2>$null
+if ($ForceBaseBuild -or -not $imageExists) {
     Write-Host "Building Base Image..." -ForegroundColor Cyan
-    Set-Location $WorkspaceRoot
-    # Note: SURFACE_EXPORT_MOD_VERSION arg is now unused by Dockerfile but kept for compatibility
-    docker build -t factorio-surface-export/base:latest -f docker/Dockerfile.base .
+    docker-compose -f docker-compose.clusterio.yml build base
     if ($LASTEXITCODE -ne 0) { throw "Base image build failed" }
+} else {
+    Write-Host "Base image already exists, skipping build (use -ForceBaseBuild to rebuild)" -ForegroundColor Yellow
 }
 
 # 3. Clean & Rebuild Cluster

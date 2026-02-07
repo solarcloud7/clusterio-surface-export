@@ -363,9 +363,6 @@ Tick 12355: [Export] Processing: 488/488 entities (100%) -- Complete
 ```lua
 -- Phase: "serializing"
 if job.current_phase == "serializing" then
-    -- Add verification hash
-    job.export_data.metadata.verification_hash = generate_verification_hash(job.export_data)
-    
     -- Serialize to JSON
     local json_string = game.table_to_json(job.export_data)
     

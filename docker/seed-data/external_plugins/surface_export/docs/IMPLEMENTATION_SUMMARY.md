@@ -80,7 +80,7 @@ surface_export_plugin/module/
 ├── control.lua             # Main entry point
 ├── core/
 │   ├── async-processor.lua  # Async job processing
-│   ├── safety.lua          # Safe import/export with rollback
+
 │   ├── serializer.lua      # Platform → JSON
 │   └── deserializer.lua    # JSON → Platform
 ├── scanners/

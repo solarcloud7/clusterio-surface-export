@@ -40,14 +40,14 @@ Base.admin_command("export-platform-file",
     
     ctx.print(string.format("Exporting platform %d to file...", platform_index))
     
-    -- Call the remote interface function
-    local result, filename_or_error = remote.call("FactorioSurfaceExport", "export_platform_to_file", platform_index, ctx.force.name)
+    -- Call the remote interface function (now async - returns job_id)
+    local result, job_id_or_error = remote.call("FactorioSurfaceExport", "export_platform_to_file", platform_index, ctx.force.name)
 
     if result then
-      ctx.print(string.format("Export complete: %s", filename_or_error))
-      ctx.print("File location: <factorio>/script-output/" .. filename_or_error)
+      ctx.print(string.format("Export queued: %s", job_id_or_error))
+      ctx.print("File will be written when export completes (check logs)")
     else
-      ctx.print(string.format("Export failed: %s", filename_or_error or "Unknown error"))
+      ctx.print(string.format("Export failed: %s", job_id_or_error or "Unknown error"))
     end
   end
 )

@@ -14,6 +14,19 @@
 
 services:
   # =====================================================
+  # Base Image
+  # Shared base image with Factorio and Clusterio
+  # =====================================================
+  base:
+    image: factorio-surface-export/base:latest
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.base
+    # This service only exists to build the base image - it exits immediately
+    command: ["true"]
+    restart: "no"
+
+  # =====================================================
   # Clusterio Controller
   # Central management server for the cluster
   # =====================================================

@@ -495,7 +495,7 @@ end
 
 - [async-processor.lua](../src/surface_export_mod/scripts/async-processor.lua) - Core async logic
 - [control.lua](../src/surface_export_mod/control.lua) - Event handlers & remote interfaces
-- [safety.lua](../src/surface_export_mod/scripts/safety.lua) - Synchronous export/import functions
+
 - [settings.lua](../src/surface_export_mod/settings.lua) - Mod settings definitions
 
 ## See Also

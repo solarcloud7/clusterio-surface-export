@@ -1,8 +1,5 @@
-# Factorio API documentation (local reference only)
-factorioAPI/
-/clusterio/
-build/
-src.old/
+
+docs/dev-docs/
 
 # Docker volumes and generated files
 docker/clusterio-containers/*

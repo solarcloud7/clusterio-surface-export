@@ -1,9 +1,14 @@
+local function log_with_time(msg)
+	local t = os and os.date and os.date("!%Y-%m-%dT%H:%M:%S") or "NO_TIME"
+	log("[" .. t .. "] " .. msg)
+end
 local api = require('modules/clusterio/api')
 local compat = require("modules/clusterio/compat")
 
 --- @class (exact) EventData.on_server_startup:EventData
 
 local function check_patch()
+	log_with_time("check_patch called at tick " .. (game and game.tick or "N/A"))
 	if compat.script_data.clusterio_patch_number ~= clusterio_patch_number then
 		compat.script_data.clusterio_patch_number = clusterio_patch_number
 		-- Initialize clusterio table synchronously BEFORE raising async event
@@ -84,6 +89,8 @@ end
 -- Internal API
 clusterio_private = {}
 function clusterio_private.update_instance(new_id, new_name)
+	log_with_time("update_instance called at tick " .. (game and game.tick or "N/A"))
+	log_with_time("new_id=" .. tostring(new_id) .. ", new_name=" .. tostring(new_name))
 	check_patch()
 	local script_data = compat.script_data
 	script_data.clusterio.instance_id = new_id

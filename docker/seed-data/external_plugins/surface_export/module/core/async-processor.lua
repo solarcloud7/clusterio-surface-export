@@ -884,6 +884,38 @@ local function complete_export_job(job)
   }
   prune_results(25)
   
+  -- Check for pending file write requests
+  if storage.pending_file_writes and storage.pending_file_writes[export_id] then
+    local file_request = storage.pending_file_writes[export_id]
+    local filename = file_request.filename
+    
+    -- Generate filename if not provided
+    if not filename then
+      filename = string.format("platform_exports/%s.json", export_id)
+    end
+    
+    -- Write export to file
+    local export_entry = storage.platform_exports[export_id]
+    if export_entry then
+      local json_string = export_entry.json_string
+      if not json_string then
+        -- Try to serialize if not already done
+        json_string = Util.encode_json_compat(export_entry)
+      end
+      
+      if json_string then
+        game.write_file(filename, json_string, false)
+        log(string.format("[Export] File written: %s (%d bytes)", filename, #json_string))
+        game.print(string.format("[Export] File written: script-output/%s", filename), {0, 1, 0})
+      else
+        log(string.format("[Export ERROR] Failed to serialize export for file write: %s", export_id))
+      end
+    end
+    
+    -- Cleanup pending write request
+    storage.pending_file_writes[export_id] = nil
+  end
+  
   -- Unlock platform if this is NOT a transfer (transfers will delete the platform anyway)
   if not job.destination_instance_id then
     local unlock_success = SurfaceLock.unlock_platform(job.platform_name)

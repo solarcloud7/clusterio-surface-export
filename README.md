@@ -25,7 +25,6 @@ A Clusterio plugin and Factorio mod that serializes complete Space Age platform 
    - [VS Code Tasks](#vs-code-tasks)
    - [PowerShell Shortcuts for Clusterio](#powershell-shortcuts-for-clusterio)
    - [Project Structure](#project-structure)
-   - [Creating Your Own Plugin](#creating-your-own-plugin)
 9. [Troubleshooting](#troubleshooting)
 10. [Contributing](#contributing)
 11. [License](#license)
@@ -177,15 +176,14 @@ The plugin automatically handles platform transfer between instances:
 **Remote Interface** (called by plugin):
 
 ```javascript
-// Export platform (returns export ID)
+// Queue async export (returns job_id)
 const result = await this.sendRcon(
-  `/sc remote.call("surface_export", "export_platform", 1)`
+  `/sc rcon.print(remote.call("surface_export", "export_platform", 1, "player"))`
 );
+const job_id = result.trim();
 
-// Import platform (creates new platform)
-const result = await this.sendRcon(
-  `/sc remote.call("surface_export", "import_platform_async", exportData)`
-);
+// Retrieve export data after completion (via getExportData)
+const exportData = await this.getExportData(job_id);
 ```
 
 **Storage**:
@@ -194,8 +192,30 @@ const result = await this.sendRcon(
 
 ## Data Format
 
-Exported JSON structure:
+Exported data is **compressed by default** using deflate compression with base64 encoding to reduce transfer size and storage requirements.
 
+**Compressed Format** (default):
+```json
+{
+  "compressed": true,
+  "compression": "deflate",
+  "payload": "<base64-encoded compressed JSON>",
+  "platform_name": "Platform Alpha",
+  "tick": 1735259234,
+  "timestamp": 1737896234000,
+  "stats": {
+    "entities": 1234,
+    "items": 56789,
+    "size_bytes": 235678
+  },
+  "verification": {
+    "item_counts": { "iron-plate": 5000, ... },
+    "fluid_counts": { "water": 50000, ... }
+  }
+}
+```
+
+**Uncompressed JSON Structure** (after decompression):
 ```json
 {
   "schema_version": "1.0.0",
@@ -208,8 +228,7 @@ Exported JSON structure:
   },
   "metadata": {
     "total_entity_count": 1234,
-    "total_item_count": 56789,
-    "verification_hash": "sha256:abc123..."
+    "total_item_count": 56789
   },
   "entities": [ /* array of entity objects */ ],
   "verification": {
@@ -219,39 +238,29 @@ Exported JSON structure:
 }
 ```
 
-## What Gets Exported
+**Compression Benefits**:
+- **Typical reduction**: 70-90% size reduction
+- **Faster transfers**: Less RCON data to transmit
+- **Storage efficiency**: Smaller files on controller
+- **Automatic**: Compression/decompression handled transparently
 
-### Entities
-- Position, direction, health, quality
-- Entity-specific state (recipes, progress, settings)
-
-### Items
-- All inventories (input, output, fuel, modules, cargo)
-- Items on transport belts (counts only)
-- Inserter held items
-- Items on ground
-- Quality levels tracked separately
-- Durability and equipment grids
-
-### Fluids
-- All fluid containers and pipes
-- Fluid amounts and temperatures
-
-### Entity Settings
-- Assembling machine recipes and progress
-- Train schedules
-- Combinator settings
-- Logistics requests
-- Filter settings
+**Note**: The `verification` field remains uncompressed at the top level to allow transfer validation without decompression.
 
 ## Verification
 
 The mod includes comprehensive verification to ensure zero item loss:
 
-1. **Pre-export counting**: All items are counted before export
-2. **Post-import verification**: Item counts are verified after import
-3. **Checksum validation**: Hash verification ensures data integrity
-4. **Warning messages**: Any mismatches are reported in-game
+1. **Pre-export counting**: All items and fluids are counted and stored in `verification.item_counts` and `verification.fluid_counts`
+2. **Post-import verification**: After import, all items and fluids are recounted and compared against expected values
+3. **Detailed comparison**: Each item type (with quality level) and fluid type (with temperature) is individually verified
+4. **Warning messages**: Any discrepancies are reported in-game with exact item names and count differences
+5. **Quality-aware**: Tracks items with different quality levels separately to prevent quality loss
+
+**How it works**:
+- Export scans every entity: inventories, belts, inserters, items on ground, fluids in tanks/pipes
+- Creates a complete manifest of what should exist
+- Import recreates entities and then rescans to verify nothing was lost
+- Comparison is done item-by-item, not with a simple hash
 
 ## Development
 
@@ -316,45 +325,6 @@ Ctrl+Shift+P  → "Tasks: Run Task" → Select any task
 3. **Debugging**: Run "Get Latest Transaction Log" to see export/import details
 4. **Troubleshooting**: Run "Cluster: Display Logs" to check for errors
 
-### PowerShell Shortcuts for Clusterio
-
-For easier RCON command execution, add these shortcuts to your PowerShell profile (`$PROFILE`):
-
-```powershell
-# Clusterio RCON shortcuts
-function rc { 
-    param([int]$h, [int]$i, [string]$cmd)
-    (docker exec clusterio-controller npx clusterioctl --log-level error instance send-rcon "clusterio-host-$h-instance-$i" $cmd 2>&1) | Where-Object { $_ -notmatch '^\[info\]' }
-}
-
-function Initialize-RcShortcuts {
-    $instances = docker exec clusterio-controller npx clusterioctl --log-level error instance list 2>$null | Select-Object -Skip 2
-    foreach ($line in $instances) {
-        if ($line -match 'clusterio-host-(\d+)-instance-(\d+)') {
-            $h = $matches[1]
-            $i = $matches[2]
-            $funcName = "rc$h$i"
-            $scriptBlock = [scriptblock]::Create("rc $h $i `$args")
-            Set-Item -Path "function:global:$funcName" -Value $scriptBlock
-        }
-    }
-}
-
-# Auto-initialize shortcuts when profile loads
-Initialize-RcShortcuts
-```
-
-**Usage:**
-```powershell
-# Full syntax: rc <host> <instance> "<command>"
-rc 1 1 "/time"
-rc 1 1 "/export-platform 1"
-
-# Or use auto-generated shortcuts:
-rc11 "/time"                    # Host 1, Instance 1
-rc21 "/players"                 # Host 2, Instance 1
-rc11 "/export-platform 1"       # Export from instance 1
-```
 
 **Note:** Run `Initialize-RcShortcuts` in any new PowerShell session to regenerate shortcuts based on current cluster configuration.
 
@@ -386,6 +356,20 @@ FactorioSurfaceExport/
 │   │   ├── exports/                      # Exported platform JSON
 │   │   ├── scripts/                      # Docker entrypoints
 │   │   └── config/                       # Config templates
+│   ├── clusterio-containers/             # Runtime cluster data (Docker volumes)
+│   │   ├── controller/                   # Controller persistent storage
+│   │   │   ├── config-control.json       # Controller authentication config
+│   │   │   ├── config-controller.json    # Controller settings
+│   │   │   ├── plugin-list.json          # Installed plugins
+│   │   │   ├── database/                 # Controller database
+│   │   │   ├── logs/                     # Controller logs
+│   │   │   ├── mods/                     # Mod cache
+│   │   │   └── plugins/                  # Plugin storage
+│   │   └── hosts/                        # Host-specific data
+│   │       ├── clusterio-host-1/         # Host 1 persistent storage
+│   │       │   ├── instances/            # Instance data and saves
+│   │       │   └── config-host.json      # Host configuration
+│   │       └── clusterio-host-2/         # Host 2 persistent storage
 │   ├── Dockerfile.base                   # Base image (Factorio + Clusterio)
 │   ├── Dockerfile.controller             # Controller image
 │   ├── Dockerfile.host                   # Host image
@@ -396,35 +380,11 @@ FactorioSurfaceExport/
 └── README.md                             # This file
 ```
 
-### Creating Your Own Plugin
-
-To create a similar Clusterio plugin:
-
-1. Study the structure in `docker/seed-data/external_plugins/surface_export/`
-2. Key files:
-   - `package.json` - Define plugin metadata and dependencies
-   - `index.js` - Export plugin class
-   - `controller.js` - Controller-side logic and storage
-   - `instance.js` - Instance-side logic and RCON handlers
-   - `messages.js` - Define inter-component messages
-   - `module/` - Factorio mod code (Lua)
-3. See [Clusterio Plugin Documentation](https://github.com/clusterio/clusterio/blob/master/docs/developing-plugins.md)
-
-**Module Structure** (Factorio mod within plugin):
-- Place Lua code in `module/` directory
-- Include `module.json` with mod metadata
-- Use `require()` for modular code organization
-
 ## Troubleshooting
-
-### Export fails with "Platform not found"
-- Verify the platform index is correct
-- Use `/sc game.print(#game.get_space_platforms())` to see platform count
 
 ### Import shows item count warnings
 - This may indicate a mod version mismatch
 - Ensure the same mods are installed on both servers
-- Check that Quality mod settings match
 
 ### Docker containers won't start
 - Ensure Docker Desktop is running
@@ -433,12 +393,7 @@ To create a similar Clusterio plugin:
 - Check `.env` file configuration
 - Verify base image exists: `docker images | grep factorio-surface-export`
 
-## Performance
 
-- Export time: ~1-5 seconds for typical platforms (1000-5000 entities)
-- Import time: ~2-10 seconds depending on complexity
-- File size: ~100KB - 10MB depending on platform size
-- No game freezes: Operations run without blocking the game
 
 ## Contributing
 
@@ -455,17 +410,8 @@ MIT License - See LICENSE.md for details
 
 ## Credits
 
-- Built for Clusterio 2.0 clusters
+- Built for [Clusterio 2.0](https://github.com/clusterio/clusterio) 
 - Uses Factorio 2.0 Space Age platform API
-- Async processing prevents game lag during large exports/imports
-- Docker-based development environment for rapid iteration
-
-## Support
-
-For issues or questions:
-- GitHub Issues: [Link to your repo]
-- Factorio Forums: [Link to forum thread]
-- Discord: [Link to Discord]
 
 ## Version History
 

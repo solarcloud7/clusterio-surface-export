@@ -1,4 +1,20 @@
 ---------------------------------------------------------------------------------------------------
+Version: 0.9.1
+Date: 2026-01-25
+  Technical:
+    - BREAKING: Removed obsolete safety.lua synchronous wrapper module
+    - Remote interfaces (export_platform, export_platform_to_file) now return job_id instead of data
+    - Fully async architecture - all exports/imports use AsyncProcessor job queue
+    - File writing now handled in async completion handler
+    - Removed legacy pending_platform_imports synchronous polling system
+  Documentation:
+    - Updated all documentation to reflect async-first architecture
+    - Removed safety.lua references from file trees and module lists
+  Impact:
+    - Cleaner codebase without redundant abstraction layers
+    - Better error handling via job status tracking
+    - No blocking operations during export/import
+---------------------------------------------------------------------------------------------------
 Version: 1.0.98
 Date: 2026-01-17
   Features:

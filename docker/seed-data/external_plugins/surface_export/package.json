@@ -1,6 +1,6 @@
 {
   "name": "@clusterio/plugin-surface-export",
-  "version": "1.0.324",
+  "version": "0.9.34",
   "description": "Clusterio plugin for exporting and importing Factorio space platforms",
   "main": "index.js",
   "scripts": {

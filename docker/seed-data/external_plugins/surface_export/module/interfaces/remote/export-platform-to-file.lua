@@ -1,27 +1,30 @@
 -- Remote Interface: export_platform_to_file
--- Export platform to disk file (script-output directory)
+-- Queue async export and write to file when complete
 
-local Safety = require("modules/surface_export/core/safety")
+local AsyncProcessor = require("modules/surface_export/core/async-processor")
 local Util = require("modules/surface_export/utils/util")
 
 --- Export platform to disk file (script-output directory)
 --- @param platform_index number: The index of the platform to export (1-based)
 --- @param force_name string: Force name
 --- @param filename string (optional): Custom filename (defaults to platform_name_tick.json)
---- @return boolean, string: Success flag and filename/error message
+--- @return boolean, string: Success flag and job_id/error message
 local function export_platform_to_file(platform_index, force_name, filename)
-  local result, export_id = Safety.atomic_export(platform_index, force_name)
-  if not result then
-    return false, export_id  -- export_id contains error message on failure
+  local job_id, err = AsyncProcessor.queue_export(platform_index, force_name, nil, nil)
+  if not job_id then
+    return false, err or "Failed to queue export"
   end
   
-  -- Get the export data
-  if not storage.platform_exports or not storage.platform_exports[export_id] then
-    return false, "Export data not found in storage"
-  end
+  -- Store file write request for when export completes
+  storage.pending_file_writes = storage.pending_file_writes or {}
+  storage.pending_file_writes[job_id] = {
+    filename = filename,
+    requested_tick = game.tick
+  }
   
-  local export_entry = storage.platform_exports[export_id]
-  local json_string = export_entry.json_string
+  -- For now, return job_id as "filename" - actual file write happens async
+  local export_entry = storage.platform_exports and storage.platform_exports[job_id]
+  local json_string = export_entry and export_entry.json_string
   
   -- Generate filename if not provided
   if not filename then

@@ -130,7 +130,6 @@ src/
 │       ├── serializer.lua        # Entity → JSON export logic
 │       ├── deserializer.lua      # JSON → Entity import logic
 │       ├── entity-scanner.lua    # Entity state capture
-│       ├── safety.lua            # pcall wrappers for atomic operations
 │       ├── util.lua              # JSON encoding, checksums, helpers
 │       └── verification.lua      # Data integrity checks
 │

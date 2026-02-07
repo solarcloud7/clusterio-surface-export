@@ -92,27 +92,18 @@ function Serializer.export_platform(platform_index, force_name)
     }
   }
 
-  -- Step 7: Generate verification hash
-  game.print("Generating checksum...")
+  -- Step 7: Verify internal consistency
+  game.print("Verifying data integrity...")
   log(string.format("[Serializer] Verification data created: item_counts=%d types, fluid_counts=%d types",
     export_data.verification and export_data.verification.item_counts and #(table.keys and table.keys(export_data.verification.item_counts) or {}) or 0,
     export_data.verification and export_data.verification.fluid_counts and #(table.keys and table.keys(export_data.verification.fluid_counts) or {}) or 0))
-  local preview_ok, json_preview = pcall(Util.encode_json_compat, export_data.verification)
-  if not preview_ok then
-    log(string.format("[FactorioSurfaceExport ERROR] Verification serialization failed: %s", json_preview))
-    return nil, string.format("Verification serialization failed: %s", json_preview)
-  end
-  export_data.metadata.verification_hash = Util.simple_checksum(json_preview)
-
-  -- Step 8: Verify internal consistency
-  game.print("Verifying data integrity...")
   local valid, error = Verification.verify_export(export_data)
   if not valid then
     log(string.format("[FactorioSurfaceExport ERROR] Verification failed: %s", error))
     return nil, string.format("Verification failed: %s", error)
   end
 
-  -- Step 9: Serialize to JSON
+  -- Step 8: Serialize to JSON
   game.print("Serializing to JSON...")
   local success, json_string = pcall(Util.encode_json_compat, export_data)
 
@@ -121,7 +112,7 @@ function Serializer.export_platform(platform_index, force_name)
     return nil, string.format("JSON serialization failed: %s", json_string)
   end
 
-  -- Step 10: Store export data for Clusterio transmission
+  -- Step 9: Store export data for Clusterio transmission
   log(string.format("[FactorioSurfaceExport] Export complete: platform %s (%d KB)", platform.name, math.floor(#json_string / 1024)))
   
   -- Store export in global for retrieval by Clusterio plugin

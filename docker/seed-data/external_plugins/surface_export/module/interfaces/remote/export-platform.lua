@@ -1,18 +1,21 @@
 -- Remote Interface: export_platform
--- Export a platform and return the data (for Clusterio)
+-- Queue async export and return job ID (for Clusterio)
 
-local Safety = require("modules/surface_export/core/safety")
+local AsyncProcessor = require("modules/surface_export/core/async-processor")
 
---- Export a platform and return the data (for Clusterio)
+--- Queue async platform export and return job ID
 --- @param platform_index number: The index of the platform to export (1-based)
 --- @param force_name string: Force name
---- @return table|nil: Export data on success, nil on failure
+--- @return string|nil: Job ID (export_id) on success, nil on failure
 local function export_platform(platform_index, force_name)
-  local result, export_id = Safety.atomic_export(platform_index, force_name)
-  if result and storage.platform_exports and storage.platform_exports[export_id] then
-    return storage.platform_exports[export_id]
+  local job_id, err = AsyncProcessor.queue_export(platform_index, force_name, nil, nil)
+  if not job_id then
+    log(string.format("[Export ERROR] Failed to queue export: %s", err or "unknown"))
+    return nil
   end
-  return nil
+  
+  -- Return job ID - caller retrieves data from storage.platform_exports[job_id] after completion
+  return job_id
 end
 
 return export_platform
