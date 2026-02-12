@@ -57,9 +57,17 @@ if ($DestHost -eq 0) { $DestHost = $TestSuite.defaultDestHost }
 # Instance configuration
 $sourceInstance = "clusterio-host-$SourceHost-instance-1"
 $destInstance = "clusterio-host-$DestHost-instance-1"
-$sourceContainer = "clusterio-host-$SourceHost"
-$destContainer = "clusterio-host-$DestHost"
-$destInstanceId = $DestHost
+$sourceContainer = "surface-export-host-$SourceHost"
+$destContainer = "surface-export-host-$DestHost"
+
+# Resolve actual Clusterio instance ID for destination
+Write-Host "  Resolving destination instance ID..." -ForegroundColor Gray
+$destInstanceId = Get-ClusterioInstanceId -InstanceName $destInstance
+if (-not $destInstanceId) {
+    Write-Status "Could not resolve Clusterio instance ID for '$destInstance'" -Type error
+    exit 1
+}
+Write-Host "  Resolved: $destInstance -> $destInstanceId" -ForegroundColor Gray
 
 # Filter tests
 $FilteredTests = Select-Tests -TestSuite $TestSuite -TestId $TestId -Category $Category
@@ -89,6 +97,11 @@ if ($debugCheck -ne "enabled") {
     exit 1
 }
 Write-Status "Debug mode enabled" -Type success
+
+# Enable pause_on_validation on destination (required for debug_destination_platform file)
+Write-Host "  Enabling pause_on_validation on destination..." -ForegroundColor Gray
+Invoke-Lua -Instance $destInstance -Code "storage.surface_export_config = storage.surface_export_config or {}; storage.surface_export_config.pause_on_validation = true; rcon.print('ok')" | Out-Null
+Write-Status "pause_on_validation enabled on destination" -Type success
 
 if (-not $SkipTransfer) {
     # Step 2: Clean up old test surfaces on destination instance
@@ -131,7 +144,7 @@ if (-not $SkipTransfer) {
     # Step 7: Wait for transfer to complete
     Write-Host "  Waiting for transfer completion..." -ForegroundColor Gray
     $startTime = Get-Date
-    $maxWait = 30
+    $maxWait = 180
     $found = $false
     
     while (-not $found -and ((Get-Date) - $startTime).TotalSeconds -lt $maxWait) {
@@ -140,9 +153,9 @@ if (-not $SkipTransfer) {
         Step-Tick -Instance $destInstance -Ticks 60 -EnsurePaused | Out-Null
         Start-Sleep -Milliseconds 500
         
-        # Check for destination debug file
-        $destFiles = @(Get-DebugFiles -Instance $destInstance -Container $destContainer -Pattern "debug_destination_*.json")
-        if ($destFiles -and $destFiles.Count -gt 0) {
+        # Check for import result debug file (always generated on transfer completion)
+        $resultFiles = @(Get-DebugFiles -Instance $destInstance -Container $destContainer -Pattern "debug_import_result_*.json")
+        if ($resultFiles -and $resultFiles.Count -gt 0) {
             $found = $true
         }
     }

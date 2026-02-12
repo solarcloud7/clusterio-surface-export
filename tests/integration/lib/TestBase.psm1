@@ -14,7 +14,8 @@
 #>
 
 # Module-level variables
-$script:DefaultController = "clusterio-controller"
+$script:DefaultController = "surface-export-controller"
+$script:ControlConfig = "/clusterio/tokens/config-control.json"
 
 #region RCON Communication
 
@@ -43,7 +44,7 @@ function Send-Rcon {
         [string]$Controller = $script:DefaultController
     )
     
-    $output = docker exec $Controller npx clusterioctl --log-level error instance send-rcon $Instance $Command 2>&1
+    $output = docker exec $Controller npx clusterioctl --log-level error instance send-rcon $Instance $Command --config $script:ControlConfig 2>&1
     return $output
 }
 
@@ -546,8 +547,29 @@ function New-IsolatedTestSurface {
         Write-Status "Created test surface '$TestPlatformName'" -Type success
     }
     
-    # Step 5: Wait for clone to complete
-    Step-Tick -Instance $Instance -Ticks 60 -EnsurePaused | Out-Null
+    # Step 5: Wait for clone import job to complete
+    # The clone starts an async import job that processes entities in batches per tick.
+    # We must wait for it to finish before the surface has all entities.
+    $jobId = $cloneResult.job_id
+    if ($jobId) {
+        if ($ShowProgress) {
+            Write-Host "  Waiting for clone import job '$jobId' to complete..." -ForegroundColor Gray
+        }
+        
+        $checkScript = "local jobs = storage.async_jobs or {}; local j = jobs['$jobId']; rcon.print(j == nil and 'true' or 'false')"
+        $jobDone = Wait-ForJob -Instances @($Instance) -MaxWaitSeconds 60 -CheckScript $checkScript
+        
+        if (-not $jobDone) {
+            if ($ShowProgress) {
+                Write-Status "Clone import job '$jobId' timed out after 60s" -Type warning
+            }
+        } elseif ($ShowProgress) {
+            Write-Status "Clone import job completed" -Type success
+        }
+    } else {
+        # Fallback: no job_id returned, step a generous number of ticks
+        Step-Tick -Instance $Instance -Ticks 300 -EnsurePaused | Out-Null
+    }
     
     return $result
 }
@@ -632,7 +654,7 @@ function Clear-DebugFiles {
         [string]$Pattern = "debug_*.json"
     )
     
-    docker exec $Container bash -c "rm -f /clusterio/instances/$Instance/script-output/$Pattern" 2>$null
+    docker exec $Container bash -c "rm -f /clusterio/data/instances/$Instance/script-output/$Pattern" 2>$null
 }
 
 <#
@@ -660,7 +682,7 @@ function Get-DebugFiles {
         [string]$Pattern = "debug_*.json"
     )
     
-    $files = docker exec $Container bash -c "ls -1 /clusterio/instances/$Instance/script-output/$Pattern 2>/dev/null" 2>$null
+    $files = docker exec $Container bash -c "ls -1 /clusterio/data/instances/$Instance/script-output/$Pattern 2>/dev/null" 2>$null
     if ($LASTEXITCODE -ne 0 -or -not $files -or $files -eq "") {
         return @()
     }
@@ -694,7 +716,7 @@ function Read-DebugFile {
     
     # If just a filename, prepend path
     if (-not $Filename.StartsWith("/")) {
-        $Filename = "/clusterio/instances/$Instance/script-output/$Filename"
+        $Filename = "/clusterio/data/instances/$Instance/script-output/$Filename"
     }
     
     $content = docker exec $Container cat $Filename 2>$null
@@ -970,10 +992,10 @@ function Wait-ForJob {
     
     while (-not $done -and ((Get-Date) - $startTime).TotalSeconds -lt $MaxWaitSeconds) {
         foreach ($inst in $Instances) {
-            Step-Tick -Instance $inst -Ticks 60 -EnsurePaused | Out-Null
+            Step-Tick -Instance $inst -Ticks 300 -EnsurePaused | Out-Null
         }
         
-        Start-Sleep -Milliseconds 500
+        Start-Sleep -Milliseconds 1000
         
         if ($CheckScript) {
             $result = Invoke-Lua -Instance $Instances[0] -Code $CheckScript
@@ -1015,6 +1037,38 @@ function Start-PlatformTransfer {
     $command = "/transfer-platform $PlatformIndex $DestInstanceId"
     $output = Send-Rcon -Instance $SourceInstance -Command $command
     return $output
+}
+
+<#
+.SYNOPSIS
+    Resolve a Clusterio instance name to its numeric instance ID.
+
+.PARAMETER InstanceName
+    The instance name (e.g., "clusterio-host-2-instance-1")
+
+.PARAMETER Controller
+    Docker container name of the controller
+
+.EXAMPLE
+    Get-ClusterioInstanceId -InstanceName "clusterio-host-2-instance-1"
+    # Returns: 96699824
+#>
+function Get-ClusterioInstanceId {
+    param(
+        [Parameter(Mandatory=$true)]
+        [string]$InstanceName,
+        [string]$Controller = $script:DefaultController
+    )
+    
+    $output = docker exec $Controller bash -c "npx clusterioctl --config $script:ControlConfig instance list 2>/dev/null"
+    foreach ($line in $output) {
+        if ($line -match "^\s*$([regex]::Escape($InstanceName))\s*\|\s*(\d+)") {
+            return [long]$Matches[1]
+        }
+    }
+    
+    Write-Warning "Could not resolve instance ID for '$InstanceName'"
+    return $null
 }
 
 #endregion
@@ -1060,5 +1114,8 @@ Export-ModuleMember -Function @(
     
     # Transfer
     'Wait-ForJob',
-    'Start-PlatformTransfer'
+    'Start-PlatformTransfer',
+    
+    # Instance Resolution
+    'Get-ClusterioInstanceId'
 )

@@ -411,9 +411,17 @@ class ControllerPlugin extends BaseControllerPlugin {
 				transfer.validationTimeout = setTimeout(async () => {
 					const currentTransfer = this.activeTransfers.get(transferId);
 					if (currentTransfer && currentTransfer.status === "awaiting_validation") {
+						// Log full transfer state at timeout for diagnosis
+						const elapsed = Date.now() - currentTransfer.startedAt;
+						this.logger.error(`Validation timeout for transfer ${transferId} after ${Math.round(elapsed / 1000)}s`);
+						this.logger.error(`  Transfer state: status=${currentTransfer.status}, platform=${currentTransfer.platformName}`);
+						this.logger.error(`  Source: instance ${currentTransfer.sourceInstanceId}, Target: instance ${currentTransfer.targetInstanceId}`);
 						this.logTransactionEvent(transferId, 'validation_timeout', 
-							`Validation timeout - no response received within 2 minutes`, {});
-						this.logger.error(`Validation timeout for transfer ${transferId}`);
+							`Validation timeout - no response received within 2 minutes`, {
+								elapsedMs: elapsed,
+								transferStatus: currentTransfer.status,
+								targetInstanceId: currentTransfer.targetInstanceId,
+							});
 						
 						// Trigger rollback via synthetic validation failure
 						await this.handleTransferValidation({
@@ -542,6 +550,8 @@ class ControllerPlugin extends BaseControllerPlugin {
 		const transfer = this.activeTransfers.get(event.transferId);
 		if (!transfer) {
 			this.logger.warn(`Received validation for unknown transfer: ${event.transferId}`);
+			this.logger.warn(`  Active transfers: ${Array.from(this.activeTransfers.keys()).join(", ") || "(none)"}`);
+			this.logger.warn(`  Event data: success=${event.success}, platform=${event.platformName}, source=${event.sourceInstanceId}`);
 			return;
 		}
 		
@@ -730,12 +740,56 @@ class ControllerPlugin extends BaseControllerPlugin {
 		return this.listStoredExports();
 	}
 
+	/**
+	 * Resolve a target instance identifier to a real Clusterio instance ID.
+	 * Accepts: numeric instance ID, instance name, or assigned host ID.
+	 * @param {number|string} target - Target identifier
+	 * @returns {{ id: number, instance: Object }|null} Resolved instance or null
+	 */
+	resolveTargetInstance(target) {
+		this.logger.info(`[resolveTargetInstance] Looking up target=${target} (type=${typeof target})`);
+
+		// 1. Direct ID lookup
+		const direct = this.controller.instances.get(target);
+		if (direct) {
+			this.logger.info(`[resolveTargetInstance] Direct ID match: ${target}`);
+			return { id: target, instance: direct };
+		}
+		this.logger.info(`[resolveTargetInstance] No direct ID match for ${target}, searching by name/host...`);
+
+		// 2. Search by name or assigned host ID
+		for (const [id, inst] of this.controller.instances) {
+			const instName = inst.config && inst.config.get("instance.name");
+			const assignedHost = inst.config && inst.config.get("instance.assigned_host");
+			
+			// Match by instance name
+			if (instName === String(target)) {
+				this.logger.info(`[resolveTargetInstance] Name match: '${instName}' -> id=${id}`);
+				return { id, instance: inst };
+			}
+			// Match by assigned host ID (e.g. target=2 matches host 2's instance)
+			if (assignedHost === target) {
+				this.logger.info(`[resolveTargetInstance] Host ID match: host=${assignedHost} -> id=${id} (name='${instName}')`);
+				return { id, instance: inst };
+			}
+			this.logger.verbose(`[resolveTargetInstance]   Checked: id=${id}, name='${instName}', host=${assignedHost} - no match`);
+		}
+
+		this.logger.warn(`[resolveTargetInstance] FAILED: No instance found for target=${target} (checked ${this.controller.instances.size} instances)`);
+		return null;
+	}
+
 	async handleTransferPlatformRequest(request) {
-		const instance = this.controller.instances.get(request.targetInstanceId);
-		if (!instance) {
+		this.logger.info(`TransferPlatformRequest received: exportId=${request.exportId}, targetInstanceId=${request.targetInstanceId} (type=${typeof request.targetInstanceId})`);
+		const resolved = this.resolveTargetInstance(request.targetInstanceId);
+		if (!resolved) {
+			this.logger.error(`Failed to resolve instance: ${request.targetInstanceId}. Available instances: ${Array.from(this.controller.instances).map(([id, inst]) => `${id}(${inst.config?.get("instance.name")})`).join(", ")}`);
 			return { success: false, error: `Unknown instance ${request.targetInstanceId}` };
 		}
-		return this.transferPlatform(request.exportId, request.targetInstanceId);
+		if (resolved.id !== request.targetInstanceId) {
+			this.logger.info(`Resolved target instance ${request.targetInstanceId} → ${resolved.id}`);
+		}
+		return this.transferPlatform(request.exportId, resolved.id);
 	}
 
 	async handleGetTransactionLog(request) {

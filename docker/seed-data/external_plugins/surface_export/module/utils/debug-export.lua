@@ -8,7 +8,18 @@ local DebugExport = {}
 --- Check if debug mode is enabled
 --- @return boolean
 function DebugExport.is_enabled()
-  return storage.surface_export_config and storage.surface_export_config.debug_mode == true
+  local enabled = storage.surface_export_config and storage.surface_export_config.debug_mode == true
+  if not enabled then
+    -- Log the actual config value to help diagnose type mismatches (e.g., "true" vs true)
+    local config = storage.surface_export_config
+    if config then
+      log(string.format("[DebugExport] is_enabled=false: debug_mode=%s (type=%s)",
+        tostring(config.debug_mode), type(config.debug_mode)))
+    else
+      log("[DebugExport] is_enabled=false: surface_export_config is nil")
+    end
+  end
+  return enabled
 end
 
 --- Write a JSON file to script-output for debugging
@@ -58,6 +69,7 @@ end
 --- @param platform_name string: Name of the platform
 function DebugExport.export_source_platform(platform_data, platform_name)
   if not DebugExport.is_enabled() then
+    log(string.format("[DebugExport] Skipping source platform export for '%s': debug mode disabled", tostring(platform_name)))
     return false
   end
   
@@ -72,6 +84,7 @@ end
 --- @param platform_name string: Name of the platform
 function DebugExport.export_destination_platform(platform_data, platform_name)
   if not DebugExport.is_enabled() then
+    log(string.format("[DebugExport] Skipping destination platform export for '%s': debug mode disabled", tostring(platform_name)))
     return false
   end
   
@@ -86,6 +99,7 @@ end
 --- @param platform_name string: Name of the platform
 function DebugExport.export_import_result(result, platform_name)
   if not DebugExport.is_enabled() then
+    log(string.format("[DebugExport] Skipping import result export for '%s': debug mode disabled", tostring(platform_name)))
     return false
   end
   

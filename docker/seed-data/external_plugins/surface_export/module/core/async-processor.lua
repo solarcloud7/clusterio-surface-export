@@ -127,9 +127,13 @@ local function prune_import_sessions()
 
   local now = game.tick
   local keys = {}
+  local pruned_age = 0
   for key, session in pairs(sessions) do
     if (now - (session.started_tick or now)) > MAX_SESSION_AGE_TICKS then
+      log(string.format("[Import Session] Pruned session '%s' (age: %d ticks, platform: %s)",
+        key, now - (session.started_tick or now), tostring(session.platform_name)))
       sessions[key] = nil
+      pruned_age = pruned_age + 1
     else
       table.insert(keys, key)
     end
@@ -228,8 +232,13 @@ function AsyncProcessor.queue_export(platform_index, force_name, requester_name,
   storage.async_job_id_counter = storage.async_job_id_counter + 1
   local job_id = "export_" .. storage.async_job_id_counter
   
+  log(string.format("[Export Queue] job_id=%s, platform_index=%s, force=%s, requester=%s, dest_instance_id=%s (type=%s)",
+    job_id, tostring(platform_index), force_name, tostring(requester_name),
+    tostring(destination_instance_id), type(destination_instance_id)))
+  
   local force = game.forces[force_name]
   if not force or not force.platforms[platform_index] then
+    log(string.format("[Export Queue] FAILED: Platform index %s not found for force '%s'", tostring(platform_index), force_name))
     return nil, "Platform not found"
   end
   
@@ -315,10 +324,15 @@ function AsyncProcessor.begin_import_session(session_id, total_chunks, platform_
   AsyncProcessor.init()
   prune_import_sessions()
 
+  log(string.format("[Import Session] begin_import_session: session_id=%s, total_chunks=%s, platform=%s, force=%s",
+    tostring(session_id), tostring(total_chunks), tostring(platform_name), tostring(force_name)))
+
   if not session_id or session_id == "" then
+    log("[Import Session] FAILED: session_id required")
     return false, "session_id required"
   end
   if storage.import_sessions[session_id] then
+    log(string.format("[Import Session] FAILED: session '%s' already exists", session_id))
     return false, "session already exists"
   end
 
@@ -342,6 +356,9 @@ function AsyncProcessor.begin_import_session(session_id, total_chunks, platform_
     force_name = force_name,
     started_tick = game.tick
   }
+
+  log(string.format("[Import Session] Session '%s' created: expecting %d chunks for platform '%s'",
+    session_id, total_chunks, tostring(platform_name)))
 
   return true, nil
 end
@@ -371,6 +388,10 @@ function AsyncProcessor.enqueue_import_chunk(session_id, chunk_index, chunk_data
   session.received[chunk_index] = chunk_data or ""
   session.received_count = session.received_count + 1
 
+  -- Log progress for every chunk (sessions are typically small)
+  log(string.format("[Import Session] Chunk received: session=%s, chunk=%d/%d, size=%d bytes",
+    session_id, session.received_count, session.total_chunks, #(chunk_data or "")))
+
   return true, nil
 end
 
@@ -382,12 +403,18 @@ function AsyncProcessor.finalize_import_session(session_id, checksum)
   AsyncProcessor.init()
   prune_import_sessions()
 
+  log(string.format("[Import Session] finalize_import_session: session_id=%s, checksum=%s",
+    tostring(session_id), tostring(checksum ~= nil)))
+
   local session = storage.import_sessions[session_id]
   if not session then
+    log(string.format("[Import Session] FAILED: session '%s' not found (may have been pruned)", tostring(session_id)))
     return nil, "session not found"
   end
 
   if session.received_count ~= session.total_chunks then
+    log(string.format("[Import Session] FAILED: session '%s' incomplete - received %d/%d chunks",
+      session_id, session.received_count, session.total_chunks))
     return nil, "incomplete session"
   end
 
@@ -402,6 +429,9 @@ function AsyncProcessor.finalize_import_session(session_id, checksum)
   end
 
   local assembled = table.concat(ordered)
+
+  log(string.format("[Import Session] Session '%s' assembled: %d chunks -> %d bytes",
+    session_id, session.total_chunks, #assembled))
 
   if checksum and checksum ~= Util.simple_checksum(assembled) then
     storage.import_sessions[session_id] = nil
@@ -454,6 +484,12 @@ function AsyncProcessor.queue_import(json_data, new_platform_name, force_name, r
   
   storage.async_job_id_counter = storage.async_job_id_counter + 1
   local job_id = "import_" .. storage.async_job_id_counter
+  
+  log(string.format("[Import Queue] job_id=%s, platform='%s', force=%s, requester=%s, data_type=%s",
+    job_id, tostring(new_platform_name), tostring(force_name), tostring(requester_name), type(json_data)))
+  if type(json_data) == "string" then
+    log(string.format("[Import Queue] JSON string size: %d bytes", #json_data))
+  end
   
   -- First, parse if it's a JSON string
   local parsed_data
@@ -546,8 +582,11 @@ function AsyncProcessor.queue_import(json_data, new_platform_name, force_name, r
   })
   
   if not new_platform or not new_platform.valid then
+    log(string.format("[Import Queue] FAILED: Could not create platform '%s'", final_name))
     return nil, "Failed to create platform"
   end
+  
+  log(string.format("[Import Queue] Platform created: '%s' (index=%s)", final_name, tostring(new_platform.index)))
   
   -- Apply starter pack to activate surface immediately
   -- Platform needs starter pack to have a valid surface
@@ -563,7 +602,15 @@ function AsyncProcessor.queue_import(json_data, new_platform_name, force_name, r
   -- Validate surface is now accessible
   if not new_platform.surface or not new_platform.surface.valid then
     new_platform.destroy()
+    log(string.format("[Import Queue] FAILED: Platform '%s' surface not valid after activation", final_name))
     return nil, "Platform surface not valid after activation"
+  end
+  
+  -- Log what the starter pack placed on the surface
+  local starter_entities = new_platform.surface.find_entities_filtered({})
+  log(string.format("[Import Queue] Starter pack applied: %d entities on surface (platform '%s')", #starter_entities, final_name))
+  for _, ent in ipairs(starter_entities) do
+    log(string.format("[Import Queue]   Starter entity: %s at (%.1f, %.1f)", ent.name, ent.position.x, ent.position.y))
   end
   
   -- CRITICAL: For transfers, PAUSE the platform immediately to prevent thruster fuel consumption
@@ -694,6 +741,8 @@ end
 local function process_import_batch(job)
   -- Validate surface is still valid
   if not job.target_surface or not job.target_surface.valid then
+    log(string.format("[Import Batch] ABORT: Target surface became invalid for job %s (platform '%s')",
+      job.job_id, job.platform_name))
     game.print("[Import Error] Target surface became invalid", {1, 0, 0})
     return true  -- Abort job
   end
@@ -1059,6 +1108,17 @@ local function complete_import_job(job)
     -- Check if we should keep platform paused for inspection (configurable)
     -- Check config for pause_on_validation (debug feature)
     local keep_paused_for_inspection = storage.surface_export_config and storage.surface_export_config.pause_on_validation == true
+    local debug_enabled = DebugExport.is_enabled()
+    
+    log(string.format("[Validation] Decision state: success=%s, keep_paused=%s, debug_enabled=%s",
+      tostring(success), tostring(keep_paused_for_inspection), tostring(debug_enabled)))
+    if storage.surface_export_config then
+      log(string.format("[Validation] Config: debug_mode=%s (type=%s), pause_on_validation=%s (type=%s)",
+        tostring(storage.surface_export_config.debug_mode), type(storage.surface_export_config.debug_mode),
+        tostring(storage.surface_export_config.pause_on_validation), type(storage.surface_export_config.pause_on_validation)))
+    else
+      log("[Validation] Config: surface_export_config is nil")
+    end
     
     if not success then
       game.print(string.format(
@@ -1096,13 +1156,20 @@ local function complete_import_job(job)
                 entity_count = #scanned_entities
               }
               DebugExport.export_destination_platform(destination_data, job.platform_name)
+            else
+              log("[DebugExport] Skipping destination platform export: debug_mode is not enabled")
             end
           end)
           if not debug_success then
             log(string.format("[DebugExport] ERROR: Failed to export destination platform: %s", tostring(debug_err)))
           end
+        else
+          log(string.format("[DebugExport] Skipping destination platform export: transfer_id=%s, surface_valid=%s",
+            tostring(job.transfer_id), tostring(job.target_surface and job.target_surface.valid)))
         end
       else
+        log(string.format("[Validation] Skipping debug export: keep_paused_for_inspection=%s (requires pause_on_validation=true)",
+          tostring(keep_paused_for_inspection)))
         -- Auto-unpause platform and activate all entities
         if job.target_platform and job.target_platform.valid then
           job.target_platform.paused = false
@@ -1200,6 +1267,19 @@ function AsyncProcessor.process_tick()
     table.insert(job_list, {id = job_id, job = job, started = job.started_tick or 0})
   end
   table.sort(job_list, function(a, b) return a.started < b.started end)
+  
+  -- Periodic progress logging (every 60 ticks = ~1 second)
+  if #job_list > 0 and game.tick % 60 == 0 then
+    for _, entry in ipairs(job_list) do
+      local job = entry.job
+      local elapsed = game.tick - (job.started_tick or game.tick)
+      log(string.format("[Process Tick] job=%s, type=%s, platform='%s', progress=%d/%d (%d%%), elapsed=%d ticks (%.1fs)",
+        entry.id, job.type, job.platform_name or "?",
+        job.current_index or 0, job.total_entities or 0,
+        calculate_progress(job),
+        elapsed, elapsed / 60))
+    end
+  end
   
   -- Process only up to max_concurrent jobs per tick
   local processed = 0

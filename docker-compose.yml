@@ -51,8 +51,8 @@ services:
       - surface-export-controller-data:/clusterio/data
       - surface-export-tokens:/clusterio/tokens
       - ./docker/seed-data:/clusterio/seed-data:ro
-      # Mount surface_export plugin for controller-side plugin code
-      - ./docker/seed-data/external_plugins/surface_export:/clusterio/external_plugins/surface_export
+      # Mount external plugins (auto-discovered by install-plugins.sh)
+      - ./docker/seed-data/external_plugins:/clusterio/external_plugins
     environment:
       - HOST_COUNT=${HOST_COUNT:-2}
     networks:
@@ -80,8 +80,8 @@ services:
       - surface-export-host-1-data:/clusterio/data
       - surface-export-tokens:/clusterio/tokens:ro
       - ./docker/seed-data/mods:/clusterio/seed-mods:ro
-      # Mount surface_export plugin for host-side plugin code + Lua module
-      - ./docker/seed-data/external_plugins/surface_export:/clusterio/external_plugins/surface_export
+      # Mount external plugins (auto-discovered by install-plugins.sh)
+      - ./docker/seed-data/external_plugins:/clusterio/external_plugins
 
   # -------------------------------------------------------------------------
   # Host 2 - Port range 34200-34209
@@ -98,8 +98,8 @@ services:
       - surface-export-host-2-data:/clusterio/data
       - surface-export-tokens:/clusterio/tokens:ro
       - ./docker/seed-data/mods:/clusterio/seed-mods:ro
-      # Mount surface_export plugin for host-side plugin code + Lua module
-      - ./docker/seed-data/external_plugins/surface_export:/clusterio/external_plugins/surface_export
+      # Mount external plugins (auto-discovered by install-plugins.sh)
+      - ./docker/seed-data/external_plugins:/clusterio/external_plugins
 
 networks:
   surface-export-net:

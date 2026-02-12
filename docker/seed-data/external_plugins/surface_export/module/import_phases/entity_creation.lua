@@ -11,14 +11,20 @@ function EntityCreation.process_batch(job, get_batch_size, should_show_progress)
     local start_index = job.current_index + 1
     local end_index = math.min(start_index + batch_size - 1, job.total_entities)
     
+    local batch_created = 0
+    local batch_failed = 0
+    local batch_skipped = 0
+    
     for i = start_index, end_index do
       local entity_data = job.entities_to_create[i]
       if entity_data then
         if entity_data.type == "item-on-ground" then
           Deserializer.create_ground_item(job.target_surface, entity_data)
+          batch_created = batch_created + 1
         else
           local entity = Deserializer.create_entity(job.target_surface, entity_data)
           if entity and entity.valid then
+            batch_created = batch_created + 1
             -- Store in entity_map for post-processing (circuit connections, etc.)
             if entity_data.entity_id then
               job.entity_map[entity_data.entity_id] = entity
@@ -56,12 +62,29 @@ function EntityCreation.process_batch(job, get_batch_size, should_show_progress)
             -- redistribution when connected pipes/tanks are created later in the batch
             Deserializer.restore_entity_state(entity, entity_data)
             Deserializer.restore_inventories(entity, entity_data)
+          else
+            batch_failed = batch_failed + 1
+            log(string.format("[Entity Creation] FAILED to create entity '%s' (type=%s) at (%.1f,%.1f) - index %d/%d",
+              entity_data.name or "?", entity_data.type or "?",
+              entity_data.position and (entity_data.position.x or entity_data.position[1]) or 0,
+              entity_data.position and (entity_data.position.y or entity_data.position[2]) or 0,
+              i, job.total_entities))
           end
         end
+      else
+        batch_skipped = batch_skipped + 1
       end
     end
     
     job.current_index = end_index
+    
+    -- Log batch summary (every batch for first 5 and every 10th after)
+    local batch_num = math.floor(end_index / batch_size)
+    if batch_num <= 5 or batch_num % 10 == 0 or end_index >= job.total_entities then
+      log(string.format("[Entity Creation] Batch %d: entities %d-%d/%d, created=%d, failed=%d, skipped=%d (job=%s)",
+        batch_num, start_index, end_index, job.total_entities,
+        batch_created, batch_failed, batch_skipped, job.job_id))
+    end
     
     -- Show progress every 10 batches
     if should_show_progress() and end_index % (batch_size * 10) == 0 then

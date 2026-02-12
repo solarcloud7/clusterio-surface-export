@@ -53,7 +53,7 @@ if (-not $SourcePlatform) {
 
 # Instance configuration
 $instanceName = "clusterio-host-$InstanceId-instance-1"
-$containerName = "clusterio-host-$InstanceId"
+$containerName = "surface-export-host-$InstanceId"
 
 # Filter tests
 $FilteredTests = Select-Tests -TestSuite $TestSuite -TestId $TestId -Category $Category

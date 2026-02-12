@@ -10,18 +10,19 @@ if ($Help) {
 Patch and Reset Instances
 ==========================
 
-Hot-reloads plugin code changes and resets instances to seed save without rebuilding containers.
+Hot-reloads plugin code changes and restarts instances.
 
 Usage:
     .\patch-and-reset.ps1
 
 This script:
 1. Stops Factorio instances (keeps controller running)
-2. Resets save files to seed saves (required to apply Lua code changes)
-3. Restarts instances (picks up plugin code changes from docker/seed-data/external_plugins/surface_export)
+2. Restarts instances - Clusterio save-patches fresh Lua module code into existing save files
+3. Save data (platforms, world state) is preserved across restarts
 
-Note: Save reset is REQUIRED because Lua code is embedded in save files via save-patching.
-      Without reset, old embedded script.dat prevents Lua code updates from taking effect.
+Note: Clusterio re-patches ALL module/ Lua files into the save zip on every instance start.
+      The patch number is incremented, triggering on_server_startup for re-initialization.
+      No need to delete saves — only stop and restart.
 "@
     exit 0
 }
@@ -68,59 +69,29 @@ if (-not $controllerStatus) {
 }
 Write-Host "✓ Controller running" -ForegroundColor Green
 
-# Stop instances
+# Stop instances (use instance names, not numeric IDs which don't match)
 Write-Host ""
 Write-Host "Stopping Factorio instances..." -ForegroundColor Yellow
-docker exec surface-export-controller npx clusterioctl instance stop 1 2>$null
-docker exec surface-export-controller npx clusterioctl instance stop 2 2>$null
+docker exec surface-export-controller npx clusterioctl instance stop "clusterio-host-1-instance-1" 2>$null
+docker exec surface-export-controller npx clusterioctl instance stop "clusterio-host-2-instance-1" 2>$null
 Start-Sleep -Seconds 2
 Write-Host "✓ Instances stopped" -ForegroundColor Green
 
 # Reset saves (ALWAYS required to apply Lua code changes)
 Write-Host ""
-Write-Host "Resetting instance saves to seed saves..." -ForegroundColor Yellow
+Write-Host "Resetting instance saves..." -ForegroundColor Yellow
 
-# Load save names from .env file
-$envPath = "docker/.env"
-$instance1SaveName = "test.zip"  # Default
-$instance2SaveName = "MinSeed.zip"  # Default
-
-if (Test-Path $envPath) {
-    Get-Content $envPath | ForEach-Object {
-        if ($_ -match '^INSTANCE1_SAVE_NAME=(.+)$') {
-            $instance1SaveName = $matches[1]
-        }
-        if ($_ -match '^INSTANCE2_SAVE_NAME=(.+)$') {
-            $instance2SaveName = $matches[1]
-        }
-    }
-}
-
-# Instance 1 - Copy specific save
-docker exec surface-export-host-1 sh -c 'rm -f /clusterio/instances/clusterio-host-1-instance-1/saves/*.zip' 2>$null
-docker exec surface-export-host-1 sh -c "cp /opt/seed-saves/$instance1SaveName /clusterio/instances/clusterio-host-1-instance-1/saves/" 2>$null
-if ($LASTEXITCODE -eq 0) {
-    Write-Host "  ✓ Reset instance 1 to: $instance1SaveName" -ForegroundColor Green
-} else {
-    Write-Host "  ✗ Failed to reset instance 1 ($instance1SaveName not found in /opt/seed-saves/)" -ForegroundColor Red
-}
-
-# Instance 2 - Copy specific save
-docker exec surface-export-host-2 sh -c 'rm -f /clusterio/instances/clusterio-host-2-instance-1/saves/*.zip' 2>$null
-docker exec surface-export-host-2 sh -c "cp /opt/seed-saves/$instance2SaveName /clusterio/instances/clusterio-host-2-instance-1/saves/" 2>$null
-if ($LASTEXITCODE -eq 0) {
-    Write-Host "  ✓ Reset instance 2 to: $instance2SaveName" -ForegroundColor Green
-} else {
-    Write-Host "  ✗ Failed to reset instance 2 ($instance2SaveName not found in /opt/seed-saves/)" -ForegroundColor Red
-}
-
-Write-Host "  → Instances will load seed saves with fresh save-patching" -ForegroundColor Cyan
+# IMPORTANT: Clusterio re-patches Lua module code into save files on every instance start.
+# We do NOT need to delete saves — the save-patcher replaces all module/ Lua files in the
+# save zip and increments the patch number, which triggers re-initialization at runtime.
+# Saves are preserved so test platforms and world state persist across hot-reloads.
+Write-Host "  → Saves preserved (Clusterio save-patches fresh Lua on instance start)" -ForegroundColor Cyan
 
 # Start instances
 Write-Host ""
 Write-Host "Starting instances (loading patched plugin code)..." -ForegroundColor Yellow
-docker exec surface-export-controller npx clusterioctl instance start 1
-docker exec surface-export-controller npx clusterioctl instance start 2
+docker exec surface-export-controller npx clusterioctl instance start "clusterio-host-1-instance-1"
+docker exec surface-export-controller npx clusterioctl instance start "clusterio-host-2-instance-1"
 Start-Sleep -Seconds 3
 Write-Host "✓ Instances started" -ForegroundColor Green
 Write-Host ""

@@ -8,7 +8,7 @@ Base.admin_command("step-tick",
   function(cmd, ctx)
     local count = tonumber(ctx.param) or 1
     if count < 1 then count = 1 end
-    if count > 60 then count = 60 end  -- Max 1 second worth of ticks
+    if count > 3600 then count = 3600 end  -- Max 60 seconds worth of ticks
     
     local start_tick = game.tick
     

@@ -23,7 +23,8 @@ class InstancePlugin extends BaseInstancePlugin {
 	 * Called when plugin is loaded
 	 */
 	async init() {		
-		this.logger.info("🔥 Surface Export Plugin Initialized - HOT RELOAD TEST");		this.logger.info("Surface Export plugin initializing...");
+		this.logger.info("Surface Export plugin initializing...");
+		this.logger.info(`Instance ID: ${this.instance.id}, Name: ${this.instance.config.get("instance.name")}`);
 		this.validateInstanceConfiguration();
 		
 		// Listen for platform export completion from Factorio mod
@@ -101,7 +102,9 @@ class InstancePlugin extends BaseInstancePlugin {
 	 * @param {Object} data - Export data from mod
 	 */
 	async handleExportComplete(data) {
-		this.logger.info(`🔥 handleExportComplete CALLED with data: ${JSON.stringify(data)}`);
+		this.logger.info(`Export complete IPC received: export_id=${data.export_id}, platform=${data.platform_name}`);
+		this.logger.info(`  destination_instance_id=${data.destination_instance_id} (type=${typeof data.destination_instance_id}), job_id=${data.job_id}`);
+		this.logger.info(`  this.instance.id=${this.instance.id} (type=${typeof this.instance.id})`);
 		this.logger.info(`Platform export completed: ${data.export_id} (${data.platform_name})`);
 
 		try {
@@ -126,7 +129,8 @@ class InstancePlugin extends BaseInstancePlugin {
 
 			// Check if auto-transfer was requested (destination_instance_id in IPC data)
 			if (data.destination_instance_id) {
-				this.logger.info(`Auto-transfer requested: transferring to instance ${data.destination_instance_id}`);
+				this.logger.info(`Auto-transfer requested: dest_instance_id=${data.destination_instance_id} (type=${typeof data.destination_instance_id})`);
+				this.logger.info(`  Sending TransferPlatformRequest to controller: exportId=${data.export_id}, targetInstanceId=${data.destination_instance_id}`);
 				
 				// Send transfer request to controller
 				const transferResponse = await this.instance.sendTo("controller",
@@ -181,7 +185,7 @@ class InstancePlugin extends BaseInstancePlugin {
 	 * @param {Object} data - Transfer request data
 	 */
 	async handleTransferRequest(data) {
-		this.logger.info(`Transfer request: Platform ${data.platform_name} to instance ${data.destination_instance_id}`);
+		this.logger.info(`Transfer request IPC received: platform=${data.platform_name}, dest=${data.destination_instance_id} (type=${typeof data.destination_instance_id}), job_id=${data.job_id}`);
 
 		try {
 			// Store transfer request for when export completes
@@ -483,6 +487,12 @@ class InstancePlugin extends BaseInstancePlugin {
 	 * @returns {Object} Response with success status
 	 */
 	async handleImportPlatformRequest(request) {
+		const hasTransferId = !!(request.exportData && request.exportData._transferId);
+		const dataSize = request.exportData ? JSON.stringify(request.exportData).length : 0;
+		this.logger.info(`ImportPlatformRequest received: force=${request.forceName}, isTransfer=${hasTransferId}, dataSize=${(dataSize / 1024).toFixed(1)}KB`);
+		if (hasTransferId) {
+			this.logger.info(`  transfer_id=${request.exportData._transferId}, source_instance=${request.exportData._sourceInstanceId}`);
+		}
 		return await this.importPlatform(request.exportData, request.forceName);
 	}
 
@@ -514,17 +524,20 @@ class InstancePlugin extends BaseInstancePlugin {
 		}
 
 		if (!transferId || !sourceInstanceId) {
-			this.logger.warn("Import completed but missing transfer metadata, skipping validation");
+			this.logger.warn(`Import completed but missing transfer metadata, skipping validation. Received keys: ${Object.keys(data).join(', ')}`);
+			this.logger.warn(`  transfer_id=${data.transfer_id} (type=${typeof data.transfer_id}), source_instance_id=${data.source_instance_id} (type=${typeof data.source_instance_id})`);
 			return;
 		}
 
 		try {
 			// Get validation data from Lua
+			const validationStartMs = Date.now();
 			const validationResult = await this.sendRcon(
 				`/sc rcon.print(remote.call("surface_export", "get_validation_result_json", "${data.platform_name}"))`
 			);
+			const validationDurationMs = Date.now() - validationStartMs;
 
-			this.logger.info(`Validation RCON result: ${validationResult.substring(0, 200)}...`);
+			this.logger.info(`Validation RCON call took ${validationDurationMs}ms, result: ${validationResult.substring(0, 200)}...`);
 
 			// Default to failed validation - only pass if we get actual validation data
 			let validation = { itemCountMatch: false, fluidCountMatch: false, entityCount: data.entity_count, mismatchDetails: "Validation data not retrieved" };
