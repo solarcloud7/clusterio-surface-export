@@ -1,264 +1,168 @@
-# Development Setup - Running Surface Export Plugin
-
-This guide explains how to run and test the Surface Export plugin in the Clusterio development environment.
+# Development Setup
 
 ## Prerequisites
 
-- Node.js >= 18
-- pnpm package manager
-- Factorio 2.0.x installed
+- Docker Desktop (for containerized development)
+- PowerShell (for tools scripts)
+- A text editor (Lua + JavaScript)
 
-## Plugin Structure
+## Plugin Location
 
-The Surface Export plugin is configured as an **external plugin** using **save-patched modules**:
+The plugin source lives at:
+```
+docker/seed-data/external_plugins/surface_export/
+```
+
+This directory is bind-mounted into containers at `/clusterio/external_plugins/surface_export/`. The base image entrypoint runs `npm install` on startup, so no manual install step is needed.
+
+## Directory Structure
 
 ```
-external_plugins/surface-export/
-├── index.js              # Plugin definition
-├── controller.js         # Controller logic
-├── instance.js           # Instance logic
-├── control.js            # Control interface
-├── ctl.js                # CLI commands
-├── messages.js           # Message definitions
-├── module/               # Lua module (save-patched)
+surface_export/
+├── index.js              # Plugin definition (config fields, messages, permissions)
+├── controller.js         # Controller logic (storage, transfer orchestration)
+├── instance.js           # Instance logic (RCON bridge, chunking, IPC)
+├── control.js            # CLI commands (surface-export list/transfer)
+├── helpers.js            # Chunked JSON, hybrid Lua escaping
+├── messages.js           # 11 message type definitions
+├── package.json          # Plugin metadata
+├── module/               # Lua module (save-patched into Factorio)
 │   ├── module.json       # Module metadata
-│   ├── control.lua       # Main Lua entry point
-│   ├── core/             # Core processing logic
-│   ├── interfaces/       # Commands & remote interface
-│   ├── utils/            # Utilities (locking, etc.)
-│   ├── validators/       # Transfer validation
-│   └── scanners/         # Entity scanning
-└── docs/                 # Documentation
-```
-
-## Setup Instructions
-
-### 1. Build Clusterio
-
-From the root directory:
-
-```bash
-pnpm install
-pnpm build
-```
-
-### 2. Configure Controller
-
-Initialize controller config if not already done:
-
-```bash
-npx clusteriocontroller config set controller.name "Development Cluster"
-npx clusteriocontroller config set controller.http_port 8080
-```
-
-The plugin is automatically discovered via the `external_plugins/` workspace.
-
-### 3. Configure Host
-
-Initialize host config:
-
-```bash
-npx clusteriohost config set host.name "Development Host"
-npx clusteriohost config set host.controller_url "http://localhost:8080"
-npx clusteriohost config set host.factorio_directory "C:/path/to/factorio"
-```
-
-### 4. Start Clusterio
-
-Start the controller:
-
-```bash
-npx clusteriocontroller run
-```
-
-In a separate terminal, start the host:
-
-```bash
-npx clusteriohost run
-```
-
-### 5. Create Test Instances
-
-```bash
-npx clusterioctl instance create "Instance 1"
-npx clusterioctl instance create "Instance 2"
-```
-
-Assign instances to the host:
-
-```bash
-npx clusterioctl instance assign "Instance 1" "Development Host"
-npx clusterioctl instance assign "Instance 2" "Development Host"
-```
-
-Start the instances:
-
-```bash
-npx clusterioctl instance start "Instance 1"
-npx clusterioctl instance start "Instance 2"
-```
-
-## Testing the Plugin
-
-### Verify Plugin Loaded
-
-Check controller logs for:
-```
-Loaded plugin surface_export
-```
-
-Check instance logs for:
-```
-[Surface Export] Clusterio module initialized
-```
-
-### Test Commands
-
-Connect to Instance 1 in Factorio and run:
-
-```lua
--- List available platforms
-/list-platforms
-
--- Export a platform (creates a platform first if needed)
-/export-platform 1
-
--- Transfer platform to Instance 2
-/transfer-platform 1 2
-```
-
-### Expected Workflow
-
-1. **Lock Phase**: Platform hidden from players
-2. **Export Phase**: Async export with progress messages
-3. **Transfer Phase**: Sent to controller → forwarded to Instance 2
-4. **Import Phase**: Async import on Instance 2
-5. **Validation Phase**: Item/fluid counts compared
-6. **Cleanup Phase**: Source deleted on success, unlocked on failure
-
-### Status Messages
-
-Both instances will see synchronized status updates:
-
-**On Instance 1 (source):**
-```
-[Transfer: Platform Name] Validation passed ✓
-[Transfer: Platform Name] Deleting source platform...
-[Transfer: Platform Name] Transfer complete! Source deleted, destination validated ✓
-```
-
-**On Instance 2 (destination):**
-```
-[Import Platform Name] Progress: 50% (261/523 entities)
-[Import Complete] Platform Name (523 entities in 10.5s)
-[Transfer: Platform Name] Validation passed ✓
-[Transfer: Platform Name] Transfer complete! Source deleted, destination validated ✓
+│   ├── control.lua       # Entry point (event_handler interface)
+│   ├── core/             # Async processing, serialization, deserialization
+│   ├── export_scanners/  # Entity, inventory, connection, tile scanning
+│   ├── import_phases/    # Entity creation, state restoration, fluids, belts, tiles
+│   ├── interfaces/       # Commands (14) and remote interface (18 functions)
+│   │   ├── commands/     # Console command implementations
+│   │   └── remote/       # Remote interface function implementations
+│   ├── utils/            # Helpers: surface-lock, json-compat, game-utils, etc.
+│   └── validators/       # Verification and transfer validation
+└── docs/                 # Documentation (this directory)
 ```
 
 ## Development Workflow
 
-### Hot Reload (Save-Patched Modules)
+### Starting the Cluster
 
-The Lua module is automatically patched into saves when instances start. To test changes:
+```bash
+# From repo root
+docker compose up -d
+```
 
-1. Edit files in `module/`
-2. Restart the Factorio instance (or reload the save)
-3. The new code will be patched in automatically
+### Editing Lua Module Code
 
-**No build step required for Lua modules!**
+Lua files in `module/` are **save-patched** — Clusterio injects them into Factorio saves at instance startup. To pick up changes:
 
-### Node.js Code Changes
+1. Edit `.lua` files in `module/`
+2. Restart all instances to re-patch saves:
 
-For changes to `controller.js`, `instance.js`, `ctl.js`:
+```powershell
+# Via RCON aliases (if configured)
+rc11 "/sc game.print('test')"  # Verify connection first
 
-1. Stop the controller/host
-2. Run `pnpm build` (if TypeScript is involved)
-3. Restart controller/host
+# Or via clusterioctl
+docker exec surface-export-controller npx clusterioctl instance stop "clusterio-host-1-instance-1"
+docker exec surface-export-controller npx clusterioctl instance start "clusterio-host-1-instance-1"
+```
+
+No build step needed for Lua changes.
+
+### Editing JavaScript Plugin Code
+
+Changes to `controller.js`, `instance.js`, `control.js`, etc. require container restarts:
+
+```bash
+docker compose restart surface-export-host-1 surface-export-host-2
+# Or for controller changes:
+docker compose restart surface-export-controller
+```
+
+No build step needed — pure JavaScript (not TypeScript).
+
+### Hot Reload Script
+
+Use the workspace task for quick iteration:
+
+```powershell
+./tools/patch-and-reset.ps1
+```
+
+This script handles stop → start for all instances, re-patching saves with latest Lua code.
+
+## Verifying Plugin is Loaded
+
+### Controller Logs
+```bash
+docker logs surface-export-controller 2>&1 | grep "surface_export"
+```
+
+Look for: `Loaded plugin surface_export`
+
+### Instance Logs
+```bash
+docker exec surface-export-host-1 tail -50 /clusterio/instances/clusterio-host-1-instance-1/factorio-current.log
+```
+
+Look for: `[Surface Export] Clusterio module initialized`
+
+### Remote Interface Check
+```powershell
+rc11 "/sc rcon.print(remote.interfaces['surface_export'] ~= nil)"
+# Should print: true
+```
+
+## Testing
+
+### Manual Testing
+
+1. Connect to Factorio instance
+2. Create a space platform or use an existing one
+3. Run `/list-platforms` to verify detection
+4. Run `/export-platform 1` to test export
+5. Run `/list-exports` to verify export stored
+6. Transfer: `/transfer-platform 1 2` (requires 2+ instances)
+
+### Entity Round-Trip Tests
+
+```powershell
+# Run from repo root
+./tests/integration/entity-roundtrip/run-tests.ps1
+```
+
+### Platform Round-Trip Tests
+
+```powershell
+./tests/integration/platform-roundtrip/run-tests.ps1
+```
 
 ## Troubleshooting
 
-### Plugin Not Discovered
+### Plugin Not Loading
 
-**Symptom:** Controller logs show "Plugin not found"
+**Symptom:** `Loaded plugin surface_export` not in controller logs
 
-**Solution:** Verify `package.json` has the `"clusterio-plugin"` keyword:
+**Check:** Verify `package.json` has the `"clusterio-plugin"` keyword and the `external_plugins` volume mount is read-write (not `:ro`).
 
-```json
-"keywords": [
-    "clusterio",
-    "clusterio-plugin",
-    "factorio"
-]
+### Module Not Initializing
+
+**Symptom:** No `[Surface Export] Clusterio module initialized` in Factorio logs
+
+**Check:** Verify `module/module.json` exists with correct `name` and `load` fields. Check for Lua syntax errors in controller logs.
+
+### RCON Command Errors
+
+**Symptom:** Remote interface commands fail with `nil` or `attempt to call nil`
+
+**Check:** Ensure the remote interface name is `"surface_export"` (not `"FactorioSurfaceExport"`). Run:
+```lua
+/sc for name, _ in pairs(remote.interfaces) do rcon.print(name) end
 ```
 
-### Lua Module Not Loading
+### Transfer Validation Failed
 
-**Symptom:** No "[Surface Export] Clusterio module initialized" message
+**Common causes:**
+1. Different mods on source vs destination
+2. Fuel consumed in furnaces during transfer
+3. Platform modified during transfer (lock bypassed via RCON)
 
-**Solutions:**
-- Check `module/module.json` has correct `name` and `load` fields
-- Verify `control.lua` exists and has no syntax errors
-- Check instance logs for Lua errors
-
-### Transfer Validation Failing
-
-**Common Causes:**
-1. **Different mods**: Source and destination must have identical mods
-2. **Items consumed**: Fuel burned during transfer
-3. **Platform modified**: Someone edited platform during transfer
-
-**Check Logs:**
-```
-[Transfer Validation Failed] Item count mismatch: iron-plate: expected 500, got 450
-```
-
-### RCON Connection Issues
-
-**Symptom:** "Failed to send RCON command"
-
-**Solutions:**
-- Verify Factorio instance is running
-- Check RCON is enabled in instance config
-- Verify RCON password is set correctly
-
-## CLI Testing
-
-Test the clusterioctl commands:
-
-```bash
-# List stored exports
-npx clusterioctl surface-export list
-
-# Transfer an export
-npx clusterioctl surface-export transfer <exportId> <targetInstanceId>
-```
-
-## Performance Testing
-
-### Small Platform (100 entities)
-- Export: ~2 seconds
-- Transfer: ~1 second
-- Import: ~2 seconds
-- Total: ~5 seconds
-
-### Large Platform (10000 entities)
-- Export: ~3 minutes
-- Transfer: ~30 seconds
-- Import: ~3 minutes
-- Total: ~7 minutes
-
-**UPS Impact:** <1% drop during transfer (async processing at 50 entities/tick)
-
-## Next Steps
-
-1. Create test platforms with various entity types
-2. Test with different mod configurations
-3. Test failure scenarios (validation failures, network interruptions)
-4. Verify rollback mechanism works correctly
-5. Test with multiple simultaneous transfers
-
-## Additional Resources
-
-- [Quick Start Guide](QUICK_START.md) - User-facing guide
-- [Surface Transfer Flow](SURFACE_TRANSFER_FLOW.md) - Technical documentation
-- [Clusterio Plugin Development](../../docs/writing-plugins.md) - Official guide
+**Check logs:** Look for `[Transfer Validation Failed]` messages with item count details.

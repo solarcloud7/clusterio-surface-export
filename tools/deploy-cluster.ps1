@@ -1,6 +1,6 @@
 param (
-    [switch]$ForceBaseBuild,
-    [switch]$SkipIncrement
+    [switch]$SkipIncrement,
+    [switch]$KeepData
 )
 
 $ErrorActionPreference = "Stop"
@@ -61,51 +61,99 @@ if (-not $SkipIncrement) {
 Write-Host "Using save-patched module architecture (no mod zip needed)" -ForegroundColor Cyan
 Write-Host "Lua code in module/ directory will be patched into saves by Clusterio" -ForegroundColor Green
 
-# 2. Build Base Image (skip if exists unless -ForceBaseBuild)
-Set-Location $DockerDir
-$imageExists = docker image inspect factorio-surface-export/base:latest 2>$null
-if ($ForceBaseBuild -or -not $imageExists) {
-    Write-Host "Building Base Image..." -ForegroundColor Cyan
-    docker-compose -f docker-compose.clusterio.yml build base
-    if ($LASTEXITCODE -ne 0) { throw "Base image build failed" }
-} else {
-    Write-Host "Base image already exists, skipping build (use -ForceBaseBuild to rebuild)" -ForegroundColor Yellow
+# 2. Verify env files exist
+$ControllerEnv = Join-Path $DockerDir "env\controller.env"
+$HostEnv = Join-Path $DockerDir "env\host.env"
+if (-not (Test-Path $ControllerEnv)) {
+    Write-Host "Creating env/controller.env from example..." -ForegroundColor Yellow
+    Copy-Item (Join-Path $DockerDir "env\controller.env.example") $ControllerEnv
+    Write-Warning "Please edit docker/env/controller.env and set INIT_CLUSTERIO_ADMIN before running again."
+    exit 1
+}
+if (-not (Test-Path $HostEnv)) {
+    Write-Host "Creating env/host.env from example..." -ForegroundColor Yellow
+    Copy-Item (Join-Path $DockerDir "env\host.env.example") $HostEnv
 }
 
-# 3. Clean & Rebuild Cluster
-Write-Host "Rebuilding Cluster..." -ForegroundColor Cyan
-Set-Location $DockerDir
-docker-compose -f docker-compose.clusterio.yml down
+# 3. Tear down existing cluster
+Write-Host "Stopping existing cluster..." -ForegroundColor Cyan
+Set-Location $WorkspaceRoot
+docker compose down
 
-# Clean Data (Optional but recommended for dev)
-Write-Host "Cleaning container data..." -ForegroundColor Yellow
-Remove-Item -Recurse -Force "clusterio-containers\controller\*" -ErrorAction SilentlyContinue
-Remove-Item -Recurse -Force "clusterio-containers\hosts\*" -ErrorAction SilentlyContinue
+# 4. Clean Docker volumes (unless -KeepData)
+if (-not $KeepData) {
+    Write-Host "Removing Docker volumes (clean slate)..." -ForegroundColor Yellow
+    docker compose down -v 2>$null
+} else {
+    Write-Host "Keeping existing data volumes (-KeepData)" -ForegroundColor Yellow
+}
 
-# Bring up cluster (plugin mounted from seed-data/external_plugins/)
-docker-compose -f docker-compose.clusterio.yml up -d --build
+# 5. Pull latest base images
+Write-Host "Pulling latest base images..." -ForegroundColor Cyan
+docker compose pull
 
-Write-Host "Cluster started with version $NewVersion" -ForegroundColor Green
+# 6. Start the cluster
+Write-Host "Starting cluster..." -ForegroundColor Cyan
+docker compose up -d
 
-# Follow init logs in real-time (will automatically stop when container exits)
-Write-Host "`nClusterio Init Logs (streaming):" -ForegroundColor Cyan
+Write-Host "Cluster started with plugin version $NewVersion" -ForegroundColor Green
+Write-Host ""
+
+# 7. Follow controller logs until initialization completes
+Write-Host "Controller Logs (streaming - waiting for initialization):" -ForegroundColor Cyan
 Write-Host "================================================" -ForegroundColor DarkGray
 
-# Check if init container exists before trying to follow logs
-$initExists = docker ps -a --filter "name=clusterio-init" --format "{{.Names}}" 2>$null
-if ($initExists) {
-    docker logs -f clusterio-init 2>&1
-} else {
-    Write-Host "clusterio-init container not found (may have already completed and been removed)" -ForegroundColor Yellow
+# Stream controller logs for up to 120 seconds, stop when we see seeding complete
+$timeout = 120
+$sw = [System.Diagnostics.Stopwatch]::StartNew()
+$initDone = $false
+
+# Wait a moment for the container to start
+Start-Sleep -Seconds 3
+
+# Follow logs and look for initialization markers
+docker logs -f surface-export-controller 2>&1 | ForEach-Object {
+    Write-Host $_
+    if ($_ -match "Instance seeding complete|Mod seeding complete|Controller is ready|All hosts connected") {
+        $initDone = $true
+    }
+    if ($sw.Elapsed.TotalSeconds -ge $timeout) {
+        Write-Host "(Log streaming timeout after ${timeout}s)" -ForegroundColor Yellow
+        return
+    }
 }
 
 Write-Host "================================================" -ForegroundColor DarkGray
-Write-Host "Init container completed" -ForegroundColor Green
 
-$ConfigControlPath = Join-Path $DockerDir "clusterio-containers/controller/config-control.json"
-if (Test-Path $ConfigControlPath) {
-    $ConfigControl = Get-Content $ConfigControlPath -Raw | ConvertFrom-Json
-    Write-Host "`nAdmin Token: $($ConfigControl.'control.controller_token')" -ForegroundColor Yellow
+# 8. Retrieve admin token
+Write-Host ""
+Write-Host "Retrieving admin token..." -ForegroundColor Cyan
+Start-Sleep -Seconds 2
+
+$tokenJson = docker exec surface-export-controller cat /clusterio/tokens/config-control.json 2>$null
+if ($LASTEXITCODE -eq 0 -and $tokenJson) {
+    try {
+        $tokenConfig = $tokenJson | ConvertFrom-Json
+        $adminToken = $tokenConfig.'control.controller_token'
+        if ($adminToken) {
+            Write-Host "Admin Token: $adminToken" -ForegroundColor Yellow
+            try { $adminToken | Set-Clipboard; Write-Host "(Copied to clipboard)" -ForegroundColor Green } catch {}
+        }
+    } catch {
+        Write-Host "Could not parse token from config" -ForegroundColor Yellow
+    }
 } else {
-    Write-Host "`nconfig-control.json not found yet. Run: docker exec clusterio-controller npx clusteriocontroller --log-level error bootstrap generate-user-token admin" -ForegroundColor Yellow
+    Write-Host "Token not available yet. Retrieve later with:" -ForegroundColor Yellow
+    Write-Host "  docker exec surface-export-controller cat /clusterio/tokens/config-control.json" -ForegroundColor DarkGray
 }
+
+Write-Host ""
+Write-Host "Web UI: http://localhost:$((Get-Content $ControllerEnv | Where-Object { $_ -match 'CONTROLLER_HTTP_PORT=(\d+)' } | ForEach-Object { $Matches[1] }) ?? '8080')" -ForegroundColor Green
+Write-Host ""
+Write-Host "Cluster topology:" -ForegroundColor Cyan
+Write-Host "  Controller (http://localhost:8080)" -ForegroundColor White
+Write-Host "    ├── surface-export-host-1 (ports 34100-34109)" -ForegroundColor White
+Write-Host "    │     └── clusterio-host-1-instance-1" -ForegroundColor White
+Write-Host "    └── surface-export-host-2 (ports 34200-34209)" -ForegroundColor White
+Write-Host "          └── clusterio-host-2-instance-1" -ForegroundColor White
+Write-Host ""

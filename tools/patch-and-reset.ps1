@@ -60,10 +60,10 @@ Write-Host ""
 
 # Check if cluster is running
 Write-Host "Checking cluster status..." -ForegroundColor Yellow
-$controllerStatus = docker ps --filter "name=clusterio-controller" --format "{{.Status}}"
+$controllerStatus = docker ps --filter "name=surface-export-controller" --format "{{.Status}}"
 if (-not $controllerStatus) {
     Write-Host "ERROR: Clusterio controller is not running. Start cluster first with:" -ForegroundColor Red
-    Write-Host "  docker compose -f docker/docker-compose.clusterio.yml up -d" -ForegroundColor Red
+    Write-Host "  docker compose up -d" -ForegroundColor Red
     exit 1
 }
 Write-Host "✓ Controller running" -ForegroundColor Green
@@ -71,8 +71,8 @@ Write-Host "✓ Controller running" -ForegroundColor Green
 # Stop instances
 Write-Host ""
 Write-Host "Stopping Factorio instances..." -ForegroundColor Yellow
-docker exec clusterio-controller npx clusterioctl instance stop 1 2>$null
-docker exec clusterio-controller npx clusterioctl instance stop 2 2>$null
+docker exec surface-export-controller npx clusterioctl instance stop 1 2>$null
+docker exec surface-export-controller npx clusterioctl instance stop 2 2>$null
 Start-Sleep -Seconds 2
 Write-Host "✓ Instances stopped" -ForegroundColor Green
 
@@ -97,8 +97,8 @@ if (Test-Path $envPath) {
 }
 
 # Instance 1 - Copy specific save
-docker exec clusterio-host-1 sh -c 'rm -f /clusterio/instances/clusterio-host-1-instance-1/saves/*.zip' 2>$null
-docker exec clusterio-host-1 sh -c "cp /opt/seed-saves/$instance1SaveName /clusterio/instances/clusterio-host-1-instance-1/saves/" 2>$null
+docker exec surface-export-host-1 sh -c 'rm -f /clusterio/instances/clusterio-host-1-instance-1/saves/*.zip' 2>$null
+docker exec surface-export-host-1 sh -c "cp /opt/seed-saves/$instance1SaveName /clusterio/instances/clusterio-host-1-instance-1/saves/" 2>$null
 if ($LASTEXITCODE -eq 0) {
     Write-Host "  ✓ Reset instance 1 to: $instance1SaveName" -ForegroundColor Green
 } else {
@@ -106,8 +106,8 @@ if ($LASTEXITCODE -eq 0) {
 }
 
 # Instance 2 - Copy specific save
-docker exec clusterio-host-2 sh -c 'rm -f /clusterio/instances/clusterio-host-2-instance-1/saves/*.zip' 2>$null
-docker exec clusterio-host-2 sh -c "cp /opt/seed-saves/$instance2SaveName /clusterio/instances/clusterio-host-2-instance-1/saves/" 2>$null
+docker exec surface-export-host-2 sh -c 'rm -f /clusterio/instances/clusterio-host-2-instance-1/saves/*.zip' 2>$null
+docker exec surface-export-host-2 sh -c "cp /opt/seed-saves/$instance2SaveName /clusterio/instances/clusterio-host-2-instance-1/saves/" 2>$null
 if ($LASTEXITCODE -eq 0) {
     Write-Host "  ✓ Reset instance 2 to: $instance2SaveName" -ForegroundColor Green
 } else {
@@ -119,8 +119,8 @@ Write-Host "  → Instances will load seed saves with fresh save-patching" -Fore
 # Start instances
 Write-Host ""
 Write-Host "Starting instances (loading patched plugin code)..." -ForegroundColor Yellow
-docker exec clusterio-controller npx clusterioctl instance start 1
-docker exec clusterio-controller npx clusterioctl instance start 2
+docker exec surface-export-controller npx clusterioctl instance start 1
+docker exec surface-export-controller npx clusterioctl instance start 2
 Start-Sleep -Seconds 3
 Write-Host "✓ Instances started" -ForegroundColor Green
 Write-Host ""
@@ -131,5 +131,5 @@ Write-Host "Instances have been reset to seed save state with fresh Lua code." -
 Write-Host ""
 Write-Host "Next steps:" -ForegroundColor Yellow
 Write-Host "  1. Check logs: .\tools\check-cluster-logs.ps1" -ForegroundColor White
-Write-Host "  2. Test export: docker exec clusterio-controller npx clusterioctl instance send-rcon 1 '/export-platform 2 2'" -ForegroundColor White
-Write-Host "  3. Test import: docker exec clusterio-controller npx clusterioctl instance send-rcon 2 '/import-platform <filename>'" -ForegroundColor White
+Write-Host "  2. Test export: docker exec surface-export-controller npx clusterioctl instance send-rcon 1 '/export-platform 2 2'" -ForegroundColor White
+Write-Host "  3. Test import: docker exec surface-export-controller npx clusterioctl instance send-rcon 2 '/import-platform <filename>'" -ForegroundColor White

@@ -22,7 +22,7 @@ Write-Host ""
 
 # Step 1: Export the platform
 Write-Host "Exporting platform..." -ForegroundColor Yellow
-$exportResult = docker exec clusterio-controller npx clusterioctl --log-level error instance send-rcon $instanceName "/export-platform $PlatformIndex" 2>&1 | Out-String
+$exportResult = docker exec surface-export-controller npx clusterioctl --log-level error instance send-rcon $instanceName "/export-platform $PlatformIndex" 2>&1 | Out-String
 
 if ($LASTEXITCODE -ne 0) {
     Write-Error "Failed to export platform: $exportResult"
@@ -51,7 +51,7 @@ while ($attemptCount -lt $maxAttempts -and -not $exportId) {
     
     # List all exports and find the most recent one
     $listCommand = "/sc local exports = remote.call('surface_export', 'list_exports'); local latest = nil; for _, e in pairs(exports) do if not latest or e.tick > latest.tick then latest = e end end; if latest then rcon.print(latest.id) else rcon.print('NONE') end"
-    $listResult = docker exec clusterio-controller npx clusterioctl --log-level error instance send-rcon $instanceName $listCommand 2>&1 | Out-String
+    $listResult = docker exec surface-export-controller npx clusterioctl --log-level error instance send-rcon $instanceName $listCommand 2>&1 | Out-String
     $latestExportId = ($listResult -split "`r?`n" | Where-Object { $_ -and $_.Trim().Length -gt 0 } | Select-Object -Last 1)
     
     if ($latestExportId -and $latestExportId -ne 'NONE') {
@@ -74,7 +74,7 @@ Write-Host ""
 # Step 3: Retrieve the export data
 Write-Host "Retrieving export data..." -ForegroundColor Yellow
 $getExportCommand = "/sc local export = remote.call('surface_export', 'get_export', '$exportId'); if export then rcon.print(helpers.table_to_json(export)) else rcon.print('ERROR: Export not found') end"
-$exportDataResult = docker exec clusterio-controller npx clusterioctl --log-level error instance send-rcon $instanceName $getExportCommand 2>&1 | Out-String
+$exportDataResult = docker exec surface-export-controller npx clusterioctl --log-level error instance send-rcon $instanceName $getExportCommand 2>&1 | Out-String
 
 if ($LASTEXITCODE -ne 0) {
     Write-Error "Failed to retrieve export data: $exportDataResult"

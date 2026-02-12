@@ -1,18 +1,19 @@
 
 docs/dev-docs/
 
-# Docker volumes and generated files
-docker/clusterio-containers/*
-!docker/clusterio-containers/controller/
-!docker/clusterio-containers/hosts/
-docker/clusterio-containers/controller/*
-!docker/clusterio-containers/controller/.gitkeep
-docker/clusterio-containers/hosts/*
-!docker/clusterio-containers/hosts/.gitkeep
+# Docker runtime data (stored in Docker volumes now)
+docker/clusterio-containers/
+
+# Seed data - keep structure, ignore large binary files
 docker/seed-data/mods/*
 !docker/seed-data/mods/.gitkeep
-docker/seed-data/saves/*
-!docker/seed-data/saves/.gitkeep
+docker/seed-data/hosts/**/*.zip
+
+# Docker env files (contain credentials)
+docker/env/controller.env
+docker/env/host.env
+
+# Legacy docker artifacts
 docker/saves/
 docker/logs/
 docker/script-output/*.json

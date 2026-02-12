@@ -114,7 +114,7 @@ Tests that require special setup can be skipped:
 
 ### "No JSON response received"
 - Check that the cluster is running: `docker ps`
-- Check instance status: `docker exec clusterio-controller npx clusterioctl instance list`
+- Check instance status: `docker exec surface-export-controller npx clusterioctl instance list`
 
 ### Entity creation failures
 - The entity prototype might not exist (mod not loaded)

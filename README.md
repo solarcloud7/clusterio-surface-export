@@ -59,40 +59,40 @@ The bottleneck is RCON round-trip time for chunked data transfer. See [docs/IMPO
 
 ### For Clusterio Clusters (Recommended)
 
-This project is designed for Clusterio 2.0 clusters. The plugin and mod are automatically deployed via Docker.
+This project is designed for Clusterio 2.0 clusters. It uses pre-built Docker images from [solarcloud7/clusterio-docker](https://github.com/solarcloud7/clusterio-docker).
 
 **Prerequisites**:
 - Docker Desktop
 - Factorio Space Age DLC
-- Factorio account with token (for mod downloads)
 
-**Setup** (see [docker/README.md](docker/README.md) and [CLUSTERIO_QUICKSTART.md](CLUSTERIO_QUICKSTART.md) for detailed instructions):
+**Setup** (see [docker/README.md](docker/README.md) for detailed instructions):
 
 1. Clone this repository
-2. Copy `docker/.env.template` to `docker/.env` and configure
-3. Place save files in `docker/seed-data/saves/`
-4. Run `docker-compose -f docker/docker-compose.clusterio.yml up -d`
+2. Copy `docker/env/controller.env.example` to `docker/env/controller.env` and set `INIT_CLUSTERIO_ADMIN`
+3. Place save files in `docker/seed-data/hosts/<hostname>/<instance>/` directories
+4. Run `docker compose up -d`
 
-The plugin and mod are baked into the Docker images and automatically installed.
+The plugin is bind-mounted from `seed-data/external_plugins/surface_export/` and auto-installed.
 
 ### For Development
 
 **Quick Commands**:
 
 ```powershell
-# Build base image (contains Factorio + Clusterio + plugin + mod)
-cd docker
-docker build -t factorio-surface-export/base:latest -f Dockerfile.base ..
-
-# Start the cluster (controller + 2 hosts with 2 instances)
-docker-compose -f docker-compose.clusterio.yml up -d
+# Pull pre-built images and start the cluster
+docker compose pull
+docker compose up -d
 
 # View logs
-docker logs -f clusterio-controller
-docker logs -f clusterio-host-1
+docker logs -f surface-export-controller
+docker logs -f surface-export-host-1
 
 # Stop the cluster
-docker-compose -f docker-compose.clusterio.yml down
+docker compose down
+
+# Clean restart (wipe all data)
+docker compose down -v
+docker compose up -d
 ```
 
 **Hot Reload** (after mod changes):
@@ -108,9 +108,9 @@ This patches the running instances without a full rebuild (~30 seconds vs 3 minu
 **Development Files**:
 - **Clusterio Plugin**: `docker/seed-data/external_plugins/surface_export/` (Node.js code)
 - **Factorio Mod**: `docker/seed-data/external_plugins/surface_export/module/` (Lua code)
-- **Save Files**: `docker/seed-data/saves/` (e.g., `test.zip`, `MinSeed.zip`)
-- **Mods**: `docker/seed-data/mods/` (additional Factorio mods)
-- **Exports**: `docker/seed-data/exports/` (exported platform JSON files)
+- **Save Files**: `docker/seed-data/hosts/<hostname>/<instance>/` (per-instance `.zip` saves)
+- **Mods**: `docker/seed-data/mods/` (additional Factorio mods as `.zip` files)
+- **Database Seeds**: `docker/seed-data/controller/database/` (users, roles)
 
 ## Usage
 
@@ -135,7 +135,7 @@ The export is processed asynchronously (default: 50 entities per tick) to preven
 rc11 "/export-platform 1"
 
 # Using clusterioctl directly
-docker exec clusterio-controller npx clusterioctl instance rcon clusterio-host-1-instance-1 "/export-platform 1"
+docker exec surface-export-controller npx clusterioctl instance rcon clusterio-host-1-instance-1 "/export-platform 1"
 ```
 
 Exported platforms are stored in the controller's storage and available to all instances in the cluster.
@@ -267,23 +267,25 @@ The mod includes comprehensive verification to ensure zero item loss:
 ### Docker Workflow
 
 ```powershell
-# Build base image (after mod/plugin changes)
-cd docker
-docker build -t factorio-surface-export/base:latest -f Dockerfile.base ..
+# Pull pre-built images
+docker compose pull
 
 # Start cluster
-docker-compose -f docker-compose.clusterio.yml up -d
+docker compose up -d
 
 # View logs
-docker logs -f clusterio-controller    # Controller logs
-docker logs -f clusterio-host-1        # Host 1 logs
-docker logs -f clusterio-init          # Init script logs
+docker logs -f surface-export-controller    # Controller logs
+docker logs -f surface-export-host-1        # Host 1 logs
 
 # Restart after config changes
-docker-compose -f docker-compose.clusterio.yml restart
+docker compose restart
 
 # Stop cluster
-docker-compose -f docker-compose.clusterio.yml down
+docker compose down
+
+# Clean restart (wipe all data)
+docker compose down -v
+docker compose up -d
 
 # Hot reload (fast, no rebuild)
 .\tools\patch-and-reset.ps1
@@ -334,6 +336,8 @@ Ctrl+Shift+P  → "Tasks: Run Task" → Select any task
 FactorioSurfaceExport/
 ├── docker/
 │   ├── seed-data/
+│   │   ├── controller/
+│   │   │   └── database/                 # Pre-seeded users.json, roles.json
 │   │   ├── external_plugins/
 │   │   │   └── surface_export/           # Clusterio Plugin + Mod
 │   │   │       ├── index.js              # Plugin entry point
@@ -351,29 +355,20 @@ FactorioSurfaceExport/
 │   │   │           ├── interfaces/       # Remote interfaces
 │   │   │           ├── utils/            # Utilities
 │   │   │           └── validators/       # Validation logic
-│   │   ├── saves/                        # Save files
-│   │   ├── mods/                         # Additional Factorio mods
-│   │   ├── exports/                      # Exported platform JSON
-│   │   ├── scripts/                      # Docker entrypoints
-│   │   └── config/                       # Config templates
-│   ├── clusterio-containers/             # Runtime cluster data (Docker volumes)
-│   │   ├── controller/                   # Controller persistent storage
-│   │   │   ├── config-control.json       # Controller authentication config
-│   │   │   ├── config-controller.json    # Controller settings
-│   │   │   ├── plugin-list.json          # Installed plugins
-│   │   │   ├── database/                 # Controller database
-│   │   │   ├── logs/                     # Controller logs
-│   │   │   ├── mods/                     # Mod cache
-│   │   │   └── plugins/                  # Plugin storage
-│   │   └── hosts/                        # Host-specific data
-│   │       ├── clusterio-host-1/         # Host 1 persistent storage
-│   │       │   ├── instances/            # Instance data and saves
-│   │       │   └── config-host.json      # Host configuration
-│   │       └── clusterio-host-2/         # Host 2 persistent storage
-│   ├── Dockerfile.base                   # Base image (Factorio + Clusterio)
-│   ├── Dockerfile.controller             # Controller image
-│   ├── Dockerfile.host                   # Host image
-│   └── docker-compose.clusterio.yml      # Cluster configuration
+│   │   ├── hosts/                        # Seed instances (folder convention)
+│   │   │   ├── clusterio-host-1/
+│   │   │   │   └── clusterio-host-1-instance-1/
+│   │   │   │       └── test.zip          # Save file for instance 1
+│   │   │   └── clusterio-host-2/
+│   │   │       └── clusterio-host-2-instance-1/
+│   │   │           └── MinSeed.zip       # Save file for instance 2
+│   │   ├── saves/                        # Legacy save storage
+│   │   └── mods/                         # Additional Factorio mods (.zip)
+│   ├── env/                              # Environment config
+│   │   ├── controller.env                # Controller settings (not in git)
+│   │   └── host.env                      # Host settings (not in git)
+│   └── README.md                         # Docker setup docs
+├── docker-compose.yml                    # Cluster definition (uses GHCR images)
 ├── tools/                                # PowerShell helper scripts
 ├── tests/                                # Integration tests
 ├── docs/                                 # Documentation
@@ -388,10 +383,10 @@ FactorioSurfaceExport/
 
 ### Docker containers won't start
 - Ensure Docker Desktop is running
-- Check that ports are available (8080, 34197, 34198, 27015, 27016)
-- Review logs: `docker-compose -f docker/docker-compose.clusterio.yml logs`
-- Check `.env` file configuration
-- Verify base image exists: `docker images | grep factorio-surface-export`
+- Check that ports are available (8080, 34100-34109, 34200-34209)
+- Review logs: `docker compose logs`
+- Check `env/controller.env` configuration
+- Ensure GHCR images are accessible: `docker pull ghcr.io/solarcloud7/clusterio-docker-controller`
 
 
 

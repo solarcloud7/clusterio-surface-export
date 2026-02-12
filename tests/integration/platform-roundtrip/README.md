@@ -26,7 +26,7 @@ The clone step uses the same export/import system as transfers, ensuring it's a 
 ## Prerequisites
 
 1. **Clusterio cluster running** with at least 2 host instances
-2. **Debug mode enabled** on both instances (configured in `clusterio-init.sh`)
+2. **Debug mode enabled** on both instances (configured via Clusterio instance settings)
 3. **A platform exists** on the source instance (default: "test" platform)
 
 ## Running Tests

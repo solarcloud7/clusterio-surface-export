@@ -41,7 +41,7 @@ Base.admin_command("export-platform-file",
     ctx.print(string.format("Exporting platform %d to file...", platform_index))
     
     -- Call the remote interface function (now async - returns job_id)
-    local result, job_id_or_error = remote.call("FactorioSurfaceExport", "export_platform_to_file", platform_index, ctx.force.name)
+    local result, job_id_or_error = remote.call("surface_export", "export_platform_to_file", platform_index, ctx.force.name)
 
     if result then
       ctx.print(string.format("Export queued: %s", job_id_or_error))

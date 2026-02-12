@@ -38,4 +38,4 @@ Write-Host ""
 Write-Host "=== Instance Status ===" -ForegroundColor Cyan
 
 # Show Clusterio instances
-docker exec clusterio-controller npx clusterioctl instance list 2>&1 | Select-Object -Skip 1
+docker exec surface-export-controller npx clusterioctl instance list 2>&1 | Select-Object -Skip 1

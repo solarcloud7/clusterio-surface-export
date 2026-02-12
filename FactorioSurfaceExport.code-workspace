@@ -46,9 +46,7 @@
     },
     "search.exclude": {
       "**/node_modules": true,
-      "**/factorioAPI": true,
-      "docker/clusterio-containers/**/logs": true,
-      "docker/clusterio-containers/**/instances": true
+      "**/factorioAPI": true
     },
     "chat.tools.terminal.autoApprove": {
       "docker ps": true,
@@ -126,9 +124,9 @@
         "problemMatcher": []
       },
       {
-        "label": "Docker: Build Base Image",
+        "label": "Docker: Pull Base Images",
         "type": "shell",
-        "command": "docker build -t factorio-surface-export/base:latest -f docker/Dockerfile.base .",
+        "command": "docker compose pull",
         "group": "build",
         "problemMatcher": [],
         "presentation": {
@@ -139,7 +137,7 @@
       {
         "label": "Docker: Get Admin Token",
         "type": "shell",
-        "command": "docker exec clusterio-controller npx clusteriocontroller --log-level error bootstrap generate-user-token admin",
+        "command": "docker exec surface-export-controller cat /clusterio/tokens/config-control.json",
         "group": "none",
         "problemMatcher": [],
         "presentation": {
@@ -150,14 +148,14 @@
       {
         "label": "Clusterio: Start All Instances",
         "type": "shell",
-        "command": "docker exec clusterio-controller npx clusterioctl --log-level error instance start-all",
+        "command": "docker exec surface-export-controller npx clusterioctl --log-level error instance start-all",
         "group": "none",
         "problemMatcher": []
       },
       {
         "label": "Clusterio: Stop All Instances",
         "type": "shell",
-        "command": "docker exec clusterio-controller npx clusterioctl --log-level error instance stop --all",
+        "command": "docker exec surface-export-controller npx clusterioctl --log-level error instance stop --all",
         "group": "none",
         "problemMatcher": []
       },

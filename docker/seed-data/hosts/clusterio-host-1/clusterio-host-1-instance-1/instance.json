@@ -1,0 +1,27 @@
+{
+	"instance.auto_start": true,
+	"factorio.version": "2.0.73",
+	"factorio.settings": {
+		"name": "instance 1",
+		"description": "Server description or Discord link",
+		"tags": ["clusterio"],
+		"max_players": 100,
+		"visibility": {
+			"public": true,
+			"lan": true
+		},
+		"require_user_verification": true,
+		"allow_commands": "admins-only",
+		"auto_pause": true,
+		"only_admins_can_pause_the_game": true,
+		"autosave_interval": 10,
+		"autosave_slots": 5,
+		"non_blocking_saving": true
+	},
+	"global_chat.load_plugin": true,
+	"inventory_sync.load_plugin": false,
+	"player_auth.load_plugin": false,
+	"research_sync.load_plugin": false,
+	"statistics_exporter.load_plugin": true,
+	"subspace_storage.load_plugin": false
+}

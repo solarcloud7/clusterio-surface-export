@@ -31,7 +31,7 @@ if ($TransferId -eq "latest") {
 try {
     # Read transaction log file directly from controller container
     # Note: We do NOT use 2>&1 here because unrelated Docker warnings on stderr would corrupt the JSON
-    $result = docker exec clusterio-controller cat /clusterio/database/surface_export_transaction_logs.json
+    $result = docker exec surface-export-controller cat /clusterio/database/surface_export_transaction_logs.json
 
     if ($LASTEXITCODE -ne 0) {
         Write-Host "No transaction logs found yet. Transfer a platform first." -ForegroundColor Yellow

@@ -20,9 +20,13 @@ This project provides tools for exporting and importing Factorio Space Age platf
 **Performance**: Small platforms (<8KB): ~1-2s | Large platforms (235KB): ~40s (RCON bottleneck)
 
 **Current Cluster Configuration:**
+- Uses pre-built images from `ghcr.io/solarcloud7/clusterio-docker-controller` and `ghcr.io/solarcloud7/clusterio-docker-host`
 - Controller: `clusterio-controller` (Web UI: http://localhost:8080)
-- Host 1: `clusterio-host-1` → Instance: `clusterio-host-1-instance-1` (Game: 34197, RCON: 27015)
-- Host 2: `clusterio-host-2` → Instance: `clusterio-host-2-instance-1` (Game: 34198, RCON: 27016)
+- Host 1: `clusterio-host-1` → Instance: `clusterio-host-1-instance-1` (ports 34100-34109)
+- Host 2: `clusterio-host-2` → Instance: `clusterio-host-2-instance-1` (ports 34200-34209)
+- Runtime data in Docker volumes (not bind-mounted directories)
+- Seed data convention from [solarcloud7/clusterio-docker](https://github.com/solarcloud7/clusterio-docker)
+- **Seeding must be idempotent**: Controller and hosts should seed only once. Currently requires `docker compose down -v` for clean restarts due to a base image bug (see Pitfall #9)
 
 ## RCON Commands (PowerShell Profile Aliases)
 
@@ -44,8 +48,8 @@ rc11 "/list-platforms"
 # Export platform (queues async export)
 rc11 "/export-platform 1"
 
-# Check async job status
-rc11 "/sc rcon.print(remote.call('FactorioSurfaceExport', 'get_job_status', 'export_1'))"
+# Check export data (JSON for RCON)
+rc11 "/sc rcon.print(remote.call('surface_export', 'list_exports_json'))"
 
 # List exports in memory
 rc11 "/list-exports"
@@ -60,45 +64,44 @@ rc11 "/c game.print('Hello')"
 
 ### Raw Docker RCON (avoid when aliases available)
 ```powershell
-docker exec clusterio-controller npx clusterioctl --log-level error instance send-rcon "clusterio-host-1-instance-1" "/list-platforms"
+docker exec surface-export-controller npx clusterioctl --log-level error instance send-rcon "clusterio-host-1-instance-1" "/list-platforms"
 ```
 
 ## Development Tools
 
 ### Primary Deployment Script
 ```powershell
-./tools/deploy-cluster.ps1                 # Full deployment: increment version, rebuild cluster
-./tools/deploy-cluster.ps1 -SkipIncrement  # Rebuild without version bump
+./tools/deploy-cluster.ps1                 # Full deployment: increment version, pull images, start cluster
+./tools/deploy-cluster.ps1 -SkipIncrement  # Deploy without version bump
+./tools/deploy-cluster.ps1 -SkipIncrement -KeepData  # Restart without wiping volumes
 ```
 
 ### Hot Reload Development (Recommended)
 
-The plugin uses **save patching** with hot reload:
-- Controller runs with `--dev --dev-plugin surface_export` flags
-- Plugin location: `docker/seed-data/external_plugins/surface-export/`
+The plugin uses **save patching** with bind-mounted source:
+- Plugin location: `docker/seed-data/external_plugins/surface_export/`
+- Mounted into containers via `external_plugins/` volume (auto-installed by base image)
 - Contains both Node.js plugin code and Lua `module/` directory
 
 **Plugin Changes** (TypeScript/JavaScript):
-- Edit `*.js` files in plugin root → Hot reload automatically
-- No restart needed
+- Edit `*.js` files in plugin root → Restart container to pick up changes
+- No image rebuild needed
 
 **Module Changes** (Lua - Save Patched):
 - Edit `*.lua` files in `module/` directory → Restart instances to re-patch saves
 - Clusterio automatically injects Lua code into saves at startup
 
 **Development Workflow**:
-1. Start cluster: `docker-compose -f docker/docker-compose.clusterio.yml up -d`
-2. Edit plugin JS files → changes reload automatically (hot reload enabled)
+1. Start cluster: `docker compose up -d`
+2. Edit plugin JS files → restart containers to pick up changes
 3. Edit module Lua files → restart instances: `clusterioctl instance stop-all && clusterioctl instance start-all`
 4. Saves are automatically patched with your Lua code
-
-See [docs/save-patching-and-hot-loading.md](docs/save-patching-and-hot-loading.md) for save patching details.
 
 ### Import/Export Tools
 ```bash
 # Recommended: Use bash script inside container (100KB chunks, ~3.4s)
-docker exec clusterio-host-1 /clusterio/seed-data/scripts/import-platform-linux.sh \
-  /clusterio/seed-data/exports/export.json clusterio-host-1-instance-1
+docker exec surface-export-host-1 bash -c 'cat /clusterio/external_plugins/surface_export/docs/import-platform-linux.sh | bash -s -- \
+  /path/to/export.json clusterio-host-1-instance-1'
 
 # Alternative: PowerShell on Windows (4KB chunks, slower due to docker exec overhead)
 ./tools/import-platform.ps1 -ExportFile "path/to/export.json" -InstanceName "clusterio-host-1-instance-1"
@@ -147,9 +150,10 @@ tools/
 └── validate-cluster.ps1          # Cluster health checks
 
 docker/
-├── docker-compose.clusterio.yml  # Cluster definition
-├── .env                          # Ports, passwords, credentials
-└── seed-data/                    # Initial configs, mods, saves
+├── env/                          # Environment config (controller.env, host.env)
+└── seed-data/                    # Seed data: database, mods, saves, plugins
+
+docker-compose.yml                  # Cluster definition (uses pre-built GHCR images)
 ```
 
 ## Key Technical Constraints
@@ -165,30 +169,54 @@ docker/
 - Progress tracked in `storage.async_jobs`
 - Results stored in `storage.async_job_results`
 
-### Remote Interface (`FactorioSurfaceExport`)
+### Remote Interface (`surface_export`)
 ```lua
 -- Key remote interface functions (call via /sc remote.call(...))
-remote.call("FactorioSurfaceExport", "export_platform", platform_index, force_name)
-remote.call("FactorioSurfaceExport", "import_platform_data_async", json_data, platform_name, force_name)
-remote.call("FactorioSurfaceExport", "begin_import_session", session_id, total_chunks, platform_name, force_name)
-remote.call("FactorioSurfaceExport", "enqueue_import_chunk", session_id, chunk_index, chunk_data)
-remote.call("FactorioSurfaceExport", "finalize_import_session", session_id, checksum)
-remote.call("FactorioSurfaceExport", "get_import_status", job_id)  -- Returns {complete, progress, platform_name, ...}
-remote.call("FactorioSurfaceExport", "list_exports")
+-- Export:
+remote.call("surface_export", "export_platform", platform_index, force_name)
+remote.call("surface_export", "export_platform_to_file", platform_index, force_name, filename)
+remote.call("surface_export", "get_export", export_id)
+remote.call("surface_export", "get_export_json", export_id)  -- JSON string for RCON
+remote.call("surface_export", "list_exports")
+remote.call("surface_export", "list_exports_json")  -- JSON string for RCON
+remote.call("surface_export", "clear_old_exports", max_to_keep)
 
--- Note: File-based import not available (Factorio 2.0 removed runtime file reading)
--- Chunked RCON is the only method for large imports
+-- Import (chunked RCON — Factorio 2.0 removed runtime file reading):
+remote.call("surface_export", "import_platform_chunk", platform_name, chunk_data, chunk_num, total_chunks, force_name)
+
+-- Platform locking (transfer workflow):
+remote.call("surface_export", "lock_platform_for_transfer", platform_index, force_name)
+remote.call("surface_export", "unlock_platform", platform_name)
+
+-- Validation:
+remote.call("surface_export", "get_validation_result", platform_name)
+remote.call("surface_export", "get_validation_result_json", platform_name)  -- JSON string for RCON
+
+-- Configuration:
+remote.call("surface_export", "configure", config_table)
+
+-- Debug/testing:
+remote.call("surface_export", "clone_platform", platform_index, force_name, new_name)
+remote.call("surface_export", "test_import_entity", entity_json, surface_index, position)
+remote.call("surface_export", "run_tests")
 ```
 
 ### In-Game Commands
 ```
 /export-platform <index>          # Export platform (async)
 /export-platform-file <index>     # Export to disk file
-/import-platform <export_id>      # Import from memory
+/export-sync-mode <index>         # Export platform synchronously
 /list-platforms                   # List all platforms
 /list-exports                     # List exports in memory
 /list-surfaces                    # List all surfaces
-/async-status                     # Show active async jobs
+/transfer-platform <index> <dest> # Transfer platform to another instance
+/lock-platform <index>            # Lock platform for transfer
+/unlock-platform <name>           # Unlock a locked platform
+/lock-status                      # Show lock status of all platforms
+/resume-platform <name>           # Resume a locked platform
+/plugin-import-file <file> <name> # Import from file via plugin
+/step-tick <count>                # Debug: step N ticks
+/test-entity <json>               # Debug: test entity import
 ```
 
 ## Common Pitfalls & Solutions
@@ -227,6 +255,29 @@ Platform indices are **per-force** and **1-based**. Use `/list-platforms` to fin
 **Symptom**: Entities present but no floor tiles
 **Cause**: Export created with version < 1.0.87 (before tile support)
 **Fix**: Re-export platform with v1.0.87+ to include tiles
+
+### 9. Duplicate Instances on Restart (Seeding Idempotency)
+**Symptom**: Extra instances appear after restarting the cluster (e.g., `clusterio-host-2-instance-2` alongside the expected `instance-1`)
+**Cause**: The base image's `seed-instances.sh` (in [solarcloud7/clusterio-docker](https://github.com/solarcloud7/clusterio-docker)) unconditionally calls `clusterioctl instance create` with `|| true` error swallowing. Clusterio allows multiple instances with the same name (they get different UUIDs), so if seeding runs again, duplicates are created. The `FIRST_RUN` guard (checks for `config-controller.json`) normally prevents re-seeding, but any scenario where the controller volume is wiped while host volumes persist — or an interrupted first run — can trigger duplicate creation.
+
+**Root Cause Location**: **Base image repository** (`solarcloud7/clusterio-docker`), specifically `scripts/seed-instances.sh`. This is **not** a bug in this project's code.
+
+**Required Fixes** (in `solarcloud7/clusterio-docker`):
+1. **P0 — Idempotent `seed_instance()`**: Before calling `instance create`, check if an instance with that name already exists via `clusterioctl instance list` and skip if found.
+2. **P1 — Seed-complete marker**: Write a `.seed-complete` marker file to the controller data volume after successful seeding. Check it alongside `FIRST_RUN` so an interrupted first run re-attempts seeding (with idempotent instance creation) rather than silently skipping.
+3. **P2 — Token desync detection**: In `host-entrypoint.sh`, compare the stored token against the shared token volume. If they differ (controller volume was wiped and regenerated new tokens), reconfigure the host automatically.
+
+**Current Workaround**: Always use `docker compose down -v` (with `-v` to remove volumes) before `docker compose up -d` for a clean restart. This ensures seeding starts from scratch. Plain `docker compose down` + `up -d` may produce duplicates if volumes get into an inconsistent state.
+
+### 10. Instances Missing Space Age Mods
+**Symptom**: Platforms don't exist, Space Age entities missing, game runs in base-game-only mode
+**Cause**: `DEFAULT_MOD_PACK` defaults to `"Base Game 2.0"` in the base image controller entrypoint
+**Fix**: Set `DEFAULT_MOD_PACK=Space Age 2.0` in `docker/env/controller.env`. Requires `docker compose down -v` + rebuild since mod pack is assigned on first run only.
+
+### 11. Both Instances Have Same Game Port
+**Symptom**: Only one instance reachable via game browser, both show same port in Clusterio UI
+**Cause**: Each host auto-assigns game port from its `host.factorio_port_range`. Previously all hosts defaulted to the same range (34100-34199), so all first instances got port 34100.
+**Fix**: Fixed in base image — `host-entrypoint.sh` now derives port range from HOST_ID (host N → `34N00-34N99`). Docker-compose port mappings must match. Requires `docker compose down -v` + image rebuild since port range is set on first host configuration only.
 
 ## Architecture Overview
 
@@ -379,14 +430,14 @@ For development, use absolute or relative paths (starting with `.` or `..`).
 
 ## Debugging Tips
 
-### Check Mod is Loaded
+### Check Plugin Module is Loaded
 ```powershell
-rc11 "/sc rcon.print((script.active_mods and script.active_mods['FactorioSurfaceExport']) or 'NOT_LOADED')"
+rc11 "/sc rcon.print(remote.interfaces['surface_export'] ~= nil)"  -- Should print 'true'
 ```
 
 ### View Factorio Log (from container)
 ```powershell
-docker exec clusterio-host-1 tail -100 /clusterio/instances/clusterio-host-1-instance-1/factorio-current.log
+docker exec surface-export-host-1 tail -100 /clusterio/instances/clusterio-host-1-instance-1/factorio-current.log
 ```
 
 ### Check Async Job Queue

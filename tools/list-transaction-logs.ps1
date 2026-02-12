@@ -15,7 +15,7 @@ Write-Host "Showing up to last 10 transfers`n" -ForegroundColor Yellow
 
 try {
     # Read the transaction log file directly from the controller container
-    $result = docker exec clusterio-controller cat /clusterio/database/surface_export_transaction_logs.json 2>&1
+    $result = docker exec surface-export-controller cat /clusterio/database/surface_export_transaction_logs.json 2>&1
 
     if ($LASTEXITCODE -ne 0) {
         Write-Host "No transaction logs found yet." -ForegroundColor Yellow

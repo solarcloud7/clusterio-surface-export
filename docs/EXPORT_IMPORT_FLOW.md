@@ -132,7 +132,7 @@ rc11 "/c storage.surface_export.surface_locks = {}"
 rc11 "/export-platform 1"
 
 # Via clusterioctl
-docker exec clusterio-controller npx clusterioctl instance rcon clusterio-host-1-instance-1 "/export-platform 1"
+docker exec surface-export-controller npx clusterioctl instance rcon clusterio-host-1-instance-1 "/export-platform 1"
 
 # Via RCON message (plugin-triggered)
 messages.ExportPlatformRequest.send(instance, { platformIndex: 1 })
@@ -140,7 +140,7 @@ messages.ExportPlatformRequest.send(instance, { platformIndex: 1 })
 
 **Log Location**: 
 - Factorio: `/clusterio-hosts/clusterio-host-1/instances/clusterio-host-1-instance-1/factorio-current.log`
-- Host: `docker logs clusterio-host-1`
+- Host: `docker logs surface-export-host-1`
 
 #### Step 1.2: Command Handler Invoked 📨
 
@@ -616,13 +616,13 @@ async handleStorePlatformExport(message, src) {
 **Verification Commands**:
 ```powershell
 # Check export exists in controller storage
-docker exec clusterio-controller ls -lh /clusterio/platforms/ | Select-String "export_Alpha"
+docker exec surface-export-controller ls -lh /clusterio/platforms/ | Select-String "export_Alpha"
 
 # View transaction log
 .\tools\get-transaction-log.ps1
 
 # Check Factorio logs
-docker exec clusterio-host-1 cat /clusterio/instances/clusterio-host-1-instance-1/factorio-current.log | Select-String "export_Alpha"
+docker exec surface-export-host-1 cat /clusterio/instances/clusterio-host-1-instance-1/factorio-current.log | Select-String "export_Alpha"
 ```
 
 ---
@@ -1221,7 +1221,7 @@ rc21 "/c for _, p in pairs(game.forces.player.platforms) do game.print(p.name) e
 .\tools\get-transaction-log.ps1
 
 # Check Factorio logs
-docker exec clusterio-host-2 cat /clusterio/instances/clusterio-host-2-instance-1/factorio-current.log | Select-String "import_job"
+docker exec surface-export-host-2 cat /clusterio/instances/clusterio-host-2-instance-1/factorio-current.log | Select-String "import_job"
 ```
 
 ---
@@ -1408,10 +1408,10 @@ rc11 "/c storage.surface_export.surface_locks = {}"
 **Logs**:
 ```powershell
 # Factorio logs
-docker exec clusterio-host-1 grep "surface_export_complete" /clusterio/instances/clusterio-host-1-instance-1/factorio-current.log
+docker exec surface-export-host-1 grep "surface_export_complete" /clusterio/instances/clusterio-host-1-instance-1/factorio-current.log
 
 # Host plugin logs
-docker logs clusterio-host-1 2>&1 | Select-String "export_complete"
+docker logs surface-export-host-1 2>&1 | Select-String "export_complete"
 ```
 
 ---
@@ -1444,7 +1444,7 @@ rc21 "/c storage.pending_platform_imports = {}"
 rc21 "/c if storage.surface_export.jobs then for _, job in ipairs(storage.surface_export.jobs) do if job.validation_results then game.print(serpent.block(job.validation_results)) end end end"
 
 # Check failed entities
-docker exec clusterio-host-2 grep "Failed to create entity" /clusterio/instances/clusterio-host-2-instance-1/factorio-current.log
+docker exec surface-export-host-2 grep "Failed to create entity" /clusterio/instances/clusterio-host-2-instance-1/factorio-current.log
 ```
 
 **Common Causes**:
@@ -1463,11 +1463,11 @@ docker exec clusterio-host-2 grep "Failed to create entity" /clusterio/instances
 **Solution**:
 ```powershell
 # Reduce batch size (default 50)
-docker exec clusterio-controller npx clusterioctl instance config set clusterio-host-1-instance-1 surface_export.batch_size 25
+docker exec surface-export-controller npx clusterioctl instance config set clusterio-host-1-instance-1 surface_export.batch_size 25
 
 # Restart instance
-docker exec clusterio-controller npx clusterioctl instance stop clusterio-host-1-instance-1
-docker exec clusterio-controller npx clusterioctl instance start clusterio-host-1-instance-1
+docker exec surface-export-controller npx clusterioctl instance stop clusterio-host-1-instance-1
+docker exec surface-export-controller npx clusterioctl instance start clusterio-host-1-instance-1
 ```
 
 #### Issue: "RCON timeouts during large exports"
@@ -1475,7 +1475,7 @@ docker exec clusterio-controller npx clusterioctl instance start clusterio-host-
 **Debug**:
 ```powershell
 # Check RCON response time
-Measure-Command { docker exec clusterio-controller npx clusterioctl instance rcon clusterio-host-1-instance-1 "/time" }
+Measure-Command { docker exec surface-export-controller npx clusterioctl instance rcon clusterio-host-1-instance-1 "/time" }
 
 # If >1 second, RCON may be overloaded
 ```
@@ -1519,8 +1519,8 @@ Measure-Command { docker exec clusterio-controller npx clusterioctl instance rco
 | Platform exports | `/clusterio/platforms/` | JSON files |
 | Transaction logs | `/clusterio/transaction_logs/` | JSON files |
 | Factorio logs | `/clusterio-hosts/.../instances/.../factorio-current.log` | Text |
-| Host logs | `docker logs clusterio-host-X` | Text |
-| Controller logs | `docker logs clusterio-controller` | Text |
+| Host logs | `docker logs surface-export-host-X` | Text |
+| Controller logs | `docker logs surface-export-controller` | Text |
 
 ---
 
@@ -1534,10 +1534,10 @@ Measure-Command { docker exec clusterio-controller npx clusterioctl instance rco
 
 ```powershell
 # View all exports in controller storage
-docker exec clusterio-controller ls -lh /clusterio/platforms/
+docker exec surface-export-controller ls -lh /clusterio/platforms/
 
 # Get export metadata
-docker exec clusterio-controller cat /clusterio/platforms/export_Alpha_1234567890_job_1.json | ConvertFrom-Json | Select-Object -Property platform, metadata
+docker exec surface-export-controller cat /clusterio/platforms/export_Alpha_1234567890_job_1.json | ConvertFrom-Json | Select-Object -Property platform, metadata
 ```
 
 ### Check Import Status
@@ -1567,13 +1567,13 @@ rc21 "/c game.print(#(storage.pending_platform_imports or {}) .. ' pending impor
 
 ```powershell
 # Follow Factorio logs
-docker logs -f clusterio-host-1 2>&1 | Select-String "export|import"
+docker logs -f surface-export-host-1 2>&1 | Select-String "export|import"
 
 # Follow controller logs
-docker logs -f clusterio-controller 2>&1 | Select-String "Surface Export"
+docker logs -f surface-export-controller 2>&1 | Select-String "Surface Export"
 
 # Follow all logs
-docker-compose -f docker/docker-compose.clusterio.yml logs -f
+docker compose logs -f
 ```
 
 ---

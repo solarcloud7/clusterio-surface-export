@@ -212,14 +212,14 @@ Files to update:
 ```powershell
 rc11 "/export-platform 1"
 # Check logs for export completion
-docker logs clusterio-host-1 | Select-String "Export"
+docker logs surface-export-host-1 | Select-String "Export"
 ```
 
 ### Test 3: Import via Clusterio
 ```powershell
 rc21 "/import-platform export_Alpha_12345"
 # Check logs for import job
-docker logs clusterio-host-2 | Select-String "Import"
+docker logs surface-export-host-2 | Select-String "Import"
 ```
 
 ### Test 4: Verify No Regressions

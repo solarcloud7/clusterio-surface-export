@@ -1,0 +1,112 @@
+# Docker Compose for Clusterio Development Cluster
+#
+# Uses pre-built images from ghcr.io/solarcloud7/clusterio-docker
+# See: https://github.com/solarcloud7/clusterio-docker
+#
+# Architecture:
+#   - 1 Controller (manages cluster, seeds data on first run)
+#   - 2 Hosts (run Factorio instances)
+#   - Instances are created automatically from seed-data/hosts/ convention
+#
+# Startup sequence:
+#   1. Controller starts, bootstraps admin user, generates host tokens
+#   2. Controller seeds database, mods, and instances from seed-data/
+#   3. Hosts start, read tokens from shared volume, connect to controller
+#   4. Instances are automatically assigned and started
+#
+# ============================================================================
+# Adding more hosts:
+#   1. Copy the surface-export-host-2 block and rename to surface-export-host-N
+#   2. Update ports to a new range (e.g., 34300-34309)
+#   3. Create seed-data/hosts/clusterio-host-N/<instance-name>/ folders
+#   4. Update HOST_COUNT in controller environment
+#
+# IMPORTANT: The hostname MUST stay "clusterio-host-N" pattern for
+# automatic token loading (the host extracts its ID from the hostname).
+# Only the service/container names use the surface-export- prefix.
+# ============================================================================
+
+# Template anchor for host services (reduces duplication)
+x-host-base: &host-base
+  image: ghcr.io/solarcloud7/clusterio-docker-host
+  env_file:
+    - docker/env/host.env
+  networks:
+    - surface-export-net
+  depends_on:
+    surface-export-controller:
+      condition: service_healthy
+  restart: unless-stopped
+
+services:
+  surface-export-controller:
+    image: ghcr.io/solarcloud7/clusterio-docker-controller
+    env_file:
+      - docker/env/controller.env
+    container_name: surface-export-controller
+    hostname: clusterio-controller  # Hosts connect to this name on the Docker network
+    ports:
+      - "${CONTROLLER_HTTP_PORT:-8080}:${CONTROLLER_HTTP_PORT:-8080}"
+    volumes:
+      - surface-export-controller-data:/clusterio/data
+      - surface-export-tokens:/clusterio/tokens
+      - ./docker/seed-data:/clusterio/seed-data:ro
+      # Mount surface_export plugin for controller-side plugin code
+      - ./docker/seed-data/external_plugins/surface_export:/clusterio/external_plugins/surface_export
+    environment:
+      - HOST_COUNT=${HOST_COUNT:-2}
+    networks:
+      - surface-export-net
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:${CONTROLLER_HTTP_PORT:-8080}/"]
+      interval: 10s
+      timeout: 3s
+      retries: 6
+      start_period: 30s
+
+  # -------------------------------------------------------------------------
+  # Host 1 - Port range 34100-34109
+  # -------------------------------------------------------------------------
+  surface-export-host-1:
+    <<: *host-base
+    container_name: surface-export-host-1
+    hostname: clusterio-host-1
+    environment:
+      - HOST_NAME=clusterio-host-1
+    ports:
+      - "34100-34109:34100-34109/udp"
+    volumes:
+      - surface-export-host-1-data:/clusterio/data
+      - surface-export-tokens:/clusterio/tokens:ro
+      - ./docker/seed-data/mods:/clusterio/seed-mods:ro
+      # Mount surface_export plugin for host-side plugin code + Lua module
+      - ./docker/seed-data/external_plugins/surface_export:/clusterio/external_plugins/surface_export
+
+  # -------------------------------------------------------------------------
+  # Host 2 - Port range 34200-34209
+  # -------------------------------------------------------------------------
+  surface-export-host-2:
+    <<: *host-base
+    container_name: surface-export-host-2
+    hostname: clusterio-host-2
+    environment:
+      - HOST_NAME=clusterio-host-2
+    ports:
+      - "34200-34209:34200-34209/udp"
+    volumes:
+      - surface-export-host-2-data:/clusterio/data
+      - surface-export-tokens:/clusterio/tokens:ro
+      - ./docker/seed-data/mods:/clusterio/seed-mods:ro
+      # Mount surface_export plugin for host-side plugin code + Lua module
+      - ./docker/seed-data/external_plugins/surface_export:/clusterio/external_plugins/surface_export
+
+networks:
+  surface-export-net:
+    driver: bridge
+
+volumes:
+  surface-export-controller-data:    # All controller persistent data
+  surface-export-host-1-data:        # Host 1 persistent data (config, instances, logs)
+  surface-export-host-2-data:        # Host 2 persistent data
+  surface-export-tokens:             # Token exchange between controller and hosts

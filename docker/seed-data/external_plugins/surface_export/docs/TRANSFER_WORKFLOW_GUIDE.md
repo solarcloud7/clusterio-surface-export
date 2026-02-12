@@ -1,549 +1,267 @@
-# Surface Export Plugin - Transfer Workflow Guide
+# Transfer Workflow Guide
 
-This guide explains how to use the complete surface transfer workflow to move space platforms between Clusterio instances.
+Complete reference for platform transfers between Factorio instances.
 
-## Table of Contents
-1. [Overview](#overview)
-2. [Prerequisites](#prerequisites)
-3. [Transfer Flow](#transfer-flow)
-4. [API Reference](#api-reference)
-5. [Testing](#testing)
-6. [Troubleshooting](#troubleshooting)
+## Transfer Overview
 
----
+A transfer moves a space platform from one Clusterio instance to another. The process has 5 phases:
 
-## Overview
+```
+Lock → Export → Transfer → Import → Validate/Cleanup
+```
 
-The surface-export plugin enables safe, validated transfers of Factorio space platforms between instances with these features:
+**Automatic transfer** (recommended): The `/transfer-platform` command or `surface-export transfer` CLI command handles all phases automatically with rollback on failure.
 
-✅ **Surface Locking** - Source platform is locked during transfer (hidden from players)
-✅ **Async Processing** - Non-blocking export/import (50 entities/tick)
-✅ **Validation** - Item and fluid counts verified after import
-✅ **Automatic Rollback** - Source unlocked if validation fails
-✅ **Automatic Cleanup** - Source deleted if validation succeeds
+**Manual transfer**: Individual commands/API calls for each phase. Useful for debugging or custom workflows.
 
----
+## Automatic Transfer
 
-## Prerequisites
+### Via In-Game Command
 
-### 1. Plugin Installation
+```
+/transfer-platform <platform_index> <destination_instance_id>
+```
+
+Example:
+```
+/transfer-platform 1 2
+```
+
+This triggers the full pipeline automatically.
+
+### Via CLI
 
 ```bash
-# Install plugin on controller
-node packages/ctl plugin add ./external_plugins/surface-export
-
-# Start controller with plugin
-node packages/controller run
-
-# Start hosts
-node packages/host run
+npx clusterioctl surface-export transfer <exportId> <instanceId>
 ```
 
-### 2. Configuration
+Use `npx clusterioctl surface-export list` to find available export IDs.
 
-**Instance Configuration:**
+### What Happens Internally
+
+1. **Lock** — `SurfaceLock.lock_platform()`:
+   - Complete all in-flight cargo pods (capture items)
+   - Freeze all entities (`entity.active = false`), recording original states
+   - Hide surface from players
+
+2. **Export** — `AsyncProcessor.queue_export()`:
+   - Scan all entities across multiple ticks (batch_size per tick)
+   - Scan tiles
+   - Generate live verification counts
+   - Compress (deflate + base64)
+   - Store in `storage.platform_exports`
+   - Send `surface_export_complete` IPC to Node.js
+
+3. **Transfer** — `instance.js` → `controller.js`:
+   - Node.js retrieves full export via RCON (`get_export_json`)
+   - Sends `PlatformExportEvent` to controller
+   - Controller stores export data, creates transfer record
+   - Controller sends `ImportPlatformRequest` to destination instance
+
+4. **Import** — Destination `instance.js` → RCON:
+   - Sends export data to Factorio in chunks (100KB per chunk, hybrid JSON escaping)
+   - `import_platform_chunk` reassembles and queues import job
+   - 7-phase import process (tiles → hub mapping → entities → fluids → belts → state → activate)
+   - Platform paused during import to prevent fuel consumption
+
+5. **Validate & Cleanup** — `controller.js`:
+   - Destination runs `TransferValidation.validate_import()`:
+     - Compares live item/fluid counts against export verification
+     - Asymmetric tolerances (small losses OK, gains always flagged)
+   - **On success**: Controller sends `DeleteSourcePlatformRequest` → source platform destroyed → transfer complete
+   - **On failure**: Controller sends `UnlockSourcePlatformRequest` → source platform unlocked, entities reactivated → rollback complete
+   - 120-second validation timeout triggers synthetic failure (rollback)
+
+## Manual Transfer Steps
+
+### Step 1: Lock the Platform
+
+```
+/lock-platform <name_or_index>
+```
+
+Or via RCON:
+```
+/sc remote.call('surface_export', 'lock_platform_for_transfer', <platform_index>, '<force_name>')
+```
+
+Verify lock status:
+```
+/lock-status <name_or_index>
+```
+
+### Step 2: Export
+
+```
+/export-platform <platform_index>
+```
+
+Or via RCON:
+```
+/sc local job_id = remote.call('surface_export', 'export_platform', <platform_index>, '<force_name>') rcon.print(job_id or 'nil')
+```
+
+Wait for the export to complete (watch for in-game notification or poll `list_exports_json`).
+
+### Step 3: List Exports
+
+```
+/list-exports
+```
+
+Or via RCON:
+```
+/sc rcon.print(remote.call('surface_export', 'list_exports_json'))
+```
+
+Note the export ID for the next step.
+
+### Step 4: Transfer via CLI
+
 ```bash
-# Enable script commands (required for RCON)
-npx clusterioctl instance config set <instance_name> factorio.enable_script_commands true
-
-# Set export cache size (optional, default: 10)
-npx clusterioctl instance config set <instance_name> surface_export.max_export_cache_size 20
+npx clusterioctl surface-export transfer <exportId> <targetInstanceId>
 ```
 
-**Controller Configuration:**
-```bash
-# Set max storage (optional, default: 100)
-npx clusterioctl controller config set surface_export.max_storage_size 200
+### Step 5: Monitor
+
+The controller broadcasts status updates to both instances. Watch for:
+- "Importing platform..." (green)
+- "Validation passed ✓" (green) → source deleted automatically
+- "Validation failed ✗ - Rolling back..." (red) → source unlocked automatically
+
+### Manual Unlock (if needed)
+
+If a transfer fails and the source wasn't automatically unlocked:
+```
+/unlock-platform <name_or_index>
 ```
 
-### 3. Verify Plugin Loaded
+## Platform Locking Detail
 
-**Check controller logs:**
-```
-[info] Surface Export controller plugin initialized
-```
+### What Gets Locked
 
-**Check instance logs:**
-```
-[info] Surface Export plugin initialized
-```
+1. **Cargo pods**: Descending pods → items captured into hub inventory → `force_finish_descending()`. Ascending pods → `force_finish_ascending()`. Awaiting launch → destroyed.
 
-**Check Factorio logs (in-game or script-output):**
-```
-[Surface Export] Clusterio module initialized
-```
+2. **Entities (35+ freezable types)**: Production (assembling machines, furnaces, mining drills, labs, rocket silos, agricultural towers), Power (reactors, generators, boilers, fusion), Logistics (inserters, loaders, pumps, roboports), Space (thrusters, asteroid collectors, cargo bays, hubs, landing pads), Misc (beacons, radar).
 
----
+3. **Surface visibility**: Hidden from players via `force.set_surface_hidden(surface, true)`.
 
-## Transfer Flow
+4. **Frozen state tracking**: Each entity's original `entity.active` state saved as `frozen_states[entity_id]`. This is critical — some entities are intentionally inactive (disabled by circuit conditions), and this state must be preserved.
 
-### Method 1: Via clusterioctl (Recommended)
-
-#### Step 1: Export Platform on Source Instance
-
-```bash
-# From source Factorio console or RCON
-/export-platform 1
-
-# This creates an export like: "Platform Name_12345678_export_42"
-```
-
-**What happens:**
-- Platform is scanned asynchronously
-- Entities, tiles, inventories are serialized
-- Item/fluid counts calculated for verification
-- Export sent to controller for storage
-
-**Expected output:**
-```
-[Export Complete] Platform Name (500 entities in 10.0s) - ID: Platform Name_12345678_export_42
-```
-
-#### Step 2: List Available Exports
-
-```bash
-# Via clusterioctl
-npx clusterioctl surface-export list
-
-# Output:
-# Export ID                              | Platform Name  | Instance | Size
-# -------------------------------------- | -------------- | -------- | ------
-# Platform Name_12345678_export_42       | Platform Name  | 1        | 2.4 MB
-```
-
-#### Step 3: Transfer to Destination Instance
-
-```bash
-# Transfer from source (instance 1) to destination (instance 2)
-npx clusterioctl surface-export transfer "Platform Name_12345678_export_42" 2
-
-# Output:
-# [info] Transfer initiated: transfer_1705680234567_abc123
-# [info] Platform import initiated on instance 2, awaiting validation
-```
-
-**What happens:**
-1. **Source Locked** - Platform hidden, cargo pods wait to complete
-2. **Import Started** - 100KB chunks sent via RCON to destination
-3. **Async Import** - Platform created and populated (50 entities/tick)
-4. **Validation** - Item/fluid counts compared to source
-5. **Rollback or Cleanup**:
-   - ✅ Success → Source platform deleted
-   - ❌ Failure → Source platform unlocked
-
-#### Step 4: Monitor Transfer Status
-
-**Watch controller logs:**
-```
-[info] Transferring platform Platform Name_12345678_export_42 to instance 2
-[info] Created transfer transfer_1705680234567_abc123
-[info] Platform import initiated on instance 2, awaiting validation
-[info] Validation result for transfer transfer_1705680234567_abc123: SUCCESS
-[info] Source platform deleted successfully
-```
-
-**Watch destination Factorio in-game:**
-```
-[Import Platform Name] Progress: 50% (250/500 entities)
-[Import Complete] Platform Name (500 entities in 10.0s)
-[Transfer] Platform 'Platform Name' transferred successfully
-```
-
----
-
-### Method 2: Via Remote Interface (Advanced)
-
-For programmatic control or custom workflows:
-
-#### Step 1: Lock Platform on Source
+### Lock Data Structure
 
 ```lua
--- Lock platform before export (prevents player modifications)
-local success, err = remote.call(
-    "FactorioSurfaceExport",
-    "lock_platform_for_transfer",
-    1,        -- Platform index
-    "player"  -- Force name
-)
-
-if not success then
-    game.print("Lock failed: " .. (err or "Unknown error"))
-end
-```
-
-#### Step 2: Export Platform
-
-```lua
--- Queue async export
-local job_id, err = remote.call(
-    "FactorioSurfaceExport",
-    "export_platform",
-    1,        -- Platform index
-    "player"  -- Force name
-)
-
-if not job_id then
-    game.print("Export failed: " .. (err or "Unknown error"))
-end
-
--- Wait for completion (poll job status)
-local status = remote.call(
-    "FactorioSurfaceExport",
-    "get_import_status",
-    job_id
-)
-```
-
-#### Step 3: Transfer via Controller API
-
-```javascript
-// Node.js code in controller or instance plugin
-const response = await controller.sendTo(
-    "controller",
-    new messages.TransferPlatformRequest({
-        exportId: "Platform Name_12345678_export_42",
-        targetInstanceId: 2
-    })
-);
-
-console.log("Transfer initiated:", response.transferId);
-```
-
-#### Step 4: Handle Validation Result
-
-```lua
--- Destination instance - after import completes
-local validation = remote.call(
-    "FactorioSurfaceExport",
-    "get_validation_result",
-    "Platform Name"
-)
-
-if validation then
-    game.print(string.format(
-        "Validation: Items=%s, Fluids=%s, Entities=%d",
-        validation.itemCountMatch and "✓" or "✗",
-        validation.fluidCountMatch and "✓" or "✗",
-        validation.entityCount
-    ))
-end
-```
-
----
-
-## API Reference
-
-### Lua Remote Interface
-
-#### `lock_platform_for_transfer(platform_index, force_name)`
-Locks a platform to prevent modifications during transfer.
-
-**Parameters:**
-- `platform_index` (number): Platform index (1-based)
-- `force_name` (string): Force name (default: "player")
-
-**Returns:**
-- `success` (boolean): true if locked successfully
-- `error` (string|nil): Error message if failed
-
-**Example:**
-```lua
-local ok, err = remote.call("FactorioSurfaceExport", "lock_platform_for_transfer", 1, "player")
-```
-
-#### `unlock_platform(platform_name)`
-Unlocks a platform (restores original visibility and schedule).
-
-**Parameters:**
-- `platform_name` (string): Name of the platform
-
-**Returns:**
-- `success` (boolean): true if unlocked successfully
-- `error` (string|nil): Error message if failed
-
-**Example:**
-```lua
-local ok, err = remote.call("FactorioSurfaceExport", "unlock_platform", "Platform Name")
-```
-
-#### `get_validation_result(platform_name)`
-Retrieves validation result after import.
-
-**Parameters:**
-- `platform_name` (string): Name of the platform
-
-**Returns:**
-- `validation` (table|nil): Validation result or nil if not found
-
-**Validation Table:**
-```lua
-{
-    itemCountMatch = true,
-    fluidCountMatch = true,
-    entityCount = 500,
-    mismatchDetails = nil  -- or string if validation failed
+storage.locked_platforms[platform_name] = {
+  surface_index = ...,
+  force_name = ...,
+  frozen_states = { [entity_id] = was_active, ... },
+  original_hidden = ...,     -- Was surface already hidden?
+  original_schedule = ...,   -- Platform travel schedule backup
 }
 ```
 
-**Example:**
-```lua
-local validation = remote.call("FactorioSurfaceExport", "get_validation_result", "Platform Name")
-if validation and not validation.itemCountMatch then
-    game.print("Item count mismatch!")
-end
-```
+## Import Phases Detail
 
-### Node.js Messages
+### Phase 1: Tile Restoration
+Place all tiles first — entities need foundation.
 
-#### `TransferPlatformRequest`
-Initiates a transfer from controller to destination instance.
+### Phase 2: Platform Hub Mapping
+`space-platform-hub` is auto-created when the platform is created. Cannot be manually placed. This phase finds the existing hub and maps it into the entity_map so connections can reference it.
 
-**Properties:**
-- `exportId` (string): Export ID from source
-- `targetInstanceId` (number): Destination instance ID
+### Phase 3: Entity Creation (Batched)
+- Processes `batch_size` entities per tick
+- Each entity: create → immediately deactivate → restore inventories (NOT fluids yet)
+- Skip `space-platform-hub` (handled by Phase 2)
+- Sort order: rails → underground-belt inputs → underground-belt outputs → pipe-to-ground → rest
 
-**Example:**
-```javascript
-const response = await controller.sendTo("controller",
-    new messages.TransferPlatformRequest({
-        exportId: "Platform Name_12345678_export_42",
-        targetInstanceId: 2
-    })
-);
-```
+### Phase 4: Fluid Restoration
+- Groups entities by fluid network segment
+- Calculates total expected fluid per segment
+- Injects into storage tanks preferentially (highest capacity)
+- Clamps to segment capacity
 
-#### `TransferValidationEvent`
-Sent from destination instance to controller after import validation.
+### Phase 5: Belt Restoration (Synchronous)
+- **Must complete in a single tick** — belts can't be deactivated
+- Uses `insert_at()` with exact positions from export
+- Items placed on correct transport line at correct belt position
 
-**Properties:**
-- `transferId` (string): Transfer ID
-- `platformName` (string): Platform name
-- `sourceInstanceId` (number): Source instance ID
-- `success` (boolean): Validation result
-- `validation` (object): Validation details
+### Phase 6: Entity State Restoration
+- Control behaviors (circuit conditions, combinator signals)
+- Entity filters (filter inserters, loaders)
+- Logistic requests (requester/buffer chests)
+- Circuit connections (red/green wires)
+- Power connections (copper cables between electric poles)
 
-**Example:**
-```javascript
-// Event is sent automatically by instance plugin
-// Controller handles it in handleTransferValidation()
-```
+### Phase 7: Active State Restoration
+- Restores `entity.active` from `frozen_states`
+- This is the "wake up" signal — machines start processing, inserters start moving
+- For transfers: platform is still paused (use `/resume-platform` when ready)
 
-#### `DeleteSourcePlatformRequest`
-Controller sends to source instance to delete platform after successful transfer.
+## Validation Rules
 
-**Properties:**
-- `platformIndex` (number): Platform index
-- `platformName` (string): Platform name
-- `forceName` (string): Force name
+### Item Validation
+| Condition | Result |
+|-----------|--------|
+| Gained items (not in export) | **FAIL** if >5 (tolerance for storage effects) |
+| Lost >95% AND >100 absolute items | **FAIL** |
+| Partial loss (<95% or <100 items) | **WARN** (machines may cap with overload_multiplier) |
+| Unexpected item type, quantity >20 | **FLAG** |
 
-#### `UnlockSourcePlatformRequest`
-Controller sends to source instance to unlock platform after failed transfer.
+### Fluid Validation
+| Condition | Result |
+|-----------|--------|
+| Gained >500 units | **FAIL** |
+| Expected >1000, actual <1 | **FAIL** (complete disappearance) |
+| Partial loss | **OK** (networks redistribute) |
+| Unexpected fluid type, significant quantity | **FLAG** |
 
-**Properties:**
-- `platformName` (string): Platform name
-- `forceName` (string): Force name
+## Transaction Logs
 
----
+Every transfer generates a transaction log with timestamped events:
 
-## Testing
+- `transfer_created` → `import_started` → `validation_received` → `source_deleted` → `transfer_completed`
+- Or on failure: `transfer_created` → `import_started` → `validation_received` → `rollback_success` → `transfer_failed`
+- Or on timeout: `transfer_created` → `import_started` → `validation_timeout` → `rollback_success` → `transfer_failed`
 
-### Test 1: Simple Transfer
-
-```bash
-# 1. Create a test platform on instance 1
-# In-game: Build a small platform with 10-20 entities
-
-# 2. Export it
-/export-platform 1
-
-# 3. List exports
-npx clusterioctl surface-export list
-
-# 4. Transfer to instance 2
-npx clusterioctl surface-export transfer "<export_id>" 2
-
-# 5. Verify on instance 2
-# In-game: /list-platforms
-# Should show the transferred platform
-```
-
-### Test 2: Validation Failure (Intentional)
-
-To test rollback, you can modify the destination after import but before validation completes:
-
-```lua
--- Destination instance - quickly delete items after import starts
--- This will cause validation to fail and trigger rollback
-```
-
-### Test 3: Large Platform Transfer
+### Viewing Logs
 
 ```bash
-# Transfer a large platform (1000+ entities)
-# Monitor UPS during transfer - should remain stable
-# Async processing keeps UPS at 60
+# List all transfer logs
+.\tools\list-transaction-logs.ps1
 
-# Check logs for throughput:
-# [info] All 150 chunks sent successfully (5000ms, 489.6 KB/s)
+# Get latest log
+.\tools\get-transaction-log.ps1
+
+# Get specific log
+.\tools\get-transaction-log.ps1 -TransferId <transfer_id>
 ```
 
----
+Each event includes `elapsedMs` from start and `deltaMs` from previous event, with phase timing (transmission, validation, cleanup).
 
 ## Troubleshooting
 
-### Issue: "Plugin not loaded"
-
-**Symptoms:**
+### Platform stuck in locked state
 ```
-[error] Plugin path /opt/seed-plugins/surface-export missing index or main file
+/unlock-platform <name_or_index>
 ```
+This restores entity active states, unhides surface, and clears lock data.
 
-**Solution:**
-Ensure `package.json` has `"clusterio-plugin"` keyword:
-```json
-"keywords": ["clusterio", "clusterio-plugin", "factorio", "platform", "export"]
-```
+### Transfer times out (120s)
+The controller triggers a synthetic validation failure → automatic rollback. Check:
+- RCON connectivity between controller and destination instance
+- Destination instance actually running
+- Export data size (very large platforms may need more time)
 
-### Issue: "Platform not found"
+### Validation fails — items missing
+Common causes:
+- Machines with `overload_multiplier` recipes cap internal inventories differently
+- Items consumed during the multi-tick import (entities should be deactivated — this indicates a bug)
+- Belt items shifted (belt restoration should be single-tick — this indicates a bug)
 
-**Symptoms:**
-```
-Export failed: Platform index 1 not found
-```
+### Validation fails — items gained
+Should never happen. Indicates:
+- Entity state restoration added unexpected items
+- Platform hub auto-created with starter pack items (should be handled by hub mapping)
 
-**Solution:**
-Check platform index:
-```lua
-/list-platforms
--- Shows all platforms with their indices
-```
-
-### Issue: "Validation failed"
-
-**Symptoms:**
-```
-[Transfer Validation Failed] Item count mismatch: iron-plate: expected 500, got 450
-```
-
-**Possible Causes:**
-1. Items consumed during transfer (e.g., fuel burned in furnaces)
-2. Mod conflict (different mods on source/destination)
-3. Platform modified during transfer (lock failed)
-
-**Solution:**
-- Check that both instances have identical mods
-- Ensure platform was properly locked
-- Review validation details in logs
-
-### Issue: "Chunk timeout"
-
-**Symptoms:**
-```
-[Import Error] Session timeout: Platform Name
-```
-
-**Solution:**
-- Check network latency between controller and instance
-- Increase chunk timeout (currently 10 seconds)
-- Reduce chunk size if network is slow
-
-### Issue: "Lock failed"
-
-**Symptoms:**
-```
-Lock failed: Timeout waiting for cargo pod deliveries
-```
-
-**Solution:**
-Wait for cargo pods to complete delivery before transferring:
-```lua
--- Check for pending pods
-local pending = surface.find_entities_filtered({name = "cargo-pod"})
-if #pending > 0 then
-    game.print("Waiting for " .. #pending .. " cargo pods to complete")
-end
-```
-
----
-
-## Performance Characteristics
-
-### Export Performance
-- **Speed**: ~3000 entities/second (50 entities/tick at 60 UPS)
-- **UPS Impact**: Minimal (<1% drop for platforms <5000 entities)
-- **Duration**: 1000-entity platform ≈ 20 seconds
-
-### Transfer Performance
-- **Chunk Size**: 100KB (default)
-- **Network**: Depends on latency between controller and instance
-- **Throughput**: ~500 KB/s typical (varies by network)
-
-### Import Performance
-- **Speed**: ~3000 entities/second (50 entities/tick at 60 UPS)
-- **UPS Impact**: Minimal (<1% drop for platforms <5000 entities)
-- **Duration**: 1000-entity platform ≈ 20 seconds
-
-### Total Transfer Time
-**Small Platform (100 entities):**
-- Export: ~2 seconds
-- Transfer: ~1 second
-- Import: ~2 seconds
-- **Total: ~5 seconds**
-
-**Medium Platform (1000 entities):**
-- Export: ~20 seconds
-- Transfer: ~5 seconds
-- Import: ~20 seconds
-- **Total: ~45 seconds**
-
-**Large Platform (10000 entities):**
-- Export: ~3 minutes
-- Transfer: ~30 seconds
-- Import: ~3 minutes
-- **Total: ~7 minutes**
-
----
-
-## Best Practices
-
-### 1. Plan Transfers During Low Activity
-Transfer large platforms during maintenance windows to avoid player disruption.
-
-### 2. Monitor Logs
-Watch both controller and instance logs during transfers to catch issues early.
-
-### 3. Verify Before Transfer
-Use `/list-platforms` to confirm platform index before exporting.
-
-### 4. Keep Mods Synchronized
-Ensure source and destination instances have identical mods to avoid validation failures.
-
-### 5. Test with Small Platforms First
-Before transferring critical platforms, test the workflow with small test platforms.
-
-### 6. Use Named Platforms
-Give platforms descriptive names for easier tracking:
-```lua
-platform.name = "Mining Outpost Alpha"
-```
-
-### 7. Clean Up Old Exports
-Periodically clean up old exports to save disk space:
-```lua
-remote.call("FactorioSurfaceExport", "clear_old_exports", 10)  -- Keep only last 10
-```
-
----
-
-## Summary
-
-The surface-export transfer workflow provides a safe, validated way to move platforms between instances:
-
-1. ✅ **Export** - Async serialization with verification checksums
-2. ✅ **Lock** - Source platform hidden during transfer
-3. ✅ **Transfer** - Chunked data transfer via controller
-4. ✅ **Import** - Async deserialization on destination
-5. ✅ **Validate** - Item/fluid count comparison
-6. ✅ **Cleanup** - Automatic deletion or rollback
-
-This ensures data integrity and prevents corruption during cross-instance platform transfers.
+### "Platform name already exists"
+Import auto-appends `#N` suffix on conflict. The platform will be created as e.g., `"My Platform #2"`.
