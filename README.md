@@ -1,59 +1,61 @@
 # Factorio Surface Export - Clusterio Integration
 
-A Clusterio plugin and Factorio mod that serializes complete Space Age platform state for cluster-wide platform transfer. Captures every entity, item, fluid, **and tile** on a platform with **zero loss or duplication**.
+A Clusterio plugin and Factorio mod that serializes complete Space Age platform state for cluster-wide platform transfer. Captures every entity, item, fluid, and tile on a platform with full verification.
 
 ## Table of Contents
 
 1. [Features](#features)
 2. [Performance](#performance)
 3. [Installation](#installation)
-   - [For Clusterio Clusters (Recommended)](#for-clusterio-clusters-recommended)
-   - [For Development](#for-development)
 4. [Usage](#usage)
+   - [Transfer a Platform](#transfer-a-platform)
    - [Export a Platform](#export-a-platform)
    - [Import a Platform](#import-a-platform)
-   - [Clusterio Integration](#clusterio-integration)
-5. [Data Format](#data-format)
-6. [What Gets Exported](#what-gets-exported)
-   - [Entities](#entities)
-   - [Items](#items)
-   - [Fluids](#fluids)
-   - [Entity Settings](#entity-settings)
-7. [Verification](#verification)
-8. [Development](#development)
+5. [How It Works](#how-it-works)
+   - [Export Pipeline](#export-pipeline)
+   - [Import Pipeline](#import-pipeline)
+   - [Atomic Belt Scan](#atomic-belt-scan)
+   - [Verification](#verification)
+6. [Data Format](#data-format)
+7. [Development](#development)
    - [Docker Workflow](#docker-workflow)
-   - [VS Code Tasks](#vs-code-tasks)
-   - [PowerShell Shortcuts for Clusterio](#powershell-shortcuts-for-clusterio)
+   - [Hot Reload](#hot-reload)
+   - [Integration Tests](#integration-tests)
+   - [Transaction Logs](#transaction-logs)
    - [Project Structure](#project-structure)
-9. [Troubleshooting](#troubleshooting)
-10. [Contributing](#contributing)
-11. [License](#license)
-12. [Credits](#credits)
-13. [Support](#support)
-14. [Version History](#version-history)
-15. [Useful Commands](#useful-commands)
+8. [Troubleshooting](#troubleshooting)
+9. [Contributing](#contributing)
+10. [License](#license)
 
 ---
 
 ## Features
 
-- **Complete Platform Serialization**: Export all entities with positions, settings, inventories, fluids, and tiles
-- **Tile Support**: Export and import platform floor tiles (concrete, refined concrete, etc.)
-- **Async Import/Export**: Background processing prevents game freezing on large platforms
-- **Zero Item Loss**: Count every item in every location - inventories, belts, inserters, machines, on ground
-- **Mod Content Handling**: Gracefully skip unknown items/entities when importing across different mod sets
-- **Verification System**: Checksum verification ensures data integrity
-- **Restore Capability**: Import serialized data to recreate platforms on different Factorio instances
-- **Clusterio Integration**: Full Clusterio 2.0 plugin with controller storage and inter-instance transfer
-- **JSON Format**: Human-readable output for debugging and compatibility
-- **Factorio 2.0 Compatible**: Handles read-only properties and runtime API changes
+- **Complete Platform Serialization**: Every entity, tile, inventory, fluid, belt item, circuit connection, and control behavior
+- **Async Processing**: Export/import across multiple ticks — zero game freezing on any platform size
+- **Atomic Belt Scan**: Belt item positions captured in a single tick for consistent snapshots (belts can't be deactivated in Factorio)
+- **Platform Locking**: Cargo pods completed, entities frozen, surface hidden during export for stable state
+- **Platform Pause**: Destination platform paused during import to prevent fuel consumption
+- **Transfer Validation**: Post-import item/fluid count verification with automatic rollback on failure
+- **Deferred Activation**: Entities stay deactivated through validation — machines never process resources during transfer
+- **Clusterio Integration**: Full plugin with controller storage, chunked RCON transport, and inter-instance transfer
+- **Transaction Logging**: Every transfer recorded with phase timing, entity breakdowns, per-item verification
+- **Integration Tests**: Automated platform-roundtrip (4 tests) and entity-roundtrip (28 tests) suites
+- **Factorio 2.0 / Space Age**: Handles quality, stacked belt items, fusion, cargo bays, and all read-only API changes
 
 ## Performance
 
-**Small platforms (<8KB):** ~1-2 seconds  
-**Large platforms (235KB, 488 entities):** ~40 seconds
+**Platform transfer (1359 entities, 4350 tiles, 5600+ items):** ~1-2 seconds end-to-end
 
-The bottleneck is RCON round-trip time for chunked data transfer. See [docs/IMPORT_PERFORMANCE.md](docs/IMPORT_PERFORMANCE.md) for detailed analysis.
+| Phase | Typical Time |
+|-------|-------------|
+| Export (async, 50 entities/tick) | ~450ms |
+| Transmission (compressed, ~55KB) | ~110ms |
+| Import (entity creation + restoration) | ~450ms |
+| Validation | <1ms |
+| **Total transfer** | **~1s** |
+
+The async processor handles 50 entities per tick (configurable), so even platforms with thousands of entities process without any game lag.
 
 ## Installation
 
@@ -114,87 +116,73 @@ This patches the running instances without a full rebuild (~30 seconds vs 3 minu
 
 ## Usage
 
+### Transfer a Platform
+
+Transfer a platform between instances in a single command:
+```
+/transfer-platform <platform_index_or_name> <target_instance>
+```
+
+This performs the full pipeline: lock → export → transmit → import → validate → activate → unlock. Progress messages appear throughout. See [docs/TRANSFER_WORKFLOW_GUIDE.md](docs/TRANSFER_WORKFLOW_GUIDE.md) for the detailed phase breakdown.
+
 ### Export a Platform
 
-In-game command:
 ```
 /export-platform <platform_index_or_name>
 ```
 
-Examples:
-```
-/export-platform 1              # Export by index
-/export-platform "Alpha"        # Export by name
-```
-
-The export is processed asynchronously (default: 50 entities per tick) to prevent game lag. Progress messages appear every 10 batches.
-
-**Via RCON** (from outside Factorio):
-```powershell
-# Using PowerShell shortcuts (see below)
-rc11 "/export-platform 1"
-
-# Using clusterioctl directly
-docker exec surface-export-controller npx clusterioctl instance rcon clusterio-host-1-instance-1 "/export-platform 1"
-```
-
-Exported platforms are stored in the controller's storage and available to all instances in the cluster.
+Exports are processed asynchronously (50 entities/tick by default). Exported data is stored on the controller and available to all instances.
 
 ### Import a Platform
 
-In-game command:
 ```
 /import-platform <export_name>
 ```
 
-Examples:
-```
-/import-platform platform_Alpha_12345    # Import by name (without .json)
-/list-exports                             # List available exports
-```
+Creates a new platform and restores all entities, tiles, inventories, and belt items. Use `/list-exports` to see available exports.
 
-The import creates a new platform and processes asynchronously (default: 50 entities per tick).
+See [docs/commands-reference.md](docs/commands-reference.md) for all 15 available commands.
 
-**Via RCON**:
-```powershell
-# List available exports first
-rc21 "/list-exports"
+## How It Works
 
-# Import to instance 2
-rc21 "/import-platform platform_Alpha_12345"
-```
+### Export Pipeline
 
-### Clusterio Integration
+1. **Lock Platform** — Complete any in-flight cargo pods, freeze entities, hide the surface from players
+2. **Async Entity Scan** — Process 50 entities/tick: serialize position, settings, inventories, circuit connections (belt items are deferred)
+3. **Tile Scan** — Capture all platform tiles in a single tick
+4. **Atomic Belt Scan** — Scan all belt item positions in a single tick for a consistent snapshot
+5. **Verification Snapshot** — Count all items/fluids from the serialized data
+6. **Compress & Transmit** — Deflate-compress the JSON, send via chunked RCON to the controller
 
-The plugin automatically handles platform transfer between instances:
+### Import Pipeline
 
-**Plugin Files**:
-- **Location**: `docker/seed-data/external_plugins/surface_export/`
-- **Plugin Code**: `index.js`, `controller.js`, `instance.js`, `messages.js`
-- **Mod Code**: `module/` directory (Lua files)
+1. **Create Platform** — Build a new platform with floor tiles
+2. **Entity Creation** — Place entities in dependency order (inserters last), deactivated
+3. **Inventory Restoration** — Fill all inventories, set recipes, configure behaviors
+4. **Belt Item Restoration** — Re-insert items onto belts at correct positions
+5. **Circuit Wiring** — Reconnect all circuit network connections
+6. **Pause Platform** — Keep platform paused to prevent fuel consumption during validation
+7. **Validation** — Compare post-import item/fluid counts against export verification data
+8. **Activation** — Activate all entities, unpause platform — transfer complete
 
-**Remote Interface** (called by plugin):
+### Atomic Belt Scan
 
-```javascript
-// Queue async export (returns job_id)
-const result = await this.sendRcon(
-  `/sc rcon.print(remote.call("surface_export", "export_platform", 1, "player"))`
-);
-const job_id = result.trim();
+Transport belts move items continuously and cannot be paused in Factorio. During async export (which spans many ticks), items would shift positions between scan batches, causing duplication or loss in the snapshot.
 
-// Retrieve export data after completion (via getExportData)
-const exportData = await this.getExportData(job_id);
-```
+The solution: during entity scanning, belt item extraction is **skipped**. After all entities are serialized, a dedicated pass scans every belt entity's items in a **single game tick**, then patches the serialized data. This guarantees a point-in-time consistent snapshot of all belt contents.
 
-**Storage**:
-- Exports are stored in controller: `/clusterio/platforms/`
-- Accessible via plugin API: `info.clusterio_plugin.controller.platformStorage`
+### Verification
+
+After import, the system counts every item and fluid across all entities and compares against the export snapshot:
+- Each item type tracked separately (with quality level)
+- Each fluid type tracked separately (with temperature)
+- Discrepancies reported in-game with exact counts
+- Automatic rollback on validation failure
 
 ## Data Format
 
-Exported data is **compressed by default** using deflate compression with base64 encoding to reduce transfer size and storage requirements.
+Export data is **deflate-compressed** by default (70-90% size reduction). The outer envelope:
 
-**Compressed Format** (default):
 ```json
 {
   "compressed": true,
@@ -204,131 +192,64 @@ Exported data is **compressed by default** using deflate compression with base64
   "tick": 1735259234,
   "timestamp": 1737896234000,
   "stats": {
-    "entities": 1234,
-    "items": 56789,
-    "size_bytes": 235678
+    "entities": 1359,
+    "items": 5618,
+    "fluids": 8,
+    "tiles": 4350,
+    "size_bytes": 55000
   },
   "verification": {
-    "item_counts": { "iron-plate": 5000, ... },
-    "fluid_counts": { "water": 50000, ... }
+    "item_counts": { "iron-plate": 500, "copper-plate": 300 },
+    "fluid_counts": { "water": 50000 }
   }
 }
 ```
 
-**Uncompressed JSON Structure** (after decompression):
-```json
-{
-  "schema_version": "1.0.0",
-  "factorio_version": "2.0.12",
-  "export_timestamp": 1735259234,
-  "platform": {
-    "name": "Platform Alpha",
-    "index": 1,
-    "surface_index": 5
-  },
-  "metadata": {
-    "total_entity_count": 1234,
-    "total_item_count": 56789
-  },
-  "entities": [ /* array of entity objects */ ],
-  "verification": {
-    "item_counts": { "iron-plate": 5000, ... },
-    "fluid_counts": { "water": 50000, ... }
-  }
-}
-```
-
-**Compression Benefits**:
-- **Typical reduction**: 70-90% size reduction
-- **Faster transfers**: Less RCON data to transmit
-- **Storage efficiency**: Smaller files on controller
-- **Automatic**: Compression/decompression handled transparently
-
-**Note**: The `verification` field remains uncompressed at the top level to allow transfer validation without decompression.
-
-## Verification
-
-The mod includes comprehensive verification to ensure zero item loss:
-
-1. **Pre-export counting**: All items and fluids are counted and stored in `verification.item_counts` and `verification.fluid_counts`
-2. **Post-import verification**: After import, all items and fluids are recounted and compared against expected values
-3. **Detailed comparison**: Each item type (with quality level) and fluid type (with temperature) is individually verified
-4. **Warning messages**: Any discrepancies are reported in-game with exact item names and count differences
-5. **Quality-aware**: Tracks items with different quality levels separately to prevent quality loss
-
-**How it works**:
-- Export scans every entity: inventories, belts, inserters, items on ground, fluids in tanks/pipes
-- Creates a complete manifest of what should exist
-- Import recreates entities and then rescans to verify nothing was lost
-- Comparison is done item-by-item, not with a simple hash
+The `verification` block stays uncompressed at the top level so the destination instance can validate counts without decompressing the full payload.
 
 ## Development
 
 ### Docker Workflow
 
 ```powershell
-# Pull pre-built images
-docker compose pull
+docker compose pull              # Pull pre-built images
+docker compose up -d             # Start cluster
+docker compose down              # Stop cluster
+docker compose down -v && docker compose up -d   # Clean restart
+```
 
-# Start cluster
-docker compose up -d
+### Hot Reload
 
-# View logs
-docker logs -f surface-export-controller    # Controller logs
-docker logs -f surface-export-host-1        # Host 1 logs
-
-# Restart after config changes
-docker compose restart
-
-# Stop cluster
-docker compose down
-
-# Clean restart (wipe all data)
-docker compose down -v
-docker compose up -d
-
-# Hot reload (fast, no rebuild)
+After modifying plugin or mod code:
+```powershell
 .\tools\patch-and-reset.ps1
 ```
+Patches running instances without a full rebuild (~30 seconds vs 3 minutes).
 
-### VS Code Tasks
+### Integration Tests
 
-The workspace includes helpful tasks for common operations. Access them via:
-- **Command Palette**: `Ctrl+Shift+P` → "Tasks: Run Task"
-- **Terminal Menu**: Terminal → Run Task...
-- **Keyboard**: `Ctrl+Shift+B` for build tasks
+Two test suites verify platform transfer correctness:
 
-**Available Tasks**:
+```powershell
+# Platform roundtrip: export → transfer → import → verify (4 tests)
+.\tests\integration\platform-roundtrip\run-tests.ps1
 
-| Task | Description | Group |
-|------|-------------|-------|
-| **Deploy: Increment Version & Rebuild Cluster** | Full deployment: increment mod version, rebuild images, restart cluster | Build |
-| **Cluster: Show Status** | Display status of all instances and hosts | - |
-| **Cluster: Display Logs** | Show recent logs from all Clusterio containers | - |
-| **Docker: Build Base Image** | Rebuild base image with Factorio + Clusterio + mods | Build |
-| **Docker: Get Admin Token** | Retrieve admin authentication token for Clusterio | - |
-| **Clusterio: Start All Instances** | Start all Factorio server instances | - |
-| **Clusterio: Stop All Instances** | Stop all Factorio server instances | - |
-| **List Transaction Logs** | List all platform export/import transaction logs | - |
-| **Get Latest Transaction Log** | Display the most recent transaction log | - |
-| **Get Transaction Log (Specific)** | Retrieve a specific transaction log by ID (prompts for ID) | - |
-| **Patch and Reset (Hot Reload)** | Hot-reload mod changes without full rebuild | - |
-
-**Quick Actions**:
-```
-Ctrl+Shift+B  → Shows build tasks (Deploy, Build Base Image)
-Ctrl+Shift+P  → "Tasks: Run Task" → Select any task
+# Entity roundtrip: per-entity-type verification (28 tests)
+.\tests\integration\entity-roundtrip\run-tests.ps1
 ```
 
-**Example Workflows**:
+Tests run against the Docker cluster and verify item counts, entity positions, and data integrity.
 
-1. **After Code Changes**: Run "Patch and Reset (Hot Reload)" for quick testing
-2. **Full Deployment**: Run "Deploy: Increment Version & Rebuild Cluster"
-3. **Debugging**: Run "Get Latest Transaction Log" to see export/import details
-4. **Troubleshooting**: Run "Cluster: Display Logs" to check for errors
+### Transaction Logs
 
+Every transfer is logged with phase timing and per-item breakdowns:
 
-**Note:** Run `Initialize-RcShortcuts` in any new PowerShell session to regenerate shortcuts based on current cluster configuration.
+```powershell
+.\tools\list-transaction-logs.ps1      # List all transfers
+.\tools\get-transaction-log.ps1        # Show latest transfer details
+```
+
+Or use VS Code tasks: "List Transaction Logs", "Get Latest Transaction Log".
 
 ### Project Structure
 
@@ -378,17 +299,16 @@ FactorioSurfaceExport/
 ## Troubleshooting
 
 ### Import shows item count warnings
-- This may indicate a mod version mismatch
-- Ensure the same mods are installed on both servers
+Item count discrepancies of ~5-6% are expected due to items in non-scannable locations (e.g., items consumed during the final tick before locking). Large discrepancies may indicate a mod version mismatch between instances.
 
 ### Docker containers won't start
 - Ensure Docker Desktop is running
-- Check that ports are available (8080, 34100-34109, 34200-34209)
+- Check port availability (8080, 34100-34109, 34200-34209)
 - Review logs: `docker compose logs`
-- Check `env/controller.env` configuration
 - Ensure GHCR images are accessible: `docker pull ghcr.io/solarcloud7/clusterio-docker-controller`
 
-
+### Server doesn't tick (headless)
+Set `auto_pause: false` in server settings. Headless servers with no connected players will pause by default, blocking async processing.
 
 ## Contributing
 
@@ -397,25 +317,9 @@ Contributions are welcome! Please:
 1. Follow Factorio Lua style guidelines
 2. Add tests for new features
 3. Update documentation
-4. Ensure zero item loss guarantee is maintained
 
 ## License
 
-MIT License - See LICENSE.md for details
+MIT License - See [LICENSE.md](LICENSE.md) for details.
 
-## Credits
-
-- Built for [Clusterio 2.0](https://github.com/clusterio/clusterio) 
-- Uses Factorio 2.0 Space Age platform API
-
-## Version History
-
-See changelog.txt for detailed version history.
-
-
-## Useful Commands
-### Get all mods versions:
-/c for name, version in pairs(script.active_mods) do game.print(name .. ": " .. version) end
-
-### Get surface_export version
-/c game.print(script.active_mods["surface_export"])
+Built for [Clusterio 2.0](https://github.com/clusterio/clusterio) with Factorio 2.0 Space Age.

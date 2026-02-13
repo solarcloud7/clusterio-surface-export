@@ -8,7 +8,7 @@ A PowerShell module providing common functions for:
 - RCON communication with Clusterio instances
 - Platform cloning for isolated test surfaces
 - Debug file retrieval and parsing
-- Tick stepping for paused games
+- Tick waiting for async operations
 - Test result formatting and reporting
 
 ## Key Features
@@ -32,12 +32,12 @@ Use `Get-SafeProperty` to safely access properties that may not exist (avoids st
 $value = Get-SafeProperty $object "propertyName"  # Returns $null if missing
 ```
 
-### Tick Control
+### Async Wait
 
-For paused games, step ticks to process async operations:
+Wait for async operations to complete (uses `Start-Sleep` under the hood):
 
 ```powershell
-Step-Tick -Instance 1 -Ticks 60 -EnsurePaused
+Step-Tick -Instance 1 -Ticks 60
 ```
 
 ## Exported Functions
@@ -55,10 +55,10 @@ Step-Tick -Instance 1 -Ticks 60 -EnsurePaused
 | `Get-PlatformIndex` | Get platform index by name |
 | `Get-Platforms` | List all platforms |
 
-### Tick Control
+### Async Wait
 | Function | Description |
 |----------|-------------|
-| `Step-Tick` | Step game ticks |
+| `Step-Tick` | Wait for async processing (Start-Sleep) |
 | `Set-GamePaused` | Pause/unpause game |
 
 ### Debug Files

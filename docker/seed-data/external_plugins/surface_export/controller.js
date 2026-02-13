@@ -167,6 +167,39 @@ class ControllerPlugin extends BaseControllerPlugin {
 				// File doesn't exist yet, that's okay
 			}
 
+			// Build summary from transfer state
+			const durationMs = (transfer.completedAt || transfer.failedAt || Date.now()) - transfer.startedAt;
+			const phaseSummary = {};
+			if (transfer.phases) {
+				for (const [name, phase] of Object.entries(transfer.phases)) {
+					if (phase.durationMs !== undefined) {
+						phaseSummary[name + 'Ms'] = phase.durationMs;
+					}
+				}
+			}
+
+			const summary = {
+				result: transfer.status === "completed" ? "SUCCESS" : "FAILED",
+				totalDurationMs: durationMs,
+				totalDurationStr: durationMs >= 1000 ? `${(durationMs / 1000).toFixed(1)}s` : `${durationMs}ms`,
+				phases: phaseSummary,
+				platform: {
+					name: transfer.platformName,
+					source: {
+						instanceId: transfer.sourceInstanceId,
+						instanceName: transfer.sourceInstanceName || null,
+					},
+					destination: {
+						instanceId: transfer.targetInstanceId,
+						instanceName: transfer.targetInstanceName || null,
+					},
+				},
+				payload: transfer.payloadMetrics || null,
+				import: transfer.importMetrics || null,
+				validation: transfer.validationResult || null,
+				error: transfer.error || null,
+			};
+
 			// Add new log
 			allLogs.push({
 				transferId,
@@ -174,13 +207,16 @@ class ControllerPlugin extends BaseControllerPlugin {
 					exportId: transfer.exportId,
 					platformName: transfer.platformName,
 					sourceInstanceId: transfer.sourceInstanceId,
+					sourceInstanceName: transfer.sourceInstanceName || null,
 					targetInstanceId: transfer.targetInstanceId,
+					targetInstanceName: transfer.targetInstanceName || null,
 					status: transfer.status,
 					startedAt: transfer.startedAt,
 					completedAt: transfer.completedAt,
 					failedAt: transfer.failedAt,
 					error: transfer.error,
 				},
+				summary,
 				events,
 				savedAt: Date.now(),
 			});
@@ -197,7 +233,6 @@ class ControllerPlugin extends BaseControllerPlugin {
 			this.logger.error(`Failed to persist transaction log ${transferId}: ${err.message}`);
 		}
 	}
-
 	/**
 	 * Load transaction logs from disk
 	 */
@@ -288,6 +323,23 @@ class ControllerPlugin extends BaseControllerPlugin {
 	}
 
 	/**
+	 * Resolve an instance ID to its display name
+	 * @param {number} instanceId - Instance ID
+	 * @returns {string|null} Instance name or null
+	 */
+	resolveInstanceName(instanceId) {
+		try {
+			const inst = this.controller.instances.get(instanceId);
+			if (inst?.config) {
+				return inst.config.get("instance.name") || null;
+			}
+		} catch (err) {
+			// Ignore lookup errors
+		}
+		return null;
+	}
+
+	/**
 	 * Get specific platform export
 	 * @param {string} exportId - Export ID
 	 * @returns {Object|null} Export data or null if not found
@@ -315,6 +367,36 @@ class ControllerPlugin extends BaseControllerPlugin {
 			// Generate transfer ID
 			const transferId = `transfer_${Date.now()}_${Math.random().toString(36).substring(7)}`;
 
+			// Extract data from stored export for detailed metrics
+			const innerData = exportData.exportData;
+			this.logger.info(`[Transfer Debug] exportData.exportData keys: ${Object.keys(innerData || {}).join(', ')}`);
+			
+			// Compute item/fluid totals from verification data
+			const verification = innerData?.verification || {};
+			const itemCounts = verification.item_counts || {};
+			const fluidCounts = verification.fluid_counts || {};
+			const totalItemCount = Object.values(itemCounts).reduce((sum, c) => sum + c, 0);
+			const totalFluidVolume = Object.values(fluidCounts).reduce((sum, c) => sum + c, 0);
+			const uniqueItemTypes = Object.keys(itemCounts).length;
+			const uniqueFluidTypes = Object.keys(fluidCounts).length;
+			
+			// Capture payload metrics with real data from stored export
+			const payloadMetrics = {
+				isCompressed: !!innerData?.compressed,
+				compressionType: innerData?.compression || 'none',
+				payloadSizeKB: innerData?.payload ? Math.round(innerData.payload.length / 1024 * 10) / 10 : null,
+				entityCount: innerData?.stats?.entity_count || 0,
+				tileCount: innerData?.stats?.tile_count || 0,
+				uniqueItemTypes,
+				totalItemCount,
+				uniqueFluidTypes,
+				totalFluidVolume: Math.round(totalFluidVolume * 10) / 10,
+			};
+			
+			// Resolve instance names
+			const sourceInstanceName = this.resolveInstanceName(exportData.instanceId);
+			const targetInstanceName = this.resolveInstanceName(targetInstanceId);
+
 			// Track transfer state
 			const platformInfo = exportData.exportData?.platform || {};
 			this.activeTransfers.set(transferId, {
@@ -324,40 +406,36 @@ class ControllerPlugin extends BaseControllerPlugin {
 				platformIndex: platformInfo.index || 1,
 				forceName: platformInfo.force || "player",
 				sourceInstanceId: exportData.instanceId,
+				sourceInstanceName,
 				targetInstanceId,
+				targetInstanceName,
 				startedAt: Date.now(),
 				status: "importing",
 			});
 
 			this.logTransactionEvent(transferId, 'transfer_created', 
-				`Transfer created: ${exportData.platformName} (${exportData.instanceId} → ${targetInstanceId})`, {
+				`Transfer created: ${exportData.platformName} (${sourceInstanceName || exportData.instanceId} → ${targetInstanceName || targetInstanceId})`, {
 					platformName: exportData.platformName,
 					sourceInstanceId: exportData.instanceId,
+					sourceInstanceName,
 					targetInstanceId,
+					targetInstanceName,
 					exportId,
 					metrics: {
 						storedDataSizeKB: Math.round((exportData.size || 0) / 1024 * 10) / 10,
 						exportTimestamp: exportData.timestamp,
 						ageMs: Date.now() - exportData.timestamp,
 					},
+					payloadMetrics,
+					sourceVerification: {
+						itemCounts: itemCounts,
+						fluidCounts: fluidCounts,
+					},
 				});
 
 			this.logger.info(`Created transfer ${transferId}: ${exportData.platformName} (${exportData.instanceId} → ${targetInstanceId})`);
 
-			// Debug: Log what's in exportData.exportData
-			const innerData = exportData.exportData;
-			this.logger.info(`[Transfer Debug] exportData.exportData keys: ${Object.keys(innerData || {}).join(', ')}`);
 			this.logger.info(`[Transfer Debug] has_compressed=${!!innerData?.compressed}, has_payload=${!!innerData?.payload}, has_verification=${!!innerData?.verification}`);
-			
-			// Capture payload metrics
-			const payloadMetrics = {
-				isCompressed: !!innerData?.compressed,
-				compressionType: innerData?.compression || 'none',
-				payloadSizeKB: innerData?.payload ? Math.round(innerData.payload.length / 1024 * 10) / 10 : null,
-				entityCount: innerData?.metadata?.total_entity_count || innerData?.verification?.entityCount || 'unknown',
-				itemCount: innerData?.metadata?.total_item_count || 'unknown',
-				fluidVolume: innerData?.metadata?.total_fluid_volume || 'unknown',
-			};
 
 			// Start transmission phase timing
 			this.startPhase(transferId, 'transmission');
@@ -559,6 +637,9 @@ class ControllerPlugin extends BaseControllerPlugin {
 		if (importMetrics) {
 			transfer.importMetrics = importMetrics;
 		}
+		
+		// Store validation result in transfer for summary
+		transfer.validationResult = event.validation || null;
 
 		// Clear validation timeout if set
 		if (transfer.validationTimeout) {

@@ -516,8 +516,8 @@ function New-IsolatedTestSurface {
         Write-Status "Scheduled $($cleanup.deleted) old test surface(s) for deletion" -Type success
     }
     
-    # Step 2: Always step ticks after cleanup to finalize any scheduled deletions
-    Step-Tick -Instance $Instance -Ticks 10 -EnsurePaused | Out-Null
+    # Step 2: Wait briefly for any scheduled deletions to process
+    Start-Sleep -Seconds 1
     
     # Step 3: Generate unique test surface name
     $TestRunId = Get-Date -Format "yyyyMMdd_HHmmss"
@@ -567,8 +567,8 @@ function New-IsolatedTestSurface {
             Write-Status "Clone import job completed" -Type success
         }
     } else {
-        # Fallback: no job_id returned, step a generous number of ticks
-        Step-Tick -Instance $Instance -Ticks 300 -EnsurePaused | Out-Null
+        # Fallback: no job_id returned, wait for processing
+        Start-Sleep -Seconds 5
     }
     
     return $result
@@ -991,11 +991,8 @@ function Wait-ForJob {
     $done = $false
     
     while (-not $done -and ((Get-Date) - $startTime).TotalSeconds -lt $MaxWaitSeconds) {
-        foreach ($inst in $Instances) {
-            Step-Tick -Instance $inst -Ticks 300 -EnsurePaused | Out-Null
-        }
-        
-        Start-Sleep -Milliseconds 1000
+        # Wait for async processing (game ticks continuously on headless server)
+        Start-Sleep -Seconds 1
         
         if ($CheckScript) {
             $result = Invoke-Lua -Instance $Instances[0] -Code $CheckScript

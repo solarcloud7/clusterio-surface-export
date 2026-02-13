@@ -4,6 +4,8 @@
 local Serializer = require("modules/surface_export/core/serializer")
 local Deserializer = require("modules/surface_export/core/deserializer")
 local EntityScanner = require("modules/surface_export/export_scanners/entity-scanner")
+local EntityHandlers = require("modules/surface_export/export_scanners/entity-handlers")
+local InventoryScanner = require("modules/surface_export/export_scanners/inventory-scanner")
 local Verification = require("modules/surface_export/validators/verification")
 local TransferValidation = require("modules/surface_export/validators/transfer-validation")
 local Util = require("modules/surface_export/utils/util")
@@ -17,15 +19,11 @@ local BeltRestoration = require("modules/surface_export/import_phases/belt_resto
 local ActiveStateRestoration = require("modules/surface_export/import_phases/active_state_restoration")
 local TileScanner = require("modules/surface_export/export_scanners/tile_scanner")
 local DebugExport = require("modules/surface_export/utils/debug-export")
-local clusterio_api
+local clusterio_api = require("modules/clusterio/api")
 
 local MAX_IMPORT_SESSIONS = 4
 local MAX_SESSION_AGE_TICKS = 3600  -- ~60 seconds at 60 UPS
 local MAX_TOTAL_CHUNKS = 256
-
-if script.active_mods["clusterio_lib"] then
-  clusterio_api = require("__clusterio_lib__/api")
-end
 
 local AsyncProcessor = {}
 
@@ -261,15 +259,6 @@ function AsyncProcessor.queue_export(platform_index, force_name, requester_name,
     game.print(string.format("[Export] Locked platform %s for stable export...", platform.name), {1, 0.8, 0})
   end
   
-  -- DEBUG: Pause game tick during export for perfectly stable snapshot comparison
-  -- This ensures belt items don't move between scan and debug export
-  local debug_paused_tick = false
-  if DebugExport.is_enabled() and not game.tick_paused then
-    game.tick_paused = true
-    debug_paused_tick = true
-    log("[DebugExport] Game tick PAUSED for stable export snapshot")
-  end
-  
   local entities = surface.find_entities_filtered({})
   
   -- Sort entities for proper placement order (inputs before outputs, etc.)
@@ -290,12 +279,14 @@ function AsyncProcessor.queue_export(platform_index, force_name, requester_name,
     destination_instance_id = destination_instance_id,  -- Transfer destination
     started_tick = game.tick,
     surface = surface,  -- Keep reference for unlock
-    debug_paused_tick = debug_paused_tick,  -- Track if we paused for debug snapshot
     
     -- Export state
     entities = entities,
     total_entities = #entities,
     current_index = 0,
+    -- Belt entities tracked for deferred atomic scan
+    -- Maps serialized entity index → live LuaEntity reference
+    belt_entities = {},
     export_data = {
       platform_name = platform.name,
       force_name = force_name,
@@ -713,15 +704,37 @@ local function process_export_batch(job)
   local start_index = job.current_index + 1
   local end_index = math.min(start_index + batch_size - 1, job.total_entities)
   
+  -- CRITICAL: Tell entity handlers to skip belt item extraction during async scanning.
+  -- Belt items will be captured in a single atomic tick in complete_export_job instead.
+  -- This prevents the "rolling snapshot" problem where items move between belts during
+  -- multi-tick scanning, causing duplicates or missed items.
+  EntityHandlers.skip_belt_items = true
+  
+  -- Belt type categories that need deferred item scanning
+  local belt_categories = {
+    ["transport-belt"] = true,
+    ["underground-belt"] = true,
+    ["splitter"] = true,
+  }
+  
   for i = start_index, end_index do
     local entity = job.entities[i]
     if entity and entity.valid then
       local entity_data = EntityScanner.serialize_entity(entity)
       if entity_data then
         table.insert(job.export_data.entities, entity_data)
+        
+        -- Track belt entities for deferred atomic item scan
+        local category = Util.get_entity_category(entity)
+        if belt_categories[category] then
+          local serialized_index = #job.export_data.entities
+          job.belt_entities[serialized_index] = entity  -- Live LuaEntity reference
+        end
       end
     end
   end
+  
+  EntityHandlers.skip_belt_items = false
   
   job.current_index = end_index
   
@@ -754,7 +767,7 @@ local function process_import_batch(job)
   if not job.tiles_placed then
     if not job.metrics.tiles_started_tick then
       job.metrics.tiles_started_tick = game.tick
-    end
+    ende
   end
   TileRestoration.process(job)
   if job.tiles_placed and not job.metrics.tiles_completed_tick then
@@ -791,20 +804,49 @@ local function complete_export_job(job)
   -- Store completed export with compression
   storage.platform_exports = storage.platform_exports or {}
   
-  -- CRITICAL: Generate verification data from LIVE SCAN of frozen platform
-  -- This captures the true state after freezing, not from serialized data
-  -- The platform is still frozen at this point, so counts are stable
-  local item_counts, fluid_counts
-  if job.surface and job.surface.valid then
-    item_counts = Verification.count_surface_items(job.surface)
-    fluid_counts = Verification.count_surface_fluids(job.surface)
-    log(string.format("[Export] Generated verification from LIVE SCAN of frozen surface"))
-  else
-    -- Fallback to serialized data if surface is somehow invalid
-    item_counts = Verification.count_all_items(job.export_data.entities)
-    fluid_counts = Verification.count_all_fluids(job.export_data.entities)
-    log(string.format("[Export] WARNING: Surface invalid, generated verification from serialized data"))
+  -- ========================================
+  -- ATOMIC BELT ITEM SCAN (single-tick pass)
+  -- ========================================
+  -- During async entity scanning, belt item extraction was SKIPPED to prevent the
+  -- "rolling snapshot" problem: belts can't be deactivated, so items keep moving
+  -- between belts during multi-tick scanning, causing duplicates or missed items.
+  -- 
+  -- Now that all entity structure is serialized, we do a single-tick scan of ALL
+  -- belt entities' transport lines. This gives an atomic, consistent snapshot of
+  -- belt item positions — no items can move between belts within a single tick.
+  -- ========================================
+  local belt_scan_count = 0
+  local belt_item_total = 0
+  for serialized_index, live_entity in pairs(job.belt_entities or {}) do
+    if live_entity and live_entity.valid then
+      local belt_items = InventoryScanner.extract_belt_items(live_entity)
+      local entity_data = job.export_data.entities[serialized_index]
+      if entity_data and entity_data.specific_data then
+        entity_data.specific_data.items = belt_items
+        belt_scan_count = belt_scan_count + 1
+        -- Count items for logging
+        for _, line_data in ipairs(belt_items) do
+          for _ in ipairs(line_data.items or {}) do
+            belt_item_total = belt_item_total + 1
+          end
+        end
+      end
+    else
+      log(string.format("[Belt Scan] WARNING: Belt entity at index %d became invalid before atomic scan",
+        serialized_index))
+    end
   end
+  log(string.format("[Export] Atomic belt scan: %d belts scanned, %d item stacks captured (single tick)",
+    belt_scan_count, belt_item_total))
+  -- ========================================
+  
+  -- CRITICAL: Generate verification data from SERIALIZED entity data
+  -- Now includes the atomically-scanned belt items, so verification counts
+  -- exactly match what will be restored on import (no rolling snapshot drift).
+  local item_counts = Verification.count_all_items(job.export_data.entities)
+  local fluid_counts = Verification.count_all_fluids(job.export_data.entities)
+  log(string.format("[Export] Generated verification from serialized entity data (%d item types, %d fluid types)",
+    table_size(item_counts), table_size(fluid_counts)))
   job.export_data.verification = {
     item_counts = item_counts,
     fluid_counts = fluid_counts
@@ -866,12 +908,6 @@ local function complete_export_job(job)
   if job.destination_instance_id then
     -- This is a transfer export - save for comparison
     DebugExport.export_source_platform(job.export_data, job.platform_name)
-  end
-  
-  -- Restore game tick if we paused it for debug
-  if job.debug_paused_tick then
-    game.tick_paused = false
-    log("[DebugExport] Game tick RESUMED after export snapshot")
   end
   
   -- Notify completion
@@ -1036,10 +1072,15 @@ local function complete_import_job(job)
   job.metrics.circuits_connected = state_result and state_result.circuits_connected or total_circuit_connections
   
   -- FINAL STEP: Restore original active/disabled states
-  -- This must be the LAST step - after all entity configuration is complete.
-  -- Uses frozen_states from export which contains the ORIGINAL state (before freeze).
+  -- For non-transfer imports: activate immediately (no validation step)
+  -- For transfers: DEFER activation until AFTER validation passes
+  --   This prevents machines from processing resources between activation and validation
   local frozen_states = job.frozen_states or {}
-  ActiveStateRestoration.restore(entities_to_create, entity_map, frozen_states)
+  if job.transfer_id then
+    log("[Import] Deferring active state restoration until after validation (transfer mode)")
+  else
+    ActiveStateRestoration.restore(entities_to_create, entity_map, frozen_states)
+  end
   
   log("[Import] Post-processing complete")
   -- ========================================
@@ -1105,21 +1146,31 @@ local function complete_import_job(job)
       duration_seconds = duration_seconds
     }, job.platform_name)
 
-    -- Check if we should keep platform paused for inspection (configurable)
-    -- Check config for pause_on_validation (debug feature)
-    local keep_paused_for_inspection = storage.surface_export_config and storage.surface_export_config.pause_on_validation == true
-    local debug_enabled = DebugExport.is_enabled()
-    
-    log(string.format("[Validation] Decision state: success=%s, keep_paused=%s, debug_enabled=%s",
-      tostring(success), tostring(keep_paused_for_inspection), tostring(debug_enabled)))
-    if storage.surface_export_config then
-      log(string.format("[Validation] Config: debug_mode=%s (type=%s), pause_on_validation=%s (type=%s)",
-        tostring(storage.surface_export_config.debug_mode), type(storage.surface_export_config.debug_mode),
-        tostring(storage.surface_export_config.pause_on_validation), type(storage.surface_export_config.pause_on_validation)))
+    -- Debug export: Always write destination platform data when debug_mode is enabled
+    -- This allows comparing source vs destination regardless of validation pass/fail
+    if job.transfer_id and job.target_surface and job.target_surface.valid then
+      local debug_success, debug_err = pcall(function()
+        if DebugExport.is_enabled() then
+          local scanned_entities = EntityScanner.scan_surface(job.target_surface)
+          local destination_data = {
+            platform_name = job.platform_name,
+            tick = game.tick,
+            entities = scanned_entities,
+            entity_count = #scanned_entities
+          }
+          DebugExport.export_destination_platform(destination_data, job.platform_name)
+        else
+          log("[DebugExport] Skipping destination platform export: debug_mode is not enabled")
+        end
+      end)
+      if not debug_success then
+        log(string.format("[DebugExport] ERROR: Failed to export destination platform: %s", tostring(debug_err)))
+      end
     else
-      log("[Validation] Config: surface_export_config is nil")
+      log(string.format("[DebugExport] Skipping destination platform export: transfer_id=%s, surface_valid=%s",
+        tostring(job.transfer_id), tostring(job.target_surface and job.target_surface.valid)))
     end
-    
+
     if not success then
       game.print(string.format(
         "[Transfer Validation Failed] %s",
@@ -1128,59 +1179,15 @@ local function complete_import_job(job)
       -- Leave platform paused and entities deactivated on validation failure so user can investigate
       log("[Validation] Platform left paused and deactivated due to validation failure")
     else
-      -- Validation passed
-      if keep_paused_for_inspection then
-        -- Keep platform paused and GAME PAUSED for visual inspection
-        -- Note: platform.paused only affects space travel, not entity operation
-        -- Entities are already deactivated (entity.active = false) from import
-        -- But we also pause the game tick for full inspection capability
-        game.tick_paused = true
-        game.print(string.format("[Validation] ✓ Validation passed for platform %s - GAME PAUSED for inspection", 
-          job.platform_name), {0, 1, 0})
-        game.print("[Validation] Entities are DEACTIVATED. Use /resume-platform <name> to unpause game and activate entities", {1, 1, 0})
-        log(string.format("[Validation] Platform %s - game tick PAUSED for inspection after successful validation", job.platform_name))
-        
-        -- Debug export: Scan and write destination platform data for comparison
-        -- Done AFTER game tick paused for a perfectly stable snapshot
-        -- Wrapped in pcall to prevent debug failures from crashing the import
-        if job.transfer_id and job.target_surface and job.target_surface.valid then
-          local debug_success, debug_err = pcall(function()
-            if DebugExport.is_enabled() then
-              -- Re-scan the imported platform to compare against source
-              -- Uses same EntityScanner as the export for consistency
-              local scanned_entities = EntityScanner.scan_surface(job.target_surface)
-              local destination_data = {
-                platform_name = job.platform_name,
-                tick = game.tick,
-                entities = scanned_entities,
-                entity_count = #scanned_entities
-              }
-              DebugExport.export_destination_platform(destination_data, job.platform_name)
-            else
-              log("[DebugExport] Skipping destination platform export: debug_mode is not enabled")
-            end
-          end)
-          if not debug_success then
-            log(string.format("[DebugExport] ERROR: Failed to export destination platform: %s", tostring(debug_err)))
-          end
-        else
-          log(string.format("[DebugExport] Skipping destination platform export: transfer_id=%s, surface_valid=%s",
-            tostring(job.transfer_id), tostring(job.target_surface and job.target_surface.valid)))
-        end
-      else
-        log(string.format("[Validation] Skipping debug export: keep_paused_for_inspection=%s (requires pause_on_validation=true)",
-          tostring(keep_paused_for_inspection)))
-        -- Auto-unpause platform and activate all entities
-        if job.target_platform and job.target_platform.valid then
-          job.target_platform.paused = false
-          log(string.format("[Validation] Platform %s UNPAUSED after successful validation", job.platform_name))
-        end
-        if job.target_surface and job.target_surface.valid then
-          local activated = SurfaceLock.activate_all(job.target_surface)
-          game.print(string.format("[Validation] ✓ Validation passed - activated %d entities on platform %s!", 
-            activated, job.platform_name), {0, 1, 0})
-        end
+      -- Validation passed — auto-unpause platform and activate all entities
+      -- Use ActiveStateRestoration to restore original active states (not blanket activate_all)
+      if job.target_platform and job.target_platform.valid then
+        job.target_platform.paused = false
+        log(string.format("[Validation] Platform %s UNPAUSED after successful validation", job.platform_name))
       end
+      ActiveStateRestoration.restore(job.entities_to_create or {}, job.entity_map or {}, job.frozen_states or {})
+      game.print(string.format("[Validation] ✓ Validation passed - entities activated on platform %s!", 
+        job.platform_name), {0, 1, 0})
     end
   end
   

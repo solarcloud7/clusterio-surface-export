@@ -52,9 +52,9 @@ docker logs surface-export-controller 2>&1 | grep "surface_export"
 | `/lock-platform <index>` | Lock platform (hide from players) |
 | `/unlock-platform <name>` | Unlock a locked platform |
 | `/lock-status` | Show lock status of all platforms |
-| `/resume-platform <name>` | Resume a locked platform |
+| `/resume-platform <name>` | Unpause a paused platform |
 | `/plugin-import-file <file> <name>` | Import from file via plugin |
-| `/step-tick <count>` | Debug: advance N async ticks |
+| `/step-tick` | Debug: unpause game tick |
 | `/test-entity <json>` | Debug: test single entity import |
 
 ## CLI Commands
@@ -111,7 +111,6 @@ remote.call("surface_export", "run_tests")
 | `surface_export.max_concurrent_jobs` | number | 3 | Max parallel async jobs |
 | `surface_export.show_progress` | boolean | true | Show progress messages in game |
 | `surface_export.debug_mode` | boolean | false | Enable debug logging |
-| `surface_export.pause_on_validation` | boolean | false | Pause game during validation |
 
 **Controller config:**
 | Field | Type | Default | Description |

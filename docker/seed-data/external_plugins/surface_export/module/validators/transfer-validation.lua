@@ -90,9 +90,13 @@ function TransferValidation.validate_import(surface, expected_verification)
     local consumer_item_counts = {}
     local total_item_counts = {}
     
+    -- Track entity type breakdown for detailed stats
+    local entity_type_counts = {}
+    
     for _, entity in ipairs(entities) do
         if entity.valid then
             local entity_type = entity.type
+            entity_type_counts[entity_type] = (entity_type_counts[entity_type] or 0) + 1
             local is_storage = STORAGE_ENTITY_TYPES[entity_type]
             local is_consumer = CONSUMER_ENTITY_TYPES[entity_type]
             
@@ -259,11 +263,45 @@ function TransferValidation.validate_import(surface, expected_verification)
         mismatch_details = table.concat(details_parts, " | ")
     end
 
+    -- Compute summary totals for detailed stats
+    local total_expected_items = 0
+    local total_actual_items = 0
+    for _, count in pairs(expected_verification.item_counts or {}) do
+        total_expected_items = total_expected_items + count
+    end
+    for _, count in pairs(total_item_counts) do
+        total_actual_items = total_actual_items + count
+    end
+    
+    local total_expected_fluids = 0
+    local total_actual_fluids = 0
+    for _, vol in pairs(expected_verification.fluid_counts or {}) do
+        total_expected_fluids = total_expected_fluids + vol
+    end
+    for _, vol in pairs(actual_fluid_counts) do
+        total_actual_fluids = total_actual_fluids + vol
+    end
+
     local validation_result = {
         itemCountMatch = item_match,
         fluidCountMatch = fluid_match,
         entityCount = #entities,
-        mismatchDetails = mismatch_details
+        mismatchDetails = mismatch_details,
+        -- Detailed counts for transaction log
+        expectedItemCounts = expected_verification.item_counts or {},
+        actualItemCounts = total_item_counts,
+        expectedFluidCounts = expected_verification.fluid_counts or {},
+        actualFluidCounts = actual_fluid_counts,
+        entityTypeBreakdown = entity_type_counts,
+        -- Summary totals
+        itemTypesExpected = table_size(expected_verification.item_counts or {}),
+        itemTypesActual = table_size(total_item_counts),
+        fluidTypesExpected = table_size(expected_verification.fluid_counts or {}),
+        fluidTypesActual = table_size(actual_fluid_counts),
+        totalExpectedItems = total_expected_items,
+        totalActualItems = total_actual_items,
+        totalExpectedFluids = total_expected_fluids,
+        totalActualFluids = total_actual_fluids,
     }
 
     local success = item_match and fluid_match

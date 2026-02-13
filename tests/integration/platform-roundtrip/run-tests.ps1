@@ -98,11 +98,6 @@ if ($debugCheck -ne "enabled") {
 }
 Write-Status "Debug mode enabled" -Type success
 
-# Enable pause_on_validation on destination (required for debug_destination_platform file)
-Write-Host "  Enabling pause_on_validation on destination..." -ForegroundColor Gray
-Invoke-Lua -Instance $destInstance -Code "storage.surface_export_config = storage.surface_export_config or {}; storage.surface_export_config.pause_on_validation = true; rcon.print('ok')" | Out-Null
-Write-Status "pause_on_validation enabled on destination" -Type success
-
 if (-not $SkipTransfer) {
     # Step 2: Clean up old test surfaces on destination instance
     Write-Host "  Cleaning up old test surfaces on destination..." -ForegroundColor Gray
@@ -110,7 +105,7 @@ if (-not $SkipTransfer) {
     if ($dstCleanup.deleted -gt 0) {
         Write-Status "Scheduled $($dstCleanup.deleted) dest old surface(s) for deletion" -Type success
     }
-    Step-Tick -Instance $destInstance -Ticks 10 -EnsurePaused | Out-Null
+    Start-Sleep -Seconds 1
     
     # Step 3: Clear previous debug files
     Write-Host "  Clearing previous debug files..." -ForegroundColor Gray
@@ -148,10 +143,8 @@ if (-not $SkipTransfer) {
     $found = $false
     
     while (-not $found -and ((Get-Date) - $startTime).TotalSeconds -lt $maxWait) {
-        # Step ticks on both instances
-        Step-Tick -Instance $sourceInstance -Ticks 60 -EnsurePaused | Out-Null
-        Step-Tick -Instance $destInstance -Ticks 60 -EnsurePaused | Out-Null
-        Start-Sleep -Milliseconds 500
+        # Wait for async processing to complete
+        Start-Sleep -Seconds 1
         
         # Check for import result debug file (always generated on transfer completion)
         $resultFiles = @(Get-DebugFiles -Instance $destInstance -Container $destContainer -Pattern "debug_import_result_*.json")

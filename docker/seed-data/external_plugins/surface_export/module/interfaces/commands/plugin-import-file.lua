@@ -3,10 +3,7 @@
 
 local Base = require("modules/surface_export/interfaces/commands/base")
 
-local clusterio_api
-if script.active_mods["clusterio_lib"] then
-  clusterio_api = require("__clusterio_lib__/api")
-end
+local clusterio_api = require("modules/clusterio/api")
 
 Base.command("plugin-import-file",
   "Request plugin to import a platform from file (usage: /plugin-import-file filename [new_name])",

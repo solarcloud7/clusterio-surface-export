@@ -228,7 +228,7 @@ The transfer will continue automatically:
 ---
 
 ### `/resume-platform`
-Resume a paused platform after inspection.
+Unpause a platform's space travel.
 
 **Usage:**
 ```
@@ -246,15 +246,12 @@ Resume a paused platform after inspection.
 
 **Output:**
 ```
-✓ Game tick UNPAUSED
 ✓ Platform 'test' space travel RESUMED
-✓ Activated 47 entities on platform
 ```
 
 **Notes:**
-- Unpauses game tick if paused
-- Unpauses platform space travel
-- Reactivates all entities on platform
+- Unpauses platform space travel (`platform.paused = false`)
+- Does not affect entity active states — use `/unlock-platform` for that
 
 ---
 
@@ -370,32 +367,22 @@ Lock status for platform 'Test Platform':
 ## Debug Commands
 
 ### `/step-tick`
-Advance the game by N ticks (for debugging paused imports).
+Unpause the game tick (debug utility).
 
 **Usage:**
 ```
-/step-tick [count]
-```
-
-**Parameters:**
-- `count` (optional): Number of ticks to step (1-60). Default: 1
-
-**Examples:**
-```
-/step-tick                    # Step 1 tick
-/step-tick 10                 # Step 10 ticks
-/step-tick 60                 # Step 60 ticks (1 second)
+/step-tick
 ```
 
 **Output:**
 ```
-Stepping 10 tick(s) from tick 12345...
+Game tick unpaused
 ```
 
 **Notes:**
-- Maximum 60 ticks per command (1 second)
-- Only works when game is paused (`game.tick_paused = true`)
-- Useful for debugging async import processing
+- Sets `game.tick_paused = false`
+- Useful if the game gets stuck in a paused state during debugging
+- No longer steps individual ticks — simply resumes continuous ticking
 
 ---
 

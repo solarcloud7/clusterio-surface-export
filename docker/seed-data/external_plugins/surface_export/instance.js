@@ -70,7 +70,6 @@ class InstancePlugin extends BaseInstancePlugin {
 			const maxConcurrentJobs = this.instance.config.get("surface_export.max_concurrent_jobs");
 			const showProgress = this.instance.config.get("surface_export.show_progress");
 			const debugMode = this.instance.config.get("surface_export.debug_mode");
-			const pauseOnValidation = this.instance.config.get("surface_export.pause_on_validation");
 			
 			const configScript = `/sc ` +
 				`if remote.interfaces["surface_export"] and remote.interfaces["surface_export"]["configure"] then ` +
@@ -78,13 +77,12 @@ class InstancePlugin extends BaseInstancePlugin {
 				`batch_size=${batchSize}, ` +
 				`max_concurrent_jobs=${maxConcurrentJobs}, ` +
 				`show_progress=${showProgress}, ` +
-				`debug_mode=${debugMode}, ` +
-				`pause_on_validation=${pauseOnValidation}` +
+				`debug_mode=${debugMode}` +
 				`}) ` +
 				`end`;
 			
 			await this.instance.sendRcon(configScript, true);
-			this.logger.info(`Configuration sent to Lua: batch_size=${batchSize}, max_concurrent_jobs=${maxConcurrentJobs}, show_progress=${showProgress}, debug_mode=${debugMode}, pause_on_validation=${pauseOnValidation}`);
+			this.logger.info(`Configuration sent to Lua: batch_size=${batchSize}, max_concurrent_jobs=${maxConcurrentJobs}, show_progress=${showProgress}, debug_mode=${debugMode}`);
 		} catch (err) {
 			this.logger.warn(`Failed to send configuration to Lua: ${err.message}`);
 		}

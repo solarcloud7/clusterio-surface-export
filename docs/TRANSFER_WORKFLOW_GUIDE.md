@@ -7,8 +7,43 @@ Complete reference for platform transfers between Factorio instances.
 A transfer moves a space platform from one Clusterio instance to another. The process has 5 phases:
 
 ```
-Lock → Export → Transfer → Import → Validate/Cleanup
+Lock → Export → Transfer → Import → Validate/Activate
 ```
+
+### Entity Lifecycle (Critical Invariant)
+
+The core guarantee of the transfer system is **item/fluid conservation**. This is enforced by keeping entities deactivated throughout the entire pipeline so machines never process resources during transfer:
+
+```
+  Source Instance                          Destination Instance
+  ┌─────────────────────┐                  ┌──────────────────────────────┐
+  │ 1. LOCK             │                  │                              │
+  │    Deactivate all    │                  │                              │
+  │    entities          │                  │                              │
+  │    Record frozen     │                  │                              │
+  │    states            │                  │                              │
+  │                      │                  │                              │
+  │ 2. EXPORT            │                  │                              │
+  │    Scan entities     │   ──transfer──►  │ 3. IMPORT                    │
+  │    (still frozen)    │                  │    Create entities INACTIVE  │
+  │    Count items ──────│──── expected ──►  │    Restore inventories       │
+  │    (stable snapshot) │                  │    Restore fluids, belts     │
+  │                      │                  │    Restore connections       │
+  │                      │                  │    (entities STILL inactive) │
+  │                      │                  │                              │
+  │                      │                  │ 4. VALIDATE                  │
+  │                      │                  │    Count items (stable ──────│── compare
+  │                      │                  │    snapshot, nothing active) │
+  │                      │                  │                              │
+  │                      │  ◄── success ──  │ 5. ACTIVATE                  │
+  │ Delete source        │                  │    Restore original active   │
+  │ platform             │                  │    states from frozen_states │
+  │                      │  ◄── failure ──  │    (or leave deactivated     │
+  │ Unlock & reactivate  │                  │     on failure)              │
+  └─────────────────────┘                  └──────────────────────────────┘
+```
+
+**Why this matters**: If entities were activated before validation, machines would consume inputs and produce outputs during the ticks between activation and counting. A furnace smelting iron ore into iron plates during validation would cause a mismatch (iron-ore lost, iron-plate gained) even though nothing was actually wrong.
 
 **Automatic transfer** (recommended): The `/transfer-platform` command or `surface-export transfer` CLI command handles all phases automatically with rollback on failure.
 
@@ -41,13 +76,15 @@ Use `npx clusterioctl surface-export list` to find available export IDs.
 
 1. **Lock** — `SurfaceLock.lock_platform()`:
    - Complete all in-flight cargo pods (capture items)
-   - Freeze all entities (`entity.active = false`), recording original states
+   - Freeze all entities (`entity.active = false`), recording original states in `frozen_states`
    - Hide surface from players
+   - **From this point, no entity on the platform processes any resources**
 
 2. **Export** — `AsyncProcessor.queue_export()`:
    - Scan all entities across multiple ticks (batch_size per tick)
    - Scan tiles
-   - Generate live verification counts
+   - Generate live verification counts (items/fluids) from **frozen surface** (stable snapshot)
+   - Include `frozen_states` in export data for restoring original active states on import
    - Compress (deflate + base64)
    - Store in `storage.platform_exports`
    - Send `surface_export_complete` IPC to Node.js
@@ -61,15 +98,18 @@ Use `npx clusterioctl surface-export list` to find available export IDs.
 4. **Import** — Destination `instance.js` → RCON:
    - Sends export data to Factorio in chunks (100KB per chunk, hybrid JSON escaping)
    - `import_platform_chunk` reassembles and queues import job
-   - 7-phase import process (tiles → hub mapping → entities → fluids → belts → state → activate)
+   - 7-phase import process:
+     1. Tiles → 2. Hub mapping → 3. Entity creation (deactivated) → 4. Fluids → 5. Belts → 6. State/connections → 7. *(activation deferred for transfers)*
+   - **Entities are created deactivated** and remain deactivated through all restoration phases
    - Platform paused during import to prevent fuel consumption
 
-5. **Validate & Cleanup** — `controller.js`:
+5. **Validate & Activate** — `complete_import_job()` → `controller.js`:
+   - **Validation runs while entities are still deactivated** — counts are stable
    - Destination runs `TransferValidation.validate_import()`:
      - Compares live item/fluid counts against export verification
      - Asymmetric tolerances (small losses OK, gains always flagged)
-   - **On success**: Controller sends `DeleteSourcePlatformRequest` → source platform destroyed → transfer complete
-   - **On failure**: Controller sends `UnlockSourcePlatformRequest` → source platform unlocked, entities reactivated → rollback complete
+   - **On success**: `ActiveStateRestoration` restores original active states from `frozen_states` → controller sends `DeleteSourcePlatformRequest` → source platform destroyed → transfer complete
+   - **On failure**: Entities left deactivated for investigation → controller sends `UnlockSourcePlatformRequest` → source platform unlocked and reactivated → rollback complete
    - 120-second validation timeout triggers synthetic failure (rollback)
 
 ## Manual Transfer Steps
@@ -170,7 +210,8 @@ Place all tiles first — entities need foundation.
 
 ### Phase 3: Entity Creation (Batched)
 - Processes `batch_size` entities per tick
-- Each entity: create → immediately deactivate → restore inventories (NOT fluids yet)
+- Each entity: create → **immediately deactivate** (`entity.active = false`) → restore recipe → restore inventories (NOT fluids yet)
+- Deactivation before inventory restoration is critical: prevents machines from consuming items the instant a recipe is set
 - Skip `space-platform-hub` (handled by Phase 2)
 - Sort order: rails → underground-belt inputs → underground-belt outputs → pipe-to-ground → rest
 
@@ -192,10 +233,13 @@ Place all tiles first — entities need foundation.
 - Circuit connections (red/green wires)
 - Power connections (copper cables between electric poles)
 
-### Phase 7: Active State Restoration
-- Restores `entity.active` from `frozen_states`
-- This is the "wake up" signal — machines start processing, inserters start moving
-- For transfers: platform is still paused (use `/resume-platform` when ready)
+### Phase 7: Active State Restoration (Conditional)
+- **Non-transfer imports** (file import, manual import): Runs immediately — restores `entity.active` from `frozen_states`, machines start processing
+- **Transfer imports**: **DEFERRED** — entities stay deactivated through validation. Activation happens only after validation passes:
+  - **Success**: `ActiveStateRestoration.restore()` called with original `frozen_states` — respects which entities were originally active vs disabled, platform unpaused
+  - **Failure**: Entities left deactivated for investigation. Source platform rolled back.
+
+> **Design principle**: Entities must never process resources between counting (export verification) and re-counting (import validation). The deactivated state is the mechanism that guarantees item/fluid conservation.
 
 ## Validation Rules
 
@@ -259,9 +303,9 @@ Common causes:
 - Belt items shifted (belt restoration should be single-tick — this indicates a bug)
 
 ### Validation fails — items gained
-Should never happen. Indicates:
-- Entity state restoration added unexpected items
-- Platform hub auto-created with starter pack items (should be handled by hub mapping)
+Should not happen with the current architecture (entities are deactivated during validation, belt items scanned atomically). If it does occur, investigate:
+- Was `ActiveStateRestoration` called before validation? (Bug — activation must be deferred for transfers)
+- Belt items being double-counted (atomic scan should prevent this)
 
 ### "Platform name already exists"
 Import auto-appends `#N` suffix on conflict. The platform will be created as e.g., `"My Platform #2"`.

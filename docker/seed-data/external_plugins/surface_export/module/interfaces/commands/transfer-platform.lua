@@ -5,10 +5,7 @@ local Base = require("modules/surface_export/interfaces/commands/base")
 local AsyncProcessor = require("modules/surface_export/core/async-processor")
 local SurfaceLock = require("modules/surface_export/utils/surface-lock")
 
-local clusterio_api
-if script.active_mods["clusterio_lib"] then
-  clusterio_api = require("__clusterio_lib__/api")
-end
+local clusterio_api = require("modules/clusterio/api")
 
 Base.admin_command("transfer-platform",
   "Transfer a platform to another instance (usage: /transfer-platform <platform_index> <destination_instance_id>)",

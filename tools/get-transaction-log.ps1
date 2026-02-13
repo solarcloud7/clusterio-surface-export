@@ -31,7 +31,7 @@ if ($TransferId -eq "latest") {
 try {
     # Read transaction log file directly from controller container
     # Note: We do NOT use 2>&1 here because unrelated Docker warnings on stderr would corrupt the JSON
-    $result = docker exec surface-export-controller cat /clusterio/database/surface_export_transaction_logs.json
+    $result = docker exec surface-export-controller cat /clusterio/data/database/surface_export_transaction_logs.json
 
     if ($LASTEXITCODE -ne 0) {
         Write-Host "No transaction logs found yet. Transfer a platform first." -ForegroundColor Yellow
@@ -90,8 +90,11 @@ try {
         Write-Host "Transfer Information:" -ForegroundColor Green
         Write-Host "  Platform:    $($info.platformName)" -ForegroundColor White
         Write-Host "  Export ID:   $($info.exportId)" -ForegroundColor White
-        Write-Host "  Source:      Instance $($info.sourceInstanceId)" -ForegroundColor White
-        Write-Host "  Destination: Instance $($info.targetInstanceId)" -ForegroundColor White
+        
+        $sourceName = if ($info.PSObject.Properties['sourceInstanceName'] -and $info.sourceInstanceName) { " ($($info.sourceInstanceName))" } else { "" }
+        $destName = if ($info.PSObject.Properties['targetInstanceName'] -and $info.targetInstanceName) { " ($($info.targetInstanceName))" } else { "" }
+        Write-Host "  Source:      Instance $($info.sourceInstanceId)$sourceName" -ForegroundColor White
+        Write-Host "  Destination: Instance $($info.targetInstanceId)$destName" -ForegroundColor White
         Write-Host "  Status:      $($info.status)" -ForegroundColor $(if ($info.status -eq "completed") { "Green" } elseif ($info.status -eq "failed") { "Red" } else { "Yellow" })
         
         if ($info.PSObject.Properties['startedAt'] -and $info.startedAt) {
@@ -188,7 +191,9 @@ try {
                 if ($pm.PSObject.Properties['compressionType']) { $parts += "type=$($pm.compressionType)" }
                 if ($pm.PSObject.Properties['payloadSizeKB']) { $parts += "size=$($pm.payloadSizeKB)KB" }
                 if ($pm.PSObject.Properties['entityCount']) { $parts += "entities=$($pm.entityCount)" }
-                if ($pm.PSObject.Properties['itemCount']) { $parts += "items=$($pm.itemCount)" }
+                if ($pm.PSObject.Properties['tileCount']) { $parts += "tiles=$($pm.tileCount)" }
+                if ($pm.PSObject.Properties['totalItemCount']) { $parts += "items=$($pm.totalItemCount) ($($pm.uniqueItemTypes) types)" }
+                if ($pm.PSObject.Properties['totalFluidVolume']) { $parts += "fluids=$($pm.totalFluidVolume) ($($pm.uniqueFluidTypes) types)" }
                 Write-Host ($parts -join ", ") -ForegroundColor Magenta
             }
             
@@ -245,14 +250,180 @@ try {
                 Write-Host "    Error: $($event.error)" -ForegroundColor Red
             }
             if ($event.PSObject.Properties['validation'] -and $event.validation) {
-                Write-Host "    Validation:" -ForegroundColor Yellow
-                $event.validation | ConvertTo-Json -Compress | Write-Host -ForegroundColor Yellow
+                $v = $event.validation
+                Write-Host "    Validation: " -NoNewline -ForegroundColor Yellow
+                Write-Host "items=$($v.itemCountMatch) fluids=$($v.fluidCountMatch) entities=$($v.entityCount)" -ForegroundColor Yellow
+                if ($v.PSObject.Properties['mismatchDetails'] -and $v.mismatchDetails) {
+                    Write-Host "    Mismatch: $($v.mismatchDetails)" -ForegroundColor Red
+                }
             }
         }
         
         Write-Host "$("`u{2500}" * 80)" -ForegroundColor DarkGray
     } else {
         Write-Host "No events found for this transfer." -ForegroundColor Yellow
+    }
+
+    # Display summary section if present
+    if ($log.PSObject.Properties['summary'] -and $log.summary) {
+        $s = $log.summary
+        Write-Host "`n=== Transfer Summary ===" -ForegroundColor Cyan
+        
+        $resultColor = if ($s.result -eq "SUCCESS") { "Green" } else { "Red" }
+        $resultIcon = if ($s.result -eq "SUCCESS") { "`u{2705}" } else { "`u{274C}" }
+        Write-Host "$resultIcon Result: $($s.result)" -ForegroundColor $resultColor
+        Write-Host "  Duration: $($s.totalDurationStr) ($($s.totalDurationMs)ms)" -ForegroundColor White
+        
+        # Phase timing
+        if ($s.PSObject.Properties['phases'] -and $s.phases) {
+            Write-Host "`n  Phase Timing:" -ForegroundColor Green
+            $phases = $s.phases
+            foreach ($prop in $phases.PSObject.Properties) {
+                $phaseName = $prop.Name -replace 'Ms$', ''
+                $ms = $prop.Value
+                $bar = ""
+                if ($s.totalDurationMs -gt 0) {
+                    $pct = [Math]::Round($ms / $s.totalDurationMs * 100, 1)
+                    $barLen = [Math]::Max(1, [Math]::Min(40, [Math]::Round($pct / 100 * 40)))
+                    $bar = "`u{2588}" * $barLen
+                    Write-Host "    $($phaseName.PadRight(14)) " -NoNewline -ForegroundColor White
+                    Write-Host "$bar " -NoNewline -ForegroundColor Cyan
+                    Write-Host "${ms}ms ($pct%)" -ForegroundColor DarkGray
+                } else {
+                    Write-Host "    $($phaseName.PadRight(14)) ${ms}ms" -ForegroundColor White
+                }
+            }
+        }
+        
+        # Platform info
+        if ($s.PSObject.Properties['platform'] -and $s.platform) {
+            $p = $s.platform
+            Write-Host "`n  Platform:" -ForegroundColor Green
+            Write-Host "    Name: $($p.name)" -ForegroundColor White
+            if ($p.source) {
+                $srcLabel = if ($p.source.instanceName) { "$($p.source.instanceName) (#$($p.source.instanceId))" } else { "Instance $($p.source.instanceId)" }
+                Write-Host "    Source: $srcLabel" -ForegroundColor White
+            }
+            if ($p.destination) {
+                $dstLabel = if ($p.destination.instanceName) { "$($p.destination.instanceName) (#$($p.destination.instanceId))" } else { "Instance $($p.destination.instanceId)" }
+                Write-Host "    Destination: $dstLabel" -ForegroundColor White
+            }
+        }
+        
+        # Payload info
+        if ($s.PSObject.Properties['payload'] -and $s.payload) {
+            $pl = $s.payload
+            Write-Host "`n  Payload:" -ForegroundColor Green
+            if ($pl.payloadSizeKB) { Write-Host "    Size: $($pl.payloadSizeKB) KB (compressed=$($pl.isCompressed), type=$($pl.compressionType))" -ForegroundColor White }
+            if ($pl.entityCount) { Write-Host "    Entities: $($pl.entityCount)" -ForegroundColor White }
+            if ($pl.tileCount) { Write-Host "    Tiles: $($pl.tileCount)" -ForegroundColor White }
+            if ($pl.uniqueItemTypes) { Write-Host "    Items: $($pl.totalItemCount) total ($($pl.uniqueItemTypes) types)" -ForegroundColor White }
+            if ($pl.uniqueFluidTypes) { Write-Host "    Fluids: $($pl.totalFluidVolume) total ($($pl.uniqueFluidTypes) types)" -ForegroundColor White }
+        }
+        
+        # Import metrics
+        if ($s.PSObject.Properties['import'] -and $s.import) {
+            $im = $s.import
+            Write-Host "`n  Import Processing:" -ForegroundColor Green
+            Write-Host "    Duration: $($im.total_ticks) ticks ($($im.total_ms)ms)" -ForegroundColor White
+            Write-Host "    Entities: $($im.entities_created) created, $($im.entities_failed) failed" -ForegroundColor White
+            Write-Host "    Tiles: $($im.tiles_placed) placed" -ForegroundColor White
+            Write-Host "    Belt Items: $($im.belt_items_restored) restored" -ForegroundColor White
+            Write-Host "    Fluids: $($im.fluids_restored) restored" -ForegroundColor White
+            Write-Host "    Circuits: $($im.circuits_connected) connected" -ForegroundColor White
+        }
+        
+        # Validation details
+        if ($s.PSObject.Properties['validation'] -and $s.validation) {
+            $v = $s.validation
+            Write-Host "`n  Validation:" -ForegroundColor Green
+            $itemIcon = if ($v.itemCountMatch) { "`u{2705}" } else { "`u{274C}" }
+            $fluidIcon = if ($v.fluidCountMatch) { "`u{2705}" } else { "`u{274C}" }
+            Write-Host "    $itemIcon Items: match=$($v.itemCountMatch)" -ForegroundColor $(if ($v.itemCountMatch) { "Green" } else { "Red" })
+            Write-Host "    $fluidIcon Fluids: match=$($v.fluidCountMatch)" -ForegroundColor $(if ($v.fluidCountMatch) { "Green" } else { "Red" })
+            Write-Host "    Entities: $($v.entityCount)" -ForegroundColor White
+            
+            # Show summary totals if available
+            if ($v.PSObject.Properties['totalExpectedItems'] -and $v.PSObject.Properties['totalActualItems']) {
+                Write-Host "    Item Totals: expected=$($v.totalExpectedItems), actual=$($v.totalActualItems)" -ForegroundColor White
+            }
+            if ($v.PSObject.Properties['totalExpectedFluids'] -and $v.PSObject.Properties['totalActualFluids']) {
+                Write-Host "    Fluid Totals: expected=$([Math]::Round($v.totalExpectedFluids, 1)), actual=$([Math]::Round($v.totalActualFluids, 1))" -ForegroundColor White
+            }
+            
+            # Entity type breakdown
+            if ($v.PSObject.Properties['entityTypeBreakdown'] -and $v.entityTypeBreakdown) {
+                Write-Host "`n  Entity Type Breakdown:" -ForegroundColor Green
+                $entityTypes = @{}
+                foreach ($prop in $v.entityTypeBreakdown.PSObject.Properties) {
+                    $entityTypes[$prop.Name] = $prop.Value
+                }
+                $sorted = $entityTypes.GetEnumerator() | Sort-Object -Property Value -Descending
+                foreach ($entry in $sorted) {
+                    Write-Host "    $($entry.Value.ToString().PadLeft(5)) $($entry.Key)" -ForegroundColor White
+                }
+            }
+            
+            # Item counts breakdown (top items by count)
+            if ($v.PSObject.Properties['expectedItemCounts'] -and $v.expectedItemCounts) {
+                Write-Host "`n  Item Inventory (expected vs actual):" -ForegroundColor Green
+                Write-Host "    $("Item".PadRight(40)) $("Expected".PadLeft(10)) $("Actual".PadLeft(10)) $("Diff".PadLeft(8))" -ForegroundColor DarkGray
+                Write-Host "    $("-" * 70)" -ForegroundColor DarkGray
+                
+                $itemEntries = @{}
+                foreach ($prop in $v.expectedItemCounts.PSObject.Properties) {
+                    $itemEntries[$prop.Name] = @{ Expected = $prop.Value; Actual = 0 }
+                }
+                if ($v.PSObject.Properties['actualItemCounts'] -and $v.actualItemCounts) {
+                    foreach ($prop in $v.actualItemCounts.PSObject.Properties) {
+                        if ($itemEntries.ContainsKey($prop.Name)) {
+                            $itemEntries[$prop.Name].Actual = $prop.Value
+                        } else {
+                            $itemEntries[$prop.Name] = @{ Expected = 0; Actual = $prop.Value }
+                        }
+                    }
+                }
+                
+                $sortedItems = $itemEntries.GetEnumerator() | Sort-Object { $_.Value.Expected } -Descending
+                foreach ($entry in $sortedItems) {
+                    $diff = $entry.Value.Actual - $entry.Value.Expected
+                    $diffStr = if ($diff -eq 0) { "  OK" } elseif ($diff -gt 0) { "+$diff" } else { "$diff" }
+                    $diffColor = if ($diff -eq 0) { "Green" } elseif ($diff -gt 0) { "Red" } else { "Yellow" }
+                    Write-Host "    $($entry.Key.PadRight(40)) $($entry.Value.Expected.ToString().PadLeft(10)) $($entry.Value.Actual.ToString().PadLeft(10)) " -NoNewline -ForegroundColor White
+                    Write-Host "$($diffStr.PadLeft(8))" -ForegroundColor $diffColor
+                }
+            }
+            
+            # Fluid counts breakdown
+            if ($v.PSObject.Properties['expectedFluidCounts'] -and $v.expectedFluidCounts) {
+                Write-Host "`n  Fluid Inventory (expected vs actual):" -ForegroundColor Green
+                Write-Host "    $("Fluid".PadRight(40)) $("Expected".PadLeft(12)) $("Actual".PadLeft(12))" -ForegroundColor DarkGray
+                Write-Host "    $("-" * 66)" -ForegroundColor DarkGray
+                
+                $fluidEntries = @{}
+                foreach ($prop in $v.expectedFluidCounts.PSObject.Properties) {
+                    $fluidEntries[$prop.Name] = @{ Expected = $prop.Value; Actual = 0 }
+                }
+                if ($v.PSObject.Properties['actualFluidCounts'] -and $v.actualFluidCounts) {
+                    foreach ($prop in $v.actualFluidCounts.PSObject.Properties) {
+                        if ($fluidEntries.ContainsKey($prop.Name)) {
+                            $fluidEntries[$prop.Name].Actual = $prop.Value
+                        } else {
+                            $fluidEntries[$prop.Name] = @{ Expected = 0; Actual = $prop.Value }
+                        }
+                    }
+                }
+                
+                $sortedFluids = $fluidEntries.GetEnumerator() | Sort-Object { $_.Value.Expected } -Descending
+                foreach ($entry in $sortedFluids) {
+                    Write-Host "    $($entry.Key.PadRight(40)) $([Math]::Round($entry.Value.Expected, 1).ToString().PadLeft(12)) $([Math]::Round($entry.Value.Actual, 1).ToString().PadLeft(12))" -ForegroundColor White
+                }
+            }
+        }
+        
+        if ($s.PSObject.Properties['error'] -and $s.error) {
+            Write-Host "`n  Error: $($s.error)" -ForegroundColor Red
+        }
     }
 
     Write-Host ""

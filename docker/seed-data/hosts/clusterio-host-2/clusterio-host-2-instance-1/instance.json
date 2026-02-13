@@ -12,7 +12,7 @@
 		},
 		"require_user_verification": true,
 		"allow_commands": "admins-only",
-		"auto_pause": true,
+		"auto_pause": false,
 		"only_admins_can_pause_the_game": true,
 		"autosave_interval": 10,
 		"autosave_slots": 5,
@@ -23,5 +23,6 @@
 	"player_auth.load_plugin": false,
 	"research_sync.load_plugin": false,
 	"statistics_exporter.load_plugin": true,
-	"subspace_storage.load_plugin": false
+	"subspace_storage.load_plugin": false,
+	"surface_export.debug_mode": true
 }

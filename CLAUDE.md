@@ -26,7 +26,7 @@ This project provides tools for exporting and importing Factorio Space Age platf
 - Host 2: `clusterio-host-2` → Instance: `clusterio-host-2-instance-1` (ports 34200-34209)
 - Runtime data in Docker volumes (not bind-mounted directories)
 - Seed data convention from [solarcloud7/clusterio-docker](https://github.com/solarcloud7/clusterio-docker)
-- **Seeding must be idempotent**: Controller and hosts should seed only once. Currently requires `docker compose down -v` for clean restarts due to a base image bug (see Pitfall #9)
+- **Seeding is idempotent**: Fixed in base image — `seed-instances.sh` checks if instance exists before creating, controller writes `.seed-complete` marker, hosts detect token desync (see Pitfall #9). Still recommend `docker compose down -v` for cleanest restarts.
 
 ## RCON Commands (PowerShell Profile Aliases)
 
@@ -279,6 +279,53 @@ Platform indices are **per-force** and **1-based**. Use `/list-platforms` to fin
 **Cause**: Each host auto-assigns game port from its `host.factorio_port_range`. Previously all hosts defaulted to the same range (34100-34199), so all first instances got port 34100.
 **Fix**: Fixed in base image — `host-entrypoint.sh` now derives port range from HOST_ID (host N → `34N00-34N99`). Docker-compose port mappings must match. Requires `docker compose down -v` + image rebuild since port range is set on first host configuration only.
 
+### 12. Clusterio API Require Path (CRITICAL)
+**Symptom**: "Clusterio API not available - aborting" when running `/transfer-platform`, or `clusterio_api` is nil
+**Cause**: Lua code uses `require("__clusterio_lib__/api")` with `script.active_mods["clusterio_lib"]` guard. This is **wrong** — `clusterio_lib` is NOT a Factorio mod. Clusterio injects its API via **save-patching** under `modules/`, not as a registered mod. `script.active_mods["clusterio_lib"]` will always be `nil`.
+**Fix**: Use `require("modules/clusterio/api")` — this is the save-patched module path. See [Clusterio plugin docs](https://github.com/clusterio/clusterio/blob/master/docs/writing-plugins.md).
+```lua
+-- WRONG (Factorio mod path — clusterio_lib is not a mod):
+if script.active_mods["clusterio_lib"] then
+  clusterio_api = require("__clusterio_lib__/api")
+end
+
+-- CORRECT (save-patched module path):
+local clusterio_api = require("modules/clusterio/api")
+```
+**Key Concept**: Clusterio has two Lua injection mechanisms:
+- **Save-patching** (`modules/`): Plugin modules injected into saves at instance start. Use `require("modules/...")`
+- **Factorio mod** (`__clusterio_lib__`): A real Factorio mod that would need to be in the mod pack. NOT used by save-patched plugins.
+
+### 13. Debug Mode Lost After Save Reset
+**Symptom**: Integration tests fail with "Debug mode not enabled on source instance" after patch-and-reset
+**Cause**: `debug_mode` is stored in `storage.surface_export_config`, which lives in the save file. When saves are wiped (by `patch-and-reset.ps1`), the config is gone.
+**Fix**: `on_init()` in `control.lua` now defaults `debug_mode = true` for fresh saves:
+```lua
+storage.surface_export_config = storage.surface_export_config or { debug_mode = true }
+```
+If the default was added after the current save was created, you need either:
+- A `patch-and-reset` (since the default only runs on `on_init`, which only fires for fresh saves)
+- Or manual enable: `rc11 "/sc remote.call('surface_export', 'configure', {debug_mode = true})"`
+
+### 14. Instance 2 "Platform Hasn't Been Built Yet"
+**Symptom**: Connecting to instance 2 shows "space platform hasn't been built yet" for spikedoom08, `/list-platforms` shows 0 entities
+**Cause**: Instance 2 uses a **minimal seed save** (`test2.zip`) that has a platform stub in save metadata but no physical space platform hub entity. The surface doesn't actually exist.
+**Expected behavior**: Instance 2 is the **import target**. Integration tests clone from the fully-built "test" platform on host 1 (1359 entities) and transfer it to host 2. The empty spikedoom08 is not used for exports.
+
+### 15. Entity Activation Before Validation (Historical Bug, Fixed)
+**Symptom**: Transfer validation fails with "Item mismatches: iron-plate: GAINED items — expected 590, got 600"
+**Cause**: `ActiveStateRestoration.restore()` was called as Phase 7 of import (before validation), which re-activated machines. In the ticks between activation and item counting, furnaces processed iron ore → iron plate, causing a net gain that triggered validation failure.
+**Fix**: For **transfers only**, Phase 7 (activation) is deferred until after validation passes. Entities stay deactivated through all restoration phases and validation. Activation happens via `ActiveStateRestoration.restore()` using `frozen_states` only after `TransferValidation.validate_import()` succeeds. On failure, entities are left deactivated for investigation.
+**Key files**: `async-processor.lua` (`complete_import_job` function), `active_state_restoration.lua`
+**See**: [TRANSFER_WORKFLOW_GUIDE.md](docker/seed-data/external_plugins/surface_export/docs/TRANSFER_WORKFLOW_GUIDE.md) — "Entity Lifecycle (Critical Invariant)" section
+
+### 16. Verification Counts From Live Scan vs Serialized Data (CRITICAL — Fixed)
+**Symptom**: Transfer validation fails with "GAINED items" across many item types (iron-plate, copper-cable, piercing-rounds-magazine, etc.). Gains are a fraction of belt item totals.
+**Cause**: Export verification used `Verification.count_surface_items()` (live scan) AFTER entity scanning completed across multiple ticks. **Belt items can't be deactivated** — they keep moving on locked platforms. During the multi-tick export, items move between belts causing a "rolling snapshot" effect: an item on belt A captured in tick 1 may move to belt B captured in tick 5 → double-counted in serialized data. Conversely, items can move from unscanned to already-scanned belts and be missed. The net result is the serialized data doesn't match the live surface state at any single point in time.
+**Fix (v2 — Atomic Belt Scan)**: Belt item extraction is now **deferred** during async entity scanning. Entity structure (position, direction, type, belt_to_ground_type, etc.) is still captured async per-tick, but `extract_belt_items()` is skipped (controlled by `EntityHandlers.skip_belt_items` flag). When all entities are scanned, `complete_export_job` does a single-tick atomic pass over all tracked belt entities, calling `extract_belt_items()` and patching the serialized data. This gives a consistent snapshot: no items can move between belts within a single tick. Verification is then generated from this consistent serialized data.
+**Key files**: `entity-handlers.lua` (`skip_belt_items` flag on transport-belt/underground-belt/splitter handlers), `async-processor.lua` (`process_export_batch` sets flag + tracks belt entities, `complete_export_job` atomic belt scan block before verification)
+**Previous approach (v1)**: Used `Verification.count_all_items()` from serialized data for verification (self-consistent but inaccurate). This masked the problem — verification matched import, but both were based on inconsistent belt data.
+
 ## Architecture Overview
 
 ### Core Packages (`/packages/`)
@@ -333,6 +380,9 @@ Key built-in plugins: global_chat, research_sync, statistics_exporter, player_au
 - RCON protocol for server communication
 - JSON serialization for data exchange
 - Lua modules located in `/packages/host/modules/` and `/packages/host/lua/`
+- **Clusterio API path**: Always `require("modules/clusterio/api")` for save-patched modules (see Pitfall #12)
+- **IPC from Lua→Node**: `clusterio_api.send_json("channel_name", data_table)` — plugin listens via `server.handle("channel_name", handler)`
+- **IPC from Node→Lua**: `this.sendRcon("/sc ...")` to execute Lua via RCON
 
 ## Code Style and Conventions
 

@@ -23,16 +23,12 @@ local function configure(config)
   if config.debug_mode ~= nil then
     storage.surface_export_config.debug_mode = config.debug_mode
   end
-  if config.pause_on_validation ~= nil then
-    storage.surface_export_config.pause_on_validation = config.pause_on_validation
-  end
   
-  log(string.format("[FactorioSurfaceExport] Configuration updated: batch_size=%s, max_concurrent_jobs=%s, show_progress=%s, debug_mode=%s, pause_on_validation=%s",
+  log(string.format("[FactorioSurfaceExport] Configuration updated: batch_size=%s, max_concurrent_jobs=%s, show_progress=%s, debug_mode=%s",
     config.batch_size or "unchanged",
     config.max_concurrent_jobs or "unchanged",
     tostring(config.show_progress),
-    tostring(config.debug_mode),
-    tostring(config.pause_on_validation)))
+    tostring(config.debug_mode)))
 end
 
 return configure

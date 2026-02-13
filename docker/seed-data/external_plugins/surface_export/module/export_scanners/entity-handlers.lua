@@ -6,6 +6,10 @@ local Util = require("modules/surface_export/utils/util")
 
 local EntityHandlers = {}
 
+-- Flag: When true, belt handlers skip item extraction (for deferred atomic belt scan)
+-- Set by AsyncProcessor during multi-tick export, cleared in complete_export_job
+EntityHandlers.skip_belt_items = false
+
 --- Main dispatcher for entity-specific data extraction
 --- @param entity LuaEntity: The entity to handle
 --- @param category string: Entity category (from Util.get_entity_category)
@@ -125,14 +129,16 @@ end
 --- Transport belt handler
 EntityHandlers["transport-belt"] = function(entity)
   return {
-    items = InventoryScanner.extract_belt_items(entity)
+    -- Belt items are deferred to atomic scan pass when skip_belt_items is set
+    items = EntityHandlers.skip_belt_items and {} or InventoryScanner.extract_belt_items(entity)
   }
 end
 
 --- Underground belt handler
 EntityHandlers["underground-belt"] = function(entity)
   local data = {
-    items = InventoryScanner.extract_belt_items(entity),
+    -- Belt items are deferred to atomic scan pass when skip_belt_items is set
+    items = EntityHandlers.skip_belt_items and {} or InventoryScanner.extract_belt_items(entity),
     belt_to_ground_type = entity.belt_to_ground_type  -- "input" or "output"
   }
 
@@ -147,7 +153,8 @@ end
 --- Splitter handler
 EntityHandlers["splitter"] = function(entity)
   local data = {
-    items = InventoryScanner.extract_belt_items(entity)
+    -- Belt items are deferred to atomic scan pass when skip_belt_items is set
+    items = EntityHandlers.skip_belt_items and {} or InventoryScanner.extract_belt_items(entity)
   }
 
   -- Filter settings

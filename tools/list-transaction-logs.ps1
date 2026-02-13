@@ -15,7 +15,7 @@ Write-Host "Showing up to last 10 transfers`n" -ForegroundColor Yellow
 
 try {
     # Read the transaction log file directly from the controller container
-    $result = docker exec surface-export-controller cat /clusterio/database/surface_export_transaction_logs.json 2>&1
+    $result = docker exec surface-export-controller cat /clusterio/data/database/surface_export_transaction_logs.json 2>&1
 
     if ($LASTEXITCODE -ne 0) {
         Write-Host "No transaction logs found yet." -ForegroundColor Yellow
@@ -61,7 +61,10 @@ try {
         Write-Host "$timestamp " -NoNewline -ForegroundColor White
         Write-Host "| " -NoNewline -ForegroundColor DarkGray
         Write-Host "$($info.platformName) " -NoNewline -ForegroundColor Cyan
-        Write-Host "($($info.sourceInstanceId) → $($info.targetInstanceId)) " -NoNewline -ForegroundColor White
+        
+        $srcLabel = if ($info.PSObject.Properties['sourceInstanceName'] -and $info.sourceInstanceName) { $info.sourceInstanceName } else { $info.sourceInstanceId }
+        $dstLabel = if ($info.PSObject.Properties['targetInstanceName'] -and $info.targetInstanceName) { $info.targetInstanceName } else { $info.targetInstanceId }
+        Write-Host "($srcLabel → $dstLabel) " -NoNewline -ForegroundColor White
         Write-Host "| " -NoNewline -ForegroundColor DarkGray
         Write-Host "$($info.status) " -NoNewline -ForegroundColor $statusColor
         Write-Host "| " -NoNewline -ForegroundColor DarkGray

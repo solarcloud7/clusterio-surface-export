@@ -25,6 +25,7 @@ local function initialize_storage()
 	storage.platform_exports = storage.platform_exports or {}
 	storage.pending_platform_imports = storage.pending_platform_imports or {}
 	storage.surface_export = storage.surface_export or {}
+	storage.surface_export_config = storage.surface_export_config or { debug_mode = true }
 	AsyncProcessor.init()
 end
 
@@ -65,13 +66,6 @@ SurfaceExportModule.events = {
 	-- Process async import/export jobs every tick
 	[e.on_tick] = function()
 		AsyncProcessor.process_tick()
-
-		-- Check for step-tick target (re-pause after stepping)
-		if storage.step_tick_target and game.tick >= storage.step_tick_target then
-			game.tick_paused = true
-			game.print(string.format("[Debug] Paused at tick %d", game.tick), {0.5, 1, 0.5})
-			storage.step_tick_target = nil
-		end
 	end,
 
 	-- Clusterio custom events

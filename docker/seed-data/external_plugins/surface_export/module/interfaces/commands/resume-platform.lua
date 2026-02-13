@@ -1,11 +1,11 @@
 -- Command: /resume-platform
--- Resume a paused platform after inspection
+-- Resume a platform after failed validation or manual inspection
 
 local Base = require("modules/surface_export/interfaces/commands/base")
 local AsyncProcessor = require("modules/surface_export/core/async-processor")
 
 Base.admin_command("resume-platform",
-  "Resume a paused platform after inspection (usage: /resume-platform <platform_name_or_index>)",
+  "Resume a platform after failed validation (usage: /resume-platform <platform_name_or_index>)",
   function(cmd, ctx)
     local param = ctx.param
     if not param or param == "" then
@@ -22,12 +22,6 @@ Base.admin_command("resume-platform",
       ctx.print(string.format("Platform '%s' not found", param))
       ctx.print("Use /list-platforms to see available platforms")
       return
-    end
-
-    -- Unpause the game tick (if paused for inspection)
-    if game.tick_paused then
-      game.tick_paused = false
-      ctx.print("✓ Game tick UNPAUSED")
     end
 
     -- Unpause the platform (space travel)

@@ -72,13 +72,7 @@ module.exports.plugin = {
 		[`${PLUGIN_NAME}.debug_mode`]: {
 			description: "Enable debug mode - exports JSON comparison files for transfer validation",
 			type: "boolean",
-			initialValue: false,
-			optional: true,
-		},
-		[`${PLUGIN_NAME}.pause_on_validation`]: {
-			description: "Pause game after successful validation for manual inspection (debug feature)",
-			type: "boolean",
-			initialValue: false,
+			initialValue: true,
 			optional: true,
 		},
 	},

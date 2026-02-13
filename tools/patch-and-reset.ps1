@@ -10,19 +10,18 @@ if ($Help) {
 Patch and Reset Instances
 ==========================
 
-Hot-reloads plugin code changes and restarts instances.
+Hot-reloads plugin code changes and resets instances to seed save without rebuilding containers.
 
 Usage:
     .\patch-and-reset.ps1
 
 This script:
 1. Stops Factorio instances (keeps controller running)
-2. Restarts instances - Clusterio save-patches fresh Lua module code into existing save files
-3. Save data (platforms, world state) is preserved across restarts
+2. Resets save files to seed saves (required to apply Lua code changes)
+3. Restarts instances (picks up plugin code changes from docker/seed-data/external_plugins/surface_export)
 
-Note: Clusterio re-patches ALL module/ Lua files into the save zip on every instance start.
-      The patch number is incremented, triggering on_server_startup for re-initialization.
-      No need to delete saves — only stop and restart.
+Note: Save reset is REQUIRED because Lua code is embedded in save files via save-patching.
+      Without reset, old embedded script.dat prevents Lua code updates from taking effect.
 "@
     exit 0
 }
@@ -71,27 +70,93 @@ Write-Host "✓ Controller running" -ForegroundColor Green
 
 # Stop instances (use instance names, not numeric IDs which don't match)
 Write-Host ""
+$ctlConfig = "--config=/clusterio/tokens/config-control.json"
+
 Write-Host "Stopping Factorio instances..." -ForegroundColor Yellow
-docker exec surface-export-controller npx clusterioctl instance stop "clusterio-host-1-instance-1" 2>$null
-docker exec surface-export-controller npx clusterioctl instance stop "clusterio-host-2-instance-1" 2>$null
+docker exec surface-export-controller npx clusterioctl $ctlConfig instance stop "clusterio-host-1-instance-1" 2>$null
+docker exec surface-export-controller npx clusterioctl $ctlConfig instance stop "clusterio-host-2-instance-1" 2>$null
 Start-Sleep -Seconds 2
 Write-Host "✓ Instances stopped" -ForegroundColor Green
 
 # Reset saves (ALWAYS required to apply Lua code changes)
 Write-Host ""
-Write-Host "Resetting instance saves..." -ForegroundColor Yellow
+Write-Host "Resetting instance saves to seed saves..." -ForegroundColor Yellow
 
-# IMPORTANT: Clusterio re-patches Lua module code into save files on every instance start.
-# We do NOT need to delete saves — the save-patcher replaces all module/ Lua files in the
-# save zip and increments the patch number, which triggers re-initialization at runtime.
-# Saves are preserved so test platforms and world state persist across hot-reloads.
-Write-Host "  → Saves preserved (Clusterio save-patches fresh Lua on instance start)" -ForegroundColor Cyan
+# Load save names from .env file
+$envPath = "docker/.env"
+$instance1SaveName = "test.zip"  # Default
+$instance2SaveName = "MinSeed.zip"  # Default
+
+if (Test-Path $envPath) {
+    Get-Content $envPath | ForEach-Object {
+        if ($_ -match '^INSTANCE1_SAVE_NAME=(.+)$') {
+            $instance1SaveName = $matches[1]
+        }
+        if ($_ -match '^INSTANCE2_SAVE_NAME=(.+)$') {
+            $instance2SaveName = $matches[1]
+        }
+    }
+}
+
+# IMPORTANT: Clusterio stores instance data under /clusterio/data/instances/
+# Lua module code is embedded in save files via save-patching during instance start.
+# To apply Lua code changes, we MUST delete old saves and re-upload the seed saves
+# so Clusterio re-patches them with the updated module code.
+
+# Instance 1 - Delete old saves and re-upload seed save
+$inst1SavePath = "/clusterio/data/instances/clusterio-host-1-instance-1/saves"
+docker exec surface-export-host-1 sh -c "rm -f $inst1SavePath/*.zip" 2>$null
+if ($LASTEXITCODE -eq 0) {
+    Write-Host "  ✓ Cleared instance 1 saves" -ForegroundColor Green
+} else {
+    Write-Host "  ✗ Failed to clear instance 1 saves" -ForegroundColor Red
+}
+$inst1SeedSave = "/clusterio/seed-data/hosts/clusterio-host-1/clusterio-host-1-instance-1/test1.zip"
+docker exec surface-export-controller npx clusterioctl $ctlConfig --log-level error instance save upload "clusterio-host-1-instance-1" $inst1SeedSave 2>$null
+if ($LASTEXITCODE -eq 0) {
+    Write-Host "  ✓ Re-uploaded seed save for instance 1 (test1.zip)" -ForegroundColor Green
+} else {
+    Write-Host "  ✗ Failed to upload seed save for instance 1" -ForegroundColor Red
+}
+
+# Instance 2 - Delete old saves and re-upload seed save
+$inst2SavePath = "/clusterio/data/instances/clusterio-host-2-instance-1/saves"
+docker exec surface-export-host-2 sh -c "rm -f $inst2SavePath/*.zip" 2>$null
+if ($LASTEXITCODE -eq 0) {
+    Write-Host "  ✓ Cleared instance 2 saves" -ForegroundColor Green
+} else {
+    Write-Host "  ✗ Failed to clear instance 2 saves" -ForegroundColor Red
+}
+$inst2SeedSave = "/clusterio/seed-data/hosts/clusterio-host-2/clusterio-host-2-instance-1/test2.zip"
+docker exec surface-export-controller npx clusterioctl $ctlConfig --log-level error instance save upload "clusterio-host-2-instance-1" $inst2SeedSave 2>$null
+if ($LASTEXITCODE -eq 0) {
+    Write-Host "  ✓ Re-uploaded seed save for instance 2 (test2.zip)" -ForegroundColor Green
+} else {
+    Write-Host "  ✗ Failed to upload seed save for instance 2" -ForegroundColor Red
+}
+
+Write-Host "  → Instances will re-patch seed saves with updated Lua code on start" -ForegroundColor Cyan
+
+# Ensure auto_pause is disabled (headless servers must tick continuously for async processing)
+Write-Host ""
+Write-Host "Disabling auto_pause on instances..." -ForegroundColor Yellow
+$settingsBase = @{ auto_pause = $false; only_admins_can_pause_the_game = $true; autosave_interval = 10; autosave_slots = 5; non_blocking_saving = $true }
+
+$inst1Settings = $settingsBase.Clone(); $inst1Settings["name"] = "instance 1"
+$inst2Settings = $settingsBase.Clone(); $inst2Settings["name"] = "instance 2"
+
+$inst1Json = ($inst1Settings | ConvertTo-Json -Compress)
+$inst2Json = ($inst2Settings | ConvertTo-Json -Compress)
+
+docker exec surface-export-controller npx clusterioctl $ctlConfig instance config set "clusterio-host-1-instance-1" "factorio.settings" $inst1Json 2>$null
+docker exec surface-export-controller npx clusterioctl $ctlConfig instance config set "clusterio-host-2-instance-1" "factorio.settings" $inst2Json 2>$null
+Write-Host "✓ auto_pause disabled" -ForegroundColor Green
 
 # Start instances
 Write-Host ""
 Write-Host "Starting instances (loading patched plugin code)..." -ForegroundColor Yellow
-docker exec surface-export-controller npx clusterioctl instance start "clusterio-host-1-instance-1"
-docker exec surface-export-controller npx clusterioctl instance start "clusterio-host-2-instance-1"
+docker exec surface-export-controller npx clusterioctl $ctlConfig instance start "clusterio-host-1-instance-1"
+docker exec surface-export-controller npx clusterioctl $ctlConfig instance start "clusterio-host-2-instance-1"
 Start-Sleep -Seconds 3
 Write-Host "✓ Instances started" -ForegroundColor Green
 Write-Host ""
