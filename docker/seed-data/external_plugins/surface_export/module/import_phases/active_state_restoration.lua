@@ -61,6 +61,8 @@ function ActiveStateRestoration.restore(entities_to_create, entity_map, frozen_s
     local activated_count = 0
     local kept_inactive_count = 0
     local skipped_count = 0
+    local held_items_restored = 0
+    local held_items_failed = 0
     
     for _, entity_data in ipairs(entities_to_create) do
         local entity = entity_map[entity_data.entity_id]
@@ -94,6 +96,29 @@ function ActiveStateRestoration.restore(entities_to_create, entity_map, frozen_s
                 entity.active = true
                 activated_count = activated_count + 1
             end
+            
+            -- Retry inserter held_stack restoration AFTER reactivation
+            -- held_stack.set_stack() silently fails on deactivated inserters
+            if entity.type == "inserter" 
+               and entity_data.specific_data 
+               and entity_data.specific_data.held_item 
+               and entity.held_stack then
+                local held = entity_data.specific_data.held_item
+                if not entity.held_stack.valid_for_read then
+                    local ok, err = pcall(function()
+                        entity.held_stack.set_stack(held)
+                    end)
+                    if ok and entity.held_stack.valid_for_read then
+                        held_items_restored = held_items_restored + (held.count or 1)
+                    else
+                        held_items_failed = held_items_failed + (held.count or 1)
+                        if not ok then
+                            log(string.format("[Import] Failed to restore held item '%s' x%d for inserter: %s",
+                                held.name or "?", held.count or 0, tostring(err)))
+                        end
+                    end
+                end
+            end
         else
             -- Entity was inactive before export - keep it inactive
             if entity.active then
@@ -105,8 +130,8 @@ function ActiveStateRestoration.restore(entities_to_create, entity_map, frozen_s
         ::continue::
     end
     
-    log(string.format("[Import] Active state restoration complete: %d activated, %d kept inactive, %d skipped",
-        activated_count, kept_inactive_count, skipped_count))    
+    log(string.format("[Import] Active state restoration complete: %d activated, %d kept inactive, %d skipped, held items: %d restored / %d failed",
+        activated_count, kept_inactive_count, skipped_count, held_items_restored, held_items_failed))    
     
     if activated_count > 0 then
         game.print(string.format("[Import] Activated %d entities (restored to original state)", activated_count), {0, 1, 0})

@@ -226,34 +226,41 @@ function InventoryScanner.extract_belt_items(entity)
 
   local lines = {}
 
-  -- Transport belts have 2 transport lines (left and right lanes)
-  for line_index = 1, 2 do
-    local line = entity.get_transport_line(line_index)
-    if line and line.valid then
-      -- Use get_detailed_contents() to get exact positions (Factorio 2.0)
-      -- Returns array of {stack: LuaItemStack, position: float, unique_id: uint32}
-      local detailed = line.get_detailed_contents()
-      
-      local items = {}
-      for _, item_data in ipairs(detailed) do
-        -- item_data.stack is a LuaItemStack, access its properties
-        local stack = item_data.stack
-        if stack and stack.valid_for_read then
-          table.insert(items, {
-            name = stack.name,
-            position = item_data.position,  -- CRITICAL: float 0.0-1.0 along belt
-            count = stack.count,            -- Stack size (1-4 in 2.0)
-            quality = stack.quality and stack.quality.name or "normal"
-          })
-        end
-      end
-      
-      if #items > 0 then
-        table.insert(lines, {
-          line = line_index,
-          items = items
+  -- Transport lines vary by belt type:
+  --   transport-belt: 2 lines (left, right)
+  --   underground-belt: 4 lines (left, right, left_underground, right_underground)
+  --   splitter: up to 8 lines (primary + secondary for each side)
+  -- We iterate until get_transport_line returns nil.
+  local max_lines = 8  -- safe upper bound
+  for line_index = 1, max_lines do
+    local ok, line = pcall(function() return entity.get_transport_line(line_index) end)
+    if not ok or not line or not line.valid then
+      break  -- no more transport lines
+    end
+
+    -- Use get_detailed_contents() to get exact positions (Factorio 2.0)
+    -- Returns array of {stack: LuaItemStack, position: float, unique_id: uint32}
+    local detailed = line.get_detailed_contents()
+    
+    local items = {}
+    for _, item_data in ipairs(detailed) do
+      -- item_data.stack is a LuaItemStack, access its properties
+      local stack = item_data.stack
+      if stack and stack.valid_for_read then
+        table.insert(items, {
+          name = stack.name,
+          position = item_data.position,  -- CRITICAL: float 0.0-1.0 along belt
+          count = stack.count,            -- Stack size (1-4 in 2.0)
+          quality = stack.quality and stack.quality.name or "normal"
         })
       end
+    end
+    
+    if #items > 0 then
+      table.insert(lines, {
+        line = line_index,
+        items = items
+      })
     end
   end
 

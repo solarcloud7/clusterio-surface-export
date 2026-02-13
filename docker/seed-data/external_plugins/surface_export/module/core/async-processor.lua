@@ -767,7 +767,7 @@ local function process_import_batch(job)
   if not job.tiles_placed then
     if not job.metrics.tiles_started_tick then
       job.metrics.tiles_started_tick = game.tick
-    ende
+    end
   end
   TileRestoration.process(job)
   if job.tiles_placed and not job.metrics.tiles_completed_tick then
@@ -1028,10 +1028,14 @@ local function complete_import_job(job)
   -- POST-PROCESSING: Restore fluids, belts, connections, control behavior, filters
   -- These must be done AFTER all entities are created
   -- ========================================
-  log("[Import] Starting post-processing (fluids, belts, control behavior, filters, connections)...")
+  log("[Import] Starting post-processing (hub inventories, fluids, belts, control behavior, filters, connections)...")
   
   local entity_map = job.entity_map or {}
   local entities_to_create = job.entities_to_create or {}
+  
+  -- Step 0: Restore hub inventories (DEFERRED from platform_hub_mapping)
+  -- The hub's inventory size scales with cargo bays, which are now placed.
+  PlatformHubMapping.restore_hub_inventories(job)
   
   -- Step 0a: Restore fluids (Network-aware optimization for Factorio 2.0)
   job.metrics.fluids_started_tick = game.tick
@@ -1188,6 +1192,98 @@ local function complete_import_job(job)
       ActiveStateRestoration.restore(job.entities_to_create or {}, job.entity_map or {}, job.frozen_states or {})
       game.print(string.format("[Validation] ✓ Validation passed - entities activated on platform %s!", 
         job.platform_name), {0, 1, 0})
+      
+      -- ========================================
+      -- ITEM LOSS ANALYSIS: Per-entity-type breakdown (run AFTER active state restoration
+      -- so inserter held items are counted correctly)
+      -- ========================================
+      if result.totalExpectedItems and result.totalActualItems then
+        -- Re-count actual items now that entities are active and held items are restored
+        local expected_by_type = {}
+        for _, entity_data in ipairs(entities_to_create) do
+          local etype = entity_data.type or entity_data.name or "unknown"
+          if entity_data.specific_data then
+            if entity_data.specific_data.inventories then
+              for _, inv_data in ipairs(entity_data.specific_data.inventories) do
+                if inv_data.items then
+                  for _, item in ipairs(inv_data.items) do
+                    expected_by_type[etype] = (expected_by_type[etype] or 0) + item.count
+                  end
+                end
+              end
+            end
+            if entity_data.specific_data.items then
+              for _, line_data in ipairs(entity_data.specific_data.items) do
+                if line_data.items then
+                  for _, item in ipairs(line_data.items) do
+                    expected_by_type[etype] = (expected_by_type[etype] or 0) + item.count
+                  end
+                end
+              end
+            end
+            if entity_data.specific_data.held_item then
+              expected_by_type[etype] = (expected_by_type[etype] or 0) + entity_data.specific_data.held_item.count
+            end
+          end
+        end
+        
+        local actual_by_type = {}
+        local total_actual = 0
+        local live_entities = job.target_surface.find_entities_filtered({})
+        for _, entity in ipairs(live_entities) do
+          if entity.valid then
+            local etype = entity.type
+            local invs = InventoryScanner.extract_all_inventories(entity)
+            local inv_totals = InventoryScanner.count_all_items(invs)
+            for _, count in pairs(inv_totals) do
+              actual_by_type[etype] = (actual_by_type[etype] or 0) + count
+              total_actual = total_actual + count
+            end
+            if etype == "transport-belt" or etype == "underground-belt" or etype == "splitter" then
+              local belt_lines = InventoryScanner.extract_belt_items(entity)
+              for _, line_data in ipairs(belt_lines) do
+                if line_data.items then
+                  for _, item in ipairs(line_data.items) do
+                    actual_by_type[etype] = (actual_by_type[etype] or 0) + item.count
+                    total_actual = total_actual + item.count
+                  end
+                end
+              end
+            end
+            if etype == "inserter" then
+              local held = InventoryScanner.extract_inserter_held_item(entity)
+              if held then
+                actual_by_type[etype] = (actual_by_type[etype] or 0) + held.count
+                total_actual = total_actual + held.count
+              end
+            end
+          end
+        end
+        
+        local total_expected = result.totalExpectedItems
+        local total_loss = total_expected - total_actual
+        if total_loss ~= 0 then
+          log(string.format("[Loss Analysis] Post-activation item delta: %+d items (expected=%d, actual=%d)",
+            -total_loss, total_expected, total_actual))
+          
+          local all_types = {}
+          for t, _ in pairs(expected_by_type) do all_types[t] = true end
+          for t, _ in pairs(actual_by_type) do all_types[t] = true end
+          
+          for etype, _ in pairs(all_types) do
+            local exp = expected_by_type[etype] or 0
+            local act = actual_by_type[etype] or 0
+            local diff = exp - act
+            if diff ~= 0 then
+              log(string.format("[Loss Analysis]   %-30s expected=%d actual=%d diff=%+d",
+                etype, exp, act, -diff))
+            end
+          end
+        else
+          log(string.format("[Loss Analysis] Post-activation: ZERO item loss (expected=%d, actual=%d)", total_expected, total_actual))
+        end
+      end
+      -- ========================================
     end
   end
   

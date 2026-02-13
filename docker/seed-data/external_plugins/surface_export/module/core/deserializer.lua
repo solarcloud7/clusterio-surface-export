@@ -768,7 +768,17 @@ function Deserializer.restore_inventories(entity, entity_data)
 
   -- Restore inserter held item
   if entity_data.specific_data.held_item and entity.held_stack then
-    entity.held_stack.set_stack(entity_data.specific_data.held_item)
+    local held = entity_data.specific_data.held_item
+    local ok, err = pcall(function()
+      entity.held_stack.set_stack(held)
+    end)
+    if not ok then
+      log(string.format("[FactorioSurfaceExport] Warning: Failed to restore held item '%s' x%d for %s: %s",
+        held.name or "?", held.count or 0, entity.name, tostring(err)))
+    elseif not entity.held_stack.valid_for_read then
+      log(string.format("[FactorioSurfaceExport] Warning: held_stack.set_stack succeeded but stack empty for %s (item=%s x%d)",
+        entity.name, held.name or "?", held.count or 0))
+    end
   end
 
   -- Restore inserter filter mode
