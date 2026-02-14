@@ -77,6 +77,22 @@ function GameUtils.make_fluid_temp_key(fluid_name, temperature)
   return string.format("%s@%.1fC", fluid_name, temperature)
 end
 
+--- Parse a fluid temperature key back into components
+--- @param key string: Fluid key (fluid_name@tempC)
+--- @return string, number: fluid_name, temperature
+function GameUtils.parse_fluid_temp_key(key)
+  local name, temp_str = key:match("^(.+)@([%d%.%-]+)C$")
+  if name and temp_str then
+    return name, tonumber(temp_str)
+  end
+  return key, 15
+end
+
+--- Temperature threshold above which fluid packets may merge due to floating-point drift.
+--- At >1,000,000°C IEEE 754 doubles lose precision; the engine may merge nearby packets
+--- via weighted-average temperature, making exact-key validation unreliable.
+GameUtils.HIGH_TEMP_THRESHOLD = 10000
+
 --- Parse a quality key back into components
 --- @param key string: Quality key (item_name or item_name:quality)
 --- @return string, string: item_name, quality_name

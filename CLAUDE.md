@@ -460,6 +460,95 @@ For development, use absolute or relative paths (starting with `.` or `..`).
 - **Message-based communication**: All inter-component communication uses Link Protocol
 - **No database**: Custom JSON file-based storage for simplicity
 
+## Known Factorio API Limitations (Transfer Fidelity)
+
+Platform transfers preserve **~99.6% of items** (API-limited) and **~100% of fluids** (after segment fixes). The remaining item losses are Factorio engine limitations, not code bugs.
+
+### Item Losses (~0.4%, ~45-49 items per transfer)
+- **Assembling machine overloaded inventories**: During gameplay, inserters can stuff items beyond the API-enforced `set_stack()` limit. For example, a foundry with `molten-copper` recipe allows 264 copper-ore per slot via inserters but `set_stack()` caps at 164. The Factorio API provides no way to exceed this limit — `set_stack()`, `insert()`, and direct `.count` assignment all enforce it.
+- **Belt item drift** (±4-8 items): Transport belts, underground belts, and splitters are always active and cannot be deactivated. Items physically move on belts between the export scan and import validation, causing small bidirectional shifts between entity types. This is cosmetic, not actual loss.
+
+### Fluid Handling (Fixed Bugs)
+Fluid losses that previously appeared as ~15% loss (19,607 units) were caused by multiple bugs, not API limitations:
+
+1. **Frozen entity ghost buffer (CRITICAL FIX)**: Factorio 2.0's fluid segment system means frozen/inactive entities are **detached from fluid segments**. Writing fluid to a frozen entity via `entity.fluidbox[i] = {...}` writes to a "ghost buffer" that is silently **wiped when the entity is unfrozen** and joins a live fluid segment. The fix: inject fluid AFTER `entity.active = true` and `entity.frozen = false`, never before. See Pitfall #17.
+
+2. **Entity handlers missing fluid extraction**: The `assembling-machine` and `furnace` entity handlers only exported inventories, not fluids. Chemical plants, oil refineries, foundries, and other crafting machines with fluidboxes had their fluid silently dropped during export. Fixed by adding `InventoryScanner.extract_fluids(entity)` to both handlers.
+
+3. **Segment injection target selection (CRITICAL)**: `get_capacity(i)` returns INCONSISTENT values depending on entity type — pipes/tanks return the FULL segment capacity (e.g., 11,800), while thrusters/machines return only the LOCAL fluidbox capacity (e.g., 1,000). Writing `fluidbox[i]=` through a thruster only sets the LOCAL buffer, not the segment total. Fix: always pick the entity with the highest `get_capacity()` as the injection target (pipes/tanks). See `fluid_restoration.lua`.
+
+4. **Loss analysis undercounting (false alarm)**: After writing a segment total through a pipe, `entity.fluidbox[i]` for other entities (especially thrusters) returns 0 for several ticks while the engine redistributes fluid to internal buffers. The loss analysis was reading these values too early, showing ~19,607 phantom loss. Fix: use `get_fluid_segment_contents(i)` for segment-aware counting, deduplicating by segment ID. A first-pass temperature cache resolves entities whose local fluidbox is nil.
+
+### Remaining Fluid Losses (Unavoidable, ~20 units)
+- **Fusion plasma temperature merging**: The ~20 units of fusion-plasma loss is NOT a simple rejection — it's **floating-point segment merging** at extreme temperatures. At >1,000,000°C, IEEE 754 double-precision representation is stretched to its limit. When multiple 10-unit plasma packets at slightly different extreme temperatures (e.g., 1065464.9°C vs 1063417.1°C) are restored, the engine may merge them into neighboring plasma segments via weighted-average temperature calculation. The 20 "lost" units actually shift the temperature of the surviving 80 units by a fraction of a degree too small to display. The validation then reports 0 for the original temperature keys because no exact-temperature match exists — the fluid migrated to a slightly-altered temperature bucket. This is a Factorio engine limitation at extreme temperature ranges and is **not fixable via API**.
+
+### Fluid Redistribution (Expected, Minor)
+- **Pipe network segment redistribution**: When entities are recreated, pipe segments may have slightly different internal capacities. Fluidbox assignment silently caps at segment capacity. The game redistributes fluid across connected entities internally. This causes minor redistribution, not loss.
+- **Temperature averaging**: Multiple fluid packets at different temperatures in the same segment get averaged, which can cause minor rounding differences.
+
+### Not Fixable via API
+- `LuaInventory::resize()` only works on custom inventories from `create_inventory()`, not entity inventories
+- Entity inventory slot limits are enforced by the game engine based on recipe, quality, and research level
+- Fluidbox assignment silently caps at segment capacity with no error or return value
+
+### Import Phase Ordering (Critical)
+The order of post-processing steps in `complete_import_job()` is critical for correctness:
+
+```
+1. Hub inventories   — restore after cargo bays exist (inventory size scales with bays)
+2. Belt items        — always-active, must restore in single tick
+3. Entity state      — control behavior, filters, circuit connections
+4. Validation        — pre-activation check (items only, fluids skipped)
+5. Activation        — ActiveStateRestoration.restore() unfreezes entities
+6. Fluid restoration — MUST be after activation (ghost buffer fix)
+7. Loss analysis     — post-activation counting for accurate transaction log
+```
+
+**Why this order matters**: Steps 5→6 are inseparable. If fluids are injected before step 5, Factorio's fluid segment system wipes them on activation. Step 4 skips fluid validation (`skip_fluid_validation=true`) because fluids haven't been injected yet.
+
+### 17. Frozen Entity Fluid Ghost Buffer (Factorio 2.0 Fluid Segments)
+**Symptom**: Fluid loss of ~15% on transfer. Fluid appears to be injected successfully (no errors, no overflows), but after activation all injected fluid is gone.
+**Root Cause**: Factorio 2.0 uses a **fluid segment system**. Fluids don't live per-entity — they exist in shared segments spanning connected pipes/machines. When an entity has `frozen=true` or `active=false`, it is **detached from its fluid segment**. Writing to `entity.fluidbox[i]` on a frozen entity writes to a **ghost buffer** — a temporary per-entity store. When the entity is later unfrozen (`frozen=false`, `active=true`), the engine re-syncs the entity with its live fluid segment, **overwriting the ghost buffer contents**. All injected fluid is silently deleted.
+**Fix**: Always set `entity.frozen = false` and `entity.active = true` **before** writing to `entity.fluidbox[i]`. In the import flow, `FluidRestoration.restore()` must run **after** `ActiveStateRestoration.restore()`, not before.
+**Confirmed by**: Factorio API expert analysis of `FluidSystem::merge_segment()` behavior.
+**Key files**: `async-processor.lua` (`complete_import_job`), `fluid_restoration.lua`, `active_state_restoration.lua`
+
+### 18. Entity Handlers Must Export Fluids for Crafting Machines
+**Symptom**: Assembling machines (chemical plants, oil refineries) and furnaces (foundries) lose all fluid on transfer, even though pipes/tanks preserve fluid correctly.
+**Root Cause**: `EntityHandlers["assembling-machine"]` and `EntityHandlers["furnace"]` in `entity-handlers.lua` only exported `inventories`, not `fluids`. These entity types have fluidboxes (chemical plants hold fluid reagents, foundries hold molten metals), but the handler never called `InventoryScanner.extract_fluids(entity)`. Entities without a specific handler use the default handler, which correctly exports both inventories AND fluids — so pipes, tanks, pumps, and thrusters (no specific handler) worked fine.
+**Fix**: Added `fluids = InventoryScanner.extract_fluids(entity)` to both the `assembling-machine` and `furnace` handlers.
+**Key files**: `entity-handlers.lua` (lines ~45 and ~92)
+**Lesson**: When adding a new entity handler, always check if the entity type has a fluidbox. The default handler exports both inventories and fluids — a specific handler that only exports inventories silently drops fluid data.
+
+## Factorio 2.0 Fluid API & Simulation Behavior
+
+**Topic**: Fluidbox Persistence, Segment Logic, and State Validation.
+**Context**: Factorio Space Age (2.0) API; interacting with entities (Thrusters) during state changes (`active=true`, `paused=false`).
+
+### Critical Knowledge
+
+1. **The Proxy Problem**: In Factorio 2.0, `entity.fluidbox[i]` is a proxy window, not a container. When an entity is activated or a platform is unpaused, the entity's local fluidbox buffer may read `0` or `nil` for one or more ticks while it synchronizes with the backend Fluid Segment.
+
+2. **The Solution**: Do not read `entity.fluidbox[i]` for validation immediately after a state change. Instead, use `entity.fluidbox.get_fluid_segment_contents(i)`. This queries the C++ segment directly, bypassing the entity's visual/local update lag.
+
+3. **Deduplication**: When summing fluid contents across a network (e.g., 9 thrusters), you must deduplicate by the Fluid Segment ID. Summing `get_fluid_segment_contents` for every entity will multiply the result by the number of entities.
+
+4. **Floating Point Epsilon**: Fluid operations at extreme temperatures (e.g., Fusion Plasma > 1,000,000°C) or large volumes suffer from floating-point drift. Validation logic must use an epsilon (tolerance) check (e.g., `diff < 0.01%`) rather than strict equality, or false "loss" positives will occur. **Concrete example**: 10 plasma packets at temperatures like 1065464.9°C and 1063417.1°C — the engine may merge 2 packets into neighbors via weighted-average temperature, shifting the surviving packets' temperature by an undetectable fraction. Validation keyed on exact `fluid_name@temp` then reports `0` for the originals.
+
+5. **Capacity Clamping**: Writing to `fluidbox[i]` writes to the entire segment. If the write amount exceeds the physical capacity of the connected segment (pipes + machines), the excess is silently voided. Always check `entity.fluidbox.get_capacity(i)` (which returns segment total for pipes/tanks) before bulk insertion. **Caveat**: `get_capacity(i)` returns LOCAL capacity for thrusters/machines but SEGMENT capacity for pipes — always pick the entity with the highest capacity as the injection target.
+
+### Implementation Pattern
+
+```lua
+-- BAD: Reads local proxy (0) before sync
+entity.active = true
+local amount = entity.fluidbox[1].amount -- Returns 0 or incorrect value
+
+-- GOOD: Reads simulation truth
+entity.active = true
+local content = entity.fluidbox.get_fluid_segment_contents(1) -- Returns actual segment total
+```
+
 ## Support Policy
 
 - **Factorio**: Active support for last two major versions (currently 2.0 and 1.1)

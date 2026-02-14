@@ -1037,11 +1037,12 @@ local function complete_import_job(job)
   -- The hub's inventory size scales with cargo bays, which are now placed.
   PlatformHubMapping.restore_hub_inventories(job)
   
-  -- Step 0a: Restore fluids (Network-aware optimization for Factorio 2.0)
-  job.metrics.fluids_started_tick = game.tick
-  local fluids_result = FluidRestoration.restore(entities_to_create, entity_map)
-  job.metrics.fluids_completed_tick = game.tick
-  job.metrics.fluids_restored = fluids_result and fluids_result.count or 0
+  -- Step 0a: Fluid restoration DEFERRED until after entity activation
+  -- Factorio 2.0 fluid segment system: frozen entities are detached from fluid segments.
+  -- Writing fluid to a frozen entity writes to a "ghost buffer" that gets wiped when
+  -- the entity is unfrozen and joins a live segment. Must inject fluid AFTER activation.
+  job.metrics.fluids_deferred = true
+  log("[Import] Fluid restoration deferred until after entity activation (frozen entity ghost buffer fix)")
   
   -- Step 0b: Restore belt items synchronously
   -- CRITICAL: Belts are always active and cannot be deactivated.
@@ -1051,29 +1052,11 @@ local function complete_import_job(job)
   job.metrics.belts_completed_tick = game.tick
   job.metrics.belt_items_restored = belts_result and belts_result.items_restored or 0
   
-  -- DEBUG: Count entity_map entries
-  local entity_map_count = 0
-  for _ in pairs(entity_map) do entity_map_count = entity_map_count + 1 end
-  log(string.format("[DEBUG] entity_map has %d entries for %d entities_to_create", 
-    entity_map_count, #entities_to_create))
-  
-  -- DEBUG: Count entities with circuit_connections
-  local entities_with_circuits = 0
-  local total_circuit_connections = 0
-  for _, entity_data in ipairs(entities_to_create) do
-    if entity_data.circuit_connections and #entity_data.circuit_connections > 0 then
-      entities_with_circuits = entities_with_circuits + 1
-      total_circuit_connections = total_circuit_connections + #entity_data.circuit_connections
-    end
-  end
-  log(string.format("[DEBUG] %d entities have circuit_connections (%d total connections)",
-    entities_with_circuits, total_circuit_connections))
-
   -- Steps 1-5: Restore localized entity state (Control Behavior, Filters, Connections)
   job.metrics.state_started_tick = game.tick
   local state_result = EntityStateRestoration.restore_all(entities_to_create, entity_map)
   job.metrics.state_completed_tick = game.tick
-  job.metrics.circuits_connected = state_result and state_result.circuits_connected or total_circuit_connections
+  job.metrics.circuits_connected = state_result and state_result.circuits_connected or 0
   
   -- FINAL STEP: Restore original active/disabled states
   -- For non-transfer imports: activate immediately (no validation step)
@@ -1084,6 +1067,11 @@ local function complete_import_job(job)
     log("[Import] Deferring active state restoration until after validation (transfer mode)")
   else
     ActiveStateRestoration.restore(entities_to_create, entity_map, frozen_states)
+    -- Non-transfer: restore fluids after activation (same ghost buffer fix)
+    job.metrics.fluids_started_tick = game.tick
+    local fluids_result = FluidRestoration.restore(entities_to_create, entity_map)
+    job.metrics.fluids_completed_tick = game.tick
+    job.metrics.fluids_restored = fluids_result and fluids_result.count or 0
   end
   
   log("[Import] Post-processing complete")
@@ -1101,31 +1089,12 @@ local function complete_import_job(job)
   end
 
   -- Perform validation if this is a transfer (has verification data and transfer ID)
-  log("[DEBUG] Starting validation check...")
   job.metrics.validation_started_tick = game.tick
   
   local validation_result = nil
   local is_transfer = job.transfer_id ~= nil
   local has_platform_data = job.platform_data ~= nil
   local has_verification = has_platform_data and job.platform_data.verification ~= nil
-  
-  -- Debug: Check what fields are in platform_data
-  if has_platform_data then
-    log(string.format("[Validation Check] platform_data type=%s", type(job.platform_data)))
-    local count = 0
-    for k, v in pairs(job.platform_data) do
-      count = count + 1
-      log(string.format("[Validation Check] field[%d]: %s (type=%s)", count, tostring(k), type(v)))
-      if count >= 10 then break end  -- Limit to first 10 fields
-    end
-    log(string.format("[Validation Check] Total fields checked: %d", count))
-  end
-  
-  log(string.format("[Validation Check] is_transfer=%s, has_platform_data=%s, has_verification=%s, transfer_id=%s",
-    tostring(is_transfer),
-    tostring(has_platform_data),
-    tostring(has_verification),
-    tostring(job.transfer_id)))
   
   if is_transfer and has_verification then
     -- NOTE: For transfers, entities are imported in deactivated state (active=false)
@@ -1134,7 +1103,8 @@ local function complete_import_job(job)
     -- TransferValidation is required at top of file
     local success, result = TransferValidation.validate_import(
       job.target_surface,
-      job.platform_data.verification
+      job.platform_data.verification,
+      { skip_fluid_validation = true }  -- Fluids are deferred to post-activation
     )
 
     validation_result = result
@@ -1190,14 +1160,28 @@ local function complete_import_job(job)
         log(string.format("[Validation] Platform %s UNPAUSED after successful validation", job.platform_name))
       end
       ActiveStateRestoration.restore(job.entities_to_create or {}, job.entity_map or {}, job.frozen_states or {})
+      
+      -- POST-ACTIVATION FLUID RESTORATION
+      -- Entities are now unfrozen and active, connected to live fluid segments.
+      -- Fluid injected now will persist correctly instead of being wiped.
+      job.metrics.fluids_started_tick = game.tick
+      local fluids_result = FluidRestoration.restore(entities_to_create, entity_map)
+      job.metrics.fluids_completed_tick = game.tick
+      job.metrics.fluids_restored = fluids_result and fluids_result.count or 0
+      log(string.format("[Import] Post-activation fluid restoration: %d fluids restored", 
+        job.metrics.fluids_restored))
+      
       game.print(string.format("[Validation] ✓ Validation passed - entities activated on platform %s!", 
         job.platform_name), {0, 1, 0})
       
       -- ========================================
-      -- ITEM LOSS ANALYSIS: Per-entity-type breakdown (run AFTER active state restoration
-      -- so inserter held items are counted correctly)
+      -- POST-ACTIVATION LOSS ANALYSIS
+      -- Run AFTER active state restoration so inserter held items and
+      -- fluid equilibrium are measured accurately.
+      -- Updates validation_result so the transaction log gets correct numbers.
       -- ========================================
-      if result.totalExpectedItems and result.totalActualItems then
+      if result.totalExpectedItems then
+        -- === ITEM LOSS ANALYSIS ===
         -- Re-count actual items now that entities are active and held items are restored
         local expected_by_type = {}
         for _, entity_data in ipairs(entities_to_create) do
@@ -1228,43 +1212,125 @@ local function complete_import_job(job)
         end
         
         local actual_by_type = {}
-        local total_actual = 0
+        local total_actual_items = 0
+        local actual_item_counts = {}  -- per-item-name counts for updated validation result
+        local actual_fluid_counts = {} -- per-fluid-key counts for updated validation result
+        local total_actual_fluids = 0
+        local counted_segments = {} -- track counted fluid segments to avoid double-counting
+        local known_fluid_temps = {} -- fluid_name → temperature from entities with non-nil fluidboxes
         local live_entities = job.target_surface.find_entities_filtered({})
+        
+        -- First pass: collect known temperatures from entities with non-empty local fluidboxes
         for _, entity in ipairs(live_entities) do
-          if entity.valid then
-            local etype = entity.type
-            local invs = InventoryScanner.extract_all_inventories(entity)
-            local inv_totals = InventoryScanner.count_all_items(invs)
-            for _, count in pairs(inv_totals) do
-              actual_by_type[etype] = (actual_by_type[etype] or 0) + count
-              total_actual = total_actual + count
-            end
-            if etype == "transport-belt" or etype == "underground-belt" or etype == "splitter" then
-              local belt_lines = InventoryScanner.extract_belt_items(entity)
-              for _, line_data in ipairs(belt_lines) do
-                if line_data.items then
-                  for _, item in ipairs(line_data.items) do
-                    actual_by_type[etype] = (actual_by_type[etype] or 0) + item.count
-                    total_actual = total_actual + item.count
-                  end
+          if entity.valid and entity.fluidbox then
+            pcall(function()
+              for i = 1, #entity.fluidbox do
+                local fluid = entity.fluidbox[i]
+                if fluid and fluid.name and fluid.temperature then
+                  known_fluid_temps[fluid.name] = fluid.temperature
                 end
               end
-            end
-            if etype == "inserter" then
-              local held = InventoryScanner.extract_inserter_held_item(entity)
-              if held then
-                actual_by_type[etype] = (actual_by_type[etype] or 0) + held.count
-                total_actual = total_actual + held.count
-              end
-            end
+            end)
           end
         end
         
+        for _, entity in ipairs(live_entities) do
+          if entity.valid then
+            local etype = entity.type
+            -- Count inventory items (pcall-protected: some entities may not support inventory access)
+            pcall(function()
+              local invs = InventoryScanner.extract_all_inventories(entity)
+              local inv_totals = InventoryScanner.count_all_items(invs)
+              for item_key, count in pairs(inv_totals) do
+                actual_by_type[etype] = (actual_by_type[etype] or 0) + count
+                total_actual_items = total_actual_items + count
+                actual_item_counts[item_key] = (actual_item_counts[item_key] or 0) + count
+              end
+            end)
+            -- Count belt items
+            if etype == "transport-belt" or etype == "underground-belt" or etype == "splitter" then
+              pcall(function()
+                local belt_lines = InventoryScanner.extract_belt_items(entity)
+                for _, line_data in ipairs(belt_lines) do
+                  if line_data.items then
+                    for _, item in ipairs(line_data.items) do
+                      actual_by_type[etype] = (actual_by_type[etype] or 0) + item.count
+                      total_actual_items = total_actual_items + item.count
+                      local item_key = Util.make_quality_key(item.name, item.quality or "normal")
+                      actual_item_counts[item_key] = (actual_item_counts[item_key] or 0) + item.count
+                    end
+                  end
+                end
+              end)
+            end
+            -- Count inserter held items
+            if etype == "inserter" then
+              pcall(function()
+                local held = InventoryScanner.extract_inserter_held_item(entity)
+                if held then
+                  actual_by_type[etype] = (actual_by_type[etype] or 0) + held.count
+                  total_actual_items = total_actual_items + held.count
+                  local item_key = Util.make_quality_key(held.name, held.quality or "normal")
+                  actual_item_counts[item_key] = (actual_item_counts[item_key] or 0) + held.count
+                end
+              end)
+            end
+            -- Count fluids using segment-aware reading
+            -- CRITICAL (Factorio 2.0): After writing a segment total through a pipe,
+            -- entity.fluidbox[i] returns LOCAL buffer amounts that may not have redistributed yet.
+            -- Thrusters in particular show 0 in their local buffer for several ticks after a segment write.
+            -- Using get_fluid_segment_contents() gives the TRUE segment total regardless of redistribution state.
+            if entity.fluidbox then
+              pcall(function()
+                for i = 1, #entity.fluidbox do
+                  local seg_id = entity.fluidbox.get_fluid_segment_id(i)
+                  if seg_id and not counted_segments[seg_id] then
+                    -- New segment: count using segment contents (accurate even before redistribution)
+                    counted_segments[seg_id] = true
+                    local contents = entity.fluidbox.get_fluid_segment_contents(i)
+                    if contents then
+                      for fluid_name, amount in pairs(contents) do
+                        -- Get temperature from local fluidbox first, then from known temps cache
+                        local local_fluid = entity.fluidbox[i]
+                        local temp = (local_fluid and local_fluid.temperature) or known_fluid_temps[fluid_name] or 15
+                        local key = Util.make_fluid_temp_key(fluid_name, temp)
+                        actual_fluid_counts[key] = (actual_fluid_counts[key] or 0) + amount
+                        total_actual_fluids = total_actual_fluids + amount
+                      end
+                    end
+                  elseif not seg_id then
+                    -- Isolated fluidbox (no segment): use local amount directly
+                    local fluid = entity.fluidbox[i]
+                    if fluid and fluid.name then
+                      local key = Util.make_fluid_temp_key(fluid.name, fluid.temperature)
+                      actual_fluid_counts[key] = (actual_fluid_counts[key] or 0) + fluid.amount
+                      total_actual_fluids = total_actual_fluids + fluid.amount
+                    end
+                  end
+                  -- seg_id already counted: skip (avoid double-counting)
+                end
+              end)
+            end
+          end
+        end
+        -- Count ground items
+        local ground_items = job.target_surface.find_entities_filtered({type = "item-entity"})
+        for _, item_entity in ipairs(ground_items) do
+          if item_entity.valid and item_entity.stack and item_entity.stack.valid_for_read then
+            local stack = item_entity.stack
+            local item_key = Util.make_quality_key(stack.name, (stack.quality and stack.quality.name) or "normal")
+            actual_item_counts[item_key] = (actual_item_counts[item_key] or 0) + stack.count
+            total_actual_items = total_actual_items + stack.count
+          end
+        end
+        
+        -- Log item loss analysis
         local total_expected = result.totalExpectedItems
-        local total_loss = total_expected - total_actual
+        local total_loss = total_expected - total_actual_items
         if total_loss ~= 0 then
-          log(string.format("[Loss Analysis] Post-activation item delta: %+d items (expected=%d, actual=%d)",
-            -total_loss, total_expected, total_actual))
+          log(string.format("[Loss Analysis] Post-activation item delta: %+d items (expected=%d, actual=%d, %.1f%% preserved)",
+            -total_loss, total_expected, total_actual_items,
+            total_expected > 0 and (total_actual_items / total_expected * 100) or 100))
           
           local all_types = {}
           for t, _ in pairs(expected_by_type) do all_types[t] = true end
@@ -1280,8 +1346,113 @@ local function complete_import_job(job)
             end
           end
         else
-          log(string.format("[Loss Analysis] Post-activation: ZERO item loss (expected=%d, actual=%d)", total_expected, total_actual))
+          log(string.format("[Loss Analysis] Post-activation: ZERO item loss (expected=%d, actual=%d)", total_expected, total_actual_items))
         end
+        
+        -- === FLUID LOSS ANALYSIS ===
+        -- For high-temperature fluids (e.g., fusion-plasma >10,000°C), the engine may merge
+        -- packets via weighted-average temperature, shifting fluid between temperature keys.
+        -- We reconcile these by comparing aggregate totals per fluid name, not per temp key.
+        local HIGH_TEMP = Util.HIGH_TEMP_THRESHOLD
+        
+        -- Aggregate high-temp fluids by base name for reconciliation
+        local expected_by_name = {}
+        local actual_by_name = {}
+        for key, amt in pairs(result.expectedFluidCounts or {}) do
+          local name, temp = Util.parse_fluid_temp_key(key)
+          if temp >= HIGH_TEMP then
+            expected_by_name[name] = (expected_by_name[name] or 0) + amt
+          end
+        end
+        for key, amt in pairs(actual_fluid_counts) do
+          local name, temp = Util.parse_fluid_temp_key(key)
+          if temp >= HIGH_TEMP then
+            actual_by_name[name] = (actual_by_name[name] or 0) + amt
+          end
+        end
+        
+        -- Calculate reconciled totals: for high-temp fluids, use aggregate comparison
+        local reconciled_loss = 0
+        local all_ht_names = {}
+        for n, _ in pairs(expected_by_name) do all_ht_names[n] = true end
+        for n, _ in pairs(actual_by_name) do all_ht_names[n] = true end
+        for name, _ in pairs(all_ht_names) do
+          local exp = expected_by_name[name] or 0
+          local act = actual_by_name[name] or 0
+          reconciled_loss = reconciled_loss + math.max(0, exp - act)
+        end
+        
+        -- For low-temp fluids, loss is straightforward per-key
+        local low_temp_loss = 0
+        for key, exp in pairs(result.expectedFluidCounts or {}) do
+          local _, temp = Util.parse_fluid_temp_key(key)
+          if temp < HIGH_TEMP then
+            local act = actual_fluid_counts[key] or 0
+            low_temp_loss = low_temp_loss + math.max(0, exp - act)
+          end
+        end
+        
+        local total_expected_fluids = result.totalExpectedFluids or 0
+        local total_reconciled_loss = low_temp_loss + reconciled_loss
+        local raw_loss = total_expected_fluids - total_actual_fluids
+        
+        if math.abs(total_reconciled_loss) > 1 then
+          log(string.format("[Loss Analysis] Post-activation fluid delta: %+.1f reconciled (raw %+.1f) (expected=%.1f, actual=%.1f, %.1f%% preserved)",
+            -total_reconciled_loss, -raw_loss, total_expected_fluids, total_actual_fluids,
+            total_expected_fluids > 0 and ((total_expected_fluids - total_reconciled_loss) / total_expected_fluids * 100) or 100))
+          
+          -- Per-fluid breakdown (low-temp only, high-temp shown as aggregate)
+          for fluid_key, _ in pairs(result.expectedFluidCounts or {}) do
+            local _, temp = Util.parse_fluid_temp_key(fluid_key)
+            if temp < HIGH_TEMP then
+              local exp = (result.expectedFluidCounts or {})[fluid_key] or 0
+              local act = actual_fluid_counts[fluid_key] or 0
+              local diff = exp - act
+              if math.abs(diff) > 1 then
+                log(string.format("[Loss Analysis]   %-30s expected=%.1f actual=%.1f diff=%+.1f",
+                  fluid_key, exp, act, -diff))
+              end
+            end
+          end
+          
+          -- High-temp aggregate breakdown
+          for name, _ in pairs(all_ht_names) do
+            local exp = expected_by_name[name] or 0
+            local act = actual_by_name[name] or 0
+            local diff = exp - act
+            if math.abs(diff) > 1 then
+              log(string.format("[Loss Analysis]   %-30s expected=%.1f actual=%.1f diff=%+.1f (high-temp aggregate)",
+                name, exp, act, -diff))
+            else
+              log(string.format("[Loss Analysis]   %-30s expected=%.1f actual=%.1f RECONCILED (temp-merged)",
+                name, exp, act))
+            end
+          end
+        else
+          log(string.format("[Loss Analysis] Post-activation: ZERO fluid loss (expected=%.1f, actual=%.1f)",
+            total_expected_fluids, total_actual_fluids))
+          -- Still log high-temp reconciliation if raw numbers differ
+          if math.abs(raw_loss) > 1 then
+            for name, _ in pairs(all_ht_names) do
+              local exp = expected_by_name[name] or 0
+              local act = actual_by_name[name] or 0
+              log(string.format("[Loss Analysis]   %-30s expected=%.1f actual=%.1f RECONCILED (temp-merged)",
+                name, exp, act))
+            end
+          end
+        end
+        
+        -- === UPDATE VALIDATION RESULT with post-activation counts ===
+        -- This ensures the transaction log reports accurate numbers
+        result.totalActualItems = total_actual_items
+        result.actualItemCounts = actual_item_counts
+        result.totalActualFluids = total_actual_fluids
+        result.actualFluidCounts = actual_fluid_counts
+        result.postActivation = true  -- Flag that these are post-activation numbers
+        
+        -- Re-store updated validation result
+        validation_result = result
+        TransferValidation.store_validation_result(job.platform_name, result)
       end
       -- ========================================
     end

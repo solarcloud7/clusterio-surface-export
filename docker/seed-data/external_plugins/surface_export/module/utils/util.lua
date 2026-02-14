@@ -26,6 +26,8 @@ Util.round_position = GameUtils.round_position
 Util.get_entity_category = GameUtils.get_entity_category
 Util.make_quality_key = GameUtils.make_quality_key
 Util.make_fluid_temp_key = GameUtils.make_fluid_temp_key
+Util.parse_fluid_temp_key = GameUtils.parse_fluid_temp_key
+Util.HIGH_TEMP_THRESHOLD = GameUtils.HIGH_TEMP_THRESHOLD
 Util.parse_quality_key = GameUtils.parse_quality_key
 Util.debug_log = GameUtils.debug_log
 

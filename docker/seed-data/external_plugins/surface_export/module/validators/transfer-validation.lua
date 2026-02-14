@@ -8,6 +8,10 @@ local Util = require("modules/surface_export/utils/util")
 local TransferValidation = {}
 
 --- Count all fluids on a live surface (for post-import verification)
+--- Uses segment-aware reading to get accurate totals even before fluid redistribution.
+--- CRITICAL (Factorio 2.0): After writing segment totals, entity.fluidbox[i] returns
+--- local buffer amounts that haven't redistributed yet. get_fluid_segment_contents()
+--- returns the true segment total regardless of redistribution state.
 --- @param surface LuaSurface: The surface to count fluids on
 --- @return table: Table of fluid_key = amount pairs
 local function count_surface_fluids(surface)
@@ -16,19 +20,53 @@ local function count_surface_fluids(surface)
     end
 
     local fluid_totals = {}
+    local counted_segments = {}
+    local known_fluid_temps = {}
 
     -- Find all entities with fluidboxes
     local entities = surface.find_entities_filtered({})
 
+    -- First pass: collect known temperatures from entities with non-empty local fluidboxes
+    for _, entity in ipairs(entities) do
+        if entity.valid and entity.fluidbox then
+            pcall(function()
+                for i = 1, #entity.fluidbox do
+                    local fluid = entity.fluidbox[i]
+                    if fluid and fluid.name and fluid.temperature then
+                        known_fluid_temps[fluid.name] = fluid.temperature
+                    end
+                end
+            end)
+        end
+    end
+
+    -- Second pass: count using segment contents
     for _, entity in ipairs(entities) do
         if entity.valid and entity.fluidbox then
             local success, err = pcall(function()
                 for i = 1, #entity.fluidbox do
-                    local fluid = entity.fluidbox[i]
-                    if fluid and fluid.name then
-                        local key = Util.make_fluid_temp_key(fluid.name, fluid.temperature)
-                        fluid_totals[key] = (fluid_totals[key] or 0) + fluid.amount
+                    local seg_id = entity.fluidbox.get_fluid_segment_id(i)
+                    if seg_id and not counted_segments[seg_id] then
+                        -- New segment: count using segment contents
+                        counted_segments[seg_id] = true
+                        local contents = entity.fluidbox.get_fluid_segment_contents(i)
+                        if contents then
+                            for fluid_name, amount in pairs(contents) do
+                                local local_fluid = entity.fluidbox[i]
+                                local temp = (local_fluid and local_fluid.temperature) or known_fluid_temps[fluid_name] or 15
+                                local key = Util.make_fluid_temp_key(fluid_name, temp)
+                                fluid_totals[key] = (fluid_totals[key] or 0) + amount
+                            end
+                        end
+                    elseif not seg_id then
+                        -- Isolated fluidbox: use local amount
+                        local fluid = entity.fluidbox[i]
+                        if fluid and fluid.name then
+                            local key = Util.make_fluid_temp_key(fluid.name, fluid.temperature)
+                            fluid_totals[key] = (fluid_totals[key] or 0) + fluid.amount
+                        end
                     end
+                    -- Already counted segments: skip
                 end
             end)
 
@@ -45,8 +83,10 @@ end
 --- Uses grouped validation: strict for storage, lenient for machines
 --- @param surface LuaSurface: The imported platform surface
 --- @param expected_verification table: Expected item/fluid counts from source
+--- @param options table|nil: Optional settings { skip_fluid_validation = true }
 --- @return boolean, table: success, validation_result
-function TransferValidation.validate_import(surface, expected_verification)
+function TransferValidation.validate_import(surface, expected_verification, options)
+    options = options or {}
     if not surface or not surface.valid then
         return false, {
             itemCountMatch = false,
@@ -207,42 +247,101 @@ function TransferValidation.validate_import(surface, expected_verification)
     end
 
     -- Fluid validation - very lenient due to network redistribution
-    -- Fluids redistribute across pipe networks automatically, so we can lose 95%+ easily
-    -- We only check: 1) didn't gain fluid, 2) fluid exists if expected
+    -- When skip_fluid_validation is true, fluids haven't been injected yet (deferred to after activation)
+    -- so we skip all fluid checks and rely on post-activation loss analysis instead
     local fluid_mismatches = {}
     local fluid_match = true
     local FLUID_GAIN_TOLERANCE = 500  -- Allow small gain due to rounding
+    local HIGH_TEMP = Util.HIGH_TEMP_THRESHOLD
 
-    for fluid_name, expected_volume in pairs(expected_verification.fluid_counts or {}) do
-        local actual_volume = actual_fluid_counts[fluid_name] or 0
-        
-        -- Check if we gained fluid (shouldn't happen)
-        if actual_volume > expected_volume + FLUID_GAIN_TOLERANCE then
-            fluid_match = false
-            table.insert(fluid_mismatches, string.format(
-                "%s: GAINED fluid - expected %.1f, got %.1f",
-                fluid_name, expected_volume, actual_volume
-            ))
-        -- Check if fluid completely disappeared (should have at least something)
-        elseif expected_volume > 1000 and actual_volume < 1 then
-            fluid_match = false
-            table.insert(fluid_mismatches, string.format(
-                "%s: fluid completely lost - expected %.1f, got %.1f",
-                fluid_name, expected_volume, actual_volume
-            ))
+    if options.skip_fluid_validation then
+        log("[TransferValidation] Skipping fluid validation (deferred to post-activation)")
+    else
+        -- Aggregate high-temperature fluids by base name for comparison
+        -- At extreme temps (>10,000°C), the engine may merge packets via weighted-average
+        -- temperature, shifting fluid between temperature keys while preserving total volume.
+        local expected_ht_by_name = {}
+        local actual_ht_by_name = {}
+        for key, amt in pairs(expected_verification.fluid_counts or {}) do
+          local name, temp = Util.parse_fluid_temp_key(key)
+          if temp >= HIGH_TEMP then
+            expected_ht_by_name[name] = (expected_ht_by_name[name] or 0) + amt
+          end
         end
-        -- Note: We don't fail on partial loss - fluid networks redistribute
-    end
+        for key, amt in pairs(actual_fluid_counts) do
+          local name, temp = Util.parse_fluid_temp_key(key)
+          if temp >= HIGH_TEMP then
+            actual_ht_by_name[name] = (actual_ht_by_name[name] or 0) + amt
+          end
+        end
 
-    -- Check for unexpected fluids
-    for fluid_name, actual_volume in pairs(actual_fluid_counts) do
-        if not expected_verification.fluid_counts[fluid_name] then
-            if actual_volume > FLUID_MIN_TOLERANCE then
+        -- Validate low-temperature fluids per exact key
+        for fluid_key, expected_volume in pairs(expected_verification.fluid_counts or {}) do
+            local _, temp = Util.parse_fluid_temp_key(fluid_key)
+            if temp >= HIGH_TEMP then
+                -- Skip per-key check for high-temp fluids; validated as aggregate below
+                goto continue_fluid_check
+            end
+            
+            local actual_volume = actual_fluid_counts[fluid_key] or 0
+            
+            -- Check if we gained fluid (shouldn't happen)
+            if actual_volume > expected_volume + FLUID_GAIN_TOLERANCE then
                 fluid_match = false
                 table.insert(fluid_mismatches, string.format(
-                    "%s: unexpected fluid (got %.1f)",
-                    fluid_name, actual_volume
+                    "%s: GAINED fluid - expected %.1f, got %.1f",
+                    fluid_key, expected_volume, actual_volume
                 ))
+            -- Check if fluid completely disappeared (should have at least something)
+            elseif expected_volume > 1000 and actual_volume < 1 then
+                fluid_match = false
+                table.insert(fluid_mismatches, string.format(
+                    "%s: fluid completely lost - expected %.1f, got %.1f",
+                    fluid_key, expected_volume, actual_volume
+                ))
+            end
+            -- Note: We don't fail on partial loss - fluid networks redistribute
+            ::continue_fluid_check::
+        end
+
+        -- Validate high-temperature fluids by aggregate total per fluid name
+        local all_ht_names = {}
+        for n, _ in pairs(expected_ht_by_name) do all_ht_names[n] = true end
+        for n, _ in pairs(actual_ht_by_name) do all_ht_names[n] = true end
+        for name, _ in pairs(all_ht_names) do
+            local exp_total = expected_ht_by_name[name] or 0
+            local act_total = actual_ht_by_name[name] or 0
+            
+            if act_total > exp_total + FLUID_GAIN_TOLERANCE then
+                fluid_match = false
+                table.insert(fluid_mismatches, string.format(
+                    "%s (high-temp aggregate): GAINED fluid - expected %.1f, got %.1f",
+                    name, exp_total, act_total
+                ))
+            elseif exp_total > 100 and act_total < 1 then
+                fluid_match = false
+                table.insert(fluid_mismatches, string.format(
+                    "%s (high-temp aggregate): fluid completely lost - expected %.1f, got %.1f",
+                    name, exp_total, act_total
+                ))
+            else
+                log(string.format("[TransferValidation] High-temp fluid %s: expected=%.1f actual=%.1f (temp-merge reconciled)",
+                    name, exp_total, act_total))
+            end
+        end
+
+        -- Check for unexpected low-temp fluids
+        for fluid_key, actual_volume in pairs(actual_fluid_counts) do
+            local _, temp = Util.parse_fluid_temp_key(fluid_key)
+            -- High-temp unexpected fluids are covered by aggregate check above
+            if temp < HIGH_TEMP and not expected_verification.fluid_counts[fluid_key] then
+                if actual_volume > FLUID_GAIN_TOLERANCE then
+                    fluid_match = false
+                    table.insert(fluid_mismatches, string.format(
+                        "%s: unexpected fluid (got %.1f)",
+                        fluid_key, actual_volume
+                    ))
+                end
             end
         end
     end

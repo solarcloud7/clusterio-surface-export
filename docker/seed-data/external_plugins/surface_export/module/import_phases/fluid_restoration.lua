@@ -71,35 +71,41 @@ function FluidRestoration.restore(entities_to_create, entity_map)
     end
   
     -- Process Segments with Capacity Safety
+    -- CRITICAL (Factorio 2.0): get_capacity() returns INCONSISTENT values depending on entity type.
+    -- For pipes/tanks: returns the FULL segment capacity (e.g., 11800)
+    -- For thrusters/machines with internal buffers: returns LOCAL fluidbox capacity (e.g., 1000)
+    -- Writing fluidbox[i]= on a pipe sets the SEGMENT total; on a thruster it only sets local buffer.
+    -- Therefore we MUST pick the entity with the highest get_capacity() as injection target.
     local dropped_fluids = {}
     local dropped_count = 0
     local success_count = 0
   
     for seg_id, data in pairs(segments_to_fill) do
         if data.amount > 0 and #data.targets > 0 then
+            -- Pick injection target: entity with highest get_capacity() to ensure we write to the segment
+            -- Entities like pipes/tanks return segment capacity; thrusters return local capacity only
             local target = data.targets[1]
-            -- Prioritize storage tanks for injection
+            local best_cap = target.entity.valid and target.entity.fluidbox.get_capacity(target.index) or 0
             for _, t in ipairs(data.targets) do
-                if t.entity.type == "storage-tank" then
-                    target = t
-                    break
+                if t.entity.valid then
+                    local cap = t.entity.fluidbox.get_capacity(t.index)
+                    if cap > best_cap then
+                        target = t
+                        best_cap = cap
+                    end
                 end
             end
             
             if target.entity.valid then
-               -- Factorio 2.0: Read total segment capacity
-               -- get_capacity returns the capacity of the entire fluid segment
-               local max_cap = target.entity.fluidbox.get_capacity(target.index)
+               local max_cap = best_cap
                
                -- Clamp amount to prevent silent loss without tracking and ensure valid assignment
                local final_amount = math.min(data.amount, max_cap)
                local avg_temp = data.amount > 0 and (data.energy / data.amount) or 15
                
-               -- DEBUG: Log capacity details for sensitive entities like thrusters
-               if target.entity.name == "thruster" or max_cap < data.amount then
-                  log(string.format("[Fluid Restore DEBUG] %s (seg %d): cap=%.1f data=%.1f final=%.1f boxlen=%d temp=%.1f",
-                      target.entity.name, seg_id, max_cap, data.amount, final_amount, #target.entity.fluidbox, avg_temp))
-               end
+               -- Log capacity details for debugging
+               log(string.format("[Fluid Restore] Seg %d (%s): target=%s cap=%.0f data=%.1f final=%.1f targets=%d temp=%.1f",
+                   seg_id, data.fluid, target.entity.name, max_cap, data.amount, final_amount, #data.targets, avg_temp))
 
                -- Use pcall for safety against "fluid mixing" errors if segment is somehow tainted
                local ok, err = pcall(function() 
@@ -114,11 +120,25 @@ function FluidRestoration.restore(entities_to_create, entity_map)
                    log(string.format("[Fluid Restore Error] Segment #%d (%s): %s", seg_id, data.fluid, err))
                else
                    success_count = success_count + 1
-                   -- Check for overflow (source amount > segment capacity)
-                   if data.amount > max_cap + 0.01 then -- Small epsilon for float comparison
+                   
+                   -- Verify actual amount written by checking segment contents
+                   local actual_contents = target.entity.fluidbox.get_fluid_segment_contents(target.index)
+                   local actual_amount = actual_contents and actual_contents[data.fluid] or 0
+                   if actual_amount < final_amount - 0.5 then
+                       local write_loss = final_amount - actual_amount
+                       log(string.format("[Fluid Restore Warning] Seg %d (%s): wrote %.1f but segment has %.1f (lost %.1f via %s)",
+                           seg_id, data.fluid, final_amount, actual_amount, write_loss, target.entity.name))
+                       dropped_fluids[data.fluid] = (dropped_fluids[data.fluid] or 0) + write_loss
+                       dropped_count = dropped_count + 1
+                   end
+                   
+                   -- Also check for pre-clamp overflow (source amount > segment capacity)
+                   if data.amount > max_cap + 0.01 then
                       local diff = data.amount - max_cap
                       dropped_fluids[data.fluid] = (dropped_fluids[data.fluid] or 0) + diff
                       dropped_count = dropped_count + 1
+                      log(string.format("[Fluid Restore Warning] Seg %d (%s): capacity overflow %.1f > %.0f (lost %.1f)",
+                          seg_id, data.fluid, data.amount, max_cap, diff))
                    end
                end
             end
@@ -136,17 +156,29 @@ function FluidRestoration.restore(entities_to_create, entity_map)
     
     log(string.format("[Fluid Restore] Batch result: %d success, %d overflows.", success_count, dropped_count))
   
-    -- Process Isolated Fluids (Fallback)
+    -- Process Isolated Fluids (Fallback) - entities without a fluid segment ID
     local isolated_count = 0
+    local isolated_lost = 0
     for _, item in ipairs(isolated_fluids) do
         if item.entity.valid then
-            item.entity.insert_fluid({
+            local inserted = item.entity.insert_fluid({
                 name = item.fluid,
                 amount = item.amount,
                 temperature = item.temperature
             })
             isolated_count = isolated_count + 1
+            if inserted < item.amount - 0.1 then
+                local lost = item.amount - inserted
+                isolated_lost = isolated_lost + lost
+                log(string.format("[Fluid Restore Warning] Isolated %s on %s: wanted %.1f, inserted %.1f (lost %.1f)",
+                    item.fluid, item.entity.name, item.amount, inserted, lost))
+                dropped_fluids[item.fluid] = (dropped_fluids[item.fluid] or 0) + lost
+            end
         end
+    end
+    
+    if isolated_lost > 0 then
+        log(string.format("[Fluid Restore Warning] Isolated entities lost %.1f total fluid", isolated_lost))
     end
     
     local total_restored = success_count + isolated_count

@@ -47,6 +47,12 @@ EntityHandlers["assembling-machine"] = function(entity)
     inventories = InventoryScanner.extract_all_inventories(entity)
   }
 
+  -- Fluids (chemical plants, oil refineries, etc. all use assembling-machine type)
+  local fluids = InventoryScanner.extract_fluids(entity)
+  if #fluids > 0 then
+    data.fluids = fluids
+  end
+
   -- Recipe
   if entity.get_recipe then
     local recipe = entity.get_recipe()
@@ -93,6 +99,12 @@ EntityHandlers["furnace"] = function(entity)
   local data = {
     inventories = InventoryScanner.extract_all_inventories(entity)
   }
+
+  -- Fluids (foundries have fluidboxes for molten metals)
+  local fluids = InventoryScanner.extract_fluids(entity)
+  if #fluids > 0 then
+    data.fluids = fluids
+  end
 
   -- Recipe (smelting recipe)
   if entity.get_recipe then

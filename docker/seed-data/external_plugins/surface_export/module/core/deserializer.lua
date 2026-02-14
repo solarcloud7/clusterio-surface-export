@@ -672,28 +672,42 @@ function Deserializer.restore_inventories(entity, entity_data)
             end
           end
         else
-          -- Regular item insertion
-          local insert_params = {
+          -- Per-slot restoration using set_stack() to preserve overloaded stacks
+          -- (inserters can push items beyond normal stack_size into crafting machines)
+          local stack_params = {
             name = item.name,
             count = item.count
           }
-
-          -- Add quality if present
           if item.quality and item.quality ~= "normal" then
-            insert_params.quality = item.quality
+            stack_params.quality = item.quality
           end
 
-          -- Wrap inventory insert in pcall to handle unknown items gracefully
-          local ok, result = pcall(function()
-            return inventory.insert(insert_params)
-          end)
+          local ok, err
+          if item.slot and item.slot <= #inventory then
+            -- Preferred: set_stack on the exact slot (preserves overloaded counts)
+            ok, err = pcall(function()
+              inventory[item.slot].set_stack(stack_params)
+            end)
+          else
+            -- Fallback: bulk insert (for old export data without slot index)
+            ok, err = pcall(function()
+              return inventory.insert(stack_params)
+            end)
+          end
 
           if not ok then
-            log(string.format("[FactorioSurfaceExport] Warning: Skipped unknown item '%s' for %s (mod missing?)",
-              item.name, entity.name))
+            log(string.format("[FactorioSurfaceExport] Warning: Skipped unknown item '%s' for %s (mod missing?): %s",
+              item.name, entity.name, tostring(err)))
+          elseif item.slot and item.slot <= #inventory then
+            -- Verify set_stack worked
+            local slot = inventory[item.slot]
+            if not slot.valid_for_read or slot.count < item.count then
+              log(string.format("[FactorioSurfaceExport] Warning: set_stack partial for slot %d: %d/%d of %s into %s",
+                item.slot, slot.valid_for_read and slot.count or 0, item.count, item.name, entity.name))
+            end
           else
-            local inserted = result
-            if inserted < item.count then
+            local inserted = err  -- err is actually the return value from insert()
+            if type(inserted) == "number" and inserted < item.count then
               log(string.format("[FactorioSurfaceExport] Warning: Only inserted %d/%d of %s into %s",
                 inserted, item.count, item.name, entity.name))
             end

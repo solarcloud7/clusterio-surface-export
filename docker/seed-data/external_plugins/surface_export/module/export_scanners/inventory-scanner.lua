@@ -129,6 +129,7 @@ function InventoryScanner.extract_all_inventories(entity)
           if stack and stack.valid_for_read then
               -- Use shared helper for all item property extraction
               local item_entry = extract_item_properties(stack)
+              item_entry.slot = i  -- Preserve slot index for per-slot restoration (overloaded stacks)
               table.insert(inv_data.items, item_entry)
           end
         end
