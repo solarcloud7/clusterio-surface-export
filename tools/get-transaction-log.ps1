@@ -252,7 +252,22 @@ try {
             if ($event.PSObject.Properties['validation'] -and $event.validation) {
                 $v = $event.validation
                 Write-Host "    Validation: " -NoNewline -ForegroundColor Yellow
-                Write-Host "items=$($v.itemCountMatch) fluids=$($v.fluidCountMatch) entities=$($v.entityCount)" -ForegroundColor Yellow
+                $postTag = if ($v.PSObject.Properties['postActivation'] -and $v.postActivation) { " (post-activation)" } else { "" }
+                Write-Host "items=$($v.itemCountMatch) fluids=$($v.fluidCountMatch) entities=$($v.entityCount)$postTag" -ForegroundColor Yellow
+                if ($v.PSObject.Properties['fluidReconciliation'] -and $v.fluidReconciliation) {
+                    $fr = $v.fluidReconciliation
+                    $pct = [Math]::Round($fr.fluidPreservedPct, 1)
+                    $pctColor = if ($pct -ge 99.9) { "Green" } elseif ($pct -ge 99) { "Yellow" } else { "Red" }
+                    Write-Host "    Fluids: " -NoNewline -ForegroundColor Yellow
+                    Write-Host "$pct% preserved" -NoNewline -ForegroundColor $pctColor
+                    if ($fr.reconciledFluidLoss -eq 0 -and [Math]::Abs($fr.rawFluidDelta) -gt 1) {
+                        Write-Host " (raw delta=$([Math]::Round($fr.rawFluidDelta, 1)), reconciled to zero)" -ForegroundColor Green
+                    } elseif ($fr.reconciledFluidLoss -gt 0) {
+                        Write-Host " (loss=$([Math]::Round($fr.reconciledFluidLoss, 1)))" -ForegroundColor Yellow
+                    } else {
+                        Write-Host "" # newline
+                    }
+                }
                 if ($v.PSObject.Properties['mismatchDetails'] -and $v.mismatchDetails) {
                     Write-Host "    Mismatch: $($v.mismatchDetails)" -ForegroundColor Red
                 }
@@ -337,18 +352,45 @@ try {
         if ($s.PSObject.Properties['validation'] -and $s.validation) {
             $v = $s.validation
             Write-Host "`n  Validation:" -ForegroundColor Green
+            
+            # Post-activation indicator
+            if ($v.PSObject.Properties['postActivation'] -and $v.postActivation) {
+                Write-Host "    (post-activation segment-aware measurement)" -ForegroundColor DarkGray
+            }
+            
             $itemIcon = if ($v.itemCountMatch) { "`u{2705}" } else { "`u{274C}" }
             $fluidIcon = if ($v.fluidCountMatch) { "`u{2705}" } else { "`u{274C}" }
             Write-Host "    $itemIcon Items: match=$($v.itemCountMatch)" -ForegroundColor $(if ($v.itemCountMatch) { "Green" } else { "Red" })
             Write-Host "    $fluidIcon Fluids: match=$($v.fluidCountMatch)" -ForegroundColor $(if ($v.fluidCountMatch) { "Green" } else { "Red" })
             Write-Host "    Entities: $($v.entityCount)" -ForegroundColor White
             
-            # Show summary totals if available
+            # Show summary totals
             if ($v.PSObject.Properties['totalExpectedItems'] -and $v.PSObject.Properties['totalActualItems']) {
-                Write-Host "    Item Totals: expected=$($v.totalExpectedItems), actual=$($v.totalActualItems)" -ForegroundColor White
+                $itemDelta = $v.totalActualItems - $v.totalExpectedItems
+                $itemPct = if ($v.totalExpectedItems -gt 0) { [Math]::Round($v.totalActualItems / $v.totalExpectedItems * 100, 1) } else { 100 }
+                $itemDeltaStr = if ($itemDelta -eq 0) { "OK" } elseif ($itemDelta -gt 0) { "+$itemDelta" } else { "$itemDelta" }
+                $itemDeltaColor = if ($itemDelta -eq 0) { "Green" } elseif ([Math]::Abs($itemDelta) -le 50) { "Yellow" } else { "Red" }
+                Write-Host "    Item Totals: expected=$($v.totalExpectedItems), actual=$($v.totalActualItems), delta=" -NoNewline -ForegroundColor White
+                Write-Host "$itemDeltaStr" -NoNewline -ForegroundColor $itemDeltaColor
+                Write-Host " ($itemPct% preserved)" -ForegroundColor DarkGray
             }
             if ($v.PSObject.Properties['totalExpectedFluids'] -and $v.PSObject.Properties['totalActualFluids']) {
-                Write-Host "    Fluid Totals: expected=$([Math]::Round($v.totalExpectedFluids, 1)), actual=$([Math]::Round($v.totalActualFluids, 1))" -ForegroundColor White
+                $fr = $v.fluidReconciliation
+                if ($fr) {
+                    $reconLoss = [Math]::Round($fr.reconciledFluidLoss, 1)
+                    $rawDelta = [Math]::Round($fr.rawFluidDelta, 1)
+                    $pct = [Math]::Round($fr.fluidPreservedPct, 1)
+                    $pctColor = if ($pct -ge 99.9) { "Green" } elseif ($pct -ge 99) { "Yellow" } else { "Red" }
+                    Write-Host "    Fluid Totals: expected=$([Math]::Round($v.totalExpectedFluids, 1)), actual=$([Math]::Round($v.totalActualFluids, 1))" -NoNewline -ForegroundColor White
+                    Write-Host " ($pct% preserved)" -ForegroundColor $pctColor
+                    if ($rawDelta -ne 0 -and $reconLoss -eq 0) {
+                        Write-Host "    Fluid Loss: raw delta=$rawDelta but reconciled to ZERO (high-temp merging)" -ForegroundColor Green
+                    } elseif ($reconLoss -gt 0) {
+                        Write-Host "    Fluid Loss: reconciled=$(-$reconLoss) (low-temp=$(-[Math]::Round($fr.lowTempLoss,1)), high-temp=$(-[Math]::Round($fr.highTempReconciledLoss,1)))" -ForegroundColor Yellow
+                    }
+                } else {
+                    Write-Host "    Fluid Totals: expected=$([Math]::Round($v.totalExpectedFluids, 1)), actual=$([Math]::Round($v.totalActualFluids, 1))" -ForegroundColor White
+                }
             }
             
             # Entity type breakdown
@@ -394,12 +436,14 @@ try {
                 }
             }
             
-            # Fluid counts breakdown
+            # Fluid counts breakdown — matches validation logic:
+            # Low-temp fluids (<10,000°C) are compared per exact temp key
+            # High-temp fluids (≥10,000°C) are aggregated by base fluid name
             if ($v.PSObject.Properties['expectedFluidCounts'] -and $v.expectedFluidCounts) {
-                Write-Host "`n  Fluid Inventory (expected vs actual):" -ForegroundColor Green
-                Write-Host "    $("Fluid".PadRight(40)) $("Expected".PadLeft(12)) $("Actual".PadLeft(12))" -ForegroundColor DarkGray
-                Write-Host "    $("-" * 66)" -ForegroundColor DarkGray
+                $fr = $v.fluidReconciliation
+                $htThreshold = if ($fr -and $fr.highTempThreshold) { $fr.highTempThreshold } else { 10000 }
                 
+                # Build fluid entries with expected/actual
                 $fluidEntries = @{}
                 foreach ($prop in $v.expectedFluidCounts.PSObject.Properties) {
                     $fluidEntries[$prop.Name] = @{ Expected = $prop.Value; Actual = 0 }
@@ -414,9 +458,90 @@ try {
                     }
                 }
                 
-                $sortedFluids = $fluidEntries.GetEnumerator() | Sort-Object { $_.Value.Expected } -Descending
-                foreach ($entry in $sortedFluids) {
-                    Write-Host "    $($entry.Key.PadRight(40)) $([Math]::Round($entry.Value.Expected, 1).ToString().PadLeft(12)) $([Math]::Round($entry.Value.Actual, 1).ToString().PadLeft(12))" -ForegroundColor White
+                # Helper to parse "name@tempC" keys
+                function Get-FluidTemp($key) {
+                    if ($key -match '@([\d.]+)C$') { return [double]$Matches[1] } else { return 15 }
+                }
+                function Get-FluidName($key) {
+                    if ($key -match '^(.+)@[\d.]+C$') { return $Matches[1] } else { return $key }
+                }
+                
+                # Separate low-temp and high-temp entries
+                $lowTemp = $fluidEntries.GetEnumerator() | Where-Object { (Get-FluidTemp $_.Key) -lt $htThreshold } | Sort-Object { $_.Value.Expected } -Descending
+                $highTemp = $fluidEntries.GetEnumerator() | Where-Object { (Get-FluidTemp $_.Key) -ge $htThreshold } | Sort-Object { $_.Value.Expected } -Descending
+                
+                # Low-temp fluids: per-key comparison with delta (same as items)
+                if ($lowTemp) {
+                    Write-Host "`n  Fluid Inventory — Per-Key (expected vs actual):" -ForegroundColor Green
+                    Write-Host "    $("Fluid".PadRight(40)) $("Expected".PadLeft(12)) $("Actual".PadLeft(12)) $("Diff".PadLeft(10))" -ForegroundColor DarkGray
+                    Write-Host "    $("-" * 76)" -ForegroundColor DarkGray
+                    
+                    foreach ($entry in $lowTemp) {
+                        $exp = [Math]::Round($entry.Value.Expected, 1)
+                        $act = [Math]::Round($entry.Value.Actual, 1)
+                        $diff = [Math]::Round($act - $exp, 1)
+                        $diffStr = if ([Math]::Abs($diff) -lt 0.1) { "OK" } elseif ($diff -gt 0) { "+$diff" } else { "$diff" }
+                        $diffColor = if ([Math]::Abs($diff) -lt 0.1) { "Green" } elseif ($diff -gt 0) { "Red" } else { "Yellow" }
+                        Write-Host "    $($entry.Key.PadRight(40)) $($exp.ToString().PadLeft(12)) $($act.ToString().PadLeft(12)) " -NoNewline -ForegroundColor White
+                        Write-Host "$($diffStr.PadLeft(10))" -ForegroundColor $diffColor
+                    }
+                }
+                
+                # High-temp fluids: show raw per-key rows dimmed, then aggregate summary
+                if ($highTemp) {
+                    Write-Host "`n  Fluid Inventory — High-Temp Aggregates (temp-merge reconciled):" -ForegroundColor Green
+                    Write-Host "    Fluids `u{2265}$($htThreshold)`u{00B0}C are validated by aggregate total per fluid name" -ForegroundColor DarkGray
+                    Write-Host "    (engine merges packets via weighted-avg temperature at extreme temps)" -ForegroundColor DarkGray
+                    
+                    # Show aggregate from reconciliation data if available
+                    if ($fr -and $fr.highTempAggregates) {
+                        Write-Host "    $("Fluid".PadRight(40)) $("Expected".PadLeft(12)) $("Actual".PadLeft(12)) $("Diff".PadLeft(10)) Status" -ForegroundColor DarkGray
+                        Write-Host "    $("-" * 86)" -ForegroundColor DarkGray
+                        
+                        foreach ($prop in $fr.highTempAggregates.PSObject.Properties) {
+                            $agg = $prop.Value
+                            $exp = [Math]::Round($agg.expected, 1)
+                            $act = [Math]::Round($agg.actual, 1)
+                            $diff = [Math]::Round($agg.delta, 1)
+                            $diffStr = if ([Math]::Abs($diff) -lt 0.1) { "OK" } elseif ($diff -gt 0) { "+$diff" } else { "$diff" }
+                            $status = if ($agg.reconciled) { "`u{2705} RECONCILED" } else { "`u{26A0} LOSS" }
+                            $diffColor = if ($agg.reconciled) { "Green" } else { "Yellow" }
+                            Write-Host "    $($prop.Name.PadRight(40)) $($exp.ToString().PadLeft(12)) $($act.ToString().PadLeft(12)) " -NoNewline -ForegroundColor White
+                            Write-Host "$($diffStr.PadLeft(10))" -NoNewline -ForegroundColor $diffColor
+                            Write-Host " $status" -ForegroundColor $diffColor
+                        }
+                    } else {
+                        # Fallback: compute aggregates from raw keys
+                        Write-Host "    $("Fluid".PadRight(40)) $("Expected".PadLeft(12)) $("Actual".PadLeft(12)) $("Diff".PadLeft(10))" -ForegroundColor DarkGray
+                        Write-Host "    $("-" * 76)" -ForegroundColor DarkGray
+                        
+                        $aggByName = @{}
+                        foreach ($entry in $highTemp) {
+                            $baseName = Get-FluidName $entry.Key
+                            if (-not $aggByName.ContainsKey($baseName)) {
+                                $aggByName[$baseName] = @{ Expected = 0; Actual = 0 }
+                            }
+                            $aggByName[$baseName].Expected += $entry.Value.Expected
+                            $aggByName[$baseName].Actual += $entry.Value.Actual
+                        }
+                        foreach ($agg in ($aggByName.GetEnumerator() | Sort-Object { $_.Value.Expected } -Descending)) {
+                            $exp = [Math]::Round($agg.Value.Expected, 1)
+                            $act = [Math]::Round($agg.Value.Actual, 1)
+                            $diff = [Math]::Round($act - $exp, 1)
+                            $diffStr = if ([Math]::Abs($diff) -lt 0.1) { "OK" } elseif ($diff -gt 0) { "+$diff" } else { "$diff" }
+                            $diffColor = if ([Math]::Abs($diff) -lt 0.1) { "Green" } elseif ($diff -gt 0) { "Red" } else { "Yellow" }
+                            Write-Host "    $($agg.Key.PadRight(40)) $($exp.ToString().PadLeft(12)) $($act.ToString().PadLeft(12)) " -NoNewline -ForegroundColor White
+                            Write-Host "$($diffStr.PadLeft(10))" -ForegroundColor $diffColor
+                        }
+                    }
+                    
+                    # Show the individual temp keys dimmed for reference
+                    Write-Host "    Per-key breakdown (for reference):" -ForegroundColor DarkGray
+                    foreach ($entry in $highTemp) {
+                        $exp = [Math]::Round($entry.Value.Expected, 1)
+                        $act = [Math]::Round($entry.Value.Actual, 1)
+                        Write-Host "      $($entry.Key.PadRight(38)) $($exp.ToString().PadLeft(12)) $($act.ToString().PadLeft(12))" -ForegroundColor DarkGray
+                    }
                 }
             }
         }

@@ -1450,6 +1450,31 @@ local function complete_import_job(job)
         result.actualFluidCounts = actual_fluid_counts
         result.postActivation = true  -- Flag that these are post-activation numbers
         
+        -- Fluid reconciliation data for transaction log
+        -- Structured so the log viewer can show high-temp aggregates and deltas
+        local fluid_reconciliation = {
+          highTempThreshold = HIGH_TEMP,
+          rawFluidDelta = total_expected_fluids - total_actual_fluids,
+          reconciledFluidLoss = total_reconciled_loss,
+          lowTempLoss = low_temp_loss,
+          highTempReconciledLoss = reconciled_loss,
+          fluidPreservedPct = total_expected_fluids > 0
+            and ((total_expected_fluids - total_reconciled_loss) / total_expected_fluids * 100)
+            or 100,
+          highTempAggregates = {},
+        }
+        for name, _ in pairs(all_ht_names) do
+          local exp = expected_by_name[name] or 0
+          local act = actual_by_name[name] or 0
+          fluid_reconciliation.highTempAggregates[name] = {
+            expected = exp,
+            actual = act,
+            delta = act - exp,
+            reconciled = math.abs(exp - act) <= 1,
+          }
+        end
+        result.fluidReconciliation = fluid_reconciliation
+        
         -- Re-store updated validation result
         validation_result = result
         TransferValidation.store_validation_result(job.platform_name, result)
