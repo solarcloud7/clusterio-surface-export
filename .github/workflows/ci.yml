@@ -119,6 +119,8 @@ jobs:
       contents: read
       id-token: write  # For npm provenance
 
+    environment: npm-publish
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4

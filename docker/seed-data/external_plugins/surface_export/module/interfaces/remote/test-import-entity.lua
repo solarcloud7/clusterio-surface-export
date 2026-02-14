@@ -202,13 +202,52 @@ return function(entity_json, surface_index, position_override)
     table.insert(result.warnings, "Entity state restoration failed: " .. tostring(state_error))
   end
   
-  -- Restore inventories (includes belt items, chest contents, etc.)
+  -- Restore inventories (chest contents, etc. - NOT belt items)
   local inv_restore_success, inv_error = pcall(function()
     Deserializer.restore_inventories(created_entity, entity_data)
   end)
   
   if not inv_restore_success then
     table.insert(result.warnings, "Inventory restoration failed: " .. tostring(inv_error))
+  end
+  
+  -- Restore belt items directly (normally handled by BeltRestoration post-processing phase)
+  -- The deserializer skips belt items because in real imports they must all be placed
+  -- in a single tick. For single-entity tests we can do it inline.
+  if entity_data.specific_data and entity_data.specific_data.items 
+     and created_entity.valid and created_entity.get_transport_line then
+    local belt_items_placed = 0
+    local belt_items_failed = 0
+    for _, line_data in ipairs(entity_data.specific_data.items) do
+      local line = created_entity.get_transport_line(line_data.line)
+      if line and line.valid and line_data.items then
+        for _, item in ipairs(line_data.items) do
+          local stack = {
+            name = item.name,
+            count = item.count,
+            quality = item.quality or "normal"
+          }
+          local success = false
+          if item.position then
+            success = line.insert_at(item.position, stack, item.count)
+          end
+          if not success then
+            success = line.insert_at_back(stack, item.count)
+          end
+          if success then
+            belt_items_placed = belt_items_placed + item.count
+          else
+            belt_items_failed = belt_items_failed + item.count
+          end
+        end
+      end
+    end
+    result.debug_info.belt_items_placed = belt_items_placed
+    result.debug_info.belt_items_failed = belt_items_failed
+    if belt_items_failed > 0 then
+      table.insert(result.warnings, string.format(
+        "Belt restoration: %d placed, %d failed", belt_items_placed, belt_items_failed))
+    end
   end
   -- Note: Turret priority targeting is controlled entirely via circuit network
   -- (LuaTurretControlBehavior), not stored on the entity itself
@@ -243,6 +282,46 @@ return function(entity_json, surface_index, position_override)
       local input_sd = entity_data.specific_data or {}
       local output_sd = exported_data.specific_data or {}
       
+      --- Normalize belt item arrays for comparison.
+      --- For each item in the output, only keep fields that exist in the
+      --- corresponding input item. This lets the test define what it cares
+      --- about (name/count/quality) without failing on output-only fields
+      --- like `position` that get_detailed_contents() adds on re-export.
+      local function normalize_belt_items(input_lines, output_lines)
+        if type(input_lines) ~= "table" or type(output_lines) ~= "table" then
+          return input_lines, output_lines
+        end
+        -- Build a set of keys used in input items
+        local input_keys = {}
+        for _, line_data in ipairs(input_lines) do
+          if line_data.items then
+            for _, item in ipairs(line_data.items) do
+              for k, _ in pairs(item) do
+                input_keys[k] = true
+              end
+            end
+          end
+        end
+        -- Strip keys from output items that aren't in the input
+        local norm_output = {}
+        for _, line_data in ipairs(output_lines) do
+          local norm_line = { line = line_data.line, items = {} }
+          if line_data.items then
+            for _, item in ipairs(line_data.items) do
+              local norm_item = {}
+              for k, v in pairs(item) do
+                if input_keys[k] then
+                  norm_item[k] = v
+                end
+              end
+              table.insert(norm_line.items, norm_item)
+            end
+          end
+          table.insert(norm_output, norm_line)
+        end
+        return input_lines, norm_output
+      end
+
       -- Build comparison report
       local function compare_field(field_name)
         local input_val = input_sd[field_name]
@@ -260,20 +339,31 @@ return function(entity_json, surface_index, position_override)
           return nil  -- Field not in input, don't compare against default
         end
         
+        local input_json, output_json
         local match = false
         if input_type == "table" and output_type == "table" then
-          -- For tables, do a deep comparison via JSON encode
-          local input_json = json.encode(input_val)
-          local output_json = json.encode(output_val)
+          -- For belt items, strip output-only fields before comparing
+          local cmp_input = input_val
+          local cmp_output = output_val
+          if field_name == "items" then
+            cmp_input, cmp_output = normalize_belt_items(input_val, output_val)
+          end
+          -- Deep comparison via JSON encode
+          input_json = json.encode(cmp_input)
+          output_json = json.encode(cmp_output)
           match = (input_json == output_json)
         else
           match = (input_val == output_val)
+          input_json = tostring(input_val)
+          output_json = tostring(output_val)
         end
         
         return {
           field = field_name,
           input = input_val,
           output = output_val,
+          input_json = input_json,
+          output_json = output_json,
           match = match
         }
       end
@@ -292,9 +382,15 @@ return function(entity_json, surface_index, position_override)
         if cmp then
           table.insert(result.comparison, cmp)
           if not cmp.match then
+            -- Include truncated JSON diff in warning for diagnostics
+            local input_str = cmp.input_json or tostring(cmp.input)
+            local output_str = cmp.output_json or tostring(cmp.output)
+            -- Truncate to keep output manageable
+            if #input_str > 300 then input_str = input_str:sub(1, 300) .. "..." end
+            if #output_str > 300 then output_str = output_str:sub(1, 300) .. "..." end
             table.insert(result.warnings, string.format(
-              "Roundtrip mismatch for '%s': input differs from exported output",
-              field
+              "Roundtrip mismatch for '%s': INPUT=%s | OUTPUT=%s",
+              field, input_str, output_str
             ))
           end
         end

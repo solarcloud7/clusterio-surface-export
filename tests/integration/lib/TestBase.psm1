@@ -884,7 +884,14 @@ function Write-TestResult {
     Write-Host "  $icon $TestId`: $TestName" -ForegroundColor $color
     
     if ($Message -and ($Status -eq "failed" -or $Status -eq "error")) {
-        Write-Host "      $Message" -ForegroundColor DarkRed
+        # Split multi-part messages (semicolon-separated) onto individual lines
+        $parts = $Message -split ';'
+        foreach ($part in $parts) {
+            $trimmed = $part.Trim()
+            if ($trimmed) {
+                Write-Host "      $trimmed" -ForegroundColor DarkRed
+            }
+        }
     }
 }
 

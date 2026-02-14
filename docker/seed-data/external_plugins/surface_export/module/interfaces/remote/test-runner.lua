@@ -155,6 +155,12 @@ function TestRunner.run_tests(test_suite_json, options)
         passed = false
         table.insert(fail_reasons, string.format("Too many mismatches: %d (max: %d)", 
           test_result.mismatches, expect.max_mismatches or 0))
+        -- Include mismatch warnings in fail reasons for diagnostics
+        for _, warning in ipairs(test_result.warnings) do
+          if string.find(warning, "Roundtrip mismatch") then
+            table.insert(fail_reasons, warning)
+          end
+        end
       end
     end
     
