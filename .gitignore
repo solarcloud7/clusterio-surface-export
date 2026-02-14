@@ -29,6 +29,8 @@ docker/server-settings.json
 
 # Mod packaging
 *.zip
+# Seed saves needed for CI integration tests
+!docker/seed-data/hosts/**/*.zip
 
 # Node dependencies
 **/node_modules/
