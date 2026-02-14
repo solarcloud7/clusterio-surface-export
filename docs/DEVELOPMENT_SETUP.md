@@ -153,7 +153,7 @@ rc11 "/sc rcon.print(remote.interfaces['surface_export'] ~= nil)"
 
 **Symptom:** Remote interface commands fail with `nil` or `attempt to call nil`
 
-**Check:** Ensure the remote interface name is `"surface_export"` (not `"FactorioSurfaceExport"`). Run:
+**Check:** Ensure the remote interface name is `"surface_export"` (not `"clusterio-surface-export"`). Run:
 ```lua
 /sc for name, _ in pairs(remote.interfaces) do rcon.print(name) end
 ```

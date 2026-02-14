@@ -28,7 +28,7 @@ Source Instance (Lua) ←IPC→ Instance Plugin (JS) ←WebSocket→ Controller 
 
 ## Docker Setup
 
-This plugin is deployed as an external plugin via the FactorioSurfaceExport project. See the [main README](../../../../../README.md) for Docker setup.
+This plugin is deployed as an external plugin via the clusterio-surface-export project. See the [main README](../../../../../README.md) for Docker setup.
 
 ```bash
 # From repo root
@@ -69,7 +69,7 @@ npx clusterioctl surface-export transfer <exportId> <targetInstanceId>
 
 ## Remote Interface
 
-The Lua module registers as `"surface_export"` (not `"FactorioSurfaceExport"`).
+The Lua module registers as `"surface_export"` (not `"clusterio-surface-export"`).
 
 ```lua
 -- Export

@@ -1,6 +1,6 @@
 {
-  "name": "@clusterio/plugin-surface-export",
-  "version": "0.9.74",
+  "name": "@solarcloud7/plugin-surface-export",
+  "version": "0.9.77",
   "description": "Clusterio plugin for exporting and importing Factorio space platforms",
   "main": "index.js",
   "scripts": {
@@ -16,6 +16,19 @@
   ],
   "author": "Solarcloud7",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/solarcloud7/clusterio-surface-export.git",
+    "directory": "docker/seed-data/external_plugins/surface_export"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "files": [
+    "*.js",
+    "module/",
+    "package.json"
+  ],
   "peerDependencies": {
     "@clusterio/controller": "^2.0.0",
     "@clusterio/host": "^2.0.0",

@@ -1,8 +1,8 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with the FactorioSurfaceExport project.
+This file provides guidance to Claude Code (claude.ai/code) when working with the clusterio-surface-export project.
 
-## FactorioSurfaceExport Project Overview
+## clusterio-surface-export Project Overview
 
 This project provides tools for exporting and importing Factorio Space Age platforms between Clusterio instances. It consists of:
 

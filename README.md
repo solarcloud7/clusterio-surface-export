@@ -1,4 +1,4 @@
-# Factorio Surface Export - Clusterio Integration
+# Clusterio Surface Export
 
 A Clusterio plugin and Factorio mod that serializes complete Space Age platform state for cluster-wide platform transfer. Captures every entity, item, fluid, and tile on a platform with full verification.
 
@@ -254,7 +254,7 @@ Or use VS Code tasks: "List Transaction Logs", "Get Latest Transaction Log".
 ### Project Structure
 
 ```
-FactorioSurfaceExport/
+clusterio-surface-export/
 ├── docker/
 │   ├── seed-data/
 │   │   ├── controller/

@@ -1,6 +1,6 @@
 # Async Processing Architecture
 
-This document explains how FactorioSurfaceExport uses asynchronous batch processing to handle large platform exports and imports without freezing the game.
+This document explains how clusterio-surface-export uses asynchronous batch processing to handle large platform exports and imports without freezing the game.
 
 ## The Problem: Game Freezing
 

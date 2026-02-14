@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-    Shared integration test infrastructure for FactorioSurfaceExport.
+    Shared integration test infrastructure for clusterio-surface-export.
 
 .DESCRIPTION
     This module provides common functions for:

@@ -1,0 +1,148 @@
+name: CI — Test & Publish
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+# Cancel in-progress runs for the same ref (branch/PR)
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  PLUGIN_DIR: docker/seed-data/external_plugins/surface_export
+
+jobs:
+  # ===========================================================================
+  # Integration Tests — spin up the full Docker cluster and run both test suites
+  # ===========================================================================
+  integration-tests:
+    name: Integration Tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Create env files from examples
+        run: |
+          cp docker/env/controller.env.example docker/env/controller.env
+          cp docker/env/host.env.example docker/env/host.env
+          # Set required values for CI
+          sed -i 's/^INIT_CLUSTERIO_ADMIN=$/INIT_CLUSTERIO_ADMIN=ci-admin/' docker/env/controller.env
+          # Space Age mod pack is required for platform transfers
+          echo 'DEFAULT_MOD_PACK=Space Age 2.0' >> docker/env/controller.env
+
+      - name: Pull Docker images
+        run: |
+          docker compose pull
+
+      - name: Start cluster
+        run: |
+          docker compose up -d
+          echo "Waiting for cluster to be healthy..."
+          # Wait for controller health check (up to 120s)
+          timeout 120 bash -c '
+            until docker inspect --format="{{.State.Health.Status}}" surface-export-controller 2>/dev/null | grep -q healthy; do
+              sleep 5
+              echo "  Waiting for controller..."
+            done
+          '
+          echo "Controller is healthy"
+
+      - name: Wait for instances to start
+        run: |
+          # Wait for both instances to be running
+          timeout 120 bash -c '
+            until docker exec surface-export-controller \
+              npx clusterioctl --config=/clusterio/tokens/config-control.json instance list 2>&1 \
+              | grep -c "running" | grep -q 2; do
+              sleep 5
+              echo "  Waiting for instances..."
+            done
+          '
+          echo "Both instances are running"
+          # Give Factorio a moment to fully initialize
+          sleep 10
+          docker exec surface-export-controller \
+            npx clusterioctl --config=/clusterio/tokens/config-control.json instance list
+
+      - name: Run Entity Roundtrip Tests
+        shell: pwsh
+        run: |
+          ./tests/integration/entity-roundtrip/run-tests.ps1
+
+      - name: Run Platform Roundtrip Tests
+        shell: pwsh
+        run: |
+          ./tests/integration/platform-roundtrip/run-tests.ps1 -ShowDetails
+
+      - name: Collect logs on failure
+        if: failure()
+        run: |
+          echo "=== Controller Logs ==="
+          docker logs surface-export-controller --tail 100 2>&1 || true
+          echo ""
+          echo "=== Host 1 Logs ==="
+          docker logs surface-export-host-1 --tail 100 2>&1 || true
+          echo ""
+          echo "=== Host 2 Logs ==="
+          docker logs surface-export-host-2 --tail 100 2>&1 || true
+          echo ""
+          echo "=== Host 1 Factorio Log ==="
+          docker exec surface-export-host-1 cat /clusterio/data/instances/clusterio-host-1-instance-1/factorio-current.log 2>/dev/null | tail -200 || true
+          echo ""
+          echo "=== Host 2 Factorio Log ==="
+          docker exec surface-export-host-2 cat /clusterio/data/instances/clusterio-host-2-instance-1/factorio-current.log 2>/dev/null | tail -200 || true
+
+      - name: Stop cluster
+        if: always()
+        run: |
+          docker compose down -v
+
+  # ===========================================================================
+  # Publish to npm — only on version tags after tests pass
+  # ===========================================================================
+  publish:
+    name: Publish to npm
+    needs: integration-tests
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    permissions:
+      contents: read
+      id-token: write  # For npm provenance
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          registry-url: 'https://registry.npmjs.org'
+
+      - name: Verify version matches tag
+        working-directory: ${{ env.PLUGIN_DIR }}
+        run: |
+          PACKAGE_VERSION=$(node -p "require('./package.json').version")
+          TAG_VERSION="${GITHUB_REF#refs/tags/v}"
+          echo "Package version: $PACKAGE_VERSION"
+          echo "Tag version:     $TAG_VERSION"
+          if [ "$PACKAGE_VERSION" != "$TAG_VERSION" ]; then
+            echo "::error::Version mismatch! package.json=$PACKAGE_VERSION, tag=$TAG_VERSION"
+            exit 1
+          fi
+
+      - name: Publish to npm
+        working-directory: ${{ env.PLUGIN_DIR }}
+        run: npm publish --provenance --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

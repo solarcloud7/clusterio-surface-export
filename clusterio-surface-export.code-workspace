@@ -1,7 +1,7 @@
 {
   "folders": [
     {
-      "name": "Factorio Surface Export",
+      "name": "Clusterio Surface Export",
       "path": "."
     }
   ],
@@ -22,10 +22,7 @@
       "table_size",
       "log"
     ],
-    "Lua.runtime.version": "Lua 5.2",
-    "Lua.workspace.library": [
-      "${workspaceFolder:Factorio Mod - Surface Export}/factorioAPI"
-    ],
+    "Lua.runtime.version": "Lua 5.2",    
     "Lua.diagnostics.disable": [
       "lowercase-global"
     ],
@@ -51,7 +48,6 @@
     "chat.tools.terminal.autoApprove": {
       "docker ps": true,
       "&": true,
-      "C:\\Users\\Solar\\source\\FactorioSurfaceExport\\tools\\deploy-cluster.ps1": true,
       ".\\deploy-cluster.ps1": true,
       "rc11": true,
       "game.table_to_json(status)": true,
