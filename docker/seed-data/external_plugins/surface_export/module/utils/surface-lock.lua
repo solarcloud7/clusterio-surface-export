@@ -1,62 +1,11 @@
--- FactorioSurfaceExport - Surface Locking Utilities
+-- Surface Locking Utilities
 -- Handles locking surfaces during transfer to prevent modifications
+
+local GameUtils = require("modules/surface_export/utils/game-utils")
 
 local SurfaceLock = {}
 
--- Entity types that should be deactivated during lock for stable counts
--- MUST match ACTIVATABLE_ENTITY_TYPES in active_state_restoration.lua
-local FREEZABLE_ENTITY_TYPES = {
-  -- Production
-  ["assembling-machine"] = true,
-  ["furnace"] = true,
-  ["mining-drill"] = true,
-  ["lab"] = true,
-  ["rocket-silo"] = true,
-  ["agricultural-tower"] = true,
-  -- Power
-  ["reactor"] = true,
-  ["generator"] = true,
-  ["burner-generator"] = true,
-  ["boiler"] = true,
-  ["fusion-reactor"] = true,
-  ["fusion-generator"] = true,
-  -- Logistics - Item transport
-  ["inserter"] = true,
-  -- Note: Belts cannot be disabled (since Factorio 0.17). This is fine -
-  -- with inserters/loaders frozen, no items can enter or leave belts.
-  ["loader"] = true,
-  ["loader-1x1"] = true,
-  -- Logistics - Fluid transport
-  ["pump"] = true,
-  ["offshore-pump"] = true,
-  -- Logistics - Robots
-  ["roboport"] = true,
-  -- Misc
-  ["beacon"] = true,
-  ["radar"] = true,
-  -- Space platform specific
-  ["thruster"] = true,
-  ["asteroid-collector"] = true,
-  ["cargo-bay"] = true,
-  ["space-platform-hub"] = true,  -- Hub controls logistics/construction; may be paused
-  -- Planet logistics (for future surface transfers)
-  ["cargo-landing-pad"] = true,
-}
-
---- Generate a stable ID for entities without unit_number
---- MUST match EntityScanner.make_stable_id() for frozen_states lookup on import
---- @param entity LuaEntity
---- @return string
-local function make_stable_id(entity)
-    local position = entity.position or {x = 0, y = 0}
-    local orientation_part = entity.orientation and string.format(":%.3f", entity.orientation) or ""
-    return string.format("%s@%.3f,%.3f#%s%s",
-        entity.name,
-        position.x,
-        position.y,
-        entity.direction or 0,
-        orientation_part)
-end
+local ACTIVATABLE_ENTITY_TYPES = GameUtils.ACTIVATABLE_ENTITY_TYPES
 
 --- Freeze all entities on a surface (synchronous - very fast)
 --- CRITICAL: This captures the ORIGINAL active state BEFORE freezing.
@@ -75,10 +24,10 @@ local function freeze_entities(surface)
     
     local entities = surface.find_entities_filtered({})
     for _, entity in pairs(entities) do
-        if entity.valid and FREEZABLE_ENTITY_TYPES[entity.type] then
+        if entity.valid and ACTIVATABLE_ENTITY_TYPES[entity.type] then
             -- Use unit_number if available, otherwise generate stable ID
             -- MUST match the entity_id format used in EntityScanner.serialize_entity()
-            local unit_id = entity.unit_number or make_stable_id(entity)
+            local unit_id = entity.unit_number or GameUtils.make_stable_id(entity)
             
             -- Check if entity has an active property
             local ok, has_active = pcall(function() return entity.active ~= nil end)
@@ -114,8 +63,8 @@ local function unfreeze_entities(surface, original_states)
     local entities = surface.find_entities_filtered({})
     
     for _, entity in pairs(entities) do
-        if entity.valid and FREEZABLE_ENTITY_TYPES[entity.type] then
-            local unit_id = entity.unit_number or make_stable_id(entity)
+        if entity.valid and ACTIVATABLE_ENTITY_TYPES[entity.type] then
+            local unit_id = entity.unit_number or GameUtils.make_stable_id(entity)
             local was_active = original_states[unit_id]
             
             -- Restore original active state
@@ -142,7 +91,7 @@ function SurfaceLock.activate_all(surface)
     
     local entities = surface.find_entities_filtered({})
     for _, entity in pairs(entities) do
-        if entity.valid and FREEZABLE_ENTITY_TYPES[entity.type] then
+        if entity.valid and ACTIVATABLE_ENTITY_TYPES[entity.type] then
             local ok = pcall(function()
                 if not entity.active then
                     entity.active = true

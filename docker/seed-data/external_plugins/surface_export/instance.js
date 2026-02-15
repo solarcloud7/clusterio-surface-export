@@ -7,8 +7,18 @@
 "use strict";
 const fs = require("fs").promises;
 const path = require("path");
-const lib = require("@clusterio/lib");
-const { BaseInstancePlugin } = require("@clusterio/host");
+function requireClusterioModule(moduleName) {
+	if (require.main && typeof require.main.require === "function") {
+		try {
+			return require.main.require(moduleName);
+		} catch (err) {
+			// Fallback to local resolution below.
+		}
+	}
+	return require(moduleName);
+}
+const lib = requireClusterioModule("@clusterio/lib");
+const { BaseInstancePlugin } = requireClusterioModule("@clusterio/host");
 const info = require("./index.js");
 const messages = require("./messages");
 const { sendChunkedJson, sendAdaptiveJson } = require("./helpers");
@@ -18,6 +28,24 @@ const { sendChunkedJson, sendAdaptiveJson } = require("./helpers");
  * Runs on each Clusterio host and handles communication with Factorio servers
  */
 class InstancePlugin extends BaseInstancePlugin {
+	normalizeRconScalarResult(value) {
+		const text = String(value ?? "");
+		const lines = text
+			.split(/\r?\n/)
+			.map(line => line.trim())
+			.filter(Boolean);
+		return lines.length ? lines[lines.length - 1] : "";
+	}
+
+	isInvalidExportId(exportId) {
+		if (!exportId) {
+			return true;
+		}
+		const lowered = String(exportId).trim().toLowerCase();
+		return lowered.startsWith("export_failed")
+			|| lowered === "nil"
+			|| lowered.startsWith("error");
+	}
 	/**
 	 * Initialize plugin
 	 * Called when plugin is loaded
@@ -48,6 +76,7 @@ class InstancePlugin extends BaseInstancePlugin {
 		this.instance.handle(messages.DeleteSourcePlatformRequest, this.handleDeleteSourcePlatform.bind(this));
 		this.instance.handle(messages.UnlockSourcePlatformRequest, this.handleUnlockSourcePlatform.bind(this));
 		this.instance.handle(messages.TransferStatusUpdate, this.handleTransferStatusUpdate.bind(this));
+		this.instance.handle(messages.InstanceListPlatformsRequest, this.handleInstanceListPlatformsRequest.bind(this));
 		
 		this.logger.info("Surface Export plugin initialized");
 	}
@@ -100,40 +129,45 @@ class InstancePlugin extends BaseInstancePlugin {
 	 * @param {Object} data - Export data from mod
 	 */
 	async handleExportComplete(data) {
-		this.logger.info(`Export complete IPC received: export_id=${data.export_id}, platform=${data.platform_name}`);
+		const exportId = String(data.export_id || "").trim();
+		this.logger.info(`Export complete IPC received: export_id=${exportId}, platform=${data.platform_name}`);
 		this.logger.info(`  destination_instance_id=${data.destination_instance_id} (type=${typeof data.destination_instance_id}), job_id=${data.job_id}`);
 		this.logger.info(`  this.instance.id=${this.instance.id} (type=${typeof this.instance.id})`);
-		this.logger.info(`Platform export completed: ${data.export_id} (${data.platform_name})`);
+		this.logger.info(`Platform export completed: ${exportId} (${data.platform_name})`);
+
+		if (this.isInvalidExportId(exportId)) {
+			this.logger.error(`Export completion IPC contained invalid export ID: ${JSON.stringify(data.export_id)}`);
+			return;
+		}
 
 		try {
 			// Retrieve full export data from mod
-			const exportData = await this.getExportData(data.export_id);
+			const exportData = await this.getExportData(exportId);
 
 			if (!exportData) {
-				this.logger.error(`Failed to retrieve export data for ${data.export_id}`);
+				this.logger.error(`Failed to retrieve export data for ${exportId}`);
 				return;
 			}
 
 			// Send export to controller for storage
 			await this.instance.sendTo("controller", new messages.PlatformExportEvent({
-				exportId: data.export_id,
+				exportId,
 				platformName: data.platform_name,
 				instanceId: this.instance.id,
 				exportData: exportData,
 				timestamp: Date.now(),
 			}));
-
-			this.logger.info(`Sent platform export ${data.export_id} to controller`);
+			this.logger.info(`Sent platform export ${exportId} to controller`);
 
 			// Check if auto-transfer was requested (destination_instance_id in IPC data)
 			if (data.destination_instance_id) {
 				this.logger.info(`Auto-transfer requested: dest_instance_id=${data.destination_instance_id} (type=${typeof data.destination_instance_id})`);
-				this.logger.info(`  Sending TransferPlatformRequest to controller: exportId=${data.export_id}, targetInstanceId=${data.destination_instance_id}`);
+				this.logger.info(`  Sending TransferPlatformRequest to controller: exportId=${exportId}, targetInstanceId=${data.destination_instance_id}`);
 				
 				// Send transfer request to controller
 				const transferResponse = await this.instance.sendTo("controller",
 					new messages.TransferPlatformRequest({
-						exportId: data.export_id,
+						exportId,
 						targetInstanceId: data.destination_instance_id,
 					})
 				);
@@ -153,7 +187,7 @@ class InstancePlugin extends BaseInstancePlugin {
 				// Send transfer request to controller
 				const transferResponse = await this.instance.sendTo("controller",
 					new messages.TransferPlatformRequest({
-						exportId: data.export_id,
+						exportId,
 						targetInstanceId: this.pendingTransfer.destination_instance_id,
 					})
 				);
@@ -238,15 +272,24 @@ class InstancePlugin extends BaseInstancePlugin {
 		try {
 			// Call mod's remote interface to export platform - this returns the export_id
 			const rconResult = await this.sendRcon(
-				`/sc local data, export_id = remote.call("surface_export", "export_platform", ${platformIndex}, "${forceName.replace(/"/g, '\\"')}"); rcon.print(export_id or "EXPORT_FAILED")`
+				`/sc local export_id, err = remote.call("surface_export", "export_platform", ${platformIndex}, "${forceName.replace(/"/g, '\\\\"')}"); ` +
+				`if export_id then rcon.print(export_id) else rcon.print("EXPORT_FAILED:" .. tostring(err or "unknown")) end`
 			);
 			this.logger.info(`Export RCON result: ${rconResult}`);
-			
-			if (!rconResult || rconResult === "EXPORT_FAILED" || rconResult === "nil") {
+			const exportResult = this.normalizeRconScalarResult(rconResult);
+			if (!exportResult || exportResult.toLowerCase() === "nil") {
 				return { success: false, error: "Export failed - no export_id returned" };
 			}
-			
-			const exportId = rconResult.trim();
+			if (exportResult.toUpperCase().startsWith("EXPORT_FAILED")) {
+				const parts = exportResult.split(":");
+				const reason = parts.length > 1 ? parts.slice(1).join(":").trim() : "";
+				return { success: false, error: reason ? `Export failed - ${reason}` : "Export failed" };
+			}
+
+			const exportId = exportResult.trim();
+			if (this.isInvalidExportId(exportId)) {
+				return { success: false, error: "Export failed - invalid export_id returned" };
+			}
 			this.logger.info(`Export completed with ID: ${exportId}`);
 			
 			// Retrieve full export data from mod storage
@@ -283,16 +326,33 @@ class InstancePlugin extends BaseInstancePlugin {
 	 */
 	async getExportData(exportId) {
 		try {
-			// Call the _json version which pre-encodes the result in Lua
-			const result = await this.sendRcon(
-`/sc rcon.print(remote.call("surface_export", "get_export_json", "${exportId}"))`
-			);
-			
-			if (result === "null") {
+			const safeExportId = String(exportId || "").trim();
+			if (this.isInvalidExportId(safeExportId)) {
+				this.logger.warn(`Skipping getExportData for invalid export ID: ${JSON.stringify(exportId)}`);
 				return null;
 			}
-			
-			const exportData = JSON.parse(result);
+			// Call the _json version which pre-encodes the result in Lua
+			const result = await this.sendRcon(
+`/sc rcon.print(remote.call("surface_export", "get_export_json", "${safeExportId}"))`
+			);
+
+			const jsonText = String(result || "").trim();
+			if (!jsonText || jsonText === "null") {
+				this.logger.error(`Export data not found for ${safeExportId} - Lua returned empty/null`);
+				// List available exports for debugging
+				try {
+					const availableExports = await this.listExports();
+					this.logger.error(`Available exports in Lua: ${JSON.stringify(availableExports)}`);
+				} catch (listErr) {
+					this.logger.error(`Failed to list available exports: ${listErr.message}`);
+				}
+				return null;
+			}
+
+			const exportData = JSON.parse(jsonText);
+			if (!exportData || typeof exportData !== "object") {
+				return null;
+			}
 			
 			// Log compression info if data is compressed
 			if (exportData.compressed && exportData.payload) {
@@ -323,6 +383,40 @@ class InstancePlugin extends BaseInstancePlugin {
 			return JSON.parse(result);
 		} catch (err) {
 			this.logger.error(`List exports failed:\n${err.stack}`);
+			return [];
+		}
+	}
+
+	/**
+	 * List all current platforms on this instance for a force
+	 * @param {string} forceName - Force name to inspect
+	 * @returns {Array} Platform metadata
+	 */
+	async listPlatforms(forceName = "player") {
+		const safeForceName = String(forceName || "player")
+			.replace(/\\/g, "\\\\")
+			.replace(/"/g, '\\"');
+
+		try {
+			const result = await this.sendRcon(
+				`/sc rcon.print(remote.call("surface_export", "list_platforms_json", "${safeForceName}"))`
+			);
+			const parsed = JSON.parse(result);
+			if (!Array.isArray(parsed)) {
+				return [];
+			}
+
+			return parsed.map(platform => ({
+				platformIndex: platform.platform_index,
+				platformName: platform.platform_name,
+				forceName: platform.force_name || forceName || "player",
+				surfaceIndex: platform.surface_index ?? null,
+				surfaceName: platform.surface_name ?? null,
+				entityCount: Number(platform.entity_count || 0),
+				isLocked: Boolean(platform.is_locked),
+			}));
+		} catch (err) {
+			this.logger.error(`List platforms failed:\\n${err.stack}`);
 			return [];
 		}
 	}
@@ -501,6 +595,22 @@ class InstancePlugin extends BaseInstancePlugin {
 	 */
 	async handleImportPlatformFromFileRequest(request) {
 		return await this.importPlatformFromFile(request.filename, request.platformName, request.forceName);
+	}
+
+	/**
+	 * Handle controller request for platform inventory on this instance
+	 * @param {Object} request - InstanceListPlatformsRequest
+	 * @returns {Object} Instance platform tree node payload
+	 */
+	async handleInstanceListPlatformsRequest(request) {
+		const forceName = request.forceName || "player";
+		const platforms = await this.listPlatforms(forceName);
+		return {
+			instanceId: this.instance.id,
+			instanceName: this.instance.config.get("instance.name"),
+			forceName,
+			platforms,
+		};
 	}
 
 	/**

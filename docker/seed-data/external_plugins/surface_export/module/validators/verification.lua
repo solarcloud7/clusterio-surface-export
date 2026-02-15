@@ -2,7 +2,7 @@
 -- CRITICAL: Ensures zero item loss and zero duplication through verification
 
 local Util = require("modules/surface_export/utils/util")
-local InventoryScanner = require("modules/surface_export/export_scanners/inventory-scanner")
+local SurfaceCounter = require("modules/surface_export/validators/surface-counter")
 
 local Verification = {}
 
@@ -154,94 +154,21 @@ function Verification.verify_export(export_data)
 end
 
 --- Count all items on a live surface (for post-import verification)
+--- Delegates to SurfaceCounter.count_items for the canonical implementation.
 --- @param surface LuaSurface: The surface to count items on
 --- @return table: Table of item_key = count pairs
 function Verification.count_surface_items(surface)
-  if not surface or not surface.valid then
-    return {}
-  end
-
-  local item_totals = {}
-
-  -- Find all entities
-  local entities = surface.find_entities_filtered({})
-
-  for _, entity in ipairs(entities) do
-    if entity.valid then
-      local success, err = pcall(function()
-        local inventories = InventoryScanner.extract_all_inventories(entity)
-        local inventory_totals = InventoryScanner.count_all_items(inventories)
-        for key, count in pairs(inventory_totals) do
-          item_totals[key] = (item_totals[key] or 0) + count
-        end
-
-        -- Belt items are returned as array of {line=N, items={...}}
-        if entity.type:find("transport%-belt") or entity.type:find("underground%-belt") or entity.type:find("splitter") then
-          local belt_lines = InventoryScanner.extract_belt_items(entity)
-          for _, line_data in ipairs(belt_lines) do
-            if line_data.items then
-              for _, item in ipairs(line_data.items) do
-                local key = Util.make_quality_key(item.name, item.quality or "normal")
-                item_totals[key] = (item_totals[key] or 0) + item.count
-              end
-            end
-          end
-        end
-
-        if entity.type:find("inserter") then
-          local held = InventoryScanner.extract_inserter_held_item(entity)
-          if held then
-            local key = Util.make_quality_key(held.name, held.quality or "normal")
-            item_totals[key] = (item_totals[key] or 0) + held.count
-          end
-        end
-      end)
-
-      if not success then
-        log(string.format("[FactorioSurfaceExport] Error counting items for entity %s: %s", entity.name, err))
-      end
-    end
-  end
-
-  -- Count items on ground
-  local ground_items = surface.find_entities_filtered({type = "item-entity"})
-  for _, item_entity in ipairs(ground_items) do
-    if item_entity.valid and item_entity.stack and item_entity.stack.valid_for_read then
-      local stack = item_entity.stack
-      local key = Util.make_quality_key(stack.name, (stack.quality and stack.quality.name) or "normal")
-      item_totals[key] = (item_totals[key] or 0) + stack.count
-    end
-  end
-
-  return item_totals
+  local counts, _ = SurfaceCounter.count_items(surface)
+  return counts
 end
 
---- Count all fluids on a live surface (for post-export/import verification)
+--- Count all fluids on a live surface (segment-aware)
+--- Delegates to SurfaceCounter.count_fluids for the canonical implementation.
 --- @param surface LuaSurface: The surface to count fluids on
 --- @return table: Table of fluid_key = amount pairs
 function Verification.count_surface_fluids(surface)
-  if not surface or not surface.valid then
-    return {}
-  end
-
-  local fluid_totals = {}
-
-  -- Find all entities with fluidboxes
-  local entities = surface.find_entities_filtered({})
-
-  for _, entity in ipairs(entities) do
-    if entity.valid and entity.fluidbox then
-      for i = 1, #entity.fluidbox do
-        local fluid = entity.fluidbox[i]
-        if fluid and fluid.name then
-          local key = Util.make_fluid_temp_key(fluid.name, fluid.temperature)
-          fluid_totals[key] = (fluid_totals[key] or 0) + fluid.amount
-        end
-      end
-    end
-  end
-
-  return fluid_totals
+  local counts, _ = SurfaceCounter.count_fluids(surface)
+  return counts
 end
 
 --- Generate a verification report comparing expected vs actual counts

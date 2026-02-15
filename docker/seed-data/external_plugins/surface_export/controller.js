@@ -7,7 +7,18 @@
 "use strict";
 const fs = require("fs/promises");
 const path = require("path");
-const { BaseControllerPlugin } = require("@clusterio/controller");
+function requireClusterioModule(moduleName) {
+	if (require.main && typeof require.main.require === "function") {
+		try {
+			return require.main.require(moduleName);
+		} catch (err) {
+			// Fallback to local resolution below.
+		}
+	}
+	return require(moduleName);
+}
+const { BaseControllerPlugin } = requireClusterioModule("@clusterio/controller");
+const lib = requireClusterioModule("@clusterio/lib");
 const info = require("./index.js");
 const messages = require("./messages");
 const PLUGIN_NAME = info.plugin.name;
@@ -27,6 +38,22 @@ class ControllerPlugin extends BaseControllerPlugin {
 
 		// Storage for platform exports (key: exportId, value: export data)
 		this.platformStorage = new Map();
+		this.activeTransfers = new Map();
+		this.transactionLogs = new Map();
+		this.persistedTransactionLogs = [];
+		this.surfaceExportSubscriptions = new Map();
+		this.treeRevision = 0;
+		this.transferRevision = 0;
+		this.logRevision = 0;
+		this.treeBroadcastLimiter = new lib.RateLimiter({
+			maxRate: 2,
+			action: () => {
+				this.emitTreeUpdate(this.lastTreeForceName || "player").catch(err => {
+					this.logger.error(`Failed to broadcast tree update: ${err.message}`);
+				});
+			},
+		});
+		this.lastTreeForceName = "player";
 		this.storagePath = path.resolve(
 			this.controller.config.get("controller.database_directory"),
 			STORAGE_FILENAME
@@ -38,21 +65,16 @@ class ControllerPlugin extends BaseControllerPlugin {
 		await this.loadStorage();
 		await this.loadTransactionLogs();
 
-		// Track active transfers (key: transferId, value: transfer state)
-		this.activeTransfers = new Map();
-
-		// Transaction event logs (key: transferId, value: array of events)
-		this.transactionLogs = new Map();
-		
-		// Persisted transaction logs (array of completed transfer logs)
-		this.persistedTransactionLogs = [];
-
 		// Register event handler for platform exports from instances
 		this.controller.handle(messages.PlatformExportEvent, this.handlePlatformExport.bind(this));
 		this.controller.handle(messages.ListExportsRequest, this.handleListExportsRequest.bind(this));
 		this.controller.handle(messages.TransferPlatformRequest, this.handleTransferPlatformRequest.bind(this));
+		this.controller.handle(messages.StartPlatformTransferRequest, this.handleStartPlatformTransferRequest.bind(this));
 		this.controller.handle(messages.TransferValidationEvent, this.handleTransferValidation.bind(this));
+		this.controller.handle(messages.GetPlatformTreeRequest, this.handleGetPlatformTreeRequest.bind(this));
+		this.controller.handle(messages.ListTransactionLogsRequest, this.handleListTransactionLogsRequest.bind(this));
 		this.controller.handle(messages.GetTransactionLogRequest, this.handleGetTransactionLog.bind(this));
+		this.controller.handle(messages.SetSurfaceExportSubscriptionRequest, this.handleSetSurfaceExportSubscriptionRequest.bind(this));
 
 		this.logger.info("Surface Export controller plugin initialized");
 	}
@@ -69,7 +91,14 @@ class ControllerPlugin extends BaseControllerPlugin {
 	 * Called when controller stops
 	 */
 	async onShutdown() {
+		this.treeBroadcastLimiter.cancel();
 		this.logger.info(`Shutting down - ${this.platformStorage.size} platforms in storage`);
+	}
+
+	onControlConnectionEvent(connection, event) {
+		if (event === "close") {
+			this.surfaceExportSubscriptions.delete(connection);
+		}
 	}
 	
 	/**
@@ -102,6 +131,7 @@ class ControllerPlugin extends BaseControllerPlugin {
 				this.cleanupOldExports(maxStorage);
 			}
 			await this.persistStorage();
+			this.queueTreeBroadcast("player");
 		} catch (err) {
 			this.logger.error(`Error handling platform export:\n${err.stack}`);
 		}
@@ -131,6 +161,7 @@ class ControllerPlugin extends BaseControllerPlugin {
 		this.persistStorage().catch(err => {
 			this.logger.error(`Failed to persist after cleanup: ${err.message}`);
 		});
+		this.queueTreeBroadcast("player");
 	}
 	
 	/**
@@ -145,6 +176,395 @@ class ControllerPlugin extends BaseControllerPlugin {
 			timestamp: data.timestamp,
 			size: data.size ?? Buffer.byteLength(JSON.stringify(data.exportData || {}), "utf8"),
 		}));
+	}
+
+	normalizeTransferStatus(status) {
+		if (status === "importing") {
+			return "transporting";
+		}
+		return status;
+	}
+
+	buildTransferInfo(transfer) {
+		return {
+			transferId: transfer.transferId,
+			exportId: transfer.exportId,
+			platformName: transfer.platformName,
+			platformIndex: transfer.platformIndex,
+			forceName: transfer.forceName,
+			sourceInstanceId: transfer.sourceInstanceId,
+			sourceInstanceName: transfer.sourceInstanceName || this.resolveInstanceName(transfer.sourceInstanceId),
+			targetInstanceId: transfer.targetInstanceId,
+			targetInstanceName: transfer.targetInstanceName || this.resolveInstanceName(transfer.targetInstanceId),
+			status: this.normalizeTransferStatus(transfer.status),
+			startedAt: transfer.startedAt || null,
+			completedAt: transfer.completedAt || null,
+			failedAt: transfer.failedAt || null,
+			error: transfer.error || null,
+		};
+	}
+
+	getLastEventTimestamp(transferId) {
+		const events = this.transactionLogs.get(transferId);
+		if (!events || !events.length) {
+			return null;
+		}
+		return events[events.length - 1].timestampMs || null;
+	}
+
+	buildTransferSummary(transferId, transfer, lastEventAt = null) {
+		const info = this.buildTransferInfo(transfer);
+		return {
+			transferId,
+			platformName: info.platformName,
+			sourceInstanceId: info.sourceInstanceId,
+			sourceInstanceName: info.sourceInstanceName,
+			targetInstanceId: info.targetInstanceId,
+			targetInstanceName: info.targetInstanceName,
+			status: info.status,
+			startedAt: info.startedAt || Date.now(),
+			completedAt: info.completedAt,
+			failedAt: info.failedAt,
+			error: info.error,
+			lastEventAt,
+		};
+	}
+
+	formatDuration(durationMs) {
+		if (typeof durationMs !== "number" || Number.isNaN(durationMs)) {
+			return null;
+		}
+		if (durationMs >= 1000) {
+			return `${(durationMs / 1000).toFixed(1)}s`;
+		}
+		return `${Math.round(durationMs)}ms`;
+	}
+
+	resolveTransferResult(status) {
+		if (status === "completed") {
+			return "SUCCESS";
+		}
+		if ([ "failed", "error", "cleanup_failed" ].includes(status)) {
+			return "FAILED";
+		}
+		return "IN_PROGRESS";
+	}
+
+	buildPhaseSummary(transfer) {
+		const phaseSummary = {};
+		if (!transfer?.phases) {
+			return phaseSummary;
+		}
+		for (const [name, phase] of Object.entries(transfer.phases)) {
+			if (phase?.durationMs !== undefined) {
+				phaseSummary[`${name}Ms`] = phase.durationMs;
+			}
+		}
+		return phaseSummary;
+	}
+
+	buildDetailedTransferSummary(transferId, transfer, lastEventAt = null) {
+		const info = this.buildTransferInfo(transfer);
+		const endAt = info.completedAt || info.failedAt || lastEventAt || Date.now();
+		const durationMs = info.startedAt ? Math.max(0, endAt - info.startedAt) : null;
+		const validation = transfer.validationResult || null;
+		let sourceVerification = transfer.sourceVerification || null;
+		if (!sourceVerification && validation) {
+			sourceVerification = {
+				itemCounts: validation.expectedItemCounts || {},
+				fluidCounts: validation.expectedFluidCounts || {},
+			};
+		}
+
+		return {
+			transferId,
+			result: this.resolveTransferResult(info.status),
+			status: info.status,
+			totalDurationMs: durationMs,
+			totalDurationStr: this.formatDuration(durationMs),
+			phases: this.buildPhaseSummary(transfer),
+			platform: {
+				name: info.platformName,
+				source: {
+					instanceId: info.sourceInstanceId,
+					instanceName: info.sourceInstanceName,
+				},
+				destination: {
+					instanceId: info.targetInstanceId,
+					instanceName: info.targetInstanceName,
+				},
+			},
+			payload: transfer.payloadMetrics || null,
+			import: transfer.importMetrics || null,
+			validation,
+			sourceVerification,
+			startedAt: info.startedAt,
+			completedAt: info.completedAt,
+			failedAt: info.failedAt,
+			lastEventAt,
+			error: info.error || null,
+		};
+	}
+
+	getTransferSummaries(limit = 50) {
+		const byId = new Map();
+
+		for (const [transferId, transfer] of this.activeTransfers) {
+			byId.set(transferId, this.buildTransferSummary(
+				transferId,
+				transfer,
+				this.getLastEventTimestamp(transferId),
+			));
+		}
+
+		for (const persistedLog of this.persistedTransactionLogs) {
+			const transferInfo = persistedLog.transferInfo || {};
+			const events = Array.isArray(persistedLog.events) ? persistedLog.events : [];
+			const lastEvent = events.length ? events[events.length - 1] : null;
+			if (!byId.has(persistedLog.transferId)) {
+				byId.set(persistedLog.transferId, {
+					transferId: persistedLog.transferId,
+					platformName: transferInfo.platformName || "Unknown",
+					sourceInstanceId: transferInfo.sourceInstanceId ?? -1,
+					sourceInstanceName: transferInfo.sourceInstanceName ?? null,
+					targetInstanceId: transferInfo.targetInstanceId ?? -1,
+					targetInstanceName: transferInfo.targetInstanceName ?? null,
+					status: this.normalizeTransferStatus(transferInfo.status || "unknown"),
+					startedAt: transferInfo.startedAt || persistedLog.savedAt || Date.now(),
+					completedAt: transferInfo.completedAt || null,
+					failedAt: transferInfo.failedAt || null,
+					error: transferInfo.error || null,
+					lastEventAt: lastEvent?.timestampMs || null,
+				});
+			}
+		}
+
+		return Array.from(byId.values())
+			.sort((a, b) => (b.startedAt || 0) - (a.startedAt || 0))
+			.slice(0, limit);
+	}
+
+	queueTreeBroadcast(forceName = "player") {
+		this.lastTreeForceName = forceName || this.lastTreeForceName || "player";
+		this.treeBroadcastLimiter.activate();
+	}
+
+	async requestInstancePlatforms(instanceId, forceName = "player") {
+		try {
+			const response = await this.controller.sendTo(
+				{ instanceId },
+				new messages.InstanceListPlatformsRequest({ forceName })
+			);
+			return {
+				platforms: Array.isArray(response?.platforms) ? response.platforms : [],
+				error: null,
+			};
+		} catch (err) {
+			return {
+				platforms: [],
+				error: err.message,
+			};
+		}
+	}
+
+	applyActiveTransferState(platforms, instanceId) {
+		const withState = platforms.map(platform => ({
+			...platform,
+			transferId: null,
+			transferStatus: "idle",
+		}));
+
+		for (const transfer of this.activeTransfers.values()) {
+			if (transfer.sourceInstanceId !== instanceId) {
+				continue;
+			}
+
+			for (const platform of withState) {
+				const indexMatches = transfer.platformIndex && platform.platformIndex === transfer.platformIndex;
+				const nameMatches = platform.platformName === transfer.platformName;
+				if (indexMatches || nameMatches) {
+					platform.transferId = transfer.transferId;
+					platform.transferStatus = this.normalizeTransferStatus(transfer.status);
+				}
+			}
+		}
+
+		return withState;
+	}
+
+	async buildPlatformTree(forceName = "player") {
+		const hostNodes = new Map();
+		for (const host of this.controller.hosts.values()) {
+			if (host.isDeleted) {
+				continue;
+			}
+			const hostId = host.id;
+			hostNodes.set(hostId, {
+				hostId,
+				hostName: host.name,
+				connected: Boolean(host.connected),
+				instances: [],
+			});
+		}
+
+		const unassignedInstances = [];
+		const platformLoads = [];
+
+		for (const instance of this.controller.instances.values()) {
+			if (instance.isDeleted) {
+				continue;
+			}
+
+			const instanceId = instance.id;
+			const hostId = instance.config.get("instance.assigned_host");
+			const host = hostId !== null && hostId !== undefined ? this.controller.hosts.get(hostId) : null;
+			const node = {
+				instanceId,
+				instanceName: instance.config.get("instance.name"),
+				hostId: hostId ?? null,
+				status: instance.status,
+				connected: Boolean(host?.connected),
+				platforms: [],
+				platformError: null,
+			};
+
+			if (hostId !== null && hostId !== undefined && hostNodes.has(hostId)) {
+				hostNodes.get(hostId).instances.push(node);
+			} else {
+				unassignedInstances.push(node);
+			}
+
+			if (host?.connected) {
+				platformLoads.push((async () => {
+					const { platforms, error } = await this.requestInstancePlatforms(instanceId, forceName);
+					node.platforms = this.applyActiveTransferState(platforms, instanceId)
+						.sort((a, b) => a.platformName.localeCompare(b.platformName));
+					node.platformError = error;
+				})());
+			}
+		}
+
+		await Promise.all(platformLoads);
+
+		for (const hostNode of hostNodes.values()) {
+			hostNode.instances.sort((a, b) => a.instanceName.localeCompare(b.instanceName));
+		}
+		unassignedInstances.sort((a, b) => a.instanceName.localeCompare(b.instanceName));
+
+		const hosts = Array.from(hostNodes.values())
+			.sort((a, b) => a.hostName.localeCompare(b.hostName));
+
+		return { hosts, unassignedInstances };
+	}
+
+	broadcastToSubscribers(filterFn, event) {
+		const staleConnections = [];
+		for (const [link, subscription] of this.surfaceExportSubscriptions.entries()) {
+			if (!filterFn(subscription)) {
+				continue;
+			}
+			try {
+				link.send(event);
+			} catch (err) {
+				staleConnections.push(link);
+			}
+		}
+
+		for (const link of staleConnections) {
+			this.surfaceExportSubscriptions.delete(link);
+		}
+	}
+
+	async emitTreeUpdate(forceName = "player") {
+		let hasTreeSubscribers = false;
+		for (const subscription of this.surfaceExportSubscriptions.values()) {
+			if (subscription.tree) {
+				hasTreeSubscribers = true;
+				break;
+			}
+		}
+		if (!hasTreeSubscribers) {
+			return;
+		}
+
+		this.lastTreeForceName = forceName || this.lastTreeForceName || "player";
+		const tree = await this.buildPlatformTree(this.lastTreeForceName);
+		this.treeRevision += 1;
+		const generatedAt = Date.now();
+		const event = new messages.SurfaceExportTreeUpdateEvent({
+			revision: this.treeRevision,
+			generatedAt,
+			forceName: this.lastTreeForceName,
+			tree,
+		});
+		this.broadcastToSubscribers(subscription => subscription.tree, event);
+	}
+
+	emitTransferUpdate(transfer) {
+		if (!transfer) {
+			return;
+		}
+		this.transferRevision += 1;
+		const transferSummary = this.buildTransferSummary(
+			transfer.transferId,
+			transfer,
+			this.getLastEventTimestamp(transfer.transferId),
+		);
+		const event = new messages.SurfaceExportTransferUpdateEvent({
+			revision: this.transferRevision,
+			generatedAt: Date.now(),
+			transfer: transferSummary,
+		});
+		this.broadcastToSubscribers(subscription => subscription.transfers, event);
+	}
+
+	emitLogUpdate(transferId, logEvent) {
+		this.logRevision += 1;
+		let transferInfo = null;
+		let summary = null;
+		const activeTransfer = this.activeTransfers.get(transferId);
+		if (activeTransfer) {
+			transferInfo = this.buildTransferInfo(activeTransfer);
+			summary = this.buildDetailedTransferSummary(
+				transferId,
+				activeTransfer,
+				logEvent?.timestampMs || this.getLastEventTimestamp(transferId),
+			);
+		}
+
+		if (!transferInfo || !summary) {
+			const persistedLog = this.persistedTransactionLogs.find(log => log.transferId === transferId);
+			if (persistedLog) {
+				transferInfo = transferInfo || persistedLog.transferInfo || null;
+				summary = summary || persistedLog.summary || null;
+			}
+		}
+
+		const event = new messages.SurfaceExportLogUpdateEvent({
+			revision: this.logRevision,
+			generatedAt: Date.now(),
+			transferId,
+			event: logEvent || {},
+			transferInfo: transferInfo || null,
+			summary: summary || null,
+		});
+
+		this.broadcastToSubscribers(subscription => (
+			subscription.logs && (!subscription.transferId || subscription.transferId === transferId)
+		), event);
+	}
+
+	async waitForStoredExport(exportId, timeoutMs = 10000) {
+		const deadline = Date.now() + timeoutMs;
+		while (Date.now() < deadline) {
+			const stored = this.platformStorage.get(exportId);
+			if (stored) {
+				return stored;
+			}
+			await new Promise(resolve => setTimeout(resolve, 100));
+		}
+
+		throw new Error(`Timed out waiting for export ${exportId} to be stored on controller`);
 	}
 	
 	/**
@@ -167,50 +587,23 @@ class ControllerPlugin extends BaseControllerPlugin {
 				// File doesn't exist yet, that's okay
 			}
 
-			// Build summary from transfer state
-			const durationMs = (transfer.completedAt || transfer.failedAt || Date.now()) - transfer.startedAt;
-			const phaseSummary = {};
-			if (transfer.phases) {
-				for (const [name, phase] of Object.entries(transfer.phases)) {
-					if (phase.durationMs !== undefined) {
-						phaseSummary[name + 'Ms'] = phase.durationMs;
-					}
-				}
-			}
+			const summary = this.buildDetailedTransferSummary(
+				transferId,
+				transfer,
+				events.length ? events[events.length - 1].timestampMs : null,
+			);
 
-			const summary = {
-				result: transfer.status === "completed" ? "SUCCESS" : "FAILED",
-				totalDurationMs: durationMs,
-				totalDurationStr: durationMs >= 1000 ? `${(durationMs / 1000).toFixed(1)}s` : `${durationMs}ms`,
-				phases: phaseSummary,
-				platform: {
-					name: transfer.platformName,
-					source: {
-						instanceId: transfer.sourceInstanceId,
-						instanceName: transfer.sourceInstanceName || null,
-					},
-					destination: {
-						instanceId: transfer.targetInstanceId,
-						instanceName: transfer.targetInstanceName || null,
-					},
-				},
-				payload: transfer.payloadMetrics || null,
-				import: transfer.importMetrics || null,
-				validation: transfer.validationResult || null,
-				error: transfer.error || null,
-			};
-
-			// Add new log
-			allLogs.push({
+			// Add or replace log entry for this transfer
+			const logEntry = {
 				transferId,
 				transferInfo: {
 					exportId: transfer.exportId,
 					platformName: transfer.platformName,
 					sourceInstanceId: transfer.sourceInstanceId,
-					sourceInstanceName: transfer.sourceInstanceName || null,
+					sourceInstanceName: transfer.sourceInstanceName || this.resolveInstanceName(transfer.sourceInstanceId),
 					targetInstanceId: transfer.targetInstanceId,
-					targetInstanceName: transfer.targetInstanceName || null,
-					status: transfer.status,
+					targetInstanceName: transfer.targetInstanceName || this.resolveInstanceName(transfer.targetInstanceId),
+					status: this.normalizeTransferStatus(transfer.status),
 					startedAt: transfer.startedAt,
 					completedAt: transfer.completedAt,
 					failedAt: transfer.failedAt,
@@ -219,7 +612,13 @@ class ControllerPlugin extends BaseControllerPlugin {
 				summary,
 				events,
 				savedAt: Date.now(),
-			});
+			};
+			const existingIndex = allLogs.findIndex(log => log.transferId === transferId);
+			if (existingIndex === -1) {
+				allLogs.push(logEntry);
+			} else {
+				allLogs[existingIndex] = logEntry;
+			}
 
 			// Keep only last 10 logs
 			if (allLogs.length > 10) {
@@ -228,6 +627,7 @@ class ControllerPlugin extends BaseControllerPlugin {
 
 			// Write back to disk
 			await fs.writeFile(this.transactionLogPath, JSON.stringify(allLogs, null, 2));
+			this.persistedTransactionLogs = allLogs;
 			this.logger.info(`Transaction log persisted: ${transferId}`);
 		} catch (err) {
 			this.logger.error(`Failed to persist transaction log ${transferId}: ${err.message}`);
@@ -240,6 +640,9 @@ class ControllerPlugin extends BaseControllerPlugin {
 		try {
 			const content = await fs.readFile(this.transactionLogPath, "utf8");
 			const allLogs = JSON.parse(content);
+			if (!Array.isArray(allLogs)) {
+				throw new Error("Transaction log file must contain an array");
+			}
 			this.logger.info(`Loaded ${allLogs.length} transaction logs from disk`);
 			
 			// Store the complete log data for retrieval
@@ -290,6 +693,7 @@ class ControllerPlugin extends BaseControllerPlugin {
 
 		events.push(event);
 		this.logger.info(`[Transaction ${transferId}] +${elapsedMs}ms ${eventType}: ${message}`);
+		this.emitLogUpdate(transferId, event);
 	}
 
 	/**
@@ -410,7 +814,12 @@ class ControllerPlugin extends BaseControllerPlugin {
 				targetInstanceId,
 				targetInstanceName,
 				startedAt: Date.now(),
-				status: "importing",
+				status: "transporting",
+				payloadMetrics,
+				sourceVerification: {
+					itemCounts,
+					fluidCounts,
+				},
 			});
 
 			this.logTransactionEvent(transferId, 'transfer_created', 
@@ -432,6 +841,8 @@ class ControllerPlugin extends BaseControllerPlugin {
 						fluidCounts: fluidCounts,
 					},
 				});
+			this.emitTransferUpdate(this.activeTransfers.get(transferId));
+			this.queueTreeBroadcast(platformInfo.force || "player");
 
 			this.logger.info(`Created transfer ${transferId}: ${exportData.platformName} (${exportData.instanceId} → ${targetInstanceId})`);
 
@@ -457,13 +868,50 @@ class ControllerPlugin extends BaseControllerPlugin {
 			const transmissionMs = this.endPhase(transferId, 'transmission');
 
 			if (!response.success) {
+				const failedTransfer = this.activeTransfers.get(transferId);
+				if (failedTransfer) {
+					failedTransfer.status = "failed";
+					failedTransfer.error = response.error || "Import failed";
+					failedTransfer.failedAt = Date.now();
+				}
 				this.logTransactionEvent(transferId, 'import_failed', 
 					`Import failed on target instance: ${response.error}`, {
 						error: response.error,
 						transmissionMs,
 					});
 				this.logger.error(`Failed to import on target: ${response.error}`);
-				this.activeTransfers.delete(transferId);
+				if (failedTransfer) {
+					let rollbackError = null;
+					this.logTransactionEvent(transferId, "rollback_attempt", "Unlocking source platform after import failure", {});
+					try {
+						const unlockResponse = await this.controller.sendTo(
+							{ instanceId: failedTransfer.sourceInstanceId },
+							new messages.UnlockSourcePlatformRequest({
+								platformName: failedTransfer.platformName,
+								forceName: failedTransfer.forceName || "player",
+							})
+						);
+						if (unlockResponse?.success) {
+							this.logTransactionEvent(transferId, "rollback_success", "Source platform unlocked after import failure", {});
+						} else {
+							rollbackError = unlockResponse?.error || "Unknown unlock error";
+							this.logTransactionEvent(transferId, "rollback_failed", `Failed to unlock source platform: ${rollbackError}`, {
+								error: rollbackError,
+							});
+						}
+					} catch (err) {
+						rollbackError = err.message;
+						this.logTransactionEvent(transferId, "rollback_failed", `Failed to unlock source platform: ${rollbackError}`, {
+							error: rollbackError,
+						});
+					}
+					if (rollbackError) {
+						failedTransfer.error = `${failedTransfer.error}; rollback failed: ${rollbackError}`;
+					}
+					this.emitTransferUpdate(failedTransfer);
+					this.queueTreeBroadcast(failedTransfer.forceName || "player");
+					await this.persistTransactionLog(transferId);
+				}
 				return { success: false, error: response.error };
 			}
 
@@ -472,6 +920,8 @@ class ControllerPlugin extends BaseControllerPlugin {
 			if (transfer) {
 				transfer.status = "awaiting_validation";
 				transfer.payloadMetrics = payloadMetrics;
+				this.emitTransferUpdate(transfer);
+				this.queueTreeBroadcast(transfer.forceName || "player");
 				
 				this.logTransactionEvent(transferId, 'import_started', 
 					`Import initiated on instance ${targetInstanceId}, awaiting validation`, {
@@ -687,6 +1137,8 @@ class ControllerPlugin extends BaseControllerPlugin {
 					this.logger.info(`Source platform deleted successfully`);
 					transfer.status = "completed";
 					transfer.completedAt = Date.now();
+					this.emitTransferUpdate(transfer);
+					this.queueTreeBroadcast(transfer.forceName || "player");
 
 					// Broadcast completion
 					await this.broadcastTransferStatus(
@@ -719,10 +1171,13 @@ class ControllerPlugin extends BaseControllerPlugin {
 					// Clean up stored export
 					this.platformStorage.delete(transfer.exportId);
 					await this.persistStorage();
+					this.queueTreeBroadcast(transfer.forceName || "player");
 				} else {
 					this.logger.error(`Failed to delete source platform: ${deleteResponse.error}`);
 					transfer.status = "cleanup_failed";
 					transfer.error = deleteResponse.error;
+					this.emitTransferUpdate(transfer);
+					this.queueTreeBroadcast(transfer.forceName || "player");
 
 					await this.broadcastTransferStatus(
 						transfer,
@@ -783,6 +1238,8 @@ class ControllerPlugin extends BaseControllerPlugin {
 				transfer.status = "failed";
 				transfer.error = errorMsg;
 				transfer.completedAt = Date.now();
+				this.emitTransferUpdate(transfer);
+				this.queueTreeBroadcast(transfer.forceName || "player");
 
 				this.logTransactionEvent(event.transferId, 'transfer_failed', 
 					`Transfer failed after ${Math.round((transfer.completedAt - transfer.startedAt) / 1000)}s`, {
@@ -808,6 +1265,8 @@ class ControllerPlugin extends BaseControllerPlugin {
 			this.logger.error(`Error handling validation:\n${err.stack}`);
 			transfer.status = "error";
 			transfer.error = err.message;
+			this.emitTransferUpdate(transfer);
+			this.queueTreeBroadcast(transfer.forceName || "player");
 
 			await this.broadcastTransferStatus(
 				transfer,
@@ -819,6 +1278,132 @@ class ControllerPlugin extends BaseControllerPlugin {
 
 	async handleListExportsRequest() {
 		return this.listStoredExports();
+	}
+
+	async handleGetPlatformTreeRequest(request) {
+		const forceName = request.forceName || "player";
+		this.lastTreeForceName = forceName;
+		const tree = await this.buildPlatformTree(forceName);
+		this.treeRevision += 1;
+		return {
+			revision: this.treeRevision,
+			generatedAt: Date.now(),
+			forceName,
+			hosts: tree.hosts,
+			unassignedInstances: tree.unassignedInstances,
+		};
+	}
+
+	async handleListTransactionLogsRequest(request) {
+		return this.getTransferSummaries(request?.limit || 50);
+	}
+
+	async handleSetSurfaceExportSubscriptionRequest(request, src) {
+		const link = this.controller.wsServer.controlConnections.get(src.id);
+		if (!link) {
+			return;
+		}
+
+		const subscription = {
+			tree: Boolean(request.tree),
+			transfers: Boolean(request.transfers),
+			logs: Boolean(request.logs),
+			transferId: request.transferId || null,
+		};
+		if (subscription.logs) {
+			link.user.checkPermission(messages.PERMISSIONS.VIEW_LOGS);
+		}
+		const hasAny = subscription.tree || subscription.transfers || subscription.logs;
+		if (!hasAny) {
+			this.surfaceExportSubscriptions.delete(link);
+			return;
+		}
+
+		this.surfaceExportSubscriptions.set(link, subscription);
+
+		if (subscription.tree) {
+			const tree = await this.buildPlatformTree(this.lastTreeForceName || "player");
+			this.treeRevision += 1;
+			try {
+				link.send(new messages.SurfaceExportTreeUpdateEvent({
+					revision: this.treeRevision,
+					generatedAt: Date.now(),
+					forceName: this.lastTreeForceName || "player",
+					tree,
+				}));
+			} catch (err) {
+				this.surfaceExportSubscriptions.delete(link);
+				return;
+			}
+		}
+
+		if (subscription.transfers) {
+			for (const transfer of this.activeTransfers.values()) {
+				this.transferRevision += 1;
+				try {
+					link.send(new messages.SurfaceExportTransferUpdateEvent({
+						revision: this.transferRevision,
+						generatedAt: Date.now(),
+						transfer: this.buildTransferSummary(
+							transfer.transferId,
+							transfer,
+							this.getLastEventTimestamp(transfer.transferId),
+						),
+					}));
+				} catch (err) {
+					this.surfaceExportSubscriptions.delete(link);
+					return;
+				}
+			}
+		}
+	}
+
+	async handleStartPlatformTransferRequest(request) {
+		const sourceInstanceId = Number(request.sourceInstanceId);
+		if (!Number.isInteger(sourceInstanceId)) {
+			return { success: false, error: `Invalid source instance: ${request.sourceInstanceId}` };
+		}
+
+		const sourceInstance = this.controller.instances.get(sourceInstanceId);
+		if (!sourceInstance || sourceInstance.isDeleted) {
+			return { success: false, error: `Unknown source instance ${sourceInstanceId}` };
+		}
+
+		const resolvedTarget = this.resolveTargetInstance(request.targetInstanceId);
+		if (!resolvedTarget) {
+			return { success: false, error: `Unknown target instance ${request.targetInstanceId}` };
+		}
+		if (resolvedTarget.id === sourceInstanceId) {
+			return { success: false, error: "Source and destination instances must be different" };
+		}
+
+		const forceName = request.forceName || "player";
+		const sourcePlatformIndex = Number(request.sourcePlatformIndex);
+		if (!Number.isInteger(sourcePlatformIndex) || sourcePlatformIndex < 1) {
+			return { success: false, error: `Invalid platform index ${request.sourcePlatformIndex}` };
+		}
+
+		try {
+			const exportResponse = await this.controller.sendTo(
+				{ instanceId: sourceInstanceId },
+				new messages.ExportPlatformRequest({
+					platformIndex: sourcePlatformIndex,
+					forceName,
+				})
+			);
+			if (!exportResponse?.success || !exportResponse.exportId) {
+				return { success: false, error: exportResponse?.error || "Export failed" };
+			}
+
+			await this.waitForStoredExport(exportResponse.exportId);
+			const transferResponse = await this.transferPlatform(exportResponse.exportId, resolvedTarget.id);
+			return {
+				...transferResponse,
+				exportId: exportResponse.exportId,
+			};
+		} catch (err) {
+			return { success: false, error: err.message };
+		}
 	}
 
 	/**
@@ -890,6 +1475,7 @@ class ControllerPlugin extends BaseControllerPlugin {
 				transferId: latestLog.transferId,
 				events: latestLog.events,
 				transferInfo: latestLog.transferInfo,
+				summary: latestLog.summary || null,
 			};
 		}
 		
@@ -906,13 +1492,18 @@ class ControllerPlugin extends BaseControllerPlugin {
 					exportId: transfer.exportId,
 					platformName: transfer.platformName,
 					sourceInstanceId: transfer.sourceInstanceId,
+					sourceInstanceName: transfer.sourceInstanceName || this.resolveInstanceName(transfer.sourceInstanceId),
 					targetInstanceId: transfer.targetInstanceId,
-					status: transfer.status,
+					targetInstanceName: transfer.targetInstanceName || this.resolveInstanceName(transfer.targetInstanceId),
+					status: this.normalizeTransferStatus(transfer.status),
 					startedAt: transfer.startedAt,
 					completedAt: transfer.completedAt,
 					failedAt: transfer.failedAt,
 					error: transfer.error,
 				} : null,
+				summary: transfer
+					? this.buildDetailedTransferSummary(transferId, transfer, this.getLastEventTimestamp(transferId))
+					: null,
 			};
 		}
 		
@@ -924,6 +1515,7 @@ class ControllerPlugin extends BaseControllerPlugin {
 				transferId: persistedLog.transferId,
 				events: persistedLog.events,
 				transferInfo: persistedLog.transferInfo,
+				summary: persistedLog.summary || null,
 			};
 		}
 		

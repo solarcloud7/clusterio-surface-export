@@ -18,11 +18,56 @@ local function safe_call(context, func)
   return ok
 end
 
---- Import a platform from JSON file
---- 9-step atomic import process
+--- Restore additional properties on a placed item stack
+--- (health, durability, ammo, spoil_percent, label, custom_description, grid, nested_inventory)
+--- @param stack LuaItemStack: The stack to restore properties on
+--- @param item_data table: Serialized item data with optional property fields
+local function restore_item_properties(stack, item_data)
+  if not stack or not stack.valid_for_read then return end
+
+  if item_data.health and stack.health then
+    stack.health = item_data.health
+  end
+  if item_data.durability and stack.durability then
+    stack.durability = item_data.durability
+  end
+  if item_data.ammo and stack.ammo then
+    stack.ammo = item_data.ammo
+  end
+  if item_data.spoil_percent and stack.spoil_percent then
+    stack.spoil_percent = item_data.spoil_percent
+  end
+  if item_data.label and stack.is_item_with_label then
+    stack.label = item_data.label.text
+    if item_data.label.color then
+      stack.label_color = item_data.label.color
+    end
+    if item_data.label.allow_manual_change ~= nil then
+      stack.allow_manual_label_change = item_data.label.allow_manual_change
+    end
+  end
+  if item_data.custom_description and stack.custom_description then
+    stack.custom_description = item_data.custom_description
+  end
+  if item_data.grid and stack.grid then
+    Deserializer.restore_equipment_grid(stack.grid, item_data.grid)
+  end
+  if item_data.nested_inventory and stack.is_item_with_inventory then
+    local sub_inventory = stack.get_inventory(defines.inventory.item_main)
+    if sub_inventory and sub_inventory.valid then
+      Deserializer.restore_nested_inventory(sub_inventory, item_data.nested_inventory)
+    end
+  end
+end
+
+--- LEGACY: Synchronous import from file. Debug/testing use only.
+--- The production path is async: AsyncProcessor.queue_import() → import_phases/*.
+--- This sync path skips tile placement, belt restoration, active state deferral,
+--- and fluid segment handling. Do not use for transfers.
 --- @param filename string: Filename in script-output directory
 --- @param target_surface LuaSurface: Surface to import to
 --- @return boolean, string|nil: success flag and error message if failed
+--- @deprecated Use AsyncProcessor.queue_import() for production imports
 function Deserializer.import_platform(filename, target_surface)
   if not target_surface or not target_surface.valid then
     return false, "Invalid target surface"
@@ -715,56 +760,7 @@ function Deserializer.restore_inventories(entity, entity_data)
             -- Find the inserted stack to restore additional properties
             if inserted > 0 then
               local inserted_stack = inventory.find_item_stack(item.name)
-              if inserted_stack and inserted_stack.valid_for_read then
-                -- Restore health
-                if item.health and inserted_stack.health then
-                  inserted_stack.health = item.health
-                end
-                
-                -- Restore durability
-                if item.durability and inserted_stack.durability then
-                  inserted_stack.durability = item.durability
-                end
-                
-                -- Restore ammo count
-                if item.ammo and inserted_stack.ammo then
-                  inserted_stack.ammo = item.ammo
-                end
-                
-                -- Restore spoilage (Space Age)
-                if item.spoil_percent and inserted_stack.spoil_percent then
-                  inserted_stack.spoil_percent = item.spoil_percent
-                end
-                
-                -- Restore label
-                if item.label and inserted_stack.is_item_with_label then
-                  inserted_stack.label = item.label.text
-                  if item.label.color then
-                    inserted_stack.label_color = item.label.color
-                  end
-                  if item.label.allow_manual_change ~= nil then
-                    inserted_stack.allow_manual_label_change = item.label.allow_manual_change
-                  end
-                end
-                
-                -- Restore custom description
-                if item.custom_description and inserted_stack.custom_description then
-                  inserted_stack.custom_description = item.custom_description
-                end
-
-                -- Restore equipment grid if present
-                if item.grid and inserted_stack.grid then
-                  Deserializer.restore_equipment_grid(inserted_stack.grid, item.grid)
-                end
-                
-                -- Restore nested inventory if present
-                if item.nested_inventory and inserted_stack.is_item_with_inventory then
-                  local sub_inventory = inserted_stack.get_inventory(defines.inventory.item_main)
-                  if sub_inventory and sub_inventory.valid then
-                    Deserializer.restore_nested_inventory(sub_inventory, item.nested_inventory)
-                  end
-                end
-              end
+              restore_item_properties(inserted_stack, item)
             end
           end
         end
@@ -917,66 +913,20 @@ function Deserializer.restore_nested_inventory(inventory, items_data)
       end)
 
       if ok and result > 0 then
-        -- Find the inserted stack to restore additional properties
         local inserted_stack = inventory.find_item_stack(item.name)
-        if inserted_stack and inserted_stack.valid_for_read then
-          -- Restore health
-          if item.health and inserted_stack.health then
-            inserted_stack.health = item.health
-          end
-          
-          -- Restore durability
-          if item.durability and inserted_stack.durability then
-            inserted_stack.durability = item.durability
-          end
-          
-          -- Restore ammo count
-          if item.ammo and inserted_stack.ammo then
-            inserted_stack.ammo = item.ammo
-          end
-          
-          -- Restore spoilage (Space Age)
-          if item.spoil_percent and inserted_stack.spoil_percent then
-            inserted_stack.spoil_percent = item.spoil_percent
-          end
-          
-          -- Restore label
-          if item.label and inserted_stack.is_item_with_label then
-            inserted_stack.label = item.label.text
-            if item.label.color then
-              inserted_stack.label_color = item.label.color
-            end
-            if item.label.allow_manual_change ~= nil then
-              inserted_stack.allow_manual_label_change = item.label.allow_manual_change
-            end
-          end
-          
-          -- Restore custom description
-          if item.custom_description and inserted_stack.custom_description then
-            inserted_stack.custom_description = item.custom_description
-          end
-
-          -- Restore equipment grid
-          if item.grid and inserted_stack.grid then
-            Deserializer.restore_equipment_grid(inserted_stack.grid, item.grid)
-          end
-          
-          -- Recursive: Restore nested inventory
-          if item.nested_inventory and inserted_stack.is_item_with_inventory then
-            local sub_inventory = inserted_stack.get_inventory(defines.inventory.item_main)
-            if sub_inventory and sub_inventory.valid then
-              Deserializer.restore_nested_inventory(sub_inventory, item.nested_inventory)
-            end
-          end
-        end
+        restore_item_properties(inserted_stack, item)
       end
     end
   end
 end
 
---- Restore fluids to an entity
+--- SUPERSEDED: Per-entity fluid restoration for legacy sync import.
+--- The production path uses FluidRestoration.restore() which handles
+--- Factorio 2.0 fluid segments correctly (inject after activation).
+--- Only called from import_platform (legacy) and test-import-entity (debug).
 --- @param entity LuaEntity: The entity to restore fluids to
 --- @param entity_data table: Serialized entity data
+--- @deprecated Use FluidRestoration.restore() for production imports
 function Deserializer.restore_fluids(entity, entity_data)
   if not entity.valid then
     return

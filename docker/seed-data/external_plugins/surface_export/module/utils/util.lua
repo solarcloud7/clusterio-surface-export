@@ -30,6 +30,11 @@ Util.parse_fluid_temp_key = GameUtils.parse_fluid_temp_key
 Util.HIGH_TEMP_THRESHOLD = GameUtils.HIGH_TEMP_THRESHOLD
 Util.parse_quality_key = GameUtils.parse_quality_key
 Util.debug_log = GameUtils.debug_log
+Util.ACTIVATABLE_ENTITY_TYPES = GameUtils.ACTIVATABLE_ENTITY_TYPES
+Util.BELT_ENTITY_TYPES = GameUtils.BELT_ENTITY_TYPES
+Util.make_stable_id = GameUtils.make_stable_id
+Util.safe_get = GameUtils.safe_get
+Util.extract_color = GameUtils.extract_color
 
 -- Re-export JSON/file compatibility
 Util.to_json = JsonCompat.to_json

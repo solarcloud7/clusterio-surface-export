@@ -1,48 +1,15 @@
--- FactorioSurfaceExport - Active State Restoration Phase
+-- Active State Restoration Phase
 -- Final import step: Restore entities to their original active state
 --
 -- This is the "Wake Up" signal - the LAST phase of import.
 -- By this point, all geometry is placed, fluids/belts are hydrated,
 -- and circuit wires are connected. Entities wake up to a "ready" environment.
 
+local GameUtils = require("modules/surface_export/utils/game-utils")
+
 local ActiveStateRestoration = {}
 
--- Entity types that can be deactivated (matches surface-lock.lua FREEZABLE_ENTITY_TYPES)
-local ACTIVATABLE_ENTITY_TYPES = {
-    -- Production
-    ["assembling-machine"] = true,
-    ["furnace"] = true,
-    ["mining-drill"] = true,
-    ["lab"] = true,
-    ["rocket-silo"] = true,
-    ["agricultural-tower"] = true,
-    -- Power
-    ["reactor"] = true,
-    ["generator"] = true,
-    ["burner-generator"] = true,
-    ["boiler"] = true,
-    ["fusion-reactor"] = true,
-    ["fusion-generator"] = true,
-    -- Logistics - Item transport
-    ["inserter"] = true,
-    ["loader"] = true,
-    ["loader-1x1"] = true,
-    -- Logistics - Fluid transport
-    ["pump"] = true,
-    ["offshore-pump"] = true,
-    -- Logistics - Robots
-    ["roboport"] = true,
-    -- Misc
-    ["beacon"] = true,
-    ["radar"] = true,
-    -- Space platform specific
-    ["thruster"] = true,
-    ["asteroid-collector"] = true,
-    ["cargo-bay"] = true,
-    ["space-platform-hub"] = true,  -- Hub controls logistics/construction; may be paused
-    -- Planet logistics (for future surface transfers)
-    ["cargo-landing-pad"] = true,
-}
+local ACTIVATABLE_ENTITY_TYPES = GameUtils.ACTIVATABLE_ENTITY_TYPES
 
 --- Restore all entities to their original active state
 --- This is the FINAL step of import, after all entities are created and configured.

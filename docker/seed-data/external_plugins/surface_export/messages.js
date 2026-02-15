@@ -4,6 +4,8 @@ const PLUGIN_NAME = "surface_export";
 const PERMISSIONS = {
 	LIST_EXPORTS: `${PLUGIN_NAME}.exports.list`,
 	TRANSFER_EXPORTS: `${PLUGIN_NAME}.exports.transfer`,
+	UI_VIEW: `${PLUGIN_NAME}.ui.view`,
+	VIEW_LOGS: `${PLUGIN_NAME}.logs.view`,
 };
 
 class ExportPlatformRequest {
@@ -52,6 +54,276 @@ class ExportPlatformRequest {
 			return json;
 		},
 	};
+}
+class GetPlatformTreeRequest {
+	static plugin = PLUGIN_NAME;
+	static type = "request";
+	static src = "control";
+	static dst = "controller";
+	static permission = PERMISSIONS.UI_VIEW;
+	static jsonSchema = {
+		type: "object",
+		properties: {
+			forceName: { type: "string", default: "player" },
+		},
+		additionalProperties: false,
+	};
+
+	constructor(json = {}) {
+		this.forceName = json.forceName || "player";
+	}
+
+	static fromJSON(json) {
+		return new GetPlatformTreeRequest(json);
+	}
+
+	toJSON() {
+		return {
+			forceName: this.forceName,
+		};
+	}
+
+	static Response = {
+		jsonSchema: {
+			type: "object",
+			properties: {
+				revision: { type: "integer" },
+				generatedAt: { type: "number" },
+				forceName: { type: "string" },
+				hosts: { type: "array", items: { type: "object" } },
+				unassignedInstances: { type: "array", items: { type: "object" } },
+			},
+			required: ["revision", "generatedAt", "forceName", "hosts", "unassignedInstances"],
+			additionalProperties: false,
+		},
+		fromJSON(json) {
+			return json;
+		},
+	};
+}
+
+class ListTransactionLogsRequest {
+	static plugin = PLUGIN_NAME;
+	static type = "request";
+	static src = "control";
+	static dst = "controller";
+	static permission = PERMISSIONS.VIEW_LOGS;
+	static jsonSchema = {
+		type: "object",
+		properties: {
+			limit: { type: "integer", minimum: 1, maximum: 500, default: 50 },
+		},
+		additionalProperties: false,
+	};
+
+	constructor(json = {}) {
+		this.limit = json.limit || 50;
+	}
+
+	static fromJSON(json) {
+		return new ListTransactionLogsRequest(json);
+	}
+
+	toJSON() {
+		return {
+			limit: this.limit,
+		};
+	}
+
+	static Response = {
+		jsonSchema: {
+			type: "array",
+			items: {
+				type: "object",
+				properties: {
+					transferId: { type: "string" },
+					platformName: { type: "string" },
+					sourceInstanceId: { type: "integer" },
+					sourceInstanceName: { type: ["string", "null"] },
+					targetInstanceId: { type: "integer" },
+					targetInstanceName: { type: ["string", "null"] },
+					status: { type: "string" },
+					startedAt: { type: "number" },
+					completedAt: { type: ["number", "null"] },
+					failedAt: { type: ["number", "null"] },
+					error: { type: ["string", "null"] },
+					lastEventAt: { type: ["number", "null"] },
+				},
+				required: [
+					"transferId",
+					"platformName",
+					"sourceInstanceId",
+					"sourceInstanceName",
+					"targetInstanceId",
+					"targetInstanceName",
+					"status",
+					"startedAt",
+					"completedAt",
+					"failedAt",
+					"error",
+					"lastEventAt",
+				],
+				additionalProperties: false,
+			},
+		},
+		fromJSON(json) {
+			return json;
+		},
+	};
+}
+class SetSurfaceExportSubscriptionRequest {
+	static plugin = PLUGIN_NAME;
+	static type = "request";
+	static src = "control";
+	static dst = "controller";
+	static permission = PERMISSIONS.UI_VIEW;
+	static jsonSchema = {
+		type: "object",
+		properties: {
+			tree: { type: "boolean", default: false },
+			transfers: { type: "boolean", default: false },
+			logs: { type: "boolean", default: false },
+			transferId: { type: ["string", "null"], default: null },
+		},
+		additionalProperties: false,
+	};
+
+	constructor(json = {}) {
+		this.tree = json.tree || false;
+		this.transfers = json.transfers || false;
+		this.logs = json.logs || false;
+		this.transferId = json.transferId || null;
+	}
+
+	static fromJSON(json) {
+		return new SetSurfaceExportSubscriptionRequest(json);
+	}
+
+	toJSON() {
+		return {
+			tree: this.tree,
+			transfers: this.transfers,
+			logs: this.logs,
+			transferId: this.transferId,
+		};
+	}
+}
+
+class SurfaceExportTreeUpdateEvent {
+	static plugin = PLUGIN_NAME;
+	static type = "event";
+	static src = "controller";
+	static dst = "control";
+	static jsonSchema = {
+		type: "object",
+		properties: {
+			revision: { type: "integer" },
+			generatedAt: { type: "number" },
+			forceName: { type: "string" },
+			tree: { type: "object" },
+		},
+		required: ["revision", "generatedAt", "forceName", "tree"],
+		additionalProperties: false,
+	};
+
+	constructor(json) {
+		this.revision = json.revision;
+		this.generatedAt = json.generatedAt;
+		this.forceName = json.forceName;
+		this.tree = json.tree;
+	}
+
+	static fromJSON(json) {
+		return new SurfaceExportTreeUpdateEvent(json);
+	}
+
+	toJSON() {
+		return {
+			revision: this.revision,
+			generatedAt: this.generatedAt,
+			forceName: this.forceName,
+			tree: this.tree,
+		};
+	}
+}
+
+class SurfaceExportTransferUpdateEvent {
+	static plugin = PLUGIN_NAME;
+	static type = "event";
+	static src = "controller";
+	static dst = "control";
+	static jsonSchema = {
+		type: "object",
+		properties: {
+			revision: { type: "integer" },
+			generatedAt: { type: "number" },
+			transfer: { type: "object" },
+		},
+		required: ["revision", "generatedAt", "transfer"],
+		additionalProperties: false,
+	};
+
+	constructor(json) {
+		this.revision = json.revision;
+		this.generatedAt = json.generatedAt;
+		this.transfer = json.transfer;
+	}
+
+	static fromJSON(json) {
+		return new SurfaceExportTransferUpdateEvent(json);
+	}
+
+	toJSON() {
+		return {
+			revision: this.revision,
+			generatedAt: this.generatedAt,
+			transfer: this.transfer,
+		};
+	}
+}
+
+class SurfaceExportLogUpdateEvent {
+	static plugin = PLUGIN_NAME;
+	static type = "event";
+	static src = "controller";
+	static dst = "control";
+	static jsonSchema = {
+		type: "object",
+		properties: {
+			revision: { type: "integer" },
+			generatedAt: { type: "number" },
+			transferId: { type: "string" },
+			event: { type: "object" },
+			transferInfo: { type: ["object", "null"] },
+			summary: { type: ["object", "null"] },
+		},
+		required: ["revision", "generatedAt", "transferId", "event", "transferInfo", "summary"],
+		additionalProperties: false,
+	};
+
+	constructor(json) {
+		this.revision = json.revision;
+		this.generatedAt = json.generatedAt;
+		this.transferId = json.transferId;
+		this.event = json.event;
+		this.transferInfo = json.transferInfo;
+		this.summary = json.summary;
+	}
+
+	static fromJSON(json) {
+		return new SurfaceExportLogUpdateEvent(json);
+	}
+
+	toJSON() {
+		return {
+			revision: this.revision,
+			generatedAt: this.generatedAt,
+			transferId: this.transferId,
+			event: this.event,
+			transferInfo: this.transferInfo,
+			summary: this.summary,
+		};
+	}
 }
 
 class PlatformExportEvent {
@@ -231,6 +503,131 @@ class TransferPlatformRequest {
 				message: { type: "string" },
 			},
 			required: ["success"],
+			additionalProperties: false,
+		},
+		fromJSON(json) {
+			return json;
+		},
+	};
+}
+class StartPlatformTransferRequest {
+	static plugin = PLUGIN_NAME;
+	static type = "request";
+	static src = "control";
+	static dst = "controller";
+	static permission = PERMISSIONS.TRANSFER_EXPORTS;
+	static jsonSchema = {
+		type: "object",
+		properties: {
+			sourceInstanceId: { type: "integer" },
+			sourcePlatformIndex: { type: "integer" },
+			targetInstanceId: { type: "integer" },
+			forceName: { type: "string", default: "player" },
+		},
+		required: ["sourceInstanceId", "sourcePlatformIndex", "targetInstanceId"],
+		additionalProperties: false,
+	};
+
+	constructor(json) {
+		this.sourceInstanceId = json.sourceInstanceId;
+		this.sourcePlatformIndex = json.sourcePlatformIndex;
+		this.targetInstanceId = json.targetInstanceId;
+		this.forceName = json.forceName || "player";
+	}
+
+	static fromJSON(json) {
+		return new StartPlatformTransferRequest(json);
+	}
+
+	toJSON() {
+		return {
+			sourceInstanceId: this.sourceInstanceId,
+			sourcePlatformIndex: this.sourcePlatformIndex,
+			targetInstanceId: this.targetInstanceId,
+			forceName: this.forceName,
+		};
+	}
+
+	static Response = {
+		jsonSchema: {
+			type: "object",
+			properties: {
+				success: { type: "boolean" },
+				error: { type: "string" },
+				transferId: { type: "string" },
+				exportId: { type: "string" },
+				message: { type: "string" },
+			},
+			required: ["success"],
+			additionalProperties: false,
+		},
+		fromJSON(json) {
+			return json;
+		},
+	};
+}
+
+class InstanceListPlatformsRequest {
+	static plugin = PLUGIN_NAME;
+	static type = "request";
+	static src = "controller";
+	static dst = "instance";
+	static jsonSchema = {
+		type: "object",
+		properties: {
+			forceName: { type: "string", default: "player" },
+		},
+		additionalProperties: false,
+	};
+
+	constructor(json = {}) {
+		this.forceName = json.forceName || "player";
+	}
+
+	static fromJSON(json) {
+		return new InstanceListPlatformsRequest(json);
+	}
+
+	toJSON() {
+		return {
+			forceName: this.forceName,
+		};
+	}
+
+	static Response = {
+		jsonSchema: {
+			type: "object",
+			properties: {
+				instanceId: { type: "integer" },
+				instanceName: { type: "string" },
+				forceName: { type: "string" },
+				platforms: {
+					type: "array",
+					items: {
+						type: "object",
+						properties: {
+							platformIndex: { type: "integer" },
+							platformName: { type: "string" },
+							forceName: { type: "string" },
+							surfaceIndex: { type: ["integer", "null"] },
+							surfaceName: { type: ["string", "null"] },
+							entityCount: { type: "integer" },
+							isLocked: { type: "boolean" },
+						},
+						required: [
+							"platformIndex",
+							"platformName",
+							"forceName",
+							"surfaceIndex",
+							"surfaceName",
+							"entityCount",
+							"isLocked",
+						],
+						additionalProperties: false,
+					},
+				},
+			},
+			required: ["instanceId", "instanceName", "forceName", "platforms"],
 			additionalProperties: false,
 		},
 		fromJSON(json) {
@@ -516,9 +913,9 @@ class TransferStatusUpdate {
 class GetTransactionLogRequest {
 	static plugin = PLUGIN_NAME;
 	static type = "request";
-	static src = ["controller", "instance"];
+	static src = ["controller", "instance", "control"];
 	static dst = "controller";
-	static permission = PERMISSIONS.LIST_EXPORTS;
+	static permission = PERMISSIONS.VIEW_LOGS;
 	static jsonSchema = {
 		type: "object",
 		properties: {
@@ -549,7 +946,8 @@ class GetTransactionLogRequest {
 				success: { type: "boolean" },
 				transferId: { type: "string" },
 				events: { type: "array" },
-				transferInfo: { type: "object" },
+				transferInfo: { type: ["object", "null"] },
+				summary: { type: ["object", "null"] },
 				error: { type: "string" },
 			},
 			required: ["success"],
@@ -568,10 +966,18 @@ module.exports = {
 	ImportPlatformFromFileRequest,
 	ListExportsRequest,
 	TransferPlatformRequest,
+	StartPlatformTransferRequest,
+	InstanceListPlatformsRequest,
 	TransferValidationEvent,
 	DeleteSourcePlatformRequest,
 	UnlockSourcePlatformRequest,
 	TransferStatusUpdate,
+	GetPlatformTreeRequest,
+	ListTransactionLogsRequest,
 	GetTransactionLogRequest,
+	SetSurfaceExportSubscriptionRequest,
+	SurfaceExportTreeUpdateEvent,
+	SurfaceExportTransferUpdateEvent,
+	SurfaceExportLogUpdateEvent,
 	PERMISSIONS,
 };

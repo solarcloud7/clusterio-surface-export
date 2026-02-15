@@ -1,0 +1,31 @@
+.surface-export-tab-body {
+	display: grid;
+	grid-template-columns: 1fr;
+	gap: 16px;
+}
+
+@media (min-width: 1200px) {
+	.surface-export-tab-body {
+		grid-template-columns: 1.2fr 0.8fr;
+		align-items: start;
+	}
+}
+
+.surface-export-tree-panel,
+.surface-export-action-panel {
+	min-width: 0;
+}
+
+.surface-export-log-body {
+	display: grid;
+	grid-template-columns: 1fr;
+	gap: 16px;
+}
+
+.surface-export-log-row {
+	cursor: pointer;
+}
+
+.surface-export-log-row-selected > td {
+	background: rgba(24, 144, 255, 0.12) !important;
+}

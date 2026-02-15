@@ -4,80 +4,11 @@
 local Verification = require("modules/surface_export/validators/verification")
 local InventoryScanner = require("modules/surface_export/export_scanners/inventory-scanner")
 local Util = require("modules/surface_export/utils/util")
+local GameUtils = require("modules/surface_export/utils/game-utils")
+local SurfaceCounter = require("modules/surface_export/validators/surface-counter")
+local LossAnalysis = require("modules/surface_export/validators/loss-analysis")
 
 local TransferValidation = {}
-
---- Count all fluids on a live surface (for post-import verification)
---- Uses segment-aware reading to get accurate totals even before fluid redistribution.
---- CRITICAL (Factorio 2.0): After writing segment totals, entity.fluidbox[i] returns
---- local buffer amounts that haven't redistributed yet. get_fluid_segment_contents()
---- returns the true segment total regardless of redistribution state.
---- @param surface LuaSurface: The surface to count fluids on
---- @return table: Table of fluid_key = amount pairs
-local function count_surface_fluids(surface)
-    if not surface or not surface.valid then
-        return {}
-    end
-
-    local fluid_totals = {}
-    local counted_segments = {}
-    local known_fluid_temps = {}
-
-    -- Find all entities with fluidboxes
-    local entities = surface.find_entities_filtered({})
-
-    -- First pass: collect known temperatures from entities with non-empty local fluidboxes
-    for _, entity in ipairs(entities) do
-        if entity.valid and entity.fluidbox then
-            pcall(function()
-                for i = 1, #entity.fluidbox do
-                    local fluid = entity.fluidbox[i]
-                    if fluid and fluid.name and fluid.temperature then
-                        known_fluid_temps[fluid.name] = fluid.temperature
-                    end
-                end
-            end)
-        end
-    end
-
-    -- Second pass: count using segment contents
-    for _, entity in ipairs(entities) do
-        if entity.valid and entity.fluidbox then
-            local success, err = pcall(function()
-                for i = 1, #entity.fluidbox do
-                    local seg_id = entity.fluidbox.get_fluid_segment_id(i)
-                    if seg_id and not counted_segments[seg_id] then
-                        -- New segment: count using segment contents
-                        counted_segments[seg_id] = true
-                        local contents = entity.fluidbox.get_fluid_segment_contents(i)
-                        if contents then
-                            for fluid_name, amount in pairs(contents) do
-                                local local_fluid = entity.fluidbox[i]
-                                local temp = (local_fluid and local_fluid.temperature) or known_fluid_temps[fluid_name] or 15
-                                local key = Util.make_fluid_temp_key(fluid_name, temp)
-                                fluid_totals[key] = (fluid_totals[key] or 0) + amount
-                            end
-                        end
-                    elseif not seg_id then
-                        -- Isolated fluidbox: use local amount
-                        local fluid = entity.fluidbox[i]
-                        if fluid and fluid.name then
-                            local key = Util.make_fluid_temp_key(fluid.name, fluid.temperature)
-                            fluid_totals[key] = (fluid_totals[key] or 0) + fluid.amount
-                        end
-                    end
-                    -- Already counted segments: skip
-                end
-            end)
-
-            if not success then
-                log(string.format("[TransferValidation] Error counting fluids for entity %s: %s", entity.name, err))
-            end
-        end
-    end
-
-    return fluid_totals
-end
 
 --- Validate an imported platform against expected verification data
 --- Uses grouped validation: strict for storage, lenient for machines
@@ -157,7 +88,7 @@ function TransferValidation.validate_import(surface, expected_verification, opti
             end)
             
             -- Count belt items
-            if entity_type:find("transport%-belt") or entity_type:find("underground%-belt") or entity_type:find("splitter") then
+            if GameUtils.BELT_ENTITY_TYPES[entity_type] then
                 local belt_lines = InventoryScanner.extract_belt_items(entity)
                 for _, line_data in ipairs(belt_lines) do
                     if line_data.items then
@@ -172,7 +103,7 @@ function TransferValidation.validate_import(surface, expected_verification, opti
             end
             
             -- Count inserter held items
-            if entity_type:find("inserter") then
+            if entity_type == "inserter" then
                 local held = InventoryScanner.extract_inserter_held_item(entity)
                 if held then
                     local key = Util.make_quality_key(held.name, held.quality or "normal")
@@ -196,7 +127,7 @@ function TransferValidation.validate_import(surface, expected_verification, opti
     end
     
     -- Count fluids
-    local actual_fluid_counts = count_surface_fluids(surface)
+    local actual_fluid_counts = SurfaceCounter.count_fluids(surface)
 
     -- VALIDATION LOGIC:
     -- For total items: actual should be <= expected (we can lose items to machine limits, but not gain)
@@ -257,23 +188,9 @@ function TransferValidation.validate_import(surface, expected_verification, opti
     if options.skip_fluid_validation then
         log("[TransferValidation] Skipping fluid validation (deferred to post-activation)")
     else
-        -- Aggregate high-temperature fluids by base name for comparison
-        -- At extreme temps (>10,000°C), the engine may merge packets via weighted-average
-        -- temperature, shifting fluid between temperature keys while preserving total volume.
-        local expected_ht_by_name = {}
-        local actual_ht_by_name = {}
-        for key, amt in pairs(expected_verification.fluid_counts or {}) do
-          local name, temp = Util.parse_fluid_temp_key(key)
-          if temp >= HIGH_TEMP then
-            expected_ht_by_name[name] = (expected_ht_by_name[name] or 0) + amt
-          end
-        end
-        for key, amt in pairs(actual_fluid_counts) do
-          local name, temp = Util.parse_fluid_temp_key(key)
-          if temp >= HIGH_TEMP then
-            actual_ht_by_name[name] = (actual_ht_by_name[name] or 0) + amt
-          end
-        end
+        -- Use shared reconciliation to aggregate high-temp fluids by base name
+        local recon = LossAnalysis.reconcile_fluids(
+            expected_verification.fluid_counts, actual_fluid_counts)
 
         -- Validate low-temperature fluids per exact key
         for fluid_key, expected_volume in pairs(expected_verification.fluid_counts or {}) do
@@ -282,9 +199,9 @@ function TransferValidation.validate_import(surface, expected_verification, opti
                 -- Skip per-key check for high-temp fluids; validated as aggregate below
                 goto continue_fluid_check
             end
-            
+
             local actual_volume = actual_fluid_counts[fluid_key] or 0
-            
+
             -- Check if we gained fluid (shouldn't happen)
             if actual_volume > expected_volume + FLUID_GAIN_TOLERANCE then
                 fluid_match = false
@@ -305,13 +222,10 @@ function TransferValidation.validate_import(surface, expected_verification, opti
         end
 
         -- Validate high-temperature fluids by aggregate total per fluid name
-        local all_ht_names = {}
-        for n, _ in pairs(expected_ht_by_name) do all_ht_names[n] = true end
-        for n, _ in pairs(actual_ht_by_name) do all_ht_names[n] = true end
-        for name, _ in pairs(all_ht_names) do
-            local exp_total = expected_ht_by_name[name] or 0
-            local act_total = actual_ht_by_name[name] or 0
-            
+        for name, _ in pairs(recon.allHighTempNames) do
+            local exp_total = recon.expectedHighTemp[name] or 0
+            local act_total = recon.actualHighTemp[name] or 0
+
             if act_total > exp_total + FLUID_GAIN_TOLERANCE then
                 fluid_match = false
                 table.insert(fluid_mismatches, string.format(
@@ -363,23 +277,10 @@ function TransferValidation.validate_import(surface, expected_verification, opti
     end
 
     -- Compute summary totals for detailed stats
-    local total_expected_items = 0
-    local total_actual_items = 0
-    for _, count in pairs(expected_verification.item_counts or {}) do
-        total_expected_items = total_expected_items + count
-    end
-    for _, count in pairs(total_item_counts) do
-        total_actual_items = total_actual_items + count
-    end
-    
-    local total_expected_fluids = 0
-    local total_actual_fluids = 0
-    for _, vol in pairs(expected_verification.fluid_counts or {}) do
-        total_expected_fluids = total_expected_fluids + vol
-    end
-    for _, vol in pairs(actual_fluid_counts) do
-        total_actual_fluids = total_actual_fluids + vol
-    end
+    local total_expected_items = Util.sum_items(expected_verification.item_counts or {})
+    local total_actual_items = Util.sum_items(total_item_counts)
+    local total_expected_fluids = Util.sum_fluids(expected_verification.fluid_counts or {})
+    local total_actual_fluids = Util.sum_fluids(actual_fluid_counts)
 
     local validation_result = {
         itemCountMatch = item_match,

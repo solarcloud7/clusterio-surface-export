@@ -1,7 +1,17 @@
 "use strict";
+function requireClusterioModule(moduleName) {
+  if (require.main && typeof require.main.require === "function") {
+    try {
+      return require.main.require(moduleName);
+    } catch (err) {
+      // Fallback to local resolution below.
+    }
+  }
+  return require(moduleName);
+}
 
-const { BaseCtlPlugin } = require("@clusterio/ctl");
-const { Command, CommandTree } = require("@clusterio/lib");
+const { BaseCtlPlugin } = requireClusterioModule("@clusterio/ctl");
+const { Command, CommandTree } = requireClusterioModule("@clusterio/lib");
 const messages = require("./messages");
 
 const surfaceExportCommands = new CommandTree({

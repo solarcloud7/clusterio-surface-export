@@ -5,7 +5,6 @@
  */
 
 "use strict";
-
 const lib = require("@clusterio/lib");
 const PLUGIN_NAME = "surface_export";
 const messages = require("./messages");
@@ -21,6 +20,18 @@ lib.definePermission({
 	name: PERMISSIONS.TRANSFER_EXPORTS,
 	title: "Transfer Surface Exports",
 	description: "Allows pushing a stored Surface Export snapshot onto a target instance.",
+});
+
+lib.definePermission({
+	name: PERMISSIONS.UI_VIEW,
+	title: "View Surface Export UI",
+	description: "Allows viewing Surface Export web UI pages and platform tree data.",
+});
+
+lib.definePermission({
+	name: PERMISSIONS.VIEW_LOGS,
+	title: "View Surface Export Transaction Logs",
+	description: "Allows viewing transaction log summaries and details for Surface Export transfers.",
 });
 
 /**
@@ -42,6 +53,12 @@ module.exports.plugin = {
 	
 	// Path to controller plugin class (runs on central controller)
 	controllerEntrypoint: "controller",
+
+	// Path to web plugin class (runs in Clusterio web UI)
+	webEntrypoint: "./web",
+
+	// UI routes served by controller
+	routes: ["/surface-export"],
 	
 	// Instance configuration fields
 	// These can be set per-instance using clusterioctl
@@ -96,11 +113,19 @@ module.exports.plugin = {
 		messages.ImportPlatformFromFileRequest,
 		messages.ListExportsRequest,
 		messages.TransferPlatformRequest,
+		messages.StartPlatformTransferRequest,
+		messages.InstanceListPlatformsRequest,
 		messages.TransferValidationEvent,
 		messages.DeleteSourcePlatformRequest,
 		messages.UnlockSourcePlatformRequest,
 		messages.TransferStatusUpdate,
+		messages.GetPlatformTreeRequest,
+		messages.ListTransactionLogsRequest,
 		messages.GetTransactionLogRequest,
+		messages.SetSurfaceExportSubscriptionRequest,
+		messages.SurfaceExportTreeUpdateEvent,
+		messages.SurfaceExportTransferUpdateEvent,
+		messages.SurfaceExportLogUpdateEvent,
 	],
 
 	// Optional CLI enhancements for clusterioctl

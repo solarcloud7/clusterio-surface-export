@@ -11,6 +11,7 @@ local Base = require("modules/surface_export/interfaces/remote/base")
 local export_platform = require("modules/surface_export/interfaces/remote/export-platform")
 local get_export = require("modules/surface_export/interfaces/remote/get-export")
 local list_exports = require("modules/surface_export/interfaces/remote/list-exports")
+local list_platforms = require("modules/surface_export/interfaces/remote/list-platforms")
 local clear_old_exports = require("modules/surface_export/interfaces/remote/clear-old-exports")
 local export_platform_to_file = require("modules/surface_export/interfaces/remote/export-platform-to-file")
 local import_platform_chunk = require("modules/surface_export/interfaces/remote/import-platform-chunk")
@@ -26,6 +27,7 @@ local clone_platform = require("modules/surface_export/interfaces/remote/clone-p
 RemoteInterface.export_platform = export_platform
 RemoteInterface.get_export = get_export
 RemoteInterface.list_exports = list_exports
+RemoteInterface.list_platforms = list_platforms
 RemoteInterface.clear_old_exports = clear_old_exports
 RemoteInterface.export_platform_to_file = export_platform_to_file
 RemoteInterface.import_platform_chunk = import_platform_chunk
@@ -40,6 +42,7 @@ RemoteInterface.clone_platform = clone_platform
 -- JSON-wrapped versions for RCON access
 RemoteInterface.get_export_json = Base.json_wrap(get_export)
 RemoteInterface.list_exports_json = Base.json_wrap(list_exports)
+RemoteInterface.list_platforms_json = Base.json_wrap(list_platforms)
 RemoteInterface.get_validation_result_json = Base.json_wrap(get_validation_result)
 
 --- Register all remote interface methods
@@ -52,6 +55,8 @@ function RemoteInterface.register()
     get_export_json = Base.json_wrap(get_export),
     list_exports = list_exports,
     list_exports_json = Base.json_wrap(list_exports),
+    list_platforms = list_platforms,
+    list_platforms_json = Base.json_wrap(list_platforms),
     clear_old_exports = clear_old_exports,
     
     -- Import method

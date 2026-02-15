@@ -3,6 +3,7 @@
 
 local InventoryScanner = require("modules/surface_export/export_scanners/inventory-scanner")
 local Util = require("modules/surface_export/utils/util")
+local GameUtils = require("modules/surface_export/utils/game-utils")
 
 local EntityHandlers = {}
 
@@ -296,15 +297,7 @@ EntityHandlers["train"] = function(entity)
   end
   
   -- COLOR (locomotives and wagons)
-  local color_success, color = pcall(function() return entity.color end)
-  if color_success and color then
-    data.color = {
-      r = color.r or 0,
-      g = color.g or 0,
-      b = color.b or 0,
-      a = color.a or 1
-    }
-  end
+  data.color = GameUtils.extract_color(entity)
   
   -- ENABLE LOGISTICS WHILE MOVING (locomotives and wagons)
   local logistics_success, enable_logistics = pcall(function() return entity.enable_logistics_while_moving end)
@@ -361,15 +354,7 @@ EntityHandlers["car"] = function(entity)
   end
   
   -- COLOR
-  local color_success, color = pcall(function() return entity.color end)
-  if color_success and color then
-    data.color = {
-      r = color.r or 0,
-      g = color.g or 0,
-      b = color.b or 0,
-      a = color.a or 1
-    }
-  end
+  data.color = GameUtils.extract_color(entity)
 
   return data
 end
@@ -418,15 +403,7 @@ EntityHandlers["spider-vehicle"] = function(entity)
   end
   
   -- COLOR
-  local color_success, color = pcall(function() return entity.color end)
-  if color_success and color then
-    data.color = {
-      r = color.r or 0,
-      g = color.g or 0,
-      b = color.b or 0,
-      a = color.a or 1
-    }
-  end
+  data.color = GameUtils.extract_color(entity)
   
   -- LABEL (spider name)
   local label_success, label = pcall(function() return entity.label end)
@@ -673,15 +650,7 @@ EntityHandlers["lamp"] = function(entity)
   local data = {}
   
   -- COLOR
-  local color_success, color = pcall(function() return entity.color end)
-  if color_success and color then
-    data.color = {
-      r = color.r or 0,
-      g = color.g or 0,
-      b = color.b or 0,
-      a = color.a or 1
-    }
-  end
+  data.color = GameUtils.extract_color(entity)
   
   -- ALWAYS ON setting
   local always_on_success, always_on = pcall(function() return entity.always_on end)
@@ -769,15 +738,7 @@ EntityHandlers["train-stop"] = function(entity)
   -- Station name (already captured in entity_data.backer_name by entity-scanner)
   
   -- COLOR
-  local color_success, color = pcall(function() return entity.color end)
-  if color_success and color then
-    data.color = {
-      r = color.r or 0,
-      g = color.g or 0,
-      b = color.b or 0,
-      a = color.a or 1
-    }
-  end
+  data.color = GameUtils.extract_color(entity)
   
   -- MANUAL TRAINS LIMIT
   local limit_success, trains_limit = pcall(function() return entity.trains_limit end)

@@ -2,6 +2,7 @@
 -- Scans all entities on a surface and orchestrates serialization
 
 local Util = require("modules/surface_export/utils/util")
+local GameUtils = require("modules/surface_export/utils/game-utils")
 local EntityHandlers = require("modules/surface_export/export_scanners/entity-handlers")
 local ConnectionScanner = require("modules/surface_export/export_scanners/connection-scanner")
 
@@ -206,17 +207,11 @@ function EntityScanner.count_by_type(entity_data)
 end
 
 --- Generate a deterministic identifier for entities without unit_number
+--- Delegates to GameUtils.make_stable_id (single source of truth)
 --- @param entity LuaEntity
 --- @return string
 function EntityScanner.make_stable_id(entity)
-  local position = entity.position or {x = 0, y = 0}
-  local orientation_part = entity.orientation and string.format(":%.3f", entity.orientation) or ""
-  return string.format("%s@%.3f,%.3f#%s%s",
-    entity.name,
-    position.x,
-    position.y,
-    entity.direction or 0,
-    orientation_part)
+  return GameUtils.make_stable_id(entity)
 end
 
 return EntityScanner

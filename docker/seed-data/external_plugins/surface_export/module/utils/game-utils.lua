@@ -113,7 +113,102 @@ end
 --- @param message string: Message to log
 function GameUtils.debug_log(message)
   -- Can be toggled via settings in future versions
-  -- log("[FactorioSurfaceExport DEBUG] " .. message)
+  -- log("[clusterio-surface-export DEBUG] " .. message)
+end
+
+-- ============================================================================
+-- Shared Constants
+-- ============================================================================
+
+--- Entity types that support entity.active (can be deactivated/frozen).
+--- Used by surface-lock.lua (freeze on export) and active_state_restoration.lua (restore on import).
+GameUtils.ACTIVATABLE_ENTITY_TYPES = {
+  -- Production
+  ["assembling-machine"] = true,
+  ["furnace"] = true,
+  ["mining-drill"] = true,
+  ["lab"] = true,
+  ["rocket-silo"] = true,
+  ["agricultural-tower"] = true,
+  -- Power
+  ["reactor"] = true,
+  ["generator"] = true,
+  ["burner-generator"] = true,
+  ["boiler"] = true,
+  ["fusion-reactor"] = true,
+  ["fusion-generator"] = true,
+  -- Logistics - Item transport
+  ["inserter"] = true,
+  -- Note: Belts cannot be disabled (since Factorio 0.17). This is fine -
+  -- with inserters/loaders frozen, no items can enter or leave belts.
+  ["loader"] = true,
+  ["loader-1x1"] = true,
+  -- Logistics - Fluid transport
+  ["pump"] = true,
+  ["offshore-pump"] = true,
+  -- Logistics - Robots
+  ["roboport"] = true,
+  -- Misc
+  ["beacon"] = true,
+  ["radar"] = true,
+  -- Space platform specific
+  ["thruster"] = true,
+  ["asteroid-collector"] = true,
+  ["cargo-bay"] = true,
+  ["space-platform-hub"] = true,
+  -- Planet logistics (for future surface transfers)
+  ["cargo-landing-pad"] = true,
+}
+
+--- Belt entity types (transport-belt, underground-belt, splitter).
+--- Items on belts cannot be deactivated and require special handling during export/import.
+GameUtils.BELT_ENTITY_TYPES = {
+  ["transport-belt"] = true,
+  ["underground-belt"] = true,
+  ["splitter"] = true,
+}
+
+-- ============================================================================
+-- Shared Helpers
+-- ============================================================================
+
+--- Generate a deterministic identifier for entities without unit_number.
+--- Format: "name@x.xxx,y.yyy#direction[:orientation]"
+--- Used by both entity-scanner.lua (export) and surface-lock.lua (frozen_states).
+--- @param entity LuaEntity
+--- @return string
+function GameUtils.make_stable_id(entity)
+  local position = entity.position or {x = 0, y = 0}
+  local orientation_part = entity.orientation and string.format(":%.3f", entity.orientation) or ""
+  return string.format("%s@%.3f,%.3f#%s%s",
+    entity.name,
+    position.x,
+    position.y,
+    entity.direction or 0,
+    orientation_part)
+end
+
+--- Safely read a property from an object, returning nil on error.
+--- Replaces the common `pcall(function() return obj.prop end)` pattern.
+--- @param obj table: Object to read from
+--- @param property string: Property name
+--- @return any|nil: Property value, or nil if read fails
+function GameUtils.safe_get(obj, property)
+  local ok, val = pcall(function() return obj[property] end)
+  if ok then return val end
+  return nil
+end
+
+--- Extract color from an entity, returning a normalized color table or nil.
+--- Replaces the repeated pcall-color-extraction pattern in entity handlers.
+--- @param entity LuaEntity
+--- @return table|nil: {r, g, b, a} or nil
+function GameUtils.extract_color(entity)
+  local ok, color = pcall(function() return entity.color end)
+  if ok and color then
+    return { r = color.r or 0, g = color.g or 0, b = color.b or 0, a = color.a or 1 }
+  end
+  return nil
 end
 
 return GameUtils
