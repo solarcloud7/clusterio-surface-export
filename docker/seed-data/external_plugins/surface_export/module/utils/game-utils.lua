@@ -3,6 +3,9 @@
 
 local GameUtils = {}
 
+--- The default quality name used by Factorio for non-quality items
+GameUtils.QUALITY_NORMAL = "normal"
+
 --- Round a position to specified precision
 --- @param position table: {x, y} position
 --- @param precision number: Decimal places (default 1)
@@ -63,7 +66,7 @@ end
 --- @param quality_name string: Quality name (normal, rare, epic, etc.)
 --- @return string: Combined key
 function GameUtils.make_quality_key(item_name, quality_name)
-  if quality_name and quality_name ~= "normal" then
+  if quality_name and quality_name ~= GameUtils.QUALITY_NORMAL then
     return string.format("%s:%s", item_name, quality_name)
   end
   return item_name
@@ -105,7 +108,7 @@ function GameUtils.parse_quality_key(key)
   if #parts == 2 then
     return parts[1], parts[2]
   else
-    return key, "normal"
+    return key, GameUtils.QUALITY_NORMAL
   end
 end
 

@@ -20,7 +20,7 @@ function Verification.count_all_items(entity_data)
         if inventory.items then
           for _, item in ipairs(inventory.items) do
             -- Use quality-aware key
-            local key = Util.make_quality_key(item.name, item.quality or "normal")
+            local key = Util.make_quality_key(item.name, item.quality or Util.QUALITY_NORMAL)
             item_totals[key] = (item_totals[key] or 0) + item.count
           end
         end
@@ -32,7 +32,7 @@ function Verification.count_all_items(entity_data)
       for _, line_data in ipairs(entity.specific_data.items) do
         if line_data.items then
           for _, item in ipairs(line_data.items) do
-            local key = Util.make_quality_key(item.name, item.quality or "normal")
+            local key = Util.make_quality_key(item.name, item.quality or Util.QUALITY_NORMAL)
             item_totals[key] = (item_totals[key] or 0) + item.count
           end
         end
@@ -42,13 +42,13 @@ function Verification.count_all_items(entity_data)
     -- Count held items (inserters)
     if entity.specific_data and entity.specific_data.held_item then
       local held = entity.specific_data.held_item
-      local key = Util.make_quality_key(held.name, held.quality or "normal")
+      local key = Util.make_quality_key(held.name, held.quality or Util.QUALITY_NORMAL)
       item_totals[key] = (item_totals[key] or 0) + held.count
     end
 
     -- Count items on ground
     if entity.type == "item-on-ground" then
-      local key = Util.make_quality_key(entity.name, entity.quality or "normal")
+      local key = Util.make_quality_key(entity.name, entity.quality or Util.QUALITY_NORMAL)
       item_totals[key] = (item_totals[key] or 0) + entity.count
     end
   end

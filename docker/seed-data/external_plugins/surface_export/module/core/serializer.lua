@@ -8,11 +8,13 @@ local Verification = require("modules/surface_export/validators/verification")
 
 local Serializer = {}
 
---- Export a complete platform to JSON
---- 10-step atomic export process
+--- LEGACY: Synchronous export. Debug/testing use only (/export-sync-mode).
+--- The production path is async: AsyncProcessor.queue_export().
+--- Known limitations: rolling snapshot for belts (Pitfall #16), no deferred belt scan.
 --- @param platform_index number: Index of the platform to export (1-based)
 --- @param force_name string|nil: Optional force name the platform belongs to
 --- @return table|nil, string: Export data and filename on success, nil and error message on failure
+--- @deprecated Use AsyncProcessor.queue_export() for production exports
 function Serializer.export_platform(platform_index, force_name)
   -- Step 1: Validate platform exists
   local resolved_force_name = force_name or "player"
@@ -164,11 +166,12 @@ function Serializer.export_platforms_batch(platform_indices, force_name)
   return results
 end
 
---- Get export statistics without actually exporting
---- Useful for preview/confirmation dialogs
+--- LEGACY: Synchronous export preview. Calls EntityScanner.scan_surface() which
+--- will freeze the game on large platforms. Debug use only.
 --- @param platform_index number: Platform index
 --- @param force_name string|nil: Optional force name the platform belongs to
 --- @return table|nil: Statistics or nil if invalid
+--- @deprecated Performs full synchronous scan; use async export for production
 function Serializer.get_export_preview(platform_index, force_name)
   local resolved_force_name = force_name or "player"
   local force = game.forces[resolved_force_name]
@@ -200,52 +203,6 @@ function Serializer.get_export_preview(platform_index, force_name)
     fluid_volume = Util.sum_fluids(fluid_counts),
     estimated_size_kb = math.floor((#entity_data * 500) / 1024)  -- Rough estimate
   }
-end
-
---- Update the export index file to track available exports
---- @param filename string: The filename that was exported
---- @param platform_name string: Name of the platform
---- @param tick number: Game tick when exported
-function Serializer.update_export_index(filename, platform_name, tick)
-  local index_filename = "platform_exports_index.json"
-  local index = {}
-  
-  -- Try to read existing index
-  local existing_data, read_error = Util.read_file_compat(index_filename)
-  if existing_data then
-    local parsed, decode_error = Util.json_to_table_compat(existing_data)
-    if parsed then
-      index = parsed
-    elseif decode_error then
-      log(string.format("[FactorioSurfaceExport] Failed to parse export index: %s", decode_error))
-    end
-  elseif read_error then
-    log(string.format("[FactorioSurfaceExport] Unable to read export index: %s", read_error))
-  end
-  
-  -- Add new entry
-  table.insert(index, {
-    filename = filename,
-    platform_name = platform_name,
-    timestamp = string.format("Tick %d", tick),
-    exported_at = Util.format_timestamp(tick)
-  })
-  
-  -- Keep only last 50 entries to avoid bloat
-  if #index > 50 then
-    table.remove(index, 1)
-  end
-  
-  -- Write updated index
-  local success, json_string = pcall(Util.encode_json_compat, index)
-  if success and json_string then
-    local wrote, err = Util.write_file_compat(index_filename, json_string, false)
-    if not wrote then
-      log(string.format("[FactorioSurfaceExport] Failed to update export index: %s", err))
-    end
-  else
-    log(string.format("[FactorioSurfaceExport] Failed to update export index: %s", json_string))
-  end
 end
 
 return Serializer

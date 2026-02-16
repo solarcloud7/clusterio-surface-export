@@ -73,7 +73,7 @@ EntityHandlers["assembling-machine"] = function(entity)
   
   -- RECIPE QUALITY (Factorio 2.0+)
   local recipe_quality_success, recipe_quality = pcall(function() return entity.get_recipe_quality() end)
-  if recipe_quality_success and recipe_quality and recipe_quality.name ~= "normal" then
+  if recipe_quality_success and recipe_quality and recipe_quality.name ~= GameUtils.QUALITY_NORMAL then
     data.recipe_quality = recipe_quality.name
   end
 
@@ -127,7 +127,7 @@ EntityHandlers["furnace"] = function(entity)
   if entity.previous_recipe then
     data.previous_recipe = {
       name = entity.previous_recipe.name,
-      quality = entity.previous_recipe.quality and entity.previous_recipe.quality.name or "normal"
+      quality = entity.previous_recipe.quality and entity.previous_recipe.quality.name or GameUtils.QUALITY_NORMAL
     }
   end
 
@@ -528,7 +528,7 @@ EntityHandlers["mining-drill"] = function(entity)
   if filter_success and filter then
     data.filter = {
       name = filter.name,
-      quality = filter.quality and filter.quality.name or "normal"
+      quality = filter.quality and filter.quality.name or GameUtils.QUALITY_NORMAL
     }
   end
 
@@ -579,7 +579,7 @@ EntityHandlers["rocket-silo"] = function(entity)
   
   -- RECIPE QUALITY (Factorio 2.0+)
   local recipe_quality_success, recipe_quality = pcall(function() return entity.get_recipe_quality() end)
-  if recipe_quality_success and recipe_quality and recipe_quality.name ~= "normal" then
+  if recipe_quality_success and recipe_quality and recipe_quality.name ~= GameUtils.QUALITY_NORMAL then
     data.recipe_quality = recipe_quality.name
   end
 
@@ -683,7 +683,7 @@ EntityHandlers["entity-ghost"] = function(entity)
   end
   
   -- Ghost quality
-  if entity.quality and entity.quality.name ~= "normal" then
+  if entity.quality and entity.quality.name ~= GameUtils.QUALITY_NORMAL then
     data.ghost_quality = entity.quality.name
   end
   

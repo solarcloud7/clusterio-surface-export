@@ -12,7 +12,7 @@ local function extract_item_properties(stack)
   local item_entry = {
     name = stack.name,
     count = stack.count,
-    quality = (stack.quality and stack.quality.name) or "normal"
+    quality = (stack.quality and stack.quality.name) or Util.QUALITY_NORMAL
   }
 
   -- Blueprint/book export strings
@@ -160,7 +160,7 @@ function InventoryScanner.extract_equipment_grid(grid)
       position = equip.position,
       energy = equip.energy,
       shield = equip.shield,
-      quality = equip.quality and equip.quality.name or "normal"
+      quality = equip.quality and equip.quality.name or Util.QUALITY_NORMAL
     }
     
     -- Burner equipment (fuel items)
@@ -252,7 +252,7 @@ function InventoryScanner.extract_belt_items(entity)
           name = stack.name,
           position = item_data.position,  -- CRITICAL: float 0.0-1.0 along belt
           count = stack.count,            -- Stack size (1-4 in 2.0)
-          quality = stack.quality and stack.quality.name or "normal"
+          quality = stack.quality and stack.quality.name or Util.QUALITY_NORMAL
         })
       end
     end
@@ -281,7 +281,7 @@ function InventoryScanner.extract_inserter_held_item(entity)
     return {
       name = held_stack.name,
       count = held_stack.count,
-      quality = held_stack.quality and held_stack.quality.name or "normal"
+      quality = held_stack.quality and held_stack.quality.name or Util.QUALITY_NORMAL
     }
   end
 

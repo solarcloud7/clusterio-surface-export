@@ -35,6 +35,7 @@ Util.BELT_ENTITY_TYPES = GameUtils.BELT_ENTITY_TYPES
 Util.make_stable_id = GameUtils.make_stable_id
 Util.safe_get = GameUtils.safe_get
 Util.extract_color = GameUtils.extract_color
+Util.QUALITY_NORMAL = GameUtils.QUALITY_NORMAL
 
 -- Re-export JSON/file compatibility
 Util.to_json = JsonCompat.to_json

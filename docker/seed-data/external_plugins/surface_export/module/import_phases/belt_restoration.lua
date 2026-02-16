@@ -1,3 +1,5 @@
+local GameUtils = require("modules/surface_export/utils/game-utils")
+
 local BeltRestoration = {}
 
 --- Restore all belt items synchronously in a single tick
@@ -47,7 +49,7 @@ function BeltRestoration.restore(entities_to_create, entity_map)
                     local stack = {
                         name = item.name,
                         count = item.count,
-                        quality = item.quality or "normal"
+                        quality = item.quality or GameUtils.QUALITY_NORMAL
                     }
                     
                     -- Use insert_at with exact position if available (new format)

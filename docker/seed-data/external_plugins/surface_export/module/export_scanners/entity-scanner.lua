@@ -94,7 +94,7 @@ function EntityScanner.serialize_entity(entity)
   end
 
   -- Quality (Factorio 2.0 Space Age feature)
-  if entity.quality and entity.quality.name ~= "normal" then
+  if entity.quality and entity.quality.name ~= GameUtils.QUALITY_NORMAL then
     entity_data.quality = entity.quality.name
   end
 
@@ -184,7 +184,7 @@ function EntityScanner.scan_items_on_ground(surface)
         name = stack.name,
         count = stack.count,
         position = Util.round_position(item_entity.position, 2),
-        quality = stack.quality and stack.quality.name or "normal"
+        quality = stack.quality and stack.quality.name or GameUtils.QUALITY_NORMAL
       })
     end
   end

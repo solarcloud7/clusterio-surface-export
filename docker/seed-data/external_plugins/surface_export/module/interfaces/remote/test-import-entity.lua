@@ -4,6 +4,7 @@
 
 local Deserializer = require("modules/surface_export/core/deserializer")
 local EntityScanner = require("modules/surface_export/export_scanners/entity-scanner")
+local GameUtils = require("modules/surface_export/utils/game-utils")
 local json = require("modules/surface_export/core/json")
 
 --- Test import a single entity from export JSON
@@ -151,7 +152,21 @@ return function(entity_json, surface_index, position_override)
   -- Restore fluids if entity has fluidbox and data has fluids
   if entity_data.specific_data and entity_data.specific_data.fluids then
     local fluid_restore_success, fluid_error = pcall(function()
-      Deserializer.restore_fluids(created_entity, entity_data)
+      -- Inline single-entity fluid restore (Deserializer.restore_fluids was removed)
+      -- This debug tool operates on a single activated entity, so direct fluidbox
+      -- assignment is appropriate (no segment-aware restoration needed)
+      local fluidbox = created_entity.fluidbox
+      if fluidbox then
+        for i, fluid_data in ipairs(entity_data.specific_data.fluids) do
+          if i <= #fluidbox then
+            fluidbox[i] = {
+              name = fluid_data.name,
+              amount = fluid_data.amount,
+              temperature = fluid_data.temperature
+            }
+          end
+        end
+      end
     end)
     
     if fluid_restore_success then
@@ -225,7 +240,7 @@ return function(entity_json, surface_index, position_override)
           local stack = {
             name = item.name,
             count = item.count,
-            quality = item.quality or "normal"
+            quality = item.quality or GameUtils.QUALITY_NORMAL
           }
           local success = false
           if item.position then

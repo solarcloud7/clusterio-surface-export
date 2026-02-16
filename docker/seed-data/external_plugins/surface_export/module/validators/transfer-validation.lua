@@ -93,7 +93,7 @@ function TransferValidation.validate_import(surface, expected_verification, opti
                 for _, line_data in ipairs(belt_lines) do
                     if line_data.items then
                         for _, item in ipairs(line_data.items) do
-                            local key = Util.make_quality_key(item.name, item.quality or "normal")
+                            local key = Util.make_quality_key(item.name, item.quality or Util.QUALITY_NORMAL)
                             total_item_counts[key] = (total_item_counts[key] or 0) + item.count
                             -- Belts are considered "storage" - items should be preserved
                             storage_item_counts[key] = (storage_item_counts[key] or 0) + item.count
@@ -106,7 +106,7 @@ function TransferValidation.validate_import(surface, expected_verification, opti
             if entity_type == "inserter" then
                 local held = InventoryScanner.extract_inserter_held_item(entity)
                 if held then
-                    local key = Util.make_quality_key(held.name, held.quality or "normal")
+                    local key = Util.make_quality_key(held.name, held.quality or Util.QUALITY_NORMAL)
                     total_item_counts[key] = (total_item_counts[key] or 0) + held.count
                     -- Inserters are "in transit" - use storage validation
                     storage_item_counts[key] = (storage_item_counts[key] or 0) + held.count
@@ -120,7 +120,7 @@ function TransferValidation.validate_import(surface, expected_verification, opti
     for _, item_entity in ipairs(ground_items) do
         if item_entity.valid and item_entity.stack and item_entity.stack.valid_for_read then
             local stack = item_entity.stack
-            local key = Util.make_quality_key(stack.name, (stack.quality and stack.quality.name) or "normal")
+            local key = Util.make_quality_key(stack.name, (stack.quality and stack.quality.name) or Util.QUALITY_NORMAL)
             total_item_counts[key] = (total_item_counts[key] or 0) + stack.count
             storage_item_counts[key] = (storage_item_counts[key] or 0) + stack.count
         end

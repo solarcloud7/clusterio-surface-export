@@ -10,10 +10,11 @@ import {
 	Table,
 	Tag,
 	Tabs,
-	Timeline,
+	Tooltip,
 	Typography,
 	message as antMessage,
 } from "antd";
+import { InfoCircleOutlined } from "@ant-design/icons";
 
 import {
 	BaseWebPlugin,
@@ -112,6 +113,15 @@ function ManualTransferTab({ plugin, state }) {
 	const [isSubmitting, setIsSubmitting] = useState(false);
 
 	const { tree, loadingTree, treeError } = state;
+	const latestCompletedByPlatform = useMemo(() => {
+		const completed = new Map();
+		for (const summary of state.transferSummaries || []) {
+			if (summary?.status === "completed" && summary?.platformName && !completed.has(summary.platformName)) {
+				completed.set(summary.platformName, summary);
+			}
+		}
+		return completed;
+	}, [state.transferSummaries]);
 	const platformLookup = useMemo(() => {
 		const lookup = new Map();
 		if (!tree) {
@@ -190,8 +200,30 @@ function ManualTransferTab({ plugin, state }) {
 			}
 		}
 
+		if (latestCompletedByPlatform.size) {
+			const platformTargets = new Map();
+			for (const [platformName, summary] of latestCompletedByPlatform.entries()) {
+				const hasTarget = rows.some(row => (
+					row.platform?.platformName === platformName
+					&& row.instanceId === summary.targetInstanceId
+				));
+				if (hasTarget) {
+					platformTargets.set(platformName, summary.targetInstanceId);
+				}
+			}
+
+			return rows.filter(row => {
+				const platformName = row.platform?.platformName;
+				const targetInstanceId = platformTargets.get(platformName);
+				if (!targetInstanceId) {
+					return true;
+				}
+				return row.instanceId === targetInstanceId;
+			});
+		}
+
 		return rows;
-	}, [tree]);
+	}, [tree, latestCompletedByPlatform]);
 
 	const selectedSource = selectedPlatformKey ? platformLookup.get(selectedPlatformKey) : null;
 
@@ -299,8 +331,162 @@ function ManualTransferTab({ plugin, state }) {
 					<Tag color={statusColor(row.platform.transferStatus)}>
 						{row.platform.transferStatus || "idle"}
 					</Tag>
+					{row.platform.hasSpaceHub === false ? (
+						<Tag color="warning">no hub</Tag>
+					) : null}
 				</Space>
 			),
+		},
+	];
+	const flowColumns = [
+		{
+			title: "At",
+			key: "at",
+			width: "16%",
+			render: (_, row) => row.timestamp ? new Date(row.timestamp).toLocaleTimeString() : "-",
+		},
+		{
+			title: "Step",
+			dataIndex: "eventType",
+			key: "eventType",
+			width: "20%",
+			render: (eventType, row) => <Tag color={row.color}>{eventType}</Tag>,
+		},
+		{
+			title: "Elapsed",
+			dataIndex: "elapsedMs",
+			key: "elapsedMs",
+			width: "10%",
+			render: value => (typeof value === "number" ? `${formatNumeric(value, 0)} ms` : "-"),
+		},
+		{
+			title: "Δ Prev",
+			dataIndex: "deltaMs",
+			key: "deltaMs",
+			width: "10%",
+			render: value => (typeof value === "number" ? `${formatNumeric(value, 0)} ms` : "-"),
+		},
+		{
+			title: "Duration",
+			key: "duration",
+			width: "12%",
+			render: (_, row) => {
+				if (typeof row.durationMs === "number") {
+					return `${formatNumeric(row.durationMs, 0)} ms`;
+				}
+				if (row.phaseTimings?.length) {
+					const totalPhaseMs = row.phaseTimings.reduce((sum, phase) => sum + (Number(phase.durationMs) || 0), 0);
+					return `${formatNumeric(totalPhaseMs, 0)} ms`;
+				}
+				return "-";
+			},
+		},
+		{
+			title: "Message",
+			dataIndex: "message",
+			key: "message",
+		},
+	];
+	const entityExpectedTotal = Number(validation?.entityCount ?? entityRows.reduce((sum, row) => sum + (Number(row.count) || 0), 0));
+	const entityActualTotal = entityRows.reduce((sum, row) => sum + (Number(row.count) || 0), 0);
+	const validationCategoryRows = useMemo(() => {
+		if (!validation) {
+			return [];
+		}
+		return [
+			{
+				key: "validation:entities",
+				category: "Entities",
+				expected: entityExpectedTotal,
+				actual: entityActualTotal,
+				delta: entityActualTotal - entityExpectedTotal,
+				preservedPct: entityExpectedTotal > 0 ? (entityActualTotal / entityExpectedTotal) * 100 : null,
+				status: Math.abs(entityActualTotal - entityExpectedTotal) <= 0.0001 ? "Match" : "Mismatch",
+				detailCount: entityRows.length,
+			},
+			{
+				key: "validation:items",
+				category: "Items",
+				expected: itemExpectedTotal,
+				actual: itemActualTotal,
+				delta: itemActualTotal - itemExpectedTotal,
+				preservedPct: itemExpectedTotal > 0 ? (itemActualTotal / itemExpectedTotal) * 100 : null,
+				status: validation.itemCountMatch ? "Match" : "Mismatch",
+				detailCount: itemRows.length,
+			},
+			{
+				key: "validation:fluids",
+				category: "Fluids",
+				expected: fluidExpectedTotal,
+				actual: fluidActualTotal,
+				delta: fluidActualTotal - fluidExpectedTotal,
+				preservedPct: fluidExpectedTotal > 0 ? (fluidActualTotal / fluidExpectedTotal) * 100 : null,
+				status: validation.fluidCountMatch ? "Match" : "Mismatch",
+				detailCount: fluidInventoryRows.length,
+			},
+		];
+	}, [
+		validation,
+		entityExpectedTotal,
+		entityActualTotal,
+		entityRows,
+		itemExpectedTotal,
+		itemActualTotal,
+		itemRows,
+		fluidExpectedTotal,
+		fluidActualTotal,
+		fluidInventoryRows,
+	]);
+	const validationCategoryColumns = [
+		{
+			title: "Category",
+			dataIndex: "category",
+			key: "category",
+			render: value => <Text strong>{value}</Text>,
+		},
+		{
+			title: "Expected",
+			dataIndex: "expected",
+			key: "expected",
+			render: value => formatNumeric(value, 1),
+		},
+		{
+			title: "Actual",
+			dataIndex: "actual",
+			key: "actual",
+			render: value => formatNumeric(value, 1),
+		},
+		{
+			title: "Δ",
+			dataIndex: "delta",
+			key: "delta",
+			render: value => (
+				<Text type={value === 0 ? undefined : value > 0 ? "success" : "danger"}>
+					{formatSigned(value, 1)}
+				</Text>
+			),
+		},
+		{
+			title: "Preserved",
+			dataIndex: "preservedPct",
+			key: "preservedPct",
+			render: value => (value === null ? "-" : `${formatNumeric(value, 1)}%`),
+		},
+		{
+			title: "Status",
+			dataIndex: "status",
+			key: "status",
+			render: status => (
+				<Tag color={status === "Match" ? "green" : "warning"}>
+					{status}
+				</Tag>
+			),
+		},
+		{
+			title: "Details",
+			dataIndex: "detailCount",
+			key: "detailCount",
+			render: value => `${formatNumeric(value, 0)} rows`,
 		},
 	];
 
@@ -320,7 +506,13 @@ function ManualTransferTab({ plugin, state }) {
 							pagination={{ pageSize: 15 }}
 							rowClassName={row => row.key === selectedPlatformKey ? "surface-export-log-row-selected" : "surface-export-log-row"}
 							onRow={row => ({
-								onClick: () => setSelectedPlatformKey(row.key),
+								onClick: () => {
+									if (row.platform?.hasSpaceHub === false) {
+										antMessage.warning("This platform does not have a space hub yet.");
+										return;
+									}
+									setSelectedPlatformKey(row.key);
+								},
 							})}
 						/>
 					) : null}
@@ -459,6 +651,116 @@ function buildExpectedActualRows(expectedMap, actualMap) {
 	return rows;
 }
 
+function parseFluidTemperatureKey(fluidKey) {
+	const key = String(fluidKey || "");
+	const match = key.match(/^(.*)@(-?\d+(?:\.\d+)?)C$/i);
+	if (!match) {
+		return {
+			baseName: key,
+			temperatureC: null,
+			rawKey: key,
+		};
+	}
+	return {
+		baseName: match[1] || key,
+		temperatureC: Number(match[2]),
+		rawKey: key,
+	};
+}
+
+function buildFluidInventoryRows(expectedMap, actualMap, highTempThreshold = 10000, highTempAggregates = {}) {
+	const expected = expectedMap || {};
+	const actual = actualMap || {};
+	const aggregates = highTempAggregates || {};
+	const threshold = Number.isFinite(Number(highTempThreshold)) ? Number(highTempThreshold) : 10000;
+	const keys = new Set([ ...Object.keys(expected), ...Object.keys(actual) ]);
+	const groups = new Map();
+
+	for (const fluidKey of keys) {
+		const expectedValue = Number(expected[fluidKey] || 0);
+		const actualValue = Number(actual[fluidKey] || 0);
+		const delta = actualValue - expectedValue;
+		const parsed = parseFluidTemperatureKey(fluidKey);
+		const isHighTemp = parsed.temperatureC !== null && parsed.temperatureC >= threshold;
+		const baseName = parsed.baseName || fluidKey;
+
+		if (!groups.has(baseName)) {
+			groups.set(baseName, {
+				baseName,
+				expected: 0,
+				actual: 0,
+				hasHighTempBucket: false,
+				children: [],
+			});
+		}
+
+		const group = groups.get(baseName);
+		group.expected += expectedValue;
+		group.actual += actualValue;
+		group.hasHighTempBucket = group.hasHighTempBucket || isHighTemp;
+		group.children.push({
+			key: `fluid:bucket:${fluidKey}`,
+			name: baseName,
+			bucketKey: fluidKey,
+			tempBucket: parsed.temperatureC === null ? "-" : `${formatNumeric(parsed.temperatureC, 1)}°C`,
+			category: isHighTemp ? "High-temp" : "Normal",
+			expected: expectedValue,
+			actual: actualValue,
+			delta,
+			preservedPct: expectedValue > 0 ? (actualValue / expectedValue) * 100 : null,
+			isGroup: false,
+			status: "Match",
+			reconciled: false,
+		});
+	}
+
+	const rows = [];
+	for (const group of groups.values()) {
+		const delta = group.actual - group.expected;
+		const category = group.hasHighTempBucket ? "High-temp" : "Normal";
+		const aggregate = aggregates[group.baseName];
+		const reconciledHighTemp = category === "High-temp"
+			? Boolean(aggregate?.reconciled ?? Math.abs(delta) <= 1)
+			: false;
+
+		const children = group.children
+			.map(child => {
+				const absDelta = Math.abs(child.delta);
+				let status = "Match";
+				if (child.category === "High-temp" && reconciledHighTemp) {
+					status = absDelta > 0.0001 ? "Bucket drift (reconciled)" : "Match";
+				} else if (absDelta > 0.0001) {
+					status = "Mismatch";
+				}
+				return {
+					...child,
+					status,
+					reconciled: child.category === "High-temp" ? reconciledHighTemp : absDelta <= 0.0001,
+				};
+			})
+			.sort((a, b) => Math.abs(b.delta) - Math.abs(a.delta) || a.bucketKey.localeCompare(b.bucketKey));
+
+		rows.push({
+			key: `fluid:group:${group.baseName}`,
+			name: group.baseName,
+			category,
+			expected: group.expected,
+			actual: group.actual,
+			delta,
+			preservedPct: group.expected > 0 ? (group.actual / group.expected) * 100 : null,
+			isGroup: true,
+			status: category === "High-temp"
+				? (reconciledHighTemp ? "Reconciled aggregate" : (Math.abs(delta) <= 0.0001 ? "Match" : "Mismatch"))
+				: (Math.abs(delta) <= 0.0001 ? "Match" : "Mismatch"),
+			reconciled: category === "High-temp" ? reconciledHighTemp : Math.abs(delta) <= 0.0001,
+			children,
+		});
+	}
+
+	rows.sort((a, b) => Math.abs(b.delta) - Math.abs(a.delta) || a.name.localeCompare(b.name));
+	return rows;
+}
+
 function findLatestEvent(events, predicate) {
 	for (let index = events.length - 1; index >= 0; index -= 1) {
 		if (predicate(events[index])) {
@@ -537,6 +839,7 @@ function buildDetailedLogSummary(detail, transferId) {
 				instanceName: transferInfo?.targetInstanceName ?? null,
 			},
 		},
+		export: summary.export || transferCreatedEvent?.exportMetrics || null,
 		payload: summary.payload || completionEvent?.payloadMetrics || transferCreatedEvent?.payloadMetrics || null,
 		import: summary.import || completionEvent?.importMetrics || validationEvent?.importMetrics || null,
 		validation,
@@ -643,34 +946,74 @@ function TransactionLogsTab({ plugin, state }) {
 		},
 	];
 
-	const timelineItems = (selectedDetails?.events || []).map(event => {
-		const eventType = event.eventType || "";
-		const isFailure = eventType.includes("failed") || eventType.includes("error");
-		const isSuccess = eventType.includes("completed") || eventType.includes("success");
-		return {
-			color: isFailure ? "red" : isSuccess ? "green" : "blue",
-			label: event.timestamp ? new Date(event.timestamp).toLocaleTimeString() : "",
-			children: (
-				<div>
-					<Text strong>{event.eventType || "event"}</Text>
-					<div>{event.message || ""}</div>
-				</div>
-			),
-		};
-	});
+	const flowRows = useMemo(
+		() => (selectedDetails?.events || []).map((event, index) => {
+			const phaseTimings = [];
+			if (typeof event?.transmissionMs === "number") {
+				phaseTimings.push({ key: "transmission", phase: "Transmission", durationMs: event.transmissionMs, source: "transfer" });
+			}
+			if (typeof event?.validationMs === "number") {
+				phaseTimings.push({ key: "validation", phase: "Validation", durationMs: event.validationMs, source: "transfer" });
+			}
+			if (event?.phases && typeof event.phases === "object") {
+				for (const [phaseName, phaseDurationMs] of Object.entries(event.phases)) {
+					if (typeof phaseDurationMs === "number") {
+						phaseTimings.push({
+							key: `phase:${phaseName}`,
+							phase: humanizeMetricKey(String(phaseName).replace(/Ms$/, "")),
+							durationMs: phaseDurationMs,
+							source: "phase",
+						});
+					}
+				}
+			}
+			if (event?.importMetrics && typeof event.importMetrics === "object") {
+				const importPhaseKeys = [
+					[ "tiles_ms", "Import: Tiles" ],
+					[ "entities_ms", "Import: Entities" ],
+					[ "fluids_ms", "Import: Fluids" ],
+					[ "belts_ms", "Import: Belts" ],
+					[ "state_ms", "Import: State Restore" ],
+					[ "validation_ms", "Import: Validation" ],
+					[ "total_ms", "Import: Total" ],
+				];
+				for (const [metricKey, label] of importPhaseKeys) {
+					const value = event.importMetrics?.[metricKey];
+					if (typeof value === "number") {
+						phaseTimings.push({
+							key: `import:${metricKey}`,
+							phase: label,
+							durationMs: value,
+							source: "import",
+						});
+					}
+				}
+			}
 
-	const phaseRows = useMemo(
-		() => Object.entries(detailedSummary?.phases || {})
-			.map(([phase, durationMs]) => ({
-				key: phase,
-				phase: humanizeMetricKey(String(phase).replace(/Ms$/, "")),
-				durationMs: Number(durationMs) || 0,
-				duration: formatDuration(Number(durationMs) || 0),
-			}))
-			.sort((a, b) => b.durationMs - a.durationMs),
-		[detailedSummary]
+			const primaryDurationMs = [event?.durationMs, event?.validationMs, event?.transmissionMs]
+				.find(value => typeof value === "number") ?? null;
+			const isFailure = String(event?.eventType || "").includes("failed") || String(event?.eventType || "").includes("error");
+			const isSuccess = String(event?.eventType || "").includes("completed") || String(event?.eventType || "").includes("success");
+
+			return {
+				key: `flow:${event?.timestampMs || Date.now()}:${index}`,
+				eventType: event?.eventType || "event",
+				message: event?.message || "",
+				timestamp: event?.timestamp || null,
+				timestampMs: event?.timestampMs || null,
+				elapsedMs: typeof event?.elapsedMs === "number" ? event.elapsedMs : null,
+				deltaMs: typeof event?.deltaMs === "number" ? event.deltaMs : null,
+				durationMs: primaryDurationMs,
+				phaseTimings,
+				exportMetrics: event?.exportMetrics
+					|| (event?.eventType === "transfer_created" ? detailedSummary?.export || null : null),
+				color: isFailure ? "red" : isSuccess ? "green" : "blue",
+			};
+		}),
+		[selectedDetails, detailedSummary]
 	);
 	const payloadRows = useMemo(() => buildMetricRows(detailedSummary?.payload), [detailedSummary]);
+	const exportRows = useMemo(() => buildMetricRows(detailedSummary?.export), [detailedSummary]);
 	const importRows = useMemo(() => buildMetricRows(detailedSummary?.import), [detailedSummary]);
 
 	const validation = detailedSummary?.validation || null;
@@ -699,35 +1042,21 @@ function TransactionLogsTab({ plugin, state }) {
 	const actualFluids = validation?.actualFluidCounts || {};
 
 	const itemRows = useMemo(() => buildExpectedActualRows(expectedItems, actualItems), [expectedItems, actualItems]);
-	const fluidRows = useMemo(() => buildExpectedActualRows(expectedFluids, actualFluids), [expectedFluids, actualFluids]);
+	const highTempThreshold = Number(validation?.fluidReconciliation?.highTempThreshold ?? 10000);
+	const fluidInventoryRows = useMemo(
+		() => buildFluidInventoryRows(
+			expectedFluids,
+			actualFluids,
+			highTempThreshold,
+			validation?.fluidReconciliation?.highTempAggregates || {}
+		),
+		[expectedFluids, actualFluids, highTempThreshold, validation]
+	);
 
-	const totalRows = useMemo(() => {
-		if (!validation) {
-			return [];
-		}
-		const itemExpected = validation.totalExpectedItems ?? sumValues(expectedItems);
-		const itemActual = validation.totalActualItems ?? sumValues(actualItems);
-		const fluidExpected = validation.totalExpectedFluids ?? sumValues(expectedFluids);
-		const fluidActual = validation.totalActualFluids ?? sumValues(actualFluids);
-		return [
-			{
-				key: "items",
-				name: "Items (total)",
-				expected: itemExpected,
-				actual: itemActual,
-				delta: itemActual - itemExpected,
-				preservedPct: itemExpected > 0 ? (itemActual / itemExpected) * 100 : null,
-			},
-			{
-				key: "fluids",
-				name: "Fluids (total)",
-				expected: fluidExpected,
-				actual: fluidActual,
-				delta: fluidActual - fluidExpected,
-				preservedPct: fluidExpected > 0 ? (fluidActual / fluidExpected) * 100 : null,
-			},
-		];
-	}, [validation, expectedItems, actualItems, expectedFluids, actualFluids]);
+	const itemExpectedTotal = validation?.totalExpectedItems ?? sumValues(expectedItems);
+	const itemActualTotal = validation?.totalActualItems ?? sumValues(actualItems);
+	const fluidExpectedTotal = validation?.totalExpectedFluids ?? sumValues(expectedFluids);
+	const fluidActualTotal = validation?.totalActualFluids ?? sumValues(actualFluids);
 
 	const entityRows = useMemo(
 		() => Object.entries(validation?.entityTypeBreakdown || {})
@@ -755,19 +1084,86 @@ function TransactionLogsTab({ plugin, state }) {
 		];
 	}, [validation]);
 
-	const highTempRows = useMemo(
-		() => Object.entries(validation?.fluidReconciliation?.highTempAggregates || {})
-			.map(([name, aggregate]) => ({
-				key: name,
-				name,
-				expected: Number(aggregate?.expected || 0),
-				actual: Number(aggregate?.actual || 0),
-				delta: Number(aggregate?.delta || 0),
-				reconciled: Boolean(aggregate?.reconciled),
-			}))
-			.sort((a, b) => Math.abs(b.delta) - Math.abs(a.delta) || a.name.localeCompare(b.name)),
-		[validation]
-	);
+	const fluidColumns = [
+		{
+			title: "Fluid / Bucket",
+			key: "fluid",
+			width: "32%",
+			render: (_, row) => (
+				row.isGroup
+					? <Text code>{row.name}</Text>
+					: (
+						<Tooltip title={row.bucketKey}>
+							<Text type="secondary">{row.tempBucket === "-" ? row.bucketKey : `@${row.tempBucket}`}</Text>
+						</Tooltip>
+					)
+			),
+		},
+		{
+			title: "Category",
+			dataIndex: "category",
+			key: "category",
+			render: value => (
+				<Tag color={value === "High-temp" ? "gold" : "default"}>
+					{value}
+				</Tag>
+			),
+		},
+		{
+			title: "Expected",
+			dataIndex: "expected",
+			key: "expected",
+			render: value => formatNumeric(value, 1),
+		},
+		{
+			title: "Actual",
+			dataIndex: "actual",
+			key: "actual",
+			render: value => formatNumeric(value, 1),
+		},
+		{
+			title: "Δ",
+			dataIndex: "delta",
+			key: "delta",
+			render: (delta, row) => {
+				if (!row.isGroup && row.category === "High-temp" && row.reconciled && Math.abs(delta) > 0.0001) {
+					return <Text type="warning">{formatSigned(delta, 1)}</Text>;
+				}
+				return (
+					<Text type={delta === 0 ? undefined : delta > 0 ? "success" : "danger"}>
+						{formatSigned(delta, 1)}
+					</Text>
+				);
+			},
+		},
+		{
+			title: "Preserved",
+			dataIndex: "preservedPct",
+			key: "preservedPct",
+			render: value => (value === null ? "-" : `${formatNumeric(value, 1)}%`),
+		},
+		{
+			title: "Status",
+			dataIndex: "status",
+			key: "status",
+			render: (status, row) => {
+				if (status === "Reconciled aggregate") {
+					return <Tag color="green">Reconciled aggregate</Tag>;
+				}
+				if (status === "Bucket drift (reconciled)") {
+					return (
+						<Tooltip title="High-temp bucket drift is expected from temperature merging/averaging.">
+							<Tag color="gold">Bucket drift (reconciled)</Tag>
+						</Tooltip>
+					);
+				}
+				if (status === "Mismatch") {
+					return <Tag color={row.category === "High-temp" ? "warning" : "error"}>Mismatch</Tag>;
+				}
+				return <Tag color="default">Match</Tag>;
+			},
+		},
+	];
 
 	const selectedStatus = detailedSummary?.status || selectedDetails?.transferInfo?.status || "unknown";
 	const selectedResult = detailedSummary?.result || "IN_PROGRESS";
@@ -859,27 +1255,19 @@ function TransactionLogsTab({ plugin, state }) {
 						</Space>
 					</Card>
 
-					<Card title="Phase Timing">
-						{phaseRows.length ? (
-							<Table
-								size="small"
-								pagination={false}
-								columns={[
-									{ title: "Phase", dataIndex: "phase", key: "phase" },
-									{ title: "Duration", dataIndex: "duration", key: "duration" },
-								]}
-								dataSource={phaseRows}
-							/>
-						) : (
-							<Empty description="No phase timing data available yet" />
-						)}
-					</Card>
 
 					<Card title="Payload Metrics">
 						{payloadRows.length ? (
 							<Table size="small" pagination={false} columns={metricColumns} dataSource={payloadRows} />
 						) : (
 							<Empty description="No payload metrics available" />
+						)}
+					</Card>
+					<Card title="Export Metrics">
+						{exportRows.length ? (
+							<Table size="small" pagination={false} columns={metricColumns} dataSource={exportRows} />
+						) : (
+							<Empty description="No export timing metrics available" />
 						)}
 					</Card>
 
@@ -903,82 +1291,152 @@ function TransactionLogsTab({ plugin, state }) {
 										description={validation.mismatchDetails}
 									/>
 								) : null}
-								<Table size="small" pagination={false} columns={comparisonColumns} dataSource={totalRows} />
+								<Table
+									size="small"
+									pagination={false}
+									columns={validationCategoryColumns}
+									dataSource={validationCategoryRows}
+									expandable={{
+										expandedRowRender: row => {
+											if (row.key === "validation:entities") {
+												return entityRows.length ? (
+													<Table
+														size="small"
+														pagination={{ pageSize: 10 }}
+														columns={[
+															{
+																title: "Entity Type",
+																dataIndex: "entityType",
+																key: "entityType",
+																render: value => <Text code>{value}</Text>,
+															},
+															{
+																title: "Count",
+																dataIndex: "count",
+																key: "count",
+																render: value => formatNumeric(value, 0),
+															},
+														]}
+														dataSource={entityRows}
+														rowKey={entry => entry.key}
+													/>
+												) : (
+													<Empty description="No entity details available" />
+												);
+											}
+											if (row.key === "validation:items") {
+												return itemRows.length ? (
+													<Table
+														size="small"
+														pagination={{ pageSize: 10 }}
+														columns={comparisonColumns}
+														dataSource={itemRows}
+														rowKey={entry => entry.key}
+													/>
+												) : (
+													<Empty description="No item details available" />
+												);
+											}
+											if (row.key === "validation:fluids") {
+												return (
+													<Space direction="vertical" style={{ width: "100%" }} size="middle">
+														{fluidInventoryRows.length ? (
+															<Table
+																size="small"
+																pagination={{ pageSize: 10 }}
+																columns={fluidColumns}
+																dataSource={fluidInventoryRows}
+																rowKey={entry => entry.key}
+															/>
+														) : (
+															<Empty description="No fluid details available" />
+														)}
+														{fluidReconciliationRows.length ? (
+															<Table
+																size="small"
+																pagination={false}
+																columns={metricColumns}
+																dataSource={fluidReconciliationRows}
+																rowKey={entry => entry.key}
+															/>
+														) : null}
+													</Space>
+												);
+											}
+											return null;
+										},
+										rowExpandable: row => [ "validation:entities", "validation:items", "validation:fluids" ].includes(row.key),
+									}}
+									rowKey={row => row.key}
+								/>
 							</Space>
 						) : (
 							<Empty description="No validation data available yet" />
 						)}
 					</Card>
 
-					<Card title="Entity Type Breakdown">
-						{entityRows.length ? (
-							<Table
-								size="small"
-								pagination={{ pageSize: 10 }}
-								columns={[
-									{ title: "Entity Type", dataIndex: "entityType", key: "entityType", render: value => <Text code>{value}</Text> },
-									{ title: "Count", dataIndex: "count", key: "count", render: value => formatNumeric(value, 0) },
-								]}
-								dataSource={entityRows}
-							/>
-						) : (
-							<Empty description="No entity breakdown available" />
+					<Card
+						title={(
+							<Space size="small">
+								<span>Transfer Flow (Timeline + Phases)</span>
+								<Tooltip title="Chronological events with phase and import timing details in ms.">
+									<InfoCircleOutlined />
+								</Tooltip>
+							</Space>
 						)}
-					</Card>
-
-					<Card title="Item Inventory (Expected vs Actual)">
-						{itemRows.length ? (
+					>
+						{flowRows.length ? (
 							<Table
 								size="small"
 								pagination={{ pageSize: 20 }}
-								columns={comparisonColumns}
-								dataSource={itemRows}
+								columns={flowColumns}
+								dataSource={flowRows}
+								rowKey={row => row.key}
+								expandable={{
+									expandedRowRender: row => (
+										<Space direction="vertical" style={{ width: "100%" }}>
+											{row.phaseTimings?.length ? (
+												<Table
+													size="small"
+													pagination={false}
+													columns={[
+														{ title: "Phase", dataIndex: "phase", key: "phase" },
+														{
+															title: "Source",
+															dataIndex: "source",
+															key: "source",
+															render: value => <Tag>{value}</Tag>,
+														},
+														{
+															title: "Duration",
+															dataIndex: "durationMs",
+															key: "durationMs",
+															render: value => `${formatNumeric(value, 0)} ms`,
+														},
+													]}
+													dataSource={row.phaseTimings}
+													rowKey={entry => entry.key}
+												/>
+											) : (
+												<Empty description="No phase timing details on this step" />
+											)}
+											{row.exportMetrics ? (
+												<Table
+													size="small"
+													pagination={false}
+													columns={metricColumns}
+													dataSource={buildMetricRows(row.exportMetrics)}
+													rowKey={entry => entry.key}
+												/>
+											) : null}
+										</Space>
+									),
+									rowExpandable: row => Boolean(row.phaseTimings?.length || row.exportMetrics),
+								}}
 							/>
 						) : (
-							<Empty description="No item inventory data available" />
+							<Empty description="No transfer flow events available" />
 						)}
-					</Card>
-
-					<Card title="Fluid Inventory (Expected vs Actual)">
-						{fluidRows.length ? (
-							<Table
-								size="small"
-								pagination={{ pageSize: 20 }}
-								columns={comparisonColumns}
-								dataSource={fluidRows}
-							/>
-						) : (
-							<Empty description="No fluid inventory data available" />
-						)}
-					</Card>
-
-					<Card title="High-Temperature Fluid Aggregates">
-						{highTempRows.length ? (
-							<Table
-								size="small"
-								pagination={false}
-								columns={[
-									{ title: "Fluid", dataIndex: "name", key: "name", render: value => <Text code>{value}</Text> },
-									{ title: "Expected", dataIndex: "expected", key: "expected", render: value => formatNumeric(value, 1) },
-									{ title: "Actual", dataIndex: "actual", key: "actual", render: value => formatNumeric(value, 1) },
-									{ title: "Δ", dataIndex: "delta", key: "delta", render: value => formatSigned(value, 1) },
-									{ title: "Reconciled", dataIndex: "reconciled", key: "reconciled", render: value => value ? "Yes" : "No" },
-								]}
-								dataSource={highTempRows}
-							/>
-						) : (
-							<Empty description="No high-temp aggregate data available" />
-						)}
-					</Card>
-
-					{fluidReconciliationRows.length ? (
-						<Card title="Fluid Reconciliation">
-							<Table size="small" pagination={false} columns={metricColumns} dataSource={fluidReconciliationRows} />
-						</Card>
-					) : null}
-
-					<Card title="Transfer Timeline">
-						<Timeline items={timelineItems} />
 					</Card>
 				</>
 			) : null}
@@ -990,6 +1448,7 @@ function SurfaceExportPage() {
 	const control = useContext(ControlContext);
 	const plugin = useSurfaceExportPlugin(control);
 	const state = useSurfaceExportState(plugin);
+	const pluginVersion = state?.pluginVersion || null;
 	const tabItems = [
 		{
 			key: "manual",
@@ -1008,6 +1467,11 @@ function SurfaceExportPage() {
 	return (
 		<PageLayout nav={[{ name: "Surface Export" }]}>
 			<PageHeader title="Surface Export" />
+			{pluginVersion ? (
+				<Text type="secondary" style={{ fontSize: 12, display: "block", marginBottom: 12 }}>
+					v{pluginVersion}
+				</Text>
+			) : null}
 			<Tabs
 				defaultActiveKey="manual"
 				items={tabItems}
@@ -1031,6 +1495,7 @@ export class WebPlugin extends BaseWebPlugin {
 			lastTransferRevision: 0,
 			lastLogRevision: 0,
 			canViewLogs: true,
+			pluginVersion: packageData?.version || null,
 		};
 	}
 

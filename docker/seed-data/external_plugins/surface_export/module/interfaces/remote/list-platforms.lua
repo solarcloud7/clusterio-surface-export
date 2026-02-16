@@ -19,11 +19,14 @@ local function list_platforms(force_name)
       local entity_count = 0
       local surface_index = nil
       local surface_name = nil
+      local has_space_hub = false
 
       if surface and surface.valid then
         surface_index = surface.index
         surface_name = surface.name
         entity_count = #surface.find_entities_filtered({})
+        local hub = surface.find_entity("space-platform-hub", {0, 0})
+        has_space_hub = hub ~= nil and hub.valid
       end
 
       table.insert(platforms, {
@@ -34,6 +37,7 @@ local function list_platforms(force_name)
         surface_name = surface_name,
         entity_count = entity_count,
         is_locked = SurfaceLock.is_locked(platform.name),
+        has_space_hub = has_space_hub,
       })
     end
   end

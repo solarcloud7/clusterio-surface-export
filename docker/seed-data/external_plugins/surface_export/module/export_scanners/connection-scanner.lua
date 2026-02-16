@@ -2,6 +2,8 @@
 -- Extract circuit connections, power connections, and control behavior
 -- Updated for Factorio 2.0 wire connector API
 
+local GameUtils = require("modules/surface_export/utils/game-utils")
+
 local ConnectionScanner = {}
 
 --- Extract all circuit wire connections from an entity
@@ -40,8 +42,7 @@ function ConnectionScanner.extract_circuit_connections(entity)
 
         if target_id then
           table.insert(connections, {
-            wire = wire_type,                           -- defines.wire_type.red (2) or .green (3)
-            source_circuit_id = connector_id,           -- Wire connector ID on source
+            source_circuit_id = connector_id,           -- Wire connector ID on source (encodes wire type)
             target_entity_id = target_id,
             target_circuit_id = conn.target.wire_connector_id  -- Wire connector ID on target
           })
@@ -224,7 +225,7 @@ function ConnectionScanner.extract_logistic_requests(entity)
         index = i,
         name = request.name,
         count = request.count,
-        quality = request.quality and request.quality.name or "normal"
+        quality = request.quality and request.quality.name or GameUtils.QUALITY_NORMAL
       })
     end
   end
@@ -252,7 +253,7 @@ function ConnectionScanner.extract_entity_filters(entity)
           table.insert(filters, {
             index = i,
             name = filter.name,
-            quality = filter.quality and filter.quality.name or "normal",
+            quality = filter.quality and filter.quality.name or GameUtils.QUALITY_NORMAL,
             comparator = filter.comparator
           })
           log(string.format("[ConnectionScanner] Extracted inserter filter at (%.1f, %.1f) slot %d: %s", 
@@ -278,7 +279,7 @@ function ConnectionScanner.extract_entity_filters(entity)
           table.insert(filters, {
             index = i,
             name = filter.name,
-            quality = filter.quality and filter.quality.name or "normal"
+            quality = filter.quality and filter.quality.name or GameUtils.QUALITY_NORMAL
           })
         end
       end
@@ -295,7 +296,7 @@ function ConnectionScanner.extract_entity_filters(entity)
           table.insert(filters, {
             index = i,
             name = filter.name,
-            quality = filter.quality and filter.quality.name or "normal"
+            quality = filter.quality and filter.quality.name or GameUtils.QUALITY_NORMAL
           })
         end
       end
@@ -328,7 +329,7 @@ function ConnectionScanner.extract_infinity_filters(entity)
           name = filter.name,
           count = filter.count,
           mode = filter.mode, -- "at-least", "at-most", "exactly"
-          quality = filter.quality and filter.quality.name or "normal"
+          quality = filter.quality and filter.quality.name or GameUtils.QUALITY_NORMAL
         })
       end
     end

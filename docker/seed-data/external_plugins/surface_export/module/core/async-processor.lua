@@ -243,10 +243,10 @@ function AsyncProcessor.queue_export(platform_index, force_name, requester_name,
   -- Sanitize platform name (replace non-alphanumeric with dash)
   local safe_name = platform.name:gsub("[^%w%-]", "-")
   
-  -- Generate export_id: counter_platformName-YY-MM-DD
-  -- Format: 001_test-26-02-15
-  local date_suffix = os.date("%y-%m-%d")
-  local job_id = string.format("%03d_%s-%s", job_counter, safe_name, date_suffix)
+  -- Generate export_id: counter_platformName
+  -- Format: 001_test
+  -- (All timing data is in the export payload - ID is just a clean key)
+  local job_id = string.format("%03d_%s", job_counter, safe_name)
   
   log(string.format("[Export Queue] job_id=%s, platform_index=%s, force=%s, requester=%s, dest_instance_id=%s (type=%s)",
     job_id, tostring(platform_index), force_name, tostring(requester_name),

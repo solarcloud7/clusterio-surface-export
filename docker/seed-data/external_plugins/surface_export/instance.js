@@ -292,10 +292,10 @@ class InstancePlugin extends BaseInstancePlugin {
 			}
 			this.logger.info(`Export completed with ID: ${exportId}`);
 			
-			// Retrieve full export data from mod storage
-			const exportData = await this.getExportData(exportId);
+			// Retrieve full export data from mod storage (async export may take time)
+			const exportData = await this.waitForExportData(exportId);
 			if (!exportData) {
-				return { success: false, error: `Failed to retrieve export data for ${exportId}` };
+				return { success: false, error: `Timed out waiting for export data for ${exportId}` };
 			}
 			
 			// Parse platform name from export_id (format: platformName_tick)
@@ -318,14 +318,36 @@ class InstancePlugin extends BaseInstancePlugin {
 			return { success: false, error: err.message };
 		}
 	}
+
+	async waitForExportData(exportId, timeoutMs = 30000, intervalMs = 500) {
+		const deadline = Date.now() + timeoutMs;
+		let lastAttempt = null;
+		while (Date.now() < deadline) {
+			lastAttempt = await this.getExportData(exportId, { logOnMissing: false });
+			if (lastAttempt) {
+				return lastAttempt;
+			}
+			await new Promise(resolve => setTimeout(resolve, intervalMs));
+		}
+		this.logger.error(`Timed out waiting for export data for ${exportId} after ${timeoutMs}ms`);
+		// Log available exports for debugging once at timeout
+		try {
+			const availableExports = await this.listExports();
+			this.logger.error(`Available exports in Lua: ${JSON.stringify(availableExports)}`);
+		} catch (listErr) {
+			this.logger.error(`Failed to list available exports: ${listErr.message}`);
+		}
+		return null;
+	}
 	
 	/**
 	 * Get export data from mod
 	 * @param {string} exportId - Export ID
 	 * @returns {Object|null} Export data (may be compressed format with {compressed, payload, ...}) or null if not found
 	 */
-	async getExportData(exportId) {
+	async getExportData(exportId, options = {}) {
 		try {
+			const { logOnMissing = true } = options;
 			const safeExportId = String(exportId || "").trim();
 			if (this.isInvalidExportId(safeExportId)) {
 				this.logger.warn(`Skipping getExportData for invalid export ID: ${JSON.stringify(exportId)}`);
@@ -338,13 +360,15 @@ class InstancePlugin extends BaseInstancePlugin {
 
 			const jsonText = String(result || "").trim();
 			if (!jsonText || jsonText === "null") {
-				this.logger.error(`Export data not found for ${safeExportId} - Lua returned empty/null`);
-				// List available exports for debugging
-				try {
-					const availableExports = await this.listExports();
-					this.logger.error(`Available exports in Lua: ${JSON.stringify(availableExports)}`);
-				} catch (listErr) {
-					this.logger.error(`Failed to list available exports: ${listErr.message}`);
+				if (logOnMissing) {
+					this.logger.error(`Export data not found for ${safeExportId} - Lua returned empty/null`);
+					// List available exports for debugging
+					try {
+						const availableExports = await this.listExports();
+						this.logger.error(`Available exports in Lua: ${JSON.stringify(availableExports)}`);
+					} catch (listErr) {
+						this.logger.error(`Failed to list available exports: ${listErr.message}`);
+					}
 				}
 				return null;
 			}
@@ -414,6 +438,7 @@ class InstancePlugin extends BaseInstancePlugin {
 				surfaceName: platform.surface_name ?? null,
 				entityCount: Number(platform.entity_count || 0),
 				isLocked: Boolean(platform.is_locked),
+				hasSpaceHub: Boolean(platform.has_space_hub),
 			}));
 		} catch (err) {
 			this.logger.error(`List platforms failed:\\n${err.stack}`);

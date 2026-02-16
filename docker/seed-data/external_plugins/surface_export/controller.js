@@ -294,6 +294,7 @@ class ControllerPlugin extends BaseControllerPlugin {
 					instanceName: info.targetInstanceName,
 				},
 			},
+			export: transfer.exportMetrics || null,
 			payload: transfer.payloadMetrics || null,
 			import: transfer.importMetrics || null,
 			validation,
@@ -756,9 +757,10 @@ class ControllerPlugin extends BaseControllerPlugin {
 	 * Transfer platform to another instance
 	 * @param {string} exportId - Export ID to transfer
 	 * @param {number} targetInstanceId - Instance ID to transfer to
+	 * @param {Object|null} exportMetrics - Export timing metrics from start request path
 	 * @returns {Object} Result with success status
 	 */
-	async transferPlatform(exportId, targetInstanceId) {
+	async transferPlatform(exportId, targetInstanceId, exportMetrics = null) {
 		this.logger.info(`Transferring platform ${exportId} to instance ${targetInstanceId}`);
 
 		try {
@@ -816,6 +818,7 @@ class ControllerPlugin extends BaseControllerPlugin {
 				startedAt: Date.now(),
 				status: "transporting",
 				payloadMetrics,
+				exportMetrics: exportMetrics || null,
 				sourceVerification: {
 					itemCounts,
 					fluidCounts,
@@ -835,6 +838,7 @@ class ControllerPlugin extends BaseControllerPlugin {
 						exportTimestamp: exportData.timestamp,
 						ageMs: Date.now() - exportData.timestamp,
 					},
+					exportMetrics: exportMetrics || null,
 					payloadMetrics,
 					sourceVerification: {
 						itemCounts: itemCounts,
@@ -1384,6 +1388,7 @@ class ControllerPlugin extends BaseControllerPlugin {
 		}
 
 		try {
+			const exportRequestStartedAt = Date.now();
 			const exportResponse = await this.controller.sendTo(
 				{ instanceId: sourceInstanceId },
 				new messages.ExportPlatformRequest({
@@ -1391,12 +1396,19 @@ class ControllerPlugin extends BaseControllerPlugin {
 					forceName,
 				})
 			);
+			const exportRequestMs = Date.now() - exportRequestStartedAt;
 			if (!exportResponse?.success || !exportResponse.exportId) {
 				return { success: false, error: exportResponse?.error || "Export failed" };
 			}
-
+			const storeWaitStartedAt = Date.now();
 			await this.waitForStoredExport(exportResponse.exportId);
-			const transferResponse = await this.transferPlatform(exportResponse.exportId, resolvedTarget.id);
+			const waitForStoredMs = Date.now() - storeWaitStartedAt;
+			const exportMetrics = {
+				exportRequestMs,
+				waitForStoredMs,
+				exportPrepTotalMs: exportRequestMs + waitForStoredMs,
+			};
+			const transferResponse = await this.transferPlatform(exportResponse.exportId, resolvedTarget.id, exportMetrics);
 			return {
 				...transferResponse,
 				exportId: exportResponse.exportId,

@@ -2,7 +2,6 @@
 -- Import/restore platform state from JSON
 
 local Util = require("modules/surface_export/utils/util")
-local Verification = require("modules/surface_export/validators/verification")
 
 local Deserializer = {}
 
@@ -58,172 +57,6 @@ local function restore_item_properties(stack, item_data)
       Deserializer.restore_nested_inventory(sub_inventory, item_data.nested_inventory)
     end
   end
-end
-
---- LEGACY: Synchronous import from file. Debug/testing use only.
---- The production path is async: AsyncProcessor.queue_import() → import_phases/*.
---- This sync path skips tile placement, belt restoration, active state deferral,
---- and fluid segment handling. Do not use for transfers.
---- @param filename string: Filename in script-output directory
---- @param target_surface LuaSurface: Surface to import to
---- @return boolean, string|nil: success flag and error message if failed
---- @deprecated Use AsyncProcessor.queue_import() for production imports
-function Deserializer.import_platform(filename, target_surface)
-  if not target_surface or not target_surface.valid then
-    return false, "Invalid target surface"
-  end
-
-  -- Step 1: Read file
-  game.print(string.format("Reading file: %s", filename))
-  local json_string, read_error = Util.read_file_compat(filename)
-  if not json_string or #json_string == 0 then
-    if read_error then
-      return false, string.format("Unable to read '%s': %s", filename, read_error)
-    end
-    return false, string.format("File not found or empty: %s", filename)
-  end
-
-  -- Step 2: Parse JSON
-  game.print("Parsing JSON...")
-  local import_data, parse_error = Util.json_to_table_compat(json_string)
-  if not import_data then
-    local reason = parse_error or "Invalid JSON"
-    return false, string.format("JSON parsing failed: %s", reason)
-  end
-
-  -- Step 3: Verify integrity
-  game.print("Verifying data integrity...")
-  local valid, error = Verification.verify_export(import_data)
-  if not valid then
-    return false, string.format("Import data verification failed: %s", error)
-  end
-
-  -- Step 4: Clear surface (ask for confirmation in production!)
-  -- For now, we'll warn if surface is not empty
-  local existing_entities = target_surface.find_entities_filtered({})
-  if #existing_entities > 0 then
-    game.print(string.format("Warning: Target surface has %d existing entities", #existing_entities))
-    -- In production, you might want to add a confirmation step here
-  end
-
-  log(string.format("[FactorioSurfaceExport] Starting import to surface %d (%d entities)",
-    target_surface.index, #import_data.entities))
-
-  -- Step 5: Create entities
-  game.print(string.format("Creating %d entities...", #import_data.entities))
-  local entity_map = {}  -- Maps old entity_id to new entity
-  local created_count = 0
-  local failed_count = 0
-
-  for _, entity_data in ipairs(import_data.entities) do
-    -- Skip items on ground for now, handle them separately
-    if entity_data.type ~= "item-on-ground" then
-      local created_entity = Deserializer.create_entity(target_surface, entity_data)
-
-      if created_entity then
-        entity_map[entity_data.entity_id] = created_entity
-        created_count = created_count + 1
-      else
-        failed_count = failed_count + 1
-        log(string.format("[FactorioSurfaceExport] Failed to create entity: %s at %s",
-          entity_data.name,
-          serpent.line(entity_data.position)))
-      end
-    end
-  end
-
-  game.print(string.format("  Created: %d, Failed: %d", created_count, failed_count))
-
-  -- Step 6: Restore entity states (recipes, settings)
-  game.print("Restoring entity states...")
-  for _, entity_data in ipairs(import_data.entities) do
-    local entity = entity_map[entity_data.entity_id]
-    if entity and entity.valid then
-      Deserializer.restore_entity_state(entity, entity_data)
-    end
-  end
-
-  -- Step 7: Restore inventories
-  game.print("Restoring inventories...")
-  for _, entity_data in ipairs(import_data.entities) do
-    local entity = entity_map[entity_data.entity_id]
-    if entity and entity.valid then
-      Deserializer.restore_inventories(entity, entity_data)
-    end
-  end
-
-  -- Step 8: Restore fluids
-  game.print("Restoring fluids...")
-  for _, entity_data in ipairs(import_data.entities) do
-    local entity = entity_map[entity_data.entity_id]
-    if entity and entity.valid then
-      Deserializer.restore_fluids(entity, entity_data)
-    end
-  end
-
-  -- Step 9: Restore control behavior (circuit conditions, filters)
-  game.print("Restoring control behavior...")
-  for _, entity_data in ipairs(import_data.entities) do
-    local entity = entity_map[entity_data.entity_id]
-    if entity and entity.valid then
-      Deserializer.restore_control_behavior(entity, entity_data)
-    end
-  end
-
-  -- Step 10: Restore logistic requests and entity filters
-  game.print("Restoring logistics and filters...")
-  for _, entity_data in ipairs(import_data.entities) do
-    local entity = entity_map[entity_data.entity_id]
-    if entity and entity.valid then
-      Deserializer.restore_logistic_requests(entity, entity_data)
-      Deserializer.restore_entity_filters(entity, entity_data)
-    end
-  end
-
-  -- Step 11: Restore circuit connections (MUST be after all entities created)
-  game.print("Restoring circuit connections...")
-  for _, entity_data in ipairs(import_data.entities) do
-    local entity = entity_map[entity_data.entity_id]
-    if entity and entity.valid then
-      Deserializer.restore_circuit_connections(entity, entity_data, entity_map)
-    end
-  end
-
-  -- Step 12: Restore power connections (copper cables between poles)
-  game.print("Restoring power connections...")
-  for _, entity_data in ipairs(import_data.entities) do
-    local entity = entity_map[entity_data.entity_id]
-    if entity and entity.valid then
-      Deserializer.restore_power_connections(entity, entity_data, entity_map)
-    end
-  end
-
-  -- Step 13: Restore items on ground
-  game.print("Restoring ground items...")
-  for _, entity_data in ipairs(import_data.entities) do
-    if entity_data.type == "item-on-ground" then
-      Deserializer.create_ground_item(target_surface, entity_data)
-    end
-  end
-
-  -- Step 14: Verify counts match
-  game.print("Verifying import...")
-  local final_counts = Verification.count_surface_items(target_surface)
-  local expected_counts = import_data.verification.item_counts
-
-  local success, report = Verification.generate_report(expected_counts, final_counts)
-
-  if not success then
-    game.print("WARNING: Item count verification found mismatches!")
-    Verification.print_report(report)
-  else
-    game.print("Import verification passed!")
-  end
-
-  log(string.format("[FactorioSurfaceExport] Import complete to surface %d", target_surface.index))
-  game.print("Import complete!")
-
-  return true, import_data
 end
 
 --- Create a single entity on the surface
@@ -402,7 +235,7 @@ function Deserializer.restore_entity_state(entity, entity_data)
     safe_call(string.format("previous_recipe for %s", entity.name), function()
       entity.previous_recipe = {
         name = data.previous_recipe.name,
-        quality = data.previous_recipe.quality or "normal"
+        quality = data.previous_recipe.quality or Util.QUALITY_NORMAL
       }
     end)
   end
@@ -533,10 +366,12 @@ function Deserializer.restore_entity_state(entity, entity_data)
       function() entity.set_fluid_filter(data.fluid_filter) end)
   end
 
-  -- Restore mining drill filter
-  if data.filter and entity.mining_target ~= nil then
-    safe_call(string.format("mining_target for %s", entity.name),
-      function() entity.mining_target = {name = data.filter} end)
+  -- Restore mining drill resource filter
+  -- Export stores data.filter as {name=..., quality=...} table; handle legacy string format too
+  if data.filter and entity.set_filter then
+    local filter_name = type(data.filter) == "table" and data.filter.name or data.filter
+    safe_call(string.format("set_filter for %s", entity.name),
+      function() entity.set_filter(1, filter_name) end)
   end
 
   -- Restore artillery auto-targeting
@@ -723,7 +558,7 @@ function Deserializer.restore_inventories(entity, entity_data)
             name = item.name,
             count = item.count
           }
-          if item.quality and item.quality ~= "normal" then
+          if item.quality and item.quality ~= Util.QUALITY_NORMAL then
             stack_params.quality = item.quality
           end
 
@@ -904,7 +739,7 @@ function Deserializer.restore_nested_inventory(inventory, items_data)
         count = item.count
       }
 
-      if item.quality and item.quality ~= "normal" then
+      if item.quality and item.quality ~= Util.QUALITY_NORMAL then
         insert_params.quality = item.quality
       end
 
@@ -917,101 +752,6 @@ function Deserializer.restore_nested_inventory(inventory, items_data)
         restore_item_properties(inserted_stack, item)
       end
     end
-  end
-end
-
---- SUPERSEDED: Per-entity fluid restoration for legacy sync import.
---- The production path uses FluidRestoration.restore() which handles
---- Factorio 2.0 fluid segments correctly (inject after activation).
---- Only called from import_platform (legacy) and test-import-entity (debug).
---- @param entity LuaEntity: The entity to restore fluids to
---- @param entity_data table: Serialized entity data
---- @deprecated Use FluidRestoration.restore() for production imports
-function Deserializer.restore_fluids(entity, entity_data)
-  if not entity.valid then
-    return
-  end
-  
-  if not entity_data.specific_data then
-    -- Debug: Log entities without specific_data
-    if entity.type == "thruster" or entity.type == "fusion-reactor" or entity.type == "fusion-generator" then
-      log(string.format("[Fluid Restore] Entity %s (%s) has no specific_data", entity.name, entity.type))
-    end
-    return
-  end
-  
-  if not entity_data.specific_data.fluids then
-    -- Debug: Log entities with specific_data but no fluids
-    if entity.type == "thruster" or entity.type == "fusion-reactor" or entity.type == "fusion-generator" then
-      log(string.format("[Fluid Restore] Entity %s (%s) has specific_data but no fluids", entity.name, entity.type))
-    end
-    return
-  end
-
-  local fluidbox = entity.fluidbox
-  if not fluidbox then
-    log(string.format("[Fluid Restore] Entity %s (%s) has no fluidbox", entity.name, entity.type))
-    return
-  end
-
-  -- Restore fluids to fluidbox
-  -- CRITICAL: In Factorio 2.0, fluid networks are "segments" with instant distribution.
-  -- Using direct fluidbox[i] assignment redistributes fluid across the entire network.
-  -- Instead, we use insert_fluid() which ADDS to the network total.
-  -- We also need to handle the case where the fluidbox already has a different fluid.
-  local restored = 0
-  for i, fluid_data in ipairs(entity_data.specific_data.fluids) do
-    if i <= #fluidbox then
-      -- Debug: Log before state
-      local before = fluidbox[i]
-      local before_amount = before and before.amount or 0
-      local before_name = before and before.name or "none"
-      
-      -- If there's a different fluid in this slot, we need to clear it first
-      if before and before.name ~= fluid_data.name then
-        -- Clear by setting to empty (will redistribute existing fluid elsewhere)
-        fluidbox[i] = nil
-        before_amount = 0
-      end
-      
-      -- Calculate how much fluid we need to ADD to reach the target
-      -- Note: The fluidbox might already have some fluid from network redistribution
-      local current = fluidbox[i]
-      local current_amount = current and current.amount or 0
-      local needed = fluid_data.amount - current_amount
-      
-      if needed > 0 then
-        -- Use insert_fluid to ADD fluid to the network
-        -- This is better than direct assignment because it adds to network total
-        local inserted = entity.insert_fluid({
-          name = fluid_data.name,
-          amount = needed,
-          temperature = fluid_data.temperature
-        })
-        
-        -- Verify the result
-        local after = fluidbox[i]
-        local after_amount = after and after.amount or 0
-        
-        if entity.type == "storage-tank" or entity.type == "thruster" then
-          log(string.format("[Fluid Restore DEBUG] %s fluidbox[%d]: insert_fluid %.1f (needed %.1f), before=%.1f, after=%.1f (%s @ %.1fC)", 
-            entity.type, i, inserted, needed, current_amount, after_amount, fluid_data.name, fluid_data.temperature))
-        end
-      else
-        if entity.type == "storage-tank" or entity.type == "thruster" then
-          log(string.format("[Fluid Restore DEBUG] %s fluidbox[%d]: already has %.1f >= target %.1f (%s)", 
-            entity.type, i, current_amount, fluid_data.amount, fluid_data.name))
-        end
-      end
-      
-      restored = restored + 1
-    end
-  end
-  
-  -- Debug: Log thruster/fusion fluid restoration
-  if (entity.type == "thruster" or entity.type == "fusion-reactor" or entity.type == "fusion-generator") and restored > 0 then
-    log(string.format("[Fluid Restore] Restored %d fluid slots to %s (%s)", 
-      restored, entity.name, entity.type))
   end
 end
 
@@ -1250,7 +990,7 @@ function Deserializer.restore_logistic_requests(entity, entity_data)
       entity.set_request_slot({
         name = request.name,
         count = request.count,
-        quality = request.quality or "normal"
+        quality = request.quality or Util.QUALITY_NORMAL
       }, request.index)
     end)
     if not req_ok then
@@ -1290,7 +1030,7 @@ function Deserializer.restore_entity_filters(entity, entity_data)
       local success, err = pcall(function()
         entity.set_filter(filter.index, {
           name = filter.name,
-          quality = filter.quality or "normal",
+          quality = filter.quality or Util.QUALITY_NORMAL,
           comparator = filter.comparator
         })
       end)
@@ -1306,7 +1046,7 @@ function Deserializer.restore_entity_filters(entity, entity_data)
       local filt_ok, filt_err = pcall(function()
         entity.set_filter(filter.index, {
           name = filter.name,
-          quality = filter.quality or "normal"
+          quality = filter.quality or Util.QUALITY_NORMAL
         })
       end)
       if not filt_ok then
@@ -1323,7 +1063,7 @@ function Deserializer.restore_entity_filters(entity, entity_data)
         local filt_ok, filt_err = pcall(function()
           inventory.set_filter(filter.index, {
             name = filter.name,
-            quality = filter.quality or "normal"
+            quality = filter.quality or Util.QUALITY_NORMAL
           })
         end)
         if not filt_ok then
@@ -1350,17 +1090,19 @@ end
 --- @param entity LuaEntity: The source entity
 --- @param entity_data table: Serialized entity data
 --- @param entity_map table: Map of entity_id to LuaEntity
+--- @return number: Count of successful connections made
 function Deserializer.restore_circuit_connections(entity, entity_data, entity_map)
   if not entity.valid then
-    return
-  end
-  
-  if not entity_data.circuit_connections then
-    return
+    return 0
   end
 
-  -- DEBUG: Log circuit connection data
-  log(string.format("[DEBUG] Restoring %d circuit connections for %s (id=%s)",
+  if not entity_data.circuit_connections then
+    return 0
+  end
+
+  local connected_count = 0
+
+  log(string.format("[Import] Restoring %d circuit connections for %s (id=%s)",
     #entity_data.circuit_connections,
     entity.name,
     tostring(entity_data.entity_id)))
@@ -1368,15 +1110,7 @@ function Deserializer.restore_circuit_connections(entity, entity_data, entity_ma
   for _, conn in ipairs(entity_data.circuit_connections) do
     -- Look up target entity by ID
     local target = entity_map[conn.target_entity_id]
-    
-    -- DEBUG: Log connection attempt
-    log(string.format("[DEBUG] Connection: wire=%s, source_id=%s, target_entity_id=%s, target_circuit_id=%s, target_found=%s",
-      tostring(conn.wire),
-      tostring(conn.source_circuit_id),
-      tostring(conn.target_entity_id),
-      tostring(conn.target_circuit_id),
-      tostring(target and target.valid)))
-    
+
     -- Fallback: Try position-based lookup if entity_id not found
     if not target and type(conn.target_entity_id) == "string" and conn.target_entity_id:find("^pos_") then
       -- Parse position from "pos_X.XX_Y.YY" format
@@ -1401,23 +1135,14 @@ function Deserializer.restore_circuit_connections(entity, entity_data, entity_ma
       local success, err = pcall(function()
         local source_connector = entity.get_wire_connector(conn.source_circuit_id, true)
         local target_connector = target.get_wire_connector(conn.target_circuit_id, true)
-        
-        -- Debug: Log connector details
-        log(string.format("[DEBUG] Source connector: type=%s, valid=%s, wire_type=%s",
-          type(source_connector),
-          tostring(source_connector and source_connector.valid),
-          tostring(source_connector and source_connector.wire_type)))
-        log(string.format("[DEBUG] Target connector: type=%s, valid=%s, wire_type=%s",
-          type(target_connector),
-          tostring(target_connector and target_connector.valid),
-          tostring(target_connector and target_connector.wire_type)))
-          
+
         if source_connector and target_connector then
           -- Pass false for reach_check since we're scripting connections that may be "out of reach"
           -- CRITICAL: Use DOT syntax, not colon syntax! connect_to() doesn't use implicit self
           local connected = source_connector.connect_to(target_connector, false)
-          log(string.format("[DEBUG] Connected %s:%d to %s:%d result=%s",
-            entity.name, conn.source_circuit_id, target.name, conn.target_circuit_id, tostring(connected)))
+          if connected then
+            connected_count = connected_count + 1
+          end
         else
           log(string.format("[WARN] Could not get connectors: source=%s, target=%s",
             tostring(source_connector), tostring(target_connector)))
@@ -1431,6 +1156,8 @@ function Deserializer.restore_circuit_connections(entity, entity_data, entity_ma
         tostring(conn.target_entity_id), entity.name))
     end
   end
+
+  return connected_count
 end
 
 --- Restore power connections (copper cables between electric poles)
@@ -1438,19 +1165,22 @@ end
 --- @param entity LuaEntity: The source pole
 --- @param entity_data table: Serialized entity data
 --- @param entity_map table: Map of entity_id to LuaEntity
+--- @return number: Count of successful connections made
 function Deserializer.restore_power_connections(entity, entity_data, entity_map)
   if not entity.valid or not entity_data.power_connections then
-    return
+    return 0
   end
 
   if entity.type ~= "electric-pole" then
-    return
+    return 0
   end
+
+  local connected_count = 0
 
   for _, target_id in ipairs(entity_data.power_connections) do
     -- Look up target entity by ID
     local target = entity_map[target_id]
-    
+
     -- Fallback: Position-based lookup
     if not target and type(target_id) == "string" and target_id:find("^pos_") then
       local x, y = target_id:match("pos_([%d%.%-]+)_([%d%.%-]+)")
@@ -1469,14 +1199,19 @@ function Deserializer.restore_power_connections(entity, entity_data, entity_map)
     end
 
     if target and target.valid then
-      pcall(function()
-        entity.connect_neighbour(target)
+      local ok, result = pcall(function()
+        return entity.connect_neighbour(target)
       end)
+      if ok and result then
+        connected_count = connected_count + 1
+      end
     else
       log(string.format("[FactorioSurfaceExport] Warning: Could not find target pole %s for power connection from %s",
         tostring(target_id), entity.name))
     end
   end
+
+  return connected_count
 end
 
 return Deserializer

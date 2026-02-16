@@ -47,7 +47,7 @@ function SurfaceCounter.count_items(surface)
                     for _, line_data in ipairs(belt_lines) do
                         if line_data.items then
                             for _, item in ipairs(line_data.items) do
-                                local key = Util.make_quality_key(item.name, item.quality or "normal")
+                                local key = Util.make_quality_key(item.name, item.quality or Util.QUALITY_NORMAL)
                                 item_totals[key] = (item_totals[key] or 0) + item.count
                                 total = total + item.count
                             end
@@ -65,7 +65,7 @@ function SurfaceCounter.count_items(surface)
                 local ok, ins_err = pcall(function()
                     local held = InventoryScanner.extract_inserter_held_item(entity)
                     if held then
-                        local key = Util.make_quality_key(held.name, held.quality or "normal")
+                        local key = Util.make_quality_key(held.name, held.quality or Util.QUALITY_NORMAL)
                         item_totals[key] = (item_totals[key] or 0) + held.count
                         total = total + held.count
                     end
@@ -83,7 +83,7 @@ function SurfaceCounter.count_items(surface)
     for _, item_entity in ipairs(ground_items) do
         if item_entity.valid and item_entity.stack and item_entity.stack.valid_for_read then
             local stack = item_entity.stack
-            local key = Util.make_quality_key(stack.name, (stack.quality and stack.quality.name) or "normal")
+            local key = Util.make_quality_key(stack.name, (stack.quality and stack.quality.name) or Util.QUALITY_NORMAL)
             item_totals[key] = (item_totals[key] or 0) + stack.count
             total = total + stack.count
         end
