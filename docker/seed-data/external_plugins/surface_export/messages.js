@@ -611,6 +611,8 @@ class InstanceListPlatformsRequest {
 							currentTarget: { type: ["string", "null"] },
 							speed: { type: "number" },
 							state: { type: ["string", "null"] },
+							departureTick: { type: ["number", "null"] },
+							estimatedDurationTicks: { type: ["number", "null"] },
 						},
 						required: [
 							"platformIndex",
@@ -951,6 +953,40 @@ class GetTransactionLogRequest {
 	};
 }
 
+class PlatformStateChangedEvent {
+	static plugin = PLUGIN_NAME;
+	static type = "event";
+	static src = "instance";
+	static dst = "controller";
+	static jsonSchema = {
+		type: "object",
+		properties: {
+			instanceId: { type: "integer" },
+			platformName: { type: "string" },
+			forceName: { type: "string" },
+		},
+		required: ["instanceId", "platformName", "forceName"],
+		additionalProperties: false,
+	};
+
+	constructor(json) {
+		this.instanceId = json.instanceId;
+		this.platformName = json.platformName;
+		this.forceName = json.forceName;
+	}
+
+	static fromJSON(json) {
+		return new PlatformStateChangedEvent(json);
+	}
+
+	toJSON() {
+		return {
+			instanceId: this.instanceId,
+			platformName: this.platformName,
+			forceName: this.forceName,
+		};
+	}
+}
 module.exports = {
 	ExportPlatformRequest,
 	PlatformExportEvent,
@@ -971,5 +1007,6 @@ module.exports = {
 	SurfaceExportTreeUpdateEvent,
 	SurfaceExportTransferUpdateEvent,
 	SurfaceExportLogUpdateEvent,
+	PlatformStateChangedEvent,
 	PERMISSIONS,
 };

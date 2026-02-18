@@ -126,6 +126,7 @@ module.exports.plugin = {
 		messages.SurfaceExportTreeUpdateEvent,
 		messages.SurfaceExportTransferUpdateEvent,
 		messages.SurfaceExportLogUpdateEvent,
+		messages.PlatformStateChangedEvent,
 	],
 
 	// Optional CLI enhancements for clusterioctl

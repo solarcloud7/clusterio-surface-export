@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import {
 	Alert,
 	Button,
@@ -16,11 +16,18 @@ import { statusColor } from "./utils";
 
 const { Text } = Typography;
 
-function locationLabel(platform) {
+function locationLabel(platform, nowMs) {
 	if (platform.spaceLocation) {
 		return platform.spaceLocation;
 	}
 	if (platform.currentTarget) {
+		if (platform.departureDateMs != null && platform.estimatedDurationTicks != null) {
+			const totalMs = (platform.estimatedDurationTicks / 60) * 1000;
+			const elapsedMs = (nowMs ?? Date.now()) - platform.departureDateMs;
+			const remainingMs = Math.max(0, totalMs - elapsedMs);
+			const remainingMin = Math.round(remainingMs / 60000);
+			return `→ ${platform.currentTarget} (ETA ~${remainingMin}min)`;
+		}
 		return `→ ${platform.currentTarget}`;
 	}
 	if (platform.speed && platform.speed > 0) {
@@ -49,6 +56,11 @@ export default function ManualTransferTab({ plugin, state }) {
 	const [selectedPlatformKey, setSelectedPlatformKey] = useState(null);
 	const [selectedTargetInstance, setSelectedTargetInstance] = useState(null);
 	const [isSubmitting, setIsSubmitting] = useState(false);
+	const [nowMs, setNowMs] = useState(Date.now());
+	useEffect(() => {
+		const id = setInterval(() => setNowMs(Date.now()), 1000);
+		return () => clearInterval(id);
+	}, []);
 
 	const { tree, loadingTree, treeError } = state;
 
@@ -149,7 +161,7 @@ export default function ManualTransferTab({ plugin, state }) {
 			width: "30%",
 			render: (_, row) => {
 				const { spaceLocation, currentTarget, speed } = row.platform;
-				const label = locationLabel(row.platform);
+				const label = locationLabel(row.platform, nowMs);
 				const moving = !spaceLocation && (currentTarget || speed > 0);
 				return (
 					<Text type={moving ? "secondary" : undefined} italic={moving}>
@@ -250,7 +262,7 @@ export default function ManualTransferTab({ plugin, state }) {
 								type="info"
 								showIcon
 								message={`Source: ${selectedSource.platformName}`}
-								description={`${selectedSource.instanceName} — ${locationLabel(selectedSource)}`}
+								description={`${selectedSource.instanceName} — ${locationLabel(selectedSource, nowMs)}`}
 							/>
 						) : (
 							<Alert type="warning" showIcon message="Select a source platform in the table" />

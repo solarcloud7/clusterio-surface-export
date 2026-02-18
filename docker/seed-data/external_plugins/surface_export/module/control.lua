@@ -26,6 +26,7 @@ local function initialize_storage()
 	storage.pending_platform_imports = storage.pending_platform_imports or {}
 	storage.surface_export = storage.surface_export or {}
 	storage.surface_export_config = storage.surface_export_config or { debug_mode = true }
+	storage.platform_flight_data = storage.platform_flight_data or {}
 	AsyncProcessor.init()
 end
 
@@ -76,6 +77,43 @@ SurfaceExportModule.events = {
 
 	[clusterio_api.events.on_instance_updated] = function()
 		log("[Surface Export] Instance configuration updated")
+	end,
+
+	[e.on_space_platform_changed_state] = function(event)
+		local platform = event.platform
+		if not (platform and platform.valid) then return end
+
+		-- Track flight start time and estimated duration; clear on arrival
+		storage.platform_flight_data = storage.platform_flight_data or {}
+		if platform.state == defines.train_state.on_the_path then
+			local est_ticks = nil
+			local ok, result = pcall(function()
+				local src = platform.space_location  -- where we just left
+				local tgt = platform.current_target  -- where we're going
+				if src and tgt and platform.speed and platform.speed > 0 then
+					return math.floor(math.abs((tgt.distance or 0) - (src.distance or 0)) / platform.speed)
+				end
+			end)
+			if ok then est_ticks = result end
+			storage.platform_flight_data[platform.name] = {
+				departure_tick = game.tick,
+				estimated_duration_ticks = est_ticks,
+			}
+		elseif platform.state == defines.train_state.wait_station then
+			storage.platform_flight_data[platform.name] = nil
+		end
+
+		-- Notify the controller so it can push a tree refresh to web subscribers
+		if not (clusterio_api and clusterio_api.send_json) then return end
+		local ok2, err = pcall(function()
+			clusterio_api.send_json("surface_platform_state_changed", {
+				platform_name = platform.name,
+				force_name = platform.force and platform.force.name or "player",
+			})
+		end)
+		if not ok2 then
+			log(string.format("[Surface Export] ERROR sending platform state IPC: %s", tostring(err)))
+		end
 	end,
 }
 

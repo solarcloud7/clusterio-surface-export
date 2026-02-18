@@ -463,6 +463,23 @@ The order of post-processing steps in `complete_import_job()` is critical for co
 **Key files**: `entity-handlers.lua` (lines ~45 and ~92)
 **Lesson**: When adding a new entity handler, always check if the entity type has a fluidbox. The default handler exports both inventories and fluids — a specific handler that only exports inventories silently drops fluid data.
 
+### 19. `platform.destroy()` is a No-Op in Factorio 2.0 Space Age (CRITICAL)
+**Symptom**: After a successful transfer, the source platform still exists in-game. Transfer shows "completed" status but platform is not deleted, creating duplicates.
+**Root Cause**: `LuaSpacePlatform.destroy()` in Factorio 2.0 Space Age is silently broken — it returns without error but does NOT actually remove the platform or its surface. Similarly, destroying the hub entity (`platform.hub.destroy()`) is auto-recovered by the engine (it recreates the hub). Both APIs report success but have no effect.
+**Fix**: Use `game.delete_surface(platform.surface)` — this is the only reliable way to remove a space platform in Factorio 2.0. It fully tears down the surface, all entities, and the platform itself.
+```lua
+-- BROKEN (returns ok=true but platform persists):
+platform.destroy()
+
+-- BROKEN (engine auto-recreates the hub):
+platform.hub.destroy()
+
+-- WORKS (fully removes platform, surface, and all entities):
+game.delete_surface(platform.surface)
+```
+**Key file**: `instance.js` (`handleDeleteSourcePlatform` method)
+**Verified**: Empirically tested via RCON — `platform.destroy()` returns `ok=true, err=nil` but `/list-platforms` shows the platform unchanged. `game.delete_surface()` confirmed working.
+
 ## Factorio 2.0 Fluid API & Simulation Behavior
 
 **Topic**: Fluidbox Persistence, Segment Logic, and State Validation.
@@ -507,14 +524,41 @@ local content = entity.fluidbox.get_fluid_segment_contents(1) -- Returns actual 
 
 ## Debugging Tips
 
+### Docker Logs (IMPORTANT — Windows Shell Escaping)
+
+**CRITICAL**: On Windows with Git Bash, `docker exec` path arguments get mangled by MSYS path conversion (e.g., `/clusterio/` → `C:/Program Files/Git/clusterio/`). Always wrap commands in `sh -c '...'` with single quotes:
+
+```bash
+# WRONG (Git Bash mangles the path):
+docker exec surface-export-controller npx clusterioctl --config=/clusterio/tokens/config-control.json ...
+
+# CORRECT (single-quoted sh -c prevents path mangling):
+docker exec surface-export-controller sh -c 'npx clusterioctl --config /clusterio/tokens/config-control.json ...'
+```
+
+**Getting container logs**: The controller container has massive `chown` noise on stderr from npm installs. Always filter:
+
+```bash
+# Get clean controller plugin logs (filter npm/chown noise):
+docker logs --tail 200 surface-export-controller 2>&1 | grep "surface_export"
+
+# Get host plugin logs:
+docker logs --tail 200 surface-export-host-1 2>&1 | grep "surface_export"
+
+# RCON commands (always use sh -c with single quotes):
+docker exec surface-export-controller sh -c 'npx clusterioctl --config /clusterio/tokens/config-control.json --log-level error instance send-rcon "clusterio-host-1-instance-1" "/list-platforms"'
+```
+
+**Note**: `docker logs` pipes work with `grep` in Git Bash. The `--tail N` flag goes BEFORE the container name. After a container restart, old logs are lost — only post-restart logs are available.
+
 ### Check Plugin Module is Loaded
 ```powershell
 rc11 "/sc rcon.print(remote.interfaces['surface_export'] ~= nil)"  -- Should print 'true'
 ```
 
 ### View Factorio Log (from container)
-```powershell
-docker exec surface-export-host-1 tail -100 /clusterio/instances/clusterio-host-1-instance-1/factorio-current.log
+```bash
+docker exec surface-export-host-1 sh -c 'tail -100 /clusterio/instances/clusterio-host-1-instance-1/factorio-current.log'
 ```
 
 ### Check Async Job Queue

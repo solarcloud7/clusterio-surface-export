@@ -153,6 +153,35 @@ if ($LASTEXITCODE -eq 0) {
 
 Write-Host "  → Instances will re-patch seed saves with updated Lua code on start" -ForegroundColor Cyan
 
+# Restart containers to pick up JavaScript changes (instance.js, controller.js, messages.js)
+Write-Host ""
+Write-Host "Restarting containers to pick up JavaScript changes..." -ForegroundColor Yellow
+docker restart surface-export-host-1 surface-export-host-2 | Out-Null
+Write-Host "  ✓ Hosts restarting" -ForegroundColor Green
+docker restart surface-export-controller | Out-Null
+Write-Host "  ✓ Controller restarting" -ForegroundColor Green
+
+Write-Host "Waiting for containers to become healthy..." -ForegroundColor Yellow
+$timeoutSec = 90
+$elapsed = 0
+$containers = @("surface-export-controller", "surface-export-host-1", "surface-export-host-2")
+do {
+    Start-Sleep -Seconds 3
+    $elapsed += 3
+    $allHealthy = $true
+    foreach ($c in $containers) {
+        $s = docker ps --filter "name=$c" --format "{{.Status}}" 2>$null
+        if ($s -notmatch "\(healthy\)") { $allHealthy = $false }
+    }
+} while (-not $allHealthy -and $elapsed -lt $timeoutSec)
+
+if ($allHealthy) {
+    Write-Host "✓ All containers healthy" -ForegroundColor Green
+} else {
+    Write-Host "  ⚠ Containers may not be fully healthy yet — proceeding" -ForegroundColor Yellow
+}
+Write-Host ""
+
 # Ensure auto_pause is disabled (headless servers must tick continuously for async processing)
 Write-Host ""
 Write-Host "Disabling auto_pause on instances..." -ForegroundColor Yellow
@@ -168,11 +197,17 @@ docker exec surface-export-controller npx clusterioctl $ctlConfig instance confi
 docker exec surface-export-controller npx clusterioctl $ctlConfig instance config set "clusterio-host-2-instance-1" "factorio.settings" $inst2Json 2>$null
 Write-Host "✓ auto_pause disabled" -ForegroundColor Green
 
-# Start instances
+# Start instances (may already be running if hosts auto-started them after container restart)
 Write-Host ""
 Write-Host "Starting instances (loading patched plugin code)..." -ForegroundColor Yellow
-docker exec surface-export-controller npx clusterioctl $ctlConfig instance start "clusterio-host-1-instance-1"
-docker exec surface-export-controller npx clusterioctl $ctlConfig instance start "clusterio-host-2-instance-1"
+docker exec surface-export-controller npx clusterioctl $ctlConfig instance start "clusterio-host-1-instance-1" 2>$null
+if ($LASTEXITCODE -ne 0) {
+    Write-Host "  Instance 1 already running" -ForegroundColor DarkGray
+}
+docker exec surface-export-controller npx clusterioctl $ctlConfig instance start "clusterio-host-2-instance-1" 2>$null
+if ($LASTEXITCODE -ne 0) {
+    Write-Host "  Instance 2 already running" -ForegroundColor DarkGray
+}
 Start-Sleep -Seconds 3
 Write-Host "✓ Instances started" -ForegroundColor Green
 Write-Host ""

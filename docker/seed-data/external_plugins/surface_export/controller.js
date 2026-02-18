@@ -39,6 +39,7 @@ class ControllerPlugin extends BaseControllerPlugin {
 		// Shared state
 		this.platformStorage = new Map();
 		this.activeTransfers = new Map();
+		this.platformDepartureTimes = new Map(); // platformName → departureDateMs (wall clock)
 		this.transactionLogs = new Map();
 		this.persistedTransactionLogs = [];
 		this.surfaceExportSubscriptions = new Map();
@@ -76,6 +77,7 @@ class ControllerPlugin extends BaseControllerPlugin {
 		this.controller.handle(messages.ListTransactionLogsRequest, this.handleListTransactionLogsRequest.bind(this));
 		this.controller.handle(messages.GetTransactionLogRequest, this.handleGetTransactionLog.bind(this));
 		this.controller.handle(messages.SetSurfaceExportSubscriptionRequest, this.subscriptions.handleSetSurfaceExportSubscriptionRequest.bind(this.subscriptions));
+		this.controller.handle(messages.PlatformStateChangedEvent, this.handlePlatformStateChanged.bind(this));
 
 		this.logger.info("Surface Export controller plugin initialized");
 	}
@@ -124,6 +126,18 @@ class ControllerPlugin extends BaseControllerPlugin {
 		} catch (err) {
 			this.logger.error(`Error handling platform export:\n${err.stack}`);
 		}
+	}
+
+	/**
+	 * Handle platform state change event from an instance.
+	 * Records wall-clock departure time and triggers a tree broadcast.
+	 * @param {import('./messages').PlatformStateChangedEvent} event
+	 */
+	async handlePlatformStateChanged(event) {
+		if (event.platformName) {
+			this.platformDepartureTimes.set(event.platformName, Date.now());
+		}
+		this.subscriptions.queueTreeBroadcast(event.forceName || "player");
 	}
 
 	cleanupOldExports(maxStorage) {

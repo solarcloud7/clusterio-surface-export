@@ -66,6 +66,9 @@ class InstancePlugin extends BaseInstancePlugin {
 		// Listen for import completion with validation from mod
 		this.instance.server.handle("surface_export_import_complete", this.handleImportCompleteValidation.bind(this));
 
+		// Listen for space platform state changes from Factorio mod
+		this.instance.server.handle("surface_platform_state_changed", this.handlePlatformStateChanged.bind(this));
+
 		// Listen for transfer requests from mod
 		this.instance.server.handle("surface_transfer_request", this.handleTransferRequest.bind(this));
 
@@ -209,6 +212,23 @@ class InstancePlugin extends BaseInstancePlugin {
 			}
 		} catch (err) {
 			this.logger.error(`Error handling export completion:\n${err.stack}`);
+		}
+	}
+
+	/**
+	 * Handle space platform state change notification from Factorio mod.
+	 * Forwards a lightweight event to the controller so it can push a tree refresh.
+	 * @param {Object} data - { platform_name, force_name }
+	 */
+	async handlePlatformStateChanged(data) {
+		try {
+			await this.instance.sendTo("controller", new messages.PlatformStateChangedEvent({
+				instanceId: this.instance.id,
+				platformName: String(data.platform_name || ""),
+				forceName: String(data.force_name || "player"),
+			}));
+		} catch (err) {
+			this.logger.warn(`Platform state change notification failed: ${err.message}`);
 		}
 	}
 
@@ -426,6 +446,8 @@ class InstancePlugin extends BaseInstancePlugin {
 				currentTarget: platform.current_target ?? null,
 				speed: typeof platform.speed === "number" ? platform.speed : 0,
 				state: platform.state ?? null,
+				departureTick: platform.departure_tick ?? null,
+				estimatedDurationTicks: platform.estimated_duration_ticks ?? null,
 			}));
 		} catch (err) {
 			this.logger.error(`List platforms failed:\\n${err.stack}`);
@@ -722,15 +744,29 @@ class InstancePlugin extends BaseInstancePlugin {
 		try {
 			const result = await this.sendRcon(
 				`/sc ` +
+				// Clean up lock data first (clears storage.locked_platforms entry)
+				`pcall(function() remote.call("surface_export", "unlock_platform", "${request.platformName}") end); ` +
 				`local force = game.forces["${request.forceName}"]; ` +
 				`local platform = nil; ` +
 				`for _, p in pairs(force.platforms) do ` +
 				`    if p.name == "${request.platformName}" then platform = p; break; end ` +
 				`end; ` +
 				`if platform then ` +
-				`    platform.destroy(); ` +
-				`    game.print("[Transfer Complete] Platform '${request.platformName}' transferred and deleted from source", {0, 1, 0}); ` +
-				`    rcon.print("SUCCESS"); ` +
+				// CRITICAL: platform.destroy() is a no-op in Factorio 2.0 Space Age.
+				// It returns without error but does NOT remove the platform or its surface.
+				// game.delete_surface() is the only reliable way to remove a space platform.
+				`    local surface = platform.surface; ` +
+				`    if surface and surface.valid then ` +
+				`        local ok, err = pcall(function() game.delete_surface(surface) end); ` +
+				`        if ok then ` +
+				`            game.print("[Transfer Complete] Platform '${request.platformName}' transferred and deleted from source", {0, 1, 0}); ` +
+				`            rcon.print("SUCCESS"); ` +
+				`        else ` +
+				`            rcon.print("ERROR:delete_surface failed: " .. tostring(err)); ` +
+				`        end ` +
+				`    else ` +
+				`        rcon.print("ERROR:Platform surface not valid"); ` +
+				`    end ` +
 				`else ` +
 				`    rcon.print("ERROR:Platform not found"); ` +
 				`end`

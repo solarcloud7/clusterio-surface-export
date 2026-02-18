@@ -78,8 +78,14 @@ class PlatformTree {
 			transferStatus: "idle",
 		}));
 
+		const terminalStatuses = new Set(["completed", "failed", "cleanup_failed", "error"]);
 		for (const transfer of this.plugin.activeTransfers.values()) {
 			if (transfer.sourceInstanceId !== instanceId) {
+				continue;
+			}
+			// Skip terminal transfers — their source platform no longer exists and the
+			// same name may now belong to an unrelated platform on this instance.
+			if (terminalStatuses.has(transfer.status)) {
 				continue;
 			}
 
@@ -143,6 +149,12 @@ class PlatformTree {
 					const { platforms, error } = await this.requestInstancePlatforms(instanceId, forceName);
 					node.platforms = this.applyActiveTransferState(platforms, instanceId)
 						.sort((a, b) => a.platformName.localeCompare(b.platformName));
+					// Annotate in-flight platforms with wall-clock departure time for browser ETA
+					for (const platform of node.platforms) {
+						if (platform.departureTick != null) {
+							platform.departureDateMs = this.plugin.platformDepartureTimes.get(platform.platformName) ?? null;
+						}
+					}
 					node.platformError = error;
 				})());
 			}

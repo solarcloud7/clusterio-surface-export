@@ -40,6 +40,8 @@ local function list_platforms(force_name)
         current_target_name = target.name
       end
 
+      local flight_data = storage.platform_flight_data and storage.platform_flight_data[platform.name]
+
       local platform_state = nil
       local ok_state, state_val = pcall(function() return platform.state end)
       if ok_state and state_val then
@@ -67,6 +69,8 @@ local function list_platforms(force_name)
         current_target = current_target_name,
         speed = platform.speed or 0,
         state = platform_state,
+        departure_tick = flight_data and flight_data.departure_tick or nil,
+        estimated_duration_ticks = flight_data and flight_data.estimated_duration_ticks or nil,
       })
     end
   end
