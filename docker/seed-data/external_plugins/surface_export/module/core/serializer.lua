@@ -5,6 +5,7 @@ local Util = require("modules/surface_export/utils/util")
 local EntityScanner = require("modules/surface_export/export_scanners/entity-scanner")
 local TileScanner = require("modules/surface_export/export_scanners/tile_scanner")
 local Verification = require("modules/surface_export/validators/verification")
+local PlatformSchedule = require("modules/surface_export/utils/platform-schedule")
 
 local Serializer = {}
 
@@ -36,6 +37,11 @@ function Serializer.export_platform(platform_index, force_name)
   local surface = platform.surface
   if not surface or not surface.valid then
     return nil, "Platform surface not valid"
+  end
+
+  local platform_schedule, schedule_err = PlatformSchedule.capture(platform, platform.hub)
+  if not platform_schedule then
+    return nil, "Failed to capture platform schedule: " .. tostring(schedule_err)
   end
 
   log(string.format("[FactorioSurfaceExport] Starting export of platform '%s' (index %d)", platform.name, platform_index))
@@ -76,8 +82,8 @@ function Serializer.export_platform(platform_index, force_name)
       force = platform.force.name,
       index = platform_index,
       surface_index = surface.index,
-      -- Extract platform settings
-      schedule = platform.schedule,  -- Platform travel schedule (stations, wait conditions, interrupts)
+      -- Full schedule payload from LuaSpacePlatform (records, wait_conditions, interrupts, group)
+      schedule = platform_schedule,
       paused = platform.paused  -- Thrust mode (automatic vs paused)
     },
     metadata = {

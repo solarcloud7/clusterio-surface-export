@@ -120,6 +120,163 @@ export function buildMetricRows(data) {
 	});
 }
 
+const EXPORT_METRIC_DEFINITIONS = {
+	requestExportAndLockMs: {
+		order: 10,
+		label: "Queue + lock request",
+		description: "Controller→source request time to queue export and lock the platform.",
+		format: "ms",
+	},
+	waitForControllerStoreMs: {
+		order: 20,
+		label: "Wait for controller store",
+		description: "Time waiting for exported payload to arrive and be stored on the controller.",
+		format: "ms",
+	},
+	controllerExportPrepTotalMs: {
+		order: 30,
+		label: "Controller prep total",
+		description: "End-to-end prep window before transmit (request + controller store wait).",
+		format: "ms",
+	},
+	instanceAsyncExportTicks: {
+		order: 40,
+		label: "Async export runtime (ticks)",
+		description: "Source instance export runtime measured in game ticks.",
+		format: "ticks",
+	},
+	instanceAsyncExportMs: {
+		order: 50,
+		label: "Async export runtime",
+		description: "Source instance export runtime converted to milliseconds.",
+		format: "ms",
+	},
+	instanceAsyncExportSeconds: {
+		order: 60,
+		label: "Async export runtime (seconds)",
+		description: "Source instance export runtime in seconds.",
+		format: "seconds",
+	},
+	exportedEntityCount: {
+		order: 70,
+		label: "Exported entities",
+		description: "Entity count serialized into the export payload.",
+		format: "count",
+	},
+	exportedTileCount: {
+		order: 80,
+		label: "Exported tiles",
+		description: "Tile count serialized into the export payload.",
+		format: "count",
+	},
+	scheduleRecordCount: {
+		order: 90,
+		label: "Schedule records exported",
+		description: "Number of LuaSpacePlatform schedule stations/records exported.",
+		format: "count",
+	},
+	scheduleInterruptCount: {
+		order: 100,
+		label: "Schedule interrupts exported",
+		description: "Number of LuaSpacePlatform schedule interrupts exported.",
+		format: "count",
+	},
+	atomicBeltEntitiesScanned: {
+		order: 110,
+		label: "Atomic belt entities scanned",
+		description: "Belt entities scanned in the single-tick atomic belt pass.",
+		format: "count",
+	},
+	atomicBeltItemStacksCaptured: {
+		order: 120,
+		label: "Atomic belt item stacks captured",
+		description: "Belt item stacks captured during the atomic belt scan.",
+		format: "count",
+	},
+	uncompressedPayloadBytes: {
+		order: 130,
+		label: "Uncompressed payload size",
+		description: "Payload size before compression.",
+		format: "bytes",
+	},
+	compressedPayloadBytes: {
+		order: 140,
+		label: "Compressed payload size",
+		description: "Payload size after compression.",
+		format: "bytes",
+	},
+	compressionReductionPct: {
+		order: 150,
+		label: "Compression reduction",
+		description: "Compression size reduction percentage.",
+		format: "percent",
+	},
+};
+
+function formatBytes(value) {
+	const numeric = Number(value);
+	if (!Number.isFinite(numeric)) {
+		return "-";
+	}
+	if (numeric < 1024) {
+		return `${formatNumeric(numeric, 0)} B`;
+	}
+	const kb = numeric / 1024;
+	if (kb < 1024) {
+		return `${formatNumeric(kb, 1)} KB`;
+	}
+	return `${formatNumeric(kb / 1024, 2)} MB`;
+}
+
+function formatExportMetricValue(value, format) {
+	const numeric = Number(value);
+	if (format === "ms") {
+		return Number.isFinite(numeric) ? `${formatNumeric(numeric, 0)} ms` : "-";
+	}
+	if (format === "ticks") {
+		return Number.isFinite(numeric) ? `${formatNumeric(numeric, 0)} ticks` : "-";
+	}
+	if (format === "seconds") {
+		return Number.isFinite(numeric) ? `${formatNumeric(numeric, 2)} s` : "-";
+	}
+	if (format === "count") {
+		return Number.isFinite(numeric) ? formatNumeric(numeric, 0) : "-";
+	}
+	if (format === "bytes") {
+		return formatBytes(value);
+	}
+	if (format === "percent") {
+		return Number.isFinite(numeric) ? `${formatNumeric(numeric, 1)}%` : "-";
+	}
+	if (typeof value === "boolean") {
+		return value ? "Yes" : "No";
+	}
+	if (Number.isFinite(numeric)) {
+		return formatNumeric(numeric, Number.isInteger(numeric) ? 0 : 2);
+	}
+	return value === null || value === undefined ? "-" : String(value);
+}
+
+export function buildExportMetricRows(data) {
+	if (!data || typeof data !== "object") {
+		return [];
+	}
+
+	const rows = Object.entries(data).map(([key, value]) => {
+		const def = EXPORT_METRIC_DEFINITIONS[key] || null;
+		return {
+			key,
+			order: def?.order ?? 10000,
+			metric: def?.label || humanizeMetricKey(key),
+			value: formatExportMetricValue(value, def?.format),
+			details: def?.description || "Extended export metric.",
+		};
+	});
+
+	rows.sort((a, b) => a.order - b.order || a.metric.localeCompare(b.metric));
+	return rows;
+}
+
 export function buildExpectedActualRows(expectedMap, actualMap) {
 	const expected = expectedMap || {};
 	const actual = actualMap || {};

@@ -2,6 +2,7 @@
 -- Handles locking surfaces during transfer to prevent modifications
 
 local GameUtils = require("modules/surface_export/utils/game-utils")
+local PlatformSchedule = require("modules/surface_export/utils/platform-schedule")
 
 local SurfaceLock = {}
 
@@ -191,7 +192,10 @@ function SurfaceLock.lock_platform(platform, force)
 
     -- Store original state
     local original_hidden = force.get_surface_hidden(surface)
-    local original_schedule = platform.schedule
+    local original_schedule, schedule_err = PlatformSchedule.capture(platform, platform.hub)
+    if not original_schedule then
+        return false, "Failed to capture original platform schedule: " .. tostring(schedule_err)
+    end
 
     -- Lock the surface (hide from players)
     force.set_surface_hidden(surface, true)
@@ -262,9 +266,13 @@ function SurfaceLock.unlock_platform(platform_name)
         -- Restore original visibility
         force.set_surface_hidden(surface, lock_data.original_hidden)
 
-        -- Restore original schedule if it existed
+        -- Restore full original schedule (records + interrupts + group)
         if lock_data.original_schedule then
-            platform.schedule = lock_data.original_schedule
+            local schedule_restore_ok, schedule_restore_err = PlatformSchedule.apply(platform, lock_data.original_schedule)
+            if not schedule_restore_ok then
+                storage.locked_platforms[platform_name] = nil
+                return false, "Failed to restore original platform schedule: " .. tostring(schedule_restore_err)
+            end
         end
     end
 

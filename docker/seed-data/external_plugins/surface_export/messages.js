@@ -336,6 +336,7 @@ class PlatformExportEvent {
 			instanceId: { type: "integer" },
 			exportData: { type: "object" },
 			timestamp: { type: "number" },
+			exportMetrics: { type: ["object", "null"] },
 		},
 		required: ["exportId", "platformName", "instanceId", "exportData", "timestamp"],
 		additionalProperties: false,
@@ -347,6 +348,7 @@ class PlatformExportEvent {
 		this.instanceId = json.instanceId;
 		this.exportData = json.exportData;
 		this.timestamp = json.timestamp;
+		this.exportMetrics = json.exportMetrics || null;
 	}
 
 	static fromJSON(json) {
@@ -360,6 +362,7 @@ class PlatformExportEvent {
 			instanceId: this.instanceId,
 			exportData: this.exportData,
 			timestamp: this.timestamp,
+			exportMetrics: this.exportMetrics,
 		};
 	}
 }

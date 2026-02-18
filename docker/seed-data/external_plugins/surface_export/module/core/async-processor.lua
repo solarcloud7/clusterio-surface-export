@@ -21,6 +21,7 @@ local BeltRestoration = require("modules/surface_export/import_phases/belt_resto
 local ActiveStateRestoration = require("modules/surface_export/import_phases/active_state_restoration")
 local TileScanner = require("modules/surface_export/export_scanners/tile_scanner")
 local DebugExport = require("modules/surface_export/utils/debug-export")
+local PlatformSchedule = require("modules/surface_export/utils/platform-schedule")
 local clusterio_api = require("modules/clusterio/api")
 
 local MAX_IMPORT_SESSIONS = 4
@@ -268,6 +269,19 @@ function AsyncProcessor.queue_export(platform_index, force_name, requester_name,
   else
     game.print(string.format("[Export] Locked platform %s for stable export...", platform.name), {1, 0.8, 0})
   end
+
+  -- CRITICAL: Capture schedule from LuaSpacePlatform (records + interrupts + group),
+  -- using hub_entity.platform as primary source.
+  local platform_schedule, schedule_err = PlatformSchedule.capture(platform, platform.hub)
+  if not platform_schedule then
+    SurfaceLock.unlock_platform(platform.name)
+    return nil, "Failed to capture platform schedule: " .. tostring(schedule_err)
+  end
+  local schedule_summary = PlatformSchedule.summarize(platform_schedule)
+  log(string.format("[Export] Captured platform schedule: records=%d, interrupts=%d, group=%s",
+    schedule_summary.record_count,
+    schedule_summary.interrupt_count,
+    tostring(schedule_summary.group)))
   
   local entities = surface.find_entities_filtered({})
   
@@ -302,6 +316,13 @@ function AsyncProcessor.queue_export(platform_index, force_name, requester_name,
       force_name = force_name,
       tick = game.tick,
       timestamp = Util.format_timestamp(game.tick),
+      platform = {
+        name = platform.name,
+        force = force_name,
+        index = platform_index,
+        paused = platform.paused == true,
+        schedule = platform_schedule,
+      },
       tiles = tiles,  -- Include platform foundation tiles
       entities = {},
       stats = {
@@ -531,6 +552,23 @@ function AsyncProcessor.queue_import(json_data, new_platform_name, force_name, r
     -- Uncompressed format - data is already the platform data
     platform_data = parsed_data
   end
+
+  -- Forward-only transfer schema cutover:
+  -- Transfer imports must include full platform schedule payload.
+  local is_transfer = (platform_data._transferId or parsed_data._transferId) ~= nil
+  local imported_schedule = platform_data
+    and platform_data.platform
+    and platform_data.platform.schedule
+    or nil
+  if is_transfer then
+    if type(platform_data.platform) ~= "table" then
+      return nil, "Transfer payload missing required platform metadata table"
+    end
+    local schedule_ok, schedule_err = PlatformSchedule.validate_transfer_payload(imported_schedule)
+    if not schedule_ok then
+      return nil, "Transfer payload missing/invalid platform schedule: " .. tostring(schedule_err)
+    end
+  end
   
   -- Entities are already sorted during export for proper placement order
   -- No need to re-sort on import
@@ -616,10 +654,27 @@ function AsyncProcessor.queue_import(json_data, new_platform_name, force_name, r
   
   -- CRITICAL: For transfers, PAUSE the platform immediately to prevent thruster fuel consumption
   -- This stops the platform from using fuel during the multi-tick import process
-  local is_transfer = (platform_data._transferId or parsed_data._transferId) ~= nil
   if is_transfer then
     new_platform.paused = true
     log(string.format("[Import] Platform %s PAUSED to prevent fuel consumption during import", new_platform.name))
+  end
+
+  -- Restore platform schedule (records + interrupts + group) from payload.
+  if imported_schedule then
+    local schedule_apply_ok, schedule_apply_err = PlatformSchedule.apply(new_platform, imported_schedule)
+    if not schedule_apply_ok then
+      new_platform.destroy()
+      return nil, "Failed to restore platform schedule: " .. tostring(schedule_apply_err)
+    end
+    local imported_schedule_summary = PlatformSchedule.summarize(imported_schedule)
+    log(string.format("[Import] Restored platform schedule: records=%d, interrupts=%d, group=%s",
+      imported_schedule_summary.record_count,
+      imported_schedule_summary.interrupt_count,
+      tostring(imported_schedule_summary.group)))
+  elseif is_transfer then
+    -- Defensive guard: transfers should never reach this state due to strict validation above.
+    new_platform.destroy()
+    return nil, "Transfer payload missing required platform schedule"
   end
   
   -- Calculate item and fluid totals from verification data if available
@@ -663,6 +718,7 @@ function AsyncProcessor.queue_import(json_data, new_platform_name, force_name, r
     
     -- Store platform reference for unpausing after validation
     target_platform = new_platform,
+    imported_schedule = imported_schedule,
     
     -- ========== PHASE METRICS TRACKING ==========
     -- Track timing and counts for each import phase
@@ -936,6 +992,17 @@ local function complete_export_job(job)
   -- Calculate duration
   local duration_ticks = game.tick - job.started_tick
   local duration_seconds = duration_ticks / 60
+  local duration_ms = math.floor(duration_ticks * 16.67)
+  local uncompressed_bytes = #json_string
+  local compressed_bytes = compressed and #compressed or nil
+  local compression_reduction_pct = nil
+  if compressed_bytes and uncompressed_bytes > 0 then
+    compression_reduction_pct = math.floor(((1 - (compressed_bytes / uncompressed_bytes)) * 1000) + 0.5) / 10
+  end
+  local exported_tile_count = #(job.export_data.tiles or {})
+  local export_schedule_summary = PlatformSchedule.summarize(
+    job.export_data.platform and job.export_data.platform.schedule or nil
+  )
   
   -- Debug export: Write source platform data for comparison
   if job.destination_instance_id then
@@ -966,7 +1033,21 @@ local function complete_export_job(job)
       entity_count = job.total_entities,
       duration_ticks = duration_ticks,
       duration_seconds = duration_seconds,
-      destination_instance_id = job.destination_instance_id  -- For auto-transfer
+      destination_instance_id = job.destination_instance_id,  -- For auto-transfer
+      export_metrics = {
+        async_export_ticks = duration_ticks,
+        async_export_ms = duration_ms,
+        async_export_seconds = duration_seconds,
+        entity_count = job.total_entities,
+        tile_count = exported_tile_count,
+        atomic_belt_entities = belt_scan_count,
+        atomic_belt_item_stacks = belt_item_total,
+        uncompressed_bytes = uncompressed_bytes,
+        compressed_bytes = compressed_bytes,
+        compression_reduction_pct = compression_reduction_pct,
+        schedule_record_count = export_schedule_summary.record_count,
+        schedule_interrupt_count = export_schedule_summary.interrupt_count,
+      },
     }
     
     if job.destination_instance_id then
@@ -1130,11 +1211,25 @@ local function complete_import_job(job)
       local debug_success, debug_err = pcall(function()
         if DebugExport.is_enabled() then
           local scanned_entities = EntityScanner.scan_surface(job.target_surface)
+          local destination_schedule = nil
+          if job.target_platform and job.target_platform.valid then
+            local captured_schedule, schedule_err = PlatformSchedule.capture(job.target_platform, job.target_platform.hub)
+            if captured_schedule then
+              destination_schedule = captured_schedule
+            else
+              log(string.format("[DebugExport] WARNING: Failed to capture destination schedule: %s", tostring(schedule_err)))
+            end
+          end
           local destination_data = {
             platform_name = job.platform_name,
             tick = game.tick,
             entities = scanned_entities,
-            entity_count = #scanned_entities
+            entity_count = #scanned_entities,
+            platform = {
+              name = job.target_platform and job.target_platform.name or job.platform_name,
+              force = job.force_name,
+              schedule = destination_schedule,
+            },
           }
           DebugExport.export_destination_platform(destination_data, job.platform_name)
         else

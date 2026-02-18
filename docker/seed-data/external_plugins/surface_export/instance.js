@@ -159,6 +159,7 @@ class InstancePlugin extends BaseInstancePlugin {
 				instanceId: this.instance.id,
 				exportData: exportData,
 				timestamp: Date.now(),
+				exportMetrics: data.export_metrics || null,
 			}));
 			this.logger.info(`Sent platform export ${exportId} to controller`);
 

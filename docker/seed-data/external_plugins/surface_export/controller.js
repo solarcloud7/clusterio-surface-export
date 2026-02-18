@@ -111,6 +111,7 @@ class ControllerPlugin extends BaseControllerPlugin {
 				platformName: event.platformName,
 				instanceId: event.instanceId,
 				exportData: event.exportData,
+				exportMetrics: event.exportMetrics || null,
 				timestamp: event.timestamp,
 				size: serializedSize,
 			});

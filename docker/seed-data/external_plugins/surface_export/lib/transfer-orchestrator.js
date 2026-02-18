@@ -37,6 +37,86 @@ function buildImportMetrics(raw) {
 	return result;
 }
 
+function toFiniteNumber(value) {
+	const numeric = Number(value);
+	return Number.isFinite(numeric) ? numeric : null;
+}
+
+function normalizeExportMetrics(raw) {
+	if (!raw || typeof raw !== "object") {
+		return {};
+	}
+
+	const normalized = {};
+	const mappings = [
+		["requestExportAndLockMs", "requestExportAndLockMs"],
+		["waitForControllerStoreMs", "waitForControllerStoreMs"],
+		["controllerExportPrepTotalMs", "controllerExportPrepTotalMs"],
+		["exportRequestMs", "requestExportAndLockMs"],
+		["waitForStoredMs", "waitForControllerStoreMs"],
+		["exportPrepTotalMs", "controllerExportPrepTotalMs"],
+		["async_export_ticks", "instanceAsyncExportTicks"],
+		["async_export_ms", "instanceAsyncExportMs"],
+		["async_export_seconds", "instanceAsyncExportSeconds"],
+		["entity_count", "exportedEntityCount"],
+		["tile_count", "exportedTileCount"],
+		["atomic_belt_entities", "atomicBeltEntitiesScanned"],
+		["atomic_belt_item_stacks", "atomicBeltItemStacksCaptured"],
+		["uncompressed_bytes", "uncompressedPayloadBytes"],
+		["compressed_bytes", "compressedPayloadBytes"],
+		["compression_reduction_pct", "compressionReductionPct"],
+		["schedule_record_count", "scheduleRecordCount"],
+		["schedule_interrupt_count", "scheduleInterruptCount"],
+	];
+
+	for (const [fromKey, toKey] of mappings) {
+		if (raw[fromKey] !== undefined && raw[fromKey] !== null) {
+			normalized[toKey] = raw[fromKey];
+		}
+	}
+
+	const ticks = toFiniteNumber(normalized.instanceAsyncExportTicks);
+	if (ticks !== null && normalized.instanceAsyncExportMs === undefined) {
+		normalized.instanceAsyncExportMs = Math.round(ticks * TICKS_TO_MS);
+	}
+
+	for (const key of [
+		"requestExportAndLockMs",
+		"waitForControllerStoreMs",
+		"controllerExportPrepTotalMs",
+		"instanceAsyncExportTicks",
+		"instanceAsyncExportMs",
+		"instanceAsyncExportSeconds",
+		"exportedEntityCount",
+		"exportedTileCount",
+		"atomicBeltEntitiesScanned",
+		"atomicBeltItemStacksCaptured",
+		"uncompressedPayloadBytes",
+		"compressedPayloadBytes",
+		"compressionReductionPct",
+		"scheduleRecordCount",
+		"scheduleInterruptCount",
+	]) {
+		if (normalized[key] === undefined || normalized[key] === null) {
+			continue;
+		}
+		const numeric = toFiniteNumber(normalized[key]);
+		if (numeric !== null) {
+			normalized[key] = numeric;
+		}
+	}
+
+	return normalized;
+}
+
+function mergeExportMetrics(storedMetrics, runtimeMetrics) {
+	const merged = {
+		...normalizeExportMetrics(storedMetrics),
+		...normalizeExportMetrics(runtimeMetrics),
+	};
+	return Object.keys(merged).length ? merged : null;
+}
+
 /**
  * Transfer lifecycle state machine.
  * Handles the full transfer flow: export → transmit → import → validate → cleanup/rollback.
@@ -117,6 +197,7 @@ class TransferOrchestrator {
 		const innerData = exportData.exportData;
 		const { payloadMetrics, itemCounts, fluidCounts } = buildPayloadMetrics(innerData);
 		const platformInfo = innerData?.platform || {};
+		const mergedExportMetrics = mergeExportMetrics(exportData.exportMetrics, exportMetrics);
 
 		this.plugin.activeTransfers.set(transferId, {
 			transferId,
@@ -131,14 +212,14 @@ class TransferOrchestrator {
 			startedAt: Date.now(),
 			status: "transporting",
 			payloadMetrics,
-			exportMetrics: exportMetrics || null,
+			exportMetrics: mergedExportMetrics,
 			sourceVerification: { itemCounts, fluidCounts },
 		});
 
 		const transfer = this.plugin.activeTransfers.get(transferId);
 		this.txLogger.logTransactionEvent(transferId, "transfer_created",
 			`${transfer.platformName}: ${transfer.sourceInstanceName || transfer.sourceInstanceId} → ${transfer.targetInstanceName || targetInstanceId}`, {
-				exportMetrics: exportMetrics || null,
+				exportMetrics: mergedExportMetrics,
 				payloadMetrics,
 			});
 		this.updateTransfer(transfer);
@@ -371,7 +452,9 @@ class TransferOrchestrator {
 			const waitForStoredMs = Date.now() - t1;
 
 			const result = await this.transferPlatform(exportResponse.exportId, resolvedTarget.id, {
-				exportRequestMs, waitForStoredMs, exportPrepTotalMs: exportRequestMs + waitForStoredMs,
+				requestExportAndLockMs: exportRequestMs,
+				waitForControllerStoreMs: waitForStoredMs,
+				controllerExportPrepTotalMs: exportRequestMs + waitForStoredMs,
 			});
 			return { ...result, exportId: exportResponse.exportId };
 		} catch (err) {
