@@ -83,15 +83,26 @@ SurfaceExportModule.events = {
 		local platform = event.platform
 		if not (platform and platform.valid) then return end
 
+		-- CRITICAL: Space platforms use defines.space_platform_state, NOT defines.train_state
+		local sps = defines.space_platform_state
+
 		-- Track flight start time and estimated duration; clear on arrival
 		storage.platform_flight_data = storage.platform_flight_data or {}
-		if platform.state == defines.train_state.on_the_path then
+		if platform.state == sps.on_the_path then
 			local est_ticks = nil
 			local ok, result = pcall(function()
-				local src = platform.space_location  -- where we just left
-				local tgt = platform.current_target  -- where we're going
-				if src and tgt and platform.speed and platform.speed > 0 then
-					return math.floor(math.abs((tgt.distance or 0) - (src.distance or 0)) / platform.speed)
+				local src = platform.space_location
+				-- Read destination from schedule (platform.current_target does NOT exist)
+				local schedule = platform.schedule
+				local tgt_name = nil
+				if schedule and schedule.records and schedule.current then
+					tgt_name = schedule.records[schedule.current].station
+				end
+				if src and tgt_name and platform.speed and platform.speed > 0 then
+					local tgt = game.space_location_prototypes[tgt_name]
+					if tgt then
+						return math.floor(math.abs((tgt.distance or 0) - (src.distance or 0)) / platform.speed)
+					end
 				end
 			end)
 			if ok then est_ticks = result end
@@ -99,7 +110,7 @@ SurfaceExportModule.events = {
 				departure_tick = game.tick,
 				estimated_duration_ticks = est_ticks,
 			}
-		elseif platform.state == defines.train_state.wait_station then
+		elseif platform.state == sps.waiting_at_station then
 			storage.platform_flight_data[platform.name] = nil
 		end
 

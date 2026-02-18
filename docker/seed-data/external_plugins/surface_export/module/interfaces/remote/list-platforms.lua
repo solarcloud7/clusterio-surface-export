@@ -34,25 +34,35 @@ local function list_platforms(force_name)
         space_location_name = platform.space_location.name
       end
 
+      -- Read destination from schedule (platform.current_target does NOT exist on LuaSpacePlatform)
       local current_target_name = nil
-      local ok_target, target = pcall(function() return platform.current_target end)
-      if ok_target and target then
-        current_target_name = target.name
+      local ok_sched, schedule = pcall(function() return platform.schedule end)
+      if ok_sched and schedule and schedule.records and schedule.current then
+        local current_record = schedule.records[schedule.current]
+        if current_record and current_record.station then
+          current_target_name = current_record.station
+        end
       end
 
       local flight_data = storage.platform_flight_data and storage.platform_flight_data[platform.name]
 
+      -- CRITICAL: Space platforms use defines.space_platform_state, NOT defines.train_state
       local platform_state = nil
       local ok_state, state_val = pcall(function() return platform.state end)
       if ok_state and state_val then
-        if state_val == defines.train_state.on_the_path then
+        local sps = defines.space_platform_state
+        if state_val == sps.on_the_path then
           platform_state = "on_the_path"
-        elseif state_val == defines.train_state.arrive_station then
-          platform_state = "arrive_station"
-        elseif state_val == defines.train_state.wait_station then
+        elseif state_val == sps.waiting_at_station then
           platform_state = "wait_station"
-        elseif state_val == defines.train_state.no_path then
+        elseif state_val == sps.waiting_for_departure then
+          platform_state = "waiting_for_departure"
+        elseif state_val == sps.no_path then
           platform_state = "no_path"
+        elseif state_val == sps.no_schedule then
+          platform_state = "no_schedule"
+        elseif state_val == sps.paused then
+          platform_state = "paused"
         end
       end
 
