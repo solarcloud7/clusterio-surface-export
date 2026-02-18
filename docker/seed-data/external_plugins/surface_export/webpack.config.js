@@ -8,6 +8,7 @@ const common = require("@clusterio/web_ui/webpack.common");
 module.exports = (env = {}, argv = {}) => merge(common(env, argv), {
 	context: __dirname,
 	entry: "./web/index.jsx",
+	cache: { type: "filesystem", buildDependencies: { config: [__filename] } },
 	output: {
 		path: path.resolve(__dirname, "dist", "web"),
 		filename: "static/[name].js",

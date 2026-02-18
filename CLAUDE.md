@@ -6,8 +6,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with th
 
 This project provides tools for exporting and importing Factorio Space Age platforms between Clusterio instances. It consists of:
 
-1. **Factorio Mod** (`src/surface_export_mod/`): Lua mod that serializes/deserializes platform entities, inventories, fluids, and tiles
-2. **Clusterio Plugin** (`src/surface_export_plugin/`): TypeScript plugin for cross-instance platform transfer
+1. **Lua Module** (`docker/seed-data/external_plugins/surface_export/module/`): Save-patched Lua code that serializes/deserializes platform entities, inventories, fluids, and tiles
+2. **Clusterio Plugin** (`docker/seed-data/external_plugins/surface_export/`): JavaScript plugin for cross-instance platform transfer
 3. **PowerShell Tools** (`tools/`): Helper scripts for deployment, import, export, and validation
 
 **Key Features (v1.0.88)**:
@@ -83,7 +83,7 @@ The plugin uses **save patching** with bind-mounted source:
 - Mounted into containers via `external_plugins/` volume (auto-installed by base image)
 - Contains both Node.js plugin code and Lua `module/` directory
 
-**Plugin Changes** (TypeScript/JavaScript):
+**Plugin Changes** (JavaScript):
 - Edit `*.js` files in plugin root → Restart container to pick up changes
 - No image rebuild needed
 
@@ -124,36 +124,49 @@ Clusterio is a clustered Factorio server manager using a WebSocket Link Protocol
 ## Project File Structure
 
 ```
-src/
-├── surface_export_mod/           # Factorio Lua mod
-│   ├── info.json                 # Mod metadata (version here!)
-│   ├── control.lua               # Main entry point, remote interfaces, commands
-│   └── scripts/
-│       ├── async-processor.lua   # Async job queue (import/export batching)
-│       ├── serializer.lua        # Entity → JSON export logic
-│       ├── deserializer.lua      # JSON → Entity import logic
-│       ├── entity-scanner.lua    # Entity state capture
-│       ├── util.lua              # JSON encoding, checksums, helpers
-│       └── verification.lua      # Data integrity checks
-│
-├── surface_export_plugin/        # Clusterio TypeScript plugin
-│   ├── package.json              # Plugin metadata (version here!)
-│   ├── index.ts                  # Plugin entry point
-│   ├── controller.ts             # Controller-side logic
-│   ├── instance.ts               # Instance-side logic
-│   └── messages.ts               # IPC message definitions
-│
+docker/seed-data/external_plugins/surface_export/   # Plugin root
+├── index.js              # Plugin registration, config fields, permissions
+├── controller.js         # Controller: slim coordinator delegating to lib/
+├── instance.js           # Instance: RCON bridge, platform listing, chunked import
+├── messages.js           # 19 message type definitions with JSON schemas
+├── control.js            # CLI command registration (clusterioctl)
+├── helpers.js            # Utility functions (chunking, escaping)
+├── package.json          # Plugin metadata and dependencies
+├── webpack.config.js     # Web UI build config
+├── lib/                  # Controller modules (split from controller.js)
+│   ├── platform-tree.js          # Tree building + instance resolution
+│   ├── transaction-logger.js     # Event logging, phase timing, persistence
+│   ├── subscription-manager.js   # WebSocket subscriptions + broadcasting
+│   └── transfer-orchestrator.js  # Transfer lifecycle state machine
+├── web/                  # React web UI (Ant Design + Module Federation)
+│   ├── index.jsx         # WebPlugin class, page wrapper, hooks
+│   ├── ManualTransferTab.jsx     # Platform tree + transfer UI
+│   ├── TransactionLogsTab.jsx    # Log viewer + validation display
+│   ├── utils.js          # Pure formatting functions (no React)
+│   └── style.css
+├── module/               # Lua module (save-patched into Factorio instances)
+│   ├── module.json       # Module metadata
+│   ├── control.lua       # Entry point, event handlers, on_init/on_load
+│   ├── core/             # Core processing (async-processor, serializer, deserializer, json)
+│   ├── export_scanners/  # Entity/inventory/connection/tile scanning
+│   ├── import_phases/    # Restoration phases (tiles, hub, entities, state, belts, fluids)
+│   ├── interfaces/       # Commands (14 files) + remote interface (18 files)
+│   ├── utils/            # Helpers (game-utils, string-utils, table-utils, etc.)
+│   ├── validators/       # Verification, transfer-validation, surface-counter, loss-analysis
+│   └── locale/           # Localization strings
+└── dist/                 # Built web UI (npm run build:web, gitignored)
+
 tools/
-├── deploy-cluster.ps1            # Main deployment script
-├── import-platform.ps1           # Chunked import via RCON
-├── export-platform.ps1           # Export trigger helper
-└── validate-cluster.ps1          # Cluster health checks
+├── deploy-cluster.ps1    # Main deployment script
+├── import-platform.ps1   # Chunked import via RCON
+├── export-platform.ps1   # Export trigger helper
+└── validate-cluster.ps1  # Cluster health checks
 
 docker/
-├── env/                          # Environment config (controller.env, host.env)
-└── seed-data/                    # Seed data: database, mods, saves, plugins
+├── env/                  # Environment config (controller.env, host.env)
+└── seed-data/            # Seed data: database, mods, saves, plugins
 
-docker-compose.yml                  # Cluster definition (uses pre-built GHCR images)
+docker-compose.yml        # Cluster definition (uses pre-built GHCR images)
 ```
 
 ## Key Technical Constraints
@@ -317,7 +330,7 @@ If the default was added after the current save was created, you need either:
 **Cause**: `ActiveStateRestoration.restore()` was called as Phase 7 of import (before validation), which re-activated machines. In the ticks between activation and item counting, furnaces processed iron ore → iron plate, causing a net gain that triggered validation failure.
 **Fix**: For **transfers only**, Phase 7 (activation) is deferred until after validation passes. Entities stay deactivated through all restoration phases and validation. Activation happens via `ActiveStateRestoration.restore()` using `frozen_states` only after `TransferValidation.validate_import()` succeeds. On failure, entities are left deactivated for investigation.
 **Key files**: `async-processor.lua` (`complete_import_job` function), `active_state_restoration.lua`
-**See**: [TRANSFER_WORKFLOW_GUIDE.md](docker/seed-data/external_plugins/surface_export/docs/TRANSFER_WORKFLOW_GUIDE.md) — "Entity Lifecycle (Critical Invariant)" section
+**See**: [TRANSFER_WORKFLOW_GUIDE.md](docs/TRANSFER_WORKFLOW_GUIDE.md) — "Entity Lifecycle (Critical Invariant)" section
 
 ### 16. Verification Counts From Live Scan vs Serialized Data (CRITICAL — Fixed)
 **Symptom**: Transfer validation fails with "GAINED items" across many item types (iron-plate, copper-cable, piercing-rounds-magazine, etc.). Gains are a fraction of belt item totals.
@@ -328,20 +341,7 @@ If the default was added after the current save was created, you need either:
 
 ## Architecture Overview
 
-### Core Packages (`/packages/`)
-
-- **lib**: Shared library containing the Link Protocol, config system, plugin framework, data structures, logging, and messaging. All other packages depend on this.
-- **controller**: Central hub coordinating all hosts, provides the web interface, routes messages between components, manages user authentication and cluster-wide state.
-- **host**: Manages Factorio server instances on a physical machine, handles RCON communication, patches saves with Lua modules at runtime.
-- **ctl**: Command-line interface tool providing the same functionality as the web UI.
-- **web_ui**: React-based web interface components using Ant Design, built with Webpack Module Federation for plugin extensibility.
-- **create**: Installation wizard/bootstrapping tool (`npm init @clusterio`).
-
-### Built-in Plugins (`/plugins/`)
-
-Plugins extend functionality across controller, host, instance, ctl, and web components. Each plugin has separate entrypoints for these contexts and can define custom messages, config fields, and UI components.
-
-Key built-in plugins: global_chat, research_sync, statistics_exporter, player_auth, inventory_sync
+For Clusterio core architecture, see [Clusterio docs](https://github.com/clusterio/clusterio).
 
 ### Communication Architecture
 
@@ -355,16 +355,6 @@ Key built-in plugins: global_chat, research_sync, statistics_exporter, player_au
 5. Ctl provides CLI access to same functionality as Web UI
 
 **Message Types**: Request/Response pattern and Event broadcasting
-
-### Key Files for Understanding Architecture
-
-- [packages/lib/src/link/link.ts](packages/lib/src/link/link.ts) - Core message routing
-- [packages/lib/src/plugin.ts](packages/lib/src/plugin.ts) - Plugin system
-- [packages/lib/src/config/classes.ts](packages/lib/src/config/classes.ts) - Configuration system
-- [packages/controller/src/Controller.ts](packages/controller/src/Controller.ts) - Central controller
-- [packages/host/src/Host.ts](packages/host/src/Host.ts) - Host management
-- [packages/host/src/Instance.ts](packages/host/src/Instance.ts) - Factorio instance management
-- [packages/lib/src/data/messages_core.ts](packages/lib/src/data/messages_core.ts) - Core message definitions
 
 ### Frontend Build (Webpack)
 
@@ -391,7 +381,7 @@ Key built-in plugins: global_chat, research_sync, statistics_exporter, player_au
 - **Indentation**: Tabs (not spaces, except in Markdown)
 - **Line length**: 120 characters (tabs count as 4)
 - **Strings**: Double quotes `"` (single quotes `'` if string contains double quotes)
-- **Naming (TypeScript)**:
+- **Naming (JavaScript)**:
   - Variables/members: camelCase
   - Classes: PascalCase
   - Config values: lowercase_underscore
@@ -402,25 +392,9 @@ Key built-in plugins: global_chat, research_sync, statistics_exporter, player_au
   - lowercase_underscore for files exporting multiple values
   - PascalCase for single-class exports
 
-### Imports Within `lib` Package
-
-When importing files within the lib package, prefix all imports with "lib" to avoid naming conflicts:
-
-```typescript
-import * as libConfig from "./config";
-import * as libErrors from "./errors";
-```
-
-### TypeScript Configuration
-
-- Project uses TypeScript references with incremental compilation
-- Base config: `tsconfig.base.json` (strict mode enabled)
-- Specialized configs: `tsconfig.node.json`, `tsconfig.browser.json`
-- Each package may have its own `tsconfig.json` extending from root
-
 ## Plugin Development
 
-Plugins are the primary extension mechanism. See [docs/writing-plugins.md](docs/writing-plugins.md) for comprehensive guide.
+Plugins are the primary extension mechanism. See [Clusterio plugin docs](https://github.com/clusterio/clusterio/blob/master/docs/writing-plugins.md) for comprehensive guide.
 
 **Plugin Structure**:
 - Separate entrypoints: controller, host, instance, ctl, web
@@ -428,37 +402,6 @@ Plugins are the primary extension mechanism. See [docs/writing-plugins.md](docs/
 - Plugins define custom Request/Event messages
 - Config fields integrate into main config system
 - Web modules use Module Federation for runtime loading
-
-**Adding a Plugin**:
-```bash
-npm install @clusterio/plugin-<name>
-npx clusteriocontroller plugin add @clusterio/plugin-<name>
-```
-
-For development, use absolute or relative paths (starting with `.` or `..`).
-
-## Testing
-
-- **Framework**: Mocha with nyc for coverage
-- **Test location**: `/test/` directory mirrors package structure
-- **Common utilities**: `test/common.js` and `test/mock.js`
-- **CI**: GitHub Actions with matrix testing (Node.js 20.x & 22.x, Factorio 1.1.110 & 2.0.47)
-
-## Technology Stack
-
-**Backend**: Node.js >= 18, TypeScript 5.7+, Express 4.x, ws (WebSockets), Winston (logging), Ajv + TypeBox (validation)
-
-**Frontend**: React 18.x, Ant Design 5.x, React Router 6.x, Webpack 5 with Module Federation, SWC
-
-**Factorio**: Lua with event_handler library, RCON client, custom save patching
-
-## Key Architectural Decisions
-
-- **Separation of concerns**: Controller (coordination) vs Host (instance management) vs Ctl/Web (control)
-- **Minimal dependencies**: New dependencies require strong justification
-- **Plugin-based extensibility**: Core provides infrastructure, plugins add functionality
-- **Message-based communication**: All inter-component communication uses Link Protocol
-- **No database**: Custom JSON file-based storage for simplicity
 
 ## Known Factorio API Limitations (Transfer Fidelity)
 
@@ -549,23 +492,18 @@ entity.active = true
 local content = entity.fluidbox.get_fluid_segment_contents(1) -- Returns actual segment total
 ```
 
-## Support Policy
-
-- **Factorio**: Active support for last two major versions (currently 2.0 and 1.1)
-- **Node.js**: All LTS versions in active and maintenance phases
-- **Operating Systems**: Windows, Linux, MacOS (via Node.js cross-platform support)
-- **Breaking Changes**: Currently in alpha, breaking changes documented with migration steps
-
 ## Additional Documentation
 
-- [docs/architecture.md](docs/architecture.md) - System architecture overview
+- [docs/README.md](docs/README.md) - Plugin overview and documentation index
 - [docs/commands-reference.md](docs/commands-reference.md) - All available commands
-- [docs/testing-guide.md](docs/testing-guide.md) - Testing procedures
-- [docs/impediments_and_resolutions.md](docs/impediments_and_resolutions.md) - Known issues and solutions (14 documented impediments)
-- [docs/factorio-saves.md](docs/factorio-saves.md) - Save management and async import details
-- [docs/IMPORT_PERFORMANCE.md](docs/IMPORT_PERFORMANCE.md) - **NEW**: Import performance analysis, chunking rationale, Factorio 2.0 limitations
-- [CLUSTERIO_QUICKSTART.md](CLUSTERIO_QUICKSTART.md) - Quick reference for cluster operations
-- [factorioAPI/index.html](factorioAPI/index.html) - Offline Factorio API reference (local HTML)
+- [docs/QUICK_START.md](docs/QUICK_START.md) - End-to-end transfer walkthrough
+- [docs/DEVELOPMENT_SETUP.md](docs/DEVELOPMENT_SETUP.md) - Plugin development workflow
+- [docs/TRANSFER_WORKFLOW_GUIDE.md](docs/TRANSFER_WORKFLOW_GUIDE.md) - Transfer phases and validation
+- [docs/EXPORT_IMPORT_FLOW.md](docs/EXPORT_IMPORT_FLOW.md) - Complete action trace with debugging
+- [docs/IMPLEMENTATION_SUMMARY.md](docs/IMPLEMENTATION_SUMMARY.md) - Module structure and design decisions
+- [docs/async-processing.md](docs/async-processing.md) - Async batch processing architecture
+- [docs/CARGO_POD_API.md](docs/CARGO_POD_API.md) - Factorio cargo pod API reference
+- [docs/REORGANIZATION_PLAN.md](docs/REORGANIZATION_PLAN.md) - Planned code structure improvements
 
 ## Debugging Tips
 

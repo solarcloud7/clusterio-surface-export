@@ -292,26 +292,9 @@ class InstancePlugin extends BaseInstancePlugin {
 			}
 			this.logger.info(`Export completed with ID: ${exportId}`);
 			
-			// Retrieve full export data from mod storage (async export may take time)
-			const exportData = await this.waitForExportData(exportId);
-			if (!exportData) {
-				return { success: false, error: `Timed out waiting for export data for ${exportId}` };
-			}
-			
-			// Parse platform name from export_id (format: platformName_tick)
-			const platformName = exportId.replace(/_\d+$/, "");
-			
-			// Send export to controller for storage
-			await this.instance.sendTo("controller", new messages.PlatformExportEvent({
-				exportId: exportId,
-				platformName: platformName,
-				instanceId: this.instance.id,
-				exportData: exportData,
-				timestamp: Date.now(),
-			}));
-			
-			this.logger.info(`Sent platform export ${exportId} to controller for storage`);
-			
+			// The export data will be sent to the controller automatically via the
+			// IPC-triggered handleExportComplete() path, which uses the real platform
+			// name from Lua (not the sanitized exportId). No need to send it here too.
 			return { success: true, exportId: exportId };
 		} catch (err) {
 			this.logger.error(`Export failed:\n${err.stack}`);
@@ -439,6 +422,10 @@ class InstancePlugin extends BaseInstancePlugin {
 				entityCount: Number(platform.entity_count || 0),
 				isLocked: Boolean(platform.is_locked),
 				hasSpaceHub: Boolean(platform.has_space_hub),
+				spaceLocation: platform.space_location ?? null,
+				currentTarget: platform.current_target ?? null,
+				speed: typeof platform.speed === "number" ? platform.speed : 0,
+				state: platform.state ?? null,
 			}));
 		} catch (err) {
 			this.logger.error(`List platforms failed:\\n${err.stack}`);

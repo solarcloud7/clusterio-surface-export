@@ -22,7 +22,7 @@
       "table_size",
       "log"
     ],
-    "Lua.runtime.version": "Lua 5.2",    
+    "Lua.runtime.version": "Lua 5.2",
     "Lua.diagnostics.disable": [
       "lowercase-global"
     ],
@@ -95,7 +95,6 @@
         "label": "Deploy: Increment Version & Rebuild Cluster",
         "type": "shell",
         "command": ".\\tools\\deploy-cluster.ps1",
-        "args": [],
         "group": "build",
         "problemMatcher": [],
         "presentation": {
@@ -104,20 +103,63 @@
         }
       },
       {
+        "label": "Deploy: Skip Increment & Rebuild",
+        "type": "shell",
+        "command": ".\\tools\\deploy-cluster.ps1",
+        "args": [
+          "-SkipIncrement"
+        ],
+        "group": "build",
+        "problemMatcher": [],
+        "presentation": {
+          "reveal": "always",
+          "panel": "dedicated"
+        }
+      },
+      {
+        "label": "Build: Web UI Only",
+        "type": "shell",
+        "command": "npm run build:web",
+        "options": {
+          "cwd": "${workspaceFolder}/docker/seed-data/external_plugins/surface_export"
+        },
+        "group": "build",
+        "problemMatcher": [],
+        "presentation": {
+          "reveal": "always",
+          "panel": "shared"
+        }
+      },
+      {
+        "label": "Patch and Reset (Hot Reload)",
+        "type": "shell",
+        "command": ".\\tools\\patch-and-reset.ps1",
+        "problemMatcher": [],
+        "presentation": {
+          "reveal": "always",
+          "focus": true,
+          "panel": "shared"
+        }
+      },
+      {
         "label": "Cluster: Show Status",
         "type": "shell",
         "command": ".\\tools\\show-cluster-status.ps1",
-        "args": [],
-        "group": "none",
-        "problemMatcher": []
+        "problemMatcher": [],
+        "presentation": {
+          "reveal": "always",
+          "panel": "shared"
+        }
       },
       {
         "label": "Cluster: Display Logs",
         "type": "shell",
         "command": ".\\tools\\check-cluster-logs.ps1",
-        "args": [],
-        "group": "none",
-        "problemMatcher": []
+        "problemMatcher": [],
+        "presentation": {
+          "reveal": "always",
+          "panel": "shared"
+        }
       },
       {
         "label": "Docker: Pull Base Images",
@@ -133,8 +175,7 @@
       {
         "label": "Docker: Get Admin Token",
         "type": "shell",
-        "command": "docker exec surface-export-controller cat /clusterio/tokens/config-control.json",
-        "group": "none",
+        "command": ".\\tools\\get-admin-token.ps1",
         "problemMatcher": [],
         "presentation": {
           "reveal": "always",
@@ -145,44 +186,76 @@
         "label": "Clusterio: Start All Instances",
         "type": "shell",
         "command": "docker exec surface-export-controller npx clusterioctl --log-level error instance start-all",
-        "group": "none",
         "problemMatcher": []
       },
       {
         "label": "Clusterio: Stop All Instances",
         "type": "shell",
         "command": "docker exec surface-export-controller npx clusterioctl --log-level error instance stop --all",
-        "group": "none",
         "problemMatcher": []
+      },
+      {
+        "label": "List Platforms",
+        "type": "shell",
+        "command": ".\\tools\\list-platforms.ps1",
+        "problemMatcher": [],
+        "presentation": {
+          "reveal": "always",
+          "panel": "shared"
+        }
+      },
+      {
+        "label": "Transfer: Instance 1 → 2",
+        "type": "shell",
+        "command": ".\\tools\\transfer-platform.ps1",
+        "args": [
+          "-PlatformIndex",
+          "${input:platformIndex}",
+          "-Direction",
+          "1to2"
+        ],
+        "problemMatcher": [],
+        "presentation": {
+          "reveal": "always",
+          "focus": true,
+          "panel": "shared"
+        }
+      },
+      {
+        "label": "Transfer: Instance 2 → 1",
+        "type": "shell",
+        "command": ".\\tools\\transfer-platform.ps1",
+        "args": [
+          "-PlatformIndex",
+          "${input:platformIndex}",
+          "-Direction",
+          "2to1"
+        ],
+        "problemMatcher": [],
+        "presentation": {
+          "reveal": "always",
+          "focus": true,
+          "panel": "shared"
+        }
       },
       {
         "label": "List Transaction Logs",
         "type": "shell",
         "command": ".\\tools\\list-transaction-logs.ps1",
-        "group": "none",
         "problemMatcher": [],
         "presentation": {
-          "echo": true,
           "reveal": "always",
-          "focus": false,
-          "panel": "shared",
-          "showReuseMessage": true,
-          "clear": false
+          "panel": "shared"
         }
       },
       {
         "label": "Get Latest Transaction Log",
         "type": "shell",
         "command": ".\\tools\\get-transaction-log.ps1",
-        "group": "none",
         "problemMatcher": [],
         "presentation": {
-          "echo": true,
           "reveal": "always",
-          "focus": false,
-          "panel": "shared",
-          "showReuseMessage": true,
-          "clear": false
+          "panel": "shared"
         }
       },
       {
@@ -193,30 +266,62 @@
           "-TransferId",
           "${input:transferId}"
         ],
-        "group": "none",
         "problemMatcher": [],
         "presentation": {
-          "echo": true,
           "reveal": "always",
-          "focus": false,
-          "panel": "shared",
-          "showReuseMessage": true,
-          "clear": false
+          "panel": "shared"
         }
       },
       {
-        "label": "Patch and Reset (Hot Reload)",
+        "label": "Logs: Import & Loss Analysis",
         "type": "shell",
-        "command": ".\\tools\\patch-and-reset.ps1",
-        "group": "none",
+        "command": ".\\tools\\check-import-logs.ps1",
+        "args": [
+          "-Instance",
+          "${input:instanceNumber}",
+          "-Pattern",
+          "${input:logPattern}"
+        ],
         "problemMatcher": [],
         "presentation": {
-          "echo": true,
+          "reveal": "always",
+          "panel": "shared"
+        }
+      },
+      {
+        "label": "Inspect: Live Fluid State",
+        "type": "shell",
+        "command": ".\\tools\\inspect-fluids.ps1",
+        "args": [
+          "-Instance",
+          "${input:instanceNumber}"
+        ],
+        "problemMatcher": [],
+        "presentation": {
+          "reveal": "always",
+          "panel": "shared"
+        }
+      },
+      {
+        "label": "Test: Entity Roundtrip",
+        "type": "shell",
+        "command": ".\\tests\\integration\\entity-roundtrip\\run-tests.ps1",
+        "problemMatcher": [],
+        "presentation": {
           "reveal": "always",
           "focus": true,
-          "panel": "shared",
-          "showReuseMessage": true,
-          "clear": false
+          "panel": "shared"
+        }
+      },
+      {
+        "label": "Test: Platform Roundtrip",
+        "type": "shell",
+        "command": ".\\tests\\integration\\platform-roundtrip\\run-tests.ps1",
+        "problemMatcher": [],
+        "presentation": {
+          "reveal": "always",
+          "focus": true,
+          "panel": "shared"
         }
       }
     ],
@@ -226,6 +331,26 @@
         "type": "promptString",
         "description": "Enter Transfer ID",
         "default": "latest"
+      },
+      {
+        "id": "platformIndex",
+        "type": "promptString",
+        "description": "Platform index (use 'List Platforms' task to find it)",
+        "default": "2"
+      },
+      {
+        "id": "instanceNumber",
+        "type": "pickString",
+        "description": "Which instance?",
+        "options": ["1", "2"],
+        "default": "2"
+      },
+      {
+        "id": "logPattern",
+        "type": "pickString",
+        "description": "Log filter",
+        "options": ["all", "fluids", "loss", "import", "transfer"],
+        "default": "all"
       }
     ]
   }

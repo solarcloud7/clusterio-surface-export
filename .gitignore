@@ -32,6 +32,9 @@ docker/server-settings.json
 # Seed saves needed for CI integration tests
 !docker/seed-data/hosts/**/*.zip
 
+# Built web UI (rebuild with npm run build:web)
+docker/seed-data/external_plugins/surface_export/dist/
+
 # Node dependencies
 **/node_modules/
 

@@ -58,6 +58,22 @@ if (Test-Path $ModuleJsonPath) {
 Write-Host "✓ Version updated" -ForegroundColor Green
 Write-Host ""
 
+# Build web UI (so dist/ matches source)
+Write-Host "Building web UI..." -ForegroundColor Yellow
+$PluginDir = Join-Path $WorkspaceRoot "docker/seed-data/external_plugins/surface_export"
+Push-Location $PluginDir
+try {
+    npm install --silent 2>$null
+    npm run build:web
+    if ($LASTEXITCODE -ne 0) {
+        throw "Web UI build failed"
+    }
+    Write-Host "✓ Web UI built" -ForegroundColor Green
+} finally {
+    Pop-Location
+}
+Write-Host ""
+
 # Check if cluster is running
 Write-Host "Checking cluster status..." -ForegroundColor Yellow
 $controllerStatus = docker ps --filter "name=surface-export-controller" --format "{{.Status}}"

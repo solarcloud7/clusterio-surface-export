@@ -88,18 +88,32 @@ if (-not $KeepData) {
     Write-Host "Keeping existing data volumes (-KeepData)" -ForegroundColor Yellow
 }
 
-# 5. Pull latest base images
+# 5. Build web UI (so dist/ matches source)
+Write-Host "Building web UI..." -ForegroundColor Cyan
+Push-Location $PluginPath
+try {
+    npm install --silent 2>$null
+    npm run build:web
+    if ($LASTEXITCODE -ne 0) {
+        throw "Web UI build failed"
+    }
+    Write-Host "Web UI built successfully" -ForegroundColor Green
+} finally {
+    Pop-Location
+}
+
+# 6. Pull latest base images
 Write-Host "Pulling latest base images..." -ForegroundColor Cyan
 docker compose pull
 
-# 6. Start the cluster
+# 7. Start the cluster
 Write-Host "Starting cluster..." -ForegroundColor Cyan
 docker compose up -d
 
 Write-Host "Cluster started with plugin version $NewVersion" -ForegroundColor Green
 Write-Host ""
 
-# 7. Follow controller logs until initialization completes
+# 8. Follow controller logs until initialization completes
 Write-Host "Controller Logs (streaming - waiting for initialization):" -ForegroundColor Cyan
 Write-Host "================================================" -ForegroundColor DarkGray
 
@@ -125,7 +139,7 @@ docker logs -f surface-export-controller 2>&1 | ForEach-Object {
 
 Write-Host "================================================" -ForegroundColor DarkGray
 
-# 8. Retrieve admin token
+# 9. Retrieve admin token
 Write-Host ""
 Write-Host "Retrieving admin token..." -ForegroundColor Cyan
 Start-Sleep -Seconds 2

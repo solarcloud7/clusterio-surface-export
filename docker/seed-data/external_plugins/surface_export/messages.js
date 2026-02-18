@@ -48,7 +48,6 @@ class ExportPlatformRequest {
 				error: { type: "string" },
 			},
 			required: ["success"],
-			additionalProperties: false,
 		},
 		fromJSON(json) {
 			return json;
@@ -94,7 +93,6 @@ class GetPlatformTreeRequest {
 				unassignedInstances: { type: "array", items: { type: "object" } },
 			},
 			required: ["revision", "generatedAt", "forceName", "hosts", "unassignedInstances"],
-			additionalProperties: false,
 		},
 		fromJSON(json) {
 			return json;
@@ -163,7 +161,6 @@ class ListTransactionLogsRequest {
 					"error",
 					"lastEventAt",
 				],
-				additionalProperties: false,
 			},
 		},
 		fromJSON(json) {
@@ -409,7 +406,6 @@ class ImportPlatformRequest {
 				error: { type: "string" },
 			},
 			required: ["success"],
-			additionalProperties: false,
 		},
 		fromJSON(json) {
 			return json;
@@ -452,7 +448,6 @@ class ListExportsRequest {
 					size: { type: "integer" },
 				},
 				required: ["exportId", "platformName", "instanceId", "timestamp", "size"],
-				additionalProperties: false,
 			},
 		},
 		fromJSON(json) {
@@ -503,7 +498,6 @@ class TransferPlatformRequest {
 				message: { type: "string" },
 			},
 			required: ["success"],
-			additionalProperties: false,
 		},
 		fromJSON(json) {
 			return json;
@@ -559,7 +553,6 @@ class StartPlatformTransferRequest {
 				message: { type: "string" },
 			},
 			required: ["success"],
-			additionalProperties: false,
 		},
 		fromJSON(json) {
 			return json;
@@ -613,6 +606,11 @@ class InstanceListPlatformsRequest {
 							surfaceName: { type: ["string", "null"] },
 							entityCount: { type: "integer" },
 							isLocked: { type: "boolean" },
+							hasSpaceHub: { type: "boolean" },
+							spaceLocation: { type: ["string", "null"] },
+							currentTarget: { type: ["string", "null"] },
+							speed: { type: "number" },
+							state: { type: ["string", "null"] },
 						},
 						required: [
 							"platformIndex",
@@ -622,13 +620,12 @@ class InstanceListPlatformsRequest {
 							"surfaceName",
 							"entityCount",
 							"isLocked",
+							"hasSpaceHub",
 						],
-						additionalProperties: false,
 					},
 				},
 			},
 			required: ["instanceId", "instanceName", "forceName", "platforms"],
-			additionalProperties: false,
 		},
 		fromJSON(json) {
 			return json;
@@ -678,7 +675,6 @@ class ImportPlatformFromFileRequest {
 				error: { type: "string" },
 			},
 			required: ["success"],
-			additionalProperties: false,
 		},
 		fromJSON(json) {
 			return json;
@@ -802,7 +798,6 @@ class DeleteSourcePlatformRequest {
 				error: { type: "string" },
 			},
 			required: ["success"],
-			additionalProperties: false,
 		},
 		fromJSON(json) {
 			return json;
@@ -849,7 +844,6 @@ class UnlockSourcePlatformRequest {
 				error: { type: "string" },
 			},
 			required: ["success"],
-			additionalProperties: false,
 		},
 		fromJSON(json) {
 			return json;
@@ -902,7 +896,6 @@ class TransferStatusUpdate {
 				error: { type: "string" },
 			},
 			required: ["success"],
-			additionalProperties: false,
 		},
 		fromJSON(json) {
 			return json;
@@ -951,7 +944,6 @@ class GetTransactionLogRequest {
 				error: { type: "string" },
 			},
 			required: ["success"],
-			additionalProperties: false,
 		},
 		fromJSON(json) {
 			return json;
