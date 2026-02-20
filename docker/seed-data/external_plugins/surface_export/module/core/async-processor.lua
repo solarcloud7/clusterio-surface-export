@@ -1194,17 +1194,46 @@ local function complete_import_job(job)
   if is_transfer and has_verification then
     -- NOTE: For transfers, entities are imported in deactivated state (active=false)
     -- so we don't need to freeze again. Just validate and then activate on success.
-    
+
+    -- Adjust expected counts to exclude items/fluids that were inside failed entities.
+    -- Those items are unrestorable by design — counting them as "expected" would cause
+    -- false validation failures for mod-mismatch or prototype-collision failures.
+    local adjusted_verification = job.platform_data.verification
+    local fel = job.failed_entity_losses
+    if fel and fel.entity_count > 0 then
+      local adjusted_items = {}
+      for k, v in pairs(adjusted_verification.item_counts or {}) do
+        adjusted_items[k] = v
+      end
+      for item_name, lost_count in pairs(fel.items) do
+        if adjusted_items[item_name] then
+          adjusted_items[item_name] = math.max(0, adjusted_items[item_name] - lost_count)
+        end
+      end
+      adjusted_verification = {
+        item_counts = adjusted_items,
+        fluid_counts = adjusted_verification.fluid_counts,
+      }
+      log(string.format("[Import] Adjusted expected totals: subtracted %d items across %d item types due to %d failed entities",
+        fel.total_items, table_size(fel.items), fel.entity_count))
+    end
+
     -- TransferValidation is required at top of file
     local success, result = TransferValidation.validate_import(
       job.target_surface,
-      job.platform_data.verification,
+      adjusted_verification,
       { skip_fluid_validation = true }  -- Fluids are deferred to post-activation
     )
 
     validation_result = result
+
+    -- Attach failed entity losses to result so it flows through to the transaction log
+    if job.failed_entity_losses and job.failed_entity_losses.entity_count > 0 then
+      result.failedEntityLosses = job.failed_entity_losses
+    end
+
     TransferValidation.store_validation_result(job.platform_name, result)
-    
+
     -- Debug export: Write validation result for analysis
     DebugExport.export_import_result({
       platform_name = job.platform_name,

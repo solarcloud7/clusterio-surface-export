@@ -268,6 +268,30 @@ function LossAnalysis.run(surface, entities_to_create, validation_result)
         end
     end
 
+    -- === FAILED ENTITY LOSS REPORT ===
+    if result.failedEntityLosses and result.failedEntityLosses.entity_count > 0 then
+        local fel = result.failedEntityLosses
+        log(string.format("[Loss Analysis] %d entities failed to place — %d items, %.1f fluids unrestorable (excluded from expected totals)",
+            fel.entity_count, fel.total_items, fel.total_fluids))
+        for _, ent in ipairs(fel.entities or {}) do
+            if ent.items > 0 or ent.fluids > 0 then
+                log(string.format("[Loss Analysis]   FAILED: %s (%s) at (%.1f,%.1f) — %d items, %.1f fluids",
+                    ent.name, ent.type,
+                    ent.position and (ent.position.x or ent.position[1]) or 0,
+                    ent.position and (ent.position.y or ent.position[2]) or 0,
+                    ent.items, ent.fluids))
+            else
+                log(string.format("[Loss Analysis]   FAILED: %s (%s) at (%.1f,%.1f) — no items or fluids",
+                    ent.name, ent.type,
+                    ent.position and (ent.position.x or ent.position[1]) or 0,
+                    ent.position and (ent.position.y or ent.position[2]) or 0))
+            end
+        end
+        if fel.entity_count > 50 then
+            log(string.format("[Loss Analysis]   ... and %d more failed entities (detail capped at 50)", fel.entity_count - 50))
+        end
+    end
+
     -- === UPDATE VALIDATION RESULT with post-activation counts ===
     result.totalActualItems = total_actual_items
     result.actualItemCounts = actual_item_counts
