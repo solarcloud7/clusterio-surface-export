@@ -3,8 +3,10 @@
 export function statusColor(status) {
 	switch (status) {
 	case "transporting":
+	case "in_progress":
 		return "processing";
 	case "awaiting_validation":
+	case "awaiting_completion":
 		return "gold";
 	case "completed":
 		return "success";
@@ -24,6 +26,7 @@ export function summaryFromTransferInfo(transferInfo, lastEventAt = null) {
 
 	return {
 		transferId: transferInfo.transferId || transferInfo.id || null,
+		operationType: transferInfo.operationType || "transfer",
 		platformName: transferInfo.platformName || "Unknown",
 		sourceInstanceId: transferInfo.sourceInstanceId ?? -1,
 		sourceInstanceName: transferInfo.sourceInstanceName ?? null,
@@ -436,6 +439,7 @@ export function buildDetailedLogSummary(detail, transferId) {
 	const latestEvent = events.length ? events[events.length - 1] : null;
 
 	const status = transferInfo?.status || summary.status || "unknown";
+	const operationType = transferInfo?.operationType || summary.operationType || "transfer";
 	let result = summary.result;
 	if (!result) {
 		if (status === "completed") {
@@ -471,6 +475,7 @@ export function buildDetailedLogSummary(detail, transferId) {
 
 	return {
 		transferId,
+		operationType,
 		result,
 		status,
 		totalDurationMs,

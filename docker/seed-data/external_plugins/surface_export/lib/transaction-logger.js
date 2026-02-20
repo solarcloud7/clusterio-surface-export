@@ -20,6 +20,7 @@ class TransactionLogger {
 	buildTransferInfo(transfer) {
 		return {
 			transferId: transfer.transferId,
+			operationType: transfer.operationType || "transfer",
 			exportId: transfer.exportId,
 			platformName: transfer.platformName,
 			platformIndex: transfer.platformIndex,
@@ -48,6 +49,7 @@ class TransactionLogger {
 		const info = this.buildTransferInfo(transfer);
 		return {
 			transferId,
+			operationType: info.operationType,
 			platformName: info.platformName,
 			sourceInstanceId: info.sourceInstanceId,
 			sourceInstanceName: info.sourceInstanceName,
@@ -110,6 +112,7 @@ class TransactionLogger {
 
 		return {
 			transferId,
+			operationType: info.operationType,
 			result: this.resolveTransferResult(info.status),
 			status: info.status,
 			totalDurationMs: durationMs,
@@ -157,6 +160,7 @@ class TransactionLogger {
 			if (!byId.has(persistedLog.transferId)) {
 				byId.set(persistedLog.transferId, {
 					transferId: persistedLog.transferId,
+					operationType: transferInfo.operationType || "transfer",
 					platformName: transferInfo.platformName || "Unknown",
 					sourceInstanceId: transferInfo.sourceInstanceId ?? -1,
 					sourceInstanceName: transferInfo.sourceInstanceName ?? null,
@@ -248,6 +252,7 @@ class TransactionLogger {
 			const logEntry = {
 				transferId,
 				transferInfo: {
+					operationType: transfer.operationType || "transfer",
 					exportId: transfer.exportId,
 					platformName: transfer.platformName,
 					sourceInstanceId: transfer.sourceInstanceId,

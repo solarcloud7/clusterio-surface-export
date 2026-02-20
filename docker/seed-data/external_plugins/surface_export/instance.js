@@ -296,7 +296,8 @@ class InstancePlugin extends BaseInstancePlugin {
 	 */
 	async exportPlatform(platformIndex, forceName = "player", targetInstanceId = null) {
 		const resolvedTargetId = Number(targetInstanceId);
-		const targetArg = Number.isInteger(resolvedTargetId) ? String(resolvedTargetId) : "nil";
+		const hasTargetInstance = Number.isInteger(resolvedTargetId) && resolvedTargetId > 0;
+		const targetArg = hasTargetInstance ? String(resolvedTargetId) : "nil";
 		this.logger.info(`Exporting platform index ${platformIndex} for force "${forceName}" (targetInstanceId=${targetArg})`);
 		
 		try {
@@ -615,7 +616,8 @@ class InstancePlugin extends BaseInstancePlugin {
 	 */
 	async handleExportPlatformRequest(request) {
 		const result = await this.exportPlatform(request.platformIndex, request.forceName, request.targetInstanceId);
-		if (result?.success && Number.isInteger(Number(request.targetInstanceId))) {
+		const numericTargetInstanceId = Number(request.targetInstanceId);
+		if (result?.success && Number.isInteger(numericTargetInstanceId) && numericTargetInstanceId > 0) {
 			this.controllerManagedTransferExports.add(result.exportId);
 		}
 		return result;
@@ -672,6 +674,7 @@ class InstancePlugin extends BaseInstancePlugin {
 		// Extract transfer metadata from platform data
 		const transferId = data.transfer_id;
 		const sourceInstanceId = data.source_instance_id;
+		const operationId = data.operation_id ? String(data.operation_id) : null;
 		
 		// Extract metrics from send_json payload
 		const metrics = data.metrics || null;
@@ -680,6 +683,27 @@ class InstancePlugin extends BaseInstancePlugin {
 		}
 
 		if (!transferId || !sourceInstanceId) {
+			if (operationId) {
+				try {
+					await this.instance.sendTo("controller", new messages.ImportOperationCompleteEvent({
+						operationId,
+						platformName: String(data.platform_name || "Unknown"),
+						instanceId: this.instance.id,
+						success: true,
+						error: null,
+						durationTicks: Number.isFinite(Number(data.duration_ticks)) ? Number(data.duration_ticks) : null,
+						entityCount: Number.isFinite(Number(data.entity_count)) ? Number(data.entity_count) : null,
+						metrics: metrics || null,
+					}));
+					await this.handlePlatformStateChanged({
+						platform_name: String(data.platform_name || ""),
+						force_name: String(data.force_name || "player"),
+					});
+				} catch (emitErr) {
+					this.logger.error(`Failed to forward import operation completion for ${operationId}: ${emitErr.message}`);
+				}
+				return;
+			}
 			this.logger.warn(`Import completed but missing transfer metadata, skipping validation. Received keys: ${Object.keys(data).join(', ')}`);
 			this.logger.warn(`  transfer_id=${data.transfer_id} (type=${typeof data.transfer_id}), source_instance_id=${data.source_instance_id} (type=${typeof data.source_instance_id})`);
 			return;

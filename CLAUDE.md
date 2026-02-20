@@ -128,7 +128,7 @@ docker/seed-data/external_plugins/surface_export/   # Plugin root
 ├── index.js              # Plugin registration, config fields, permissions
 ├── controller.js         # Controller: slim coordinator delegating to lib/
 ├── instance.js           # Instance: RCON bridge, platform listing, chunked import
-├── messages.js           # 19 message type definitions with JSON schemas
+├── messages.js           # Message type definitions with JSON schemas (transfer + export/import operations)
 ├── control.js            # CLI command registration (clusterioctl)
 ├── helpers.js            # Utility functions (chunking, escaping)
 ├── package.json          # Plugin metadata and dependencies
@@ -140,7 +140,8 @@ docker/seed-data/external_plugins/surface_export/   # Plugin root
 │   └── transfer-orchestrator.js  # Transfer lifecycle state machine
 ├── web/                  # React web UI (Ant Design + Module Federation)
 │   ├── index.jsx         # WebPlugin class, page wrapper, hooks
-│   ├── ManualTransferTab.jsx     # Platform tree + transfer UI
+│   ├── ManualTransferTab.jsx     # Platform tree + per-platform export / per-instance import UI
+│   ├── ExportsTab.jsx            # Stored export list + download/upload-import workflows
 │   ├── TransactionLogsTab.jsx    # Log viewer + validation display
 │   ├── utils.js          # Pure formatting functions (no React)
 │   └── style.css
@@ -186,7 +187,7 @@ docker-compose.yml        # Cluster definition (uses pre-built GHCR images)
 ```lua
 -- Key remote interface functions (call via /sc remote.call(...))
 -- Export:
-remote.call("surface_export", "export_platform", platform_index, force_name)
+remote.call("surface_export", "export_platform", platform_index, force_name, destination_instance_id)
 remote.call("surface_export", "export_platform_to_file", platform_index, force_name, filename)
 remote.call("surface_export", "get_export", export_id)
 remote.call("surface_export", "get_export_json", export_id)  -- JSON string for RCON
@@ -231,6 +232,25 @@ remote.call("surface_export", "run_tests")
 /step-tick <count>                # Debug: step N ticks
 /test-entity <json>               # Debug: test entity import
 ```
+
+## Export/Import Workflow Notes (Current)
+
+### Export for download
+- UI path: Manual Transfer per-platform **Export JSON** and Exports tab download action.
+- Controller path: `ExportPlatformForDownloadRequest` sends `ExportPlatformRequest` with `targetInstanceId: null`.
+- Instance/Lua path: destination must be Lua `nil` for export-only; otherwise export is treated as transfer.
+- Export-only jobs unlock the source platform after completion; transfer jobs keep source locked until cleanup.
+
+### Upload-import JSON
+- UI path: Manual Transfer per-instance **Import JSON** and Exports tab upload/import action.
+- Controller path: `ImportUploadedExportRequest` forwards payload via `ImportPlatformRequest` to target instance.
+- Controller injects `_operationId` into payload; Lua emits completion with `operation_id`.
+- Instance forwards `ImportOperationCompleteEvent` to controller so non-transfer imports can complete their transaction logs.
+
+### Transaction logs
+- Logs now include operation type: `transfer`, `export`, `import`.
+- `TransactionLogsTab` shows mixed operation history in one list with operation type tags.
+- Export/import operations are persisted using the same transaction log store as transfers.
 
 ## Common Pitfalls & Solutions
 
@@ -479,6 +499,11 @@ game.delete_surface(platform.surface)
 ```
 **Key file**: `instance.js` (`handleDeleteSourcePlatform` method)
 **Verified**: Empirically tested via RCON — `platform.destroy()` returns `ok=true, err=nil` but `/list-platforms` shows the platform unchanged. `game.delete_surface()` confirmed working.
+
+### 20. Export-Only Destination Must Be `nil` (Not `0`)
+**Symptom**: Export succeeds but source platform remains locked (looks stuck in UI).
+**Cause**: `Number(null) === 0` in JS. Passing `0` as destination to Lua is truthy, so export is treated as transfer and unlock is skipped.
+**Fix**: In `instance.js`, only treat `targetInstanceId` as a transfer destination if it is a positive integer (`> 0`); otherwise pass Lua `nil`.
 
 ## Factorio 2.0 Fluid API & Simulation Behavior
 

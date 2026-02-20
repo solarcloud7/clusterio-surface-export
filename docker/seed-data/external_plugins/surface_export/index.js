@@ -119,6 +119,7 @@ module.exports.plugin = {
 		messages.StartPlatformTransferRequest,
 		messages.InstanceListPlatformsRequest,
 		messages.TransferValidationEvent,
+		messages.ImportOperationCompleteEvent,
 		messages.DeleteSourcePlatformRequest,
 		messages.UnlockSourcePlatformRequest,
 		messages.TransferStatusUpdate,

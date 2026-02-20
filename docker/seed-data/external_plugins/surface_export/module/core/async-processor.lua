@@ -715,6 +715,7 @@ function AsyncProcessor.queue_import(json_data, new_platform_name, force_name, r
     -- Check both parsed_data (compressed format) and platform_data (decompressed)
     transfer_id = platform_data._transferId or parsed_data._transferId,
     source_instance_id = platform_data._sourceInstanceId or parsed_data._sourceInstanceId,
+    operation_id = platform_data._operationId or parsed_data._operationId,
     
     -- Store platform reference for unpausing after validation
     target_platform = new_platform,
@@ -746,10 +747,11 @@ function AsyncProcessor.queue_import(json_data, new_platform_name, force_name, r
     }
   }
   
-  log(string.format("[Import Job] Created job %s for platform '%s' (transfer_id=%s, source=%s)", 
+  log(string.format("[Import Job] Created job %s for platform '%s' (transfer_id=%s, source=%s, operation_id=%s)", 
     job_id, new_platform.name, 
     tostring(storage.async_jobs[job_id].transfer_id), 
-    tostring(storage.async_jobs[job_id].source_instance_id)))
+    tostring(storage.async_jobs[job_id].source_instance_id),
+    tostring(storage.async_jobs[job_id].operation_id)))
   
   return job_id
 end
@@ -1091,6 +1093,14 @@ local function complete_export_job(job)
     local unlock_success = SurfaceLock.unlock_platform(job.platform_name)
     if unlock_success then
       game.print(string.format("[Export] Platform %s unlocked - machines reactivated", job.platform_name), {0, 1, 0})
+      if clusterio_api and clusterio_api.send_json then
+        pcall(function()
+          clusterio_api.send_json("surface_platform_state_changed", {
+            platform_name = job.platform_name,
+            force_name = job.force_name,
+          })
+        end)
+      end
     end
   else
     log(string.format("[Export] Skipping unlock for transfer - platform %s will be deleted", job.platform_name))
@@ -1349,6 +1359,11 @@ local function complete_import_job(job)
       
       log(string.format("[send_json] Import complete with transfer metadata: transfer_id=%s, source=%s", 
         job.transfer_id, tostring(job.source_instance_id)))
+    end
+    if job.operation_id then
+      event_payload.operation_id = job.operation_id
+      log(string.format("[send_json] Import complete with operation metadata: operation_id=%s",
+        tostring(job.operation_id)))
     end
     clusterio_api.send_json("surface_export_import_complete", event_payload)
   end

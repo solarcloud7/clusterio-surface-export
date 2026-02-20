@@ -121,10 +121,29 @@ export default function TransactionLogsTab({ plugin, state }) {
 		() => (selectedDetails ? buildDetailedLogSummary(selectedDetails, selectedTransferId) : null),
 		[selectedDetails, selectedTransferId]
 	);
+	const formatInstanceLabel = (instanceName, instanceId) => {
+		if (instanceName) {
+			return instanceName;
+		}
+		if (typeof instanceId === "number" && instanceId > 0) {
+			return instanceId;
+		}
+		return "-";
+	};
 
 	const columns = [
 		{
-			title: "Transfer",
+			title: "Type",
+			dataIndex: "operationType",
+			key: "operationType",
+			render: operationType => (
+				<Tag color={operationType === "transfer" ? "blue" : "default"}>
+					{operationType || "transfer"}
+				</Tag>
+			),
+		},
+		{
+			title: "ID",
 			dataIndex: "transferId",
 			key: "transferId",
 			render: transferId => <Text code>{transferId}</Text>,
@@ -137,12 +156,12 @@ export default function TransactionLogsTab({ plugin, state }) {
 		{
 			title: "Source",
 			key: "source",
-			render: (_, row) => row.sourceInstanceName || row.sourceInstanceId,
+			render: (_, row) => formatInstanceLabel(row.sourceInstanceName, row.sourceInstanceId),
 		},
 		{
 			title: "Destination",
 			key: "destination",
-			render: (_, row) => row.targetInstanceName || row.targetInstanceId,
+			render: (_, row) => formatInstanceLabel(row.targetInstanceName, row.targetInstanceId),
 		},
 		{
 			title: "Status",
@@ -647,16 +666,18 @@ export default function TransactionLogsTab({ plugin, state }) {
 									{
 										key: "source",
 										metric: "Source",
-										value: detailedSummary.platform?.source?.instanceName
-											|| detailedSummary.platform?.source?.instanceId
-											|| "-",
+									value: formatInstanceLabel(
+										detailedSummary.platform?.source?.instanceName,
+										detailedSummary.platform?.source?.instanceId
+									),
 									},
 									{
 										key: "destination",
 										metric: "Destination",
-										value: detailedSummary.platform?.destination?.instanceName
-											|| detailedSummary.platform?.destination?.instanceId
-											|| "-",
+									value: formatInstanceLabel(
+										detailedSummary.platform?.destination?.instanceName,
+										detailedSummary.platform?.destination?.instanceId
+									),
 									},
 								]}
 							/>

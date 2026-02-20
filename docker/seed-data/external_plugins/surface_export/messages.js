@@ -299,6 +299,7 @@ class ListTransactionLogsRequest {
 				type: "object",
 				properties: {
 					transferId: { type: "string" },
+					operationType: { type: "string" },
 					platformName: { type: "string" },
 					sourceInstanceId: { type: "integer" },
 					sourceInstanceName: { type: ["string", "null"] },
@@ -925,6 +926,56 @@ class TransferValidationEvent {
 	}
 }
 
+class ImportOperationCompleteEvent {
+	static plugin = PLUGIN_NAME;
+	static type = "event";
+	static src = "instance";
+	static dst = "controller";
+	static jsonSchema = {
+		type: "object",
+		properties: {
+			operationId: { type: "string" },
+			platformName: { type: "string" },
+			instanceId: { type: "integer" },
+			success: { type: "boolean" },
+			error: { type: ["string", "null"] },
+			durationTicks: { type: ["integer", "null"] },
+			entityCount: { type: ["integer", "null"] },
+			metrics: { type: ["object", "null"] },
+		},
+		required: ["operationId", "platformName", "instanceId", "success"],
+		additionalProperties: false,
+	};
+
+	constructor(json) {
+		this.operationId = json.operationId;
+		this.platformName = json.platformName;
+		this.instanceId = json.instanceId;
+		this.success = json.success;
+		this.error = json.error ?? null;
+		this.durationTicks = json.durationTicks ?? null;
+		this.entityCount = json.entityCount ?? null;
+		this.metrics = json.metrics ?? null;
+	}
+
+	static fromJSON(json) {
+		return new ImportOperationCompleteEvent(json);
+	}
+
+	toJSON() {
+		return {
+			operationId: this.operationId,
+			platformName: this.platformName,
+			instanceId: this.instanceId,
+			success: this.success,
+			error: this.error,
+			durationTicks: this.durationTicks,
+			entityCount: this.entityCount,
+			metrics: this.metrics,
+		};
+	}
+}
+
 class DeleteSourcePlatformRequest {
 	static plugin = PLUGIN_NAME;
 	static type = "request";
@@ -1167,6 +1218,7 @@ module.exports = {
 	StartPlatformTransferRequest,
 	InstanceListPlatformsRequest,
 	TransferValidationEvent,
+	ImportOperationCompleteEvent,
 	DeleteSourcePlatformRequest,
 	UnlockSourcePlatformRequest,
 	TransferStatusUpdate,
