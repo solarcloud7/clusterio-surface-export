@@ -91,16 +91,16 @@ Base.admin_command("transfer-platform",
     ctx.print("💡 Use /list-platforms to track progress")
     ctx.print("═══════════════════════════════════════")
 
-    -- Send transfer request via IPC
-    local ipc_payload = {
+    -- Send transfer request via Clusterio send_json event channel
+    local event_payload = {
       platform_index = platform_index,
       platform_name = platform_name,
       force_name = force_name,
       destination_instance_id = dest_instance_id,
       job_id = job_id
     }
-    log(string.format("[Transfer Command] Sending IPC 'surface_transfer_request': platform='%s', dest_instance_id=%s (type=%s), job_id=%s",
+    log(string.format("[Transfer Command] Sending send_json event 'surface_transfer_request': platform='%s', dest_instance_id=%s (type=%s), job_id=%s",
       platform_name, tostring(dest_instance_id), type(dest_instance_id), job_id))
-    clusterio_api.send_json("surface_transfer_request", ipc_payload)
+    clusterio_api.send_json("surface_transfer_request", event_payload)
   end
 )

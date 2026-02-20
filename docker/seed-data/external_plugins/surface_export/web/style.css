@@ -29,3 +29,72 @@
 .surface-export-log-row-selected > td {
 	background: rgba(24, 144, 255, 0.12) !important;
 }
+
+.surface-export-gantt-scale {
+	display: block;
+}
+.surface-export-gantt-cell {
+	display: flex;
+	flex-direction: column;
+	gap: 4px;
+}
+
+.surface-export-gantt-track {
+	position: relative;
+	height: 14px;
+	border-radius: 999px;
+	background: rgba(0, 0, 0, 0.08);
+	overflow: hidden;
+}
+
+.surface-export-gantt-bar {
+	position: absolute;
+	top: 2px;
+	height: 10px;
+	border-radius: 999px;
+	opacity: 0.75;
+}
+
+.surface-export-gantt-marker {
+	position: absolute;
+	top: 0;
+	width: 2px;
+	height: 14px;
+	transform: translateX(-1px);
+}
+
+.surface-export-gantt-metric-marker {
+	position: absolute;
+	top: 1px;
+	width: 2px;
+	height: 12px;
+	background: rgba(255, 255, 255, 0.9);
+	transform: translateX(-1px);
+}
+
+.surface-export-gantt-metrics {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 4px;
+}
+
+.surface-export-gantt-metric-chip {
+	display: inline-block;
+	padding: 0 6px;
+	font-size: 11px;
+	line-height: 16px;
+	border-radius: 999px;
+	background: rgba(22, 119, 255, 0.12);
+	color: rgba(0, 0, 0, 0.88);
+	white-space: nowrap;
+}
+
+.surface-export-exports-body {
+	display: flex;
+	flex-direction: column;
+	gap: 16px;
+}
+
+.surface-export-upload-panel {
+	max-width: 640px;
+}

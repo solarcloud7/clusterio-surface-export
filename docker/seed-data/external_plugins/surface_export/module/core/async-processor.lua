@@ -1023,10 +1023,10 @@ local function complete_export_job(job)
     rcon.print(string.format("EXPORT_COMPLETE:%s", export_id))
   end
   
-  -- Send export completion notification to Clusterio plugin via IPC
-  -- Note: Don't send full data - it's too large for IPC. Plugin will retrieve it via remote interface.
+  -- Send export completion notification to Clusterio plugin via send_json event channel
+  -- Note: Don't send full data - it's too large for a send_json payload. Plugin retrieves it via remote interface.
   if clusterio_api and clusterio_api.send_json then
-    local ipc_data = {
+    local event_payload = {
       export_id = export_id,
       platform_name = job.platform_name,
       platform_index = job.platform_index,
@@ -1051,19 +1051,19 @@ local function complete_export_job(job)
     }
     
     if job.destination_instance_id then
-      log(string.format("[IPC] Sending export notification: %s (%d entities) → transfer to instance %d", 
+      log(string.format("[send_json] Sending export notification: %s (%d entities) → transfer to instance %d", 
         export_id, job.total_entities, job.destination_instance_id))
     else
-      log(string.format("[IPC] Sending export notification: %s (%d entities)", export_id, job.total_entities))
+      log(string.format("[send_json] Sending export notification: %s (%d entities)", export_id, job.total_entities))
     end
     local send_success, send_err = pcall(function()
-      clusterio_api.send_json("surface_export_complete", ipc_data)
+      clusterio_api.send_json("surface_export_complete", event_payload)
     end)
     
     if send_success then
-      log("[IPC] Export notification sent successfully")
+      log("[send_json] Export notification sent successfully")
     else
-      log(string.format("[IPC ERROR] Failed to send notification: %s", tostring(send_err)))
+      log(string.format("[send_json ERROR] Failed to send notification: %s", tostring(send_err)))
     end
   else
     log("[WARN] clusterio_api not available, export notification not sent to plugin")
@@ -1309,7 +1309,7 @@ local function complete_import_job(job)
   }
 
   if clusterio_api and clusterio_api.send_json then
-    local ipc_data = {
+    local event_payload = {
       job_id = job.job_id,
       platform_name = job.platform_name,
       entity_count = job.total_entities,
@@ -1339,19 +1339,18 @@ local function complete_import_job(job)
 
     -- Include transfer metadata if available
     if job.transfer_id then
-      ipc_data.transfer_id = job.transfer_id
-      ipc_data.source_instance_id = job.source_instance_id
+      event_payload.transfer_id = job.transfer_id
+      event_payload.source_instance_id = job.source_instance_id
       
       -- Include validation result for transfers
       if validation_result then
-        ipc_data.validation = validation_result
+        event_payload.validation = validation_result
       end
       
-      log(string.format("[IPC] Import complete with transfer metadata: transfer_id=%s, source=%s", 
+      log(string.format("[send_json] Import complete with transfer metadata: transfer_id=%s, source=%s", 
         job.transfer_id, tostring(job.source_instance_id)))
     end
-
-    clusterio_api.send_json("surface_export_import_complete", ipc_data)
+    clusterio_api.send_json("surface_export_import_complete", event_payload)
   end
 
   prune_results(25)

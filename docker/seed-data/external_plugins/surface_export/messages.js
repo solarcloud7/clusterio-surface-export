@@ -18,6 +18,7 @@ class ExportPlatformRequest {
 		properties: {
 			platformIndex: { type: "integer" },
 			forceName: { type: "string", default: "player" },
+			targetInstanceId: { type: ["integer", "null"], default: null },
 		},
 		required: ["platformIndex"],
 		additionalProperties: false,
@@ -26,6 +27,7 @@ class ExportPlatformRequest {
 	constructor(json) {
 		this.platformIndex = json.platformIndex;
 		this.forceName = json.forceName || "player";
+		this.targetInstanceId = json.targetInstanceId ?? null;
 	}
 
 	static fromJSON(json) {
@@ -36,6 +38,7 @@ class ExportPlatformRequest {
 		return {
 			platformIndex: this.platformIndex,
 			forceName: this.forceName,
+			targetInstanceId: this.targetInstanceId,
 		};
 	}
 
@@ -46,6 +49,167 @@ class ExportPlatformRequest {
 				success: { type: "boolean" },
 				exportId: { type: "string" },
 				error: { type: "string" },
+			},
+			required: ["success"],
+		},
+		fromJSON(json) {
+			return json;
+		},
+	};
+}
+
+class GetStoredExportRequest {
+	static plugin = PLUGIN_NAME;
+	static type = "request";
+	static src = "control";
+	static dst = "controller";
+	static permission = PERMISSIONS.LIST_EXPORTS;
+	static jsonSchema = {
+		type: "object",
+		properties: {
+			exportId: { type: "string" },
+		},
+		required: ["exportId"],
+		additionalProperties: false,
+	};
+
+	constructor(json) {
+		this.exportId = json.exportId;
+	}
+
+	static fromJSON(json) {
+		return new GetStoredExportRequest(json);
+	}
+
+	toJSON() {
+		return {
+			exportId: this.exportId,
+		};
+	}
+
+	static Response = {
+		jsonSchema: {
+			type: "object",
+			properties: {
+				success: { type: "boolean" },
+				error: { type: "string" },
+				exportId: { type: "string" },
+				platformName: { type: "string" },
+				instanceId: { type: "integer" },
+				timestamp: { type: "number" },
+				size: { type: "integer" },
+				exportData: { type: "object" },
+			},
+			required: ["success"],
+		},
+		fromJSON(json) {
+			return json;
+		},
+	};
+}
+
+class ImportUploadedExportRequest {
+	static plugin = PLUGIN_NAME;
+	static type = "request";
+	static src = "control";
+	static dst = "controller";
+	static permission = PERMISSIONS.TRANSFER_EXPORTS;
+	static jsonSchema = {
+		type: "object",
+		properties: {
+			targetInstanceId: { type: "integer" },
+			exportData: { type: "object" },
+			forceName: { type: "string", default: "player" },
+			platformName: { type: ["string", "null"], default: null },
+		},
+		required: ["targetInstanceId", "exportData"],
+		additionalProperties: false,
+	};
+
+	constructor(json) {
+		this.targetInstanceId = json.targetInstanceId;
+		this.exportData = json.exportData;
+		this.forceName = json.forceName || "player";
+		this.platformName = json.platformName ?? null;
+	}
+
+	static fromJSON(json) {
+		return new ImportUploadedExportRequest(json);
+	}
+
+	toJSON() {
+		return {
+			targetInstanceId: this.targetInstanceId,
+			exportData: this.exportData,
+			forceName: this.forceName,
+			platformName: this.platformName,
+		};
+	}
+
+	static Response = {
+		jsonSchema: {
+			type: "object",
+			properties: {
+				success: { type: "boolean" },
+				error: { type: "string" },
+				platformName: { type: "string" },
+				targetInstanceId: { type: "integer" },
+			},
+			required: ["success"],
+		},
+		fromJSON(json) {
+			return json;
+		},
+	};
+}
+
+class ExportPlatformForDownloadRequest {
+	static plugin = PLUGIN_NAME;
+	static type = "request";
+	static src = "control";
+	static dst = "controller";
+	static permission = PERMISSIONS.TRANSFER_EXPORTS;
+	static jsonSchema = {
+		type: "object",
+		properties: {
+			sourceInstanceId: { type: "integer" },
+			sourcePlatformIndex: { type: "integer" },
+			forceName: { type: "string", default: "player" },
+		},
+		required: ["sourceInstanceId", "sourcePlatformIndex"],
+		additionalProperties: false,
+	};
+
+	constructor(json) {
+		this.sourceInstanceId = json.sourceInstanceId;
+		this.sourcePlatformIndex = json.sourcePlatformIndex;
+		this.forceName = json.forceName || "player";
+	}
+
+	static fromJSON(json) {
+		return new ExportPlatformForDownloadRequest(json);
+	}
+
+	toJSON() {
+		return {
+			sourceInstanceId: this.sourceInstanceId,
+			sourcePlatformIndex: this.sourcePlatformIndex,
+			forceName: this.forceName,
+		};
+	}
+
+	static Response = {
+		jsonSchema: {
+			type: "object",
+			properties: {
+				success: { type: "boolean" },
+				error: { type: "string" },
+				exportId: { type: "string" },
+				platformName: { type: "string" },
+				instanceId: { type: "integer" },
+				timestamp: { type: "number" },
+				size: { type: "integer" },
+				exportData: { type: "object" },
 			},
 			required: ["success"],
 		},
@@ -996,6 +1160,9 @@ module.exports = {
 	ImportPlatformRequest,
 	ImportPlatformFromFileRequest,
 	ListExportsRequest,
+	GetStoredExportRequest,
+	ImportUploadedExportRequest,
+	ExportPlatformForDownloadRequest,
 	TransferPlatformRequest,
 	StartPlatformTransferRequest,
 	InstanceListPlatformsRequest,

@@ -45,6 +45,18 @@
         "validation_success": true,
         "fluidCountMatch": true
       }
+    },
+    {
+      "id": "test-platform-schedule-fidelity",
+      "name": "Platform schedule records, waits, and interrupts preserved",
+      "category": "schedule",
+      "description": "Verify LuaSpacePlatform schedule records, wait_conditions, and interrupts survive transfer roundtrip",
+      "expect": {
+        "validation_success": true,
+        "scheduleRecordsMatch": true,
+        "scheduleWaitConditionsMatch": true,
+        "scheduleInterruptsMatch": true
+      }
     }
   ]
 }

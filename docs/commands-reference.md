@@ -415,7 +415,7 @@ Check logs for import status
 **Notes:**
 - Requires Clusterio plugin to be running
 - Does NOT require admin (anyone can request import)
-- Plugin reads file and sends data via IPC
+- Plugin reads file and sends data via the Clusterio `send_json` event channel
 
 ---
 

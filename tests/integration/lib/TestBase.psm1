@@ -1035,9 +1035,20 @@ function Start-PlatformTransfer {
         [Parameter(Mandatory=$true)]
         [int]$DestInstanceId,
         [Parameter(Mandatory=$true)]
-        [int]$PlatformIndex
+        [int]$PlatformIndex,
+        [ValidateSet("rcon", "controller")]
+        [string]$TransferMode = "rcon"
     )
-    
+
+    if ($TransferMode -eq "controller") {
+        $sourceInstanceId = Get-ClusterioInstanceId -InstanceName $SourceInstance
+        if (-not $sourceInstanceId) {
+            throw "Could not resolve source instance ID for '$SourceInstance'"
+        }
+        $output = docker exec $script:DefaultController npx clusterioctl --config $script:ControlConfig surface-export start-transfer $sourceInstanceId $PlatformIndex $DestInstanceId player 2>&1
+        return $output
+    }
+
     $command = "/transfer-platform $PlatformIndex $DestInstanceId"
     $output = Send-Rcon -Instance $SourceInstance -Command $command
     return $output

@@ -177,6 +177,10 @@ class TransferOrchestrator {
 				return null;
 			}
 			const err = resp?.error || "Unknown unlock error";
+			if (/platform not locked|no locked platforms/i.test(err)) {
+				this.txLogger.logTransactionEvent(transferId, "rollback_success", `Source platform already unlocked (${err})`, {});
+				return null;
+			}
 			this.txLogger.logTransactionEvent(transferId, "rollback_failed", `Unlock failed: ${err}`, { error: err });
 			return err;
 		} catch (err) {
@@ -440,7 +444,11 @@ class TransferOrchestrator {
 			const t0 = Date.now();
 			const exportResponse = await this.plugin.controller.sendTo(
 				{ instanceId: sourceInstanceId },
-				new this.messages.ExportPlatformRequest({ platformIndex: sourcePlatformIndex, forceName })
+				new this.messages.ExportPlatformRequest({
+					platformIndex: sourcePlatformIndex,
+					forceName,
+					targetInstanceId: resolvedTarget.id,
+				})
 			);
 			const exportRequestMs = Date.now() - t0;
 			if (!exportResponse?.success || !exportResponse.exportId) {

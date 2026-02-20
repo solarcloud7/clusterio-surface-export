@@ -21,7 +21,7 @@ This directory is bind-mounted into containers at `/clusterio/external_plugins/s
 surface_export/
 ├── index.js              # Plugin definition (config fields, messages, permissions)
 ├── controller.js         # Controller logic (storage, transfer orchestration)
-├── instance.js           # Instance logic (RCON bridge, chunking, IPC)
+├── instance.js           # Instance logic (RCON bridge, chunking, send_json event handlers)
 ├── control.js            # CLI commands (surface-export list/transfer)
 ├── helpers.js            # Chunked JSON, hybrid Lua escaping
 ├── messages.js           # 11 message type definitions

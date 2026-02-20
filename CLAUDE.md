@@ -371,8 +371,8 @@ For Clusterio core architecture, see [Clusterio docs](https://github.com/cluster
 - JSON serialization for data exchange
 - Lua modules located in `/packages/host/modules/` and `/packages/host/lua/`
 - **Clusterio API path**: Always `require("modules/clusterio/api")` for save-patched modules (see Pitfall #12)
-- **IPC from Lua→Node**: `clusterio_api.send_json("channel_name", data_table)` — plugin listens via `server.handle("channel_name", handler)`
-- **IPC from Node→Lua**: `this.sendRcon("/sc ...")` to execute Lua via RCON
+- **Clusterio send_json event channel (Lua→Node)**: `clusterio_api.send_json("channel_name", data_table)` — plugin listens via `server.handle("channel_name", handler)`
+- **RCON transport (Node→Lua)**: `this.sendRcon("/sc ...")` to execute Lua via RCON
 
 ## Code Style and Conventions
 

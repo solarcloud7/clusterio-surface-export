@@ -14,6 +14,7 @@ import {
 import * as messageDefs from "../messages";
 import { summaryFromTransferInfo, mergeTransferSummary } from "./utils";
 import ManualTransferTab from "./ManualTransferTab";
+import ExportsTab from "./ExportsTab";
 import TransactionLogsTab from "./TransactionLogsTab";
 
 import "./style.css";
@@ -21,6 +22,10 @@ import "./style.css";
 const {
 	PERMISSIONS,
 	GetPlatformTreeRequest,
+	ListExportsRequest,
+	GetStoredExportRequest,
+	ImportUploadedExportRequest,
+	ExportPlatformForDownloadRequest,
 	ListTransactionLogsRequest,
 	GetTransactionLogRequest,
 	StartPlatformTransferRequest,
@@ -62,6 +67,11 @@ function SurfaceExportPage() {
 			label: "Manual Transfer",
 			children: <ManualTransferTab plugin={plugin} state={state} />,
 		},
+		{
+			key: "exports",
+			label: "Exports",
+			children: <ExportsTab plugin={plugin} state={state} />,
+		},
 	];
 	if (state.canViewLogs !== false) {
 		tabItems.push({
@@ -96,6 +106,9 @@ export class WebPlugin extends BaseWebPlugin {
 			tree: null,
 			loadingTree: false,
 			treeError: null,
+			exports: [],
+			loadingExports: false,
+			exportsError: null,
 			transferSummaries: [],
 			logDetails: {},
 			lastTreeRevision: 0,
@@ -183,9 +196,20 @@ export class WebPlugin extends BaseWebPlugin {
 	}
 
 	async refreshSnapshots() {
-		this.setState({ loadingTree: true, treeError: null });
+		this.setState({ loadingTree: true, treeError: null, loadingExports: true, exportsError: null });
 		try {
 			const treeResponse = await this.control.send(new GetPlatformTreeRequest({ forceName: "player" }));
+			let exports = this.state.exports;
+			let exportsError = null;
+			try {
+				const exportEntries = await this.control.send(new ListExportsRequest());
+				exports = Array.isArray(exportEntries)
+					? [...exportEntries].sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0))
+					: [];
+			} catch (err) {
+				exports = [];
+				exportsError = err.message || "Failed to list exports";
+			}
 			let transferSummaries = this.state.transferSummaries;
 			if (this.state.canViewLogs !== false) {
 				try {
@@ -211,6 +235,9 @@ export class WebPlugin extends BaseWebPlugin {
 					revision: treeResponse.revision,
 					generatedAt: treeResponse.generatedAt,
 				},
+				exports,
+				exportsError,
+				loadingExports: false,
 				transferSummaries,
 				loadingTree: false,
 				treeError: null,
@@ -218,9 +245,40 @@ export class WebPlugin extends BaseWebPlugin {
 		} catch (err) {
 			this.setState({
 				loadingTree: false,
+				loadingExports: false,
 				treeError: err.message || "Failed to refresh Surface Export state",
 			});
 		}
+	}
+
+	async listExports() {
+		this.setState({ loadingExports: true, exportsError: null });
+		try {
+			const exportEntries = await this.control.send(new ListExportsRequest());
+			const exports = Array.isArray(exportEntries)
+				? [...exportEntries].sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0))
+				: [];
+			this.setState({ exports, loadingExports: false, exportsError: null });
+			return exports;
+		} catch (err) {
+			this.setState({
+				exports: [],
+				loadingExports: false,
+				exportsError: err.message || "Failed to list exports",
+			});
+			throw err;
+		}
+	}
+
+	async getStoredExport(exportId) {
+		return this.control.send(new GetStoredExportRequest({ exportId }));
+	}
+	async exportPlatformForDownload(payload) {
+		return this.control.send(new ExportPlatformForDownloadRequest(payload));
+	}
+
+	async importUploadedExport(payload) {
+		return this.control.send(new ImportUploadedExportRequest(payload));
 	}
 
 	async startTransfer(payload) {

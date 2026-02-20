@@ -209,7 +209,7 @@ Uses dynamic discovery — no hardcoded inventory indices:
 
 After all phases:
 - **Validation**: `TransferValidation.validate_import()` compares live item/fluid counts against export verification
-- **IPC**: Send `surface_export_import_complete` to Node.js with metrics
+- **send_json event**: Send `surface_export_import_complete` to Node.js with metrics
 
 ### Transfer Safety Measures
 

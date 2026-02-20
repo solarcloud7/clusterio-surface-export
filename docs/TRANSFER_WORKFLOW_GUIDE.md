@@ -1,311 +1,148 @@
 # Transfer Workflow Guide
+Diagrams
 
-Complete reference for platform transfers between Factorio instances.
+## Entry Points
+- In-game command: `/transfer-platform <platform_index> <destination_instance_id>`
+- CLI (stored export): `npx clusterioctl surface-export transfer <exportId> <instanceId>`
+- List exports: `npx clusterioctl surface-export list`
 
-## Transfer Overview
+## Critical Invariants
+1. Transfer Start (lock source platform)
+   - completes in-flight cargo pod transitions
+   - freezes entities (`entity.active = false`) and records `frozen_states`
+   - hides/locks the surface so it can’t be modified during export
+2. Export Job (scanning)
+   - runs async export batches
+   - performs atomic single-tick belt scan before final verification
+   - stores compressed export data by `export_id`
+3. Factorio -> Instance Plugin (Clusterio `send_json` event channel)
+   - source Factorio emits `surface_export_complete`
+   - instance plugin fetches full export payload via `get_export_json(export_id)`
+4. Host -> Controller (Clusterio link messages)
+   - E3a: `PlatformExportEvent` (store export)
+   - E3b: `TransferPlatformRequest` (start transfer)
+5. Validation + controller decision
+   - I5a: `TransferValidationEvent` (destination plugin -> controller)
+   - I5b: Controller decision (success / failed / timeout)
+   - I5c-success: `DeleteSourcePlatformRequest` (cleanup path)
+   - I5c-failure: `UnlockSourcePlatformRequest` (rollback path)
 
-A transfer moves a space platform from one Clusterio instance to another. The process has 5 phases:
+## 1) Canonical End-to-End Transfer Sequence
+```mermaid
+sequenceDiagram
+autonumber
+participant U as Initialize Transfer
+participant SF as Factorio 1 (Lua)
+participant SI as Host 1
+participant C as Controller
+participant DI as Host 2
+participant DF as Factorio 2 (Lua)
 
-```
-Lock → Export → Transfer → Import → Validate/Activate
-```
+U->>SF: /command
+SF->>SF: Export Job
+SF->>SI: clusterio_api.send_json("surface_export_complete", data)
+SI->>C:  PlatformExportEvent + TransferPlatformRequest
+C->>DI: ImportPlatformRequest
+DI->>DF: Send import payload in chunks
+DF->>DF: Run async import + validation preparation
+DF->>DI: send_json event surface_export_import_complete
+DI->>C: TransferValidationEvent
 
-### Entity Lifecycle (Critical Invariant)
-
-The core guarantee of the transfer system is **item/fluid conservation**. This is enforced by keeping entities deactivated throughout the entire pipeline so machines never process resources during transfer:
-
-```
-  Source Instance                          Destination Instance
-  ┌─────────────────────┐                  ┌──────────────────────────────┐
-  │ 1. LOCK             │                  │                              │
-  │    Deactivate all    │                  │                              │
-  │    entities          │                  │                              │
-  │    Record frozen     │                  │                              │
-  │    states            │                  │                              │
-  │                      │                  │                              │
-  │ 2. EXPORT            │                  │                              │
-  │    Scan entities     │   ──transfer──►  │ 3. IMPORT                    │
-  │    (still frozen)    │                  │    Create entities INACTIVE  │
-  │    Count items ──────│──── expected ──►  │    Restore inventories       │
-  │    (stable snapshot) │                  │    Restore fluids, belts     │
-  │                      │                  │    Restore connections       │
-  │                      │                  │    (entities STILL inactive) │
-  │                      │                  │                              │
-  │                      │                  │ 4. VALIDATE                  │
-  │                      │                  │    Count items (stable ──────│── compare
-  │                      │                  │    snapshot, nothing active) │
-  │                      │                  │                              │
-  │                      │  ◄── success ──  │ 5. ACTIVATE                  │
-  │ Delete source        │                  │    Restore original active   │
-  │ platform             │                  │    states from frozen_states │
-  │                      │  ◄── failure ──  │    (or leave deactivated     │
-  │ Unlock & reactivate  │                  │     on failure)              │
-  └─────────────────────┘                  └──────────────────────────────┘
-```
-
-**Why this matters**: If entities were activated before validation, machines would consume inputs and produce outputs during the ticks between activation and counting. A furnace smelting iron ore into iron plates during validation would cause a mismatch (iron-ore lost, iron-plate gained) even though nothing was actually wrong.
-
-**Automatic transfer** (recommended): The `/transfer-platform` command or `surface-export transfer` CLI command handles all phases automatically with rollback on failure.
-
-**Manual transfer**: Individual commands/API calls for each phase. Useful for debugging or custom workflows.
-
-## Automatic Transfer
-
-### Via In-Game Command
-
-```
-/transfer-platform <platform_index> <destination_instance_id>
-```
-
-Example:
-```
-/transfer-platform 1 2
+alt Validation success
+  C->>SI: DeleteSourcePlatformRequest
+  SI->>SF: Delete source platform surface
+  C->>C: Mark completed + persist log
+else Validation failed or timeout
+  C->>SI: UnlockSourcePlatformRequest
+  SI->>SF: Unlock source platform (rollback)
+  C->>C: Mark failed + persist log
+end
 ```
 
-This triggers the full pipeline automatically.
+## 2) Export Internals (Zoom-In: E1 -> E3)
+Scope: Source-side export work only. Starts when export is queued and ends when export data is stored on controller.
 
-### Via CLI
+```mermaid
+sequenceDiagram
+autonumber
+participant SF as Source Factorio (Lua)
+participant SI as Source Instance Plugin
+participant C as Controller
 
-```bash
-npx clusterioctl surface-export transfer <exportId> <instanceId>
+SF->>SF: Lock platform (cargo pods complete, entities freeze, surface hidden)
+SF->>SF: Capture platform schedule (records + interrupts + group)
+
+loop on_tick export batches
+  SF->>SF: Serialize entities (belt contents deferred)
+end
+
+SF->>SF: Atomic single-tick belt scan
+SF->>SF: Build verification counts + compress + store export by export_id
+SF->>SI: send_json event surface_export_complete {export_id, metrics}
+SI->>SF: RCON get_export_json(export_id)
+SF-->>SI: Export payload
+SI->>C: PlatformExportEvent(export_id, platformName, instanceId, exportData)
+C->>C: Store export in platformStorage
 ```
 
-Use `npx clusterioctl surface-export list` to find available export IDs.
+## 3) Import Internals (Zoom-In: I2 -> I5)
+Scope: Destination-side import work only. Starts when payload chunking begins and ends when validation event is sent to controller.
 
-### What Happens Internally
+```mermaid
+sequenceDiagram
+autonumber
+participant DI as Destination Instance Plugin
+participant DF as Destination Factorio (Lua)
 
-1. **Lock** — `SurfaceLock.lock_platform()`:
-   - Complete all in-flight cargo pods (capture items)
-   - Freeze all entities (`entity.active = false`), recording original states in `frozen_states`
-   - Hide surface from players
-   - **From this point, no entity on the platform processes any resources**
+loop Chunk transfer
+  DI->>DF: import_platform_chunk(platform, chunk, index, total, force)
+  DF->>DF: Store chunk session
+end
 
-2. **Export** — `AsyncProcessor.queue_export()`:
-   - Scan all entities across multiple ticks (batch_size per tick)
-   - Scan tiles
-   - Generate live verification counts (items/fluids) from **frozen surface** (stable snapshot)
-   - Include `frozen_states` in export data for restoring original active states on import
-   - Compress (deflate + base64)
-   - Store in `storage.platform_exports`
-   - Send `surface_export_complete` IPC to Node.js
+DF->>DF: Finalize chunks -> queue_import()
+DF->>DF: Parse/decompress payload + validate transfer schedule payload
+DF->>DF: Create platform + apply starter pack + pause platform
 
-3. **Transfer** — `instance.js` → `controller.js`:
-   - Node.js retrieves full export via RCON (`get_export_json`)
-   - Sends `PlatformExportEvent` to controller
-   - Controller stores export data, creates transfer record
-   - Controller sends `ImportPlatformRequest` to destination instance
+loop on_tick creation phases
+  DF->>DF: Tile restoration
+  DF->>DF: Hub mapping
+  DF->>DF: Entity creation (entities kept inactive)
+end
 
-4. **Import** — Destination `instance.js` → RCON:
-   - Sends export data to Factorio in chunks (100KB per chunk, hybrid JSON escaping)
-   - `import_platform_chunk` reassembles and queues import job
-   - 7-phase import process:
-     1. Tiles → 2. Hub mapping → 3. Entity creation (deactivated) → 4. Fluids → 5. Belts → 6. State/connections → 7. *(activation deferred for transfers)*
-   - **Entities are created deactivated** and remain deactivated through all restoration phases
-   - Platform paused during import to prevent fuel consumption
+DF->>DF: Deferred hub inventory restore
+DF->>DF: Belt restore (single tick)
+DF->>DF: Entity state/connections restore
+DF->>DF: TransferValidation.validate_import(skip_fluid_validation=true)
 
-5. **Validate & Activate** — `complete_import_job()` → `controller.js`:
-   - **Validation runs while entities are still deactivated** — counts are stable
-   - Destination runs `TransferValidation.validate_import()`:
-     - Compares live item/fluid counts against export verification
-     - Asymmetric tolerances (small losses OK, gains always flagged)
-   - **On success**: `ActiveStateRestoration` restores original active states from `frozen_states` → controller sends `DeleteSourcePlatformRequest` → source platform destroyed → transfer complete
-   - **On failure**: Entities left deactivated for investigation → controller sends `UnlockSourcePlatformRequest` → source platform unlocked and reactivated → rollback complete
-   - 120-second validation timeout triggers synthetic failure (rollback)
+alt validation success
+  DF->>DF: Unpause platform
+  DF->>DF: Restore active states from frozen_states
+  DF->>DF: Post-activation fluid restore
+else validation failure
+  DF->>DF: Keep destination paused/inactive for investigation
+end
 
-## Manual Transfer Steps
-
-### Step 1: Lock the Platform
-
-```
-/lock-platform <name_or_index>
+DF->>DF: Store validation result
+DF->>DI: send_json event surface_export_import_complete
+DI->>DF: RCON get_validation_result_json(platform_name)
+DF-->>DI: Validation JSON
 ```
 
-Or via RCON:
-```
-/sc remote.call('surface_export', 'lock_platform_for_transfer', <platform_index>, '<force_name>')
-```
+## Validation Summary
+- Item gains greater than 5 are failure.
+- Very large item loss (greater than 95% and greater than 100 absolute) is failure.
+- Unexpected item types above threshold are flagged.
+- Fluid gains greater than 500 are failure.
+- If expected fluid is greater than 1000 and actual is near zero, failure.
+- Transfer path defers full fluid reconciliation until post-activation analysis.
 
-Verify lock status:
-```
-/lock-status <name_or_index>
-```
+## Transaction Log Flow
+Common progression:
+- `transfer_created` -> `import_started` -> `validation_received` -> `transfer_completed`
+- Failure path includes rollback events (for example `rollback_attempt`, `rollback_success`, `transfer_failed`)
+- Timeout path records `validation_timeout` then rollback
 
-### Step 2: Export
-
-```
-/export-platform <platform_index>
-```
-
-Or via RCON:
-```
-/sc local job_id = remote.call('surface_export', 'export_platform', <platform_index>, '<force_name>') rcon.print(job_id or 'nil')
-```
-
-Wait for the export to complete (watch for in-game notification or poll `list_exports_json`).
-
-### Step 3: List Exports
-
-```
-/list-exports
-```
-
-Or via RCON:
-```
-/sc rcon.print(remote.call('surface_export', 'list_exports_json'))
-```
-
-Note the export ID for the next step.
-
-### Step 4: Transfer via CLI
-
-```bash
-npx clusterioctl surface-export transfer <exportId> <targetInstanceId>
-```
-
-### Step 5: Monitor
-
-The controller broadcasts status updates to both instances. Watch for:
-- "Importing platform..." (green)
-- "Validation passed ✓" (green) → source deleted automatically
-- "Validation failed ✗ - Rolling back..." (red) → source unlocked automatically
-
-### Manual Unlock (if needed)
-
-If a transfer fails and the source wasn't automatically unlocked:
-```
-/unlock-platform <name_or_index>
-```
-
-## Platform Locking Detail
-
-### What Gets Locked
-
-1. **Cargo pods**: Descending pods → items captured into hub inventory → `force_finish_descending()`. Ascending pods → `force_finish_ascending()`. Awaiting launch → destroyed.
-
-2. **Entities (35+ freezable types)**: Production (assembling machines, furnaces, mining drills, labs, rocket silos, agricultural towers), Power (reactors, generators, boilers, fusion), Logistics (inserters, loaders, pumps, roboports), Space (thrusters, asteroid collectors, cargo bays, hubs, landing pads), Misc (beacons, radar).
-
-3. **Surface visibility**: Hidden from players via `force.set_surface_hidden(surface, true)`.
-
-4. **Frozen state tracking**: Each entity's original `entity.active` state saved as `frozen_states[entity_id]`. This is critical — some entities are intentionally inactive (disabled by circuit conditions), and this state must be preserved.
-
-### Lock Data Structure
-
-```lua
-storage.locked_platforms[platform_name] = {
-  surface_index = ...,
-  force_name = ...,
-  frozen_states = { [entity_id] = was_active, ... },
-  original_hidden = ...,     -- Was surface already hidden?
-  original_schedule = ...,   -- Platform travel schedule backup
-}
-```
-
-## Import Phases Detail
-
-### Phase 1: Tile Restoration
-Place all tiles first — entities need foundation.
-
-### Phase 2: Platform Hub Mapping
-`space-platform-hub` is auto-created when the platform is created. Cannot be manually placed. This phase finds the existing hub and maps it into the entity_map so connections can reference it.
-
-### Phase 3: Entity Creation (Batched)
-- Processes `batch_size` entities per tick
-- Each entity: create → **immediately deactivate** (`entity.active = false`) → restore recipe → restore inventories (NOT fluids yet)
-- Deactivation before inventory restoration is critical: prevents machines from consuming items the instant a recipe is set
-- Skip `space-platform-hub` (handled by Phase 2)
-- Sort order: rails → underground-belt inputs → underground-belt outputs → pipe-to-ground → rest
-
-### Phase 4: Fluid Restoration
-- Groups entities by fluid network segment
-- Calculates total expected fluid per segment
-- Injects into storage tanks preferentially (highest capacity)
-- Clamps to segment capacity
-
-### Phase 5: Belt Restoration (Synchronous)
-- **Must complete in a single tick** — belts can't be deactivated
-- Uses `insert_at()` with exact positions from export
-- Items placed on correct transport line at correct belt position
-
-### Phase 6: Entity State Restoration
-- Control behaviors (circuit conditions, combinator signals)
-- Entity filters (filter inserters, loaders)
-- Logistic requests (requester/buffer chests)
-- Circuit connections (red/green wires)
-- Power connections (copper cables between electric poles)
-
-### Phase 7: Active State Restoration (Conditional)
-- **Non-transfer imports** (file import, manual import): Runs immediately — restores `entity.active` from `frozen_states`, machines start processing
-- **Transfer imports**: **DEFERRED** — entities stay deactivated through validation. Activation happens only after validation passes:
-  - **Success**: `ActiveStateRestoration.restore()` called with original `frozen_states` — respects which entities were originally active vs disabled, platform unpaused
-  - **Failure**: Entities left deactivated for investigation. Source platform rolled back.
-
-> **Design principle**: Entities must never process resources between counting (export verification) and re-counting (import validation). The deactivated state is the mechanism that guarantees item/fluid conservation.
-
-## Validation Rules
-
-### Item Validation
-| Condition | Result |
-|-----------|--------|
-| Gained items (not in export) | **FAIL** if >5 (tolerance for storage effects) |
-| Lost >95% AND >100 absolute items | **FAIL** |
-| Partial loss (<95% or <100 items) | **WARN** (machines may cap with overload_multiplier) |
-| Unexpected item type, quantity >20 | **FLAG** |
-
-### Fluid Validation
-| Condition | Result |
-|-----------|--------|
-| Gained >500 units | **FAIL** |
-| Expected >1000, actual <1 | **FAIL** (complete disappearance) |
-| Partial loss | **OK** (networks redistribute) |
-| Unexpected fluid type, significant quantity | **FLAG** |
-
-## Transaction Logs
-
-Every transfer generates a transaction log with timestamped events:
-
-- `transfer_created` → `import_started` → `validation_received` → `source_deleted` → `transfer_completed`
-- Or on failure: `transfer_created` → `import_started` → `validation_received` → `rollback_success` → `transfer_failed`
-- Or on timeout: `transfer_created` → `import_started` → `validation_timeout` → `rollback_success` → `transfer_failed`
-
-### Viewing Logs
-
-```bash
-# List all transfer logs
-.\tools\list-transaction-logs.ps1
-
-# Get latest log
-.\tools\get-transaction-log.ps1
-
-# Get specific log
-.\tools\get-transaction-log.ps1 -TransferId <transfer_id>
-```
-
-Each event includes `elapsedMs` from start and `deltaMs` from previous event, with phase timing (transmission, validation, cleanup).
-
-## Troubleshooting
-
-### Platform stuck in locked state
-```
-/unlock-platform <name_or_index>
-```
-This restores entity active states, unhides surface, and clears lock data.
-
-### Transfer times out (120s)
-The controller triggers a synthetic validation failure → automatic rollback. Check:
-- RCON connectivity between controller and destination instance
-- Destination instance actually running
-- Export data size (very large platforms may need more time)
-
-### Validation fails — items missing
-Common causes:
-- Machines with `overload_multiplier` recipes cap internal inventories differently
-- Items consumed during the multi-tick import (entities should be deactivated — this indicates a bug)
-- Belt items shifted (belt restoration should be single-tick — this indicates a bug)
-
-### Validation fails — items gained
-Should not happen with the current architecture (entities are deactivated during validation, belt items scanned atomically). If it does occur, investigate:
-- Was `ActiveStateRestoration` called before validation? (Bug — activation must be deferred for transfers)
-- Belt items being double-counted (atomic scan should prevent this)
-
-### "Platform name already exists"
-Import auto-appends `#N` suffix on conflict. The platform will be created as e.g., `"My Platform #2"`.
+Scripts:
+- `.\tools\list-transaction-logs.ps1`
+- `.\tools\get-transaction-log.ps1`
+- `.\tools\get-transaction-log.ps1 -TransferId <transfer_id>`

@@ -54,6 +54,7 @@ class InstancePlugin extends BaseInstancePlugin {
 		this.logger.info("Surface Export plugin initializing...");
 		this.logger.info(`Instance ID: ${this.instance.id}, Name: ${this.instance.config.get("instance.name")}`);
 		this.validateInstanceConfiguration();
+		this.controllerManagedTransferExports = new Set();
 		
 		// Listen for platform export completion from Factorio mod
 		// The mod sends data via clusterio_api.send_json("surface_export_complete", data)
@@ -133,13 +134,13 @@ class InstancePlugin extends BaseInstancePlugin {
 	 */
 	async handleExportComplete(data) {
 		const exportId = String(data.export_id || "").trim();
-		this.logger.info(`Export complete IPC received: export_id=${exportId}, platform=${data.platform_name}`);
+		this.logger.info(`Export complete send_json event received: export_id=${exportId}, platform=${data.platform_name}`);
 		this.logger.info(`  destination_instance_id=${data.destination_instance_id} (type=${typeof data.destination_instance_id}), job_id=${data.job_id}`);
 		this.logger.info(`  this.instance.id=${this.instance.id} (type=${typeof this.instance.id})`);
 		this.logger.info(`Platform export completed: ${exportId} (${data.platform_name})`);
 
 		if (this.isInvalidExportId(exportId)) {
-			this.logger.error(`Export completion IPC contained invalid export ID: ${JSON.stringify(data.export_id)}`);
+			this.logger.error(`Export completion send_json payload contained invalid export ID: ${JSON.stringify(data.export_id)}`);
 			return;
 		}
 
@@ -163,8 +164,13 @@ class InstancePlugin extends BaseInstancePlugin {
 			}));
 			this.logger.info(`Sent platform export ${exportId} to controller`);
 
-			// Check if auto-transfer was requested (destination_instance_id in IPC data)
+			// Check if auto-transfer was requested (destination_instance_id in send_json payload)
 			if (data.destination_instance_id) {
+				if (this.controllerManagedTransferExports.has(exportId)) {
+					this.controllerManagedTransferExports.delete(exportId);
+					this.logger.info(`Skipping instance auto-transfer for controller-managed export ${exportId}`);
+					return;
+				}
 				this.logger.info(`Auto-transfer requested: dest_instance_id=${data.destination_instance_id} (type=${typeof data.destination_instance_id})`);
 				this.logger.info(`  Sending TransferPlatformRequest to controller: exportId=${exportId}, targetInstanceId=${data.destination_instance_id}`);
 				
@@ -238,7 +244,7 @@ class InstancePlugin extends BaseInstancePlugin {
 	 * @param {Object} data - Transfer request data
 	 */
 	async handleTransferRequest(data) {
-		this.logger.info(`Transfer request IPC received: platform=${data.platform_name}, dest=${data.destination_instance_id} (type=${typeof data.destination_instance_id}), job_id=${data.job_id}`);
+		this.logger.info(`Transfer request send_json event received: platform=${data.platform_name}, dest=${data.destination_instance_id} (type=${typeof data.destination_instance_id}), job_id=${data.job_id}`);
 
 		try {
 			// Store transfer request for when export completes
@@ -285,15 +291,18 @@ class InstancePlugin extends BaseInstancePlugin {
 	 * Export a platform by platform index
 	 * @param {number} platformIndex - Index of platform to export
 	 * @param {string} forceName - Force name (default: "player")
+	 * @param {number|null} targetInstanceId - Optional destination instance for transfer-aware export locking
 	 * @returns {Object} Result with success status and exportId
 	 */
-	async exportPlatform(platformIndex, forceName = "player") {
-		this.logger.info(`Exporting platform index ${platformIndex} for force "${forceName}"`);
+	async exportPlatform(platformIndex, forceName = "player", targetInstanceId = null) {
+		const resolvedTargetId = Number(targetInstanceId);
+		const targetArg = Number.isInteger(resolvedTargetId) ? String(resolvedTargetId) : "nil";
+		this.logger.info(`Exporting platform index ${platformIndex} for force "${forceName}" (targetInstanceId=${targetArg})`);
 		
 		try {
 			// Call mod's remote interface to export platform - this returns the export_id
 			const rconResult = await this.sendRcon(
-				`/sc local export_id, err = remote.call("surface_export", "export_platform", ${platformIndex}, "${forceName.replace(/"/g, '\\\\"')}"); ` +
+				`/sc local export_id, err = remote.call("surface_export", "export_platform", ${platformIndex}, "${forceName.replace(/"/g, '\\\\\\"')}", ${targetArg}); ` +
 				`if export_id then rcon.print(export_id) else rcon.print("EXPORT_FAILED:" .. tostring(err or "unknown")) end`
 			);
 			this.logger.info(`Export RCON result: ${rconResult}`);
@@ -314,7 +323,7 @@ class InstancePlugin extends BaseInstancePlugin {
 			this.logger.info(`Export completed with ID: ${exportId}`);
 			
 			// The export data will be sent to the controller automatically via the
-			// IPC-triggered handleExportComplete() path, which uses the real platform
+			// send_json event-triggered handleExportComplete() path, which uses the real platform
 			// name from Lua (not the sanitized exportId). No need to send it here too.
 			return { success: true, exportId: exportId };
 		} catch (err) {
@@ -605,7 +614,11 @@ class InstancePlugin extends BaseInstancePlugin {
 	 * @returns {Object} Response with success status
 	 */
 	async handleExportPlatformRequest(request) {
-		return await this.exportPlatform(request.platformIndex, request.forceName);
+		const result = await this.exportPlatform(request.platformIndex, request.forceName, request.targetInstanceId);
+		if (result?.success && Number.isInteger(Number(request.targetInstanceId))) {
+			this.controllerManagedTransferExports.add(result.exportId);
+		}
+		return result;
 	}
 
 	/**
@@ -660,7 +673,7 @@ class InstancePlugin extends BaseInstancePlugin {
 		const transferId = data.transfer_id;
 		const sourceInstanceId = data.source_instance_id;
 		
-		// Extract metrics from IPC data
+		// Extract metrics from send_json payload
 		const metrics = data.metrics || null;
 		if (metrics) {
 			this.logger.info(`Import metrics: ${JSON.stringify(metrics)}`);

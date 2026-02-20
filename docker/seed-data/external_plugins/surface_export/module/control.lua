@@ -123,7 +123,7 @@ SurfaceExportModule.events = {
 			})
 		end)
 		if not ok2 then
-			log(string.format("[Surface Export] ERROR sending platform state IPC: %s", tostring(err)))
+			log(string.format("[Surface Export] ERROR sending platform state send_json event: %s", tostring(err)))
 		end
 	end,
 }

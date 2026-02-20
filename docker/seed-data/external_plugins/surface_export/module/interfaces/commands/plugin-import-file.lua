@@ -17,7 +17,7 @@ Base.command("plugin-import-file",
       ctx.print("New platform name: " .. new_name)
     end
 
-    -- Send request to plugin via IPC
+    -- Send request to plugin via Clusterio send_json event channel
     if clusterio_api then
       clusterio_api.send_json("surface_import_file_request", {
         filename = filename,

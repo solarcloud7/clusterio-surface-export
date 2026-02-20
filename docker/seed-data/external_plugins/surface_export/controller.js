@@ -70,6 +70,9 @@ class ControllerPlugin extends BaseControllerPlugin {
 		// Register message handlers
 		this.controller.handle(messages.PlatformExportEvent, this.handlePlatformExport.bind(this));
 		this.controller.handle(messages.ListExportsRequest, this.handleListExportsRequest.bind(this));
+		this.controller.handle(messages.GetStoredExportRequest, this.handleGetStoredExportRequest.bind(this));
+		this.controller.handle(messages.ImportUploadedExportRequest, this.handleImportUploadedExportRequest.bind(this));
+		this.controller.handle(messages.ExportPlatformForDownloadRequest, this.handleExportPlatformForDownloadRequest.bind(this));
 		this.controller.handle(messages.TransferPlatformRequest, this.orchestrator.handleTransferPlatformRequest.bind(this.orchestrator));
 		this.controller.handle(messages.StartPlatformTransferRequest, this.orchestrator.handleStartPlatformTransferRequest.bind(this.orchestrator));
 		this.controller.handle(messages.TransferValidationEvent, this.orchestrator.handleTransferValidation.bind(this.orchestrator));
@@ -174,6 +177,116 @@ class ControllerPlugin extends BaseControllerPlugin {
 
 	async handleListExportsRequest() {
 		return this.listStoredExports();
+	}
+
+	async handleGetStoredExportRequest(request) {
+		const { exportId } = request;
+		const stored = this.platformStorage.get(exportId);
+		if (!stored) {
+			return { success: false, error: `Export not found: ${exportId}` };
+		}
+
+		return {
+			success: true,
+			exportId: stored.exportId,
+			platformName: stored.platformName,
+			instanceId: stored.instanceId,
+			timestamp: stored.timestamp,
+			size: stored.size ?? Buffer.byteLength(JSON.stringify(stored.exportData || {}), "utf8"),
+			exportData: stored.exportData,
+		};
+	}
+
+	async handleImportUploadedExportRequest(request) {
+		const { targetInstanceId, exportData, forceName, platformName } = request;
+
+		if (!exportData || typeof exportData !== "object" || Array.isArray(exportData)) {
+			return { success: false, error: "exportData must be a non-null object" };
+		}
+
+		const resolved = this.platformTree.resolveTargetInstance(targetInstanceId);
+		if (!resolved || !resolved.instance || resolved.instance.isDeleted) {
+			return { success: false, error: `Target instance not found: ${targetInstanceId}` };
+		}
+
+		const importData = { ...exportData };
+		if (platformName && String(platformName).trim()) {
+			importData.platform_name = String(platformName).trim();
+		}
+		const resolvedForceName = forceName || importData?.platform?.force || "player";
+		const uploadExportId = `uploaded_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+
+		try {
+			const response = await this.controller.sendTo(
+				{ instanceId: resolved.id },
+				new messages.ImportPlatformRequest({
+					exportId: uploadExportId,
+					exportData: importData,
+					forceName: resolvedForceName,
+				})
+			);
+			if (!response?.success) {
+				return {
+					success: false,
+					error: response?.error || "Import failed on target instance",
+					targetInstanceId: resolved.id,
+				};
+			}
+
+			return {
+				success: true,
+				platformName: importData.platform_name || "Unknown",
+				targetInstanceId: resolved.id,
+			};
+		} catch (err) {
+			this.logger.error(`Upload import failed:\n${err.stack}`);
+			return { success: false, error: err.message };
+		}
+	}
+
+	async handleExportPlatformForDownloadRequest(request) {
+		const sourceInstanceId = Number(request.sourceInstanceId);
+		const sourcePlatformIndex = Number(request.sourcePlatformIndex);
+		const forceName = request.forceName || "player";
+
+		if (!Number.isInteger(sourceInstanceId)) {
+			return { success: false, error: `Invalid source instance: ${request.sourceInstanceId}` };
+		}
+		if (!Number.isInteger(sourcePlatformIndex) || sourcePlatformIndex < 1) {
+			return { success: false, error: `Invalid platform index: ${request.sourcePlatformIndex}` };
+		}
+
+		const sourceInstance = this.controller.instances.get(sourceInstanceId);
+		if (!sourceInstance || sourceInstance.isDeleted) {
+			return { success: false, error: `Unknown source instance ${sourceInstanceId}` };
+		}
+
+		try {
+			const exportResponse = await this.controller.sendTo(
+				{ instanceId: sourceInstanceId },
+				new messages.ExportPlatformRequest({
+					platformIndex: sourcePlatformIndex,
+					forceName,
+					targetInstanceId: null,
+				})
+			);
+			if (!exportResponse?.success || !exportResponse.exportId) {
+				return { success: false, error: exportResponse?.error || "Export failed" };
+			}
+
+			const stored = await this.orchestrator.waitForStoredExport(exportResponse.exportId, 60000);
+			return {
+				success: true,
+				exportId: stored.exportId,
+				platformName: stored.platformName,
+				instanceId: stored.instanceId,
+				timestamp: stored.timestamp,
+				size: stored.size ?? Buffer.byteLength(JSON.stringify(stored.exportData || {}), "utf8"),
+				exportData: stored.exportData,
+			};
+		} catch (err) {
+			return { success: false, error: err.message };
+		}
 	}
 
 	async handleGetPlatformTreeRequest(request) {

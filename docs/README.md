@@ -17,7 +17,7 @@ Clusterio plugin for exporting and importing Factorio 2.0 space platforms betwee
 ## Architecture
 
 ```
-Source Instance (Lua) ←IPC→ Instance Plugin (JS) ←WebSocket→ Controller Plugin (JS) ←WebSocket→ Destination Instance Plugin (JS) ←IPC→ Destination Instance (Lua)
+Source Instance (Lua) ←send_json event→ Instance Plugin (JS) ←WebSocket link→ Controller Plugin (JS) ←WebSocket link→ Destination Instance Plugin (JS) ←send_json event→ Destination Instance (Lua)
 ```
 
 **Components:**
@@ -123,7 +123,7 @@ remote.call("surface_export", "run_tests")
 surface_export/
 ├── index.js                  # Plugin definition, config fields, message registration
 ├── controller.js             # Controller: export storage, transfer orchestration
-├── instance.js               # Instance: RCON bridge, chunking, IPC handlers
+├── instance.js               # Instance: RCON bridge, chunking, send_json event handlers
 ├── control.js                # CLI: surface-export list/transfer subcommands
 ├── helpers.js                # sendChunkedJson, hybrid Lua escaping
 ├── messages.js               # 11 message type definitions

@@ -34,6 +34,8 @@ The clone step uses the same export/import system as transfers, ensuring it's a 
 ```powershell
 # Run all tests (clones "test" platform)
 .\run-tests.ps1
+# Run via controller orchestration (same path as browser UI Start Transfer)
+.\run-tests.ps1 -TransferMode controller
 
 # Run a specific test
 .\run-tests.ps1 -TestId "test-platform-basic"
@@ -53,6 +55,10 @@ The clone step uses the same export/import system as transfers, ensuring it's a 
 # Custom source/destination hosts
 .\run-tests.ps1 -SourceHost 1 -DestHost 2
 ```
+
+`TransferMode` options:
+- `rcon` (default): triggers `/transfer-platform` in-game command path
+- `controller`: triggers `StartPlatformTransferRequest` path (same as web UI manual transfer)
 
 ## Test Cases
 

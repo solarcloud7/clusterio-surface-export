@@ -27,6 +27,9 @@
 
 .PARAMETER ShowDetails
     Show detailed item/fluid mismatches
+
+.PARAMETER TransferMode
+    Transfer trigger path: rcon (/transfer-platform) or controller (StartPlatformTransferRequest, same as web UI)
 #>
 
 param(
@@ -36,7 +39,9 @@ param(
     [int]$SourceHost = 0,
     [int]$DestHost = 0,
     [switch]$SkipTransfer,
-    [switch]$ShowDetails
+    [switch]$ShowDetails,
+    [ValidateSet("rcon","controller")]
+    [string]$TransferMode = "rcon"
 )
 
 $ErrorActionPreference = "Stop"
@@ -59,6 +64,25 @@ $sourceInstance = "clusterio-host-$SourceHost-instance-1"
 $destInstance = "clusterio-host-$DestHost-instance-1"
 $sourceContainer = "surface-export-host-$SourceHost"
 $destContainer = "surface-export-host-$DestHost"
+
+function Convert-CanonicalJson {
+    param(
+        [Parameter(Mandatory = $false)]
+        [AllowNull()]
+        $Value
+    )
+    if ($null -eq $Value) { return "null" }
+    return ($Value | ConvertTo-Json -Depth 100 -Compress)
+}
+
+function Append-TestMessage {
+    param(
+        [string]$Current,
+        [string]$Next
+    )
+    if (-not $Current) { return $Next }
+    return "$Current; $Next"
+}
 
 # Resolve actual Clusterio instance ID for destination
 Write-Host "  Resolving destination instance ID..." -ForegroundColor Gray
@@ -87,6 +111,7 @@ Write-Host "  Source Platform: $SourcePlatform" -ForegroundColor White
 Write-Host "  Test Platform:   $TestPlatformName" -ForegroundColor White
 Write-Host "  Source Host:     host-$SourceHost" -ForegroundColor Gray
 Write-Host "  Dest Host:       host-$DestHost" -ForegroundColor Gray
+Write-Host "  Transfer Mode:   $TransferMode" -ForegroundColor Gray
 Write-Host ""
 
 # Step 1: Verify debug mode is enabled
@@ -133,7 +158,7 @@ if (-not $SkipTransfer) {
     
     # Step 6: Transfer the cloned platform
     Write-Host "  Triggering platform transfer..." -ForegroundColor Gray
-    $transferResult = Start-PlatformTransfer -SourceInstance $sourceInstance -DestInstanceId $destInstanceId -PlatformIndex $platformIndex
+    $transferResult = Start-PlatformTransfer -SourceInstance $sourceInstance -DestInstanceId $destInstanceId -PlatformIndex $platformIndex -TransferMode $TransferMode
     Write-Status "Transfer initiated" -Type success
     
     # Step 7: Wait for transfer to complete
@@ -234,6 +259,53 @@ if ($sourceFluidCounts) {
     }
 }
 
+# Build schedule fidelity comparisons (records, wait_conditions, interrupts)
+$sourcePlatformData = Get-SafeProperty $sourceData "platform"
+$destPlatformData = Get-SafeProperty $destData "platform"
+$sourceSchedule = Get-SafeProperty $sourcePlatformData "schedule"
+$destSchedule = Get-SafeProperty $destPlatformData "schedule"
+
+$sourceScheduleRecords = @()
+$destScheduleRecords = @()
+$sourceScheduleInterrupts = @()
+$destScheduleInterrupts = @()
+
+if ($null -ne $sourceSchedule) {
+    $sourceRecordsRaw = Get-SafeProperty $sourceSchedule "records"
+    $sourceInterruptsRaw = Get-SafeProperty $sourceSchedule "interrupts"
+    if ($null -ne $sourceRecordsRaw) { $sourceScheduleRecords = @($sourceRecordsRaw) }
+    if ($null -ne $sourceInterruptsRaw) { $sourceScheduleInterrupts = @($sourceInterruptsRaw) }
+}
+if ($null -ne $destSchedule) {
+    $destRecordsRaw = Get-SafeProperty $destSchedule "records"
+    $destInterruptsRaw = Get-SafeProperty $destSchedule "interrupts"
+    if ($null -ne $destRecordsRaw) { $destScheduleRecords = @($destRecordsRaw) }
+    if ($null -ne $destInterruptsRaw) { $destScheduleInterrupts = @($destInterruptsRaw) }
+}
+
+$sourceWaitConditions = @()
+foreach ($record in @($sourceScheduleRecords)) {
+    if ($null -ne $record) {
+        $sourceWaitConditions += ,(Get-SafeProperty $record "wait_conditions")
+    }
+}
+
+$destWaitConditions = @()
+foreach ($record in @($destScheduleRecords)) {
+    if ($null -ne $record) {
+        $destWaitConditions += ,(Get-SafeProperty $record "wait_conditions")
+    }
+}
+
+$sourceScheduleRecordCount = @($sourceScheduleRecords).Count
+$destScheduleRecordCount = @($destScheduleRecords).Count
+$sourceScheduleInterruptCount = @($sourceScheduleInterrupts).Count
+$destScheduleInterruptCount = @($destScheduleInterrupts).Count
+
+$scheduleRecordsMatch = (Convert-CanonicalJson $sourceScheduleRecords) -eq (Convert-CanonicalJson $destScheduleRecords)
+$scheduleWaitConditionsMatch = (Convert-CanonicalJson $sourceWaitConditions) -eq (Convert-CanonicalJson $destWaitConditions)
+$scheduleInterruptsMatch = (Convert-CanonicalJson $sourceScheduleInterrupts) -eq (Convert-CanonicalJson $destScheduleInterrupts)
+
 # Run test assertions
 Write-TestHeader "Test Results"
 
@@ -318,6 +390,33 @@ foreach ($test in $FilteredTests) {
             $message = "$($fluidMismatches.Count) fluid type(s) mismatched"
         }
     }
+
+    # Check schedule record fidelity
+    $expectScheduleRecords = Get-SafeProperty $expect "scheduleRecordsMatch"
+    if ($expectScheduleRecords -eq $true) {
+        if (-not $scheduleRecordsMatch) {
+            $testPassed = $false
+            $message = Append-TestMessage $message "Schedule records mismatch: source=$sourceScheduleRecordCount, dest=$destScheduleRecordCount"
+        }
+    }
+
+    # Check schedule wait-condition fidelity (nested in records)
+    $expectScheduleWaitConditions = Get-SafeProperty $expect "scheduleWaitConditionsMatch"
+    if ($expectScheduleWaitConditions -eq $true) {
+        if (-not $scheduleWaitConditionsMatch) {
+            $testPassed = $false
+            $message = Append-TestMessage $message "Schedule wait_conditions mismatch"
+        }
+    }
+
+    # Check schedule interrupt fidelity
+    $expectScheduleInterrupts = Get-SafeProperty $expect "scheduleInterruptsMatch"
+    if ($expectScheduleInterrupts -eq $true) {
+        if (-not $scheduleInterruptsMatch) {
+            $testPassed = $false
+            $message = Append-TestMessage $message "Schedule interrupts mismatch: source=$sourceScheduleInterruptCount, dest=$destScheduleInterruptCount"
+        }
+    }
     
     # Record result
     if ($testPassed) {
@@ -339,6 +438,15 @@ foreach ($test in $FilteredTests) {
                     Write-Host "      ⚠️  $($m.Fluid): source=$($m.Source), dest=$($m.Dest)" -ForegroundColor DarkYellow
                 }
             }
+            if ($expectScheduleRecords -and -not $scheduleRecordsMatch) {
+                Write-Host "      ⚠️  Schedule records differ: source=$sourceScheduleRecordCount, dest=$destScheduleRecordCount" -ForegroundColor DarkYellow
+            }
+            if ($expectScheduleWaitConditions -and -not $scheduleWaitConditionsMatch) {
+                Write-Host "      ⚠️  Schedule wait_conditions differ between source and destination records" -ForegroundColor DarkYellow
+            }
+            if ($expectScheduleInterrupts -and -not $scheduleInterruptsMatch) {
+                Write-Host "      ⚠️  Schedule interrupts differ: source=$sourceScheduleInterruptCount, dest=$destScheduleInterruptCount" -ForegroundColor DarkYellow
+            }
         }
     }
 }
@@ -353,6 +461,8 @@ Write-Host "  Source Platform: $SourcePlatform" -ForegroundColor Gray
 Write-Host "  Test Platform:   $TestPlatformName" -ForegroundColor Gray
 Write-Host "  Source Entities: $sourceEntityCount" -ForegroundColor Gray
 Write-Host "  Dest Entities:   $destEntityCount" -ForegroundColor Gray
+Write-Host "  Source Schedule: $sourceScheduleRecordCount records, $sourceScheduleInterruptCount interrupts" -ForegroundColor Gray
+Write-Host "  Dest Schedule:   $destScheduleRecordCount records, $destScheduleInterruptCount interrupts" -ForegroundColor Gray
 Write-Host ""
 
 Write-TestSummary -Passed $passed -Failed $failed -Skipped $skipped

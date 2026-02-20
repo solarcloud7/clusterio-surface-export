@@ -5,7 +5,7 @@ local Util = require("modules/surface_export/utils/util")
 
 local PlatformSchedule = {}
 
---- Deep clone a value through JSON to guarantee compatibility with IPC/storage.
+--- Deep clone a value through JSON to guarantee compatibility with send_json payloads/storage.
 --- @param value any
 --- @return table|nil, string|nil
 local function json_clone(value)
