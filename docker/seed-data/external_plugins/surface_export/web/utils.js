@@ -1,5 +1,27 @@
 "use strict";
 
+/**
+ * Build the URL for a named planet's icon.
+ * Served by the controller; authenticated via token query param.
+ * @param {string} planetName
+ * @param {string} token - Clusterio auth token
+ * @returns {string}
+ */
+export function planetIconUrl(planetName, token) {
+	return `/api/surface_export/planet-icon/${encodeURIComponent(planetName)}?token=${token}`;
+}
+
+/**
+ * Build the URL for an arbitrary Factorio asset path ("__mod__/path/to/file.png").
+ * Served by the controller; authenticated via token query param.
+ * @param {string} factorioPath - e.g. "__maraxsis__/graphics/icons/planet.png"
+ * @param {string} token - Clusterio auth token
+ * @returns {string}
+ */
+export function factorioAssetUrl(factorioPath, token) {
+	return `/api/surface_export/asset?path=${encodeURIComponent(factorioPath)}&token=${token}`;
+}
+
 export function statusColor(status) {
 	switch (status) {
 	case "transporting":
@@ -27,6 +49,9 @@ export function summaryFromTransferInfo(transferInfo, lastEventAt = null) {
 	return {
 		transferId: transferInfo.transferId || transferInfo.id || null,
 		operationType: transferInfo.operationType || "transfer",
+		exportId: transferInfo.exportId || null,
+		artifactSizeBytes: transferInfo.artifactSizeBytes ?? null,
+		downloadable: false,
 		platformName: transferInfo.platformName || "Unknown",
 		sourceInstanceId: transferInfo.sourceInstanceId ?? -1,
 		sourceInstanceName: transferInfo.sourceInstanceName ?? null,

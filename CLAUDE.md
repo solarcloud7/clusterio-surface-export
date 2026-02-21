@@ -26,7 +26,14 @@ This project provides tools for exporting and importing Factorio Space Age platf
 - Host 2: `clusterio-host-2` → Instance: `clusterio-host-2-instance-1` (ports 34200-34209)
 - Runtime data in Docker volumes (not bind-mounted directories)
 - Seed data convention from [solarcloud7/clusterio-docker](https://github.com/solarcloud7/clusterio-docker)
-- **Seeding is idempotent**: Fixed in base image — `seed-instances.sh` checks if instance exists before creating, controller writes `.seed-complete` marker, hosts detect token desync (see Pitfall #9). Still recommend `docker compose down -v` for cleanest restarts.
+- **Seeding is idempotent**: Fixed in base image — `seed-instances.sh` checks if instance exists before creating, controller writes `.seed-complete` marker, hosts detect token desync. `docker compose restart` is safe; `docker compose down -v` for full wipe.
+
+**Base Image Capabilities** (from `solarcloud7/clusterio-docker`):
+- **Factorio download hardening**: SHA256 verification (optional), `--retry 8` on curl, `SHELL ["/bin/bash", "-eo", "pipefail", "-c"]`
+- **Game client support**: `INSTALL_FACTORIO_CLIENT=true` build arg downloads the full Factorio game client for graphical asset export (icon spritesheets). When enabled, headless server download is skipped (client is a superset). Client requires Factorio account credentials at build time.
+- **Port range auto-derivation**: Host N → port range `34N00-34N99` (no manual port config needed)
+- **Mod seeding before instances**: Mods are uploaded to controller before instances are created/started
+- **External plugins must be read-write**: Mount without `:ro` — entrypoint runs `npm install` inside each plugin
 
 ## RCON Commands (PowerShell Profile Aliases)
 
@@ -164,9 +171,10 @@ tools/
 └── validate-cluster.ps1  # Cluster health checks
 
 docker/
-├── env/                  # Environment config (controller.env, host.env)
 └── seed-data/            # Seed data: database, mods, saves, plugins
 
+.env                      # All environment config (gitignored, credentials)
+.env.example              # Template for .env (tracked in git)
 docker-compose.yml        # Cluster definition (uses pre-built GHCR images)
 ```
 
@@ -289,28 +297,21 @@ Platform indices are **per-force** and **1-based**. Use `/list-platforms` to fin
 **Cause**: Export created with version < 1.0.87 (before tile support)
 **Fix**: Re-export platform with v1.0.87+ to include tiles
 
-### 9. Duplicate Instances on Restart (Seeding Idempotency)
-**Symptom**: Extra instances appear after restarting the cluster (e.g., `clusterio-host-2-instance-2` alongside the expected `instance-1`)
-**Cause**: The base image's `seed-instances.sh` (in [solarcloud7/clusterio-docker](https://github.com/solarcloud7/clusterio-docker)) unconditionally calls `clusterioctl instance create` with `|| true` error swallowing. Clusterio allows multiple instances with the same name (they get different UUIDs), so if seeding runs again, duplicates are created. The `FIRST_RUN` guard (checks for `config-controller.json`) normally prevents re-seeding, but any scenario where the controller volume is wiped while host volumes persist — or an interrupted first run — can trigger duplicate creation.
+### 9. Duplicate Instances on Restart (Seeding Idempotency) — FIXED IN BASE IMAGE
+**Status**: All three fixes are now implemented in [solarcloud7/clusterio-docker](https://github.com/solarcloud7/clusterio-docker):
+1. **Idempotent `seed_instance()`**: `seed-instances.sh` checks `instance list | grep -wF` before creating — skips duplicates.
+2. **Seed-complete marker**: `.seed-complete` file on controller data volume prevents re-seeding after successful first run. Interrupted first runs re-attempt safely.
+3. **Token desync detection**: `host-entrypoint.sh` compares stored token vs shared volume token — reconfigures automatically on mismatch.
 
-**Root Cause Location**: **Base image repository** (`solarcloud7/clusterio-docker`), specifically `scripts/seed-instances.sh`. This is **not** a bug in this project's code.
-
-**Required Fixes** (in `solarcloud7/clusterio-docker`):
-1. **P0 — Idempotent `seed_instance()`**: Before calling `instance create`, check if an instance with that name already exists via `clusterioctl instance list` and skip if found.
-2. **P1 — Seed-complete marker**: Write a `.seed-complete` marker file to the controller data volume after successful seeding. Check it alongside `FIRST_RUN` so an interrupted first run re-attempts seeding (with idempotent instance creation) rather than silently skipping.
-3. **P2 — Token desync detection**: In `host-entrypoint.sh`, compare the stored token against the shared token volume. If they differ (controller volume was wiped and regenerated new tokens), reconfigure the host automatically.
-
-**Current Workaround**: Always use `docker compose down -v` (with `-v` to remove volumes) before `docker compose up -d` for a clean restart. This ensures seeding starts from scratch. Plain `docker compose down` + `up -d` may produce duplicates if volumes get into an inconsistent state.
+`docker compose restart` is now safe (no duplicate instances). Use `docker compose down -v` only when you want a full volume wipe.
 
 ### 10. Instances Missing Space Age Mods
 **Symptom**: Platforms don't exist, Space Age entities missing, game runs in base-game-only mode
 **Cause**: `DEFAULT_MOD_PACK` defaults to `"Base Game 2.0"` in the base image controller entrypoint
-**Fix**: Set `DEFAULT_MOD_PACK=Space Age 2.0` in `docker/env/controller.env`. Requires `docker compose down -v` + rebuild since mod pack is assigned on first run only.
+**Fix**: Set `DEFAULT_MOD_PACK=Space Age 2.0` in `.env`. Requires `docker compose down -v` since mod pack is assigned on first run only.
 
-### 11. Both Instances Have Same Game Port
-**Symptom**: Only one instance reachable via game browser, both show same port in Clusterio UI
-**Cause**: Each host auto-assigns game port from its `host.factorio_port_range`. Previously all hosts defaulted to the same range (34100-34199), so all first instances got port 34100.
-**Fix**: Fixed in base image — `host-entrypoint.sh` now derives port range from HOST_ID (host N → `34N00-34N99`). Docker-compose port mappings must match. Requires `docker compose down -v` + image rebuild since port range is set on first host configuration only.
+### 11. Both Instances Have Same Game Port — FIXED IN BASE IMAGE
+**Status**: Fixed in [solarcloud7/clusterio-docker](https://github.com/solarcloud7/clusterio-docker) — `host-entrypoint.sh` auto-derives port range from HOST_ID (host N → `34N00-34N99`). Docker-compose port mappings must match. Requires `docker compose down -v` + image pull/rebuild if upgrading from an older base image.
 
 ### 12. Clusterio API Require Path (CRITICAL)
 **Symptom**: "Clusterio API not available - aborting" when running `/transfer-platform`, or `clusterio_api` is nil

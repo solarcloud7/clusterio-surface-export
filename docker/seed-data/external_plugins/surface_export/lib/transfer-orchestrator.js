@@ -206,6 +206,7 @@ class TransferOrchestrator {
 		this.plugin.activeTransfers.set(transferId, {
 			transferId,
 			exportId,
+			artifactSizeBytes: exportData.size ?? null,
 			platformName: exportData.platformName,
 			platformIndex: platformInfo.index || 1,
 			forceName: platformInfo.force || "player",

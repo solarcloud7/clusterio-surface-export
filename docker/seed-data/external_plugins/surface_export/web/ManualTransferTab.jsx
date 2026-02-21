@@ -1,4 +1,6 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useContext, useEffect, useMemo, useState } from "react";
+import { ControlContext } from "@clusterio/web_ui";
+import { planetIconUrl, factorioAssetUrl } from "./utils.js";
 import {
 	Alert,
 	Button,
@@ -18,6 +20,56 @@ import {
 import { DownloadOutlined, UploadOutlined } from "@ant-design/icons";
 
 const { Text } = Typography;
+
+// Bundled planet icons — webpack picks up whatever PNGs exist in the assets/planets/ folder.
+// Add nauvis.png, vulcanus.png, gleba.png, fulgora.png, aquilo.png to that folder to enable them.
+const DEFAULT_PLANET_ICON = new URL("./assets/planets/default-planet.svg", import.meta.url).href;
+
+// Build a lookup of bundled planet PNGs from the assets/planets/ directory.
+// require.context is a webpack-only API that scans the folder at build time.
+const _planetCtx = require.context("./assets/planets", false, /\.png$/);
+const BUNDLED_PLANET_ICONS = Object.fromEntries(
+	_planetCtx.keys().map(k => [k.replace(/^\.\//, "").replace(/\.png$/, ""), _planetCtx(k)])
+);
+
+/**
+ * Display a planet icon by name.
+ * Priority: bundled PNG (vanilla) → HTTP endpoint (modded) → default SVG.
+ * @param {{ planetName: string, token: string, size?: number }} props
+ */
+function PlanetIcon({ planetName, token, size = 24 }) {
+	const bundled = BUNDLED_PLANET_ICONS[planetName];
+	const src = bundled ?? planetIconUrl(planetName, token);
+	return (
+		<img
+			src={src}
+			alt={planetName}
+			title={planetName}
+			style={{ width: size, height: size, objectFit: "contain", verticalAlign: "middle" }}
+			loading="lazy"
+			onError={(e) => { e.target.onerror = null; e.target.src = DEFAULT_PLANET_ICON; }}
+		/>
+	);
+}
+
+/**
+ * Display any Factorio asset by its "__mod__/path/to/file.png" reference.
+ * Falls back to a generic planet SVG on error.
+ * @param {{ assetPath: string, label: string, token: string, size?: number }} props
+ */
+function FactorioIcon({ assetPath, label, token, size = 24 }) {
+	if (!assetPath) return <Tag>{label}</Tag>;
+	return (
+		<img
+			src={factorioAssetUrl(assetPath, token)}
+			alt={label}
+			title={label}
+			style={{ width: size, height: size, objectFit: "contain", verticalAlign: "middle" }}
+			loading="lazy"
+			onError={(e) => { e.target.onerror = null; e.target.src = DEFAULT_PLANET_ICON; }}
+		/>
+	);
+}
 
 function locationLabel(platform, nowMs) {
 	if (platform.spaceLocation) {
@@ -39,18 +91,28 @@ function locationLabel(platform, nowMs) {
 	return "—";
 }
 
-function buildInstanceSections(tree) {
+function buildHostSections(tree) {
 	const sections = [];
-	for (const host of tree.hosts || []) {
-		const sorted = [...(host.instances || [])].sort((a, b) =>
-			a.instanceName.localeCompare(b.instanceName)
-		);
-		for (const instance of sorted) {
-			sections.push({ host, instance });
-		}
+	for (const host of [...(tree?.hosts || [])].sort((a, b) => String(a.hostName || "").localeCompare(String(b.hostName || "")))) {
+		const instances = [...(host.instances || [])].sort((a, b) => String(a.instanceName || "").localeCompare(String(b.instanceName || "")));
+		sections.push({
+			key: `host:${host.hostId}`,
+			host,
+			hostName: host.hostName,
+			instances,
+		});
 	}
-	for (const instance of tree.unassignedInstances || []) {
-		sections.push({ host: null, instance });
+
+	const unassignedInstances = [...(tree?.unassignedInstances || [])].sort((a, b) =>
+		String(a.instanceName || "").localeCompare(String(b.instanceName || ""))
+	);
+	if (unassignedInstances.length) {
+		sections.push({
+			key: "host:unassigned",
+			host: null,
+			hostName: "Unassigned",
+			instances: unassignedInstances,
+		});
 	}
 	return sections;
 }
@@ -87,6 +149,8 @@ function parseJsonFile(file) {
 }
 
 export default function ManualTransferTab({ plugin, state }) {
+	const control = useContext(ControlContext);
+	const token = control.connector?.token ?? "";
 	const [selectedPlatformKey, setSelectedPlatformKey] = useState(null);
 	const [selectedTargetInstance, setSelectedTargetInstance] = useState(null);
 	const [isSubmitting, setIsSubmitting] = useState(false);
@@ -108,40 +172,34 @@ export default function ManualTransferTab({ plugin, state }) {
 
 	const { tree, loadingTree, treeError } = state;
 
+	const hostSections = useMemo(() => buildHostSections(tree), [tree]);
 	const platformLookup = useMemo(() => {
 		const lookup = new Map();
-		if (!tree) {
-			return lookup;
-		}
-		const addInstance = instance => {
-			for (const platform of instance.platforms || []) {
-				const key = `platform:${instance.instanceId}:${platform.platformIndex}`;
-				lookup.set(key, {
-					instanceId: instance.instanceId,
-					instanceName: instance.instanceName,
-					forceName: platform.forceName || tree.forceName || "player",
-					...platform,
-				});
+		for (const section of hostSections) {
+			for (const instance of section.instances) {
+				for (const platform of instance.platforms || []) {
+					if (!platform.hasSpaceHub) {
+						continue;
+					}
+					const key = `platform:${instance.instanceId}:${platform.platformIndex}`;
+					lookup.set(key, {
+						key,
+						host: section.host,
+						hostName: section.hostName,
+						instance,
+						instanceId: instance.instanceId,
+						instanceName: instance.instanceName,
+						platform,
+						platformIndex: platform.platformIndex,
+						platformName: platform.platformName,
+						forceName: platform.forceName || tree?.forceName || "player",
+						locationText: locationLabel(platform, nowMs),
+					});
+				}
 			}
-		};
-		for (const host of tree.hosts || []) {
-			for (const instance of host.instances || []) {
-				addInstance(instance);
-			}
-		}
-		for (const instance of tree.unassignedInstances || []) {
-			addInstance(instance);
 		}
 		return lookup;
-	}, [tree]);
-
-	const instanceSections = useMemo(() => {
-		if (!tree) {
-			return [];
-		}
-		return buildInstanceSections(tree);
-	}, [tree]);
-
+	}, [hostSections, nowMs, tree]);
 	const selectedSource = selectedPlatformKey ? platformLookup.get(selectedPlatformKey) : null;
 
 	const destinationOptions = useMemo(() => {
@@ -188,18 +246,21 @@ export default function ManualTransferTab({ plugin, state }) {
 		}
 	}
 
-	async function handleExportPlatform(row) {
-		setExportingPlatformKey(row.key);
+	async function handleExportPlatform(source = selectedSource) {
+		if (!source) {
+			return;
+		}
+		setExportingPlatformKey(`platform:${source.instanceId}:${source.platformIndex}`);
 		try {
 			const response = await plugin.exportPlatformForDownload({
-				sourceInstanceId: row.instanceId,
-				sourcePlatformIndex: row.platform.platformIndex,
-				forceName: row.platform.forceName || tree?.forceName || "player",
+				sourceInstanceId: source.instanceId,
+				sourcePlatformIndex: source.platformIndex,
+				forceName: source.forceName || tree?.forceName || "player",
 			});
 			if (!response.success) {
 				throw new Error(response.error || "Export failed");
 			}
-			const filename = `${response.platformName || row.platform.platformName || "platform"}_${sanitizeTimestamp(response.timestamp)}.json`;
+			const filename = `${response.platformName || source.platformName || "platform"}_${sanitizeTimestamp(response.timestamp)}.json`;
 			downloadJsonFile(response.exportData, filename);
 			antMessage.success(`Export downloaded: ${response.exportId}`, 6);
 		} catch (err) {
@@ -284,8 +345,8 @@ export default function ManualTransferTab({ plugin, state }) {
 			key: "name",
 			render: (_, row) => (
 				<Space>
-					<Text>{row.platform.platformName}</Text>
-					{row.platform.isLocked ? <Tag color="orange">locked</Tag> : null}
+					<Text>{row.platformName}</Text>
+					{row.platform?.isLocked ? <Tag color="orange">locked</Tag> : null}
 				</Space>
 			),
 		},
@@ -294,12 +355,15 @@ export default function ManualTransferTab({ plugin, state }) {
 			key: "location",
 			width: "35%",
 			render: (_, row) => {
-				const label = locationLabel(row.platform, nowMs);
-				const moving = !row.platform.spaceLocation && (row.platform.currentTarget || row.platform.speed > 0);
+				const moving = !row.platform?.spaceLocation && (row.platform?.currentTarget || row.platform?.speed > 0);
+				const locationName = row.platform?.spaceLocation || row.platform?.currentTarget;
 				return (
-					<Text type={moving ? "secondary" : undefined} italic={moving}>
-						{label}
-					</Text>
+					<Space size={6}>
+						{locationName ? <PlanetIcon planetName={locationName} token={token} /> : null}
+						<Text type={moving ? "secondary" : undefined} italic={moving}>
+							{row.locationText}
+						</Text>
+					</Space>
 				);
 			},
 		},
@@ -330,71 +394,74 @@ export default function ManualTransferTab({ plugin, state }) {
 				<div className="surface-export-tree-panel">
 					{loadingTree ? <Spin style={{ margin: "24px auto", display: "block" }} /> : null}
 					{treeError ? <Alert type="error" showIcon message={treeError} style={{ marginBottom: 12 }} /> : null}
-					{!loadingTree && instanceSections.length === 0 ? (
+					{!loadingTree && hostSections.length === 0 ? (
 						<Empty description="No instances available" />
 					) : null}
-
-					{instanceSections.map(({ host, instance }) => {
-						const hubPlatforms = (instance.platforms || []).filter(p => p.hasSpaceHub);
-
-						const rows = hubPlatforms.map(platform => ({
-							key: `platform:${instance.instanceId}:${platform.platformIndex}`,
-							instanceId: instance.instanceId,
-							instanceName: instance.instanceName,
-							platform,
-						}));
-
-						const hostLabel = host ? host.hostName : "Unassigned";
-						const hostTag = <Tag color={host?.connected ? "blue" : "default"}>{hostLabel}</Tag>;
-						const cardTitle = (
-							<Space>
-								{hostTag}
-								<Text strong>{instance.instanceName}</Text>
-								{instance.platformError ? <Tag color="warning">error</Tag> : null}
-							</Space>
-						);
-
-						return (
-							<Card
-								key={instance.instanceId}
-								title={cardTitle}
-								extra={(
-									<Button
-										icon={<UploadOutlined />}
+					{hostSections.map(section => (
+						<Card
+							key={section.key}
+							title={(
+								<Space>
+									<Tag color={section.host?.connected ? "blue" : "default"}>{section.hostName}</Tag>
+									<Text type="secondary">{section.instances.length} instances</Text>
+								</Space>
+							)}
+							size="small"
+							style={{ marginBottom: 12 }}
+						>
+							{section.instances.map(instance => {
+								const rows = (instance.platforms || [])
+									.filter(platform => platform.hasSpaceHub)
+									.map(platform => platformLookup.get(`platform:${instance.instanceId}:${platform.platformIndex}`))
+									.filter(Boolean);
+								return (
+									<Card
+										key={`instance:${instance.instanceId}`}
+										title={(
+											<Space>
+												<Text strong>{instance.instanceName}</Text>
+												{instance.platformError ? <Tag color="warning">error</Tag> : null}
+											</Space>
+										)}
+										extra={(
+											<Button
+												icon={<UploadOutlined />}
+												size="small"
+												onClick={() => openImportModal(instance)}
+											>
+												Import JSON
+											</Button>
+										)}
 										size="small"
-										onClick={() => openImportModal(instance)}
+										style={{ marginBottom: 12 }}
 									>
-										Import JSON
-									</Button>
-								)}
-								size="small"
-								style={{ marginBottom: 12 }}
-							>
-								{rows.length ? (
-									<Table
-										size="small"
-										columns={platformColumns}
-										dataSource={rows}
-										rowKey={row => row.key}
-										pagination={false}
-										rowClassName={row =>
-											row.key === selectedPlatformKey
-												? "surface-export-log-row-selected"
-												: "surface-export-log-row"
-										}
-										onRow={row => ({
-											onClick: () => {
-												setSelectedPlatformKey(row.key);
-												setSelectedTargetInstance(null);
-											},
-										})}
-									/>
-								) : (
-									<Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="No platforms with a space hub" />
-								)}
-							</Card>
-						);
-					})}
+										{rows.length ? (
+											<Table
+												size="small"
+												columns={platformColumns}
+												dataSource={rows}
+												rowKey={row => row.key}
+												pagination={false}
+												rowClassName={row => (
+													row.key === selectedPlatformKey
+														? "surface-export-log-row-selected"
+														: "surface-export-log-row"
+												)}
+												onRow={row => ({
+													onClick: () => {
+														setSelectedPlatformKey(row.key);
+														setSelectedTargetInstance(null);
+													},
+												})}
+											/>
+										) : (
+											<Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="No platforms with a space hub" />
+										)}
+									</Card>
+								);
+							})}
+						</Card>
+					))}
 				</div>
 
 				<div className="surface-export-action-panel">
@@ -405,12 +472,11 @@ export default function ManualTransferTab({ plugin, state }) {
 									type="info"
 									showIcon
 									message={`Source: ${selectedSource.platformName}`}
-									description={`${selectedSource.instanceName} — ${locationLabel(selectedSource, nowMs)}`}
+									description={`${selectedSource.instanceName} — ${selectedSource.locationText}`}
 								/>
 							) : (
 								<Alert type="warning" showIcon message="Select a source platform in the table" />
 							)}
-
 							<Select
 								placeholder="Select destination instance"
 								options={destinationOptions}
@@ -419,7 +485,6 @@ export default function ManualTransferTab({ plugin, state }) {
 								disabled={!selectedSource}
 								style={{ width: "100%" }}
 							/>
-
 							<Button
 								type="primary"
 								onClick={submitTransfer}

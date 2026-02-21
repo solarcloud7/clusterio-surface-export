@@ -1,6 +1,7 @@
 import React, { useMemo, useState } from "react";
 import {
 	Alert,
+	Button,
 	Card,
 	Empty,
 	Space,
@@ -13,6 +14,7 @@ import {
 	message as antMessage,
 } from "antd";
 import { InfoCircleOutlined } from "@ant-design/icons";
+import { DownloadOutlined } from "@ant-design/icons";
 import {
 	statusColor,
 	humanizeMetricKey,
@@ -29,6 +31,20 @@ const { Text } = Typography;
 
 function formatFlowDurationMs(value) {
 	return typeof value === "number" ? `${formatNumeric(value, 0)} ms` : "-";
+}
+
+function formatBytes(value) {
+	const numeric = Number(value);
+	if (!Number.isFinite(numeric) || numeric < 0) {
+		return "-";
+	}
+	if (numeric < 1024) {
+		return `${numeric.toLocaleString()} B`;
+	}
+	if (numeric < 1024 * 1024) {
+		return `${(numeric / 1024).toFixed(1)} KB`;
+	}
+	return `${(numeric / (1024 * 1024)).toFixed(2)} MB`;
 }
 
 function buildFlowTimelineRows(rows) {
@@ -116,20 +132,12 @@ function buildFlowTimelineRows(rows) {
 
 export default function TransactionLogsTab({ plugin, state }) {
 	const [selectedTransferId, setSelectedTransferId] = useState(null);
+	const [downloadingTransferId, setDownloadingTransferId] = useState(null);
 	const selectedDetails = selectedTransferId ? state.logDetails[selectedTransferId] : null;
 	const detailedSummary = useMemo(
 		() => (selectedDetails ? buildDetailedLogSummary(selectedDetails, selectedTransferId) : null),
 		[selectedDetails, selectedTransferId]
 	);
-	const formatInstanceLabel = (instanceName, instanceId) => {
-		if (instanceName) {
-			return instanceName;
-		}
-		if (typeof instanceId === "number" && instanceId > 0) {
-			return instanceId;
-		}
-		return "-";
-	};
 
 	const columns = [
 		{
@@ -143,25 +151,9 @@ export default function TransactionLogsTab({ plugin, state }) {
 			),
 		},
 		{
-			title: "ID",
-			dataIndex: "transferId",
-			key: "transferId",
-			render: transferId => <Text code>{transferId}</Text>,
-		},
-		{
 			title: "Platform",
 			dataIndex: "platformName",
 			key: "platformName",
-		},
-		{
-			title: "Source",
-			key: "source",
-			render: (_, row) => formatInstanceLabel(row.sourceInstanceName, row.sourceInstanceId),
-		},
-		{
-			title: "Destination",
-			key: "destination",
-			render: (_, row) => formatInstanceLabel(row.targetInstanceName, row.targetInstanceId),
 		},
 		{
 			title: "Status",
@@ -170,10 +162,58 @@ export default function TransactionLogsTab({ plugin, state }) {
 			render: status => <Tag color={statusColor(status)}>{status}</Tag>,
 		},
 		{
-			title: "Started",
+			title: "Timestamp",
 			dataIndex: "startedAt",
 			key: "startedAt",
 			render: startedAt => startedAt ? new Date(startedAt).toLocaleString() : "-",
+		},
+		{
+			title: "Size",
+			dataIndex: "artifactSizeBytes",
+			key: "artifactSizeBytes",
+			render: value => formatBytes(value),
+		},
+		{
+			title: "Actions",
+			key: "actions",
+			render: (_, row) => (
+				<Button
+					icon={<DownloadOutlined />}
+					size="small"
+					disabled={!row.downloadable || !row.exportId}
+					loading={downloadingTransferId === row.transferId}
+					onClick={async event => {
+						event.stopPropagation();
+						if (!row.downloadable || !row.exportId) {
+							return;
+						}
+						setDownloadingTransferId(row.transferId);
+						try {
+							const response = await plugin.getStoredExport(row.exportId);
+							if (!response.success) {
+								throw new Error(response.error || "Download failed");
+							}
+							const blob = new Blob([JSON.stringify(response.exportData, null, 2)], { type: "application/json" });
+							const url = URL.createObjectURL(blob);
+							const link = document.createElement("a");
+							link.href = url;
+							const safeName = (response.platformName || row.platformName || "platform").replace(/[^\w-]+/g, "_");
+							const timestamp = new Date(response.timestamp || Date.now()).toISOString().replace(/[:.]/g, "-");
+							link.download = `${safeName}_${timestamp}.json`;
+							document.body.appendChild(link);
+							link.click();
+							document.body.removeChild(link);
+							URL.revokeObjectURL(url);
+						} catch (err) {
+							antMessage.error(err.message || "Failed to download export");
+						} finally {
+							setDownloadingTransferId(null);
+						}
+					}}
+				>
+					Download
+				</Button>
+			),
 		},
 	];
 	const exportMetricColumns = [
@@ -247,59 +287,16 @@ export default function TransactionLogsTab({ plugin, state }) {
 	];
 	const flowColumns = [
 		{
-			title: "At",
-			key: "at",
-			width: "12%",
-			render: (_, row) => {
-				if (row.timestamp) {
-					return new Date(row.timestamp).toLocaleTimeString();
-				}
-				if (typeof row.timestampMs === "number") {
-					return new Date(row.timestampMs).toLocaleTimeString();
-				}
-				return "-";
-			},
-		},
-		{
 			title: "Step",
 			dataIndex: "eventType",
 			key: "eventType",
-			width: "14%",
+			width: "12%",
 			render: (eventType, row) => <Tag color={row.color}>{eventType}</Tag>,
-		},
-		{
-			title: "Elapsed",
-			dataIndex: "elapsedMs",
-			key: "elapsedMs",
-			width: "9%",
-			render: value => formatFlowDurationMs(value),
-		},
-		{
-			title: "\u0394 Prev",
-			dataIndex: "deltaMs",
-			key: "deltaMs",
-			width: "9%",
-			render: value => formatFlowDurationMs(value),
-		},
-		{
-			title: "Duration",
-			key: "duration",
-			width: "10%",
-			render: (_, row) => {
-				if (typeof row.durationMs === "number") {
-					return `${formatNumeric(row.durationMs, 0)} ms`;
-				}
-				if (row.phaseTimings?.length) {
-					const totalPhaseMs = row.phaseTimings.reduce((sum, phase) => sum + (Number(phase.durationMs) || 0), 0);
-					return `${formatNumeric(totalPhaseMs, 0)} ms`;
-				}
-				return "-";
-			},
 		},
 		{
 			title: "Timeline",
 			key: "timeline",
-			width: "22%",
+			width: "88%",
 			render: (_, row) => {
 				const tone = row.color === "red"
 					? "#ff4d4f"
@@ -347,11 +344,6 @@ export default function TransactionLogsTab({ plugin, state }) {
 					</div>
 				);
 			},
-		},
-		{
-			title: "Message",
-			dataIndex: "message",
-			key: "message",
 		},
 	];
 
@@ -597,6 +589,11 @@ export default function TransactionLogsTab({ plugin, state }) {
 	const summaryAlertType = selectedResult === "SUCCESS"
 		? "success"
 		: selectedResult === "FAILED" ? "error" : "info";
+	const summaryOutcomeText = selectedResult === "FAILED"
+		? "Transfer error"
+		: selectedResult === "SUCCESS"
+			? "Transfer completed"
+			: "Transfer in progress";
 	const detailLoaded = Boolean(selectedDetails && detailedSummary);
 	const hasValidation = Boolean(validation);
 
@@ -641,46 +638,37 @@ export default function TransactionLogsTab({ plugin, state }) {
 						<Alert
 							type={summaryAlertType}
 							showIcon
-							message={`${selectedResult}: ${detailedSummary.platform?.name || selectedTransferId}`}
-							description={`Duration: ${detailedSummary.totalDurationStr} | Status: ${selectedStatus}`}
+							message={<span className="surface-export-summary-platform-title">{detailedSummary.platform?.name || selectedTransferId}</span>}
+							description={(
+								<Space direction="vertical" size={2}>
+									<span>{summaryOutcomeText} {`(${detailedSummary.totalDurationStr}):`}</span>
+									{detailedSummary.error ? <span>{detailedSummary.error}</span> : null}
+								</Space>
+							)}
 						/>
 						<Space direction="vertical" style={{ width: "100%", marginTop: 12 }}>
-							{detailedSummary.error ? (
-								<Alert
-									type="error"
-									showIcon
-									message="Transfer error"
-									description={detailedSummary.error}
-								/>
-							) : null}
-							<Table
-								size="small"
-								pagination={false}
-								columns={metricColumns}
-								dataSource={[
-									{
-										key: "platform",
-										metric: "Platform",
-										value: detailedSummary.platform?.name || "-",
-									},
-									{
-										key: "source",
-										metric: "Source",
-									value: formatInstanceLabel(
-										detailedSummary.platform?.source?.instanceName,
-										detailedSummary.platform?.source?.instanceId
-									),
-									},
-									{
-										key: "destination",
-										metric: "Destination",
-									value: formatInstanceLabel(
-										detailedSummary.platform?.destination?.instanceName,
-										detailedSummary.platform?.destination?.instanceId
-									),
-									},
-								]}
-							/>
+							<Space size="small">
+								<Text strong>Transfer Flow (Timeline + Phases)</Text>
+								<Tooltip title="Chronological events with phase and import timing details in ms.">
+									<InfoCircleOutlined />
+								</Tooltip>
+							</Space>
+							{flowRows.length ? (
+								<Space direction="vertical" style={{ width: "100%" }} size="small">
+									<Text type="secondary" className="surface-export-gantt-scale">
+										Timeline scale: 0 ms to {formatNumeric(flowTimeline.totalMs, 0)} ms
+									</Text>
+									<Table
+										size="small"
+										pagination={{ pageSize: 20 }}
+										columns={flowColumns}
+										dataSource={flowTimeline.rows}
+										rowKey={row => row.key}
+									/>
+								</Space>
+							) : (
+								<Empty description="No transfer flow events available" />
+							)}
 						</Space>
 					</Card>
 
@@ -722,14 +710,6 @@ export default function TransactionLogsTab({ plugin, state }) {
 													<Empty description="No import metrics available" />
 												)}
 											</Space>
-											{hasValidation && validation?.mismatchDetails ? (
-												<Alert
-													type="error"
-													showIcon
-													message="Validation mismatch details"
-													description={validation.mismatchDetails}
-												/>
-											) : null}
 										</Space>
 									),
 								},
@@ -805,33 +785,6 @@ export default function TransactionLogsTab({ plugin, state }) {
 						/>
 					</Card>
 
-					<Card
-						title={(
-							<Space size="small">
-								<span>Transfer Flow (Timeline + Phases)</span>
-								<Tooltip title="Chronological events with phase and import timing details in ms.">
-									<InfoCircleOutlined />
-								</Tooltip>
-							</Space>
-						)}
-					>
-						{flowRows.length ? (
-							<Space direction="vertical" style={{ width: "100%" }} size="small">
-								<Text type="secondary" className="surface-export-gantt-scale">
-									Timeline scale: 0 ms to {formatNumeric(flowTimeline.totalMs, 0)} ms
-								</Text>
-								<Table
-									size="small"
-									pagination={{ pageSize: 20 }}
-									columns={flowColumns}
-									dataSource={flowTimeline.rows}
-									rowKey={row => row.key}
-								/>
-							</Space>
-						) : (
-							<Empty description="No transfer flow events available" />
-						)}
-					</Card>
 				</>
 			) : null}
 		</div>

@@ -10,8 +10,7 @@ docker/seed-data/mods/*
 docker/seed-data/hosts/**/*.zip
 
 # Docker env files (contain credentials)
-docker/env/controller.env
-docker/env/host.env
+.env
 
 # Legacy docker artifacts
 docker/saves/
@@ -45,6 +44,3 @@ Thumbs.db
 # Temporary files
 *.tmp
 *.log
-
-# Environment variables
-.env

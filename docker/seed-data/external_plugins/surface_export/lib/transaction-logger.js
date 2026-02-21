@@ -22,6 +22,7 @@ class TransactionLogger {
 			transferId: transfer.transferId,
 			operationType: transfer.operationType || "transfer",
 			exportId: transfer.exportId,
+			artifactSizeBytes: transfer.artifactSizeBytes ?? null,
 			platformName: transfer.platformName,
 			platformIndex: transfer.platformIndex,
 			forceName: transfer.forceName,
@@ -47,9 +48,19 @@ class TransactionLogger {
 
 	buildTransferSummary(transferId, transfer, lastEventAt = null) {
 		const info = this.buildTransferInfo(transfer);
+		const storedExport = info.exportId ? this.plugin.platformStorage.get(info.exportId) : null;
+		const artifactSizeBytes = info.artifactSizeBytes
+			?? storedExport?.size
+			?? (typeof transfer?.payloadMetrics?.payloadSizeKB === "number"
+				? Math.round(transfer.payloadMetrics.payloadSizeKB * 1024)
+				: null);
+		const downloadable = Boolean(storedExport?.exportData);
 		return {
 			transferId,
 			operationType: info.operationType,
+			exportId: info.exportId || null,
+			artifactSizeBytes,
+			downloadable,
 			platformName: info.platformName,
 			sourceInstanceId: info.sourceInstanceId,
 			sourceInstanceName: info.sourceInstanceName,
@@ -161,6 +172,9 @@ class TransactionLogger {
 				byId.set(persistedLog.transferId, {
 					transferId: persistedLog.transferId,
 					operationType: transferInfo.operationType || "transfer",
+					exportId: transferInfo.exportId || null,
+					artifactSizeBytes: transferInfo.artifactSizeBytes ?? null,
+					downloadable: false,
 					platformName: transferInfo.platformName || "Unknown",
 					sourceInstanceId: transferInfo.sourceInstanceId ?? -1,
 					sourceInstanceName: transferInfo.sourceInstanceName ?? null,
@@ -177,6 +191,14 @@ class TransactionLogger {
 		}
 
 		return Array.from(byId.values())
+			.map(summary => {
+				const storedExport = summary.exportId ? this.plugin.platformStorage.get(summary.exportId) : null;
+				return {
+					...summary,
+					artifactSizeBytes: summary.artifactSizeBytes ?? storedExport?.size ?? null,
+					downloadable: Boolean(storedExport?.exportData),
+				};
+			})
 			.sort((a, b) => (b.startedAt || 0) - (a.startedAt || 0))
 			.slice(0, limit);
 	}
@@ -254,6 +276,7 @@ class TransactionLogger {
 				transferInfo: {
 					operationType: transfer.operationType || "transfer",
 					exportId: transfer.exportId,
+					artifactSizeBytes: transfer.artifactSizeBytes ?? null,
 					platformName: transfer.platformName,
 					sourceInstanceId: transfer.sourceInstanceId,
 					sourceInstanceName: transfer.sourceInstanceName || this.plugin.platformTree.resolveInstanceName(transfer.sourceInstanceId),
@@ -276,8 +299,8 @@ class TransactionLogger {
 				allLogs[existingIndex] = logEntry;
 			}
 
-			if (allLogs.length > 10) {
-				allLogs = allLogs.slice(-10);
+			if (allLogs.length > 200) {
+				allLogs = allLogs.slice(-200);
 			}
 
 			await fs.writeFile(this.plugin.transactionLogPath, JSON.stringify(allLogs, null, 2));

@@ -14,11 +14,10 @@ This directory contains Docker Compose configuration for running a Clusterio dev
 ### 1. Configure Environment
 
 ```bash
-cp env/controller.env.example env/controller.env
-cp env/host.env.example env/host.env
+cp .env.example .env
 ```
 
-Edit `env/controller.env` and set `INIT_CLUSTERIO_ADMIN` to your Factorio username.
+Edit `.env` and set `INIT_CLUSTERIO_ADMIN` to your Factorio username.
 
 ### 2. Add Seed Data (Optional)
 
@@ -89,11 +88,6 @@ See [solarcloud7/clusterio-docker seed-data docs](https://github.com/solarcloud7
 
 ```
 docker/
-├── env/
-│   ├── controller.env             # Controller configuration (not in git)
-│   ├── controller.env.example     # Template
-│   ├── host.env                   # Host configuration (not in git)
-│   └── host.env.example           # Template
 └── seed-data/                     # All seed data (mounted read-only)
     ├── controller/
     │   └── database/              # users.json, roles.json
@@ -114,7 +108,7 @@ Runtime data is stored in Docker volumes (not bind-mounted directories):
 
 ## Environment Variables
 
-### Controller (`env/controller.env`)
+### Controller
 
 | Variable | Default | Description |
 |----------|---------|-------------|
@@ -123,7 +117,7 @@ Runtime data is stored in Docker volumes (not bind-mounted directories):
 | `HOST_COUNT` | `2` (via compose) | Number of host tokens to generate |
 | `DEFAULT_MOD_PACK` | `Base Game 2.0` | Default mod pack name |
 
-### Host (`env/host.env`)
+### Host
 
 | Variable | Default | Description |
 |----------|---------|-------------|
@@ -167,6 +161,6 @@ This setup was refactored to use [solarcloud7/clusterio-docker](https://github.c
 | 3 custom Dockerfiles (base, controller, host) | Pre-built `ghcr.io/solarcloud7/clusterio-docker-*` images |
 | Separate `clusterio-init` container (700+ line script) | Controller handles all bootstrapping |
 | Bind-mounted `clusterio-containers/` directories | Docker volumes |
-| Single `.env` file with many variables | `env/controller.env` + `env/host.env` |
+| Single `.env` file with many variables | Single `.env` at project root |
 | Manual port/RCON configuration per instance | Port ranges per host |
 | Custom entrypoint scripts | Built into base images |

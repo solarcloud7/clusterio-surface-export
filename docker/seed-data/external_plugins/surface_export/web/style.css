@@ -29,6 +29,11 @@
 .surface-export-log-row-selected > td {
 	background: rgba(24, 144, 255, 0.12) !important;
 }
+.surface-export-summary-platform-title {
+	font-size: 18px;
+	font-weight: 700;
+	line-height: 1.2;
+}
 
 .surface-export-gantt-scale {
 	display: block;

@@ -70,7 +70,7 @@ This project is designed for Clusterio 2.0 clusters. It uses pre-built Docker im
 **Setup** (see [docker/README.md](docker/README.md) for detailed instructions):
 
 1. Clone this repository
-2. Copy `docker/env/controller.env.example` to `docker/env/controller.env` and set `INIT_CLUSTERIO_ADMIN`
+2. Copy `.env.example` to `.env` and set `INIT_CLUSTERIO_ADMIN`
 3. Place save files in `docker/seed-data/hosts/<hostname>/<instance>/` directories
 4. Run `docker compose up -d`
 
@@ -285,9 +285,7 @@ clusterio-surface-export/
 │   │   │           └── MinSeed.zip       # Save file for instance 2
 │   │   ├── saves/                        # Legacy save storage
 │   │   └── mods/                         # Additional Factorio mods (.zip)
-│   ├── env/                              # Environment config
-│   │   ├── controller.env                # Controller settings (not in git)
-│   │   └── host.env                      # Host settings (not in git)
+
 │   └── README.md                         # Docker setup docs
 ├── docker-compose.yml                    # Cluster definition (uses GHCR images)
 ├── tools/                                # PowerShell helper scripts

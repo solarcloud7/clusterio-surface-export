@@ -4,6 +4,8 @@
  */
 
 "use strict";
+const fs = require("fs").promises;
+const path = require("path");
 const lib = require("@clusterio/lib");
 
 /**
@@ -155,9 +157,96 @@ async function sendAdaptiveJson(instance, directFunction, chunkFunction, data, l
 	}
 }
 
+// Mod names bundled with the Factorio executable (no zip file on disk)
+const VANILLA_MODS = new Set(["base", "core", "space-age", "quality", "elevated-rails"]);
+
+/**
+ * Extract a single file from a mod zip using yauzl (non-blocking, stream-based).
+ * Stops as soon as the target entry is found — never loads the full zip into memory.
+ *
+ * @param {string} zipPath - Absolute path to the .zip file
+ * @param {string} modName - Mod name (zip root folder may be "modName" or "modName_version")
+ * @param {string} filePath - Path inside the mod, relative to mod root (e.g. "graphics/icons/planet.png")
+ * @returns {Promise<Buffer|null>} File contents, or null if not found
+ */
+function extractFromModZip(zipPath, modName, filePath) {
+	const yauzl = require("yauzl");
+	return new Promise((resolve, reject) => {
+		yauzl.open(zipPath, { lazyEntries: true }, (err, zipFile) => {
+			if (err) return reject(err);
+			zipFile.readEntry();
+			zipFile.on("entry", entry => {
+				const parts = entry.fileName.split("/");
+				const root = parts[0];
+				const rest = parts.slice(1).join("/");
+				// Zip root folder is either "modname" or "modname_version"
+				const rootMatches = root === modName || root.startsWith(modName + "_");
+				if (rootMatches && rest === filePath) {
+					zipFile.openReadStream(entry, (streamErr, stream) => {
+						if (streamErr) return reject(streamErr);
+						const chunks = [];
+						stream.on("data", chunk => chunks.push(chunk));
+						stream.on("end", () => resolve(Buffer.concat(chunks)));
+						stream.on("error", reject);
+					});
+				} else {
+					zipFile.readEntry();
+				}
+			});
+			zipFile.on("end", () => resolve(null));
+			zipFile.on("error", reject);
+		});
+	});
+}
+
+/**
+ * Resolve a Factorio asset path ("__modname__/path/to/file.png") to a Buffer.
+ * Vanilla mod files are read from the Factorio data directory.
+ * Third-party mod files are extracted from the mod zip in the mods directory.
+ *
+ * @param {string} assetPath - Factorio asset path, e.g. "__space-age__/graphics/icons/planet/aquilo.png"
+ * @param {string} factorioDataDir - Path to Factorio data directory (e.g. "/opt/factorio/data")
+ * @param {string} modsDir - Path to mods directory (e.g. "/clusterio/mods")
+ * @returns {Promise<Buffer|null>} File contents as a Buffer, or null if not found
+ */
+async function resolveFactorioAsset(assetPath, factorioDataDir, modsDir) {
+	// Parse __modname__/path/to/file from the Factorio asset path format
+	const match = assetPath.match(/^__([^_](?:[^_]|_(?!_))*[^_]|[^_])__\/(.+)$/);
+	if (!match) return null;
+	const modName = match[1];
+	const filePath = match[2];
+
+	if (VANILLA_MODS.has(modName)) {
+		// Vanilla mods: read directly from Factorio data directory
+		try {
+			return await fs.readFile(path.join(factorioDataDir, modName, filePath));
+		} catch {
+			return null;
+		}
+	}
+
+	// Third-party mod: find the zip file and extract from it
+	let modFiles;
+	try {
+		modFiles = await fs.readdir(modsDir);
+	} catch {
+		return null;
+	}
+	const zipFile = modFiles.find(f => f.startsWith(modName + "_") && f.endsWith(".zip"));
+	if (!zipFile) return null;
+
+	try {
+		return await extractFromModZip(path.join(modsDir, zipFile), modName, filePath);
+	} catch {
+		return null;
+	}
+}
+
 module.exports = {
 	sendJsonToFactorio,
 	chunkify,
 	sendChunkedJson,
 	sendAdaptiveJson,
+	resolveFactorioAsset,
+	extractFromModZip,
 };

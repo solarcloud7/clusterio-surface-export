@@ -22,6 +22,7 @@ local unlock_platform = require("modules/surface_export/interfaces/remote/unlock
 local test_import_entity = require("modules/surface_export/interfaces/remote/test-import-entity")
 local test_runner = require("modules/surface_export/interfaces/remote/test-runner")
 local clone_platform = require("modules/surface_export/interfaces/remote/clone-platform")
+local get_asset_paths = require("modules/surface_export/interfaces/remote/get-asset-paths")
 
 -- Expose functions for direct Lua access (not just remote interface)
 RemoteInterface.export_platform = export_platform
@@ -38,6 +39,8 @@ RemoteInterface.unlock_platform = unlock_platform
 RemoteInterface.test_import_entity = test_import_entity
 RemoteInterface.test_runner = test_runner
 RemoteInterface.clone_platform = clone_platform
+RemoteInterface.get_planet_icon_paths = get_asset_paths.get_planet_icon_paths
+RemoteInterface.get_prototype_icon_path = get_asset_paths.get_prototype_icon_path
 
 -- JSON-wrapped versions for RCON access
 RemoteInterface.get_export_json = Base.json_wrap(get_export)
@@ -79,6 +82,11 @@ function RemoteInterface.register()
     run_tests_json = Base.json_wrap(test_runner.run_tests),
     clone_platform = clone_platform,
     clone_platform_json = Base.json_wrap(clone_platform),
+
+    -- Asset path discovery (for Web UI icons)
+    get_planet_icon_paths = get_asset_paths.get_planet_icon_paths,
+    get_planet_icon_paths_json = Base.json_wrap(get_asset_paths.get_planet_icon_paths),
+    get_prototype_icon_path = get_asset_paths.get_prototype_icon_path,
   })
 end
 

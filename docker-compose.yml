@@ -30,7 +30,7 @@
 x-host-base: &host-base
   image: ghcr.io/solarcloud7/clusterio-docker-host
   env_file:
-    - docker/env/host.env
+    - .env
   networks:
     - surface-export-net
   depends_on:
@@ -42,7 +42,7 @@ services:
   surface-export-controller:
     image: ghcr.io/solarcloud7/clusterio-docker-controller
     env_file:
-      - docker/env/controller.env
+      - .env
     container_name: surface-export-controller
     hostname: clusterio-controller  # Hosts connect to this name on the Docker network
     ports:

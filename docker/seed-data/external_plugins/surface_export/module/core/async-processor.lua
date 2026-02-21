@@ -645,11 +645,22 @@ function AsyncProcessor.queue_import(json_data, new_platform_name, force_name, r
     return nil, "Platform surface not valid after activation"
   end
   
-  -- Log what the starter pack placed on the surface
+  -- CRITICAL: Destroy all starter pack entities EXCEPT the hub.
+  -- The hub is created automatically and cannot be re-created manually — we remap it via
+  -- PlatformHubMapping and restore its inventories from export data.
+  -- All other starter entities (thrusters, etc.) must be destroyed so they don't accumulate
+  -- alongside the imported entities, causing item count inflation during validation.
   local starter_entities = new_platform.surface.find_entities_filtered({})
-  log(string.format("[Import Queue] Starter pack applied: %d entities on surface (platform '%s')", #starter_entities, final_name))
+  log(string.format("[Import Queue] Starter pack applied: %d entities on surface (platform '%s') — destroying non-hub starters", #starter_entities, final_name))
   for _, ent in ipairs(starter_entities) do
-    log(string.format("[Import Queue]   Starter entity: %s at (%.1f, %.1f)", ent.name, ent.position.x, ent.position.y))
+    if ent.valid then
+      if ent.name == "space-platform-hub" then
+        log(string.format("[Import Queue]   Keeping starter entity: %s at (%.1f, %.1f)", ent.name, ent.position.x, ent.position.y))
+      else
+        log(string.format("[Import Queue]   Destroying starter entity: %s at (%.1f, %.1f)", ent.name, ent.position.x, ent.position.y))
+        ent.destroy()
+      end
+    end
   end
   
   -- CRITICAL: For transfers, PAUSE the platform immediately to prevent thruster fuel consumption

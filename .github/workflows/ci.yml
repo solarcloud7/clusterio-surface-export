@@ -29,14 +29,11 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Create env files from examples
+      - name: Create env file from example
         run: |
-          cp docker/env/controller.env.example docker/env/controller.env
-          cp docker/env/host.env.example docker/env/host.env
+          cp .env.example .env
           # Set required values for CI
-          sed -i 's/^INIT_CLUSTERIO_ADMIN=$/INIT_CLUSTERIO_ADMIN=ci-admin/' docker/env/controller.env
-          # Space Age mod pack is required for platform transfers
-          echo 'DEFAULT_MOD_PACK=Space Age 2.0' >> docker/env/controller.env
+          sed -i 's/^INIT_CLUSTERIO_ADMIN=$/INIT_CLUSTERIO_ADMIN=ci-admin/' .env
 
       - name: Pull Docker images
         run: |

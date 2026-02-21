@@ -99,7 +99,8 @@
         "problemMatcher": [],
         "presentation": {
           "reveal": "always",
-          "panel": "dedicated"
+          "panel": "dedicated",
+          "close": true
         }
       },
       {
@@ -113,7 +114,8 @@
         "problemMatcher": [],
         "presentation": {
           "reveal": "always",
-          "panel": "dedicated"
+          "panel": "dedicated",
+          "close": true
         }
       },
       {

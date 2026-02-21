@@ -167,6 +167,11 @@ class ControllerPlugin extends BaseControllerPlugin {
 			"surface_export_transaction_logs.json"
 		);
 
+		// Asset delivery cache: __mod__/path → Buffer | null
+		this.assetCache = new Map();
+		// Planet icon registry: planet_name → { instanceId, iconPath, modName }
+		this.planetRegistry = new Map();
+
 		// Instantiate modules (order matters: txLogger before subscriptions,
 		// platformTree before orchestrator)
 		this.platformTree = new PlatformTree(this, messages);
@@ -192,6 +197,17 @@ class ControllerPlugin extends BaseControllerPlugin {
 		this.controller.handle(messages.GetTransactionLogRequest, this.handleGetTransactionLog.bind(this));
 		this.controller.handle(messages.SetSurfaceExportSubscriptionRequest, this.subscriptions.handleSetSurfaceExportSubscriptionRequest.bind(this.subscriptions));
 		this.controller.handle(messages.PlatformStateChangedEvent, this.handlePlatformStateChanged.bind(this));
+		this.controller.handle(messages.RegisterPlanetPathsRequest, this.handleRegisterPlanetPaths.bind(this));
+
+		// HTTP routes for serving Factorio graphical assets to the Web UI
+		this.controller.app.get(
+			"/api/surface_export/planet-icon/:planetName",
+			this.handlePlanetIconHttp.bind(this)
+		);
+		this.controller.app.get(
+			"/api/surface_export/asset",
+			this.handleAssetHttp.bind(this)
+		);
 
 		this.logger.info("Surface Export controller plugin initialized");
 	}
@@ -253,6 +269,115 @@ class ControllerPlugin extends BaseControllerPlugin {
 			this.platformDepartureTimes.set(event.platformName, Date.now());
 		}
 		this.subscriptions.queueTreeBroadcast(event.forceName || "player");
+	}
+
+	/**
+	 * Store planet icon paths reported by an instance on startup.
+	 * @param {import('./messages').RegisterPlanetPathsRequest} request
+	 * @param {Object} src - Source descriptor; src.instanceId identifies the reporting instance
+	 */
+	handleRegisterPlanetPaths(request, src) {
+		for (const [planetName, data] of Object.entries(request.planets || {})) {
+			this.planetRegistry.set(planetName, {
+				instanceId: src.instanceId,
+				iconPath: data.iconPath,
+				modName: data.modName,
+			});
+		}
+		this.logger.info(
+			`Registered ${Object.keys(request.planets || {}).length} planet icons ` +
+			`from instance ${src.instanceId}`
+		);
+		return {};
+	}
+
+	/**
+	 * Verify the Bearer / query-string token on an Express request.
+	 * Returns true and leaves res untouched on success.
+	 * Returns false and sends 401/403 on failure.
+	 */
+	async verifyRequestToken(req, res) {
+		const token = req.headers["x-access-token"] || req.query.token;
+		if (!token) { res.status(401).end(); return false; }
+		try {
+			const secret = this.controller.config.get("controller.auth_secret");
+			await lib.verifyToken(token, secret, "user");
+			return true;
+		} catch {
+			res.status(403).end();
+			return false;
+		}
+	}
+
+	/**
+	 * GET /api/surface_export/planet-icon/:planetName
+	 * Serves the icon for a named planet.
+	 */
+	async handlePlanetIconHttp(req, res) {
+		if (!await this.verifyRequestToken(req, res)) return;
+		const { planetName } = req.params;
+		const entry = this.planetRegistry.get(planetName);
+		if (!entry) { res.status(404).end(); return; }
+		return this.serveAsset(res, entry.iconPath, entry.instanceId);
+	}
+
+	/**
+	 * GET /api/surface_export/asset?path=__mod__/path/to/file.png
+	 * Serves any arbitrary Factorio asset by its __mod__/path reference.
+	 */
+	async handleAssetHttp(req, res) {
+		if (!await this.verifyRequestToken(req, res)) return;
+		const assetPath = req.query.path;
+		if (!assetPath || typeof assetPath !== "string") { res.status(400).end(); return; }
+		return this.serveAsset(res, assetPath, null);
+	}
+
+	/**
+	 * Core asset serving: check cache, route to instance, send image bytes.
+	 * @param {Object} res - Express response
+	 * @param {string} assetPath - "__mod__/path/to/file.png"
+	 * @param {number|null} preferredInstanceId - Instance that owns this asset (from planetRegistry)
+	 */
+	async serveAsset(res, assetPath, preferredInstanceId) {
+		if (this.assetCache.has(assetPath)) {
+			const buf = this.assetCache.get(assetPath);
+			if (!buf) { res.status(404).end(); return; }
+			this.sendImageBuffer(res, buf);
+			return;
+		}
+
+		// Find a running instance, preferring the one that registered the planet
+		const instances = [...this.controller.instances.values()];
+		const target =
+			(preferredInstanceId !== null &&
+				instances.find(i => i.id === preferredInstanceId && i.status === "running")) ||
+			instances.find(i => i.status === "running");
+
+		if (!target) { res.status(503).json({ error: "no running instance" }); return; }
+
+		try {
+			const response = await this.controller.sendTo(
+				{ instanceId: target.id },
+				new messages.ResolveAssetsRequest({ paths: [assetPath] })
+			);
+			const b64 = response.assets?.[assetPath];
+			const buf = b64 ? Buffer.from(b64, "base64") : null;
+			this.assetCache.set(assetPath, buf);
+			if (!buf) { res.status(404).end(); return; }
+			this.sendImageBuffer(res, buf);
+		} catch (err) {
+			this.logger.warn(`Asset resolve failed for ${assetPath}: ${err.message}`);
+			res.status(500).end();
+		}
+	}
+
+	/**
+	 * Write an image buffer to the response with caching headers.
+	 */
+	sendImageBuffer(res, buf) {
+		res.setHeader("Content-Type", "image/png");
+		res.setHeader("Cache-Control", "max-age=86400, immutable");
+		res.send(buf);
 	}
 
 	cleanupOldExports(maxStorage) {
@@ -324,6 +449,7 @@ class ControllerPlugin extends BaseControllerPlugin {
 			transferId: operationId,
 			operationType,
 			exportId: options.exportId || null,
+			artifactSizeBytes: options.artifactSizeBytes ?? null,
 			platformName: options.platformName || "Unknown",
 			platformIndex: Number.isInteger(Number(options.platformIndex)) ? Number(options.platformIndex) : 1,
 			forceName: options.forceName || "player",
@@ -367,6 +493,7 @@ class ControllerPlugin extends BaseControllerPlugin {
 		});
 		importData._operationId = operation.transferId;
 		const payloadSizeBytes = Buffer.byteLength(JSON.stringify(importData), "utf8");
+		operation.artifactSizeBytes = payloadSizeBytes;
 		this.txLogger.logTransactionEvent(operation.transferId, "import_requested",
 			`Upload import requested for ${operation.platformName}`, {
 				targetInstanceId: resolved.id,
@@ -498,6 +625,7 @@ class ControllerPlugin extends BaseControllerPlugin {
 				controllerExportPrepTotalMs: exportRequestMs + waitForStoredMs,
 			});
 			operation.payloadMetrics = buildPayloadMetrics(stored.exportData || {});
+			operation.artifactSizeBytes = stored.size ?? operation.artifactSizeBytes ?? null;
 			operation.status = "completed";
 			operation.completedAt = Date.now();
 			const durationMs = operation.completedAt - operation.startedAt;

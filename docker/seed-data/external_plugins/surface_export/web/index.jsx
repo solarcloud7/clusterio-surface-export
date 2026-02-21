@@ -14,7 +14,6 @@ import {
 import * as messageDefs from "../messages";
 import { summaryFromTransferInfo, mergeTransferSummary } from "./utils";
 import ManualTransferTab from "./ManualTransferTab";
-import ExportsTab from "./ExportsTab";
 import TransactionLogsTab from "./TransactionLogsTab";
 
 import "./style.css";
@@ -66,11 +65,6 @@ function SurfaceExportPage() {
 			key: "manual",
 			label: "Manual Transfer",
 			children: <ManualTransferTab plugin={plugin} state={state} />,
-		},
-		{
-			key: "exports",
-			label: "Exports",
-			children: <ExportsTab plugin={plugin} state={state} />,
 		},
 	];
 	if (state.canViewLogs !== false) {

@@ -21,7 +21,7 @@ const lib = requireClusterioModule("@clusterio/lib");
 const { BaseInstancePlugin } = requireClusterioModule("@clusterio/host");
 const info = require("./index.js");
 const messages = require("./messages");
-const { sendChunkedJson, sendAdaptiveJson } = require("./helpers");
+const { sendChunkedJson, sendAdaptiveJson, resolveFactorioAsset } = require("./helpers");
 
 /**
  * Instance plugin class
@@ -81,7 +81,8 @@ class InstancePlugin extends BaseInstancePlugin {
 		this.instance.handle(messages.UnlockSourcePlatformRequest, this.handleUnlockSourcePlatform.bind(this));
 		this.instance.handle(messages.TransferStatusUpdate, this.handleTransferStatusUpdate.bind(this));
 		this.instance.handle(messages.InstanceListPlatformsRequest, this.handleInstanceListPlatformsRequest.bind(this));
-		
+		this.instance.handle(messages.ResolveAssetsRequest, this.handleResolveAssets.bind(this));
+
 		this.logger.info("Surface Export plugin initialized");
 	}
 	
@@ -92,6 +93,7 @@ class InstancePlugin extends BaseInstancePlugin {
 		this.logger.info("Instance started - Surface Export plugin ready");
 		await this.ensureLuaConsoleUnlocked();
 		await this.sendConfigurationToLua();
+		await this.registerPlanetPaths();
 	}
 	
 	/**
@@ -121,6 +123,61 @@ class InstancePlugin extends BaseInstancePlugin {
 		}
 	}
 	
+	/**
+	 * Query Lua for planet icon paths and register them with the controller.
+	 * Called on onStart so the controller's planet registry is populated
+	 * and can route asset requests to this instance.
+	 */
+	async registerPlanetPaths() {
+		try {
+			const json = await this.instance.sendRcon(
+				"/sc rcon.print(remote.call('surface_export', 'get_planet_icon_paths_json'))",
+				true
+			);
+			const normalized = this.normalizeRconScalarResult(json);
+			if (!normalized || normalized === "nil") return;
+			const planetPaths = JSON.parse(normalized);
+			if (!planetPaths || typeof planetPaths !== "object") return;
+
+			const planets = {};
+			for (const [name, iconData] of Object.entries(planetPaths)) {
+				const iconPath = iconData.starmap_icon || iconData.icon;
+				if (!iconPath) continue;
+				const match = iconPath.match(/^__([^_](?:[^_]|_(?!_))*[^_]|[^_])__\//);
+				const modName = match ? match[1] : null;
+				if (modName) planets[name] = { iconPath, modName };
+			}
+
+			if (Object.keys(planets).length === 0) return;
+
+			await this.instance.sendTo("controller", new messages.RegisterPlanetPathsRequest({ planets }));
+			this.logger.info(`Registered ${Object.keys(planets).length} planet icon paths with controller`);
+		} catch (err) {
+			this.logger.warn(`registerPlanetPaths failed: ${err.message}`);
+		}
+	}
+
+	/**
+	 * Resolve Factorio asset paths to raw file buffers (base64-encoded).
+	 * Handles both vanilla mods (from Factorio data dir) and third-party mod zips.
+	 * @param {import('./messages').ResolveAssetsRequest} request
+	 */
+	async handleResolveAssets(request) {
+		const factorioDataDir = "/opt/factorio/data";
+		const modsDir = "/clusterio/mods";
+		const assets = {};
+		for (const assetPath of request.paths) {
+			try {
+				const buf = await resolveFactorioAsset(assetPath, factorioDataDir, modsDir);
+				assets[assetPath] = buf ? buf.toString("base64") : null;
+			} catch (err) {
+				this.logger.warn(`Asset resolve failed for ${assetPath}: ${err.message}`);
+				assets[assetPath] = null;
+			}
+		}
+		return { assets };
+	}
+
 	/**
 	 * Called when instance stops
 	 */

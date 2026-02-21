@@ -63,73 +63,80 @@ function EntityCreation.process_batch(job, get_batch_size, should_show_progress)
             Deserializer.restore_entity_state(entity, entity_data)
             Deserializer.restore_inventories(entity, entity_data)
           else
-            batch_failed = batch_failed + 1
+            -- space-platform-hub returns nil from create_entity deliberately:
+            -- it is pre-created with the platform and mapped in platform_hub_mapping.
+            -- Its inventories ARE restored there, so do NOT count it as lost here.
+            if entity_data.name == "space-platform-hub" then
+              batch_skipped = batch_skipped + 1
+            else
+              batch_failed = batch_failed + 1
 
-            -- Tally items/fluids lost due to failed placement
-            local losses = job.failed_entity_losses
-            if not losses then
-              losses = { entity_count = 0, total_items = 0, total_fluids = 0.0, items = {}, fluids = {}, entities = {} }
-              job.failed_entity_losses = losses
-            end
+              -- Tally items/fluids lost due to failed placement
+              local losses = job.failed_entity_losses
+              if not losses then
+                losses = { entity_count = 0, total_items = 0, total_fluids = 0.0, items = {}, fluids = {}, entities = {} }
+                job.failed_entity_losses = losses
+              end
 
-            local entity_items = 0
-            local entity_fluids = 0.0
+              local entity_items = 0
+              local entity_fluids = 0.0
 
-            if entity_data.specific_data then
-              -- Inventory items
-              if entity_data.specific_data.inventories then
-                for _, inv_data in ipairs(entity_data.specific_data.inventories) do
-                  for _, item in ipairs(inv_data.items or {}) do
-                    losses.items[item.name] = (losses.items[item.name] or 0) + item.count
-                    entity_items = entity_items + item.count
+              if entity_data.specific_data then
+                -- Inventory items
+                if entity_data.specific_data.inventories then
+                  for _, inv_data in ipairs(entity_data.specific_data.inventories) do
+                    for _, item in ipairs(inv_data.items or {}) do
+                      losses.items[item.name] = (losses.items[item.name] or 0) + item.count
+                      entity_items = entity_items + item.count
+                    end
+                  end
+                end
+                -- Belt items
+                if entity_data.specific_data.items then
+                  for _, line_data in ipairs(entity_data.specific_data.items) do
+                    for _, item in ipairs(line_data.items or {}) do
+                      losses.items[item.name] = (losses.items[item.name] or 0) + item.count
+                      entity_items = entity_items + item.count
+                    end
+                  end
+                end
+                -- Inserter held item
+                if entity_data.specific_data.held_item then
+                  local held = entity_data.specific_data.held_item
+                  losses.items[held.name] = (losses.items[held.name] or 0) + held.count
+                  entity_items = entity_items + held.count
+                end
+                -- Fluids
+                if entity_data.specific_data.fluids then
+                  for _, fluid_data in ipairs(entity_data.specific_data.fluids) do
+                    local key = fluid_data.name
+                    losses.fluids[key] = (losses.fluids[key] or 0.0) + (fluid_data.amount or 0)
+                    entity_fluids = entity_fluids + (fluid_data.amount or 0)
                   end
                 end
               end
-              -- Belt items
-              if entity_data.specific_data.items then
-                for _, line_data in ipairs(entity_data.specific_data.items) do
-                  for _, item in ipairs(line_data.items or {}) do
-                    losses.items[item.name] = (losses.items[item.name] or 0) + item.count
-                    entity_items = entity_items + item.count
-                  end
-                end
+
+              losses.entity_count = losses.entity_count + 1
+              losses.total_items = losses.total_items + entity_items
+              losses.total_fluids = losses.total_fluids + entity_fluids
+
+              -- Cap detail entries to avoid memory bloat
+              if #losses.entities < 50 then
+                table.insert(losses.entities, {
+                  name = entity_data.name or "?",
+                  type = entity_data.type or "?",
+                  position = entity_data.position,
+                  items = entity_items,
+                  fluids = entity_fluids,
+                })
               end
-              -- Inserter held item
-              if entity_data.specific_data.held_item then
-                local held = entity_data.specific_data.held_item
-                losses.items[held.name] = (losses.items[held.name] or 0) + held.count
-                entity_items = entity_items + held.count
-              end
-              -- Fluids
-              if entity_data.specific_data.fluids then
-                for _, fluid_data in ipairs(entity_data.specific_data.fluids) do
-                  local key = fluid_data.name
-                  losses.fluids[key] = (losses.fluids[key] or 0.0) + (fluid_data.amount or 0)
-                  entity_fluids = entity_fluids + (fluid_data.amount or 0)
-                end
-              end
+
+              log(string.format("[Entity Creation] FAILED to create '%s' (type=%s) at (%.1f,%.1f) — lost %d items, %.1f fluids — index %d/%d",
+                entity_data.name or "?", entity_data.type or "?",
+                entity_data.position and (entity_data.position.x or entity_data.position[1]) or 0,
+                entity_data.position and (entity_data.position.y or entity_data.position[2]) or 0,
+                entity_items, entity_fluids, i, job.total_entities))
             end
-
-            losses.entity_count = losses.entity_count + 1
-            losses.total_items = losses.total_items + entity_items
-            losses.total_fluids = losses.total_fluids + entity_fluids
-
-            -- Cap detail entries to avoid memory bloat
-            if #losses.entities < 50 then
-              table.insert(losses.entities, {
-                name = entity_data.name or "?",
-                type = entity_data.type or "?",
-                position = entity_data.position,
-                items = entity_items,
-                fluids = entity_fluids,
-              })
-            end
-
-            log(string.format("[Entity Creation] FAILED to create '%s' (type=%s) at (%.1f,%.1f) — lost %d items, %.1f fluids — index %d/%d",
-              entity_data.name or "?", entity_data.type or "?",
-              entity_data.position and (entity_data.position.x or entity_data.position[1]) or 0,
-              entity_data.position and (entity_data.position.y or entity_data.position[2]) or 0,
-              entity_items, entity_fluids, i, job.total_entities))
           end
         end
       else

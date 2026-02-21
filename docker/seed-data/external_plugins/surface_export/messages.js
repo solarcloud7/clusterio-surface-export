@@ -1205,6 +1205,94 @@ class PlatformStateChangedEvent {
 		};
 	}
 }
+class ResolveAssetsRequest {
+	static plugin = PLUGIN_NAME;
+	static type = "request";
+	static src = "controller";
+	static dst = "instance";
+	static jsonSchema = {
+		type: "object",
+		properties: {
+			paths: { type: "array", items: { type: "string" } },
+		},
+		required: ["paths"],
+		additionalProperties: false,
+	};
+
+	constructor(json) {
+		this.paths = json.paths;
+	}
+
+	static fromJSON(json) {
+		return new ResolveAssetsRequest(json);
+	}
+
+	toJSON() {
+		return { paths: this.paths };
+	}
+
+	static Response = {
+		jsonSchema: {
+			type: "object",
+			properties: {
+				assets: {
+					type: "object",
+					additionalProperties: { type: ["string", "null"] },
+				},
+			},
+			required: ["assets"],
+		},
+		fromJSON(json) {
+			return json;
+		},
+	};
+}
+
+class RegisterPlanetPathsRequest {
+	static plugin = PLUGIN_NAME;
+	static type = "request";
+	static src = "instance";
+	static dst = "controller";
+	static jsonSchema = {
+		type: "object",
+		properties: {
+			planets: {
+				type: "object",
+				additionalProperties: {
+					type: "object",
+					properties: {
+						iconPath: { type: "string" },
+						modName: { type: "string" },
+					},
+					required: ["iconPath", "modName"],
+					additionalProperties: false,
+				},
+			},
+		},
+		required: ["planets"],
+		additionalProperties: false,
+	};
+
+	constructor(json) {
+		this.planets = json.planets;
+	}
+
+	static fromJSON(json) {
+		return new RegisterPlanetPathsRequest(json);
+	}
+
+	toJSON() {
+		return { planets: this.planets };
+	}
+
+	static Response = {
+		jsonSchema: { type: "object", additionalProperties: false },
+		fromJSON(json) {
+			return json;
+		},
+	};
+}
+
 module.exports = {
 	ExportPlatformRequest,
 	PlatformExportEvent,
@@ -1230,5 +1318,7 @@ module.exports = {
 	SurfaceExportTransferUpdateEvent,
 	SurfaceExportLogUpdateEvent,
 	PlatformStateChangedEvent,
+	ResolveAssetsRequest,
+	RegisterPlanetPathsRequest,
 	PERMISSIONS,
 };

@@ -61,18 +61,13 @@ if (-not $SkipIncrement) {
 Write-Host "Using save-patched module architecture (no mod zip needed)" -ForegroundColor Cyan
 Write-Host "Lua code in module/ directory will be patched into saves by Clusterio" -ForegroundColor Green
 
-# 2. Verify env files exist
-$ControllerEnv = Join-Path $DockerDir "env\controller.env"
-$HostEnv = Join-Path $DockerDir "env\host.env"
-if (-not (Test-Path $ControllerEnv)) {
-    Write-Host "Creating env/controller.env from example..." -ForegroundColor Yellow
-    Copy-Item (Join-Path $DockerDir "env\controller.env.example") $ControllerEnv
-    Write-Warning "Please edit docker/env/controller.env and set INIT_CLUSTERIO_ADMIN before running again."
+# 2. Verify env file exists
+$EnvFile = Join-Path $WorkspaceRoot ".env"
+if (-not (Test-Path $EnvFile)) {
+    Write-Host "Creating .env from example..." -ForegroundColor Yellow
+    Copy-Item (Join-Path $WorkspaceRoot ".env.example") $EnvFile
+    Write-Warning "Please edit .env and set INIT_CLUSTERIO_ADMIN before running again."
     exit 1
-}
-if (-not (Test-Path $HostEnv)) {
-    Write-Host "Creating env/host.env from example..." -ForegroundColor Yellow
-    Copy-Item (Join-Path $DockerDir "env\host.env.example") $HostEnv
 }
 
 # 3. Tear down existing cluster

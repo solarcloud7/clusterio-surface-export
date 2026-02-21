@@ -101,7 +101,7 @@ module.exports.plugin = {
 		[`${PLUGIN_NAME}.max_storage_size`]: {
 			description: "Maximum number of platform exports to store on controller",
 			type: "number",
-			initialValue: 100,
+			initialValue: 20,
 		},
 	},
 	
@@ -131,6 +131,8 @@ module.exports.plugin = {
 		messages.SurfaceExportTransferUpdateEvent,
 		messages.SurfaceExportLogUpdateEvent,
 		messages.PlatformStateChangedEvent,
+		messages.ResolveAssetsRequest,
+		messages.RegisterPlanetPathsRequest,
 	],
 
 	// Optional CLI enhancements for clusterioctl

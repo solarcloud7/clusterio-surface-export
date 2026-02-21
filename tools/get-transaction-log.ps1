@@ -440,8 +440,8 @@ try {
             # Low-temp fluids (<10,000°C) are compared per exact temp key
             # High-temp fluids (≥10,000°C) are aggregated by base fluid name
             if ($v.PSObject.Properties['expectedFluidCounts'] -and $v.expectedFluidCounts) {
-                $fr = $v.fluidReconciliation
-                $htThreshold = if ($fr -and $fr.highTempThreshold) { $fr.highTempThreshold } else { 10000 }
+                $fr = if ($v.PSObject.Properties['fluidReconciliation']) { $v.fluidReconciliation } else { $null }
+                $htThreshold = if ($fr -and $fr.PSObject.Properties['highTempThreshold'] -and $fr.highTempThreshold) { $fr.highTempThreshold } else { 10000 }
                 
                 # Build fluid entries with expected/actual
                 $fluidEntries = @{}
