@@ -11,16 +11,6 @@ export function planetIconUrl(planetName, token) {
 	return `/api/surface_export/planet-icon/${encodeURIComponent(planetName)}?token=${token}`;
 }
 
-/**
- * Build the URL for an arbitrary Factorio asset path ("__mod__/path/to/file.png").
- * Served by the controller; authenticated via token query param.
- * @param {string} factorioPath - e.g. "__maraxsis__/graphics/icons/planet.png"
- * @param {string} token - Clusterio auth token
- * @returns {string}
- */
-export function factorioAssetUrl(factorioPath, token) {
-	return `/api/surface_export/asset?path=${encodeURIComponent(factorioPath)}&token=${token}`;
-}
 
 export function statusColor(status) {
 	switch (status) {

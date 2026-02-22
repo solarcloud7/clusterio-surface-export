@@ -1,6 +1,6 @@
 {
   "name": "@solarcloud7/plugin-surface-export",
-  "version": "0.9.117",
+  "version": "0.9.121",
   "description": "Clusterio plugin for exporting and importing Factorio space platforms",
   "main": "index.js",
   "scripts": {

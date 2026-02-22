@@ -80,6 +80,7 @@ services:
       - surface-export-host-1-data:/clusterio/data
       - surface-export-tokens:/clusterio/tokens:ro
       - ./docker/seed-data/mods:/clusterio/seed-mods:ro
+      - factorio-client:/opt/factorio-client
       # Mount external plugins (auto-discovered by install-plugins.sh)
       - ./docker/seed-data/external_plugins:/clusterio/external_plugins
 
@@ -92,6 +93,7 @@ services:
     hostname: clusterio-host-2
     environment:
       - HOST_NAME=clusterio-host-2
+      - SKIP_CLIENT=true
     ports:
       - "34200-34209:34200-34209/udp"
     volumes:
@@ -110,3 +112,5 @@ volumes:
   surface-export-host-1-data:        # Host 1 persistent data (config, instances, logs)
   surface-export-host-2-data:        # Host 2 persistent data
   surface-export-tokens:             # Token exchange between controller and hosts
+  factorio-client:                   # Shared Factorio game client (external — survives down -v)
+    external: true

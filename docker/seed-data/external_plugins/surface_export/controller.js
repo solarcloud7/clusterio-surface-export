@@ -167,8 +167,6 @@ class ControllerPlugin extends BaseControllerPlugin {
 			"surface_export_transaction_logs.json"
 		);
 
-		// Asset delivery cache: __mod__/path → Buffer | null
-		this.assetCache = new Map();
 		// Planet icon registry: planet_name → { instanceId, iconPath, modName }
 		this.planetRegistry = new Map();
 
@@ -199,14 +197,10 @@ class ControllerPlugin extends BaseControllerPlugin {
 		this.controller.handle(messages.PlatformStateChangedEvent, this.handlePlatformStateChanged.bind(this));
 		this.controller.handle(messages.RegisterPlanetPathsRequest, this.handleRegisterPlanetPaths.bind(this));
 
-		// HTTP routes for serving Factorio graphical assets to the Web UI
+		// HTTP route for serving planet icons to the Web UI
 		this.controller.app.get(
 			"/api/surface_export/planet-icon/:planetName",
 			this.handlePlanetIconHttp.bind(this)
-		);
-		this.controller.app.get(
-			"/api/surface_export/asset",
-			this.handleAssetHttp.bind(this)
 		);
 
 		this.logger.info("Surface Export controller plugin initialized");
@@ -311,73 +305,15 @@ class ControllerPlugin extends BaseControllerPlugin {
 
 	/**
 	 * GET /api/surface_export/planet-icon/:planetName
-	 * Serves the icon for a named planet.
+	 * Returns the registered icon path for a named planet as JSON.
+	 * Callers should resolve the __mod__/path via Clusterio's static asset endpoint.
 	 */
 	async handlePlanetIconHttp(req, res) {
 		if (!await this.verifyRequestToken(req, res)) return;
 		const { planetName } = req.params;
 		const entry = this.planetRegistry.get(planetName);
 		if (!entry) { res.status(404).end(); return; }
-		return this.serveAsset(res, entry.iconPath, entry.instanceId);
-	}
-
-	/**
-	 * GET /api/surface_export/asset?path=__mod__/path/to/file.png
-	 * Serves any arbitrary Factorio asset by its __mod__/path reference.
-	 */
-	async handleAssetHttp(req, res) {
-		if (!await this.verifyRequestToken(req, res)) return;
-		const assetPath = req.query.path;
-		if (!assetPath || typeof assetPath !== "string") { res.status(400).end(); return; }
-		return this.serveAsset(res, assetPath, null);
-	}
-
-	/**
-	 * Core asset serving: check cache, route to instance, send image bytes.
-	 * @param {Object} res - Express response
-	 * @param {string} assetPath - "__mod__/path/to/file.png"
-	 * @param {number|null} preferredInstanceId - Instance that owns this asset (from planetRegistry)
-	 */
-	async serveAsset(res, assetPath, preferredInstanceId) {
-		if (this.assetCache.has(assetPath)) {
-			const buf = this.assetCache.get(assetPath);
-			if (!buf) { res.status(404).end(); return; }
-			this.sendImageBuffer(res, buf);
-			return;
-		}
-
-		// Find a running instance, preferring the one that registered the planet
-		const instances = [...this.controller.instances.values()];
-		const target =
-			(preferredInstanceId !== null &&
-				instances.find(i => i.id === preferredInstanceId && i.status === "running")) ||
-			instances.find(i => i.status === "running");
-
-		if (!target) { res.status(503).json({ error: "no running instance" }); return; }
-
-		try {
-			const response = await this.controller.sendTo(
-				{ instanceId: target.id },
-				new messages.ResolveAssetsRequest({ paths: [assetPath] })
-			);
-			const b64 = response.assets?.[assetPath];
-			const buf = b64 ? Buffer.from(b64, "base64") : null;
-			this.assetCache.set(assetPath, buf);
-			if (!buf) { res.status(404).end(); return; }
-			this.sendImageBuffer(res, buf);
-		} catch (err) {
-			this.logger.warn(`Asset resolve failed for ${assetPath}: ${err.message}`);
-			res.status(500).end();
-		}
-	}
-
-	/**
-	 * Write an image buffer to the response with caching headers.
-	 */
-	sendImageBuffer(res, buf) {
-		res.setHeader("Content-Type", "image/png");
-		res.setHeader("Cache-Control", "max-age=86400, immutable");
-		res.send(buf);
+		res.json({ iconPath: entry.iconPath, modName: entry.modName });
 	}
 
 	cleanupOldExports(maxStorage) {

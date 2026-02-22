@@ -21,7 +21,7 @@ const lib = requireClusterioModule("@clusterio/lib");
 const { BaseInstancePlugin } = requireClusterioModule("@clusterio/host");
 const info = require("./index.js");
 const messages = require("./messages");
-const { sendChunkedJson, sendAdaptiveJson, resolveFactorioAsset } = require("./helpers");
+const { sendChunkedJson, sendAdaptiveJson } = require("./helpers");
 
 /**
  * Instance plugin class
@@ -81,7 +81,6 @@ class InstancePlugin extends BaseInstancePlugin {
 		this.instance.handle(messages.UnlockSourcePlatformRequest, this.handleUnlockSourcePlatform.bind(this));
 		this.instance.handle(messages.TransferStatusUpdate, this.handleTransferStatusUpdate.bind(this));
 		this.instance.handle(messages.InstanceListPlatformsRequest, this.handleInstanceListPlatformsRequest.bind(this));
-		this.instance.handle(messages.ResolveAssetsRequest, this.handleResolveAssets.bind(this));
 
 		this.logger.info("Surface Export plugin initialized");
 	}
@@ -155,27 +154,6 @@ class InstancePlugin extends BaseInstancePlugin {
 		} catch (err) {
 			this.logger.warn(`registerPlanetPaths failed: ${err.message}`);
 		}
-	}
-
-	/**
-	 * Resolve Factorio asset paths to raw file buffers (base64-encoded).
-	 * Handles both vanilla mods (from Factorio data dir) and third-party mod zips.
-	 * @param {import('./messages').ResolveAssetsRequest} request
-	 */
-	async handleResolveAssets(request) {
-		const factorioDataDir = "/opt/factorio/data";
-		const modsDir = "/clusterio/mods";
-		const assets = {};
-		for (const assetPath of request.paths) {
-			try {
-				const buf = await resolveFactorioAsset(assetPath, factorioDataDir, modsDir);
-				assets[assetPath] = buf ? buf.toString("base64") : null;
-			} catch (err) {
-				this.logger.warn(`Asset resolve failed for ${assetPath}: ${err.message}`);
-				assets[assetPath] = null;
-			}
-		}
-		return { assets };
 	}
 
 	/**

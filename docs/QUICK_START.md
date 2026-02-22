@@ -1,5 +1,14 @@
 # Quick Start — Platform Transfer
 
+## Prerequisites
+
+1. Docker Desktop running
+2. Clone the repo, copy `.env.example` to `.env`, set `INIT_CLUSTERIO_ADMIN`
+3. Create external volume (one-time): `docker volume create factorio-client`
+4. Start the cluster: `docker compose up -d`
+
+> **Factorio Game Client**: If you need export-data (icon spritesheets), set `FACTORIO_USERNAME` and `FACTORIO_TOKEN` in `.env`. Host-1 downloads the client into the `factorio-client` volume on first startup. This volume persists across `docker compose down -v`.
+
 ## One-Command Transfer
 
 ```lua

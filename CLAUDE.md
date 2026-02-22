@@ -25,12 +25,18 @@ This project provides tools for exporting and importing Factorio Space Age platf
 - Host 1: `clusterio-host-1` → Instance: `clusterio-host-1-instance-1` (ports 34100-34109)
 - Host 2: `clusterio-host-2` → Instance: `clusterio-host-2-instance-1` (ports 34200-34209)
 - Runtime data in Docker volumes (not bind-mounted directories)
+- `factorio-client` external volume on host-1 (shared with clusterio-docker project, persists across `down -v`)
+- Host-2 uses `SKIP_CLIENT=true` (no game client needed)
 - Seed data convention from [solarcloud7/clusterio-docker](https://github.com/solarcloud7/clusterio-docker)
 - **Seeding is idempotent**: Fixed in base image — `seed-instances.sh` checks if instance exists before creating, controller writes `.seed-complete` marker, hosts detect token desync. `docker compose restart` is safe; `docker compose down -v` for full wipe.
 
 **Base Image Capabilities** (from `solarcloud7/clusterio-docker`):
 - **Factorio download hardening**: SHA256 verification (optional), `--retry 8` on curl, `SHELL ["/bin/bash", "-eo", "pipefail", "-c"]`
-- **Game client support**: `INSTALL_FACTORIO_CLIENT=true` build arg downloads the full Factorio game client for graphical asset export (icon spritesheets). When enabled, headless server download is skipped (client is a superset). Client requires Factorio account credentials at build time.
+- **Game client support**: Two paths available:
+  - **Runtime download** (recommended): Set `FACTORIO_USERNAME` + `FACTORIO_TOKEN` env vars — host downloads the client on first startup into the `factorio-client` external volume. Persists across restarts and `docker compose down -v`.
+  - **Build-time bake**: `INSTALL_FACTORIO_CLIENT=true` build arg downloads during `docker build`. Credentials appear in `docker history` — only for private images.
+  - The game client enables Clusterio's export-data flow for graphical asset export (icon spritesheets). Only host-1 needs it; host-2 uses `SKIP_CLIENT=true`.
+- **External factorio-client volume**: Declared as `external: true` in docker-compose.yml. Must be created once with `docker volume create factorio-client`. Shared across projects (clusterio-docker and FactorioSurfaceExport use the same volume).
 - **Port range auto-derivation**: Host N → port range `34N00-34N99` (no manual port config needed)
 - **Mod seeding before instances**: Mods are uploaded to controller before instances are created/started
 - **External plugins must be read-write**: Mount without `:ro` — entrypoint runs `npm install` inside each plugin

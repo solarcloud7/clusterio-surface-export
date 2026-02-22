@@ -1,6 +1,6 @@
 import React, { useContext, useEffect, useMemo, useState } from "react";
 import { ControlContext } from "@clusterio/web_ui";
-import { planetIconUrl, factorioAssetUrl } from "./utils.js";
+import { planetIconUrl } from "./utils.js";
 import {
 	Alert,
 	Button,
@@ -52,24 +52,6 @@ function PlanetIcon({ planetName, token, size = 24 }) {
 	);
 }
 
-/**
- * Display any Factorio asset by its "__mod__/path/to/file.png" reference.
- * Falls back to a generic planet SVG on error.
- * @param {{ assetPath: string, label: string, token: string, size?: number }} props
- */
-function FactorioIcon({ assetPath, label, token, size = 24 }) {
-	if (!assetPath) return <Tag>{label}</Tag>;
-	return (
-		<img
-			src={factorioAssetUrl(assetPath, token)}
-			alt={label}
-			title={label}
-			style={{ width: size, height: size, objectFit: "contain", verticalAlign: "middle" }}
-			loading="lazy"
-			onError={(e) => { e.target.onerror = null; e.target.src = DEFAULT_PLANET_ICON; }}
-		/>
-	);
-}
 
 function locationLabel(platform, nowMs) {
 	if (platform.spaceLocation) {

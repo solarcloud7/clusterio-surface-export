@@ -45,9 +45,16 @@ surface_export/
 ### Starting the Cluster
 
 ```bash
+# One-time: create external volume for Factorio game client
+docker volume create factorio-client
+
 # From repo root
 docker compose up -d
 ```
+
+**Factorio Game Client**: Host-1 mounts the `factorio-client` external volume at `/opt/factorio-client`. If `FACTORIO_USERNAME` and `FACTORIO_TOKEN` are set in `.env` and the volume is empty, the client is downloaded automatically on first startup (~4 GB, expansion build with Space Age). Host-2 has `SKIP_CLIENT=true` — it doesn't need the client.
+
+The game client is required for Clusterio's export-data flow (icon/graphics spritesheets). The headless server is sufficient for running game instances.
 
 ### Editing Lua Module Code
 
