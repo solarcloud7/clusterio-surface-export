@@ -440,11 +440,11 @@ Plugins are the primary extension mechanism. See [Clusterio plugin docs](https:/
 
 ## Known Factorio API Limitations (Transfer Fidelity)
 
-Platform transfers preserve **~99.6% of items** (API-limited) and **~100% of fluids** (after segment fixes). The remaining item losses are Factorio engine limitations, not code bugs.
+Platform transfers preserve **100% of items** and **~100% of fluids** (after segment fixes).
 
-### Item Losses (~0.4%, ~45-49 items per transfer)
-- **Assembling machine overloaded inventories**: During gameplay, inserters can stuff items beyond the API-enforced `set_stack()` limit. For example, a foundry with `molten-copper` recipe allows 264 copper-ore per slot via inserters but `set_stack()` caps at 164. The Factorio API provides no way to exceed this limit — `set_stack()`, `insert()`, and direct `.count` assignment all enforce it. **Engine detail**: Inserters check `recipe_requirements * multiplier` (accounting for quality and productivity bonuses) to determine how many items to insert, not `get_max_stack_size()`. This means crafting buffers can exceed API stack limits when quality/productivity multipliers are active.
-- **Belt item drift** (±4-8 items): Transport belts, underground belts, and splitters are always active and cannot be deactivated. Items physically move on belts between the export scan and import validation, causing small bidirectional shifts between entity types. This is cosmetic, not actual loss.
+### Item Losses — FULLY RESOLVED
+- **Assembling machine overloaded inventories (FIXED)**: Previously lost ~5 items per transfer. The `set_stack()` ceiling = `ingredient_count × quality_multiplier × crafting_speed_factor`. On import, `crafting_speed` started at base prototype speed (2.5) because beacon modules weren't yet in the beacons when crafter input inventories were restored. **Fix**: Phase 3 inventory restoration now runs in two passes — beacons first (populating their `beacon_modules`), then all other entities. After beacon modules are placed, `crafting_speed` immediately reflects the beacon bonus (e.g. 17.375 for a legendary crusher near legendary beacons with speed-module-3). The subsequent `set_stack()` calls for crafter inputs use the correct boosted cap. **Key insight**: `entity.crafting_speed` updates instantly when beacon modules are inserted — no tick delay, no power required. The beacons just need their module inventory populated. Fixed in `async-processor.lua` `finish_import_job_phase3()`.
+- **Belt item drift** (±4-8 items): Transport belts are always active and cannot be deactivated. Items physically move on belts between export scan and import validation, causing small bidirectional shifts between entity types. This is cosmetic — not actual loss, just redistribution between belt entities.
 
 ### Fluid Handling (Fixed Bugs)
 Fluid losses that previously appeared as ~15% loss (19,607 units) were caused by multiple bugs, not API limitations:
@@ -457,8 +457,9 @@ Fluid losses that previously appeared as ~15% loss (19,607 units) were caused by
 
 4. **Loss analysis undercounting (false alarm)**: After writing a segment total through a pipe, `entity.fluidbox[i]` for other entities (especially thrusters) returns 0 for several ticks while the engine redistributes fluid to internal buffers. The loss analysis was reading these values too early, showing ~19,607 phantom loss. Fix: use `get_fluid_segment_contents(i)` for segment-aware counting, deduplicating by segment ID. A first-pass temperature cache resolves entities whose local fluidbox is nil.
 
-### Remaining Fluid Losses (Unavoidable, ~20 units)
-- **Fusion plasma temperature merging**: The ~20 units of fusion-plasma loss is NOT a simple rejection — it's **floating-point segment merging** at extreme temperatures. At >1,000,000°C, IEEE 754 double-precision representation is stretched to its limit. When multiple 10-unit plasma packets at slightly different extreme temperatures (e.g., 1065464.9°C vs 1063417.1°C) are restored, the engine may merge them into neighboring plasma segments via weighted-average temperature calculation: `T_final = (m1*T1 + m2*T2) / (m1 + m2)`. The 20 "lost" units actually shift the temperature of the surviving 80 units by a fraction of a degree too small to display. The validation then reports 0 for the original temperature keys because no exact-temperature match exists — the fluid migrated to a slightly-altered temperature bucket. This is a Factorio engine limitation at extreme temperature ranges and is **not fixable via API**.
+### Remaining Fluid Losses (Handled, ~20 units)
+- **Fusion-reactor output write rejection (~20 units)**: Fusion-reactor output fluidboxes silently reject all fluid writes via API (`fluidbox[i]=` and `insert_fluid()` both fail silently). The engine generates fusion-plasma internally during simulation — it cannot be injected externally. This accounts for the previously unexplained ~20 unit loss (2 reactors × 10 units). Now tracked via `write_rejected` in `fluid_restoration.lua` and subtracted from expected counts before validation. See Pitfall #21.
+- **Fusion plasma temperature drift (cosmetic, not loss)**: At >1,000,000°C, temperatures shift continuously during simulation. Per-temperature-bucket validation reports "0/10 Bucket drift" because every temperature key changes between export and import. The total volume is preserved — only the temperature distribution shifts. The UI now uses thermal energy (V×T) validation instead of per-bucket matching. See Pitfall #23.
 
 ### Fluid Redistribution (Expected, Minor)
 - **Pipe network segment redistribution**: When entities are recreated, pipe segments may have slightly different internal capacities. Fluidbox assignment silently caps at segment capacity. The game redistributes fluid across connected entities internally. This causes minor redistribution, not loss.
@@ -468,21 +469,29 @@ Fluid losses that previously appeared as ~15% loss (19,607 units) were caused by
 - `LuaInventory::resize()` only works on custom inventories from `create_inventory()`, not entity inventories
 - Entity inventory slot limits are enforced by the game engine based on recipe, quality, and research level
 - Fluidbox assignment silently caps at segment capacity with no error or return value
+- Fusion-reactor output fluidboxes silently reject all writes (`fluidbox[i]=` and `insert_fluid()`) — engine-managed output only
+- `get_fluid_segment_id(i)` returns nil for isolated machine fluidboxes (not connected to pipes) — must handle with proxy fallback
 
 ### Import Phase Ordering (Critical)
 The order of post-processing steps in `complete_import_job()` is critical for correctness:
 
 ```
-1. Hub inventories   — restore after cargo bays exist (inventory size scales with bays)
-2. Belt items        — always-active, must restore in single tick
-3. Entity state      — control behavior, filters, circuit connections
-4. Validation        — pre-activation check (items only, fluids skipped)
-5. Activation        — ActiveStateRestoration.restore() unfreezes entities
-6. Fluid restoration — MUST be after activation (ghost buffer fix)
-7. Loss analysis     — post-activation counting for accurate transaction log
+1. Hub inventories        — restore after cargo bays exist (inventory size scales with bays)
+2. Belt items             — always-active, must restore in single tick
+3. Entity state           — control behavior, filters, circuit connections
+4. Beacon activation      — activate beacons so crafting_speed bonus propagates instantly
+5. Inventories (2 passes) — Pass 1: beacons (populates beacon_modules, crafting_speed updates immediately)
+                            Pass 2: everything else (set_stack cap now reflects beacon-boosted cs)
+6. Validation             — pre-activation check (items only, fluids skipped)
+7. Activation             — ActiveStateRestoration.restore() unfreezes all remaining entities
+8. Fluid restoration      — MUST be after activation (ghost buffer fix)
+9. Loss analysis          — post-activation counting for accurate transaction log
 ```
 
-**Why this order matters**: Steps 5→6 are inseparable. If fluids are injected before step 5, Factorio's fluid segment system wipes them on activation. Step 4 skips fluid validation (`skip_fluid_validation=true`) because fluids haven't been injected yet.
+**Why this order matters**:
+- Step 4 (beacon activation): beacons are kept active during entity creation (never deactivated). Phase 2 explicitly activates them and fills their energy buffer. This is necessary but not sufficient — beacons need their **module inventory populated** before `crafting_speed` reflects the beacon bonus.
+- Step 5 (inventories, 2 passes): The two-pass approach is critical. `crafting_speed` on a machine updates **immediately** when its nearby beacon's `beacon_modules` inventory is populated — no tick delay, no power required. Pass 1 populates all beacon modules. Pass 2 then restores crafter inputs with `set_stack()`, which uses the now-correct beacon-boosted cap (e.g. cs=17.375 → 12 slots instead of cs=2.5 → 7 slots). Machines remain deactivated throughout — they cannot consume items.
+- Steps 7→8 are inseparable. If fluids are injected before step 7, Factorio's fluid segment system wipes them on activation. Step 6 skips fluid validation (`skip_fluid_validation=true`) because fluids haven't been injected yet.
 
 ### 17. Frozen Entity Fluid Ghost Buffer (Factorio 2.0 Fluid Segments)
 **Symptom**: Fluid loss of ~15% on transfer. Fluid appears to be injected successfully (no errors, no overflows), but after activation all injected fluid is gone.
@@ -519,6 +528,40 @@ game.delete_surface(platform.surface)
 **Symptom**: Export succeeds but source platform remains locked (looks stuck in UI).
 **Cause**: `Number(null) === 0` in JS. Passing `0` as destination to Lua is truthy, so export is treated as transfer and unlock is skipped.
 **Fix**: In `instance.js`, only treat `targetInstanceId` as a transfer destination if it is a positive integer (`> 0`); otherwise pass Lua `nil`.
+
+### 21. Fusion-Reactor Output Fluidboxes Silently Reject Writes (Engine Limitation)
+**Symptom**: After transfer, fusion-reactor shows 0 fusion-plasma even though `fluidbox[i] = {...}` succeeds without error. Transaction log shows "Expected: 100, Actual: 80" with 20 units lost (2 fusion-reactors × 10 units each).
+**Root Cause**: Fusion-reactor **output** fluidboxes (where fusion-plasma is produced) are engine-managed. Both `fluidbox[i] = {...}` and `insert_fluid()` silently fail — they return without error but `get_fluid_segment_contents(i)` reads 0 afterward. The engine generates fusion-plasma internally during simulation; it cannot be injected externally via any API method.
+**Important distinction**: Fusion-reactor **input** fluidboxes (fluoroketone-cold coolant) accept writes normally. Fusion-**generator** input fluidboxes (fusion-plasma consumer) also accept writes. Only the fusion-reactor *output* side rejects.
+**Fix**: Track silently rejected writes in `fluid_restoration.lua` via `write_rejected` map. After writing, verify with `get_fluid_segment_contents(i)` — if amount is 0 when we wrote >0, record in `write_rejected`. In `async-processor.lua`, subtract `write_rejected` amounts from `expectedFluidCounts` before `LossAnalysis.run()` so validation doesn't count engine-rejected fluid as loss.
+**Key files**: `fluid_restoration.lua` (`write_rejected` tracking), `async-processor.lua` (expected count adjustment)
+**Test coverage**: Entity roundtrip test `fusion-reactor-plasma-output` with `expect.fluidWriteRejected: true` and `allowed_mismatches: ["fluids"]` — verifies the engine does reject the write. See `test-cases.json`.
+
+### 22. `get_fluid_segment_id()` Returns Nil for Isolated Machine Fluidboxes
+**Symptom**: Export captures only 2 of 10 fusion entities' fluids. 8 fusion-generators show 0 fluid in export despite having 10 units each in-game.
+**Root Cause**: `fluidbox.get_fluid_segment_id(i)` returns `nil` for isolated machine fluidboxes (fusion-generators not connected to pipes). The `fluid_segment_cache` in `inventory-scanner.lua` only had branches for `seg_id and not cache[seg_id]` (new segment) and the implicit `cache[seg_id]` (dedup skip). When `seg_id` was nil, neither branch matched and the fluid was silently dropped.
+**Fix**: Added `elseif not seg_id` fallback branch that reads `fluidbox[i]` proxy directly (safe for isolated entities — no segment dedup needed since there's no segment to share).
+**Key file**: `inventory-scanner.lua` (`extract_fluids` function, cache mode)
+**Pattern**: Always handle the nil segment ID case when working with `get_fluid_segment_id()`. Isolated machines (fusion-generators, standalone assemblers without pipe connections) return nil, not 0.
+```lua
+if seg_id and not cache[seg_id] then
+  -- First entity to claim segment: read via get_fluid_segment_contents
+elseif not seg_id then
+  -- Isolated fluidbox: read proxy directly (no segment dedup needed)
+elseif cache[seg_id] then
+  -- Already claimed: skip (dedup)
+end
+```
+
+### 23. Thermal Energy Validation for High-Temperature Fluids
+**Context**: Fusion-plasma temperatures exceed 1,000,000°C and shift continuously during simulation. Per-temperature-bucket validation (e.g., `@1,066,009.6°C: 10→0`) is meaningless because temperatures drift between export and import — every bucket key is different even though total volume is preserved.
+**Solution**: For high-temp fluids, display **thermal energy (Volume × Temperature)** instead of per-bucket rows in the transaction log UI. This honestly represents what's preserved without the noise of individual bucket drift.
+**Implementation**:
+- **Lua** (`loss-analysis.lua`): `reconcile_fluids()` now computes `expectedEnergy` and `actualEnergy` (sum of `amount × temperature` across all buckets) and includes them in `highTempAggregates`.
+- **JS** (`web/utils.js`): `buildFluidInventoryRows()` replaces individual temperature bucket children with a single "Thermal (V×T)" summary row when energy data is present. Uses `formatCompactEnergy()` for readable display (e.g., `106,762,720` → `106.8M`).
+- **JSX** (`web/TransactionLogsTab.jsx`): Renders "Verified (thermal)" group status and "Thermal match"/"Thermal drift" child status tags.
+**Backward compat**: When `aggregate.expectedEnergy` is undefined (old transaction logs without energy data), falls through to existing per-bucket-drift display.
+**Key files**: `loss-analysis.lua`, `web/utils.js`, `web/TransactionLogsTab.jsx`
 
 ## Factorio 2.0 Fluid API & Simulation Behavior
 

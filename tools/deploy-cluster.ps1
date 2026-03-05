@@ -102,7 +102,11 @@ Write-Host "Pulling latest base images..." -ForegroundColor Cyan
 docker compose pull
 
 # 7. Start the cluster
+# Run up -d twice: first pass starts the controller; second pass ensures hosts
+# are started after the controller is healthy (Docker Compose timing quirk with
+# depends_on: service_healthy can leave dependent containers in Created state).
 Write-Host "Starting cluster..." -ForegroundColor Cyan
+docker compose up -d
 docker compose up -d
 
 Write-Host "Cluster started with plugin version $NewVersion" -ForegroundColor Green
@@ -121,16 +125,27 @@ $initDone = $false
 Start-Sleep -Seconds 3
 
 # Follow logs and look for initialization markers
-docker logs -f surface-export-controller 2>&1 | ForEach-Object {
-    Write-Host $_
-    if ($_ -match "Instance seeding complete|Mod seeding complete|Controller is ready|All hosts connected") {
-        $initDone = $true
+# Use a job so we can break out early when seeding completes
+$logJob = Start-Job -ScriptBlock {
+    docker logs -f surface-export-controller 2>&1
+}
+while ($true) {
+    $lines = Receive-Job $logJob
+    foreach ($line in $lines) {
+        Write-Host $line
+        if ($line -match "Seeding complete") {
+            $initDone = $true
+        }
     }
+    if ($initDone) { break }
     if ($sw.Elapsed.TotalSeconds -ge $timeout) {
         Write-Host "(Log streaming timeout after ${timeout}s)" -ForegroundColor Yellow
-        return
+        break
     }
+    Start-Sleep -Milliseconds 200
 }
+Stop-Job $logJob -ErrorAction SilentlyContinue
+Remove-Job $logJob -ErrorAction SilentlyContinue
 
 Write-Host "================================================" -ForegroundColor DarkGray
 
@@ -157,7 +172,8 @@ if ($LASTEXITCODE -eq 0 -and $tokenJson) {
 }
 
 Write-Host ""
-Write-Host "Web UI: http://localhost:$((Get-Content $ControllerEnv | Where-Object { $_ -match 'CONTROLLER_HTTP_PORT=(\d+)' } | ForEach-Object { $Matches[1] }) ?? '8080')" -ForegroundColor Green
+$httpPort = (Get-Content $EnvFile | Where-Object { $_ -match '^CONTROLLER_HTTP_PORT=(\d+)' } | ForEach-Object { $Matches[1] } | Select-Object -First 1) ?? "8080"
+Write-Host "Web UI: http://localhost:$httpPort" -ForegroundColor Green
 Write-Host ""
 Write-Host "Cluster topology:" -ForegroundColor Cyan
 Write-Host "  Controller (http://localhost:8080)" -ForegroundColor White

@@ -1,17 +1,5 @@
 "use strict";
 
-/**
- * Build the URL for a named planet's icon.
- * Served by the controller; authenticated via token query param.
- * @param {string} planetName
- * @param {string} token - Clusterio auth token
- * @returns {string}
- */
-export function planetIconUrl(planetName, token) {
-	return `/api/surface_export/planet-icon/${encodeURIComponent(planetName)}?token=${token}`;
-}
-
-
 export function statusColor(status) {
 	switch (status) {
 	case "transporting":
@@ -91,6 +79,23 @@ export function formatNumeric(value, maxFractionDigits = 1) {
 	return value.toLocaleString(undefined, { maximumFractionDigits: maxFractionDigits });
 }
 
+export function formatCompactEnergy(value) {
+	if (typeof value !== "number" || Number.isNaN(value)) {
+		return "-";
+	}
+	const abs = Math.abs(value);
+	if (abs >= 1e9) {
+		return `${(value / 1e9).toLocaleString(undefined, { maximumFractionDigits: 1 })}B`;
+	}
+	if (abs >= 1e6) {
+		return `${(value / 1e6).toLocaleString(undefined, { maximumFractionDigits: 1 })}M`;
+	}
+	if (abs >= 1e3) {
+		return `${(value / 1e3).toLocaleString(undefined, { maximumFractionDigits: 1 })}K`;
+	}
+	return value.toLocaleString(undefined, { maximumFractionDigits: 0 });
+}
+
 export function formatSigned(value, maxFractionDigits = 1) {
 	if (typeof value !== "number" || Number.isNaN(value)) {
 		return "-";
@@ -117,11 +122,13 @@ export function buildMetricRows(data) {
 			formattedValue = value ? "Yes" : "No";
 		} else if (typeof value === "number") {
 			const lowered = key.toLowerCase();
-			if (lowered.endsWith("ms")) {
+			// Require unit suffixes to follow an underscore to avoid false positives:
+			// "total_items" ends in "ms" but is not a duration; "total_ms" is.
+			if (lowered.endsWith("_ms") || lowered === "ms") {
 				formattedValue = `${formatNumeric(value, 0)} ms`;
-			} else if (lowered.endsWith("ticks")) {
+			} else if (lowered.endsWith("_ticks") || lowered === "ticks") {
 				formattedValue = `${formatNumeric(value, 0)} ticks`;
-			} else if (lowered.endsWith("kb")) {
+			} else if (lowered.endsWith("_kb") || lowered === "kb") {
 				formattedValue = `${formatNumeric(value, 1)} KB`;
 			} else {
 				formattedValue = formatNumeric(value, Number.isInteger(value) ? 0 : 1);
@@ -138,98 +145,55 @@ export function buildMetricRows(data) {
 	});
 }
 
-const EXPORT_METRIC_DEFINITIONS = {
-	requestExportAndLockMs: {
-		order: 10,
-		label: "Queue + lock request",
-		description: "Controller→source request time to queue export and lock the platform.",
-		format: "ms",
-	},
-	waitForControllerStoreMs: {
-		order: 20,
-		label: "Wait for controller store",
-		description: "Time waiting for exported payload to arrive and be stored on the controller.",
-		format: "ms",
-	},
-	controllerExportPrepTotalMs: {
-		order: 30,
-		label: "Controller prep total",
-		description: "End-to-end prep window before transmit (request + controller store wait).",
-		format: "ms",
-	},
-	instanceAsyncExportTicks: {
-		order: 40,
-		label: "Async export runtime (ticks)",
-		description: "Source instance export runtime measured in game ticks.",
-		format: "ticks",
-	},
-	instanceAsyncExportMs: {
-		order: 50,
-		label: "Async export runtime",
-		description: "Source instance export runtime converted to milliseconds.",
-		format: "ms",
-	},
-	instanceAsyncExportSeconds: {
-		order: 60,
-		label: "Async export runtime (seconds)",
-		description: "Source instance export runtime in seconds.",
-		format: "seconds",
-	},
-	exportedEntityCount: {
-		order: 70,
-		label: "Exported entities",
-		description: "Entity count serialized into the export payload.",
-		format: "count",
-	},
-	exportedTileCount: {
-		order: 80,
-		label: "Exported tiles",
-		description: "Tile count serialized into the export payload.",
-		format: "count",
-	},
-	scheduleRecordCount: {
-		order: 90,
-		label: "Schedule records exported",
-		description: "Number of LuaSpacePlatform schedule stations/records exported.",
-		format: "count",
-	},
-	scheduleInterruptCount: {
-		order: 100,
-		label: "Schedule interrupts exported",
-		description: "Number of LuaSpacePlatform schedule interrupts exported.",
-		format: "count",
-	},
-	atomicBeltEntitiesScanned: {
-		order: 110,
-		label: "Atomic belt entities scanned",
-		description: "Belt entities scanned in the single-tick atomic belt pass.",
-		format: "count",
-	},
-	atomicBeltItemStacksCaptured: {
-		order: 120,
-		label: "Atomic belt item stacks captured",
-		description: "Belt item stacks captured during the atomic belt scan.",
-		format: "count",
-	},
-	uncompressedPayloadBytes: {
-		order: 130,
-		label: "Uncompressed payload size",
-		description: "Payload size before compression.",
-		format: "bytes",
-	},
-	compressedPayloadBytes: {
-		order: 140,
-		label: "Compressed payload size",
-		description: "Payload size after compression.",
-		format: "bytes",
-	},
-	compressionReductionPct: {
-		order: 150,
-		label: "Compression reduction",
-		description: "Compression size reduction percentage.",
-		format: "percent",
-	},
-};
+// Timing fields from export metrics that belong in the Gantt diagram, not the table.
+export const EXPORT_TIMING_FIELDS = [
+	"requestExportAndLockMs",
+	"waitForControllerStoreMs",
+	"controllerExportPrepTotalMs",
+	"instanceAsyncExportMs",
+	"instanceAsyncExportSeconds",
+	"instanceAsyncExportTicks",
+];
+
+// Size/compression fields from export metrics that belong in the Payload section.
+const EXPORT_SIZE_FIELDS = new Set([
+	"uncompressedPayloadBytes",
+	"compressedPayloadBytes",
+	"compressionReductionPct",
+]);
+
+// Ordered operation count definitions — merged export+import, displayed in combined table.
+// "source" indicates which data object the field comes from: "export" or "import".
+export const OPERATION_COUNT_DEFINITIONS = [
+	{ key: "exportedEntityCount",        source: "export", label: "Entities" },
+	{ key: "exportedTileCount",          source: "export", label: "Tiles" },
+	{ key: "belt_items_restored",        source: "import", label: "Belt items restored" },
+	{ key: "fluids_restored",            source: "import", label: "Fluid segments restored" },
+	{ key: "circuits_connected",         source: "import", label: "Circuits connected" },
+	{ key: "scheduleRecordCount",        source: "export", label: "Schedule records" },
+	{ key: "scheduleInterruptCount",     source: "export", label: "Schedule interrupts" },
+	{ key: "atomicBeltEntitiesScanned",  source: "export", label: "Belt entities scanned" },
+	{ key: "atomicBeltItemStacksCaptured", source: "export", label: "Belt item stacks captured" },
+];
+
+export function buildOperationCountRows(exportData, importData) {
+	const rows = [];
+	for (const def of OPERATION_COUNT_DEFINITIONS) {
+		const raw = def.source === "export" ? exportData?.[def.key] : importData?.[def.key];
+		const value = Number(raw ?? 0);
+		if (value === 0) continue;
+		rows.push({ key: def.key, metric: def.label, value: value.toLocaleString() });
+	}
+	return rows;
+}
+
+// Gantt timing definitions for export events.
+export const EXPORT_GANTT_TIMINGS = [
+	{ key: "requestExportAndLockMs",     label: "Queue + lock" },
+	{ key: "waitForControllerStoreMs",   label: "Wait for store" },
+	{ key: "controllerExportPrepTotalMs", label: "Prep total" },
+	{ key: "instanceAsyncExportMs",      label: "Async export" },
+];
 
 function formatBytes(value) {
 	const numeric = Number(value);
@@ -246,54 +210,6 @@ function formatBytes(value) {
 	return `${formatNumeric(kb / 1024, 2)} MB`;
 }
 
-function formatExportMetricValue(value, format) {
-	const numeric = Number(value);
-	if (format === "ms") {
-		return Number.isFinite(numeric) ? `${formatNumeric(numeric, 0)} ms` : "-";
-	}
-	if (format === "ticks") {
-		return Number.isFinite(numeric) ? `${formatNumeric(numeric, 0)} ticks` : "-";
-	}
-	if (format === "seconds") {
-		return Number.isFinite(numeric) ? `${formatNumeric(numeric, 2)} s` : "-";
-	}
-	if (format === "count") {
-		return Number.isFinite(numeric) ? formatNumeric(numeric, 0) : "-";
-	}
-	if (format === "bytes") {
-		return formatBytes(value);
-	}
-	if (format === "percent") {
-		return Number.isFinite(numeric) ? `${formatNumeric(numeric, 1)}%` : "-";
-	}
-	if (typeof value === "boolean") {
-		return value ? "Yes" : "No";
-	}
-	if (Number.isFinite(numeric)) {
-		return formatNumeric(numeric, Number.isInteger(numeric) ? 0 : 2);
-	}
-	return value === null || value === undefined ? "-" : String(value);
-}
-
-export function buildExportMetricRows(data) {
-	if (!data || typeof data !== "object") {
-		return [];
-	}
-
-	const rows = Object.entries(data).map(([key, value]) => {
-		const def = EXPORT_METRIC_DEFINITIONS[key] || null;
-		return {
-			key,
-			order: def?.order ?? 10000,
-			metric: def?.label || humanizeMetricKey(key),
-			value: formatExportMetricValue(value, def?.format),
-			details: def?.description || "Extended export metric.",
-		};
-	});
-
-	rows.sort((a, b) => a.order - b.order || a.metric.localeCompare(b.metric));
-	return rows;
-}
 
 export function buildExpectedActualRows(expectedMap, actualMap) {
 	const expected = expectedMap || {};
@@ -356,7 +272,7 @@ export function buildFluidInventoryRows(expectedMap, actualMap, highTempThreshol
 				expected: 0,
 				actual: 0,
 				hasHighTempBucket: false,
-				children: [],
+				buckets: [],
 			});
 		}
 
@@ -364,19 +280,14 @@ export function buildFluidInventoryRows(expectedMap, actualMap, highTempThreshol
 		group.expected += expectedValue;
 		group.actual += actualValue;
 		group.hasHighTempBucket = group.hasHighTempBucket || isHighTemp;
-		group.children.push({
-			key: `fluid:bucket:${fluidKey}`,
-			name: baseName,
-			bucketKey: fluidKey,
-			tempBucket: parsed.temperatureC === null ? "-" : `${formatNumeric(parsed.temperatureC, 1)}\u00B0C`,
+		group.buckets.push({
+			fluidKey,
+			tempBucket: parsed.temperatureC === null ? null : `${formatNumeric(parsed.temperatureC, 1)}°C`,
 			category: isHighTemp ? "High-temp" : "Normal",
 			expected: expectedValue,
 			actual: actualValue,
 			delta,
 			preservedPct: expectedValue > 0 ? (actualValue / expectedValue) * 100 : null,
-			isGroup: false,
-			status: "Match",
-			reconciled: false,
 		});
 	}
 
@@ -388,43 +299,107 @@ export function buildFluidInventoryRows(expectedMap, actualMap, highTempThreshol
 		const reconciledHighTemp = category === "High-temp"
 			? Boolean(aggregate?.reconciled ?? Math.abs(delta) <= 1)
 			: false;
+		const hasThermalData = aggregate && aggregate.expectedEnergy > 0;
 
-		const children = group.children
-			.map(child => {
-				const absDelta = Math.abs(child.delta);
-				let status = "Match";
-				if (child.category === "High-temp" && reconciledHighTemp) {
-					status = absDelta > 0.0001 ? "Bucket drift (reconciled)" : "Match";
-				} else if (absDelta > 0.0001) {
-					status = "Mismatch";
-				}
-				return {
-					...child,
-					status,
-					reconciled: child.category === "High-temp" ? reconciledHighTemp : absDelta <= 0.0001,
-				};
-			})
-			.sort((a, b) => Math.abs(b.delta) - Math.abs(a.delta) || a.bucketKey.localeCompare(b.bucketKey));
-
-		rows.push({
-			key: `fluid:group:${group.baseName}`,
-			name: group.baseName,
-			category,
-			expected: group.expected,
-			actual: group.actual,
-			delta,
-			preservedPct: group.expected > 0 ? (group.actual / group.expected) * 100 : null,
-			isGroup: true,
-			status: category === "High-temp"
-				? (reconciledHighTemp ? "Reconciled aggregate" : (Math.abs(delta) <= 0.0001 ? "Match" : "Mismatch"))
-				: (Math.abs(delta) <= 0.0001 ? "Match" : "Mismatch"),
-			reconciled: category === "High-temp" ? reconciledHighTemp : Math.abs(delta) <= 0.0001,
-			children,
-		});
+		if (category === "High-temp" && reconciledHighTemp && hasThermalData) {
+			// High-temp with thermal energy: single row with icon+name + thermal energy values.
+			// "High-temp (V×T)" label replaces the redundant volume aggregate row.
+			const expEnergy = aggregate.expectedEnergy;
+			const actEnergy = aggregate.actualEnergy;
+			const energyDelta = actEnergy - expEnergy;
+			const energyPrecision = expEnergy > 0 ? (actEnergy / expEnergy) * 100 : 100;
+			rows.push({
+				key: `fluid:thermal:${group.baseName}`,
+				name: group.baseName,
+				tempDisplay: "High-temp (V×T)",
+				category,
+				expected: expEnergy,
+				actual: actEnergy,
+				delta: energyDelta,
+				preservedPct: energyPrecision,
+				isGroup: true,
+				isThermalSummary: true,
+				status: energyPrecision >= 99.0 ? "Thermal match" : "Thermal drift",
+				reconciled: true,
+			});
+		} else if (group.buckets.length === 1) {
+			// Single bucket — flat row: icon + name + temperature inline
+			const bucket = group.buckets[0];
+			const absDelta = Math.abs(bucket.delta);
+			let status;
+			if (category === "High-temp" && reconciledHighTemp) {
+				status = absDelta > 0.0001 ? "Bucket drift (reconciled)" : "Match";
+			} else {
+				status = absDelta > 0.0001 ? "Mismatch" : "Match";
+			}
+			rows.push({
+				key: `fluid:bucket:${bucket.fluidKey}`,
+				name: group.baseName,
+				tempDisplay: bucket.tempBucket,
+				category,
+				expected: bucket.expected,
+				actual: bucket.actual,
+				delta: bucket.delta,
+				preservedPct: bucket.preservedPct,
+				isGroup: true,
+				status,
+				reconciled: category === "High-temp" ? reconciledHighTemp : absDelta <= 0.0001,
+			});
+		} else {
+			// Multiple normal-temp buckets — aggregate row + per-bucket rows
+			const groupStatus = Math.abs(delta) <= 0.0001 ? "Match" : "Mismatch";
+			rows.push({
+				key: `fluid:group:${group.baseName}`,
+				name: group.baseName,
+				tempDisplay: null,
+				category,
+				expected: group.expected,
+				actual: group.actual,
+				delta,
+				preservedPct: group.expected > 0 ? (group.actual / group.expected) * 100 : null,
+				isGroup: true,
+				status: groupStatus,
+				reconciled: Math.abs(delta) <= 0.0001,
+			});
+			const sortedBuckets = [...group.buckets]
+				.sort((a, b) => Math.abs(b.delta) - Math.abs(a.delta) || a.fluidKey.localeCompare(b.fluidKey));
+			for (const bucket of sortedBuckets) {
+				const absDelta = Math.abs(bucket.delta);
+				rows.push({
+					key: `fluid:bucket:${bucket.fluidKey}`,
+					name: group.baseName,
+					tempDisplay: bucket.tempBucket,
+					category,
+					expected: bucket.expected,
+					actual: bucket.actual,
+					delta: bucket.delta,
+					preservedPct: bucket.preservedPct,
+					isGroup: false,
+					status: absDelta > 0.0001 ? "Mismatch" : "Match",
+					reconciled: absDelta <= 0.0001,
+				});
+			}
+		}
 	}
 
-	rows.sort((a, b) => Math.abs(b.delta) - Math.abs(a.delta) || a.name.localeCompare(b.name));
-	return rows;
+	rows.sort((a, b) => {
+		// Keep thermal child rows immediately after their group row
+		if (a.isThermalSummary || (!a.isGroup && !a.isThermalSummary)) return 0;
+		return Math.abs(b.delta) - Math.abs(a.delta) || a.name.localeCompare(b.name);
+	});
+	// Stable sort: group rows first by delta, then thermal/bucket rows follow their group
+	const grouped = [];
+	const seen = new Set();
+	const allGroupKeys = rows.filter(r => r.isGroup).map(r => r.name);
+	for (const groupRow of rows.filter(r => r.isGroup).sort((a, b) => Math.abs(b.delta) - Math.abs(a.delta) || a.name.localeCompare(b.name))) {
+		if (seen.has(groupRow.name)) continue;
+		seen.add(groupRow.name);
+		grouped.push(groupRow);
+		for (const child of rows.filter(r => !r.isGroup && r.name === groupRow.name)) {
+			grouped.push(child);
+		}
+	}
+	return grouped;
 }
 
 export function findLatestEvent(events, predicate) {

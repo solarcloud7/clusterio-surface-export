@@ -503,21 +503,35 @@ end
 --- Restore inventories to an entity
 --- @param entity LuaEntity: The entity to restore inventories to
 --- @param entity_data table: Serialized entity data
-function Deserializer.restore_inventories(entity, entity_data)
+--- @param overflow_losses table|nil: Optional { items={name->count}, total=n, entities={...} } to accumulate set_stack partial losses into
+function Deserializer.restore_inventories(entity, entity_data, overflow_losses)
   if not entity.valid or not entity_data.specific_data then
     return
   end
   
   -- Check if there's anything to restore (inventories only - belt items handled in post-processing)
   local has_inventories = entity_data.specific_data.inventories ~= nil
-  
+
   if not has_inventories then
     return
   end
 
   -- Restore regular inventories
+  -- CRITICAL: crafter_modules MUST be restored before crafter_input/output.
+  -- The engine computes input slot caps as: recipe_amount × module_multiplier.
+  -- If input items are set_stack()'d before modules are placed, the cap reflects
+  -- no-module state, causing partial writes ("wanted 12, placed 7").
+  -- Sort so crafter_modules comes first; all other inventories follow unchanged.
   if has_inventories then
+  local sorted_inventories = {}
   for _, inv_data in ipairs(entity_data.specific_data.inventories) do
+    if inv_data.type == "crafter_modules" then
+      table.insert(sorted_inventories, 1, inv_data)
+    else
+      table.insert(sorted_inventories, inv_data)
+    end
+  end
+  for _, inv_data in ipairs(sorted_inventories) do
     -- Convert inventory type name (string) to numeric index
     -- inv_data.type is a string like "crafter_input", need to convert to defines.inventory index
     local inv_index = defines.inventory[inv_data.type]
@@ -568,6 +582,14 @@ function Deserializer.restore_inventories(entity, entity_data)
             ok, err = pcall(function()
               inventory[item.slot].set_stack(stack_params)
             end)
+            -- DIAG: log beacon module set_stack result
+            if entity.name == "beacon" then
+              local slot = inventory[item.slot]
+              log(string.format("[DiagBeacon] set_stack slot=%d item=%s q=%s ok=%s err=%s valid=%s count=%s",
+                item.slot, item.name, tostring(item.quality), tostring(ok), tostring(err),
+                tostring(slot.valid_for_read), tostring(slot.valid_for_read and slot.count or "n/a")))
+            end
+            -- DIAG END
           else
             -- Fallback: bulk insert (for old export data without slot index)
             ok, err = pcall(function()
@@ -582,8 +604,25 @@ function Deserializer.restore_inventories(entity, entity_data)
             -- Verify set_stack worked
             local slot = inventory[item.slot]
             if not slot.valid_for_read or slot.count < item.count then
+              local actual_count = slot.valid_for_read and slot.count or 0
+              local lost = item.count - actual_count
               log(string.format("[FactorioSurfaceExport] Warning: set_stack partial for slot %d: %d/%d of %s into %s",
-                item.slot, slot.valid_for_read and slot.count or 0, item.count, item.name, entity.name))
+                item.slot, actual_count, item.count, item.name, entity.name))
+              if overflow_losses and lost > 0 then
+                overflow_losses.items[item.name] = (overflow_losses.items[item.name] or 0) + lost
+                overflow_losses.total = overflow_losses.total + lost
+                -- Record per-entity detail (capped at 50)
+                if #overflow_losses.entities < 50 then
+                  table.insert(overflow_losses.entities, {
+                    name = entity.name,
+                    position = entity.position,
+                    item = item.name,
+                    lost = lost,
+                    actual = actual_count,
+                    expected = item.count,
+                  })
+                end
+              end
             end
           else
             local inserted = err  -- err is actually the return value from insert()

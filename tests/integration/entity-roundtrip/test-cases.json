@@ -437,6 +437,65 @@
         "specific_data": {}
       },
       "expect": { "success": true }
+    },
+    {
+      "id": "fusion-reactor-coolant",
+      "name": "Fusion Reactor with coolant input",
+      "category": "space-age-energy",
+      "type": "entity",
+      "input": {
+        "name": "fusion-reactor",
+        "direction": 0,
+        "specific_data": {
+          "fluids": [
+            { "name": "fluoroketone-cold", "amount": 500, "temperature": -150 }
+          ]
+        }
+      },
+      "expect": {
+        "success": true,
+        "verifyFluids": true
+      }
+    },
+    {
+      "id": "fusion-reactor-plasma-output",
+      "name": "Fusion Reactor with plasma output (engine rejects write)",
+      "category": "space-age-energy",
+      "type": "entity",
+      "input": {
+        "name": "fusion-reactor",
+        "direction": 0,
+        "specific_data": {
+          "fluids": [
+            { "name": "fusion-plasma", "amount": 10, "temperature": 1066000 }
+          ]
+        }
+      },
+      "expect": {
+        "success": true,
+        "verifyFluids": true,
+        "fluidWriteRejected": true,
+        "allowed_mismatches": ["fluids"]
+      }
+    },
+    {
+      "id": "fusion-generator-plasma",
+      "name": "Fusion Generator with plasma input",
+      "category": "space-age-energy",
+      "type": "entity",
+      "input": {
+        "name": "fusion-generator",
+        "direction": 0,
+        "specific_data": {
+          "fluids": [
+            { "name": "fusion-plasma", "amount": 10, "temperature": 1066000 }
+          ]
+        }
+      },
+      "expect": {
+        "success": true,
+        "verifyFluids": true
+      }
     }
   ]
 }

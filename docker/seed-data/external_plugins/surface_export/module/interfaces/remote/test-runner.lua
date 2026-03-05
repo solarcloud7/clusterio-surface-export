@@ -108,9 +108,10 @@ function TestRunner.run_tests(test_suite_json, options)
       goto continue
     end
     
-    -- Copy warnings
+    -- Copy warnings and fluid verification
     test_result.warnings = result.warnings or {}
     test_result.mismatches = result.comparison_summary and result.comparison_summary.mismatches or 0
+    test_result.fluid_verification = result.fluid_verification
     
     -- Evaluate success
     local expect = test_case.expect or { success = true, max_mismatches = 0 }
@@ -128,6 +129,32 @@ function TestRunner.run_tests(test_suite_json, options)
       end
     end
     
+    -- Check fluid verification if requested
+    if passed and expect.verifyFluids and result.fluid_verification then
+      local fv = result.fluid_verification
+      if expect.fluidWriteRejected then
+        -- We expect the engine to reject the fluid write (e.g., fusion-reactor plasma output)
+        if fv.write_rejected <= 0 then
+          passed = false
+          table.insert(fail_reasons, "Expected fluid write rejection but none occurred")
+        end
+      else
+        -- Normal fluid verification — write should succeed
+        if not fv.passed then
+          passed = false
+          table.insert(fail_reasons, string.format(
+            "Fluid verification failed: expected %.1f, got %.1f (write_rejected=%.1f)",
+            fv.expected or 0, fv.actual or 0, fv.write_rejected or 0))
+        end
+        if fv.write_rejected and fv.write_rejected > 0 then
+          passed = false
+          table.insert(fail_reasons, string.format(
+            "Unexpected fluid write rejection: %.1f units rejected by engine",
+            fv.write_rejected))
+        end
+      end
+    end
+
     -- Check mismatch count
     if passed and test_result.mismatches > (expect.max_mismatches or 0) then
       -- Check if mismatches are in allowed list

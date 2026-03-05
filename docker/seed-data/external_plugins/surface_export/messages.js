@@ -1206,51 +1206,6 @@ class PlatformStateChangedEvent {
 	}
 }
 
-class RegisterPlanetPathsRequest {
-	static plugin = PLUGIN_NAME;
-	static type = "request";
-	static src = "instance";
-	static dst = "controller";
-	static jsonSchema = {
-		type: "object",
-		properties: {
-			planets: {
-				type: "object",
-				additionalProperties: {
-					type: "object",
-					properties: {
-						iconPath: { type: "string" },
-						modName: { type: "string" },
-					},
-					required: ["iconPath", "modName"],
-					additionalProperties: false,
-				},
-			},
-		},
-		required: ["planets"],
-		additionalProperties: false,
-	};
-
-	constructor(json) {
-		this.planets = json.planets;
-	}
-
-	static fromJSON(json) {
-		return new RegisterPlanetPathsRequest(json);
-	}
-
-	toJSON() {
-		return { planets: this.planets };
-	}
-
-	static Response = {
-		jsonSchema: { type: "object", additionalProperties: false },
-		fromJSON(json) {
-			return json;
-		},
-	};
-}
-
 module.exports = {
 	ExportPlatformRequest,
 	PlatformExportEvent,
@@ -1276,6 +1231,5 @@ module.exports = {
 	SurfaceExportTransferUpdateEvent,
 	SurfaceExportLogUpdateEvent,
 	PlatformStateChangedEvent,
-	RegisterPlanetPathsRequest,
 	PERMISSIONS,
 };

@@ -167,9 +167,6 @@ class ControllerPlugin extends BaseControllerPlugin {
 			"surface_export_transaction_logs.json"
 		);
 
-		// Planet icon registry: planet_name → { instanceId, iconPath, modName }
-		this.planetRegistry = new Map();
-
 		// Instantiate modules (order matters: txLogger before subscriptions,
 		// platformTree before orchestrator)
 		this.platformTree = new PlatformTree(this, messages);
@@ -195,13 +192,6 @@ class ControllerPlugin extends BaseControllerPlugin {
 		this.controller.handle(messages.GetTransactionLogRequest, this.handleGetTransactionLog.bind(this));
 		this.controller.handle(messages.SetSurfaceExportSubscriptionRequest, this.subscriptions.handleSetSurfaceExportSubscriptionRequest.bind(this.subscriptions));
 		this.controller.handle(messages.PlatformStateChangedEvent, this.handlePlatformStateChanged.bind(this));
-		this.controller.handle(messages.RegisterPlanetPathsRequest, this.handleRegisterPlanetPaths.bind(this));
-
-		// HTTP route for serving planet icons to the Web UI
-		this.controller.app.get(
-			"/api/surface_export/planet-icon/:planetName",
-			this.handlePlanetIconHttp.bind(this)
-		);
 
 		this.logger.info("Surface Export controller plugin initialized");
 	}
@@ -263,57 +253,6 @@ class ControllerPlugin extends BaseControllerPlugin {
 			this.platformDepartureTimes.set(event.platformName, Date.now());
 		}
 		this.subscriptions.queueTreeBroadcast(event.forceName || "player");
-	}
-
-	/**
-	 * Store planet icon paths reported by an instance on startup.
-	 * @param {import('./messages').RegisterPlanetPathsRequest} request
-	 * @param {Object} src - Source descriptor; src.instanceId identifies the reporting instance
-	 */
-	handleRegisterPlanetPaths(request, src) {
-		for (const [planetName, data] of Object.entries(request.planets || {})) {
-			this.planetRegistry.set(planetName, {
-				instanceId: src.instanceId,
-				iconPath: data.iconPath,
-				modName: data.modName,
-			});
-		}
-		this.logger.info(
-			`Registered ${Object.keys(request.planets || {}).length} planet icons ` +
-			`from instance ${src.instanceId}`
-		);
-		return {};
-	}
-
-	/**
-	 * Verify the Bearer / query-string token on an Express request.
-	 * Returns true and leaves res untouched on success.
-	 * Returns false and sends 401/403 on failure.
-	 */
-	async verifyRequestToken(req, res) {
-		const token = req.headers["x-access-token"] || req.query.token;
-		if (!token) { res.status(401).end(); return false; }
-		try {
-			const secret = this.controller.config.get("controller.auth_secret");
-			await lib.verifyToken(token, secret, "user");
-			return true;
-		} catch {
-			res.status(403).end();
-			return false;
-		}
-	}
-
-	/**
-	 * GET /api/surface_export/planet-icon/:planetName
-	 * Returns the registered icon path for a named planet as JSON.
-	 * Callers should resolve the __mod__/path via Clusterio's static asset endpoint.
-	 */
-	async handlePlanetIconHttp(req, res) {
-		if (!await this.verifyRequestToken(req, res)) return;
-		const { planetName } = req.params;
-		const entry = this.planetRegistry.get(planetName);
-		if (!entry) { res.status(404).end(); return; }
-		res.json({ iconPath: entry.iconPath, modName: entry.modName });
 	}
 
 	cleanupOldExports(maxStorage) {

@@ -97,8 +97,11 @@ end
 --- local buffer amounts that haven't redistributed yet. get_fluid_segment_contents()
 --- returns the true segment total regardless of redistribution state.
 --- @param surface LuaSurface: The surface to count fluids on
+--- @param segment_temps table|nil: Optional seg_id→{fluid,temp} map from FluidRestoration.restore().
+---   When provided, temperatures are sourced from what was actually written rather than re-reading
+---   from the proxy (which may lag for high-temp fluids like fusion-plasma).
 --- @return table, number: fluid_key→amount map, total fluid amount
-function SurfaceCounter.count_fluids(surface)
+function SurfaceCounter.count_fluids(surface, segment_temps)
     if not surface or not surface.valid then
         return {}, 0
     end
@@ -107,10 +110,12 @@ function SurfaceCounter.count_fluids(surface)
     local total = 0
     local counted_segments = {}
     local known_fluid_temps = {}
+    local seg_temps = segment_temps or {}
 
     local entities = surface.find_entities_filtered({})
 
-    -- First pass: collect known temperatures from entities with non-empty local fluidboxes
+    -- First pass: collect known temperatures from entities with non-empty local fluidboxes.
+    -- This is a fallback for segments not covered by segment_temps.
     for _, entity in ipairs(entities) do
         if entity.valid and entity.fluidbox then
             pcall(function()
@@ -124,20 +129,26 @@ function SurfaceCounter.count_fluids(surface)
         end
     end
 
-    -- Second pass: count using segment contents (deduplicating by segment ID)
+    -- Second pass: count using segment contents (deduplicating by segment ID).
+    -- Temperature priority: segment_temps (authoritative) > local proxy > known_fluid_temps > 15
     for _, entity in ipairs(entities) do
         if entity.valid and entity.fluidbox then
             local success, err = pcall(function()
                 for i = 1, #entity.fluidbox do
                     local seg_id = entity.fluidbox.get_fluid_segment_id(i)
                     if seg_id and not counted_segments[seg_id] then
-                        -- New segment: count using segment contents
                         counted_segments[seg_id] = true
                         local contents = entity.fluidbox.get_fluid_segment_contents(i)
                         if contents then
                             for fluid_name, amount in pairs(contents) do
-                                local local_fluid = entity.fluidbox[i]
-                                local temp = (local_fluid and local_fluid.temperature) or known_fluid_temps[fluid_name] or 15
+                                local temp
+                                local st = seg_temps[seg_id]
+                                if st and st.fluid == fluid_name then
+                                    temp = st.temp
+                                else
+                                    local local_fluid = entity.fluidbox[i]
+                                    temp = (local_fluid and local_fluid.temperature) or known_fluid_temps[fluid_name] or 15
+                                end
                                 local key = Util.make_fluid_temp_key(fluid_name, temp)
                                 fluid_totals[key] = (fluid_totals[key] or 0) + amount
                                 total = total + amount
@@ -168,10 +179,11 @@ end
 --- Count both items and fluids on a live surface
 --- Convenience wrapper that calls count_items and count_fluids.
 --- @param surface LuaSurface: The surface to count
+--- @param segment_temps table|nil: Optional seg_id→{fluid,temp} map from FluidRestoration.restore()
 --- @return table: { item_counts, item_total, fluid_counts, fluid_total }
-function SurfaceCounter.count_all(surface)
+function SurfaceCounter.count_all(surface, segment_temps)
     local item_counts, item_total = SurfaceCounter.count_items(surface)
-    local fluid_counts, fluid_total = SurfaceCounter.count_fluids(surface)
+    local fluid_counts, fluid_total = SurfaceCounter.count_fluids(surface, segment_temps)
     return {
         item_counts = item_counts,
         item_total = item_total,

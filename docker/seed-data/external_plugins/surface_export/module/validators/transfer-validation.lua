@@ -61,13 +61,16 @@ function TransferValidation.validate_import(surface, expected_verification, opti
     local consumer_item_counts = {}
     local total_item_counts = {}
     
-    -- Track entity type breakdown for detailed stats
+    -- Track entity name breakdown for detailed stats.
+    -- Uses entity.name (prototype name, e.g. "small-lamp") not entity.type (base type, e.g. "lamp")
+    -- so the web UI can resolve CSS spritesheet classes like entity-small-lamp correctly.
     local entity_type_counts = {}
-    
+
     for _, entity in ipairs(entities) do
         if entity.valid then
+            local entity_name = entity.name
+            entity_type_counts[entity_name] = (entity_type_counts[entity_name] or 0) + 1
             local entity_type = entity.type
-            entity_type_counts[entity_type] = (entity_type_counts[entity_type] or 0) + 1
             local is_storage = STORAGE_ENTITY_TYPES[entity_type]
             local is_consumer = CONSUMER_ENTITY_TYPES[entity_type]
             

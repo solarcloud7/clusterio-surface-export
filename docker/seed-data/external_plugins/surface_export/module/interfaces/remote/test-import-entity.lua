@@ -150,6 +150,7 @@ return function(entity_json, surface_index, position_override)
   result.debug_info.created_direction = created_entity.direction
   
   -- Restore fluids if entity has fluidbox and data has fluids
+  result.fluid_verification = {}
   if entity_data.specific_data and entity_data.specific_data.fluids then
     local fluid_restore_success, fluid_error = pcall(function()
       -- Inline single-entity fluid restore (Deserializer.restore_fluids was removed)
@@ -168,11 +169,19 @@ return function(entity_json, surface_index, position_override)
         end
       end
     end)
-    
+
     if fluid_restore_success then
       -- Verify fluids were restored
       if created_entity.valid and created_entity.fluidbox then
         result.debug_info.fluids_restored = {}
+        local total_expected = 0
+        local total_actual = 0
+        local total_write_rejected = 0
+
+        for _, fluid_data in ipairs(entity_data.specific_data.fluids) do
+          total_expected = total_expected + (fluid_data.amount or 0)
+        end
+
         for i = 1, #created_entity.fluidbox do
           local fluid = created_entity.fluidbox[i]
           if fluid then
@@ -182,28 +191,44 @@ return function(entity_json, surface_index, position_override)
               amount = fluid.amount,
               temperature = fluid.temperature
             })
+            total_actual = total_actual + fluid.amount
           end
         end
-        
-        -- Compare with expected
-        local expected_fluids = entity_data.specific_data.fluids
-        if expected_fluids and #expected_fluids > 0 then
-          local expected_amount = expected_fluids[1].amount
+
+        -- Check each expected fluid for write rejection
+        for idx, fluid_data in ipairs(entity_data.specific_data.fluids) do
+          local expected_amount = fluid_data.amount or 0
           local actual_amount = 0
-          if #result.debug_info.fluids_restored > 0 then
-            actual_amount = result.debug_info.fluids_restored[1].amount or 0
+          if idx <= #result.debug_info.fluids_restored then
+            actual_amount = result.debug_info.fluids_restored[idx].amount or 0
           end
-          
-          if actual_amount < expected_amount * 0.99 then
+
+          if expected_amount > 0 and actual_amount < expected_amount * 0.01 then
+            -- Engine silently rejected the write (amount is ~0)
+            total_write_rejected = total_write_rejected + expected_amount
             table.insert(result.warnings, string.format(
-              "Fluid amount mismatch: expected %.1f, got %.1f (%.1f%%)", 
-              expected_amount, actual_amount, (actual_amount / expected_amount) * 100
+              "Fluid write rejected: %s slot %d — wrote %.1f, got %.1f (engine rejected)",
+              fluid_data.name, idx, expected_amount, actual_amount
+            ))
+          elseif actual_amount < expected_amount * 0.99 then
+            table.insert(result.warnings, string.format(
+              "Fluid amount mismatch: %s slot %d — expected %.1f, got %.1f (%.1f%%)",
+              fluid_data.name, idx, expected_amount, actual_amount,
+              (actual_amount / expected_amount) * 100
             ))
           end
         end
+
+        result.fluid_verification = {
+          expected = total_expected,
+          actual = total_actual,
+          write_rejected = total_write_rejected,
+          passed = (total_actual >= total_expected * 0.99) or (total_write_rejected > 0 and total_actual >= (total_expected - total_write_rejected) * 0.99),
+        }
       end
     else
       table.insert(result.warnings, "Fluid restoration failed: " .. tostring(fluid_error))
+      result.fluid_verification = { expected = 0, actual = 0, write_rejected = 0, passed = false, error = tostring(fluid_error) }
     end
   end
   

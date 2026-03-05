@@ -131,8 +131,6 @@ module.exports.plugin = {
 		messages.SurfaceExportTransferUpdateEvent,
 		messages.SurfaceExportLogUpdateEvent,
 		messages.PlatformStateChangedEvent,
-		messages.ResolveAssetsRequest,
-		messages.RegisterPlanetPathsRequest,
 	],
 
 	// Optional CLI enhancements for clusterioctl

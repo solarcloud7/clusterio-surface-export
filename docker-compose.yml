@@ -28,7 +28,7 @@
 
 # Template anchor for host services (reduces duplication)
 x-host-base: &host-base
-  image: ghcr.io/solarcloud7/clusterio-docker-host
+  image: ghcr.io/solarcloud7/clusterio-docker-host:ExtendedExportData
   env_file:
     - .env
   networks:
@@ -40,7 +40,7 @@ x-host-base: &host-base
 
 services:
   surface-export-controller:
-    image: ghcr.io/solarcloud7/clusterio-docker-controller
+    image: ghcr.io/solarcloud7/clusterio-docker-controller:ExtendedExportData
     env_file:
       - .env
     container_name: surface-export-controller
@@ -55,6 +55,7 @@ services:
       - ./docker/seed-data/external_plugins:/clusterio/external_plugins
     environment:
       - HOST_COUNT=${HOST_COUNT:-2}
+      - EXPORT_HOST=${EXPORT_HOST:-1}
     networks:
       - surface-export-net
     restart: unless-stopped
@@ -62,8 +63,8 @@ services:
       test: ["CMD", "curl", "-sf", "http://localhost:${CONTROLLER_HTTP_PORT:-8080}/"]
       interval: 10s
       timeout: 3s
-      retries: 6
-      start_period: 30s
+      retries: 12
+      start_period: 90s
 
   # -------------------------------------------------------------------------
   # Host 1 - Port range 34100-34109

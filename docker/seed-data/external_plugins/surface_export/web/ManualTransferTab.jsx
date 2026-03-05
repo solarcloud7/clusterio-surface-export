@@ -1,6 +1,4 @@
-import React, { useContext, useEffect, useMemo, useState } from "react";
-import { ControlContext } from "@clusterio/web_ui";
-import { planetIconUrl } from "./utils.js";
+import React, { useEffect, useMemo, useState } from "react";
 import {
 	Alert,
 	Button,
@@ -20,38 +18,6 @@ import {
 import { DownloadOutlined, UploadOutlined } from "@ant-design/icons";
 
 const { Text } = Typography;
-
-// Bundled planet icons — webpack picks up whatever PNGs exist in the assets/planets/ folder.
-// Add nauvis.png, vulcanus.png, gleba.png, fulgora.png, aquilo.png to that folder to enable them.
-const DEFAULT_PLANET_ICON = new URL("./assets/planets/default-planet.svg", import.meta.url).href;
-
-// Build a lookup of bundled planet PNGs from the assets/planets/ directory.
-// require.context is a webpack-only API that scans the folder at build time.
-const _planetCtx = require.context("./assets/planets", false, /\.png$/);
-const BUNDLED_PLANET_ICONS = Object.fromEntries(
-	_planetCtx.keys().map(k => [k.replace(/^\.\//, "").replace(/\.png$/, ""), _planetCtx(k)])
-);
-
-/**
- * Display a planet icon by name.
- * Priority: bundled PNG (vanilla) → HTTP endpoint (modded) → default SVG.
- * @param {{ planetName: string, token: string, size?: number }} props
- */
-function PlanetIcon({ planetName, token, size = 24 }) {
-	const bundled = BUNDLED_PLANET_ICONS[planetName];
-	const src = bundled ?? planetIconUrl(planetName, token);
-	return (
-		<img
-			src={src}
-			alt={planetName}
-			title={planetName}
-			style={{ width: size, height: size, objectFit: "contain", verticalAlign: "middle" }}
-			loading="lazy"
-			onError={(e) => { e.target.onerror = null; e.target.src = DEFAULT_PLANET_ICON; }}
-		/>
-	);
-}
-
 
 function locationLabel(platform, nowMs) {
 	if (platform.spaceLocation) {
@@ -131,8 +97,6 @@ function parseJsonFile(file) {
 }
 
 export default function ManualTransferTab({ plugin, state }) {
-	const control = useContext(ControlContext);
-	const token = control.connector?.token ?? "";
 	const [selectedPlatformKey, setSelectedPlatformKey] = useState(null);
 	const [selectedTargetInstance, setSelectedTargetInstance] = useState(null);
 	const [isSubmitting, setIsSubmitting] = useState(false);
@@ -341,7 +305,7 @@ export default function ManualTransferTab({ plugin, state }) {
 				const locationName = row.platform?.spaceLocation || row.platform?.currentTarget;
 				return (
 					<Space size={6}>
-						{locationName ? <PlanetIcon planetName={locationName} token={token} /> : null}
+						{locationName ? <div className={`planet-${CSS.escape(locationName)}`} title={locationName} /> : null}
 						<Text type={moving ? "secondary" : undefined} italic={moving}>
 							{row.locationText}
 						</Text>

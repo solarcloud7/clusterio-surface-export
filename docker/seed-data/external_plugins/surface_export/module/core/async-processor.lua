@@ -168,7 +168,7 @@ local function sort_entities_for_placement(entities)
     if type_name == "straight-rail" or type_name == "curved-rail" then
       return 1
     end
-    
+
     -- 2. Underground belts - entrance before exit
     -- Only access belt_to_ground_type if it's actually an underground belt
     if type_name == "underground-belt" then
@@ -180,12 +180,12 @@ local function sort_entities_for_placement(entities)
         return 3  -- Output/exit second
       end
     end
-    
+
     -- 3. Pipes and underground pipes
     if type_name == "pipe-to-ground" then
       return 4
     end
-    
+
     -- 4. Regular entities
     return 5
   end
@@ -311,6 +311,10 @@ function AsyncProcessor.queue_export(platform_index, force_name, requester_name,
     -- Belt entities tracked for deferred atomic scan
     -- Maps serialized entity index → live LuaEntity reference
     belt_entities = {},
+    -- Fluid segment dedup cache: seg_id → {fluid, amount, temp}
+    -- Shared across all export batches so each segment is serialized exactly once
+    -- at the segment-level weighted-average temperature (matches FluidRestoration output)
+    fluid_segment_cache = {},
     export_data = {
       platform_name = platform.name,
       force_name = force_name,
@@ -779,8 +783,11 @@ local function process_export_batch(job)
   -- Belt items will be captured in a single atomic tick in complete_export_job instead.
   -- This prevents the "rolling snapshot" problem where items move between belts during
   -- multi-tick scanning, causing duplicates or missed items.
-  -- Wrapped to ensure flag is always cleared even if an error occurs mid-batch.
+  -- Also enable fluid segment dedup so each segment is captured at its weighted-average
+  -- temperature exactly once, matching what FluidRestoration.restore() will write.
+  -- Wrapped to ensure flags are always cleared even if an error occurs mid-batch.
   EntityHandlers.skip_belt_items = true
+  InventoryScanner.fluid_segment_cache = job.fluid_segment_cache
   local batch_ok, batch_err = pcall(function()
     for i = start_index, end_index do
       local entity = job.entities[i]
@@ -800,6 +807,7 @@ local function process_export_batch(job)
     end
   end)
   EntityHandlers.skip_belt_items = false
+  InventoryScanner.fluid_segment_cache = nil
   if not batch_ok then error(batch_err) end
   
   job.current_index = end_index
@@ -843,7 +851,39 @@ local function process_import_batch(job)
   
   -- Phase 2: Platform Hub Mapping
   PlatformHubMapping.process(job)
-  
+
+  -- Phase 2b: Beacon Pre-Placement (synchronous, runs once before entity batching)
+  -- Beacons MUST exist before the machines they affect are created. If a machine is placed
+  -- first, the engine registers it with no beacon linkage and crafting_speed stays at base
+  -- value — the beacon-boosted set_stack() cap is never applied, causing item overflow.
+  -- This phase places ALL beacons (including modded types) in one tick, unconditionally.
+  -- Uses prototypes[name].type to detect beacons so any mod's beacon variant is covered.
+  if not job.beacons_placed and job.tiles_placed then
+    local beacons_created = 0
+    local beacons_skipped = 0
+    for _, entity_data in ipairs(job.entities_to_create) do
+      if entity_data and entity_data.name and not entity_data._beacon_placed then
+        local proto = prototypes.entity[entity_data.name]
+        if proto and proto.type == "beacon" then
+          local entity = Deserializer.create_entity(job.target_surface, entity_data)
+          if entity and entity.valid then
+            if entity_data.entity_id then
+              job.entity_map[entity_data.entity_id] = entity
+            end
+            entity_data._beacon_placed = true  -- Skip in main batch loop
+            beacons_created = beacons_created + 1
+          else
+            beacons_skipped = beacons_skipped + 1
+          end
+        end
+      end
+    end
+    job.beacons_placed = true
+    if beacons_created > 0 or beacons_skipped > 0 then
+      log(string.format("[Import] Beacon pre-placement: %d placed, %d failed (tick %d)", beacons_created, beacons_skipped, game.tick))
+    end
+  end
+
   -- Phase 3: Entity Creation Batch (track timing)
   if not job.metrics.entities_started_tick and job.tiles_placed then
     job.metrics.entities_started_tick = game.tick
@@ -1123,7 +1163,7 @@ end
 
 --- Complete an import job
 --- @param job table: Job data
-local function complete_import_job(job)
+local function finish_import_job(job)
   local duration_ticks = game.tick - job.started_tick
   local duration_seconds = duration_ticks / 60
   
@@ -1134,7 +1174,7 @@ local function complete_import_job(job)
   -- POST-PROCESSING: Restore fluids, belts, connections, control behavior, filters
   -- These must be done AFTER all entities are created
   -- ========================================
-  log("[Import] Starting post-processing (hub inventories, fluids, belts, control behavior, filters, connections)...")
+  log("[Import] Phase 1 post-processing: hub inventories, belts, entity state...")
   
   local entity_map = job.entity_map or {}
   local entities_to_create = job.entities_to_create or {}
@@ -1163,7 +1203,80 @@ local function complete_import_job(job)
   local state_result = EntityStateRestoration.restore_all(entities_to_create, entity_map)
   job.metrics.state_completed_tick = game.tick
   job.metrics.circuits_connected = state_result and state_result.circuits_connected or 0
-  
+
+  -- Phase 1 complete. Schedule Phase 2 (inventory restoration) for the next tick.
+  -- Beacon modules are restored first in Phase 2 (Pass 1 of inventory loop), which
+  -- immediately updates crafting_speed on nearby machines — no pre-activation needed.
+  -- The platform stays paused throughout to prevent thrusters from consuming/generating fluids.
+  job.pending_beacon_tick = game.tick + 1
+  log(string.format("[Import] Phase 1 complete (tick %d). Inventory restore scheduled for tick %d", game.tick, job.pending_beacon_tick))
+end
+
+--- Phase 2 of import completion: restore inventories, activate entities, restore fluids, validate.
+--- Called one tick after Phase 1 (entity creation). Beacon modules are restored first (Pass 1)
+--- so crafting_speed caps are correct before crafter inputs are set (Pass 2).
+local function finish_import_job_phase3(job)
+  local duration_ticks = game.tick - job.started_tick
+  local duration_seconds = duration_ticks / 60
+  job.metrics = job.metrics or {}
+  local entity_map = job.entity_map or {}
+  local entities_to_create = job.entities_to_create or {}
+
+
+  -- Step 6: Restore inventories.
+  -- CRITICAL ORDER: beacons FIRST, then everything else.
+  -- Beacon modules (speed-module-3) must be placed before crafting machine input inventories
+  -- are restored. The set_stack() cap on crafting machine inputs = ingredient_count × crafting_speed.
+  -- crafting_speed only reflects beacon bonuses AFTER the beacon's module inventory is populated.
+  -- If we restore crusher inputs before beacon modules, set_stack() uses the un-boosted cs=2.5
+  -- cap (slots 7) instead of the beacon-boosted cs=17.375 cap (slots 12).
+
+  if not job.inventory_overflow_losses then
+    job.inventory_overflow_losses = { total = 0, items = {}, entities = {} }
+  end
+  local inv_restored = 0
+  local inv_skipped = 0
+  -- Pass 1: beacons only
+  for _, entity_data in ipairs(entities_to_create) do
+    if entity_data and entity_data.entity_id and entity_data.type == "beacon" then
+      local entity = entity_map[entity_data.entity_id]
+      if entity and entity.valid then
+        Deserializer.restore_inventories(entity, entity_data, job.inventory_overflow_losses)
+      end
+    end
+  end
+  -- Pass 2: all other entities
+  for _, entity_data in ipairs(entities_to_create) do
+    if entity_data and entity_data.entity_id and entity_data.type ~= "beacon" then
+      local entity = entity_map[entity_data.entity_id]
+      if entity and entity.valid then
+        Deserializer.restore_inventories(entity, entity_data, job.inventory_overflow_losses)
+        inv_restored = inv_restored + 1
+      else
+        inv_skipped = inv_skipped + 1
+      end
+    end
+  end
+  log(string.format("[Import] Inventory restoration: %d entities restored, %d skipped (failed/missing)", inv_restored, inv_skipped))
+  if job.inventory_overflow_losses.total > 0 then
+    log(string.format("[Import] Inventory overflow losses: %d items lost (set_stack API cap)", job.inventory_overflow_losses.total))
+  end
+
+  -- Deactivate entities and re-pause platform after inventory restore.
+  -- Validation requires machines to be inactive so they cannot consume items between now and validation.
+  for _, entity_data in ipairs(entities_to_create) do
+    if entity_data and entity_data.entity_id then
+      local entity = entity_map[entity_data.entity_id]
+      if entity and entity.valid and GameUtils.ACTIVATABLE_ENTITY_TYPES[entity.type] then
+        entity.active = false
+      end
+    end
+  end
+  if job.transfer_id and job.target_platform and job.target_platform.valid then
+    job.target_platform.paused = true
+    log(string.format("[Import] Platform %s re-paused for validation (tick %d)", job.platform_name, game.tick))
+  end
+
   -- FINAL STEP: Restore original active/disabled states
   -- For non-transfer imports: activate immediately (no validation step)
   -- For transfers: DEFER activation until AFTER validation passes
@@ -1229,6 +1342,28 @@ local function complete_import_job(job)
         fel.total_items, table_size(fel.items), fel.entity_count))
     end
 
+    -- Adjust expected counts for inventory overflow losses (set_stack API cap).
+    -- These items are present in the export but unrestorable due to Factorio engine limits —
+    -- counting them as "expected" would cause false validation failures.
+    local iol = job.inventory_overflow_losses
+    if iol and iol.total > 0 then
+      local adjusted_items = {}
+      for k, v in pairs(adjusted_verification.item_counts or {}) do
+        adjusted_items[k] = v
+      end
+      for item_name, lost_count in pairs(iol.items) do
+        if adjusted_items[item_name] then
+          adjusted_items[item_name] = math.max(0, adjusted_items[item_name] - lost_count)
+        end
+      end
+      adjusted_verification = {
+        item_counts = adjusted_items,
+        fluid_counts = adjusted_verification.fluid_counts,
+      }
+      log(string.format("[Import] Adjusted expected totals: subtracted %d items across %d item types due to inventory overflow (API stack cap)",
+        iol.total, table_size(iol.items)))
+    end
+
     -- TransferValidation is required at top of file
     local success, result = TransferValidation.validate_import(
       job.target_surface,
@@ -1241,6 +1376,11 @@ local function complete_import_job(job)
     -- Attach failed entity losses to result so it flows through to the transaction log
     if job.failed_entity_losses and job.failed_entity_losses.entity_count > 0 then
       result.failedEntityLosses = job.failed_entity_losses
+    end
+
+    -- Attach inventory overflow losses to result
+    if job.inventory_overflow_losses and job.inventory_overflow_losses.total > 0 then
+      result.inventoryOverflowLosses = job.inventory_overflow_losses
     end
 
     TransferValidation.store_validation_result(job.platform_name, result)
@@ -1329,8 +1469,31 @@ local function complete_import_job(job)
       -- fluid equilibrium are measured accurately.
       -- Updates validation_result so the transaction log gets correct numbers.
       -- ========================================
+      -- Adjust expected fluid counts for engine-rejected writes (e.g., fusion-reactor plasma output).
+      -- These fluids are unrestorable via any API — subtract from expected so validation doesn't
+      -- report them as loss. Same pattern as failedEntityLosses for items.
+      if fluids_result and fluids_result.write_rejected then
+        for fluid_name, rejected_amount in pairs(fluids_result.write_rejected) do
+          if rejected_amount > 0 then
+            log(string.format("[Import] Adjusting expected fluids: -%s=%.1f (engine write-rejected)", fluid_name, rejected_amount))
+            -- Subtract from expected fluid counts across matching temperature keys
+            local remaining = rejected_amount
+            for key, amt in pairs(result.expectedFluidCounts or {}) do
+              if remaining <= 0 then break end
+              local name, _ = Util.parse_fluid_temp_key(key)
+              if name == fluid_name and amt > 0 then
+                local subtract = math.min(amt, remaining)
+                result.expectedFluidCounts[key] = amt - subtract
+                remaining = remaining - subtract
+              end
+            end
+            result.totalExpectedFluids = (result.totalExpectedFluids or 0) - (rejected_amount - remaining)
+          end
+        end
+      end
+
       if result.totalExpectedItems then
-        LossAnalysis.run(job.target_surface, entities_to_create, result)
+        LossAnalysis.run(job.target_surface, entities_to_create, result, fluids_result and fluids_result.segment_temps)
 
         -- Re-store updated validation result
         validation_result = result
@@ -1457,9 +1620,19 @@ function AsyncProcessor.process_tick()
         complete_export_job(job)
       end
     elseif job.type == "import" then
-      complete = process_import_batch(job)
-      if complete then
-        complete_import_job(job)
+      if job.pending_beacon_tick then
+        -- Phase 1 done (entities placed); waiting one tick before inventory restore (Phase 2).
+        if game.tick >= job.pending_beacon_tick then
+          job.pending_beacon_tick = nil
+          finish_import_job_phase3(job)
+          complete = true
+        end
+      else
+        complete = process_import_batch(job)
+        if complete then
+          finish_import_job(job)
+          complete = false  -- Phase 2 (inventory restore) fires next tick; keep job alive
+        end
       end
     end
     

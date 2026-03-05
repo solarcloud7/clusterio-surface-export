@@ -1,4 +1,5 @@
 import React, { useMemo, useState } from "react";
+import { useEntityMetadata } from "@clusterio/web_ui";
 import {
 	Alert,
 	Button,
@@ -20,8 +21,8 @@ import {
 	humanizeMetricKey,
 	formatNumeric,
 	formatSigned,
-	buildMetricRows,
-	buildExportMetricRows,
+	formatCompactEnergy,
+	buildOperationCountRows,
 	buildExpectedActualRows,
 	buildFluidInventoryRows,
 	buildDetailedLogSummary,
@@ -47,90 +48,141 @@ function formatBytes(value) {
 	return `${(numeric / (1024 * 1024)).toFixed(2)} MB`;
 }
 
-function buildFlowTimelineRows(rows) {
-	const timelineRows = [];
-	let previousElapsedMs = 0;
-	let maxTimelineMs = 0;
+function buildGanttRows(events, detailedSummary) {
+	// Produce one row per named phase across all events.
+	// Each row: { key, label, isEvent, indent, startMs, endMs, durationMs, color }
+	// All times are absolute ms from transfer start (elapsedMs of first event = 0).
+	const rows = [];
+	let totalMs = 0;
 
-	for (const row of rows || []) {
-		const elapsedMs = typeof row.elapsedMs === "number" && row.elapsedMs >= 0 ? row.elapsedMs : null;
-		const deltaMs = typeof row.deltaMs === "number" && row.deltaMs >= 0 ? row.deltaMs : null;
-		const durationMs = typeof row.durationMs === "number" && row.durationMs >= 0 ? row.durationMs : null;
+	for (const event of events || []) {
+		const elapsedMs = typeof event?.elapsedMs === "number" ? event.elapsedMs : null;
+		const isFailure = String(event?.eventType || "").includes("failed") || String(event?.eventType || "").includes("error");
+		const isSuccess = String(event?.eventType || "").includes("completed") || String(event?.eventType || "").includes("success");
+		const color = isFailure ? "red" : isSuccess ? "green" : "blue";
 
-		let startMs = previousElapsedMs;
-		let endMs = previousElapsedMs;
-		if (elapsedMs !== null) {
-			endMs = elapsedMs;
-			startMs = deltaMs !== null ? Math.max(0, elapsedMs - deltaMs) : previousElapsedMs;
-		} else if (deltaMs !== null) {
-			endMs = previousElapsedMs + deltaMs;
-		} else if (durationMs !== null) {
-			endMs = previousElapsedMs + durationMs;
+		// Event anchor row (marker only, no duration bar)
+		rows.push({ key: `event:${event?.eventType}:${elapsedMs}`, label: event?.eventType || "event",
+			isEvent: true, indent: 0, startMs: elapsedMs ?? 0, endMs: elapsedMs ?? 0,
+			durationMs: null, color });
+		if (elapsedMs !== null) totalMs = Math.max(totalMs, elapsedMs);
+
+		// Export sub-phases (on transfer_created)
+		const exportMetrics = event?.exportMetrics
+			|| (event?.eventType === "transfer_created" ? detailedSummary?.export || null : null);
+		if (exportMetrics && typeof exportMetrics === "object") {
+			const eventStart = elapsedMs ?? 0;
+			const lockMs = Number(exportMetrics.requestExportAndLockMs ?? 0);
+			const storeMs = Number(exportMetrics.waitForControllerStoreMs ?? 0);
+			const asyncMs = Number(exportMetrics.instanceAsyncExportMs ?? 0);
+			const ticks = Number(exportMetrics.instanceAsyncExportTicks ?? 0);
+			// requestExportAndLockMs and waitForControllerStoreMs are sequential sub-phases.
+			// controllerExportPrepTotalMs = lockMs + storeMs (derived, skip).
+			// instanceAsyncExportMs starts after prep.
+			let cursor = eventStart;
+			if (lockMs > 0) {
+				rows.push({ key: `export:lock:${eventStart}`, label: "Queue + lock",
+					isEvent: false, indent: 1, startMs: cursor, endMs: cursor + lockMs,
+					durationMs: lockMs, color: "blue" });
+				totalMs = Math.max(totalMs, cursor + lockMs);
+				cursor += lockMs;
+			}
+			if (storeMs > 0) {
+				rows.push({ key: `export:store:${eventStart}`, label: "Wait for store",
+					isEvent: false, indent: 1, startMs: cursor, endMs: cursor + storeMs,
+					durationMs: storeMs, color: "blue" });
+				totalMs = Math.max(totalMs, cursor + storeMs);
+				cursor += storeMs;
+			}
+			if (asyncMs > 0) {
+				const asyncLabel = ticks > 0 ? `Async export (${ticks.toLocaleString()} ticks)` : "Async export";
+				rows.push({ key: `export:async:${eventStart}`, label: asyncLabel,
+					isEvent: false, indent: 1, startMs: cursor, endMs: cursor + asyncMs,
+					durationMs: asyncMs, color: "blue" });
+				totalMs = Math.max(totalMs, cursor + asyncMs);
+			}
 		}
 
-		if (endMs < startMs) {
-			endMs = startMs;
+		// Import sub-phases
+		if (event?.importMetrics && typeof event.importMetrics === "object") {
+			const m = event.importMetrics;
+			const eventStart = elapsedMs ?? 0;
+			let cursor = eventStart;
+			const tilesMs = Number(m.tiles_ms ?? 0);
+			const tilesCount = Number(m.tiles_placed ?? 0);
+			const entitiesMs = Number(m.entities_ms ?? 0);
+			const entitiesCount = Number(m.entities_created ?? 0);
+			const totalImportMs = Number(m.total_ms ?? 0);
+			if (tilesMs > 0 || tilesCount > 0) {
+				const label = tilesCount > 0 ? `Tiles (${tilesCount.toLocaleString()})` : "Tiles";
+				rows.push({ key: `import:tiles:${eventStart}`, label,
+					isEvent: false, indent: 1, startMs: cursor, endMs: cursor + (tilesMs || 0),
+					durationMs: tilesMs || null, color: "blue" });
+				totalMs = Math.max(totalMs, cursor + (tilesMs || 0));
+				cursor += tilesMs;
+			}
+			if (entitiesMs > 0 || entitiesCount > 0) {
+				const label = entitiesCount > 0 ? `Entities (${entitiesCount.toLocaleString()})` : "Entities";
+				rows.push({ key: `import:entities:${eventStart}`, label,
+					isEvent: false, indent: 1, startMs: cursor, endMs: cursor + (entitiesMs || 0),
+					durationMs: entitiesMs || null, color: "blue" });
+				totalMs = Math.max(totalMs, cursor + (entitiesMs || 0));
+				cursor += entitiesMs;
+			}
+			if (totalImportMs > 0) {
+				// Import total spans from event start
+				rows.push({ key: `import:total:${eventStart}`, label: "Import total",
+					isEvent: false, indent: 1, startMs: eventStart, endMs: eventStart + totalImportMs,
+					durationMs: totalImportMs, color: "blue" });
+				totalMs = Math.max(totalMs, eventStart + totalImportMs);
+			}
 		}
 
-		const markerMs = elapsedMs ?? endMs;
-		const segmentMs = Math.max(0, endMs - startMs);
-		previousElapsedMs = Math.max(previousElapsedMs, markerMs, endMs);
-		maxTimelineMs = Math.max(maxTimelineMs, markerMs, endMs, durationMs || 0);
-
-		timelineRows.push({
-			...row,
-			ganttStartMs: startMs,
-			ganttEndMs: endMs,
-			ganttSegmentMs: segmentMs,
-			ganttMarkerMs: markerMs,
-		});
+		// Transfer-level phases (transmission, validation, cleanup)
+		if (typeof event?.transmissionMs === "number" && event.transmissionMs > 0) {
+			const eventStart = elapsedMs ?? 0;
+			rows.push({ key: `phase:transmission:${eventStart}`, label: "Transmission",
+				isEvent: false, indent: 1, startMs: eventStart - event.transmissionMs, endMs: eventStart,
+				durationMs: event.transmissionMs, color: "blue" });
+			totalMs = Math.max(totalMs, eventStart);
+		}
+		if (typeof event?.validationMs === "number" && event.validationMs > 0) {
+			const eventStart = elapsedMs ?? 0;
+			rows.push({ key: `phase:validation:${eventStart}`, label: "Validation",
+				isEvent: false, indent: 1, startMs: eventStart - event.validationMs, endMs: eventStart,
+				durationMs: event.validationMs, color: "blue" });
+			totalMs = Math.max(totalMs, eventStart);
+		}
+		if (event?.phases && typeof event.phases === "object") {
+			const eventStart = elapsedMs ?? 0;
+			for (const [k, v] of Object.entries(event.phases)) {
+				if (typeof v === "number" && v > 0) {
+					rows.push({ key: `phase:${k}:${eventStart}`, label: humanizeMetricKey(String(k).replace(/Ms$/, "")),
+						isEvent: false, indent: 1, startMs: eventStart - v, endMs: eventStart,
+						durationMs: v, color: "blue" });
+					totalMs = Math.max(totalMs, eventStart);
+				}
+			}
+		}
 	}
 
-	const totalMs = maxTimelineMs > 0 ? maxTimelineMs : 1;
+	const scale = totalMs > 0 ? totalMs : 1;
 	return {
 		totalMs,
-		rows: timelineRows.map(row => {
-			const startPct = Math.max(0, Math.min(100, (row.ganttStartMs / totalMs) * 100));
-			let widthPct = row.ganttSegmentMs > 0
-				? Math.max((row.ganttSegmentMs / totalMs) * 100, 1.2)
-				: 0;
-			if (startPct + widthPct > 100) {
-				widthPct = Math.max(0, 100 - startPct);
-			}
-			const markerPct = Math.max(0, Math.min(100, (row.ganttMarkerMs / totalMs) * 100));
-			const metricPoints = [];
-			let phaseCursorMs = row.ganttStartMs;
-			for (const metric of row.timeMetrics || []) {
-				if (typeof metric?.valueMs !== "number" || Number.isNaN(metric.valueMs) || metric.valueMs < 0) {
-					continue;
-				}
-				let metricMs = row.ganttMarkerMs;
-				if (metric.kind === "absolute") {
-					metricMs = metric.valueMs;
-				} else if (metric.kind === "phase") {
-					phaseCursorMs += metric.valueMs;
-					metricMs = phaseCursorMs;
-				} else {
-					metricMs = row.ganttStartMs + metric.valueMs;
-				}
-				metricPoints.push({
-					...metric,
-					metricMs,
-					metricPct: Math.max(0, Math.min(100, (metricMs / totalMs) * 100)),
-				});
-			}
-			return {
-				...row,
-				ganttStartPct: startPct,
-				ganttWidthPct: widthPct,
-				ganttMarkerPct: markerPct,
-				metricPoints,
-			};
-		}),
+		rows: rows.map(row => ({
+			...row,
+			ganttStartPct: Math.max(0, Math.min(100, (row.startMs / scale) * 100)),
+			ganttWidthPct: row.endMs > row.startMs
+				? Math.max(0.8, Math.min(100 - (row.startMs / scale) * 100, ((row.endMs - row.startMs) / scale) * 100))
+				: 0,
+			ganttMarkerPct: Math.max(0, Math.min(100, (row.endMs / scale) * 100)),
+		})),
 	};
 }
 
+
 export default function TransactionLogsTab({ plugin, state }) {
+	const entityMetadata = useEntityMetadata();
 	const [selectedTransferId, setSelectedTransferId] = useState(null);
 	const [downloadingTransferId, setDownloadingTransferId] = useState(null);
 	const selectedDetails = selectedTransferId ? state.logDetails[selectedTransferId] : null;
@@ -216,25 +268,6 @@ export default function TransactionLogsTab({ plugin, state }) {
 			),
 		},
 	];
-	const exportMetricColumns = [
-		{
-			title: "Metric",
-			dataIndex: "metric",
-			key: "metric",
-			width: "36%",
-		},
-		{
-			title: "Value",
-			dataIndex: "value",
-			key: "value",
-			width: "20%",
-		},
-		{
-			title: "Details",
-			dataIndex: "details",
-			key: "details",
-		},
-	];
 	const metricColumns = [
 		{
 			title: "Metric",
@@ -254,7 +287,12 @@ export default function TransactionLogsTab({ plugin, state }) {
 			dataIndex: "name",
 			key: "name",
 			width: "40%",
-			render: name => <Text code>{name}</Text>,
+			render: name => (
+				<Space size={6}>
+					<div className={`item-${CSS.escape(name)}`} title={name} />
+					<Text code>{name}</Text>
+				</Space>
+			),
 		},
 		{
 			title: "Expected",
@@ -287,157 +325,70 @@ export default function TransactionLogsTab({ plugin, state }) {
 	];
 	const flowColumns = [
 		{
-			title: "Step",
-			dataIndex: "eventType",
-			key: "eventType",
-			width: "12%",
-			render: (eventType, row) => <Tag color={row.color}>{eventType}</Tag>,
+			title: "Phase",
+			dataIndex: "label",
+			key: "label",
+			width: "22%",
+			render: (label, row) => row.isEvent
+				? <Tag color={row.color}>{label}</Tag>
+				: <span style={{ paddingLeft: row.indent * 16, color: "rgba(0,0,0,0.65)", fontSize: 12 }}>{label}</span>,
+		},
+		{
+			title: "ms",
+			dataIndex: "durationMs",
+			key: "durationMs",
+			width: "10%",
+			render: value => value !== null && value !== undefined ? formatFlowDurationMs(value) : "",
 		},
 		{
 			title: "Timeline",
 			key: "timeline",
-			width: "88%",
 			render: (_, row) => {
-				const tone = row.color === "red"
-					? "#ff4d4f"
-					: row.color === "green"
-						? "#52c41a"
-						: "#1677ff";
+				const tone = row.color === "red" ? "#ff4d4f" : row.color === "green" ? "#52c41a" : "#1677ff";
 				return (
-					<div className="surface-export-gantt-cell">
-						<div className="surface-export-gantt-track" title={`${row.eventType}: ${formatFlowDurationMs(row.ganttStartMs)} → ${formatFlowDurationMs(row.ganttMarkerMs)}`}>
-							{row.ganttWidthPct > 0 ? (
-								<span
-									className="surface-export-gantt-bar"
-									style={{
-										left: `${row.ganttStartPct}%`,
-										width: `${row.ganttWidthPct}%`,
-										backgroundColor: tone,
-									}}
-								/>
-							) : null}
-							{(row.metricPoints || []).map(metric => (
-								<span
-									key={`point:${metric.key}`}
-									className="surface-export-gantt-metric-marker"
-									title={`${metric.label}: ${formatFlowDurationMs(metric.valueMs)}`}
-									style={{ left: `${metric.metricPct}%` }}
-								/>
-							))}
-							<span
-								className="surface-export-gantt-marker"
-								style={{
-									left: `${row.ganttMarkerPct}%`,
-									backgroundColor: tone,
-								}}
-							/>
-						</div>
-						{row.timeMetrics?.length ? (
-							<div className="surface-export-gantt-metrics">
-								{row.timeMetrics.map(metric => (
-									<span key={`metric:${metric.key}`} className="surface-export-gantt-metric-chip">
-										{metric.label}: {formatFlowDurationMs(metric.valueMs)}
-									</span>
-								))}
-							</div>
-						) : null}
+					<div className="surface-export-gantt-track" title={row.durationMs !== null ? formatFlowDurationMs(row.durationMs) : row.label}>
+						{row.ganttWidthPct > 0 && (
+							<span className="surface-export-gantt-bar" style={{
+								left: `${row.ganttStartPct}%`,
+								width: `${row.ganttWidthPct}%`,
+								backgroundColor: tone,
+								opacity: row.isEvent ? 0 : 0.75,
+							}} />
+						)}
+						<span className="surface-export-gantt-marker" style={{
+							left: `${row.ganttMarkerPct}%`,
+							backgroundColor: tone,
+							opacity: row.isEvent ? 1 : 0.4,
+						}} />
 					</div>
 				);
 			},
 		},
-	];
+	]
 
-	const flowRows = useMemo(
-		() => (selectedDetails?.events || []).map((event, index) => {
-			const phaseTimings = [];
-			if (typeof event?.transmissionMs === "number") {
-				phaseTimings.push({ key: "transmission", phase: "Transmission", durationMs: event.transmissionMs, source: "transfer" });
-			}
-			if (typeof event?.validationMs === "number") {
-				phaseTimings.push({ key: "validation", phase: "Validation", durationMs: event.validationMs, source: "transfer" });
-			}
-			if (event?.phases && typeof event.phases === "object") {
-				for (const [phaseName, phaseDurationMs] of Object.entries(event.phases)) {
-					if (typeof phaseDurationMs === "number") {
-						phaseTimings.push({
-							key: `phase:${phaseName}`,
-							phase: humanizeMetricKey(String(phaseName).replace(/Ms$/, "")),
-							durationMs: phaseDurationMs,
-							source: "phase",
-						});
-					}
-				}
-			}
-			if (event?.importMetrics && typeof event.importMetrics === "object") {
-				const importPhaseKeys = [
-					[ "tiles_ms", "Import: Tiles" ],
-					[ "entities_ms", "Import: Entities" ],
-					[ "fluids_ms", "Import: Fluids" ],
-					[ "belts_ms", "Import: Belts" ],
-					[ "state_ms", "Import: State Restore" ],
-					[ "validation_ms", "Import: Validation" ],
-					[ "total_ms", "Import: Total" ],
-				];
-				for (const [metricKey, label] of importPhaseKeys) {
-					const value = event.importMetrics?.[metricKey];
-					if (typeof value === "number") {
-						phaseTimings.push({
-							key: `import:${metricKey}`,
-							phase: label,
-							durationMs: value,
-							source: "import",
-						});
-					}
-				}
-			}
-
-			const primaryDurationMs = [event?.durationMs, event?.validationMs, event?.transmissionMs]
-				.find(value => typeof value === "number") ?? null;
-			const timeMetrics = [];
-			if (typeof event?.elapsedMs === "number") {
-				timeMetrics.push({ key: "elapsed", label: "Elapsed", valueMs: event.elapsedMs, kind: "absolute" });
-			}
-			if (typeof event?.deltaMs === "number") {
-				timeMetrics.push({ key: "delta", label: "\u0394 Prev", valueMs: event.deltaMs, kind: "segment" });
-			}
-			if (typeof primaryDurationMs === "number") {
-				timeMetrics.push({ key: "duration", label: "Duration", valueMs: primaryDurationMs, kind: "segment" });
-			}
-			for (const timing of phaseTimings) {
-				if (typeof timing?.durationMs === "number") {
-					timeMetrics.push({
-						key: `timing:${timing.key}`,
-						label: timing.phase,
-						valueMs: timing.durationMs,
-						kind: "phase",
-					});
-				}
-			}
-			const isFailure = String(event?.eventType || "").includes("failed") || String(event?.eventType || "").includes("error");
-			const isSuccess = String(event?.eventType || "").includes("completed") || String(event?.eventType || "").includes("success");
-
-			return {
-				key: `flow:${event?.timestampMs || Date.now()}:${index}`,
-				eventType: event?.eventType || "event",
-				message: event?.message || "",
-				timestamp: event?.timestamp || null,
-				timestampMs: event?.timestampMs || null,
-				elapsedMs: typeof event?.elapsedMs === "number" ? event.elapsedMs : null,
-				deltaMs: typeof event?.deltaMs === "number" ? event.deltaMs : null,
-				durationMs: primaryDurationMs,
-				phaseTimings,
-				timeMetrics,
-				exportMetrics: event?.exportMetrics
-					|| (event?.eventType === "transfer_created" ? detailedSummary?.export || null : null),
-				color: isFailure ? "red" : isSuccess ? "green" : "blue",
-			};
-		}),
+	const flowTimeline = useMemo(
+		() => buildGanttRows(selectedDetails?.events || [], detailedSummary),
 		[selectedDetails, detailedSummary]
+	)
+	const compressionSummary = useMemo(() => {
+		const p = detailedSummary?.payload;
+		const e = detailedSummary?.export;
+		if (!p && !e) return null;
+		const uncompressed = e?.uncompressedPayloadBytes ?? null;
+		const compressed = e?.compressedPayloadBytes ?? null;
+		const pct = e?.compressionReductionPct ?? null;
+		const isCompressed = p?.isCompressed ?? (compressed !== null && uncompressed !== null && compressed < uncompressed);
+		if (uncompressed === null) return null;
+		if (isCompressed && compressed !== null && pct !== null) {
+			return `${formatNumeric(pct, 1)}% compression: ${formatBytes(compressed)} (${formatBytes(uncompressed)} uncompressed)`;
+		}
+		return `0% compression: ${formatBytes(uncompressed)} (uncompressed)`;
+	}, [detailedSummary]);
+	const operationRows = useMemo(
+		() => buildOperationCountRows(detailedSummary?.export, detailedSummary?.import),
+		[detailedSummary]
 	);
-	const flowTimeline = useMemo(() => buildFlowTimelineRows(flowRows), [flowRows]);
-	const payloadRows = useMemo(() => buildMetricRows(detailedSummary?.payload), [detailedSummary]);
-	const exportRows = useMemo(() => buildExportMetricRows(detailedSummary?.export), [detailedSummary]);
-	const importRows = useMemo(() => buildMetricRows(detailedSummary?.import), [detailedSummary]);
+
 
 	const validation = detailedSummary?.validation || null;
 
@@ -478,7 +429,16 @@ export default function TransactionLogsTab({ plugin, state }) {
 			title: "Entity Type",
 			dataIndex: "entityType",
 			key: "entityType",
-			render: value => <Text code>{value}</Text>,
+			render: value => {
+				const meta = entityMetadata.get(value);
+				const sz = meta?.size ?? 32;
+				return (
+					<Space size={6}>
+						<div className={`entity-${CSS.escape(value)}`} title={value} style={{ width: sz, height: sz, imageRendering: "pixelated", display: "inline-block", verticalAlign: "middle", flexShrink: 0 }} />
+						<Text code>{value}</Text>
+					</Space>
+				);
+			},
 		},
 		{
 			title: "Count",
@@ -510,12 +470,24 @@ export default function TransactionLogsTab({ plugin, state }) {
 			width: "32%",
 			render: (_, row) => (
 				row.isGroup
-					? <Text code>{row.name}</Text>
-					: (
-						<Tooltip title={row.bucketKey}>
-							<Text type="secondary">{row.tempBucket === "-" ? row.bucketKey : `@${row.tempBucket}`}</Text>
-						</Tooltip>
+					? (
+						<Space size={6} align="center">
+							<div style={{ width: 32, height: 32 }}>
+								<div className={`item-${CSS.escape(row.name)}`} title={row.name} />
+							</div>
+							<Text code>{row.name}</Text>
+							{row.tempDisplay && <Text type="secondary" style={{ fontSize: 12 }}>{row.tempDisplay}</Text>}
+						</Space>
 					)
+					: row.isThermalSummary
+						? (
+							<Tooltip title="Total thermal energy: Volume × Temperature">
+								<Text type="secondary" style={{ paddingLeft: 28 }}>Thermal (V×T)</Text>
+							</Tooltip>
+						)
+						: (
+							<Text type="secondary" style={{ paddingLeft: 28 }}>{row.tempDisplay ?? row.name}</Text>
+						)
 			),
 		},
 		{
@@ -532,19 +504,23 @@ export default function TransactionLogsTab({ plugin, state }) {
 			title: "Expected",
 			dataIndex: "expected",
 			key: "expected",
-			render: value => formatNumeric(value, 1),
+			render: (value, row) => row.isThermalSummary ? formatCompactEnergy(value) : formatNumeric(value, 1),
 		},
 		{
 			title: "Actual",
 			dataIndex: "actual",
 			key: "actual",
-			render: value => formatNumeric(value, 1),
+			render: (value, row) => row.isThermalSummary ? formatCompactEnergy(value) : formatNumeric(value, 1),
 		},
 		{
 			title: "\u0394",
 			dataIndex: "delta",
 			key: "delta",
 			render: (delta, row) => {
+				if (row.isThermalSummary) {
+					const color = row.reconciled ? undefined : "warning";
+					return <Text type={color}>{formatCompactEnergy(delta)}</Text>;
+				}
 				if (!row.isGroup && row.category === "High-temp" && row.reconciled && Math.abs(delta) > 0.0001) {
 					return <Text type="warning">{formatSigned(delta, 1)}</Text>;
 				}
@@ -559,13 +535,34 @@ export default function TransactionLogsTab({ plugin, state }) {
 			title: "Preserved",
 			dataIndex: "preservedPct",
 			key: "preservedPct",
-			render: value => (value === null ? "-" : `${formatNumeric(value, 1)}%`),
+			render: (value, row) => {
+				if (value === null) return "-";
+				if (row.isThermalSummary) return `${formatNumeric(value, 2)}%`;
+				return `${formatNumeric(value, 1)}%`;
+			},
 		},
 		{
 			title: "Status",
 			dataIndex: "status",
 			key: "status",
 			render: (status, row) => {
+				if (status === "Verified (thermal)") {
+					return (
+						<Tooltip title="Volume preserved; thermal energy (V×T) validated.">
+							<Tag color="green">Verified (thermal)</Tag>
+						</Tooltip>
+					);
+				}
+				if (status === "Thermal match") {
+					return (
+						<Tooltip title="Total thermal energy (Volume × Temperature) preserved within tolerance.">
+							<Tag color="green">Thermal match</Tag>
+						</Tooltip>
+					);
+				}
+				if (status === "Thermal drift") {
+					return <Tag color="warning">Thermal drift</Tag>;
+				}
 				if (status === "Reconciled aggregate") {
 					return <Tag color="green">Reconciled aggregate</Tag>;
 				}
@@ -653,7 +650,7 @@ export default function TransactionLogsTab({ plugin, state }) {
 									<InfoCircleOutlined />
 								</Tooltip>
 							</Space>
-							{flowRows.length ? (
+							{(flowTimeline?.rows?.length) ? (
 								<Space direction="vertical" style={{ width: "100%" }} size="small">
 									<Text type="secondary" className="surface-export-gantt-scale">
 										Timeline scale: 0 ms to {formatNumeric(flowTimeline.totalMs, 0)} ms
@@ -681,33 +678,15 @@ export default function TransactionLogsTab({ plugin, state }) {
 									label: "Metrics",
 									children: (
 										<Space direction="vertical" style={{ width: "100%" }} size="middle">
+											{compressionSummary ? (
+												<Text type="secondary">{compressionSummary}</Text>
+											) : null}
 											<Space direction="vertical" style={{ width: "100%" }} size="small">
-												<Text strong>Payload Metrics</Text>
-												{payloadRows.length ? (
-													<Table size="small" pagination={false} columns={metricColumns} dataSource={payloadRows} />
+												<Text strong>Operation Counts</Text>
+												{operationRows.length ? (
+													<Table size="small" pagination={false} columns={metricColumns} dataSource={operationRows} />
 												) : (
-													<Empty description="No payload metrics available" />
-												)}
-											</Space>
-											<Space direction="vertical" style={{ width: "100%" }} size="small">
-												<Text strong>Export Metrics</Text>
-												{exportRows.length ? (
-													<Table
-														size="small"
-														pagination={false}
-														columns={exportMetricColumns}
-														dataSource={exportRows}
-													/>
-												) : (
-													<Empty description="No export metrics available" />
-												)}
-											</Space>
-											<Space direction="vertical" style={{ width: "100%" }} size="small">
-												<Text strong>Import Processing Metrics</Text>
-												{importRows.length ? (
-													<Table size="small" pagination={false} columns={metricColumns} dataSource={importRows} />
-												) : (
-													<Empty description="No import metrics available" />
+													<Empty description="No operation metrics available" />
 												)}
 											</Space>
 										</Space>
@@ -715,12 +694,14 @@ export default function TransactionLogsTab({ plugin, state }) {
 								},
 								{
 									key: "entities",
-									label: "Entities",
+									label: detailedSummary?.export?.exportedEntityCount
+										? `Entities (${Number(detailedSummary.export.exportedEntityCount).toLocaleString()})`
+										: "Entities",
 									children: hasValidation ? (
 										entityRows.length ? (
 											<Table
 												size="small"
-												pagination={{ pageSize: 10 }}
+												pagination={{ pageSize: 20 }}
 												columns={entityColumns}
 												dataSource={entityRows}
 												rowKey={entry => entry.key}
@@ -736,17 +717,34 @@ export default function TransactionLogsTab({ plugin, state }) {
 									key: "items",
 									label: "Items",
 									children: hasValidation ? (
-										itemRows.length ? (
-											<Table
-												size="small"
-												pagination={{ pageSize: 10 }}
-												columns={comparisonColumns}
-												dataSource={itemRows}
-												rowKey={entry => entry.key}
-											/>
-										) : (
-											<Empty description="No item details available" />
-										)
+										<Space direction="vertical" style={{ width: "100%" }} size="middle">
+											{itemRows.length ? (
+												<Table
+													size="small"
+													pagination={{ pageSize: 20 }}
+													columns={comparisonColumns}
+													dataSource={itemRows}
+													rowKey={entry => entry.key}
+												/>
+											) : (
+												<Empty description="No item details available" />
+											)}
+											{validation?.inventoryOverflowLosses?.total > 0 && (() => {
+												const iol = validation.inventoryOverflowLosses;
+												const entityLines = (iol.entities || [])
+													.map(e => `${e.name} @ (${e.position?.x?.toFixed(1)}, ${e.position?.y?.toFixed(1)}): ${e.item} — wanted ${e.expected}, placed ${e.actual}, lost ${e.lost}`)
+													.join("\n");
+												return (
+													<Tooltip title={<pre style={{ margin: 0, fontSize: 11 }}>{entityLines}</pre>}>
+														<Alert
+															type="info"
+															showIcon
+															message={`API stack cap: ${iol.total} item${iol.total !== 1 ? "s" : ""} excluded from expected (hover for details)`}
+														/>
+													</Tooltip>
+												);
+											})()}
+										</Space>
 									) : (
 										<Empty description="No validation data available yet" />
 									),
@@ -759,7 +757,7 @@ export default function TransactionLogsTab({ plugin, state }) {
 											{fluidInventoryRows.length ? (
 												<Table
 													size="small"
-													pagination={{ pageSize: 10 }}
+													pagination={{ pageSize: 20 }}
 													columns={fluidColumns}
 													dataSource={fluidInventoryRows}
 													rowKey={entry => entry.key}
@@ -767,15 +765,6 @@ export default function TransactionLogsTab({ plugin, state }) {
 											) : (
 												<Empty description="No fluid details available" />
 											)}
-											{fluidReconciliationRows.length ? (
-												<Table
-													size="small"
-													pagination={false}
-													columns={metricColumns}
-													dataSource={fluidReconciliationRows}
-													rowKey={entry => entry.key}
-												/>
-											) : null}
 										</Space>
 									) : (
 										<Empty description="No validation data available yet" />

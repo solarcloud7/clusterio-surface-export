@@ -79,7 +79,14 @@ function FluidRestoration.restore(entities_to_create, entity_map)
     local dropped_fluids = {}
     local dropped_count = 0
     local success_count = 0
-  
+    -- Track fluids that the engine silently rejects (e.g., fusion-reactor plasma output).
+    -- These are unrestorable via any API and must be excluded from expected totals.
+    local write_rejected = {}
+    -- Authoritative temperature record keyed by segment ID: seg_id → {fluid=name, temp=avg_temp}
+    -- Returned to callers so SurfaceCounter can use what was actually written rather than
+    -- re-reading from the proxy (entity.fluidbox[i].temperature), which may lag after injection.
+    local segment_temps = {}
+
     for seg_id, data in pairs(segments_to_fill) do
         if data.amount > 0 and #data.targets > 0 then
             -- Pick injection target: entity with highest get_capacity() to ensure we write to the segment
@@ -120,16 +127,37 @@ function FluidRestoration.restore(entities_to_create, entity_map)
                    log(string.format("[Fluid Restore Error] Segment #%d (%s): %s", seg_id, data.fluid, err))
                else
                    success_count = success_count + 1
+                   segment_temps[seg_id] = { fluid = data.fluid, temp = avg_temp }
                    
                    -- Verify actual amount written by checking segment contents
                    local actual_contents = target.entity.fluidbox.get_fluid_segment_contents(target.index)
                    local actual_amount = actual_contents and actual_contents[data.fluid] or 0
                    if actual_amount < final_amount - 0.5 then
                        local write_loss = final_amount - actual_amount
-                       log(string.format("[Fluid Restore Warning] Seg %d (%s): wrote %.1f but segment has %.1f (lost %.1f via %s)",
-                           seg_id, data.fluid, final_amount, actual_amount, write_loss, target.entity.name))
-                       dropped_fluids[data.fluid] = (dropped_fluids[data.fluid] or 0) + write_loss
-                       dropped_count = dropped_count + 1
+                       -- Fallback: some entities (fusion-reactor, etc.) silently reject fluidbox[i] writes.
+                       -- Retry with insert_fluid which uses a different engine path.
+                       local retry_ok, retry_inserted = pcall(function()
+                           return target.entity.insert_fluid({
+                               name = data.fluid,
+                               amount = final_amount,
+                               temperature = avg_temp
+                           })
+                       end)
+                       if retry_ok and retry_inserted and retry_inserted > 0.5 then
+                           log(string.format("[Fluid Restore] Seg %d (%s): fluidbox write failed on %s, insert_fluid recovered %.1f/%.1f",
+                               seg_id, data.fluid, target.entity.name, retry_inserted, final_amount))
+                           if retry_inserted < final_amount - 0.5 then
+                               local remaining_loss = final_amount - retry_inserted
+                               dropped_fluids[data.fluid] = (dropped_fluids[data.fluid] or 0) + remaining_loss
+                               dropped_count = dropped_count + 1
+                           end
+                       else
+                           -- Engine silently rejected both write paths — this fluid is unrestorable
+                           -- (e.g., fusion-reactor plasma output). Track separately for validation adjustment.
+                           log(string.format("[Fluid Restore] Seg %d (%s): engine rejected write on %s (%.1f unrestorable)",
+                               seg_id, data.fluid, target.entity.name, write_loss))
+                           write_rejected[data.fluid] = (write_rejected[data.fluid] or 0) + write_loss
+                       end
                    end
                    
                    -- Also check for pre-clamp overflow (source amount > segment capacity)
@@ -185,7 +213,7 @@ function FluidRestoration.restore(entities_to_create, entity_map)
     log(string.format("[Import] Fluid restoration complete. Processed %d segments and %d isolated entities.", 
         table_size(segments_to_fill), #isolated_fluids))
     
-    return { count = total_restored, segments = success_count, isolated = isolated_count }
+    return { count = total_restored, segments = success_count, isolated = isolated_count, segment_temps = segment_temps, write_rejected = write_rejected }
 end
 
 return FluidRestoration

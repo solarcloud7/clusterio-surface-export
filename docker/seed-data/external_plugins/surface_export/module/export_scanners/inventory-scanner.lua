@@ -5,6 +5,13 @@ local Util = require("modules/surface_export/utils/util")
 
 local InventoryScanner = {}
 
+-- When set to a table, extract_fluids uses segment-level deduplication:
+-- seg_id → {fluid=name, amount=total, energy=total_temp_product}
+-- This ensures export captures the same weighted-average temperature that
+-- FluidRestoration.restore() will later write, preventing cosmetic mismatches.
+-- Set by AsyncProcessor at export job start, cleared to nil at job completion.
+InventoryScanner.fluid_segment_cache = nil
+
 --- Helper to safely extract item properties using pcall
 --- @param stack LuaItemStack: The item stack
 --- @return table: Item entry with all properties
@@ -302,18 +309,63 @@ function InventoryScanner.extract_fluids(entity)
   end
 
   local fluids = {}
+  local cache = InventoryScanner.fluid_segment_cache
 
-  -- Iterate through all fluidbox slots
-  for i = 1, #fluidbox do
-    local fluid = fluidbox[i]
-    if fluid then
-      -- CRITICAL: Track temperature separately
-      -- Different temperatures of the same fluid are different resources
-      table.insert(fluids, {
-        name = fluid.name,
-        amount = fluid.amount,
-        temperature = fluid.temperature
-      })
+  if cache then
+    -- Segment-dedup mode: accumulate per-segment weighted-average temperature.
+    -- This matches what FluidRestoration.restore() will write on import (one packet
+    -- per segment at avg_temp = energy/amount), preventing temperature key mismatches.
+    for i = 1, #fluidbox do
+      local seg_id = fluidbox.get_fluid_segment_id(i)
+      if seg_id and not cache[seg_id] then
+        -- First entity to claim this segment: read authoritative contents
+        local contents = fluidbox.get_fluid_segment_contents(i)
+        if contents then
+          for fluid_name, amount in pairs(contents) do
+            if amount > 0 then
+              local local_fluid = fluidbox[i]
+              local temp = (local_fluid and local_fluid.temperature) or 15
+              log(string.format("[Fluid Export] Seg %d claimed by %s box %d: %s=%.1f temp=%.1f",
+                  seg_id, entity.name, i, fluid_name, amount, temp))
+              cache[seg_id] = { fluid = fluid_name, amount = amount, temp = temp }
+              table.insert(fluids, { name = fluid_name, amount = amount, temperature = temp })
+            end
+          end
+        end
+      elseif not seg_id then
+        -- Fallback for isolated fluidboxes without a segment ID (e.g., machine
+        -- internal buffers not connected to a pipe network). Read the local proxy
+        -- directly — no dedup needed since there's no shared segment.
+        local fluid = fluidbox[i]
+        if fluid and fluid.amount and fluid.amount > 0 then
+          log(string.format("[Fluid Export] Isolated %s box %d (no seg_id): %s=%.1f temp=%.1f",
+              entity.name, i, fluid.name, fluid.amount, fluid.temperature or 15))
+          table.insert(fluids, {
+            name = fluid.name,
+            amount = fluid.amount,
+            temperature = fluid.temperature or 15
+          })
+        end
+      elseif cache[seg_id] then
+        -- Already seen this segment — log for diagnostics
+        local local_fluid = fluidbox[i]
+        if local_fluid and local_fluid.amount and local_fluid.amount > 0 then
+          log(string.format("[Fluid Export] Seg %d already claimed, skipping %s box %d: local %s=%.1f",
+              seg_id, entity.name, i, local_fluid.name, local_fluid.amount))
+        end
+      end
+    end
+  else
+    -- Per-entity proxy mode (used for non-async scans like debug/validation)
+    for i = 1, #fluidbox do
+      local fluid = fluidbox[i]
+      if fluid then
+        table.insert(fluids, {
+          name = fluid.name,
+          amount = fluid.amount,
+          temperature = fluid.temperature
+        })
+      end
     end
   end
 

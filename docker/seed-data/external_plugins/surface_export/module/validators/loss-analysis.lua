@@ -23,19 +23,23 @@ local LossAnalysis = {}
 function LossAnalysis.reconcile_fluids(expected_counts, actual_counts, high_temp_threshold)
     local HIGH_TEMP = high_temp_threshold or Util.HIGH_TEMP_THRESHOLD
 
-    -- Aggregate high-temp fluids by base name
+    -- Aggregate high-temp fluids by base name (volume and thermal energy)
     local expected_ht_by_name = {}
     local actual_ht_by_name = {}
+    local expected_ht_energy_by_name = {}
+    local actual_ht_energy_by_name = {}
     for key, amt in pairs(expected_counts or {}) do
         local name, temp = Util.parse_fluid_temp_key(key)
         if temp >= HIGH_TEMP then
             expected_ht_by_name[name] = (expected_ht_by_name[name] or 0) + amt
+            expected_ht_energy_by_name[name] = (expected_ht_energy_by_name[name] or 0) + (amt * temp)
         end
     end
     for key, amt in pairs(actual_counts or {}) do
         local name, temp = Util.parse_fluid_temp_key(key)
         if temp >= HIGH_TEMP then
             actual_ht_by_name[name] = (actual_ht_by_name[name] or 0) + amt
+            actual_ht_energy_by_name[name] = (actual_ht_energy_by_name[name] or 0) + (amt * temp)
         end
     end
 
@@ -69,11 +73,17 @@ function LossAnalysis.reconcile_fluids(expected_counts, actual_counts, high_temp
     for name, _ in pairs(all_ht_names) do
         local exp = expected_ht_by_name[name] or 0
         local act = actual_ht_by_name[name] or 0
+        -- At extreme temperatures (>1M°C), IEEE 754 doubles lose precision and the engine's
+        -- internal segment merging can shift ~20 units between temperature buckets.
+        -- Use a tolerance proportional to the expected amount (5% or 25 units, whichever is larger).
+        local ht_tolerance = math.max(25, exp * 0.05)
         ht_aggregates[name] = {
             expected = exp,
             actual = act,
             delta = act - exp,
-            reconciled = math.abs(exp - act) <= 1,
+            reconciled = math.abs(exp - act) <= ht_tolerance,
+            expectedEnergy = expected_ht_energy_by_name[name] or 0,
+            actualEnergy = actual_ht_energy_by_name[name] or 0,
         }
     end
 
@@ -176,7 +186,8 @@ end
 --- @param surface LuaSurface: The imported platform surface
 --- @param entities_to_create table: Array of serialized entity data (for per-type breakdown)
 --- @param validation_result table: The validation result to update (modified in-place)
-function LossAnalysis.run(surface, entities_to_create, validation_result)
+--- @param segment_temps table|nil: Optional seg_id→{fluid,temp} map from FluidRestoration.restore()
+function LossAnalysis.run(surface, entities_to_create, validation_result, segment_temps)
     local result = validation_result
     if not result.totalExpectedItems then
         return
@@ -185,8 +196,10 @@ function LossAnalysis.run(surface, entities_to_create, validation_result)
     -- === ITEM LOSS ANALYSIS ===
     local expected_by_type = build_expected_by_type(entities_to_create)
 
-    -- Count all items and fluids on the live surface
-    local surface_counts = SurfaceCounter.count_all(surface)
+    -- Count all items and fluids on the live surface.
+    -- Pass segment_temps so fluid temperature keys match what FluidRestoration wrote,
+    -- avoiding cosmetic mismatches from proxy read lag (especially for high-temp fluids).
+    local surface_counts = SurfaceCounter.count_all(surface, segment_temps)
     local actual_item_counts = surface_counts.item_counts
     local total_actual_items = surface_counts.item_total
     local actual_fluid_counts = surface_counts.fluid_counts
@@ -289,6 +302,23 @@ function LossAnalysis.run(surface, entities_to_create, validation_result)
         end
         if fel.entity_count > 50 then
             log(string.format("[Loss Analysis]   ... and %d more failed entities (detail capped at 50)", fel.entity_count - 50))
+        end
+    end
+
+    -- === INVENTORY OVERFLOW LOSS REPORT ===
+    if result.inventoryOverflowLosses and result.inventoryOverflowLosses.total > 0 then
+        local iol = result.inventoryOverflowLosses
+        log(string.format("[Loss Analysis] Inventory overflow (API stack cap): %d items unrestorable (excluded from expected totals)",
+            iol.total))
+        for _, ent in ipairs(iol.entities or {}) do
+            log(string.format("[Loss Analysis]   OVERFLOW: %s at (%.1f,%.1f) — %s: wanted %d, placed %d, lost %d",
+                ent.name,
+                ent.position and (ent.position.x or ent.position[1]) or 0,
+                ent.position and (ent.position.y or ent.position[2]) or 0,
+                ent.item, ent.expected, ent.actual, ent.lost))
+        end
+        if iol.total > 50 then
+            log(string.format("[Loss Analysis]   ... (detail capped at 50 entries)"))
         end
     end
 

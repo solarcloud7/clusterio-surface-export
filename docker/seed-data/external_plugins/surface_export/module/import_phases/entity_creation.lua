@@ -18,7 +18,11 @@ function EntityCreation.process_batch(job, get_batch_size, should_show_progress)
     for i = start_index, end_index do
       local entity_data = job.entities_to_create[i]
       if entity_data then
-        if entity_data.type == "item-on-ground" then
+        if entity_data._beacon_placed then
+          -- Already created by the beacon pre-placement phase; skip to avoid duplicates.
+          -- The entity is already in entity_map under entity_data.entity_id.
+          batch_created = batch_created + 1
+        elseif entity_data.type == "item-on-ground" then
           Deserializer.create_ground_item(job.target_surface, entity_data)
           batch_created = batch_created + 1
         else
@@ -28,24 +32,13 @@ function EntityCreation.process_batch(job, get_batch_size, should_show_progress)
             -- Store in entity_map for post-processing (circuit connections, etc.)
             if entity_data.entity_id then
               job.entity_map[entity_data.entity_id] = entity
-              -- DEBUG: Log entity_id mapping for first few entities
-              if i <= 5 then
-                log(string.format("[DEBUG] entity_map[%s] = %s (new unit_number=%s)",
-                  tostring(entity_data.entity_id),
-                  entity.name,
-                  tostring(entity.unit_number)))
-              end
-            else
-              -- DEBUG: Log entities missing entity_id
-              log(string.format("[DEBUG WARNING] Entity %s at (%.1f,%.1f) has NO entity_id!",
-                entity_data.name,
-                entity_data.position.x or entity_data.position[1] or 0,
-                entity_data.position.y or entity_data.position[2] or 0))
             end
             
-            -- CRITICAL: If this is a transfer, deactivate entity BEFORE restoring state/inventories
-            -- This prevents crafting machines from starting to consume items the moment we set their recipe
-            if job.transfer_id then
+            -- CRITICAL: If this is a transfer, deactivate productive entities BEFORE restoring state/inventories.
+            -- This prevents crafting machines from consuming items the moment a recipe is set.
+            -- Passive entities (beacons, radars, walls) are excluded — they hold no items/fluids
+            -- and must remain active so beacon speed bonuses apply to nearby machines as they are placed.
+            if job.transfer_id and entity.type ~= "beacon" and entity.type ~= "radar" then
               local ok, err = pcall(function()
                 if entity.active then
                   entity.active = false
@@ -60,8 +53,11 @@ function EntityCreation.process_batch(job, get_batch_size, should_show_progress)
             -- NOTE: Fluids are restored in post-processing phase (complete_import_job)
             -- This is CRITICAL because restoring fluids immediately causes fluid network
             -- redistribution when connected pipes/tanks are created later in the batch
+            -- NOTE: Inventories are also restored in post-processing phase (complete_import_job)
+            -- This is CRITICAL because set_stack() ceiling depends on crafting_speed, which
+            -- depends on beacon effects. Beacons may not yet be placed when an entity is created
+            -- in an earlier batch — restoring inventories here would lose items to a too-low cap.
             Deserializer.restore_entity_state(entity, entity_data)
-            Deserializer.restore_inventories(entity, entity_data)
           else
             -- space-platform-hub returns nil from create_entity deliberately:
             -- it is pre-created with the platform and mapped in platform_hub_mapping.

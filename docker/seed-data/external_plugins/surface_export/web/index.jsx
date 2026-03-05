@@ -10,6 +10,9 @@ import {
 	PageHeader,
 	PageLayout,
 	notifyErrorHandler,
+	useItemMetadata,
+	useEntityMetadata,
+	usePlanetMetadata,
 } from "@clusterio/web_ui";
 import * as messageDefs from "../messages";
 import { summaryFromTransferInfo, mergeTransferSummary } from "./utils";
@@ -59,6 +62,10 @@ function SurfaceExportPage() {
 	const control = useContext(ControlContext);
 	const plugin = useSurfaceExportPlugin(control);
 	const state = useSurfaceExportState(plugin);
+	// Trigger spritesheet CSS injection for categories used across tabs
+	useItemMetadata();
+	useEntityMetadata();
+	usePlanetMetadata();
 	const pluginVersion = state?.pluginVersion || null;
 	const tabItems = [
 		{
