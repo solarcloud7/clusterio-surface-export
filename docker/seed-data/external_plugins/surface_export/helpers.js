@@ -124,40 +124,8 @@ async function sendChunkedJson(instance, luaTemplate, data, logger, chunkSize = 
 	);
 }
 
-/**
- * Send data with adaptive chunking based on size
- * Small data: Send directly
- * Medium data: 50KB chunks
- * Large data: 100KB chunks
- *
- * @param {Object} instance - Clusterio instance
- * @param {string} directFunction - Lua function for direct receive (receives json_string)
- * @param {string} chunkFunction - Lua function for chunked receive (receives chunk, index, total)
- * @param {Object} data - Data to send
- * @param {Object} logger - Logger instance
- */
-async function sendAdaptiveJson(instance, directFunction, chunkFunction, data, logger) {
-	const json = JSON.stringify(data);
-	const sizeKB = json.length / 1024;
-
-	if (sizeKB < 50) {
-		// Small data: send directly
-		logger.info(`Sending ${sizeKB.toFixed(1)}KB directly (below chunking threshold)`);
-		await sendJsonToFactorio(instance, directFunction, data, logger);
-	} else if (sizeKB < 1024) {
-		// Medium data: 50KB chunks
-		logger.info(`Sending ${sizeKB.toFixed(1)}KB in 50KB chunks`);
-		await sendChunkedJson(instance, chunkFunction, data, logger, 50000);
-	} else {
-		// Large data: 100KB chunks
-		logger.info(`Sending ${sizeKB.toFixed(1)}KB in 100KB chunks`);
-		await sendChunkedJson(instance, chunkFunction, data, logger, 100000);
-	}
-}
-
 module.exports = {
 	sendJsonToFactorio,
 	chunkify,
 	sendChunkedJson,
-	sendAdaptiveJson,
 };

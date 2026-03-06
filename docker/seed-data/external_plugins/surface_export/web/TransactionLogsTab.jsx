@@ -68,6 +68,10 @@ function buildGanttRows(events, detailedSummary) {
 		if (elapsedMs !== null) totalMs = Math.max(totalMs, elapsedMs);
 
 		// Export sub-phases (on transfer_created)
+		// These phases all ENDED at transfer_created — place them backward from eventStart.
+		// Sequential order: [lock (includes async export)] → [wait for store] → transfer_created marker.
+		// instanceAsyncExportMs is a sub-component of requestExportAndLockMs (async export runs
+		// inside the lock RTT), shown as an indented sub-bar at the end of the lock phase.
 		const exportMetrics = event?.exportMetrics
 			|| (event?.eventType === "transfer_created" ? detailedSummary?.export || null : null);
 		if (exportMetrics && typeof exportMetrics === "object") {
@@ -76,65 +80,60 @@ function buildGanttRows(events, detailedSummary) {
 			const storeMs = Number(exportMetrics.waitForControllerStoreMs ?? 0);
 			const asyncMs = Number(exportMetrics.instanceAsyncExportMs ?? 0);
 			const ticks = Number(exportMetrics.instanceAsyncExportTicks ?? 0);
-			// requestExportAndLockMs and waitForControllerStoreMs are sequential sub-phases.
-			// controllerExportPrepTotalMs = lockMs + storeMs (derived, skip).
-			// instanceAsyncExportMs starts after prep.
-			let cursor = eventStart;
+			// storeMs ends at eventStart; lockMs ends where storeMs begins.
+			const lockEnd = eventStart - storeMs;
+			const lockStart = lockEnd - lockMs;
 			if (lockMs > 0) {
 				rows.push({ key: `export:lock:${eventStart}`, label: "Queue + lock",
-					isEvent: false, indent: 1, startMs: cursor, endMs: cursor + lockMs,
+					isEvent: false, indent: 1, startMs: lockStart, endMs: lockEnd,
 					durationMs: lockMs, color: "blue" });
-				totalMs = Math.max(totalMs, cursor + lockMs);
-				cursor += lockMs;
-			}
-			if (storeMs > 0) {
-				rows.push({ key: `export:store:${eventStart}`, label: "Wait for store",
-					isEvent: false, indent: 1, startMs: cursor, endMs: cursor + storeMs,
-					durationMs: storeMs, color: "blue" });
-				totalMs = Math.max(totalMs, cursor + storeMs);
-				cursor += storeMs;
+				totalMs = Math.max(totalMs, lockEnd);
 			}
 			if (asyncMs > 0) {
 				const asyncLabel = ticks > 0 ? `Async export (${ticks.toLocaleString()} ticks)` : "Async export";
+				// Async export ends when the lock RTT completes (instance finishes → response returns)
 				rows.push({ key: `export:async:${eventStart}`, label: asyncLabel,
-					isEvent: false, indent: 1, startMs: cursor, endMs: cursor + asyncMs,
-					durationMs: asyncMs, color: "blue" });
-				totalMs = Math.max(totalMs, cursor + asyncMs);
+					isEvent: false, indent: 2, startMs: lockEnd - asyncMs, endMs: lockEnd,
+					durationMs: asyncMs, color: "cyan" });
+			}
+			if (storeMs > 0) {
+				rows.push({ key: `export:store:${eventStart}`, label: "Wait for store",
+					isEvent: false, indent: 1, startMs: lockEnd, endMs: eventStart,
+					durationMs: storeMs, color: "blue" });
+				totalMs = Math.max(totalMs, eventStart);
 			}
 		}
 
 		// Import sub-phases
+		// These phases all ENDED at this event — place them backward from eventStart.
+		// Sequential order within import: tiles → entities. Import total is the outer bar.
 		if (event?.importMetrics && typeof event.importMetrics === "object") {
 			const m = event.importMetrics;
 			const eventStart = elapsedMs ?? 0;
-			let cursor = eventStart;
 			const tilesMs = Number(m.tiles_ms ?? 0);
 			const tilesCount = Number(m.tiles_placed ?? 0);
 			const entitiesMs = Number(m.entities_ms ?? 0);
 			const entitiesCount = Number(m.entities_created ?? 0);
 			const totalImportMs = Number(m.total_ms ?? 0);
-			if (tilesMs > 0 || tilesCount > 0) {
-				const label = tilesCount > 0 ? `Tiles (${tilesCount.toLocaleString()})` : "Tiles";
-				rows.push({ key: `import:tiles:${eventStart}`, label,
-					isEvent: false, indent: 1, startMs: cursor, endMs: cursor + (tilesMs || 0),
-					durationMs: tilesMs || null, color: "blue" });
-				totalMs = Math.max(totalMs, cursor + (tilesMs || 0));
-				cursor += tilesMs;
-			}
-			if (entitiesMs > 0 || entitiesCount > 0) {
-				const label = entitiesCount > 0 ? `Entities (${entitiesCount.toLocaleString()})` : "Entities";
-				rows.push({ key: `import:entities:${eventStart}`, label,
-					isEvent: false, indent: 1, startMs: cursor, endMs: cursor + (entitiesMs || 0),
-					durationMs: entitiesMs || null, color: "blue" });
-				totalMs = Math.max(totalMs, cursor + (entitiesMs || 0));
-				cursor += entitiesMs;
-			}
 			if (totalImportMs > 0) {
-				// Import total spans from event start
 				rows.push({ key: `import:total:${eventStart}`, label: "Import total",
-					isEvent: false, indent: 1, startMs: eventStart, endMs: eventStart + totalImportMs,
+					isEvent: false, indent: 1, startMs: eventStart - totalImportMs, endMs: eventStart,
 					durationMs: totalImportMs, color: "blue" });
-				totalMs = Math.max(totalMs, eventStart + totalImportMs);
+				totalMs = Math.max(totalMs, eventStart);
+				// Sub-phases: tiles first, then entities, positioned within the total window
+				const subStart = eventStart - totalImportMs;
+				if (tilesMs > 0 || tilesCount > 0) {
+					const label = tilesCount > 0 ? `Tiles (${tilesCount.toLocaleString()})` : "Tiles";
+					rows.push({ key: `import:tiles:${eventStart}`, label,
+						isEvent: false, indent: 2, startMs: subStart, endMs: subStart + (tilesMs || 0),
+						durationMs: tilesMs || null, color: "cyan" });
+				}
+				if (entitiesMs > 0 || entitiesCount > 0) {
+					const label = entitiesCount > 0 ? `Entities (${entitiesCount.toLocaleString()})` : "Entities";
+					rows.push({ key: `import:entities:${eventStart}`, label,
+						isEvent: false, indent: 2, startMs: subStart + (tilesMs || 0), endMs: subStart + (tilesMs || 0) + (entitiesMs || 0),
+						durationMs: entitiesMs || null, color: "cyan" });
+				}
 			}
 		}
 

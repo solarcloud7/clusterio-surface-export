@@ -21,7 +21,7 @@ const lib = requireClusterioModule("@clusterio/lib");
 const { BaseInstancePlugin } = requireClusterioModule("@clusterio/host");
 const info = require("./index.js");
 const messages = require("./messages");
-const { sendChunkedJson, sendAdaptiveJson } = require("./helpers");
+const { sendChunkedJson } = require("./helpers");
 
 /**
  * Instance plugin class

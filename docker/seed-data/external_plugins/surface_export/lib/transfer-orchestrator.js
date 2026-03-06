@@ -191,7 +191,7 @@ class TransferOrchestrator {
 
 	// ── Transfer initiation ─────────────────────────────────────────────
 
-	async transferPlatform(exportId, targetInstanceId, exportMetrics = null) {
+	async transferPlatform(exportId, targetInstanceId, exportMetrics = null, transferStartedAt = null) {
 		const exportData = this.plugin.platformStorage.get(exportId);
 		if (!exportData) {
 			return { success: false, error: `Export not found: ${exportId}` };
@@ -214,7 +214,7 @@ class TransferOrchestrator {
 			sourceInstanceName: this.plugin.platformTree.resolveInstanceName(exportData.instanceId),
 			targetInstanceId,
 			targetInstanceName: this.plugin.platformTree.resolveInstanceName(targetInstanceId),
-			startedAt: Date.now(),
+			startedAt: transferStartedAt ?? Date.now(),
 			status: "transporting",
 			payloadMetrics,
 			exportMetrics: mergedExportMetrics,
@@ -464,7 +464,7 @@ class TransferOrchestrator {
 				requestExportAndLockMs: exportRequestMs,
 				waitForControllerStoreMs: waitForStoredMs,
 				controllerExportPrepTotalMs: exportRequestMs + waitForStoredMs,
-			});
+			}, t0);
 			return { ...result, exportId: exportResponse.exportId };
 		} catch (err) {
 			return { success: false, error: err.message };
