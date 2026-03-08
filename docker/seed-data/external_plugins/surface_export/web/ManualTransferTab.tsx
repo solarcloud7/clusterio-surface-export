@@ -15,11 +15,29 @@ import {
 	Upload,
 	message as antMessage,
 } from "antd";
+import type { ColumnsType } from "antd/es/table";
+import type { UploadChangeParam, UploadFile } from "antd/es/upload/interface";
 import { DownloadOutlined, UploadOutlined } from "@ant-design/icons";
+import { sanitizeTimestamp, parseJsonFile, downloadJsonFile, getErrorMessage } from "./utils";
+import type { HostNode, InstanceNode, JsonObject, PlatformSummary, SurfaceExportPlugin, SurfaceExportState } from "./types";
 
 const { Text } = Typography;
 
-function locationLabel(platform, nowMs) {
+type PlatformRow = {
+	key: string;
+	host: HostNode | null;
+	hostName: string;
+	instance: InstanceNode;
+	instanceId: number;
+	instanceName: string;
+	platform: PlatformSummary;
+	platformIndex: number;
+	platformName: string;
+	forceName: string;
+	locationText: string;
+};
+
+function locationLabel(platform: PlatformSummary, nowMs?: number | null) {
 	if (platform.spaceLocation) {
 		return platform.spaceLocation;
 	}
@@ -39,8 +57,8 @@ function locationLabel(platform, nowMs) {
 	return "—";
 }
 
-function buildHostSections(tree) {
-	const sections = [];
+function buildHostSections(tree: SurfaceExportState["tree"]) {
+	const sections: Array<{ key: string; host: HostNode | null; hostName: string; instances: InstanceNode[] }> = [];
 	for (const host of [...(tree?.hosts || [])].sort((a, b) => String(a.hostName || "").localeCompare(String(b.hostName || "")))) {
 		const instances = [...(host.instances || [])].sort((a, b) => String(a.instanceName || "").localeCompare(String(b.instanceName || "")));
 		sections.push({
@@ -52,7 +70,7 @@ function buildHostSections(tree) {
 	}
 
 	const unassignedInstances = [...(tree?.unassignedInstances || [])].sort((a, b) =>
-		String(a.instanceName || "").localeCompare(String(b.instanceName || ""))
+		String(a.instanceName || "").localeCompare(String(b.instanceName || "")),
 	);
 	if (unassignedInstances.length) {
 		sections.push({
@@ -65,48 +83,17 @@ function buildHostSections(tree) {
 	return sections;
 }
 
-function sanitizeTimestamp(timestamp) {
-	return new Date(timestamp || Date.now()).toISOString().replace(/[:.]/g, "-");
-}
-
-function downloadJsonFile(data, filename) {
-	const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
-	const url = URL.createObjectURL(blob);
-	const link = document.createElement("a");
-	link.href = url;
-	link.download = filename;
-	document.body.appendChild(link);
-	link.click();
-	document.body.removeChild(link);
-	URL.revokeObjectURL(url);
-}
-
-function parseJsonFile(file) {
-	return new Promise((resolve, reject) => {
-		const reader = new FileReader();
-		reader.onload = () => {
-			try {
-				resolve(JSON.parse(String(reader.result || "")));
-			} catch (err) {
-				reject(err);
-			}
-		};
-		reader.onerror = () => reject(reader.error || new Error("Failed to read file"));
-		reader.readAsText(file);
-	});
-}
-
-export default function ManualTransferTab({ plugin, state }) {
-	const [selectedPlatformKey, setSelectedPlatformKey] = useState(null);
-	const [selectedTargetInstance, setSelectedTargetInstance] = useState(null);
+export default function ManualTransferTab({ plugin, state }: { plugin: SurfaceExportPlugin; state: SurfaceExportState }) {
+	const [selectedPlatformKey, setSelectedPlatformKey] = useState<string | null>(null);
+	const [selectedTargetInstance, setSelectedTargetInstance] = useState<number | null>(null);
 	const [isSubmitting, setIsSubmitting] = useState(false);
 	const [nowMs, setNowMs] = useState(Date.now());
-	const [exportingPlatformKey, setExportingPlatformKey] = useState(null);
+	const [exportingPlatformKey, setExportingPlatformKey] = useState<string | null>(null);
 	const [importModalOpen, setImportModalOpen] = useState(false);
-	const [importTargetInstance, setImportTargetInstance] = useState(null);
-	const [importFileList, setImportFileList] = useState([]);
-	const [importPayload, setImportPayload] = useState(null);
-	const [importError, setImportError] = useState(null);
+	const [importTargetInstance, setImportTargetInstance] = useState<{ instanceId: number; instanceName: string } | null>(null);
+	const [importFileList, setImportFileList] = useState<UploadFile[]>([]);
+	const [importPayload, setImportPayload] = useState<JsonObject | null>(null);
+	const [importError, setImportError] = useState<string | null>(null);
 	const [importForceName, setImportForceName] = useState("player");
 	const [importPlatformName, setImportPlatformName] = useState("");
 	const [importing, setImporting] = useState(false);
@@ -120,7 +107,7 @@ export default function ManualTransferTab({ plugin, state }) {
 
 	const hostSections = useMemo(() => buildHostSections(tree), [tree]);
 	const platformLookup = useMemo(() => {
-		const lookup = new Map();
+		const lookup = new Map<string, PlatformRow>();
 		for (const section of hostSections) {
 			for (const instance of section.instances) {
 				for (const platform of instance.platforms || []) {
@@ -152,7 +139,7 @@ export default function ManualTransferTab({ plugin, state }) {
 		if (!tree) {
 			return [];
 		}
-		const nodes = [];
+		const nodes: InstanceNode[] = [];
 		for (const host of tree.hosts || []) {
 			for (const instance of host.instances || []) {
 				nodes.push(instance);
@@ -185,8 +172,8 @@ export default function ManualTransferTab({ plugin, state }) {
 				throw new Error(response.error || "Transfer start failed");
 			}
 			antMessage.success(`Transfer started: ${response.transferId}`, 5);
-		} catch (err) {
-			antMessage.error(err.message || "Failed to start transfer", 10);
+		} catch (err: unknown) {
+			antMessage.error(getErrorMessage(err, "Failed to start transfer"), 10);
 		} finally {
 			setIsSubmitting(false);
 		}
@@ -209,14 +196,14 @@ export default function ManualTransferTab({ plugin, state }) {
 			const filename = `${response.platformName || source.platformName || "platform"}_${sanitizeTimestamp(response.timestamp)}.json`;
 			downloadJsonFile(response.exportData, filename);
 			antMessage.success(`Export downloaded: ${response.exportId}`, 6);
-		} catch (err) {
-			antMessage.error(err.message || "Failed to export platform", 10);
+		} catch (err: unknown) {
+			antMessage.error(getErrorMessage(err, "Failed to export platform"), 10);
 		} finally {
 			setExportingPlatformKey(null);
 		}
 	}
 
-	function openImportModal(instance) {
+	function openImportModal(instance: InstanceNode) {
 		setImportTargetInstance({
 			instanceId: instance.instanceId,
 			instanceName: instance.instanceName,
@@ -229,7 +216,7 @@ export default function ManualTransferTab({ plugin, state }) {
 		setImportModalOpen(true);
 	}
 
-	async function handleImportFileChange({ fileList }) {
+	async function handleImportFileChange({ fileList }: UploadChangeParam<UploadFile>) {
 		const next = fileList.slice(-1);
 		setImportFileList(next);
 		setImportPayload(null);
@@ -253,8 +240,8 @@ export default function ManualTransferTab({ plugin, state }) {
 			if (!parsed.platform_name) {
 				antMessage.warning("JSON file is missing platform_name. Set an override below before import.", 8);
 			}
-		} catch (err) {
-			setImportError(err.message || "Invalid JSON file");
+		} catch (err: unknown) {
+			setImportError(getErrorMessage(err, "Invalid JSON file"));
 		}
 	}
 
@@ -275,21 +262,21 @@ export default function ManualTransferTab({ plugin, state }) {
 			}
 			antMessage.success(
 				`Import started on ${importTargetInstance.instanceName}: ${response.platformName || "Unknown"}`,
-				8
+				8,
 			);
 			setImportModalOpen(false);
-		} catch (err) {
-			antMessage.error(err.message || "Failed to import JSON", 10);
+		} catch (err: unknown) {
+			antMessage.error(getErrorMessage(err, "Failed to import JSON"), 10);
 		} finally {
 			setImporting(false);
 		}
 	}
 
-	const platformColumns = [
+	const platformColumns: ColumnsType<PlatformRow> = [
 		{
 			title: "Platform",
 			key: "name",
-			render: (_, row) => (
+			render: (_: unknown, row: PlatformRow) => (
 				<Space>
 					<Text>{row.platformName}</Text>
 					{row.platform?.isLocked ? <Tag color="orange">locked</Tag> : null}
@@ -300,8 +287,8 @@ export default function ManualTransferTab({ plugin, state }) {
 			title: "Location",
 			key: "location",
 			width: "35%",
-			render: (_, row) => {
-				const moving = !row.platform?.spaceLocation && (row.platform?.currentTarget || row.platform?.speed > 0);
+			render: (_: unknown, row: PlatformRow) => {
+				const moving = !row.platform?.spaceLocation && (row.platform?.currentTarget || (row.platform?.speed || 0) > 0);
 				const locationName = row.platform?.spaceLocation || row.platform?.currentTarget;
 				return (
 					<Space size={6}>
@@ -317,12 +304,12 @@ export default function ManualTransferTab({ plugin, state }) {
 			title: "Actions",
 			key: "actions",
 			width: "20%",
-			render: (_, row) => (
+			render: (_: unknown, row: PlatformRow) => (
 				<Button
 					icon={<DownloadOutlined />}
 					size="small"
 					loading={exportingPlatformKey === row.key}
-					onClick={event => {
+					onClick={(event: React.MouseEvent<HTMLElement>) => {
 						event.stopPropagation();
 						handleExportPlatform(row);
 					}}
@@ -333,7 +320,6 @@ export default function ManualTransferTab({ plugin, state }) {
 		},
 	];
 
-
 	return (
 		<>
 			<div className="surface-export-tab-body">
@@ -343,7 +329,7 @@ export default function ManualTransferTab({ plugin, state }) {
 					{!loadingTree && hostSections.length === 0 ? (
 						<Empty description="No instances available" />
 					) : null}
-					{hostSections.map(section => (
+					{hostSections.map((section) => (
 						<Card
 							key={section.key}
 							title={(
@@ -355,11 +341,11 @@ export default function ManualTransferTab({ plugin, state }) {
 							size="small"
 							style={{ marginBottom: 12 }}
 						>
-							{section.instances.map(instance => {
+							{section.instances.map((instance) => {
 								const rows = (instance.platforms || [])
-									.filter(platform => platform.hasSpaceHub)
-									.map(platform => platformLookup.get(`platform:${instance.instanceId}:${platform.platformIndex}`))
-									.filter(Boolean);
+									.filter((platform) => platform.hasSpaceHub)
+									.map((platform) => platformLookup.get(`platform:${instance.instanceId}:${platform.platformIndex}`))
+									.filter(Boolean) as PlatformRow[];
 								return (
 									<Card
 										key={`instance:${instance.instanceId}`}
@@ -386,14 +372,14 @@ export default function ManualTransferTab({ plugin, state }) {
 												size="small"
 												columns={platformColumns}
 												dataSource={rows}
-												rowKey={row => row.key}
+												rowKey={(row: PlatformRow) => row.key}
 												pagination={false}
-												rowClassName={row => (
+												rowClassName={(row: PlatformRow) => (
 													row.key === selectedPlatformKey
 														? "surface-export-log-row-selected"
 														: "surface-export-log-row"
 												)}
-												onRow={row => ({
+												onRow={(row: PlatformRow) => ({
 													onClick: () => {
 														setSelectedPlatformKey(row.key);
 														setSelectedTargetInstance(null);
@@ -427,7 +413,7 @@ export default function ManualTransferTab({ plugin, state }) {
 								placeholder="Select destination instance"
 								options={destinationOptions}
 								value={selectedTargetInstance}
-								onChange={setSelectedTargetInstance}
+								onChange={value => setSelectedTargetInstance(value)}
 								disabled={!selectedSource}
 								style={{ width: "100%" }}
 							/>

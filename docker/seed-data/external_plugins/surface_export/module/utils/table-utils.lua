@@ -47,6 +47,7 @@ end
 --- @param item_table table: Table of item_name = count pairs
 --- @return number: Total item count
 function TableUtils.sum_items(item_table)
+  if type(item_table) ~= "table" then return 0 end
   local total = 0
   for _, count in pairs(item_table) do
     total = total + count
@@ -58,6 +59,7 @@ end
 --- @param fluid_table table: Table of fluid_name = amount pairs
 --- @return number: Total fluid amount
 function TableUtils.sum_fluids(fluid_table)
+  if type(fluid_table) ~= "table" then return 0 end
   local total = 0
   for _, amount in pairs(fluid_table) do
     total = total + amount

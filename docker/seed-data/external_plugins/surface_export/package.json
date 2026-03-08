@@ -1,11 +1,15 @@
 {
   "name": "@solarcloud7/plugin-surface-export",
-  "version": "0.9.171",
+  "version": "0.9.184",
   "description": "Clusterio plugin for exporting and importing Factorio space platforms",
   "main": "index.js",
+  "types": "index.d.ts",
   "scripts": {
+    "build:node": "tsc -p tsconfig.node.json",
+    "build:browser": "tsc -p tsconfig.browser.json --noEmit",
     "build:web": "webpack-cli --mode production",
-    "prepare": "npm run build:web",
+    "build": "npm run build:node && npm run build:web",
+    "prepare": "npm run build",
     "test": "echo \"No tests yet\" && exit 0"
   },
   "keywords": [
@@ -28,8 +32,10 @@
   },
   "files": [
     "*.js",
+    "*.d.ts",
+    "lib/**/*.js",
+    "lib/**/*.d.ts",
     "dist/web/",
-    "web/",
     "module/",
     "package.json"
   ],
@@ -39,9 +45,15 @@
   "devDependencies": {
     "@clusterio/lib": "2.0.0-alpha.22b",
     "@clusterio/web_ui": "2.0.0-alpha.22b",
+    "@sinclair/typebox": "^0.32.22",
+    "@types/node": "^20.11.30",
+    "@types/react": "^18.2.65",
+    "@types/react-dom": "^18.2.22",
     "antd": "^5.24.2",
+    "mermaid": "^10.0.0",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
+    "typescript": "^5.5.4",
     "webpack": "^5.98.0",
     "webpack-cli": "^5.1.4",
     "webpack-merge": "^5.9.0"

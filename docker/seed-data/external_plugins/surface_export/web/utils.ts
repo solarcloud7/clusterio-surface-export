@@ -1,6 +1,24 @@
 "use strict";
 
-export function statusColor(status) {
+import type { JsonObject, LogEvent, TransferSummary } from "./types";
+
+export function getErrorMessage(err: unknown, fallback = "Unknown error") {
+	if (err instanceof Error) {
+		return err.message || fallback;
+	}
+	if (typeof err === "string") {
+		return err || fallback;
+	}
+	if (err && typeof err === "object" && "message" in err) {
+		const message = (err as { message?: unknown }).message;
+		if (typeof message === "string" && message) {
+			return message;
+		}
+	}
+	return fallback;
+}
+
+export function statusColor(status: string) {
 	switch (status) {
 	case "transporting":
 	case "in_progress":
@@ -19,7 +37,7 @@ export function statusColor(status) {
 	}
 }
 
-export function summaryFromTransferInfo(transferInfo, lastEventAt = null) {
+export function summaryFromTransferInfo(transferInfo: JsonObject | null, lastEventAt: number | null = null): TransferSummary | null {
 	if (!transferInfo) {
 		return null;
 	}
@@ -44,7 +62,7 @@ export function summaryFromTransferInfo(transferInfo, lastEventAt = null) {
 	};
 }
 
-export function mergeTransferSummary(existing, incoming) {
+export function mergeTransferSummary(existing: TransferSummary[], incoming: TransferSummary | null) {
 	const byId = new Map((existing || []).map(summary => [summary.transferId, summary]));
 	if (incoming && incoming.transferId) {
 		byId.set(incoming.transferId, { ...byId.get(incoming.transferId), ...incoming });
@@ -53,7 +71,7 @@ export function mergeTransferSummary(existing, incoming) {
 	return Array.from(byId.values()).sort((a, b) => (b.startedAt || 0) - (a.startedAt || 0));
 }
 
-export function humanizeMetricKey(key) {
+export function humanizeMetricKey(key: string) {
 	return String(key || "")
 		.replace(/_/g, " ")
 		.replace(/([a-z])([A-Z])/g, "$1 $2")
@@ -62,7 +80,7 @@ export function humanizeMetricKey(key) {
 		.replace(/^./, text => text.toUpperCase());
 }
 
-export function formatDuration(durationMs) {
+export function formatDuration(durationMs: number | null) {
 	if (typeof durationMs !== "number" || Number.isNaN(durationMs)) {
 		return "-";
 	}
@@ -72,14 +90,14 @@ export function formatDuration(durationMs) {
 	return `${Math.round(durationMs).toLocaleString()}ms`;
 }
 
-export function formatNumeric(value, maxFractionDigits = 1) {
+export function formatNumeric(value: number | null, maxFractionDigits = 1) {
 	if (typeof value !== "number" || Number.isNaN(value)) {
 		return "-";
 	}
 	return value.toLocaleString(undefined, { maximumFractionDigits: maxFractionDigits });
 }
 
-export function formatCompactEnergy(value) {
+export function formatCompactEnergy(value: number | null) {
 	if (typeof value !== "number" || Number.isNaN(value)) {
 		return "-";
 	}
@@ -96,7 +114,7 @@ export function formatCompactEnergy(value) {
 	return value.toLocaleString(undefined, { maximumFractionDigits: 0 });
 }
 
-export function formatSigned(value, maxFractionDigits = 1) {
+export function formatSigned(value: number | null, maxFractionDigits = 1) {
 	if (typeof value !== "number" || Number.isNaN(value)) {
 		return "-";
 	}
@@ -104,14 +122,14 @@ export function formatSigned(value, maxFractionDigits = 1) {
 	return `${sign}${value.toLocaleString(undefined, { maximumFractionDigits: maxFractionDigits })}`;
 }
 
-export function sumValues(map) {
+export function sumValues(map: Record<string, number> | null | undefined) {
 	return Object.values(map || {}).reduce((total, value) => {
 		const numeric = Number(value);
 		return Number.isFinite(numeric) ? total + numeric : total;
 	}, 0);
 }
 
-export function buildMetricRows(data) {
+export function buildMetricRows(data: Record<string, unknown> | null | undefined) {
 	if (!data || typeof data !== "object") {
 		return [];
 	}
@@ -176,7 +194,7 @@ export const OPERATION_COUNT_DEFINITIONS = [
 	{ key: "atomicBeltItemStacksCaptured", source: "export", label: "Belt item stacks captured" },
 ];
 
-export function buildOperationCountRows(exportData, importData) {
+export function buildOperationCountRows(exportData: JsonObject | null | undefined, importData: JsonObject | null | undefined) {
 	const rows = [];
 	for (const def of OPERATION_COUNT_DEFINITIONS) {
 		const raw = def.source === "export" ? exportData?.[def.key] : importData?.[def.key];
@@ -195,7 +213,7 @@ export const EXPORT_GANTT_TIMINGS = [
 	{ key: "instanceAsyncExportMs",      label: "Async export" },
 ];
 
-function formatBytes(value) {
+export function formatBytes(value: number | null) {
 	const numeric = Number(value);
 	if (!Number.isFinite(numeric)) {
 		return "-";
@@ -210,12 +228,42 @@ function formatBytes(value) {
 	return `${formatNumeric(kb / 1024, 2)} MB`;
 }
 
+export function sanitizeTimestamp(timestamp: number | string | null) {
+	return new Date(timestamp || Date.now()).toISOString().replace(/[:.]/g, "-");
+}
 
-export function buildExpectedActualRows(expectedMap, actualMap) {
+export function parseJsonFile(file: File) {
+	return new Promise<JsonObject>((resolve, reject) => {
+		const reader = new FileReader();
+		reader.onload = () => {
+			try {
+				resolve(JSON.parse(String(reader.result || "")) as JsonObject);
+			} catch (err) {
+				reject(err);
+			}
+		};
+		reader.onerror = () => reject(reader.error || new Error("Failed to read file"));
+		reader.readAsText(file);
+	});
+}
+
+export function downloadJsonFile(data: Record<string, unknown>, filename: string) {
+	const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+	const url = URL.createObjectURL(blob);
+	const link = document.createElement("a");
+	link.href = url;
+	link.download = filename;
+	document.body.appendChild(link);
+	link.click();
+	document.body.removeChild(link);
+	URL.revokeObjectURL(url);
+}
+
+export function buildExpectedActualRows(expectedMap: Record<string, number> | null | undefined, actualMap: Record<string, number> | null | undefined) {
 	const expected = expectedMap || {};
 	const actual = actualMap || {};
 	const keys = new Set([ ...Object.keys(expected), ...Object.keys(actual) ]);
-	const rows = [];
+	const rows: ExpectedActualRow[] = [];
 	for (const name of keys) {
 		const expectedValue = Number(expected[name] || 0);
 		const actualValue = Number(actual[name] || 0);
@@ -233,13 +281,22 @@ export function buildExpectedActualRows(expectedMap, actualMap) {
 	return rows;
 }
 
-export function parseFluidTemperatureKey(fluidKey) {
+export type ExpectedActualRow = {
+	key: string;
+	name: string;
+	expected: number;
+	actual: number;
+	delta: number;
+	preservedPct: number | null;
+};
+
+export function parseFluidTemperatureKey(fluidKey: string) {
 	const key = String(fluidKey || "");
 	const match = key.match(/^(.*)@(-?\d+(?:\.\d+)?)C$/i);
 	if (!match) {
 		return {
 			baseName: key,
-			temperatureC: null,
+			temperatureC: null as number | null,
 			rawKey: key,
 		};
 	}
@@ -250,7 +307,22 @@ export function parseFluidTemperatureKey(fluidKey) {
 	};
 }
 
-export function buildFluidInventoryRows(expectedMap, actualMap, highTempThreshold = 10000, highTempAggregates = {}) {
+export type FluidInventoryRow = {
+	key: string;
+	name: string;
+	tempDisplay: string | null;
+	category: string;
+	expected: number;
+	actual: number;
+	delta: number;
+	preservedPct: number | null;
+	isGroup: boolean;
+	status: string;
+	reconciled: boolean;
+	isThermalSummary?: boolean;
+};
+
+export function buildFluidInventoryRows(expectedMap: Record<string, number> | null | undefined, actualMap: Record<string, number> | null | undefined, highTempThreshold = 10000, highTempAggregates: JsonObject = {}) {
 	const expected = expectedMap || {};
 	const actual = actualMap || {};
 	const aggregates = highTempAggregates || {};
@@ -291,7 +363,7 @@ export function buildFluidInventoryRows(expectedMap, actualMap, highTempThreshol
 		});
 	}
 
-	const rows = [];
+	const rows: Array<FluidInventoryRow> = [];
 	for (const group of groups.values()) {
 		const delta = group.actual - group.expected;
 		const category = group.hasHighTempBucket ? "High-temp" : "Normal";
@@ -402,7 +474,13 @@ export function buildFluidInventoryRows(expectedMap, actualMap, highTempThreshol
 	return grouped;
 }
 
-export function findLatestEvent(events, predicate) {
+export type MetricRow = {
+	key: string;
+	metric: string;
+	value: string;
+};
+
+export function findLatestEvent(events: Array<LogEvent>, predicate: (event: LogEvent) => boolean) {
 	for (let index = events.length - 1; index >= 0; index -= 1) {
 		if (predicate(events[index])) {
 			return events[index];
@@ -411,7 +489,7 @@ export function findLatestEvent(events, predicate) {
 	return null;
 }
 
-export function buildDetailedLogSummary(detail, transferId) {
+export function buildDetailedLogSummary(detail: JsonObject, transferId: string) {
 	const transferInfo = detail?.transferInfo || null;
 	const events = Array.isArray(detail?.events) ? detail.events : [];
 	const summary = detail?.summary && typeof detail.summary === "object" ? detail.summary : {};

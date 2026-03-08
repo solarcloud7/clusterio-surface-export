@@ -12,6 +12,8 @@ local TileScanner = require("modules/surface_export/export_scanners/tile_scanner
 local DebugExport = require("modules/surface_export/utils/debug-export")
 local PlatformSchedule = require("modules/surface_export/utils/platform-schedule")
 local clusterio_api = require("modules/clusterio/api")
+local PhaseProfiler = require("modules/surface_export/utils/phase-profiler")
+local TransactionHistory = require("modules/surface_export/utils/transaction-history")
 
 local ExportPipeline = {}
 
@@ -248,6 +250,7 @@ function ExportPipeline.queue(platform_index, force_name, requester_name, destin
 		}
 	}
 
+	PhaseProfiler.init(job_id, {"completion"})
 	return job_id
 end
 
@@ -310,6 +313,9 @@ function ExportPipeline.complete(job)
 	-- The job_id already contains the full export_id (platformName_tick_export_N)
 	-- generated at queue time to prevent race conditions
 	local export_id = job.job_id
+
+	-- Start completion profiler (belt scan + verify + serialize + compress)
+	PhaseProfiler.start(job.job_id, "completion")
 
 	-- Store completed export with compression
 	storage.platform_exports = storage.platform_exports or {}
@@ -410,6 +416,9 @@ function ExportPipeline.complete(job)
 		log(string.format("[Compression Warning] Failed to compress export %s, storing uncompressed", export_id))
 	end
 
+	-- Stop completion profiler
+	PhaseProfiler.stop(job.job_id, "completion")
+
 	-- Calculate duration
 	local duration_ticks = game.tick - job.started_tick
 	local duration_seconds = duration_ticks / 60
@@ -442,6 +451,21 @@ function ExportPipeline.complete(job)
 	-- Notify requester if via RCON
 	if job.requester == "RCON" then
 		rcon.print(string.format("EXPORT_COMPLETE:%s", export_id))
+	end
+
+	-- Performance summary
+	local perf = PhaseProfiler.get(job.job_id)
+	if perf then
+		-- CRITICAL: Use profiler objects directly in LocalisedString, NOT tostring().
+		local msg = {"", "[Perf] Export '", job.platform_name, "' (", job.total_entities, " entities):\n",
+			"  Scanning:   ", math.floor(duration_ticks * 16.67), "ms (", duration_ticks, " ticks)\n",
+			"  Completion (belt+verify+compress): ", perf.completion}
+		game.print(msg)
+		
+		-- Record to transaction history BEFORE discarding profilers
+		TransactionHistory.record_export(job, perf)
+		
+		PhaseProfiler.discard(job.job_id)
 	end
 
 	-- Send export completion notification to Clusterio plugin via send_json event channel
@@ -513,7 +537,7 @@ function ExportPipeline.complete(job)
 		if unlock_success then
 			game.print(string.format("[Export] Platform %s unlocked - machines reactivated", job.platform_name), {0, 1, 0})
 			if clusterio_api and clusterio_api.send_json then
-				pcall(function()
+				GameUtils.pcall_warn("[ExportPipeline] send_json surface_platform_state_changed", function()
 					clusterio_api.send_json("surface_platform_state_changed", {
 						platform_name = job.platform_name,
 						force_name = job.force_name,

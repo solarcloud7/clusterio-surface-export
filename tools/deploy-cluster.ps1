@@ -149,7 +149,59 @@ Remove-Job $logJob -ErrorAction SilentlyContinue
 
 Write-Host "================================================" -ForegroundColor DarkGray
 
-# 9. Retrieve admin token
+# 9. Wait for instances to reach running state
+Write-Host ""
+Write-Host "Waiting for instances to start..." -ForegroundColor Cyan
+Write-Host "================================================" -ForegroundColor DarkGray
+
+$instanceTimeout = 300
+$instanceSw = [System.Diagnostics.Stopwatch]::StartNew()
+$lastStates = @{}
+$instancesDone = $false
+
+while (-not $instancesDone -and $instanceSw.Elapsed.TotalSeconds -lt $instanceTimeout) {
+    Start-Sleep -Seconds 3
+
+    $listOut = docker exec surface-export-controller sh -c 'npx clusterioctl --config /clusterio/tokens/config-control.json --log-level error instance list 2>/dev/null' 2>$null
+    if ($LASTEXITCODE -ne 0 -or -not $listOut) { continue }
+
+    $stateMap = @{}
+    foreach ($line in ($listOut -split "`n")) {
+        if ($line -match '(clusterio-\S+-instance-\d+).*\b(running|starting|stopped|stopping|creating_save|unassigned)\b') {
+            $stateMap[$Matches[1]] = $Matches[2]
+        }
+    }
+
+    foreach ($name in ($stateMap.Keys | Sort-Object)) {
+        $state = $stateMap[$name]
+        if ($lastStates[$name] -ne $state) {
+            $stateColor = switch ($state) {
+                "running"       { "Green"  }
+                "stopped"       { "Red"    }
+                "creating_save" { "Cyan"   }
+                default         { "Yellow" }
+            }
+            $elapsed = [int]$instanceSw.Elapsed.TotalSeconds
+            Write-Host "  [+${elapsed}s] $name -> $state" -ForegroundColor $stateColor
+            $lastStates[$name] = $state
+        }
+    }
+
+    $nonRunning = @($stateMap.Values | Where-Object { $_ -ne "running" })
+    if ($stateMap.Count -gt 0 -and $nonRunning.Count -eq 0) {
+        $instancesDone = $true
+    }
+}
+
+Write-Host "================================================" -ForegroundColor DarkGray
+if ($instancesDone) {
+    $elapsed = [int]$instanceSw.Elapsed.TotalSeconds
+    Write-Host "All instances running! (+${elapsed}s)" -ForegroundColor Green
+} else {
+    Write-Host "(Instance startup timeout after ${instanceTimeout}s)" -ForegroundColor Yellow
+}
+
+# 10. Retrieve admin token
 Write-Host ""
 Write-Host "Retrieving admin token..." -ForegroundColor Cyan
 Start-Sleep -Seconds 2

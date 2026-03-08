@@ -118,7 +118,7 @@ function SurfaceCounter.count_fluids(surface, segment_temps)
     -- This is a fallback for segments not covered by segment_temps.
     for _, entity in ipairs(entities) do
         if entity.valid and entity.fluidbox then
-            pcall(function()
+            Util.pcall_warn("[SurfaceCounter] Fluidbox temp read on " .. entity.name, function()
                 for i = 1, #entity.fluidbox do
                     local fluid = entity.fluidbox[i]
                     if fluid and fluid.name and fluid.temperature then

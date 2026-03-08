@@ -7,8 +7,11 @@ const common = require("@clusterio/web_ui/webpack.common");
 
 module.exports = (env = {}, argv = {}) => merge(common(env, argv), {
 	context: __dirname,
-	entry: "./web/index.jsx",
+	entry: "./web/index.tsx",
 	cache: { type: "filesystem", buildDependencies: { config: [__filename] } },
+	resolve: {
+		extensions: [".tsx", ".ts", ".jsx", ".js"],
+	},
 	output: {
 		path: path.resolve(__dirname, "dist", "web"),
 		filename: "static/[name].js",
@@ -20,9 +23,9 @@ module.exports = (env = {}, argv = {}) => merge(common(env, argv), {
 			name: "surface_export",
 			library: { type: "var", name: "plugin_surface_export" },
 			exposes: {
-				"./": "./index.js",
+				"./": "./index.ts",
 				"./package.json": "./package.json",
-				"./web": "./web/index.jsx",
+				"./web": "./web/index.tsx",
 			},
 			shared: {
 				"@clusterio/lib": { import: false },

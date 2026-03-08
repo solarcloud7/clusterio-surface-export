@@ -15,9 +15,10 @@ import {
 	usePlanetMetadata,
 } from "@clusterio/web_ui";
 import * as messageDefs from "../messages";
-import { summaryFromTransferInfo, mergeTransferSummary } from "./utils";
+import { summaryFromTransferInfo, mergeTransferSummary, getErrorMessage } from "./utils";
 import ManualTransferTab from "./ManualTransferTab";
 import TransactionLogsTab from "./TransactionLogsTab";
+import type { JsonObject, LogEvent, SurfaceExportPlugin, SurfaceExportState } from "./types";
 
 import "./style.css";
 
@@ -39,12 +40,19 @@ const {
 
 const { Text } = Typography;
 
-function useSurfaceExportPlugin(control) {
-	return control.plugins.get("surface_export");
+type ControlLike = {
+	plugins: Map<string, unknown>;
+	connector: { connected: boolean };
+	send: (message: unknown) => Promise<unknown>;
+	handle: (message: unknown, handler: (payload: unknown) => void) => void;
+};
+
+function useSurfaceExportPlugin(control: ControlLike): SurfaceExportPlugin {
+	return control.plugins.get("surface_export") as SurfaceExportPlugin;
 }
 
-function useSurfaceExportState(plugin) {
-	const [state, setState] = useState(plugin.getState());
+function useSurfaceExportState(plugin: SurfaceExportPlugin) {
+	const [state, setState] = useState<SurfaceExportState>(plugin.getState());
 
 	useEffect(() => {
 		function onUpdate() {
@@ -59,7 +67,7 @@ function useSurfaceExportState(plugin) {
 }
 
 function SurfaceExportPage() {
-	const control = useContext(ControlContext);
+	const control = useContext(ControlContext) as ControlLike;
 	const plugin = useSurfaceExportPlugin(control);
 	const state = useSurfaceExportState(plugin);
 	// Trigger spritesheet CSS injection for categories used across tabs
@@ -99,7 +107,14 @@ function SurfaceExportPage() {
 }
 
 export class WebPlugin extends BaseWebPlugin {
-	constructor(container, packageData, info, control, logger) {
+	declare control: ControlLike;
+	declare pages: Array<Record<string, unknown>>;
+
+	private callbacks: Array<() => void>;
+	private liveUpdatesEnabled: boolean;
+	private state: SurfaceExportState;
+
+	constructor(container: unknown, packageData: JsonObject, info: JsonObject, control: ControlLike, logger: unknown) {
 		super(container, packageData, info, control, logger);
 		this.callbacks = [];
 		this.liveUpdatesEnabled = false;
@@ -135,7 +150,7 @@ export class WebPlugin extends BaseWebPlugin {
 		this.control.handle(SurfaceExportLogUpdateEvent, this.handleLogUpdate.bind(this));
 	}
 
-	onControllerConnectionEvent(event) {
+	onControllerConnectionEvent(event: string) {
 		if (event === "connect" || event === "resume") {
 			this.syncLiveState().catch(notifyErrorHandler("Failed to resubscribe Surface Export live updates"));
 		}
@@ -145,19 +160,19 @@ export class WebPlugin extends BaseWebPlugin {
 		return this.state;
 	}
 
-	setState(partial) {
+	setState(partial: Partial<SurfaceExportState>) {
 		this.state = { ...this.state, ...partial };
 		for (const callback of this.callbacks) {
 			callback();
 		}
 	}
 
-	onUpdate(callback) {
+	onUpdate(callback: () => void) {
 		this.callbacks.push(callback);
 		this.syncLiveState().catch(notifyErrorHandler("Failed to start Surface Export live updates"));
 	}
 
-	offUpdate(callback) {
+	offUpdate(callback: () => void) {
 		const index = this.callbacks.lastIndexOf(callback);
 		if (index !== -1) {
 			this.callbacks.splice(index, 1);
@@ -171,7 +186,7 @@ export class WebPlugin extends BaseWebPlugin {
 			this.liveUpdatesEnabled = shouldEnable;
 			return;
 		}
-		const trySubscribe = logs => this.control.send(new SetSurfaceExportSubscriptionRequest({
+		const trySubscribe = (logs: boolean) => this.control.send(new SetSurfaceExportSubscriptionRequest({
 			tree: shouldEnable,
 			transfers: shouldEnable,
 			logs,
@@ -180,8 +195,8 @@ export class WebPlugin extends BaseWebPlugin {
 		let logsEnabled = shouldEnable && this.state.canViewLogs !== false;
 		try {
 			await trySubscribe(logsEnabled);
-		} catch (err) {
-			if (logsEnabled && /permission denied/i.test(err?.message || "")) {
+		} catch (err: unknown) {
+			if (logsEnabled && /permission denied/i.test(getErrorMessage(err))) {
 				logsEnabled = false;
 				this.setState({ canViewLogs: false });
 				await trySubscribe(false);
@@ -207,9 +222,9 @@ export class WebPlugin extends BaseWebPlugin {
 				exports = Array.isArray(exportEntries)
 					? [...exportEntries].sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0))
 					: [];
-			} catch (err) {
+			} catch (err: unknown) {
 				exports = [];
-				exportsError = err.message || "Failed to list exports";
+				exportsError = getErrorMessage(err, "Failed to list exports");
 			}
 			let transferSummaries = this.state.transferSummaries;
 			if (this.state.canViewLogs !== false) {
@@ -218,8 +233,8 @@ export class WebPlugin extends BaseWebPlugin {
 					transferSummaries = Array.isArray(logSummaries)
 						? [...logSummaries].sort((a, b) => (b.startedAt || 0) - (a.startedAt || 0))
 						: [];
-				} catch (err) {
-					if (/permission denied/i.test(err?.message || "")) {
+				} catch (err: unknown) {
+					if (/permission denied/i.test(getErrorMessage(err))) {
 						this.setState({ canViewLogs: false });
 						transferSummaries = [];
 					} else {
@@ -243,11 +258,11 @@ export class WebPlugin extends BaseWebPlugin {
 				loadingTree: false,
 				treeError: null,
 			});
-		} catch (err) {
+		} catch (err: unknown) {
 			this.setState({
 				loadingTree: false,
 				loadingExports: false,
-				treeError: err.message || "Failed to refresh Surface Export state",
+				treeError: getErrorMessage(err, "Failed to refresh Surface Export state"),
 			});
 		}
 	}
@@ -261,32 +276,32 @@ export class WebPlugin extends BaseWebPlugin {
 				: [];
 			this.setState({ exports, loadingExports: false, exportsError: null });
 			return exports;
-		} catch (err) {
+		} catch (err: unknown) {
 			this.setState({
 				exports: [],
 				loadingExports: false,
-				exportsError: err.message || "Failed to list exports",
+				exportsError: getErrorMessage(err, "Failed to list exports"),
 			});
 			throw err;
 		}
 	}
 
-	async getStoredExport(exportId) {
+	async getStoredExport(exportId: string) {
 		return this.control.send(new GetStoredExportRequest({ exportId }));
 	}
-	async exportPlatformForDownload(payload) {
+	async exportPlatformForDownload(payload: JsonObject) {
 		return this.control.send(new ExportPlatformForDownloadRequest(payload));
 	}
 
-	async importUploadedExport(payload) {
+	async importUploadedExport(payload: JsonObject) {
 		return this.control.send(new ImportUploadedExportRequest(payload));
 	}
 
-	async startTransfer(payload) {
+	async startTransfer(payload: JsonObject) {
 		return this.control.send(new StartPlatformTransferRequest(payload));
 	}
 
-	async loadTransactionLog(transferId) {
+	async loadTransactionLog(transferId: string) {
 		const response = await this.control.send(new GetTransactionLogRequest({ transferId }));
 		if (!response.success) {
 			throw new Error(response.error || "Failed to load transaction log");
@@ -317,44 +332,52 @@ export class WebPlugin extends BaseWebPlugin {
 		});
 	}
 
-	async handleTreeUpdate(event) {
-		if (event.revision <= this.state.lastTreeRevision) {
+	async handleTreeUpdate(event: JsonObject) {
+		const revision = Number(event.revision ?? 0);
+		if (revision <= this.state.lastTreeRevision) {
 			return;
 		}
+		const tree = (event.tree ?? {}) as { hosts?: Array<unknown>; unassignedInstances?: Array<unknown> };
 
 		this.setState({
 			tree: {
-				forceName: event.forceName,
-				hosts: event.tree?.hosts || [],
-				unassignedInstances: event.tree?.unassignedInstances || [],
-				revision: event.revision,
-				generatedAt: event.generatedAt,
+				forceName: String(event.forceName || "player"),
+				hosts: (tree.hosts || []) as NonNullable<SurfaceExportState["tree"]>["hosts"],
+				unassignedInstances: (tree.unassignedInstances || []) as NonNullable<SurfaceExportState["tree"]>["unassignedInstances"],
+				revision,
+				generatedAt: Number(event.generatedAt ?? Date.now()),
 			},
 			loadingTree: false,
 			treeError: null,
-			lastTreeRevision: event.revision,
+			lastTreeRevision: revision,
 		});
 	}
 
-	async handleTransferUpdate(event) {
-		if (event.revision <= this.state.lastTransferRevision) {
+	async handleTransferUpdate(event: JsonObject) {
+		const revision = Number(event.revision ?? 0);
+		if (revision <= this.state.lastTransferRevision) {
 			return;
 		}
 
 		this.setState({
-			transferSummaries: mergeTransferSummary(this.state.transferSummaries, event.transfer),
-			lastTransferRevision: event.revision,
+			transferSummaries: mergeTransferSummary(this.state.transferSummaries, event.transfer as SurfaceExportState["transferSummaries"][number]),
+			lastTransferRevision: revision,
 		});
 	}
 
-	async handleLogUpdate(event) {
-		if (event.revision <= this.state.lastLogRevision) {
+	async handleLogUpdate(event: JsonObject) {
+		const revision = Number(event.revision ?? 0);
+		if (revision <= this.state.lastLogRevision) {
+			return;
+		}
+		const transferId = String(event.transferId || "");
+		if (!transferId) {
 			return;
 		}
 
-		const existing = this.state.logDetails[event.transferId] || { events: [] };
+		const existing = this.state.logDetails[transferId] || { events: [] };
 		const events = [...existing.events];
-		const incoming = event.event || {};
+		const incoming = (event.event || {}) as LogEvent;
 		const lastEvent = events.length ? events[events.length - 1] : null;
 		const isDuplicate = lastEvent
 			&& lastEvent.timestampMs === incoming.timestampMs
@@ -365,26 +388,28 @@ export class WebPlugin extends BaseWebPlugin {
 		}
 
 		const detail = {
-			transferInfo: event.transferInfo || existing.transferInfo || null,
-			summary: event.summary || existing.summary || null,
+			transferInfo: (event.transferInfo as JsonObject) || existing.transferInfo || null,
+			summary: (event.summary as JsonObject) || existing.summary || null,
 			events,
 		};
 
 		let transferSummary = null;
 		if (event.transferInfo) {
-			transferSummary = summaryFromTransferInfo(event.transferInfo, incoming.timestampMs || null);
-			transferSummary.transferId = event.transferId;
+			transferSummary = summaryFromTransferInfo(event.transferInfo as JsonObject, incoming.timestampMs || null);
+			if (transferSummary) {
+				transferSummary.transferId = transferId;
+			}
 		}
 
 		this.setState({
 			logDetails: {
 				...this.state.logDetails,
-				[event.transferId]: detail,
+				[transferId]: detail,
 			},
 			transferSummaries: transferSummary
 				? mergeTransferSummary(this.state.transferSummaries, transferSummary)
 				: this.state.transferSummaries,
-			lastLogRevision: event.revision,
+			lastLogRevision: revision,
 		});
 	}
 }

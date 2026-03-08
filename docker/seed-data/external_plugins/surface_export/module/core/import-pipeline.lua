@@ -7,6 +7,7 @@ local PlatformSchedule = require("modules/surface_export/utils/platform-schedule
 local TileRestoration = require("modules/surface_export/import_phases/tile_restoration")
 local PlatformHubMapping = require("modules/surface_export/import_phases/platform_hub_mapping")
 local EntityCreation = require("modules/surface_export/import_phases/entity_creation")
+local PhaseProfiler = require("modules/surface_export/utils/phase-profiler")
 
 local ImportPipeline = {}
 
@@ -48,6 +49,14 @@ function ImportPipeline.queue(json_data, new_platform_name, force_name, requeste
 	if type(json_data) == "string" then
 		log(string.format("[Import Queue] JSON string size: %d bytes", #json_data))
 	end
+
+	-- Initialize phase profilers and measure decompression + platform setup time
+	PhaseProfiler.init(job_id, {
+		"queue_setup", "beacons",
+		"hub_restore", "belts", "state",
+		"inventories", "validation", "activation", "fluids", "loss_analysis",
+	})
+	PhaseProfiler.start(job_id, "queue_setup")
 
 	-- First, parse if it's a JSON string
 	local parsed_data
@@ -232,6 +241,8 @@ function ImportPipeline.queue(json_data, new_platform_name, force_name, requeste
 		total_fluids = Util.sum_fluids(platform_data.verification.fluid_counts or {})
 	end
 
+	PhaseProfiler.stop(job_id, "queue_setup")
+
 	storage.async_jobs[job_id] = {
 		type = "import",
 		job_id = job_id,
@@ -342,6 +353,7 @@ function ImportPipeline.process_batch(job, get_batch_size, should_show_progress)
 	-- This phase places ALL beacons (including modded types) in one tick, unconditionally.
 	-- Uses prototypes[name].type to detect beacons so any mod's beacon variant is covered.
 	if not job.beacons_placed and job.tiles_placed then
+		PhaseProfiler.start(job.job_id, "beacons")
 		local beacons_created = 0
 		local beacons_skipped = 0
 		for _, entity_data in ipairs(job.entities_to_create) do
@@ -362,6 +374,7 @@ function ImportPipeline.process_batch(job, get_batch_size, should_show_progress)
 			end
 		end
 		job.beacons_placed = true
+		PhaseProfiler.stop(job.job_id, "beacons")
 		if beacons_created > 0 or beacons_skipped > 0 then
 			log(string.format("[Import] Beacon pre-placement: %d placed, %d failed (tick %d)", beacons_created, beacons_skipped, game.tick))
 		end

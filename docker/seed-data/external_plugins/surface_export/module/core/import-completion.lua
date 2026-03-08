@@ -21,6 +21,8 @@ local EntityScanner = require("modules/surface_export/export_scanners/entity-sca
 local GameUtils = require("modules/surface_export/utils/game-utils")
 local Util = require("modules/surface_export/utils/util")
 local clusterio_api = require("modules/clusterio/api")
+local PhaseProfiler = require("modules/surface_export/utils/phase-profiler")
+local TransactionHistory = require("modules/surface_export/utils/transaction-history")
 
 local ImportCompletion = {}
 
@@ -47,7 +49,9 @@ function ImportCompletion.run_phase1(job)
 
 	-- Step 0: Restore hub inventories (DEFERRED from platform_hub_mapping)
 	-- The hub's inventory size scales with cargo bays, which are now placed.
+	PhaseProfiler.start(job.job_id, "hub_restore")
 	PlatformHubMapping.restore_hub_inventories(job)
+	PhaseProfiler.stop(job.job_id, "hub_restore")
 
 	-- Step 0a: Fluid restoration DEFERRED until after entity activation
 	-- Factorio 2.0 fluid segment system: frozen entities are detached from fluid segments.
@@ -60,13 +64,17 @@ function ImportCompletion.run_phase1(job)
 	-- CRITICAL: Belts are always active and cannot be deactivated.
 	-- Must restore all belt items in a single tick to prevent partial restoration
 	job.metrics.belts_started_tick = game.tick
+	PhaseProfiler.start(job.job_id, "belts")
 	local belts_result = BeltRestoration.restore(entities_to_create, entity_map)
+	PhaseProfiler.stop(job.job_id, "belts")
 	job.metrics.belts_completed_tick = game.tick
 	job.metrics.belt_items_restored = belts_result and belts_result.items_restored or 0
 
 	-- Steps 1-5: Restore localized entity state (Control Behavior, Filters, Connections)
 	job.metrics.state_started_tick = game.tick
+	PhaseProfiler.start(job.job_id, "state")
 	local state_result = EntityStateRestoration.restore_all(entities_to_create, entity_map)
+	PhaseProfiler.stop(job.job_id, "state")
 	job.metrics.state_completed_tick = game.tick
 	job.metrics.circuits_connected = state_result and state_result.circuits_connected or 0
 
@@ -99,6 +107,7 @@ function ImportCompletion.run_phase2(job)
 	if not job.inventory_overflow_losses then
 		job.inventory_overflow_losses = { total = 0, items = {}, entities = {} }
 	end
+	PhaseProfiler.start(job.job_id, "inventories")
 	local inv_restored = 0
 	local inv_skipped = 0
 	-- Pass 1: beacons only
@@ -122,6 +131,7 @@ function ImportCompletion.run_phase2(job)
 			end
 		end
 	end
+	PhaseProfiler.stop(job.job_id, "inventories")
 	log(string.format("[Import] Inventory restoration: %d entities restored, %d skipped (failed/missing)", inv_restored, inv_skipped))
 	if job.inventory_overflow_losses.total > 0 then
 		log(string.format("[Import] Inventory overflow losses: %d items lost (set_stack API cap)", job.inventory_overflow_losses.total))
@@ -150,10 +160,14 @@ function ImportCompletion.run_phase2(job)
 	if job.transfer_id then
 		log("[Import] Deferring active state restoration until after validation (transfer mode)")
 	else
+		PhaseProfiler.start(job.job_id, "activation")
 		ActiveStateRestoration.restore(entities_to_create, entity_map, frozen_states)
+		PhaseProfiler.stop(job.job_id, "activation")
 		-- Non-transfer: restore fluids after activation (same ghost buffer fix)
 		job.metrics.fluids_started_tick = game.tick
+		PhaseProfiler.start(job.job_id, "fluids")
 		local fluids_result = FluidRestoration.restore(entities_to_create, entity_map)
+		PhaseProfiler.stop(job.job_id, "fluids")
 		job.metrics.fluids_completed_tick = game.tick
 		job.metrics.fluids_restored = fluids_result and fluids_result.count or 0
 	end
@@ -228,12 +242,14 @@ function ImportCompletion.run_phase2(job)
 				iol.total, table_size(iol.items)))
 		end
 
+		PhaseProfiler.start(job.job_id, "validation")
 		local success, result = TransferValidation.validate_import(
 			job.target_surface,
 			adjusted_verification,
 			{ skip_fluid_validation = true }  -- Fluids are deferred to post-activation
 		)
 
+		PhaseProfiler.stop(job.job_id, "validation")
 		validation_result = result
 
 		-- Attach failed entity losses to result so it flows through to the transaction log
@@ -311,13 +327,17 @@ function ImportCompletion.run_phase2(job)
 				job.target_platform.paused = false
 				log(string.format("[Validation] Platform %s UNPAUSED after successful validation", job.platform_name))
 			end
+			PhaseProfiler.start(job.job_id, "activation")
 			ActiveStateRestoration.restore(job.entities_to_create or {}, job.entity_map or {}, job.frozen_states or {})
+			PhaseProfiler.stop(job.job_id, "activation")
 
 			-- POST-ACTIVATION FLUID RESTORATION
 			-- Entities are now unfrozen and active, connected to live fluid segments.
 			-- Fluid injected now will persist correctly instead of being wiped.
 			job.metrics.fluids_started_tick = game.tick
+			PhaseProfiler.start(job.job_id, "fluids")
 			local fluids_result = FluidRestoration.restore(entities_to_create, entity_map)
+			PhaseProfiler.stop(job.job_id, "fluids")
 			job.metrics.fluids_completed_tick = game.tick
 			job.metrics.fluids_restored = fluids_result and fluids_result.count or 0
 			log(string.format("[Import] Post-activation fluid restoration: %d fluids restored",
@@ -356,8 +376,10 @@ function ImportCompletion.run_phase2(job)
 			end
 
 			if result.totalExpectedItems then
+				PhaseProfiler.start(job.job_id, "loss_analysis")
 				LossAnalysis.run(job.target_surface, entities_to_create, result, fluids_result and fluids_result.segment_temps)
 
+				PhaseProfiler.stop(job.job_id, "loss_analysis")
 				-- Re-store updated validation result
 				validation_result = result
 				TransferValidation.store_validation_result(job.platform_name, result)
@@ -432,6 +454,32 @@ function ImportCompletion.run_phase2(job)
 				tostring(job.operation_id)))
 		end
 		clusterio_api.send_json("surface_export_import_complete", event_payload)
+	end
+
+	-- Performance summary (profiler values are display-only, not serializable to JSON)
+	local perf = PhaseProfiler.get(job.job_id)
+	if perf then
+		local tiles_ms = math.floor(((job.metrics.tiles_completed_tick or 0) - (job.metrics.tiles_started_tick or 0)) * 16.67)
+		local entities_ms = math.floor(((job.metrics.entities_completed_tick or 0) - (job.metrics.entities_started_tick or 0)) * 16.67)
+		-- CRITICAL: Each print must stay below the 20-parameter LocalisedString limit.
+		game.print({"", "[Perf] Import '", job.platform_name, "' (", job.total_entities, " entities)"})
+		game.print({"", "  Setup:         ", perf.queue_setup})
+		game.print({"", "  Tiles:         ", tiles_ms, "ms"})
+		game.print({"", "  Beacons:       ", perf.beacons})
+		game.print({"", "  Entities:      ", entities_ms, "ms"})
+		game.print({"", "  Hub restore:   ", perf.hub_restore})
+		game.print({"", "  Belts:         ", perf.belts})
+		game.print({"", "  State:         ", perf.state})
+		game.print({"", "  Inventories:   ", perf.inventories})
+		game.print({"", "  Validation:    ", perf.validation})
+		game.print({"", "  Activation:    ", perf.activation})
+		game.print({"", "  Fluids:        ", perf.fluids})
+		game.print({"", "  Loss analysis: ", perf.loss_analysis})
+		
+		-- Record to transaction history BEFORE discarding profilers
+		TransactionHistory.record_import(job, validation_result, perf)
+		
+		PhaseProfiler.discard(job.job_id)
 	end
 
 	prune_results(25)

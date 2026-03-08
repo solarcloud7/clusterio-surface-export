@@ -214,4 +214,16 @@ function GameUtils.extract_color(entity)
   return nil
 end
 
+--- Call fn() inside pcall; log a warning with context if it fails.
+--- Use this for operations that should never fail but are guarded defensively.
+--- Does not propagate the error — the caller continues normally after a failure.
+--- @param context string: Human-readable description for the log message (e.g. "[LossAnalysis] Belt scan on iron-chest")
+--- @param fn function: Zero-argument function to call
+function GameUtils.pcall_warn(context, fn)
+  local ok, err = pcall(fn)
+  if not ok then
+    log(string.format("%s: %s", context, tostring(err)))
+  end
+end
+
 return GameUtils

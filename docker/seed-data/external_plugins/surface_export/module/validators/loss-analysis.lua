@@ -9,6 +9,12 @@ local SurfaceCounter = require("modules/surface_export/validators/surface-counte
 
 local LossAnalysis = {}
 
+-- At extreme temperatures (>1M°C), IEEE 754 doubles lose precision and the engine's
+-- segment merging can shift fluid between temperature buckets.
+-- Use a tolerance proportional to the expected amount (5% or 25 units, whichever is larger).
+local LOSS_TOLERANCE_PCT = 0.05  -- 5% relative tolerance for high-temp fluid comparison
+local LOSS_TOLERANCE_ABS = 25    -- minimum absolute tolerance (units) for high-temp fluid comparison
+
 --- Reconcile high-temperature fluid counts between expected and actual.
 --- At extreme temps (>10,000°C), the engine may merge packets via weighted-average
 --- temperature, shifting fluid between temperature keys while preserving total volume.
@@ -73,10 +79,7 @@ function LossAnalysis.reconcile_fluids(expected_counts, actual_counts, high_temp
     for name, _ in pairs(all_ht_names) do
         local exp = expected_ht_by_name[name] or 0
         local act = actual_ht_by_name[name] or 0
-        -- At extreme temperatures (>1M°C), IEEE 754 doubles lose precision and the engine's
-        -- internal segment merging can shift ~20 units between temperature buckets.
-        -- Use a tolerance proportional to the expected amount (5% or 25 units, whichever is larger).
-        local ht_tolerance = math.max(25, exp * 0.05)
+        local ht_tolerance = math.max(LOSS_TOLERANCE_ABS, exp * LOSS_TOLERANCE_PCT)
         ht_aggregates[name] = {
             expected = exp,
             actual = act,
@@ -148,7 +151,7 @@ local function build_actual_by_type(surface)
     for _, entity in ipairs(live_entities) do
         if entity.valid then
             local etype = entity.type
-            pcall(function()
+            GameUtils.pcall_warn("[LossAnalysis] Inventory scan on " .. entity.name, function()
                 local invs = InventoryScanner.extract_all_inventories(entity)
                 local inv_totals = InventoryScanner.count_all_items(invs)
                 for _, count in pairs(inv_totals) do
@@ -156,7 +159,7 @@ local function build_actual_by_type(surface)
                 end
             end)
             if GameUtils.BELT_ENTITY_TYPES[etype] then
-                pcall(function()
+                GameUtils.pcall_warn("[LossAnalysis] Belt scan on " .. entity.name, function()
                     local belt_lines = InventoryScanner.extract_belt_items(entity)
                     for _, line_data in ipairs(belt_lines) do
                         if line_data.items then
@@ -168,7 +171,7 @@ local function build_actual_by_type(surface)
                 end)
             end
             if etype == "inserter" then
-                pcall(function()
+                GameUtils.pcall_warn("[LossAnalysis] Inserter scan on " .. entity.name, function()
                     local held = InventoryScanner.extract_inserter_held_item(entity)
                     if held then
                         actual_by_type[etype] = (actual_by_type[etype] or 0) + held.count

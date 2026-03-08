@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "react";
+import React, { useMemo, useState, useEffect, useRef } from "react";
 import { useEntityMetadata } from "@clusterio/web_ui";
 import {
 	Alert,
@@ -14,45 +14,95 @@ import {
 	Typography,
 	message as antMessage,
 } from "antd";
-import { InfoCircleOutlined } from "@ant-design/icons";
-import { DownloadOutlined } from "@ant-design/icons";
+import type { ColumnsType } from "antd/es/table";
+import { InfoCircleOutlined, DownloadOutlined } from "@ant-design/icons";
 import {
 	statusColor,
 	humanizeMetricKey,
 	formatNumeric,
 	formatSigned,
 	formatCompactEnergy,
+	formatBytes,
 	buildOperationCountRows,
 	buildExpectedActualRows,
 	buildFluidInventoryRows,
 	buildDetailedLogSummary,
+	getErrorMessage,
+type ExpectedActualRow,
+type FluidInventoryRow,
+type MetricRow,
 } from "./utils";
+import type { JsonObject, LogEvent, SurfaceExportPlugin, SurfaceExportState, TransferSummary } from "./types";
 
 const { Text } = Typography;
 
-function formatFlowDurationMs(value) {
-	return typeof value === "number" ? `${formatNumeric(value, 0)} ms` : "-";
+type MermaidApi = {
+	initialize: (config: Record<string, unknown>) => void;
+	render: (id: string, text: string) => Promise<{ svg: string }>;
+};
+
+let _mermaidPromise: Promise<MermaidApi> | null = null;
+function getMermaid() {
+	if (!_mermaidPromise) {
+		_mermaidPromise = import("mermaid").then(m => {
+			m.default.initialize({ startOnLoad: false, theme: "dark", themeVariables: { background: "transparent" } });
+			return m.default as MermaidApi;
+		}).catch(err => {
+			_mermaidPromise = null;
+			throw err;
+		});
+	}
+	return _mermaidPromise;
 }
 
-function formatBytes(value) {
-	const numeric = Number(value);
-	if (!Number.isFinite(numeric) || numeric < 0) {
-		return "-";
-	}
-	if (numeric < 1024) {
-		return `${numeric.toLocaleString()} B`;
-	}
-	if (numeric < 1024 * 1024) {
-		return `${(numeric / 1024).toFixed(1)} KB`;
-	}
-	return `${(numeric / (1024 * 1024)).toFixed(2)} MB`;
+function formatMsLabel(ms: number | null) {
+	if (ms == null) return "";
+	return ms >= 1000 ? `${(ms / 1000).toFixed(1)}s` : `${Math.round(ms)}ms`;
 }
 
-function buildGanttRows(events, detailedSummary) {
+function buildMermaidGanttText(rows: Array<JsonObject>, totalMs: number) {
+	if (!rows || rows.length === 0 || totalMs <= 0) return null;
+	let axisFormat;
+	if (totalMs < 1000) {
+		axisFormat = "%L";
+	} else if (totalMs < 60000) {
+		axisFormat = "%Ss";
+	} else {
+		axisFormat = "%M:%S";
+	}
+	const eventRows: string[] = [];
+	const exportRows: string[] = [];
+	const importRows: string[] = [];
+	const transferRows: string[] = [];
+	let taskIdx = 0, milestoneIdx = 0;
+	for (const row of rows) {
+		const start = Math.max(0, Math.round(row.startMs));
+		const end = Math.max(start + 1, Math.round(row.endMs));
+		const durationSuffix = row.durationMs != null ? " (" + formatMsLabel(row.durationMs) + ")" : "";
+		const safeName = row.label.replace(/[:\[\];#]/g, " ").trim() + durationSuffix;
+		if (row.isEvent) {
+			eventRows.push("    " + safeName + " :milestone, m" + milestoneIdx++ + ", " + start + ", 0");
+		} else if (row.key.startsWith("export:")) {
+			exportRows.push("    " + safeName + " :active, t" + taskIdx++ + ", " + start + ", " + end);
+		} else if (row.key.startsWith("import:")) {
+			importRows.push("    " + safeName + " :active, t" + taskIdx++ + ", " + start + ", " + end);
+		} else if (row.key.startsWith("phase:")) {
+			transferRows.push("    " + safeName + " :active, t" + taskIdx++ + ", " + start + ", " + end);
+		}
+	}
+	const lines = ["gantt", "    dateFormat x", "    axisFormat " + axisFormat, "    title Transfer Timeline"];
+	if (eventRows.length)    { lines.push("    section Events");   lines.push(...eventRows); }
+	if (exportRows.length)   { lines.push("    section Export");   lines.push(...exportRows); }
+	if (importRows.length)   { lines.push("    section Import");   lines.push(...importRows); }
+	if (transferRows.length) { lines.push("    section Transfer"); lines.push(...transferRows); }
+	return lines.join("\n");
+}
+
+function buildGanttRows(events: Array<LogEvent>, detailedSummary: JsonObject | null) {
 	// Produce one row per named phase across all events.
 	// Each row: { key, label, isEvent, indent, startMs, endMs, durationMs, color }
 	// All times are absolute ms from transfer start (elapsedMs of first event = 0).
-	const rows = [];
+	const rows: Array<JsonObject> = [];
 	let totalMs = 0;
 
 	for (const event of events || []) {
@@ -83,18 +133,28 @@ function buildGanttRows(events, detailedSummary) {
 			// storeMs ends at eventStart; lockMs ends where storeMs begins.
 			const lockEnd = eventStart - storeMs;
 			const lockStart = lockEnd - lockMs;
-			if (lockMs > 0) {
-				rows.push({ key: `export:lock:${eventStart}`, label: "Queue + lock",
-					isEvent: false, indent: 1, startMs: lockStart, endMs: lockEnd,
-					durationMs: lockMs, color: "blue" });
-				totalMs = Math.max(totalMs, lockEnd);
+			// Controller prep fills the gap from t=0 to lockStart, anchoring the chart origin.
+			if (lockStart > 1) {
+				rows.push({ key: `export:prep:${eventStart}`, label: "Controller prep",
+					isEvent: false, indent: 1, startMs: 0, endMs: lockStart,
+					durationMs: lockStart, color: "blue" });
 			}
-			if (asyncMs > 0) {
-				const asyncLabel = ticks > 0 ? `Async export (${ticks.toLocaleString()} ticks)` : "Async export";
-				// Async export ends when the lock RTT completes (instance finishes → response returns)
-				rows.push({ key: `export:async:${eventStart}`, label: asyncLabel,
-					isEvent: false, indent: 2, startMs: lockEnd - asyncMs, endMs: lockEnd,
-					durationMs: asyncMs, color: "cyan" });
+			if (lockMs > 0) {
+				// Split lock into sequential non-overlapping bars: RCON overhead → async export
+				const overheadMs = asyncMs > 0 ? Math.max(0, lockMs - asyncMs) : lockMs;
+				const asyncStart = lockStart + overheadMs;
+				if (overheadMs > 0) {
+					rows.push({ key: `export:queue:${eventStart}`, label: "Queue + RCON",
+						isEvent: false, indent: 1, startMs: lockStart, endMs: asyncStart,
+						durationMs: overheadMs, color: "blue" });
+				}
+				if (asyncMs > 0) {
+					const asyncLabel = ticks > 0 ? `Async export (${ticks.toLocaleString()} ticks)` : "Async export";
+					rows.push({ key: `export:async:${eventStart}`, label: asyncLabel,
+						isEvent: false, indent: 1, startMs: asyncStart, endMs: lockEnd,
+						durationMs: asyncMs, color: "blue" });
+				}
+				totalMs = Math.max(totalMs, lockEnd);
 			}
 			if (storeMs > 0) {
 				rows.push({ key: `export:store:${eventStart}`, label: "Wait for store",
@@ -104,9 +164,7 @@ function buildGanttRows(events, detailedSummary) {
 			}
 		}
 
-		// Import sub-phases
-		// These phases all ENDED at this event — place them backward from eventStart.
-		// Sequential order within import: tiles → entities. Import total is the outer bar.
+		// Import sub-phases — sequential flat bars (tiles → entities → fluids)
 		if (event?.importMetrics && typeof event.importMetrics === "object") {
 			const m = event.importMetrics;
 			const eventStart = elapsedMs ?? 0;
@@ -114,25 +172,34 @@ function buildGanttRows(events, detailedSummary) {
 			const tilesCount = Number(m.tiles_placed ?? 0);
 			const entitiesMs = Number(m.entities_ms ?? 0);
 			const entitiesCount = Number(m.entities_created ?? 0);
+			const fluidsMs = Number(m.fluids_ms ?? 0);
+			const fluidsCount = Number(m.fluids_restored ?? 0);
 			const totalImportMs = Number(m.total_ms ?? 0);
 			if (totalImportMs > 0) {
-				rows.push({ key: `import:total:${eventStart}`, label: "Import total",
-					isEvent: false, indent: 1, startMs: eventStart - totalImportMs, endMs: eventStart,
-					durationMs: totalImportMs, color: "blue" });
 				totalMs = Math.max(totalMs, eventStart);
-				// Sub-phases: tiles first, then entities, positioned within the total window
-				const subStart = eventStart - totalImportMs;
+				let cursor = eventStart - totalImportMs;
 				if (tilesMs > 0 || tilesCount > 0) {
 					const label = tilesCount > 0 ? `Tiles (${tilesCount.toLocaleString()})` : "Tiles";
+					const dur = tilesMs || 1;
 					rows.push({ key: `import:tiles:${eventStart}`, label,
-						isEvent: false, indent: 2, startMs: subStart, endMs: subStart + (tilesMs || 0),
-						durationMs: tilesMs || null, color: "cyan" });
+						isEvent: false, indent: 1, startMs: cursor, endMs: cursor + dur,
+						durationMs: tilesMs || null, color: "blue" });
+					cursor += dur;
 				}
 				if (entitiesMs > 0 || entitiesCount > 0) {
 					const label = entitiesCount > 0 ? `Entities (${entitiesCount.toLocaleString()})` : "Entities";
+					const dur = entitiesMs || 1;
 					rows.push({ key: `import:entities:${eventStart}`, label,
-						isEvent: false, indent: 2, startMs: subStart + (tilesMs || 0), endMs: subStart + (tilesMs || 0) + (entitiesMs || 0),
-						durationMs: entitiesMs || null, color: "cyan" });
+						isEvent: false, indent: 1, startMs: cursor, endMs: cursor + dur,
+						durationMs: entitiesMs || null, color: "blue" });
+					cursor += dur;
+				}
+				if (fluidsMs > 0 || fluidsCount > 0) {
+					const label = fluidsCount > 0 ? `Fluids (${fluidsCount.toLocaleString()})` : "Fluids";
+					const dur = fluidsMs || 1;
+					rows.push({ key: `import:fluids:${eventStart}`, label,
+						isEvent: false, indent: 1, startMs: cursor, endMs: cursor + dur,
+						durationMs: fluidsMs || null, color: "blue" });
 				}
 			}
 		}
@@ -154,7 +221,12 @@ function buildGanttRows(events, detailedSummary) {
 		}
 		if (event?.phases && typeof event.phases === "object") {
 			const eventStart = elapsedMs ?? 0;
+			// Skip phases already captured by individual event fields at correct timeline positions:
+			// transmissionMs comes from import_started.transmissionMs
+			// validationMs comes from validation_received.validationMs
+			const skipFromPhaseSummary = new Set(["transmissionMs", "validationMs"]);
 			for (const [k, v] of Object.entries(event.phases)) {
+				if (skipFromPhaseSummary.has(k)) continue;
 				if (typeof v === "number" && v > 0) {
 					rows.push({ key: `phase:${k}:${eventStart}`, label: humanizeMetricKey(String(k).replace(/Ms$/, "")),
 						isEvent: false, indent: 1, startMs: eventStart - v, endMs: eventStart,
@@ -180,22 +252,48 @@ function buildGanttRows(events, detailedSummary) {
 }
 
 
-export default function TransactionLogsTab({ plugin, state }) {
+function MermaidGantt({ rows, totalMs }: { rows: Array<JsonObject>; totalMs: number }) {
+	const [svgHtml, setSvgHtml] = useState<string | null>(null);
+	const [error, setError] = useState<string | null>(null);
+	const idRef = useRef(`mermaid-gantt-${Math.random().toString(36).slice(2)}`);
+	const mermaidText = useMemo(() => buildMermaidGanttText(rows, totalMs), [rows, totalMs]);
+	useEffect(() => {
+		if (!mermaidText) {
+			setSvgHtml(null);
+			return;
+		}
+		let cancelled = false;
+		setSvgHtml(null);
+		setError(null);
+		getMermaid()
+			.then(mermaid => mermaid.render(idRef.current, mermaidText))
+			.then(({ svg }) => { if (!cancelled) setSvgHtml(svg); })
+			.catch((err: unknown) => { if (!cancelled) setError(getErrorMessage(err)); });
+		return () => { cancelled = true; };
+	}, [mermaidText]);
+	if (!mermaidText) return <Empty description="No transfer flow events available" />;
+	if (error) return <Alert type="warning" message="Gantt diagram unavailable" description={error} />;
+	if (!svgHtml) return <Spin />;
+	return <div style={{ overflowX: "auto" }} dangerouslySetInnerHTML={{ __html: svgHtml }} />;
+}
+
+export default function TransactionLogsTab({ plugin, state }: { plugin: SurfaceExportPlugin; state: SurfaceExportState }) {
 	const entityMetadata = useEntityMetadata();
-	const [selectedTransferId, setSelectedTransferId] = useState(null);
-	const [downloadingTransferId, setDownloadingTransferId] = useState(null);
+	const [selectedTransferId, setSelectedTransferId] = useState<string | null>(null);
+	const [downloadingTransferId, setDownloadingTransferId] = useState<string | null>(null);
 	const selectedDetails = selectedTransferId ? state.logDetails[selectedTransferId] : null;
-	const detailedSummary = useMemo(
+	type DetailedSummary = ReturnType<typeof buildDetailedLogSummary>;
+	const detailedSummary = useMemo<DetailedSummary | null>(
 		() => (selectedDetails ? buildDetailedLogSummary(selectedDetails, selectedTransferId) : null),
-		[selectedDetails, selectedTransferId]
+		[selectedDetails, selectedTransferId],
 	);
 
-	const columns = [
+	const columns: ColumnsType<TransferSummary> = [
 		{
 			title: "Type",
 			dataIndex: "operationType",
 			key: "operationType",
-			render: operationType => (
+			render: (operationType: string) => (
 				<Tag color={operationType === "transfer" ? "blue" : "default"}>
 					{operationType || "transfer"}
 				</Tag>
@@ -210,24 +308,24 @@ export default function TransactionLogsTab({ plugin, state }) {
 			title: "Status",
 			dataIndex: "status",
 			key: "status",
-			render: status => <Tag color={statusColor(status)}>{status}</Tag>,
+			render: (status: string) => <Tag color={statusColor(status)}>{status}</Tag>,
 		},
 		{
 			title: "Timestamp",
 			dataIndex: "startedAt",
 			key: "startedAt",
-			render: startedAt => startedAt ? new Date(startedAt).toLocaleString() : "-",
+			render: (startedAt: number) => startedAt ? new Date(startedAt).toLocaleString() : "-",
 		},
 		{
 			title: "Size",
 			dataIndex: "artifactSizeBytes",
 			key: "artifactSizeBytes",
-			render: value => formatBytes(value),
+			render: (value: number) => formatBytes(value),
 		},
 		{
 			title: "Actions",
 			key: "actions",
-			render: (_, row) => (
+			render: (_: unknown, row: TransferSummary) => (
 				<Button
 					icon={<DownloadOutlined />}
 					size="small"
@@ -255,8 +353,8 @@ export default function TransactionLogsTab({ plugin, state }) {
 							link.click();
 							document.body.removeChild(link);
 							URL.revokeObjectURL(url);
-						} catch (err) {
-							antMessage.error(err.message || "Failed to download export");
+						} catch (err: unknown) {
+							antMessage.error(getErrorMessage(err, "Failed to download export"));
 						} finally {
 							setDownloadingTransferId(null);
 						}
@@ -286,7 +384,7 @@ export default function TransactionLogsTab({ plugin, state }) {
 			dataIndex: "name",
 			key: "name",
 			width: "40%",
-			render: name => (
+			render: (name: string) => (
 				<Space size={6}>
 					<div className={`item-${CSS.escape(name)}`} title={name} />
 					<Text code>{name}</Text>
@@ -297,19 +395,19 @@ export default function TransactionLogsTab({ plugin, state }) {
 			title: "Expected",
 			dataIndex: "expected",
 			key: "expected",
-			render: value => formatNumeric(value, Number.isInteger(value) ? 0 : 1),
+			render: (value: number) => formatNumeric(value, Number.isInteger(value) ? 0 : 1),
 		},
 		{
 			title: "Actual",
 			dataIndex: "actual",
 			key: "actual",
-			render: value => formatNumeric(value, Number.isInteger(value) ? 0 : 1),
+			render: (value: number) => formatNumeric(value, Number.isInteger(value) ? 0 : 1),
 		},
 		{
-			title: "\u0394",
+			title: "Δ",
 			dataIndex: "delta",
 			key: "delta",
-			render: delta => (
+			render: (delta: number) => (
 				<Text type={delta === 0 ? undefined : delta > 0 ? "success" : "danger"}>
 					{formatSigned(delta, Number.isInteger(delta) ? 0 : 1)}
 				</Text>
@@ -319,59 +417,16 @@ export default function TransactionLogsTab({ plugin, state }) {
 			title: "Preserved",
 			dataIndex: "preservedPct",
 			key: "preservedPct",
-			render: value => (value === null ? "-" : `${formatNumeric(value, 1)}%`),
+			render: (value: number | null) => (value === null ? "-" : `${formatNumeric(value, 1)}%`),
 		},
 	];
-	const flowColumns = [
-		{
-			title: "Phase",
-			dataIndex: "label",
-			key: "label",
-			width: "22%",
-			render: (label, row) => row.isEvent
-				? <Tag color={row.color}>{label}</Tag>
-				: <span style={{ paddingLeft: row.indent * 16, color: "rgba(0,0,0,0.65)", fontSize: 12 }}>{label}</span>,
-		},
-		{
-			title: "ms",
-			dataIndex: "durationMs",
-			key: "durationMs",
-			width: "10%",
-			render: value => value !== null && value !== undefined ? formatFlowDurationMs(value) : "",
-		},
-		{
-			title: "Timeline",
-			key: "timeline",
-			render: (_, row) => {
-				const tone = row.color === "red" ? "#ff4d4f" : row.color === "green" ? "#52c41a" : "#1677ff";
-				return (
-					<div className="surface-export-gantt-track" title={row.durationMs !== null ? formatFlowDurationMs(row.durationMs) : row.label}>
-						{row.ganttWidthPct > 0 && (
-							<span className="surface-export-gantt-bar" style={{
-								left: `${row.ganttStartPct}%`,
-								width: `${row.ganttWidthPct}%`,
-								backgroundColor: tone,
-								opacity: row.isEvent ? 0 : 0.75,
-							}} />
-						)}
-						<span className="surface-export-gantt-marker" style={{
-							left: `${row.ganttMarkerPct}%`,
-							backgroundColor: tone,
-							opacity: row.isEvent ? 1 : 0.4,
-						}} />
-					</div>
-				);
-			},
-		},
-	]
-
 	const flowTimeline = useMemo(
-		() => buildGanttRows(selectedDetails?.events || [], detailedSummary),
-		[selectedDetails, detailedSummary]
-	)
+		() => buildGanttRows(selectedDetails?.events || [], detailedSummary as JsonObject | null),
+		[selectedDetails, detailedSummary],
+	);
 	const compressionSummary = useMemo(() => {
-		const p = detailedSummary?.payload;
-		const e = detailedSummary?.export;
+		const p = (detailedSummary?.payload ?? null) as JsonObject | null;
+		const e = (detailedSummary?.export ?? null) as JsonObject | null;
 		if (!p && !e) return null;
 		const uncompressed = e?.uncompressedPayloadBytes ?? null;
 		const compressed = e?.compressedPayloadBytes ?? null;
@@ -384,21 +439,21 @@ export default function TransactionLogsTab({ plugin, state }) {
 		return `0% compression: ${formatBytes(uncompressed)} (uncompressed)`;
 	}, [detailedSummary]);
 	const operationRows = useMemo(
-		() => buildOperationCountRows(detailedSummary?.export, detailedSummary?.import),
-		[detailedSummary]
+		() => buildOperationCountRows((detailedSummary?.export ?? null) as JsonObject | null, (detailedSummary?.import ?? null) as JsonObject | null),
+		[detailedSummary],
 	);
 
 
-	const validation = detailedSummary?.validation || null;
+	const validation = (detailedSummary?.validation ?? null) as JsonObject | null;
 
-	const expectedItems = validation?.expectedItemCounts
-		|| detailedSummary?.sourceVerification?.itemCounts
+	const expectedItems = (validation?.expectedItemCounts as Record<string, number> | undefined)
+		|| (detailedSummary?.sourceVerification?.itemCounts as Record<string, number> | undefined)
 		|| {};
-	const actualItems = validation?.actualItemCounts || {};
-	const expectedFluids = validation?.expectedFluidCounts
-		|| detailedSummary?.sourceVerification?.fluidCounts
+	const actualItems = (validation?.actualItemCounts as Record<string, number> | undefined) || {};
+	const expectedFluids = (validation?.expectedFluidCounts as Record<string, number> | undefined)
+		|| (detailedSummary?.sourceVerification?.fluidCounts as Record<string, number> | undefined)
 		|| {};
-	const actualFluids = validation?.actualFluidCounts || {};
+	const actualFluids = (validation?.actualFluidCounts as Record<string, number> | undefined) || {};
 
 	const itemRows = useMemo(() => buildExpectedActualRows(expectedItems, actualItems), [expectedItems, actualItems]);
 	const highTempThreshold = Number(validation?.fluidReconciliation?.highTempThreshold ?? 10000);
@@ -407,9 +462,9 @@ export default function TransactionLogsTab({ plugin, state }) {
 			expectedFluids,
 			actualFluids,
 			highTempThreshold,
-			validation?.fluidReconciliation?.highTempAggregates || {}
+			(validation?.fluidReconciliation?.highTempAggregates as JsonObject | undefined) || {},
 		),
-		[expectedFluids, actualFluids, highTempThreshold, validation]
+		[expectedFluids, actualFluids, highTempThreshold, validation],
 	);
 
 
@@ -421,14 +476,14 @@ export default function TransactionLogsTab({ plugin, state }) {
 				count: Number(count) || 0,
 			}))
 			.sort((a, b) => b.count - a.count),
-		[validation]
+		[validation],
 	);
 	const entityColumns = [
 		{
 			title: "Entity Type",
 			dataIndex: "entityType",
 			key: "entityType",
-			render: value => {
+			render: (value: string) => {
 				const meta = entityMetadata.get(value);
 				const sz = meta?.size ?? 32;
 				return (
@@ -443,31 +498,31 @@ export default function TransactionLogsTab({ plugin, state }) {
 			title: "Count",
 			dataIndex: "count",
 			key: "count",
-			render: value => formatNumeric(value, 0),
+			render: (value: number) => formatNumeric(value, 0),
 		},
 	];
 
 	const fluidReconciliationRows = useMemo(() => {
-		const recon = validation?.fluidReconciliation;
+		const recon = validation?.fluidReconciliation as JsonObject | undefined;
 		if (!recon) {
-			return [];
+			return [] as MetricRow[];
 		}
 		return [
-			{ key: "rawFluidDelta", metric: "Raw fluid delta", value: formatSigned(recon.rawFluidDelta, 1) },
-			{ key: "reconciledFluidLoss", metric: "Reconciled fluid loss", value: formatNumeric(recon.reconciledFluidLoss, 1) },
-			{ key: "lowTempLoss", metric: "Low-temp loss", value: formatNumeric(recon.lowTempLoss, 1) },
-			{ key: "highTempReconciledLoss", metric: "High-temp reconciled loss", value: formatNumeric(recon.highTempReconciledLoss, 1) },
-			{ key: "fluidPreservedPct", metric: "Fluid preserved", value: `${formatNumeric(recon.fluidPreservedPct, 1)}%` },
-			{ key: "highTempThreshold", metric: "High-temp threshold", value: formatNumeric(recon.highTempThreshold, 0) },
+			{ key: "rawFluidDelta", metric: "Raw fluid delta", value: formatSigned(Number(recon.rawFluidDelta ?? 0), 1) },
+			{ key: "reconciledFluidLoss", metric: "Reconciled fluid loss", value: formatNumeric(Number(recon.reconciledFluidLoss ?? 0), 1) },
+			{ key: "lowTempLoss", metric: "Low-temp loss", value: formatNumeric(Number(recon.lowTempLoss ?? 0), 1) },
+			{ key: "highTempReconciledLoss", metric: "High-temp reconciled loss", value: formatNumeric(Number(recon.highTempReconciledLoss ?? 0), 1) },
+			{ key: "fluidPreservedPct", metric: "Fluid preserved", value: `${formatNumeric(Number(recon.fluidPreservedPct ?? 0), 1)}%` },
+			{ key: "highTempThreshold", metric: "High-temp threshold", value: formatNumeric(Number(recon.highTempThreshold ?? 0), 0) },
 		];
 	}, [validation]);
 
-	const fluidColumns = [
+	const fluidColumns: ColumnsType<FluidInventoryRow> = [
 		{
 			title: "Fluid / Bucket",
 			key: "fluid",
 			width: "32%",
-			render: (_, row) => (
+			render: (_: unknown, row: FluidInventoryRow) => (
 				row.isGroup
 					? (
 						<Space size={6} align="center">
@@ -493,7 +548,7 @@ export default function TransactionLogsTab({ plugin, state }) {
 			title: "Category",
 			dataIndex: "category",
 			key: "category",
-			render: value => (
+			render: (value: string) => (
 				<Tag color={value === "High-temp" ? "gold" : "default"}>
 					{value}
 				</Tag>
@@ -503,19 +558,19 @@ export default function TransactionLogsTab({ plugin, state }) {
 			title: "Expected",
 			dataIndex: "expected",
 			key: "expected",
-			render: (value, row) => row.isThermalSummary ? formatCompactEnergy(value) : formatNumeric(value, 1),
+			render: (value: number, row: FluidInventoryRow) => row.isThermalSummary ? formatCompactEnergy(value) : formatNumeric(value, 1),
 		},
 		{
 			title: "Actual",
 			dataIndex: "actual",
 			key: "actual",
-			render: (value, row) => row.isThermalSummary ? formatCompactEnergy(value) : formatNumeric(value, 1),
+			render: (value: number, row: FluidInventoryRow) => row.isThermalSummary ? formatCompactEnergy(value) : formatNumeric(value, 1),
 		},
 		{
-			title: "\u0394",
+			title: "Δ",
 			dataIndex: "delta",
 			key: "delta",
-			render: (delta, row) => {
+			render: (delta: number, row: FluidInventoryRow) => {
 				if (row.isThermalSummary) {
 					const color = row.reconciled ? undefined : "warning";
 					return <Text type={color}>{formatCompactEnergy(delta)}</Text>;
@@ -534,7 +589,7 @@ export default function TransactionLogsTab({ plugin, state }) {
 			title: "Preserved",
 			dataIndex: "preservedPct",
 			key: "preservedPct",
-			render: (value, row) => {
+			render: (value: number | null, row: FluidInventoryRow) => {
 				if (value === null) return "-";
 				if (row.isThermalSummary) return `${formatNumeric(value, 2)}%`;
 				return `${formatNumeric(value, 1)}%`;
@@ -544,7 +599,7 @@ export default function TransactionLogsTab({ plugin, state }) {
 			title: "Status",
 			dataIndex: "status",
 			key: "status",
-			render: (status, row) => {
+			render: (status: string, row: FluidInventoryRow) => {
 				if (status === "Verified (thermal)") {
 					return (
 						<Tooltip title="Volume preserved; thermal energy (V×T) validated.">
@@ -608,8 +663,8 @@ export default function TransactionLogsTab({ plugin, state }) {
 							setSelectedTransferId(row.transferId);
 							try {
 								await plugin.loadTransactionLog(row.transferId);
-							} catch (err) {
-								antMessage.error(err.message || "Failed to load transaction log");
+								} catch (err: unknown) {
+									antMessage.error(getErrorMessage(err, "Failed to load transaction log"));
 							}
 						},
 					})}
@@ -644,27 +699,12 @@ export default function TransactionLogsTab({ plugin, state }) {
 						/>
 						<Space direction="vertical" style={{ width: "100%", marginTop: 12 }}>
 							<Space size="small">
-								<Text strong>Transfer Flow (Timeline + Phases)</Text>
-								<Tooltip title="Chronological events with phase and import timing details in ms.">
+								<Text strong>Transfer Flow</Text>
+								<Tooltip title="Mermaid Gantt diagram of all transfer phases and events, with timing in milliseconds.">
 									<InfoCircleOutlined />
 								</Tooltip>
 							</Space>
-							{(flowTimeline?.rows?.length) ? (
-								<Space direction="vertical" style={{ width: "100%" }} size="small">
-									<Text type="secondary" className="surface-export-gantt-scale">
-										Timeline scale: 0 ms to {formatNumeric(flowTimeline.totalMs, 0)} ms
-									</Text>
-									<Table
-										size="small"
-										pagination={{ pageSize: 20 }}
-										columns={flowColumns}
-										dataSource={flowTimeline.rows}
-										rowKey={row => row.key}
-									/>
-								</Space>
-							) : (
-								<Empty description="No transfer flow events available" />
-							)}
+							<MermaidGantt rows={flowTimeline?.rows || []} totalMs={flowTimeline?.totalMs || 0} />
 						</Space>
 					</Card>
 
@@ -694,7 +734,7 @@ export default function TransactionLogsTab({ plugin, state }) {
 								{
 									key: "entities",
 									label: detailedSummary?.export?.exportedEntityCount
-										? `Entities (${Number(detailedSummary.export.exportedEntityCount).toLocaleString()})`
+										? `Entities (${Number(((detailedSummary.export ?? {}) as JsonObject).exportedEntityCount ?? 0).toLocaleString()})`
 										: "Entities",
 									children: hasValidation ? (
 										entityRows.length ? (
@@ -729,9 +769,17 @@ export default function TransactionLogsTab({ plugin, state }) {
 												<Empty description="No item details available" />
 											)}
 											{validation?.inventoryOverflowLosses?.total > 0 && (() => {
-												const iol = validation.inventoryOverflowLosses;
-												const entityLines = (iol.entities || [])
-													.map(e => `${e.name} @ (${e.position?.x?.toFixed(1)}, ${e.position?.y?.toFixed(1)}): ${e.item} — wanted ${e.expected}, placed ${e.actual}, lost ${e.lost}`)
+												const iol = validation.inventoryOverflowLosses as JsonObject;
+												type InventoryOverflowEntity = {
+													name?: string;
+													position?: { x?: number; y?: number };
+													item?: string;
+													expected?: number;
+													actual?: number;
+													lost?: number;
+												};
+												const entityLines = ((iol.entities as InventoryOverflowEntity[]) || [])
+													.map((e) => `${e.name} @ (${e.position?.x?.toFixed(1)}, ${e.position?.y?.toFixed(1)}): ${e.item} — wanted ${e.expected}, placed ${e.actual}, lost ${e.lost}`)
 													.join("\n");
 												return (
 													<Tooltip title={<pre style={{ margin: 0, fontSize: 11 }}>{entityLines}</pre>}>

@@ -160,7 +160,7 @@ function AsyncProcessor.process_tick()
 	table.sort(job_list, function(a, b) return a.started < b.started end)
 
 	-- Periodic progress logging (every 60 ticks = ~1 second)
-	if #job_list > 0 and game.tick % 60 == 0 then
+	if #job_list > 0 and game.tick % 60 == 0 and should_show_progress() then
 		for _, entry in ipairs(job_list) do
 			local job = entry.job
 			local elapsed = game.tick - (job.started_tick or game.tick)

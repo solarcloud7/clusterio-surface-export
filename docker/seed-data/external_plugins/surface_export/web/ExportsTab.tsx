@@ -13,11 +13,15 @@ import {
 	Upload,
 	message as antMessage,
 } from "antd";
+import type { ColumnsType } from "antd/es/table";
+import type { UploadChangeParam, UploadFile } from "antd/es/upload/interface";
 import { DownloadOutlined, UploadOutlined, ReloadOutlined } from "@ant-design/icons";
+import { formatBytes, sanitizeTimestamp, parseJsonFile, downloadJsonFile, getErrorMessage } from "./utils";
+import type { JsonObject, SurfaceExportPlugin, SurfaceExportState, StoredExportSummary } from "./types";
 
 const { Text } = Typography;
 
-function formatTimestamp(timestamp) {
+function formatTimestamp(timestamp: number | null | undefined) {
 	if (!timestamp) {
 		return "—";
 	}
@@ -28,25 +32,11 @@ function formatTimestamp(timestamp) {
 	}
 }
 
-function formatBytes(value) {
-	const numeric = Number(value);
-	if (!Number.isFinite(numeric) || numeric < 0) {
-		return "—";
-	}
-	if (numeric < 1024) {
-		return `${numeric.toLocaleString()} B`;
-	}
-	if (numeric < 1024 * 1024) {
-		return `${(numeric / 1024).toFixed(1)} KB`;
-	}
-	return `${(numeric / (1024 * 1024)).toFixed(2)} MB`;
-}
-
-function getInstanceOptions(tree) {
+function getInstanceOptions(tree: SurfaceExportState["tree"]) {
 	if (!tree) {
-		return [];
+		return [] as Array<{ label: string; value: number }>;
 	}
-	const options = [];
+	const options: Array<{ label: string; value: number }> = [];
 	for (const host of tree.hosts || []) {
 		for (const instance of host.instances || []) {
 			options.push({
@@ -65,38 +55,18 @@ function getInstanceOptions(tree) {
 	return options;
 }
 
-function sanitizeFileTimestamp(timestamp) {
-	return new Date(timestamp || Date.now()).toISOString().replace(/[:.]/g, "-");
-}
-
-function parseJsonFile(file) {
-	return new Promise((resolve, reject) => {
-		const reader = new FileReader();
-		reader.onload = () => {
-			try {
-				const parsed = JSON.parse(String(reader.result || ""));
-				resolve(parsed);
-			} catch (err) {
-				reject(err);
-			}
-		};
-		reader.onerror = () => reject(reader.error || new Error("Failed to read file"));
-		reader.readAsText(file);
-	});
-}
-
-export default function ExportsTab({ plugin, state }) {
-	const [downloadingExportId, setDownloadingExportId] = useState(null);
-	const [uploadFileList, setUploadFileList] = useState([]);
-	const [parsedUpload, setParsedUpload] = useState(null);
-	const [uploadError, setUploadError] = useState(null);
-	const [targetInstanceId, setTargetInstanceId] = useState(null);
+export default function ExportsTab({ plugin, state }: { plugin: SurfaceExportPlugin; state: SurfaceExportState }) {
+	const [downloadingExportId, setDownloadingExportId] = useState<string | null>(null);
+	const [uploadFileList, setUploadFileList] = useState<UploadFile[]>([]);
+	const [parsedUpload, setParsedUpload] = useState<JsonObject | null>(null);
+	const [uploadError, setUploadError] = useState<string | null>(null);
+	const [targetInstanceId, setTargetInstanceId] = useState<number | null>(null);
 	const [forceName, setForceName] = useState("player");
 	const [platformName, setPlatformName] = useState("");
 	const [importing, setImporting] = useState(false);
 
 	const exportEntries = state.exports || [];
-	const loadingExports = !!state.loadingExports;
+	const loadingExports = Boolean(state.loadingExports);
 	const exportsError = state.exportsError || null;
 	const instanceOptions = useMemo(() => getInstanceOptions(state.tree), [state.tree]);
 
@@ -107,36 +77,28 @@ export default function ExportsTab({ plugin, state }) {
 	async function refreshExports() {
 		try {
 			await plugin.listExports();
-		} catch (err) {
-			antMessage.error(err.message || "Failed to refresh exports", 6);
+		} catch (err: unknown) {
+			antMessage.error(getErrorMessage(err, "Failed to refresh exports"), 6);
 		}
 	}
 
-	async function handleDownload(row) {
+	async function handleDownload(row: StoredExportSummary) {
 		setDownloadingExportId(row.exportId);
 		try {
 			const response = await plugin.getStoredExport(row.exportId);
 			if (!response.success) {
 				throw new Error(response.error || "Download failed");
 			}
-			const blob = new Blob([JSON.stringify(response.exportData, null, 2)], { type: "application/json" });
-			const url = URL.createObjectURL(blob);
-			const link = document.createElement("a");
-			link.href = url;
-			link.download = `${row.platformName || "platform"}_${sanitizeFileTimestamp(row.timestamp)}.json`;
-			document.body.appendChild(link);
-			link.click();
-			document.body.removeChild(link);
-			URL.revokeObjectURL(url);
+			downloadJsonFile(response.exportData, `${row.platformName || "platform"}_${sanitizeTimestamp(row.timestamp)}.json`);
 			antMessage.success(`Downloaded ${row.exportId}`, 4);
-		} catch (err) {
-			antMessage.error(err.message || "Failed to download export", 8);
+		} catch (err: unknown) {
+			antMessage.error(getErrorMessage(err, "Failed to download export"), 8);
 		} finally {
 			setDownloadingExportId(null);
 		}
 	}
 
-	async function onUploadChange({ fileList }) {
+	async function onUploadChange({ fileList }: UploadChangeParam<UploadFile>) {
 		const next = fileList.slice(-1);
 		setUploadFileList(next);
 		setParsedUpload(null);
@@ -161,8 +123,8 @@ export default function ExportsTab({ plugin, state }) {
 			if (!parsed.platform_name) {
 				antMessage.warning("Uploaded JSON is missing platform_name. Enter one manually before import.", 8);
 			}
-		} catch (err) {
-			setUploadError(err.message || "Invalid JSON file");
+		} catch (err: unknown) {
+			setUploadError(getErrorMessage(err, "Invalid JSON file"));
 		}
 	}
 
@@ -189,54 +151,54 @@ export default function ExportsTab({ plugin, state }) {
 			}
 			antMessage.success(
 				`Import started: "${response.platformName || "Unknown"}" on instance ${response.targetInstanceId}`,
-				8
+				8,
 			);
 			setUploadFileList([]);
 			setParsedUpload(null);
 			setUploadError(null);
 			setPlatformName("");
-		} catch (err) {
-			antMessage.error(err.message || "Import failed", 10);
+		} catch (err: unknown) {
+			antMessage.error(getErrorMessage(err, "Import failed"), 10);
 		} finally {
 			setImporting(false);
 		}
 	}
 
-	const columns = [
+	const columns: ColumnsType<StoredExportSummary> = [
 		{
 			title: "Platform",
 			dataIndex: "platformName",
 			key: "platformName",
-			render: value => value || "Unknown",
+			render: (value: string) => value || "Unknown",
 		},
 		{
 			title: "Export ID",
 			dataIndex: "exportId",
 			key: "exportId",
-			render: value => <Text code>{value}</Text>,
+			render: (value: string) => <Text code>{value}</Text>,
 		},
 		{
 			title: "Source Instance",
 			dataIndex: "instanceId",
 			key: "instanceId",
-			render: value => value ?? "—",
+			render: (value: number) => value ?? "—",
 		},
 		{
 			title: "Timestamp",
 			dataIndex: "timestamp",
 			key: "timestamp",
-			render: value => formatTimestamp(value),
+			render: (value: number) => formatTimestamp(value),
 		},
 		{
 			title: "Size",
 			dataIndex: "size",
 			key: "size",
-			render: value => formatBytes(value),
+			render: (value: number) => formatBytes(value),
 		},
 		{
 			title: "Actions",
 			key: "actions",
-			render: (_, row) => (
+			render: (_: unknown, row: StoredExportSummary) => (
 				<Button
 					icon={<DownloadOutlined />}
 					size="small"
@@ -296,7 +258,7 @@ export default function ExportsTab({ plugin, state }) {
 						placeholder="Select destination instance"
 						options={instanceOptions}
 						value={targetInstanceId}
-						onChange={setTargetInstanceId}
+						onChange={value => setTargetInstanceId(value)}
 						style={{ width: "100%" }}
 					/>
 
