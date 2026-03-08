@@ -3,7 +3,25 @@ const path = require("path");
 const webpack = require("webpack");
 const { merge } = require("webpack-merge");
 
-const common = require("@clusterio/web_ui/webpack.common");
+function resolveClusterioWebpackCommon() {
+	const candidates = [
+		"@clusterio/web_ui/webpack.common",
+		path.resolve(__dirname, "../../../../clusterio/packages/web_ui/webpack.common.js"),
+		path.resolve(__dirname, "../../../../clusterio/packages/web_ui/webpack.common"),
+	];
+
+	for (const candidate of candidates) {
+		try {
+			return require(candidate);
+		} catch (_err) {
+			// Try the next candidate.
+		}
+	}
+
+	throw new Error("Unable to resolve Clusterio webpack.common (tried package and local workspace fallback)");
+}
+
+const common = resolveClusterioWebpackCommon();
 
 module.exports = (env = {}, argv = {}) => merge(common(env, argv), {
 	context: __dirname,

@@ -19,13 +19,35 @@ This directory is bind-mounted into containers at `/clusterio/external_plugins/s
 
 ```
 surface_export/
-├── index.js              # Plugin definition (config fields, messages, permissions)
-├── controller.js         # Controller logic (storage, transfer orchestration)
-├── instance.js           # Instance logic (RCON bridge, chunking, send_json event handlers)
-├── control.js            # CLI commands (surface-export list/transfer)
-├── helpers.js            # Chunked JSON, hybrid Lua escaping
-├── messages.js           # 11 message type definitions
+├── index.ts              # Plugin definition (config fields, messages, permissions)
+├── controller.ts         # Controller logic (storage, transfer orchestration)
+├── instance.ts           # Instance logic (RCON bridge, chunking, send_json event handlers)
+├── control.ts            # CLI commands (surface-export list/transfer)
+├── helpers.ts            # Chunked JSON, hybrid Lua escaping
+├── messages.ts           # 11 message type definitions with JSON schemas
 ├── package.json          # Plugin metadata
+├── tsconfig.node.json    # TypeScript configuration for Node.js runtime
+├── webpack.config.js     # Web UI build configuration
+├── dist/                 # Build output (gitignored, generated on deploy)
+│   ├── node/             # Node.js runtime artifacts (.js, .d.ts, .map)
+│   │   ├── index.js      # Built entrypoint
+│   │   ├── controller.js # Built controller
+│   │   ├── instance.js   # Built instance
+│   │   ├── control.js    # Built CLI
+│   │   └── lib/          # Built library modules
+│   └── web/              # Web UI bundle (React + Webpack Module Federation)
+├── lib/                  # TypeScript source modules
+│   ├── platform-tree.ts          # Tree building + instance resolution
+│   ├── transaction-logger.ts     # Event logging, phase timing, persistence
+│   ├── subscription-manager.ts   # WebSocket subscriptions + broadcasting
+│   └── transfer-orchestrator.ts  # Transfer lifecycle state machine
+├── web/                  # React web UI source
+│   ├── index.jsx         # WebPlugin class, page wrapper, hooks
+│   ├── ManualTransferTab.jsx     # Platform tree + export/import UI
+│   ├── ExportsTab.jsx            # Stored export list + workflows
+│   ├── TransactionLogsTab.jsx    # Log viewer + validation display
+│   ├── utils.js          # Pure formatting functions
+│   └── style.css
 ├── module/               # Lua module (save-patched into Factorio)
 │   ├── module.json       # Module metadata
 │   ├── control.lua       # Entry point (event_handler interface)
@@ -39,6 +61,17 @@ surface_export/
 │   └── validators/       # Verification and transfer validation
 └── docs/                 # Documentation (this directory)
 ```
+
+### Build Architecture
+
+The plugin uses **TypeScript with clean source tree architecture**:
+
+- **Source**: TypeScript files (`.ts`) in plugin root and `lib/`, React components in `web/`
+- **Build output**: Compiled JavaScript in `dist/node/` (Node runtime) and `dist/web/` (browser bundle)
+- **Entrypoints**: `package.json` points `main` to `dist/node/index.js`, plugin entrypoint paths reference `dist/node/*`
+- **Git**: Only source (`.ts`) is tracked; `dist/` is gitignored and rebuilt on deploy
+
+This keeps the source tree clean — no generated `.js`, `.d.ts`, or `.map` files mixed with source code.
 
 ## Development Workflow
 
@@ -74,17 +107,60 @@ docker exec surface-export-controller npx clusterioctl instance start "clusterio
 
 No build step needed for Lua changes.
 
-### Editing JavaScript Plugin Code
+### Editing TypeScript Plugin Code
 
-Changes to `controller.js`, `instance.js`, `control.js`, etc. require container restarts:
+The plugin uses TypeScript for type safety. Changes to `.ts` files require a rebuild:
 
-```bash
-docker compose restart surface-export-host-1 surface-export-host-2
-# Or for controller changes:
-docker compose restart surface-export-controller
+```powershell
+# From plugin directory
+cd docker/seed-data/external_plugins/surface_export
+npm run build  # Builds both dist/node/ (Node.js) and dist/web/ (browser bundle)
+
+# Or build individually
+npm run build:node  # TypeScript compilation only
+npm run build:web   # Webpack web UI bundle only
 ```
 
-No build step needed — pure JavaScript (not TypeScript).
+Then restart containers to pick up the cha on **Lua code only**:
+
+```powershell
+./tools/patch-and-reset.ps1
+```
+
+This script handles stop → start for all instances, re-patching saves with latest Lua code. **Note**: This only hot-reloads Lua — TypeScript changes require a full deploy.
+
+### Development Iteration Patterns
+
+**For Lua changes** (fastest):
+1. Edit files in `module/`
+2. Run `.\tools\patch-and-reset.ps1`
+3. Test in-game
+
+**For TypeScript changes** (requires rebuild):
+1. Edit `.ts` files in plugin root or `lib/`
+2. Run `npm run build:node` in plugin directory
+3. Run `docker compose restart` to pick up built files
+4. Test via RCON or web UI
+
+**For web UI changes**:
+1. Edit React files in `web/`
+2. Run `npm run build:web` in plugin directory
+3. Hard-refresh browser (Ctrl+Shift+R) to reload bundle
+4. Test in controller web UI
+
+**For full deployment** (cleanest):
+1. Make all changes
+2. Run `.\tools\deploy-cluster.ps1 -SkipIncrement`
+3. Test end-to-end
+
+**Best practice**: Use the full deployment script which handles version bump, build, and restart:
+
+```powershell
+.\tools\deploy-cluster.ps1           # Increment version + full rebuild
+.\tools\deploy-cluster.ps1 -SkipIncrement  # Rebuild without version bump
+```
+
+The deploy script automatically runs `npm run build` to regenerate `dist/node/` and `dist/web/` before Docker startup.
 
 ### Hot Reload Script
 

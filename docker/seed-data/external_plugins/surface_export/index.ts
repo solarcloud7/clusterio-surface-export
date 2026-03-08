@@ -42,8 +42,8 @@ export const plugin = {
 	name: PLUGIN_NAME,
 	title: "Surface Export",
 	description: "Export and import Factorio space platforms between Clusterio instances",
-	instanceEntrypoint: "instance",
-	controllerEntrypoint: "controller",
+	instanceEntrypoint: "dist/node/instance",
+	controllerEntrypoint: "dist/node/controller",
 	webEntrypoint: "./web",
 	routes: ["/surface-export"],
 	instanceConfigFields: {
@@ -110,5 +110,5 @@ export const plugin = {
 		messages.SurfaceExportLogUpdateEvent,
 		messages.PlatformStateChangedEvent,
 	],
-	ctlEntrypoint: "control",
+	ctlEntrypoint: "dist/node/control",
 };

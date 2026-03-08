@@ -5,7 +5,7 @@
 		"module": "commonjs",
 		"moduleResolution": "node",
 		"target": "es2022",
-		"outDir": ".",
+		"outDir": "dist/node",
 		"rootDir": ".",
 		"incremental": true,
 		"sourceMap": true,
@@ -20,5 +20,5 @@
 		"control.ts",
 		"lib/**/*.ts"
 	],
-	"exclude": ["web/**", "dist/**", "node_modules/**", "webpack.config.js"]
+	"exclude": ["web/**", "dist/web/**", "node_modules/**", "webpack.config.js"]
 }

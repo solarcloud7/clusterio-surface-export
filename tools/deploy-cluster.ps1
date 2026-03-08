@@ -83,16 +83,16 @@ if (-not $KeepData) {
     Write-Host "Keeping existing data volumes (-KeepData)" -ForegroundColor Yellow
 }
 
-# 5. Build web UI (so dist/ matches source)
-Write-Host "Building web UI..." -ForegroundColor Cyan
+# 5. Build plugin artifacts (node + web)
+Write-Host "Building plugin artifacts (node + web)..." -ForegroundColor Cyan
 Push-Location $PluginPath
 try {
     npm install --silent 2>$null
-    npm run build:web
+    npm run build
     if ($LASTEXITCODE -ne 0) {
-        throw "Web UI build failed"
+        throw "Plugin build failed"
     }
-    Write-Host "Web UI built successfully" -ForegroundColor Green
+    Write-Host "Plugin artifacts built successfully" -ForegroundColor Green
 } finally {
     Pop-Location
 }
