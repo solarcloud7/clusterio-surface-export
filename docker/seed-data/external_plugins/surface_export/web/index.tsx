@@ -15,12 +15,11 @@ import {
 	usePlanetMetadata,
 } from "@clusterio/web_ui";
 import * as messageDefs from "../messages";
-import { summaryFromTransferInfo, mergeTransferSummary, getErrorMessage } from "./utils";
 import ManualTransferTab from "./ManualTransferTab";
 import TransactionLogsTab from "./TransactionLogsTab";
 import type { JsonObject, LogEvent, SurfaceExportPlugin, SurfaceExportState } from "./types";
 
-import "./style.css";
+import { summaryFromTransferInfo, mergeTransferSummary, getErrorMessage, getProp } from "./utils";
 
 const {
 	PERMISSIONS,
@@ -44,7 +43,7 @@ type ControlLike = {
 	plugins: Map<string, unknown>;
 	connector: { connected: boolean };
 	send: (message: unknown) => Promise<unknown>;
-	handle: (message: unknown, handler: (payload: unknown) => void) => void;
+	handle: (message: unknown, handler: (payload: unknown) => void | Promise<void>) => void;
 };
 
 function useSurfaceExportPlugin(control: ControlLike): SurfaceExportPlugin {
@@ -67,7 +66,7 @@ function useSurfaceExportState(plugin: SurfaceExportPlugin) {
 }
 
 function SurfaceExportPage() {
-	const control = useContext(ControlContext) as ControlLike;
+	const control = useContext(ControlContext) as unknown as ControlLike;
 	const plugin = useSurfaceExportPlugin(control);
 	const state = useSurfaceExportState(plugin);
 	// Trigger spritesheet CSS injection for categories used across tabs
@@ -131,7 +130,9 @@ export class WebPlugin extends BaseWebPlugin {
 			lastTransferRevision: 0,
 			lastLogRevision: 0,
 			canViewLogs: true,
-			pluginVersion: packageData?.version || null,
+			pluginVersion: (packageData && typeof packageData === "object" && "version" in packageData && typeof packageData.version === "string")
+				? packageData.version
+				: null,
 		};
 	}
 
@@ -145,9 +146,9 @@ export class WebPlugin extends BaseWebPlugin {
 			},
 		];
 
-		this.control.handle(SurfaceExportTreeUpdateEvent, this.handleTreeUpdate.bind(this));
-		this.control.handle(SurfaceExportTransferUpdateEvent, this.handleTransferUpdate.bind(this));
-		this.control.handle(SurfaceExportLogUpdateEvent, this.handleLogUpdate.bind(this));
+		this.control.handle(SurfaceExportTreeUpdateEvent, payload => this.handleTreeUpdate(payload as JsonObject));
+		this.control.handle(SurfaceExportTransferUpdateEvent, payload => this.handleTransferUpdate(payload as JsonObject));
+		this.control.handle(SurfaceExportLogUpdateEvent, payload => this.handleLogUpdate(payload as JsonObject));
 	}
 
 	onControllerConnectionEvent(event: string) {
@@ -214,7 +215,7 @@ export class WebPlugin extends BaseWebPlugin {
 	async refreshSnapshots() {
 		this.setState({ loadingTree: true, treeError: null, loadingExports: true, exportsError: null });
 		try {
-			const treeResponse = await this.control.send(new GetPlatformTreeRequest({ forceName: "player" }));
+			const treeResponse = await this.control.send(new GetPlatformTreeRequest({ forceName: "player" })) as JsonObject;
 			let exports = this.state.exports;
 			let exportsError = null;
 			try {
@@ -245,11 +246,11 @@ export class WebPlugin extends BaseWebPlugin {
 
 			this.setState({
 				tree: {
-					forceName: treeResponse.forceName,
-					hosts: treeResponse.hosts || [],
-					unassignedInstances: treeResponse.unassignedInstances || [],
-					revision: treeResponse.revision,
-					generatedAt: treeResponse.generatedAt,
+					forceName: String(getProp(treeResponse, "forceName", "player")),
+					hosts: getProp(treeResponse, "hosts", []) as NonNullable<SurfaceExportState["tree"]>["hosts"],
+					unassignedInstances: getProp(treeResponse, "unassignedInstances", []) as NonNullable<SurfaceExportState["tree"]>["unassignedInstances"],
+					revision: Number(getProp(treeResponse, "revision", 0)),
+					generatedAt: Number(getProp(treeResponse, "generatedAt", Date.now())),
 				},
 				exports,
 				exportsError,
@@ -289,30 +290,31 @@ export class WebPlugin extends BaseWebPlugin {
 	async getStoredExport(exportId: string) {
 		return this.control.send(new GetStoredExportRequest({ exportId }));
 	}
-	async exportPlatformForDownload(payload: JsonObject) {
+	async exportPlatformForDownload(payload: { sourceInstanceId: number; sourcePlatformIndex: number; forceName?: string }) {
 		return this.control.send(new ExportPlatformForDownloadRequest(payload));
 	}
 
-	async importUploadedExport(payload: JsonObject) {
+	async importUploadedExport(payload: { targetInstanceId: number; exportData: Record<string, unknown>; forceName?: string; platformName?: string | null }) {
 		return this.control.send(new ImportUploadedExportRequest(payload));
 	}
 
-	async startTransfer(payload: JsonObject) {
+	async startTransfer(payload: { sourceInstanceId: number; sourcePlatformIndex: number; targetInstanceId: number; forceName?: string }) {
 		return this.control.send(new StartPlatformTransferRequest(payload));
 	}
 
 	async loadTransactionLog(transferId: string) {
-		const response = await this.control.send(new GetTransactionLogRequest({ transferId }));
-		if (!response.success) {
-			throw new Error(response.error || "Failed to load transaction log");
+		const response = await this.control.send(new GetTransactionLogRequest({ transferId })) as JsonObject;
+		if (!getProp(response, "success", false)) {
+			throw new Error(String(getProp(response, "error", "Failed to load transaction log")));
 		}
 
 		const existing = this.state.logDetails[transferId] || {};
-		const transferInfo = response.transferInfo || existing.transferInfo || null;
-		const events = Array.isArray(response.events) ? response.events : existing.events || [];
+		const transferInfo = getProp(response, "transferInfo", null) as JsonObject | null || existing.transferInfo || null;
+		const responseEvents = getProp(response, "events", null);
+		const events = Array.isArray(responseEvents) ? responseEvents as Array<LogEvent> : existing.events || [];
 		const detail = {
 			transferInfo,
-			summary: response.summary || existing.summary || null,
+			summary: getProp(response, "summary", null) as JsonObject | null || existing.summary || null,
 			events,
 		};
 

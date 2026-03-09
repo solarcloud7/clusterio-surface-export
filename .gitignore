@@ -3,6 +3,7 @@ docs/dev-docs/
 
 # Docker runtime data (stored in Docker volumes now)
 docker/clusterio-containers/
+clusterio/*
 
 # Seed data - keep structure, ignore large binary files
 docker/seed-data/mods/*

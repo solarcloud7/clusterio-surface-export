@@ -1047,8 +1047,29 @@ export interface ValidationResult {
 	actualItemCounts?: Record<string, number>;
 	expectedFluidCounts?: Record<string, number>;
 	actualFluidCounts?: Record<string, number>;
+	entityTypeBreakdown?: Record<string, number>;
 	failedEntityLosses?: { items: Record<string, number>; fluids: Record<string, number> };
 	highTempAggregates?: Record<string, { expectedEnergy: number; actualEnergy: number; reconciled: boolean }>;
+	// Post-LossAnalysis fields
+	postActivation?: boolean;
+	totalExpectedItems?: number;
+	totalActualItems?: number;
+	totalExpectedFluids?: number;
+	totalActualFluids?: number;
+	itemTypesExpected?: number;
+	itemTypesActual?: number;
+	fluidTypesExpected?: number;
+	fluidTypesActual?: number;
+	fluidReconciliation?: {
+		highTempThreshold: number;
+		rawFluidDelta: number;
+		reconciledFluidLoss: number;
+		lowTempLoss: number;
+		highTempReconciledLoss: number;
+		fluidPreservedPct: number;
+		highTempAggregates?: Record<string, { expected: number; actual: number; delta: number; reconciled: boolean; expectedEnergy: number; actualEnergy: number }>;
+	};
+	[key: string]: unknown;
 }
 
 export type OperationType = "transfer" | "export" | "import";

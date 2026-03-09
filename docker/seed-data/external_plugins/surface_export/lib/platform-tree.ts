@@ -50,7 +50,7 @@ type PluginLike = {
  * Queries connected instances for their platforms and builds
  * the hierarchical host → instance → platform tree used by the web UI.
  */
-class PlatformTree {
+export class PlatformTree {
 	private plugin: PluginLike;
 	private messages: typeof import("../messages");
 
@@ -227,5 +227,3 @@ class PlatformTree {
 		return { hosts, unassignedInstances };
 	}
 }
-
-module.exports = PlatformTree;

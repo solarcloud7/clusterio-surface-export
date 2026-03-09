@@ -32,7 +32,7 @@ type PluginLike = {
  * Manages surfaceExportSubscriptions Map and revision counters.
  * Handles tree/transfer/log update events sent to connected web UI clients.
  */
-class SubscriptionManager {
+export class SubscriptionManager {
 	private plugin: PluginLike;
 	private messages: typeof import("../messages");
 	public treeBroadcastLimiter: { activate: () => void; cancel: () => void };
@@ -223,5 +223,3 @@ class SubscriptionManager {
 		}
 	}
 }
-
-module.exports = SubscriptionManager;

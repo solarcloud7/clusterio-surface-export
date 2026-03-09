@@ -21,7 +21,7 @@ type PluginLike = {
  * Transaction logging, phase timing, persistence, and transfer summary building.
  * Owns the transactionLogs Map and persistedTransactionLogs array on the plugin.
  */
-class TransactionLogger {
+export class TransactionLogger {
 	private plugin: PluginLike;
 
 	constructor(plugin: PluginLike) {
@@ -321,5 +321,3 @@ class TransactionLogger {
 		}
 	}
 }
-
-module.exports = TransactionLogger;

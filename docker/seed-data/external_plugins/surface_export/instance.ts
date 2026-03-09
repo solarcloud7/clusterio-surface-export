@@ -761,16 +761,9 @@ class InstancePlugin extends BaseInstancePlugin {
 				try {
 					const parsed = JSON.parse(validationResult) as Partial<messages.ValidationResult>;
 					validation = {
+						...parsed,
 						itemCountMatch: Boolean(parsed.itemCountMatch),
 						fluidCountMatch: Boolean(parsed.fluidCountMatch),
-						entityCount: typeof parsed.entityCount === "number" ? parsed.entityCount : undefined,
-						mismatchDetails: typeof parsed.mismatchDetails === "string" ? parsed.mismatchDetails : undefined,
-						expectedItemCounts: parsed.expectedItemCounts,
-						actualItemCounts: parsed.actualItemCounts,
-						expectedFluidCounts: parsed.expectedFluidCounts,
-						actualFluidCounts: parsed.actualFluidCounts,
-						failedEntityLosses: parsed.failedEntityLosses,
-						highTempAggregates: parsed.highTempAggregates,
 					};
 					validationRetrieved = true;
 				} catch (_parseErr) {

@@ -16,7 +16,7 @@ import {
 import type { ColumnsType } from "antd/es/table";
 import type { UploadChangeParam, UploadFile } from "antd/es/upload/interface";
 import { DownloadOutlined, UploadOutlined, ReloadOutlined } from "@ant-design/icons";
-import { formatBytes, sanitizeTimestamp, parseJsonFile, downloadJsonFile, getErrorMessage } from "./utils";
+import { formatBytes, sanitizeTimestamp, parseJsonFile, downloadJsonFile, getErrorMessage, getProp } from "./utils";
 import type { JsonObject, SurfaceExportPlugin, SurfaceExportState, StoredExportSummary } from "./types";
 
 const { Text } = Typography;
@@ -85,11 +85,12 @@ export default function ExportsTab({ plugin, state }: { plugin: SurfaceExportPlu
 	async function handleDownload(row: StoredExportSummary) {
 		setDownloadingExportId(row.exportId);
 		try {
-			const response = await plugin.getStoredExport(row.exportId);
-			if (!response.success) {
-				throw new Error(response.error || "Download failed");
+			const response = await plugin.getStoredExport(row.exportId) as JsonObject;
+			if (!getProp(response, "success", false)) {
+				throw new Error(String(getProp(response, "error", "Download failed")));
 			}
-			downloadJsonFile(response.exportData, `${row.platformName || "platform"}_${sanitizeTimestamp(row.timestamp)}.json`);
+			const exportData = getProp(response, "exportData", {}) as Record<string, unknown>;
+			downloadJsonFile(exportData, `${row.platformName || "platform"}_${sanitizeTimestamp(row.timestamp)}.json`);
 			antMessage.success(`Downloaded ${row.exportId}`, 4);
 		} catch (err: unknown) {
 			antMessage.error(getErrorMessage(err, "Failed to download export"), 8);
@@ -146,11 +147,12 @@ export default function ExportsTab({ plugin, state }: { plugin: SurfaceExportPlu
 				forceName: forceName || "player",
 				platformName: platformName.trim() || null,
 			});
-			if (!response.success) {
-				throw new Error(response.error || "Import failed");
+			const responseObj = response as JsonObject;
+			if (!getProp(responseObj, "success", false)) {
+				throw new Error(String(getProp(responseObj, "error", "Import failed")));
 			}
 			antMessage.success(
-				`Import started: "${response.platformName || "Unknown"}" on instance ${response.targetInstanceId}`,
+				`Import started: "${getProp(responseObj, "platformName", "Unknown")}" on instance ${getProp(responseObj, "targetInstanceId", 0)}`,
 				8,
 			);
 			setUploadFileList([]);

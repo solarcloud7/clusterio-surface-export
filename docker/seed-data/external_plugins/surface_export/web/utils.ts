@@ -2,6 +2,34 @@
 
 import type { JsonObject, LogEvent, TransferSummary } from "./types";
 
+// Type-safe helpers for accessing JsonObject properties
+function getString(obj: JsonObject, key: string, fallback: string): string;
+function getString(obj: JsonObject, key: string, fallback?: null): string | null;
+function getString(obj: JsonObject, key: string, fallback: string | null = null): string | null {
+	const val = obj[key];
+	return typeof val === "string" ? val : fallback;
+}
+
+function getNumber(obj: JsonObject, key: string, fallback: number): number;
+function getNumber(obj: JsonObject, key: string, fallback?: null): number | null;
+function getNumber(obj: JsonObject, key: string, fallback: number | null = null): number | null {
+	const val = obj[key];
+	return typeof val === "number" ? val : fallback;
+}
+
+function getBool(obj: JsonObject, key: string, fallback = false): boolean {
+	const val = obj[key];
+	return typeof val === "boolean" ? val : fallback;
+}
+
+export function getProp<T>(obj: object | null | undefined, key: string, fallback: T): T {
+	if (!obj || typeof obj !== "object") {
+		return fallback;
+	}
+	const val = (obj as Record<string, unknown>)[key];
+	return val !== undefined && val !== null ? (val as T) : fallback;
+}
+
 export function getErrorMessage(err: unknown, fallback = "Unknown error") {
 	if (err instanceof Error) {
 		return err.message || fallback;
@@ -43,21 +71,21 @@ export function summaryFromTransferInfo(transferInfo: JsonObject | null, lastEve
 	}
 
 	return {
-		transferId: transferInfo.transferId || transferInfo.id || null,
-		operationType: transferInfo.operationType || "transfer",
-		exportId: transferInfo.exportId || null,
-		artifactSizeBytes: transferInfo.artifactSizeBytes ?? null,
+		transferId: getString(transferInfo, "transferId", null) || getString(transferInfo, "id", null) || "",
+		operationType: getString(transferInfo, "operationType", "transfer"),
+		exportId: getString(transferInfo, "exportId", null),
+		artifactSizeBytes: getNumber(transferInfo, "artifactSizeBytes", null),
 		downloadable: false,
-		platformName: transferInfo.platformName || "Unknown",
-		sourceInstanceId: transferInfo.sourceInstanceId ?? -1,
-		sourceInstanceName: transferInfo.sourceInstanceName ?? null,
-		targetInstanceId: transferInfo.targetInstanceId ?? -1,
-		targetInstanceName: transferInfo.targetInstanceName ?? null,
-		status: transferInfo.status || "unknown",
-		startedAt: transferInfo.startedAt || Date.now(),
-		completedAt: transferInfo.completedAt || null,
-		failedAt: transferInfo.failedAt || null,
-		error: transferInfo.error || null,
+		platformName: getString(transferInfo, "platformName", "Unknown"),
+		sourceInstanceId: getNumber(transferInfo, "sourceInstanceId", -1),
+		sourceInstanceName: getString(transferInfo, "sourceInstanceName", null),
+		targetInstanceId: getNumber(transferInfo, "targetInstanceId", -1),
+		targetInstanceName: getString(transferInfo, "targetInstanceName", null),
+		status: getString(transferInfo, "status", "unknown"),
+		startedAt: getNumber(transferInfo, "startedAt", Date.now()),
+		completedAt: getNumber(transferInfo, "completedAt", null),
+		failedAt: getNumber(transferInfo, "failedAt", null),
+		error: getString(transferInfo, "error", null),
 		lastEventAt,
 	};
 }
@@ -368,16 +396,21 @@ export function buildFluidInventoryRows(expectedMap: Record<string, number> | nu
 		const delta = group.actual - group.expected;
 		const category = group.hasHighTempBucket ? "High-temp" : "Normal";
 		const aggregate = aggregates[group.baseName];
-		const reconciledHighTemp = category === "High-temp"
-			? Boolean(aggregate?.reconciled ?? Math.abs(delta) <= 1)
-			: false;
-		const hasThermalData = aggregate && aggregate.expectedEnergy > 0;
+		const aggregateRec = typeof aggregate === "object" && aggregate !== null && "reconciled" in aggregate
+			? (aggregate.reconciled as boolean)
+			: Math.abs(delta) <= 1;
+		const reconciledHighTemp = category === "High-temp" ? Boolean(aggregateRec) : false;
+		const expEnergy = typeof aggregate === "object" && aggregate !== null && "expectedEnergy" in aggregate
+			? (aggregate.expectedEnergy as number)
+			: 0;
+		const actEnergy = typeof aggregate === "object" && aggregate !== null && "actualEnergy" in aggregate
+			? (aggregate.actualEnergy as number)
+			: 0;
+		const hasThermalData = expEnergy > 0;
 
 		if (category === "High-temp" && reconciledHighTemp && hasThermalData) {
 			// High-temp with thermal energy: single row with icon+name + thermal energy values.
 			// "High-temp (V×T)" label replaces the redundant volume aggregate row.
-			const expEnergy = aggregate.expectedEnergy;
-			const actEnergy = aggregate.actualEnergy;
 			const energyDelta = actEnergy - expEnergy;
 			const energyPrecision = expEnergy > 0 ? (actEnergy / expEnergy) * 100 : 100;
 			rows.push({
@@ -490,25 +523,35 @@ export function findLatestEvent(events: Array<LogEvent>, predicate: (event: LogE
 }
 
 export function buildDetailedLogSummary(detail: JsonObject, transferId: string) {
-	const transferInfo = detail?.transferInfo || null;
-	const events = Array.isArray(detail?.events) ? detail.events : [];
-	const summary = detail?.summary && typeof detail.summary === "object" ? detail.summary : {};
+	const transferInfoRaw = detail?.transferInfo;
+	const transferInfo = transferInfoRaw && typeof transferInfoRaw === "object" && !Array.isArray(transferInfoRaw)
+		? transferInfoRaw as JsonObject
+		: null;
+	const events = Array.isArray(detail?.events) ? detail.events as LogEvent[] : [];
+	const summaryRaw = detail?.summary;
+	const summary = summaryRaw && typeof summaryRaw === "object" && !Array.isArray(summaryRaw)
+		? summaryRaw as JsonObject
+		: {} as JsonObject;
 
 	const transferCreatedEvent = findLatestEvent(events, event => event?.eventType === "transfer_created");
-	const validationEvent = findLatestEvent(events, event => (
-		event?.eventType === "validation_received"
-		|| event?.eventType === "validation_failed"
-		|| event?.validation
-	));
+	const validationEvent = findLatestEvent(events, event => {
+		const hasValidation = event && typeof event === "object" && "validation" in event;
+		return event?.eventType === "validation_received"
+			|| event?.eventType === "validation_failed"
+			|| hasValidation;
+	});
 	const completionEvent = findLatestEvent(events, event => (
 		event?.eventType === "transfer_completed"
 		|| event?.eventType === "transfer_failed"
 	));
 	const latestEvent = events.length ? events[events.length - 1] : null;
 
-	const status = transferInfo?.status || summary.status || "unknown";
-	const operationType = transferInfo?.operationType || summary.operationType || "transfer";
-	let result = summary.result;
+	const status = (transferInfo ? getString(transferInfo, "status", null) : null)
+		|| getString(summary, "status", "unknown");
+	const operationType = (transferInfo ? getString(transferInfo, "operationType", null) : null)
+		|| getString(summary, "operationType", "transfer");
+	const resultRaw = summary.result;
+	let result = typeof resultRaw === "string" ? resultRaw : null;
 	if (!result) {
 		if (status === "completed") {
 			result = "SUCCESS";
@@ -519,12 +562,17 @@ export function buildDetailedLogSummary(detail: JsonObject, transferId: string) 
 		}
 	}
 
-	const startedAt = transferInfo?.startedAt || summary.startedAt || transferCreatedEvent?.timestampMs || null;
-	const completedAt = transferInfo?.completedAt || summary.completedAt || null;
-	const failedAt = transferInfo?.failedAt || summary.failedAt || null;
-	const lastEventAt = summary.lastEventAt || latestEvent?.timestampMs || null;
+	const startedAt = (transferInfo ? getNumber(transferInfo, "startedAt", null) : null)
+		|| getNumber(summary, "startedAt", null)
+		|| (transferCreatedEvent?.timestampMs ?? null);
+	const completedAt = (transferInfo ? getNumber(transferInfo, "completedAt", null) : null)
+		|| getNumber(summary, "completedAt", null);
+	const failedAt = (transferInfo ? getNumber(transferInfo, "failedAt", null) : null)
+		|| getNumber(summary, "failedAt", null);
+	const lastEventAt = getNumber(summary, "lastEventAt", null)
+		|| (latestEvent?.timestampMs ?? null);
 	const finishedAt = completedAt || failedAt || completionEvent?.timestampMs || lastEventAt;
-	let totalDurationMs = typeof summary.totalDurationMs === "number" ? summary.totalDurationMs : null;
+	let totalDurationMs = getNumber(summary, "totalDurationMs", null);
 	if (totalDurationMs === null && startedAt && finishedAt) {
 		totalDurationMs = Math.max(0, finishedAt - startedAt);
 	}
@@ -532,14 +580,27 @@ export function buildDetailedLogSummary(detail: JsonObject, transferId: string) 
 		totalDurationMs = completionEvent.durationMs;
 	}
 
-	const validation = summary.validation || validationEvent?.validation || null;
-	let sourceVerification = summary.sourceVerification || transferCreatedEvent?.sourceVerification || null;
-	if (!sourceVerification && validation) {
+	const validationFromSummary = summary.validation;
+	const validation = (validationFromSummary && typeof validationFromSummary === "object" ? validationFromSummary : null)
+		|| (validationEvent?.validation && typeof validationEvent.validation === "object" ? validationEvent.validation : null)
+		|| null;
+	const sourceVerificationFromSummary = summary.sourceVerification;
+	let sourceVerification = (sourceVerificationFromSummary && typeof sourceVerificationFromSummary === "object" ? sourceVerificationFromSummary : null)
+		|| (transferCreatedEvent?.sourceVerification && typeof transferCreatedEvent.sourceVerification === "object" ? transferCreatedEvent.sourceVerification : null)
+		|| null;
+	if (!sourceVerification && validation && typeof validation === "object") {
+		const valObj = validation as Record<string, unknown>;
 		sourceVerification = {
-			itemCounts: validation.expectedItemCounts || {},
-			fluidCounts: validation.expectedFluidCounts || {},
+			itemCounts: (valObj.expectedItemCounts && typeof valObj.expectedItemCounts === "object" ? valObj.expectedItemCounts : {}) as Record<string, number>,
+			fluidCounts: (valObj.expectedFluidCounts && typeof valObj.expectedFluidCounts === "object" ? valObj.expectedFluidCounts : {}) as Record<string, number>,
 		};
 	}
+
+	const platformFromSummary = summary.platform;
+	const phasesFromSummary = summary.phases;
+	const exportFromSummary = summary.export;
+	const payloadFromSummary = summary.payload;
+	const importFromSummary = summary.import;
 
 	return {
 		transferId,
@@ -547,28 +608,39 @@ export function buildDetailedLogSummary(detail: JsonObject, transferId: string) 
 		result,
 		status,
 		totalDurationMs,
-		totalDurationStr: summary.totalDurationStr || formatDuration(totalDurationMs),
-		phases: summary.phases || completionEvent?.phases || {},
-		platform: summary.platform || {
-			name: transferInfo?.platformName || "Unknown",
+		totalDurationStr: getString(summary, "totalDurationStr", null) || formatDuration(totalDurationMs),
+		phases: (phasesFromSummary && typeof phasesFromSummary === "object" ? phasesFromSummary : null)
+			|| (completionEvent?.phases && typeof completionEvent.phases === "object" ? completionEvent.phases : null)
+			|| {},
+		platform: (platformFromSummary && typeof platformFromSummary === "object" ? platformFromSummary : null) || {
+			name: transferInfo ? getString(transferInfo, "platformName", "Unknown") : "Unknown",
 			source: {
-				instanceId: transferInfo?.sourceInstanceId ?? -1,
-				instanceName: transferInfo?.sourceInstanceName ?? null,
+				instanceId: transferInfo ? getNumber(transferInfo, "sourceInstanceId", -1) : -1,
+				instanceName: transferInfo ? getString(transferInfo, "sourceInstanceName", null) : null,
 			},
 			destination: {
-				instanceId: transferInfo?.targetInstanceId ?? -1,
-				instanceName: transferInfo?.targetInstanceName ?? null,
+				instanceId: transferInfo ? getNumber(transferInfo, "targetInstanceId", -1) : -1,
+				instanceName: transferInfo ? getString(transferInfo, "targetInstanceName", null) : null,
 			},
 		},
-		export: summary.export || transferCreatedEvent?.exportMetrics || null,
-		payload: summary.payload || completionEvent?.payloadMetrics || transferCreatedEvent?.payloadMetrics || null,
-		import: summary.import || completionEvent?.importMetrics || validationEvent?.importMetrics || null,
+		export: (exportFromSummary && typeof exportFromSummary === "object" ? exportFromSummary : null)
+			|| (transferCreatedEvent?.exportMetrics && typeof transferCreatedEvent.exportMetrics === "object" ? transferCreatedEvent.exportMetrics : null)
+			|| null,
+		payload: (payloadFromSummary && typeof payloadFromSummary === "object" ? payloadFromSummary : null)
+			|| (completionEvent?.payloadMetrics && typeof completionEvent.payloadMetrics === "object" ? completionEvent.payloadMetrics : null)
+			|| (transferCreatedEvent?.payloadMetrics && typeof transferCreatedEvent.payloadMetrics === "object" ? transferCreatedEvent.payloadMetrics : null)
+			|| null,
+		import: (importFromSummary && typeof importFromSummary === "object" ? importFromSummary : null)
+			|| (completionEvent?.importMetrics && typeof completionEvent.importMetrics === "object" ? completionEvent.importMetrics : null)
+			|| (validationEvent?.importMetrics && typeof validationEvent.importMetrics === "object" ? validationEvent.importMetrics : null)
+			|| null,
 		validation,
 		sourceVerification,
 		startedAt,
 		completedAt,
 		failedAt,
 		lastEventAt,
-		error: summary.error || transferInfo?.error || null,
+		error: getString(summary, "error", null)
+			|| (transferInfo ? getString(transferInfo, "error", null) : null),
 	};
 }

@@ -10,6 +10,10 @@
 
 import fs from "fs/promises";
 import path from "path";
+import { PlatformTree } from "./lib/platform-tree";
+import { TransactionLogger } from "./lib/transaction-logger";
+import { SubscriptionManager } from "./lib/subscription-manager";
+import { TransferOrchestrator } from "./lib/transfer-orchestrator";
 import type { ActiveTransfer, OperationType, PlatformHostNode, PlatformInstanceNode, SubscriptionState, TransferSummary } from "./messages";
 
 function requireClusterioModule<T>(moduleName: string): T {
@@ -59,11 +63,6 @@ type TransferOrchestratorLike = {
 	pruneOldTransfers(): void;
 	waitForStoredExport(exportId: string, timeoutMs?: number): Promise<StoredExport>;
 };
-
-const PlatformTree = require("./lib/platform-tree") as new (...args: unknown[]) => PlatformTreeLike;
-const TransactionLogger = require("./lib/transaction-logger") as new (...args: unknown[]) => TransactionLoggerLike;
-const SubscriptionManager = require("./lib/subscription-manager") as new (...args: unknown[]) => SubscriptionManagerLike;
-const TransferOrchestrator = require("./lib/transfer-orchestrator") as new (...args: unknown[]) => TransferOrchestratorLike;
 
 const PLUGIN_NAME = info.plugin.name;
 const STORAGE_FILENAME = "surface_export_storage.json";

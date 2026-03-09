@@ -20,7 +20,6 @@ if (-not $PluginPath) {
 
 $PluginJsonPath = Join-Path $PluginPath "package.json"
 $ModuleJsonPath = Join-Path $PluginPath "module\module.json"
-$DockerDir = Join-Path $WorkspaceRoot "docker"
 
 # 1. Increment Version
 if (-not $SkipIncrement) {
@@ -87,7 +86,11 @@ if (-not $KeepData) {
 Write-Host "Building plugin artifacts (node + web)..." -ForegroundColor Cyan
 Push-Location $PluginPath
 try {
-    npm install --silent 2>$null
+    if (Test-Path (Join-Path $PluginPath "package-lock.json")) {
+        npm ci --silent 2>$null
+    } else {
+        npm install --silent 2>$null
+    }
     npm run build
     if ($LASTEXITCODE -ne 0) {
         throw "Plugin build failed"
@@ -129,23 +132,28 @@ Start-Sleep -Seconds 3
 $logJob = Start-Job -ScriptBlock {
     docker logs -f surface-export-controller 2>&1
 }
-while ($true) {
-    $lines = Receive-Job $logJob
-    foreach ($line in $lines) {
-        Write-Host $line
-        if ($line -match "Seeding complete") {
-            $initDone = $true
+try {
+    while ($true) {
+        $lines = Receive-Job $logJob
+        foreach ($line in $lines) {
+            Write-Host $line
+            if ($line -match "Seeding complete") {
+                $initDone = $true
+            }
         }
+        if ($initDone) { break }
+        if ($sw.Elapsed.TotalSeconds -ge $timeout) {
+            Write-Host "(Log streaming timeout after ${timeout}s)" -ForegroundColor Yellow
+            break
+        }
+        Start-Sleep -Milliseconds 200
     }
-    if ($initDone) { break }
-    if ($sw.Elapsed.TotalSeconds -ge $timeout) {
-        Write-Host "(Log streaming timeout after ${timeout}s)" -ForegroundColor Yellow
-        break
+} finally {
+    if ($logJob) {
+        Stop-Job $logJob -ErrorAction SilentlyContinue
+        Remove-Job $logJob -ErrorAction SilentlyContinue
     }
-    Start-Sleep -Milliseconds 200
 }
-Stop-Job $logJob -ErrorAction SilentlyContinue
-Remove-Job $logJob -ErrorAction SilentlyContinue
 
 Write-Host "================================================" -ForegroundColor DarkGray
 
@@ -228,7 +236,7 @@ $httpPort = (Get-Content $EnvFile | Where-Object { $_ -match '^CONTROLLER_HTTP_P
 Write-Host "Web UI: http://localhost:$httpPort" -ForegroundColor Green
 Write-Host ""
 Write-Host "Cluster topology:" -ForegroundColor Cyan
-Write-Host "  Controller (http://localhost:8080)" -ForegroundColor White
+Write-Host "  Controller (http://localhost:$httpPort)" -ForegroundColor White
 Write-Host "    ├── surface-export-host-1 (ports 34100-34109)" -ForegroundColor White
 Write-Host "    │     └── clusterio-host-1-instance-1" -ForegroundColor White
 Write-Host "    └── surface-export-host-2 (ports 34200-34209)" -ForegroundColor White

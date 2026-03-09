@@ -18,7 +18,7 @@ import {
 import type { ColumnsType } from "antd/es/table";
 import type { UploadChangeParam, UploadFile } from "antd/es/upload/interface";
 import { DownloadOutlined, UploadOutlined } from "@ant-design/icons";
-import { sanitizeTimestamp, parseJsonFile, downloadJsonFile, getErrorMessage } from "./utils";
+import { sanitizeTimestamp, parseJsonFile, downloadJsonFile, getErrorMessage, formatBytes, getProp } from "./utils";
 import type { HostNode, InstanceNode, JsonObject, PlatformSummary, SurfaceExportPlugin, SurfaceExportState } from "./types";
 
 const { Text } = Typography;
@@ -168,10 +168,11 @@ export default function ManualTransferTab({ plugin, state }: { plugin: SurfaceEx
 				targetInstanceId: Number(selectedTargetInstance),
 				forceName: selectedSource.forceName || "player",
 			});
-			if (!response.success) {
-				throw new Error(response.error || "Transfer start failed");
+			const responseObj = response as JsonObject;
+			if (!getProp(responseObj, "success", false)) {
+				throw new Error(String(getProp(responseObj, "error", "Transfer start failed")));
 			}
-			antMessage.success(`Transfer started: ${response.transferId}`, 5);
+			antMessage.success(`Transfer started: ${getProp(responseObj, "transferId", "")}`, 5);
 		} catch (err: unknown) {
 			antMessage.error(getErrorMessage(err, "Failed to start transfer"), 10);
 		} finally {
@@ -190,12 +191,16 @@ export default function ManualTransferTab({ plugin, state }: { plugin: SurfaceEx
 				sourcePlatformIndex: source.platformIndex,
 				forceName: source.forceName || tree?.forceName || "player",
 			});
-			if (!response.success) {
-				throw new Error(response.error || "Export failed");
+			const responseObj = response as JsonObject;
+			if (!getProp(responseObj, "success", false)) {
+				throw new Error(String(getProp(responseObj, "error", "Export failed")));
 			}
-			const filename = `${response.platformName || source.platformName || "platform"}_${sanitizeTimestamp(response.timestamp)}.json`;
-			downloadJsonFile(response.exportData, filename);
-			antMessage.success(`Export downloaded: ${response.exportId}`, 6);
+			const platformName = String(getProp(responseObj, "platformName", "") || source.platformName || "platform");
+			const timestamp = getProp(responseObj, "timestamp", null) as string | number | null;
+			const filename = `${platformName}_${sanitizeTimestamp(timestamp)}.json`;
+			const exportData = getProp(responseObj, "exportData", {}) as Record<string, unknown>;
+			downloadJsonFile(exportData, filename);
+			antMessage.success(`Export downloaded: ${getProp(responseObj, "exportId", "")}`, 6);
 		} catch (err: unknown) {
 			antMessage.error(getErrorMessage(err, "Failed to export platform"), 10);
 		} finally {
@@ -256,12 +261,12 @@ export default function ManualTransferTab({ plugin, state }: { plugin: SurfaceEx
 				exportData: importPayload,
 				forceName: importForceName || "player",
 				platformName: importPlatformName.trim() || null,
-			});
-			if (!response.success) {
-				throw new Error(response.error || "Import failed");
+			}) as JsonObject;
+			if (!getProp(response, "success", false)) {
+				throw new Error(String(getProp(response, "error", "Import failed")));
 			}
 			antMessage.success(
-				`Import started on ${importTargetInstance.instanceName}: ${response.platformName || "Unknown"}`,
+				`Import started on ${importTargetInstance.instanceName}: ${getProp(response, "platformName", "Unknown")}`,
 				8,
 			);
 			setImportModalOpen(false);
@@ -293,7 +298,7 @@ export default function ManualTransferTab({ plugin, state }: { plugin: SurfaceEx
 				return (
 					<Space size={6}>
 						{locationName ? <div className={`planet-${CSS.escape(locationName)}`} title={locationName} /> : null}
-						<Text type={moving ? "secondary" : undefined} italic={moving}>
+						<Text type={moving ? "secondary" : undefined} italic={moving ? true : undefined}>
 							{row.locationText}
 						</Text>
 					</Space>

@@ -59,7 +59,7 @@ function mergeExportMetrics(storedMetrics: ExportMetrics | null | undefined, run
  * Transfer lifecycle state machine.
  * Handles the full transfer flow: export → transmit → import → validate → cleanup/rollback.
  */
-class TransferOrchestrator {
+export class TransferOrchestrator {
 	private plugin: {
 		controller: {
 			sendTo: (target: { instanceId: number }, message: unknown) => Promise<SimpleResponse>;
@@ -452,5 +452,3 @@ class TransferOrchestrator {
 		return this.transferPlatform(request.exportId, resolved.id);
 	}
 }
-
-module.exports = TransferOrchestrator;

@@ -28,6 +28,7 @@ import {
 	buildFluidInventoryRows,
 	buildDetailedLogSummary,
 	getErrorMessage,
+	getProp,
 type ExpectedActualRow,
 type FluidInventoryRow,
 type MetricRow,
@@ -76,17 +77,20 @@ function buildMermaidGanttText(rows: Array<JsonObject>, totalMs: number) {
 	const transferRows: string[] = [];
 	let taskIdx = 0, milestoneIdx = 0;
 	for (const row of rows) {
-		const start = Math.max(0, Math.round(row.startMs));
-		const end = Math.max(start + 1, Math.round(row.endMs));
-		const durationSuffix = row.durationMs != null ? " (" + formatMsLabel(row.durationMs) + ")" : "";
-		const safeName = row.label.replace(/[:\[\];#]/g, " ").trim() + durationSuffix;
-		if (row.isEvent) {
+		const start = Math.max(0, Math.round(getProp(row, "startMs", 0)));
+		const end = Math.max(start + 1, Math.round(getProp(row, "endMs", start + 1)));
+		const durationMs = getProp(row, "durationMs", null);
+		const durationSuffix = durationMs != null ? " (" + formatMsLabel(durationMs) + ")" : "";
+		const safeName = String(getProp(row, "label", "")).replace(/[:\[\];#]/g, " ").trim() + durationSuffix;
+		const isEvent = getProp(row, "isEvent", false);
+		const key = String(getProp(row, "key", ""));
+		if (isEvent) {
 			eventRows.push("    " + safeName + " :milestone, m" + milestoneIdx++ + ", " + start + ", 0");
-		} else if (row.key.startsWith("export:")) {
+		} else if (key.startsWith("export:")) {
 			exportRows.push("    " + safeName + " :active, t" + taskIdx++ + ", " + start + ", " + end);
-		} else if (row.key.startsWith("import:")) {
+		} else if (key.startsWith("import:")) {
 			importRows.push("    " + safeName + " :active, t" + taskIdx++ + ", " + start + ", " + end);
-		} else if (row.key.startsWith("phase:")) {
+		} else if (key.startsWith("phase:")) {
 			transferRows.push("    " + safeName + " :active, t" + taskIdx++ + ", " + start + ", " + end);
 		}
 	}
@@ -126,10 +130,10 @@ function buildGanttRows(events: Array<LogEvent>, detailedSummary: JsonObject | n
 			|| (event?.eventType === "transfer_created" ? detailedSummary?.export || null : null);
 		if (exportMetrics && typeof exportMetrics === "object") {
 			const eventStart = elapsedMs ?? 0;
-			const lockMs = Number(exportMetrics.requestExportAndLockMs ?? 0);
-			const storeMs = Number(exportMetrics.waitForControllerStoreMs ?? 0);
-			const asyncMs = Number(exportMetrics.instanceAsyncExportMs ?? 0);
-			const ticks = Number(exportMetrics.instanceAsyncExportTicks ?? 0);
+			const lockMs = Number(getProp(exportMetrics as JsonObject, "requestExportAndLockMs", 0));
+			const storeMs = Number(getProp(exportMetrics as JsonObject, "waitForControllerStoreMs", 0));
+			const asyncMs = Number(getProp(exportMetrics as JsonObject, "instanceAsyncExportMs", 0));
+			const ticks = Number(getProp(exportMetrics as JsonObject, "instanceAsyncExportTicks", 0));
 			// storeMs ends at eventStart; lockMs ends where storeMs begins.
 			const lockEnd = eventStart - storeMs;
 			const lockStart = lockEnd - lockMs;
@@ -166,15 +170,15 @@ function buildGanttRows(events: Array<LogEvent>, detailedSummary: JsonObject | n
 
 		// Import sub-phases — sequential flat bars (tiles → entities → fluids)
 		if (event?.importMetrics && typeof event.importMetrics === "object") {
-			const m = event.importMetrics;
+			const m = event.importMetrics as JsonObject;
 			const eventStart = elapsedMs ?? 0;
-			const tilesMs = Number(m.tiles_ms ?? 0);
-			const tilesCount = Number(m.tiles_placed ?? 0);
-			const entitiesMs = Number(m.entities_ms ?? 0);
-			const entitiesCount = Number(m.entities_created ?? 0);
-			const fluidsMs = Number(m.fluids_ms ?? 0);
-			const fluidsCount = Number(m.fluids_restored ?? 0);
-			const totalImportMs = Number(m.total_ms ?? 0);
+			const tilesMs = Number(getProp(m, "tiles_ms", 0));
+			const tilesCount = Number(getProp(m, "tiles_placed", 0));
+			const entitiesMs = Number(getProp(m, "entities_ms", 0));
+			const entitiesCount = Number(getProp(m, "entities_created", 0));
+			const fluidsMs = Number(getProp(m, "fluids_ms", 0));
+			const fluidsCount = Number(getProp(m, "fluids_restored", 0));
+			const totalImportMs = Number(getProp(m, "total_ms", 0));
 			if (totalImportMs > 0) {
 				totalMs = Math.max(totalMs, eventStart);
 				let cursor = eventStart - totalImportMs;
@@ -240,14 +244,18 @@ function buildGanttRows(events: Array<LogEvent>, detailedSummary: JsonObject | n
 	const scale = totalMs > 0 ? totalMs : 1;
 	return {
 		totalMs,
-		rows: rows.map(row => ({
-			...row,
-			ganttStartPct: Math.max(0, Math.min(100, (row.startMs / scale) * 100)),
-			ganttWidthPct: row.endMs > row.startMs
-				? Math.max(0.8, Math.min(100 - (row.startMs / scale) * 100, ((row.endMs - row.startMs) / scale) * 100))
-				: 0,
-			ganttMarkerPct: Math.max(0, Math.min(100, (row.endMs / scale) * 100)),
-		})),
+		rows: rows.map(row => {
+			const startMs = getProp(row, "startMs", 0);
+			const endMs = getProp(row, "endMs", 0);
+			return {
+				...row,
+				ganttStartPct: Math.max(0, Math.min(100, (startMs / scale) * 100)),
+				ganttWidthPct: endMs > startMs
+					? Math.max(0.8, Math.min(100 - (startMs / scale) * 100, ((endMs - startMs) / scale) * 100))
+					: 0,
+				ganttMarkerPct: Math.max(0, Math.min(100, (endMs / scale) * 100)),
+			};
+		}),
 	};
 }
 
@@ -284,7 +292,7 @@ export default function TransactionLogsTab({ plugin, state }: { plugin: SurfaceE
 	const selectedDetails = selectedTransferId ? state.logDetails[selectedTransferId] : null;
 	type DetailedSummary = ReturnType<typeof buildDetailedLogSummary>;
 	const detailedSummary = useMemo<DetailedSummary | null>(
-		() => (selectedDetails ? buildDetailedLogSummary(selectedDetails, selectedTransferId) : null),
+		() => (selectedDetails && selectedTransferId ? buildDetailedLogSummary(selectedDetails, selectedTransferId) : null),
 		[selectedDetails, selectedTransferId],
 	);
 
@@ -338,16 +346,18 @@ export default function TransactionLogsTab({ plugin, state }: { plugin: SurfaceE
 						}
 						setDownloadingTransferId(row.transferId);
 						try {
-							const response = await plugin.getStoredExport(row.exportId);
-							if (!response.success) {
-								throw new Error(response.error || "Download failed");
-							}
-							const blob = new Blob([JSON.stringify(response.exportData, null, 2)], { type: "application/json" });
-							const url = URL.createObjectURL(blob);
-							const link = document.createElement("a");
-							link.href = url;
-							const safeName = (response.platformName || row.platformName || "platform").replace(/[^\w-]+/g, "_");
-							const timestamp = new Date(response.timestamp || Date.now()).toISOString().replace(/[:.]/g, "-");
+						const response = await plugin.getStoredExport(row.exportId) as JsonObject;
+						if (!getProp(response, "success", false)) {
+							throw new Error(String(getProp(response, "error", "Download failed")));
+						}
+						const exportData = getProp(response, "exportData", {});
+						const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: "application/json" });
+						const url = URL.createObjectURL(blob);
+						const link = document.createElement("a");
+						link.href = url;
+						const platformName = String(getProp(response, "platformName", "") || row.platformName || "platform");
+						const safeName = platformName.replace(/[^\w-]+/g, "_");
+						const timestamp = new Date(Number(getProp(response, "timestamp", Date.now()))).toISOString().replace(/[:.]/g, "-");
 							link.download = `${safeName}_${timestamp}.json`;
 							document.body.appendChild(link);
 							link.click();
@@ -428,15 +438,15 @@ export default function TransactionLogsTab({ plugin, state }: { plugin: SurfaceE
 		const p = (detailedSummary?.payload ?? null) as JsonObject | null;
 		const e = (detailedSummary?.export ?? null) as JsonObject | null;
 		if (!p && !e) return null;
-		const uncompressed = e?.uncompressedPayloadBytes ?? null;
-		const compressed = e?.compressedPayloadBytes ?? null;
-		const pct = e?.compressionReductionPct ?? null;
-		const isCompressed = p?.isCompressed ?? (compressed !== null && uncompressed !== null && compressed < uncompressed);
+		const uncompressed = e ? getProp(e, "uncompressedPayloadBytes", null) : null;
+		const compressed = e ? getProp(e, "compressedPayloadBytes", null) : null;
+		const pct = e ? getProp(e, "compressionReductionPct", null) : null;
+		const isCompressed = p ? getProp(p, "isCompressed", false) : (compressed !== null && uncompressed !== null && Number(compressed) < Number(uncompressed));
 		if (uncompressed === null) return null;
 		if (isCompressed && compressed !== null && pct !== null) {
-			return `${formatNumeric(pct, 1)}% compression: ${formatBytes(compressed)} (${formatBytes(uncompressed)} uncompressed)`;
+			return `${formatNumeric(Number(pct), 1)}% compression: ${formatBytes(Number(compressed))} (${formatBytes(Number(uncompressed))} uncompressed)`;
 		}
-		return `0% compression: ${formatBytes(uncompressed)} (uncompressed)`;
+		return `0% compression: ${formatBytes(Number(uncompressed))} (uncompressed)`;
 	}, [detailedSummary]);
 	const operationRows = useMemo(
 		() => buildOperationCountRows((detailedSummary?.export ?? null) as JsonObject | null, (detailedSummary?.import ?? null) as JsonObject | null),
@@ -446,25 +456,27 @@ export default function TransactionLogsTab({ plugin, state }: { plugin: SurfaceE
 
 	const validation = (detailedSummary?.validation ?? null) as JsonObject | null;
 
-	const expectedItems = (validation?.expectedItemCounts as Record<string, number> | undefined)
-		|| (detailedSummary?.sourceVerification?.itemCounts as Record<string, number> | undefined)
+	const expectedItems = (validation ? getProp(validation, "expectedItemCounts", null) as Record<string, number> | null : null)
+		|| (detailedSummary?.sourceVerification ? getProp(detailedSummary.sourceVerification as JsonObject, "itemCounts", null) as Record<string, number> | null : null)
 		|| {};
-	const actualItems = (validation?.actualItemCounts as Record<string, number> | undefined) || {};
-	const expectedFluids = (validation?.expectedFluidCounts as Record<string, number> | undefined)
-		|| (detailedSummary?.sourceVerification?.fluidCounts as Record<string, number> | undefined)
+	const actualItems = (validation ? getProp(validation, "actualItemCounts", {}) as Record<string, number> : {});
+	const expectedFluids = (validation ? getProp(validation, "expectedFluidCounts", null) as Record<string, number> | null : null)
+		|| (detailedSummary?.sourceVerification ? getProp(detailedSummary.sourceVerification as JsonObject, "fluidCounts", null) as Record<string, number> | null : null)
 		|| {};
-	const actualFluids = (validation?.actualFluidCounts as Record<string, number> | undefined) || {};
+	const actualFluids = (validation ? getProp(validation, "actualFluidCounts", {}) as Record<string, number> : {});
 
 	const itemRows = useMemo(() => buildExpectedActualRows(expectedItems, actualItems), [expectedItems, actualItems]);
-	const highTempThreshold = Number(validation?.fluidReconciliation?.highTempThreshold ?? 10000);
+	const fluidReconciliation = validation ? getProp(validation, "fluidReconciliation", null) as JsonObject | null : null;
+	const highTempThreshold = Number(fluidReconciliation ? getProp(fluidReconciliation, "highTempThreshold", 10000) : 10000);
+	const highTempAggregates = fluidReconciliation ? getProp(fluidReconciliation, "highTempAggregates", {}) as JsonObject : {};
 	const fluidInventoryRows = useMemo(
 		() => buildFluidInventoryRows(
 			expectedFluids,
 			actualFluids,
 			highTempThreshold,
-			(validation?.fluidReconciliation?.highTempAggregates as JsonObject | undefined) || {},
+			highTempAggregates,
 		),
-		[expectedFluids, actualFluids, highTempThreshold, validation],
+		[expectedFluids, actualFluids, highTempThreshold, highTempAggregates],
 	);
 
 
@@ -683,17 +695,17 @@ export default function TransactionLogsTab({ plugin, state }: { plugin: SurfaceE
 				</Card>
 			) : null}
 
-			{detailLoaded ? (
+			{detailLoaded && detailedSummary ? (
 				<>
 					<Card title="Transfer Summary">
 						<Alert
 							type={summaryAlertType}
 							showIcon
-							message={<span className="surface-export-summary-platform-title">{detailedSummary.platform?.name || selectedTransferId}</span>}
+							message={<span className="surface-export-summary-platform-title">{(detailedSummary.platform ? getProp(detailedSummary.platform as JsonObject, "name", "") : "") || selectedTransferId}</span>}
 							description={(
 								<Space direction="vertical" size={2}>
 									<span>{summaryOutcomeText} {`(${detailedSummary.totalDurationStr}):`}</span>
-									{detailedSummary.error ? <span>{detailedSummary.error}</span> : null}
+									{detailedSummary.error ? <span>{String(detailedSummary.error)}</span> : null}
 								</Space>
 							)}
 						/>
@@ -733,8 +745,8 @@ export default function TransactionLogsTab({ plugin, state }: { plugin: SurfaceE
 								},
 								{
 									key: "entities",
-									label: detailedSummary?.export?.exportedEntityCount
-										? `Entities (${Number(((detailedSummary.export ?? {}) as JsonObject).exportedEntityCount ?? 0).toLocaleString()})`
+									label: detailedSummary?.export
+										? `Entities (${Number(getProp(detailedSummary.export as JsonObject, "exportedEntityCount", 0)).toLocaleString()})`
 										: "Entities",
 									children: hasValidation ? (
 										entityRows.length ? (
@@ -768,8 +780,8 @@ export default function TransactionLogsTab({ plugin, state }: { plugin: SurfaceE
 											) : (
 												<Empty description="No item details available" />
 											)}
-											{validation?.inventoryOverflowLosses?.total > 0 && (() => {
-												const iol = validation.inventoryOverflowLosses as JsonObject;
+														{validation && Number(getProp(getProp(validation, "inventoryOverflowLosses", null) as JsonObject | null || {}, "total", 0)) > 0 && (() => {
+															const iol = getProp(validation, "inventoryOverflowLosses", {}) as JsonObject;
 												type InventoryOverflowEntity = {
 													name?: string;
 													position?: { x?: number; y?: number };
