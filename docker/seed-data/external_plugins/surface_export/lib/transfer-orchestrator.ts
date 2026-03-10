@@ -62,7 +62,7 @@ function mergeExportMetrics(storedMetrics: ExportMetrics | null | undefined, run
 export class TransferOrchestrator {
 	private plugin: {
 		controller: {
-			sendTo: (target: { instanceId: number }, message: unknown) => Promise<SimpleResponse>;
+			sendTo: <T = unknown>(target: { instanceId: number }, message: unknown) => Promise<T>;
 			instances: Map<number, { isDeleted?: boolean }>;
 		};
 		platformStorage: Map<string, StoredExport>;
@@ -83,7 +83,6 @@ export class TransferOrchestrator {
 			resolveTargetInstance: (target: unknown) => { id: number; instance: unknown } | null;
 			resolveInstanceName: (instanceId: number) => string | null;
 		};
-		controllerConfig: { get: (key: string) => number };
 	};
 	private messages: typeof import("../messages");
 
@@ -130,7 +129,7 @@ export class TransferOrchestrator {
 	async tryUnlockSource(transferId: string, transfer: ActiveTransfer) {
 		this.txLogger.logTransactionEvent(transferId, "rollback_attempt", "Unlocking source platform", {});
 		try {
-			const resp = await this.plugin.controller.sendTo(
+			const resp = await this.plugin.controller.sendTo<SimpleResponse>(
 				{ instanceId: transfer.sourceInstanceId },
 				new this.messages.UnlockSourcePlatformRequest({
 					platformName: transfer.platformName,
@@ -203,7 +202,7 @@ export class TransferOrchestrator {
 		try {
 			// Transmit to target instance
 			this.txLogger.startPhase(transferId, "transmission");
-			const response = await this.plugin.controller.sendTo(
+			const response = await this.plugin.controller.sendTo<SimpleResponse>(
 				{ instanceId: targetInstanceId },
 				new this.messages.ImportPlatformRequest({
 					exportId,
@@ -320,7 +319,7 @@ export class TransferOrchestrator {
 		this.txLogger.startPhase(transferId, "cleanup");
 		await this.broadcastTransferStatus(transfer, "Validation passed ✓ — deleting source...", "green");
 
-		const deleteResponse = await this.plugin.controller.sendTo(
+		const deleteResponse = await this.plugin.controller.sendTo<SimpleResponse>(
 			{ instanceId: transfer.sourceInstanceId },
 			new this.messages.DeleteSourcePlatformRequest({
 				platformIndex: transfer.platformIndex,

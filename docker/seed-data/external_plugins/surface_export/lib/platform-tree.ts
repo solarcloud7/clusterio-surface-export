@@ -63,7 +63,8 @@ export class PlatformTree {
 		try {
 			const inst = this.plugin.controller.instances.get(instanceId);
 			if (inst?.config) {
-				return inst.config.get("instance.name") || null;
+				const name = inst.config.get("instance.name");
+				return typeof name === "string" && name ? name : null;
 			}
 		} catch (_err) {
 			// Ignore lookup errors

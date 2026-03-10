@@ -9,7 +9,7 @@ type ControlLink = {
 };
 
 type PluginLike = {
-	controller: { wsServer: { controlConnections: Map<number, ControlLink> } };
+	controller: { wsServer: { controlConnections: Map<number, unknown> } };
 	surfaceExportSubscriptions: Map<ControlLink, SubscriptionState>;
 	lastTreeForceName: string;
 	treeRevision: number;
@@ -164,7 +164,7 @@ export class SubscriptionManager {
 		if (!src) {
 			return;
 		}
-		const link = this.plugin.controller.wsServer.controlConnections.get(src.id);
+		const link = this.plugin.controller.wsServer.controlConnections.get(src.id) as ControlLink | undefined;
 		if (!link) {
 			return;
 		}

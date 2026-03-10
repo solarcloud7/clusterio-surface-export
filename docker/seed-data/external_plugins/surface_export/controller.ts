@@ -14,7 +14,17 @@ import { PlatformTree } from "./lib/platform-tree";
 import { TransactionLogger } from "./lib/transaction-logger";
 import { SubscriptionManager } from "./lib/subscription-manager";
 import { TransferOrchestrator } from "./lib/transfer-orchestrator";
-import type { ActiveTransfer, OperationType, PlatformHostNode, PlatformInstanceNode, SubscriptionState, TransferSummary } from "./messages";
+import type {
+	ActiveTransfer,
+	OperationType,
+	PlatformHostNode,
+	PlatformInstanceNode,
+	SubscriptionState,
+	TransferSummary,
+	StoredExport,
+	TransactionLogEntry,
+	PersistedTransactionLog,
+} from "./messages";
 
 function requireClusterioModule<T>(moduleName: string): T {
 	if (require.main && typeof (require.main as NodeJS.Module & { require?: NodeRequire }).require === "function") {
@@ -41,6 +51,9 @@ type PlatformTreeLike = {
 type TransactionLoggerLike = {
 	loadTransactionLogs(): Promise<void>;
 	logTransactionEvent(transferId: string, eventType: string, message: string, data?: Record<string, unknown>): void;
+	startPhase(transferId: string, phaseName: string): void;
+	endPhase(transferId: string, phaseName: string): number;
+	buildPhaseSummary(transfer: ActiveTransfer): Record<string, number>;
 	persistTransactionLog(transferId: string): Promise<void>;
 	getTransferSummaries(limit?: number): TransferSummary[];
 	buildTransferSummary(transferId: string, transfer: ActiveTransfer, lastEventAt: number | null): TransferSummary;
@@ -87,18 +100,6 @@ type ExportData = {
 	platform?: { force?: string; index?: number };
 	platform_name?: string;
 	[extra: string]: unknown;
-};
-
-type ExportMetrics = Record<string, number> | null;
-
-type StoredExport = {
-	exportId: string;
-	platformName: string;
-	instanceId: number;
-	exportData: ExportData;
-	exportMetrics: ExportMetrics;
-	timestamp: number;
-	size?: number;
 };
 
 type TransferRecord = ActiveTransfer;
@@ -177,9 +178,9 @@ class ControllerPlugin extends BaseControllerPlugin {
 	platformStorage!: Map<string, StoredExport>;
 	activeTransfers!: Map<string, TransferRecord>;
 	platformDepartureTimes!: Map<string, number>;
-	transactionLogs!: Map<string, Array<Record<string, unknown>>>;
-	persistedTransactionLogs!: Array<Record<string, unknown>>;
-	surfaceExportSubscriptions!: Map<unknown, SubscriptionState>;
+	transactionLogs!: Map<string, TransactionLogEntry[]>;
+	persistedTransactionLogs!: PersistedTransactionLog[];
+	surfaceExportSubscriptions!: Map<{ send: (event: unknown) => void; user: { checkPermission: (permission: string) => void } }, SubscriptionState>;
 	treeRevision!: number;
 	transferRevision!: number;
 	logRevision!: number;
@@ -256,11 +257,13 @@ class ControllerPlugin extends BaseControllerPlugin {
 
 	onControlConnectionEvent(connection: unknown, event: string) {
 		if (event === "close") {
-			this.surfaceExportSubscriptions.delete(connection);
+			this.surfaceExportSubscriptions.delete(
+				connection as { send: (event: unknown) => void; user: { checkPermission: (permission: string) => void } },
+			);
 		}
 	}
 
-	async handlePlatformExport(event: { exportId: string; platformName: string; instanceId: number; exportData: ExportData; exportMetrics?: ExportMetrics; timestamp: number }) {
+	async handlePlatformExport(event: { exportId: string; platformName: string; instanceId: number; exportData: ExportData; exportMetrics?: messages.ExportMetrics; timestamp: number }) {
 		this.logger.info(
 			`Received platform export: ${event.exportId} from instance ${event.instanceId} ` +
 			`(${event.platformName})`,
