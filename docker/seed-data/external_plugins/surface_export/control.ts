@@ -167,12 +167,10 @@ surfaceExportCommands.add(new Command({
 	},
 }));
 
-class CtlPlugin extends BaseCtlPlugin {
+export class CtlPlugin extends BaseCtlPlugin {
 	declare logger: { info(msg: string): void; warn(msg: string): void; error(msg: string): void };
 	async addCommands(rootCommand: { add: (command: unknown) => void }) {
 		rootCommand.add(surfaceExportCommands);
 	}
 }
 
-module.exports = CtlPlugin;
-module.exports.CtlPlugin = CtlPlugin;

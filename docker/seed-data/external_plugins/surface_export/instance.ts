@@ -55,7 +55,7 @@ type PendingTransfer = {
  * Instance plugin class
  * Runs on each Clusterio host and handles communication with Factorio servers
  */
-class InstancePlugin extends BaseInstancePlugin {
+export class InstancePlugin extends BaseInstancePlugin {
 	declare instance: {
 		id: number;
 		config: { get(key: string): unknown };
@@ -950,5 +950,3 @@ class InstancePlugin extends BaseInstancePlugin {
 	}
 }
 
-module.exports = InstancePlugin;
-module.exports.InstancePlugin = InstancePlugin;

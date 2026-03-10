@@ -165,7 +165,7 @@ function buildImportMetrics(raw: Record<string, unknown> | null | undefined, dur
 	return result as messages.ImportMetrics;
 }
 
-class ControllerPlugin extends BaseControllerPlugin {
+export class ControllerPlugin extends BaseControllerPlugin {
 	declare controller: {
 		config: { get(key: string): unknown };
 		sendTo: <T = unknown>(target: { instanceId: number } | string, message: unknown) => Promise<T>;
@@ -745,5 +745,3 @@ class ControllerPlugin extends BaseControllerPlugin {
 	}
 }
 
-module.exports = ControllerPlugin;
-module.exports.ControllerPlugin = ControllerPlugin;
