@@ -1,19 +1,6 @@
-"use strict";
-
-function requireClusterioModule<T>(moduleName: string): T {
-	if (require.main && typeof (require.main as NodeJS.Module & { require?: NodeRequire }).require === "function") {
-		try {
-			return ((require.main as NodeJS.Module & { require?: NodeRequire }).require as NodeRequire)(moduleName) as T;
-		} catch (_err) {
-			// Fallback to local resolution below.
-		}
-	}
-	return require(moduleName) as T;
-}
-
-const { BaseCtlPlugin } = requireClusterioModule<{ BaseCtlPlugin: new (...args: unknown[]) => object }>("@clusterio/ctl");
-const { Command, CommandTree } = requireClusterioModule<{ Command: new (...args: unknown[]) => unknown; CommandTree: new (...args: unknown[]) => { add: (command: unknown) => void } }>("@clusterio/lib");
 import fs from "fs";
+import { BaseCtlPlugin } from "@clusterio/ctl";
+import { Command, CommandTree } from "@clusterio/lib";
 import * as messages from "./messages";
 import { getErrorMessage } from "./helpers";
 
@@ -26,7 +13,7 @@ type YargsLike = { positional: (name: string, opts: unknown) => void };
 const surfaceExportCommands = new CommandTree({
 	name: "surface-export",
 	description: "Surface Export plugin commands",
-}) as { add: (command: unknown) => void };
+});
 
 surfaceExportCommands.add(new Command({
 	definition: ["list", "List stored platform exports"],
@@ -168,8 +155,7 @@ surfaceExportCommands.add(new Command({
 }));
 
 export class CtlPlugin extends BaseCtlPlugin {
-	declare logger: { info(msg: string): void; warn(msg: string): void; error(msg: string): void };
-	async addCommands(rootCommand: { add: (command: unknown) => void }) {
+	async addCommands(rootCommand: CommandTree) {
 		rootCommand.add(surfaceExportCommands);
 	}
 }

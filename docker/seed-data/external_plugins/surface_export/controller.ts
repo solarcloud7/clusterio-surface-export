@@ -6,16 +6,21 @@
  * @see https://github.com/clusterio/clusterio/blob/master/docs/writing-plugins.md
  */
 
-"use strict";
-
 import fs from "fs/promises";
 import path from "path";
+import { BaseControllerPlugin } from "@clusterio/controller";
+import * as lib from "@clusterio/lib";
 import { PlatformTree } from "./lib/platform-tree";
 import { TransactionLogger } from "./lib/transaction-logger";
 import { SubscriptionManager } from "./lib/subscription-manager";
 import { TransferOrchestrator } from "./lib/transfer-orchestrator";
 import type {
+	IControllerPlugin,
 	ActiveTransfer,
+	ExportData,
+	OperationOptions,
+	ExportVerification,
+	ExportStats,
 	OperationType,
 	PlatformHostNode,
 	PlatformInstanceNode,
@@ -25,158 +30,17 @@ import type {
 	TransactionLogEntry,
 	PersistedTransactionLog,
 } from "./messages";
-
-function requireClusterioModule<T>(moduleName: string): T {
-	if (require.main && typeof (require.main as NodeJS.Module & { require?: NodeRequire }).require === "function") {
-		try {
-			return ((require.main as NodeJS.Module & { require?: NodeRequire }).require as NodeRequire)(moduleName) as T;
-		} catch (_err) {
-			// Fallback to local resolution below.
-		}
-	}
-	return require(moduleName) as T;
-}
-
-const { BaseControllerPlugin } = requireClusterioModule<{ BaseControllerPlugin: new (...args: unknown[]) => object }>("@clusterio/controller");
-const lib = requireClusterioModule<{ RateLimiter: new (options: { maxRate: number; action: () => void }) => { activate: () => void; cancel: () => void } }>("@clusterio/lib");
-const info = require("./index") as { plugin: { name: string } };
 import * as messages from "./messages";
-import { normalizeExportMetrics, getErrorMessage } from "./helpers";
+import { normalizeExportMetrics, getErrorMessage, TICKS_TO_MS, STORAGE_FILENAME, buildPayloadMetrics, buildImportMetrics } from "./helpers";
 
-type PlatformTreeLike = {
-	buildPlatformTree(forceName?: string): Promise<{ hosts: PlatformHostNode[]; unassignedInstances: PlatformInstanceNode[] }>;
-	resolveInstanceName(instanceId: number): string | null;
-	resolveTargetInstance(target: unknown): { id: number; instance: unknown } | null;
-};
-type TransactionLoggerLike = {
-	loadTransactionLogs(): Promise<void>;
-	logTransactionEvent(transferId: string, eventType: string, message: string, data?: Record<string, unknown>): void;
-	startPhase(transferId: string, phaseName: string): void;
-	endPhase(transferId: string, phaseName: string): number;
-	buildPhaseSummary(transfer: ActiveTransfer): Record<string, number>;
-	persistTransactionLog(transferId: string): Promise<void>;
-	getTransferSummaries(limit?: number): TransferSummary[];
-	buildTransferSummary(transferId: string, transfer: ActiveTransfer, lastEventAt: number | null): TransferSummary;
-	buildTransferInfo(transfer: ActiveTransfer): Record<string, unknown>;
-	buildDetailedTransferSummary(transferId: string, transfer: ActiveTransfer, lastEventAt: number | null): Record<string, unknown>;
-	getLastEventTimestamp(transferId: string): number | null;
-	normalizeTransferStatus(status: string): string;
-};
-type SubscriptionManagerLike = {
-	treeBroadcastLimiter: { cancel: () => void };
-	emitTransferUpdate(transfer: ActiveTransfer): void;
-	emitLogUpdate(transferId: string, event: messages.TransactionLogEntry | null): void;
-	handleSetSurfaceExportSubscriptionRequest(request: messages.SubscriptionState, src?: { id: number }): Promise<void>;
-	queueTreeBroadcast(forceName?: string): void;
-};
-type TransferOrchestratorLike = {
-	handleTransferPlatformRequest(request: messages.TransferPlatformRequest): Promise<messages.SimpleResponse>;
-	handleStartPlatformTransferRequest(request: messages.StartPlatformTransferRequest): Promise<messages.SimpleResponse>;
-	handleTransferValidation(event: messages.TransferValidationEvent): Promise<void>;
-	pruneOldTransfers(): void;
-	waitForStoredExport(exportId: string, timeoutMs?: number): Promise<StoredExport>;
-};
-
-const PLUGIN_NAME = info.plugin.name;
-const STORAGE_FILENAME = "surface_export_storage.json";
-const TICKS_TO_MS = 16.67;
-
-type ExportVerification = {
-	item_counts?: Record<string, number>;
-	fluid_counts?: Record<string, number>;
-};
-
-type ExportStats = {
-	entity_count?: number;
-	tile_count?: number;
-};
-
-type ExportData = {
-	compressed?: boolean;
-	compression?: string;
-	payload?: string;
-	stats?: ExportStats;
-	verification?: ExportVerification;
-	platform?: { force?: string; index?: number };
-	platform_name?: string;
-	[extra: string]: unknown;
-};
-
-type TransferRecord = ActiveTransfer;
-
-type OperationOptions = {
-	operationId?: string;
-	exportId?: string | null;
-	artifactSizeBytes?: number | null;
-	platformName?: string;
-	platformIndex?: number;
-	forceName?: string;
-	sourceInstanceId?: number;
-	sourceInstanceName?: string | null;
-	targetInstanceId?: number;
-	targetInstanceName?: string | null;
-	status?: messages.TransferStatus;
-	startedAt?: number;
-	completedAt?: number | null;
-	failedAt?: number | null;
-	error?: string | null;
-	payloadMetrics?: Record<string, unknown> | null;
-	exportMetrics?: Record<string, unknown> | null;
-	importMetrics?: Record<string, unknown> | null;
-	phases?: Record<string, { startMs?: number; endMs?: number; durationMs?: number }>;
-	validationResult?: Record<string, unknown> | null;
-	sourceVerification?: { itemCounts?: Record<string, number>; fluidCounts?: Record<string, number> } | null;
-};
-
-function buildPayloadMetrics(exportData: ExportData | null | undefined) {
-	const verification = (exportData?.verification || {}) as ExportVerification;
-	const itemCounts = (verification.item_counts || {}) as Record<string, number>;
-	const fluidCounts = (verification.fluid_counts || {}) as Record<string, number>;
-	return {
-		isCompressed: Boolean(exportData?.compressed),
-		compressionType: exportData?.compression || "none",
-		payloadSizeKB: exportData?.payload ? Math.round((exportData.payload.length / 1024) * 10) / 10 : null,
-		entityCount: exportData?.stats?.entity_count || 0,
-		tileCount: exportData?.stats?.tile_count || 0,
-		uniqueItemTypes: Object.keys(itemCounts).length,
-		totalItemCount: Object.values(itemCounts).reduce((sum, count) => sum + count, 0),
-		uniqueFluidTypes: Object.keys(fluidCounts).length,
-		totalFluidVolume: Math.round(Object.values(fluidCounts).reduce((sum, count) => sum + count, 0) * 10) / 10,
-	};
-}
-
-function buildImportMetrics(raw: Record<string, unknown> | null | undefined, durationTicks: number | null = null) {
-	if (!raw && durationTicks === null) {
-		return null;
-	}
-	const input = raw && typeof raw === "object" ? raw : {};
-	const tickFields = ["tiles", "entities", "fluids", "belts", "state", "validation", "total"];
-	const countFields = ["tiles_placed", "entities_created", "entities_failed", "fluids_restored",
-		"belt_items_restored", "circuits_connected", "total_items", "total_fluids"];
-	const result: Record<string, number> = { total_ticks: Number((input as Record<string, unknown>).total_ticks || durationTicks || 0) };
-	for (const field of tickFields) {
-		const ticks = Number((input as Record<string, unknown>)[`${field}_ticks`] || (field === "total" ? durationTicks || 0 : 0));
-		result[`${field}_ticks`] = ticks;
-		result[`${field}_ms`] = Math.round(ticks * TICKS_TO_MS);
-	}
-	for (const field of countFields) {
-		result[field] = Number((input as Record<string, unknown>)[field] || 0);
-	}
-	return result as messages.ImportMetrics;
-}
+const PLUGIN_NAME = "surface_export";
 
 export class ControllerPlugin extends BaseControllerPlugin {
-	declare controller: {
-		config: { get(key: string): unknown };
-		sendTo: <T = unknown>(target: { instanceId: number } | string, message: unknown) => Promise<T>;
-		handle: <T>(message: unknown, handler: (payload: T, src?: { id: number }) => void) => void;
-		hosts: Map<number, { id: number; name: string; connected: boolean; isDeleted: boolean }>;
-		instances: Map<number, { id: number; isDeleted: boolean; status: string; config: { get(key: string): unknown } }>;
-		wsServer: { controlConnections: Map<number, unknown> };
-	};
-	declare logger: { info(msg: string): void; warn(msg: string): void; error(msg: string): void; verbose(msg: string): void };
+	// Escape hatch: our plugin config keys and SubscribableDatastore aren't in Controller's strict types.
+	// eslint-disable-next-line @typescript-eslint/no-explicit-any
+	private get c(): any { return this.controller; }
 	platformStorage!: Map<string, StoredExport>;
-	activeTransfers!: Map<string, TransferRecord>;
+	activeTransfers!: Map<string, ActiveTransfer>;
 	platformDepartureTimes!: Map<string, number>;
 	transactionLogs!: Map<string, TransactionLogEntry[]>;
 	persistedTransactionLogs!: PersistedTransactionLog[];
@@ -187,10 +51,10 @@ export class ControllerPlugin extends BaseControllerPlugin {
 	lastTreeForceName!: string;
 	storagePath!: string;
 	transactionLogPath!: string;
-	platformTree!: PlatformTreeLike;
-	txLogger!: TransactionLoggerLike;
-	subscriptions!: SubscriptionManagerLike;
-	orchestrator!: TransferOrchestratorLike;
+	platformTree!: PlatformTree;
+	txLogger!: TransactionLogger;
+	subscriptions!: SubscriptionManager;
+	orchestrator!: TransferOrchestrator;
 
 	async init() {
 		this.logger.info("Surface Export controller plugin initializing...");
@@ -208,39 +72,39 @@ export class ControllerPlugin extends BaseControllerPlugin {
 		this.lastTreeForceName = "player";
 
 		this.storagePath = path.resolve(
-			String(this.controller.config.get("controller.database_directory")),
+			String(this.c.config.get("controller.database_directory")),
 			STORAGE_FILENAME,
 		);
 		this.transactionLogPath = path.resolve(
-			String(this.controller.config.get("controller.database_directory")),
+			String(this.c.config.get("controller.database_directory")),
 			"surface_export_transaction_logs.json",
 		);
 
 		// Instantiate modules (order matters: txLogger before subscriptions,
 		// platformTree before orchestrator)
-		this.platformTree = new PlatformTree(this, messages);
-		this.txLogger = new TransactionLogger(this);
-		this.subscriptions = new SubscriptionManager(this, lib, messages);
-		this.orchestrator = new TransferOrchestrator(this, messages);
+		this.platformTree = new PlatformTree(this as unknown as IControllerPlugin, messages);
+		this.txLogger = new TransactionLogger(this as unknown as IControllerPlugin);
+		this.subscriptions = new SubscriptionManager(this as unknown as IControllerPlugin, lib, messages);
+		this.orchestrator = new TransferOrchestrator(this as unknown as IControllerPlugin, messages);
 
 		await this.loadStorage();
 		await this.txLogger.loadTransactionLogs();
 
 		// Register message handlers
-		this.controller.handle(messages.PlatformExportEvent, this.handlePlatformExport.bind(this));
-		this.controller.handle(messages.ListExportsRequest, this.handleListExportsRequest.bind(this));
-		this.controller.handle(messages.GetStoredExportRequest, this.handleGetStoredExportRequest.bind(this));
-		this.controller.handle(messages.ImportUploadedExportRequest, this.handleImportUploadedExportRequest.bind(this));
-		this.controller.handle(messages.ExportPlatformForDownloadRequest, this.handleExportPlatformForDownloadRequest.bind(this));
-		this.controller.handle(messages.TransferPlatformRequest, this.orchestrator.handleTransferPlatformRequest.bind(this.orchestrator));
-		this.controller.handle(messages.StartPlatformTransferRequest, this.orchestrator.handleStartPlatformTransferRequest.bind(this.orchestrator));
-		this.controller.handle(messages.TransferValidationEvent, this.orchestrator.handleTransferValidation.bind(this.orchestrator));
-		this.controller.handle(messages.ImportOperationCompleteEvent, this.handleImportOperationCompleteEvent.bind(this));
-		this.controller.handle(messages.GetPlatformTreeRequest, this.handleGetPlatformTreeRequest.bind(this));
-		this.controller.handle(messages.ListTransactionLogsRequest, this.handleListTransactionLogsRequest.bind(this));
-		this.controller.handle(messages.GetTransactionLogRequest, this.handleGetTransactionLog.bind(this));
-		this.controller.handle(messages.SetSurfaceExportSubscriptionRequest, this.subscriptions.handleSetSurfaceExportSubscriptionRequest.bind(this.subscriptions));
-		this.controller.handle(messages.PlatformStateChangedEvent, this.handlePlatformStateChanged.bind(this));
+		this.c.handle(messages.PlatformExportEvent, this.handlePlatformExport.bind(this));
+		this.c.handle(messages.ListExportsRequest, this.handleListExportsRequest.bind(this));
+		this.c.handle(messages.GetStoredExportRequest, this.handleGetStoredExportRequest.bind(this));
+		this.c.handle(messages.ImportUploadedExportRequest, this.handleImportUploadedExportRequest.bind(this));
+		this.c.handle(messages.ExportPlatformForDownloadRequest, this.handleExportPlatformForDownloadRequest.bind(this));
+		this.c.handle(messages.TransferPlatformRequest, this.orchestrator.handleTransferPlatformRequest.bind(this.orchestrator));
+		this.c.handle(messages.StartPlatformTransferRequest, this.orchestrator.handleStartPlatformTransferRequest.bind(this.orchestrator));
+		this.c.handle(messages.TransferValidationEvent, this.orchestrator.handleTransferValidation.bind(this.orchestrator));
+		this.c.handle(messages.ImportOperationCompleteEvent, this.handleImportOperationCompleteEvent.bind(this));
+		this.c.handle(messages.GetPlatformTreeRequest, this.handleGetPlatformTreeRequest.bind(this));
+		this.c.handle(messages.ListTransactionLogsRequest, this.handleListTransactionLogsRequest.bind(this));
+		this.c.handle(messages.GetTransactionLogRequest, this.handleGetTransactionLog.bind(this));
+		this.c.handle(messages.SetSurfaceExportSubscriptionRequest, this.subscriptions.handleSetSurfaceExportSubscriptionRequest.bind(this.subscriptions));
+		this.c.handle(messages.PlatformStateChangedEvent, this.handlePlatformStateChanged.bind(this));
 
 		this.logger.info("Surface Export controller plugin initialized");
 	}
@@ -283,7 +147,7 @@ export class ControllerPlugin extends BaseControllerPlugin {
 
 			this.logger.info(`Stored platform export: ${event.exportId}`);
 
-			const maxStorage = Number(this.controller.config.get(`${PLUGIN_NAME}.max_storage_size`));
+			const maxStorage = Number(this.c.config.get(`${PLUGIN_NAME}.max_storage_size`));
 			if (Number.isFinite(maxStorage) && this.platformStorage.size > maxStorage) {
 				this.cleanupOldExports(maxStorage);
 			}
@@ -303,6 +167,16 @@ export class ControllerPlugin extends BaseControllerPlugin {
 			this.platformDepartureTimes.set(event.platformName, Date.now());
 		}
 		this.subscriptions.queueTreeBroadcast(event.forceName || "player");
+	}
+
+	private async failOperation(operation: ActiveTransfer, eventType: string, message: string, extra: Record<string, unknown> = {}) {
+		operation.status = "failed";
+		operation.error = operation.error || "";
+		operation.failedAt = Date.now();
+		this.txLogger.logTransactionEvent(operation.transferId, eventType, message, extra);
+		this.subscriptions.emitTransferUpdate(operation);
+		await this.txLogger.persistTransactionLog(operation.transferId);
+		this.orchestrator.pruneOldTransfers();
 	}
 
 	cleanupOldExports(maxStorage: number) {
@@ -370,7 +244,7 @@ export class ControllerPlugin extends BaseControllerPlugin {
 			?? (sourceInstanceId > 0 ? this.platformTree.resolveInstanceName(sourceInstanceId) : null);
 		const targetInstanceName = options.targetInstanceName
 			?? (targetInstanceId > 0 ? this.platformTree.resolveInstanceName(targetInstanceId) : null);
-		const operation: TransferRecord = {
+		const operation: ActiveTransfer = {
 			transferId: operationId,
 			operationType,
 			exportId: options.exportId || null,
@@ -429,7 +303,7 @@ export class ControllerPlugin extends BaseControllerPlugin {
 		const uploadExportId = `uploaded_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
 
 		try {
-			const response = await this.controller.sendTo(
+			const response = await this.c.sendTo(
 				{ instanceId: resolved.id },
 				new messages.ImportPlatformRequest({
 					exportId: uploadExportId,
@@ -439,14 +313,8 @@ export class ControllerPlugin extends BaseControllerPlugin {
 			) as messages.SimpleResponse & { platformName?: string; targetInstanceId?: number };
 			if (!response?.success) {
 				const error = response?.error || "Import failed on target instance";
-				operation.status = "failed";
 				operation.error = error;
-				operation.failedAt = Date.now();
-				this.txLogger.logTransactionEvent(operation.transferId, "import_failed",
-					`Import request failed: ${error}`, { error });
-				this.subscriptions.emitTransferUpdate(operation);
-				await this.txLogger.persistTransactionLog(operation.transferId);
-				this.orchestrator.pruneOldTransfers();
+				await this.failOperation(operation, "import_failed", `Import request failed: ${error}`, { error });
 				return {
 					success: false,
 					error,
@@ -470,16 +338,11 @@ export class ControllerPlugin extends BaseControllerPlugin {
 				targetInstanceId: resolved.id,
 			};
 		} catch (err: unknown) {
-			operation.status = "failed";
-			operation.error = getErrorMessage(err);
-			operation.failedAt = Date.now();
-			this.txLogger.logTransactionEvent(operation.transferId, "import_failed",
-				`Import request failed: ${getErrorMessage(err)}`, { error: getErrorMessage(err) });
-			this.subscriptions.emitTransferUpdate(operation);
-			await this.txLogger.persistTransactionLog(operation.transferId);
-			this.orchestrator.pruneOldTransfers();
-			this.logger.error(`Upload import failed: ${getErrorMessage(err)}`);
-			return { success: false, error: getErrorMessage(err) };
+			const errMsg = getErrorMessage(err);
+			operation.error = errMsg;
+			await this.failOperation(operation, "import_failed", `Import request failed: ${errMsg}`, { error: errMsg });
+			this.logger.error(`Upload import failed: ${errMsg}`);
+			return { success: false, error: errMsg };
 		}
 	}
 
@@ -495,7 +358,7 @@ export class ControllerPlugin extends BaseControllerPlugin {
 			return { success: false, error: `Invalid platform index: ${request.sourcePlatformIndex}` };
 		}
 
-		const sourceInstance = this.controller.instances.get(sourceInstanceId);
+		const sourceInstance = this.c.instances.get(sourceInstanceId);
 		if (!sourceInstance || sourceInstance.isDeleted) {
 			return { success: false, error: `Unknown source instance ${sourceInstanceId}` };
 		}
@@ -516,7 +379,7 @@ export class ControllerPlugin extends BaseControllerPlugin {
 
 		try {
 			const exportRequestStartMs = Date.now();
-			const exportResponse = await this.controller.sendTo(
+			const exportResponse = await this.c.sendTo(
 				{ instanceId: sourceInstanceId },
 				new messages.ExportPlatformRequest({
 					platformIndex: sourcePlatformIndex,
@@ -527,14 +390,8 @@ export class ControllerPlugin extends BaseControllerPlugin {
 			const exportRequestMs = Date.now() - exportRequestStartMs;
 			if (!exportResponse?.success || !exportResponse.exportId) {
 				const error = exportResponse?.error || "Export failed";
-				operation.status = "failed";
 				operation.error = error;
-				operation.failedAt = Date.now();
-				this.txLogger.logTransactionEvent(operation.transferId, "export_failed",
-					`Export request failed: ${error}`, { error, exportRequestMs });
-				this.subscriptions.emitTransferUpdate(operation);
-				await this.txLogger.persistTransactionLog(operation.transferId);
-				this.orchestrator.pruneOldTransfers();
+				await this.failOperation(operation, "export_failed", `Export request failed: ${error}`, { error, exportRequestMs });
 				return { success: false, error };
 			}
 			const waitForStoreStartMs = Date.now();
@@ -550,7 +407,7 @@ export class ControllerPlugin extends BaseControllerPlugin {
 				waitForControllerStoreMs: waitForStoredMs,
 				controllerExportPrepTotalMs: exportRequestMs + waitForStoredMs,
 			});
-			operation.payloadMetrics = buildPayloadMetrics(stored.exportData || {});
+			operation.payloadMetrics = buildPayloadMetrics(stored.exportData || {}).payloadMetrics;
 			operation.artifactSizeBytes = stored.size ?? operation.artifactSizeBytes ?? null;
 			operation.status = "completed";
 			operation.completedAt = Date.now();
@@ -576,20 +433,15 @@ export class ControllerPlugin extends BaseControllerPlugin {
 				exportData: stored.exportData,
 			};
 		} catch (err: unknown) {
-			operation.status = "failed";
-			operation.error = getErrorMessage(err);
-			operation.failedAt = Date.now();
-			this.txLogger.logTransactionEvent(operation.transferId, "export_failed",
-				`Export failed: ${getErrorMessage(err)}`, { error: getErrorMessage(err) });
-			this.subscriptions.emitTransferUpdate(operation);
-			await this.txLogger.persistTransactionLog(operation.transferId);
-			this.orchestrator.pruneOldTransfers();
-			return { success: false, error: getErrorMessage(err) };
+			const errMsg = getErrorMessage(err);
+			operation.error = errMsg;
+			await this.failOperation(operation, "export_failed", `Export failed: ${errMsg}`, { error: errMsg });
+			return { success: false, error: errMsg };
 		}
 	}
 
-	async handleImportOperationCompleteEvent(event: { operationId?: string; platformName?: string; instanceId?: number; success?: boolean; error?: string; durationTicks?: number | null; entityCount?: number | null; metrics?: Record<string, unknown> | null }) {
-		const operationId = String(event.operationId || "").trim();
+	async handleImportOperationCompleteEvent(event: messages.ImportOperationCompleteEvent) {
+		const operationId = event.operationId.trim();
 		if (!operationId) {
 			return;
 		}

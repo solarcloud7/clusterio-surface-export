@@ -1215,3 +1215,120 @@ export interface SubscriptionState {
 	logs: boolean;
 	transferId: string | null;
 }
+
+/** Shared interface implemented by ControllerPlugin; used by lib/ modules to avoid circular imports. */
+export interface IControllerPlugin {
+	controller: {
+		wsServer: { controlConnections: Map<number, unknown> };
+		sendTo: (target: { instanceId: number }, message: unknown) => Promise<any>;
+		instances: Map<number, { id: number; isDeleted: boolean; status?: string; config: { get(key: string): unknown } }>;
+		hosts: Map<number, { id: number; name: string; connected: boolean; isDeleted: boolean }>;
+	};
+	logger: {
+		info(msg: string): void;
+		warn(msg: string): void;
+		error(msg: string): void;
+		verbose(msg: string): void;
+	};
+	platformStorage: Map<string, StoredExport>;
+	platformTree: {
+		resolveInstanceName: (instanceId: number) => string | null;
+		buildPlatformTree: (forceName?: string) => Promise<{ hosts: unknown[]; unassignedInstances: unknown[] }>;
+		resolveTargetInstance: (target: unknown) => { id: number; instance: unknown } | null;
+	};
+	platformDepartureTimes: Map<string, number>;
+	activeTransfers: Map<string, ActiveTransfer>;
+	surfaceExportSubscriptions: Map<{ send: (event: unknown) => void; user: { checkPermission: (permission: string) => void } }, SubscriptionState>;
+	transactionLogs: Map<string, TransactionLogEntry[]>;
+	persistedTransactionLogs: PersistedTransactionLog[];
+	transactionLogPath: string;
+	lastTreeForceName: string;
+	treeRevision: number;
+	transferRevision: number;
+	logRevision: number;
+	txLogger: {
+		normalizeTransferStatus(status: string): string;
+		logTransactionEvent(transferId: string, eventType: string, message: string, data?: Record<string, unknown>): void;
+		buildTransferSummary(transferId: string, transfer: ActiveTransfer, lastEventAt: number | null): TransferSummary;
+		buildTransferInfo(transfer: ActiveTransfer): Record<string, unknown>;
+		buildDetailedTransferSummary(transferId: string, transfer: ActiveTransfer, lastEventAt: number | null): Record<string, unknown>;
+		getLastEventTimestamp(transferId: string): number | null;
+		persistTransactionLog(transferId: string): Promise<void>;
+		startPhase(transferId: string, phaseName: string): void;
+		endPhase(transferId: string, phaseName: string): number;
+		buildPhaseSummary(transfer: ActiveTransfer): Record<string, number>;
+	};
+	subscriptions: {
+		emitLogUpdate(transferId: string, event: TransactionLogEntry | null): void;
+		emitTransferUpdate(transfer: ActiveTransfer): void;
+		queueTreeBroadcast(forceName?: string): void;
+	};
+	persistStorage(): Promise<void>;
+}
+
+/** Verification counts embedded in exported platform JSON (from Lua serializer). */
+export type ExportVerification = {
+	item_counts?: Record<string, number>;
+	fluid_counts?: Record<string, number>;
+};
+
+/** Entity/tile counts embedded in exported platform JSON. */
+export type ExportStats = {
+	entity_count?: number;
+	tile_count?: number;
+};
+
+/** Exported platform payload as produced by the Lua serializer. */
+export type ExportData = {
+	compressed?: boolean;
+	compression?: string;
+	payload?: string;
+	stats?: ExportStats;
+	verification?: ExportVerification;
+	platform?: { force?: string; index?: number };
+	platform_name?: string;
+	_transferId?: string;
+	_sourceInstanceId?: number;
+	_operationId?: string;
+	[extra: string]: unknown;
+};
+
+/** Options for creating a new operation record on the controller. */
+export type OperationOptions = {
+	operationId?: string;
+	exportId?: string | null;
+	artifactSizeBytes?: number | null;
+	platformName?: string;
+	platformIndex?: number;
+	forceName?: string;
+	sourceInstanceId?: number;
+	sourceInstanceName?: string | null;
+	targetInstanceId?: number;
+	targetInstanceName?: string | null;
+	status?: TransferStatus;
+	startedAt?: number;
+	completedAt?: number | null;
+	failedAt?: number | null;
+	error?: string | null;
+	payloadMetrics?: Record<string, unknown> | null;
+	exportMetrics?: Record<string, unknown> | null;
+	importMetrics?: Record<string, unknown> | null;
+	phases?: Record<string, { startMs?: number; endMs?: number; durationMs?: number }>;
+	validationResult?: Record<string, unknown> | null;
+	sourceVerification?: { itemCounts?: Record<string, number>; fluidCounts?: Record<string, number> } | null;
+};
+
+/** Result returned from Lua export polling. */
+export type ExportResult = { success: boolean; exportId?: string; error?: string };
+
+/** Result returned from Lua import operation. */
+export type ImportResult = { success: boolean; error?: string };
+
+/** Pending transfer state tracked by the instance plugin. */
+export type PendingTransfer = {
+	platform_index?: number;
+	platform_name?: string;
+	force_name?: string;
+	destination_instance_id?: number;
+	job_id?: number | string;
+};

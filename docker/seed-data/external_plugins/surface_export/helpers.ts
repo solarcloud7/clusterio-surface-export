@@ -3,12 +3,16 @@
  * @description Helper functions for chunked RCON data transfer with hybrid escaping
  */
 
-"use strict";
 
-// eslint-disable-next-line @typescript-eslint/no-var-requires
-const lib = require("@clusterio/lib") as { escapeString(s: string): string };
+import { escapeString as libEscapeString } from "@clusterio/lib";
+import type { ExportData, ExportVerification, ImportMetrics } from "./messages";
 
 export const TICKS_TO_MS = 16.67;
+export const RCON_CHUNK_SIZE = 100_000;
+export const EXPORT_POLL_TIMEOUT_MS = 30_000;
+export const EXPORT_POLL_INTERVAL_MS = 500;
+export const VALIDATION_TIMEOUT_MS = 120_000;
+export const STORAGE_FILENAME = "surface_export_storage.json";
 
 export function getErrorMessage(err: unknown, fallback = "Unknown error") {
 	if (err instanceof Error) {
@@ -123,7 +127,7 @@ export async function sendJsonToFactorio(
 
 	if (json.includes("]]")) {
 		logger.verbose(`Data contains ]], using escaped string (${json.length} bytes)`);
-		const escaped = lib.escapeString(json);
+		const escaped = libEscapeString(json);
 		await instance.sendRcon(`/sc ${luaFunction}('${escaped}')`, true);
 	} else {
 		await instance.sendRcon(`/sc ${luaFunction}([[${json}]])`, true);
@@ -174,7 +178,7 @@ export async function sendChunkedJson(
 
 		let chunkString: string;
 		if (needsEscaping) {
-			const escaped = lib.escapeString(chunk);
+			const escaped = libEscapeString(chunk);
 			chunkString = `'${escaped}'`;
 		} else {
 			chunkString = `[[${chunk}]]`;
@@ -199,4 +203,51 @@ export async function sendChunkedJson(
 		`All ${chunks.length} chunks sent successfully ` +
 		`(${duration}ms, ${throughput} KB/s)`,
 	);
+}
+
+/**
+ * Compute payload metrics from stored export data.
+ */
+export function buildPayloadMetrics(exportData: ExportData | Record<string, unknown> | null | undefined) {
+	const verification = (exportData?.verification || {}) as ExportVerification;
+	const itemCounts = (verification.item_counts || {}) as Record<string, number>;
+	const fluidCounts = (verification.fluid_counts || {}) as Record<string, number>;
+	const payload = typeof exportData?.payload === "string" ? exportData.payload : null;
+	const stats = (exportData?.stats && typeof exportData.stats === "object"
+		? exportData.stats
+		: {}) as { entity_count?: number; tile_count?: number };
+	return {
+		payloadMetrics: {
+			isCompressed: Boolean(exportData?.compressed),
+			compressionType: typeof exportData?.compression === "string" ? exportData.compression : "none",
+			payloadSizeKB: payload ? Math.round(payload.length / 1024 * 10) / 10 : null,
+			entityCount: Number(stats.entity_count || 0),
+			tileCount: Number(stats.tile_count || 0),
+			uniqueItemTypes: Object.keys(itemCounts).length,
+			totalItemCount: Object.values(itemCounts).reduce((sum, c) => sum + c, 0),
+			uniqueFluidTypes: Object.keys(fluidCounts).length,
+			totalFluidVolume: Math.round(Object.values(fluidCounts).reduce((sum, c) => sum + c, 0) * 10) / 10,
+		},
+		itemCounts,
+		fluidCounts,
+	};
+}
+
+/**
+ * Convert Lua tick-based import metrics to milliseconds.
+ */
+export function buildImportMetrics(raw: Record<string, unknown> | null | undefined, durationTicks: number | null = null): ImportMetrics | null {
+	if (!raw && durationTicks === null) return null;
+	const input = (raw && typeof raw === "object" ? raw : {}) as Record<string, unknown>;
+	const tickFields = ["tiles", "entities", "fluids", "belts", "state", "validation", "total"];
+	const countFields = ["tiles_placed", "entities_created", "entities_failed", "fluids_restored",
+		"belt_items_restored", "circuits_connected", "total_items", "total_fluids"];
+	const result: Record<string, number> = { total_ticks: Number(input.total_ticks || durationTicks || 0) };
+	for (const f of tickFields) {
+		const ticks = Number(input[f + "_ticks"] || (f === "total" ? durationTicks || 0 : 0));
+		result[f + "_ticks"] = ticks;
+		result[f + "_ms"] = Math.round(ticks * TICKS_TO_MS);
+	}
+	for (const f of countFields) result[f] = Number(input[f] || 0);
+	return result as ImportMetrics;
 }

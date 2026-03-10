@@ -1,53 +1,6 @@
-"use strict";
 
-import { normalizeExportMetrics, TICKS_TO_MS, getErrorMessage } from "../helpers";
-import type { ActiveTransfer, SimpleResponse, TransferValidationEvent, StoredExport, ValidationResult, ImportMetrics, ExportMetrics } from "../messages";
-
-const VALIDATION_TIMEOUT_MS = 120000;
-
-/** Extract payload metrics from stored export data. */
-function buildPayloadMetrics(innerData: Record<string, unknown> | null | undefined) {
-	const verification = (innerData?.verification && typeof innerData.verification === "object"
-		? innerData.verification
-		: {}) as { item_counts?: Record<string, number>; fluid_counts?: Record<string, number> };
-	const itemCounts = (verification.item_counts || {}) as Record<string, number>;
-	const fluidCounts = (verification.fluid_counts || {}) as Record<string, number>;
-	const payload = typeof innerData?.payload === "string" ? innerData.payload : null;
-	const stats = (innerData?.stats && typeof innerData.stats === "object"
-		? innerData.stats
-		: {}) as { entity_count?: number; tile_count?: number };
-	const compressionType = typeof innerData?.compression === "string" ? innerData.compression : "none";
-	return {
-		payloadMetrics: {
-			isCompressed: Boolean(innerData?.compressed),
-			compressionType,
-			payloadSizeKB: payload ? Math.round(payload.length / 1024 * 10) / 10 : null,
-			entityCount: Number(stats.entity_count || 0),
-			tileCount: Number(stats.tile_count || 0),
-			uniqueItemTypes: Object.keys(itemCounts).length,
-			totalItemCount: Object.values(itemCounts).reduce((sum, c) => sum + c, 0),
-			uniqueFluidTypes: Object.keys(fluidCounts).length,
-			totalFluidVolume: Math.round(Object.values(fluidCounts).reduce((sum, c) => sum + c, 0) * 10) / 10,
-		},
-		itemCounts,
-		fluidCounts,
-	};
-}
-
-/** Convert Lua tick-based metrics to milliseconds. */
-function buildImportMetrics(raw: Record<string, unknown> | null | undefined) {
-	if (!raw) return null;
-	const input = raw as Record<string, unknown>;
-	const tickFields = ["tiles", "entities", "fluids", "belts", "state", "validation", "total"];
-	const countFields = ["tiles_placed", "entities_created", "entities_failed", "fluids_restored",
-		"belt_items_restored", "circuits_connected", "total_items", "total_fluids"];
-	const result: Record<string, number> = { total_ticks: Number(input.total_ticks || 0) };
-	for (const f of tickFields) result[`${f}_ms`] = Math.round(Number(input[`${f}_ticks`] || 0) * TICKS_TO_MS);
-	for (const f of countFields) result[f] = Number(input[f] || 0);
-	return result as ImportMetrics;
-}
-
-function mergeExportMetrics(storedMetrics: ExportMetrics | null | undefined, runtimeMetrics: Record<string, unknown> | null | undefined) {
+import { normalizeExportMetrics, TICKS_TO_MS, getErrorMessage, VALIDATION_TIMEOUT_MS, buildPayloadMetrics, buildImportMetrics } from "../helpers";
+import type { IControllerPlugin, ActiveTransfer, SimpleResponse, TransferValidationEvent, StoredExport, ValidationResult, ImportMetrics, ExportMetrics } from "../messages";function mergeExportMetrics(storedMetrics: ExportMetrics | null | undefined, runtimeMetrics: Record<string, unknown> | null | undefined) {
 	const merged = {
 		...normalizeExportMetrics((storedMetrics || null) as Record<string, unknown> | null),
 		...normalizeExportMetrics(runtimeMetrics || null),
@@ -60,33 +13,10 @@ function mergeExportMetrics(storedMetrics: ExportMetrics | null | undefined, run
  * Handles the full transfer flow: export → transmit → import → validate → cleanup/rollback.
  */
 export class TransferOrchestrator {
-	private plugin: {
-		controller: {
-			sendTo: <T = unknown>(target: { instanceId: number }, message: unknown) => Promise<T>;
-			instances: Map<number, { isDeleted?: boolean }>;
-		};
-		platformStorage: Map<string, StoredExport>;
-		persistStorage: () => Promise<void>;
-		activeTransfers: Map<string, ActiveTransfer>;
-		logger: { warn(msg: string): void; info(msg: string): void; error(msg: string): void };
-		txLogger: {
-			logTransactionEvent: (transferId: string, eventType: string, message: string, data?: Record<string, unknown>) => void;
-			buildTransferSummary: (transferId: string, transfer: ActiveTransfer, lastEventAt: number | null) => unknown;
-			getLastEventTimestamp: (transferId: string) => number | null;
-			persistTransactionLog: (transferId: string) => Promise<void>;
-			startPhase: (transferId: string, phaseName: string) => void;
-			endPhase: (transferId: string, phaseName: string) => number;
-			buildPhaseSummary: (transfer: ActiveTransfer) => Record<string, number>;
-		};
-		subscriptions: { emitTransferUpdate: (transfer: ActiveTransfer) => void; queueTreeBroadcast: (forceName?: string) => void };
-		platformTree: {
-			resolveTargetInstance: (target: unknown) => { id: number; instance: unknown } | null;
-			resolveInstanceName: (instanceId: number) => string | null;
-		};
-	};
+	private plugin: IControllerPlugin;
 	private messages: typeof import("../messages");
 
-	constructor(plugin: TransferOrchestrator["plugin"], messages: typeof import("../messages")) {
+	constructor(plugin: IControllerPlugin, messages: typeof import("../messages")) {
 		this.plugin = plugin;
 		this.messages = messages;
 	}
@@ -129,7 +59,7 @@ export class TransferOrchestrator {
 	async tryUnlockSource(transferId: string, transfer: ActiveTransfer) {
 		this.txLogger.logTransactionEvent(transferId, "rollback_attempt", "Unlocking source platform", {});
 		try {
-			const resp = await this.plugin.controller.sendTo<SimpleResponse>(
+			const resp = await this.plugin.controller.sendTo(
 				{ instanceId: transfer.sourceInstanceId },
 				new this.messages.UnlockSourcePlatformRequest({
 					platformName: transfer.platformName,
@@ -148,8 +78,9 @@ export class TransferOrchestrator {
 			this.txLogger.logTransactionEvent(transferId, "rollback_failed", `Unlock failed: ${err}`, { error: err });
 			return err;
 		} catch (err: unknown) {
-			this.txLogger.logTransactionEvent(transferId, "rollback_failed", `Unlock failed: ${getErrorMessage(err)}`, { error: getErrorMessage(err) });
-			return getErrorMessage(err);
+			const errMsg = getErrorMessage(err);
+			this.txLogger.logTransactionEvent(transferId, "rollback_failed", `Unlock failed: ${errMsg}`, { error: errMsg });
+			return errMsg;
 		}
 	}
 
@@ -202,7 +133,7 @@ export class TransferOrchestrator {
 		try {
 			// Transmit to target instance
 			this.txLogger.startPhase(transferId, "transmission");
-			const response = await this.plugin.controller.sendTo<SimpleResponse>(
+			const response = await this.plugin.controller.sendTo(
 				{ instanceId: targetInstanceId },
 				new this.messages.ImportPlatformRequest({
 					exportId,
@@ -227,8 +158,9 @@ export class TransferOrchestrator {
 			return { success: true, transferId, message: `Transfer initiated: ${transferId}` };
 
 		} catch (err: unknown) {
-			this.logger.error(`Error transferring platform: ${getErrorMessage(err)}`);
-			return { success: false, error: getErrorMessage(err) };
+			const errMsg = getErrorMessage(err);
+			this.logger.error(`Error transferring platform: ${errMsg}`);
+			return { success: false, error: errMsg };
 		}
 	}
 
@@ -307,11 +239,12 @@ export class TransferOrchestrator {
 			}
 			this.pruneOldTransfers();
 		} catch (err: unknown) {
-			this.logger.error(`Error handling validation: ${getErrorMessage(err)}`);
+			const errMsg = getErrorMessage(err);
+			this.logger.error(`Error handling validation: ${errMsg}`);
 			transfer.status = "error";
-			transfer.error = getErrorMessage(err);
+			transfer.error = errMsg;
 			this.updateTransfer(transfer);
-			await this.broadcastTransferStatus(transfer, `Error: ${getErrorMessage(err)}`, "red");
+			await this.broadcastTransferStatus(transfer, `Error: ${errMsg}`, "red");
 		}
 	}
 
@@ -319,7 +252,7 @@ export class TransferOrchestrator {
 		this.txLogger.startPhase(transferId, "cleanup");
 		await this.broadcastTransferStatus(transfer, "Validation passed ✓ — deleting source...", "green");
 
-		const deleteResponse = await this.plugin.controller.sendTo<SimpleResponse>(
+		const deleteResponse = await this.plugin.controller.sendTo(
 			{ instanceId: transfer.sourceInstanceId },
 			new this.messages.DeleteSourcePlatformRequest({
 				platformIndex: transfer.platformIndex,

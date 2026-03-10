@@ -1,30 +1,10 @@
-"use strict";
 
-import type { SubscriptionState, TransactionLogEntry, TransferSummary, ActiveTransfer } from "../messages";
+import type { IControllerPlugin, SubscriptionState, TransactionLogEntry, TransferSummary, ActiveTransfer } from "../messages";
 import { getErrorMessage } from "../helpers";
 
 type ControlLink = {
 	send: (event: unknown) => void;
 	user: { checkPermission: (permission: string) => void };
-};
-
-type PluginLike = {
-	controller: { wsServer: { controlConnections: Map<number, unknown> } };
-	surfaceExportSubscriptions: Map<ControlLink, SubscriptionState>;
-	lastTreeForceName: string;
-	treeRevision: number;
-	transferRevision: number;
-	logRevision: number;
-	platformTree: { buildPlatformTree: (forceName: string) => Promise<{ hosts: unknown[]; unassignedInstances: unknown[] }> };
-	txLogger: {
-		buildTransferSummary: (transferId: string, transfer: ActiveTransfer, lastEventAt: number | null) => TransferSummary;
-		buildTransferInfo: (transfer: ActiveTransfer) => Record<string, unknown>;
-		buildDetailedTransferSummary: (transferId: string, transfer: ActiveTransfer, lastEventAt: number | null) => Record<string, unknown>;
-		getLastEventTimestamp: (transferId: string) => number | null;
-	};
-	activeTransfers: Map<string, ActiveTransfer>;
-	persistedTransactionLogs: Array<{ transferId: string; transferInfo?: unknown; summary?: unknown }>;
-	logger: { error(msg: string): void; warn(msg: string): void };
 };
 
 /**
@@ -33,11 +13,11 @@ type PluginLike = {
  * Handles tree/transfer/log update events sent to connected web UI clients.
  */
 export class SubscriptionManager {
-	private plugin: PluginLike;
+	private plugin: IControllerPlugin;
 	private messages: typeof import("../messages");
 	public treeBroadcastLimiter: { activate: () => void; cancel: () => void };
 
-	constructor(plugin: PluginLike, lib: { RateLimiter: new (options: { maxRate: number; action: () => void }) => { activate: () => void; cancel: () => void } }, messages: typeof import("../messages")) {
+	constructor(plugin: IControllerPlugin, lib: { RateLimiter: new (options: { maxRate: number; action: () => void }) => { activate: () => void; cancel: () => void } }, messages: typeof import("../messages")) {
 		this.plugin = plugin;
 		this.messages = messages;
 		this.treeBroadcastLimiter = new lib.RateLimiter({

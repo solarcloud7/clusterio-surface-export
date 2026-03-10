@@ -38,12 +38,14 @@
     "package.json"
   ],
   "peerDependencies": {
-    "@clusterio/lib": "2.0.0-alpha.22b"
+    "@clusterio/lib": "2.0.0-alpha.22b",
+    "@clusterio/controller": "2.0.0-alpha.22b",
+    "@clusterio/host": "2.0.0-alpha.22b",
+    "@clusterio/ctl": "2.0.0-alpha.22b"
   },
   "devDependencies": {
     "@clusterio/lib": "2.0.0-alpha.22b",
     "@clusterio/web_ui": "2.0.0-alpha.22b",
-    "@sinclair/typebox": "^0.32.22",
     "@types/node": "^20.11.30",
     "@types/react": "^18.2.65",
     "@types/react-dom": "^18.2.22",

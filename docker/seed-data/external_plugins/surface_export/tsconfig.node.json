@@ -9,7 +9,13 @@
 		"rootDir": ".",
 		"incremental": true,
 		"sourceMap": true,
-		"types": ["node"]
+		"types": ["node"],
+		"paths": {
+			"@clusterio/lib": ["../../../../clusterio/packages/lib/dist/node/index"],
+			"@clusterio/controller": ["../../../../clusterio/packages/controller/dist/node/index"],
+			"@clusterio/host": ["../../../../clusterio/packages/host/dist/node/index"],
+			"@clusterio/ctl": ["../../../../clusterio/packages/ctl/dist/node/index"]
+		}
 	},
 	"include": [
 		"helpers.ts",

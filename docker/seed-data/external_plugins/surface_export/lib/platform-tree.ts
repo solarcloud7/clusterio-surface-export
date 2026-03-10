@@ -1,49 +1,6 @@
-"use strict";
 
-import type { PlatformHostNode, PlatformInfo, PlatformInstanceNode } from "../messages";
+import type { IControllerPlugin, PlatformHostNode, PlatformInfo, PlatformInstanceNode } from "../messages";
 import { getErrorMessage } from "../helpers";
-
-type InstanceLike = {
-	id: number;
-	status: string;
-	isDeleted: boolean;
-	config: { get(key: string): unknown };
-};
-
-type HostLike = {
-	id: number;
-	name: string;
-	connected: boolean;
-	isDeleted: boolean;
-};
-
-type ControllerLike = {
-	instances: Map<number, InstanceLike>;
-	hosts: Map<number, HostLike>;
-	sendTo: (target: { instanceId: number }, message: unknown) => Promise<{ platforms?: PlatformInfo[] }>;
-};
-
-type LoggerLike = {
-	info(msg: string): void;
-	warn(msg: string): void;
-	verbose(msg: string): void;
-};
-
-type ActiveTransferLike = {
-	transferId: string;
-	sourceInstanceId: number;
-	platformIndex?: number;
-	platformName?: string;
-	status: string;
-};
-
-type PluginLike = {
-	controller: ControllerLike;
-	logger: LoggerLike;
-	activeTransfers: Map<string, ActiveTransferLike>;
-	txLogger: { normalizeTransferStatus(status: string): string };
-	platformDepartureTimes: Map<string, number>;
-};
 
 /**
  * Platform tree building and instance resolution.
@@ -51,10 +8,10 @@ type PluginLike = {
  * the hierarchical host → instance → platform tree used by the web UI.
  */
 export class PlatformTree {
-	private plugin: PluginLike;
+	private plugin: IControllerPlugin;
 	private messages: typeof import("../messages");
 
-	constructor(plugin: PluginLike, messages: typeof import("../messages")) {
+	constructor(plugin: IControllerPlugin, messages: typeof import("../messages")) {
 		this.plugin = plugin;
 		this.messages = messages;
 	}

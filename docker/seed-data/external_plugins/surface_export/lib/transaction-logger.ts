@@ -1,30 +1,16 @@
-"use strict";
 
 import fs from "fs/promises";
-import type { ActiveTransfer, PersistedTransactionLog, TransactionLogEntry } from "../messages";
+import type { IControllerPlugin, ActiveTransfer, PersistedTransactionLog, TransactionLogEntry } from "../messages";
 import { getErrorMessage } from "../helpers";
-
-type PlatformStorageEntry = { exportData?: unknown; size?: number };
-
-type PluginLike = {
-	platformTree: { resolveInstanceName: (instanceId: number) => string | null };
-	platformStorage: Map<string, PlatformStorageEntry>;
-	activeTransfers: Map<string, ActiveTransfer>;
-	transactionLogs: Map<string, TransactionLogEntry[]>;
-	persistedTransactionLogs: PersistedTransactionLog[];
-	transactionLogPath: string;
-	logger: { info(msg: string): void; error(msg: string): void };
-	subscriptions: { emitLogUpdate: (transferId: string, event: TransactionLogEntry) => void };
-};
 
 /**
  * Transaction logging, phase timing, persistence, and transfer summary building.
  * Owns the transactionLogs Map and persistedTransactionLogs array on the plugin.
  */
 export class TransactionLogger {
-	private plugin: PluginLike;
+	private plugin: IControllerPlugin;
 
-	constructor(plugin: PluginLike) {
+	constructor(plugin: IControllerPlugin) {
 		this.plugin = plugin;
 	}
 

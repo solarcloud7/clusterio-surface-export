@@ -1,4 +1,3 @@
-"use strict";
 
 import type { JsonObject, LogEvent, TransferSummary } from "./types";
 
