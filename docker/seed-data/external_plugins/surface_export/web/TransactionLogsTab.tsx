@@ -33,7 +33,7 @@ type ExpectedActualRow,
 type FluidInventoryRow,
 type MetricRow,
 } from "./utils";
-import type { JsonObject, LogEvent, SurfaceExportPlugin, SurfaceExportState, TransferSummary } from "./types";
+import type { JsonObject, LogEvent, SurfaceExportPlugin, SurfaceExportState, TransferSummary } from "./view-models";
 
 const { Text } = Typography;
 

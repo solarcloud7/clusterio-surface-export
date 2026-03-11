@@ -1,5 +1,5 @@
 
-import type { IControllerPlugin, PlatformHostNode, PlatformInfo, PlatformInstanceNode } from "../messages";
+import type { IControllerPlugin, HostNodeModel, PlatformModel, InstanceNodeModel } from "../messages";
 import { getErrorMessage } from "../helpers";
 
 /**
@@ -78,8 +78,8 @@ export class PlatformTree {
 		}
 	}
 
-	applyActiveTransferState(platforms: Array<PlatformInfo>, instanceId: number) {
-		const withState: PlatformInfo[] = platforms.map(platform => ({
+	applyActiveTransferState(platforms: Array<PlatformModel>, instanceId: number) {
+		const withState: PlatformModel[] = platforms.map(platform => ({
 			...platform,
 			transferId: null,
 			transferStatus: "idle",
@@ -110,7 +110,7 @@ export class PlatformTree {
 	}
 
 	async buildPlatformTree(forceName = "player") {
-		const hostNodes = new Map<number, PlatformHostNode>();
+		const hostNodes = new Map<number, HostNodeModel>();
 		for (const host of this.plugin.controller.hosts.values()) {
 			if (host.isDeleted) {
 				continue;
@@ -124,7 +124,7 @@ export class PlatformTree {
 			});
 		}
 
-		const unassignedInstances: Array<PlatformInstanceNode> = [];
+		const unassignedInstances: Array<InstanceNodeModel> = [];
 		const platformLoads: Array<Promise<void>> = [];
 
 		for (const instance of this.plugin.controller.instances.values()) {
@@ -137,7 +137,7 @@ export class PlatformTree {
 			const parsedHostId = Number(rawHostId);
 			const hostId = Number.isInteger(parsedHostId) ? parsedHostId : null;
 			const host = hostId !== null ? this.plugin.controller.hosts.get(hostId) : null;
-			const node: PlatformInstanceNode = {
+			const node: InstanceNodeModel = {
 				instanceId,
 				instanceName: String(instance.config.get("instance.name") || ""),
 				hostId,

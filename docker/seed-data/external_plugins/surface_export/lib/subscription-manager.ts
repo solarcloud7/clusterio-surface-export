@@ -1,5 +1,5 @@
 
-import type { IControllerPlugin, SubscriptionState, TransactionLogEntry, TransferSummary, ActiveTransfer } from "../messages";
+import type { IControllerPlugin, SubscriptionState, TransactionLogEntryModelModel, TransferSummaryModel, ActiveTransfer } from "../messages";
 import { getErrorMessage } from "../helpers";
 
 type ControlLink = {
@@ -97,7 +97,7 @@ export class SubscriptionManager {
 		this.broadcastToSubscribers(subscription => subscription.transfers, event);
 	}
 
-	emitLogUpdate(transferId: string, logEvent: TransactionLogEntry | null) {
+	emitLogUpdate(transferId: string, logEvent: TransactionLogEntryModel | null) {
 		this.plugin.logRevision += 1;
 		let transferInfo = null;
 		let summary = null;

@@ -17,14 +17,13 @@ import {
 import * as messageDefs from "../messages";
 import ManualTransferTab from "./ManualTransferTab";
 import TransactionLogsTab from "./TransactionLogsTab";
-import type { JsonObject, LogEvent, SurfaceExportPlugin, SurfaceExportState } from "./types";
+import type { JsonObject, LogEvent, SurfaceExportPlugin, SurfaceExportState } from "./view-models";
 
 import { summaryFromTransferInfo, mergeTransferSummary, getErrorMessage, getProp } from "./utils";
 
 const {
 	PERMISSIONS,
 	GetPlatformTreeRequest,
-	ListExportsRequest,
 	GetStoredExportRequest,
 	ImportUploadedExportRequest,
 	ExportPlatformForDownloadRequest,
@@ -121,9 +120,6 @@ export class WebPlugin extends BaseWebPlugin {
 			tree: null,
 			loadingTree: false,
 			treeError: null,
-			exports: [],
-			loadingExports: false,
-			exportsError: null,
 			transferSummaries: [],
 			logDetails: {},
 			lastTreeRevision: 0,
@@ -213,20 +209,9 @@ export class WebPlugin extends BaseWebPlugin {
 	}
 
 	async refreshSnapshots() {
-		this.setState({ loadingTree: true, treeError: null, loadingExports: true, exportsError: null });
+		this.setState({ loadingTree: true, treeError: null });
 		try {
 			const treeResponse = await this.control.send(new GetPlatformTreeRequest({ forceName: "player" })) as JsonObject;
-			let exports = this.state.exports;
-			let exportsError = null;
-			try {
-				const exportEntries = await this.control.send(new ListExportsRequest());
-				exports = Array.isArray(exportEntries)
-					? [...exportEntries].sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0))
-					: [];
-			} catch (err: unknown) {
-				exports = [];
-				exportsError = getErrorMessage(err, "Failed to list exports");
-			}
 			let transferSummaries = this.state.transferSummaries;
 			if (this.state.canViewLogs !== false) {
 				try {
@@ -252,9 +237,6 @@ export class WebPlugin extends BaseWebPlugin {
 					revision: Number(getProp(treeResponse, "revision", 0)),
 					generatedAt: Number(getProp(treeResponse, "generatedAt", Date.now())),
 				},
-				exports,
-				exportsError,
-				loadingExports: false,
 				transferSummaries,
 				loadingTree: false,
 				treeError: null,
@@ -262,28 +244,8 @@ export class WebPlugin extends BaseWebPlugin {
 		} catch (err: unknown) {
 			this.setState({
 				loadingTree: false,
-				loadingExports: false,
 				treeError: getErrorMessage(err, "Failed to refresh Surface Export state"),
 			});
-		}
-	}
-
-	async listExports() {
-		this.setState({ loadingExports: true, exportsError: null });
-		try {
-			const exportEntries = await this.control.send(new ListExportsRequest());
-			const exports = Array.isArray(exportEntries)
-				? [...exportEntries].sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0))
-				: [];
-			this.setState({ exports, loadingExports: false, exportsError: null });
-			return exports;
-		} catch (err: unknown) {
-			this.setState({
-				exports: [],
-				loadingExports: false,
-				exportsError: getErrorMessage(err, "Failed to list exports"),
-			});
-			throw err;
 		}
 	}
 

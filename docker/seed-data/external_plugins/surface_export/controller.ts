@@ -22,12 +22,12 @@ import type {
 	ExportVerification,
 	ExportStats,
 	OperationType,
-	PlatformHostNode,
-	PlatformInstanceNode,
+	HostNodeModel,
+	InstanceNodeModel,
 	SubscriptionState,
-	TransferSummary,
+	TransferSummaryModel,
 	StoredExport,
-	TransactionLogEntry,
+	TransactionLogEntryModelModel,
 	PersistedTransactionLog,
 } from "./messages";
 import * as messages from "./messages";
@@ -42,7 +42,7 @@ export class ControllerPlugin extends BaseControllerPlugin {
 	platformStorage!: Map<string, StoredExport>;
 	activeTransfers!: Map<string, ActiveTransfer>;
 	platformDepartureTimes!: Map<string, number>;
-	transactionLogs!: Map<string, TransactionLogEntry[]>;
+	transactionLogs!: Map<string, TransactionLogEntryModel[]>;
 	persistedTransactionLogs!: PersistedTransactionLog[];
 	surfaceExportSubscriptions!: Map<{ send: (event: unknown) => void; user: { checkPermission: (permission: string) => void } }, SubscriptionState>;
 	treeRevision!: number;

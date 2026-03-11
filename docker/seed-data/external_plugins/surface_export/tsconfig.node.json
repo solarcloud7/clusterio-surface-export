@@ -24,7 +24,8 @@
 		"controller.ts",
 		"instance.ts",
 		"control.ts",
-		"lib/**/*.ts"
+		"lib/**/*.ts",
+		"shared/**/*.ts"
 	],
 	"exclude": ["web/**", "dist/web/**", "node_modules/**", "webpack.config.js"]
 }

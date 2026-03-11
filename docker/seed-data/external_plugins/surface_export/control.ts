@@ -18,7 +18,7 @@ const surfaceExportCommands = new CommandTree({
 surfaceExportCommands.add(new Command({
 	definition: ["list", "List stored platform exports"],
 	handler: async function(_args: Record<string, unknown>, control: ControlLike) {
-		const entries = await control.sendTo("controller", new messages.ListExportsRequest()) as messages.StoredExportSummary[];
+		const entries = await control.sendTo("controller", new messages.ListExportsRequest()) as messages.StoredExportSummaryModel[];
 		if (!entries.length) {
 			console.log("No stored platform exports available");
 			return;
@@ -42,7 +42,7 @@ surfaceExportCommands.add(new Command({
 	handler: async function(args: { exportId: string; outputFile?: string }, control: ControlLike) {
 		const response = await control.sendTo("controller", new messages.GetStoredExportRequest({
 			exportId: args.exportId,
-		})) as messages.SimpleResponse & { exportData?: Record<string, unknown> };
+		})) as ReturnType<typeof messages.GetStoredExportRequest.Response.fromJSON>;
 		if (!response.success) {
 			throw new Error(response.error || "Export not found");
 		}
@@ -88,7 +88,7 @@ surfaceExportCommands.add(new Command({
 			exportData,
 			forceName: args.forceName || "player",
 			platformName: args.platformName || null,
-		})) as messages.SimpleResponse & { platformName?: string; targetInstanceId?: number };
+		})) as ReturnType<typeof messages.ImportUploadedExportRequest.Response.fromJSON>;
 		if (!response.success) {
 			throw new Error(response.error || "Import failed");
 		}
@@ -119,7 +119,7 @@ surfaceExportCommands.add(new Command({
 			sourcePlatformIndex,
 			targetInstanceId,
 			forceName: args.forceName || "player",
-		})) as messages.SimpleResponse & { transferId?: string; exportId?: string };
+		})) as ReturnType<typeof messages.StartPlatformTransferRequest.Response.fromJSON>;
 		if (response.success) {
 			console.log(`Transfer started: ${response.transferId || "pending"} (export=${response.exportId || "n/a"})`);
 			return;
@@ -145,7 +145,7 @@ surfaceExportCommands.add(new Command({
 		const response = await control.sendTo("controller", new messages.TransferPlatformRequest({
 			exportId: args.exportId,
 			targetInstanceId,
-		})) as messages.SimpleResponse;
+		})) as ReturnType<typeof messages.TransferPlatformRequest.Response.fromJSON>;
 		if (response.success) {
 			console.log(`Transfer of ${args.exportId} to instance ${targetInstanceId} succeeded`);
 			return;
@@ -159,4 +159,3 @@ export class CtlPlugin extends BaseCtlPlugin {
 		rootCommand.add(surfaceExportCommands);
 	}
 }
-

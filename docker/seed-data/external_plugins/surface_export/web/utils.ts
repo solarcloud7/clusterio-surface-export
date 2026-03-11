@@ -1,5 +1,5 @@
 
-import type { JsonObject, LogEvent, TransferSummary } from "./types";
+import type { JsonObject, LogEvent, TransferSummary } from "./view-models";
 
 // Type-safe helpers for accessing JsonObject properties
 function getString(obj: JsonObject, key: string, fallback: string): string;

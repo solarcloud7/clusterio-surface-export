@@ -10,13 +10,15 @@ This project provides tools for exporting and importing Factorio Space Age platf
 2. **Clusterio Plugin** (`docker/seed-data/external_plugins/surface_export/`): JavaScript plugin for cross-instance platform transfer
 3. **PowerShell Tools** (`tools/`): Helper scripts for deployment, import, export, and validation
 
-**Key Features (v1.0.88)**:
+**Key Features (v1.0.98)**:
 - Complete platform state export/import (entities, inventories, fluids, tiles)
 - Async processing to prevent game freezing
 - Graceful handling of mod content mismatches
 - Factorio 2.0 compatibility (handles read-only properties)
 - Chunked RCON protocol for large payloads (>8KB)
 - In-game transaction dashboard with persistent profiler snapshots
+- Platform schedule + interrupts preserved (stations, wait conditions, train group inheritance)
+- Ghost entities, tile ghosts, and item request proxies preserved
 
 **Performance**: Small platforms (<8KB): ~1-2s | Large platforms (235KB): ~40s (RCON bottleneck)
 
@@ -296,6 +298,12 @@ remote.call("surface_export", "run_tests")
 - Controller path: `ImportUploadedExportRequest` forwards payload via `ImportPlatformRequest` to target instance.
 - Controller injects `_operationId` into payload; Lua emits completion with `operation_id`.
 - Instance forwards `ImportOperationCompleteEvent` to controller so non-transfer imports can complete their transaction logs.
+
+### Space Hub schedule export source (CRITICAL)
+- Always read schedule data from `hub_entity.platform`, not from hub entity fields.
+- Use `platform.get_schedule()` and serialize both `schedule.stations` and `schedule.interrupts`.
+- Include interrupt trigger details, wait conditions, and inherited train-group references.
+- This prevents partial exports where stations appear but interrupts are lost.
 
 ### Transaction logs
 - Logs now include operation type: `transfer`, `export`, `import`.

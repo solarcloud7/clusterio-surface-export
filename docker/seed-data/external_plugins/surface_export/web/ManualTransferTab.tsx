@@ -19,25 +19,25 @@ import type { ColumnsType } from "antd/es/table";
 import type { UploadChangeParam, UploadFile } from "antd/es/upload/interface";
 import { DownloadOutlined, UploadOutlined } from "@ant-design/icons";
 import { sanitizeTimestamp, parseJsonFile, downloadJsonFile, getErrorMessage, formatBytes, getProp } from "./utils";
-import type { HostNode, InstanceNode, JsonObject, PlatformSummary, SurfaceExportPlugin, SurfaceExportState } from "./types";
+import type { HostNodeModelModel, InstanceNodeModelModel, JsonObject, PlatformModel, SurfaceExportPlugin, SurfaceExportState } from "./view-models";
 
 const { Text } = Typography;
 
 type PlatformRow = {
 	key: string;
-	host: HostNode | null;
+	host: HostNodeModel | null;
 	hostName: string;
-	instance: InstanceNode;
+	instance: InstanceNodeModel;
 	instanceId: number;
 	instanceName: string;
-	platform: PlatformSummary;
+	platform: PlatformModel;
 	platformIndex: number;
 	platformName: string;
 	forceName: string;
 	locationText: string;
 };
 
-function locationLabel(platform: PlatformSummary, nowMs?: number | null) {
+function locationLabel(platform: PlatformModel, nowMs?: number | null) {
 	if (platform.spaceLocation) {
 		return platform.spaceLocation;
 	}
@@ -58,7 +58,7 @@ function locationLabel(platform: PlatformSummary, nowMs?: number | null) {
 }
 
 function buildHostSections(tree: SurfaceExportState["tree"]) {
-	const sections: Array<{ key: string; host: HostNode | null; hostName: string; instances: InstanceNode[] }> = [];
+	const sections: Array<{ key: string; host: HostNodeModel | null; hostName: string; instances: InstanceNodeModel[] }> = [];
 	for (const host of [...(tree?.hosts || [])].sort((a, b) => String(a.hostName || "").localeCompare(String(b.hostName || "")))) {
 		const instances = [...(host.instances || [])].sort((a, b) => String(a.instanceName || "").localeCompare(String(b.instanceName || "")));
 		sections.push({
@@ -139,7 +139,7 @@ export default function ManualTransferTab({ plugin, state }: { plugin: SurfaceEx
 		if (!tree) {
 			return [];
 		}
-		const nodes: InstanceNode[] = [];
+		const nodes: InstanceNodeModel[] = [];
 		for (const host of tree.hosts || []) {
 			for (const instance of host.instances || []) {
 				nodes.push(instance);
@@ -208,7 +208,7 @@ export default function ManualTransferTab({ plugin, state }: { plugin: SurfaceEx
 		}
 	}
 
-	function openImportModal(instance: InstanceNode) {
+	function openImportModal(instance: InstanceNodeModel) {
 		setImportTargetInstance({
 			instanceId: instance.instanceId,
 			instanceName: instance.instanceName,

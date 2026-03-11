@@ -1,3 +1,19 @@
+import type {
+	HostNodeModel,
+	InstanceNodeModel,
+	PlatformModel,
+	StoredExportSummaryModelModel,
+	TransactionLogEntryModelModel,
+	TransferSummaryModelModel,
+} from "./shared/dto";
+export type {
+	HostNodeModel,
+	InstanceNodeModel,
+	PlatformModel,
+	StoredExportSummaryModelModel,
+	TransactionLogEntryModelModel,
+	TransferSummaryModelModel,
+} from "./shared/dto";
 const PLUGIN_NAME = "surface_export";
 
 export const PERMISSIONS = {
@@ -292,7 +308,7 @@ export class ListTransactionLogsRequest {
 
 	static Response = {
 		jsonSchema: { type: "array", items: { type: "object" } } as JsonSchema,
-		fromJSON(json: unknown) { return json as TransferSummary[]; },
+		fromJSON(json: unknown) { return json as TransferSummaryModel[]; },
 	};
 }
 
@@ -393,15 +409,15 @@ export class SurfaceExportTransferUpdateEvent {
 
 	revision: number;
 	generatedAt: number;
-	transfer: TransferSummary;
+	transfer: TransferSummaryModel;
 
-	constructor(json: { revision: number; generatedAt: number; transfer: TransferSummary }) {
+	constructor(json: { revision: number; generatedAt: number; transfer: TransferSummaryModel }) {
 		this.revision = json.revision;
 		this.generatedAt = json.generatedAt;
 		this.transfer = json.transfer;
 	}
 
-	static fromJSON(json: { revision: number; generatedAt: number; transfer: TransferSummary }) {
+	static fromJSON(json: { revision: number; generatedAt: number; transfer: TransferSummaryModel }) {
 		return new SurfaceExportTransferUpdateEvent(json);
 	}
 
@@ -433,11 +449,11 @@ export class SurfaceExportLogUpdateEvent {
 	revision: number;
 	generatedAt: number;
 	transferId: string;
-	event: TransactionLogEntry;
+	event: TransactionLogEntryModel;
 	transferInfo: Record<string, unknown> | null;
 	summary: Record<string, unknown> | null;
 
-	constructor(json: { revision: number; generatedAt: number; transferId: string; event: TransactionLogEntry; transferInfo: Record<string, unknown> | null; summary: Record<string, unknown> | null }) {
+	constructor(json: { revision: number; generatedAt: number; transferId: string; event: TransactionLogEntryModel; transferInfo: Record<string, unknown> | null; summary: Record<string, unknown> | null }) {
 		this.revision = json.revision;
 		this.generatedAt = json.generatedAt;
 		this.transferId = json.transferId;
@@ -446,7 +462,7 @@ export class SurfaceExportLogUpdateEvent {
 		this.summary = json.summary;
 	}
 
-	static fromJSON(json: { revision: number; generatedAt: number; transferId: string; event: TransactionLogEntry; transferInfo: Record<string, unknown> | null; summary: Record<string, unknown> | null }) {
+	static fromJSON(json: { revision: number; generatedAt: number; transferId: string; event: TransactionLogEntryModel; transferInfo: Record<string, unknown> | null; summary: Record<string, unknown> | null }) {
 		return new SurfaceExportLogUpdateEvent(json);
 	}
 
@@ -560,7 +576,7 @@ export class ListExportsRequest {
 
 	static Response = {
 		jsonSchema: { type: "array", items: { type: "object" } } as JsonSchema,
-		fromJSON(json: unknown) { return json as StoredExportSummary[]; },
+		fromJSON(json: unknown) { return json as StoredExportSummaryModel[]; },
 	};
 }
 
@@ -666,7 +682,7 @@ export class InstanceListPlatformsRequest {
 
 	static Response = {
 		jsonSchema: { type: "object", properties: { instanceId: { type: "integer" }, instanceName: { type: "string" }, forceName: { type: "string" }, platforms: { type: "array" } }, required: ["instanceId", "instanceName", "forceName", "platforms"] } as JsonSchema,
-		fromJSON(json: unknown) { return json as { instanceId: number; instanceName: string; forceName: string; platforms: PlatformInfo[] }; },
+		fromJSON(json: unknown) { return json as { instanceId: number; instanceName: string; forceName: string; platforms: PlatformModel[] }; },
 	};
 }
 
@@ -944,7 +960,7 @@ export class GetTransactionLogRequest {
 		fromJSON(json: unknown) {
 			return json as SimpleResponse & {
 				transferId?: string;
-				events?: TransactionLogEntry[];
+				events?: TransactionLogEntryModel[];
 				transferInfo?: Record<string, unknown> | null;
 				summary?: Record<string, unknown> | null;
 			};
@@ -1117,24 +1133,6 @@ export interface ActiveTransfer {
 	phases?: Record<string, PhaseRecord>;
 }
 
-export interface TransferSummary {
-	transferId: string;
-	operationType: OperationType;
-	exportId: string | null;
-	artifactSizeBytes: number | null;
-	downloadable: boolean;
-	platformName: string;
-	sourceInstanceId: number;
-	sourceInstanceName: string | null;
-	targetInstanceId: number;
-	targetInstanceName: string | null;
-	status: string;
-	startedAt: number;
-	completedAt: number | null;
-	failedAt: number | null;
-	error: string | null;
-	lastEventAt: number | null;
-}
 
 export interface StoredExport {
 	exportId: string;
@@ -1146,68 +1144,15 @@ export interface StoredExport {
 	size: number;
 }
 
-export interface StoredExportSummary {
-	exportId: string;
-	platformName: string;
-	instanceId: number;
-	timestamp: number;
-	size: number;
-}
-
-export interface TransactionLogEntry {
-	timestamp: string;
-	timestampMs: number;
-	elapsedMs: number;
-	deltaMs: number;
-	eventType: string;
-	message: string;
-	[key: string]: unknown;
-}
 
 export interface PersistedTransactionLog {
 	transferId: string;
 	transferInfo: Partial<ActiveTransfer> & { status: string };
 	summary: Record<string, unknown>;
-	events: TransactionLogEntry[];
+	events: TransactionLogEntryModel[];
 	savedAt: number;
 }
 
-export interface PlatformInfo {
-	platformIndex: number;
-	platformName: string;
-	forceName: string;
-	surfaceIndex: number | null;
-	surfaceName: string | null;
-	entityCount: number;
-	isLocked: boolean;
-	hasSpaceHub: boolean;
-	spaceLocation?: string | null;
-	currentTarget?: string | null;
-	speed?: number;
-	state?: string | null;
-	departureTick?: number | null;
-	estimatedDurationTicks?: number | null;
-	departureDateMs?: number | null;
-	transferId?: string | null;
-	transferStatus?: string;
-}
-
-export interface PlatformInstanceNode {
-	instanceId: number;
-	instanceName: string;
-	hostId: number | null;
-	status: string;
-	connected: boolean;
-	platforms: PlatformInfo[];
-	platformError: string | null;
-}
-
-export interface PlatformHostNode {
-	hostId: number;
-	hostName: string;
-	connected: boolean;
-	instances: PlatformInstanceNode[];
-}
 
 export interface SubscriptionState {
 	tree: boolean;
@@ -1239,7 +1184,7 @@ export interface IControllerPlugin {
 	platformDepartureTimes: Map<string, number>;
 	activeTransfers: Map<string, ActiveTransfer>;
 	surfaceExportSubscriptions: Map<{ send: (event: unknown) => void; user: { checkPermission: (permission: string) => void } }, SubscriptionState>;
-	transactionLogs: Map<string, TransactionLogEntry[]>;
+	transactionLogs: Map<string, TransactionLogEntryModel[]>;
 	persistedTransactionLogs: PersistedTransactionLog[];
 	transactionLogPath: string;
 	lastTreeForceName: string;
@@ -1249,9 +1194,9 @@ export interface IControllerPlugin {
 	txLogger: {
 		normalizeTransferStatus(status: string): string;
 		logTransactionEvent(transferId: string, eventType: string, message: string, data?: Record<string, unknown>): void;
-		buildTransferSummary(transferId: string, transfer: ActiveTransfer, lastEventAt: number | null): TransferSummary;
+		buildTransferSummaryModel(transferId: string, transfer: ActiveTransfer, lastEventAt: number | null): TransferSummaryModel;
 		buildTransferInfo(transfer: ActiveTransfer): Record<string, unknown>;
-		buildDetailedTransferSummary(transferId: string, transfer: ActiveTransfer, lastEventAt: number | null): Record<string, unknown>;
+		buildDetailedTransferSummaryModel(transferId: string, transfer: ActiveTransfer, lastEventAt: number | null): Record<string, unknown>;
 		getLastEventTimestamp(transferId: string): number | null;
 		persistTransactionLog(transferId: string): Promise<void>;
 		startPhase(transferId: string, phaseName: string): void;
@@ -1259,7 +1204,7 @@ export interface IControllerPlugin {
 		buildPhaseSummary(transfer: ActiveTransfer): Record<string, number>;
 	};
 	subscriptions: {
-		emitLogUpdate(transferId: string, event: TransactionLogEntry | null): void;
+		emitLogUpdate(transferId: string, event: TransactionLogEntryModel | null): void;
 		emitTransferUpdate(transfer: ActiveTransfer): void;
 		queueTreeBroadcast(forceName?: string): void;
 	};
