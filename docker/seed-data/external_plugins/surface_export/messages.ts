@@ -2,17 +2,17 @@ import type {
 	HostNodeModel,
 	InstanceNodeModel,
 	PlatformModel,
-	StoredExportSummaryModelModel,
-	TransactionLogEntryModelModel,
-	TransferSummaryModelModel,
+	StoredExportSummaryModel,
+	TransactionLogEntryModel,
+	TransferSummaryModel,
 } from "./shared/dto";
 export type {
 	HostNodeModel,
 	InstanceNodeModel,
 	PlatformModel,
-	StoredExportSummaryModelModel,
-	TransactionLogEntryModelModel,
-	TransferSummaryModelModel,
+	StoredExportSummaryModel,
+	TransactionLogEntryModel,
+	TransferSummaryModel,
 } from "./shared/dto";
 const PLUGIN_NAME = "surface_export";
 

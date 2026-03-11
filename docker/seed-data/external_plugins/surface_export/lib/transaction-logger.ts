@@ -1,6 +1,6 @@
 
 import fs from "fs/promises";
-import type { IControllerPlugin, ActiveTransfer, PersistedTransactionLog, TransactionLogEntryModelModel } from "../messages";
+import type { IControllerPlugin, ActiveTransfer, PersistedTransactionLog, TransactionLogEntryModel } from "../messages";
 import { getErrorMessage } from "../helpers";
 
 /**

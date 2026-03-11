@@ -19,7 +19,7 @@ import type { ColumnsType } from "antd/es/table";
 import type { UploadChangeParam, UploadFile } from "antd/es/upload/interface";
 import { DownloadOutlined, UploadOutlined } from "@ant-design/icons";
 import { sanitizeTimestamp, parseJsonFile, downloadJsonFile, getErrorMessage, formatBytes, getProp } from "./utils";
-import type { HostNodeModelModel, InstanceNodeModelModel, JsonObject, PlatformModel, SurfaceExportPlugin, SurfaceExportState } from "./view-models";
+import type { HostNodeModel, InstanceNodeModel, JsonObject, PlatformModel, SurfaceExportPlugin, SurfaceExportState } from "./view-models";
 
 const { Text } = Typography;
 

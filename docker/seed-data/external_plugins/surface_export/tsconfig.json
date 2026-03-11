@@ -22,6 +22,7 @@
 		"controller.ts",
 		"instance.ts",
 		"control.ts",
+		"shared/**/*.ts",
 		"lib/**/*.ts",
 		"web/**/*.tsx",
 		"web/**/*.ts"

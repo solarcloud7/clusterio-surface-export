@@ -1,5 +1,5 @@
 
-import type { IControllerPlugin, SubscriptionState, TransactionLogEntryModelModel, TransferSummaryModel, ActiveTransfer } from "../messages";
+import type { IControllerPlugin, SubscriptionState, TransactionLogEntryModel, TransferSummaryModel, ActiveTransfer } from "../messages";
 import { getErrorMessage } from "../helpers";
 
 type ControlLink = {

@@ -27,7 +27,7 @@ import type {
 	SubscriptionState,
 	TransferSummaryModel,
 	StoredExport,
-	TransactionLogEntryModelModel,
+	TransactionLogEntryModel,
 	PersistedTransactionLog,
 } from "./messages";
 import * as messages from "./messages";
