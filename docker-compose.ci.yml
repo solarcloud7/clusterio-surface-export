@@ -1,0 +1,17 @@
+# CI override — DO NOT use for local dev.
+#
+# Points both host services at the locally-built `clusterio-docker-host:factorio-baked`
+# image (see docker/ci/Dockerfile.factorio-baked) so the integration tests use a host image
+# with Factorio headless already baked in, instead of downloading it at runtime every run.
+#
+# Activated in CI via `COMPOSE_FILE=docker-compose.yml:docker-compose.ci.yml`, after the CI
+# workflow builds + loads the baked image. `pull_policy: never` keeps `docker compose pull`
+# from trying to fetch this local-only tag from a registry.
+services:
+  surface-export-host-1:
+    image: clusterio-docker-host:factorio-baked
+    pull_policy: never
+
+  surface-export-host-2:
+    image: clusterio-docker-host:factorio-baked
+    pull_policy: never

@@ -1,0 +1,37 @@
+# syntax=docker/dockerfile:1
+#
+# CI-ONLY image: bake the Factorio headless server onto the public Clusterio host image so
+# the integration tests don't re-download Factorio at runtime on every fresh runner.
+#
+# Why this is needed: the public host image ships NO Factorio (Wube's EULA forbids
+# redistributing the server), so `/opt/factorio` starts empty and Clusterio's
+# checkForUpdates fetches the headless server at runtime — slow, and it raced the CI
+# wait timeout. See Dockerfile.host in solarcloud7/clusterio-docker (the BAKE_FACTORIO_HEADLESS
+# path this replicates).
+#
+# EULA: this image is built and used ONLY on the CI runner and is NEVER pushed to a
+# registry, so the no-redistribution constraint is not implicated — the same condition the
+# base image's bake path is documented for ("private/offline images you do not redistribute").
+#
+# The build layer is cached across runs via GitHub Actions cache (buildx type=gha), so the
+# Factorio download happens at most once per cache lifetime, not once per CI run.
+
+ARG HOST_IMAGE=ghcr.io/solarcloud7/clusterio-docker-host:2.0.0-alpha.25
+FROM ${HOST_IMAGE}
+
+# Headless tag/version Clusterio would otherwise fetch for the mod-pack. `stable` matches the
+# base image's default bake; pin to an explicit version (e.g. 2.0.67) if a mismatch makes
+# Clusterio re-download at runtime anyway.
+ARG FACTORIO_HEADLESS_TAG=stable
+
+# Replicate the base image's supported bake (Dockerfile.host): extract into the /opt/factorio
+# multi-version PARENT so Clusterio finds the version already present and skips the runtime
+# download. Runs as root at build time (the image drops to the clusterio user via gosu at
+# runtime); the extracted files are world-readable/executable so clusterio can run them.
+RUN set -eux; \
+    curl -fL --retry 8 \
+      "https://factorio.com/get-download/${FACTORIO_HEADLESS_TAG}/headless/linux64" \
+      -o /tmp/factorio-headless.tar.xz; \
+    tar -xJf /tmp/factorio-headless.tar.xz -C /opt/factorio; \
+    rm -f /tmp/factorio-headless.tar.xz; \
+    test -x /opt/factorio/factorio/bin/x64/factorio

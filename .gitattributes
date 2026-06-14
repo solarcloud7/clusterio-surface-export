@@ -1,0 +1,5 @@
+# The working tree is otherwise CRLF (Windows dev), but these files are consumed on Linux.
+# A CRLF Dockerfile breaks `RUN ... \` line continuations during the Docker build, so force
+# LF for the CI Docker/compose assets regardless of local autocrlf settings.
+docker/ci/Dockerfile.factorio-baked text eol=lf
+docker-compose.ci.yml text eol=lf
