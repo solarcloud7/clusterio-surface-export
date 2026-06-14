@@ -614,12 +614,15 @@ export class InstancePlugin extends BaseInstancePlugin {
 	/**
 	 * Handle import platform request
 	 */
-	async handleImportPlatformRequest(request: { exportData: ExportData; forceName?: string }) {
+	async handleImportPlatformRequest(request: { exportData: ExportData; forceName?: string; targetPlanet?: string | null }) {
 		const hasTransferId = Boolean(request.exportData && request.exportData._transferId);
 		const dataSize = request.exportData ? JSON.stringify(request.exportData).length : 0;
-		this.logger.info(`ImportPlatformRequest received: force=${request.forceName}, isTransfer=${hasTransferId}, dataSize=${(dataSize / 1024).toFixed(1)}KB`);
+		this.logger.info(`ImportPlatformRequest received: force=${request.forceName}, isTransfer=${hasTransferId}, dataSize=${(dataSize / 1024).toFixed(1)}KB, targetPlanet=${request.targetPlanet ?? "default"}`);
 		if (hasTransferId) {
 			this.logger.info(`  transfer_id=${request.exportData._transferId}, source_instance=${request.exportData._sourceInstanceId}`);
+		}
+		if (request.targetPlanet) {
+			(request.exportData as Record<string, unknown>)._targetPlanet = request.targetPlanet;
 		}
 		return await this.importPlatform(request.exportData, request.forceName || "player");
 	}

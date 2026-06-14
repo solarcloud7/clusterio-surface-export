@@ -29,18 +29,122 @@
 .surface-export-log-row-selected > td {
 	background: rgba(24, 144, 255, 0.12) !important;
 }
+
+.surface-export-instance-header {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	padding: 4px 12px;
+	background: #fafafa;
+	border-bottom: 1px solid #f0f0f0;
+}
+
+.surface-export-platform-row {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	padding: 6px 12px 6px 24px;
+	cursor: pointer;
+	border-bottom: 1px solid #f0f0f0;
+	transition: background 0.15s;
+}
+
+.surface-export-platform-row:last-child {
+	border-bottom: none;
+}
+
+.surface-export-platform-row:hover {
+	background: rgba(0, 0, 0, 0.02);
+}
+
+.surface-export-platform-row-selected {
+	background: rgba(24, 144, 255, 0.12) !important;
+}
+
+.surface-export-platform-row-name {
+	flex: 1;
+	display: flex;
+	align-items: center;
+	gap: 6px;
+}
+
+.surface-export-platform-row-location {
+	flex: 1;
+	display: flex;
+	align-items: center;
+	gap: 6px;
+}
+
+.surface-export-platform-row-actions {
+	flex-shrink: 0;
+}
 .surface-export-summary-platform-title {
 	font-size: 18px;
 	font-weight: 700;
 	line-height: 1.2;
 }
 
-.surface-export-exports-body {
+/* Transfer flow timeline (replaces the former mermaid gantt) */
+.surface-export-timeline {
 	display: flex;
 	flex-direction: column;
-	gap: 16px;
+	gap: 3px;
+	padding: 4px 0;
+	overflow-x: auto;
 }
 
-.surface-export-upload-panel {
-	max-width: 640px;
+.surface-export-timeline-row {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	min-height: 18px;
+}
+
+.surface-export-timeline-label {
+	flex: 0 0 200px;
+	width: 200px;
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+
+.surface-export-timeline-track {
+	position: relative;
+	flex: 1 1 auto;
+	min-width: 120px;
+	height: 14px;
+	background: rgba(128, 128, 128, 0.15);
+	border-radius: 3px;
+}
+
+.surface-export-timeline-bar {
+	position: absolute;
+	top: 2px;
+	height: 10px;
+	min-width: 2px;
+	border-radius: 3px;
+	opacity: 0.85;
+}
+
+.surface-export-timeline-marker {
+	position: absolute;
+	top: 0;
+	width: 2px;
+	height: 14px;
+	transform: translateX(-1px);
+	opacity: 0.9;
+}
+
+.surface-export-timeline-time {
+	flex: 0 0 52px;
+	width: 52px;
+	text-align: right;
+}
+
+.surface-export-timeline-axis {
+	display: flex;
+	justify-content: space-between;
+	margin: 2px 60px 0 208px;
+	padding-top: 2px;
+	border-top: 1px solid rgba(128, 128, 128, 0.25);
 }

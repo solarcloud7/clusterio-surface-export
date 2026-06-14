@@ -144,6 +144,7 @@ export class ImportUploadedExportRequest {
 			exportData: { type: "object" },
 			forceName: { type: "string", default: "player" },
 			platformName: { type: ["string", "null"], default: null },
+			targetPlanet: { type: ["string", "null"], default: null },
 		},
 		required: ["targetInstanceId", "exportData"],
 		additionalProperties: false,
@@ -153,20 +154,22 @@ export class ImportUploadedExportRequest {
 	exportData: Record<string, unknown>;
 	forceName: string;
 	platformName: string | null;
+	targetPlanet: string | null;
 
-	constructor(json: { targetInstanceId: number; exportData: Record<string, unknown>; forceName?: string; platformName?: string | null }) {
+	constructor(json: { targetInstanceId: number; exportData: Record<string, unknown>; forceName?: string; platformName?: string | null; targetPlanet?: string | null }) {
 		this.targetInstanceId = json.targetInstanceId;
 		this.exportData = json.exportData;
 		this.forceName = json.forceName || "player";
 		this.platformName = json.platformName ?? null;
+		this.targetPlanet = json.targetPlanet ?? null;
 	}
 
-	static fromJSON(json: { targetInstanceId: number; exportData: Record<string, unknown>; forceName?: string; platformName?: string | null }) {
+	static fromJSON(json: { targetInstanceId: number; exportData: Record<string, unknown>; forceName?: string; platformName?: string | null; targetPlanet?: string | null }) {
 		return new ImportUploadedExportRequest(json);
 	}
 
 	toJSON() {
-		return { targetInstanceId: this.targetInstanceId, exportData: this.exportData, forceName: this.forceName, platformName: this.platformName };
+		return { targetInstanceId: this.targetInstanceId, exportData: this.exportData, forceName: this.forceName, platformName: this.platformName, targetPlanet: this.targetPlanet };
 	}
 
 	static Response = {
@@ -534,6 +537,7 @@ export class ImportPlatformRequest {
 			exportId: { type: "string" },
 			exportData: { type: "object" },
 			forceName: { type: "string", default: "player" },
+			targetPlanet: { type: ["string", "null"], default: null },
 		},
 		required: ["exportId", "exportData"],
 		additionalProperties: false,
@@ -542,18 +546,20 @@ export class ImportPlatformRequest {
 	exportId: string;
 	exportData: Record<string, unknown>;
 	forceName: string;
+	targetPlanet: string | null;
 
-	constructor(json: { exportId: string; exportData: Record<string, unknown>; forceName?: string }) {
+	constructor(json: { exportId: string; exportData: Record<string, unknown>; forceName?: string; targetPlanet?: string | null }) {
 		this.exportId = json.exportId;
 		this.exportData = json.exportData;
 		this.forceName = json.forceName || "player";
+		this.targetPlanet = json.targetPlanet ?? null;
 	}
 
-	static fromJSON(json: { exportId: string; exportData: Record<string, unknown>; forceName?: string }) {
+	static fromJSON(json: { exportId: string; exportData: Record<string, unknown>; forceName?: string; targetPlanet?: string | null }) {
 		return new ImportPlatformRequest(json);
 	}
 
-	toJSON() { return { exportId: this.exportId, exportData: this.exportData, forceName: this.forceName }; }
+	toJSON() { return { exportId: this.exportId, exportData: this.exportData, forceName: this.forceName, targetPlanet: this.targetPlanet }; }
 
 	static Response = {
 		jsonSchema: { type: "object", properties: { success: { type: "boolean" }, error: { type: "string" } }, required: ["success"] } as JsonSchema,
@@ -1161,12 +1167,26 @@ export interface SubscriptionState {
 	transferId: string | null;
 }
 
+/** Minimal read-only shape of a Clusterio InstanceRecord as consumed by this plugin. */
+export type InstanceRecordLike = {
+	id: number;
+	isDeleted: boolean;
+	status?: string;
+	config: { get(key: string): unknown };
+};
+
 /** Shared interface implemented by ControllerPlugin; used by lib/ modules to avoid circular imports. */
 export interface IControllerPlugin {
 	controller: {
 		wsServer: { controlConnections: Map<number, unknown> };
 		sendTo: (target: { instanceId: number }, message: unknown) => Promise<any>;
-		instances: Map<number, { id: number; isDeleted: boolean; status?: string; config: { get(key: string): unknown } }>;
+		// alpha.25: controller.instances is an InstanceManager, not a plain Map. Expose only the
+		// members we use (get/values returning Readonly records); avoids accidental Map-only calls
+		// like entry-iteration or .size, which InstanceManager does not support.
+		instances: {
+			get(id: number): InstanceRecordLike | undefined;
+			values(): IterableIterator<InstanceRecordLike>;
+		};
 		hosts: Map<number, { id: number; name: string; connected: boolean; isDeleted: boolean }>;
 	};
 	logger: {
@@ -1192,11 +1212,10 @@ export interface IControllerPlugin {
 	transferRevision: number;
 	logRevision: number;
 	txLogger: {
-		normalizeTransferStatus(status: string): string;
 		logTransactionEvent(transferId: string, eventType: string, message: string, data?: Record<string, unknown>): void;
-		buildTransferSummaryModel(transferId: string, transfer: ActiveTransfer, lastEventAt: number | null): TransferSummaryModel;
+		buildTransferSummary(transferId: string, transfer: ActiveTransfer, lastEventAt: number | null): TransferSummaryModel;
 		buildTransferInfo(transfer: ActiveTransfer): Record<string, unknown>;
-		buildDetailedTransferSummaryModel(transferId: string, transfer: ActiveTransfer, lastEventAt: number | null): Record<string, unknown>;
+		buildDetailedTransferSummary(transferId: string, transfer: ActiveTransfer, lastEventAt: number | null): Record<string, unknown>;
 		getLastEventTimestamp(transferId: string): number | null;
 		persistTransactionLog(transferId: string): Promise<void>;
 		startPhase(transferId: string, phaseName: string): void;

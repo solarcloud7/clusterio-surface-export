@@ -71,7 +71,7 @@ export function summaryFromTransferInfo(transferInfo: JsonObject | null, lastEve
 
 	return {
 		transferId: getString(transferInfo, "transferId", null) || getString(transferInfo, "id", null) || "",
-		operationType: getString(transferInfo, "operationType", "transfer"),
+		operationType: getString(transferInfo, "operationType", "transfer") as TransferSummary["operationType"],
 		exportId: getString(transferInfo, "exportId", null),
 		artifactSizeBytes: getNumber(transferInfo, "artifactSizeBytes", null),
 		downloadable: false,

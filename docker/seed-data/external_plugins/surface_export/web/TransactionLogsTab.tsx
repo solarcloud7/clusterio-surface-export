@@ -1,5 +1,5 @@
-import React, { useMemo, useState, useEffect, useRef } from "react";
-import { useEntityMetadata } from "@clusterio/web_ui";
+import React, { useMemo, useState, useEffect } from "react";
+import { ItemIcon, EntityIcon, FluidIcon } from "./icons";
 import {
 	Alert,
 	Button,
@@ -31,75 +31,14 @@ import {
 	getProp,
 type ExpectedActualRow,
 type FluidInventoryRow,
-type MetricRow,
 } from "./utils";
 import type { JsonObject, LogEvent, SurfaceExportPlugin, SurfaceExportState, TransferSummary } from "./view-models";
 
 const { Text } = Typography;
 
-type MermaidApi = {
-	initialize: (config: Record<string, unknown>) => void;
-	render: (id: string, text: string) => Promise<{ svg: string }>;
-};
-
-let _mermaidPromise: Promise<MermaidApi> | null = null;
-function getMermaid() {
-	if (!_mermaidPromise) {
-		_mermaidPromise = import("mermaid").then(m => {
-			m.default.initialize({ startOnLoad: false, theme: "dark", themeVariables: { background: "transparent" } });
-			return m.default as MermaidApi;
-		}).catch(err => {
-			_mermaidPromise = null;
-			throw err;
-		});
-	}
-	return _mermaidPromise;
-}
-
 function formatMsLabel(ms: number | null) {
 	if (ms == null) return "";
 	return ms >= 1000 ? `${(ms / 1000).toFixed(1)}s` : `${Math.round(ms)}ms`;
-}
-
-function buildMermaidGanttText(rows: Array<JsonObject>, totalMs: number) {
-	if (!rows || rows.length === 0 || totalMs <= 0) return null;
-	let axisFormat;
-	if (totalMs < 1000) {
-		axisFormat = "%L";
-	} else if (totalMs < 60000) {
-		axisFormat = "%Ss";
-	} else {
-		axisFormat = "%M:%S";
-	}
-	const eventRows: string[] = [];
-	const exportRows: string[] = [];
-	const importRows: string[] = [];
-	const transferRows: string[] = [];
-	let taskIdx = 0, milestoneIdx = 0;
-	for (const row of rows) {
-		const start = Math.max(0, Math.round(getProp(row, "startMs", 0)));
-		const end = Math.max(start + 1, Math.round(getProp(row, "endMs", start + 1)));
-		const durationMs = getProp(row, "durationMs", null);
-		const durationSuffix = durationMs != null ? " (" + formatMsLabel(durationMs) + ")" : "";
-		const safeName = String(getProp(row, "label", "")).replace(/[:\[\];#]/g, " ").trim() + durationSuffix;
-		const isEvent = getProp(row, "isEvent", false);
-		const key = String(getProp(row, "key", ""));
-		if (isEvent) {
-			eventRows.push("    " + safeName + " :milestone, m" + milestoneIdx++ + ", " + start + ", 0");
-		} else if (key.startsWith("export:")) {
-			exportRows.push("    " + safeName + " :active, t" + taskIdx++ + ", " + start + ", " + end);
-		} else if (key.startsWith("import:")) {
-			importRows.push("    " + safeName + " :active, t" + taskIdx++ + ", " + start + ", " + end);
-		} else if (key.startsWith("phase:")) {
-			transferRows.push("    " + safeName + " :active, t" + taskIdx++ + ", " + start + ", " + end);
-		}
-	}
-	const lines = ["gantt", "    dateFormat x", "    axisFormat " + axisFormat, "    title Transfer Timeline"];
-	if (eventRows.length)    { lines.push("    section Events");   lines.push(...eventRows); }
-	if (exportRows.length)   { lines.push("    section Export");   lines.push(...exportRows); }
-	if (importRows.length)   { lines.push("    section Import");   lines.push(...importRows); }
-	if (transferRows.length) { lines.push("    section Transfer"); lines.push(...transferRows); }
-	return lines.join("\n");
 }
 
 function buildGanttRows(events: Array<LogEvent>, detailedSummary: JsonObject | null) {
@@ -260,33 +199,63 @@ function buildGanttRows(events: Array<LogEvent>, detailedSummary: JsonObject | n
 }
 
 
-function MermaidGantt({ rows, totalMs }: { rows: Array<JsonObject>; totalMs: number }) {
-	const [svgHtml, setSvgHtml] = useState<string | null>(null);
-	const [error, setError] = useState<string | null>(null);
-	const idRef = useRef(`mermaid-gantt-${Math.random().toString(36).slice(2)}`);
-	const mermaidText = useMemo(() => buildMermaidGanttText(rows, totalMs), [rows, totalMs]);
-	useEffect(() => {
-		if (!mermaidText) {
-			setSvgHtml(null);
-			return;
-		}
-		let cancelled = false;
-		setSvgHtml(null);
-		setError(null);
-		getMermaid()
-			.then(mermaid => mermaid.render(idRef.current, mermaidText))
-			.then(({ svg }) => { if (!cancelled) setSvgHtml(svg); })
-			.catch((err: unknown) => { if (!cancelled) setError(getErrorMessage(err)); });
-		return () => { cancelled = true; };
-	}, [mermaidText]);
-	if (!mermaidText) return <Empty description="No transfer flow events available" />;
-	if (error) return <Alert type="warning" message="Gantt diagram unavailable" description={error} />;
-	if (!svgHtml) return <Spin />;
-	return <div style={{ overflowX: "auto" }} dangerouslySetInnerHTML={{ __html: svgHtml }} />;
+const TIMELINE_COLORS: Record<string, string> = { red: "#ff4d4f", green: "#52c41a", blue: "#1890ff" };
+
+// Lightweight CSS bar timeline. Each row is positioned from the ganttStartPct/ganttWidthPct/
+// ganttMarkerPct that buildGanttRows already computes — duration phases render as bars, events as
+// markers. Replaces the former mermaid gantt (a multi-MB dep for one diagram).
+function PhaseTimeline({ rows, totalMs }: { rows: Array<JsonObject>; totalMs: number }) {
+	if (!rows || rows.length === 0 || totalMs <= 0) {
+		return <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="No transfer flow events available" />;
+	}
+	return (
+		<div className="surface-export-timeline">
+			{rows.map((row, i) => {
+				const isEvent = Boolean(getProp(row, "isEvent", false));
+				const label = String(getProp(row, "label", ""));
+				const durationMs = getProp(row, "durationMs", null) as number | null;
+				const indent = Number(getProp(row, "indent", 0));
+				const color = TIMELINE_COLORS[String(getProp(row, "color", "blue"))] ?? TIMELINE_COLORS.blue;
+				const startPct = Number(getProp(row, "ganttStartPct", 0));
+				const widthPct = Number(getProp(row, "ganttWidthPct", 0));
+				const markerPct = Number(getProp(row, "ganttMarkerPct", 0));
+				const endMs = Number(getProp(row, "endMs", 0));
+				const timeLabel = durationMs != null ? formatMsLabel(durationMs) : "";
+				return (
+					<div key={String(getProp(row, "key", i))} className="surface-export-timeline-row">
+						<div className="surface-export-timeline-label" style={{ paddingLeft: 4 + indent * 14 }} title={label}>
+							<Text strong={isEvent} style={{ fontSize: 12 }}>{label}</Text>
+						</div>
+						<div className="surface-export-timeline-track">
+							{isEvent ? (
+								<span
+									className="surface-export-timeline-marker"
+									style={{ left: `${markerPct}%`, background: color }}
+									title={`${label} @ ${formatMsLabel(endMs)}`}
+								/>
+							) : (
+								<span
+									className="surface-export-timeline-bar"
+									style={{ left: `${startPct}%`, width: `${Math.max(widthPct, 0.6)}%`, background: color }}
+									title={`${label}${timeLabel ? ` — ${timeLabel}` : ""}`}
+								/>
+							)}
+						</div>
+						<div className="surface-export-timeline-time">
+							<Text type="secondary" style={{ fontSize: 11 }}>{timeLabel}</Text>
+						</div>
+					</div>
+				);
+			})}
+			<div className="surface-export-timeline-axis">
+				<Text type="secondary" style={{ fontSize: 11 }}>0</Text>
+				<Text type="secondary" style={{ fontSize: 11 }}>{formatMsLabel(totalMs)}</Text>
+			</div>
+		</div>
+	);
 }
 
 export default function TransactionLogsTab({ plugin, state }: { plugin: SurfaceExportPlugin; state: SurfaceExportState }) {
-	const entityMetadata = useEntityMetadata();
 	const [selectedTransferId, setSelectedTransferId] = useState<string | null>(null);
 	const [downloadingTransferId, setDownloadingTransferId] = useState<string | null>(null);
 	const selectedDetails = selectedTransferId ? state.logDetails[selectedTransferId] : null;
@@ -396,7 +365,7 @@ export default function TransactionLogsTab({ plugin, state }: { plugin: SurfaceE
 			width: "40%",
 			render: (name: string) => (
 				<Space size={6}>
-					<div className={`item-${CSS.escape(name)}`} title={name} />
+					<ItemIcon name={name} size={24} />
 					<Text code>{name}</Text>
 				</Space>
 			),
@@ -479,9 +448,35 @@ export default function TransactionLogsTab({ plugin, state }: { plugin: SurfaceE
 		[expectedFluids, actualFluids, highTempThreshold, highTempAggregates],
 	);
 
+	type InventoryOverflowEntity = {
+		name?: string;
+		position?: { x?: number; y?: number };
+		item?: string;
+		expected?: number;
+		actual?: number;
+		lost?: number;
+	};
+	const inventoryOverflowAlert = useMemo(() => {
+		if (!validation) return null;
+		const iol = getProp(validation, "inventoryOverflowLosses", null) as JsonObject | null;
+		if (!iol || Number(getProp(iol, "total", 0)) <= 0) return null;
+		const entityLines = ((iol.entities as InventoryOverflowEntity[]) || [])
+			.map((e) => `${e.name} @ (${e.position?.x?.toFixed(1)}, ${e.position?.y?.toFixed(1)}): ${e.item} \u2014 wanted ${e.expected}, placed ${e.actual}, lost ${e.lost}`)
+			.join("\n");
+		return (
+			<Tooltip title={<pre style={{ margin: 0, fontSize: 11 }}>{entityLines}</pre>}>
+				<Alert
+					type="info"
+					showIcon
+					message={`API stack cap: ${iol.total} item${iol.total !== 1 ? "s" : ""} excluded from expected (hover for details)`}
+				/>
+			</Tooltip>
+		);
+	}, [validation]);
+
 
 	const entityRows = useMemo(
-		() => Object.entries(validation?.entityTypeBreakdown || {})
+		() => Object.entries((validation ? getProp(validation, "entityTypeBreakdown", {}) : {}) as Record<string, number>)
 			.map(([type, count]) => ({
 				key: type,
 				entityType: type,
@@ -495,16 +490,12 @@ export default function TransactionLogsTab({ plugin, state }: { plugin: SurfaceE
 			title: "Entity Type",
 			dataIndex: "entityType",
 			key: "entityType",
-			render: (value: string) => {
-				const meta = entityMetadata.get(value);
-				const sz = meta?.size ?? 32;
-				return (
-					<Space size={6}>
-						<div className={`entity-${CSS.escape(value)}`} title={value} style={{ width: sz, height: sz, imageRendering: "pixelated", display: "inline-block", verticalAlign: "middle", flexShrink: 0 }} />
-						<Text code>{value}</Text>
-					</Space>
-				);
-			},
+			render: (value: string) => (
+				<Space size={6}>
+					<EntityIcon name={value} size={24} />
+					<Text code>{value}</Text>
+				</Space>
+			),
 		},
 		{
 			title: "Count",
@@ -513,21 +504,6 @@ export default function TransactionLogsTab({ plugin, state }: { plugin: SurfaceE
 			render: (value: number) => formatNumeric(value, 0),
 		},
 	];
-
-	const fluidReconciliationRows = useMemo(() => {
-		const recon = validation?.fluidReconciliation as JsonObject | undefined;
-		if (!recon) {
-			return [] as MetricRow[];
-		}
-		return [
-			{ key: "rawFluidDelta", metric: "Raw fluid delta", value: formatSigned(Number(recon.rawFluidDelta ?? 0), 1) },
-			{ key: "reconciledFluidLoss", metric: "Reconciled fluid loss", value: formatNumeric(Number(recon.reconciledFluidLoss ?? 0), 1) },
-			{ key: "lowTempLoss", metric: "Low-temp loss", value: formatNumeric(Number(recon.lowTempLoss ?? 0), 1) },
-			{ key: "highTempReconciledLoss", metric: "High-temp reconciled loss", value: formatNumeric(Number(recon.highTempReconciledLoss ?? 0), 1) },
-			{ key: "fluidPreservedPct", metric: "Fluid preserved", value: `${formatNumeric(Number(recon.fluidPreservedPct ?? 0), 1)}%` },
-			{ key: "highTempThreshold", metric: "High-temp threshold", value: formatNumeric(Number(recon.highTempThreshold ?? 0), 0) },
-		];
-	}, [validation]);
 
 	const fluidColumns: ColumnsType<FluidInventoryRow> = [
 		{
@@ -538,9 +514,7 @@ export default function TransactionLogsTab({ plugin, state }: { plugin: SurfaceE
 				row.isGroup
 					? (
 						<Space size={6} align="center">
-							<div style={{ width: 32, height: 32 }}>
-								<div className={`item-${CSS.escape(row.name)}`} title={row.name} />
-							</div>
+							<FluidIcon name={row.name} size={32} />
 							<Text code>{row.name}</Text>
 							{row.tempDisplay && <Text type="secondary" style={{ fontSize: 12 }}>{row.tempDisplay}</Text>}
 						</Space>
@@ -647,7 +621,6 @@ export default function TransactionLogsTab({ plugin, state }: { plugin: SurfaceE
 		},
 	];
 
-	const selectedStatus = detailedSummary?.status || selectedDetails?.transferInfo?.status || "unknown";
 	const selectedResult = detailedSummary?.result || "IN_PROGRESS";
 	const summaryAlertType = selectedResult === "SUCCESS"
 		? "success"
@@ -675,8 +648,8 @@ export default function TransactionLogsTab({ plugin, state }: { plugin: SurfaceE
 							setSelectedTransferId(row.transferId);
 							try {
 								await plugin.loadTransactionLog(row.transferId);
-								} catch (err: unknown) {
-									antMessage.error(getErrorMessage(err, "Failed to load transaction log"));
+							} catch (err: unknown) {
+								antMessage.error(getErrorMessage(err, "Failed to load transaction log"));
 							}
 						},
 					})}
@@ -712,11 +685,11 @@ export default function TransactionLogsTab({ plugin, state }: { plugin: SurfaceE
 						<Space direction="vertical" style={{ width: "100%", marginTop: 12 }}>
 							<Space size="small">
 								<Text strong>Transfer Flow</Text>
-								<Tooltip title="Mermaid Gantt diagram of all transfer phases and events, with timing in milliseconds.">
+								<Tooltip title="Timeline of all transfer phases and events, with timing in milliseconds.">
 									<InfoCircleOutlined />
 								</Tooltip>
 							</Space>
-							<MermaidGantt rows={flowTimeline?.rows || []} totalMs={flowTimeline?.totalMs || 0} />
+							<PhaseTimeline rows={flowTimeline?.rows || []} totalMs={flowTimeline?.totalMs || 0} />
 						</Space>
 					</Card>
 
@@ -780,29 +753,7 @@ export default function TransactionLogsTab({ plugin, state }: { plugin: SurfaceE
 											) : (
 												<Empty description="No item details available" />
 											)}
-														{validation && Number(getProp(getProp(validation, "inventoryOverflowLosses", null) as JsonObject | null || {}, "total", 0)) > 0 && (() => {
-															const iol = getProp(validation, "inventoryOverflowLosses", {}) as JsonObject;
-												type InventoryOverflowEntity = {
-													name?: string;
-													position?: { x?: number; y?: number };
-													item?: string;
-													expected?: number;
-													actual?: number;
-													lost?: number;
-												};
-												const entityLines = ((iol.entities as InventoryOverflowEntity[]) || [])
-													.map((e) => `${e.name} @ (${e.position?.x?.toFixed(1)}, ${e.position?.y?.toFixed(1)}): ${e.item} — wanted ${e.expected}, placed ${e.actual}, lost ${e.lost}`)
-													.join("\n");
-												return (
-													<Tooltip title={<pre style={{ margin: 0, fontSize: 11 }}>{entityLines}</pre>}>
-														<Alert
-															type="info"
-															showIcon
-															message={`API stack cap: ${iol.total} item${iol.total !== 1 ? "s" : ""} excluded from expected (hover for details)`}
-														/>
-													</Tooltip>
-												);
-											})()}
+											{inventoryOverflowAlert}
 										</Space>
 									) : (
 										<Empty description="No validation data available yet" />

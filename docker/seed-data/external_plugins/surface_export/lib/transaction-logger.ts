@@ -14,13 +14,6 @@ export class TransactionLogger {
 		this.plugin = plugin;
 	}
 
-	normalizeTransferStatus(status: string) {
-		if (status === "importing") {
-			return "transporting";
-		}
-		return status;
-	}
-
 	buildTransferInfo(transfer: ActiveTransfer) {
 		return {
 			transferId: transfer.transferId,
@@ -34,7 +27,7 @@ export class TransactionLogger {
 			sourceInstanceName: transfer.sourceInstanceName || this.plugin.platformTree.resolveInstanceName(transfer.sourceInstanceId),
 			targetInstanceId: transfer.targetInstanceId,
 			targetInstanceName: transfer.targetInstanceName || this.plugin.platformTree.resolveInstanceName(transfer.targetInstanceId),
-			status: this.normalizeTransferStatus(transfer.status),
+			status: transfer.status,
 			startedAt: transfer.startedAt || null,
 			completedAt: transfer.completedAt || null,
 			failedAt: transfer.failedAt || null,
@@ -53,6 +46,7 @@ export class TransactionLogger {
 	buildTransferSummary(transferId: string, transfer: ActiveTransfer, lastEventAt: number | null = null) {
 		const info = this.buildTransferInfo(transfer);
 		const storedExport = info.exportId ? this.plugin.platformStorage.get(info.exportId) : null;
+		// Artifact size fallback chain: transfer field → stored export → payload metrics estimate
 		const artifactSizeBytes = info.artifactSizeBytes
 			?? storedExport?.size
 			?? (typeof transfer?.payloadMetrics?.payloadSizeKB === "number"
@@ -117,6 +111,7 @@ export class TransactionLogger {
 		const endAt = info.completedAt || info.failedAt || lastEventAt || Date.now();
 		const durationMs = info.startedAt ? Math.max(0, endAt - info.startedAt) : null;
 		const validation = transfer.validationResult || null;
+		// Fall back to validation expected counts if no explicit source verification was recorded
 		let sourceVerification = transfer.sourceVerification || null;
 		if (!sourceVerification && validation) {
 			sourceVerification = {
@@ -157,9 +152,11 @@ export class TransactionLogger {
 		};
 	}
 
+	/** Merge active (in-memory) and persisted (on-disk) transfers into one list, active taking priority. */
 	getTransferSummaries(limit = 50) {
 		const byId = new Map();
 
+		// Active transfers are inserted first so they win over persisted duplicates
 		for (const [transferId, transfer] of this.plugin.activeTransfers) {
 			byId.set(transferId, this.buildTransferSummary(
 				transferId,
@@ -175,7 +172,7 @@ export class TransactionLogger {
 			if (!byId.has(persistedLog.transferId)) {
 				byId.set(persistedLog.transferId, {
 					transferId: persistedLog.transferId,
-					operationType: transferInfo.operationType || "transfer",
+					operationType: transferInfo.operationType ?? "transfer",
 					exportId: transferInfo.exportId || null,
 					artifactSizeBytes: transferInfo.artifactSizeBytes ?? null,
 					downloadable: false,
@@ -184,7 +181,7 @@ export class TransactionLogger {
 					sourceInstanceName: transferInfo.sourceInstanceName ?? null,
 					targetInstanceId: transferInfo.targetInstanceId ?? -1,
 					targetInstanceName: transferInfo.targetInstanceName ?? null,
-					status: this.normalizeTransferStatus(transferInfo.status || "unknown"),
+					status: transferInfo.status || "unknown",
 					startedAt: transferInfo.startedAt || persistedLog.savedAt || Date.now(),
 					completedAt: transferInfo.completedAt || null,
 					failedAt: transferInfo.failedAt || null,
@@ -194,6 +191,8 @@ export class TransactionLogger {
 			}
 		}
 
+		// Enrich all summaries with current platformStorage state (export may have been
+		// uploaded or deleted since the summary was built or persisted)
 		return Array.from(byId.values())
 			.map(summary => {
 				const storedExport = summary.exportId ? this.plugin.platformStorage.get(summary.exportId) : null;
@@ -282,6 +281,7 @@ export class TransactionLogger {
 				savedAt: Date.now(),
 			};
 
+			// Upsert: replace existing entry for this transfer, or append if new
 			const existingIndex = allLogs.findIndex((log: PersistedTransactionLog) => log.transferId === transferId);
 			if (existingIndex !== -1) {
 				allLogs.splice(existingIndex, 1, entry);

@@ -1,6 +1,6 @@
 {
   "name": "@solarcloud7/plugin-surface-export",
-  "version": "0.9.195",
+  "version": "0.10.0",
   "description": "Clusterio plugin for exporting and importing Factorio space platforms",
   "main": "dist/node/index.js",
   "types": "dist/node/index.d.ts",
@@ -38,19 +38,21 @@
     "package.json"
   ],
   "peerDependencies": {
-    "@clusterio/lib": "2.0.0-alpha.22b",
-    "@clusterio/controller": "2.0.0-alpha.22b",
-    "@clusterio/host": "2.0.0-alpha.22b",
-    "@clusterio/ctl": "2.0.0-alpha.22b"
+    "@clusterio/lib": "2.0.0-alpha.25",
+    "@clusterio/controller": "2.0.0-alpha.25",
+    "@clusterio/host": "2.0.0-alpha.25",
+    "@clusterio/ctl": "2.0.0-alpha.25"
   },
   "devDependencies": {
-    "@clusterio/lib": "2.0.0-alpha.22b",
-    "@clusterio/web_ui": "2.0.0-alpha.22b",
+    "@clusterio/lib": "2.0.0-alpha.25",
+    "@clusterio/controller": "2.0.0-alpha.25",
+    "@clusterio/host": "2.0.0-alpha.25",
+    "@clusterio/ctl": "2.0.0-alpha.25",
+    "@clusterio/web_ui": "2.0.0-alpha.25",
     "@types/node": "^20.11.30",
     "@types/react": "^18.2.65",
     "@types/react-dom": "^18.2.22",
     "antd": "^5.24.2",
-    "mermaid": "^10.0.0",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
     "typescript": "^5.5.4",

@@ -45,6 +45,9 @@ export const plugin = {
 	controllerEntrypoint: "dist/node/controller",
 	webEntrypoint: "./web",
 	routes: ["/surface-export"],
+	// alpha.25 (#884): plugins that save-patch a Lua module and/or run /sc script commands must
+	// declare these so the host validates the instance has both enabled before loading the plugin.
+	features: ["SavePatching", "ScriptCommands"],
 	instanceConfigFields: {
 		[`${PLUGIN_NAME}.max_export_cache_size`]: {
 			description: "Maximum number of platform exports to cache per instance",

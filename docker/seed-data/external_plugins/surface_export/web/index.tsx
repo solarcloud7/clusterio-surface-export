@@ -1,6 +1,8 @@
 import React, { useContext, useEffect, useState } from "react";
 import {
+	Button,
 	Tabs,
+	Tooltip,
 	Typography,
 } from "antd";
 
@@ -10,16 +12,16 @@ import {
 	PageHeader,
 	PageLayout,
 	notifyErrorHandler,
-	useItemMetadata,
-	useEntityMetadata,
-	usePlanetMetadata,
 } from "@clusterio/web_ui";
+import { UploadOutlined } from "@ant-design/icons";
 import * as messageDefs from "../messages";
 import ManualTransferTab from "./ManualTransferTab";
 import TransactionLogsTab from "./TransactionLogsTab";
+import ImportModal from "./ImportModal";
 import type { JsonObject, LogEvent, SurfaceExportPlugin, SurfaceExportState } from "./view-models";
 
 import { summaryFromTransferInfo, mergeTransferSummary, getErrorMessage, getProp } from "./utils";
+import "./style.css";
 
 const {
 	PERMISSIONS,
@@ -68,10 +70,9 @@ function SurfaceExportPage() {
 	const control = useContext(ControlContext) as unknown as ControlLike;
 	const plugin = useSurfaceExportPlugin(control);
 	const state = useSurfaceExportState(plugin);
-	// Trigger spritesheet CSS injection for categories used across tabs
-	useItemMetadata();
-	useEntityMetadata();
-	usePlanetMetadata();
+	const [importModalOpen, setImportModalOpen] = useState(false);
+	// Icon spritesheet CSS is injected on demand by the FactorioIcon wrappers in web/icons.tsx
+	// (via useExportPrototypeMetadata) when icons render.
 	const pluginVersion = state?.pluginVersion || null;
 	const tabItems = [
 		{
@@ -99,21 +100,38 @@ function SurfaceExportPage() {
 			<Tabs
 				defaultActiveKey="manual"
 				items={tabItems}
+				tabBarExtraContent={(
+					<Tooltip title="Import JSON">
+						<Button
+							icon={<UploadOutlined />}
+							size="small"
+							onClick={() => setImportModalOpen(true)}
+						/>
+					</Tooltip>
+				)}
+			/>
+			<ImportModal
+				open={importModalOpen}
+				onClose={() => setImportModalOpen(false)}
+				plugin={plugin}
+				state={state}
 			/>
 		</PageLayout>
 	);
 }
 
 export class WebPlugin extends BaseWebPlugin {
-	declare control: ControlLike;
-	declare pages: Array<Record<string, unknown>>;
+	// Escape hatch: the framework's Control type is broader than the slice we use.
+	// eslint-disable-next-line @typescript-eslint/no-explicit-any
+	private get link(): ControlLike { return this.control as unknown as ControlLike; }
 
 	private callbacks: Array<() => void>;
 	private liveUpdatesEnabled: boolean;
 	private state: SurfaceExportState;
 
 	constructor(container: unknown, packageData: JsonObject, info: JsonObject, control: ControlLike, logger: unknown) {
-		super(container, packageData, info, control, logger);
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any
+		super(container, packageData, info as any, control as any, logger as any);
 		this.callbacks = [];
 		this.liveUpdatesEnabled = false;
 		this.state = {
@@ -142,9 +160,9 @@ export class WebPlugin extends BaseWebPlugin {
 			},
 		];
 
-		this.control.handle(SurfaceExportTreeUpdateEvent, payload => this.handleTreeUpdate(payload as JsonObject));
-		this.control.handle(SurfaceExportTransferUpdateEvent, payload => this.handleTransferUpdate(payload as JsonObject));
-		this.control.handle(SurfaceExportLogUpdateEvent, payload => this.handleLogUpdate(payload as JsonObject));
+		this.link.handle(SurfaceExportTreeUpdateEvent, payload => this.handleTreeUpdate(payload as JsonObject));
+		this.link.handle(SurfaceExportTransferUpdateEvent, payload => this.handleTransferUpdate(payload as JsonObject));
+		this.link.handle(SurfaceExportLogUpdateEvent, payload => this.handleLogUpdate(payload as JsonObject));
 	}
 
 	onControllerConnectionEvent(event: string) {
@@ -179,11 +197,11 @@ export class WebPlugin extends BaseWebPlugin {
 
 	async syncLiveState() {
 		const shouldEnable = this.callbacks.length > 0;
-		if (!this.control.connector.connected) {
+		if (!this.link.connector.connected) {
 			this.liveUpdatesEnabled = shouldEnable;
 			return;
 		}
-		const trySubscribe = (logs: boolean) => this.control.send(new SetSurfaceExportSubscriptionRequest({
+		const trySubscribe = (logs: boolean) => this.link.send(new SetSurfaceExportSubscriptionRequest({
 			tree: shouldEnable,
 			transfers: shouldEnable,
 			logs,
@@ -211,11 +229,11 @@ export class WebPlugin extends BaseWebPlugin {
 	async refreshSnapshots() {
 		this.setState({ loadingTree: true, treeError: null });
 		try {
-			const treeResponse = await this.control.send(new GetPlatformTreeRequest({ forceName: "player" })) as JsonObject;
+			const treeResponse = await this.link.send(new GetPlatformTreeRequest({ forceName: "player" })) as JsonObject;
 			let transferSummaries = this.state.transferSummaries;
 			if (this.state.canViewLogs !== false) {
 				try {
-					const logSummaries = await this.control.send(new ListTransactionLogsRequest({ limit: 100 }));
+					const logSummaries = await this.link.send(new ListTransactionLogsRequest({ limit: 100 }));
 					transferSummaries = Array.isArray(logSummaries)
 						? [...logSummaries].sort((a, b) => (b.startedAt || 0) - (a.startedAt || 0))
 						: [];
@@ -250,22 +268,22 @@ export class WebPlugin extends BaseWebPlugin {
 	}
 
 	async getStoredExport(exportId: string) {
-		return this.control.send(new GetStoredExportRequest({ exportId }));
+		return this.link.send(new GetStoredExportRequest({ exportId }));
 	}
 	async exportPlatformForDownload(payload: { sourceInstanceId: number; sourcePlatformIndex: number; forceName?: string }) {
-		return this.control.send(new ExportPlatformForDownloadRequest(payload));
+		return this.link.send(new ExportPlatformForDownloadRequest(payload));
 	}
 
-	async importUploadedExport(payload: { targetInstanceId: number; exportData: Record<string, unknown>; forceName?: string; platformName?: string | null }) {
-		return this.control.send(new ImportUploadedExportRequest(payload));
+	async importUploadedExport(payload: { targetInstanceId: number; exportData: Record<string, unknown>; forceName?: string; platformName?: string | null; targetPlanet?: string | null }) {
+		return this.link.send(new ImportUploadedExportRequest(payload));
 	}
 
 	async startTransfer(payload: { sourceInstanceId: number; sourcePlatformIndex: number; targetInstanceId: number; forceName?: string }) {
-		return this.control.send(new StartPlatformTransferRequest(payload));
+		return this.link.send(new StartPlatformTransferRequest(payload));
 	}
 
 	async loadTransactionLog(transferId: string) {
-		const response = await this.control.send(new GetTransactionLogRequest({ transferId })) as JsonObject;
+		const response = await this.link.send(new GetTransactionLogRequest({ transferId })) as JsonObject;
 		if (!getProp(response, "success", false)) {
 			throw new Error(String(getProp(response, "error", "Failed to load transaction log")));
 		}

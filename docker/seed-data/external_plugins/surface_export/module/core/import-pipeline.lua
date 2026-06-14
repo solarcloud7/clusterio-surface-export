@@ -159,18 +159,34 @@ function ImportPipeline.queue(json_data, new_platform_name, force_name, requeste
 	end
 
 	-- Create new platform
-	local new_platform = force.create_space_platform({
-		name = final_name,
-		planet = "nauvis",
-		starter_pack = "space-platform-starter-pack"
-	})
+	-- Check both platform_data (decompressed) and parsed_data (compressed format),
+	-- mirroring the _transferId / _operationId handling below.
+	local target_planet = platform_data._targetPlanet or parsed_data._targetPlanet or "nauvis"
+	-- create_space_platform raises if the planet name is invalid or not present on this instance
+	-- (e.g. mod mismatch). Guard it so a bad destination returns a clean error instead of crashing
+	-- the instance (cf. Pitfall #25). The UI restricts choices, but RCON/API callers do not.
+	-- Call via a closure: force.create_space_platform binds self on access, so it takes ONLY the
+	-- table (passing force explicitly gives an "Expected 1 argument but 2 were given" error).
+	local ok_create, new_platform = pcall(function()
+		return force.create_space_platform({
+			name = final_name,
+			planet = target_planet,
+			starter_pack = "space-platform-starter-pack"
+		})
+	end)
+
+	if not ok_create then
+		log(string.format("[Import Queue] FAILED: create_space_platform errored for planet='%s': %s",
+			target_planet, tostring(new_platform)))
+		return nil, string.format("Failed to create platform on planet '%s' (invalid or unavailable on this instance)", target_planet)
+	end
 
 	if not new_platform or not new_platform.valid then
 		log(string.format("[Import Queue] FAILED: Could not create platform '%s'", final_name))
 		return nil, "Failed to create platform"
 	end
 
-	log(string.format("[Import Queue] Platform created: '%s' (index=%s)", final_name, tostring(new_platform.index)))
+	log(string.format("[Import Queue] Platform created: '%s' (index=%s, planet=%s)", final_name, tostring(new_platform.index), target_planet))
 
 	-- Apply starter pack to activate surface immediately
 	-- Platform needs starter pack to have a valid surface

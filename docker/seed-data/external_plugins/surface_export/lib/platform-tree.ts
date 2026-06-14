@@ -41,7 +41,12 @@ export class PlatformTree {
 		}
 		logger.info(`[resolveTargetInstance] No direct ID match for ${target}, searching by name/host...`);
 
-		for (const [id, inst] of this.plugin.controller.instances) {
+		// alpha.25: controller.instances is an InstanceManager (not a plain Map) — iterate via
+		// values() and read inst.id rather than entry-iteration / .size, which it does not expose.
+		let checked = 0;
+		for (const inst of this.plugin.controller.instances.values()) {
+			checked += 1;
+			const id = inst.id;
 			const instName = inst.config && inst.config.get("instance.name");
 			const assignedHost = inst.config && inst.config.get("instance.assigned_host");
 
@@ -56,7 +61,7 @@ export class PlatformTree {
 			logger.verbose(`[resolveTargetInstance]   Checked: id=${id}, name='${instName}', host=${assignedHost} - no match`);
 		}
 
-		logger.warn(`[resolveTargetInstance] FAILED: No instance found for target=${target} (checked ${this.plugin.controller.instances.size} instances)`);
+		logger.warn(`[resolveTargetInstance] FAILED: No instance found for target=${target} (checked ${checked} instances)`);
 		return null;
 	}
 
@@ -101,7 +106,7 @@ export class PlatformTree {
 				const nameMatches = platform.platformName === transfer.platformName;
 				if (indexMatches || nameMatches) {
 					platform.transferId = transfer.transferId;
-					platform.transferStatus = this.plugin.txLogger.normalizeTransferStatus(transfer.status);
+					platform.transferStatus = transfer.status;
 				}
 			}
 		}

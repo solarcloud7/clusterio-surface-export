@@ -266,8 +266,8 @@ export class ControllerPlugin extends BaseControllerPlugin {
 		return operation;
 	}
 
-	async handleImportUploadedExportRequest(request: { targetInstanceId: number; exportData: ExportData; forceName?: string; platformName?: string | null }) {
-		const { targetInstanceId, exportData, forceName, platformName } = request;
+	async handleImportUploadedExportRequest(request: { targetInstanceId: number; exportData: ExportData; forceName?: string; platformName?: string | null; targetPlanet?: string | null }) {
+		const { targetInstanceId, exportData, forceName, platformName, targetPlanet } = request;
 
 		if (!exportData || typeof exportData !== "object" || Array.isArray(exportData)) {
 			return { success: false, error: "exportData must be a non-null object" };
@@ -309,6 +309,7 @@ export class ControllerPlugin extends BaseControllerPlugin {
 					exportId: uploadExportId,
 					exportData: importData,
 					forceName: resolvedForceName,
+					targetPlanet: targetPlanet ?? null,
 				}),
 			) as messages.SimpleResponse & { platformName?: string; targetInstanceId?: number };
 			if (!response?.success) {
