@@ -102,12 +102,13 @@ logs, and each host's `factorio-current.log`.
   loaded — a failure after that is runtime, not a load error.
 - **Phase 1 timeout** (instances never appear in `instance list`) → seeding didn't finish; check
   the controller log for `Instance seeding complete.`
-- **Phase 2** prints `✗ Failed to start <name>: <error>` if the host rejects the start — that
-  reason used to be swallowed by the seed script's `|| true`. `Unable to find Factorio version X`
-  there means the baked image isn't the pinned version (check the Resolve & verify output / a
+- **Phase 2** drives `instance start-all` each iteration and prints its output followed by the
+  current `instance list`. If the host rejects a start, the reason now surfaces in that output and
+  the host logs (it used to be swallowed by the seed script's `|| true`). `Unable to find Factorio
+  version X` means the baked image isn't the pinned version (check the Resolve & verify output / a
   stale gha cache layer).
-- `✓ Started` but the instance stays `stopped` with an **empty** `factorio-current.log` means
-  Factorio launched-then-exited — look at the host-log error grep, not the bake.
+- An instance stuck `stopped`/`errored` with an **empty** `factorio-current.log` means Factorio
+  launched-then-exited — look at the host-log error grep, not the bake.
 
 ## Running the integration tests locally
 

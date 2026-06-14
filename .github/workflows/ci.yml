@@ -66,8 +66,12 @@ jobs:
           H1=docker/seed-data/hosts/clusterio-host-1/clusterio-host-1-instance-1/instance.json
           H2=docker/seed-data/hosts/clusterio-host-2/clusterio-host-2-instance-1/instance.json
           DF=docker/ci/Dockerfile.factorio-baked
-          v=$(read_ver "$H1"); v2=$(read_ver "$H2")
-          vdf=$(grep -oE 'FACTORIO_HEADLESS_TAG=[0-9]+\.[0-9]+\.[0-9]+' "$DF" | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1)
+          # Best-effort extraction: a grep no-match (exit 1, propagated by pipefail) must NOT abort
+          # the step under `set -e` before the explicit `test -n` checks below can emit a clear
+          # ::error::. Let each assignment yield empty on failure; the checks are the real gate.
+          v=$(read_ver "$H1")  || true
+          v2=$(read_ver "$H2") || true
+          vdf=$(grep -oE 'FACTORIO_HEADLESS_TAG=[0-9]+\.[0-9]+\.[0-9]+' "$DF" | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1) || true
           test -n "$v"   || { echo "::error::could not resolve factorio.version from $H1"; exit 1; }
           test -n "$v2"  || { echo "::error::could not resolve factorio.version from $H2"; exit 1; }
           test -n "$vdf" || { echo "::error::could not resolve FACTORIO_HEADLESS_TAG default from $DF"; exit 1; }
@@ -134,7 +138,7 @@ jobs:
           echo "Waiting for both instances to be created & assigned..."
           if ! timeout 60 bash -c '
             until [ "$(docker exec surface-export-controller npx clusterioctl \
-                       --config=/clusterio/tokens/config-control.json instance list 2>&1 \
+                       --config=/clusterio/tokens/config-control.json --log-level error instance list 2>/dev/null \
                        | grep -cE "clusterio-host-[12]-instance-1")" -ge 2 ]; do
               echo "  instances not all present yet; current list:"
               docker exec surface-export-controller npx clusterioctl \
@@ -157,8 +161,8 @@ jobs:
           echo "Driving 'instance start-all' until both instances report running..."
           if ! timeout 90 bash -c '
             until [ "$(docker exec surface-export-controller npx clusterioctl \
-                       --config=/clusterio/tokens/config-control.json instance list 2>&1 \
-                       | grep -c "running")" -ge 2 ]; do
+                       --config=/clusterio/tokens/config-control.json --log-level error instance list 2>/dev/null \
+                       | grep -E "clusterio-host-[12]-instance-1" | grep -c "running")" -ge 2 ]; do
               echo "  start-all (starts any stopped instances):"
               docker exec surface-export-controller npx clusterioctl \
                 --config=/clusterio/tokens/config-control.json instance start-all 2>&1 | sed "s/^/    /" || true
