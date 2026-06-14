@@ -9,11 +9,13 @@
 import fs from "fs/promises";
 import path from "path";
 import { BaseControllerPlugin } from "@clusterio/controller";
+import type { Controller } from "@clusterio/controller";
 import * as lib from "@clusterio/lib";
 import { PlatformTree } from "./lib/platform-tree";
 import { TransactionLogger } from "./lib/transaction-logger";
 import { SubscriptionManager } from "./lib/subscription-manager";
 import { TransferOrchestrator } from "./lib/transfer-orchestrator";
+import { createOperationRecord as buildOperationRecord } from "./lib/operation-record";
 import type {
 	IControllerPlugin,
 	ActiveTransfer,
@@ -36,9 +38,14 @@ import { normalizeExportMetrics, getErrorMessage, TICKS_TO_MS, STORAGE_FILENAME,
 const PLUGIN_NAME = "surface_export";
 
 export class ControllerPlugin extends BaseControllerPlugin {
-	// Escape hatch: our plugin config keys and SubscribableDatastore aren't in Controller's strict types.
-	// eslint-disable-next-line @typescript-eslint/no-explicit-any
-	private get c(): any { return this.controller; }
+	private get c(): Controller { return this.controller; }
+	/**
+	 * Read a config key that isn't in ControllerConfig's strict field union (our custom
+	 * plugin keys). Bypasses the keyed Config.get typing.
+	 */
+	private cfg<T = unknown>(key: string): T {
+		return (this.controller.config as { get(k: string): unknown }).get(key) as T;
+	}
 	platformStorage!: Map<string, StoredExport>;
 	activeTransfers!: Map<string, ActiveTransfer>;
 	platformDepartureTimes!: Map<string, number>;
@@ -147,7 +154,7 @@ export class ControllerPlugin extends BaseControllerPlugin {
 
 			this.logger.info(`Stored platform export: ${event.exportId}`);
 
-			const maxStorage = Number(this.c.config.get(`${PLUGIN_NAME}.max_storage_size`));
+			const maxStorage = Number(this.cfg(`${PLUGIN_NAME}.max_storage_size`));
 			if (Number.isFinite(maxStorage) && this.platformStorage.size > maxStorage) {
 				this.cleanupOldExports(maxStorage);
 			}
@@ -233,36 +240,11 @@ export class ControllerPlugin extends BaseControllerPlugin {
 	}
 
 	createOperationRecord(operationType: OperationType, options: OperationOptions = {}) {
-		const sourceInstanceId = Number.isInteger(Number(options.sourceInstanceId))
-			? Number(options.sourceInstanceId)
-			: -1;
-		const targetInstanceId = Number.isInteger(Number(options.targetInstanceId))
-			? Number(options.targetInstanceId)
-			: -1;
-		const operationId = String(options.operationId || `${operationType}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`);
-		const sourceInstanceName = options.sourceInstanceName
-			?? (sourceInstanceId > 0 ? this.platformTree.resolveInstanceName(sourceInstanceId) : null);
-		const targetInstanceName = options.targetInstanceName
-			?? (targetInstanceId > 0 ? this.platformTree.resolveInstanceName(targetInstanceId) : null);
-		const operation: ActiveTransfer = {
-			transferId: operationId,
-			operationType,
-			exportId: options.exportId || null,
-			artifactSizeBytes: options.artifactSizeBytes ?? null,
-			platformName: options.platformName || "Unknown",
-			platformIndex: Number.isInteger(Number(options.platformIndex)) ? Number(options.platformIndex) : 1,
-			forceName: options.forceName || "player",
-			sourceInstanceId,
-			sourceInstanceName,
-			targetInstanceId,
-			targetInstanceName,
-			status: options.status || "in_progress",
-			startedAt: options.startedAt || Date.now(),
-			completedAt: options.completedAt || null,
-			failedAt: options.failedAt || null,
-			error: options.error || null,
-		};
-		this.activeTransfers.set(operationId, operation);
+		const operation = buildOperationRecord(operationType, {
+			...options,
+			resolveInstanceName: (instanceId: number) => this.platformTree.resolveInstanceName(instanceId),
+		});
+		this.activeTransfers.set(operation.transferId, operation);
 		return operation;
 	}
 

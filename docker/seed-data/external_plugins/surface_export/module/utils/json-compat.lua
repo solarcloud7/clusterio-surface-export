@@ -7,28 +7,7 @@
 
 local JsonCompat = {}
 
---- Determine if a table behaves like an array (1..n integer keys)
---- @param t table
---- @return boolean
-local function is_array(t)
-  if type(t) ~= "table" then
-    return false
-  end
-
-  local count = 0
-  local max_index = 0
-  for k, _ in pairs(t) do
-    if type(k) ~= "number" or k <= 0 or math.floor(k) ~= k then
-      return false
-    end
-    count = count + 1
-    if k > max_index then
-      max_index = k
-    end
-  end
-
-  return max_index == count
-end
+local TableUtils = require("modules/surface_export/utils/table-utils")
 
 local JSON_ESCAPES = {
   ['"'] = '\\"',
@@ -79,7 +58,7 @@ local function encode_json(value, visited)
     visited[value] = true
 
     local parts = {}
-    if is_array(value) then
+    if TableUtils.is_array(value) then
       for i = 1, #value do
         table.insert(parts, encode_json(value[i], visited))
       end

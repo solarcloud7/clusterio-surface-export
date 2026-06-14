@@ -23,20 +23,9 @@ local Util = require("modules/surface_export/utils/util")
 local clusterio_api = require("modules/clusterio/api")
 local PhaseProfiler = require("modules/surface_export/utils/phase-profiler")
 local TransactionHistory = require("modules/surface_export/utils/transaction-history")
+local JobResults = require("modules/surface_export/core/job-results")
 
 local ImportCompletion = {}
-
-local function prune_results(max_entries)
-	local keys = {}
-	for key in pairs(storage.async_job_results) do
-		table.insert(keys, key)
-	end
-	table.sort(keys)
-	while #keys > max_entries do
-		local oldest = table.remove(keys, 1)
-		storage.async_job_results[oldest] = nil
-	end
-end
 
 --- Phase 1: Restore hub inventories, belt items, and entity state.
 --- Schedules Phase 2 for the next tick via job.pending_beacon_tick.
@@ -483,7 +472,7 @@ function ImportCompletion.run_phase2(job)
 		PhaseProfiler.discard(job.job_id)
 	end
 
-	prune_results(25)
+	JobResults.prune(25)
 
 	storage.async_jobs[job.job_id] = nil
 end

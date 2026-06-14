@@ -7,6 +7,7 @@
 import fs from "fs";
 import path from "path";
 import { BaseInstancePlugin } from "@clusterio/host";
+import type { Instance } from "@clusterio/host";
 import { escapeString } from "@clusterio/lib";
 import type { ExportData, ExportResult, ImportResult, PendingTransfer } from "./messages";
 import * as messages from "./messages";
@@ -18,8 +19,14 @@ import { sendChunkedJson, getErrorMessage, RCON_CHUNK_SIZE, EXPORT_POLL_TIMEOUT_
  * Runs on each Clusterio host and handles communication with Factorio servers
  */
 export class InstancePlugin extends BaseInstancePlugin {
-	// eslint-disable-next-line @typescript-eslint/no-explicit-any
-	private get i(): any { return this.instance; }
+	private get i(): Instance { return this.instance; }
+	/**
+	 * Read a config key that isn't in InstanceConfig's strict field union (our custom
+	 * plugin keys and a few non-typed built-ins). Bypasses the keyed Config.get typing.
+	 */
+	private cfg<T = unknown>(key: string): T {
+		return (this.instance.config as { get(k: string): unknown }).get(key) as T;
+	}
 	private controllerManagedTransferExports: Set<string> = new Set();
 	private pendingTransfer: PendingTransfer | null = null;
 
@@ -74,8 +81,13 @@ export class InstancePlugin extends BaseInstancePlugin {
 		this.i.handle(messages.ImportPlatformFromFileRequest, this.handleImportPlatformFromFileRequest.bind(this));
 		this.i.handle(messages.DeleteSourcePlatformRequest, this.handleDeleteSourcePlatform.bind(this));
 		this.i.handle(messages.UnlockSourcePlatformRequest, this.handleUnlockSourcePlatform.bind(this));
-		this.i.handle(messages.TransferStatusUpdate, this.handleTransferStatusUpdate.bind(this));
-		this.i.handle(messages.InstanceListPlatformsRequest, this.handleInstanceListPlatformsRequest.bind(this));
+		// These two message/handler pairs have latent type mismatches in their declared
+		// Request/Response shapes (TransferStatusUpdate.color: string|null vs handler's
+		// string|undefined; InstanceListPlatformsRequest Response.platforms optional fields).
+		// Fixing the message schemas is out of scope here, so localize a permissive handle cast.
+		const handleMessage = this.i.handle as (cls: unknown, handler: unknown) => void;
+		handleMessage(messages.TransferStatusUpdate, this.handleTransferStatusUpdate.bind(this));
+		handleMessage(messages.InstanceListPlatformsRequest, this.handleInstanceListPlatformsRequest.bind(this));
 
 		this.logger.info("Surface Export plugin initialized");
 	}
@@ -94,10 +106,10 @@ export class InstancePlugin extends BaseInstancePlugin {
 	 */
 	async sendConfigurationToLua() {
 		try {
-			const batchSize = this.i.config.get("surface_export.batch_size");
-			const maxConcurrentJobs = this.i.config.get("surface_export.max_concurrent_jobs");
-			const showProgress = this.i.config.get("surface_export.show_progress");
-			const debugMode = this.i.config.get("surface_export.debug_mode");
+			const batchSize = this.cfg<number>("surface_export.batch_size");
+			const maxConcurrentJobs = this.cfg<number>("surface_export.max_concurrent_jobs");
+			const showProgress = this.cfg<boolean>("surface_export.show_progress");
+			const debugMode = this.cfg<boolean>("surface_export.debug_mode");
 
 			const configScript = `/sc ` +
 				`if remote.interfaces["surface_export"] and remote.interfaces["surface_export"]["configure"] then ` +
@@ -169,12 +181,17 @@ export class InstancePlugin extends BaseInstancePlugin {
 				this.logger.info(`Auto-transfer requested: dest_instance_id=${data.destination_instance_id} (type=${typeof data.destination_instance_id})`);
 				this.logger.info(`  Sending TransferPlatformRequest to controller: exportId=${exportId}, targetInstanceId=${data.destination_instance_id}`);
 
-				// Send transfer request to controller
-				const transferResponse = await this.i.sendTo("controller",
+				// Send transfer request to controller. The plugin's message classes are duck-typed
+				// (they don't extend lib.Request/Event), so Link.sendTo's strict overloads don't
+				// apply — cast sendTo to a permissive signature with the real Response type.
+				const sendToController = this.i.sendTo as (
+					dst: "controller", msg: unknown,
+				) => Promise<messages.SimpleResponse & { transferId?: string }>;
+				const transferResponse = await sendToController("controller",
 					new messages.TransferPlatformRequest({
 						exportId,
 						targetInstanceId: Number(data.destination_instance_id),
-					}) as unknown as messages.SimpleResponse & { transferId?: string }
+					}),
 				);
 
 				if (transferResponse.success) {
@@ -195,12 +212,15 @@ export class InstancePlugin extends BaseInstancePlugin {
 				}
 				this.logger.info(`Transfer export complete, initiating transfer to instance ${this.pendingTransfer.destination_instance_id}`);
 
-				// Send transfer request to controller
-				const transferResponse = await this.i.sendTo("controller",
+				// Send transfer request to controller (see note above re: permissive sendTo cast).
+				const sendToController = this.i.sendTo as (
+					dst: "controller", msg: unknown,
+				) => Promise<messages.SimpleResponse & { transferId?: string }>;
+				const transferResponse = await sendToController("controller",
 					new messages.TransferPlatformRequest({
 						exportId,
 						targetInstanceId: Number(pendingTargetId),
-					}) as unknown as messages.SimpleResponse & { transferId?: string }
+					}),
 				);
 
 				if (transferResponse.success) {
@@ -475,36 +495,19 @@ export class InstancePlugin extends BaseInstancePlugin {
 				this.logger.info(`Import data size: ${sizeKB} KB (uncompressed)`);
 			}
 
-			// Use chunked approach like inventory_sync
-			const chunkSize = RCON_CHUNK_SIZE;
-			const chunks: string[] = [];
-			for (let i = 0; i < jsonData.length; i += chunkSize) {
-				chunks.push(jsonData.slice(i, i + chunkSize));
-			}
-
-			this.logger.info(`Sending import in ${chunks.length} chunks`);
-
+			// Send chunks using import_platform_chunk remote interface via the shared
+			// chunked-JSON helper (same template + args as importPlatformFromFile).
 			const escapedPlatformName = escapeString(platformName);
 			const escapedForceName = escapeString(forceName);
+			await sendChunkedJson(
+				this.i,
+				`remote.call("surface_export", "import_platform_chunk", "${escapedPlatformName}", %CHUNK%, %INDEX%, %TOTAL%, "${escapedForceName}")`,
+				exportData,
+				this.logger,
+				RCON_CHUNK_SIZE,
+			);
 
-			// Send chunks using import_platform_chunk remote interface
-			for (let i = 0; i < chunks.length; i++) {
-				const chunk = escapeString(chunks[i]);
-				const chunkNum = i + 1;
-				const totalChunks = chunks.length;
-
-				await this.sendRcon(
-					`/sc remote.call("surface_export", "import_platform_chunk", ` +
-					`"${escapedPlatformName}", '${chunk}', ${chunkNum}, ${totalChunks}, "${escapedForceName}")`,
-					true,
-				);
-
-				if (i % 10 === 0 || chunkNum === totalChunks) {
-					this.logger.verbose(`Sent chunk ${chunkNum}/${totalChunks}`);
-				}
-			}
-
-			this.logger.info(`All ${chunks.length} chunks sent, import queued for async processing`);
+			this.logger.info("All chunks sent, import queued for async processing");
 			return { success: true };
 
 		} catch (err: unknown) {
@@ -523,7 +526,7 @@ export class InstancePlugin extends BaseInstancePlugin {
 
 		try {
 			// Step 1: Node.js reads the file (Lua cannot do this in Factorio 2.0)
-			const instanceDir = String(this.i.config.get("instance.directory"));
+			const instanceDir = String(this.cfg("instance.directory"));
 			const scriptOutputPath = path.join(instanceDir, "script-output", filename);
 
 			this.logger.verbose(`Reading file from: ${scriptOutputPath}`);
@@ -902,7 +905,7 @@ export class InstancePlugin extends BaseInstancePlugin {
 		if (!scriptCommandsEnabled) {
 			throw new Error("Surface Export requires factorio.enable_script_commands to be enabled");
 		}
-		const cacheLimit = this.i.config.get("surface_export.max_export_cache_size");
+		const cacheLimit = this.cfg("surface_export.max_export_cache_size");
 		if (typeof cacheLimit !== "number" || cacheLimit < 1) {
 			throw new Error("surface_export.max_export_cache_size must be >= 1");
 		}

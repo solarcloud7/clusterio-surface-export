@@ -37,10 +37,6 @@ end
 --- @param requester_name string|nil
 --- @return string|nil, string|nil: job_id or error
 function ImportPipeline.queue(json_data, new_platform_name, force_name, requester_name)
-	storage.async_jobs = storage.async_jobs or {}
-	storage.async_job_id_counter = storage.async_job_id_counter or 0
-	storage.async_job_results = storage.async_job_results or {}
-
 	storage.async_job_id_counter = storage.async_job_id_counter + 1
 	local job_id = "import_" .. storage.async_job_id_counter
 
