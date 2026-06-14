@@ -1,5 +1,6 @@
 
 import { normalizeExportMetrics, TICKS_TO_MS, getErrorMessage, VALIDATION_TIMEOUT_MS, buildPayloadMetrics, buildImportMetrics } from "../helpers";
+import { createOperationRecord } from "./operation-record";
 import type { IControllerPlugin, ActiveTransfer, SimpleResponse, TransferValidationEvent, StoredExport, ValidationResult, ImportMetrics, ExportMetrics } from "../messages";function mergeExportMetrics(storedMetrics: ExportMetrics | null | undefined, runtimeMetrics: Record<string, unknown> | null | undefined) {
 	const merged = {
 		...normalizeExportMetrics((storedMetrics || null) as Record<string, unknown> | null),
@@ -100,9 +101,11 @@ export class TransferOrchestrator {
 			: {}) as { index?: number; force?: string };
 		const mergedExportMetrics = mergeExportMetrics(exportData.exportMetrics, exportMetrics);
 
-		this.plugin.activeTransfers.set(transferId, {
-			transferId,
-			operationType: "transfer",
+		// Shared skeleton via the common factory. Values are pre-resolved here so the
+		// factory's defaults/guards are no-ops and the record is identical to the
+		// previous inline construction. Transfer-only fields are overlaid afterward.
+		const operation = createOperationRecord("transfer", {
+			operationId: transferId,
 			exportId,
 			artifactSizeBytes: exportData.size ?? null,
 			platformName: exportData.platformName || "Unknown",
@@ -114,10 +117,11 @@ export class TransferOrchestrator {
 			targetInstanceName: this.plugin.platformTree.resolveInstanceName(targetInstanceId),
 			startedAt: transferStartedAt ?? Date.now(),
 			status: "transporting",
-			payloadMetrics,
-			exportMetrics: mergedExportMetrics,
-			sourceVerification: { itemCounts, fluidCounts },
 		});
+		operation.payloadMetrics = payloadMetrics;
+		operation.exportMetrics = mergedExportMetrics;
+		operation.sourceVerification = { itemCounts, fluidCounts };
+		this.plugin.activeTransfers.set(transferId, operation);
 
 		const transfer = this.plugin.activeTransfers.get(transferId);
 		if (!transfer) {

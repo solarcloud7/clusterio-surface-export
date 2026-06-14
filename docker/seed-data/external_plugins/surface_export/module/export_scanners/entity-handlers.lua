@@ -203,10 +203,7 @@ EntityHandlers["inserter"] = function(entity)
   end
   
   -- USE FILTERS flag - Whether filtering is enabled/active
-  local use_filters_success, use_filters = pcall(function() return entity.use_filters end)
-  if use_filters_success and use_filters ~= nil then
-    data.use_filters = use_filters
-  end
+  data.use_filters = GameUtils.safe_get(entity, "use_filters")
 
   -- Stack size override (0 = no override)
   if entity.inserter_stack_size_override and entity.inserter_stack_size_override > 0 then
@@ -300,16 +297,10 @@ EntityHandlers["train"] = function(entity)
   data.color = GameUtils.extract_color(entity)
   
   -- ENABLE LOGISTICS WHILE MOVING (locomotives and wagons)
-  local logistics_success, enable_logistics = pcall(function() return entity.enable_logistics_while_moving end)
-  if logistics_success and enable_logistics ~= nil then
-    data.enable_logistics_while_moving = enable_logistics
-  end
+  data.enable_logistics_while_moving = GameUtils.safe_get(entity, "enable_logistics_while_moving")
   
   -- COPY COLOR FROM TRAIN STOP (locomotives and wagons)
-  local copy_color_success, copy_color = pcall(function() return entity.copy_color_from_train_stop end)
-  if copy_color_success and copy_color ~= nil then
-    data.copy_color_from_train_stop = copy_color
-  end
+  data.copy_color_from_train_stop = GameUtils.safe_get(entity, "copy_color_from_train_stop")
 
   -- Equipment grid (locomotives can have equipment in Space Age)
   if entity.grid and entity.grid.valid and #entity.grid.equipment > 0 then
@@ -331,16 +322,10 @@ EntityHandlers["car"] = function(entity)
   end
   
   -- ENABLE LOGISTICS WHILE MOVING
-  local logistics_success, enable_logistics = pcall(function() return entity.enable_logistics_while_moving end)
-  if logistics_success and enable_logistics ~= nil then
-    data.enable_logistics_while_moving = enable_logistics
-  end
+  data.enable_logistics_while_moving = GameUtils.safe_get(entity, "enable_logistics_while_moving")
   
   -- DRIVER IS MAIN GUNNER
-  local gunner_success, driver_is_main_gunner = pcall(function() return entity.driver_is_main_gunner end)
-  if gunner_success and driver_is_main_gunner ~= nil then
-    data.driver_is_main_gunner = driver_is_main_gunner
-  end
+  data.driver_is_main_gunner = GameUtils.safe_get(entity, "driver_is_main_gunner")
   
   -- SELECTED GUN INDEX
   local gun_success, selected_gun_index = pcall(function() return entity.selected_gun_index end)
@@ -391,16 +376,10 @@ EntityHandlers["spider-vehicle"] = function(entity)
   end
   
   -- DRIVER IS MAIN GUNNER
-  local gunner_success, driver_is_main_gunner = pcall(function() return entity.driver_is_main_gunner end)
-  if gunner_success and driver_is_main_gunner ~= nil then
-    data.driver_is_main_gunner = driver_is_main_gunner
-  end
+  data.driver_is_main_gunner = GameUtils.safe_get(entity, "driver_is_main_gunner")
   
   -- ENABLE LOGISTICS WHILE MOVING
-  local logistics_success, enable_logistics = pcall(function() return entity.enable_logistics_while_moving end)
-  if logistics_success and enable_logistics ~= nil then
-    data.enable_logistics_while_moving = enable_logistics
-  end
+  data.enable_logistics_while_moving = GameUtils.safe_get(entity, "enable_logistics_while_moving")
   
   -- COLOR
   data.color = GameUtils.extract_color(entity)
@@ -468,10 +447,7 @@ EntityHandlers["turret"] = function(entity)
   end
   
   -- Whether turret ignores non-prioritised targets
-  local ignore_success, ignore_unprioritised = pcall(function() return entity.ignore_unprioritised_targets end)
-  if ignore_success and ignore_unprioritised ~= nil then
-    data.ignore_unprioritised_targets = ignore_unprioritised
-  end
+  data.ignore_unprioritised_targets = GameUtils.safe_get(entity, "ignore_unprioritised_targets")
   
   -- Turret control behavior (circuit-controlled targeting)
   local cb = entity.get_control_behavior()
@@ -556,10 +532,7 @@ EntityHandlers["artillery-turret"] = function(entity)
   }
   
   -- ARTILLERY AUTO TARGETING
-  local auto_target_success, auto_targeting = pcall(function() return entity.artillery_auto_targeting end)
-  if auto_target_success and auto_targeting ~= nil then
-    data.artillery_auto_targeting = auto_targeting
-  end
+  data.artillery_auto_targeting = GameUtils.safe_get(entity, "artillery_auto_targeting")
   
   return data
 end
@@ -613,10 +586,7 @@ EntityHandlers["power-switch"] = function(entity)
   local data = {}
   
   -- SWITCH STATE (on/off)
-  local switch_success, switch_state = pcall(function() return entity.power_switch_state end)
-  if switch_success and switch_state ~= nil then
-    data.switch_state = switch_state
-  end
+  data.switch_state = GameUtils.safe_get(entity, "power_switch_state")
   
   return next(data) and data or nil
 end
@@ -653,10 +623,7 @@ EntityHandlers["lamp"] = function(entity)
   data.color = GameUtils.extract_color(entity)
   
   -- ALWAYS ON setting
-  local always_on_success, always_on = pcall(function() return entity.always_on end)
-  if always_on_success and always_on ~= nil then
-    data.always_on = always_on
-  end
+  data.always_on = GameUtils.safe_get(entity, "always_on")
   
   -- Control behavior (use_colors) will be captured by ConnectionScanner
   

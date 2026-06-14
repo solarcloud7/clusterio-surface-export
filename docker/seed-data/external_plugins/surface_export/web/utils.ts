@@ -149,64 +149,6 @@ export function formatSigned(value: number | null, maxFractionDigits = 1) {
 	return `${sign}${value.toLocaleString(undefined, { maximumFractionDigits: maxFractionDigits })}`;
 }
 
-export function sumValues(map: Record<string, number> | null | undefined) {
-	return Object.values(map || {}).reduce((total, value) => {
-		const numeric = Number(value);
-		return Number.isFinite(numeric) ? total + numeric : total;
-	}, 0);
-}
-
-export function buildMetricRows(data: Record<string, unknown> | null | undefined) {
-	if (!data || typeof data !== "object") {
-		return [];
-	}
-
-	return Object.entries(data).map(([key, value]) => {
-		let formattedValue = "-";
-		if (typeof value === "boolean") {
-			formattedValue = value ? "Yes" : "No";
-		} else if (typeof value === "number") {
-			const lowered = key.toLowerCase();
-			// Require unit suffixes to follow an underscore to avoid false positives:
-			// "total_items" ends in "ms" but is not a duration; "total_ms" is.
-			if (lowered.endsWith("_ms") || lowered === "ms") {
-				formattedValue = `${formatNumeric(value, 0)} ms`;
-			} else if (lowered.endsWith("_ticks") || lowered === "ticks") {
-				formattedValue = `${formatNumeric(value, 0)} ticks`;
-			} else if (lowered.endsWith("_kb") || lowered === "kb") {
-				formattedValue = `${formatNumeric(value, 1)} KB`;
-			} else {
-				formattedValue = formatNumeric(value, Number.isInteger(value) ? 0 : 1);
-			}
-		} else if (value !== null && value !== undefined) {
-			formattedValue = String(value);
-		}
-
-		return {
-			key,
-			metric: humanizeMetricKey(key),
-			value: formattedValue,
-		};
-	});
-}
-
-// Timing fields from export metrics that belong in the Gantt diagram, not the table.
-export const EXPORT_TIMING_FIELDS = [
-	"requestExportAndLockMs",
-	"waitForControllerStoreMs",
-	"controllerExportPrepTotalMs",
-	"instanceAsyncExportMs",
-	"instanceAsyncExportSeconds",
-	"instanceAsyncExportTicks",
-];
-
-// Size/compression fields from export metrics that belong in the Payload section.
-const EXPORT_SIZE_FIELDS = new Set([
-	"uncompressedPayloadBytes",
-	"compressedPayloadBytes",
-	"compressionReductionPct",
-]);
-
 // Ordered operation count definitions — merged export+import, displayed in combined table.
 // "source" indicates which data object the field comes from: "export" or "import".
 export const OPERATION_COUNT_DEFINITIONS = [
@@ -232,13 +174,163 @@ export function buildOperationCountRows(exportData: JsonObject | null | undefine
 	return rows;
 }
 
-// Gantt timing definitions for export events.
-export const EXPORT_GANTT_TIMINGS = [
-	{ key: "requestExportAndLockMs",     label: "Queue + lock" },
-	{ key: "waitForControllerStoreMs",   label: "Wait for store" },
-	{ key: "controllerExportPrepTotalMs", label: "Prep total" },
-	{ key: "instanceAsyncExportMs",      label: "Async export" },
-];
+export function buildGanttRows(events: Array<LogEvent>, detailedSummary: JsonObject | null) {
+	// Produce one row per named phase across all events.
+	// Each row: { key, label, isEvent, indent, startMs, endMs, durationMs, color }
+	// All times are absolute ms from transfer start (elapsedMs of first event = 0).
+	const rows: Array<JsonObject> = [];
+	let totalMs = 0;
+
+	for (const event of events || []) {
+		const elapsedMs = typeof event?.elapsedMs === "number" ? event.elapsedMs : null;
+		const isFailure = String(event?.eventType || "").includes("failed") || String(event?.eventType || "").includes("error");
+		const isSuccess = String(event?.eventType || "").includes("completed") || String(event?.eventType || "").includes("success");
+		const color = isFailure ? "red" : isSuccess ? "green" : "blue";
+
+		// Event anchor row (marker only, no duration bar)
+		rows.push({ key: `event:${event?.eventType}:${elapsedMs}`, label: event?.eventType || "event",
+			isEvent: true, indent: 0, startMs: elapsedMs ?? 0, endMs: elapsedMs ?? 0,
+			durationMs: null, color });
+		if (elapsedMs !== null) totalMs = Math.max(totalMs, elapsedMs);
+
+		// Export sub-phases (on transfer_created)
+		// These phases all ENDED at transfer_created — place them backward from eventStart.
+		// Sequential order: [lock (includes async export)] → [wait for store] → transfer_created marker.
+		// instanceAsyncExportMs is a sub-component of requestExportAndLockMs (async export runs
+		// inside the lock RTT), shown as an indented sub-bar at the end of the lock phase.
+		const exportMetrics = event?.exportMetrics
+			|| (event?.eventType === "transfer_created" ? detailedSummary?.export || null : null);
+		if (exportMetrics && typeof exportMetrics === "object") {
+			const eventStart = elapsedMs ?? 0;
+			const lockMs = Number(getProp(exportMetrics as JsonObject, "requestExportAndLockMs", 0));
+			const storeMs = Number(getProp(exportMetrics as JsonObject, "waitForControllerStoreMs", 0));
+			const asyncMs = Number(getProp(exportMetrics as JsonObject, "instanceAsyncExportMs", 0));
+			const ticks = Number(getProp(exportMetrics as JsonObject, "instanceAsyncExportTicks", 0));
+			// storeMs ends at eventStart; lockMs ends where storeMs begins.
+			const lockEnd = eventStart - storeMs;
+			const lockStart = lockEnd - lockMs;
+			// Controller prep fills the gap from t=0 to lockStart, anchoring the chart origin.
+			if (lockStart > 1) {
+				rows.push({ key: `export:prep:${eventStart}`, label: "Controller prep",
+					isEvent: false, indent: 1, startMs: 0, endMs: lockStart,
+					durationMs: lockStart, color: "blue" });
+			}
+			if (lockMs > 0) {
+				// Split lock into sequential non-overlapping bars: RCON overhead → async export
+				const overheadMs = asyncMs > 0 ? Math.max(0, lockMs - asyncMs) : lockMs;
+				const asyncStart = lockStart + overheadMs;
+				if (overheadMs > 0) {
+					rows.push({ key: `export:queue:${eventStart}`, label: "Queue + RCON",
+						isEvent: false, indent: 1, startMs: lockStart, endMs: asyncStart,
+						durationMs: overheadMs, color: "blue" });
+				}
+				if (asyncMs > 0) {
+					const asyncLabel = ticks > 0 ? `Async export (${ticks.toLocaleString()} ticks)` : "Async export";
+					rows.push({ key: `export:async:${eventStart}`, label: asyncLabel,
+						isEvent: false, indent: 1, startMs: asyncStart, endMs: lockEnd,
+						durationMs: asyncMs, color: "blue" });
+				}
+				totalMs = Math.max(totalMs, lockEnd);
+			}
+			if (storeMs > 0) {
+				rows.push({ key: `export:store:${eventStart}`, label: "Wait for store",
+					isEvent: false, indent: 1, startMs: lockEnd, endMs: eventStart,
+					durationMs: storeMs, color: "blue" });
+				totalMs = Math.max(totalMs, eventStart);
+			}
+		}
+
+		// Import sub-phases — sequential flat bars (tiles → entities → fluids)
+		if (event?.importMetrics && typeof event.importMetrics === "object") {
+			const m = event.importMetrics as JsonObject;
+			const eventStart = elapsedMs ?? 0;
+			const tilesMs = Number(getProp(m, "tiles_ms", 0));
+			const tilesCount = Number(getProp(m, "tiles_placed", 0));
+			const entitiesMs = Number(getProp(m, "entities_ms", 0));
+			const entitiesCount = Number(getProp(m, "entities_created", 0));
+			const fluidsMs = Number(getProp(m, "fluids_ms", 0));
+			const fluidsCount = Number(getProp(m, "fluids_restored", 0));
+			const totalImportMs = Number(getProp(m, "total_ms", 0));
+			if (totalImportMs > 0) {
+				totalMs = Math.max(totalMs, eventStart);
+				let cursor = eventStart - totalImportMs;
+				if (tilesMs > 0 || tilesCount > 0) {
+					const label = tilesCount > 0 ? `Tiles (${tilesCount.toLocaleString()})` : "Tiles";
+					const dur = tilesMs || 1;
+					rows.push({ key: `import:tiles:${eventStart}`, label,
+						isEvent: false, indent: 1, startMs: cursor, endMs: cursor + dur,
+						durationMs: tilesMs || null, color: "blue" });
+					cursor += dur;
+				}
+				if (entitiesMs > 0 || entitiesCount > 0) {
+					const label = entitiesCount > 0 ? `Entities (${entitiesCount.toLocaleString()})` : "Entities";
+					const dur = entitiesMs || 1;
+					rows.push({ key: `import:entities:${eventStart}`, label,
+						isEvent: false, indent: 1, startMs: cursor, endMs: cursor + dur,
+						durationMs: entitiesMs || null, color: "blue" });
+					cursor += dur;
+				}
+				if (fluidsMs > 0 || fluidsCount > 0) {
+					const label = fluidsCount > 0 ? `Fluids (${fluidsCount.toLocaleString()})` : "Fluids";
+					const dur = fluidsMs || 1;
+					rows.push({ key: `import:fluids:${eventStart}`, label,
+						isEvent: false, indent: 1, startMs: cursor, endMs: cursor + dur,
+						durationMs: fluidsMs || null, color: "blue" });
+				}
+			}
+		}
+
+		// Transfer-level phases (transmission, validation, cleanup)
+		if (typeof event?.transmissionMs === "number" && event.transmissionMs > 0) {
+			const eventStart = elapsedMs ?? 0;
+			rows.push({ key: `phase:transmission:${eventStart}`, label: "Transmission",
+				isEvent: false, indent: 1, startMs: eventStart - event.transmissionMs, endMs: eventStart,
+				durationMs: event.transmissionMs, color: "blue" });
+			totalMs = Math.max(totalMs, eventStart);
+		}
+		if (typeof event?.validationMs === "number" && event.validationMs > 0) {
+			const eventStart = elapsedMs ?? 0;
+			rows.push({ key: `phase:validation:${eventStart}`, label: "Validation",
+				isEvent: false, indent: 1, startMs: eventStart - event.validationMs, endMs: eventStart,
+				durationMs: event.validationMs, color: "blue" });
+			totalMs = Math.max(totalMs, eventStart);
+		}
+		if (event?.phases && typeof event.phases === "object") {
+			const eventStart = elapsedMs ?? 0;
+			// Skip phases already captured by individual event fields at correct timeline positions:
+			// transmissionMs comes from import_started.transmissionMs
+			// validationMs comes from validation_received.validationMs
+			const skipFromPhaseSummary = new Set(["transmissionMs", "validationMs"]);
+			for (const [k, v] of Object.entries(event.phases)) {
+				if (skipFromPhaseSummary.has(k)) continue;
+				if (typeof v === "number" && v > 0) {
+					rows.push({ key: `phase:${k}:${eventStart}`, label: humanizeMetricKey(String(k).replace(/Ms$/, "")),
+						isEvent: false, indent: 1, startMs: eventStart - v, endMs: eventStart,
+						durationMs: v, color: "blue" });
+					totalMs = Math.max(totalMs, eventStart);
+				}
+			}
+		}
+	}
+
+	const scale = totalMs > 0 ? totalMs : 1;
+	return {
+		totalMs,
+		rows: rows.map((row, i) => {
+			const startMs = Number(getProp(row, "startMs", 0)) || 0;
+			const endMs = Number(getProp(row, "endMs", 0)) || 0;
+			return {
+				...row,
+				key: `${getProp(row, "key", "row")}#${i}`,
+				ganttStartPct: Math.max(0, Math.min(100, (startMs / scale) * 100)),
+				ganttWidthPct: endMs > startMs
+					? Math.max(0.8, Math.min(100 - (startMs / scale) * 100, ((endMs - startMs) / scale) * 100))
+					: 0,
+				ganttMarkerPct: Math.max(0, Math.min(100, (endMs / scale) * 100)),
+			};
+		}),
+	};
+}
 
 export function formatBytes(value: number | null) {
 	const numeric = Number(value);
@@ -505,12 +597,6 @@ export function buildFluidInventoryRows(expectedMap: Record<string, number> | nu
 	}
 	return grouped;
 }
-
-export type MetricRow = {
-	key: string;
-	metric: string;
-	value: string;
-};
 
 export function findLatestEvent(events: Array<LogEvent>, predicate: (event: LogEvent) => boolean) {
 	for (let index = events.length - 1; index >= 0; index -= 1) {

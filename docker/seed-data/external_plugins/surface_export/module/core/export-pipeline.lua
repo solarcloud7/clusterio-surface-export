@@ -14,20 +14,9 @@ local PlatformSchedule = require("modules/surface_export/utils/platform-schedule
 local clusterio_api = require("modules/clusterio/api")
 local PhaseProfiler = require("modules/surface_export/utils/phase-profiler")
 local TransactionHistory = require("modules/surface_export/utils/transaction-history")
+local JobResults = require("modules/surface_export/core/job-results")
 
 local ExportPipeline = {}
-
-local function prune_results(max_entries)
-	local keys = {}
-	for key in pairs(storage.async_job_results) do
-		table.insert(keys, key)
-	end
-	table.sort(keys)
-	while #keys > max_entries do
-		local oldest = table.remove(keys, 1)
-		storage.async_job_results[oldest] = nil
-	end
-end
 
 --- Sort entities for proper placement order
 --- Underground belts, pipes, etc. need special ordering
@@ -139,10 +128,6 @@ end
 --- @param destination_instance_id number|nil: If set, transfer to this instance after export
 --- @return string|nil, string|nil: job_id or nil + error
 function ExportPipeline.queue(platform_index, force_name, requester_name, destination_instance_id)
-	storage.async_jobs = storage.async_jobs or {}
-	storage.async_job_id_counter = storage.async_job_id_counter or 0
-	storage.async_job_results = storage.async_job_results or {}
-
 	storage.async_job_id_counter = storage.async_job_id_counter + 1
 	local job_counter = storage.async_job_id_counter
 
@@ -526,7 +511,7 @@ function ExportPipeline.complete(job)
 		progress = 100,
 		requester = job.requester
 	}
-	prune_results(25)
+	JobResults.prune(25)
 
 	-- Handle pending file write if requested
 	handle_pending_file_write(export_id)
