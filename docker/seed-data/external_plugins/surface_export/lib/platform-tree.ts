@@ -1,40 +1,52 @@
-"use strict";
+
+import type { IControllerPlugin, HostNodeModel, PlatformModel, InstanceNodeModel } from "../messages";
+import { getErrorMessage } from "../helpers";
 
 /**
  * Platform tree building and instance resolution.
  * Queries connected instances for their platforms and builds
  * the hierarchical host → instance → platform tree used by the web UI.
  */
-class PlatformTree {
-	constructor(plugin, messages) {
+export class PlatformTree {
+	private plugin: IControllerPlugin;
+	private messages: typeof import("../messages");
+
+	constructor(plugin: IControllerPlugin, messages: typeof import("../messages")) {
 		this.plugin = plugin;
 		this.messages = messages;
 	}
 
-	resolveInstanceName(instanceId) {
+	resolveInstanceName(instanceId: number) {
 		try {
 			const inst = this.plugin.controller.instances.get(instanceId);
 			if (inst?.config) {
-				return inst.config.get("instance.name") || null;
+				const name = inst.config.get("instance.name");
+				return typeof name === "string" && name ? name : null;
 			}
-		} catch (err) {
+		} catch (_err) {
 			// Ignore lookup errors
 		}
 		return null;
 	}
 
-	resolveTargetInstance(target) {
+	resolveTargetInstance(target: unknown) {
 		const logger = this.plugin.logger;
 		logger.info(`[resolveTargetInstance] Looking up target=${target} (type=${typeof target})`);
 
-		const direct = this.plugin.controller.instances.get(target);
+		const numericTarget = Number(target);
+		const direct = Number.isInteger(numericTarget) ? this.plugin.controller.instances.get(numericTarget) : undefined;
 		if (direct) {
-			logger.info(`[resolveTargetInstance] Direct ID match: ${target}`);
-			return { id: target, instance: direct };
+			logger.info(`[resolveTargetInstance] Direct ID match: ${numericTarget}`);
+			return { id: numericTarget, instance: direct };
 		}
 		logger.info(`[resolveTargetInstance] No direct ID match for ${target}, searching by name/host...`);
 
-		for (const [id, inst] of this.plugin.controller.instances) {
+		// alpha.25: controller.instances is an InstanceManager (not a plain Map) — iterate via
+		// values() and read inst.id rather than entry-iteration / .size, which it does not expose.
+		let checked = 0;
+		for (const inst of this.plugin.controller.instances.values()) {
+			checked += 1;
+			const id = inst.id;
 			const instName = inst.config && inst.config.get("instance.name");
 			const assignedHost = inst.config && inst.config.get("instance.assigned_host");
 
@@ -49,30 +61,30 @@ class PlatformTree {
 			logger.verbose(`[resolveTargetInstance]   Checked: id=${id}, name='${instName}', host=${assignedHost} - no match`);
 		}
 
-		logger.warn(`[resolveTargetInstance] FAILED: No instance found for target=${target} (checked ${this.plugin.controller.instances.size} instances)`);
+		logger.warn(`[resolveTargetInstance] FAILED: No instance found for target=${target} (checked ${checked} instances)`);
 		return null;
 	}
 
-	async requestInstancePlatforms(instanceId, forceName = "player") {
+	async requestInstancePlatforms(instanceId: number, forceName = "player") {
 		try {
 			const response = await this.plugin.controller.sendTo(
 				{ instanceId },
-				new this.messages.InstanceListPlatformsRequest({ forceName })
+				new this.messages.InstanceListPlatformsRequest({ forceName }),
 			);
 			return {
 				platforms: Array.isArray(response?.platforms) ? response.platforms : [],
 				error: null,
 			};
-		} catch (err) {
+		} catch (err: unknown) {
 			return {
 				platforms: [],
-				error: err.message,
+				error: getErrorMessage(err),
 			};
 		}
 	}
 
-	applyActiveTransferState(platforms, instanceId) {
-		const withState = platforms.map(platform => ({
+	applyActiveTransferState(platforms: Array<PlatformModel>, instanceId: number) {
+		const withState: PlatformModel[] = platforms.map(platform => ({
 			...platform,
 			transferId: null,
 			transferStatus: "idle",
@@ -94,7 +106,7 @@ class PlatformTree {
 				const nameMatches = platform.platformName === transfer.platformName;
 				if (indexMatches || nameMatches) {
 					platform.transferId = transfer.transferId;
-					platform.transferStatus = this.plugin.txLogger.normalizeTransferStatus(transfer.status);
+					platform.transferStatus = transfer.status;
 				}
 			}
 		}
@@ -103,7 +115,7 @@ class PlatformTree {
 	}
 
 	async buildPlatformTree(forceName = "player") {
-		const hostNodes = new Map();
+		const hostNodes = new Map<number, HostNodeModel>();
 		for (const host of this.plugin.controller.hosts.values()) {
 			if (host.isDeleted) {
 				continue;
@@ -117,8 +129,8 @@ class PlatformTree {
 			});
 		}
 
-		const unassignedInstances = [];
-		const platformLoads = [];
+		const unassignedInstances: Array<InstanceNodeModel> = [];
+		const platformLoads: Array<Promise<void>> = [];
 
 		for (const instance of this.plugin.controller.instances.values()) {
 			if (instance.isDeleted) {
@@ -126,20 +138,25 @@ class PlatformTree {
 			}
 
 			const instanceId = instance.id;
-			const hostId = instance.config.get("instance.assigned_host");
-			const host = hostId !== null && hostId !== undefined ? this.plugin.controller.hosts.get(hostId) : null;
-			const node = {
+			const rawHostId = instance.config.get("instance.assigned_host");
+			const parsedHostId = Number(rawHostId);
+			const hostId = Number.isInteger(parsedHostId) ? parsedHostId : null;
+			const host = hostId !== null ? this.plugin.controller.hosts.get(hostId) : null;
+			const node: InstanceNodeModel = {
 				instanceId,
-				instanceName: instance.config.get("instance.name"),
-				hostId: hostId ?? null,
-				status: instance.status,
+				instanceName: String(instance.config.get("instance.name") || ""),
+				hostId,
+				status: String(instance.status || ""),
 				connected: Boolean(host?.connected),
 				platforms: [],
 				platformError: null,
 			};
 
-			if (hostId !== null && hostId !== undefined && hostNodes.has(hostId)) {
-				hostNodes.get(hostId).instances.push(node);
+			if (hostId !== null && hostNodes.has(hostId)) {
+				const hostNode = hostNodes.get(hostId);
+				if (hostNode) {
+					hostNode.instances.push(node);
+				}
 			} else {
 				unassignedInstances.push(node);
 			}
@@ -173,5 +190,3 @@ class PlatformTree {
 		return { hosts, unassignedInstances };
 	}
 }
-
-module.exports = PlatformTree;

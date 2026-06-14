@@ -1,19 +1,30 @@
-"use strict";
+
+import type { IControllerPlugin, SubscriptionState, TransactionLogEntryModel, TransferSummaryModel, ActiveTransfer } from "../messages";
+import { getErrorMessage } from "../helpers";
+
+type ControlLink = {
+	send: (event: unknown) => void;
+	user: { checkPermission: (permission: string) => void };
+};
 
 /**
  * WebSocket subscription management and live update broadcasting.
  * Manages surfaceExportSubscriptions Map and revision counters.
  * Handles tree/transfer/log update events sent to connected web UI clients.
  */
-class SubscriptionManager {
-	constructor(plugin, lib, messages) {
+export class SubscriptionManager {
+	private plugin: IControllerPlugin;
+	private messages: typeof import("../messages");
+	public treeBroadcastLimiter: { activate: () => void; cancel: () => void };
+
+	constructor(plugin: IControllerPlugin, lib: { RateLimiter: new (options: { maxRate: number; action: () => void }) => { activate: () => void; cancel: () => void } }, messages: typeof import("../messages")) {
 		this.plugin = plugin;
 		this.messages = messages;
 		this.treeBroadcastLimiter = new lib.RateLimiter({
 			maxRate: 2,
 			action: () => {
-				this.emitTreeUpdate(this.plugin.lastTreeForceName || "player").catch(err => {
-					this.plugin.logger.error(`Failed to broadcast tree update: ${err.message}`);
+				this.emitTreeUpdate(this.plugin.lastTreeForceName || "player").catch((err: unknown) => {
+					this.plugin.logger.error(`Failed to broadcast tree update: ${getErrorMessage(err)}`);
 				});
 			},
 		});
@@ -24,7 +35,7 @@ class SubscriptionManager {
 		this.treeBroadcastLimiter.activate();
 	}
 
-	broadcastToSubscribers(filterFn, event) {
+	broadcastToSubscribers(filterFn: (subscription: SubscriptionState) => boolean, event: unknown) {
 		const staleConnections = [];
 		for (const [link, subscription] of this.plugin.surfaceExportSubscriptions.entries()) {
 			if (!filterFn(subscription)) {
@@ -32,7 +43,8 @@ class SubscriptionManager {
 			}
 			try {
 				link.send(event);
-			} catch (err) {
+			} catch (err: unknown) {
+				this.plugin.logger.warn(`Failed to send event to subscriber, removing stale connection: ${getErrorMessage(err)}`);
 				staleConnections.push(link);
 			}
 		}
@@ -67,7 +79,7 @@ class SubscriptionManager {
 		this.broadcastToSubscribers(subscription => subscription.tree, event);
 	}
 
-	emitTransferUpdate(transfer) {
+	emitTransferUpdate(transfer: ActiveTransfer) {
 		if (!transfer) {
 			return;
 		}
@@ -85,7 +97,7 @@ class SubscriptionManager {
 		this.broadcastToSubscribers(subscription => subscription.transfers, event);
 	}
 
-	emitLogUpdate(transferId, logEvent) {
+	emitLogUpdate(transferId: string, logEvent: TransactionLogEntryModel | null) {
 		this.plugin.logRevision += 1;
 		let transferInfo = null;
 		let summary = null;
@@ -111,9 +123,16 @@ class SubscriptionManager {
 			revision: this.plugin.logRevision,
 			generatedAt: Date.now(),
 			transferId,
-			event: logEvent || {},
-			transferInfo: transferInfo || null,
-			summary: summary || null,
+			event: logEvent || {
+				timestamp: new Date().toISOString(),
+				timestampMs: Date.now(),
+				elapsedMs: 0,
+				deltaMs: 0,
+				eventType: "info",
+				message: "No event details",
+			},
+			transferInfo: (transferInfo && typeof transferInfo === "object" ? transferInfo as Record<string, unknown> : null),
+			summary: (summary && typeof summary === "object" ? summary as Record<string, unknown> : null),
 		});
 
 		this.broadcastToSubscribers(subscription => (
@@ -121,13 +140,16 @@ class SubscriptionManager {
 		), event);
 	}
 
-	async handleSetSurfaceExportSubscriptionRequest(request, src) {
-		const link = this.plugin.controller.wsServer.controlConnections.get(src.id);
+	async handleSetSurfaceExportSubscriptionRequest(request: SubscriptionState, src?: { id: number }) {
+		if (!src) {
+			return;
+		}
+		const link = this.plugin.controller.wsServer.controlConnections.get(src.id) as ControlLink | undefined;
 		if (!link) {
 			return;
 		}
 
-		const subscription = {
+		const subscription: SubscriptionState = {
 			tree: Boolean(request.tree),
 			transfers: Boolean(request.transfers),
 			logs: Boolean(request.logs),
@@ -154,7 +176,7 @@ class SubscriptionManager {
 					forceName: this.plugin.lastTreeForceName || "player",
 					tree,
 				}));
-			} catch (err) {
+			} catch (_err) {
 				this.plugin.surfaceExportSubscriptions.delete(link);
 				return;
 			}
@@ -173,7 +195,7 @@ class SubscriptionManager {
 							this.plugin.txLogger.getLastEventTimestamp(transfer.transferId),
 						),
 					}));
-				} catch (err) {
+				} catch (_err) {
 					this.plugin.surfaceExportSubscriptions.delete(link);
 					return;
 				}
@@ -181,5 +203,3 @@ class SubscriptionManager {
 		}
 	}
 }
-
-module.exports = SubscriptionManager;

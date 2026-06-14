@@ -1,0 +1,25 @@
+{
+	"extends": "./tsconfig.base.json",
+	"compilerOptions": {
+		"lib": ["es2023"],
+		"module": "nodenext",
+		"moduleResolution": "nodenext",
+		"target": "es2022",
+		"outDir": "dist/node",
+		"rootDir": ".",
+		"incremental": true,
+		"sourceMap": true,
+		"types": ["node"]
+	},
+	"include": [
+		"helpers.ts",
+		"messages.ts",
+		"index.ts",
+		"controller.ts",
+		"instance.ts",
+		"control.ts",
+		"lib/**/*.ts",
+		"shared/**/*.ts"
+	],
+	"exclude": ["web/**", "dist/web/**", "node_modules/**", "webpack.config.js"]
+}

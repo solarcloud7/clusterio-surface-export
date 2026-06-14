@@ -10,12 +10,15 @@ This project provides tools for exporting and importing Factorio Space Age platf
 2. **Clusterio Plugin** (`docker/seed-data/external_plugins/surface_export/`): JavaScript plugin for cross-instance platform transfer
 3. **PowerShell Tools** (`tools/`): Helper scripts for deployment, import, export, and validation
 
-**Key Features (v1.0.88)**:
+**Key Features (v1.0.98)**:
 - Complete platform state export/import (entities, inventories, fluids, tiles)
 - Async processing to prevent game freezing
 - Graceful handling of mod content mismatches
 - Factorio 2.0 compatibility (handles read-only properties)
 - Chunked RCON protocol for large payloads (>8KB)
+- In-game transaction dashboard with persistent profiler snapshots
+- Platform schedule + interrupts preserved (stations, wait conditions, train group inheritance)
+- Ghost entities, tile ghosts, and item request proxies preserved
 
 **Performance**: Small platforms (<8KB): ~1-2s | Large platforms (235KB): ~40s (RCON bottleneck)
 
@@ -91,24 +94,33 @@ docker exec surface-export-controller npx clusterioctl --log-level error instanc
 
 ### Hot Reload Development (Recommended)
 
-The plugin uses **save patching** with bind-mounted source:
+The plugin uses **TypeScript** with bind-mounted source and **save patching** for Lua:
 - Plugin location: `docker/seed-data/external_plugins/surface_export/`
 - Mounted into containers via `external_plugins/` volume (auto-installed by base image)
-- Contains both Node.js plugin code and Lua `module/` directory
+- Contains TypeScript plugin code (`*.ts`), React web UI (`web/`), and Lua `module/` directory
+- Build output: `dist/node/` (Node.js runtime), `dist/web/` (browser bundle)
 
-**Plugin Changes** (JavaScript):
-- Edit `*.js` files in plugin root → Restart container to pick up changes
-- No image rebuild needed
+**Plugin Changes** (TypeScript):
+- Edit `*.ts` files in plugin root or `lib/` → Run `npm run build:node` → Restart containers
+- Build generates `dist/node/*.js` from TypeScript sources
+- Deploy script automatically rebuilds before Docker startup
+
+**Web UI Changes** (React):
+- Edit `*.jsx` or `*.css` files in `web/` → Run `npm run build:web` → Hard-refresh browser
+- Build generates `dist/web/` bundle via Webpack Module Federation
+- Deploy script automatically rebuilds before Docker startup
 
 **Module Changes** (Lua - Save Patched):
 - Edit `*.lua` files in `module/` directory → Restart instances to re-patch saves
 - Clusterio automatically injects Lua code into saves at startup
+- No build step needed for Lua changes
 
 **Development Workflow**:
 1. Start cluster: `docker compose up -d`
-2. Edit plugin JS files → restart containers to pick up changes
-3. Edit module Lua files → restart instances: `clusterioctl instance stop-all && clusterioctl instance start-all`
-4. Saves are automatically patched with your Lua code
+2. Edit TypeScript files → `npm run build:node` → restart containers
+3. Edit React files → `npm run build:web` → hard-refresh browser
+4. Edit Lua files → restart instances: `clusterioctl instance stop-all && clusterioctl instance start-all`
+5. **Or use deploy script** for full rebuild: `.\tools\deploy-cluster.ps1 -SkipIncrement`
 
 ### Import/Export Tools
 ```bash
@@ -138,19 +150,32 @@ Clusterio is a clustered Factorio server manager using a WebSocket Link Protocol
 
 ```
 docker/seed-data/external_plugins/surface_export/   # Plugin root
-├── index.js              # Plugin registration, config fields, permissions
-├── controller.js         # Controller: slim coordinator delegating to lib/
-├── instance.js           # Instance: RCON bridge, platform listing, chunked import
-├── messages.js           # Message type definitions with JSON schemas (transfer + export/import operations)
-├── control.js            # CLI command registration (clusterioctl)
-├── helpers.js            # Utility functions (chunking, escaping)
+├── index.ts              # Plugin registration, config fields, permissions
+├── controller.ts         # Controller: slim coordinator delegating to lib/
+├── instance.ts           # Instance: RCON bridge, platform listing, chunked import
+├── messages.ts           # Message type definitions with JSON schemas (transfer + export/import operations)
+├── control.ts            # CLI command registration (clusterioctl)
+├── helpers.ts            # Utility functions (chunking, escaping)
 ├── package.json          # Plugin metadata and dependencies
+├── tsconfig.node.json    # TypeScript config: outputs to dist/node/
 ├── webpack.config.js     # Web UI build config
-├── lib/                  # Controller modules (split from controller.js)
-│   ├── platform-tree.js          # Tree building + instance resolution
-│   ├── transaction-logger.js     # Event logging, phase timing, persistence
-│   ├── subscription-manager.js   # WebSocket subscriptions + broadcasting
-│   └── transfer-orchestrator.js  # Transfer lifecycle state machine
+├── dist/                 # Build output (gitignored, generated by npm run build)
+│   ├── node/             # TypeScript compilation output (Node.js runtime)
+│   │   ├── index.js      # Built plugin entrypoint
+│   │   ├── controller.js # Built controller
+│   │   ├── instance.js   # Built instance
+│   │   ├── control.js    # Built CLI
+│   │   ├── helpers.js    # Built utilities
+│   │   ├── messages.js   # Built message types
+│   │   ├── *.d.ts        # TypeScript declaration files
+│   │   ├── *.map         # Source maps
+│   │   └── lib/          # Built library modules
+│   └── web/              # Webpack bundle (React + Module Federation)
+├── lib/                  # TypeScript source modules
+│   ├── platform-tree.ts          # Tree building + instance resolution
+│   ├── transaction-logger.ts     # Event logging, phase timing, persistence
+│   ├── subscription-manager.ts   # WebSocket subscriptions + broadcasting
+│   └── transfer-orchestrator.ts  # Transfer lifecycle state machine
 ├── web/                  # React web UI (Ant Design + Module Federation)
 │   ├── index.jsx         # WebPlugin class, page wrapper, hooks
 │   ├── ManualTransferTab.jsx     # Platform tree + per-platform export / per-instance import UI
@@ -160,18 +185,21 @@ docker/seed-data/external_plugins/surface_export/   # Plugin root
 │   └── style.css
 ├── module/               # Lua module (save-patched into Factorio instances)
 │   ├── module.json       # Module metadata
-│   ├── control.lua       # Entry point, event handlers, on_init/on_load
+│   ├── control.lua       # Entry point, event handlers, on_init/on_load, GUI events
 │   ├── core/             # Core processing (async-processor, serializer, deserializer, json)
 │   ├── export_scanners/  # Entity/inventory/connection/tile scanning
 │   ├── import_phases/    # Restoration phases (tiles, hub, entities, state, belts, fluids)
-│   ├── interfaces/       # Commands (14 files) + remote interface (18 files)
-│   ├── utils/            # Helpers (game-utils, string-utils, table-utils, etc.)
+│   ├── interfaces/       # Commands (15 files) + remote interface (18 files) + GUI (1 file)
+│   │   ├── commands/     # In-game slash commands
+│   │   ├── remote/       # Remote interface functions
+│   │   └── gui/          # GUI modules (transaction-dashboard.lua)
+│   ├── utils/            # Helpers (game-utils, transaction-history, phase-profiler, etc.)
 │   ├── validators/       # Verification, transfer-validation, surface-counter, loss-analysis
 │   └── locale/           # Localization strings
-└── dist/                 # Built web UI (npm run build:web, gitignored)
+└── docs/                 # Documentation
 
 tools/
-├── deploy-cluster.ps1    # Main deployment script
+├── deploy-cluster.ps1    # Main deployment script (runs npm run build before Docker startup)
 ├── import-platform.ps1   # Chunked import via RCON
 ├── export-platform.ps1   # Export trigger helper
 └── validate-cluster.ps1  # Cluster health checks
@@ -183,6 +211,15 @@ docker/
 .env.example              # Template for .env (tracked in git)
 docker-compose.yml        # Cluster definition (uses pre-built GHCR images)
 ```
+
+### Build Architecture
+
+- **Language**: TypeScript 5.5.4 (strict mode) for plugin code, Lua 5.2 for Factorio module
+- **Runtime entrypoints**: `index.ts` declares `instanceEntrypoint: "dist/node/instance"`, etc.
+- **Build pipeline**: `npm run build` compiles TypeScript → `dist/node/*.js` and bundles React → `dist/web/*`
+- **Clean source tree**: Only `.ts` and `.jsx` files in source directories; all generated artifacts in `dist/`
+- **Deploy integration**: `deploy-cluster.ps1` runs `npm run build` before Docker compose up
+- **Git hygiene**: `dist/` is gitignored; fresh builds ensure consistency
 
 ## Key Technical Constraints
 
@@ -243,6 +280,7 @@ remote.call("surface_export", "run_tests")
 /lock-status                      # Show lock status of all platforms
 /resume-platform <name>           # Resume a locked platform
 /plugin-import-file <file> <name> # Import from file via plugin
+/transaction-dashboard [limit]    # Open in-game transaction history GUI (default: 25 entries)
 /step-tick <count>                # Debug: step N ticks
 /test-entity <json>               # Debug: test entity import
 ```
@@ -261,10 +299,28 @@ remote.call("surface_export", "run_tests")
 - Controller injects `_operationId` into payload; Lua emits completion with `operation_id`.
 - Instance forwards `ImportOperationCompleteEvent` to controller so non-transfer imports can complete their transaction logs.
 
+### Space Hub schedule export source (CRITICAL)
+- Always read schedule data from `hub_entity.platform`, not from hub entity fields.
+- Use `platform.get_schedule()` and serialize both `schedule.stations` and `schedule.interrupts`.
+- Include interrupt trigger details, wait conditions, and inherited train-group references.
+- This prevents partial exports where stations appear but interrupts are lost.
+
 ### Transaction logs
 - Logs now include operation type: `transfer`, `export`, `import`.
 - `TransactionLogsTab` shows mixed operation history in one list with operation type tags.
 - Export/import operations are persisted using the same transaction log store as transfers.
+
+### In-game transaction dashboard
+- **Command**: `/transaction-dashboard [limit]` opens GUI (default 25 entries, max 500)
+- **Features**: Scrollable history table, color-coded by operation type, detail popups with phase timing
+- **Persistence**: Uses LocalisédString profiler snapshots stored in `storage.transaction_history`
+- **Phase timing**: Displays per-phase LuaProfiler values that survive save/load
+- **Implementation**: Three-part system:
+  1. `utils/transaction-history.lua` — Snapshot storage (converts profilers to LocalisedStrings)
+  2. `interfaces/gui/transaction-dashboard.lua` — GUI rendering (assigns snapshots to labels)
+  3. `core/import-completion.lua` + `core/export-pipeline.lua` — History recording hooks
+- **Admin features**: Clear history button, adjustable row limits (10/25/50/100)
+- **See**: Pitfall #24 for LocalisedString profiler serialization requirements
 
 ## Common Pitfalls & Solutions
 
@@ -562,6 +618,67 @@ end
 - **JSX** (`web/TransactionLogsTab.jsx`): Renders "Verified (thermal)" group status and "Thermal match"/"Thermal drift" child status tags.
 **Backward compat**: When `aggregate.expectedEnergy` is undefined (old transaction logs without energy data), falls through to existing per-bucket-drift display.
 **Key files**: `loss-analysis.lua`, `web/utils.js`, `web/TransactionLogsTab.jsx`
+
+### 24. LuaProfiler Serialization — LocalisedString Snapshots (CRITICAL)
+**Symptom**: Performance timing displays show "userdata: 0x..." instead of readable times like "1.234 ms". Or transaction history loses all profiler values after save/load.
+**Root Cause**: `LuaProfiler` objects are **not serializable** and **cannot be read as numbers** in Lua. Three critical facts:
+1. **`tostring(profiler)` is broken**: Returns `"userdata: 0x12345678"` (memory address), NOT the time value.
+2. **Cannot store in `storage`**: Profiler objects crash on save — they must stay in module-local tables.
+3. **LocalisedString is the ONLY serializable form**: Profiler objects can only be rendered when embedded in a LocalisedString array.
+
+**The ONLY way to persist profiler values across save/load**:
+```lua
+-- WRONG (produces "userdata: 0x..." garbage):
+local msg = "Phase: " .. tostring(profiler_obj)
+
+-- WRONG (crashes on save — profilers are not serializable):
+storage.history = { timing = profiler_obj }
+
+-- CORRECT (LocalisedString array — serializable + renders correctly in GUI):
+local snapshot = {"", "Phase: ", profiler_obj}
+game.print(snapshot)  -- Displays "Phase: 1.234 ms"
+storage.history = { timing = snapshot }  -- Safe to save
+```
+
+**Why LocalisedString works**:
+- When a profiler is embedded in a LocalisedString array `{"", profiler}`, Factorio's engine "bakes" the current time value into the string during serialization.
+- After reload, GUI labels assigned that LocalisedString still display the correct millisecond value.
+- **This is render-only**: You cannot perform math on the value or send it via JSON. It's for display purposes only.
+
+**Implementation pattern** (transaction history dashboard):
+1. **During job processing**: Keep profilers in module-local RAM table (`PhaseProfiler` uses `local active = {}`).
+2. **At job completion**: Create LocalisedString snapshots BEFORE `PhaseProfiler.discard()`:
+   ```lua
+   local snapshot = {}
+   for phase_name, profiler_obj in pairs(perf) do
+     snapshot[phase_name] = {"", profiler_obj}  -- Serializable
+   end
+   storage.transaction_history[job_id] = { phases = snapshot }
+   ```
+3. **In GUI**: Assign snapshots directly to label captions:
+   ```lua
+   label.caption = entry.phases.validation  -- Shows "1.234 ms"
+   ```
+
+**Key files**: 
+- `utils/phase-profiler.lua` (module-local profiler storage)
+- `utils/transaction-history.lua` (LocalisedString snapshot storage)
+- `interfaces/gui/transaction-dashboard.lua` (GUI display)
+- `core/import-completion.lua`, `core/export-pipeline.lua` (snapshot recording)
+
+**Verification**: See Factorio API docs for [LuaProfiler](https://lua-api.factorio.com/latest/classes/LuaProfiler.html): "They can be used anywhere a LocalisedString is used, except for LuaGuiElement::add's LocalisedString arguments."
+
+### 25. LocalisedString 20-Parameter Limit Can Crash on_tick (CRITICAL)
+**Symptom**: Instance shuts down with code 255 during import completion/validation, RCON drops with `Connection closed`, and host logs show `Factorio server unexpectedly shut down`.
+**Root Cause**: A single `game.print({...})` LocalisedString exceeded Factorio's hard parameter cap: `Too many parameters for localised string: 39 > 20 (limit)`. This occurred when printing all phase profiler values in one array.
+**Error signature**:
+```text
+Error while running event level::on_tick (ID 0)
+Too many parameters for localised string: 39 > 20 (limit)
+... import-completion.lua:479 ...
+```
+**Fix**: Split output into multiple `game.print({"", ...})` calls (one line per phase) so each LocalisedString stays under 20 parameters. Do not pack full perf summaries into one LocalisedString.
+**Key file**: `module/core/import-completion.lua`
 
 ## Factorio 2.0 Fluid API & Simulation Behavior
 

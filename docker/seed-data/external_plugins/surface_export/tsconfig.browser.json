@@ -1,0 +1,19 @@
+{
+	"extends": "./tsconfig.base.json",
+	"compilerOptions": {
+		"lib": ["dom", "dom.iterable", "es2023"],
+		"module": "es2022",
+		"moduleResolution": "bundler",
+		"target": "es2022",
+		"jsx": "react-jsx",
+		"outDir": "dist/browser",
+		"noEmit": true
+	},
+	"include": [
+		"web/**/*.tsx",
+		"web/**/*.ts",
+		"messages.ts",
+		"shared/**/*.ts"
+	],
+	"exclude": ["dist/**", "node_modules/**"]
+}

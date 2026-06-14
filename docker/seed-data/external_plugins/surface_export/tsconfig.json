@@ -1,0 +1,31 @@
+{
+	"extends": "./tsconfig.base.json",
+	"compilerOptions": {
+		"lib": ["dom", "dom.iterable", "es2023"],
+		"module": "commonjs",
+		"moduleResolution": "node",
+		"target": "es2022",
+		"jsx": "react-jsx",
+		"types": ["node"],
+		"noEmit": true,
+		"paths": {
+			"@clusterio/lib": ["../../../../clusterio/packages/lib/dist/node/index"],
+			"@clusterio/controller": ["../../../../clusterio/packages/controller/dist/node/index"],
+			"@clusterio/host": ["../../../../clusterio/packages/host/dist/node/index"],
+			"@clusterio/ctl": ["../../../../clusterio/packages/ctl/dist/node/index"]
+		}
+	},
+	"include": [
+		"helpers.ts",
+		"messages.ts",
+		"index.ts",
+		"controller.ts",
+		"instance.ts",
+		"control.ts",
+		"shared/**/*.ts",
+		"lib/**/*.ts",
+		"web/**/*.tsx",
+		"web/**/*.ts"
+	],
+	"exclude": ["dist/**", "node_modules/**"]
+}

@@ -13,6 +13,7 @@ local RemoteInterface = require("modules/surface_export/interfaces/remote-interf
 local Commands = require("modules/surface_export/interfaces/commands")
 local AsyncProcessor = require("modules/surface_export/core/async-processor")
 local SurfaceLock = require("modules/surface_export/utils/surface-lock")
+local TransactionDashboard = require("modules/surface_export/interfaces/gui/transaction-dashboard")
 
 -- Top-level module table (event_handler interface)
 local SurfaceExportModule = {}
@@ -125,6 +126,15 @@ SurfaceExportModule.events = {
 		if not ok2 then
 			log(string.format("[Surface Export] ERROR sending platform state send_json event: %s", tostring(err)))
 		end
+	end,
+
+	-- GUI events for transaction dashboard
+	[e.on_gui_click] = function(event)
+		TransactionDashboard.on_gui_click(event)
+	end,
+
+	[e.on_gui_closed] = function(event)
+		TransactionDashboard.on_gui_closed(event)
 	end,
 }
 

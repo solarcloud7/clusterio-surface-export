@@ -28,7 +28,7 @@
 
 # Template anchor for host services (reduces duplication)
 x-host-base: &host-base
-  image: ghcr.io/solarcloud7/clusterio-docker-host:ExtendedExportData
+  image: ghcr.io/solarcloud7/clusterio-docker-host:2.0.0-alpha.25
   env_file:
     - .env
   networks:
@@ -40,7 +40,7 @@ x-host-base: &host-base
 
 services:
   surface-export-controller:
-    image: ghcr.io/solarcloud7/clusterio-docker-controller:ExtendedExportData
+    image: ghcr.io/solarcloud7/clusterio-docker-controller:2.0.0-alpha.25
     env_file:
       - .env
     container_name: surface-export-controller

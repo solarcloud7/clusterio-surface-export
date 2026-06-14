@@ -20,7 +20,6 @@ if (-not $PluginPath) {
 
 $PluginJsonPath = Join-Path $PluginPath "package.json"
 $ModuleJsonPath = Join-Path $PluginPath "module\module.json"
-$DockerDir = Join-Path $WorkspaceRoot "docker"
 
 # 1. Increment Version
 if (-not $SkipIncrement) {
@@ -83,16 +82,20 @@ if (-not $KeepData) {
     Write-Host "Keeping existing data volumes (-KeepData)" -ForegroundColor Yellow
 }
 
-# 5. Build web UI (so dist/ matches source)
-Write-Host "Building web UI..." -ForegroundColor Cyan
+# 5. Build plugin artifacts (node + web)
+Write-Host "Building plugin artifacts (node + web)..." -ForegroundColor Cyan
 Push-Location $PluginPath
 try {
-    npm install --silent 2>$null
-    npm run build:web
-    if ($LASTEXITCODE -ne 0) {
-        throw "Web UI build failed"
+    if (Test-Path (Join-Path $PluginPath "package-lock.json")) {
+        npm ci --silent 2>$null
+    } else {
+        npm install --silent 2>$null
     }
-    Write-Host "Web UI built successfully" -ForegroundColor Green
+    npm run build
+    if ($LASTEXITCODE -ne 0) {
+        throw "Plugin build failed"
+    }
+    Write-Host "Plugin artifacts built successfully" -ForegroundColor Green
 } finally {
     Pop-Location
 }
@@ -129,27 +132,84 @@ Start-Sleep -Seconds 3
 $logJob = Start-Job -ScriptBlock {
     docker logs -f surface-export-controller 2>&1
 }
-while ($true) {
-    $lines = Receive-Job $logJob
-    foreach ($line in $lines) {
-        Write-Host $line
-        if ($line -match "Seeding complete") {
-            $initDone = $true
+try {
+    while ($true) {
+        $lines = Receive-Job $logJob
+        foreach ($line in $lines) {
+            Write-Host $line
+            if ($line -match "Seeding complete") {
+                $initDone = $true
+            }
         }
+        if ($initDone) { break }
+        if ($sw.Elapsed.TotalSeconds -ge $timeout) {
+            Write-Host "(Log streaming timeout after ${timeout}s)" -ForegroundColor Yellow
+            break
+        }
+        Start-Sleep -Milliseconds 200
     }
-    if ($initDone) { break }
-    if ($sw.Elapsed.TotalSeconds -ge $timeout) {
-        Write-Host "(Log streaming timeout after ${timeout}s)" -ForegroundColor Yellow
-        break
+} finally {
+    if ($logJob) {
+        Stop-Job $logJob -ErrorAction SilentlyContinue
+        Remove-Job $logJob -ErrorAction SilentlyContinue
     }
-    Start-Sleep -Milliseconds 200
 }
-Stop-Job $logJob -ErrorAction SilentlyContinue
-Remove-Job $logJob -ErrorAction SilentlyContinue
 
 Write-Host "================================================" -ForegroundColor DarkGray
 
-# 9. Retrieve admin token
+# 9. Wait for instances to reach running state
+Write-Host ""
+Write-Host "Waiting for instances to start..." -ForegroundColor Cyan
+Write-Host "================================================" -ForegroundColor DarkGray
+
+$instanceTimeout = 300
+$instanceSw = [System.Diagnostics.Stopwatch]::StartNew()
+$lastStates = @{}
+$instancesDone = $false
+
+while (-not $instancesDone -and $instanceSw.Elapsed.TotalSeconds -lt $instanceTimeout) {
+    Start-Sleep -Seconds 3
+
+    $listOut = docker exec surface-export-controller sh -c 'npx clusterioctl --config /clusterio/tokens/config-control.json --log-level error instance list 2>/dev/null' 2>$null
+    if ($LASTEXITCODE -ne 0 -or -not $listOut) { continue }
+
+    $stateMap = @{}
+    foreach ($line in ($listOut -split "`n")) {
+        if ($line -match '(clusterio-\S+-instance-\d+).*\b(running|starting|stopped|stopping|creating_save|unassigned)\b') {
+            $stateMap[$Matches[1]] = $Matches[2]
+        }
+    }
+
+    foreach ($name in ($stateMap.Keys | Sort-Object)) {
+        $state = $stateMap[$name]
+        if ($lastStates[$name] -ne $state) {
+            $stateColor = switch ($state) {
+                "running"       { "Green"  }
+                "stopped"       { "Red"    }
+                "creating_save" { "Cyan"   }
+                default         { "Yellow" }
+            }
+            $elapsed = [int]$instanceSw.Elapsed.TotalSeconds
+            Write-Host "  [+${elapsed}s] $name -> $state" -ForegroundColor $stateColor
+            $lastStates[$name] = $state
+        }
+    }
+
+    $nonRunning = @($stateMap.Values | Where-Object { $_ -ne "running" })
+    if ($stateMap.Count -gt 0 -and $nonRunning.Count -eq 0) {
+        $instancesDone = $true
+    }
+}
+
+Write-Host "================================================" -ForegroundColor DarkGray
+if ($instancesDone) {
+    $elapsed = [int]$instanceSw.Elapsed.TotalSeconds
+    Write-Host "All instances running! (+${elapsed}s)" -ForegroundColor Green
+} else {
+    Write-Host "(Instance startup timeout after ${instanceTimeout}s)" -ForegroundColor Yellow
+}
+
+# 10. Retrieve admin token
 Write-Host ""
 Write-Host "Retrieving admin token..." -ForegroundColor Cyan
 Start-Sleep -Seconds 2
@@ -176,7 +236,7 @@ $httpPort = (Get-Content $EnvFile | Where-Object { $_ -match '^CONTROLLER_HTTP_P
 Write-Host "Web UI: http://localhost:$httpPort" -ForegroundColor Green
 Write-Host ""
 Write-Host "Cluster topology:" -ForegroundColor Cyan
-Write-Host "  Controller (http://localhost:8080)" -ForegroundColor White
+Write-Host "  Controller (http://localhost:$httpPort)" -ForegroundColor White
 Write-Host "    ├── surface-export-host-1 (ports 34100-34109)" -ForegroundColor White
 Write-Host "    │     └── clusterio-host-1-instance-1" -ForegroundColor White
 Write-Host "    └── surface-export-host-2 (ports 34200-34209)" -ForegroundColor White

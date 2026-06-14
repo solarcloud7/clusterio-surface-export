@@ -1,23 +1,20 @@
-"use strict";
-const fs = require("fs/promises");
+
+import fs from "fs/promises";
+import type { IControllerPlugin, ActiveTransfer, PersistedTransactionLog, TransactionLogEntryModel } from "../messages";
+import { getErrorMessage } from "../helpers";
 
 /**
  * Transaction logging, phase timing, persistence, and transfer summary building.
  * Owns the transactionLogs Map and persistedTransactionLogs array on the plugin.
  */
-class TransactionLogger {
-	constructor(plugin) {
+export class TransactionLogger {
+	private plugin: IControllerPlugin;
+
+	constructor(plugin: IControllerPlugin) {
 		this.plugin = plugin;
 	}
 
-	normalizeTransferStatus(status) {
-		if (status === "importing") {
-			return "transporting";
-		}
-		return status;
-	}
-
-	buildTransferInfo(transfer) {
+	buildTransferInfo(transfer: ActiveTransfer) {
 		return {
 			transferId: transfer.transferId,
 			operationType: transfer.operationType || "transfer",
@@ -30,7 +27,7 @@ class TransactionLogger {
 			sourceInstanceName: transfer.sourceInstanceName || this.plugin.platformTree.resolveInstanceName(transfer.sourceInstanceId),
 			targetInstanceId: transfer.targetInstanceId,
 			targetInstanceName: transfer.targetInstanceName || this.plugin.platformTree.resolveInstanceName(transfer.targetInstanceId),
-			status: this.normalizeTransferStatus(transfer.status),
+			status: transfer.status,
 			startedAt: transfer.startedAt || null,
 			completedAt: transfer.completedAt || null,
 			failedAt: transfer.failedAt || null,
@@ -38,7 +35,7 @@ class TransactionLogger {
 		};
 	}
 
-	getLastEventTimestamp(transferId) {
+	getLastEventTimestamp(transferId: string) {
 		const events = this.plugin.transactionLogs.get(transferId);
 		if (!events || !events.length) {
 			return null;
@@ -46,9 +43,10 @@ class TransactionLogger {
 		return events[events.length - 1].timestampMs || null;
 	}
 
-	buildTransferSummary(transferId, transfer, lastEventAt = null) {
+	buildTransferSummary(transferId: string, transfer: ActiveTransfer, lastEventAt: number | null = null) {
 		const info = this.buildTransferInfo(transfer);
 		const storedExport = info.exportId ? this.plugin.platformStorage.get(info.exportId) : null;
+		// Artifact size fallback chain: transfer field → stored export → payload metrics estimate
 		const artifactSizeBytes = info.artifactSizeBytes
 			?? storedExport?.size
 			?? (typeof transfer?.payloadMetrics?.payloadSizeKB === "number"
@@ -75,7 +73,7 @@ class TransactionLogger {
 		};
 	}
 
-	formatDuration(durationMs) {
+	formatDuration(durationMs: number | null) {
 		if (typeof durationMs !== "number" || Number.isNaN(durationMs)) {
 			return null;
 		}
@@ -85,7 +83,7 @@ class TransactionLogger {
 		return `${Math.round(durationMs)}ms`;
 	}
 
-	resolveTransferResult(status) {
+	resolveTransferResult(status: string) {
 		if (status === "completed") {
 			return "SUCCESS";
 		}
@@ -95,24 +93,25 @@ class TransactionLogger {
 		return "IN_PROGRESS";
 	}
 
-	buildPhaseSummary(transfer) {
-		const phaseSummary = {};
+	buildPhaseSummary(transfer: ActiveTransfer) {
+		const phaseSummary: Record<string, number> = {};
 		if (!transfer?.phases) {
 			return phaseSummary;
 		}
 		for (const [name, phase] of Object.entries(transfer.phases)) {
-			if (phase?.durationMs !== undefined) {
-				phaseSummary[`${name}Ms`] = phase.durationMs;
+			if ((phase as { durationMs?: number })?.durationMs !== undefined) {
+				phaseSummary[`${name}Ms`] = (phase as { durationMs: number }).durationMs;
 			}
 		}
 		return phaseSummary;
 	}
 
-	buildDetailedTransferSummary(transferId, transfer, lastEventAt = null) {
+	buildDetailedTransferSummary(transferId: string, transfer: ActiveTransfer, lastEventAt: number | null = null) {
 		const info = this.buildTransferInfo(transfer);
 		const endAt = info.completedAt || info.failedAt || lastEventAt || Date.now();
 		const durationMs = info.startedAt ? Math.max(0, endAt - info.startedAt) : null;
 		const validation = transfer.validationResult || null;
+		// Fall back to validation expected counts if no explicit source verification was recorded
 		let sourceVerification = transfer.sourceVerification || null;
 		if (!sourceVerification && validation) {
 			sourceVerification = {
@@ -153,9 +152,11 @@ class TransactionLogger {
 		};
 	}
 
+	/** Merge active (in-memory) and persisted (on-disk) transfers into one list, active taking priority. */
 	getTransferSummaries(limit = 50) {
 		const byId = new Map();
 
+		// Active transfers are inserted first so they win over persisted duplicates
 		for (const [transferId, transfer] of this.plugin.activeTransfers) {
 			byId.set(transferId, this.buildTransferSummary(
 				transferId,
@@ -171,7 +172,7 @@ class TransactionLogger {
 			if (!byId.has(persistedLog.transferId)) {
 				byId.set(persistedLog.transferId, {
 					transferId: persistedLog.transferId,
-					operationType: transferInfo.operationType || "transfer",
+					operationType: transferInfo.operationType ?? "transfer",
 					exportId: transferInfo.exportId || null,
 					artifactSizeBytes: transferInfo.artifactSizeBytes ?? null,
 					downloadable: false,
@@ -180,7 +181,7 @@ class TransactionLogger {
 					sourceInstanceName: transferInfo.sourceInstanceName ?? null,
 					targetInstanceId: transferInfo.targetInstanceId ?? -1,
 					targetInstanceName: transferInfo.targetInstanceName ?? null,
-					status: this.normalizeTransferStatus(transferInfo.status || "unknown"),
+					status: transferInfo.status || "unknown",
 					startedAt: transferInfo.startedAt || persistedLog.savedAt || Date.now(),
 					completedAt: transferInfo.completedAt || null,
 					failedAt: transferInfo.failedAt || null,
@@ -190,6 +191,8 @@ class TransactionLogger {
 			}
 		}
 
+		// Enrich all summaries with current platformStorage state (export may have been
+		// uploaded or deleted since the summary was built or persisted)
 		return Array.from(byId.values())
 			.map(summary => {
 				const storedExport = summary.exportId ? this.plugin.platformStorage.get(summary.exportId) : null;
@@ -203,13 +206,16 @@ class TransactionLogger {
 			.slice(0, limit);
 	}
 
-	logTransactionEvent(transferId, eventType, message, data = {}) {
+	logTransactionEvent(transferId: string, eventType: string, message: string, data: Record<string, unknown> = {}) {
 		if (!this.plugin.transactionLogs.has(transferId)) {
 			this.plugin.transactionLogs.set(transferId, []);
 		}
 
 		const now = Date.now();
-		const events = this.plugin.transactionLogs.get(transferId);
+		const events = this.plugin.transactionLogs.get(transferId) || [];
+		if (!this.plugin.transactionLogs.has(transferId)) {
+			this.plugin.transactionLogs.set(transferId, events);
+		}
 		const transfer = this.plugin.activeTransfers.get(transferId);
 
 		const elapsedMs = transfer?.startedAt ? now - transfer.startedAt : 0;
@@ -231,7 +237,7 @@ class TransactionLogger {
 		this.plugin.subscriptions.emitLogUpdate(transferId, event);
 	}
 
-	startPhase(transferId, phaseName) {
+	startPhase(transferId: string, phaseName: string) {
 		const transfer = this.plugin.activeTransfers.get(transferId);
 		if (transfer) {
 			if (!transfer.phases) transfer.phases = {};
@@ -239,7 +245,7 @@ class TransactionLogger {
 		}
 	}
 
-	endPhase(transferId, phaseName) {
+	endPhase(transferId: string, phaseName: string) {
 		const transfer = this.plugin.activeTransfers.get(transferId);
 		if (transfer?.phases?.[phaseName]) {
 			const phase = transfer.phases[phaseName];
@@ -250,7 +256,7 @@ class TransactionLogger {
 		return 0;
 	}
 
-	async persistTransactionLog(transferId) {
+	async persistTransactionLog(transferId: string) {
 		try {
 			const events = this.plugin.transactionLogs.get(transferId);
 			const transfer = this.plugin.activeTransfers.get(transferId);
@@ -261,75 +267,43 @@ class TransactionLogger {
 			try {
 				const content = await fs.readFile(this.plugin.transactionLogPath, "utf8");
 				allLogs = JSON.parse(content);
-			} catch (err) {
-				// File doesn't exist yet
+			} catch (_err) {
+				allLogs = [];
 			}
 
-			const summary = this.buildDetailedTransferSummary(
+			const transferInfo = this.buildTransferInfo(transfer);
+			const summary = this.buildDetailedTransferSummary(transferId, transfer, this.getLastEventTimestamp(transferId));
+			const entry = {
 				transferId,
-				transfer,
-				events.length ? events[events.length - 1].timestampMs : null,
-			);
-
-			const logEntry = {
-				transferId,
-				transferInfo: {
-					operationType: transfer.operationType || "transfer",
-					exportId: transfer.exportId,
-					artifactSizeBytes: transfer.artifactSizeBytes ?? null,
-					platformName: transfer.platformName,
-					sourceInstanceId: transfer.sourceInstanceId,
-					sourceInstanceName: transfer.sourceInstanceName || this.plugin.platformTree.resolveInstanceName(transfer.sourceInstanceId),
-					targetInstanceId: transfer.targetInstanceId,
-					targetInstanceName: transfer.targetInstanceName || this.plugin.platformTree.resolveInstanceName(transfer.targetInstanceId),
-					status: this.normalizeTransferStatus(transfer.status),
-					startedAt: transfer.startedAt,
-					completedAt: transfer.completedAt,
-					failedAt: transfer.failedAt,
-					error: transfer.error,
-				},
+				transferInfo,
 				summary,
 				events,
 				savedAt: Date.now(),
 			};
-			const existingIndex = allLogs.findIndex(log => log.transferId === transferId);
-			if (existingIndex === -1) {
-				allLogs.push(logEntry);
+
+			// Upsert: replace existing entry for this transfer, or append if new
+			const existingIndex = allLogs.findIndex((log: PersistedTransactionLog) => log.transferId === transferId);
+			if (existingIndex !== -1) {
+				allLogs.splice(existingIndex, 1, entry);
 			} else {
-				allLogs[existingIndex] = logEntry;
+				allLogs.push(entry);
 			}
 
-			if (allLogs.length > 200) {
-				allLogs = allLogs.slice(-200);
-			}
-
-			await fs.writeFile(this.plugin.transactionLogPath, JSON.stringify(allLogs, null, 2));
+			await fs.writeFile(this.plugin.transactionLogPath, JSON.stringify(allLogs, null, 2), "utf8");
 			this.plugin.persistedTransactionLogs = allLogs;
-			this.plugin.logger.info(`Transaction log persisted: ${transferId}`);
-		} catch (err) {
-			this.plugin.logger.error(`Failed to persist transaction log ${transferId}: ${err.message}`);
+		} catch (err: unknown) {
+			this.plugin.logger.error(`Failed to persist transaction log: ${getErrorMessage(err)}`);
 		}
 	}
 
 	async loadTransactionLogs() {
 		try {
 			const content = await fs.readFile(this.plugin.transactionLogPath, "utf8");
-			const allLogs = JSON.parse(content);
-			if (!Array.isArray(allLogs)) {
-				throw new Error("Transaction log file must contain an array");
-			}
-			this.plugin.logger.info(`Loaded ${allLogs.length} transaction logs from disk`);
-			this.plugin.persistedTransactionLogs = allLogs;
-		} catch (err) {
-			if (err.code === "ENOENT") {
-				this.plugin.logger.info("No transaction logs file found, starting fresh");
-				this.plugin.persistedTransactionLogs = [];
-			} else {
-				this.plugin.logger.error(`Error loading transaction logs: ${err.message}`);
-				this.plugin.persistedTransactionLogs = [];
-			}
+			const logs = JSON.parse(content);
+			this.plugin.persistedTransactionLogs = Array.isArray(logs) ? logs : [];
+			this.plugin.logger.info(`Loaded ${this.plugin.persistedTransactionLogs.length} transaction logs`);
+		} catch (_err) {
+			this.plugin.persistedTransactionLogs = [];
 		}
 	}
 }
-
-module.exports = TransactionLogger;

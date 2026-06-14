@@ -1,34 +1,29 @@
 /**
- * @file instance.js
+ * @file instance.ts
  * @description Instance plugin for Surface Export - runs on each Factorio host
  * @see https://github.com/clusterio/clusterio/blob/master/docs/writing-plugins.md
  */
 
-"use strict";
-const fs = require("fs").promises;
-const path = require("path");
-function requireClusterioModule(moduleName) {
-	if (require.main && typeof require.main.require === "function") {
-		try {
-			return require.main.require(moduleName);
-		} catch (err) {
-			// Fallback to local resolution below.
-		}
-	}
-	return require(moduleName);
-}
-const lib = requireClusterioModule("@clusterio/lib");
-const { BaseInstancePlugin } = requireClusterioModule("@clusterio/host");
-const info = require("./index.js");
-const messages = require("./messages");
-const { sendChunkedJson, sendAdaptiveJson } = require("./helpers");
+import fs from "fs";
+import path from "path";
+import { BaseInstancePlugin } from "@clusterio/host";
+import { escapeString } from "@clusterio/lib";
+import type { ExportData, ExportResult, ImportResult, PendingTransfer } from "./messages";
+import * as messages from "./messages";
+import { sendChunkedJson, getErrorMessage, RCON_CHUNK_SIZE, EXPORT_POLL_TIMEOUT_MS, EXPORT_POLL_INTERVAL_MS } from "./helpers";
+
 
 /**
  * Instance plugin class
  * Runs on each Clusterio host and handles communication with Factorio servers
  */
-class InstancePlugin extends BaseInstancePlugin {
-	normalizeRconScalarResult(value) {
+export class InstancePlugin extends BaseInstancePlugin {
+	// eslint-disable-next-line @typescript-eslint/no-explicit-any
+	private get i(): any { return this.instance; }
+	private controllerManagedTransferExports: Set<string> = new Set();
+	private pendingTransfer: PendingTransfer | null = null;
+
+	normalizeRconScalarResult(value: unknown) {
 		const text = String(value ?? "");
 		const lines = text
 			.split(/\r?\n/)
@@ -37,7 +32,7 @@ class InstancePlugin extends BaseInstancePlugin {
 		return lines.length ? lines[lines.length - 1] : "";
 	}
 
-	isInvalidExportId(exportId) {
+	isInvalidExportId(exportId: string | null | undefined) {
 		if (!exportId) {
 			return true;
 		}
@@ -46,45 +41,45 @@ class InstancePlugin extends BaseInstancePlugin {
 			|| lowered === "nil"
 			|| lowered.startsWith("error");
 	}
+
 	/**
 	 * Initialize plugin
 	 * Called when plugin is loaded
 	 */
-	async init() {		
+	async init() {
 		this.logger.info("Surface Export plugin initializing...");
-		this.logger.info(`Instance ID: ${this.instance.id}, Name: ${this.instance.config.get("instance.name")}`);
+		this.logger.info(`Instance ID: ${this.i.id}, Name: ${this.i.config.get("instance.name")}`);
 		this.validateInstanceConfiguration();
-		this.controllerManagedTransferExports = new Set();
-		
+
 		// Listen for platform export completion from Factorio mod
 		// The mod sends data via clusterio_api.send_json("surface_export_complete", data)
-		this.instance.server.handle("surface_export_complete", this.handleExportComplete.bind(this));
-		
+		this.i.server.handle("surface_export_complete", this.handleExportComplete.bind(this));
+
 		// Listen for import file requests from mod
 		// The mod sends data via clusterio_api.send_json("surface_import_file_request", data)
-		this.instance.server.handle("surface_import_file_request", this.handleImportFileRequest.bind(this));
+		this.i.server.handle("surface_import_file_request", this.handleImportFileRequest.bind(this));
 
 		// Listen for import completion with validation from mod
-		this.instance.server.handle("surface_export_import_complete", this.handleImportCompleteValidation.bind(this));
+		this.i.server.handle("surface_export_import_complete", this.handleImportCompleteValidation.bind(this));
 
 		// Listen for space platform state changes from Factorio mod
-		this.instance.server.handle("surface_platform_state_changed", this.handlePlatformStateChanged.bind(this));
+		this.i.server.handle("surface_platform_state_changed", this.handlePlatformStateChanged.bind(this));
 
 		// Listen for transfer requests from mod
-		this.instance.server.handle("surface_transfer_request", this.handleTransferRequest.bind(this));
+		this.i.server.handle("surface_transfer_request", this.handleTransferRequest.bind(this));
 
 		// Register message handlers
-		this.instance.handle(messages.ExportPlatformRequest, this.handleExportPlatformRequest.bind(this));
-		this.instance.handle(messages.ImportPlatformRequest, this.handleImportPlatformRequest.bind(this));
-		this.instance.handle(messages.ImportPlatformFromFileRequest, this.handleImportPlatformFromFileRequest.bind(this));
-		this.instance.handle(messages.DeleteSourcePlatformRequest, this.handleDeleteSourcePlatform.bind(this));
-		this.instance.handle(messages.UnlockSourcePlatformRequest, this.handleUnlockSourcePlatform.bind(this));
-		this.instance.handle(messages.TransferStatusUpdate, this.handleTransferStatusUpdate.bind(this));
-		this.instance.handle(messages.InstanceListPlatformsRequest, this.handleInstanceListPlatformsRequest.bind(this));
+		this.i.handle(messages.ExportPlatformRequest, this.handleExportPlatformRequest.bind(this));
+		this.i.handle(messages.ImportPlatformRequest, this.handleImportPlatformRequest.bind(this));
+		this.i.handle(messages.ImportPlatformFromFileRequest, this.handleImportPlatformFromFileRequest.bind(this));
+		this.i.handle(messages.DeleteSourcePlatformRequest, this.handleDeleteSourcePlatform.bind(this));
+		this.i.handle(messages.UnlockSourcePlatformRequest, this.handleUnlockSourcePlatform.bind(this));
+		this.i.handle(messages.TransferStatusUpdate, this.handleTransferStatusUpdate.bind(this));
+		this.i.handle(messages.InstanceListPlatformsRequest, this.handleInstanceListPlatformsRequest.bind(this));
 
 		this.logger.info("Surface Export plugin initialized");
 	}
-	
+
 	/**
 	 * Called when instance starts
 	 */
@@ -93,17 +88,17 @@ class InstancePlugin extends BaseInstancePlugin {
 		await this.ensureLuaConsoleUnlocked();
 		await this.sendConfigurationToLua();
 	}
-	
+
 	/**
 	 * Send plugin configuration to Lua
 	 */
 	async sendConfigurationToLua() {
 		try {
-			const batchSize = this.instance.config.get("surface_export.batch_size");
-			const maxConcurrentJobs = this.instance.config.get("surface_export.max_concurrent_jobs");
-			const showProgress = this.instance.config.get("surface_export.show_progress");
-			const debugMode = this.instance.config.get("surface_export.debug_mode");
-			
+			const batchSize = this.i.config.get("surface_export.batch_size");
+			const maxConcurrentJobs = this.i.config.get("surface_export.max_concurrent_jobs");
+			const showProgress = this.i.config.get("surface_export.show_progress");
+			const debugMode = this.i.config.get("surface_export.debug_mode");
+
 			const configScript = `/sc ` +
 				`if remote.interfaces["surface_export"] and remote.interfaces["surface_export"]["configure"] then ` +
 				`remote.call("surface_export", "configure", {` +
@@ -113,30 +108,30 @@ class InstancePlugin extends BaseInstancePlugin {
 				`debug_mode=${debugMode}` +
 				`}) ` +
 				`end`;
-			
-			await this.instance.sendRcon(configScript, true);
+
+			await this.i.sendRcon(configScript, true);
 			this.logger.info(`Configuration sent to Lua: batch_size=${batchSize}, max_concurrent_jobs=${maxConcurrentJobs}, show_progress=${showProgress}, debug_mode=${debugMode}`);
-		} catch (err) {
-			this.logger.warn(`Failed to send configuration to Lua: ${err.message}`);
+		} catch (err: unknown) {
+			this.logger.warn(`Failed to send configuration to Lua: ${getErrorMessage(err)}`);
 		}
 	}
-	
+
 	/**
 	 * Called when instance stops
 	 */
 	async onStop() {
 		this.logger.info("Instance stopped - Surface Export plugin shutting down");
 	}
-	
+
 	/**
 	 * Handle export completion event from Factorio mod
-	 * @param {Object} data - Export data from mod
+	 * @param data - Export data from mod
 	 */
-	async handleExportComplete(data) {
+	async handleExportComplete(data: Record<string, unknown>) {
 		const exportId = String(data.export_id || "").trim();
 		this.logger.info(`Export complete send_json event received: export_id=${exportId}, platform=${data.platform_name}`);
-		this.logger.info(`  destination_instance_id=${data.destination_instance_id} (type=${typeof data.destination_instance_id}), job_id=${data.job_id}`);
-		this.logger.info(`  this.instance.id=${this.instance.id} (type=${typeof this.instance.id})`);
+		this.logger.verbose(`  destination_instance_id=${data.destination_instance_id} (type=${typeof data.destination_instance_id}), job_id=${data.job_id}`);
+		this.logger.verbose(`  this.i.id=${this.i.id} (type=${typeof this.i.id})`);
 		this.logger.info(`Platform export completed: ${exportId} (${data.platform_name})`);
 
 		if (this.isInvalidExportId(exportId)) {
@@ -154,10 +149,10 @@ class InstancePlugin extends BaseInstancePlugin {
 			}
 
 			// Send export to controller for storage
-			await this.instance.sendTo("controller", new messages.PlatformExportEvent({
+			await this.i.sendTo("controller", new messages.PlatformExportEvent({
 				exportId,
-				platformName: data.platform_name,
-				instanceId: this.instance.id,
+				platformName: String(data.platform_name || ""),
+				instanceId: this.i.id,
 				exportData: exportData,
 				timestamp: Date.now(),
 				exportMetrics: data.export_metrics || null,
@@ -173,13 +168,13 @@ class InstancePlugin extends BaseInstancePlugin {
 				}
 				this.logger.info(`Auto-transfer requested: dest_instance_id=${data.destination_instance_id} (type=${typeof data.destination_instance_id})`);
 				this.logger.info(`  Sending TransferPlatformRequest to controller: exportId=${exportId}, targetInstanceId=${data.destination_instance_id}`);
-				
+
 				// Send transfer request to controller
-				const transferResponse = await this.instance.sendTo("controller",
+				const transferResponse = await this.i.sendTo("controller",
 					new messages.TransferPlatformRequest({
 						exportId,
-						targetInstanceId: data.destination_instance_id,
-					})
+						targetInstanceId: Number(data.destination_instance_id),
+					}) as unknown as messages.SimpleResponse & { transferId?: string }
 				);
 
 				if (transferResponse.success) {
@@ -192,14 +187,20 @@ class InstancePlugin extends BaseInstancePlugin {
 
 			// Check if this was part of a pending transfer request (legacy path)
 			if (this.pendingTransfer && this.pendingTransfer.job_id === data.job_id) {
+				const pendingTargetId = Number(this.pendingTransfer.destination_instance_id);
+				if (!Number.isInteger(pendingTargetId) || pendingTargetId <= 0) {
+					this.logger.error(`Pending transfer has invalid target instance: ${this.pendingTransfer.destination_instance_id}`);
+					this.pendingTransfer = null;
+					return;
+				}
 				this.logger.info(`Transfer export complete, initiating transfer to instance ${this.pendingTransfer.destination_instance_id}`);
 
 				// Send transfer request to controller
-				const transferResponse = await this.instance.sendTo("controller",
+				const transferResponse = await this.i.sendTo("controller",
 					new messages.TransferPlatformRequest({
 						exportId,
-						targetInstanceId: this.pendingTransfer.destination_instance_id,
-					})
+						targetInstanceId: Number(pendingTargetId),
+					}) as unknown as messages.SimpleResponse & { transferId?: string }
 				);
 
 				if (transferResponse.success) {
@@ -210,101 +211,96 @@ class InstancePlugin extends BaseInstancePlugin {
 					// Unlock platform on failure
 					await this.sendRcon(
 						`/sc local SurfaceLock = require("modules/surface_export/utils/surface-lock"); ` +
-						`SurfaceLock.unlock_platform("${data.platform_name}")`
+						`SurfaceLock.unlock_platform("${escapeString(String(data.platform_name || ""))}")`,
 					);
 				}
 
 				// Clear pending transfer
 				this.pendingTransfer = null;
 			}
-		} catch (err) {
-			this.logger.error(`Error handling export completion:\n${err.stack}`);
+		} catch (err: unknown) {
+			this.logger.error(`Error handling export completion: ${getErrorMessage(err)}`);
 		}
 	}
 
 	/**
 	 * Handle space platform state change notification from Factorio mod.
 	 * Forwards a lightweight event to the controller so it can push a tree refresh.
-	 * @param {Object} data - { platform_name, force_name }
 	 */
-	async handlePlatformStateChanged(data) {
+	async handlePlatformStateChanged(data: Record<string, unknown>) {
 		try {
-			await this.instance.sendTo("controller", new messages.PlatformStateChangedEvent({
-				instanceId: this.instance.id,
+			await this.i.sendTo("controller", new messages.PlatformStateChangedEvent({
+				instanceId: this.i.id,
 				platformName: String(data.platform_name || ""),
 				forceName: String(data.force_name || "player"),
 			}));
-		} catch (err) {
-			this.logger.warn(`Platform state change notification failed: ${err.message}`);
+		} catch (err: unknown) {
+			this.logger.warn(`Platform state change notification failed: ${getErrorMessage(err)}`);
 		}
 	}
 
 	/**
 	 * Handle transfer request from Lua command
-	 * @param {Object} data - Transfer request data
 	 */
-	async handleTransferRequest(data) {
+	async handleTransferRequest(data: Record<string, unknown>) {
 		this.logger.info(`Transfer request send_json event received: platform=${data.platform_name}, dest=${data.destination_instance_id} (type=${typeof data.destination_instance_id}), job_id=${data.job_id}`);
 
 		try {
+			const platformIndex = Number(data.platform_index);
+			const destinationInstanceId = Number(data.destination_instance_id);
 			// Store transfer request for when export completes
 			this.pendingTransfer = {
-				platform_index: data.platform_index,
-				platform_name: data.platform_name,
-				force_name: data.force_name,
-				destination_instance_id: data.destination_instance_id,
-				job_id: data.job_id,
+				platform_index: Number.isInteger(platformIndex) ? platformIndex : undefined,
+				platform_name: typeof data.platform_name === "string" ? data.platform_name : undefined,
+				force_name: typeof data.force_name === "string" ? data.force_name : undefined,
+				destination_instance_id: Number.isInteger(destinationInstanceId) ? destinationInstanceId : undefined,
+				job_id: typeof data.job_id === "string" || typeof data.job_id === "number" ? data.job_id : undefined,
 			};
 
 			this.logger.info(`Transfer queued: will execute after export ${data.job_id} completes`);
 
-		} catch (err) {
-			this.logger.error(`Error handling transfer request:\n${err.stack}`);
+		} catch (err: unknown) {
+			this.logger.error(`Error handling transfer request: ${getErrorMessage(err)}`);
 		}
 	}
-	
+
 	/**
 	 * Handle import file request from Factorio mod
-	 * @param {Object} data - Import request data with filename, platform_name, force_name
 	 */
-	async handleImportFileRequest(data) {
+	async handleImportFileRequest(data: Record<string, unknown>) {
 		this.logger.info(`Received import file request: ${data.filename}`);
-		
+
 		try {
 			const result = await this.importPlatformFromFile(
-				data.filename,
-				data.platform_name,
-				data.force_name || "player"
+				String(data.filename || ""),
+				typeof data.platform_name === "string" ? data.platform_name : null,
+				typeof data.force_name === "string" ? data.force_name : "player",
 			);
-			
+
 			if (result.success) {
-				this.logger.info(`Import request completed successfully`);
+				this.logger.info("Import request completed successfully");
 			} else {
 				this.logger.error(`Import request failed: ${result.error}`);
 			}
-		} catch (err) {
-			this.logger.error(`Error handling import file request:\n${err.stack}`);
+		} catch (err: unknown) {
+			this.logger.error(`Error handling import file request: ${getErrorMessage(err)}`);
 		}
 	}
-	
+
 	/**
 	 * Export a platform by platform index
-	 * @param {number} platformIndex - Index of platform to export
-	 * @param {string} forceName - Force name (default: "player")
-	 * @param {number|null} targetInstanceId - Optional destination instance for transfer-aware export locking
-	 * @returns {Object} Result with success status and exportId
 	 */
-	async exportPlatform(platformIndex, forceName = "player", targetInstanceId = null) {
+	async exportPlatform(platformIndex: number, forceName = "player", targetInstanceId: number | null = null): Promise<ExportResult> {
 		const resolvedTargetId = Number(targetInstanceId);
 		const hasTargetInstance = Number.isInteger(resolvedTargetId) && resolvedTargetId > 0;
 		const targetArg = hasTargetInstance ? String(resolvedTargetId) : "nil";
 		this.logger.info(`Exporting platform index ${platformIndex} for force "${forceName}" (targetInstanceId=${targetArg})`);
-		
+
 		try {
 			// Call mod's remote interface to export platform - this returns the export_id
 			const rconResult = await this.sendRcon(
-				`/sc local export_id, err = remote.call("surface_export", "export_platform", ${platformIndex}, "${forceName.replace(/"/g, '\\\\\\"')}", ${targetArg}); ` +
-				`if export_id then rcon.print(export_id) else rcon.print("EXPORT_FAILED:" .. tostring(err or "unknown")) end`
+				`/sc local export_id, err = remote.call("surface_export", "export_platform", ${platformIndex}, "${escapeString(forceName)}", ${targetArg}); ` +
+				`if export_id then rcon.print(export_id) else rcon.print("EXPORT_FAILED:" .. tostring(err or "unknown")) end`,
 			);
 			this.logger.info(`Export RCON result: ${rconResult}`);
 			const exportResult = this.normalizeRconScalarResult(rconResult);
@@ -322,20 +318,21 @@ class InstancePlugin extends BaseInstancePlugin {
 				return { success: false, error: "Export failed - invalid export_id returned" };
 			}
 			this.logger.info(`Export completed with ID: ${exportId}`);
-			
+
 			// The export data will be sent to the controller automatically via the
 			// send_json event-triggered handleExportComplete() path, which uses the real platform
 			// name from Lua (not the sanitized exportId). No need to send it here too.
-			return { success: true, exportId: exportId };
-		} catch (err) {
-			this.logger.error(`Export failed:\n${err.stack}`);
-			return { success: false, error: err.message };
+			return { success: true, exportId };
+		} catch (err: unknown) {
+			const errMsg = getErrorMessage(err);
+			this.logger.error(`Export failed: ${errMsg}`);
+			return { success: false, error: errMsg };
 		}
 	}
 
-	async waitForExportData(exportId, timeoutMs = 30000, intervalMs = 500) {
+	async waitForExportData(exportId: string, timeoutMs = EXPORT_POLL_TIMEOUT_MS, intervalMs = EXPORT_POLL_INTERVAL_MS) {
 		const deadline = Date.now() + timeoutMs;
-		let lastAttempt = null;
+		let lastAttempt: ExportData | null = null;
 		while (Date.now() < deadline) {
 			lastAttempt = await this.getExportData(exportId, { logOnMissing: false });
 			if (lastAttempt) {
@@ -348,18 +345,16 @@ class InstancePlugin extends BaseInstancePlugin {
 		try {
 			const availableExports = await this.listExports();
 			this.logger.error(`Available exports in Lua: ${JSON.stringify(availableExports)}`);
-		} catch (listErr) {
-			this.logger.error(`Failed to list available exports: ${listErr.message}`);
+		} catch (listErr: unknown) {
+			this.logger.error(`Failed to list available exports: ${getErrorMessage(listErr)}`);
 		}
 		return null;
 	}
-	
+
 	/**
 	 * Get export data from mod
-	 * @param {string} exportId - Export ID
-	 * @returns {Object|null} Export data (may be compressed format with {compressed, payload, ...}) or null if not found
 	 */
-	async getExportData(exportId, options = {}) {
+	async getExportData(exportId: string, options: { logOnMissing?: boolean } = {}): Promise<ExportData | null> {
 		try {
 			const { logOnMissing = true } = options;
 			const safeExportId = String(exportId || "").trim();
@@ -369,7 +364,7 @@ class InstancePlugin extends BaseInstancePlugin {
 			}
 			// Call the _json version which pre-encodes the result in Lua
 			const result = await this.sendRcon(
-`/sc rcon.print(remote.call("surface_export", "get_export_json", "${safeExportId}"))`
+				`/sc rcon.print(remote.call("surface_export", "get_export_json", "${safeExportId}"))`,
 			);
 
 			const jsonText = String(result || "").trim();
@@ -380,8 +375,8 @@ class InstancePlugin extends BaseInstancePlugin {
 					try {
 						const availableExports = await this.listExports();
 						this.logger.error(`Available exports in Lua: ${JSON.stringify(availableExports)}`);
-					} catch (listErr) {
-						this.logger.error(`Failed to list available exports: ${listErr.message}`);
+					} catch (listErr: unknown) {
+						this.logger.error(`Failed to list available exports: ${getErrorMessage(listErr)}`);
 					}
 				}
 				return null;
@@ -391,7 +386,7 @@ class InstancePlugin extends BaseInstancePlugin {
 			if (!exportData || typeof exportData !== "object") {
 				return null;
 			}
-			
+
 			// Log compression info if data is compressed
 			if (exportData.compressed && exportData.payload) {
 				const compressedSize = (exportData.payload.length / 1024).toFixed(1);
@@ -400,51 +395,46 @@ class InstancePlugin extends BaseInstancePlugin {
 				const jsonSize = (JSON.stringify(exportData).length / 1024).toFixed(1);
 				this.logger.info(`Retrieved uncompressed export: ${jsonSize} KB`);
 			}
-			
-			return exportData;
-		} catch (err) {
-			this.logger.error(`Get export data failed:\n${err.stack}`);
+
+			return exportData as ExportData;
+		} catch (err: unknown) {
+			this.logger.error(`Get export data failed: ${getErrorMessage(err)}`);
 			return null;
 		}
 	}
-	
+
 	/**
 	 * List all platform exports stored in mod
-	 * @returns {Array} List of export IDs
 	 */
-	async listExports() {
+	async listExports(): Promise<string[]> {
 		try {
 			const result = await this.sendRcon(
-				'/sc rcon.print(remote.call("surface_export", "list_exports_json"))'
+				"/sc rcon.print(remote.call(\"surface_export\", \"list_exports_json\"))",
 			);
-			
+
 			return JSON.parse(result);
-		} catch (err) {
-			this.logger.error(`List exports failed:\n${err.stack}`);
+		} catch (err: unknown) {
+			this.logger.error(`List exports failed: ${getErrorMessage(err)}`);
 			return [];
 		}
 	}
 
 	/**
 	 * List all current platforms on this instance for a force
-	 * @param {string} forceName - Force name to inspect
-	 * @returns {Array} Platform metadata
 	 */
 	async listPlatforms(forceName = "player") {
-		const safeForceName = String(forceName || "player")
-			.replace(/\\/g, "\\\\")
-			.replace(/"/g, '\\"');
+		const safeForceName = escapeString(String(forceName || "player"));
 
 		try {
 			const result = await this.sendRcon(
-				`/sc rcon.print(remote.call("surface_export", "list_platforms_json", "${safeForceName}"))`
+				`/sc rcon.print(remote.call("surface_export", "list_platforms_json", "${safeForceName}"))`,
 			);
 			const parsed = JSON.parse(result);
 			if (!Array.isArray(parsed)) {
 				return [];
 			}
 
-			return parsed.map(platform => ({
+			return parsed.map((platform: Record<string, unknown>) => ({
 				platformIndex: platform.platform_index,
 				platformName: platform.platform_name,
 				forceName: platform.force_name || forceName || "player",
@@ -460,87 +450,84 @@ class InstancePlugin extends BaseInstancePlugin {
 				departureTick: platform.departure_tick ?? null,
 				estimatedDurationTicks: platform.estimated_duration_ticks ?? null,
 			}));
-		} catch (err) {
-			this.logger.error(`List platforms failed:\\n${err.stack}`);
+		} catch (err: unknown) {
+			this.logger.error(`List platforms failed: ${getErrorMessage(err)}`);
 			return [];
 		}
 	}
-	
+
 	/**
 	 * Import a platform from export data using chunked RCON (like inventory_sync)
-	 * @param {Object} exportData - Platform export data (may be compressed format)
-	 * @param {string} forceName - Force to import to (default: "player")
-	 * @returns {Object} Result with success status
 	 */
-	async importPlatform(exportData, forceName = "player") {
+	async importPlatform(exportData: ExportData, forceName = "player"): Promise<ImportResult> {
 		const platformName = exportData.platform_name || `Imported_${Date.now()}`;
 		this.logger.info(`Importing platform "${platformName}" for force "${forceName}"`);
-		
+
 		try {
 			// Keep data in its current format (compressed or uncompressed)
 			// Lua side will handle decompression in queue_import
 			const jsonData = JSON.stringify(exportData);
 			const sizeKB = (jsonData.length / 1024).toFixed(1);
-			
+
 			if (exportData.compressed) {
 				this.logger.info(`Import data size: ${sizeKB} KB (compressed with ${exportData.compression})`);
 			} else {
 				this.logger.info(`Import data size: ${sizeKB} KB (uncompressed)`);
 			}
-			
+
 			// Use chunked approach like inventory_sync
-			const chunkSize = 100000;  // 100KB chunks
-			const chunks = [];
+			const chunkSize = RCON_CHUNK_SIZE;
+			const chunks: string[] = [];
 			for (let i = 0; i < jsonData.length; i += chunkSize) {
 				chunks.push(jsonData.slice(i, i + chunkSize));
 			}
-			
+
 			this.logger.info(`Sending import in ${chunks.length} chunks`);
-			
+
+			const escapedPlatformName = escapeString(platformName);
+			const escapedForceName = escapeString(forceName);
+
 			// Send chunks using import_platform_chunk remote interface
 			for (let i = 0; i < chunks.length; i++) {
-				const chunk = lib.escapeString(chunks[i]);
+				const chunk = escapeString(chunks[i]);
 				const chunkNum = i + 1;
 				const totalChunks = chunks.length;
-				
-				const result = await this.sendRcon(
+
+				await this.sendRcon(
 					`/sc remote.call("surface_export", "import_platform_chunk", ` +
-					`"${platformName}", '${chunk}', ${chunkNum}, ${totalChunks}, "${forceName}")`,
-					true
+					`"${escapedPlatformName}", '${chunk}', ${chunkNum}, ${totalChunks}, "${escapedForceName}")`,
+					true,
 				);
-				
+
 				if (i % 10 === 0 || chunkNum === totalChunks) {
 					this.logger.verbose(`Sent chunk ${chunkNum}/${totalChunks}`);
 				}
 			}
-			
+
 			this.logger.info(`All ${chunks.length} chunks sent, import queued for async processing`);
 			return { success: true };
-			
-		} catch (err) {
-			this.logger.error(`Import failed:\n${err.stack}`);
-			return { success: false, error: err.message };
+
+		} catch (err: unknown) {
+			const errMsg = getErrorMessage(err);
+			this.logger.error(`Import failed: ${errMsg}`);
+			return { success: false, error: errMsg };
 		}
 	}
 
 	/**
 	 * Import a platform from a file in script-output directory
 	 * FACTORIO 2.0: Lua cannot read files, so Node.js reads and sends via RCON chunks
-	 * @param {string} filename - Filename in script-output (e.g., "Strana Mechty_26842034.json")
-	 * @param {string} platformName - Name for the imported platform (optional, defaults to original name)
-	 * @param {string} forceName - Force to import to (default: "player")
-	 * @returns {Object} Result with success status
 	 */
-	async importPlatformFromFile(filename, platformName = null, forceName = "player") {
+	async importPlatformFromFile(filename: string, platformName: string | null = null, forceName = "player"): Promise<ImportResult> {
 		this.logger.info(`Importing platform from file "${filename}" for force "${forceName}"`);
 
 		try {
 			// Step 1: Node.js reads the file (Lua cannot do this in Factorio 2.0)
-			const instanceDir = this.instance.config.get("instance.directory");
+			const instanceDir = String(this.i.config.get("instance.directory"));
 			const scriptOutputPath = path.join(instanceDir, "script-output", filename);
 
 			this.logger.verbose(`Reading file from: ${scriptOutputPath}`);
-			const fileContent = await fs.readFile(scriptOutputPath, "utf8");
+			const fileContent = await fs.promises.readFile(scriptOutputPath, "utf8");
 			const exportData = JSON.parse(fileContent);
 
 			const sizeKB = (fileContent.length / 1024).toFixed(1);
@@ -551,15 +538,17 @@ class InstancePlugin extends BaseInstancePlugin {
 
 			// Step 2: Send to Factorio via RCON chunking
 			// Use the existing import_platform_chunk remote interface
+			const escapedTargetName = escapeString(targetPlatformName);
+			const escapedForceName = escapeString(forceName);
 			await sendChunkedJson(
-				this.instance,
-				`remote.call("surface_export", "import_platform_chunk", "${targetPlatformName}", %CHUNK%, %INDEX%, %TOTAL%, "${forceName}")`,
+				this.i,
+				`remote.call("surface_export", "import_platform_chunk", "${escapedTargetName}", %CHUNK%, %INDEX%, %TOTAL%, "${escapedForceName}")`,
 				exportData,
 				this.logger,
-				100000  // 100KB chunks
+				RCON_CHUNK_SIZE,
 			);
 
-			this.logger.info(`Platform import chunks sent successfully`);
+			this.logger.info("Platform import chunks sent successfully");
 
 			// Step 3: Wait a moment for async processing to start
 			await new Promise(resolve => setTimeout(resolve, 500));
@@ -567,23 +556,24 @@ class InstancePlugin extends BaseInstancePlugin {
 			// Step 4: Verify the import was queued
 			try {
 				const result = await this.sendRcon(
-					`/sc rcon.print('{"success":true}')`
+					"/sc rcon.print('{\"success\":true}')",
 				);
 				const response = JSON.parse(result);
 
 				if (response.success) {
-					this.logger.info(`Platform import queued for async processing`);
+					this.logger.info("Platform import queued for async processing");
 					return { success: true };
 				}
-			} catch (verifyErr) {
-				this.logger.warn(`Could not verify import: ${verifyErr.message}`);
+			} catch (verifyErr: unknown) {
+				this.logger.warn(`Could not verify import: ${getErrorMessage(verifyErr)}`);
 			}
 
 			return { success: true };
 
-		} catch (err) {
-			this.logger.error(`Import from file failed:\n${err.stack}`);
-			return { success: false, error: err.message };
+		} catch (err: unknown) {
+			const errMsg = getErrorMessage(err);
+			this.logger.error(`Import from file failed: ${errMsg}`);
+			return { success: false, error: errMsg };
 		}
 	}
 
@@ -592,7 +582,7 @@ class InstancePlugin extends BaseInstancePlugin {
 	 * Send a harmless command twice so subsequent RCON calls execute immediately.
 	 */
 	async ensureLuaConsoleUnlocked() {
-		const unlockCommand = '/sc rcon.print("surface-export-ready")';
+		const unlockCommand = "/sc rcon.print(\"surface-export-ready\")";
 		for (let attempt = 1; attempt <= 2; attempt += 1) {
 			try {
 				await this.sendRcon(unlockCommand);
@@ -602,8 +592,8 @@ class InstancePlugin extends BaseInstancePlugin {
 				}
 				this.logger.info("Lua console unlocked for Surface Export automation");
 				return;
-			} catch (err) {
-				this.logger.warn(`RCON handshake attempt ${attempt} failed: ${err.message}`);
+			} catch (err: unknown) {
+				this.logger.warn(`RCON handshake attempt ${attempt} failed: ${getErrorMessage(err)}`);
 			}
 		}
 		this.logger.warn("Unable to confirm Lua console unlock; subsequent exports may require a manual command rerun.");
@@ -611,53 +601,48 @@ class InstancePlugin extends BaseInstancePlugin {
 
 	/**
 	 * Handle export platform request
-	 * @param {Object} request - ExportPlatformRequest
-	 * @returns {Object} Response with success status
 	 */
-	async handleExportPlatformRequest(request) {
-		const result = await this.exportPlatform(request.platformIndex, request.forceName, request.targetInstanceId);
+	async handleExportPlatformRequest(request: { platformIndex: number; forceName?: string; targetInstanceId?: number | null }) {
+		const result = await this.exportPlatform(request.platformIndex, request.forceName, request.targetInstanceId ?? null);
 		const numericTargetInstanceId = Number(request.targetInstanceId);
 		if (result?.success && Number.isInteger(numericTargetInstanceId) && numericTargetInstanceId > 0) {
-			this.controllerManagedTransferExports.add(result.exportId);
+			this.controllerManagedTransferExports.add(result.exportId as string);
 		}
 		return result;
 	}
 
 	/**
 	 * Handle import platform request
-	 * @param {Object} request - ImportPlatformRequest
-	 * @returns {Object} Response with success status
 	 */
-	async handleImportPlatformRequest(request) {
-		const hasTransferId = !!(request.exportData && request.exportData._transferId);
+	async handleImportPlatformRequest(request: { exportData: ExportData; forceName?: string; targetPlanet?: string | null }) {
+		const hasTransferId = Boolean(request.exportData && request.exportData._transferId);
 		const dataSize = request.exportData ? JSON.stringify(request.exportData).length : 0;
-		this.logger.info(`ImportPlatformRequest received: force=${request.forceName}, isTransfer=${hasTransferId}, dataSize=${(dataSize / 1024).toFixed(1)}KB`);
+		this.logger.info(`ImportPlatformRequest received: force=${request.forceName}, isTransfer=${hasTransferId}, dataSize=${(dataSize / 1024).toFixed(1)}KB, targetPlanet=${request.targetPlanet ?? "default"}`);
 		if (hasTransferId) {
 			this.logger.info(`  transfer_id=${request.exportData._transferId}, source_instance=${request.exportData._sourceInstanceId}`);
 		}
-		return await this.importPlatform(request.exportData, request.forceName);
+		if (request.targetPlanet) {
+			(request.exportData as Record<string, unknown>)._targetPlanet = request.targetPlanet;
+		}
+		return await this.importPlatform(request.exportData, request.forceName || "player");
 	}
 
 	/**
 	 * Handle import platform from file request
-	 * @param {Object} request - ImportPlatformFromFileRequest
-	 * @returns {Object} Response with success status
 	 */
-	async handleImportPlatformFromFileRequest(request) {
-		return await this.importPlatformFromFile(request.filename, request.platformName, request.forceName);
+	async handleImportPlatformFromFileRequest(request: { filename: string; platformName?: string | null; forceName?: string }) {
+		return await this.importPlatformFromFile(request.filename, request.platformName ?? null, request.forceName || "player");
 	}
 
 	/**
 	 * Handle controller request for platform inventory on this instance
-	 * @param {Object} request - InstanceListPlatformsRequest
-	 * @returns {Object} Instance platform tree node payload
 	 */
-	async handleInstanceListPlatformsRequest(request) {
+	async handleInstanceListPlatformsRequest(request: { forceName?: string }) {
 		const forceName = request.forceName || "player";
 		const platforms = await this.listPlatforms(forceName);
 		return {
-			instanceId: this.instance.id,
-			instanceName: this.instance.config.get("instance.name"),
+			instanceId: this.i.id,
+			instanceName: this.i.config.get("instance.name"),
 			forceName,
 			platforms,
 		};
@@ -666,45 +651,44 @@ class InstancePlugin extends BaseInstancePlugin {
 	/**
 	 * Handle import completion and perform validation
 	 * Called by Lua when async import completes
-	 * @param {Object} data - Import completion data with validation info and metrics
 	 */
-	async handleImportCompleteValidation(data) {
+	async handleImportCompleteValidation(data: Record<string, unknown>) {
 		this.logger.info(`Import completed for ${data.platform_name}, performing validation`);
 
 		// Extract transfer metadata from platform data
-		const transferId = data.transfer_id;
-		const sourceInstanceId = data.source_instance_id;
+		const transferId = String(data.transfer_id || "").trim();
+		const sourceInstanceId = Number(data.source_instance_id);
 		const operationId = data.operation_id ? String(data.operation_id) : null;
-		
+
 		// Extract metrics from send_json payload
 		const metrics = data.metrics || null;
 		if (metrics) {
 			this.logger.info(`Import metrics: ${JSON.stringify(metrics)}`);
 		}
 
-		if (!transferId || !sourceInstanceId) {
+		if (!transferId || !Number.isInteger(sourceInstanceId) || sourceInstanceId <= 0) {
 			if (operationId) {
 				try {
-					await this.instance.sendTo("controller", new messages.ImportOperationCompleteEvent({
+					await this.i.sendTo("controller", new messages.ImportOperationCompleteEvent({
 						operationId,
 						platformName: String(data.platform_name || "Unknown"),
-						instanceId: this.instance.id,
+						instanceId: this.i.id,
 						success: true,
 						error: null,
 						durationTicks: Number.isFinite(Number(data.duration_ticks)) ? Number(data.duration_ticks) : null,
 						entityCount: Number.isFinite(Number(data.entity_count)) ? Number(data.entity_count) : null,
-						metrics: metrics || null,
+						metrics: (metrics as Record<string, number> | null) || null,
 					}));
 					await this.handlePlatformStateChanged({
 						platform_name: String(data.platform_name || ""),
 						force_name: String(data.force_name || "player"),
 					});
-				} catch (emitErr) {
-					this.logger.error(`Failed to forward import operation completion for ${operationId}: ${emitErr.message}`);
+				} catch (emitErr: unknown) {
+					this.logger.error(`Failed to forward import operation completion for ${operationId}: ${getErrorMessage(emitErr)}`);
 				}
 				return;
 			}
-			this.logger.warn(`Import completed but missing transfer metadata, skipping validation. Received keys: ${Object.keys(data).join(', ')}`);
+			this.logger.warn(`Import completed but missing transfer metadata, skipping validation. Received keys: ${Object.keys(data).join(", ")}`);
 			this.logger.warn(`  transfer_id=${data.transfer_id} (type=${typeof data.transfer_id}), source_instance_id=${data.source_instance_id} (type=${typeof data.source_instance_id})`);
 			return;
 		}
@@ -713,21 +697,31 @@ class InstancePlugin extends BaseInstancePlugin {
 			// Get validation data from Lua
 			const validationStartMs = Date.now();
 			const validationResult = await this.sendRcon(
-				`/sc rcon.print(remote.call("surface_export", "get_validation_result_json", "${data.platform_name}"))`
+				`/sc rcon.print(remote.call("surface_export", "get_validation_result_json", "${escapeString(String(data.platform_name || ""))}"))`,
 			);
 			const validationDurationMs = Date.now() - validationStartMs;
 
 			this.logger.info(`Validation RCON call took ${validationDurationMs}ms, result: ${validationResult.substring(0, 200)}...`);
 
 			// Default to failed validation - only pass if we get actual validation data
-			let validation = { itemCountMatch: false, fluidCountMatch: false, entityCount: data.entity_count, mismatchDetails: "Validation data not retrieved" };
+			let validation: messages.ValidationResult = {
+				itemCountMatch: false,
+				fluidCountMatch: false,
+				entityCount: Number.isFinite(Number(data.entity_count)) ? Number(data.entity_count) : undefined,
+				mismatchDetails: "Validation data not retrieved",
+			};
 			let validationRetrieved = false;
 
 			if (validationResult && validationResult !== "null" && validationResult.startsWith("{")) {
 				try {
-					validation = JSON.parse(validationResult);
+					const parsed = JSON.parse(validationResult) as Partial<messages.ValidationResult>;
+					validation = {
+						...parsed,
+						itemCountMatch: Boolean(parsed.itemCountMatch),
+						fluidCountMatch: Boolean(parsed.fluidCountMatch),
+					};
 					validationRetrieved = true;
-				} catch (parseErr) {
+				} catch (_parseErr) {
 					this.logger.error(`Failed to parse validation result: ${validationResult}`);
 					validation.mismatchDetails = "Failed to parse validation result";
 				}
@@ -736,58 +730,67 @@ class InstancePlugin extends BaseInstancePlugin {
 				validation.mismatchDetails = `Validation error: ${validationResult.substring(0, 100)}`;
 			}
 
+			const normalizedMetrics = metrics && typeof metrics === "object"
+				? Object.fromEntries(Object.entries(metrics as Record<string, unknown>)
+					.filter(([, v]) => typeof v === "number" && Number.isFinite(v))
+					.map(([k, v]) => [k, v as number]))
+				: undefined;
+
 			// Send validation event to controller with metrics
-			await this.instance.sendTo("controller", new messages.TransferValidationEvent({
+			await this.i.sendTo("controller", new messages.TransferValidationEvent({
 				transferId,
-				platformName: data.platform_name,
+				platformName: String(data.platform_name || "Unknown"),
 				sourceInstanceId,
-				success: validation.itemCountMatch && validation.fluidCountMatch,
+				success: Boolean(validation.itemCountMatch && validation.fluidCountMatch),
 				validation,
-				metrics,  // Forward Lua import metrics to controller
+				metrics: normalizedMetrics, // Forward Lua import metrics to controller
 			}));
 
 			this.logger.info(`Validation event sent for transfer ${transferId}: success=${validation.itemCountMatch && validation.fluidCountMatch}`);
 
-		} catch (err) {
-			this.logger.error(`Error during validation:\n${err.stack}`);
-			
+		} catch (err: unknown) {
+			const errMsg = getErrorMessage(err);
+			this.logger.error(`Error during validation: ${errMsg}`);
+
 			// Send failure validation to prevent controller from hanging
 			try {
-				await this.instance.sendTo("controller", new messages.TransferValidationEvent({
+				await this.i.sendTo("controller", new messages.TransferValidationEvent({
 					transferId,
-					platformName: data.platform_name,
+					platformName: String(data.platform_name || "Unknown"),
 					sourceInstanceId,
 					success: false,
 					validation: {
 						itemCountMatch: false,
 						fluidCountMatch: false,
-						mismatchDetails: `Validation error: ${err.message}`,
+						mismatchDetails: `Validation error: ${errMsg}`,
 					},
 				}));
 				this.logger.info(`Sent failure validation for transfer ${transferId} due to error`);
-			} catch (sendErr) {
-				this.logger.error(`Failed to send failure validation: ${sendErr.message}`);
+				} catch (sendErr: unknown) {
+					this.logger.error(`Failed to send failure validation: ${getErrorMessage(sendErr)}`);
 			}
 		}
 	}
 
 	/**
 	 * Handle delete source platform request
-	 * @param {Object} request - DeleteSourcePlatformRequest
-	 * @returns {Object} Response with success status
 	 */
-	async handleDeleteSourcePlatform(request) {
+	async handleDeleteSourcePlatform(request: { platformName: string; forceName?: string }) {
 		this.logger.info(`Deleting source platform: ${request.platformName}`);
+
+		// Fields use lowercase_underscore to match Lua message schema
+		const escapedPlatformName = escapeString(String(request.platformName || ""));
+		const escapedForceName = escapeString(String(request.forceName || "player"));
 
 		try {
 			const result = await this.sendRcon(
 				`/sc ` +
 				// Clean up lock data first (clears storage.locked_platforms entry)
-				`pcall(function() remote.call("surface_export", "unlock_platform", "${request.platformName}") end); ` +
-				`local force = game.forces["${request.forceName}"]; ` +
+				`pcall(function() remote.call("surface_export", "unlock_platform", "${escapedPlatformName}") end); ` +
+				`local force = game.forces["${escapedForceName}"]; ` +
 				`local platform = nil; ` +
 				`for _, p in pairs(force.platforms) do ` +
-				`    if p.name == "${request.platformName}" then platform = p; break; end ` +
+				`    if p.name == "${escapedPlatformName}" then platform = p; break; end ` +
 				`end; ` +
 				`if platform then ` +
 				// CRITICAL: platform.destroy() is a no-op in Factorio 2.0 Space Age.
@@ -797,7 +800,7 @@ class InstancePlugin extends BaseInstancePlugin {
 				`    if surface and surface.valid then ` +
 				`        local ok, err = pcall(function() game.delete_surface(surface) end); ` +
 				`        if ok then ` +
-				`            game.print("[Transfer Complete] Platform '${request.platformName}' transferred and deleted from source", {0, 1, 0}); ` +
+				`            game.print("[Transfer Complete] Platform '${escapedPlatformName}' transferred and deleted from source", {0, 1, 0}); ` +
 				`            rcon.print("SUCCESS"); ` +
 				`        else ` +
 				`            rcon.print("ERROR:delete_surface failed: " .. tostring(err)); ` +
@@ -807,106 +810,102 @@ class InstancePlugin extends BaseInstancePlugin {
 				`    end ` +
 				`else ` +
 				`    rcon.print("ERROR:Platform not found"); ` +
-				`end`
+				`end`,
 			);
 
 			const trimmedResult = result.trim();
 			if (trimmedResult === "SUCCESS") {
 				this.logger.info(`Platform ${request.platformName} deleted successfully`);
 				return { success: true };
-			} else {
-				const error = trimmedResult.replace("ERROR:", "");
-				this.logger.error(`Failed to delete platform: ${error}`);
-				return { success: false, error };
 			}
+			const error = trimmedResult.replace("ERROR:", "");
+			this.logger.error(`Failed to delete platform: ${error}`);
+			return { success: false, error };
 
-		} catch (err) {
-			this.logger.error(`Error deleting platform:\n${err.stack}`);
-			return { success: false, error: err.message };
+		} catch (err: unknown) {
+			const errMsg = getErrorMessage(err);
+			this.logger.error(`Error deleting platform: ${errMsg}`);
+			return { success: false, error: errMsg };
 		}
 	}
 
 	/**
 	 * Handle unlock source platform request (rollback)
-	 * @param {Object} request - UnlockSourcePlatformRequest
-	 * @returns {Object} Response with success status
 	 */
-	async handleUnlockSourcePlatform(request) {
+	async handleUnlockSourcePlatform(request: { platformName: string }) {
 		this.logger.info(`Unlocking source platform for rollback: ${request.platformName}`);
+
+		const escapedPlatformName = escapeString(String(request.platformName || ""));
 
 		try {
 			const result = await this.sendRcon(
 				`/sc ` +
-				`local success, err = remote.call("surface_export", "unlock_platform", "${request.platformName}"); ` +
+				`local success, err = remote.call("surface_export", "unlock_platform", "${escapedPlatformName}"); ` +
 				`if success then ` +
 				`    rcon.print("SUCCESS"); ` +
 				`else ` +
 				`    rcon.print("ERROR:" .. (err or "Unknown error")); ` +
-				`end`
+				`end`,
 			);
 
 			if (result.trim() === "SUCCESS") {
 				this.logger.info(`Platform ${request.platformName} unlocked successfully`);
 				return { success: true };
-			} else {
-				const error = result.trim().replace("ERROR:", "");
-				this.logger.warn(`Failed to unlock platform: ${error}`);
-				return { success: false, error };
 			}
+			const error = result.trim().replace("ERROR:", "");
+			this.logger.warn(`Failed to unlock platform: ${error}`);
+			return { success: false, error };
 
-		} catch (err) {
-			this.logger.error(`Error unlocking platform:\n${err.stack}`);
-			return { success: false, error: err.message };
+		} catch (err: unknown) {
+			const errMsg = getErrorMessage(err);
+			this.logger.error(`Error unlocking platform: ${errMsg}`);
+			return { success: false, error: errMsg };
 		}
 	}
 
 	/**
 	 * Handle transfer status update from controller
 	 * Broadcasts status to all players in-game
-	 * @param {Object} request - TransferStatusUpdate
-	 * @returns {Object} Response with success status
 	 */
-	async handleTransferStatusUpdate(request) {
+	async handleTransferStatusUpdate(request: { message: string; color?: string }) {
 		this.logger.info(`Transfer status: ${request.message}`);
 
 		try {
 			// Map color names to RGB arrays for Factorio
-			const colorMap = {
-				"green": "{0, 1, 0}",
-				"yellow": "{1, 1, 0}",
-				"red": "{1, 0, 0}",
-				"blue": "{0, 0.5, 1}",
-				"white": "{1, 1, 1}",
+			const colorMap: Record<string, string> = {
+				green: "{0, 1, 0}",
+				yellow: "{1, 1, 0}",
+				red: "{1, 0, 0}",
+				blue: "{0, 0.5, 1}",
+				white: "{1, 1, 1}",
 			};
 
-			const colorCode = colorMap[request.color] || "{1, 1, 1}";
+			const colorCode = colorMap[request.color || ""] || "{1, 1, 1}";
 
 			// Send message to Factorio for in-game display
 			await this.sendRcon(
-				`/sc game.print("${request.message}", ${colorCode})`,
-				true
+				`/sc game.print("${escapeString(String(request.message ?? ""))}", ${colorCode})`,
+				true,
 			);
 
 			return { success: true };
 
-		} catch (err) {
-			this.logger.error(`Error displaying transfer status:\n${err.stack}`);
-			return { success: false, error: err.message };
+		} catch (err: unknown) {
+			const errMsg = getErrorMessage(err);
+			this.logger.error(`Error displaying transfer status: ${errMsg}`);
+			return { success: false, error: errMsg };
 		}
 	}
 
 	validateInstanceConfiguration() {
-		const scriptCommandsEnabled = this.instance.config.get("factorio.enable_script_commands");
+		const scriptCommandsEnabled = this.i.config.get("factorio.enable_script_commands");
 		if (!scriptCommandsEnabled) {
 			throw new Error("Surface Export requires factorio.enable_script_commands to be enabled");
 		}
-		const cacheLimit = this.instance.config.get(`${info.plugin.name}.max_export_cache_size`);
+		const cacheLimit = this.i.config.get("surface_export.max_export_cache_size");
 		if (typeof cacheLimit !== "number" || cacheLimit < 1) {
 			throw new Error("surface_export.max_export_cache_size must be >= 1");
 		}
 	}
 }
-
-module.exports = InstancePlugin;
-module.exports.InstancePlugin = InstancePlugin;
 

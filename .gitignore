@@ -3,6 +3,10 @@ docs/dev-docs/
 
 # Docker runtime data (stored in Docker volumes now)
 docker/clusterio-containers/
+# Retired in-repo Clusterio fork checkout — ignore the whole dir, including the
+# embedded git repo (a bare `clusterio/*` ignores contents but not the gitlink entry,
+# which is how it was accidentally committed as a submodule pointer).
+/clusterio/
 
 # Seed data - keep structure, ignore large binary files
 docker/seed-data/mods/*
@@ -31,8 +35,23 @@ docker/server-settings.json
 # Seed saves needed for CI integration tests
 !docker/seed-data/hosts/**/*.zip
 
-# Built web UI (rebuild with npm run build:web)
+# Built plugin artifacts (rebuild with npm run build)
 docker/seed-data/external_plugins/surface_export/dist/
+
+# TypeScript build output in plugin root and lib/ (should only be in dist/node/)
+docker/seed-data/external_plugins/surface_export/*.js
+docker/seed-data/external_plugins/surface_export/*.d.ts
+docker/seed-data/external_plugins/surface_export/*.js.map
+docker/seed-data/external_plugins/surface_export/*.d.ts.map
+docker/seed-data/external_plugins/surface_export/*.tsbuildinfo
+docker/seed-data/external_plugins/surface_export/lib/*.js
+docker/seed-data/external_plugins/surface_export/lib/*.d.ts
+docker/seed-data/external_plugins/surface_export/lib/*.js.map
+docker/seed-data/external_plugins/surface_export/lib/*.d.ts.map
+
+# Keep webpack config and web source files
+!docker/seed-data/external_plugins/surface_export/webpack.config.js
+!docker/seed-data/external_plugins/surface_export/web/*.js
 
 # Node dependencies
 **/node_modules/

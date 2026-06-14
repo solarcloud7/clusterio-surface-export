@@ -92,28 +92,32 @@ function TransferValidation.validate_import(surface, expected_verification, opti
             
             -- Count belt items
             if GameUtils.BELT_ENTITY_TYPES[entity_type] then
-                local belt_lines = InventoryScanner.extract_belt_items(entity)
-                for _, line_data in ipairs(belt_lines) do
-                    if line_data.items then
-                        for _, item in ipairs(line_data.items) do
-                            local key = Util.make_quality_key(item.name, item.quality or Util.QUALITY_NORMAL)
-                            total_item_counts[key] = (total_item_counts[key] or 0) + item.count
-                            -- Belts are considered "storage" - items should be preserved
-                            storage_item_counts[key] = (storage_item_counts[key] or 0) + item.count
+                Util.pcall_warn("[TransferValidation] Belt scan on " .. entity_name, function()
+                    local belt_lines = InventoryScanner.extract_belt_items(entity)
+                    for _, line_data in ipairs(belt_lines) do
+                        if line_data.items then
+                            for _, item in ipairs(line_data.items) do
+                                local key = Util.make_quality_key(item.name, item.quality or Util.QUALITY_NORMAL)
+                                total_item_counts[key] = (total_item_counts[key] or 0) + item.count
+                                -- Belts are considered "storage" - items should be preserved
+                                storage_item_counts[key] = (storage_item_counts[key] or 0) + item.count
+                            end
                         end
                     end
-                end
+                end)
             end
-            
+
             -- Count inserter held items
             if entity_type == "inserter" then
-                local held = InventoryScanner.extract_inserter_held_item(entity)
-                if held then
-                    local key = Util.make_quality_key(held.name, held.quality or Util.QUALITY_NORMAL)
-                    total_item_counts[key] = (total_item_counts[key] or 0) + held.count
-                    -- Inserters are "in transit" - use storage validation
-                    storage_item_counts[key] = (storage_item_counts[key] or 0) + held.count
-                end
+                Util.pcall_warn("[TransferValidation] Inserter scan on " .. entity_name, function()
+                    local held = InventoryScanner.extract_inserter_held_item(entity)
+                    if held then
+                        local key = Util.make_quality_key(held.name, held.quality or Util.QUALITY_NORMAL)
+                        total_item_counts[key] = (total_item_counts[key] or 0) + held.count
+                        -- Inserters are "in transit" - use storage validation
+                        storage_item_counts[key] = (storage_item_counts[key] or 0) + held.count
+                    end
+                end)
             end
         end
     end

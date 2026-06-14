@@ -1,14 +1,17 @@
 /**
- * @file index.js
+ * @file index.ts
  * @description Clusterio plugin for exporting and importing Factorio space platforms
  * @see https://github.com/clusterio/clusterio/blob/master/docs/writing-plugins.md
  */
 
-"use strict";
-const lib = require("@clusterio/lib");
-const PLUGIN_NAME = "surface_export";
-const messages = require("./messages");
+
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+const lib = require("@clusterio/lib") as { definePermission(opts: { name: string; title: string; description: string }): void };
+
+import * as messages from "./messages";
 const { PERMISSIONS } = messages;
+
+const PLUGIN_NAME = "surface_export";
 
 lib.definePermission({
 	name: PERMISSIONS.LIST_EXPORTS,
@@ -34,34 +37,17 @@ lib.definePermission({
 	description: "Allows viewing transaction log summaries and details for Surface Export transfers.",
 });
 
-/**
- * Plugin declaration
- * This is the main export that Clusterio looks for to recognize the plugin
- */
-module.exports.plugin = {
-	// Internal plugin identifier used by Clusterio
+export const plugin = {
 	name: PLUGIN_NAME,
-	
-	// Display name shown to users
 	title: "Surface Export",
-	
-	// Brief description
 	description: "Export and import Factorio space platforms between Clusterio instances",
-	
-	// Path to instance plugin class (runs on hosts with Factorio servers)
-	instanceEntrypoint: "instance",
-	
-	// Path to controller plugin class (runs on central controller)
-	controllerEntrypoint: "controller",
-
-	// Path to web plugin class (runs in Clusterio web UI)
+	instanceEntrypoint: "dist/node/instance",
+	controllerEntrypoint: "dist/node/controller",
 	webEntrypoint: "./web",
-
-	// UI routes served by controller
 	routes: ["/surface-export"],
-	
-	// Instance configuration fields
-	// These can be set per-instance using clusterioctl
+	// alpha.25 (#884): plugins that save-patch a Lua module and/or run /sc script commands must
+	// declare these so the host validates the instance has both enabled before loading the plugin.
+	features: ["SavePatching", "ScriptCommands"],
 	instanceConfigFields: {
 		[`${PLUGIN_NAME}.max_export_cache_size`]: {
 			description: "Maximum number of platform exports to cache per instance",
@@ -93,19 +79,13 @@ module.exports.plugin = {
 			optional: true,
 		},
 	},
-	
-	// Controller configuration fields
-	// These are global controller settings
 	controllerConfigFields: {
-		// Example: Global platform storage limit
 		[`${PLUGIN_NAME}.max_storage_size`]: {
 			description: "Maximum number of platform exports to store on controller",
 			type: "number",
 			initialValue: 20,
 		},
 	},
-	
-	// Link messages for communication between controller/instances/ctl
 	messages: [
 		messages.ExportPlatformRequest,
 		messages.PlatformExportEvent,
@@ -132,7 +112,5 @@ module.exports.plugin = {
 		messages.SurfaceExportLogUpdateEvent,
 		messages.PlatformStateChangedEvent,
 	],
-
-	// Optional CLI enhancements for clusterioctl
-	ctlEntrypoint: "control",
+	ctlEntrypoint: "dist/node/control",
 };

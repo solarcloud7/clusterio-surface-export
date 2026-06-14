@@ -1,53 +1,48 @@
-"use strict";
-function requireClusterioModule(moduleName) {
-  if (require.main && typeof require.main.require === "function") {
-    try {
-      return require.main.require(moduleName);
-    } catch (err) {
-      // Fallback to local resolution below.
-    }
-  }
-  return require(moduleName);
-}
+import fs from "fs";
+import { BaseCtlPlugin } from "@clusterio/ctl";
+import { Command, CommandTree } from "@clusterio/lib";
+import * as messages from "./messages";
+import { getErrorMessage } from "./helpers";
 
-const { BaseCtlPlugin } = requireClusterioModule("@clusterio/ctl");
-const { Command, CommandTree } = requireClusterioModule("@clusterio/lib");
-const fs = require("fs");
-const messages = require("./messages");
+type ControlLike = {
+	sendTo: <T = unknown>(target: string, message: unknown) => Promise<T>;
+};
+
+type YargsLike = { positional: (name: string, opts: unknown) => void };
 
 const surfaceExportCommands = new CommandTree({
-  name: "surface-export",
-  description: "Surface Export plugin commands",
+	name: "surface-export",
+	description: "Surface Export plugin commands",
 });
 
 surfaceExportCommands.add(new Command({
-  definition: ["list", "List stored platform exports"],
-  handler: async function(args, control) {
-    const entries = await control.sendTo("controller", new messages.ListExportsRequest());
-    if (!entries.length) {
-      console.log("No stored platform exports available");
-      return;
-    }
-    const lines = entries
-      .sort((a, b) => b.timestamp - a.timestamp)
-      .map(entry => `${entry.exportId}\t${entry.platformName}\tinstance ${entry.instanceId}\t${new Date(entry.timestamp).toISOString()}\t${entry.size} bytes`);
-    console.log(["Export ID\tPlatform\tSource\tTimestamp\tSize"].concat(lines).join("\n"));
-  },
+	definition: ["list", "List stored platform exports"],
+	handler: async function(_args: Record<string, unknown>, control: ControlLike) {
+		const entries = await control.sendTo("controller", new messages.ListExportsRequest()) as messages.StoredExportSummaryModel[];
+		if (!entries.length) {
+			console.log("No stored platform exports available");
+			return;
+		}
+		const lines = entries
+			.sort((a, b) => b.timestamp - a.timestamp)
+			.map(entry => `${entry.exportId}\t${entry.platformName}\tinstance ${entry.instanceId}\t${new Date(entry.timestamp).toISOString()}\t${entry.size} bytes`);
+		console.log(["Export ID\tPlatform\tSource\tTimestamp\tSize"].concat(lines).join("\n"));
+	},
 }));
 
 surfaceExportCommands.add(new Command({
 	definition: [
 		"get-export <exportId> [outputFile]",
 		"Download a stored export payload as JSON",
-		(yargs) => {
+		(yargs: YargsLike) => {
 			yargs.positional("exportId", { describe: "Stored export identifier", type: "string" });
 			yargs.positional("outputFile", { describe: "Output file path (default: stdout)", type: "string" });
 		},
 	],
-	handler: async function(args, control) {
+	handler: async function(args: { exportId: string; outputFile?: string }, control: ControlLike) {
 		const response = await control.sendTo("controller", new messages.GetStoredExportRequest({
 			exportId: args.exportId,
-		}));
+		})) as ReturnType<typeof messages.GetStoredExportRequest.Response.fromJSON>;
 		if (!response.success) {
 			throw new Error(response.error || "Export not found");
 		}
@@ -65,24 +60,24 @@ surfaceExportCommands.add(new Command({
 	definition: [
 		"upload-import <file> <targetInstanceId> [forceName] [platformName]",
 		"Upload a JSON export file and import it onto a target instance",
-		(yargs) => {
+		(yargs: YargsLike) => {
 			yargs.positional("file", { describe: "Path to JSON export file", type: "string" });
 			yargs.positional("targetInstanceId", { describe: "Target instance ID", type: "number" });
 			yargs.positional("forceName", { describe: "Force name", type: "string", default: "player" });
 			yargs.positional("platformName", { describe: "Optional platform name override", type: "string" });
 		},
 	],
-	handler: async function(args, control) {
+	handler: async function(args: { file: string; targetInstanceId: number | string; forceName?: string; platformName?: string }, control: ControlLike) {
 		const targetInstanceId = Number(args.targetInstanceId);
 		if (Number.isNaN(targetInstanceId)) {
 			throw new Error("targetInstanceId must be a number");
 		}
 		const raw = fs.readFileSync(args.file, "utf8");
-		let exportData;
+		let exportData: Record<string, unknown>;
 		try {
 			exportData = JSON.parse(raw);
-		} catch (err) {
-			throw new Error(`Invalid JSON in ${args.file}: ${err.message}`);
+		} catch (err: unknown) {
+			throw new Error(`Invalid JSON in ${args.file}: ${getErrorMessage(err)}`);
 		}
 		if (!exportData || typeof exportData !== "object" || Array.isArray(exportData)) {
 			throw new Error("Export file must contain a JSON object");
@@ -93,7 +88,7 @@ surfaceExportCommands.add(new Command({
 			exportData,
 			forceName: args.forceName || "player",
 			platformName: args.platformName || null,
-		}));
+		})) as ReturnType<typeof messages.ImportUploadedExportRequest.Response.fromJSON>;
 		if (!response.success) {
 			throw new Error(response.error || "Import failed");
 		}
@@ -105,14 +100,14 @@ surfaceExportCommands.add(new Command({
 	definition: [
 		"start-transfer <sourceInstanceId> <sourcePlatformIndex> <targetInstanceId> [forceName]",
 		"Start transfer through controller orchestration path (same path used by web UI)",
-		(yargs) => {
+		(yargs: YargsLike) => {
 			yargs.positional("sourceInstanceId", { describe: "Source instance ID", type: "number" });
 			yargs.positional("sourcePlatformIndex", { describe: "Source platform index", type: "number" });
 			yargs.positional("targetInstanceId", { describe: "Target instance ID", type: "number" });
 			yargs.positional("forceName", { describe: "Force name", type: "string", default: "player" });
 		},
 	],
-	handler: async function(args, control) {
+	handler: async function(args: { sourceInstanceId: number | string; sourcePlatformIndex: number | string; targetInstanceId: number | string; forceName?: string }, control: ControlLike) {
 		const sourceInstanceId = Number(args.sourceInstanceId);
 		const sourcePlatformIndex = Number(args.sourcePlatformIndex);
 		const targetInstanceId = Number(args.targetInstanceId);
@@ -124,7 +119,7 @@ surfaceExportCommands.add(new Command({
 			sourcePlatformIndex,
 			targetInstanceId,
 			forceName: args.forceName || "player",
-		}));
+		})) as ReturnType<typeof messages.StartPlatformTransferRequest.Response.fromJSON>;
 		if (response.success) {
 			console.log(`Transfer started: ${response.transferId || "pending"} (export=${response.exportId || "n/a"})`);
 			return;
@@ -134,36 +129,33 @@ surfaceExportCommands.add(new Command({
 }));
 
 surfaceExportCommands.add(new Command({
-  definition: [
-    "transfer <exportId> <instanceId>",
-    "Import a stored export onto the target instance",
-    (yargs) => {
-      yargs.positional("exportId", { describe: "Stored export identifier", type: "string" });
-      yargs.positional("instanceId", { describe: "ID of target instance", type: "number" });
-    },
-  ],
-  handler: async function(args, control) {
-    const targetInstanceId = Number(args.instanceId);
-    if (Number.isNaN(targetInstanceId)) {
-      throw new Error("instanceId must be a number");
-    }
-    const response = await control.sendTo("controller", new messages.TransferPlatformRequest({
-      exportId: args.exportId,
-      targetInstanceId,
-    }));
-    if (response.success) {
-      console.log(`Transfer of ${args.exportId} to instance ${targetInstanceId} succeeded`);
-      return;
-    }
-    throw new Error(response.error || "Unknown transfer failure");
-  },
+	definition: [
+		"transfer <exportId> <instanceId>",
+		"Import a stored export onto the target instance",
+		(yargs: YargsLike) => {
+			yargs.positional("exportId", { describe: "Stored export identifier", type: "string" });
+			yargs.positional("instanceId", { describe: "ID of target instance", type: "number" });
+		},
+	],
+	handler: async function(args: { exportId: string; instanceId: number | string }, control: ControlLike) {
+		const targetInstanceId = Number(args.instanceId);
+		if (Number.isNaN(targetInstanceId)) {
+			throw new Error("instanceId must be a number");
+		}
+		const response = await control.sendTo("controller", new messages.TransferPlatformRequest({
+			exportId: args.exportId,
+			targetInstanceId,
+		})) as ReturnType<typeof messages.TransferPlatformRequest.Response.fromJSON>;
+		if (response.success) {
+			console.log(`Transfer of ${args.exportId} to instance ${targetInstanceId} succeeded`);
+			return;
+		}
+		throw new Error(response.error || "Unknown transfer failure");
+	},
 }));
 
-class CtlPlugin extends BaseCtlPlugin {
-  async addCommands(rootCommand) {
-    rootCommand.add(surfaceExportCommands);
-  }
+export class CtlPlugin extends BaseCtlPlugin {
+	async addCommands(rootCommand: CommandTree) {
+		rootCommand.add(surfaceExportCommands);
+	}
 }
-
-module.exports = CtlPlugin;
-module.exports.CtlPlugin = CtlPlugin;

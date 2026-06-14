@@ -192,20 +192,6 @@ function EntityScanner.scan_items_on_ground(surface)
   return item_list
 end
 
---- Count entities by type (for statistics)
---- @param entity_data table: Array of serialized entities
---- @return table: Table of type = count pairs
-function EntityScanner.count_by_type(entity_data)
-  local counts = {}
-
-  for _, entity in ipairs(entity_data) do
-    local type_name = entity.type or "unknown"
-    counts[type_name] = (counts[type_name] or 0) + 1
-  end
-
-  return counts
-end
-
 --- Generate a deterministic identifier for entities without unit_number
 --- Delegates to GameUtils.make_stable_id (single source of truth)
 --- @param entity LuaEntity
