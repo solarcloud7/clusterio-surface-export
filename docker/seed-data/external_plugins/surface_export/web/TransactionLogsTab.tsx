@@ -18,7 +18,6 @@ import type { ColumnsType } from "antd/es/table";
 import { InfoCircleOutlined, DownloadOutlined } from "@ant-design/icons";
 import {
 	statusColor,
-	humanizeMetricKey,
 	formatNumeric,
 	formatSigned,
 	formatCompactEnergy,
