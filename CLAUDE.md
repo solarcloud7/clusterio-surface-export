@@ -715,6 +715,7 @@ local content = entity.fluidbox.get_fluid_segment_contents(1) -- Returns actual 
 - [docs/commands-reference.md](docs/commands-reference.md) - All available commands
 - [docs/QUICK_START.md](docs/QUICK_START.md) - End-to-end transfer walkthrough
 - [docs/DEVELOPMENT_SETUP.md](docs/DEVELOPMENT_SETUP.md) - Plugin development workflow
+- [docs/CI_CD.md](docs/CI_CD.md) - CI pipeline, Factorio-baking for integration tests, and debugging failed runs
 - [docs/TRANSFER_WORKFLOW_GUIDE.md](docs/TRANSFER_WORKFLOW_GUIDE.md) - Transfer phases and validation
 - [docs/EXPORT_IMPORT_FLOW.md](docs/EXPORT_IMPORT_FLOW.md) - Complete action trace with debugging
 - [docs/IMPLEMENTATION_SUMMARY.md](docs/IMPLEMENTATION_SUMMARY.md) - Module structure and design decisions
