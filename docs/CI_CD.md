@@ -22,7 +22,10 @@ Two jobs:
    game client, but the volume must exist or `docker compose up` fails with
    "external volume not found".
 4. **Start cluster** — `docker compose up -d`, then wait for controller health.
-5. **Wait for instances** — both instances must reach `running`.
+5. **Wait for instances** — wait until both instances are *created/assigned*, then drive
+   `clusterioctl instance start-all` (retried) until both reach `running`. This is the reliable
+   equivalent of the seed script's per-instance start, which can race the host's asynchronous
+   instance-dir creation and silently leave an instance `stopped`.
 6. **Run test suites** — `tests/integration/{entity,platform}-roundtrip/run-tests.ps1`.
 7. **Collect logs on failure** — dumps controller/host/Factorio logs (only when a step fails).
 
@@ -65,13 +68,24 @@ Net effect: Factorio is present in the host image on **every** run (the cache on
 the *build*), so instances start with **no runtime download**. Cache-miss runs are ~4 min;
 cache-hit runs ~3 min.
 
-### Version pinning
+### Version pinning (single source of truth)
 
-The bake uses `FACTORIO_HEADLESS_TAG=stable` (the base image's default, and the mod-pack's
-target). If a run's logs show instances still downloading Factorio (a slow
-`Wait for instances` step with empty `factorio-current.log`), the mod-pack targets a
-different version — pin `FACTORIO_HEADLESS_TAG` to that exact version in the `build-args`
-of the build step in `ci.yml`.
+The baked version **must equal the instances' pinned `factorio.version`** (in both
+`docker/seed-data/hosts/.../instance.json`, currently `2.0.76`). Clusterio's host resolves the
+Factorio install by version (`findVersion` in `@clusterio/host`'s `server.js`): the multi-version
+`/opt/factorio` dir **downloads** the requested version if the baked one differs, and a *direct*
+install **throws** "Unable to find Factorio version X" — so an instance pinned to `2.0.76` must
+have `2.0.76` baked.
+
+**Single source + guard.** `host-1`'s `instance.json` is the canonical version. CI's **Resolve &
+verify** step reads it, passes it as the `FACTORIO_HEADLESS_TAG` build-arg, and **fails the build**
+if `host-2`'s `instance.json` or the Dockerfile fallback default disagree. To change the Factorio
+version, set all three to the same value (host-1 / host-2 / the Dockerfile `ARG`) — the guard
+catches any you miss. The gha cache key includes the build-arg, so a bump triggers a one-time rebuild.
+
+We keep the **multi-version** `/opt/factorio` layout (not a direct install) on purpose: if the
+baked version ever drifts from the pin, Clusterio degrades to a (slow) download rather than
+hard-failing — a safety net, not the normal path.
 
 ## Line endings
 
@@ -86,10 +100,14 @@ logs, and each host's `factorio-current.log`.
 
 - `Loaded plugin surface_export` in the host/controller logs confirms the plugin built and
   loaded — a failure after that is runtime, not a load error.
-- An **empty** `factorio-current.log` means Factorio never launched — almost always the
-  host is still acquiring the binary (check the bake/cache, not the plugin).
-- `Wait for instances` timing out is the classic Factorio-acquisition symptom; see
-  [Factorio in CI](#factorio-in-ci--why-we-bake-it).
+- **Phase 1 timeout** (instances never appear in `instance list`) → seeding didn't finish; check
+  the controller log for `Instance seeding complete.`
+- **Phase 2** prints `✗ Failed to start <name>: <error>` if the host rejects the start — that
+  reason used to be swallowed by the seed script's `|| true`. `Unable to find Factorio version X`
+  there means the baked image isn't the pinned version (check the Resolve & verify output / a
+  stale gha cache layer).
+- `✓ Started` but the instance stays `stopped` with an **empty** `factorio-current.log` means
+  Factorio launched-then-exited — look at the host-log error grep, not the bake.
 
 ## Running the integration tests locally
 

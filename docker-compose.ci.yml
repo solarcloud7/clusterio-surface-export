@@ -1,8 +1,15 @@
 # CI override — DO NOT use for local dev.
 #
-# Points both host services at the locally-built `clusterio-docker-host:factorio-baked`
-# image (see docker/ci/Dockerfile.factorio-baked) so the integration tests use a host image
-# with Factorio headless already baked in, instead of downloading it at runtime every run.
+# Points both host services at the locally-built `clusterio-docker-host:factorio-baked` image
+# (see docker/ci/Dockerfile.factorio-baked), which bakes the headless server — at the instance's
+# pinned `factorio.version` — into /opt/factorio/factorio.
+#
+# With the default factorio_directory (/opt/factorio, a multi-version parent), Clusterio finds
+# that baked version already present and skips the runtime download. We deliberately keep the
+# multi-version layout rather than a direct install: if the baked version ever drifts from the
+# instance pin, Clusterio gracefully downloads the right one instead of hard-failing in
+# findVersion() (which throws "Unable to find Factorio version X" for a direct install).
+# See docs/CI_CD.md.
 #
 # Activated in CI via `COMPOSE_FILE=docker-compose.yml:docker-compose.ci.yml`, after the CI
 # workflow builds + loads the baked image. `pull_policy: never` keeps `docker compose pull`

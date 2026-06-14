@@ -51,6 +51,33 @@ jobs:
           # Set required values for CI
           sed -i 's/^INIT_CLUSTERIO_ADMIN=$/INIT_CLUSTERIO_ADMIN=ci-admin/' .env
 
+      - name: Resolve & verify pinned Factorio version
+        id: factorio_version
+        run: |
+          # Single source of truth = host-1 instance.json's factorio.version. We bake exactly that
+          # version (FACTORIO_HEADLESS_TAG) so Clusterio finds it present and neither re-downloads
+          # nor fails findVersion(). host-2's instance.json and the Dockerfile fallback default MUST
+          # match it — a mismatch breaks the "one version, one place" invariant, so fail loudly
+          # instead of baking the wrong version.
+          read_ver() {
+            grep -oE '"factorio\.version"[^"]*"[0-9]+\.[0-9]+\.[0-9]+"' "$1" \
+              | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1
+          }
+          H1=docker/seed-data/hosts/clusterio-host-1/clusterio-host-1-instance-1/instance.json
+          H2=docker/seed-data/hosts/clusterio-host-2/clusterio-host-2-instance-1/instance.json
+          DF=docker/ci/Dockerfile.factorio-baked
+          v=$(read_ver "$H1"); v2=$(read_ver "$H2")
+          vdf=$(grep -oE 'FACTORIO_HEADLESS_TAG=[0-9]+\.[0-9]+\.[0-9]+' "$DF" | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1)
+          test -n "$v"   || { echo "::error::could not resolve factorio.version from $H1"; exit 1; }
+          test -n "$v2"  || { echo "::error::could not resolve factorio.version from $H2"; exit 1; }
+          test -n "$vdf" || { echo "::error::could not resolve FACTORIO_HEADLESS_TAG default from $DF"; exit 1; }
+          if [ "$v" != "$v2" ] || [ "$v" != "$vdf" ]; then
+            echo "::error::Factorio version mismatch — single source host-1=$v disagrees with host-2=$v2 and/or Dockerfile default=$vdf. Set all three to the same version."
+            exit 1
+          fi
+          echo "version=$v" >> "$GITHUB_OUTPUT"
+          echo "Pinned Factorio version (verified consistent across host-1/host-2/Dockerfile): $v"
+
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
@@ -69,7 +96,7 @@ jobs:
           cache-to: type=gha,mode=max,scope=factorio-headless
           build-args: |
             HOST_IMAGE=ghcr.io/solarcloud7/clusterio-docker-host:2.0.0-alpha.25
-            FACTORIO_HEADLESS_TAG=stable
+            FACTORIO_HEADLESS_TAG=${{ steps.factorio_version.outputs.version }}
 
       - name: Create external factorio-client volume
         run: |
@@ -98,20 +125,57 @@ jobs:
 
       - name: Wait for instances to start
         run: |
-          # Wait for both instances to be running
-          timeout 120 bash -c '
-            until docker exec surface-export-controller \
-              npx clusterioctl --config=/clusterio/tokens/config-control.json instance list 2>&1 \
-              | grep -c "running" | grep -q 2; do
-              sleep 5
-              echo "  Waiting for instances..."
+          CTL="docker exec surface-export-controller npx clusterioctl --config=/clusterio/tokens/config-control.json"
+
+          # Phase 1: wait until BOTH instances are created & assigned. Seeding runs inside the
+          # controller entrypoint and can still be in flight after the controller health check
+          # passes, so the instances may not be in `instance list` yet. Waiting here decouples us
+          # from the seed script's own (racy) per-instance start.
+          echo "Waiting for both instances to be created & assigned..."
+          if ! timeout 60 bash -c '
+            until [ "$(docker exec surface-export-controller npx clusterioctl \
+                       --config=/clusterio/tokens/config-control.json instance list 2>&1 \
+                       | grep -cE "clusterio-host-[12]-instance-1")" -ge 2 ]; do
+              echo "  instances not all present yet; current list:"
+              docker exec surface-export-controller npx clusterioctl \
+                --config=/clusterio/tokens/config-control.json instance list 2>&1 | sed "s/^/    /" || true
+              sleep 4
             done
-          '
+          '; then
+            echo "::error::Instances were never created/assigned (seeding did not complete) — see 'Collect logs on failure'"
+            $CTL instance list 2>&1 || true
+            exit 1
+          fi
+          echo "Both instances are present."
+
+          # Phase 2: explicitly start them, retrying until both report running. The base image's
+          # seed fires `instance start` right after `instance assign`, before the host has created
+          # the instance dir, and swallows the failure with `|| true` — so an instance can silently
+          # stay `stopped`. `instance start-all` is the reliable, retryable equivalent: it (re)starts
+          # every `stopped` instance and is a no-op for running ones, so looping it converges. With
+          # the baked image there's no Factorio download, so starts complete in seconds.
+          echo "Driving 'instance start-all' until both instances report running..."
+          if ! timeout 90 bash -c '
+            until [ "$(docker exec surface-export-controller npx clusterioctl \
+                       --config=/clusterio/tokens/config-control.json instance list 2>&1 \
+                       | grep -c "running")" -ge 2 ]; do
+              echo "  start-all (starts any stopped instances):"
+              docker exec surface-export-controller npx clusterioctl \
+                --config=/clusterio/tokens/config-control.json instance start-all 2>&1 | sed "s/^/    /" || true
+              echo "  current state:"
+              docker exec surface-export-controller npx clusterioctl \
+                --config=/clusterio/tokens/config-control.json instance list 2>&1 | sed "s/^/    /" || true
+              sleep 8
+            done
+          '; then
+            echo "::error::Instances did not reach running after start-all — see 'Collect logs on failure'"
+            $CTL instance list 2>&1 || true
+            exit 1
+          fi
           echo "Both instances are running"
-          # Give Factorio a moment to fully initialize
+          # Give Factorio a moment to finish loading the save before the test suites RCON in.
           sleep 10
-          docker exec surface-export-controller \
-            npx clusterioctl --config=/clusterio/tokens/config-control.json instance list
+          $CTL instance list
 
       - name: Run Entity Roundtrip Tests
         shell: pwsh
@@ -126,16 +190,34 @@ jobs:
       - name: Collect logs on failure
         if: failure()
         run: |
-          echo "=== Controller Logs ==="
-          docker logs surface-export-controller --tail 100 2>&1 || true
+          # Surface the start-failure reason first. The most common opaque failure is the host
+          # rejecting an instance before Factorio launches (e.g. Clusterio's findVersion()
+          # throwing "Unable to find Factorio version X" when the baked/installed version does
+          # not match the instance's pinned factorio.version) — that throw lands in the HOST
+          # log, NOT factorio-current.log (which stays empty). Earlier runs truncated it with
+          # `--tail 100`; we now grep the FULL host logs for it and dump instance status.
+          echo "=== Instance status (look for 'errored'/'stopped' + the reason) ==="
+          docker exec surface-export-controller \
+            npx clusterioctl --config=/clusterio/tokens/config-control.json instance list 2>&1 || true
           echo ""
-          echo "=== Host 1 Logs ==="
-          docker logs surface-export-host-1 --tail 100 2>&1 || true
+          echo "=== Highlighted errors across host logs (usual smoking gun) ==="
+          for h in host-1 host-2; do
+            echo "--- surface-export-$h ---"
+            docker logs "surface-export-$h" 2>&1 \
+              | grep -iE "error|unable to find|exception|fatal|cannot|failed to|not found|throw|traceback" \
+              | tail -40 || true
+          done
           echo ""
-          echo "=== Host 2 Logs ==="
-          docker logs surface-export-host-2 --tail 100 2>&1 || true
+          echo "=== Controller Logs (tail 500) ==="
+          docker logs surface-export-controller --tail 500 2>&1 || true
           echo ""
-          echo "=== Host 1 Factorio Log ==="
+          echo "=== Host 1 Logs (tail 500) ==="
+          docker logs surface-export-host-1 --tail 500 2>&1 || true
+          echo ""
+          echo "=== Host 2 Logs (tail 500) ==="
+          docker logs surface-export-host-2 --tail 500 2>&1 || true
+          echo ""
+          echo "=== Host 1 Factorio Log (empty => Factorio never launched; see host log above) ==="
           docker exec surface-export-host-1 cat /clusterio/data/instances/clusterio-host-1-instance-1/factorio-current.log 2>/dev/null | tail -200 || true
           echo ""
           echo "=== Host 2 Factorio Log ==="
