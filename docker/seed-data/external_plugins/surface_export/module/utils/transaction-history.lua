@@ -52,14 +52,14 @@ function TransactionHistory.record_import(job, validation_result, perf)
 		op_type = job.transfer_id and "transfer" or "import",
 		platform_name = job.platform_name,
 		entity_count = job.total_entities,
-		duration_ticks = (job.metrics.import_completed_tick or game.tick) - (job.metrics.import_started_tick or game.tick),
+		duration_ticks = game.tick - (job.started_tick or game.tick),
 		status = "complete",
 		-- Serializable phase snapshots (LocalisedString arrays)
 		phase_snapshots = snapshot_profilers(perf),
 		-- Plain data validation summary
 		validation = validation_result and {
 			success = validation_result.success,
-			mismatch_summary = validation_result.mismatch_summary
+			mismatch_summary = validation_result.mismatchDetails
 		} or nil,
 		-- Additional metadata
 		transfer_id = job.transfer_id,
@@ -88,8 +88,7 @@ function TransactionHistory.record_export(job, perf)
 	local hist = storage.transaction_history
 	hist.sequence = hist.sequence + 1
 	
-	local duration_ticks = (job.metrics and job.metrics.export_completed_tick or game.tick) - 
-	                       (job.metrics and job.metrics.export_started_tick or game.tick)
+	local duration_ticks = game.tick - (job.started_tick or game.tick)
 	
 	local entry = {
 		seq = hist.sequence,

@@ -884,7 +884,7 @@ export class InstancePlugin extends BaseInstancePlugin {
 
 			// Send message to Factorio for in-game display
 			await this.sendRcon(
-				`/sc game.print("${request.message}", ${colorCode})`,
+				`/sc game.print("${escapeString(String(request.message ?? ""))}", ${colorCode})`,
 				true,
 			);
 

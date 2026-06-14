@@ -3,7 +3,10 @@ docs/dev-docs/
 
 # Docker runtime data (stored in Docker volumes now)
 docker/clusterio-containers/
-clusterio/*
+# Retired in-repo Clusterio fork checkout — ignore the whole dir, including the
+# embedded git repo (a bare `clusterio/*` ignores contents but not the gitlink entry,
+# which is how it was accidentally committed as a submodule pointer).
+/clusterio/
 
 # Seed data - keep structure, ignore large binary files
 docker/seed-data/mods/*

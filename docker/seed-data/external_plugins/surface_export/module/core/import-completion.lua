@@ -251,6 +251,7 @@ function ImportCompletion.run_phase2(job)
 
 		PhaseProfiler.stop(job.job_id, "validation")
 		validation_result = result
+		result.success = success
 
 		-- Attach failed entity losses to result so it flows through to the transaction log
 		if job.failed_entity_losses and job.failed_entity_losses.entity_count > 0 then

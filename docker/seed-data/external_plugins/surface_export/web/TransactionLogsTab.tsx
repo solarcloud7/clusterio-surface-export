@@ -183,11 +183,12 @@ function buildGanttRows(events: Array<LogEvent>, detailedSummary: JsonObject | n
 	const scale = totalMs > 0 ? totalMs : 1;
 	return {
 		totalMs,
-		rows: rows.map(row => {
-			const startMs = getProp(row, "startMs", 0);
-			const endMs = getProp(row, "endMs", 0);
+		rows: rows.map((row, i) => {
+			const startMs = Number(getProp(row, "startMs", 0)) || 0;
+			const endMs = Number(getProp(row, "endMs", 0)) || 0;
 			return {
 				...row,
+				key: `${getProp(row, "key", "row")}#${i}`,
 				ganttStartPct: Math.max(0, Math.min(100, (startMs / scale) * 100)),
 				ganttWidthPct: endMs > startMs
 					? Math.max(0.8, Math.min(100 - (startMs / scale) * 100, ((endMs - startMs) / scale) * 100))
