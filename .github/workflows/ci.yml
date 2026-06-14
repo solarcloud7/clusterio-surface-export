@@ -48,6 +48,14 @@ jobs:
           # Set required values for CI
           sed -i 's/^INIT_CLUSTERIO_ADMIN=$/INIT_CLUSTERIO_ADMIN=ci-admin/' .env
 
+      - name: Create external factorio-client volume
+        run: |
+          # docker-compose declares `factorio-client` as an external volume (shared across
+          # projects in local dev). CI has no Factorio credentials, so host-1 falls back to
+          # headless mode (auto-downloads the headless server) — but compose still mounts the
+          # volume, so it must exist or `up` fails with "external volume not found".
+          docker volume create factorio-client
+
       - name: Pull Docker images
         run: |
           docker compose pull
