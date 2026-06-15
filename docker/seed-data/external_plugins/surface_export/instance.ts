@@ -81,13 +81,13 @@ export class InstancePlugin extends BaseInstancePlugin {
 		this.i.handle(messages.ImportPlatformFromFileRequest, this.handleImportPlatformFromFileRequest.bind(this));
 		this.i.handle(messages.DeleteSourcePlatformRequest, this.handleDeleteSourcePlatform.bind(this));
 		this.i.handle(messages.UnlockSourcePlatformRequest, this.handleUnlockSourcePlatform.bind(this));
-		// These two message/handler pairs have latent type mismatches in their declared
-		// Request/Response shapes (TransferStatusUpdate.color: string|null vs handler's
-		// string|undefined; InstanceListPlatformsRequest Response.platforms optional fields).
-		// Fixing the message schemas is out of scope here, so localize a permissive handle cast.
-		const handleMessage = this.i.handle as (cls: unknown, handler: unknown) => void;
-		handleMessage(messages.TransferStatusUpdate, this.handleTransferStatusUpdate.bind(this));
-		handleMessage(messages.InstanceListPlatformsRequest, this.handleInstanceListPlatformsRequest.bind(this));
+		// TransferStatusUpdate.color (string|null) and InstanceListPlatformsRequest's Response
+		// optionals don't line up with their handlers' declared shapes. Register them BOUND via
+		// this.i.handle like the others, casting the mismatched ARGS — NEVER extract the method
+		// (`const h = this.i.handle`): that loses `this` and crashes Link.handle ("Cannot read
+		// properties of undefined (reading 'handleRequest')") at instance start.
+		this.i.handle(messages.TransferStatusUpdate as never, this.handleTransferStatusUpdate.bind(this) as never);
+		this.i.handle(messages.InstanceListPlatformsRequest as never, this.handleInstanceListPlatformsRequest.bind(this) as never);
 
 		this.logger.info("Surface Export plugin initialized");
 	}
