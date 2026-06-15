@@ -4,8 +4,6 @@
  * @see https://github.com/clusterio/clusterio/blob/master/docs/writing-plugins.md
  */
 
-
-// eslint-disable-next-line @typescript-eslint/no-var-requires
 const lib = require("@clusterio/lib") as { definePermission(opts: { name: string; title: string; description: string }): void };
 
 import * as messages from "./messages";

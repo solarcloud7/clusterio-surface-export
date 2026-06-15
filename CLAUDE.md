@@ -46,7 +46,15 @@ This project provides tools for exporting and importing Factorio Space Age platf
 
 ## RCON Commands (PowerShell Profile Aliases)
 
-**CRITICAL**: These aliases are defined in the user's PowerShell profile. Always use them instead of raw docker commands.
+**CRITICAL (interactive humans)**: These aliases are defined in the user's PowerShell profile. Always use them instead of raw docker commands.
+
+**CRITICAL (AI agents / non-interactive shells)**: `rc11`/`rc21`/`rclist` are **interactive-profile-only** and are **NOT available** in the non-interactive shell an agent runs in — calling them errors with `rc11: The term 'rc11' is not recognized`. Use the raw form instead (PowerShell does not MSYS-mangle the path, so prefer it over Git Bash):
+```powershell
+# rc11 "<cmd>"  ≡
+docker exec surface-export-controller sh -c 'npx clusterioctl --config /clusterio/tokens/config-control.json --log-level error instance send-rcon "clusterio-host-1-instance-1" "<cmd>"'
+# rc21 "<cmd>" → swap to "clusterio-host-2-instance-1"
+```
+A reusable wrapper lives in `tools/rcon.ps1` (see "Development Tools"). When you see `rc11 "X"` below, mentally expand it to the raw form above.
 
 ### Core RCON Aliases
 ```powershell
@@ -104,6 +112,8 @@ The plugin uses **TypeScript** with bind-mounted source and **save patching** fo
 - Edit `*.ts` files in plugin root or `lib/` → Run `npm run build:node` → Restart containers
 - Build generates `dist/node/*.js` from TypeScript sources
 - Deploy script automatically rebuilds before Docker startup
+- The agent shell has no `node` on PATH; build inside a container: `docker exec surface-export-host-1 sh -c 'cd /clusterio/external_plugins/surface_export && npx tsc -p tsconfig.node.json'`. Restart hosts to reload the dist (`docker restart surface-export-host-1 surface-export-host-2`).
+- **DO NOT** run `npm install`/`npm install --include=dev`/`npm prune` in the plugin dir on a running cluster: the plugin lists `@clusterio/*` as **peer+dev** deps and npm 7+ auto-installs peers, so a second copy of `@clusterio/lib` lands in the shared (bind-mounted) `node_modules` and breaks `clusterioctl` with `Error: Attempt to import duplicate copy of @clusterio/lib`. The base-image entrypoint avoids this by deleting them after install (log line "Removing local @clusterio packages"). **Recover with** `docker exec surface-export-host-1 sh -c 'rm -rf /clusterio/external_plugins/surface_export/node_modules/@clusterio'` (NOT `npm prune` — that re-adds the peers). To lint/build locally, install only the tool you need (`npm install --no-save eslint typescript-eslint`) then remove `@clusterio` again. CI is unaffected — it runs `npm ci` in a clean runner.
 
 **Web UI Changes** (React):
 - Edit `*.jsx` or `*.css` files in `web/` → Run `npm run build:web` → Hard-refresh browser
@@ -122,19 +132,32 @@ The plugin uses **TypeScript** with bind-mounted source and **save patching** fo
 4. Edit Lua files → restart instances: `clusterioctl instance stop-all && clusterioctl instance start-all`
 5. **Or use deploy script** for full rebuild: `.\tools\deploy-cluster.ps1 -SkipIncrement`
 
-### Import/Export Tools
-```bash
-# Recommended: Use bash script inside container (100KB chunks, ~3.4s)
-docker exec surface-export-host-1 bash -c 'cat /clusterio/external_plugins/surface_export/docs/import-platform-linux.sh | bash -s -- \
-  /path/to/export.json clusterio-host-1-instance-1'
+### Cluster / transfer / RCON tools (`tools/`)
 
-# Alternative: PowerShell on Windows (4KB chunks, slower due to docker exec overhead)
+> Run `ls tools/` for the full set — this list is the agent-relevant subset. The `rc11`/`rc21`
+> profile aliases do NOT work in a non-interactive (agent/CI) shell; use `tools/rcon.ps1` instead.
+
+```powershell
+# RCON (agent-friendly; replaces the rc11/rc21 profile aliases):
+./tools/rcon.ps1 11 "/list-platforms"            # host-1/instance-1   (21 = host-2)
+
+# Find what happened (plugin errors, transfer traces) — reads the JSON logs docker logs hides:
+./tools/check-cluster-logs.ps1                   # or -Grep "sendRequest|validation|fail"
+
+# Transfer a platform between instances (then prints post-transfer state):
+./tools/transfer-platform.ps1 -PlatformIndex <idx> -Direction 2to1   # or 1to2
+
+# Status / listing:
+./tools/show-cluster-status.ps1
+./tools/list-platforms.ps1
+. ./tools/cluster-utils.ps1                       # dot-source for Send-RCON / Get-InstanceList
+
+# Import an export file (chunked via RCON):
 ./tools/import-platform.ps1 -ExportFile "path/to/export.json" -InstanceName "clusterio-host-1-instance-1"
-
-# Export and validation
-./tools/export-platform.ps1 -PlatformIndex 1 -HostNumber 1 -InstanceNumber 1
-./tools/validate-cluster.ps1       # Run health checks on cluster
 ```
+
+**Skills** (invoke with `/<name>`): `/cluster-logs` (find logs / trace a failure) and
+`/repro-transfer` (reproduce a transfer end-to-end locally). Prefer local repro over CI logs.
 
 ## Clusterio Architecture (Reference)
 
@@ -198,11 +221,14 @@ docker/seed-data/external_plugins/surface_export/   # Plugin root
 │   └── locale/           # Localization strings
 └── docs/                 # Documentation
 
-tools/
+tools/                    # (run `ls tools/` for the full set)
 ├── deploy-cluster.ps1    # Main deployment script (runs npm run build before Docker startup)
+├── rcon.ps1              # Agent-friendly one-shot RCON (replaces rc11/rc21 profile aliases)
+├── cluster-utils.ps1     # Dot-source for Send-RCON / Get-InstanceList helpers
+├── check-cluster-logs.ps1# Dump plugin/factorio logs from where they actually live (JSON files)
+├── transfer-platform.ps1 # Transfer a platform between instances
 ├── import-platform.ps1   # Chunked import via RCON
-├── export-platform.ps1   # Export trigger helper
-└── validate-cluster.ps1  # Cluster health checks
+└── show-cluster-status.ps1 # Cluster health/status
 
 docker/
 └── seed-data/            # Seed data: database, mods, saves, plugins
@@ -325,9 +351,9 @@ remote.call("surface_export", "run_tests")
 ## Common Pitfalls & Solutions
 
 ### 1. Empty RCON Response
-**Symptom**: `rc11` returns nothing
+**Symptom**: `rc11` returns nothing (or, in a non-interactive/agent shell, `rc11: not recognized` — the aliases are interactive-profile-only; use `./tools/rcon.ps1 11 "..."`)
 **Cause**: Instance not running or mod not loaded
-**Fix**: Run `rclist` to check status, then `./tools/validate-cluster.ps1`
+**Fix**: Run `./tools/show-cluster-status.ps1` to check status, then `./tools/check-cluster-logs.ps1` for errors
 
 ### 2. Import Fails Silently
 **Symptom**: Import command returns but no platform created
@@ -467,7 +493,9 @@ For Clusterio core architecture, see [Clusterio docs](https://github.com/cluster
 
 ## Code Style and Conventions
 
-### General Style (enforced by ESLint)
+### General Style (partially enforced by ESLint — `npm run lint`, gated in CI)
+
+> ESLint config: `eslint.config.js` in the plugin root (flat config, type-aware via `tsconfig.node.json`). It currently enforces the **correctness** rules that have bitten us — chiefly the unbound Clusterio Link-method guard (Pitfall #26) via `@typescript-eslint/unbound-method` + a `no-restricted-syntax` selector. The cosmetic conventions below (indentation, quotes, naming) are **conventions, not yet all machine-enforced** — match the surrounding code.
 
 - **Indentation**: Tabs (not spaces, except in Markdown)
 - **Line length**: 120 characters (tabs count as 4)
@@ -680,6 +708,29 @@ Too many parameters for localised string: 39 > 20 (limit)
 **Fix**: Split output into multiple `game.print({"", ...})` calls (one line per phase) so each LocalisedString stays under 20 parameters. Do not pack full perf summaries into one LocalisedString.
 **Key file**: `module/core/import-completion.lua`
 
+### 26. NEVER Extract a Clusterio Link Method — Call It Bound (CRITICAL, caused 2 crashes)
+**Symptom**: `Cannot read properties of undefined (reading 'handleRequest')` at instance **start**, or `Cannot read properties of undefined (reading 'sendRequest')` during a **transfer**. The instance may even start fine and only crash later when the broken path runs.
+**Root Cause**: Clusterio's `Link` methods (`handle`, `sendTo`, `send`, `sendRequest`, `subscribe`, …) rely on `this`. **Extracting one as a value** — directly OR via a cast — loses the binding, so the method runs with `this === undefined` and throws inside `@clusterio/lib`:
+```ts
+// BROKEN — both of these lose `this`:
+const handleMessage = this.i.handle as (cls, h) => void;   // → "reading 'handleRequest'" at start
+handleMessage(messages.TransferStatusUpdate, …);
+const sendToController = this.i.sendTo as (...) => …;       // → "reading 'sendRequest'" on transfer
+await sendToController("controller", new messages.TransferPlatformRequest({…}));
+```
+Both were introduced by PR #2 (`902c5f8`) as "permissive casts" for Request/Response type mismatches — the `as (...) => …` cast on the *method* silenced the type error AND would silence the lint rule meant to catch it.
+**Fix**: ALWAYS call the method **bound** (`this.i.handle(...)`, `this.i.sendTo(...)`). When the plugin's duck-typed message classes don't satisfy the strict overloads, cast the **arguments/result**, never the method:
+```ts
+this.i.handle(messages.TransferStatusUpdate as never, this.handleTransferStatusUpdate.bind(this) as never);
+const resp = await this.i.sendTo(
+  "controller",
+  new messages.TransferPlatformRequest({ exportId, targetInstanceId }) as never,
+) as messages.SimpleResponse & { transferId?: string };
+```
+**Diagnosing it**: the `this.logger` lines around the throw are in the host log file, not `docker logs` — see Observability above. Read `/clusterio/logs/host/host-*.log` for the exact `Error handling … : Cannot read properties of undefined (reading 'sendRequest')`.
+**Mechanical guard**: `npm run lint` (eslint `@typescript-eslint/unbound-method` + a `no-restricted-syntax` rule flagging extraction/cast of any Link method) catches this — and is enforced in CI. This Pitfall exists because a manual audit caught the `handle` site but **missed** the identical `sendTo` site; do not rely on manual review for this class of bug.
+**Key file**: `instance.ts` (handler registration ~line 79, `handleExportComplete` sendTo sites).
+
 ## Factorio 2.0 Fluid API & Simulation Behavior
 
 **Topic**: Fluidbox Persistence, Segment Logic, and State Validation.
@@ -737,20 +788,28 @@ docker exec surface-export-controller npx clusterioctl --config=/clusterio/token
 docker exec surface-export-controller sh -c 'npx clusterioctl --config /clusterio/tokens/config-control.json ...'
 ```
 
-**Getting container logs**: The controller container has massive `chown` noise on stderr from npm installs. Always filter:
-
+**RCON command (always use sh -c with single quotes):**
 ```bash
-# Get clean controller plugin logs (filter npm/chown noise):
-docker logs --tail 200 surface-export-controller 2>&1 | grep "surface_export"
-
-# Get host plugin logs:
-docker logs --tail 200 surface-export-host-1 2>&1 | grep "surface_export"
-
-# RCON commands (always use sh -c with single quotes):
 docker exec surface-export-controller sh -c 'npx clusterioctl --config /clusterio/tokens/config-control.json --log-level error instance send-rcon "clusterio-host-1-instance-1" "/list-platforms"'
 ```
 
-**Note**: `docker logs` pipes work with `grep` in Git Bash. The `--tail N` flag goes BEFORE the container name. After a container restart, old logs are lost — only post-restart logs are available.
+### Observability — WHERE EACH LOG ACTUALLY LIVES (read this before debugging)
+
+**The #1 gotcha that wastes hours**: a plugin's `this.logger.info(...)` output (controller AND instance/host plugins) does **NOT** reliably appear in `docker logs`. `docker logs surface-export-host-1 | grep surface_export` returns **nothing** — the host plugin's own logs are not on host stdout. Clusterio routes them to **log files on disk** instead. Look in the files, not (only) `docker logs`.
+
+| What you want | Where it actually is | How to read it |
+|---|---|---|
+| **Everything, aggregated** (controller + every host + every instance plugin `this.logger`) | Controller: `/clusterio/logs/cluster/cluster-YYYY-MM-DD.log` (JSON lines, date-rotated) | `docker exec surface-export-controller sh -c 'cat /clusterio/logs/cluster/cluster-*.log' \| grep -aoE '"message":"[^"]*"'` |
+| **One host's plugin logs** (instance `this.logger.info/error`) | Host: `/clusterio/logs/host/host-YYYY-MM-DD.log` (JSON lines) | `docker exec surface-export-host-1 sh -c 'cat /clusterio/logs/host/host-*.log' \| grep -aoE '"message":"[^"]*"' \| grep -i transfer` |
+| **Controller-origin plugin logs only** | `docker logs surface-export-controller` stdout (controller `this.logger` DOES appear here; host/instance logs do NOT) | `docker logs --tail 300 surface-export-controller 2>&1 \| grep surface_export` |
+| **Factorio engine + Lua `log(...)` / `[Script]`** | Host: `/clusterio/data/instances/<instance>/factorio-current.log` (also mirrored into the host/cluster JSON logs as `"level":"server"`) | `docker exec surface-export-host-1 sh -c 'tail -200 /clusterio/data/instances/clusterio-host-1-instance-1/factorio-current.log'` |
+| **Debug dumps** (`debug_source_*`, `debug_destination_*`, `debug_import_result_*`) | Host: `/clusterio/data/instances/<instance>/script-output/` (only when `debug_mode` on) | `docker exec surface-export-host-2 sh -c 'ls /clusterio/data/instances/clusterio-host-2-instance-1/script-output/debug_import_result_*.json'` |
+
+The JSON log shape is `{"instance_id":…,"instance_name":…,"level":"info|error|server","message":"…","plugin":"surface_export","timestamp":"…"}`. Filter a single plugin with `grep '"plugin":"surface_export"'`. The `cluster-*.log` file is the single best place to trace a cross-instance transfer end-to-end (it has the host-1 export, the controller routing, AND the host-2 import in one stream).
+
+**Prometheus metrics are LIVE**: the `statistics_exporter` plugin exposes `http://localhost:8080/metrics` on the controller (process + cluster metrics, ~45 KB). Custom surface_export transfer metrics (success/fail counts, durations) are the planned "real fix" for plugin observability — the endpoint already exists, only custom collectors are missing.
+
+**Note**: `--tail N` goes BEFORE the container name. After a container restart, `docker logs` loses pre-restart output — but the on-disk `/clusterio/logs/*` files persist across restarts (until date-rotation), so prefer the files for any post-restart investigation.
 
 ### Check Plugin Module is Loaded
 ```powershell
@@ -759,7 +818,7 @@ rc11 "/sc rcon.print(remote.interfaces['surface_export'] ~= nil)"  -- Should pri
 
 ### View Factorio Log (from container)
 ```bash
-docker exec surface-export-host-1 sh -c 'tail -100 /clusterio/instances/clusterio-host-1-instance-1/factorio-current.log'
+docker exec surface-export-host-1 sh -c 'tail -100 /clusterio/data/instances/clusterio-host-1-instance-1/factorio-current.log'
 ```
 
 ### Check Async Job Queue
