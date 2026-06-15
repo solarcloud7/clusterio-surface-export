@@ -1,6 +1,7 @@
 
 import type { IControllerPlugin, SubscriptionState, TransactionLogEntryModel, TransferSummaryModel, ActiveTransfer } from "../messages";
 import { getErrorMessage } from "../helpers";
+import { recordOperationOutcome } from "./metrics";
 
 type ControlLink = {
 	send: (event: unknown) => void;
@@ -83,6 +84,11 @@ export class SubscriptionManager {
 		if (!transfer) {
 			return;
 		}
+		// Universal "operation changed" chokepoint — every terminal transfer/export/import passes
+		// through here, so this is where we record Prometheus outcome metrics (idempotent + no-ops
+		// while non-terminal). Keeps the recording in one place instead of scattered across each
+		// terminal site in controller.ts / transfer-orchestrator.ts.
+		recordOperationOutcome(transfer);
 		this.plugin.transferRevision += 1;
 		const transferSummary = this.plugin.txLogger.buildTransferSummary(
 			transfer.transferId,

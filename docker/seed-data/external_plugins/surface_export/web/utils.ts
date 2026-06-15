@@ -1,5 +1,6 @@
 
 import type { JsonObject, LogEvent, TransferSummary } from "./view-models";
+import type { GanttRowInput, GanttRow } from "./view-models";
 
 // Type-safe helpers for accessing JsonObject properties
 function getString(obj: JsonObject, key: string, fallback: string): string;
@@ -174,11 +175,11 @@ export function buildOperationCountRows(exportData: JsonObject | null | undefine
 	return rows;
 }
 
-export function buildGanttRows(events: Array<LogEvent>, detailedSummary: JsonObject | null) {
+export function buildGanttRows(events: Array<LogEvent>, detailedSummary: JsonObject | null): { totalMs: number; rows: GanttRow[] } {
 	// Produce one row per named phase across all events.
 	// Each row: { key, label, isEvent, indent, startMs, endMs, durationMs, color }
 	// All times are absolute ms from transfer start (elapsedMs of first event = 0).
-	const rows: Array<JsonObject> = [];
+	const rows: GanttRowInput[] = [];
 	let totalMs = 0;
 
 	for (const event of events || []) {
@@ -316,12 +317,12 @@ export function buildGanttRows(events: Array<LogEvent>, detailedSummary: JsonObj
 	const scale = totalMs > 0 ? totalMs : 1;
 	return {
 		totalMs,
-		rows: rows.map((row, i) => {
-			const startMs = Number(getProp(row, "startMs", 0)) || 0;
-			const endMs = Number(getProp(row, "endMs", 0)) || 0;
+		rows: rows.map((row, i): GanttRow => {
+			const startMs = row.startMs;
+			const endMs = row.endMs;
 			return {
 				...row,
-				key: `${getProp(row, "key", "row")}#${i}`,
+				key: `${row.key}#${i}`,
 				ganttStartPct: Math.max(0, Math.min(100, (startMs / scale) * 100)),
 				ganttWidthPct: endMs > startMs
 					? Math.max(0.8, Math.min(100 - (startMs / scale) * 100, ((endMs - startMs) / scale) * 100))

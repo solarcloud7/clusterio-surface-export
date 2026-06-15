@@ -21,9 +21,13 @@ const path = require("node:path");
 
 const messages = require(path.join(__dirname, "..", "dist", "node", "messages.js"));
 
-// A message class is an exported function (class) carrying the static wire contract.
+// Discover message classes by the one invariant every plugin message MUST carry: `static plugin`.
+// Deliberately NOT keyed on `jsonSchema`/`type` — a class that omits those is exactly the drift this
+// harness exists to catch, so it must still be discovered here and FAIL the per-class assertions
+// below, rather than be silently skipped.
+const PLUGIN_NAME = "surface_export";
 const messageClasses = Object.entries(messages)
-	.filter(([, value]) => typeof value === "function" && value.jsonSchema && value.type)
+	.filter(([, value]) => typeof value === "function" && value.plugin === PLUGIN_NAME)
 	.map(([name, cls]) => ({ name, cls }));
 
 const VALID_TYPES = new Set(["request", "event"]);
