@@ -226,4 +226,29 @@ function GameUtils.pcall_warn(context, fn)
   end
 end
 
+--- Reliably remove a space platform (its surface and all entities).
+--- Pitfall #19: LuaSpacePlatform.destroy() is a SILENT no-op in Factorio 2.0 Space Age — it
+--- returns without error but leaves the platform and surface fully intact (verified empirically:
+--- after `platform.destroy()`, `platform.valid` is still true and the platform count is unchanged).
+--- `game.delete_surface()` is the ONLY API that actually tears a platform down. Always route
+--- platform removal through this helper; never call `platform.destroy()` directly. The
+--- tools/lint-lua-invariants.mjs guard fails CI if a raw `*platform*.destroy()` call is reintroduced.
+--- @param platform LuaSpacePlatform
+--- @return boolean: true if a surface deletion was issued, false if nothing could be removed
+function GameUtils.delete_platform(platform)
+  if not (platform and platform.valid) then return false end
+  local surface = platform.surface
+  if surface and surface.valid then
+    game.delete_surface(surface)  -- deferred to end of tick; fully removes platform + surface
+    return true
+  end
+  -- No valid surface to delete (e.g. apply_starter_pack failed before the surface materialized).
+  -- platform.destroy() is a no-op, and there is no other API to remove a surfaceless platform —
+  -- log so the leak is visible rather than silent.
+  log(string.format(
+    "[GameUtils] delete_platform: platform '%s' has no valid surface; cannot fully remove (Pitfall #19)",
+    tostring(platform.name)))
+  return false
+end
+
 return GameUtils
