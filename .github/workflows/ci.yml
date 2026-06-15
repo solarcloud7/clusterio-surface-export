@@ -49,6 +49,10 @@ jobs:
         working-directory: ${{ env.PLUGIN_DIR }}
         run: npm run lint
 
+      - name: Test (message round-trip + wire contract)
+        working-directory: ${{ env.PLUGIN_DIR }}
+        run: npm test
+
       - name: Create env file from example
         run: |
           cp .env.example .env

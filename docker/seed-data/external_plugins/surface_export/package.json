@@ -13,7 +13,7 @@
     "lint": "npm run lint:js && npm run lint:lua",
     "lint:js": "eslint . --max-warnings 0",
     "lint:lua": "node scripts/lint-lua-invariants.mjs",
-    "test": "echo \"No tests yet\" && exit 0"
+    "test": "npm run build:node && node --test test/messages.roundtrip.test.cjs"
   },
   "keywords": [
     "clusterio",
