@@ -32,7 +32,7 @@ import {
 type ExpectedActualRow,
 type FluidInventoryRow,
 } from "./utils";
-import type { JsonObject, LogEvent, SurfaceExportPlugin, SurfaceExportState, TransferSummary } from "./view-models";
+import type { JsonObject, LogEvent, SurfaceExportPlugin, SurfaceExportState, TransferSummary, GanttRow } from "./view-models";
 
 const { Text } = Typography;
 
@@ -47,25 +47,25 @@ const TIMELINE_COLORS: Record<string, string> = { red: "#ff4d4f", green: "#52c41
 // Lightweight CSS bar timeline. Each row is positioned from the ganttStartPct/ganttWidthPct/
 // ganttMarkerPct that buildGanttRows already computes — duration phases render as bars, events as
 // markers. Replaces the former mermaid gantt (a multi-MB dep for one diagram).
-function PhaseTimeline({ rows, totalMs }: { rows: Array<JsonObject>; totalMs: number }) {
+function PhaseTimeline({ rows, totalMs }: { rows: GanttRow[]; totalMs: number }) {
 	if (!rows || rows.length === 0 || totalMs <= 0) {
 		return <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="No transfer flow events available" />;
 	}
 	return (
 		<div className="surface-export-timeline">
-			{rows.map((row, i) => {
-				const isEvent = Boolean(getProp(row, "isEvent", false));
-				const label = String(getProp(row, "label", ""));
-				const durationMs = getProp(row, "durationMs", null) as number | null;
-				const indent = Number(getProp(row, "indent", 0));
-				const color = TIMELINE_COLORS[String(getProp(row, "color", "blue"))] ?? TIMELINE_COLORS.blue;
-				const startPct = Number(getProp(row, "ganttStartPct", 0));
-				const widthPct = Number(getProp(row, "ganttWidthPct", 0));
-				const markerPct = Number(getProp(row, "ganttMarkerPct", 0));
-				const endMs = Number(getProp(row, "endMs", 0));
+			{rows.map((row) => {
+				const isEvent = row.isEvent;
+				const label = row.label;
+				const durationMs = row.durationMs;
+				const indent = row.indent;
+				const color = TIMELINE_COLORS[row.color] ?? TIMELINE_COLORS.blue;
+				const startPct = row.ganttStartPct;
+				const widthPct = row.ganttWidthPct;
+				const markerPct = row.ganttMarkerPct;
+				const endMs = row.endMs;
 				const timeLabel = durationMs != null ? formatMsLabel(durationMs) : "";
 				return (
-					<div key={String(getProp(row, "key", i))} className="surface-export-timeline-row">
+					<div key={row.key} className="surface-export-timeline-row">
 						<div className="surface-export-timeline-label" style={{ paddingLeft: 4 + indent * 14 }} title={label}>
 							<Text strong={isEvent} style={{ fontSize: 12 }}>{label}</Text>
 						</div>
