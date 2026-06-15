@@ -67,3 +67,92 @@ export interface HostNodeModel {
 	connected: boolean;
 	instances: InstanceNodeModel[];
 }
+
+// ── Transaction payload types (shared by the node controller/instance and the web UI) ───────────
+// These describe the export/import/validation payloads carried on the wire and rendered in the
+// transaction-log UI. They live here (not in messages.ts) so the browser bundle can import them
+// without pulling in node-only code — see web/view-models.ts.
+
+export interface ExportMetrics {
+	requestExportAndLockMs?: number;
+	waitForControllerStoreMs?: number;
+	controllerExportPrepTotalMs?: number;
+	instanceAsyncExportTicks?: number;
+	instanceAsyncExportMs?: number;
+	instanceAsyncExportSeconds?: number;
+	exportedEntityCount?: number;
+	exportedTileCount?: number;
+	atomicBeltEntitiesScanned?: number;
+	atomicBeltItemStacksCaptured?: number;
+	uncompressedPayloadBytes?: number;
+	compressedPayloadBytes?: number;
+	compressionReductionPct?: number;
+	scheduleRecordCount?: number;
+	scheduleInterruptCount?: number;
+}
+
+export interface ImportMetrics {
+	total_ticks: number;
+	tiles_ms: number;
+	entities_ms: number;
+	fluids_ms: number;
+	belts_ms: number;
+	state_ms: number;
+	validation_ms: number;
+	total_ms: number;
+	tiles_placed: number;
+	entities_created: number;
+	entities_failed: number;
+	fluids_restored: number;
+	belt_items_restored: number;
+	circuits_connected: number;
+	total_items: number;
+	total_fluids: number;
+	[key: string]: number;
+}
+
+export interface PayloadMetrics {
+	isCompressed: boolean;
+	compressionType: string;
+	payloadSizeKB: number | null;
+	entityCount: number;
+	tileCount: number;
+	uniqueItemTypes: number;
+	totalItemCount: number;
+	uniqueFluidTypes: number;
+	totalFluidVolume: number;
+}
+
+export interface ValidationResult {
+	itemCountMatch: boolean;
+	fluidCountMatch: boolean;
+	entityCount?: number;
+	mismatchDetails?: string;
+	expectedItemCounts?: Record<string, number>;
+	actualItemCounts?: Record<string, number>;
+	expectedFluidCounts?: Record<string, number>;
+	actualFluidCounts?: Record<string, number>;
+	entityTypeBreakdown?: Record<string, number>;
+	failedEntityLosses?: { items: Record<string, number>; fluids: Record<string, number> };
+	highTempAggregates?: Record<string, { expectedEnergy: number; actualEnergy: number; reconciled: boolean }>;
+	// Post-LossAnalysis fields
+	postActivation?: boolean;
+	totalExpectedItems?: number;
+	totalActualItems?: number;
+	totalExpectedFluids?: number;
+	totalActualFluids?: number;
+	itemTypesExpected?: number;
+	itemTypesActual?: number;
+	fluidTypesExpected?: number;
+	fluidTypesActual?: number;
+	fluidReconciliation?: {
+		highTempThreshold: number;
+		rawFluidDelta: number;
+		reconciledFluidLoss: number;
+		lowTempLoss: number;
+		highTempReconciledLoss: number;
+		fluidPreservedPct: number;
+		highTempAggregates?: Record<string, { expected: number; actual: number; delta: number; reconciled: boolean; expectedEnergy: number; actualEnergy: number }>;
+	};
+	[key: string]: unknown;
+}

@@ -1,5 +1,5 @@
 
-import type { JsonObject, LogEvent, TransferSummary } from "./view-models";
+import type { JsonObject, LogEvent, TransferSummary, ExportMetrics, ImportMetrics } from "./view-models";
 
 // Type-safe helpers for accessing JsonObject properties
 function getString(obj: JsonObject, key: string, fallback: string): string;
@@ -202,10 +202,11 @@ export function buildGanttRows(events: Array<LogEvent>, detailedSummary: JsonObj
 			|| (event?.eventType === "transfer_created" ? detailedSummary?.export || null : null);
 		if (exportMetrics && typeof exportMetrics === "object") {
 			const eventStart = elapsedMs ?? 0;
-			const lockMs = Number(getProp(exportMetrics as JsonObject, "requestExportAndLockMs", 0));
-			const storeMs = Number(getProp(exportMetrics as JsonObject, "waitForControllerStoreMs", 0));
-			const asyncMs = Number(getProp(exportMetrics as JsonObject, "instanceAsyncExportMs", 0));
-			const ticks = Number(getProp(exportMetrics as JsonObject, "instanceAsyncExportTicks", 0));
+			const em = exportMetrics as Partial<ExportMetrics>;
+			const lockMs = em.requestExportAndLockMs ?? 0;
+			const storeMs = em.waitForControllerStoreMs ?? 0;
+			const asyncMs = em.instanceAsyncExportMs ?? 0;
+			const ticks = em.instanceAsyncExportTicks ?? 0;
 			// storeMs ends at eventStart; lockMs ends where storeMs begins.
 			const lockEnd = eventStart - storeMs;
 			const lockStart = lockEnd - lockMs;
@@ -242,15 +243,15 @@ export function buildGanttRows(events: Array<LogEvent>, detailedSummary: JsonObj
 
 		// Import sub-phases — sequential flat bars (tiles → entities → fluids)
 		if (event?.importMetrics && typeof event.importMetrics === "object") {
-			const m = event.importMetrics as JsonObject;
+			const m = event.importMetrics as Partial<ImportMetrics>;
 			const eventStart = elapsedMs ?? 0;
-			const tilesMs = Number(getProp(m, "tiles_ms", 0));
-			const tilesCount = Number(getProp(m, "tiles_placed", 0));
-			const entitiesMs = Number(getProp(m, "entities_ms", 0));
-			const entitiesCount = Number(getProp(m, "entities_created", 0));
-			const fluidsMs = Number(getProp(m, "fluids_ms", 0));
-			const fluidsCount = Number(getProp(m, "fluids_restored", 0));
-			const totalImportMs = Number(getProp(m, "total_ms", 0));
+			const tilesMs = m.tiles_ms ?? 0;
+			const tilesCount = m.tiles_placed ?? 0;
+			const entitiesMs = m.entities_ms ?? 0;
+			const entitiesCount = m.entities_created ?? 0;
+			const fluidsMs = m.fluids_ms ?? 0;
+			const fluidsCount = m.fluids_restored ?? 0;
+			const totalImportMs = m.total_ms ?? 0;
 			if (totalImportMs > 0) {
 				totalMs = Math.max(totalMs, eventStart);
 				let cursor = eventStart - totalImportMs;
