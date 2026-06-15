@@ -35,11 +35,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v6
         with:
-          # Build Node pinned to 20: building the plugin under Node 24 produces a dist that crashes
-          # at instance start with "Cannot read properties of undefined (reading 'handleRequest')".
-          # The action runtime is already Node 24 (setup-node@v6); only the build Node stays 20,
-          # pending investigation of the Node-24 build breakage.
-          node-version: '20'
+          node-version: '24'
           cache: 'npm'
           cache-dependency-path: ${{ env.PLUGIN_DIR }}/package-lock.json
 
@@ -259,7 +255,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v6
         with:
-          node-version: '20'
+          node-version: '24'
           registry-url: 'https://registry.npmjs.org'
           cache: 'npm'
           cache-dependency-path: ${{ env.PLUGIN_DIR }}/package-lock.json
