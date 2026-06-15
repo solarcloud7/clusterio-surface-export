@@ -29,6 +29,14 @@ if (-not (Test-Path (Join-Path $forkDir "pnpm-workspace.yaml"))) {
 $forkDir = (Resolve-Path $forkDir).Path
 $repoDir = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 
+# Deps must be installed once before `pnpm build` works — fail fast with a clear message instead of a
+# confusing build error on a fresh checkout. (We don't run `pnpm install` here: it's slow and only
+# needed when deps change, not every rebuild.)
+if (-not (Test-Path (Join-Path $forkDir "node_modules"))) {
+    Write-Host "Fork dependencies are not installed. Run 'pnpm install' in $forkDir first." -ForegroundColor Red
+    exit 1
+}
+
 Write-Host "Building Clusterio fork at $forkDir (pnpm build)..." -ForegroundColor Cyan
 Push-Location $forkDir
 try {
