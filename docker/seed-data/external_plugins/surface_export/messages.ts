@@ -1065,6 +1065,8 @@ export interface ActiveTransfer {
 	sourceVerification?: { itemCounts: Record<string, number>; fluidCounts: Record<string, number> };
 	validationTimeout?: ReturnType<typeof setTimeout> | null;
 	phases?: Record<string, PhaseRecord>;
+	/** Set once recordOperationOutcome() has counted this operation's terminal result (Prometheus idempotency guard). */
+	metricsRecorded?: boolean;
 }
 
 

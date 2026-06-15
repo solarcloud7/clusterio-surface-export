@@ -18,6 +18,25 @@ export type LogEvent = {
 	message?: string;
 };
 
+/** A timeline row as pushed inside buildGanttRows, before the percentage columns are computed. */
+export interface GanttRowInput {
+	key: string;
+	label: string;
+	isEvent: boolean;
+	indent: number;
+	startMs: number;
+	endMs: number;
+	durationMs: number | null;
+	color: string;
+}
+
+/** A timeline row as returned by buildGanttRows — the input plus its computed gantt percentages. */
+export interface GanttRow extends GanttRowInput {
+	ganttStartPct: number;
+	ganttWidthPct: number;
+	ganttMarkerPct: number;
+}
+
 export type PlatformTreeState = {
 	forceName: string;
 	hosts: HostNodeModel[];

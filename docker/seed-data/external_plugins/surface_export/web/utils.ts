@@ -1,5 +1,6 @@
 
 import type { JsonObject, LogEvent, TransferSummary, ExportMetrics, ImportMetrics } from "./view-models";
+import type { GanttRowInput, GanttRow } from "./view-models";
 
 // Type-safe helpers for accessing JsonObject properties
 function getString(obj: JsonObject, key: string, fallback: string): string;
@@ -174,11 +175,11 @@ export function buildOperationCountRows(exportData: JsonObject | null | undefine
 	return rows;
 }
 
-export function buildGanttRows(events: Array<LogEvent>, detailedSummary: JsonObject | null) {
+export function buildGanttRows(events: Array<LogEvent>, detailedSummary: JsonObject | null): { totalMs: number; rows: GanttRow[] } {
 	// Produce one row per named phase across all events.
 	// Each row: { key, label, isEvent, indent, startMs, endMs, durationMs, color }
 	// All times are absolute ms from transfer start (elapsedMs of first event = 0).
-	const rows: Array<JsonObject> = [];
+	const rows: GanttRowInput[] = [];
 	let totalMs = 0;
 
 	for (const event of events || []) {
@@ -203,10 +204,13 @@ export function buildGanttRows(events: Array<LogEvent>, detailedSummary: JsonObj
 		if (exportMetrics && typeof exportMetrics === "object") {
 			const eventStart = elapsedMs ?? 0;
 			const em = exportMetrics as Partial<ExportMetrics>;
-			const lockMs = em.requestExportAndLockMs ?? 0;
-			const storeMs = em.waitForControllerStoreMs ?? 0;
-			const asyncMs = em.instanceAsyncExportMs ?? 0;
-			const ticks = em.instanceAsyncExportTicks ?? 0;
+			// Number(... ?? 0): typed access catches field-name drift, while the explicit coercion keeps
+			// the old getProp robustness — legacy persisted logs may store these as numeric strings, and
+			// an unconverted string would break the timeline math below (e.g. string concat in cursor + dur).
+			const lockMs = Number(em.requestExportAndLockMs ?? 0);
+			const storeMs = Number(em.waitForControllerStoreMs ?? 0);
+			const asyncMs = Number(em.instanceAsyncExportMs ?? 0);
+			const ticks = Number(em.instanceAsyncExportTicks ?? 0);
 			// storeMs ends at eventStart; lockMs ends where storeMs begins.
 			const lockEnd = eventStart - storeMs;
 			const lockStart = lockEnd - lockMs;
@@ -245,13 +249,15 @@ export function buildGanttRows(events: Array<LogEvent>, detailedSummary: JsonObj
 		if (event?.importMetrics && typeof event.importMetrics === "object") {
 			const m = event.importMetrics as Partial<ImportMetrics>;
 			const eventStart = elapsedMs ?? 0;
-			const tilesMs = m.tiles_ms ?? 0;
-			const tilesCount = m.tiles_placed ?? 0;
-			const entitiesMs = m.entities_ms ?? 0;
-			const entitiesCount = m.entities_created ?? 0;
-			const fluidsMs = m.fluids_ms ?? 0;
-			const fluidsCount = m.fluids_restored ?? 0;
-			const totalImportMs = m.total_ms ?? 0;
+			// Number(... ?? 0): coerce defensively so a numeric string from a legacy log can't slip
+			// through typed access and corrupt the cursor math (cursor + dur would concatenate).
+			const tilesMs = Number(m.tiles_ms ?? 0);
+			const tilesCount = Number(m.tiles_placed ?? 0);
+			const entitiesMs = Number(m.entities_ms ?? 0);
+			const entitiesCount = Number(m.entities_created ?? 0);
+			const fluidsMs = Number(m.fluids_ms ?? 0);
+			const fluidsCount = Number(m.fluids_restored ?? 0);
+			const totalImportMs = Number(m.total_ms ?? 0);
 			if (totalImportMs > 0) {
 				totalMs = Math.max(totalMs, eventStart);
 				let cursor = eventStart - totalImportMs;
@@ -317,12 +323,12 @@ export function buildGanttRows(events: Array<LogEvent>, detailedSummary: JsonObj
 	const scale = totalMs > 0 ? totalMs : 1;
 	return {
 		totalMs,
-		rows: rows.map((row, i) => {
-			const startMs = Number(getProp(row, "startMs", 0)) || 0;
-			const endMs = Number(getProp(row, "endMs", 0)) || 0;
+		rows: rows.map((row, i): GanttRow => {
+			const startMs = row.startMs;
+			const endMs = row.endMs;
 			return {
 				...row,
-				key: `${getProp(row, "key", "row")}#${i}`,
+				key: `${row.key}#${i}`,
 				ganttStartPct: Math.max(0, Math.min(100, (startMs / scale) * 100)),
 				ganttWidthPct: endMs > startMs
 					? Math.max(0.8, Math.min(100 - (startMs / scale) * 100, ((endMs - startMs) / scale) * 100))

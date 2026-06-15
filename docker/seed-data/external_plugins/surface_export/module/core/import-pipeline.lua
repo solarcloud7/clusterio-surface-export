@@ -8,6 +8,7 @@ local TileRestoration = require("modules/surface_export/import_phases/tile_resto
 local PlatformHubMapping = require("modules/surface_export/import_phases/platform_hub_mapping")
 local EntityCreation = require("modules/surface_export/import_phases/entity_creation")
 local PhaseProfiler = require("modules/surface_export/utils/phase-profiler")
+local GameUtils = require("modules/surface_export/utils/game-utils")
 
 local ImportPipeline = {}
 
@@ -191,13 +192,13 @@ function ImportPipeline.queue(json_data, new_platform_name, force_name, requeste
 	end)
 
 	if not ok then
-		new_platform.destroy()
+		GameUtils.delete_platform(new_platform)
 		return nil, "Failed to apply starter pack: " .. tostring(err)
 	end
 
 	-- Validate surface is now accessible
 	if not new_platform.surface or not new_platform.surface.valid then
-		new_platform.destroy()
+		GameUtils.delete_platform(new_platform)
 		log(string.format("[Import Queue] FAILED: Platform '%s' surface not valid after activation", final_name))
 		return nil, "Platform surface not valid after activation"
 	end
@@ -231,7 +232,7 @@ function ImportPipeline.queue(json_data, new_platform_name, force_name, requeste
 	if imported_schedule then
 		local schedule_apply_ok, schedule_apply_err = PlatformSchedule.apply(new_platform, imported_schedule)
 		if not schedule_apply_ok then
-			new_platform.destroy()
+			GameUtils.delete_platform(new_platform)
 			return nil, "Failed to restore platform schedule: " .. tostring(schedule_apply_err)
 		end
 		local imported_schedule_summary = PlatformSchedule.summarize(imported_schedule)
@@ -241,7 +242,7 @@ function ImportPipeline.queue(json_data, new_platform_name, force_name, requeste
 			tostring(imported_schedule_summary.group)))
 	elseif is_transfer then
 		-- Defensive guard: transfers should never reach this state due to strict validation above.
-		new_platform.destroy()
+		GameUtils.delete_platform(new_platform)
 		return nil, "Transfer payload missing required platform schedule"
 	end
 
