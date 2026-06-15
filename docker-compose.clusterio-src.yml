@@ -1,0 +1,45 @@
+# Opt-in override: run a LOCALLY-BUILT Clusterio fork in the dev cluster instead of the published
+# alpha.25 image — so you can test a Clusterio core change alongside the surface_export plugin.
+#
+# This is NOT auto-loaded (only docker-compose.yml / docker-compose.override.yml are). It activates
+# only when you pass it explicitly with -f.
+#
+# Usage (from the repo root):
+#   # 1. build the fork (it lives in the SIBLING checkout ../clusterio):
+#   ./tools/rebuild-clusterio.ps1            # (pnpm build + bring the cluster up with this override)
+#   # ...or manually:
+#   pnpm -C ../clusterio install ; pnpm -C ../clusterio build
+#   docker compose -f docker-compose.yml -f docker-compose.clusterio-src.yml up -d --force-recreate
+#   # revert to the published image:  docker compose up -d --force-recreate
+#
+# How it works: it bind-mounts each fork package's built dist/ over the image's installed
+# @clusterio/<pkg>/dist, overlaying the compiled JS while the container's FLAT node_modules still
+# resolves the inter-package deps (so we never import the fork's pnpm symlink tree). The image's
+# package.json — and thus `main: dist/node/index.js` — is kept; only the compiled output is swapped.
+#
+# CLUSTERIO_SRC overrides the fork location (default: the sibling ../clusterio).
+#
+# COMPATIBILITY: the fork build must be API-compatible with what the dev cluster's pinned plugin
+# expects (currently @clusterio/* 2.0.0-alpha.25). To test against the current cluster, build the fork
+# on a branch CLOSE to that release. A heavily-diverged branch (e.g. ExtendedExportData) may not drop
+# in cleanly — if it doesn't, use Clusterio's native pnpm dev env instead. See CLAUDE.md "Clusterio
+# core development".
+
+services:
+  surface-export-controller:
+    volumes:
+      - ${CLUSTERIO_SRC:-../clusterio}/packages/lib/dist:/clusterio/node_modules/@clusterio/lib/dist:ro
+      - ${CLUSTERIO_SRC:-../clusterio}/packages/controller/dist:/clusterio/node_modules/@clusterio/controller/dist:ro
+      - ${CLUSTERIO_SRC:-../clusterio}/packages/ctl/dist:/clusterio/node_modules/@clusterio/ctl/dist:ro
+
+  surface-export-host-1:
+    volumes:
+      - ${CLUSTERIO_SRC:-../clusterio}/packages/lib/dist:/clusterio/node_modules/@clusterio/lib/dist:ro
+      - ${CLUSTERIO_SRC:-../clusterio}/packages/host/dist:/clusterio/node_modules/@clusterio/host/dist:ro
+      - ${CLUSTERIO_SRC:-../clusterio}/packages/ctl/dist:/clusterio/node_modules/@clusterio/ctl/dist:ro
+
+  surface-export-host-2:
+    volumes:
+      - ${CLUSTERIO_SRC:-../clusterio}/packages/lib/dist:/clusterio/node_modules/@clusterio/lib/dist:ro
+      - ${CLUSTERIO_SRC:-../clusterio}/packages/host/dist:/clusterio/node_modules/@clusterio/host/dist:ro
+      - ${CLUSTERIO_SRC:-../clusterio}/packages/ctl/dist:/clusterio/node_modules/@clusterio/ctl/dist:ro
