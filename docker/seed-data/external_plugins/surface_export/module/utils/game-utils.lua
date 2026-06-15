@@ -232,7 +232,7 @@ end
 --- after `platform.destroy()`, `platform.valid` is still true and the platform count is unchanged).
 --- `game.delete_surface()` is the ONLY API that actually tears a platform down. Always route
 --- platform removal through this helper; never call `platform.destroy()` directly. The
---- tools/lint-lua-invariants.mjs guard fails CI if a raw `*platform*.destroy()` call is reintroduced.
+--- scripts/lint-lua-invariants.mjs guard fails CI if a raw `*platform*.destroy()` call is reintroduced.
 --- @param platform LuaSpacePlatform
 --- @return boolean: true if a surface deletion was issued, false if nothing could be removed
 function GameUtils.delete_platform(platform)
