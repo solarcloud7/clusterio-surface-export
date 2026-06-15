@@ -13,6 +13,17 @@ import type { ExportData, ExportResult, ImportResult, PendingTransfer } from "./
 import * as messages from "./messages";
 import { sendChunkedJson, getErrorMessage, RCON_CHUNK_SIZE, EXPORT_POLL_TIMEOUT_MS, EXPORT_POLL_INTERVAL_MS } from "./helpers";
 
+/**
+ * The instance Link viewed with permissive `handle`/`sendTo` signatures. Our message classes are
+ * duck-typed (they don't extend lib.Request/Event), so they don't satisfy Link's strict overloads.
+ * We cast the OBJECT to this and call methods ON it — we never extract or cast a Link *method*
+ * (`const h = this.i.handle` / `this.i.sendTo as ...`), which loses `this` and crashes
+ * Link.handle/sendTo ("reading 'handleRequest'"/"'sendRequest'") at runtime. See CLAUDE.md Pitfall #26.
+ */
+type PermissiveLink = {
+	handle(messageClass: unknown, handler: (...args: never[]) => unknown): void;
+	sendTo(dst: "controller", message: unknown): Promise<messages.SimpleResponse & { transferId?: string }>;
+};
 
 /**
  * Instance plugin class
@@ -20,6 +31,8 @@ import { sendChunkedJson, getErrorMessage, RCON_CHUNK_SIZE, EXPORT_POLL_TIMEOUT_
  */
 export class InstancePlugin extends BaseInstancePlugin {
 	private get i(): Instance { return this.instance; }
+	/** `this.i` with permissive handle/sendTo signatures — see {@link PermissiveLink}. */
+	private get link(): PermissiveLink { return this.instance as unknown as PermissiveLink; }
 	/**
 	 * Read a config key that isn't in InstanceConfig's strict field union (our custom
 	 * plugin keys and a few non-typed built-ins). Bypasses the keyed Config.get typing.
@@ -82,12 +95,11 @@ export class InstancePlugin extends BaseInstancePlugin {
 		this.i.handle(messages.DeleteSourcePlatformRequest, this.handleDeleteSourcePlatform.bind(this));
 		this.i.handle(messages.UnlockSourcePlatformRequest, this.handleUnlockSourcePlatform.bind(this));
 		// TransferStatusUpdate.color (string|null) and InstanceListPlatformsRequest's Response
-		// optionals don't line up with their handlers' declared shapes. Register them BOUND via
-		// this.i.handle like the others, casting the mismatched ARGS — NEVER extract the method
-		// (`const h = this.i.handle`): that loses `this` and crashes Link.handle ("Cannot read
-		// properties of undefined (reading 'handleRequest')") at instance start.
-		this.i.handle(messages.TransferStatusUpdate as never, this.handleTransferStatusUpdate.bind(this) as never);
-		this.i.handle(messages.InstanceListPlatformsRequest as never, this.handleInstanceListPlatformsRequest.bind(this) as never);
+		// optionals don't line up with their handlers' declared shapes. Register them through the
+		// permissive `this.link` view (see PermissiveLink) — a BOUND method call on the object,
+		// never an extracted/cast method (Pitfall #26).
+		this.link.handle(messages.TransferStatusUpdate, this.handleTransferStatusUpdate.bind(this));
+		this.link.handle(messages.InstanceListPlatformsRequest, this.handleInstanceListPlatformsRequest.bind(this));
 
 		this.logger.info("Surface Export plugin initialized");
 	}
@@ -181,18 +193,15 @@ export class InstancePlugin extends BaseInstancePlugin {
 				this.logger.info(`Auto-transfer requested: dest_instance_id=${data.destination_instance_id} (type=${typeof data.destination_instance_id})`);
 				this.logger.info(`  Sending TransferPlatformRequest to controller: exportId=${exportId}, targetInstanceId=${data.destination_instance_id}`);
 
-				// Send transfer request to controller. The plugin's message classes are duck-typed
-				// (they don't extend lib.Request/Event), so Link.sendTo's strict overloads don't
-				// apply. Call sendTo BOUND (`this.i.sendTo(...)`) and cast the ARG/result — NEVER
-				// extract the method (`const f = this.i.sendTo`): that loses `this` and crashes
-				// Link.sendTo ("Cannot read properties of undefined (reading 'sendRequest')").
-				const transferResponse = await this.i.sendTo(
+				// Send transfer request to controller through the permissive `this.link` view (see
+				// PermissiveLink) — a BOUND call on the object, never an extracted/cast method (Pitfall #26).
+				const transferResponse = await this.link.sendTo(
 					"controller",
 					new messages.TransferPlatformRequest({
 						exportId,
 						targetInstanceId: Number(data.destination_instance_id),
-					}) as never,
-				) as messages.SimpleResponse & { transferId?: string };
+					}),
+				);
 
 				if (transferResponse.success) {
 					this.logger.info(`Transfer initiated: ${transferResponse.transferId}`);
@@ -212,14 +221,14 @@ export class InstancePlugin extends BaseInstancePlugin {
 				}
 				this.logger.info(`Transfer export complete, initiating transfer to instance ${this.pendingTransfer.destination_instance_id}`);
 
-				// Send transfer request to controller (see note above — call sendTo BOUND, never extract it).
-				const transferResponse = await this.i.sendTo(
+				// Send transfer request to controller through the permissive `this.link` view (see note above).
+				const transferResponse = await this.link.sendTo(
 					"controller",
 					new messages.TransferPlatformRequest({
 						exportId,
 						targetInstanceId: Number(pendingTargetId),
-					}) as never,
-				) as messages.SimpleResponse & { transferId?: string };
+					}),
+				);
 
 				if (transferResponse.success) {
 					this.logger.info(`Transfer initiated: ${transferResponse.transferId}`);
