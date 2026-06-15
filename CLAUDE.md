@@ -246,6 +246,14 @@ docker-compose.yml        # Cluster definition (uses pre-built GHCR images)
 - **Clean source tree**: Only `.ts` and `.jsx` files in source directories; all generated artifacts in `dist/`
 - **Deploy integration**: `deploy-cluster.ps1` runs `npm run build` before Docker compose up
 - **Git hygiene**: `dist/` is gitignored; fresh builds ensure consistency
+- **Tests**: `npm test` (gated in CI) builds `dist/node` then runs the message round-trip harness
+  (`test/messages.roundtrip.test.cjs`, built-in `node --test`, zero deps). It self-discovers every
+  message class in `messages.ts` and, per class, asserts the static wire contract
+  (`plugin/type/src/dst/jsonSchema/fromJSON`), a stable `toJSON`→`fromJSON` round-trip, and that
+  `toJSON` fields agree with `jsonSchema` (catches the field-drift / "Unregistered Event class" /
+  serialization-break classes of bug that otherwise only surface at runtime). A new message is
+  covered automatically — no edits to the harness needed. The agent shell has no `node`; run it in a
+  container: `docker exec surface-export-host-1 sh -c 'cd /clusterio/external_plugins/surface_export && npm test'`.
 
 ## Key Technical Constraints
 
