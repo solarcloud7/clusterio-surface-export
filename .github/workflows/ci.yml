@@ -30,12 +30,12 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
-          node-version: '20'
+          node-version: '24'
           cache: 'npm'
           cache-dependency-path: ${{ env.PLUGIN_DIR }}/package-lock.json
 
@@ -87,14 +87,14 @@ jobs:
           echo "Pinned Factorio version (verified consistent across host-1/host-2/Dockerfile): $v"
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@v4
 
       - name: Build Factorio-baked host image (layer-cached)
         # Bakes the headless server onto the public host image so instances don't download
         # Factorio at runtime. The build layer is cached across runs via GitHub Actions cache,
         # so the Factorio download happens at most once per cache lifetime. `load` makes the
         # image available to the local Docker daemon for `docker compose`.
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: docker/ci
           file: docker/ci/Dockerfile.factorio-baked
@@ -254,12 +254,12 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
-          node-version: '20'
+          node-version: '24'
           registry-url: 'https://registry.npmjs.org'
           cache: 'npm'
           cache-dependency-path: ${{ env.PLUGIN_DIR }}/package-lock.json
