@@ -273,7 +273,8 @@ tools/                    # (run `ls tools/` for the full set)
 ├── check-cluster-logs.ps1# Dump plugin/factorio logs from where they actually live (JSON files)
 ├── transfer-platform.ps1 # Transfer a platform between instances
 ├── import-platform.ps1   # Chunked import via RCON
-└── show-cluster-status.ps1 # Cluster health/status
+├── show-cluster-status.ps1 # Cluster health/status
+└── rebuild-clusterio.ps1 # Build the SIBLING Clusterio fork + run the cluster on it (see "Clusterio Core Development")
 
 docker/
 └── seed-data/            # Seed data: database, mods, saves, plugins
@@ -281,6 +282,7 @@ docker/
 .env                      # All environment config (gitignored, credentials)
 .env.example              # Template for .env (tracked in git)
 docker-compose.yml        # Cluster definition (uses pre-built GHCR images)
+docker-compose.clusterio-src.yml  # Opt-in override: run a locally-built Clusterio fork (see "Clusterio Core Development")
 ```
 
 ### Build Architecture
