@@ -28,7 +28,9 @@ docker/server-settings.json
 !.vscode/settings.json
 !.vscode/extensions.json
 .vscode
-.claude
+# Ignore local .claude state, but TRACK shared project skills (committed dev-env helpers):
+.claude/*
+!.claude/skills/
 
 # Mod packaging
 *.zip
@@ -40,6 +42,9 @@ docker/seed-data/external_plugins/surface_export/dist/
 
 # TypeScript build output in plugin root and lib/ (should only be in dist/node/)
 docker/seed-data/external_plugins/surface_export/*.js
+# ...but hand-written JS configs in the plugin root are source, not build output:
+!docker/seed-data/external_plugins/surface_export/eslint.config.js
+!docker/seed-data/external_plugins/surface_export/webpack.config.js
 docker/seed-data/external_plugins/surface_export/*.d.ts
 docker/seed-data/external_plugins/surface_export/*.js.map
 docker/seed-data/external_plugins/surface_export/*.d.ts.map

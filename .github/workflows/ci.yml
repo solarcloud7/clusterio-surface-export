@@ -45,6 +45,10 @@ jobs:
           npm ci
           npm run build
 
+      - name: Lint (Clusterio Link-method binding guard + type-aware rules)
+        working-directory: ${{ env.PLUGIN_DIR }}
+        run: npm run lint -- --max-warnings 0
+
       - name: Create env file from example
         run: |
           cp .env.example .env
