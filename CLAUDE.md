@@ -807,7 +807,12 @@ docker exec surface-export-controller sh -c 'npx clusterioctl --config /clusteri
 
 The JSON log shape is `{"instance_id":…,"instance_name":…,"level":"info|error|server","message":"…","plugin":"surface_export","timestamp":"…"}`. Filter a single plugin with `grep '"plugin":"surface_export"'`. The `cluster-*.log` file is the single best place to trace a cross-instance transfer end-to-end (it has the host-1 export, the controller routing, AND the host-2 import in one stream).
 
-**Prometheus metrics are LIVE**: the `statistics_exporter` plugin exposes `http://localhost:8080/metrics` on the controller (process + cluster metrics, ~45 KB). Custom surface_export transfer metrics (success/fail counts, durations) are the planned "real fix" for plugin observability — the endpoint already exists, only custom collectors are missing.
+**Prometheus metrics are LIVE**: the `statistics_exporter` plugin exposes `http://localhost:8080/metrics` on the controller (process + cluster metrics, ~45 KB). **Custom surface_export transfer metrics are now implemented** — `lib/metrics.ts` defines collectors that register to Clusterio's default registry (so they surface on the same `/metrics` with no extra wiring) and `recordOperationOutcome()` is called from `SubscriptionManager.emitTransferUpdate` (the universal terminal chokepoint, idempotent per operation):
+- `surface_export_operations_total{operation,result}` — counter; `operation` ∈ transfer/export/import, `result` ∈ success/failure/cleanup_failed
+- `surface_export_operation_duration_seconds{operation,result}` — histogram (buckets 0.5s…300s)
+- `surface_export_entities_transferred_total{operation}` — counter (entities placed on the destination)
+
+These complement, not replace, the JSON-file logs above — metrics tell you *that* transfers are failing and how long they take; the `cluster-*.log` files tell you *why*. Scrape with `docker exec surface-export-controller sh -c 'curl -s http://localhost:8080/metrics | grep ^surface_export_'`.
 
 **Note**: `--tail N` goes BEFORE the container name. After a container restart, `docker logs` loses pre-restart output — but the on-disk `/clusterio/logs/*` files persist across restarts (until date-rotation), so prefer the files for any post-restart investigation.
 
