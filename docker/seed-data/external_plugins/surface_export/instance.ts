@@ -183,16 +183,16 @@ export class InstancePlugin extends BaseInstancePlugin {
 
 				// Send transfer request to controller. The plugin's message classes are duck-typed
 				// (they don't extend lib.Request/Event), so Link.sendTo's strict overloads don't
-				// apply — cast sendTo to a permissive signature with the real Response type.
-				const sendToController = this.i.sendTo as (
-					dst: "controller", msg: unknown,
-				) => Promise<messages.SimpleResponse & { transferId?: string }>;
-				const transferResponse = await sendToController("controller",
+				// apply. Call sendTo BOUND (`this.i.sendTo(...)`) and cast the ARG/result — NEVER
+				// extract the method (`const f = this.i.sendTo`): that loses `this` and crashes
+				// Link.sendTo ("Cannot read properties of undefined (reading 'sendRequest')").
+				const transferResponse = await this.i.sendTo(
+					"controller",
 					new messages.TransferPlatformRequest({
 						exportId,
 						targetInstanceId: Number(data.destination_instance_id),
-					}),
-				);
+					}) as never,
+				) as messages.SimpleResponse & { transferId?: string };
 
 				if (transferResponse.success) {
 					this.logger.info(`Transfer initiated: ${transferResponse.transferId}`);
@@ -212,16 +212,14 @@ export class InstancePlugin extends BaseInstancePlugin {
 				}
 				this.logger.info(`Transfer export complete, initiating transfer to instance ${this.pendingTransfer.destination_instance_id}`);
 
-				// Send transfer request to controller (see note above re: permissive sendTo cast).
-				const sendToController = this.i.sendTo as (
-					dst: "controller", msg: unknown,
-				) => Promise<messages.SimpleResponse & { transferId?: string }>;
-				const transferResponse = await sendToController("controller",
+				// Send transfer request to controller (see note above — call sendTo BOUND, never extract it).
+				const transferResponse = await this.i.sendTo(
+					"controller",
 					new messages.TransferPlatformRequest({
 						exportId,
 						targetInstanceId: Number(pendingTargetId),
-					}),
-				);
+					}) as never,
+				) as messages.SimpleResponse & { transferId?: string };
 
 				if (transferResponse.success) {
 					this.logger.info(`Transfer initiated: ${transferResponse.transferId}`);
