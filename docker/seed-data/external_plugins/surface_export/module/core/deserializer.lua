@@ -59,6 +59,69 @@ local function restore_item_properties(stack, item_data)
   end
 end
 
+--- Trivial single-field restore rules for restore_entity_state, transcribed 1:1 from the explicit
+--- `if data.<field> ... then entity.<prop> = data.<field> end` blocks they replaced. Each rule
+--- restores `entity[prop] = data[field]` when the field is present and the entity supports it.
+--- This mirrors the export-side EntityHandlers table: a new exported field gets restored by adding
+--- one row here. Non-trivial restorations (recipe, filters, priority targets, equipment grids, the
+--- train-stop/train/vehicle sub-blocks) deliberately stay inline in restore_entity_state.
+---   field   : key in specific_data (and the entity property, unless `prop` overrides it)
+---   prop    : entity property to assign (defaults to `field`)
+---   present : guard is `data[field] ~= nil` (booleans, where `false` is a valid value);
+---             otherwise the guard is truthy `data[field]` (tables/strings/numbers)
+---   safecall: wrap the assignment in safe_call (matches the original block); default is direct
+---   no_entity_guard : skip the `entity[prop] ~= nil` support check (only the read-only turret
+---                     `ignore_unprioritised_targets` did this — its assignment is safe_call-wrapped)
+local SIMPLE_RESTORE_RULES = {
+  { field = "crafting_progress" },
+  { field = "productivity_bonus", safecall = true },
+  { field = "player_description", prop = "entity_label", safecall = true },
+  { field = "ignore_unprioritised_targets", present = true, safecall = true, no_entity_guard = true },
+  { field = "use_filters", present = true },
+  { field = "filter_mode", prop = "inserter_filter_mode" },
+  { field = "stack_size_override", prop = "inserter_stack_size_override" },
+  -- Splitter filter: data.filter is a plain name string here (mining-drill data.filter is a
+  -- {name,quality} table handled by the inline set_filter block, gated on entity.set_filter).
+  { field = "filter", prop = "splitter_filter" },
+  { field = "input_priority", prop = "splitter_input_priority", safecall = true },
+  { field = "output_priority", prop = "splitter_output_priority", safecall = true },
+  { field = "color", safecall = true },
+  { field = "always_on", present = true, safecall = true },
+  { field = "auto_launch", present = true },
+  { field = "rocket_parts" },
+  { field = "recipe_quality", safecall = true },
+  { field = "switch_state", present = true, safecall = true },
+  { field = "artillery_auto_targeting", present = true, safecall = true },
+  { field = "opened", present = true },
+  { field = "planting_position" },
+  { field = "autopilot_destination" },
+}
+
+--- Apply SIMPLE_RESTORE_RULES to an entity. Each rule's guards are reproduced exactly so this is a
+--- behavior-preserving replacement for the inline blocks.
+--- @param entity LuaEntity
+--- @param data table: entity_data.specific_data
+local function apply_simple_restore_rules(entity, data)
+  for _, rule in ipairs(SIMPLE_RESTORE_RULES) do
+    local value = data[rule.field]
+    local has_value
+    if rule.present then
+      has_value = value ~= nil          -- booleans: false is a value worth restoring
+    else
+      has_value = value and true or false -- truthy (these fields are never boolean)
+    end
+    local prop = rule.prop or rule.field
+    if has_value and (rule.no_entity_guard or entity[prop] ~= nil) then
+      if rule.safecall then
+        safe_call(string.format("%s for %s", prop, entity.name),
+          function() entity[prop] = value end)
+      else
+        entity[prop] = value
+      end
+    end
+  end
+end
+
 --- Create a single entity on the surface
 --- @param surface LuaSurface: Target surface
 --- @param entity_data table: Serialized entity data
@@ -240,16 +303,9 @@ function Deserializer.restore_entity_state(entity, entity_data)
     end)
   end
 
-  -- Restore crafting progress
-  if data.crafting_progress and entity.crafting_progress ~= nil then
-    entity.crafting_progress = data.crafting_progress
-  end
-
-  -- Restore productivity bonus (read-only in Factorio 2.0+, skip if it fails)
-  if data.productivity_bonus and entity.productivity_bonus ~= nil then
-    safe_call(string.format("productivity_bonus for %s", entity.name),
-      function() entity.productivity_bonus = data.productivity_bonus end)
-  end
+  -- Trivial single-field restorations (see SIMPLE_RESTORE_RULES). Placed here, after recipe
+  -- restoration, so recipe_quality (one of the rules) still applies after the recipe is set.
+  apply_simple_restore_rules(entity, data)
 
   -- Restore train schedule
   if data.schedule and entity.train then
@@ -265,12 +321,6 @@ function Deserializer.restore_entity_state(entity, entity_data)
     end
   end
 
-  -- Restore combinator player description
-  if data.player_description and entity.entity_label ~= nil then
-    safe_call(string.format("entity_label for %s", entity.name),
-      function() entity.entity_label = data.player_description end)
-  end
-
   -- Restore turret priority targets using set_priority_target(index, entity_id)
   -- Note: priority_targets property is read-only, use set_priority_target method
   if data.priority_targets and #data.priority_targets > 0 then
@@ -280,43 +330,10 @@ function Deserializer.restore_entity_state(entity, entity_data)
     end
   end
   
-  -- Restore ignore_unprioritised_targets (RW boolean on turrets)
-  if data.ignore_unprioritised_targets ~= nil then
-    safe_call(string.format("ignore_unprioritised_targets for %s", entity.name),
-      function() entity.ignore_unprioritised_targets = data.ignore_unprioritised_targets end)
-  end
-  
   -- The turret control behavior settings (set_priority_list, set_ignore_unlisted_targets, etc.)
-  -- are handled in restore_control_behavior()
-
-  -- Restore inserter settings  
-  if data.use_filters ~= nil and entity.use_filters ~= nil then
-    entity.use_filters = data.use_filters
-  end
-
-  if data.filter_mode and entity.inserter_filter_mode ~= nil then
-    entity.inserter_filter_mode = data.filter_mode
-  end
-
-  if data.stack_size_override and entity.inserter_stack_size_override ~= nil then
-    entity.inserter_stack_size_override = data.stack_size_override
-  end
-
-  -- Restore splitter filter
-  if data.filter and entity.splitter_filter ~= nil then
-    entity.splitter_filter = data.filter
-  end
-
-  -- Restore splitter priority settings
-  if data.input_priority and entity.splitter_input_priority ~= nil then
-    safe_call(string.format("splitter_input_priority for %s", entity.name),
-      function() entity.splitter_input_priority = data.input_priority end)
-  end
-
-  if data.output_priority and entity.splitter_output_priority ~= nil then
-    safe_call(string.format("splitter_output_priority for %s", entity.name),
-      function() entity.splitter_output_priority = data.output_priority end)
-  end
+  -- are handled in restore_control_behavior(). ignore_unprioritised_targets, the inserter
+  -- use_filters/filter_mode/stack_size_override settings, and the splitter filter/priorities are
+  -- restored by apply_simple_restore_rules above (SIMPLE_RESTORE_RULES).
 
   -- Restore container bar (inventory limit)
   if data.bar and entity.get_inventory then
@@ -325,39 +342,6 @@ function Deserializer.restore_entity_state(entity, entity_data)
       safe_call(string.format("inventory bar for %s", entity.name),
         function() inv.set_bar(data.bar) end)
     end
-  end
-
-  -- Restore lamp settings
-  if data.color and entity.color ~= nil then
-    safe_call(string.format("color for %s", entity.name),
-      function() entity.color = data.color end)
-  end
-
-  if data.always_on ~= nil and entity.always_on ~= nil then
-    safe_call(string.format("always_on for %s", entity.name),
-      function() entity.always_on = data.always_on end)
-  end
-
-  -- Restore rocket silo auto-launch
-  if data.auto_launch ~= nil and entity.auto_launch ~= nil then
-    entity.auto_launch = data.auto_launch
-  end
-
-  -- Restore rocket parts
-  if data.rocket_parts and entity.rocket_parts ~= nil then
-    entity.rocket_parts = data.rocket_parts
-  end
-
-  -- Restore recipe quality (assemblers, rocket silos)
-  if data.recipe_quality and entity.recipe_quality ~= nil then
-    safe_call(string.format("recipe_quality for %s", entity.name),
-      function() entity.recipe_quality = data.recipe_quality end)
-  end
-
-  -- Restore power switch state
-  if data.switch_state ~= nil and entity.switch_state ~= nil then
-    safe_call(string.format("switch_state for %s", entity.name),
-      function() entity.switch_state = data.switch_state end)
   end
 
   -- Restore pump fluid filter
@@ -372,22 +356,6 @@ function Deserializer.restore_entity_state(entity, entity_data)
     local filter_name = type(data.filter) == "table" and data.filter.name or data.filter
     safe_call(string.format("set_filter for %s", entity.name),
       function() entity.set_filter(1, filter_name) end)
-  end
-
-  -- Restore artillery auto-targeting
-  if data.artillery_auto_targeting ~= nil and entity.artillery_auto_targeting ~= nil then
-    safe_call(string.format("artillery_auto_targeting for %s", entity.name),
-      function() entity.artillery_auto_targeting = data.artillery_auto_targeting end)
-  end
-
-  -- Restore gate open state
-  if data.opened ~= nil and entity.opened ~= nil then
-    entity.opened = data.opened
-  end
-
-  -- Restore agricultural tower planting position (Space Age)
-  if data.planting_position and entity.planting_position ~= nil then
-    entity.planting_position = data.planting_position
   end
 
   -- Restore train station custom name and settings
@@ -420,11 +388,6 @@ function Deserializer.restore_entity_state(entity, entity_data)
   -- Restore equipment grid for entities (vehicles, locomotives, etc.)
   if data.equipment_grid and entity.grid and entity.grid.valid then
     Deserializer.restore_equipment_grid(entity.grid, data.equipment_grid)
-  end
-
-  -- Restore spidertron autopilot destination
-  if data.autopilot_destination and entity.autopilot_destination ~= nil then
-    entity.autopilot_destination = data.autopilot_destination
   end
 
   -- Restore rolling stock and vehicle settings
