@@ -42,7 +42,20 @@ function formatMsLabel(ms: number | null) {
 }
 
 
-const TIMELINE_COLORS: Record<string, string> = { red: "#ff4d4f", green: "#52c41a", blue: "#1890ff" };
+const TIMELINE_COLORS: Record<string, string> = {
+	red: "#ff4d4f", green: "#52c41a", blue: "#1890ff",
+	// Import waterfall — distinct hues of blue/cyan→indigo in pipeline order so the cascade reads
+	// segment-by-segment. Unknown color keys fall back to blue (see PhaseTimeline lookup).
+	tiles: "#36cfc9", entities: "#1890ff", belts: "#40a9ff", state: "#597ef7",
+	inventories: "#2f54eb", validation: "#85a5ff", fluids: "#08979c",
+	// Transfer-level segments
+	transmission: "#13c2c2", cleanup: "#73d13d",
+	// Cross-machine gap decomposition: delivery (RCON bottleneck, prominent), queue (async wait),
+	// roundtrip (muted slate — derived residual, not a direct measurement).
+	delivery: "#1d39c4", queue: "#adc6ff", roundtrip: "#737d8c",
+	// Export sub-phases (when an exportMetrics block is present)
+	exportPrep: "#bae0ff", exportQueue: "#91caff", exportAsync: "#69c0ff", exportStore: "#4096ff",
+};
 
 // Lightweight CSS bar timeline. Each row is positioned from the ganttStartPct/ganttWidthPct/
 // ganttMarkerPct that buildGanttRows already computes — duration phases render as bars, events as

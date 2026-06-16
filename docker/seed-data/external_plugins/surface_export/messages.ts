@@ -8,6 +8,7 @@ import type {
 	ExportMetrics,
 	ImportMetrics,
 	PayloadMetrics,
+	PhaseSpan,
 	ValidationResult,
 } from "./shared/dto";
 export type {
@@ -20,6 +21,7 @@ export type {
 	ExportMetrics,
 	ImportMetrics,
 	PayloadMetrics,
+	PhaseSpan,
 	ValidationResult,
 } from "./shared/dto";
 const PLUGIN_NAME = "surface_export";
@@ -764,9 +766,11 @@ export class TransferValidationEvent {
 	sourceInstanceId: number;
 	success: boolean;
 	validation?: ValidationResult;
-	metrics?: Record<string, number>;
+	// Carries the import metrics dict from Lua, which now includes a nested `phase_spans` array
+	// (waterfall trace) alongside the numeric fields — hence Record<string, unknown>, not number.
+	metrics?: Record<string, unknown>;
 
-	constructor(json: { transferId: string; platformName: string; sourceInstanceId: number; success: boolean; validation?: ValidationResult; metrics?: Record<string, number> }) {
+	constructor(json: { transferId: string; platformName: string; sourceInstanceId: number; success: boolean; validation?: ValidationResult; metrics?: Record<string, unknown> }) {
 		this.transferId = json.transferId;
 		this.platformName = json.platformName;
 		this.sourceInstanceId = json.sourceInstanceId;
@@ -775,7 +779,7 @@ export class TransferValidationEvent {
 		this.metrics = json.metrics;
 	}
 
-	static fromJSON(json: { transferId: string; platformName: string; sourceInstanceId: number; success: boolean; validation?: ValidationResult; metrics?: Record<string, number> }) {
+	static fromJSON(json: { transferId: string; platformName: string; sourceInstanceId: number; success: boolean; validation?: ValidationResult; metrics?: Record<string, unknown> }) {
 		return new TransferValidationEvent(json);
 	}
 
@@ -813,9 +817,9 @@ export class ImportOperationCompleteEvent {
 	error: string | null;
 	durationTicks: number | null;
 	entityCount: number | null;
-	metrics: Record<string, number> | null;
+	metrics: Record<string, unknown> | null;
 
-	constructor(json: { operationId: string; platformName: string; instanceId: number; success: boolean; error?: string | null; durationTicks?: number | null; entityCount?: number | null; metrics?: Record<string, number> | null }) {
+	constructor(json: { operationId: string; platformName: string; instanceId: number; success: boolean; error?: string | null; durationTicks?: number | null; entityCount?: number | null; metrics?: Record<string, unknown> | null }) {
 		this.operationId = json.operationId;
 		this.platformName = json.platformName;
 		this.instanceId = json.instanceId;
@@ -826,7 +830,7 @@ export class ImportOperationCompleteEvent {
 		this.metrics = json.metrics ?? null;
 	}
 
-	static fromJSON(json: { operationId: string; platformName: string; instanceId: number; success: boolean; error?: string | null; durationTicks?: number | null; entityCount?: number | null; metrics?: Record<string, number> | null }) {
+	static fromJSON(json: { operationId: string; platformName: string; instanceId: number; success: boolean; error?: string | null; durationTicks?: number | null; entityCount?: number | null; metrics?: Record<string, unknown> | null }) {
 		return new ImportOperationCompleteEvent(json);
 	}
 

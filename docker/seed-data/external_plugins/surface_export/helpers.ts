@@ -5,7 +5,7 @@
 
 
 import { escapeString as libEscapeString } from "@clusterio/lib";
-import type { ExportData, ExportVerification, ImportMetrics } from "./messages";
+import type { ExportData, ExportVerification, ImportMetrics, PhaseSpan } from "./messages";
 
 export const TICKS_TO_MS = 16.67;
 export const RCON_CHUNK_SIZE = 100_000;
@@ -249,5 +249,23 @@ export function buildImportMetrics(raw: Record<string, unknown> | null | undefin
 		result[f + "_ms"] = Math.round(ticks * TICKS_TO_MS);
 	}
 	for (const f of countFields) result[f] = Number(input[f] || 0);
-	return result as ImportMetrics;
+	// Builder uses dynamic keys, so the loose Record is the one legitimate place to cast through
+	// unknown. Consumers still get field-typed (typo-catching) access via the ImportMetrics interface.
+	const metrics = result as unknown as ImportMetrics;
+	// Waterfall trace: map Lua snake_case phase spans → camelCase. Absent on legacy logs.
+	if (Array.isArray(input.phase_spans)) {
+		const spans: PhaseSpan[] = [];
+		for (const entry of input.phase_spans) {
+			if (!entry || typeof entry !== "object") continue;
+			const s = entry as Record<string, unknown>;
+			const startOffsetMs = Number(s.start_offset_ms);
+			const durationMs = Number(s.duration_ms);
+			if (typeof s.name !== "string" || !Number.isFinite(startOffsetMs) || !Number.isFinite(durationMs)) continue;
+			const span: PhaseSpan = { name: s.name, startOffsetMs, durationMs };
+			if (typeof s.parent === "string") span.parent = s.parent;
+			spans.push(span);
+		}
+		if (spans.length) metrics.phaseSpans = spans;
+	}
+	return metrics;
 }

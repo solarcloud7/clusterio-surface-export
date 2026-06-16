@@ -37,7 +37,7 @@ end
 --- @param force_name string
 --- @param requester_name string|nil
 --- @return string|nil, string|nil: job_id or error
-function ImportPipeline.queue(json_data, new_platform_name, force_name, requester_name)
+function ImportPipeline.queue(json_data, new_platform_name, force_name, requester_name, receive_timing)
 	storage.async_job_id_counter = storage.async_job_id_counter + 1
 	local job_id = "import_" .. storage.async_job_id_counter
 
@@ -295,6 +295,10 @@ function ImportPipeline.queue(json_data, new_platform_name, force_name, requeste
 		-- ========== PHASE METRICS TRACKING ==========
 		-- Track timing and counts for each import phase
 		metrics = {
+			-- Chunked-receive (delivery) window — populated only for RCON_CHUNKED imports so the
+			-- waterfall can show data delivery as its own span. Pure game.tick reads (freeze-safe).
+			delivery_started_tick = receive_timing and receive_timing.delivery_started_tick or nil,
+			delivery_completed_tick = receive_timing and receive_timing.delivery_completed_tick or nil,
 			-- Phase timing (tick numbers)
 			tiles_started_tick = nil,
 			tiles_completed_tick = nil,

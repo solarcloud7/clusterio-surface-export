@@ -73,6 +73,20 @@ export interface HostNodeModel {
 // transaction-log UI. They live here (not in messages.ts) so the browser bundle can import them
 // without pulling in node-only code — see web/view-models.ts.
 
+/**
+ * One phase of a transfer/import pipeline as a trace span. Offsets are SEGMENT-relative
+ * (measured from the Lua import job's t0 = job.started_tick); the web stitches them onto the
+ * global transfer timeline using the controller "import_started" anchor. Powers the waterfall
+ * Transfer-Flow chart. Lua emits these in snake_case (start_offset_ms/duration_ms);
+ * helpers.buildImportMetrics maps them to this camelCase shape.
+ */
+export interface PhaseSpan {
+	name: string;
+	parent?: string;
+	startOffsetMs: number;
+	durationMs: number;
+}
+
 export interface ExportMetrics {
 	requestExportAndLockMs?: number;
 	waitForControllerStoreMs?: number;
@@ -108,7 +122,8 @@ export interface ImportMetrics {
 	circuits_connected: number;
 	total_items: number;
 	total_fluids: number;
-	[key: string]: number;
+	/** Waterfall trace: per-phase start offsets + durations (segment-relative). Optional — absent on legacy logs. */
+	phaseSpans?: PhaseSpan[];
 }
 
 export interface PayloadMetrics {

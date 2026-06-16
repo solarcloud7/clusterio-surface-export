@@ -687,7 +687,7 @@ export class InstancePlugin extends BaseInstancePlugin {
 						error: null,
 						durationTicks: Number.isFinite(Number(data.duration_ticks)) ? Number(data.duration_ticks) : null,
 						entityCount: Number.isFinite(Number(data.entity_count)) ? Number(data.entity_count) : null,
-						metrics: (metrics as Record<string, number> | null) || null,
+						metrics: (metrics as Record<string, unknown> | null) || null,
 					}));
 					await this.handlePlatformStateChanged({
 						platform_name: String(data.platform_name || ""),
@@ -740,11 +740,16 @@ export class InstancePlugin extends BaseInstancePlugin {
 				validation.mismatchDetails = `Validation error: ${validationResult.substring(0, 100)}`;
 			}
 
-			const normalizedMetrics = metrics && typeof metrics === "object"
-				? Object.fromEntries(Object.entries(metrics as Record<string, unknown>)
-					.filter(([, v]) => typeof v === "number" && Number.isFinite(v))
-					.map(([k, v]) => [k, v as number]))
-				: undefined;
+			let normalizedMetrics: Record<string, unknown> | undefined;
+			if (metrics && typeof metrics === "object") {
+				const src = metrics as Record<string, unknown>;
+				// Keep numeric fields, plus preserve the nested `phase_spans` array (waterfall trace)
+				// which the numeric filter would otherwise strip before it reaches the controller.
+				normalizedMetrics = Object.fromEntries(
+					Object.entries(src).filter(([, v]) => typeof v === "number" && Number.isFinite(v)),
+				);
+				if (Array.isArray(src.phase_spans)) normalizedMetrics.phase_spans = src.phase_spans;
+			}
 
 			// Send validation event to controller with metrics
 			await this.i.sendTo("controller", new messages.TransferValidationEvent({

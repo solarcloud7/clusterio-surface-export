@@ -71,6 +71,19 @@ function SurfaceExportPage() {
 	const plugin = useSurfaceExportPlugin(control);
 	const state = useSurfaceExportState(plugin);
 	const [importModalOpen, setImportModalOpen] = useState(false);
+	// Tab is URL-synced so the view is deep-linkable, e.g. /surface-export?tab=logs — read on mount,
+	// updated on change. Uses the native History API (no react-router import) to avoid bundling a
+	// non-shared web dep (see the in-container web build model / why mermaid was removed).
+	const [activeTab, setActiveTab] = useState<string>(() => {
+		const t = new URLSearchParams(window.location.search).get("tab");
+		return t === "logs" ? "logs" : "manual";
+	});
+	function handleTabChange(key: string) {
+		setActiveTab(key);
+		const params = new URLSearchParams(window.location.search);
+		params.set("tab", key);
+		window.history.replaceState(null, "", `${window.location.pathname}?${params.toString()}`);
+	}
 	// Icon spritesheet CSS is injected on demand by the FactorioIcon wrappers in web/icons.tsx
 	// (via useExportPrototypeMetadata) when icons render.
 	const pluginVersion = state?.pluginVersion || null;
@@ -89,6 +102,9 @@ function SurfaceExportPage() {
 		});
 	}
 
+	// Fall back to manual if the URL asks for a tab that isn't available (e.g. ?tab=logs without view perms).
+	const effectiveTab = tabItems.some(t => t.key === activeTab) ? activeTab : "manual";
+
 	return (
 		<PageLayout nav={[{ name: "Surface Export" }]}>
 			<PageHeader title="Surface Export" />
@@ -98,7 +114,8 @@ function SurfaceExportPage() {
 				</Text>
 			) : null}
 			<Tabs
-				defaultActiveKey="manual"
+				activeKey={effectiveTab}
+				onChange={handleTabChange}
 				items={tabItems}
 				tabBarExtraContent={(
 					<Tooltip title="Import JSON">

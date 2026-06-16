@@ -1,0 +1,17 @@
+# Opt-in override: run the LOCALLY-BUILT clusterio-docker host image (clusterio-host:debug)
+# instead of the published GHCR host image, for iterating on the base image.
+#
+# NOT auto-loaded — activate explicitly:
+#   docker compose -f docker-compose.yml -f docker-compose.debug.yml up -d
+#
+# IMPORTANT (icons / export-data): this override only swaps the host IMAGE. It must NOT set
+# SKIP_CLIENT=true on host-1 — host-1 is the EXPORT_HOST and needs the game client so the
+# export-data flow can generate web-UI icon spritesheets. A previous version of this file set
+# SKIP_CLIENT=true on host-1, which silently disabled icon export. host-2 keeps SKIP_CLIENT=true
+# (from docker-compose.yml) since it is import-only and needs no client.
+services:
+  surface-export-host-1:
+    image: clusterio-host:debug
+
+  surface-export-host-2:
+    image: clusterio-host:debug

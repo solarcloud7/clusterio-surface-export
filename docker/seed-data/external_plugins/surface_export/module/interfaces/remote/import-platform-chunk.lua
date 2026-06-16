@@ -57,12 +57,14 @@ local function import_platform_chunk(platform_name, chunk_data, chunk_num, total
   -- Clean up session
   storage.chunked_imports[session_key] = nil
   
-  -- Queue the import job
+  -- Queue the import job. Pass chunk-receive timing so the waterfall can show the data-delivery
+  -- window (first chunk arrival -> assembly) as its own span. Pure game.tick reads, no side effects.
   local job_id, err = AsyncProcessor.queue_import(
     complete_json,
     platform_name,
     force_name,
-    "RCON_CHUNKED"
+    "RCON_CHUNKED",
+    { delivery_started_tick = session.started_tick, delivery_completed_tick = game.tick }
   )
   
   if not job_id then
