@@ -27,6 +27,20 @@ local JobResults = require("modules/surface_export/core/job-results")
 
 local ImportCompletion = {}
 
+--- Build a waterfall phase span {name, start_offset_ms, duration_ms} from two game.tick marks,
+--- relative to the import job's t0 (job.started_tick). Returns nil if either boundary is missing
+--- (e.g. validation on non-transfer imports) so the phase is simply omitted from the trace.
+--- This is pure arithmetic over already-recorded tick reads — it adds no game state and never
+--- gates the freeze/count/populate logic.
+local function build_phase_span(name, started_tick, completed_tick, t0)
+	if not started_tick or not completed_tick then return nil end
+	return {
+		name = name,
+		start_offset_ms = math.max(0, math.floor((started_tick - t0) * 16.67)),
+		duration_ms = math.max(0, math.floor((completed_tick - started_tick) * 16.67)),
+	}
+end
+
 --- Phase 1: Restore hub inventories, belt items, and entity state.
 --- Schedules Phase 2 for the next tick via job.pending_beacon_tick.
 --- @param job table: Job data
@@ -96,6 +110,7 @@ function ImportCompletion.run_phase2(job)
 	if not job.inventory_overflow_losses then
 		job.inventory_overflow_losses = { total = 0, items = {}, entities = {} }
 	end
+	job.metrics.inventories_started_tick = game.tick
 	PhaseProfiler.start(job.job_id, "inventories")
 	local inv_restored = 0
 	local inv_skipped = 0
@@ -121,6 +136,7 @@ function ImportCompletion.run_phase2(job)
 		end
 	end
 	PhaseProfiler.stop(job.job_id, "inventories")
+	job.metrics.inventories_completed_tick = game.tick
 	log(string.format("[Import] Inventory restoration: %d entities restored, %d skipped (failed/missing)", inv_restored, inv_skipped))
 	if job.inventory_overflow_losses.total > 0 then
 		log(string.format("[Import] Inventory overflow losses: %d items lost (set_stack API cap)", job.inventory_overflow_losses.total))
@@ -239,6 +255,9 @@ function ImportCompletion.run_phase2(job)
 		)
 
 		PhaseProfiler.stop(job.job_id, "validation")
+		-- Clean validation-only boundary for the waterfall span (the existing
+		-- validation_completed_tick at the end of run_phase2 also covers activation/fluids/loss).
+		job.metrics.validation_done_tick = game.tick
 		validation_result = result
 		result.success = success
 
@@ -397,6 +416,29 @@ function ImportCompletion.run_phase2(job)
 	}
 
 	if clusterio_api and clusterio_api.send_json then
+		-- Waterfall phase spans: absolute start offsets (from job.started_tick) + durations, in
+		-- pipeline order. Built purely from already-recorded tick marks; nils (e.g. validation on
+		-- non-transfer imports) are skipped so they don't appear as zero-width spans.
+		local m = job.metrics
+		-- Unified t0 = first-chunk arrival when available (so delivery/queue/phases share one origin),
+		-- else the job start tick.
+		local t0 = m.delivery_started_tick or job.started_tick or 0
+		local phase_spans = {}
+		local function add_span(name, started_tick, completed_tick)
+			local sp = build_phase_span(name, started_tick, completed_tick, t0)
+			if sp then phase_spans[#phase_spans + 1] = sp end
+		end
+		-- Cross-machine front of the import: chunked-RCON delivery, then the async-queue wait.
+		add_span("delivery", m.delivery_started_tick, m.delivery_completed_tick)
+		add_span("queue", job.started_tick, m.tiles_started_tick)
+		add_span("tiles", m.tiles_started_tick, m.tiles_completed_tick)
+		add_span("entities", m.entities_started_tick, m.entities_completed_tick)
+		add_span("belts", m.belts_started_tick, m.belts_completed_tick)
+		add_span("state", m.state_started_tick, m.state_completed_tick)
+		add_span("inventories", m.inventories_started_tick, m.inventories_completed_tick)
+		add_span("validation", m.validation_started_tick, m.validation_done_tick)
+		add_span("fluids", m.fluids_started_tick, m.fluids_completed_tick)
+
 		local event_payload = {
 			job_id = job.job_id,
 			platform_name = job.platform_name,
@@ -422,6 +464,8 @@ function ImportCompletion.run_phase2(job)
 				-- Totals from source data
 				total_items = job.total_items or 0,
 				total_fluids = job.total_fluids or 0,
+				-- Waterfall trace: per-phase {name, start_offset_ms, duration_ms} (segment-relative)
+				phase_spans = phase_spans,
 			}
 		}
 

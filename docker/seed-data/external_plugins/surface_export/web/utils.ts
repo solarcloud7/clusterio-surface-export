@@ -182,6 +182,16 @@ export function buildGanttRows(events: Array<LogEvent>, detailedSummary: JsonObj
 	const rows: GanttRowInput[] = [];
 	let totalMs = 0;
 
+	// Pre-pass: map eventType → elapsedMs so the import waterfall can anchor its sub-phases to the
+	// "import_started" event (the true segment start) and lay them FORWARD, instead of back-anchoring
+	// each phase to where the segment ended (which made phases overlap).
+	const eventElapsedMs: Record<string, number> = {};
+	for (const ev of events || []) {
+		if (ev && typeof ev.elapsedMs === "number" && ev.eventType) {
+			eventElapsedMs[String(ev.eventType)] = ev.elapsedMs;
+		}
+	}
+
 	for (const event of events || []) {
 		const elapsedMs = typeof event?.elapsedMs === "number" ? event.elapsedMs : null;
 		const isFailure = String(event?.eventType || "").includes("failed") || String(event?.eventType || "").includes("error");
@@ -218,7 +228,7 @@ export function buildGanttRows(events: Array<LogEvent>, detailedSummary: JsonObj
 			if (lockStart > 1) {
 				rows.push({ key: `export:prep:${eventStart}`, label: "Controller prep",
 					isEvent: false, indent: 1, startMs: 0, endMs: lockStart,
-					durationMs: lockStart, color: "blue" });
+					durationMs: lockStart, color: "exportPrep" });
 			}
 			if (lockMs > 0) {
 				// Split lock into sequential non-overlapping bars: RCON overhead → async export
@@ -227,62 +237,112 @@ export function buildGanttRows(events: Array<LogEvent>, detailedSummary: JsonObj
 				if (overheadMs > 0) {
 					rows.push({ key: `export:queue:${eventStart}`, label: "Queue + RCON",
 						isEvent: false, indent: 1, startMs: lockStart, endMs: asyncStart,
-						durationMs: overheadMs, color: "blue" });
+						durationMs: overheadMs, color: "exportQueue" });
 				}
 				if (asyncMs > 0) {
 					const asyncLabel = ticks > 0 ? `Async export (${ticks.toLocaleString()} ticks)` : "Async export";
 					rows.push({ key: `export:async:${eventStart}`, label: asyncLabel,
 						isEvent: false, indent: 1, startMs: asyncStart, endMs: lockEnd,
-						durationMs: asyncMs, color: "blue" });
+						durationMs: asyncMs, color: "exportAsync" });
 				}
 				totalMs = Math.max(totalMs, lockEnd);
 			}
 			if (storeMs > 0) {
 				rows.push({ key: `export:store:${eventStart}`, label: "Wait for store",
 					isEvent: false, indent: 1, startMs: lockEnd, endMs: eventStart,
-					durationMs: storeMs, color: "blue" });
+					durationMs: storeMs, color: "exportStore" });
 				totalMs = Math.max(totalMs, eventStart);
 			}
 		}
 
-		// Import sub-phases — sequential flat bars (tiles → entities → fluids)
+		// Import sub-phases. Preferred path: real per-phase start offsets (phaseSpans) laid FORWARD
+		// from the import_started segment anchor — a true waterfall. Fallback (legacy logs with no
+		// spans): the old back-anchored cursor that ends tiles→entities→fluids at this event.
 		if (event?.importMetrics && typeof event.importMetrics === "object") {
 			const m = event.importMetrics as Partial<ImportMetrics>;
 			const eventStart = elapsedMs ?? 0;
-			// Number(... ?? 0): coerce defensively so a numeric string from a legacy log can't slip
-			// through typed access and corrupt the cursor math (cursor + dur would concatenate).
-			const tilesMs = Number(m.tiles_ms ?? 0);
-			const tilesCount = Number(m.tiles_placed ?? 0);
-			const entitiesMs = Number(m.entities_ms ?? 0);
-			const entitiesCount = Number(m.entities_created ?? 0);
-			const fluidsMs = Number(m.fluids_ms ?? 0);
-			const fluidsCount = Number(m.fluids_restored ?? 0);
-			const totalImportMs = Number(m.total_ms ?? 0);
-			if (totalImportMs > 0) {
+			const spans = Array.isArray(m.phaseSpans) ? m.phaseSpans : null;
+			if (spans && spans.length) {
+				const totalImportMs = Number(m.total_ms ?? 0);
+				// Start-anchor the import block at import_started; it begins with the chunked-delivery span, then
+				// queue and the import phases; a derived Round-trip bar (below) absorbs the cross-clock residual.
+				// The gap before the block is platform-data delivery to the target. Clamp to import_started
+				// so the block can never start before the import actually began.
+				const importStartedMs = typeof eventElapsedMs["import_started"] === "number"
+					? eventElapsedMs["import_started"] : null;
+				const segStart = importStartedMs != null ? importStartedMs : eventStart - totalImportMs;
+				const countLabel = (base: string, count: number) =>
+					count > 0 ? `${base} (${count.toLocaleString()})` : base;
+				const spanLabel = (name: string) => {
+					switch (name) {
+						case "delivery": return "Delivery";
+						case "queue": return "Queue wait";
+						case "tiles": return countLabel("Tiles", Number(m.tiles_placed ?? 0));
+						case "entities": return countLabel("Entities", Number(m.entities_created ?? 0));
+						case "fluids": return countLabel("Fluids", Number(m.fluids_restored ?? 0));
+						case "belts": return countLabel("Belts", Number(m.belt_items_restored ?? 0));
+						case "state": return countLabel("State", Number(m.circuits_connected ?? 0));
+						case "inventories": return "Inventories";
+						case "validation": return "Validation";
+						default: return humanizeMetricKey(name);
+					}
+				};
+				for (const sp of [...spans].sort((a, b) => a.startOffsetMs - b.startOffsetMs)) {
+					const startMs = segStart + Number(sp.startOffsetMs || 0);
+					const dur = Number(sp.durationMs || 0);
+					// Floor the bar to >=1ms so single-tick (0ms) phases remain visible as a sliver.
+					const endMs = startMs + Math.max(dur, 1);
+					rows.push({ key: `import:${sp.name}:${eventStart}`, label: spanLabel(sp.name),
+						isEvent: false, indent: 1, startMs, endMs,
+						durationMs: dur || null, color: sp.name });
+					totalMs = Math.max(totalMs, endMs);
+				}
+				const lastSpanEnd = segStart + spans.reduce((mx, s) => Math.max(mx, Number(s.startOffsetMs || 0) + Number(s.durationMs || 0)), 0);
+				// Derived round-trip residual: validation_received (eventStart) is logged after the Lua
+				// super-block finishes; the leftover = network round-trip + finalize tail + clock skew.
+				// Render a muted bar so the segments sum to the total instead of leaving a blank.
+				const roundtripMs = eventStart - lastSpanEnd;
+				if (roundtripMs > 2) {
+					rows.push({ key: `import:roundtrip:${eventStart}`, label: "Round-trip",
+						isEvent: false, indent: 1, startMs: lastSpanEnd, endMs: eventStart,
+						durationMs: roundtripMs, color: "roundtrip" });
+				}
 				totalMs = Math.max(totalMs, eventStart);
-				let cursor = eventStart - totalImportMs;
-				if (tilesMs > 0 || tilesCount > 0) {
-					const label = tilesCount > 0 ? `Tiles (${tilesCount.toLocaleString()})` : "Tiles";
-					const dur = tilesMs || 1;
-					rows.push({ key: `import:tiles:${eventStart}`, label,
-						isEvent: false, indent: 1, startMs: cursor, endMs: cursor + dur,
-						durationMs: tilesMs || null, color: "blue" });
-					cursor += dur;
-				}
-				if (entitiesMs > 0 || entitiesCount > 0) {
-					const label = entitiesCount > 0 ? `Entities (${entitiesCount.toLocaleString()})` : "Entities";
-					const dur = entitiesMs || 1;
-					rows.push({ key: `import:entities:${eventStart}`, label,
-						isEvent: false, indent: 1, startMs: cursor, endMs: cursor + dur,
-						durationMs: entitiesMs || null, color: "blue" });
-					cursor += dur;
-				}
-				if (fluidsMs > 0 || fluidsCount > 0) {
-					const label = fluidsCount > 0 ? `Fluids (${fluidsCount.toLocaleString()})` : "Fluids";
-					const dur = fluidsMs || 1;
-					rows.push({ key: `import:fluids:${eventStart}`, label,
-						isEvent: false, indent: 1, startMs: cursor, endMs: cursor + dur,
-						durationMs: fluidsMs || null, color: "blue" });
+			} else {
+				// Legacy fallback (no phaseSpans): back-anchored cursor ending at eventStart.
+				const tilesMs = Number(m.tiles_ms ?? 0);
+				const tilesCount = Number(m.tiles_placed ?? 0);
+				const entitiesMs = Number(m.entities_ms ?? 0);
+				const entitiesCount = Number(m.entities_created ?? 0);
+				const fluidsMs = Number(m.fluids_ms ?? 0);
+				const fluidsCount = Number(m.fluids_restored ?? 0);
+				const totalImportMs = Number(m.total_ms ?? 0);
+				if (totalImportMs > 0) {
+					totalMs = Math.max(totalMs, eventStart);
+					let cursor = eventStart - totalImportMs;
+					if (tilesMs > 0 || tilesCount > 0) {
+						const label = tilesCount > 0 ? `Tiles (${tilesCount.toLocaleString()})` : "Tiles";
+						const dur = tilesMs || 1;
+						rows.push({ key: `import:tiles:${eventStart}`, label,
+							isEvent: false, indent: 1, startMs: cursor, endMs: cursor + dur,
+							durationMs: tilesMs || null, color: "tiles" });
+						cursor += dur;
+					}
+					if (entitiesMs > 0 || entitiesCount > 0) {
+						const label = entitiesCount > 0 ? `Entities (${entitiesCount.toLocaleString()})` : "Entities";
+						const dur = entitiesMs || 1;
+						rows.push({ key: `import:entities:${eventStart}`, label,
+							isEvent: false, indent: 1, startMs: cursor, endMs: cursor + dur,
+							durationMs: entitiesMs || null, color: "entities" });
+						cursor += dur;
+					}
+					if (fluidsMs > 0 || fluidsCount > 0) {
+						const label = fluidsCount > 0 ? `Fluids (${fluidsCount.toLocaleString()})` : "Fluids";
+						const dur = fluidsMs || 1;
+						rows.push({ key: `import:fluids:${eventStart}`, label,
+							isEvent: false, indent: 1, startMs: cursor, endMs: cursor + dur,
+							durationMs: fluidsMs || null, color: "fluids" });
+					}
 				}
 			}
 		}
@@ -292,14 +352,19 @@ export function buildGanttRows(events: Array<LogEvent>, detailedSummary: JsonObj
 			const eventStart = elapsedMs ?? 0;
 			rows.push({ key: `phase:transmission:${eventStart}`, label: "Transmission",
 				isEvent: false, indent: 1, startMs: eventStart - event.transmissionMs, endMs: eventStart,
-				durationMs: event.transmissionMs, color: "blue" });
+				durationMs: event.transmissionMs, color: "transmission" });
 			totalMs = Math.max(totalMs, eventStart);
 		}
-		if (typeof event?.validationMs === "number" && event.validationMs > 0) {
+		// Skip the legacy back-anchored validation bar when the import waterfall already positions a
+		// "validation" span (otherwise validation would be drawn twice).
+		const importSpansForGuard = (event?.importMetrics as Partial<ImportMetrics> | undefined)?.phaseSpans;
+		const hasValidationSpan = Array.isArray(importSpansForGuard)
+			&& importSpansForGuard.some((s) => s.name === "validation");
+		if (typeof event?.validationMs === "number" && event.validationMs > 0 && !hasValidationSpan) {
 			const eventStart = elapsedMs ?? 0;
 			rows.push({ key: `phase:validation:${eventStart}`, label: "Validation",
 				isEvent: false, indent: 1, startMs: eventStart - event.validationMs, endMs: eventStart,
-				durationMs: event.validationMs, color: "blue" });
+				durationMs: event.validationMs, color: "validation" });
 			totalMs = Math.max(totalMs, eventStart);
 		}
 		if (event?.phases && typeof event.phases === "object") {
@@ -311,9 +376,10 @@ export function buildGanttRows(events: Array<LogEvent>, detailedSummary: JsonObj
 			for (const [k, v] of Object.entries(event.phases)) {
 				if (skipFromPhaseSummary.has(k)) continue;
 				if (typeof v === "number" && v > 0) {
-					rows.push({ key: `phase:${k}:${eventStart}`, label: humanizeMetricKey(String(k).replace(/Ms$/, "")),
+					const phaseKey = String(k).replace(/Ms$/, "");
+					rows.push({ key: `phase:${k}:${eventStart}`, label: humanizeMetricKey(phaseKey),
 						isEvent: false, indent: 1, startMs: eventStart - v, endMs: eventStart,
-						durationMs: v, color: "blue" });
+						durationMs: v, color: phaseKey });
 					totalMs = Math.max(totalMs, eventStart);
 				}
 			}

@@ -9,7 +9,7 @@ export type { JsonObject, HostNodeModel, InstanceNodeModel };
 export type { PlatformModel } from "../shared/dto";
 // Transaction payload types — let the UI read export/import/validation payloads with field types
 // instead of stringly-typed getProp() access.
-export type { ExportMetrics, ImportMetrics, PayloadMetrics, ValidationResult } from "../shared/dto";
+export type { ExportMetrics, ImportMetrics, PayloadMetrics, PhaseSpan, ValidationResult } from "../shared/dto";
 
 export type LogEvent = {
 	[key: string]: unknown;

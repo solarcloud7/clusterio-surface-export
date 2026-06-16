@@ -142,9 +142,9 @@ end
 --- @param force_name string
 --- @param requester_name string|nil
 --- @return string|nil, string|nil: job_id or error
-function AsyncProcessor.queue_import(json_data, new_platform_name, force_name, requester_name)
+function AsyncProcessor.queue_import(json_data, new_platform_name, force_name, requester_name, receive_timing)
 	AsyncProcessor.init()
-	return ImportPipeline.queue(json_data, new_platform_name, force_name, requester_name)
+	return ImportPipeline.queue(json_data, new_platform_name, force_name, requester_name, receive_timing)
 end
 
 --- Process all active async jobs (called on_tick)
