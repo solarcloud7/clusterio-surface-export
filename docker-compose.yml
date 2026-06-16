@@ -45,6 +45,10 @@ services:
       - .env
     container_name: surface-export-controller
     hostname: clusterio-controller  # Hosts connect to this name on the Docker network
+    # DEV: revalidate static assets (max-age=0) instead of the image's immutable 1y, so plugin web
+    # rebuilds show up without a manual hard-refresh. Idempotent; runs before the real entrypoint.
+    # See docker/patches/disable-immutable-cache.js.
+    entrypoint: ["/bin/bash", "-c", "node /patches/disable-immutable-cache.js || true; exec /controller-entrypoint.sh"]
     ports:
       - "${CONTROLLER_HTTP_PORT:-8080}:${CONTROLLER_HTTP_PORT:-8080}"
     volumes:
@@ -53,6 +57,8 @@ services:
       - ./docker/seed-data:/clusterio/seed-data:ro
       # Mount external plugins (auto-discovered by install-plugins.sh)
       - ./docker/seed-data/external_plugins:/clusterio/external_plugins
+      # DEV static-cache patch script (run by the entrypoint wrapper above)
+      - ./docker/patches:/patches:ro
     environment:
       - HOST_COUNT=${HOST_COUNT:-2}
       - EXPORT_HOST=${EXPORT_HOST:-1}

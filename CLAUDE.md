@@ -801,6 +801,47 @@ const resp = await this.i.sendTo(
 **Mechanical guard**: `npm run lint` (eslint `@typescript-eslint/unbound-method` + a `no-restricted-syntax` rule flagging extraction/cast of any Link method) catches this — and is enforced in CI. This Pitfall exists because a manual audit caught the `handle` site but **missed** the identical `sendTo` site; do not rely on manual review for this class of bug.
 **Key file**: `instance.ts` (handler registration ~line 79, `handleExportComplete` sendTo sites).
 
+### 27. Web-UI Icons Blank ("?") — export-data / game-client persistence (CRITICAL)
+**Symptom**: Transfer Details / Entities tab shows `?` placeholder icons; browser console/network shows
+`Failed to fetch prototype metadata for mod pack <id>, server returned: 404 Not Found`.
+**Cause**: the mod pack has no **export-data** (icon spritesheets + prototype metadata). In alpha.25 the icon
+system is upstream-native (`FactorioIcon` + `useExportPrototypeMetadata`, [PR #875]; the old `ExtendedExportData`
+fork is retired — see [[clusterio-alpha25-migration]]). The data is produced by **`clusterioctl instance
+export-data <instance>`**, which is **never** generated unless the export host actually runs the **graphical game
+client** (headless has no sprites). Two things silently break it:
+  1. **`SKIP_CLIENT=true` on the EXPORT_HOST (host-1).** The base image's `seed-instances.sh` auto-runs
+     `export-data` on first seed **only** when `EXPORT_HOST` is set (controller has `EXPORT_HOST=1`) **and** the
+     host has a client. With `SKIP_CLIENT=true`, host-1 runs headless-only → export skipped, icons blank. A
+     `docker-compose.debug.yml` override once set this on host-1 — **never set `SKIP_CLIENT=true` on host-1**
+     (host-2 is import-only and keeps it).
+  2. **Stale client version after a Factorio bump.** host-1 uses the client as its `factorio_directory`, a
+     single-version **direct install** (clusterio-docker Pitfall #11 — client & multi-version headless are
+     mutually exclusive). Clusterio auto-downloads the **free headless** for any version, but **NOT** the
+     **owned graphics client** (needs the account token), so the client is a hand-managed install that does
+     **not** move when you bump the instance `factorio.version`. A 2.0.x **client** can export icons for any
+     2.0.y pack (icons are version-agnostic), but Clusterio refuses to *run the instance* on a mismatched
+     binary → export fails. Keep them in lockstep via **`FACTORIO_CLIENT_TAG`** in `.env` (= the instances'
+     `factorio.version`; `FACTORIO_CLIENT_BUILD=expansion` for Space Age).
+**How it works / where it lands**: `export-data` (instance must be **stopped**) launches the client with
+`--export-data` → assets written to the controller's **`/clusterio/static/<kind>.<hash>.{json,png}`**
+(prototypes/spritesheet/metadata/locale/defines/settings), referenced by an **`export_manifest`** on the mod-pack
+record in `mod-packs.json`, served at **`/static/...`**; `FactorioIcon` fetches them. Verify:
+`curl -s -o /dev/null -w '%{http_code}' http://localhost:8080/static/<prototypes-asset>` → `200`.
+**Persistence (3 invariants)**: (a) host-1 (=`EXPORT_HOST`) never `SKIP_CLIENT=true`; (b) `FACTORIO_CLIENT_TAG`
+pinned in `.env` to the instance version — **bump both together**; (c) the **external** `factorio-client` volume
+persists the client across `down -v`, so fresh-seed auto-export always has a client. After a manual version bump
+(no `down -v`), the seed-time auto-export does **not** re-run (`.seed-complete`); regenerate by hand:
+```powershell
+# host-1 must already have a client matching the instance version (FACTORIO_CLIENT_TAG)
+./tools/rcon.ps1 ...                                  # (not needed) — use clusterioctl directly:
+docker exec surface-export-controller sh -c 'npx clusterioctl --config /clusterio/tokens/config-control.json instance stop clusterio-host-1-instance-1'
+docker exec surface-export-controller sh -c 'npx clusterioctl --config /clusterio/tokens/config-control.json instance export-data clusterio-host-1-instance-1'  # "Export complete: N icons"
+docker exec surface-export-controller sh -c 'npx clusterioctl --config /clusterio/tokens/config-control.json instance start clusterio-host-1-instance-1'
+```
+Then **hard-refresh** the browser (the 404 is cached). After a `down -v`, fresh seed regenerates it automatically.
+**Key files/config**: `.env` (`FACTORIO_CLIENT_TAG`/`FACTORIO_CLIENT_BUILD`), `docker-compose.debug.yml` (no
+`SKIP_CLIENT` on host-1), clusterio-docker `scripts/seed-instances.sh` (auto-export), `web/icons.tsx`.
+
 ## Factorio 2.0 Fluid API & Simulation Behavior
 
 **Topic**: Fluidbox Persistence, Segment Logic, and State Validation.
