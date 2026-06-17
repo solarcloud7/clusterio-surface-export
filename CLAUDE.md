@@ -112,11 +112,11 @@ The plugin uses **TypeScript** with bind-mounted source and **save patching** fo
 - Edit `*.ts` files in plugin root or `lib/` → Run `npm run build:node` → Restart containers
 - Build generates `dist/node/*.js` from TypeScript sources
 - Deploy script automatically rebuilds before Docker startup
-- The agent shell has no `node` on PATH; build inside a container: `docker exec surface-export-host-1 sh -c 'cd /clusterio/external_plugins/surface_export && npx tsc -p tsconfig.node.json'`. Restart hosts to reload the dist (`docker restart surface-export-host-1 surface-export-host-2`).
+- Host Node (24.x, matching CI) is available in shells — but **do not** `npm install`/`npm run build` in the live plugin dir while the cluster runs (see the next bullet: it re-adds the `@clusterio` peers and breaks `clusterioctl`; the cluster also strips them, so an in-place build can't resolve `@clusterio` anyway). Use **`./tools/build-plugin.ps1 [all|node|web] [-RestartController]`** — it builds in an isolated `node:24` container (CI parity) with a named volume shadowing `node_modules`, writing `dist/` back to the host; pass `-RestartController` for web changes (the controller caches each plugin's `manifest.json` at startup). Quick node-only compile alternative: `docker exec surface-export-host-1 sh -c 'cd /clusterio/external_plugins/surface_export && npx tsc -p tsconfig.node.json'` then `docker restart surface-export-host-1 surface-export-host-2`.
 - **DO NOT** run `npm install`/`npm install --include=dev`/`npm prune` in the plugin dir on a running cluster: the plugin lists `@clusterio/*` as **peer+dev** deps and npm 7+ auto-installs peers, so a second copy of `@clusterio/lib` lands in the shared (bind-mounted) `node_modules` and breaks `clusterioctl` with `Error: Attempt to import duplicate copy of @clusterio/lib`. The base-image entrypoint avoids this by deleting them after install (log line "Removing local @clusterio packages"). **Recover with** `docker exec surface-export-host-1 sh -c 'rm -rf /clusterio/external_plugins/surface_export/node_modules/@clusterio'` (NOT `npm prune` — that re-adds the peers). To lint/build locally, install only the tool you need (`npm install --no-save eslint typescript-eslint`) then remove `@clusterio` again. CI is unaffected — it runs `npm ci` in a clean runner.
 
 **Web UI Changes** (React):
-- Edit `*.jsx` or `*.css` files in `web/` → Run `npm run build:web` → Hard-refresh browser
+- Edit `*.tsx`/`*.css` files in `web/` → `./tools/build-plugin.ps1 web -RestartController` → reload browser (chunks are content-hashed, so a normal reload suffices — no hard-refresh)
 - Build generates `dist/web/` bundle via Webpack Module Federation
 - Deploy script automatically rebuilds before Docker startup
 
@@ -127,8 +127,8 @@ The plugin uses **TypeScript** with bind-mounted source and **save patching** fo
 
 **Development Workflow**:
 1. Start cluster: `docker compose up -d`
-2. Edit TypeScript files → `npm run build:node` → restart containers
-3. Edit React files → `npm run build:web` → hard-refresh browser
+2. Edit TypeScript files → `./tools/build-plugin.ps1 node` → restart containers
+3. Edit web (`*.tsx`) files → `./tools/build-plugin.ps1 web -RestartController` → reload browser
 4. Edit Lua files → restart instances: `clusterioctl instance stop-all && clusterioctl instance start-all`
 5. **Or use deploy script** for full rebuild: `.\tools\deploy-cluster.ps1 -SkipIncrement`
 
@@ -299,8 +299,8 @@ docker-compose.clusterio-src.yml  # Opt-in override: run a locally-built Cluster
   (`plugin/type/src/dst/jsonSchema/fromJSON`), a stable `toJSON`→`fromJSON` round-trip, and that
   `toJSON` fields agree with `jsonSchema` (catches the field-drift / "Unregistered Event class" /
   serialization-break classes of bug that otherwise only surface at runtime). A new message is
-  covered automatically — no edits to the harness needed. The agent shell has no `node`; run it in a
-  container: `docker exec surface-export-host-1 sh -c 'cd /clusterio/external_plugins/surface_export && npm test'`.
+  covered automatically — no edits to the harness needed. Run it in the `@clusterio`-stripped host
+  container (it only needs `dist/node`): `docker exec surface-export-host-1 sh -c 'cd /clusterio/external_plugins/surface_export && npm test'`.
 
 ## Key Technical Constraints
 
