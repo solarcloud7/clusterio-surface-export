@@ -32,8 +32,14 @@ module.exports = (env = {}, argv = {}) => merge(common(env, argv), {
 	},
 	output: {
 		path: path.resolve(__dirname, "dist", "web"),
-		filename: "static/[name].js",
-		chunkFilename: "static/[name].js",
+		// Content-hash every emitted chunk so the controller's immutable 1y /static cache header is
+		// actually correct: a content change yields a NEW url, so returning users can never serve a
+		// stale chunk. The Module-Federation remote entry is resolved via dist/web/manifest.json
+		// (shipped through /api/plugins — NOT the immutable /static cache), so the entry is safe to
+		// hash too. This restores @clusterio/web_ui's default; the prior fixed "static/[name].js"
+		// override silently defeated it. See docs/static-asset-caching.md.
+		filename: "static/[name].[contenthash].js",
+		chunkFilename: "static/[name].[contenthash].js",
 		clean: false,
 	},
 	plugins: [
