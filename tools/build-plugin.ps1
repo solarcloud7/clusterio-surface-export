@@ -46,6 +46,11 @@ $PluginPath = (Resolve-Path "$PSScriptRoot/../docker/seed-data/external_plugins/
 $DepsVolume = 'se_plugin_build_nm'
 $Image = 'node:24-bookworm-slim'
 
+# Fail fast with a clear message if the Docker daemon isn't reachable (otherwise the docker
+# commands below fail with an opaque non-zero exit that reads like a build error).
+docker version --format '{{.Server.Version}}' 2>$null | Out-Null
+if ($LASTEXITCODE -ne 0) { throw "Docker does not appear to be running. Start Docker Desktop and retry." }
+
 $BuildScript = switch ($Target) {
     'web'  { 'npm run build:web' }
     'node' { 'npm run build:node' }
@@ -57,11 +62,12 @@ if ($Fresh) {
     docker volume rm $DepsVolume 2>$null | Out-Null
 }
 
-# Inside the container: install deps into the named volume only if missing, then build.
-# (npm ci's `prepare` lifecycle already runs a full build on first install.)
+# Inside the container: if deps are missing, `npm ci` installs them AND builds (its `prepare`
+# lifecycle runs a full `npm run build`); if deps are already cached, run the requested build
+# directly. The if/else avoids building twice on a fresh install.
 $Inner = "set -e; echo '[node] '`$(node -v); " +
-         "if [ ! -x node_modules/.bin/webpack-cli ]; then echo '[deps] npm ci'; npm ci --no-audit --no-fund; fi; " +
-         "echo '[build] $BuildScript'; $BuildScript; echo '[ok] build complete'"
+         "if [ ! -x node_modules/.bin/webpack-cli ]; then echo '[deps] npm ci (prepare runs a full build)'; npm ci --no-audit --no-fund; " +
+         "else echo '[build] $BuildScript'; $BuildScript; fi; echo '[ok] build complete'"
 
 Write-Host "Building plugin ($Target) in $Image ..." -ForegroundColor Cyan
 docker run --rm `
@@ -76,6 +82,7 @@ if ($LASTEXITCODE -ne 0) { throw "Plugin build failed (exit $LASTEXITCODE)" }
 if ($RestartController) {
     Write-Host "Restarting controller to re-read dist/web/manifest.json ..." -ForegroundColor Cyan
     docker restart surface-export-controller | Out-Null
+    if ($LASTEXITCODE -ne 0) { throw "Controller restart failed (exit $LASTEXITCODE) — build succeeded, but the new bundle isn't being served yet." }
     Write-Host "Controller restarted. Hard-reload not needed — chunks are content-hashed." -ForegroundColor Green
 }
 

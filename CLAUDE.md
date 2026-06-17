@@ -109,7 +109,7 @@ The plugin uses **TypeScript** with bind-mounted source and **save patching** fo
 - Build output: `dist/node/` (Node.js runtime), `dist/web/` (browser bundle)
 
 **Plugin Changes** (TypeScript):
-- Edit `*.ts` files in plugin root or `lib/` → Run `npm run build:node` → Restart containers
+- Edit `*.ts` files in plugin root or `lib/` → `./tools/build-plugin.ps1 node` → restart containers
 - Build generates `dist/node/*.js` from TypeScript sources
 - Deploy script automatically rebuilds before Docker startup
 - Host Node (24.x, matching CI) is available in shells — but **do not** `npm install`/`npm run build` in the live plugin dir while the cluster runs (see the next bullet: it re-adds the `@clusterio` peers and breaks `clusterioctl`; the cluster also strips them, so an in-place build can't resolve `@clusterio` anyway). Use **`./tools/build-plugin.ps1 [all|node|web] [-RestartController]`** — it builds in an isolated `node:24` container (CI parity) with a named volume shadowing `node_modules`, writing `dist/` back to the host; pass `-RestartController` for web changes (the controller caches each plugin's `manifest.json` at startup). Quick node-only compile alternative: `docker exec surface-export-host-1 sh -c 'cd /clusterio/external_plugins/surface_export && npx tsc -p tsconfig.node.json'` then `docker restart surface-export-host-1 surface-export-host-2`.
