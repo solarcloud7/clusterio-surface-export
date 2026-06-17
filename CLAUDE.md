@@ -109,10 +109,10 @@ The plugin uses **TypeScript** with bind-mounted source and **save patching** fo
 - Build output: `dist/node/` (Node.js runtime), `dist/web/` (browser bundle)
 
 **Plugin Changes** (TypeScript):
-- Edit `*.ts` files in plugin root or `lib/` → `./tools/build-plugin.ps1 node` → restart containers
+- Edit `*.ts` files in plugin root or `lib/` → `./tools/build-plugin.ps1 node -RestartHosts` (rebuild + reload the hosts)
 - Build generates `dist/node/*.js` from TypeScript sources
 - Deploy script automatically rebuilds before Docker startup
-- Host Node (24.x, matching CI) is available in shells — but **do not** `npm install`/`npm run build` in the live plugin dir while the cluster runs (see the next bullet: it re-adds the `@clusterio` peers and breaks `clusterioctl`; the cluster also strips them, so an in-place build can't resolve `@clusterio` anyway). Use **`./tools/build-plugin.ps1 [all|node|web] [-RestartController]`** — it builds in an isolated `node:24` container (CI parity) with a named volume shadowing `node_modules`, writing `dist/` back to the host; pass `-RestartController` for web changes (the controller caches each plugin's `manifest.json` at startup). Quick node-only compile alternative: `docker exec surface-export-host-1 sh -c 'cd /clusterio/external_plugins/surface_export && npx tsc -p tsconfig.node.json'` then `docker restart surface-export-host-1 surface-export-host-2`.
+- Host Node (24.x, matching CI) is available in shells — but **do not** `npm install`/`npm run build` in the live plugin dir while the cluster runs (see the next bullet: it re-adds the `@clusterio` peers and breaks `clusterioctl`; the cluster also strips them, so an in-place build can't resolve `@clusterio` anyway). Use **`./tools/build-plugin.ps1 [all|node|web] [-RestartController] [-RestartHosts]`** — it builds in an isolated `node:24` container (CI parity) with a named volume shadowing `node_modules`, writing `dist/` back to the host; pass `-RestartController` for web changes (the controller caches each plugin's `manifest.json` at startup), or `-RestartHosts` for node changes (the hosts load `dist/node` at startup). Quick node-only compile alternative: `docker exec surface-export-host-1 sh -c 'cd /clusterio/external_plugins/surface_export && npx tsc -p tsconfig.node.json'` then `docker restart surface-export-host-1 surface-export-host-2`.
 - **DO NOT** run `npm install`/`npm install --include=dev`/`npm prune` in the plugin dir on a running cluster: the plugin lists `@clusterio/*` as **peer+dev** deps and npm 7+ auto-installs peers, so a second copy of `@clusterio/lib` lands in the shared (bind-mounted) `node_modules` and breaks `clusterioctl` with `Error: Attempt to import duplicate copy of @clusterio/lib`. The base-image entrypoint avoids this by deleting them after install (log line "Removing local @clusterio packages"). **Recover with** `docker exec surface-export-host-1 sh -c 'rm -rf /clusterio/external_plugins/surface_export/node_modules/@clusterio'` (NOT `npm prune` — that re-adds the peers). To lint/build locally, install only the tool you need (`npm install --no-save eslint typescript-eslint`) then remove `@clusterio` again. CI is unaffected — it runs `npm ci` in a clean runner.
 
 **Web UI Changes** (React):
@@ -121,15 +121,15 @@ The plugin uses **TypeScript** with bind-mounted source and **save patching** fo
 - Deploy script automatically rebuilds before Docker startup
 
 **Module Changes** (Lua - Save Patched):
-- Edit `*.lua` files in `module/` directory → Restart instances to re-patch saves
+- Edit `*.lua` files in `module/` directory → `./tools/patch-and-reset.ps1` (rebuilds the plugin, resets saves so Clusterio re-patches the Lua, restarts the cluster)
 - Clusterio automatically injects Lua code into saves at startup
-- No build step needed for Lua changes
+- No compile step for Lua itself — but the save MUST be reset (a plain restart reuses the old patched `script.dat`); `patch-and-reset.ps1` does that for you
 
 **Development Workflow**:
 1. Start cluster: `docker compose up -d`
-2. Edit TypeScript files → `./tools/build-plugin.ps1 node` → restart containers
+2. Edit TypeScript files → `./tools/build-plugin.ps1 node -RestartHosts`
 3. Edit web (`*.tsx`) files → `./tools/build-plugin.ps1 web -RestartController` → reload browser
-4. Edit Lua files → restart instances: `clusterioctl instance stop-all && clusterioctl instance start-all`
+4. Edit Lua files → `./tools/patch-and-reset.ps1` (rebuild + reset saves to re-patch Lua + restart)
 5. **Or use deploy script** for full rebuild: `.\tools\deploy-cluster.ps1 -SkipIncrement`
 
 ### Cluster / transfer / RCON tools (`tools/`)
@@ -269,6 +269,8 @@ docker/seed-data/external_plugins/surface_export/   # Plugin root
 
 tools/                    # (run `ls tools/` for the full set)
 ├── deploy-cluster.ps1    # Main deployment script (runs npm run build before Docker startup)
+├── build-plugin.ps1      # Safe isolated build (node:24 container): node|web|all, -RestartController / -RestartHosts
+├── patch-and-reset.ps1   # Lua / full reload: build plugin (via build-plugin.ps1) + reset saves (re-patch Lua) + restart cluster
 ├── rcon.ps1              # Agent-friendly one-shot RCON (replaces rc11/rc21 profile aliases)
 ├── cluster-utils.ps1     # Dot-source for Send-RCON / Get-InstanceList helpers
 ├── check-cluster-logs.ps1# Dump plugin/factorio logs from where they actually live (JSON files)
@@ -878,7 +880,6 @@ local content = entity.fluidbox.get_fluid_segment_contents(1) -- Returns actual 
 - [docs/README.md](docs/README.md) - Plugin overview and documentation index
 - [docs/commands-reference.md](docs/commands-reference.md) - All available commands
 - [docs/QUICK_START.md](docs/QUICK_START.md) - End-to-end transfer walkthrough
-- [docs/DEVELOPMENT_SETUP.md](docs/DEVELOPMENT_SETUP.md) - Plugin development workflow
 - [docs/CI_CD.md](docs/CI_CD.md) - CI pipeline, Factorio-baking for integration tests, and debugging failed runs
 - [docs/TRANSFER_WORKFLOW_GUIDE.md](docs/TRANSFER_WORKFLOW_GUIDE.md) - Transfer phases and validation
 - [docs/EXPORT_IMPORT_FLOW.md](docs/EXPORT_IMPORT_FLOW.md) - Complete action trace with debugging

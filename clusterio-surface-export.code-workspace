@@ -117,12 +117,13 @@
         }
       },
       {
-        "label": "Build: Web UI Only",
+        "label": "Build: Web UI (+ restart controller)",
         "type": "shell",
-        "command": "npm run build:web",
-        "options": {
-          "cwd": "${workspaceFolder}/docker/seed-data/external_plugins/surface_export"
-        },
+        "command": ".\\tools\\build-plugin.ps1",
+        "args": [
+          "web",
+          "-RestartController"
+        ],
         "group": "build",
         "problemMatcher": [],
         "presentation": {
@@ -131,7 +132,38 @@
         }
       },
       {
-        "label": "Patch and Reset (Hot Reload)",
+        "label": "Build: Node/TypeScript (+ reload hosts)",
+        "type": "shell",
+        "command": ".\\tools\\build-plugin.ps1",
+        "args": [
+          "node",
+          "-RestartHosts"
+        ],
+        "group": "build",
+        "problemMatcher": [],
+        "presentation": {
+          "reveal": "always",
+          "panel": "shared"
+        }
+      },
+      {
+        "label": "Build: All (Node + Web, full reload)",
+        "type": "shell",
+        "command": ".\\tools\\build-plugin.ps1",
+        "args": [
+          "all",
+          "-RestartController",
+          "-RestartHosts"
+        ],
+        "group": "build",
+        "problemMatcher": [],
+        "presentation": {
+          "reveal": "always",
+          "panel": "shared"
+        }
+      },
+      {
+        "label": "Patch and Reset (Lua / full reload)",
         "type": "shell",
         "command": ".\\tools\\patch-and-reset.ps1",
         "problemMatcher": [],

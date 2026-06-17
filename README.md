@@ -109,15 +109,7 @@ docker compose down -v
 docker compose up -d
 ```
 
-**Hot Reload** (after mod changes):
-
-Use the VS Code task "Patch and Reset (Hot Reload)" or run:
-
-```powershell
-.\tools\patch-and-reset.ps1
-```
-
-This patches the running instances without a full rebuild (~30 seconds vs 3 minutes).
+**Hot Reload**: rebuild only what you changed (web / TypeScript / Lua) instead of a full redeploy — see [Hot Reload](#hot-reload) below for the per-change commands, or use the matching VS Code "Build: …" / "Patch and Reset" tasks.
 
 **Development Files**:
 - **Clusterio Plugin**: `docker/seed-data/external_plugins/surface_export/` (Node.js code)
@@ -232,11 +224,25 @@ docker compose down -v && docker compose up -d   # Clean restart
 
 ### Hot Reload
 
-After modifying plugin or mod code:
-```powershell
-.\tools\patch-and-reset.ps1
-```
-Patches running instances without a full rebuild (~30 seconds vs 3 minutes).
+After code changes, rebuild **only what changed** — no full redeploy. `build-plugin.ps1` builds in an
+isolated `node:24` container, so it never touches the running cluster's `node_modules`:
+
+| Changed | Command |
+|---------|---------|
+| Web UI (`*.tsx` / `*.css`) | `.\tools\build-plugin.ps1 web -RestartController` |
+| TypeScript (`*.ts`) | `.\tools\build-plugin.ps1 node -RestartHosts` |
+| Lua (`module/`) | `.\tools\patch-and-reset.ps1` |
+
+Lua is **save-patched**, so a Lua change needs the save reset that `patch-and-reset.ps1` performs (it
+also rebuilds the plugin and restarts the cluster — the one-shot for a mixed change). A plain container
+restart reuses the old patched `script.dat` and won't pick up Lua edits.
+
+The matching VS Code tasks ("Build: Web UI …", "Build: Node/TypeScript …", "Patch and Reset …") run
+these for you.
+
+> ⚠️ Don't run `npm run build` / `npm install` directly in the plugin dir on a running cluster — it
+> re-adds the `@clusterio/*` peer deps into the bind-mounted `node_modules` and breaks `clusterioctl`.
+> Always build via `build-plugin.ps1` (isolated container) or `deploy-cluster.ps1`.
 
 ### Integration Tests
 

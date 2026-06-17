@@ -10,18 +10,26 @@ if ($Help) {
 Patch and Reset Instances
 ==========================
 
-Hot-reloads plugin code changes and resets instances to seed save without rebuilding containers.
+Hot-reloads plugin code (Lua + TypeScript + web) and resets instances to seed save without
+rebuilding containers. This is the one-shot for LUA changes (and any combination of changes).
 
 Usage:
     .\patch-and-reset.ps1
 
 This script:
-1. Stops Factorio instances (keeps controller running)
-2. Resets save files to seed saves (required to apply Lua code changes)
-3. Restarts instances (picks up plugin code changes from docker/seed-data/external_plugins/surface_export)
+1. Bumps the plugin version (cache-bust marker)
+2. Builds plugin artifacts (dist/node + dist/web) via tools/build-plugin.ps1 — an isolated
+   node:24 container, so it never pollutes the running cluster's bind-mounted node_modules
+3. Stops Factorio instances (keeps controller running)
+4. Resets save files to seed saves (required to apply Lua code changes)
+5. Restarts all containers (hosts + controller) — hosts load the new dist/node and re-patch
+   saves with the latest Lua; the controller re-reads dist/web/manifest.json
 
 Note: Save reset is REQUIRED because Lua code is embedded in save files via save-patching.
       Without reset, old embedded script.dat prevents Lua code updates from taking effect.
+
+      For a web-ONLY or TypeScript-ONLY change you do NOT need this heavy reset — use
+      `tools/build-plugin.ps1 web -RestartController` or `... node -RestartHosts` instead.
 "@
     exit 0
 }
@@ -58,20 +66,16 @@ if (Test-Path $ModuleJsonPath) {
 Write-Host "✓ Version updated" -ForegroundColor Green
 Write-Host ""
 
-# Build web UI (so dist/ matches source)
-Write-Host "Building web UI..." -ForegroundColor Yellow
-$PluginDir = Join-Path $WorkspaceRoot "docker/seed-data/external_plugins/surface_export"
-Push-Location $PluginDir
-try {
-    npm install --silent 2>$null
-    npm run build:web
-    if ($LASTEXITCODE -ne 0) {
-        throw "Web UI build failed"
-    }
-    Write-Host "✓ Web UI built" -ForegroundColor Green
-} finally {
-    Pop-Location
+# Build plugin artifacts (node + web) so dist/ matches source.
+# IMPORTANT: build in the isolated container via build-plugin.ps1 — NEVER `npm install`/`npm run
+# build` in the live plugin dir on a running cluster: it re-adds the @clusterio/* peers into the
+# bind-mounted node_modules and breaks clusterioctl ("duplicate copy of @clusterio/lib").
+Write-Host "Building plugin artifacts (node + web)..." -ForegroundColor Yellow
+& "$PSScriptRoot/build-plugin.ps1" all
+if ($LASTEXITCODE -ne 0) {
+    throw "Plugin build failed"
 }
+Write-Host "✓ Plugin artifacts built" -ForegroundColor Green
 Write-Host ""
 
 # Check if cluster is running
