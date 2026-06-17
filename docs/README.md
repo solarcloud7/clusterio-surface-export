@@ -172,7 +172,6 @@ surface_export/
 ## Documentation
 
 - [QUICK_START.md](QUICK_START.md) — End-to-end transfer walkthrough
-- [DEVELOPMENT_SETUP.md](DEVELOPMENT_SETUP.md) — Development and hot-reload workflow
 - [TRANSFER_WORKFLOW_GUIDE.md](TRANSFER_WORKFLOW_GUIDE.md) — Transfer phases, validation, troubleshooting
 - [IMPLEMENTATION_SUMMARY.md](IMPLEMENTATION_SUMMARY.md) — Technical decisions and Factorio 2.0 compatibility
 - [static-asset-caching.md](static-asset-caching.md) — The stale web-chunk problem: our webpack config was overriding Clusterio's built-in content-hashing; restoring it is the whole fix (no core change), plus the dev-workflow tradeoff

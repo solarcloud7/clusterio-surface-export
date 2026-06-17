@@ -27,8 +27,16 @@
     After building, restart the controller so it re-reads dist/web/manifest.json. Required for
     web changes to show up, because the controller caches each plugin's manifest at startup.
 
+.PARAMETER RestartHosts
+    After building, restart both hosts so they reload dist/node/*.js. Required for TypeScript
+    (node) changes to show up, because the hosts load the plugin's node bundle at startup.
+
 .EXAMPLE
     ./tools/build-plugin.ps1 web -RestartController     # rebuild web UI and serve it live
+.EXAMPLE
+    ./tools/build-plugin.ps1 node -RestartHosts        # rebuild TypeScript and reload it on the hosts
+.EXAMPLE
+    ./tools/build-plugin.ps1 all -RestartController -RestartHosts   # full build + reload everything
 .EXAMPLE
     ./tools/build-plugin.ps1                            # full build (node + web)
 .EXAMPLE
@@ -37,7 +45,8 @@
 param(
     [ValidateSet('all', 'node', 'web')][string]$Target = 'all',
     [switch]$Fresh,
-    [switch]$RestartController
+    [switch]$RestartController,
+    [switch]$RestartHosts
 )
 
 $ErrorActionPreference = 'Stop'
@@ -84,6 +93,13 @@ if ($RestartController) {
     docker restart surface-export-controller | Out-Null
     if ($LASTEXITCODE -ne 0) { throw "Controller restart failed (exit $LASTEXITCODE) — build succeeded, but the new bundle isn't being served yet." }
     Write-Host "Controller restarted. Hard-reload not needed — chunks are content-hashed." -ForegroundColor Green
+}
+
+if ($RestartHosts) {
+    Write-Host "Restarting hosts to reload dist/node/*.js ..." -ForegroundColor Cyan
+    docker restart surface-export-host-1 surface-export-host-2 | Out-Null
+    if ($LASTEXITCODE -ne 0) { throw "Host restart failed (exit $LASTEXITCODE) — build succeeded, but the new node bundle isn't loaded yet." }
+    Write-Host "Hosts restarted." -ForegroundColor Green
 }
 
 Write-Host "Done: $Target build complete." -ForegroundColor Green
