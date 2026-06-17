@@ -40,7 +40,7 @@ module.exports = (env = {}, argv = {}) => merge(common(env, argv), {
 		// override silently defeated it. See docs/static-asset-caching.md.
 		filename: "static/[name].[contenthash].js",
 		chunkFilename: "static/[name].[contenthash].js",
-		clean: false,
+		clean: false, // safe: @clusterio/web_ui's CleanWebpackPlugin clears old hashes each build (no stale-file buildup)
 	},
 	plugins: [
 		new webpack.container.ModuleFederationPlugin({
