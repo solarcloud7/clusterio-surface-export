@@ -47,7 +47,7 @@ module/
 
 ### Factorio 2.0 Constraints
 
-1. **No runtime file reading** — `game.read_file()` was removed. File imports route through Node.js (`instance.js` reads the file, sends via RCON chunks).
+1. **No runtime file reading** — `game.read_file()` was removed. File imports route through Node.js (`instance.ts` reads the file, sends via RCON chunks).
 
 2. **`require()` at parse time only** — All `require()` calls are at module top level. Commands self-register during parse via `commands.add_command()`.
 
@@ -276,11 +276,11 @@ Large payloads are chunked for RCON transmission:
   - 50KB–1MB → 50KB chunks  
   - \>1MB → 100KB chunks
 
-### Controller Storage (`controller.js`)
+### Controller Storage (`controller.ts`)
 
 Export data stored in `platformStorage` map, persisted to `surface_export_storage.json`. Auto-cleanup when exceeding `max_storage_size` config (oldest first).
 
-### Transaction Logging (`controller.js`)
+### Transaction Logging (`controller.ts`)
 
 Events tracked per transfer: `transfer_created`, `import_started`, `validation_received`, `validation_timeout`, `source_deleted`, `rollback_success`, `transfer_completed`, `transfer_failed`.
 

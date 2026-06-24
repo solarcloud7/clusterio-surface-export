@@ -1,14 +1,42 @@
 # Commands Reference
 
-Console commands for debugging and manual control of platform export/import functionality. These commands can be used in-game via the chat console or remotely via RCON.
+Console commands for debugging and manual control of platform export/import functionality. These commands run in-game via the chat console or remotely via RCON. They are registered in [`module/interfaces/commands/`](../docker/seed-data/external_plugins/surface_export/module/interfaces/commands/).
+
+For the `clusterioctl surface-export` CLI subcommands (`list`, `get-export`, `upload-import`, `start-transfer`, `transfer`), see the Remote Interface and CLI sections of [README.md](README.md). For the Lua `remote.call("surface_export", ...)` API, see the Remote Interface section of [README.md](README.md).
+
+## Table of Contents
+
+- [Quick Reference](#quick-reference)
+- [Platform Listing Commands](#platform-listing-commands)
+- [Export Commands](#export-commands)
+- [Transfer Commands](#transfer-commands)
+- [Platform Lock Commands](#platform-lock-commands)
+- [Debug Commands](#debug-commands)
+- [Command Context](#command-context)
+- [See Also](#see-also)
 
 ## Quick Reference
 
-```
-/command-name [required_param] [optional_param]
-```
+All commands except `/plugin-import-file` require admin privileges. `[param]` is optional, `<param>` is required.
 
-All commands except `/plugin-import-file` require admin privileges.
+| Command | Arguments | Description |
+|---------|-----------|-------------|
+| `/list-platforms` | — | List space platforms for your force |
+| `/list-surfaces` | — | List all surfaces with their indices |
+| `/list-exports` | — | List exports held in memory |
+| `/export-platform` | `[platform_index] [destination_instance_id]` | Export a platform to JSON (async) |
+| `/export-platform-file` | `[platform_index]` | Export a platform to a JSON file on disk (async) |
+| `/export-sync-mode` | `[on\|off]` | Toggle synchronous export mode |
+| `/transfer-platform` | `<platform_index> <destination_instance_id>` | Transfer a platform to another instance |
+| `/resume-platform` | `<platform_name_or_index>` | Unpause a platform and activate its entities |
+| `/lock-platform` | `[platform_name_or_index]` | Lock a platform (complete cargo pods, freeze entities) |
+| `/unlock-platform` | `[platform_name_or_index]` | Unlock a locked platform |
+| `/lock-status` | `[platform_name]` | Show status of locked platforms |
+| `/step-tick` | — | Unpause the game tick |
+| `/plugin-import-file` | `<filename> [new_name]` | Request the plugin to import a platform from a file (no admin) |
+| `/test-entity` | `<json>` | Import a single entity from JSON for debugging |
+| `/test-entity-at` | `<x> <y> <json>` | Import a single entity at a specific position |
+| `/transaction-dashboard` | `[limit]` | Open the in-game transaction history GUI |
 
 ---
 
@@ -70,8 +98,8 @@ List available platform exports in memory.
 **Output:**
 ```
 Found 2 export(s) in memory:
-  [1] Test Platform_12345678 (47 entities, 2026-01-23T10:30:00Z)
-  [2] Mining Station_12340000 (123 entities, 2026-01-23T09:15:00Z)
+  [1] Test Platform_12345678 (47 entities, <ISO-8601 timestamp>)
+  [2] Mining Station_12340000 (123 entities, <ISO-8601 timestamp>)
 ```
 
 **Notes:**
@@ -135,12 +163,12 @@ Export a platform directly to a JSON file on disk.
 ```
 Auto-detected platform: Test Platform (index 1)
 Exporting platform 1 to file...
-Export complete: platform_exports/Test Platform_12345678.json
-File location: <factorio>/script-output/platform_exports/Test Platform_12345678.json
+Export queued: Test Platform_12345678
+File will be written when export completes (check logs)
 ```
 
 **Notes:**
-- Synchronous operation (may cause brief lag for large platforms)
+- Async operation — the file is written when the export job completes
 - File saved to `script-output/platform_exports/`
 
 ---
@@ -376,13 +404,13 @@ Unpause the game tick (debug utility).
 
 **Output:**
 ```
-Game tick unpaused
+Game unpaused at tick 12345
 ```
 
 **Notes:**
-- Sets `game.tick_paused = false`
+- Sets `game.tick_paused = false` if the game is paused; otherwise prints "Game is already running"
 - Useful if the game gets stuck in a paused state during debugging
-- No longer steps individual ticks — simply resumes continuous ticking
+- Takes no parameters (any argument is ignored)
 
 ---
 
@@ -419,6 +447,95 @@ Check logs for import status
 
 ---
 
+### `/test-entity`
+Import a single entity from JSON for debugging.
+
+**Usage:**
+```
+/test-entity <json>
+```
+
+**Parameters:**
+- `json` (required): A serialized entity (e.g. `{"name":"iron-chest","position":{"x":0,"y":0}}`)
+
+**Examples:**
+```
+/test-entity {"name":"iron-chest","position":{"x":0,"y":0}}
+```
+
+**Output:**
+```
+═══════════════════════════════════════
+🧪 Entity Test Result
+═══════════════════════════════════════
+✓ SUCCESS - Entity created!
+
+Created Entity:
+  Name: iron-chest
+  Position: {x = 0, y = 0}
+  Unit Number: 123
+...
+```
+
+**Notes:**
+- Creates the entity on your current surface via `remote.call("surface_export", "test_import_entity", ...)`
+- Reports success/failure plus errors, warnings, and debug info (prototype type, placement check)
+- A `file:<filename>` prefix is recognized but not supported in-game — it prints a note to pass the JSON via RCON or the remote interface instead
+
+---
+
+### `/test-entity-at`
+Import a single entity at a specific position.
+
+**Usage:**
+```
+/test-entity-at <x> <y> <json>
+```
+
+**Parameters:**
+- `x` (required): Target X coordinate
+- `y` (required): Target Y coordinate
+- `json` (required): A serialized entity
+
+**Examples:**
+```
+/test-entity-at 5 -3 {"name":"iron-chest"}
+```
+
+**Output:**
+```
+✓ Created iron-chest at {5, -3}
+```
+
+**Notes:**
+- Same as `/test-entity` but overrides the position with the given coordinates
+- Prints a condensed result (one line on success, errors/warnings on failure)
+
+---
+
+### `/transaction-dashboard`
+Open the in-game transaction history dashboard (import/export/transfer history with phase timing).
+
+**Usage:**
+```
+/transaction-dashboard [limit]
+```
+
+**Parameters:**
+- `limit` (optional): Number of entries to show, 1–500. Default: 25
+
+**Examples:**
+```
+/transaction-dashboard
+/transaction-dashboard 100
+```
+
+**Notes:**
+- Player-only — running it from the console/RCON prints an error ("can only be run by a player")
+- Opens a GUI; `limit` outside the 1–500 range is rejected with a usage message
+
+---
+
 ## Command Context
 
 All commands automatically handle:
@@ -445,7 +562,7 @@ Commands work via RCON but some require explicit parameters:
 
 ## See Also
 
-- [Remote Interface Reference](remote-interface-reference.md) - Lua API for plugin integration
-- [Architecture](architecture.md) - System design overview
-- [Async Processing](async-processing.md) - How async export/import works
+- [README.md](README.md) — Remote Interface (Lua `remote.call` API) and `clusterioctl surface-export` CLI commands
+- [IMPLEMENTATION_SUMMARY.md](IMPLEMENTATION_SUMMARY.md) — Module structure and Factorio 2.0 compatibility
+- [async-processing.md](async-processing.md) — How async export/import works
 

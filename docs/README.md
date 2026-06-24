@@ -1,50 +1,59 @@
 # Surface Export Plugin
 
-Clusterio plugin for exporting and importing Factorio 2.0 space platforms between instances. Supports full platform state: entities, tiles, inventories, equipment grids, fluids, and connections.
+Clusterio plugin for exporting and importing Factorio 2.0 space platforms between instances. Supports full platform state: entities, tiles, inventories, equipment grids, fluids, belt items, circuit connections, and control behaviors.
 
-**Version**: 0.9.34 | **License**: MIT | **Author**: Solarcloud7
+This is the plugin-level documentation index. For project-level setup, performance, and the full development workflow, see the [main README](../README.md).
 
-## Features
+## Table of Contents
 
-- Async export/import (50 entities/tick, <1% UPS impact)
-- Chunked RCON transport for large platforms (100KB chunks)
-- Surface locking during transfers (prevents player modification)
-- Post-transfer validation (item/fluid count verification)
-- Automatic rollback on failure, automatic source cleanup on success
-- Clone platform within same instance
-- Transaction logging for transfer auditing
+- [Architecture](#architecture)
+- [Docker Setup](#docker-setup)
+- [In-Game Commands](#in-game-commands)
+- [CLI Commands](#cli-commands)
+- [Remote Interface](#remote-interface)
+- [Configuration](#configuration)
+- [Plugin Layout](#plugin-layout)
+- [Documentation](#documentation)
 
 ## Architecture
 
 ```
-Source Instance (Lua) ←send_json event→ Instance Plugin (JS) ←WebSocket link→ Controller Plugin (JS) ←WebSocket link→ Destination Instance Plugin (JS) ←send_json event→ Destination Instance (Lua)
+Source Instance (Lua) ←send_json event→ Instance Plugin (TS) ←WebSocket link→ Controller Plugin (TS) ←WebSocket link→ Destination Instance Plugin (TS) ←send_json event→ Destination Instance (Lua)
 ```
 
+The plugin is written in TypeScript (compiled to `dist/node/`); the Factorio module is Lua, save-patched into instances.
+
 **Components:**
-- **Lua Module** (`module/`): Save-patched into Factorio instances. Handles serialization, async processing, locking, validation.
-- **Instance Plugin** (`instance.js`): Bridges Lua ↔ Controller. Handles RCON chunking, file reads.
-- **Controller Plugin** (`controller.js`): Stores exports, orchestrates transfers, manages transaction logs.
-- **CLI** (`control.js`): `clusterioctl surface-export` subcommands.
+
+| Component | Source | Role |
+|-----------|--------|------|
+| Lua module | `module/` | Save-patched into Factorio instances. Serialization, async processing, locking, validation. |
+| Instance plugin | `instance.ts` | Bridges Lua ↔ Controller. RCON chunking, send_json event handlers. |
+| Controller plugin | `controller.ts` | Stores exports, orchestrates transfers, manages transaction logs. |
+| CLI | `control.ts` | `clusterioctl surface-export` subcommands. |
+| Web UI | `web/` | React + Module Federation tabs (manual transfer, exports, transaction logs). |
 
 ## Docker Setup
 
-This plugin is deployed as an external plugin via the clusterio-surface-export project. See the [main README](../../../../../README.md) for Docker setup.
+This plugin is deployed as an external plugin via the clusterio-surface-export project. See the [main README](../README.md) for Docker setup.
 
 ```bash
 # From repo root
 docker compose up -d
 
-# Verify plugin loaded
+# Verify plugin loaded (controller-origin logs appear on controller stdout)
 docker logs surface-export-controller 2>&1 | grep "surface_export"
 ```
 
 ## In-Game Commands
 
+These run in-game via the chat console or remotely via RCON. They are registered in `module/interfaces/commands/`. See [commands-reference.md](commands-reference.md) for full usage and arguments.
+
 | Command | Description |
 |---------|-------------|
 | `/export-platform <index>` | Export platform asynchronously |
-| `/export-platform-file <index>` | Export to disk file in script-output/ |
-| `/export-sync-mode <index>` | Export synchronously (blocks game) |
+| `/export-platform-file <index>` | Export to disk file in `script-output/` |
+| `/export-sync-mode [on\|off]` | Toggle single-tick (sync) processing for debugging |
 | `/transfer-platform <index> <dest_id>` | Transfer platform to another instance |
 | `/list-platforms` | List all space platforms |
 | `/list-exports` | List exports in memory |
@@ -54,22 +63,35 @@ docker logs surface-export-controller 2>&1 | grep "surface_export"
 | `/lock-status` | Show lock status of all platforms |
 | `/resume-platform <name>` | Unpause a paused platform |
 | `/plugin-import-file <file> <name>` | Import from file via plugin |
-| `/step-tick` | Debug: unpause game tick |
-| `/test-entity <json>` | Debug: test single entity import |
+| `/transaction-dashboard [limit]` | Open in-game transaction history GUI |
+| `/step-tick [count]` | Debug: unpause the game to allow async processing |
+| `/test-entity <json>` | Debug: test a single entity import |
+| `/test-entity-at <x> <y> <json>` | Debug: test a single entity import at a position |
 
 ## CLI Commands
 
+Registered under `clusterioctl surface-export` in `control.ts`:
+
 ```bash
-# List stored exports on controller
+# List stored exports on the controller
 npx clusterioctl surface-export list
 
-# Transfer a stored export to a target instance
-npx clusterioctl surface-export transfer <exportId> <targetInstanceId>
+# Download a stored export payload as JSON
+npx clusterioctl surface-export get-export <exportId> [outputFile]
+
+# Upload a JSON export file and import it onto a target instance
+npx clusterioctl surface-export upload-import <file> <targetInstanceId> [forceName] [platformName]
+
+# Start a transfer through the controller orchestration path (same path as the web UI)
+npx clusterioctl surface-export start-transfer <sourceInstanceId> <sourcePlatformIndex> <targetInstanceId> [forceName]
+
+# Import a stored export onto a target instance
+npx clusterioctl surface-export transfer <exportId> <instanceId>
 ```
 
 ## Remote Interface
 
-The Lua module registers as `"surface_export"` (not `"clusterio-surface-export"`).
+The Lua module registers as `"surface_export"`. Functions are defined in `module/interfaces/remote/` and wired up in `module/interfaces/remote-interface.lua`.
 
 ```lua
 -- Export
@@ -79,6 +101,8 @@ remote.call("surface_export", "get_export", export_id)
 remote.call("surface_export", "get_export_json", export_id)
 remote.call("surface_export", "list_exports")
 remote.call("surface_export", "list_exports_json")
+remote.call("surface_export", "list_platforms")
+remote.call("surface_export", "list_platforms_json")
 remote.call("surface_export", "clear_old_exports", max_to_keep)
 
 -- Import (chunked — Factorio 2.0 cannot read files at runtime)
@@ -103,77 +127,57 @@ remote.call("surface_export", "run_tests")
 
 ## Configuration
 
+Config fields are defined in `index.ts`.
+
 **Instance config:**
+
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
-| `surface_export.max_export_cache_size` | number | 10 | Max exports kept in memory |
-| `surface_export.batch_size` | number | 50 | Entities processed per tick |
-| `surface_export.max_concurrent_jobs` | number | 3 | Max parallel async jobs |
-| `surface_export.show_progress` | boolean | true | Show progress messages in game |
-| `surface_export.debug_mode` | boolean | false | Enable debug logging |
+| `surface_export.max_export_cache_size` | number | 10 | Max exports cached per instance |
+| `surface_export.batch_size` | number | 50 | Entities processed per tick during async operations |
+| `surface_export.max_concurrent_jobs` | number | 3 | Max concurrent async import/export jobs |
+| `surface_export.show_progress` | boolean | true | Show progress notifications for async operations |
+| `surface_export.debug_mode` | boolean | true | Export JSON comparison files for transfer validation |
 
 **Controller config:**
+
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
-| `surface_export.max_storage_size` | number | 100 | Max exports stored on controller |
+| `surface_export.max_storage_size` | number | 20 | Max exports stored on the controller |
 
-## Plugin File Structure
+## Plugin Layout
 
-```
-surface_export/
-├── index.js                  # Plugin definition, config fields, message registration
-├── controller.js             # Controller: export storage, transfer orchestration
-├── instance.js               # Instance: RCON bridge, chunking, send_json event handlers
-├── control.js                # CLI: surface-export list/transfer subcommands
-├── helpers.js                # sendChunkedJson, hybrid Lua escaping
-├── messages.js               # 11 message type definitions
-├── package.json
-├── module/                   # Lua module (save-patched into Factorio)
-│   ├── module.json
-│   ├── control.lua           # Entry point (event_handler interface)
-│   ├── core/
-│   │   ├── async-processor.lua
-│   │   ├── serializer.lua
-│   │   ├── deserializer.lua
-│   │   └── json.lua
-│   ├── export_scanners/
-│   │   ├── entity-scanner.lua
-│   │   ├── inventory-scanner.lua
-│   │   ├── connection-scanner.lua
-│   │   ├── entity-handlers.lua
-│   │   └── tile_scanner.lua
-│   ├── import_phases/
-│   │   ├── entity_creation.lua
-│   │   ├── entity_state_restoration.lua
-│   │   ├── active_state_restoration.lua
-│   │   ├── belt_restoration.lua
-│   │   ├── fluid_restoration.lua
-│   │   ├── tile_restoration.lua
-│   │   └── platform_hub_mapping.lua
-│   ├── interfaces/
-│   │   ├── commands.lua      # Command loader
-│   │   ├── commands/         # 14 command files + base.lua
-│   │   ├── remote-interface.lua  # Remote interface loader
-│   │   └── remote/           # 14 remote function files + base.lua
-│   ├── utils/
-│   │   ├── util.lua
-│   │   ├── game-utils.lua
-│   │   ├── string-utils.lua
-│   │   ├── table-utils.lua
-│   │   ├── json-compat.lua
-│   │   ├── surface-lock.lua
-│   │   └── debug-export.lua
-│   └── validators/
-│       ├── verification.lua
-│       └── transfer-validation.lua
-└── docs/                     # This directory
-```
+Plugin root: `docker/seed-data/external_plugins/surface_export/`. The full project tree is in the [main README](../README.md) under Project Structure.
+
+| Path | Contents |
+|------|----------|
+| `index.ts` | Plugin definition, config fields, message registration |
+| `controller.ts` | Controller: export storage, transfer orchestration, transaction logs |
+| `instance.ts` | Instance: RCON bridge, chunking, send_json event handlers |
+| `control.ts` | CLI: `surface-export` subcommands |
+| `messages.ts` | Plugin message type definitions |
+| `helpers.ts` | `sendChunkedJson`, Lua escaping helpers |
+| `lib/` | TypeScript modules (platform tree, subscription manager, transaction logger, transfer orchestrator, metrics) |
+| `web/` | React web UI (Ant Design + Module Federation) |
+| `module/` | Lua module, save-patched into Factorio (`core/`, `export_scanners/`, `import_phases/`, `interfaces/`, `utils/`, `validators/`, `locale/`) |
+| `test/` | Message round-trip test harness |
+| `scripts/` | Build/lint helpers (Lua-invariant and webpack-cache guards) |
+| `dist/` | Build output (`dist/node/`, `dist/web/`), gitignored |
+
+For the detailed Lua module breakdown, see [IMPLEMENTATION_SUMMARY.md](IMPLEMENTATION_SUMMARY.md).
 
 ## Documentation
 
-- [QUICK_START.md](QUICK_START.md) — End-to-end transfer walkthrough
-- [TRANSFER_WORKFLOW_GUIDE.md](TRANSFER_WORKFLOW_GUIDE.md) — Transfer phases, validation, troubleshooting
-- [IMPLEMENTATION_SUMMARY.md](IMPLEMENTATION_SUMMARY.md) — Technical decisions and Factorio 2.0 compatibility
-- [static-asset-caching.md](static-asset-caching.md) — The stale web-chunk problem: our webpack config was overriding Clusterio's built-in content-hashing; restoring it is the whole fix (no core change), plus the dev-workflow tradeoff
-- [CARGO_POD_API.md](CARGO_POD_API.md) — Factorio cargo pod API reference
-- [import-platform-linux.sh](import-platform-linux.sh) — Bash import script for use inside containers
+| Doc | Covers |
+|-----|--------|
+| [QUICK_START.md](QUICK_START.md) | End-to-end platform transfer walkthrough |
+| [commands-reference.md](commands-reference.md) | All in-game / RCON console commands with usage |
+| [TRANSFER_WORKFLOW_GUIDE.md](TRANSFER_WORKFLOW_GUIDE.md) | Transfer entry points, phases, critical invariants |
+| [TRANSFER_CODE_PATHS.md](TRANSFER_CODE_PATHS.md) | End-to-end code trace of a transfer, from UI click to completion |
+| [EXPORT_IMPORT_FLOW.md](EXPORT_IMPORT_FLOW.md) | Action trace of export/import/transfer with message names, channels, and handler locations |
+| [async-processing.md](async-processing.md) | Async batch-processing architecture for large exports/imports |
+| [IMPLEMENTATION_SUMMARY.md](IMPLEMENTATION_SUMMARY.md) | Plugin architecture deep-dive and Lua module structure |
+| [FAILED_ENTITY_LOSS_TRACKING.md](FAILED_ENTITY_LOSS_TRACKING.md) | How items/fluids in entities that fail to place are tallied and attributed |
+| [static-asset-caching.md](static-asset-caching.md) | Webpack content-hashing requirement for web chunks and its dev-workflow consequence |
+| [CI_CD.md](CI_CD.md) | CI pipeline, integration-test flow, and how Factorio is provisioned in CI |
+| [GATEWAY_TRANSFER_PRD.md](GATEWAY_TRANSFER_PRD.md) | Design / product-requirements doc for in-game gateway transfer |

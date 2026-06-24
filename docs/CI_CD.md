@@ -3,6 +3,15 @@
 How continuous integration works for this project, and the non-obvious parts —
 especially how Factorio is provisioned — that you need to debug or extend it.
 
+## Table of Contents
+
+- [Pipeline overview](#pipeline-overview)
+- [Integration test flow](#integration-test-flow)
+- [Factorio in CI — why we bake it](#factorio-in-ci--why-we-bake-it)
+- [Line endings](#line-endings)
+- [Debugging a failed run](#debugging-a-failed-run)
+- [Running the integration tests locally](#running-the-integration-tests-locally)
+
 ## Pipeline overview
 
 `.github/workflows/ci.yml` runs on PRs to `main`, pushes to `main`, and `v*` tags.
@@ -17,21 +26,22 @@ Two jobs:
 ## Integration test flow
 
 1. **Build plugin** — `npm ci && npm run build` (TypeScript → `dist/node`, webpack → `dist/web`).
-2. **Build Factorio-baked host image** — see [Factorio in CI](#factorio-in-ci--why-we-bake-it).
-3. **Create `factorio-client` volume** — compose declares it `external: true`; CI has no
+2. **Lint** — `npm run lint` (TS Link-method binding guard + Lua invariant guard + webpack-cache guard).
+3. **Test** — `npm test` (message round-trip + wire contract).
+4. **Resolve & verify pinned Factorio version** — see [Version pinning](#version-pinning-single-source-of-truth).
+5. **Build Factorio-baked host image** — see [Factorio in CI](#factorio-in-ci--why-we-bake-it).
+6. **Create `factorio-client` volume** — compose declares it `external: true`; CI has no
    game client, but the volume must exist or `docker compose up` fails with
    "external volume not found".
-4. **Start cluster** — `docker compose up -d`, then wait for controller health.
-5. **Wait for instances** — wait until both instances are *created/assigned*, then drive
+7. **Start cluster** — `docker compose up -d`, then wait for controller health.
+8. **Wait for instances** — wait until both instances are *created/assigned*, then drive
    `clusterioctl instance start-all` (retried) until both reach `running`. This is the reliable
    equivalent of the seed script's per-instance start, which can race the host's asynchronous
    instance-dir creation and silently leave an instance `stopped`.
-6. **Run test suites** — `tests/integration/{entity,platform}-roundtrip/run-tests.ps1`.
-7. **Collect logs on failure** — dumps controller/host/Factorio logs (only when a step fails).
+9. **Run test suites** — `tests/integration/{entity,platform}-roundtrip/run-tests.ps1`.
+10. **Collect logs on failure** — dumps controller/host/Factorio logs (only when a step fails).
 
 ## Factorio in CI — why we bake it
-
-This is the most important thing to understand about this pipeline.
 
 The public `clusterio-docker-host` image **ships no Factorio**. Wube's EULA forbids
 redistributing the server, so the base image leaves `/opt/factorio` empty and Clusterio
@@ -83,9 +93,9 @@ if `host-2`'s `instance.json` or the Dockerfile fallback default disagree. To ch
 version, set all three to the same value (host-1 / host-2 / the Dockerfile `ARG`) — the guard
 catches any you miss. The gha cache key includes the build-arg, so a bump triggers a one-time rebuild.
 
-We keep the **multi-version** `/opt/factorio` layout (not a direct install) on purpose: if the
-baked version ever drifts from the pin, Clusterio degrades to a (slow) download rather than
-hard-failing — a safety net, not the normal path.
+The baked image uses the **multi-version** `/opt/factorio` layout (not a direct install): if the
+baked version drifts from the pin, Clusterio downloads the requested version rather than
+hard-failing on `findVersion()`.
 
 ## Line endings
 
