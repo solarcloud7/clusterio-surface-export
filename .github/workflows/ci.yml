@@ -206,6 +206,11 @@ jobs:
         run: |
           ./tests/integration/engine-invariants/run-tests.ps1
 
+      - name: Run Rollback Safety Test
+        shell: pwsh
+        run: |
+          ./tests/integration/rollback/run-tests.ps1
+
       - name: Collect logs on failure
         if: failure()
         run: |
