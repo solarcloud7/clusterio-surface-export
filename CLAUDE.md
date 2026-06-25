@@ -7,10 +7,10 @@ This file provides guidance to Claude Code (claude.ai/code) when working with th
 This project provides tools for exporting and importing Factorio Space Age platforms between Clusterio instances. It consists of:
 
 1. **Lua Module** (`docker/seed-data/external_plugins/surface_export/module/`): Save-patched Lua code that serializes/deserializes platform entities, inventories, fluids, and tiles
-2. **Clusterio Plugin** (`docker/seed-data/external_plugins/surface_export/`): JavaScript plugin for cross-instance platform transfer
+2. **Clusterio Plugin** (`docker/seed-data/external_plugins/surface_export/`): TypeScript plugin for cross-instance platform transfer
 3. **PowerShell Tools** (`tools/`): Helper scripts for deployment, import, export, and validation
 
-**Key Features (v1.0.98)**:
+**Key Features**:
 - Complete platform state export/import (entities, inventories, fluids, tiles)
 - Async processing to prevent game freezing
 - Graceful handling of mod content mismatches
@@ -152,8 +152,8 @@ The plugin uses **TypeScript** with bind-mounted source and **save patching** fo
 ./tools/list-platforms.ps1
 . ./tools/cluster-utils.ps1                       # dot-source for Send-RCON / Get-InstanceList
 
-# Import an export file (chunked via RCON):
-./tools/import-platform.ps1 -ExportFile "path/to/export.json" -InstanceName "clusterio-host-1-instance-1"
+# Import an export file: use the web UI "Import JSON" (Manual Transfer / Exports tab) or the in-game
+# /plugin-import-file <file> <name> command — both chunk automatically. There is no CLI import script.
 ```
 
 **Skills** (invoke with `/<name>`): `/cluster-logs` (find logs / trace a failure) and
@@ -275,7 +275,6 @@ tools/                    # (run `ls tools/` for the full set)
 ├── cluster-utils.ps1     # Dot-source for Send-RCON / Get-InstanceList helpers
 ├── check-cluster-logs.ps1# Dump plugin/factorio logs from where they actually live (JSON files)
 ├── transfer-platform.ps1 # Transfer a platform between instances
-├── import-platform.ps1   # Chunked import via RCON
 ├── show-cluster-status.ps1 # Cluster health/status
 └── rebuild-clusterio.ps1 # Build the SIBLING Clusterio fork + run the cluster on it (see "Clusterio Core Development")
 
@@ -353,8 +352,8 @@ remote.call("surface_export", "run_tests")
 ### In-Game Commands
 ```
 /export-platform <index>          # Export platform (async)
-/export-platform-file <index>     # Export to disk file
-/export-sync-mode <index>         # Export platform synchronously
+/export-platform-file <index>     # Export platform to a disk file (async)
+/export-sync-mode [on|off]        # Toggle single-tick (sync) processing — debug
 /list-platforms                   # List all platforms
 /list-exports                     # List exports in memory
 /list-surfaces                    # List all surfaces
@@ -363,10 +362,11 @@ remote.call("surface_export", "run_tests")
 /unlock-platform <name>           # Unlock a locked platform
 /lock-status                      # Show lock status of all platforms
 /resume-platform <name>           # Resume a locked platform
-/plugin-import-file <file> <name> # Import from file via plugin
+/plugin-import-file <file> <name> # Import from a file via plugin
 /transaction-dashboard [limit]    # Open in-game transaction history GUI (default: 25 entries)
-/step-tick <count>                # Debug: step N ticks
+/step-tick [count]                # Debug: unpause the game to allow async processing
 /test-entity <json>               # Debug: test entity import
+/test-entity-at <x> <y> <json>    # Debug: test entity import at a position
 ```
 
 ## Export/Import Workflow Notes (Current)
@@ -415,8 +415,8 @@ remote.call("surface_export", "run_tests")
 
 ### 2. Import Fails Silently
 **Symptom**: Import command returns but no platform created
-**Cause**: JSON too large for single RCON command
-**Fix**: Use `./tools/import-platform.ps1` which handles chunking
+**Cause**: JSON too large for a single RCON command
+**Fix**: Import via the web UI **Import JSON** (Manual Transfer / Exports tab) or `/plugin-import-file <file> <name>` — both chunk automatically (the instance layer runs the 4KB-chunk RCON protocol). There is no standalone import script.
 
 ### 3. Version Mismatch After Deploy
 **Symptom**: Old code still running after deploy
@@ -439,18 +439,8 @@ Platform indices are **per-force** and **1-based**. Use `/list-platforms` to fin
 **Cause**: Export from modded game, importing to instance with different mods
 **Expected**: v1.0.84+ gracefully skips unknown items with warnings. Check logs for what was skipped.
 
-### 8. Missing Tiles After Import
-**Symptom**: Entities present but no floor tiles
-**Cause**: Export created with version < 1.0.87 (before tile support)
-**Fix**: Re-export platform with v1.0.87+ to include tiles
-
-### 9. Duplicate Instances on Restart (Seeding Idempotency) — FIXED IN BASE IMAGE
-**Status**: All three fixes are now implemented in [solarcloud7/clusterio-docker](https://github.com/solarcloud7/clusterio-docker):
-1. **Idempotent `seed_instance()`**: `seed-instances.sh` checks `instance list | grep -wF` before creating — skips duplicates.
-2. **Seed-complete marker**: `.seed-complete` file on controller data volume prevents re-seeding after successful first run. Interrupted first runs re-attempt safely.
-3. **Token desync detection**: `host-entrypoint.sh` compares stored token vs shared volume token — reconfigures automatically on mismatch.
-
-`docker compose restart` is now safe (no duplicate instances). Use `docker compose down -v` only when you want a full volume wipe.
+### 9. Duplicate Instances on Restart — FIXED IN BASE IMAGE
+`docker compose restart` is safe — the base image's `seed-instances.sh` is idempotent (checks for the instance before creating, writes a `.seed-complete` marker, and reconfigures on host token desync). Use `docker compose down -v` only for a full volume wipe.
 
 ### 10. Instances Missing Space Age Mods
 **Symptom**: Platforms don't exist, Space Age entities missing, game runs in base-game-only mode
@@ -458,25 +448,11 @@ Platform indices are **per-force** and **1-based**. Use `/list-platforms` to fin
 **Fix**: Set `DEFAULT_MOD_PACK=Space Age 2.0` in `.env`. Requires `docker compose down -v` since mod pack is assigned on first run only.
 
 ### 11. Both Instances Have Same Game Port — FIXED IN BASE IMAGE
-**Status**: Fixed in [solarcloud7/clusterio-docker](https://github.com/solarcloud7/clusterio-docker) — `host-entrypoint.sh` auto-derives port range from HOST_ID (host N → `34N00-34N99`). Docker-compose port mappings must match. Requires `docker compose down -v` + image pull/rebuild if upgrading from an older base image.
+The base image's `host-entrypoint.sh` auto-derives the port range from HOST_ID (host N → `34N00-34N99`); docker-compose mappings must match. A `down -v` + image pull is needed when upgrading from an older base image.
 
 ### 12. Clusterio API Require Path (CRITICAL)
-**Symptom**: "Clusterio API not available - aborting" when running `/transfer-platform`, or `clusterio_api` is nil
-**Cause**: Lua code uses `require("__clusterio_lib__/api")` with `script.active_mods["clusterio_lib"]` guard. This is **wrong** — `clusterio_lib` is NOT a Factorio mod. Clusterio injects its API via **save-patching** under `modules/`, not as a registered mod. `script.active_mods["clusterio_lib"]` will always be `nil`.
-**Fix**: Use `require("modules/clusterio/api")` — this is the save-patched module path. See [Clusterio plugin docs](https://github.com/clusterio/clusterio/blob/master/docs/writing-plugins.md).
-```lua
--- WRONG (Factorio mod path — clusterio_lib is not a mod):
-if script.active_mods["clusterio_lib"] then
-  clusterio_api = require("__clusterio_lib__/api")
-end
-
--- CORRECT (save-patched module path):
-local clusterio_api = require("modules/clusterio/api")
-```
-**Key Concept**: Clusterio has two Lua injection mechanisms:
-- **Save-patching** (`modules/`): Plugin modules injected into saves at instance start. Use `require("modules/...")`
-- **Factorio mod** (`__clusterio_lib__`): A real Factorio mod that would need to be in the mod pack. NOT used by save-patched plugins.
-**Enforced**: the Lua guard (`npm run lint:lua`, gated in CI) fails on any `__clusterio_lib__` reference or `active_mods[...clusterio_lib...]` guard in the module tree.
+Use `require("modules/clusterio/api")` — the save-patched module path — NOT `require("__clusterio_lib__/api")`. `clusterio_lib` is not a Factorio mod (Clusterio injects its API via save-patching under `modules/`, not as a registered mod), so an `__clusterio_lib__` require or a `script.active_mods["clusterio_lib"]` guard is always nil → "Clusterio API not available - aborting".
+**Enforced**: `npm run lint:lua` (gated in CI) fails on any `__clusterio_lib__` reference or `active_mods[...clusterio_lib...]` guard in the module tree.
 
 ### 13. Debug Mode Lost After Save Reset
 **Symptom**: Integration tests fail with "Debug mode not enabled on source instance" after patch-and-reset
@@ -589,37 +565,26 @@ Plugins are the primary extension mechanism. See [Clusterio plugin docs](https:/
 
 ## Known Factorio API Limitations (Transfer Fidelity)
 
-Platform transfers preserve **100% of items** and **~100% of fluids** (after segment fixes).
+Transfers preserve **100% of items** and **~100% of fluids**. The durable Factorio 2.0 API facts behind
+this — fluid segments, the fluidbox proxy/capacity behavior, segment-ID dedup, fusion-reactor output,
+inventory resize/override, the epsilon rule — live in
+[factorio-2.0-api-notes.md](docs/factorio-2.0-api-notes.md). Read that before touching fluid or inventory
+restoration.
 
-### Item Losses — FULLY RESOLVED
-- **Assembling machine overloaded inventories (FIXED)**: Previously lost ~5 items per transfer. The `set_stack()` ceiling = `ingredient_count × quality_multiplier × crafting_speed_factor`. On import, `crafting_speed` started at base prototype speed (2.5) because beacon modules weren't yet in the beacons when crafter input inventories were restored. **Fix**: Phase 3 inventory restoration now runs in two passes — beacons first (populating their `beacon_modules`), then all other entities. After beacon modules are placed, `crafting_speed` immediately reflects the beacon bonus (e.g. 17.375 for a legendary crusher near legendary beacons with speed-module-3). The subsequent `set_stack()` calls for crafter inputs use the correct boosted cap. **Key insight**: `entity.crafting_speed` updates instantly when beacon modules are inserted — no tick delay, no power required. The beacons just need their module inventory populated. Fixed in `async-processor.lua` `finish_import_job_phase3()`.
-- **Belt item drift** (±4-8 items): Transport belts are always active and cannot be deactivated. Items physically move on belts between export scan and import validation, causing small bidirectional shifts between entity types. This is cosmetic — not actual loss, just redistribution between belt entities.
-
-### Fluid Handling (Fixed Bugs)
-Fluid losses that previously appeared as ~15% loss (19,607 units) were caused by multiple bugs, not API limitations:
-
-1. **Frozen entity ghost buffer (CRITICAL FIX)**: Factorio 2.0's fluid segment system means frozen/inactive entities are **detached from fluid segments**. Writing fluid to a frozen entity via `entity.fluidbox[i] = {...}` writes to a "ghost buffer" that is silently **wiped when the entity is unfrozen** and joins a live fluid segment. The fix: inject fluid AFTER `entity.active = true` and `entity.frozen = false`, never before. See Pitfall #17.
-
-2. **Entity handlers missing fluid extraction**: The `assembling-machine` and `furnace` entity handlers only exported inventories, not fluids. Chemical plants, oil refineries, foundries, and other crafting machines with fluidboxes had their fluid silently dropped during export. Fixed by adding `InventoryScanner.extract_fluids(entity)` to both handlers.
-
-3. **Segment injection target selection (CRITICAL)**: `get_capacity(i)` returns INCONSISTENT values depending on entity type — pipes/tanks return the FULL segment capacity (e.g., 11,800), while thrusters/machines return only the LOCAL fluidbox capacity (e.g., 1,000). Writing `fluidbox[i]=` through a thruster only sets the LOCAL buffer, not the segment total. Fix: always pick the entity with the highest `get_capacity()` as the injection target (pipes/tanks). See `fluid_restoration.lua`. **Prototype-level explanation**: Pipe prototypes define `base_area` as their primary fluid identity — the engine uses this to compute segment capacity across connected pipes. Thrusters and machines instead define specific `fluid_box` entries that act as internal buffers with fixed local capacity. This is why `get_capacity()` returns segment-total for pipes but local-only for thrusters.
-
-4. **Loss analysis undercounting (false alarm)**: After writing a segment total through a pipe, `entity.fluidbox[i]` for other entities (especially thrusters) returns 0 for several ticks while the engine redistributes fluid to internal buffers. The loss analysis was reading these values too early, showing ~19,607 phantom loss. Fix: use `get_fluid_segment_contents(i)` for segment-aware counting, deduplicating by segment ID. A first-pass temperature cache resolves entities whose local fluidbox is nil.
-
-### Remaining Fluid Losses (Handled, ~20 units)
-- **Fusion-reactor output write rejection (~20 units)**: Fusion-reactor output fluidboxes silently reject all fluid writes via API (`fluidbox[i]=` and `insert_fluid()` both fail silently). The engine generates fusion-plasma internally during simulation — it cannot be injected externally. This accounts for the previously unexplained ~20 unit loss (2 reactors × 10 units). Now tracked via `write_rejected` in `fluid_restoration.lua` and subtracted from expected counts before validation. See Pitfall #21.
-- **Fusion plasma temperature drift (cosmetic, not loss)**: At >1,000,000°C, temperatures shift continuously during simulation. Per-temperature-bucket validation reports "0/10 Bucket drift" because every temperature key changes between export and import. The total volume is preserved — only the temperature distribution shifts. The UI now uses thermal energy (V×T) validation instead of per-bucket matching. See Pitfall #23.
-
-### Fluid Redistribution (Expected, Minor)
-- **Pipe network segment redistribution**: When entities are recreated, pipe segments may have slightly different internal capacities. Fluidbox assignment silently caps at segment capacity. The game redistributes fluid across connected entities internally. This causes minor redistribution, not loss.
-- **Temperature averaging**: Multiple fluid packets at different temperatures in the same segment get averaged, which can cause minor rounding differences.
-
-### Not Fixable via API
-- `LuaInventory::resize()` only works on custom inventories from `create_inventory()`, not entity inventories
-- Entity inventory slot limits are enforced by the game engine based on recipe, quality, and research level
-- Fluidbox assignment silently caps at segment capacity with no error or return value
-- Fusion-reactor output fluidboxes silently reject all writes (`fluidbox[i]=` and `insert_fluid()`) — engine-managed output only
-- `get_fluid_segment_id(i)` returns nil for isolated machine fluidboxes (not connected to pipes) — must handle with proxy fallback
+Project invariants that still bite if changed:
+- **Beacon-before-crafter inventory order.** `crafting_speed` (which sets the `set_stack()` cap) only
+  reflects beacon bonuses once the beacon's `beacon_modules` inventory is populated, so Phase 3 restores
+  beacons first, then everything else. See [Import Phase Ordering](#import-phase-ordering-critical).
+- **Belt item drift (±4–8 items).** Belts can't be deactivated, so items move between belts during the
+  multi-tick export — cosmetic redistribution, not loss. Export uses an atomic single-tick belt scan to
+  keep the snapshot consistent (Pitfall #16).
+- **Inject fluid only after activation** (frozen entities are detached from their segment — the
+  ghost-buffer trap, Pitfall #17). **Fusion-reactor output rejects writes** (Pitfall #21). Subtract
+  rejected writes from expected counts.
+- **Entity inventory size** isn't changed by `LuaInventory.resize` (custom inventories only).
+  `LuaEntity.set_inventory_size_override` overrides **container** sizes but is a **no-op for crafter inputs**
+  at 2.0.76 (verified) — so it is *not* a lever for overloaded-crafter-input loss (already handled by the
+  beacon-first ordering). See the API notes.
 
 ### Import Phase Ordering (Critical)
 The order of post-processing steps in `complete_import_job()` is critical for correctness:
@@ -656,119 +621,29 @@ The order of post-processing steps in `complete_import_job()` is critical for co
 **Key files**: `entity-handlers.lua` (lines ~45 and ~92)
 **Lesson**: When adding a new entity handler, always check if the entity type has a fluidbox. The default handler exports both inventories and fluids — a specific handler that only exports inventories silently drops fluid data.
 
-### 19. `platform.destroy()` is a No-Op in Factorio 2.0 Space Age (CRITICAL)
-**Symptom**: After a successful transfer, the source platform still exists in-game. Transfer shows "completed" status but platform is not deleted, creating duplicates.
-**Root Cause**: `LuaSpacePlatform.destroy()` in Factorio 2.0 Space Age is silently broken — it returns without error but does NOT actually remove the platform or its surface. Similarly, destroying the hub entity (`platform.hub.destroy()`) is auto-recovered by the engine (it recreates the hub). Both APIs report success but have no effect.
-**Fix**: Use `game.delete_surface(platform.surface)` — this is the only reliable way to remove a space platform in Factorio 2.0. It fully tears down the surface, all entities, and the platform itself.
-```lua
--- BROKEN (returns ok=true but platform persists):
-platform.destroy()
-
--- BROKEN (engine auto-recreates the hub):
-platform.hub.destroy()
-
--- WORKS (fully removes platform, surface, and all entities):
-game.delete_surface(platform.surface)
-```
-**Blessed Lua helper**: route ALL platform removal through `GameUtils.delete_platform(platform)`
-(`module/utils/game-utils.lua`) — it calls `game.delete_surface` when the surface is valid and logs a
-visible warning for the surfaceless edge case (apply_starter_pack failed before the surface materialized,
-where nothing can remove it). Never call `*platform*.destroy()` directly.
-**Key files**: `instance.js` (`handleDeleteSourcePlatform`), `module/core/import-pipeline.lua` (4 import
-rollback paths now use `GameUtils.delete_platform` — they previously leaked a half-built platform on error).
-**Enforced**: the Lua guard (`npm run lint:lua`, gated in CI) fails on any `*platform*.destroy()` call
-(matches a receiver whose name contains "platform"; `pod`/`ent`/GUI `.destroy()` are not flagged).
-**Verified**: Empirically tested via RCON — `platform.destroy()` returns `ok=true, err=nil` but
-`/list-platforms` shows the platform unchanged, and on a freshly-created platform `platform.valid` stays
-`true` after the call. `game.delete_surface()` confirmed working.
+### 19. Removing a Space Platform — use `game.delete_surface`, not `platform.destroy()` (CRITICAL)
+`LuaSpacePlatform.destroy()` is a no-op at our pinned 2.0.76 — verified via RCON: `destroy()`, `destroy(0)`, and `destroy(60)` all return `ok=true` but leave the platform `valid` and present after 100+ ticks; `hub.destroy()` is auto-recovered. (The latest docs describe `destroy(ticks)` as scheduling deferred deletion — a post-2.0.76 change; see [factorio-2.0-api-notes.md](docs/factorio-2.0-api-notes.md).) Use `game.delete_surface(platform.surface)` (verified to remove the platform) — route all removal through `GameUtils.delete_platform(platform)` (`module/utils/game-utils.lua`), which handles the surfaceless edge case.
+**Enforced**: `npm run lint:lua` (gated in CI) fails on any `*platform*.destroy()` call.
+**Key files**: `instance.ts` (`handleDeleteSourcePlatform`), `module/core/import-pipeline.lua` (import rollback paths).
 
 ### 20. Export-Only Destination Must Be `nil` (Not `0`)
 **Symptom**: Export succeeds but source platform remains locked (looks stuck in UI).
 **Cause**: `Number(null) === 0` in JS. Passing `0` as destination to Lua is truthy, so export is treated as transfer and unlock is skipped.
-**Fix**: In `instance.js`, only treat `targetInstanceId` as a transfer destination if it is a positive integer (`> 0`); otherwise pass Lua `nil`.
+**Fix**: In `instance.ts`, only treat `targetInstanceId` as a transfer destination if it is a positive integer (`> 0`); otherwise pass Lua `nil`.
 
-### 21. Fusion-Reactor Output Fluidboxes Silently Reject Writes (Engine Limitation)
-**Symptom**: After transfer, fusion-reactor shows 0 fusion-plasma even though `fluidbox[i] = {...}` succeeds without error. Transaction log shows "Expected: 100, Actual: 80" with 20 units lost (2 fusion-reactors × 10 units each).
-**Root Cause**: Fusion-reactor **output** fluidboxes (where fusion-plasma is produced) are engine-managed. Both `fluidbox[i] = {...}` and `insert_fluid()` silently fail — they return without error but `get_fluid_segment_contents(i)` reads 0 afterward. The engine generates fusion-plasma internally during simulation; it cannot be injected externally via any API method.
-**Important distinction**: Fusion-reactor **input** fluidboxes (fluoroketone-cold coolant) accept writes normally. Fusion-**generator** input fluidboxes (fusion-plasma consumer) also accept writes. Only the fusion-reactor *output* side rejects.
-**Fix**: Track silently rejected writes in `fluid_restoration.lua` via `write_rejected` map. After writing, verify with `get_fluid_segment_contents(i)` — if amount is 0 when we wrote >0, record in `write_rejected`. In `async-processor.lua`, subtract `write_rejected` amounts from `expectedFluidCounts` before `LossAnalysis.run()` so validation doesn't count engine-rejected fluid as loss.
-**Key files**: `fluid_restoration.lua` (`write_rejected` tracking), `async-processor.lua` (expected count adjustment)
-**Test coverage**: Entity roundtrip test `fusion-reactor-plasma-output` with `expect.fluidWriteRejected: true` and `allowed_mismatches: ["fluids"]` — verifies the engine does reject the write. See `test-cases.json`.
+### 21. Fusion-Reactor Output Fluidboxes Reject Writes (Engine Limitation)
+Fusion-reactor **output** fluidboxes are engine-managed — `fluidbox[i]=` and `insert_fluid()` return without error but read back 0 (input fluidboxes accept writes normally). See [factorio-2.0-api-notes.md](docs/factorio-2.0-api-notes.md). The plugin tracks rejected writes in `fluid_restoration.lua` (`write_rejected`) and subtracts them from `expectedFluidCounts` before loss analysis. Covered by the `fusion-reactor-plasma-output` roundtrip test.
 
-### 22. `get_fluid_segment_id()` Returns Nil for Isolated Machine Fluidboxes
-**Symptom**: Export captures only 2 of 10 fusion entities' fluids. 8 fusion-generators show 0 fluid in export despite having 10 units each in-game.
-**Root Cause**: `fluidbox.get_fluid_segment_id(i)` returns `nil` for isolated machine fluidboxes (fusion-generators not connected to pipes). The `fluid_segment_cache` in `inventory-scanner.lua` only had branches for `seg_id and not cache[seg_id]` (new segment) and the implicit `cache[seg_id]` (dedup skip). When `seg_id` was nil, neither branch matched and the fluid was silently dropped.
-**Fix**: Added `elseif not seg_id` fallback branch that reads `fluidbox[i]` proxy directly (safe for isolated entities — no segment dedup needed since there's no segment to share).
-**Key file**: `inventory-scanner.lua` (`extract_fluids` function, cache mode)
-**Pattern**: Always handle the nil segment ID case when working with `get_fluid_segment_id()`. Isolated machines (fusion-generators, standalone assemblers without pipe connections) return nil, not 0.
-```lua
-if seg_id and not cache[seg_id] then
-  -- First entity to claim segment: read via get_fluid_segment_contents
-elseif not seg_id then
-  -- Isolated fluidbox: read proxy directly (no segment dedup needed)
-elseif cache[seg_id] then
-  -- Already claimed: skip (dedup)
-end
-```
+### 22. `get_fluid_segment_id()` Returns Nil for Isolated Fluidboxes
+`get_fluid_segment_id(i)` returns `nil` for fluidboxes not in a segment (isolated machines such as fusion-generators not connected to pipes) — see [factorio-2.0-api-notes.md](docs/factorio-2.0-api-notes.md). `inventory-scanner.lua` `extract_fluids` handles this with an `elseif not seg_id` branch that reads the `fluidbox[i]` proxy directly; without it, isolated fluids are silently dropped.
 
 ### 23. Thermal Energy Validation for High-Temperature Fluids
-**Context**: Fusion-plasma temperatures exceed 1,000,000°C and shift continuously during simulation. Per-temperature-bucket validation (e.g., `@1,066,009.6°C: 10→0`) is meaningless because temperatures drift between export and import — every bucket key is different even though total volume is preserved.
-**Solution**: For high-temp fluids, display **thermal energy (Volume × Temperature)** instead of per-bucket rows in the transaction log UI. This honestly represents what's preserved without the noise of individual bucket drift.
-**Implementation**:
-- **Lua** (`loss-analysis.lua`): `reconcile_fluids()` now computes `expectedEnergy` and `actualEnergy` (sum of `amount × temperature` across all buckets) and includes them in `highTempAggregates`.
-- **JS** (`web/utils.js`): `buildFluidInventoryRows()` replaces individual temperature bucket children with a single "Thermal (V×T)" summary row when energy data is present. Uses `formatCompactEnergy()` for readable display (e.g., `106,762,720` → `106.8M`).
-- **JSX** (`web/TransactionLogsTab.jsx`): Renders "Verified (thermal)" group status and "Thermal match"/"Thermal drift" child status tags.
-**Backward compat**: When `aggregate.expectedEnergy` is undefined (old transaction logs without energy data), falls through to existing per-bucket-drift display.
-**Key files**: `loss-analysis.lua`, `web/utils.js`, `web/TransactionLogsTab.jsx`
+Fusion-plasma temperatures (>1,000,000°C) drift continuously, so per-temperature-bucket validation is meaningless (every bucket key changes even though volume is preserved). For high-temp fluids the loss analysis and transaction-log UI validate on **thermal energy (Volume × Temperature)** instead, falling back to per-bucket for old logs without energy data.
+**Key files**: `loss-analysis.lua` (`reconcile_fluids` → `highTempAggregates`), `web/utils.js`, `web/TransactionLogsTab.jsx`.
 
 ### 24. LuaProfiler Serialization — LocalisedString Snapshots (CRITICAL)
-**Symptom**: Performance timing displays show "userdata: 0x..." instead of readable times like "1.234 ms". Or transaction history loses all profiler values after save/load.
-**Root Cause**: `LuaProfiler` objects are **not serializable** and **cannot be read as numbers** in Lua. Three critical facts:
-1. **`tostring(profiler)` is broken**: Returns `"userdata: 0x12345678"` (memory address), NOT the time value.
-2. **Cannot store in `storage`**: Profiler objects crash on save — they must stay in module-local tables.
-3. **LocalisedString is the ONLY serializable form**: Profiler objects can only be rendered when embedded in a LocalisedString array.
-
-**The ONLY way to persist profiler values across save/load**:
-```lua
--- WRONG (produces "userdata: 0x..." garbage):
-local msg = "Phase: " .. tostring(profiler_obj)
-
--- WRONG (crashes on save — profilers are not serializable):
-storage.history = { timing = profiler_obj }
-
--- CORRECT (LocalisedString array — serializable + renders correctly in GUI):
-local snapshot = {"", "Phase: ", profiler_obj}
-game.print(snapshot)  -- Displays "Phase: 1.234 ms"
-storage.history = { timing = snapshot }  -- Safe to save
-```
-
-**Why LocalisedString works**:
-- When a profiler is embedded in a LocalisedString array `{"", profiler}`, Factorio's engine "bakes" the current time value into the string during serialization.
-- After reload, GUI labels assigned that LocalisedString still display the correct millisecond value.
-- **This is render-only**: You cannot perform math on the value or send it via JSON. It's for display purposes only.
-
-**Implementation pattern** (transaction history dashboard):
-1. **During job processing**: Keep profilers in module-local RAM table (`PhaseProfiler` uses `local active = {}`).
-2. **At job completion**: Create LocalisedString snapshots BEFORE `PhaseProfiler.discard()`:
-   ```lua
-   local snapshot = {}
-   for phase_name, profiler_obj in pairs(perf) do
-     snapshot[phase_name] = {"", profiler_obj}  -- Serializable
-   end
-   storage.transaction_history[job_id] = { phases = snapshot }
-   ```
-3. **In GUI**: Assign snapshots directly to label captions:
-   ```lua
-   label.caption = entry.phases.validation  -- Shows "1.234 ms"
-   ```
-
-**Key files**: 
-- `utils/phase-profiler.lua` (module-local profiler storage)
-- `utils/transaction-history.lua` (LocalisedString snapshot storage)
-- `interfaces/gui/transaction-dashboard.lua` (GUI display)
-- `core/import-completion.lua`, `core/export-pipeline.lua` (snapshot recording)
-
-**Verification**: See Factorio API docs for [LuaProfiler](https://lua-api.factorio.com/latest/classes/LuaProfiler.html): "They can be used anywhere a LocalisedString is used, except for LuaGuiElement::add's LocalisedString arguments."
+`LuaProfiler` cannot be serialized and `tostring()` returns a memory address, not a time — see [factorio-2.0-api-notes.md](docs/factorio-2.0-api-notes.md). To persist timing across save/load, embed the profiler in a LocalisedString array (`{"", profiler}`); the engine bakes the value in and a GUI label renders it. Keep live profilers in module-local tables (never `storage`), and snapshot them to LocalisedStrings at job completion. Display-only — no math, no JSON.
+**Key files**: `utils/phase-profiler.lua`, `utils/transaction-history.lua`, `interfaces/gui/transaction-dashboard.lua`, `core/import-completion.lua`, `core/export-pipeline.lua`.
 
 ### 25. LocalisedString 20-Parameter Limit Can Crash on_tick (CRITICAL)
 **Symptom**: Instance shuts down with code 255 during import completion/validation, RCON drops with `Connection closed`, and host logs show `Factorio server unexpectedly shut down`.
@@ -848,32 +723,9 @@ Then **hard-refresh** the browser (the 404 is cached). After a `down -v`, fresh 
 
 ## Factorio 2.0 Fluid API & Simulation Behavior
 
-**Topic**: Fluidbox Persistence, Segment Logic, and State Validation.
-**Context**: Factorio Space Age (2.0) API; interacting with entities (Thrusters) during state changes (`active=true`, `paused=false`).
-
-### Critical Knowledge
-
-1. **The Proxy Problem**: In Factorio 2.0, `entity.fluidbox[i]` is a proxy window, not a container. When an entity is activated or a platform is unpaused, the entity's local fluidbox buffer may read `0` or `nil` for one or more ticks while it synchronizes with the backend Fluid Segment.
-
-2. **The Solution**: Do not read `entity.fluidbox[i]` for validation immediately after a state change. Instead, use `entity.fluidbox.get_fluid_segment_contents(i)`. This queries the C++ segment directly, bypassing the entity's visual/local update lag.
-
-3. **Deduplication**: When summing fluid contents across a network (e.g., 9 thrusters), you must deduplicate by the Fluid Segment ID. Summing `get_fluid_segment_contents` for every entity will multiply the result by the number of entities.
-
-4. **Floating Point Epsilon**: Fluid operations at extreme temperatures (e.g., Fusion Plasma > 1,000,000°C) or large volumes suffer from floating-point drift. Validation logic must use an epsilon (tolerance) check (e.g., `diff < 0.01%`) rather than strict equality, or false "loss" positives will occur. **Concrete example**: 10 plasma packets at temperatures like 1065464.9°C and 1063417.1°C — the engine may merge 2 packets into neighbors via weighted-average temperature, shifting the surviving packets' temperature by an undetectable fraction. Validation keyed on exact `fluid_name@temp` then reports `0` for the originals.
-
-5. **Capacity Clamping**: Writing to `fluidbox[i]` writes to the entire segment. If the write amount exceeds the physical capacity of the connected segment (pipes + machines), the excess is silently voided. Always check `entity.fluidbox.get_capacity(i)` (which returns segment total for pipes/tanks) before bulk insertion. **Caveat**: `get_capacity(i)` returns LOCAL capacity for thrusters/machines but SEGMENT capacity for pipes. This is because pipe prototypes define `base_area` (used to compute segment capacity) while thrusters/machines define `fluid_box` entries with fixed local capacity. Always pick the entity with the highest capacity as the injection target.
-
-### Implementation Pattern
-
-```lua
--- BAD: Reads local proxy (0) before sync
-entity.active = true
-local amount = entity.fluidbox[1].amount -- Returns 0 or incorrect value
-
--- GOOD: Reads simulation truth
-entity.active = true
-local content = entity.fluidbox.get_fluid_segment_contents(1) -- Returns actual segment total
-```
+Moved to [factorio-2.0-api-notes.md](docs/factorio-2.0-api-notes.md) — the fluid-segment model, the
+fluidbox proxy/capacity behavior, segment-ID dedup, the floating-point epsilon rule, and the
+inject-after-activation requirement. Read it before touching fluid scanning or restoration.
 
 ## Additional Documentation
 
@@ -885,8 +737,9 @@ local content = entity.fluidbox.get_fluid_segment_contents(1) -- Returns actual 
 - [docs/EXPORT_IMPORT_FLOW.md](docs/EXPORT_IMPORT_FLOW.md) - Complete action trace with debugging
 - [docs/IMPLEMENTATION_SUMMARY.md](docs/IMPLEMENTATION_SUMMARY.md) - Module structure and design decisions
 - [docs/async-processing.md](docs/async-processing.md) - Async batch processing architecture
-- [docs/CARGO_POD_API.md](docs/CARGO_POD_API.md) - Factorio cargo pod API reference
-- [docs/REORGANIZATION_PLAN.md](docs/REORGANIZATION_PLAN.md) - Planned code structure improvements
+- [docs/TRANSFER_CODE_PATHS.md](docs/TRANSFER_CODE_PATHS.md) - Transfer feature mapped to its code paths
+- [docs/factorio-2.0-api-notes.md](docs/factorio-2.0-api-notes.md) - Verified Factorio 2.0 API & fluid-simulation facts
+- [docs/FAILED_ENTITY_LOSS_TRACKING.md](docs/FAILED_ENTITY_LOSS_TRACKING.md) - How losses from entities that fail to place are attributed
 
 ## Debugging Tips
 
@@ -942,8 +795,6 @@ docker exec surface-export-host-1 sh -c 'tail -100 /clusterio/data/instances/clu
 
 ### Check Async Job Queue
 ```powershell
-rc11 "/async-status"
-# Or detailed:
 rc11 "/sc rcon.print(serpent.block(storage.async_jobs or {}))"
 ```
 

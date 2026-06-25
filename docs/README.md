@@ -178,6 +178,7 @@ For the detailed Lua module breakdown, see [IMPLEMENTATION_SUMMARY.md](IMPLEMENT
 | [async-processing.md](async-processing.md) | Async batch-processing architecture for large exports/imports |
 | [IMPLEMENTATION_SUMMARY.md](IMPLEMENTATION_SUMMARY.md) | Plugin architecture deep-dive and Lua module structure |
 | [FAILED_ENTITY_LOSS_TRACKING.md](FAILED_ENTITY_LOSS_TRACKING.md) | How items/fluids in entities that fail to place are tallied and attributed |
+| [factorio-2.0-api-notes.md](factorio-2.0-api-notes.md) | Verified Factorio 2.0 API & fluid-simulation facts (fluid segments, profiler/LocalisedString, inventory/platform APIs) |
 | [static-asset-caching.md](static-asset-caching.md) | Webpack content-hashing requirement for web chunks and its dev-workflow consequence |
 | [CI_CD.md](CI_CD.md) | CI pipeline, integration-test flow, and how Factorio is provisioned in CI |
 | [GATEWAY_TRANSFER_PRD.md](GATEWAY_TRANSFER_PRD.md) | Design / product-requirements doc for in-game gateway transfer |
