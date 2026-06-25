@@ -189,6 +189,11 @@ jobs:
           sleep 10
           $CTL instance list
 
+      - name: Run Engine Invariant Tests
+        shell: pwsh
+        run: |
+          ./tests/integration/engine-invariants/run-tests.ps1
+
       - name: Run Entity Roundtrip Tests
         shell: pwsh
         run: |
