@@ -160,6 +160,36 @@ function Get-PlatformIndex {
 
 <#
 .SYNOPSIS
+    Find which host (1 or 2) currently holds a platform by name.
+
+.DESCRIPTION
+    Returns the host number, or $null if the platform isn't on either host. Lets the suites work
+    whether the source platform is seeded on host-1 (CI) or host-2 (dev cluster) without a hardcoded
+    default that fails on the wrong cluster layout.
+
+.PARAMETER PlatformName
+    Name of the platform to locate.
+
+.PARAMETER Hosts
+    Host numbers to check (default: 1, 2).
+#>
+function Resolve-PlatformHost {
+    param(
+        [Parameter(Mandatory=$true)]
+        [string]$PlatformName,
+        [int[]]$Hosts = @(1, 2)
+    )
+
+    foreach ($h in $Hosts) {
+        $instance = "clusterio-host-$h-instance-1"
+        $idx = Get-PlatformIndex -Instance $instance -PlatformName $PlatformName
+        if ($idx) { return $h }
+    }
+    return $null
+}
+
+<#
+.SYNOPSIS
     List all platforms on an instance.
 
 .PARAMETER Instance
@@ -202,8 +232,9 @@ function Remove-Platform {
         return $false
     }
     
-    # Delete the platform (use destroy(0) for immediate deletion at end of tick)
-    $luaCode = "local p = game.forces.player.platforms[$index] if p and p.valid then p.destroy(0) rcon.print('deleted') else rcon.print('not_found') end"
+    # platform.destroy() is a no-op at our pinned Factorio (Pitfall #19) — game.delete_surface is
+    # the only reliable removal (deferred to end of tick).
+    $luaCode = "local p = game.forces.player.platforms[$index] if p and p.valid and p.surface and p.surface.valid then game.delete_surface(p.surface) rcon.print('deleted') else rcon.print('not_found') end"
     $result = Invoke-Lua -Instance $Instance -Code $luaCode
     
     return $result -eq "deleted"
@@ -249,11 +280,13 @@ for i, p in pairs(game.forces.player.platforms) do
 end
 -- Sort by name descending (newest first based on timestamp in name)
 table.sort(platforms, function(a, b) return a.name > b.name end)
--- Delete all except the first $KeepCount (use destroy(0) for immediate deletion at end of tick)
+-- Delete all except the first $KeepCount. platform.destroy() is a no-op at our pinned Factorio
+-- (Pitfall #19) — use game.delete_surface (deferred to end of tick).
 local deleted = 0
 for i = $($KeepCount + 1), #platforms do
-    if platforms[i] and platforms[i].valid then
-        platforms[i].destroy(0)
+    local p = platforms[i]
+    if p and p.valid and p.surface and p.surface.valid then
+        game.delete_surface(p.surface)
         deleted = deleted + 1
     end
 end
@@ -312,11 +345,12 @@ rcon.print(helpers.table_to_json(surfaces))
     Delete test surfaces matching a name pattern.
 
 .DESCRIPTION
-    Uses the /delete-surfaces command to schedule deletion of all platform surfaces
-    whose names contain the specified pattern. Only works on space platform surfaces.
-    
+    Deletes all platform surfaces whose names contain the specified pattern, via
+    game.delete_surface (platform.destroy() is a no-op at our pinned Factorio — Pitfall #19).
+    Only affects space platform surfaces.
+
     After calling this function, you must step at least one tick for the deletions
-    to take effect (the platforms are scheduled for deletion at end of current tick).
+    to take effect (game.delete_surface is deferred to end of current tick).
 
 .PARAMETER Instance
     Instance name or ID
@@ -339,36 +373,34 @@ function Remove-TestSurfaces {
         [string]$TestName
     )
     
-    # First get matching surfaces so we can report what was deleted
-    $surfaces = Get-Surfaces -Instance $Instance
-    $matching = $surfaces | Where-Object { $_.is_platform -and $_.name -like "*$TestName*" }
-    
-    if ($matching.Count -eq 0) {
+    # Match on PLATFORM name — test surfaces are named by platform.name (e.g. "entity-test-<ts>"),
+    # while surface.name is "platform-N", so the old surface.name match never hit. Delete via
+    # game.delete_surface (platform.destroy() is a no-op — Pitfall #19). Never touch real fixtures.
+    $luaPat = $TestName -replace "'", ""
+    $lua = @"
+local protected = {['test']=true, ['spikedoom08']=true, ['ptB']=true}
+local deleted = 0
+local names = {}
+for _, s in pairs(game.surfaces) do
+    local p = s.platform
+    if p and p.valid and not protected[p.name] and string.find(p.name, '$luaPat', 1, true) then
+        table.insert(names, p.name)
+        if s.valid then game.delete_surface(s); deleted = deleted + 1 end
+    end
+end
+rcon.print(helpers.table_to_json({deleted = deleted, failed = 0, names = names}))
+"@
+    $result = Invoke-Lua -Instance $Instance -Code $lua
+    try {
+        $parsed = $result | ConvertFrom-Json
         return @{
-            deleted = 0
-            failed = 0
-            names = @()
+            deleted = $parsed.deleted
+            failed = $parsed.failed
+            names = @($parsed.names)
         }
-    }
-    
-    # Use the /delete-surfaces command
-    $output = Send-Rcon -Instance $Instance -Command "/delete-surfaces $TestName"
-    
-    # Parse the result to get counts
-    $deleted = 0
-    $failed = 0
-    
-    foreach ($line in $output) {
-        if ($line -match 'Scheduled (\d+) for deletion, (\d+) failed') {
-            $deleted = [int]$Matches[1]
-            $failed = [int]$Matches[2]
-        }
-    }
-    
-    return @{
-        deleted = $deleted
-        failed = $failed
-        names = @($matching | ForEach-Object { $_.name })
+    } catch {
+        Write-Warning "Failed to parse delete result: $result"
+        return @{ deleted = 0; failed = 0; names = @() }
     }
 }
 
@@ -418,14 +450,17 @@ for _, name in ipairs(names_to_delete) do
     name_set[name] = true
 end
 
+local protected = {['test']=true, ['spikedoom08']=true, ['ptB']=true}
 local deleted = 0
 local failed = 0
 
 for _, surface in pairs(game.surfaces) do
-    if name_set[surface.name] and surface.platform then
-        local platform = surface.platform
-        if platform and platform.valid then
-            platform.destroy(0)
+    -- Callers may pass either the surface name ("platform-N") or the platform name; match both.
+    local pname = surface.platform and surface.platform.name
+    if surface.platform and not protected[pname] and (name_set[surface.name] or (pname and name_set[pname])) then
+        -- platform.destroy() is a no-op at our pinned Factorio (Pitfall #19); delete the surface.
+        if surface.valid then
+            game.delete_surface(surface)
             deleted = deleted + 1
         else
             failed = failed + 1
@@ -1097,6 +1132,7 @@ Export-ModuleMember -Function @(
     # Platform Management
     'New-TestPlatform',
     'Get-PlatformIndex',
+    'Resolve-PlatformHost',
     'Get-Platforms',
     'Remove-Platform',
     'Clear-TestPlatforms',

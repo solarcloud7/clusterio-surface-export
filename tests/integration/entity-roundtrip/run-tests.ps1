@@ -46,9 +46,17 @@ $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $TestSuite = Get-TestCases -Path (Join-Path $ScriptDir "test-cases.json")
 
 # Apply defaults
-if (-not $SourcePlatform) { 
+if (-not $SourcePlatform) {
     $SourcePlatform = Get-SafeProperty $TestSuite "sourcePlatform"
     if (-not $SourcePlatform) { $SourcePlatform = "test" }
+}
+
+# Auto-detect which instance actually holds the source platform (the default may be wrong on the dev
+# cluster, where 'test' lives on host-2 rather than host-1).
+$detectedHost = Resolve-PlatformHost -PlatformName $SourcePlatform
+if ($detectedHost -and $detectedHost -ne $InstanceId) {
+    Write-Host "  Source '$SourcePlatform' is on host-$detectedHost (default was instance $InstanceId) - switching." -ForegroundColor Yellow
+    $InstanceId = $detectedHost
 }
 
 # Instance configuration

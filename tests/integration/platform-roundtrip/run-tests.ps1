@@ -59,6 +59,15 @@ if (-not $SourcePlatform) { $SourcePlatform = $TestSuite.sourcePlatform }
 if ($SourceHost -eq 0) { $SourceHost = $TestSuite.defaultSourceHost }
 if ($DestHost -eq 0) { $DestHost = $TestSuite.defaultDestHost }
 
+# Auto-detect the host that actually holds the source platform (CI seeds 'test' on host-1, the dev
+# cluster on host-2). Without this the suite fails out-of-the-box on whichever layout isn't the default.
+$detectedHost = Resolve-PlatformHost -PlatformName $SourcePlatform
+if ($detectedHost -and $detectedHost -ne $SourceHost) {
+    Write-Host "  Source '$SourcePlatform' is on host-$detectedHost (default was host-$SourceHost) - switching." -ForegroundColor Yellow
+    $SourceHost = $detectedHost
+    $DestHost = if ($SourceHost -eq 1) { 2 } else { 1 }
+}
+
 # Instance configuration
 $sourceInstance = "clusterio-host-$SourceHost-instance-1"
 $destInstance = "clusterio-host-$DestHost-instance-1"
