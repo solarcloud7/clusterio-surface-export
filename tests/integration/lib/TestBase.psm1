@@ -17,6 +17,10 @@
 $script:DefaultController = "surface-export-controller"
 $script:ControlConfig = "/clusterio/tokens/config-control.json"
 
+# Real platforms that must NEVER be deleted by any cleanup/sweep — the single source of truth,
+# consumed by Remove-PlatformSurfacesWhere (and thus by every deletion path here and in the sweep tool).
+$script:ProtectedFixtures = @('test', 'spikedoom08', 'ptB')
+
 #region RCON Communication
 
 <#
@@ -207,136 +211,58 @@ function Get-Platforms {
 
 <#
 .SYNOPSIS
-    Delete a platform by name.
+    Delete platform surfaces matching a Lua predicate, via game.delete_surface — the single source of
+    truth for removing test/throwaway platforms.
+
+.DESCRIPTION
+    Protected fixtures ($script:ProtectedFixtures) are never deleted. platform.destroy() is a no-op at
+    our pinned Factorio (Pitfall #19), so removal goes through game.delete_surface, which is deferred to
+    end of tick — step a tick afterward to finalize.
 
 .PARAMETER Instance
-    Instance name or ID
+    Instance name or ID.
 
-.PARAMETER PlatformName
-    Name of the platform to delete
+.PARAMETER PredicateLua
+    A Lua boolean expression over `p` (the LuaSpacePlatform) and `s` (its surface) selecting which
+    platforms to remove, e.g. "string.find(p.name, 'entity-test-', 1, true)".
+
+.PARAMETER WhatIf
+    List matching platforms without deleting them.
 
 .OUTPUTS
-    Boolean indicating success
+    Hashtable @{ deleted = <int>; names = <string[]> }
 #>
-function Remove-Platform {
+function Remove-PlatformSurfacesWhere {
     param(
         [Parameter(Mandatory=$true)]
         [string]$Instance,
         [Parameter(Mandatory=$true)]
-        [string]$PlatformName
+        [string]$PredicateLua,
+        [switch]$WhatIf
     )
-    
-    # Find platform index first
-    $index = Get-PlatformIndex -Instance $Instance -PlatformName $PlatformName
-    if (-not $index) {
-        return $false
-    }
-    
-    # platform.destroy() is a no-op at our pinned Factorio (Pitfall #19) — game.delete_surface is
-    # the only reliable removal (deferred to end of tick).
-    $luaCode = "local p = game.forces.player.platforms[$index] if p and p.valid and p.surface and p.surface.valid then game.delete_surface(p.surface) rcon.print('deleted') else rcon.print('not_found') end"
-    $result = Invoke-Lua -Instance $Instance -Code $luaCode
-    
-    return $result -eq "deleted"
-}
 
-<#
-.SYNOPSIS
-    Clean up old test platforms matching a prefix.
-
-.PARAMETER Instance
-    Instance name or ID
-
-.PARAMETER Prefix
-    Platform name prefix to match (e.g., "entity-test-" or "integration-test-")
-
-.PARAMETER KeepCount
-    Number of most recent platforms to keep (default: 0 = delete all)
-
-.OUTPUTS
-    Number of platforms deleted
-#>
-function Clear-TestPlatforms {
-    param(
-        [Parameter(Mandatory=$true)]
-        [string]$Instance,
-        [Parameter(Mandatory=$true)]
-        [string]$Prefix,
-        [int]$KeepCount = 0
-    )
-    
-    # Get all platforms matching prefix
-    # Escape special Lua pattern characters (especially - which is common in prefixes)
-    $luaPrefix = $Prefix -replace '([-%.%+%*%?%[%]%^%$%(%)%%])', '%$1'
-    
-    # Get matching platforms, sorted by name descending (newest first)
-    # Then delete all except KeepCount newest in a single Lua call
-    $luaCode = @"
-local platforms = {}
-for i, p in pairs(game.forces.player.platforms) do
-    if p.name:find('^$luaPrefix') then
-        table.insert(platforms, p)
-    end
-end
--- Sort by name descending (newest first based on timestamp in name)
-table.sort(platforms, function(a, b) return a.name > b.name end)
--- Delete all except the first $KeepCount. platform.destroy() is a no-op at our pinned Factorio
--- (Pitfall #19) — use game.delete_surface (deferred to end of tick).
+    $protectedLua = ($script:ProtectedFixtures | ForEach-Object { "['" + $_ + "']=true" }) -join ", "
+    $deleteStmt = if ($WhatIf) { "" } else { "if s.valid then game.delete_surface(s); deleted = deleted + 1 end" }
+    $lua = @"
+local protected = {$protectedLua}
 local deleted = 0
-for i = $($KeepCount + 1), #platforms do
-    local p = platforms[i]
-    if p and p.valid and p.surface and p.surface.valid then
-        game.delete_surface(p.surface)
-        deleted = deleted + 1
+local names = {}
+for _, s in pairs(game.surfaces) do
+    local p = s.platform
+    if p and p.valid and not protected[p.name] and ($PredicateLua) then
+        table.insert(names, p.name)
+        $deleteStmt
     end
 end
-rcon.print(deleted)
+rcon.print(helpers.table_to_json({deleted = deleted, names = names}))
 "@
-    
-    $result = Invoke-Lua -Instance $Instance -Code $luaCode
-    
-    # Result is the count of deleted platforms
-    if ($result -match '^\d+$') {
-        return [int]$result
-    }
-    return 0
-}
-
-<#
-.SYNOPSIS
-    Get all surfaces from the game.
-
-.PARAMETER Instance
-    Instance name or ID
-
-.OUTPUTS
-    Array of surface objects with index, name, and platform properties
-#>
-function Get-Surfaces {
-    param(
-        [Parameter(Mandatory=$true)]
-        [string]$Instance
-    )
-    
-    $luaCode = @"
-local surfaces = {}
-for _, surface in pairs(game.surfaces) do
-    table.insert(surfaces, {
-        index = surface.index,
-        name = surface.name,
-        is_platform = surface.platform ~= nil
-    })
-end
-rcon.print(helpers.table_to_json(surfaces))
-"@
-    
-    $result = Invoke-Lua -Instance $Instance -Code $luaCode
-    
+    $result = Invoke-Lua -Instance $Instance -Code $lua
     try {
-        return $result | ConvertFrom-Json
+        $parsed = $result | ConvertFrom-Json
+        return @{ deleted = [int]$parsed.deleted; names = @($parsed.names) }
     } catch {
-        Write-Warning "Failed to parse surfaces JSON: $result"
-        return @()
+        Write-Warning "Failed to parse delete result: $result"
+        return @{ deleted = 0; names = @() }
     }
 }
 
@@ -373,119 +299,10 @@ function Remove-TestSurfaces {
         [string]$TestName
     )
     
-    # Match on PLATFORM name — test surfaces are named by platform.name (e.g. "entity-test-<ts>"),
-    # while surface.name is "platform-N", so the old surface.name match never hit. Delete via
-    # game.delete_surface (platform.destroy() is a no-op — Pitfall #19). Never touch real fixtures.
+    # Test surfaces are named by platform.name (e.g. "entity-test-<ts>"); match it as a substring.
     $luaPat = $TestName -replace "'", ""
-    $lua = @"
-local protected = {['test']=true, ['spikedoom08']=true, ['ptB']=true}
-local deleted = 0
-local names = {}
-for _, s in pairs(game.surfaces) do
-    local p = s.platform
-    if p and p.valid and not protected[p.name] and string.find(p.name, '$luaPat', 1, true) then
-        table.insert(names, p.name)
-        if s.valid then game.delete_surface(s); deleted = deleted + 1 end
-    end
-end
-rcon.print(helpers.table_to_json({deleted = deleted, failed = 0, names = names}))
-"@
-    $result = Invoke-Lua -Instance $Instance -Code $lua
-    try {
-        $parsed = $result | ConvertFrom-Json
-        return @{
-            deleted = $parsed.deleted
-            failed = $parsed.failed
-            names = @($parsed.names)
-        }
-    } catch {
-        Write-Warning "Failed to parse delete result: $result"
-        return @{ deleted = 0; failed = 0; names = @() }
-    }
-}
-
-<#
-.SYNOPSIS
-    Delete multiple surfaces by their exact names.
-
-.DESCRIPTION
-    Deletes specific surfaces by name. Only works on space platform surfaces.
-    
-    After calling this function, you must step at least one tick for the deletions
-    to take effect.
-
-.PARAMETER Instance
-    Instance name or ID
-
-.PARAMETER SurfaceNames
-    Array of surface names to delete
-
-.OUTPUTS
-    Hashtable with:
-    - deleted: Number of surfaces scheduled for deletion
-    - failed: Number that failed to delete
-#>
-function Remove-SurfacesByName {
-    param(
-        [Parameter(Mandatory=$true)]
-        [string]$Instance,
-        [Parameter(Mandatory=$true)]
-        [string[]]$SurfaceNames
-    )
-    
-    if ($SurfaceNames.Count -eq 0) {
-        return @{
-            deleted = 0
-            failed = 0
-        }
-    }
-    
-    # Build a Lua table of names to delete
-    $namesJson = ($SurfaceNames | ForEach-Object { "`"$_`"" }) -join ","
-    
-    $luaCode = @"
-local names_to_delete = {$namesJson}
-local name_set = {}
-for _, name in ipairs(names_to_delete) do
-    name_set[name] = true
-end
-
-local protected = {['test']=true, ['spikedoom08']=true, ['ptB']=true}
-local deleted = 0
-local failed = 0
-
-for _, surface in pairs(game.surfaces) do
-    -- Callers may pass either the surface name ("platform-N") or the platform name; match both.
-    local pname = surface.platform and surface.platform.name
-    if surface.platform and not protected[pname] and (name_set[surface.name] or (pname and name_set[pname])) then
-        -- platform.destroy() is a no-op at our pinned Factorio (Pitfall #19); delete the surface.
-        if surface.valid then
-            game.delete_surface(surface)
-            deleted = deleted + 1
-        else
-            failed = failed + 1
-        end
-    end
-end
-
-rcon.print(helpers.table_to_json({deleted = deleted, failed = failed}))
-"@
-    
-    $result = Invoke-Lua -Instance $Instance -Code $luaCode
-    
-    try {
-        $parsed = $result | ConvertFrom-Json
-        return @{
-            deleted = $parsed.deleted
-            failed = $parsed.failed
-        }
-    } catch {
-        Write-Warning "Failed to parse delete result: $result"
-        return @{
-            deleted = 0
-            failed = $SurfaceNames.Count
-        }
-    }
+    $res = Remove-PlatformSurfacesWhere -Instance $Instance -PredicateLua "string.find(p.name, '$luaPat', 1, true)"
+    return @{ deleted = $res.deleted; failed = 0; names = $res.names }
 }
 
 <#
@@ -1134,13 +951,9 @@ Export-ModuleMember -Function @(
     'Get-PlatformIndex',
     'Resolve-PlatformHost',
     'Get-Platforms',
-    'Remove-Platform',
-    'Clear-TestPlatforms',
-    
+    'Remove-PlatformSurfacesWhere',
     # Surface Management
-    'Get-Surfaces',
     'Remove-TestSurfaces',
-    'Remove-SurfacesByName',
     'New-IsolatedTestSurface',
     
     # Tick Control
