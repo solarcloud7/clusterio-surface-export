@@ -305,36 +305,6 @@
         }
       },
       {
-        "label": "Logs: Import & Loss Analysis",
-        "type": "shell",
-        "command": ".\\tools\\check-import-logs.ps1",
-        "args": [
-          "-Instance",
-          "${input:instanceNumber}",
-          "-Pattern",
-          "${input:logPattern}"
-        ],
-        "problemMatcher": [],
-        "presentation": {
-          "reveal": "always",
-          "panel": "shared"
-        }
-      },
-      {
-        "label": "Inspect: Live Fluid State",
-        "type": "shell",
-        "command": ".\\tools\\inspect-fluids.ps1",
-        "args": [
-          "-Instance",
-          "${input:instanceNumber}"
-        ],
-        "problemMatcher": [],
-        "presentation": {
-          "reveal": "always",
-          "panel": "shared"
-        }
-      },
-      {
         "label": "Test: Entity Roundtrip",
         "type": "shell",
         "command": ".\\tests\\integration\\entity-roundtrip\\run-tests.ps1",
@@ -369,20 +339,6 @@
         "type": "promptString",
         "description": "Platform index (use 'List Platforms' task to find it)",
         "default": "2"
-      },
-      {
-        "id": "instanceNumber",
-        "type": "pickString",
-        "description": "Which instance?",
-        "options": ["1", "2"],
-        "default": "2"
-      },
-      {
-        "id": "logPattern",
-        "type": "pickString",
-        "description": "Log filter",
-        "options": ["all", "fluids", "loss", "import", "transfer"],
-        "default": "all"
       }
     ]
   }
