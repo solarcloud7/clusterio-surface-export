@@ -339,20 +339,6 @@
         "type": "promptString",
         "description": "Platform index (use 'List Platforms' task to find it)",
         "default": "2"
-      },
-      {
-        "id": "instanceNumber",
-        "type": "pickString",
-        "description": "Which instance?",
-        "options": ["1", "2"],
-        "default": "2"
-      },
-      {
-        "id": "logPattern",
-        "type": "pickString",
-        "description": "Log filter",
-        "options": ["all", "fluids", "loss", "import", "transfer"],
-        "default": "all"
       }
     ]
   }
