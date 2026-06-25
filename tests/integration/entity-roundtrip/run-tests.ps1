@@ -51,12 +51,14 @@ if (-not $SourcePlatform) {
     if (-not $SourcePlatform) { $SourcePlatform = "test" }
 }
 
-# Auto-detect which instance actually holds the source platform (the default may be wrong on the dev
-# cluster, where 'test' lives on host-2 rather than host-1).
-$detectedHost = Resolve-PlatformHost -PlatformName $SourcePlatform
-if ($detectedHost -and $detectedHost -ne $InstanceId) {
-    Write-Host "  Source '$SourcePlatform' is on host-$detectedHost (default was instance $InstanceId) - switching." -ForegroundColor Yellow
-    $InstanceId = $detectedHost
+# Auto-detect which instance holds the source platform, but ONLY when the caller did NOT explicitly
+# pass -InstanceId — an explicit host choice must be honored even if the platform also exists elsewhere.
+if (-not $PSBoundParameters.ContainsKey('InstanceId')) {
+    $detectedHost = Resolve-PlatformHost -PlatformName $SourcePlatform
+    if ($detectedHost -and $detectedHost -ne $InstanceId) {
+        Write-Host "  Source '$SourcePlatform' is on host-$detectedHost (default was instance $InstanceId) - switching." -ForegroundColor Yellow
+        $InstanceId = $detectedHost
+    }
 }
 
 # Instance configuration

@@ -111,7 +111,9 @@ function TestRunner.run_tests(test_suite_json, options)
     if test_surface and entity_data.name and prototypes.entity[entity_data.name] then
       placed = test_surface.find_non_colliding_position(entity_data.name, anchor, 128, 1)
     end
-    entity_data.position = placed or { x = current_x, y = current_y }
+    -- Fallback (find_non_colliding_position returned nil): keep the increment pattern but ANCHOR it
+    -- to the platform foundation, not absolute coords (which may be off a map-offset clone platform).
+    entity_data.position = placed or { x = anchor.x + (current_x - base_x), y = anchor.y + (current_y - base_y) }
 
     -- Run the test on the isolated surface (not player 1's surface).
     local run_ok, result = pcall(function()

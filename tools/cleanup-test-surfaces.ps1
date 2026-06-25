@@ -27,7 +27,9 @@
 [CmdletBinding()]
 param(
     [int[]]$Hosts = @(1, 2),
-    [string[]]$Prefixes = @('reprotest_', 'integration-test-', 'entity-test-', 'test-', 'destroyprobe', 'mytestclone', 'mytestname'),
+    # NB: deliberately NOT 'test-' — that would also match a real user platform like 'test-mainbase'
+    # (the protected set only exact-matches 'test'). Suite clones use the specific prefixes below.
+    [string[]]$Prefixes = @('reprotest_', 'integration-test-', 'entity-test-', 'engineinv-', 'destroyprobe', 'mytestclone', 'mytestname'),
     [switch]$DryRun
 )
 
