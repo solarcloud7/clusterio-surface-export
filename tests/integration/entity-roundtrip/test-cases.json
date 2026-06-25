@@ -496,6 +496,40 @@
         "success": true,
         "verifyFluids": true
       }
+    },
+    {
+      "id": "unknown-item-graceful-skip",
+      "name": "Chest with an unknown item — import skips it, no crash (Pitfall #7)",
+      "category": "failure-paths",
+      "type": "entity",
+      "input": {
+        "name": "iron-chest",
+        "specific_data": {
+          "inventories": [
+            { "type": "chest", "items": [
+              { "name": "iron-plate", "count": 10, "quality": "normal" },
+              { "name": "totally-not-a-real-item-xyz", "count": 5, "quality": "normal" }
+            ] }
+          ]
+        }
+      },
+      "expect": {
+        "success": true,
+        "allowed_mismatches": ["items", "inventories"]
+      }
+    },
+    {
+      "id": "unknown-prototype-fails-gracefully",
+      "name": "Unknown entity prototype fails with a clear error, no crash",
+      "category": "failure-paths",
+      "type": "entity",
+      "input": {
+        "name": "totally-not-a-real-entity-xyz"
+      },
+      "expect": {
+        "success": false,
+        "errorContains": "prototype not found"
+      }
     }
   ]
 }
