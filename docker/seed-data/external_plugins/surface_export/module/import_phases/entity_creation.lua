@@ -35,8 +35,24 @@ function EntityCreation.process_batch(job, get_batch_size, should_show_progress)
           -- The entity is already in entity_map under entity_data.entity_id.
           batch_created = batch_created + 1
         elseif entity_data.type == "item-on-ground" then
-          Deserializer.create_ground_item(job.target_surface, entity_data)
-          batch_created = batch_created + 1
+          local created = Deserializer.create_ground_item(job.target_surface, entity_data)
+          if created and created.valid then
+            batch_created = batch_created + 1
+          else
+            -- Ground item could not be placed (tile now occupied, invalid item, etc.) — tally as a
+            -- loss so it is accounted (subtracted from expected) rather than silently dropped.
+            batch_failed = batch_failed + 1
+            local losses = job.failed_entity_losses
+            if not losses then
+              losses = { entity_count = 0, total_items = 0, total_fluids = 0.0, items = {}, fluids = {}, entities = {} }
+              job.failed_entity_losses = losses
+            end
+            losses.items[entity_data.name] = (losses.items[entity_data.name] or 0) + (entity_data.count or 0)
+            losses.total_items = losses.total_items + (entity_data.count or 0)
+            losses.entity_count = losses.entity_count + 1
+            log(string.format("[Entity Creation] FAILED to place ground item '%s' x%d at (%.1f,%.1f) -- tallied as loss",
+              entity_data.name, entity_data.count or 0, entity_data.position.x, entity_data.position.y))
+          end
         else
           local entity
           -- TEST HOOK (one-shot, debug-gated): simulate a failed placement for the first

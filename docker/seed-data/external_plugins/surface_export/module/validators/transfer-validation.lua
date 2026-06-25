@@ -289,6 +289,19 @@ function TransferValidation.validate_import(surface, expected_verification, opti
     local total_expected_fluids = Util.sum_fluids(expected_verification.fluid_counts or {})
     local total_actual_fluids = Util.sum_fluids(actual_fluid_counts)
 
+    -- Per-item loss breakdown (instrumentation, non-gating): exactly which items fall short, so
+    -- silent loss is measurable on every transfer (drives the 100%-fidelity work). The current
+    -- match gate is very tolerant (>95% AND >100 absolute), so this can be non-zero while success=true.
+    local item_loss_by_type = {}
+    local total_item_loss = 0
+    for item_name, exp in pairs(expected_verification.item_counts or {}) do
+        local act = total_item_counts[item_name] or 0
+        if exp > act then
+            item_loss_by_type[item_name] = { expected = exp, actual = act, loss = exp - act }
+            total_item_loss = total_item_loss + (exp - act)
+        end
+    end
+
     local validation_result = {
         itemCountMatch = item_match,
         fluidCountMatch = fluid_match,
@@ -309,9 +322,17 @@ function TransferValidation.validate_import(surface, expected_verification, opti
         totalActualItems = total_actual_items,
         totalExpectedFluids = total_expected_fluids,
         totalActualFluids = total_actual_fluids,
+        -- Per-item loss instrumentation (non-gating)
+        itemLossByType = item_loss_by_type,
+        totalItemLoss = total_item_loss,
     }
 
     local success = item_match and fluid_match
+
+    if total_item_loss > 0 then
+        log(string.format("[TransferValidation] FIDELITY: %d item(s) short across %d type(s) (gate may tolerate; see itemLossByType)",
+            total_item_loss, table_size(item_loss_by_type)))
+    end
 
     if success then
         log(string.format("[TransferValidation] ✓ Validation passed: %d entities, %d item types, %d fluid types",
