@@ -261,7 +261,10 @@ function ExportPipeline.process_batch(job, get_batch_size, should_show_progress)
 	local batch_ok, batch_err = pcall(function()
 		for i = start_index, end_index do
 			local entity = job.entities[i]
-			if entity and entity.valid then
+			-- Skip loose ground items (item-entity): the generic serializer would emit a stackless,
+			-- unrestorable "item-on-ground" record (silent loss). Captured WITH item payload by the
+			-- atomic ground-item scan in complete().
+			if entity and entity.valid and entity.type ~= "item-entity" then
 				local entity_data = EntityScanner.serialize_entity(entity)
 				if entity_data then
 					table.insert(job.export_data.entities, entity_data)
@@ -339,6 +342,20 @@ function ExportPipeline.complete(job)
 	end
 	log(string.format("[Export] Atomic belt scan: %d belts scanned, %d item stacks captured (single tick)",
 		belt_scan_count, belt_item_total))
+	-- ========================================
+
+	-- ========================================
+	-- ATOMIC GROUND-ITEM SCAN (single-tick pass)
+	-- ========================================
+	-- Loose ground items (item-entity / "item-on-ground") are skipped by the async loop (which
+	-- would emit a stackless, unrestorable record). Capture them here in one tick WITH their item
+	-- payload, BEFORE verification, so they are both counted and restorable. Fixes silent
+	-- ground-item loss on transfer.
+	local ground_items = EntityScanner.scan_items_on_ground(job.surface)
+	for _, ground_item in ipairs(ground_items) do
+		table.insert(job.export_data.entities, ground_item)
+	end
+	log(string.format("[Export] Atomic ground-item scan: %d loose item stack(s) captured", #ground_items))
 	-- ========================================
 
 	-- CRITICAL: Generate verification data from SERIALIZED entity data

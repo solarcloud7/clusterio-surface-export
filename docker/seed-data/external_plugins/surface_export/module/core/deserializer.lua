@@ -761,15 +761,24 @@ end
 --- @param surface LuaSurface: Target surface
 --- @param item_data table: Serialized item data
 function Deserializer.create_ground_item(surface, item_data)
-  surface.create_entity({
-    name = "item-on-ground",
-    position = item_data.position,
-    stack = {
-      name = item_data.name,
-      count = item_data.count,
-      quality = item_data.quality
-    }
-  })
+  local stack = { name = item_data.name, count = item_data.count, quality = item_data.quality }
+  local ok, entity = pcall(function()
+    return surface.create_entity({ name = "item-on-ground", position = item_data.position, stack = stack })
+  end)
+  if ok and entity and entity.valid then
+    return entity
+  end
+  -- Position may now be occupied by a restored building; retry at a nearby non-colliding spot.
+  local pos = surface.find_non_colliding_position("item-on-ground", item_data.position, 8, 0.25)
+  if pos then
+    local ok2, entity2 = pcall(function()
+      return surface.create_entity({ name = "item-on-ground", position = pos, stack = stack })
+    end)
+    if ok2 and entity2 and entity2.valid then
+      return entity2
+    end
+  end
+  return nil  -- caller (entity_creation.lua) tallies the loss
 end
 
 --- Place tiles on a surface

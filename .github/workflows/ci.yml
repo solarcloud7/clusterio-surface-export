@@ -216,6 +216,11 @@ jobs:
         run: |
           ./tests/integration/failed-entity-loss/run-tests.ps1
 
+      - name: Run Ground-Item Fidelity Test
+        shell: pwsh
+        run: |
+          ./tests/integration/ground-item-fidelity/run-tests.ps1
+
       - name: Collect logs on failure
         if: failure()
         run: |
