@@ -247,6 +247,37 @@ function ImportCompletion.run_phase2(job)
 				iol.total, table_size(iol.items)))
 		end
 
+		-- Adjust expected counts for inserter HELD items. They are restored only in the post-validation
+		-- activation phase (held_stack.set_stack silently fails on deactivated inserters), so they are NOT
+		-- present at this pre-activation count. Counting them as "expected" caused phantom loss (~the entire
+		-- historical "transit loss"). Held-item fidelity is verified post-activation (held_items_failed).
+		local pending_held = {}
+		local pending_held_total = 0
+		for _, ed in ipairs(job.entities_to_create or {}) do
+			if ed.type == "inserter" and ed.specific_data and ed.specific_data.held_item then
+				local h = ed.specific_data.held_item
+				local key = Util.make_quality_key(h.name, h.quality or Util.QUALITY_NORMAL)
+				pending_held[key] = (pending_held[key] or 0) + (h.count or 0)
+				pending_held_total = pending_held_total + (h.count or 0)
+			end
+		end
+		if pending_held_total > 0 then
+			local adjusted_items = {}
+			for k, v in pairs(adjusted_verification.item_counts or {}) do adjusted_items[k] = v end
+			for key, held_count in pairs(pending_held) do
+				if adjusted_items[key] then
+					adjusted_items[key] = math.max(0, adjusted_items[key] - held_count)
+				end
+			end
+			adjusted_verification = {
+				item_counts = adjusted_items,
+				fluid_counts = adjusted_verification.fluid_counts,
+			}
+			job.pending_held_items = pending_held
+			log(string.format("[Import] Adjusted expected totals: subtracted %d inserter held item(s) (restored post-validation in activation phase)",
+				pending_held_total))
+		end
+
 		PhaseProfiler.start(job.job_id, "validation")
 		local success, result = TransferValidation.validate_import(
 			job.target_surface,

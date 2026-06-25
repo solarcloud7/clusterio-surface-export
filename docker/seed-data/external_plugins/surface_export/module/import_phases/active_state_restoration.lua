@@ -98,8 +98,18 @@ function ActiveStateRestoration.restore(entities_to_create, entity_map, frozen_s
     end
     
     log(string.format("[Import] Active state restoration complete: %d activated, %d kept inactive, %d skipped, held items: %d restored / %d failed",
-        activated_count, kept_inactive_count, skipped_count, held_items_restored, held_items_failed))    
-    
+        activated_count, kept_inactive_count, skipped_count, held_items_restored, held_items_failed))
+
+    -- Held items are restored HERE (post-activation), AFTER the pre-activation validation gate
+    -- (held_stack.set_stack needs an active inserter). The gate subtracts pending held items from
+    -- expected, so a held-item restore failure is NOT gate-blocking (can't roll back) — surface it
+    -- loudly so it is never silent. In practice held_items_failed is 0 (set_stack on an active
+    -- inserter succeeds); a non-zero value means a genuine, rare loss (e.g. unknown item prototype).
+    if held_items_failed > 0 then
+        log(string.format("[Import] WARNING: %d inserter held item(s) FAILED to restore -- real loss, post-gate (not rolled back)", held_items_failed))
+        game.print(string.format("[Import] WARNING: %d held item(s) failed to restore (post-validation)", held_items_failed), {1, 0.5, 0})
+    end
+
     if activated_count > 0 then
         game.print(string.format("[Import] Activated %d entities (restored to original state)", activated_count), {0, 1, 0})
     end
