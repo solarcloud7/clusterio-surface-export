@@ -254,6 +254,27 @@ function ImportCompletion.run_phase2(job)
 			{ skip_fluid_validation = true }  -- Fluids are deferred to post-activation
 		)
 
+		-- TEST HOOK (one-shot, debug-gated): force a validation failure to exercise the rollback /
+		-- two-phase-commit safety path. Set via configure({ test_force_validation_failure = true }).
+		local _cfg = storage.surface_export_config
+		if _cfg and _cfg.debug_mode and _cfg.test_force_validation_failure then
+			_cfg.test_force_validation_failure = nil  -- consume: applies to one transfer only
+			success = false
+			result = result or {}
+			-- Corrupt the SAME fields the controller's source-delete gate actually reads
+			-- (instance.ts re-fetches get_validation_result_json and computes
+			--  success = itemCountMatch && fluidCountMatch). Overriding only `success` here
+			-- left these true, so the controller saw a "pass" and deleted the source.
+			result.itemCountMatch = false
+			result.fluidCountMatch = false
+			-- mismatchDetails is the field handleValidationFailure logs as the rollback reason;
+			-- set it so CI logs read "Rolled back. Error: TEST ..." instead of "Unknown error".
+			result.mismatchDetails = "TEST: forced validation failure (rollback safety test)"
+			result.message = "TEST: validation failure forced (test_force_validation_failure)"
+			result.testForcedFailure = true
+			log("[TEST HOOK] Forcing validation failure to exercise rollback")
+		end
+
 		PhaseProfiler.stop(job.job_id, "validation")
 		-- Clean validation-only boundary for the waterfall span (the existing
 		-- validation_completed_tick at the end of run_phase2 also covers activation/fluids/loss).

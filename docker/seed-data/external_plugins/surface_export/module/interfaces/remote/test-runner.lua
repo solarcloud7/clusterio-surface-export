@@ -146,8 +146,25 @@ function TestRunner.run_tests(test_suite_json, options)
     local passed = true
     local fail_reasons = {}
     
+    -- Expected-FAILURE cases: a test may assert that creation/import fails gracefully (e.g. an
+    -- unknown prototype). When expect.success == false, a failure is the pass condition.
+    if expect.success == false then
+      if result.success then
+        passed = false
+        table.insert(fail_reasons, "Expected entity creation to FAIL, but it succeeded")
+      elseif expect.errorContains then
+        local matched = false
+        for _, err in ipairs(result.errors or {}) do
+          if string.find(err, expect.errorContains, 1, true) then matched = true break end
+        end
+        if not matched then
+          passed = false
+          table.insert(fail_reasons, "Expected an error containing '" .. expect.errorContains ..
+            "', got: " .. table.concat(result.errors or {}, " | "))
+        end
+      end
     -- Check entity creation success
-    if expect.success and not result.success then
+    elseif expect.success and not result.success then
       passed = false
       table.insert(fail_reasons, "Entity creation failed")
       if result.errors then
