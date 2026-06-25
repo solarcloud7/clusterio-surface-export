@@ -199,6 +199,13 @@ jobs:
         run: |
           ./tests/integration/platform-roundtrip/run-tests.ps1 -ShowDetails
 
+      # Last: a supplementary engine-behavior probe. Kept after the roundtrip suites so a timing-
+      # sensitive invariant check can't gate the primary transfer tests from running.
+      - name: Run Engine Invariant Tests
+        shell: pwsh
+        run: |
+          ./tests/integration/engine-invariants/run-tests.ps1
+
       - name: Collect logs on failure
         if: failure()
         run: |

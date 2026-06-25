@@ -1,3 +1,31 @@
+# ── Line endings ─────────────────────────────────────────────────────────────
+# Normalize all text to LF in the repository; check out native per platform
+# (CRLF on Windows via core.autocrlf, LF on Linux/macOS). This keeps the index
+# consistent regardless of each contributor's local git config — the index is
+# already LF today, this just makes it explicit and portable.
+* text=auto
+
+# Scripts executed inside Linux containers MUST stay LF even on Windows checkouts
+# (a CRLF shebang or line-continuation breaks bash and Docker builds).
+*.sh   text eol=lf
+*.bash text eol=lf
+
+# Windows-only helper scripts keep CRLF.
+*.ps1 text eol=crlf
+*.cmd text eol=crlf
+*.bat text eol=crlf
+
+# Binary assets — never normalize or diff as text.
+*.zip   binary
+*.png   binary
+*.jpg   binary
+*.jpeg  binary
+*.gif   binary
+*.ico   binary
+*.woff  binary
+*.woff2 binary
+
+# ── CI Docker assets ─────────────────────────────────────────────────────────
 # The working tree is otherwise CRLF (Windows dev), but these files are consumed on Linux.
 # A CRLF Dockerfile breaks `RUN ... \` line continuations during the Docker build, so force
 # LF for the CI Docker/compose assets regardless of local autocrlf settings.

@@ -121,7 +121,6 @@ remote.call("surface_export", "import_platform_chunk", name, chunk, n, total, fo
 ### Via Custom Command
 
 ```lua
-/import-platform platform_Alpha_12345
 /plugin-import-file <filename> <platform_name>
 ```
 

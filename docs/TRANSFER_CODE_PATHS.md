@@ -2,32 +2,45 @@
 
 End-to-end trace of a platform transfer, from UI click to completion.
 
+## Table of Contents
+
+- [1. User clicks "Transfer" in Web UI](#1-user-clicks-transfer-in-web-ui)
+- [2. Controller receives the request](#2-controller-receives-the-request)
+- [3. Instance receives ExportPlatformRequest](#3-instance-receives-exportplatformrequest)
+- [4. Lua export entry point](#4-lua-export-entry-point)
+- [5. Instance receives export data, forwards to controller](#5-instance-receives-export-data-forwards-to-controller)
+- [6. Controller sends import to target instance](#6-controller-sends-import-to-target-instance)
+- [7. Instance chunks and sends via RCON](#7-instance-chunks-and-sends-via-rcon)
+- [8. Lua import entry point](#8-lua-import-entry-point)
+- [9. Validation flows back, source platform deleted](#9-validation-flows-back-source-platform-deleted)
+- [Key Invariants](#key-invariants)
+
 ---
 
 ## 1. User clicks "Transfer" in Web UI
 
-**[web/ManualTransferTab.jsx](../docker/seed-data/external_plugins/surface_export/web/ManualTransferTab.jsx)**
+**[web/ManualTransferTab.tsx](../docker/seed-data/external_plugins/surface_export/web/ManualTransferTab.tsx)** → `submitTransfer()`
 
-Sends a `StartPlatformTransferRequest` message via WebSocket to the controller.
+Calls `plugin.startTransfer(...)`, which constructs and sends the `StartPlatformTransferRequest` message in **[web/index.tsx](../docker/seed-data/external_plugins/surface_export/web/index.tsx)** (`SurfaceExportPlugin.startTransfer`) via WebSocket to the controller.
 
 ---
 
 ## 2. Controller receives the request
 
-**[lib/transfer-orchestrator.js](../docker/seed-data/external_plugins/surface_export/lib/transfer-orchestrator.js)** → `handleStartPlatformTransferRequest()`
+**[controller.ts](../docker/seed-data/external_plugins/surface_export/controller.ts)** routes `StartPlatformTransferRequest` to **[lib/transfer-orchestrator.ts](../docker/seed-data/external_plugins/surface_export/lib/transfer-orchestrator.ts)** → `handleStartPlatformTransferRequest()`
 
 ```
 t0 = Date.now()
 sendTo(sourceInstance, ExportPlatformRequest)   ← waits for async export to complete
 waitForStoredExport(exportId)                   ← waits for data to arrive at controller
-transferPlatform(exportId, targetInstanceId, metrics, t0)
+transferPlatform(exportId, targetInstanceId, ...)
 ```
 
 ---
 
 ## 3. Instance receives ExportPlatformRequest
 
-**[instance.js](../docker/seed-data/external_plugins/surface_export/instance.js)** → `handleExportPlatformRequest()`
+**[instance.ts](../docker/seed-data/external_plugins/surface_export/instance.ts)** → `handleExportPlatformRequest()`
 
 Sends RCON to Factorio:
 ```lua
@@ -38,41 +51,43 @@ remote.call('surface_export', 'export_platform', platformIndex, forceName, targe
 
 ## 4. Lua export entry point
 
-**[module/interfaces/remote-interface.lua](../docker/seed-data/external_plugins/surface_export/module/interfaces/remote-interface.lua)** → `export_platform` handler
+**[module/interfaces/remote-interface.lua](../docker/seed-data/external_plugins/surface_export/module/interfaces/remote-interface.lua)** registers the `export_platform` handler
 
 → **[module/interfaces/remote/export-platform.lua](../docker/seed-data/external_plugins/surface_export/module/interfaces/remote/export-platform.lua)**
 
-→ `AsyncProcessor.queue_export(job)`
+→ `AsyncProcessor.queue_export(...)`
 
 ### Async export (runs over multiple ticks)
 
-**[module/core/async-processor.lua](../docker/seed-data/external_plugins/surface_export/module/core/async-processor.lua)**
+**[module/core/async-processor.lua](../docker/seed-data/external_plugins/surface_export/module/core/async-processor.lua)** → `process_tick()` dispatches to the export pipeline:
 
 ```
-process_export_batch()  (called each tick until complete)
+ExportPipeline.process_batch()  (called each tick until complete)   [core/export-pipeline.lua]
   → EntityScanner.scan_surface()       [export_scanners/entity-scanner.lua]
   → entity-handlers.lua                [export_scanners/entity-handlers.lua]
      (belt items deferred — skip_belt_items flag)
 
-complete_export_job()  (single tick, after all entities scanned)
+ExportPipeline.complete()  (single tick, after all entities scanned)  [core/export-pipeline.lua]
   → atomic belt scan (extract_belt_items for all belt entities)
-  → Verification.generate()            [validators/verification.lua]
-  → clusterio_api.send_json("surface_export_export_ready", data)
+  → Verification.count_all_items() / count_all_fluids()   [validators/verification.lua]
+  → clusterio_api.send_json("surface_export_complete", data)
 ```
 
 ---
 
-## 5. Controller receives export data
+## 5. Instance receives export data, forwards to controller
 
-**[controller.js](../docker/seed-data/external_plugins/surface_export/controller.js)** → `server.handle("surface_export_export_ready")`
+**[instance.ts](../docker/seed-data/external_plugins/surface_export/instance.ts)** → `server.handle("surface_export_complete", handleExportComplete)`
 
-Stores payload in `platformStorage`. `waitForStoredExport` resolves → `transferPlatform()` begins, logs `transfer_created` event.
+`handleExportComplete()` retrieves the full export from the mod (via the `get_export_json` remote interface) and sends a `PlatformExportEvent` to the controller.
+
+**[controller.ts](../docker/seed-data/external_plugins/surface_export/controller.ts)** → `handlePlatformExport()` (handles `PlatformExportEvent`) stores the payload in `platformStorage`. `waitForStoredExport` resolves → `transferPlatform()` begins, logs `transfer_created`.
 
 ---
 
 ## 6. Controller sends import to target instance
 
-**[lib/transfer-orchestrator.js](../docker/seed-data/external_plugins/surface_export/lib/transfer-orchestrator.js)**
+**[lib/transfer-orchestrator.ts](../docker/seed-data/external_plugins/surface_export/lib/transfer-orchestrator.ts)** → `transferPlatform()`
 
 Sends `ImportPlatformRequest` to the target instance via WebSocket link.
 
@@ -80,7 +95,7 @@ Sends `ImportPlatformRequest` to the target instance via WebSocket link.
 
 ## 7. Instance chunks and sends via RCON
 
-**[instance.js](../docker/seed-data/external_plugins/surface_export/instance.js)** → `handleImportPlatformRequest()`
+**[instance.ts](../docker/seed-data/external_plugins/surface_export/instance.ts)** → `handleImportPlatformRequest()`
 
 Splits the JSON payload into ~4KB chunks, sends each via RCON:
 ```lua
@@ -91,56 +106,65 @@ remote.call('surface_export', 'import_platform_chunk', name, chunk, n, total, fo
 
 ## 8. Lua import entry point
 
-**[module/interfaces/remote-interface.lua](../docker/seed-data/external_plugins/surface_export/module/interfaces/remote-interface.lua)** → `import_platform_chunk`
+**[module/interfaces/remote-interface.lua](../docker/seed-data/external_plugins/surface_export/module/interfaces/remote-interface.lua)** registers `import_platform_chunk`
 
-Assembles chunks, then calls `AsyncProcessor.queue_import(job)`.
+→ **[module/interfaces/remote/import-platform-chunk.lua](../docker/seed-data/external_plugins/surface_export/module/interfaces/remote/import-platform-chunk.lua)**
+
+Assembles chunks, then calls `AsyncProcessor.queue_import(...)`.
 
 ### Phase 1 — Entity placement (async, multiple ticks)
 
-**[module/core/async-processor.lua](../docker/seed-data/external_plugins/surface_export/module/core/async-processor.lua)** → `process_import_batch()`
+**[module/core/async-processor.lua](../docker/seed-data/external_plugins/surface_export/module/core/async-processor.lua)** → `process_tick()` dispatches to `ImportPipeline.process_batch()` in **[module/core/import-pipeline.lua](../docker/seed-data/external_plugins/surface_export/module/core/import-pipeline.lua)**
 
 ```
-→ TileRestoration.restore()          [import_phases/tile-restoration.lua]
-→ EntityCreation.create_entities()   [import_phases/entity-creation.lua]
+→ TileRestoration.process()          [import_phases/tile_restoration.lua]
+→ EntityCreation.process_batch()     [import_phases/entity_creation.lua]
 ```
 
-### Phase 1 completion (single tick) — `finish_import_job()`
+### Post-placement Phase 1 (single tick) — `ImportCompletion.run_phase1()`
+
+**[module/core/import-completion.lua](../docker/seed-data/external_plugins/surface_export/module/core/import-completion.lua)**
 
 ```
-→ HubInventoryRestoration            [import_phases/hub-inventory-restoration.lua]
-→ BeltRestoration.restore()          [import_phases/belt-restoration.lua]
-→ EntityStateRestoration.restore()   [import_phases/entity-state-restoration.lua]
+→ PlatformHubMapping.restore_hub_inventories()   [import_phases/platform_hub_mapping.lua]
+→ BeltRestoration.restore()                      [import_phases/belt_restoration.lua]
+→ EntityStateRestoration.restore_all()           [import_phases/entity_state_restoration.lua]
 → job.pending_beacon_tick = tick + 1   (wait 1 tick → Phase 2)
 ```
 
-### Phase 2 — Inventory + validation + fluids (single tick) — `finish_import_job_phase3()`
+### Phase 2 — Inventory + validation + fluids (single tick) — `ImportCompletion.run_phase2()`
+
+**[module/core/import-completion.lua](../docker/seed-data/external_plugins/surface_export/module/core/import-completion.lua)**
 
 ```
-→ Deserializer.restore_inventories()   PASS 1: beacons only
+→ Deserializer.restore_inventories()   PASS 1: beacons only       [core/deserializer.lua]
    (beacon_modules populated → crafting_speed updates immediately)
 → Deserializer.restore_inventories()   PASS 2: all other entities
    (set_stack cap now uses beacon-boosted crafting_speed)
 → deactivate all entities, re-pause platform
 → TransferValidation.validate_import() [validators/transfer-validation.lua]
    (items only — fluids not yet injected)
-→ ActiveStateRestoration.restore()     [import_phases/active-state-restoration.lua]
+→ ActiveStateRestoration.restore()     [import_phases/active_state_restoration.lua]
    (unfreeze + activate all entities)
-→ FluidRestoration.restore()           [import_phases/fluid-restoration.lua]
+→ FluidRestoration.restore()           [import_phases/fluid_restoration.lua]
    (MUST be after activation — ghost buffer fix)
 → LossAnalysis.run()                   [validators/loss-analysis.lua]
-→ clusterio_api.send_json("surface_export_validation_result", result)
+→ clusterio_api.send_json("surface_export_import_complete", result)
 ```
 
 ---
 
-## 9. Controller receives validation result
+## 9. Validation flows back, source platform deleted
 
-**[controller.js](../docker/seed-data/external_plugins/surface_export/controller.js)** → `server.handle("surface_export_validation_result")`
+**[instance.ts](../docker/seed-data/external_plugins/surface_export/instance.ts)** → `server.handle("surface_export_import_complete", handleImportCompleteValidation)`
 
-→ **[lib/transfer-orchestrator.js](../docker/seed-data/external_plugins/surface_export/lib/transfer-orchestrator.js)**
+`handleImportCompleteValidation()` pulls the validation result from Lua (`get_validation_result_json` remote interface) and sends a `TransferValidationEvent` to the controller.
+
+**[controller.ts](../docker/seed-data/external_plugins/surface_export/controller.ts)** routes `TransferValidationEvent` to **[lib/transfer-orchestrator.ts](../docker/seed-data/external_plugins/surface_export/lib/transfer-orchestrator.ts)** → `handleTransferValidation()`
 
 ```
-validation passed → game.delete_surface(platform.surface)  (source deleted)
+validation passed → sendTo(sourceInstance, DeleteSourcePlatformRequest)
+                      (instance runs game.delete_surface(platform.surface) via RCON)
                  → logTransactionEvent("transfer_completed")
                  → persistTransactionLog()
 validation failed → platform left paused + deactivated for investigation

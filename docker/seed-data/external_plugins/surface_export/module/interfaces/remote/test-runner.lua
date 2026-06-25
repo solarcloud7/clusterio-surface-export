@@ -41,6 +41,27 @@ function TestRunner.run_tests(test_suite_json, options)
   local increment = test_suite.positionIncrement or 5
   local current_x = base_x
   local current_y = base_y
+
+  -- Resolve the isolated test surface. run-tests.ps1 passes test_suite.testPlatform (the cloned
+  -- platform's name); place entities THERE so each run is isolated and auto-cleaned when the clone
+  -- surface is deleted. Without this, entities land on player 1's surface and accumulate across runs,
+  -- eventually colliding (belt tests failed once absolute coords started hitting stale entities).
+  local test_surface
+  if test_suite.testPlatform then
+    for _, s in pairs(game.surfaces) do
+      if s.platform and s.platform.name == test_suite.testPlatform then test_surface = s break end
+    end
+  end
+  if not test_surface then
+    local p1 = game.get_player(1)
+    test_surface = (p1 and p1.surface) or game.surfaces[1]
+  end
+  local target_surface_index = test_surface.index
+  -- Anchor placement to the platform foundation so fixed coords don't fall off a map-offset platform.
+  local anchor = { x = base_x, y = base_y }
+  if test_surface.platform and test_surface.platform.hub and test_surface.platform.hub.valid then
+    anchor = test_surface.platform.hub.position
+  end
   
   -- Run each test
   for _, test_case in ipairs(test_suite.tests) do
@@ -83,13 +104,20 @@ function TestRunner.run_tests(test_suite_json, options)
       goto continue
     end
     
-    -- Prepare entity data with position
+    -- Prepare entity data with position. Find a clear, on-foundation spot near the platform anchor
+    -- (robust to surface map-offset and to entities placed by earlier tests in this run).
     local entity_data = test_case.input
-    entity_data.position = { x = current_x, y = current_y }
-    
-    -- Run the test
+    local placed = nil
+    if test_surface and entity_data.name and prototypes.entity[entity_data.name] then
+      placed = test_surface.find_non_colliding_position(entity_data.name, anchor, 128, 1)
+    end
+    -- Fallback (find_non_colliding_position returned nil): keep the increment pattern but ANCHOR it
+    -- to the platform foundation, not absolute coords (which may be off a map-offset clone platform).
+    entity_data.position = placed or { x = anchor.x + (current_x - base_x), y = anchor.y + (current_y - base_y) }
+
+    -- Run the test on the isolated surface (not player 1's surface).
     local run_ok, result = pcall(function()
-      return test_import_entity(entity_data, nil, nil)
+      return test_import_entity(entity_data, target_surface_index, nil)
     end)
     
     if not run_ok then

@@ -68,3 +68,5 @@ Thumbs.db
 # Temporary files
 *.tmp
 *.log
+# Transient controller log dumps (saved with a .txt extension, so *.log misses them)
+controller-logs.txt

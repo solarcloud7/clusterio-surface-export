@@ -59,6 +59,17 @@ if (-not $SourcePlatform) { $SourcePlatform = $TestSuite.sourcePlatform }
 if ($SourceHost -eq 0) { $SourceHost = $TestSuite.defaultSourceHost }
 if ($DestHost -eq 0) { $DestHost = $TestSuite.defaultDestHost }
 
+# Auto-detect the host holding the source platform, but ONLY when the caller did NOT explicitly pass
+# -SourceHost (CI seeds 'test' on host-1, the dev cluster on host-2; an explicit choice is honored).
+if (-not $PSBoundParameters.ContainsKey('SourceHost')) {
+    $detectedHost = Resolve-PlatformHost -PlatformName $SourcePlatform
+    if ($detectedHost -and $detectedHost -ne $SourceHost) {
+        Write-Host "  Source '$SourcePlatform' is on host-$detectedHost (default was host-$SourceHost) - switching." -ForegroundColor Yellow
+        $SourceHost = $detectedHost
+        $DestHost = if ($SourceHost -eq 1) { 2 } else { 1 }
+    }
+}
+
 # Instance configuration
 $sourceInstance = "clusterio-host-$SourceHost-instance-1"
 $destInstance = "clusterio-host-$DestHost-instance-1"
