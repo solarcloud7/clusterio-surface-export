@@ -1,6 +1,18 @@
 local Deserializer = require("modules/surface_export/core/deserializer")
 local EntityCreation = {}
 
+-- TEST-ONLY helper: does this serialized entity carry inventory items? The one-shot
+-- `test_force_entity_failure` hook targets such an entity (a container/crafter with stable
+-- counts) rather than a belt, so the failed-entity-loss attribution is exercised cleanly.
+local function carries_inventory_items(entity_data)
+  local sd = entity_data.specific_data
+  if not sd or not sd.inventories then return false end
+  for _, inv in ipairs(sd.inventories) do
+    if inv.items and #inv.items > 0 then return true end
+  end
+  return false
+end
+
 --- Process a batch of entity creation
 --- @param job table: The import job state
 --- @param get_batch_size function: Function to get current batch size
@@ -26,7 +38,20 @@ function EntityCreation.process_batch(job, get_batch_size, should_show_progress)
           Deserializer.create_ground_item(job.target_surface, entity_data)
           batch_created = batch_created + 1
         else
-          local entity = Deserializer.create_entity(job.target_surface, entity_data)
+          local entity
+          -- TEST HOOK (one-shot, debug-gated): simulate a failed placement for the first
+          -- inventory-bearing entity, exercising failed-entity-loss attribution + the expected-count
+          -- subtraction so validation still passes (Pitfall #20). Set via
+          -- configure({ test_force_entity_failure = true }).
+          local _cfg = storage.surface_export_config
+          if _cfg and _cfg.debug_mode and _cfg.test_force_entity_failure
+              and entity_data.name ~= "space-platform-hub" and carries_inventory_items(entity_data) then
+            _cfg.test_force_entity_failure = nil  -- consume: applies to one entity only
+            entity = nil
+            log(string.format("[TEST HOOK] Forcing placement failure for inventory-bearing entity '%s' to exercise failed-entity-loss attribution", entity_data.name))
+          else
+            entity = Deserializer.create_entity(job.target_surface, entity_data)
+          end
           if entity and entity.valid then
             batch_created = batch_created + 1
             -- Store in entity_map for post-processing (circuit connections, etc.)
