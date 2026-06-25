@@ -27,6 +27,11 @@ local function configure(config)
     -- Test-only: make the NEXT import deliberately fail validation (exercises the rollback path).
     storage.surface_export_config.test_force_validation_failure = config.test_force_validation_failure
   end
+  if config.test_force_entity_failure ~= nil then
+    -- Test-only: make the NEXT inventory-bearing entity fail to place (exercises the
+    -- failed-entity-loss attribution + expected-count subtraction, Pitfall #20).
+    storage.surface_export_config.test_force_entity_failure = config.test_force_entity_failure
+  end
 
   log(string.format("[FactorioSurfaceExport] Configuration updated: batch_size=%s, max_concurrent_jobs=%s, show_progress=%s, debug_mode=%s",
     config.batch_size or "unchanged",

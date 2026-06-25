@@ -224,3 +224,10 @@ Write-Host "Next steps:" -ForegroundColor Yellow
 Write-Host "  1. Check logs: .\tools\check-cluster-logs.ps1" -ForegroundColor White
 Write-Host "  2. Test export: docker exec surface-export-controller npx clusterioctl instance send-rcon 1 '/export-platform 2 2'" -ForegroundColor White
 Write-Host "  3. Test import: docker exec surface-export-controller npx clusterioctl instance send-rcon 2 '/import-platform <filename>'" -ForegroundColor White
+
+# Reaching here means every fail-fast step above passed ($ErrorActionPreference=Stop, plus explicit
+# `throw`/`exit 1` on build + health failures). The final `instance start` leaks a non-zero
+# $LASTEXITCODE when an instance was already running (handled gracefully above), which otherwise makes
+# a fully SUCCESSFUL run report exit 1 — confusing automation/CI and masking real failures. Force a
+# clean success so the exit code is trustworthy.
+exit 0
