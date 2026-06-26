@@ -254,34 +254,40 @@ function ImportCompletion.run_phase2(job)
 		local pending_held = {}
 		local pending_held_total = 0
 		for _, ed in ipairs(job.entities_to_create or {}) do
-			if ed.type == "inserter" and ed.specific_data and ed.specific_data.held_item then
+			if ed.type == "inserter" and ed.specific_data and ed.specific_data.held_item
+					and (job.entity_map or {})[ed.entity_id]                  -- CREATED (excludes FAILED entities)
+					and (job.frozen_states or {})[ed.entity_id] ~= false then  -- was ACTIVE (matches restore)
 				local h = ed.specific_data.held_item
 				local key = Util.make_quality_key(h.name, h.quality or Util.QUALITY_NORMAL)
 				pending_held[key] = (pending_held[key] or 0) + (h.count or 0)
 				pending_held_total = pending_held_total + (h.count or 0)
 			end
 		end
+		-- GATE-ONLY expected: held subtracted (held items are not present until the post-validation
+		-- activation phase). The DISPLAY expected (adjusted_verification, stored in the result) KEEPS held
+		-- items, because the post-activation loss scan re-counts them in `actual`; subtracting from display
+		-- too would show a phantom GAIN. Held counts are re-added to the result after validation (display-only).
+		local gate_verification = adjusted_verification
 		if pending_held_total > 0 then
-			local adjusted_items = {}
-			for k, v in pairs(adjusted_verification.item_counts or {}) do adjusted_items[k] = v end
+			local gate_items = {}
+			for k, v in pairs(adjusted_verification.item_counts or {}) do gate_items[k] = v end
 			for key, held_count in pairs(pending_held) do
-				if adjusted_items[key] then
-					adjusted_items[key] = math.max(0, adjusted_items[key] - held_count)
+				if gate_items[key] then
+					gate_items[key] = math.max(0, gate_items[key] - held_count)
 				end
 			end
-			adjusted_verification = {
-				item_counts = adjusted_items,
+			gate_verification = {
+				item_counts = gate_items,
 				fluid_counts = adjusted_verification.fluid_counts,
 			}
-			job.pending_held_items = pending_held
-			log(string.format("[Import] Adjusted expected totals: subtracted %d inserter held item(s) (restored post-validation in activation phase)",
+			log(string.format("[Import] Gate expected: subtracted %d created+active inserter held item(s) (restored post-validation; display keeps them)",
 				pending_held_total))
 		end
 
 		PhaseProfiler.start(job.job_id, "validation")
 		local success, result = TransferValidation.validate_import(
 			job.target_surface,
-			adjusted_verification,
+			gate_verification,
 			{ skip_fluid_validation = true }  -- Fluids are deferred to post-activation
 		)
 
@@ -312,6 +318,16 @@ function ImportCompletion.run_phase2(job)
 		job.metrics.validation_done_tick = game.tick
 		validation_result = result
 		result.success = success
+
+		-- DISPLAY fix (#3): the gate compared held-SUBTRACTED expected vs the pre-activation actual; held
+		-- items reappear in the post-activation loss scan's actual, so re-add them to the stored expected
+		-- here (item_match is already computed from the gate copy). Prevents a phantom GAIN in the UI.
+		if pending_held_total > 0 and result.expectedItemCounts then
+			for key, held_count in pairs(pending_held) do
+				result.expectedItemCounts[key] = (result.expectedItemCounts[key] or 0) + held_count
+			end
+			result.totalExpectedItems = (result.totalExpectedItems or 0) + pending_held_total
+		end
 
 		-- Attach failed entity losses to result so it flows through to the transaction log
 		if job.failed_entity_losses and job.failed_entity_losses.entity_count > 0 then
@@ -389,7 +405,19 @@ function ImportCompletion.run_phase2(job)
 				log(string.format("[Validation] Platform %s UNPAUSED after successful validation", job.platform_name))
 			end
 			PhaseProfiler.start(job.job_id, "activation")
-			ActiveStateRestoration.restore(job.entities_to_create or {}, job.entity_map or {}, job.frozen_states or {})
+			local active_result = ActiveStateRestoration.restore(job.entities_to_create or {}, job.entity_map or {}, job.frozen_states or {})
+			-- Fold any genuine held-restore failures (rare; e.g. unknown item prototype) into the loss
+			-- accounting so they surface in the transaction-log/UI numbers, not just a host-log warning.
+			if active_result and active_result.held_items_failed and active_result.held_items_failed > 0 then
+				local fel = job.failed_entity_losses or { entity_count = 0, total_items = 0, total_fluids = 0.0, items = {}, fluids = {}, entities = {} }
+				for hk, hc in pairs(active_result.failed_held_items or {}) do
+					fel.items[hk] = (fel.items[hk] or 0) + hc
+					fel.total_items = fel.total_items + hc
+				end
+				job.failed_entity_losses = fel
+				result.failedEntityLosses = fel
+				log(string.format("[Import] Recorded %d failed held item(s) into loss accounting", active_result.held_items_failed))
+			end
 			PhaseProfiler.stop(job.job_id, "activation")
 
 			-- POST-ACTIVATION FLUID RESTORATION

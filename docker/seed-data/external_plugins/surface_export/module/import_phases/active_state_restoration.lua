@@ -30,7 +30,8 @@ function ActiveStateRestoration.restore(entities_to_create, entity_map, frozen_s
     local skipped_count = 0
     local held_items_restored = 0
     local held_items_failed = 0
-    
+    local failed_held_items = {}  -- plain item name -> count, returned for loss attribution by the caller
+
     for _, entity_data in ipairs(entities_to_create) do
         local entity = entity_map[entity_data.entity_id]
         
@@ -79,6 +80,7 @@ function ActiveStateRestoration.restore(entities_to_create, entity_map, frozen_s
                         held_items_restored = held_items_restored + (held.count or 1)
                     else
                         held_items_failed = held_items_failed + (held.count or 1)
+                        failed_held_items[held.name] = (failed_held_items[held.name] or 0) + (held.count or 1)
                         if not ok then
                             log(string.format("[Import] Failed to restore held item '%s' x%d for inserter: %s",
                                 held.name or "?", held.count or 0, tostring(err)))
@@ -106,13 +108,17 @@ function ActiveStateRestoration.restore(entities_to_create, entity_map, frozen_s
     -- loudly so it is never silent. In practice held_items_failed is 0 (set_stack on an active
     -- inserter succeeds); a non-zero value means a genuine, rare loss (e.g. unknown item prototype).
     if held_items_failed > 0 then
-        log(string.format("[Import] WARNING: %d inserter held item(s) FAILED to restore -- real loss, post-gate (not rolled back)", held_items_failed))
+        log(string.format("[Import] WARNING: %d inserter held item(s) FAILED to restore -- real loss; folded into loss accounting by the caller", held_items_failed))
         game.print(string.format("[Import] WARNING: %d held item(s) failed to restore (post-validation)", held_items_failed), {1, 0.5, 0})
     end
 
     if activated_count > 0 then
         game.print(string.format("[Import] Activated %d entities (restored to original state)", activated_count), {0, 1, 0})
     end
+
+    -- Surface held-restore failures so the caller can fold them into failed_entity_losses (a genuine, rare
+    -- held loss then shows in the transaction-log/UI numbers, not just a host-log line).
+    return { held_items_failed = held_items_failed, failed_held_items = failed_held_items }
 end
 
 return ActiveStateRestoration
