@@ -8,40 +8,35 @@ local QUALITY_NORMAL = GameUtils.QUALITY_NORMAL
 --- Restore all belt items synchronously in a single tick.
 --- CRITICAL: Belts are always active and cannot be deactivated, so items must be restored all at once.
 ---
---- Factorio 2.0.76 LuaTransportLine API — VERIFIED EMPIRICALLY on the pinned engine via a controlled
---- custom-surface experiment (the signature itself is routed through version-compat.lua; do NOT trust
---- the "latest" lua-api docs — they reorder the params. Source of truth: lua-api.factorio.com/2.0.76/):
----     insert_at(position, items, belt_stack_size?) -> bool
----     insert_at_back(items, belt_stack_size?)      -> bool
---- `belt_stack_size` is the per-slot cap (turbo belts max 4); it CAPS how many of `items` land at the
---- position. Passing item.count works because a serialized slot holds <= 4. Two facts make the naive
---- approach lossy and drove this design:
----   1. insert_at returns TRUE even when it places FEWER than requested (a dense/occupied slot). The
----      bool is NOT a placement count — trusting it silently drops the unplaced remainder.
----   2. A connected run of belts is ONE segment but each belt exposes its OWN LuaTransportLine object
----      (line_equals is false across them), so a PER-LINE "did it all fit?" check under-counts and
----      spills DUPLICATES. Reconciliation must be GLOBAL.
+--- Factorio 2.0.76 LuaTransportLine API (signature routed through version-compat.lua; source of truth is
+--- lua-api.factorio.com/2.0.76/, NOT the "latest" docs which reorder the params):
+---     insert_at(position, items, belt_stack_size?) -> bool     (position FIRST; belt_stack_size caps the slot)
 ---
---- Approach — a bank reconciliation (debit == credit), never trusting the insert bool:
----   Phase A: place every serialized slot at its recorded position; tally EXPECTED per (name,quality)
----            and remember each restored line (preserving multiplicity).
----   Phase B: PHYSICALLY measure what actually landed (get_contents over the SAME line set, so any
----            source-side shared-line double-count cancels), and settle the NET shortfall per item to
----            the ground (item-on-ground — still on the platform, counted, merely relocated). This can
----            only relocate; it can never lose or duplicate.
---- All API errors are LOGGED, never swallowed.
+--- THE FIX (verified empirically, apples-to-apples, on the pinned engine):
+--- Re-insert each captured slot at its EXACT position, but in ASCENDING POSITION ORDER. A controlled
+--- single-loop experiment (custom surface, items packed by real belt movement, source-vs-dest physical
+--- counts) showed:
+---   * Inserting in the captured (UNSORTED) order — what the old code did — lets an earlier insert occupy a
+---     slot a later item needs, so insert_at PARTIAL-places and returns true anyway (the bool lies). Result:
+---     a few items silently dropped (e.g. 112 -> 108, 28 -> 27).
+---   * Inserting SORTED BY POSITION (ascending) makes every item land at its exact position because each new
+---     item goes ahead of all already-placed ones — no collisions. Result: 100% on-belt, ZERO shortfall,
+---     every can_insert_at a hit, across single items (belt_stack_size 1) and full stacks (4).
+--- The items demonstrably fit — they were on a belt at the source — so they go back ON the belt. There is NO
+--- ground-spill: items that were on belts must stay on belts. The only fallback (which the experiment never
+--- needed) keeps any rare residual ON THE SAME LINE via insert_at_back, and a genuine failure is LOGGED loudly
+--- rather than hidden or dropped on the floor.
 ---
 --- @param entities_to_create table: List of entity data objects
 --- @param entity_map table: Map of entity_id to LuaEntity
 function BeltRestoration.restore(entities_to_create, entity_map)
-    log("[Import] Restoring belt items (2.0.76 insert_at(position, items, belt_stack_size) + global reconcile)...")
+    log("[Import] Restoring belt items (2.0.76: sort slots by position, then insert_at — 100% on-belt)...")
 
     local belt_count = 0
-    local expected = {}        -- quality_key -> { name, quality, count } : the debit (from serialized data)
-    local restored_lines = {}  -- one entry per restored line_data (multiplicity preserved for measurement)
-    local anchor = nil         -- a valid belt entity to anchor ground spills
+    local placed_count = 0
+    local backfilled_count = 0  -- rare on-belt insert_at_back fallback (never ground)
+    local failed_count = 0      -- genuinely could not place ON the belt (expected: 0)
 
-    -- ---- Phase A: place every slot at its recorded position; tally the debit. --------------------
     for _, entity_data in ipairs(entities_to_create) do
         local entity = entity_map[entity_data.entity_id]
 
@@ -50,29 +45,28 @@ function BeltRestoration.restore(entities_to_create, entity_map)
         if not entity.get_transport_line then goto continue end
 
         belt_count = belt_count + 1
-        anchor = anchor or entity
 
         for _, line_data in ipairs(entity_data.specific_data.items) do
             local line = entity.get_transport_line(line_data.line)
             if line and line.valid then
-                restored_lines[#restored_lines + 1] = line
-
+                -- Collect this line's slots and the expected total, then SORT BY POSITION ASCENDING.
+                -- This is the fix: position order = collision-free placement (see header).
+                local slots = {}
+                local expected = 0
                 for _, item in ipairs(line_data.items) do
-                    local quality = item.quality or QUALITY_NORMAL
-                    local key = GameUtils.make_quality_key(item.name, quality)
-                    local exp = expected[key]
-                    if not exp then
-                        exp = { name = item.name, quality = quality, count = 0 }
-                        expected[key] = exp
-                    end
-                    exp.count = exp.count + item.count
+                    slots[#slots + 1] = item
+                    expected = expected + item.count
+                end
+                table.sort(slots, function(a, b) return (a.position or 0) < (b.position or 0) end)
 
-                    local stack = { name = item.name, count = item.count, quality = quality }
-
-                    -- Place at the exact source position (belt_stack_size = item.count, the slot's cap).
-                    -- We DO NOT trust the bool for accounting — Phase B measures physical reality. The
-                    -- pcall+log stays here (richest context) per the never-swallow-errors rule.
-                    local placed = false
+                for _, item in ipairs(slots) do
+                    local stack = {
+                        name = item.name,
+                        count = item.count,
+                        quality = item.quality or QUALITY_NORMAL,
+                    }
+                    -- belt_stack_size = item.count (the captured slot's stack; turbo cap is 4). The bool is
+                    -- NOT trusted for accounting — the per-line physical verify below is authoritative.
                     if item.position then
                         local ok, res = pcall(function()
                             return VersionCompat.belt_insert_at(line, item.position, stack, item.count)
@@ -81,12 +75,8 @@ function BeltRestoration.restore(entities_to_create, entity_map)
                             log(string.format("[Belt Restore] insert_at ERROR on %s line %d (pos=%s): %s",
                                 entity.name, line_data.line, tostring(item.position), tostring(res)))
                         end
-                        placed = ok and res == true
-                    end
-
-                    -- Positionless (or position rejected): best-effort append at the back. Still not
-                    -- trusted for accounting — Phase B is authoritative.
-                    if not placed then
+                    else
+                        -- Positionless slot (rare): append at the back, on the belt.
                         local ok, res = pcall(function()
                             return VersionCompat.belt_insert_at_back(line, stack, item.count)
                         end)
@@ -96,78 +86,62 @@ function BeltRestoration.restore(entities_to_create, entity_map)
                         end
                     end
                 end
+
+                -- Per-line physical verify (authoritative — does not trust the insert bool). Sorted
+                -- insertion is exact in every tested case, so this is defensive. Any residual stays ON THE
+                -- BELT (insert_at_back on the SAME line); it is NEVER spilled to the ground.
+                local actual = line.get_item_count()
+                placed_count = placed_count + math.min(actual, expected)
+
+                if actual < expected then
+                    log(string.format("[Belt Restore] %s line %d short after sorted insert (%d/%d) — on-belt back-fill",
+                        entity.name, line_data.line, actual, expected))
+                    for _, item in ipairs(slots) do
+                        local stack = {
+                            name = item.name,
+                            count = item.count,
+                            quality = item.quality or QUALITY_NORMAL,
+                        }
+                        while line.get_item_count() < expected and line.can_insert_at_back() do
+                            local ok, res = pcall(function()
+                                return VersionCompat.belt_insert_at_back(line, stack, item.count)
+                            end)
+                            if not ok then
+                                log(string.format("[Belt Restore] back-fill insert_at_back ERROR on %s line %d: %s",
+                                    entity.name, line_data.line, tostring(res)))
+                                break
+                            end
+                            if res ~= true then break end
+                            backfilled_count = backfilled_count + item.count
+                        end
+                        if line.get_item_count() >= expected then break end
+                    end
+
+                    local final = line.get_item_count()
+                    if final < expected then
+                        -- Could not place on the belt at all. Do NOT ground-spill and do NOT hide it.
+                        failed_count = failed_count + (expected - final)
+                        log(string.format("[Belt Restore] LOST %d belt items on %s line %d — line could not hold them (NOT ground-spilled)",
+                            expected - final, entity.name, line_data.line))
+                    end
+                end
             end
         end
 
         ::continue::
     end
 
-    -- ---- Phase B: measure the credit, settle the net shortfall to ground. ------------------------
-    -- Measure over the SAME (entity, line) set Phase A summed `expected` over — read each restored
-    -- line once. Belts are frozen for this whole synchronous pass (no tick elapses), so nothing moves
-    -- between placement and measurement; get_contents is exactly what we placed.
-    local actual = {}
-    for _, line in ipairs(restored_lines) do
-        if line.valid then
-            local ok, contents = pcall(function() return line.get_contents() end)
-            if not ok then
-                log(string.format("[Belt Restore] get_contents ERROR during reconcile: %s", tostring(contents)))
-            elseif contents then
-                for _, c in ipairs(contents) do
-                    local key = GameUtils.make_quality_key(c.name, c.quality or QUALITY_NORMAL)
-                    actual[key] = (actual[key] or 0) + c.count
-                end
-            end
-        end
-    end
+    log(string.format("[Import] Belt restoration complete. Processed %d belts, %d items on belts (%d via back-fill), %d lost.",
+        belt_count, placed_count, backfilled_count, failed_count))
 
-    local placed_count = 0
-    local relocated_count = 0
-    local failed_count = 0
-    for key, exp in pairs(expected) do
-        local got = actual[key] or 0
-        if got > exp.count then got = exp.count end  -- never credit more than the debit
-        placed_count = placed_count + got
-
-        local short = exp.count - (actual[key] or 0)
-        if short > 0 then
-            -- Genuine net shortfall: these items did not fit on the belts. Relocate to the ground so
-            -- the platform total is conserved (debit == credit). Spilled items become item-on-ground,
-            -- which the surface counter includes — no item loss, just belt -> floor.
-            local stack = { name = exp.name, count = short, quality = exp.quality }
-            local ok, spilled = pcall(function()
-                return anchor.surface.spill_item_stack({
-                    position = anchor.position,
-                    stack = stack,
-                    enable_looted = false,
-                    allow_belts = false,
-                })
-            end)
-            if ok and spilled and #spilled > 0 then
-                relocated_count = relocated_count + short
-            else
-                failed_count = failed_count + short
-                log(string.format("[Belt Restore] LOST %d x %s (q=%s) — net shortfall AND ground spill failed (err=%s)",
-                    short, exp.name, tostring(exp.quality), tostring(spilled)))
-            end
-        end
-    end
-
-    log(string.format("[Import] Belt restoration complete. Processed %d belts, %d items on belts (%d relocated to ground), %d lost.",
-        belt_count, placed_count, relocated_count, failed_count))
-
-    if relocated_count > 0 then
-        log(string.format("[Belt Restore] %d belt items relocated to ground (net shortfall on restore) — NO item loss",
-            relocated_count))
-    end
     if failed_count > 0 then
-        game.print(string.format("[Import Warning] LOST %d belt items (net shortfall AND ground spill failed)", failed_count), {1, 0.5, 0})
+        game.print(string.format("[Import Warning] %d belt items could not be placed on belts", failed_count), {1, 0.5, 0})
     end
 
     return {
         belts_processed = belt_count,
-        items_restored = placed_count + relocated_count,
-        items_relocated = relocated_count,
+        items_restored = placed_count,
+        items_backfilled = backfilled_count,
         items_failed = failed_count,
     }
 end

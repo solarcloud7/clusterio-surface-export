@@ -265,6 +265,9 @@ return function(entity_json, surface_index, position_override)
     for _, line_data in ipairs(entity_data.specific_data.items) do
       local line = created_entity.get_transport_line(line_data.line)
       if line and line.valid and line_data.items then
+        -- Insert slots in ASCENDING POSITION ORDER so every insert_at lands exactly (collision-free).
+        -- Same fix as BeltRestoration.restore — unsorted order silently partial-places (the bool lies).
+        table.sort(line_data.items, function(a, b) return (a.position or 0) < (b.position or 0) end)
         for _, item in ipairs(line_data.items) do
           local stack = {
             name = item.name,
