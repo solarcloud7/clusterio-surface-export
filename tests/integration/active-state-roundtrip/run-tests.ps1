@@ -18,7 +18,9 @@
     validator's report):
       * an inactive+holding inserter arrives active=false  (the state fix; FAILS on the pre-fix code)
       * that inserter still holds its item                 (the held-item regression guard)
-      * an active+holding inserter arrives active=true and still holds its item (baseline)
+      * an active inserter arrives active=true             (state baseline; an active inserter may
+                                                            legitimately deliver its held item, so we
+                                                            do not check its hand — timing-dependent)
 
     NOTE: this does NOT assert an aggregate item total — `test` is a live crafting platform whose totals are
     not conserved across the transfer window (see the data-integrity-test-grounding memory). The invariant is
@@ -138,11 +140,16 @@ if ($bInfo -match "held=$([regex]::Escape($Item))x") {
     $failed++
 }
 
-# C) BASELINE: the active inserter must arrive active AND still hold its item.
-if ($aInfo -match 'active=true' -and $aInfo -match "held=$([regex]::Escape($Item))x") {
-    Write-TestResult -TestId "as-active-held" -TestName "Active inserter stays active and keeps its held item (dest: $aInfo)" -Status "passed"
+# C) BASELINE: the active inserter must arrive active (state baseline, mirrors B).
+# We deliberately do NOT assert the item stays IN HAND for an active inserter — an active inserter
+# legitimately swings and DELIVERS its held item to its drop target within a second or two, so an
+# in-hand check here is timing-dependent (flaky across runs/CI). The held-item RESTORE path is covered
+# deterministically by the inactive case above: B keeps its item in hand because it never swings, and
+# both branches call the same restore_inserter_held helper.
+if ($aInfo -match 'active=true') {
+    Write-TestResult -TestId "as-active-kept" -TestName "Active inserter stays active across transfer (dest: $aInfo)" -Status "passed"
 } else {
-    Write-TestResult -TestId "as-active-held" -TestName "Active inserter stays active and keeps its held item" -Status "failed" -Message "expected dest active=true + held=${Item}x.. but got '$aInfo'"
+    Write-TestResult -TestId "as-active-kept" -TestName "Active inserter stays active across transfer" -Status "failed" -Message "expected dest active=true but got '$aInfo'"
     $failed++
 }
 
