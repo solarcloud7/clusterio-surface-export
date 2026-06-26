@@ -103,7 +103,11 @@ function JsonCompat.encode_json_compat(value)
     if ok and result ~= nil then
       return result
     end
-    -- If not ok, assume API is unavailable and fall through to fallbacks
+    -- ok && result==nil → API genuinely unavailable (normal fallthrough, no log).
+    -- not ok → game.table_to_json EXISTED and THREW: a real encode error we must not swallow.
+    if not ok then
+      log(string.format("[JsonCompat] game.table_to_json failed, falling back: %s", tostring(result)))
+    end
   end
 
   -- Try LuaHelpers.table_to_json when enabled
@@ -116,6 +120,9 @@ function JsonCompat.encode_json_compat(value)
   if ok_helpers and helpers_result ~= nil then
     return helpers_result
   end
+  if not ok_helpers then
+    log(string.format("[JsonCompat] helpers.table_to_json failed, falling back: %s", tostring(helpers_result)))
+  end
 
   -- Fallback to internal encoder
   local ok, result = pcall(JsonCompat.to_json, value)
@@ -123,6 +130,8 @@ function JsonCompat.encode_json_compat(value)
     return result
   end
 
+  -- All encoders exhausted: log the genuine total-failure before returning the error to the caller.
+  log(string.format("[JsonCompat] internal JSON encoder failed (all encoders exhausted): %s", tostring(result)))
   return nil, result
 end
 
@@ -134,15 +143,23 @@ function JsonCompat.json_to_table_compat(json_string)
   if helpers and helpers.json_to_table then
     local ok, result = pcall(helpers.json_to_table, json_string)
     if ok and result then return result end
+    -- Decoder EXISTED and THREW (e.g. malformed JSON): log so it isn't masked as "no decoder available".
+    if not ok then
+      log(string.format("[JsonCompat] helpers.json_to_table failed: %s", tostring(result)))
+    end
   end
 
   -- Try Factorio 0.17-1.1 game API (Safe check for 2.0 compatibility)
   -- Accessing missing keys on LuaGameScript errors in 2.0
   if game then
+    -- intentional probe; failure expected (game.json_to_table is absent in 2.0 and the key access errors), no log
     local status, has_func = pcall(function() return game.json_to_table end)
     if status and has_func then
       local ok, result = pcall(game.json_to_table, json_string)
       if ok and result then return result end
+      if not ok then
+        log(string.format("[JsonCompat] game.json_to_table failed: %s", tostring(result)))
+      end
     end
   end
 
@@ -171,6 +188,11 @@ function JsonCompat.write_file_compat(filename, contents, append, for_player)
     if ok and type(result) == "table" and result[1] == false then
       return false, result[2]
     end
+    -- not ok → game.write_file EXISTED and THREW (e.g. disk/filename error): log so it isn't
+    -- masked as "No available write_file implementation" below.
+    if not ok then
+      log(string.format("[JsonCompat] game.write_file failed, falling back: %s", tostring(result)))
+    end
   end
 
   -- Try LuaHelpers.write_file when enabled
@@ -183,6 +205,9 @@ function JsonCompat.write_file_compat(filename, contents, append, for_player)
   end)
   if ok_helpers and helpers_error == true then
     return true
+  end
+  if not ok_helpers then
+    log(string.format("[JsonCompat] helpers.write_file failed: %s", tostring(helpers_error)))
   end
 
   return false, "No available write_file implementation"

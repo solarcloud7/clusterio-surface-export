@@ -192,6 +192,8 @@ function ImportPipeline.queue(json_data, new_platform_name, force_name, requeste
 	end)
 
 	if not ok then
+		log(string.format("[Import Queue] FAILED: apply_starter_pack errored for platform '%s': %s",
+			final_name, tostring(err)))
 		GameUtils.delete_platform(new_platform)
 		return nil, "Failed to apply starter pack: " .. tostring(err)
 	end

@@ -32,6 +32,12 @@ local function configure(config)
     -- failed-entity-loss attribution + expected-count subtraction, Pitfall #20).
     storage.surface_export_config.test_force_entity_failure = config.test_force_entity_failure
   end
+  if config.test_defer_clone_activation ~= nil then
+    -- Test-only: leave a CLONE/non-transfer import DEACTIVATED (skip the activation step) so the
+    -- pristine restored state can be physically counted with ZERO crafting confound — the clean
+    -- way to measure belt/inventory restoration fidelity on the same instance (no transmission).
+    storage.surface_export_config.test_defer_clone_activation = config.test_defer_clone_activation
+  end
   if config.test_force_item_loss ~= nil then
     -- Test-only: remove N items of the most-abundant type from the destination on the NEXT
     -- transfer, AFTER held-item restore but BEFORE the gate — an UNACCOUNTED loss (not routed

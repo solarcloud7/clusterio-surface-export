@@ -72,6 +72,7 @@ EntityHandlers["assembling-machine"] = function(entity)
   end
   
   -- RECIPE QUALITY (Factorio 2.0+)
+  -- intentional probe; failure expected, no log
   local recipe_quality_success, recipe_quality = pcall(function() return entity.get_recipe_quality() end)
   if recipe_quality_success and recipe_quality and recipe_quality.name ~= GameUtils.QUALITY_NORMAL then
     data.recipe_quality = recipe_quality.name
@@ -229,6 +230,7 @@ EntityHandlers["container"] = function(entity)
     local inv = entity.get_inventory(defines.inventory.chest)
     return inv and inv.valid and inv.get_bar() or nil
   end)
+  if not bar_success then log(string.format("[entity-handlers] read container bar failed on %s: %s", entity.name, tostring(bar))) end
   if bar_success and bar and bar < 65535 then  -- 65535 is "no bar"
     data.bar = bar
   end
@@ -264,6 +266,7 @@ EntityHandlers["pump"] = function(entity)
   }
   
   -- FLUID FILTER
+  -- intentional probe; failure expected, no log
   local filter_success, fluid_filter = pcall(function() return entity.get_fluid_filter() end)
   if filter_success and fluid_filter then
     data.fluid_filter = fluid_filter.name
@@ -328,6 +331,7 @@ EntityHandlers["car"] = function(entity)
   data.driver_is_main_gunner = GameUtils.safe_get(entity, "driver_is_main_gunner")
   
   -- SELECTED GUN INDEX
+  -- intentional probe; failure expected, no log
   local gun_success, selected_gun_index = pcall(function() return entity.selected_gun_index end)
   if gun_success and selected_gun_index then
     data.selected_gun_index = selected_gun_index
@@ -361,6 +365,7 @@ EntityHandlers["spider-vehicle"] = function(entity)
   end
   
   -- AUTOMATIC TARGETING PARAMETERS (critical for combat configuration)
+  -- intentional probe; failure expected, no log
   local targeting_success, auto_targeting = pcall(function() return entity.vehicle_automatic_targeting_parameters end)
   if targeting_success and auto_targeting then
     data.automatic_targeting_parameters = {
@@ -370,6 +375,7 @@ EntityHandlers["spider-vehicle"] = function(entity)
   end
   
   -- SELECTED GUN INDEX
+  -- intentional probe; failure expected, no log
   local gun_success, selected_gun_index = pcall(function() return entity.selected_gun_index end)
   if gun_success and selected_gun_index then
     data.selected_gun_index = selected_gun_index
@@ -385,6 +391,7 @@ EntityHandlers["spider-vehicle"] = function(entity)
   data.color = GameUtils.extract_color(entity)
   
   -- LABEL (spider name)
+  -- intentional probe; failure expected, no log
   local label_success, label = pcall(function() return entity.label end)
   if label_success and label and label ~= "" then
     data.label = label
@@ -398,6 +405,7 @@ EntityHandlers["combinator"] = function(entity)
   local data = {}
   
   -- PLAYER DESCRIPTION (user-set description for arithmetic/decider/selector combinators)
+  -- intentional probe; failure expected, no log
   local desc_success, description = pcall(function() return entity.entity_description end)
   if desc_success and description and description ~= "" then
     data.player_description = description
@@ -406,6 +414,7 @@ EntityHandlers["combinator"] = function(entity)
   local cb = entity.get_control_behavior()
   if cb then
     -- Try to get parameters (exists for arithmetic/decider combinators, not constant)
+    -- intentional probe; failure expected, no log
     local success, params = pcall(function() return cb.parameters end)
     if success and params then
       data.parameters = params
@@ -435,6 +444,7 @@ EntityHandlers["turret"] = function(entity)
   }
   
   -- Priority targets (entity's own priority list - not circuit controlled)
+  -- intentional probe; failure expected, no log
   local priority_success, priority_targets = pcall(function() return entity.priority_targets end)
   if priority_success and priority_targets and #priority_targets > 0 then
     data.priority_targets = {}
@@ -453,24 +463,28 @@ EntityHandlers["turret"] = function(entity)
   local cb = entity.get_control_behavior()
   if cb then
     -- Circuit conditions for ignoring unlisted targets
+    -- intentional probe; failure expected, no log
     local success, ignore_condition = pcall(function() return cb.ignore_unlisted_targets_condition end)
     if success and ignore_condition then
       data.ignore_unlisted_targets_condition = ignore_condition
     end
     
     -- Whether to ignore unlisted targets based on circuit
+    -- intentional probe; failure expected, no log
     local success2, set_ignore = pcall(function() return cb.set_ignore_unlisted_targets end)
     if success2 and set_ignore then
       data.set_ignore_unlisted_targets = set_ignore
     end
     
     -- Whether to set priority list from circuit signals
+    -- intentional probe; failure expected, no log
     local success3, set_priority = pcall(function() return cb.set_priority_list end)
     if success3 and set_priority then
       data.set_priority_list = set_priority
     end
     
     -- Read ammo to circuit
+    -- intentional probe; failure expected, no log
     local success4, read_ammo = pcall(function() return cb.read_ammo end)
     if success4 and read_ammo then
       data.read_ammo = read_ammo
@@ -500,6 +514,7 @@ EntityHandlers["mining-drill"] = function(entity)
   end
   
   -- FILTER (resource filter for mining drills)
+  -- intentional probe; failure expected, no log
   local filter_success, filter = pcall(function() return entity.get_filter() end)
   if filter_success and filter then
     data.filter = {
@@ -551,6 +566,7 @@ EntityHandlers["rocket-silo"] = function(entity)
   end
   
   -- RECIPE QUALITY (Factorio 2.0+)
+  -- intentional probe; failure expected, no log
   local recipe_quality_success, recipe_quality = pcall(function() return entity.get_recipe_quality() end)
   if recipe_quality_success and recipe_quality and recipe_quality.name ~= GameUtils.QUALITY_NORMAL then
     data.recipe_quality = recipe_quality.name
@@ -708,12 +724,14 @@ EntityHandlers["train-stop"] = function(entity)
   data.color = GameUtils.extract_color(entity)
   
   -- MANUAL TRAINS LIMIT
+  -- intentional probe; failure expected, no log
   local limit_success, trains_limit = pcall(function() return entity.trains_limit end)
   if limit_success and trains_limit then
     data.manual_trains_limit = trains_limit
   end
   
   -- PRIORITY
+  -- intentional probe; failure expected, no log
   local priority_success, priority = pcall(function() return entity.priority end)
   if priority_success and priority then
     data.priority = priority

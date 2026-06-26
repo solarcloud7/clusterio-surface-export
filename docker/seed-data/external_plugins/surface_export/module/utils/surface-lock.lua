@@ -32,7 +32,11 @@ local function freeze_entities(surface)
             
             -- Check if entity has an active property
             local ok, has_active = pcall(function() return entity.active ~= nil end)
-            if ok and has_active then
+            if not ok then
+                -- Entity is in ACTIVATABLE_ENTITY_TYPES, so reading .active should succeed.
+                log(string.format("[SurfaceLock] freeze: reading entity.active failed for '%s': %s",
+                    tostring(entity.name), tostring(has_active)))
+            elseif has_active then
                 -- CRITICAL: Capture the active state BEFORE we freeze
                 local was_active = entity.active
                 original_states[unit_id] = was_active
@@ -70,8 +74,11 @@ local function unfreeze_entities(surface, original_states)
             
             -- Restore original active state
             if was_active ~= nil then
-                local ok = pcall(function() entity.active = was_active end)
-                if ok and was_active then
+                local ok, err = pcall(function() entity.active = was_active end)
+                if not ok then
+                    log(string.format("[SurfaceLock] unfreeze: restoring entity.active failed for '%s': %s",
+                        tostring(entity.name), tostring(err)))
+                elseif was_active then
                     restored_count = restored_count + 1
                 end
             end
@@ -93,7 +100,7 @@ function SurfaceLock.activate_all(surface)
     local entities = surface.find_entities_filtered({})
     for _, entity in pairs(entities) do
         if entity.valid and ACTIVATABLE_ENTITY_TYPES[entity.type] then
-            local ok = pcall(function()
+            GameUtils.pcall_warn("[SurfaceLock] activate_all: activating entity '" .. tostring(entity.name) .. "'", function()
                 if not entity.active then
                     entity.active = true
                     activated_count = activated_count + 1

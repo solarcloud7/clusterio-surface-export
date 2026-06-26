@@ -37,7 +37,10 @@ local function list_platforms(force_name)
       -- Read destination from schedule (platform.current_target does NOT exist on LuaSpacePlatform)
       local current_target_name = nil
       local ok_sched, schedule = pcall(function() return platform.schedule end)
-      if ok_sched and schedule and schedule.records and schedule.current then
+      if not ok_sched then
+        log(string.format("[list_platforms] read platform.schedule failed for '%s': %s",
+          tostring(platform.name), tostring(schedule)))
+      elseif schedule and schedule.records and schedule.current then
         local current_record = schedule.records[schedule.current]
         if current_record and current_record.station then
           current_target_name = current_record.station
@@ -49,7 +52,10 @@ local function list_platforms(force_name)
       -- CRITICAL: Space platforms use defines.space_platform_state, NOT defines.train_state
       local platform_state = nil
       local ok_state, state_val = pcall(function() return platform.state end)
-      if ok_state and state_val then
+      if not ok_state then
+        log(string.format("[list_platforms] read platform.state failed for '%s': %s",
+          tostring(platform.name), tostring(state_val)))
+      elseif state_val then
         local sps = defines.space_platform_state
         if state_val == sps.on_the_path then
           platform_state = "on_the_path"

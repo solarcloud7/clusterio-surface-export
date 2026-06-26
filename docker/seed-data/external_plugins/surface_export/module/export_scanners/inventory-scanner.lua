@@ -27,36 +27,42 @@ local function extract_item_properties(stack)
      stack.is_upgrade_item or stack.is_deconstruction_item or 
      stack.is_item_with_tags then
     local call_success, call_return = pcall(function() return stack.export_stack() end)
+    if not call_success then log(string.format("[inventory-scanner] export_stack failed on %s: %s", stack.name, tostring(call_return))) end
     if call_success and call_return then
       item_entry.export_string = call_return
     end
   end
 
   -- Health (damaged items: armor, vehicles, etc.)
+  -- intentional probe; failure expected, no log
   local health_success, health = pcall(function() return stack.health end)
   if health_success and health then
     item_entry.health = health
   end
 
   -- Durability (for tools, armor)
+  -- intentional probe; failure expected, no log
   local durability_success, durability = pcall(function() return stack.durability end)
   if durability_success and durability then
     item_entry.durability = durability
   end
 
   -- Ammo count (partial magazines)
+  -- intentional probe; failure expected, no log
   local ammo_success, ammo = pcall(function() return stack.ammo end)
   if ammo_success and ammo then
     item_entry.ammo = ammo
   end
 
   -- Spoilage (Space Age - items that decay over time)
+  -- intentional probe; failure expected, no log
   local spoil_success, spoil_percent = pcall(function() return stack.spoil_percent end)
   if spoil_success and spoil_percent then
     item_entry.spoil_percent = spoil_percent
   end
 
   -- Spoil result (what it turns into when spoiled)
+  -- intentional probe; failure expected, no log
   local result_success, spoil_result = pcall(function() return stack.spoil_result end)
   if result_success and spoil_result and spoil_result.name then
     item_entry.spoil_result = spoil_result.name
@@ -71,18 +77,21 @@ local function extract_item_properties(stack)
         allow_manual_change = stack.allow_manual_label_change
       }
     end)
+    if not label_success then log(string.format("[inventory-scanner] read item label failed on %s: %s", stack.name, tostring(label_data))) end
     if label_success and label_data then
       item_entry.label = label_data
     end
   end
 
   -- Custom description (for tagged items)
+  -- intentional probe; failure expected, no log
   local desc_success, custom_desc = pcall(function() return stack.custom_description end)
   if desc_success and custom_desc then
     item_entry.custom_description = custom_desc
   end
 
   -- Grid equipment (for power armor)
+  -- intentional probe; failure expected, no log
   local grid_success, grid = pcall(function() return stack.grid end)
   if grid_success and grid and grid.equipment then
     item_entry.grid = InventoryScanner.extract_equipment_grid(grid)
@@ -242,6 +251,9 @@ function InventoryScanner.extract_belt_items(entity)
   local max_lines = 8  -- safe upper bound
   for line_index = 1, max_lines do
     local ok, line = pcall(function() return entity.get_transport_line(line_index) end)
+    if not ok then
+      log(string.format("[inventory-scanner] get_transport_line(%d) failed on %s: %s", line_index, entity.name, tostring(line)))
+    end
     if not ok or not line or not line.valid then
       break  -- no more transport lines
     end

@@ -197,6 +197,7 @@ end
 --- @param property string: Property name
 --- @return any|nil: Property value, or nil if read fails
 function GameUtils.safe_get(obj, property)
+  -- intentional probe; failure expected (property may not exist / obj invalid), no log
   local ok, val = pcall(function() return obj[property] end)
   if ok then return val end
   return nil
@@ -207,6 +208,7 @@ end
 --- @param entity LuaEntity
 --- @return table|nil: {r, g, b, a} or nil
 function GameUtils.extract_color(entity)
+  -- intentional probe; failure expected (entity may have no color), no log
   local ok, color = pcall(function() return entity.color end)
   if ok and color then
     return { r = color.r or 0, g = color.g or 0, b = color.b or 0, a = color.a or 1 }

@@ -749,6 +749,10 @@ function Deserializer.restore_nested_inventory(inventory, items_data)
         return inventory.insert(insert_params)
       end)
 
+      if not ok then
+        log(string.format("[Deserializer] Failed to insert nested item '%s' x%d: %s",
+          item.name or "?", item.count or 0, tostring(result)))
+      end
       if ok and result > 0 then
         local inserted_stack = inventory.find_item_stack(item.name)
         restore_item_properties(inserted_stack, item)
@@ -768,6 +772,13 @@ function Deserializer.create_ground_item(surface, item_data)
   if ok and entity and entity.valid then
     return entity
   end
+  -- A pcall ERROR here is a genuine fault (bad stack/signature/unknown item), NOT an expected
+  -- collision (create_entity returns nil WITHOUT erroring on collision) — surface it so such a bug
+  -- isn't masked as silent ground-item loss. Expected collisions (ok=true, entity=nil) stay quiet.
+  if not ok then
+    log(string.format("[Deserializer] create_ground_item '%s' x%s errored on first attempt: %s",
+      tostring(item_data.name), tostring(item_data.count), tostring(entity)))
+  end
   -- Position may now be occupied by a restored building; retry at a nearby non-colliding spot.
   local pos = surface.find_non_colliding_position("item-on-ground", item_data.position, 8, 0.25)
   if pos then
@@ -776,6 +787,10 @@ function Deserializer.create_ground_item(surface, item_data)
     end)
     if ok2 and entity2 and entity2.valid then
       return entity2
+    end
+    if not ok2 then
+      log(string.format("[Deserializer] create_ground_item '%s' x%s errored on retry: %s",
+        tostring(item_data.name), tostring(item_data.count), tostring(entity2)))
     end
   end
   return nil  -- caller (entity_creation.lua) tallies the loss
@@ -1215,6 +1230,9 @@ function Deserializer.restore_power_connections(entity, entity_data, entity_map)
       end)
       if ok and result then
         connected_count = connected_count + 1
+      elseif not ok then
+        log(string.format("[Deserializer] connect_neighbour failed for pole %s -> %s: %s",
+          entity.name, tostring(target_id), tostring(result)))
       end
     else
       log(string.format("[FactorioSurfaceExport] Warning: Could not find target pole %s for power connection from %s",

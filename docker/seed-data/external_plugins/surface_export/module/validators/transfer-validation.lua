@@ -90,6 +90,10 @@ function TransferValidation.validate_import(surface, expected_verification, opti
                 end
             end)
             
+            if not success then
+                log(string.format("[TransferValidation] Error counting inventories for entity %s: %s", entity_name, err))
+            end
+
             -- Count belt items
             if GameUtils.BELT_ENTITY_TYPES[entity_type] then
                 Util.pcall_warn("[TransferValidation] Belt scan on " .. entity_name, function()

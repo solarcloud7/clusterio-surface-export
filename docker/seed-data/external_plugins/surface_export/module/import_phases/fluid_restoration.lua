@@ -152,6 +152,10 @@ function FluidRestoration.restore(entities_to_create, entity_map)
                                dropped_count = dropped_count + 1
                            end
                        else
+                           if not retry_ok then
+                               log(string.format("[Fluid Restore] Seg %d (%s): insert_fluid ERROR on %s: %s",
+                                   seg_id, data.fluid, target.entity.name, tostring(retry_inserted)))
+                           end
                            -- Engine silently rejected both write paths — this fluid is unrestorable
                            -- (e.g., fusion-reactor plasma output). Track separately for validation adjustment.
                            log(string.format("[Fluid Restore] Seg %d (%s): engine rejected write on %s (%.1f unrestorable)",

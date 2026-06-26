@@ -106,7 +106,12 @@ SurfaceExportModule.events = {
 					end
 				end
 			end)
-			if ok then est_ticks = result end
+			if ok then
+				est_ticks = result
+			else
+				log(string.format("[Surface Export] ERROR computing flight duration estimate for '%s': %s",
+					tostring(platform.name), tostring(result)))
+			end
 			storage.platform_flight_data[platform.name] = {
 				departure_tick = game.tick,
 				estimated_duration_ticks = est_ticks,

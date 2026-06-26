@@ -170,6 +170,9 @@ return function(entity_json, surface_index, position_override)
       end
     end)
 
+    if not fluid_restore_success then
+      log(string.format("[test_import_entity] fluid restore pcall failed: %s", tostring(fluid_error)))
+    end
     if fluid_restore_success then
       -- Verify fluids were restored
       if created_entity.valid and created_entity.fluidbox then
@@ -314,6 +317,9 @@ return function(entity_json, surface_index, position_override)
       return EntityScanner.serialize_entity(created_entity)
     end)
     
+    if not export_success then
+      log(string.format("[test_import_entity] re-export pcall failed: %s", tostring(exported_data)))
+    end
     if export_success and exported_data then
       result.exported_entity = exported_data
       result.comparison = {}

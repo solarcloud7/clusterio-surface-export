@@ -32,6 +32,8 @@ function PlatformSchedule.capture(platform, hub_entity)
 	local schedule_platform = platform
 
 	if hub_entity and hub_entity.valid then
+		-- intentional probe; failure expected (best-effort preference for the hub's platform view),
+		-- benign fallback to the passed-in platform below, no log
 		local ok_hub_platform, hub_platform = pcall(function()
 			return hub_entity.platform
 		end)
@@ -92,7 +94,9 @@ function PlatformSchedule.capture(platform, hub_entity)
 	local ok_current, current_or_err = pcall(function()
 		return schedule.current
 	end)
-	if ok_current and type(current_or_err) == "number" and current_or_err >= 1 then
+	if not ok_current then
+		log(string.format("[PlatformSchedule] read schedule.current failed: %s", tostring(current_or_err)))
+	elseif type(current_or_err) == "number" and current_or_err >= 1 then
 		current = current_or_err
 	end
 
@@ -102,6 +106,8 @@ function PlatformSchedule.capture(platform, hub_entity)
 	end)
 	if ok_group then
 		group = group_or_err
+	else
+		log(string.format("[PlatformSchedule] read schedule.group failed: %s", tostring(group_or_err)))
 	end
 
 	return {

@@ -20,6 +20,7 @@ function ConnectionScanner.extract_circuit_connections(entity)
   
   -- Factorio 2.0: Use get_wire_connectors() API instead of circuit_connection_definitions
   local success, wire_connectors = pcall(function() return entity.get_wire_connectors(false) end)
+  if not success then log(string.format("[connection-scanner] get_wire_connectors failed on %s: %s", entity.name, tostring(wire_connectors))) end
   if not success or not wire_connectors then
     return {}
   end
@@ -70,6 +71,7 @@ function ConnectionScanner.extract_power_connections(entity)
   local connections = {}
   
   local success, neighbours = pcall(function() return entity.neighbours end)
+  if not success then log(string.format("[connection-scanner] read neighbours failed on %s: %s", entity.name, tostring(neighbours))) end
   if not success or not neighbours or not neighbours.copper then
     return {}
   end
@@ -105,6 +107,7 @@ function ConnectionScanner.extract_control_behavior(entity)
 
   -- Common control behavior properties (many entities)
   local function safe_get(prop)
+    -- intentional probe; failure expected, no log
     local success, value = pcall(function() return cb[prop] end)
     return success and value or nil
   end
@@ -146,6 +149,7 @@ function ConnectionScanner.extract_control_behavior(entity)
   if entity.name:find("constant%-combinator") then
     local sections_data = {}
     local success, sections = pcall(function() return cb.sections end)
+    if not success then log(string.format("[connection-scanner] read constant-combinator sections failed on %s: %s", entity.name, tostring(sections))) end
     if success and sections and #sections > 0 then
       for _, section in ipairs(sections) do
         local section_data = {
@@ -214,12 +218,14 @@ function ConnectionScanner.extract_logistic_requests(entity)
   local requests = {}
   
   local success, slot_count = pcall(function() return entity.request_slot_count end)
+  if not success then log(string.format("[connection-scanner] read request_slot_count failed on %s: %s", entity.name, tostring(slot_count))) end
   if not success or not slot_count or slot_count == 0 then
     return {}
   end
 
   for i = 1, slot_count do
     local req_success, request = pcall(function() return entity.get_request_slot(i) end)
+      if not req_success then log(string.format("[connection-scanner] get_request_slot(%d) failed on %s: %s", i, entity.name, tostring(request))) end
     if req_success and request then
       table.insert(requests, {
         index = i,
@@ -246,9 +252,11 @@ function ConnectionScanner.extract_entity_filters(entity)
   -- Filter inserters (2.0+ supports multiple filter slots)
   if entity.type == "inserter" then
     local success, slot_count = pcall(function() return entity.filter_slot_count end)
+    if not success then log(string.format("[connection-scanner] read inserter filter_slot_count failed on %s: %s", entity.name, tostring(slot_count))) end
     if success and slot_count and slot_count > 0 then
       for i = 1, slot_count do
         local filter_success, filter = pcall(function() return entity.get_filter(i) end)
+        if not filter_success then log(string.format("[connection-scanner] inserter get_filter(%d) failed on %s: %s", i, entity.name, tostring(filter))) end
         if filter_success and filter and filter.name then
           table.insert(filters, {
             index = i,
@@ -272,9 +280,11 @@ function ConnectionScanner.extract_entity_filters(entity)
   -- Loaders and loader-1x1
   if entity.type == "loader" or entity.type == "loader-1x1" then
     local success, slot_count = pcall(function() return entity.filter_slot_count end)
+    if not success then log(string.format("[connection-scanner] read loader filter_slot_count failed on %s: %s", entity.name, tostring(slot_count))) end
     if success and slot_count and slot_count > 0 then
       for i = 1, slot_count do
         local filter_success, filter = pcall(function() return entity.get_filter(i) end)
+        if not filter_success then log(string.format("[connection-scanner] loader get_filter(%d) failed on %s: %s", i, entity.name, tostring(filter))) end
         if filter_success and filter then
           table.insert(filters, {
             index = i,
@@ -289,9 +299,11 @@ function ConnectionScanner.extract_entity_filters(entity)
   -- Cargo wagon filters
   if entity.type == "cargo-wagon" then
     local success, inventory = pcall(function() return entity.get_inventory(defines.inventory.cargo_wagon) end)
+    if not success then log(string.format("[connection-scanner] get cargo-wagon inventory failed on %s: %s", entity.name, tostring(inventory))) end
     if success and inventory and inventory.valid then
       for i = 1, #inventory do
         local filter_success, filter = pcall(function() return inventory.get_filter(i) end)
+        if not filter_success then log(string.format("[connection-scanner] cargo-wagon get_filter(%d) failed on %s: %s", i, entity.name, tostring(filter))) end
         if filter_success and filter then
           table.insert(filters, {
             index = i,
@@ -321,6 +333,7 @@ function ConnectionScanner.extract_infinity_filters(entity)
   local filters = {}
   
   local success, infinity_filters = pcall(function() return entity.infinity_container_filters end)
+  if not success then log(string.format("[connection-scanner] read infinity_container_filters failed on %s: %s", entity.name, tostring(infinity_filters))) end
   if success and infinity_filters then
     for i, filter in ipairs(infinity_filters) do
       if filter and filter.name then

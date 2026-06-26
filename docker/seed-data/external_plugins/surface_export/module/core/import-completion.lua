@@ -162,8 +162,14 @@ function ImportCompletion.run_phase2(job)
 	-- For transfers: DEFER activation until AFTER validation passes
 	--   This prevents machines from processing resources between activation and validation
 	local frozen_states = job.frozen_states or {}
+	local _dbg_cfg = storage.surface_export_config
+	local defer_clone = _dbg_cfg and _dbg_cfg.debug_mode and _dbg_cfg.test_defer_clone_activation
 	if job.transfer_id then
 		log("[Import] Deferring active state restoration until after validation (transfer mode)")
+	elseif defer_clone then
+		-- TEST-ONLY: leave the clone DEACTIVATED so the pristine restored state can be physically
+		-- counted with zero crafting confound (clean same-instance restoration-fidelity measurement).
+		log("[Import][TEST] test_defer_clone_activation set — clone left DEACTIVATED (no activation, no fluids)")
 	else
 		PhaseProfiler.start(job.job_id, "activation")
 		ActiveStateRestoration.restore(entities_to_create, entity_map, frozen_states)
@@ -267,7 +273,7 @@ function ImportCompletion.run_phase2(job)
 				local totals = {}
 				for _, ent in ipairs(ents) do
 					if ent.valid then
-						local ok, maxi = pcall(function() return ent.get_max_inventory_index() end)
+						local ok, maxi = pcall(function() return ent.get_max_inventory_index() end) -- intentional probe; failure expected per-entity, no log
 						if ok and maxi then
 							for ii = 1, maxi do
 								local inv = ent.get_inventory(ii)

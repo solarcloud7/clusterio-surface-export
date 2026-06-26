@@ -99,6 +99,7 @@ function EntityScanner.serialize_entity(entity)
   end
 
   -- MIRROR (whether entity is mirrored)
+  -- intentional probe; failure expected, no log
   local mirror_success, mirrored = pcall(function() return entity.mirrored end)
   if mirror_success and mirrored then
     entity_data.mirror = true
