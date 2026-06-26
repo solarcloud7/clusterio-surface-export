@@ -6,13 +6,14 @@ local BeltRestoration = {}
 --- CRITICAL: Belts are always active and cannot be deactivated, so items must be restored all at once.
 ---
 --- Factorio 2.0.76 LuaTransportLine API — VERIFIED EMPIRICALLY on the pinned engine (do NOT trust the
---- "latest" lua-api docs: they describe a POST-2.0.76 signature with an extra `belt_stack_size` first
---- parameter that does NOT exist here):
----     insert_at(position, items) -> bool        [position runs 0..line_length]
----     insert_at_back(items) -> bool
---- Proof: on 2.0.76, insert_at_back(4, items) ERRORS "items: table expected, got number" and the 3-arg
---- insert_at(stack_size, items, position) returns false; the 1-arg / 2-arg forms above work. (Recheck this
---- if the engine is ever upgraded — belt stacking added the belt_stack_size param in a later version.)
+--- "latest" lua-api docs: they describe a POST-2.0.76 signature with a `belt_stack_size` param that does
+--- NOT exist here):
+---     insert_at(position, items, count) -> bool     [position runs 0..line_length; count = how many to place]
+---     insert_at_back(items, count) -> bool
+--- Proof (fresh turbo belt): insert_at(pos, {iron-plate,count=4}, 4) places 4; WITHOUT the count arg it
+--- places only 1 (the count defaults to 1 — this exact omission once dropped ~72% of stacked-belt items
+--- while the meter still reported "0 lost"). insert_at_back(4, items) ERRORS "items: table expected, got
+--- number" (the latest-docs belt_stack_size form). Recheck if the engine is upgraded.
 ---
 --- A few items on DENSE turbo belts cannot be re-inserted at their exact source positions (the line packs
 --- slightly differently on restore and fills before the last items). To GUARANTEE zero item loss
@@ -56,9 +57,11 @@ function BeltRestoration.restore(entities_to_create, entity_map)
                     }
                     local success = false
 
-                    -- Primary: insert at the exact source position (2.0.76 2-arg form).
+                    -- Primary: insert `item.count` items at the exact source position.
+                    -- 2.0.76 form: insert_at(position, items, COUNT) — the 3rd arg is how many to place
+                    -- (verified empirically: insert_at(pos, {count=4}, 4) places 4; without it, only 1).
                     if item.position then
-                        local ok, res = pcall(function() return line.insert_at(item.position, stack) end)
+                        local ok, res = pcall(function() return line.insert_at(item.position, stack, item.count) end)
                         if not ok then
                             log(string.format("[Belt Restore] insert_at ERROR on %s line %d (pos=%s): %s",
                                 entity.name, line_data.line, tostring(item.position), tostring(res)))
@@ -66,9 +69,9 @@ function BeltRestoration.restore(entities_to_create, entity_map)
                         success = ok and res == true
                     end
 
-                    -- Fallback: append at the back of the line (2.0.76 1-arg form).
+                    -- Fallback: append at the back of the line. 2.0.76 form: insert_at_back(items, COUNT).
                     if not success then
-                        local ok, res = pcall(function() return line.insert_at_back(stack) end)
+                        local ok, res = pcall(function() return line.insert_at_back(stack, item.count) end)
                         if not ok then
                             log(string.format("[Belt Restore] insert_at_back ERROR on %s line %d: %s",
                                 entity.name, line_data.line, tostring(res)))
