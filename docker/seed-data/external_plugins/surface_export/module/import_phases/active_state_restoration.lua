@@ -11,6 +11,30 @@ local ActiveStateRestoration = {}
 
 local ACTIVATABLE_ENTITY_TYPES = GameUtils.ACTIVATABLE_ENTITY_TYPES
 
+--- Restore an inserter's held item from its serialized data.
+--- CRITICAL: held_stack.set_stack() silently fails on a SETTLED-deactivated inserter,
+--- so the caller MUST ensure entity.active == true before calling this.
+--- No-op (returns 0,0) for non-inserters, missing data, or an already-restored hand.
+--- @param entity LuaEntity
+--- @param entity_data table
+--- @return number, number: items restored, items failed
+local function restore_inserter_held(entity, entity_data)
+    if entity.type ~= "inserter" then return 0, 0 end
+    local sd = entity_data.specific_data
+    if not (sd and sd.held_item and entity.held_stack) then return 0, 0 end
+    if entity.held_stack.valid_for_read then return 0, 0 end
+    local held = sd.held_item
+    local ok, err = pcall(function() entity.held_stack.set_stack(held) end)
+    if ok and entity.held_stack.valid_for_read then
+        return (held.count or 1), 0
+    end
+    if not ok then
+        log(string.format("[Import] Failed to restore held item '%s' x%d for inserter: %s",
+            held.name or "?", held.count or 0, tostring(err)))
+    end
+    return 0, (held.count or 1)
+end
+
 --- Restore all entities to their original active state
 --- This is the FINAL step of import, after all entities are created and configured.
 ---
@@ -44,11 +68,21 @@ function ActiveStateRestoration.restore(entities_to_create, entity_map, frozen_s
             goto continue
         end
         
-        -- Look up the ORIGINAL active state from frozen_states
-        -- The entity_id in entity_data is the ORIGINAL unit_number from export
+        -- Look up the ORIGINAL active state from frozen_states.
+        -- The entity_id in entity_data is the ORIGINAL unit_number from export.
+        -- CRITICAL (cross-instance transfer): frozen_states is built on the SOURCE keyed by
+        -- numeric unit_number, then transmitted as JSON. JSON object keys are strings, so a
+        -- numeric key (12917) comes back as "12917"; a numeric lookup then MISSES and every
+        -- entity wrongly defaults to active below — silently flipping inactive entities to
+        -- active on the destination. Fall back to the string key. (Same-instance/clone paths
+        -- keep numeric keys and hit the first lookup; stable-id entity_ids are already strings,
+        -- so tostring is a no-op there.) Verified via a helpers.table_to_json round-trip on 2.0.76.
         local was_active = frozen_states[entity_data.entity_id]
-        
-        -- If not in frozen_states, default to active (most entities are active)
+        if was_active == nil and entity_data.entity_id ~= nil then
+            was_active = frozen_states[tostring(entity_data.entity_id)]
+        end
+
+        -- If still not found, default to active (most entities are active)
         if was_active == nil then
             was_active = true
         end
@@ -63,31 +97,31 @@ function ActiveStateRestoration.restore(entities_to_create, entity_map, frozen_s
                 entity.active = true
                 activated_count = activated_count + 1
             end
-            
+
             -- Retry inserter held_stack restoration AFTER reactivation
-            -- held_stack.set_stack() silently fails on deactivated inserters
-            if entity.type == "inserter" 
-               and entity_data.specific_data 
-               and entity_data.specific_data.held_item 
-               and entity.held_stack then
-                local held = entity_data.specific_data.held_item
-                if not entity.held_stack.valid_for_read then
-                    local ok, err = pcall(function()
-                        entity.held_stack.set_stack(held)
-                    end)
-                    if ok and entity.held_stack.valid_for_read then
-                        held_items_restored = held_items_restored + (held.count or 1)
-                    else
-                        held_items_failed = held_items_failed + (held.count or 1)
-                        if not ok then
-                            log(string.format("[Import] Failed to restore held item '%s' x%d for inserter: %s",
-                                held.name or "?", held.count or 0, tostring(err)))
-                        end
-                    end
-                end
-            end
+            -- (set_stack silently fails on a deactivated inserter; entity is active here).
+            local restored, failed = restore_inserter_held(entity, entity_data)
+            held_items_restored = held_items_restored + restored
+            held_items_failed = held_items_failed + failed
         else
-            -- Entity was inactive before export - keep it inactive
+            -- Entity was inactive before export - keep it inactive.
+            -- Held items must STILL be restored, but set_stack fails on a deactivated
+            -- inserter, so temporarily activate, restore, then re-deactivate. Verified on
+            -- 2.0.76: activate->set_stack->deactivate within one tick preserves the held
+            -- stack durably (no inserter logic runs mid-script), and it survives settled
+            -- deactivation. Without this, the frozen_states fix above would convert a
+            -- state-only bug into a held-item LOSS for inactive inserters.
+            if entity.type == "inserter"
+               and entity_data.specific_data
+               and entity_data.specific_data.held_item
+               and entity.held_stack
+               and not entity.held_stack.valid_for_read then
+                entity.active = true
+                local restored, failed = restore_inserter_held(entity, entity_data)
+                held_items_restored = held_items_restored + restored
+                held_items_failed = held_items_failed + failed
+            end
+
             if entity.active then
                 entity.active = false
             end
