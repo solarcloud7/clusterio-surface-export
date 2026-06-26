@@ -221,6 +221,11 @@ jobs:
         run: |
           ./tests/integration/ground-item-fidelity/run-tests.ps1
 
+      - name: Run Active-State Roundtrip Test
+        shell: pwsh
+        run: |
+          ./tests/integration/active-state-roundtrip/run-tests.ps1
+
       - name: Run Transfer Fidelity Sentinel
         shell: pwsh
         run: |
