@@ -9,6 +9,7 @@ local PlatformHubMapping = require("modules/surface_export/import_phases/platfor
 local EntityCreation = require("modules/surface_export/import_phases/entity_creation")
 local PhaseProfiler = require("modules/surface_export/utils/phase-profiler")
 local GameUtils = require("modules/surface_export/utils/game-utils")
+local VersionCompat = require("modules/surface_export/utils/version-compat")
 
 local ImportPipeline = {}
 
@@ -94,6 +95,18 @@ function ImportPipeline.queue(json_data, new_platform_name, force_name, requeste
 		-- Uncompressed format - data is already the platform data
 		platform_data = parsed_data
 	end
+
+	-- Version dispatch (SOURCE axis): the payload carries the engine version that produced it
+	-- (factorio_version, stamped at export). Migrate its DATA SHAPE to the runtime engine's shape
+	-- before any restoration reads it. Phase 1 is identity (only the "2.0" bucket exists), but the
+	-- seam + the both-buckets log line are built now so a future cross-version mismatch is visible
+	-- and phase 2 only has to register the migration. See utils/version-compat.lua.
+	local source_parsed = VersionCompat.parse(platform_data.factorio_version)
+	local source_bucket = source_parsed and source_parsed.bucket or nil
+	local runtime_bucket = VersionCompat.runtime_bucket()
+	log(string.format("[Import Queue] Version dispatch: source=%s (%s) runtime=%s",
+		tostring(platform_data.factorio_version), tostring(source_bucket), tostring(runtime_bucket)))
+	platform_data = VersionCompat.migrate(platform_data, source_bucket, runtime_bucket)
 
 	-- Forward-only transfer schema cutover:
 	-- Transfer imports must include full platform schedule payload.
@@ -268,6 +281,10 @@ function ImportPipeline.queue(json_data, new_platform_name, force_name, requeste
 
 		-- Import state
 		platform_data = platform_data,
+		-- Engine version that produced this payload (SOURCE axis) vs the running engine (RUNTIME axis).
+		-- Equal in phase 1; recorded so cross-version handling/diagnostics can key off them later.
+		source_bucket = source_bucket,
+		runtime_bucket = runtime_bucket,
 		target_surface = new_platform.surface,
 		tiles_to_place = platform_data.tiles or {},
 		tiles_placed = false,

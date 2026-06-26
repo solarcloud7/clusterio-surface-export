@@ -1,6 +1,8 @@
 -- FactorioSurfaceExport - Game Utilities
 -- Helper functions specific to Factorio game mechanics
 
+local VersionCompat = require("modules/surface_export/utils/version-compat")
+
 local GameUtils = {}
 
 --- The default quality name used by Factorio for non-quality items
@@ -241,7 +243,9 @@ function GameUtils.delete_platform(platform)
   if not (platform and platform.valid) then return false end
   local surface = platform.surface
   if surface and surface.valid then
-    game.delete_surface(surface)  -- deferred to end of tick; fully removes platform + surface
+    -- Version-correct teardown primitive (2.0.76: game.delete_surface; platform.destroy() is a
+    -- no-op — Pitfall #19). Routed through VersionCompat so an engine bump can change just the seam.
+    VersionCompat.delete_platform(platform)  -- deferred to end of tick; fully removes platform + surface
     return true
   end
   -- No valid surface to delete (e.g. apply_starter_pack failed before the surface materialized).

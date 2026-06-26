@@ -92,6 +92,56 @@ function Invoke-Lua {
 
 #endregion
 
+#region Version Audit
+
+# The engine version every test is written and verified against. Export/import API behavior drifts
+# between Factorio versions (belt insert_at param order, platform destroy(), fluidbox writes, ...), so a
+# silent engine bump must fail LOUDLY rather than let a test pass on untested behavior. Bump this in
+# lockstep with the instances' factorio.version (and the version-compat.lua PROFILES) when upgrading.
+$script:ExpectedFactorioVersion = "2.0.76"
+
+<#
+.SYNOPSIS
+    Audit the running Factorio engine version and fail loudly if it is not the expected one.
+
+.DESCRIPTION
+    Reads active_mods.base from the instance and compares it to $script:ExpectedFactorioVersion. Throws
+    on mismatch so an engine upgrade can never silently change export/import API behavior under the tests
+    (the version-drift trap: insert_at order, destroy() no-op, set_inventory_size_override args, ...).
+    Authoritative signatures live at lua-api.factorio.com/<version>/ — NOT the "latest" docs/MCP.
+
+.PARAMETER Instance
+    Instance name or ID to query.
+
+.PARAMETER Expected
+    Override the expected version (defaults to $script:ExpectedFactorioVersion).
+
+.OUTPUTS
+    The detected version string.
+#>
+function Assert-FactorioVersion {
+    param(
+        [Parameter(Mandatory=$true)]
+        [string]$Instance,
+        [string]$Expected = $script:ExpectedFactorioVersion
+    )
+
+    $lua = "rcon.print(tostring((script and script.active_mods and script.active_mods.base) or (game.active_mods and game.active_mods.base) or 'unknown'))"
+    $detected = (Invoke-Lua -Instance $Instance -Code $lua | Out-String).Trim()
+
+    if (-not $detected -or $detected -eq "unknown") {
+        throw "Version audit: could not read Factorio version from '$Instance' (RCON empty/unresponsive?)"
+    }
+    if ($detected -ne $Expected) {
+        throw "Version audit FAILED on '$Instance': running Factorio $detected but tests are written for $Expected. " +
+              "Bump `$script:ExpectedFactorioVersion + version-compat.lua PROFILES and re-verify against lua-api.factorio.com/$detected/."
+    }
+    Write-Status "Factorio version audited: $detected (matches expected)" -Type success
+    return $detected
+}
+
+#endregion
+
 #region Platform Management
 
 <#
@@ -356,6 +406,10 @@ function New-IsolatedTestSurface {
         error = $null
     }
     
+    # Step 0: Version audit — fail loudly if the engine isn't the version these tests target, so an
+    # engine bump can't silently change export/import API behavior under us (version-drift trap).
+    Assert-FactorioVersion -Instance $Instance | Out-Null
+
     # Step 1: Clean up old test surfaces
     if ($ShowProgress) {
         Write-Host "  Cleaning up old test surfaces..." -ForegroundColor Gray
@@ -945,7 +999,10 @@ Export-ModuleMember -Function @(
     # RCON
     'Send-Rcon',
     'Invoke-Lua',
-    
+
+    # Version Audit
+    'Assert-FactorioVersion',
+
     # Platform Management
     'New-TestPlatform',
     'Get-PlatformIndex',

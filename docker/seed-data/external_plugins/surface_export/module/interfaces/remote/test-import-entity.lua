@@ -5,6 +5,7 @@
 local Deserializer = require("modules/surface_export/core/deserializer")
 local EntityScanner = require("modules/surface_export/export_scanners/entity-scanner")
 local GameUtils = require("modules/surface_export/utils/game-utils")
+local VersionCompat = require("modules/surface_export/utils/version-compat")
 local json = require("modules/surface_export/core/json")
 
 --- Test import a single entity from export JSON
@@ -272,10 +273,10 @@ return function(entity_json, surface_index, position_override)
           }
           local success = false
           if item.position then
-            success = line.insert_at(item.position, stack, item.count)
+            success = VersionCompat.belt_insert_at(line, item.position, stack, item.count)
           end
           if not success then
-            success = line.insert_at_back(stack, item.count)
+            success = VersionCompat.belt_insert_at_back(line, stack, item.count)
           end
           if success then
             belt_items_placed = belt_items_placed + item.count
