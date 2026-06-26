@@ -10,10 +10,11 @@
     "build:web": "webpack-cli --mode production",
     "build": "npm run build:node && npm run build:web",
     "prepare": "npm run build",
-    "lint": "npm run lint:js && npm run lint:lua && npm run lint:web-cache",
+    "lint": "npm run lint:js && npm run lint:lua && npm run lint:web-cache && npm run lint:test-grounding",
     "lint:js": "eslint . --max-warnings 0",
     "lint:lua": "node scripts/lint-lua-invariants.mjs",
     "lint:web-cache": "node scripts/lint-webpack-cache.mjs",
+    "lint:test-grounding": "node scripts/lint-test-grounding.mjs",
     "test": "npm run build:node && node --test test/messages.roundtrip.test.cjs"
   },
   "keywords": [
