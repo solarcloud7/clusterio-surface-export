@@ -144,30 +144,58 @@ function TransferValidation.validate_import(surface, expected_verification, opti
     local item_mismatches = {}
     local item_match = true
     
-    -- Tolerances
-    local STORAGE_TOLERANCE = 5          -- Allow 5 items difference for storage
-    local TOTAL_LOSS_TOLERANCE = 0.95    -- Allow up to 95% loss overall (machine inventory limits)
-    local MIN_ABSOLUTE_LOSS = 100        -- Only fail if we lost more than 100 absolute items
+    -- Tolerances.
+    -- strict=true (transfers): held items are restored BEFORE this count while machines stay
+    -- deactivated (no craft window — see validation-timing-trilemma), so actual should match
+    -- expected within the irreducible belt-restoration floor (<= ~8 items/type on a ~10k-belt
+    -- platform). This is the gate that protects source deletion; STRICT_ABS/PCT are ~3x that
+    -- floor, verified empirically, so a clean transfer passes with margin while a real loss
+    -- (a dropped inventory/category — hundreds of items) fails. The loose path (default)
+    -- predates the strict gate and remains for non-transfer callers (no source-deletion risk).
+    local strict = options.strict == true
+    local STORAGE_TOLERANCE = 5          -- loose: gain headroom
+    local TOTAL_LOSS_TOLERANCE = 0.95    -- loose: up to 95% loss
+    local MIN_ABSOLUTE_LOSS = 100        -- loose: and >100 absolute
+    local STRICT_ABS = 20                -- strict: per-item absolute floor (low-count items)
+    local STRICT_PCT = 0.015             -- strict: per-item fraction of expected (high-count items)
 
     for item_name, expected_count in pairs(expected_verification.item_counts or {}) do
         local actual_count = total_item_counts[item_name] or 0
         local diff = expected_count - actual_count  -- Positive = items lost
-        
-        -- Check if we gained items (should never happen)
-        if actual_count > expected_count + STORAGE_TOLERANCE then
-            item_match = false
-            table.insert(item_mismatches, string.format(
-                "%s: GAINED items - expected %d, got %d",
-                item_name, expected_count, actual_count
-            ))
-        -- Check if we lost more than tolerance allows
-        elseif diff > expected_count * TOTAL_LOSS_TOLERANCE and diff > MIN_ABSOLUTE_LOSS then
-            -- Only flag if we lost more than 95% AND more than 100 absolute items
-            item_match = false
-            table.insert(item_mismatches, string.format(
-                "%s: excessive loss - expected %d, got %d (lost %d, %.0f%%)",
-                item_name, expected_count, actual_count, diff, (diff/expected_count)*100
-            ))
+
+        if strict then
+            -- Symmetric per-item tolerance: fail on real loss OR an unexplained gain beyond the floor.
+            local tol = math.max(STRICT_ABS, expected_count * STRICT_PCT)
+            if actual_count > expected_count + tol then
+                item_match = false
+                table.insert(item_mismatches, string.format(
+                    "%s: GAINED items - expected %d, got %d (> tol %d)",
+                    item_name, expected_count, actual_count, math.floor(tol)
+                ))
+            elseif diff > tol then
+                item_match = false
+                table.insert(item_mismatches, string.format(
+                    "%s: loss - expected %d, got %d (lost %d > tol %d)",
+                    item_name, expected_count, actual_count, diff, math.floor(tol)
+                ))
+            end
+        else
+            -- Check if we gained items (should never happen)
+            if actual_count > expected_count + STORAGE_TOLERANCE then
+                item_match = false
+                table.insert(item_mismatches, string.format(
+                    "%s: GAINED items - expected %d, got %d",
+                    item_name, expected_count, actual_count
+                ))
+            -- Check if we lost more than tolerance allows
+            elseif diff > expected_count * TOTAL_LOSS_TOLERANCE and diff > MIN_ABSOLUTE_LOSS then
+                -- Only flag if we lost more than 95% AND more than 100 absolute items
+                item_match = false
+                table.insert(item_mismatches, string.format(
+                    "%s: excessive loss - expected %d, got %d (lost %d, %.0f%%)",
+                    item_name, expected_count, actual_count, diff, (diff/expected_count)*100
+                ))
+            end
         end
     end
 

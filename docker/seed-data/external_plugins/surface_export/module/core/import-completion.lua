@@ -247,11 +247,70 @@ function ImportCompletion.run_phase2(job)
 				iol.total, table_size(iol.items)))
 		end
 
+		-- Restore inserter held items BEFORE counting so the strict gate sees them while machines
+		-- stay deactivated (Pitfall #15). Removes the pre-activation "held phantom" (a few hundred
+		-- items) that previously forced a loose tolerance — without opening a craft window, because
+		-- only inserters are briefly toggled (within one synchronous pass; they cannot swing).
+		ActiveStateRestoration.restore_held_items_only(entities_to_create, entity_map)
+
+		-- TEST HOOK (one-shot, debug-gated): inject a REAL, UNACCOUNTED item loss on the destination
+		-- AFTER held-restore but BEFORE the gate, to prove the STRICT gate DETECTS loss and the
+		-- two-phase commit preserves the source (gate-detects-loss test). Removes N of the most-abundant
+		-- (name,quality) from the surface — NOT routed through failed_entity_losses/overflow, so it is a
+		-- genuine shortfall the gate must catch. Set via configure({ test_force_item_loss = N }).
+		do
+			local _cfg2 = storage.surface_export_config
+			if _cfg2 and _cfg2.debug_mode and _cfg2.test_force_item_loss and _cfg2.test_force_item_loss > 0 then
+				local n_want = _cfg2.test_force_item_loss
+				_cfg2.test_force_item_loss = nil  -- consume: applies to one transfer only
+				local ents = job.target_surface.find_entities_filtered({})
+				local totals = {}
+				for _, ent in ipairs(ents) do
+					if ent.valid then
+						local ok, maxi = pcall(function() return ent.get_max_inventory_index() end)
+						if ok and maxi then
+							for ii = 1, maxi do
+								local inv = ent.get_inventory(ii)
+								if inv and inv.valid and not inv.is_empty() then
+									for si = 1, #inv do
+										local stack = inv[si]
+										if stack.valid_for_read then
+											local q = (stack.quality and stack.quality.name) or "normal"
+											local key = stack.name .. "|" .. q
+											local e = totals[key]
+											if not e then e = { name = stack.name, quality = q, count = 0 }; totals[key] = e end
+											e.count = e.count + stack.count
+										end
+									end
+								end
+							end
+						end
+					end
+				end
+				local best
+				for _, e in pairs(totals) do
+					if not best or e.count > best.count then best = e end
+				end
+				local removed = 0
+				if best then
+					for _, ent in ipairs(ents) do
+						if removed >= n_want then break end
+						if ent.valid then
+							local r = ent.remove_item({ name = best.name, count = n_want - removed, quality = best.quality })
+							removed = removed + (r or 0)
+						end
+					end
+				end
+				log(string.format("[TEST HOOK] Forced item loss: removed %d %s (quality=%s) from destination (requested %d)",
+					removed, best and best.name or "?", best and best.quality or "?", n_want))
+			end
+		end
+
 		PhaseProfiler.start(job.job_id, "validation")
 		local success, result = TransferValidation.validate_import(
 			job.target_surface,
 			adjusted_verification,
-			{ skip_fluid_validation = true }  -- Fluids are deferred to post-activation
+			{ skip_fluid_validation = true, strict = true }  -- strict per-item gate; fluids deferred
 		)
 
 		-- TEST HOOK (one-shot, debug-gated): force a validation failure to exercise the rollback /

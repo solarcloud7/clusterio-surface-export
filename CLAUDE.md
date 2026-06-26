@@ -722,6 +722,29 @@ Then **hard-refresh** the browser (the 404 is cached). After a `down -v`, fresh 
 **Key files/config**: `.env` (`FACTORIO_CLIENT_TAG`/`FACTORIO_CLIENT_BUILD`), `docker-compose.debug.yml` (no
 `SKIP_CLIENT` on host-1), clusterio-docker `scripts/seed-instances.sh` (auto-export), `web/icons.tsx`.
 
+### 28. Transfer Validation Timing — the gate must count a COMPLETE state (CRITICAL, data-integrity)
+**Symptom**: the transfer gate reports a few hundred items "lost" (the phantom 382/417) even though the
+transfer physically preserves ~100%. Tightening the loose tolerance to catch real loss then fails *every*
+transfer.
+**Root cause**: the gate counts the destination **pre-activation** (Pitfall #15 — machines must stay
+deactivated through validation or they craft in the gap and produce false GAINS), but inserter **held items**
+restore only via `set_stack`, which silently fails on a settled-deactivated inserter — so they're absent at
+the gate. The gate measures a *deliberately-incomplete* reality. The data is fine; the clock is wrong.
+**DO NOT re-attempt** (each is a proven dead-end — see [memory] `validation-timing-trilemma`): (1) move
+validation after activation → craft-gain false failures; (2) subtract *predicted* held items from expected
+(PR #25, closed) → prediction ≠ restoration → an inactive inserter's item is subtracted, never restored →
+**silent permanent loss**; (3) gate-vs-display two-pass → coupling hell.
+**Fix (approach #4 — fix the clock)**: held items only need the *inserter* active, not the machines. A
+pre-gate pass (`ActiveStateRestoration.restore_held_items_only`) briefly toggles each inserter active →
+`set_stack` → back, in one synchronous pass (no engine tick → no swing, no crafting), so the gate counts a
+**complete** physical reality with every machine still deactivated. Then `validate_import(..., {strict=true})`
+tightens the per-item tolerance to `max(20, 1.5%·expected)` (≈3× the irreducible belt-restoration floor).
+**Rule**: a gate must measure a COMPLETE state, never a mid-process one — fix the timing, not the number.
+**Mechanical guard**: `tests/integration/gate-detects-loss` injects a real shortfall (`test_force_item_loss`)
+and asserts the strict gate FAILS + the source is preserved — so reverting to a loose gate goes RED in CI.
+**Key files**: `module/import_phases/active_state_restoration.lua`, `module/core/import-completion.lua`,
+`module/validators/transfer-validation.lua`.
+
 ## Factorio 2.0 Fluid API & Simulation Behavior
 
 Moved to [factorio-2.0-api-notes.md](docs/factorio-2.0-api-notes.md) — the fluid-segment model, the

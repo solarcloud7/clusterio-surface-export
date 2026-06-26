@@ -35,6 +35,44 @@ local function restore_inserter_held(entity, entity_data)
     return 0, (held.count or 1)
 end
 
+--- Restore inserter held items WITHOUT activating machines (pre-validation pass).
+--- Held items are the only item category not present at the pre-activation validation gate
+--- (set_stack fails on a settled-deactivated inserter, so they are normally restored only in the
+--- post-activation restore() above). Restoring them here lets the STRICT transfer gate count them
+--- while every machine stays deactivated — removing the "held phantom" (a few hundred items) from
+--- the gate without opening a craft window (Pitfall #15: machines must stay inactive through
+--- validation so they cannot consume/produce items between activation and counting).
+--- Only inserters are briefly toggled active (within one synchronous pass, so they cannot swing);
+--- each is returned to its prior (deactivated) state. Idempotent with restore(): its
+--- `not valid_for_read` guard makes the later held-restore a no-op for hands filled here.
+--- @param entities_to_create table: List of entity data objects
+--- @param entity_map table: Map of entity_id to LuaEntity
+--- @return number, number: items restored, items failed
+function ActiveStateRestoration.restore_held_items_only(entities_to_create, entity_map)
+    local restored = 0
+    local failed = 0
+    for _, entity_data in ipairs(entities_to_create) do
+        local entity = entity_map[entity_data.entity_id]
+        if entity and entity.valid and entity.type == "inserter"
+           and entity_data.specific_data
+           and entity_data.specific_data.held_item
+           and entity.held_stack
+           and not entity.held_stack.valid_for_read then
+            local was_active = entity.active
+            entity.active = true
+            local r, f = restore_inserter_held(entity, entity_data)
+            entity.active = was_active  -- restore prior (deactivated) state: machines-off invariant
+            restored = restored + r
+            failed = failed + f
+        end
+    end
+    if restored > 0 or failed > 0 then
+        log(string.format("[Import] Pre-validation held-item restore: %d restored, %d failed (machines stay inactive)",
+            restored, failed))
+    end
+    return restored, failed
+end
+
 --- Restore all entities to their original active state
 --- This is the FINAL step of import, after all entities are created and configured.
 ---

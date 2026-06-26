@@ -32,6 +32,13 @@ local function configure(config)
     -- failed-entity-loss attribution + expected-count subtraction, Pitfall #20).
     storage.surface_export_config.test_force_entity_failure = config.test_force_entity_failure
   end
+  if config.test_force_item_loss ~= nil then
+    -- Test-only: remove N items of the most-abundant type from the destination on the NEXT
+    -- transfer, AFTER held-item restore but BEFORE the gate — an UNACCOUNTED loss (not routed
+    -- through failed_entity_losses/overflow). Proves the STRICT gate DETECTS real loss and the
+    -- two-phase commit preserves the source. See validation-timing-trilemma / gate-detects-loss test.
+    storage.surface_export_config.test_force_item_loss = config.test_force_item_loss
+  end
 
   log(string.format("[FactorioSurfaceExport] Configuration updated: batch_size=%s, max_concurrent_jobs=%s, show_progress=%s, debug_mode=%s",
     config.batch_size or "unchanged",

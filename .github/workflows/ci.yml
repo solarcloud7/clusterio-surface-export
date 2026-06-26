@@ -226,6 +226,11 @@ jobs:
         run: |
           ./tests/integration/active-state-roundtrip/run-tests.ps1
 
+      - name: Run Strict-Gate Loss Detection Test
+        shell: pwsh
+        run: |
+          ./tests/integration/gate-detects-loss/run-tests.ps1
+
       - name: Run Transfer Fidelity Sentinel
         shell: pwsh
         run: |
