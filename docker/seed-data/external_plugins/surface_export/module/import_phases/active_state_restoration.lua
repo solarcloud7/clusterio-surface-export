@@ -22,17 +22,21 @@ local function restore_inserter_held(entity, entity_data)
     if entity.type ~= "inserter" then return 0, 0 end
     local sd = entity_data.specific_data
     if not (sd and sd.held_item and entity.held_stack) then return 0, 0 end
-    if entity.held_stack.valid_for_read then return 0, 0 end
-    local held = sd.held_item
-    local ok, err = pcall(function() entity.held_stack.set_stack(held) end)
-    if ok and entity.held_stack.valid_for_read then
-        return (held.count or 1), 0
-    end
+    local want = sd.held_item.count or 1
+    local have = entity.held_stack.valid_for_read and entity.held_stack.count or 0
+    if have >= want then return have, 0 end                    -- already satisfied (idempotent top-up)
+    -- set_stack REPLACES the hand, so this tops up a PARTIALLY-filled hand too (the busy-loss case: the
+    -- deserializer under-fills a deactivated/bulk inserter, leaving a non-empty-but-short hand). Caller MUST
+    -- have set entity.active=true (set_stack under-fills a deactivated bulk inserter). The bool lies, so we
+    -- read back and return the genuine shortfall (now a VISIBLE loss, not silent).
+    local ok, err = pcall(function() entity.held_stack.set_stack(sd.held_item) end)
     if not ok then
         log(string.format("[Import] Failed to restore held item '%s' x%d for inserter: %s",
-            held.name or "?", held.count or 0, tostring(err)))
+            sd.held_item.name or "?", want, tostring(err)))
     end
-    return 0, (held.count or 1)
+    local got = entity.held_stack.valid_for_read and entity.held_stack.count or 0
+    if got < have then got = have end                          -- never report worse than before the call
+    return got, math.max(0, want - got)
 end
 
 --- Restore inserter held items WITHOUT activating machines (pre-validation pass).
@@ -56,14 +60,21 @@ function ActiveStateRestoration.restore_held_items_only(entities_to_create, enti
         if entity and entity.valid and entity.type == "inserter"
            and entity_data.specific_data
            and entity_data.specific_data.held_item
-           and entity.held_stack
-           and not entity.held_stack.valid_for_read then
-            local was_active = entity.active
-            entity.active = true
-            local r, f = restore_inserter_held(entity, entity_data)
-            entity.active = was_active  -- restore prior (deactivated) state: machines-off invariant
-            restored = restored + r
-            failed = failed + f
+           and entity.held_stack then
+            -- Trigger on EMPTY *or* PARTIALLY-filled hands (have < captured), not only empty. The busy held-item
+            -- loss is the deserializer leaving a hand partially filled (set_stack under-fills a deactivated bulk
+            -- inserter) — the old `not valid_for_read` (empty-only) guard skipped those, so they were never
+            -- topped up and vanished silently. Verified: src-held 80 -> dest-held 33 == gate loss 47.
+            local want = entity_data.specific_data.held_item.count or 1
+            local have = entity.held_stack.valid_for_read and entity.held_stack.count or 0
+            if have < want then
+                local was_active = entity.active
+                entity.active = true  -- bulk-inserter capacity only applies when active; set_stack under-fills otherwise
+                local got, short = restore_inserter_held(entity, entity_data)
+                entity.active = was_active  -- restore prior (deactivated) state: machines-off invariant (Pitfall #15)
+                restored = restored + math.max(0, got - have)
+                failed = failed + short
+            end
         end
     end
     if restored > 0 or failed > 0 then

@@ -31,3 +31,28 @@ So inserters DO hold railgun-ammo. The 47 loss is a subset — D1 decides real (
 inflated).
 
 ## NEXT: D1+D2 — ground clone_physical vs expected vs dest_physical (decisive). Then Fix A or B.
+
+## ROOT CAUSE (2026-06-27) — held items UNDER-restored; held loss == gate loss EXACTLY
+D1+D2 on CI: [CI-DIAG-EXPORT-SUMMARY] total_abs_diff=0 (export EXACT, H-PHANTOM refuted) and [CI-DIAG]
+held_failed=0 (no tracked bucket). But [CI-DIAG-SRC-HELD] vs [CI-DIAG-DEST-HELD] nailed it:
+    railgun-ammo: src-held 80 -> dest-held 33 = lost 47  == gate loss 47
+    copper-plate: src-held 68 -> dest-held 24 = lost 44  == gate loss 44
+    iron-plate:   src-held 52 -> dest-held 20 = lost 32  == gate loss 32
+The gate loss EXACTLY equals the held-item shortfall for every item => the busy loss IS inserter held items
+being UNDER-restored, silently (held_failed=0).
+
+MECHANISM: deserializer (`deserializer.lua:617-628`) set_stacks the held item on a freshly-created DEACTIVATED
+inserter. On a deactivated inserter the bulk-inserter capacity isn't active, so set_stack seats only ~base hand
+amount (D3: a non-bulk/deactivated hand takes ~4; a briefly-ACTIVE bulk inserter takes the full stack 10). The
+hand is left PARTIALLY filled (valid_for_read=TRUE). Then `restore_held_items_only` (the pre-gate recovery)
+SKIPS it because its guard is `not entity.held_stack.valid_for_read` (EMPTY hands only) -> partial hands never
+topped up -> dest short -> gate fails, no bucket.
+
+LOCAL vs CI EXPLAINED: locally the deserializer set_stack leaves the hand EMPTY (set_stack "silently fails on a
+SETTLED-deactivated inserter") -> recovery pass fires (empty) -> full restore -> 0 loss. On CI (fresher state)
+it leaves the hand PARTIAL -> recovery skips -> loss. Same code, state-dependent.
+
+FIX A (Phase E): make held-item restore top up ANY hand whose count < captured (empty OR partial), via a
+brief active toggle + set_stack the FULL captured count (verify by physical read-back, the bool lies). Likely
+in `restore_held_items_only` (change the guard from "empty" to "count < captured"; clear + set_stack full).
+Lab-test the top-up on a partially-filled bulk inserter first.
