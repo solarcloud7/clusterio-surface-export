@@ -85,6 +85,8 @@ function BeltRestoration.restore(entities_to_create, entity_map)
     -- storage.surface_export_config.belt_consolidate=false to fall back to the lossy −8 floor.
     local consolidate_enabled = not (storage.surface_export_config and storage.surface_export_config.belt_consolidate == false)
     local consolidated_lines = 0
+    local consolidate_reject_count = 0   -- consolidated groups insert_at rejected (always tracked — the busy-case signal)
+    local consolidate_reject_total = 0   -- items in those rejected groups
 
     for _, entity_data in ipairs(entities_to_create) do
         local entity = entity_map[entity_data.entity_id]
@@ -127,14 +129,25 @@ function BeltRestoration.restore(entities_to_create, entity_map)
                         local g = groups[key]
                         local pos = math.min((gi - 1) * 0.25, len - 0.05)
                         local before = line.get_item_count()
-                        local ok, err = pcall(function()
+                        local ok, ret = pcall(function()
                             return VersionCompat.belt_insert_at(line, pos, { name = g.name, count = g.count, quality = g.quality }, g.count)
                         end)
                         if not ok then
                             log(string.format("[Belt Restore] consolidate insert ERROR on %s line %d: %s",
-                                entity.name, line_data.line, tostring(err)))
+                                entity.name, line_data.line, tostring(ret)))
                         end
                         placed_count = placed_count + (line.get_item_count() - before)
+                        -- A false return = the consolidated group was REJECTED (likely a multi-type line where
+                        -- N groups × 0.25 overran the line, or two types within 0.25). This is exactly the
+                        -- busy-case failure mode single-type over-compression doesn't show. Track always.
+                        if ret == false then
+                            consolidate_reject_count = consolidate_reject_count + 1
+                            consolidate_reject_total = consolidate_reject_total + g.count
+                            if diag then
+                                log(string.format("[BeltDiag] CONSOLIDATE-REJECT: %s x%d at pos=%.4f line_len=%.4f group %d/%d on %s line %d",
+                                    g.name, g.count, pos, len, gi, #order, entity.name, line_data.line))
+                            end
+                        end
                     end
                     consolidated_lines = consolidated_lines + 1
                 else
@@ -201,6 +214,14 @@ function BeltRestoration.restore(entities_to_create, entity_map)
     log(string.format(
         "[Import] Belt restoration complete. %d belts: expected=%d placed=%d unplaced_diag=%d consolidated_lines=%d (per-line; gate authoritative)",
         belt_count, expected_total, placed_count, unplaced_diag, consolidated_lines))
+
+    -- Surface consolidation rejects to the cluster log (game.print mirrors to factorio log → cluster log,
+    -- which CI captures even when belt_diag is off). consolidate_reject_total > 0 means the oversized-stack
+    -- fix could not place some groups — the busy-case signal we can't otherwise see from CI.
+    if consolidate_reject_count > 0 then
+        game.print(string.format("[BeltConsolidate] %d groups REJECTED (%d items) across %d consolidated lines",
+            consolidate_reject_count, consolidate_reject_total, consolidated_lines), { 1, 0.5, 0 })
+    end
 
     if diag then
         storage.belt_diag_result = {
