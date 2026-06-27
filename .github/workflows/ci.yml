@@ -272,6 +272,32 @@ jobs:
           echo "=== Host 2 Factorio Log ==="
           docker exec surface-export-host-2 cat /clusterio/data/instances/clusterio-host-2-instance-1/factorio-current.log 2>/dev/null | tail -200 || true
 
+      - name: Capture failing repro (payload + save) for local debugging
+        if: failure()
+        run: |
+          # The busy held-item loss only reproduces in CI's platform state. Capture the re-importable payload
+          # (debug_source_platform_*.json = the serialized clone the transfer imports) and the host-2 save
+          # (failed dest left deactivated on gate failure) so we can repro + interrogate the failing inserters
+          # locally instead of guessing via 4-minute CI pushes. See plan / tests/inserter-lab/NOTEBOOK.md.
+          mkdir -p ci-artifacts/host1-script-output ci-artifacts/host2-script-output ci-artifacts/host2-saves
+          docker cp surface-export-host-1:/clusterio/data/instances/clusterio-host-1-instance-1/script-output/. ci-artifacts/host1-script-output/ 2>/dev/null || true
+          docker cp surface-export-host-2:/clusterio/data/instances/clusterio-host-2-instance-1/script-output/. ci-artifacts/host2-script-output/ 2>/dev/null || true
+          # Stop host-2 to flush the latest save (with the failed dest) to disk, then copy it.
+          docker exec surface-export-controller sh -c 'npx clusterioctl --config /clusterio/tokens/config-control.json instance stop clusterio-host-2-instance-1' 2>/dev/null || true
+          sleep 5
+          docker cp surface-export-host-2:/clusterio/data/instances/clusterio-host-2-instance-1/saves/. ci-artifacts/host2-saves/ 2>/dev/null || true
+          echo "=== captured artifact sizes ===" ; du -sh ci-artifacts/* 2>/dev/null || true
+          ls -la ci-artifacts/host1-script-output/ 2>/dev/null | grep -i debug_source || true
+
+      - name: Upload failing repro artifacts
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: failing-repro
+          path: ci-artifacts/
+          retention-days: 5
+          if-no-files-found: warn
+
       - name: Stop cluster
         if: always()
         run: |
