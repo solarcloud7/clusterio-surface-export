@@ -5,7 +5,6 @@
  */
 
 import fs from "fs";
-import path from "path";
 import { BaseInstancePlugin } from "@clusterio/host";
 import type { Instance } from "@clusterio/host";
 import { escapeString } from "@clusterio/lib";

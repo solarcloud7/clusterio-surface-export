@@ -41,7 +41,11 @@ local function restore_inserter_held(entity, entity_data)
     -- ticks + save/load), write the full count DIRECTLY once set_stack has seated the item TYPE. The set_stack
     -- bool lies, so we read back below; any genuine shortfall is returned as a VISIBLE loss (never silent).
     if entity.held_stack.valid_for_read and entity.held_stack.count < want then
-        pcall(function() entity.held_stack.count = want end)
+        local cok, cerr = pcall(function() entity.held_stack.count = want end)
+        if not cok then
+            log(string.format("[Import] held_stack.count=%d failed for '%s': %s",
+                want, sd.held_item.name or "?", tostring(cerr)))
+        end
     end
     local got = entity.held_stack.valid_for_read and entity.held_stack.count or 0
     if got < have then got = have end                          -- never report worse than before the call
