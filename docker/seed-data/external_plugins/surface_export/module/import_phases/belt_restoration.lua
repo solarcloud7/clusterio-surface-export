@@ -237,6 +237,9 @@ function BeltRestoration.restore(entities_to_create, entity_map)
         storage.belt_diag_result = {
             geometry = geom_items, compression = comp_items, other = other_items,
             nopos = nopos_items, total_unplaced = unplaced_diag,
+            consolidated_lines = consolidated_lines,
+            consolidate_reject_count = consolidate_reject_count,
+            consolidate_reject_total = consolidate_reject_total,
         }
         log(string.format("[BeltDiag] SUMMARY unplaced=%d -> geometry=%d compression=%d other=%d nopos=%d",
             unplaced_diag, geom_items, comp_items, other_items, nopos_items))

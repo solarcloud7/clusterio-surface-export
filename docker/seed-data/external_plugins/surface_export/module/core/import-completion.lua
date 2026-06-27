@@ -414,7 +414,15 @@ function ImportCompletion.run_phase2(job)
 				result.mismatchDetails or "Unknown error"
 			), {1, 0, 0})
 			-- Leave platform paused and entities deactivated on validation failure so user can investigate
-			log("[Validation] Platform left paused and deactivated due to validation failure")
+							local bd = storage.belt_diag_result
+				if bd then
+					game.print(string.format(
+						"[BeltDiagFail] unplaced=%d geom=%d comp=%d other=%d nopos=%d | consolidated=%d reject=%d(%d items)",
+						bd.total_unplaced or -1, bd.geometry or -1, bd.compression or -1, bd.other or -1,
+						bd.nopos or -1, bd.consolidated_lines or -1, bd.consolidate_reject_count or -1,
+						bd.consolidate_reject_total or -1), {1, 0.6, 0})
+				end
+				log("[Validation] Platform left paused and deactivated due to validation failure")
 		else
 			-- Validation passed — auto-unpause platform and activate all entities
 			-- Use ActiveStateRestoration to restore original active states (not blanket activate_all)
