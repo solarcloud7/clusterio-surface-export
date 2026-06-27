@@ -257,7 +257,8 @@ function ImportCompletion.run_phase2(job)
 		-- stay deactivated (Pitfall #15). Removes the pre-activation "held phantom" (a few hundred
 		-- items) that previously forced a loose tolerance — without opening a craft window, because
 		-- only inserters are briefly toggled (within one synchronous pass; they cannot swing).
-		ActiveStateRestoration.restore_held_items_only(entities_to_create, entity_map)
+		local _held_restored, _held_failed = ActiveStateRestoration.restore_held_items_only(entities_to_create, entity_map)
+		job.held_items_failed = _held_failed
 
 		-- TEST HOOK (one-shot, debug-gated): inject a REAL, UNACCOUNTED item loss on the destination
 		-- AFTER held-restore but BEFORE the gate, to prove the STRICT gate DETECTS loss and the
@@ -422,6 +423,11 @@ function ImportCompletion.run_phase2(job)
 						bd.nopos or -1, bd.consolidated_lines or -1, bd.consolidate_reject_count or -1,
 						bd.consolidate_reject_total or -1))
 				end
+				log(string.format("[CI-DIAG] held_failed=%d inv_overflow=%d failed_entity=%d belt_comp=%d (failed_entity+inv_overflow already subtracted from expected; held NOT)",
+					(job.held_items_failed or -1),
+					(job.inventory_overflow_losses and job.inventory_overflow_losses.total) or 0,
+					(job.failed_entity_losses and job.failed_entity_losses.total_items) or 0,
+					(bd and bd.compression) or -1))
 				log("[Validation] Platform left paused and deactivated due to validation failure")
 		else
 			-- Validation passed — auto-unpause platform and activate all entities
