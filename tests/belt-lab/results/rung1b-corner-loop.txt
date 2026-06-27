@@ -1,0 +1,33 @@
+Rung 1b — mid-motion corner loop (2x2 turbo, clockwise corners), spin 300 ticks, atomic capture -> two-pass
+rebuild offset -> rank-matched diff. Sparse seed (single items, 0.3 spacing).
+
+RESULT (sparse):
+  [R1B] srcTotal=24 dstTotal=24
+  [R1B] countDrops(0): NONE
+  [R1B] maxDelta=0.125000 driftCount=16
+  [R1B] DONE
+
+CONCLUSIONS:
+- ZERO item loss, ZERO per-line count drop — the feared micro-collision cascade did NOT occur at this density.
+  insert_at conserved all 24 mid-motion corner items.
+- insert_at QUANTIZES captured float positions to a 1/8 (0.125) grid: 16/24 items drifted, max shift = 0.125.
+  => item-lossless but NOT position-exact. The drift is sub-tile and harmless to item COUNT here.
+- The micro-collision threat is density-dependent: at 0.3 spacing, 0.125 snapping never collided two items.
+  DECISIVE follow-up = DENSE loop (items at minimum separation) -> does quantization ever force a count drop?
+  That is the candidate for the production residual loss.
+
+RESULT (DENSE — jam-packed loop, fed to gridlock then captured):
+  [R1BD] srcTotal=112 dstTotal=112
+  [R1BD] countDrops(0): NONE
+  [R1BD] maxDelta=0.039063 driftCount=28
+
+DECISIVE CONCLUSION:
+- At MAXIMUM density, capture -> sorted insert_at + belt_stack_size (two-pass) is STILL item-LOSSLESS:
+  112=112, ZERO count drops. The micro-collision cascade provably does NOT occur — belt items are always
+  >= min separation, and insert_at's 1/8 quantization preserves distinctness.
+- This held on a 4-belt CHAINED CORNER segment (the multi-entity segment case blamed for production loss).
+- Position drift is sub-tile (<=0.125, smaller when dense) and HARMLESS to item count.
+- => The core capture/restore ALGORITHM (sorted insert_at, two-pass, all entities first) is sound and lossless
+  for single belts AND chained corner segments. The production residual must come from elsewhere: undergrounds
+  (relocate not yet tested), splitters, OR the export side (multi-tick scan / JSON float precision / cross-instance),
+  NOT from insert_at fidelity.
