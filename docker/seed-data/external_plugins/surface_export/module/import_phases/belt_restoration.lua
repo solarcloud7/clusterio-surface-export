@@ -73,7 +73,9 @@ function BeltRestoration.restore(entities_to_create, entity_map)
     -- longer, e.g. a curve outside-lane) vs COMPRESSION (in-bounds but too tight for insert_at's ~0.25 min
     -- spacing). Decides whether multi-tick (helps compression only) can reach literal-zero, or whether the
     -- loss is geometry (needs dest-geometry preservation instead). See tests/belt-lab/NOTEBOOK.md.
-    local diag = storage.surface_export_config and storage.surface_export_config.belt_diag
+    -- DIAGNOSTIC: default-ON to capture the busy-case classification from CI (game.print'd below; gate back
+    -- off once diagnosed). Set belt_diag=false to disable.
+    local diag = not (storage.surface_export_config and storage.surface_export_config.belt_diag == false)
     local geom_items, comp_items, other_items, nopos_items = 0, 0, 0, 0
 
     -- Oversized-stack consolidation: over-compressed lines (whose captured slots are packed tighter than
@@ -230,6 +232,9 @@ function BeltRestoration.restore(entities_to_create, entity_map)
         }
         log(string.format("[BeltDiag] SUMMARY unplaced=%d -> geometry=%d compression=%d other=%d nopos=%d",
             unplaced_diag, geom_items, comp_items, other_items, nopos_items))
+        -- game.print mirrors to the factorio log → cluster log → CI capture (log() above does NOT reach CI).
+        game.print(string.format("[BeltDiag] unplaced=%d geom=%d comp=%d other=%d | consolidated_lines=%d reject=%d(%d items)",
+            unplaced_diag, geom_items, comp_items, other_items, consolidated_lines, consolidate_reject_count, consolidate_reject_total), { 0.6, 0.8, 1 })
     end
 
     return {
