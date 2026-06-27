@@ -14,6 +14,14 @@ local MIN_SPACING = 0.24
 
 -- True if the sorted captured slots can't be placed at insert_at's min spacing within the dest line.
 local function line_needs_consolidation(sorted_slots, len)
+    local n = #sorted_slots
+    if n == 0 then return false end
+    -- TOO MANY SLOTS to place at min spacing within the line — even if every individual adjacent gap looks
+    -- OK, N groups need ~(N)·MIN_SPACING of length. This catches the busy-case miss the pairwise-adjacent
+    -- check below does NOT: a line (esp. a short curve/underground lane) carrying more item-groups than fit,
+    -- where greedy forward-packing would push the tail past the end → per-slot drop. (consolidate_reject=0 on
+    -- CI proved consolidation always places; the loss is lines that BYPASS it — this closes that gap.)
+    if n * MIN_SPACING > len then return true end
     local prev = nil
     for _, item in ipairs(sorted_slots) do
         local p = item.position
