@@ -110,9 +110,17 @@ local function handle_pending_file_write(export_id)
 		end
 
 		if json_string then
-			game.write_file(filename, json_string, false)
-			log(string.format("[Export] File written: %s (%d bytes)", filename, #json_string))
-			game.print(string.format("[Export] File written: script-output/%s", filename), {0, 1, 0})
+			-- Use the pcall-guarded compat wrapper: on Factorio 2.0 `game.write_file` does not exist and even
+			-- ACCESSING the key throws ("LuaGameScript doesn't contain key write_file"), which crashed the host
+			-- instance on every /export-platform-file. write_file_compat falls back to helpers.write_file.
+			local wrote_ok, write_err = Util.write_file_compat(filename, json_string, false)
+			if wrote_ok then
+				log(string.format("[Export] File written: %s (%d bytes)", filename, #json_string))
+				game.print(string.format("[Export] File written: script-output/%s", filename), {0, 1, 0})
+			else
+				log(string.format("[Export ERROR] write_file failed for %s: %s", filename, tostring(write_err)))
+				game.print(string.format("[Export ERROR] Could not write file %s", filename), {1, 0.3, 0})
+			end
 		else
 			log(string.format("[Export ERROR] Failed to serialize export for file write: %s", export_id))
 		end

@@ -31,13 +31,22 @@ local function export_platform_to_file(platform_index, force_name, filename)
     filename = string.format("platform_exports/%s.json", export_id)
   end
   
+  -- The export is ASYNC: job_id is returned immediately but storage.platform_exports[job_id] is not
+  -- populated until the job completes, so export_entry/json_string are nil here. The actual file write
+  -- happens later via the async pipeline (handle_pending_file_write). Guard against the nil so we return
+  -- a clean error instead of indexing nil (export_entry.stats) and crashing.
+  if not export_entry or not json_string then
+    return false, "Export not yet complete — file is written asynchronously when the export job finishes"
+  end
+
   -- Write to file
   local success, write_error = Util.write_file_compat(filename, json_string, false)
   if not success then
     return false, string.format("Failed to write file: %s", write_error or "Unknown error")
   end
-  
-  log(string.format("[FactorioSurfaceExport] Exported platform to file: %s (%d KB)", filename, export_entry.stats.size_kb))
+
+  local size_kb = (export_entry.stats and export_entry.stats.size_kb) or (#json_string / 1024)
+  log(string.format("[FactorioSurfaceExport] Exported platform to file: %s (%d KB)", filename, size_kb))
   return true, filename
 end
 
