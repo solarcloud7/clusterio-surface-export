@@ -400,6 +400,13 @@ function ExportPipeline.complete(job)
 			end
 		end
 		log(string.format("[CI-DIAG-EXPORT-SUMMARY] ran=true diff_types=%d total_abs_diff=%d (serialized-vs-live source; nonzero => export over/under-count = phantom)", diff_types, total_abs))
+		-- source HELD-by-item (to compare against dest-held at the gate: if src-held >> dest-held for a lost
+		-- item, held items are silently dropped at restore even though no bucket reports it).
+		local sheld = {}
+		for _, e in ipairs(job.surface.find_entities_filtered({ type = "inserter" })) do
+			if e.held_stack and e.held_stack.valid_for_read then sheld[e.held_stack.name] = (sheld[e.held_stack.name] or 0) + e.held_stack.count end
+		end
+		for k, v in pairs(sheld) do log(string.format("[CI-DIAG-SRC-HELD] %s=%d", k, v)) end
 	else
 		log("[CI-DIAG-EXPORT-SUMMARY] ran=false (count_surface_items pcall failed: " .. tostring(live) .. ")")
 	end

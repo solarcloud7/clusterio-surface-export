@@ -428,6 +428,13 @@ function ImportCompletion.run_phase2(job)
 					(job.inventory_overflow_losses and job.inventory_overflow_losses.total) or 0,
 					(job.failed_entity_losses and job.failed_entity_losses.total_items) or 0,
 					(bd and bd.compression) or -1))
+				if job.target_surface and job.target_surface.valid then
+					local dheld = {}
+					for _, e in ipairs(job.target_surface.find_entities_filtered({ type = "inserter" })) do
+						if e.held_stack and e.held_stack.valid_for_read then dheld[e.held_stack.name] = (dheld[e.held_stack.name] or 0) + e.held_stack.count end
+					end
+					for k, v in pairs(dheld) do log(string.format("[CI-DIAG-DEST-HELD] %s=%d", k, v)) end
+				end
 				log("[Validation] Platform left paused and deactivated due to validation failure")
 		else
 			-- Validation passed — auto-unpause platform and activate all entities
