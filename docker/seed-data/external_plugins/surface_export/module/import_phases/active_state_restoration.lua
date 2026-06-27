@@ -34,6 +34,15 @@ local function restore_inserter_held(entity, entity_data)
         log(string.format("[Import] Failed to restore held item '%s' x%d for inserter: %s",
             sd.held_item.name or "?", want, tostring(err)))
     end
+    -- ROOT FIX (the busy/CI held-item loss): set_stack seats only the inserter's CURRENT hand CAPACITY, which on
+    -- a freshly-created bulk/legendary inserter whose capacity hasn't initialized yet is the base (~1) — so it
+    -- under-seats (CI: 8→1). `held_stack.count` is RW with NO capacity cap; since we restore a LEGAL captured
+    -- amount (the source inserter held it legally — verified: count=8 on a legendary bulk survives activation +
+    -- ticks + save/load), write the full count DIRECTLY once set_stack has seated the item TYPE. The set_stack
+    -- bool lies, so we read back below; any genuine shortfall is returned as a VISIBLE loss (never silent).
+    if entity.held_stack.valid_for_read and entity.held_stack.count < want then
+        pcall(function() entity.held_stack.count = want end)
+    end
     local got = entity.held_stack.valid_for_read and entity.held_stack.count or 0
     if got < have then got = have end                          -- never report worse than before the call
     return got, math.max(0, want - got)

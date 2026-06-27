@@ -532,9 +532,10 @@ export class InstancePlugin extends BaseInstancePlugin {
 		this.logger.info(`Importing platform from file "${filename}" for force "${forceName}"`);
 
 		try {
-			// Step 1: Node.js reads the file (Lua cannot do this in Factorio 2.0)
-			const instanceDir = String(this.cfg("instance.directory"));
-			const scriptOutputPath = path.join(instanceDir, "script-output", filename);
+			// Step 1: Node.js reads the file (Lua cannot do this in Factorio 2.0).
+			// Use this.instance.path(...) — `instance.directory` is not a config field in alpha.25
+			// (the old this.cfg("instance.directory") threw "No field named 'instance.directory'").
+			const scriptOutputPath = this.instance.path("script-output", filename);
 
 			this.logger.verbose(`Reading file from: ${scriptOutputPath}`);
 			const fileContent = await fs.promises.readFile(scriptOutputPath, "utf8");

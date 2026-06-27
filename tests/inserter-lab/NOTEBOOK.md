@@ -56,3 +56,31 @@ FIX A (Phase E): make held-item restore top up ANY hand whose count < captured (
 brief active toggle + set_stack the FULL captured count (verify by physical read-back, the bool lies). Likely
 in `restore_held_items_only` (change the guard from "empty" to "count < captured"; clear + set_stack full).
 Lab-test the top-up on a partially-filled bulk inserter first.
+
+## FIX A ATTEMPT 1 FAILED — set_stack briefly-active does NOT seat items on CI inserters
+Top-up fix (trigger on partial hands, briefly active + set_stack full count) deployed. CI result:
+[CI-DIAG] held_failed=269 (was 0 — now VISIBLE), but [CI-DIAG-DEST-HELD] railgun-ammo STILL 33 (src 80). So
+set_stack ran but added NOTHING on the real inserters. Lab + local: set_stack briefly-active reaches full (402
+restored locally). CI: 269 failed. SAME code — the inserter ENTITY STATE differs (local clone settled vs CI
+clone fresh), and set_stack on CI's inserters under-fills even briefly-active.
+- The held loss is actually ~269 (the fix made it visible); the gate's ~147 is just the per-item-over-tol subset.
+- This is the validation-timing-trilemma resurfacing: held items can't be reliably set pre-gate on these
+  inserters. Candidate causes to probe: inserter_stack_size_override capping the hand; bulk capacity needing a
+  TICK (not a synchronous toggle) to recompute; filter/pickup state. NEXT: advisor + probe override/tick.
+
+## REPRO ATTEMPT via /plugin-import-file — does NOT reproduce; loss is ENVIRONMENT/PATH-driven, not payload
+Captured the FAILING CI artifacts (added CI artifact upload): debug_source_platform (payload), debug_
+destination_platform (failed dest state), host-2 save. Static JSON diff: dest inserters hold ~1 vs source 8/6/2
+(257 lost across 42 inserters); inserters created with CORRECT legendary quality + correct held quality. A
+fresh ACTIVE inserter, and the real dest inserter, both take set_stack(8)->8 and .count=8->8 fine.
+- Fixed a real bug to enable replay: `/plugin-import-file` threw `No field named 'instance.directory'` —
+  `this.cfg("instance.directory")` → `this.instance.path("script-output", filename)` (instance.ts).
+- Replayed the EXACT CI payload locally via /plugin-import-file: railgun held restored to 78 across 19 inserters
+  (dist 2/4/6/8 = the SOURCE counts) = ~100% CORRECT. So SAME PAYLOAD → local restores FULLY, CI under-restores.
+  => NOT payload-driven. It's the import EXECUTION ENVIRONMENT (timing? whether the inserter has ticked to
+  initialize bulk capacity? paused state?), or /plugin-import-file (non-transfer) takes a different path than a
+  TRANSFER (which keeps entities deactivated through the gate).
+- D3/lab never reproduces either. The ONLY faithful failed state we have is the CI host-2 SAVE (world.zip).
+NEXT: load the CI save to inspect the actual failed inserters + run the activation test (active=true + step tick
+→ do held items recover? = gate-timing vs real loss). OR ship the gate-side fix (skip held at gate, restore
+post-activation where set_stack works). Advisor consult pending.
