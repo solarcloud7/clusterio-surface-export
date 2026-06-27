@@ -5,6 +5,26 @@ local BeltRestoration = {}
 
 local QUALITY_NORMAL = GameUtils.QUALITY_NORMAL
 
+-- insert_at's minimum lengthwise spacing between item groups (~0.25 on turbo). A captured line whose slots are
+-- packed tighter than this (a backed-up belt at max compression) CANNOT be rebuilt slot-by-slot — insert_at
+-- rejects the over-compressed tail (the documented −8/−143 floor). Detected purely from the CAPTURED positions
+-- + dest line_length, so no runtime per-line measurement (which is unreliable on merged segments → the 267
+-- phantom drops / the +108 duplication). See tests/belt-lab/NOTEBOOK.md.
+local MIN_SPACING = 0.24
+
+-- True if the sorted captured slots can't be placed at insert_at's min spacing within the dest line.
+local function line_needs_consolidation(sorted_slots, len)
+    local prev = nil
+    for _, item in ipairs(sorted_slots) do
+        local p = item.position
+        if not p then return false end                -- no position → insert_at_back path handles it
+        if p > len then return true end               -- captured past the dest line end
+        if prev and (p - prev) < MIN_SPACING then return true end
+        prev = p
+    end
+    return false
+end
+
 --- Restore all belt items synchronously in a single tick.
 --- CRITICAL: Belts are always active and cannot be deactivated, so items must be restored all at once.
 ---
@@ -48,6 +68,24 @@ function BeltRestoration.restore(entities_to_create, entity_map)
     -- duplicated; see header + NOTEBOOK).
     local unplaced_diag = 0
 
+    -- TEMP DIAGNOSTIC (gated by storage.surface_export_config.belt_diag; off by default, zero prod impact):
+    -- classify each dropped item as GEOMETRY (captured pos beyond the dest line's end — source lane was
+    -- longer, e.g. a curve outside-lane) vs COMPRESSION (in-bounds but too tight for insert_at's ~0.25 min
+    -- spacing). Decides whether multi-tick (helps compression only) can reach literal-zero, or whether the
+    -- loss is geometry (needs dest-geometry preservation instead). See tests/belt-lab/NOTEBOOK.md.
+    local diag = storage.surface_export_config and storage.surface_export_config.belt_diag
+    local geom_items, comp_items, other_items, nopos_items = 0, 0, 0, 0
+
+    -- Oversized-stack consolidation: over-compressed lines (whose captured slots are packed tighter than
+    -- insert_at's min spacing — the −8/−143 floor) are rebuilt as one oversized stack per (name,quality)
+    -- instead of dropping the un-placeable tail. insert_at accepts an arbitrary belt_stack_size and the engine
+    -- keeps it — VERIFIED end-to-end: survives save/load, gate reports literal-zero with no duplication, and
+    -- post-activation loss-analysis is ZERO (a powered factory draining the over-stacks conserves). ON by
+    -- default (preserving items beats cosmetic layout; the belt self-heals as the factory pulls). Set
+    -- storage.surface_export_config.belt_consolidate=false to fall back to the lossy −8 floor.
+    local consolidate_enabled = not (storage.surface_export_config and storage.surface_export_config.belt_consolidate == false)
+    local consolidated_lines = 0
+
     for _, entity_data in ipairs(entities_to_create) do
         local entity = entity_map[entity_data.entity_id]
 
@@ -71,6 +109,35 @@ function BeltRestoration.restore(entities_to_create, entity_map)
                 expected_total = expected_total + expected
                 table.sort(slots, function(a, b) return (a.position or 0) < (b.position or 0) end)
 
+                if consolidate_enabled and line_needs_consolidation(slots, line.line_length) then
+                    -- Over-compressed line: group items by (name,quality) and place each group as ONE oversized
+                    -- stack at a spread position. insert_at takes an arbitrary belt_stack_size, so all items fit
+                    -- → zero loss (vs dropping the over-compressed tail). Positions are cosmetic on a maxed belt
+                    -- and self-heal as the factory pulls items. Deterministic (no per-line measurement → no dup).
+                    local groups, order = {}, {}
+                    for _, item in ipairs(slots) do
+                        local q = item.quality or QUALITY_NORMAL
+                        local key = item.name .. "\0" .. q
+                        local g = groups[key]
+                        if not g then g = { name = item.name, quality = q, count = 0 }; groups[key] = g; order[#order + 1] = key end
+                        g.count = g.count + item.count
+                    end
+                    local len = line.line_length
+                    for gi, key in ipairs(order) do
+                        local g = groups[key]
+                        local pos = math.min((gi - 1) * 0.25, len - 0.05)
+                        local before = line.get_item_count()
+                        local ok, err = pcall(function()
+                            return VersionCompat.belt_insert_at(line, pos, { name = g.name, count = g.count, quality = g.quality }, g.count)
+                        end)
+                        if not ok then
+                            log(string.format("[Belt Restore] consolidate insert ERROR on %s line %d: %s",
+                                entity.name, line_data.line, tostring(err)))
+                        end
+                        placed_count = placed_count + (line.get_item_count() - before)
+                    end
+                    consolidated_lines = consolidated_lines + 1
+                else
                 for _, item in ipairs(slots) do
                     local stack = {
                         name = item.name,
@@ -93,8 +160,35 @@ function BeltRestoration.restore(entities_to_create, entity_map)
                     local placed = line.get_item_count() - before
                     placed_count = placed_count + placed
                     if placed < item.count then
-                        unplaced_diag = unplaced_diag + (item.count - placed)
+                        local short = item.count - placed
+                        unplaced_diag = unplaced_diag + short
+                        if diag then
+                            local pos = item.position
+                            local len = line.line_length
+                            if not pos then
+                                nopos_items = nopos_items + short
+                            elseif pos > len then
+                                geom_items = geom_items + short
+                                log(string.format("[BeltDiag] GEOMETRY off-end: %s pos=%.4f > dest_len=%.4f (over %.4f) short=%d",
+                                    item.name, pos, len, pos - len, short))
+                            else
+                                local nearest = 999
+                                for _, e in ipairs(line.get_detailed_contents()) do
+                                    local d = math.abs(e.position - pos); if d < nearest then nearest = d end
+                                end
+                                if nearest < 0.25 then
+                                    comp_items = comp_items + short
+                                    log(string.format("[BeltDiag] COMPRESSION: %s pos=%.4f dest_len=%.4f nearest=%.4f short=%d",
+                                        item.name, pos, len, nearest, short))
+                                else
+                                    other_items = other_items + short
+                                    log(string.format("[BeltDiag] OTHER inbounds: %s pos=%.4f dest_len=%.4f nearest=%.4f short=%d",
+                                        item.name, pos, len, nearest, short))
+                                end
+                            end
+                        end
                     end
+                end
                 end
             end
         end
@@ -105,8 +199,17 @@ function BeltRestoration.restore(entities_to_create, entity_map)
     -- Diagnostic summary (factorio log only). `unplaced` over-reports on merged segments — the transfer gate's
     -- whole-surface physical count is the authoritative arbiter of real loss (proven: gate −8 vs per-line 507).
     log(string.format(
-        "[Import] Belt restoration complete. %d belts: expected=%d placed=%d unplaced_diag=%d (per-line; gate authoritative)",
-        belt_count, expected_total, placed_count, unplaced_diag))
+        "[Import] Belt restoration complete. %d belts: expected=%d placed=%d unplaced_diag=%d consolidated_lines=%d (per-line; gate authoritative)",
+        belt_count, expected_total, placed_count, unplaced_diag, consolidated_lines))
+
+    if diag then
+        storage.belt_diag_result = {
+            geometry = geom_items, compression = comp_items, other = other_items,
+            nopos = nopos_items, total_unplaced = unplaced_diag,
+        }
+        log(string.format("[BeltDiag] SUMMARY unplaced=%d -> geometry=%d compression=%d other=%d nopos=%d",
+            unplaced_diag, geom_items, comp_items, other_items, nopos_items))
+    end
 
     return {
         belts_processed = belt_count,

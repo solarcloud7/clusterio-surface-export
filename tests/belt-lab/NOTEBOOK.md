@@ -268,3 +268,89 @@ reconstruct max-compression: the output-edge item on a connected belt). It is WE
 **DECISION FOR USER:** literal-zero is NOT achievable via insert_at routing (proven). Ship routing-OFF
 (clean −8, gate SUCCESS) and accept the documented sub-0.1% belt floor, OR keep chasing literal-zero down a
 different axis (would NOT be routing). Recommend: ship routing-OFF, codify the loss-injection guard, close.
+
+---
+
+## CI BUSY-CASE RESULT (2026-06-27, commit 38d5e66, routing REMOVED) — losses, not gains
+
+Settled (local): −8 iron-plate, gate SUCCESS. Busy (CI PR #30, run 28282680823): gate FAILED, but with
+LOSSES not gains — confirming the duplication is GONE:
+
+    copper-cable:  expected 1068, got 1046  (lost 22 > tol 20)
+    copper-plate:  expected  494, got  461  (lost 33 > tol 20)
+    iron-plate:    expected 1578, got 1545  (lost 33 > tol 23)
+    railgun-ammo:  expected  286, got  239  (lost 47 > tol 20)
+    (~135 total; per-item 22–47 each exceed the strict per-item tol max(20,1.5%·exp))
+
+So: routing removal achieved its goal (no more +108 dup). Residual = real belt-floor loss that SCALES with
+belt density (−8 settled → ~−135 busy). On busy platforms it exceeds the strict gate → CI red, source PRESERVED
+(no silent delete — gate working as designed).
+
+OPEN QUESTION before the user decision (real loss vs inflated baseline): is "expected N" a true physical
+source count, or is it the SERIALIZED export total which may DOUBLE-COUNT merged-window belt items (the same
+merged-line problem that broke the per-line counter, but on the EXPORT side → Pitfall #16 territory)? If
+expected is inflated, part of "−135" is phantom and literal-zero is reachable via an EXPORT-side fix (don't
+over-capture), NOT routing. Must reconcile source-physical vs dest-physical directly to tell.
+
+---
+
+## GEOMETRY-vs-COMPRESSION DIAGNOSIS (2026-06-27, gated belt_diag on a real settled transfer)
+
+Classified every insert_at drop at restore time (pos vs dest line_length; nearest existing item):
+
+    unplaced=283  ->  geometry=0   compression=16   other=267   nopos=0
+
+1. **geometry=0** — NOT a single off-end drop (pos > dest_len never happened). Dest belts rebuild geometry
+   FAITHFULLY (log shows dest_len=1.1523 curve outside-lanes present). => GEOMETRY PRESERVATION IS NOT THE FIX.
+   (Corrects the earlier read of the pos=1.125 drop: it's on a dest_len=1.1523 CURVE => in-bounds compression,
+   not off-end geometry.)
+2. **Real loss = COMPRESSION.** Every genuine drop is iron-plate at pos=0.875 nearest=0.125 (straight) or
+   pos=1.125 dest_len=1.1523 nearest=0.125 (curve) — the 5th stack packed tighter than insert_at's 0.25 min.
+   This is exactly multi-tick's target => MULTI-TICK IS THE RIGHT AXIS.
+3. **The 267 "other" are MEASUREMENT PHANTOMS, proven.** They are items at pos~0.0 nearest=999 (EMPTY line)
+   that "failed" — impossible for a real insert. Proof: the gate flagged ONLY iron-plate −8, yet "other" spans
+   piercing-rounds/metallic/carbonic/copper-cable/iron-ore — none of which the gate reports lost. Those 267
+   ARE placed (on connected sibling windows); per-window get_item_count can't see it. Same merged-window
+   unreliability that drove the +108 duplication.
+
+**Design lock for any multi-tick attempt:** drive the topup off the WHOLE-SEGMENT DEDUPED DEFICIT
+(expected − actual, the gate's instrument), NEVER per-line "did it place?" deltas (267 false positives here →
+re-placing → duplication). Feed the segment input, let flow compress, re-check the deduped deficit each tick,
+stop at 0 or TTL.
+
+---
+
+## BREAKTHROUGH (2026-06-27): belt slots accept OVERSIZED stacks → single-tick fix for over-compression
+
+User asked "how high can items stack on a belt? did we hard code 4?" — we do NOT hardcode 4 (we pass the
+captured stack.count as belt_stack_size). Empirical probe on 2.0.76:
+- `force.belt_stack_size_bonus = 3` → the GAME-BALANCE max is 4 (1 + bonus). BUT:
+- `insert_at(pos, {iron-plate, count=N}, N)` ACCEPTS arbitrary N — tested 1,2,4,8,16,20 — each lands as a
+  SINGLE slot with that full count (`slots=[16]`, `[20]`). The 4-cap is NOT an engine storage limit.
+- **Persistence (the safety question): a 20-item single slot SURVIVES belt flow** — chain_total=20, ground=0,
+  flowed across a 3-belt chain to jam at the wall as `belt3 L1[20@0.00]`, STABLE over multiple real-time
+  reads. No clamp-to-4, no shed-to-ground. (Contrast: force_insert_at SQUASHES/loses — this does NOT.)
+
+**IMPLICATION — over-compression is fixable SINGLE-TICK (no async/multi-tick/gate-tension):** the loss is the
+5th 4-stack rejected at 0.125 spacing. Instead, CONSOLIDATE each line's items per (name,quality) into one tall
+stack via insert_at with belt_stack_size = group total → all items fit → ZERO loss. Belt count is preserved;
+appearance self-heals as the factory pulls items (re-stacking to the normal 4-max). Positions are cosmetic
+(CLAUDE.md accepts belt drift). This BEATS multi-tick (simpler, synchronous, no gate restructuring).
+
+**STILL TO VALIDATE before shipping:** (a) over-stack survives SAVE/LOAD (transfer crosses a save); (b) the
+gate counts it correctly (get_detailed_contents sums stack.count — should be fine); (c) no bad interaction
+when inserters/machines pull from an over-stack; (d) real-transfer end-to-end = literal zero on the gate.
+
+## SAVE/LOAD GATE: PASSED — oversized stack survives reload
+
+Walled 20-stack on an isolated lab surface → real `instance stop` (saves) + `instance start` (reloads from
+that save, NOT patch-and-reset) → re-acquired by surface name + position:
+    AFTER LOAD: line_total=20 ground=0 slots=[20@0.00]
+Fully intact. The engine does NOT clamp the illegal over-stack to 4 on save/load (the one fatal mode: green
+pre-save gate → silent post-save loss). => oversized-stack restore is save/load-safe. Cleared to implement.
+
+DESIGN (deterministic targeted consolidation, no measurement → no duplication trap): per line, decide from the
+CAPTURED positions + dest line_length whether it places slot-by-slot at >=0.25 spacing. Legal lines: unchanged
+(exact layout). Over-compressed lines only: group items by (name,quality), place each group as ONE oversized
+stack at its min captured position (always fits; count exact). Validate end-to-end on a real transfer: gate
+clean (no GAINS = no double-place) AND post-activation loss-analysis conserved (interaction/drain safe).
