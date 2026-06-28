@@ -494,16 +494,21 @@ function ImportCompletion.run_phase2(job)
 			-- PAUSE FIRST (its own pcall), THEN place: if the space_location write throws, the platform
 			-- is still safely parked-paused rather than flying off next tick.
 			if job.gateway_target and job.target_platform and job.target_platform.valid then
-				local ok_pause = pcall(function() job.target_platform.paused = true end)
-				local ok_loc, err_loc = pcall(function()
-					job.target_platform.space_location = job.gateway_target
-				end)
-				if ok_loc then
+				local tp = job.target_platform
+				-- Unlock the gateway for the platform's force first (a force created after the startup
+				-- discover_and_unlock pass wouldn't have it; placement needs a reachable location).
+				pcall(function() tp.force.unlock_space_location(job.gateway_target) end)
+				-- Pause FIRST so a placement throw leaves it safely parked-paused, not flying the stripped route.
+				local ok_pause, err_pause = pcall(function() tp.paused = true end)
+				local ok_loc, err_loc = pcall(function() tp.space_location = job.gateway_target end)
+				if ok_pause and ok_loc then
 					log(string.format("[Gateway] Platform %s arrived PAUSED at gateway '%s'",
 						job.platform_name, job.gateway_target))
 				else
-					log(string.format("[Gateway] Could not place %s at gateway '%s' (left safely paused=%s): %s",
-						job.platform_name, job.gateway_target, tostring(ok_pause), tostring(err_loc)))
+					-- Report BOTH outcomes — a silent pause failure would leave the platform unpaused.
+					log(string.format("[Gateway] Park INCOMPLETE for %s at '%s' — paused=%s (%s), placed=%s (%s)",
+						job.platform_name, job.gateway_target,
+						tostring(ok_pause), tostring(err_pause), tostring(ok_loc), tostring(err_loc)))
 				end
 			end
 			-- ========================================
