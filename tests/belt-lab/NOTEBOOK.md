@@ -354,3 +354,39 @@ CAPTURED positions + dest line_length whether it places slot-by-slot at >=0.25 s
 (exact layout). Over-compressed lines only: group items by (name,quality), place each group as ONE oversized
 stack at its min captured position (always fits; count exact). Validate end-to-end on a real transfer: gate
 clean (no GAINS = no double-place) AND post-activation loss-analysis conserved (interaction/drain safe).
+
+## CI BUSY RESULT after consolidation (commit dfdd59d, v0.10.34) — settled FIXED, busy STILL loses
+
+Settled (local): literal ZERO (2 lines consolidated, all deltas 0). But CI busy STILL fails:
+    copper-cable: lost 22 > tol 20 ; copper-plate: lost 44 > tol 20 ;
+    iron-plate:   lost 25 > tol 23 ; railgun-ammo: lost 47 > tol 20   (~138 total)
+Nearly unchanged from pre-consolidation. So consolidation fixed the single-type settled over-compression but
+NOT the busy case. HYPOTHESIS: a busy over-compressed line carries MULTIPLE item types; consolidation spreads
+groups at gi*0.25 capped at len-0.05, so N types where N*0.25 > line_length collide → later groups rejected →
+loss. OR the detection (adjacent < 0.24) misses busy loss modes (end-clipping at line end with normal spacing).
+NEED: reproduce a lossy (busy) transfer locally with belt_diag to see per-line classification + whether
+consolidation triggered for the lost lines. CI logs don't capture the belt summary.
+
+BLOCKER (2026-06-27 ~12:xx): a stray in-progress plugin `clusterio-atlas` (user's parallel work, untracked,
+dir 'clusterio-atlas' vs declared name 'clusterio_atlas') in docker/seed-data/external_plugins/ breaks ALL
+clusterioctl ("Expected plugin ... named clusterio-atlas but got clusterio_atlas") → no local RCON/transfer/
+test until the name mismatch is fixed or the plugin is moved aside.
+
+## PIVOT (2026-06-27): the BUSY loss is NOT belt — it's a non-belt source
+
+After figuring out CI observability (log() IS captured as Script lines; game.print is NOT), the BeltDiagFail
+log at the validation-failure point finally showed the busy breakdown:
+    [BeltDiagFail] unplaced=333 geom=0 comp=4 other=329 nopos=0 | consolidated=29 reject=0(0 items)
+    gate loss ~115 (copper-plate 28, iron-plate 40, railgun-ammo 47)
+=> Belt layer real compression drops = comp=4. Consolidation placed everything (reject=0, 29 lines). The gate
+loses ~115. So ~111 items vanish from a NON-BELT source. railgun-ammo is EXACTLY 47 every run (deterministic,
+not phase-varying like belts) → a specific source.
+
+CONCLUSION: the settled −8 WAS belt over-compression (FIXED to literal-zero via consolidation; comp also cut
+16→4). But the BUSY case is a DIFFERENT bug — candidates: inserter HELD items (Pitfall #28 restore_held_items_
+only failing on busy), inventory set_stack OVERFLOW (job.inventory_overflow_losses), or EXPORT over-count
+(expected inflated). NEXT: log ALL loss buckets (held/inventory-overflow/failed-entity/belt) at validation
+failure to see which accounts for the ~115. STOP iterating belt fixes for the busy case.
+
+LESSON: log() not game.print for anything you need to read back from CI (game.print never reached CI's
+captured logs — wasted ~3 cycles on invisible diagnostics).

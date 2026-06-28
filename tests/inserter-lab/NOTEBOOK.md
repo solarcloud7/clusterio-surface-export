@@ -84,3 +84,24 @@ fresh ACTIVE inserter, and the real dest inserter, both take set_stack(8)->8 and
 NEXT: load the CI save to inspect the actual failed inserters + run the activation test (active=true + step tick
 → do held items recover? = gate-timing vs real loss). OR ship the gate-side fix (skip held at gate, restore
 post-activation where set_stack works). Advisor consult pending.
+
+## Part B+C reality check (2026-06-27) — local CANNOT repro; gate-side fix hits the trilemma
+- Faithful repro attempt: injected `_transferId` into the CI payload + imported via the transfer (deactivated/
+  gate) branch → held STILL restored fully locally (78, dist 2/4/6/8, gate passed, active). So even the
+  transfer/gate path restores held fine LOCALLY. The failure is genuinely CI-environment-only; no local path
+  reproduces it.
+- SAFETY (good): we lose ZERO data today. Two-phase commit preserves the source on gate failure
+  (instance.ts:710 re-fetches get_validation_result_json; :759 success=itemCountMatch&&fluidCountMatch). Busy
+  cross-instance transfers FAIL-SAFE; they don't corrupt.
+- The gate-side fix has a HOLE: `LossAnalysis.run` (loss-analysis.lua:329-333) updates actualItemCounts but does
+  NOT re-derive itemCountMatch → the stored result's itemCountMatch stays the PRE-activation value. So just
+  excluding held from the pre-gate → gate passes → source deleted regardless of post-activation held = SILENT
+  LOSS risk (trilemma dead-end #2).
+- Re-deriving itemCountMatch post-activation risks craft-gains (dead-end #1) UNLESS counted in the same tick as
+  activation (machines don't craft until the next engine tick — line 496 runs same-tick). BUT if restore()
+  (:447) also under-seats held on a just-activated inserter (capacity needs a real tick; the inserter fills over
+  LATER ticks via re-grab), the same-tick count still reads held short → gate red anyway.
+- => The exact engine-tick behavior (does restore() seat held in the activation tick on CI? does the inserter
+  fill over later ticks?) is UNVERIFIABLE locally. Need either a CI experiment or a behavior gate that
+  reproduces. Advisor + user check-in pending. Candidate reframe: do the SIMPLIFICATION + a behavior gate
+  (source==dest physical invariant under CI-like settle) FIRST to get a repro, THEN fix.
