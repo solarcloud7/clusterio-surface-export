@@ -422,27 +422,7 @@ function ImportCompletion.run_phase2(job)
 				result.mismatchDetails or "Unknown error"
 			), {1, 0, 0})
 			-- Leave platform paused and entities deactivated on validation failure so user can investigate
-							local bd = storage.belt_diag_result
-				if bd then
-					log(string.format(
-						"[BeltDiagFail] unplaced=%d geom=%d comp=%d other=%d nopos=%d | consolidated=%d reject=%d(%d items)",
-						bd.total_unplaced or -1, bd.geometry or -1, bd.compression or -1, bd.other or -1,
-						bd.nopos or -1, bd.consolidated_lines or -1, bd.consolidate_reject_count or -1,
-						bd.consolidate_reject_total or -1))
-				end
-				log(string.format("[CI-DIAG] held_failed=%d inv_overflow=%d failed_entity=%d belt_comp=%d (failed_entity+inv_overflow already subtracted from expected; held NOT)",
-					(job.held_items_failed or -1),
-					(job.inventory_overflow_losses and job.inventory_overflow_losses.total) or 0,
-					(job.failed_entity_losses and job.failed_entity_losses.total_items) or 0,
-					(bd and bd.compression) or -1))
-				if job.target_surface and job.target_surface.valid then
-					local dheld = {}
-					for _, e in ipairs(job.target_surface.find_entities_filtered({ type = "inserter" })) do
-						if e.held_stack and e.held_stack.valid_for_read then dheld[e.held_stack.name] = (dheld[e.held_stack.name] or 0) + e.held_stack.count end
-					end
-					for k, v in pairs(dheld) do log(string.format("[CI-DIAG-DEST-HELD] %s=%d", k, v)) end
-				end
-				log("[Validation] Platform left paused and deactivated due to validation failure")
+			log("[Validation] Platform left paused and deactivated due to validation failure")
 		else
 			-- Validation passed — auto-unpause platform and activate all entities
 			-- Use ActiveStateRestoration to restore original active states (not blanket activate_all)

@@ -378,39 +378,6 @@ function ExportPipeline.complete(job)
 		fluid_counts = fluid_counts
 	}
 
-	-- [CI-DIAG] D1 export-accuracy: serialized "expected" vs a LIVE single-tick physical scan of the locked
-	-- source surface. Same categories (inventories+belts+held+ground via SurfaceCounter). If they differ, the
-	-- export over/under-counts vs reality = the PHANTOM-loss source; if they match, "expected" is accurate and
-	-- any gate loss is real restore-side. log() (NOT game.print) so CI captures it. Diagnostic only.
-	local ok_diag, live = pcall(function() return Verification.count_surface_items(job.surface) end)
-	if ok_diag and live then
-		local seen, diff_types, total_abs = {}, 0, 0
-		for key, exp in pairs(item_counts) do
-			seen[key] = true
-			local phys = live[key] or 0
-			if exp ~= phys then
-				diff_types = diff_types + 1; total_abs = total_abs + math.abs(exp - phys)
-				log(string.format("[CI-DIAG-EXPORT] %s serialized=%d live=%d diff=%d", key, exp, phys, exp - phys))
-			end
-		end
-		for key, phys in pairs(live) do
-			if not seen[key] then
-				diff_types = diff_types + 1; total_abs = total_abs + phys
-				log(string.format("[CI-DIAG-EXPORT] %s serialized=0 live=%d diff=%d", key, phys, -phys))
-			end
-		end
-		log(string.format("[CI-DIAG-EXPORT-SUMMARY] ran=true diff_types=%d total_abs_diff=%d (serialized-vs-live source; nonzero => export over/under-count = phantom)", diff_types, total_abs))
-		-- source HELD-by-item (to compare against dest-held at the gate: if src-held >> dest-held for a lost
-		-- item, held items are silently dropped at restore even though no bucket reports it).
-		local sheld = {}
-		for _, e in ipairs(job.surface.find_entities_filtered({ type = "inserter" })) do
-			if e.held_stack and e.held_stack.valid_for_read then sheld[e.held_stack.name] = (sheld[e.held_stack.name] or 0) + e.held_stack.count end
-		end
-		for k, v in pairs(sheld) do log(string.format("[CI-DIAG-SRC-HELD] %s=%d", k, v)) end
-	else
-		log("[CI-DIAG-EXPORT-SUMMARY] ran=false (count_surface_items pcall failed: " .. tostring(live) .. ")")
-	end
-
 	-- CRITICAL: Include frozen_states for restoring original active states on import
 	-- The frozen_states map contains the ORIGINAL state of each entity BEFORE freezing.
 	-- This allows import to restore entities to their pre-export active/disabled state.

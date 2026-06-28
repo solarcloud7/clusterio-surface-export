@@ -81,9 +81,9 @@ function BeltRestoration.restore(entities_to_create, entity_map)
     -- longer, e.g. a curve outside-lane) vs COMPRESSION (in-bounds but too tight for insert_at's ~0.25 min
     -- spacing). Decides whether multi-tick (helps compression only) can reach literal-zero, or whether the
     -- loss is geometry (needs dest-geometry preservation instead). See tests/belt-lab/NOTEBOOK.md.
-    -- DIAGNOSTIC: default-ON to capture the busy-case classification from CI (game.print'd below; gate back
-    -- off once diagnosed). Set belt_diag=false to disable.
-    local diag = not (storage.surface_export_config and storage.surface_export_config.belt_diag == false)
+    -- Opt-in diagnostic (default OFF, zero prod impact): set storage.surface_export_config.belt_diag=true to
+    -- emit the geometry-vs-compression classification for local belt-loss debugging.
+    local diag = storage.surface_export_config and storage.surface_export_config.belt_diag == true
     local geom_items, comp_items, other_items, nopos_items = 0, 0, 0, 0
 
     -- Oversized-stack consolidation: over-compressed lines (whose captured slots are packed tighter than
