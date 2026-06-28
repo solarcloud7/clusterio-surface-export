@@ -1,7 +1,9 @@
 # In-Game Gateway Transfer — Product Requirements (PRD)
 
-**Status:** Phase 0 VALIDATED (2026-06-28) — Phase 1 ready to build
-**Date:** 2026-06-19 (Phase 0 results added 2026-06-28)
+**Status:** Phase 1a CORE MECHANIC IMPLEMENTED (2026-06-28) — explicit `/gateway-transfer` command works
+end-to-end (park at gateway → transfer → arrive paused at the gateway, hop stripped, full fidelity). Next:
+Phase 1b (on-arrival GUI + conditions + passenger hard-block), Phase 1c (web Gateways config tab).
+**Date:** 2026-06-19 (Phase 0 results added 2026-06-28; Phase 1a status 2026-06-28)
 **Owner:** Solar
 **Component:** `clusterio-surface-export`
 

@@ -358,6 +358,7 @@ remote.call("surface_export", "run_tests")
 /list-exports                     # List exports in memory
 /list-surfaces                    # List all surfaces
 /transfer-platform <index> <dest> # Transfer platform to another instance
+/gateway-transfer <index> <dest>  # Transfer a platform PARKED at a gateway → arrives paused at the gateway, hop stripped (Phase 1a)
 /lock-platform <index>            # Lock platform for transfer
 /unlock-platform <name>           # Unlock a locked platform
 /lock-status                      # Show lock status of all platforms
