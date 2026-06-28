@@ -1,17 +1,18 @@
 # In-Game Gateway Transfer — Product Requirements (PRD)
 
-**Status:** Draft — design in progress (grilling snapshot)
-**Date:** 2026-06-19
+**Status:** Phase 0 VALIDATED (2026-06-28) — Phase 1 ready to build
+**Date:** 2026-06-19 (Phase 0 results added 2026-06-28)
 **Owner:** Solar
 **Component:** `clusterio-surface-export`
 
 > This is a living design snapshot captured during a requirements interview. Sections 1–8 are
 > decided; Section 10 lists what is still open. Update this file as decisions land.
 >
-> ⚠️ **Building is gated on Phase 0 (§6).** The core mechanic — a platform parking at a custom
-> non-planet `space-location` and firing `on_space_platform_changed_state` — is currently an
-> *inference*, not an empirical fact. Validate it on the live cluster (zero mod-building, using vanilla
-> `solar-system-edge`) before writing the mod, GUI, or dashboard.
+> ✅ **Phase 0 PASSED — building is unblocked.** The core mechanic was validated empirically on the live
+> cluster with vanilla `solar-system-edge` (zero mod-building): a platform routed there reaches a **stable
+> `waiting_at_station`** (it PARKS — not a fly-by) and the existing `on_space_platform_changed_state`
+> handler **fires** (proven via its `storage.platform_flight_data` side effect). Full results + the API
+> facts discovered are in §6. Proceed to Phase 1.
 
 ---
 
@@ -134,20 +135,42 @@ plugin we already develop.
 
 ## 6. Phasing
 
-- **Phase 0 (PREREQUISITE — gates all build work) — validate the core mechanic empirically.** No
-  mod-building, no GUI. On the live cluster, using the vanilla non-planet location `solar-system-edge`
-  and the very `unlock_space_location` API we plan to ship:
-  1. Enumerate names: `/sc for n,_ in pairs(prototypes.space_location) do rcon.print(n) end`
-  2. `/sc game.forces.player.unlock_space_location("solar-system-edge")` (also exercises the unlock path).
-  3. Route a test platform there; poll
-     `/sc local p=game.forces.player.platforms[IDX]; rcon.print(serpent.line({state=p.state, loc=p.space_location and p.space_location.name}))`.
-  4. Confirm the platform reaches a **stable `waiting_at_station`** (parks, not fly-by) and that the
-     existing `on_space_platform_changed_state` handler **fires with `space_location.name` set**
-     (check `factorio-current.log`).
-  **Exit criteria:** parks + handler fires → Phase 1 is real, proceed. Also resolve here: does
-  `fly_condition` control park-vs-flyby? Does an unlocked-but-`hidden` location appear in the picker
-  (the `hidden` vs `unlocked` question, §3)? If it behaves fly-by, the design changes materially —
-  **do not build the mod/GUI/dashboard first.**
+- **Phase 0 ✅ PASSED (2026-06-28) — core mechanic validated empirically.** On the live cluster, no
+  mod-building, no GUI, using vanilla `solar-system-edge` (already unlocked for the player force). A long
+  *natural* flight was avoided by teleporting a **clone** of `test` (the `test` fixture was untouched).
+  **RESULTS (empirical facts — do not re-derive):**
+  - ✅ **PARKS, not fly-by.** A platform whose schedule targets `solar-system-edge` (a schedule record with
+    `station="solar-system-edge"` + a wait condition) reaches **`waiting_at_station` (state=6)** and stays
+    there for the wait duration (confirmed STABLE ≥8s, speed≈0; then departed exactly when the 30s `time`
+    wait elapsed). A fly-by location (shattered-planet style) never reaches `waiting_at_station`. → our
+    gateway, modeled on solar-system-edge, will park.
+  - ✅ **The handler FIRES.** `on_space_platform_changed_state` ran on the platform's state changes — proven
+    via its side effect `storage.platform_flight_data[name] = {departure_tick=…}` (written ONLY by that
+    handler). NOTE: the success path does NOT `log()` (it `send_json`s `surface_platform_state_changed`), so
+    detect it via the side effect or the controller event — not `factorio-current.log`.
+  - ✅ **API for Phase 1 (verified on 2.0.76):**
+    - `platform.space_location = "solar-system-edge"` (STRING name) teleports/places the platform. → use
+      this for §7.4 "place the imported platform at the target gateway."
+    - `platform.get_schedule().go_to_station(index)` routes to a schedule record (sets `current`). Records are
+      `{station="<space-location-name>", wait_conditions={…}, allows_unloading, temporary, created_by_interrupt}`.
+      → a gateway "station" is just a schedule record whose `station` is the gateway's space-location name.
+    - `platform.schedule` returns a plain-table COPY (read-only view); `platform.get_schedule()` returns the
+      live `LuaSchedule` (write). `defines.space_platform_state`: paused=7, waiting_at_station=6, on_the_path=2,
+      no_schedule=4, no_path=5, waiting_for_departure=3.
+    - `force.is_space_location_unlocked("solar-system-edge")` → true (already unlocked); `unlock_space_location`
+      is the reveal lever (§3 plan holds).
+  - ⚠️ **`fly_condition` / `hidden` are NOT runtime-readable** on `LuaSpaceLocationPrototype` (returned n/a) —
+    they are data-stage prototype settings we set when BUILDING the gateway mod (model on solar-system-edge,
+    which parks). The `hidden`-vs-picker behaviour can only be confirmed once the mod ships a gateway
+    prototype; NOT a blocker — functional gating is plugin-side regardless (§8).
+  - 📝 **Topology note:** `solar-system-edge` is reached only via `aquilo↔solar-system-edge` (length 100000),
+    several hops from nauvis → a *natural* flight is long. The gateway mod should add a shorter
+    `space-connection` from a convenient planet so players can actually fly to the gateway.
+  **Exit criteria MET → Phase 1 is real. Proceed.**
+
+  Original procedure (for reference): (1) `/sc for n,_ in pairs(prototypes.space_location) do rcon.print(n) end`;
+  (2) `unlock_space_location("solar-system-edge")`; (3) route a clone there (schedule `go_to_station` +
+  `space_location=`); (4) poll `{state, space_location.name}` + check `storage.platform_flight_data`.
 - **Phase 1 (priority) — manual, explicit.** Fly to a gateway → platform parks
   (`waiting_at_station`) → plugin shows a **custom GUI / button** → on press, **if conditions are met**,
   run the transfer. No accidental triggers. Destination comes from the gateway-link config (an in-GUI
