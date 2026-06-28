@@ -22,21 +22,23 @@
 .PARAMETER Items
     Representative high-count item types to count (default: a combat/asteroid-platform mix present on `test`).
 .PARAMETER TolPct
-    Tolerance as a fraction of the source total (default 0.02), absorbing the craft window between the physical
-    measurement and the (multi-tick, async) export scan: the `test` platform is a LIVE crafting system, so it
-    produces/consumes the tracked items in that gap. The window is timing-dependent and runs larger on a busy
-    CI runner (observed ~1% there vs ~0.6% locally), so 1% was occasionally too tight (a 3-item overshoot at
-    ~9.8k items). 2% still catches the bug this sentinel exists for — a serializer MISCOUNT (a dropped/double-
-    counted inventory or belt category), which is orders of magnitude larger than craft-window drift.
+    Tolerance as a fraction of the source total (default 0.005). The source is FROZEN before the physical
+    snapshot (step 2), so there is NO craft-window: both meters count the same frozen state, and get_item_count
+    already includes belt-line items (verified directly: get_item_count == get_transport_line per belt). The
+    only residual is belt items shifting POSITION between the snapshot and the export's atomic belt scan, which
+    conserves the COUNT (inserters frozen → nothing enters or leaves the belts). So the meters should agree to
+    within a tiny floor; a real serializer MISCOUNT (a dropped/double-counted category) is orders of magnitude
+    larger. (Earlier this carried a 1%→2% tolerance band-aid for what turned out to be benign craft-window;
+    freezing fixes the clock instead of the number, so the tolerance is tight again.)
 .PARAMETER TolAbs
-    Minimum absolute tolerance (default 100).
+    Minimum absolute tolerance (default 20).
 #>
 param(
     [string]$SourcePlatform = "test",
     [int]$SourceHost = 0,
     [string[]]$Items = @("railgun-ammo", "iron-plate", "copper-plate", "steel-plate", "piercing-rounds-magazine"),
-    [double]$TolPct = 0.02,
-    [int]$TolAbs = 100,
+    [double]$TolPct = 0.005,
+    [int]$TolAbs = 20,
     [int]$TimeoutSec = 150
 )
 
@@ -86,10 +88,19 @@ $idx = Get-PlatformIndex -Instance $srcInstance -PlatformName $clone
 if (-not $idx) { Write-Status "Clone did not materialize" -Type error; exit 1 }
 Write-Status "Clone ready (index $idx)" -Type success
 
-# 2. Physical source count (the independent truth), measured just before the transfer's export scan.
+# 2. FREEZE the source's crafting before measuring — the gold-standard "fix the clock". We set active=false
+#    directly on the producing/consuming entities (assemblers, furnaces, etc.) + inserters, stopping
+#    PRODUCTION of the tracked items so their TOTAL is conserved — item movement along belts/inserters only
+#    changes location, not count. This is deliberately NOT lock_platform_for_transfer: that "locked-for-
+#    transfer" state stalls the subsequent transfer's export. The transfer still does its own lock and captures
+#    frozen_states normally; these entities simply arrive inactive on the (immediately-deleted) dest clone.
+Invoke-Lua -Instance $srcInstance -Code "local function fp(n) for _,q in pairs(game.forces['player'].platforms or {}) do if q.name==n then return q end end end local p=fp('$clone') if not p then rcon.print('no clone') return end local n=0 for _,e in ipairs(p.surface.find_entities_filtered({type={'assembling-machine','furnace','inserter','lab','chemical-plant','oil-refinery','rocket-silo','mining-drill','boiler','generator','reactor','burner-generator','agricultural-tower'}})) do if e.valid and e.active then e.active=false n=n+1 end end rcon.print('froze '..n..' producing entities')" | Out-Null
+Start-Sleep -Seconds 1   # let any in-flight crafts settle
+
+# 3. Physical source count on the FROZEN platform (the independent truth; no craft-window now).
 $srcTotal = Count-Set $srcSel $clone
 if ($srcTotal -lt 1) { Write-Status "Source physical total invalid ($srcTotal) — fixture has none of the tracked items?" -Type error; exit 1 }
-Write-Status "Source physical total (tracked items): $srcTotal" -Type info
+Write-Status "Source physical total (frozen, tracked items): $srcTotal" -Type info
 
 # 3. Transfer (so the export produces the validator's expectedItemCounts in the import-result).
 $destId = Get-ClusterioInstanceId -InstanceName $dstInstance
