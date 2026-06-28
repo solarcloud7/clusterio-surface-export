@@ -1,0 +1,42 @@
+{
+  "name": "@solarcloud7/clusterio-atlas",
+  "version": "0.1.0",
+  "description": "Clusterio plugin that ingests Factorio map data (entities) into the atlas database",
+  "main": "dist/node/index.js",
+  "types": "dist/node/index.d.ts",
+  "scripts": {
+    "build:node": "tsc -p tsconfig.node.json",
+    "build": "npm run build:node"
+  },
+  "keywords": [
+    "clusterio",
+    "factorio",
+    "map",
+    "atlas",
+    "clusterio-plugin"
+  ],
+  "author": "Solarcloud7",
+  "license": "MIT",
+  "files": [
+    "dist/node/**/*.js",
+    "dist/node/**/*.d.ts",
+    "module/",
+    "package.json"
+  ],
+  "peerDependencies": {
+    "@clusterio/controller": "2.0.0-alpha.25",
+    "@clusterio/ctl": "2.0.0-alpha.25",
+    "@clusterio/host": "2.0.0-alpha.25",
+    "@clusterio/lib": "2.0.0-alpha.25"
+  },
+  "dependencies": {
+    "pg": "^8.11.0"
+  },
+  "devDependencies": {
+    "@clusterio/host": "2.0.0-alpha.25",
+    "@clusterio/lib": "2.0.0-alpha.25",
+    "@types/node": "^20.11.30",
+    "@types/pg": "^8.11.0",
+    "typescript": "^5.5.4"
+  }
+}

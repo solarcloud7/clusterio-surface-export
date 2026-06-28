@@ -24,5 +24,6 @@
 	"research_sync.load_plugin": false,
 	"statistics_exporter.load_plugin": true,
 	"subspace_storage.load_plugin": false,
-	"surface_export.debug_mode": true
+	"surface_export.debug_mode": true,
+	"clusterio_atlas.load_plugin": true
 }

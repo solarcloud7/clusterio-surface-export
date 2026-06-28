@@ -1,0 +1,19 @@
+{
+	"extends": "./tsconfig.base.json",
+	"compilerOptions": {
+		"lib": ["es2023"],
+		"module": "nodenext",
+		"moduleResolution": "nodenext",
+		"target": "es2022",
+		"outDir": "dist/node",
+		"rootDir": ".",
+		"incremental": true,
+		"sourceMap": true,
+		"types": ["node"]
+	},
+	"include": [
+		"index.ts",
+		"instance.ts"
+	],
+	"exclude": ["node_modules/**", "dist/**"]
+}

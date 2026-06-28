@@ -39,6 +39,7 @@ docker/server-settings.json
 
 # Built plugin artifacts (rebuild with npm run build)
 docker/seed-data/external_plugins/surface_export/dist/
+docker/seed-data/external_plugins/clusterio-atlas/dist/
 
 # TypeScript build output in plugin root and lib/ (should only be in dist/node/)
 docker/seed-data/external_plugins/surface_export/*.js

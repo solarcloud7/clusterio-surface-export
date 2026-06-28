@@ -7,55 +7,59 @@ $ErrorActionPreference = "Stop"
 
 # Paths
 $WorkspaceRoot = Resolve-Path "$PSScriptRoot/.."
-$PluginPathCandidates = @(
-    (Join-Path $WorkspaceRoot "docker\seed-data\external_plugins\surface_export"),
-    (Join-Path $WorkspaceRoot "docker\seed-data\external_plugins\surface-export")
+$ExternalPlugins = Join-Path $WorkspaceRoot "docker\seed-data\external_plugins"
+
+# Plugins built host-side. The host image's install-plugins.sh runs
+# `npm install --omit=dev`, which cannot run tsc, so each plugin's dist/ MUST be
+# compiled here before the cluster mounts it. surface_export may live under either
+# folder spelling; clusterio-atlas is fixed.
+$PluginSpecs = @(
+    @{ Name = "surface_export";  Candidates = @("surface_export", "surface-export") },
+    @{ Name = "clusterio-atlas"; Candidates = @("clusterio-atlas") }
 )
 
-$PluginPath = $PluginPathCandidates | Where-Object { Test-Path $_ } | Select-Object -First 1
-if (-not $PluginPath) {
-    $Checked = $PluginPathCandidates -join ", "
-    throw "Could not find surface-export plugin folder. Checked: $Checked"
+$Plugins = @()
+foreach ($spec in $PluginSpecs) {
+    $path = $spec.Candidates |
+        ForEach-Object { Join-Path $ExternalPlugins $_ } |
+        Where-Object { Test-Path $_ } |
+        Select-Object -First 1
+    if (-not $path) {
+        throw "Could not find plugin '$($spec.Name)'. Checked: $($spec.Candidates -join ', ') under $ExternalPlugins"
+    }
+    $Plugins += [pscustomobject]@{ Name = $spec.Name; Path = $path; Version = $null }
 }
 
-$PluginJsonPath = Join-Path $PluginPath "package.json"
-$ModuleJsonPath = Join-Path $PluginPath "module\module.json"
-
-# 1. Increment Version
-if (-not $SkipIncrement) {
-    Write-Host "Reading version..." -ForegroundColor Cyan
-    $PluginJson = Get-Content $PluginJsonPath -Raw | ConvertFrom-Json
-
-    # Parse version (Simple Major.Minor.Patch)
-    $VerParts = $PluginJson.version.Split('.')
-    if ($VerParts.Count -ne 3) {
-        Write-Error "Version format $($PluginJson.version) not supported for auto-increment. Expected X.Y.Z"
+# 1. Increment Version (per plugin: package.json + module/module.json in lockstep)
+function Update-PluginVersion {
+    param([string]$PluginPath, [switch]$Skip)
+    $pkgPath = Join-Path $PluginPath "package.json"
+    $modPath = Join-Path $PluginPath "module\module.json"
+    $pkg = Get-Content $pkgPath -Raw | ConvertFrom-Json
+    if ($Skip) {
+        Write-Host "  $(Split-Path $PluginPath -Leaf): using existing version $($pkg.version)" -ForegroundColor Yellow
+        return $pkg.version
     }
-
-    $NewPatch = [int]$VerParts[2] + 1
-    $NewVersion = "{0}.{1}.{2}" -f $VerParts[0], $VerParts[1], $NewPatch
-
-    Write-Host "Bumping version: $($PluginJson.version) -> $NewVersion" -ForegroundColor Green
-
-    # Update Plugin package.json
-    $PluginJson.version = $NewVersion
-    $PluginJson | ConvertTo-Json -Depth 10 | Set-Content $PluginJsonPath -Encoding UTF8
-    Write-Host "Updated plugin version in package.json" -ForegroundColor Green
-
-    # Update Module module.json to match
-    if (Test-Path $ModuleJsonPath) {
-        $ModuleJson = Get-Content $ModuleJsonPath -Raw | ConvertFrom-Json
-        $ModuleJson.version = $NewVersion
-        $ModuleJson | ConvertTo-Json -Depth 10 | Set-Content $ModuleJsonPath -Encoding UTF8
-        Write-Host "Updated module version in module/module.json" -ForegroundColor Green
-    } else {
-        Write-Warning "module.json not found at $ModuleJsonPath"
+    $parts = $pkg.version.Split('.')
+    if ($parts.Count -ne 3) { throw "Version '$($pkg.version)' not X.Y.Z in $pkgPath" }
+    $new = "{0}.{1}.{2}" -f $parts[0], $parts[1], ([int]$parts[2] + 1)
+    $pkg.version = $new
+    $pkg | ConvertTo-Json -Depth 10 | Set-Content $pkgPath -Encoding UTF8
+    if (Test-Path $modPath) {
+        $mod = Get-Content $modPath -Raw | ConvertFrom-Json
+        $mod.version = $new
+        $mod | ConvertTo-Json -Depth 10 | Set-Content $modPath -Encoding UTF8
     }
-} else {
-    $PluginJson = Get-Content $PluginJsonPath -Raw | ConvertFrom-Json
-    $NewVersion = $PluginJson.version
-    Write-Host "Using existing version: $NewVersion" -ForegroundColor Yellow
+    Write-Host "  $(Split-Path $PluginPath -Leaf): $($parts -join '.') -> $new" -ForegroundColor Green
+    return $new
 }
+
+Write-Host "Versioning plugins..." -ForegroundColor Cyan
+foreach ($p in $Plugins) {
+    $p.Version = Update-PluginVersion -PluginPath $p.Path -Skip:$SkipIncrement
+}
+# Reported in the final summary / startup message.
+$NewVersion = ($Plugins | Where-Object { $_.Name -eq "surface_export" }).Version
 
 Write-Host "Using save-patched module architecture (no mod zip needed)" -ForegroundColor Cyan
 Write-Host "Lua code in module/ directory will be patched into saves by Clusterio" -ForegroundColor Green
@@ -82,23 +86,27 @@ if (-not $KeepData) {
     Write-Host "Keeping existing data volumes (-KeepData)" -ForegroundColor Yellow
 }
 
-# 5. Build plugin artifacts (node + web)
-Write-Host "Building plugin artifacts (node + web)..." -ForegroundColor Cyan
-Push-Location $PluginPath
-try {
-    if (Test-Path (Join-Path $PluginPath "package-lock.json")) {
-        npm ci --silent 2>$null
-    } else {
-        npm install --silent 2>$null
+# 5. Build plugin artifacts (host-side — mandatory; in-container install can't run tsc)
+Write-Host "Building plugin artifacts..." -ForegroundColor Cyan
+foreach ($p in $Plugins) {
+    Write-Host "  Building $($p.Name)..." -ForegroundColor Cyan
+    Push-Location $p.Path
+    try {
+        if (Test-Path (Join-Path $p.Path "package-lock.json")) {
+            npm ci --silent 2>$null
+        } else {
+            npm install --silent 2>$null
+        }
+        npm run build
+        if ($LASTEXITCODE -ne 0) {
+            throw "Plugin build failed: $($p.Name)"
+        }
+        Write-Host "  $($p.Name) built" -ForegroundColor Green
+    } finally {
+        Pop-Location
     }
-    npm run build
-    if ($LASTEXITCODE -ne 0) {
-        throw "Plugin build failed"
-    }
-    Write-Host "Plugin artifacts built successfully" -ForegroundColor Green
-} finally {
-    Pop-Location
 }
+Write-Host "All plugin artifacts built successfully" -ForegroundColor Green
 
 # 6. Pull latest base images
 Write-Host "Pulling latest base images..." -ForegroundColor Cyan

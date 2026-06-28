@@ -110,6 +110,30 @@ services:
       # Mount external plugins (auto-discovered by install-plugins.sh)
       - ./docker/seed-data/external_plugins:/clusterio/external_plugins
 
+  # -------------------------------------------------------------------------
+  # Atlas map-data ingestion store (Phase 0). The clusterio-atlas plugin (runs
+  # on the hosts) writes captured per-chunk entity data here. Plain Postgres for
+  # now; the spatial-query phase swaps this for postgis/postgis and adds a geom
+  # column. Reached by the hosts as `atlas-postgres` on surface-export-net.
+  # -------------------------------------------------------------------------
+  atlas-postgres:
+    image: postgres:16-alpine
+    container_name: atlas-postgres
+    environment:
+      POSTGRES_USER: atlas
+      POSTGRES_PASSWORD: atlas
+      POSTGRES_DB: atlas
+    volumes:
+      - atlas-pgdata:/var/lib/postgresql/data
+    networks:
+      - surface-export-net
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U atlas -d atlas"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
 networks:
   surface-export-net:
     driver: bridge
@@ -119,5 +143,6 @@ volumes:
   surface-export-host-1-data:        # Host 1 persistent data (config, instances, logs)
   surface-export-host-2-data:        # Host 2 persistent data
   surface-export-tokens:             # Token exchange between controller and hosts
+  atlas-pgdata:                      # Atlas map-data ingestion store (Phase 0)
   factorio-client:                   # Shared Factorio game client (external — survives down -v)
     external: true

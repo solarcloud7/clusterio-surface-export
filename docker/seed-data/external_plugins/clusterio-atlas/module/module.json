@@ -1,0 +1,6 @@
+{
+  "name": "clusterio_atlas",
+  "version": "0.1.0",
+  "dependencies": { "clusterio": "*" },
+  "load": ["control.lua"]
+}
