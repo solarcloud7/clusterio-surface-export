@@ -15,6 +15,7 @@ was learned.
 - [Reading fluid safely](#reading-fluid-safely)
 - [Fluid injection on import](#fluid-injection-on-import)
 - [Inventory sizing](#inventory-sizing)
+- [Item counting (get_item_count includes belts)](#item-counting)
 - [Space platform deletion](#space-platform-deletion)
 - [LuaProfiler and LocalisedString](#luaprofiler-and-localisedstring)
 - [Read-only entity properties](#read-only-entity-properties)
@@ -77,6 +78,19 @@ Consequence: fluid does not live per-entity — it lives in the shared segment. 
   inventories** (the call returns ok, yet size and override stay unchanged). So it is **not** a lever for the
   overloaded-crafter-input item loss — that case is already handled by the beacon-first `set_stack` ordering.
   **[empirical, 2.0.76]**
+
+## Item counting
+
+- **`LuaEntity.get_item_count(item)` INCLUDES transport-line (belt) items** — verified on **2.0.76**: on a
+  belt it returns *exactly* `Σ get_transport_line(i).get_item_count(item)` (measured 104=104, 4=4, 8=8). So a
+  physical total computed as `get_item_count` over every entity is **complete** — it already covers inventories
+  **and** belt-line contents (and inserter-held items). **Do NOT add a separate `get_transport_line` pass on top
+  of `get_item_count` for a total — that double-counts the belts.** A belt-only scan via `get_transport_line`
+  must dedup merged lines (adjacent belts in a straight run share one transport line, so a naive per-entity sum
+  over-counts ~Nx); `get_item_count` sidesteps that. This is what the freeze-first `transfer-fidelity` sentinel
+  relies on (its physical meter == the validator's `count_all_items`, both belt-aware; the only residual is the
+  craft window, which freezing the source eliminates). **[empirical, 2.0.76]** Guarded by
+  `tests/integration/engine-invariants`.
 
 ## Space platform deletion
 

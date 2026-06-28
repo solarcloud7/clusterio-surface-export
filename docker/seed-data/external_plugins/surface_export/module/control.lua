@@ -175,6 +175,6 @@ SurfaceExportModule.events = {
 -- Debug/testing:
 --   remote.call("surface_export", "test_import_entity", entity_json, surface_index, position)
 --   remote.call("surface_export", "run_tests")
---   remote.call("surface_export", "clone_platform", platform_index, force_name, new_name)
+--   remote.call("surface_export", "clone_platform", source_name, dest_name)  -- by NAME, 2 args
 
 return SurfaceExportModule

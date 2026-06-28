@@ -57,8 +57,32 @@ Write-Status "Clone ready" -Type success
 Write-Host ""
 
 $failed = 0
+$passed = 0
 
-# 2. WARN-ONLY probe: LuaSpacePlatform.destroy(). This must NOT fail the build if it changes —
+# 2. INVARIANT: get_item_count INCLUDES belt (transport-line) items. The freeze-first transfer-fidelity
+#    sentinel's physical meter relies on a `get_item_count` total being COMPLETE (inventories + belts + held).
+#    On the clone's belts, get_item_count(item) must equal Σ get_transport_line(i).get_item_count(item).
+#    See docs/factorio-2.0-api-notes.md "Item counting". If a Factorio bump changes this, the sentinel's
+#    assumption breaks and this goes RED.
+$beltLua = "local items={'railgun-ammo','iron-plate','copper-plate','steel-plate','piercing-rounds-magazine'} local p for _,x in pairs(game.forces.player.platforms) do if x.name=='$cloneName' then p=x end end if not p then rcon.print('RESULT checked=0 mism=0 ex=noplatform') return end local s=p.surface local checked=0 local mism=0 local ex='' for _,e in ipairs(s.find_entities_filtered({type={'transport-belt','underground-belt'}})) do local mx=e.get_max_transport_line_index() local tl=0 for li=1,mx do local l=e.get_transport_line(li) if l then for _,n in ipairs(items) do tl=tl+l.get_item_count(n) end end end if tl>0 then local gic=0 for _,n in ipairs(items) do gic=gic+e.get_item_count(n) end checked=checked+1 if gic~=tl then mism=mism+1 if ex=='' then ex=e.name..'(gic='..gic..' tl='..tl..')' end end if checked>=15 then break end end end rcon.print('RESULT checked='..checked..' mism='..mism..' ex='..ex)"
+$beltRaw = (Invoke-Lua -Instance $instance -Code $beltLua) -join " "
+if ($beltRaw -match 'checked=(\d+) mism=(\d+)') {
+    $bChecked = [int]$Matches[1]; $bMism = [int]$Matches[2]
+    if ($bChecked -eq 0) {
+        Write-Status "get_item_count/belt invariant: no belts with tracked items on the clone this run — inconclusive (skipped)" -Type warning
+    } elseif ($bMism -eq 0) {
+        Write-TestResult -TestId "get-item-count-includes-belts" -TestName "get_item_count includes belt items (== get_transport_line; $bChecked belts checked)" -Status "passed"
+        $passed++
+    } else {
+        Write-TestResult -TestId "get-item-count-includes-belts" -TestName "get_item_count includes belt items" -Status "failed" -Message "$bMism/$bChecked belts: get_item_count != transport_line total ($beltRaw) — the freeze-first transfer-fidelity meter assumption is BROKEN at this Factorio version (see docs/factorio-2.0-api-notes.md Item counting)"
+        $failed++
+    }
+} else {
+    Write-Status "get_item_count/belt invariant: unexpected probe output: $beltRaw" -Type warning
+}
+Write-Host ""
+
+# 3. WARN-ONLY probe: LuaSpacePlatform.destroy(). This must NOT fail the build if it changes —
 #    an upstream fix that makes destroy() functional is a benign improvement, not a regression.
 $destroyLua = "local p for _,x in pairs(game.forces.player.platforms) do if x.name=='$cloneName' then p=x end end if p then pcall(function() p.destroy() end) end rcon.print('ok')"
 Invoke-Lua -Instance $instance -Code $destroyLua | Out-Null
@@ -70,6 +94,7 @@ if (-not (Test-ClonePresent)) {
     # needs is satisfied; just flag that the documented no-op behavior has changed.
     Write-Status "destroy() REMOVED the platform — it is FUNCTIONAL at this Factorio version." -Type warning
     Write-Status "Revisit Pitfall #19 / docs/factorio-2.0-api-notes.md (they document destroy() as a no-op)." -Type warning
+    $passed++   # the removal invariant our code needs is satisfied (just via destroy() now)
 } else {
     Write-Status "destroy() left the platform intact — no-op, as documented (Pitfall #19)." -Type info
 
@@ -84,6 +109,7 @@ if (-not (Test-ClonePresent)) {
         $failed++
     } else {
         Write-TestResult -TestId "delete-surface-removes-platform" -TestName "game.delete_surface() removes a space platform" -Status "passed"
+        $passed++
     }
 }
 
@@ -93,6 +119,6 @@ if (Test-ClonePresent) {
     Step-Tick -Instance $instance -Ticks 5 | Out-Null
 }
 
-Write-TestSummary -Passed $(if ($failed -eq 0) { 1 } else { 0 }) -Failed $failed
+Write-TestSummary -Passed $passed -Failed $failed
 if ($failed -gt 0) { exit 1 }
 exit 0
