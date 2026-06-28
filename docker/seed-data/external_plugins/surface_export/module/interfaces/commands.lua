@@ -16,6 +16,7 @@ local command_modules = {
   require("modules/surface_export/interfaces/commands/list-surfaces"),
   require("modules/surface_export/interfaces/commands/plugin-import-file"),
   require("modules/surface_export/interfaces/commands/transfer-platform"),
+  require("modules/surface_export/interfaces/commands/gateway-transfer"),
   require("modules/surface_export/interfaces/commands/resume-platform"),
   require("modules/surface_export/interfaces/commands/export-sync-mode"),
   require("modules/surface_export/interfaces/commands/step-tick"),
