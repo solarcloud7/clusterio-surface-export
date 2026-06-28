@@ -602,6 +602,13 @@ export class ControllerPlugin extends BaseControllerPlugin {
 			if (Array.isArray(entries)) {
 				for (const entry of entries) {
 					if (Array.isArray(entry) && typeof entry[0] === "string" && Array.isArray(entry[1])) {
+						// Drop links for gateway names this build doesn't know (GATEWAY_COUNT shrank, or a
+						// hand-edited file) — otherwise they'd be pushed to instances yet be invisible and
+						// unremovable in the web editor, which only renders GATEWAY_NAMES.
+						if (!(messages.GATEWAY_NAMES as readonly string[]).includes(entry[0])) {
+							this.logger.warn(`Dropping orphaned gateway link for unknown gateway '${entry[0]}'`);
+							continue;
+						}
 						this.gatewayLinks.set(entry[0], entry[1] as messages.GatewayLink[]);
 					}
 				}
@@ -627,7 +634,11 @@ export class ControllerPlugin extends BaseControllerPlugin {
 		}
 	}
 
-	/** Is the instance present, on a connected host, and running? */
+	/**
+	 * Is the instance reachable for a transfer — present, on a connected host, AND running? This is the
+	 * single definition of "online"; the web Gateways editor's "(offline)" label MUST use the same
+	 * (connected && status==="running"), or the editor and the pushed config disagree.
+	 */
 	private isInstanceOnline(instanceId: number): boolean {
 		const inst = this.c.instances.get(instanceId);
 		if (!inst || inst.isDeleted) {
@@ -638,9 +649,15 @@ export class ControllerPlugin extends BaseControllerPlugin {
 		return Boolean(host?.connected) && String(inst.status) === "running";
 	}
 
-	/** Resolve the raw links into the wire shape with live instance_name + online, for instances. */
-	private resolveGateways(): Array<{ gatewayName: string; targets: messages.ResolvedGatewayTarget[] }> {
-		const out: Array<{ gatewayName: string; targets: messages.ResolvedGatewayTarget[] }> = [];
+	/**
+	 * Resolve the raw links into the wire shape with live instance_name + online.
+	 * NOTE: `online` is a SNAPSHOT taken at resolve (push/pull) time — @clusterio's BaseControllerPlugin
+	 * exposes no instance-status hook to re-push on, so it is refreshed only on a config edit and on each
+	 * instance's own startup. The in-game chooser (WS3) therefore treats `online` as an advisory hint, not
+	 * a hard gate; the transfer itself is gated by live controller routing.
+	 */
+	private resolveGateways(): messages.ResolvedGateway[] {
+		const out: messages.ResolvedGateway[] = [];
 		for (const [gatewayName, links] of this.gatewayLinks.entries()) {
 			const targets = (links || []).map(link => ({
 				instanceId: link.targetInstanceId,

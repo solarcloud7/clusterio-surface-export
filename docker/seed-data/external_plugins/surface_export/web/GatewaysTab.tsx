@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
+	Alert,
 	Button,
 	Card,
 	Empty,
@@ -42,10 +43,15 @@ export default function GatewaysTab({ plugin, state }: { plugin: SurfaceExportPl
 		for (const instance of tree?.unassignedInstances || []) {
 			nodes.push(instance);
 		}
-		return nodes.map(inst => ({
-			label: `${inst.instanceName || `instance ${inst.instanceId}`}${inst.connected ? "" : " (offline)"}`,
-			value: inst.instanceId,
-		}));
+		return nodes.map(inst => {
+			// "online" MUST match the controller's isInstanceOnline (connected AND running), or the editor
+			// disagrees with the config that gets pushed to instances.
+			const online = inst.connected && inst.status === "running";
+			return {
+				label: `${inst.instanceName || `instance ${inst.instanceId}`}${online ? "" : " (offline)"}`,
+				value: inst.instanceId,
+			};
+		});
 	}, [tree]);
 
 	const load = useCallback(async () => {
@@ -89,7 +95,15 @@ export default function GatewaysTab({ plugin, state }: { plugin: SurfaceExportPl
 	}
 
 	async function save(gatewayName: string) {
-		const valid = (edits[gatewayName] || []).filter(t => t.targetInstanceId != null);
+		const rows = edits[gatewayName] || [];
+		// Guard the silent-disable trap: if a row exists with no instance picked, error instead of
+		// dropping it (which would save fewer/zero targets and quietly disable the gateway). To
+		// intentionally disable a gateway, remove all its rows (an empty list is an explicit clear).
+		if (rows.some(t => t.targetInstanceId == null)) {
+			antMessage.error("Pick a destination instance for every target row, or remove the empty row.", 6);
+			return;
+		}
+		const valid = rows;
 		setSavingGateway(gatewayName);
 		try {
 			const resp = (await plugin.setGatewayLink({
@@ -126,6 +140,14 @@ export default function GatewaysTab({ plugin, state }: { plugin: SurfaceExportPl
 				Link each gateway to one or more destination instances. A platform that parks at the gateway and
 				is gateway-transferred arrives at the chosen instance (parked, paused, at the target gateway).
 			</Text>
+			{instanceOptions.length === 0 ? (
+				<Alert
+					type="warning"
+					showIcon
+					message="No destination instances available"
+					description="The instance list (platform tree) is still loading or unavailable — destinations can't be selected until it loads."
+				/>
+			) : null}
 			{gatewayNames.map(gatewayName => {
 				const targets = edits[gatewayName] || [];
 				return (

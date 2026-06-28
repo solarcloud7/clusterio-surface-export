@@ -12,6 +12,7 @@ import type {
 	ValidationResult,
 	GatewayLink,
 	ResolvedGatewayTarget,
+	ResolvedGateway,
 } from "./shared/dto";
 export type {
 	HostNodeModel,
@@ -27,6 +28,7 @@ export type {
 	ValidationResult,
 	GatewayLink,
 	ResolvedGatewayTarget,
+	ResolvedGateway,
 } from "./shared/dto";
 export { GATEWAY_NAMES, GATEWAY_PREFIX } from "./shared/dto";
 const PLUGIN_NAME = "surface_export";
@@ -833,7 +835,7 @@ export class GetGatewayConfigRequest {
 	static Response = {
 		jsonSchema: { type: "object", properties: { gateways: RESOLVED_GATEWAYS_SCHEMA }, required: ["gateways"] } as JsonSchema,
 		fromJSON(json: unknown) {
-			return json as { gateways: Array<{ gatewayName: string; targets: ResolvedGatewayTarget[] }> };
+			return json as { gateways: ResolvedGateway[] };
 		},
 	};
 }
@@ -852,13 +854,13 @@ export class PushGatewayConfigRequest {
 		additionalProperties: false,
 	};
 
-	gateways: Array<{ gatewayName: string; targets: ResolvedGatewayTarget[] }>;
+	gateways: ResolvedGateway[];
 
-	constructor(json: { gateways: Array<{ gatewayName: string; targets: ResolvedGatewayTarget[] }> }) {
+	constructor(json: { gateways: ResolvedGateway[] }) {
 		this.gateways = json.gateways;
 	}
 
-	static fromJSON(json: { gateways: Array<{ gatewayName: string; targets: ResolvedGatewayTarget[] }> }) {
+	static fromJSON(json: { gateways: ResolvedGateway[] }) {
 		return new PushGatewayConfigRequest(json);
 	}
 	toJSON() { return { gateways: this.gateways }; }

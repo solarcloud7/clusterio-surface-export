@@ -63,6 +63,16 @@ export class LuaInterface {
 			`if remote.interfaces["surface_export"] and remote.interfaces["surface_export"]["configure"] then ` +
 			`remote.call("surface_export", "configure", {gateways_json="${escapeString(gatewaysJson)}"}) ` +
 			`end`;
+		// A single /sc command is bounded by Factorio's ~8KB RCON limit. Gateway config is tiny in
+		// practice (a few gateways × targets), but fail LOUDLY rather than send a truncated/dropped
+		// command if it ever grows past a safe single-command size (escaping inflates it further).
+		const MAX_RCON_COMMAND_BYTES = 7000;
+		if (Buffer.byteLength(script, "utf8") > MAX_RCON_COMMAND_BYTES) {
+			throw new Error(
+				`Gateway config command is ${Buffer.byteLength(script, "utf8")} bytes (> ${MAX_RCON_COMMAND_BYTES}); ` +
+				`too large for a single RCON command — reduce the number of gateway targets.`,
+			);
+		}
 		await this.host.sendRcon(script, true);
 	}
 

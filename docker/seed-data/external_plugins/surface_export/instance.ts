@@ -138,20 +138,15 @@ export class InstancePlugin extends BaseInstancePlugin {
 
 	// ── Gateway link config (WS2) ───────────────────────────────────────────
 
-	/** Convert resolved gateway targets to the snake_case Lua storage shape and push them as JSON. */
-	private async applyGatewaysToLua(
-		gateways: Array<{ gatewayName: string; targets: messages.ResolvedGatewayTarget[] }>,
-	): Promise<void> {
-		const keyed: Record<string, { targets: Array<{ instance_id: number; instance_name: string; target_gateway: string; online: boolean }> }> = {};
+	/**
+	 * Push the resolved gateway config into Lua storage as a keyed map. The targets ride through with
+	 * their camelCase field names (instanceId/instanceName/targetGateway/online) — the in-game chooser
+	 * reads the SAME shape, so there is no second per-field map to drift from the controller's resolve.
+	 */
+	private async applyGatewaysToLua(gateways: messages.ResolvedGateway[]): Promise<void> {
+		const keyed: Record<string, { targets: messages.ResolvedGatewayTarget[] }> = {};
 		for (const g of gateways || []) {
-			keyed[g.gatewayName] = {
-				targets: (g.targets || []).map(t => ({
-					instance_id: t.instanceId,
-					instance_name: t.instanceName,
-					target_gateway: t.targetGateway,
-					online: t.online,
-				})),
-			};
+			keyed[g.gatewayName] = { targets: g.targets || [] };
 		}
 		await this.lua.configureGateways(JSON.stringify(keyed));
 	}
@@ -162,7 +157,7 @@ export class InstancePlugin extends BaseInstancePlugin {
 			const resp = (await this.link.sendTo(
 				"controller",
 				new messages.GetGatewayConfigRequest({}),
-			)) as unknown as { gateways?: Array<{ gatewayName: string; targets: messages.ResolvedGatewayTarget[] }> };
+			)) as unknown as { gateways?: messages.ResolvedGateway[] };
 			await this.applyGatewaysToLua(resp?.gateways || []);
 			this.logger.info(`Gateway config pulled from controller: ${(resp?.gateways || []).length} gateway(s)`);
 		} catch (err: unknown) {
@@ -171,7 +166,7 @@ export class InstancePlugin extends BaseInstancePlugin {
 	}
 
 	/** controller → instance: a gateway config push (on a config change). */
-	async handlePushGatewayConfig(request: { gateways: Array<{ gatewayName: string; targets: messages.ResolvedGatewayTarget[] }> }) {
+	async handlePushGatewayConfig(request: { gateways: messages.ResolvedGateway[] }) {
 		try {
 			await this.applyGatewaysToLua(request.gateways || []);
 			return { success: true };
