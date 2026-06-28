@@ -29,6 +29,7 @@ local function initialize_storage()
 	storage.pending_platform_imports = storage.pending_platform_imports or {}
 	storage.surface_export = storage.surface_export or {}
 	storage.surface_export_config = storage.surface_export_config or { debug_mode = true }
+	storage.surface_export_config.gateways = storage.surface_export_config.gateways or {}
 	storage.platform_flight_data = storage.platform_flight_data or {}
 	AsyncProcessor.init()
 end

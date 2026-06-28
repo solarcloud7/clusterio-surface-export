@@ -104,6 +104,7 @@ export class InstancePlugin extends BaseInstancePlugin {
 		// never an extracted/cast method (Pitfall #26).
 		this.link.handle(messages.TransferStatusUpdate, this.handleTransferStatusUpdate.bind(this));
 		this.link.handle(messages.InstanceListPlatformsRequest, this.handleInstanceListPlatformsRequest.bind(this));
+		this.link.handle(messages.PushGatewayConfigRequest, this.handlePushGatewayConfig.bind(this));
 
 		this.logger.info("Surface Export plugin initialized");
 	}
@@ -115,6 +116,7 @@ export class InstancePlugin extends BaseInstancePlugin {
 		this.logger.info("Instance started - Surface Export plugin ready");
 		await this.ensureLuaConsoleUnlocked();
 		await this.sendConfigurationToLua();
+		await this.sendGatewayConfigToLua();
 	}
 
 	/**
@@ -131,6 +133,50 @@ export class InstancePlugin extends BaseInstancePlugin {
 			this.logger.info(`Configuration sent to Lua: batch_size=${batchSize}, max_concurrent_jobs=${maxConcurrentJobs}, show_progress=${showProgress}, debug_mode=${debugMode}`);
 		} catch (err: unknown) {
 			this.logger.warn(`Failed to send configuration to Lua: ${getErrorMessage(err)}`);
+		}
+	}
+
+	// ── Gateway link config (WS2) ───────────────────────────────────────────
+
+	/** Convert resolved gateway targets to the snake_case Lua storage shape and push them as JSON. */
+	private async applyGatewaysToLua(
+		gateways: Array<{ gatewayName: string; targets: messages.ResolvedGatewayTarget[] }>,
+	): Promise<void> {
+		const keyed: Record<string, { targets: Array<{ instance_id: number; instance_name: string; target_gateway: string; online: boolean }> }> = {};
+		for (const g of gateways || []) {
+			keyed[g.gatewayName] = {
+				targets: (g.targets || []).map(t => ({
+					instance_id: t.instanceId,
+					instance_name: t.instanceName,
+					target_gateway: t.targetGateway,
+					online: t.online,
+				})),
+			};
+		}
+		await this.lua.configureGateways(JSON.stringify(keyed));
+	}
+
+	/** Pull the resolved gateway config from the controller on start (catch-up for a fresh instance). */
+	async sendGatewayConfigToLua() {
+		try {
+			const resp = (await this.link.sendTo(
+				"controller",
+				new messages.GetGatewayConfigRequest({}),
+			)) as unknown as { gateways?: Array<{ gatewayName: string; targets: messages.ResolvedGatewayTarget[] }> };
+			await this.applyGatewaysToLua(resp?.gateways || []);
+			this.logger.info(`Gateway config pulled from controller: ${(resp?.gateways || []).length} gateway(s)`);
+		} catch (err: unknown) {
+			this.logger.warn(`Failed to pull gateway config: ${getErrorMessage(err)}`);
+		}
+	}
+
+	/** controller → instance: a gateway config push (on a config change). */
+	async handlePushGatewayConfig(request: { gateways: Array<{ gatewayName: string; targets: messages.ResolvedGatewayTarget[] }> }) {
+		try {
+			await this.applyGatewaysToLua(request.gateways || []);
+			return { success: true };
+		} catch (err: unknown) {
+			return { success: false, error: getErrorMessage(err) };
 		}
 	}
 

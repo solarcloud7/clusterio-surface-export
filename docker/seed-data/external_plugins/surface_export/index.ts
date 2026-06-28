@@ -109,6 +109,10 @@ export const plugin = {
 		messages.SurfaceExportTransferUpdateEvent,
 		messages.SurfaceExportLogUpdateEvent,
 		messages.PlatformStateChangedEvent,
+		messages.GetGatewaysRequest,
+		messages.SetGatewayLinkRequest,
+		messages.GetGatewayConfigRequest,
+		messages.PushGatewayConfigRequest,
 	],
 	ctlEntrypoint: "dist/node/control",
 };

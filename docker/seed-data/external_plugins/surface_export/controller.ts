@@ -62,6 +62,9 @@ export class ControllerPlugin extends BaseControllerPlugin {
 	txLogger!: TransactionLogger;
 	subscriptions!: SubscriptionManager;
 	orchestrator!: TransferOrchestrator;
+	/** Gateway → destination links (raw, the source of truth). Keyed by gateway name. Persisted. */
+	gatewayLinks!: Map<string, messages.GatewayLink[]>;
+	gatewayConfigPath!: string;
 
 	async init() {
 		this.logger.info("Surface Export controller plugin initializing...");
@@ -86,6 +89,11 @@ export class ControllerPlugin extends BaseControllerPlugin {
 			String(this.c.config.get("controller.database_directory")),
 			"surface_export_transaction_logs.json",
 		);
+		this.gatewayLinks = new Map();
+		this.gatewayConfigPath = path.resolve(
+			String(this.c.config.get("controller.database_directory")),
+			"surface_export_gateways.json",
+		);
 
 		// Instantiate modules (order matters: txLogger before subscriptions,
 		// platformTree before orchestrator)
@@ -96,6 +104,7 @@ export class ControllerPlugin extends BaseControllerPlugin {
 
 		await this.loadStorage();
 		await this.txLogger.loadTransactionLogs();
+		await this.loadGatewayConfig();
 
 		// Register message handlers
 		this.c.handle(messages.PlatformExportEvent, this.handlePlatformExport.bind(this));
@@ -112,6 +121,9 @@ export class ControllerPlugin extends BaseControllerPlugin {
 		this.c.handle(messages.GetTransactionLogRequest, this.handleGetTransactionLog.bind(this));
 		this.c.handle(messages.SetSurfaceExportSubscriptionRequest, this.subscriptions.handleSetSurfaceExportSubscriptionRequest.bind(this.subscriptions));
 		this.c.handle(messages.PlatformStateChangedEvent, this.handlePlatformStateChanged.bind(this));
+		this.c.handle(messages.GetGatewaysRequest, this.handleGetGatewaysRequest.bind(this));
+		this.c.handle(messages.SetGatewayLinkRequest, this.handleSetGatewayLinkRequest.bind(this));
+		this.c.handle(messages.GetGatewayConfigRequest, this.handleGetGatewayConfigRequest.bind(this));
 
 		this.logger.info("Surface Export controller plugin initialized");
 	}
@@ -577,6 +589,118 @@ export class ControllerPlugin extends BaseControllerPlugin {
 		} catch (err: unknown) {
 			this.logger.error(`Failed to persist Surface Export storage: ${getErrorMessage(err)}`);
 		}
+	}
+
+	// ── Gateway link config (WS2) ───────────────────────────────────────────
+	// The controller persists RAW links ({targetInstanceId, targetGateway}); live instance_name/online
+	// are resolved only at read/push time so they never go stale on disk.
+
+	async loadGatewayConfig() {
+		try {
+			const content = await fs.readFile(this.gatewayConfigPath, "utf8");
+			const entries = JSON.parse(content);
+			if (Array.isArray(entries)) {
+				for (const entry of entries) {
+					if (Array.isArray(entry) && typeof entry[0] === "string" && Array.isArray(entry[1])) {
+						this.gatewayLinks.set(entry[0], entry[1] as messages.GatewayLink[]);
+					}
+				}
+			}
+			this.logger.info(`Loaded ${this.gatewayLinks.size} gateway link(s) from disk`);
+		} catch (err: unknown) {
+			const code = (err as { code?: string }).code;
+			if (code === "ENOENT") {
+				this.logger.verbose("No existing gateway config found; starting fresh");
+				return;
+			}
+			this.logger.error(`Failed to load gateway config: ${getErrorMessage(err)}`);
+		}
+	}
+
+	async persistGatewayConfig() {
+		try {
+			const payload = JSON.stringify(Array.from(this.gatewayLinks.entries()), null, 2);
+			await fs.mkdir(path.dirname(this.gatewayConfigPath), { recursive: true });
+			await fs.writeFile(this.gatewayConfigPath, payload, "utf8");
+		} catch (err: unknown) {
+			this.logger.error(`Failed to persist gateway config: ${getErrorMessage(err)}`);
+		}
+	}
+
+	/** Is the instance present, on a connected host, and running? */
+	private isInstanceOnline(instanceId: number): boolean {
+		const inst = this.c.instances.get(instanceId);
+		if (!inst || inst.isDeleted) {
+			return false;
+		}
+		const hostId = Number(inst.config.get("instance.assigned_host"));
+		const host = Number.isInteger(hostId) ? this.c.hosts.get(hostId) : null;
+		return Boolean(host?.connected) && String(inst.status) === "running";
+	}
+
+	/** Resolve the raw links into the wire shape with live instance_name + online, for instances. */
+	private resolveGateways(): Array<{ gatewayName: string; targets: messages.ResolvedGatewayTarget[] }> {
+		const out: Array<{ gatewayName: string; targets: messages.ResolvedGatewayTarget[] }> = [];
+		for (const [gatewayName, links] of this.gatewayLinks.entries()) {
+			const targets = (links || []).map(link => ({
+				instanceId: link.targetInstanceId,
+				instanceName: this.platformTree.resolveInstanceName(link.targetInstanceId) ?? "(unknown)",
+				targetGateway: link.targetGateway,
+				online: this.isInstanceOnline(link.targetInstanceId),
+			}));
+			out.push({ gatewayName, targets });
+		}
+		return out;
+	}
+
+	/** Push the resolved gateway config to every connected instance (best-effort per instance). */
+	private async pushGatewayConfigToConnectedInstances(): Promise<void> {
+		const gateways = this.resolveGateways();
+		for (const inst of this.c.instances.values()) {
+			if (inst.isDeleted || !this.isInstanceOnline(inst.id)) {
+				continue;
+			}
+			try {
+				await this.c.sendTo({ instanceId: inst.id }, new messages.PushGatewayConfigRequest({ gateways }));
+			} catch (err: unknown) {
+				this.logger.warn(`Failed to push gateway config to instance ${inst.id}: ${getErrorMessage(err)}`);
+			}
+		}
+	}
+
+	/** control → controller: raw links + the pinned gateway-name list (for the web editor). */
+	async handleGetGatewaysRequest(_request: Record<string, never>) {
+		return {
+			gatewayNames: [...messages.GATEWAY_NAMES],
+			links: Array.from(this.gatewayLinks.entries()).map(([gatewayName, targets]) => ({ gatewayName, targets })),
+		};
+	}
+
+	/** control → controller: replace the entire target list for one gateway, persist, push. */
+	async handleSetGatewayLinkRequest(request: { gatewayName: string; targets: messages.GatewayLink[] }) {
+		const { gatewayName } = request;
+		if (!(messages.GATEWAY_NAMES as readonly string[]).includes(gatewayName)) {
+			return { success: false, error: `Unknown gateway: ${gatewayName}` };
+		}
+		// Normalize: keep only links with a valid integer instance id; default a blank target gateway
+		// to the source gateway name (the 1:1 default).
+		const targets: messages.GatewayLink[] = (request.targets || [])
+			.filter(t => Number.isInteger(Number(t.targetInstanceId)))
+			.map(t => ({ targetInstanceId: Number(t.targetInstanceId), targetGateway: t.targetGateway || gatewayName }));
+		if (targets.length > 0) {
+			this.gatewayLinks.set(gatewayName, targets);
+		} else {
+			this.gatewayLinks.delete(gatewayName);
+		}
+		await this.persistGatewayConfig();
+		await this.pushGatewayConfigToConnectedInstances();
+		this.logger.info(`Gateway '${gatewayName}' links set: ${targets.length} target(s)`);
+		return { success: true };
+	}
+
+	/** instance → controller: pull the resolved gateway config on instance start. */
+	async handleGetGatewayConfigRequest(_request: Record<string, never>) {
+		return { gateways: this.resolveGateways() };
 	}
 }
 

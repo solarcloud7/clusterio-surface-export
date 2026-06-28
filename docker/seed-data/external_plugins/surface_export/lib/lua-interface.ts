@@ -53,6 +53,20 @@ export class LuaInterface {
 	}
 
 	/**
+	 * Push the resolved gateway link config into Lua storage. The config is sent as a JSON STRING and
+	 * decoded in Lua (via the `configure` remote's `gateways_json` key) — NOT string-interpolated as a
+	 * Lua table — so arbitrary instance names in the config can never inject Lua. `escapeString` makes
+	 * the JSON safe to embed in the surrounding Lua double-quoted literal.
+	 */
+	async configureGateways(gatewaysJson: string): Promise<void> {
+		const script = `/sc ` +
+			`if remote.interfaces["surface_export"] and remote.interfaces["surface_export"]["configure"] then ` +
+			`remote.call("surface_export", "configure", {gateways_json="${escapeString(gatewaysJson)}"}) ` +
+			`end`;
+		await this.host.sendRcon(script, true);
+	}
+
+	/**
 	 * Queue an async export. `targetArg` is the already-formatted Lua literal ("nil" for export-only, or a
 	 * positive integer string for a transfer destination). Returns the RAW rcon result; the caller interprets
 	 * the `export_id` / `EXPORT_FAILED:<reason>` contract.
