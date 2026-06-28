@@ -14,6 +14,7 @@ local Commands = require("modules/surface_export/interfaces/commands")
 local AsyncProcessor = require("modules/surface_export/core/async-processor")
 local SurfaceLock = require("modules/surface_export/utils/surface-lock")
 local TransactionDashboard = require("modules/surface_export/interfaces/gui/transaction-dashboard")
+local Gateway = require("modules/surface_export/core/gateway")
 
 -- Top-level module table (event_handler interface)
 local SurfaceExportModule = {}
@@ -42,6 +43,9 @@ end
 
 function SurfaceExportModule.on_configuration_changed(data)
 	initialize_storage()
+	-- Unlock gateways here too so adding the surfexp_gateways mod mid-save makes them routable
+	-- without waiting for the next server startup.
+	Gateway.discover_and_unlock()
 	log("[Surface Export] Configuration changed - module state initialized")
 end
 
@@ -73,6 +77,8 @@ SurfaceExportModule.events = {
 	-- Clusterio custom events
 	[clusterio_api.events.on_server_startup] = function()
 		initialize_storage()
+		-- Unlock gateway space-locations on every startup (covers every save load). Caches nothing.
+		Gateway.discover_and_unlock()
 		log("[Surface Export] Connected to Clusterio controller")
 	end,
 
@@ -118,6 +124,29 @@ SurfaceExportModule.events = {
 			}
 		elseif platform.state == sps.waiting_at_station then
 			storage.platform_flight_data[platform.name] = nil
+
+			-- Gateway arrival detection (Phase 1a): did the platform just park at a gateway? This only
+			-- DETECTS + announces — it never triggers a transfer (that is the explicit /gateway-transfer
+			-- command, which runs outside this state-change handler). 1b turns this into an on-arrival GUI.
+			local loc = platform.space_location
+			if loc and Gateway.is_gateway(loc.name) then
+				log(string.format("[Gateway] Platform '%s' (force '%s') arrived at gateway '%s'",
+					tostring(platform.name),
+					tostring(platform.force and platform.force.name or "?"),
+					loc.name))
+				if clusterio_api and clusterio_api.send_json then
+					local okg, errg = pcall(function()
+						clusterio_api.send_json("surface_gateway_arrival", {
+							platform_name = platform.name,
+							force_name = platform.force and platform.force.name or "player",
+							gateway = loc.name,
+						})
+					end)
+					if not okg then
+						log(string.format("[Gateway] send_json arrival announce failed: %s", tostring(errg)))
+					end
+				end
+			end
 		end
 
 		-- Notify the controller so it can push a tree refresh to web subscribers
