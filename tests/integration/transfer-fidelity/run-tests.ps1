@@ -22,17 +22,21 @@
 .PARAMETER Items
     Representative high-count item types to count (default: a combat/asteroid-platform mix present on `test`).
 .PARAMETER TolPct
-    Tolerance as a fraction of the source total (default 0.01), absorbing the few-tick craft window between
-    the physical measurement and the export scan.
+    Tolerance as a fraction of the source total (default 0.02), absorbing the craft window between the physical
+    measurement and the (multi-tick, async) export scan: the `test` platform is a LIVE crafting system, so it
+    produces/consumes the tracked items in that gap. The window is timing-dependent and runs larger on a busy
+    CI runner (observed ~1% there vs ~0.6% locally), so 1% was occasionally too tight (a 3-item overshoot at
+    ~9.8k items). 2% still catches the bug this sentinel exists for — a serializer MISCOUNT (a dropped/double-
+    counted inventory or belt category), which is orders of magnitude larger than craft-window drift.
 .PARAMETER TolAbs
-    Minimum absolute tolerance (default 50).
+    Minimum absolute tolerance (default 100).
 #>
 param(
     [string]$SourcePlatform = "test",
     [int]$SourceHost = 0,
     [string[]]$Items = @("railgun-ammo", "iron-plate", "copper-plate", "steel-plate", "piercing-rounds-magazine"),
-    [double]$TolPct = 0.01,
-    [int]$TolAbs = 50,
+    [double]$TolPct = 0.02,
+    [int]$TolAbs = 100,
     [int]$TimeoutSec = 150
 )
 
