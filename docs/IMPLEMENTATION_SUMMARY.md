@@ -157,18 +157,25 @@ Export data is compressed via Factorio's `helpers.encode_string()` (deflate + ba
 
 ## Export Flow
 
-`Serializer.export_platform()` runs 10 synchronous steps:
+Production export/transfer is **asynchronous**: `AsyncProcessor.queue_export()` → `ExportPipeline`
+(`module/core/export-pipeline.lua`) batches the work across ticks (default ~50 entities/tick) and does an
+**atomic single-tick belt-item scan** (Pitfall #16) before building verification. A synchronous variant,
+`Serializer.export_platform()` (`module/core/serializer.lua`), runs the same conceptual steps in one tick — it is
+used by `clone-platform` (and therefore the integration-test fixture) and `/export-sync-mode`, and carries the
+belt rolling-snapshot limitation the async path avoids.
+
+The conceptual steps (async = pipeline phases, sync = inline steps):
 
 1. Validate platform exists
 2. Get surface reference
-3. Scan entities → `EntityScanner.scan_surface()`
+3. Scan entities → `EntityScanner.scan_surface()` (async: per-tick batches)
 4. Scan tiles → `TileScanner.scan_surface()`
-5. Count items → `Verification.count_all_items()`
-6. Count fluids → `Verification.count_all_fluids()`
-7. Build export structure
-8. Verify internal consistency → `Verification.verify_export()`
-9. Serialize to JSON
-10. Store in `storage.platform_exports[export_id]`
+5. (async only) Atomic single-tick belt-item scan once all entities are captured (Pitfall #16)
+6. Count items → `Verification.count_all_items()`
+7. Count fluids → `Verification.count_all_fluids()`
+8. Build export structure (+ `frozen_states`, `force_data`)
+9. Verify internal consistency → `Verification.verify_export()`
+10. Serialize to JSON (+ compression) → store in `storage.platform_exports[export_id]`
 
 ### Entity Handlers
 

@@ -9,13 +9,16 @@ local PlatformSchedule = require("modules/surface_export/utils/platform-schedule
 
 local Serializer = {}
 
---- LEGACY: Synchronous export. Debug/testing use only (/export-sync-mode).
---- The production path is async: AsyncProcessor.queue_export().
---- Known limitations: rolling snapshot for belts (Pitfall #16), no deferred belt scan.
+--- Synchronous single-tick export. NOT deprecated — actively used by clone-platform (it needs the
+--- export_data in-hand to rewrite platform.name before queuing the async import) and therefore by the
+--- integration-test fixture (New-TestPlatform), plus /export-sync-mode for debugging.
+--- Production transfer/export uses the async ExportPipeline (AsyncProcessor.queue_export()), which adds
+--- multi-tick batching + the atomic single-tick belt scan that this path lacks (so this path has the
+--- belt rolling-snapshot limitation, Pitfall #16). Collapsing to one path would require an async clone —
+--- deferred. Do NOT delete this without first making clone async (it would break the test fixture).
 --- @param platform_index number: Index of the platform to export (1-based)
 --- @param force_name string|nil: Optional force name the platform belongs to
 --- @return table|nil, string: Export data and filename on success, nil and error message on failure
---- @deprecated Use AsyncProcessor.queue_export() for production exports
 function Serializer.export_platform(platform_index, force_name)
   -- Step 1: Validate platform exists
   local resolved_force_name = force_name or "player"
@@ -151,64 +154,6 @@ function Serializer.export_platform(platform_index, force_name)
   game.print(string.format("  Size: %d KB", math.floor(#json_string / 1024)))
 
   return export_data, export_id
-end
-
---- Export multiple platforms at once
---- @param platform_indices table: Array of platform indices
---- @param force_name string|nil: Optional force name the platforms belong to
---- @return table: Array of results {success, filename/error}
-function Serializer.export_platforms_batch(platform_indices, force_name)
-  local results = {}
-
-  for _, idx in ipairs(platform_indices) do
-    local data, filename_or_error = Serializer.export_platform(idx, force_name)
-    table.insert(results, {
-      platform_index = idx,
-      success = data ~= nil,
-      result = filename_or_error
-    })
-  end
-
-  return results
-end
-
---- LEGACY: Synchronous export preview. Calls EntityScanner.scan_surface() which
---- will freeze the game on large platforms. Debug use only.
---- @param platform_index number: Platform index
---- @param force_name string|nil: Optional force name the platform belongs to
---- @return table|nil: Statistics or nil if invalid
---- @deprecated Performs full synchronous scan; use async export for production
-function Serializer.get_export_preview(platform_index, force_name)
-  local resolved_force_name = force_name or "player"
-  local force = game.forces[resolved_force_name]
-  if not force then
-    return nil
-  end
-
-  local platforms = force.platforms
-  if not platforms or not platforms[platform_index] then
-    return nil
-  end
-
-  local platform = platforms[platform_index]
-  local surface = platform.surface
-
-  if not surface or not surface.valid then
-    return nil
-  end
-
-  local entities = surface.find_entities_filtered({})
-  local entity_data = EntityScanner.scan_surface(surface)
-  local item_counts = Verification.count_all_items(entity_data)
-  local fluid_counts = Verification.count_all_fluids(entity_data)
-
-  return {
-    platform_name = platform.name,
-    entity_count = #entities,
-    item_count = Util.sum_items(item_counts),
-    fluid_volume = Util.sum_fluids(fluid_counts),
-    estimated_size_kb = math.floor((#entity_data * 500) / 1024)  -- Rough estimate
-  }
 end
 
 return Serializer

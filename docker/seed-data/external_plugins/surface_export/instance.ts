@@ -7,10 +7,10 @@
 import fs from "fs";
 import { BaseInstancePlugin } from "@clusterio/host";
 import type { Instance } from "@clusterio/host";
-import { escapeString } from "@clusterio/lib";
 import type { ExportData, ExportResult, ImportResult, PendingTransfer } from "./messages";
 import * as messages from "./messages";
-import { sendChunkedJson, getErrorMessage, RCON_CHUNK_SIZE, EXPORT_POLL_TIMEOUT_MS, EXPORT_POLL_INTERVAL_MS } from "./helpers";
+import { getErrorMessage, EXPORT_POLL_TIMEOUT_MS, EXPORT_POLL_INTERVAL_MS } from "./helpers";
+import { LuaInterface } from "./lib/lua-interface";
 
 /**
  * The instance Link viewed with permissive `handle`/`sendTo` signatures. Our message classes are
@@ -41,6 +41,8 @@ export class InstancePlugin extends BaseInstancePlugin {
 	}
 	private controllerManagedTransferExports: Set<string> = new Set();
 	private pendingTransfer: PendingTransfer | null = null;
+	/** Typed gateway to the surface_export Lua module (command-building, escaping, chunking, parsing). */
+	private lua!: LuaInterface;
 
 	normalizeRconScalarResult(value: unknown) {
 		const text = String(value ?? "");
@@ -69,6 +71,9 @@ export class InstancePlugin extends BaseInstancePlugin {
 		this.logger.info("Surface Export plugin initializing...");
 		this.logger.info(`Instance ID: ${this.i.id}, Name: ${this.i.config.get("instance.name")}`);
 		this.validateInstanceConfiguration();
+		// Construct with `this` (the plugin), NOT this.i (the raw Instance): BaseInstancePlugin.sendRcon
+		// forwards the plugin name as the `plugin` label on the RCON-size metric; the Instance's does not.
+		this.lua = new LuaInterface(this, this.logger);
 
 		// Listen for platform export completion from Factorio mod
 		// The mod sends data via clusterio_api.send_json("surface_export_complete", data)
@@ -122,17 +127,7 @@ export class InstancePlugin extends BaseInstancePlugin {
 			const showProgress = this.cfg<boolean>("surface_export.show_progress");
 			const debugMode = this.cfg<boolean>("surface_export.debug_mode");
 
-			const configScript = `/sc ` +
-				`if remote.interfaces["surface_export"] and remote.interfaces["surface_export"]["configure"] then ` +
-				`remote.call("surface_export", "configure", {` +
-				`batch_size=${batchSize}, ` +
-				`max_concurrent_jobs=${maxConcurrentJobs}, ` +
-				`show_progress=${showProgress}, ` +
-				`debug_mode=${debugMode}` +
-				`}) ` +
-				`end`;
-
-			await this.i.sendRcon(configScript, true);
+			await this.lua.configure({ batchSize, maxConcurrentJobs, showProgress, debugMode });
 			this.logger.info(`Configuration sent to Lua: batch_size=${batchSize}, max_concurrent_jobs=${maxConcurrentJobs}, show_progress=${showProgress}, debug_mode=${debugMode}`);
 		} catch (err: unknown) {
 			this.logger.warn(`Failed to send configuration to Lua: ${getErrorMessage(err)}`);
@@ -235,10 +230,7 @@ export class InstancePlugin extends BaseInstancePlugin {
 					this.logger.error(`Transfer failed: ${transferResponse.error}`);
 
 					// Unlock platform on failure
-					await this.sendRcon(
-						`/sc local SurfaceLock = require("modules/surface_export/utils/surface-lock"); ` +
-						`SurfaceLock.unlock_platform("${escapeString(String(data.platform_name || ""))}")`,
-					);
+					await this.lua.unlockViaSurfaceLock(String(data.platform_name || ""));
 				}
 
 				// Clear pending transfer
@@ -324,10 +316,7 @@ export class InstancePlugin extends BaseInstancePlugin {
 
 		try {
 			// Call mod's remote interface to export platform - this returns the export_id
-			const rconResult = await this.sendRcon(
-				`/sc local export_id, err = remote.call("surface_export", "export_platform", ${platformIndex}, "${escapeString(forceName)}", ${targetArg}); ` +
-				`if export_id then rcon.print(export_id) else rcon.print("EXPORT_FAILED:" .. tostring(err or "unknown")) end`,
-			);
+			const rconResult = await this.lua.exportPlatform(platformIndex, forceName, targetArg);
 			this.logger.info(`Export RCON result: ${rconResult}`);
 			const exportResult = this.normalizeRconScalarResult(rconResult);
 			if (!exportResult || exportResult.toLowerCase() === "nil") {
@@ -388,13 +377,9 @@ export class InstancePlugin extends BaseInstancePlugin {
 				this.logger.warn(`Skipping getExportData for invalid export ID: ${JSON.stringify(exportId)}`);
 				return null;
 			}
-			// Call the _json version which pre-encodes the result in Lua
-			const result = await this.sendRcon(
-				`/sc rcon.print(remote.call("surface_export", "get_export_json", "${safeExportId}"))`,
-			);
-
-			const jsonText = String(result || "").trim();
-			if (!jsonText || jsonText === "null") {
+			// Call the _json version which pre-encodes the result in Lua (adapter sends + parses).
+			const exportData = await this.lua.getExportJson(safeExportId);
+			if (!exportData) {
 				if (logOnMissing) {
 					this.logger.error(`Export data not found for ${safeExportId} - Lua returned empty/null`);
 					// List available exports for debugging
@@ -408,14 +393,9 @@ export class InstancePlugin extends BaseInstancePlugin {
 				return null;
 			}
 
-			const exportData = JSON.parse(jsonText);
-			if (!exportData || typeof exportData !== "object") {
-				return null;
-			}
-
 			// Log compression info if data is compressed
 			if (exportData.compressed && exportData.payload) {
-				const compressedSize = (exportData.payload.length / 1024).toFixed(1);
+				const compressedSize = ((exportData.payload as string).length / 1024).toFixed(1);
 				this.logger.info(`Retrieved compressed export: ${compressedSize} KB (${exportData.compression})`);
 			} else {
 				const jsonSize = (JSON.stringify(exportData).length / 1024).toFixed(1);
@@ -434,11 +414,7 @@ export class InstancePlugin extends BaseInstancePlugin {
 	 */
 	async listExports(): Promise<string[]> {
 		try {
-			const result = await this.sendRcon(
-				"/sc rcon.print(remote.call(\"surface_export\", \"list_exports_json\"))",
-			);
-
-			return JSON.parse(result);
+			return await this.lua.listExportsJson();
 		} catch (err: unknown) {
 			this.logger.error(`List exports failed: ${getErrorMessage(err)}`);
 			return [];
@@ -449,17 +425,9 @@ export class InstancePlugin extends BaseInstancePlugin {
 	 * List all current platforms on this instance for a force
 	 */
 	async listPlatforms(forceName = "player") {
-		const safeForceName = escapeString(String(forceName || "player"));
-
 		try {
-			const result = await this.sendRcon(
-				`/sc rcon.print(remote.call("surface_export", "list_platforms_json", "${safeForceName}"))`,
-			);
-			const parsed = JSON.parse(result);
-			if (!Array.isArray(parsed)) {
-				return [];
-			}
-
+			// Coalesce an empty force name to "player" (the JS default param only catches undefined).
+			const parsed = await this.lua.listPlatformsJson(forceName || "player");
 			return parsed.map((platform: Record<string, unknown>) => ({
 				platformIndex: platform.platform_index,
 				platformName: platform.platform_name,
@@ -501,17 +469,8 @@ export class InstancePlugin extends BaseInstancePlugin {
 				this.logger.info(`Import data size: ${sizeKB} KB (uncompressed)`);
 			}
 
-			// Send chunks using import_platform_chunk remote interface via the shared
-			// chunked-JSON helper (same template + args as importPlatformFromFile).
-			const escapedPlatformName = escapeString(platformName);
-			const escapedForceName = escapeString(forceName);
-			await sendChunkedJson(
-				this.i,
-				`remote.call("surface_export", "import_platform_chunk", "${escapedPlatformName}", %CHUNK%, %INDEX%, %TOTAL%, "${escapedForceName}")`,
-				exportData,
-				this.logger,
-				RCON_CHUNK_SIZE,
-			);
+			// Send chunks via the adapter (same import_platform_chunk path as importPlatformFromFile).
+			await this.lua.importPlatformChunked(platformName, forceName, exportData);
 
 			this.logger.info("All chunks sent, import queued for async processing");
 			return { success: true };
@@ -546,17 +505,8 @@ export class InstancePlugin extends BaseInstancePlugin {
 			// Use the original platform name if no custom name provided
 			const targetPlatformName = platformName || exportData.platform_name || `Imported_${Date.now()}`;
 
-			// Step 2: Send to Factorio via RCON chunking
-			// Use the existing import_platform_chunk remote interface
-			const escapedTargetName = escapeString(targetPlatformName);
-			const escapedForceName = escapeString(forceName);
-			await sendChunkedJson(
-				this.i,
-				`remote.call("surface_export", "import_platform_chunk", "${escapedTargetName}", %CHUNK%, %INDEX%, %TOTAL%, "${escapedForceName}")`,
-				exportData,
-				this.logger,
-				RCON_CHUNK_SIZE,
-			);
+			// Step 2: Send to Factorio via RCON chunking (adapter owns the import_platform_chunk template).
+			await this.lua.importPlatformChunked(targetPlatformName, forceName, exportData);
 
 			this.logger.info("Platform import chunks sent successfully");
 
@@ -592,10 +542,9 @@ export class InstancePlugin extends BaseInstancePlugin {
 	 * Send a harmless command twice so subsequent RCON calls execute immediately.
 	 */
 	async ensureLuaConsoleUnlocked() {
-		const unlockCommand = "/sc rcon.print(\"surface-export-ready\")";
 		for (let attempt = 1; attempt <= 2; attempt += 1) {
 			try {
-				await this.sendRcon(unlockCommand);
+				await this.lua.signalReady();
 				if (attempt === 1) {
 					// First attempt may only trigger the confirmation prompt; always run twice.
 					continue;
@@ -706,9 +655,7 @@ export class InstancePlugin extends BaseInstancePlugin {
 		try {
 			// Get validation data from Lua
 			const validationStartMs = Date.now();
-			const validationResult = await this.sendRcon(
-				`/sc rcon.print(remote.call("surface_export", "get_validation_result_json", "${escapeString(String(data.platform_name || ""))}"))`,
-			);
+			const validationResult = await this.lua.getValidationResultJson(String(data.platform_name || ""));
 			const validationDurationMs = Date.now() - validationStartMs;
 
 			this.logger.info(`Validation RCON call took ${validationDurationMs}ms, result: ${validationResult.substring(0, 200)}...`);
@@ -793,39 +740,10 @@ export class InstancePlugin extends BaseInstancePlugin {
 	async handleDeleteSourcePlatform(request: { platformName: string; forceName?: string }) {
 		this.logger.info(`Deleting source platform: ${request.platformName}`);
 
-		// Fields use lowercase_underscore to match Lua message schema
-		const escapedPlatformName = escapeString(String(request.platformName || ""));
-		const escapedForceName = escapeString(String(request.forceName || "player"));
-
 		try {
-			const result = await this.sendRcon(
-				`/sc ` +
-				// Clean up lock data first (clears storage.locked_platforms entry)
-				`pcall(function() remote.call("surface_export", "unlock_platform", "${escapedPlatformName}") end); ` +
-				`local force = game.forces["${escapedForceName}"]; ` +
-				`local platform = nil; ` +
-				`for _, p in pairs(force.platforms) do ` +
-				`    if p.name == "${escapedPlatformName}" then platform = p; break; end ` +
-				`end; ` +
-				`if platform then ` +
-				// CRITICAL: platform.destroy() is a no-op in Factorio 2.0 Space Age.
-				// It returns without error but does NOT remove the platform or its surface.
-				// game.delete_surface() is the only reliable way to remove a space platform.
-				`    local surface = platform.surface; ` +
-				`    if surface and surface.valid then ` +
-				`        local ok, err = pcall(function() game.delete_surface(surface) end); ` +
-				`        if ok then ` +
-				`            game.print("[Transfer Complete] Platform '${escapedPlatformName}' transferred and deleted from source", {0, 1, 0}); ` +
-				`            rcon.print("SUCCESS"); ` +
-				`        else ` +
-				`            rcon.print("ERROR:delete_surface failed: " .. tostring(err)); ` +
-				`        end ` +
-				`    else ` +
-				`        rcon.print("ERROR:Platform surface not valid"); ` +
-				`    end ` +
-				`else ` +
-				`    rcon.print("ERROR:Platform not found"); ` +
-				`end`,
+			const result = await this.lua.deleteSourcePlatform(
+				String(request.platformName || ""),
+				String(request.forceName || "player"),
 			);
 
 			const trimmedResult = result.trim();
@@ -850,18 +768,8 @@ export class InstancePlugin extends BaseInstancePlugin {
 	async handleUnlockSourcePlatform(request: { platformName: string }) {
 		this.logger.info(`Unlocking source platform for rollback: ${request.platformName}`);
 
-		const escapedPlatformName = escapeString(String(request.platformName || ""));
-
 		try {
-			const result = await this.sendRcon(
-				`/sc ` +
-				`local success, err = remote.call("surface_export", "unlock_platform", "${escapedPlatformName}"); ` +
-				`if success then ` +
-				`    rcon.print("SUCCESS"); ` +
-				`else ` +
-				`    rcon.print("ERROR:" .. (err or "Unknown error")); ` +
-				`end`,
-			);
+			const result = await this.lua.unlockPlatform(String(request.platformName || ""));
 
 			if (result.trim() === "SUCCESS") {
 				this.logger.info(`Platform ${request.platformName} unlocked successfully`);
@@ -898,10 +806,7 @@ export class InstancePlugin extends BaseInstancePlugin {
 			const colorCode = colorMap[request.color || ""] || "{1, 1, 1}";
 
 			// Send message to Factorio for in-game display
-			await this.sendRcon(
-				`/sc game.print("${escapeString(String(request.message ?? ""))}", ${colorCode})`,
-				true,
-			);
+			await this.lua.printToGame(String(request.message ?? ""), colorCode);
 
 			return { success: true };
 
