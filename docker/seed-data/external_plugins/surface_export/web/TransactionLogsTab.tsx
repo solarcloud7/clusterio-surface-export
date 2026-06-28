@@ -331,6 +331,7 @@ export default function TransactionLogsTab({ plugin, state }: { plugin: SurfaceE
 	}, [validation]);
 
 	type ForceDataMismatch = {
+		force?: string;
 		property?: string;
 		source?: number;
 		destination?: number;
@@ -343,7 +344,7 @@ export default function TransactionLogsTab({ plugin, state }: { plugin: SurfaceE
 		const mismatches = (getProp(validation, "forceDataMismatches", null) as ForceDataMismatch[] | null);
 		if (!mismatches || mismatches.length === 0) return null;
 		const lines = mismatches
-			.map((m) => `${m.property}: dest ${m.destination} → ${m.synced_to} (source ${m.source})`)
+			.map((m) => `${m.force ? m.force + " " : ""}${m.property}: dest ${m.destination} → ${m.synced_to} (source ${m.source})`)
 			.join("\n");
 		return (
 			<Tooltip title={<pre style={{ margin: 0, fontSize: 11 }}>{lines}</pre>}>

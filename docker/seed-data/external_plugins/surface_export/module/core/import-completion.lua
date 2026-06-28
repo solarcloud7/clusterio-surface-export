@@ -257,8 +257,7 @@ function ImportCompletion.run_phase2(job)
 		-- stay deactivated (Pitfall #15). Removes the pre-activation "held phantom" (a few hundred
 		-- items) that previously forced a loose tolerance — without opening a craft window, because
 		-- only inserters are briefly toggled (within one synchronous pass; they cannot swing).
-		local _held_restored, _held_failed = ActiveStateRestoration.restore_held_items_only(entities_to_create, entity_map)
-		job.held_items_failed = _held_failed
+		ActiveStateRestoration.restore_held_items_only(entities_to_create, entity_map)
 
 		-- TEST HOOK (one-shot, debug-gated): inject a REAL, UNACCOUNTED item loss on the destination
 		-- AFTER held-restore but BEFORE the gate, to prove the STRICT gate DETECTS loss and the

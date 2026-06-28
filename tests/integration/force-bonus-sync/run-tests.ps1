@@ -104,81 +104,91 @@ if ($srcHeld.held -lt 1) { Write-Status "Source held total is $($srcHeld.held) �
 
 # 3. ADVERSARIAL SETUP: force the destination force UNDER-researched (bonus 0) so the import must repair it.
 #    Safe: seated items are never ejected on a bonus drop, and host-$DestHost's import target is idle.
-Invoke-Lua -Instance $dstInstance -Code "local f=game.forces['player'] f.bulk_inserter_capacity_bonus=0 f.inserter_stack_size_bonus=0 rcon.print('dest bonus zeroed: '..f.bulk_inserter_capacity_bonus)" | Out-Null
-$destBefore = Get-Bonus $dstSel
-Write-Status "Destination forced under-researched: bonus(bulk=$($destBefore.bulk) stack=$($destBefore.stack))" -Type info
+#    Capture the ORIGINAL dest bonus FIRST — the finally below restores it on EVERY exit path (including a
+#    timeout/parse early-exit). Without that, a failed run on a long-lived local host-2 would leave it at 0 and
+#    silently cap held items on every later transfer (a phantom regression). PowerShell runs finally on exit.
+$destOrig = Get-Bonus $dstSel
+try {
+    Invoke-Lua -Instance $dstInstance -Code "local f=game.forces['player'] f.bulk_inserter_capacity_bonus=0 f.inserter_stack_size_bonus=0 rcon.print('dest bonus zeroed: '..f.bulk_inserter_capacity_bonus)" | Out-Null
+    $destBefore = Get-Bonus $dstSel
+    Write-Status "Destination forced under-researched: bonus(bulk=$($destBefore.bulk) stack=$($destBefore.stack))" -Type info
 
-# 4. Transfer. The import's Phase-0 force-sync must raise the dest bonus and seat the held items in full.
-$destId = Get-ClusterioInstanceId -InstanceName $dstInstance
-docker exec $dstContainer sh -c "rm -f $dstScriptOut/debug_import_result_${clone}_*.json 2>/dev/null" 2>$null | Out-Null
-Send-Rcon -Instance $srcInstance -Command "/transfer-platform $idx $destId" | Out-Null
-Write-Status "Transfer initiated (expecting NATIVE strict-gate pass on the repaired dest)" -Type info
+    # 4. Transfer. The import's Phase-0 force-sync must raise the dest bonus and seat the held items in full.
+    $destId = Get-ClusterioInstanceId -InstanceName $dstInstance
+    docker exec $dstContainer sh -c "rm -f $dstScriptOut/debug_import_result_${clone}_*.json 2>/dev/null" 2>$null | Out-Null
+    Send-Rcon -Instance $srcInstance -Command "/transfer-platform $idx $destId" | Out-Null
+    Write-Status "Transfer initiated (expecting NATIVE strict-gate pass on the repaired dest)" -Type info
 
-# 5. Wait for the import-result file (written regardless of pass/fail).
-$start = Get-Date; $resultFile = $null
-while (-not $resultFile -and ((Get-Date) - $start).TotalSeconds -lt $TimeoutSec) {
-    Start-Sleep -Seconds 2
-    $files = @(Get-DebugFiles -Instance $dstInstance -Container $dstContainer -Pattern "debug_import_result_${clone}_*.json")
-    if ($files.Count -gt 0) { $resultFile = $files[0] }
+    # 5. Wait for the import-result file (written regardless of pass/fail).
+    $start = Get-Date; $resultFile = $null
+    while (-not $resultFile -and ((Get-Date) - $start).TotalSeconds -lt $TimeoutSec) {
+        Start-Sleep -Seconds 2
+        $files = @(Get-DebugFiles -Instance $dstInstance -Container $dstContainer -Pattern "debug_import_result_${clone}_*.json")
+        if ($files.Count -gt 0) { $resultFile = $files[0] }
+    }
+    if (-not $resultFile) { Write-Status "No import-result after ${TimeoutSec}s (transfer may have stalled)" -Type error; exit 1 }
+    Start-Sleep -Seconds 3
+
+    $resultData = Read-DebugFile -Instance $dstInstance -Container $dstContainer -Filename $resultFile
+    if (-not $resultData) { Write-Status "Could not parse import-result $resultFile" -Type error; exit 1 }
+    $valResult  = Get-SafeProperty $resultData "validation_result"
+    $valSuccess = Get-SafeProperty $resultData "validation_success"
+    $fdm        = Get-SafeProperty $valResult "forceDataMismatches"
+
+    # Live post-transfer reads on the destination.
+    $destAfter = Get-Bonus $dstSel
+    $dstHeld   = Get-HeldTotal $dstSel $clone
+    Write-Status "Destination after import: bonus(bulk=$($destAfter.bulk) stack=$($destAfter.stack))  held=$($dstHeld.held) over $($dstHeld.ins) inserters" -Type info
+
+    $heldTol = [Math]::Max($HeldTolAbs, [int]($srcHeld.held * $HeldTolPct))
+
+    # --- Assertions ---
+
+    # A) The dest force bonus was RAISED back to (at least) the source value.
+    if ($destAfter.bulk -ge $srcBonus.bulk) {
+        Write-TestResult -TestId "forcesync-bonus-raised" -TestName "Dest bonus raised to source ($($destBefore.bulk) -> $($destAfter.bulk), source=$($srcBonus.bulk))" -Status "passed"
+    } else {
+        Write-TestResult -TestId "forcesync-bonus-raised" -TestName "Dest bonus raised to source" -Status "failed" -Message "dest bulk bonus after import = $($destAfter.bulk) < source $($srcBonus.bulk) — pre-hydration force-sync did not run (reverted?)"
+        $failed++
+    }
+
+    # B) The dest PHYSICALLY holds ~the full source amount (NOT capped at ~1/hand). Independent of the gate.
+    $heldDelta = [Math]::Abs($srcHeld.held - $dstHeld.held)
+    if ($dstHeld.held -gt 0 -and $heldDelta -le $heldTol) {
+        Write-TestResult -TestId "forcesync-held-preserved" -TestName "Dest inserters physically hold full source amount (src=$($srcHeld.held) dst=$($dstHeld.held), |Δ|=$heldDelta <= $heldTol)" -Status "passed"
+    } else {
+        Write-TestResult -TestId "forcesync-held-preserved" -TestName "Dest inserters physically hold full source amount" -Status "failed" -Message "src held=$($srcHeld.held) but dst held=$($dstHeld.held) |Δ|=$heldDelta > tol=$heldTol — held items capped on the under-researched dest (force-sync failed)"
+        $failed++
+    }
+
+    # C) The strict gate PASSED natively (no gate-side hack, the repaired dest is a complete physical reality).
+    if ($valSuccess -eq $true) {
+        Write-TestResult -TestId "forcesync-gate-passed" -TestName "Strict gate passes natively on the repaired dest (validation_success=true)" -Status "passed"
+    } else {
+        Write-TestResult -TestId "forcesync-gate-passed" -TestName "Strict gate passes natively on the repaired dest" -Status "failed" -Message "validation_success=$valSuccess — the dest could not hold the held items even after force-sync (incomplete bonus coverage?)"
+        $failed++
+    }
+
+    # D) The force-mismatch warning was recorded (so the raise-only side effect is visible/auditable).
+    $bulkEntry = $null
+    if ($fdm) { $bulkEntry = @($fdm) | Where-Object { $_.property -eq "bulk_inserter_capacity_bonus" } | Select-Object -First 1 }
+    if ($bulkEntry -and [int]$bulkEntry.destination -eq 0 -and [int]$bulkEntry.synced_to -ge $srcBonus.bulk) {
+        Write-TestResult -TestId "forcesync-warning-recorded" -TestName "forceDataMismatches recorded the raise (dest 0 -> $([int]$bulkEntry.synced_to))" -Status "passed"
+    } else {
+        Write-TestResult -TestId "forcesync-warning-recorded" -TestName "forceDataMismatches recorded the raise" -Status "failed" -Message "no bulk_inserter_capacity_bonus mismatch entry (dest=0 -> source) found in forceDataMismatches — the warning did not fire"
+        $failed++
+    }
+
+    Write-TestSummary -Passed ($TOTAL_ASSERTIONS - $failed) -Failed $failed
+    if ($failed -gt 0) { exit 1 }
+    exit 0
 }
-if (-not $resultFile) { Write-Status "No import-result after ${TimeoutSec}s (transfer may have stalled)" -Type error; exit 1 }
-Start-Sleep -Seconds 3
-
-$resultData = Read-DebugFile -Instance $dstInstance -Container $dstContainer -Filename $resultFile
-if (-not $resultData) { Write-Status "Could not parse import-result $resultFile" -Type error; exit 1 }
-$valResult  = Get-SafeProperty $resultData "validation_result"
-$valSuccess = Get-SafeProperty $resultData "validation_success"
-$fdm        = Get-SafeProperty $valResult "forceDataMismatches"
-
-# Live post-transfer reads on the destination.
-$destAfter = Get-Bonus $dstSel
-$dstHeld   = Get-HeldTotal $dstSel $clone
-Write-Status "Destination after import: bonus(bulk=$($destAfter.bulk) stack=$($destAfter.stack))  held=$($dstHeld.held) over $($dstHeld.ins) inserters" -Type info
-
-$heldTol = [Math]::Max($HeldTolAbs, [int]($srcHeld.held * $HeldTolPct))
-
-# --- Assertions ---
-
-# A) The dest force bonus was RAISED back to (at least) the source value.
-if ($destAfter.bulk -ge $srcBonus.bulk) {
-    Write-TestResult -TestId "forcesync-bonus-raised" -TestName "Dest bonus raised to source ($($destBefore.bulk) -> $($destAfter.bulk), source=$($srcBonus.bulk))" -Status "passed"
-} else {
-    Write-TestResult -TestId "forcesync-bonus-raised" -TestName "Dest bonus raised to source" -Status "failed" -Message "dest bulk bonus after import = $($destAfter.bulk) < source $($srcBonus.bulk) — pre-hydration force-sync did not run (reverted?)"
-    $failed++
+finally {
+    # Restore the shared dest force to its pre-test bonus on ALL paths, AFTER removing the clone surfaces so no
+    # held inserter is disturbed. Guards against leaving a long-lived local host-2 under-researched.
+    Remove-PlatformSurfacesWhere -Instance $dstInstance -PredicateLua "p.name == '$clone'" | Out-Null
+    Remove-PlatformSurfacesWhere -Instance $srcInstance -PredicateLua "p.name == '$clone'" | Out-Null
+    if ($destOrig.bulk -ge 0 -and $destOrig.stack -ge 0) {
+        Invoke-Lua -Instance $dstInstance -Code "local f=game.forces['player'] f.bulk_inserter_capacity_bonus=$($destOrig.bulk) f.inserter_stack_size_bonus=$($destOrig.stack) rcon.print('dest bonus restored to bulk=$($destOrig.bulk)')" | Out-Null
+    }
 }
-
-# B) The dest PHYSICALLY holds ~the full source amount (NOT capped at ~1/hand). Independent of the gate.
-$heldDelta = [Math]::Abs($srcHeld.held - $dstHeld.held)
-if ($dstHeld.held -gt 0 -and $heldDelta -le $heldTol) {
-    Write-TestResult -TestId "forcesync-held-preserved" -TestName "Dest inserters physically hold full source amount (src=$($srcHeld.held) dst=$($dstHeld.held), |Δ|=$heldDelta <= $heldTol)" -Status "passed"
-} else {
-    Write-TestResult -TestId "forcesync-held-preserved" -TestName "Dest inserters physically hold full source amount" -Status "failed" -Message "src held=$($srcHeld.held) but dst held=$($dstHeld.held) |Δ|=$heldDelta > tol=$heldTol — held items capped on the under-researched dest (force-sync failed)"
-    $failed++
-}
-
-# C) The strict gate PASSED natively (no gate-side hack, the repaired dest is a complete physical reality).
-if ($valSuccess -eq $true) {
-    Write-TestResult -TestId "forcesync-gate-passed" -TestName "Strict gate passes natively on the repaired dest (validation_success=true)" -Status "passed"
-} else {
-    Write-TestResult -TestId "forcesync-gate-passed" -TestName "Strict gate passes natively on the repaired dest" -Status "failed" -Message "validation_success=$valSuccess — the dest could not hold the held items even after force-sync (incomplete bonus coverage?)"
-    $failed++
-}
-
-# D) The force-mismatch warning was recorded (so the raise-only side effect is visible/auditable).
-$bulkEntry = $null
-if ($fdm) { $bulkEntry = @($fdm) | Where-Object { $_.property -eq "bulk_inserter_capacity_bonus" } | Select-Object -First 1 }
-if ($bulkEntry -and [int]$bulkEntry.destination -eq 0 -and [int]$bulkEntry.synced_to -ge $srcBonus.bulk) {
-    Write-TestResult -TestId "forcesync-warning-recorded" -TestName "forceDataMismatches recorded the raise (dest 0 -> $([int]$bulkEntry.synced_to))" -Status "passed"
-} else {
-    Write-TestResult -TestId "forcesync-warning-recorded" -TestName "forceDataMismatches recorded the raise" -Status "failed" -Message "no bulk_inserter_capacity_bonus mismatch entry (dest=0 -> source) found in forceDataMismatches — the warning did not fire"
-    $failed++
-}
-
-# 6. Cleanup: remove the clone on both hosts. The dest bonus is left raised (intended, raise-only) — and the
-#    transfer's own sync already restored it from the forced 0, so the cluster is left in a sane state.
-Remove-PlatformSurfacesWhere -Instance $dstInstance -PredicateLua "p.name == '$clone'" | Out-Null
-Remove-PlatformSurfacesWhere -Instance $srcInstance -PredicateLua "p.name == '$clone'" | Out-Null
-
-Write-TestSummary -Passed ($TOTAL_ASSERTIONS - $failed) -Failed $failed
-if ($failed -gt 0) { exit 1 }
-exit 0

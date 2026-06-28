@@ -394,10 +394,11 @@ function ExportPipeline.complete(job)
 	-- source held, and the held items are genuinely unplaceable (see Pitfall #28 / the held-item root cause).
 	local src_force = game.forces[job.force_name]
 	if src_force and src_force.valid then
-		job.export_data.force_data = {
-			bulk_inserter_capacity_bonus = src_force.bulk_inserter_capacity_bonus,
-			inserter_stack_size_bonus = src_force.inserter_stack_size_bonus,
-		}
+		local force_data = {}
+		for _, prop in ipairs(GameUtils.FORCE_SYNC_PROPS) do
+			force_data[prop] = src_force[prop]
+		end
+		job.export_data.force_data = force_data
 	end
 
 	-- Debug: Check if verification exists before compression

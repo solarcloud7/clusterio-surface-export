@@ -76,13 +76,11 @@ function BeltRestoration.restore(entities_to_create, entity_map)
     -- duplicated; see header + NOTEBOOK).
     local unplaced_diag = 0
 
-    -- TEMP DIAGNOSTIC (gated by storage.surface_export_config.belt_diag; off by default, zero prod impact):
+    -- Opt-in diagnostic (default OFF, zero prod impact; set storage.surface_export_config.belt_diag=true):
     -- classify each dropped item as GEOMETRY (captured pos beyond the dest line's end — source lane was
     -- longer, e.g. a curve outside-lane) vs COMPRESSION (in-bounds but too tight for insert_at's ~0.25 min
     -- spacing). Decides whether multi-tick (helps compression only) can reach literal-zero, or whether the
     -- loss is geometry (needs dest-geometry preservation instead). See tests/belt-lab/NOTEBOOK.md.
-    -- Opt-in diagnostic (default OFF, zero prod impact): set storage.surface_export_config.belt_diag=true to
-    -- emit the geometry-vs-compression classification for local belt-loss debugging.
     local diag = storage.surface_export_config and storage.surface_export_config.belt_diag == true
     local geom_items, comp_items, other_items, nopos_items = 0, 0, 0, 0
 
@@ -234,13 +232,6 @@ function BeltRestoration.restore(entities_to_create, entity_map)
     end
 
     if diag then
-        storage.belt_diag_result = {
-            geometry = geom_items, compression = comp_items, other = other_items,
-            nopos = nopos_items, total_unplaced = unplaced_diag,
-            consolidated_lines = consolidated_lines,
-            consolidate_reject_count = consolidate_reject_count,
-            consolidate_reject_total = consolidate_reject_total,
-        }
         log(string.format("[BeltDiag] SUMMARY unplaced=%d -> geometry=%d compression=%d other=%d nopos=%d",
             unplaced_diag, geom_items, comp_items, other_items, nopos_items))
         -- game.print mirrors to the factorio log → cluster log → CI capture (log() above does NOT reach CI).

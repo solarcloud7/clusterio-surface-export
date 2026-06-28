@@ -764,8 +764,13 @@ no capacity cap" assumption — it clamps (CI: `.count=8→1`).
 **Fix — Pre-Hydration Force Sync**: export captures the source force's inserter bonuses (`force_data`); import
 replicates them onto the dest force in a one-shot **Phase 0** (`ImportPipeline.process_batch`) **before** any
 entity is created — **RAISE-ONLY** (`math.max`; never LOWER a dest bonus, which would eject other platforms'
-held items). The existing `restore_held_items_only` → strict gate then seats full and passes **natively** — the
-gate is unchanged. A non-fatal `forceDataMismatches` warning surfaces the raise in the UI.
+held items). It raises **every distinct force the entities land on** (`entity_data.force or "player"`), not just
+the platform force, so a differently-forced inserter can't be left under-capacity (silent loss). The property
+list is a single source of truth: `GameUtils.FORCE_SYNC_PROPS`. The existing `restore_held_items_only` → strict
+gate then seats full and passes **natively** — the gate is unchanged. A non-fatal `forceDataMismatches` warning
+surfaces the raise in the UI. **Applies to ALL imports (transfer AND uploaded-JSON), by design** — fidelity over
+avoiding the (warned, raise-only) research-boost side effect; uploads delete no source, so there is no loss risk
+either way.
 **Durability (verified on 2.0.76)**: an unbacked direct write grants real seating capacity, and once seated the
 hand keeps its items even if the bonus later drops or `reset_technology_effects()` runs — so there is no
 post-commit loss path; the write need not be tech-backed.

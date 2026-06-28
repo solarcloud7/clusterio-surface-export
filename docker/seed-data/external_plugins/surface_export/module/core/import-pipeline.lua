@@ -368,42 +368,46 @@ function ImportPipeline.process_batch(job, get_batch_size, should_show_progress)
 	job.metrics = job.metrics or {}
 
 	-- Phase 0: Pre-hydration force synchronization (one-shot, RAISE-ONLY).
-	-- Inserter HAND CAPACITY is governed by the destination force's research bonuses, not by entity data,
-	-- and the plugin doesn't transfer the tech tree. The source force's bonuses ride in the payload
-	-- (export-pipeline force_data); replicate them onto the dest force BEFORE any entity is created or any
-	-- held item is seated, so a less-researched dest can physically hold what the source held. Without this,
-	-- set_stack/count silently clamp to the dest's lower capacity and the held items are genuinely
-	-- unplaceable (the held-item root cause; see Pitfall #28).
-	-- RAISE-ONLY (math.max semantics): never LOWER the dest bonus — lowering it would eject items from OTHER
-	-- platforms' inserters already on this force. Verified durable: once seated, items are NOT ejected even
-	-- if the bonus later resets (reset_technology_effects), so no post-commit loss path.
+	-- Inserter HAND CAPACITY is governed by the FORCE the inserter is on (its research bonuses), not by entity
+	-- data, and the plugin doesn't transfer the tech tree. The source force's bonuses ride in the payload
+	-- (export-pipeline force_data); replicate them onto the destination force(s) BEFORE any entity is created or
+	-- any held item is seated, so a less-researched dest can physically hold what the source held. Without this,
+	-- set_stack/count silently clamp to the dest's lower capacity and the held items are genuinely unplaceable
+	-- (the held-item root cause; see Pitfall #29).
+	-- Raise EVERY distinct force the entities land on (the deserializer creates each entity on
+	-- entity_data.force or "player"), not just job.force_name — they normally match, but syncing only the
+	-- platform force would leave a differently-forced inserter under-capacity → silent held-item loss.
+	-- RAISE-ONLY (math.max semantics): never LOWER a dest bonus — lowering it would eject items from OTHER
+	-- platforms' inserters already on that force. Verified durable: once seated, items are NOT ejected even if
+	-- the bonus later resets (reset_technology_effects), so no post-commit loss path.
 	if not job.force_bonuses_synced then
 		job.force_bonuses_synced = true
 		local fd = job.platform_data and job.platform_data.force_data
-		local dest = job.force_name and game.forces[job.force_name]
-		if fd and dest and dest.valid then
+		if fd then
 			job.force_bonuses_mismatch = {}
-			local function raise(prop)
-				local src = fd[prop] or 0
-				local cur = dest[prop]
-				if src > cur then
-					dest[prop] = src
-					table.insert(job.force_bonuses_mismatch,
-						{ property = prop, source = src, destination = cur, synced_to = src })
-					log(string.format("[Import] Force '%s' %s raised %d->%d to match source platform",
-						dest.name, prop, cur, src))
+			-- Distinct set of forces the inserters will be created on, plus the platform force defensively.
+			local force_names = {}
+			if job.force_name then force_names[job.force_name] = true end
+			for _, ed in ipairs(job.entities_to_create or {}) do
+				force_names[ed.force or "player"] = true
+			end
+			for fname in pairs(force_names) do
+				local dest = game.forces[fname]
+				if dest and dest.valid then
+					for _, prop in ipairs(GameUtils.FORCE_SYNC_PROPS) do
+						local src = fd[prop] or 0
+						local cur = dest[prop]
+						if src > cur then
+							dest[prop] = src
+							table.insert(job.force_bonuses_mismatch,
+								{ force = dest.name, property = prop, source = src, destination = cur, synced_to = src })
+							log(string.format("[Import] Force '%s' %s raised %d->%d to match source platform",
+								dest.name, prop, cur, src))
+						end
+					end
 				end
 			end
-			raise("bulk_inserter_capacity_bonus")
-			raise("inserter_stack_size_bonus")
-			-- Guard: inserters are created on entity_data.force or "player" (deserializer). In this cluster
-			-- that equals job.force_name; if it ever differs we'd sync the wrong force, so flag it loudly.
-			local sample = job.entities_to_create and job.entities_to_create[1]
-			if sample and sample.force and sample.force ~= dest.name then
-				log(string.format("[Import] WARNING force-sync target '%s' ~= entity force '%s' — held "
-					.. "capacity may not be synced for those entities", dest.name, sample.force))
-			end
-		elseif not fd and dest then
+		else
 			-- Old (pre-fix) payload carries no force_data → sync skipped. One-line notice so a future gate
 			-- failure on an under-researched dest is self-explaining rather than a mystery.
 			log("[Import] payload has no force_data (pre-fix export) — dest force bonuses NOT synced; "

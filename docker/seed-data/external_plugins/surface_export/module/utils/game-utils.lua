@@ -8,6 +8,12 @@ local GameUtils = {}
 --- The default quality name used by Factorio for non-quality items
 GameUtils.QUALITY_NORMAL = "normal"
 
+--- LuaForce research bonuses that govern INSERTER HAND CAPACITY (how many items an inserter hand holds).
+--- These ride in the export payload (force_data) and are replicated RAISE-ONLY onto the destination force(s)
+--- before import hydration so a less-researched dest can physically hold the source's held items (Pitfall #29).
+--- Single source of truth for BOTH the export capture and the import apply — keep them in lockstep here.
+GameUtils.FORCE_SYNC_PROPS = { "bulk_inserter_capacity_bonus", "inserter_stack_size_bonus" }
+
 --- Round a position to specified precision
 --- @param position table: {x, y} position
 --- @param precision number: Decimal places (default 1)
