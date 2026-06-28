@@ -1,0 +1,7 @@
+---------------------------------------------------------------------------------------------------
+Version: 0.1.0
+Date: 2026-06-28
+  Features:
+    - Add four surfaceless gateway space-locations (surfexp_gateway_1..4), modeled on
+      solar-system-edge (parkable, no fly_condition), plus short space-connections from nauvis.
+    - Gateways ship locked; the surface_export module unlocks them per-force at runtime.
