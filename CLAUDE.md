@@ -744,6 +744,38 @@ tightens the per-item tolerance to `max(20, 1.5%·expected)` (≈3× the irreduc
 and asserts the strict gate FAILS + the source is preserved — so reverting to a loose gate goes RED in CI.
 **Key files**: `module/import_phases/active_state_restoration.lua`, `module/core/import-completion.lua`,
 `module/validators/transfer-validation.lua`.
+**Deeper root cause (the CI-only residual): see Pitfall #29** — `restore_held_items_only` (the timing fix
+above) is necessary but NOT sufficient on an under-researched destination: `set_stack` clamps to the dest
+inserter's *physical* hand capacity, which the dest **force's** research governs. The phantom 382/417 was that
+clamp, not the clock alone.
+
+### 29. Inserter Held-Item Capacity Is Governed by the DEST Force's Research — Replicate It On Import (CRITICAL, data-integrity)
+**Symptom**: a transfer of a busy platform fails the strict gate **only on CI** (railgun-ammo 80→33,
+"held_failed=214"), while the *same payload + same code* restores held items fully **locally**. "Same bytes,
+different by machine."
+**Root cause**: a bulk-inserter hand's physical capacity = the **destination force's**
+`bulk_inserter_capacity_bonus` (normal inserters: `inserter_stack_size_bonus`) — research-derived scalars that
+live in the **dest save**, which the plugin did not transfer. Measured on 2.0.76: CI's fresh `test2.zip` seed
+has `bulk_inserter_capacity_bonus = 0` → a fresh legendary bulk inserter caps at 1 (`set_stack(8)→1`,
+`.count=8→1`); a long-lived local host-2 has bonus 11 → seats 8. So the held items the source legitimately held
+are **genuinely unplaceable** on a less-researched dest, and the strict gate (Pitfall #28) **correctly** refuses
+(two-phase commit preserves the source). NOT a restoration bug. This also overturns the "`held_stack.count` has
+no capacity cap" assumption — it clamps (CI: `.count=8→1`).
+**Fix — Pre-Hydration Force Sync**: export captures the source force's inserter bonuses (`force_data`); import
+replicates them onto the dest force in a one-shot **Phase 0** (`ImportPipeline.process_batch`) **before** any
+entity is created — **RAISE-ONLY** (`math.max`; never LOWER a dest bonus, which would eject other platforms'
+held items). The existing `restore_held_items_only` → strict gate then seats full and passes **natively** — the
+gate is unchanged. A non-fatal `forceDataMismatches` warning surfaces the raise in the UI.
+**Durability (verified on 2.0.76)**: an unbacked direct write grants real seating capacity, and once seated the
+hand keeps its items even if the bonus later drops or `reset_technology_effects()` runs — so there is no
+post-commit loss path; the write need not be tech-backed.
+**Mechanical guard**: `tests/integration/force-bonus-sync` forces the dest bonus to 0, transfers, and asserts
+(physical held counts) the bonus is raised, held items seat in full, the strict gate passes, and the warning
+fired — reverting the sync goes RED. CI's native bonus-0 host-2 means platform-roundtrip / transfer-fidelity
+corroborate.
+**Key files**: `module/core/export-pipeline.lua` (capture), `module/core/import-pipeline.lua` (Phase-0 sync),
+`module/core/import-completion.lua` (warning), `module/import_phases/active_state_restoration.lua` (the
+disproven `count=` hack removed). Memory: [memory] `held-item-loss-is-dest-force-research`.
 
 ## Factorio 2.0 Fluid API & Simulation Behavior
 
