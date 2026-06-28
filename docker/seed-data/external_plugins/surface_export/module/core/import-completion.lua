@@ -486,6 +486,24 @@ function ImportCompletion.run_phase2(job)
 				validation_result = result
 				TransferValidation.store_validation_result(job.platform_name, result)
 			end
+
+			-- GATEWAY ARRIVAL: park the platform AT the gateway, paused, instead of letting the
+			-- restored schedule fly it there. The unpause above and this all run in one synchronous
+			-- tick, so no flight happens in between. Placement is instant (verified on 2.0.76); pausing
+			-- holds it until the player resumes. nil for normal transfers — they keep the unpause above.
+			if job.gateway_arrival and job.target_platform and job.target_platform.valid then
+				local ok_gw, err_gw = pcall(function()
+					job.target_platform.space_location = job.gateway_arrival
+					job.target_platform.paused = true
+				end)
+				if ok_gw then
+					log(string.format("[Gateway] Platform %s arrived PAUSED at gateway '%s'",
+						job.platform_name, job.gateway_arrival))
+				else
+					log(string.format("[Gateway] Failed to park %s at gateway '%s': %s",
+						job.platform_name, job.gateway_arrival, tostring(err_gw)))
+				end
+			end
 			-- ========================================
 		end
 	end

@@ -10,6 +10,7 @@ local EntityCreation = require("modules/surface_export/import_phases/entity_crea
 local PhaseProfiler = require("modules/surface_export/utils/phase-profiler")
 local GameUtils = require("modules/surface_export/utils/game-utils")
 local VersionCompat = require("modules/surface_export/utils/version-compat")
+local Gateway = require("modules/surface_export/core/gateway")
 
 local ImportPipeline = {}
 
@@ -243,6 +244,27 @@ function ImportPipeline.queue(json_data, new_platform_name, force_name, requeste
 		log(string.format("[Import] Platform %s PAUSED to prevent fuel consumption during import", new_platform.name))
 	end
 
+	-- Gateway arrival: if the platform is arriving parked at a gateway (its schedule's CURRENT record
+	-- is a gateway), strip the gateway hop(s) from the itinerary and remember which gateway to park at.
+	-- The platform is placed there, paused, at the very end of import (see import-completion.lua) so it
+	-- arrives parked instead of flying the schedule. Inferred from the schedule — no payload threading;
+	-- a normal transfer's current record is never a gateway, so this is a no-op for normal imports.
+	local gateway_arrival = nil
+	if imported_schedule then
+		gateway_arrival = Gateway.arrival_from_schedule(imported_schedule)
+		if gateway_arrival then
+			local stripped = Gateway.strip_gateway_records(imported_schedule)
+			if stripped then
+				log(string.format("[Gateway] Arrival at '%s' — stripping gateway hop (records %d -> %d)",
+					gateway_arrival, #(imported_schedule.records or {}), #stripped.records))
+				imported_schedule = stripped
+			else
+				log(string.format("[Gateway] Arrival at '%s' — gateway is the only schedule record, keeping it",
+					gateway_arrival))
+			end
+		end
+	end
+
 	-- Restore platform schedule (records + interrupts + group) from payload.
 	if imported_schedule then
 		local schedule_apply_ok, schedule_apply_err = PlatformSchedule.apply(new_platform, imported_schedule)
@@ -310,6 +332,9 @@ function ImportPipeline.queue(json_data, new_platform_name, force_name, requeste
 		-- Store platform reference for unpausing after validation
 		target_platform = new_platform,
 		imported_schedule = imported_schedule,
+		-- Gateway the platform is arriving through (nil for normal transfers). When set, import
+		-- completion parks the platform AT this gateway, paused, instead of unpausing it to fly.
+		gateway_arrival = gateway_arrival,
 
 		-- ========== PHASE METRICS TRACKING ==========
 		-- Track timing and counts for each import phase

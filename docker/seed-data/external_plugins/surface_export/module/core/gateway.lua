@@ -52,4 +52,50 @@ function Gateway.discover_and_unlock()
 	return unlocked
 end
 
+--- If a captured schedule's CURRENT record is a gateway, return that gateway's name — i.e. the
+--- platform is parked at / arriving through it. This is how the destination recognises a gateway
+--- transfer with no extra payload threading: a platform parked at a gateway carries the gateway as
+--- its current schedule record. A normal transfer's current record is never a gateway, so this
+--- returns nil and the import is unaffected.
+--- @param schedule_payload table|nil
+--- @return string|nil gateway_name
+function Gateway.arrival_from_schedule(schedule_payload)
+	if type(schedule_payload) ~= "table" then
+		return nil
+	end
+	local records = schedule_payload.records
+	local current = schedule_payload.current
+	if type(records) ~= "table" or type(current) ~= "number" then
+		return nil
+	end
+	local rec = records[current]
+	if rec and Gateway.is_gateway(rec.station) then
+		return rec.station
+	end
+	return nil
+end
+
+--- Return a copy of schedule_payload with EVERY gateway-station record removed and current reset to 1
+--- — gateways are transfer points, not itinerary stations, so the arrived platform resumes its real
+--- route. Returns nil if that would leave no records at all (caller keeps the original schedule then).
+--- @param schedule_payload table
+--- @return table|nil stripped
+function Gateway.strip_gateway_records(schedule_payload)
+	local kept = {}
+	for _, r in ipairs(schedule_payload.records or {}) do
+		if not (type(r) == "table" and Gateway.is_gateway(r.station)) then
+			kept[#kept + 1] = r
+		end
+	end
+	if #kept == 0 then
+		return nil
+	end
+	return {
+		current = 1,
+		records = kept,
+		interrupts = schedule_payload.interrupts or {},
+		group = schedule_payload.group,
+	}
+end
+
 return Gateway
