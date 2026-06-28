@@ -174,7 +174,14 @@ function New-TestPlatform {
         $DestPlatform = "test-$timestamp"
     }
     
-    $luaCode = "local result = remote.call('surface_export', 'clone_platform', '$SourcePlatform', '$DestPlatform') rcon.print(helpers.table_to_json(result))"
+    # clone_platform keys the SOURCE on the unique per-force index, not a (collidable) name.
+    # Resolve our known fixture name -> index here (Get-PlatformIndex errors if the name is ambiguous).
+    $srcIndex = Get-PlatformIndex -Instance $Instance -PlatformName $SourcePlatform
+    if ($null -eq $srcIndex) {
+        return @{ success = $false; error = "Source platform '$SourcePlatform' not found" }
+    }
+    # Index emitted UNQUOTED so it arrives as a Lua number (force.platforms["2"] would miss).
+    $luaCode = "local result = remote.call('surface_export', 'clone_platform', $srcIndex, '$DestPlatform') rcon.print(helpers.table_to_json(result))"
     $result = Invoke-Lua -Instance $Instance -Code $luaCode -ReturnJson
     
     if (-not $result) {
@@ -202,13 +209,18 @@ function Get-PlatformIndex {
         [string]$PlatformName
     )
     
-    $luaCode = "for i, p in pairs(game.forces.player.platforms) do if p.name == '$PlatformName' then rcon.print(i) return end end rcon.print('NOT_FOUND')"
+    # Platform names are NOT unique. Count every match and fail loudly on ambiguity instead of
+    # silently returning the first — a first-match resolver is the bad practice we're avoiding.
+    $luaCode = "local idx, count = nil, 0 for i, p in pairs(game.forces.player.platforms) do if p.name == '$PlatformName' then idx = i; count = count + 1 end end if count == 0 then rcon.print('NOT_FOUND') elseif count > 1 then rcon.print('AMBIGUOUS ' .. count) else rcon.print(idx) end"
     $result = Invoke-Lua -Instance $Instance -Code $luaCode
-    
+
     if ($result -eq "NOT_FOUND") {
         return $null
     }
-    
+    if ($result -match '^AMBIGUOUS\s+(\d+)') {
+        throw "Get-PlatformIndex: $($Matches[1]) platforms are named '$PlatformName' — names are not unique; reference the platform by a unique name or its index."
+    }
+
     return [int]$result
 }
 

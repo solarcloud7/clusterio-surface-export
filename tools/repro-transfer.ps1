@@ -51,9 +51,14 @@ $clone = "reprotest_$stamp"
 Write-Host "`n=== repro-transfer: $SourcePlatform on host-$SourceHost  ->  host-$DestHost ($clone) ===`n" -ForegroundColor Cyan
 
 # 1. Clone the source platform (async import job on the source instance).
+#    clone_platform keys the source on the unique per-force index. Resolve our known name -> index
+#    here, failing loudly if it's ambiguous (names aren't unique). The index comes straight from the
+#    pairs() loop, so it's already a Lua number passed unquoted to clone_platform.
 Step "Cloning '$SourcePlatform' -> '$clone' on $($src.Name)..."
-$cloneLua = "/sc local ok,r=pcall(function() return remote.call('surface_export','clone_platform','$SourcePlatform','$clone') end) rcon.print(ok and (r.success and ('OK '..tostring(r.entity_count)) or ('ERR '..tostring(r.error))) or ('PCALL '..tostring(r)))"
+$cloneLua = "/sc local si,c=nil,0 for i,p in pairs(game.forces.player.platforms) do if p.name=='$SourcePlatform' then si=i; c=c+1 end end if c==0 then rcon.print('NOSRC') elseif c>1 then rcon.print('AMBIG '..c) else local ok,r=pcall(function() return remote.call('surface_export','clone_platform',si,'$clone') end) rcon.print(ok and (r.success and ('OK '..tostring(r.entity_count)) or ('ERR '..tostring(r.error))) or ('PCALL '..tostring(r))) end"
 $cloneRes = (Send-RCON -InstanceName $src.Name -Command $cloneLua) -join " "
+if ($cloneRes -match "NOSRC") { Die "source platform '$SourcePlatform' not found on $($src.Name)" }
+if ($cloneRes -match "AMBIG\s+(\d+)") { Die "$($Matches[1]) platforms are named '$SourcePlatform' — ambiguous source; names aren't unique. Rename or pick a unique source." }
 if ($cloneRes -notmatch "OK\s+(\d+)") { Die "clone failed: $cloneRes" }
 $entityCount = $Matches[1]
 Ok "clone queued ($entityCount entities)"
