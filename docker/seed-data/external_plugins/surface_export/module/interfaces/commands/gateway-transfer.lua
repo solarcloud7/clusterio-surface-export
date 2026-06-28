@@ -31,21 +31,21 @@ Base.admin_command("gateway-transfer",
       return
     end
 
-    -- Gate: the platform must currently be parked AT a gateway. Reading space_location only makes
-    -- sense in waiting_at_station (in flight it is nil), so check the state first.
-    local sps = defines.space_platform_state
-    local loc = platform.state == sps.waiting_at_station and platform.space_location or nil
-    if not (loc and Gateway.is_gateway(loc.name)) then
+    -- Gate: the platform must currently be parked AT a gateway (shared predicate — see gateway.lua).
+    local gw_name = Gateway.parked_at_gateway(platform)
+    if not gw_name then
       ctx.print(string.format("✗ Platform '%s' is not parked at a gateway (state=%s, location=%s)",
-        platform.name, tostring(platform.state), tostring(loc and loc.name or "nil")))
+        platform.name, tostring(platform.state),
+        tostring(platform.space_location and platform.space_location.name or "nil")))
       ctx.print("Route it to a surfexp_gateway_* and wait until it is waiting_at_station, then retry.")
       return
     end
 
     ctx.print(string.format("🛰  Gateway transfer: '%s' parked at '%s' → instance %d",
-      platform.name, loc.name, dest_instance_id))
+      platform.name, gw_name, dest_instance_id))
 
-    local job_id, err = TransferTrigger.start(ctx.force, platform_index, dest_instance_id)
+    -- 1a default: park at the SAME gateway name on the destination (gw_name as the explicit target).
+    local job_id, err = TransferTrigger.start(ctx.force, platform_index, dest_instance_id, gw_name)
     if not job_id then
       log(string.format("[Gateway Transfer] start failed for '%s' (index %d): %s",
         platform.name, platform_index, err or "unknown"))
@@ -53,8 +53,7 @@ Base.admin_command("gateway-transfer",
       return
     end
 
-    log(string.format("[Gateway Transfer] started: platform='%s' at gateway '%s' -> instance %s, job_id=%s",
-      platform.name, loc.name, tostring(dest_instance_id), tostring(job_id)))
+    -- (TransferTrigger.start already logs the canonical "[TransferTrigger] started" line.)
     ctx.print(string.format("✓ Transfer queued: %s", job_id))
     ctx.print("⏳ The transfer continues automatically (export → controller → destination import → validate).")
   end

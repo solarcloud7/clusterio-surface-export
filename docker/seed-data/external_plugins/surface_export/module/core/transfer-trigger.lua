@@ -16,9 +16,12 @@ local TransferTrigger = {}
 --- @param force LuaForce The force that owns the platform.
 --- @param platform_index number Per-force platform index (names are not unique — key on the index).
 --- @param dest_instance_id number Destination Clusterio instance id.
+--- @param gateway_target string|nil When set, this is a GATEWAY transfer: the destination parks the
+---        imported platform at this gateway (paused) and strips the gateway hop. Carried explicitly
+---        in the export payload (NOT inferred from the schedule). nil ⇒ ordinary transfer.
 --- @return string|nil job_id The async export job id on success, or nil on failure.
 --- @return string|nil err An error message on failure, or nil on success.
-function TransferTrigger.start(force, platform_index, dest_instance_id)
+function TransferTrigger.start(force, platform_index, dest_instance_id, gateway_target)
 	if not clusterio_api then
 		return nil, "Clusterio API not available"
 	end
@@ -39,7 +42,7 @@ function TransferTrigger.start(force, platform_index, dest_instance_id)
 
 	-- Step 2: queue the export tagged TRANSFER with the destination — completion auto-continues the
 	-- transfer (controller → destination import → validation → source delete/unlock).
-	local job_id, export_err = AsyncProcessor.queue_export(platform_index, force_name, "TRANSFER", dest_instance_id)
+	local job_id, export_err = AsyncProcessor.queue_export(platform_index, force_name, "TRANSFER", dest_instance_id, gateway_target)
 	if not job_id then
 		SurfaceLock.unlock_platform(platform_name)
 		return nil, "Export failed: " .. tostring(export_err or "unknown")

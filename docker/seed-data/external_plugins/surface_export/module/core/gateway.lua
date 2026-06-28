@@ -52,46 +52,59 @@ function Gateway.discover_and_unlock()
 	return unlocked
 end
 
---- If a captured schedule's CURRENT record is a gateway, return that gateway's name — i.e. the
---- platform is parked at / arriving through it. This is how the destination recognises a gateway
---- transfer with no extra payload threading: a platform parked at a gateway carries the gateway as
---- its current schedule record. A normal transfer's current record is never a gateway, so this
---- returns nil and the import is unaffected.
---- @param schedule_payload table|nil
+--- The gateway a platform is currently PARKED at (waiting_at_station at a gateway space-location), or
+--- nil. The single source of truth for the "is this platform at a gateway right now" predicate, shared
+--- by the /gateway-transfer command and the on-arrival handler (do not re-inline the check).
+--- @param platform LuaSpacePlatform|nil
 --- @return string|nil gateway_name
-function Gateway.arrival_from_schedule(schedule_payload)
-	if type(schedule_payload) ~= "table" then
+function Gateway.parked_at_gateway(platform)
+	if not (platform and platform.valid) then
 		return nil
 	end
-	local records = schedule_payload.records
-	local current = schedule_payload.current
-	if type(records) ~= "table" or type(current) ~= "number" then
+	if platform.state ~= defines.space_platform_state.waiting_at_station then
 		return nil
 	end
-	local rec = records[current]
-	if rec and Gateway.is_gateway(rec.station) then
-		return rec.station
+	local loc = platform.space_location
+	if loc and Gateway.is_gateway(loc.name) then
+		return loc.name
 	end
 	return nil
 end
 
---- Return a copy of schedule_payload with EVERY gateway-station record removed and current reset to 1
---- — gateways are transfer points, not itinerary stations, so the arrived platform resumes its real
---- route. Returns nil if that would leave no records at all (caller keeps the original schedule then).
+--- Return a copy of schedule_payload with EVERY gateway-station record removed, carrying `current`
+--- FORWARD to the record that followed the gateway (NOT reset to 1) so a resumed itinerary continues
+--- rather than re-travelling an already-visited stop. Schedules are cyclic, so a gateway in the last
+--- position wraps the cursor to 1. Returns nil if removing the gateways would leave no records at all
+--- (caller keeps the original schedule then — a lone-gateway schedule stays valid).
 --- @param schedule_payload table
 --- @return table|nil stripped
 function Gateway.strip_gateway_records(schedule_payload)
+	local records = schedule_payload.records or {}
+	local orig_current = schedule_payload.current
+	if type(orig_current) ~= "number" or orig_current < 1 then
+		orig_current = 1
+	elseif orig_current > #records then
+		orig_current = #records
+	end
 	local kept = {}
-	for _, r in ipairs(schedule_payload.records or {}) do
+	local new_current = nil
+	for i, r in ipairs(records) do
 		if not (type(r) == "table" and Gateway.is_gateway(r.station)) then
 			kept[#kept + 1] = r
+			-- The first kept record at or after the old cursor → resume forward from here.
+			if new_current == nil and i >= orig_current then
+				new_current = #kept
+			end
 		end
 	end
 	if #kept == 0 then
 		return nil
 	end
+	if new_current == nil then
+		new_current = 1 -- cursor was at/after the last kept record (e.g. gateway was last) → wrap to 1
+	end
 	return {
-		current = 1,
+		current = new_current,
 		records = kept,
 		interrupts = schedule_payload.interrupts or {},
 		group = schedule_payload.group,

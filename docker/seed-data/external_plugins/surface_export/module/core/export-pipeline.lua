@@ -134,8 +134,12 @@ end
 --- @param force_name string
 --- @param requester_name string|nil: Player name or "RCON"
 --- @param destination_instance_id number|nil: If set, transfer to this instance after export
+--- @param gateway_target string|nil: If set, this is a GATEWAY transfer — the destination parks the
+---        imported platform at this gateway (paused) and strips the gateway hop. Stamped into the
+---        payload (rides the compressed blob, opaque to the TS layers; read on the dest as
+---        platform_data.platform.gateway_target). nil for ordinary transfers/exports.
 --- @return string|nil, string|nil: job_id or nil + error
-function ExportPipeline.queue(platform_index, force_name, requester_name, destination_instance_id)
+function ExportPipeline.queue(platform_index, force_name, requester_name, destination_instance_id, gateway_target)
 	storage.async_job_id_counter = storage.async_job_id_counter + 1
 	local job_counter = storage.async_job_id_counter
 
@@ -232,6 +236,9 @@ function ExportPipeline.queue(platform_index, force_name, requester_name, destin
 				index = platform_index,
 				paused = platform.paused == true,
 				schedule = platform_schedule,
+				-- Explicit gateway-transfer signal (nil ⇒ ordinary transfer). Rides the same payload
+				-- rails as `schedule`; the dest reads it as platform_data.platform.gateway_target.
+				gateway_target = gateway_target,
 			},
 			tiles = tiles,  -- Include platform foundation tiles
 			entities = {},

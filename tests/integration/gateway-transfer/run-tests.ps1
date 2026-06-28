@@ -58,7 +58,8 @@ Write-Host "  host-$SourceHost -> host-$DestHost   gateway: $Gateway   clone: $c
 Write-Host ""
 
 $failed = 0
-$TOTAL_ASSERTIONS = 7
+$TOTAL_ASSERTIONS = 9
+$normClone = $null   # 2nd clone (normal-transfer regression); cleaned in finally
 
 # Physical entity count on a named platform (independent of any validator self-report).
 function Get-EntityCount([string]$instance, [string]$name) {
@@ -195,6 +196,66 @@ try {
         $failed++
     }
 
+    # ============================================================================================
+    # REGRESSION: a NORMAL /transfer-platform of a gateway-PARKED platform must NOT be treated as a
+    # gateway arrival. With the explicit _gatewayTarget signal, only /gateway-transfer carries the
+    # target — a plain /transfer-platform sends no signal, so the platform arrives UNPAUSED with its
+    # schedule intact (gateway record still present). Litmus: schedule-inference would over-fire here.
+    # ============================================================================================
+    $normClone = "gwnorm-$(Get-Date -Format 'HHmmss')"
+    Write-Status "REGRESSION: cloning '$SourcePlatform' -> '$normClone' for a NORMAL transfer..." -Type info
+    $ncl = New-TestPlatform -Instance $srcInstance -SourcePlatform $SourcePlatform -DestPlatform $normClone
+    if (-not $ncl.success) { Write-Status "Regression clone failed: $($ncl.error)" -Type error; exit 1 }
+    if ($ncl.job_id) {
+        Wait-ForJob -Instances @($srcInstance) -MaxWaitSeconds 120 -CheckScript "local j=(storage.async_jobs or {})['$($ncl.job_id)']; rcon.print(j == nil and 'true' or 'false')" | Out-Null
+    }
+    Start-Sleep -Seconds 1
+    $nidx = Get-PlatformIndex -Instance $srcInstance -PlatformName $normClone
+    if (-not $nidx) { Write-Status "Regression clone did not materialize" -Type error; exit 1 }
+
+    # Park it at the gateway (same technique as the main scenario).
+    Invoke-Lua -Instance $srcInstance -Code "local p=game.forces['player'].platforms[$nidx] local s=p.get_schedule() local i=s.add_record({station='$Gateway', wait_conditions={{type='time', ticks=7200, compare_type='or'}}}) s.go_to_station(i) s.set_stopped(false) rcon.print('routed')" | Out-Null
+    $nparked = $false
+    for ($i = 0; $i -lt 40; $i++) {
+        Start-Sleep -Seconds 2
+        $st = (Invoke-Lua -Instance $srcInstance -Code "local p=game.forces['player'].platforms[$nidx] local sps=defines.space_platform_state rcon.print(tostring(p.state==sps.waiting_at_station)..' '..tostring(p.space_location and p.space_location.name))" | Out-String)
+        if ($st -match "true\s+$([regex]::Escape($Gateway))") { $nparked = $true; break }
+    }
+    if (-not $nparked) { Write-Status "Regression clone never parked at '$Gateway'" -Type error; exit 1 }
+
+    # Fire the NORMAL /transfer-platform (NOT /gateway-transfer) of the gateway-parked platform.
+    docker exec $dstContainer sh -c "rm -f $dstScriptOut/debug_import_result_${normClone}_*.json 2>/dev/null" 2>$null | Out-Null
+    Send-Rcon -Instance $srcInstance -Command "/transfer-platform $nidx $destId" | Out-Null
+    Write-Status "/transfer-platform $nidx $destId fired (NORMAL transfer of a gateway-parked platform)..." -Type info
+
+    $nstart = Get-Date; $nresultFile = $null
+    while (-not $nresultFile -and ((Get-Date) - $nstart).TotalSeconds -lt $TimeoutSec) {
+        Start-Sleep -Seconds 2
+        $nfiles = @(Get-DebugFiles -Instance $dstInstance -Container $dstContainer -Pattern "debug_import_result_${normClone}_*.json")
+        if ($nfiles.Count -gt 0) { $nresultFile = $nfiles[0] }
+    }
+    if (-not $nresultFile) { Write-Status "No import-result for the normal transfer after ${TimeoutSec}s" -Type error; exit 1 }
+    Start-Sleep -Seconds 5
+
+    $nlanded = Get-LandedState $dstInstance $normClone
+    Write-Status "Normal-transfer landed state: $nlanded" -Type info
+
+    # ---- H) normal transfer arrives UNPAUSED (no over-fire) ----
+    if ($nlanded -match 'PAUSED=false') {
+        Write-TestResult -TestId "gw-normal-unpaused" -TestName "NORMAL transfer of a gateway-parked platform arrives UNPAUSED (no over-fire)" -Status "passed"
+    } else {
+        Write-TestResult -TestId "gw-normal-unpaused" -TestName "NORMAL transfer of a gateway-parked platform arrives UNPAUSED" -Status "failed" -Message "expected PAUSED=false in: $nlanded — schedule-inference over-fired (treated a normal transfer as a gateway arrival)"
+        $failed++
+    }
+
+    # ---- I) normal transfer keeps its schedule (gateway hop NOT stripped) ----
+    if ($nlanded -match 'HASGW=true') {
+        Write-TestResult -TestId "gw-normal-schedule-intact" -TestName "NORMAL transfer keeps its schedule intact (gateway record NOT stripped)" -Status "passed"
+    } else {
+        Write-TestResult -TestId "gw-normal-schedule-intact" -TestName "NORMAL transfer keeps its schedule intact" -Status "failed" -Message "expected HASGW=true in: $nlanded — the gateway hop was wrongly stripped on a normal transfer"
+        $failed++
+    }
+
     Write-TestSummary -Passed ($TOTAL_ASSERTIONS - $failed) -Failed $failed
     if ($failed -gt 0) { exit 1 }
     exit 0
@@ -202,4 +263,8 @@ try {
 finally {
     Remove-PlatformSurfacesWhere -Instance $dstInstance -PredicateLua "p.name == '$clone'" | Out-Null
     Remove-PlatformSurfacesWhere -Instance $srcInstance -PredicateLua "p.name == '$clone'" | Out-Null
+    if ($normClone) {
+        Remove-PlatformSurfacesWhere -Instance $dstInstance -PredicateLua "p.name == '$normClone'" | Out-Null
+        Remove-PlatformSurfacesWhere -Instance $srcInstance -PredicateLua "p.name == '$normClone'" | Out-Null
+    }
 }

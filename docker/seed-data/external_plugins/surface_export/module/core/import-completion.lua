@@ -487,21 +487,23 @@ function ImportCompletion.run_phase2(job)
 				TransferValidation.store_validation_result(job.platform_name, result)
 			end
 
-			-- GATEWAY ARRIVAL: park the platform AT the gateway, paused, instead of letting the
+			-- GATEWAY TRANSFER: park the platform AT the gateway, paused, instead of letting the
 			-- restored schedule fly it there. The unpause above and this all run in one synchronous
 			-- tick, so no flight happens in between. Placement is instant (verified on 2.0.76); pausing
 			-- holds it until the player resumes. nil for normal transfers — they keep the unpause above.
-			if job.gateway_arrival and job.target_platform and job.target_platform.valid then
-				local ok_gw, err_gw = pcall(function()
-					job.target_platform.space_location = job.gateway_arrival
-					job.target_platform.paused = true
+			-- PAUSE FIRST (its own pcall), THEN place: if the space_location write throws, the platform
+			-- is still safely parked-paused rather than flying off next tick.
+			if job.gateway_target and job.target_platform and job.target_platform.valid then
+				local ok_pause = pcall(function() job.target_platform.paused = true end)
+				local ok_loc, err_loc = pcall(function()
+					job.target_platform.space_location = job.gateway_target
 				end)
-				if ok_gw then
+				if ok_loc then
 					log(string.format("[Gateway] Platform %s arrived PAUSED at gateway '%s'",
-						job.platform_name, job.gateway_arrival))
+						job.platform_name, job.gateway_target))
 				else
-					log(string.format("[Gateway] Failed to park %s at gateway '%s': %s",
-						job.platform_name, job.gateway_arrival, tostring(err_gw)))
+					log(string.format("[Gateway] Could not place %s at gateway '%s' (left safely paused=%s): %s",
+						job.platform_name, job.gateway_target, tostring(ok_pause), tostring(err_loc)))
 				end
 			end
 			-- ========================================

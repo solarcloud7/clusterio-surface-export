@@ -4,8 +4,6 @@
 local Base = require("modules/surface_export/interfaces/commands/base")
 local TransferTrigger = require("modules/surface_export/core/transfer-trigger")
 
-local clusterio_api = require("modules/clusterio/api")
-
 Base.admin_command("transfer-platform",
   "Transfer a platform to another instance (usage: /transfer-platform <platform_index> <destination_instance_id>)",
   function(cmd, ctx)
@@ -28,12 +26,7 @@ Base.admin_command("transfer-platform",
       return
     end
 
-    if not clusterio_api then
-      log("[Transfer Command] Clusterio API not available - aborting")
-      ctx.print("✗ Clusterio not available - cannot transfer")
-      return
-    end
-
+    -- (Clusterio-availability is checked by TransferTrigger.start, surfaced via the failure branch below.)
     local platform = ctx.force.platforms[platform_index]
     if not platform or not platform.valid then
       ctx.print(string.format("Error: Platform index %d not found", platform_index))

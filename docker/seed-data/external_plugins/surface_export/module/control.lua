@@ -15,6 +15,7 @@ local AsyncProcessor = require("modules/surface_export/core/async-processor")
 local SurfaceLock = require("modules/surface_export/utils/surface-lock")
 local TransactionDashboard = require("modules/surface_export/interfaces/gui/transaction-dashboard")
 local Gateway = require("modules/surface_export/core/gateway")
+local GameUtils = require("modules/surface_export/utils/game-utils")
 
 -- Top-level module table (event_handler interface)
 local SurfaceExportModule = {}
@@ -125,41 +126,26 @@ SurfaceExportModule.events = {
 		elseif platform.state == sps.waiting_at_station then
 			storage.platform_flight_data[platform.name] = nil
 
-			-- Gateway arrival detection (Phase 1a): did the platform just park at a gateway? This only
-			-- DETECTS + announces — it never triggers a transfer (that is the explicit /gateway-transfer
-			-- command, which runs outside this state-change handler). 1b turns this into an on-arrival GUI.
-			local loc = platform.space_location
-			if loc and Gateway.is_gateway(loc.name) then
+			-- Gateway arrival detection: did the platform just park at a gateway? Detect + log only;
+			-- it never triggers a transfer (that is the explicit /gateway-transfer command; 1b opens
+			-- an on-arrival GUI here). Uses the shared parked_at_gateway predicate.
+			local gw_name = Gateway.parked_at_gateway(platform)
+			if gw_name then
 				log(string.format("[Gateway] Platform '%s' (force '%s') arrived at gateway '%s'",
 					tostring(platform.name),
 					tostring(platform.force and platform.force.name or "?"),
-					loc.name))
-				if clusterio_api and clusterio_api.send_json then
-					local okg, errg = pcall(function()
-						clusterio_api.send_json("surface_gateway_arrival", {
-							platform_name = platform.name,
-							force_name = platform.force and platform.force.name or "player",
-							gateway = loc.name,
-						})
-					end)
-					if not okg then
-						log(string.format("[Gateway] send_json arrival announce failed: %s", tostring(errg)))
-					end
-				end
+					gw_name))
 			end
 		end
 
 		-- Notify the controller so it can push a tree refresh to web subscribers
 		if not (clusterio_api and clusterio_api.send_json) then return end
-		local ok2, err = pcall(function()
+		GameUtils.pcall_warn("[Surface Export] send_json surface_platform_state_changed", function()
 			clusterio_api.send_json("surface_platform_state_changed", {
 				platform_name = platform.name,
 				force_name = platform.force and platform.force.name or "player",
 			})
 		end)
-		if not ok2 then
-			log(string.format("[Surface Export] ERROR sending platform state send_json event: %s", tostring(err)))
-		end
 	end,
 
 	-- GUI events for transaction dashboard
