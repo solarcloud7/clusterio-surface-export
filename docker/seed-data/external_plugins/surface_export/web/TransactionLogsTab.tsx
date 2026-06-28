@@ -330,6 +330,32 @@ export default function TransactionLogsTab({ plugin, state }: { plugin: SurfaceE
 		);
 	}, [validation]);
 
+	type ForceDataMismatch = {
+		property?: string;
+		source?: number;
+		destination?: number;
+		synced_to?: number;
+	};
+	// Non-fatal notice: the destination force was under-researched relative to the source platform, so its
+	// inserter-capacity bonuses were RAISED on import to preserve held items (a global, raise-only side effect).
+	const forceBonusAlert = useMemo(() => {
+		if (!validation) return null;
+		const mismatches = (getProp(validation, "forceDataMismatches", null) as ForceDataMismatch[] | null);
+		if (!mismatches || mismatches.length === 0) return null;
+		const lines = mismatches
+			.map((m) => `${m.property}: dest ${m.destination} → ${m.synced_to} (source ${m.source})`)
+			.join("\n");
+		return (
+			<Tooltip title={<pre style={{ margin: 0, fontSize: 11 }}>{lines}</pre>}>
+				<Alert
+					type="warning"
+					showIcon
+					message={`Destination force under-researched: raised ${mismatches.length} inserter bonus${mismatches.length !== 1 ? "es" : ""} to preserve held items (hover for details)`}
+				/>
+			</Tooltip>
+		);
+	}, [validation]);
+
 
 	const entityRows = useMemo(
 		() => Object.entries((validation ? getProp(validation, "entityTypeBreakdown", {}) : {}) as Record<string, number>)
@@ -610,6 +636,7 @@ export default function TransactionLogsTab({ plugin, state }: { plugin: SurfaceE
 												<Empty description="No item details available" />
 											)}
 											{inventoryOverflowAlert}
+											{forceBonusAlert}
 										</Space>
 									) : (
 										<Empty description="No validation data available yet" />

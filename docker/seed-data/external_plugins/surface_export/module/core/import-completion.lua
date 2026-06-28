@@ -358,6 +358,13 @@ function ImportCompletion.run_phase2(job)
 			result.inventoryOverflowLosses = job.inventory_overflow_losses
 		end
 
+		-- Attach force-bonus sync notices (non-fatal): the dest force was under-researched relative to the
+		-- source, so its inserter-capacity bonuses were RAISED to preserve held items. Surfaced in the UI so
+		-- this global, raise-only side effect is visible/auditable. Does NOT affect validation success.
+		if job.force_bonuses_mismatch and #job.force_bonuses_mismatch > 0 then
+			result.forceDataMismatches = job.force_bonuses_mismatch
+		end
+
 		TransferValidation.store_validation_result(job.platform_name, result)
 
 		-- Debug export: Write validation result for analysis

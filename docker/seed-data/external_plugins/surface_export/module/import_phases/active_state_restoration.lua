@@ -34,19 +34,13 @@ local function restore_inserter_held(entity, entity_data)
         log(string.format("[Import] Failed to restore held item '%s' x%d for inserter: %s",
             sd.held_item.name or "?", want, tostring(err)))
     end
-    -- ROOT FIX (the busy/CI held-item loss): set_stack seats only the inserter's CURRENT hand CAPACITY, which on
-    -- a freshly-created bulk/legendary inserter whose capacity hasn't initialized yet is the base (~1) — so it
-    -- under-seats (CI: 8→1). `held_stack.count` is RW with NO capacity cap; since we restore a LEGAL captured
-    -- amount (the source inserter held it legally — verified: count=8 on a legendary bulk survives activation +
-    -- ticks + save/load), write the full count DIRECTLY once set_stack has seated the item TYPE. The set_stack
-    -- bool lies, so we read back below; any genuine shortfall is returned as a VISIBLE loss (never silent).
-    if entity.held_stack.valid_for_read and entity.held_stack.count < want then
-        local cok, cerr = pcall(function() entity.held_stack.count = want end)
-        if not cok then
-            log(string.format("[Import] held_stack.count=%d failed for '%s': %s",
-                want, sd.held_item.name or "?", tostring(cerr)))
-        end
-    end
+    -- set_stack seats up to the inserter's CURRENT hand capacity, which is governed by the destination FORCE's
+    -- inserter-capacity research (bulk_inserter_capacity_bonus / inserter_stack_size_bonus). That bonus is now
+    -- synced from the source force BEFORE hydration (import-pipeline Phase 0), so a legally-captured amount
+    -- seats in full. A direct `held_stack.count = want` write does NOT bypass this — it clamps to the same
+    -- capacity (verified on 2.0.76: at bonus 0, count=8 → 1). That earlier "no-cap" write was a disproven
+    -- dead-end and was removed. The set_stack bool lies, so we read back and return any genuine shortfall as a
+    -- VISIBLE loss (never silent).
     local got = entity.held_stack.valid_for_read and entity.held_stack.count or 0
     if got < have then got = have end                          -- never report worse than before the call
     return got, math.max(0, want - got)

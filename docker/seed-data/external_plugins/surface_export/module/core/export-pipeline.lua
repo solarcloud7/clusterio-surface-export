@@ -421,6 +421,18 @@ function ExportPipeline.complete(job)
 			lock_data.frozen_count or 0))
 	end
 
+	-- Source force research bonuses that govern INSERTER HAND CAPACITY. These are not entity data — they
+	-- live in the source force's tech tree — so the import side replicates them onto the destination force
+	-- BEFORE hydration; otherwise a less-researched dest physically caps each inserter hand below what the
+	-- source held, and the held items are genuinely unplaceable (see Pitfall #28 / the held-item root cause).
+	local src_force = game.forces[job.force_name]
+	if src_force and src_force.valid then
+		job.export_data.force_data = {
+			bulk_inserter_capacity_bonus = src_force.bulk_inserter_capacity_bonus,
+			inserter_stack_size_bonus = src_force.inserter_stack_size_bonus,
+		}
+	end
+
 	-- Debug: Check if verification exists before compression
 	log(string.format("[Export] Before compression: has_verification=%s", tostring(job.export_data.verification ~= nil)))
 	if job.export_data.verification then

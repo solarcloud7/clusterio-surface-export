@@ -250,6 +250,11 @@ jobs:
         run: |
           ./tests/integration/transfer-fidelity/run-tests.ps1
 
+      - name: Run Force-Bonus Sync Test
+        shell: pwsh
+        run: |
+          ./tests/integration/force-bonus-sync/run-tests.ps1
+
       - name: Collect logs on failure
         if: failure()
         run: |
