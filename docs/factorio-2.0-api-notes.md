@@ -81,16 +81,30 @@ Consequence: fluid does not live per-entity — it lives in the shared segment. 
 
 ## Item counting
 
-- **`LuaEntity.get_item_count(item)` INCLUDES transport-line (belt) items** — verified on **2.0.76**: on a
-  belt it returns *exactly* `Σ get_transport_line(i).get_item_count(item)` (measured 104=104, 4=4, 8=8). So a
-  physical total computed as `get_item_count` over every entity is **complete** — it already covers inventories
-  **and** belt-line contents (and inserter-held items). **Do NOT add a separate `get_transport_line` pass on top
-  of `get_item_count` for a total — that double-counts the belts.** A belt-only scan via `get_transport_line`
-  must dedup merged lines (adjacent belts in a straight run share one transport line, so a naive per-entity sum
-  over-counts ~Nx); `get_item_count` sidesteps that. This is what the freeze-first `transfer-fidelity` sentinel
-  relies on (its physical meter == the validator's `count_all_items`, both belt-aware; the only residual is the
-  craft window, which freezing the source eliminates). **[empirical, 2.0.76]** Guarded by
-  `tests/integration/engine-invariants`.
+- **`LuaEntity.get_item_count(item)` is a per-entity total that INCLUDES that entity's belt-line and
+  inserter-held items.** Verified on **2.0.76**:
+  - On a belt it returns *exactly* that belt's `Σ get_transport_line(i).get_item_count(item)` (measured
+    104=104, 4=4, 8=8). Each belt exposes its **own per-belt** transport line, so it counts only **its own
+    tile** — adjacent belts on the same run report **independent** counts (measured 8 vs 16 on two neighbours).
+    Therefore **summing `get_item_count` over every belt entity does NOT double-count** a shared run; each belt
+    contributes only its own items. Cross-checked against an independent physical total (the count of unique
+    `get_detailed_contents().unique_id` stacks): `Σ get_item_count` over 193 belts = 5277 = the unique-stack
+    total, exactly.
+  - On an inserter it **includes the held hand** (`held_stack`): measured `get_item_count(held.name) == held.count`
+    across 8 holding inserters.
+- **So a physical total computed as `get_item_count` over every entity is complete** — inventories **+** belt
+  lines **+** inserter-held — and is not inflated by shared belt runs. This is what the freeze-first
+  `transfer-fidelity` sentinel relies on (its physical meter == the validator's `count_all_items`, both
+  belt-aware; the only residual is the craft window, which freezing the source eliminates).
+- **Do NOT add a separate `get_transport_line` pass on top of a `get_item_count` total — that double-counts the
+  belts** (`get_item_count` already includes them).
+- **Do NOT reason about belt grouping via `line_equals` at 2.0.76 — it is unreliable here** (observed returning
+  `true` for two belts whose lines hold *different* counts, so it is neither identity nor content equality).
+  Ground belt totals on `get_item_count` (or unique `get_detailed_contents().unique_id` stacks), never on
+  `line_equals` dedup.
+- **[empirical, 2.0.76]** `tests/integration/engine-invariants` grounds the belt meter against the unique-stack
+  physical total (catches both belt-item drop → meter < physical and a whole-line double-count → meter >
+  physical) and asserts held-item inclusion whenever an inserter is holding.
 
 ## Space platform deletion
 
