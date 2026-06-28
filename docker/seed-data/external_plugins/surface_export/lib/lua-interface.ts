@@ -13,12 +13,14 @@
 
 import { escapeString } from "@clusterio/lib";
 import type { ExportData } from "../messages";
-import { sendChunkedJson, RCON_CHUNK_SIZE } from "../helpers";
+import { sendChunkedJson, RCON_CHUNK_SIZE, type FactorioInstance } from "../helpers";
 
-/** Minimal RCON surface — the Clusterio Instance satisfies this (so does helpers.ts's FactorioInstance). */
-interface RconHost {
-	sendRcon(command: string, expectEmpty?: boolean): Promise<string>;
-}
+/**
+ * The RCON host. MUST be the plugin (BaseInstancePlugin) — its `sendRcon` forwards the plugin name as the
+ * `plugin` label on the RCON-size metric; the raw Instance's `sendRcon` defaults that label to "". Reuses
+ * helpers.ts's `FactorioInstance` (same `{ sendRcon }` surface) rather than re-declaring it.
+ */
+type RconHost = FactorioInstance;
 
 /** The subset of the plugin logger that the chunked-send path needs. */
 interface ChunkLogger {

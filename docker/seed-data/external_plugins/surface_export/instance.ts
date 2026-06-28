@@ -71,7 +71,9 @@ export class InstancePlugin extends BaseInstancePlugin {
 		this.logger.info("Surface Export plugin initializing...");
 		this.logger.info(`Instance ID: ${this.i.id}, Name: ${this.i.config.get("instance.name")}`);
 		this.validateInstanceConfiguration();
-		this.lua = new LuaInterface(this.i, this.logger);
+		// Construct with `this` (the plugin), NOT this.i (the raw Instance): BaseInstancePlugin.sendRcon
+		// forwards the plugin name as the `plugin` label on the RCON-size metric; the Instance's does not.
+		this.lua = new LuaInterface(this, this.logger);
 
 		// Listen for platform export completion from Factorio mod
 		// The mod sends data via clusterio_api.send_json("surface_export_complete", data)
@@ -424,7 +426,8 @@ export class InstancePlugin extends BaseInstancePlugin {
 	 */
 	async listPlatforms(forceName = "player") {
 		try {
-			const parsed = await this.lua.listPlatformsJson(forceName);
+			// Coalesce an empty force name to "player" (the JS default param only catches undefined).
+			const parsed = await this.lua.listPlatformsJson(forceName || "player");
 			return parsed.map((platform: Record<string, unknown>) => ({
 				platformIndex: platform.platform_index,
 				platformName: platform.platform_name,

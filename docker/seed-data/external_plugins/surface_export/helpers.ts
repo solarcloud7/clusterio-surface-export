@@ -109,7 +109,7 @@ export function normalizeExportMetrics(raw: Record<string, unknown> | null | und
 	return normalized as Record<string, number>;
 }
 
-interface FactorioInstance {
+export interface FactorioInstance {
 	sendRcon(command: string, expectEmpty?: boolean): Promise<string>;
 }
 
