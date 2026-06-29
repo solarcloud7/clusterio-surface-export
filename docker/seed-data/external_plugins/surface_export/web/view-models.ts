@@ -77,4 +77,6 @@ export type SurfaceExportPlugin = {
 	importUploadedExport(payload: JsonObject): Promise<JsonObject>;
 	startTransfer(payload: JsonObject): Promise<JsonObject>;
 	loadTransactionLog(transferId: string): Promise<void>;
+	getGateways(): Promise<JsonObject>;
+	setGatewayLink(payload: JsonObject): Promise<JsonObject>;
 };

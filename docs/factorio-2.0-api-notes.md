@@ -19,6 +19,7 @@ was learned.
 - [Space platform deletion](#space-platform-deletion)
 - [LuaProfiler and LocalisedString](#luaprofiler-and-localisedstring)
 - [Read-only entity properties](#read-only-entity-properties)
+- [Players on space platforms + cross-server move](#players-on-space-platforms--cross-server-move)
 
 ## Fluid segment system
 
@@ -139,3 +140,32 @@ Consequence: fluid does not live per-entity — it lives in the shared segment. 
 - **`crafting_speed` updates instantly** when a nearby beacon's `beacon_modules` inventory is
   populated — no tick delay, no power needed. This is why import restores beacon module inventories
   before crafter inputs, so `set_stack()` caps reflect the beacon-boosted speed. **[empirical]**
+
+## Players on space platforms + cross-server move
+
+These facts drive how cross-instance transfer handles a player who is "aboard" a platform
+(see [GATEWAY_TRANSFER_PRD.md](GATEWAY_TRANSFER_PRD.md) and the passenger-evacuate test).
+
+- **A player on a platform is hub-locked in remote view with ~no inventory.** Official wiki
+  (Space platform → Passengers): a character traveling to a platform "is **not allowed to carry any items
+  in their inventory, except for their equipped weapons and armor (but not ammunition)**"; players aboard are
+  "**locked inside the space platform hub, unable to move … locked into remote view** until they drop their
+  character to a planetary surface", and "**there is no way to access a player's inventory while in this
+  state.**" So a "passenger" carries essentially nothing to sync. **[wiki, verified]**
+- **Native hub-loss returns the player to the planet they were last at.** This is why evacuating an aboard
+  player to a planet on transfer is *native-aligned*, not a hack. **[wiki]**
+- **Detecting an aboard player**: `player.physical_surface_index == platform.surface.index` (catches a
+  connected pilot AND a disconnected player still on it) ∪ `surface.count_entities_filtered{type="character"}`
+  (abandoned bodies). A remote-view *watcher* has `surface_index` but not `physical_surface_index` → NOT
+  aboard. `LuaSpacePlatform` has no players/characters accessor — go through the surface. **[empirical]**
+- **Moving a player off a platform**: `LuaPlayer.land_on_planet()` lands on "the current planet" → **useless
+  at a surfaceless gateway** (no planet); use `player.teleport(pos, planet_surface)` instead.
+  `enter_space_platform(platform)` / `leave_space_platform()` are the on/off-platform primitives.
+  (Whether `teleport` cleanly exits a hub-locked remote-view session for a *connected* player is verified by
+  hand — the automated test exercises an abandoned character body.) **[docs + to-verify]**
+- **Redirecting a player's client to another server**: `LuaPlayer.connect_to_server{address, name,
+  description, password}` — "**Asks** the player if they would like to connect" (a PROMPT the player accepts;
+  it is a **no-op on a host / single-player**, only works on a connected multiplayer *peer*). Address comes
+  from Clusterio's `host.public_address` + instance `game_port` (the `server_select` plugin pattern). Not
+  silent, and `public_address` defaults to `"localhost"` (must be client-routable). This is the basis of the
+  future Layer-2 "follow your platform" feature. **[docs 2.0.76, verified]**

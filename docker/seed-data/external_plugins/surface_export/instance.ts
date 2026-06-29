@@ -104,6 +104,7 @@ export class InstancePlugin extends BaseInstancePlugin {
 		// never an extracted/cast method (Pitfall #26).
 		this.link.handle(messages.TransferStatusUpdate, this.handleTransferStatusUpdate.bind(this));
 		this.link.handle(messages.InstanceListPlatformsRequest, this.handleInstanceListPlatformsRequest.bind(this));
+		this.link.handle(messages.PushGatewayConfigRequest, this.handlePushGatewayConfig.bind(this));
 
 		this.logger.info("Surface Export plugin initialized");
 	}
@@ -115,6 +116,7 @@ export class InstancePlugin extends BaseInstancePlugin {
 		this.logger.info("Instance started - Surface Export plugin ready");
 		await this.ensureLuaConsoleUnlocked();
 		await this.sendConfigurationToLua();
+		await this.sendGatewayConfigToLua();
 	}
 
 	/**
@@ -131,6 +133,45 @@ export class InstancePlugin extends BaseInstancePlugin {
 			this.logger.info(`Configuration sent to Lua: batch_size=${batchSize}, max_concurrent_jobs=${maxConcurrentJobs}, show_progress=${showProgress}, debug_mode=${debugMode}`);
 		} catch (err: unknown) {
 			this.logger.warn(`Failed to send configuration to Lua: ${getErrorMessage(err)}`);
+		}
+	}
+
+	// ── Gateway link config (WS2) ───────────────────────────────────────────
+
+	/**
+	 * Push the resolved gateway config into Lua storage as a keyed map. The targets ride through with
+	 * their camelCase field names (instanceId/instanceName/targetGateway/online) — the in-game chooser
+	 * reads the SAME shape, so there is no second per-field map to drift from the controller's resolve.
+	 */
+	private async applyGatewaysToLua(gateways: messages.ResolvedGateway[]): Promise<void> {
+		const keyed: Record<string, { targets: messages.ResolvedGatewayTarget[] }> = {};
+		for (const g of gateways || []) {
+			keyed[g.gatewayName] = { targets: g.targets || [] };
+		}
+		await this.lua.configureGateways(JSON.stringify(keyed));
+	}
+
+	/** Pull the resolved gateway config from the controller on start (catch-up for a fresh instance). */
+	async sendGatewayConfigToLua() {
+		try {
+			const resp = (await this.link.sendTo(
+				"controller",
+				new messages.GetGatewayConfigRequest({}),
+			)) as unknown as { gateways?: messages.ResolvedGateway[] };
+			await this.applyGatewaysToLua(resp?.gateways || []);
+			this.logger.info(`Gateway config pulled from controller: ${(resp?.gateways || []).length} gateway(s)`);
+		} catch (err: unknown) {
+			this.logger.warn(`Failed to pull gateway config: ${getErrorMessage(err)}`);
+		}
+	}
+
+	/** controller → instance: a gateway config push (on a config change). */
+	async handlePushGatewayConfig(request: { gateways: messages.ResolvedGateway[] }) {
+		try {
+			await this.applyGatewaysToLua(request.gateways || []);
+			return { success: true };
+		} catch (err: unknown) {
+			return { success: false, error: getErrorMessage(err) };
 		}
 	}
 

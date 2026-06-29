@@ -134,8 +134,12 @@ end
 --- @param force_name string
 --- @param requester_name string|nil: Player name or "RCON"
 --- @param destination_instance_id number|nil: If set, transfer to this instance after export
+--- @param gateway_target string|nil: If set, this is a GATEWAY transfer — the destination parks the
+---        imported platform at this gateway (paused) and strips the gateway hop. Stamped into the
+---        payload (rides the compressed blob, opaque to the TS layers; read on the dest as
+---        platform_data.platform.gateway_target). nil for ordinary transfers/exports.
 --- @return string|nil, string|nil: job_id or nil + error
-function ExportPipeline.queue(platform_index, force_name, requester_name, destination_instance_id)
+function ExportPipeline.queue(platform_index, force_name, requester_name, destination_instance_id, gateway_target)
 	storage.async_job_id_counter = storage.async_job_id_counter + 1
 	local job_counter = storage.async_job_id_counter
 
@@ -162,6 +166,10 @@ function ExportPipeline.queue(platform_index, force_name, requester_name, destin
 	if not surface or not surface.valid then
 		return nil, "Platform surface not valid"
 	end
+
+	-- NOTE: passengers are NOT blocked here. A transfer is allowed with players aboard; they are evacuated to
+	-- a planet at the SOLE source-delete chokepoint (delete_platform_for_transfer → Gateway.evacuate_passengers)
+	-- so no one is orphaned and no entry point can be bypassed. See gateway.lua.
 
 	-- CRITICAL: Lock the platform BEFORE scanning to ensure stable item/fluid counts
 	-- This completes cargo pods, deactivates machines, and hides surface
@@ -232,6 +240,9 @@ function ExportPipeline.queue(platform_index, force_name, requester_name, destin
 				index = platform_index,
 				paused = platform.paused == true,
 				schedule = platform_schedule,
+				-- Explicit gateway-transfer signal (nil ⇒ ordinary transfer). Rides the same payload
+				-- rails as `schedule`; the dest reads it as platform_data.platform.gateway_target.
+				gateway_target = gateway_target,
 			},
 			tiles = tiles,  -- Include platform foundation tiles
 			entities = {},
@@ -269,10 +280,11 @@ function ExportPipeline.process_batch(job, get_batch_size, should_show_progress)
 	local batch_ok, batch_err = pcall(function()
 		for i = start_index, end_index do
 			local entity = job.entities[i]
-			-- Skip loose ground items (item-entity): the generic serializer would emit a stackless,
-			-- unrestorable "item-on-ground" record (silent loss). Captured WITH item payload by the
-			-- atomic ground-item scan in complete().
-			if entity and entity.valid and entity.type ~= "item-entity" then
+			-- Exclude non-cargo entities (loose ground items + passengers) via the SINGLE shared predicate, so
+			-- this async transfer path and the sync EntityScanner.scan_surface cannot drift. Ground items are
+			-- captured separately WITH their payload by the atomic scan in complete(); characters are evacuated,
+			-- not copied (the cardinal-sin duplication guard — see EntityScanner.is_exportable_entity).
+			if EntityScanner.is_exportable_entity(entity) then
 				local entity_data = EntityScanner.serialize_entity(entity)
 				if entity_data then
 					table.insert(job.export_data.entities, entity_data)

@@ -53,6 +53,30 @@ export class LuaInterface {
 	}
 
 	/**
+	 * Push the resolved gateway link config into Lua storage. The config is sent as a JSON STRING and
+	 * decoded in Lua (via the `configure` remote's `gateways_json` key) — NOT string-interpolated as a
+	 * Lua table — so arbitrary instance names in the config can never inject Lua. `escapeString` makes
+	 * the JSON safe to embed in the surrounding Lua double-quoted literal.
+	 */
+	async configureGateways(gatewaysJson: string): Promise<void> {
+		const script = `/sc ` +
+			`if remote.interfaces["surface_export"] and remote.interfaces["surface_export"]["configure"] then ` +
+			`remote.call("surface_export", "configure", {gateways_json="${escapeString(gatewaysJson)}"}) ` +
+			`end`;
+		// A single /sc command is bounded by Factorio's ~8KB RCON limit. Gateway config is tiny in
+		// practice (a few gateways × targets), but fail LOUDLY rather than send a truncated/dropped
+		// command if it ever grows past a safe single-command size (escaping inflates it further).
+		const MAX_RCON_COMMAND_BYTES = 7000;
+		if (Buffer.byteLength(script, "utf8") > MAX_RCON_COMMAND_BYTES) {
+			throw new Error(
+				`Gateway config command is ${Buffer.byteLength(script, "utf8")} bytes (> ${MAX_RCON_COMMAND_BYTES}); ` +
+				`too large for a single RCON command — reduce the number of gateway targets.`,
+			);
+		}
+		await this.host.sendRcon(script, true);
+	}
+
+	/**
 	 * Queue an async export. `targetArg` is the already-formatted Lua literal ("nil" for export-only, or a
 	 * positive integer string for a transfer destination). Returns the RAW rcon result; the caller interprets
 	 * the `export_id` / `EXPORT_FAILED:<reason>` contract.
@@ -118,35 +142,17 @@ export class LuaInterface {
 
 	/**
 	 * Delete a transferred source platform. Returns RAW "SUCCESS" / "ERROR:<reason>".
-	 * Uses `game.delete_surface` — `LuaSpacePlatform.destroy()` is a NO-OP at 2.0.76 (Pitfall #19).
+	 * Routes through the `delete_platform_for_transfer` remote, which (atomically, one tick): unlocks,
+	 * EVACUATES any aboard players/characters to a planet (so a passenger is never orphaned when the surface
+	 * vanishes), then tears down via `GameUtils.delete_platform` (version-correct; `game.delete_surface`
+	 * under the hood — `LuaSpacePlatform.destroy()` is a NO-OP at 2.0.76, Pitfall #19). Keeping all of that
+	 * in one remote (a) makes evacuation atomic with the delete and (b) fixes the prior inline-RCON that
+	 * bypassed GameUtils.delete_platform.
 	 */
 	async deleteSourcePlatform(platformName: string, forceName: string): Promise<string> {
-		const name = escapeString(platformName);
-		const force = escapeString(forceName);
 		return this.host.sendRcon(
-			`/sc ` +
-			`pcall(function() remote.call("surface_export", "unlock_platform", "${name}") end); ` +
-			`local force = game.forces["${force}"]; ` +
-			`local platform = nil; ` +
-			`for _, p in pairs(force.platforms) do ` +
-			`    if p.name == "${name}" then platform = p; break; end ` +
-			`end; ` +
-			`if platform then ` +
-			`    local surface = platform.surface; ` +
-			`    if surface and surface.valid then ` +
-			`        local ok, err = pcall(function() game.delete_surface(surface) end); ` +
-			`        if ok then ` +
-			`            game.print("[Transfer Complete] Platform '${name}' transferred and deleted from source", {0, 1, 0}); ` +
-			`            rcon.print("SUCCESS"); ` +
-			`        else ` +
-			`            rcon.print("ERROR:delete_surface failed: " .. tostring(err)); ` +
-			`        end ` +
-			`    else ` +
-			`        rcon.print("ERROR:Platform surface not valid"); ` +
-			`    end ` +
-			`else ` +
-			`    rcon.print("ERROR:Platform not found"); ` +
-			`end`,
+			`/sc rcon.print(remote.call("surface_export", "delete_platform_for_transfer", ` +
+			`"${escapeString(platformName)}", "${escapeString(forceName)}"))`,
 		);
 	}
 

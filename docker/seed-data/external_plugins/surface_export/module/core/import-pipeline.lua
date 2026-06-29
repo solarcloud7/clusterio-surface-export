@@ -10,6 +10,7 @@ local EntityCreation = require("modules/surface_export/import_phases/entity_crea
 local PhaseProfiler = require("modules/surface_export/utils/phase-profiler")
 local GameUtils = require("modules/surface_export/utils/game-utils")
 local VersionCompat = require("modules/surface_export/utils/version-compat")
+local Gateway = require("modules/surface_export/core/gateway")
 
 local ImportPipeline = {}
 
@@ -243,6 +244,31 @@ function ImportPipeline.queue(json_data, new_platform_name, force_name, requeste
 		log(string.format("[Import] Platform %s PAUSED to prevent fuel consumption during import", new_platform.name))
 	end
 
+	-- Gateway transfer: the source carries an EXPLICIT gateway_target in the payload (a sibling of
+	-- platform.schedule — NOT inferred from the schedule's current record). When present, strip the
+	-- gateway hop(s) from the itinerary; the platform is placed at gateway_target, paused, at the very
+	-- end of import (see import-completion.lua) so it arrives parked instead of flying the schedule.
+	-- Absent ⇒ ordinary transfer, schedule untouched (so a normal /transfer-platform of a gateway-parked
+	-- platform is NOT treated as a gateway arrival — fixes the over-/under-fire of schedule inference).
+	local gateway_target = platform_data and platform_data.platform and platform_data.platform.gateway_target or nil
+	-- Defensive: ignore a stale/bogus target that isn't a real gateway on THIS instance.
+	if gateway_target and not Gateway.is_gateway(gateway_target) then
+		log(string.format("[Gateway] Ignoring gateway_target '%s' — not a gateway on this instance",
+			tostring(gateway_target)))
+		gateway_target = nil
+	end
+	if gateway_target and imported_schedule then
+		local stripped = Gateway.strip_gateway_records(imported_schedule)
+		if stripped then
+			log(string.format("[Gateway] Gateway transfer to '%s' — stripping gateway hop (records %d -> %d)",
+				gateway_target, #(imported_schedule.records or {}), #stripped.records))
+			imported_schedule = stripped
+		else
+			log(string.format("[Gateway] Gateway transfer to '%s' — gateway is the only schedule record, keeping it",
+				gateway_target))
+		end
+	end
+
 	-- Restore platform schedule (records + interrupts + group) from payload.
 	if imported_schedule then
 		local schedule_apply_ok, schedule_apply_err = PlatformSchedule.apply(new_platform, imported_schedule)
@@ -310,6 +336,9 @@ function ImportPipeline.queue(json_data, new_platform_name, force_name, requeste
 		-- Store platform reference for unpausing after validation
 		target_platform = new_platform,
 		imported_schedule = imported_schedule,
+		-- Gateway to park at (nil for normal transfers; explicit, from the payload). When set, import
+		-- completion parks the platform AT this gateway, paused, instead of unpausing it to fly.
+		gateway_target = gateway_target,
 
 		-- ========== PHASE METRICS TRACKING ==========
 		-- Track timing and counts for each import phase

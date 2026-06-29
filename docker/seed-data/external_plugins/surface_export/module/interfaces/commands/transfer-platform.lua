@@ -2,10 +2,7 @@
 -- Transfer a platform to another instance
 
 local Base = require("modules/surface_export/interfaces/commands/base")
-local AsyncProcessor = require("modules/surface_export/core/async-processor")
-local SurfaceLock = require("modules/surface_export/utils/surface-lock")
-
-local clusterio_api = require("modules/clusterio/api")
+local TransferTrigger = require("modules/surface_export/core/transfer-trigger")
 
 Base.admin_command("transfer-platform",
   "Transfer a platform to another instance (usage: /transfer-platform <platform_index> <destination_instance_id>)",
@@ -29,12 +26,7 @@ Base.admin_command("transfer-platform",
       return
     end
 
-    if not clusterio_api then
-      log("[Transfer Command] Clusterio API not available - aborting")
-      ctx.print("✗ Clusterio not available - cannot transfer")
-      return
-    end
-
+    -- (Clusterio-availability is checked by TransferTrigger.start, surfaced via the failure branch below.)
     local platform = ctx.force.platforms[platform_index]
     if not platform or not platform.valid then
       ctx.print(string.format("Error: Platform index %d not found", platform_index))
@@ -43,7 +35,6 @@ Base.admin_command("transfer-platform",
     end
 
     local platform_name = platform.name
-    local force_name = ctx.force.name
 
     ctx.print("═══════════════════════════════════════")
     ctx.print(string.format("🚀 Transfer Platform: %s", platform_name))
@@ -52,33 +43,18 @@ Base.admin_command("transfer-platform",
     ctx.print(string.format("Platform: [%d] %s", platform_index, platform_name))
     ctx.print("")
 
-    -- Step 1: Lock platform
-    ctx.print("[1/3] Locking platform...")
-    local lock_ok, lock_err = SurfaceLock.lock_platform(platform, ctx.force)
-
-    if not lock_ok then
-      log(string.format("[Transfer Command] Lock failed for platform '%s': %s", platform_name, lock_err or "Unknown error"))
-      ctx.print(string.format("✗ Lock failed: %s", lock_err or "Unknown error"))
-      return
-    end
-    log(string.format("[Transfer Command] Platform '%s' locked successfully", platform_name))
-
-    ctx.print("✓ Platform locked (hidden from players)")
-
-    -- Step 2: Queue export WITH destination instance ID for auto-transfer
-    ctx.print("[2/3] Queueing export...")
-    local job_id, export_err = AsyncProcessor.queue_export(platform_index, force_name, "TRANSFER", dest_instance_id)
-
+    -- Lock + queue export + send transfer request (shared with /gateway-transfer).
+    ctx.print("[1/2] Locking + queueing export...")
+    local job_id, err = TransferTrigger.start(ctx.force, platform_index, dest_instance_id)
     if not job_id then
-      log(string.format("[Transfer Command] Export queue failed for platform '%s' (index %d): %s", platform_name, platform_index, export_err or "Unknown error"))
-      ctx.print(string.format("✗ Export failed: %s", export_err or "Unknown error"))
-      SurfaceLock.unlock_platform(platform_name)
+      log(string.format("[Transfer Command] Transfer start failed for platform '%s' (index %d): %s", platform_name, platform_index, err or "Unknown error"))
+      ctx.print(string.format("✗ Transfer failed: %s", err or "Unknown error"))
       return
     end
-    log(string.format("[Transfer Command] Export queued: job_id=%s, platform='%s', dest_instance_id=%s (type=%s)",
+    log(string.format("[Transfer Command] Transfer started: job_id=%s, platform='%s', dest_instance_id=%s (type=%s)",
       job_id, platform_name, tostring(dest_instance_id), type(dest_instance_id)))
 
-    ctx.print(string.format("✓ Export queued: %s", job_id))
+    ctx.print(string.format("[2/2] ✓ Export queued: %s", job_id))
     ctx.print("⏳ Exporting asynchronously (this may take a while)...")
     ctx.print("")
     ctx.print("The transfer will continue automatically:")
@@ -90,17 +66,5 @@ Base.admin_command("transfer-platform",
     ctx.print("")
     ctx.print("💡 Use /list-platforms to track progress")
     ctx.print("═══════════════════════════════════════")
-
-    -- Send transfer request via Clusterio send_json event channel
-    local event_payload = {
-      platform_index = platform_index,
-      platform_name = platform_name,
-      force_name = force_name,
-      destination_instance_id = dest_instance_id,
-      job_id = job_id
-    }
-    log(string.format("[Transfer Command] Sending send_json event 'surface_transfer_request': platform='%s', dest_instance_id=%s (type=%s), job_id=%s",
-      platform_name, tostring(dest_instance_id), type(dest_instance_id), job_id))
-    clusterio_api.send_json("surface_transfer_request", event_payload)
   end
 )

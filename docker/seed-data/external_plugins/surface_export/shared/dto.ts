@@ -1,4 +1,38 @@
 export type JsonObject = Record<string, unknown>;
+
+// ── Gateway link config (WS2) ───────────────────────────────────────────────
+// Gateways are surfaceless `space-location`s added by the surfexp_gateways data mod. The controller is
+// Node and CANNOT read Factorio prototypes, so the gateway-name list is pinned here, DERIVED from the
+// prefix + count (mirror surfexp_gateways/data.lua's GATEWAY_COUNT and module/core/gateway.lua's
+// Gateway.PREFIX — keep GATEWAY_COUNT below in sync with data.lua).
+export const GATEWAY_PREFIX = "surfexp_gateway_";
+export const GATEWAY_COUNT = 4;
+export const GATEWAY_NAMES: string[] = Array.from(
+	{ length: GATEWAY_COUNT },
+	(_unused, i) => `${GATEWAY_PREFIX}${i + 1}`,
+);
+
+/** A raw gateway→destination link (controller source of truth; persisted). */
+export interface GatewayLink {
+	targetInstanceId: number;
+	/** The gateway to park at on the destination (defaults to the source gateway name). */
+	targetGateway: string;
+}
+
+/** A link resolved with live instance display info — built at push time, never persisted. */
+export interface ResolvedGatewayTarget {
+	instanceId: number;
+	instanceName: string;
+	targetGateway: string;
+	online: boolean;
+}
+
+/** A gateway plus its resolved destination targets (the push/pull wire + Lua storage shape). */
+export interface ResolvedGateway {
+	gatewayName: string;
+	targets: ResolvedGatewayTarget[];
+}
+
 export interface TransferSummaryModel {
 	transferId: string;
 	operationType: "transfer" | "export" | "import";

@@ -89,10 +89,11 @@ end
 --- @param force_name string
 --- @param requester_name string|nil
 --- @param destination_instance_id number|nil
+--- @param gateway_target string|nil: gateway to park at on the destination (gateway transfers only)
 --- @return string|nil, string|nil: job_id or error
-function AsyncProcessor.queue_export(platform_index, force_name, requester_name, destination_instance_id)
+function AsyncProcessor.queue_export(platform_index, force_name, requester_name, destination_instance_id, gateway_target)
 	AsyncProcessor.init()
-	return ExportPipeline.queue(platform_index, force_name, requester_name, destination_instance_id)
+	return ExportPipeline.queue(platform_index, force_name, requester_name, destination_instance_id, gateway_target)
 end
 
 --- Begin a chunked import session

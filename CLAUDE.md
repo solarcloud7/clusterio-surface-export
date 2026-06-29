@@ -360,6 +360,8 @@ remote.call("surface_export", "run_tests")
 /list-exports                     # List exports in memory
 /list-surfaces                    # List all surfaces
 /transfer-platform <index> <dest> # Transfer platform to another instance
+/gateway-transfer <index> <dest>  # Transfer a platform PARKED at a gateway → arrives paused at the gateway, hop stripped (Phase 1a)
+/gateway-gui <index>              # Open the on-arrival gateway chooser GUI for a platform parked at a gateway (Model A)
 /lock-platform <index>            # Lock platform for transfer
 /unlock-platform <name>           # Unlock a locked platform
 /lock-status                      # Show lock status of all platforms
@@ -370,6 +372,17 @@ remote.call("surface_export", "run_tests")
 /test-entity <json>               # Debug: test entity import
 /test-entity-at <x> <y> <json>    # Debug: test entity import at a position
 ```
+
+### Passenger handling on transfer (evacuate, don't block)
+A transfer is **NOT** blocked when players are aboard. A player on a platform is hub-locked in remote view
+(no inventory — only equipped gear, no ammo). When the platform transfers, everyone aboard **and** abandoned
+character bodies are **EVACUATED to Nauvis** at the SOLE source-delete chokepoint
+(`delete_platform_for_transfer` → `Gateway.evacuate_passengers`, in `module/core/gateway.lua`) BEFORE the
+surface is torn down — never orphaned, never duplicated (native-aligned with how the engine returns a player
+to a planet on hub-loss). This replaced an earlier passenger hard-block. Carrying the player **with** the
+platform to the destination (`connect_to_server` + `enter_space_platform`) is a future Layer-2 feature gated on
+a reachability spike. Covered by `tests/integration/passenger-evacuate`; design in
+[docs/GATEWAY_TRANSFER_PRD.md](docs/GATEWAY_TRANSFER_PRD.md).
 
 ## Export/Import Workflow Notes (Current)
 
@@ -533,11 +546,12 @@ For Clusterio core architecture, see [Clusterio docs](https://github.com/cluster
 
 ### General Style (partially enforced by ESLint — `npm run lint`, gated in CI)
 
-> `npm run lint` runs four **correctness** guards, all gated in CI:
-> - **TS** — `eslint.config.js` in the plugin root (flat config, type-aware via `tsconfig.node.json`). Chiefly the unbound Clusterio Link-method guard (Pitfall #26) via `@typescript-eslint/unbound-method` + a `no-restricted-syntax` selector.
+> `npm run lint` runs five **correctness** guards, all gated in CI:
+> - **TS** — `eslint.config.js` in the plugin root (flat config, type-aware via `tsconfig.node.json`). The unbound Clusterio Link-method guard (Pitfall #26) via `@typescript-eslint/unbound-method` + a `no-restricted-syntax` selector, PLUS `no-empty` + an empty-arrow `.catch(() => {})` selector so a swallowed promise rejection can't ship silently (the TS analogue of the Lua pcall-logging guard below).
 > - **Lua** — `scripts/lint-lua-invariants.mjs` (`npm run lint:lua`), a static guard over the `module/` tree for documented Factorio/Clusterio footguns we've already been bitten by: `global` persistence (Pitfall #4), `__clusterio_lib__` require/`active_mods` guard (#12), and `*platform*.destroy()` no-op (#19). Each rule maps to a Pitfall and was verified clean when added. Add a `-- lint-lua:allow` comment (with a reason) to suppress a verified false positive.
 > - **Web cache** — `scripts/lint-webpack-cache.mjs` (`npm run lint:web-cache`), guards that `webpack.config.js` keeps its output filenames content-hashed. A fixed-name `filename`/`chunkFilename` override silently defeats `@clusterio/web_ui`'s hashed default and, with the controller's immutable 1y `/static` cache, serves returning users stale chunks (the regression that shipped in `94e1b8c`; see [docs/static-asset-caching.md](docs/static-asset-caching.md)). Add a `lint-webpack-cache:allow` comment (with a reason) to suppress a verified exception.
 > - **Test grounding** — `scripts/lint-test-grounding.mjs` (`npm run lint:test-grounding`), guards that integration tests measure fidelity **independently of the code under test**: a `*fidelity*` test MUST do a physical `get_item_count(...)` count, and any test reading a validator self-report field (`totalItemLoss`/`expectedItemCounts`/`actualItemCounts`) MUST cross-ground it with a physical count. Exists because a `transfer-fidelity` test that asserted on `totalItemLoss` (the value under test) would have gone green on a broken meter — the catch came from physical counts + adversarial review, never the self-report. **Rule of thumb: if the thing under test could be wrong and the test would still pass, it's grounded in the wrong place.** Also: ship the adversarial fixture (inactive inserter, failed entity, non-normal quality) WITH the fix, and run `/code-review` before merging any gate/validation/source-deletion change. Add a `lint-test-grounding:allow` comment (with a reason) to suppress a verified exception.
+> - **pcall logging** — `scripts/lint-pcall-logging.mjs` (`npm run lint:pcall-logging`), every `pcall`/`xpcall` in the `module/` tree must SURFACE its error (log it / route through `pcall_warn` / propagate it to the caller) or be an annotated `-- intentional probe` — never a silent swallow. Exists because a swallowed pcall hid a belt-API signature mismatch across two failed fix attempts. Add `-- pcall:allow` (with a reason) for a verified false positive.
 >
 > The cosmetic conventions below (indentation, quotes, naming) are **conventions, not yet all machine-enforced** — match the surrounding code.
 

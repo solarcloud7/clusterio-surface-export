@@ -8,6 +8,23 @@ local ConnectionScanner = require("modules/surface_export/export_scanners/connec
 
 local EntityScanner = {}
 
+--- Whether the export serializes `entity` as a normal entity record. SINGLE source of truth for the
+--- export-exclusion set — BOTH the sync `scan_surface` and the async `ExportPipeline.process_batch` call
+--- this, so the two export paths cannot drift (a drift would silently re-open a data-integrity hole).
+--- Excludes:
+---   * `item-entity` — loose ground items; captured separately WITH their item payload by the atomic
+---     ground-item scan (`scan_items_on_ground` / export-pipeline `complete()`), so the generic serializer
+---     must not emit a stackless, unrestorable "item-on-ground" record (silent loss).
+---   * `character` — a player's body (a PASSENGER), never cargo; serializing it would recreate the body +
+---     equipped gear on the dest while the source original is evacuated at the delete = cross-instance
+---     DUPLICATION (the cardinal sin, Pitfalls #28/#29). Passengers are handled by
+---     `Gateway.evacuate_passengers`. (Corpses stay included: not evacuated, so copying = relocation, no dup.)
+--- @param entity LuaEntity|nil
+--- @return boolean
+function EntityScanner.is_exportable_entity(entity)
+  return entity ~= nil and entity.valid and entity.type ~= "item-entity" and entity.type ~= "character"
+end
+
 --- Scan all entities on a surface
 --- @param surface LuaSurface: The surface to scan
 --- @return table: Array of serialized entity data
@@ -22,7 +39,7 @@ function EntityScanner.scan_surface(surface)
 
   local sortable_entities = {}
   for _, entity in pairs(entities) do
-    if entity.valid and entity.type ~= "item-entity" then
+    if EntityScanner.is_exportable_entity(entity) then
       table.insert(sortable_entities, entity)
     end
   end

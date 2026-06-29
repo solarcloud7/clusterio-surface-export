@@ -2,6 +2,7 @@
 -- Configure plugin settings (called from Node.js plugin on startup)
 
 local AsyncProcessor = require("modules/surface_export/core/async-processor")
+local Util = require("modules/surface_export/utils/util")
 
 --- Configure plugin settings (called from Node.js plugin on startup)
 --- @param config table: Configuration parameters {batch_size, max_concurrent_jobs, show_progress, debug_mode}
@@ -44,6 +45,20 @@ local function configure(config)
     -- through failed_entity_losses/overflow). Proves the STRICT gate DETECTS real loss and the
     -- two-phase commit preserves the source. See validation-timing-trilemma / gate-detects-loss test.
     storage.surface_export_config.test_force_item_loss = config.test_force_item_loss
+  end
+
+  if config.gateways_json then
+    -- Replace the whole gateway link map (controller is the source of truth). Decoded from JSON,
+    -- never built as a Lua table literal, so arbitrary instance names cannot inject Lua.
+    local decoded = Util.json_to_table_compat(config.gateways_json)
+    if type(decoded) == "table" then
+      storage.surface_export_config.gateways = decoded
+      local n = 0
+      for _ in pairs(decoded) do n = n + 1 end
+      log(string.format("[FactorioSurfaceExport] Gateway config updated: %d gateway(s)", n))
+    else
+      log("[FactorioSurfaceExport] configure: gateways_json did not decode to a table")
+    end
   end
 
   log(string.format("[FactorioSurfaceExport] Configuration updated: batch_size=%s, max_concurrent_jobs=%s, show_progress=%s, debug_mode=%s",

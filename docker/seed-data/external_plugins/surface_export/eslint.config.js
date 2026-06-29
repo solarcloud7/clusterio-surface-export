@@ -46,6 +46,11 @@ module.exports = tseslint.config(
 			// A BOUND call `this.i.sendTo(...)` is a CallExpression and is NOT matched.
 			// An ARG/result cast `... as never` / `new Msg(...) as never` is NOT matched
 			// (the cast target is not a Link-method MemberExpression).
+			// A truly-empty catch silently swallows an error (a comment-only catch is allowed for a
+			// deliberate, explained no-op). Mirrors the Lua pcall-discipline guard — silent failures
+			// have repeatedly hidden real bugs here. See the pcall/catch audit.
+			"no-empty": ["error", { allowEmptyCatch: false }],
+
 			"no-restricted-syntax": [
 				"error",
 				{
@@ -60,6 +65,14 @@ module.exports = tseslint.config(
 					message:
 						"Do not assign a Clusterio Link method to a variable (e.g. `const h = this.i.handle`). " +
 						"Extracting it loses `this` -> runtime crash. Call it BOUND. See CLAUDE.md Pitfall #26.",
+				},
+				{
+					// `.catch(() => {})` / `.catch((e) => {})` with an empty body silently swallows a promise
+					// rejection. Log it, handle it, or rethrow. (A non-empty handler is fine.)
+					selector: "CallExpression[callee.property.name='catch'] > ArrowFunctionExpression[body.type='BlockStatement'][body.body.length=0]",
+					message:
+						"Empty `.catch(() => {})` silently swallows a promise rejection. Log/handle/rethrow it " +
+						"(a stray swallow has hidden real bugs here — see the pcall/catch audit).",
 				},
 			],
 		},

@@ -10,6 +10,9 @@ import type {
 	PayloadMetrics,
 	PhaseSpan,
 	ValidationResult,
+	GatewayLink,
+	ResolvedGatewayTarget,
+	ResolvedGateway,
 } from "./shared/dto";
 export type {
 	HostNodeModel,
@@ -23,7 +26,11 @@ export type {
 	PayloadMetrics,
 	PhaseSpan,
 	ValidationResult,
+	GatewayLink,
+	ResolvedGatewayTarget,
+	ResolvedGateway,
 } from "./shared/dto";
+export { GATEWAY_NAMES, GATEWAY_PREFIX } from "./shared/dto";
 const PLUGIN_NAME = "surface_export";
 
 export const PERMISSIONS = {
@@ -702,6 +709,168 @@ export class InstanceListPlatformsRequest {
 	};
 }
 
+// ── Gateway link config (WS2) ───────────────────────────────────────────────
+// Nested item schemas (the round-trip harness only samples top-level required fields, so these only
+// drive AJV runtime validation of the array contents).
+const GATEWAY_LINK_SCHEMA: JsonSchema = {
+	type: "object",
+	properties: { targetInstanceId: { type: "integer" }, targetGateway: { type: "string" } },
+	required: ["targetInstanceId", "targetGateway"],
+	additionalProperties: false,
+};
+const RESOLVED_TARGET_SCHEMA: JsonSchema = {
+	type: "object",
+	properties: {
+		instanceId: { type: "integer" },
+		instanceName: { type: "string" },
+		targetGateway: { type: "string" },
+		online: { type: "boolean" },
+	},
+	required: ["instanceId", "instanceName", "targetGateway", "online"],
+	additionalProperties: false,
+};
+const RESOLVED_GATEWAYS_SCHEMA: JsonSchema = {
+	type: "array",
+	items: {
+		type: "object",
+		properties: {
+			gatewayName: { type: "string" },
+			targets: { type: "array", items: RESOLVED_TARGET_SCHEMA },
+		},
+		required: ["gatewayName", "targets"],
+		additionalProperties: false,
+	},
+};
+
+/** control → controller: read the raw gateway links + the pinned gateway-name list (web editor). */
+export class GetGatewaysRequest {
+	declare ["constructor"]: typeof GetGatewaysRequest;
+	static plugin = PLUGIN_NAME;
+	static type = "request" as const;
+	static src = "control" as const;
+	static dst = "controller" as const;
+	static permission = PERMISSIONS.UI_VIEW;
+	static jsonSchema: JsonSchema = { type: "object", properties: {}, additionalProperties: false };
+
+	constructor(_json: Record<string, unknown> = {}) {}
+
+	static fromJSON(_json: unknown) { return new GetGatewaysRequest(); }
+	toJSON() { return {}; }
+
+	static Response = {
+		jsonSchema: {
+			type: "object",
+			properties: {
+				gatewayNames: { type: "array", items: { type: "string" } },
+				links: {
+					type: "array",
+					items: {
+						type: "object",
+						properties: {
+							gatewayName: { type: "string" },
+							targets: { type: "array", items: GATEWAY_LINK_SCHEMA },
+						},
+						required: ["gatewayName", "targets"],
+						additionalProperties: false,
+					},
+				},
+			},
+			required: ["gatewayNames", "links"],
+		} as JsonSchema,
+		fromJSON(json: unknown) {
+			return json as { gatewayNames: string[]; links: Array<{ gatewayName: string; targets: GatewayLink[] }> };
+		},
+	};
+}
+
+/** control → controller: replace the entire target list for one gateway. */
+export class SetGatewayLinkRequest {
+	declare ["constructor"]: typeof SetGatewayLinkRequest;
+	static plugin = PLUGIN_NAME;
+	static type = "request" as const;
+	static src = "control" as const;
+	static dst = "controller" as const;
+	static permission = PERMISSIONS.TRANSFER_EXPORTS;
+	static jsonSchema: JsonSchema = {
+		type: "object",
+		properties: {
+			gatewayName: { type: "string" },
+			targets: { type: "array", items: GATEWAY_LINK_SCHEMA },
+		},
+		required: ["gatewayName", "targets"],
+		additionalProperties: false,
+	};
+
+	gatewayName: string;
+	targets: GatewayLink[];
+
+	constructor(json: { gatewayName: string; targets: GatewayLink[] }) {
+		this.gatewayName = json.gatewayName;
+		this.targets = json.targets;
+	}
+
+	static fromJSON(json: { gatewayName: string; targets: GatewayLink[] }) { return new SetGatewayLinkRequest(json); }
+	toJSON() { return { gatewayName: this.gatewayName, targets: this.targets }; }
+
+	static Response = {
+		jsonSchema: { type: "object", properties: { success: { type: "boolean" }, error: { type: "string" } }, required: ["success"] } as JsonSchema,
+		fromJSON(json: unknown) { return json as SimpleResponse; },
+	};
+}
+
+/** instance → controller: pull the resolved gateway config (live names + online) on instance start. */
+export class GetGatewayConfigRequest {
+	declare ["constructor"]: typeof GetGatewayConfigRequest;
+	static plugin = PLUGIN_NAME;
+	static type = "request" as const;
+	static src = "instance" as const;
+	static dst = "controller" as const;
+	static jsonSchema: JsonSchema = { type: "object", properties: {}, additionalProperties: false };
+
+	constructor(_json: Record<string, unknown> = {}) {}
+
+	static fromJSON(_json: unknown) { return new GetGatewayConfigRequest(); }
+	toJSON() { return {}; }
+
+	static Response = {
+		jsonSchema: { type: "object", properties: { gateways: RESOLVED_GATEWAYS_SCHEMA }, required: ["gateways"] } as JsonSchema,
+		fromJSON(json: unknown) {
+			return json as { gateways: ResolvedGateway[] };
+		},
+	};
+}
+
+/** controller → instance: push the resolved gateway config (on a config change). */
+export class PushGatewayConfigRequest {
+	declare ["constructor"]: typeof PushGatewayConfigRequest;
+	static plugin = PLUGIN_NAME;
+	static type = "request" as const;
+	static src = "controller" as const;
+	static dst = "instance" as const;
+	static jsonSchema: JsonSchema = {
+		type: "object",
+		properties: { gateways: RESOLVED_GATEWAYS_SCHEMA },
+		required: ["gateways"],
+		additionalProperties: false,
+	};
+
+	gateways: ResolvedGateway[];
+
+	constructor(json: { gateways: ResolvedGateway[] }) {
+		this.gateways = json.gateways;
+	}
+
+	static fromJSON(json: { gateways: ResolvedGateway[] }) {
+		return new PushGatewayConfigRequest(json);
+	}
+	toJSON() { return { gateways: this.gateways }; }
+
+	static Response = {
+		jsonSchema: { type: "object", properties: { success: { type: "boolean" }, error: { type: "string" } }, required: ["success"] } as JsonSchema,
+		fromJSON(json: unknown) { return json as SimpleResponse; },
+	};
+}
+
 export class ImportPlatformFromFileRequest {
 	declare ["constructor"]: typeof ImportPlatformFromFileRequest;
 	static plugin = PLUGIN_NAME;
@@ -1134,6 +1303,7 @@ export interface IControllerPlugin {
 		resolveInstanceName: (instanceId: number) => string | null;
 		buildPlatformTree: (forceName?: string) => Promise<{ hosts: unknown[]; unassignedInstances: unknown[] }>;
 		resolveTargetInstance: (target: unknown) => { id: number; instance: unknown } | null;
+		requestInstancePlatforms: (instanceId: number, forceName?: string) => Promise<{ platforms: Array<Record<string, unknown>>; error: string | null }>;
 	};
 	platformDepartureTimes: Map<string, number>;
 	activeTransfers: Map<string, ActiveTransfer>;

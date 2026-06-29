@@ -17,6 +17,7 @@ import { UploadOutlined } from "@ant-design/icons";
 import * as messageDefs from "../messages";
 import ManualTransferTab from "./ManualTransferTab";
 import TransactionLogsTab from "./TransactionLogsTab";
+import GatewaysTab from "./GatewaysTab";
 import ImportModal from "./ImportModal";
 import type { JsonObject, LogEvent, SurfaceExportPlugin, SurfaceExportState } from "./view-models";
 
@@ -32,6 +33,8 @@ const {
 	ListTransactionLogsRequest,
 	GetTransactionLogRequest,
 	StartPlatformTransferRequest,
+	GetGatewaysRequest,
+	SetGatewayLinkRequest,
 	SetSurfaceExportSubscriptionRequest,
 	SurfaceExportTreeUpdateEvent,
 	SurfaceExportTransferUpdateEvent,
@@ -101,6 +104,11 @@ function SurfaceExportPage() {
 			children: <TransactionLogsTab plugin={plugin} state={state} />,
 		});
 	}
+	tabItems.push({
+		key: "gateways",
+		label: "Gateways",
+		children: <GatewaysTab plugin={plugin} state={state} />,
+	});
 
 	// Fall back to manual if the URL asks for a tab that isn't available (e.g. ?tab=logs without view perms).
 	const effectiveTab = tabItems.some(t => t.key === activeTab) ? activeTab : "manual";
@@ -297,6 +305,14 @@ export class WebPlugin extends BaseWebPlugin {
 
 	async startTransfer(payload: { sourceInstanceId: number; sourcePlatformIndex: number; targetInstanceId: number; forceName?: string }) {
 		return this.link.send(new StartPlatformTransferRequest(payload));
+	}
+
+	async getGateways() {
+		return this.link.send(new GetGatewaysRequest({}));
+	}
+
+	async setGatewayLink(payload: { gatewayName: string; targets: Array<{ targetInstanceId: number; targetGateway: string }> }) {
+		return this.link.send(new SetGatewayLinkRequest(payload));
 	}
 
 	async loadTransactionLog(transferId: string) {
