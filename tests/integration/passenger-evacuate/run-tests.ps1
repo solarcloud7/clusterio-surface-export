@@ -154,6 +154,12 @@ try {
         Write-Status "Destination platform characters: $dstChars (must be 0 — passenger evacuated to source, not transported)" -Type info
         if ($dstChars -eq 0) {
             Write-TestResult -TestId "ev-no-dup" -TestName "Aboard character NOT duplicated onto destination (dest char count = 0)" -Status "passed"
+        } elseif ($dstChars -lt 0) {
+            # -1 (no surface matched the name) / -999 (RCON/parse error) are MEASUREMENT failures, not a
+            # duplication signal — fail explicitly as "could not measure" so a transient hiccup can't read
+            # as a false cross-instance-duplication regression.
+            Write-TestResult -TestId "ev-no-dup" -TestName "Aboard character NOT duplicated onto destination" -Status "failed" -Message "could not measure dest platform characters (got $dstChars — surface name-scan/RCON error); not a duplication signal"
+            $failed++
         } else {
             Write-TestResult -TestId "ev-no-dup" -TestName "Aboard character NOT duplicated onto destination" -Status "failed" -Message "dest platform has $dstChars character(s) — the passenger was COPIED to the dest AND evacuated to source-Nauvis (cross-instance duplication)"
             $failed++

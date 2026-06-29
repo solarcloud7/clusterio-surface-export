@@ -280,16 +280,11 @@ function ExportPipeline.process_batch(job, get_batch_size, should_show_progress)
 	local batch_ok, batch_err = pcall(function()
 		for i = start_index, end_index do
 			local entity = job.entities[i]
-			-- Skip loose ground items (item-entity): the generic serializer would emit a stackless,
-			-- unrestorable "item-on-ground" record (silent loss). Captured WITH item payload by the
-			-- atomic ground-item scan in complete().
-			-- Skip character: a character on a platform is a PASSENGER (a player's body), never cargo.
-			-- Serializing it would recreate the body + equipped gear on the destination while the source
-			-- original is evacuated to a planet at the delete, DUPLICATING a player across instances (the
-			-- cardinal sin, Pitfalls #28/#29). Passengers are handled by Gateway.evacuate_passengers at the
-			-- source delete. (This is the ASYNC transfer/export path; the sync EntityScanner.scan_surface loop
-			-- excludes character too — keep both in lockstep.)
-			if entity and entity.valid and entity.type ~= "item-entity" and entity.type ~= "character" then
+			-- Exclude non-cargo entities (loose ground items + passengers) via the SINGLE shared predicate, so
+			-- this async transfer path and the sync EntityScanner.scan_surface cannot drift. Ground items are
+			-- captured separately WITH their payload by the atomic scan in complete(); characters are evacuated,
+			-- not copied (the cardinal-sin duplication guard — see EntityScanner.is_exportable_entity).
+			if EntityScanner.is_exportable_entity(entity) then
 				local entity_data = EntityScanner.serialize_entity(entity)
 				if entity_data then
 					table.insert(job.export_data.entities, entity_data)
