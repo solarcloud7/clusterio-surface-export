@@ -48,13 +48,26 @@ Write-Host "  host-$SourceHost -> host-$DestHost   clone: $clone" -ForegroundCol
 Write-Host ""
 
 $failed = 0
-$TOTAL_ASSERTIONS = 4
+$TOTAL_ASSERTIONS = 5
 
 # Character entities on the source instance's Nauvis (the evacuation destination).
 function Get-NauvisChars([string]$instance) {
     $lua = "local s=game.surfaces['nauvis'] rcon.print('NCHARS='..(s and s.count_entities_filtered{type='character'} or -1))"
     $raw = (Invoke-Lua -Instance $instance -Code $lua | Out-String)
     if ($raw -match 'NCHARS=(-?\d+)') { return [int]$Matches[1] }
+    return -999
+}
+
+# Character entities on a named platform's surface (the clone is uniquely timestamped, so a name lookup is
+# unambiguous at this tooling boundary). Used on the DEST to assert the aboard character was NOT duplicated
+# there: Layer 1 evacuates passengers to the SOURCE's planet, they do NOT travel with the platform. A character
+# is a passenger (a player's body), excluded from the export scan; if one appears on the dest, the export is
+# copying it AND evacuation is teleporting the source original = cross-instance duplication. Returns -1 if no
+# surface with that platform name exists.
+function Get-PlatformChars([string]$instance, [string]$name) {
+    $lua = "local c=-1 for _,s in pairs(game.surfaces) do if s.valid and s.platform and s.platform.name=='$name' then c=s.count_entities_filtered{type='character'} break end end rcon.print('PCHARS='..c)"
+    $raw = (Invoke-Lua -Instance $instance -Code $lua | Out-String)
+    if ($raw -match 'PCHARS=(-?\d+)') { return [int]$Matches[1] }
     return -999
 }
 
@@ -130,6 +143,23 @@ try {
         Write-TestResult -TestId "ev-evacuated" -TestName "Aboard character EVACUATED to Nauvis (count +$delta), not orphaned" -Status "passed"
     } else {
         Write-TestResult -TestId "ev-evacuated" -TestName "Aboard character EVACUATED to Nauvis" -Status "failed" -Message "Nauvis char delta=$delta (expected >=1) — the aboard character was lost with the deleted surface (no evacuation)"
+        $failed++
+    }
+
+    # ---- E) the character must NOT also be DUPLICATED onto the destination (Layer 1: passengers don't travel) ----
+    # Litmus for the cross-instance duplication the export scan would otherwise cause (character serialized →
+    # recreated on dest AND evacuated to source-Nauvis). The dest platform must have ZERO characters.
+    if ($dstPresent) {
+        $dstChars = Get-PlatformChars $dstInstance $clone
+        Write-Status "Destination platform characters: $dstChars (must be 0 — passenger evacuated to source, not transported)" -Type info
+        if ($dstChars -eq 0) {
+            Write-TestResult -TestId "ev-no-dup" -TestName "Aboard character NOT duplicated onto destination (dest char count = 0)" -Status "passed"
+        } else {
+            Write-TestResult -TestId "ev-no-dup" -TestName "Aboard character NOT duplicated onto destination" -Status "failed" -Message "dest platform has $dstChars character(s) — the passenger was COPIED to the dest AND evacuated to source-Nauvis (cross-instance duplication)"
+            $failed++
+        }
+    } else {
+        Write-TestResult -TestId "ev-no-dup" -TestName "Aboard character NOT duplicated onto destination" -Status "failed" -Message "dest platform not present — cannot check for duplication"
         $failed++
     }
 

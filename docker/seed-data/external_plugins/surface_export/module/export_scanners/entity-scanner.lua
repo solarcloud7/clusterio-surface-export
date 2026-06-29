@@ -22,7 +22,13 @@ function EntityScanner.scan_surface(surface)
 
   local sortable_entities = {}
   for _, entity in pairs(entities) do
-    if entity.valid and entity.type ~= "item-entity" then
+    -- Exclude item-entity (items-on-ground are scanned separately below) AND character. A character on a
+    -- platform is a PASSENGER — a player's body, never cargo. Serializing it would recreate the body (and its
+    -- equipped armor/weapons) on the destination while the source original is evacuated to a planet at the
+    -- transfer delete, DUPLICATING a player + gear across instances — the cardinal sin (Pitfalls #28/#29), and
+    -- the strict gate is blind to it. Passengers are handled by Gateway.evacuate_passengers at the source
+    -- delete, never copied. (Corpses stay included: they are not evacuated, so copying = relocation, no dup.)
+    if entity.valid and entity.type ~= "item-entity" and entity.type ~= "character" then
       table.insert(sortable_entities, entity)
     end
   end

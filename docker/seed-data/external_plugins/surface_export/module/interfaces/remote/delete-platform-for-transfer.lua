@@ -39,11 +39,21 @@ local function delete_platform_for_transfer(platform_name, force_name)
     return "ERROR:Platform not found: " .. tostring(platform_name)
   end
 
-  -- Evacuate BEFORE deleting — players/characters must be off the surface before it is torn down.
-  Gateway.evacuate_passengers(platform)
+  -- Evacuate BEFORE deleting — players/characters must be off the surface before it is torn down. GUARDED
+  -- (symmetric with the unlock above): an evacuation throw must NEVER abort the delete. If it did, the source
+  -- would survive while the destination copy is already committed = a DUPLICATED platform (two-phase-commit
+  -- violation, Pitfalls #28/#29). Orphan-avoidance is best-effort; never deleting the source is the worse sin.
+  GameUtils.pcall_warn("[DeleteForTransfer] evacuate '" .. tostring(platform_name) .. "'", function()
+    Gateway.evacuate_passengers(platform)
+  end)
 
   -- Version-correct teardown (game.delete_surface under the hood; raw platform.destroy() is a no-op at 2.0.76).
-  local deleted = GameUtils.delete_platform(platform)
+  -- GUARDED so a delete throw returns the "ERROR:<reason>" contract the instance plugin parses, not a raw Lua
+  -- error that escapes remote.call and leaves the caller with no usable result.
+  local ok, deleted = pcall(function() return GameUtils.delete_platform(platform) end)
+  if not ok then
+    return "ERROR:delete_platform failed: " .. tostring(deleted)
+  end
   if deleted then
     game.print(string.format("[Transfer Complete] Platform '%s' transferred and deleted from source", platform_name), {0, 1, 0})
     return "SUCCESS"

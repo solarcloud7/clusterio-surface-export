@@ -76,8 +76,9 @@ end
 --- (catches a connected pilot AND a disconnected player still standing on it), and
 --- `surface.count_entities_filtered{type="character"}` catches abandoned character bodies with no player.
 --- A remote-view watcher has surface_index == the platform but NOT physical_surface_index → NOT a passenger.
---- This is the safety-critical input to the passenger HARD BLOCK (see transfer-trigger.lua / gateway-guard.lua),
---- so it lives here, shared by the backend block, the chooser GUI, and the guard — one source of truth.
+--- This is the input to the passenger COUNT shown in the chooser GUI and the list Gateway.evacuate_passengers
+--- teleports off before a transfer deletes the surface (passengers are EVACUATED, never blocked) — one source
+--- of truth, shared by the GUI display and the delete-time evacuation.
 --- @param platform LuaSpacePlatform|nil
 --- @return table players (array of LuaPlayer bodily aboard), number character_count
 function Gateway.collect_passengers(platform)
@@ -187,13 +188,16 @@ function Gateway.evacuate_passengers(platform)
 	pcall(function() chars = surface.find_entities_filtered{ type = "character" } end)
 	for _, char in ipairs(chars) do
 		if char and char.valid then
-			local ok, err = pcall(function() char.teleport(safe_pos(char.name), dest) end)
-			if ok then
+			-- Return the teleport boolean so a FAILED placement (no room) is counted as a failure, not a
+			-- phantom success — matching the player branch above. Without the `return`, a character the engine
+			-- refuses to place is logged as evacuated and then destroyed with the surface (silent loss).
+			local ok, moved = pcall(function() return char.teleport(safe_pos(char.name), dest) end)
+			if ok and moved then
 				result.characters = result.characters + 1
 			else
 				result.failures = result.failures + 1
-				log(string.format("[Gateway] evacuate: teleport abandoned character off '%s' failed: %s",
-					tostring(platform.name), tostring(err)))
+				log(string.format("[Gateway] evacuate: teleport abandoned character off '%s' failed (ok=%s): %s",
+					tostring(platform.name), tostring(ok), tostring(moved)))
 			end
 		end
 	end
