@@ -241,6 +241,11 @@ jobs:
         run: |
           ./tests/integration/force-bonus-sync/run-tests.ps1
 
+      - name: Run Gateway Guard Self-Test
+        shell: pwsh
+        run: |
+          ./tests/integration/gateway-guard/run-tests.ps1
+
       - name: Run Gateway Transfer Test
         shell: pwsh
         run: |

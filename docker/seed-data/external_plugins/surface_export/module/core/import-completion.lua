@@ -497,8 +497,17 @@ function ImportCompletion.run_phase2(job)
 				local tp = job.target_platform
 				-- Unlock the gateway for the platform's force first (a force created after the startup
 				-- discover_and_unlock pass wouldn't have it; placement needs a reachable location).
-				pcall(function() tp.force.unlock_space_location(job.gateway_target) end)
+				-- Log on failure: this unlock is a PREREQUISITE for the space_location write below, so a
+				-- silent failure here surfaces only as a mysterious "Park INCOMPLETE / location unreachable"
+				-- with no root cause. (No data loss either way — pause-first keeps the platform safe.)
+				local ok_unlock, err_unlock = pcall(function() tp.force.unlock_space_location(job.gateway_target) end)
+				if not ok_unlock then
+					log(string.format("[Gateway] unlock_space_location('%s') failed before park for %s: %s",
+						tostring(job.gateway_target), tostring(job.platform_name), tostring(err_unlock)))
+				end
 				-- Pause FIRST so a placement throw leaves it safely parked-paused, not flying the stripped route.
+				-- pcall:allow — err_pause and err_loc are BOTH logged jointly in the else branch below; the
+				-- pcall-logging linter's scan just stops at the adjacent pcall on the next line and can't see it.
 				local ok_pause, err_pause = pcall(function() tp.paused = true end)
 				local ok_loc, err_loc = pcall(function() tp.space_location = job.gateway_target end)
 				if ok_pause and ok_loc then

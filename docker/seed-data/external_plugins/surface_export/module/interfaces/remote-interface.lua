@@ -23,6 +23,7 @@ local test_import_entity = require("modules/surface_export/interfaces/remote/tes
 local test_runner = require("modules/surface_export/interfaces/remote/test-runner")
 local clone_platform = require("modules/surface_export/interfaces/remote/clone-platform")
 local version_selftest = require("modules/surface_export/interfaces/remote/version-selftest")
+local gateway_selftest = require("modules/surface_export/interfaces/remote/gateway-selftest")
 
 -- Expose functions for direct Lua access (not just remote interface)
 RemoteInterface.export_platform = export_platform
@@ -40,6 +41,7 @@ RemoteInterface.test_import_entity = test_import_entity
 RemoteInterface.test_runner = test_runner
 RemoteInterface.clone_platform = clone_platform
 RemoteInterface.version_selftest = version_selftest
+RemoteInterface.gateway_selftest = gateway_selftest
 
 -- JSON-wrapped versions for RCON access
 RemoteInterface.get_export_json = Base.json_wrap(get_export)
@@ -83,6 +85,8 @@ function RemoteInterface.register()
     clone_platform_json = Base.json_wrap(clone_platform),
     version_selftest = version_selftest,
     version_selftest_json = Base.json_wrap(version_selftest),
+    gateway_selftest = gateway_selftest,
+    gateway_selftest_json = Base.json_wrap(gateway_selftest),
   })
 end
 

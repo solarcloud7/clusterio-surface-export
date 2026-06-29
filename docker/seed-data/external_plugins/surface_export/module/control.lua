@@ -14,6 +14,7 @@ local Commands = require("modules/surface_export/interfaces/commands")
 local AsyncProcessor = require("modules/surface_export/core/async-processor")
 local SurfaceLock = require("modules/surface_export/utils/surface-lock")
 local TransactionDashboard = require("modules/surface_export/interfaces/gui/transaction-dashboard")
+local GatewayTransferGui = require("modules/surface_export/interfaces/gui/gateway-transfer")
 local Gateway = require("modules/surface_export/core/gateway")
 local GameUtils = require("modules/surface_export/utils/game-utils")
 
@@ -127,15 +128,34 @@ SurfaceExportModule.events = {
 		elseif platform.state == sps.waiting_at_station then
 			storage.platform_flight_data[platform.name] = nil
 
-			-- Gateway arrival detection: did the platform just park at a gateway? Detect + log only;
-			-- it never triggers a transfer (that is the explicit /gateway-transfer command; 1b opens
-			-- an on-arrival GUI here). Uses the shared parked_at_gateway predicate.
+			-- Gateway arrival detection: did the platform just park at a gateway? Detect + log, and (if the
+			-- gateway has configured destinations) open the on-arrival chooser GUI for everyone VIEWING this
+			-- platform. The arrival itself NEVER fires a transfer — that is the player's explicit Transfer
+			-- click inside the GUI (a separate tick, outside this state-change). Uses the shared predicate.
 			local gw_name = Gateway.parked_at_gateway(platform)
 			if gw_name then
 				log(string.format("[Gateway] Platform '%s' (force '%s') arrived at gateway '%s'",
 					tostring(platform.name),
 					tostring(platform.force and platform.force.name or "?"),
 					gw_name))
+
+				local cfg = storage.surface_export_config
+					and storage.surface_export_config.gateways
+					and storage.surface_export_config.gateways[gw_name]
+				if cfg and cfg.targets and #cfg.targets > 0 then
+					local surf_idx = platform.surface.index
+					for _, player in pairs(game.connected_players) do
+						-- intentional probe; a surface_index read failure just means this player doesn't get
+						-- the arrival chooser (no state/data impact), and the GUI-open below is itself
+						-- pcall_warn-logged — so skipping silently here is the correct, harmless fallback.
+						local ok, si = pcall(function() return player.surface_index end)
+						if ok and si == surf_idx then
+							GameUtils.pcall_warn("[Gateway] open arrival chooser", function()
+								GatewayTransferGui.open(player, platform, gw_name)
+							end)
+						end
+					end
+				end
 			end
 		end
 
@@ -149,13 +169,15 @@ SurfaceExportModule.events = {
 		end)
 	end,
 
-	-- GUI events for transaction dashboard
+	-- GUI events — routed to every plugin GUI; each acts only on its own elements.
 	[e.on_gui_click] = function(event)
 		TransactionDashboard.on_gui_click(event)
+		GatewayTransferGui.on_gui_click(event)
 	end,
 
 	[e.on_gui_closed] = function(event)
 		TransactionDashboard.on_gui_closed(event)
+		GatewayTransferGui.on_gui_closed(event)
 	end,
 }
 
