@@ -189,72 +189,13 @@ jobs:
           sleep 10
           $CTL instance list
 
-      - name: Run Entity Roundtrip Tests
-        shell: pwsh
-        run: |
-          ./tests/integration/entity-roundtrip/run-tests.ps1
-
-      - name: Run Platform Roundtrip Tests
-        shell: pwsh
-        run: |
-          ./tests/integration/platform-roundtrip/run-tests.ps1 -ShowDetails
-
-      # Last: a supplementary engine-behavior probe. Kept after the roundtrip suites so a timing-
-      # sensitive invariant check can't gate the primary transfer tests from running.
-      - name: Run Engine Invariant Tests
-        shell: pwsh
-        run: |
-          ./tests/integration/engine-invariants/run-tests.ps1
-
-      - name: Run Rollback Safety Test
-        shell: pwsh
-        run: |
-          ./tests/integration/rollback/run-tests.ps1
-
-      - name: Run Failed-Entity-Loss Attribution Test
-        shell: pwsh
-        run: |
-          ./tests/integration/failed-entity-loss/run-tests.ps1
-
-      - name: Run Ground-Item Fidelity Test
-        shell: pwsh
-        run: |
-          ./tests/integration/ground-item-fidelity/run-tests.ps1
-
-      - name: Run Active-State Roundtrip Test
-        shell: pwsh
-        run: |
-          ./tests/integration/active-state-roundtrip/run-tests.ps1
-
-      - name: Run Strict-Gate Loss Detection Test
-        shell: pwsh
-        run: |
-          ./tests/integration/gate-detects-loss/run-tests.ps1
-
-      - name: Run Transfer Fidelity Sentinel
-        shell: pwsh
-        run: |
-          ./tests/integration/transfer-fidelity/run-tests.ps1
-
-      - name: Run Force-Bonus Sync Test
-        shell: pwsh
-        run: |
-          ./tests/integration/force-bonus-sync/run-tests.ps1
-
-      - name: Run Gateway Guard Self-Test
-        shell: pwsh
-        run: |
-          ./tests/integration/gateway-guard/run-tests.ps1
-
-      - name: Run Gateway Transfer Test
-        shell: pwsh
-        run: |
-          ./tests/integration/gateway-transfer/run-tests.ps1
-
-      - name: Run Passenger Evacuate Test
-        shell: pwsh
-        run: |
-          ./tests/integration/passenger-evacuate/run-tests.ps1
+      # One auto-discovering runner over tests/integration/*/run-tests.{ps1,mjs} — the dir set is the single
+      # source of truth, so adding a test dir auto-wires it here (no per-test step to maintain; this replaced
+      # ~13 hand-listed steps that had already drifted — version-dispatch/name-collision-delete were missing).
+      # Node spawns pwsh for the .ps1 tests (ubuntu-latest ships both); each test's output folds under
+      # ::group:: in the log. Runs everything, then fails the job if any test failed.
+      - name: Run integration suite
+        run: node tools/run-integration-tests.mjs
 
       - name: Collect logs on failure
         if: failure()
