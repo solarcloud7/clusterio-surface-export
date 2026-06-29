@@ -34,41 +34,13 @@ local COLOR_WARN = {r = 1.0, g = 0.5, b = 0.4}
 -- Passenger detection (the safety-critical inputs — verified on 2.0.76)
 -- ============================================================================
 
---- Players + character entities currently aboard a platform (its own surface). Two complementary signals:
----   • a player is BODILY aboard iff player.physical_surface_index == platform.surface.index (catches a
----     CONNECTED pilot AND a DISCONNECTED player still standing on the platform), and
----   • surface.count_entities_filtered{type="character"} catches abandoned character bodies with no player.
---- A remote-view watcher has surface_index == the platform but NOT physical_surface_index, so it is NOT a
---- passenger — it can safely trigger the transfer (and is the natural chooser recipient).
+--- Passenger detection (the safety-critical input) lives in core/gateway.lua as the single source of
+--- truth — shared by this chooser, the guard, AND the backend HARD BLOCK in transfer-trigger.lua, so a
+--- transfer started by any path is gated by the SAME check. Thin delegate kept for call-site readability.
 --- @param platform LuaSpacePlatform
 --- @return table players (array of LuaPlayer bodily aboard), number character_count
 function GatewayTransferGui.collect_passengers(platform)
-	local players = {}
-	if not (platform and platform.valid and platform.surface and platform.surface.valid) then
-		return players, 0
-	end
-	local surf_idx = platform.surface.index
-	for _, player in pairs(game.players) do
-		-- intentional probe; reading physical_surface_index can fail for an odd/transient player state,
-		-- and skipping that player is the correct fallback (they're simply not counted aboard). No log.
-		local ok, psi = pcall(function() return player.physical_surface_index end)
-		if ok and psi == surf_idx then
-			players[#players + 1] = player
-		end
-	end
-	-- The surface is validated at function entry, so count_entities_filtered should SUCCEED. If it throws,
-	-- this is a safety check (passenger detection) — do NOT swallow it: log so a real failure is visible
-	-- rather than silently reporting "nobody aboard". The 0 fallback is acceptable because the per-player
-	-- physical_surface_index loop above is the primary signal; blocking every transfer on a phantom engine
-	-- error would be worse than relying on it.
-	local ok_c, char_count = pcall(function()
-		return platform.surface.count_entities_filtered{type = "character"}
-	end)
-	if not ok_c then
-		log(string.format("[GatewayTransfer] collect_passengers: count_entities_filtered{character} failed for platform '%s': %s",
-			tostring(platform.name), tostring(char_count)))
-	end
-	return players, (ok_c and char_count) or 0
+	return Gateway.collect_passengers(platform)
 end
 
 -- ============================================================================

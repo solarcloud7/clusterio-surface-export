@@ -71,6 +71,42 @@ function Gateway.parked_at_gateway(platform)
 	return nil
 end
 
+--- Players + character entities currently aboard a platform (on its own surface). Two complementary
+--- signals: a player is BODILY aboard iff `player.physical_surface_index == platform.surface.index`
+--- (catches a connected pilot AND a disconnected player still standing on it), and
+--- `surface.count_entities_filtered{type="character"}` catches abandoned character bodies with no player.
+--- A remote-view watcher has surface_index == the platform but NOT physical_surface_index → NOT a passenger.
+--- This is the safety-critical input to the passenger HARD BLOCK (see transfer-trigger.lua / gateway-guard.lua),
+--- so it lives here, shared by the backend block, the chooser GUI, and the guard — one source of truth.
+--- @param platform LuaSpacePlatform|nil
+--- @return table players (array of LuaPlayer bodily aboard), number character_count
+function Gateway.collect_passengers(platform)
+	local players = {}
+	if not (platform and platform.valid and platform.surface and platform.surface.valid) then
+		return players, 0
+	end
+	local surf_idx = platform.surface.index
+	for _, player in pairs(game.players) do
+		-- intentional probe; reading physical_surface_index can fail for an odd/transient player state,
+		-- and skipping that player is the correct fallback (they're simply not counted aboard). No log.
+		local ok, psi = pcall(function() return player.physical_surface_index end)
+		if ok and psi == surf_idx then
+			players[#players + 1] = player
+		end
+	end
+	-- The surface is validated above, so count_entities_filtered should SUCCEED. If it throws, this is a
+	-- safety check — do NOT swallow it: log so a real failure is visible rather than silently reporting
+	-- "nobody aboard". The 0 fallback is acceptable because the per-player loop above is the primary signal.
+	local ok_c, char_count = pcall(function()
+		return platform.surface.count_entities_filtered{type = "character"}
+	end)
+	if not ok_c then
+		log(string.format("[Gateway] collect_passengers: count_entities_filtered{character} failed for platform '%s': %s",
+			tostring(platform.name), tostring(char_count)))
+	end
+	return players, (ok_c and char_count) or 0
+end
+
 --- Return a copy of schedule_payload with EVERY gateway-station record removed, carrying `current`
 --- FORWARD to the record that followed the gateway (NOT reset to 1) so a resumed itinerary continues
 --- rather than re-travelling an already-visited stop. Schedules are cyclic, so a gateway in the last

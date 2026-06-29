@@ -58,7 +58,7 @@ Write-Host "  host-$SourceHost -> host-$DestHost   gateway: $Gateway   clone: $c
 Write-Host ""
 
 $failed = 0
-$TOTAL_ASSERTIONS = 9
+$TOTAL_ASSERTIONS = 10
 $normClone = $null   # 2nd clone (normal-transfer regression); cleaned in finally
 
 # Physical entity count on a named platform (independent of any validator self-report).
@@ -120,8 +120,26 @@ try {
     $srcEnt = Get-EntityCount $srcInstance $clone
     Write-Status "Source entity count: $srcEnt" -Type info
 
-    # ---- Fire /gateway-transfer to the destination. ----
     $destId = Get-ClusterioInstanceId -InstanceName $dstInstance
+
+    # ---- SAFETY: a passenger aboard must BLOCK the transfer (source left UNTOUCHED) ----
+    # The hard block lives in the shared TransferTrigger.start backend, so /gateway-transfer is gated too
+    # (not just the GUI). A character on the platform surface => collect_passengers > 0 => start refuses
+    # BEFORE locking. Assert the protective route ran: source still present AND never even locked.
+    Invoke-Lua -Instance $srcInstance -Code "local p=game.forces['player'].platforms[$idx] local e=p.surface.create_entity{name='character', position={0,0}} rcon.print(e and 'spawned' or 'fail')" | Out-Null
+    Send-Rcon -Instance $srcInstance -Command "/gateway-transfer $idx $destId" | Out-Null
+    Start-Sleep -Seconds 6
+    $blockState = (Invoke-Lua -Instance $srcInstance -Code "local present=false for _,q in pairs(game.forces['player'].platforms or {}) do if q.name=='$clone' then present=true end end rcon.print('PRESENT='..tostring(present)..' LOCKED='..tostring((storage.locked_platforms or {})['$clone'] ~= nil))" | Out-String)
+    # Despawn so the real transfer below is passenger-free.
+    Invoke-Lua -Instance $srcInstance -Code "local p=game.forces['player'].platforms[$idx] if p and p.valid then for _,c in pairs(p.surface.find_entities_filtered{type='character'}) do c.destroy() end end rcon.print('despawned')" | Out-Null
+    if ($blockState -match 'PRESENT=true' -and $blockState -match 'LOCKED=false') {
+        Write-TestResult -TestId "gw-passenger-block" -TestName "Passenger aboard BLOCKS the transfer in the shared backend (source untouched, never locked)" -Status "passed"
+    } else {
+        Write-TestResult -TestId "gw-passenger-block" -TestName "Passenger aboard BLOCKS the transfer" -Status "failed" -Message "expected PRESENT=true LOCKED=false (refused before lock); got: $blockState"
+        $failed++
+    }
+
+    # ---- Fire /gateway-transfer to the destination (now passenger-free). ----
     docker exec $dstContainer sh -c "rm -f $dstScriptOut/debug_import_result_${clone}_*.json 2>/dev/null" 2>$null | Out-Null
     Send-Rcon -Instance $srcInstance -Command "/gateway-transfer $idx $destId" | Out-Null
     Write-Status "/gateway-transfer $idx $destId fired (waiting for destination import)..." -Type info

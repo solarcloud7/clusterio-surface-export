@@ -7,6 +7,7 @@
 
 local AsyncProcessor = require("modules/surface_export/core/async-processor")
 local SurfaceLock = require("modules/surface_export/utils/surface-lock")
+local Gateway = require("modules/surface_export/core/gateway")
 local clusterio_api = require("modules/clusterio/api")
 
 local TransferTrigger = {}
@@ -33,6 +34,23 @@ function TransferTrigger.start(force, platform_index, dest_instance_id, gateway_
 
 	local platform_name = platform.name
 	local force_name = force.name
+
+	-- Passenger HARD BLOCK (the safety floor) — enforced HERE, the one backend every start path funnels
+	-- through (/transfer-platform, /gateway-transfer, the on-arrival GUI), NOT just in the GUI. A successful
+	-- transfer deletes the source surface (game.delete_surface) out from under anyone bodily aboard, orphaning
+	-- them — and at a surfaceless gateway they cannot even disembark. Checked BEFORE the lock so a refused
+	-- transfer leaves the platform completely untouched. Applies to ALL transfers, not only gateway ones.
+	local aboard_players, aboard_characters = Gateway.collect_passengers(platform)
+	local passenger_count = #aboard_players + aboard_characters
+	if passenger_count > 0 then
+		for _, p in ipairs(aboard_players) do
+			-- intentional probe; best-effort notify, a print failure must NOT block the safety return.
+			pcall(function()
+				p.print({"", "✗ '", platform_name, "' cannot transfer while you are aboard — leave the platform first."})
+			end)
+		end
+		return nil, string.format("%d passenger(s)/character(s) aboard — they must leave the platform before it can transfer", passenger_count)
+	end
 
 	-- Step 1: lock the source (hidden from players, paused) for the duration of the transfer.
 	local lock_ok, lock_err = SurfaceLock.lock_platform(platform, force)

@@ -403,12 +403,45 @@ export class TransferOrchestrator {
 					return { success: false, error: `${errMsg}; rollback failed: ${rollbackError}` };
 				}
 			} else {
-				// Export may have succeeded-and-locked before its name was resolvable here (a waitForStoredExport
-				// timeout). Surface it so an operator can unlock manually rather than hunt a phantom stuck platform.
-				this.logger.error(`Source platform #${sourcePlatformIndex} on instance ${sourceInstanceId} may remain LOCKED (failed before its name was known) — unlock manually if it is hidden/paused.`);
+				// Export succeeded-and-locked but threw before its name was learned (e.g. a waitForStoredExport
+				// timeout on a large/slow export — deterministic for big platforms). Recover the name by INDEX:
+				// a locked platform is hidden but still present in force.platforms, so it is still listed.
+				const recovered = await this.resolveLockedSourceName(sourceInstanceId, sourcePlatformIndex, forceName);
+				if (recovered) {
+					const rollbackError = await this.sendUnlockRequest(sourceInstanceId, recovered, forceName);
+					if (rollbackError) {
+						this.logger.error(`Rollback unlock of source '${recovered}' (resolved by index ${sourcePlatformIndex}) failed: ${rollbackError}`);
+						return { success: false, error: `${errMsg}; rollback failed: ${rollbackError}` };
+					}
+				} else {
+					// The name could not be resolved (source instance unreachable) — nothing could unlock it
+					// remotely anyway. Surface it so an operator can act once the instance is back.
+					this.logger.error(`Source platform #${sourcePlatformIndex} on instance ${sourceInstanceId} may remain LOCKED — name unresolved (instance unreachable?); unlock manually.`);
+				}
 			}
 			return { success: false, error: errMsg };
 		}
+	}
+
+	/**
+	 * Resolve a source platform's name by its per-force index via a fresh platform-list fetch. A
+	 * locked-for-transfer platform is HIDDEN but still present in force.platforms, so it is still listed —
+	 * this gives deterministic name recovery for the rollback path even when the name was never learned
+	 * up-front. Returns null only if the instance is unreachable or the index isn't present.
+	 */
+	private async resolveLockedSourceName(sourceInstanceId: number, platformIndex: number, forceName: string): Promise<string | null> {
+		try {
+			const { platforms } = await this.plugin.platformTree.requestInstancePlatforms(sourceInstanceId, forceName);
+			for (const p of platforms) {
+				const entry = p as { platformIndex?: number; platformName?: string };
+				if (Number(entry.platformIndex) === platformIndex) {
+					return typeof entry.platformName === "string" && entry.platformName ? entry.platformName : null;
+				}
+			}
+		} catch (err: unknown) {
+			this.logger.error(`resolveLockedSourceName failed for index ${platformIndex} on instance ${sourceInstanceId}: ${getErrorMessage(err)}`);
+		}
+		return null;
 	}
 
 	/**

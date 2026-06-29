@@ -1303,6 +1303,7 @@ export interface IControllerPlugin {
 		resolveInstanceName: (instanceId: number) => string | null;
 		buildPlatformTree: (forceName?: string) => Promise<{ hosts: unknown[]; unassignedInstances: unknown[] }>;
 		resolveTargetInstance: (target: unknown) => { id: number; instance: unknown } | null;
+		requestInstancePlatforms: (instanceId: number, forceName?: string) => Promise<{ platforms: Array<Record<string, unknown>>; error: string | null }>;
 	};
 	platformDepartureTimes: Map<string, number>;
 	activeTransfers: Map<string, ActiveTransfer>;
