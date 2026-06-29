@@ -147,6 +147,11 @@ The plugin uses **TypeScript** with bind-mounted source and **save patching** fo
 # Transfer a platform between instances (then prints post-transfer state):
 ./tools/transfer-platform.ps1 -PlatformIndex <idx> -Direction 2to1   # or 1to2
 
+# Run the WHOLE integration suite (auto-discovers tests/integration/*/run-tests.{ps1,mjs}; cluster must be
+# UP). One source of truth — also the single CI step. Node spawns pwsh per .ps1 test (macOS: brew install
+# powershell). Filter with --only <regex>; dry-run with --list.
+node tools/run-integration-tests.mjs                 # or:  --only 'gateway' / --skip 'fidelity' / --list
+
 # Status / listing:
 ./tools/show-cluster-status.ps1
 ./tools/list-platforms.ps1
@@ -276,6 +281,7 @@ tools/                    # (run `ls tools/` for the full set)
 ├── check-cluster-logs.ps1# Dump plugin/factorio logs from where they actually live (JSON files)
 ├── transfer-platform.ps1 # Transfer a platform between instances
 ├── show-cluster-status.ps1 # Cluster health/status
+├── run-integration-tests.mjs # Auto-discovering integration-test runner (the single CI step); Node spawns pwsh per .ps1 test
 └── rebuild-clusterio.ps1 # Build the SIBLING Clusterio fork + run the cluster on it (see "Clusterio Core Development")
 
 docker/
