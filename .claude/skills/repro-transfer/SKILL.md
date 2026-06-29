@@ -55,7 +55,7 @@ Where it stops = the layer at fault:
 - `validation_received: FAILED` → real item/fluid mismatch. Read `[Loss Analysis]` / `[Validation]` in the destination factorio log.
 
 ## What the driver does (manual equivalent, for one-off control)
-1. Clone a realistic source by NAME (async): `remote.call('surface_export','clone_platform','test','<newname>')` on the source host, then wait for `storage.async_jobs` to drain. Prefer the real `test` platform (host-2, ~1359 entities, has a schedule) — a hub-only stub has no schedule and hits a benign `Index out of bounds` on unlock/rollback that is NOT representative.
+1. Clone a realistic source (async). `clone_platform` keys the source on the unique per-force **index** (names aren't unique), so resolve the index first, then clone: `local i; for k,p in pairs(game.forces.player.platforms) do if p.name=='test' then i=k end end; remote.call('surface_export','clone_platform', i, '<newname>')` on the source host, then wait for `storage.async_jobs` to drain. Prefer the real `test` platform (host-2, ~1359 entities, has a schedule) — a hub-only stub has no schedule and hits a benign `Index out of bounds` on unlock/rollback that is NOT representative.
 2. `./tools/transfer-platform.ps1 -PlatformIndex <idx> -Direction 2to1` (or `/transfer-platform <idx> <destId>`). If "already locked" from a prior run: `./tools/rcon.ps1 21 "/unlock-platform <name>"`.
 3. Poll the destination success signal (what CI's integration test waits on):
    `docker exec surface-export-host-1 sh -c 'ls /clusterio/data/instances/clusterio-host-1-instance-1/script-output/debug_import_result_*.json'`

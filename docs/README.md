@@ -120,7 +120,7 @@ remote.call("surface_export", "get_validation_result_json", platform_name)
 remote.call("surface_export", "configure", config_table)
 
 -- Debug/testing
-remote.call("surface_export", "clone_platform", platform_index, force_name, new_name)
+remote.call("surface_export", "clone_platform", source_index, dest_name)  -- source by UNIQUE index (names collide), 2 args
 remote.call("surface_export", "test_import_entity", entity_json, surface_index, position)
 remote.call("surface_export", "run_tests")
 ```

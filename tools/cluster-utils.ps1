@@ -6,6 +6,20 @@
 
 $script:ControlConfig = "/clusterio/tokens/config-control.json"
 
+function ConvertTo-LuaLiteral {
+    <#
+    .SYNOPSIS
+        Escape a string for safe embedding inside a Lua single-quoted '...' literal.
+    .DESCRIPTION
+        RCON snippets interpolate values (e.g. platform names) into Lua source. Send-RCON passes the
+        command to `docker exec` as a single argv element — PowerShell native invocation, no shell layer —
+        so the ONLY quoting that matters is Lua's. Escape backslash first, then the single quote, so a
+        name like "Bob's Platform" can't break the literal (or inject Lua). A no-op for ordinary names.
+    #>
+    param([Parameter(Mandatory=$true)][AllowEmptyString()][string]$Value)
+    return $Value.Replace('\', '\\').Replace("'", "\'")
+}
+
 function Get-InstanceList {
     <#
     .SYNOPSIS

@@ -344,7 +344,9 @@ remote.call("surface_export", "get_validation_result_json", platform_name)  -- J
 remote.call("surface_export", "configure", config_table)
 
 -- Debug/testing:
-remote.call("surface_export", "clone_platform", platform_index, force_name, new_name)
+-- NOTE: clone_platform takes the source platform's UNIQUE per-force index + a dest name (2 args).
+-- Source is keyed on the index, not a name: platform names can collide (see /list-platforms for the index).
+remote.call("surface_export", "clone_platform", source_index, dest_name)
 remote.call("surface_export", "test_import_entity", entity_json, surface_index, position)
 remote.call("surface_export", "run_tests")
 ```
