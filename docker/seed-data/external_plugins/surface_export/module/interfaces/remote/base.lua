@@ -25,36 +25,46 @@ function Base.get_force(force_name)
   return game.forces[force_name or "player"]
 end
 
---- Find platform by name or index
+--- Find a platform by its UNIQUE index (preferred) or by display name. A purely-numeric argument is treated
+--- as the unique `platform.index` and looked up DIRECTLY in `force.platforms` (which Factorio keys by that
+--- unique index — a possibly-sparse map after deletions, NOT a positional ordinal). A non-numeric argument
+--- is matched against `platform.name`; since names are mutable + non-unique, name matching is for the
+--- interactive tooling boundary only and **fails loud on ambiguity** (≥2 matches → nil + error + log) rather
+--- than silently returning the first match. Numeric-string platform names are therefore treated as indices
+--- (the documented trade-off — emit the unique index, not the name, across boundaries).
 --- @param force LuaForce: The force to search
---- @param name_or_index string|number: Platform name or 1-based index
---- @return LuaSpacePlatform|nil: The platform or nil if not found
+--- @param name_or_index string|number: Unique platform index (preferred) or display name
+--- @return LuaSpacePlatform|nil platform, string|nil error
 function Base.find_platform(force, name_or_index)
   if not force or not force.valid then
     return nil
   end
-  
+
   local index = tonumber(name_or_index)
   if index then
-    -- Find by index (1-based)
-    local count = 0
-    for _, platform in pairs(force.platforms) do
-      if platform.valid then
-        count = count + 1
-        if count == index then
-          return platform
-        end
-      end
+    -- Direct unique-index lookup (NOT count-to-Nth — that disagreed with the index when the map is sparse).
+    local platform = force.platforms[index]
+    if platform and platform.valid then
+      return platform
     end
-  else
-    -- Find by name
-    for _, platform in pairs(force.platforms) do
-      if platform.valid and platform.name == name_or_index then
-        return platform
-      end
+    return nil
+  end
+
+  -- Name match: collect ALL matches, fail loud on ambiguity (never silent first-match on a non-unique key).
+  local match, count = nil, 0
+  for _, platform in pairs(force.platforms) do
+    if platform.valid and platform.name == name_or_index then
+      match = platform
+      count = count + 1
     end
   end
-  return nil
+  if count > 1 then
+    local err = string.format("ambiguous: %d platforms named '%s' — use the unique platform index",
+      count, tostring(name_or_index))
+    log("[Base.find_platform] " .. err)
+    return nil, err
+  end
+  return match
 end
 
 --- Standard print function that works for both player and RCON

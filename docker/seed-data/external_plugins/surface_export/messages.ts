@@ -505,6 +505,10 @@ export class PlatformExportEvent {
 		properties: {
 			exportId: { type: "string" },
 			platformName: { type: "string" },
+			// The source platform's UNIQUE index, surfaced TOP-LEVEL (compression-proof). The index lives
+			// inside exportData.platform too, but large exports are a compressed blob whose inner platform.index
+			// is unreadable controller-side — and the source delete is keyed on this index, so it must ride here.
+			platformIndex: { type: ["integer", "null"], default: null },
 			instanceId: { type: "integer" },
 			exportData: { type: "object" },
 			timestamp: { type: "number" },
@@ -516,27 +520,30 @@ export class PlatformExportEvent {
 
 	exportId: string;
 	platformName: string;
+	platformIndex: number | null;
 	instanceId: number;
 	exportData: Record<string, unknown>;
 	timestamp: number;
 	exportMetrics: ExportMetrics | null;
 
-	constructor(json: { exportId: string; platformName: string; instanceId: number; exportData: Record<string, unknown>; timestamp: number; exportMetrics?: ExportMetrics | null }) {
+	constructor(json: { exportId: string; platformName: string; platformIndex?: number | null; instanceId: number; exportData: Record<string, unknown>; timestamp: number; exportMetrics?: ExportMetrics | null }) {
 		this.exportId = json.exportId;
 		this.platformName = json.platformName;
+		this.platformIndex = Number.isInteger(json.platformIndex) ? (json.platformIndex as number) : null;
 		this.instanceId = json.instanceId;
 		this.exportData = json.exportData;
 		this.timestamp = json.timestamp;
 		this.exportMetrics = json.exportMetrics || null;
 	}
 
-	static fromJSON(json: { exportId: string; platformName: string; instanceId: number; exportData: Record<string, unknown>; timestamp: number; exportMetrics?: ExportMetrics | null }) {
+	static fromJSON(json: { exportId: string; platformName: string; platformIndex?: number | null; instanceId: number; exportData: Record<string, unknown>; timestamp: number; exportMetrics?: ExportMetrics | null }) {
 		return new PlatformExportEvent(json);
 	}
 
 	toJSON() {
 		return {
-			exportId: this.exportId, platformName: this.platformName, instanceId: this.instanceId,
+			exportId: this.exportId, platformName: this.platformName, platformIndex: this.platformIndex,
+			instanceId: this.instanceId,
 			exportData: this.exportData, timestamp: this.timestamp, exportMetrics: this.exportMetrics,
 		};
 	}
@@ -1053,23 +1060,29 @@ export class UnlockSourcePlatformRequest {
 	static jsonSchema: JsonSchema = {
 		type: "object",
 		properties: {
+			platformIndex: { type: "integer" },
 			platformName: { type: "string" },
 			forceName: { type: "string", default: "player" },
 		},
-		required: ["platformName"],
+		required: ["platformIndex"],
 		additionalProperties: false,
 	};
 
+	// Unlock keys on the unique platformIndex. platformName is OPTIONAL (defaults to "") — the rollback path
+	// may only have the index (when the stored export has timed out), and the Lua unlock recovers the display
+	// name from lock_data, so the request doesn't need it. (Delete keeps name required — it's a tripwire there.)
+	platformIndex: number;
 	platformName: string;
 	forceName: string;
 
-	constructor(json: { platformName: string; forceName?: string }) {
-		this.platformName = json.platformName;
+	constructor(json: { platformIndex: number; platformName?: string; forceName?: string }) {
+		this.platformIndex = json.platformIndex;
+		this.platformName = json.platformName || "";
 		this.forceName = json.forceName || "player";
 	}
 
-	static fromJSON(json: { platformName: string; forceName?: string }) { return new UnlockSourcePlatformRequest(json); }
-	toJSON() { return { platformName: this.platformName, forceName: this.forceName }; }
+	static fromJSON(json: { platformIndex: number; platformName?: string; forceName?: string }) { return new UnlockSourcePlatformRequest(json); }
+	toJSON() { return { platformIndex: this.platformIndex, platformName: this.platformName, forceName: this.forceName }; }
 
 	static Response = {
 		jsonSchema: { type: "object", properties: { success: { type: "boolean" }, error: { type: "string" } }, required: ["success"] } as JsonSchema,
@@ -1246,6 +1259,7 @@ export interface ActiveTransfer {
 export interface StoredExport {
 	exportId: string;
 	platformName: string;
+	platformIndex: number | null;  // source platform's unique index (top-level, compression-proof; keys the source delete)
 	instanceId: number;
 	exportData: Record<string, unknown>;
 	exportMetrics: ExportMetrics | null;

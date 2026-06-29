@@ -27,7 +27,16 @@ Base.admin_command("lock-status",
     
     -- If specific platform requested
     if param and param ~= "" then
-      local lock_data = SurfaceLock.get_lock_data(param)
+      -- Resolve the user input (name or index) to the unique platform index (the registry key); for an
+      -- orphaned lock (platform deleted) fall back to a name scan of the registry (fail-loud on ambiguity).
+      local target = Base.find_platform(ctx.force, param)
+      local lock_key = target and target.index
+      if not lock_key then
+        local key, ambiguous_err = SurfaceLock.find_lock_key_by_name(param)
+        if ambiguous_err then ctx.print(ambiguous_err); return end
+        lock_key = key
+      end
+      local lock_data = lock_key and SurfaceLock.get_lock_data(lock_key)
       if not lock_data then
         ctx.print("Platform '" .. param .. "' is not locked")
         return
@@ -49,13 +58,13 @@ Base.admin_command("lock-status",
     -- List all locked platforms
     ctx.print("Locked platforms:")
     local count = 0
-    for platform_name, lock_data in pairs(storage.locked_platforms) do
+    for platform_index, lock_data in pairs(storage.locked_platforms) do
       count = count + 1
       local age_ticks = game.tick - lock_data.locked_tick
       local age_seconds = math.floor(age_ticks / 60)
-      
-      ctx.print(string.format("  %d. %s (locked %ds ago, %d entities frozen)", 
-        count, platform_name, age_seconds, lock_data.frozen_count or 0))
+
+      ctx.print(string.format("  %d. %s (index %s, locked %ds ago, %d entities frozen)",
+        count, tostring(lock_data.platform_name), tostring(platform_index), age_seconds, lock_data.frozen_count or 0))
     end
     
     ctx.print("")

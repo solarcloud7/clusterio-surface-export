@@ -85,7 +85,7 @@ local function build_frame(player, state)
 	-- SAME rules the backend enforces (no second copy of the gate to drift here). Passengers do NOT block —
 	-- they are evacuated to a planet when the platform transfers — so the count below is an informational note.
 	local aboard_players, char_count = Gateway.collect_passengers(platform)
-	local in_flight = SurfaceLock.is_locked(platform.name)
+	local in_flight = SurfaceLock.is_locked(platform.index)
 	local decision = GatewayGuard.evaluate{
 		docked = (Gateway.parked_at_gateway(platform) == state.gateway_name),
 		in_flight = in_flight,
@@ -258,7 +258,7 @@ function GatewayTransferGui.confirm_transfer(player, state)
 	-- only docked + not-already-in-flight; the transfer fires the same backend as the commands.
 	local result = GatewayGuard.guard_and_transfer{
 		docked = (gw_now == state.gateway_name),
-		in_flight = SurfaceLock.is_locked(platform.name),
+		in_flight = SurfaceLock.is_locked(platform.index),
 		aboard_players = aboard_players,
 		aboard_characters = char_count,
 		start_fn = function()

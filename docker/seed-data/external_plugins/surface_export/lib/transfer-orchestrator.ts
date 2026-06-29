@@ -62,7 +62,7 @@ export class TransferOrchestrator {
 	 *  send (and the benign already-unlocked handling) to sendUnlockRequest; adds the tx-log breadcrumbs. */
 	async tryUnlockSource(transferId: string, transfer: ActiveTransfer) {
 		this.txLogger.logTransactionEvent(transferId, "rollback_attempt", "Unlocking source platform", {});
-		const err = await this.sendUnlockRequest(transfer.sourceInstanceId, transfer.platformName, transfer.forceName || "player");
+		const err = await this.sendUnlockRequest(transfer.sourceInstanceId, transfer.platformIndex, transfer.forceName || "player", transfer.platformName);
 		if (!err) {
 			this.txLogger.logTransactionEvent(transferId, "rollback_success", "Source platform unlocked", {});
 			return null;
@@ -87,6 +87,19 @@ export class TransferOrchestrator {
 			: {}) as { index?: number; force?: string };
 		const mergedExportMetrics = mergeExportMetrics(exportData.exportMetrics, exportMetrics);
 
+		// Source platform index — the KEY for the source delete. Prefer the TOP-LEVEL value surfaced on the
+		// stored export (compression-proof); fall back to the payload's platform.index (readable only for
+		// small, uncompressed exports). FAIL LOUD if neither is a valid index — never default to platform 1
+		// (the old `|| 1`), which the now index-keyed source delete would (correctly) refuse via its name
+		// cross-check, but which must not silently target the wrong platform if a path ever skipped the check.
+		const topLevelIndex = exportData.platformIndex;
+		const payloadIndex = Number(platformInfo.index);
+		const sourcePlatformIndex = Number.isInteger(topLevelIndex) ? (topLevelIndex as number)
+			: (Number.isInteger(payloadIndex) ? payloadIndex : null);
+		if (sourcePlatformIndex === null || sourcePlatformIndex < 1) {
+			return { success: false, error: `Transfer aborted: source platform index unavailable (top-level=${String(topLevelIndex)}, payload=${String(platformInfo.index)})` };
+		}
+
 		// Shared skeleton via the common factory. Values are pre-resolved here so the
 		// factory's defaults/guards are no-ops and the record is identical to the
 		// previous inline construction. Transfer-only fields are overlaid afterward.
@@ -95,7 +108,7 @@ export class TransferOrchestrator {
 			exportId,
 			artifactSizeBytes: exportData.size ?? null,
 			platformName: exportData.platformName || "Unknown",
-			platformIndex: Number(platformInfo.index || 1),
+			platformIndex: sourcePlatformIndex,
 			forceName: String(platformInfo.force || "player"),
 			sourceInstanceId: exportData.instanceId,
 			sourceInstanceName: this.plugin.platformTree.resolveInstanceName(exportData.instanceId),
@@ -352,8 +365,6 @@ export class TransferOrchestrator {
 			return { success: false, error: `Invalid platform index ${request.sourcePlatformIndex}` };
 		}
 
-		// Name of the source platform once it is locked-for-transfer, for rollback on a later throw.
-		let lockedSourceName: string | null = null;
 		try {
 			const t0 = Date.now();
 			const exportResponse = await this.plugin.controller.sendTo(
@@ -373,8 +384,6 @@ export class TransferOrchestrator {
 			const t1 = Date.now();
 			await this.waitForStoredExport(exportResponse.exportId);
 			const waitForStoredMs = Date.now() - t1;
-			// The stored export carries the real platform name — the key we need to unlock the source.
-			lockedSourceName = this.plugin.platformStorage.get(exportResponse.exportId)?.platformName || null;
 
 			const result = await this.transferPlatform(exportResponse.exportId, resolvedTarget.id, {
 				requestExportAndLockMs: exportRequestMs,
@@ -389,44 +398,15 @@ export class TransferOrchestrator {
 			// leave it stuck locked-and-hidden with no trace. transferPlatform's own catch self-heals its
 			// transmission failures; this covers the paths it can't.
 			this.logger.error(`Error starting transfer (source instance ${sourceInstanceId}, platform #${sourcePlatformIndex}): ${errMsg}`);
-			// Resolve the locked source's name (learned up-front from the stored export, else by INDEX from
-			// the source's platform list — a locked platform is hidden but still in force.platforms, so still
-			// listed; deterministic for the large-platform waitForStoredExport-timeout case) and unlock once.
-			const name = lockedSourceName || await this.resolveLockedSourceName(sourceInstanceId, sourcePlatformIndex, forceName);
-			if (name) {
-				const rollbackError = await this.sendUnlockRequest(sourceInstanceId, name, forceName);
-				if (rollbackError) {
-					this.logger.error(`Rollback unlock of source '${name}' failed: ${rollbackError}`);
-					return { success: false, error: `${errMsg}; rollback failed: ${rollbackError}` };
-				}
-			} else {
-				// Name unresolved (source instance unreachable) — nothing could unlock it remotely anyway.
-				// Surface it so an operator can act once the instance is back.
-				this.logger.error(`Source platform #${sourcePlatformIndex} on instance ${sourceInstanceId} may remain LOCKED — name unresolved (instance unreachable?); unlock manually.`);
+			// Unlock the source by its UNIQUE index — we have it up-front from the request (no name resolution
+			// needed now that the lock registry is index-keyed). Benign if it was never locked.
+			const rollbackError = await this.sendUnlockRequest(sourceInstanceId, sourcePlatformIndex, forceName);
+			if (rollbackError) {
+				this.logger.error(`Rollback unlock of source #${sourcePlatformIndex} failed: ${rollbackError}`);
+				return { success: false, error: `${errMsg}; rollback failed: ${rollbackError}` };
 			}
 			return { success: false, error: errMsg };
 		}
-	}
-
-	/**
-	 * Resolve a source platform's name by its per-force index via a fresh platform-list fetch. A
-	 * locked-for-transfer platform is HIDDEN but still present in force.platforms, so it is still listed —
-	 * this gives deterministic name recovery for the rollback path even when the name was never learned
-	 * up-front. Returns null only if the instance is unreachable or the index isn't present.
-	 */
-	private async resolveLockedSourceName(sourceInstanceId: number, platformIndex: number, forceName: string): Promise<string | null> {
-		try {
-			const { platforms } = await this.plugin.platformTree.requestInstancePlatforms(sourceInstanceId, forceName);
-			for (const p of platforms) {
-				const entry = p as { platformIndex?: number; platformName?: string };
-				if (Number(entry.platformIndex) === platformIndex) {
-					return typeof entry.platformName === "string" && entry.platformName ? entry.platformName : null;
-				}
-			}
-		} catch (err: unknown) {
-			this.logger.error(`resolveLockedSourceName failed for index ${platformIndex} on instance ${sourceInstanceId}: ${getErrorMessage(err)}`);
-		}
-		return null;
 	}
 
 	/**
@@ -434,11 +414,12 @@ export class TransferOrchestrator {
 	 * not-locked cases, which are benign), or an error string. Shared by the rollback paths so a thrown
 	 * transfer step can never leave the source stuck locked-and-hidden.
 	 */
-	private async sendUnlockRequest(sourceInstanceId: number, platformName: string, forceName: string): Promise<string | null> {
+	private async sendUnlockRequest(sourceInstanceId: number, platformIndex: number, forceName: string, platformName = ""): Promise<string | null> {
+		if (!Number.isInteger(platformIndex)) return `invalid platformIndex: ${String(platformIndex)}`;
 		try {
 			const resp = await this.plugin.controller.sendTo(
 				{ instanceId: sourceInstanceId },
-				new this.messages.UnlockSourcePlatformRequest({ platformName, forceName }),
+				new this.messages.UnlockSourcePlatformRequest({ platformIndex, platformName, forceName }),
 			);
 			if (resp?.success) return null;
 			const err = resp?.error || "Unknown unlock error";
@@ -464,10 +445,10 @@ export class TransferOrchestrator {
 			this.logger.error(`Error transferring export ${request.exportId}: ${errMsg}`);
 			const stored = this.plugin.platformStorage.get(request.exportId);
 			const force = String((stored?.exportData as { platform?: { force?: string } } | undefined)?.platform?.force || "player");
-			if (stored?.platformName) {
-				const rollbackError = await this.sendUnlockRequest(stored.instanceId, stored.platformName, force);
+			if (stored && Number.isInteger(stored.platformIndex)) {
+				const rollbackError = await this.sendUnlockRequest(stored.instanceId, stored.platformIndex as number, force, stored.platformName);
 				if (rollbackError) {
-					this.logger.error(`Rollback unlock of source '${stored.platformName}' failed: ${rollbackError}`);
+					this.logger.error(`Rollback unlock of source #${stored.platformIndex} ('${stored.platformName}') failed: ${rollbackError}`);
 				}
 			}
 			return { success: false, error: errMsg };

@@ -149,18 +149,20 @@ export class LuaInterface {
 	 * in one remote (a) makes evacuation atomic with the delete and (b) fixes the prior inline-RCON that
 	 * bypassed GameUtils.delete_platform.
 	 */
-	async deleteSourcePlatform(platformName: string, forceName: string): Promise<string> {
+	async deleteSourcePlatform(platformIndex: number, platformName: string, forceName: string): Promise<string> {
+		// Resolve+delete by the UNIQUE index (emitted unquoted → a Lua number); the name is passed as a
+		// cross-check tripwire (the Lua remote refuses to delete if force.platforms[index].name ≠ this name).
 		return this.host.sendRcon(
 			`/sc rcon.print(remote.call("surface_export", "delete_platform_for_transfer", ` +
-			`"${escapeString(platformName)}", "${escapeString(forceName)}"))`,
+			`${Math.trunc(platformIndex)}, "${escapeString(platformName)}", "${escapeString(forceName)}"))`,
 		);
 	}
 
-	/** Unlock a platform via the remote interface. Returns RAW "SUCCESS" / "ERROR:<reason>". */
-	async unlockPlatform(platformName: string): Promise<string> {
+	/** Unlock a platform via the remote interface (keyed by the unique index). Returns RAW "SUCCESS" / "ERROR:<reason>". */
+	async unlockPlatform(platformIndex: number): Promise<string> {
 		return this.host.sendRcon(
 			`/sc ` +
-			`local success, err = remote.call("surface_export", "unlock_platform", "${escapeString(platformName)}"); ` +
+			`local success, err = remote.call("surface_export", "unlock_platform", ${Math.trunc(platformIndex)}); ` +
 			`if success then ` +
 			`    rcon.print("SUCCESS"); ` +
 			`else ` +
@@ -169,11 +171,11 @@ export class LuaInterface {
 		);
 	}
 
-	/** Fire-and-forget unlock via the SurfaceLock util directly (the transfer-failure rollback path). */
-	async unlockViaSurfaceLock(platformName: string): Promise<void> {
+	/** Fire-and-forget unlock via the SurfaceLock util directly (the transfer-failure rollback path), by index. */
+	async unlockViaSurfaceLock(platformIndex: number): Promise<void> {
 		await this.host.sendRcon(
 			`/sc local SurfaceLock = require("modules/surface_export/utils/surface-lock"); ` +
-			`SurfaceLock.unlock_platform("${escapeString(platformName)}")`,
+			`SurfaceLock.unlock_platform(${Math.trunc(platformIndex)})`,
 		);
 	}
 

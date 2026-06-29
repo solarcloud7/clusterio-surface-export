@@ -79,7 +79,7 @@ local function list_platforms(force_name)
         surface_index = surface_index,
         surface_name = surface_name,
         entity_count = entity_count,
-        is_locked = SurfaceLock.is_locked(platform.name),
+        is_locked = SurfaceLock.is_locked(platform.index),
         has_space_hub = has_space_hub,
         space_location = space_location_name,
         current_target = current_target_name,

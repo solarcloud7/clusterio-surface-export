@@ -207,10 +207,14 @@ export class InstancePlugin extends BaseInstancePlugin {
 				return;
 			}
 
-			// Send export to controller for storage
+			// Send export to controller for storage. Surface the source platform's unique index TOP-LEVEL
+			// (the export-complete payload carries it as data.platform_index) so it survives even when the
+			// export body is a compressed blob — the source delete is keyed on it.
+			const sourcePlatformIndex = Number(data.platform_index);
 			await this.i.sendTo("controller", new messages.PlatformExportEvent({
 				exportId,
 				platformName: String(data.platform_name || ""),
+				platformIndex: Number.isInteger(sourcePlatformIndex) ? sourcePlatformIndex : null,
 				instanceId: this.i.id,
 				exportData: exportData,
 				timestamp: Date.now(),
@@ -270,8 +274,14 @@ export class InstancePlugin extends BaseInstancePlugin {
 				} else {
 					this.logger.error(`Transfer failed: ${transferResponse.error}`);
 
-					// Unlock platform on failure
-					await this.lua.unlockViaSurfaceLock(String(data.platform_name || ""));
+					// Unlock the source on failure, by its unique index (pendingTransfer carries it from the
+					// transfer request). Guard: only unlock when we actually have a valid index.
+					const idx = this.pendingTransfer.platform_index;
+					if (Number.isInteger(idx)) {
+						await this.lua.unlockViaSurfaceLock(idx as number);
+					} else {
+						this.logger.warn("Cannot unlock after failed transfer — pendingTransfer has no valid platform_index");
+					}
 				}
 
 				// Clear pending transfer
@@ -778,11 +788,21 @@ export class InstancePlugin extends BaseInstancePlugin {
 	/**
 	 * Handle delete source platform request
 	 */
-	async handleDeleteSourcePlatform(request: { platformName: string; forceName?: string }) {
-		this.logger.info(`Deleting source platform: ${request.platformName}`);
+	async handleDeleteSourcePlatform(request: { platformIndex: number; platformName: string; forceName?: string }) {
+		const platformIndex = Number(request.platformIndex);
+		this.logger.info(`Deleting source platform: index ${platformIndex} ('${request.platformName}')`);
+
+		// Fail loud on a missing/invalid index rather than coercing — the Lua delete resolves force.platforms
+		// by this index and cross-checks the name, so a bad index here would (correctly) be refused downstream.
+		if (!Number.isInteger(platformIndex)) {
+			const error = `invalid platformIndex: ${String(request.platformIndex)}`;
+			this.logger.error(`Refusing source delete — ${error}`);
+			return { success: false, error };
+		}
 
 		try {
 			const result = await this.lua.deleteSourcePlatform(
+				platformIndex,
 				String(request.platformName || ""),
 				String(request.forceName || "player"),
 			);
@@ -806,14 +826,21 @@ export class InstancePlugin extends BaseInstancePlugin {
 	/**
 	 * Handle unlock source platform request (rollback)
 	 */
-	async handleUnlockSourcePlatform(request: { platformName: string }) {
-		this.logger.info(`Unlocking source platform for rollback: ${request.platformName}`);
+	async handleUnlockSourcePlatform(request: { platformIndex: number; platformName?: string }) {
+		const platformIndex = Number(request.platformIndex);
+		this.logger.info(`Unlocking source platform for rollback: index ${platformIndex}`);
+
+		if (!Number.isInteger(platformIndex)) {
+			const error = `invalid platformIndex: ${String(request.platformIndex)}`;
+			this.logger.warn(`Cannot unlock — ${error}`);
+			return { success: false, error };
+		}
 
 		try {
-			const result = await this.lua.unlockPlatform(String(request.platformName || ""));
+			const result = await this.lua.unlockPlatform(platformIndex);
 
 			if (result.trim() === "SUCCESS") {
-				this.logger.info(`Platform ${request.platformName} unlocked successfully`);
+				this.logger.info(`Platform index ${platformIndex} unlocked successfully`);
 				return { success: true };
 			}
 			const error = result.trim().replace("ERROR:", "");

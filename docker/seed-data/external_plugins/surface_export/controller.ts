@@ -146,7 +146,7 @@ export class ControllerPlugin extends BaseControllerPlugin {
 		}
 	}
 
-	async handlePlatformExport(event: { exportId: string; platformName: string; instanceId: number; exportData: ExportData; exportMetrics?: messages.ExportMetrics; timestamp: number }) {
+	async handlePlatformExport(event: { exportId: string; platformName: string; platformIndex?: number | null; instanceId: number; exportData: ExportData; exportMetrics?: messages.ExportMetrics; timestamp: number }) {
 		this.logger.info(
 			`Received platform export: ${event.exportId} from instance ${event.instanceId} ` +
 			`(${event.platformName})`,
@@ -157,6 +157,7 @@ export class ControllerPlugin extends BaseControllerPlugin {
 			this.platformStorage.set(event.exportId, {
 				exportId: event.exportId,
 				platformName: event.platformName,
+				platformIndex: Number.isInteger(event.platformIndex) ? (event.platformIndex as number) : null,
 				instanceId: event.instanceId,
 				exportData: event.exportData,
 				exportMetrics: event.exportMetrics || null,

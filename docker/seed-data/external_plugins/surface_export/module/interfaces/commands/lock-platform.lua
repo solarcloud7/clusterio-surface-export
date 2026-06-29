@@ -42,7 +42,7 @@ Base.admin_command("lock-platform",
     end
 
     -- Check if already locked
-    if SurfaceLock.is_locked(target_platform.name) then
+    if SurfaceLock.is_locked(target_platform.index) then
       ctx.print("Platform '" .. target_platform.name .. "' is already locked")
       ctx.print("Use /unlock-platform to unlock it first")
       return

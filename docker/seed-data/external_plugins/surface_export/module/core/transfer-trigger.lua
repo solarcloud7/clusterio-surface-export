@@ -47,7 +47,7 @@ function TransferTrigger.start(force, platform_index, dest_instance_id, gateway_
 	-- transfer (controller → destination import → validation → source delete/unlock).
 	local job_id, export_err = AsyncProcessor.queue_export(platform_index, force_name, "TRANSFER", dest_instance_id, gateway_target)
 	if not job_id then
-		SurfaceLock.unlock_platform(platform_name)
+		SurfaceLock.unlock_platform(platform.index)
 		return nil, "Export failed: " .. tostring(export_err or "unknown")
 	end
 
