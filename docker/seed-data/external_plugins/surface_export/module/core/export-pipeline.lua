@@ -188,7 +188,7 @@ function ExportPipeline.queue(platform_index, force_name, requester_name, destin
 	-- using hub_entity.platform as primary source.
 	local platform_schedule, schedule_err = PlatformSchedule.capture(platform, platform.hub)
 	if not platform_schedule then
-		SurfaceLock.unlock_platform(platform.name)
+		SurfaceLock.unlock_platform(platform.index)
 		return nil, "Failed to capture platform schedule: " .. tostring(schedule_err)
 	end
 	local schedule_summary = PlatformSchedule.summarize(platform_schedule)
@@ -393,7 +393,7 @@ function ExportPipeline.complete(job)
 	-- CRITICAL: Include frozen_states for restoring original active states on import
 	-- The frozen_states map contains the ORIGINAL state of each entity BEFORE freezing.
 	-- This allows import to restore entities to their pre-export active/disabled state.
-	local lock_data = storage.locked_platforms and storage.locked_platforms[job.platform_name]
+	local lock_data = storage.locked_platforms and storage.locked_platforms[job.platform_index]
 	if lock_data and lock_data.frozen_states then
 		job.export_data.frozen_states = lock_data.frozen_states
 		log(string.format("[Export] Including frozen_states for %d entities",
@@ -568,7 +568,7 @@ function ExportPipeline.complete(job)
 
 	-- Unlock platform if this is NOT a transfer (transfers will delete the platform anyway)
 	if not job.destination_instance_id then
-		local unlock_success = SurfaceLock.unlock_platform(job.platform_name)
+		local unlock_success = SurfaceLock.unlock_platform(job.platform_index)
 		if unlock_success then
 			game.print(string.format("[Export] Platform %s unlocked - machines reactivated", job.platform_name), {0, 1, 0})
 			if clusterio_api and clusterio_api.send_json then

@@ -46,6 +46,9 @@ end
 
 function SurfaceExportModule.on_configuration_changed(data)
 	initialize_storage()
+	-- Migrate any legacy name-keyed locks to index keys (cheap no-op once index-keyed). Also runs lazily at
+	-- SurfaceLock.lock_platform so a deploy that didn't fire this hook still migrates before the next lock.
+	SurfaceLock.ensure_index_keyed()
 	-- Unlock gateways here too so adding the surfexp_gateways mod mid-save makes them routable
 	-- without waiting for the next server startup.
 	Gateway.discover_and_unlock()
@@ -201,7 +204,7 @@ SurfaceExportModule.events = {
 --
 -- For platform locking (transfer workflow):
 --   remote.call("surface_export", "lock_platform_for_transfer", platform_index, force_name)
---   remote.call("surface_export", "unlock_platform", platform_name)
+--   remote.call("surface_export", "unlock_platform", platform_index_or_name)  -- index preferred; name accepted
 --
 -- For validation:
 --   remote.call("surface_export", "get_validation_result", platform_name)
