@@ -45,10 +45,11 @@ function GatewayGuard.evaluate(deps)
 	deps = deps or {}
 	local aboard_players = deps.aboard_players or {}
 	local aboard_characters = deps.aboard_characters or 0
-	-- Conservative over-count is fine for a safety gate: a connected player aboard is counted both as a
-	-- player and (via its character entity) in aboard_characters. Over-counting only ever makes the block
-	-- MORE cautious; it can never let a real passenger slip through.
-	local passenger_count = #aboard_players + aboard_characters
+	-- max(), NOT sum(): a connected player is counted both as a player (physical_surface_index) AND via its
+	-- character entity in aboard_characters, so summing double-counts the common one-player case. max() is
+	-- exact there and a safe lower bound otherwise. The block fires on ANY signal (count > 0), so this only
+	-- affects the displayed number, never whether a real passenger is caught.
+	local passenger_count = math.max(#aboard_players, aboard_characters)
 
 	if not deps.docked then
 		return { allowed = false, reason = GatewayGuard.REASON.NOT_DOCKED, passenger_count = passenger_count }

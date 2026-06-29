@@ -107,6 +107,39 @@ function Gateway.collect_passengers(platform)
 	return players, (ok_c and char_count) or 0
 end
 
+--- The number of distinct passengers aboard, for user-facing messages. Uses max(), NOT sum: a CONNECTED
+--- player is counted both as a player (physical_surface_index) and via their character entity in
+--- aboard_characters, so summing double-counts the common one-player case. max() is exact there and a safe
+--- lower bound otherwise — the block decision itself fires on ANY signal, so this is display-only.
+--- @param aboard_players table array of LuaPlayer
+--- @param aboard_characters number
+--- @return number
+function Gateway.passenger_count(aboard_players, aboard_characters)
+	return math.max(#(aboard_players or {}), aboard_characters or 0)
+end
+
+--- The passenger HARD BLOCK, in ONE place. If anyone is bodily aboard the platform, best-effort notify them
+--- and return an error string for the caller to refuse the transfer with; otherwise nil. Used by EVERY
+--- transfer-start chokepoint (ExportPipeline.queue for the web-UI/ctl spine, TransferTrigger.start for the
+--- command/GUI spine) so the floor is identical and unbypassable. A successful transfer ends in
+--- game.delete_surface, which would orphan anyone aboard — and at a surfaceless gateway they cannot disembark.
+--- @param platform LuaSpacePlatform
+--- @return string|nil reason nil if clear, else a human-readable refusal reason
+function Gateway.passenger_block_reason(platform)
+	local aboard_players, aboard_characters = Gateway.collect_passengers(platform)
+	if #aboard_players == 0 and aboard_characters == 0 then
+		return nil
+	end
+	for _, p in ipairs(aboard_players) do
+		-- intentional probe; best-effort notify, a print failure must NOT block the safety return.
+		pcall(function()
+			p.print({"", "✗ '", platform.name, "' cannot transfer while you are aboard — leave the platform first."})
+		end)
+	end
+	local count = Gateway.passenger_count(aboard_players, aboard_characters)
+	return string.format("%d aboard — everyone must leave the platform before it can transfer", count)
+end
+
 --- Return a copy of schedule_payload with EVERY gateway-station record removed, carrying `current`
 --- FORWARD to the record that followed the gateway (NOT reset to 1) so a resumed itinerary continues
 --- rather than re-travelling an already-visited stop. Schedules are cyclic, so a gateway in the last

@@ -58,33 +58,17 @@ export class TransferOrchestrator {
 		this.subscriptions.queueTreeBroadcast(transfer.forceName || "player");
 	}
 
-	/** Attempt to unlock source platform after a failure. Returns error string or null. */
+	/** Attempt to unlock source platform after a failure. Returns error string or null. Delegates the raw
+	 *  send (and the benign already-unlocked handling) to sendUnlockRequest; adds the tx-log breadcrumbs. */
 	async tryUnlockSource(transferId: string, transfer: ActiveTransfer) {
 		this.txLogger.logTransactionEvent(transferId, "rollback_attempt", "Unlocking source platform", {});
-		try {
-			const resp = await this.plugin.controller.sendTo(
-				{ instanceId: transfer.sourceInstanceId },
-				new this.messages.UnlockSourcePlatformRequest({
-					platformName: transfer.platformName,
-					forceName: transfer.forceName || "player",
-				}),
-			);
-			if (resp?.success) {
-				this.txLogger.logTransactionEvent(transferId, "rollback_success", "Source platform unlocked", {});
-				return null;
-			}
-			const err = resp?.error || "Unknown unlock error";
-			if (/platform not locked|no locked platforms/i.test(err)) {
-				this.txLogger.logTransactionEvent(transferId, "rollback_success", `Source platform already unlocked (${err})`, {});
-				return null;
-			}
-			this.txLogger.logTransactionEvent(transferId, "rollback_failed", `Unlock failed: ${err}`, { error: err });
-			return err;
-		} catch (err: unknown) {
-			const errMsg = getErrorMessage(err);
-			this.txLogger.logTransactionEvent(transferId, "rollback_failed", `Unlock failed: ${errMsg}`, { error: errMsg });
-			return errMsg;
+		const err = await this.sendUnlockRequest(transfer.sourceInstanceId, transfer.platformName, transfer.forceName || "player");
+		if (!err) {
+			this.txLogger.logTransactionEvent(transferId, "rollback_success", "Source platform unlocked", {});
+			return null;
 		}
+		this.txLogger.logTransactionEvent(transferId, "rollback_failed", `Unlock failed: ${err}`, { error: err });
+		return err;
 	}
 
 	// ── Transfer initiation ─────────────────────────────────────────────
@@ -136,6 +120,7 @@ export class TransferOrchestrator {
 			});
 		this.updateTransfer(transfer);
 
+		let importAccepted = false;
 		try {
 			// Transmit to target instance
 			this.txLogger.startPhase(transferId, "transmission");
@@ -153,22 +138,30 @@ export class TransferOrchestrator {
 				return await this.handleImportFailure(transferId, response.error || "Import failed", transmissionMs);
 			}
 
-			// Import accepted — wait for validation callback
+			// Destination ACCEPTED the import. Arm the validation timeout FIRST so that even if a later line
+			// throws, the transfer is still resolved (fail -> rollback) by the timeout — and the catch below
+			// must NOT unlock the source (the dest now holds the import; unlocking would leave a live source
+			// coexisting with the dest copy = duplication).
+			importAccepted = true;
+			this.txLogger.startPhase(transferId, "validation");
+			this.scheduleValidationTimeout(transferId);
 			transfer.status = "awaiting_validation";
 			this.updateTransfer(transfer);
 			this.txLogger.logTransactionEvent(transferId, "import_started",
 				`Awaiting validation (timeout: ${VALIDATION_TIMEOUT_MS / 1000}s)`, { transmissionMs });
-			this.txLogger.startPhase(transferId, "validation");
-			this.scheduleValidationTimeout(transferId);
 
 			return { success: true, transferId, message: `Transfer initiated: ${transferId}` };
 
 		} catch (err: unknown) {
 			const errMsg = getErrorMessage(err);
 			this.logger.error(`Error transferring platform: ${errMsg}`);
-			// The source platform is locked-for-transfer at this point. A THROW here (offline target, or a
-			// Pitfall #26 unbound-method TypeError) would otherwise leave it stuck locked-and-hidden — no
-			// validation handler was armed to ever unlock it. Roll the lock back (mirrors handleImportFailure).
+			if (importAccepted) {
+				// Throw AFTER the destination accepted the import: do NOT unlock the source — it would coexist
+				// with the destination copy (duplication). The validation timeout armed above will resolve it.
+				return { success: false, error: errMsg };
+			}
+			// Throw BEFORE accept: the source is locked but the destination has nothing — safe to roll back
+			// (mirrors handleImportFailure).
 			const rollbackError = await this.tryUnlockSource(transferId, transfer);
 			if (rollbackError) {
 				return { success: false, error: `${errMsg}; rollback failed: ${rollbackError}` };
@@ -396,28 +389,20 @@ export class TransferOrchestrator {
 			// leave it stuck locked-and-hidden with no trace. transferPlatform's own catch self-heals its
 			// transmission failures; this covers the paths it can't.
 			this.logger.error(`Error starting transfer (source instance ${sourceInstanceId}, platform #${sourcePlatformIndex}): ${errMsg}`);
-			if (lockedSourceName) {
-				const rollbackError = await this.sendUnlockRequest(sourceInstanceId, lockedSourceName, forceName);
+			// Resolve the locked source's name (learned up-front from the stored export, else by INDEX from
+			// the source's platform list — a locked platform is hidden but still in force.platforms, so still
+			// listed; deterministic for the large-platform waitForStoredExport-timeout case) and unlock once.
+			const name = lockedSourceName || await this.resolveLockedSourceName(sourceInstanceId, sourcePlatformIndex, forceName);
+			if (name) {
+				const rollbackError = await this.sendUnlockRequest(sourceInstanceId, name, forceName);
 				if (rollbackError) {
-					this.logger.error(`Rollback unlock of source '${lockedSourceName}' failed: ${rollbackError}`);
+					this.logger.error(`Rollback unlock of source '${name}' failed: ${rollbackError}`);
 					return { success: false, error: `${errMsg}; rollback failed: ${rollbackError}` };
 				}
 			} else {
-				// Export succeeded-and-locked but threw before its name was learned (e.g. a waitForStoredExport
-				// timeout on a large/slow export — deterministic for big platforms). Recover the name by INDEX:
-				// a locked platform is hidden but still present in force.platforms, so it is still listed.
-				const recovered = await this.resolveLockedSourceName(sourceInstanceId, sourcePlatformIndex, forceName);
-				if (recovered) {
-					const rollbackError = await this.sendUnlockRequest(sourceInstanceId, recovered, forceName);
-					if (rollbackError) {
-						this.logger.error(`Rollback unlock of source '${recovered}' (resolved by index ${sourcePlatformIndex}) failed: ${rollbackError}`);
-						return { success: false, error: `${errMsg}; rollback failed: ${rollbackError}` };
-					}
-				} else {
-					// The name could not be resolved (source instance unreachable) — nothing could unlock it
-					// remotely anyway. Surface it so an operator can act once the instance is back.
-					this.logger.error(`Source platform #${sourcePlatformIndex} on instance ${sourceInstanceId} may remain LOCKED — name unresolved (instance unreachable?); unlock manually.`);
-				}
+				// Name unresolved (source instance unreachable) — nothing could unlock it remotely anyway.
+				// Surface it so an operator can act once the instance is back.
+				this.logger.error(`Source platform #${sourcePlatformIndex} on instance ${sourceInstanceId} may remain LOCKED — name unresolved (instance unreachable?); unlock manually.`);
 			}
 			return { success: false, error: errMsg };
 		}

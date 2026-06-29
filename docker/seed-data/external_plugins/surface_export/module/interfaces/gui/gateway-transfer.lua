@@ -34,14 +34,9 @@ local COLOR_WARN = {r = 1.0, g = 0.5, b = 0.4}
 -- Passenger detection (the safety-critical inputs — verified on 2.0.76)
 -- ============================================================================
 
---- Passenger detection (the safety-critical input) lives in core/gateway.lua as the single source of
---- truth — shared by this chooser, the guard, AND the backend HARD BLOCK in transfer-trigger.lua, so a
---- transfer started by any path is gated by the SAME check. Thin delegate kept for call-site readability.
---- @param platform LuaSpacePlatform
---- @return table players (array of LuaPlayer bodily aboard), number character_count
-function GatewayTransferGui.collect_passengers(platform)
-	return Gateway.collect_passengers(platform)
-end
+-- Passenger detection (the safety-critical input) lives in core/gateway.lua (Gateway.collect_passengers)
+-- as the single source of truth — shared by this chooser, the guard, AND the backend HARD BLOCK in
+-- ExportPipeline.queue / TransferTrigger.start. Call it directly; no GUI-local wrapper.
 
 -- ============================================================================
 -- Rendering
@@ -56,8 +51,8 @@ local function resolve_platform(state)
 	return platform
 end
 
---- (Re)build the frame body from the current state. Pure-ish: reads passenger/lock state to set the
---- Transfer button enabled-ness, but evaluates via the SIDE-EFFECT-FREE GatewayGuard.evaluate.
+--- (Re)build the frame body from the current state. Reads passenger/lock state and runs it through the
+--- SIDE-EFFECT-FREE GatewayGuard.evaluate to set the Transfer button's enabled-ness (no side effects).
 local function build_frame(player, state)
 	if player.gui.screen[FRAME] then
 		player.gui.screen[FRAME].destroy()
@@ -86,10 +81,18 @@ local function build_frame(player, state)
 	frame.add{type = "label", caption = {"", "[font=default-bold]", platform.name, "[/font] parked at [font=default-bold]", state.gateway_name, "[/font]"}}
 	frame.add{type = "label", caption = "Choose a destination instance:", style = "bold_label"}
 
-	-- Passenger state (the hard block).
-	local aboard_players, char_count = GatewayTransferGui.collect_passengers(platform)
-	local passenger_count = #aboard_players + char_count
+	-- Passenger + lock state, gated through the SIDE-EFFECT-FREE GatewayGuard.evaluate so the Transfer
+	-- button reflects the SAME rules the backend enforces — add a block reason to evaluate() and the button
+	-- disables automatically, with no second copy of the gate to drift here.
+	local aboard_players, char_count = Gateway.collect_passengers(platform)
 	local in_flight = SurfaceLock.is_locked(platform.name)
+	local decision = GatewayGuard.evaluate{
+		docked = (Gateway.parked_at_gateway(platform) == state.gateway_name),
+		in_flight = in_flight,
+		aboard_players = aboard_players,
+		aboard_characters = char_count,
+	}
+	local passenger_count = decision.passenger_count
 
 	if passenger_count > 0 then
 		local warn = frame.add{type = "label", caption = {"",
@@ -136,7 +139,9 @@ local function build_frame(player, state)
 	footer.add{type = "button", name = PREFIX .. "cancel", caption = "Cancel"}
 	footer.add{type = "empty-widget"}.style.horizontally_stretchable = true
 
-	local can_transfer = (state.selected ~= nil) and (passenger_count == 0) and (not in_flight)
+	-- The gate (docked / not-in-flight / no-passengers) comes from evaluate; the GUI only adds its own
+	-- "a destination is selected" requirement on top.
+	local can_transfer = (state.selected ~= nil) and decision.allowed
 	local transfer_btn = footer.add{
 		type = "button",
 		name = PREFIX .. "transfer",
@@ -247,7 +252,7 @@ function GatewayTransferGui.confirm_transfer(player, state)
 
 	-- Re-validate "parked at this gateway right now" (the platform could have moved between open + click).
 	local gw_now = Gateway.parked_at_gateway(platform)
-	local aboard_players, char_count = GatewayTransferGui.collect_passengers(platform)
+	local aboard_players, char_count = Gateway.collect_passengers(platform)
 	local force = game.forces[state.force_name]
 
 	local result = GatewayGuard.guard_and_transfer{
