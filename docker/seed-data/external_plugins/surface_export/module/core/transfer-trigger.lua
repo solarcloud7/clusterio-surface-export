@@ -7,7 +7,6 @@
 
 local AsyncProcessor = require("modules/surface_export/core/async-processor")
 local SurfaceLock = require("modules/surface_export/utils/surface-lock")
-local Gateway = require("modules/surface_export/core/gateway")
 local clusterio_api = require("modules/clusterio/api")
 
 local TransferTrigger = {}
@@ -35,14 +34,8 @@ function TransferTrigger.start(force, platform_index, dest_instance_id, gateway_
 	local platform_name = platform.name
 	local force_name = force.name
 
-	-- Passenger HARD BLOCK (pre-lock) for the command/GUI spine. The canonical block lives in
-	-- ExportPipeline.queue (the chokepoint BOTH start spines share), but check here too — BEFORE the
-	-- expensive lock (which freezes entities + completes cargo pods) — so a refused transfer leaves the
-	-- platform completely untouched rather than locked-then-unlocked. Shared one-liner; see gateway.lua.
-	local block_reason = Gateway.passenger_block_reason(platform)
-	if block_reason then
-		return nil, block_reason
-	end
+	-- NOTE: passengers are NOT blocked. The transfer proceeds with players aboard; they are evacuated to a
+	-- planet at the source-delete chokepoint (delete_platform_for_transfer → Gateway.evacuate_passengers).
 
 	-- Step 1: lock the source (hidden from players, paused) for the duration of the transfer.
 	local lock_ok, lock_err = SurfaceLock.lock_platform(platform, force)

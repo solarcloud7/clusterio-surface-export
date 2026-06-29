@@ -81,9 +81,9 @@ local function build_frame(player, state)
 	frame.add{type = "label", caption = {"", "[font=default-bold]", platform.name, "[/font] parked at [font=default-bold]", state.gateway_name, "[/font]"}}
 	frame.add{type = "label", caption = "Choose a destination instance:", style = "bold_label"}
 
-	-- Passenger + lock state, gated through the SIDE-EFFECT-FREE GatewayGuard.evaluate so the Transfer
-	-- button reflects the SAME rules the backend enforces — add a block reason to evaluate() and the button
-	-- disables automatically, with no second copy of the gate to drift here.
+	-- Lock state gated through the SIDE-EFFECT-FREE GatewayGuard.evaluate so the Transfer button reflects the
+	-- SAME rules the backend enforces (no second copy of the gate to drift here). Passengers do NOT block —
+	-- they are evacuated to a planet when the platform transfers — so the count below is an informational note.
 	local aboard_players, char_count = Gateway.collect_passengers(platform)
 	local in_flight = SurfaceLock.is_locked(platform.name)
 	local decision = GatewayGuard.evaluate{
@@ -96,8 +96,7 @@ local function build_frame(player, state)
 
 	if passenger_count > 0 then
 		local warn = frame.add{type = "label", caption = {"",
-			"⚠ ", tostring(passenger_count), " aboard — they must leave the platform before it can transfer. "
-			.. "(At a gateway there is no planet to disembark onto; route the platform to a planet to drop them off.)"}}
+			"⚠ ", tostring(passenger_count), " aboard — they will be returned to a planet when the platform transfers."}}
 		warn.style.single_line = false
 		warn.style.maximal_width = 340
 		warn.style.font_color = COLOR_WARN
@@ -255,15 +254,13 @@ function GatewayTransferGui.confirm_transfer(player, state)
 	local aboard_players, char_count = Gateway.collect_passengers(platform)
 	local force = game.forces[state.force_name]
 
+	-- Passengers do NOT block: anyone aboard is evacuated to a planet when the source is deleted. The gate is
+	-- only docked + not-already-in-flight; the transfer fires the same backend as the commands.
 	local result = GatewayGuard.guard_and_transfer{
 		docked = (gw_now == state.gateway_name),
 		in_flight = SurfaceLock.is_locked(platform.name),
 		aboard_players = aboard_players,
 		aboard_characters = char_count,
-		eject_fn = function(p)
-			-- Best-effort: at a surfaceless gateway there is nowhere to put them, so this is a notify.
-			p.print({"", "⚠ '", platform.name, "' is transferring through a gateway — please leave the platform first."})
-		end,
 		start_fn = function()
 			return TransferTrigger.start(force, state.platform_index, target.instanceId, target.targetGateway or state.gateway_name)
 		end,
@@ -276,9 +273,7 @@ function GatewayTransferGui.confirm_transfer(player, state)
 	end
 
 	-- Blocked or failed to start — explain and keep the frame open so they can fix it and retry.
-	if result.reason == GatewayGuard.REASON.PASSENGERS then
-		player.print({"", "✗ Cannot transfer: ", tostring(result.passenger_count), " aboard. They must leave the platform first."})
-	elseif result.reason == GatewayGuard.REASON.IN_FLIGHT then
+	if result.reason == GatewayGuard.REASON.IN_FLIGHT then
 		player.print("✗ Cannot transfer: this platform is already transferring.")
 	elseif result.reason == GatewayGuard.REASON.NOT_DOCKED then
 		player.print("✗ Cannot transfer: the platform is no longer parked at the gateway.")

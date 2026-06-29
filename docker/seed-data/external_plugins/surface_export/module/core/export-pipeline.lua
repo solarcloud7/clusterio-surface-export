@@ -15,7 +15,6 @@ local clusterio_api = require("modules/clusterio/api")
 local PhaseProfiler = require("modules/surface_export/utils/phase-profiler")
 local TransactionHistory = require("modules/surface_export/utils/transaction-history")
 local JobResults = require("modules/surface_export/core/job-results")
-local Gateway = require("modules/surface_export/core/gateway")
 
 local ExportPipeline = {}
 
@@ -168,19 +167,9 @@ function ExportPipeline.queue(platform_index, force_name, requester_name, destin
 		return nil, "Platform surface not valid"
 	end
 
-	-- Passenger HARD BLOCK (the safety floor), at the chokepoint BOTH transfer-start spines funnel through:
-	-- TransferTrigger.start (commands/GUI) AND the export_platform remote (web-UI/ctl via
-	-- handleStartPlatformTransferRequest) both reach here. A TRANSFER ends in game.delete_surface, orphaning
-	-- anyone bodily aboard; refuse BEFORE the lock. Gated on destination_instance_id — the SAME predicate the
-	-- pipeline uses downstream to decide "this is a transfer" (job.destination_instance_id). Export-ONLY jobs
-	-- (no destination) never delete the source, so they are exempt.
-	if destination_instance_id then
-		local block_reason = Gateway.passenger_block_reason(platform)
-		if block_reason then
-			log(string.format("[Export Queue] REFUSED transfer of '%s': %s", platform.name, block_reason))
-			return nil, block_reason
-		end
-	end
+	-- NOTE: passengers are NOT blocked here. A transfer is allowed with players aboard; they are evacuated to
+	-- a planet at the SOLE source-delete chokepoint (delete_platform_for_transfer → Gateway.evacuate_passengers)
+	-- so no one is orphaned and no entry point can be bypassed. See gateway.lua.
 
 	-- CRITICAL: Lock the platform BEFORE scanning to ensure stable item/fluid counts
 	-- This completes cargo pods, deactivates machines, and hides surface

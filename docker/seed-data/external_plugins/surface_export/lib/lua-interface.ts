@@ -142,35 +142,17 @@ export class LuaInterface {
 
 	/**
 	 * Delete a transferred source platform. Returns RAW "SUCCESS" / "ERROR:<reason>".
-	 * Uses `game.delete_surface` — `LuaSpacePlatform.destroy()` is a NO-OP at 2.0.76 (Pitfall #19).
+	 * Routes through the `delete_platform_for_transfer` remote, which (atomically, one tick): unlocks,
+	 * EVACUATES any aboard players/characters to a planet (so a passenger is never orphaned when the surface
+	 * vanishes), then tears down via `GameUtils.delete_platform` (version-correct; `game.delete_surface`
+	 * under the hood — `LuaSpacePlatform.destroy()` is a NO-OP at 2.0.76, Pitfall #19). Keeping all of that
+	 * in one remote (a) makes evacuation atomic with the delete and (b) fixes the prior inline-RCON that
+	 * bypassed GameUtils.delete_platform.
 	 */
 	async deleteSourcePlatform(platformName: string, forceName: string): Promise<string> {
-		const name = escapeString(platformName);
-		const force = escapeString(forceName);
 		return this.host.sendRcon(
-			`/sc ` +
-			`pcall(function() remote.call("surface_export", "unlock_platform", "${name}") end); ` +
-			`local force = game.forces["${force}"]; ` +
-			`local platform = nil; ` +
-			`for _, p in pairs(force.platforms) do ` +
-			`    if p.name == "${name}" then platform = p; break; end ` +
-			`end; ` +
-			`if platform then ` +
-			`    local surface = platform.surface; ` +
-			`    if surface and surface.valid then ` +
-			`        local ok, err = pcall(function() game.delete_surface(surface) end); ` +
-			`        if ok then ` +
-			`            game.print("[Transfer Complete] Platform '${name}' transferred and deleted from source", {0, 1, 0}); ` +
-			`            rcon.print("SUCCESS"); ` +
-			`        else ` +
-			`            rcon.print("ERROR:delete_surface failed: " .. tostring(err)); ` +
-			`        end ` +
-			`    else ` +
-			`        rcon.print("ERROR:Platform surface not valid"); ` +
-			`    end ` +
-			`else ` +
-			`    rcon.print("ERROR:Platform not found"); ` +
-			`end`,
+			`/sc rcon.print(remote.call("surface_export", "delete_platform_for_transfer", ` +
+			`"${escapeString(platformName)}", "${escapeString(forceName)}"))`,
 		);
 	}
 

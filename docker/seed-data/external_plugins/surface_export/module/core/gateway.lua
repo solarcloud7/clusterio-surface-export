@@ -118,26 +118,91 @@ function Gateway.passenger_count(aboard_players, aboard_characters)
 	return math.max(#(aboard_players or {}), aboard_characters or 0)
 end
 
---- The passenger HARD BLOCK, in ONE place. If anyone is bodily aboard the platform, best-effort notify them
---- and return an error string for the caller to refuse the transfer with; otherwise nil. Used by EVERY
---- transfer-start chokepoint (ExportPipeline.queue for the web-UI/ctl spine, TransferTrigger.start for the
---- command/GUI spine) so the floor is identical and unbypassable. A successful transfer ends in
---- game.delete_surface, which would orphan anyone aboard — and at a surfaceless gateway they cannot disembark.
+--- Evacuate everyone bodily aboard a platform to a safe planetary surface, called RIGHT BEFORE the platform
+--- is deleted on a transfer. A transfer ends in game.delete_surface; without this, anyone aboard is orphaned.
+--- This is NATIVE-ALIGNED: the engine itself sends a player "back to the planet they were last at" on hub
+--- loss. We do NOT block the transfer (the old hard-block kept finding new bypass entry points); we let it
+--- proceed and evacuate at the delete — the ONE chokepoint every transfer path funnels through, so it cannot
+--- be bypassed and a delete-time evacuation can never duplicate the platform (the dest copy is already
+--- committed by the time the source is deleted).
+---
+--- Teleports aboard players (connected + disconnected) AND abandoned character bodies to a non-colliding
+--- position near the force's Nauvis spawn (fallback: the first planetary surface; if none, log + skip so a
+--- clean teardown still beats an orphan). Every move is pcall-guarded + logged; one failure never aborts the
+--- rest, and evacuation failure NEVER blocks the delete.
 --- @param platform LuaSpacePlatform
---- @return string|nil reason nil if clear, else a human-readable refusal reason
-function Gateway.passenger_block_reason(platform)
-	local aboard_players, aboard_characters = Gateway.collect_passengers(platform)
-	if #aboard_players == 0 and aboard_characters == 0 then
-		return nil
+--- @return table result {players=number, characters=number, failures=number}
+function Gateway.evacuate_passengers(platform)
+	local result = { players = 0, characters = 0, failures = 0 }
+	if not (platform and platform.valid and platform.surface and platform.surface.valid) then
+		return result
 	end
-	for _, p in ipairs(aboard_players) do
-		-- intentional probe; best-effort notify, a print failure must NOT block the safety return.
-		pcall(function()
-			p.print({"", "✗ '", platform.name, "' cannot transfer while you are aboard — leave the platform first."})
-		end)
+	local surface = platform.surface
+
+	-- Destination: a planetary (non-platform) surface — Nauvis by default, else the first planet found.
+	local dest = game.surfaces["nauvis"]
+	if not (dest and dest.valid) then
+		for _, s in pairs(game.surfaces) do
+			if s.valid and not s.platform then dest = s; break end
+		end
 	end
-	local count = Gateway.passenger_count(aboard_players, aboard_characters)
-	return string.format("%d aboard — everyone must leave the platform before it can transfer", count)
+	if not (dest and dest.valid) then
+		log(string.format("[Gateway] evacuate_passengers: no planetary surface to evacuate to for '%s' — deleting anyway (orphan risk)",
+			tostring(platform.name)))
+		return result
+	end
+
+	local force = platform.force
+	local function safe_pos(ref)
+		local anchor = (force and force.valid and force.get_spawn_position(dest)) or { x = 0, y = 0 }
+		local pos
+		-- intentional probe; find_non_colliding_position may return nil (no room) — fall back to the anchor.
+		pcall(function() pos = dest.find_non_colliding_position(ref or "character", anchor, 64, 0.5) end)
+		return pos or anchor
+	end
+
+	-- 1) Aboard players first (connected + disconnected) — physical_surface_index match. teleport moves the
+	-- player AND their character together; check the boolean return so a failed placement is counted, not lost.
+	local aboard_players = Gateway.collect_passengers(platform)
+	for _, player in ipairs(aboard_players) do
+		local ref = (player.character and player.character.valid and player.character.name) or "character"
+		local ok, moved = pcall(function() return player.teleport(safe_pos(ref), dest) end)
+		if ok and moved then
+			result.players = result.players + 1
+			-- intentional probe; best-effort notify, a print failure must NOT abort evacuation.
+			pcall(function()
+				player.print({"", "🛟 '", platform.name, "' was transferred — you were returned to ", dest.name, "."})
+			end)
+		else
+			result.failures = result.failures + 1
+			log(string.format("[Gateway] evacuate: teleport player '%s' off '%s' failed (ok=%s): %s",
+				tostring(player.name), tostring(platform.name), tostring(ok), tostring(moved)))
+		end
+	end
+
+	-- 2) Then abandoned character bodies still on the platform (logged-off players with no controller). A
+	-- connected player's character was already moved above, so it is no longer on this surface.
+	local chars = {}
+	-- intentional probe; surface is validated above, the find should succeed — empty list on failure is fine.
+	pcall(function() chars = surface.find_entities_filtered{ type = "character" } end)
+	for _, char in ipairs(chars) do
+		if char and char.valid then
+			local ok, err = pcall(function() char.teleport(safe_pos(char.name), dest) end)
+			if ok then
+				result.characters = result.characters + 1
+			else
+				result.failures = result.failures + 1
+				log(string.format("[Gateway] evacuate: teleport abandoned character off '%s' failed: %s",
+					tostring(platform.name), tostring(err)))
+			end
+		end
+	end
+
+	if result.players + result.characters + result.failures > 0 then
+		log(string.format("[Gateway] evacuated %d player(s) + %d character(s) from '%s' to '%s' (%d failure(s))",
+			result.players, result.characters, tostring(platform.name), dest.name, result.failures))
+	end
+	return result
 end
 
 --- Return a copy of schedule_payload with EVERY gateway-station record removed, carrying `current`
