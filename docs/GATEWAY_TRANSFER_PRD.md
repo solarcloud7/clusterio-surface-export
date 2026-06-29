@@ -201,17 +201,23 @@ plugin we already develop.
 
 - **Schedule loop.** The arriving platform retains a schedule that still names the gateway → it could
   fly straight back. **Fix:** on import, strip/rewrite the gateway hop and arrive paused.
-- **Player aboard.** ⚠️ **The two-phase commit protects platform *data*, not a player *session*.** A
-  player locked in the hub is a live session bound to instance A's *server process* — it cannot be
-  carried to instance B's process by the data export/import at all. These are two different problems;
-  do not let the validation-commit language imply the player is handled. **Phase 1 policy: hard-block
-  the transfer while a passenger is present** (built-in "Passenger present" detection), *or* eject to
-  the planet first (`LuaPlayer.land_on_planet`). Simple, safe, no cross-process handoff.
-  - **Future (separate problem, NOT Phase 1): live cross-server player handoff.** Would require
-    serializing the player's character/inventory, recreating it on the destination, and redirecting the
-    client's connection — the same unsolved area `universal_edges` punts on. Sketch to revisit:
-    serialize → recreate on B at the arrived platform → **fallback** to Nauvis's first cargo landing pad,
-    else `0,0`, if recreation fails. Out of scope until Phase 1 ships.
+- **Player aboard — EVACUATE, don't block (Layer 1, IMPLEMENTED).** The two-phase commit protects platform
+  *data*, not a player *session*, so a passenger can't ride the data export/import. A player "on" a platform
+  is hub-locked in remote view carrying ~no inventory (just equipped gear, no ammo). **Policy: do NOT block
+  the transfer.** Instead, at the SOLE source-delete chokepoint (`delete_platform_for_transfer` →
+  `Gateway.evacuate_passengers`, run *before* `game.delete_surface`), teleport everyone aboard **and**
+  abandoned character bodies to a non-colliding Nauvis position — native-aligned with how the engine returns
+  a player to a planet on hub-loss. Because it runs at the one delete-sender every transfer path funnels
+  through, no path can orphan a player; and at delete-time it can't duplicate (the dest copy is already
+  committed). Replaced an earlier hard-block (which kept leaving bypass entry points). Covered by
+  `tests/integration/passenger-evacuate`.
+  - **Layer 2 — follow-your-platform (deferred, spike-gated).** Carry the player WITH the platform to B via
+    `LuaPlayer.connect_to_server{address, name}` (a PROMPT the player accepts; address = `host.public_address`
+    + instance `game_port`, the `server_select` pattern) → on B `enter_space_platform` onto the arrived
+    platform (found by name). **No `inventory_sync`** (off in our cluster, and a platform passenger carries
+    nothing). Build only after a spike proves `connect_to_server` + `enter_space_platform` + `public_address`
+    reachability (defaults `"localhost"`; must be client-routable). Layer 1 is the fallback: decline / timeout
+    / unreachable → the player simply stays safe on Nauvis-A.
 - **Disabled / unconfigured gateway.** The plugin **no-ops** when a platform docks at an unconfigured
   gateway, regardless of whether the location is visible — this is the real safety guarantee
   (independent of the `unlock`/re-lock visibility layer).
@@ -234,8 +240,9 @@ plugin we already develop.
 - ✅ **Phase 1 = manual GUI button at the gateway**; **Phase 2 = automation** (deferred, blocked on
   cross-instance stop visibility).
 - ✅ Hazards: schedule-loop fixed by **hop-strip on import**; data integrity by the existing **two-phase
-  commit**; **Phase 1 hard-blocks transfer while a passenger is present** (live cross-server player
-  handoff is a separate, out-of-scope future problem — §8).
+  commit**; **passengers are EVACUATED to a planet at the source delete (Layer 1, implemented), NOT blocked**
+  — the earlier hard-block was replaced because it kept leaving bypass entry points. Carrying the player WITH
+  the platform to the destination is the deferred, spike-gated **Layer 2** (§8).
 - ✅ **Phase 0 empirical validation gates all build work** (§6) — the park-and-fire mechanic is verified
   on the live cluster with vanilla `solar-system-edge` before any mod/GUI/dashboard is written.
 
@@ -247,7 +254,8 @@ plugin we already develop.
 > fires — are resolved by **Phase 0 (§6)**, not here. The items below are genuine design choices.
 
 - **"Conditions met" set** for the Phase-1 transfer button (docked at gateway; target instance online;
-  no in-flight transfer for this platform; passenger policy; thrust/fuel state; …).
+  no in-flight transfer for this platform; thrust/fuel state; …). *(Passenger policy is RESOLVED:
+  passengers do NOT gate the transfer — they are evacuated to a planet at the source delete; see §8.)*
 - **Permissions:** who may *trigger* a transfer (any player on the force? admin only?) vs who may
   *configure* gateways (admin).
 - **Connection topology:** which planet(s) connect to each gateway, and the `space-connection.length`
