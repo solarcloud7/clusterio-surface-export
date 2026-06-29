@@ -23,6 +23,8 @@
 -- so gating on it could block a transfer to a genuinely-reachable instance; the live controller routing is
 -- the real reachability gate, and a failed route rolls the source back. `online` is informational only.
 
+local Gateway = require("modules/surface_export/core/gateway")
+
 local GatewayGuard = {}
 
 --- Reasons a transfer can be blocked (stable identifiers for tests + UI messaging).
@@ -45,11 +47,9 @@ function GatewayGuard.evaluate(deps)
 	deps = deps or {}
 	local aboard_players = deps.aboard_players or {}
 	local aboard_characters = deps.aboard_characters or 0
-	-- max(), NOT sum(): a connected player is counted both as a player (physical_surface_index) AND via its
-	-- character entity in aboard_characters, so summing double-counts the common one-player case. max() is
-	-- exact there and a safe lower bound otherwise. The block fires on ANY signal (count > 0), so this only
-	-- affects the displayed number, never whether a real passenger is caught.
-	local passenger_count = math.max(#aboard_players, aboard_characters)
+	-- Distinct count via the single source of truth (max(), not sum() — see Gateway.passenger_count). The
+	-- block fires on ANY signal (count > 0), so this only affects the displayed number, never the decision.
+	local passenger_count = Gateway.passenger_count(aboard_players, aboard_characters)
 
 	if not deps.docked then
 		return { allowed = false, reason = GatewayGuard.REASON.NOT_DOCKED, passenger_count = passenger_count }

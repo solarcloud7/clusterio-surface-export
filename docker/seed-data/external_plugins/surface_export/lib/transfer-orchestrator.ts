@@ -454,6 +454,23 @@ export class TransferOrchestrator {
 		if (!resolved) {
 			return { success: false, error: `Unknown instance ${request.targetInstanceId}` };
 		}
-		return this.transferPlatform(request.exportId, resolved.id);
+		try {
+			return await this.transferPlatform(request.exportId, resolved.id);
+		} catch (err: unknown) {
+			// transferPlatform's own try/catch self-heals its transmission failures, but a throw in its
+			// PRE-transmit setup propagates here. On the auto-continuation path the source is already
+			// locked-for-transfer, so roll it back rather than leave it stuck locked-and-hidden.
+			const errMsg = getErrorMessage(err);
+			this.logger.error(`Error transferring export ${request.exportId}: ${errMsg}`);
+			const stored = this.plugin.platformStorage.get(request.exportId);
+			const force = String((stored?.exportData as { platform?: { force?: string } } | undefined)?.platform?.force || "player");
+			if (stored?.platformName) {
+				const rollbackError = await this.sendUnlockRequest(stored.instanceId, stored.platformName, force);
+				if (rollbackError) {
+					this.logger.error(`Rollback unlock of source '${stored.platformName}' failed: ${rollbackError}`);
+				}
+			}
+			return { success: false, error: errMsg };
+		}
 	}
 }
