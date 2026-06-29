@@ -172,6 +172,38 @@ local function complete_cargo_pods(surface, hub)
     return descending_count, ascending_count, items_recovered
 end
 
+--- Re-key storage.locked_platforms from any legacy NAME (string) keys to the unique platform.index, using the
+--- platform_index stored inside each lock_data. Idempotent + cheap: returns immediately when every key is
+--- already numeric (the steady state), so it is safe to call on every lock. Belt-and-suspenders against a
+--- code update that did NOT fire on_configuration_changed (e.g. a save-patch code swap) leaving a name-keyed
+--- lock un-migrated — without this, is_locked(index) would false-negative and the still-frozen platform would
+--- look unlocked. (Cannot run in on_load — Factorio forbids writing storage there.)
+--- @return number moved, number dropped
+function SurfaceLock.ensure_index_keyed()
+    local locks = storage.locked_platforms
+    if type(locks) ~= "table" then return 0, 0 end
+    local has_string_key = false
+    for k, _ in pairs(locks) do
+        if type(k) == "string" then has_string_key = true; break end
+    end
+    if not has_string_key then return 0, 0 end  -- already index-keyed (steady state) — no rebuild
+
+    local rekeyed, moved, dropped = {}, 0, 0
+    for key, lock_data in pairs(locks) do
+        if type(key) == "number" then
+            rekeyed[key] = lock_data
+        elseif type(lock_data) == "table" and type(lock_data.platform_index) == "number" then
+            rekeyed[lock_data.platform_index] = lock_data
+            moved = moved + 1
+        else
+            dropped = dropped + 1
+        end
+    end
+    storage.locked_platforms = rekeyed
+    log(string.format("[SurfaceLock] Migrated lock registry to index keys: %d re-keyed, %d dropped (no index)", moved, dropped))
+    return moved, dropped
+end
+
 --- Lock a platform surface for transfer
 --- Completes cargo pod transfers, freezes entities, hides surface
 --- @param platform LuaSpacePlatform: The platform to lock
@@ -191,6 +223,9 @@ function SurfaceLock.lock_platform(platform, force)
     if not storage.locked_platforms then
         storage.locked_platforms = {}
     end
+    -- Migrate any legacy name-keyed entries to index keys before we read/write the registry (cheap no-op
+    -- once index-keyed). Covers a deploy that didn't fire on_configuration_changed — see ensure_index_keyed.
+    SurfaceLock.ensure_index_keyed()
 
     -- Check if already locked. Keyed by the UNIQUE platform.index (not the mutable, non-unique name) so
     -- two same-named platforms can't collide in the registry (#81). Name is kept inside lock_data for display.
@@ -267,21 +302,26 @@ function SurfaceLock.unlock_platform(platform_index)
     end
 
     local surface = platform.surface
-    local restored = 0
-    if surface and surface.valid then
-        -- Restore entity active states
-        restored = unfreeze_entities(surface, lock_data.frozen_states)
+    -- IDENTITY TRIPWIRE (symmetric with the delete path's name cross-check): only restore onto this platform
+    -- if it is the SAME one we locked. surface.index is the stable identity — a rename keeps it, but a
+    -- per-force platform INDEX reused after the source was deleted gets a NEW surface. If a different platform
+    -- now holds this index, do NOT restore (it would clobber an unrelated platform's frozen-state + schedule);
+    -- just drop the stale lock entry.
+    if not (surface and surface.valid and surface.index == lock_data.surface_index) then
+        storage.locked_platforms[platform_index] = nil
+        log(string.format("[SurfaceLock] unlock: index %s now holds a different surface (locked %s, found %s) — dropping stale lock WITHOUT restoring",
+            tostring(platform_index), tostring(lock_data.surface_index), tostring(surface and surface.index)))
+        return false, "Platform index reused since lock — stale lock dropped (not restored)"
+    end
 
-        -- Restore original visibility
-        force.set_surface_hidden(surface, lock_data.original_hidden)
-
-        -- Restore full original schedule (records + interrupts + group)
-        if lock_data.original_schedule then
-            local schedule_restore_ok, schedule_restore_err = PlatformSchedule.apply(platform, lock_data.original_schedule)
-            if not schedule_restore_ok then
-                storage.locked_platforms[platform_index] = nil
-                return false, "Failed to restore original platform schedule: " .. tostring(schedule_restore_err)
-            end
+    -- Restore entity active states, original visibility, and the full original schedule.
+    local restored = unfreeze_entities(surface, lock_data.frozen_states)
+    force.set_surface_hidden(surface, lock_data.original_hidden)
+    if lock_data.original_schedule then
+        local schedule_restore_ok, schedule_restore_err = PlatformSchedule.apply(platform, lock_data.original_schedule)
+        if not schedule_restore_ok then
+            storage.locked_platforms[platform_index] = nil
+            return false, "Failed to restore original platform schedule: " .. tostring(schedule_restore_err)
         end
     end
 

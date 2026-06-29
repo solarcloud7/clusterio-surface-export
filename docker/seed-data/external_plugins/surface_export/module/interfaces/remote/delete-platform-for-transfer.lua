@@ -29,9 +29,18 @@ local function delete_platform_for_transfer(platform_index, platform_name, force
     return "ERROR:Force not found: " .. tostring(force_name)
   end
 
+  -- Best-effort unlock FIRST, by index. This runs on EVERY path below — INCLUDING a refused delete — so a
+  -- refusal never leaves the source frozen-and-hidden (it would otherwise vanish from the owner's list until
+  -- an admin manually unlocked it, while the dest copy is already a live duplicate). unlock_platform is
+  -- identity-safe: it restores a renamed source but drops a stale/reused-index lock without clobbering. On the
+  -- success path the platform is deleted immediately after, so the brief restore is harmless.
+  GameUtils.pcall_warn("[DeleteForTransfer] unlock index " .. tostring(platform_index), function()
+    SurfaceLock.unlock_platform(platform_index)
+  end)
+
   -- Resolve by the UNIQUE index, then CROSS-CHECK the name. If the index is missing OR the platform there is
   -- not the one we exported (stale/reused index, or a renamed/mismatched platform), REFUSE to delete (the
-  -- safe direction): the source survives, the dest copy is already committed, and a loud error fires.
+  -- safe direction): the source survives (now unlocked, above), the dest copy is already committed, loud error.
   local platform = force.platforms[platform_index]
   if not platform or not platform.valid then
     return "ERROR:Platform not found at index " .. tostring(platform_index)
@@ -40,11 +49,6 @@ local function delete_platform_for_transfer(platform_index, platform_name, force
     return string.format("ERROR:index/name mismatch — platforms[%s] is '%s', expected '%s' (refusing to delete)",
       tostring(platform_index), tostring(platform.name), tostring(platform_name))
   end
-
-  -- Best-effort unlock so the lock-registry entry for this index doesn't linger after deletion.
-  GameUtils.pcall_warn("[DeleteForTransfer] unlock index " .. tostring(platform_index), function()
-    SurfaceLock.unlock_platform(platform_index)
-  end)
 
   -- Evacuate BEFORE deleting — players/characters must be off the surface before it is torn down. GUARDED
   -- (symmetric with the unlock above): an evacuation throw must NEVER abort the delete. If it did, the source

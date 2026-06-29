@@ -35,32 +35,6 @@ local function initialize_storage()
 	AsyncProcessor.init()
 end
 
--- Migrate storage.locked_platforms from the old NAME keys to the unique platform.index keys (the lock
--- registry is now index-keyed so two same-named platforms can't collide — #81). Idempotent: numeric keys
--- are left as-is; a string (name) key is re-keyed using the platform_index already stored inside each
--- lock_data; an entry with no usable index is dropped (a lock with no recoverable platform is stale anyway).
-local function migrate_lock_registry_to_index_keys()
-	local locks = storage.locked_platforms
-	if type(locks) ~= "table" then return end
-	local rekeyed = {}
-	local moved, dropped = 0, 0
-	for key, lock_data in pairs(locks) do
-		if type(key) == "number" then
-			rekeyed[key] = lock_data  -- already index-keyed
-		elseif type(lock_data) == "table" and type(lock_data.platform_index) == "number" then
-			rekeyed[lock_data.platform_index] = lock_data
-			moved = moved + 1
-		else
-			dropped = dropped + 1
-		end
-	end
-	storage.locked_platforms = rekeyed
-	if moved > 0 or dropped > 0 then
-		log(string.format("[Surface Export] Migrated lock registry to index keys: %d re-keyed, %d dropped (no index)",
-			moved, dropped))
-	end
-end
-
 function SurfaceExportModule.on_init()
 	initialize_storage()
 	log("[Surface Export] Save-patched module loaded with Clusterio support")
@@ -72,7 +46,9 @@ end
 
 function SurfaceExportModule.on_configuration_changed(data)
 	initialize_storage()
-	migrate_lock_registry_to_index_keys()
+	-- Migrate any legacy name-keyed locks to index keys (cheap no-op once index-keyed). Also runs lazily at
+	-- SurfaceLock.lock_platform so a deploy that didn't fire this hook still migrates before the next lock.
+	SurfaceLock.ensure_index_keyed()
 	-- Unlock gateways here too so adding the surfexp_gateways mod mid-save makes them routable
 	-- without waiting for the next server startup.
 	Gateway.discover_and_unlock()
@@ -228,7 +204,7 @@ SurfaceExportModule.events = {
 --
 -- For platform locking (transfer workflow):
 --   remote.call("surface_export", "lock_platform_for_transfer", platform_index, force_name)
---   remote.call("surface_export", "unlock_platform", platform_name)
+--   remote.call("surface_export", "unlock_platform", platform_index_or_name)  -- index preferred; name accepted
 --
 -- For validation:
 --   remote.call("surface_export", "get_validation_result", platform_name)
