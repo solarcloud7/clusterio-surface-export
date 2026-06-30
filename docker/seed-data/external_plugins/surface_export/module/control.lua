@@ -142,9 +142,7 @@ SurfaceExportModule.events = {
 					tostring(platform.force and platform.force.name or "?"),
 					gw_name))
 
-				local cfg = storage.surface_export_config
-					and storage.surface_export_config.gateways
-					and storage.surface_export_config.gateways[gw_name]
+				local cfg = Gateway.get_gateway_config(gw_name)
 				if cfg and cfg.targets and #cfg.targets > 0 then
 					local surf_idx = platform.surface.index
 					for _, player in pairs(game.connected_players) do
