@@ -16,7 +16,7 @@
     is created. This test reproduces the adversarial condition ON PURPOSE — it forces the dest bonus to 0
     regardless of environment — then WITNESSES (not infers):
       A) the dest force bonus was RAISED back to the source value           (live read on the dest),
-      B) the dest inserters PHYSICALLY hold ~the full source amount         (sum of held_stack.count),
+      B) the dest inserters PHYSICALLY SEAT the held items (no cap-collapse) (sum of held_stack.count),
       C) validation_success == true                                        (strict gate passes natively),
       D) forceDataMismatches recorded the raise                            (the warning fired).
 
@@ -27,19 +27,18 @@
 
 .PARAMETER SourcePlatform
     Platform to clone as the transfer subject (default: test — busy, with held inserters).
-.PARAMETER HeldTolPct
-    Tolerance on the dest-vs-source held total, as a fraction (default 0.12) — absorbs the inserter-motion
-    noise on the live source clone while staying well under the cap-at-1 collapse the test must catch.
-.PARAMETER HeldTolAbs
-    Minimum absolute held tolerance (default 12).
+.PARAMETER HeldSeatFrac
+    Minimum fraction of the source held total the dest must physically seat (default 0.5). Held-only is a
+    NON-conserved quantity (inserters cycle items between belt and hand every few ticks), so we do NOT assert
+    dst==src; we assert the dest did not COLLAPSE to the ~1-item-per-hand floor a reverted force-sync causes
+    (~#inserters, ~0.1x source) — 0.5 sits with large margin between that collapse and a real seat (~0.9x).
 .PARAMETER TimeoutSec
     Max seconds to wait for the destination import-result (default: 150).
 #>
 param(
     [string]$SourcePlatform = "test",
     [int]$SourceHost = 0,
-    [double]$HeldTolPct = 0.12,
-    [int]$HeldTolAbs = 12,
+    [double]$HeldSeatFrac = 0.5,
     [int]$TimeoutSec = 150
 )
 
@@ -140,7 +139,7 @@ try {
     $dstHeld   = Get-HeldTotal $dstSel $clone
     Write-Status "Destination after import: bonus(bulk=$($destAfter.bulk) stack=$($destAfter.stack))  held=$($dstHeld.held) over $($dstHeld.ins) inserters" -Type info
 
-    $heldTol = [Math]::Max($HeldTolAbs, [int]($srcHeld.held * $HeldTolPct))
+    $seatFloor = [int][Math]::Ceiling($srcHeld.held * $HeldSeatFrac)
 
     # --- Assertions ---
 
@@ -152,12 +151,17 @@ try {
         $failed++
     }
 
-    # B) The dest PHYSICALLY holds ~the full source amount (NOT capped at ~1/hand). Independent of the gate.
-    $heldDelta = [Math]::Abs($srcHeld.held - $dstHeld.held)
-    if ($dstHeld.held -gt 0 -and $heldDelta -le $heldTol) {
-        Write-TestResult -TestId "forcesync-held-preserved" -TestName "Dest inserters physically hold full source amount (src=$($srcHeld.held) dst=$($dstHeld.held), |Δ|=$heldDelta <= $heldTol)" -Status "passed"
+    # B) The dest PHYSICALLY SEATED the held items (force-sync worked) — independent of the gate's self-report.
+    #    Held-only is NOT conserved: inserters cycle items belt->hand->belt every few ticks, so dst held != src
+    #    held even at ZERO loss — the difference is on belts at the count tick, and the strict gate (C), which
+    #    counts belt+hand+inventory together, accounts for it (proven on 2.0.76: totalActual==totalExpected,
+    #    totalItemLoss=0, itemLossByType={}). So we do NOT compare dst~=src (a churning sub-quantity recounted on
+    #    the live source at a different tick); we assert the dest did not COLLAPSE to the ~1-per-hand floor
+    #    (~#inserters) a reverted force-sync causes — a generous floor with huge margin on both sides.
+    if ($dstHeld.held -ge $seatFloor) {
+        Write-TestResult -TestId "forcesync-held-seated" -TestName "Dest physically seated held items, no cap-collapse (src=$($srcHeld.held) dst=$($dstHeld.held) >= floor $seatFloor)" -Status "passed"
     } else {
-        Write-TestResult -TestId "forcesync-held-preserved" -TestName "Dest inserters physically hold full source amount" -Status "failed" -Message "src held=$($srcHeld.held) but dst held=$($dstHeld.held) |Δ|=$heldDelta > tol=$heldTol — held items capped on the under-researched dest (force-sync failed)"
+        Write-TestResult -TestId "forcesync-held-seated" -TestName "Dest physically seated held items (no cap-collapse)" -Status "failed" -Message "dst held=$($dstHeld.held) < floor $seatFloor (= $HeldSeatFrac x src $($srcHeld.held)) — hands collapsed toward ~1/inserter; force-sync did NOT seat (reverted?)"
         $failed++
     }
 
