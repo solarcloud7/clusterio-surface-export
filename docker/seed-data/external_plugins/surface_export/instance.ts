@@ -9,7 +9,7 @@ import { BaseInstancePlugin } from "@clusterio/host";
 import type { Instance } from "@clusterio/host";
 import type { ExportData, ExportResult, ImportResult, PendingTransfer } from "./messages";
 import * as messages from "./messages";
-import { getErrorMessage, EXPORT_POLL_TIMEOUT_MS, EXPORT_POLL_INTERVAL_MS } from "./helpers";
+import { getErrorMessage, coercePlatformIndex, EXPORT_POLL_TIMEOUT_MS, EXPORT_POLL_INTERVAL_MS } from "./helpers";
 import { LuaInterface } from "./lib/lua-interface";
 
 /**
@@ -789,12 +789,12 @@ export class InstancePlugin extends BaseInstancePlugin {
 	 * Handle delete source platform request
 	 */
 	async handleDeleteSourcePlatform(request: { platformIndex: number; platformName: string; forceName?: string }) {
-		const platformIndex = Number(request.platformIndex);
+		const platformIndex = coercePlatformIndex(request.platformIndex);
 		this.logger.info(`Deleting source platform: index ${platformIndex} ('${request.platformName}')`);
 
 		// Fail loud on a missing/invalid index rather than coercing — the Lua delete resolves force.platforms
 		// by this index and cross-checks the name, so a bad index here would (correctly) be refused downstream.
-		if (!Number.isInteger(platformIndex)) {
+		if (platformIndex === null) {
 			const error = `invalid platformIndex: ${String(request.platformIndex)}`;
 			this.logger.error(`Refusing source delete — ${error}`);
 			return { success: false, error };
@@ -826,11 +826,11 @@ export class InstancePlugin extends BaseInstancePlugin {
 	/**
 	 * Handle unlock source platform request (rollback)
 	 */
-	async handleUnlockSourcePlatform(request: { platformIndex: number; platformName?: string }) {
-		const platformIndex = Number(request.platformIndex);
+	async handleUnlockSourcePlatform(request: { platformIndex: number }) {
+		const platformIndex = coercePlatformIndex(request.platformIndex);
 		this.logger.info(`Unlocking source platform for rollback: index ${platformIndex}`);
 
-		if (!Number.isInteger(platformIndex)) {
+		if (platformIndex === null) {
 			const error = `invalid platformIndex: ${String(request.platformIndex)}`;
 			this.logger.warn(`Cannot unlock — ${error}`);
 			return { success: false, error };

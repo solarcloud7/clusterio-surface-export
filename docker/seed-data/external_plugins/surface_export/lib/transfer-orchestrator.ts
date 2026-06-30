@@ -1,5 +1,5 @@
 
-import { normalizeExportMetrics, TICKS_TO_MS, getErrorMessage, VALIDATION_TIMEOUT_MS, buildPayloadMetrics, buildImportMetrics } from "../helpers";
+import { normalizeExportMetrics, TICKS_TO_MS, getErrorMessage, coercePlatformIndex, VALIDATION_TIMEOUT_MS, buildPayloadMetrics, buildImportMetrics } from "../helpers";
 import { createOperationRecord } from "./operation-record";
 import type { IControllerPlugin, ActiveTransfer, SimpleResponse, TransferValidationEvent, StoredExport, ValidationResult, ImportMetrics, ExportMetrics } from "../messages";function mergeExportMetrics(storedMetrics: ExportMetrics | null | undefined, runtimeMetrics: Record<string, unknown> | null | undefined) {
 	const merged = {
@@ -62,7 +62,7 @@ export class TransferOrchestrator {
 	 *  send (and the benign already-unlocked handling) to sendUnlockRequest; adds the tx-log breadcrumbs. */
 	async tryUnlockSource(transferId: string, transfer: ActiveTransfer) {
 		this.txLogger.logTransactionEvent(transferId, "rollback_attempt", "Unlocking source platform", {});
-		const err = await this.sendUnlockRequest(transfer.sourceInstanceId, transfer.platformIndex, transfer.forceName || "player", transfer.platformName);
+		const err = await this.sendUnlockRequest(transfer.sourceInstanceId, transfer.platformIndex, transfer.forceName || "player");
 		if (!err) {
 			this.txLogger.logTransactionEvent(transferId, "rollback_success", "Source platform unlocked", {});
 			return null;
@@ -414,12 +414,12 @@ export class TransferOrchestrator {
 	 * not-locked cases, which are benign), or an error string. Shared by the rollback paths so a thrown
 	 * transfer step can never leave the source stuck locked-and-hidden.
 	 */
-	private async sendUnlockRequest(sourceInstanceId: number, platformIndex: number, forceName: string, platformName = ""): Promise<string | null> {
-		if (!Number.isInteger(platformIndex)) return `invalid platformIndex: ${String(platformIndex)}`;
+	private async sendUnlockRequest(sourceInstanceId: number, platformIndex: number, forceName: string): Promise<string | null> {
+		if (coercePlatformIndex(platformIndex) === null) return `invalid platformIndex: ${String(platformIndex)}`;
 		try {
 			const resp = await this.plugin.controller.sendTo(
 				{ instanceId: sourceInstanceId },
-				new this.messages.UnlockSourcePlatformRequest({ platformIndex, platformName, forceName }),
+				new this.messages.UnlockSourcePlatformRequest({ platformIndex, forceName }),
 			);
 			if (resp?.success) return null;
 			const err = resp?.error || "Unknown unlock error";
@@ -446,7 +446,7 @@ export class TransferOrchestrator {
 			const stored = this.plugin.platformStorage.get(request.exportId);
 			const force = String((stored?.exportData as { platform?: { force?: string } } | undefined)?.platform?.force || "player");
 			if (stored && Number.isInteger(stored.platformIndex)) {
-				const rollbackError = await this.sendUnlockRequest(stored.instanceId, stored.platformIndex as number, force, stored.platformName);
+				const rollbackError = await this.sendUnlockRequest(stored.instanceId, stored.platformIndex as number, force);
 				if (rollbackError) {
 					this.logger.error(`Rollback unlock of source #${stored.platformIndex} ('${stored.platformName}') failed: ${rollbackError}`);
 				}

@@ -39,6 +39,15 @@ export function toFiniteNumber(value: unknown): number | null {
 }
 
 /**
+ * Coerce a value to an integer platform index, or null if it isn't a valid integer. The single
+ * "is this a usable platform index?" guard shared by the index-keyed source-delete / unlock paths.
+ */
+export function coercePlatformIndex(value: unknown): number | null {
+	const numeric = Number(value);
+	return Number.isInteger(numeric) ? numeric : null;
+}
+
+/**
  * Normalize raw export metrics from Lua (which may use old or new field names)
  * to the canonical camelCase schema expected by the controller and web UI.
  */

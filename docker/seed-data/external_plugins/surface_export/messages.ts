@@ -1061,28 +1061,24 @@ export class UnlockSourcePlatformRequest {
 		type: "object",
 		properties: {
 			platformIndex: { type: "integer" },
-			platformName: { type: "string" },
 			forceName: { type: "string", default: "player" },
 		},
 		required: ["platformIndex"],
 		additionalProperties: false,
 	};
 
-	// Unlock keys on the unique platformIndex. platformName is OPTIONAL (defaults to "") — the rollback path
-	// may only have the index (when the stored export has timed out), and the Lua unlock recovers the display
-	// name from lock_data, so the request doesn't need it. (Delete keeps name required — it's a tripwire there.)
+	// Unlock keys purely on the unique platformIndex — the registry is index-keyed and the Lua unlock recovers
+	// the display name from lock_data, so no name is needed. (Delete keeps name required — it's a tripwire there.)
 	platformIndex: number;
-	platformName: string;
 	forceName: string;
 
-	constructor(json: { platformIndex: number; platformName?: string; forceName?: string }) {
+	constructor(json: { platformIndex: number; forceName?: string }) {
 		this.platformIndex = json.platformIndex;
-		this.platformName = json.platformName || "";
 		this.forceName = json.forceName || "player";
 	}
 
-	static fromJSON(json: { platformIndex: number; platformName?: string; forceName?: string }) { return new UnlockSourcePlatformRequest(json); }
-	toJSON() { return { platformIndex: this.platformIndex, platformName: this.platformName, forceName: this.forceName }; }
+	static fromJSON(json: { platformIndex: number; forceName?: string }) { return new UnlockSourcePlatformRequest(json); }
+	toJSON() { return { platformIndex: this.platformIndex, forceName: this.forceName }; }
 
 	static Response = {
 		jsonSchema: { type: "object", properties: { success: { type: "boolean" }, error: { type: "string" } }, required: ["success"] } as JsonSchema,

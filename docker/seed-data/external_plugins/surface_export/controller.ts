@@ -157,7 +157,7 @@ export class ControllerPlugin extends BaseControllerPlugin {
 			this.platformStorage.set(event.exportId, {
 				exportId: event.exportId,
 				platformName: event.platformName,
-				platformIndex: Number.isInteger(event.platformIndex) ? (event.platformIndex as number) : null,
+				platformIndex: event.platformIndex ?? null,
 				instanceId: event.instanceId,
 				exportData: event.exportData,
 				exportMetrics: event.exportMetrics || null,
@@ -674,16 +674,16 @@ export class ControllerPlugin extends BaseControllerPlugin {
 	/** Push the resolved gateway config to every connected instance (best-effort per instance). */
 	private async pushGatewayConfigToConnectedInstances(): Promise<void> {
 		const gateways = this.resolveGateways();
-		for (const inst of this.c.instances.values()) {
-			if (inst.isDeleted || !this.isInstanceOnline(inst.id)) {
-				continue;
-			}
+		const online = [...this.c.instances.values()].filter(inst => !inst.isDeleted && this.isInstanceOnline(inst.id));
+		// Fan out in parallel — each push catches its own error, so one slow/failed instance can't delay or
+		// abort the others (Promise.all never rejects here because the per-instance catch resolves).
+		await Promise.all(online.map(async inst => {
 			try {
 				await this.c.sendTo({ instanceId: inst.id }, new messages.PushGatewayConfigRequest({ gateways }));
 			} catch (err: unknown) {
 				this.logger.warn(`Failed to push gateway config to instance ${inst.id}: ${getErrorMessage(err)}`);
 			}
-		}
+		}));
 	}
 
 	/** control → controller: raw links + the pinned gateway-name list (for the web editor). */
