@@ -32,9 +32,11 @@ Base.admin_command("unlock-platform",
       end
     else
       -- Resolve the name-or-index to the lock-registry key (unique index), failing loud on an ambiguous name.
-      local err
-      lock_key, err = Base.resolve_lock_key(ctx.force, param)
+      -- Prefer the live platform's display name for messages; fall back to the stored lock name (orphaned lock).
+      local err, display_name
+      lock_key, err, display_name = Base.resolve_lock_key(ctx.force, param)
       if err then ctx.print(err); return end
+      if display_name then platform_name = display_name end
       local lock_data = lock_key and SurfaceLock.get_lock_data(lock_key)
       if lock_data and lock_data.platform_name then platform_name = lock_data.platform_name end
     end
