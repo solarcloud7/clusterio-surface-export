@@ -2,6 +2,7 @@
 -- Common helper functions for command modules
 
 local RemoteBase = require("modules/surface_export/interfaces/remote/base")
+local SurfaceLock = require("modules/surface_export/utils/surface-lock")
 
 local Base = {}
 
@@ -81,5 +82,19 @@ end
 -- Re-export utilities from remote/base
 Base.find_platform = RemoteBase.find_platform
 Base.get_force = RemoteBase.get_force
+
+--- Resolve a platform name-or-index to its lock-registry key (the unique platform index). A live platform
+--- resolves to its `.index`; an orphaned lock (the platform was already deleted) is recovered by a name scan
+--- of the registry. Fails loud on an ambiguous name (≥2 live platforms — or ≥2 locks — share it) so a
+--- destructive lock op never silently targets the wrong platform; the caller prints the error and returns.
+--- @param force LuaForce
+--- @param name_or_index string|number: Unique platform index (preferred) or display name
+--- @return number|nil lock_key, string|nil err
+function Base.resolve_lock_key(force, name_or_index)
+  local target, find_err = Base.find_platform(force, name_or_index)
+  if find_err then return nil, find_err end
+  if target then return target.index, nil end
+  return SurfaceLock.find_lock_key_by_name(name_or_index)
+end
 
 return Base

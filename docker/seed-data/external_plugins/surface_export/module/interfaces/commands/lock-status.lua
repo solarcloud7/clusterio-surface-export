@@ -27,15 +27,10 @@ Base.admin_command("lock-status",
     
     -- If specific platform requested
     if param and param ~= "" then
-      -- Resolve the user input (name or index) to the unique platform index (the registry key); for an
-      -- orphaned lock (platform deleted) fall back to a name scan of the registry (fail-loud on ambiguity).
-      local target = Base.find_platform(ctx.force, param)
-      local lock_key = target and target.index
-      if not lock_key then
-        local key, ambiguous_err = SurfaceLock.find_lock_key_by_name(param)
-        if ambiguous_err then ctx.print(ambiguous_err); return end
-        lock_key = key
-      end
+      -- Resolve the user input (name or index) to the unique platform index (the registry key), failing loud
+      -- on an ambiguous name (≥2 platforms/locks share it).
+      local lock_key, err = Base.resolve_lock_key(ctx.force, param)
+      if err then ctx.print(err); return end
       local lock_data = lock_key and SurfaceLock.get_lock_data(lock_key)
       if not lock_data then
         ctx.print("Platform '" .. param .. "' is not locked")
