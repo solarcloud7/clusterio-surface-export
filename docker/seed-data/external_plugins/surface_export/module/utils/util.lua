@@ -14,9 +14,6 @@ Util.sanitize_filename = StringUtils.sanitize_filename
 Util.simple_checksum = StringUtils.simple_checksum
 
 -- Re-export table utilities
-Util.table_deep_copy = TableUtils.deep_copy
-Util.is_table_empty = TableUtils.is_empty
-Util.table_merge = TableUtils.merge
 Util.sum_items = TableUtils.sum_items
 Util.sum_fluids = TableUtils.sum_fluids
 Util.is_array = TableUtils.is_array

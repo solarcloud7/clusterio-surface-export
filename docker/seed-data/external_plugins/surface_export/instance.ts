@@ -7,6 +7,7 @@
 import fs from "fs";
 import { BaseInstancePlugin } from "@clusterio/host";
 import type { Instance } from "@clusterio/host";
+import { wait } from "@clusterio/lib";
 import type { ExportData, ExportResult, ImportResult, PendingTransfer } from "./messages";
 import * as messages from "./messages";
 import { getErrorMessage, EXPORT_POLL_TIMEOUT_MS, EXPORT_POLL_INTERVAL_MS } from "./helpers";
@@ -404,7 +405,7 @@ export class InstancePlugin extends BaseInstancePlugin {
 			if (lastAttempt) {
 				return lastAttempt;
 			}
-			await new Promise(resolve => setTimeout(resolve, intervalMs));
+			await wait(intervalMs);
 		}
 		this.logger.error(`Timed out waiting for export data for ${exportId} after ${timeoutMs}ms`);
 		// Log available exports for debugging once at timeout
@@ -562,7 +563,7 @@ export class InstancePlugin extends BaseInstancePlugin {
 			this.logger.info("Platform import chunks sent successfully");
 
 			// Step 3: Wait a moment for async processing to start
-			await new Promise(resolve => setTimeout(resolve, 500));
+			await wait(500);
 
 			// Step 4: Verify the import was queued
 			try {

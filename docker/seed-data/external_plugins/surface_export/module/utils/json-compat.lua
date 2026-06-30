@@ -1,5 +1,8 @@
 -- FactorioSurfaceExport - JSON and File Compatibility Layer
 -- Handles JSON encoding/decoding and file I/O across different Factorio versions
+-- NATIVE-FIRST compat seam (library-reuse audit): encode/decode/read/write PREFER Factorio native
+-- helpers.*/game.* (table_to_json / json_to_table / write_file / read_file); the hand-rolled encoder
+-- below is a LAST-RESORT fallback only. This IS the library-first path, NOT reinvention — do not re-flag.
 
 -- NOTE: This module is injected into a save via Clusterio, not loaded as a Factorio mod.
 -- That means mod-qualified paths like "__SomeMod__/json" are not available.
