@@ -1,5 +1,6 @@
 
 import fs from "fs/promises";
+import { safeOutputFile } from "@clusterio/lib";
 import type { IControllerPlugin, ActiveTransfer, PersistedTransactionLog, TransactionLogEntryModel } from "../messages";
 import { getErrorMessage } from "../helpers";
 
@@ -289,7 +290,7 @@ export class TransactionLogger {
 				allLogs.push(entry);
 			}
 
-			await fs.writeFile(this.plugin.transactionLogPath, JSON.stringify(allLogs, null, 2), "utf8");
+			await safeOutputFile(this.plugin.transactionLogPath, JSON.stringify(allLogs, null, 2));
 			this.plugin.persistedTransactionLogs = allLogs;
 		} catch (err: unknown) {
 			this.plugin.logger.error(`Failed to persist transaction log: ${getErrorMessage(err)}`);
