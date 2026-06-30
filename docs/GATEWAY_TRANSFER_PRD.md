@@ -1,283 +1,144 @@
-# In-Game Gateway Transfer — Product Requirements (PRD)
+# Gateway Transfer — Design and Current State
 
-**Status:** Phase 1a CORE MECHANIC IMPLEMENTED (2026-06-28) — explicit `/gateway-transfer` command works
-end-to-end (park at gateway → transfer → arrive paused at the gateway, hop stripped, full fidelity). Next:
-Phase 1b (on-arrival GUI + conditions + passenger hard-block), Phase 1c (web Gateways config tab).
-**Date:** 2026-06-19 (Phase 0 results added 2026-06-28; Phase 1a status 2026-06-28)
-**Owner:** Solar
-**Component:** `clusterio-surface-export`
+> The filename keeps its historical `_PRD` suffix so existing links stay valid. This is a facts-forward
+> design + current-state reference (what the feature does now, the API behavior it rests on, and what is
+> not yet built) — not a requirements/tracking document.
 
-> This is a living design snapshot captured during a requirements interview. Sections 1–8 are
-> decided; Section 10 lists what is still open. Update this file as decisions land.
->
-> ✅ **Phase 0 PASSED — building is unblocked.** The core mechanic was validated empirically on the live
-> cluster with vanilla `solar-system-edge` (zero mod-building): a platform routed there reaches a **stable
-> `waiting_at_station`** (it PARKS — not a fly-by) and the existing `on_space_platform_changed_state`
-> handler **fires** (proven via its `storage.platform_flight_data` side effect). Full results + the API
-> facts discovered are in §6. Proceed to Phase 1.
+Players trigger a cross-instance space-platform transfer **from inside the game** by flying a platform to a
+dedicated in-space **gateway**, instead of using the web UI. It reuses the existing transfer pipeline and is
+a feature of this repo, not a separate project.
 
----
+## Contents
 
-## 1. Summary / Goal
+- [Current state](#current-state)
+- [How a gateway transfer runs](#how-a-gateway-transfer-runs)
+- [The gateway mod](#the-gateway-mod)
+- [Where each piece lives](#where-each-piece-lives)
+- [Verified Factorio API behavior](#verified-factorio-api-behavior)
+- [Passenger handling](#passenger-handling)
+- [Planned work](#planned-work)
+- [References](#references)
 
-Let players trigger a cross-instance space-platform transfer **from inside the game** by flying the
-platform to a dedicated in-space **gateway**, instead of only via the web UI. The experience is
-diegetic — "fly your ship to a place, and it crosses to the other server." This is a feature *of this
-repo*, reusing the existing transfer pipeline; it is not a separate project.
+## Current state
 
-**Non-goal (for now):** fully automated, schedule-driven cross-server routing (see Phase 2 / open
-questions — it is blocked on a real Factorio limitation).
+| Piece | Home | What it does |
+|---|---|---|
+| **Gateway mod** (data-stage) | `docker/seed-data/mods-src/surfexp_gateways/` → built `docker/seed-data/mods/surfexp_gateways_0.1.0.zip` | 4 surfaceless gateway `space-location`s + `nauvis` connections; pure data, no control.lua |
+| **Gateway logic** | [gateway.lua](../docker/seed-data/external_plugins/surface_export/module/core/gateway.lua) | discovery + per-force unlock, arrival detection, passenger evacuation, schedule hop-strip |
+| **Commands** | `module/interfaces/commands/{gateway-transfer,gateway-gui}.lua` | `/gateway-transfer <index> <dest_id>`, `/gateway-gui <index>` |
+| **On-arrival chooser GUI** | [gui/gateway-transfer.lua](../docker/seed-data/external_plugins/surface_export/module/interfaces/gui/gateway-transfer.lua) | opens for viewers when a platform parks at a gateway that has configured targets |
+| **Web Gateways tab** | [GatewaysTab.tsx](../docker/seed-data/external_plugins/surface_export/web/GatewaysTab.tsx) + `GetGatewaysRequest` / `SetGatewayLinkRequest` in [messages.ts](../docker/seed-data/external_plugins/surface_export/messages.ts) | edit each gateway's destination links; controller is the source of truth; an empty target list disables the gateway |
 
----
+A transfer triggered at a gateway runs the existing **two-phase commit** pipeline — the source platform is
+deleted only after the destination validates. The destination is resolved either explicitly (the command
+argument) or from the configured gateway links (the on-arrival chooser).
 
-## 2. Background — what exists today
+## How a gateway transfer runs
 
-- **The transfer machinery is fully built and keys off a single value: a numeric
-  `destination_instance_id`.** `/transfer-platform <index> <dest_id>` → lock platform →
-  `AsyncProcessor.queue_export(index, force, "TRANSFER", dest_id)` →
-  `clusterio_api.send_json("surface_transfer_request", {…, destination_instance_id})`. The controller's
-  `TransferOrchestrator` then runs **export → transmit → import → validate → delete-source**, a
-  **two-phase commit** (source platform is deleted only after the destination validates).
-- **The in-game trigger hook already exists.** `module/control.lua` handles
-  `on_space_platform_changed_state`; it already reads the schedule destination
-  (`schedule.records[schedule.current].station`) and sends a `send_json` telemetry event. **Today it
-  does not initiate a transfer** — that is the gap this feature closes.
-- **The plugin is a save-patched Clusterio plugin (control-stage Lua only).** It cannot define Factorio
-  prototypes.
-- **There is no first-party data-stage mod yet.** `docker/seed-data/mods/` contains only third-party
-  mods (FluidMustFlow, maraxsis, Spidertron×2).
+1. **Route** a platform to a `surfexp_gateway_*` (reached via a `space-connection` from `nauvis`, length
+   3000). It reaches `waiting_at_station` (state 6) and **parks** — the gateway has no `fly_condition`, so it
+   is not a fly-by.
+2. **Trigger** (currently manual):
+   - `/gateway-transfer <platform_index> <destination_instance_id>` — gates on `Gateway.parked_at_gateway`
+     (refuses unless the platform is parked at a gateway); the destination is supplied explicitly. Or
+   - the **on-arrival chooser GUI**, opened automatically for players viewing a platform that parks at a
+     gateway with configured target links (`/gateway-gui <index>` opens it on demand).
+3. **Transfer** via `TransferTrigger.start(force, index, dest_id, gateway_name)` → the existing pipeline:
+   lock → export (`TRANSFER`, dest) → controller route → import on target → validate → delete source.
+4. **On import**, the platform is placed at the target gateway (default: the same gateway name on the
+   destination), arrives **paused**, and has the gateway hop stripped from its schedule
+   (`Gateway.strip_gateway_records`) so it does not immediately fly back.
+5. **Passengers** aboard, and any abandoned character bodies, are evacuated to Nauvis at the source-delete
+   chokepoint (`Gateway.evacuate_passengers`, before `game.delete_surface`).
 
-So the feature reduces to three new bolts: **(a)** a place to fly to, **(b)** map that place → an
-instance id, **(c)** call the transfer that already exists.
+## The gateway mod
 
----
+[surfexp_gateways](../docker/seed-data/mods-src/surfexp_gateways/) is a pure data-stage mod (no control.lua)
+that ships **4** gateway `space-location` prototypes (`surfexp_gateway_1`..`4`), each modeled exactly on
+vanilla `solar-system-edge`:
 
-## 3. Key research findings (load-bearing — do not re-derive)
+- **No `fly_condition`** → a routed platform reaches a stable `waiting_at_station` (it parks).
+  `shattered-planet` sets `fly_condition = true` (the fly-by tell); the gateway omits it.
+- **No `surface` / `map_gen`** → surfaceless (no surface is generated).
+- **No `asteroid_spawn_definitions`** → an asteroid-free route.
+- Each has a `space-connection` (`surfexp_gateway_link_i`) from `nauvis`, length 3000 — a short hop (vanilla
+  nauvis→planet is 15000).
 
-### Factorio 2.0 Space Age API
-- **A surfaceless-but-parkable destination is a `space-location` prototype** (as opposed to a `planet`,
-  which generates a surface). Vanilla precedent: **"Solar system edge"** — reachable, platforms park
-  there with normal wait conditions. The **"Shattered planet"** is the *other* kind: 4,000,000 km out,
-  "not intended to be reached," so selecting it converts the wait condition into a **"fly condition"**
-  (triggers en-route, never parks). → **Our gateway must be modeled on Solar System Edge (reachable)**
-  so the platform truly enters `waiting_at_station` and the existing handler fires. **Likely explicit
-  lever:** `LuaSpaceLocationPrototype.fly_condition` (exists in the API) — set it false for a parkable
-  gateway, rather than tuning `space-connection.length` to avoid shattered-planet behavior. *Verify in
-  Phase 0.*
-- **Prototypes are data-stage and cannot be created at runtime.** Adding a `space-location` /
-  `space-connection` requires a **mod in the mod pack**. Clusterio save-patching is control-stage only
-  ("Mods on the other hand work without modifications"); the instance mods folder is driven entirely by
-  the mod pack (`Instance.syncMods`).
-- **`space-connection`** = `from` / `to` (SpaceLocationID) + `length` (km, can't be 0). One connection
-  from an existing planet → the gateway is what makes it appear in the hub's "add station" picker.
-- **Hidden-until-configured is supported — but `hidden` and `unlocked` are INDEPENDENT axes, do not
-  conflate them.** `SpaceLocationPrototype.hidden` (bool) "Hides the space location from the planet
-  selection lists and the space map" — this is likely *unconditional*, i.e. an unlocked-but-`hidden`
-  location probably still won't appear in the schedule picker, which would defeat reveal-by-config.
-  **Working hypothesis (verify in Phase 0): ship gateways `hidden = false` but LOCKED (simply never
-  auto-unlocked), and reveal a configured gateway with runtime
-  `LuaForce.unlock_space_location(name)`** ("Unlocks the planet to be accessible to this force"). *No
-  runtime single-location re-lock was found* → functional gating must be plugin-side regardless of
-  visibility (the plugin no-ops on docking at an unconfigured gateway no matter what).
-- **Runtime placement / identity primitives:** `platform.space_location = <loc>` (teleports; cancels
-  pending item requests), `platform.space_connection = <conn>` (sets distance to 0.5). Lua reads its own
-  instance id via `remote.call("clusterio_api", "get_instance_id")`. Player primitives:
-  built-in **"Passenger present / not present"** wait condition; `LuaPlayer.land_on_planet` (ejects a
-  player from the platform onto the current planet).
+The mod ships **locked** (no unlock technology). The save-patched plugin unlocks each gateway per-force at
+runtime (`Gateway.discover_and_unlock` → `force.unlock_space_location`). The plugin **no-ops** when a platform
+parks at a gateway with no configured targets, so an unconfigured gateway is inert regardless of visibility.
 
-### Clusterio prior art — `edge_transports` → `universal_edges`
-- An **"edge" link** is configured as `{ id, origin[x,y], surface, direction, length, target_instance,
-  target_edge }`. → This is exactly our gateway shape: a place that maps to a **target instance** *and*
-  a **corresponding place on the far side** (`target_edge`).
-- **Config is offline / applied at startup** (`edge_transports.internal` per-instance). The successor
-  **`universal_edges` moved edge config to a web interface** on a **global (controller) config system**.
-  → Validates our "offline config + web dashboard, controller = source of truth" plan; it is the same
-  direction Clusterio itself went.
-- **Player/passenger-in-vehicle handling is NOT solved or documented** in either plugin (universal_edges
-  even lists "train fuel and schedules go missing" as open bugs). → There is no blueprint to copy; we
-  engineer the player hazard ourselves.
-
-**Sources:** lua-api.factorio.com (`SpaceLocationPrototype`, `LuaForce.unlock_space_location`,
-`LuaSpacePlatform`, `SpaceConnectionPrototype`); Factorio wiki (Space platform, Shattered planet);
-Clusterio `docs/how-it-works.md` + `Instance.syncMods`; GitHub `clusterio/edge_transports`,
-`clusterio/universal_edges`.
-
----
-
-## 4. Architecture (where each piece lives in this repo)
+## Where each piece lives
 
 | Layer | Home | Responsibility |
 |---|---|---|
-| **Data-stage mod** (new) | `docker/seed-data/mods/<surfexp_gateways>/`, added to the mod pack | **Prototypes only** — N gateway `space-location`s (Solar-System-Edge style, reachable — `fly_condition = false`; shipped **locked but not `hidden`**, never auto-unlocked — pending Phase 0), `space-connection`(s) wiring each gateway to an existing planet, icon, locale. Discoverable by naming convention `surfexp_gateway_*`. **No control-stage code.** |
-| **Save-patched plugin** (existing) | `module/` | Gateway discovery (scan `prototypes.space_location` by prefix); per-force `unlock_space_location` of configured gateways at startup; arrival detection (extend the existing `on_space_platform_changed_state` handler); Phase-1 transfer GUI/button + "conditions met" checks; call into the existing `surface_transfer_request` flow. |
-| **Controller / web UI** (existing) | `controller.ts`, `web/` | New **"Gateways" tab** to configure links; controller is source of truth; config applied offline/at startup. |
+| **Data-stage mod** | `mods-src/surfexp_gateways/` (built into `mods/`) | Prototypes only — gateway `space-location`s + `nauvis` connections + icon/locale. No control-stage code. |
+| **Save-patched plugin** | `module/core/gateway.lua`, `module/interfaces/{commands,gui}/` | Discovery + per-force unlock, arrival detection (extends the `on_space_platform_changed_state` handler), the transfer trigger + chooser GUI, passenger evacuation, schedule hop-strip. |
+| **Controller / web** | `controller.ts`, `web/GatewaysTab.tsx`, `messages.ts` | The Gateways config tab; controller is the source of truth; resolved links are pushed to instances. |
 
-**Why the split works:** the save-patched module runs in the *same* Factorio game as the mod, so at
-runtime the plugin can see the mod's prototype by name (`game.space_location_prototypes[...]`,
-`platform.space_location.name == "surfexp_gateway_1"`). The mod can be pure data; all logic stays in the
-plugin we already develop.
+The split works because the save-patched module runs in the *same* Factorio game as the mod, so at runtime it
+sees the mod's prototypes by name (`game.space_location_prototypes[...]`,
+`platform.space_location.name == "surfexp_gateway_1"`). The mod stays pure data; all logic lives in the plugin.
 
----
+## Verified Factorio API behavior
 
-## 5. Topology & configuration model
+Load-bearing facts (verified empirically on the live cluster and on Factorio 2.0.76 — do not re-derive):
 
-- **N gateways supported (optional).** Runtime treats gateways as a **set** and never assumes a
-  singleton. Ship **4 prototypes**, **1 enabled by default**.
-- **Gateway ↔ instance = many-to-many**, **default 1:1**.
-- A **gateway-link** = **`{ target_instance, target_gateway }`** (mirrors edge `target_instance` +
-  `target_edge`). Default 1:1 means `surfexp_gateway_1@A ↔ surfexp_gateway_1@B`.
-- **Config is offline** (applied at instance startup, like other Clusterio settings) and edited via the
-  **web dashboard** (controller-global). Changing it requires the standard restart/sync, not a live
-  hot-reconfigure.
-- **Provisioning reality:** the *number of physical gateway places* is fixed at mod-build (data-stage).
-  The dashboard maps / enables / names / routes the existing pool; adding a brand-new place = add one
-  templated prototype + rebuild the mod (the only data-stage step).
+- A **surfaceless-but-parkable destination is a `space-location` prototype** (a `planet` would generate a
+  surface). Vanilla precedent: `solar-system-edge`. A platform routed to a location with **no `fly_condition`**
+  reaches `waiting_at_station` and parks; a fly-by location (`shattered-planet`, `fly_condition = true`) never
+  parks. `fly_condition` and `hidden` are **data-stage only — not runtime-readable** on
+  `LuaSpaceLocationPrototype`.
+- **Prototypes are data-stage and cannot be created at runtime**, so a `space-location` / `space-connection`
+  requires a mod in the mod pack. Clusterio save-patching is control-stage only.
+- **`hidden` and `unlocked` are independent axes.** Reveal a gateway with
+  `LuaForce.unlock_space_location(name)`; there is no runtime single-location **re-lock** API, so functional
+  gating is plugin-side regardless of visibility.
+- **Placement / schedule primitives:** `platform.space_location = "<name>"` (string; teleports/places, cancels
+  pending item requests); `platform.get_schedule().go_to_station(index)` routes to a record; `platform.schedule`
+  is a read-only plain-table copy while `get_schedule()` returns the live `LuaSchedule`. A gateway "station" is a
+  schedule record whose `station` is the gateway's space-location name.
+- **`defines.space_platform_state`:** paused = 7, waiting_at_station = 6, on_the_path = 2, no_schedule = 4,
+  no_path = 5, waiting_for_departure = 3.
+- **`on_space_platform_changed_state` fires** on the park transition. Its success path does **not** `log()` (it
+  `send_json`s `surface_platform_state_changed`), so observe it via its `storage.platform_flight_data` side
+  effect or the controller event — not `factorio-current.log`.
+- `force.is_space_location_unlocked("<name>")` reports unlock state.
 
----
+## Passenger handling
 
-## 6. Phasing
+A transfer is **not** blocked when players are aboard. A platform passenger is hub-locked in remote view with
+roughly no inventory (only equipped gear). Everyone aboard, and any abandoned character bodies, are
+**evacuated to Nauvis** at the sole source-delete chokepoint (`delete_platform_for_transfer` →
+`Gateway.evacuate_passengers`, run before `game.delete_surface`) — never orphaned, never duplicated (the
+destination copy is already committed). Covered by `tests/integration/passenger-evacuate`; see the passenger
+section of [CLAUDE.md](../CLAUDE.md).
 
-- **Phase 0 ✅ PASSED (2026-06-28) — core mechanic validated empirically.** On the live cluster, no
-  mod-building, no GUI, using vanilla `solar-system-edge` (already unlocked for the player force). A long
-  *natural* flight was avoided by teleporting a **clone** of `test` (the `test` fixture was untouched).
-  **RESULTS (empirical facts — do not re-derive):**
-  - ✅ **PARKS, not fly-by.** A platform whose schedule targets `solar-system-edge` (a schedule record with
-    `station="solar-system-edge"` + a wait condition) reaches **`waiting_at_station` (state=6)** and stays
-    there for the wait duration (confirmed STABLE ≥8s, speed≈0; then departed exactly when the 30s `time`
-    wait elapsed). A fly-by location (shattered-planet style) never reaches `waiting_at_station`. → our
-    gateway, modeled on solar-system-edge, will park.
-  - ✅ **The handler FIRES.** `on_space_platform_changed_state` ran on the platform's state changes — proven
-    via its side effect `storage.platform_flight_data[name] = {departure_tick=…}` (written ONLY by that
-    handler). NOTE: the success path does NOT `log()` (it `send_json`s `surface_platform_state_changed`), so
-    detect it via the side effect or the controller event — not `factorio-current.log`.
-  - ✅ **API for Phase 1 (verified on 2.0.76):**
-    - `platform.space_location = "solar-system-edge"` (STRING name) teleports/places the platform. → use
-      this for §7.4 "place the imported platform at the target gateway."
-    - `platform.get_schedule().go_to_station(index)` routes to a schedule record (sets `current`). Records are
-      `{station="<space-location-name>", wait_conditions={…}, allows_unloading, temporary, created_by_interrupt}`.
-      → a gateway "station" is just a schedule record whose `station` is the gateway's space-location name.
-    - `platform.schedule` returns a plain-table COPY (read-only view); `platform.get_schedule()` returns the
-      live `LuaSchedule` (write). `defines.space_platform_state`: paused=7, waiting_at_station=6, on_the_path=2,
-      no_schedule=4, no_path=5, waiting_for_departure=3.
-    - `force.is_space_location_unlocked("solar-system-edge")` → true (already unlocked); `unlock_space_location`
-      is the reveal lever (§3 plan holds).
-  - ⚠️ **`fly_condition` / `hidden` are NOT runtime-readable** on `LuaSpaceLocationPrototype` (returned n/a) —
-    they are data-stage prototype settings we set when BUILDING the gateway mod (model on solar-system-edge,
-    which parks). The `hidden`-vs-picker behaviour can only be confirmed once the mod ships a gateway
-    prototype; NOT a blocker — functional gating is plugin-side regardless (§8).
-  - 📝 **Topology note:** `solar-system-edge` is reached only via `aquilo↔solar-system-edge` (length 100000),
-    several hops from nauvis → a *natural* flight is long. The gateway mod should add a shorter
-    `space-connection` from a convenient planet so players can actually fly to the gateway.
-  **Exit criteria MET → Phase 1 is real. Proceed.**
+## Planned work
 
-  Original procedure (for reference): (1) `/sc for n,_ in pairs(prototypes.space_location) do rcon.print(n) end`;
-  (2) `unlock_space_location("solar-system-edge")`; (3) route a clone there (schedule `go_to_station` +
-  `space_location=`); (4) poll `{state, space_location.name}` + check `storage.platform_flight_data`.
-- **Phase 1 (priority) — manual, explicit.** Fly to a gateway → platform parks
-  (`waiting_at_station`) → plugin shows a **custom GUI / button** → on press, **if conditions are met**,
-  run the transfer. No accidental triggers. Destination comes from the gateway-link config (an in-GUI
-  selector appears only when a gateway is configured with multiple targets).
-- **Phase 2 (deferred — research item) — automation.** Auto-trigger on arrival / via schedule logic.
-  **Blocked on:** *worlds can't see each other's "stops"* — an instance only knows its own
-  space-locations, so vanilla schedule routing can't target another server's destination. Likely needs
-  plugin-injected schedule/interrupt logic or config-driven auto-transfer on arrival. Explicitly **not**
-  in Phase 1.
+- **Automation** — auto-trigger on arrival, or schedule-driven routing. Blocked on a Factorio limitation: an
+  instance only knows its own space-locations, so vanilla schedule routing cannot target another server's
+  destination. Likely needs plugin-injected schedule/interrupt logic or config-driven auto-transfer on arrival.
+- **Follow-your-platform (Layer 2)** — carry the player with the platform to the destination via
+  `LuaPlayer.connect_to_server` + `enter_space_platform` (no `inventory_sync`). Spike-gated on
+  `host.public_address` client reachability; Layer 1 (evacuate to Nauvis) is the fallback.
+- **Richer trigger conditions and policy** — the "conditions met" set beyond "parked at a gateway" (target
+  instance online, no in-flight transfer for this platform, fuel/thrust state); who may trigger versus
+  configure; `space-connection` length tuning; a re-lock workaround for a disabled gateway; per-force versus
+  global unlock.
 
----
-
-## 7. Transfer flow (reuses the existing pipeline)
-
-1. Platform parks at a gateway. **Phase 1:** player presses the transfer button; conditions met.
-2. Plugin resolves gateway-link → `destination_instance_id` (+ `target_gateway`).
-3. Existing pipeline: **lock → export(`TRANSFER`, dest) → controller route → import on target →
-   validate → delete source only on validated success** (two-phase commit, already implemented in
-   `TransferOrchestrator`).
-4. On import, **place the platform at `target_gateway`** (paused) and **strip the gateway hop from its
-   schedule** so it does not immediately bounce back.
-
----
-
-## 8. Hazards & handling
-
-- **Schedule loop.** The arriving platform retains a schedule that still names the gateway → it could
-  fly straight back. **Fix:** on import, strip/rewrite the gateway hop and arrive paused.
-- **Player aboard — EVACUATE, don't block (Layer 1, IMPLEMENTED).** The two-phase commit protects platform
-  *data*, not a player *session*, so a passenger can't ride the data export/import. A player "on" a platform
-  is hub-locked in remote view carrying ~no inventory (just equipped gear, no ammo). **Policy: do NOT block
-  the transfer.** Instead, at the SOLE source-delete chokepoint (`delete_platform_for_transfer` →
-  `Gateway.evacuate_passengers`, run *before* `game.delete_surface`), teleport everyone aboard **and**
-  abandoned character bodies to a non-colliding Nauvis position — native-aligned with how the engine returns
-  a player to a planet on hub-loss. Because it runs at the one delete-sender every transfer path funnels
-  through, no path can orphan a player; and at delete-time it can't duplicate (the dest copy is already
-  committed). Replaced an earlier hard-block (which kept leaving bypass entry points). Covered by
-  `tests/integration/passenger-evacuate`.
-  - **Layer 2 — follow-your-platform (deferred, spike-gated).** Carry the player WITH the platform to B via
-    `LuaPlayer.connect_to_server{address, name}` (a PROMPT the player accepts; address = `host.public_address`
-    + instance `game_port`, the `server_select` pattern) → on B `enter_space_platform` onto the arrived
-    platform (found by name). **No `inventory_sync`** (off in our cluster, and a platform passenger carries
-    nothing). Build only after a spike proves `connect_to_server` + `enter_space_platform` + `public_address`
-    reachability (defaults `"localhost"`; must be client-routable). Layer 1 is the fallback: decline / timeout
-    / unreachable → the player simply stays safe on Nauvis-A.
-- **Disabled / unconfigured gateway.** The plugin **no-ops** when a platform docks at an unconfigured
-  gateway, regardless of whether the location is visible — this is the real safety guarantee
-  (independent of the `unlock`/re-lock visibility layer).
-
----
-
-## 9. Decisions log
-
-- ✅ Diegetic "fly to a gateway" model; dedicated **surfaceless `space-location`** (reachable, Solar-
-  System-Edge style). No piggybacking an existing planet. No shortcuts.
-- ✅ Delivered as a new **data-stage mod (prototypes)** + the existing **save-patched plugin (logic/GUI)**
-  — one feature of this repo.
-- ✅ **N gateways**, optional; runtime treats them as a **set**. Ship 4, default 1 enabled.
-- ✅ **Gateway ↔ instance many-to-many, default 1:1**; link = `{ target_instance, target_gateway }`;
-  imported platform **arrives at the target gateway**, paused, hop stripped.
-- ✅ **Reveal-when-configured** via `unlock_space_location` (ship **locked, not `hidden`** — pending
-  Phase 0 confirmation of the `hidden`-vs-`unlocked` behavior); functional gating is plugin-side regardless.
-- ✅ Config is **offline + web-dashboard-driven** (controller = source of truth), mirroring
-  `edge_transports`/`universal_edges`.
-- ✅ **Phase 1 = manual GUI button at the gateway**; **Phase 2 = automation** (deferred, blocked on
-  cross-instance stop visibility).
-- ✅ Hazards: schedule-loop fixed by **hop-strip on import**; data integrity by the existing **two-phase
-  commit**; **passengers are EVACUATED to a planet at the source delete (Layer 1, implemented), NOT blocked**
-  — the earlier hard-block was replaced because it kept leaving bypass entry points. Carrying the player WITH
-  the platform to the destination is the deferred, spike-gated **Layer 2** (§8).
-- ✅ **Phase 0 empirical validation gates all build work** (§6) — the park-and-fire mechanic is verified
-  on the live cluster with vanilla `solar-system-edge` before any mod/GUI/dashboard is written.
-
----
-
-## 10. Open questions / TODO (not yet decided)
-
-> Empirical unknowns — park-vs-flyby / `fly_condition`, `hidden`-vs-`unlocked`, whether the handler
-> fires — are resolved by **Phase 0 (§6)**, not here. The items below are genuine design choices.
-
-- **"Conditions met" set** for the Phase-1 transfer button (docked at gateway; target instance online;
-  no in-flight transfer for this platform; thrust/fuel state; …). *(Passenger policy is RESOLVED:
-  passengers do NOT gate the transfer — they are evacuated to a planet at the source delete; see §8.)*
-- **Permissions:** who may *trigger* a transfer (any player on the force? admin only?) vs who may
-  *configure* gateways (admin).
-- **Connection topology:** which planet(s) connect to each gateway, and the `space-connection.length`
-  (travel time vs asteroid danger trade-off).
-- **GUI surface:** auto-popup on dock vs a button on the hub GUI vs a shortcut/hotkey.
-- **Re-lock workaround** if a gateway is disabled after having been unlocked (no single-location
-  runtime re-lock API).
-- **Phase-2 automation mechanism** (cross-instance stop visibility) — research.
-- **Per-force vs global unlock**, and how the single default-enabled gateway is chosen on a fresh
-  cluster (config default vs a first-instance convention).
-- **Prototype pool details:** ship exactly 4? naming/display conventions; per-force vs global unlock.
-
----
-
-## 11. References
+## References
 
 - Factorio API: [`SpaceLocationPrototype`](https://lua-api.factorio.com/latest/prototypes/SpaceLocationPrototype.html),
   [`LuaForce.unlock_space_location`](https://lua-api.factorio.com/latest/classes/LuaForce.html#method_unlock_space_location),
   [`LuaSpacePlatform`](https://lua-api.factorio.com/latest/classes/LuaSpacePlatform.html),
-  [`SpaceConnectionPrototype`](https://lua-api.factorio.com/latest/prototypes/SpaceConnectionPrototype.html)
-- Factorio wiki: [Space platform](https://wiki.factorio.com/Space_platform), [Shattered planet](https://wiki.factorio.com/Shattered_planet)
-- Clusterio prior art: [edge_transports](https://github.com/clusterio/edge_transports), [universal_edges](https://github.com/clusterio/universal_edges)
-- This repo: `module/control.lua` (existing `on_space_platform_changed_state` handler),
-  `lib/transfer-orchestrator.ts` (two-phase commit), `module/interfaces/commands/transfer-platform.lua`
-  (existing transfer entry point), `CLAUDE.md` (Pitfall #19 platform deletion, Pitfall #12 clusterio API path).
+  [`SpaceConnectionPrototype`](https://lua-api.factorio.com/latest/prototypes/SpaceConnectionPrototype.html).
+- Clusterio prior art (same direction — offline/global config + web UI):
+  [edge_transports](https://github.com/clusterio/edge_transports),
+  [universal_edges](https://github.com/clusterio/universal_edges).
+- This repo: [gateway.lua](../docker/seed-data/external_plugins/surface_export/module/core/gateway.lua),
+  [control.lua](../docker/seed-data/external_plugins/surface_export/module/control.lua)
+  (the `on_space_platform_changed_state` handler),
+  [transfer-orchestrator.ts](../docker/seed-data/external_plugins/surface_export/lib/transfer-orchestrator.ts)
+  (two-phase commit), and [factorio-2.0-api-notes.md](factorio-2.0-api-notes.md). Platform deletion uses
+  `game.delete_surface` (Pitfall #19 in CLAUDE.md).

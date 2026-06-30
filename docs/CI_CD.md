@@ -18,15 +18,16 @@ especially how Factorio is provisioned — that you need to debug or extend it.
 Two jobs:
 
 - **Integration Tests** (every PR/push) — build the plugin, stand up the full Docker
-  cluster (controller + 2 hosts + 2 instances), and run the entity- and
-  platform-roundtrip suites against it.
+  cluster (controller + 2 hosts + 2 instances), and run the full integration suite
+  against it via `tools/run-integration-tests.mjs`, which auto-discovers every
+  `tests/integration/*/run-tests.{ps1,mjs}`.
 - **Publish to npm** (tags only) — build and publish the plugin after tests pass,
   verifying the git tag matches `package.json`'s version (`--provenance`).
 
 ## Integration test flow
 
 1. **Build plugin** — `npm ci && npm run build` (TypeScript → `dist/node`, webpack → `dist/web`).
-2. **Lint** — `npm run lint` (TS Link-method binding guard + Lua invariant guard + webpack-cache guard).
+2. **Lint** — `npm run lint` (five correctness guards: TS/eslint, Lua invariants, webpack-cache, test-grounding, pcall-logging).
 3. **Test** — `npm test` (message round-trip + wire contract).
 4. **Resolve & verify pinned Factorio version** — see [Version pinning](#version-pinning-single-source-of-truth).
 5. **Build Factorio-baked host image** — see [Factorio in CI](#factorio-in-ci--why-we-bake-it).
@@ -38,8 +39,12 @@ Two jobs:
    `clusterioctl instance start-all` (retried) until both reach `running`. This is the reliable
    equivalent of the seed script's per-instance start, which can race the host's asynchronous
    instance-dir creation and silently leave an instance `stopped`.
-9. **Run test suites** — `tests/integration/{entity,platform}-roundtrip/run-tests.ps1`.
-10. **Collect logs on failure** — dumps controller/host/Factorio logs (only when a step fails).
+9. **Run integration suite** — `node tools/run-integration-tests.mjs` auto-discovers and runs every
+   `tests/integration/*/run-tests.{ps1,mjs}` sequentially against the shared cluster (Node spawns `pwsh`
+   for the `.ps1` tests). The job fails if any test fails.
+10. **On failure** — dump controller/host/Factorio logs, then capture and upload a re-importable repro
+    (serialized source payload + host-2 save) as the `failing-repro` artifact. The cluster is always torn
+    down (`docker compose down -v`) afterward.
 
 ## Factorio in CI — why we bake it
 
@@ -122,11 +127,19 @@ logs, and each host's `factorio-current.log`.
 
 ## Running the integration tests locally
 
-Bring up the cluster with `tools/deploy-cluster.ps1` (or `docker compose up -d`), then run
-the suites:
+Bring up the cluster with `tools/deploy-cluster.ps1` (or `docker compose up -d`), then run the whole
+suite the same way CI does:
 
 ```powershell
-pwsh ./tests/integration/entity-roundtrip/run-tests.ps1
+node tools/run-integration-tests.mjs                # every tests/integration/*/run-tests.{ps1,mjs}
+node tools/run-integration-tests.mjs --only gateway # filter by dir-name regex
+node tools/run-integration-tests.mjs --list         # dry-run: list discovered tests
+```
+
+The runner needs `pwsh` for the `.ps1` tests (`brew install powershell` on macOS). To run a single
+test directly:
+
+```powershell
 pwsh ./tests/integration/platform-roundtrip/run-tests.ps1 -ShowDetails
 ```
 

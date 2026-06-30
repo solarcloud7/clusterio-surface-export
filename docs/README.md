@@ -181,4 +181,4 @@ For the detailed Lua module breakdown, see [IMPLEMENTATION_SUMMARY.md](IMPLEMENT
 | [factorio-2.0-api-notes.md](factorio-2.0-api-notes.md) | Verified Factorio 2.0 API & fluid-simulation facts (fluid segments, profiler/LocalisedString, inventory/platform APIs) |
 | [static-asset-caching.md](static-asset-caching.md) | Webpack content-hashing requirement for web chunks and its dev-workflow consequence |
 | [CI_CD.md](CI_CD.md) | CI pipeline, integration-test flow, and how Factorio is provisioned in CI |
-| [GATEWAY_TRANSFER_PRD.md](GATEWAY_TRANSFER_PRD.md) | Design / product-requirements doc for in-game gateway transfer |
+| [GATEWAY_TRANSFER_PRD.md](GATEWAY_TRANSFER_PRD.md) | In-game gateway transfer — design + current state (what's shipped, verified 2.0.76 API facts, planned work) |

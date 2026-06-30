@@ -132,9 +132,10 @@ which resolves the entry from live stats) is a restart-free path, but the Docker
 
 ## Verification
 
-Builds run in your node environment (the agent shell and the host plugin dir have no `node`/web deps;
-the in-container build can't resolve `@clusterio/web_ui` because the entrypoint strips `@clusterio`).
-After `npm run build:web` + `docker restart surface-export-controller`:
+Builds run in a real node environment with the web deps installed — the live plugin dir's `node_modules`
+has `@clusterio` stripped by the entrypoint, so an in-place build can't resolve `@clusterio/web_ui`; use
+`tools/build-plugin.ps1 web`, which builds in an isolated `node:24` container instead. After the build +
+`docker restart surface-export-controller`:
 
 1. **Manifest is hashed:**
    ```
