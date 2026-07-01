@@ -1,4 +1,5 @@
 
+import { wait } from "@clusterio/lib";
 import { normalizeExportMetrics, TICKS_TO_MS, getErrorMessage, coercePlatformIndex, VALIDATION_TIMEOUT_MS, buildPayloadMetrics, buildImportMetrics } from "../helpers";
 import { createOperationRecord } from "./operation-record";
 import type { IControllerPlugin, ActiveTransfer, SimpleResponse, TransferValidationEvent, StoredExport, ValidationResult, ImportMetrics, ExportMetrics } from "../messages";function mergeExportMetrics(storedMetrics: ExportMetrics | null | undefined, runtimeMetrics: Record<string, unknown> | null | undefined) {
@@ -31,7 +32,7 @@ export class TransferOrchestrator {
 		while (Date.now() < deadline) {
 			const stored = this.plugin.platformStorage.get(exportId);
 			if (stored) return stored;
-			await new Promise(resolve => setTimeout(resolve, 100));
+			await wait(100);
 		}
 		throw new Error(`Timed out waiting for export ${exportId} to be stored on controller`);
 	}

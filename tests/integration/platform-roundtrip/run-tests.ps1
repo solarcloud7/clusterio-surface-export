@@ -182,9 +182,14 @@ if (-not $SkipTransfer) {
         # Wait for async processing to complete
         Start-Sleep -Seconds 1
         
-        # Check for import result debug file (always generated on transfer completion)
+        # Wait for the LAST-written destination artifact, not just import_result. import-completion.lua
+        # writes debug_import_result_* BEFORE debug_destination_* (the post-import snapshot), so polling
+        # only for import_result can unblock before debug_destination_* has landed -> step 8s one-shot
+        # check then flakes with "Debug files not found: Dest files: 0" on slower CI I/O. Previous debug
+        # files were cleared in step 3, so these patterns only match THIS run.
         $resultFiles = @(Get-DebugFiles -Instance $destInstance -Container $destContainer -Pattern "debug_import_result_*.json")
-        if ($resultFiles -and $resultFiles.Count -gt 0) {
+        $destSnapFiles = @(Get-DebugFiles -Instance $destInstance -Container $destContainer -Pattern "debug_destination_*.json")
+        if ($resultFiles.Count -gt 0 -and $destSnapFiles.Count -gt 0) {
             $found = $true
         }
     }

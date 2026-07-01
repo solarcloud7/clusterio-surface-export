@@ -585,8 +585,7 @@ export class ControllerPlugin extends BaseControllerPlugin {
 	async persistStorage() {
 		try {
 			const payload = JSON.stringify(Array.from(this.platformStorage.values()), null, 2);
-			await fs.mkdir(path.dirname(this.storagePath), { recursive: true });
-			await fs.writeFile(this.storagePath, payload, "utf8");
+			await lib.safeOutputFile(this.storagePath, payload);
 		} catch (err: unknown) {
 			this.logger.error(`Failed to persist Surface Export storage: ${getErrorMessage(err)}`);
 		}
@@ -628,8 +627,7 @@ export class ControllerPlugin extends BaseControllerPlugin {
 	async persistGatewayConfig() {
 		try {
 			const payload = JSON.stringify(Array.from(this.gatewayLinks.entries()), null, 2);
-			await fs.mkdir(path.dirname(this.gatewayConfigPath), { recursive: true });
-			await fs.writeFile(this.gatewayConfigPath, payload, "utf8");
+			await lib.safeOutputFile(this.gatewayConfigPath, payload);
 		} catch (err: unknown) {
 			this.logger.error(`Failed to persist gateway config: ${getErrorMessage(err)}`);
 		}
