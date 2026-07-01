@@ -148,7 +148,7 @@ docker exec surface-export-host-2 sh -c 'ls -t /clusterio/data/instances/cluster
 ./tools/rcon.ps1 21 "/plugin-import-file <filename> <new_platform_name>"
 ```
 
-Or use the **web UI** (§11) → Manual Transfer "Export JSON" / "Import JSON", or the Exports tab.
+Or use the **web UI** (§11) → Manual Transfer per-platform **Export JSON**, or the global **Import JSON** button.
 
 ---
 
@@ -226,16 +226,77 @@ Log homes (see [CLAUDE.md](../CLAUDE.md) "Observability"): controller `/clusteri
 
 ---
 
-## 11. Web UI walkthrough
+## 11. Web UI walkthrough (per-feature checklist)
 
-1. Open `http://localhost:8080` → **Surface Export** page (auth: `./tools/get-admin-token.ps1` for the
-   login token).
-2. **Manual Transfer** tab — platform tree; per-platform **Export JSON**, per-instance **Import JSON**;
-   drag a platform to start a transfer.
-3. **Exports** tab — stored exports; download / upload-import.
-4. **Transaction Logs** tab — mixed transfer/export/import history, validation display, phase waterfall;
-   deep-link `?tab=logs`.
-5. Confirm Entities-tab icons render (not `?` placeholders) — requires export-data (CLAUDE.md Pitfall #27).
+Open `http://localhost:8080` → **Surface Export** in the sidebar (auth: `./tools/get-admin-token.ps1` copies a
+login token). The page has three tabs — **Manual Transfer**, **Transaction Logs**, **Gateways** — plus a global
+**Import JSON** button (top-right, beside the tabs) and a live WebSocket feed (no manual refresh needed). Tick
+each feature:
+
+### 11.1 Page shell & live updates
+- [ ] Page loads; the plugin **version** shows under the title; the **Surface Export** sidebar entry is present.
+- [ ] All three tabs render. Switching tabs updates the URL (`?tab=manual` / `?tab=logs` / `?tab=gateways`);
+      pasting `…/surface-export?tab=logs` opens straight to that tab.
+- [ ] **Live**: start a transfer from RCON/CLI and watch the Manual Transfer tree **and** the Logs tab update on
+      their own, with no page reload (WebSocket subscription).
+- [ ] **Permissions**: a user without the log-view permission sees the **Transaction Logs** tab hidden and the
+      page still loads (the subscription downgrades gracefully — no error toast).
+
+### 11.2 Manual Transfer tab — platform tree (left panel)
+- [ ] Tree is grouped **Host → Instance → platform**. A connected host shows a **blue** tag, a disconnected one a
+      grey tag; an instance that failed to list platforms shows an **error** tag.
+- [ ] Only platforms with a space hub appear. Each row shows the platform **name**, its **location** (a space
+      body, `→ <target> (ETA ~N min)` while flying, or *in transit*) with a **planet icon**, and an **orange
+      "locked" tag** when the platform is locked (e.g. mid-transfer).
+- [ ] Click a row → it highlights as the selected **source**.
+- [ ] **Export JSON** (download icon on each row) → a `<platform>_<timestamp>.json` file downloads and a success
+      toast shows the export id. Source is **not** deleted (export-only).
+
+### 11.3 Manual Transfer tab — transfer panel (right panel)
+- [ ] With no source selected, the card shows a "Select a source platform" warning and both the destination
+      picker and **Start Transfer** are disabled.
+- [ ] Select a source → the card shows a source info alert; the **destination instance** dropdown lists every
+      instance **except the source's own**.
+- [ ] Pick a destination → **Start Transfer** enables. Click it → success toast with a transfer id (or an error
+      toast on rejection); the new operation appears in **Transaction Logs**.
+
+### 11.4 Import JSON (global modal — works from any tab)
+- [ ] Click **Import JSON** (top-right). Choose a `.json` export file → a green "JSON parsed" alert shows the
+      file's `platform_name` (or warns if it's missing); a malformed file shows a red parse-error alert.
+- [ ] Fields: **Target instance** (required), **destination planet** (optional — aquilo/fulgora/gleba/nauvis/
+      vulcanus, with icons, clearable), **force name** (default `player`), optional **platform-name override**.
+- [ ] **Import** stays disabled until a file is parsed **and** a target instance is chosen. Import → success
+      toast, the modal closes, and the import shows up in **Transaction Logs**. Upload-import deletes no source.
+
+### 11.5 Transaction Logs tab
+- [ ] **Recent Transfer Logs** table lists operations with **Type** (transfer/export/import tag), **Platform**,
+      **Status** (colour-coded), **Timestamp**, **Size**, and a **Download** action (enabled only for rows with a
+      stored, downloadable export). Download → the export JSON saves to disk.
+- [ ] Click a row → **Transfer Summary** card: a success/error/in-progress alert with the platform name, outcome,
+      total duration, and any error message.
+- [ ] **Transfer Flow** timeline renders as horizontal phase bars + event markers with per-phase millisecond
+      timing (export → delivery → import phases → validation → cleanup).
+- [ ] **Details** sub-tabs each populate:
+  - [ ] **Metrics** — compression summary + operation counts.
+  - [ ] **Entities** — total count + per-entity-type breakdown; **icons render** (not `?` placeholders — see §11.7).
+  - [ ] **Items** — Expected / Actual / Δ / Preserved% per item type (Δ green/red). An **API-stack-cap** info
+        alert and a **"destination force under-researched → bonuses raised"** warning appear when relevant.
+  - [ ] **Fluids** — per fluid/bucket table with thermal (Volume×Temperature) validation for high-temp fluids
+        (gold tags) and status tags (Match / Thermal match / Reconciled / Mismatch).
+
+### 11.6 Gateways tab
+- [ ] Lists every gateway (from the `surfexp_gateways` mod). If none, an Empty state explains the mod isn't
+      loaded on the cluster.
+- [ ] Per-gateway card: add **target** rows (destination instance — **offline instances are flagged**; a
+      `→ gateway` picker), delete a row, **Add target**, **Save**.
+- [ ] A gateway with **no targets** reads "disabled". Saving a row with **no instance picked** is refused with a
+      toast (no silent-disable). Save → success toast; the resolved config is pushed to the instances (the
+      in-game on-arrival chooser reads it).
+
+### 11.7 Icons / export-data sanity
+- [ ] Item / entity / fluid / planet icons render everywhere they appear (Logs details, tree, Import planet
+      picker). Blank `?` placeholders ⇒ the mod pack has no export-data — regenerate it (CLAUDE.md **Pitfall
+      #27**) and hard-refresh (the 404 is cached).
 
 ---
 
