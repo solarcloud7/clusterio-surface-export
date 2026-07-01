@@ -165,9 +165,7 @@ function GatewayTransferGui.open(player, platform, gateway_name)
 	if not (player and player.valid and platform and platform.valid) then
 		return false
 	end
-	local cfg = storage.surface_export_config
-		and storage.surface_export_config.gateways
-		and storage.surface_export_config.gateways[gateway_name]
+	local cfg = Gateway.get_gateway_config(gateway_name)
 	local targets = (cfg and cfg.targets) or {}
 	if #targets == 0 then
 		player.print({"", "Gateway '", gateway_name, "' has no configured destinations. Set links in the web UI → Gateways tab."})

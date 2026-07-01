@@ -27,6 +27,16 @@ function Gateway.is_gateway(name)
 	return prototypes.space_location[name] ~= nil
 end
 
+--- The stored config for a gateway by name (the `{ targets = {…} }` table the controller pushes via WS2),
+--- or nil if unset. Nil-safe across the whole storage chain — the SINGLE accessor for the arrival handler
+--- (control.lua) and the on-arrival chooser GUI, so the lookup can't drift between them.
+--- @param gateway_name string
+--- @return table|nil
+function Gateway.get_gateway_config(gateway_name)
+	local cfg = storage.surface_export_config
+	return (cfg and cfg.gateways and cfg.gateways[gateway_name]) or nil
+end
+
 --- Unlock every gateway space-location for every force so platforms can route to them. Idempotent and
 --- cheap — safe to call on every server startup. pcall-guarded per (force, gateway) so one bad force
 --- (e.g. a force without space travel) can't abort the rest.

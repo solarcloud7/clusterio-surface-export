@@ -51,14 +51,27 @@ function TransferTrigger.start(force, platform_index, dest_instance_id, gateway_
 		return nil, "Export failed: " .. tostring(export_err or "unknown")
 	end
 
-	-- Step 3: announce the transfer request so the instance plugin forwards it to the controller.
-	clusterio_api.send_json("surface_transfer_request", {
-		platform_index = platform_index,
-		platform_name = platform_name,
-		force_name = force_name,
-		destination_instance_id = dest_instance_id,
-		job_id = job_id,
-	})
+	-- Step 3: announce the transfer request. This only feeds the instance plugin's pendingTransfer (a LEGACY
+	-- fallback) + dashboard status — the transfer itself is driven by the export-complete event, which carries
+	-- the destination (export-pipeline.lua), so it proceeds even if this announce throws. GUARDED so a throw
+	-- can't escape the command/GUI handler, and surfaced honestly (host log + in-game chat), but NOT fatal: do
+	-- NOT unlock (that would run the queued export on a live, unfrozen platform) and do NOT report failure (the
+	-- transfer is not failed — reporting it would be a lie while the source is being deleted on the far side).
+	local announced, announce_err = pcall(function()
+		clusterio_api.send_json("surface_transfer_request", {
+			platform_index = platform_index,
+			platform_name = platform_name,
+			force_name = force_name,
+			destination_instance_id = dest_instance_id,
+			job_id = job_id,
+		})
+	end)
+	if not announced then
+		log(string.format("[TransferTrigger] announce (send_json) failed for '%s' (idx %d) — transfer still proceeds via export-complete: %s",
+			platform_name, platform_index, tostring(announce_err)))
+		game.print(string.format("⚠ Transfer of '%s' is proceeding; its status announce failed, so dashboard updates may lag (see log).",
+			platform_name), {1, 0.8, 0})
+	end
 
 	log(string.format("[TransferTrigger] started: platform='%s' (idx %d) -> instance %s, job_id=%s",
 		platform_name, platform_index, tostring(dest_instance_id), tostring(job_id)))
