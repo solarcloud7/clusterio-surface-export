@@ -347,6 +347,45 @@ function ImportCompletion.run_phase2(job)
 		validation_result = result
 		result.success = success
 
+		-- TEST HOOK (one-shot, debug-gated): destroy N non-hub entities on the destination AFTER the item
+		-- gate but BEFORE the cross-ground count, to prove the entity cross-ground DETECTS a post-gate
+		-- shortfall (entity-cross-ground test). Set via configure({ test_force_entity_loss = N }).
+		do
+			local _cfg3 = storage.surface_export_config
+			if _cfg3 and _cfg3.debug_mode and _cfg3.test_force_entity_loss and _cfg3.test_force_entity_loss > 0
+				and job.target_surface and job.target_surface.valid then
+				local n_want = _cfg3.test_force_entity_loss
+				_cfg3.test_force_entity_loss = nil  -- consume: applies to one transfer only
+				local removed = 0
+				for _, ent in ipairs(job.target_surface.find_entities_filtered({})) do
+					if removed >= n_want then break end
+					if ent.valid and ent.name ~= "space-platform-hub" and ent.destroy() then
+						removed = removed + 1
+					end
+				end
+				log(string.format("[TEST HOOK] Forced entity loss: destroyed %d entities on destination (requested %d)",
+					removed, n_want))
+			end
+		end
+
+		-- CROSS-GROUND the reported entity count against the LIVE destination surface (the "catch"):
+		-- `job.total_entities` is the EXPECTED count carried in the source payload — nothing verified that
+		-- the destination actually holds that many. Physically count what landed so the transfer details can
+		-- never claim more entities than exist (the name-collision / misreport symptom). Only a SHORTFALL is
+		-- flagged: a surplus is benign (belt overflow can add item-on-ground the source didn't have). This is
+		-- audit metadata surfaced in the details; the item/fluid strict gate remains the pass/fail authority.
+		if job.target_surface and job.target_surface.valid then
+			local actual_entity_count = #job.target_surface.find_entities_filtered({})
+			result.reportedEntityCount = job.total_entities
+			result.actualEntityCount = actual_entity_count
+			result.entityCountMatch = actual_entity_count >= (job.total_entities or 0)
+			if not result.entityCountMatch then
+				log(string.format(
+					"[Import] ENTITY COUNT MISMATCH: details report %d entities but destination surface holds %d (%d missing)",
+					job.total_entities or 0, actual_entity_count, (job.total_entities or 0) - actual_entity_count))
+			end
+		end
+
 		-- Attach failed entity losses to result so it flows through to the transaction log
 		if job.failed_entity_losses and job.failed_entity_losses.entity_count > 0 then
 			result.failedEntityLosses = job.failed_entity_losses

@@ -25,8 +25,10 @@ local function list_platforms(force_name)
         surface_index = surface.index
         surface_name = surface.name
         entity_count = #surface.find_entities_filtered({})
-        local hub = surface.find_entity("space-platform-hub", {0, 0})
-        has_space_hub = hub ~= nil and hub.valid
+        -- Robust hub detection: find the hub ANYWHERE on the surface (not at a fixed {0,0}) so a real,
+        -- transferable platform is never false-negatived by hub placement. Matches the export-gate check
+        -- in export-pipeline.lua (ExportPipeline.queue) — one transferability signal, two enforcement points.
+        has_space_hub = #surface.find_entities_filtered({ name = "space-platform-hub", limit = 1 }) > 0
       end
 
       local space_location_name = nil

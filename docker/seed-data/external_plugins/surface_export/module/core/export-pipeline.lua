@@ -167,6 +167,20 @@ function ExportPipeline.queue(platform_index, force_name, requester_name, destin
 		return nil, "Platform surface not valid"
 	end
 
+	-- Transferability gate — the SINGLE chokepoint for every export/transfer path (web, ctl, in-game).
+	-- Only a real, materialized space platform (one with a space-platform hub) may be exported. A source
+	-- with no hub would produce a trivially-passing "green" (little/no real content → ~0 loss) and
+	-- misleading transfer details. Hub-less stubs (waiting_for_starter_pack) are already caught above by
+	-- the surface==nil check; this also covers the surface-valid-but-hub-missing edge, and keeps a
+	-- non-platform surface (which can never live in force.platforms) from ever reaching a transfer.
+	-- Robust check: find the hub anywhere on the surface (NOT position {0,0}) so a real platform is never
+	-- false-negatived by hub placement.
+	if #surface.find_entities_filtered({ name = "space-platform-hub", limit = 1 }) == 0 then
+		return nil, string.format(
+			"Platform '%s' (index %d) has no space-platform hub — not a transferable platform",
+			platform.name, platform_index)
+	end
+
 	-- NOTE: passengers are NOT blocked here. A transfer is allowed with players aboard; they are evacuated to
 	-- a planet at the SOLE source-delete chokepoint (delete_platform_for_transfer → Gateway.evacuate_passengers)
 	-- so no one is orphaned and no entry point can be bypassed. See gateway.lua.

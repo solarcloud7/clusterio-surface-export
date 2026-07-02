@@ -176,6 +176,13 @@ export interface ValidationResult {
 	itemCountMatch: boolean;
 	fluidCountMatch: boolean;
 	entityCount?: number;
+	// Cross-grounding ("the catch"): reportedEntityCount is the payload/expected count; actualEntityCount is a
+	// LIVE physical count of the destination surface after import. entityCountMatch is false ONLY on a
+	// SHORTFALL (fewer landed than reported) — the "claimed entities that aren't there" case. Audit metadata;
+	// the item/fluid gate remains the pass/fail authority (a surplus, e.g. belt-overflow item-on-ground, is fine).
+	reportedEntityCount?: number;
+	actualEntityCount?: number;
+	entityCountMatch?: boolean;
 	mismatchDetails?: string;
 	expectedItemCounts?: Record<string, number>;
 	actualItemCounts?: Record<string, number>;

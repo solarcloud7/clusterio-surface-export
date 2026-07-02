@@ -256,6 +256,9 @@ export default function ManualTransferTab({ plugin, state }: { plugin: SurfaceEx
 											>
 												<div className="surface-export-platform-row-name">
 													<Text>{row.platformName}</Text>
+													<Text type="secondary" style={{ fontSize: 11, marginLeft: 4 }}>
+														#{row.platformIndex}
+													</Text>
 													{row.platform?.isLocked ? <Tag color="orange">locked</Tag> : null}
 												</div>
 												<div className="surface-export-platform-row-location">
