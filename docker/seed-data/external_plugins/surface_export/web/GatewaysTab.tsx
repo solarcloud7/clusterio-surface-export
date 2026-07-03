@@ -132,7 +132,9 @@ export default function GatewaysTab({ plugin, state }: { plugin: SurfaceExportPl
 				throw new Error(String(getProp(resp, "error", "Save failed")));
 			}
 			antMessage.success(`Saved ${gatewayName} (${rows.length} target${rows.length === 1 ? "" : "s"})`, 4);
-			await load();
+			// Do NOT reload the whole config here: this grid shows every instance × gateway at once, and a
+			// full load() rebuilds `edits` from the server, silently discarding unsaved rows on other cards.
+			// The rows we just sent are already the local state for this key, so leave the form as-is.
 		} catch (err: unknown) {
 			antMessage.error(getErrorMessage(err, "Failed to save gateway links"), 8);
 		} finally {
@@ -166,6 +168,8 @@ export default function GatewaysTab({ plugin, state }: { plugin: SurfaceExportPl
 			) : null}
 			{instances.map(inst => {
 				const online = inst.connected && inst.status === "running";
+				// Depends only on the (outer) source instance — compute once per instance, not per gateway.
+				const destOptions = destOptionsFor(inst.instanceId);
 				return (
 					<Card
 						key={inst.instanceId}
@@ -181,7 +185,6 @@ export default function GatewaysTab({ plugin, state }: { plugin: SurfaceExportPl
 							{gatewayNames.map(gatewayName => {
 								const key = editKey(inst.instanceId, gatewayName);
 								const targets = edits[key] || [];
-								const destOptions = destOptionsFor(inst.instanceId);
 								return (
 									<Card key={gatewayName} size="small" type="inner" title={gatewayName}>
 										<Space direction="vertical" style={{ width: "100%" }}>

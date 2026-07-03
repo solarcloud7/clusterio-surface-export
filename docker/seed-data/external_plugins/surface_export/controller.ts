@@ -618,21 +618,54 @@ export class ControllerPlugin extends BaseControllerPlugin {
 		try {
 			const content = await fs.readFile(this.gatewayConfigPath, "utf8");
 			const entries = JSON.parse(content);
+			// Snapshot of live instances, for migrating legacy cluster-wide links (below). Taken once.
+			const liveInstances = [...this.c.instances.values()].filter(inst => !inst.isDeleted);
+			let migratedLegacy = 0;
 			if (Array.isArray(entries)) {
 				for (const entry of entries) {
-					if (Array.isArray(entry) && typeof entry[0] === "string" && Array.isArray(entry[1])) {
-						// Drop (a) LEGACY bare-name keys from the pre-per-instance format, and (b) links for
-						// gateway names this build doesn't know (GATEWAY_COUNT shrank, or a hand-edited file) —
-						// otherwise they'd be pushed to instances yet be invisible and unremovable in the web
-						// editor, which only renders GATEWAY_NAMES per instance.
-						const parsed = this.parseGatewayKey(entry[0]);
-						if (!parsed || !(messages.GATEWAY_NAMES as readonly string[]).includes(parsed.gatewayName)) {
-							this.logger.warn(`Dropping legacy/unknown gateway link '${entry[0]}'`);
+					if (!(Array.isArray(entry) && typeof entry[0] === "string" && Array.isArray(entry[1]))) {
+						continue;
+					}
+					const key = entry[0] as string;
+					const links = entry[1] as messages.GatewayLink[];
+					const parsed = this.parseGatewayKey(key);
+					if (parsed) {
+						// New per-instance composite key. Drop links for gateway names this build doesn't know
+						// (GATEWAY_COUNT shrank, or a hand-edited file) — they'd be pushed yet be invisible and
+						// unremovable in the web editor, which only renders GATEWAY_NAMES per instance.
+						if (!(messages.GATEWAY_NAMES as readonly string[]).includes(parsed.gatewayName)) {
+							this.logger.warn(`Dropping unknown gateway link '${key}'`);
 							continue;
 						}
-						this.gatewayLinks.set(entry[0], entry[1] as messages.GatewayLink[]);
+						this.gatewayLinks.set(key, links);
+					} else if ((messages.GATEWAY_NAMES as readonly string[]).includes(key)) {
+						// LEGACY bare-name key from the pre-per-instance format. The old model pushed this SAME
+						// config to every instance, so faithfully migrate by replicating it to each known
+						// instance as source — dropping self-targets, which the per-instance model forbids.
+						if (liveInstances.length === 0) {
+							// No instances known yet at load: KEEP the bare key in memory (invisible to the
+							// per-instance editor, never resolved/pushed since parseGatewayKey returns null) so it
+							// survives on disk and is migrated on a later boot — never silently destroyed.
+							this.gatewayLinks.set(key, links);
+							this.logger.warn(`Legacy gateway link '${key}' kept for migration on a later boot (no instances known yet)`);
+							continue;
+						}
+						for (const inst of liveInstances) {
+							const perInstance = links.filter(l => l.targetInstanceId !== inst.id);
+							if (perInstance.length > 0) {
+								this.gatewayLinks.set(this.gatewayKey(inst.id, key), perInstance);
+							}
+						}
+						migratedLegacy += 1;
+					} else {
+						this.logger.warn(`Dropping unknown gateway link '${key}'`);
 					}
 				}
+			}
+			if (migratedLegacy > 0) {
+				// Rewrite the file in the new per-instance format so the one-time migration is durable.
+				await this.persistGatewayConfig();
+				this.logger.warn(`Migrated ${migratedLegacy} legacy cluster-wide gateway link(s) to per-instance keys`);
 			}
 			this.logger.info(`Loaded ${this.gatewayLinks.size} gateway link(s) from disk`);
 		} catch (err: unknown) {
@@ -707,14 +740,6 @@ export class ControllerPlugin extends BaseControllerPlugin {
 		}
 	}
 
-	/** Push every connected instance its own gateway config (best-effort per instance). */
-	private async pushGatewayConfigToConnectedInstances(): Promise<void> {
-		const online = [...this.c.instances.values()].filter(inst => !inst.isDeleted && this.isInstanceOnline(inst.id));
-		// Fan out in parallel — each push catches its own error, so one slow/failed instance can't delay or
-		// abort the others (Promise.all never rejects here because the per-instance catch resolves).
-		await Promise.all(online.map(inst => this.pushGatewayConfigToInstance(inst.id)));
-	}
-
 	/** control → controller: raw links (each tagged with its source instance) + the pinned gateway-name
 	 * list (for the web editor, which groups by source instance). */
 	async handleGetGatewaysRequest(_request: Record<string, never>) {
@@ -736,15 +761,18 @@ export class ControllerPlugin extends BaseControllerPlugin {
 		if (!(messages.GATEWAY_NAMES as readonly string[]).includes(gatewayName)) {
 			return { success: false, error: `Unknown gateway: ${gatewayName}` };
 		}
+		// A non-integer/NaN id yields undefined from instances.get() (caught by !sourceInstance).
 		const sourceInstance = this.c.instances.get(sourceInstanceId);
-		if (!Number.isInteger(sourceInstanceId) || !sourceInstance || sourceInstance.isDeleted) {
+		if (!sourceInstance || sourceInstance.isDeleted) {
 			return { success: false, error: `Unknown source instance: ${request.sourceInstanceId}` };
 		}
 		const key = this.gatewayKey(sourceInstanceId, gatewayName);
-		// Normalize: keep only links with a valid integer instance id; default a blank target gateway
-		// to the source gateway name (the 1:1 default).
+		// Normalize: keep only links with a valid integer instance id that is NOT the source itself (an
+		// instance can't gateway-transfer to its own instance — enforced here, not just in the web dropdown,
+		// so a hand-edited config or future import path can't persist a self-referential target); default a
+		// blank target gateway to the source gateway name (the 1:1 default).
 		const targets: messages.GatewayLink[] = (request.targets || [])
-			.filter(t => Number.isInteger(Number(t.targetInstanceId)))
+			.filter(t => Number.isInteger(Number(t.targetInstanceId)) && Number(t.targetInstanceId) !== sourceInstanceId)
 			.map(t => ({ targetInstanceId: Number(t.targetInstanceId), targetGateway: t.targetGateway || gatewayName }));
 		if (targets.length > 0) {
 			this.gatewayLinks.set(key, targets);
