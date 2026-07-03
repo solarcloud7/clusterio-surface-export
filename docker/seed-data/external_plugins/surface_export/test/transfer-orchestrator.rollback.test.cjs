@@ -137,3 +137,41 @@ test("Non-session-loss throw on import send: source IS rolled back (unlock route
 
 	if (transfer.validationTimeout) clearTimeout(transfer.validationTimeout);
 });
+
+test("#106: validation fails AND source unlock fails → cleanup_failed KEEPS the recovery intent (not dropped)", async () => {
+	// Adversarial (review #106 orch:310, a CONFIRMED data-loss defect): reverting handleValidationFailure to
+	// an unconditional status='failed' makes handleTransferValidation's removal condition DROP the persisted
+	// intent while the source is STILL locked-and-hidden (the unlock failed) — so a later restart has nothing
+	// to reconcile and the source is stranded forever. This test goes RED on that revert.
+	const { orch, activeTransfers, calls } = makeHarness(() => { throw sessionLost("Session Closed"); });
+	const res = await orch.transferPlatform("export_1", 2); // arm awaiting_validation (persists the intent)
+	const transfer = onlyTransfer(activeTransfers);
+	assert.equal(transfer.status, "awaiting_validation");
+	assert.ok(calls.pendingPersisted, "the recovery intent was persisted on awaiting_validation");
+	if (transfer.validationTimeout) clearTimeout(transfer.validationTimeout);
+
+	// The source UNLOCK fails (source briefly unreachable) — tryUnlockSource returns a non-null error string.
+	orch.tryUnlockSource = async () => { calls.unlockRouteTaken++; return "unlock failed: source offline"; };
+	calls.pendingRemoved = undefined;
+
+	await orch.handleTransferValidation({ transferId: res.transferId, success: false, validation: { mismatchDetails: "item mismatch" } });
+
+	assert.equal(transfer.status, "cleanup_failed", "failed validation + failed unlock must be cleanup_failed, not failed");
+	assert.equal(calls.pendingRemoved, undefined, "the recovery intent must be KEPT (source not resolved) for a restart reconcile");
+});
+
+test("#106: validation fails but source unlock SUCCEEDS → failed drops the intent (source resolved)", async () => {
+	// The symmetric happy path: a successful unlock DOES resolve the source, so the intent is correctly dropped.
+	const { orch, activeTransfers, calls } = makeHarness(() => { throw sessionLost("Session Closed"); });
+	const res = await orch.transferPlatform("export_1", 2);
+	const transfer = onlyTransfer(activeTransfers);
+	if (transfer.validationTimeout) clearTimeout(transfer.validationTimeout);
+
+	orch.tryUnlockSource = async () => { calls.unlockRouteTaken++; return null; }; // unlock succeeds
+	calls.pendingRemoved = undefined;
+
+	await orch.handleTransferValidation({ transferId: res.transferId, success: false, validation: { mismatchDetails: "item mismatch" } });
+
+	assert.equal(transfer.status, "failed", "failed validation + successful unlock is 'failed'");
+	assert.equal(calls.pendingRemoved, res.transferId, "the recovery intent is dropped once the source is unlocked");
+});
