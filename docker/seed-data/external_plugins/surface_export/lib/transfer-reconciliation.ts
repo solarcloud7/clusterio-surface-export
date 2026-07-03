@@ -70,13 +70,10 @@ export function resolvePendingTransfer(inputs: ReconcileInputs): ReconcileAction
 			: { kind: "retry", reason: "destination not reachable yet" };
 	}
 
-	// The dest is still importing this transfer — not terminal. Always wait.
-	if (outcome.inProgress) {
-		return { kind: "retry", reason: "destination import still in progress" };
-	}
-
+	// An authoritative terminal outcome takes precedence over `inProgress` — the outcome is recorded at
+	// import-completion (after validation), so `found` means the destination is DONE with this transfer; a
+	// lingering/finalizing import job must NOT keep us retrying forever on a transfer that already committed.
 	if (outcome.found) {
-		// Authoritative terminal outcome recorded on the destination.
 		if (outcome.success) {
 			// Dest committed + validated. Complete the two-phase commit by deleting the source — but only if
 			// the source is reachable to delete; otherwise wait (never leave a committed dest with a live source
@@ -89,6 +86,11 @@ export function resolvePendingTransfer(inputs: ReconcileInputs): ReconcileAction
 		return sourceOnline
 			? { kind: "unlock", reason: "destination validation failed (found, !success) — dest discarded its copy" }
 			: { kind: "retry", reason: "source offline — cannot unlock it yet (dest failed)" };
+	}
+
+	// !found: no terminal outcome recorded yet. If the dest is still importing this transfer, wait.
+	if (outcome.inProgress) {
+		return { kind: "retry", reason: "destination has no outcome yet and is still importing" };
 	}
 
 	// !found and NOT in progress, dest online: the dest is not importing this transfer and holds no record of

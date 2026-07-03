@@ -100,6 +100,7 @@ export const plugin = {
 		messages.ImportOperationCompleteEvent,
 		messages.DeleteSourcePlatformRequest,
 		messages.UnlockSourcePlatformRequest,
+		messages.GetTransferOutcomeRequest,
 		messages.TransferStatusUpdate,
 		messages.GetPlatformTreeRequest,
 		messages.ListTransactionLogsRequest,

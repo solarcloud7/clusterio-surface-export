@@ -41,10 +41,13 @@ test("!found + !inProgress + dest online → unlock (dest never committed)", () 
 	assert.equal(act({ found: false, success: false, inProgress: false }, false), "retry"); // source offline → wait
 });
 
-test("inProgress → always retry (dest still importing — not terminal)", () => {
-	assert.equal(act({ found: false, success: false, inProgress: true }, true), "retry");
-	assert.equal(act({ found: true, success: true, inProgress: true }, true), "retry"); // inProgress wins over a stale record
+test("!found + inProgress → retry; a recorded outcome takes precedence over inProgress", () => {
+	assert.equal(act({ found: false, success: false, inProgress: true }, true), "retry"); // no outcome yet, still importing
 	assert.equal(act({ found: false, success: false, inProgress: true }, true, STALE), "retry"); // never escalates while importing
+	// A recorded terminal outcome resolves even if an import job lingers/finalizes (found is authoritative) —
+	// else a committed transfer would retry forever.
+	assert.equal(act({ found: true, success: true, inProgress: true }, true), "complete");
+	assert.equal(act({ found: true, success: false, inProgress: true }, true), "unlock");
 });
 
 test("dest unreachable (outcome null) → retry when fresh, escalate when stale — never destructive", () => {
@@ -65,14 +68,17 @@ test("no destructive action on any non-authoritative or ambiguous input", () => 
 			for (const age of [FRESH, STALE]) {
 				const kind = act(outcome, sourceOnline, age);
 				const isDestructive = kind === "complete"; // unlock is non-destructive (frees a stuck source)
-				// The ONLY allowed destructive outcome across the entire space:
-				const allowedComplete = outcome && outcome.found && outcome.success && !outcome.inProgress && sourceOnline;
+				// The ONLY allowed destructive outcome across the entire space: an authoritative recorded
+				// success, source reachable. (inProgress does NOT gate it — a recorded outcome is terminal.)
+				const allowedComplete = outcome && outcome.found && outcome.success && sourceOnline;
 				if (isDestructive) {
-					assert.ok(allowedComplete, `complete must require found+success+!inProgress+sourceOnline; got ${JSON.stringify({ outcome, sourceOnline })}`);
+					assert.ok(allowedComplete, `complete must require found+success+sourceOnline; got ${JSON.stringify({ outcome, sourceOnline })}`);
 				}
-				// unlock must never fire while the dest is still importing or unreachable.
+				// unlock fires only when the dest is reachable + source online AND the dest authoritatively
+				// holds nothing: found+!success (imported then failed → discarded), or !found+!inProgress.
 				if (kind === "unlock") {
-					assert.ok(outcome !== null && !outcome.inProgress && sourceOnline, `unlock only when dest reachable, not importing, source online; got ${JSON.stringify({ outcome, sourceOnline })}`);
+					const authoritativelyEmpty = outcome !== null && sourceOnline && (outcome.found ? !outcome.success : !outcome.inProgress);
+					assert.ok(authoritativelyEmpty, `unlock only when dest authoritatively holds nothing; got ${JSON.stringify({ outcome, sourceOnline })}`);
 				}
 			}
 		}

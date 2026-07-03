@@ -374,6 +374,31 @@ function ImportCompletion.run_phase2(job)
 
 		TransferValidation.store_validation_result(job.platform_name, result)
 
+		-- #106 restart-durability: record this transfer's AUTHORITATIVE terminal outcome, keyed by transferId,
+		-- so the controller can reconcile a pending transfer after a controller restart (via the
+		-- get_transfer_outcome remote). `success` here is the final strict-gate result (incl. the test hook
+		-- override above). Retention far outlives the minutes-long reconciliation window; bounded below.
+		if job.transfer_id then
+			local outcomes = storage.surface_export_transfer_outcomes or {}
+			outcomes[job.transfer_id] = {
+				success = success and true or false,
+				platform_name = job.platform_name,
+				tick = game.tick,
+			}
+			-- Bound the store (transfers are infrequent, so this rarely fires): keep the 500 most recent.
+			local count = 0
+			for _ in pairs(outcomes) do count = count + 1 end
+			if count > 1000 then
+				local arr = {}
+				for id, o in pairs(outcomes) do arr[#arr + 1] = { id = id, tick = o.tick or 0 } end
+				table.sort(arr, function(a, b) return a.tick > b.tick end)
+				local kept = {}
+				for i = 1, 500 do local e = arr[i]; if e then kept[e.id] = outcomes[e.id] end end
+				outcomes = kept
+			end
+			storage.surface_export_transfer_outcomes = outcomes
+		end
+
 		-- Debug export: Write validation result for analysis
 		DebugExport.export_import_result({
 			platform_name = job.platform_name,

@@ -1064,6 +1064,47 @@ export class DeleteSourcePlatformRequest {
 	};
 }
 
+/**
+ * Controller→instance query used by #106 restart reconciliation: for a given transferId, what did THIS
+ * (destination) instance do — did it record a terminal outcome (found/success), and is it still importing?
+ * Answered from the dest's persisted `transfer_outcomes[transferId]` record + a scan of its active import
+ * jobs. The controller feeds the answer to resolvePendingTransfer() to decide complete/unlock/retry.
+ */
+export class GetTransferOutcomeRequest {
+	declare ["constructor"]: typeof GetTransferOutcomeRequest;
+	static plugin = PLUGIN_NAME;
+	static type = "request" as const;
+	static src = "controller" as const;
+	static dst = "instance" as const;
+	static jsonSchema: JsonSchema = {
+		type: "object",
+		properties: { transferId: { type: "string" } },
+		required: ["transferId"],
+		additionalProperties: false,
+	};
+
+	transferId: string;
+
+	constructor(json: { transferId: string }) { this.transferId = json.transferId; }
+	static fromJSON(json: { transferId: string }) { return new GetTransferOutcomeRequest(json); }
+	toJSON() { return { transferId: this.transferId }; }
+
+	static Response = {
+		jsonSchema: {
+			type: "object",
+			properties: {
+				found: { type: "boolean" },
+				success: { type: "boolean" },
+				inProgress: { type: "boolean" },
+				platformName: { type: ["string", "null"] },
+			},
+			required: ["found", "success", "inProgress"],
+			additionalProperties: false,
+		} as JsonSchema,
+		fromJSON(json: unknown) { return json as { found: boolean; success: boolean; inProgress: boolean; platformName?: string | null }; },
+	};
+}
+
 export class UnlockSourcePlatformRequest {
 	declare ["constructor"]: typeof UnlockSourcePlatformRequest;
 	static plugin = PLUGIN_NAME;
