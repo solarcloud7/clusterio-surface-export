@@ -557,7 +557,16 @@ export default function TransactionLogsTab({ plugin, state }: { plugin: SurfaceE
 						<Alert
 							type={summaryAlertType}
 							showIcon
-							message={<span className="surface-export-summary-platform-title">{(detailedSummary.platform ? getProp(detailedSummary.platform as JsonObject, "name", "") : "") || selectedTransferId}</span>}
+							message={(
+								<span className="surface-export-summary-platform-title">
+									{(detailedSummary.platform ? getProp(detailedSummary.platform as JsonObject, "name", "") : "") || selectedTransferId}
+									{detailedSummary.platform && getProp(detailedSummary.platform as JsonObject, "index", null) != null ? (
+										<Text type="secondary" style={{ fontSize: 12, marginLeft: 6 }}>
+											#{String(getProp(detailedSummary.platform as JsonObject, "index", ""))}
+										</Text>
+									) : null}
+								</span>
+							)}
 							description={(
 								<Space direction="vertical" size={2}>
 									<span>{summaryOutcomeText} {`(${detailedSummary.totalDurationStr}):`}</span>
@@ -605,17 +614,34 @@ export default function TransactionLogsTab({ plugin, state }: { plugin: SurfaceE
 										? `Entities (${Number(getProp(detailedSummary.export as JsonObject, "exportedEntityCount", 0)).toLocaleString()})`
 										: "Entities",
 									children: hasValidation ? (
-										entityRows.length ? (
-											<Table
-												size="small"
-												pagination={{ pageSize: 20 }}
-												columns={entityColumns}
-												dataSource={entityRows}
-												rowKey={entry => entry.key}
-											/>
-										) : (
-											<Empty description="No entity details available" />
-										)
+										<Space direction="vertical" style={{ width: "100%" }} size="small">
+											{(() => {
+												// Informational (display-only): live destination count (result.entityCount)
+												// vs the source payload total. They legitimately differ (failed-to-place /
+												// filtered / belt surplus) — no verdict; the item/fluid gate detects loss.
+												const reported = getProp(validation as JsonObject, "reportedEntityCount", null) as number | null;
+												const actual = getProp(validation as JsonObject, "entityCount", null) as number | null;
+												if (reported == null || actual == null) {
+													return null;
+												}
+												return (
+													<Text type="secondary">
+														{`Entities: ${actual.toLocaleString()} on destination · ${reported.toLocaleString()} in source payload`}
+													</Text>
+												);
+											})()}
+											{entityRows.length ? (
+												<Table
+													size="small"
+													pagination={{ pageSize: 20 }}
+													columns={entityColumns}
+													dataSource={entityRows}
+													rowKey={entry => entry.key}
+												/>
+											) : (
+												<Empty description="No entity details available" />
+											)}
+										</Space>
 									) : (
 										<Empty description="No validation data available yet" />
 									),

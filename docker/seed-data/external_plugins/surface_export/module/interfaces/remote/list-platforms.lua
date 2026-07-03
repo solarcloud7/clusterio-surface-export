@@ -2,6 +2,7 @@
 -- List all available platforms for a given force as structured data.
 
 local SurfaceLock = require("modules/surface_export/utils/surface-lock")
+local GameUtils = require("modules/surface_export/utils/game-utils")
 
 --- List all available platforms for a force.
 --- @param force_name string|nil: Force name (defaults to "player")
@@ -25,9 +26,10 @@ local function list_platforms(force_name)
         surface_index = surface.index
         surface_name = surface.name
         entity_count = #surface.find_entities_filtered({})
-        local hub = surface.find_entity("space-platform-hub", {0, 0})
-        has_space_hub = hub ~= nil and hub.valid
       end
+      -- Transferability signal via LuaSpacePlatform.hub (name-agnostic) — single source of truth shared with
+      -- the export gate (GameUtils.platform_has_hub in export-pipeline.lua ExportPipeline.queue).
+      has_space_hub = GameUtils.platform_has_hub(platform)
 
       local space_location_name = nil
       if platform.space_location and platform.space_location.valid then

@@ -131,6 +131,9 @@ export class TransactionLogger {
 			phases: this.buildPhaseSummary(transfer),
 			platform: {
 				name: info.platformName,
+				// Unique per-force index — disambiguates collidable platform names (e.g. two "test" surfaces)
+				// in the Transfer Details. Names are display-only; the index is the identity.
+				index: info.platformIndex ?? null,
 				source: {
 					instanceId: info.sourceInstanceId,
 					instanceName: info.sourceInstanceName,

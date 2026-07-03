@@ -263,4 +263,17 @@ function GameUtils.delete_platform(platform)
   return false
 end
 
+--- Does this platform have a materialized space-platform hub? This is the transferability signal — a
+--- platform with a valid hub is a real, exportable platform; a hub-less stub (waiting_for_starter_pack, or a
+--- seed placeholder like spikedoom08) is not. Uses LuaSpacePlatform.hub, which is NAME-AGNOSTIC (works for a
+--- modded/renamed hub prototype) unlike a literal-name entity scan. Single source of truth for BOTH the
+--- export gate (export-pipeline.lua ExportPipeline.queue) and the listing flag (list-platforms.lua).
+--- @param platform LuaSpacePlatform
+--- @return boolean
+function GameUtils.platform_has_hub(platform)
+  if not (platform and platform.valid) then return false end
+  local hub = platform.hub
+  return hub ~= nil and hub.valid
+end
+
 return GameUtils

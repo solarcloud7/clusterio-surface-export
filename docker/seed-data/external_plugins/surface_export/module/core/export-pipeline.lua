@@ -167,6 +167,19 @@ function ExportPipeline.queue(platform_index, force_name, requester_name, destin
 		return nil, "Platform surface not valid"
 	end
 
+	-- Transferability gate — the chokepoint for the ASYNC export/transfer path (web, ctl, in-game transfers
+	-- + gateway). Only a real, materialized space platform (one with a hub) may be exported; a hub-less
+	-- source would produce a trivially-passing "green" (~0 content → ~0 loss) and misleading details.
+	-- Hub-less stubs (waiting_for_starter_pack) are already caught above by the surface==nil check; this
+	-- also covers the surface-valid-but-hub-missing edge. NOTE: the SYNCHRONOUS Serializer.export_platform
+	-- path (reached via clone_platform) is separate and NOT gated here — it neither transfers nor deletes a
+	-- source, so an empty clone is harmless; add the same guard there if it ever becomes a transfer source.
+	if not GameUtils.platform_has_hub(platform) then
+		return nil, string.format(
+			"Platform '%s' (index %d) has no hub — not a transferable platform",
+			platform.name, platform_index)
+	end
+
 	-- NOTE: passengers are NOT blocked here. A transfer is allowed with players aboard; they are evacuated to
 	-- a planet at the SOLE source-delete chokepoint (delete_platform_for_transfer → Gateway.evacuate_passengers)
 	-- so no one is orphaned and no entry point can be bypassed. See gateway.lua.

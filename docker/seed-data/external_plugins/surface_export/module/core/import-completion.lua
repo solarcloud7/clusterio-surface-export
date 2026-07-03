@@ -347,6 +347,14 @@ function ImportCompletion.run_phase2(job)
 		validation_result = result
 		result.success = success
 
+		-- Informational entity accounting for the transfer details (DISPLAY ONLY, no verdict):
+		-- reportedEntityCount is the source payload's entity total; result.entityCount (already set by
+		-- validate_import from a live scan of the destination surface) is what actually landed. They
+		-- legitimately differ — entities that fail to place, serialization-filtered item/character entities,
+		-- belt-overflow surplus — so this is NOT a loss signal. The item/fluid strict gate remains the
+		-- authoritative data-loss detector.
+		result.reportedEntityCount = job.total_entities
+
 		-- Attach failed entity losses to result so it flows through to the transaction log
 		if job.failed_entity_losses and job.failed_entity_losses.entity_count > 0 then
 			result.failedEntityLosses = job.failed_entity_losses

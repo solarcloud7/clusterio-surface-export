@@ -176,6 +176,10 @@ export interface ValidationResult {
 	itemCountMatch: boolean;
 	fluidCountMatch: boolean;
 	entityCount?: number;
+	// Informational (display-only): the SOURCE payload's entity total. `entityCount` above is the live
+	// destination count (from validate_import). These legitimately differ (failed-to-place / serialization-
+	// filtered / belt-overflow surplus), so neither is a loss signal — the item/fluid gate is authoritative.
+	reportedEntityCount?: number;
 	mismatchDetails?: string;
 	expectedItemCounts?: Record<string, number>;
 	actualItemCounts?: Record<string, number>;
