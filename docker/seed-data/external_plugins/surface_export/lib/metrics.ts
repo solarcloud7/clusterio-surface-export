@@ -48,6 +48,39 @@ const entitiesTransferredTotal = new lib.Counter(
 );
 
 /**
+ * Source-side async export span, in seconds — the "export tick-stall" that can heartbeat-drop a connected
+ * player (task #86: a player aboard a transferring platform is dropped during this window). Recorded for
+ * operations that did a source export (transfer + export); import-only operations have no source export.
+ * Buckets span a small platform (~0.5s) to a large one (~40s, RCON-bound). Diagnoses #86 from /metrics.
+ */
+const exportStallSeconds = new lib.Histogram(
+	"surface_export_export_stall_seconds",
+	"Source-side async export span in seconds (the tick-stall window that can drop a connected player), per operation.",
+	{ labels: ["operation"], buckets: [0.1, 0.25, 0.5, 1, 2, 5, 10, 20, 40, 60] },
+);
+
+/**
+ * Extract the source-side async export span (seconds) from an operation's export metrics, or null when
+ * absent (import-only ops, or metrics not yet populated). normalizeExportMetrics derives
+ * `instanceAsyncExportMs` from the async export tick count, so it is the most reliably present field.
+ */
+function exportStallSecondsValue(exportMetrics: unknown): number | null {
+	if (!exportMetrics || typeof exportMetrics !== "object") {
+		return null;
+	}
+	const m = exportMetrics as Record<string, unknown>;
+	const ms = Number(m.instanceAsyncExportMs);
+	if (Number.isFinite(ms) && ms >= 0) {
+		return ms / 1000;
+	}
+	const sec = Number(m.instanceAsyncExportSeconds);
+	if (Number.isFinite(sec) && sec >= 0) {
+		return sec;
+	}
+	return null;
+}
+
+/**
  * Record terminal Prometheus metrics for an operation. Idempotent: the first terminal call stamps
  * `operation.metricsRecorded` and later calls no-op, so this is safe to call on every operation
  * update — it also no-ops while the operation is still in a non-terminal state.
@@ -76,5 +109,12 @@ export function recordOperationOutcome(operation: ActiveTransfer | null | undefi
 	const entitiesCreated = Number(operation.importMetrics?.entities_created);
 	if (result === "success" && Number.isFinite(entitiesCreated) && entitiesCreated > 0) {
 		entitiesTransferredTotal.labels({ operation: operationLabel }).inc(entitiesCreated);
+	}
+
+	// Source-side export stall — recorded regardless of result: a stall happens on every source export, and
+	// #86's failure mode is a transfer that SUCCEEDS end-to-end but drops the connected player mid-stall.
+	const stallSeconds = exportStallSecondsValue(operation.exportMetrics);
+	if (stallSeconds !== null) {
+		exportStallSeconds.labels({ operation: operationLabel }).observe(stallSeconds);
 	}
 }
