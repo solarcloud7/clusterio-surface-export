@@ -774,10 +774,11 @@ export class GetGatewaysRequest {
 					items: {
 						type: "object",
 						properties: {
+							sourceInstanceId: { type: "integer" },
 							gatewayName: { type: "string" },
 							targets: { type: "array", items: GATEWAY_LINK_SCHEMA },
 						},
-						required: ["gatewayName", "targets"],
+						required: ["sourceInstanceId", "gatewayName", "targets"],
 						additionalProperties: false,
 					},
 				},
@@ -785,7 +786,7 @@ export class GetGatewaysRequest {
 			required: ["gatewayNames", "links"],
 		} as JsonSchema,
 		fromJSON(json: unknown) {
-			return json as { gatewayNames: string[]; links: Array<{ gatewayName: string; targets: GatewayLink[] }> };
+			return json as { gatewayNames: string[]; links: Array<{ sourceInstanceId: number; gatewayName: string; targets: GatewayLink[] }> };
 		},
 	};
 }
@@ -801,23 +802,26 @@ export class SetGatewayLinkRequest {
 	static jsonSchema: JsonSchema = {
 		type: "object",
 		properties: {
+			sourceInstanceId: { type: "integer" },
 			gatewayName: { type: "string" },
 			targets: { type: "array", items: GATEWAY_LINK_SCHEMA },
 		},
-		required: ["gatewayName", "targets"],
+		required: ["sourceInstanceId", "gatewayName", "targets"],
 		additionalProperties: false,
 	};
 
+	sourceInstanceId: number;
 	gatewayName: string;
 	targets: GatewayLink[];
 
-	constructor(json: { gatewayName: string; targets: GatewayLink[] }) {
+	constructor(json: { sourceInstanceId: number; gatewayName: string; targets: GatewayLink[] }) {
+		this.sourceInstanceId = json.sourceInstanceId;
 		this.gatewayName = json.gatewayName;
 		this.targets = json.targets;
 	}
 
-	static fromJSON(json: { gatewayName: string; targets: GatewayLink[] }) { return new SetGatewayLinkRequest(json); }
-	toJSON() { return { gatewayName: this.gatewayName, targets: this.targets }; }
+	static fromJSON(json: { sourceInstanceId: number; gatewayName: string; targets: GatewayLink[] }) { return new SetGatewayLinkRequest(json); }
+	toJSON() { return { sourceInstanceId: this.sourceInstanceId, gatewayName: this.gatewayName, targets: this.targets }; }
 
 	static Response = {
 		jsonSchema: { type: "object", properties: { success: { type: "boolean" }, error: { type: "string" } }, required: ["success"] } as JsonSchema,
@@ -832,12 +836,21 @@ export class GetGatewayConfigRequest {
 	static type = "request" as const;
 	static src = "instance" as const;
 	static dst = "controller" as const;
-	static jsonSchema: JsonSchema = { type: "object", properties: {}, additionalProperties: false };
+	static jsonSchema: JsonSchema = {
+		type: "object",
+		properties: { instanceId: { type: "integer" } },
+		required: ["instanceId"],
+		additionalProperties: false,
+	};
 
-	constructor(_json: Record<string, unknown> = {}) {}
+	instanceId: number;
 
-	static fromJSON(_json: unknown) { return new GetGatewayConfigRequest(); }
-	toJSON() { return {}; }
+	constructor(json: { instanceId: number }) {
+		this.instanceId = json.instanceId;
+	}
+
+	static fromJSON(json: { instanceId: number }) { return new GetGatewayConfigRequest(json); }
+	toJSON() { return { instanceId: this.instanceId }; }
 
 	static Response = {
 		jsonSchema: { type: "object", properties: { gateways: RESOLVED_GATEWAYS_SCHEMA }, required: ["gateways"] } as JsonSchema,
