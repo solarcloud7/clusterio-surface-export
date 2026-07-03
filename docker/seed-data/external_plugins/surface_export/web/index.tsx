@@ -125,7 +125,7 @@ function SurfaceExportPage() {
 				activeKey={effectiveTab}
 				onChange={handleTabChange}
 				items={tabItems}
-				tabBarExtraContent={(
+				tabBarExtraContent={effectiveTab === "manual" ? (
 					<Tooltip title="Import JSON">
 						<Button
 							icon={<UploadOutlined />}
@@ -133,7 +133,7 @@ function SurfaceExportPage() {
 							onClick={() => setImportModalOpen(true)}
 						/>
 					</Tooltip>
-				)}
+				) : null}
 			/>
 			<ImportModal
 				open={importModalOpen}
