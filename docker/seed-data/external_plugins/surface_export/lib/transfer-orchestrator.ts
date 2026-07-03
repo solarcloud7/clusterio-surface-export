@@ -1,6 +1,6 @@
 
 import { wait } from "@clusterio/lib";
-import { normalizeExportMetrics, TICKS_TO_MS, getErrorMessage, coercePlatformIndex, VALIDATION_TIMEOUT_MS, buildPayloadMetrics, buildImportMetrics } from "../helpers";
+import { normalizeExportMetrics, TICKS_TO_MS, getErrorMessage, isSessionLostError, coercePlatformIndex, VALIDATION_TIMEOUT_MS, buildPayloadMetrics, buildImportMetrics } from "../helpers";
 import { createOperationRecord } from "./operation-record";
 import type { IControllerPlugin, ActiveTransfer, SimpleResponse, TransferValidationEvent, StoredExport, ValidationResult, ImportMetrics, ExportMetrics } from "../messages";function mergeExportMetrics(storedMetrics: ExportMetrics | null | undefined, runtimeMetrics: Record<string, unknown> | null | undefined) {
 	const merged = {
@@ -157,10 +157,7 @@ export class TransferOrchestrator {
 			// must NOT unlock the source (the dest now holds the import; unlocking would leave a live source
 			// coexisting with the dest copy = duplication).
 			importAccepted = true;
-			this.txLogger.startPhase(transferId, "validation");
-			this.scheduleValidationTimeout(transferId);
-			transfer.status = "awaiting_validation";
-			this.updateTransfer(transfer);
+			this.enterAwaitingValidation(transfer, transferId);
 			this.txLogger.logTransactionEvent(transferId, "import_started",
 				`Awaiting validation (timeout: ${VALIDATION_TIMEOUT_MS / 1000}s)`, { transmissionMs });
 
@@ -174,8 +171,22 @@ export class TransferOrchestrator {
 				// with the destination copy (duplication). The validation timeout armed above will resolve it.
 				return { success: false, error: errMsg };
 			}
-			// Throw BEFORE accept: the source is locked but the destination has nothing — safe to roll back
-			// (mirrors handleImportFailure).
+			if (isSessionLostError(err)) {
+				// AMBIGUOUS delivery (#80): the import send was rejected by a controller↔host session drop
+				// (Session Lost/Closed), which does NOT prove non-delivery — the destination may already have
+				// started importing. Unlocking here would leave a live source alongside a destination copy
+				// (duplication). Instead treat it like the ACK path: enter awaiting_validation so the normal
+				// state machine resolves it — a real validation event completes it, or the timeout rolls it
+				// back. Same residual profile as an ACK'd import whose validation never returns; strictly safer
+				// than the guaranteed duplication of the unconditional unlock this replaces.
+				this.enterAwaitingValidation(transfer, transferId);
+				this.txLogger.logTransactionEvent(transferId, "import_delivery_uncertain",
+					`Import send interrupted by session loss (${errMsg}); NOT unlocking source — awaiting validation`,
+					{ error: errMsg });
+				return { success: true, transferId, message: `Transfer initiated (delivery unconfirmed after a session interruption; awaiting validation): ${transferId}` };
+			}
+			// Throw BEFORE accept with a definite non-delivery error: the source is locked but the destination
+			// has nothing — safe to roll back (mirrors handleImportFailure).
 			const rollbackError = await this.tryUnlockSource(transferId, transfer);
 			if (rollbackError) {
 				return { success: false, error: `${errMsg}; rollback failed: ${rollbackError}` };
@@ -200,6 +211,19 @@ export class TransferOrchestrator {
 		this.updateTransfer(transfer);
 		await this.txLogger.persistTransactionLog(transferId);
 		return { success: false, error };
+	}
+
+	/**
+	 * Enter the `awaiting_validation` state: start the validation phase timer, arm the validation timeout
+	 * (which fails → rolls back if no result arrives), and broadcast. Shared by the two paths that hand a
+	 * transfer to the validation state machine — the destination-ACK path and the ambiguous-delivery path
+	 * (a SessionLost on the import send, where the destination may already be importing).
+	 */
+	enterAwaitingValidation(transfer: ActiveTransfer, transferId: string) {
+		this.txLogger.startPhase(transferId, "validation");
+		this.scheduleValidationTimeout(transferId);
+		transfer.status = "awaiting_validation";
+		this.updateTransfer(transfer);
 	}
 
 	scheduleValidationTimeout(transferId: string) {
