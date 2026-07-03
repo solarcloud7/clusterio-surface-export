@@ -229,9 +229,9 @@ Log homes (see [CLAUDE.md](../CLAUDE.md) "Observability"): controller `/clusteri
 ## 11. Web UI walkthrough (per-feature checklist)
 
 Open `http://localhost:8080` → **Surface Export** in the sidebar (auth: `./tools/get-admin-token.ps1` copies a
-login token). The page has three tabs — **Manual Transfer**, **Transaction Logs**, **Gateways** — plus a global
-**Import JSON** button (top-right, beside the tabs) and a live WebSocket feed (no manual refresh needed). Tick
-each feature:
+login token). The page has three tabs — **Manual Transfer**, **Transaction Logs**, **Gateways** — plus an
+**Import JSON** button (top-right, shown **only on the Manual Transfer tab**) and a live WebSocket feed (no
+manual refresh needed). Tick each feature:
 
 ### 11.1 Page shell & live updates
 - [ ] Page loads; the plugin **version** shows under the title; the **Surface Export** sidebar entry is present.
@@ -245,7 +245,8 @@ each feature:
 ### 11.2 Manual Transfer tab — platform tree (left panel)
 - [ ] Tree is grouped **Host → Instance → platform**. A connected host shows a **blue** tag, a disconnected one a
       grey tag; an instance that failed to list platforms shows an **error** tag.
-- [ ] Only platforms with a space hub appear. Each row shows the platform **name**, its **location** (a space
+- [ ] Only platforms with a space hub appear. Each row shows the platform **name** with its unique **`#index`**
+      (disambiguates same-named platforms — two `test`s are distinguishable), its **location** (a space
       body, `→ <target> (ETA ~N min)` while flying, or *in transit*) with a **planet icon**, and an **orange
       "locked" tag** when the platform is locked (e.g. mid-transfer).
 - [ ] Click a row → it highlights as the selected **source**.
@@ -260,7 +261,9 @@ each feature:
 - [ ] Pick a destination → **Start Transfer** enables. Click it → success toast with a transfer id (or an error
       toast on rejection); the new operation appears in **Transaction Logs**.
 
-### 11.4 Import JSON (global modal — works from any tab)
+### 11.4 Import JSON (Manual Transfer tab only)
+- [ ] The **Import JSON** button appears **only** on the Manual Transfer tab — it is **absent** on Transaction
+      Logs and Gateways (it lives in the tab bar, gated to the active tab).
 - [ ] Click **Import JSON** (top-right). Choose a `.json` export file → a green "JSON parsed" alert shows the
       file's `platform_name` (or warns if it's missing); a malformed file shows a red parse-error alert.
 - [ ] Fields: **Target instance** (required), **destination planet** (optional — aquilo/fulgora/gleba/nauvis/
@@ -278,7 +281,9 @@ each feature:
       timing (export → delivery → import phases → validation → cleanup).
 - [ ] **Details** sub-tabs each populate:
   - [ ] **Metrics** — compression summary + operation counts.
-  - [ ] **Entities** — total count + per-entity-type breakdown; **icons render** (not `?` placeholders — see §11.7).
+  - [ ] **Entities** — an informational **"Entities: N on destination · M in source payload"** line (neutral,
+        *not* a pass/fail — the two counts legitimately differ by failed-to-place / filtered / belt-surplus),
+        plus the per-entity-type breakdown; **icons render** (not `?` placeholders — see §11.7).
   - [ ] **Items** — Expected / Actual / Δ / Preserved% per item type (Δ green/red). An **API-stack-cap** info
         alert and a **"destination force under-researched → bonuses raised"** warning appear when relevant.
   - [ ] **Fluids** — per fluid/bucket table with thermal (Volume×Temperature) validation for high-temp fluids

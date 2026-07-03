@@ -804,6 +804,26 @@ corroborate.
 `module/core/import-completion.lua` (warning), `module/import_phases/active_state_restoration.lua` (the
 disproven `count=` hack removed). Memory: [memory] `held-item-loss-is-dest-force-research`.
 
+### 30. A Mutating Debug/Test Hook Must Be Fail-Safe On LEAK (CRITICAL, data-integrity)
+**Symptom**: a debug-gated `test_force_*` hook silently corrupts the NEXT unrelated transfer (not the one under
+test) — e.g. destroys destination entities *after* the gate passed, so the transfer still reports SUCCESS and the
+source is deleted = unattributed data loss, firing only on the flaky/error path (hardest to notice).
+**Root cause**: `debug_mode` defaults **true** on the always-up shared cluster (Pitfall #13) and hook flags
+persist in `storage.surface_export_config`. If the arming integration test disarms only on its **success path**
+(no `finally`/`trap`; an early `exit 1` skips the cleanup), a leaked flag stays armed and detonates on a later
+transfer. `/code-review` (not the author) caught exactly this in `test_force_entity_loss`: post-gate, destructive,
+persisted, non-blocking — the worst combination.
+**Rule**: a hook that MUTATES game state must be fail-safe on leak. Prefer **PRE-gate** placement (a leak makes
+the next transfer FAIL its gate + PRESERVE its source — self-protecting, like `test_force_item_loss`); if it must
+be post-gate/destructive, the arming test MUST disarm in a guaranteed `finally`/`trap` (PowerShell runs `finally`
+even on `exit`); best of all, use a **non-destructive** hook (inflate the *expected* value, don't destroy real
+state).
+**Mechanical guard**: `npm run lint:test-hooks` (`scripts/lint-test-hooks.mjs`, gated in CI) fails when an
+integration test arms a `test_force_*` hook without a `finally`/`trap`, UNLESS the hook is verified pre-gate and
+listed in `FAIL_SAFE_HOOKS` (a reviewable act). Run the **`/di-change`** skill before merging any
+gate/validation/rollback/source-delete/test-hook change — it codifies this plus the grounding / commensurate /
+two-phase-commit rules. Memory: [memory] `test-hook-mutating-must-be-fail-safe`.
+
 ## Factorio 2.0 Fluid API & Simulation Behavior
 
 Moved to [factorio-2.0-api-notes.md](docs/factorio-2.0-api-notes.md) — the fluid-segment model, the
