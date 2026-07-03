@@ -7,6 +7,7 @@
 
 local AsyncProcessor = require("modules/surface_export/core/async-processor")
 local SurfaceLock = require("modules/surface_export/utils/surface-lock")
+local Gateway = require("modules/surface_export/core/gateway")
 local clusterio_api = require("modules/clusterio/api")
 
 local TransferTrigger = {}
@@ -36,6 +37,27 @@ function TransferTrigger.start(force, platform_index, dest_instance_id, gateway_
 
 	-- NOTE: passengers are NOT blocked. The transfer proceeds with players aboard; they are evacuated to a
 	-- planet at the source-delete chokepoint (delete_platform_for_transfer → Gateway.evacuate_passengers).
+
+	-- #86: a CONNECTED player aboard is heartbeat-DROPPED during the heavy export tick-stall (the transfer is
+	-- lossless, but the client is booted — see the connected-player-transfer-drops-client memory). Two things
+	-- here, BEFORE the export begins: (1) log who's aboard so it correlates with the
+	-- surface_export_export_stall_seconds metric; (2) WARN each connected passenger NOW — the evacuate notice
+	-- fires post-export (at delete), by which point the client has already been dropped and never sees it.
+	local aboard_players, aboard_characters = Gateway.collect_passengers(platform)
+	local connected = {}
+	for _, p in ipairs(aboard_players) do
+		if p.connected then connected[#connected + 1] = p end
+	end
+	if #aboard_players > 0 or aboard_characters > 0 then
+		log(string.format("[TransferTrigger] '%s' (idx %d) starting transfer with %d connected + %d total player(s) aboard, %d character(s) — export tick-stall may drop connected clients (#86)",
+			platform_name, platform_index, #connected, #aboard_players, aboard_characters))
+	end
+	for _, p in ipairs(connected) do
+		-- intentional probe; best-effort pre-stall notify, a print failure must NOT abort the transfer.
+		pcall(function()
+			p.print({"", "🚀 '", platform_name, "' is transferring to another server — you'll return to Nauvis. A brief disconnect is possible during the transfer; just reconnect."})
+		end)
+	end
 
 	-- Step 1: lock the source (hidden from players, paused) for the duration of the transfer.
 	local lock_ok, lock_err = SurfaceLock.lock_platform(platform, force)
