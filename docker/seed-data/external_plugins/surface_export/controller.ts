@@ -34,8 +34,14 @@ import type {
 } from "./messages";
 import * as messages from "./messages";
 import { normalizeExportMetrics, getErrorMessage, TICKS_TO_MS, STORAGE_FILENAME, buildPayloadMetrics, buildImportMetrics } from "./helpers";
+import { resolvePendingTransfer, type DestTransferOutcome } from "./lib/transfer-reconciliation";
 
 const PLUGIN_NAME = "surface_export";
+// #106 restart reconciliation: alpha.25 has no instance-status hook, so poll while pending intents remain.
+const RECONCILE_INTERVAL_MS = 30_000;
+// Grace from reconcile-start (this boot) before an unresolvable intent escalates — must comfortably exceed
+// instance-reconnect + a large chunked import + validation.
+const RECONCILE_ESCALATE_MS = 10 * 60_000;
 
 export class ControllerPlugin extends BaseControllerPlugin {
 	private get c(): Controller { return this.controller; }
@@ -66,6 +72,12 @@ export class ControllerPlugin extends BaseControllerPlugin {
 	 * so each source instance owns its own gateway config. Persisted. */
 	gatewayLinks!: Map<string, messages.GatewayLink[]>;
 	gatewayConfigPath!: string;
+	/** #106: transfers persisted while awaiting_validation, reconciled after a controller restart. */
+	pendingTransfers!: Map<string, messages.PendingTransferIntent>;
+	pendingTransfersPath!: string;
+	private reconcileTimer: ReturnType<typeof setInterval> | null = null;
+	private reconcileStartedAt = 0;
+	private reconcileEscalated = new Set<string>();
 
 	async init() {
 		this.logger.info("Surface Export controller plugin initializing...");
@@ -95,6 +107,11 @@ export class ControllerPlugin extends BaseControllerPlugin {
 			String(this.c.config.get("controller.database_directory")),
 			"surface_export_gateways.json",
 		);
+		this.pendingTransfers = new Map();
+		this.pendingTransfersPath = path.resolve(
+			String(this.c.config.get("controller.database_directory")),
+			"surface_export_pending_transfers.json",
+		);
 
 		// Instantiate modules (order matters: txLogger before subscriptions,
 		// platformTree before orchestrator)
@@ -106,6 +123,7 @@ export class ControllerPlugin extends BaseControllerPlugin {
 		await this.loadStorage();
 		await this.txLogger.loadTransactionLogs();
 		await this.loadGatewayConfig();
+		await this.loadPendingTransfers();
 
 		// Register message handlers
 		this.c.handle(messages.PlatformExportEvent, this.handlePlatformExport.bind(this));
@@ -132,9 +150,19 @@ export class ControllerPlugin extends BaseControllerPlugin {
 	async onStart() {
 		this.logger.info("Controller started - Surface Export plugin ready");
 		this.logger.info(`Current storage: ${this.platformStorage.size} platforms`);
+		// #106: any transfer left in awaiting_validation across the restart is now a persisted intent —
+		// reconcile it (source stays locked-and-hidden until we complete/unlock/escalate it).
+		if (this.pendingTransfers.size > 0) {
+			this.logger.warn(`#106: ${this.pendingTransfers.size} transfer(s) were awaiting validation at shutdown — reconciling`);
+			this.scheduleReconcile();
+		}
 	}
 
 	async onShutdown() {
+		if (this.reconcileTimer) {
+			clearInterval(this.reconcileTimer);
+			this.reconcileTimer = null;
+		}
 		this.subscriptions.treeBroadcastLimiter.cancel();
 		this.logger.info(`Shutting down - ${this.platformStorage.size} platforms in storage`);
 	}
@@ -684,6 +712,160 @@ export class ControllerPlugin extends BaseControllerPlugin {
 			await lib.safeOutputFile(this.gatewayConfigPath, payload);
 		} catch (err: unknown) {
 			this.logger.error(`Failed to persist gateway config: ${getErrorMessage(err)}`);
+		}
+	}
+
+	// ── #106 restart reconciliation ─────────────────────────────────────────
+	// A transfer awaiting validation lives only in memory (activeTransfers + the validation timeout), so a
+	// controller restart would leave its source platform locked-and-hidden forever. The orchestrator persists
+	// a PendingTransferIntent while awaiting_validation; on boot we reconcile each against the DESTINATION's
+	// authoritative transferId-keyed outcome, driving the (exhaustively-tested) resolvePendingTransfer:
+	// complete = delete the stranded source, unlock = free it, retry = wait, escalate = leave locked + warn.
+	// Safety is delegated to that pure function — this loop only queries the dest and routes the decision to
+	// the existing delete/unlock sends. alpha.25 has no instance-status hook, so we poll while intents remain.
+
+	async loadPendingTransfers() {
+		try {
+			const content = await fs.readFile(this.pendingTransfersPath, "utf8");
+			const entries = JSON.parse(content);
+			if (Array.isArray(entries)) {
+				for (const e of entries) {
+					if (e && typeof e.transferId === "string") {
+						this.pendingTransfers.set(e.transferId, e as messages.PendingTransferIntent);
+					}
+				}
+			}
+			if (this.pendingTransfers.size > 0) {
+				this.logger.info(`Loaded ${this.pendingTransfers.size} pending transfer intent(s) from disk`);
+			}
+		} catch (err: unknown) {
+			const code = (err as { code?: string }).code;
+			if (code === "ENOENT") {
+				return;
+			}
+			this.logger.error(`Failed to load pending transfers: ${getErrorMessage(err)}`);
+		}
+	}
+
+	async persistPendingTransfers() {
+		try {
+			const payload = JSON.stringify(Array.from(this.pendingTransfers.values()), null, 2);
+			await lib.safeOutputFile(this.pendingTransfersPath, payload);
+		} catch (err: unknown) {
+			this.logger.error(`Failed to persist pending transfers: ${getErrorMessage(err)}`);
+		}
+	}
+
+	/** #106: orchestrator hook — a transfer entered awaiting_validation; persist its recovery intent. */
+	persistPendingTransfer(intent: messages.PendingTransferIntent): void {
+		this.pendingTransfers.set(intent.transferId, intent);
+		void this.persistPendingTransfers();
+	}
+
+	/** #106: orchestrator hook — the transfer resolved terminally; drop its intent (+ any escalate flag). */
+	removePendingTransfer(transferId: string): void {
+		this.reconcileEscalated.delete(transferId);
+		if (this.pendingTransfers.delete(transferId)) {
+			void this.persistPendingTransfers();
+		}
+	}
+
+	private scheduleReconcile(): void {
+		if (this.reconcileTimer) {
+			return;
+		}
+		this.reconcileStartedAt = Date.now();
+		void this.reconcilePendingTransfers();
+		this.reconcileTimer = setInterval(() => { void this.reconcilePendingTransfers(); }, RECONCILE_INTERVAL_MS);
+	}
+
+	/** Poll every pending intent; act on each once resolvePendingTransfer returns a terminal action. */
+	async reconcilePendingTransfers(): Promise<void> {
+		for (const intent of Array.from(this.pendingTransfers.values())) {
+			try {
+				await this.reconcileOne(intent);
+			} catch (err: unknown) {
+				this.logger.warn(`#106 reconcile of ${intent.transferId} threw (will retry): ${getErrorMessage(err)}`);
+			}
+		}
+		if (this.pendingTransfers.size === 0 && this.reconcileTimer) {
+			clearInterval(this.reconcileTimer);
+			this.reconcileTimer = null;
+			this.logger.info("#106: all pending transfers reconciled");
+		}
+	}
+
+	private async reconcileOne(intent: messages.PendingTransferIntent): Promise<void> {
+		const sourceOnline = this.isInstanceOnline(intent.sourceInstanceId);
+		const destOnline = this.isInstanceOnline(intent.targetInstanceId);
+
+		// Query the destination's AUTHORITATIVE outcome. null = could not query (offline/error) → the resolve
+		// waits, then escalates — never acts destructively on an unknown.
+		let outcome: DestTransferOutcome | null = null;
+		if (destOnline) {
+			try {
+				const resp = await this.c.sendTo(
+					{ instanceId: intent.targetInstanceId },
+					new messages.GetTransferOutcomeRequest({ transferId: intent.transferId }),
+				);
+				outcome = resp as DestTransferOutcome;
+			} catch (err: unknown) {
+				this.logger.warn(`#106 reconcile: outcome query to instance ${intent.targetInstanceId} for ${intent.transferId} failed: ${getErrorMessage(err)}`);
+				outcome = null;
+			}
+		}
+
+		const action = resolvePendingTransfer({
+			outcome,
+			sourceOnline,
+			ageMs: Date.now() - this.reconcileStartedAt,
+			escalateAfterMs: RECONCILE_ESCALATE_MS,
+		});
+
+		const where = `'${intent.sourcePlatformName}' (#${intent.sourcePlatformIndex}) on instance ${intent.sourceInstanceId}`;
+		switch (action.kind) {
+			case "complete": {
+				const resp = await this.c.sendTo(
+					{ instanceId: intent.sourceInstanceId },
+					new messages.DeleteSourcePlatformRequest({
+						platformIndex: intent.sourcePlatformIndex,
+						platformName: intent.sourcePlatformName,
+						forceName: intent.forceName,
+					}),
+				) as { success?: boolean; error?: string };
+				if (resp?.success) {
+					this.logger.info(`#106 reconcile: ${intent.transferId} — destination committed; deleted stranded source ${where}`);
+					this.removePendingTransfer(intent.transferId);
+				} else {
+					this.logger.warn(`#106 reconcile: ${intent.transferId} — source delete failed (${resp?.error ?? "unknown"}); will retry`);
+				}
+				break;
+			}
+			case "unlock": {
+				const resp = await this.c.sendTo(
+					{ instanceId: intent.sourceInstanceId },
+					new messages.UnlockSourcePlatformRequest({ platformIndex: intent.sourcePlatformIndex }),
+				) as { success?: boolean; error?: string };
+				if (resp?.success) {
+					this.logger.info(`#106 reconcile: ${intent.transferId} — destination did not commit; unlocked stranded source ${where}`);
+					this.removePendingTransfer(intent.transferId);
+				} else {
+					this.logger.warn(`#106 reconcile: ${intent.transferId} — source unlock failed (${resp?.error ?? "unknown"}); will retry`);
+				}
+				break;
+			}
+			case "escalate": {
+				// Never auto-act on an ambiguous state — leave the source LOCKED (recoverable) and warn ONCE.
+				if (!this.reconcileEscalated.has(intent.transferId)) {
+					this.reconcileEscalated.add(intent.transferId);
+					this.logger.error(`#106 reconcile: ${intent.transferId} UNRESOLVABLE — ${action.reason}. Source ${where} left LOCKED; verify the destination, then /unlock-platform (or delete the source) manually.`);
+				}
+				break;
+			}
+			case "retry":
+			default:
+				// Not yet resolvable (offline / mid-import) — leave persisted; the next poll retries.
+				break;
 		}
 	}
 

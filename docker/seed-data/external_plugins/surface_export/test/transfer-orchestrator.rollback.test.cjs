@@ -42,6 +42,9 @@ function makeHarness(importSendResult) {
 
 	const plugin = {
 		logger: { error: noop, warn: noop, info: noop },
+		// #106 hooks the orchestrator calls on enter/exit of awaiting_validation (recorded for assertions).
+		persistPendingTransfer: (intent) => { calls.pendingPersisted = intent; },
+		removePendingTransfer: (id) => { calls.pendingRemoved = id; },
 		platformStorage: {
 			get: () => ({
 				exportData: { platform: { index: 3, force: "player" } },

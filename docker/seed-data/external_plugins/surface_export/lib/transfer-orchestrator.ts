@@ -236,6 +236,17 @@ export class TransferOrchestrator {
 		this.scheduleValidationTimeout(transferId);
 		transfer.status = "awaiting_validation";
 		this.updateTransfer(transfer);
+		// #106: persist the intent so a controller restart during this window can reconcile it (query the dest
+		// → complete/unlock/escalate) instead of leaving the source platform locked-and-hidden forever.
+		this.plugin.persistPendingTransfer({
+			transferId,
+			sourceInstanceId: transfer.sourceInstanceId,
+			sourcePlatformIndex: transfer.platformIndex,
+			sourcePlatformName: transfer.platformName,
+			forceName: transfer.forceName || "player",
+			targetInstanceId: Number(transfer.targetInstanceId),
+			startedAt: transfer.startedAt,
+		});
 	}
 
 	scheduleValidationTimeout(transferId: string) {
@@ -292,6 +303,12 @@ export class TransferOrchestrator {
 				await this.handleValidationSuccess(event.transferId, transfer);
 			} else {
 				await this.handleValidationFailure(event.transferId, transfer, event.validation);
+			}
+			// #106: drop the persisted intent once the SOURCE is definitively resolved (deleted on success,
+			// unlocked on failure). Keep it on `cleanup_failed` (the source delete failed) so a restart
+			// reconcile retries the delete rather than orphaning a committed-dest + still-locked source.
+			if (transfer.status === "completed" || transfer.status === "failed" || transfer.status === "error") {
+				this.plugin.removePendingTransfer(event.transferId);
 			}
 			this.pruneOldTransfers();
 		} catch (err: unknown) {

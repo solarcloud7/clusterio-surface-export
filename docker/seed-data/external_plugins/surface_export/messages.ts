@@ -1343,7 +1343,26 @@ export type InstanceRecordLike = {
 };
 
 /** Shared interface implemented by ControllerPlugin; used by lib/ modules to avoid circular imports. */
+/**
+ * The minimal, persistable "a transfer is awaiting validation" intent used by #106 restart reconciliation.
+ * Persisted when a transfer enters awaiting_validation and removed on its terminal state, so a controller
+ * restart can re-load it and reconcile (query the dest → complete/unlock/escalate) instead of leaving the
+ * source platform locked-and-hidden forever.
+ */
+export interface PendingTransferIntent {
+	transferId: string;
+	sourceInstanceId: number;
+	sourcePlatformIndex: number;
+	sourcePlatformName: string;
+	forceName: string;
+	targetInstanceId: number;
+	startedAt: number;
+}
+
 export interface IControllerPlugin {
+	/** #106: add/remove a persisted awaiting_validation intent (the orchestrator calls these). */
+	persistPendingTransfer(intent: PendingTransferIntent): void;
+	removePendingTransfer(transferId: string): void;
 	controller: {
 		wsServer: { controlConnections: Map<number, unknown> };
 		sendTo: (target: { instanceId: number }, message: unknown) => Promise<any>;
