@@ -23,8 +23,15 @@ local function get_transfer_outcome(transfer_id)
 		result.platform_name = rec.platform_name
 	end
 
-	-- Is an import for this transfer still RUNNING (no terminal outcome yet)? A `found` outcome takes
-	-- precedence controller-side, so this only decides the !found case (still importing vs. never received).
+	-- Is an ASYNC IMPORT job for this transfer still running (post-assembly, no terminal outcome yet)? A
+	-- `found` outcome takes precedence controller-side, so in_progress only refines the !found case.
+	--
+	-- NOTE (#106 review [2]): this deliberately does NOT report in_progress for a payload still in CHUNK
+	-- DELIVERY (storage.chunked_imports). Those sessions are keyed by platform_name, not transferId (the
+	-- transferId lives inside the un-parsed JSON), AND after a CONTROLLER restart the controller never resumes
+	-- sending the remaining chunks, so such a session is permanently STUCK. Reporting in_progress for it would
+	-- make the reconcile retry FOREVER; leaving it !found + !in_progress lets the controller retry briefly then
+	-- ESCALATE (source stays locked for admin review) — the reconcile never UNLOCKS on !found, so no dup.
 	for _, job in pairs(storage.async_jobs or {}) do
 		if job and job.type == "import" and job.transfer_id == transfer_id then
 			result.in_progress = true

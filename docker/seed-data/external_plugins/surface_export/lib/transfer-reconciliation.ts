@@ -53,11 +53,12 @@ export type ReconcileAction =
  * Safety invariants (the whole point of this being a tested pure function):
  * - `complete` (deletes the source) fires ONLY on `found && success` — an authoritative, transferId-keyed
  *   "the destination committed + validated" signal. Never on a name match, never on ambiguity.
- * - `unlock` (rolls back the source) fires ONLY when the dest authoritatively holds nothing: `found &&
- *   !success` (it imported then failed validation → discarded its copy), or a definite `!found && !inProgress`
- *   with the dest online (it is not importing this transfer and has no record → it never committed).
- * - Any inability to be sure (dest offline, query failed, still importing, or source offline) ⇒ `retry`,
- *   escalating to `escalate` once it has been ambiguous longer than `escalateAfterMs`.
+ * - `unlock` (rolls back the source) fires ONLY on `found && !success` — the dest authoritatively imported
+ *   then FAILED validation, so it holds no committed copy (matching the normal handleValidationFailure path).
+ *   `!found` is NOT treated as authoritative (the record can be evicted / never-written / mid-delivery — see
+ *   the #106 review), so it NEVER auto-unlocks.
+ * - Any inability to be sure (dest offline, query failed, still importing, or a non-authoritative `!found`)
+ *   ⇒ `retry`, escalating to `escalate` once it has been ambiguous longer than `escalateAfterMs`.
  */
 export function resolvePendingTransfer(inputs: ReconcileInputs): ReconcileAction {
 	const { outcome, sourceOnline, ageMs, escalateAfterMs } = inputs;
@@ -88,15 +89,19 @@ export function resolvePendingTransfer(inputs: ReconcileInputs): ReconcileAction
 			: { kind: "retry", reason: "source offline — cannot unlock it yet (dest failed)" };
 	}
 
-	// !found: no terminal outcome recorded yet. If the dest is still importing this transfer, wait.
+	// !found: no terminal outcome recorded. If the dest is still importing this transfer, wait.
 	if (outcome.inProgress) {
 		return { kind: "retry", reason: "destination has no outcome yet and is still importing" };
 	}
 
-	// !found and NOT in progress, dest online: the dest is not importing this transfer and holds no record of
-	// it. Retention of the outcome record far exceeds the reconciliation window, so this means it never
-	// committed → safe to roll back the source.
-	return sourceOnline
-		? { kind: "unlock", reason: "destination has no record and is not importing (!found, !inProgress) — never committed" }
-		: { kind: "retry", reason: "source offline — cannot unlock it yet (dest has nothing)" };
+	// !found and NOT in progress: `!found` is NOT authoritative — the outcome can be ABSENT even though the
+	// destination committed a copy (record evicted by the bounded prune; a no-verification transfer that never
+	// wrote one; a chunked payload still assembling before its import job exists — code-review #106 findings
+	// 0/1/2). Auto-unlocking here would re-activate a source whose destination holds a committed copy =
+	// DUPLICATION. So NEVER unlock on `!found`: keep retrying (the dest may still be mid-delivery), and once it
+	// has aged past escalateAfterMs, ESCALATE — leave the source locked (recoverable) with a loud admin
+	// warning rather than risk a duplicate.
+	return staleAmbiguous
+		? { kind: "escalate", reason: "no destination outcome and not importing, but `!found` is not authoritative (evicted / unwritten / mid-delivery) — leaving source locked for admin review" }
+		: { kind: "retry", reason: "no destination outcome yet — `!found` is not authoritative; waiting for the dest" };
 }

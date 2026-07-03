@@ -36,9 +36,12 @@ test("found + validation failed → unlock the source (dest discarded its copy)"
 	assert.equal(act({ found: true, success: false, inProgress: false }, false), "retry"); // source offline → wait
 });
 
-test("!found + !inProgress + dest online → unlock (dest never committed)", () => {
-	assert.equal(act({ found: false, success: false, inProgress: false }, true), "unlock");
-	assert.equal(act({ found: false, success: false, inProgress: false }, false), "retry"); // source offline → wait
+test("!found + !inProgress → NEVER unlock: retry when fresh, escalate when stale (!found is not authoritative)", () => {
+	// #106 review: `!found` can be wrong three ways (evicted / unwritten / mid-delivery), so auto-unlocking on
+	// it could free a source whose dest committed = dup. It must retry then escalate, never unlock.
+	assert.equal(act({ found: false, success: false, inProgress: false }, true), "retry"); // fresh → wait
+	assert.equal(act({ found: false, success: false, inProgress: false }, true, STALE), "escalate"); // aged out → admin
+	assert.equal(act({ found: false, success: false, inProgress: false }, false), "retry"); // source offline too → wait
 });
 
 test("!found + inProgress → retry; a recorded outcome takes precedence over inProgress", () => {
@@ -74,11 +77,14 @@ test("no destructive action on any non-authoritative or ambiguous input", () => 
 				if (isDestructive) {
 					assert.ok(allowedComplete, `complete must require found+success+sourceOnline; got ${JSON.stringify({ outcome, sourceOnline })}`);
 				}
-				// unlock fires only when the dest is reachable + source online AND the dest authoritatively
-				// holds nothing: found+!success (imported then failed → discarded), or !found+!inProgress.
+				// unlock fires ONLY on an authoritative found+!success (dest imported then failed → discarded).
 				if (kind === "unlock") {
-					const authoritativelyEmpty = outcome !== null && sourceOnline && (outcome.found ? !outcome.success : !outcome.inProgress);
-					assert.ok(authoritativelyEmpty, `unlock only when dest authoritatively holds nothing; got ${JSON.stringify({ outcome, sourceOnline })}`);
+					assert.ok(outcome !== null && outcome.found && !outcome.success && sourceOnline, `unlock only on found+!success+sourceOnline; got ${JSON.stringify({ outcome, sourceOnline })}`);
+				}
+				// #106 review invariant: `!found` is NOT authoritative, so it must NEVER produce a
+				// source-freeing (unlock) or source-destroying (complete) action — only retry/escalate.
+				if (outcome !== null && !outcome.found) {
+					assert.ok(kind === "retry" || kind === "escalate", `!found must be retry/escalate only, got '${kind}' for ${JSON.stringify({ outcome, sourceOnline })}`);
 				}
 			}
 		}
