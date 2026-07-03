@@ -10,12 +10,13 @@
     "build:web": "webpack-cli --mode production",
     "build": "npm run build:node && npm run build:web",
     "prepare": "npm run build",
-    "lint": "npm run lint:js && npm run lint:lua && npm run lint:web-cache && npm run lint:test-grounding && npm run lint:pcall-logging",
+    "lint": "npm run lint:js && npm run lint:lua && npm run lint:web-cache && npm run lint:test-grounding && npm run lint:pcall-logging && npm run lint:test-hooks",
     "lint:js": "eslint . --max-warnings 0",
     "lint:lua": "node scripts/lint-lua-invariants.mjs",
     "lint:web-cache": "node scripts/lint-webpack-cache.mjs",
     "lint:test-grounding": "node scripts/lint-test-grounding.mjs",
     "lint:pcall-logging": "node scripts/lint-pcall-logging.mjs",
+    "lint:test-hooks": "node scripts/lint-test-hooks.mjs",
     "test": "npm run build:node && node --test test/messages.roundtrip.test.cjs test/transfer-orchestrator.rollback.test.cjs"
   },
   "keywords": [
