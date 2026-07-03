@@ -62,7 +62,8 @@ export class ControllerPlugin extends BaseControllerPlugin {
 	txLogger!: TransactionLogger;
 	subscriptions!: SubscriptionManager;
 	orchestrator!: TransferOrchestrator;
-	/** Gateway → destination links (raw, the source of truth). Keyed by gateway name. Persisted. */
+	/** Gateway → destination links (raw, the source of truth). Keyed by `${sourceInstanceId}:${gatewayName}`
+	 * so each source instance owns its own gateway config. Persisted. */
 	gatewayLinks!: Map<string, messages.GatewayLink[]>;
 	gatewayConfigPath!: string;
 
@@ -592,26 +593,79 @@ export class ControllerPlugin extends BaseControllerPlugin {
 	}
 
 	// ── Gateway link config (WS2) ───────────────────────────────────────────
-	// The controller persists RAW links ({targetInstanceId, targetGateway}); live instance_name/online
-	// are resolved only at read/push time so they never go stale on disk.
+	// The controller persists RAW links ({targetInstanceId, targetGateway}) keyed by
+	// `${sourceInstanceId}:${gatewayName}`; live instance_name/online are resolved only at read/push time
+	// so they never go stale on disk. Gateway names never contain a colon, so the FIRST ":" splits the key.
+
+	private gatewayKey(sourceInstanceId: number, gatewayName: string): string {
+		return `${sourceInstanceId}:${gatewayName}`;
+	}
+
+	private parseGatewayKey(key: string): { sourceInstanceId: number; gatewayName: string } | null {
+		const idx = key.indexOf(":");
+		if (idx <= 0) {
+			return null;
+		}
+		const sourceInstanceId = Number(key.slice(0, idx));
+		const gatewayName = key.slice(idx + 1);
+		if (!Number.isInteger(sourceInstanceId) || !gatewayName) {
+			return null;
+		}
+		return { sourceInstanceId, gatewayName };
+	}
 
 	async loadGatewayConfig() {
 		try {
 			const content = await fs.readFile(this.gatewayConfigPath, "utf8");
 			const entries = JSON.parse(content);
+			// Snapshot of live instances, for migrating legacy cluster-wide links (below). Taken once.
+			const liveInstances = [...this.c.instances.values()].filter(inst => !inst.isDeleted);
+			let migratedLegacy = 0;
 			if (Array.isArray(entries)) {
 				for (const entry of entries) {
-					if (Array.isArray(entry) && typeof entry[0] === "string" && Array.isArray(entry[1])) {
-						// Drop links for gateway names this build doesn't know (GATEWAY_COUNT shrank, or a
-						// hand-edited file) — otherwise they'd be pushed to instances yet be invisible and
-						// unremovable in the web editor, which only renders GATEWAY_NAMES.
-						if (!(messages.GATEWAY_NAMES as readonly string[]).includes(entry[0])) {
-							this.logger.warn(`Dropping orphaned gateway link for unknown gateway '${entry[0]}'`);
+					if (!(Array.isArray(entry) && typeof entry[0] === "string" && Array.isArray(entry[1]))) {
+						continue;
+					}
+					const key = entry[0] as string;
+					const links = entry[1] as messages.GatewayLink[];
+					const parsed = this.parseGatewayKey(key);
+					if (parsed) {
+						// New per-instance composite key. Drop links for gateway names this build doesn't know
+						// (GATEWAY_COUNT shrank, or a hand-edited file) — they'd be pushed yet be invisible and
+						// unremovable in the web editor, which only renders GATEWAY_NAMES per instance.
+						if (!(messages.GATEWAY_NAMES as readonly string[]).includes(parsed.gatewayName)) {
+							this.logger.warn(`Dropping unknown gateway link '${key}'`);
 							continue;
 						}
-						this.gatewayLinks.set(entry[0], entry[1] as messages.GatewayLink[]);
+						this.gatewayLinks.set(key, links);
+					} else if ((messages.GATEWAY_NAMES as readonly string[]).includes(key)) {
+						// LEGACY bare-name key from the pre-per-instance format. The old model pushed this SAME
+						// config to every instance, so faithfully migrate by replicating it to each known
+						// instance as source — dropping self-targets, which the per-instance model forbids.
+						if (liveInstances.length === 0) {
+							// No instances known yet at load: KEEP the bare key in memory (invisible to the
+							// per-instance editor, never resolved/pushed since parseGatewayKey returns null) so it
+							// survives on disk and is migrated on a later boot — never silently destroyed.
+							this.gatewayLinks.set(key, links);
+							this.logger.warn(`Legacy gateway link '${key}' kept for migration on a later boot (no instances known yet)`);
+							continue;
+						}
+						for (const inst of liveInstances) {
+							const perInstance = links.filter(l => l.targetInstanceId !== inst.id);
+							if (perInstance.length > 0) {
+								this.gatewayLinks.set(this.gatewayKey(inst.id, key), perInstance);
+							}
+						}
+						migratedLegacy += 1;
+					} else {
+						this.logger.warn(`Dropping unknown gateway link '${key}'`);
 					}
 				}
+			}
+			if (migratedLegacy > 0) {
+				// Rewrite the file in the new per-instance format so the one-time migration is durable.
+				await this.persistGatewayConfig();
+				this.logger.warn(`Migrated ${migratedLegacy} legacy cluster-wide gateway link(s) to per-instance keys`);
 			}
 			this.logger.info(`Loaded ${this.gatewayLinks.size} gateway link(s) from disk`);
 		} catch (err: unknown) {
@@ -649,74 +703,91 @@ export class ControllerPlugin extends BaseControllerPlugin {
 	}
 
 	/**
-	 * Resolve the raw links into the wire shape with live instance_name + online.
+	 * Resolve ONE source instance's raw links into the wire shape with live instance_name + online.
 	 * NOTE: `online` is a SNAPSHOT taken at resolve (push/pull) time — @clusterio's BaseControllerPlugin
 	 * exposes no instance-status hook to re-push on, so it is refreshed only on a config edit and on each
 	 * instance's own startup. The in-game chooser (WS3) therefore treats `online` as an advisory hint, not
 	 * a hard gate; the transfer itself is gated by live controller routing.
 	 */
-	private resolveGateways(): messages.ResolvedGateway[] {
+	private resolveGateways(sourceInstanceId: number): messages.ResolvedGateway[] {
 		const out: messages.ResolvedGateway[] = [];
-		for (const [gatewayName, links] of this.gatewayLinks.entries()) {
+		for (const [key, links] of this.gatewayLinks.entries()) {
+			const parsed = this.parseGatewayKey(key);
+			if (!parsed || parsed.sourceInstanceId !== sourceInstanceId) {
+				continue;
+			}
 			const targets = (links || []).map(link => ({
 				instanceId: link.targetInstanceId,
 				instanceName: this.platformTree.resolveInstanceName(link.targetInstanceId) ?? "(unknown)",
 				targetGateway: link.targetGateway,
 				online: this.isInstanceOnline(link.targetInstanceId),
 			}));
-			out.push({ gatewayName, targets });
+			out.push({ gatewayName: parsed.gatewayName, targets });
 		}
 		return out;
 	}
 
-	/** Push the resolved gateway config to every connected instance (best-effort per instance). */
-	private async pushGatewayConfigToConnectedInstances(): Promise<void> {
-		const gateways = this.resolveGateways();
-		const online = [...this.c.instances.values()].filter(inst => !inst.isDeleted && this.isInstanceOnline(inst.id));
-		// Fan out in parallel — each push catches its own error, so one slow/failed instance can't delay or
-		// abort the others (Promise.all never rejects here because the per-instance catch resolves).
-		await Promise.all(online.map(async inst => {
-			try {
-				await this.c.sendTo({ instanceId: inst.id }, new messages.PushGatewayConfigRequest({ gateways }));
-			} catch (err: unknown) {
-				this.logger.warn(`Failed to push gateway config to instance ${inst.id}: ${getErrorMessage(err)}`);
-			}
-		}));
+	/** Push ONE source instance its own resolved gateway config (best-effort; no-op if offline). */
+	private async pushGatewayConfigToInstance(sourceInstanceId: number): Promise<void> {
+		if (!this.isInstanceOnline(sourceInstanceId)) {
+			return;
+		}
+		try {
+			const gateways = this.resolveGateways(sourceInstanceId);
+			await this.c.sendTo({ instanceId: sourceInstanceId }, new messages.PushGatewayConfigRequest({ gateways }));
+		} catch (err: unknown) {
+			this.logger.warn(`Failed to push gateway config to instance ${sourceInstanceId}: ${getErrorMessage(err)}`);
+		}
 	}
 
-	/** control → controller: raw links + the pinned gateway-name list (for the web editor). */
+	/** control → controller: raw links (each tagged with its source instance) + the pinned gateway-name
+	 * list (for the web editor, which groups by source instance). */
 	async handleGetGatewaysRequest(_request: Record<string, never>) {
+		const links = Array.from(this.gatewayLinks.entries()).flatMap(([key, targets]) => {
+			const parsed = this.parseGatewayKey(key);
+			return parsed ? [{ sourceInstanceId: parsed.sourceInstanceId, gatewayName: parsed.gatewayName, targets }] : [];
+		});
 		return {
 			gatewayNames: [...messages.GATEWAY_NAMES],
-			links: Array.from(this.gatewayLinks.entries()).map(([gatewayName, targets]) => ({ gatewayName, targets })),
+			links,
 		};
 	}
 
-	/** control → controller: replace the entire target list for one gateway, persist, push. */
-	async handleSetGatewayLinkRequest(request: { gatewayName: string; targets: messages.GatewayLink[] }) {
+	/** control → controller: replace the entire target list for one (source instance, gateway), persist,
+	 * push the affected instance its own updated config. */
+	async handleSetGatewayLinkRequest(request: { sourceInstanceId: number; gatewayName: string; targets: messages.GatewayLink[] }) {
 		const { gatewayName } = request;
+		const sourceInstanceId = Number(request.sourceInstanceId);
 		if (!(messages.GATEWAY_NAMES as readonly string[]).includes(gatewayName)) {
 			return { success: false, error: `Unknown gateway: ${gatewayName}` };
 		}
-		// Normalize: keep only links with a valid integer instance id; default a blank target gateway
-		// to the source gateway name (the 1:1 default).
+		// A non-integer/NaN id yields undefined from instances.get() (caught by !sourceInstance).
+		const sourceInstance = this.c.instances.get(sourceInstanceId);
+		if (!sourceInstance || sourceInstance.isDeleted) {
+			return { success: false, error: `Unknown source instance: ${request.sourceInstanceId}` };
+		}
+		const key = this.gatewayKey(sourceInstanceId, gatewayName);
+		// Normalize: keep only links with a valid integer instance id that is NOT the source itself (an
+		// instance can't gateway-transfer to its own instance — enforced here, not just in the web dropdown,
+		// so a hand-edited config or future import path can't persist a self-referential target); default a
+		// blank target gateway to the source gateway name (the 1:1 default).
 		const targets: messages.GatewayLink[] = (request.targets || [])
-			.filter(t => Number.isInteger(Number(t.targetInstanceId)))
+			.filter(t => Number.isInteger(Number(t.targetInstanceId)) && Number(t.targetInstanceId) !== sourceInstanceId)
 			.map(t => ({ targetInstanceId: Number(t.targetInstanceId), targetGateway: t.targetGateway || gatewayName }));
 		if (targets.length > 0) {
-			this.gatewayLinks.set(gatewayName, targets);
+			this.gatewayLinks.set(key, targets);
 		} else {
-			this.gatewayLinks.delete(gatewayName);
+			this.gatewayLinks.delete(key);
 		}
 		await this.persistGatewayConfig();
-		await this.pushGatewayConfigToConnectedInstances();
-		this.logger.info(`Gateway '${gatewayName}' links set: ${targets.length} target(s)`);
+		await this.pushGatewayConfigToInstance(sourceInstanceId);
+		this.logger.info(`Gateway '${gatewayName}' on instance ${sourceInstanceId} links set: ${targets.length} target(s)`);
 		return { success: true };
 	}
 
-	/** instance → controller: pull the resolved gateway config on instance start. */
-	async handleGetGatewayConfigRequest(_request: Record<string, never>) {
-		return { gateways: this.resolveGateways() };
+	/** instance → controller: pull the requesting instance's own resolved gateway config on instance start. */
+	async handleGetGatewayConfigRequest(request: { instanceId: number }) {
+		return { gateways: this.resolveGateways(Number(request.instanceId)) };
 	}
 }
 

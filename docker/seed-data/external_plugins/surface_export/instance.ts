@@ -157,7 +157,7 @@ export class InstancePlugin extends BaseInstancePlugin {
 		try {
 			const resp = (await this.link.sendTo(
 				"controller",
-				new messages.GetGatewayConfigRequest({}),
+				new messages.GetGatewayConfigRequest({ instanceId: this.i.id }),
 			)) as unknown as { gateways?: messages.ResolvedGateway[] };
 			await this.applyGatewaysToLua(resp?.gateways || []);
 			this.logger.info(`Gateway config pulled from controller: ${(resp?.gateways || []).length} gateway(s)`);
