@@ -33,7 +33,7 @@ import type {
 	PersistedTransactionLog,
 } from "./messages";
 import * as messages from "./messages";
-import { normalizeExportMetrics, getErrorMessage, TICKS_TO_MS, STORAGE_FILENAME, buildPayloadMetrics, buildImportMetrics } from "./helpers";
+import { normalizeExportMetrics, getErrorMessage, generateOperationId, TICKS_TO_MS, STORAGE_FILENAME, buildPayloadMetrics, buildImportMetrics } from "./helpers";
 import { resolvePendingTransfer, type DestTransferOutcome } from "./lib/transfer-reconciliation";
 
 const PLUGIN_NAME = "surface_export";
@@ -334,7 +334,7 @@ export class ControllerPlugin extends BaseControllerPlugin {
 				payloadSizeBytes,
 			});
 		this.subscriptions.emitTransferUpdate(operation);
-		const uploadExportId = `uploaded_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+		const uploadExportId = generateOperationId("uploaded");
 
 		try {
 			const response = await this.c.sendTo(

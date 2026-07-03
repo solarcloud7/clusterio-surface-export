@@ -30,21 +30,9 @@ export function getProp<T>(obj: object | null | undefined, key: string, fallback
 	return val !== undefined && val !== null ? (val as T) : fallback;
 }
 
-export function getErrorMessage(err: unknown, fallback = "Unknown error") {
-	if (err instanceof Error) {
-		return err.message || fallback;
-	}
-	if (typeof err === "string") {
-		return err || fallback;
-	}
-	if (err && typeof err === "object" && "message" in err) {
-		const message = (err as { message?: unknown }).message;
-		if (typeof message === "string" && message) {
-			return message;
-		}
-	}
-	return fallback;
-}
+// Single source in the shared (Node + web) module — see shared-utils.ts (task #97). Re-exported so web
+// call sites keep importing it from "./utils".
+export { getErrorMessage } from "../shared/utils";
 
 export function statusColor(status: string) {
 	switch (status) {
