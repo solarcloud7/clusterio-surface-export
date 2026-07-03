@@ -31,6 +31,10 @@ docker/server-settings.json
 # Ignore local .claude state, but TRACK shared project skills (committed dev-env helpers):
 .claude/*
 !.claude/skills/
+# Codex agent tooling (the .claude analogue for Codex) — local dev config, not tracked
+/.agents/
+/.codex/
+/AGENTS.md
 
 # Mod packaging
 *.zip
