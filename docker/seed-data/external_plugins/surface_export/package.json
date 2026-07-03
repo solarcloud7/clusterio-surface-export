@@ -16,7 +16,7 @@
     "lint:web-cache": "node scripts/lint-webpack-cache.mjs",
     "lint:test-grounding": "node scripts/lint-test-grounding.mjs",
     "lint:pcall-logging": "node scripts/lint-pcall-logging.mjs",
-    "test": "npm run build:node && node --test test/messages.roundtrip.test.cjs test/transfer-orchestrator.rollback.test.cjs"
+    "test": "npm run build:node && node --test test/messages.roundtrip.test.cjs test/transfer-orchestrator.rollback.test.cjs test/transfer-reconciliation.test.cjs"
   },
   "keywords": [
     "clusterio",
