@@ -160,12 +160,15 @@ These facts drive how cross-instance transfer handles a player who is "aboard" a
   aboard. `LuaSpacePlatform` has no players/characters accessor — go through the surface. **[empirical]**
 - **Moving a player off a platform**: `LuaPlayer.land_on_planet()` lands on "the current planet" → **useless
   at a surfaceless gateway** (no planet); use `player.teleport(pos, planet_surface)` instead.
-  `enter_space_platform(platform)` / `leave_space_platform()` are the on/off-platform primitives.
+  `enter_space_platform(space_platform) → boolean` (takes a **LuaSpacePlatform object**, not a name; returns
+  whether the player entered) / `leave_space_platform()` are the on/off-platform primitives. **[API, 2.0.77]**
   (Whether `teleport` cleanly exits a hub-locked remote-view session for a *connected* player is verified by
   hand — the automated test exercises an abandoned character body.) **[docs + to-verify]**
 - **Redirecting a player's client to another server**: `LuaPlayer.connect_to_server{address, name,
   description, password}` — "**Asks** the player if they would like to connect" (a PROMPT the player accepts;
   it is a **no-op on a host / single-player**, only works on a connected multiplayer *peer*). Address comes
   from Clusterio's `host.public_address` + instance `game_port` (the `server_select` plugin pattern). Not
-  silent, and `public_address` defaults to `"localhost"` (must be client-routable). This is the basis of the
-  future Layer-2 "follow your platform" feature. **[docs 2.0.76, verified]**
+  silent; **no engine permission/admin gate** (the client just accepts the prompt); engine API since 2.0.47.
+  `public_address` defaults to `"localhost"` (must be client-routable). Basis of the future Layer-2 "follow
+  your platform" feature — spike done 2026-07-03 (**CONDITIONAL GO**), see
+  [GATEWAY_TRANSFER_PRD.md](GATEWAY_TRANSFER_PRD.md). **[docs 2.0.77, verified]**
