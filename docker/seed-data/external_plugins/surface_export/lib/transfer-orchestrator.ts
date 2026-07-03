@@ -179,10 +179,22 @@ export class TransferOrchestrator {
 				// state machine resolves it — a real validation event completes it, or the timeout rolls it
 				// back. Same residual profile as an ACK'd import whose validation never returns; strictly safer
 				// than the guaranteed duplication of the unconditional unlock this replaces.
+				//
+				// KNOWN EXPOSURE (#106): for a GENUINE non-delivery SessionLost, the source unlock is now
+				// deferred to the in-memory validation timeout instead of being synchronous. If the controller
+				// restarts within that window, the timeout + activeTransfers record are lost and the source
+				// stays locked-for-transfer (hidden) until an admin /unlock-platform. This is the SAME restart
+				// fragility the ACK path already has (awaiting_validation is in-memory); the durable fix is
+				// persisting/reconciling awaiting_validation transfers on controller boot (#106). A recoverable
+				// stranded-lock is still strictly better than the unrecoverable duplication this branch prevents.
+				//
+				// Close the "transmission" phase the throw at the sendTo skipped (else a recovered+completed
+				// transfer reports blank transmission timing — buildPhaseSummary drops phases with no duration).
+				const transmissionMs = this.txLogger.endPhase(transferId, "transmission");
 				this.enterAwaitingValidation(transfer, transferId);
 				this.txLogger.logTransactionEvent(transferId, "import_delivery_uncertain",
 					`Import send interrupted by session loss (${errMsg}); NOT unlocking source — awaiting validation`,
-					{ error: errMsg });
+					{ error: errMsg, transmissionMs });
 				return { success: true, transferId, message: `Transfer initiated (delivery unconfirmed after a session interruption; awaiting validation): ${transferId}` };
 			}
 			// Throw BEFORE accept with a definite non-delivery error: the source is locked but the destination

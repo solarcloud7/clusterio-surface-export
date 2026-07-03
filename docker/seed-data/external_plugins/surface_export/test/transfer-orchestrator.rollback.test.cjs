@@ -38,7 +38,7 @@ function sessionLost(message = "Session Closed") {
 function makeHarness(importSendResult) {
 	const noop = () => {};
 	const activeTransfers = new Map();
-	const calls = { events: [], unlockRouteTaken: 0, importSends: 0 };
+	const calls = { events: [], unlockRouteTaken: 0, importSends: 0, openPhases: new Set() };
 
 	const plugin = {
 		logger: { error: noop, warn: noop, info: noop },
@@ -57,8 +57,8 @@ function makeHarness(importSendResult) {
 		activeTransfers,
 		txLogger: {
 			logTransactionEvent: (_id, type) => { calls.events.push(type); },
-			startPhase: noop,
-			endPhase: () => 0,
+			startPhase: (_id, name) => { calls.openPhases.add(name); },
+			endPhase: (_id, name) => { calls.openPhases.delete(name); return 0; },
 			persistTransactionLog: async () => {},
 			buildPhaseSummary: () => ({}),
 		},
@@ -108,6 +108,10 @@ test("SessionLost on import send: source NOT unlocked, transfer enters awaiting_
 	assert.equal(transfer.status, "awaiting_validation", "must arm validation, not roll back");
 	assert.ok(transfer.validationTimeout, "the validation timeout must be armed to resolve it later");
 	assert.ok(calls.events.includes("import_delivery_uncertain"), "the uncertain-delivery route must be logged");
+	// The "transmission" phase (opened before the failed send) must be CLOSED on the recovery path — else a
+	// recovered+completed transfer reports blank transmission timing. "validation" is open while we wait.
+	assert.equal(calls.openPhases.has("transmission"), false, "transmission phase must be closed on the recovery path");
+	assert.equal(calls.openPhases.has("validation"), true, "validation phase is open while awaiting validation");
 
 	assert.equal(res.success, true, "the transfer continues through the state machine");
 	assert.ok(res.transferId, "a transferId is returned so the caller can track it");
