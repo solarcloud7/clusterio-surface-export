@@ -46,12 +46,6 @@ local function configure(config)
     -- two-phase commit preserves the source. See validation-timing-trilemma / gate-detects-loss test.
     storage.surface_export_config.test_force_item_loss = config.test_force_item_loss
   end
-  if config.test_force_entity_loss ~= nil then
-    -- Test-only: destroy N non-hub entities on the destination on the NEXT transfer, AFTER the item
-    -- gate but BEFORE the entity cross-ground count. Proves the cross-ground DETECTS a post-gate
-    -- shortfall (details grounded to a live physical count, not the payload). See entity-cross-ground test.
-    storage.surface_export_config.test_force_entity_loss = config.test_force_entity_loss
-  end
 
   if config.gateways_json then
     -- Replace the whole gateway link map (controller is the source of truth). Decoded from JSON,

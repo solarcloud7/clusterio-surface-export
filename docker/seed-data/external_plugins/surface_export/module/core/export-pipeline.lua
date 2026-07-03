@@ -167,17 +167,16 @@ function ExportPipeline.queue(platform_index, force_name, requester_name, destin
 		return nil, "Platform surface not valid"
 	end
 
-	-- Transferability gate — the SINGLE chokepoint for every export/transfer path (web, ctl, in-game).
-	-- Only a real, materialized space platform (one with a space-platform hub) may be exported. A source
-	-- with no hub would produce a trivially-passing "green" (little/no real content → ~0 loss) and
-	-- misleading transfer details. Hub-less stubs (waiting_for_starter_pack) are already caught above by
-	-- the surface==nil check; this also covers the surface-valid-but-hub-missing edge, and keeps a
-	-- non-platform surface (which can never live in force.platforms) from ever reaching a transfer.
-	-- Robust check: find the hub anywhere on the surface (NOT position {0,0}) so a real platform is never
-	-- false-negatived by hub placement.
-	if #surface.find_entities_filtered({ name = "space-platform-hub", limit = 1 }) == 0 then
+	-- Transferability gate — the chokepoint for the ASYNC export/transfer path (web, ctl, in-game transfers
+	-- + gateway). Only a real, materialized space platform (one with a hub) may be exported; a hub-less
+	-- source would produce a trivially-passing "green" (~0 content → ~0 loss) and misleading details.
+	-- Hub-less stubs (waiting_for_starter_pack) are already caught above by the surface==nil check; this
+	-- also covers the surface-valid-but-hub-missing edge. NOTE: the SYNCHRONOUS Serializer.export_platform
+	-- path (reached via clone_platform) is separate and NOT gated here — it neither transfers nor deletes a
+	-- source, so an empty clone is harmless; add the same guard there if it ever becomes a transfer source.
+	if not GameUtils.platform_has_hub(platform) then
 		return nil, string.format(
-			"Platform '%s' (index %d) has no space-platform hub — not a transferable platform",
+			"Platform '%s' (index %d) has no hub — not a transferable platform",
 			platform.name, platform_index)
 	end
 

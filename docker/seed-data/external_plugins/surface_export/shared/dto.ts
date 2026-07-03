@@ -176,13 +176,10 @@ export interface ValidationResult {
 	itemCountMatch: boolean;
 	fluidCountMatch: boolean;
 	entityCount?: number;
-	// Cross-grounding ("the catch"): reportedEntityCount is the payload/expected count; actualEntityCount is a
-	// LIVE physical count of the destination surface after import. entityCountMatch is false ONLY on a
-	// SHORTFALL (fewer landed than reported) — the "claimed entities that aren't there" case. Audit metadata;
-	// the item/fluid gate remains the pass/fail authority (a surplus, e.g. belt-overflow item-on-ground, is fine).
+	// Informational (display-only): the SOURCE payload's entity total. `entityCount` above is the live
+	// destination count (from validate_import). These legitimately differ (failed-to-place / serialization-
+	// filtered / belt-overflow surplus), so neither is a loss signal — the item/fluid gate is authoritative.
 	reportedEntityCount?: number;
-	actualEntityCount?: number;
-	entityCountMatch?: boolean;
 	mismatchDetails?: string;
 	expectedItemCounts?: Record<string, number>;
 	actualItemCounts?: Record<string, number>;

@@ -616,23 +616,18 @@ export default function TransactionLogsTab({ plugin, state }: { plugin: SurfaceE
 									children: hasValidation ? (
 										<Space direction="vertical" style={{ width: "100%" }} size="small">
 											{(() => {
-												// The "catch": reported (payload/expected) vs a LIVE physical count of the
-												// destination surface. Surfaces a shortfall so details can't claim entities
-												// that aren't there. Absent on legacy logs → render nothing.
+												// Informational (display-only): live destination count (result.entityCount)
+												// vs the source payload total. They legitimately differ (failed-to-place /
+												// filtered / belt surplus) — no verdict; the item/fluid gate detects loss.
 												const reported = getProp(validation as JsonObject, "reportedEntityCount", null) as number | null;
-												const actual = getProp(validation as JsonObject, "actualEntityCount", null) as number | null;
+												const actual = getProp(validation as JsonObject, "entityCount", null) as number | null;
 												if (reported == null || actual == null) {
 													return null;
 												}
-												const mismatch = getProp(validation as JsonObject, "entityCountMatch", true) === false;
 												return (
-													<Alert
-														type={mismatch ? "error" : "success"}
-														showIcon
-														message={mismatch
-															? `Entity count MISMATCH: details report ${reported.toLocaleString()} but the destination surface holds ${actual.toLocaleString()} (${(reported - actual).toLocaleString()} missing)`
-															: `Entity count grounded: ${actual.toLocaleString()} physically on the destination surface (reported ${reported.toLocaleString()})`}
-													/>
+													<Text type="secondary">
+														{`Entities: ${actual.toLocaleString()} on destination · ${reported.toLocaleString()} in source payload`}
+													</Text>
 												);
 											})()}
 											{entityRows.length ? (
