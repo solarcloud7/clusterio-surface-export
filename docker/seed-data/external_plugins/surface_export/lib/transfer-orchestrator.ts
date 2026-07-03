@@ -1,6 +1,6 @@
 
 import { wait } from "@clusterio/lib";
-import { normalizeExportMetrics, TICKS_TO_MS, getErrorMessage, isSessionLostError, coercePlatformIndex, VALIDATION_TIMEOUT_MS, buildPayloadMetrics, buildImportMetrics } from "../helpers";
+import { normalizeExportMetrics, TICKS_TO_MS, getErrorMessage, isSessionLostError, generateOperationId, coercePlatformIndex, VALIDATION_TIMEOUT_MS, buildPayloadMetrics, buildImportMetrics } from "../helpers";
 import { createOperationRecord } from "./operation-record";
 import type { IControllerPlugin, ActiveTransfer, SimpleResponse, TransferValidationEvent, StoredExport, ValidationResult, ImportMetrics, ExportMetrics } from "../messages";function mergeExportMetrics(storedMetrics: ExportMetrics | null | undefined, runtimeMetrics: Record<string, unknown> | null | undefined) {
 	const merged = {
@@ -80,7 +80,7 @@ export class TransferOrchestrator {
 			return { success: false, error: `Export not found: ${exportId}` };
 		}
 
-		const transferId = `transfer_${Date.now()}_${Math.random().toString(36).substring(7)}`;
+		const transferId = generateOperationId("transfer");
 		const innerData = exportData.exportData;
 		const { payloadMetrics, itemCounts, fluidCounts } = buildPayloadMetrics(innerData);
 		const platformInfo = (innerData?.platform && typeof innerData.platform === "object"
