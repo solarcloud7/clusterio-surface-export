@@ -243,44 +243,33 @@ function InventoryScanner.extract_belt_items(entity)
 
   local lines = {}
 
-  -- Transport lines vary by belt type:
-  --   transport-belt: 2 lines (left, right)
-  --   underground-belt: 4 lines (left, right, left_underground, right_underground)
-  --   splitter: up to 8 lines (primary + secondary for each side)
-  -- We iterate until get_transport_line returns nil.
-  local max_lines = 8  -- safe upper bound
+  -- Transport lines vary by belt type — iterate EXACTLY the belt's real line count via
+  -- get_max_transport_line_index() (verified on 2.0.77: transport-belt=2, underground-belt=4, splitter=8),
+  -- so get_transport_line() is never called out of range. The old `max_lines=8` pcall-until-throw
+  -- over-iterated and THREW on the surplus indices, dumping ~500-600 synchronous log() writes + ~2000
+  -- pcall/closure allocations into the export-completion tick — a #86 heartbeat-stall contributor. The
+  -- import side already avoids blind iteration via the captured line_data.line (belt_restoration.lua).
+  local max_lines = entity.get_max_transport_line_index()
   for line_index = 1, max_lines do
-    local ok, line = pcall(function() return entity.get_transport_line(line_index) end)
-    if not ok then
-      log(string.format("[inventory-scanner] get_transport_line(%d) failed on %s: %s", line_index, entity.name, tostring(line)))
-    end
-    if not ok or not line or not line.valid then
-      break  -- no more transport lines
-    end
-
-    -- Use get_detailed_contents() to get exact positions (Factorio 2.0)
-    -- Returns array of {stack: LuaItemStack, position: float, unique_id: uint32}
-    local detailed = line.get_detailed_contents()
-    
-    local items = {}
-    for _, item_data in ipairs(detailed) do
-      -- item_data.stack is a LuaItemStack, access its properties
-      local stack = item_data.stack
-      if stack and stack.valid_for_read then
-        table.insert(items, {
-          name = stack.name,
-          position = item_data.position,  -- CRITICAL: float 0.0-1.0 along belt
-          count = stack.count,            -- Stack size (1-4 in 2.0)
-          quality = stack.quality and stack.quality.name or Util.QUALITY_NORMAL
-        })
+    local line = entity.get_transport_line(line_index)
+    if line and line.valid then
+      -- get_detailed_contents(): array of {stack: LuaItemStack, position: float 0.0-1.0, unique_id}
+      local detailed = line.get_detailed_contents()
+      local items = {}
+      for _, item_data in ipairs(detailed) do
+        local stack = item_data.stack
+        if stack and stack.valid_for_read then
+          table.insert(items, {
+            name = stack.name,
+            position = item_data.position,  -- CRITICAL: float 0.0-1.0 along belt
+            count = stack.count,            -- Stack size (1-4 in 2.0)
+            quality = stack.quality and stack.quality.name or Util.QUALITY_NORMAL
+          })
+        end
       end
-    end
-    
-    if #items > 0 then
-      table.insert(lines, {
-        line = line_index,
-        items = items
-      })
+      if #items > 0 then
+        table.insert(lines, { line = line_index, items = items })
+      end
     end
   end
 
