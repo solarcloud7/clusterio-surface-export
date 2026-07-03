@@ -31,6 +31,24 @@ export function getErrorMessage(err: unknown, fallback = "Unknown error") {
 }
 
 /**
+ * True when `err` is a Clusterio session-loss rejection (`@clusterio/lib` `SessionLost`, which sets
+ * `code = "SessionLost"` and a "Session Lost"/"Session Closed" message). A pending request rejects with
+ * this when the controller↔host link drops — see `@clusterio/lib` `link.ts` `_clearPendingRequests`.
+ *
+ * Duck-typed on `.code` rather than `instanceof SessionLost` on purpose: this repo can end up with a
+ * second copy of `@clusterio/lib` in a plugin's node_modules (CLAUDE.md Pitfalls #12/#26), and an
+ * `instanceof` against the wrong copy would silently return false. The `.code` string is stable.
+ *
+ * Load-bearing for the transfer two-phase commit: a SessionLost on the import send is AMBIGUOUS — the
+ * destination may already have started importing — so the source must NOT be unlocked (that would leave a
+ * live source coexisting with the destination copy = duplication).
+ */
+export function isSessionLostError(err: unknown): boolean {
+	return typeof err === "object" && err !== null
+		&& (err as { code?: unknown }).code === "SessionLost";
+}
+
+/**
  * Convert a value to a finite number, returning null for non-finite values.
  */
 export function toFiniteNumber(value: unknown): number | null {
