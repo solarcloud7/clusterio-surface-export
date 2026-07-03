@@ -1115,24 +1115,28 @@ export class UnlockSourcePlatformRequest {
 		type: "object",
 		properties: {
 			platformIndex: { type: "integer" },
+			platformName: { type: ["string", "null"] },
 			forceName: { type: "string", default: "player" },
 		},
 		required: ["platformIndex"],
 		additionalProperties: false,
 	};
 
-	// Unlock keys purely on the unique platformIndex — the registry is index-keyed and the Lua unlock recovers
-	// the display name from lock_data, so no name is needed. (Delete keeps name required — it's a tripwire there.)
+	// Unlock keys on the unique platformIndex; `platformName`, when set, is a name TRIPWIRE — the #106 restart
+	// reconcile passes it so a stale index (reused by a differently-named, in-flight platform) is refused
+	// rather than freeing the wrong source. The normal rollback omits it (same-tick, index still valid).
 	platformIndex: number;
+	platformName: string | null;
 	forceName: string;
 
-	constructor(json: { platformIndex: number; forceName?: string }) {
+	constructor(json: { platformIndex: number; platformName?: string | null; forceName?: string }) {
 		this.platformIndex = json.platformIndex;
+		this.platformName = json.platformName ?? null;
 		this.forceName = json.forceName || "player";
 	}
 
-	static fromJSON(json: { platformIndex: number; forceName?: string }) { return new UnlockSourcePlatformRequest(json); }
-	toJSON() { return { platformIndex: this.platformIndex, forceName: this.forceName }; }
+	static fromJSON(json: { platformIndex: number; platformName?: string | null; forceName?: string }) { return new UnlockSourcePlatformRequest(json); }
+	toJSON() { return { platformIndex: this.platformIndex, platformName: this.platformName, forceName: this.forceName }; }
 
 	static Response = {
 		jsonSchema: { type: "object", properties: { success: { type: "boolean" }, error: { type: "string" } }, required: ["success"] } as JsonSchema,
@@ -1357,6 +1361,9 @@ export interface PendingTransferIntent {
 	forceName: string;
 	targetInstanceId: number;
 	startedAt: number;
+	/** The stored export blob for this transfer — deleted when a reconcile completes the transfer, so it can't
+	 *  linger in the Exports tab and be re-imported into a duplicate of the already-transferred platform. */
+	exportId: string | null;
 }
 
 export interface IControllerPlugin {

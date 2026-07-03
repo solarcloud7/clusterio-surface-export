@@ -246,6 +246,7 @@ export class TransferOrchestrator {
 			forceName: transfer.forceName || "player",
 			targetInstanceId: Number(transfer.targetInstanceId),
 			startedAt: transfer.startedAt,
+			exportId: transfer.exportId ?? null,
 		});
 	}
 
@@ -375,7 +376,10 @@ export class TransferOrchestrator {
 			await this.broadcastTransferStatus(transfer, `Rolled back. Error: ${errorMsg}`, "red");
 		}
 
-		transfer.status = "failed";
+		// #106: if the source unlock ALSO failed, the source is NOT resolved (still locked) — mark it
+		// cleanup_failed (not failed) so handleTransferValidation KEEPS the persisted intent, letting a restart
+		// reconcile retry the unlock. Mirrors the success path's cleanup_failed on a failed source delete.
+		transfer.status = rollbackError ? "cleanup_failed" : "failed";
 		transfer.error = errorMsg;
 		transfer.completedAt = Date.now();
 		this.txLogger.logTransactionEvent(transferId, "transfer_failed",

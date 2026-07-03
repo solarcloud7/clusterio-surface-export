@@ -98,7 +98,9 @@ export class InstancePlugin extends BaseInstancePlugin {
 		this.i.handle(messages.ImportPlatformRequest, this.handleImportPlatformRequest.bind(this));
 		this.i.handle(messages.ImportPlatformFromFileRequest, this.handleImportPlatformFromFileRequest.bind(this));
 		this.i.handle(messages.DeleteSourcePlatformRequest, this.handleDeleteSourcePlatform.bind(this));
-		this.i.handle(messages.UnlockSourcePlatformRequest, this.handleUnlockSourcePlatform.bind(this));
+		// Cast the ARGUMENTS (never the bound method — Pitfall #26): the optional nullable platformName makes
+		// the duck-typed Request class miss Link.handle's strict overload.
+		this.i.handle(messages.UnlockSourcePlatformRequest as never, this.handleUnlockSourcePlatform.bind(this) as never);
 		// Cast the ARGUMENTS (never the bound method — Pitfall #26): the duck-typed Request class doesn't
 		// satisfy Link.handle's strict request overload, but the method must stay bound.
 		this.i.handle(messages.GetTransferOutcomeRequest as never, this.handleGetTransferOutcome.bind(this) as never);
@@ -830,7 +832,7 @@ export class InstancePlugin extends BaseInstancePlugin {
 	/**
 	 * Handle unlock source platform request (rollback)
 	 */
-	async handleUnlockSourcePlatform(request: { platformIndex: number }) {
+	async handleUnlockSourcePlatform(request: { platformIndex: number; platformName?: string }) {
 		const platformIndex = coercePlatformIndex(request.platformIndex);
 		this.logger.info(`Unlocking source platform for rollback: index ${platformIndex}`);
 
@@ -841,7 +843,9 @@ export class InstancePlugin extends BaseInstancePlugin {
 		}
 
 		try {
-			const result = await this.lua.unlockPlatform(platformIndex);
+			// platformName (when the #106 reconcile supplies it) is a name tripwire — refuse if a reused index
+			// now holds a differently-named platform.
+			const result = await this.lua.unlockPlatform(platformIndex, request.platformName);
 
 			if (result.trim() === "SUCCESS") {
 				this.logger.info(`Platform index ${platformIndex} unlocked successfully`);

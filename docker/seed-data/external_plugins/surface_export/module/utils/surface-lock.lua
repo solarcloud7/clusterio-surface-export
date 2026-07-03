@@ -277,7 +277,12 @@ end
 --- Unlock a platform surface (restore original state and unfreeze entities)
 --- @param platform_index number: Unique index of the platform to unlock (the registry key)
 --- @return boolean, string|nil: success, error_message
-function SurfaceLock.unlock_platform(platform_index)
+--- @param platform_index number
+--- @param expected_name string|nil When provided, a NAME TRIPWIRE: refuse if the lock at this index is for a
+---        DIFFERENTLY-named platform. The surface.index tripwire below only validates lock-data-vs-current
+---        platform; it does NOT catch a per-force index REUSED by an unrelated transfer's (valid) lock, so a
+---        stale caller — the #106 restart reconcile — must also assert the name, mirroring the delete path.
+function SurfaceLock.unlock_platform(platform_index, expected_name)
     if not storage.locked_platforms then
         return false, "No locked platforms"
     end
@@ -287,6 +292,10 @@ function SurfaceLock.unlock_platform(platform_index)
         return false, "Platform not locked: index " .. tostring(platform_index)
     end
     local platform_name = lock_data.platform_name  -- display only
+    if expected_name ~= nil and platform_name ~= expected_name then
+        return false, string.format("Unlock refused: index %s is locked for a DIFFERENT platform (expected '%s', locked '%s')",
+            tostring(platform_index), tostring(expected_name), tostring(platform_name))
+    end
 
     -- Find the platform
     local force = game.forces[lock_data.force_name]

@@ -182,11 +182,14 @@ export class LuaInterface {
 		);
 	}
 
-	/** Unlock a platform via the remote interface (keyed by the unique index). Returns RAW "SUCCESS" / "ERROR:<reason>". */
-	async unlockPlatform(platformIndex: number): Promise<string> {
+	/** Unlock a platform via the remote interface (keyed by the unique index). Returns RAW "SUCCESS" /
+	 *  "ERROR:<reason>". `platformName`, when given, is a name tripwire (the #106 reconcile passes it so a stale
+	 *  index can't unlock a differently-named, in-flight platform). */
+	async unlockPlatform(platformIndex: number, platformName?: string): Promise<string> {
+		const nameArg = platformName ? `, "${escapeString(platformName)}"` : "";
 		return this.host.sendRcon(
 			`/sc ` +
-			`local success, err = remote.call("surface_export", "unlock_platform", ${Math.trunc(platformIndex)}); ` +
+			`local success, err = remote.call("surface_export", "unlock_platform", ${Math.trunc(platformIndex)}${nameArg}); ` +
 			`if success then ` +
 			`    rcon.print("SUCCESS"); ` +
 			`else ` +
