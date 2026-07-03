@@ -885,3 +885,22 @@ rc11 "/sc rcon.print(serpent.block(storage.async_jobs or {}))"
 ```powershell
 rc11 "/sc for name, _ in pairs(remote.interfaces) do rcon.print(name) end"
 ```
+
+## Shared Clusterio knowledge (cross-repo)
+
+- **Skill**: a user-level `clusterio-ops` skill (`C:\Users\Solar\.claude\skills\clusterio-ops\`)
+  carries the Clusterio knowledge shared by this repo and FactorioMap — the @clusterio singleton
+  rule, git-bash path mangling (incl. `--config=/...` → "Missing URL and/or token"), the
+  controller-hello boot race, RCON/save-patching mechanics, and this machine's multi-cluster port
+  map. Load it when operating or debugging any cluster.
+- **Singleton problem, structural fix**: FactorioMap solved the shared "@clusterio in plugin
+  node_modules breaks clusterioctl" problem structurally instead of by hand-recovery — the
+  `@clusterio` devDeps live in a repo-root `package.json` (host tsc resolves them via the upward
+  walk; the repo root is never bind-mounted) plus a plugin-level `.npmrc` with
+  `legacy-peer-deps=true` so npm 7+ never auto-installs the peers back. See
+  `FactorioMap/docs/lessons-learned.md` § "Wave C". Worth adopting here as a complement to the
+  isolated `tools/build-plugin.ps1` container build.
+- **Multi-cluster coexistence**: this cluster (controller :8080, game 34100–34209) shares the
+  machine with the atlas cluster (controller :8090, game host-port 34300 → container 34100;
+  containers prefixed `atlas-`). The authoritative port/coexistence map lives in
+  `FactorioMap/docs/RUNBOOK.md` — never stop/restart another cluster's containers.
