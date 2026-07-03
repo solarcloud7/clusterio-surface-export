@@ -1,5 +1,6 @@
 
 import type { ActiveTransfer, OperationOptions, OperationType } from "../messages";
+import { generateOperationId } from "../helpers";
 
 /**
  * Build an {@link ActiveTransfer} record with the canonical defaults/guards shared by
@@ -24,7 +25,7 @@ export function createOperationRecord(
 	const targetInstanceId = Number.isInteger(Number(options.targetInstanceId))
 		? Number(options.targetInstanceId)
 		: -1;
-	const operationId = String(options.operationId || `${operationType}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`);
+	const operationId = String(options.operationId || generateOperationId(operationType));
 	const sourceInstanceName = options.sourceInstanceName
 		?? (sourceInstanceId > 0 ? resolveInstanceName(sourceInstanceId) : null);
 	const targetInstanceName = options.targetInstanceName

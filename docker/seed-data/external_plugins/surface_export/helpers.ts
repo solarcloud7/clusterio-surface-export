@@ -14,21 +14,9 @@ export const EXPORT_POLL_INTERVAL_MS = 500;
 export const VALIDATION_TIMEOUT_MS = 120_000;
 export const STORAGE_FILENAME = "surface_export_storage.json";
 
-export function getErrorMessage(err: unknown, fallback = "Unknown error") {
-	if (err instanceof Error) {
-		return err.message || fallback;
-	}
-	if (typeof err === "string") {
-		return err || fallback;
-	}
-	if (err && typeof err === "object" && "message" in err) {
-		const message = (err as { message?: unknown }).message;
-		if (typeof message === "string" && message) {
-			return message;
-		}
-	}
-	return fallback;
-}
+// getErrorMessage + generateOperationId live in the shared (Node + web) module so they aren't duplicated
+// across helpers.ts and web/utils.ts (task #97). Re-export so existing `.../helpers` call sites keep working.
+export { getErrorMessage, generateOperationId } from "./shared/utils";
 
 /**
  * True when `err` is a Clusterio session-loss rejection (`@clusterio/lib` `SessionLost`, which sets
