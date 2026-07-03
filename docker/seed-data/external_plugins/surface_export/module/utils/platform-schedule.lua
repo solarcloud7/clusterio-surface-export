@@ -142,6 +142,71 @@ function PlatformSchedule.validate_transfer_payload(schedule_payload)
 	return true, nil
 end
 
+--- Filter a schedule payload for import onto THIS instance: drop records whose `station` is not a routable
+--- space-location here (phantom stops carried from a heterogeneous-mod source — the engine ACCEPTS an invalid
+--- station name, so these would otherwise sit as dead stops). Detection mirrors Gateway.is_gateway:
+--- `prototypes.space_location[station] == nil` ⇒ not routable here.
+---
+--- NEVER strips records to empty: an empty `records = {}` is engine-rejected ("Index out of bounds"), so if
+--- EVERY record is unroutable the ORIGINAL payload is returned untouched (a lone dead stop is safer than a
+--- filter that INTRODUCES an invalid/empty schedule — the load-bearing safety of WS1). A record with no
+--- string `station` is kept (defensive — never strip what we don't understand).
+--- @param schedule_payload table  { current, records, interrupts, group }
+--- @return table filtered  a NEW payload when stops were stripped; the SAME payload on identity / skip-to-empty
+--- @return table dropped   { stations = { name, ... }, skipped_empty = boolean }
+function PlatformSchedule.filter_for_import(schedule_payload)
+	local dropped = { stations = {}, skipped_empty = false }
+	if type(schedule_payload) ~= "table" or type(schedule_payload.records) ~= "table" then
+		return schedule_payload, dropped
+	end
+
+	local records = schedule_payload.records
+	local orig_current = schedule_payload.current
+	if type(orig_current) ~= "number" or orig_current < 1 then
+		orig_current = 1
+	elseif orig_current > #records then
+		orig_current = #records
+	end
+
+	local kept = {}
+	local new_current = nil
+	for i, r in ipairs(records) do
+		local unroutable = type(r) == "table"
+			and type(r.station) == "string"
+			and prototypes.space_location[r.station] == nil
+		if unroutable then
+			dropped.stations[#dropped.stations + 1] = r.station
+		else
+			kept[#kept + 1] = r
+			-- The first kept record at or after the old cursor → resume forward from here.
+			if new_current == nil and i >= orig_current then
+				new_current = #kept
+			end
+		end
+	end
+
+	if #dropped.stations == 0 then
+		return schedule_payload, dropped -- nothing unroutable → identity
+	end
+
+	if #kept == 0 then
+		-- Refuse to strip to empty (see the header): keep the original schedule, flag it, still report the
+		-- stations we DECLINED to strip so the caller's warning is truthful.
+		dropped.skipped_empty = true
+		return schedule_payload, dropped
+	end
+
+	if new_current == nil then
+		new_current = 1 -- cursor was at/after the last kept record → wrap to 1
+	end
+	return {
+		current = new_current,
+		records = kept,
+		interrupts = schedule_payload.interrupts or {},
+		group = schedule_payload.group,
+	}, dropped
+end
+
 --- Apply a full schedule payload to a platform, including interrupts and group.
 --- @param platform LuaSpacePlatform
 --- @param schedule_payload table

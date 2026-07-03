@@ -271,6 +271,20 @@ function ImportPipeline.queue(json_data, new_platform_name, force_name, requeste
 
 	-- Restore platform schedule (records + interrupts + group) from payload.
 	if imported_schedule then
+		-- Strip stops that are not routable on THIS instance (phantom stops from a heterogeneous-mod source).
+		-- filter_for_import NEVER strips to empty — if every stop is unroutable it keeps the original schedule
+		-- (an empty schedule is engine-rejected). Log-only (no UI plumbing); a lone dead stop is harmless.
+		local filtered_schedule, dropped_stops = PlatformSchedule.filter_for_import(imported_schedule)
+		if dropped_stops and #(dropped_stops.stations or {}) > 0 then
+			if dropped_stops.skipped_empty then
+				log(string.format("[Schedule] %d unroutable stop(s) on this instance (%s) but ALL records are unroutable — kept original schedule to avoid an empty (invalid) schedule",
+					#dropped_stops.stations, table.concat(dropped_stops.stations, ", ")))
+			else
+				log(string.format("[Schedule] stripped %d unroutable stop(s) not present on this instance: %s",
+					#dropped_stops.stations, table.concat(dropped_stops.stations, ", ")))
+				imported_schedule = filtered_schedule
+			end
+		end
 		local schedule_apply_ok, schedule_apply_err = PlatformSchedule.apply(new_platform, imported_schedule)
 		if not schedule_apply_ok then
 			GameUtils.delete_platform(new_platform)
