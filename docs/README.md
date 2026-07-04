@@ -171,6 +171,7 @@ For the detailed Lua module breakdown, see [IMPLEMENTATION_SUMMARY.md](IMPLEMENT
 | Doc | Covers |
 |-----|--------|
 | [QUICK_START.md](QUICK_START.md) | End-to-end platform transfer walkthrough |
+| [ENGINEERING_FAQ.md](ENGINEERING_FAQ.md) | "What if the user does X?" edge-case checklist — how each transfer/lock/failure case is engineered today, with OPEN items flagged for a human call |
 | [E2E_TEST_GUIDE.md](E2E_TEST_GUIDE.md) | Hands-on QA checklist to validate the full transfer pipeline (automated suite + manual flows + failure cases) |
 | [commands-reference.md](commands-reference.md) | All in-game / RCON console commands with usage |
 | [TRANSFER_WORKFLOW_GUIDE.md](TRANSFER_WORKFLOW_GUIDE.md) | Transfer entry points, phases, critical invariants |

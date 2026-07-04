@@ -34,16 +34,9 @@ import type {
 } from "./messages";
 import * as messages from "./messages";
 import { normalizeExportMetrics, getErrorMessage, generateOperationId, TICKS_TO_MS, STORAGE_FILENAME, buildPayloadMetrics, buildImportMetrics } from "./helpers";
-import { resolvePendingTransfer, type DestTransferOutcome } from "./lib/transfer-reconciliation";
 
 const PLUGIN_NAME = "surface_export";
-// #106 restart reconciliation: alpha.25 has no instance-status hook, so poll while pending intents remain.
-const RECONCILE_INTERVAL_MS = 30_000;
-// Grace from reconcile-start (this boot) before an unresolvable intent escalates — must comfortably exceed
-// instance-reconnect + a large chunked import + validation.
-const RECONCILE_ESCALATE_MS = 10 * 60_000;
-// Failed complete/unlock SENDS for one intent before we give up auto-resolving it and escalate to an admin.
-const MAX_RECONCILE_ATTEMPTS = 5;
+export const PENDING_TRANSFER_INTENT_RETENTION_MS = 15 * 60 * 1000;
 
 export class ControllerPlugin extends BaseControllerPlugin {
 	private get c(): Controller { return this.controller; }
@@ -74,16 +67,9 @@ export class ControllerPlugin extends BaseControllerPlugin {
 	 * so each source instance owns its own gateway config. Persisted. */
 	gatewayLinks!: Map<string, messages.GatewayLink[]>;
 	gatewayConfigPath!: string;
-	/** #106: transfers persisted while awaiting_validation, reconciled after a controller restart. */
+	/** Transfers persisted while awaiting_validation for observability and future Phase 2 re-adoption. */
 	pendingTransfers!: Map<string, messages.PendingTransferIntent>;
 	pendingTransfersPath!: string;
-	/** The BOOT SNAPSHOT actually being reconciled this boot (with a per-intent failed-send count). Populated
-	 *  ONCE in onStart from the loaded pendingTransfers; runtime transfers are NOT added here, so the reconcile
-	 *  loop never races the normal validation flow of a live transfer. */
-	private reconcileQueue = new Map<string, { intent: messages.PendingTransferIntent; attempts: number }>();
-	private reconcileTimer: ReturnType<typeof setInterval> | null = null;
-	private reconcileStartedAt = 0;
-	private reconcileInFlight = false;
 
 	async init() {
 		this.logger.info("Surface Export controller plugin initializing...");
@@ -156,23 +142,13 @@ export class ControllerPlugin extends BaseControllerPlugin {
 	async onStart() {
 		this.logger.info("Controller started - Surface Export plugin ready");
 		this.logger.info(`Current storage: ${this.platformStorage.size} platforms`);
-		// #106: snapshot the transfers left awaiting_validation ACROSS THE RESTART into the reconcile queue and
-		// resolve them. ONLY these boot leftovers are reconciled — a runtime transfer added later goes into
-		// pendingTransfers (for a future restart) but NOT reconcileQueue, so the loop never races its live flow.
+		await this.prunePendingTransfers();
 		if (this.pendingTransfers.size > 0) {
-			for (const intent of this.pendingTransfers.values()) {
-				this.reconcileQueue.set(intent.transferId, { intent, attempts: 0 });
-			}
-			this.logger.warn(`#106: ${this.reconcileQueue.size} transfer(s) were awaiting validation at shutdown — reconciling`);
-			this.scheduleReconcile();
+			this.logger.warn(`${this.pendingTransfers.size} transfer(s) were awaiting validation at shutdown. Phase 1 recovery is source-side TTL unlock; controller will not auto-delete or auto-unlock on boot.`);
 		}
 	}
 
 	async onShutdown() {
-		if (this.reconcileTimer) {
-			clearInterval(this.reconcileTimer);
-			this.reconcileTimer = null;
-		}
 		this.subscriptions.treeBroadcastLimiter.cancel();
 		this.logger.info(`Shutting down - ${this.platformStorage.size} platforms in storage`);
 	}
@@ -725,14 +701,11 @@ export class ControllerPlugin extends BaseControllerPlugin {
 		}
 	}
 
-	// ── #106 restart reconciliation ─────────────────────────────────────────
+	// ── #106 Phase-1 restart observability ──────────────────────────────────
 	// A transfer awaiting validation lives only in memory (activeTransfers + the validation timeout), so a
-	// controller restart would leave its source platform locked-and-hidden forever. The orchestrator persists
-	// a PendingTransferIntent while awaiting_validation; on boot we reconcile each against the DESTINATION's
-	// authoritative transferId-keyed outcome, driving the (exhaustively-tested) resolvePendingTransfer:
-	// complete = delete the stranded source, unlock = free it, retry = wait, escalate = leave locked + warn.
-	// Safety is delegated to that pure function — this loop only queries the dest and routes the decision to
-	// the existing delete/unlock sends. alpha.25 has no instance-status hook, so we poll while intents remain.
+	// controller restart used to strand its source platform locked-and-hidden. Phase 1 moves recovery into the
+	// source save: transfer locks expire by game tick and auto-UNLOCK there. The controller keeps pending intents
+	// only as bounded observability/future Phase-2 re-adoption state; it never auto-deletes or auto-unlocks on boot.
 
 	async loadPendingTransfers() {
 		try {
@@ -745,6 +718,7 @@ export class ControllerPlugin extends BaseControllerPlugin {
 					}
 				}
 			}
+			await this.prunePendingTransfers();
 			if (this.pendingTransfers.size > 0) {
 				this.logger.info(`Loaded ${this.pendingTransfers.size} pending transfer intent(s) from disk`);
 			}
@@ -766,150 +740,41 @@ export class ControllerPlugin extends BaseControllerPlugin {
 		}
 	}
 
-	/** #106: orchestrator hook — a transfer entered awaiting_validation; persist its recovery intent. This does
-	 *  NOT enqueue it for the current boot's reconcile (only boot leftovers are reconciled); a live runtime
-	 *  transfer is driven by the normal validation flow, never this loop. */
+	/** Orchestrator hook — a transfer entered awaiting_validation; persist for observability and future Phase 2
+	 *  re-adoption. Phase 1 recovery is source-side TTL unlock; the controller never auto-acts on boot. */
 	persistPendingTransfer(intent: messages.PendingTransferIntent): void {
+		this.prunePendingTransfersInMemory();
 		this.pendingTransfers.set(intent.transferId, intent);
 		void this.persistPendingTransfers();
 	}
 
-	/** #106: drop an intent from BOTH the reconcile queue and the persisted set — it reached a terminal
-	 *  disposition (resolved, or handed to an admin), so it is never auto-acted on again, this boot or a future
-	 *  one. Called by the orchestrator on normal terminal resolution and by the reconcile loop. */
+	/** Bound the observability-only pending intent store. Phase 1 source recovery is authoritative in Lua. */
+	async prunePendingTransfers(now = Date.now()): Promise<number> {
+		const pruned = this.prunePendingTransfersInMemory(now);
+		if (pruned > 0) {
+			this.logger.info(`Pruned ${pruned} stale pending transfer intent(s); Phase 1 recovery is source-side TTL unlock`);
+			await this.persistPendingTransfers();
+		}
+		return pruned;
+	}
+
+	private prunePendingTransfersInMemory(now = Date.now()): number {
+		let pruned = 0;
+		for (const [transferId, intent] of this.pendingTransfers) {
+			const startedAt = Number(intent.startedAt);
+			if (!Number.isFinite(startedAt) || now - startedAt > PENDING_TRANSFER_INTENT_RETENTION_MS) {
+				this.pendingTransfers.delete(transferId);
+				pruned++;
+			}
+		}
+		return pruned;
+	}
+
+	/** Drop an intent from the persisted set after normal terminal resolution. */
 	removePendingTransfer(transferId: string): void {
-		this.reconcileQueue.delete(transferId);
 		if (this.pendingTransfers.delete(transferId)) {
 			void this.persistPendingTransfers();
 		}
-	}
-
-	private scheduleReconcile(): void {
-		if (this.reconcileTimer) {
-			return;
-		}
-		this.reconcileStartedAt = Date.now();
-		void this.reconcilePendingTransfers();
-		this.reconcileTimer = setInterval(() => { void this.reconcilePendingTransfers(); }, RECONCILE_INTERVAL_MS);
-	}
-
-	/** Poll each BOOT-leftover intent once per interval; drive it to a terminal disposition. Re-entrant-safe (a
-	 *  slow pass can't overlap the next tick) and scoped to reconcileQueue — never touches a live transfer. */
-	async reconcilePendingTransfers(): Promise<void> {
-		if (this.reconcileInFlight) {
-			return;
-		}
-		this.reconcileInFlight = true;
-		try {
-			for (const [transferId, entry] of Array.from(this.reconcileQueue.entries())) {
-				try {
-					await this.reconcileOne(transferId, entry);
-				} catch (err: unknown) {
-					this.logger.warn(`#106 reconcile of ${transferId} threw (will retry): ${getErrorMessage(err)}`);
-				}
-			}
-		} finally {
-			this.reconcileInFlight = false;
-		}
-		if (this.reconcileQueue.size === 0 && this.reconcileTimer) {
-			clearInterval(this.reconcileTimer);
-			this.reconcileTimer = null;
-			this.logger.info("#106: all boot-leftover transfers reconciled");
-		}
-	}
-
-	private async reconcileOne(transferId: string, entry: { intent: messages.PendingTransferIntent; attempts: number }): Promise<void> {
-		const intent = entry.intent;
-		const sourceOnline = this.isInstanceOnline(intent.sourceInstanceId);
-		const destOnline = this.isInstanceOnline(intent.targetInstanceId);
-
-		// Query the destination's AUTHORITATIVE outcome. null = could not query (offline/error) → the resolve
-		// waits, then escalates — never acts destructively on an unknown.
-		let outcome: DestTransferOutcome | null = null;
-		if (destOnline) {
-			try {
-				const resp = await this.c.sendTo(
-					{ instanceId: intent.targetInstanceId },
-					new messages.GetTransferOutcomeRequest({ transferId }),
-				);
-				outcome = resp as DestTransferOutcome;
-			} catch (err: unknown) {
-				this.logger.warn(`#106 reconcile: outcome query to instance ${intent.targetInstanceId} for ${transferId} failed: ${getErrorMessage(err)}`);
-				outcome = null;
-			}
-		}
-
-		const action = resolvePendingTransfer({
-			outcome,
-			sourceOnline,
-			ageMs: Date.now() - this.reconcileStartedAt,
-			escalateAfterMs: RECONCILE_ESCALATE_MS,
-		});
-
-		const where = `'${intent.sourcePlatformName}' (#${intent.sourcePlatformIndex}) on instance ${intent.sourceInstanceId}`;
-		switch (action.kind) {
-			case "complete": {
-				// REUSE the normal completion path via the orchestrator (delete source + stored-export cleanup +
-				// txLogger terminal event + broadcast) — no reimplementation, so no side effect can drift out of
-				// parity, and a thrown send is counted as an attempt inside resolveStrandedTransfer (#106 review).
-				const r = await this.orchestrator.resolveStrandedTransfer(intent, "complete");
-				if (r === "resolved") {
-					this.logger.info(`#106 reconcile: ${transferId} — destination committed; deleted stranded source ${where}`);
-					this.removePendingTransfer(transferId);
-				} else {
-					this.failReconcileAttempt(transferId, entry, where, "source delete failed/threw");
-				}
-				break;
-			}
-			case "unlock": {
-				// REUSE the normal rollback path (unlock incl. the benign already-unlocked guard + the F847 name
-				// tripwire, now threaded through sendUnlockRequest) — same no-drift guarantee as complete.
-				const r = await this.orchestrator.resolveStrandedTransfer(intent, "unlock");
-				if (r === "resolved") {
-					this.logger.info(`#106 reconcile: ${transferId} — destination did not commit; unlocked stranded source ${where}`);
-					this.removePendingTransfer(transferId);
-				} else {
-					this.failReconcileAttempt(transferId, entry, where, "source unlock failed/threw");
-				}
-				break;
-			}
-			case "escalate":
-				// Ambiguous for too long: hand it to an admin and STOP auto-acting (this boot AND a future one) —
-				// the source stays LOCKED (recoverable), but we never later flip to a destructive complete/unlock
-				// on it after the admin intervenes (review #106 [F857]).
-				this.escalateReconcile(transferId, where, action.reason);
-				break;
-			case "retry":
-			default:
-				// Not yet resolvable (offline / mid-import) — leave queued; the next poll retries.
-				break;
-		}
-	}
-
-	/** A resolved action (complete/unlock) whose SEND failed: count it; after MAX_RECONCILE_ATTEMPTS give up and
-	 *  escalate, so a definitively-stuck source produces a loud admin signal instead of retrying forever. */
-	private failReconcileAttempt(
-		transferId: string,
-		entry: { intent: messages.PendingTransferIntent; attempts: number },
-		where: string,
-		reason: string,
-	): void {
-		entry.attempts += 1;
-		if (entry.attempts >= MAX_RECONCILE_ATTEMPTS) {
-			this.escalateReconcile(transferId, where, `${reason} — gave up after ${entry.attempts} attempts`);
-		} else {
-			this.logger.warn(`#106 reconcile: ${transferId} — ${reason}; retry ${entry.attempts}/${MAX_RECONCILE_ATTEMPTS}`);
-		}
-	}
-
-	/** Log a loud one-time UNRESOLVABLE warning and stop auto-acting THIS boot (drop from the reconcile queue),
-	 *  but KEEP the persisted intent so a future restart re-attempts once the destination is authoritative. A
-	 *  bare-outage escalation (dest offline, outcome===null) must stay recoverable — dropping the persisted
-	 *  intent there would strand the source permanently (review #106). Removing only from the queue (no more
-	 *  polling this boot) is itself what prevents the original F857 escalate→admin-acts→auto-delete race. */
-	private escalateReconcile(transferId: string, where: string, reason: string): void {
-		this.logger.error(`#106 reconcile: ${transferId} UNRESOLVABLE — ${reason}. Source ${where} left LOCKED; verify the destination, then /unlock-platform (or delete the source) manually. The recovery intent is kept for a future restart.`);
-		this.reconcileQueue.delete(transferId);
 	}
 
 	/**

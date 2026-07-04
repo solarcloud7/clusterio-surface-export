@@ -101,9 +101,6 @@ export class InstancePlugin extends BaseInstancePlugin {
 		// Cast the ARGUMENTS (never the bound method — Pitfall #26): the optional nullable platformName makes
 		// the duck-typed Request class miss Link.handle's strict overload.
 		this.i.handle(messages.UnlockSourcePlatformRequest as never, this.handleUnlockSourcePlatform.bind(this) as never);
-		// Cast the ARGUMENTS (never the bound method — Pitfall #26): the duck-typed Request class doesn't
-		// satisfy Link.handle's strict request overload, but the method must stay bound.
-		this.i.handle(messages.GetTransferOutcomeRequest as never, this.handleGetTransferOutcome.bind(this) as never);
 		// TransferStatusUpdate.color (string|null) and InstanceListPlatformsRequest's Response
 		// optionals don't line up with their handlers' declared shapes. Register them through the
 		// permissive `this.link` view (see PermissiveLink) — a BOUND method call on the object,
@@ -860,24 +857,6 @@ export class InstancePlugin extends BaseInstancePlugin {
 			this.logger.error(`Error unlocking platform: ${errMsg}`);
 			return { success: false, error: errMsg };
 		}
-	}
-
-	/**
-	 * #106 restart reconciliation: report THIS instance's outcome for a transferId (found/success + whether
-	 * an import is still running). THROWS on an unparseable result rather than reporting a false authoritative
-	 * "!found" — a throw makes the controller treat it as "could not query" (retry) instead of unlocking a
-	 * source whose destination might be mid-import.
-	 */
-	async handleGetTransferOutcome(request: { transferId: string }) {
-		const outcome = await this.lua.getTransferOutcome(String(request.transferId));
-		if (!outcome) {
-			throw new Error(`get_transfer_outcome returned an unparseable result for ${String(request.transferId)}`);
-		}
-		this.logger.info(
-			`Transfer outcome for ${String(request.transferId)}: ` +
-			`found=${outcome.found} success=${outcome.success} inProgress=${outcome.inProgress}`,
-		);
-		return outcome;
 	}
 
 	/**

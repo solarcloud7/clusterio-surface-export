@@ -7,6 +7,10 @@ local PlatformSchedule = require("modules/surface_export/utils/platform-schedule
 local SurfaceLock = {}
 
 local ACTIVATABLE_ENTITY_TYPES = GameUtils.ACTIVATABLE_ENTITY_TYPES
+local DEFAULT_TRANSFER_LOCK_TTL_TICKS = 36000 -- 10 minutes at 60 UPS
+local MIN_WORST_CASE_TRANSFER_TTL_TICKS = 36000 -- export + RCON transmit + import + validation + margin
+SurfaceLock.DEFAULT_TRANSFER_LOCK_TTL_TICKS = DEFAULT_TRANSFER_LOCK_TTL_TICKS
+SurfaceLock.MIN_WORST_CASE_TRANSFER_TTL_TICKS = MIN_WORST_CASE_TRANSFER_TTL_TICKS
 
 --- Freeze all entities on a surface (synchronous - very fast)
 --- CRITICAL: This captures the ORIGINAL active state BEFORE freezing.
@@ -204,12 +208,13 @@ function SurfaceLock.ensure_index_keyed()
     return moved, dropped
 end
 
---- Lock a platform surface for transfer
+--- Lock a platform surface for export/transfer
 --- Completes cargo pod transfers, freezes entities, hides surface
 --- @param platform LuaSpacePlatform: The platform to lock
 --- @param force LuaForce: The force that owns the platform
+--- @param transfer_opts table|nil: Optional {job_id, expires_tick} for transfer locks only
 --- @return boolean, string|nil: success, error_message
-function SurfaceLock.lock_platform(platform, force)
+function SurfaceLock.lock_platform(platform, force, transfer_opts)
     if not platform or not platform.valid then
         return false, "Platform not valid"
     end
@@ -229,7 +234,21 @@ function SurfaceLock.lock_platform(platform, force)
 
     -- Check if already locked. Keyed by the UNIQUE platform.index (not the mutable, non-unique name) so
     -- two same-named platforms can't collide in the registry (#81). Name is kept inside lock_data for display.
-    if storage.locked_platforms[platform.index] then
+    local existing_lock = storage.locked_platforms[platform.index]
+    if existing_lock then
+        if transfer_opts and existing_lock.kind == "transfer"
+            and existing_lock.platform_name == platform.name
+            and existing_lock.surface_index == surface.index then
+            existing_lock.transfer_job_id = transfer_opts.job_id or existing_lock.transfer_job_id
+            existing_lock.expires_tick = transfer_opts.expires_tick or existing_lock.expires_tick
+            return true, nil -- same transfer lock upgraded
+        end
+        if transfer_opts and existing_lock.kind == "transfer" then
+            return false, "Platform already locked by a different transfer lock"
+        end
+        if transfer_opts and existing_lock.kind ~= "transfer" then
+            return false, "Platform already locked by a non-transfer lock"
+        end
         return false, "Platform already locked"
     end
 
@@ -264,6 +283,9 @@ function SurfaceLock.lock_platform(platform, force)
         original_hidden = original_hidden,
         original_schedule = original_schedule,
         locked_tick = game.tick,
+        kind = transfer_opts and "transfer" or nil,
+        transfer_job_id = transfer_opts and transfer_opts.job_id or nil,
+        expires_tick = transfer_opts and transfer_opts.expires_tick or nil,
         frozen_states = frozen_states,
         frozen_count = frozen_count,
     }
@@ -281,7 +303,7 @@ end
 --- @param expected_name string|nil When provided, a NAME TRIPWIRE: refuse if the lock at this index is for a
 ---        DIFFERENTLY-named platform. The surface.index tripwire below only validates lock-data-vs-current
 ---        platform; it does NOT catch a per-force index REUSED by an unrelated transfer's (valid) lock, so a
----        stale caller — the #106 restart reconcile — must also assert the name, mirroring the delete path.
+---        stale caller must also assert the name, mirroring the delete path.
 function SurfaceLock.unlock_platform(platform_index, expected_name)
     if not storage.locked_platforms then
         return false, "No locked platforms"
@@ -387,36 +409,35 @@ function SurfaceLock.find_lock_key_by_name(platform_name)
     return found, nil
 end
 
---- Clean up stale locks (platforms that no longer exist or are too old)
---- @param max_age_ticks number: Maximum age in ticks before considering a lock stale
-function SurfaceLock.cleanup_stale_locks(max_age_ticks)
+--- Scan transfer locks for durable tick-based expiry. Only transfer locks are touched.
+--- Manual/admin locks and old-save locks without enough timing data are skipped.
+--- @return table summary
+function SurfaceLock.scan_transfer_expiries()
     if not storage.locked_platforms then
-        return
+        return { checked = 0, expired = 0, skipped = 0 }
     end
 
-    max_age_ticks = max_age_ticks or 36000  -- Default: 10 minutes at 60 UPS
+    local checked, expired, skipped = 0, 0, 0
 
     for platform_index, lock_data in pairs(storage.locked_platforms) do
-        local age = game.tick - lock_data.locked_tick
-
-        -- Check if platform still exists (cross-check the stored display name to catch a reused index)
-        local force = game.forces[lock_data.force_name]
-        local platform_exists = false
-
-        if force then
-            local platform = force.platforms[lock_data.platform_index]
-            if platform and platform.valid and platform.name == lock_data.platform_name then
-                platform_exists = true
+        if type(lock_data) == "table" and lock_data.kind == "transfer" then
+            checked = checked + 1
+            local locked_tick = lock_data.locked_tick
+            if not locked_tick then
+                skipped = skipped + 1 -- skip old-save locks without enough timing data
+            else
+                local expires_tick = lock_data.expires_tick or (locked_tick + DEFAULT_TRANSFER_LOCK_TTL_TICKS)
+                if game.tick >= expires_tick then
+                    expired = expired + 1
+                    log(string.format("[SurfaceLock] Transfer lock expired: '%s' (index %s, locked_tick=%s, expires_tick=%s)",
+                        tostring(lock_data.platform_name), tostring(platform_index), tostring(locked_tick), tostring(expires_tick)))
+                    SurfaceLock.unlock_platform(platform_index, lock_data.platform_name)
+                end
             end
         end
-
-        -- Remove stale lock
-        if not platform_exists or age > max_age_ticks then
-            log(string.format("[SurfaceLock] Removing stale lock: '%s' (index %s, age: %d ticks, exists: %s)",
-                tostring(lock_data.platform_name), tostring(platform_index), age, tostring(platform_exists)))
-            SurfaceLock.unlock_platform(platform_index)
-        end
     end
+
+    return { checked = checked, expired = expired, skipped = skipped }
 end
 
 return SurfaceLock

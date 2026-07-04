@@ -140,29 +140,6 @@ export class LuaInterface {
 		);
 	}
 
-	/**
-	 * #106 restart reconciliation: query THIS instance's outcome for a transferId — did it record a terminal
-	 * outcome (found/success), and is an import for it still running (inProgress)? Returns `null` when the RCON
-	 * result can't be parsed (dest offline / odd output), which the controller treats as "could not query".
-	 */
-	async getTransferOutcome(
-		transferId: string,
-	): Promise<{ found: boolean; success: boolean; inProgress: boolean; platformName: string | null } | null> {
-		const raw = await this.host.sendRcon(
-			`/sc rcon.print(remote.call("surface_export", "get_transfer_outcome_json", "${escapeString(transferId)}"))`,
-		);
-		try {
-			const parsed = JSON.parse(raw.trim()) as Record<string, unknown>;
-			return {
-				found: Boolean(parsed.found),
-				success: Boolean(parsed.success),
-				inProgress: Boolean(parsed.in_progress),
-				platformName: typeof parsed.platform_name === "string" ? parsed.platform_name : null,
-			};
-		} catch {
-			return null; // unparseable RCON output → "could not query" (resolvePendingTransfer waits/escalates)
-		}
-	}
 
 	/**
 	 * Delete a transferred source platform. Returns RAW "SUCCESS" / "ERROR:<reason>".

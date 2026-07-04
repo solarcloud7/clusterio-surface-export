@@ -9,7 +9,7 @@ local SurfaceLock = require("modules/surface_export/utils/surface-lock")
 --- name (fail-loud on ambiguity). The registry recovers the display name from lock_data either way.
 --- @param platform_index_or_name number|string: Unique index (preferred) or platform name
 --- @param expected_name string|nil: Optional name tripwire — refuse if the lock at that index is for a
----        differently-named platform (used by the #106 restart reconcile, which may act on a stale index).
+---        differently-named platform when a stale caller acts on a reused index.
 --- @return boolean, string|nil: success, error_message
 local function unlock_platform(platform_index_or_name, expected_name)
   local index = tonumber(platform_index_or_name)

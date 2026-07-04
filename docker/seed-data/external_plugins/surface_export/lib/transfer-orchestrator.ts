@@ -2,7 +2,7 @@
 import { wait } from "@clusterio/lib";
 import { normalizeExportMetrics, TICKS_TO_MS, getErrorMessage, isSessionLostError, generateOperationId, coercePlatformIndex, VALIDATION_TIMEOUT_MS, buildPayloadMetrics, buildImportMetrics } from "../helpers";
 import { createOperationRecord } from "./operation-record";
-import type { IControllerPlugin, ActiveTransfer, SimpleResponse, TransferValidationEvent, StoredExport, ValidationResult, ImportMetrics, ExportMetrics, PendingTransferIntent } from "../messages";function mergeExportMetrics(storedMetrics: ExportMetrics | null | undefined, runtimeMetrics: Record<string, unknown> | null | undefined) {
+import type { IControllerPlugin, ActiveTransfer, SimpleResponse, TransferValidationEvent, StoredExport, ValidationResult, ImportMetrics, ExportMetrics } from "../messages";function mergeExportMetrics(storedMetrics: ExportMetrics | null | undefined, runtimeMetrics: Record<string, unknown> | null | undefined) {
 	const merged = {
 		...normalizeExportMetrics((storedMetrics || null) as Record<string, unknown> | null),
 		...normalizeExportMetrics(runtimeMetrics || null),
@@ -72,48 +72,6 @@ export class TransferOrchestrator {
 		return err;
 	}
 
-	/**
-	 * #106: resolve a restart-STRANDED transfer by REUSING the normal completion handlers, so it inherits every
-	 * side effect — source delete/unlock, stored-export cleanup, txLogger terminal event, status broadcast, and
-	 * the benign already-unlocked guard — with NO reimplementation and no parity to drift (the reconcile driver
-	 * previously reimplemented these and silently dropped half; see the #106 review). A minimal ActiveTransfer is
-	 * reconstructed from the persisted intent (the in-memory record was lost on the restart).
-	 * @param kind "complete" (dest committed → delete source) or "unlock" (dest failed → roll back source).
-	 * @returns "resolved" when the source was deleted/unlocked (drop the intent); "retriable" when the
-	 *          delete/unlock send failed or threw (the caller counts an attempt, escalating after the cap).
-	 */
-	async resolveStrandedTransfer(intent: PendingTransferIntent, kind: "complete" | "unlock"): Promise<"resolved" | "retriable"> {
-		const transfer = this.plugin.activeTransfers.get(intent.transferId) ?? createOperationRecord("transfer", {
-			operationId: intent.transferId,
-			exportId: intent.exportId,
-			platformName: intent.sourcePlatformName,
-			platformIndex: intent.sourcePlatformIndex,
-			forceName: intent.forceName,
-			sourceInstanceId: intent.sourceInstanceId,
-			targetInstanceId: intent.targetInstanceId,
-			startedAt: intent.startedAt,
-			status: "awaiting_validation",
-			resolveInstanceName: (id: number) => this.plugin.platformTree.resolveInstanceName(id),
-		});
-		this.plugin.activeTransfers.set(intent.transferId, transfer);
-		try {
-			if (kind === "complete") {
-				await this.handleValidationSuccess(intent.transferId, transfer);
-				// completed = source deleted; cleanup_failed = delete refused/failed (no throw) → retry.
-				return transfer.status === "completed" ? "resolved" : "retriable";
-			}
-			await this.handleValidationFailure(intent.transferId, transfer, {
-				mismatchDetails: "destination reported validation failure (recovered by restart reconcile)",
-			} as ValidationResult);
-			// failed = source unlocked (incl. the benign already-unlocked case); cleanup_failed = unlock failed.
-			return transfer.status === "failed" ? "resolved" : "retriable";
-		} catch (err: unknown) {
-			// A THROWN send (e.g. a wedged source's RCON) — count it as an attempt so the give-up→escalate cap
-			// still fires (the pre-redesign driver only counted resp.success===false, so a throw retried forever).
-			this.logger.warn(`#106 reconcile ${kind} for ${intent.transferId} threw (will retry): ${getErrorMessage(err)}`);
-			return "retriable";
-		}
-	}
 
 	// ── Transfer initiation ─────────────────────────────────────────────
 
@@ -279,8 +237,8 @@ export class TransferOrchestrator {
 		this.scheduleValidationTimeout(transferId);
 		transfer.status = "awaiting_validation";
 		this.updateTransfer(transfer);
-		// #106: persist the intent so a controller restart during this window can reconcile it (query the dest
-		// → complete/unlock/escalate) instead of leaving the source platform locked-and-hidden forever.
+		// #106 Phase 1: persist an observability record while source-side Lua TTL is the recovery authority.
+		// A restarted controller must not auto-delete or auto-unlock from this record.
 		this.plugin.persistPendingTransfer({
 			transferId,
 			sourceInstanceId: transfer.sourceInstanceId,
@@ -348,9 +306,9 @@ export class TransferOrchestrator {
 			} else {
 				await this.handleValidationFailure(event.transferId, transfer, event.validation);
 			}
-			// #106: drop the persisted intent once the SOURCE is definitively resolved (deleted on success,
-			// unlocked on failure). Keep it on `cleanup_failed` (the source delete failed) so a restart
-			// reconcile retries the delete rather than orphaning a committed-dest + still-locked source.
+			// Drop the bounded observability record once the SOURCE is definitively resolved (deleted on success,
+			// unlocked on failure). Keep cleanup_failed visible until retention pruning; Phase 1 recovery remains
+			// source-side TTL unlock, never controller auto-delete on restart.
 			if (transfer.status === "completed" || transfer.status === "failed" || transfer.status === "error") {
 				this.plugin.removePendingTransfer(event.transferId);
 			}
@@ -521,7 +479,7 @@ export class TransferOrchestrator {
 			const resp = await this.plugin.controller.sendTo(
 				{ instanceId: sourceInstanceId },
 				// platformName is a name tripwire — harmless for the same-tick rollback (it matches), load-bearing
-				// for the #106 restart reconcile (a reused index could point at a different, in-flight platform).
+				// if a stale caller sees a reused index pointing at a different, in-flight platform.
 				new this.messages.UnlockSourcePlatformRequest({ platformIndex, platformName: platformName ?? null, forceName }),
 			);
 			if (resp?.success) return null;

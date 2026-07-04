@@ -374,31 +374,6 @@ function ImportCompletion.run_phase2(job)
 
 		TransferValidation.store_validation_result(job.platform_name, result)
 
-		-- #106 restart-durability: record this transfer's AUTHORITATIVE terminal outcome, keyed by transferId,
-		-- so the controller can reconcile a pending transfer after a controller restart (via the
-		-- get_transfer_outcome remote). `success` here is the final strict-gate result (incl. the test hook
-		-- override above). This lives inside the `is_transfer and has_verification` guard: a transfer WITHOUT
-		-- verification has no VALIDATED outcome to record, and recording a fabricated one would be worse than
-		-- absence — the reconcile treats a missing outcome as non-authoritative (`!found`) and safely ESCALATES
-		-- rather than unlocking (code-review #106 finding [1]).
-		if job.transfer_id then
-			local outcomes = storage.surface_export_transfer_outcomes or {}
-			outcomes[job.transfer_id] = {
-				success = success and true or false,
-				platform_name = job.platform_name,
-				tick = game.tick,
-			}
-			-- Prune by AGE, not count (#106 review finding [0]): a pending reconciliation can reference an
-			-- outcome for as long as its SOURCE instance stays offline, so a count-bounded prune could evict a
-			-- still-needed committed-success outcome and make the reconcile mis-read it as "never committed". A
-			-- generous 7-game-day bound far exceeds any realistic pending window while keeping the store bounded.
-			local cutoff = game.tick - (7 * 24 * 3600 * 60) -- 7 days at 60 UPS
-			for id, o in pairs(outcomes) do
-				if (o.tick or 0) < cutoff then outcomes[id] = nil end
-			end
-			storage.surface_export_transfer_outcomes = outcomes
-		end
-
 		-- Debug export: Write validation result for analysis
 		DebugExport.export_import_result({
 			platform_name = job.platform_name,

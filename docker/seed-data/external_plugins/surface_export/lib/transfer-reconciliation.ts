@@ -1,16 +1,12 @@
 /**
  * @file lib/transfer-reconciliation.ts
- * @description Pure decision core for reconciling a persisted `awaiting_validation` transfer after a
- * controller restart (#106). A transfer in that state relies on the in-memory activeTransfers record + the
- * validation timeout, both lost on a controller restart — so the source platform stays locked-and-hidden
- * until an admin `/unlock-platform`. On boot we re-load the persisted intents and reconcile each against the
- * DESTINATION's authoritative, `transferId`-keyed outcome record.
+ * @description Legacy pure decision core retained for Phase-2 rework. It is NOT wired into Phase-1 controller
+ * boot, because Phase-1 recovery is source-side Lua TTL unlock and the controller must not auto-act from a
+ * persisted intent.
  *
- * This module is PURE (no I/O) so the safety-critical branch — the only path that DELETES a source platform
- * automatically — is exhaustively unit-tested. The controller feeds it the dest query result + liveness and
- * acts on the returned action. See CLAUDE.md Pitfall #28/#29 and the transfer two-phase-commit invariant:
- * a source is deleted ONLY on an authoritative "dest committed + validated success"; ANY ambiguity is never
- * resolved destructively.
+ * This module is PURE (no I/O) so any future reuse can stay exhaustively tested before it is reconnected to
+ * controller behavior. See AGENTS.md Pitfall #28/#29 and the transfer two-phase-commit invariant: a source is
+ * deleted ONLY on an authoritative commit signal; ANY ambiguity is never resolved destructively.
  */
 
 /**

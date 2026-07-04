@@ -1064,46 +1064,6 @@ export class DeleteSourcePlatformRequest {
 	};
 }
 
-/**
- * Controller→instance query used by #106 restart reconciliation: for a given transferId, what did THIS
- * (destination) instance do — did it record a terminal outcome (found/success), and is it still importing?
- * Answered from the dest's persisted `transfer_outcomes[transferId]` record + a scan of its active import
- * jobs. The controller feeds the answer to resolvePendingTransfer() to decide complete/unlock/retry.
- */
-export class GetTransferOutcomeRequest {
-	declare ["constructor"]: typeof GetTransferOutcomeRequest;
-	static plugin = PLUGIN_NAME;
-	static type = "request" as const;
-	static src = "controller" as const;
-	static dst = "instance" as const;
-	static jsonSchema: JsonSchema = {
-		type: "object",
-		properties: { transferId: { type: "string" } },
-		required: ["transferId"],
-		additionalProperties: false,
-	};
-
-	transferId: string;
-
-	constructor(json: { transferId: string }) { this.transferId = json.transferId; }
-	static fromJSON(json: { transferId: string }) { return new GetTransferOutcomeRequest(json); }
-	toJSON() { return { transferId: this.transferId }; }
-
-	static Response = {
-		jsonSchema: {
-			type: "object",
-			properties: {
-				found: { type: "boolean" },
-				success: { type: "boolean" },
-				inProgress: { type: "boolean" },
-				platformName: { type: ["string", "null"] },
-			},
-			required: ["found", "success", "inProgress"],
-			additionalProperties: false,
-		} as JsonSchema,
-		fromJSON(json: unknown) { return json as { found: boolean; success: boolean; inProgress: boolean; platformName?: string | null }; },
-	};
-}
 
 export class UnlockSourcePlatformRequest {
 	declare ["constructor"]: typeof UnlockSourcePlatformRequest;
@@ -1348,10 +1308,9 @@ export type InstanceRecordLike = {
 
 /** Shared interface implemented by ControllerPlugin; used by lib/ modules to avoid circular imports. */
 /**
- * The minimal, persistable "a transfer is awaiting validation" intent used by #106 restart reconciliation.
- * Persisted when a transfer enters awaiting_validation and removed on its terminal state, so a controller
- * restart can re-load it and reconcile (query the dest → complete/unlock/escalate) instead of leaving the
- * source platform locked-and-hidden forever.
+ * The minimal, persistable "a transfer is awaiting validation" intent used for bounded Phase-1 observability
+ * and future Phase-2 re-adoption. Source recovery is authoritative in Lua: transfer locks expire by game tick
+ * and auto-unlock there. The controller must not auto-delete or auto-unlock from this record on restart.
  */
 export interface PendingTransferIntent {
 	transferId: string;
@@ -1361,8 +1320,7 @@ export interface PendingTransferIntent {
 	forceName: string;
 	targetInstanceId: number;
 	startedAt: number;
-	/** The stored export blob for this transfer — deleted when a reconcile completes the transfer, so it can't
-	 *  linger in the Exports tab and be re-imported into a duplicate of the already-transferred platform. */
+	/** The stored export blob for this transfer. Phase 1 keeps this only as bounded observability metadata. */
 	exportId: string | null;
 }
 

@@ -1,0 +1,107 @@
+-- FactorioSurfaceExport - Transfer-lock expiry self-test (remote)
+-- Pure storage-level checks for SurfaceLock.scan_transfer_expiries.
+
+local SurfaceLock = require("modules/surface_export/utils/surface-lock")
+
+--- Run transfer-lock expiry self-test.
+--- @return table { passed, failed, total, details = { {name, ok, msg}, ... } }
+local function transfer_lock_selftest()
+	local details = {}
+	local passed, failed = 0, 0
+
+	local function check(name, cond, msg)
+		if cond then
+			passed = passed + 1
+			details[#details + 1] = { name = name, ok = true }
+		else
+			failed = failed + 1
+			details[#details + 1] = { name = name, ok = false, msg = msg or "assertion failed" }
+		end
+	end
+
+	local old_locks = storage.locked_platforms
+	local old_unlock = SurfaceLock.unlock_platform
+	local unlocks = {}
+
+	-- pcall:allow selftest must restore SurfaceLock/storage before reporting the exception
+	local ok, err = pcall(function()
+		storage.locked_platforms = {
+			[1] = {
+				kind = "transfer",
+				platform_name = "expired",
+				platform_index = 1,
+				force_name = "player",
+				locked_tick = game.tick - 120,
+				expires_tick = game.tick - 1,
+			},
+			[2] = {
+				platform_name = "manual",
+				platform_index = 2,
+				force_name = "player",
+				locked_tick = game.tick - 999999,
+			},
+			[3] = {
+				kind = "transfer",
+				platform_name = "old-save",
+				platform_index = 3,
+				force_name = "player",
+			},
+			[4] = {
+				kind = "transfer",
+				platform_name = "fallback",
+				platform_index = 4,
+				force_name = "player",
+				locked_tick = game.tick - SurfaceLock.DEFAULT_TRANSFER_LOCK_TTL_TICKS - 1,
+			},
+			[5] = {
+				kind = "transfer",
+				platform_name = "fresh",
+				platform_index = 5,
+				force_name = "player",
+				locked_tick = game.tick,
+				expires_tick = game.tick + SurfaceLock.DEFAULT_TRANSFER_LOCK_TTL_TICKS,
+			},
+		}
+
+		SurfaceLock.unlock_platform = function(platform_index, expected_name)
+			unlocks[#unlocks + 1] = { index = platform_index, name = expected_name }
+			storage.locked_platforms[platform_index] = nil
+			return true, nil
+		end
+
+		local summary = SurfaceLock.scan_transfer_expiries()
+
+		check("expired_transfer_unlocked", storage.locked_platforms[1] == nil,
+			"expired transfer lock should be removed")
+		check("manual_lock_untouched", storage.locked_platforms[2] ~= nil,
+			"manual lock without kind must not be touched")
+		check("old_save_without_locked_tick_skipped", storage.locked_platforms[3] ~= nil,
+			"old-save transfer lock without locked_tick must be skipped")
+		check("fallback_ttl_unlocked", storage.locked_platforms[4] == nil,
+			"missing expires_tick should fall back to locked_tick + DEFAULT_TRANSFER_LOCK_TTL_TICKS")
+		check("fresh_transfer_untouched", storage.locked_platforms[5] ~= nil,
+			"fresh transfer lock must not be touched")
+		check("unlock_uses_name_tripwire",
+			#unlocks == 2 and unlocks[1].name == "expired" and unlocks[2].name == "fallback",
+			"expired unlocks must pass the stored platform_name tripwire")
+		check("summary_counts",
+			summary.checked == 4 and summary.expired == 2 and summary.skipped == 1,
+			"unexpected summary: checked=" .. tostring(summary.checked) ..
+				" expired=" .. tostring(summary.expired) .. " skipped=" .. tostring(summary.skipped))
+		check("ttl_exceeds_worst_case_transfer_duration",
+			SurfaceLock.DEFAULT_TRANSFER_LOCK_TTL_TICKS >= SurfaceLock.MIN_WORST_CASE_TRANSFER_TTL_TICKS,
+			"TTL must exceed the worst-case total transfer duration, not only validation timeout")
+	end)
+
+	SurfaceLock.unlock_platform = old_unlock
+	storage.locked_platforms = old_locks
+
+	if not ok then
+		failed = failed + 1
+		details[#details + 1] = { name = "selftest_exception", ok = false, msg = tostring(err) }
+	end
+
+	return { passed = passed, failed = failed, total = passed + failed, details = details }
+end
+
+return transfer_lock_selftest
