@@ -111,11 +111,17 @@ Legend: **S**=source, **D**=dest, **C**=controller; `{}` = source lock phase (Ph
 | 8 | S-host down long mid-transfer | ticks don't advance ⇒ no spurious expiry | HOLD | per S phase on return | tick-based ⇒ downtime never over-counts |
 
 ## Current implementation status
-- **Shipped:** Phase 1 source-side TTL (unlock-only) + identity gate (surface.index) + cargo-pod awaiting_launch
-  zero-loss recovery. The #60 controller auto-delete spine is removed; `resolvePendingTransfer` is retained pure
-  and dormant for Phase-2 reuse.
-- **In flight (re-audit follow-ups, this branch):** in-game double-transfer refuse guard; expiry-scan failure
-  counter; TTL-floor derivation; test-teeth hardening; dest-side `validation_results` re-key off name.
+- **Shipped:** Phase 1 source-side TTL (unlock-only) + identity gate (surface.index + a name-free `job_id`
+  request↔lock correlation) + cargo-pod awaiting_launch zero-loss recovery. The #60 controller auto-delete spine
+  is removed; `resolvePendingTransfer` is retained pure and dormant for Phase-2 reuse. Re-audit hardening R1–R8
+  shipped (`feat/106-hardening`): in-game double-transfer refuse guard, expiry-scan failure counter, derived TTL
+  floor, order-independent + timer-spy test teeth, stale-comment cleanup.
+- **Follow-ups:** dest-side `validation_results` / `flight_data` re-key off name (collision); the descending/
+  parking cargo-pod branch does not spill a hub-overflow remainder like `awaiting_launch` does — a potential
+  loss IF `force_finish_descending` discards it, needs a live test before generalizing (avoid a double-deposit);
+  a full controller/web-route behavior test for the double-transfer reject (the decision is unit-tested via
+  `is_same_transfer_upgrade`; the in-game route is live-verified). The mid-flight TTL self-unlock on a >10-min
+  transfer (delete gate makes it a recoverable dup, not loss) is eliminated by the Phase-2 heartbeat.
 - **Pending:** all of Phase 2 (blocked on the two prerequisites above).
 
 ## Verification

@@ -16,7 +16,7 @@ test("surface-lock exposes transfer-only expiry scanner with nil-safe TTL fallba
 	const src = readModule(path.join("utils", "surface-lock.lua"));
 
 	assert.match(src, /DEFAULT_TRANSFER_LOCK_TTL_TICKS\s*=\s*36000/, "named 10-minute transfer TTL constant is required");
-	assert.match(src, /MIN_WORST_CASE_TRANSFER_TTL_TICKS\s*=\s*36000/, "TTL floor must encode worst-case total transfer duration, not only validation timeout");
+	assert.match(src, /MIN_WORST_CASE_TRANSFER_TTL_TICKS\s*=\s*[\s\S]*?VALIDATION_TIMEOUT_TICKS\s*\+\s*WORST_CASE_RCON_TICKS/, "TTL floor must be DERIVED from named worst-case components (not a duplicate of DEFAULT), so DEFAULT>=MIN is a real check");
 	assert.match(src, /function\s+SurfaceLock\.scan_transfer_expiries\s*\(/, "scan_transfer_expiries must exist");
 	assert.doesNotMatch(src, /function\s+SurfaceLock\.cleanup_stale_locks\s*\(/, "destructive stale cleanup should be retired");
 	assert.match(src, /kind\s*==\s*["']transfer["']/, "scanner must only act on transfer locks");

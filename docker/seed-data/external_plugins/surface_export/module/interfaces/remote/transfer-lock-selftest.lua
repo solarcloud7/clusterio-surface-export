@@ -82,12 +82,14 @@ local function transfer_lock_selftest()
 		check("fresh_transfer_untouched", storage.locked_platforms[5] ~= nil,
 			"fresh transfer lock must not be touched")
 		check("unlock_uses_name_tripwire",
-			#unlocks == 2 and unlocks[1].name == "expired" and unlocks[2].name == "fallback",
-			"expired unlocks must pass the stored platform_name tripwire")
+			#unlocks == 2 and ((unlocks[1].name == "expired" and unlocks[2].name == "fallback")
+				or (unlocks[1].name == "fallback" and unlocks[2].name == "expired")),
+			"expired unlocks must pass the stored platform_name tripwire (order-independent: the set {expired, fallback})")
 		check("summary_counts",
-			summary.checked == 4 and summary.expired == 2 and summary.skipped == 1,
+			summary.checked == 4 and summary.expired == 2 and summary.skipped == 1 and summary.failed == 0,
 			"unexpected summary: checked=" .. tostring(summary.checked) ..
-				" expired=" .. tostring(summary.expired) .. " skipped=" .. tostring(summary.skipped))
+				" expired=" .. tostring(summary.expired) .. " skipped=" .. tostring(summary.skipped) ..
+				" failed=" .. tostring(summary.failed))
 		check("ttl_exceeds_worst_case_transfer_duration",
 			SurfaceLock.DEFAULT_TRANSFER_LOCK_TTL_TICKS >= SurfaceLock.MIN_WORST_CASE_TRANSFER_TTL_TICKS,
 			"TTL must exceed the worst-case total transfer duration, not only validation timeout")

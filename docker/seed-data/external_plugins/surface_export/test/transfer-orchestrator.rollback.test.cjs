@@ -81,7 +81,7 @@ function makeHarness(importSendResult, sourceSendResult = () => ({ success: true
 	const orch = new TransferOrchestrator(plugin, messages);
 	// Spy the protective route WITHOUT running the real unlock send (mechanics tested elsewhere). The
 	// The rollback-path tests below spy this method directly; sendUnlockRequest mechanics are covered by
-	// integration paths rather than the retired restart-reconcile helper.
+	// integration paths (recovery is the source-side TTL — there is no restart-reconcile helper).
 	orch.tryUnlockSource = async () => { calls.unlockRouteTaken++; return null; };
 	return { orch, activeTransfers, calls, plugin };
 }
@@ -144,8 +144,8 @@ test("Non-session-loss throw on import send: source IS rolled back (unlock route
 test("#106: validation fails AND source unlock fails → cleanup_failed KEEPS the recovery intent (not dropped)", async () => {
 	// Adversarial (review #106 orch:310, a CONFIRMED data-loss defect): reverting handleValidationFailure to
 	// an unconditional status='failed' makes handleTransferValidation's removal condition DROP the persisted
-	// intent while the source is STILL locked-and-hidden (the unlock failed) — so a later restart has nothing
-	// to reconcile and the source is stranded forever. This test goes RED on that revert.
+	// intent while the source is STILL locked-and-hidden (the unlock failed) — losing the observability/re-adoption
+	// record for a source that only the source-side TTL will recover. This test goes RED on that revert.
 	const { orch, activeTransfers, calls } = makeHarness(() => { throw sessionLost("Session Closed"); });
 	const res = await orch.transferPlatform("export_1", 2); // arm awaiting_validation (persists the intent)
 	const transfer = onlyTransfer(activeTransfers);

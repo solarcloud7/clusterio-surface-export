@@ -52,8 +52,11 @@ local function delete_platform_for_transfer(platform_index, platform_name, force
 
   -- Validated: THIS transfer's lock AND our live platform. Best-effort unlock (unfreezes, un-hides, restores the
   -- original schedule, clears the lock entry), then evacuate + delete — safe now because the gate proved it's ours.
+  -- No name tripwire is passed: identity was ALREADY fully established by the gate above (job_id + surface.index),
+  -- and unlock_platform re-checks surface.index internally. (Passing lock.platform_name would be a self-comparison
+  -- against the same lock record — a dead guard that validates nothing.)
   GameUtils.pcall_warn("[DeleteForTransfer] unlock index " .. tostring(platform_index), function()
-    SurfaceLock.unlock_platform(platform_index, lock.platform_name)
+    SurfaceLock.unlock_platform(platform_index)
   end)
 
   -- Evacuate BEFORE deleting — players/characters must be off the surface before it is torn down. GUARDED
