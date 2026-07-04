@@ -7,9 +7,8 @@
 > Where there is **no shipped answer**, the row is flagged **⚠️ OPEN** — that decision belongs to a human
 > engineer; do not invent an answer to close the gap. Keep this current as part of the `/di-change` gate.
 >
-> Related: [`TRANSFER_2PC_DESIGN.md`](TRANSFER_2PC_DESIGN.md) (Phase-2 failure-mode table),
-> [`TRANSFER_2PC_PHASE1_REAUDIT.md`](TRANSFER_2PC_PHASE1_REAUDIT.md) (the `R#` fix references below),
-> [`TRANSFER_WORKFLOW_GUIDE.md`](TRANSFER_WORKFLOW_GUIDE.md), and CLAUDE.md "Common Pitfalls" (`#NN`).
+> Related: [`TRANSFER_2PC.md`](TRANSFER_2PC.md) (the durable transfer design + current state — single source of
+> truth), [`TRANSFER_WORKFLOW_GUIDE.md`](TRANSFER_WORKFLOW_GUIDE.md), and CLAUDE.md "Common Pitfalls" (`#NN`).
 
 ## Status legend
 - ✅ **Handled** — shipped behavior today.

@@ -174,6 +174,7 @@ For the detailed Lua module breakdown, see [IMPLEMENTATION_SUMMARY.md](IMPLEMENT
 | [ENGINEERING_FAQ.md](ENGINEERING_FAQ.md) | "What if the user does X?" edge-case checklist — how each transfer/lock/failure case is engineered today, with OPEN items flagged for a human call |
 | [E2E_TEST_GUIDE.md](E2E_TEST_GUIDE.md) | Hands-on QA checklist to validate the full transfer pipeline (automated suite + manual flows + failure cases) |
 | [commands-reference.md](commands-reference.md) | All in-game / RCON console commands with usage |
+| [TRANSFER_2PC.md](TRANSFER_2PC.md) | Transfer durability, identity (surface.index not name), and two-phase-commit design + current state — single source of truth |
 | [TRANSFER_WORKFLOW_GUIDE.md](TRANSFER_WORKFLOW_GUIDE.md) | Transfer entry points, phases, critical invariants |
 | [TRANSFER_CODE_PATHS.md](TRANSFER_CODE_PATHS.md) | End-to-end code trace of a transfer, from UI click to completion |
 | [EXPORT_IMPORT_FLOW.md](EXPORT_IMPORT_FLOW.md) | Action trace of export/import/transfer with message names, channels, and handler locations |
