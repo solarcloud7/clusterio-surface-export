@@ -244,6 +244,19 @@ function SurfaceLock.ensure_index_keyed()
     return moved, dropped
 end
 
+--- Pure: is an incoming transfer lock the SAME transfer as the existing transfer lock at this index (so its
+--- pre-lock→export-queue backfill may proceed), or a DIFFERENT/second transfer (which must be rejected so it
+--- cannot OVERWRITE the first transfer's correlation token)? Same iff the existing token is unset — the initial
+--- transfer-trigger → export-pipeline handoff, where only export-pipeline carries the job_id — or equals the
+--- incoming one. This is the UNIVERSAL guard: it protects EVERY entry path (the in-game trigger AND the web/ctl
+--- export_platform route), because all of them lock through lock_platform. Pure → unit-testable.
+--- @param existing_job_id string|nil  the existing lock's transfer_job_id
+--- @param opts_job_id string|nil  the incoming transfer_opts.job_id
+--- @return boolean same
+function SurfaceLock.is_same_transfer_upgrade(existing_job_id, opts_job_id)
+    return existing_job_id == nil or existing_job_id == opts_job_id
+end
+
 --- Lock a platform surface for export/transfer
 --- Completes cargo pod transfers, freezes entities, hides surface
 --- @param platform LuaSpacePlatform: The platform to lock
@@ -278,6 +291,14 @@ function SurfaceLock.lock_platform(platform, force, transfer_opts)
         -- "different transfer lock" refusal below. A rename keeps surface.index, so a renamed source re-locks fine.
         if transfer_opts and existing_lock.kind == "transfer"
             and existing_lock.surface_index == surface.index then
+            -- Only the SAME transfer's pre-lock→export-queue handoff may upgrade this lock: its token is either
+            -- not stamped yet (transfer-trigger locked first, no job_id) or equal. A DIFFERENT token — or, for a
+            -- token-less caller, ANY existing token — means a SECOND transfer of an in-flight platform. REJECT it,
+            -- else it OVERWRITES the first transfer's correlation token → the first transfer's source delete then
+            -- refuses (job_id mismatch) AFTER its destination committed = a live-source + committed-dest DUP.
+            if not SurfaceLock.is_same_transfer_upgrade(existing_lock.transfer_job_id, transfer_opts.job_id) then
+                return false, "Platform already locked by a different in-flight transfer"
+            end
             existing_lock.transfer_job_id = transfer_opts.job_id or existing_lock.transfer_job_id
             existing_lock.expires_tick = transfer_opts.expires_tick or existing_lock.expires_tick
             return true, nil -- same transfer lock upgraded

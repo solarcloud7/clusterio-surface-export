@@ -134,6 +134,23 @@ local function transfer_lock_selftest()
 		SurfaceLock.transfer_delete_identity_ok({ kind = "transfer", surface_index = 7 }, fake_surface(7), "job_A") == true,
 		"an old-save lock with no transfer_job_id degrades to the surface.index check (no correlation available)")
 
+	-- re-audit P1 (both PR reviews): the SAME-transfer backfill in lock_platform must only upgrade the SAME
+	-- transfer (existing token unset or equal); a DIFFERENT/second transfer must be REJECTED so it can't
+	-- overwrite the first transfer's correlation token → a live-source + committed-dest dup. Universal — covers
+	-- the in-game trigger AND the web/ctl export_platform route (both lock through lock_platform).
+	check("lock_upgrade_same_handoff_ok",
+		SurfaceLock.is_same_transfer_upgrade(nil, "job_A") == true,
+		"the transfer-trigger→export-pipeline handoff (existing token unset) may upgrade")
+	check("lock_upgrade_idempotent_ok",
+		SurfaceLock.is_same_transfer_upgrade("job_A", "job_A") == true,
+		"an idempotent re-lock of the SAME transfer (equal token) may upgrade")
+	check("lock_upgrade_refuses_second_transfer",
+		SurfaceLock.is_same_transfer_upgrade("job_A", "job_B") == false,
+		"a SECOND transfer (different job_id) must be REJECTED — must not overwrite the first transfer's token (P1)")
+	check("lock_upgrade_refuses_tokenless_second_lock",
+		SurfaceLock.is_same_transfer_upgrade("job_A", nil) == false,
+		"a token-less lock attempt on an already-tokened transfer (the in-game 2nd trigger) must be REJECTED")
+
 	return { passed = passed, failed = failed, total = passed + failed, details = details }
 end
 
