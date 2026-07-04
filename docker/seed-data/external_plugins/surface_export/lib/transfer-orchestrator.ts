@@ -63,7 +63,7 @@ export class TransferOrchestrator {
 	 *  send (and the benign already-unlocked handling) to sendUnlockRequest; adds the tx-log breadcrumbs. */
 	async tryUnlockSource(transferId: string, transfer: ActiveTransfer) {
 		this.txLogger.logTransactionEvent(transferId, "rollback_attempt", "Unlocking source platform", {});
-		const err = await this.sendUnlockRequest(transfer.sourceInstanceId, transfer.platformIndex, transfer.forceName || "player");
+		const err = await this.sendUnlockRequest(transfer.sourceInstanceId, transfer.platformIndex, transfer.forceName || "player", transfer.platformName);
 		if (!err) {
 			this.txLogger.logTransactionEvent(transferId, "rollback_success", "Source platform unlocked", {});
 			return null;
@@ -71,6 +71,7 @@ export class TransferOrchestrator {
 		this.txLogger.logTransactionEvent(transferId, "rollback_failed", `Unlock failed: ${err}`, { error: err });
 		return err;
 	}
+
 
 	// ── Transfer initiation ─────────────────────────────────────────────
 
@@ -236,6 +237,18 @@ export class TransferOrchestrator {
 		this.scheduleValidationTimeout(transferId);
 		transfer.status = "awaiting_validation";
 		this.updateTransfer(transfer);
+		// #106 Phase 1: persist an observability record while source-side Lua TTL is the recovery authority.
+		// A restarted controller must not auto-delete or auto-unlock from this record.
+		this.plugin.persistPendingTransfer({
+			transferId,
+			sourceInstanceId: transfer.sourceInstanceId,
+			sourcePlatformIndex: transfer.platformIndex,
+			sourcePlatformName: transfer.platformName,
+			forceName: transfer.forceName || "player",
+			targetInstanceId: Number(transfer.targetInstanceId),
+			startedAt: transfer.startedAt,
+			exportId: transfer.exportId ?? null,
+		});
 	}
 
 	scheduleValidationTimeout(transferId: string) {
@@ -293,6 +306,12 @@ export class TransferOrchestrator {
 			} else {
 				await this.handleValidationFailure(event.transferId, transfer, event.validation);
 			}
+			// Drop the bounded observability record once the SOURCE is definitively resolved (deleted on success,
+			// unlocked on failure). Keep cleanup_failed visible until retention pruning; Phase 1 recovery remains
+			// source-side TTL unlock, never controller auto-delete on restart.
+			if (transfer.status === "completed" || transfer.status === "failed" || transfer.status === "error") {
+				this.plugin.removePendingTransfer(event.transferId);
+			}
 			this.pruneOldTransfers();
 		} catch (err: unknown) {
 			const errMsg = getErrorMessage(err);
@@ -314,6 +333,8 @@ export class TransferOrchestrator {
 				platformIndex: transfer.platformIndex,
 				platformName: transfer.platformName,
 				forceName: transfer.forceName,
+				// Name-free request-vs-lock correlation: transfer.exportId == the source lock's transfer_job_id.
+				exportId: transfer.exportId ?? null,
 			}),
 		);
 		const cleanupMs = this.txLogger.endPhase(transferId, "cleanup");
@@ -358,7 +379,10 @@ export class TransferOrchestrator {
 			await this.broadcastTransferStatus(transfer, `Rolled back. Error: ${errorMsg}`, "red");
 		}
 
-		transfer.status = "failed";
+		// #106: if the source unlock ALSO failed, the source is NOT resolved (still locked) — mark it
+		// cleanup_failed (not failed) so handleTransferValidation KEEPS the persisted intent, letting a restart
+		// reconcile retry the unlock. Mirrors the success path's cleanup_failed on a failed source delete.
+		transfer.status = rollbackError ? "cleanup_failed" : "failed";
 		transfer.error = errorMsg;
 		transfer.completedAt = Date.now();
 		this.txLogger.logTransactionEvent(transferId, "transfer_failed",
@@ -451,12 +475,14 @@ export class TransferOrchestrator {
 	 * not-locked cases, which are benign), or an error string. Shared by the rollback paths so a thrown
 	 * transfer step can never leave the source stuck locked-and-hidden.
 	 */
-	private async sendUnlockRequest(sourceInstanceId: number, platformIndex: number, forceName: string): Promise<string | null> {
+	private async sendUnlockRequest(sourceInstanceId: number, platformIndex: number, forceName: string, platformName?: string): Promise<string | null> {
 		if (coercePlatformIndex(platformIndex) === null) return `invalid platformIndex: ${String(platformIndex)}`;
 		try {
 			const resp = await this.plugin.controller.sendTo(
 				{ instanceId: sourceInstanceId },
-				new this.messages.UnlockSourcePlatformRequest({ platformIndex, forceName }),
+				// platformName is a name tripwire — harmless for the same-tick rollback (it matches), load-bearing
+				// if a stale caller sees a reused index pointing at a different, in-flight platform.
+				new this.messages.UnlockSourcePlatformRequest({ platformIndex, platformName: platformName ?? null, forceName }),
 			);
 			if (resp?.success) return null;
 			const err = resp?.error || "Unknown unlock error";

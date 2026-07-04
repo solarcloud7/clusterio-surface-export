@@ -58,6 +58,27 @@ const RULES = [
 		hint: "LuaSpacePlatform.destroy() is a no-op in Factorio 2.0. "
 			+ "Use GameUtils.delete_platform(platform) (game.delete_surface under the hood).",
 	},
+	{
+		id: "no-name-as-transfer-identity",
+		pitfall: "#31",
+		// Platform identity in the source-delete / lock spine MUST key on the STABLE surface.index (or the
+		// unique platform.index), NEVER the mutable platform.name. A player can rename a platform mid-transfer
+		// from the hub GUI, so a name-based identity check on the DESTRUCTIVE delete path refused the delete →
+		// source survived + dest committed = a duplication exploit. Matches `platform.name`/`platform_name`
+		// used in an ==/~= comparison. SCOPED to the delete + lock-identity spine (appliesTo) — name→index
+		// LOOKUPS at the admin boundary (e.g. find_lock_key_by_name, fail-loud on ambiguity) are the sanctioned
+		// exception: annotate them with `-- lint-lua:allow` + a reason.
+		regex: /(?:\bplatform\.name|\bplatform_name)\s*[=~]=|[=~]=\s*(?:platform\.name|\bplatform_name)\b/,
+		appliesTo: [
+			"interfaces/remote/delete-platform-for-transfer.lua",
+			"utils/surface-lock.lua",
+			"core/transfer-trigger.lua",
+			"core/export-pipeline.lua",
+		],
+		hint: "Source-delete/lock identity must use surface.index / unique platform.index, never the mutable "
+			+ "platform.name (rename dup exploit). Resolve name→index only at the admin boundary (fail-loud) "
+			+ "and annotate that line with `-- lint-lua:allow <reason>`.",
+	},
 ];
 
 /** Strip a Lua line comment (`-- ...`) so rules only see executable code. Block comments are rare
@@ -86,15 +107,17 @@ function main() {
 	const violations = [];
 
 	for (const file of files) {
+		const relPath = relative(PLUGIN_DIR, file).replace(/\\/g, "/");
 		const lines = readFileSync(file, "utf8").split(/\r?\n/);
 		lines.forEach((rawLine, i) => {
 			if (rawLine.includes(ALLOW_MARKER)) return; // explicit per-line suppression
 			const code = stripLineComment(rawLine);
 			for (const rule of RULES) {
+					if (rule.appliesTo && !rule.appliesTo.some((p) => relPath.includes(p))) continue;
 				const m = rule.regex.exec(code);
 				if (m) {
 					violations.push({
-						file: relative(PLUGIN_DIR, file).replace(/\\/g, "/"),
+						file: relPath,
 						line: i + 1,
 						col: m.index + 1,
 						rule,

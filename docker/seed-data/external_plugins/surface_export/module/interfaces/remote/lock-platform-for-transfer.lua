@@ -20,7 +20,9 @@ local function lock_platform_for_transfer(platform_index, force_name)
     return false, "Platform not found at index: " .. platform_index
   end
 
-  return SurfaceLock.lock_platform(platform, force)
+  return SurfaceLock.lock_platform(platform, force, {
+    expires_tick = game.tick + SurfaceLock.DEFAULT_TRANSFER_LOCK_TTL_TICKS,
+  })
 end
 
 return lock_platform_for_transfer

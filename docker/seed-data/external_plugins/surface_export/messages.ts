@@ -1040,6 +1040,7 @@ export class DeleteSourcePlatformRequest {
 			platformIndex: { type: "integer" },
 			platformName: { type: "string" },
 			forceName: { type: "string", default: "player" },
+			exportId: { type: ["string", "null"], default: null },
 		},
 		required: ["platformIndex", "platformName"],
 		additionalProperties: false,
@@ -1048,21 +1049,27 @@ export class DeleteSourcePlatformRequest {
 	platformIndex: number;
 	platformName: string;
 	forceName: string;
+	// The source-generated export/transfer id (== the source lock's transfer_job_id). A NAME-FREE correlation
+	// token: the Lua delete refuses if this doesn't match the lock at the index, so a stale/duplicate/reused-index
+	// delete can't unlock or tear down an UNRELATED in-flight transfer's platform (Pitfall #31 / re-audit P1).
+	exportId: string | null;
 
-	constructor(json: { platformIndex: number; platformName: string; forceName?: string }) {
+	constructor(json: { platformIndex: number; platformName: string; forceName?: string; exportId?: string | null }) {
 		this.platformIndex = json.platformIndex;
 		this.platformName = json.platformName;
 		this.forceName = json.forceName || "player";
+		this.exportId = json.exportId ?? null;
 	}
 
-	static fromJSON(json: { platformIndex: number; platformName: string; forceName?: string }) { return new DeleteSourcePlatformRequest(json); }
-	toJSON() { return { platformIndex: this.platformIndex, platformName: this.platformName, forceName: this.forceName }; }
+	static fromJSON(json: { platformIndex: number; platformName: string; forceName?: string; exportId?: string | null }) { return new DeleteSourcePlatformRequest(json); }
+	toJSON() { return { platformIndex: this.platformIndex, platformName: this.platformName, forceName: this.forceName, exportId: this.exportId }; }
 
 	static Response = {
 		jsonSchema: { type: "object", properties: { success: { type: "boolean" }, error: { type: "string" } }, required: ["success"] } as JsonSchema,
 		fromJSON(json: unknown) { return json as SimpleResponse; },
 	};
 }
+
 
 export class UnlockSourcePlatformRequest {
 	declare ["constructor"]: typeof UnlockSourcePlatformRequest;
@@ -1074,24 +1081,28 @@ export class UnlockSourcePlatformRequest {
 		type: "object",
 		properties: {
 			platformIndex: { type: "integer" },
+			platformName: { type: ["string", "null"] },
 			forceName: { type: "string", default: "player" },
 		},
 		required: ["platformIndex"],
 		additionalProperties: false,
 	};
 
-	// Unlock keys purely on the unique platformIndex — the registry is index-keyed and the Lua unlock recovers
-	// the display name from lock_data, so no name is needed. (Delete keeps name required — it's a tripwire there.)
+	// Unlock keys on the unique platformIndex; `platformName`, when set, is a name TRIPWIRE — the #106 restart
+	// reconcile passes it so a stale index (reused by a differently-named, in-flight platform) is refused
+	// rather than freeing the wrong source. The normal rollback omits it (same-tick, index still valid).
 	platformIndex: number;
+	platformName: string | null;
 	forceName: string;
 
-	constructor(json: { platformIndex: number; forceName?: string }) {
+	constructor(json: { platformIndex: number; platformName?: string | null; forceName?: string }) {
 		this.platformIndex = json.platformIndex;
+		this.platformName = json.platformName ?? null;
 		this.forceName = json.forceName || "player";
 	}
 
-	static fromJSON(json: { platformIndex: number; forceName?: string }) { return new UnlockSourcePlatformRequest(json); }
-	toJSON() { return { platformIndex: this.platformIndex, forceName: this.forceName }; }
+	static fromJSON(json: { platformIndex: number; platformName?: string | null; forceName?: string }) { return new UnlockSourcePlatformRequest(json); }
+	toJSON() { return { platformIndex: this.platformIndex, platformName: this.platformName, forceName: this.forceName }; }
 
 	static Response = {
 		jsonSchema: { type: "object", properties: { success: { type: "boolean" }, error: { type: "string" } }, required: ["success"] } as JsonSchema,
@@ -1302,7 +1313,27 @@ export type InstanceRecordLike = {
 };
 
 /** Shared interface implemented by ControllerPlugin; used by lib/ modules to avoid circular imports. */
+/**
+ * The minimal, persistable "a transfer is awaiting validation" intent used for bounded Phase-1 observability
+ * and future Phase-2 re-adoption. Source recovery is authoritative in Lua: transfer locks expire by game tick
+ * and auto-unlock there. The controller must not auto-delete or auto-unlock from this record on restart.
+ */
+export interface PendingTransferIntent {
+	transferId: string;
+	sourceInstanceId: number;
+	sourcePlatformIndex: number;
+	sourcePlatformName: string;
+	forceName: string;
+	targetInstanceId: number;
+	startedAt: number;
+	/** The stored export blob for this transfer. Phase 1 keeps this only as bounded observability metadata. */
+	exportId: string | null;
+}
+
 export interface IControllerPlugin {
+	/** #106: add/remove a persisted awaiting_validation intent (the orchestrator calls these). */
+	persistPendingTransfer(intent: PendingTransferIntent): void;
+	removePendingTransfer(transferId: string): void;
 	controller: {
 		wsServer: { controlConnections: Map<number, unknown> };
 		sendTo: (target: { instanceId: number }, message: unknown) => Promise<any>;

@@ -98,7 +98,9 @@ export class InstancePlugin extends BaseInstancePlugin {
 		this.i.handle(messages.ImportPlatformRequest, this.handleImportPlatformRequest.bind(this));
 		this.i.handle(messages.ImportPlatformFromFileRequest, this.handleImportPlatformFromFileRequest.bind(this));
 		this.i.handle(messages.DeleteSourcePlatformRequest, this.handleDeleteSourcePlatform.bind(this));
-		this.i.handle(messages.UnlockSourcePlatformRequest, this.handleUnlockSourcePlatform.bind(this));
+		// Cast the ARGUMENTS (never the bound method — Pitfall #26): the optional nullable platformName makes
+		// the duck-typed Request class miss Link.handle's strict overload.
+		this.i.handle(messages.UnlockSourcePlatformRequest as never, this.handleUnlockSourcePlatform.bind(this) as never);
 		// TransferStatusUpdate.color (string|null) and InstanceListPlatformsRequest's Response
 		// optionals don't line up with their handlers' declared shapes. Register them through the
 		// permissive `this.link` view (see PermissiveLink) — a BOUND method call on the object,
@@ -789,9 +791,9 @@ export class InstancePlugin extends BaseInstancePlugin {
 	/**
 	 * Handle delete source platform request
 	 */
-	async handleDeleteSourcePlatform(request: { platformIndex: number; platformName: string; forceName?: string }) {
+	async handleDeleteSourcePlatform(request: { platformIndex: number; platformName: string; forceName?: string; exportId?: string | null }) {
 		const platformIndex = coercePlatformIndex(request.platformIndex);
-		this.logger.info(`Deleting source platform: index ${platformIndex} ('${request.platformName}')`);
+		this.logger.info(`Deleting source platform: index ${platformIndex} ('${request.platformName}', export ${request.exportId ?? "—"})`);
 
 		// Fail loud on a missing/invalid index rather than coercing — the Lua delete resolves force.platforms
 		// by this index and cross-checks the name, so a bad index here would (correctly) be refused downstream.
@@ -806,6 +808,7 @@ export class InstancePlugin extends BaseInstancePlugin {
 				platformIndex,
 				String(request.platformName || ""),
 				String(request.forceName || "player"),
+				request.exportId ?? null,
 			);
 
 			const trimmedResult = result.trim();
@@ -827,7 +830,7 @@ export class InstancePlugin extends BaseInstancePlugin {
 	/**
 	 * Handle unlock source platform request (rollback)
 	 */
-	async handleUnlockSourcePlatform(request: { platformIndex: number }) {
+	async handleUnlockSourcePlatform(request: { platformIndex: number; platformName?: string }) {
 		const platformIndex = coercePlatformIndex(request.platformIndex);
 		this.logger.info(`Unlocking source platform for rollback: index ${platformIndex}`);
 
@@ -838,7 +841,9 @@ export class InstancePlugin extends BaseInstancePlugin {
 		}
 
 		try {
-			const result = await this.lua.unlockPlatform(platformIndex);
+			// platformName (when the #106 reconcile supplies it) is a name tripwire — refuse if a reused index
+			// now holds a differently-named platform.
+			const result = await this.lua.unlockPlatform(platformIndex, request.platformName);
 
 			if (result.trim() === "SUCCESS") {
 				this.logger.info(`Platform index ${platformIndex} unlocked successfully`);

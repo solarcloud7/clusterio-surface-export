@@ -824,6 +824,34 @@ listed in `FAIL_SAFE_HOOKS` (a reviewable act). Run the **`/di-change`** skill b
 gate/validation/rollback/source-delete/test-hook change — it codifies this plus the grounding / commensurate /
 two-phase-commit rules. Memory: [memory] `test-hook-mutating-must-be-fail-safe`.
 
+### 31. Platform Identity Is `surface.index` / Unique Index — NEVER the Mutable `platform.name` (CRITICAL, data-integrity + exploit)
+**Symptom**: transferring a platform that a player RENAMES mid-flight produces a DUPLICATE (two live copies on
+different instances). A malicious player can farm duplicates on demand.
+**Root cause**: `LuaSpacePlatform.name` is MUTABLE — a player can rename a platform any time from the hub GUI
+(verified: Factorio wiki, *"space platforms can later be renamed from the menus of their space platform hubs"*;
+`surface.index` and `platform.index` are the STABLE unique identifiers). The sole source-delete path
+(`delete-platform-for-transfer.lua`) keyed its identity cross-check on the name (`platform.name ~= expected` →
+refuse). On a rename mid-transfer the LIVE name no longer matched the name captured at lock time → the delete
+REFUSED → the source survived while the destination copy had already committed = two live copies. (Names also
+COLLIDE — two platforms can share one — so name-based identity can match the WRONG platform.)
+**Fix**: key EVERY transfer/lock/delete IDENTITY decision on the STABLE `surface.index` (recorded in the lock at
+lock time) or the unique `platform.index` — never `platform.name`. The delete gate reads `lock.surface_index`
+(before the best-effort unlock clears it) and compares it to the current `platform.surface.index` via the pure
+`SurfaceLock.transfer_delete_identity_ok(lock, surface)`; a rename is then correctly IGNORED (same surface ⇒ same
+platform ⇒ proceed), a released/reused lock is REFUSED. Resolve a user-supplied NAME→index ONLY at the admin
+tooling boundary, failing LOUD on ambiguity (`find_lock_key_by_name`).
+**Rule**: NAME is a display label, NEVER an identity/join key for a destructive or lock decision. Same owner rule
+as [memory] `lookup-by-unique-id-not-name` — now mechanically enforced.
+**Mechanical guard**: `npm run lint:lua` (`scripts/lint-lua-invariants.mjs`, gated in CI) — the
+`no-name-as-transfer-identity` rule fails on `platform.name`/`platform_name` used in an `==`/`~=` comparison
+within the source-delete + lock-identity spine (`delete-platform-for-transfer.lua`, `surface-lock.lua`,
+`transfer-trigger.lua`, `export-pipeline.lua`). Sanctioned name→index boundary lookups carry a
+`-- lint-lua:allow <reason>` annotation. Teeth verified: reverting the delete gate to a name comparison goes RED.
+**Key files**: `module/interfaces/remote/delete-platform-for-transfer.lua`, `module/utils/surface-lock.lua`
+(`transfer_delete_identity_ok`; the lock record stores `surface_index`), `scripts/lint-lua-invariants.mjs`.
+Behavioral teeth: the `transfer_delete_identity_ok` checks in `transfer-lock-selftest.lua` (a renamed source
+STILL deletes). Memory: [memory] `lookup-by-unique-id-not-name`.
+
 ## Factorio 2.0 Fluid API & Simulation Behavior
 
 Moved to [factorio-2.0-api-notes.md](docs/factorio-2.0-api-notes.md) — the fluid-segment model, the

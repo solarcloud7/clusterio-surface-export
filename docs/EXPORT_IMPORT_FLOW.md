@@ -27,11 +27,11 @@ pods, hides the surface from players, and captures the platform schedule.
 
 | Operation | Function | Storage key |
 |-----------|----------|-------------|
-| Lock | `SurfaceLock.lock_platform(platform, force)` | `storage.locked_platforms[platform.name]` |
-| Unlock | `SurfaceLock.unlock_platform(platform_name)` | (removes the same entry) |
-| Check | `SurfaceLock.is_locked(platform_name)` | — |
+| Lock | `SurfaceLock.lock_platform(platform, force, transfer_opts?)` | `storage.locked_platforms[platform.index]` (unique index, NOT name) |
+| Unlock | `SurfaceLock.unlock_platform(platform_index, expected_name?)` | (removes the same entry; `expected_name` is a display tripwire only) |
+| Check | `SurfaceLock.is_locked(platform_index)` | — |
 | Activate after validation | `SurfaceLock.activate_all(surface)` | — |
-| Clean up stale locks | `SurfaceLock.cleanup_stale_locks(max_age_ticks)` | — |
+| Transfer-lock expiry (source-side TTL) | `SurfaceLock.scan_transfer_expiries()` (on_tick, `%60`) | auto-unlocks expired `kind="transfer"` locks |
 
 `lock_platform` returns `false` with `"Platform already locked"` if the platform is
 already locked. The lock record stores `frozen_states` (entity id → original active

@@ -36,6 +36,7 @@ import * as messages from "./messages";
 import { normalizeExportMetrics, getErrorMessage, generateOperationId, TICKS_TO_MS, STORAGE_FILENAME, buildPayloadMetrics, buildImportMetrics } from "./helpers";
 
 const PLUGIN_NAME = "surface_export";
+export const PENDING_TRANSFER_INTENT_RETENTION_MS = 15 * 60 * 1000;
 
 export class ControllerPlugin extends BaseControllerPlugin {
 	private get c(): Controller { return this.controller; }
@@ -66,6 +67,9 @@ export class ControllerPlugin extends BaseControllerPlugin {
 	 * so each source instance owns its own gateway config. Persisted. */
 	gatewayLinks!: Map<string, messages.GatewayLink[]>;
 	gatewayConfigPath!: string;
+	/** Transfers persisted while awaiting_validation for observability and future Phase 2 re-adoption. */
+	pendingTransfers!: Map<string, messages.PendingTransferIntent>;
+	pendingTransfersPath!: string;
 
 	async init() {
 		this.logger.info("Surface Export controller plugin initializing...");
@@ -95,6 +99,11 @@ export class ControllerPlugin extends BaseControllerPlugin {
 			String(this.c.config.get("controller.database_directory")),
 			"surface_export_gateways.json",
 		);
+		this.pendingTransfers = new Map();
+		this.pendingTransfersPath = path.resolve(
+			String(this.c.config.get("controller.database_directory")),
+			"surface_export_pending_transfers.json",
+		);
 
 		// Instantiate modules (order matters: txLogger before subscriptions,
 		// platformTree before orchestrator)
@@ -106,6 +115,7 @@ export class ControllerPlugin extends BaseControllerPlugin {
 		await this.loadStorage();
 		await this.txLogger.loadTransactionLogs();
 		await this.loadGatewayConfig();
+		await this.loadPendingTransfers();
 
 		// Register message handlers
 		this.c.handle(messages.PlatformExportEvent, this.handlePlatformExport.bind(this));
@@ -132,6 +142,10 @@ export class ControllerPlugin extends BaseControllerPlugin {
 	async onStart() {
 		this.logger.info("Controller started - Surface Export plugin ready");
 		this.logger.info(`Current storage: ${this.platformStorage.size} platforms`);
+		await this.prunePendingTransfers();
+		if (this.pendingTransfers.size > 0) {
+			this.logger.warn(`${this.pendingTransfers.size} transfer(s) were awaiting validation at shutdown. Phase 1 recovery is source-side TTL unlock; controller will not auto-delete or auto-unlock on boot.`);
+		}
 	}
 
 	async onShutdown() {
@@ -684,6 +698,82 @@ export class ControllerPlugin extends BaseControllerPlugin {
 			await lib.safeOutputFile(this.gatewayConfigPath, payload);
 		} catch (err: unknown) {
 			this.logger.error(`Failed to persist gateway config: ${getErrorMessage(err)}`);
+		}
+	}
+
+	// ── #106 Phase-1 restart observability ──────────────────────────────────
+	// A transfer awaiting validation lives only in memory (activeTransfers + the validation timeout), so a
+	// controller restart used to strand its source platform locked-and-hidden. Phase 1 moves recovery into the
+	// source save: transfer locks expire by game tick and auto-UNLOCK there. The controller keeps pending intents
+	// only as bounded observability/future Phase-2 re-adoption state; it never auto-deletes or auto-unlocks on boot.
+
+	async loadPendingTransfers() {
+		try {
+			const content = await fs.readFile(this.pendingTransfersPath, "utf8");
+			const entries = JSON.parse(content);
+			if (Array.isArray(entries)) {
+				for (const e of entries) {
+					if (e && typeof e.transferId === "string") {
+						this.pendingTransfers.set(e.transferId, e as messages.PendingTransferIntent);
+					}
+				}
+			}
+			await this.prunePendingTransfers();
+			if (this.pendingTransfers.size > 0) {
+				this.logger.info(`Loaded ${this.pendingTransfers.size} pending transfer intent(s) from disk`);
+			}
+		} catch (err: unknown) {
+			const code = (err as { code?: string }).code;
+			if (code === "ENOENT") {
+				return;
+			}
+			this.logger.error(`Failed to load pending transfers: ${getErrorMessage(err)}`);
+		}
+	}
+
+	async persistPendingTransfers() {
+		try {
+			const payload = JSON.stringify(Array.from(this.pendingTransfers.values()), null, 2);
+			await lib.safeOutputFile(this.pendingTransfersPath, payload);
+		} catch (err: unknown) {
+			this.logger.error(`Failed to persist pending transfers: ${getErrorMessage(err)}`);
+		}
+	}
+
+	/** Orchestrator hook — a transfer entered awaiting_validation; persist for observability and future Phase 2
+	 *  re-adoption. Phase 1 recovery is source-side TTL unlock; the controller never auto-acts on boot. */
+	persistPendingTransfer(intent: messages.PendingTransferIntent): void {
+		this.prunePendingTransfersInMemory();
+		this.pendingTransfers.set(intent.transferId, intent);
+		void this.persistPendingTransfers();
+	}
+
+	/** Bound the observability-only pending intent store. Phase 1 source recovery is authoritative in Lua. */
+	async prunePendingTransfers(now = Date.now()): Promise<number> {
+		const pruned = this.prunePendingTransfersInMemory(now);
+		if (pruned > 0) {
+			this.logger.info(`Pruned ${pruned} stale pending transfer intent(s); Phase 1 recovery is source-side TTL unlock`);
+			await this.persistPendingTransfers();
+		}
+		return pruned;
+	}
+
+	private prunePendingTransfersInMemory(now = Date.now()): number {
+		let pruned = 0;
+		for (const [transferId, intent] of this.pendingTransfers) {
+			const startedAt = Number(intent.startedAt);
+			if (!Number.isFinite(startedAt) || now - startedAt > PENDING_TRANSFER_INTENT_RETENTION_MS) {
+				this.pendingTransfers.delete(transferId);
+				pruned++;
+			}
+		}
+		return pruned;
+	}
+
+	/** Drop an intent from the persisted set after normal terminal resolution. */
+	removePendingTransfer(transferId: string): void {
+		if (this.pendingTransfers.delete(transferId)) {
+			void this.persistPendingTransfers();
 		}
 	}
 

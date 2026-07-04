@@ -48,11 +48,25 @@ items restore post-activation), never a mid-process snapshot; an ambiguous `Sess
 **possibly-delivered** — do NOT unlock (that duplicates). When in doubt, a recoverable stuck-lock beats an
 unrecoverable duplication. (memories: `validation-timing-trilemma`, `held-item-loss-is-dest-force-research`.)
 
-## 6. Run `/code-review` before merging.
+## 6. Run `/code-review` — at AUTHORING time, not just before merge.
 Non-negotiable for these paths. It has caught what manual review + the author missed (the `sendTo` unbound
-method, `test_force_entity_loss`, the mislabeled tightening). Present the findings; fix or consciously
-accept-and-document each. Use Opus for the adjudication tier — do not route merge-gating review to a smaller
-model.
+method, `test_force_entity_loss`, the mislabeled tightening, and #106: **16 defects across 3 passes, ALL in the
+stateful integration, none in the exhaustively-tested pure core**). Writing a source-delete/rollback/gate/
+reconcile path is NOT "done" until this ran — do not self-declare "verified" on the strength of pure-core tests
+first. Present the findings; fix or consciously accept-and-document each. Use Opus for the adjudication tier —
+do not route merge-gating review to a smaller model.
+
+Two failure classes #106 kept reproducing — check for them explicitly (memory: `verified-the-easy-part`):
+- **Equivalence-diff a mirrored path.** When a new path must behave like an existing proven one
+  (`reconcile-complete` ≡ `handleValidationSuccess`), enumerate the proven path's side effects and confirm the
+  new one does EACH or consciously skips it — export-delete, txLogger entries, benign-error guards, and name
+  tripwires all got silently dropped. BETTER: extract the shared logic into ONE helper both call, so there is
+  no parity to maintain.
+- **Lifecycle-trace** every loop / state var / terminal transition: first pass, Nth pass, after-an-admin-
+  intervenes, concurrent-with-the-normal-flow, across-restart, AND the error/rejection branch (not just the
+  resolved-false branch). Green on the pure core ≠ the feature is verified. If a review keeps finding
+  parity/lifecycle bugs in a hand-rolled stateful path, STOP patching — the design is reimplementation instead
+  of reuse.
 
 ## 7. Owner hygiene
 - Ship as a focused PR; **omit** the `Claude-Session:` trailer and the session URL (owner rule).
@@ -71,5 +85,5 @@ node tools/run-integration-tests.mjs --only 'gate-detects-loss|force-bonus-sync|
 ## Reference
 Related discipline memories (all in the project memory): `data-integrity-test-grounding`,
 `test-hook-mutating-must-be-fail-safe`, `check-commensurate-not-redundant`, `validation-timing-trilemma`,
-`held-items-non-conserved-test-the-total`. CLAUDE.md Pitfalls #15, #16, #28, #29, #30. The `/repro-transfer`
+`held-items-non-conserved-test-the-total`, `verified-the-easy-part`. CLAUDE.md Pitfalls #15, #16, #28, #29, #30. The `/repro-transfer`
 skill reproduces a transfer end-to-end locally to exercise a change.

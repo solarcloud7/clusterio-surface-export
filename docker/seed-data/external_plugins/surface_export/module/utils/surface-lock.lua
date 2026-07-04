@@ -7,6 +7,10 @@ local PlatformSchedule = require("modules/surface_export/utils/platform-schedule
 local SurfaceLock = {}
 
 local ACTIVATABLE_ENTITY_TYPES = GameUtils.ACTIVATABLE_ENTITY_TYPES
+local DEFAULT_TRANSFER_LOCK_TTL_TICKS = 36000 -- 10 minutes at 60 UPS
+local MIN_WORST_CASE_TRANSFER_TTL_TICKS = 36000 -- export + RCON transmit + import + validation + margin
+SurfaceLock.DEFAULT_TRANSFER_LOCK_TTL_TICKS = DEFAULT_TRANSFER_LOCK_TTL_TICKS
+SurfaceLock.MIN_WORST_CASE_TRANSFER_TTL_TICKS = MIN_WORST_CASE_TRANSFER_TTL_TICKS
 
 --- Freeze all entities on a surface (synchronous - very fast)
 --- CRITICAL: This captures the ORIGINAL active state BEFORE freezing.
@@ -113,6 +117,39 @@ function SurfaceLock.activate_all(surface)
     return activated_count
 end
 
+--- Recover a cargo pod's loaded cargo (its cargo_unit inventory) so NOTHING is lost when the pod is destroyed:
+--- insert what fits into the hub, and SPILL any remainder onto the surface. Item-on-ground is scanned/exported
+--- with the platform, so even a FULL hub (or a missing hub) is still zero-loss. Nil-safe. Returns the count
+--- recovered into the hub (spilled items are also preserved, just on the ground).
+--- @param pod LuaEntity: the cargo pod
+--- @param hub LuaEntity|nil: the platform hub (may be nil/invalid)
+--- @param surface LuaSurface: the platform surface (spill target)
+--- @return number: items recovered into the hub
+local function recover_pod_cargo_to_hub_and_spill(pod, hub, surface)
+    local inventory = pod.get_inventory(defines.inventory.cargo_unit)
+    if not inventory then return 0 end
+    local hub_inventory = (hub and hub.valid) and hub.get_inventory(defines.inventory.hub_main) or nil
+    local recovered = 0
+    for i = 1, #inventory do
+        local stack = inventory[i]
+        if stack.valid_for_read then
+            local inserted = hub_inventory and hub_inventory.insert(stack) or 0
+            recovered = recovered + inserted
+            local remainder = stack.count - inserted
+            if remainder > 0 then
+                -- Hub full (or absent): spill the rest onto the platform so it exports with the surface — no loss.
+                GameUtils.pcall_warn(string.format("[SurfaceLock] cargo recovery spill %d %s (hub full/absent)", remainder, stack.name), function()
+                    surface.spill_item_stack({
+                        position = pod.position,
+                        stack = { name = stack.name, count = remainder, quality = stack.quality and stack.quality.name or nil },
+                    })
+                end)
+            end
+        end
+    end
+    return recovered
+end
+
 --- Complete all in-flight cargo pod transfers immediately
 --- Descending pods: Add items to hub inventory, then force finish
 --- Ascending pods: Force finish (items are already "sent")
@@ -158,7 +195,10 @@ local function complete_cargo_pods(surface, hub)
                 ascending_count = ascending_count + 1
                 
             elseif state == "awaiting_launch" then
-                -- Pod waiting to launch - destroy it, items stay in origin
+                -- Pod loaded but not yet launched — its cargo_unit may hold items, and a bare destroy() would
+                -- DELETE them. Recover them (into the hub; overflow spilled to the surface — both export with the
+                -- platform) BEFORE destroy → ZERO loss even when the hub is full. (Engineering FAQ / re-audit P2.)
+                items_recovered = items_recovered + recover_pod_cargo_to_hub_and_spill(pod, hub, surface)
                 pod.destroy()
             end
         end
@@ -204,12 +244,26 @@ function SurfaceLock.ensure_index_keyed()
     return moved, dropped
 end
 
---- Lock a platform surface for transfer
+--- Pure: is an incoming transfer lock the SAME transfer as the existing transfer lock at this index (so its
+--- pre-lock→export-queue backfill may proceed), or a DIFFERENT/second transfer (which must be rejected so it
+--- cannot OVERWRITE the first transfer's correlation token)? Same iff the existing token is unset — the initial
+--- transfer-trigger → export-pipeline handoff, where only export-pipeline carries the job_id — or equals the
+--- incoming one. This is the UNIVERSAL guard: it protects EVERY entry path (the in-game trigger AND the web/ctl
+--- export_platform route), because all of them lock through lock_platform. Pure → unit-testable.
+--- @param existing_job_id string|nil  the existing lock's transfer_job_id
+--- @param opts_job_id string|nil  the incoming transfer_opts.job_id
+--- @return boolean same
+function SurfaceLock.is_same_transfer_upgrade(existing_job_id, opts_job_id)
+    return existing_job_id == nil or existing_job_id == opts_job_id
+end
+
+--- Lock a platform surface for export/transfer
 --- Completes cargo pod transfers, freezes entities, hides surface
 --- @param platform LuaSpacePlatform: The platform to lock
 --- @param force LuaForce: The force that owns the platform
+--- @param transfer_opts table|nil: Optional {job_id, expires_tick} for transfer locks only
 --- @return boolean, string|nil: success, error_message
-function SurfaceLock.lock_platform(platform, force)
+function SurfaceLock.lock_platform(platform, force, transfer_opts)
     if not platform or not platform.valid then
         return false, "Platform not valid"
     end
@@ -229,7 +283,32 @@ function SurfaceLock.lock_platform(platform, force)
 
     -- Check if already locked. Keyed by the UNIQUE platform.index (not the mutable, non-unique name) so
     -- two same-named platforms can't collide in the registry (#81). Name is kept inside lock_data for display.
-    if storage.locked_platforms[platform.index] then
+    local existing_lock = storage.locked_platforms[platform.index]
+    if existing_lock then
+        -- Same-transfer re-lock (backfill): identity is surface.index (stable across a rename), NOT the mutable
+        -- platform.name. The registry is already keyed by the unique platform.index; surface.index additionally
+        -- rejects an index REUSED by a different platform (its surface differs) → that falls through to the
+        -- "different transfer lock" refusal below. A rename keeps surface.index, so a renamed source re-locks fine.
+        if transfer_opts and existing_lock.kind == "transfer"
+            and existing_lock.surface_index == surface.index then
+            -- Only the SAME transfer's pre-lock→export-queue handoff may upgrade this lock: its token is either
+            -- not stamped yet (transfer-trigger locked first, no job_id) or equal. A DIFFERENT token — or, for a
+            -- token-less caller, ANY existing token — means a SECOND transfer of an in-flight platform. REJECT it,
+            -- else it OVERWRITES the first transfer's correlation token → the first transfer's source delete then
+            -- refuses (job_id mismatch) AFTER its destination committed = a live-source + committed-dest DUP.
+            if not SurfaceLock.is_same_transfer_upgrade(existing_lock.transfer_job_id, transfer_opts.job_id) then
+                return false, "Platform already locked by a different in-flight transfer"
+            end
+            existing_lock.transfer_job_id = transfer_opts.job_id or existing_lock.transfer_job_id
+            existing_lock.expires_tick = transfer_opts.expires_tick or existing_lock.expires_tick
+            return true, nil -- same transfer lock upgraded
+        end
+        if transfer_opts and existing_lock.kind == "transfer" then
+            return false, "Platform already locked by a different transfer lock"
+        end
+        if transfer_opts and existing_lock.kind ~= "transfer" then
+            return false, "Platform already locked by a non-transfer lock"
+        end
         return false, "Platform already locked"
     end
 
@@ -264,6 +343,9 @@ function SurfaceLock.lock_platform(platform, force)
         original_hidden = original_hidden,
         original_schedule = original_schedule,
         locked_tick = game.tick,
+        kind = transfer_opts and "transfer" or nil,
+        transfer_job_id = transfer_opts and transfer_opts.job_id or nil,
+        expires_tick = transfer_opts and transfer_opts.expires_tick or nil,
         frozen_states = frozen_states,
         frozen_count = frozen_count,
     }
@@ -277,7 +359,12 @@ end
 --- Unlock a platform surface (restore original state and unfreeze entities)
 --- @param platform_index number: Unique index of the platform to unlock (the registry key)
 --- @return boolean, string|nil: success, error_message
-function SurfaceLock.unlock_platform(platform_index)
+--- @param platform_index number
+--- @param expected_name string|nil When provided, a NAME TRIPWIRE: refuse if the lock at this index is for a
+---        DIFFERENTLY-named platform. The surface.index tripwire below only validates lock-data-vs-current
+---        platform; it does NOT catch a per-force index REUSED by an unrelated transfer's (valid) lock, so a
+---        stale caller must also assert the name, mirroring the delete path.
+function SurfaceLock.unlock_platform(platform_index, expected_name)
     if not storage.locked_platforms then
         return false, "No locked platforms"
     end
@@ -287,6 +374,10 @@ function SurfaceLock.unlock_platform(platform_index)
         return false, "Platform not locked: index " .. tostring(platform_index)
     end
     local platform_name = lock_data.platform_name  -- display only
+    if expected_name ~= nil and platform_name ~= expected_name then -- lint-lua:allow compares STORED snapshots (lock_data name vs caller expectation), not the live platform.name — not rename-vulnerable; surface.index is the primary identity at the tripwire below. Collision-residual follow-up: pass expected_surface_index.
+        return false, string.format("Unlock refused: index %s is locked for a DIFFERENT platform (expected '%s', locked '%s')",
+            tostring(platform_index), tostring(expected_name), tostring(platform_name))
+    end
 
     -- Find the platform
     local force = game.forces[lock_data.force_name]
@@ -355,6 +446,38 @@ function SurfaceLock.get_lock_data(platform_index)
     return storage.locked_platforms[platform_index]
 end
 
+--- Pure identity check for the source-delete-for-transfer precondition (Pitfall #31 — identity = surface.index,
+--- NEVER platform.name). Given the stored lock record (captured BEFORE any unlock, since unlock clears it) and
+--- the CURRENT surface at that platform index, decide whether it is safe to delete the source:
+---   (1) the source must still be locked-for-transfer  — lock present with kind=="transfer" (a source released
+---       by the TTL/admin is LIVE again and must NOT be deleted), AND
+---   (2) the current platform must be the SAME one we locked — surface.index matches the lock's stored
+---       surface_index. surface.index is stable across a player rename, so a rename is correctly IGNORED; a
+---       per-force index REUSED by a different platform has a different surface → rejected.
+--- Pure (no storage/game access) so it is unit-testable with fake records — see transfer-lock-selftest.
+--- @param lock table|nil  the lock record (storage.locked_platforms[index])
+--- @param current_surface LuaSurface|nil  the surface of the platform now at that index
+--- @param expected_job_id string|nil  the delete request's transfer id (== the lock's transfer_job_id) — a
+---        NAME-FREE request-vs-lock correlation. When both sides are present they MUST match.
+--- @return boolean ok, string|nil reason
+function SurfaceLock.transfer_delete_identity_ok(lock, current_surface, expected_job_id)
+    if not lock or lock.kind ~= "transfer" then
+        return false, "source is not locked-for-transfer (released by TTL/admin, or never locked)"
+    end
+    -- Request-vs-lock correlation (NAME-FREE): a stale/duplicate/reused-index delete request for a DIFFERENT
+    -- transfer will not match this lock's transfer_job_id, so the caller refuses WITHOUT touching the unrelated
+    -- transfer's lock or platform. Nil-guarded: an old-save lock or a caller without a job id degrades to the
+    -- surface.index check (no worse than before; real transfers always carry both).
+    if expected_job_id and lock.transfer_job_id and lock.transfer_job_id ~= expected_job_id then
+        return false, string.format("lock belongs to a different transfer (job_id '%s' != requested '%s')",
+            tostring(lock.transfer_job_id), tostring(expected_job_id))
+    end
+    if not (current_surface and current_surface.valid and current_surface.index == lock.surface_index) then
+        return false, "surface identity mismatch (index reused since lock?)"
+    end
+    return true, nil
+end
+
 --- Resolve a user-supplied platform NAME to the registry key (unique index). For ADMIN-RECOVERY commands
 --- ONLY (the transfer spine always has the index) — e.g. unlocking an orphaned lock whose platform was
 --- deleted. Scans the registry by stored display name and FAILS LOUD on ambiguity (≥2 locks share the
@@ -367,7 +490,7 @@ function SurfaceLock.find_lock_key_by_name(platform_name)
     end
     local found, count = nil, 0
     for idx, lock_data in pairs(storage.locked_platforms) do
-        if lock_data.platform_name == platform_name then
+        if lock_data.platform_name == platform_name then -- lint-lua:allow sanctioned name→index resolver at the ADMIN tooling boundary (fails loud on ambiguity below) — the owner-approved exception to "identity = surface.index"
             found = idx
             count = count + 1
         end
@@ -378,36 +501,35 @@ function SurfaceLock.find_lock_key_by_name(platform_name)
     return found, nil
 end
 
---- Clean up stale locks (platforms that no longer exist or are too old)
---- @param max_age_ticks number: Maximum age in ticks before considering a lock stale
-function SurfaceLock.cleanup_stale_locks(max_age_ticks)
+--- Scan transfer locks for durable tick-based expiry. Only transfer locks are touched.
+--- Manual/admin locks and old-save locks without enough timing data are skipped.
+--- @return table summary
+function SurfaceLock.scan_transfer_expiries()
     if not storage.locked_platforms then
-        return
+        return { checked = 0, expired = 0, skipped = 0 }
     end
 
-    max_age_ticks = max_age_ticks or 36000  -- Default: 10 minutes at 60 UPS
+    local checked, expired, skipped = 0, 0, 0
 
     for platform_index, lock_data in pairs(storage.locked_platforms) do
-        local age = game.tick - lock_data.locked_tick
-
-        -- Check if platform still exists (cross-check the stored display name to catch a reused index)
-        local force = game.forces[lock_data.force_name]
-        local platform_exists = false
-
-        if force then
-            local platform = force.platforms[lock_data.platform_index]
-            if platform and platform.valid and platform.name == lock_data.platform_name then
-                platform_exists = true
+        if type(lock_data) == "table" and lock_data.kind == "transfer" then
+            checked = checked + 1
+            local locked_tick = lock_data.locked_tick
+            if not locked_tick then
+                skipped = skipped + 1 -- skip old-save locks without enough timing data
+            else
+                local expires_tick = lock_data.expires_tick or (locked_tick + DEFAULT_TRANSFER_LOCK_TTL_TICKS)
+                if game.tick >= expires_tick then
+                    expired = expired + 1
+                    log(string.format("[SurfaceLock] Transfer lock expired: '%s' (index %s, locked_tick=%s, expires_tick=%s)",
+                        tostring(lock_data.platform_name), tostring(platform_index), tostring(locked_tick), tostring(expires_tick)))
+                    SurfaceLock.unlock_platform(platform_index, lock_data.platform_name)
+                end
             end
         end
-
-        -- Remove stale lock
-        if not platform_exists or age > max_age_ticks then
-            log(string.format("[SurfaceLock] Removing stale lock: '%s' (index %s, age: %d ticks, exists: %s)",
-                tostring(lock_data.platform_name), tostring(platform_index), age, tostring(platform_exists)))
-            SurfaceLock.unlock_platform(platform_index)
-        end
     end
+
+    return { checked = checked, expired = expired, skipped = skipped }
 end
 
 return SurfaceLock

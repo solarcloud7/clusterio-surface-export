@@ -78,6 +78,9 @@ SurfaceExportModule.events = {
 	-- Process async import/export jobs every tick
 	[e.on_tick] = function()
 		AsyncProcessor.process_tick()
+		if game.tick % 60 == 0 then
+			SurfaceLock.scan_transfer_expiries()
+		end
 	end,
 
 	-- Clusterio custom events
