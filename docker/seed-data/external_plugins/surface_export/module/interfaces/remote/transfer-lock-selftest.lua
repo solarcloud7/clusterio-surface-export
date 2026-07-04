@@ -101,6 +101,28 @@ local function transfer_lock_selftest()
 		details[#details + 1] = { name = "selftest_exception", ok = false, msg = tostring(err) }
 	end
 
+-- Pitfall #31 — the source-delete identity gate keys on surface.index, NEVER platform.name. Exercise the pure
+	-- SurfaceLock.transfer_delete_identity_ok directly (no storage/game state needed).
+	local function fake_surface(index, valid) return { index = index, valid = valid ~= false } end
+	check("delete_identity_same_surface_ok",
+		SurfaceLock.transfer_delete_identity_ok({ kind = "transfer", surface_index = 7 }, fake_surface(7)) == true,
+		"a locked transfer whose surface.index still matches must be deletable")
+	check("delete_identity_ignores_rename",
+		SurfaceLock.transfer_delete_identity_ok({ kind = "transfer", surface_index = 7, platform_name = "OLD" }, fake_surface(7)) == true,
+		"a RENAMED source (same surface.index, different name) must STILL delete — closes the rename dup exploit")
+	check("delete_identity_refuses_released",
+		SurfaceLock.transfer_delete_identity_ok(nil, fake_surface(7)) == false,
+		"a released/absent lock (TTL/admin unlocked) must REFUSE the delete — the source is live")
+	check("delete_identity_refuses_non_transfer_lock",
+		SurfaceLock.transfer_delete_identity_ok({ surface_index = 7 }, fake_surface(7)) == false,
+		"a non-transfer (kind-less) lock must REFUSE the transfer delete")
+	check("delete_identity_refuses_reused_index",
+		SurfaceLock.transfer_delete_identity_ok({ kind = "transfer", surface_index = 7 }, fake_surface(9)) == false,
+		"a DIFFERENT surface.index at the index (reuse) must REFUSE the delete")
+	check("delete_identity_refuses_invalid_surface",
+		SurfaceLock.transfer_delete_identity_ok({ kind = "transfer", surface_index = 7 }, fake_surface(7, false)) == false,
+		"an invalid current surface must REFUSE the delete")
+
 	return { passed = passed, failed = failed, total = passed + failed, details = details }
 end
 

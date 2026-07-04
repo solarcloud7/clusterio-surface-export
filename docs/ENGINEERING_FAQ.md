@@ -23,11 +23,12 @@ unless a validated copy exists on the destination AND the source is still the fr
 forced to choose, a **recoverable dup or stuck-lock always beats an unrecoverable deletion.**
 
 ## Open items needing a human-engineer decision (the "we don't have an answer" list)
-- ⚠️ **Cargo-pod `awaiting_launch` item loss** (§D) — the one real *unresolved* data-loss path.
-- ❓ **Can a hidden/frozen platform be renamed mid-transfer?** (§B) — needs a ~2-minute live test; the answer
-  decides whether R9's rename-robustness is load-bearing or belt-and-suspenders.
-- 🔧 **Export/file-lock strand policy** (§G) — accept manual-unlock recovery, or give transient export locks
-  their own TTL?
+- 🔧 **Export/file-lock strand policy** (§G) — a save taken while an export lock is held would restore locked;
+  give transient export locks their own expiring kind, or accept manual `/unlock-platform`? Deferred (owner)
+  until the identifier gate + the other re-audit fixes land.
+
+*Resolved since first draft:* cargo-pod `awaiting_launch` loss → **fixed** zero-loss (§D); rename-mid-transfer →
+**confirmed a real duplication exploit + fixed** via `surface.index` identity, lint-enforced (§B, Pitfall #31).
 
 ---
 
@@ -58,9 +59,11 @@ backfill returns success) → dup. **Planned (R1):** transfer-trigger refuses if
 backstopped by R9).
 
 **Q: What if I rename my platform (Space Platforms GUI) while it's transferring?**
-A: 🔧 / ❓ Today the delete path cross-checks the mutable *name* and would **refuse** to delete the renamed source
-→ dup. **Planned (R9):** key the delete's identity on the stable `surface.index` (a rename keeps it). ❓ Whether a
-hidden+frozen platform can even be renamed in-GUI is **unverified** — needs a live test.
+A: ✅ Handled — and it was a real **duplication exploit**: renaming mid-transfer made the old name-based delete
+check refuse the delete → source survived + dest committed = two copies. Renaming is a standard hub-GUI action
+(wiki-confirmed). The transfer/delete identity now keys on the STABLE `surface.index` (never the mutable name), so
+a rename is correctly IGNORED — same surface ⇒ same platform ⇒ the delete proceeds. Enforced by `lint:lua`
+(Pitfall #31). Fixed 2026-07-04.
 
 **Q: What if a platform index is reused by a new platform during my transfer?**
 A: ✅ The name tripwire (and, post-R9, `surface.index`) refuses to unlock/delete the wrong platform — a
@@ -105,10 +108,10 @@ A: ✅ Their items/fluids are tallied as failed-entity-loss and subtracted from 
 not falsely failed; each failure is logged per entity (Pitfall #20).
 
 **Q: What if I have cargo pods waiting to launch (`awaiting_launch`) when I transfer?**
-A: ⚠️ **OPEN — human call.** `complete_cargo_pods` currently `pod.destroy()`s them ("items stay in origin"); if
-items were already loaded into the pod's `cargo_unit` inventory, `destroy()` deletes them = potential loss
-(pre-existing; not introduced by #106). **Not handled.** Decision needed: recover the pod inventory into the hub
-before destroy (mirroring the descending-pod path)?
+A: ✅ Zero loss. `complete_cargo_pods` (during the lock step, before the export scan) now recovers the pod's
+loaded `cargo_unit` inventory into the hub, THEN destroys the pod — so the items stay on the platform (in the hub)
+and transfer with it. (Fixed 2026-07-04, mirroring the descending-pod recovery path. Previously a bare
+`pod.destroy()` deleted any already-loaded items.)
 
 ## E. Passengers
 
@@ -135,9 +138,12 @@ A: ✅ `/unlock-platform <index>` frees it immediately.
 ## G. Non-transfer export / import
 
 **Q: What if I export a platform to a file and the server crashes mid-export?**
-A: 🔧 The export lock is kind-less → no TTL → the platform strands frozen until a manual `/unlock-platform`
-(Gemini #2). No data loss (export deletes nothing). Follow-up: give transient export locks their own expiring
-kind.
+A: ✅ Mostly a non-issue. A crash rolls the instance back to its **last valid save**, where the platform is in a
+good state (the in-flight export simply didn't happen — just re-run it); export deletes nothing. ⚠️ The real, and
+narrower, "what if" is a save taken **while the platform is locked** (frozen+hidden): it would restore locked, and
+an export lock is currently kind-less → no TTL → it needs a manual `/unlock-platform`. **OPEN, deferred** (owner)
+until the identifier gate + other fixes land — likely resolved by giving transient export locks their own
+expiring kind (Gemini #2 follow-up).
 
 **Q: What if I import the same export JSON twice?**
 A: ✅ You get two platforms — import is not deduped, by design. Caveat: a stranded-then-committed transfer's export

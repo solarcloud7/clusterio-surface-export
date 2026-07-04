@@ -162,7 +162,27 @@ local function complete_cargo_pods(surface, hub)
                 ascending_count = ascending_count + 1
                 
             elseif state == "awaiting_launch" then
-                -- Pod waiting to launch - destroy it, items stay in origin
+                -- Pod loaded but not yet launched. It may ALREADY hold items in its cargo_unit inventory, and a
+                -- bare destroy() would DELETE them (data loss — Engineering FAQ: awaiting_launch cargo pods).
+                -- Recover them into the hub FIRST (mirrors the descending branch), then destroy → zero-loss; the
+                -- items then stay on the platform (in the hub) and transfer with it.
+                local inventory = pod.get_inventory(defines.inventory.cargo_unit)
+                if inventory and hub and hub.valid then
+                    local hub_inventory = hub.get_inventory(defines.inventory.hub_main)
+                    if hub_inventory then
+                        for i = 1, #inventory do
+                            local stack = inventory[i]
+                            if stack.valid_for_read then
+                                local inserted = hub_inventory.insert(stack)
+                                items_recovered = items_recovered + inserted
+                                if inserted < stack.count then
+                                    log(string.format("[SurfaceLock] Warning: awaiting_launch pod — recovered only %d/%d of %s into hub",
+                                        inserted, stack.count, stack.name))
+                                end
+                            end
+                        end
+                    end
+                end
                 pod.destroy()
             end
         end
@@ -236,8 +256,11 @@ function SurfaceLock.lock_platform(platform, force, transfer_opts)
     -- two same-named platforms can't collide in the registry (#81). Name is kept inside lock_data for display.
     local existing_lock = storage.locked_platforms[platform.index]
     if existing_lock then
+        -- Same-transfer re-lock (backfill): identity is surface.index (stable across a rename), NOT the mutable
+        -- platform.name. The registry is already keyed by the unique platform.index; surface.index additionally
+        -- rejects an index REUSED by a different platform (its surface differs) → that falls through to the
+        -- "different transfer lock" refusal below. A rename keeps surface.index, so a renamed source re-locks fine.
         if transfer_opts and existing_lock.kind == "transfer"
-            and existing_lock.platform_name == platform.name
             and existing_lock.surface_index == surface.index then
             existing_lock.transfer_job_id = transfer_opts.job_id or existing_lock.transfer_job_id
             existing_lock.expires_tick = transfer_opts.expires_tick or existing_lock.expires_tick
@@ -314,7 +337,7 @@ function SurfaceLock.unlock_platform(platform_index, expected_name)
         return false, "Platform not locked: index " .. tostring(platform_index)
     end
     local platform_name = lock_data.platform_name  -- display only
-    if expected_name ~= nil and platform_name ~= expected_name then
+    if expected_name ~= nil and platform_name ~= expected_name then -- lint-lua:allow compares STORED snapshots (lock_data name vs caller expectation), not the live platform.name — not rename-vulnerable; surface.index is the primary identity at the tripwire below. Collision-residual follow-up: pass expected_surface_index.
         return false, string.format("Unlock refused: index %s is locked for a DIFFERENT platform (expected '%s', locked '%s')",
             tostring(platform_index), tostring(expected_name), tostring(platform_name))
     end
@@ -386,6 +409,28 @@ function SurfaceLock.get_lock_data(platform_index)
     return storage.locked_platforms[platform_index]
 end
 
+--- Pure identity check for the source-delete-for-transfer precondition (Pitfall #31 — identity = surface.index,
+--- NEVER platform.name). Given the stored lock record (captured BEFORE any unlock, since unlock clears it) and
+--- the CURRENT surface at that platform index, decide whether it is safe to delete the source:
+---   (1) the source must still be locked-for-transfer  — lock present with kind=="transfer" (a source released
+---       by the TTL/admin is LIVE again and must NOT be deleted), AND
+---   (2) the current platform must be the SAME one we locked — surface.index matches the lock's stored
+---       surface_index. surface.index is stable across a player rename, so a rename is correctly IGNORED; a
+---       per-force index REUSED by a different platform has a different surface → rejected.
+--- Pure (no storage/game access) so it is unit-testable with fake records — see transfer-lock-selftest.
+--- @param lock table|nil  the lock record (storage.locked_platforms[index])
+--- @param current_surface LuaSurface|nil  the surface of the platform now at that index
+--- @return boolean ok, string|nil reason
+function SurfaceLock.transfer_delete_identity_ok(lock, current_surface)
+    if not lock or lock.kind ~= "transfer" then
+        return false, "source is not locked-for-transfer (released by TTL/admin, or never locked)"
+    end
+    if not (current_surface and current_surface.valid and current_surface.index == lock.surface_index) then
+        return false, "surface identity mismatch (index reused since lock?)"
+    end
+    return true, nil
+end
+
 --- Resolve a user-supplied platform NAME to the registry key (unique index). For ADMIN-RECOVERY commands
 --- ONLY (the transfer spine always has the index) — e.g. unlocking an orphaned lock whose platform was
 --- deleted. Scans the registry by stored display name and FAILS LOUD on ambiguity (≥2 locks share the
@@ -398,7 +443,7 @@ function SurfaceLock.find_lock_key_by_name(platform_name)
     end
     local found, count = nil, 0
     for idx, lock_data in pairs(storage.locked_platforms) do
-        if lock_data.platform_name == platform_name then
+        if lock_data.platform_name == platform_name then -- lint-lua:allow sanctioned name→index resolver at the ADMIN tooling boundary (fails loud on ambiguity below) — the owner-approved exception to "identity = surface.index"
             found = idx
             count = count + 1
         end
