@@ -53,6 +53,35 @@ function stripComments(src) {
 		.join("\n");
 }
 
+// Extract the bodies of all `finally { ... }` and `trap { ... }` blocks (brace-matched, nesting-aware) so we can
+// check that a hook's DISARM actually lives inside a guaranteed-cleanup block — not merely that SOME unrelated
+// finally/trap exists elsewhere in the file. (The weakness a review caught: a temp-file cleanup `finally`
+// satisfied the old file-level presence check while the hook's disarm sat only on the success path.)
+// Blank the CONTENTS of quoted strings so braces INSIDE a string can't skew the brace-matcher (an unbalanced
+// brace in `finally { $x = "{" }` would otherwise let the block run to EOF and mask a later violation). Simple
+// single/double-quoted strings only; here-strings are rare in test files — a documented residual gap.
+function stripStrings(code) {
+	return code.replace(/'[^']*'/g, "''").replace(/"[^"]*"/g, '""');
+}
+
+function extractGuaranteedCleanup(code) {
+	let out = "";
+	const kw = /\b(?:finally|trap)\b/g;
+	let m;
+	while ((m = kw.exec(code)) !== null) {
+		const open = code.indexOf("{", m.index);
+		if (open === -1) continue;
+		let depth = 0, j = open;
+		for (; j < code.length; j++) {
+			if (code[j] === "{") depth++;
+			else if (code[j] === "}" && --depth === 0) break;
+		}
+		out += code.slice(open + 1, j) + "\n";
+		kw.lastIndex = j; // resume scanning after this block
+	}
+	return out;
+}
+
 function findTestFiles() {
 	if (!existsSync(TESTS_DIR)) return [];
 	const out = [];
@@ -70,7 +99,7 @@ for (const { file } of findTestFiles()) {
 	const raw = readFileSync(file, "utf8");
 	if (raw.includes(ALLOW_MARKER)) continue; // explicitly opted out (with a reason)
 	const code = stripComments(raw);
-	const hasGuaranteedCleanup = /\bfinally\b|\btrap\b/.test(code);
+	const cleanup = extractGuaranteedCleanup(stripStrings(code));
 
 	// Every hook this file ARMS (assigns a value that is not a disarm).
 	const armed = new Set();
@@ -82,12 +111,15 @@ for (const { file } of findTestFiles()) {
 		}
 	}
 
+	// A risky (armed, not-pre-gate) hook is fail-safe ONLY if its DISARM sits INSIDE a finally/trap block — not
+	// merely if some unrelated finally exists somewhere in the file. Check the disarm is in the cleanup region.
 	const risky = [...armed].filter((h) => !FAIL_SAFE_HOOKS.has(h));
-	if (risky.length > 0 && !hasGuaranteedCleanup) {
+	const notCleaned = risky.filter((h) => !new RegExp(h + "\\s*=\\s*(?:0|false|\\$false|nil|null|\\$null)\\b").test(cleanup));
+	if (notCleaned.length > 0) {
 		const rel = relative(REPO_ROOT, file).replace(/\\/g, "/");
 		violations.push(
-			`${rel}\n    arms mutating hook(s) [${risky.join(", ")}] not verified pre-gate, but has no ` +
-				`finally/trap block to GUARANTEE disarm — a leaked flag detonates on the next transfer's error/flaky path.`,
+			`${rel}\n    arms mutating hook(s) [${notCleaned.join(", ")}] not verified pre-gate, whose DISARM is NOT ` +
+				`inside a finally/trap block — a leaked flag detonates on the next transfer's error/flaky path.`,
 		);
 	}
 }

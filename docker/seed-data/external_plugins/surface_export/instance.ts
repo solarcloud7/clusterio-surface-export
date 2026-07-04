@@ -841,8 +841,8 @@ export class InstancePlugin extends BaseInstancePlugin {
 		}
 
 		try {
-			// platformName (when the #106 reconcile supplies it) is a name tripwire — refuse if a reused index
-			// now holds a differently-named platform.
+			// platformName is a secondary display tripwire passed by the rollback path (identity is the unique
+			// index + surface.index inside unlock_platform); no controller reconcile supplies it.
 			const result = await this.lua.unlockPlatform(platformIndex, request.platformName);
 
 			if (result.trim() === "SUCCESS") {

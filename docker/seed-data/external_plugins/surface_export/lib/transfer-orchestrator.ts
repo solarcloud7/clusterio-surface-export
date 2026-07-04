@@ -184,9 +184,9 @@ export class TransferOrchestrator {
 				// KNOWN EXPOSURE (#106): for a GENUINE non-delivery SessionLost, the source unlock is now
 				// deferred to the in-memory validation timeout instead of being synchronous. If the controller
 				// restarts within that window, the timeout + activeTransfers record are lost and the source
-				// stays locked-for-transfer (hidden) until an admin /unlock-platform. This is the SAME restart
-				// fragility the ACK path already has (awaiting_validation is in-memory); the durable fix is
-				// persisting/reconciling awaiting_validation transfers on controller boot (#106). A recoverable
+				// stays locked-for-transfer (hidden) until the SOURCE-SIDE TTL auto-unlocks it (~10 min). The
+				// durable fix is that source-side tick-based expiry — the controller does NOT reconcile on boot
+				// (the #60 controller boot-reconcile/auto-delete spine was removed). A recoverable
 				// stranded-lock is still strictly better than the unrecoverable duplication this branch prevents.
 				//
 				// Close the "transmission" phase the throw at the sendTo skipped (else a recovered+completed
@@ -380,8 +380,9 @@ export class TransferOrchestrator {
 		}
 
 		// #106: if the source unlock ALSO failed, the source is NOT resolved (still locked) — mark it
-		// cleanup_failed (not failed) so handleTransferValidation KEEPS the persisted intent, letting a restart
-		// reconcile retry the unlock. Mirrors the success path's cleanup_failed on a failed source delete.
+		// cleanup_failed (not failed) so handleTransferValidation KEEPS the observability intent. Recovery is the
+		// SOURCE-SIDE TTL auto-unlock (the controller does not reconcile/retry on boot). Mirrors the success
+		// path's cleanup_failed on a failed source delete.
 		transfer.status = rollbackError ? "cleanup_failed" : "failed";
 		transfer.error = errorMsg;
 		transfer.completedAt = Date.now();

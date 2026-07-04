@@ -35,6 +35,14 @@ function TransferTrigger.start(force, platform_index, dest_instance_id, gateway_
 	local platform_name = platform.name
 	local force_name = force.name
 
+	-- R1: refuse a SECOND transfer of an already-in-flight (locked) platform. transfer-trigger is ALWAYS the
+	-- first lock in the in-game path, so is_locked here means another transfer (or an admin lock) already holds
+	-- it; proceeding would queue a duplicate export → two live copies. (The universal export-pipeline self-relock
+	-- uses the backfill at a different call site and is unaffected by this guard.)
+	if SurfaceLock.is_locked(platform.index) then
+		return nil, string.format("Platform '%s' (index %s) is already locked/transferring", platform_name, tostring(platform.index))
+	end
+
 	-- NOTE: passengers are NOT blocked. The transfer proceeds with players aboard; they are evacuated to a
 	-- planet at the source-delete chokepoint (delete_platform_for_transfer → Gateway.evacuate_passengers).
 

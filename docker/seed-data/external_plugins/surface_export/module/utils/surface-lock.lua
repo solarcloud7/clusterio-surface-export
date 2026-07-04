@@ -8,7 +8,15 @@ local SurfaceLock = {}
 
 local ACTIVATABLE_ENTITY_TYPES = GameUtils.ACTIVATABLE_ENTITY_TYPES
 local DEFAULT_TRANSFER_LOCK_TTL_TICKS = 36000 -- 10 minutes at 60 UPS
-local MIN_WORST_CASE_TRANSFER_TTL_TICKS = 36000 -- export + RCON transmit + import + validation + margin
+-- R6: the worst-case-TOTAL-transfer floor, DERIVED from named components (NOT a duplicate of DEFAULT) so the
+-- selftest's `DEFAULT >= MIN` is a real check — lowering DEFAULT below the real worst case now fails, and each
+-- component is independently visible/tunable.
+local VALIDATION_TIMEOUT_TICKS     = 7200  -- 120s validation timeout (helpers.ts VALIDATION_TIMEOUT_MS) at 60 UPS
+local WORST_CASE_RCON_TICKS        = 3000  -- ~50s: a 235KB platform @ ~6KB/s chunked RCON, rounded up
+local WORST_CASE_SCAN_IMPORT_TICKS = 6000  -- ~100s: async export scan + destination import (~100 entities/tick each)
+local WORST_CASE_MARGIN_TICKS      = 3000  -- ~50s controller queue / round-trip / jitter slack
+local MIN_WORST_CASE_TRANSFER_TTL_TICKS =
+    VALIDATION_TIMEOUT_TICKS + WORST_CASE_RCON_TICKS + WORST_CASE_SCAN_IMPORT_TICKS + WORST_CASE_MARGIN_TICKS -- 19200 (~5.3 min); DEFAULT 36000 clears it ~1.9×
 SurfaceLock.DEFAULT_TRANSFER_LOCK_TTL_TICKS = DEFAULT_TRANSFER_LOCK_TTL_TICKS
 SurfaceLock.MIN_WORST_CASE_TRANSFER_TTL_TICKS = MIN_WORST_CASE_TRANSFER_TTL_TICKS
 
@@ -506,10 +514,10 @@ end
 --- @return table summary
 function SurfaceLock.scan_transfer_expiries()
     if not storage.locked_platforms then
-        return { checked = 0, expired = 0, skipped = 0 }
+        return { checked = 0, expired = 0, skipped = 0, failed = 0 }
     end
 
-    local checked, expired, skipped = 0, 0, 0
+    local checked, expired, skipped, failed = 0, 0, 0, 0
 
     for platform_index, lock_data in pairs(storage.locked_platforms) do
         if type(lock_data) == "table" and lock_data.kind == "transfer" then
@@ -520,16 +528,26 @@ function SurfaceLock.scan_transfer_expiries()
             else
                 local expires_tick = lock_data.expires_tick or (locked_tick + DEFAULT_TRANSFER_LOCK_TTL_TICKS)
                 if game.tick >= expires_tick then
-                    expired = expired + 1
                     log(string.format("[SurfaceLock] Transfer lock expired: '%s' (index %s, locked_tick=%s, expires_tick=%s)",
                         tostring(lock_data.platform_name), tostring(platform_index), tostring(locked_tick), tostring(expires_tick)))
-                    SurfaceLock.unlock_platform(platform_index, lock_data.platform_name)
+                    -- R4: SURFACE a failed auto-unlock (don't swallow its result). unlock_platform unfreezes +
+                    -- un-hides BEFORE restoring the schedule and drops the lock even when the schedule restore
+                    -- fails — so a failure can leave the source live+visible with a stale schedule and no lock.
+                    -- Counting/logging it means the tick loop + selftest have a signal instead of a silent gap.
+                    local ok, err = SurfaceLock.unlock_platform(platform_index, lock_data.platform_name)
+                    if ok then
+                        expired = expired + 1
+                    else
+                        failed = failed + 1
+                        log(string.format("[SurfaceLock] Transfer-lock expiry UNLOCK FAILED for '%s' (index %s): %s",
+                            tostring(lock_data.platform_name), tostring(platform_index), tostring(err)))
+                    end
                 end
             end
         end
     end
 
-    return { checked = checked, expired = expired, skipped = skipped }
+    return { checked = checked, expired = expired, skipped = skipped, failed = failed }
 end
 
 return SurfaceLock

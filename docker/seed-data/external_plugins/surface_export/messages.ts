@@ -1088,9 +1088,10 @@ export class UnlockSourcePlatformRequest {
 		additionalProperties: false,
 	};
 
-	// Unlock keys on the unique platformIndex; `platformName`, when set, is a name TRIPWIRE — the #106 restart
-	// reconcile passes it so a stale index (reused by a differently-named, in-flight platform) is refused
-	// rather than freeing the wrong source. The normal rollback omits it (same-tick, index still valid).
+	// Unlock keys on the unique platformIndex; `platformName`, when set, is a secondary DISPLAY tripwire (the
+	// rollback/expiry paths pass the stored name). Identity is the index + surface.index inside unlock_platform;
+	// the destructive delete's request-vs-lock correlation is the name-free transfer_job_id (see
+	// DeleteSourcePlatformRequest.exportId) — NOT the mutable name, and NOT any controller boot reconcile.
 	platformIndex: number;
 	platformName: string | null;
 	forceName: string;
