@@ -849,41 +849,27 @@ export class ControllerPlugin extends BaseControllerPlugin {
 		const where = `'${intent.sourcePlatformName}' (#${intent.sourcePlatformIndex}) on instance ${intent.sourceInstanceId}`;
 		switch (action.kind) {
 			case "complete": {
-				const resp = await this.c.sendTo(
-					{ instanceId: intent.sourceInstanceId },
-					new messages.DeleteSourcePlatformRequest({
-						platformIndex: intent.sourcePlatformIndex,
-						platformName: intent.sourcePlatformName,
-						forceName: intent.forceName,
-					}),
-				) as { success?: boolean; error?: string };
-				if (resp?.success) {
+				// REUSE the normal completion path via the orchestrator (delete source + stored-export cleanup +
+				// txLogger terminal event + broadcast) — no reimplementation, so no side effect can drift out of
+				// parity, and a thrown send is counted as an attempt inside resolveStrandedTransfer (#106 review).
+				const r = await this.orchestrator.resolveStrandedTransfer(intent, "complete");
+				if (r === "resolved") {
 					this.logger.info(`#106 reconcile: ${transferId} — destination committed; deleted stranded source ${where}`);
-					// Parity with handleValidationSuccess: also drop the stored export (else it lingers in the
-					// Exports tab, re-importable into a DUPLICATE of the already-transferred platform) + refresh.
-					if (intent.exportId && this.platformStorage.delete(intent.exportId)) {
-						await this.persistStorage();
-					}
-					this.subscriptions.queueTreeBroadcast(intent.forceName || "player");
 					this.removePendingTransfer(transferId);
 				} else {
-					this.failReconcileAttempt(transferId, entry, where, `source delete failed (${resp?.error ?? "unknown"})`);
+					this.failReconcileAttempt(transferId, entry, where, "source delete failed/threw");
 				}
 				break;
 			}
 			case "unlock": {
-				const resp = await this.c.sendTo(
-					{ instanceId: intent.sourceInstanceId },
-					// Pass the name as a TRIPWIRE — a stale index reused by a differently-named in-flight platform
-					// is refused rather than freeing the wrong source (review #106 [F847]).
-					new messages.UnlockSourcePlatformRequest({ platformIndex: intent.sourcePlatformIndex, platformName: intent.sourcePlatformName, forceName: intent.forceName }),
-				) as { success?: boolean; error?: string };
-				if (resp?.success) {
+				// REUSE the normal rollback path (unlock incl. the benign already-unlocked guard + the F847 name
+				// tripwire, now threaded through sendUnlockRequest) — same no-drift guarantee as complete.
+				const r = await this.orchestrator.resolveStrandedTransfer(intent, "unlock");
+				if (r === "resolved") {
 					this.logger.info(`#106 reconcile: ${transferId} — destination did not commit; unlocked stranded source ${where}`);
-					this.subscriptions.queueTreeBroadcast(intent.forceName || "player");
 					this.removePendingTransfer(transferId);
 				} else {
-					this.failReconcileAttempt(transferId, entry, where, `source unlock failed (${resp?.error ?? "unknown"})`);
+					this.failReconcileAttempt(transferId, entry, where, "source unlock failed/threw");
 				}
 				break;
 			}
@@ -916,11 +902,14 @@ export class ControllerPlugin extends BaseControllerPlugin {
 		}
 	}
 
-	/** Log a loud one-time UNRESOLVABLE warning and STOP auto-acting on the intent (drop it from the queue AND
-	 *  the persisted set) — the admin owns it now, so no later poll or restart can act destructively on it. */
+	/** Log a loud one-time UNRESOLVABLE warning and stop auto-acting THIS boot (drop from the reconcile queue),
+	 *  but KEEP the persisted intent so a future restart re-attempts once the destination is authoritative. A
+	 *  bare-outage escalation (dest offline, outcome===null) must stay recoverable — dropping the persisted
+	 *  intent there would strand the source permanently (review #106). Removing only from the queue (no more
+	 *  polling this boot) is itself what prevents the original F857 escalate→admin-acts→auto-delete race. */
 	private escalateReconcile(transferId: string, where: string, reason: string): void {
-		this.logger.error(`#106 reconcile: ${transferId} UNRESOLVABLE — ${reason}. Source ${where} left LOCKED; verify the destination, then /unlock-platform (or delete the source) manually.`);
-		this.removePendingTransfer(transferId);
+		this.logger.error(`#106 reconcile: ${transferId} UNRESOLVABLE — ${reason}. Source ${where} left LOCKED; verify the destination, then /unlock-platform (or delete the source) manually. The recovery intent is kept for a future restart.`);
+		this.reconcileQueue.delete(transferId);
 	}
 
 	/**

@@ -31,11 +31,12 @@ local function delete_platform_for_transfer(platform_index, platform_name, force
 
   -- Best-effort unlock FIRST, by index. This runs on EVERY path below — INCLUDING a refused delete — so a
   -- refusal never leaves the source frozen-and-hidden (it would otherwise vanish from the owner's list until
-  -- an admin manually unlocked it, while the dest copy is already a live duplicate). unlock_platform is
-  -- identity-safe: it restores a renamed source but drops a stale/reused-index lock without clobbering. On the
-  -- success path the platform is deleted immediately after, so the brief restore is harmless.
+  -- an admin manually unlocked it, while the dest copy is already a live duplicate). Pass the NAME tripwire so
+  -- a per-force index REUSED by a different, in-flight platform's (valid) lock is refused here too — the
+  -- surface.index tripwire alone doesn't catch that case, so without the name this best-effort unlock could
+  -- clobber an unrelated transfer's lock before the name cross-check below refuses the delete (#106 review).
   GameUtils.pcall_warn("[DeleteForTransfer] unlock index " .. tostring(platform_index), function()
-    SurfaceLock.unlock_platform(platform_index)
+    SurfaceLock.unlock_platform(platform_index, platform_name)
   end)
 
   -- Resolve by the UNIQUE index, then CROSS-CHECK the name. If the index is missing OR the platform there is

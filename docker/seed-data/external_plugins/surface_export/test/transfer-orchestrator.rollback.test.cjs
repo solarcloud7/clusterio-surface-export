@@ -35,7 +35,7 @@ function sessionLost(message = "Session Closed") {
  * `importSendResult(msg)` decides what the ImportPlatformRequest send does (throw or resolve). We spy
  * `tryUnlockSource` to record whether the source-unlock (rollback) route was taken.
  */
-function makeHarness(importSendResult) {
+function makeHarness(importSendResult, sourceSendResult = () => ({ success: true })) {
 	const noop = () => {};
 	const activeTransfers = new Map();
 	const calls = { events: [], unlockRouteTaken: 0, importSends: 0, openPhases: new Set() };
@@ -45,6 +45,7 @@ function makeHarness(importSendResult) {
 		// #106 hooks the orchestrator calls on enter/exit of awaiting_validation (recorded for assertions).
 		persistPendingTransfer: (intent) => { calls.pendingPersisted = intent; },
 		removePendingTransfer: (id) => { calls.pendingRemoved = id; },
+		persistStorage: async () => { calls.persistStorageCalls = (calls.persistStorageCalls || 0) + 1; },
 		platformStorage: {
 			get: () => ({
 				exportData: { platform: { index: 3, force: "player" } },
@@ -72,15 +73,16 @@ function makeHarness(importSendResult) {
 					calls.importSends++;
 					return importSendResult(msg);
 				}
-				return { success: true };
+				return sourceSendResult(msg); // Delete/Unlock/StatusUpdate — default success; tests override.
 			},
 		},
 	};
 
 	const orch = new TransferOrchestrator(plugin, messages);
-	// Spy the protective route WITHOUT running the real unlock send (mechanics tested elsewhere).
+	// Spy the protective route WITHOUT running the real unlock send (mechanics tested elsewhere). The
+	// resolveStrandedTransfer('unlock') tests `delete orch.tryUnlockSource` to restore the REAL send + guard.
 	orch.tryUnlockSource = async () => { calls.unlockRouteTaken++; return null; };
-	return { orch, activeTransfers, calls };
+	return { orch, activeTransfers, calls, plugin };
 }
 
 function onlyTransfer(activeTransfers) {
@@ -174,4 +176,53 @@ test("#106: validation fails but source unlock SUCCEEDS → failed drops the int
 
 	assert.equal(transfer.status, "failed", "failed validation + successful unlock is 'failed'");
 	assert.equal(calls.pendingRemoved, res.transferId, "the recovery intent is dropped once the source is unlocked");
+});
+
+// ── #106 restart-reconcile RESOLUTION (resolveStrandedTransfer) — the stateful integration, tested directly
+//    (not just the pure decision core). It REUSES handleValidationSuccess/Failure, so it must inherit their
+//    side effects (export delete, benign-unlock guard) and count thrown sends as retries. ──
+const STRANDED_INTENT = {
+	transferId: "t_stranded", sourceInstanceId: 1, sourcePlatformIndex: 3, sourcePlatformName: "test-platform",
+	forceName: "player", targetInstanceId: 2, startedAt: 1, exportId: "export_1",
+};
+
+test("#106 resolveStrandedTransfer('complete'): delete succeeds → resolved + stored export deleted (no re-import dup)", async () => {
+	let exportDeleted = null;
+	const { orch, plugin } = makeHarness(() => ({ success: true }), () => ({ success: true }));
+	plugin.platformStorage.delete = (id) => { exportDeleted = id; };
+
+	const r = await orch.resolveStrandedTransfer(STRANDED_INTENT, "complete");
+
+	assert.equal(r, "resolved");
+	assert.equal(exportDeleted, "export_1", "the stored export must be deleted (else it re-imports into a dup) — inherited from handleValidationSuccess");
+	assert.equal(plugin.activeTransfers.get("t_stranded").status, "completed");
+});
+
+test("#106 resolveStrandedTransfer('complete'): delete refused → retriable (counted → will escalate at the cap)", async () => {
+	const { orch } = makeHarness(() => ({ success: true }),
+		(msg) => msg.constructor.name === "DeleteSourcePlatformRequest" ? { success: false, error: "index/name mismatch" } : { success: true });
+	assert.equal(await orch.resolveStrandedTransfer(STRANDED_INTENT, "complete"), "retriable");
+});
+
+test("#106 resolveStrandedTransfer('complete'): a THROWN delete send is retriable, not propagated (attempts count on throw)", async () => {
+	const { orch } = makeHarness(() => ({ success: true }),
+		(msg) => { if (msg.constructor.name === "DeleteSourcePlatformRequest") throw new Error("source RCON wedged"); return { success: true }; });
+	// TEETH: without resolveStrandedTransfer's try/catch this THROWS and errors the test — the pre-redesign
+	// driver let a thrown send bypass the attempts counter (retry forever, never escalate).
+	assert.equal(await orch.resolveStrandedTransfer(STRANDED_INTENT, "complete"), "retriable");
+});
+
+test("#106 resolveStrandedTransfer('unlock'): a benign 'not locked' unlock is resolved (inherited benign guard)", async () => {
+	const { orch } = makeHarness(() => ({ success: true }),
+		(msg) => msg.constructor.name === "UnlockSourcePlatformRequest" ? { success: false, error: "Platform not locked: index 3" } : { success: true });
+	delete orch.tryUnlockSource; // restore the REAL tryUnlockSource → sendUnlockRequest (with its benign guard)
+	// TEETH: relies on sendUnlockRequest's /platform not locked/ guard; without it this would be 'retriable'.
+	assert.equal(await orch.resolveStrandedTransfer(STRANDED_INTENT, "unlock"), "resolved");
+});
+
+test("#106 resolveStrandedTransfer('unlock'): a real unlock error → retriable", async () => {
+	const { orch } = makeHarness(() => ({ success: true }),
+		(msg) => msg.constructor.name === "UnlockSourcePlatformRequest" ? { success: false, error: "some real unlock failure" } : { success: true });
+	delete orch.tryUnlockSource;
+	assert.equal(await orch.resolveStrandedTransfer(STRANDED_INTENT, "unlock"), "retriable");
 });
