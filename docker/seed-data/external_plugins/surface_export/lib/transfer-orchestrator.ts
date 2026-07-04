@@ -333,6 +333,8 @@ export class TransferOrchestrator {
 				platformIndex: transfer.platformIndex,
 				platformName: transfer.platformName,
 				forceName: transfer.forceName,
+				// Name-free request-vs-lock correlation: transfer.exportId == the source lock's transfer_job_id.
+				exportId: transfer.exportId ?? null,
 			}),
 		);
 		const cleanupMs = this.txLogger.endPhase(transferId, "cleanup");

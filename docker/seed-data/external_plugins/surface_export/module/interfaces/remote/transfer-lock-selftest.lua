@@ -122,6 +122,17 @@ local function transfer_lock_selftest()
 	check("delete_identity_refuses_invalid_surface",
 		SurfaceLock.transfer_delete_identity_ok({ kind = "transfer", surface_index = 7 }, fake_surface(7, false)) == false,
 		"an invalid current surface must REFUSE the delete")
+	-- Request-vs-lock correlation (re-audit P1): the request's job id (== exportId) must match the lock's
+	-- transfer_job_id, else a stale/reused-index delete would tear down a DIFFERENT in-flight transfer.
+	check("delete_identity_job_id_match_ok",
+		SurfaceLock.transfer_delete_identity_ok({ kind = "transfer", surface_index = 7, transfer_job_id = "job_A" }, fake_surface(7), "job_A") == true,
+		"a matching job_id (same transfer) must be deletable")
+	check("delete_identity_refuses_job_id_mismatch",
+		SurfaceLock.transfer_delete_identity_ok({ kind = "transfer", surface_index = 7, transfer_job_id = "job_B" }, fake_surface(7), "job_A") == false,
+		"a DIFFERENT transfer's lock (job_id mismatch) must REFUSE even when surface.index matches — the stale/reused-index delete (P1)")
+	check("delete_identity_degrades_without_lock_job_id",
+		SurfaceLock.transfer_delete_identity_ok({ kind = "transfer", surface_index = 7 }, fake_surface(7), "job_A") == true,
+		"an old-save lock with no transfer_job_id degrades to the surface.index check (no correlation available)")
 
 	return { passed = passed, failed = failed, total = passed + failed, details = details }
 end

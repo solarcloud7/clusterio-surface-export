@@ -150,12 +150,16 @@ export class LuaInterface {
 	 * in one remote (a) makes evacuation atomic with the delete and (b) fixes the prior inline-RCON that
 	 * bypassed GameUtils.delete_platform.
 	 */
-	async deleteSourcePlatform(platformIndex: number, platformName: string, forceName: string): Promise<string> {
-		// Resolve+delete by the UNIQUE index (emitted unquoted → a Lua number); the name is passed as a
-		// cross-check tripwire (the Lua remote refuses to delete if force.platforms[index].name ≠ this name).
+	async deleteSourcePlatform(platformIndex: number, platformName: string, forceName: string, exportId?: string | null): Promise<string> {
+		// Resolve+delete by the UNIQUE index (emitted unquoted → a Lua number). Identity is surface.index
+		// (rename-safe, Pitfall #31); the 4th arg is the transfer's exportId (== the source lock's
+		// transfer_job_id) — a NAME-FREE request-vs-lock correlation so a stale/reused-index delete can't tear
+		// down an unrelated transfer. platformName is display/logging only; a missing exportId degrades to the
+		// surface.index check.
+		const jobArg = exportId ? `, "${escapeString(exportId)}"` : ", nil";
 		return this.host.sendRcon(
 			`/sc rcon.print(remote.call("surface_export", "delete_platform_for_transfer", ` +
-			`${Math.trunc(platformIndex)}, "${escapeString(platformName)}", "${escapeString(forceName)}"))`,
+			`${Math.trunc(platformIndex)}, "${escapeString(platformName)}", "${escapeString(forceName)}"${jobArg}))`,
 		);
 	}
 

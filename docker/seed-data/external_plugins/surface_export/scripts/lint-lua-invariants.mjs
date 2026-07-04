@@ -107,16 +107,17 @@ function main() {
 	const violations = [];
 
 	for (const file of files) {
+		const relPath = relative(PLUGIN_DIR, file).replace(/\\/g, "/");
 		const lines = readFileSync(file, "utf8").split(/\r?\n/);
 		lines.forEach((rawLine, i) => {
 			if (rawLine.includes(ALLOW_MARKER)) return; // explicit per-line suppression
 			const code = stripLineComment(rawLine);
 			for (const rule of RULES) {
-				if (rule.appliesTo && !rule.appliesTo.some((p) => relative(PLUGIN_DIR, file).replace(/\\/g, "/").includes(p))) continue;
-					const m = rule.regex.exec(code);
+					if (rule.appliesTo && !rule.appliesTo.some((p) => relPath.includes(p))) continue;
+				const m = rule.regex.exec(code);
 				if (m) {
 					violations.push({
-						file: relative(PLUGIN_DIR, file).replace(/\\/g, "/"),
+						file: relPath,
 						line: i + 1,
 						col: m.index + 1,
 						rule,

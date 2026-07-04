@@ -40,10 +40,12 @@ reappears in your list — no admin action. *(Before Phase 1: stuck locked-and-h
 `/unlock-platform`.)*
 
 **Q: What if my transfer takes longer than the 10-minute TTL (huge / laggy platform)?**
-A: 🔧 The TTL fires mid-flight and the source goes live again. Today that risks the later success-delete
-destroying a now-live source (re-audit R7). **Planned (R9):** the delete gate refuses to delete a source that is
-no longer locked-for-transfer → a recoverable **dup** instead of loss. Eliminating the mid-flight unlock entirely
-(controller heartbeat + canonical transfer id) is Phase 2.
+A: ✅ The TTL fires mid-flight and the source goes live again, but the delete gate now REFUSES to delete a source
+that is no longer locked-for-transfer: `SurfaceLock.transfer_delete_identity_ok` requires the lock to still be
+present with `kind="transfer"` (a TTL/admin release makes the platform live again ⇒ not deletable), AND correlates
+the delete request to that lock by a name-free `transfer_job_id` + `surface.index`. Worst case is a recoverable
+**dup**, never an unrecoverable deletion. Eliminating the mid-flight unlock entirely (controller heartbeat +
+canonical transfer id) is still **Phase 2**, unshipped.
 
 **Q: What if the source server is down for a while during my transfer?**
 A: ✅ The expiry clock is game-ticks, which do not advance while the host is down — downtime never causes a
@@ -52,10 +54,13 @@ spurious expiry.
 ## B. Concurrency
 
 **Q: What if I start a transfer of the same platform twice?**
-A: 🔧 In-game (`/transfer-platform`, `/gateway-transfer`) currently lets the 2nd command through (the F2 lock
-backfill returns success) → dup. **Planned (R1):** transfer-trigger refuses if the platform is already locked;
-**R9** delete-gate backstops it. The web/controller path was already permissive here (unchanged by this work; also
-backstopped by R9).
+A: 🔧 The delete-gate backstop is now SHIPPED — `transfer_delete_identity_ok`'s name-free `transfer_job_id`
+correlation refuses a stale/duplicate delete aimed at a DIFFERENT transfer, so a double-fire can never cause an
+unrecoverable deletion. But the front door is still open: in-game (`/transfer-platform`, `/gateway-transfer`)
+still lets the 2nd command through (the lock backfill returns success) → a recoverable **dup**. **Still planned
+(R1):** transfer-trigger refuses up front if the platform is already locked. (The on-arrival gateway chooser path
+already blocks its own double-fire via `GatewayGuard` IN_FLIGHT — but that is not R1 and does not cover the two
+console commands.)
 
 **Q: What if I rename my platform (Space Platforms GUI) while it's transferring?**
 A: ✅ Handled — and it was a real **duplication exploit**: renaming mid-transfer made the old name-based delete
@@ -65,8 +70,9 @@ a rename is correctly IGNORED — same surface ⇒ same platform ⇒ the delete 
 (Pitfall #31). Fixed 2026-07-04.
 
 **Q: What if a platform index is reused by a new platform during my transfer?**
-A: ✅ The name tripwire (and, post-R9, `surface.index`) refuses to unlock/delete the wrong platform — a
-destructive op is never resolved by a non-unique key alone.
+A: ✅ The delete/unlock identity keys on `surface.index` (recorded at lock time): a reused per-force index points
+at a DIFFERENT surface, so `transfer_delete_identity_ok` refuses ("surface identity mismatch") — a destructive op
+is never resolved by a non-unique key alone.
 
 ## C. Failure & rollback
 
@@ -107,10 +113,19 @@ A: ✅ Their items/fluids are tallied as failed-entity-loss and subtracted from 
 not falsely failed; each failure is logged per entity (Pitfall #20).
 
 **Q: What if I have cargo pods waiting to launch (`awaiting_launch`) when I transfer?**
-A: ✅ Zero loss. `complete_cargo_pods` (during the lock step, before the export scan) now recovers the pod's
-loaded `cargo_unit` inventory into the hub, THEN destroys the pod — so the items stay on the platform (in the hub)
-and transfer with it. (Fixed 2026-07-04, mirroring the descending-pod recovery path. Previously a bare
-`pod.destroy()` deleted any already-loaded items.)
+A: ✅ Zero loss. `complete_cargo_pods` (during the lock step, before the export scan) recovers the pod's loaded
+`cargo_unit` inventory into the hub, and **spills any overflow the hub can't hold onto the surface** (item-on-
+ground is scanned/exported with the platform), THEN destroys the pod. So the items always stay on the platform
+and transfer with it — even when the hub is full or absent. (Fixed 2026-07-04. Previously a bare `pod.destroy()`
+deleted any already-loaded items; the first fix still lost a full-hub remainder until the spill was added.)
+
+**Q: What if my platform's train/space schedule points at stations (space locations) that don't exist on the destination?**
+A: ✅ On import, unroutable stops are filtered out — `PlatformSchedule.filter_for_import` drops any record whose
+`station` isn't a routable `space_location` on the destination (`prototypes.space_location[station] == nil`) and
+resumes the cursor at the first surviving stop. Guard: it **never strips to empty** — if EVERY stop is unroutable
+it returns the original schedule untouched (an empty `records={}` is engine-rejected), leaving a lone dead stop
+rather than an invalid schedule; a record with no string `station` is kept (never strip what we don't understand).
+(WS1, #72.)
 
 ## E. Passengers
 
@@ -120,7 +135,9 @@ A: ✅ They (and abandoned character bodies) are evacuated to Nauvis at the sole
 
 **Q: What if I'm connected and piloting the platform during the transfer?**
 A: 🔧 The transfer is lossless, but the heavy export tick-stall heartbeat-drops your client (you reconnect and
-land on Nauvis). "Ride with your platform to the next server" (Layer 2) is unbuilt.
+land on Nauvis). Since the post-export evacuate notice fires after you've already been dropped, each connected
+passenger is now WARNED up front — before the export begins — that they're transferring and will return to Nauvis
+(#86). "Ride with your platform to the next server" (Layer 2) is still unbuilt.
 
 ## F. Locks & admin
 
@@ -147,6 +164,20 @@ expiring kind (Gemini #2 follow-up).
 **Q: What if I import the same export JSON twice?**
 A: ✅ You get two platforms — import is not deduped, by design. Caveat: a stranded-then-committed transfer's export
 can linger in the Exports tab and be re-imported into a 3rd copy (re-audit R5 — documented Phase-1 corner).
+
+## H. Gateways
+
+**Q: What if my platform arrives at a gateway — does it auto-transfer?**
+A: ✅ No. It routes to and **parks** at the gateway (`waiting_at_station`, paused; gateways have no `fly_condition`)
+and NEVER auto-fires a transfer. On arrival, if that gateway has configured destinations, an on-arrival chooser
+GUI opens for everyone currently VIEWING the platform (`control.lua` gateway-arrival detection); the transfer
+itself is the player's explicit Transfer click inside that GUI, on a later tick. If the gateway has no configured
+destinations, the platform just sits parked (no chooser).
+
+**Q: What if I click Transfer twice, or a passenger is aboard, at the gateway?**
+A: ✅ The chooser's Transfer is gated by `GatewayGuard`: the platform must be docked and NOT already in-flight, so
+a double-click can't double-fire. Passengers do not block — they're evacuated to Nauvis at the delete chokepoint
+(same as §E).
 
 ---
 

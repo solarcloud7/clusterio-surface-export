@@ -2,10 +2,11 @@
 -- The source-side teardown of a SUCCESSFULLY transferred platform — the controller calls this (the SOLE
 -- DeleteSourcePlatformRequest path) after the destination has committed the import. One atomic call so it all
 -- happens in a single tick with no interleaving:
---   1. best-effort unlock (clears the lock-registry entry for this index),
---   2. resolve the platform by its UNIQUE INDEX and apply the IDENTITY GATE — key on the STABLE surface.index
---      (recorded in the lock at lock time), NOT the mutable platform.name; refuse if the lock was released or
---      the surface differs (rename-proof; SurfaceLock.transfer_delete_identity_ok, Pitfall #31),
+--   1. IDENTITY GATE (before any destructive step): correlate the request to the lock by the NAME-FREE transfer
+--      id (the request's exportId == the lock's transfer_job_id) AND match the lock's stored surface.index to the
+--      live platform's surface.index (STABLE across a rename; platform.name is never consulted). Refuse otherwise
+--      (SurfaceLock.transfer_delete_identity_ok, Pitfall #31 / re-audit P1),
+--   2. best-effort unlock — only once the gate proved this is THIS transfer's platform (clears the lock entry),
 --   3. EVACUATE anyone bodily aboard to a planet (never orphan a player when the surface vanishes —
 --      Gateway.evacuate_passengers; native-aligned with how the engine handles hub loss),
 --   4. delete the platform via GameUtils.delete_platform (game.delete_surface under the hood — NOT raw, so it
@@ -22,46 +23,38 @@ local GameUtils = require("modules/surface_export/utils/game-utils")
 local SurfaceLock = require("modules/surface_export/utils/surface-lock")
 
 --- @param platform_index number  -- the unique platform index (join key)
---- @param platform_name string   -- the expected display name (cross-check tripwire)
+--- @param platform_name string   -- display/logging only (NOT identity)
 --- @param force_name string
+--- @param expected_job_id string|nil  -- the transfer's exportId (== the lock's transfer_job_id); a NAME-FREE
+---        request-vs-lock correlation so a stale/reused-index delete can't tear down an unrelated transfer
 --- @return string "SUCCESS" or "ERROR:<reason>"
-local function delete_platform_for_transfer(platform_index, platform_name, force_name)
+local function delete_platform_for_transfer(platform_index, platform_name, force_name, expected_job_id)
   local force = game.forces[force_name]
   if not force then
     return "ERROR:Force not found: " .. tostring(force_name)
   end
 
-  -- IDENTITY GATE — surface.index, NEVER the mutable platform.name (invariant: platform identity = surface.index
-  -- / unique index). At lock time the transfer lock recorded the surface.index of the exact platform we exported.
-  -- surface.index is the STABLE unique identity: it survives a player rename; platform.name does NOT. Reading it
-  -- HERE, before the best-effort unlock (which clears the lock), gives a rename-proof check and closes the rename
-  -- DUPLICATION exploit — a player who renamed the source mid-transfer used to make the old name-based check
-  -- REFUSE the delete → source survived + dest committed = two live copies. This also gates on the source still
-  -- being locked-for-transfer: if the source-side TTL (or an admin) already released the lock, the source is LIVE
-  -- again and MUST NOT be deleted — refuse, leaving a recoverable duplicate rather than deleting a live platform.
+  -- IDENTITY GATE — runs BEFORE any destructive unlock/delete (re-audit P1). Two checks, both NAME-FREE:
+  --   (1) request-vs-lock correlation — the request's exportId (== the lock's transfer_job_id) must match the
+  --       lock at this index, so a stale/duplicate/reused-index delete for a DIFFERENT transfer is refused
+  --       WITHOUT unlocking or restoring the unrelated transfer's platform (that clobber was the P1-b bug); and
+  --   (2) lock-vs-live-platform — the current platform's surface.index must equal the lock's stored
+  --       surface_index. surface.index is STABLE across a player rename (platform.name is never consulted), so
+  --       a rename is correctly IGNORED and the rename DUPLICATION exploit stays closed.
+  -- A released lock (TTL/admin) or a reused index is refused, leaving a recoverable state rather than deleting a
+  -- live/unrelated platform. Decision is the pure, unit-tested SurfaceLock.transfer_delete_identity_ok.
   local lock = SurfaceLock.get_lock_data(platform_index)
-
-  -- Best-effort unlock FIRST (recovery on EVERY path incl. a refused delete, so a refusal never leaves the
-  -- source frozen-and-hidden). Only meaningful when a lock exists; unlock's own identity check is surface.index
-  -- based, and the STORED name is passed only to satisfy its name tripwire self-consistently.
-  if lock then
-    GameUtils.pcall_warn("[DeleteForTransfer] unlock index " .. tostring(platform_index), function()
-      SurfaceLock.unlock_platform(platform_index, lock.platform_name)
-    end)
-  end
-
-  -- Resolve by the UNIQUE index, then CROSS-CHECK the STABLE surface.index. If the index is missing, or the
-  -- platform there is a DIFFERENT surface than the one we locked (stale/reused index), REFUSE (the safe
-  -- direction): the source survives (now unlocked, above), the dest copy is already committed, loud error.
-  -- A rename is correctly IGNORED — same surface.index ⇒ same platform ⇒ proceed.
   local platform = force.platforms[platform_index]
-  if not platform or not platform.valid then
-    return "ERROR:Platform not found at index " .. tostring(platform_index)
-  end
-  local id_ok, id_reason = SurfaceLock.transfer_delete_identity_ok(lock, platform.surface)
+  local id_ok, id_reason = SurfaceLock.transfer_delete_identity_ok(lock, platform and platform.surface, expected_job_id)
   if not id_ok then
     return "ERROR:" .. tostring(id_reason) .. " — refusing to delete platforms[" .. tostring(platform_index) .. "]"
   end
+
+  -- Validated: THIS transfer's lock AND our live platform. Best-effort unlock (unfreezes, un-hides, restores the
+  -- original schedule, clears the lock entry), then evacuate + delete — safe now because the gate proved it's ours.
+  GameUtils.pcall_warn("[DeleteForTransfer] unlock index " .. tostring(platform_index), function()
+    SurfaceLock.unlock_platform(platform_index, lock.platform_name)
+  end)
 
   -- Evacuate BEFORE deleting — players/characters must be off the surface before it is torn down. GUARDED
   -- (symmetric with the unlock above): an evacuation throw must NEVER abort the delete. If it did, the source

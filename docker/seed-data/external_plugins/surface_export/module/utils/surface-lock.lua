@@ -117,6 +117,39 @@ function SurfaceLock.activate_all(surface)
     return activated_count
 end
 
+--- Recover a cargo pod's loaded cargo (its cargo_unit inventory) so NOTHING is lost when the pod is destroyed:
+--- insert what fits into the hub, and SPILL any remainder onto the surface. Item-on-ground is scanned/exported
+--- with the platform, so even a FULL hub (or a missing hub) is still zero-loss. Nil-safe. Returns the count
+--- recovered into the hub (spilled items are also preserved, just on the ground).
+--- @param pod LuaEntity: the cargo pod
+--- @param hub LuaEntity|nil: the platform hub (may be nil/invalid)
+--- @param surface LuaSurface: the platform surface (spill target)
+--- @return number: items recovered into the hub
+local function recover_pod_cargo_to_hub_and_spill(pod, hub, surface)
+    local inventory = pod.get_inventory(defines.inventory.cargo_unit)
+    if not inventory then return 0 end
+    local hub_inventory = (hub and hub.valid) and hub.get_inventory(defines.inventory.hub_main) or nil
+    local recovered = 0
+    for i = 1, #inventory do
+        local stack = inventory[i]
+        if stack.valid_for_read then
+            local inserted = hub_inventory and hub_inventory.insert(stack) or 0
+            recovered = recovered + inserted
+            local remainder = stack.count - inserted
+            if remainder > 0 then
+                -- Hub full (or absent): spill the rest onto the platform so it exports with the surface — no loss.
+                GameUtils.pcall_warn(string.format("[SurfaceLock] cargo recovery spill %d %s (hub full/absent)", remainder, stack.name), function()
+                    surface.spill_item_stack({
+                        position = pod.position,
+                        stack = { name = stack.name, count = remainder, quality = stack.quality and stack.quality.name or nil },
+                    })
+                end)
+            end
+        end
+    end
+    return recovered
+end
+
 --- Complete all in-flight cargo pod transfers immediately
 --- Descending pods: Add items to hub inventory, then force finish
 --- Ascending pods: Force finish (items are already "sent")
@@ -162,27 +195,10 @@ local function complete_cargo_pods(surface, hub)
                 ascending_count = ascending_count + 1
                 
             elseif state == "awaiting_launch" then
-                -- Pod loaded but not yet launched. It may ALREADY hold items in its cargo_unit inventory, and a
-                -- bare destroy() would DELETE them (data loss — Engineering FAQ: awaiting_launch cargo pods).
-                -- Recover them into the hub FIRST (mirrors the descending branch), then destroy → zero-loss; the
-                -- items then stay on the platform (in the hub) and transfer with it.
-                local inventory = pod.get_inventory(defines.inventory.cargo_unit)
-                if inventory and hub and hub.valid then
-                    local hub_inventory = hub.get_inventory(defines.inventory.hub_main)
-                    if hub_inventory then
-                        for i = 1, #inventory do
-                            local stack = inventory[i]
-                            if stack.valid_for_read then
-                                local inserted = hub_inventory.insert(stack)
-                                items_recovered = items_recovered + inserted
-                                if inserted < stack.count then
-                                    log(string.format("[SurfaceLock] Warning: awaiting_launch pod — recovered only %d/%d of %s into hub",
-                                        inserted, stack.count, stack.name))
-                                end
-                            end
-                        end
-                    end
-                end
+                -- Pod loaded but not yet launched — its cargo_unit may hold items, and a bare destroy() would
+                -- DELETE them. Recover them (into the hub; overflow spilled to the surface — both export with the
+                -- platform) BEFORE destroy → ZERO loss even when the hub is full. (Engineering FAQ / re-audit P2.)
+                items_recovered = items_recovered + recover_pod_cargo_to_hub_and_spill(pod, hub, surface)
                 pod.destroy()
             end
         end
@@ -420,10 +436,20 @@ end
 --- Pure (no storage/game access) so it is unit-testable with fake records — see transfer-lock-selftest.
 --- @param lock table|nil  the lock record (storage.locked_platforms[index])
 --- @param current_surface LuaSurface|nil  the surface of the platform now at that index
+--- @param expected_job_id string|nil  the delete request's transfer id (== the lock's transfer_job_id) — a
+---        NAME-FREE request-vs-lock correlation. When both sides are present they MUST match.
 --- @return boolean ok, string|nil reason
-function SurfaceLock.transfer_delete_identity_ok(lock, current_surface)
+function SurfaceLock.transfer_delete_identity_ok(lock, current_surface, expected_job_id)
     if not lock or lock.kind ~= "transfer" then
         return false, "source is not locked-for-transfer (released by TTL/admin, or never locked)"
+    end
+    -- Request-vs-lock correlation (NAME-FREE): a stale/duplicate/reused-index delete request for a DIFFERENT
+    -- transfer will not match this lock's transfer_job_id, so the caller refuses WITHOUT touching the unrelated
+    -- transfer's lock or platform. Nil-guarded: an old-save lock or a caller without a job id degrades to the
+    -- surface.index check (no worse than before; real transfers always carry both).
+    if expected_job_id and lock.transfer_job_id and lock.transfer_job_id ~= expected_job_id then
+        return false, string.format("lock belongs to a different transfer (job_id '%s' != requested '%s')",
+            tostring(lock.transfer_job_id), tostring(expected_job_id))
     end
     if not (current_surface and current_surface.valid and current_surface.index == lock.surface_index) then
         return false, "surface identity mismatch (index reused since lock?)"

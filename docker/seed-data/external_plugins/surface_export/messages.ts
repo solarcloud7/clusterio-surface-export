@@ -1040,6 +1040,7 @@ export class DeleteSourcePlatformRequest {
 			platformIndex: { type: "integer" },
 			platformName: { type: "string" },
 			forceName: { type: "string", default: "player" },
+			exportId: { type: ["string", "null"], default: null },
 		},
 		required: ["platformIndex", "platformName"],
 		additionalProperties: false,
@@ -1048,15 +1049,20 @@ export class DeleteSourcePlatformRequest {
 	platformIndex: number;
 	platformName: string;
 	forceName: string;
+	// The source-generated export/transfer id (== the source lock's transfer_job_id). A NAME-FREE correlation
+	// token: the Lua delete refuses if this doesn't match the lock at the index, so a stale/duplicate/reused-index
+	// delete can't unlock or tear down an UNRELATED in-flight transfer's platform (Pitfall #31 / re-audit P1).
+	exportId: string | null;
 
-	constructor(json: { platformIndex: number; platformName: string; forceName?: string }) {
+	constructor(json: { platformIndex: number; platformName: string; forceName?: string; exportId?: string | null }) {
 		this.platformIndex = json.platformIndex;
 		this.platformName = json.platformName;
 		this.forceName = json.forceName || "player";
+		this.exportId = json.exportId ?? null;
 	}
 
-	static fromJSON(json: { platformIndex: number; platformName: string; forceName?: string }) { return new DeleteSourcePlatformRequest(json); }
-	toJSON() { return { platformIndex: this.platformIndex, platformName: this.platformName, forceName: this.forceName }; }
+	static fromJSON(json: { platformIndex: number; platformName: string; forceName?: string; exportId?: string | null }) { return new DeleteSourcePlatformRequest(json); }
+	toJSON() { return { platformIndex: this.platformIndex, platformName: this.platformName, forceName: this.forceName, exportId: this.exportId }; }
 
 	static Response = {
 		jsonSchema: { type: "object", properties: { success: { type: "boolean" }, error: { type: "string" } }, required: ["success"] } as JsonSchema,

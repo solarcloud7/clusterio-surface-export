@@ -791,9 +791,9 @@ export class InstancePlugin extends BaseInstancePlugin {
 	/**
 	 * Handle delete source platform request
 	 */
-	async handleDeleteSourcePlatform(request: { platformIndex: number; platformName: string; forceName?: string }) {
+	async handleDeleteSourcePlatform(request: { platformIndex: number; platformName: string; forceName?: string; exportId?: string | null }) {
 		const platformIndex = coercePlatformIndex(request.platformIndex);
-		this.logger.info(`Deleting source platform: index ${platformIndex} ('${request.platformName}')`);
+		this.logger.info(`Deleting source platform: index ${platformIndex} ('${request.platformName}', export ${request.exportId ?? "—"})`);
 
 		// Fail loud on a missing/invalid index rather than coercing — the Lua delete resolves force.platforms
 		// by this index and cross-checks the name, so a bad index here would (correctly) be refused downstream.
@@ -808,6 +808,7 @@ export class InstancePlugin extends BaseInstancePlugin {
 				platformIndex,
 				String(request.platformName || ""),
 				String(request.forceName || "player"),
+				request.exportId ?? null,
 			);
 
 			const trimmedResult = result.trim();
