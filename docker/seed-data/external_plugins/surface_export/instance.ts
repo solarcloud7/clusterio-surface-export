@@ -10,7 +10,7 @@ import type { Instance } from "@clusterio/host";
 import { wait } from "@clusterio/lib";
 import type { ExportData, ExportResult, ImportResult, PendingTransfer } from "./messages";
 import * as messages from "./messages";
-import { getErrorMessage, coercePlatformIndex, EXPORT_POLL_TIMEOUT_MS, EXPORT_POLL_INTERVAL_MS } from "./helpers";
+import { getErrorMessage, coercePlatformIndex, EXPORT_POLL_TIMEOUT_MS, EXPORT_POLL_INTERVAL_MS, makeCanonicalTransferId } from "./helpers";
 import { LuaInterface } from "./lib/lua-interface";
 
 /**
@@ -233,15 +233,18 @@ export class InstancePlugin extends BaseInstancePlugin {
 					return;
 				}
 				this.logger.info(`Auto-transfer requested: dest_instance_id=${data.destination_instance_id} (type=${typeof data.destination_instance_id})`);
-				this.logger.info(`  Sending TransferPlatformRequest to controller: exportId=${exportId}, targetInstanceId=${data.destination_instance_id}`);
+				const canonicalExportId = makeCanonicalTransferId(this.i.id, exportId);
+				this.logger.info(`  Sending TransferPlatformRequest to controller: exportId=${canonicalExportId}, targetInstanceId=${data.destination_instance_id}`);
 
 				// Send transfer request to controller through the permissive `this.link` view (see
 				// PermissiveLink) — a BOUND call on the object, never an extracted/cast method (Pitfall #26).
 				const transferResponse = await this.link.sendTo(
 					"controller",
 					new messages.TransferPlatformRequest({
-						exportId,
+						exportId: canonicalExportId,
 						targetInstanceId: Number(data.destination_instance_id),
+						sourceInstanceId: this.i.id,
+						sourceExportId: exportId,
 					}),
 				);
 
@@ -261,14 +264,17 @@ export class InstancePlugin extends BaseInstancePlugin {
 					this.pendingTransfer = null;
 					return;
 				}
+				const canonicalExportId = makeCanonicalTransferId(this.i.id, exportId);
 				this.logger.info(`Transfer export complete, initiating transfer to instance ${this.pendingTransfer.destination_instance_id}`);
 
 				// Send transfer request to controller through the permissive `this.link` view (see note above).
 				const transferResponse = await this.link.sendTo(
 					"controller",
 					new messages.TransferPlatformRequest({
-						exportId,
+						exportId: canonicalExportId,
 						targetInstanceId: Number(pendingTargetId),
+						sourceInstanceId: this.i.id,
+						sourceExportId: exportId,
 					}),
 				);
 

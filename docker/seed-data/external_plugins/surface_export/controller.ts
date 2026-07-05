@@ -33,7 +33,7 @@ import type {
 	PersistedTransactionLog,
 } from "./messages";
 import * as messages from "./messages";
-import { normalizeExportMetrics, getErrorMessage, generateOperationId, TICKS_TO_MS, STORAGE_FILENAME, buildPayloadMetrics, buildImportMetrics } from "./helpers";
+import { normalizeExportMetrics, getErrorMessage, generateOperationId, TICKS_TO_MS, STORAGE_FILENAME, buildPayloadMetrics, buildImportMetrics, makeCanonicalTransferId, parseCanonicalTransferId } from "./helpers";
 
 const PLUGIN_NAME = "surface_export";
 export const PENDING_TRANSFER_INTENT_RETENTION_MS = 15 * 60 * 1000;
@@ -162,15 +162,15 @@ export class ControllerPlugin extends BaseControllerPlugin {
 	}
 
 	async handlePlatformExport(event: { exportId: string; platformName: string; platformIndex?: number | null; instanceId: number; exportData: ExportData; exportMetrics?: messages.ExportMetrics; timestamp: number }) {
-		this.logger.info(
-			`Received platform export: ${event.exportId} from instance ${event.instanceId} ` +
-			`(${event.platformName})`,
-		);
+		const sourceExportId = event.exportId;
+		const canonicalExportId = makeCanonicalTransferId(event.instanceId, sourceExportId);
+		this.logger.info(`Received platform export: ${canonicalExportId} (source ${sourceExportId}) from instance ${event.instanceId} (${event.platformName})`);
 
 		try {
 			const serializedSize = Buffer.byteLength(JSON.stringify(event.exportData), "utf8");
-			this.platformStorage.set(event.exportId, {
-				exportId: event.exportId,
+			this.platformStorage.set(canonicalExportId, {
+				exportId: canonicalExportId,
+				sourceExportId,
 				platformName: event.platformName,
 				platformIndex: event.platformIndex ?? null,
 				instanceId: event.instanceId,
@@ -180,7 +180,7 @@ export class ControllerPlugin extends BaseControllerPlugin {
 				size: serializedSize,
 			});
 
-			this.logger.info(`Stored platform export: ${event.exportId}`);
+			this.logger.info(`Stored platform export: ${canonicalExportId}`);
 
 			const maxStorage = Number(this.cfg(`${PLUGIN_NAME}.max_storage_size`));
 			if (Number.isFinite(maxStorage) && this.platformStorage.size > maxStorage) {
@@ -238,6 +238,7 @@ export class ControllerPlugin extends BaseControllerPlugin {
 	listStoredExports() {
 		return Array.from(this.platformStorage.values()).map(data => ({
 			exportId: data.exportId,
+			sourceExportId: data.sourceExportId ?? null,
 			platformName: data.platformName,
 			instanceId: data.instanceId,
 			timestamp: data.timestamp,
@@ -263,6 +264,7 @@ export class ControllerPlugin extends BaseControllerPlugin {
 			instanceId: stored.instanceId,
 			timestamp: stored.timestamp,
 			size: stored.size ?? Buffer.byteLength(JSON.stringify(stored.exportData || {}), "utf8"),
+			sourceExportId: stored.sourceExportId ?? null,
 			exportData: stored.exportData,
 		};
 	}
@@ -407,7 +409,8 @@ export class ControllerPlugin extends BaseControllerPlugin {
 			}
 			const waitForStoreStartMs = Date.now();
 
-			const stored = await this.orchestrator.waitForStoredExport(exportResponse.exportId, 60000);
+			const canonicalExportId = makeCanonicalTransferId(sourceInstanceId, exportResponse.exportId);
+			const stored = await this.orchestrator.waitForStoredExport(canonicalExportId, 60000);
 			const waitForStoredMs = Date.now() - waitForStoreStartMs;
 			operation.platformName = stored.platformName || operation.platformName;
 			operation.sourceInstanceId = stored.instanceId;
@@ -572,17 +575,32 @@ export class ControllerPlugin extends BaseControllerPlugin {
 		return { success: false, error: `Transaction log not found for transfer: ${transferId}` };
 	}
 
+	canonicalizeStoredExport(entry: StoredExport): StoredExport {
+		const parsed = parseCanonicalTransferId(entry.exportId);
+		if (parsed) {
+			return { ...entry, exportId: entry.exportId, sourceExportId: entry.sourceExportId || parsed.sourceJobId };
+		}
+		if (Number.isInteger(Number(entry.instanceId)) && Number(entry.instanceId) > 0) {
+			const sourceExportId = entry.sourceExportId || entry.exportId;
+			return { ...entry, exportId: makeCanonicalTransferId(Number(entry.instanceId), sourceExportId), sourceExportId };
+		}
+		this.logger.warn(`Cannot canonicalize stored export ${entry.exportId}: missing numeric instanceId; preserving legacy key`);
+		return { ...entry, sourceExportId: entry.sourceExportId || entry.exportId };
+	}
+
 	async loadStorage() {
 		try {
 			const content = await fs.readFile(this.storagePath, "utf8");
 			const entries = JSON.parse(content);
 			if (Array.isArray(entries)) {
-				for (const entry of entries) {
-					if (entry && entry.exportId) {
+				for (const rawEntry of entries) {
+					if (rawEntry && rawEntry.exportId) {
+						const entry = rawEntry as StoredExport;
 						if (!entry.size && entry.exportData) {
 							entry.size = Buffer.byteLength(JSON.stringify(entry.exportData), "utf8");
 						}
-						this.platformStorage.set(entry.exportId, entry);
+						const stored = this.canonicalizeStoredExport(entry);
+						this.platformStorage.set(stored.exportId, stored);
 					}
 				}
 			}

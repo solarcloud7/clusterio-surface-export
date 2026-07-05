@@ -53,6 +53,7 @@ export interface TransferSummaryModel {
 }
 export interface StoredExportSummaryModel {
 	exportId: string;
+	sourceExportId: string | null;
 	platformName: string;
 	instanceId: number;
 	timestamp: number;

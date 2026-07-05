@@ -34,6 +34,7 @@ export function createOperationRecord(
 		transferId: operationId,
 		operationType,
 		exportId: options.exportId || null,
+		sourceExportId: options.sourceExportId || null,
 		artifactSizeBytes: options.artifactSizeBytes ?? null,
 		platformName: options.platformName || "Unknown",
 		platformIndex: Number.isInteger(Number(options.platformIndex)) ? Number(options.platformIndex) : 1,

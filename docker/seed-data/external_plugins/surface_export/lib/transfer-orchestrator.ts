@@ -1,8 +1,9 @@
 
 import { wait } from "@clusterio/lib";
-import { normalizeExportMetrics, TICKS_TO_MS, getErrorMessage, isSessionLostError, generateOperationId, coercePlatformIndex, VALIDATION_TIMEOUT_MS, buildPayloadMetrics, buildImportMetrics } from "../helpers";
+import { normalizeExportMetrics, TICKS_TO_MS, getErrorMessage, isSessionLostError, coercePlatformIndex, VALIDATION_TIMEOUT_MS, buildPayloadMetrics, buildImportMetrics, makeCanonicalTransferId, parseCanonicalTransferId } from "../helpers";
 import { createOperationRecord } from "./operation-record";
-import type { IControllerPlugin, ActiveTransfer, SimpleResponse, TransferValidationEvent, StoredExport, ValidationResult, ImportMetrics, ExportMetrics } from "../messages";function mergeExportMetrics(storedMetrics: ExportMetrics | null | undefined, runtimeMetrics: Record<string, unknown> | null | undefined) {
+import type { IControllerPlugin, ActiveTransfer, SimpleResponse, TransferValidationEvent, StoredExport, ValidationResult, ImportMetrics, ExportMetrics } from "../messages";
+function mergeExportMetrics(storedMetrics: ExportMetrics | null | undefined, runtimeMetrics: Record<string, unknown> | null | undefined) {
 	const merged = {
 		...normalizeExportMetrics((storedMetrics || null) as Record<string, unknown> | null),
 		...normalizeExportMetrics(runtimeMetrics || null),
@@ -81,7 +82,12 @@ export class TransferOrchestrator {
 			return { success: false, error: `Export not found: ${exportId}` };
 		}
 
-		const transferId = generateOperationId("transfer");
+		const transferId = exportData.exportId || exportId;
+		const sourceExportId = exportData.sourceExportId || parseCanonicalTransferId(transferId)?.sourceJobId || transferId;
+		const existingTransfer = this.plugin.activeTransfers.get(transferId);
+		if (existingTransfer) {
+			return { success: true, transferId, message: `Transfer already active: ${transferId}` };
+		}
 		const innerData = exportData.exportData;
 		const { payloadMetrics, itemCounts, fluidCounts } = buildPayloadMetrics(innerData);
 		const platformInfo = (innerData?.platform && typeof innerData.platform === "object"
@@ -108,6 +114,7 @@ export class TransferOrchestrator {
 		const operation = createOperationRecord("transfer", {
 			operationId: transferId,
 			exportId,
+			sourceExportId,
 			artifactSizeBytes: exportData.size ?? null,
 			platformName: exportData.platformName || "Unknown",
 			platformIndex: sourcePlatformIndex,
@@ -333,8 +340,8 @@ export class TransferOrchestrator {
 				platformIndex: transfer.platformIndex,
 				platformName: transfer.platformName,
 				forceName: transfer.forceName,
-				// Name-free request-vs-lock correlation: transfer.exportId == the source lock's transfer_job_id.
-				exportId: transfer.exportId ?? null,
+				// Name-free request-vs-lock correlation: transfer.sourceExportId == the source lock's transfer_job_id.
+				exportId: transfer.sourceExportId ?? transfer.exportId ?? null,
 			}),
 		);
 		const cleanupMs = this.txLogger.endPhase(transferId, "cleanup");
@@ -444,15 +451,16 @@ export class TransferOrchestrator {
 			// Export succeeded ⇒ the source is now locked-for-transfer on the source instance.
 
 			const t1 = Date.now();
-			await this.waitForStoredExport(exportResponse.exportId);
+			const canonicalExportId = makeCanonicalTransferId(sourceInstanceId, exportResponse.exportId);
+			await this.waitForStoredExport(canonicalExportId);
 			const waitForStoredMs = Date.now() - t1;
 
-			const result = await this.transferPlatform(exportResponse.exportId, resolvedTarget.id, {
+			const result = await this.transferPlatform(canonicalExportId, resolvedTarget.id, {
 				requestExportAndLockMs: exportRequestMs,
 				waitForControllerStoreMs: waitForStoredMs,
 				controllerExportPrepTotalMs: exportRequestMs + waitForStoredMs,
 			}, t0);
-			return { ...result, exportId: exportResponse.exportId };
+			return { ...result, exportId: canonicalExportId, sourceExportId: exportResponse.exportId };
 		} catch (err: unknown) {
 			const errMsg = getErrorMessage(err);
 			// NEVER silent: the source is locked-for-transfer once the export succeeds, so a throw below it
@@ -494,20 +502,28 @@ export class TransferOrchestrator {
 		}
 	}
 
-	async handleTransferPlatformRequest(request: { exportId: string; targetInstanceId: number }) {
+	async handleTransferPlatformRequest(request: { exportId: string; targetInstanceId: number; sourceInstanceId?: number | null; sourceExportId?: string | null }) {
 		const resolved = this.plugin.platformTree.resolveTargetInstance(request.targetInstanceId);
 		if (!resolved) {
 			return { success: false, error: `Unknown instance ${request.targetInstanceId}` };
 		}
 		try {
-			return await this.transferPlatform(request.exportId, resolved.id);
+			const exportId = this.plugin.platformStorage.get(request.exportId)
+				? request.exportId
+				: (request.sourceInstanceId && request.sourceExportId
+					? makeCanonicalTransferId(Number(request.sourceInstanceId), request.sourceExportId)
+					: request.exportId);
+			return await this.transferPlatform(exportId, resolved.id);
 		} catch (err: unknown) {
 			// transferPlatform's own try/catch self-heals its transmission failures, but a throw in its
 			// PRE-transmit setup propagates here. On the auto-continuation path the source is already
 			// locked-for-transfer, so roll it back rather than leave it stuck locked-and-hidden.
 			const errMsg = getErrorMessage(err);
 			this.logger.error(`Error transferring export ${request.exportId}: ${errMsg}`);
-			const stored = this.plugin.platformStorage.get(request.exportId);
+			const fallbackExportId = request.sourceInstanceId && request.sourceExportId
+				? makeCanonicalTransferId(Number(request.sourceInstanceId), request.sourceExportId)
+				: request.exportId;
+			const stored = this.plugin.platformStorage.get(request.exportId) || this.plugin.platformStorage.get(fallbackExportId);
 			const force = String((stored?.exportData as { platform?: { force?: string } } | undefined)?.platform?.force || "player");
 			if (stored && Number.isInteger(stored.platformIndex)) {
 				const rollbackError = await this.sendUnlockRequest(stored.instanceId, stored.platformIndex as number, force);

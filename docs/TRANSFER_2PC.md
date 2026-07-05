@@ -40,11 +40,12 @@ The failsafe lives where the at-risk resource lives: the source instance's own F
 ticks (which do not advance while the host is down). Non-destructive by construction — it **only ever unlocks,
 never deletes**.
 
-- The transfer lock carries `kind="transfer"` + `expires_tick` (+ the export `job_id`), stamped at the universal
+- Transfer locks carry `kind="transfer"` + `expires_tick` (+ the export `job_id`), stamped at the universal
   lock path (`ExportPipeline.queue` whenever a `destination_instance_id` is present) and at the in-game
-  `transfer-trigger`. Manual `/lock-platform` locks are kind-less and are never auto-touched.
+  `transfer-trigger`. Export/file locks carry `kind="export"` + `expires_tick`. Manual `/lock-platform` locks
+  are kind-less and are never auto-touched.
 - `SurfaceLock.scan_transfer_expiries()` runs from `on_tick` (throttled `game.tick % 60 == 0`): for each
-  `kind="transfer"` lock past `expires_tick` (fallback `locked_tick + DEFAULT_TRANSFER_LOCK_TTL_TICKS`), it calls
+  `kind="transfer"` or `kind="export"` lock past `expires_tick` (fallback `locked_tick + DEFAULT_TRANSFER_LOCK_TTL_TICKS`), it calls
   `unlock_platform`. Old-save locks lacking timing data are skipped; every new field is nil-guarded.
 - TTL: `DEFAULT_TRANSFER_LOCK_TTL_TICKS = 36000` (10 min at 60 UPS), sized to exceed the worst-case TOTAL
   transfer duration (export scan + chunked RCON + import + validation + margin), asserted `>=`
@@ -61,8 +62,8 @@ never deletes**.
   than deleting a live platform. Phase 2's heartbeat + canonical id eliminate the mid-flight unlock.
 - A stranded-then-committed transfer's stored export can linger in the Exports tab and be re-imported into an
   extra copy (Phase 1 cannot know the dest committed, so it cannot safely delete the export). Resolved in Phase 2.
-- A transient EXPORT/file lock is kind-less (no TTL); a crash mid-export strands it until manual `/unlock-platform`
-  (no data loss — export deletes nothing). Follow-up: give transient export locks their own expiring kind.
+- A transient EXPORT/file lock now self-expires as `kind="export"`; a crash mid-export recovers by TTL instead
+  of stranding the platform until manual `/unlock-platform`.
 
 ## Phase 2 — full phase-aware 2PC (PENDING; do not start until prerequisites are proven)
 Adds a durable COMMIT signal on the source (its lock gains a `phase`: `pre_commit → committed`) plus destination
@@ -122,7 +123,7 @@ Legend: **S**=source, **D**=dest, **C**=controller; `{}` = source lock phase (Ph
   a full controller/web-route behavior test for the double-transfer reject (the decision is unit-tested via
   `is_same_transfer_upgrade`; the in-game route is live-verified). The mid-flight TTL self-unlock on a >10-min
   transfer (delete gate makes it a recoverable dup, not loss) is eliminated by the Phase-2 heartbeat.
-- **Pending:** all of Phase 2 (blocked on the two prerequisites above).
+- **Pending:** Phase 2 COMMIT / GO-LIVE / committed-tombstone protocol and the destination hold primitive. The canonical-id prerequisite and export-lock strand are implemented in the current working tree pending the live gate.
 
 ## Verification
 - **Headless:** `npm run lint:lua` (incl. the identity guard) + `npm run lint:pcall-logging` + `npm test`.

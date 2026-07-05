@@ -622,6 +622,8 @@ export class TransferPlatformRequest {
 		properties: {
 			exportId: { type: "string" },
 			targetInstanceId: { type: "integer" },
+			sourceInstanceId: { type: ["integer", "null"], default: null },
+			sourceExportId: { type: ["string", "null"], default: null },
 		},
 		required: ["exportId", "targetInstanceId"],
 		additionalProperties: false,
@@ -629,14 +631,18 @@ export class TransferPlatformRequest {
 
 	exportId: string;
 	targetInstanceId: number;
+	sourceInstanceId: number | null;
+	sourceExportId: string | null;
 
-	constructor(json: { exportId: string; targetInstanceId: number }) {
+	constructor(json: { exportId: string; targetInstanceId: number; sourceInstanceId?: number | null; sourceExportId?: string | null }) {
 		this.exportId = json.exportId;
 		this.targetInstanceId = json.targetInstanceId;
+		this.sourceInstanceId = Number.isInteger(json.sourceInstanceId) ? (json.sourceInstanceId as number) : null;
+		this.sourceExportId = json.sourceExportId ?? null;
 	}
 
-	static fromJSON(json: { exportId: string; targetInstanceId: number }) { return new TransferPlatformRequest(json); }
-	toJSON() { return { exportId: this.exportId, targetInstanceId: this.targetInstanceId }; }
+	static fromJSON(json: { exportId: string; targetInstanceId: number; sourceInstanceId?: number | null; sourceExportId?: string | null }) { return new TransferPlatformRequest(json); }
+	toJSON() { return { exportId: this.exportId, targetInstanceId: this.targetInstanceId, sourceInstanceId: this.sourceInstanceId, sourceExportId: this.sourceExportId }; }
 
 	static Response = {
 		jsonSchema: { type: "object", properties: { success: { type: "boolean" }, error: { type: "string" }, transferId: { type: "string" }, message: { type: "string" } }, required: ["success"] } as JsonSchema,
@@ -1252,6 +1258,7 @@ export interface ActiveTransfer {
 	transferId: string;
 	operationType: OperationType;
 	exportId: string | null;
+	sourceExportId?: string | null;
 	artifactSizeBytes: number | null;
 	platformName: string;
 	platformIndex: number;
@@ -1279,6 +1286,7 @@ export interface ActiveTransfer {
 
 export interface StoredExport {
 	exportId: string;
+	sourceExportId: string;
 	platformName: string;
 	platformIndex: number | null;  // source platform's unique index (top-level, compression-proof; keys the source delete)
 	instanceId: number;
@@ -1420,6 +1428,7 @@ export type ExportData = {
 export type OperationOptions = {
 	operationId?: string;
 	exportId?: string | null;
+	sourceExportId?: string | null;
 	artifactSizeBytes?: number | null;
 	platformName?: string;
 	platformIndex?: number;
