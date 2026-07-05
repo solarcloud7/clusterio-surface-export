@@ -70,6 +70,7 @@ function TransferTrigger.start(force, platform_index, dest_instance_id, gateway_
 	-- Step 1: lock the source (hidden from players, paused) for the duration of the transfer.
 	-- The export queue later backfills the generated job_id onto this same transfer lock.
 	local lock_ok, lock_err = SurfaceLock.lock_platform(platform, force, {
+		kind = "transfer",
 		expires_tick = game.tick + SurfaceLock.DEFAULT_TRANSFER_LOCK_TTL_TICKS,
 	})
 	if not lock_ok then

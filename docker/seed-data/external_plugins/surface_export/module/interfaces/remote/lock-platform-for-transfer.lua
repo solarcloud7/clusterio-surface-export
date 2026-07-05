@@ -21,6 +21,7 @@ local function lock_platform_for_transfer(platform_index, force_name)
   end
 
   return SurfaceLock.lock_platform(platform, force, {
+    kind = "transfer",
     expires_tick = game.tick + SurfaceLock.DEFAULT_TRANSFER_LOCK_TTL_TICKS,
   })
 end

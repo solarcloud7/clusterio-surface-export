@@ -61,6 +61,14 @@ local function transfer_lock_selftest()
 				locked_tick = game.tick,
 				expires_tick = game.tick + SurfaceLock.DEFAULT_TRANSFER_LOCK_TTL_TICKS,
 			},
+			[6] = {
+				kind = "export",
+				platform_name = "expired-export",
+				platform_index = 6,
+				force_name = "player",
+				locked_tick = game.tick - 120,
+				expires_tick = game.tick - 1,
+			},
 		}
 
 		SurfaceLock.unlock_platform = function(platform_index, expected_name)
@@ -81,12 +89,15 @@ local function transfer_lock_selftest()
 			"missing expires_tick should fall back to locked_tick + DEFAULT_TRANSFER_LOCK_TTL_TICKS")
 		check("fresh_transfer_untouched", storage.locked_platforms[5] ~= nil,
 			"fresh transfer lock must not be touched")
+		local unlocked_names = {}
+		for _, unlock in pairs(unlocks) do
+			unlocked_names[unlock.name] = true
+		end
 		check("unlock_uses_name_tripwire",
-			#unlocks == 2 and ((unlocks[1].name == "expired" and unlocks[2].name == "fallback")
-				or (unlocks[1].name == "fallback" and unlocks[2].name == "expired")),
-			"expired unlocks must pass the stored platform_name tripwire (order-independent: the set {expired, fallback})")
+			#unlocks == 3 and unlocked_names.expired and unlocked_names.fallback and unlocked_names["expired-export"],
+			"expired unlocks must pass the stored platform_name tripwire (order-independent: the set {expired, fallback, expired-export})")
 		check("summary_counts",
-			summary.checked == 4 and summary.expired == 2 and summary.skipped == 1 and summary.failed == 0,
+			summary.checked == 5 and summary.expired == 3 and summary.skipped == 1 and summary.failed == 0,
 			"unexpected summary: checked=" .. tostring(summary.checked) ..
 				" expired=" .. tostring(summary.expired) .. " skipped=" .. tostring(summary.skipped) ..
 				" failed=" .. tostring(summary.failed))
