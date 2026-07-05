@@ -123,7 +123,7 @@ Legend: **S**=source, **D**=dest, **C**=controller; `{}` = source lock phase (Ph
   a full controller/web-route behavior test for the double-transfer reject (the decision is unit-tested via
   `is_same_transfer_upgrade`; the in-game route is live-verified). The mid-flight TTL self-unlock on a >10-min
   transfer (delete gate makes it a recoverable dup, not loss) is eliminated by the Phase-2 heartbeat.
-- **Pending:** Phase 2 COMMIT / GO-LIVE / committed-tombstone protocol and the destination hold primitive. The canonical-id prerequisite and export-lock strand are implemented in the current working tree pending the live gate.
+- **Pending:** Phase 2 COMMIT / GO-LIVE / committed-tombstone protocol and the destination hold primitive. The canonical-id prerequisite and export-lock strand are closed.
 
 ## Verification
 - **Headless:** `npm run lint:lua` (incl. the identity guard) + `npm run lint:pcall-logging` + `npm test`.
