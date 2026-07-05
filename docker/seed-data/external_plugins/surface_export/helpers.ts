@@ -16,7 +16,7 @@ export const STORAGE_FILENAME = "surface_export_storage.json";
 
 // getErrorMessage + generateOperationId live in the shared (Node + web) module so they aren't duplicated
 // across helpers.ts and web/utils.ts (task #97). Re-export so existing `.../helpers` call sites keep working.
-export { getErrorMessage, generateOperationId } from "./shared/utils";
+export { getErrorMessage, generateOperationId, makeCanonicalTransferId, parseCanonicalTransferId } from "./shared/utils";
 
 /**
  * True when `err` is a Clusterio session-loss rejection (`@clusterio/lib` `SessionLost`, which sets

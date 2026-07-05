@@ -19,6 +19,7 @@ local MIN_WORST_CASE_TRANSFER_TTL_TICKS =
     VALIDATION_TIMEOUT_TICKS + WORST_CASE_RCON_TICKS + WORST_CASE_SCAN_IMPORT_TICKS + WORST_CASE_MARGIN_TICKS -- 19200 (~5.3 min); DEFAULT 36000 clears it ~1.9×
 SurfaceLock.DEFAULT_TRANSFER_LOCK_TTL_TICKS = DEFAULT_TRANSFER_LOCK_TTL_TICKS
 SurfaceLock.MIN_WORST_CASE_TRANSFER_TTL_TICKS = MIN_WORST_CASE_TRANSFER_TTL_TICKS
+local EXPIRABLE_LOCK_KINDS = { transfer = true, export = true }
 
 --- Freeze all entities on a surface (synchronous - very fast)
 --- CRITICAL: This captures the ORIGINAL active state BEFORE freezing.
@@ -259,7 +260,7 @@ end
 --- incoming one. This is the UNIVERSAL guard: it protects EVERY entry path (the in-game trigger AND the web/ctl
 --- export_platform route), because all of them lock through lock_platform. Pure → unit-testable.
 --- @param existing_job_id string|nil  the existing lock's transfer_job_id
---- @param opts_job_id string|nil  the incoming transfer_opts.job_id
+--- @param opts_job_id string|nil  the incoming lock_opts.job_id
 --- @return boolean same
 function SurfaceLock.is_same_transfer_upgrade(existing_job_id, opts_job_id)
     return existing_job_id == nil or existing_job_id == opts_job_id
@@ -269,9 +270,9 @@ end
 --- Completes cargo pod transfers, freezes entities, hides surface
 --- @param platform LuaSpacePlatform: The platform to lock
 --- @param force LuaForce: The force that owns the platform
---- @param transfer_opts table|nil: Optional {job_id, expires_tick} for transfer locks only
+--- @param lock_opts table|nil: Optional {job_id, expires_tick} for transfer locks only
 --- @return boolean, string|nil: success, error_message
-function SurfaceLock.lock_platform(platform, force, transfer_opts)
+function SurfaceLock.lock_platform(platform, force, lock_opts)
     if not platform or not platform.valid then
         return false, "Platform not valid"
     end
@@ -297,24 +298,24 @@ function SurfaceLock.lock_platform(platform, force, transfer_opts)
         -- platform.name. The registry is already keyed by the unique platform.index; surface.index additionally
         -- rejects an index REUSED by a different platform (its surface differs) → that falls through to the
         -- "different transfer lock" refusal below. A rename keeps surface.index, so a renamed source re-locks fine.
-        if transfer_opts and existing_lock.kind == "transfer"
+        if lock_opts and lock_opts.kind == "transfer" and existing_lock.kind == "transfer"
             and existing_lock.surface_index == surface.index then
             -- Only the SAME transfer's pre-lock→export-queue handoff may upgrade this lock: its token is either
             -- not stamped yet (transfer-trigger locked first, no job_id) or equal. A DIFFERENT token — or, for a
             -- token-less caller, ANY existing token — means a SECOND transfer of an in-flight platform. REJECT it,
             -- else it OVERWRITES the first transfer's correlation token → the first transfer's source delete then
             -- refuses (job_id mismatch) AFTER its destination committed = a live-source + committed-dest DUP.
-            if not SurfaceLock.is_same_transfer_upgrade(existing_lock.transfer_job_id, transfer_opts.job_id) then
+            if not SurfaceLock.is_same_transfer_upgrade(existing_lock.transfer_job_id, lock_opts.job_id) then
                 return false, "Platform already locked by a different in-flight transfer"
             end
-            existing_lock.transfer_job_id = transfer_opts.job_id or existing_lock.transfer_job_id
-            existing_lock.expires_tick = transfer_opts.expires_tick or existing_lock.expires_tick
+            existing_lock.transfer_job_id = lock_opts.job_id or existing_lock.transfer_job_id
+            existing_lock.expires_tick = lock_opts.expires_tick or existing_lock.expires_tick
             return true, nil -- same transfer lock upgraded
         end
-        if transfer_opts and existing_lock.kind == "transfer" then
+        if lock_opts and lock_opts.kind == "transfer" and existing_lock.kind == "transfer" then
             return false, "Platform already locked by a different transfer lock"
         end
-        if transfer_opts and existing_lock.kind ~= "transfer" then
+        if lock_opts and lock_opts.kind == "transfer" and existing_lock.kind ~= "transfer" then
             return false, "Platform already locked by a non-transfer lock"
         end
         return false, "Platform already locked"
@@ -351,9 +352,9 @@ function SurfaceLock.lock_platform(platform, force, transfer_opts)
         original_hidden = original_hidden,
         original_schedule = original_schedule,
         locked_tick = game.tick,
-        kind = transfer_opts and "transfer" or nil,
-        transfer_job_id = transfer_opts and transfer_opts.job_id or nil,
-        expires_tick = transfer_opts and transfer_opts.expires_tick or nil,
+        kind = lock_opts and lock_opts.kind or nil,
+        transfer_job_id = lock_opts and lock_opts.job_id or nil,
+        expires_tick = lock_opts and lock_opts.expires_tick or nil,
         frozen_states = frozen_states,
         frozen_count = frozen_count,
     }
@@ -520,7 +521,7 @@ function SurfaceLock.scan_transfer_expiries()
     local checked, expired, skipped, failed = 0, 0, 0, 0
 
     for platform_index, lock_data in pairs(storage.locked_platforms) do
-        if type(lock_data) == "table" and lock_data.kind == "transfer" then
+        if type(lock_data) == "table" and EXPIRABLE_LOCK_KINDS[lock_data.kind] then
             checked = checked + 1
             local locked_tick = lock_data.locked_tick
             if not locked_tick then

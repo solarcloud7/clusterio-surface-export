@@ -22,8 +22,8 @@ unless a validated copy exists on the destination AND the source is still the fr
 forced to choose, a **recoverable dup or stuck-lock always beats an unrecoverable deletion.**
 
 ## Open items needing a human-engineer decision (the "we don't have an answer" list)
-- 🔧 **Export/file-lock strand policy** (§G) — a save taken while an export lock is held would restore locked;
-  give transient export locks their own expiring kind, or accept manual `/unlock-platform`? Deferred (owner)
+- ✅ **Export/file-lock strand policy** (§G) — transient export/file locks now use `kind="export"` with the same
+  source-side TTL scan as transfer locks; manual kind-less locks remain manual.
   until the identifier gate + the other re-audit fixes land.
 
 *Resolved since first draft:* cargo-pod `awaiting_launch` loss → **fixed** zero-loss (§D); rename-mid-transfer →
@@ -45,7 +45,7 @@ that is no longer locked-for-transfer: `SurfaceLock.transfer_delete_identity_ok`
 present with `kind="transfer"` (a TTL/admin release makes the platform live again ⇒ not deletable), AND correlates
 the delete request to that lock by a name-free `transfer_job_id` + `surface.index`. Worst case is a recoverable
 **dup**, never an unrecoverable deletion. Eliminating the mid-flight unlock entirely (controller heartbeat +
-canonical transfer id) is still **Phase 2**, unshipped.
+Phase-2 commit state) is still **Phase 2**; the canonical transfer id prerequisite is implemented in the current working tree pending the live gate.
 
 **Q: What if the source server is down for a while during my transfer?**
 A: ✅ The expiry clock is game-ticks, which do not advance while the host is down — downtime never causes a
@@ -142,7 +142,7 @@ passenger is now WARNED up front — before the export begins — that they're t
 ## F. Locks & admin
 
 **Q: What if I manually `/lock-platform` a platform — will the TTL auto-unlock it?**
-A: ✅ No. Manual locks are kind-less; the expiry scan only touches `kind="transfer"` locks. Your admin lock stays
+A: ✅ No. Manual locks are kind-less; the expiry scan only touches transient `kind="transfer"` and `kind="export"` locks. Your admin lock stays
 until you `/unlock-platform`.
 
 **Q: What if I try to transfer a platform I've manually locked?**

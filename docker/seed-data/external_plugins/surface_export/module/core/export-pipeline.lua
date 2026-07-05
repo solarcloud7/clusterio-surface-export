@@ -184,17 +184,15 @@ function ExportPipeline.queue(platform_index, force_name, requester_name, destin
 	-- a planet at the SOLE source-delete chokepoint (delete_platform_for_transfer → Gateway.evacuate_passengers)
 	-- so no one is orphaned and no entry point can be bypassed. See gateway.lua.
 
-	local transfer_opts = nil
-	if destination_instance_id then
-		transfer_opts = {
-			job_id = job_id,
-			expires_tick = game.tick + SurfaceLock.DEFAULT_TRANSFER_LOCK_TTL_TICKS,
-		}
-	end
+	local lock_opts = {
+		kind = destination_instance_id and "transfer" or "export",
+		job_id = job_id,
+		expires_tick = game.tick + SurfaceLock.DEFAULT_TRANSFER_LOCK_TTL_TICKS,
+	}
 
 	-- CRITICAL: Lock the platform BEFORE scanning to ensure stable item/fluid counts
 	-- This completes cargo pods, deactivates machines, and hides surface
-	local lock_success, lock_err = SurfaceLock.lock_platform(platform, force, transfer_opts)
+	local lock_success, lock_err = SurfaceLock.lock_platform(platform, force, lock_opts)
 	if not lock_success then
 		-- If already locked by this transfer path, that's fine - just note it. A transfer targeting a platform
 		-- already locked by a non-transfer lock returns a distinct error and is refused below.

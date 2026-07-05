@@ -37,3 +37,35 @@ export function getErrorMessage(err: unknown, fallback = "Unknown error"): strin
 export function generateOperationId(prefix: string): string {
 	return `${prefix}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
 }
+
+/**
+ * Canonical controller/destination transfer id: source instance id + source save job id.
+ * The source save only knows the raw job id; the controller qualifies it when adopting the export.
+ */
+export function makeCanonicalTransferId(sourceInstanceId: number, sourceJobId: string): string {
+	if (!Number.isInteger(sourceInstanceId) || sourceInstanceId <= 0) {
+		throw new Error(`Invalid source instance id: ${String(sourceInstanceId)}`);
+	}
+	const jobId = String(sourceJobId || "");
+	if (!jobId) {
+		throw new Error("sourceJobId is required");
+	}
+	return `${sourceInstanceId}:${jobId}`;
+}
+
+/** Parse a canonical transfer id by the first colon. Returns null for legacy/upload ids. */
+export function parseCanonicalTransferId(id: string | null | undefined): { sourceInstanceId: number; sourceJobId: string } | null {
+	if (typeof id !== "string") {
+		return null;
+	}
+	const idx = id.indexOf(":");
+	if (idx <= 0) {
+		return null;
+	}
+	const sourceInstanceId = Number(id.slice(0, idx));
+	const sourceJobId = id.slice(idx + 1);
+	if (!Number.isInteger(sourceInstanceId) || sourceInstanceId <= 0 || !sourceJobId) {
+		return null;
+	}
+	return { sourceInstanceId, sourceJobId };
+}
