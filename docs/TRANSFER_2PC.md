@@ -120,13 +120,12 @@ Load-bearing rules (each is a hard constraint, not a preference):
    treating the missing platform as a failure. This closes the prerequisite that a destination can be held not-live,
    fidelity-preserved, and reversibly released before Phase 2 starts.
 
-   *Amendment (CI, 2026-07-06):* the "fidelity-preserving" claim above has one measured gap — fluid held inside a
-   DEACTIVATED crafting machine is destroyed across the hold cycle (Pitfall #17: `active=false` detaches the fluid
-   segment; reactivation's merge wipes it; CI signature `fluids 1120→1100 delta=20`). Local runs missed it because
-   the fixture's fluid write was silently rejected on our force. Fix in flight: snapshot fluidbox contents at
-   stage, re-inject after reactivation on go_live (the import pipeline's established inject-after-activation
-   pattern), plus a deterministic fixture that asserts the fluid case is armed.
-
+   *Amendment (CI closeout, 2026-07-06):* the earlier CI-only `fluids 1120→1100 delta=20` gap is **UNEXPLAINED,
+   not solved**. The bad run was eliminated by fixture determinism and direct-machine meter hardening: the probe now
+   enables `heavy-oil-cracking`, asserts the write was accepted, measures direct machine buffers separately from
+   segment totals, and reports tick/game-paused/platform-paused state on recurrence. Local R9 and CI run
+   28814951121 preserved asserted machine fluid through stage → +600 held ticks → go-live with the primitive
+   unchanged. Rejected design: no destination-hold fluid snapshot/reinject; the hold keeps full deactivation.
    **D1 — DECIDED (2026-07-06): an active destination hold owns the platform's FULL not-live state** — visibility,
    entity activation, and platform pause; `unlock_platform` (manual, TTL expiry, or any other path) touches none
    of them while a hold exists for that surface. Lock-release-before-stage ordering is retained as protocol

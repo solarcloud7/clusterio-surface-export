@@ -4,7 +4,7 @@ Isolated fluid-segment experiments on the pinned **2.0.77** engine. Goal: turn t
 MECHANISM from an unverified hypothesis into measured facts, and decide the destination-hold fluid-fidelity fix
 on data. Nothing durable lives in chat — every experiment is a saved script + a notebook entry here.
 
-> **UNTRACKED** by git until a conclusion is worth committing (user policy). Do not `git add` this dir.
+> **PROMOTED TO GIT on 2026-07-06** after R9/R7 produced durable conclusions. Continue appending every rung result, including failures.
 
 ## Why this lab exists (the provenance failure it corrects)
 
@@ -75,9 +75,9 @@ write VERIFIED by read-back, or you reproduce the silent-rejection blind spot th
 
 | Claim / approach | Verdict | Evidence |
 |---|---|---|
-| "Ghost buffer wiped on rejoin" as stated (loss only AFTER reactivation) | ⚠️ UNDER TEST — CI contradicts: loss visible at staged+600, pre-reactivation | destination-hold CI runs 28765920597 / 28800842207 / 28802133085, delta=20 |
+| Original destination-hold CI `delta=20` | ⚠️ UNEXPLAINED — eliminated by fixture determinism; root cause never isolated. Candidates: fresh-force recipe-less write path, meter staleness. Instrumented probe self-diagnoses on recurrence. | CI runs 28765920597 / 28800842207 / 28802133085 failed with `fluids 1120→1100 delta=20`; hardened run 28814951121 green with asserted `machine_fluids=40`. |
 | Tank/pipe (non-activatable) fluids survive the hold cycle | ✅ OBSERVED (CI, 3 runs) | same runs: 1100 stable across stage→restart→go-live |
-| Local force silently rejects the plant's heavy-oil write (recipe state) | ✅ OBSERVED — the local-green blind spot | local probe runs measured 1100 pre-stage vs CI's 1120 |
+| Local force silently rejected the original plant heavy-oil write when fixture setup did not assert recipe/write acceptance | ✅ OBSERVED — the local-green blind spot fixed by fixture determinism | local probe runs measured 1100 pre-stage vs CI's 1120; hardened fixture enables `heavy-oil-cracking`, probes every fluidbox, and asserts positive machine fluid. |
 
 *(append experiment entries below — script name, date, raw numbers, verdict)*
 
