@@ -68,10 +68,21 @@ Two failure classes #106 kept reproducing — check for them explicitly (memory:
   parity/lifecycle bugs in a hand-rolled stateful path, STOP patching — the design is reimplementation instead
   of reuse.
 
-## 7. Owner hygiene
+## 7. Does the change rest on an UNTESTED engine belief? (lab gate)
+Check every engine-behavior assumption the change depends on against
+[docs/factorio-2.0-api-notes.md](../../../docs/factorio-2.0-api-notes.md): if it is not **[API]** or
+**[empirical, <current pin>]**, it is a **[hypothesis]** — run a lab rung BEFORE designing on it
+(pattern + triggers: CLAUDE.md § "Empirical lab discipline"; exemplar `tests/fluid-lab/`). A mechanism
+EXPLANATION is not a law until its predictions are tested; never cite an unverifiable source as "Confirmed by."
+Paid for: the ghost-buffer legend survived 4 months and nearly caused two unnecessary primitive redesigns; a
+one-afternoon lab killed it and fixed CI with a meter change instead.
+
+## 8. Owner hygiene
 - Ship as a focused PR; **omit** the `Claude-Session:` trailer and the session URL (owner rule).
 - Prefer `@clusterio/lib` (TS) / `require("modules/clusterio/api")` (Lua) over reinventing.
 - Look up platforms/instances by unique per-force **index**, never collidable names.
+- Commit labels are audit boundaries (`docs:` never carries code); a merge isn't done until main's own
+  post-merge run is green.
 
 ## Fast verification (the mechanical guards this gate leans on)
 ```powershell

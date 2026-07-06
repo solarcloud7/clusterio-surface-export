@@ -194,6 +194,34 @@ for in a real incident — the destination-hold probe audit):
 8. **A "passed" claim requires two consecutive full green runs + zero-leftover evidence, reported ONCE at the
    end.** No live-narration of running passes; no trusting a single lucky green.
 
+### Empirical lab discipline (how engine lore becomes law — exemplar: `tests/fluid-lab/`)
+
+Engine-behavior knowledge carries evidence tags in [docs/factorio-2.0-api-notes.md](docs/factorio-2.0-api-notes.md):
+**[API]** / **[empirical, <pin>]** / **[hypothesis]**. A mechanism EXPLANATION is [hypothesis] until its
+*predictions* are tested — a behavioral rule can be [empirical] while its explanation is lore, and an
+unverifiable source ("expert analysis" of closed-source internals) must NEVER be cited as "Confirmed by."
+(Paid for: Pitfall #17's ghost-buffer mechanism survived 4 months as law; the fluid-lab refuted it in hours and
+prevented two unnecessary primitive redesigns.)
+
+**A lab rung is MANDATORY when:** (a) a design decision rests on engine behavior not tagged
+`[empirical, <current pin>]`; (b) CI and local disagree on a physical measurement; (c) a mechanism explanation
+cites uninspectable internals; (d) the engine pin bumps — **re-run every `tests/*-lab/` runner** (the labs are
+the version-drift re-certification suite).
+
+**The pattern** (belt-lab → inserter-lab → fluid-lab lineage): append-only NOTEBOOK; a rung ladder isolating ONE
+variable per rung; controls first (trust the instrument before the experiment); every reading tick-stamped and
+carrying ALL meters + paused flags; a TRIED-&-SETTLED do-not-repeat ledger; inherited LAB HAZARDS (the on_tick
+clobber, `platform.destroy` no-op, recipe-enable + write-assert); `--reset` + zero-leftover proof; untracked
+until a conclusion is worth committing — then commit the RUNNERS with the conclusions and promote facts to
+api-notes WITH tags. Record negative and unexplained results honestly (an eliminated failure whose root cause
+was never isolated is UNEXPLAINED, not fixed — never retcon green into understood).
+
+**Two audit-boundary rules (each paid for in a real incident):**
+- **Commit labels are audit boundaries.** A `docs:` commit must never carry code — reviewers allocate attention
+  by label, and a mislabeled rider evaded two review passes before fresh eyes caught the defect it contained.
+- **A merge isn't done until main's own post-merge run is green.** PR runs get watched; push runs don't — main
+  once sat red for 12+ hours because nobody looked. Watch the post-merge run, every time.
+
 ## Clusterio Core Development
 
 This repo is a **plugin + dev cluster**; the dev cluster runs **published** `@clusterio/* 2.0.0-alpha.25`
