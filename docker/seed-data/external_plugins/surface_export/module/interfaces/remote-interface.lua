@@ -27,6 +27,7 @@ local gateway_selftest = require("modules/surface_export/interfaces/remote/gatew
 local schedule_selftest = require("modules/surface_export/interfaces/remote/schedule-selftest")
 local transfer_lock_selftest = require("modules/surface_export/interfaces/remote/transfer-lock-selftest")
 local delete_platform_for_transfer = require("modules/surface_export/interfaces/remote/delete-platform-for-transfer")
+local destination_hold = require("modules/surface_export/interfaces/remote/destination-hold")
 
 -- Expose functions for direct Lua access (not just remote interface)
 RemoteInterface.export_platform = export_platform
@@ -48,6 +49,7 @@ RemoteInterface.gateway_selftest = gateway_selftest
 RemoteInterface.schedule_selftest = schedule_selftest
 RemoteInterface.transfer_lock_selftest = transfer_lock_selftest
 RemoteInterface.delete_platform_for_transfer = delete_platform_for_transfer
+RemoteInterface.destination_hold = destination_hold
 
 -- JSON-wrapped versions for RCON access
 RemoteInterface.get_export_json = Base.json_wrap(get_export)
@@ -98,6 +100,8 @@ function RemoteInterface.register()
     transfer_lock_selftest = transfer_lock_selftest,
     transfer_lock_selftest_json = Base.json_wrap(transfer_lock_selftest),
     delete_platform_for_transfer = delete_platform_for_transfer,
+    destination_hold = destination_hold,
+    destination_hold_json = Base.json_wrap(destination_hold),
   })
 end
 

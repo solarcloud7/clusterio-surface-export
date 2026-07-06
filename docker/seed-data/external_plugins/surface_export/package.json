@@ -1,6 +1,6 @@
 {
   "name": "@solarcloud7/plugin-surface-export",
-  "version": "0.10.60",
+  "version": "0.10.63",
   "description": "Clusterio plugin for exporting and importing Factorio space platforms",
   "main": "dist/node/index.js",
   "types": "dist/node/index.d.ts",
@@ -17,7 +17,7 @@
     "lint:test-grounding": "node scripts/lint-test-grounding.mjs",
     "lint:pcall-logging": "node scripts/lint-pcall-logging.mjs",
     "lint:test-hooks": "node scripts/lint-test-hooks.mjs",
-    "test": "npm run build:node && node --test test/messages.roundtrip.test.cjs test/transfer-orchestrator.rollback.test.cjs test/transfer-reconciliation.test.cjs test/lua-transfer-lock-phase1.test.cjs test/canonical-identity.test.cjs test/no-controller-auto-delete.test.cjs"
+    "test": "npm run build:node && node --test test/messages.roundtrip.test.cjs test/transfer-orchestrator.rollback.test.cjs test/transfer-reconciliation.test.cjs test/lua-transfer-lock-phase1.test.cjs test/canonical-identity.test.cjs test/no-controller-auto-delete.test.cjs test/destination-hold.test.cjs"
   },
   "keywords": [
     "clusterio",

@@ -92,10 +92,23 @@ Load-bearing rules (each is a hard constraint, not a preference):
 1. **Canonical transfer id.** One id shared across source-lock → dest-stage → COMMIT → GO-LIVE → tombstone. It
    MUST originate at the source (the in-game path has no controller at lock time); the controller adopts the
    export's source-generated id and persists it before awaiting export-complete.
-2. **Destination hold primitive.** A staged dest must be provably not-live (no sim/craft/consume/cargo-launch/
-   movement/player-access) AND fidelity-preserving (items + fluids identical to the validated snapshot) AND
-   losslessly reversible on go-live. `set_surface_hidden` alone doesn't stop the sim; `entity.frozen` detaches
-   fluid segments (Pitfall #17). Prove the exact combination live before Phase 2 starts.
+2. **Destination hold primitive — PROVEN for the primitive, not yet wired.** The live-proven hold mechanism is
+   `platform.paused = true` + `force.set_surface_hidden(surface, true)` + per-entity deactivation for activatable
+   entities, keyed by the destination platform's stable `surface.index`. The proof run physically counted items
+   and fluids across stage → 600 held ticks → docker restart of the destination host → go-live, and verified the
+   copy stayed paused, hidden, inactive, restart-durable, and fidelity-preserving. The destructive discard path was
+   also proved safe when the held platform was already externally deleted: discard cleared the hold record without
+   treating the missing platform as a failure. This closes the prerequisite that a destination can be held not-live,
+   fidelity-preserved, and reversibly released before Phase 2 starts.
+
+   **D1 open decision — transfer-lock expiry can reveal a held destination surface.** The destination-hold probe
+   measured that an expired transfer lock currently restores surface visibility even while a destination hold still
+   exists. This is a Phase-2 wiring gate, not a blocker for shipping the primitive. Resolution options:
+   (a) make `unlock_platform` consult `storage.destination_holds` before restoring visibility, which centralizes the
+   guard but couples the lock spine to the destination-hold primitive; (b) require Phase-2 sequencing to release the
+   source lock before staging the destination hold, which keeps the primitive boundary clean but makes ordering
+   correctness load-bearing; or (c) have destination holds re-assert hidden after any unlock, which is self-healing
+   but introduces competing ownership and tick/order races. Do not wire Phase 2 until this choice is made.
 
 ### Failure-mode table (restart/crash at each step)
 Legend: **S**=source, **D**=dest, **C**=controller; `{}` = source lock phase (Phase 2). The decisive fact is S's phase.
@@ -123,7 +136,7 @@ Legend: **S**=source, **D**=dest, **C**=controller; `{}` = source lock phase (Ph
   a full controller/web-route behavior test for the double-transfer reject (the decision is unit-tested via
   `is_same_transfer_upgrade`; the in-game route is live-verified). The mid-flight TTL self-unlock on a >10-min
   transfer (delete gate makes it a recoverable dup, not loss) is eliminated by the Phase-2 heartbeat.
-- **Pending:** Phase 2 COMMIT / GO-LIVE / committed-tombstone protocol and the destination hold primitive. The canonical-id prerequisite and export-lock strand are closed.
+- **Pending:** Phase 2 COMMIT / GO-LIVE / committed-tombstone protocol and the D1 lock/hold visibility decision. The canonical-id prerequisite, export-lock strand, and destination-hold primitive proof are closed.
 
 ## Verification
 - **Headless:** `npm run lint:lua` (incl. the identity guard) + `npm run lint:pcall-logging` + `npm test`.
@@ -132,6 +145,7 @@ Legend: **S**=source, **D**=dest, **C**=controller; `{}` = source lock phase (Ph
   released/reused/invalid refuse). Wired into `tests/integration/transfer-lock-expiry`.
 - **Live:** start a transfer, `docker restart` the controller during `awaiting_validation`, confirm the source
   auto-unlocks after the TTL with no admin action and a normal transfer is unaffected.
+- **Destination-hold primitive proof:** `tests/integration/destination-hold` (`-Sections main,restart,lifecycle,double,discard,ttl,cleanup` by default) records the not-live/fidelity/restart/go-live/discard/TTL-hazard evidence and asserts zero leftover `storage.destination_holds`, zero `storage.locked_platforms`, zero `desthold-*` surfaces, and `game.tick_paused == false` after cleanup. The harness scopes parsed RCON output to stdout from `surface-export-controller`; the unrelated `clusterio-atlas` warning was `clusterioctl` stderr from the same controller's incomplete `/clusterio/external_plugins/clusterio-atlas` directory, not an atlas-container dependency.
 - Run `/di-change` before merging any change to the gate / rollback / source-delete / identity paths.
 
 ## Critical files

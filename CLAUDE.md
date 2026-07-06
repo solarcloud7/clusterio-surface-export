@@ -164,6 +164,36 @@ node tools/run-integration-tests.mjs                 # or:  --only 'gateway' / -
 **Skills** (invoke with `/<name>`): `/cluster-logs` (find logs / trace a failure) and
 `/repro-transfer` (reproduce a transfer end-to-end locally). Prefer local repro over CI logs.
 
+### Integration-probe iteration discipline (shared live cluster — read BEFORE debugging tests/integration)
+
+The cluster is a shared, stateful, EXPENSIVE test target (platform clone ≈60–90s async; docker restart ≈30–60s;
+other work may be in flight). The default agent failure mode is re-running a full multi-minute probe to debug one
+tail check — turning a 30-second fix into a 6-minute cycle that also churns cluster state. Rules (each was paid
+for in a real incident — the destination-hold probe audit):
+
+1. **Build probes in sections; iterate on sections.** Any `run-tests.ps1` using more than one expensive resource
+   MUST take a section-selection param (e.g. `-Sections main,restart,ttl`). Debug loops run ONLY the failing
+   section; the full unsegmented run is reserved for final evidence passes.
+2. **Cheapest fixture that proves the invariant.** A check that doesn't measure content uses a bare
+   `force.create_space_platform{...}` + `apply_starter_pack()` (instant) — NOT a clone of the 1359-entity test
+   platform. Clone only where fidelity is physically measured.
+3. **Never docker-restart per debug iteration.** Restart-durability sections run in final passes only. After any
+   restart, POLL for RCON readiness (deadline loop) — never a fixed sleep (a 30s sleep is a race you will lose).
+4. **Derive counts; never hardcode totals.** Summary math comes from actual recorded results (a hardcoded
+   `$total` overreported a phantom pass). Treat a new harness like production code: regression-test its
+   accounting before trusting its summary.
+5. **Clean up EVERY state layer, then assert zero leftovers.** Surfaces AND persistent Lua storage records
+   (`storage.destination_holds`, `storage.locked_platforms`, …) — a `finally` that deletes surfaces but strands
+   storage records leaks landmines into the shared cluster. Post-run: assert both empty and the game unpaused.
+6. **Scope every predicate to THIS cluster.** Only `surface-export-*` containers / this instance's own RCON
+   stream. `atlas-*` (a second, unrelated cluster on this machine) must never appear in a probe's input — if its
+   text shows up, find the cross-wire; do not widen the regex around it.
+7. **Assert measured behavior, not desired architecture.** When a probe exists to answer an unknown, the
+   assertion records the MEASURED fact (labelled a hazard if undesired); changing the behavior is a separate,
+   adjudicated design decision.
+8. **A "passed" claim requires two consecutive full green runs + zero-leftover evidence, reported ONCE at the
+   end.** No live-narration of running passes; no trusting a single lucky green.
+
 ## Clusterio Core Development
 
 This repo is a **plugin + dev cluster**; the dev cluster runs **published** `@clusterio/* 2.0.0-alpha.25`
