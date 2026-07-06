@@ -29,8 +29,8 @@ local function find_platform(force, platform_index)
 	return nil
 end
 
-local function capture_and_deactivate(surface)
-	local active_states = {}
+local function capture_and_deactivate(surface, active_states)
+	active_states = active_states or {}
 	local deactivated = 0
 	for _, entity in pairs(surface.find_entities_filtered({})) do
 		if entity.valid and GameUtils.ACTIVATABLE_ENTITY_TYPES[entity.type] then
@@ -42,7 +42,7 @@ local function capture_and_deactivate(surface)
 			end
 		end
 	end
-	return active_states, deactivated
+	return deactivated
 end
 
 local function restore_active_states(surface, active_states)
@@ -86,6 +86,17 @@ local function resolve_hold(transfer_id)
 	return hold, force, platform, nil
 end
 
+local function find_hold_for_platform(holds, surface_index, platform_index, except_transfer_id)
+	for other_transfer_id, hold in pairs(holds) do
+		if other_transfer_id ~= except_transfer_id
+			and hold.surface_index == surface_index
+			and hold.platform_index == platform_index then
+			return other_transfer_id, hold
+		end
+	end
+	return nil, nil
+end
+
 --- Stage a destination platform in a non-live hold.
 --- @param transfer_id string
 --- @param platform LuaSpacePlatform
@@ -115,6 +126,10 @@ function DestinationHold.stage(transfer_id, platform, force)
 		end
 		return false, "transfer_id already holds a different destination platform"
 	end
+	local other_transfer_id = find_hold_for_platform(holds, surface.index, platform.index, transfer_id)
+	if other_transfer_id then
+		return false, "platform is already held by transfer_id " .. tostring(other_transfer_id)
+	end
 
 	local original_hidden = force.get_surface_hidden(surface)
 	local original_paused = platform.paused == true
@@ -123,11 +138,20 @@ function DestinationHold.stage(transfer_id, platform, force)
 	local staged_ok, staged_err = pcall(function()
 		platform.paused = true
 		force.set_surface_hidden(surface, true)
-		active_states, deactivated = capture_and_deactivate(surface)
+		deactivated = capture_and_deactivate(surface, active_states)
 	end)
 	if not staged_ok then
 		log(string.format("[DestinationHold] stage failed for transfer %s on platform '%s': %s",
 			transfer_id, platform.name, tostring(staged_err)))
+		local restore_ok, restore_err = pcall(function()
+			restore_active_states(surface, active_states)
+			force.set_surface_hidden(surface, original_hidden == true)
+			platform.paused = original_paused == true
+		end)
+		if not restore_ok then
+			log(string.format("[DestinationHold] stage rollback failed for transfer %s on platform '%s': %s",
+				transfer_id, platform.name, tostring(restore_err)))
+		end
 		return false, "Failed to stage destination hold: " .. tostring(staged_err)
 	end
 
@@ -180,17 +204,18 @@ function DestinationHold.discard(transfer_id)
 	local holds = ensure_storage()
 	local hold, _, platform, err = resolve_hold(transfer_id)
 	if err then
-		if err == "Held platform is missing" then
+		if err == "Held platform is missing" or err == "Held platform surface changed or is missing" then
 			holds[transfer_id] = nil
-			log(string.format("[DestinationHold] discard transfer %s: platform '%s' already missing; cleared hold",
-				transfer_id, hold and hold.platform_name or "?"))
+			log(string.format("[DestinationHold] discard transfer %s: %s for platform '%s'; cleared hold",
+				transfer_id, err, hold and hold.platform_name or "?"))
 			return true, {
 				transfer_id = transfer_id,
 				platform_name = hold and hold.platform_name or nil,
 				platform_index = hold and hold.platform_index or nil,
 				surface_index = hold and hold.surface_index or nil,
 				deleted = false,
-				already_missing = true,
+				already_missing = (err == "Held platform is missing"),
+				surface_changed = (err == "Held platform surface changed or is missing"),
 			}
 		end
 		return false, err

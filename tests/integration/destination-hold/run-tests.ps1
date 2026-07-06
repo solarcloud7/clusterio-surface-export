@@ -41,7 +41,7 @@ $failed = 0
 $total = 0
 $script:SelectedSections = @($Sections | ForEach-Object { $_ -split "," } | ForEach-Object { $_.Trim().ToLowerInvariant() } | Where-Object { $_ })
 if ($script:SelectedSections.Count -eq 0) { $script:SelectedSections = @("all") }
-$validSections = @("all", "main", "restart", "lifecycle", "discard", "ttl", "cleanup")
+$validSections = @("all", "main", "restart", "lifecycle", "double", "discard", "ttl", "cleanup")
 foreach ($section in $script:SelectedSections) {
     if ($validSections -notcontains $section) {
         throw "Unknown destination-hold section '$section'. Valid sections: $($validSections -join ', ')"
@@ -70,23 +70,23 @@ function Invoke-ScopedRcon {
         $exit = $LASTEXITCODE
         $stderr = ""
         if (Test-Path -LiteralPath $stderrPath) {
-            $stderr = (Get-Content -LiteralPath $stderrPath -Raw -ErrorAction SilentlyContinue).Trim()
+            $stderr = (Get-Content -LiteralPath $stderrPath -Raw -ErrorAction SilentlyContinue | Out-String).Trim()
         }
         if ($exit -ne 0) {
-            $stdoutText = ($stdout | Out-String).Trim()
+            $stdoutText = ([string]($stdout | Out-String)).Trim()
             throw "surface-export scoped RCON failed exit=$exit stderr=$stderr stdout=$stdoutText"
         }
-        return ($stdout | Out-String).Trim()
+        return ([string]($stdout | Out-String)).Trim()
     } finally {
         Remove-Item -LiteralPath $stderrPath -Force -ErrorAction SilentlyContinue
     }
 }
 
 function Get-LastNonEmptyLine {
-    param([AllowEmptyString()][string]$Text)
-    $line = (($Text -split "`r?`n") | Where-Object { $_.Trim() -ne "" } | Select-Object -Last 1)
+    param([AllowNull()][AllowEmptyString()][string]$Text)
+    $line = (((( [string]$Text ) -split "`r?`n") | Where-Object { ([string]$_).Trim() -ne "" }) | Select-Object -Last 1)
     if ($null -eq $line) { return "" }
-    return $line.Trim()
+    return ([string]$line).Trim()
 }
 
 function Invoke-ProbeJson {
@@ -120,6 +120,29 @@ function Add-Result {
     }
 }
 
+function Get-ClusterioInstanceStatus {
+    param([Parameter(Mandatory=$true)][string]$Instance)
+
+    $stderrPath = Join-Path ([System.IO.Path]::GetTempPath()) ("destination-hold-ctl-" + [guid]::NewGuid().ToString("N") + ".err")
+    try {
+        $stdout = docker exec surface-export-controller npx clusterioctl --log-level error instance list --config /clusterio/tokens/config-control.json 2>$stderrPath
+        $exit = $LASTEXITCODE
+        $stderr = (Get-Content -LiteralPath $stderrPath -Raw -ErrorAction SilentlyContinue | Out-String).Trim()
+        if ($exit -ne 0) {
+            $stdoutText = ([string]($stdout | Out-String)).Trim()
+            throw "surface-export scoped instance list failed exit=$exit stderr=$stderr stdout=$stdoutText"
+        }
+        foreach ($line in ($stdout | Out-String) -split "`r?`n") {
+            if ($line -match ('^\s*' + [regex]::Escape($Instance) + '\s*\|')) {
+                $parts = $line -split '\|'
+                if ($parts.Count -ge 5) { return ([string]$parts[4]).Trim() }
+            }
+        }
+        return $null
+    } finally {
+        Remove-Item -LiteralPath $stderrPath -Force -ErrorAction SilentlyContinue
+    }
+}
 function Wait-ForRconReady {
     param(
         [Parameter(Mandatory=$true)][string]$Instance,
@@ -130,6 +153,12 @@ function Wait-ForRconReady {
     $lastError = ""
     while ((Get-Date) -lt $deadline) {
         try {
+            $status = Get-ClusterioInstanceStatus -Instance $Instance
+            if ($status -ne "running") {
+                $lastError = "instance status=$status"
+                Start-Sleep -Seconds 2
+                continue
+            }
             $ready = Invoke-ScopedRcon -Instance $Instance -Command "/sc rcon.print('READY '..game.tick)"
             if ($ready -match '^READY\s+\d+') { return $true }
             $lastError = $ready
@@ -501,6 +530,16 @@ try {
         }
     }
 
+    if (Test-Section "double") {
+        $double = New-BareHoldPlatform -Prefix "desthold-double"
+        $firstTid = "dh-double-a-$(Get-Date -Format 'HHmmss')"
+        $secondTid = "dh-double-b-$(Get-Date -Format 'HHmmss')"
+        $firstStage = Invoke-HoldJson -Action stage -TransferId $firstTid -PlatformIndex $double.Index
+        Add-Result "dh-double-stage-first-ok" "first hold on a platform succeeds" ($firstStage.success -eq $true) ($firstStage | ConvertTo-Json -Compress)
+        $secondStage = Invoke-HoldJson -Action stage -TransferId $secondTid -PlatformIndex $double.Index
+        Add-Result "dh-double-stage-refuses" "second hold on the same platform under another transfer id refuses" (($secondStage.success -eq $false) -and ([string]$secondStage.error -match 'already held')) ($secondStage | ConvertTo-Json -Compress)
+        Invoke-HoldJson -Action discard -TransferId $firstTid | Out-Null
+    }
     if (Test-Section "discard") {
         $missing = New-BareHoldPlatform -Prefix "desthold-missing"
         $missTid = "dh-missing-$(Get-Date -Format 'HHmmss')"

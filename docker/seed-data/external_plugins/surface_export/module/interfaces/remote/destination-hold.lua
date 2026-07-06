@@ -4,9 +4,10 @@
 local DestinationHold = require("modules/surface_export/core/destination-hold")
 
 local function find_platform(platform_index, force_name)
-	local force = game.forces[force_name or "player"] or game.forces.player
+	local selected_force_name = force_name or "player"
+	local force = game.forces[selected_force_name]
 	if not (force and force.valid) then
-		return nil, nil, "Force not found: " .. tostring(force_name)
+		return nil, nil, "Force not found: " .. tostring(selected_force_name)
 	end
 	local idx = tonumber(platform_index)
 	if not idx then
