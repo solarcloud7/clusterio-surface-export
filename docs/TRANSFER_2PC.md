@@ -120,9 +120,21 @@ Load-bearing rules (each is a hard constraint, not a preference):
    treating the missing platform as a failure. This closes the prerequisite that a destination can be held not-live,
    fidelity-preserved, and reversibly released before Phase 2 starts.
 
-   **D1 open decision — transfer-lock expiry can reveal a held destination surface.** The destination-hold probe
-   measured that an expired transfer lock currently restores surface visibility even while a destination hold still
-   exists. This is a Phase-2 wiring gate, not a blocker for shipping the primitive. Resolution options:
+   *Amendment (CI, 2026-07-06):* the "fidelity-preserving" claim above has one measured gap — fluid held inside a
+   DEACTIVATED crafting machine is destroyed across the hold cycle (Pitfall #17: `active=false` detaches the fluid
+   segment; reactivation's merge wipes it; CI signature `fluids 1120→1100 delta=20`). Local runs missed it because
+   the fixture's fluid write was silently rejected on our force. Fix in flight: snapshot fluidbox contents at
+   stage, re-inject after reactivation on go_live (the import pipeline's established inject-after-activation
+   pattern), plus a deterministic fixture that asserts the fluid case is armed.
+
+   **D1 — DECIDED (2026-07-06): an active destination hold owns the platform's FULL not-live state** — visibility,
+   entity activation, and platform pause; `unlock_platform` (manual, TTL expiry, or any other path) touches none
+   of them while a hold exists for that surface. Lock-release-before-stage ordering is retained as protocol
+   hygiene, not the load-bearing guarantee. Ships as **PR-1, first and alone**, with selftest teeth (unlock over a
+   held surface leaves it hidden AND inactive AND paused — RED if the guard is removed), `/di-change` gated.
+   Background — the measured hazard that forced the decision (both axes): an expired transfer lock restores
+   surface visibility over an active hold, and its `frozen_states` unfreeze can reactivate entities the hold
+   deactivated. Superseded resolution options (recorded for history):
    (a) make `unlock_platform` consult `storage.destination_holds` before restoring visibility, which centralizes the
    guard but couples the lock spine to the destination-hold primitive; (b) require Phase-2 sequencing to release the
    source lock before staging the destination hold, which keeps the primitive boundary clean but makes ordering
@@ -137,16 +149,19 @@ Legend: **S**=source, **D**=dest, **C**=controller; `{}` = source lock phase (Ph
 | 1 | S locked {pre_commit}, before/during export | expiry → UNLOCK | nothing staged | let S self-unlock | only S exists |
 | 2 | D crashes mid-import | {pre_commit} → UNLOCK | no validated copy → discard | ABORT | D had no good copy |
 | 3 | D staged_validated, VOTE lost / C down before COMMIT | {pre_commit} → UNLOCK | HOLD; re-announce | query S=pre_commit ⇒ DISCARD D | S live, D staged ⇒ not both-live |
-| 4 | C sent COMMIT; S {committed}, delete errors persistently | {committed} → DELETE (retry); frozen tombstone | HOLD → GO-LIVE | query S=committed ⇒ GO-LIVE D | committed = non-live ⇒ not both-live |
+| 4 | C sent COMMIT; S {committed}, delete errors persistently | {committed} → DELETE (retry); frozen tombstone | reconcile loop: retry → GO-LIVE (within the deadline window) | query S=committed ⇒ GO-LIVE D | committed = non-live ⇒ not both-live |
 | 5 | S deleted, RELEASED lost, C down before GO-LIVE | (done) | HOLD; re-announce | query S=gone ⇒ GO-LIVE D | S gone + D staged ⇒ not both-gone |
 | 6 | GO-LIVE lands; D crashes mid-activate | (S gone) | idempotent re-run | GO-LIVE idempotent | only D exists |
+| 7 | S permanently unreachable / handshake never completes | (unknowable) | reconcile loop retries through the compensation window; at the DEADLINE → **DISCARD D** (handshake-or-discard) | same — deadline discard is unconditional | no-dup by construction; residual loss accepted, rightable via the ops layer (backups/save upload) |
 | 7 | Race: COMMIT vs S {pre_commit} expiry | UNLOCK-first ⇒ COMMIT finds no matching id → REFUSE | HOLD | refused COMMIT ⇒ DISCARD D | id match prevents deleting a rolled-back live source |
 | 8 | S-host down long mid-transfer | ticks don't advance ⇒ no spurious expiry | HOLD | per S phase on return | tick-based ⇒ downtime never over-counts |
 
 ## Current implementation status
 - **Shipped:** Phase 1 source-side TTL (unlock-only) + identity gate (surface.index + a name-free `job_id`
   request↔lock correlation) + cargo-pod awaiting_launch zero-loss recovery. The #60 controller auto-delete spine
-  is removed; `resolvePendingTransfer` is retained pure and dormant for Phase-2 reuse. Re-audit hardening R1–R8
+  is removed; the dormant `resolvePendingTransfer` reconciliation core was DELETED in #64 (it embodied the
+  superseded destination-outcome/escalate-to-admin model — the Phase-2 reconcile loop is built fresh against the
+  handshake-or-discard contract). Re-audit hardening R1–R8
   shipped (`feat/106-hardening`): in-game double-transfer refuse guard, expiry-scan failure counter, derived TTL
   floor, order-independent + timer-spy test teeth, stale-comment cleanup.
 - **Follow-ups:** dest-side `validation_results` / `flight_data` re-key off name (collision); the descending/
@@ -155,7 +170,10 @@ Legend: **S**=source, **D**=dest, **C**=controller; `{}` = source lock phase (Ph
   a full controller/web-route behavior test for the double-transfer reject (the decision is unit-tested via
   `is_same_transfer_upgrade`; the in-game route is live-verified). The mid-flight TTL self-unlock on a >10-min
   transfer (delete gate makes it a recoverable dup, not loss) is eliminated by the Phase-2 heartbeat.
-- **Pending:** Phase 2 COMMIT / GO-LIVE / committed-tombstone protocol and the D1 lock/hold visibility decision. The canonical-id prerequisite, export-lock strand, and destination-hold primitive proof are closed.
+- **Pending:** Phase 2 COMMIT / GO-LIVE / committed-tombstone protocol wiring, gated on the hold fluid-fidelity
+  fix (CI blocker, see the prerequisite-#2 amendment). **D1 is DECIDED** (hold owns the full not-live state;
+  PR-1 hold-aware unlock ships first, alone). The canonical-id prerequisite, export-lock strand, and
+  destination-hold primitive proof are closed.
 
 ## Verification
 - **Headless:** `npm run lint:lua` (incl. the identity guard) + `npm run lint:pcall-logging` + `npm test`.
@@ -171,5 +189,5 @@ Legend: **S**=source, **D**=dest, **C**=controller; `{}` = source lock phase (Ph
 `module/utils/surface-lock.lua` (lock, scan_transfer_expiries, transfer_delete_identity_ok) ·
 `module/interfaces/remote/delete-platform-for-transfer.lua` (the sole source-delete) · `module/core/control.lua`
 (on_tick scan) · `module/core/transfer-trigger.lua` · `module/core/export-pipeline.lua` (universal lock stamp) ·
-`lib/transfer-orchestrator.ts` · `lib/transfer-reconciliation.ts` (dormant Phase-2 core) · `controller.ts`
+`lib/transfer-orchestrator.ts` · `controller.ts`
 (observability store) · `messages.ts` · `instance.ts` · `scripts/lint-lua-invariants.mjs` (identity guard).
