@@ -8,9 +8,20 @@ Related: CLAUDE.md Pitfalls #15/#16/#28/#29/#30/#31, [ENGINEERING_FAQ.md](ENGINE
 behavior), [TRANSFER_WORKFLOW_GUIDE.md](TRANSFER_WORKFLOW_GUIDE.md).
 
 ## The core invariant
-The **source** platform is the at-risk resource. One rule governs everything: **never delete the source unless a
-validated copy exists on the destination AND the source is still the exact frozen platform we exported.** When
-forced to choose, a **recoverable duplicate or stuck-lock always beats an unrecoverable deletion.**
+The contract is **NO DUPLICATES** — never two live copies. Not transfer-at-any-cost, and not recovery from
+someone else's hardware failure. Two side-scoped rules enforce it **by construction** (DECIDED 2026-07-06):
+- **Source (the original, the at-risk resource):** never deleted unless a validated copy exists on the
+  destination AND the source is still the exact frozen platform we exported (a confirmed handshake). Its
+  failsafe is **unlock-only** — a stuck lock always beats deleting the original.
+- **Destination (a staged copy, pre-handshake):** never goes live without a completed handshake, and its
+  failsafe is **discard-only** — a staged copy is an artifact, not "the platform"; at the handshake deadline it
+  is DELETED regardless of why the handshake failed (host death, partition, timeout — the reason is irrelevant;
+  the handshake either completed or it did not). Inventing a recovery flow per failure reason is
+  over-engineering; a host that dies holding the only copy of a platform is a backup problem, not a transfer
+  problem.
+
+Duplication requires a live source AND a live destination copy — the symmetric failsafes (source unlocks, dest
+discards) make that impossible without a completed handshake.
 
 Two gates express it:
 - **Gate A (never both gone):** the source is deleted only after a durable signal that the destination holds a
@@ -81,9 +92,17 @@ Load-bearing rules (each is a hard constraint, not a preference):
   then vote, holding the finished platform not-live. COMMIT can never race a later restoration failure.
 - `committed` is an **irreversible non-live tombstone**: every unlock/resume/expiry path REFUSES a `committed`
   lock; only delete clears it. GO-LIVE fires on source state `gone` OR `committed`.
-- The controller must **never DISCARD after transmitting COMMIT** — a COMMIT timeout is ambiguous (may have
-  landed); compensation is query-source-phase + retry-COMMIT or HOLD, never DISCARD. DISCARD is reachable only
-  from a confirmed `pre_commit`.
+- **Handshake-or-discard (DECIDED 2026-07-06, supersedes the earlier unbounded never-discard rule):** after
+  transmitting COMMIT the controller enters a bounded compensation window — the reconcile loop queries the
+  source phase and retries COMMIT/RELEASED. If the handshake still has not completed at the **deadline**, the
+  staged destination copy is **DISCARDED anyway** — the no-duplicate contract outranks preserving the artifact.
+  Accepted residual (documented, not mitigated in-protocol): a source that processed COMMIT, died inside the ack
+  window, and never returns loses the platform with the host — the same category as that host dying with no
+  transfer in flight, and recoverable the same way: Clusterio's own ops layer (dashboard save download/upload,
+  backups, logs) already rights that wrong. The transfer protocol does not re-implement disaster recovery. There is **no operator attestation / force-resolve path** and no admin recovery console: every other
+  row of the recovery table is a deterministic function of queryable state and is executed by the reconcile
+  loop, not a human. Read-only observability (`/lock-status`, web status, metrics/escalation) is how the loop is
+  trusted; the sole human lever is what RCON already provides.
 - New `GetSourceTransferLockStateRequest` distinguishes ALL of: `pre_commit` · `committed` ·
   `source_gone_matching_transfer` (via a durable committed tombstone keyed by the canonical transfer id) ·
   `unknown/offline` · `index_reused_or_name_mismatch` — never infer commit from absence.

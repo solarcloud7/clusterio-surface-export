@@ -17,9 +17,16 @@
 - ❓ **Unverified** — behavior is believed but not empirically confirmed; needs a live test.
 
 ## The core invariant
-The **source** platform is the at-risk resource. One rule governs everything below: **never delete the source
-unless a validated copy exists on the destination AND the source is still the frozen thing we exported.** When
-forced to choose, a **recoverable dup or stuck-lock always beats an unrecoverable deletion.**
+The contract is **NO DUPLICATES** — never two live copies. Not transfer-at-any-cost. Side-scoped failsafes
+enforce it by construction (DECIDED 2026-07-06):
+- **Source (the original):** never deleted without a confirmed handshake (validated dest copy + identity
+  intact). Failsafe: **unlock-only** — a stuck lock beats deleting the original.
+- **Destination (staged copy, pre-handshake):** never goes live without a completed handshake. Failsafe:
+  **discard-only** — at the deadline the staged artifact is deleted, whatever the failure reason. The handshake
+  either completed or it did not; we do not invent a recovery flow per failure reason.
+
+Duplication needs a live source AND a live dest copy — the symmetric failsafes make that impossible without a
+completed handshake.
 
 ## Open items needing a human-engineer decision (the "we don't have an answer" list)
 - ✅ **Export/file-lock strand policy** (§G) — transient export/file locks now use `kind="export"` with the same
@@ -27,7 +34,9 @@ forced to choose, a **recoverable dup or stuck-lock always beats an unrecoverabl
   until the identifier gate + the other re-audit fixes land.
 
 *Resolved since first draft:* cargo-pod `awaiting_launch` loss → **fixed** zero-loss (§D); rename-mid-transfer →
-**confirmed a real duplication exploit + fixed** via `surface.index` identity, lint-enforced (§B, Pitfall #31).
+**confirmed a real duplication exploit + fixed** via `surface.index` identity, lint-enforced (§B, Pitfall #31);
+source-dies-mid-transfer / unrecoverable-counterpart policy → **DECIDED** handshake-or-discard, no force-resolve,
+no admin recovery console (§A, TRANSFER_2PC.md core invariant).
 
 ---
 
@@ -44,12 +53,32 @@ A: ✅ The TTL fires mid-flight and the source goes live again, but the delete g
 that is no longer locked-for-transfer: `SurfaceLock.transfer_delete_identity_ok` requires the lock to still be
 present with `kind="transfer"` (a TTL/admin release makes the platform live again ⇒ not deletable), AND correlates
 the delete request to that lock by a name-free `transfer_job_id` + `surface.index`. Worst case is a recoverable
-**dup**, never an unrecoverable deletion. Eliminating the mid-flight unlock entirely (controller heartbeat +
-Phase-2 commit state) is still **Phase 2**; the canonical transfer id prerequisite is implemented in the current working tree pending the live gate.
+**dup**, never an unrecoverable deletion. Eliminating the mid-flight unlock entirely is **Phase 2**; both
+prerequisites are now done (canonical transfer id SHIPPED #62; destination-hold primitive PROVEN #63), and the
+decided failure contract is handshake-or-discard (see §A source-dies entry + TRANSFER_2PC.md core invariant).
 
 **Q: What if the source server is down for a while during my transfer?**
 A: ✅ The expiry clock is game-ticks, which do not advance while the host is down — downtime never causes a
 spurious expiry.
+
+**Q: What if the source instance dies (or goes permanently unreachable) while the destination is reconstructing
+the platform?**
+A: ✅ DECIDED (2026-07-06): the transfer **fails — black and white**. The destination discards its staged copy at
+the handshake deadline (a staged copy never goes live without a completed handshake); the source's own TTL
+failsafe unlocks the original whenever that save next runs. We do not care WHY the handshake failed — host death,
+partition, timeout — and there is deliberately **no force-resolve, no operator attestation, no "is the host
+coming back" tracking**: a dest copy that never outlives a failed handshake can never collide with a resurrected
+source, so the entire recovery-console problem vanishes by construction. Accepted residual: a source that
+processed COMMIT and died inside the ack window loses the platform with the host — the same category as that
+host dying with no transfer in flight, and rightable the same way: Clusterio's ops layer (dashboard save
+download/upload, backups, logs) already provides disaster recovery. The transfer protocol does not re-implement
+it. Inventing a solution per failure reason is over-engineering: the contract is either fulfilled or it is not.
+
+**Q: What if the destination host/instance isn't ready (offline, stopped, still booting) when the transfer needs
+it?**
+A: ✅ Fail fast. The controller already has the observability (host connected, instance running, healthchecks).
+If the destination can't shake hands by the deadline, the transfer fails: staged copy discarded if one exists,
+source unlocks via its TTL. A retry is a NEW transfer — no resume machinery.
 
 ## B. Concurrency
 
