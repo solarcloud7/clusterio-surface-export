@@ -139,6 +139,27 @@ repoOnlyTest("destination hold integration probe asserts save and hold stage res
 	assert.doesNotMatch(script, /Send-Rcon -Instance \$instance -Command "\/server-save" \| Out-Null/);
 	assert.doesNotMatch(script, /Invoke-HoldJson -Action stage -TransferId \$ttlTid -PlatformIndex \$ttl\.Index \| Out-Null/);
 });
+repoOnlyTest("destination hold integration probe directly measures machine-buffer fluids", () => {
+	const script = readRepo("tests/integration/destination-hold/run-tests.ps1");
+	assert.match(script, /tick=game\.tick/);
+	assert.match(script, /game_paused=game\.tick_paused == true/);
+	assert.match(script, /platform_paused=p\.paused == true/);
+	assert.match(script, /machine_fluid_total/);
+	assert.match(script, /machine_fluid_direct_total/);
+	assert.match(script, /machine_fluid_segment_total/);
+	assert.match(script, /machine_fluid_boxes/);
+	assert.match(script, /e\.type == 'assembling-machine'/);
+	assert.match(script, /dh-fixture-machine-fluid-grounded/);
+	assert.match(script, /heavy-oil-cracking/);
+	assert.doesNotMatch(script, /solid-fuel-from-heavy-oil/);
+	assert.match(script, /\$machineFluidOk/);
+	assert.match(script, /game_paused \$\(\$Expected\.game_paused\)->\$\(\$Actual\.game_paused\)/);
+	assert.match(script, /platform_paused \$\(\$Expected\.platform_paused\)->\$\(\$Actual\.platform_paused\)/);
+	assert.match(script, /machine_fluids \$\(\$Expected\.machine_fluid_total\)->\$\(\$Actual\.machine_fluid_total\)/);
+	assert.match(script, /machine_direct \$\(\$Expected\.machine_fluid_direct_total\)->\$\(\$Actual\.machine_fluid_direct_total\)/);
+	assert.match(script, /machine_segment \$\(\$Expected\.machine_fluid_segment_total\)->\$\(\$Actual\.machine_fluid_segment_total\)/);
+});
+
 repoOnlyTest("destination hold integration probe scopes parsed RCON responses to surface-export stdout", () => {
 	const script = readRepo("tests/integration/destination-hold/run-tests.ps1");
 	assert.match(script, /function Invoke-ScopedRcon/);

@@ -345,6 +345,10 @@ local tracked_fluids = {['crude-oil']=true, ['heavy-oil']=true}
 local activatable_types = {['assembling-machine']=true, ['furnace']=true, ['mining-drill']=true, ['lab']=true, ['rocket-silo']=true, ['agricultural-tower']=true, ['reactor']=true, ['generator']=true, ['burner-generator']=true, ['boiler']=true, ['fusion-reactor']=true, ['fusion-generator']=true, ['inserter']=true, ['loader']=true, ['loader-1x1']=true, ['pump']=true, ['offshore-pump']=true, ['roboport']=true, ['beacon']=true, ['radar']=true, ['thruster']=true, ['asteroid-collector']=true, ['cargo-bay']=true, ['space-platform-hub']=true, ['cargo-landing-pad']=true}
 local item_total = 0
 local fluid_total = 0
+local machine_fluid_total = 0
+local machine_fluid_direct_total = 0
+local machine_fluid_segment_total = 0
+local machine_fluid_boxes = {}
 local counted_segments = {}
 local active, activatable = 0, 0
 local belt_iron = 0
@@ -372,15 +376,29 @@ for _, e in ipairs(s.find_entities_filtered({})) do
         if e.fluidbox then
             pcall(function()
                 for i = 1, #e.fluidbox do
+                    local f = e.fluidbox[i]
                     local seg_id = e.fluidbox.get_fluid_segment_id(i)
+                    local seg_contents = nil
+                    if seg_id then seg_contents = e.fluidbox.get_fluid_segment_contents(i) end
+                    if e.type == 'assembling-machine' then
+                        local machine_box = {entity=e.name, unit_number=e.unit_number, index=i, segment_id=seg_id}
+                        if f and f.amount and tracked_fluids[f.name] then
+                            machine_box.direct = {name=f.name, amount=f.amount, temperature=f.temperature}
+                            machine_fluid_total = machine_fluid_total + f.amount
+                            machine_fluid_direct_total = machine_fluid_direct_total + f.amount
+                        end
+                        if seg_contents then
+                            machine_box.segment_contents = seg_contents
+                            for fluid_name, amount in pairs(seg_contents) do if tracked_fluids[fluid_name] then machine_fluid_segment_total = machine_fluid_segment_total + amount end end
+                        end
+                        machine_fluid_boxes[#machine_fluid_boxes + 1] = machine_box
+                    end
                     if seg_id and not counted_segments[seg_id] then
                         counted_segments[seg_id] = true
-                        local contents = e.fluidbox.get_fluid_segment_contents(i)
-                        if contents then
-                            for fluid_name, amount in pairs(contents) do if tracked_fluids[fluid_name] then fluid_total = fluid_total + amount end end
+                        if seg_contents then
+                            for fluid_name, amount in pairs(seg_contents) do if tracked_fluids[fluid_name] then fluid_total = fluid_total + amount end end
                         end
                     elseif not seg_id then
-                        local f = e.fluidbox[i]
                         if f and f.amount and tracked_fluids[f.name] then fluid_total = fluid_total + f.amount end
                     end
                 end
@@ -397,10 +415,17 @@ return {
     name=p.name,
     index=p.index,
     surface_index=s.index,
+    tick=game.tick,
+    game_paused=game.tick_paused == true,
     paused=p.paused == true,
+    platform_paused=p.paused == true,
     hidden=force.get_surface_hidden(s) == true,
     item_total=item_total,
     fluid_total=fluid_total,
+    machine_fluid_total=machine_fluid_total,
+    machine_fluid_direct_total=machine_fluid_direct_total,
+    machine_fluid_segment_total=machine_fluid_segment_total,
+    machine_fluid_boxes=machine_fluid_boxes,
     active_count=active,
     activatable_count=activatable,
     belt_iron=belt_iron,
@@ -418,13 +443,15 @@ function Assert-MetricsEqual {
     $itemOk = ([int]$Expected.item_total -eq [int]$Actual.item_total)
     $fluidDelta = [Math]::Abs([double]$Expected.fluid_total - [double]$Actual.fluid_total)
     $fluidOk = $fluidDelta -le $FluidEpsilon
+    $machineFluidDelta = [Math]::Abs([double]$Expected.machine_fluid_total - [double]$Actual.machine_fluid_total)
+    $machineFluidOk = $machineFluidDelta -le $FluidEpsilon
     $beltOk = ([int]$Expected.belt_iron -eq [int]$Actual.belt_iron)
     $podOk = ([int]$Expected.cargo_pods -eq [int]$Actual.cargo_pods)
     $posOk = ([string]$Expected.distance -eq [string]$Actual.distance)
     $schedOk = ([int]$Expected.schedule_records -eq [int]$Actual.schedule_records)
     return [pscustomobject]@{
-        Ok = ($itemOk -and $fluidOk -and $beltOk -and $podOk -and $posOk -and $schedOk)
-        Message = "${Label}: items $($Expected.item_total)->$($Actual.item_total), fluids $($Expected.fluid_total)->$($Actual.fluid_total) delta=$fluidDelta, belt_iron $($Expected.belt_iron)->$($Actual.belt_iron), pods $($Expected.cargo_pods)->$($Actual.cargo_pods), distance $($Expected.distance)->$($Actual.distance), schedule $($Expected.schedule_records)->$($Actual.schedule_records)"
+        Ok = ($itemOk -and $fluidOk -and $machineFluidOk -and $beltOk -and $podOk -and $posOk -and $schedOk)
+        Message = "${Label}: tick $($Expected.tick)->$($Actual.tick), game_paused $($Expected.game_paused)->$($Actual.game_paused), platform_paused $($Expected.platform_paused)->$($Actual.platform_paused), items $($Expected.item_total)->$($Actual.item_total), fluids $($Expected.fluid_total)->$($Actual.fluid_total) delta=$fluidDelta, machine_fluids $($Expected.machine_fluid_total)->$($Actual.machine_fluid_total) delta=$machineFluidDelta, machine_direct $($Expected.machine_fluid_direct_total)->$($Actual.machine_fluid_direct_total), machine_segment $($Expected.machine_fluid_segment_total)->$($Actual.machine_fluid_segment_total), belt_iron $($Expected.belt_iron)->$($Actual.belt_iron), pods $($Expected.cargo_pods)->$($Actual.cargo_pods), distance $($Expected.distance)->$($Actual.distance), schedule $($Expected.schedule_records)->$($Actual.schedule_records)"
     }
 }
 
@@ -467,15 +494,28 @@ local tank = ent{name='storage-tank', position={ox+2, oy+4}, force=force}
 if tank and tank.fluidbox then pcall(function() tank.fluidbox[1] = {name='crude-oil', amount=1000, temperature=25} end) end
 if pipe and pipe.fluidbox then pcall(function() pipe.fluidbox[1] = {name='crude-oil', amount=100, temperature=25} end) end
 local plant = ent{name='chemical-plant', position={ox+5, oy+4}, force=force}
+local plant_fluid_written = 0
 if plant then
-    pcall(function() plant.set_recipe('solid-fuel-from-heavy-oil') end)
+    if force.recipes['heavy-oil-cracking'] then
+        force.recipes['heavy-oil-cracking'].enabled = true
+    end
+    local recipe_ok, recipe_err = pcall(function() plant.set_recipe('heavy-oil-cracking') end)
+    if not recipe_ok then return {success=false,error='set_recipe heavy-oil-cracking failed: '..tostring(recipe_err)} end
     if plant.fluidbox then
-        pcall(function() plant.fluidbox[1] = {name='heavy-oil', amount=50, temperature=25} end)
-
+        local write_errors = {}
+        for i = 1, #plant.fluidbox do
+            local write_ok, write_err = pcall(function() plant.fluidbox[i] = {name='heavy-oil', amount=40, temperature=25} end)
+            if not write_ok then write_errors[#write_errors + 1] = tostring(i) .. ':' .. tostring(write_err) end
+            local written = plant.fluidbox[i]
+            if written and written.name == 'heavy-oil' and written.amount and written.amount > 0 then
+                plant_fluid_written = plant_fluid_written + written.amount
+            end
+        end
+        if plant_fluid_written <= 0 then return {success=false,error='chemical plant heavy-oil write was rejected: '..table.concat(write_errors, '; ')} end
     end
     plant.active = true
 end
-return {success=true, created=created}
+return {success=true, created=created, plant_fluid_written=plant_fluid_written}
 "@
     return Invoke-ProbeJson -Body $body
 }
@@ -488,7 +528,8 @@ try {
         $fixture = Install-AdversarialFixture -PlatformIndex $main.Index
         if (-not $fixture.success) { throw "Fixture failed: $($fixture.error)" }
         $pre = Get-Metrics -PlatformIndex $main.Index
-        Add-Result "dh-fixture-grounded" "fixture has physical items and fluids (items=$($pre.item_total), fluids=$($pre.fluid_total))" (($pre.item_total -gt 0) -and ($pre.fluid_total -gt 0)) "fixture failed to produce positive physical totals"
+        Add-Result "dh-fixture-grounded" "fixture has physical items and fluids (items=$($pre.item_total), fluids=$($pre.fluid_total), machine_fluids=$($pre.machine_fluid_total))" (($pre.item_total -gt 0) -and ($pre.fluid_total -gt 0)) "fixture failed to produce positive physical totals"
+        Add-Result "dh-fixture-machine-fluid-grounded" "fixture has heavy oil physically accepted inside the crafting machine" (([double]$fixture.plant_fluid_written -gt 0) -and ([double]$pre.machine_fluid_total -gt 0)) "fixture=$($fixture | ConvertTo-Json -Compress); metrics=$($pre | ConvertTo-Json -Compress)"
 
         $tid = "dh-main-$(Get-Date -Format 'HHmmss')"
         $stage = Invoke-HoldJson -Action stage -TransferId $tid -PlatformIndex $main.Index

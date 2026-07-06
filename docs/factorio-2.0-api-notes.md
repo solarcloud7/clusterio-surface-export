@@ -68,6 +68,15 @@ Consequence: fluid does not live per-entity — it lives in the shared segment. 
   staged+600 — BEFORE any reactivation — while wipe-on-rejoin predicts loss only after. Under test in
   `tests/fluid-lab/` (rungs R1/R2 discriminate loss-at-deactivation vs shadow-then-wipe vs meter artifact).
   Build new designs on the behavioral rule, never on the mechanism, until the lab settles it.
+- **Isolated chemical-plant heavy-oil buffers survive `active=false` and platform pause.**
+  **[empirical, 2.0.77, fluid-lab R1/R3]** With `heavy-oil-cracking` explicitly enabled and the write
+  read back before proceeding, a chemical plant's isolated heavy-oil input (`get_fluid_segment_id(i) == nil`)
+  stayed at 20 units immediately after `active=false`, after +60 ticks, after `active=true`, and after another
+  +60 ticks. Writing the same buffer while inactive also survived immediate reactivation (R2). A paused platform
+  with the plant left active preserved the same 20 units across +600 ticks and after unpause (R3). These results
+  narrow the destination-hold CI failure but do not identify the cause; fixture-only remains possible when the
+  real hold path preserves an asserted fixture, and segment-connected R7 remains the design gate. Directly setting
+  `LuaEntity.frozen` failed in this lab because the property is read-only.
 - **Fusion-reactor *output* fluidboxes reject external writes.** The plasma output is engine-managed
   — [`FusionReactorPrototype.output_fluid_box`](https://lua-api.factorio.com/latest/prototypes/FusionReactorPrototype.html#output_fluid_box)
   with an engine `target_temperature`; the engine generates plasma during simulation. `fluidbox[i]=`
@@ -144,6 +153,7 @@ Consequence: fluid does not live per-entity — it lives in the shared segment. 
 
 ## Read-only entity properties
 
+- **`LuaEntity.frozen` is read-only on 2.0.77.** **[empirical, 2.0.77, fluid-lab R1/R8]** Direct assignment (`entity.frozen = true` or `false`) fails with `LuaEntity::frozen is read only.` A module-tree grep found no production `.frozen =` assignments, so the current drift is documentation/API-note wording rather than a live write site. Code that needs frozen-state changes must go through entity creation/import seams that the engine permits, not post-create assignment.
 - **Many entity properties became read-only in 2.0** (e.g. quality, computed bonuses like
   `productivity_bonus`, which aggregates force + beacon/module bonuses). Set them during
   `create_entity`, not after, and wrap optional writes in `pcall`. **[empirical]**
@@ -182,3 +192,8 @@ These facts drive how cross-instance transfer handles a player who is "aboard" a
   `public_address` defaults to `"localhost"` (must be client-routable). Basis of the future Layer-2 "follow
   your platform" feature — spike done 2026-07-03 (**CONDITIONAL GO**), see
   [GATEWAY_TRANSFER_PRD.md](GATEWAY_TRANSFER_PRD.md). **[docs 2.0.77, verified]**
+
+## Fluid segment membership and paused destination holds
+
+- **[empirical, 2.0.77, fluid-lab R9]** A deterministic chemical-plant `heavy-oil-cracking` fixture with a verified 20 heavy-oil direct buffer preserved that buffer through the real destination-hold primitive while the game was held paused: pre-read -> stage -> +600 held ticks -> go-live -> +60 -> unpaused +120 all read direct machine fluid = 20. The plant buffer remained isolated (`segment_id=nil`, segment meter = 0). This did not locally reproduce the CI 20-fluid delta; current evidence favors fixture/meter hardening over primitive redesign, pending CI self-report.
+- **[empirical, 2.0.77, fluid-lab R7]** Tested activatable fluid entities did not expose non-nil fluid segment IDs on their own fluidboxes: chemical-plant buffers were isolated, and a pump connected to adjacent pipes still returned no pump-side segment ID after tick updates while the pipes/tanks reported segment IDs. Pipes/tanks are segment-meter surfaces but are not activatable. Do not treat the old ghost-buffer hypothesis as proven for this engine surface without a specimen that has both `active` and a non-nil own-fluidbox segment ID.
