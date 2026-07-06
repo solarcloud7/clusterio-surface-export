@@ -1,8 +1,10 @@
 # Factorio 2.0 (Space Age) API & Simulation Notes
 
 Durable Factorio 2.0 API facts this plugin depends on. Each entry is marked **[API]**
-(verified against [lua-api.factorio.com](https://lua-api.factorio.com/latest/)) or
-**[empirical]** (observed via RCON testing in this project; not stated in the docs). A version
+(verified against [lua-api.factorio.com](https://lua-api.factorio.com/latest/)),
+**[empirical]** (observed via RCON testing in this project; not stated in the docs), or
+**[hypothesis]** (a mechanism EXPLANATION whose predictions have not been isolated and tested — treat as a
+lead, not a law; a behavioral rule can be [empirical] while its explanation is only [hypothesis]). A version
 qualifier may be appended — **[empirical, 2.0.76]** means checked against our pinned engine, and
 **[API, latest]** means the current published docs, which can differ from our pin (the API drifts —
 see [Space platform deletion](#space-platform-deletion)). When they disagree, the pinned-version fact
@@ -55,9 +57,17 @@ Consequence: fluid does not live per-entity — it lives in the shared segment. 
 
 ## Fluid injection on import
 
-- **Inject fluid only after `entity.active = true` and `entity.frozen = false`.** A frozen/inactive
-  entity is detached from its segment; writing `entity.fluidbox[i] = {...}` lands in a temporary
-  ghost buffer that is wiped when the entity rejoins a live segment on unfreeze. **[empirical]**
+- **Inject fluid only after `entity.active = true` and `entity.frozen = false`.** **[empirical]** — the
+  behavioral rule is solid: injecting pre-activation reproducibly lost ~15% of fluids; the
+  inject-after-activation reorder eliminated the loss and has been regression-tested since.
+- *Mechanism explanation for the above* — "a frozen/inactive entity is detached from its segment; the write
+  lands in a temporary ghost buffer that is wiped when the entity rejoins a live segment on unfreeze" —
+  **[hypothesis]**. The cited internals (`FluidSystem::merge_segment()`, `FluidSystem::on_entity_unfrozen`)
+  are closed-source and uninspectable ("expert analysis" ≠ verification), and the 2026-07 destination-hold CI
+  data CONTRADICTS the story's timing prediction: fluid in a deactivated crafting machine reads as lost at
+  staged+600 — BEFORE any reactivation — while wipe-on-rejoin predicts loss only after. Under test in
+  `tests/fluid-lab/` (rungs R1/R2 discriminate loss-at-deactivation vs shadow-then-wipe vs meter artifact).
+  Build new designs on the behavioral rule, never on the mechanism, until the lab settles it.
 - **Fusion-reactor *output* fluidboxes reject external writes.** The plasma output is engine-managed
   — [`FusionReactorPrototype.output_fluid_box`](https://lua-api.factorio.com/latest/prototypes/FusionReactorPrototype.html#output_fluid_box)
   with an engine `target_temperature`; the engine generates plasma during simulation. `fluidbox[i]=`
