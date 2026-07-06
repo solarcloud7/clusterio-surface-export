@@ -1,8 +1,10 @@
 # Factorio 2.0 (Space Age) API & Simulation Notes
 
 Durable Factorio 2.0 API facts this plugin depends on. Each entry is marked **[API]**
-(verified against [lua-api.factorio.com](https://lua-api.factorio.com/latest/)) or
-**[empirical]** (observed via RCON testing in this project; not stated in the docs). A version
+(verified against [lua-api.factorio.com](https://lua-api.factorio.com/latest/)),
+**[empirical]** (observed via RCON testing in this project; not stated in the docs), or
+**[hypothesis]** (a mechanism EXPLANATION whose predictions have not been isolated and tested — treat as a
+lead, not a law; a behavioral rule can be [empirical] while its explanation is only [hypothesis]). A version
 qualifier may be appended — **[empirical, 2.0.76]** means checked against our pinned engine, and
 **[API, latest]** means the current published docs, which can differ from our pin (the API drifts —
 see [Space platform deletion](#space-platform-deletion)). When they disagree, the pinned-version fact
@@ -55,9 +57,27 @@ Consequence: fluid does not live per-entity — it lives in the shared segment. 
 
 ## Fluid injection on import
 
-- **Inject fluid only after `entity.active = true` and `entity.frozen = false`.** A frozen/inactive
-  entity is detached from its segment; writing `entity.fluidbox[i] = {...}` lands in a temporary
-  ghost buffer that is wiped when the entity rejoins a live segment on unfreeze. **[empirical]**
+- **Inject fluid only after `entity.active = true` and `entity.frozen = false`.** **[empirical]** — the
+  behavioral rule is solid: injecting pre-activation reproducibly lost ~15% of fluids; the
+  inject-after-activation reorder eliminated the loss and has been regression-tested since.
+- *Mechanism explanation for the above* — "a frozen/inactive entity is detached from its segment; the write
+  lands in a temporary ghost buffer that is wiped when the entity rejoins a live segment on unfreeze" —
+  **[hypothesis]**. The cited internals (`FluidSystem::merge_segment()`, `FluidSystem::on_entity_unfrozen`)
+  are closed-source and uninspectable ("expert analysis" ≠ verification). Fluid-lab tested the prediction set:
+  isolated machine buffers survived deactivation/reactivation, `game.tick_paused` during destination-hold
+  stage/read did not affect isolated machine buffers, and the attempted segment-connected activatable specimen
+  was unconstructible on 2.0.77 because tested activatable fluid entities expose no non-nil own-fluidbox segment
+  ID. Retain the behavioral import rule on historical evidence; do not treat the ghost-buffer mechanism as
+  proven for current-engine destination-hold design.
+- **Isolated chemical-plant heavy-oil buffers survive `active=false` and platform pause.**
+  **[empirical, 2.0.77, fluid-lab R1/R3]** With `heavy-oil-cracking` explicitly enabled and the write
+  read back before proceeding, a chemical plant's isolated heavy-oil input (`get_fluid_segment_id(i) == nil`)
+  stayed at 20 units immediately after `active=false`, after +60 ticks, after `active=true`, and after another
+  +60 ticks. Writing the same buffer while inactive also survived immediate reactivation (R2). A paused platform
+  with the plant left active preserved the same 20 units across +600 ticks and after unpause (R3). R9 then proved
+  the real destination-hold path also preserves an asserted isolated machine buffer while `game.tick_paused=true`;
+  the hold keeps full deactivation. Directly setting `LuaEntity.frozen` failed in this lab because the property is
+  read-only.
 - **Fusion-reactor *output* fluidboxes reject external writes.** The plasma output is engine-managed
   — [`FusionReactorPrototype.output_fluid_box`](https://lua-api.factorio.com/latest/prototypes/FusionReactorPrototype.html#output_fluid_box)
   with an engine `target_temperature`; the engine generates plasma during simulation. `fluidbox[i]=`
@@ -134,6 +154,7 @@ Consequence: fluid does not live per-entity — it lives in the shared segment. 
 
 ## Read-only entity properties
 
+- **`LuaEntity.frozen` is read-only on 2.0.77.** **[empirical, 2.0.77, fluid-lab R1/R8]** Direct assignment (`entity.frozen = true` or `false`) fails with `LuaEntity::frozen is read only.` A module-tree grep found no production `.frozen =` assignments, so the current drift is documentation/API-note wording rather than a live write site. Code that needs frozen-state changes must go through entity creation/import seams that the engine permits, not post-create assignment.
 - **Many entity properties became read-only in 2.0** (e.g. quality, computed bonuses like
   `productivity_bonus`, which aggregates force + beacon/module bonuses). Set them during
   `create_entity`, not after, and wrap optional writes in `pcall`. **[empirical]**
@@ -172,3 +193,9 @@ These facts drive how cross-instance transfer handles a player who is "aboard" a
   `public_address` defaults to `"localhost"` (must be client-routable). Basis of the future Layer-2 "follow
   your platform" feature — spike done 2026-07-03 (**CONDITIONAL GO**), see
   [GATEWAY_TRANSFER_PRD.md](GATEWAY_TRANSFER_PRD.md). **[docs 2.0.77, verified]**
+
+## Fluid segment membership and paused destination holds
+
+- **[empirical, 2.0.77, fluid-lab R9]** A deterministic chemical-plant `heavy-oil-cracking` fixture with a verified 20 heavy-oil direct buffer preserved that buffer through the real destination-hold primitive while the game was held paused: pre-read -> stage -> +600 held ticks -> go-live -> +60 -> unpaused +120 all read direct machine fluid = 20. The plant buffer remained isolated (`segment_id=nil`, segment meter = 0). `game.tick_paused=true` during stage/read does not affect isolated machine buffers; fixture/meter hardening was sufficient and the destination-hold primitive remains unchanged.
+- **[empirical, 2.0.77, fluid-lab R7]** Tested activatable fluid entities did not expose non-nil fluid segment IDs on their own fluidboxes: chemical-plant buffers were isolated, and a pump connected to adjacent pipes still returned no pump-side segment ID after tick updates while the pipes/tanks reported segment IDs. Pipes/tanks are segment-meter surfaces but are not activatable. For the tested engine surface, no activatable entity's own fluidbox exposes a non-nil segment ID; the ghost-buffer mechanism's current constructible domain is empty.
+- **[unexplained, 2.0.77, destination-hold CI delta=20]** The original CI-only `fluids 1120→1100 delta=20` was eliminated by fixture determinism and direct-machine meter hardening, but its root cause was never isolated. Remaining candidates are the fresh-force recipe-less write path and meter staleness. The instrumented probe now reports tick, `game.tick_paused`, platform pause, direct machine buffers, and segment meters so any recurrence self-diagnoses instead of becoming a silent fidelity claim.
