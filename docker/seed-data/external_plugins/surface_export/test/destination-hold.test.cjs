@@ -215,13 +215,14 @@ repoOnlyTest("destination hold integration probe reports required zero-state evi
 	assert.match(script, /Set-GamePaused -Pause \$false/);
 });
 
-repoOnlyTest("destination hold integration probe records TTL expiry as the measured unhide hazard", () => {
+repoOnlyTest("destination hold integration probe proves TTL expiry respects an active hold", () => {
 	const script = readRepo("tests/integration/destination-hold/run-tests.ps1");
-	assert.match(script, /dh-ttl-expiry-unhides-held-surface/);
+	assert.match(script, /dh-ttl-expiry-respects-hold/);
 	assert.match(script, /dh-ttl-expire-ok/);
 	assert.match(script, /expires_tick=game.tick - 1/);
-	assert.match(script, /\$ttlMetrics\.hidden -eq \$false/);
-	assert.doesNotMatch(script, /dh-ttl-does-not-unhide/);
+	assert.match(script, /\$ttlMetrics\.hidden -eq \$true/);
+	assert.match(script, /\$null -ne \$ttlHoldAfter\.hold/);
+	assert.match(script, /\$ttlLockAfter\.locked -eq \$false/);
 });
 
 
@@ -245,4 +246,44 @@ test("surface lock cargo pod completion preserves descending overflow via recove
 	assert.match(lock, /stack\.clear\(\)/);
 	assert.match(lock, /surface\.spill_item_stack/);
 	assert.doesNotMatch(lock, /pod\.force_finish_descending\(/);
+});
+test("unlock_platform defers not-live ownership to an active destination hold", () => {
+	const lock = read("module/utils/surface-lock.lua");
+	const unlockAt = lock.indexOf("function SurfaceLock.unlock_platform(platform_index, expected_name)");
+	const identityAt = lock.indexOf("Platform index reused since lock", unlockAt);
+	const holdCheckAt = lock.indexOf("SurfaceLock.destination_hold_owns_surface", unlockAt);
+	const restoreAt = lock.indexOf("local restored = unfreeze_entities", unlockAt);
+	const holdBranch = lock.slice(holdCheckAt, restoreAt);
+
+	assert.match(lock, /function SurfaceLock\.destination_hold_owns_surface\(surface, platform\)/);
+	assert.notEqual(unlockAt, -1);
+	assert.notEqual(identityAt, -1);
+	assert.notEqual(holdCheckAt, -1);
+	assert.notEqual(restoreAt, -1);
+	assert.ok(identityAt < holdCheckAt, "hold ownership check must run after the existing surface identity tripwire");
+	assert.ok(holdCheckAt < restoreAt, "hold ownership check must run before any restore side effects");
+	assert.match(holdBranch, /storage\.locked_platforms\[platform_index\] = nil/);
+	assert.match(holdBranch, /destination hold .* owns .* not restoring/i);
+	assert.doesNotMatch(holdBranch, /unfreeze_entities/);
+	assert.doesNotMatch(holdBranch, /set_surface_hidden/);
+	assert.doesNotMatch(holdBranch, /platform\.paused/);
+	const helper = lock.slice(lock.indexOf("function SurfaceLock.destination_hold_owns_surface"), lock.indexOf("--- Lock a platform surface"));
+	assert.doesNotMatch(helper, /force_name/);
+});
+
+test("hold-aware unlock selftest traces held and non-held lifecycle cases", () => {
+	const selftest = read("module/interfaces/remote/hold-aware-unlock-selftest.lua");
+	const remote = read("module/interfaces/remote-interface.lua");
+	assert.match(remote, /hold_aware_unlock_selftest_json = Base\.json_wrap\(hold_aware_unlock_selftest\)/);
+	assert.match(selftest, /ttl_expiry_unlock_over_hold/);
+	assert.match(selftest, /manual_unlock_over_hold/);
+	assert.match(selftest, /unlock_after_hold_removed/);
+	assert.match(selftest, /unlock_after_go_live/);
+	assert.match(selftest, /double_unlock/);
+	assert.match(selftest, /non_held_unlock_restores/);
+	assert.match(selftest, /hidden = true/);
+	assert.match(selftest, /active = false/);
+	assert.match(selftest, /paused = true/);
+	assert.match(selftest, /hidden = false/);
+	assert.match(selftest, /active = true/);
 });

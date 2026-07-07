@@ -267,6 +267,26 @@ function SurfaceLock.is_same_transfer_upgrade(existing_job_id, opts_job_id)
     return existing_job_id == nil or existing_job_id == opts_job_id
 end
 
+--- Does an active destination hold currently own this platform surface's not-live state?
+--- When true, unlock_platform may clear the source/export lock record but must not restore visibility,
+--- entity activation, or platform pause. The hold remains the owner until go_live/discard clears it.
+--- @param surface LuaSurface
+--- @param platform LuaSpacePlatform
+--- @return boolean, string|nil transfer_id
+function SurfaceLock.destination_hold_owns_surface(surface, platform)
+    local holds = storage.destination_holds
+    if type(holds) ~= "table" or not (surface and surface.valid and platform and platform.valid) then
+        return false, nil
+    end
+    for transfer_id, hold in pairs(holds) do
+        if type(hold) == "table"
+            and hold.surface_index == surface.index
+            and hold.platform_index == platform.index then
+            return true, transfer_id
+        end
+    end
+    return false, nil
+end
 --- Lock a platform surface for export/transfer
 --- Completes cargo pod transfers, freezes entities, hides surface
 --- @param platform LuaSpacePlatform: The platform to lock
@@ -413,6 +433,15 @@ function SurfaceLock.unlock_platform(platform_index, expected_name)
         log(string.format("[SurfaceLock] unlock: index %s now holds a different surface (locked %s, found %s) — dropping stale lock WITHOUT restoring",
             tostring(platform_index), tostring(lock_data.surface_index), tostring(surface and surface.index)))
         return false, "Platform index reused since lock — stale lock dropped (not restored)"
+    end
+
+    local destination_hold_active, destination_hold_transfer_id = SurfaceLock.destination_hold_owns_surface(surface, platform)
+    if destination_hold_active then
+        storage.locked_platforms[platform_index] = nil
+        log(string.format("[SurfaceLock] unlock: destination hold %s owns platform '%s' (index %s, surface %s); not restoring hold-owned not-live state",
+            tostring(destination_hold_transfer_id), tostring(platform_name), tostring(platform_index), tostring(surface.index)))
+        game.print(string.format("[Lock] Platform '%s' lock released; destination hold remains in control", tostring(platform_name)), {0.5, 1, 0.5})
+        return true, nil
     end
 
     -- Restore entity active states, original visibility, and the full original schedule.
