@@ -49,6 +49,19 @@ export interface SimpleResponse {
 	error?: string;
 }
 
+export const SOURCE_TRANSFER_LOCK_STATES = [
+	"pre_commit",
+	"committed",
+	"source_gone_matching_transfer",
+	"unknown/offline",
+	"identity_mismatch",
+] as const;
+export type SourceTransferLockState = typeof SOURCE_TRANSFER_LOCK_STATES[number];
+export interface SourceTransferLockStateResponse {
+	state: SourceTransferLockState;
+	transferId: string | null;
+	error: string | null;
+}
 // ── Request / Event classes ─────────────────────────────────────────────────
 
 export class ExportPlatformRequest {
@@ -1117,6 +1130,53 @@ export class UnlockSourcePlatformRequest {
 	};
 }
 
+export class GetSourceTransferLockStateRequest {
+	declare ["constructor"]: typeof GetSourceTransferLockStateRequest;
+	static plugin = PLUGIN_NAME;
+	static type = "request" as const;
+	static src = "controller" as const;
+	static dst = "instance" as const;
+	static jsonSchema: JsonSchema = {
+		type: "object",
+		properties: {
+			transferId: { type: "string" },
+			platformIndex: { type: "integer" },
+			platformName: { type: "string" },
+			forceName: { type: "string", default: "player" },
+		},
+		required: ["transferId", "platformIndex", "platformName"],
+		additionalProperties: false,
+	};
+
+	transferId: string;
+	platformIndex: number;
+	platformName: string;
+	forceName: string;
+
+	constructor(json: { transferId: string; platformIndex: number; platformName: string; forceName?: string }) {
+		this.transferId = json.transferId;
+		this.platformIndex = json.platformIndex;
+		this.platformName = json.platformName;
+		this.forceName = json.forceName || "player";
+	}
+
+	static fromJSON(json: { transferId: string; platformIndex: number; platformName: string; forceName?: string }) { return new GetSourceTransferLockStateRequest(json); }
+	toJSON() { return { transferId: this.transferId, platformIndex: this.platformIndex, platformName: this.platformName, forceName: this.forceName }; }
+
+	static Response = {
+		jsonSchema: {
+			type: "object",
+			properties: {
+				state: { enum: SOURCE_TRANSFER_LOCK_STATES },
+				transferId: { type: ["string", "null"] },
+				error: { type: ["string", "null"] },
+			},
+			required: ["state"],
+			additionalProperties: false,
+		} as JsonSchema,
+		fromJSON(json: unknown) { return json as SourceTransferLockStateResponse; },
+	};
+}
 export class TransferStatusUpdate {
 	declare ["constructor"]: typeof TransferStatusUpdate;
 	static plugin = PLUGIN_NAME;
@@ -1337,6 +1397,15 @@ export interface PendingTransferIntent {
 	startedAt: number;
 	/** The stored export blob for this transfer. Phase 1 keeps this only as bounded observability metadata. */
 	exportId: string | null;
+}
+
+export interface SourceCommitMarker {
+	transferId: string;
+	sourceInstanceId?: number;
+	sourcePlatformIndex?: number;
+	sourcePlatformName?: string;
+	forceName?: string;
+	committedAt: number;
 }
 
 export interface IControllerPlugin {

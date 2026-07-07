@@ -37,6 +37,7 @@ import { normalizeExportMetrics, getErrorMessage, generateOperationId, TICKS_TO_
 
 const PLUGIN_NAME = "surface_export";
 export const PENDING_TRANSFER_INTENT_RETENTION_MS = 15 * 60 * 1000;
+export const SOURCE_COMMIT_MARKER_RETENTION_MS = PENDING_TRANSFER_INTENT_RETENTION_MS * 2;
 
 export class ControllerPlugin extends BaseControllerPlugin {
 	private get c(): Controller { return this.controller; }
@@ -70,6 +71,8 @@ export class ControllerPlugin extends BaseControllerPlugin {
 	/** Transfers persisted while awaiting_validation for observability and future Phase 2 re-adoption. */
 	pendingTransfers!: Map<string, messages.PendingTransferIntent>;
 	pendingTransfersPath!: string;
+	sourceCommitMarkers!: Map<string, messages.SourceCommitMarker>;
+	sourceCommitMarkersPath!: string;
 
 	async init() {
 		this.logger.info("Surface Export controller plugin initializing...");
@@ -100,9 +103,14 @@ export class ControllerPlugin extends BaseControllerPlugin {
 			"surface_export_gateways.json",
 		);
 		this.pendingTransfers = new Map();
+		this.sourceCommitMarkers = new Map();
 		this.pendingTransfersPath = path.resolve(
 			String(this.c.config.get("controller.database_directory")),
 			"surface_export_pending_transfers.json",
+		);
+		this.sourceCommitMarkersPath = path.resolve(
+			String(this.c.config.get("controller.database_directory")),
+			"surface_export_source_commit_markers.json",
 		);
 
 		// Instantiate modules (order matters: txLogger before subscriptions,
@@ -116,6 +124,7 @@ export class ControllerPlugin extends BaseControllerPlugin {
 		await this.txLogger.loadTransactionLogs();
 		await this.loadGatewayConfig();
 		await this.loadPendingTransfers();
+		await this.loadSourceCommitMarkers();
 
 		// Register message handlers
 		this.c.handle(messages.PlatformExportEvent, this.handlePlatformExport.bind(this));
@@ -143,6 +152,7 @@ export class ControllerPlugin extends BaseControllerPlugin {
 		this.logger.info("Controller started - Surface Export plugin ready");
 		this.logger.info(`Current storage: ${this.platformStorage.size} platforms`);
 		await this.prunePendingTransfers();
+		await this.pruneSourceCommitMarkers();
 		if (this.pendingTransfers.size > 0) {
 			this.logger.warn(`${this.pendingTransfers.size} transfer(s) were awaiting validation at shutdown. Phase 1 recovery is source-side TTL unlock; controller will not auto-delete or auto-unlock on boot.`);
 		}
@@ -795,6 +805,66 @@ export class ControllerPlugin extends BaseControllerPlugin {
 		}
 	}
 
+	async loadSourceCommitMarkers() {
+		try {
+			const content = await fs.readFile(this.sourceCommitMarkersPath, "utf8");
+			const entries = JSON.parse(content);
+			if (Array.isArray(entries)) {
+				for (const e of entries) {
+					if (e && typeof e.transferId === "string") {
+						this.sourceCommitMarkers.set(e.transferId, e as messages.SourceCommitMarker);
+					}
+				}
+			}
+			await this.pruneSourceCommitMarkers();
+		} catch (err: unknown) {
+			const code = (err as { code?: string }).code;
+			if (code === "ENOENT") {
+				return;
+			}
+			this.logger.error(`Failed to load source COMMIT markers: ${getErrorMessage(err)}`);
+		}
+	}
+
+	async persistSourceCommitMarkers() {
+		try {
+			const payload = JSON.stringify(Array.from(this.sourceCommitMarkers.values()), null, 2);
+			await lib.safeOutputFile(this.sourceCommitMarkersPath, payload);
+		} catch (err: unknown) {
+			this.logger.error(`Failed to persist source COMMIT markers: ${getErrorMessage(err)}`);
+		}
+	}
+
+	/**
+	 * Write-ahead hygiene only: this records that this controller attempted to transmit COMMIT.
+	 * The source-phase query is authoritative for destructive compensation; never the flag alone.
+	 */
+	recordCommitTransmitted(marker: messages.SourceCommitMarker): void {
+		this.pruneSourceCommitMarkersInMemory();
+		this.sourceCommitMarkers.set(marker.transferId, marker);
+		void this.persistSourceCommitMarkers();
+	}
+
+	async pruneSourceCommitMarkers(now = Date.now()): Promise<number> {
+		const pruned = this.pruneSourceCommitMarkersInMemory(now);
+		if (pruned > 0) {
+			this.logger.info(`Pruned ${pruned} stale source COMMIT marker(s)`);
+			await this.persistSourceCommitMarkers();
+		}
+		return pruned;
+	}
+
+	private pruneSourceCommitMarkersInMemory(now = Date.now()): number {
+		let pruned = 0;
+		for (const [transferId, marker] of this.sourceCommitMarkers) {
+			const committedAt = Number(marker.committedAt);
+			if (!Number.isFinite(committedAt) || now - committedAt > SOURCE_COMMIT_MARKER_RETENTION_MS) {
+				this.sourceCommitMarkers.delete(transferId);
+				pruned++;
+			}
+		}
+		return pruned;
+	}
 	/**
 	 * Is the instance reachable for a transfer — present, on a connected host, AND running? This is the
 	 * single definition of "online"; the web Gateways editor's "(offline)" label MUST use the same

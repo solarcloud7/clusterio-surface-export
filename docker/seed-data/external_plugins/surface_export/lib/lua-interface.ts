@@ -163,6 +163,12 @@ export class LuaInterface {
 		);
 	}
 
+	async getSourceTransferLockState(transferId: string, platformIndex: number, platformName: string, forceName: string): Promise<string> {
+		return this.host.sendRcon(
+			`/sc rcon.print(remote.call("surface_export", "get_source_transfer_lock_state_json", ` +
+			`"${escapeString(transferId)}", ${Math.trunc(platformIndex)}, "${escapeString(platformName)}", "${escapeString(forceName)}"))`,
+		);
+	}
 	/** Unlock a platform via the remote interface (keyed by the unique index). Returns RAW "SUCCESS" /
 	 *  "ERROR:<reason>". `platformName`, when given, is a secondary display tripwire passed by the rollback/expiry
 	 *  paths; identity is the index + surface.index inside unlock_platform (not the mutable name, not any reconcile). */

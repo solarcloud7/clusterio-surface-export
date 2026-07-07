@@ -105,7 +105,7 @@ Load-bearing rules (each is a hard constraint, not a preference):
   trusted; the sole human lever is what RCON already provides.
 - New `GetSourceTransferLockStateRequest` distinguishes ALL of: `pre_commit` · `committed` ·
   `source_gone_matching_transfer` (via a durable committed tombstone keyed by the canonical transfer id) ·
-  `unknown/offline` · `index_reused_or_name_mismatch` — never infer commit from absence.
+  `unknown/offline` · `identity_mismatch` — never infer commit from absence.
 
 **Phase-2 prerequisites (spike + prove BEFORE implementing):**
 1. **Canonical transfer id.** One id shared across source-lock → dest-stage → COMMIT → GO-LIVE → tombstone. It

@@ -155,7 +155,7 @@ Tasks:
    - `committed`
    - `source_gone_matching_transfer`
    - `unknown/offline`
-   - `index_reused_or_name_mismatch`
+   - `identity_mismatch`
 7. Persist the COMMIT-transmitted marker write-ahead as hygiene, without using it as the only destructive gate.
 8. Add message round-trip coverage and source-state unit tests.
 

@@ -55,10 +55,16 @@ local function delete_platform_for_transfer(platform_index, platform_name, force
   -- No name tripwire is passed: identity was ALREADY fully established by the gate above (job_id + surface.index),
   -- and unlock_platform re-checks surface.index internally. (Passing lock.platform_name would be a self-comparison
   -- against the same lock record — a dead guard that validates nothing.)
-  GameUtils.pcall_warn("[DeleteForTransfer] unlock index " .. tostring(platform_index), function()
-    SurfaceLock.unlock_platform(platform_index)
-  end)
-
+  if SurfaceLock.source_lock_is_committed(lock) then
+    local cleared, clear_err = SurfaceLock.clear_committed_source_lock_after_delete(platform_index, expected_job_id)
+    if not cleared then
+      return "ERROR:committed source lock clear failed: " .. tostring(clear_err)
+    end
+  else
+    GameUtils.pcall_warn("[DeleteForTransfer] unlock index " .. tostring(platform_index), function()
+      SurfaceLock.unlock_platform(platform_index)
+    end)
+  end
   -- Evacuate BEFORE deleting — players/characters must be off the surface before it is torn down. GUARDED
   -- (symmetric with the unlock above): an evacuation throw must NEVER abort the delete. If it did, the source
   -- would survive while the destination copy is already committed = a DUPLICATED platform (two-phase-commit
