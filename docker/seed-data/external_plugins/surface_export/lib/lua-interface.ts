@@ -133,10 +133,10 @@ export class LuaInterface {
 		);
 	}
 
-	/** Fetch the post-import validation result as a RAW rcon string; the caller parses/defaults it. */
-	async getValidationResultJson(platformName: string): Promise<string> {
+	/** Debug-only fetch of a stored validation result by canonical transfer id or job id. */
+	async getValidationResultJson(resultId: string): Promise<string> {
 		return this.host.sendRcon(
-			`/sc rcon.print(remote.call("surface_export", "get_validation_result_json", "${escapeString(platformName)}"))`,
+			`/sc rcon.print(remote.call("surface_export", "get_validation_result_json", "${escapeString(resultId)}"))`,
 		);
 	}
 

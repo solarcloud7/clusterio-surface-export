@@ -301,6 +301,7 @@ export class TransferOrchestrator {
 
 		if (importMetrics) transfer.importMetrics = importMetrics;
 		transfer.validationResult = event.validation || null;
+		transfer.failedStage = event.validation?.failedStage ?? null;
 
 		if (transfer.validationTimeout) {
 			clearTimeout(transfer.validationTimeout);

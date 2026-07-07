@@ -10,6 +10,78 @@ local LossAnalysis = require("modules/surface_export/validators/loss-analysis")
 
 local TransferValidation = {}
 
+local FLUID_GAIN_TOLERANCE = 500  -- Allow small gain due to rounding
+
+local function validate_fluid_counts(expected_fluid_counts, actual_fluid_counts)
+    local fluid_mismatches = {}
+    local fluid_match = true
+    local HIGH_TEMP = Util.HIGH_TEMP_THRESHOLD
+    local recon = LossAnalysis.reconcile_fluids(expected_fluid_counts, actual_fluid_counts)
+
+    -- Validate low-temperature fluids per exact key
+    for fluid_key, expected_volume in pairs(expected_fluid_counts or {}) do
+        local _, temp = Util.parse_fluid_temp_key(fluid_key)
+        if temp >= HIGH_TEMP then
+            goto continue_fluid_check
+        end
+
+        local actual_volume = actual_fluid_counts[fluid_key] or 0
+        if actual_volume > expected_volume + FLUID_GAIN_TOLERANCE then
+            fluid_match = false
+            table.insert(fluid_mismatches, string.format(
+                "%s: GAINED fluid - expected %.1f, got %.1f",
+                fluid_key, expected_volume, actual_volume
+            ))
+        elseif expected_volume > 1000 and actual_volume < 1 then
+            fluid_match = false
+            table.insert(fluid_mismatches, string.format(
+                "%s: fluid completely lost - expected %.1f, got %.1f",
+                fluid_key, expected_volume, actual_volume
+            ))
+        end
+        ::continue_fluid_check::
+    end
+
+    -- Validate high-temperature fluids by aggregate total per fluid name
+    for name, _ in pairs(recon.allHighTempNames) do
+        local exp_total = recon.expectedHighTemp[name] or 0
+        local act_total = recon.actualHighTemp[name] or 0
+
+        if act_total > exp_total + FLUID_GAIN_TOLERANCE then
+            fluid_match = false
+            table.insert(fluid_mismatches, string.format(
+                "%s (high-temp aggregate): GAINED fluid - expected %.1f, got %.1f",
+                name, exp_total, act_total
+            ))
+        elseif exp_total > 100 and act_total < 1 then
+            fluid_match = false
+            table.insert(fluid_mismatches, string.format(
+                "%s (high-temp aggregate): fluid completely lost - expected %.1f, got %.1f",
+                name, exp_total, act_total
+            ))
+        else
+            log(string.format("[TransferValidation] High-temp fluid %s: expected=%.1f actual=%.1f (temp-merge reconciled)",
+                name, exp_total, act_total))
+        end
+    end
+
+    -- Check for unexpected low-temp fluids
+    for fluid_key, actual_volume in pairs(actual_fluid_counts or {}) do
+        local _, temp = Util.parse_fluid_temp_key(fluid_key)
+        if temp < HIGH_TEMP and not (expected_fluid_counts or {})[fluid_key] then
+            if actual_volume > FLUID_GAIN_TOLERANCE then
+                fluid_match = false
+                table.insert(fluid_mismatches, string.format(
+                    "%s: unexpected fluid (got %.1f)",
+                    fluid_key, actual_volume
+                ))
+            end
+        end
+    end
+
+    return fluid_match, fluid_mismatches, recon
+end
+
 --- Validate an imported platform against expected verification data
 --- Uses grouped validation: strict for storage, lenient for machines
 --- @param surface LuaSurface: The imported platform surface
@@ -221,82 +293,10 @@ function TransferValidation.validate_import(surface, expected_verification, opti
     -- so we skip all fluid checks and rely on post-activation loss analysis instead
     local fluid_mismatches = {}
     local fluid_match = true
-    local FLUID_GAIN_TOLERANCE = 500  -- Allow small gain due to rounding
-    local HIGH_TEMP = Util.HIGH_TEMP_THRESHOLD
-
     if options.skip_fluid_validation then
         log("[TransferValidation] Skipping fluid validation (deferred to post-activation)")
     else
-        -- Use shared reconciliation to aggregate high-temp fluids by base name
-        local recon = LossAnalysis.reconcile_fluids(
-            expected_verification.fluid_counts, actual_fluid_counts)
-
-        -- Validate low-temperature fluids per exact key
-        for fluid_key, expected_volume in pairs(expected_verification.fluid_counts or {}) do
-            local _, temp = Util.parse_fluid_temp_key(fluid_key)
-            if temp >= HIGH_TEMP then
-                -- Skip per-key check for high-temp fluids; validated as aggregate below
-                goto continue_fluid_check
-            end
-
-            local actual_volume = actual_fluid_counts[fluid_key] or 0
-
-            -- Check if we gained fluid (shouldn't happen)
-            if actual_volume > expected_volume + FLUID_GAIN_TOLERANCE then
-                fluid_match = false
-                table.insert(fluid_mismatches, string.format(
-                    "%s: GAINED fluid - expected %.1f, got %.1f",
-                    fluid_key, expected_volume, actual_volume
-                ))
-            -- Check if fluid completely disappeared (should have at least something)
-            elseif expected_volume > 1000 and actual_volume < 1 then
-                fluid_match = false
-                table.insert(fluid_mismatches, string.format(
-                    "%s: fluid completely lost - expected %.1f, got %.1f",
-                    fluid_key, expected_volume, actual_volume
-                ))
-            end
-            -- Note: We don't fail on partial loss - fluid networks redistribute
-            ::continue_fluid_check::
-        end
-
-        -- Validate high-temperature fluids by aggregate total per fluid name
-        for name, _ in pairs(recon.allHighTempNames) do
-            local exp_total = recon.expectedHighTemp[name] or 0
-            local act_total = recon.actualHighTemp[name] or 0
-
-            if act_total > exp_total + FLUID_GAIN_TOLERANCE then
-                fluid_match = false
-                table.insert(fluid_mismatches, string.format(
-                    "%s (high-temp aggregate): GAINED fluid - expected %.1f, got %.1f",
-                    name, exp_total, act_total
-                ))
-            elseif exp_total > 100 and act_total < 1 then
-                fluid_match = false
-                table.insert(fluid_mismatches, string.format(
-                    "%s (high-temp aggregate): fluid completely lost - expected %.1f, got %.1f",
-                    name, exp_total, act_total
-                ))
-            else
-                log(string.format("[TransferValidation] High-temp fluid %s: expected=%.1f actual=%.1f (temp-merge reconciled)",
-                    name, exp_total, act_total))
-            end
-        end
-
-        -- Check for unexpected low-temp fluids
-        for fluid_key, actual_volume in pairs(actual_fluid_counts) do
-            local _, temp = Util.parse_fluid_temp_key(fluid_key)
-            -- High-temp unexpected fluids are covered by aggregate check above
-            if temp < HIGH_TEMP and not expected_verification.fluid_counts[fluid_key] then
-                if actual_volume > FLUID_GAIN_TOLERANCE then
-                    fluid_match = false
-                    table.insert(fluid_mismatches, string.format(
-                        "%s: unexpected fluid (got %.1f)",
-                        fluid_key, actual_volume
-                    ))
-                end
-            end
-        end
+        fluid_match, fluid_mismatches = validate_fluid_counts(expected_verification.fluid_counts or {}, actual_fluid_counts or {})
     end
 
     -- Build mismatch details
@@ -379,29 +379,72 @@ function TransferValidation.validate_import(surface, expected_verification, opti
     return success, validation_result
 end
 
---- Store validation result for a platform (for retrieval by instance plugin)
---- @param platform_name string: Name of the platform
+--- Run the post-activation fluid gate against counts already updated by LossAnalysis.run().
+--- @param validation_result table: The validation result to update in-place
+--- @return boolean, table: success, validation_result
+function TransferValidation.validate_fluids_post_activation(validation_result)
+    local result = validation_result or {}
+    local fluid_match, fluid_mismatches = validate_fluid_counts(result.expectedFluidCounts or {}, result.actualFluidCounts or {})
+    result.fluidCountMatch = fluid_match == true
+    if not result.itemCountMatch then
+        result.failedStage = "items"
+    elseif not result.fluidCountMatch then
+        result.failedStage = "fluids"
+    else
+        result.failedStage = nil
+    end
+    result.success = result.itemCountMatch == true and result.fluidCountMatch == true
+
+    if not result.fluidCountMatch then
+        local fluid_details = "Fluid mismatches: " .. table.concat(fluid_mismatches, "; ")
+        if result.mismatchDetails and result.mismatchDetails ~= "" then
+            result.mismatchDetails = result.mismatchDetails .. " | " .. fluid_details
+        else
+            result.mismatchDetails = fluid_details
+        end
+    end
+
+    return result.success == true, result
+end
+
+--- Store validation result for a transfer/job id (debug remote only; production uses import-complete payload).
+--- @param result_id string: Canonical transfer id or job id
 --- @param validation_result table: Validation result data
-function TransferValidation.store_validation_result(platform_name, validation_result)
+function TransferValidation.store_validation_result(result_id, validation_result)
+    if type(result_id) ~= "string" or result_id == "" then
+        return false, "result_id is required"
+    end
     if not storage.validation_results then
         storage.validation_results = {}
     end
 
-    storage.validation_results[platform_name] = {
+    storage.validation_results[result_id] = {
         result = validation_result,
         timestamp = game.tick
     }
+    return true
 end
 
---- Get validation result for a platform
---- @param platform_name string: Name of the platform
+--- Clear a validation result by transfer/job id.
+--- @param result_id string
+function TransferValidation.clear_validation_result(result_id)
+    if storage.validation_results and type(result_id) == "string" then
+        storage.validation_results[result_id] = nil
+    end
+end
+
+--- Get validation result by transfer/job id.
+--- @param result_id string: Canonical transfer id or job id
 --- @return table|nil: Validation result or nil if not found
-function TransferValidation.get_validation_result(platform_name)
+function TransferValidation.get_validation_result(result_id)
+    if type(result_id) ~= "string" or result_id == "" then
+        error("validation result id is required")
+    end
     if not storage.validation_results then
         return nil
     end
 
-    local stored = storage.validation_results[platform_name]
+    local stored = storage.validation_results[result_id]
     if stored then
         return stored.result
     end
@@ -418,10 +461,10 @@ function TransferValidation.cleanup_old_results(max_age_ticks)
 
     max_age_ticks = max_age_ticks or 36000  -- Default: 10 minutes at 60 UPS
 
-    for platform_name, stored in pairs(storage.validation_results) do
+    for result_id, stored in pairs(storage.validation_results) do
         local age = game.tick - stored.timestamp
         if age > max_age_ticks then
-            storage.validation_results[platform_name] = nil
+            storage.validation_results[result_id] = nil
         end
     end
 end

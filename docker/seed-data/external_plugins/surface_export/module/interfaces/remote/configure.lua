@@ -46,7 +46,12 @@ local function configure(config)
     -- two-phase commit preserves the source. See validation-timing-trilemma / gate-detects-loss test.
     storage.surface_export_config.test_force_item_loss = config.test_force_item_loss
   end
-
+  if config.test_force_fluid_loss ~= nil then
+    -- Test-only: inflate expected fluid count on the NEXT transfer AFTER fluid restoration/loss-analysis
+    -- but BEFORE the post-activation fluid gate. Non-destructive: predicts extra fluid instead of
+    -- removing fluid, proving the composite gate fails and discards the activated destination safely.
+    storage.surface_export_config.test_force_fluid_loss = config.test_force_fluid_loss
+  end
   if config.gateways_json then
     -- Replace the whole gateway link map (controller is the source of truth). Decoded from JSON,
     -- never built as a Lua table literal, so arbitrary instance names cannot inject Lua.
