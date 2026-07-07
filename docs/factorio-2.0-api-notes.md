@@ -22,6 +22,7 @@ was learned.
 - [LuaProfiler and LocalisedString](#luaprofiler-and-localisedstring)
 - [Read-only entity properties](#read-only-entity-properties)
 - [Players on space platforms + cross-server move](#players-on-space-platforms--cross-server-move)
+- [Space platform hold semantics](#space-platform-hold-semantics)
 
 ## Fluid segment system
 
@@ -193,6 +194,11 @@ These facts drive how cross-instance transfer handles a player who is "aboard" a
   `public_address` defaults to `"localhost"` (must be client-routable). Basis of the future Layer-2 "follow
   your platform" feature — spike done 2026-07-03 (**CONDITIONAL GO**), see
   [GATEWAY_TRANSFER_PRD.md](GATEWAY_TRANSFER_PRD.md). **[docs 2.0.77, verified]**
+
+## Space platform hold semantics
+
+- **[empirical, 2.0.77, hold-lab PR-0A]** Spoilage is anchored to global game ticks and continues under `platform.paused`. In the hold-completeness lab, a held yumako stack drifted by the same spoil percent as the live-control stack while the platform was hidden, paused, and held. This is acceptable destination-hold behavior: the not-live contract is no observable side effects, held drift no worse than the live control, zero platform damage, and nothing leaving the platform — not frozen time.
+- **[empirical, 2.0.77, hold-lab PR-0A]** Cargo-pod state machines are pause-exempt. Before the primitive fix, a held cargo pod advanced while `platform.paused=true`; `DestinationHold.stage()` now reuses `SurfaceLock.complete_cargo_pods` after pausing/hiding/deactivating the held platform, so a staged destination hold is pod-free. The PR-0A live specimen was an `awaiting_launch` pod: it verified `pod_count=0` immediately after stage and after the hold window, with overflow cargo retained on the platform as item-on-ground when the hub was full. The shared helper also routes `descending`/`parking` pods through the same recover-and-spill path, but PR-0A did not construct that state as a separate live specimen.
 
 ## Fluid segment membership and paused destination holds
 

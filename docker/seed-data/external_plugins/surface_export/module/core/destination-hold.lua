@@ -5,6 +5,7 @@
 -- canonical transfer id.
 
 local GameUtils = require("modules/surface_export/utils/game-utils")
+local SurfaceLock = require("modules/surface_export/utils/surface-lock")
 
 local DestinationHold = {}
 
@@ -86,6 +87,13 @@ local function resolve_hold(transfer_id)
 	return hold, force, platform, nil
 end
 
+local function find_hub(surface)
+	for _, entity in pairs(surface.find_entities_filtered({ name = "space-platform-hub" })) do
+		if entity.valid then return entity end
+	end
+	return nil
+end
+
 local function find_hold_for_platform(holds, surface_index, platform_index, except_transfer_id)
 	for other_transfer_id, hold in pairs(holds) do
 		if other_transfer_id ~= except_transfer_id
@@ -135,10 +143,14 @@ function DestinationHold.stage(transfer_id, platform, force)
 	local original_paused = platform.paused == true
 	local active_states = {}
 	local deactivated = 0
+	local pod_completion = { descending = 0, ascending = 0, items_recovered = 0 }
 	local staged_ok, staged_err = pcall(function()
 		platform.paused = true
 		force.set_surface_hidden(surface, true)
 		deactivated = capture_and_deactivate(surface, active_states)
+		local hub = find_hub(surface)
+		local descending, ascending, items_recovered = SurfaceLock.complete_cargo_pods(surface, hub)
+		pod_completion = { descending = descending, ascending = ascending, items_recovered = items_recovered }
 	end)
 	if not staged_ok then
 		log(string.format("[DestinationHold] stage failed for transfer %s on platform '%s': %s",
@@ -165,11 +177,13 @@ function DestinationHold.stage(transfer_id, platform, force)
 		original_paused = original_paused,
 		active_states = active_states,
 		deactivated_count = deactivated,
+		pod_completion = pod_completion,
 		held_tick = game.tick,
 	}
 	holds[transfer_id] = hold
-	log(string.format("[DestinationHold] staged transfer %s on platform '%s' (idx=%s, surface=%s, deactivated=%d)",
-		transfer_id, platform.name, tostring(platform.index), tostring(surface.index), deactivated))
+	log(string.format("[DestinationHold] staged transfer %s on platform '%s' (idx=%s, surface=%s, deactivated=%d, pods=%d/%d, recovered=%d)",
+		transfer_id, platform.name, tostring(platform.index), tostring(surface.index), deactivated,
+		pod_completion.descending or 0, pod_completion.ascending or 0, pod_completion.items_recovered or 0))
 	return true, hold
 end
 

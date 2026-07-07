@@ -113,12 +113,16 @@ Load-bearing rules (each is a hard constraint, not a preference):
    export's source-generated id and persists it before awaiting export-complete.
 2. **Destination hold primitive — PROVEN for the primitive, not yet wired.** The live-proven hold mechanism is
    `platform.paused = true` + `force.set_surface_hidden(surface, true)` + per-entity deactivation for activatable
-   entities, keyed by the destination platform's stable `surface.index`. The proof run physically counted items
-   and fluids across stage → 600 held ticks → docker restart of the destination host → go-live, and verified the
-   copy stayed paused, hidden, inactive, restart-durable, and fidelity-preserving. The destructive discard path was
-   also proved safe when the held platform was already externally deleted: discard cleared the hold record without
-   treating the missing platform as a failure. This closes the prerequisite that a destination can be held not-live,
-   fidelity-preserved, and reversibly released before Phase 2 starts.
+   entities, keyed by the destination platform's stable `surface.index`; `DestinationHold.stage()` also completes
+   in-flight cargo pods through `SurfaceLock.complete_cargo_pods` after pause/hidden/deactivation takes ownership. The proof runs
+   physically counted items and fluids across stage → 600 held ticks → docker restart of the destination host →
+   go-live, and verified the copy stayed paused, hidden, inactive, restart-durable, and fidelity-preserving. The
+   destructive discard path was also proved safe when the held platform was already externally deleted: discard
+   cleared the hold record without treating the missing platform as a failure. PR-0A then proved the remaining
+   hold-completeness axes under the corrected not-live definition: no observable side effects, held drift no worse
+   than a live control, zero platform damage, and nothing leaving the platform — not frozen time. This closes the
+   prerequisite that a destination can be held not-live, fidelity-preserved, and reversibly released before Phase 2
+   starts.
 
    *Amendment (CI closeout, 2026-07-06):* the earlier CI-only `fluids 1120→1100 delta=20` gap is **UNEXPLAINED,
    not solved**. The bad run was eliminated by fixture determinism and direct-machine meter hardening: the probe now
@@ -138,7 +142,8 @@ Load-bearing rules (each is a hard constraint, not a preference):
    guard but couples the lock spine to the destination-hold primitive; (b) require Phase-2 sequencing to release the
    source lock before staging the destination hold, which keeps the primitive boundary clean but makes ordering
    correctness load-bearing; or (c) have destination holds re-assert hidden after any unlock, which is self-healing
-   but introduces competing ownership and tick/order races. Do not wire Phase 2 until this choice is made.
+   but introduces competing ownership and tick/order races. The decided path is (a), shipped before any Phase 2
+   wiring, with the not-live definition above as the acceptance bar.
 
 ### Failure-mode table (restart/crash at each step)
 Legend: **S**=source, **D**=dest, **C**=controller; `{}` = source lock phase (Phase 2). The decisive fact is S's phase.
@@ -163,16 +168,16 @@ Legend: **S**=source, **D**=dest, **C**=controller; `{}` = source lock phase (Ph
   handshake-or-discard contract). Re-audit hardening R1–R8
   shipped (`feat/106-hardening`): in-game double-transfer refuse guard, expiry-scan failure counter, derived TTL
   floor, order-independent + timer-spy test teeth, stale-comment cleanup.
-- **Follow-ups:** dest-side `validation_results` / `flight_data` re-key off name (collision); the descending/
-  parking cargo-pod branch does not spill a hub-overflow remainder like `awaiting_launch` does — a potential
-  loss IF `force_finish_descending` discards it, needs a live test before generalizing (avoid a double-deposit);
-  a full controller/web-route behavior test for the double-transfer reject (the decision is unit-tested via
+- **Follow-ups:** dest-side `validation_results` / `flight_data` re-key off name (collision); a true live
+  `descending`/`parking` cargo-pod overflow specimen is still not constructed by PR-0A (the shared helper now routes
+  those states through recover-and-spill, while the live specimen is `awaiting_launch`); a full controller/web-route
+  behavior test for the double-transfer reject (the decision is unit-tested via
   `is_same_transfer_upgrade`; the in-game route is live-verified). The mid-flight TTL self-unlock on a >10-min
   transfer (delete gate makes it a recoverable dup, not loss) is eliminated by the Phase-2 heartbeat.
-- **Pending:** Phase 2 COMMIT / GO-LIVE / committed-tombstone protocol wiring, gated on the hold fluid-fidelity
-  fix (CI blocker, see the prerequisite-#2 amendment). **D1 is DECIDED** (hold owns the full not-live state;
-  PR-1 hold-aware unlock ships first, alone). The canonical-id prerequisite, export-lock strand, and
-  destination-hold primitive proof are closed.
+- **Pending:** Phase 2 COMMIT / GO-LIVE / committed-tombstone protocol wiring, gated on the remaining Phase-0
+  labs and PR-1 hold-aware unlock. **D1 is DECIDED** (hold owns the full not-live state; PR-1 ships first,
+  alone). The canonical-id prerequisite, export-lock strand, destination-hold primitive proof, and PR-0A
+  hold-completeness gate are closed.
 
 ## Verification
 - **Headless:** `npm run lint:lua` (incl. the identity guard) + `npm run lint:pcall-logging` + `npm test`.
