@@ -1,12 +1,20 @@
 const REQUIRED_RUNGS = ["spoilage", "damage", "cargo_pods"];
+const DRIFT_EPSILON = 1e-9;
 
 function fail(checks, failures, name, reason) {
-	checks[name] = { ok: false, reason };
+	checks[name] = checks[name] || { ok: true, reasons: [] };
+	checks[name].ok = false;
+	checks[name].reasons.push(reason);
 	failures.push(`${name}: ${reason}`);
 }
 
 function pass(checks, name) {
-	checks[name] = { ok: true };
+	checks[name] = checks[name] || { ok: true, reasons: [] };
+}
+
+function asNumber(value) {
+	const n = Number(value);
+	return Number.isFinite(n) ? n : null;
 }
 
 function validateRung(name, rung, checks, failures) {
@@ -20,15 +28,28 @@ function validateRung(name, rung, checks, failures) {
 	}
 	if (rung.live_changed !== true) {
 		fail(checks, failures, name, "live control did not move, so the rung did not prove the hold stopped anything");
-		return;
 	}
-	if (rung.held_changed !== false) {
-		fail(checks, failures, name, "held specimen changed while destination hold was active");
-		return;
+	const liveDrift = asNumber(rung.live_drift);
+	const heldDrift = asNumber(rung.held_drift);
+	if (liveDrift === null || heldDrift === null) {
+		fail(checks, failures, name, "missing numeric live_drift/held_drift meters");
+	} else if (heldDrift - liveDrift > DRIFT_EPSILON) {
+		fail(checks, failures, name, `held drift ${heldDrift} exceeded live-control drift ${liveDrift}`);
 	}
-	if (name === "cargo_pods" && rung.overflow_preserved !== true) {
-		fail(checks, failures, name, "overflow branch did not prove preservation");
-		return;
+	const damage = asNumber(rung.platform_damage ?? 0);
+	if (damage === null || damage !== 0) {
+		fail(checks, failures, name, `platform damage was ${rung.platform_damage}`);
+	}
+	if (rung.nothing_left_platform !== true) {
+		fail(checks, failures, name, "something left the platform or the runner did not prove platform containment");
+	}
+	if (name === "cargo_pods") {
+		if (rung.staged_pod_free !== true) {
+			fail(checks, failures, name, "staged platform was not pod-free after DestinationHold.stage()");
+		}
+		if (rung.overflow_preserved !== true) {
+			fail(checks, failures, name, "overflow branch did not prove preservation");
+		}
 	}
 	pass(checks, name);
 }

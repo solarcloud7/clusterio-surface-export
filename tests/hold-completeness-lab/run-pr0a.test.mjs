@@ -8,7 +8,14 @@ test("runner records the three blocking hold-completeness rungs", () => {
 	assert.match(script, /rungs\.spoilage/);
 	assert.match(script, /rungs\.damage/);
 	assert.match(script, /rungs\.cargo_pods/);
-	assert.match(script, /descending-pod overflow/i);
+	assert.match(script, /cargo-pod overflow/i);
+	assert.match(script, /awaiting-launch pod/i);
+	assert.match(script, /live_drift/);
+	assert.match(script, /held_drift/);
+	assert.match(script, /nothing_left_platform/);
+	assert.match(script, /staged_pod_free/);
+	assert.match(script, /asteroid_terminal_matches_live/);
+	assert.match(script, /held_asteroid_contained/);
 });
 
 test("runner uses real destination hold stage and discard cleanup", () => {

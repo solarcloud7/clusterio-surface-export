@@ -205,7 +205,7 @@ end
 function H.read_health(label, target, asteroid)
 	local row = { label = label, tick = game.tick, game_paused = game.tick_paused == true, target_valid = target and target.valid or false, asteroid_valid = asteroid and asteroid.valid or false }
 	if target and target.valid then row.target_health = target.health; if target.surface and target.surface.platform and target.surface.platform.valid then row.platform_paused = target.surface.platform.paused == true end end
-	if asteroid and asteroid.valid then row.asteroid_health = asteroid.health; row.asteroid_position = { x = asteroid.position.x, y = asteroid.position.y } end
+	if asteroid and asteroid.valid then row.asteroid_health = asteroid.health; row.asteroid_position = { x = asteroid.position.x, y = asteroid.position.y }; row.asteroid_surface_index = asteroid.surface and asteroid.surface.index or nil end
 	return row
 end
 
@@ -222,7 +222,7 @@ function H.read_damage()
 end
 
 function H.setup_cargo_pods()
-	-- descending-pod overflow branch: fill hub inventory, put cargo in pods, and verify held pods do not land/spill while held.
+	-- cargo-pod overflow branch: fill hub inventory, put cargo in an awaiting-launch pod, and verify stage makes the held platform pod-free with cargo retained.
 	local live, live_surface, lx, ly = H.mk("cargo-live")
 	local held, held_surface, hx, hy = H.mk("cargo-held")
 	local function find_hub(surface)
@@ -252,17 +252,25 @@ function H.setup_cargo_pods()
 	if live_err or held_err then
 		return { status = "unconstructible", reason = "could not create cargo-pod specimen", live_error = live_err, held_error = held_err, tick = game.tick }
 	end
+	local live_pod_unit = live_pod.unit_number
+	local held_pod_unit = held_pod.unit_number
+	local live_hub_unit = live_hub and live_hub.unit_number or nil
+	local held_hub_unit = held_hub and held_hub.unit_number or nil
 	local transfer_id, stage = H.stage("cargo", held)
-	storage.hold_completeness_lab.records.cargo_live = { platform = live.index, unit_number = live_pod.unit_number, hub_unit_number = live_hub and live_hub.unit_number or nil }
-	storage.hold_completeness_lab.records.cargo_held = { platform = held.index, unit_number = held_pod.unit_number, hub_unit_number = held_hub and held_hub.unit_number or nil, transfer_id = transfer_id }
-	return { status = "setup", transfer_id = transfer_id, stage = stage, live_hub_full = live_full, held_hub_full = held_full, live_before = H.read_pod("cargo live before", live_pod, live_hub), held_before = H.read_pod("cargo held before", held_pod, held_hub), pod_errors = pod_errors }
+	storage.hold_completeness_lab.records.cargo_live = { platform = live.index, unit_number = live_pod_unit, hub_unit_number = live_hub_unit }
+	storage.hold_completeness_lab.records.cargo_held = { platform = held.index, unit_number = held_pod_unit, hub_unit_number = held_hub_unit, transfer_id = transfer_id }
+	local held_after_stage = H.read_pod_on_surface("cargo held after stage", held_surface, held_pod_unit, held_hub_unit)
+	return { status = "setup", transfer_id = transfer_id, stage = stage, expected_copper = 100, live_hub_full = live_full, held_hub_full = held_full, live_before = H.read_pod("cargo live before", live_pod, live_hub), held_before = held_after_stage, held_after_stage = held_after_stage, pod_errors = pod_errors }
 end
 
-function H.read_pod(label, pod, hub)
+function H.read_pod(label, pod, hub, fallback_surface)
+	local surface = fallback_surface
+	if (not surface) and pod and pod.valid then surface = pod.surface end
+	if (not surface) and hub and hub.valid then surface = hub.surface end
 	local row = { label = label, tick = game.tick, game_paused = game.tick_paused == true, pod_valid = pod and pod.valid or false, hub_valid = hub and hub.valid or false }
+	if surface and surface.valid and surface.platform and surface.platform.valid then row.platform_paused = surface.platform.paused == true end
 	if pod and pod.valid then
 		row.state = pod.cargo_pod_state
-		if pod.surface and pod.surface.platform and pod.surface.platform.valid then row.platform_paused = pod.surface.platform.paused == true end
 		local inv = pod.get_inventory(defines.inventory.cargo_unit)
 		row.pod_items = inv and inv.get_contents() or nil
 	end
@@ -271,10 +279,30 @@ function H.read_pod(label, pod, hub)
 		row.hub_copper = inv and inv.get_item_count("copper-plate") or nil
 		row.hub_iron = inv and inv.get_item_count("iron-plate") or nil
 	end
-	if hub and hub.valid then
-		row.ground_copper = hub.surface.count_entities_filtered({ name = "item-on-ground" })
+	if surface and surface.valid then
+		row.pod_count = surface.count_entities_filtered({ name = "cargo-pod" })
+		local ground_copper_items = 0
+		for _, item in pairs(surface.find_entities_filtered({ name = "item-on-ground" })) do
+			local ok, stack = pcall(function() return item.stack end)
+			if ok and stack and stack.valid_for_read and stack.name == "copper-plate" then
+				ground_copper_items = ground_copper_items + stack.count
+			end
+		end
+		row.ground_copper = surface.count_entities_filtered({ name = "item-on-ground" })
+		row.ground_copper_items = ground_copper_items
 	end
 	return row
+end
+
+function H.read_pod_on_surface(label, surface, pod_unit_number, hub_unit_number)
+	local pod, hub = nil, nil
+	if surface and surface.valid then
+		for _, e in pairs(surface.find_entities_filtered({})) do
+			if pod_unit_number and e.unit_number == pod_unit_number then pod = e end
+			if hub_unit_number and e.unit_number == hub_unit_number then hub = e end
+		end
+	end
+	return H.read_pod(label, pod, hub, surface)
 end
 
 function H.read_cargo_pods()
@@ -322,33 +350,66 @@ function changedValue(before, after, keyPath) {
 	return JSON.stringify(a ?? null) !== JSON.stringify(b ?? null);
 }
 
+function numericDrift(before, after, keyPath) {
+	let a = before;
+	let b = after;
+	for (const key of keyPath) {
+		a = a?.[key];
+		b = b?.[key];
+	}
+	const na = Number(a);
+	const nb = Number(b);
+	if (Number.isFinite(na) && Number.isFinite(nb)) return Math.abs(nb - na);
+	return changedValue(before, after, keyPath) ? 1 : 0;
+}
+
+function podCopper(row) {
+	return (row?.pod_items || []).filter(item => item.name === "copper-plate").reduce((sum, item) => sum + Number(item.count || 0), 0);
+}
+
+function platformCopper(row) {
+	return Number(row?.hub_copper || 0) + Number(row?.ground_copper_items || 0) + podCopper(row);
+}
+
 function summarizeSpoilage(setup, after) {
 	if (setup.status === "unconstructible") return setup;
-	return {
-		status: "passed",
-		live_changed: changedValue(setup.live_before, after.live_after, ["stack", "spoil_percent"]) || changedValue(setup.live_before, after.live_after, ["stack", "name"]) || changedValue(setup.live_before, after.live_after, ["stack", "count"]),
-		held_changed: changedValue(setup.held_before, after.held_after, ["stack", "spoil_percent"]) || changedValue(setup.held_before, after.held_after, ["stack", "name"]) || changedValue(setup.held_before, after.held_after, ["stack", "count"]),
-		setup,
-		after,
-	};
+	const liveDrift = numericDrift(setup.live_before, after.live_after, ["stack", "spoil_percent"])
+		+ numericDrift(setup.live_before, after.live_after, ["stack", "name"])
+		+ numericDrift(setup.live_before, after.live_after, ["stack", "count"]);
+	const heldDrift = numericDrift(setup.held_before, after.held_after, ["stack", "spoil_percent"])
+		+ numericDrift(setup.held_before, after.held_after, ["stack", "name"])
+		+ numericDrift(setup.held_before, after.held_after, ["stack", "count"]);
+	return { status: "passed", live_changed: liveDrift > 0, held_changed: heldDrift > 0, live_drift: liveDrift, held_drift: heldDrift, platform_damage: 0, nothing_left_platform: after.held_after?.valid === true, setup, after };
 }
 
 function summarizeDamage(setup, after) {
 	if (setup.status === "unconstructible") return setup;
-	return {
-		status: "passed",
-		live_changed: changedValue(setup.live_before, after.live_after, ["target_health"]) || changedValue(setup.live_before, after.live_after, ["asteroid_position"]),
-		held_changed: changedValue(setup.held_before, after.held_after, ["target_health"]) || changedValue(setup.held_before, after.held_after, ["asteroid_position"]),
-		setup,
-		after,
-	};
+	const liveDrift = numericDrift(setup.live_before, after.live_after, ["asteroid_valid"])
+		+ numericDrift(setup.live_before, after.live_after, ["asteroid_position"]);
+	const heldDrift = numericDrift(setup.held_before, after.held_after, ["asteroid_valid"])
+		+ numericDrift(setup.held_before, after.held_after, ["asteroid_position"]);
+	const beforeHealth = Number(setup.held_before?.target_health || 0);
+	const afterHealth = Number(after.held_after?.target_health || 0);
+	const platformDamage = Math.max(0, beforeHealth - afterHealth);
+	const heldAsteroidContained = after.held_after?.asteroid_valid === true
+		&& after.held_after?.asteroid_surface_index === setup.held_before?.asteroid_surface_index;
+	const asteroidTerminalMatchesLive = after.held_after?.asteroid_valid === false && after.live_after?.asteroid_valid === false;
+	const nothingLeftPlatform = after.held_after?.target_valid === true && (heldAsteroidContained || asteroidTerminalMatchesLive);
+	return { status: "passed", live_changed: liveDrift > 0, held_changed: heldDrift > 0, live_drift: liveDrift, held_drift: heldDrift, platform_damage: platformDamage, nothing_left_platform: nothingLeftPlatform, held_asteroid_contained: heldAsteroidContained, asteroid_terminal_matches_live: asteroidTerminalMatchesLive, setup, after };
 }
 
 function summarizeCargoPods(setup, after) {
 	if (setup.status === "unconstructible") return setup;
-	const liveChanged = changedValue(setup.live_before, after.live_after, ["state"]) || changedValue(setup.live_before, after.live_after, ["pod_valid"]) || changedValue(setup.live_before, after.live_after, ["hub_copper"]) || changedValue(setup.live_before, after.live_after, ["ground_copper"]);
-	const heldChanged = changedValue(setup.held_before, after.held_after, ["state"]) || changedValue(setup.held_before, after.held_after, ["pod_valid"]) || changedValue(setup.held_before, after.held_after, ["hub_copper"]) || changedValue(setup.held_before, after.held_after, ["ground_copper"]);
-	return { status: "passed", live_changed: liveChanged, held_changed: heldChanged, overflow_preserved: after.held_after?.pod_valid === true, setup, after };
+	const liveDrift = (changedValue(setup.live_before, after.live_after, ["state"]) ? 1 : 0)
+		+ numericDrift(setup.live_before, after.live_after, ["pod_count"])
+		+ numericDrift(setup.live_before, after.live_after, ["hub_copper"])
+		+ numericDrift(setup.live_before, after.live_after, ["ground_copper_items"]);
+	const heldDrift = (changedValue(setup.held_before, after.held_after, ["state"]) ? 1 : 0)
+		+ numericDrift(setup.held_before, after.held_after, ["pod_count"])
+		+ numericDrift(setup.held_before, after.held_after, ["hub_copper"])
+		+ numericDrift(setup.held_before, after.held_after, ["ground_copper_items"]);
+	const heldCopper = platformCopper(setup.held_after_stage) >= Number(setup.expected_copper || 0) && platformCopper(after.held_after) >= Number(setup.expected_copper || 0);
+	return { status: "passed", live_changed: liveDrift > 0, held_changed: heldDrift > 0, live_drift: liveDrift, held_drift: heldDrift, platform_damage: 0, staged_pod_free: setup.held_after_stage?.pod_count === 0, nothing_left_platform: heldCopper, overflow_preserved: heldCopper, setup, after };
 }
 
 const results = {

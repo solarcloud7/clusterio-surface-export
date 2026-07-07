@@ -13,9 +13,9 @@ const cleanFinalReset = {
 function baseResult(overrides = {}) {
 	return {
 		rungs: {
-			spoilage: { status: "passed", live_changed: true, held_changed: false },
-			damage: { status: "passed", live_changed: true, held_changed: false },
-			cargo_pods: { status: "passed", live_changed: true, held_changed: false, overflow_preserved: true },
+			spoilage: { status: "passed", live_changed: true, held_changed: true, live_drift: 0.10, held_drift: 0.10, nothing_left_platform: true },
+			damage: { status: "passed", live_changed: true, held_changed: true, live_drift: 1, held_drift: 1, platform_damage: 0, nothing_left_platform: true },
+			cargo_pods: { status: "passed", live_changed: true, held_changed: false, live_drift: 1, held_drift: 0, staged_pod_free: true, nothing_left_platform: true, overflow_preserved: true },
 		},
 		final_reset: cleanFinalReset,
 		...overrides,
@@ -52,16 +52,31 @@ test("requires cleanup to prove zero lab state", () => {
 	assert.match(summary.failures.join("\n"), /cleanup/);
 });
 
-test("requires live controls to move and held specimens to stay stable", () => {
+test("requires live controls, no-worse held drift, zero platform damage, and no platform escape", () => {
 	const summary = evaluateHoldCompletenessResults(baseResult({
 		rungs: {
-			spoilage: { status: "passed", live_changed: false, held_changed: false },
-			damage: { status: "passed", live_changed: true, held_changed: true },
-			cargo_pods: { status: "passed", live_changed: true, held_changed: false, overflow_preserved: false },
+			spoilage: { status: "passed", live_changed: false, held_changed: false, live_drift: 0, held_drift: 0, nothing_left_platform: true },
+			damage: { status: "passed", live_changed: true, held_changed: true, live_drift: 1, held_drift: 2, platform_damage: 1, nothing_left_platform: false },
+			cargo_pods: { status: "passed", live_changed: true, held_changed: false, live_drift: 1, held_drift: 0, staged_pod_free: false, nothing_left_platform: false, overflow_preserved: true },
 		},
 	}));
 	assert.equal(summary.ok, false);
 	assert.match(summary.failures.join("\n"), /spoilage.*live control/);
-	assert.match(summary.failures.join("\n"), /damage.*held specimen/);
-	assert.match(summary.failures.join("\n"), /cargo_pods.*overflow/);
+	assert.match(summary.failures.join("\n"), /damage.*held drift/);
+	assert.match(summary.failures.join("\n"), /damage.*platform damage/);
+	assert.match(summary.failures.join("\n"), /damage.*left the platform/);
+	assert.match(summary.failures.join("\n"), /cargo_pods.*pod-free/);
+	assert.match(summary.failures.join("\n"), /cargo_pods.*left the platform/);
+});
+
+
+test("accepts held drift equal to live control drift", () => {
+	const summary = evaluateHoldCompletenessResults(baseResult({
+		rungs: {
+			spoilage: { status: "passed", live_changed: true, held_changed: true, live_drift: 0.0007962962963, held_drift: 0.0007962962963, nothing_left_platform: true },
+			damage: { status: "passed", live_changed: true, held_changed: true, live_drift: 1, held_drift: 1, platform_damage: 0, nothing_left_platform: true },
+			cargo_pods: { status: "passed", live_changed: true, held_changed: false, live_drift: 1, held_drift: 0, staged_pod_free: true, nothing_left_platform: true, overflow_preserved: true },
+		},
+	}));
+	assert.equal(summary.ok, true);
 });

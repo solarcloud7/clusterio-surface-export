@@ -30,19 +30,23 @@ Blocking for protocol wiring.
 
 Question: Does a destination hold keep the whole platform non-live over a long hold window, not merely item/fluid counts?
 
+Correct not-live bar: no observable side effects, held drift no worse than live-control drift, zero platform damage, nothing leaves the platform, and staged platforms are pod-free. It does not require frozen time.
+
 Tasks:
 
 1. Add a lab runner following the PR #68 lab discipline: isolated fixture, reset action, tick-stamped readings, both direct and aggregate meters where applicable, zero-leftover assertion.
 2. Measure spoilage progression during a long hold against a live control.
 3. Measure asteroid collision or damage exposure during a long hold against a live control.
 4. Measure cargo-pod descent and landing behavior while the platform is held.
-5. Include the descending-pod overflow branch from issue #69's checklist.
-6. Record every result in the lab notebook, including failed specimens and unconstructible cases.
-7. Promote durable facts to api-notes with evidence tags only after the lab result is stable.
+5. Include the cargo-pod overflow branch from issue #69's checklist; label the live specimen state exactly (`awaiting_launch`, `descending`, or `parking`) and do not promote an unconstructed state as empirical evidence.
+6. If cargo pods advance under pause, close it mechanically by reusing the source-lock cargo-pod completion helper in `DestinationHold.stage()`; do not reimplement the helper.
+7. Record every result in the lab notebook, including failed specimens and unconstructible cases.
+8. Promote durable facts to api-notes with evidence tags only after the lab result is stable.
 
 Acceptance:
 
-- The held platform remains hidden, inactive, paused, and non-live for the measured axes, or the plan stops for redesign.
+- The held platform remains hidden, inactive, paused, and non-live under the corrected bar, or the plan stops for redesign.
+- A staged held platform is pod-free, and any pod overflow cargo remains on the platform.
 - Lab cleanup proves no lab platforms or `storage.fluid_lab`-style state remains.
 - The notebook distinguishes empirical facts from hypotheses and uses UNEXPLAINED honestly if needed.
 
@@ -361,4 +365,3 @@ Verification:
 - Admin surfaces are read-only.
 - Passenger follow is last and depends on a real `connect_to_server` spike.
 - The plan keeps Tier B outside this scope.
-

@@ -129,38 +129,54 @@ end
 --- Recover a cargo pod's loaded cargo (its cargo_unit inventory) so NOTHING is lost when the pod is destroyed:
 --- insert what fits into the hub, and SPILL any remainder onto the surface. Item-on-ground is scanned/exported
 --- with the platform, so even a FULL hub (or a missing hub) is still zero-loss. Nil-safe. Returns the count
---- recovered into the hub (spilled items are also preserved, just on the ground).
+--- preserved either in the hub or on the platform surface.
 --- @param pod LuaEntity: the cargo pod
 --- @param hub LuaEntity|nil: the platform hub (may be nil/invalid)
 --- @param surface LuaSurface: the platform surface (spill target)
---- @return number: items recovered into the hub
+--- @return number: items preserved in the hub or spilled onto the platform
 local function recover_pod_cargo_to_hub_and_spill(pod, hub, surface)
     local inventory = pod.get_inventory(defines.inventory.cargo_unit)
     if not inventory then return 0 end
     local hub_inventory = (hub and hub.valid) and hub.get_inventory(defines.inventory.hub_main) or nil
-    local recovered = 0
+    local preserved = 0
     for i = 1, #inventory do
         local stack = inventory[i]
         if stack.valid_for_read then
+            local stack_name = stack.name
+            local stack_count = stack.count
+            local stack_quality = stack.quality and stack.quality.name or nil
             local inserted = hub_inventory and hub_inventory.insert(stack) or 0
-            recovered = recovered + inserted
-            local remainder = stack.count - inserted
+            preserved = preserved + inserted
+            local remainder = stack_count - inserted
+            if inserted > 0 then
+                if remainder > 0 then
+                    stack.count = remainder
+                else
+                    stack.clear()
+                end
+            end
             if remainder > 0 then
-                -- Hub full (or absent): spill the rest onto the platform so it exports with the surface — no loss.
-                GameUtils.pcall_warn(string.format("[SurfaceLock] cargo recovery spill %d %s (hub full/absent)", remainder, stack.name), function()
+                local spill_ok, spill_err = pcall(function()
                     surface.spill_item_stack({
                         position = pod.position,
-                        stack = { name = stack.name, count = remainder, quality = stack.quality and stack.quality.name or nil },
+                        stack = { name = stack_name, count = remainder, quality = stack_quality },
                     })
                 end)
+                if spill_ok then
+                    preserved = preserved + remainder
+                    stack.clear()
+                else
+                    log(string.format("[SurfaceLock] cargo recovery spill failed for %d %s: %s",
+                        remainder, tostring(stack_name), tostring(spill_err)))
+                end
             end
         end
     end
-    return recovered
+    return preserved
 end
 
 --- Complete all in-flight cargo pod transfers immediately
---- Descending pods: Add items to hub inventory, then force finish
+--- Descending/parking pods: recover cargo to the platform, then remove the pod.
 --- Ascending pods: Force finish (items are already "sent")
 --- @param surface LuaSurface: The platform surface
 --- @param hub LuaEntity: The space platform hub
@@ -176,28 +192,12 @@ local function complete_cargo_pods(surface, hub)
             local state = pod.cargo_pod_state
             
             if state == "descending" or state == "parking" then
-                -- Incoming cargo: capture items and add to hub before completing
-                local inventory = pod.get_inventory(defines.inventory.cargo_unit)
-                if inventory and hub and hub.valid then
-                    local hub_inventory = hub.get_inventory(defines.inventory.hub_main)
-                    if hub_inventory then
-                        for i = 1, #inventory do
-                            local stack = inventory[i]
-                            if stack.valid_for_read then
-                                local inserted = hub_inventory.insert(stack)
-                                items_recovered = items_recovered + inserted
-                                if inserted < stack.count then
-                                    log(string.format("[SurfaceLock] Warning: Could only insert %d/%d of %s", 
-                                        inserted, stack.count, stack.name))
-                                end
-                            end
-                        end
-                    end
-                end
-                -- Force immediate completion
-                pod.force_finish_descending()
+                -- Incoming cargo: recover into the hub, spilling overflow onto the platform, then remove the pod.
+                -- This avoids relying on force_finish_descending's overflow behavior and keeps the held surface pod-free.
+                items_recovered = items_recovered + recover_pod_cargo_to_hub_and_spill(pod, hub, surface)
+                pod.destroy()
                 descending_count = descending_count + 1
-                
+
             elseif state == "ascending" or state == "surface_transition" then
                 -- Outgoing cargo: just force complete (items are already "sent")
                 pod.force_finish_ascending()
@@ -213,13 +213,14 @@ local function complete_cargo_pods(surface, hub)
         end
     end
     
-    if descending_count > 0 or ascending_count > 0 then
+    if descending_count > 0 or ascending_count > 0 or items_recovered > 0 then
         log(string.format("[SurfaceLock] Completed %d descending pods (recovered %d items), %d ascending pods",
             descending_count, items_recovered, ascending_count))
     end
     
     return descending_count, ascending_count, items_recovered
 end
+SurfaceLock.complete_cargo_pods = complete_cargo_pods
 
 --- Re-key storage.locked_platforms from any legacy NAME (string) keys to the unique platform.index, using the
 --- platform_index stored inside each lock_data. Idempotent + cheap: returns immediately when every key is

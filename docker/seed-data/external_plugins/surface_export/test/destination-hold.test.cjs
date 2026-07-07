@@ -223,3 +223,26 @@ repoOnlyTest("destination hold integration probe records TTL expiry as the measu
 	assert.match(script, /\$ttlMetrics\.hidden -eq \$false/);
 	assert.doesNotMatch(script, /dh-ttl-does-not-unhide/);
 });
+
+
+test("destination hold stage completes cargo pods by reusing SurfaceLock helper", () => {
+	const hold = read("module/core/destination-hold.lua");
+	const lock = read("module/utils/surface-lock.lua");
+	assert.match(lock, /SurfaceLock\.complete_cargo_pods\s*=\s*complete_cargo_pods/);
+	assert.match(hold, /local SurfaceLock = require\("modules\/surface_export\/utils\/surface-lock"\)/);
+	assert.match(hold, /SurfaceLock\.complete_cargo_pods\(surface, hub\)/);
+	assert.ok(hold.indexOf("platform.paused = true") < hold.indexOf("SurfaceLock.complete_cargo_pods(surface, hub)"));
+	assert.ok(hold.indexOf("force.set_surface_hidden(surface, true)") < hold.indexOf("SurfaceLock.complete_cargo_pods(surface, hub)"));
+	assert.match(hold, /pod_completion = \{/);
+	assert.doesNotMatch(hold, /function complete_cargo_pods/);
+});
+
+test("surface lock cargo pod completion preserves descending overflow via recover-and-spill", () => {
+	const lock = read("module/utils/surface-lock.lua");
+	assert.match(lock, /state == "descending" or state == "parking"/);
+	assert.match(lock, /recover_pod_cargo_to_hub_and_spill\(pod, hub, surface\)/);
+	assert.match(lock, /stack\.count = remainder/);
+	assert.match(lock, /stack\.clear\(\)/);
+	assert.match(lock, /surface\.spill_item_stack/);
+	assert.doesNotMatch(lock, /pod\.force_finish_descending\(/);
+});
