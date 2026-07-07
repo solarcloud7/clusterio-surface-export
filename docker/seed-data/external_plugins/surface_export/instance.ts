@@ -12,6 +12,7 @@ import type { ExportData, ExportResult, ImportResult, PendingTransfer } from "./
 import * as messages from "./messages";
 import { getErrorMessage, coercePlatformIndex, EXPORT_POLL_TIMEOUT_MS, EXPORT_POLL_INTERVAL_MS, makeCanonicalTransferId } from "./helpers";
 import { LuaInterface } from "./lib/lua-interface";
+import { parseSourceTransferLockStateJson } from "./lib/source-lock-state";
 
 /**
  * The instance Link viewed with permissive `handle`/`sendTo` signatures. Our message classes are
@@ -101,6 +102,7 @@ export class InstancePlugin extends BaseInstancePlugin {
 		// Cast the ARGUMENTS (never the bound method — Pitfall #26): the optional nullable platformName makes
 		// the duck-typed Request class miss Link.handle's strict overload.
 		this.i.handle(messages.UnlockSourcePlatformRequest as never, this.handleUnlockSourcePlatform.bind(this) as never);
+		this.i.handle(messages.GetSourceTransferLockStateRequest, this.handleGetSourceTransferLockState.bind(this));
 		// TransferStatusUpdate.color (string|null) and InstanceListPlatformsRequest's Response
 		// optionals don't line up with their handlers' declared shapes. Register them through the
 		// permissive `this.link` view (see PermissiveLink) — a BOUND method call on the object,
@@ -866,6 +868,23 @@ export class InstancePlugin extends BaseInstancePlugin {
 		}
 	}
 
+	async handleGetSourceTransferLockState(request: { transferId: string; platformIndex: number; platformName: string; forceName?: string }) {
+		const platformIndex = coercePlatformIndex(request.platformIndex);
+		if (platformIndex === null) {
+			return { state: "identity_mismatch", transferId: request.transferId, error: `invalid platformIndex: ${String(request.platformIndex)}` };
+		}
+		try {
+			const result = await this.lua.getSourceTransferLockState(
+				request.transferId,
+				platformIndex,
+				String(request.platformName || ""),
+				String(request.forceName || "player"),
+			);
+			return parseSourceTransferLockStateJson(result.trim());
+		} catch (err: unknown) {
+			return { state: "unknown/offline", transferId: request.transferId, error: getErrorMessage(err) };
+		}
+	}
 	/**
 	 * Handle transfer status update from controller
 	 * Broadcasts status to all players in-game

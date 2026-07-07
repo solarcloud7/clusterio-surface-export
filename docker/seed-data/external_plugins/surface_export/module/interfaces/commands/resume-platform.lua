@@ -3,6 +3,7 @@
 
 local Base = require("modules/surface_export/interfaces/commands/base")
 local AsyncProcessor = require("modules/surface_export/core/async-processor")
+local SurfaceLock = require("modules/surface_export/utils/surface-lock")
 
 Base.admin_command("resume-platform",
   "Resume a platform after failed validation (usage: /resume-platform <platform_name_or_index>)",
@@ -24,6 +25,16 @@ Base.admin_command("resume-platform",
       return
     end
 
+    local lock_data = SurfaceLock.get_lock_data(target_platform.index)
+    if SurfaceLock.source_lock_is_committed(lock_data) then
+      ctx.print(string.format("Platform '%s' has a committed transfer lock and cannot be resumed; only transfer delete may clear it", target_platform.name))
+      return
+    end
+    local hold_active, hold_transfer_id = SurfaceLock.destination_hold_owns_surface(target_platform.surface, target_platform)
+    if hold_active then
+      ctx.print(string.format("Platform '%s' is owned by destination hold %s and cannot be resumed", target_platform.name, tostring(hold_transfer_id)))
+      return
+    end
     -- Unpause the platform (space travel)
     target_platform.paused = false
     ctx.print(string.format("✓ Platform '%s' space travel RESUMED", target_platform.name))

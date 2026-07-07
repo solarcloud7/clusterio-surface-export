@@ -69,6 +69,15 @@ local function transfer_lock_selftest()
 				locked_tick = game.tick - 120,
 				expires_tick = game.tick - 1,
 			},
+			[7] = {
+				kind = "transfer",
+				phase = SurfaceLock.SOURCE_TRANSFER_PHASE_COMMITTED,
+				platform_name = "committed",
+				platform_index = 7,
+				force_name = "player",
+				locked_tick = game.tick - SurfaceLock.DEFAULT_TRANSFER_LOCK_TTL_TICKS - 1,
+				expires_tick = game.tick - 1,
+			},
 		}
 
 		SurfaceLock.unlock_platform = function(platform_index, expected_name)
@@ -89,6 +98,8 @@ local function transfer_lock_selftest()
 			"missing expires_tick should fall back to locked_tick + DEFAULT_TRANSFER_LOCK_TTL_TICKS")
 		check("fresh_transfer_untouched", storage.locked_platforms[5] ~= nil,
 			"fresh transfer lock must not be touched")
+		check("committed_ttl_retained", storage.locked_platforms[7] ~= nil,
+			"committed transfer locks must survive TTL expiry and remain non-live tombstones")
 		local unlocked_names = {}
 		for _, unlock in pairs(unlocks) do
 			unlocked_names[unlock.name] = true
@@ -97,10 +108,10 @@ local function transfer_lock_selftest()
 			#unlocks == 3 and unlocked_names.expired and unlocked_names.fallback and unlocked_names["expired-export"],
 			"expired unlocks must pass the stored platform_name tripwire (order-independent: the set {expired, fallback, expired-export})")
 		check("summary_counts",
-			summary.checked == 5 and summary.expired == 3 and summary.skipped == 1 and summary.failed == 0,
+			summary.checked == 6 and summary.expired == 3 and summary.skipped == 2 and summary.failed == 0 and summary.committed == 1,
 			"unexpected summary: checked=" .. tostring(summary.checked) ..
 				" expired=" .. tostring(summary.expired) .. " skipped=" .. tostring(summary.skipped) ..
-				" failed=" .. tostring(summary.failed))
+				" failed=" .. tostring(summary.failed) .. " committed=" .. tostring(summary.committed))
 		check("ttl_exceeds_worst_case_transfer_duration",
 			SurfaceLock.DEFAULT_TRANSFER_LOCK_TTL_TICKS >= SurfaceLock.MIN_WORST_CASE_TRANSFER_TTL_TICKS,
 			"TTL must exceed the worst-case total transfer duration, not only validation timeout")
@@ -163,6 +174,40 @@ local function transfer_lock_selftest()
 	check("lock_upgrade_refuses_tokenless_second_lock",
 		SurfaceLock.is_same_transfer_upgrade("job_A", nil) == false,
 		"a token-less lock attempt on an already-tokened transfer (the in-game 2nd trigger) must be REJECTED")
+
+	local old_locks_for_commit = storage.locked_platforms
+	local old_tombstones = storage.committed_source_transfer_tombstones
+	storage.locked_platforms = {
+		[9] = { kind = "transfer", phase = SurfaceLock.SOURCE_TRANSFER_PHASE_COMMITTED, platform_name = "committed-unlock", platform_index = 9, force_name = "player" },
+	}
+	local unlock_ok = SurfaceLock.unlock_platform(9)
+	check("committed_unlock_refused",
+		unlock_ok == false and storage.locked_platforms[9] ~= nil,
+		"normal unlock must refuse and retain committed transfer locks")
+	check("legacy_phase_is_pre_commit",
+		SurfaceLock.source_lock_phase({ kind = "transfer" }) == SurfaceLock.SOURCE_TRANSFER_PHASE_PRE_COMMIT,
+		"phase-less legacy transfer locks must normalize to pre_commit")
+	storage.locked_platforms[10] = { kind = "transfer", platform_name = "lock-time-name", platform_index = 10, force_name = "player", transfer_job_id = "rename-pre" }
+	local renamed_pre = SurfaceLock.get_source_transfer_lock_state("rename-pre", 10, "live-renamed", "player")
+	check("source_query_pre_commit_ignores_rename",
+		renamed_pre.state == "pre_commit",
+		"source state query must not use mutable platform.name as a discriminator for pre_commit")
+	storage.locked_platforms[11] = { kind = "transfer", phase = SurfaceLock.SOURCE_TRANSFER_PHASE_COMMITTED, platform_name = "lock-time-name", platform_index = 11, force_name = "player", transfer_job_id = "rename-committed" }
+	local renamed_committed = SurfaceLock.get_source_transfer_lock_state("rename-committed", 11, "live-renamed", "player")
+	check("source_query_committed_ignores_rename",
+		renamed_committed.state == "committed",
+		"source state query must not use mutable platform.name as a discriminator for committed")
+	storage.committed_source_transfer_tombstones = {
+		fresh = { committed_tick = game.tick },
+		stale = { committed_tick = game.tick - SurfaceLock.COMMITTED_SOURCE_TOMBSTONE_RETENTION_TICKS - 1 },
+		invalid = { committed_tick = "not-a-number" },
+	}
+	local tombstone_pruned = SurfaceLock.prune_committed_source_tombstones(game.tick)
+	check("committed_tombstone_pruned",
+		tombstone_pruned == 2 and storage.committed_source_transfer_tombstones.fresh ~= nil and storage.committed_source_transfer_tombstones.stale == nil and storage.committed_source_transfer_tombstones.invalid == nil,
+		"committed source tombstones must be bounded, not immortal save growth")
+	storage.locked_platforms = old_locks_for_commit
+	storage.committed_source_transfer_tombstones = old_tombstones
 
 	return { passed = passed, failed = failed, total = passed + failed, details = details }
 end

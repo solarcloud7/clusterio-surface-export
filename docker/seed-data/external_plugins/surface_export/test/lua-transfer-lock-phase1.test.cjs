@@ -47,6 +47,52 @@ test("transfer exports stamp transfer lock metadata and refuse manual locks", ()
 	assert.match(remoteLock, /SurfaceLock\.lock_platform\s*\(\s*platform\s*,\s*force\s*,\s*\{[\s\S]*expires_tick\s*=\s*game\.tick\s*\+\s*SurfaceLock\.DEFAULT_TRANSFER_LOCK_TTL_TICKS/, "documented lock_platform_for_transfer remote must create an expiring transfer lock");
 });
 
+test("source transfer locks have fail-closed pre_commit/committed phases", () => {
+	const surfaceLock = readModule(path.join("utils", "surface-lock.lua"));
+	const deleteForTransfer = readModule(path.join("interfaces", "remote", "delete-platform-for-transfer.lua"));
+	const remoteInterface = readModule(path.join("interfaces", "remote-interface.lua"));
+	const resumeCommand = readModule(path.join("interfaces", "commands", "resume-platform.lua"));
+	const selftest = readModule(path.join("interfaces", "remote", "transfer-lock-selftest.lua"));
+
+	assert.match(surfaceLock, /SOURCE_TRANSFER_PHASE_PRE_COMMIT\s*=\s*["']pre_commit["']/, "source transfer locks need an explicit pre_commit phase");
+	assert.match(surfaceLock, /SOURCE_TRANSFER_PHASE_COMMITTED\s*=\s*["']committed["']/, "source transfer locks need an explicit committed phase");
+	assert.match(surfaceLock, /phase\s*=\s*SurfaceLock\.source_lock_initial_phase\s*\(\s*lock_opts\s*\)/, "new transfer locks must stamp pre_commit while legacy nil remains distinguishable");
+	assert.match(surfaceLock, /function\s+SurfaceLock\.source_lock_phase\s*\(/, "phase-less legacy transfer locks must normalize through one nil-safe helper");
+	assert.match(surfaceLock, /lock\.phase\s*==\s*nil[\s\S]*SOURCE_TRANSFER_PHASE_PRE_COMMIT/, "legacy phase-less locks must be treated as pre_commit");
+	assert.match(surfaceLock, /function\s+SurfaceLock\.commit_source_transfer_lock\s*\(/, "COMMIT needs a single write-ahead phase transition seam");
+	assert.match(surfaceLock, /committed_source_transfer_tombstones/, "committed source tombstones must be keyed outside the mutable platform index registry");
+	assert.match(surfaceLock, /COMMITTED_SOURCE_TOMBSTONE_RETENTION_TICKS/, "committed source tombstones must have bounded retention");
+	assert.match(surfaceLock, /function\s+SurfaceLock\.prune_committed_source_tombstones\s*\(/, "committed source tombstones must be age-pruned");
+	assert.match(surfaceLock, /if\s+SurfaceLock\.source_lock_is_committed\s*\(\s*lock_data\s*\)\s+then[\s\S]*return\s+false/, "normal unlock must refuse committed locks without clearing or restoring them");
+	assert.match(surfaceLock, /source_lock_is_committed\s*\(\s*lock_data\s*\)[\s\S]*committed\s*=\s*committed\s*\+\s*1/, "TTL expiry scan must retain committed locks instead of unlocking them");
+	assert.doesNotMatch(surfaceLock, /platform name mismatch|live platform name mismatch/, "source state query must not use mutable platform.name as a state discriminator");
+	assert.match(deleteForTransfer, /SurfaceLock\.clear_committed_source_lock_after_delete\s*\(/, "delete is the sole path allowed to clear a committed source lock");
+	assert.doesNotMatch(deleteForTransfer, /record_committed_source_tombstone/, "delete must not create the canonical committed tombstone after the fact");
+	assert.match(resumeCommand, /SurfaceLock\.source_lock_is_committed\s*\(/, "resume-platform must refuse committed source locks before unpausing/reactivating");
+	assert.match(resumeCommand, /SurfaceLock\.destination_hold_owns_surface\s*\(/, "resume-platform must preserve PR-1 D1 hold ownership before unpausing/reactivating");
+	assert.match(remoteInterface, /get_source_transfer_lock_state/, "source lock state query remote must be registered");
+	assert.match(selftest, /committed_unlock_refused/, "live selftest must go red if committed unlock refusal is removed");
+	assert.match(selftest, /committed_ttl_retained/, "live selftest must go red if TTL clears a committed lock");
+	assert.match(selftest, /legacy_phase_is_pre_commit/, "live selftest must prove old saves without phase fail closed as pre_commit");
+	assert.match(selftest, /source_query_pre_commit_ignores_rename/, "live selftest must prove pre_commit query is rename-robust");
+	assert.match(selftest, /source_query_committed_ignores_rename/, "live selftest must prove committed query is rename-robust");
+	assert.match(selftest, /committed_tombstone_pruned/, "live selftest must prove tombstone retention is bounded");
+});
+test("source commit seam is intentionally unwired until protocol PR", () => {
+	const productionFiles = [
+		path.join("core", "export-pipeline.lua"),
+		path.join("core", "transfer-trigger.lua"),
+		path.join("interfaces", "remote", "delete-platform-for-transfer.lua"),
+		path.join("interfaces", "remote-interface.lua"),
+		path.join("interfaces", "commands", "resume-platform.lua"),
+	].map(readModule).join("\n");
+	const controller = fs.readFileSync(path.join(pluginDir, "controller.ts"), "utf8");
+	const orchestrator = fs.readFileSync(path.join(pluginDir, "lib", "transfer-orchestrator.ts"), "utf8");
+
+	assert.doesNotMatch(productionFiles, /commit_source_transfer_lock\s*\(/, "PR-2 adds the commit seam but production Lua must not call it until PR-3 wiring");
+	const markerRefs = [...(controller + "\n" + orchestrator).matchAll(/recordCommitTransmitted\s*\(/g)].length;
+	assert.equal(markerRefs, 1, "PR-2 commit marker must have only its declaration; no production caller until PR-3 immediate-abort gate wiring");
+});
 test("export-platform-to-file reports queued success and leaves async writing to the pipeline", () => {
 	const remote = readModule(path.join("interfaces", "remote", "export-platform-to-file.lua"));
 

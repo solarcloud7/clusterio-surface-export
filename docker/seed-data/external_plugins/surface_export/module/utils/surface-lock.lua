@@ -19,6 +19,12 @@ local MIN_WORST_CASE_TRANSFER_TTL_TICKS =
     VALIDATION_TIMEOUT_TICKS + WORST_CASE_RCON_TICKS + WORST_CASE_SCAN_IMPORT_TICKS + WORST_CASE_MARGIN_TICKS -- 19200 (~5.3 min); DEFAULT 36000 clears it ~1.9×
 SurfaceLock.DEFAULT_TRANSFER_LOCK_TTL_TICKS = DEFAULT_TRANSFER_LOCK_TTL_TICKS
 SurfaceLock.MIN_WORST_CASE_TRANSFER_TTL_TICKS = MIN_WORST_CASE_TRANSFER_TTL_TICKS
+local SOURCE_TRANSFER_PHASE_PRE_COMMIT = "pre_commit"
+local SOURCE_TRANSFER_PHASE_COMMITTED = "committed"
+local COMMITTED_SOURCE_TOMBSTONE_RETENTION_TICKS = DEFAULT_TRANSFER_LOCK_TTL_TICKS + WORST_CASE_MARGIN_TICKS
+SurfaceLock.SOURCE_TRANSFER_PHASE_PRE_COMMIT = SOURCE_TRANSFER_PHASE_PRE_COMMIT
+SurfaceLock.SOURCE_TRANSFER_PHASE_COMMITTED = SOURCE_TRANSFER_PHASE_COMMITTED
+SurfaceLock.COMMITTED_SOURCE_TOMBSTONE_RETENTION_TICKS = COMMITTED_SOURCE_TOMBSTONE_RETENTION_TICKS
 local EXPIRABLE_LOCK_KINDS = { transfer = true, export = true }
 
 --- Freeze all entities on a surface (synchronous - very fast)
@@ -267,6 +273,133 @@ function SurfaceLock.is_same_transfer_upgrade(existing_job_id, opts_job_id)
     return existing_job_id == nil or existing_job_id == opts_job_id
 end
 
+function SurfaceLock.source_lock_initial_phase(lock_opts)
+    if lock_opts and lock_opts.kind == "transfer" then
+        return SOURCE_TRANSFER_PHASE_PRE_COMMIT
+    end
+    return nil
+end
+
+function SurfaceLock.source_lock_phase(lock)
+    if type(lock) ~= "table" then return nil end
+    if lock.kind ~= "transfer" then return lock.phase end
+    if lock.phase == nil then
+        return SOURCE_TRANSFER_PHASE_PRE_COMMIT
+    end
+    return lock.phase
+end
+
+function SurfaceLock.source_lock_is_committed(lock)
+    return SurfaceLock.source_lock_phase(lock) == SOURCE_TRANSFER_PHASE_COMMITTED
+end
+
+local function committed_source_tombstones()
+    if type(storage.committed_source_transfer_tombstones) ~= "table" then
+        storage.committed_source_transfer_tombstones = {}
+    end
+    return storage.committed_source_transfer_tombstones
+end
+
+function SurfaceLock.prune_committed_source_tombstones(now_tick)
+    local tombstones = storage.committed_source_transfer_tombstones
+    if type(tombstones) ~= "table" then return 0 end
+    local now = now_tick or game.tick
+    local pruned = 0
+    for transfer_id, tombstone in pairs(tombstones) do
+        local committed_tick = type(tombstone) == "table" and tonumber(tombstone.committed_tick) or nil
+        if not committed_tick or now - committed_tick > COMMITTED_SOURCE_TOMBSTONE_RETENTION_TICKS then
+            tombstones[transfer_id] = nil
+            pruned = pruned + 1
+        end
+    end
+    return pruned
+end
+
+local function record_committed_source_tombstone(lock, transfer_id)
+    local canonical_id = transfer_id or lock.committed_transfer_id or lock.transfer_job_id
+    if not canonical_id then return nil end
+    local tombstones = committed_source_tombstones()
+    local existing = tombstones[canonical_id] or {}
+    existing.transfer_id = canonical_id
+    existing.platform_index = lock.platform_index
+    existing.platform_name = lock.platform_name
+    existing.force_name = lock.force_name
+    existing.surface_index = lock.surface_index
+    existing.transfer_job_id = lock.transfer_job_id
+    existing.committed_tick = existing.committed_tick or game.tick
+    existing.source_deleted_tick = existing.source_deleted_tick
+    tombstones[canonical_id] = existing
+    return existing
+end
+
+function SurfaceLock.commit_source_transfer_lock(platform_index, transfer_id)
+    if not storage.locked_platforms then return false, "No locked platforms" end
+    local lock = storage.locked_platforms[platform_index]
+    if not lock or lock.kind ~= "transfer" then
+        return false, "source is not locked-for-transfer"
+    end
+    if transfer_id and lock.transfer_job_id and lock.transfer_job_id ~= transfer_id then
+        return false, "lock belongs to a different transfer"
+    end
+    lock.phase = SOURCE_TRANSFER_PHASE_COMMITTED
+    lock.committed_transfer_id = transfer_id or lock.committed_transfer_id or lock.transfer_job_id
+    lock.committed_tick = lock.committed_tick or game.tick
+    record_committed_source_tombstone(lock, lock.committed_transfer_id)
+    SurfaceLock.prune_committed_source_tombstones(game.tick)
+    return true, nil
+end
+
+function SurfaceLock.clear_committed_source_lock_after_delete(platform_index, transfer_id)
+    if not storage.locked_platforms then return false, "No locked platforms" end
+    local lock = storage.locked_platforms[platform_index]
+    if not SurfaceLock.source_lock_is_committed(lock) then
+        return false, "source lock is not committed"
+    end
+    if transfer_id and lock.committed_transfer_id and lock.committed_transfer_id ~= transfer_id then
+        return false, "committed lock belongs to a different transfer"
+    end
+    local canonical_id = transfer_id or lock.committed_transfer_id or lock.transfer_job_id
+    local tombstones = storage.committed_source_transfer_tombstones
+    local tombstone = type(tombstones) == "table" and canonical_id and tombstones[canonical_id] or nil
+    if type(tombstone) ~= "table" then
+        return false, "committed source tombstone missing for " .. tostring(canonical_id)
+    end
+    tombstone.source_deleted_tick = game.tick
+    storage.locked_platforms[platform_index] = nil
+    return true, nil
+end
+
+function SurfaceLock.get_source_transfer_lock_state(transfer_id, platform_index, platform_name, force_name)
+    SurfaceLock.prune_committed_source_tombstones(game.tick)
+    local tombstones = storage.committed_source_transfer_tombstones
+    local tombstone = type(tombstones) == "table" and transfer_id and tombstones[transfer_id] or nil
+    if type(tombstone) == "table" and tombstone.source_deleted_tick then
+        return { state = "source_gone_matching_transfer", transferId = transfer_id, error = nil }
+    end
+
+    local lock = storage.locked_platforms and storage.locked_platforms[platform_index] or nil
+    if type(lock) == "table" then
+        if force_name and lock.force_name and lock.force_name ~= force_name then
+            return { state = "identity_mismatch", transferId = transfer_id, error = "force mismatch" }
+        end
+        if transfer_id and lock.transfer_job_id and lock.transfer_job_id ~= transfer_id and lock.committed_transfer_id ~= transfer_id then
+            return { state = "identity_mismatch", transferId = transfer_id, error = "transfer id mismatch" }
+        end
+        if SurfaceLock.source_lock_is_committed(lock) then
+            return { state = "committed", transferId = transfer_id, error = nil }
+        end
+        if SurfaceLock.source_lock_phase(lock) == SOURCE_TRANSFER_PHASE_PRE_COMMIT then
+            return { state = "pre_commit", transferId = transfer_id, error = nil }
+        end
+    end
+
+    local force = force_name and game.forces[force_name] or nil
+    local platform = force and force.platforms and force.platforms[platform_index] or nil
+    if platform and platform.valid then
+        return { state = "identity_mismatch", transferId = transfer_id, error = "source platform is live or not locked" }
+    end
+    return { state = "identity_mismatch", transferId = transfer_id, error = "no matching source lock or tombstone" }
+end
 --- Does an active destination hold currently own this platform surface's not-live state?
 --- When true, unlock_platform may clear the source/export lock record but must not restore visibility,
 --- entity activation, or platform pause. The hold remains the owner until go_live/discard clears it.
@@ -287,6 +420,7 @@ function SurfaceLock.destination_hold_owns_surface(surface, platform)
     end
     return false, nil
 end
+
 --- Lock a platform surface for export/transfer
 --- Completes cargo pod transfers, freezes entities, hides surface
 --- @param platform LuaSpacePlatform: The platform to lock
@@ -330,6 +464,7 @@ function SurfaceLock.lock_platform(platform, force, lock_opts)
                 return false, "Platform already locked by a different in-flight transfer"
             end
             existing_lock.transfer_job_id = lock_opts.job_id or existing_lock.transfer_job_id
+            existing_lock.phase = existing_lock.phase or SurfaceLock.source_lock_initial_phase(lock_opts)
             existing_lock.expires_tick = lock_opts.expires_tick or existing_lock.expires_tick
             return true, nil -- same transfer lock upgraded
         end
@@ -374,6 +509,7 @@ function SurfaceLock.lock_platform(platform, force, lock_opts)
         original_schedule = original_schedule,
         locked_tick = game.tick,
         kind = lock_opts and lock_opts.kind or nil,
+        phase = SurfaceLock.source_lock_initial_phase(lock_opts),
         transfer_job_id = lock_opts and lock_opts.job_id or nil,
         expires_tick = lock_opts and lock_opts.expires_tick or nil,
         frozen_states = frozen_states,
@@ -409,6 +545,10 @@ function SurfaceLock.unlock_platform(platform_index, expected_name)
             tostring(platform_index), tostring(expected_name), tostring(platform_name))
     end
 
+    if SurfaceLock.source_lock_is_committed(lock_data) then
+        return false, string.format("Unlock refused: committed transfer lock for '%s' (index %s) is a non-live source tombstone; only delete_platform_for_transfer may clear it",
+            tostring(platform_name), tostring(platform_index))
+    end
     -- Find the platform
     local force = game.forces[lock_data.force_name]
     if not force then
@@ -545,40 +685,46 @@ end
 --- @return table summary
 function SurfaceLock.scan_transfer_expiries()
     if not storage.locked_platforms then
-        return { checked = 0, expired = 0, skipped = 0, failed = 0 }
+        return { checked = 0, expired = 0, skipped = 0, failed = 0, committed = 0 }
     end
 
-    local checked, expired, skipped, failed = 0, 0, 0, 0
+    local checked, expired, skipped, failed, committed = 0, 0, 0, 0, 0
 
     for platform_index, lock_data in pairs(storage.locked_platforms) do
         if type(lock_data) == "table" and EXPIRABLE_LOCK_KINDS[lock_data.kind] then
             checked = checked + 1
-            local locked_tick = lock_data.locked_tick
-            if not locked_tick then
-                skipped = skipped + 1 -- skip old-save locks without enough timing data
+            if SurfaceLock.source_lock_is_committed(lock_data) then
+                committed = committed + 1
+                skipped = skipped + 1
             else
-                local expires_tick = lock_data.expires_tick or (locked_tick + DEFAULT_TRANSFER_LOCK_TTL_TICKS)
-                if game.tick >= expires_tick then
-                    log(string.format("[SurfaceLock] Transfer lock expired: '%s' (index %s, locked_tick=%s, expires_tick=%s)",
-                        tostring(lock_data.platform_name), tostring(platform_index), tostring(locked_tick), tostring(expires_tick)))
-                    -- R4: SURFACE a failed auto-unlock (don't swallow its result). unlock_platform unfreezes +
-                    -- un-hides BEFORE restoring the schedule and drops the lock even when the schedule restore
-                    -- fails — so a failure can leave the source live+visible with a stale schedule and no lock.
-                    -- Counting/logging it means the tick loop + selftest have a signal instead of a silent gap.
-                    local ok, err = SurfaceLock.unlock_platform(platform_index, lock_data.platform_name)
-                    if ok then
-                        expired = expired + 1
-                    else
-                        failed = failed + 1
-                        log(string.format("[SurfaceLock] Transfer-lock expiry UNLOCK FAILED for '%s' (index %s): %s",
-                            tostring(lock_data.platform_name), tostring(platform_index), tostring(err)))
+                local locked_tick = lock_data.locked_tick
+                if not locked_tick then
+                    skipped = skipped + 1 -- skip old-save locks without enough timing data
+                else
+                    local expires_tick = lock_data.expires_tick or (locked_tick + DEFAULT_TRANSFER_LOCK_TTL_TICKS)
+                    if game.tick >= expires_tick then
+                        log(string.format("[SurfaceLock] Transfer lock expired: '%s' (index %s, locked_tick=%s, expires_tick=%s)",
+                            tostring(lock_data.platform_name), tostring(platform_index), tostring(locked_tick), tostring(expires_tick)))
+                        -- R4: SURFACE a failed auto-unlock (don't swallow its result). unlock_platform unfreezes +
+                        -- un-hides BEFORE restoring the schedule and drops the lock even when the schedule restore
+                        -- fails — so a failure can leave the source live+visible with a stale schedule and no lock.
+                        -- Counting/logging it means the tick loop + selftest have a signal instead of a silent gap.
+                        local ok, err = SurfaceLock.unlock_platform(platform_index, lock_data.platform_name)
+                        if ok then
+                            expired = expired + 1
+                        else
+                            failed = failed + 1
+                            log(string.format("[SurfaceLock] Transfer-lock expiry UNLOCK FAILED for '%s' (index %s): %s",
+                                tostring(lock_data.platform_name), tostring(platform_index), tostring(err)))
+                        end
                     end
                 end
             end
         end
     end
 
-    return { checked = checked, expired = expired, skipped = skipped, failed = failed }
+    SurfaceLock.prune_committed_source_tombstones(game.tick)
+    return { checked = checked, expired = expired, skipped = skipped, failed = failed, committed = committed }
 end
 
 return SurfaceLock

@@ -29,6 +29,7 @@ local transfer_lock_selftest = require("modules/surface_export/interfaces/remote
 local no_tick_sync_selftest = require("modules/surface_export/interfaces/remote/no-tick-sync-selftest")
 local hold_aware_unlock_selftest = require("modules/surface_export/interfaces/remote/hold-aware-unlock-selftest")
 local delete_platform_for_transfer = require("modules/surface_export/interfaces/remote/delete-platform-for-transfer")
+local get_source_transfer_lock_state = require("modules/surface_export/interfaces/remote/get-source-transfer-lock-state")
 local destination_hold = require("modules/surface_export/interfaces/remote/destination-hold")
 
 -- Expose functions for direct Lua access (not just remote interface)
@@ -53,6 +54,7 @@ RemoteInterface.transfer_lock_selftest = transfer_lock_selftest
 RemoteInterface.no_tick_sync_selftest = no_tick_sync_selftest
 RemoteInterface.hold_aware_unlock_selftest = hold_aware_unlock_selftest
 RemoteInterface.delete_platform_for_transfer = delete_platform_for_transfer
+RemoteInterface.get_source_transfer_lock_state = get_source_transfer_lock_state
 RemoteInterface.destination_hold = destination_hold
 
 -- JSON-wrapped versions for RCON access
@@ -108,6 +110,8 @@ function RemoteInterface.register()
     hold_aware_unlock_selftest = hold_aware_unlock_selftest,
     hold_aware_unlock_selftest_json = Base.json_wrap(hold_aware_unlock_selftest),
     delete_platform_for_transfer = delete_platform_for_transfer,
+    get_source_transfer_lock_state = get_source_transfer_lock_state,
+    get_source_transfer_lock_state_json = Base.json_wrap(get_source_transfer_lock_state),
     destination_hold = destination_hold,
     destination_hold_json = Base.json_wrap(destination_hold),
   })
