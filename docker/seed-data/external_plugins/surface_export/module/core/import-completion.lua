@@ -98,6 +98,7 @@ function ImportCompletion.run_phase2(job)
 	job.metrics = job.metrics or {}
 	local entity_map = job.entity_map or {}
 	local entities_to_create = job.entities_to_create or {}
+	local validation_result_id = job.transfer_id or job.job_id
 
 	-- Step 6: Restore inventories.
 	-- CRITICAL ORDER: beacons FIRST, then everything else.
@@ -326,10 +327,9 @@ function ImportCompletion.run_phase2(job)
 			_cfg.test_force_validation_failure = nil  -- consume: applies to one transfer only
 			success = false
 			result = result or {}
-			-- Corrupt the SAME fields the controller's source-delete gate actually reads
-			-- (instance.ts re-fetches get_validation_result_json and computes
-			--  success = itemCountMatch && fluidCountMatch). Overriding only `success` here
-			-- left these true, so the controller saw a "pass" and deleted the source.
+			-- Corrupt the SAME verdict fields the controller receives in the import-complete payload.
+			-- Overriding only `success` leaves the count booleans true, so the payload would look like
+			-- a contradictory pass to downstream readers.
 			result.itemCountMatch = false
 			result.fluidCountMatch = false
 			-- mismatchDetails is the field handleValidationFailure logs as the rollback reason;
@@ -345,8 +345,8 @@ function ImportCompletion.run_phase2(job)
 		-- validation_completed_tick at the end of run_phase2 also covers activation/fluids/loss).
 		job.metrics.validation_done_tick = game.tick
 		validation_result = result
-		result.success = success
-
+		result.failedStage = success and nil or "items"
+		result.success = result.itemCountMatch and result.fluidCountMatch
 		-- Informational entity accounting for the transfer details (DISPLAY ONLY, no verdict):
 		-- reportedEntityCount is the source payload's entity total; result.entityCount (already set by
 		-- validate_import from a live scan of the destination surface) is what actually landed. They
@@ -372,17 +372,8 @@ function ImportCompletion.run_phase2(job)
 			result.forceDataMismatches = job.force_bonuses_mismatch
 		end
 
-		TransferValidation.store_validation_result(job.platform_name, result)
+		TransferValidation.store_validation_result(validation_result_id, result)
 
-		-- Debug export: Write validation result for analysis
-		DebugExport.export_import_result({
-			platform_name = job.platform_name,
-			transfer_id = job.transfer_id,
-			validation_success = success,
-			validation_result = result,
-			total_entities = job.total_entities,
-			duration_seconds = duration_seconds
-		}, job.platform_name)
 
 		-- Debug export: Always write destination platform data when debug_mode is enabled
 		-- This allows comparing source vs destination regardless of validation pass/fail
@@ -489,10 +480,50 @@ function ImportCompletion.run_phase2(job)
 				PhaseProfiler.start(job.job_id, "loss_analysis")
 				LossAnalysis.run(job.target_surface, entities_to_create, result, fluids_result and fluids_result.segment_temps)
 
+				-- TEST HOOK (one-shot, debug-gated): inflate expected fluid count after the real
+				-- post-activation meter has run, before the fluid gate. This creates an unaccounted
+				-- shortfall without mutating the destination platform.
+				local _fluid_cfg = storage.surface_export_config
+				if _fluid_cfg and _fluid_cfg.debug_mode and _fluid_cfg.test_force_fluid_loss and _fluid_cfg.test_force_fluid_loss > 0 then
+					local n_want = _fluid_cfg.test_force_fluid_loss
+					_fluid_cfg.test_force_fluid_loss = nil
+					local best_key = nil
+					local best_amount = -1
+					for key, amount in pairs(result.expectedFluidCounts or {}) do
+						if type(amount) == "number" and amount > best_amount then
+							best_key = key
+							best_amount = amount
+						end
+					end
+					if best_key then
+						local fluid_name, _ = Util.parse_fluid_temp_key(best_key)
+						local missing_key = Util.make_fluid_temp_key(fluid_name, -99999)
+						local expected_loss = math.max(n_want, 1500)
+						result.expectedFluidCounts[missing_key] = (result.expectedFluidCounts[missing_key] or 0) + expected_loss
+						result.totalExpectedFluids = (result.totalExpectedFluids or 0) + expected_loss
+						log(string.format("[TEST HOOK] Forced fluid loss: inflated missing expected %s by %.1f (largest real key %s=%.1f)", missing_key, expected_loss, best_key, best_amount))
+					else
+						log(string.format("[TEST HOOK] Forced fluid loss requested %.1f but no expected fluid key existed", n_want))
+					end
+				end
+
 				PhaseProfiler.stop(job.job_id, "loss_analysis")
-				-- Re-store updated validation result
+				success, result = TransferValidation.validate_fluids_post_activation(result)
 				validation_result = result
-				TransferValidation.store_validation_result(job.platform_name, result)
+				TransferValidation.store_validation_result(validation_result_id, result)
+				if not success then
+					if result.itemCountMatch == true then
+						result.failedStage = "fluids"
+					end
+					game.print(string.format("[Transfer Validation Failed] %s", result.mismatchDetails or "Unknown error"), {1, 0, 0})
+					local discarded = false
+					if job.target_platform and job.target_platform.valid then
+						discarded = GameUtils.delete_platform(job.target_platform)
+					end
+					result.destinationDiscarded = discarded == true
+					TransferValidation.clear_validation_result(validation_result_id)
+					log(string.format("[Validation] Fluid gate failed after activation; destination platform discarded=%s", tostring(discarded)))
+				end
 			end
 
 			-- GATEWAY TRANSFER: park the platform AT the gateway, paused, instead of letting the
@@ -501,7 +532,7 @@ function ImportCompletion.run_phase2(job)
 			-- holds it until the player resumes. nil for normal transfers — they keep the unpause above.
 			-- PAUSE FIRST (its own pcall), THEN place: if the space_location write throws, the platform
 			-- is still safely parked-paused rather than flying off next tick.
-			if job.gateway_target and job.target_platform and job.target_platform.valid then
+			if success and job.gateway_target and job.target_platform and job.target_platform.valid then
 				local tp = job.target_platform
 				-- Unlock the gateway for the platform's force first (a force created after the startup
 				-- discover_and_unlock pass wouldn't have it; placement needs a reachable location).
@@ -574,6 +605,18 @@ function ImportCompletion.run_phase2(job)
 		add_span("validation", m.validation_started_tick, m.validation_done_tick)
 		add_span("fluids", m.fluids_started_tick, m.fluids_completed_tick)
 
+		if job.transfer_id then
+			-- Final debug export: Write the same composite verdict the controller receives.
+			DebugExport.export_import_result({
+				platform_name = job.platform_name,
+				transfer_id = job.transfer_id,
+				validation_success = validation_result and validation_result.success == true,
+				validation_result = validation_result,
+				total_entities = job.total_entities,
+				duration_seconds = duration_seconds
+			}, job.platform_name)
+		end
+
 		local event_payload = {
 			job_id = job.job_id,
 			platform_name = job.platform_name,
@@ -603,6 +646,7 @@ function ImportCompletion.run_phase2(job)
 				phase_spans = phase_spans,
 			}
 		}
+		event_payload.success = validation_result and validation_result.success == true
 
 		-- Include transfer metadata if available
 		if job.transfer_id then

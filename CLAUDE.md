@@ -402,7 +402,7 @@ remote.call("surface_export", "unlock_platform", platform_index_or_name)  -- uni
 
 -- Validation:
 remote.call("surface_export", "get_validation_result", platform_name)
-remote.call("surface_export", "get_validation_result_json", platform_name)  -- JSON string for RCON
+remote.call("surface_export", "get_validation_result_json", result_id)  -- Debug JSON lookup by canonical transfer id / job id
 
 -- Configuration:
 remote.call("surface_export", "configure", config_table)
@@ -689,12 +689,13 @@ The order of post-processing steps in `complete_import_job()` is critical for co
 7. Activation             — ActiveStateRestoration.restore() unfreezes all remaining entities
 8. Fluid restoration      — MUST be after activation (ghost buffer fix)
 9. Loss analysis          — post-activation counting for accurate transaction log
+10. Fluid gate             — validates post-activation fluids; composes final success + failedStage
 ```
 
 **Why this order matters**:
 - Step 4 (beacon activation): beacons are kept active during entity creation (never deactivated). Phase 2 explicitly activates them and fills their energy buffer. This is necessary but not sufficient — beacons need their **module inventory populated** before `crafting_speed` reflects the beacon bonus.
 - Step 5 (inventories, 2 passes): The two-pass approach is critical. `crafting_speed` on a machine updates **immediately** when its nearby beacon's `beacon_modules` inventory is populated — no tick delay, no power required. Pass 1 populates all beacon modules. Pass 2 then restores crafter inputs with `set_stack()`, which uses the now-correct beacon-boosted cap (e.g. cs=17.375 → 12 slots instead of cs=2.5 → 7 slots). Machines remain deactivated throughout — they cannot consume items.
-- Steps 7→8 are inseparable. Injecting fluids before step 7 reproducibly lost ~15% (the empirical inject-after-activation rule, Pitfall #17; the ghost-buffer mechanism once used to explain this is dead — api-notes). Step 6 skips fluid validation (`skip_fluid_validation=true`) because fluids haven't been injected yet.
+- Steps 7→8 are inseparable. Injecting fluids before step 7 reproducibly lost ~15% (the empirical inject-after-activation rule, Pitfall #17; the ghost-buffer mechanism once used to explain this is dead — api-notes). Step 6 skips fluid validation (`skip_fluid_validation=true`) because fluids haven't been injected yet; the final verdict is composed after Step 9 by the post-activation fluid gate (`failedStage=fluids` on failure).
 
 ### 17. Frozen Entity Fluid Ghost Buffer (Factorio 2.0 Fluid Segments)
 **Symptom**: Fluid loss of ~15% on transfer. Fluid appears to be injected successfully (no errors, no overflows), but after activation all injected fluid is gone.
@@ -827,7 +828,7 @@ pre-gate pass (`ActiveStateRestoration.restore_held_items_only`) briefly toggles
 `set_stack` → back, in one synchronous pass (no engine tick → no swing, no crafting), so the gate counts a
 **complete** physical reality with every machine still deactivated. Then `validate_import(..., {strict=true})`
 tightens the per-item tolerance to `max(20, 1.5%·expected)` (≈3× the irreducible belt-restoration floor).
-**Rule**: a gate must measure a COMPLETE state, never a mid-process one — fix the timing, not the number.
+**Rule**: a gate must measure a COMPLETE state, never a mid-process one — fix the timing, not the number. The current transfer verdict is composite: the item gate runs pre-activation, then the fluid gate runs post-activation and owns `failedStage=fluids`.
 **Mechanical guard**: `tests/integration/gate-detects-loss` injects a real shortfall (`test_force_item_loss`)
 and asserts the strict gate FAILS + the source is preserved — so reverting to a loose gate goes RED in CI.
 **Clock evidence (2026-07-07, 2.0.77)**: `tests/no-tick-sync-lab/run-pr0b.mjs` proves the synchronous pass

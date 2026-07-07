@@ -138,6 +138,12 @@ A: ✅ Import replicates the source force's inserter bonuses onto the dest force
 A: ✅ 100% preserved; fluids injected **after** activation (the empirical inject-after-activation rule, Pitfall #17); fusion-output
 rejections tracked and subtracted (#21); high-temperature fluids validated on thermal energy (#23).
 
+**Q: What if fluids are lost after the item check?**
+A: The transfer verdict is composite: Lua emits one `success` covering the strict item gate plus the post-activation
+fluid gate. A fluid-stage failure discards the activated destination artifact, reports `failedStage=fluids`, and
+preserves/rolls back the source. Historical note: from 2026-02 through 2026-07 the transfer verdict was effectively
+item-only because fluids were restored after the original gate.
+
 **Q: What if some entities fail to place on the destination (missing mod)?**
 A: ✅ Their items/fluids are tallied as failed-entity-loss and subtracted from expected totals so validation is
 not falsely failed; each failure is logged per entity (Pitfall #20, failed-entity loss attribution).

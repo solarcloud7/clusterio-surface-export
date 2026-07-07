@@ -26,8 +26,8 @@ const TERMINAL_RESULT: Record<string, string> = {
 /** Operations that reached a terminal state, by operation type and result. The headline metric. */
 const operationsTotal = new lib.Counter(
 	"surface_export_operations_total",
-	"Surface Export operations that reached a terminal state, labeled by operation type and result.",
-	{ labels: ["operation", "result"] },
+	"Surface Export operations that reached a terminal state, labeled by operation type, result, and bounded failure stage.",
+	{ labels: ["operation", "result", "failure_stage"] },
 );
 
 /**
@@ -37,7 +37,7 @@ const operationsTotal = new lib.Counter(
 const operationDurationSeconds = new lib.Histogram(
 	"surface_export_operation_duration_seconds",
 	"Wall-clock duration of Surface Export operations from start to terminal state, in seconds.",
-	{ labels: ["operation", "result"], buckets: [0.5, 1, 2, 5, 10, 20, 40, 60, 120, 300] },
+	{ labels: ["operation", "result", "failure_stage"], buckets: [0.5, 1, 2, 5, 10, 20, 40, 60, 120, 300] },
 );
 
 /** Entities placed on the destination across successful imports/transfers (throughput). */
@@ -98,12 +98,13 @@ export function recordOperationOutcome(operation: ActiveTransfer | null | undefi
 	operation.metricsRecorded = true;
 
 	const operationLabel = operation.operationType || "unknown";
-	operationsTotal.labels({ operation: operationLabel, result }).inc();
+	const failureStage = operation.failedStage === "items" || operation.failedStage === "fluids" ? operation.failedStage : "none";
+	operationsTotal.labels({ operation: operationLabel, result, failure_stage: failureStage }).inc();
 
 	const endMs = operation.completedAt || operation.failedAt || Date.now();
 	const durationSec = (endMs - operation.startedAt) / 1000;
 	if (Number.isFinite(durationSec) && durationSec >= 0) {
-		operationDurationSeconds.labels({ operation: operationLabel, result }).observe(durationSec);
+		operationDurationSeconds.labels({ operation: operationLabel, result, failure_stage: failureStage }).observe(durationSec);
 	}
 
 	const entitiesCreated = Number(operation.importMetrics?.entities_created);
