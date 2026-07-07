@@ -128,6 +128,12 @@ Consequence: fluid does not live per-entity — it lives in the shared segment. 
   physical total (catches both belt-item drop → meter < physical and a whole-line double-count → meter >
   physical) and asserts held-item inclusion whenever an inserter is holding.
 
+- **[empirical, 2.0.77, no-tick-sync-lab]** The strict-gate synchronous pass
+  (`restore_held_items_only` → `validate_import(..., strict=true)`) does not advance `game.tick`, does not move
+  a deactivated assembler's `crafting_progress`, and does not change the restored inserter hand before the strict
+  count. Measured by `tests/no-tick-sync-lab/run-pr0b.mjs`: tick 187755→187755, crafting_progress
+  0.42000000000000004→0.42000000000000004, held `iron-plate x1` unchanged after restore, strict validation green.
+
 ## Space platform deletion
 
 - **`LuaSpacePlatform.destroy()` is a no-op at 2.0.76 — use `game.delete_surface` instead.** Verified via

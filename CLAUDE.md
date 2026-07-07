@@ -822,6 +822,8 @@ tightens the per-item tolerance to `max(20, 1.5%·expected)` (≈3× the irreduc
 **Rule**: a gate must measure a COMPLETE state, never a mid-process one — fix the timing, not the number.
 **Mechanical guard**: `tests/integration/gate-detects-loss` injects a real shortfall (`test_force_item_loss`)
 and asserts the strict gate FAILS + the source is preserved — so reverting to a loose gate goes RED in CI.
+**Clock evidence (2026-07-07, 2.0.77)**: `tests/no-tick-sync-lab/run-pr0b.mjs` proves the synchronous pass
+keeps `game.tick`, `crafting_progress`, and the restored inserter hand stable through the strict count.
 **Key files**: `module/import_phases/active_state_restoration.lua`, `module/core/import-completion.lua`,
 `module/validators/transfer-validation.lua`.
 **Deeper root cause (the CI-only residual): see Pitfall #29** — `restore_held_items_only` (the timing fix
