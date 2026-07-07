@@ -208,7 +208,7 @@ prevented two unnecessary primitive redesigns.)
 cites uninspectable internals; (d) the engine pin bumps — **re-run every `tests/*-lab/` runner** (the labs are
 the version-drift re-certification suite).
 
-**The pattern** (belt-lab → inserter-lab → fluid-lab lineage): append-only NOTEBOOK; a rung ladder isolating ONE
+**The pattern** (belt-lab → inserter-lab → fluid-lab → hold-completeness-lab → no-tick-sync-lab lineage): append-only NOTEBOOK; a rung ladder isolating ONE
 variable per rung; controls first (trust the instrument before the experiment); every reading tick-stamped and
 carrying ALL meters + paused flags; a TRIED-&-SETTLED do-not-repeat ledger; inherited LAB HAZARDS (the on_tick
 clobber, `platform.destroy` no-op, recipe-enable + write-assert); `--reset` + zero-leftover proof; untracked
@@ -552,6 +552,7 @@ If the default was added after the current save was created, you need either:
 ### 15. Entity Activation Before Validation (Historical Bug, Fixed)
 **Symptom**: Transfer validation fails with "Item mismatches: iron-plate: GAINED items — expected 590, got 600"
 **Cause**: `ActiveStateRestoration.restore()` was called as Phase 7 of import (before validation), which re-activated machines. In the ticks between activation and item counting, furnaces processed iron ore → iron plate, causing a net gain that triggered validation failure.
+**Evidence status**: the FIX (validate pre-activation) is [empirical] — the false GAINs were reproducible and the reorder eliminated them, regression-tested since. The craft-in-the-gap mechanism is [hypothesis] (plausible, never isolated as its own rung).
 **Fix**: For **transfers only**, Phase 7 (activation) is deferred until after validation passes. Entities stay deactivated through all restoration phases and validation. Activation happens via `ActiveStateRestoration.restore()` using `frozen_states` only after `TransferValidation.validate_import()` succeeds. On failure, entities are left deactivated for investigation.
 **Key files**: `async-processor.lua` (`complete_import_job` function), `active_state_restoration.lua`
 **See**: [TRANSFER_WORKFLOW_GUIDE.md](docs/TRANSFER_WORKFLOW_GUIDE.md) — "Entity Lifecycle (Critical Invariant)" section
@@ -567,6 +568,7 @@ If the default was added after the current save was created, you need either:
 ### 16. Verification Counts From Live Scan vs Serialized Data (CRITICAL — Fixed)
 **Symptom**: Transfer validation fails with "GAINED items" across many item types (iron-plate, copper-cable, piercing-rounds-magazine, etc.). Gains are a fraction of belt item totals.
 **Cause**: Export verification used `Verification.count_surface_items()` (live scan) AFTER entity scanning completed across multiple ticks. **Belt items can't be deactivated** — they keep moving on locked platforms. During the multi-tick export, items move between belts causing a "rolling snapshot" effect: an item on belt A captured in tick 1 may move to belt B captured in tick 5 → double-counted in serialized data. Conversely, items can move from unscanned to already-scanned belts and be missed. The net result is the serialized data doesn't match the live surface state at any single point in time.
+**Evidence status**: the FIX (atomic single-tick belt scan) is [empirical] — the GAINED-items failures were reproducible and v2 eliminated them. The "rolling snapshot" mechanism is [hypothesis] (consistent with all observations, never isolated as its own rung).
 **Fix (v2 — Atomic Belt Scan)**: Belt item extraction is now **deferred** during async entity scanning. Entity structure (position, direction, type, belt_to_ground_type, etc.) is still captured async per-tick, but `extract_belt_items()` is skipped (controlled by `EntityHandlers.skip_belt_items` flag). When all entities are scanned, `complete_export_job` does a single-tick atomic pass over all tracked belt entities, calling `extract_belt_items()` and patching the serialized data. This gives a consistent snapshot: no items can move between belts within a single tick. Verification is then generated from this consistent serialized data.
 **Key files**: `entity-handlers.lua` (`skip_belt_items` flag on transport-belt/underground-belt/splitter handlers), `async-processor.lua` (`process_export_batch` sets flag + tracks belt entities, `complete_export_job` atomic belt scan block before verification)
 **Previous approach (v1)**: Used `Verification.count_all_items()` from serialized data for verification (self-consistent but inaccurate). This masked the problem — verification matched import, but both were based on inconsistent belt data.
@@ -660,7 +662,7 @@ Project invariants that still bite if changed:
   multi-tick export — cosmetic redistribution, not loss. Export uses an atomic single-tick belt scan to
   keep the snapshot consistent (Pitfall #16).
 - **Inject fluid only after activation** (frozen entities are detached from their segment — the
-  ghost-buffer trap, Pitfall #17). **Fusion-reactor output rejects writes** (Pitfall #21). Subtract
+  inject-after-activation rule, Pitfall #17 — behavioral rule [empirical]; the old ghost-buffer MECHANISM is dead, see api-notes). **Fusion-reactor output rejects writes** (Pitfall #21). Subtract
   rejected writes from expected counts.
 - **Entity inventory size** isn't changed by `LuaInventory.resize` (custom inventories only).
   `LuaEntity.set_inventory_size_override` overrides **container** sizes but is a **no-op for crafter inputs**
@@ -686,7 +688,7 @@ The order of post-processing steps in `complete_import_job()` is critical for co
 **Why this order matters**:
 - Step 4 (beacon activation): beacons are kept active during entity creation (never deactivated). Phase 2 explicitly activates them and fills their energy buffer. This is necessary but not sufficient — beacons need their **module inventory populated** before `crafting_speed` reflects the beacon bonus.
 - Step 5 (inventories, 2 passes): The two-pass approach is critical. `crafting_speed` on a machine updates **immediately** when its nearby beacon's `beacon_modules` inventory is populated — no tick delay, no power required. Pass 1 populates all beacon modules. Pass 2 then restores crafter inputs with `set_stack()`, which uses the now-correct beacon-boosted cap (e.g. cs=17.375 → 12 slots instead of cs=2.5 → 7 slots). Machines remain deactivated throughout — they cannot consume items.
-- Steps 7→8 are inseparable. If fluids are injected before step 7, Factorio's fluid segment system wipes them on activation. Step 6 skips fluid validation (`skip_fluid_validation=true`) because fluids haven't been injected yet.
+- Steps 7→8 are inseparable. Injecting fluids before step 7 reproducibly lost ~15% (the empirical inject-after-activation rule, Pitfall #17; the ghost-buffer mechanism once used to explain this is dead — api-notes). Step 6 skips fluid validation (`skip_fluid_validation=true`) because fluids haven't been injected yet.
 
 ### 17. Frozen Entity Fluid Ghost Buffer (Factorio 2.0 Fluid Segments)
 **Symptom**: Fluid loss of ~15% on transfer. Fluid appears to be injected successfully (no errors, no overflows), but after activation all injected fluid is gone.
@@ -719,7 +721,7 @@ Fusion-reactor **output** fluidboxes are engine-managed — `fluidbox[i]=` and `
 `get_fluid_segment_id(i)` returns `nil` for fluidboxes not in a segment (isolated machines such as fusion-generators not connected to pipes) — see [factorio-2.0-api-notes.md](docs/factorio-2.0-api-notes.md). `inventory-scanner.lua` `extract_fluids` handles this with an `elseif not seg_id` branch that reads the `fluidbox[i]` proxy directly; without it, isolated fluids are silently dropped.
 
 ### 23. Thermal Energy Validation for High-Temperature Fluids
-Fusion-plasma temperatures (>1,000,000°C) drift continuously, so per-temperature-bucket validation is meaningless (every bucket key changes even though volume is preserved). For high-temp fluids the loss analysis and transaction-log UI validate on **thermal energy (Volume × Temperature)** instead, falling back to per-bucket for old logs without energy data.
+Fusion-plasma temperatures (>1,000,000°C) drift continuously, so per-temperature-bucket validation is meaningless (every bucket key changes even though volume is preserved). **Evidence status**: temperature drift is [empirical]; the weighted-average packet-merge explanation is [hypothesis]. For high-temp fluids the loss analysis and transaction-log UI validate on **thermal energy (Volume × Temperature)** instead, falling back to per-bucket for old logs without energy data.
 **Key files**: `loss-analysis.lua` (`reconcile_fluids` → `highTempAggregates`), `web/utils.js`, `web/TransactionLogsTab.jsx`.
 
 ### 24. LuaProfiler Serialization — LocalisedString Snapshots (CRITICAL)

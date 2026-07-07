@@ -147,7 +147,7 @@ Assembles chunks, then calls `AsyncProcessor.queue_import(...)`.
 → ActiveStateRestoration.restore()     [import_phases/active_state_restoration.lua]
    (unfreeze + activate all entities)
 → FluidRestoration.restore()           [import_phases/fluid_restoration.lua]
-   (MUST be after activation — ghost buffer fix)
+   (MUST be after activation — the empirical inject-after-activation rule, Pitfall #17)
 → LossAnalysis.run()                   [validators/loss-analysis.lua]
 → clusterio_api.send_json("surface_export_import_complete", result)
 ```
@@ -178,5 +178,5 @@ validation failed → platform left paused + deactivated for investigation
 |------|-----|
 | Belt items extracted in a single atomic tick | Items move between ticks — multi-tick scan causes double-counting |
 | Beacon modules restored before crafter inputs | `crafting_speed` updates instantly when `beacon_modules` is populated; `set_stack()` cap depends on it |
-| Fluids injected after `ActiveStateRestoration` | Frozen entities have a ghost buffer that is wiped on unfreeze — injecting before activation silently loses all fluid |
+| Fluids injected after `ActiveStateRestoration` | Injecting before activation reproducibly lost ~15% of fluids (empirical rule, Pitfall #17; the ghost-buffer mechanism once used to explain it is dead on 2.0.77 — see api-notes) |
 | `game.delete_surface()` not `platform.destroy()` | `LuaSpacePlatform.destroy()` is a no-op in Factorio 2.0 Space Age |

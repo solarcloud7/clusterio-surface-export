@@ -49,6 +49,9 @@ docker logs surface-export-controller 2>&1 | grep "surface_export"
 
 These run in-game via the chat console or remotely via RCON. They are registered in `module/interfaces/commands/`. See [commands-reference.md](commands-reference.md) for full usage and arguments.
 
+> The authoritative command list is `module/interfaces/commands.lua` (this table is a convenience subset —
+> notably `/gateway-transfer`, `/gateway-gui`, and debug commands also exist; see CLAUDE.md "In-Game Commands").
+
 | Command | Description |
 |---------|-------------|
 | `/export-platform <index>` | Export platform asynchronously |
@@ -92,6 +95,10 @@ npx clusterioctl surface-export transfer <exportId> <instanceId>
 ## Remote Interface
 
 The Lua module registers as `"surface_export"`. Functions are defined in `module/interfaces/remote/` and wired up in `module/interfaces/remote-interface.lua`.
+
+> The authoritative remote list is `module/interfaces/remote-interface.lua` (this is a convenience subset —
+> also registered: `destination_hold(_json)`, `delete_platform_for_transfer`, `transfer_lock_selftest(_json)`,
+> `no_tick_sync_selftest(_json)`, `version_selftest`, `gateway_selftest`, `schedule_selftest`, `clone_platform_json`, …).
 
 ```lua
 -- Export
@@ -184,4 +191,4 @@ For the detailed Lua module breakdown, see [IMPLEMENTATION_SUMMARY.md](IMPLEMENT
 | [factorio-2.0-api-notes.md](factorio-2.0-api-notes.md) | Verified Factorio 2.0 API & fluid-simulation facts (fluid segments, profiler/LocalisedString, inventory/platform APIs) |
 | [static-asset-caching.md](static-asset-caching.md) | Webpack content-hashing requirement for web chunks and its dev-workflow consequence |
 | [CI_CD.md](CI_CD.md) | CI pipeline, integration-test flow, and how Factorio is provisioned in CI |
-| [GATEWAY_TRANSFER_PRD.md](GATEWAY_TRANSFER_PRD.md) | In-game gateway transfer — design + current state (what's shipped, verified 2.0.76 API facts, planned work) |
+| [GATEWAY_TRANSFER_PRD.md](GATEWAY_TRANSFER_PRD.md) | In-game gateway transfer — design + current state (what's shipped, verified 2.0.77 API facts, planned work) |

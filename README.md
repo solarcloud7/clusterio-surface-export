@@ -140,12 +140,12 @@ Exports are processed asynchronously (50 entities/tick by default). Exported dat
 ### Import a Platform
 
 ```
-/import-platform <export_name>
+/plugin-import-file <file> <name>
 ```
 
 Creates a new platform and restores all entities, tiles, inventories, and belt items. Use `/list-exports` to see available exports.
 
-See [docs/commands-reference.md](docs/commands-reference.md) for all 15 available commands.
+See [docs/commands-reference.md](docs/commands-reference.md) for the command reference (the authoritative list is `module/interfaces/commands.lua` — counts drift).
 
 ## How It Works
 

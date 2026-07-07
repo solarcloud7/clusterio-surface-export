@@ -174,7 +174,7 @@ local jobs = AsyncProcessor.get_active_jobs()
 | `batch_size` | 50 | Entities processed per tick |
 | `max_concurrent_jobs` | 3 | Max parallel async jobs |
 | `show_progress` | true | Show progress messages in game |
-| `debug_mode` | false | Enable debug logging |
+| `debug_mode` | true (fresh saves — Pitfall #13) | Enable debug logging |
 
 Configured via `remote.call("surface_export", "configure", config_table)` from the Clusterio plugin.
 

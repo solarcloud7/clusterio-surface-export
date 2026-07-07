@@ -18,19 +18,21 @@ module/
 │   ├── connection-scanner.lua          Circuit/power/control behavior extraction
 │   ├── inventory-scanner.lua           Dynamic inventory discovery
 │   └── tile_scanner.lua                Tile scanning
-├── import_phases/
-│   ├── tile_restoration.lua            Phase 1: Place tiles
-│   ├── platform_hub_mapping.lua        Phase 2: Map auto-created hub
-│   ├── entity_creation.lua             Phase 3: Batched entity creation
-│   ├── fluid_restoration.lua           Phase 4: Network-aware fluid injection
-│   ├── belt_restoration.lua            Phase 5: Single-tick belt items
-│   ├── entity_state_restoration.lua    Phase 6: Connections, filters, behaviors
-│   └── active_state_restoration.lua    Phase 7: "Wake up" — restore entity.active
+├── import_phases/                      (execution ORDER is critical and lives in ONE place:
+│   │                                    CLAUDE.md § "Import Phase Ordering (Critical)" — validation runs
+│   │                                    PRE-activation and fluids inject POST-activation, Pitfalls #15/#17)
+│   ├── tile_restoration.lua            Place tiles
+│   ├── platform_hub_mapping.lua        Map auto-created hub
+│   ├── entity_creation.lua             Batched entity creation (deactivated for transfers)
+│   ├── belt_restoration.lua            Single-tick belt items
+│   ├── entity_state_restoration.lua    Connections, filters, behaviors
+│   ├── active_state_restoration.lua    "Wake up" — restore entity.active (+ pre-gate held-item pass)
+│   └── fluid_restoration.lua           Fluid injection — AFTER activation (Pitfall #17)
 ├── interfaces/
-│   ├── remote-interface.lua            Remote interface registrar
-│   ├── commands.lua                    Command loader
-│   ├── commands/                       14 individual command files
-│   └── remote/                         18 remote interface implementations
+│   ├── remote-interface.lua            Remote interface registrar (the authoritative remote list)
+│   ├── commands.lua                    Command loader (the authoritative command list)
+│   ├── commands/                       individual command files (run `ls` — counts drift)
+│   └── remote/                         remote interface implementations (run `ls` — counts drift)
 ├── utils/
 │   ├── surface-lock.lua                Platform freeze/unfreeze/lock
 │   ├── json-compat.lua                 JSON encode/decode + file I/O compat
@@ -204,19 +206,18 @@ Uses dynamic discovery — no hardcoded inventory indices:
 
 ### Phase Overview
 
-| Phase | Module | Description |
-|-------|--------|-------------|
-| 1 | `tile_restoration.lua` | Place all tiles (foundation for entities) |
-| 2 | `platform_hub_mapping.lua` | Map auto-created `space-platform-hub` to original entity_id |
-| 3 | `entity_creation.lua` | Batched creation; entities immediately deactivated for transfers |
-| 4 | `fluid_restoration.lua` | Network-aware segment aggregation; inject into storage tanks preferentially |
-| 5 | `belt_restoration.lua` | **Synchronous single-tick** — belts can't be deactivated |
-| 6 | `entity_state_restoration.lua` | Control behavior → filters → logistic requests → circuit connections → power connections |
-| 7 | `active_state_restoration.lua` | Restore `entity.active` from `frozen_states` — the "wake up" signal |
+> **Do not implement from this summary — the authoritative ordering is CLAUDE.md § "Import Phase Ordering
+> (Critical)".** The two load-bearing rules a summary can silently rot on: **validation runs PRE-activation**
+> (Pitfall #15 — active machines craft in the gap → false GAINS) and **fluid injection runs POST-activation**
+> (Pitfall #17's empirical rule — injecting earlier reproducibly lost ~15% of fluids).
 
-After all phases:
-- **Validation**: `TransferValidation.validate_import()` compares live item/fluid counts against export verification
-- **send_json event**: Send `surface_export_import_complete` to Node.js with metrics
+Condensed current order (transfers): tiles → hub mapping → entity creation (deactivated) → hub inventories →
+belt items (single tick) → entity state → beacon activation + two-pass inventories → **validation
+(pre-activation, strict; pre-gate held-item pass)** → **activation** → **fluid restoration (post-activation)** →
+loss analysis.
+
+After completion:
+- **send_json event**: `surface_export_import_complete` to Node.js with metrics
 
 ### Transfer Safety Measures
 
