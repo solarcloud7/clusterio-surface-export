@@ -82,7 +82,7 @@ sees the mod's prototypes by name (`game.space_location_prototypes[...]`,
 
 ## Verified Factorio API behavior
 
-Load-bearing facts (verified empirically on the live cluster and on Factorio 2.0.76 — do not re-derive):
+Load-bearing facts (verified empirically on the live cluster and on Factorio 2.0.77 — do not re-derive):
 
 - A **surfaceless-but-parkable destination is a `space-location` prototype** (a `planet` would generate a
   surface). Vanilla precedent: `solar-system-edge`. A platform routed to a location with **no `fly_condition`**

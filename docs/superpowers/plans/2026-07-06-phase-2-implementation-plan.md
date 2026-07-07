@@ -1,6 +1,6 @@
 # Phase 2 Implementation Plan
 
-Status: draft for audit. Do not start implementation until this plan is approved.
+Status: APPROVED with amendments A1-A5 (audited 2026-07-06). Execution in progress: PR-0A (#70) and PR-0B (#71) merged; PR-1 in progress. Phase-0 hold-completeness gate PASSED on the corrected not-live bar.
 
 Source of truth: `docs/TRANSFER_2PC.md` on converged main after PR #68, plus issue #69 Tier A assumption sweep.
 

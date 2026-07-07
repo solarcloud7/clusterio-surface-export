@@ -31,7 +31,6 @@ completed handshake.
 ## Open items needing a human-engineer decision (the "we don't have an answer" list)
 - ✅ **Export/file-lock strand policy** (§G) — transient export/file locks now use `kind="export"` with the same
   source-side TTL scan as transfer locks; manual kind-less locks remain manual.
-  until the identifier gate + the other re-audit fixes land.
 
 *Resolved since first draft:* cargo-pod `awaiting_launch` loss → **fixed** zero-loss (§D); rename-mid-transfer →
 **confirmed a real duplication exploit + fixed** via `surface.index` identity, lint-enforced (§B, Pitfall #31);
@@ -83,13 +82,13 @@ source unlocks via its TTL. A retry is a NEW transfer — no resume machinery.
 ## B. Concurrency
 
 **Q: What if I start a transfer of the same platform twice?**
-A: 🔧 The delete-gate backstop is now SHIPPED — `transfer_delete_identity_ok`'s name-free `transfer_job_id`
-correlation refuses a stale/duplicate delete aimed at a DIFFERENT transfer, so a double-fire can never cause an
-unrecoverable deletion. But the front door is still open: in-game (`/transfer-platform`, `/gateway-transfer`)
-still lets the 2nd command through (the lock backfill returns success) → a recoverable **dup**. **Still planned
-(R1):** transfer-trigger refuses up front if the platform is already locked. (The on-arrival gateway chooser path
-already blocks its own double-fire via `GatewayGuard` IN_FLIGHT — but that is not R1 and does not cover the two
-console commands.)
+A: ✅ Defended at THREE layers, all SHIPPED. (1) The universal lock path refuses a second transfer's backfill
+(`SurfaceLock.is_same_transfer_upgrade` — a different/token-less second attempt cannot overwrite the first
+transfer's correlation token; covers in-game AND web/ctl routes). (2) The in-game front door refuses up front
+(R1, `transfer-trigger.lua` — "already locked/transferring"). (3) The delete-gate backstop:
+`transfer_delete_identity_ok`'s name-free `transfer_job_id` correlation refuses a stale/duplicate delete aimed
+at a DIFFERENT transfer. (The on-arrival gateway chooser additionally blocks its own double-fire via
+`GatewayGuard` IN_FLIGHT.)
 
 **Q: What if I rename my platform (Space Platforms GUI) while it's transferring?**
 A: ✅ Handled — and it was a real **duplication exploit**: renaming mid-transfer made the old name-based delete
@@ -134,7 +133,7 @@ A: ✅ Import replicates the source force's inserter bonuses onto the dest force
 (Pitfall #29).
 
 **Q: What if I have fluids (chemical plants, foundries, fusion plasma)?**
-A: ✅ ~100% preserved; fluids injected **after** activation (segment ghost-buffer fix, Pitfall #17); fusion-output
+A: ✅ ~100% preserved; fluids injected **after** activation (the empirical inject-after-activation rule, Pitfall #17); fusion-output
 rejections tracked and subtracted (#21); high-temperature fluids validated on thermal energy (#23).
 
 **Q: What if some entities fail to place on the destination (missing mod)?**
@@ -183,12 +182,11 @@ A: ✅ `/unlock-platform <index>` frees it immediately.
 ## G. Non-transfer export / import
 
 **Q: What if I export a platform to a file and the server crashes mid-export?**
-A: ✅ Mostly a non-issue. A crash rolls the instance back to its **last valid save**, where the platform is in a
-good state (the in-flight export simply didn't happen — just re-run it); export deletes nothing. ⚠️ The real, and
-narrower, "what if" is a save taken **while the platform is locked** (frozen+hidden): it would restore locked, and
-an export lock is currently kind-less → no TTL → it needs a manual `/unlock-platform`. **OPEN, deferred** (owner)
-until the identifier gate + other fixes land — likely resolved by giving transient export locks their own
-expiring kind (Gemini #2 follow-up).
+A: ✅ A non-issue. A crash rolls the instance back to its **last valid save**, where the platform is in a good
+state (the in-flight export simply didn't happen — just re-run it); export deletes nothing. The narrower "save
+taken while locked" case is also closed: export/file locks carry `kind="export"` + `expires_tick`, so a restored
+locked platform **self-unlocks via the same TTL scan as transfer locks** — no manual `/unlock-platform` needed.
+(Resolved 2026-07: formerly kind-less/OPEN.)
 
 **Q: What if I import the same export JSON twice?**
 A: ✅ You get two platforms — import is not deduped, by design. Caveat: a stranded-then-committed transfer's export

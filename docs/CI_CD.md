@@ -86,11 +86,11 @@ cache-hit runs ~3 min.
 ### Version pinning (single source of truth)
 
 The baked version **must equal the instances' pinned `factorio.version`** (in both
-`docker/seed-data/hosts/.../instance.json`, currently `2.0.76`). Clusterio's host resolves the
+`docker/seed-data/hosts/.../instance.json`, currently `2.0.77`). Clusterio's host resolves the
 Factorio install by version (`findVersion` in `@clusterio/host`'s `server.js`): the multi-version
 `/opt/factorio` dir **downloads** the requested version if the baked one differs, and a *direct*
-install **throws** "Unable to find Factorio version X" — so an instance pinned to `2.0.76` must
-have `2.0.76` baked.
+install **throws** "Unable to find Factorio version X" — so an instance pinned to `2.0.77` must
+have `2.0.77` baked.
 
 **Single source + guard.** `host-1`'s `instance.json` is the canonical version. CI's **Resolve &
 verify** step reads it, passes it as the `FACTORIO_HEADLESS_TAG` build-arg, and **fails the build**
