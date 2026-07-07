@@ -12,7 +12,7 @@
       * hold identity survives platform rename (surface-index keyed)
       * discard succeeds and clears the hold when the platform was already externally deleted
       * go_live is not idempotent after success
-      * an expired transfer lock currently un-hides a held surface (recorded Phase-2 wiring hazard)
+      * an expired transfer lock respects an active destination hold: hidden, hold retained, lock cleared
 #>
 param(
     [string]$SourcePlatform = "test",
@@ -602,13 +602,15 @@ try {
         $lockResult = Invoke-ProbeJson -Body $lockBody
         Add-Result "dh-ttl-lock-ok" "fresh transfer lock hides the bare held platform before staging" ($lockResult.success -eq $true -and $lockResult.hidden -eq $true) ($lockResult | ConvertTo-Json -Compress)
         $ttlStage = Invoke-HoldJson -Action stage -TransferId $ttlTid -PlatformIndex $ttl.Index
-        Add-Result "dh-ttl-stage-ok" "stage succeeds before TTL hazard probe" ($ttlStage.success -eq $true) ($ttlStage.error | Out-String)
+        Add-Result "dh-ttl-stage-ok" "stage succeeds before TTL hold-respect probe" ($ttlStage.success -eq $true) ($ttlStage.error | Out-String)
         $expireBody = "local p=game.forces['player'].platforms[$($ttl.Index)]; if not (p and p.valid) then return {success=false,error='missing platform'} end; local lock=(storage.locked_platforms or {})[p.index]; if not lock then return {success=false,error='lock missing'} end; lock.locked_tick=game.tick - 2; lock.expires_tick=game.tick - 1; return {success=true, expires_tick=lock.expires_tick}"
         $expireResult = Invoke-ProbeJson -Body $expireBody
         Add-Result "dh-ttl-expire-ok" "TTL probe forces the transfer lock into the expired window after staging" ($expireResult.success -eq $true) ($expireResult | ConvertTo-Json -Compress)
         Step-Tick -Instance $instance -Ticks 61 -EnsurePaused | Out-Null
         $ttlMetrics = Get-Metrics -PlatformIndex $ttl.Index
-        Add-Result "dh-ttl-expiry-unhides-held-surface" "expired transfer lock reveals the held surface (recorded Phase-2 wiring hazard)" (($lockResult.success -eq $true) -and ($ttlStage.success -eq $true) -and ($expireResult.success -eq $true) -and ($ttlMetrics.hidden -eq $false)) "hidden after expiry=$($ttlMetrics.hidden); lock=$($lockResult | ConvertTo-Json -Compress); stage=$($ttlStage | ConvertTo-Json -Compress); expire=$($expireResult | ConvertTo-Json -Compress)"
+        $ttlHoldAfter = Invoke-HoldJson -Action get -TransferId $ttlTid
+        $ttlLockAfter = Invoke-ProbeJson -Body "local p=game.forces['player'].platforms[$($ttl.Index)]; if not (p and p.valid) then return {success=false,error='missing platform'} end; return {success=true, locked=(storage.locked_platforms or {})[p.index] ~= nil}"
+        Add-Result "dh-ttl-expiry-respects-hold" "expired transfer lock keeps the held destination hidden, retains the hold, and clears the lock" (($lockResult.success -eq $true) -and ($ttlStage.success -eq $true) -and ($expireResult.success -eq $true) -and ($ttlMetrics.hidden -eq $true) -and ($null -ne $ttlHoldAfter.hold) -and ($ttlLockAfter.success -eq $true) -and ($ttlLockAfter.locked -eq $false)) "hidden after expiry=$($ttlMetrics.hidden); hold=$($ttlHoldAfter | ConvertTo-Json -Compress); lock_after=$($ttlLockAfter | ConvertTo-Json -Compress); lock=$($lockResult | ConvertTo-Json -Compress); stage=$($ttlStage | ConvertTo-Json -Compress); expire=$($expireResult | ConvertTo-Json -Compress)"
         Invoke-HoldJson -Action discard -TransferId $ttlTid | Out-Null
     }
 }

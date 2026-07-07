@@ -27,6 +27,7 @@ local gateway_selftest = require("modules/surface_export/interfaces/remote/gatew
 local schedule_selftest = require("modules/surface_export/interfaces/remote/schedule-selftest")
 local transfer_lock_selftest = require("modules/surface_export/interfaces/remote/transfer-lock-selftest")
 local no_tick_sync_selftest = require("modules/surface_export/interfaces/remote/no-tick-sync-selftest")
+local hold_aware_unlock_selftest = require("modules/surface_export/interfaces/remote/hold-aware-unlock-selftest")
 local delete_platform_for_transfer = require("modules/surface_export/interfaces/remote/delete-platform-for-transfer")
 local destination_hold = require("modules/surface_export/interfaces/remote/destination-hold")
 
@@ -50,6 +51,7 @@ RemoteInterface.gateway_selftest = gateway_selftest
 RemoteInterface.schedule_selftest = schedule_selftest
 RemoteInterface.transfer_lock_selftest = transfer_lock_selftest
 RemoteInterface.no_tick_sync_selftest = no_tick_sync_selftest
+RemoteInterface.hold_aware_unlock_selftest = hold_aware_unlock_selftest
 RemoteInterface.delete_platform_for_transfer = delete_platform_for_transfer
 RemoteInterface.destination_hold = destination_hold
 
@@ -103,6 +105,8 @@ function RemoteInterface.register()
     transfer_lock_selftest_json = Base.json_wrap(transfer_lock_selftest),
     no_tick_sync_selftest = no_tick_sync_selftest,
     no_tick_sync_selftest_json = Base.json_wrap(no_tick_sync_selftest),
+    hold_aware_unlock_selftest = hold_aware_unlock_selftest,
+    hold_aware_unlock_selftest_json = Base.json_wrap(hold_aware_unlock_selftest),
     delete_platform_for_transfer = delete_platform_for_transfer,
     destination_hold = destination_hold,
     destination_hold_json = Base.json_wrap(destination_hold),
