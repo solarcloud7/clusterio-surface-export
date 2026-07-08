@@ -133,14 +133,6 @@ export class LuaInterface {
 		);
 	}
 
-	/** Debug-only fetch of a stored validation result by canonical transfer id or job id. */
-	async getValidationResultJson(resultId: string): Promise<string> {
-		return this.host.sendRcon(
-			`/sc rcon.print(remote.call("surface_export", "get_validation_result_json", "${escapeString(resultId)}"))`,
-		);
-	}
-
-
 	/**
 	 * Delete a transferred source platform. Returns RAW "SUCCESS" / "ERROR:<reason>".
 	 * Routes through the `delete_platform_for_transfer` remote, which (atomically, one tick): unlocks,
