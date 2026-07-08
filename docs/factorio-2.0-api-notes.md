@@ -51,6 +51,13 @@ Consequence: fluid does not live per-entity — it lives in the shared segment. 
 - **Use an epsilon** for high-temperature / large-volume fluids — floating-point drift and
   temperature-weighted merges shift exact `fluid@temp` keys. Validate on volume (or thermal energy
   V×T), not exact temperature buckets. **[empirical]**
+- **Storage-tank mixed-temperature steam equilibrates before export and round-trips as the equilibrated key.**
+  **[empirical, 2.0.77, fluid-lab R10a/R10b]** R10a proved a fixed `steam@165.0C` storage-tank segment
+  (`2000`) reproduces exactly through the real transfer path and passes validation. R10b wrote `1000` steam at
+  `165C` plus `1000` steam at `500C` into one storage tank; the same-tick read, +1 tick, +60 ticks, source
+  debug dump, destination validation, and destination direct/segment meters all reported a single equilibrated
+  `steam@332.5C = 2000` key. In this measured storage-tank case, the old exact-key gate would not have
+  false-failed; aggregate-by-name validation is defensive for this case rather than proven necessary by R10b.
 - **`get_capacity(i)`** is the segment capacity. **[API]** Empirically it returns the **full segment**
   capacity for pipes/tanks but only the **local** buffer capacity for machines/thrusters, because
   pipe prototypes define `base_area` (drives segment capacity) while machines define fixed local
