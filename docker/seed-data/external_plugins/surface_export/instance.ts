@@ -722,9 +722,10 @@ export class InstancePlugin extends BaseInstancePlugin {
 				itemCountMatch: false,
 				fluidCountMatch: false,
 				entityCount: Number.isFinite(Number(data.entity_count)) ? Number(data.entity_count) : undefined,
-				mismatchDetails: "Validation data not retrieved",
+				mismatchDetails: "Validation payload not retrieved",
 			};
-			if (data.validation && typeof data.validation === "object" && !Array.isArray(data.validation)) {
+			const hasValidationPayload = Boolean(data.validation && typeof data.validation === "object" && !Array.isArray(data.validation));
+			if (hasValidationPayload) {
 				const parsed = data.validation as Partial<messages.ValidationResult>;
 				validation = {
 					...parsed,
@@ -732,9 +733,10 @@ export class InstancePlugin extends BaseInstancePlugin {
 					fluidCountMatch: Boolean(parsed.fluidCountMatch),
 				};
 			}
-			const success = typeof data.success === "boolean"
-				? data.success
-				: Boolean(validation.itemCountMatch && validation.fluidCountMatch);
+			const validationSaysSuccess = validation.itemCountMatch && validation.fluidCountMatch;
+			const success = hasValidationPayload
+				? (typeof data.success === "boolean" ? data.success === true && validationSaysSuccess : validationSaysSuccess)
+				: false;
 
 			let normalizedMetrics: Record<string, unknown> | undefined;
 			if (metrics && typeof metrics === "object") {

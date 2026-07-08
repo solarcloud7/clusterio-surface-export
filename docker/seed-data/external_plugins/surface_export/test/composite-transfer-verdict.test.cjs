@@ -91,6 +91,25 @@ test("instance forwards Lua composite verdict payload without name-keyed refetch
 	assert.deepEqual(calls.sent[0].metrics.phase_spans, [{ name: "fluids", duration_ms: 10 }]);
 });
 
+test("instance fails closed on success-only transfer payload without validation", async () => {
+	const { plugin, calls } = makeInstanceHarness();
+
+	await plugin.handleImportCompleteValidation({
+		platform_name: "Malformed Success Only",
+		transfer_id: "1:001_success_only",
+		source_instance_id: 1,
+		success: true,
+		metrics: { fluids_restored: 4 },
+	});
+
+	assert.equal(calls.validationFetches, 0, "transfer verdict must not fall back to a platform-name-keyed RCON refetch");
+	assert.equal(calls.sent.length, 1, "one fail-closed TransferValidationEvent must be emitted");
+	assert.equal(calls.sent[0].success, false, "missing validation payload must fail closed even when data.success is true");
+	assert.equal(calls.sent[0].validation.itemCountMatch, false);
+	assert.equal(calls.sent[0].validation.fluidCountMatch, false);
+	assert.match(calls.sent[0].validation.mismatchDetails, /Validation payload not retrieved/);
+});
+
 function makeTransferHarness() {
 	const noop = () => {};
 	const activeTransfers = new Map();
@@ -176,6 +195,10 @@ test("Lua import completion gates post-activation fluids and discards the destin
 		"debug import-result must contain the final composite verdict, not the pre-fluid snapshot");
 	assert.doesNotMatch(importCompletion, /store_validation_result\s*\(\s*job\.platform_name\s*,\s*result\s*\)/,
 		"transfer validation storage must not be keyed by mutable platform name");
+	const successPrintIndex = importCompletion.indexOf("[Validation] ✓ Validation passed");
+	const fluidGateIndex = importCompletion.indexOf("TransferValidation.validate_fluids_post_activation");
+	assert.ok(successPrintIndex > fluidGateIndex,
+		"green validation-passed player message must only appear after the post-activation fluid gate");
 });
 
 test("TransferValidation exposes a reusable post-activation fluid gate keyed by transfer id", () => {
