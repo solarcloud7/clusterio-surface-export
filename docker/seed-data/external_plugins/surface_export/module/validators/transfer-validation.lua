@@ -11,71 +11,52 @@ local LossAnalysis = require("modules/surface_export/validators/loss-analysis")
 local TransferValidation = {}
 
 local FLUID_GAIN_TOLERANCE = 500  -- Allow small gain due to rounding
+local FLUID_LOSS_TOLERANCE = 500  -- Destructive gate: material loss only, not temperature-key drift
+
+local function aggregate_fluid_counts_by_name(fluid_counts)
+    local by_name = {}
+    for fluid_key, volume in pairs(fluid_counts or {}) do
+        local name, _ = Util.parse_fluid_temp_key(fluid_key)
+        by_name[name] = (by_name[name] or 0) + (volume or 0)
+    end
+    return by_name
+end
 
 local function validate_fluid_counts(expected_fluid_counts, actual_fluid_counts)
     local fluid_mismatches = {}
     local fluid_match = true
-    local HIGH_TEMP = Util.HIGH_TEMP_THRESHOLD
     local recon = LossAnalysis.reconcile_fluids(expected_fluid_counts, actual_fluid_counts)
+    local expected_by_name = aggregate_fluid_counts_by_name(expected_fluid_counts)
+    local actual_by_name = aggregate_fluid_counts_by_name(actual_fluid_counts)
+    local all_names = {}
 
-    -- Validate low-temperature fluids per exact key
-    for fluid_key, expected_volume in pairs(expected_fluid_counts or {}) do
-        local _, temp = Util.parse_fluid_temp_key(fluid_key)
-        if temp >= HIGH_TEMP then
-            goto continue_fluid_check
-        end
+    for name, _ in pairs(expected_by_name) do
+        all_names[name] = true
+    end
+    for name, _ in pairs(actual_by_name) do
+        all_names[name] = true
+    end
 
-        local actual_volume = actual_fluid_counts[fluid_key] or 0
-        if actual_volume > expected_volume + FLUID_GAIN_TOLERANCE then
+    for name, _ in pairs(all_names) do
+        local expected_volume = expected_by_name[name] or 0
+        local actual_volume = actual_by_name[name] or 0
+        local delta = actual_volume - expected_volume
+
+        if delta > FLUID_GAIN_TOLERANCE then
             fluid_match = false
             table.insert(fluid_mismatches, string.format(
                 "%s: GAINED fluid - expected %.1f, got %.1f",
-                fluid_key, expected_volume, actual_volume
+                name, expected_volume, actual_volume
             ))
-        elseif expected_volume > 1000 and actual_volume < 1 then
+        elseif -delta > math.max(25, math.min(FLUID_LOSS_TOLERANCE, expected_volume * 0.05)) then
             fluid_match = false
             table.insert(fluid_mismatches, string.format(
-                "%s: fluid completely lost - expected %.1f, got %.1f",
-                fluid_key, expected_volume, actual_volume
+                "%s: LOST fluid - expected %.1f, got %.1f",
+                name, expected_volume, actual_volume
             ))
-        end
-        ::continue_fluid_check::
-    end
-
-    -- Validate high-temperature fluids by aggregate total per fluid name
-    for name, _ in pairs(recon.allHighTempNames) do
-        local exp_total = recon.expectedHighTemp[name] or 0
-        local act_total = recon.actualHighTemp[name] or 0
-
-        if act_total > exp_total + FLUID_GAIN_TOLERANCE then
-            fluid_match = false
-            table.insert(fluid_mismatches, string.format(
-                "%s (high-temp aggregate): GAINED fluid - expected %.1f, got %.1f",
-                name, exp_total, act_total
-            ))
-        elseif exp_total > 100 and act_total < 1 then
-            fluid_match = false
-            table.insert(fluid_mismatches, string.format(
-                "%s (high-temp aggregate): fluid completely lost - expected %.1f, got %.1f",
-                name, exp_total, act_total
-            ))
-        else
-            log(string.format("[TransferValidation] High-temp fluid %s: expected=%.1f actual=%.1f (temp-merge reconciled)",
-                name, exp_total, act_total))
-        end
-    end
-
-    -- Check for unexpected low-temp fluids
-    for fluid_key, actual_volume in pairs(actual_fluid_counts or {}) do
-        local _, temp = Util.parse_fluid_temp_key(fluid_key)
-        if temp < HIGH_TEMP and not (expected_fluid_counts or {})[fluid_key] then
-            if actual_volume > FLUID_GAIN_TOLERANCE then
-                fluid_match = false
-                table.insert(fluid_mismatches, string.format(
-                    "%s: unexpected fluid (got %.1f)",
-                    fluid_key, actual_volume
-                ))
-            end
+        elseif (recon.allHighTempNames or {})[name] then
+            log(string.format("[TransferValidation] Fluid %s: expected=%.1f actual=%.1f (name-aggregate reconciled)",
+                name, expected_volume, actual_volume))
         end
     end
 

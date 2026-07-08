@@ -41,6 +41,53 @@ local function build_phase_span(name, started_tick, completed_tick, t0)
 	}
 end
 
+local function emit_debug_import_result(job, validation_result, duration_seconds)
+	if not job.transfer_id then return end
+	local ok, err = pcall(function()
+		DebugExport.export_import_result({
+			platform_name = job.platform_name,
+			transfer_id = job.transfer_id,
+			validation_success = validation_result and validation_result.success == true,
+			validation_result = validation_result,
+			total_entities = job.total_entities,
+			duration_seconds = duration_seconds
+		}, job.platform_name)
+	end)
+	if not ok then
+		log(string.format("[DebugExport] ERROR: Failed to export import result: %s", tostring(err)))
+	end
+end
+
+local function quarantine_destination_after_discard_failure(job, result)
+	result.destinationDiscardEscalated = true
+	local ok, err = pcall(function()
+		local platform = job.target_platform
+		if platform and platform.valid then
+			platform.paused = true
+		end
+
+		local surface = job.target_surface
+		if surface and surface.valid then
+			local force = game.forces[job.force_name or "player"]
+			if force then
+				force.set_surface_hidden(surface, true)
+			end
+			for _, entity in ipairs(surface.find_entities_filtered({})) do
+				if entity.valid and GameUtils.ACTIVATABLE_ENTITY_TYPES[entity.type] then
+					entity.active = false
+				end
+			end
+		end
+	end)
+	result.destinationQuarantined = ok == true
+	if not ok then
+		result.destinationQuarantineError = tostring(err)
+	end
+	log(string.format("[Validation] Fluid gate discard failed; destination quarantine attempted=%s error=%s",
+		tostring(ok), tostring(err)))
+	return ok == true
+end
+
 --- Phase 1: Restore hub inventories, belt items, and entity state.
 --- Schedules Phase 2 for the next tick via job.pending_beacon_tick.
 --- @param job table: Job data
@@ -345,7 +392,11 @@ function ImportCompletion.run_phase2(job)
 		-- validation_completed_tick at the end of run_phase2 also covers activation/fluids/loss).
 		job.metrics.validation_done_tick = game.tick
 		validation_result = result
-		result.failedStage = success and nil or "items"
+		if success then
+			result.failedStage = nil
+		else
+			result.failedStage = "items"
+		end
 		result.success = result.itemCountMatch and result.fluidCountMatch
 		-- Informational entity accounting for the transfer details (DISPLAY ONLY, no verdict):
 		-- reportedEntityCount is the source payload's entity total; result.entityCount (already set by
@@ -373,6 +424,7 @@ function ImportCompletion.run_phase2(job)
 		end
 
 		TransferValidation.store_validation_result(validation_result_id, result)
+		emit_debug_import_result(job, validation_result, duration_seconds)
 
 
 		-- Debug export: Always write destination platform data when debug_mode is enabled
@@ -509,16 +561,17 @@ function ImportCompletion.run_phase2(job)
 				success, result = TransferValidation.validate_fluids_post_activation(result)
 				validation_result = result
 				TransferValidation.store_validation_result(validation_result_id, result)
+				emit_debug_import_result(job, validation_result, duration_seconds)
 				if not success then
-					if result.itemCountMatch == true then
-						result.failedStage = "fluids"
-					end
 					game.print(string.format("[Transfer Validation Failed] %s", result.mismatchDetails or "Unknown error"), {1, 0, 0})
 					local discarded = false
 					if job.target_platform and job.target_platform.valid then
 						discarded = GameUtils.delete_platform(job.target_platform)
 					end
 					result.destinationDiscarded = discarded == true
+					if not discarded then
+						quarantine_destination_after_discard_failure(job, result)
+					end
 					TransferValidation.clear_validation_result(validation_result_id)
 					log(string.format("[Validation] Fluid gate failed after activation; destination platform discarded=%s", tostring(discarded)))
 				else
@@ -606,17 +659,7 @@ function ImportCompletion.run_phase2(job)
 		add_span("validation", m.validation_started_tick, m.validation_done_tick)
 		add_span("fluids", m.fluids_started_tick, m.fluids_completed_tick)
 
-		if job.transfer_id then
-			-- Final debug export: Write the same composite verdict the controller receives.
-			DebugExport.export_import_result({
-				platform_name = job.platform_name,
-				transfer_id = job.transfer_id,
-				validation_success = validation_result and validation_result.success == true,
-				validation_result = validation_result,
-				total_entities = job.total_entities,
-				duration_seconds = duration_seconds
-			}, job.platform_name)
-		end
+		emit_debug_import_result(job, validation_result, duration_seconds)
 
 		local event_payload = {
 			job_id = job.job_id,
