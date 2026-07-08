@@ -4611,3 +4611,1351 @@ Decision status: no primitive design change yet. R6 did not reproduce the CI los
   "finished": "2026-07-06T18:40:11.973Z"
 }
 ```
+
+
+## 2026-07-08T19:18:10.771Z - R10 fluid-lab run (run-r10.mjs; sections=r10a,r10b)
+
+```json
+{
+  "script": "tests/fluid-lab/run-r10.mjs",
+  "started": "2026-07-08T19:17:43.547Z",
+  "sections": [
+    "r10a",
+    "r10b"
+  ],
+  "no_notebook": false,
+  "source": {
+    "host": 1,
+    "instance": "clusterio-host-1-instance-1"
+  },
+  "dest": {
+    "host": 2,
+    "instance": "clusterio-host-2-instance-1"
+  },
+  "rungs": {
+    "r10a": {
+      "success": true,
+      "rung": "R10a",
+      "platform": "fluid-lab-r10a-1783538269993",
+      "setup": {
+        "success": true,
+        "platform": {
+          "name": "fluid-lab-r10a-1783538269993",
+          "index": 8
+        },
+        "inserted": 2000,
+        "read": {
+          "label": "R10a after insert",
+          "tick": 3269917,
+          "game_paused": false,
+          "platform_paused": false,
+          "valid": true,
+          "name": "storage-tank",
+          "type": "storage-tank",
+          "direct_total": 2000,
+          "segment_total": 2000,
+          "boxes": [
+            {
+              "index": 1,
+              "direct": {
+                "name": "steam",
+                "amount": 2000,
+                "temperature": 165
+              },
+              "segment_id": 48,
+              "segment_contents": {
+                "steam": 2000
+              }
+            }
+          ]
+        }
+      },
+      "transfer": {
+        "dest_instance_id": 1351385547,
+        "command": "/transfer-platform 8 1351385547",
+        "output": "═══════════════════════════════════════\n🚀 Transfer Platform: fluid-lab-r10a-1783538269993\n═══════════════════════════════════════\nDestination: Instance 1351385547\nPlatform: [8] fluid-lab-r10a-1783538269993\n\n[1/2] Locking + queueing export...\n[2/2] ✓ Export queued: 005_fluid-lab-r10a-1783538269993\n⏳ Exporting asynchronously (this may take a while)...\n\nThe transfer will continue automatically:\n  1. Export completes → Sent to controller\n  2. Controller → Sends to destination instance\n  3. Destination imports → Validates counts\n  4. On success → Source deleted automatically\n  5. On failure → Source unlocked automatically\n\n💡 Use /list-platforms to track progress\n═══════════════════════════════════════",
+        "debug": {
+          "import_result_file": "/clusterio/data/instances/clusterio-host-2-instance-1/script-output/debug_import_result_fluid-lab-r10a-1783538269993_3203220.json",
+          "source_file": "/clusterio/data/instances/clusterio-host-1-instance-1/script-output/debug_source_platform_fluid-lab-r10a-1783538269993_3269997.json",
+          "import_result_keys": [
+            "duration_seconds",
+            "platform_name",
+            "total_entities",
+            "transfer_id",
+            "validation_result",
+            "validation_success"
+          ],
+          "validation_result_keys": [
+            "actualFluidCounts",
+            "actualItemCounts",
+            "entityCount",
+            "entityTypeBreakdown",
+            "expectedFluidCounts",
+            "expectedItemCounts",
+            "fluidCountMatch",
+            "fluidReconciliation",
+            "fluidTypesActual",
+            "fluidTypesExpected",
+            "itemCountMatch",
+            "itemLossByType",
+            "itemTypesActual",
+            "itemTypesExpected",
+            "postActivation",
+            "reportedEntityCount",
+            "success",
+            "totalActualFluids",
+            "totalActualItems",
+            "totalExpectedFluids",
+            "totalExpectedItems",
+            "totalItemLoss"
+          ],
+          "source_debug_keys": [
+            "entities",
+            "force_data",
+            "force_name",
+            "frozen_states",
+            "platform",
+            "platform_name",
+            "stats",
+            "tick",
+            "tiles",
+            "timestamp",
+            "verification"
+          ],
+          "source_verification_keys": [
+            "fluid_counts",
+            "item_counts"
+          ],
+          "validation": {
+            "validation_success": true,
+            "itemCountMatch": true,
+            "fluidCountMatch": true,
+            "failedStage": null,
+            "expectedFluidCounts": {
+              "steam@165.0C": 2000
+            },
+            "actualFluidCounts": {
+              "steam@165.0C": 2000
+            },
+            "totalExpectedFluids": 2000,
+            "totalActualFluids": 2000,
+            "fluidReconciliation": {
+              "highTempThreshold": 10000,
+              "rawFluidDelta": 0,
+              "reconciledFluidLoss": 0,
+              "lowTempLoss": 0,
+              "highTempReconciledLoss": 0,
+              "fluidPreservedPct": 100,
+              "highTempAggregates": {}
+            }
+          },
+          "source_verification": {
+            "fluid_counts": {
+              "steam@165.0C": 2000
+            },
+            "item_counts": {
+              "space-platform-foundation": 10
+            }
+          },
+          "source_platform": {
+            "name": "fluid-lab-r10a-1783538269993",
+            "index": 8,
+            "paused": false,
+            "schedule_records": 1
+          }
+        },
+        "dest_read": {
+          "success": true,
+          "platform": {
+            "name": "fluid-lab-r10a-1783538269993",
+            "index": 8,
+            "paused": false
+          },
+          "read": {
+            "label": "dest post-transfer fluid-lab-r10a-1783538269993",
+            "tick": 3203446,
+            "game_paused": false,
+            "platform_paused": false,
+            "valid": true,
+            "name": "storage-tank",
+            "type": "storage-tank",
+            "direct_total": 2000,
+            "segment_total": 2000,
+            "boxes": [
+              {
+                "index": 1,
+                "direct": {
+                  "name": "steam",
+                  "amount": 2000,
+                  "temperature": 165
+                },
+                "segment_id": 157,
+                "segment_contents": {
+                  "steam": 2000
+                }
+              }
+            ]
+          }
+        }
+      },
+      "gate": {
+        "validation_success": true,
+        "fluidCountMatch": true,
+        "failedStage": null,
+        "expectedFluidCounts": {
+          "steam@165.0C": 2000
+        },
+        "actualFluidCounts": {
+          "steam@165.0C": 2000
+        },
+        "totalExpectedFluids": 2000,
+        "totalActualFluids": 2000,
+        "fluidReconciliation": {
+          "highTempThreshold": 10000,
+          "rawFluidDelta": 0,
+          "reconciledFluidLoss": 0,
+          "lowTempLoss": 0,
+          "highTempReconciledLoss": 0,
+          "fluidPreservedPct": 100,
+          "highTempAggregates": {}
+        },
+        "sourceVerificationFluidCounts": {
+          "steam@165.0C": 2000
+        }
+      },
+      "assertions": {
+        "expected_key": "steam@165.0C",
+        "expected_volume": 2000,
+        "actual_volume": 2000,
+        "key_reproduced": true,
+        "volume_delta": 0,
+        "gate_passed": true
+      },
+      "conclusion": "R10a PASS: fixed steam@165.0C key reproduced through real transfer and the composite fluid gate passed."
+    },
+    "r10b": {
+      "success": true,
+      "rung": "R10b",
+      "platform": "fluid-lab-r10b-1783538276845",
+      "setup": {
+        "success": true,
+        "platform": {
+          "name": "fluid-lab-r10b-1783538276845",
+          "index": 9
+        },
+        "inserted1": 1000,
+        "inserted2": 1000,
+        "after_first": {
+          "label": "R10b after first insert",
+          "tick": 3270275,
+          "game_paused": false,
+          "platform_paused": false,
+          "valid": true,
+          "name": "storage-tank",
+          "type": "storage-tank",
+          "direct_total": 1000,
+          "segment_total": 1000,
+          "boxes": [
+            {
+              "index": 1,
+              "direct": {
+                "name": "steam",
+                "amount": 1000,
+                "temperature": 165
+              },
+              "segment_id": 49,
+              "segment_contents": {
+                "steam": 1000
+              }
+            }
+          ]
+        },
+        "after_second": {
+          "label": "R10b after second insert",
+          "tick": 3270275,
+          "game_paused": false,
+          "platform_paused": false,
+          "valid": true,
+          "name": "storage-tank",
+          "type": "storage-tank",
+          "direct_total": 2000,
+          "segment_total": 2000,
+          "boxes": [
+            {
+              "index": 1,
+              "direct": {
+                "name": "steam",
+                "amount": 2000,
+                "temperature": 332.5
+              },
+              "segment_id": 49,
+              "segment_contents": {
+                "steam": 2000
+              }
+            }
+          ]
+        },
+        "after_plus1": {
+          "success": true,
+          "platform": {
+            "name": "fluid-lab-r10b-1783538276845",
+            "index": 9,
+            "paused": false
+          },
+          "read": {
+            "label": "R10b +1 tick",
+            "tick": 3270346,
+            "game_paused": false,
+            "platform_paused": false,
+            "valid": true,
+            "name": "storage-tank",
+            "type": "storage-tank",
+            "direct_total": 2000,
+            "segment_total": 2000,
+            "boxes": [
+              {
+                "index": 1,
+                "direct": {
+                  "name": "steam",
+                  "amount": 2000,
+                  "temperature": 332.5
+                },
+                "segment_id": 49,
+                "segment_contents": {
+                  "steam": 2000
+                }
+              }
+            ]
+          }
+        },
+        "after_plus60": {
+          "success": true,
+          "platform": {
+            "name": "fluid-lab-r10b-1783538276845",
+            "index": 9,
+            "paused": false
+          },
+          "read": {
+            "label": "R10b +60 ticks",
+            "tick": 3270414,
+            "game_paused": false,
+            "platform_paused": false,
+            "valid": true,
+            "name": "storage-tank",
+            "type": "storage-tank",
+            "direct_total": 2000,
+            "segment_total": 2000,
+            "boxes": [
+              {
+                "index": 1,
+                "direct": {
+                  "name": "steam",
+                  "amount": 2000,
+                  "temperature": 332.5
+                },
+                "segment_id": 49,
+                "segment_contents": {
+                  "steam": 2000
+                }
+              }
+            ]
+          }
+        },
+        "pre_export": {
+          "success": true,
+          "platform": {
+            "name": "fluid-lab-r10b-1783538276845",
+            "index": 9,
+            "paused": false
+          },
+          "read": {
+            "label": "R10b pre-export",
+            "tick": 3270447,
+            "game_paused": false,
+            "platform_paused": false,
+            "valid": true,
+            "name": "storage-tank",
+            "type": "storage-tank",
+            "direct_total": 2000,
+            "segment_total": 2000,
+            "boxes": [
+              {
+                "index": 1,
+                "direct": {
+                  "name": "steam",
+                  "amount": 2000,
+                  "temperature": 332.5
+                },
+                "segment_id": 49,
+                "segment_contents": {
+                  "steam": 2000
+                }
+              }
+            ]
+          }
+        }
+      },
+      "transfer": {
+        "dest_instance_id": 1351385547,
+        "command": "/transfer-platform 9 1351385547",
+        "output": "═══════════════════════════════════════\n🚀 Transfer Platform: fluid-lab-r10b-1783538276845\n═══════════════════════════════════════\nDestination: Instance 1351385547\nPlatform: [9] fluid-lab-r10b-1783538276845\n\n[1/2] Locking + queueing export...\n[2/2] ✓ Export queued: 006_fluid-lab-r10b-1783538276845\n⏳ Exporting asynchronously (this may take a while)...\n\nThe transfer will continue automatically:\n  1. Export completes → Sent to controller\n  2. Controller → Sends to destination instance\n  3. Destination imports → Validates counts\n  4. On success → Source deleted automatically\n  5. On failure → Source unlocked automatically\n\n💡 Use /list-platforms to track progress\n═══════════════════════════════════════",
+        "debug": {
+          "import_result_file": "/clusterio/data/instances/clusterio-host-2-instance-1/script-output/debug_import_result_fluid-lab-r10b-1783538276845_3203762.json",
+          "source_file": "/clusterio/data/instances/clusterio-host-1-instance-1/script-output/debug_source_platform_fluid-lab-r10b-1783538276845_3270525.json",
+          "import_result_keys": [
+            "duration_seconds",
+            "platform_name",
+            "total_entities",
+            "transfer_id",
+            "validation_result",
+            "validation_success"
+          ],
+          "validation_result_keys": [
+            "actualFluidCounts",
+            "actualItemCounts",
+            "entityCount",
+            "entityTypeBreakdown",
+            "expectedFluidCounts",
+            "expectedItemCounts",
+            "fluidCountMatch",
+            "fluidReconciliation",
+            "fluidTypesActual",
+            "fluidTypesExpected",
+            "itemCountMatch",
+            "itemLossByType",
+            "itemTypesActual",
+            "itemTypesExpected",
+            "postActivation",
+            "reportedEntityCount",
+            "success",
+            "totalActualFluids",
+            "totalActualItems",
+            "totalExpectedFluids",
+            "totalExpectedItems",
+            "totalItemLoss"
+          ],
+          "source_debug_keys": [
+            "entities",
+            "force_data",
+            "force_name",
+            "frozen_states",
+            "platform",
+            "platform_name",
+            "stats",
+            "tick",
+            "tiles",
+            "timestamp",
+            "verification"
+          ],
+          "source_verification_keys": [
+            "fluid_counts",
+            "item_counts"
+          ],
+          "validation": {
+            "validation_success": true,
+            "itemCountMatch": true,
+            "fluidCountMatch": true,
+            "failedStage": null,
+            "expectedFluidCounts": {
+              "steam@332.5C": 2000
+            },
+            "actualFluidCounts": {
+              "steam@332.5C": 2000
+            },
+            "totalExpectedFluids": 2000,
+            "totalActualFluids": 2000,
+            "fluidReconciliation": {
+              "highTempThreshold": 10000,
+              "rawFluidDelta": 0,
+              "reconciledFluidLoss": 0,
+              "lowTempLoss": 0,
+              "highTempReconciledLoss": 0,
+              "fluidPreservedPct": 100,
+              "highTempAggregates": {}
+            }
+          },
+          "source_verification": {
+            "fluid_counts": {
+              "steam@332.5C": 2000
+            },
+            "item_counts": {
+              "space-platform-foundation": 10
+            }
+          },
+          "source_platform": {
+            "name": "fluid-lab-r10b-1783538276845",
+            "index": 9,
+            "paused": false,
+            "schedule_records": 1
+          }
+        },
+        "dest_read": {
+          "success": true,
+          "platform": {
+            "name": "fluid-lab-r10b-1783538276845",
+            "index": 9,
+            "paused": false
+          },
+          "read": {
+            "label": "dest post-transfer fluid-lab-r10b-1783538276845",
+            "tick": 3203987,
+            "game_paused": false,
+            "platform_paused": false,
+            "valid": true,
+            "name": "storage-tank",
+            "type": "storage-tank",
+            "direct_total": 2000,
+            "segment_total": 2000,
+            "boxes": [
+              {
+                "index": 1,
+                "direct": {
+                  "name": "steam",
+                  "amount": 2000,
+                  "temperature": 332.5
+                },
+                "segment_id": 158,
+                "segment_contents": {
+                  "steam": 2000
+                }
+              }
+            ]
+          }
+        }
+      },
+      "gate": {
+        "validation_success": true,
+        "fluidCountMatch": true,
+        "failedStage": null,
+        "expectedFluidCounts": {
+          "steam@332.5C": 2000
+        },
+        "actualFluidCounts": {
+          "steam@332.5C": 2000
+        },
+        "totalExpectedFluids": 2000,
+        "totalActualFluids": 2000,
+        "fluidReconciliation": {
+          "highTempThreshold": 10000,
+          "rawFluidDelta": 0,
+          "reconciledFluidLoss": 0,
+          "lowTempLoss": 0,
+          "highTempReconciledLoss": 0,
+          "fluidPreservedPct": 100,
+          "highTempAggregates": {}
+        },
+        "sourceVerificationFluidCounts": {
+          "steam@332.5C": 2000
+        }
+      },
+      "old_gate_simulation": {
+        "would_false_fail": false,
+        "false_fail_keys": []
+      },
+      "aggregates": {
+        "expectedByName": {
+          "steam": 2000
+        },
+        "actualByName": {
+          "steam": 2000
+        }
+      },
+      "source_cross_check": {
+        "verification_fluid_counts": {
+          "steam@332.5C": 2000
+        },
+        "matches_import_expected": true
+      },
+      "assertions": {
+        "new_gate_passed_valid_transfer": true,
+        "old_gate_would_false_fail": false
+      },
+      "conclusion": "R10b PASS: valid mixed-temp transfer passed; old exact-key gate would NOT have false-failed this measured export/import pair, so #76 is defensive for this case rather than proven necessary."
+    }
+  },
+  "errors": [],
+  "initial_reset": {
+    "cleanup": {
+      "source": {
+        "success": true,
+        "deleted": {},
+        "tick": 3269559,
+        "game_paused": false
+      },
+      "dest": {
+        "success": true,
+        "deleted": {},
+        "tick": 3202797,
+        "game_paused": false
+      }
+    },
+    "zero": {
+      "source": {
+        "success": true,
+        "tick": 3269705,
+        "game_paused": false,
+        "zero_surfaces": true,
+        "leftovers": {},
+        "zero_storage": true,
+        "destination_holds": 0,
+        "locked_platforms": 0,
+        "committed_source_transfer_tombstones": 0
+      },
+      "dest": {
+        "success": true,
+        "tick": 3202944,
+        "game_paused": false,
+        "zero_surfaces": true,
+        "leftovers": {},
+        "zero_storage": true,
+        "destination_holds": 0,
+        "locked_platforms": 0,
+        "committed_source_transfer_tombstones": 0
+      }
+    },
+    "ok": true
+  },
+  "install": {
+    "source": {
+      "success": true,
+      "tick": 3269773,
+      "base": "2.0.77"
+    },
+    "dest": {
+      "success": true,
+      "tick": 3203011,
+      "base": "2.0.77"
+    }
+  },
+  "final_reset": {
+    "cleanup": {
+      "source": {
+        "success": true,
+        "deleted": {},
+        "tick": 3270793,
+        "game_paused": false
+      },
+      "dest": {
+        "success": true,
+        "deleted": [
+          {
+            "name": "fluid-lab-r10a-1783538269993",
+            "ok": true
+          },
+          {
+            "name": "fluid-lab-r10b-1783538276845",
+            "ok": true
+          }
+        ],
+        "tick": 3204055,
+        "game_paused": false
+      }
+    },
+    "zero": {
+      "source": {
+        "success": true,
+        "tick": 3270938,
+        "game_paused": false,
+        "zero_surfaces": true,
+        "leftovers": {},
+        "zero_storage": true,
+        "destination_holds": 0,
+        "locked_platforms": 0,
+        "committed_source_transfer_tombstones": 0
+      },
+      "dest": {
+        "success": true,
+        "tick": 3204198,
+        "game_paused": false,
+        "zero_surfaces": true,
+        "leftovers": {},
+        "zero_storage": true,
+        "destination_holds": 0,
+        "locked_platforms": 0,
+        "committed_source_transfer_tombstones": 0
+      }
+    },
+    "ok": true
+  },
+  "finished": "2026-07-08T19:18:10.771Z"
+}
+```
+
+
+## 2026-07-08T19:18:46.992Z - R10 fluid-lab run (run-r10.mjs; sections=r10a,r10b)
+
+```json
+{
+  "script": "tests/fluid-lab/run-r10.mjs",
+  "started": "2026-07-08T19:18:19.919Z",
+  "sections": [
+    "r10a",
+    "r10b"
+  ],
+  "no_notebook": false,
+  "source": {
+    "host": 1,
+    "instance": "clusterio-host-1-instance-1"
+  },
+  "dest": {
+    "host": 2,
+    "instance": "clusterio-host-2-instance-1"
+  },
+  "rungs": {
+    "r10a": {
+      "success": true,
+      "rung": "R10a",
+      "platform": "fluid-lab-r10a-1783538306364",
+      "setup": {
+        "success": true,
+        "platform": {
+          "name": "fluid-lab-r10a-1783538306364",
+          "index": 10
+        },
+        "inserted": 2000,
+        "read": {
+          "label": "R10a after insert",
+          "tick": 3271861,
+          "game_paused": false,
+          "platform_paused": false,
+          "valid": true,
+          "name": "storage-tank",
+          "type": "storage-tank",
+          "direct_total": 2000,
+          "segment_total": 2000,
+          "boxes": [
+            {
+              "index": 1,
+              "direct": {
+                "name": "steam",
+                "amount": 2000,
+                "temperature": 165
+              },
+              "segment_id": 50,
+              "segment_contents": {
+                "steam": 2000
+              }
+            }
+          ]
+        }
+      },
+      "transfer": {
+        "dest_instance_id": 1351385547,
+        "command": "/transfer-platform 10 1351385547",
+        "output": "═══════════════════════════════════════\n🚀 Transfer Platform: fluid-lab-r10a-1783538306364\n═══════════════════════════════════════\nDestination: Instance 1351385547\nPlatform: [10] fluid-lab-r10a-1783538306364\n\n[1/2] Locking + queueing export...\n[2/2] ✓ Export queued: 007_fluid-lab-r10a-1783538306364\n⏳ Exporting asynchronously (this may take a while)...\n\nThe transfer will continue automatically:\n  1. Export completes → Sent to controller\n  2. Controller → Sends to destination instance\n  3. Destination imports → Validates counts\n  4. On success → Source deleted automatically\n  5. On failure → Source unlocked automatically\n\n💡 Use /list-platforms to track progress\n═══════════════════════════════════════",
+        "debug": {
+          "import_result_file": "/clusterio/data/instances/clusterio-host-2-instance-1/script-output/debug_import_result_fluid-lab-r10a-1783538306364_3205180.json",
+          "source_file": "/clusterio/data/instances/clusterio-host-1-instance-1/script-output/debug_source_platform_fluid-lab-r10a-1783538306364_3271944.json",
+          "import_result_keys": [
+            "duration_seconds",
+            "platform_name",
+            "total_entities",
+            "transfer_id",
+            "validation_result",
+            "validation_success"
+          ],
+          "validation_result_keys": [
+            "actualFluidCounts",
+            "actualItemCounts",
+            "entityCount",
+            "entityTypeBreakdown",
+            "expectedFluidCounts",
+            "expectedItemCounts",
+            "fluidCountMatch",
+            "fluidReconciliation",
+            "fluidTypesActual",
+            "fluidTypesExpected",
+            "itemCountMatch",
+            "itemLossByType",
+            "itemTypesActual",
+            "itemTypesExpected",
+            "postActivation",
+            "reportedEntityCount",
+            "success",
+            "totalActualFluids",
+            "totalActualItems",
+            "totalExpectedFluids",
+            "totalExpectedItems",
+            "totalItemLoss"
+          ],
+          "source_debug_keys": [
+            "entities",
+            "force_data",
+            "force_name",
+            "frozen_states",
+            "platform",
+            "platform_name",
+            "stats",
+            "tick",
+            "tiles",
+            "timestamp",
+            "verification"
+          ],
+          "source_verification_keys": [
+            "fluid_counts",
+            "item_counts"
+          ],
+          "validation": {
+            "validation_success": true,
+            "itemCountMatch": true,
+            "fluidCountMatch": true,
+            "failedStage": null,
+            "expectedFluidCounts": {
+              "steam@165.0C": 2000
+            },
+            "actualFluidCounts": {
+              "steam@165.0C": 2000
+            },
+            "totalExpectedFluids": 2000,
+            "totalActualFluids": 2000,
+            "fluidReconciliation": {
+              "highTempThreshold": 10000,
+              "rawFluidDelta": 0,
+              "reconciledFluidLoss": 0,
+              "lowTempLoss": 0,
+              "highTempReconciledLoss": 0,
+              "fluidPreservedPct": 100,
+              "highTempAggregates": {}
+            }
+          },
+          "source_verification": {
+            "fluid_counts": {
+              "steam@165.0C": 2000
+            },
+            "item_counts": {
+              "space-platform-foundation": 10
+            }
+          },
+          "source_platform": {
+            "name": "fluid-lab-r10a-1783538306364",
+            "index": 10,
+            "paused": false,
+            "schedule_records": 1
+          }
+        },
+        "dest_read": {
+          "success": true,
+          "platform": {
+            "name": "fluid-lab-r10a-1783538306364",
+            "index": 10,
+            "paused": false
+          },
+          "read": {
+            "label": "dest post-transfer fluid-lab-r10a-1783538306364",
+            "tick": 3205407,
+            "game_paused": false,
+            "platform_paused": false,
+            "valid": true,
+            "name": "storage-tank",
+            "type": "storage-tank",
+            "direct_total": 2000,
+            "segment_total": 2000,
+            "boxes": [
+              {
+                "index": 1,
+                "direct": {
+                  "name": "steam",
+                  "amount": 2000,
+                  "temperature": 165
+                },
+                "segment_id": 159,
+                "segment_contents": {
+                  "steam": 2000
+                }
+              }
+            ]
+          }
+        }
+      },
+      "gate": {
+        "validation_success": true,
+        "fluidCountMatch": true,
+        "failedStage": null,
+        "expectedFluidCounts": {
+          "steam@165.0C": 2000
+        },
+        "actualFluidCounts": {
+          "steam@165.0C": 2000
+        },
+        "totalExpectedFluids": 2000,
+        "totalActualFluids": 2000,
+        "fluidReconciliation": {
+          "highTempThreshold": 10000,
+          "rawFluidDelta": 0,
+          "reconciledFluidLoss": 0,
+          "lowTempLoss": 0,
+          "highTempReconciledLoss": 0,
+          "fluidPreservedPct": 100,
+          "highTempAggregates": {}
+        },
+        "sourceVerificationFluidCounts": {
+          "steam@165.0C": 2000
+        }
+      },
+      "assertions": {
+        "expected_key": "steam@165.0C",
+        "expected_volume": 2000,
+        "actual_volume": 2000,
+        "key_reproduced": true,
+        "volume_delta": 0,
+        "gate_passed": true
+      },
+      "conclusion": "R10a PASS: fixed steam@165.0C key reproduced through real transfer and the composite fluid gate passed."
+    },
+    "r10b": {
+      "success": true,
+      "rung": "R10b",
+      "platform": "fluid-lab-r10b-1783538313161",
+      "setup": {
+        "success": true,
+        "platform": {
+          "name": "fluid-lab-r10b-1783538313161",
+          "index": 11
+        },
+        "inserted1": 1000,
+        "inserted2": 1000,
+        "after_first": {
+          "label": "R10b after first insert",
+          "tick": 3272223,
+          "game_paused": false,
+          "platform_paused": false,
+          "valid": true,
+          "name": "storage-tank",
+          "type": "storage-tank",
+          "direct_total": 1000,
+          "segment_total": 1000,
+          "boxes": [
+            {
+              "index": 1,
+              "direct": {
+                "name": "steam",
+                "amount": 1000,
+                "temperature": 165
+              },
+              "segment_id": 51,
+              "segment_contents": {
+                "steam": 1000
+              }
+            }
+          ]
+        },
+        "after_second": {
+          "label": "R10b after second insert",
+          "tick": 3272223,
+          "game_paused": false,
+          "platform_paused": false,
+          "valid": true,
+          "name": "storage-tank",
+          "type": "storage-tank",
+          "direct_total": 2000,
+          "segment_total": 2000,
+          "boxes": [
+            {
+              "index": 1,
+              "direct": {
+                "name": "steam",
+                "amount": 2000,
+                "temperature": 332.5
+              },
+              "segment_id": 51,
+              "segment_contents": {
+                "steam": 2000
+              }
+            }
+          ]
+        },
+        "after_plus1": {
+          "success": true,
+          "platform": {
+            "name": "fluid-lab-r10b-1783538313161",
+            "index": 11,
+            "paused": false
+          },
+          "read": {
+            "label": "R10b +1 tick",
+            "tick": 3272290,
+            "game_paused": false,
+            "platform_paused": false,
+            "valid": true,
+            "name": "storage-tank",
+            "type": "storage-tank",
+            "direct_total": 2000,
+            "segment_total": 2000,
+            "boxes": [
+              {
+                "index": 1,
+                "direct": {
+                  "name": "steam",
+                  "amount": 2000,
+                  "temperature": 332.5
+                },
+                "segment_id": 51,
+                "segment_contents": {
+                  "steam": 2000
+                }
+              }
+            ]
+          }
+        },
+        "after_plus60": {
+          "success": true,
+          "platform": {
+            "name": "fluid-lab-r10b-1783538313161",
+            "index": 11,
+            "paused": false
+          },
+          "read": {
+            "label": "R10b +60 ticks",
+            "tick": 3272354,
+            "game_paused": false,
+            "platform_paused": false,
+            "valid": true,
+            "name": "storage-tank",
+            "type": "storage-tank",
+            "direct_total": 2000,
+            "segment_total": 2000,
+            "boxes": [
+              {
+                "index": 1,
+                "direct": {
+                  "name": "steam",
+                  "amount": 2000,
+                  "temperature": 332.5
+                },
+                "segment_id": 51,
+                "segment_contents": {
+                  "steam": 2000
+                }
+              }
+            ]
+          }
+        },
+        "pre_export": {
+          "success": true,
+          "platform": {
+            "name": "fluid-lab-r10b-1783538313161",
+            "index": 11,
+            "paused": false
+          },
+          "read": {
+            "label": "R10b pre-export",
+            "tick": 3272387,
+            "game_paused": false,
+            "platform_paused": false,
+            "valid": true,
+            "name": "storage-tank",
+            "type": "storage-tank",
+            "direct_total": 2000,
+            "segment_total": 2000,
+            "boxes": [
+              {
+                "index": 1,
+                "direct": {
+                  "name": "steam",
+                  "amount": 2000,
+                  "temperature": 332.5
+                },
+                "segment_id": 51,
+                "segment_contents": {
+                  "steam": 2000
+                }
+              }
+            ]
+          }
+        }
+      },
+      "transfer": {
+        "dest_instance_id": 1351385547,
+        "command": "/transfer-platform 11 1351385547",
+        "output": "═══════════════════════════════════════\n🚀 Transfer Platform: fluid-lab-r10b-1783538313161\n═══════════════════════════════════════\nDestination: Instance 1351385547\nPlatform: [11] fluid-lab-r10b-1783538313161\n\n[1/2] Locking + queueing export...\n[2/2] ✓ Export queued: 008_fluid-lab-r10b-1783538313161\n⏳ Exporting asynchronously (this may take a while)...\n\nThe transfer will continue automatically:\n  1. Export completes → Sent to controller\n  2. Controller → Sends to destination instance\n  3. Destination imports → Validates counts\n  4. On success → Source deleted automatically\n  5. On failure → Source unlocked automatically\n\n💡 Use /list-platforms to track progress\n═══════════════════════════════════════",
+        "debug": {
+          "import_result_file": "/clusterio/data/instances/clusterio-host-2-instance-1/script-output/debug_import_result_fluid-lab-r10b-1783538313161_3205720.json",
+          "source_file": "/clusterio/data/instances/clusterio-host-1-instance-1/script-output/debug_source_platform_fluid-lab-r10b-1783538313161_3272464.json",
+          "import_result_keys": [
+            "duration_seconds",
+            "platform_name",
+            "total_entities",
+            "transfer_id",
+            "validation_result",
+            "validation_success"
+          ],
+          "validation_result_keys": [
+            "actualFluidCounts",
+            "actualItemCounts",
+            "entityCount",
+            "entityTypeBreakdown",
+            "expectedFluidCounts",
+            "expectedItemCounts",
+            "fluidCountMatch",
+            "fluidReconciliation",
+            "fluidTypesActual",
+            "fluidTypesExpected",
+            "itemCountMatch",
+            "itemLossByType",
+            "itemTypesActual",
+            "itemTypesExpected",
+            "postActivation",
+            "reportedEntityCount",
+            "success",
+            "totalActualFluids",
+            "totalActualItems",
+            "totalExpectedFluids",
+            "totalExpectedItems",
+            "totalItemLoss"
+          ],
+          "source_debug_keys": [
+            "entities",
+            "force_data",
+            "force_name",
+            "frozen_states",
+            "platform",
+            "platform_name",
+            "stats",
+            "tick",
+            "tiles",
+            "timestamp",
+            "verification"
+          ],
+          "source_verification_keys": [
+            "fluid_counts",
+            "item_counts"
+          ],
+          "validation": {
+            "validation_success": true,
+            "itemCountMatch": true,
+            "fluidCountMatch": true,
+            "failedStage": null,
+            "expectedFluidCounts": {
+              "steam@332.5C": 2000
+            },
+            "actualFluidCounts": {
+              "steam@332.5C": 2000
+            },
+            "totalExpectedFluids": 2000,
+            "totalActualFluids": 2000,
+            "fluidReconciliation": {
+              "highTempThreshold": 10000,
+              "rawFluidDelta": 0,
+              "reconciledFluidLoss": 0,
+              "lowTempLoss": 0,
+              "highTempReconciledLoss": 0,
+              "fluidPreservedPct": 100,
+              "highTempAggregates": {}
+            }
+          },
+          "source_verification": {
+            "fluid_counts": {
+              "steam@332.5C": 2000
+            },
+            "item_counts": {
+              "space-platform-foundation": 10
+            }
+          },
+          "source_platform": {
+            "name": "fluid-lab-r10b-1783538313161",
+            "index": 11,
+            "paused": false,
+            "schedule_records": 1
+          }
+        },
+        "dest_read": {
+          "success": true,
+          "platform": {
+            "name": "fluid-lab-r10b-1783538313161",
+            "index": 11,
+            "paused": false
+          },
+          "read": {
+            "label": "dest post-transfer fluid-lab-r10b-1783538313161",
+            "tick": 3205946,
+            "game_paused": false,
+            "platform_paused": false,
+            "valid": true,
+            "name": "storage-tank",
+            "type": "storage-tank",
+            "direct_total": 2000,
+            "segment_total": 2000,
+            "boxes": [
+              {
+                "index": 1,
+                "direct": {
+                  "name": "steam",
+                  "amount": 2000,
+                  "temperature": 332.5
+                },
+                "segment_id": 160,
+                "segment_contents": {
+                  "steam": 2000
+                }
+              }
+            ]
+          }
+        }
+      },
+      "gate": {
+        "validation_success": true,
+        "fluidCountMatch": true,
+        "failedStage": null,
+        "expectedFluidCounts": {
+          "steam@332.5C": 2000
+        },
+        "actualFluidCounts": {
+          "steam@332.5C": 2000
+        },
+        "totalExpectedFluids": 2000,
+        "totalActualFluids": 2000,
+        "fluidReconciliation": {
+          "highTempThreshold": 10000,
+          "rawFluidDelta": 0,
+          "reconciledFluidLoss": 0,
+          "lowTempLoss": 0,
+          "highTempReconciledLoss": 0,
+          "fluidPreservedPct": 100,
+          "highTempAggregates": {}
+        },
+        "sourceVerificationFluidCounts": {
+          "steam@332.5C": 2000
+        }
+      },
+      "old_gate_simulation": {
+        "would_false_fail": false,
+        "false_fail_keys": []
+      },
+      "aggregates": {
+        "expectedByName": {
+          "steam": 2000
+        },
+        "actualByName": {
+          "steam": 2000
+        }
+      },
+      "source_cross_check": {
+        "verification_fluid_counts": {
+          "steam@332.5C": 2000
+        },
+        "matches_import_expected": true
+      },
+      "assertions": {
+        "new_gate_passed_valid_transfer": true,
+        "old_gate_would_false_fail": false
+      },
+      "conclusion": "R10b PASS: valid mixed-temp transfer passed; old exact-key gate would NOT have false-failed this measured export/import pair, so #76 is defensive for this case rather than proven necessary."
+    }
+  },
+  "errors": [],
+  "initial_reset": {
+    "cleanup": {
+      "source": {
+        "success": true,
+        "deleted": {},
+        "tick": 3271499,
+        "game_paused": false
+      },
+      "dest": {
+        "success": true,
+        "deleted": {},
+        "tick": 3204761,
+        "game_paused": false
+      }
+    },
+    "zero": {
+      "source": {
+        "success": true,
+        "tick": 3271640,
+        "game_paused": false,
+        "zero_surfaces": true,
+        "leftovers": {},
+        "zero_storage": true,
+        "destination_holds": 0,
+        "locked_platforms": 0,
+        "committed_source_transfer_tombstones": 0
+      },
+      "dest": {
+        "success": true,
+        "tick": 3204903,
+        "game_paused": false,
+        "zero_surfaces": true,
+        "leftovers": {},
+        "zero_storage": true,
+        "destination_holds": 0,
+        "locked_platforms": 0,
+        "committed_source_transfer_tombstones": 0
+      }
+    },
+    "ok": true
+  },
+  "install": {
+    "source": {
+      "success": true,
+      "tick": 3271709,
+      "base": "2.0.77"
+    },
+    "dest": {
+      "success": true,
+      "tick": 3204972,
+      "base": "2.0.77"
+    }
+  },
+  "final_reset": {
+    "cleanup": {
+      "source": {
+        "success": true,
+        "deleted": {},
+        "tick": 3272729,
+        "game_paused": false
+      },
+      "dest": {
+        "success": true,
+        "deleted": [
+          {
+            "name": "fluid-lab-r10a-1783538306364",
+            "ok": true
+          },
+          {
+            "name": "fluid-lab-r10b-1783538313161",
+            "ok": true
+          }
+        ],
+        "tick": 3206009,
+        "game_paused": false
+      }
+    },
+    "zero": {
+      "source": {
+        "success": true,
+        "tick": 3272871,
+        "game_paused": false,
+        "zero_surfaces": true,
+        "leftovers": {},
+        "zero_storage": true,
+        "destination_holds": 0,
+        "locked_platforms": 0,
+        "committed_source_transfer_tombstones": 0
+      },
+      "dest": {
+        "success": true,
+        "tick": 3206154,
+        "game_paused": false,
+        "zero_surfaces": true,
+        "leftovers": {},
+        "zero_storage": true,
+        "destination_holds": 0,
+        "locked_platforms": 0,
+        "committed_source_transfer_tombstones": 0
+      }
+    },
+    "ok": true
+  },
+  "finished": "2026-07-08T19:18:46.992Z"
+}
+```
+
+## 2026-07-08 - R10a/R10b conclusion summary
+
+R10a/R10b were run twice consecutively via `node tests/fluid-lab/run-r10.mjs --sections r10a,r10b` after one focused `--no-notebook` shakeout pass. Both evidence passes ended with host-1 and host-2 zero-leftover checks green: no lab surfaces, `storage.fluid_lab` cleared, `storage.destination_holds=0`, `storage.locked_platforms=0`, `storage.committed_source_transfer_tombstones=0`, and `game.tick_paused=false`.
+
+Conclusions:
+- R10a: fixed `steam@165.0C = 2000` reproduced exactly through the real transfer path; new composite gate passed.
+- R10b: `1000` steam at `165C` + `1000` steam at `500C` equilibrated in the storage-tank segment before export to `steam@332.5C = 2000`; source verification, destination expected, destination actual, direct meter, and segment meter all matched.
+- Old-gate simulation: no false-fail in this measured R10b case. #76 remains defensive for this case, not proven necessary by R10b.
+- R10c/R10d were not run.
