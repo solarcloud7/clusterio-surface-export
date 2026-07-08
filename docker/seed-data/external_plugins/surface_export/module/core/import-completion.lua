@@ -444,8 +444,6 @@ function ImportCompletion.run_phase2(job)
 			log(string.format("[Import] Post-activation fluid restoration: %d fluids restored",
 				job.metrics.fluids_restored))
 
-			game.print(string.format("[Validation] ✓ Validation passed - entities activated on platform %s!",
-				job.platform_name), {0, 1, 0})
 
 			-- ========================================
 			-- POST-ACTIVATION LOSS ANALYSIS
@@ -523,6 +521,9 @@ function ImportCompletion.run_phase2(job)
 					result.destinationDiscarded = discarded == true
 					TransferValidation.clear_validation_result(validation_result_id)
 					log(string.format("[Validation] Fluid gate failed after activation; destination platform discarded=%s", tostring(discarded)))
+				else
+					game.print(string.format("[Validation] ✓ Validation passed - entities activated on platform %s!",
+						job.platform_name), {0, 1, 0})
 				end
 			end
 
