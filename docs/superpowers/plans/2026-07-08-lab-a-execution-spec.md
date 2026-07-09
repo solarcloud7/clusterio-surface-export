@@ -65,8 +65,19 @@ fix-validation. Keep both, but the fluid measurement is where the gate calibrati
   read_entity:195]`. Reuse the SAME dedup the export uses so the comparison is exact.
 - Belt item positions (for drift diagnosis): `LuaTransportLine.get_detailed_contents()` / `get_line_item_position`
   `[doc-verified 2.0.76]` — sharper than manual reads.
-- Serialized side: read `debug_source_platform_*.json` `verification.{fluid_counts,item_counts}` (enable
-  `debug_mode=true`; dumps land in `script-output/`) `[plugin-proven — run-r10.mjs waitForDebugResult/compactDebugDump]`.
+- Serialized side — **ADJUDICATED 2026-07-09 (boundary stop, verified against code):** the
+  `debug_source_platform_*.json` dump is written ONLY when `job.destination_instance_id` is set (transfers —
+  `export-pipeline.lua` `if job.destination_instance_id then DebugExport.export_source_platform(...)`), so an
+  export-only run has no dump. **Read `storage.platform_exports[<export_id>].verification` instead** — it is the
+  SAME table by reference (`job.export_data.verification`, attached after the atomic belt scan) kept as a
+  plaintext top-level sibling of the compressed payload ("must be accessible without decompression"), and the
+  uncompressed-fallback record resolves `.verification` identically. Conditions: (1) record provenance in
+  evidence — `export_id`, `record.tick`, `record.stats.started_tick`, runner-observed completion tick, entity
+  count (this doubles as the multi-tick-span proof); (2) keep fixtures small so the RCON JSON print of the
+  verification table stays well under the ~8KB response comfort zone (or print per-name lines); (3) cite the
+  equivalence in the NOTEBOOK (export-pipeline.lua verification attach + plaintext-sibling store); (4) **the
+  zero-leftover contract gains a 7th check for this lab: no lab-created `storage.platform_exports` entries remain**
+  (delete them in cleanup — the standard 6 fields do not cover this layer).
 
 ## Runner build (Style B — copy `tests/fluid-lab/run-r10.mjs`)
 - New: `tests/gate-drift-lab/run-lab-a.mjs`. Change constants: `notebook`, `fixturePrefix="gate-drift-a"`,
@@ -74,8 +85,9 @@ fix-validation. Keep both, but the fluid measurement is where the gate calibrati
 - **Reuse unchanged** (per the scaffolding map): `rcon`/`lua`/`lastLine`/`stepTick`/`luaString`/`safeName`/
   `scriptOutput`/`listDebugFiles`/`readJsonFile`/`removeDebugFilesForName`/`getInstanceId`, and the transfer/dump
   layer — BUT LAB-A does NOT need a two-instance transfer for the drift measurement; it exports on host-1 and
-  reads the source dump + a same-tick physical census. (A transfer is only needed if we also want the dest side.)
-  So this is closer to a Style-A single-instance export probe that reads the debug_source dump.
+  reads the stored export's `verification` table (see the adjudicated Measurement-API note above — the debug
+  dump is transfer-only) + a same-tick physical census. (A transfer is only needed if we also want the dest side.)
+  So this is closer to a Style-A single-instance export probe reading `storage.platform_exports`.
 - Rewrite the install Lua: `mk` bare platform; build the flowing fixture (offshore/pump/pipe/tank + belt loop);
   a `census(platform)` helper returning `{fluid_by_name, item_by_name, tick}` using the dedup above; a
   `flowing_segment_probe` for step 0/precondition 3.
