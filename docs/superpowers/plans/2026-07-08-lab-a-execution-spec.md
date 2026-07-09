@@ -84,13 +84,21 @@ fix-validation. Keep both, but the fluid measurement is where the gate calibrati
 - Sections: `freeze0` (step-0 fluid-flow-while-locked probe), `control` (static exact), `fluidflow`, `beltflow`.
 
 ## Pass / decision (what LAB-A concludes)
-- **No drift (residual ≈ 0):** the gates can go near-exact — float-epsilon + a **complete-loss floor**; delete the
+**THE CONTRACT (owner, 2026-07-08): 100% parity before and after — totals per item (name,quality) and per fluid
+name are CONSERVED. A gate tolerance is only ever acceptable for a PROVEN measurement/timing artifact (e.g. the
+craft-window read effect), never for real material loss. Real loss is a BUG to fix, not a number to tolerate.**
+- **No drift (residual ≈ 0):** the gates go near-exact — float-epsilon + a **complete-loss floor**; delete the
   20/500/5% band. Strong, clean result.
-- **Drift = D on fluids:** (a) if giving fluids the same **atomic single-tick scan** belts have removes it → fix
-  the measurement (the belt precedent), then near-exact gate; (b) else set each fluid/item gate floor to ~3×D,
-  **measured** (like the item gate's belt floor, Pitfall #28) + complete-loss floor.
-- Either branch: this is the number that calibrates the #76 fluid gate fix. Do NOT hand-pick a threshold — LAB-A
-  produces it.
+- **Drift = D > 0:** D must be **root-caused before it may become anything**:
+  - *Measurement artifact* (snapshot inconsistency — serialized total matches no single tick): **fix the meter** —
+    give fluids the same atomic single-tick scan belts have (the Pitfall #16 belt precedent); then near-exact gate.
+  - *Real material loss on restore*: a **bug** — file it, fix it, regression-lock it. The gate does NOT get a
+    tolerance to paper over it.
+  - Only a residual that is proven-artifact AND proven-irreducible may become a gate floor, sized to the
+    measurement (like the item gate's belt floor claims to be — which is exactly the claim LAB-A checks), and a
+    **complete-loss floor lands regardless of every branch** (no type/name may ever vanish entirely and pass).
+- Either branch: this produces the number that calibrates the #76 fluid gate fix. Do NOT hand-pick a threshold —
+  LAB-A produces it, and the contract above bounds what it may be used for.
 
 ## Discipline / done criteria
 Controls-first (static must read exact before believing any flowing number) · force multi-tick + confirm it ·
