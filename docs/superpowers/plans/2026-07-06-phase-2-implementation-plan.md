@@ -1,6 +1,11 @@
 # Phase 2 Implementation Plan
 
-Status: APPROVED with amendments A1-A5 (audited 2026-07-06). Execution in progress: PR-0A (#70) and PR-0B (#71) merged; PR-1 in progress. Phase-0 hold-completeness gate PASSED on the corrected not-live bar.
+Status (updated 2026-07-08): APPROVED with amendments A1-A5 (audited 2026-07-06). Merged: PR-0A (#70,
+hold-completeness lab), PR-0B (#71, no-tick-sync rung), PR-1 (#73, hold-aware unlock), PR-2 (#75, source phase
+model). Phase-0 hold-completeness gate PASSED on the corrected not-live bar. Inserted debt-paydown: composite
+transfer verdict V1 (PR #76, in review) — its fluid-gate threshold fix is gated on LAB-A of
+`2026-07-08-empirical-test-backlog.md`. Next: PR-3 (detailed executor plan:
+`2026-07-08-pr-3-protocol-wiring-plan.md`; starts after #76 merges). PR-0C remains a scheduled non-blocker.
 
 Source of truth: `docs/TRANSFER_2PC.md` on converged main after PR #68, plus issue #69 Tier A assumption sweep.
 

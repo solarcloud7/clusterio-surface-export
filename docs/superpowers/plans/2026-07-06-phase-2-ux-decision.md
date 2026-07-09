@@ -1,6 +1,7 @@
 # Phase 2 UX Decision Brief
 
-Status: final decision brief for audit. Do not implement from this file alone; use the Phase 2 implementation plan after audit approval.
+Status (updated 2026-07-08): audited & APPROVED 2026-07-06 with amendments A1-A5. This is the decision RECORD
+only — implement from `2026-07-06-phase-2-implementation-plan.md`.
 
 ## Seven-Line Product Summary
 
