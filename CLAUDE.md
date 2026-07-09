@@ -487,6 +487,12 @@ a reachability spike. Covered by `tests/integration/passenger-evacuate`; design 
 
 ## Common Pitfalls & Solutions
 
+> Numbering note (2026-07-08): #8 does not exist (retired); #20 (Failed Entity Loss) sits out of sequence between
+> #15 and #16 for historical reasons — do not renumber it, code comments cite it; the former *second* #20
+> (Export-Only Destination) was renumbered to #32. When citing a pitfall, always write number + short name
+> (e.g. "Pitfall #19, platform.destroy is a no-op") so the reference survives renumbering and means something
+> to a human without a lookup.
+
 ### 1. Empty RCON Response
 **Symptom**: `rc11` returns nothing (or, in a non-interactive/agent shell, `rc11: not recognized` — the aliases are interactive-profile-only; use `./tools/rcon.ps1 11 "..."`)
 **Cause**: Instance not running or mod not loaded
@@ -709,7 +715,7 @@ The order of post-processing steps in `complete_import_job()` is critical for co
 **Enforced**: `npm run lint:lua` (gated in CI) fails on any `*platform*.destroy()` call.
 **Key files**: `instance.ts` (`handleDeleteSourcePlatform`), `module/core/import-pipeline.lua` (import rollback paths).
 
-### 20. Export-Only Destination Must Be `nil` (Not `0`)
+### 32. Export-Only Destination Must Be `nil` (Not `0`)
 **Symptom**: Export succeeds but source platform remains locked (looks stuck in UI).
 **Cause**: `Number(null) === 0` in JS. Passing `0` as destination to Lua is truthy, so export is treated as transfer and unlock is skipped.
 **Fix**: In `instance.ts`, only treat `targetInstanceId` as a transfer destination if it is a positive integer (`> 0`); otherwise pass Lua `nil`.
