@@ -112,6 +112,18 @@ craft-window read effect), never for real material loss. Real loss is a BUG to f
 - Either branch: this produces the number that calibrates the #76 fluid gate fix. Do NOT hand-pick a threshold —
   LAB-A produces it, and the contract above bounds what it may be used for.
 
+## Execution clarifications (adjudicated 2026-07-09, on the implementer's pre-execution plan)
+1. **Span bar:** the flowing sections require an **observed export span ≥5 ticks** (add entities / shrink batch
+   size until reached), or report why unattainable — ">1 tick" under-powers the drift window.
+2. **freeze0 under the REAL lock:** observe under the production lock/freeze state the export pipeline actually
+   applies (ideally sampling during an actual export scan window), never a mere `platform.paused`; record the
+   mechanism used in evidence.
+3. **Atomic censuses:** each physical census = ONE `/sc` invocation computing and printing all totals within a
+   single tick — never assembled across multiple RCON round-trips (that would recreate the rolling-snapshot
+   problem the lab exists to measure).
+4. Accepted from the implementer's plan: section order `control → freeze0 → fluidflow → beltflow` (stricter
+   controls-first than the brief); LAB-A-prefix-only deletion of `storage.platform_exports` records.
+
 ## Discipline / done criteria
 Controls-first (static must read exact before believing any flowing number) · force multi-tick + confirm it ·
 tick-stamped readings · **two clean passes** · `--reset` two-instance zero-leftover · append NOTEBOOK incl.
