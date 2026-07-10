@@ -19,7 +19,7 @@
     "lint:test-hooks": "node scripts/lint-test-hooks.mjs",
     "lint:doc-refs": "node scripts/lint-doc-refs.mjs",
     "lint:allow-manifest": "node scripts/lint-allow-manifest.mjs",
-    "test": "npm run build:node && node --test test/messages.roundtrip.test.cjs test/transfer-orchestrator.rollback.test.cjs test/transfer-reconciliation.test.cjs test/lua-transfer-lock-phase1.test.cjs test/canonical-identity.test.cjs test/no-controller-auto-delete.test.cjs test/source-transfer-lock-state.test.cjs test/destination-hold.test.cjs"
+    "test": "npm run build:node && node --test test/messages.roundtrip.test.cjs test/transfer-orchestrator.rollback.test.cjs test/transfer-reconciliation.test.cjs test/lua-transfer-lock-phase1.test.cjs test/canonical-identity.test.cjs test/no-controller-auto-delete.test.cjs test/source-transfer-lock-state.test.cjs test/destination-hold.test.cjs test/persistence-read-failure.test.cjs"
   },
   "keywords": [
     "clusterio",

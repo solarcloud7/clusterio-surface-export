@@ -59,6 +59,7 @@ export class ControllerPlugin extends BaseControllerPlugin {
 	logRevision!: number;
 	lastTreeForceName!: string;
 	storagePath!: string;
+	storageLoadDegraded!: boolean;
 	transactionLogPath!: string;
 	platformTree!: PlatformTree;
 	txLogger!: TransactionLogger;
@@ -88,6 +89,7 @@ export class ControllerPlugin extends BaseControllerPlugin {
 		this.transferRevision = 0;
 		this.logRevision = 0;
 		this.lastTreeForceName = "player";
+		this.storageLoadDegraded = false;
 
 		this.storagePath = path.resolve(
 			String(this.c.config.get("controller.database_directory")),
@@ -614,18 +616,25 @@ export class ControllerPlugin extends BaseControllerPlugin {
 					}
 				}
 			}
+			this.storageLoadDegraded = false;
 			this.logger.info(`Loaded ${this.platformStorage.size} stored platforms from disk`);
 		} catch (err: unknown) {
 			const code = (err as { code?: string }).code;
 			if (code === "ENOENT") {
+				this.storageLoadDegraded = false;
 				this.logger.verbose("No existing Surface Export storage found; starting fresh");
 				return;
 			}
+			this.storageLoadDegraded = true;
 			this.logger.error(`Failed to load Surface Export storage: ${getErrorMessage(err)}`);
 		}
 	}
 
 	async persistStorage() {
+		if (this.storageLoadDegraded) {
+			this.logger.error("Refusing to persist Surface Export storage after a degraded load; existing file left untouched");
+			return;
+		}
 		try {
 			const payload = JSON.stringify(Array.from(this.platformStorage.values()), null, 2);
 			await lib.safeOutputFile(this.storagePath, payload);

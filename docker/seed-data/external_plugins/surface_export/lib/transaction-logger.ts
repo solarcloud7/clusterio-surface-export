@@ -271,8 +271,12 @@ export class TransactionLogger {
 			try {
 				const content = await fs.readFile(this.plugin.transactionLogPath, "utf8");
 				allLogs = JSON.parse(content);
-			} catch (_err) {
-				allLogs = [];
+			} catch (err: unknown) {
+				if ((err as { code?: string }).code === "ENOENT") {
+					allLogs = [];
+				} else {
+					throw err;
+				}
 			}
 
 			const transferInfo = this.buildTransferInfo(transfer);
@@ -306,8 +310,12 @@ export class TransactionLogger {
 			const logs = JSON.parse(content);
 			this.plugin.persistedTransactionLogs = Array.isArray(logs) ? logs : [];
 			this.plugin.logger.info(`Loaded ${this.plugin.persistedTransactionLogs.length} transaction logs`);
-		} catch (_err) {
-			this.plugin.persistedTransactionLogs = [];
+		} catch (err: unknown) {
+			if ((err as { code?: string }).code === "ENOENT") {
+				this.plugin.persistedTransactionLogs = [];
+				return;
+			}
+			this.plugin.logger.error(`Failed to load transaction logs: ${getErrorMessage(err)}`);
 		}
 	}
 }
