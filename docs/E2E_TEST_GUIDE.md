@@ -300,8 +300,7 @@ manual refresh needed). Tick each feature:
 
 ### 11.7 Icons / export-data sanity
 - [ ] Item / entity / fluid / planet icons render everywhere they appear (Logs details, tree, Import planet
-      picker). Blank `?` placeholders ⇒ the mod pack has no export-data — regenerate it (CLAUDE.md **Pitfall
-      #27**) and hard-refresh (the 404 is cached).
+      picker). Blank `?` placeholders ⇒ the mod pack has no export-data — regenerate it (**Pitfall #27, web-UI icons blank — export-data/game-client**) and hard-refresh (the 404 is cached).
 
 ---
 

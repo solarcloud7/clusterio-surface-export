@@ -610,7 +610,7 @@ For Clusterio core architecture, see [Clusterio docs](https://github.com/cluster
 - RCON protocol for server communication
 - JSON serialization for data exchange
 - Lua modules located in `/packages/host/modules/` and `/packages/host/lua/`
-- **Clusterio API path**: Always `require("modules/clusterio/api")` for save-patched modules (see Pitfall #12)
+- **Clusterio API path**: Always `require("modules/clusterio/api")` for save-patched modules (Pitfall #12, the Clusterio API require path)
 - **Clusterio send_json event channel (Lua→Node)**: `clusterio_api.send_json("channel_name", data_table)` — plugin listens via `server.handle("channel_name", handler)`
 - **RCON transport (Node→Lua)**: `this.sendRcon("/sc ...")` to execute Lua via RCON
 
@@ -619,8 +619,8 @@ For Clusterio core architecture, see [Clusterio docs](https://github.com/cluster
 ### General Style (partially enforced by ESLint — `npm run lint`, gated in CI)
 
 > `npm run lint` runs five **correctness** guards, all gated in CI:
-> - **TS** — `eslint.config.js` in the plugin root (flat config, type-aware via `tsconfig.node.json`). The unbound Clusterio Link-method guard (Pitfall #26) via `@typescript-eslint/unbound-method` + a `no-restricted-syntax` selector, PLUS `no-empty` + an empty-arrow `.catch(() => {})` selector so a swallowed promise rejection can't ship silently (the TS analogue of the Lua pcall-logging guard below).
-> - **Lua** — `scripts/lint-lua-invariants.mjs` (`npm run lint:lua`), a static guard over the `module/` tree for documented Factorio/Clusterio footguns we've already been bitten by: `global` persistence (Pitfall #4), `__clusterio_lib__` require/`active_mods` guard (#12), and `*platform*.destroy()` no-op (#19). Each rule maps to a Pitfall and was verified clean when added. Add a `-- lint-lua:allow` comment (with a reason) to suppress a verified false positive.
+> - **TS** — `eslint.config.js` in the plugin root (flat config, type-aware via `tsconfig.node.json`). The unbound Clusterio Link-method guard (Pitfall #26, call Link methods bound) via `@typescript-eslint/unbound-method` + a `no-restricted-syntax` selector, PLUS `no-empty` + an empty-arrow `.catch(() => {})` selector so a swallowed promise rejection can't ship silently (the TS analogue of the Lua pcall-logging guard below).
+> - **Lua** — `scripts/lint-lua-invariants.mjs` (`npm run lint:lua`), a static guard over the `module/` tree for documented Factorio/Clusterio footguns we've already been bitten by: `global` persistence (Pitfall #4, storage vs global), `__clusterio_lib__` require/`active_mods` guard (#12), and `*platform*.destroy()` no-op (#19). Each rule maps to a Pitfall and was verified clean when added. Add a `-- lint-lua:allow` comment (with a reason) to suppress a verified false positive.
 > - **Web cache** — `scripts/lint-webpack-cache.mjs` (`npm run lint:web-cache`), guards that `webpack.config.js` keeps its output filenames content-hashed. A fixed-name `filename`/`chunkFilename` override silently defeats `@clusterio/web_ui`'s hashed default and, with the controller's immutable 1y `/static` cache, serves returning users stale chunks (the regression that shipped in `94e1b8c`; see [docs/static-asset-caching.md](docs/static-asset-caching.md)). Add a `lint-webpack-cache:allow` comment (with a reason) to suppress a verified exception.
 > - **Test grounding** — `scripts/lint-test-grounding.mjs` (`npm run lint:test-grounding`), guards that integration tests measure fidelity **independently of the code under test**: a `*fidelity*` test MUST do a physical `get_item_count(...)` count, and any test reading a validator self-report field (`totalItemLoss`/`expectedItemCounts`/`actualItemCounts`) MUST cross-ground it with a physical count. Exists because a `transfer-fidelity` test that asserted on `totalItemLoss` (the value under test) would have gone green on a broken meter — the catch came from physical counts + adversarial review, never the self-report. **Rule of thumb: if the thing under test could be wrong and the test would still pass, it's grounded in the wrong place.** Also: ship the adversarial fixture (inactive inserter, failed entity, non-normal quality) WITH the fix, and run `/code-review` before merging any gate/validation/source-deletion change. Add a `lint-test-grounding:allow` comment (with a reason) to suppress a verified exception.
 > - **pcall logging** — `scripts/lint-pcall-logging.mjs` (`npm run lint:pcall-logging`), every `pcall`/`xpcall` in the `module/` tree must SURFACE its error (log it / route through `pcall_warn` / propagate it to the caller) or be an annotated `-- intentional probe` — never a silent swallow. Exists because a swallowed pcall hid a belt-API signature mismatch across two failed fix attempts. Add `-- pcall:allow` (with a reason) for a verified false positive.
@@ -666,9 +666,9 @@ Project invariants that still bite if changed:
   beacons first, then everything else. See [Import Phase Ordering](#import-phase-ordering-critical).
 - **Belt item drift (±4–8 items).** Belts can't be deactivated, so items move between belts during the
   multi-tick export — cosmetic redistribution, not loss. Export uses an atomic single-tick belt scan to
-  keep the snapshot consistent (Pitfall #16).
+  keep the snapshot consistent (Pitfall #16, the atomic single-tick belt scan).
 - **Inject fluid only after activation** (frozen entities are detached from their segment — the
-  inject-after-activation rule, Pitfall #17 — behavioral rule [empirical]; the old ghost-buffer MECHANISM is dead, see api-notes). **Fusion-reactor output rejects writes** (Pitfall #21). Subtract
+  inject-after-activation rule, Pitfall #17 — behavioral rule [empirical]; the old ghost-buffer MECHANISM is dead, see api-notes). **Fusion-reactor output rejects writes** (Pitfall #21, fusion outputs are engine-managed). Subtract
   rejected writes from expected counts.
 - **Entity inventory size** isn't changed by `LuaInventory.resize` (custom inventories only).
   `LuaEntity.set_inventory_size_override` overrides **container** sizes but is a **no-op for crafter inputs**
@@ -848,7 +848,7 @@ different by machine."
 live in the **dest save**, which the plugin did not transfer. Measured on 2.0.76: CI's fresh `test2.zip` seed
 has `bulk_inserter_capacity_bonus = 0` → a fresh legendary bulk inserter caps at 1 (`set_stack(8)→1`,
 `.count=8→1`); a long-lived local host-2 has bonus 11 → seats 8. So the held items the source legitimately held
-are **genuinely unplaceable** on a less-researched dest, and the strict gate (Pitfall #28) **correctly** refuses
+are **genuinely unplaceable** on a less-researched dest, and the strict gate (Pitfall #28, count a complete state) **correctly** refuses
 (two-phase commit preserves the source). NOT a restoration bug. This also overturns the "`held_stack.count` has
 no capacity cap" assumption — it clamps (CI: `.count=8→1`).
 **Fix — Pre-Hydration Force Sync**: export captures the source force's inserter bonuses (`force_data`); import
@@ -876,7 +876,7 @@ disproven `count=` hack removed). Memory: [memory] `held-item-loss-is-dest-force
 **Symptom**: a debug-gated `test_force_*` hook silently corrupts the NEXT unrelated transfer (not the one under
 test) — e.g. destroys destination entities *after* the gate passed, so the transfer still reports SUCCESS and the
 source is deleted = unattributed data loss, firing only on the flaky/error path (hardest to notice).
-**Root cause**: `debug_mode` defaults **true** on the always-up shared cluster (Pitfall #13) and hook flags
+**Root cause**: `debug_mode` defaults **true** on the always-up shared cluster (Pitfall #13, debug mode defaults true on fresh saves) and hook flags
 persist in `storage.surface_export_config`. If the arming integration test disarms only on its **success path**
 (no `finally`/`trap`; an early `exit 1` skips the cleanup), a leaked flag stays armed and detonates on a later
 transfer. `/code-review` (not the author) caught exactly this in `test_force_entity_loss`: post-gate, destructive,

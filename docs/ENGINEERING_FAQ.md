@@ -97,7 +97,7 @@ A: ✅ Handled — and it was a real **duplication exploit**: renaming mid-trans
 check refuse the delete → source survived + dest committed = two copies. Renaming is a standard hub-GUI action
 (wiki-confirmed). The transfer/delete identity now keys on the STABLE `surface.index` (never the mutable name), so
 a rename is correctly IGNORED — same surface ⇒ same platform ⇒ the delete proceeds. Enforced by `lint:lua`
-(Pitfall #31). Fixed 2026-07-04.
+(Pitfall #31, identity = surface.index). Fixed 2026-07-04.
 
 **Q: What if a platform index is reused by a new platform during my transfer?**
 A: ✅ The delete/unlock identity keys on `surface.index` (recorded at lock time): a reused per-force index points
@@ -124,15 +124,15 @@ A: ✅ Marked `cleanup_failed`, the observability record is kept, and the source
 
 **Q: What if my belts are packed with items?**
 A: ✅ 100% preserved via an atomic single-tick belt scan (±4–8 items is cosmetic redistribution, not loss —
-Pitfall #16).
+Pitfall #16, the atomic belt scan).
 
 **Q: What if my inserters are holding items mid-swing?**
 A: ✅ Restored via a pre-gate inserter-only activation pass so the strict gate counts a complete state (Pitfall
-#28).
+#28, the gate must count a complete state).
 
 **Q: What if the destination force has less inserter-capacity research than mine?**
 A: ✅ Import replicates the source force's inserter bonuses onto the dest force (raise-only) so held items seat
-(Pitfall #29).
+(Pitfall #29, dest-force research governs hand capacity).
 
 **Q: What if I have fluids (chemical plants, foundries, fusion plasma)?**
 A: ✅ 100% preserved; fluids injected **after** activation (the empirical inject-after-activation rule, Pitfall #17); fusion-output

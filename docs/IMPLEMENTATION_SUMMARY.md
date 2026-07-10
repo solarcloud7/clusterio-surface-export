@@ -27,7 +27,7 @@ module/
 │   ├── belt_restoration.lua            Single-tick belt items
 │   ├── entity_state_restoration.lua    Connections, filters, behaviors
 │   ├── active_state_restoration.lua    "Wake up" — restore entity.active (+ pre-gate held-item pass)
-│   └── fluid_restoration.lua           Fluid injection — AFTER activation (Pitfall #17)
+│   └── fluid_restoration.lua           Fluid injection — AFTER activation (Pitfall #17, frozen-entity fluid loss)
 ├── interfaces/
 │   ├── remote-interface.lua            Remote interface registrar (the authoritative remote list)
 │   ├── commands.lua                    Command loader (the authoritative command list)
@@ -161,7 +161,7 @@ Export data is compressed via Factorio's `helpers.encode_string()` (deflate + ba
 
 Production export/transfer is **asynchronous**: `AsyncProcessor.queue_export()` → `ExportPipeline`
 (`module/core/export-pipeline.lua`) batches the work across ticks (default ~50 entities/tick) and does an
-**atomic single-tick belt-item scan** (Pitfall #16) before building verification. A synchronous variant,
+**atomic single-tick belt-item scan** (Pitfall #16, consistent belt snapshot) before building verification. A synchronous variant,
 `Serializer.export_platform()` (`module/core/serializer.lua`), runs the same conceptual steps in one tick — it is
 used by `clone-platform` (and therefore the integration-test fixture) and `/export-sync-mode`, and carries the
 belt rolling-snapshot limitation the async path avoids.
@@ -172,7 +172,7 @@ The conceptual steps (async = pipeline phases, sync = inline steps):
 2. Get surface reference
 3. Scan entities → `EntityScanner.scan_surface()` (async: per-tick batches)
 4. Scan tiles → `TileScanner.scan_surface()`
-5. (async only) Atomic single-tick belt-item scan once all entities are captured (Pitfall #16)
+5. (async only) Atomic single-tick belt-item scan once all entities are captured (Pitfall #16, consistent belt snapshot)
 6. Count items → `Verification.count_all_items()`
 7. Count fluids → `Verification.count_all_fluids()`
 8. Build export structure (+ `frozen_states`, `force_data`)

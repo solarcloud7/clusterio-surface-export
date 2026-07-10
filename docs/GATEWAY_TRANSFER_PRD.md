@@ -221,4 +221,4 @@ cannot be automated headlessly):
   (the `on_space_platform_changed_state` handler),
   [transfer-orchestrator.ts](../docker/seed-data/external_plugins/surface_export/lib/transfer-orchestrator.ts)
   (two-phase commit), and [factorio-2.0-api-notes.md](factorio-2.0-api-notes.md). Platform deletion uses
-  `game.delete_surface` (Pitfall #19 in CLAUDE.md).
+  `game.delete_surface` (Pitfall #19, platform.destroy is a no-op — use game.delete_surface).
