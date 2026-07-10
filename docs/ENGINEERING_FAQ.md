@@ -29,13 +29,14 @@ Duplication needs a live source AND a live dest copy — the symmetric failsafes
 completed handshake.
 
 ## Open items needing a human-engineer decision (the "we don't have an answer" list)
-- ✅ **Export/file-lock strand policy** (§G) — transient export/file locks now use `kind="export"` with the same
+- ✅ **Export/file-lock strand policy** (§G, Non-transfer export/import) — transient export/file locks now use `kind="export"` with the same
   source-side TTL scan as transfer locks; manual kind-less locks remain manual.
 
-*Resolved since first draft:* cargo-pod `awaiting_launch` loss → **fixed** zero-loss (§D); rename-mid-transfer →
-**confirmed a real duplication exploit + fixed** via `surface.index` identity, lint-enforced (§B, Pitfall #31);
-source-dies-mid-transfer / unrecoverable-counterpart policy → **DECIDED** handshake-or-discard, no force-resolve,
-no admin recovery console (§A, TRANSFER_2PC.md core invariant).
+*Resolved since first draft:* cargo-pod `awaiting_launch` loss → **fixed** zero-loss (§D, Data fidelity); rename-mid-transfer →
+**confirmed a real duplication exploit + fixed** via `surface.index` identity, lint-enforced (§B Concurrency;
+Pitfall #31, identity = `surface.index`, never the mutable name); source-dies-mid-transfer /
+unrecoverable-counterpart policy → **DECIDED** handshake-or-discard, no force-resolve,
+no admin recovery console (§A Interruptions & durability; TRANSFER_2PC.md core invariant).
 
 ---
 
@@ -54,7 +55,8 @@ present with `kind="transfer"` (a TTL/admin release makes the platform live agai
 the delete request to that lock by a name-free `transfer_job_id` + `surface.index`. Worst case is a recoverable
 **dup**, never an unrecoverable deletion. Eliminating the mid-flight unlock entirely is **Phase 2**; both
 prerequisites are now done (canonical transfer id SHIPPED #62; destination-hold primitive PROVEN #63), and the
-decided failure contract is handshake-or-discard (see §A source-dies entry + TRANSFER_2PC.md core invariant).
+decided failure contract is handshake-or-discard (see the §A Interruptions & durability source-dies entry +
+TRANSFER_2PC.md core invariant).
 
 **Q: What if the source server is down for a while during my transfer?**
 A: ✅ The expiry clock is game-ticks, which do not advance while the host is down — downtime never causes a
@@ -95,7 +97,7 @@ A: ✅ Handled — and it was a real **duplication exploit**: renaming mid-trans
 check refuse the delete → source survived + dest committed = two copies. Renaming is a standard hub-GUI action
 (wiki-confirmed). The transfer/delete identity now keys on the STABLE `surface.index` (never the mutable name), so
 a rename is correctly IGNORED — same surface ⇒ same platform ⇒ the delete proceeds. Enforced by `lint:lua`
-(Pitfall #31). Fixed 2026-07-04.
+(Pitfall #31, identity = surface.index). Fixed 2026-07-04.
 
 **Q: What if a platform index is reused by a new platform during my transfer?**
 A: ✅ The delete/unlock identity keys on `surface.index` (recorded at lock time): a reused per-force index points
@@ -121,24 +123,24 @@ A: ✅ Marked `cleanup_failed`, the observability record is kept, and the source
 ## D. Data fidelity
 
 **Q: What if my belts are packed with items?**
-A: ✅ ~100% preserved via an atomic single-tick belt scan (±4–8 items is cosmetic redistribution, not loss —
-Pitfall #16).
+A: ✅ 100% preserved via an atomic single-tick belt scan (±4–8 items is cosmetic redistribution, not loss —
+Pitfall #16, the atomic belt scan).
 
 **Q: What if my inserters are holding items mid-swing?**
 A: ✅ Restored via a pre-gate inserter-only activation pass so the strict gate counts a complete state (Pitfall
-#28).
+#28, the gate must count a complete state).
 
 **Q: What if the destination force has less inserter-capacity research than mine?**
 A: ✅ Import replicates the source force's inserter bonuses onto the dest force (raise-only) so held items seat
-(Pitfall #29).
+(Pitfall #29, dest-force research governs hand capacity).
 
 **Q: What if I have fluids (chemical plants, foundries, fusion plasma)?**
-A: ✅ ~100% preserved; fluids injected **after** activation (the empirical inject-after-activation rule, Pitfall #17); fusion-output
+A: ✅ 100% preserved; fluids injected **after** activation (the empirical inject-after-activation rule, Pitfall #17); fusion-output
 rejections tracked and subtracted (#21); high-temperature fluids validated on thermal energy (#23).
 
 **Q: What if some entities fail to place on the destination (missing mod)?**
 A: ✅ Their items/fluids are tallied as failed-entity-loss and subtracted from expected totals so validation is
-not falsely failed; each failure is logged per entity (Pitfall #20).
+not falsely failed; each failure is logged per entity (Pitfall #20, failed-entity loss attribution).
 
 **Q: What if I have cargo pods waiting to launch (`awaiting_launch`) when I transfer?**
 A: ✅ Zero loss. `complete_cargo_pods` (during the lock step, before the export scan) recovers the pod's loaded
@@ -204,7 +206,7 @@ destinations, the platform just sits parked (no chooser).
 **Q: What if I click Transfer twice, or a passenger is aboard, at the gateway?**
 A: ✅ The chooser's Transfer is gated by `GatewayGuard`: the platform must be docked and NOT already in-flight, so
 a double-click can't double-fire. Passengers do not block — they're evacuated to Nauvis at the delete chokepoint
-(same as §E).
+(same answer as §E, Passengers — evacuation at the sole delete chokepoint).
 
 ---
 
