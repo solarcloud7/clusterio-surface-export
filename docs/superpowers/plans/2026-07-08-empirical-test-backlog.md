@@ -11,6 +11,17 @@
 >
 > ~68 deduplicated test items across 9 domains. Source keys: A#=code constant, B#=lab open item, plus pitfall #.
 
+## Progress
+- **2026-07-09 — GATE-5 CLOSED (LAB-A, commit `d666b23`, audited):** export-scan residual measured **0** for both
+  fluids and items across two full passes (spans 144–240 ticks). Stronger than absence: **freeze0 proved the
+  mechanism** — the production export lock disables fluid movers (pump `disabled_by_script`; per-segment contents
+  static; segment IDs stable) while belts keep moving and the atomic scan preserves exact totals. Export-side
+  justification for the gate tolerance bands is dead. Also advanced: **BELT-2** (belts keep moving under a
+  production lock — now `[empirical, 2.0.77]`) and **BELT-1** (the atomic-scan fix re-validated under moving
+  belts; the historical mechanism story remains historical). Scope: source-export path only — restore-side
+  exactness rests on the end-to-end fidelity suite. GATE-1/2/3/4 now have their calibration input → the #76/gate
+  hardening task.
+
 ## Priority summary (where to start)
 - **P0 — the source-delete gate is calibrated on guesses that the labs already contradict.** `STRICT_ABS=20` /
   `STRICT_PCT=1.5%` authorize irreversible source deletion, are asserted ("~3× the irreducible belt floor"), and
