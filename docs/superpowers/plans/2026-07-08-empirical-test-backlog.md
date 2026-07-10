@@ -12,6 +12,16 @@
 > ~68 deduplicated test items across 9 domains. Source keys: A#=code constant, B#=lab open item, plus pitfall #.
 
 ## Progress
+- **2026-07-10 — OWNER CONTRACT UPDATE + new rung R11 (fluid-lab) queued ahead of the #30 gate hardening:** the
+  fluid gate gets NO band and NO complete-loss floor — regular fluids are exact, black-or-white, same contract as
+  items (high-temp already solved via aggregate-by-name + write-rejection subtraction). The 2026-07-09
+  gate-hardening brief is ON HOLD. Root discovery: Pitfall #17's "gate must count a live world" is a WELDED
+  INFERENCE, not a measured fact — fluid-lab R2 already shows write-while-inactive works (machine buffer), and
+  `import-completion.lua`'s completion is one synchronous execution anyway (zero-tick window even today). **R11**
+  (`2026-07-10-fluid-r11-frozen-injection-rung-spec.md`) tests frozen-world injection at segment/line/real-path
+  scale; if it passes, the verdict collapses to a SINGLE frozen-world exact gate and the post-activation fluid
+  gate + discard/quarantine path is retired. Touches GATE-2/3/4 (fluid band items — now resolved by contract, not
+  calibration) and the FLUID-* mechanism rows.
 - **2026-07-09 — GATE-5 CLOSED (LAB-A, commit `d666b23`, audited):** export-scan residual measured **0** for both
   fluids and items across two full passes (spans 144–240 ticks). Stronger than absence: **freeze0 proved the
   mechanism** — the production export lock disables fluid movers (pump `disabled_by_script`; per-segment contents

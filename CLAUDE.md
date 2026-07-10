@@ -703,6 +703,18 @@ The order of post-processing steps in `complete_import_job()` is critical for co
 **Fix**: Always set `entity.frozen = false` and `entity.active = true` **before** writing to `entity.fluidbox[i]`. In the import flow, `FluidRestoration.restore()` must run **after** `ActiveStateRestoration.restore()`, not before.
 **Evidence status (corrected 2026-07-06)**: the FIX is **[empirical]** — the pre-activation injection loss was reproducible (~15%), the reorder eliminated it, regression-tested since. The Root-Cause MECHANISM above is **[hypothesis]** — the cited `FluidSystem::*` internals are closed-source and were never inspectable ("expert analysis" was an unverifiable consult, not verification). Fluid-lab tested the prediction set: isolated machine buffers survived deactivation/reactivation, `game.tick_paused` during destination-hold stage/read did not affect isolated machine buffers, and R7 could not construct any tested activatable entity whose own fluidbox exposed a non-nil segment ID on 2.0.77. The original destination-hold CI `delta=20` is **UNEXPLAINED** but eliminated by fixture/meter hardening; the instrumented probe self-diagnoses on recurrence. Build on the behavioral import rule, not the ghost-buffer mechanism. See [factorio-2.0-api-notes.md](docs/factorio-2.0-api-notes.md).
 **Key files**: `async-processor.lua` (`complete_import_job`), `fluid_restoration.lua`, `active_state_restoration.lua`
+**Scope correction (2026-07-10 — read before designing on this pitfall)**: the rule as stated OVER-GENERALIZES a
+historical fix. Fluid-lab **R2 [empirical, 2.0.77]**: writing fluid to an INACTIVE machine buffer reads back and
+survives reactivation; **R1**: an inactive buffer survives deactivate→+60 ticks→reactivate with no loss. Also
+`LuaEntity.frozen` is READ-ONLY at 2.0.77 (R1 measured the hard error) and the shipped code writes only
+`entity.active` (`frozen_states` is a misnomer — it maps original ACTIVE states) — the "set `entity.frozen =
+false`" fix text above matches neither engine nor code. What remains [empirical] is only the whole-pipeline
+fact: the OLD pre-activation injection order lost ~15% and the reorder fixed it; WHICH entity/topology class
+caused the loss was never isolated. Whether fluids can be injected into a fully FROZEN world (segments at scale,
+newly-created entities, the real import path) is the open R11 rung —
+`docs/superpowers/plans/2026-07-10-fluid-r11-frozen-injection-rung-spec.md`. If it passes, injection moves
+pre-gate, the transfer verdict becomes a SINGLE frozen-world exact gate (items+fluids), and the post-activation
+fluid gate is retired. Do NOT design new work on "the fluid gate must count a live world".
 
 ### 18. Entity Handlers Must Export Fluids for Crafting Machines
 **Symptom**: Assembling machines (chemical plants, oil refineries) and furnaces (foundries) lose all fluid on transfer, even though pipes/tanks preserve fluid correctly.

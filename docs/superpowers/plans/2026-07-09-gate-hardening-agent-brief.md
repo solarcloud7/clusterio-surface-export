@@ -1,5 +1,14 @@
 # Gate-hardening agent brief — tighten the fidelity gates on LAB-A's evidence (task #30)
 
+> **STATUS (2026-07-10): ON HOLD — fluid semantics below are SUPERSEDED. Do not execute this brief.**
+> The owner rejected the fluid BAND and complete-loss FLOOR: regular fluids are exact, black-or-white, no
+> exceptions — same contract as items. Fluid-lab R2 already refutes the universal "inject only after activation"
+> premise this brief's fluid section rests on. Run the R11 rung FIRST
+> (`2026-07-10-fluid-r11-frozen-injection-rung-spec.md`); if it passes, this brief is rewritten to a SINGLE
+> frozen-world exact gate (items+fluids, one verdict before activation) and the post-activation fluid gate is
+> retired. The item-gate exactness section (0/0) remains directionally valid but will be re-issued as part of
+> the rewrite.
+
 > You are the **implementer** on the `codex/composite-transfer-verdict` branch (PR #76). The orchestrator audits
 > and the owner merges — **stop for audit before any merge.** This is a DATA-INTEGRITY change on the
 > source-delete spine: `/di-change` applies in full; any DI-lint firing = escalate, never self-approve an allow.
@@ -15,9 +24,10 @@ proven measurement artifact; real loss is a bug; a complete-loss floor lands on 
 ## Target gate semantics — items and fluids are NOT symmetric
 
 ### Item gate (`validate_fluid_counts`' sibling strict item path, `module/validators/transfer-validation.lua`)
-The item gate counts a **frozen** world (pre-activation, machines deactivated, held items pre-restored, belts
-placed single-tick; failed-entity losses already subtracted from expected). No artifact source remains → the
-contract licenses **exact**:
+The item gate counts a **frozen** world (pre-activation so machines can't craft during the count — Pitfall #15,
+entity activation before validation; held items pre-restored by the synchronous pass — Pitfall #28, the gate must
+count a complete state; belts placed single-tick; failed-entity losses already subtracted from expected —
+Pitfall #20, failed-entity loss attribution). No artifact source remains → the contract licenses **exact**:
 - **Complete-loss floor:** any item type with `expected > 0` and `actual == 0` → FAIL, unconditionally.
 - **Band:** `STRICT_ABS 20 → 0`, `STRICT_PCT 0.015 → 0` (exact, symmetric — a gain is as anomalous as a loss).
 - **Validation duty:** the full fidelity suite + ≥5 real transfers of the 1359-entity platform must run green
