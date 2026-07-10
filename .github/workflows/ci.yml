@@ -31,6 +31,17 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v6
+        with:
+          # Full history: the commit-label guard diffs origin/<base>..HEAD per commit.
+          fetch-depth: 0
+
+      # Commit labels are audit boundaries — a docs(...) commit must not carry code (twice-paid
+      # incident: a mislabeled rider evades review attention). PR-only: push-to-main ranges are empty.
+      - name: Commit-label audit boundaries
+        if: github.event_name == 'pull_request'
+        env:
+          BASE_REF: ${{ github.base_ref }}
+        run: node ${{ env.PLUGIN_DIR }}/scripts/lint-commit-labels.mjs
 
       - name: Setup Node.js
         uses: actions/setup-node@v6
