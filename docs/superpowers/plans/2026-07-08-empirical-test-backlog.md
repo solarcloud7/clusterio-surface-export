@@ -12,6 +12,16 @@
 > ~68 deduplicated test items across 9 domains. Source keys: A#=code constant, B#=lab open item, plus pitfall #.
 
 ## Progress
+- **2026-07-10 — R11 PASSED (commit `e8c7bbe`, audited):** frozen-world fluid injection conserves EXACTLY on
+  2.0.77 — segment write-while-off (R11a), full inactive mini-line (R11b), newly-created pre-first-activation
+  entities with no toggle fallback needed (R11c), and the shipped `FluidRestoration.restore()` invoked frozen on
+  the 1,359-entity clone via a one-shot name-scoped seam (R11d: max per-name |delta| = 0 at both the frozen and
+  same-tick post-activation censuses, all 8 names; fusion 100 raw / 20 engine-rejected / 80 restored exactly).
+  Two acceptance passes, seven-field zero-leftover both instances. The historical ~15% pre-activation loss did
+  NOT reproduce in any class. **Decision contract fires: the #30 rewrite is the SINGLE frozen-world exact gate**
+  (items+fluids, one verdict before activation; post-activation fluid gate + discard/quarantine path retired).
+  Closes FLUID-1/2; GATE-2/3/4 resolved by owner contract + this measurement. Companion audit:
+  `2026-07-10-welded-inference-sweep.md` (10 welded inferences catalogued; stale texts queued into the #30 PR).
 - **2026-07-10 — OWNER CONTRACT UPDATE + new rung R11 (fluid-lab) queued ahead of the #30 gate hardening:** the
   fluid gate gets NO band and NO complete-loss floor — regular fluids are exact, black-or-white, same contract as
   items (high-temp already solved via aggregate-by-name + write-rejection subtraction). The 2026-07-09
