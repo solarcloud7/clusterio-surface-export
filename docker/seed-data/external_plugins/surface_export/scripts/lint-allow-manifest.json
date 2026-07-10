@@ -1,0 +1,26 @@
+{
+  "_comment": "Every *:allow escape-hatch annotation on a data-integrity lint guard (lint-lua:allow, pcall:allow, lint-webpack-cache:allow, lint-test-grounding:allow, lint-doc-refs:allow) MUST be enumerated here, or lint-allow-manifest.mjs FAILS. Adding an entry is a deliberate, reviewable act requiring ORCHESTRATOR/OWNER approval BEFORE the PR opens (memory: lint-allows-are-escalations; the PR #75 incident). The manifest must match reality EXACTLY — a removed annotation must also be removed here, in the same reviewed commit. Counts are per (file, marker).",
+  "entries": [
+    {
+      "file": "docker/seed-data/external_plugins/surface_export/module/core/import-completion.lua",
+      "marker": "pcall:allow",
+      "count": 1,
+      "reason": "err_pause and err_loc are both logged jointly in the else branch below — not a swallow",
+      "approver": "baseline (pre-manifest, audited 2026-07-07)"
+    },
+    {
+      "file": "docker/seed-data/external_plugins/surface_export/module/interfaces/remote/transfer-lock-selftest.lua",
+      "marker": "pcall:allow",
+      "count": 1,
+      "reason": "selftest must restore SurfaceLock/storage before reporting the exception",
+      "approver": "baseline (pre-manifest, audited 2026-07-07)"
+    },
+    {
+      "file": "docker/seed-data/external_plugins/surface_export/module/utils/surface-lock.lua",
+      "marker": "lint-lua:allow",
+      "count": 2,
+      "reason": "(1) unlock tripwire compares STORED snapshots, not live platform.name — not rename-vulnerable; (2) sanctioned name→index resolver at the ADMIN tooling boundary, fails loud on ambiguity — the owner-approved exception to identity=surface.index",
+      "approver": "baseline (pre-manifest, audited 2026-07-07; both re-verified in the #60/#61 review cycle)"
+    }
+  ]
+}
