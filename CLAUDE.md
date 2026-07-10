@@ -654,7 +654,7 @@ Plugins are the primary extension mechanism. See [Clusterio plugin docs](https:/
 
 ## Known Factorio API Limitations (Transfer Fidelity)
 
-Transfers preserve **100% of items** and **~100% of fluids**. The durable Factorio 2.0 API facts behind
+Transfers require **100% of restorable items and fluids** at the frozen-world exact gate. The durable Factorio 2.0 API facts behind
 this — fluid segments, the fluidbox proxy/capacity behavior, segment-ID dedup, fusion-reactor output,
 inventory resize/override, the epsilon rule — live in
 [factorio-2.0-api-notes.md](docs/factorio-2.0-api-notes.md). Read that before touching fluid or inventory
@@ -666,9 +666,9 @@ Project invariants that still bite if changed:
   beacons first, then everything else. See [Import Phase Ordering](#import-phase-ordering-critical).
 - **Historical belt restore loss (formerly described as ±4–8 cosmetic drift).** The residual was real
   restore-time loss, not harmless redistribution. Belt restoration was fixed to exact physical totals; the
-  atomic single-tick export scan prevents a rolling source snapshot (Pitfall #16).
-- **Fluid restoration ordering is historical, not engine law.** The shipped pipeline still injects after activation, but R11 proved the same restoration code conserves exactly in a frozen world; task #30 owns any production reorder (Pitfall #17). **Fusion-reactor output rejects writes** (Pitfall #21). Subtract
-  rejected writes from expected counts. Validation is now composite: the pre-activation item gate is not success by itself; post-activation fluid validation composes the final verdict and uses the same reconciliation tolerances.
+  atomic single-tick export scan prevents a rolling source snapshot (Pitfall #16, atomic belt scan).
+- **Fluid restoration runs in the frozen world before the exact gate.** R11 proved the shipped restoration code conserves exactly there (Pitfall #17, historical pre-activation fluid loss). **Fusion-reactor output rejects writes** (Pitfall #21, fusion outputs are engine-managed). Subtract
+  only physically rejected writes from expected counts; capacity drops remain gate failures. One pre-activation verdict covers exact items and aggregate-by-name fluids (`epsilon=1e-6`).
 - **Entity inventory size** isn't changed by `LuaInventory.resize` (custom inventories only).
   `LuaEntity.set_inventory_size_override` overrides **container** sizes but is a **no-op for crafter inputs**
   at 2.0.76 (verified) — so it is *not* a lever for overloaded-crafter-input loss (already handled by the
@@ -684,23 +684,23 @@ The order of post-processing steps in `complete_import_job()` is critical for co
 4. Beacon activation      — activate beacons so crafting_speed bonus propagates instantly
 5. Inventories (2 passes) — Pass 1: beacons (populates beacon_modules, crafting_speed updates immediately)
                             Pass 2: everything else (set_stack cap now reflects beacon-boosted cs)
-6. Validation             — pre-activation check (items only, fluids skipped)
-7. Activation             — ActiveStateRestoration.restore() unfreezes all remaining entities
-8. Fluid restoration      — currently after activation; R11 proved frozen-world restoration exact
-9. Loss analysis          — post-activation counting for accurate transaction log
-10. Fluid gate             — validates post-activation fluids; composes final success + failedStage
+6. Held-item completion   — inserter-only synchronous pass; no tick advances
+7. Fluid restoration      — inject while platform remains paused and entities deactivated
+8. Exact validation       — one immutable verdict: exact items + by-name fluids
+9. Activation             — only after the verdict passes; then gateway park if requested
+10. Loss analysis         — post-activation reporting under `postActivationReport`; never changes verdict
 ```
 
 **Why this order matters**:
 - Step 4 (beacon activation): beacons are kept active during entity creation (never deactivated). Phase 2 explicitly activates them and fills their energy buffer. This is necessary but not sufficient — beacons need their **module inventory populated** before `crafting_speed` reflects the beacon bonus.
 - Step 5 (inventories, 2 passes): The two-pass approach is critical. `crafting_speed` on a machine updates **immediately** when its nearby beacon's `beacon_modules` inventory is populated — no tick delay, no power required. Pass 1 populates all beacon modules. Pass 2 then restores crafter inputs with `set_stack()`, which uses the now-correct beacon-boosted cap (e.g. cs=17.375 → 12 slots instead of cs=2.5 → 7 slots). Machines remain deactivated throughout — they cannot consume items.
-- Steps 7→8 reflect the current production order, not a current-pin engine requirement. The old pipeline lost ~15% pre-activation, but R11 later measured exact frozen-world restoration at scale; task #30 owns the gated reorder. Step 6 currently skips fluid validation because fluids have not yet been injected; the final verdict is composed after Step 9 by the post-activation fluid gate.
+- Steps 6→8 are one synchronous frozen-world completion and verdict pass. The old pipeline's ~15% pre-activation loss was historical and class-unisolated; R11 measured the current restoration path exact before activation, and five consecutive 1,359-entity transfers grounded the production ordering. A failure banks an always-on black box, then discards the destination unless the debug-gated preserve flag is explicitly armed.
 
 ### 17. Historical Pre-Activation Fluid Loss (Class Unisolated)
 **Measured history**: an old import pipeline lost ~15% when fluids were injected pre-activation; moving injection after activation eliminated that whole-pipeline loss. The responsible entity/topology class was never isolated.
 **Current-pin result**: fluid-lab R11 [empirical, 2.0.77] ran the shipped `FluidRestoration.restore()` in a paused, deactivated destination world, including two real 1,359-entity transfers. Frozen and same-tick post-activation censuses conserved all eight fluid names exactly (`max |delta| = 0`, comparison epsilon `1e-6`), after subtracting only engine-rejected fusion output writes.
 **Historical hypothesis, not law**: the old "detached ghost buffer overwritten on segment merge" explanation cited closed-source internals and its constructible predictions did not reproduce. Tested activatable entities expose no non-nil segment ID on their own fluidboxes at 2.0.77; `LuaEntity.frozen` is read-only. Keep the old loss as an honest historical fact, not as proof that current restoration requires a live world.
-**Production state**: R11 was measurement-only; the shipped post-activation ordering remains until task #30 changes it under its own review gate.
+**Production state**: the production path now restores fluids in the paused/deactivated world, applies the single exact gate, and activates only after success. Post-activation fluid counts are telemetry only.
 **Key files**: `async-processor.lua` (`complete_import_job`), `fluid_restoration.lua`, `active_state_restoration.lua`
 
 ### 18. Entity Handlers Must Export Fluids for Crafting Machines
@@ -825,9 +825,9 @@ validation after activation → craft-gain false failures; (2) subtract *predict
 **Fix (approach #4 — fix the clock)**: held items only need the *inserter* active, not the machines. A
 pre-gate pass (`ActiveStateRestoration.restore_held_items_only`) briefly toggles each inserter active →
 `set_stack` → back, in one synchronous pass (no engine tick → no swing, no crafting), so the gate counts a
-**complete** physical reality with every machine still deactivated. Then `validate_import(..., {strict=true})`
-tightens the per-item tolerance to `max(20, 1.5%·expected)` (≈3× the irreducible belt-restoration floor).
-**Rule**: a gate must measure a COMPLETE state, never a mid-process one — fix the timing, not the number. The current transfer verdict is composite: the item gate runs pre-activation, then the fluid gate runs post-activation and owns `failedStage=fluids`.
+**complete** physical reality with every machine still deactivated. Fluid restoration then completes the same
+frozen world and `validate_import(..., {strict=true})` requires exact per-key items and exact aggregate-by-name fluids.
+**Rule**: a gate must measure a COMPLETE state, never a mid-process one — fix the timing, not the number. The current transfer verdict is one immutable pre-activation result; `failedStage` names the mismatched category (`items` or `fluids`).
 **Mechanical guard**: `tests/integration/gate-detects-loss` injects a real shortfall (`test_force_item_loss`)
 and asserts the strict gate FAILS + the source is preserved — so reverting to a loose gate goes RED in CI.
 **Clock evidence (2026-07-07, 2.0.77)**: `tests/no-tick-sync-lab/run-pr0b.mjs` proves the synchronous pass

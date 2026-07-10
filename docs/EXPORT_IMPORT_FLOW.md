@@ -163,13 +163,13 @@ sends it to Lua through the same `import_platform_chunk` interface.
 
 The import job runs across multiple ticks. The post-placement phase ordering is
 critical (hub inventories, belt items, entity state, beacon activation, two-pass
-inventory restoration, validation, activation, fluid restoration, loss analysis) and
+inventory restoration, held-item completion, frozen fluid restoration, exact validation, activation, reporting) and
 is documented in CLAUDE.md under "Import Phase Ordering (Critical)". On completion
 the mod emits `surface_export_import_complete` with validation and import metrics.
 
-For transfers, `instance.ts` → `handleImportCompleteValidation` reads the validation
-result via `remote.call("surface_export", "get_validation_result_json",
-platform_name)` and sends a **`TransferValidationEvent`** to the controller. For
+For transfers, `instance.ts` → `handleImportCompleteValidation` consumes the validation
+result carried by the Lua completion event (no name-keyed refetch) and sends a
+**`TransferValidationEvent`** to the controller. For
 non-transfer imports (those carrying an `operation_id`) it sends an
 `ImportOperationCompleteEvent` instead.
 
