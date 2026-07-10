@@ -124,6 +124,28 @@ craft-window read effect), never for real material loss. Real loss is a BUG to f
 4. Accepted from the implementer's plan: section order `control → freeze0 → fluidflow → beltflow` (stricter
    controls-first than the brief); LAB-A-prefix-only deletion of `storage.platform_exports` records.
 
+## Adjudication 3 (2026-07-09): the flowing-fixture pump stall
+The static control PASSED exactly (146-tick export, fluid residual 0, item residual 0 — instrument proven). The
+flowing prerequisite failed: a powered, `active=true` pump moved nothing between two connected segments across
+three grounded layouts. Ruling — **no fourth layout guess; one DIAGNOSTIC-ONLY pass, then one evidence-grounded
+change**:
+1. **Read `pump.status`** and map it against `defines.entity_status` (`working` / `no_power` /
+   `no_fluid_source` / `disabled` / …) — the engine names the cause directly; this read was missing from all
+   three attempts.
+2. **Read `prototypes.entity["pump"].surface_conditions`** vs the platform surface's properties — Space Age can
+   prototype-restrict an entity from FUNCTIONING on platforms even when script-placed (matches the observed
+   symptom exactly). Also read the live `pump.fluidbox.get_pipe_connections(1)` (flow direction + target
+   positions) and assert direction against `defines.direction.east` **by the define, not a numeric literal**
+   (2.0 uses 16-way directions; a hardcoded old-style value silently snaps).
+3. Then **at most ONE change**, dictated by those reads. If the pump is surface-restricted or still stalls:
+   **sanctioned fallback mechanism** — machine-driven flow via the fluid-lab R9-proven fixture (chemical plant +
+   `heavy-oil-cracking`, buffer-energized; proven on this cluster at 2.0.77). Scientifically valid for LAB-A:
+   crafting-driven fluid movement during the scan IS the real-world drift condition (the fluid craft-window);
+   the pump was merely the cleaner conserved-total isolate. If the fallback also fails → full stop, escalate.
+4. **Bank the evidence now**: append the NOTEBOOK with the control-exact result + the three-layout failure
+   ledger (honest negatives seed this lab's TRIED-&-SETTLED table). No api-notes promotion and no commit until
+   the flowing arm concludes.
+
 ## Discipline / done criteria
 Controls-first (static must read exact before believing any flowing number) · force multi-tick + confirm it ·
 tick-stamped readings · **two clean passes** · `--reset` two-instance zero-leftover · append NOTEBOOK incl.
