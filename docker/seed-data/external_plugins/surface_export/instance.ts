@@ -715,9 +715,9 @@ export class InstancePlugin extends BaseInstancePlugin {
 		}
 
 		try {
-			// The Lua import-completion payload is the source of truth for the composite verdict.
+			// The Lua import-completion payload is the source of truth for the single frozen-world verdict.
 			// Do not re-fetch by platform name or re-derive success here: platform names are mutable,
-			// and Lua owns the item + post-activation fluid gate.
+			// and Lua owns the exact item + fluid gate.
 			let validation: messages.ValidationResult = {
 				itemCountMatch: false,
 				fluidCountMatch: false,
@@ -735,8 +735,9 @@ export class InstancePlugin extends BaseInstancePlugin {
 			}
 			const validationSaysSuccess = validation.itemCountMatch && validation.fluidCountMatch;
 			const success = hasValidationPayload
-				? (typeof data.success === "boolean" ? data.success === true && validationSaysSuccess : validationSaysSuccess)
-				: false;
+				&& typeof data.success === "boolean"
+				&& data.success === true
+				&& validationSaysSuccess;
 
 			let normalizedMetrics: Record<string, unknown> | undefined;
 			if (metrics && typeof metrics === "object") {

@@ -10,7 +10,7 @@ test("runner exercises the real strict-gate helper path", () => {
 	assert.match(selftest, /restore_held_items_only/);
 	assert.match(selftest, /TransferValidation\.validate_import/);
 	assert.match(selftest, /strict = true/);
-	assert.match(selftest, /skip_fluid_validation = true/);
+	assert.doesNotMatch(selftest, /skip_fluid_validation/);
 });
 
 test("runner records tick, crafting-progress, and held-item meters", () => {

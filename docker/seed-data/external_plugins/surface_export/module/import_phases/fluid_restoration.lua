@@ -217,7 +217,14 @@ function FluidRestoration.restore(entities_to_create, entity_map)
     log(string.format("[Import] Fluid restoration complete. Processed %d segments and %d isolated entities.", 
         table_size(segments_to_fill), #isolated_fluids))
     
-    return { count = total_restored, segments = success_count, isolated = isolated_count, segment_temps = segment_temps, write_rejected = write_rejected }
+    return {
+        count = total_restored,
+        segments = success_count,
+        isolated = isolated_count,
+        segment_temps = segment_temps,
+        write_rejected = write_rejected,
+        dropped_fluids = dropped_fluids,
+    }
 end
 
 return FluidRestoration

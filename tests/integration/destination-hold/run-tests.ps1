@@ -170,12 +170,84 @@ function Wait-ForRconReady {
     throw "RCON not ready on $Instance after ${TimeoutSec}s: $lastError"
 }
 
+function Get-SaveState {
+    param(
+        [Parameter(Mandatory=$true)][string]$Container,
+        [Parameter(Mandatory=$true)][string]$Instance,
+        [Parameter(Mandatory=$true)][string]$SaveName
+    )
+    $savePath = "/clusterio/data/instances/$Instance/saves/$SaveName"
+    $tmpPath = $savePath -replace '\.zip$', '.tmp.zip'
+    $stat = ([string](docker exec $Container stat -c '%Y|%s|%i' $savePath 2>$null | Out-String)).Trim()
+    if ($LASTEXITCODE -ne 0 -or $stat -notmatch '^(\d+)\|(\d+)\|(\d+)$') {
+        throw "Could not stat primary save $savePath in $Container"
+    }
+    $saved_at = [long]$Matches[1]
+    $save_size = [long]$Matches[2]
+    $save_inode = [long]$Matches[3]
+    docker exec $Container sh -c "test -e '$tmpPath'" 2>$null | Out-Null
+    return [pscustomobject]@{
+        saved_at = $saved_at
+        size = $save_size
+        inode = $save_inode
+        tmp_exists = ($LASTEXITCODE -eq 0)
+        save_path = $savePath
+        tmp_path = $tmpPath
+    }
+}
+
+function Get-ActiveSaveName {
+    param(
+        [Parameter(Mandatory=$true)][string]$Container,
+        [Parameter(Mandatory=$true)][string]$Instance
+    )
+    $logPath = "/clusterio/data/instances/$Instance/factorio-current.log"
+    $argsLine = ([string](docker exec $Container grep -m 1 -- '--start-server' $logPath 2>$null | Out-String)).Trim()
+    if ($LASTEXITCODE -ne 0 -or $argsLine -notmatch '/saves/([^\"]+\.zip)\"') {
+        throw "Could not determine active save from $logPath"
+    }
+    return $Matches[1]
+}
+
+function Wait-ForCompletedSave {
+    param(
+        [Parameter(Mandatory=$true)][string]$Container,
+        [Parameter(Mandatory=$true)][string]$Instance,
+        [Parameter(Mandatory=$true)][string]$SaveName,
+        [Parameter(Mandatory=$true)][long]$BeforeTimestamp,
+        [Parameter(Mandatory=$true)][long]$BeforeInode,
+        [int]$TimeoutSec = 60
+    )
+    $deadline = (Get-Date).AddSeconds($TimeoutSec)
+    $last = $null
+    while ((Get-Date) -lt $deadline) {
+        $last = Get-SaveState -Container $Container -Instance $Instance -SaveName $SaveName
+        if ((-not $last.tmp_exists) -and ($last.saved_at -gt $BeforeTimestamp) `
+            -and ($last.inode -ne $BeforeInode) -and ($last.size -gt 0)) {
+            return $last
+        }
+        Start-Sleep -Milliseconds 250
+    }
+    throw "Save did not complete its atomic rename within ${TimeoutSec}s: $($last | ConvertTo-Json -Compress)"
+}
+
 function Invoke-ServerSave {
-    param([Parameter(Mandatory=$true)][string]$Instance)
+    param(
+        [Parameter(Mandatory=$true)][string]$Instance,
+        [Parameter(Mandatory=$true)][string]$Container
+    )
     try {
+        $SaveName = Get-ActiveSaveName -Container $Container -Instance $Instance
+        $before = Get-SaveState -Container $Container -Instance $Instance -SaveName $SaveName
         $raw = Invoke-ScopedRcon -Instance $Instance -Command "/server-save"
         $ok = ($raw -match '(?i)Saving the map|saved') -and ($raw -notmatch '(?i)session closed|error sending request|failed|denied')
-        return [pscustomobject]@{ Ok = $ok; Message = $raw }
+        if (-not $ok) { return [pscustomobject]@{ Ok = $false; Message = $raw } }
+        $completed = Wait-ForCompletedSave -Container $Container -Instance $Instance -SaveName $SaveName `
+            -BeforeTimestamp $before.saved_at -BeforeInode $before.inode
+        return [pscustomobject]@{
+            Ok = $true
+            Message = "$raw; completed=$($completed.save_path) timestamp=$($completed.saved_at) size=$($completed.size)"
+        }
     } catch {
         return [pscustomobject]@{ Ok = $false; Message = $_.Exception.Message }
     }
@@ -543,8 +615,8 @@ try {
         Add-Result "dh-staged-fidelity" "physical totals and behavior stay unchanged while held for 600 ticks" $cmp600.Ok $cmp600.Message
 
         if (Test-Section "restart") {
-            $save = Invoke-ServerSave -Instance $instance
-            Add-Result "dh-server-save-ok" "server save command completed before restart" $save.Ok $save.Message
+            $save = Invoke-ServerSave -Instance $instance -Container $container
+            Add-Result "dh-server-save-ok" "server save atomic rename completed before restart" $save.Ok $save.Message
             if (-not $save.Ok) { throw "server save failed before restart: $($save.Message)" }
             Wait-ForRconReady -Instance $instance -TimeoutSec 30 | Out-Null
             Write-Status "Restarting $container mid-hold..." -Type info

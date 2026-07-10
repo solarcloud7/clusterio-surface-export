@@ -47,16 +47,14 @@ local function configure(config)
     storage.surface_export_config.test_force_item_loss = config.test_force_item_loss
   end
   if config.test_force_fluid_loss ~= nil then
-    -- Test-only: inflate expected fluid count on the NEXT transfer AFTER fluid restoration/loss-analysis
-    -- but BEFORE the post-activation fluid gate. Non-destructive: predicts extra fluid instead of
-    -- removing fluid, proving the composite gate fails and discards the activated destination safely.
+    -- Test-only: inflate expected fluid count after frozen restoration but before the single gate.
     storage.surface_export_config.test_force_fluid_loss = config.test_force_fluid_loss
   end
-  if config.test_measure_frozen_fluid_injection ~= nil then
-    -- Test-only: on the next transfer whose platform name matches exactly, restore fluids while
-    -- the destination is still paused/deactivated and attach frozen/post-activation censuses to
-    -- the debug result. A unique name scopes a leaked flag away from unrelated transfers.
-    storage.surface_export_config.test_measure_frozen_fluid_injection = config.test_measure_frozen_fluid_injection
+  if config.preserve_failed_destination ~= nil then
+    -- Debug-only escape hatch. Normal failed transfers always bank evidence and discard the destination.
+    local debug_enabled = config.debug_mode == true or storage.surface_export_config.debug_mode == true
+    storage.surface_export_config.preserve_failed_destination = debug_enabled
+      and config.preserve_failed_destination == true or false
   end
   if config.gateways_json then
     -- Replace the whole gateway link map (controller is the source of truth). Decoded from JSON,

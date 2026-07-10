@@ -55,7 +55,7 @@ Write-Host "  host-$SourceHost -> host-$DestHost   clone: $clone" -ForegroundCol
 Write-Host ""
 
 $failed = 0
-$TOTAL_ASSERTIONS = 5
+$TOTAL_ASSERTIONS = 7
 
 # 1. Clone a disposable platform on the source.
 Write-Status "Cloning '$SourcePlatform' -> '$clone'..." -Type info
@@ -69,9 +69,45 @@ $idx = Get-PlatformIndex -Instance $srcInstance -PlatformName $clone
 if (-not $idx) { Write-Status "Clone did not materialize" -Type error; exit 1 }
 Write-Status "Clone ready (index $idx)" -Type success
 
+# Add a deterministic entity carrying both an inventory item and fluid, so this probe grounds both
+# failed-entity adjustment axes in one transfer.
+$fixture = Invoke-Lua -Instance $srcInstance -ReturnJson -Code @"
+local p=game.forces.player.platforms[$idx]; local s=p and p.surface
+local out={created=false,item=0,fluid=0,x=0,y=0}
+if s then
+    p.force.recipes['heavy-oil-cracking'].enabled=true
+  for _,tile in ipairs(s.find_tiles_filtered({name='space-platform-foundation'})) do
+    local pos=tile.position
+    if s.can_place_entity({name='chemical-plant',position=pos,force=p.force}) then
+      local e=s.create_entity({name='chemical-plant',position=pos,force=p.force})
+      if e then
+        e.set_recipe('heavy-oil-cracking')
+        local inv=e.get_module_inventory()
+        out.item=inv and inv.insert({name='speed-module',count=1}) or 0
+        for i=1,#e.fluidbox do
+          local ok=pcall(function() e.fluidbox[i]={name='heavy-oil',amount=20,temperature=25} end)
+          local f=e.fluidbox[i]
+          if ok and f and f.amount>0 then out.fluid=f.amount; break end
+        end
+        out.created=true
+        out.x=e.position.x
+        out.y=e.position.y
+        break
+      end
+    end
+  end
+end
+rcon.print(helpers.table_to_json(out))
+"@
+if (-not $fixture.created -or [int]$fixture.item -lt 1 -or [double]$fixture.fluid -le 0) {
+    throw "Could not build deterministic inventory+fluid failed-entity fixture"
+}
+Write-Status "Fixture ready (items=$($fixture.item), fluid=$($fixture.fluid))" -Type success
+
 # 2. Arm the one-shot entity-failure hook on the DESTINATION (where import + validation run).
-Invoke-Lua -Instance $dstInstance -Code "remote.call('surface_export','configure',{debug_mode=true, test_force_entity_failure=true}) rcon.print('armed')" | Out-Null
-Write-Status "Armed test_force_entity_failure on the destination" -Type info
+$hookMode = "inventory_and_fluid_at:$($fixture.x):$($fixture.y)"
+Invoke-Lua -Instance $dstInstance -Code "remote.call('surface_export','configure',{debug_mode=true, test_force_entity_failure='$hookMode'}) rcon.print('armed')" | Out-Null
+Write-Status "Armed inventory+fluid test_force_entity_failure on the destination" -Type info
 
 # 3. Baseline the destination factorio log so we can scan ONLY the import window.
 $baseLines = [int]((docker exec $dstContainer sh -c "wc -l < $dstLog 2>/dev/null").Trim())
@@ -102,15 +138,23 @@ $newLogText = (docker exec $dstContainer sh -c "tail -n +$($baseLines + 1) $dstL
 $fel         = Get-SafeProperty (Get-SafeProperty $resultData "validation_result") "failedEntityLosses"
 $entityCount = [int](Get-SafeProperty $fel "entity_count")
 $totalItems  = [int](Get-SafeProperty $fel "total_items")
+$totalFluids = [double](Get-SafeProperty $fel "total_fluids")
 $valSuccess  = Get-SafeProperty $resultData "validation_success"
 
 # A) DIRECT witness the forced-failure hook ran. The 'test' platform also has an incidental 0-item
 #    natural failure (an item-on-ground / item-entity), so entity_count >= 1 alone CANNOT prove OUR
 #    hook fired — witness the [TEST HOOK] log line itself.
-if ($newLogText -match "TEST HOOK.*Forcing placement failure for inventory-bearing entity") {
+if ($newLogText -match "TEST HOOK.*Forcing placement failure for inventory_and_fluid_at:.* entity") {
     Write-TestResult -TestId "fel-hook-fired" -TestName "Forced-failure hook ran (witnessed in destination log)" -Status "passed"
 } else {
     Write-TestResult -TestId "fel-hook-fired" -TestName "Forced-failure hook ran" -Status "failed" -Message "Did not find the '[TEST HOOK] Forcing placement failure' log line — the hook never matched an inventory-bearing entity"
+    $failed++
+}
+
+if ($totalFluids -gt 0) {
+    Write-TestResult -TestId "fel-fluid-attributed" -TestName "Failed-entity fluids attributed ($totalFluids fluid)" -Status "passed"
+} else {
+    Write-TestResult -TestId "fel-fluid-attributed" -TestName "Failed-entity fluids attributed" -Status "failed" -Message "failedEntityLosses total_fluids=$totalFluids"
     $failed++
 }
 
@@ -123,10 +167,18 @@ if ($entityCount -ge 1 -and $totalItems -gt 0) {
 }
 
 # C) Direct witness: the expected-count subtraction route executed (don't infer it).
-if ($newLogText -match "Adjusted expected totals: subtracted \d+ items.*failed entities") {
-    Write-TestResult -TestId "fel-expected-adjusted" -TestName "Expected totals adjusted to exclude failed-entity items (subtraction ran)" -Status "passed"
+if ($newLogText -match "Adjusted expected totals for \d+ failed entities: -\d+ items, -[1-9][\d.]* fluids") {
+    Write-TestResult -TestId "fel-expected-adjusted" -TestName "Expected totals adjusted for failed-entity items and fluids" -Status "passed"
 } else {
     Write-TestResult -TestId "fel-expected-adjusted" -TestName "Expected totals adjusted to exclude failed-entity items" -Status "failed" -Message "Missing the '[Import] Adjusted expected totals: subtracted ... failed entities' log line in the import window"
+    $failed++
+}
+
+$validation = Get-SafeProperty $resultData "validation_result"
+if ((Get-SafeProperty $validation "itemCountMatch") -eq $true -and (Get-SafeProperty $validation "fluidCountMatch") -eq $true) {
+    Write-TestResult -TestId "fel-both-gates-pass" -TestName "Exact item and fluid gates both pass after attribution" -Status "passed"
+} else {
+    Write-TestResult -TestId "fel-both-gates-pass" -TestName "Exact item and fluid gates both pass after attribution" -Status "failed" -Message "itemCountMatch=$(Get-SafeProperty $validation 'itemCountMatch') fluidCountMatch=$(Get-SafeProperty $validation 'fluidCountMatch')"
     $failed++
 }
 

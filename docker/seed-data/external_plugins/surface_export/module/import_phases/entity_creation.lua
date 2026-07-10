@@ -13,6 +13,15 @@ local function carries_inventory_items(entity_data)
   return false
 end
 
+local function carries_fluids(entity_data)
+  local sd = entity_data.specific_data
+  if not sd or not sd.fluids then return false end
+  for _, fluid in ipairs(sd.fluids) do
+    if (fluid.amount or 0) > 0 then return true end
+  end
+  return false
+end
+
 --- Process a batch of entity creation
 --- @param job table: The import job state
 --- @param get_batch_size function: Function to get current batch size
@@ -60,11 +69,27 @@ function EntityCreation.process_batch(job, get_batch_size, should_show_progress)
           -- subtraction so validation still passes (Pitfall #20). Set via
           -- configure({ test_force_entity_failure = true }).
           local _cfg = storage.surface_export_config
-          if _cfg and _cfg.debug_mode and _cfg.test_force_entity_failure
-              and entity_data.name ~= "space-platform-hub" and carries_inventory_items(entity_data) then
+          local failure_mode = _cfg and _cfg.test_force_entity_failure
+          local fluid_target = type(failure_mode) == "string"
+            and string.match(failure_mode, "^inventory_and_fluid:(.+)$") or nil
+          local fluid_x, fluid_y = nil, nil
+          if type(failure_mode) == "string" then
+            fluid_x, fluid_y = string.match(failure_mode, "^inventory_and_fluid_at:([^:]+):([^:]+)$")
+          end
+          local position_matches = fluid_x and fluid_y and entity_data.position
+            and math.abs((entity_data.position.x or entity_data.position[1]) - tonumber(fluid_x)) < 0.001
+            and math.abs((entity_data.position.y or entity_data.position[2]) - tonumber(fluid_y)) < 0.001
+          local matches_failure_mode = (fluid_target ~= nil
+            and entity_data.name == fluid_target
+            or position_matches)
+            and carries_inventory_items(entity_data) and carries_fluids(entity_data)
+            or failure_mode == true and carries_inventory_items(entity_data)
+          if _cfg and _cfg.debug_mode and matches_failure_mode
+              and entity_data.name ~= "space-platform-hub" then
             _cfg.test_force_entity_failure = nil  -- consume: applies to one entity only
             entity = nil
-            log(string.format("[TEST HOOK] Forcing placement failure for inventory-bearing entity '%s' to exercise failed-entity-loss attribution", entity_data.name))
+            log(string.format("[TEST HOOK] Forcing placement failure for %s entity '%s' to exercise failed-entity-loss attribution",
+              tostring(failure_mode), entity_data.name))
           else
             entity = Deserializer.create_entity(job.target_surface, entity_data)
           end
