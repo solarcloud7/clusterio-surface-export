@@ -20944,3 +20944,639 @@ and R11c conserved every fluid exactly without fallback; and R11d retained posit
 raw serialized values, exact frozen and post-activation comparisons, and the measured 100 raw / 20 rejected /
 80 restored fusion-plasma accounting. Both passes ended with both-instance seven-field zero-leftover evidence.
 These are the final acceptance passes for the committed runner.
+
+
+## 2026-07-10T06:09:39.563Z - R12 / LAB-B6 temperature grounding
+
+Predictions stated before execution: unequal-volume temperature merges volume-weighted with exact volume conservation; key stability is measured without presuming the 10,000C threshold.
+
+```json
+{
+  "script": "tests/fluid-lab/run-r12.mjs",
+  "started": "2026-07-10T06:09:28.869Z",
+  "sections": [
+    "b6a",
+    "b6b"
+  ],
+  "predictions": {
+    "b6a": "volume-weighted merge with exact volume conservation",
+    "b6b": "measure key stability without presuming 10,000C"
+  },
+  "rungs": {
+    "b6a": {
+      "success": true,
+      "prediction": "2000 steam at 416.25C; water control clamps and cannot carry the requested temperatures",
+      "water_control": [
+        {
+          "asked": 165,
+          "read": 100,
+          "tick": 429192
+        },
+        {
+          "asked": 500,
+          "read": 100,
+          "tick": 429192
+        }
+      ],
+      "before": {
+        "a": {
+          "label": "isolated A",
+          "tick": 429192,
+          "game_paused": false,
+          "direct": {
+            "name": "steam",
+            "amount": 500,
+            "temperature": 165
+          },
+          "segment_id": 409,
+          "segment_contents": {
+            "steam": 500
+          }
+        },
+        "b": {
+          "label": "isolated B",
+          "tick": 429192,
+          "game_paused": false,
+          "direct": {
+            "name": "steam",
+            "amount": 1500,
+            "temperature": 500
+          },
+          "segment_id": 410,
+          "segment_contents": {
+            "steam": 1500
+          }
+        }
+      },
+      "topology_same_tick": {
+        "label": "connector same tick",
+        "tick": 429192,
+        "game_paused": false,
+        "direct": {
+          "name": "steam",
+          "amount": 3.9292730689048767,
+          "temperature": 416.25
+        },
+        "segment_id": 409,
+        "segment_contents": {
+          "steam": 2000
+        }
+      },
+      "merged": {
+        "label": "merged after elapsed tick",
+        "tick": 429244,
+        "game_paused": false,
+        "direct": {
+          "name": "steam",
+          "amount": 3.9292730689048767,
+          "temperature": 416.25
+        },
+        "segment_id": 409,
+        "segment_contents": {
+          "steam": 2000
+        }
+      },
+      "verdict": "volume-weighted temperature and volume conservation confirmed"
+    },
+    "b6b": {
+      "success": true,
+      "prediction": "identify the first engine-read key instability or collision without assuming a threshold",
+      "rows": [
+        {
+          "asked": 9999,
+          "tick": 429283,
+          "game_paused": false,
+          "direct": {
+            "name": "steam",
+            "amount": 100,
+            "temperature": 5000
+          },
+          "key": "steam@5000.0C"
+        },
+        {
+          "asked": 10001,
+          "tick": 429283,
+          "game_paused": false,
+          "direct": {
+            "name": "steam",
+            "amount": 100,
+            "temperature": 5000
+          },
+          "key": "steam@5000.0C"
+        },
+        {
+          "asked": 100000,
+          "tick": 429283,
+          "game_paused": false,
+          "direct": {
+            "name": "steam",
+            "amount": 100,
+            "temperature": 5000
+          },
+          "key": "steam@5000.0C"
+        },
+        {
+          "asked": 1000000,
+          "tick": 429283,
+          "game_paused": false,
+          "direct": {
+            "name": "steam",
+            "amount": 100,
+            "temperature": 5000
+          },
+          "key": "steam@5000.0C"
+        },
+        {
+          "asked": 10000000,
+          "tick": 429283,
+          "game_paused": false,
+          "direct": {
+            "name": "steam",
+            "amount": 100,
+            "temperature": 5000
+          },
+          "key": "steam@5000.0C"
+        }
+      ],
+      "reread": {
+        "success": true,
+        "rows": [
+          {
+            "tick": 429401,
+            "asked_index": 1,
+            "direct": {
+              "name": "steam",
+              "amount": 100,
+              "temperature": 5000
+            },
+            "key": "steam@5000.0C"
+          },
+          {
+            "tick": 429401,
+            "asked_index": 2,
+            "direct": {
+              "name": "steam",
+              "amount": 100,
+              "temperature": 5000
+            },
+            "key": "steam@5000.0C"
+          },
+          {
+            "tick": 429401,
+            "asked_index": 3,
+            "direct": {
+              "name": "steam",
+              "amount": 100,
+              "temperature": 5000
+            },
+            "key": "steam@5000.0C"
+          },
+          {
+            "tick": 429401,
+            "asked_index": 4,
+            "direct": {
+              "name": "steam",
+              "amount": 100,
+              "temperature": 5000
+            },
+            "key": "steam@5000.0C"
+          },
+          {
+            "tick": 429401,
+            "asked_index": 5,
+            "direct": {
+              "name": "steam",
+              "amount": 100,
+              "temperature": 5000
+            },
+            "key": "steam@5000.0C"
+          }
+        ]
+      },
+      "stable": true,
+      "collisions": [
+        "steam@5000.0C",
+        "steam@5000.0C",
+        "steam@5000.0C",
+        "steam@5000.0C"
+      ],
+      "verdict": "keys stable through 5000C at %.1f formatting"
+    }
+  },
+  "errors": [],
+  "initial_reset": {
+    "cleanup": {
+      "source": {
+        "success": true,
+        "deleted": {},
+        "tick": 428934
+      },
+      "destination": {
+        "success": true,
+        "deleted": {},
+        "tick": 373868
+      }
+    },
+    "zero": {
+      "source": {
+        "success": true,
+        "tick": 429034,
+        "zero_surfaces": true,
+        "surfaces": {},
+        "zero_storage": true,
+        "game_paused": false,
+        "destination_holds": 0,
+        "locked_platforms": 0,
+        "committed_source_transfer_tombstones": 0,
+        "lab_platform_exports": 0
+      },
+      "destination": {
+        "success": true,
+        "tick": 373967,
+        "zero_surfaces": true,
+        "surfaces": {},
+        "zero_storage": true,
+        "game_paused": false,
+        "destination_holds": 0,
+        "locked_platforms": 0,
+        "committed_source_transfer_tombstones": 0,
+        "lab_platform_exports": 0
+      }
+    },
+    "ok": true
+  },
+  "install": {
+    "source": {
+      "success": true,
+      "tick": 429114
+    },
+    "destination": {
+      "success": true,
+      "tick": 374047
+    }
+  },
+  "final_reset": {
+    "cleanup": {
+      "source": {
+        "success": true,
+        "deleted": [
+          "fluid-lab-r12-merge-1783663772929",
+          "fluid-lab-r12-keys-1783663774348"
+        ],
+        "tick": 429440
+      },
+      "destination": {
+        "success": true,
+        "deleted": {},
+        "tick": 374374
+      }
+    },
+    "zero": {
+      "source": {
+        "success": true,
+        "tick": 429538,
+        "zero_surfaces": true,
+        "surfaces": {},
+        "zero_storage": true,
+        "game_paused": false,
+        "destination_holds": 0,
+        "locked_platforms": 0,
+        "committed_source_transfer_tombstones": 0,
+        "lab_platform_exports": 0
+      },
+      "destination": {
+        "success": true,
+        "tick": 374470,
+        "zero_surfaces": true,
+        "surfaces": {},
+        "zero_storage": true,
+        "game_paused": false,
+        "destination_holds": 0,
+        "locked_platforms": 0,
+        "committed_source_transfer_tombstones": 0,
+        "lab_platform_exports": 0
+      }
+    },
+    "ok": true
+  },
+  "finished": "2026-07-10T06:09:39.563Z"
+}
+```
+
+
+## 2026-07-10T06:11:47.346Z - R12 / LAB-B6 temperature grounding
+
+Predictions stated before execution: unequal-volume temperature merges volume-weighted with exact volume conservation; key stability is measured without presuming the 10,000C threshold.
+
+```json
+{
+  "script": "tests/fluid-lab/run-r12.mjs",
+  "started": "2026-07-10T06:11:36.673Z",
+  "sections": [
+    "b6a",
+    "b6b"
+  ],
+  "predictions": {
+    "b6a": "volume-weighted merge with exact volume conservation",
+    "b6b": "measure key stability without presuming 10,000C"
+  },
+  "rungs": {
+    "b6a": {
+      "success": true,
+      "prediction": "2000 steam at 416.25C; water control clamps and cannot carry the requested temperatures",
+      "water_control": [
+        {
+          "asked": 165,
+          "read": 100,
+          "tick": 435134
+        },
+        {
+          "asked": 500,
+          "read": 100,
+          "tick": 435134
+        }
+      ],
+      "before": {
+        "a": {
+          "label": "isolated A",
+          "tick": 435134,
+          "game_paused": false,
+          "direct": {
+            "name": "steam",
+            "amount": 500,
+            "temperature": 165
+          },
+          "segment_id": 420,
+          "segment_contents": {
+            "steam": 500
+          }
+        },
+        "b": {
+          "label": "isolated B",
+          "tick": 435134,
+          "game_paused": false,
+          "direct": {
+            "name": "steam",
+            "amount": 1500,
+            "temperature": 500
+          },
+          "segment_id": 421,
+          "segment_contents": {
+            "steam": 1500
+          }
+        }
+      },
+      "topology_same_tick": {
+        "label": "connector same tick",
+        "tick": 435134,
+        "game_paused": false,
+        "direct": {
+          "name": "steam",
+          "amount": 3.9292730689048767,
+          "temperature": 416.25
+        },
+        "segment_id": 420,
+        "segment_contents": {
+          "steam": 2000
+        }
+      },
+      "merged": {
+        "label": "merged after elapsed tick",
+        "tick": 435189,
+        "game_paused": false,
+        "direct": {
+          "name": "steam",
+          "amount": 3.9292730689048767,
+          "temperature": 416.25
+        },
+        "segment_id": 420,
+        "segment_contents": {
+          "steam": 2000
+        }
+      },
+      "verdict": "volume-weighted temperature and volume conservation confirmed"
+    },
+    "b6b": {
+      "success": true,
+      "prediction": "identify the first engine-read key instability or collision without assuming a threshold",
+      "rows": [
+        {
+          "asked": 9999,
+          "tick": 435227,
+          "game_paused": false,
+          "direct": {
+            "name": "steam",
+            "amount": 100,
+            "temperature": 5000
+          },
+          "key": "steam@5000.0C"
+        },
+        {
+          "asked": 10001,
+          "tick": 435227,
+          "game_paused": false,
+          "direct": {
+            "name": "steam",
+            "amount": 100,
+            "temperature": 5000
+          },
+          "key": "steam@5000.0C"
+        },
+        {
+          "asked": 100000,
+          "tick": 435227,
+          "game_paused": false,
+          "direct": {
+            "name": "steam",
+            "amount": 100,
+            "temperature": 5000
+          },
+          "key": "steam@5000.0C"
+        },
+        {
+          "asked": 1000000,
+          "tick": 435227,
+          "game_paused": false,
+          "direct": {
+            "name": "steam",
+            "amount": 100,
+            "temperature": 5000
+          },
+          "key": "steam@5000.0C"
+        },
+        {
+          "asked": 10000000,
+          "tick": 435227,
+          "game_paused": false,
+          "direct": {
+            "name": "steam",
+            "amount": 100,
+            "temperature": 5000
+          },
+          "key": "steam@5000.0C"
+        }
+      ],
+      "reread": {
+        "success": true,
+        "rows": [
+          {
+            "tick": 435343,
+            "asked_index": 1,
+            "direct": {
+              "name": "steam",
+              "amount": 100,
+              "temperature": 5000
+            },
+            "key": "steam@5000.0C"
+          },
+          {
+            "tick": 435343,
+            "asked_index": 2,
+            "direct": {
+              "name": "steam",
+              "amount": 100,
+              "temperature": 5000
+            },
+            "key": "steam@5000.0C"
+          },
+          {
+            "tick": 435343,
+            "asked_index": 3,
+            "direct": {
+              "name": "steam",
+              "amount": 100,
+              "temperature": 5000
+            },
+            "key": "steam@5000.0C"
+          },
+          {
+            "tick": 435343,
+            "asked_index": 4,
+            "direct": {
+              "name": "steam",
+              "amount": 100,
+              "temperature": 5000
+            },
+            "key": "steam@5000.0C"
+          },
+          {
+            "tick": 435343,
+            "asked_index": 5,
+            "direct": {
+              "name": "steam",
+              "amount": 100,
+              "temperature": 5000
+            },
+            "key": "steam@5000.0C"
+          }
+        ]
+      },
+      "stable": true,
+      "collisions": [
+        "steam@5000.0C",
+        "steam@5000.0C",
+        "steam@5000.0C",
+        "steam@5000.0C"
+      ],
+      "verdict": "keys stable through 5000C at %.1f formatting"
+    }
+  },
+  "errors": [],
+  "initial_reset": {
+    "cleanup": {
+      "source": {
+        "success": true,
+        "deleted": {},
+        "tick": 434876
+      },
+      "destination": {
+        "success": true,
+        "deleted": {},
+        "tick": 382017
+      }
+    },
+    "zero": {
+      "source": {
+        "success": true,
+        "tick": 434978,
+        "zero_surfaces": true,
+        "surfaces": {},
+        "zero_storage": true,
+        "game_paused": false,
+        "destination_holds": 0,
+        "locked_platforms": 0,
+        "committed_source_transfer_tombstones": 0,
+        "lab_platform_exports": 0
+      },
+      "destination": {
+        "success": true,
+        "tick": 382116,
+        "zero_surfaces": true,
+        "surfaces": {},
+        "zero_storage": true,
+        "game_paused": false,
+        "destination_holds": 0,
+        "locked_platforms": 0,
+        "committed_source_transfer_tombstones": 0,
+        "lab_platform_exports": 0
+      }
+    },
+    "ok": true
+  },
+  "install": {
+    "source": {
+      "success": true,
+      "tick": 435055
+    },
+    "destination": {
+      "success": true,
+      "tick": 382194
+    }
+  },
+  "final_reset": {
+    "cleanup": {
+      "source": {
+        "success": true,
+        "deleted": [
+          "fluid-lab-r12-merge-1783663900713",
+          "fluid-lab-r12-keys-1783663902196"
+        ],
+        "tick": 435381
+      },
+      "destination": {
+        "success": true,
+        "deleted": {},
+        "tick": 382519
+      }
+    },
+    "zero": {
+      "source": {
+        "success": true,
+        "tick": 435478,
+        "zero_surfaces": true,
+        "surfaces": {},
+        "zero_storage": true,
+        "game_paused": false,
+        "destination_holds": 0,
+        "locked_platforms": 0,
+        "committed_source_transfer_tombstones": 0,
+        "lab_platform_exports": 0
+      },
+      "destination": {
+        "success": true,
+        "tick": 382617,
+        "zero_surfaces": true,
+        "surfaces": {},
+        "zero_storage": true,
+        "game_paused": false,
+        "destination_holds": 0,
+        "locked_platforms": 0,
+        "committed_source_transfer_tombstones": 0,
+        "lab_platform_exports": 0
+      }
+    },
+    "ok": true
+  },
+  "finished": "2026-07-10T06:11:47.346Z"
+}
+```
