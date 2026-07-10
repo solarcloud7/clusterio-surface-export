@@ -381,3 +381,407 @@ node tests/no-tick-sync-lab/run-pr0b.mjs --reset
   "finished": "2026-07-07T01:51:54.450Z"
 }
 ```
+
+
+## 2026-07-10T06:09:28.818Z - B5 craft-without-a-tick run
+
+Prediction: no crafting progress or inventory change without an elapsed tick.
+
+```json
+{
+  "script": "tests/no-tick-sync-lab/run-b5.mjs",
+  "started": "2026-07-10T06:09:15.822Z",
+  "sections": [
+    "b5"
+  ],
+  "prediction": "B5: no crafting progress or inventory change without an elapsed tick",
+  "rungs": {
+    "b5": {
+      "success": true,
+      "prediction": "no change inside one execution; progress resumes only after elapsed ticks",
+      "setup": {
+        "setup": {
+          "success": true,
+          "name": "no-tick-sync-lab-b5-1783663759481",
+          "tick": 428336,
+          "unit_number": 19955
+        },
+        "mid_craft": {
+          "success": true,
+          "tick": 428415,
+          "game_paused": false,
+          "active": true,
+          "status": 1,
+          "crafting_progress": 0.4062500000000001,
+          "input_count": 9,
+          "output_count": 0,
+          "fuel_count": 9,
+          "entity_ore_count": 9,
+          "entity_plate_count": 0
+        },
+        "frozen": {
+          "success": true,
+          "tick": 428456,
+          "game_paused": false,
+          "active": false,
+          "status": 60,
+          "crafting_progress": 0.619791666666666,
+          "input_count": 9,
+          "output_count": 0,
+          "fuel_count": 9,
+          "entity_ore_count": 9,
+          "entity_plate_count": 0
+        }
+      },
+      "synchronous": {
+        "success": true,
+        "before": {
+          "tick": 428494,
+          "crafting_progress": 0.619791666666666,
+          "input_count": 9,
+          "output_count": 0
+        },
+        "after": {
+          "tick": 428494,
+          "game_paused": false,
+          "active": true,
+          "crafting_progress": 0.619791666666666,
+          "input_count": 9,
+          "output_count": 0,
+          "entity_ore_count": 9,
+          "entity_plate_count": 0
+        }
+      },
+      "plus1": {
+        "requested_ticks": 1,
+        "observed_elapsed_ticks": 81,
+        "read": {
+          "success": true,
+          "tick": 428575,
+          "game_paused": false,
+          "active": true,
+          "status": 1,
+          "crafting_progress": 0.04166666666666458,
+          "input_count": 8,
+          "output_count": 1,
+          "fuel_count": 9,
+          "entity_ore_count": 8,
+          "entity_plate_count": 1
+        }
+      },
+      "plus60": {
+        "requested_additional_ticks": 59,
+        "observed_elapsed_ticks": 158,
+        "read": {
+          "success": true,
+          "tick": 428652,
+          "game_paused": false,
+          "active": true,
+          "status": 1,
+          "crafting_progress": 0.44270833333333126,
+          "input_count": 8,
+          "output_count": 1,
+          "fuel_count": 9,
+          "entity_ore_count": 8,
+          "entity_plate_count": 1
+        }
+      },
+      "step_tick_limitation": "/step-tick ignores its count and only unpauses; observed elapsed ticks are reported",
+      "same_execution_unchanged": true,
+      "resumed_after_ticks": true
+    }
+  },
+  "errors": [],
+  "initial_reset": {
+    "cleanup": {
+      "source": {
+        "success": true,
+        "deleted": {},
+        "tick": 428101
+      },
+      "destination": {
+        "success": true,
+        "deleted": {},
+        "tick": 373034
+      }
+    },
+    "zero": {
+      "source": {
+        "success": true,
+        "tick": 428257,
+        "zero_surfaces": true,
+        "surfaces": {},
+        "zero_storage": true,
+        "game_paused": false,
+        "destination_holds": 0,
+        "locked_platforms": 0,
+        "committed_source_transfer_tombstones": 0,
+        "lab_platform_exports": 0,
+        "force_count": 3
+      },
+      "destination": {
+        "success": true,
+        "tick": 373189,
+        "zero_surfaces": true,
+        "surfaces": {},
+        "zero_storage": true,
+        "game_paused": false,
+        "destination_holds": 0,
+        "locked_platforms": 0,
+        "committed_source_transfer_tombstones": 0,
+        "lab_platform_exports": 0,
+        "force_count": 3
+      }
+    },
+    "ok": true
+  },
+  "final_reset": {
+    "cleanup": {
+      "source": {
+        "success": true,
+        "deleted": [
+          "no-tick-sync-lab-b5-1783663759481"
+        ],
+        "tick": 428693
+      },
+      "destination": {
+        "success": true,
+        "deleted": {},
+        "tick": 373625
+      }
+    },
+    "zero": {
+      "source": {
+        "success": true,
+        "tick": 428851,
+        "zero_surfaces": true,
+        "surfaces": {},
+        "zero_storage": true,
+        "game_paused": false,
+        "destination_holds": 0,
+        "locked_platforms": 0,
+        "committed_source_transfer_tombstones": 0,
+        "lab_platform_exports": 0,
+        "force_count": 3
+      },
+      "destination": {
+        "success": true,
+        "tick": 373785,
+        "zero_surfaces": true,
+        "surfaces": {},
+        "zero_storage": true,
+        "game_paused": false,
+        "destination_holds": 0,
+        "locked_platforms": 0,
+        "committed_source_transfer_tombstones": 0,
+        "lab_platform_exports": 0,
+        "force_count": 3
+      }
+    },
+    "ok": true
+  },
+  "finished": "2026-07-10T06:09:28.818Z"
+}
+```
+
+
+## 2026-07-10T06:11:36.620Z - B5 craft-without-a-tick run
+
+Prediction: no crafting progress or inventory change without an elapsed tick.
+
+```json
+{
+  "script": "tests/no-tick-sync-lab/run-b5.mjs",
+  "started": "2026-07-10T06:11:23.736Z",
+  "sections": [
+    "b5"
+  ],
+  "prediction": "B5: no crafting progress or inventory change without an elapsed tick",
+  "rungs": {
+    "b5": {
+      "success": true,
+      "prediction": "no change inside one execution; progress resumes only after elapsed ticks",
+      "setup": {
+        "setup": {
+          "success": true,
+          "name": "no-tick-sync-lab-b5-1783663887377",
+          "tick": 434285,
+          "unit_number": 19988
+        },
+        "mid_craft": {
+          "success": true,
+          "tick": 434365,
+          "game_paused": false,
+          "active": true,
+          "status": 1,
+          "crafting_progress": 0.41145833333333337,
+          "input_count": 9,
+          "output_count": 0,
+          "fuel_count": 9,
+          "entity_ore_count": 9,
+          "entity_plate_count": 0
+        },
+        "frozen": {
+          "success": true,
+          "tick": 434403,
+          "game_paused": false,
+          "active": false,
+          "status": 60,
+          "crafting_progress": 0.6093749999999993,
+          "input_count": 9,
+          "output_count": 0,
+          "fuel_count": 9,
+          "entity_ore_count": 9,
+          "entity_plate_count": 0
+        }
+      },
+      "synchronous": {
+        "success": true,
+        "before": {
+          "tick": 434441,
+          "crafting_progress": 0.6093749999999993,
+          "input_count": 9,
+          "output_count": 0
+        },
+        "after": {
+          "tick": 434441,
+          "game_paused": false,
+          "active": true,
+          "crafting_progress": 0.6093749999999993,
+          "input_count": 9,
+          "output_count": 0,
+          "entity_ore_count": 9,
+          "entity_plate_count": 0
+        }
+      },
+      "plus1": {
+        "requested_ticks": 1,
+        "observed_elapsed_ticks": 79,
+        "read": {
+          "success": true,
+          "tick": 434520,
+          "game_paused": false,
+          "active": true,
+          "status": 1,
+          "crafting_progress": 0.02083333333333125,
+          "input_count": 8,
+          "output_count": 1,
+          "fuel_count": 9,
+          "entity_ore_count": 8,
+          "entity_plate_count": 1
+        }
+      },
+      "plus60": {
+        "requested_additional_ticks": 59,
+        "observed_elapsed_ticks": 159,
+        "read": {
+          "success": true,
+          "tick": 434600,
+          "game_paused": false,
+          "active": true,
+          "status": 1,
+          "crafting_progress": 0.43749999999999795,
+          "input_count": 8,
+          "output_count": 1,
+          "fuel_count": 9,
+          "entity_ore_count": 8,
+          "entity_plate_count": 1
+        }
+      },
+      "step_tick_limitation": "/step-tick ignores its count and only unpauses; observed elapsed ticks are reported",
+      "same_execution_unchanged": true,
+      "resumed_after_ticks": true
+    }
+  },
+  "errors": [],
+  "initial_reset": {
+    "cleanup": {
+      "source": {
+        "success": true,
+        "deleted": {},
+        "tick": 434050
+      },
+      "destination": {
+        "success": true,
+        "deleted": {},
+        "tick": 381190
+      }
+    },
+    "zero": {
+      "source": {
+        "success": true,
+        "tick": 434206,
+        "zero_surfaces": true,
+        "surfaces": {},
+        "zero_storage": true,
+        "game_paused": false,
+        "destination_holds": 0,
+        "locked_platforms": 0,
+        "committed_source_transfer_tombstones": 0,
+        "lab_platform_exports": 0,
+        "force_count": 3
+      },
+      "destination": {
+        "success": true,
+        "tick": 381344,
+        "zero_surfaces": true,
+        "surfaces": {},
+        "zero_storage": true,
+        "game_paused": false,
+        "destination_holds": 0,
+        "locked_platforms": 0,
+        "committed_source_transfer_tombstones": 0,
+        "lab_platform_exports": 0,
+        "force_count": 3
+      }
+    },
+    "ok": true
+  },
+  "final_reset": {
+    "cleanup": {
+      "source": {
+        "success": true,
+        "deleted": [
+          "no-tick-sync-lab-b5-1783663887377"
+        ],
+        "tick": 434639
+      },
+      "destination": {
+        "success": true,
+        "deleted": {},
+        "tick": 381776
+      }
+    },
+    "zero": {
+      "source": {
+        "success": true,
+        "tick": 434794,
+        "zero_surfaces": true,
+        "surfaces": {},
+        "zero_storage": true,
+        "game_paused": false,
+        "destination_holds": 0,
+        "locked_platforms": 0,
+        "committed_source_transfer_tombstones": 0,
+        "lab_platform_exports": 0,
+        "force_count": 3
+      },
+      "destination": {
+        "success": true,
+        "tick": 381933,
+        "zero_surfaces": true,
+        "surfaces": {},
+        "zero_storage": true,
+        "game_paused": false,
+        "destination_holds": 0,
+        "locked_platforms": 0,
+        "committed_source_transfer_tombstones": 0,
+        "lab_platform_exports": 0,
+        "force_count": 3
+      }
+    },
+    "ok": true
+  },
+  "finished": "2026-07-10T06:11:36.620Z"
+}
+```
