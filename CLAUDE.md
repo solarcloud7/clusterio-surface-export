@@ -558,7 +558,7 @@ If the default was added after the current save was created, you need either:
 ### 15. Entity Activation Before Validation (Historical Bug, Fixed)
 **Symptom**: Transfer validation fails with "Item mismatches: iron-plate: GAINED items — expected 590, got 600"
 **Cause**: `ActiveStateRestoration.restore()` was called as Phase 7 of import (before validation), which re-activated machines. In the ticks between activation and item counting, furnaces processed iron ore → iron plate, causing a net gain that triggered validation failure.
-**Evidence status**: the FIX (validate pre-activation) is [empirical] — the false GAINs were reproducible and the reorder eliminated them, regression-tested since. The craft-in-the-gap mechanism is [hypothesis] (plausible, never isolated as its own rung).
+**Evidence status**: the FIX (validate pre-activation) is [empirical]. No-tick-sync LAB-B5 [empirical, 2.0.77] isolated the boundary: reactivating a mid-craft furnace and reading it again in the same Lua execution left `game.tick`, `crafting_progress`, input, and output unchanged; crafting resumed only after ticks elapsed. The ordering rule is therefore "count before an elapsed tick," not "never read after activation."
 **Fix**: For **transfers only**, Phase 7 (activation) is deferred until after validation passes. Entities stay deactivated through all restoration phases and validation. Activation happens via `ActiveStateRestoration.restore()` using `frozen_states` only after `TransferValidation.validate_import()` succeeds. On failure, entities are left deactivated for investigation.
 **Key files**: `async-processor.lua` (`complete_import_job` function), `active_state_restoration.lua`
 **See**: [TRANSFER_WORKFLOW_GUIDE.md](docs/TRANSFER_WORKFLOW_GUIDE.md) — "Entity Lifecycle (Critical Invariant)" section
@@ -664,12 +664,11 @@ Project invariants that still bite if changed:
 - **Beacon-before-crafter inventory order.** `crafting_speed` (which sets the `set_stack()` cap) only
   reflects beacon bonuses once the beacon's `beacon_modules` inventory is populated, so Phase 3 restores
   beacons first, then everything else. See [Import Phase Ordering](#import-phase-ordering-critical).
-- **Belt item drift (±4–8 items).** Belts can't be deactivated, so items move between belts during the
-  multi-tick export — cosmetic redistribution, not loss. Export uses an atomic single-tick belt scan to
-  keep the snapshot consistent (Pitfall #16, the atomic single-tick belt scan).
-- **Inject fluid only after activation** (frozen entities are detached from their segment — the
-  inject-after-activation rule, Pitfall #17 — behavioral rule [empirical]; the old ghost-buffer MECHANISM is dead, see api-notes). **Fusion-reactor output rejects writes** (Pitfall #21, fusion outputs are engine-managed). Subtract
-  rejected writes from expected counts.
+- **Historical belt restore loss (formerly described as ±4–8 cosmetic drift).** The residual was real
+  restore-time loss, not harmless redistribution. Belt restoration was fixed to exact physical totals; the
+  atomic single-tick export scan prevents a rolling source snapshot (Pitfall #16).
+- **Fluid restoration ordering is historical, not engine law.** The shipped pipeline still injects after activation, but R11 proved the same restoration code conserves exactly in a frozen world; task #30 owns any production reorder (Pitfall #17). **Fusion-reactor output rejects writes** (Pitfall #21). Subtract
+  rejected writes from expected counts. Validation is now composite: the pre-activation item gate is not success by itself; post-activation fluid validation composes the final verdict and uses the same reconciliation tolerances.
 - **Entity inventory size** isn't changed by `LuaInventory.resize` (custom inventories only).
   `LuaEntity.set_inventory_size_override` overrides **container** sizes but is a **no-op for crafter inputs**
   at 2.0.76 (verified) — so it is *not* a lever for overloaded-crafter-input loss (already handled by the
@@ -687,7 +686,7 @@ The order of post-processing steps in `complete_import_job()` is critical for co
                             Pass 2: everything else (set_stack cap now reflects beacon-boosted cs)
 6. Validation             — pre-activation check (items only, fluids skipped)
 7. Activation             — ActiveStateRestoration.restore() unfreezes all remaining entities
-8. Fluid restoration      — MUST be after activation (ghost buffer fix)
+8. Fluid restoration      — currently after activation; R11 proved frozen-world restoration exact
 9. Loss analysis          — post-activation counting for accurate transaction log
 10. Fluid gate             — validates post-activation fluids; composes final success + failedStage
 ```
@@ -695,26 +694,14 @@ The order of post-processing steps in `complete_import_job()` is critical for co
 **Why this order matters**:
 - Step 4 (beacon activation): beacons are kept active during entity creation (never deactivated). Phase 2 explicitly activates them and fills their energy buffer. This is necessary but not sufficient — beacons need their **module inventory populated** before `crafting_speed` reflects the beacon bonus.
 - Step 5 (inventories, 2 passes): The two-pass approach is critical. `crafting_speed` on a machine updates **immediately** when its nearby beacon's `beacon_modules` inventory is populated — no tick delay, no power required. Pass 1 populates all beacon modules. Pass 2 then restores crafter inputs with `set_stack()`, which uses the now-correct beacon-boosted cap (e.g. cs=17.375 → 12 slots instead of cs=2.5 → 7 slots). Machines remain deactivated throughout — they cannot consume items.
-- Steps 7→8 are inseparable. Injecting fluids before step 7 reproducibly lost ~15% (the empirical inject-after-activation rule, Pitfall #17; the ghost-buffer mechanism once used to explain this is dead — api-notes). Step 6 skips fluid validation (`skip_fluid_validation=true`) because fluids haven't been injected yet; the final verdict is composed after Step 9 by the post-activation fluid gate (`failedStage=fluids` on failure).
+- Steps 7→8 reflect the current production order, not a current-pin engine requirement. The old pipeline lost ~15% pre-activation, but R11 later measured exact frozen-world restoration at scale; task #30 owns the gated reorder. Step 6 currently skips fluid validation because fluids have not yet been injected; the final verdict is composed after Step 9 by the post-activation fluid gate.
 
-### 17. Frozen Entity Fluid Ghost Buffer (Factorio 2.0 Fluid Segments)
-**Symptom**: Fluid loss of ~15% on transfer. Fluid appears to be injected successfully (no errors, no overflows), but after activation all injected fluid is gone.
-**Root Cause**: Factorio 2.0 uses a **fluid segment system**. Fluids don't live per-entity — they exist in shared segments spanning connected pipes/machines. When an entity has `frozen=true` or `active=false`, it is **detached from its fluid segment** — internally, `fluid_network_id` is nil or points to a singular (isolated) network. Writing to `entity.fluidbox[i]` on a frozen entity writes to a **ghost buffer** — a temporary per-entity store. When the entity is later unfrozen, `FluidSystem::on_entity_unfrozen` triggers a network merge. The merge priority favors the existing large segment over the newly joined entity's ghost buffer, **overwriting the ghost buffer contents**. All injected fluid is silently deleted.
-**Fix**: Always set `entity.frozen = false` and `entity.active = true` **before** writing to `entity.fluidbox[i]`. In the import flow, `FluidRestoration.restore()` must run **after** `ActiveStateRestoration.restore()`, not before.
-**Evidence status (corrected 2026-07-06)**: the FIX is **[empirical]** — the pre-activation injection loss was reproducible (~15%), the reorder eliminated it, regression-tested since. The Root-Cause MECHANISM above is **[hypothesis]** — the cited `FluidSystem::*` internals are closed-source and were never inspectable ("expert analysis" was an unverifiable consult, not verification). Fluid-lab tested the prediction set: isolated machine buffers survived deactivation/reactivation, `game.tick_paused` during destination-hold stage/read did not affect isolated machine buffers, and R7 could not construct any tested activatable entity whose own fluidbox exposed a non-nil segment ID on 2.0.77. The original destination-hold CI `delta=20` is **UNEXPLAINED** but eliminated by fixture/meter hardening; the instrumented probe self-diagnoses on recurrence. Build on the behavioral import rule, not the ghost-buffer mechanism. See [factorio-2.0-api-notes.md](docs/factorio-2.0-api-notes.md).
+### 17. Historical Pre-Activation Fluid Loss (Class Unisolated)
+**Measured history**: an old import pipeline lost ~15% when fluids were injected pre-activation; moving injection after activation eliminated that whole-pipeline loss. The responsible entity/topology class was never isolated.
+**Current-pin result**: fluid-lab R11 [empirical, 2.0.77] ran the shipped `FluidRestoration.restore()` in a paused, deactivated destination world, including two real 1,359-entity transfers. Frozen and same-tick post-activation censuses conserved all eight fluid names exactly (`max |delta| = 0`, comparison epsilon `1e-6`), after subtracting only engine-rejected fusion output writes.
+**Historical hypothesis, not law**: the old "detached ghost buffer overwritten on segment merge" explanation cited closed-source internals and its constructible predictions did not reproduce. Tested activatable entities expose no non-nil segment ID on their own fluidboxes at 2.0.77; `LuaEntity.frozen` is read-only. Keep the old loss as an honest historical fact, not as proof that current restoration requires a live world.
+**Production state**: R11 was measurement-only; the shipped post-activation ordering remains until task #30 changes it under its own review gate.
 **Key files**: `async-processor.lua` (`complete_import_job`), `fluid_restoration.lua`, `active_state_restoration.lua`
-**Scope correction (2026-07-10 — read before designing on this pitfall)**: the rule as stated OVER-GENERALIZES a
-historical fix. Fluid-lab **R2 [empirical, 2.0.77]**: writing fluid to an INACTIVE machine buffer reads back and
-survives reactivation; **R1**: an inactive buffer survives deactivate→+60 ticks→reactivate with no loss. Also
-`LuaEntity.frozen` is READ-ONLY at 2.0.77 (R1 measured the hard error) and the shipped code writes only
-`entity.active` (`frozen_states` is a misnomer — it maps original ACTIVE states) — the "set `entity.frozen =
-false`" fix text above matches neither engine nor code. What remains [empirical] is only the whole-pipeline
-fact: the OLD pre-activation injection order lost ~15% and the reorder fixed it; WHICH entity/topology class
-caused the loss was never isolated. Whether fluids can be injected into a fully FROZEN world (segments at scale,
-newly-created entities, the real import path) is the open R11 rung —
-`docs/superpowers/plans/2026-07-10-fluid-r11-frozen-injection-rung-spec.md`. If it passes, injection moves
-pre-gate, the transfer verdict becomes a SINGLE frozen-world exact gate (items+fluids), and the post-activation
-fluid gate is retired. Do NOT design new work on "the fluid gate must count a live world".
 
 ### 18. Entity Handlers Must Export Fluids for Crafting Machines
 **Symptom**: Assembling machines (chemical plants, oil refineries) and furnaces (foundries) lose all fluid on transfer, even though pipes/tanks preserve fluid correctly.
@@ -724,7 +711,7 @@ fluid gate is retired. Do NOT design new work on "the fluid gate must count a li
 **Lesson**: When adding a new entity handler, always check if the entity type has a fluidbox. The default handler exports both inventories and fluids — a specific handler that only exports inventories silently drops fluid data.
 
 ### 19. Removing a Space Platform — use `game.delete_surface`, not `platform.destroy()` (CRITICAL)
-`LuaSpacePlatform.destroy()` is a no-op at our pinned 2.0.76 — verified via RCON: `destroy()`, `destroy(0)`, and `destroy(60)` all return `ok=true` but leave the platform `valid` and present after 100+ ticks; `hub.destroy()` is auto-recovered. (The latest docs describe `destroy(ticks)` as scheduling deferred deletion — a post-2.0.76 change; see [factorio-2.0-api-notes.md](docs/factorio-2.0-api-notes.md).) Use `game.delete_surface(platform.surface)` (verified to remove the platform) — route all removal through `GameUtils.delete_platform(platform)` (`module/utils/game-utils.lua`), which handles the surfaceless edge case.
+At 2.0.77, LAB-I B7 measured `platform.destroy()` with no argument as a silent no-op, while `destroy(0)` deleted after an elapsed tick and `destroy(60)` deleted on the deferred schedule. Keep `game.delete_surface(platform.surface)` as this project's deterministic removal route through `GameUtils.delete_platform(platform)` (`module/utils/game-utils.lua`), which also handles the surfaceless edge case; do not generalize the old 2.0.76 all-no-op result to ticked calls on 2.0.77.
 **Enforced**: `npm run lint:lua` (gated in CI) fails on any `*platform*.destroy()` call.
 **Key files**: `instance.ts` (`handleDeleteSourcePlatform`), `module/core/import-pipeline.lua` (import rollback paths).
 
@@ -736,11 +723,11 @@ fluid gate is retired. Do NOT design new work on "the fluid gate must count a li
 ### 21. Fusion-Reactor Output Fluidboxes Reject Writes (Engine Limitation)
 Fusion-reactor **output** fluidboxes are engine-managed — `fluidbox[i]=` and `insert_fluid()` return without error but read back 0 (input fluidboxes accept writes normally). See [factorio-2.0-api-notes.md](docs/factorio-2.0-api-notes.md). The plugin tracks rejected writes in `fluid_restoration.lua` (`write_rejected`) and subtracts them from `expectedFluidCounts` before loss analysis. Covered by the `fusion-reactor-plasma-output` roundtrip test.
 
-### 22. `get_fluid_segment_id()` Returns Nil for Isolated Fluidboxes
-`get_fluid_segment_id(i)` returns `nil` for fluidboxes not in a segment (isolated machines such as fusion-generators not connected to pipes) — see [factorio-2.0-api-notes.md](docs/factorio-2.0-api-notes.md). `inventory-scanner.lua` `extract_fluids` handles this with an `elseif not seg_id` branch that reads the `fluidbox[i]` proxy directly; without it, isolated fluids are silently dropped.
+### 22. Activatable Entities Expose No Own Segment ID on 2.0.77
+Fluid-lab R7 found no tested activatable entity whose own fluidbox exposes a non-nil `get_fluid_segment_id(i)`, including a pump connected to segmented pipes/tanks; machine buffers likewise returned nil. Pipes/tanks expose segment IDs but are not activatable. `inventory-scanner.lua` handles the nil case by reading `fluidbox[i]` directly; without it, these fluids are silently dropped.
 
-### 23. Thermal Energy Validation for High-Temperature Fluids
-Fusion-plasma temperatures (>1,000,000°C) drift continuously, so per-temperature-bucket validation is meaningless (every bucket key changes even though volume is preserved). **Evidence status**: temperature drift is [empirical]; the weighted-average packet-merge explanation is [hypothesis]. For high-temp fluids the loss analysis and transaction-log UI validate on **thermal energy (Volume × Temperature)** instead, falling back to per-bucket for old logs without energy data.
+### 23. Temperature Merge and Key Boundaries
+Fluid-lab R12 [empirical, 2.0.77] connected `500 steam@165°C` to `1500 steam@500°C` and read one exact `2000@416.25°C` segment: volume and V×T were conserved by a volume-weighted merge. The requested key sweep from 9,999 through 10,000,000°C did not expose floating-point drift because the steam prototype clamped every write to 5,000°C, producing one stable `steam@5000.0C` key. The generic ">1,000,000°C doubles lose precision" story does not license the current 10,000 threshold; the threshold value remains task #30 territory.
 **Key files**: `loss-analysis.lua` (`reconcile_fluids` → `highTempAggregates`), `web/utils.js`, `web/TransactionLogsTab.jsx`.
 
 ### 24. LuaProfiler Serialization — LocalisedString Snapshots (CRITICAL)
@@ -866,16 +853,14 @@ are **genuinely unplaceable** on a less-researched dest, and the strict gate (Pi
 no capacity cap" assumption — it clamps (CI: `.count=8→1`).
 **Fix — Pre-Hydration Force Sync**: export captures the source force's inserter bonuses (`force_data`); import
 replicates them onto the dest force in a one-shot **Phase 0** (`ImportPipeline.process_batch`) **before** any
-entity is created — **RAISE-ONLY** (`math.max`; never LOWER a dest bonus, which would eject other platforms'
-held items). It raises **every distinct force the entities land on** (`entity_data.force or "player"`), not just
+entity is created — **RAISE-ONLY** (`math.max`; never lower an unrelated destination force's state during an import). It raises **every distinct force the entities land on** (`entity_data.force or "player"`), not just
 the platform force, so a differently-forced inserter can't be left under-capacity (silent loss). The property
 list is a single source of truth: `GameUtils.FORCE_SYNC_PROPS`. The existing `restore_held_items_only` → strict
 gate then seats full and passes **natively** — the gate is unchanged. A non-fatal `forceDataMismatches` warning
 surfaces the raise in the UI. **Applies to ALL imports (transfer AND uploaded-JSON), by design** — fidelity over
 avoiding the (warned, raise-only) research-boost side effect; uploads delete no source, so there is no loss risk
 either way.
-**Durability (verified on 2.0.76)**: an unbacked direct write grants real seating capacity, and once seated the
-hand keeps its items even if the bonus later drops or `reset_technology_effects()` runs — so there is no
+**Durability (verified on 2.0.77, inserter-lab B4)**: an unbacked direct write grants real seating capacity, and once seated a legendary bulk-inserter hand stayed at 8 when the bonus dropped 11→0, after elapsed ticks, and after `reset_technology_effects()` — so there is no
 post-commit loss path; the write need not be tech-backed.
 **Mechanical guard**: `tests/integration/force-bonus-sync` forces the dest bonus to 0, transfers, and asserts
 (physical held counts) the bonus is raised, held items seat in full, the strict gate passes, and the warning

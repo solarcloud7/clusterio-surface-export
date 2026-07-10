@@ -123,8 +123,8 @@ A: ✅ Marked `cleanup_failed`, the observability record is kept, and the source
 ## D. Data fidelity
 
 **Q: What if my belts are packed with items?**
-A: ✅ 100% preserved via an atomic single-tick belt scan (±4–8 items is cosmetic redistribution, not loss —
-Pitfall #16, the atomic belt scan).
+A: ✅ 100% preserved. The source uses an atomic single-tick belt scan, and the historical restore-time
+residual once described as cosmetic ±4–8 drift has been fixed to zero (Pitfall #16).
 
 **Q: What if my inserters are holding items mid-swing?**
 A: ✅ Restored via a pre-gate inserter-only activation pass so the strict gate counts a complete state (Pitfall
