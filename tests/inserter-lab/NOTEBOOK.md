@@ -84,3 +84,825 @@ fresh ACTIVE inserter, and the real dest inserter, both take set_stack(8)->8 and
 NEXT: load the CI save to inspect the actual failed inserters + run the activation test (active=true + step tick
 → do held items recover? = gate-timing vs real loss). OR ship the gate-side fix (skip held at gate, restore
 post-activation where set_stack works). Advisor consult pending.
+
+
+## 2026-07-10T06:09:15.764Z - B1-B4 inserter lab
+
+Predictions: B1 held 8; B2 force sync raises bonus; B3 no residual; B4 open.
+
+```json
+{
+  "script": "tests/inserter-lab/run-b1-b4.mjs",
+  "started": "2026-07-10T06:08:15.154Z",
+  "sections": [
+    "b1",
+    "b2",
+    "b3",
+    "b4"
+  ],
+  "predictions": {
+    "b1": "researched-force control preserves held 8",
+    "b2": "Phase-0 raises bonus-0 destination entity force",
+    "b3": "pre-gate top-up leaves no physical residual",
+    "b4": "OPEN"
+  },
+  "rungs": {
+    "b1": {
+      "success": true,
+      "control": {
+        "success": true,
+        "kind": "control",
+        "prediction": "full hand of 8 physically survives; adversarial destination bonus is raised before restore",
+        "force_setup": null,
+        "setup": {
+          "success": true,
+          "error": "nil",
+          "name": "inserter-lab-b-control-1783663700627",
+          "index": 33,
+          "platform_force": "player",
+          "entity_force": "player",
+          "force_bonus": 11,
+          "held": 8,
+          "tick": 426788,
+          "game_paused": false,
+          "platform_paused": false
+        },
+        "source_physical": {
+          "success": true,
+          "name": "inserter-lab-b-control-1783663700627",
+          "tick": 426832,
+          "game_paused": false,
+          "platform_paused": false,
+          "platform_force": "player",
+          "entity_force": "player",
+          "force_bonus": 11,
+          "held": 8,
+          "physical_iron_plate": 8,
+          "active": true
+        },
+        "transfer": {
+          "success": true,
+          "job_id": "014_inserter-lab-b-control-1783663700627",
+          "tick": 426910
+        },
+        "destination_physical": {
+          "success": true,
+          "name": "inserter-lab-b-control-1783663700627",
+          "tick": 370864,
+          "game_paused": false,
+          "platform_paused": false,
+          "platform_force": "player",
+          "entity_force": "player",
+          "force_bonus": 11,
+          "held": 8,
+          "physical_iron_plate": 8,
+          "active": true
+        },
+        "force_sync_confirmed": null,
+        "full_hand_confirmed": true,
+        "physical_total_confirmed": true
+      }
+    },
+    "b2": {
+      "success": true,
+      "adversarial": {
+        "success": true,
+        "kind": "adversarial",
+        "prediction": "full hand of 8 physically survives; adversarial destination bonus is raised before restore",
+        "force_setup": {
+          "source": {
+            "success": true,
+            "name": "inserter-lab-b-force-1783663722996",
+            "bonus": 11,
+            "force_count": 4
+          },
+          "destination": {
+            "success": true,
+            "name": "inserter-lab-b-force-1783663722996",
+            "bonus": 0,
+            "force_count": 4
+          }
+        },
+        "setup": {
+          "success": true,
+          "error": "nil",
+          "name": "inserter-lab-b-adversarial-1783663722996",
+          "index": 34,
+          "platform_force": "player",
+          "entity_force": "inserter-lab-b-force-1783663722996",
+          "force_bonus": 11,
+          "held": 8,
+          "tick": 427208,
+          "game_paused": false,
+          "platform_paused": false
+        },
+        "source_physical": {
+          "success": true,
+          "name": "inserter-lab-b-adversarial-1783663722996",
+          "tick": 427249,
+          "game_paused": false,
+          "platform_paused": false,
+          "platform_force": "player",
+          "entity_force": "inserter-lab-b-force-1783663722996",
+          "force_bonus": 11,
+          "held": 8,
+          "physical_iron_plate": 8,
+          "active": true
+        },
+        "transfer": {
+          "success": true,
+          "job_id": "015_inserter-lab-b-adversarial-1783663722996",
+          "tick": 427328
+        },
+        "destination_physical": {
+          "success": true,
+          "name": "inserter-lab-b-adversarial-1783663722996",
+          "tick": 372400,
+          "game_paused": false,
+          "platform_paused": false,
+          "platform_force": "player",
+          "entity_force": "inserter-lab-b-force-1783663722996",
+          "force_bonus": 11,
+          "held": 8,
+          "physical_iron_plate": 8,
+          "active": true
+        },
+        "force_sync_confirmed": true,
+        "full_hand_confirmed": true,
+        "physical_total_confirmed": true
+      }
+    },
+    "b3": {
+      "success": true,
+      "adversarial": {
+        "success": true,
+        "kind": "adversarial",
+        "prediction": "full hand of 8 physically survives; adversarial destination bonus is raised before restore",
+        "force_setup": {
+          "source": {
+            "success": true,
+            "name": "inserter-lab-b-force-1783663722996",
+            "bonus": 11,
+            "force_count": 4
+          },
+          "destination": {
+            "success": true,
+            "name": "inserter-lab-b-force-1783663722996",
+            "bonus": 0,
+            "force_count": 4
+          }
+        },
+        "setup": {
+          "success": true,
+          "error": "nil",
+          "name": "inserter-lab-b-adversarial-1783663722996",
+          "index": 34,
+          "platform_force": "player",
+          "entity_force": "inserter-lab-b-force-1783663722996",
+          "force_bonus": 11,
+          "held": 8,
+          "tick": 427208,
+          "game_paused": false,
+          "platform_paused": false
+        },
+        "source_physical": {
+          "success": true,
+          "name": "inserter-lab-b-adversarial-1783663722996",
+          "tick": 427249,
+          "game_paused": false,
+          "platform_paused": false,
+          "platform_force": "player",
+          "entity_force": "inserter-lab-b-force-1783663722996",
+          "force_bonus": 11,
+          "held": 8,
+          "physical_iron_plate": 8,
+          "active": true
+        },
+        "transfer": {
+          "success": true,
+          "job_id": "015_inserter-lab-b-adversarial-1783663722996",
+          "tick": 427328
+        },
+        "destination_physical": {
+          "success": true,
+          "name": "inserter-lab-b-adversarial-1783663722996",
+          "tick": 372400,
+          "game_paused": false,
+          "platform_paused": false,
+          "platform_force": "player",
+          "entity_force": "inserter-lab-b-force-1783663722996",
+          "force_bonus": 11,
+          "held": 8,
+          "physical_iron_plate": 8,
+          "active": true
+        },
+        "force_sync_confirmed": true,
+        "full_hand_confirmed": true,
+        "physical_total_confirmed": true
+      }
+    },
+    "b4": {
+      "success": true,
+      "prediction": "OPEN: measurement decides whether seated over-capacity hands survive or eject",
+      "setup": {
+        "success": true,
+        "name": "inserter-lab-b-b4-1783663747098",
+        "force": "inserter-lab-b-force-1783663747098",
+        "before": {
+          "label": "bonus 11 seated",
+          "tick": 427547,
+          "game_paused": false,
+          "bonus": 11,
+          "held": 8,
+          "ground": 0,
+          "total": 8
+        }
+      },
+      "lowered": {
+        "success": true,
+        "tick": 427588,
+        "game_paused": false,
+        "bonus": 0,
+        "held": 8,
+        "ground": 0,
+        "total": 8
+      },
+      "after_lower_elapsed": {
+        "success": true,
+        "tick": 427707,
+        "game_paused": false,
+        "bonus": 0,
+        "held": 8,
+        "ground": 0,
+        "total": 8
+      },
+      "reset_technology_effects": {
+        "success": true,
+        "tick": 427751,
+        "game_paused": false,
+        "bonus": 0,
+        "held": 8,
+        "ground": 0,
+        "total": 8
+      },
+      "after_reset_elapsed": {
+        "success": true,
+        "tick": 427870,
+        "game_paused": false,
+        "bonus": 0,
+        "held": 8,
+        "ground": 0,
+        "total": 8
+      },
+      "verdict": "seated hand survives bonus drop"
+    }
+  },
+  "errors": [],
+  "initial_reset": {
+    "baseline": {
+      "source": 3,
+      "destination": 3
+    },
+    "cleanup": {
+      "source": {
+        "success": true,
+        "deleted": {},
+        "exports": {},
+        "records": {},
+        "tick": 426518,
+        "force_count": 3
+      },
+      "destination": {
+        "success": true,
+        "deleted": {},
+        "exports": {},
+        "records": {},
+        "tick": 369244,
+        "force_count": 3
+      }
+    },
+    "zero": {
+      "source": {
+        "success": true,
+        "tick": 426629,
+        "zero_surfaces": true,
+        "surfaces": {},
+        "zero_storage": true,
+        "game_paused": false,
+        "destination_holds": 0,
+        "locked_platforms": 0,
+        "committed_source_transfer_tombstones": 0,
+        "lab_platform_exports": 0,
+        "lab_forces": 0,
+        "forces": {},
+        "force_count": 3
+      },
+      "destination": {
+        "success": true,
+        "tick": 369355,
+        "zero_surfaces": true,
+        "surfaces": {},
+        "zero_storage": true,
+        "game_paused": false,
+        "destination_holds": 0,
+        "locked_platforms": 0,
+        "committed_source_transfer_tombstones": 0,
+        "lab_platform_exports": 0,
+        "lab_forces": 0,
+        "forces": {},
+        "force_count": 3
+      }
+    },
+    "ok": true
+  },
+  "install": {
+    "source": {
+      "success": true,
+      "tick": 426709,
+      "force_count": 3
+    },
+    "destination": {
+      "success": true,
+      "tick": 369437,
+      "force_count": 3
+    }
+  },
+  "final_reset": {
+    "baseline": {
+      "source": 3,
+      "destination": 3
+    },
+    "cleanup": {
+      "source": {
+        "success": true,
+        "deleted": [
+          "inserter-lab-b-b4-1783663747098"
+        ],
+        "exports": [
+          "014_inserter-lab-b-control-1783663700627",
+          "015_inserter-lab-b-adversarial-1783663722996"
+        ],
+        "records": {},
+        "tick": 427911,
+        "force_count": 5
+      },
+      "destination": {
+        "success": true,
+        "deleted": [
+          "platform-1",
+          "platform-2"
+        ],
+        "exports": {},
+        "records": {},
+        "tick": 372843,
+        "force_count": 4
+      }
+    },
+    "zero": {
+      "source": {
+        "success": true,
+        "tick": 428019,
+        "zero_surfaces": true,
+        "surfaces": {},
+        "zero_storage": true,
+        "game_paused": false,
+        "destination_holds": 0,
+        "locked_platforms": 0,
+        "committed_source_transfer_tombstones": 0,
+        "lab_platform_exports": 0,
+        "lab_forces": 0,
+        "forces": {},
+        "force_count": 3
+      },
+      "destination": {
+        "success": true,
+        "tick": 372952,
+        "zero_surfaces": true,
+        "surfaces": {},
+        "zero_storage": true,
+        "game_paused": false,
+        "destination_holds": 0,
+        "locked_platforms": 0,
+        "committed_source_transfer_tombstones": 0,
+        "lab_platform_exports": 0,
+        "lab_forces": 0,
+        "forces": {},
+        "force_count": 3
+      }
+    },
+    "ok": true
+  },
+  "finished": "2026-07-10T06:09:15.764Z"
+}
+```
+
+
+## 2026-07-10T06:11:23.677Z - B1-B4 inserter lab
+
+Predictions: B1 held 8; B2 force sync raises bonus; B3 no residual; B4 open.
+
+```json
+{
+  "script": "tests/inserter-lab/run-b1-b4.mjs",
+  "started": "2026-07-10T06:10:23.153Z",
+  "sections": [
+    "b1",
+    "b2",
+    "b3",
+    "b4"
+  ],
+  "predictions": {
+    "b1": "researched-force control preserves held 8",
+    "b2": "Phase-0 raises bonus-0 destination entity force",
+    "b3": "pre-gate top-up leaves no physical residual",
+    "b4": "OPEN"
+  },
+  "rungs": {
+    "b1": {
+      "success": true,
+      "control": {
+        "success": true,
+        "kind": "control",
+        "prediction": "full hand of 8 physically survives; adversarial destination bonus is raised before restore",
+        "force_setup": null,
+        "setup": {
+          "success": true,
+          "error": "nil",
+          "name": "inserter-lab-b-control-1783663828575",
+          "index": 38,
+          "platform_force": "player",
+          "entity_force": "player",
+          "force_bonus": 11,
+          "held": 8,
+          "tick": 432740,
+          "game_paused": false,
+          "platform_paused": false
+        },
+        "source_physical": {
+          "success": true,
+          "name": "inserter-lab-b-control-1783663828575",
+          "tick": 432783,
+          "game_paused": false,
+          "platform_paused": false,
+          "platform_force": "player",
+          "entity_force": "player",
+          "force_bonus": 11,
+          "held": 8,
+          "physical_iron_plate": 8,
+          "active": true
+        },
+        "transfer": {
+          "success": true,
+          "job_id": "016_inserter-lab-b-control-1783663828575",
+          "tick": 432862
+        },
+        "destination_physical": {
+          "success": true,
+          "name": "inserter-lab-b-control-1783663828575",
+          "tick": 378993,
+          "game_paused": false,
+          "platform_paused": false,
+          "platform_force": "player",
+          "entity_force": "player",
+          "force_bonus": 11,
+          "held": 8,
+          "physical_iron_plate": 8,
+          "active": true
+        },
+        "force_sync_confirmed": null,
+        "full_hand_confirmed": true,
+        "physical_total_confirmed": true
+      }
+    },
+    "b2": {
+      "success": true,
+      "adversarial": {
+        "success": true,
+        "kind": "adversarial",
+        "prediction": "full hand of 8 physically survives; adversarial destination bonus is raised before restore",
+        "force_setup": {
+          "source": {
+            "success": true,
+            "name": "inserter-lab-b-force-1783663850505",
+            "bonus": 11,
+            "force_count": 4
+          },
+          "destination": {
+            "success": true,
+            "name": "inserter-lab-b-force-1783663850505",
+            "bonus": 0,
+            "force_count": 4
+          }
+        },
+        "setup": {
+          "success": true,
+          "error": "nil",
+          "name": "inserter-lab-b-adversarial-1783663850505",
+          "index": 39,
+          "platform_force": "player",
+          "entity_force": "inserter-lab-b-force-1783663850505",
+          "force_bonus": 11,
+          "held": 8,
+          "tick": 433161,
+          "game_paused": false,
+          "platform_paused": false
+        },
+        "source_physical": {
+          "success": true,
+          "name": "inserter-lab-b-adversarial-1783663850505",
+          "tick": 433201,
+          "game_paused": false,
+          "platform_paused": false,
+          "platform_force": "player",
+          "entity_force": "inserter-lab-b-force-1783663850505",
+          "force_bonus": 11,
+          "held": 8,
+          "physical_iron_plate": 8,
+          "active": true
+        },
+        "transfer": {
+          "success": true,
+          "job_id": "017_inserter-lab-b-adversarial-1783663850505",
+          "tick": 433280
+        },
+        "destination_physical": {
+          "success": true,
+          "name": "inserter-lab-b-adversarial-1783663850505",
+          "tick": 380556,
+          "game_paused": false,
+          "platform_paused": false,
+          "platform_force": "player",
+          "entity_force": "inserter-lab-b-force-1783663850505",
+          "force_bonus": 11,
+          "held": 8,
+          "physical_iron_plate": 8,
+          "active": true
+        },
+        "force_sync_confirmed": true,
+        "full_hand_confirmed": true,
+        "physical_total_confirmed": true
+      }
+    },
+    "b3": {
+      "success": true,
+      "adversarial": {
+        "success": true,
+        "kind": "adversarial",
+        "prediction": "full hand of 8 physically survives; adversarial destination bonus is raised before restore",
+        "force_setup": {
+          "source": {
+            "success": true,
+            "name": "inserter-lab-b-force-1783663850505",
+            "bonus": 11,
+            "force_count": 4
+          },
+          "destination": {
+            "success": true,
+            "name": "inserter-lab-b-force-1783663850505",
+            "bonus": 0,
+            "force_count": 4
+          }
+        },
+        "setup": {
+          "success": true,
+          "error": "nil",
+          "name": "inserter-lab-b-adversarial-1783663850505",
+          "index": 39,
+          "platform_force": "player",
+          "entity_force": "inserter-lab-b-force-1783663850505",
+          "force_bonus": 11,
+          "held": 8,
+          "tick": 433161,
+          "game_paused": false,
+          "platform_paused": false
+        },
+        "source_physical": {
+          "success": true,
+          "name": "inserter-lab-b-adversarial-1783663850505",
+          "tick": 433201,
+          "game_paused": false,
+          "platform_paused": false,
+          "platform_force": "player",
+          "entity_force": "inserter-lab-b-force-1783663850505",
+          "force_bonus": 11,
+          "held": 8,
+          "physical_iron_plate": 8,
+          "active": true
+        },
+        "transfer": {
+          "success": true,
+          "job_id": "017_inserter-lab-b-adversarial-1783663850505",
+          "tick": 433280
+        },
+        "destination_physical": {
+          "success": true,
+          "name": "inserter-lab-b-adversarial-1783663850505",
+          "tick": 380556,
+          "game_paused": false,
+          "platform_paused": false,
+          "platform_force": "player",
+          "entity_force": "inserter-lab-b-force-1783663850505",
+          "force_bonus": 11,
+          "held": 8,
+          "physical_iron_plate": 8,
+          "active": true
+        },
+        "force_sync_confirmed": true,
+        "full_hand_confirmed": true,
+        "physical_total_confirmed": true
+      }
+    },
+    "b4": {
+      "success": true,
+      "prediction": "OPEN: measurement decides whether seated over-capacity hands survive or eject",
+      "setup": {
+        "success": true,
+        "name": "inserter-lab-b-b4-1783663875020",
+        "force": "inserter-lab-b-force-1783663875020",
+        "before": {
+          "label": "bonus 11 seated",
+          "tick": 433497,
+          "game_paused": false,
+          "bonus": 11,
+          "held": 8,
+          "ground": 0,
+          "total": 8
+        }
+      },
+      "lowered": {
+        "success": true,
+        "tick": 433536,
+        "game_paused": false,
+        "bonus": 0,
+        "held": 8,
+        "ground": 0,
+        "total": 8
+      },
+      "after_lower_elapsed": {
+        "success": true,
+        "tick": 433653,
+        "game_paused": false,
+        "bonus": 0,
+        "held": 8,
+        "ground": 0,
+        "total": 8
+      },
+      "reset_technology_effects": {
+        "success": true,
+        "tick": 433697,
+        "game_paused": false,
+        "bonus": 0,
+        "held": 8,
+        "ground": 0,
+        "total": 8
+      },
+      "after_reset_elapsed": {
+        "success": true,
+        "tick": 433817,
+        "game_paused": false,
+        "bonus": 0,
+        "held": 8,
+        "ground": 0,
+        "total": 8
+      },
+      "verdict": "seated hand survives bonus drop"
+    }
+  },
+  "errors": [],
+  "initial_reset": {
+    "baseline": {
+      "source": 3,
+      "destination": 3
+    },
+    "cleanup": {
+      "source": {
+        "success": true,
+        "deleted": {},
+        "exports": {},
+        "records": {},
+        "tick": 432471,
+        "force_count": 3
+      },
+      "destination": {
+        "success": true,
+        "deleted": {},
+        "exports": {},
+        "records": {},
+        "tick": 377404,
+        "force_count": 3
+      }
+    },
+    "zero": {
+      "source": {
+        "success": true,
+        "tick": 432582,
+        "zero_surfaces": true,
+        "surfaces": {},
+        "zero_storage": true,
+        "game_paused": false,
+        "destination_holds": 0,
+        "locked_platforms": 0,
+        "committed_source_transfer_tombstones": 0,
+        "lab_platform_exports": 0,
+        "lab_forces": 0,
+        "forces": {},
+        "force_count": 3
+      },
+      "destination": {
+        "success": true,
+        "tick": 377514,
+        "zero_surfaces": true,
+        "surfaces": {},
+        "zero_storage": true,
+        "game_paused": false,
+        "destination_holds": 0,
+        "locked_platforms": 0,
+        "committed_source_transfer_tombstones": 0,
+        "lab_platform_exports": 0,
+        "lab_forces": 0,
+        "forces": {},
+        "force_count": 3
+      }
+    },
+    "ok": true
+  },
+  "install": {
+    "source": {
+      "success": true,
+      "tick": 432662,
+      "force_count": 3
+    },
+    "destination": {
+      "success": true,
+      "tick": 377595,
+      "force_count": 3
+    }
+  },
+  "final_reset": {
+    "baseline": {
+      "source": 3,
+      "destination": 3
+    },
+    "cleanup": {
+      "source": {
+        "success": true,
+        "deleted": [
+          "inserter-lab-b-b4-1783663875020"
+        ],
+        "exports": [
+          "016_inserter-lab-b-control-1783663828575",
+          "017_inserter-lab-b-adversarial-1783663850505"
+        ],
+        "records": {},
+        "tick": 433859,
+        "force_count": 5
+      },
+      "destination": {
+        "success": true,
+        "deleted": [
+          "platform-1",
+          "platform-2"
+        ],
+        "exports": {},
+        "records": {},
+        "tick": 380998,
+        "force_count": 4
+      }
+    },
+    "zero": {
+      "source": {
+        "success": true,
+        "tick": 433969,
+        "zero_surfaces": true,
+        "surfaces": {},
+        "zero_storage": true,
+        "game_paused": false,
+        "destination_holds": 0,
+        "locked_platforms": 0,
+        "committed_source_transfer_tombstones": 0,
+        "lab_platform_exports": 0,
+        "lab_forces": 0,
+        "forces": {},
+        "force_count": 3
+      },
+      "destination": {
+        "success": true,
+        "tick": 381108,
+        "zero_surfaces": true,
+        "surfaces": {},
+        "zero_storage": true,
+        "game_paused": false,
+        "destination_holds": 0,
+        "locked_platforms": 0,
+        "committed_source_transfer_tombstones": 0,
+        "lab_platform_exports": 0,
+        "lab_forces": 0,
+        "forces": {},
+        "force_count": 3
+      }
+    },
+    "ok": true
+  },
+  "finished": "2026-07-10T06:11:23.677Z"
+}
+```
