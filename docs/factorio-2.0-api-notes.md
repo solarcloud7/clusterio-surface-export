@@ -58,6 +58,17 @@ Consequence: fluid does not live per-entity — it lives in the shared segment. 
   debug dump, destination validation, and destination direct/segment meters all reported a single equilibrated
   `steam@332.5C = 2000` key. In this measured storage-tank case, the old exact-key gate would not have
   false-failed; aggregate-by-name validation is defensive for this case rather than proven necessary by R10b.
+- **A production export lock freezes pump-driven segment transfer while belts keep moving.**
+  **[empirical, 2.0.77, gate-drift LAB-A]** A powered east-facing pump moved water between two connected
+  segments before export and resumed after unlock. During the real multi-tick `/export-platform` lock, the
+  pump reported `disabled_by_script`, four lock-window samples per flowing section showed unchanged per-segment
+  contents and stable segment IDs, while belt-position signatures continued changing. Two consecutive full
+  passes covered export spans of `144`–`240` ticks; serialized versus independent single-tick physical totals
+  were exact in every section (`max fluid residual=0`, `max item residual=0`). This grounds the tested source
+  export path only; it does not generalize exactness to untested fluids or restoration behavior.
+- **LAB-A found no source-export scan residual requiring a tolerance in its tested fixture.**
+  **[empirical, 2.0.77, gate-drift LAB-A]** The existing high-temperature/merge epsilon note concerns other
+  measurement domains; it is not evidence for a generic source-export volume-loss band.
 - **`get_capacity(i)`** is the segment capacity. **[API]** Empirically it returns the **full segment**
   capacity for pipes/tanks but only the **local** buffer capacity for machines/thrusters, because
   pipe prototypes define `base_area` (drives segment capacity) while machines define fixed local
