@@ -64,6 +64,29 @@ function DebugExport.write_json(filename, data, description)
   return true
 end
 
+--- Write an always-on failure evidence bundle. This deliberately bypasses debug_mode: the artifact
+--- must exist before a failed destination is discarded.
+--- @param filename string
+--- @param data table
+--- @return string|nil: script-output filename on success
+function DebugExport.write_failure_black_box(filename, data)
+  local full_filename = "failure_black_box_" .. filename
+  local encode_ok, json_data = pcall(function()
+    return Util.encode_json_compat(data)
+  end)
+  if not encode_ok or type(json_data) ~= "string" then
+    log(string.format("[BlackBox] ERROR: encode failed for %s: %s", full_filename, tostring(json_data)))
+    return nil
+  end
+  local write_ok, write_err = Util.write_file_compat(full_filename, json_data, false)
+  if not write_ok then
+    log(string.format("[BlackBox] ERROR: write failed for %s: %s", full_filename, tostring(write_err)))
+    return nil
+  end
+  log(string.format("[BlackBox] Banked %s (%d bytes)", full_filename, #json_data))
+  return full_filename
+end
+
 --- Export platform data before transfer (source platform)
 --- @param platform_data table: The exported platform data
 --- @param platform_name string: Name of the platform

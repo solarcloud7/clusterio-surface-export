@@ -39,6 +39,7 @@ const distNode = path.join(__dirname, "..", "dist", "node");
 const moduleRoot = path.join(__dirname, "..", "module");
 const { InstancePlugin } = require(path.join(distNode, "instance.js"));
 const { TransferOrchestrator } = require(path.join(distNode, "lib", "transfer-orchestrator.js"));
+const { createOperationRecord } = require(path.join(distNode, "lib", "operation-record.js"));
 require(path.join(distNode, "lib", "metrics.js"));
 
 function makeInstanceHarness() {
@@ -64,7 +65,7 @@ function makeInstanceHarness() {
 	return { plugin, calls };
 }
 
-test("instance forwards Lua composite verdict payload without name-keyed refetch or re-derivation", async () => {
+test("instance forwards Lua single verdict payload without name-keyed refetch or re-derivation", async () => {
 	const { plugin, calls } = makeInstanceHarness();
 	const validation = {
 		itemCountMatch: true,
@@ -85,7 +86,7 @@ test("instance forwards Lua composite verdict payload without name-keyed refetch
 	assert.equal(calls.luaAccesses, 0, "transfer verdict must come from the event payload, not a Lua refetch");
 	assert.equal(calls.sent.length, 1, "one TransferValidationEvent must be emitted");
 	assert.equal(calls.sent[0].transferId, "1:001_composite");
-	assert.equal(calls.sent[0].success, false, "payload success is the authoritative composite verdict");
+	assert.equal(calls.sent[0].success, false, "payload success is the authoritative single verdict");
 	assert.deepEqual(calls.sent[0].validation, validation);
 	assert.equal(calls.sent[0].metrics.fluids_restored, 4);
 	assert.deepEqual(calls.sent[0].metrics.phase_spans, [{ name: "fluids", duration_ms: 10 }]);
@@ -108,6 +109,38 @@ test("instance fails closed on success-only transfer payload without validation"
 	assert.equal(calls.sent[0].validation.itemCountMatch, false);
 	assert.equal(calls.sent[0].validation.fluidCountMatch, false);
 	assert.match(calls.sent[0].validation.mismatchDetails, /Validation payload not retrieved/);
+});
+
+test("instance fails closed when Lua omits the boolean success verdict", async () => {
+	const { plugin, calls } = makeInstanceHarness();
+
+	await plugin.handleImportCompleteValidation({
+		platform_name: "Missing Boolean Verdict",
+		transfer_id: "1:001_missing_boolean",
+		source_instance_id: 1,
+		validation: { itemCountMatch: true, fluidCountMatch: true },
+	});
+
+	assert.equal(calls.sent.length, 1);
+	assert.equal(calls.sent[0].success, false, "missing data.success must fail closed despite matching counts");
+});
+
+test("transfer operation records reject a missing platform index", () => {
+	assert.throws(() => createOperationRecord("transfer", {
+		operationId: "transfer:missing-index",
+		platformName: "test",
+		sourceInstanceId: 1,
+		targetInstanceId: 2,
+	}), /platformIndex/i);
+	for (const platformIndex of [null, 0, -1]) {
+		assert.throws(() => createOperationRecord("transfer", {
+			operationId: `transfer:invalid-index:${platformIndex}`,
+			platformName: "test",
+			platformIndex,
+			sourceInstanceId: 1,
+			targetInstanceId: 2,
+		}), /platformIndex/i);
+	}
 });
 
 function makeTransferHarness() {
@@ -152,7 +185,7 @@ function makeTransferHarness() {
 	return { orch, transfer };
 }
 
-test("orchestrator preserves failedStage from the composite verdict on failed transfers", async () => {
+test("orchestrator preserves failedStage from the single verdict on failed transfers", async () => {
 	const { orch, transfer } = makeTransferHarness();
 
 	await orch.handleTransferValidation({
@@ -173,109 +206,114 @@ test("orchestrator preserves failedStage from the composite verdict on failed tr
 	assert.equal(transfer.validationResult.failedStage, "fluids");
 });
 
+test("orchestrator surfaces a failed destination discard as cleanup_failed", async () => {
+	const { orch, transfer } = makeTransferHarness();
+
+	await orch.handleTransferValidation({
+		transferId: transfer.transferId,
+		success: false,
+		platformName: transfer.platformName,
+		sourceInstanceId: transfer.sourceInstanceId,
+		validation: {
+			itemCountMatch: false,
+			fluidCountMatch: true,
+			failedStage: "items",
+			mismatchDetails: "Item gate failed",
+			cleanup_failed: true,
+			cleanup_error: "GameUtils.delete_platform returned false",
+		},
+	});
+
+	assert.equal(transfer.status, "cleanup_failed");
+	assert.match(transfer.error, /delete_platform returned false/);
+});
+
 test("operation outcome metrics expose bounded failure_stage label", () => {
 	const operationsMetric = metricDefinitions.find(def => def.name === "surface_export_operations_total");
 	assert.ok(operationsMetric, "operations total metric should be registered");
 	assert.deepEqual(operationsMetric.options.labels, ["operation", "result", "failure_stage"]);
 });
 
-test("Lua import completion gates post-activation fluids and discards the destination on fluid failure", () => {
+test("Lua import completion injects fluids and renders one verdict before activation", () => {
 	const importCompletion = fs.readFileSync(path.join(moduleRoot, "core", "import-completion.lua"), "utf8");
-	assert.match(importCompletion, /TransferValidation\.validate_fluids_post_activation\s*\(\s*result\s*\)/,
-		"post-activation fluid reconciliation must become a real validation gate");
-	assert.match(importCompletion, /result\.success\s*=\s*result\.itemCountMatch\s+and\s+result\.fluidCountMatch/,
-		"Lua must compose the single composite verdict before emitting it");
-	const transferValidation = fs.readFileSync(path.join(moduleRoot, "validators", "transfer-validation.lua"), "utf8");
-	assert.match(transferValidation, /result\.failedStage\s*=\s*["']fluids["']/,
-		"fluid gate failure must label failedStage=fluids in the validation helper");
-	assert.match(importCompletion, /GameUtils\.delete_platform\s*\(\s*job\.target_platform\s*\)/,
-		"fluid-stage failure happens after activation, so the destination artifact must be deleted before rollback");
-	assert.match(importCompletion, /event_payload\.success\s*=\s*validation_result\s+and\s+validation_result\.success\s*==\s*true/,
-		"the Clusterio import-complete message must carry the Lua composite verdict");
-	assert.match(importCompletion, /function\s+emit_debug_import_result\s*\([\s\S]*validation_success\s*=\s*validation_result\s+and\s+validation_result\.success\s*==\s*true/,
-		"debug import-result must contain the final composite verdict through the shared emitter");
-	assert.doesNotMatch(importCompletion, /store_validation_result\s*\(\s*job\.platform_name\s*,\s*result\s*\)/,
-		"transfer validation storage must not be keyed by mutable platform name");
-	const successPrintIndex = importCompletion.indexOf("[Validation] ✓ Validation passed");
-	const fluidGateIndex = importCompletion.indexOf("TransferValidation.validate_fluids_post_activation");
-	assert.ok(successPrintIndex > fluidGateIndex,
-		"green validation-passed player message must only appear after the post-activation fluid gate");
+	const heldAt = importCompletion.indexOf("ActiveStateRestoration.restore_held_items_only");
+	const injectAt = importCompletion.indexOf("FluidRestoration.restore(entities_to_create, entity_map)", heldAt);
+	const gateAt = importCompletion.indexOf("TransferValidation.validate_import", injectAt);
+	const activateAt = importCompletion.indexOf("ActiveStateRestoration.restore(job.entities_to_create", gateAt);
+	assert.ok(heldAt !== -1 && injectAt > heldAt, "frozen fluid injection must follow held-item completion");
+	assert.ok(gateAt > injectAt, "the complete-world census must follow frozen fluid injection");
+	assert.ok(activateAt > gateAt, "activation must remain strictly after the one verdict");
+	assert.doesNotMatch(importCompletion, /validate_fluids_post_activation/,
+		"no post-activation verdict writer may remain");
+	assert.doesNotMatch(importCompletion, /test_measure_frozen_fluid_injection|r11FrozenFluidMeasurement/,
+		"the R11 measurement seam must retire when its body becomes production ordering");
 });
 
-test("fluid verdict is commensurate by fluid name, not exact low-temp temperature key", () => {
+test("single gate is exact for items and by-name fluids", () => {
 	const transferValidation = fs.readFileSync(path.join(moduleRoot, "validators", "transfer-validation.lua"), "utf8");
 	assert.match(transferValidation, /function\s+aggregate_fluid_counts_by_name\s*\(/,
-		"destructive fluid gate must aggregate by fluid name so temperature-key drift cannot look like total loss");
-	assert.match(transferValidation, /expected_by_name[\s\S]*actual_by_name[\s\S]*all_names/,
-		"fluid gate must compare expected and actual totals over the same fluid-name set");
-	assert.doesNotMatch(transferValidation, /actual_volume\s*<\s*1/,
-		"destructive fluid gate must not classify an exact low-temp key miss as complete fluid loss");
+		"fluid parity must aggregate temperatures by fluid name");
+	assert.match(transferValidation, /EXACT_EPSILON\s*=\s*1e-6/,
+		"the only fluid comparison nuance is serializer-scale floating representation");
+	assert.doesNotMatch(transferValidation, /STRICT_ABS|STRICT_PCT|FLUID_GAIN_TOLERANCE|FLUID_LOSS_TOLERANCE/,
+		"destructive transfer parity must contain no band, floor, or percentage tolerance");
+	assert.match(transferValidation, /SurfaceCounter\.count_fluids\s*\(\s*surface\s*,\s*options\.segment_temps\s*\)/,
+		"the exact census must receive injection segment temperatures");
 });
 
-test("fluid-gate discard failure re-quarantines the destination instead of leaving a live duplicate", () => {
+test("failed single gate banks an always-on black box before discard", () => {
 	const importCompletion = fs.readFileSync(path.join(moduleRoot, "core", "import-completion.lua"), "utf8");
-	assert.match(importCompletion, /function\s+quarantine_destination_after_discard_failure\s*\(/,
-		"delete failure after an activated fluid-gate reject needs a single quarantine helper");
-	assert.match(importCompletion, /if\s+not\s+discarded\s+then[\s\S]*quarantine_destination_after_discard_failure\s*\(\s*job\s*,\s*result\s*\)/,
-		"a failed destination discard must immediately re-quarantine the artifact");
-	assert.match(importCompletion, /platform\.paused\s*=\s*true/,
-		"quarantine must pause the surviving destination platform");
-	assert.match(importCompletion, /set_surface_hidden\(\s*surface\s*,\s*true\s*\)/,
-		"quarantine must hide the surviving destination surface");
-	assert.match(importCompletion, /entity\.active\s*=\s*false/,
-		"quarantine must deactivate activatable entities on the surviving destination");
-	assert.match(importCompletion, /destinationDiscardEscalated/,
-		"failed discard must be surfaced as an escalated result field");
+	const bankAt = importCompletion.indexOf("bank_failure_black_box");
+	const discardAt = importCompletion.indexOf("GameUtils.delete_platform", bankAt);
+	assert.ok(bankAt !== -1 && discardAt > bankAt, "black-box evidence must be banked before destination discard");
+	assert.match(importCompletion, /preserve_failed_destination/,
+		"debug-gated preserve mode must remain an explicit escape hatch");
+	assert.doesNotMatch(importCompletion, /quarantine_destination_after_discard_failure|destinationDiscard(?:ed|Escalated|Quarantined|QuarantineError)/,
+		"retired quarantine and consumer-less destination fields must be gone");
 });
 
-test("import completion emits a post-item debug result before risky post-gate phases", () => {
+test("failed-entity fluids and engine-rejected writes adjust expectations before the gate", () => {
 	const importCompletion = fs.readFileSync(path.join(moduleRoot, "core", "import-completion.lua"), "utf8");
-	assert.match(importCompletion, /function\s+emit_debug_import_result\s*\(/,
-		"debug import-result emission should be centralized so pre/post verdict dumps cannot drift");
-	const itemGateAt = importCompletion.indexOf("result.success = result.itemCountMatch and result.fluidCountMatch");
-	const activationAt = importCompletion.indexOf("ActiveStateRestoration.restore(job.entities_to_create");
-	const firstDebugAt = importCompletion.indexOf("emit_debug_import_result(job, validation_result, duration_seconds", itemGateAt);
-	assert.ok(itemGateAt !== -1 && activationAt !== -1 && firstDebugAt !== -1 && firstDebugAt < activationAt,
-		"a post-item-gate debug result must land before activation/fluid/loss can throw");
+	const failedFluidsAt = importCompletion.indexOf("fel.fluids");
+	const rejectedAt = importCompletion.indexOf("write_rejected", failedFluidsAt);
+	const gateAt = importCompletion.indexOf("TransferValidation.validate_import", rejectedAt);
+	assert.ok(failedFluidsAt !== -1 && rejectedAt > failedFluidsAt && gateAt > rejectedAt,
+		"failed-entity fluids and rejected writes must adjust expected counts before the verdict");
 });
 
-test("Lua verdict fields have single owners and no truthiness idiom traps", () => {
+test("fluid restoration reports dropped fluids without subtracting them", () => {
+	const restoration = fs.readFileSync(path.join(moduleRoot, "import_phases", "fluid_restoration.lua"), "utf8");
+	assert.match(restoration, /return\s*\{[\s\S]*dropped_fluids\s*=\s*dropped_fluids[\s\S]*\}/,
+		"capacity or partial-insert drops must be returned for diagnosis");
 	const importCompletion = fs.readFileSync(path.join(moduleRoot, "core", "import-completion.lua"), "utf8");
-	assert.doesNotMatch(importCompletion, /success\s+and\s+nil\s+or\s+["']items["']/,
-		"Lua 'success and nil or items' always yields items on success; use an explicit nil-safe expression");
-	const callerFluidStageWrites = [...importCompletion.matchAll(/result\.failedStage\s*=\s*["']fluids["']/g)];
-	assert.equal(callerFluidStageWrites.length, 0,
-		"validate_fluids_post_activation should be the single writer for failedStage=fluids");
+	assert.doesNotMatch(importCompletion, /expected_fluids_after_[^(]*drops|subtract[^\n]*dropped_fluids/i,
+		"real dropped fluid must fail exact parity, never be subtracted from expected");
 });
 
-test("TransferValidation exposes a reusable post-activation fluid gate keyed by transfer id", () => {
-	const transferValidation = fs.readFileSync(path.join(moduleRoot, "validators", "transfer-validation.lua"), "utf8");
-	assert.match(transferValidation, /function\s+TransferValidation\.validate_fluids_post_activation\s*\(/,
-		"fluid gate should reuse the existing reconciliation logic through a named helper");
-	assert.match(transferValidation, /function\s+TransferValidation\.store_validation_result\s*\(\s*result_id\s*,\s*validation_result\s*\)/,
-		"validation result store should use transfer/job id, not platform name");
-	assert.match(transferValidation, /function\s+TransferValidation\.get_validation_result\s*\(\s*result_id\s*\)/,
-		"debug remote should fetch by id");
-	assert.doesNotMatch(transferValidation, /storage\.validation_results\s*\[\s*platform_name\s*\]/,
-		"validation result storage must not be platform-name keyed");
+test("post-activation reporting cannot overwrite frozen gate fields", () => {
+	const lossAnalysis = fs.readFileSync(path.join(moduleRoot, "validators", "loss-analysis.lua"), "utf8");
+	assert.match(lossAnalysis, /result\.postActivationReport\s*=\s*{/,
+		"post-activation physical reporting must live under a separate sub-object");
+	assert.doesNotMatch(lossAnalysis, /validation_result\.actualItemCounts\s*=|validation_result\.actualFluidCounts\s*=/,
+		"reporting must not mutate the gate's immutable actual counts");
 });
 
 test("LuaInterface has no production validation-result refetch helper", () => {
 	const luaInterface = fs.readFileSync(path.join(__dirname, "..", "lib", "lua-interface.ts"), "utf8");
 	const removedHelperName = ["getValidationResult", "Json"].join("");
 	assert.doesNotMatch(luaInterface, new RegExp(removedHelperName),
-		"production TS should consume the Lua composite verdict payload instead of re-fetching stored validation by id");
+		"production TS should consume the Lua single verdict payload instead of re-fetching stored validation by id");
 });
-test("fluid-loss hook is allowlisted and fires before the post-activation fluid gate", () => {
+test("fluid-loss hook is allowlisted and fires before the single gate", () => {
 	const importCompletion = fs.readFileSync(path.join(moduleRoot, "core", "import-completion.lua"), "utf8");
 	const configure = fs.readFileSync(path.join(moduleRoot, "interfaces", "remote", "configure.lua"), "utf8");
 	const hookLint = fs.readFileSync(path.join(__dirname, "..", "scripts", "lint-test-hooks.mjs"), "utf8");
 	const hookIndex = importCompletion.indexOf("test_force_fluid_loss");
-	const gateIndex = importCompletion.indexOf("TransferValidation.validate_fluids_post_activation");
+	const gateIndex = importCompletion.indexOf("TransferValidation.validate_import");
 
 	assert.notEqual(hookIndex, -1, "import completion must consume test_force_fluid_loss");
-	assert.ok(hookIndex < gateIndex, "test_force_fluid_loss must fire before the fluid gate");
-	assert.match(importCompletion, /result\.expectedFluidCounts\[missing_key\]\s*=\s*\(result\.expectedFluidCounts\[missing_key\]\s*or\s*0\)\s*\+\s*expected_loss/,
+	assert.ok(hookIndex < gateIndex, "test_force_fluid_loss must fire before the single gate");
+	assert.match(importCompletion, /adjusted_verification\.fluid_counts\[missing_key\]\s*=\s*\(adjusted_verification\.fluid_counts\[missing_key\]\s*or\s*0\)\s*\+\s*expected_loss/,
 		"hook should inflate expected fluids without mutating the destination");
 	assert.match(importCompletion, /\[TEST HOOK\] Forced fluid loss: inflated missing expected/,
 		"integration probe needs a direct log witness that the hook fired");

@@ -281,6 +281,8 @@ export default function TransactionLogsTab({ plugin, state }: { plugin: SurfaceE
 
 	const validation = (detailedSummary?.validation ?? null) as JsonObject | null;
 	const failureStage = validation ? getProp(validation, "failedStage", null) as string | null : null;
+	const failureBlackBox = validation ? getProp(validation, "failureBlackBox", null) as JsonObject | null : null;
+	const failureBlackBoxFile = failureBlackBox ? String(getProp(failureBlackBox, "file", "")) : "";
 
 	const expectedItems = (validation ? getProp(validation, "expectedItemCounts", null) as Record<string, number> | null : null)
 		|| (detailedSummary?.sourceVerification ? getProp(detailedSummary.sourceVerification as JsonObject, "itemCounts", null) as Record<string, number> | null : null)
@@ -573,6 +575,7 @@ export default function TransactionLogsTab({ plugin, state }: { plugin: SurfaceE
 									<span>{summaryOutcomeText} {`(${detailedSummary.totalDurationStr}):`}</span>
 									{detailedSummary.error ? <span>{String(detailedSummary.error)}</span> : null}
 									{selectedResult === "FAILED" && failureStage ? <span>{`Failure stage: ${failureStage}`}</span> : null}
+									{failureBlackBoxFile ? <span>{`Failure evidence: ${failureBlackBoxFile}`}</span> : null}
 								</Space>
 							)}
 						/>

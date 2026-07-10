@@ -139,6 +139,18 @@ repoOnlyTest("destination hold integration probe asserts save and hold stage res
 	assert.doesNotMatch(script, /Send-Rcon -Instance \$instance -Command "\/server-save" \| Out-Null/);
 	assert.doesNotMatch(script, /Invoke-HoldJson -Action stage -TransferId \$ttlTid -PlatformIndex \$ttl\.Index \| Out-Null/);
 });
+repoOnlyTest("destination hold integration probe waits for the save atomic rename before restart", () => {
+	const script = readRepo("tests/integration/destination-hold/run-tests.ps1");
+	assert.match(script, /function Wait-ForCompletedSave/);
+	assert.match(script, /function Get-ActiveSaveName/);
+	assert.match(script, /--start-server/);
+	assert.match(script, /\.tmp\.zip/);
+	assert.match(script, /saved_at -gt \$BeforeTimestamp/);
+	assert.ok(
+		script.indexOf("Wait-ForCompletedSave") < script.indexOf("docker restart $container"),
+		"completed-save wait must precede container restart",
+	);
+});
 repoOnlyTest("destination hold integration probe directly measures machine-buffer fluids", () => {
 	const script = readRepo("tests/integration/destination-hold/run-tests.ps1");
 	assert.match(script, /tick=game\.tick/);

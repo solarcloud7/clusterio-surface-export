@@ -30,6 +30,13 @@ export function createOperationRecord(
 		?? (sourceInstanceId > 0 ? resolveInstanceName(sourceInstanceId) : null);
 	const targetInstanceName = options.targetInstanceName
 		?? (targetInstanceId > 0 ? resolveInstanceName(targetInstanceId) : null);
+	const candidatePlatformIndex = Number(options.platformIndex);
+	const platformIndex = Number.isInteger(candidatePlatformIndex) && candidatePlatformIndex > 0
+		? candidatePlatformIndex
+		: null;
+	if (operationType === "transfer" && platformIndex === null) {
+		throw new Error("platformIndex is required for transfer operations");
+	}
 	const operation: ActiveTransfer = {
 		transferId: operationId,
 		operationType,
@@ -37,7 +44,7 @@ export function createOperationRecord(
 		sourceExportId: options.sourceExportId || null,
 		artifactSizeBytes: options.artifactSizeBytes ?? null,
 		platformName: options.platformName || "Unknown",
-		platformIndex: Number.isInteger(Number(options.platformIndex)) ? Number(options.platformIndex) : 1,
+		platformIndex: platformIndex ?? 1,
 		forceName: options.forceName || "player",
 		sourceInstanceId,
 		sourceInstanceName,

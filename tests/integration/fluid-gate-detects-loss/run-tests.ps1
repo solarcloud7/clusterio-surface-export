@@ -1,15 +1,15 @@
 <#
 .SYNOPSIS
-    Composite fluid-gate loss-detection test: a post-activation fluid mismatch fails the transfer,
-    discards the activated destination artifact, and preserves the source.
+    Single exact-gate loss-detection test: a frozen-world fluid mismatch fails the transfer,
+    banks a black box, discards the held destination artifact, and preserves the source.
 
 .DESCRIPTION
-    This is the adversarial tooth for the V1 composite transfer verdict. The destination arms the
-    one-shot `test_force_fluid_loss = N` hook. During import, after fluid restoration and
-    LossAnalysis.run but before the post-activation fluid gate, the hook adds a non-destructive
+    This is the adversarial tooth for the single frozen-world transfer verdict. The destination arms the
+    one-shot `test_force_fluid_loss = N` hook. During import, after frozen fluid restoration but before
+    the exact gate, the hook adds a non-destructive
     expected-fluid shortfall. The final debug import-result must report validation_success=false,
-    failedStage=fluids, and fluidCountMatch=false. Because this failure happens after activation,
-    the destination platform must be physically gone, while the source clone remains.
+    failedStage=fluids, and fluidCountMatch=false. The black box must be banked before the held
+    destination is discarded, while the source clone remains.
 #>
 param(
     [string]$SourcePlatform = "test",
@@ -22,14 +22,14 @@ $ErrorActionPreference = "Stop"
 $ModulePath = Join-Path (Split-Path -Parent $PSScriptRoot) "lib\TestBase.psm1"
 Import-Module $ModulePath -Force
 
-Write-TestHeader "Composite Fluid Gate Loss Detection"
+Write-TestHeader "Single Exact Fluid Gate Loss Detection"
 
 $clone = "fluidgateloss-$(Get-Date -Format 'HHmmss')"
 $srcInstance = $null
 $dstInstance = $null
 $dstContainer = $null
 $failed = 0
-$TOTAL_ASSERTIONS = 6
+$TOTAL_ASSERTIONS = 8
 
 try {
     if ($SourceHost -eq 0) {
@@ -63,7 +63,7 @@ try {
     $baseLines = [int]((docker exec $dstContainer sh -c "wc -l < $dstLog 2>/dev/null").Trim())
 
     $destId = Get-ClusterioInstanceId -InstanceName $dstInstance
-    docker exec $dstContainer sh -c "rm -f $dstScriptOut/debug_import_result_${clone}_*.json 2>/dev/null" 2>$null | Out-Null
+    docker exec $dstContainer sh -c "rm -f $dstScriptOut/debug_import_result_${clone}_*.json $dstScriptOut/failure_black_box_${clone}_*.json 2>/dev/null" 2>$null | Out-Null
     Send-Rcon -Instance $srcInstance -Command "/transfer-platform $idx $destId" | Out-Null
     Write-Status "Transfer initiated (expecting fluid-stage failure and destination discard)" -Type info
 
@@ -82,6 +82,7 @@ try {
     $valSuccess      = Get-SafeProperty $resultData "validation_success"
     $failedStage     = Get-SafeProperty $valResult "failedStage"
     $fluidCountMatch = Get-SafeProperty $valResult "fluidCountMatch"
+    $blackBoxRef     = Get-SafeProperty $valResult "failureBlackBox"
 
     $newLogText = (docker exec $dstContainer sh -c "tail -n +$($baseLines + 1) $dstLog 2>/dev/null") -join "`n"
 
@@ -113,6 +114,30 @@ try {
         $failed++
     }
 
+    $blackBoxFile = Get-SafeProperty $blackBoxRef "file"
+    $blackBox = if ($blackBoxFile) { Read-DebugFile -Instance $dstInstance -Container $dstContainer -Filename $blackBoxFile } else { $null }
+    if ($blackBox) {
+        Write-TestResult -TestId "fluidgate-blackbox-written" -TestName "Always-on failure black box written before discard" -Status "passed"
+    } else {
+        Write-TestResult -TestId "fluidgate-blackbox-written" -TestName "Always-on failure black box written before discard" -Status "failed" -Message "failureBlackBox.file=$blackBoxFile"
+        $failed++
+    }
+
+    $fluidDiff = if ($blackBox) { Get-SafeProperty (Get-SafeProperty $blackBox "diff") "fluids" } else { $null }
+    $shortfallGrounded = $false
+    if ($fluidDiff) {
+        foreach ($prop in $fluidDiff.PSObject.Properties) {
+            $delta = [double](Get-SafeProperty $prop.Value "delta")
+            if ($delta -le -$LossAmount) { $shortfallGrounded = $true; break }
+        }
+    }
+    if ($shortfallGrounded) {
+        Write-TestResult -TestId "fluidgate-blackbox-shortfall" -TestName "Black box carries the injected per-name shortfall" -Status "passed"
+    } else {
+        Write-TestResult -TestId "fluidgate-blackbox-shortfall" -TestName "Black box carries the injected per-name shortfall" -Status "failed" -Message "No fluid diff delta <= -$LossAmount"
+        $failed++
+    }
+
     if (Get-PlatformIndex -Instance $srcInstance -PlatformName $clone) {
         Write-TestResult -TestId "fluidgate-source-preserved" -TestName "Source preserved after fluid gate failure" -Status "passed"
     } else {
@@ -121,7 +146,7 @@ try {
     }
 
     if (-not (Get-PlatformIndex -Instance $dstInstance -PlatformName $clone)) {
-        Write-TestResult -TestId "fluidgate-dest-discarded" -TestName "Activated destination artifact discarded after fluid gate failure" -Status "passed"
+        Write-TestResult -TestId "fluidgate-dest-discarded" -TestName "Held destination artifact discarded after exact-gate failure" -Status "passed"
     } else {
         Write-TestResult -TestId "fluidgate-dest-discarded" -TestName "Activated destination artifact discarded after fluid gate failure" -Status "failed" -Message "Destination platform '$clone' still exists after fluid-stage failure"
         $failed++

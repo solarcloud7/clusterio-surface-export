@@ -35,7 +35,7 @@ const ALLOW_MARKER = "lint-test-hooks:allow";
 // post-gate/destructive hook here would defeat the guard, so adding one is a reviewable act.
 const FAIL_SAFE_HOOKS = new Set([
 	"test_force_item_loss", // pre-gate: inflates the loss the strict gate counts → gate FAILS → source preserved
-	"test_force_fluid_loss", // pre-gate: inflates expected fluids before the composite gate → gate FAILS → dest discarded/source preserved
+	"test_force_fluid_loss", // pre-gate: inflates expected fluids before the single exact gate → gate FAILS → dest discarded/source preserved
 	"test_force_validation_failure", // pre-gate: forces validation FAIL → rollback → source preserved
 	"test_force_entity_failure", // pre-gate: one entity fails to place → attributed loss → gate catches it
 ]);

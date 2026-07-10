@@ -325,21 +325,21 @@ function LossAnalysis.run(surface, entities_to_create, validation_result, segmen
         end
     end
 
-    -- === UPDATE VALIDATION RESULT with post-activation counts ===
-    result.totalActualItems = total_actual_items
-    result.actualItemCounts = actual_item_counts
-    result.totalActualFluids = total_actual_fluids
-    result.actualFluidCounts = actual_fluid_counts
-    result.postActivation = true
-
-    result.fluidReconciliation = {
-        highTempThreshold = recon.highTempThreshold,
-        rawFluidDelta = recon.rawDelta,
-        reconciledFluidLoss = recon.reconciledLoss,
-        lowTempLoss = recon.lowTempLoss,
-        highTempReconciledLoss = recon.highTempReconciledLoss,
-        fluidPreservedPct = recon.fluidPreservedPct,
-        highTempAggregates = recon.highTempAggregates,
+    -- Reporting only: the frozen gate fields above are immutable once the verdict is rendered.
+    result.postActivationReport = {
+        totalActualItems = total_actual_items,
+        actualItemCounts = actual_item_counts,
+        totalActualFluids = total_actual_fluids,
+        actualFluidCounts = actual_fluid_counts,
+        fluidReconciliation = {
+            highTempThreshold = recon.highTempThreshold,
+            rawFluidDelta = recon.rawDelta,
+            reconciledFluidLoss = recon.reconciledLoss,
+            lowTempLoss = recon.lowTempLoss,
+            highTempReconciledLoss = recon.highTempReconciledLoss,
+            fluidPreservedPct = recon.fluidPreservedPct,
+            highTempAggregates = recon.highTempAggregates,
+        },
     }
 end
 

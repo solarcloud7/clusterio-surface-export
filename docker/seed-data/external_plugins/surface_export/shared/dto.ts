@@ -190,8 +190,7 @@ export interface ValidationResult {
 	entityTypeBreakdown?: Record<string, number>;
 	failedEntityLosses?: { items: Record<string, number>; fluids: Record<string, number> };
 	highTempAggregates?: Record<string, { expectedEnergy: number; actualEnergy: number; reconciled: boolean }>;
-	// Post-LossAnalysis fields
-	postActivation?: boolean;
+	// Frozen-gate totals. Post-activation telemetry lives under postActivationReport.
 	totalExpectedItems?: number;
 	totalActualItems?: number;
 	totalExpectedFluids?: number;
@@ -209,5 +208,17 @@ export interface ValidationResult {
 		fluidPreservedPct: number;
 		highTempAggregates?: Record<string, { expected: number; actual: number; delta: number; reconciled: boolean; expectedEnergy: number; actualEnergy: number }>;
 	};
+	droppedFluids?: Record<string, number>;
+	writeRejectedFluids?: Record<string, number>;
+	postActivationReport?: {
+		totalActualItems: number;
+		actualItemCounts: Record<string, number>;
+		totalActualFluids: number;
+		actualFluidCounts: Record<string, number>;
+		fluidReconciliation?: Record<string, unknown>;
+	};
+	failureBlackBox?: { file: string; tick: number };
+	cleanup_failed?: boolean;
+	cleanup_error?: string;
 	[key: string]: unknown;
 }
