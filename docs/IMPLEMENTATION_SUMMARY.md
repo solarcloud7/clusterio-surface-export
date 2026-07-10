@@ -209,11 +209,11 @@ Uses dynamic discovery — no hardcoded inventory indices:
 > **Do not implement from this summary — the authoritative ordering is CLAUDE.md § "Import Phase Ordering
 > (Critical)".** The two load-bearing rules a summary can silently rot on: **validation runs PRE-activation**
 > (Pitfall #15 — active machines craft in the gap → false GAINS) and **fluid injection runs POST-activation**
-> (Pitfall #17's empirical rule — injecting earlier reproducibly lost ~15% of fluids).
+> (Pitfall #17 records that as historical pipeline evidence; R11 refuted it as current-path engine law).
 
 Condensed current order (transfers): tiles → hub mapping → entity creation (deactivated) → hub inventories →
-belt items (single tick) → entity state → beacon activation + two-pass inventories → **validation
-(pre-activation, strict; pre-gate held-item pass)** → **activation** → **fluid restoration (post-activation)** →
+belt items (single tick) → entity state → beacon activation + two-pass inventories → held-item completion →
+**fluid restoration while paused/deactivated** → **one exact item+fluid gate** → activation → reporting-only
 loss analysis.
 
 After completion:

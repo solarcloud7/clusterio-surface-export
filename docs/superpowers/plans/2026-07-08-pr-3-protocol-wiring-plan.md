@@ -2,7 +2,7 @@
 
 > Provenance: authored + approved 2026-07-08 in-session; rescued into the repo 2026-07-08 (the session plan file
 > was later overwritten by the empirical-test-suite plan — this doc is now the source of truth for PR-3).
-> Execution gates: **#76 (composite verdict V1) must merge first** (VOTE emits its verdict object, amendment A6),
+> Execution gates: **#76 (single frozen-world verdict) must merge first** (VOTE emits its verdict object, amendment A6),
 > and the `lint-allow-manifest` guard should land first. Companion: the boundary/UX decisions live in
 > `2026-07-06-phase-2-ux-decision.md`; the parent roadmap in `2026-07-06-phase-2-implementation-plan.md`.
 
@@ -43,16 +43,14 @@ no admin console**. Identity keys on `surface.index` / unique index + canonical 
 ## 1. Lua — VOTE (stage-not-live), COMMIT flip, GO-LIVE / unified DISCARD
 
 **1a. PREPARE + VOTE — hold instead of go-live** (`core/import-completion.lua` `run_phase2`, and the transfer
-import entry so it sets a `job.hold_for_transfer` flag). When the flag is set, after the fluid gate PASSES,
+import entry so it sets a `job.hold_for_transfer` flag). When the flag is set, after the single exact gate PASSES,
 replace the go-live + gateway-park block with `DestinationHold.stage(job.transfer_id, platform, force)`
 (`core/destination-hold.lua`) and emit the existing `surface_export_import_complete` event — which is now the
-**VOTE** — carrying the already-computed composite verdict (`event_payload.success`,
+**VOTE** — carrying the already-computed single frozen-world verdict (`event_payload.success`,
 item+fluid+`failedStage`+metrics). The platform stays paused, hidden, deactivated.
-- **Unify Q9 (both gate failures self-discard the dest).** In the transfer/hold path, on EITHER an item-gate
-  failure (today leaves a deactivated corpse) OR a fluid-gate failure (already discards), delete the
-  just-imported destination via `GameUtils.delete_platform` and VOTE `success=false`. So a failed VOTE always
-  means the dest is already gone — the controller's abort path only unlocks the source. Non-transfer/upload
-  imports keep today's go-live behavior (flag off).
+- **Failed verdicts are already Black-Box Discard.** The current path banks always-on evidence and deletes the
+  failed destination through `GameUtils.delete_platform`; PR-3 preserves that disposition and VOTEs
+  `success=false`. It must not add another quarantine or recovery owner.
 
 **1b. COMMIT — flip the source lock to `committed`** (new source-side remote wrapper, e.g.
 `interfaces/remote/commit-source-transfer.lua`, registered in `interfaces/remote-interface.lua`). Calls the
@@ -76,11 +74,9 @@ DISCARD deletes the held platform + clears the hold.
 (`no-name-as-transfer-identity`); every new `pcall` surfaces via `GameUtils.pcall_warn` (`lint:pcall-logging`);
 route all platform teardown through `GameUtils.delete_platform` (`no-platform-destroy`, Pitfall #19).
 
-**Reconcile with #76.** The V1 remediation added `quarantine_destination_after_discard_failure` in
-`core/import-completion.lua` — a manual `paused=true` + `set_surface_hidden(true)` + `active=false` mini-hold on
-the discard-failure path. That is an ad-hoc duplicate of `DestinationHold.stage`. PR-3 should route that path
-through `DestinationHold` + the reconcile loop's discard gates so there is ONE quarantine owner, not two parallel
-mechanisms.
+**Reconcile with #76.** The quarantine path was retired by the single-gate rewrite. A gate failure banks its
+black box and discards immediately; `DestinationHold` owns only a successfully validated staged artifact during
+the protocol handshake.
 
 ## 2. Messages — 3 new + 1 flag (`messages.ts`, register in `index.ts`, round-trip auto-covered)
 - **`CommitSourceTransferRequest`** (controller → instance-source): `{ transferId, platformIndex, platformName, forceName }`.

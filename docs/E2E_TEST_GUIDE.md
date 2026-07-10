@@ -116,7 +116,8 @@ Don't trust only the validator's self-report — cross-check with a **physical c
 ```pwsh
 # A) The gate's authoritative result (JSON) for the imported platform on host-2:
 ./tools/rcon.ps1 21 "/sc rcon.print(remote.call('surface_export','get_validation_result_json','<platform_name>'))"
-#    look for: validation_success=true, totalItemLoss≈0, expectedItemCounts == actualItemCounts, entityCount matches
+#    look for: validation_success=true, itemCountMatch=true, fluidCountMatch=true,
+#              expectedItemCounts == actualItemCounts, and exact by-name fluid totals
 ```
 
 The conclusive artifact is the on-disk import result (debug_mode on):
@@ -127,7 +128,7 @@ docker exec surface-export-host-2 sh -c 'ls -t /clusterio/data/instances/cluster
 #          entityCount, failedEntityLosses (should be absent/empty), forceDataMismatches (raise-only warnings)
 ```
 
-> **Fidelity is solved** (proven 0-loss). A flaky *held-item* count is a measurement artifact, not loss —
+> **The transfer gate requires exact restorable data.** A flaky *held-item* sub-count is a measurement artifact, not loss —
 > held items cycle belt↔hand and are craftable, so dst-held ≠ src-held at zero loss. Trust
 > `totalItemLoss`/`expected==actual` + entity count, not a raw held sub-count. `get_item_count` is itself a
 > complete physical meter (it includes belt + held items).

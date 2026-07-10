@@ -135,14 +135,16 @@ A: ✅ Import replicates the source force's inserter bonuses onto the dest force
 (Pitfall #29, dest-force research governs hand capacity).
 
 **Q: What if I have fluids (chemical plants, foundries, fusion plasma)?**
-A: ✅ 100% preserved; fluids injected **after** activation (the empirical inject-after-activation rule, Pitfall #17); fusion-output
-rejections tracked and subtracted (#21); high-temperature fluids validated on thermal energy (#23).
+A: ✅ Measured exact and enforced exact. R10/R11 grounded aggregate-by-name conservation, including frozen-world
+injection at 1,359 entities (Pitfall #17, historical pre-activation fluid loss). The single gate requires zero
+volume drift within `1e-6`; only engine-rejected fusion output writes are subtracted (Pitfall #21, fusion outputs
+are engine-managed). Temperature remains diagnostic fidelity data (Pitfall #23, temperature merge and key boundaries).
 
 **Q: What if fluids are lost after the item check?**
-A: The transfer verdict is composite: Lua emits one `success` covering the strict item gate plus the post-activation
-fluid gate. A fluid-stage failure discards the activated destination artifact, reports `failedStage=fluids`, and
-preserves/rolls back the source. Historical note: from 2026-02 through 2026-07 the transfer verdict was effectively
-item-only because fluids were restored after the original gate.
+A: There is no second check. Lua completes held items and fluid restoration while the destination is paused and
+deactivated, then emits one exact item+fluid verdict before activation. Any mismatch banks an always-on physical
+black box, discards the destination, reports `failedStage=items|fluids`, and preserves/rolls back the source.
+Post-activation recounts are reporting only and cannot rewrite the verdict.
 
 **Q: What if some entities fail to place on the destination (missing mod)?**
 A: ✅ Their items/fluids are tallied as failed-entity-loss and subtracted from expected totals so validation is

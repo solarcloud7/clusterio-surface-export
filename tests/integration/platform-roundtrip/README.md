@@ -18,7 +18,7 @@ Tests can be run **multiple times without redeploying the cluster**. This works 
 4. **Step ticks** on both instances (game may be paused)
 5. **Wait** for debug files to appear on destination
 6. **Parse** source, destination, and import result JSON files
-7. **Compare** entity counts, item totals, and fluid totals
+7. **Compare** entity counts and the single frozen-world exact item/fluid verdict
 8. **Report** test results with pass/fail status
 
 The clone step uses the same export/import system as transfers, ensuring it's a true deep copy.
@@ -82,7 +82,7 @@ When `debug_mode` is enabled, the plugin exports:
 | File | Description |
 |------|-------------|
 | `debug_source_platform_{name}_{tick}.json` | Source platform snapshot (before transfer) |
-| `debug_destination_platform_{name}_{tick}.json` | Destination platform snapshot (after import) |
+| `debug_destination_platform_{name}_{tick}.json` | Destination platform snapshot for post-verdict reporting |
 | `debug_import_result_{name}_{tick}.json` | Import validation summary |
 
 ## Adding New Tests

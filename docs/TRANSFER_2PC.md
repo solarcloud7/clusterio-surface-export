@@ -86,10 +86,11 @@ vote) → COMMIT (flip phase=committed FIRST, then evacuate + delete) → RELEAS
 DISCARD the sibling on abort)`.
 
 Load-bearing rules (each is a hard constraint, not a preference):
-- The dest VOTE means **fully finalized**, not just item-validated: import → item-validate (pre-activation,
-  Pitfall #15) → activate → restore fluids (post-activation, Pitfall #17) → fluid-validate → gateway park → only
-  then vote, holding the finished platform not-live. COMMIT can never race a later restoration failure.
-  **Composite-verdict V1 pre-implements this object** on the current live transfer path: one Lua payload carries
+- The dest VOTE means **fully finalized**: import → complete held items → restore fluids while paused/deactivated
+  (Pitfall #17, Historical Pre-Activation Fluid Loss) → one exact item+fluid gate
+  (Pitfall #15, Entity Activation Before Validation) → activate → gateway park → only then vote, holding the
+  finished platform not-live. COMMIT can never race a later restoration failure.
+  **The single frozen-world verdict pre-implements this object** on the current live transfer path: one Lua payload carries
   `success`, item/fluid validation, `failedStage`, and metrics; PR-3's VOTE consumes the same verdict shape.
 - `committed` is an **irreversible non-live tombstone**: every unlock/resume/expiry path REFUSES a `committed`
   lock; only delete clears it. GO-LIVE fires on source state `gone` OR `committed`.

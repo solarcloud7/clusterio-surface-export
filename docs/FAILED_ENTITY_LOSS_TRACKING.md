@@ -128,32 +128,20 @@ log(string.format(
 
 **Complexity**: ~40 lines added to one existing branch. No new functions, no new files.
 
-#### 2. `async-processor.lua` (`complete_import_job`) — Pass losses to validation
+#### 2. `import-completion.lua` — Pass losses to the exact gate
 
-Before calling `TransferValidation.validate_import`, adjust expected counts:
+Before calling `TransferValidation.validate_import`, copy both expected tables and adjust known-unrestorable
+counts. Items remain quality-keyed; failed-entity fluids are name-keyed and are distributed across matching
+temperature keys:
 
 ```lua
 -- Before the validate_import call, adjust expected counts for failed entities
-local adjusted_verification = job.platform_data.verification
-if job.failed_entity_losses and job.failed_entity_losses.total_items > 0 then
-    -- Deep-copy item_counts to avoid mutating source data
-    local adjusted_items = {}
-    for k, v in pairs(adjusted_verification.item_counts or {}) do
-        adjusted_items[k] = v
-    end
-    -- Subtract items that were in failed entities (can't possibly be on the surface)
-    for item_key, lost_count in pairs(job.failed_entity_losses.items) do
-        if adjusted_items[item_key] then
-            adjusted_items[item_key] = math.max(0, adjusted_items[item_key] - lost_count)
-        end
-    end
-    adjusted_verification = {
-        item_counts = adjusted_items,
-        fluid_counts = adjusted_verification.fluid_counts,  -- fluids adjusted separately if needed
-    }
-    log(string.format("[Import] Adjusted expected totals: %d items subtracted due to %d failed entities",
-        job.failed_entity_losses.total_items, job.failed_entity_losses.entity_count))
-end
+local adjusted_verification = {
+    item_counts = copy_counts(job.platform_data.verification.item_counts),
+    fluid_counts = copy_counts(job.platform_data.verification.fluid_counts),
+}
+-- subtract fel.items per quality key
+-- subtract_fluids_by_name(adjusted_verification.fluid_counts, fel.fluids)
 ```
 
 Then pass `adjusted_verification` to `validate_import` instead of `job.platform_data.verification`.
@@ -167,7 +155,9 @@ if job.failed_entity_losses and job.failed_entity_losses.entity_count > 0 then
 end
 ```
 
-**Complexity**: ~15 lines, straightforward copy-adjust pattern.
+The `failed-entity-loss` integration probe creates a uniquely positioned chemical plant carrying an inventory
+item and fluid, forces that exact serialized entity to fail placement, and proves both exact gates still pass
+after attribution.
 
 #### 3. `loss-analysis.lua` — Report failed entity losses in breakdown
 
@@ -195,7 +185,7 @@ end
 
 ### Files NOT changed
 
-- `transfer-validation.lua` — No changes. It already compares expected vs actual; we adjust expected *before* calling it.
+- `transfer-validation.lua` — The gate consumes the already-adjusted expected tables; attribution never weakens its exact comparison.
 - `fluid_restoration.lua` — No changes. Skipping nil entities is correct behavior.
 - `belt_restoration.lua` — No changes. Same skip pattern.
 - `entity_state_restoration.lua` — No changes. Same skip pattern.
