@@ -1,0 +1,49 @@
+{
+  "_comment": "Lab re-certification record. The engine pin (host-1 instance.json -> factorio.version) MUST equal factorio_version below, or scripts/lint-version-certification.mjs (npm run lint:version-certification, gated in CI) FAILS. A pin bump means: re-run EVERY tests/*-lab runner on the new pin, record the conclusion commit per lab here, bump factorio_version + certified_at, all in the same PR. The labs are the drift-detection suite; this record is their signed-off certificate. No escape hatch. This rule exists because 2.0.76->2.0.77 shipped real LuaSpacePlatform.destroy() semantics drift that went uncertified until a campaign audit forced the labs to re-run (measured in tests/engine-repin-lab, commit 00e44c7).",
+  "factorio_version": "2.0.77",
+  "certified_at": "2026-07-10",
+  "evidence": [
+    {
+      "lab": "gate-drift-lab",
+      "runner": "tests/gate-drift-lab",
+      "rungs": "LAB-A",
+      "conclusion": "measured export-scan residuals (the belt-restoration drift floor behind the strict gate)",
+      "commits": ["d666b23"]
+    },
+    {
+      "lab": "fluid-lab",
+      "runner": "tests/fluid-lab (run-r*.mjs)",
+      "rungs": "R10, R11, R12",
+      "conclusion": "temperature-key drift is a phantom (steam merges pre-export + round-trips exactly); frozen-world fluid injection + temperature-merge boundaries measured",
+      "commits": ["ae1efe6", "e8c7bbe", "f8cea7f"]
+    },
+    {
+      "lab": "inserter-lab",
+      "runner": "tests/inserter-lab",
+      "rungs": "B1-B4",
+      "conclusion": "held-item capacity is governed by the dest force's inserter research (CI bonus 0 vs local 11); set_stack clamps to physical hand capacity",
+      "commits": ["8c61365"]
+    },
+    {
+      "lab": "no-tick-sync-lab",
+      "runner": "tests/no-tick-sync-lab (run-pr0b.mjs)",
+      "rungs": "B5, PR0B",
+      "conclusion": "the synchronous held-item restore pass keeps game.tick, crafting_progress, and the restored inserter hand stable through the strict count (no craft window)",
+      "commits": ["be754fd", "5f7ca16"]
+    },
+    {
+      "lab": "engine-repin-lab",
+      "runner": "tests/engine-repin-lab",
+      "rungs": "B7-B9",
+      "conclusion": "re-pinned engine behaviors on 2.0.77; measured the LuaSpacePlatform.destroy(0)/destroy(60) semantics drift from 2.0.76",
+      "commits": ["00e44c7"]
+    },
+    {
+      "lab": "hold-completeness-lab",
+      "runner": "tests/hold-completeness-lab (run-pr0a.mjs)",
+      "rungs": "PR0A",
+      "conclusion": "destination-hold stage/read completeness measured; isolated machine buffers survive the hold",
+      "commits": ["a007ecb"]
+    }
+  ]
+}
