@@ -98,6 +98,16 @@ Consequence: fluid does not live per-entity — it lives in the shared segment. 
   the real destination-hold path also preserves an asserted isolated machine buffer while `game.tick_paused=true`;
   the hold keeps full deactivation. Directly setting `LuaEntity.frozen` failed in this lab because the property is
   read-only.
+- **Production fluid restoration conserved exact aggregate-by-name totals in a frozen destination world.**
+  **[empirical, 2.0.77, fluid-lab R11]** Controls covering a pipe/tank segment, a mixed pump/pipe/chemical-
+  plant/boiler fixture, and newly created paused/deactivated entities all retained exact totals through
+  activation and 60 ticks. Two consecutive real transfers of a 1,359-entity clone then invoked the shipped
+  `FluidRestoration.restore()` before activation through a one-shot, name-scoped diagnostic seam. All eight
+  fluid names matched their full-precision expected totals exactly in both the frozen and same-tick
+  post-activation censuses (`max |delta| = 0`, epsilon `1e-6`). Engine-rejected fusion-plasma output writes
+  were measured and subtracted before comparison. This refutes the historical rule's generalization to the
+  current engine/path; the old ~15% loss remains a historical observation whose responsible class was not
+  reproduced. Production ordering and validation were intentionally unchanged by this measurement rung.
 - **Fusion-reactor *output* fluidboxes reject external writes.** The plasma output is engine-managed
   — [`FusionReactorPrototype.output_fluid_box`](https://lua-api.factorio.com/latest/prototypes/FusionReactorPrototype.html#output_fluid_box)
   with an engine `target_temperature`; the engine generates plasma during simulation. `fluidbox[i]=`

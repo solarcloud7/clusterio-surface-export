@@ -52,6 +52,12 @@ local function configure(config)
     -- removing fluid, proving the composite gate fails and discards the activated destination safely.
     storage.surface_export_config.test_force_fluid_loss = config.test_force_fluid_loss
   end
+  if config.test_measure_frozen_fluid_injection ~= nil then
+    -- Test-only: on the next transfer whose platform name matches exactly, restore fluids while
+    -- the destination is still paused/deactivated and attach frozen/post-activation censuses to
+    -- the debug result. A unique name scopes a leaked flag away from unrelated transfers.
+    storage.surface_export_config.test_measure_frozen_fluid_injection = config.test_measure_frozen_fluid_injection
+  end
   if config.gateways_json then
     -- Replace the whole gateway link map (controller is the source of truth). Decoded from JSON,
     -- never built as a Lua table literal, so arbitrary instance names cannot inject Lua.

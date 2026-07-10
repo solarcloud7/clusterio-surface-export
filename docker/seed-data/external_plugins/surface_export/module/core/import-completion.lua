@@ -15,6 +15,7 @@ local ActiveStateRestoration = require("modules/surface_export/import_phases/act
 local PlatformHubMapping = require("modules/surface_export/import_phases/platform_hub_mapping")
 local TransferValidation = require("modules/surface_export/validators/transfer-validation")
 local LossAnalysis = require("modules/surface_export/validators/loss-analysis")
+local SurfaceCounter = require("modules/surface_export/validators/surface-counter")
 local DebugExport = require("modules/surface_export/utils/debug-export")
 local PlatformSchedule = require("modules/surface_export/utils/platform-schedule")
 local EntityScanner = require("modules/surface_export/export_scanners/entity-scanner")
@@ -26,6 +27,29 @@ local TransactionHistory = require("modules/surface_export/utils/transaction-his
 local JobResults = require("modules/surface_export/core/job-results")
 
 local ImportCompletion = {}
+
+local function aggregate_fluid_counts_by_name(counts)
+	local totals = {}
+	for key, amount in pairs(counts or {}) do
+		local name, _ = Util.parse_fluid_temp_key(key)
+		totals[name] = (totals[name] or 0) + amount
+	end
+	return totals
+end
+
+local function copy_counts(counts)
+	local copy = {}
+	for key, amount in pairs(counts or {}) do copy[key] = amount end
+	return copy
+end
+
+local function expected_fluids_after_rejected_writes(counts, write_rejected)
+	local totals = aggregate_fluid_counts_by_name(counts)
+	for name, amount in pairs(write_rejected or {}) do
+		totals[name] = math.max(0, (totals[name] or 0) - amount)
+	end
+	return totals
+end
 
 --- Build a waterfall phase span {name, start_offset_ms, duration_ms} from two game.tick marks,
 --- relative to the import job's t0 (job.started_tick). Returns nil if either boundary is missing
@@ -251,6 +275,8 @@ function ImportCompletion.run_phase2(job)
 	local is_transfer = job.transfer_id ~= nil
 	local has_platform_data = job.platform_data ~= nil
 	local has_verification = has_platform_data and job.platform_data.verification ~= nil
+	local r11_fluids_result = nil
+	local r11_measurement = nil
 
 	if is_transfer and has_verification then
 		-- NOTE: For transfers, entities are imported in deactivated state (active=false)
@@ -306,6 +332,38 @@ function ImportCompletion.run_phase2(job)
 		-- items) that previously forced a loose tolerance — without opening a craft window, because
 		-- only inserters are briefly toggled (within one synchronous pass; they cannot swing).
 		ActiveStateRestoration.restore_held_items_only(entities_to_create, entity_map)
+
+		-- TEST-ONLY R11 measurement seam. This changes ordering only for the uniquely named lab
+		-- transfer and does not participate in the production verdict. The runner compares these
+		-- physical censuses exactly and always disarms the option in its finally path.
+		local r11_cfg = storage.surface_export_config and storage.surface_export_config.test_measure_frozen_fluid_injection
+		if type(r11_cfg) == "table" and r11_cfg.platform_name == job.platform_name then
+			storage.surface_export_config.test_measure_frozen_fluid_injection = nil
+			local injection_started_tick = game.tick
+			r11_fluids_result = FluidRestoration.restore(entities_to_create, entity_map)
+			local frozen_counts, frozen_total = SurfaceCounter.count_fluids(
+				job.target_surface,
+				r11_fluids_result and r11_fluids_result.segment_temps
+			)
+			r11_measurement = {
+				hook_consumed = true,
+				platform_name = job.platform_name,
+				injection_started_tick = injection_started_tick,
+				frozen_census_tick = game.tick,
+				platform_paused = job.target_platform and job.target_platform.valid and job.target_platform.paused == true or nil,
+				expected_by_name = expected_fluids_after_rejected_writes(
+					adjusted_verification.fluid_counts,
+					r11_fluids_result and r11_fluids_result.write_rejected
+				),
+				expected_raw = copy_counts(adjusted_verification.fluid_counts),
+				frozen_actual_raw = frozen_counts,
+				frozen_actual_by_name = aggregate_fluid_counts_by_name(frozen_counts),
+				frozen_actual_total = frozen_total,
+				write_rejected = r11_fluids_result and r11_fluids_result.write_rejected or {},
+			}
+			log(string.format("[Import][TEST][R11] Frozen fluid injection measured for %s at tick %d",
+				job.platform_name, game.tick))
+		end
 
 		-- TEST HOOK (one-shot, debug-gated): inject a REAL, UNACCOUNTED item loss on the destination
 		-- AFTER held-restore but BEFORE the gate, to prove the STRICT gate DETECTS loss and the
@@ -489,12 +547,25 @@ function ImportCompletion.run_phase2(job)
 			-- Fluid injected now will persist correctly instead of being wiped.
 			job.metrics.fluids_started_tick = game.tick
 			PhaseProfiler.start(job.job_id, "fluids")
-			local fluids_result = FluidRestoration.restore(entities_to_create, entity_map)
+			local fluids_result = r11_fluids_result or FluidRestoration.restore(entities_to_create, entity_map)
 			PhaseProfiler.stop(job.job_id, "fluids")
 			job.metrics.fluids_completed_tick = game.tick
 			job.metrics.fluids_restored = fluids_result and fluids_result.count or 0
 			log(string.format("[Import] Post-activation fluid restoration: %d fluids restored",
 				job.metrics.fluids_restored))
+
+			if r11_measurement then
+				local post_counts, post_total = SurfaceCounter.count_fluids(
+					job.target_surface,
+					fluids_result and fluids_result.segment_temps
+				)
+				r11_measurement.activation_census_tick = game.tick
+				r11_measurement.post_activation_actual_by_name = aggregate_fluid_counts_by_name(post_counts)
+				r11_measurement.post_activation_actual_raw = post_counts
+				r11_measurement.post_activation_actual_total = post_total
+				r11_measurement.platform_paused_after_activation = job.target_platform
+					and job.target_platform.valid and job.target_platform.paused == true or nil
+			end
 
 
 			-- ========================================
@@ -529,6 +600,9 @@ function ImportCompletion.run_phase2(job)
 			if result.totalExpectedItems then
 				PhaseProfiler.start(job.job_id, "loss_analysis")
 				LossAnalysis.run(job.target_surface, entities_to_create, result, fluids_result and fluids_result.segment_temps)
+				if r11_measurement then
+					result.r11FrozenFluidMeasurement = r11_measurement
+				end
 
 				-- TEST HOOK (one-shot, debug-gated): inflate expected fluid count after the real
 				-- post-activation meter has run, before the fluid gate. This creates an unaccounted
