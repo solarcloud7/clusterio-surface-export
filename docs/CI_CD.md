@@ -27,9 +27,10 @@ Two jobs:
 ## Integration test flow
 
 1. **Build plugin** — `npm ci && npm run build` (TypeScript → `dist/node`, webpack → `dist/web`).
-2. **Lint** — `npm run lint` (nine correctness guards: TS/eslint, Lua invariants, webpack-cache,
-   test-grounding, pcall-logging, catch-swallow, test-hooks, doc-refs, allow-manifest — see the
-   guard list in CLAUDE.md "General Style"). A tenth, `lint-commit-labels`, runs as its own PR-gated
+2. **Lint** — `npm run lint` (eleven correctness guards: TS/eslint, Lua invariants, webpack-cache,
+   test-grounding, pcall-logging, catch-swallow, test-hooks, doc-refs, evidence-claims,
+   version-certification, allow-manifest — see the
+   guard list in CLAUDE.md "General Style"). A twelfth, `lint-commit-labels`, runs as its own PR-gated
    step (docs commits must touch only doc paths).
 3. **Test** — `npm test` (message round-trip + wire contract).
 4. **Resolve & verify pinned Factorio version** — see [Version pinning](#version-pinning-single-source-of-truth).
