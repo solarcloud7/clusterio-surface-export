@@ -99,10 +99,10 @@ rcon.print(helpers.table_to_json({entities=#p.surface.find_entities_filtered({})
             $ownedPlasma -gt 0 -and $expectedPlasma -ge 5
         $id = "plasma-owned-run-$run"
         if ($ok) {
-            Write-TestResult -TestId $id -TestName "Run $run: exact gate passes with engine-owned plasma excluded and isolated plasma retained" -Status passed
+            Write-TestResult -TestId $id -TestName "Run ${run}: exact gate passes with engine-owned plasma excluded and isolated plasma retained" -Status passed
             $passed++
         } else {
-            Write-TestResult -TestId $id -TestName "Run $run: symmetric engine-owned accounting" -Status failed -Message "success=$($result.validation_success) fluidMatch=$($validation.fluidCountMatch) owned=$ownedPlasma expectedPlasma=$expectedPlasma"
+            Write-TestResult -TestId $id -TestName "Run ${run}: symmetric engine-owned accounting" -Status failed -Message "success=$($result.validation_success) fluidMatch=$($validation.fluidCountMatch) owned=$ownedPlasma expectedPlasma=$expectedPlasma"
             $failed++
             break
         }
