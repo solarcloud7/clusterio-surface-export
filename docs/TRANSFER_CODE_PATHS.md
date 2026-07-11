@@ -143,12 +143,14 @@ Assembles chunks, then calls `AsyncProcessor.queue_import(...)`.
    (set_stack cap now uses beacon-boosted crafting_speed)
 → deactivate all entities, re-pause platform
 → TransferValidation.validate_import() [validators/transfer-validation.lua]
-   (items only — fluids not yet injected)
-→ ActiveStateRestoration.restore()     [import_phases/active_state_restoration.lua]
-   (unfreeze + activate all entities)
 → FluidRestoration.restore()           [import_phases/fluid_restoration.lua]
-   (MUST be after activation — the empirical inject-after-activation rule, Pitfall #17)
+   (paused/deactivated; segment temperatures feed the census)
+→ TransferValidation.validate_import(strict=true)
+   (ONE immutable exact item + by-name fluid verdict)
+→ ActiveStateRestoration.restore()     [import_phases/active_state_restoration.lua]
+   (unfreeze + activate only after verdict success)
 → LossAnalysis.run()                   [validators/loss-analysis.lua]
+   (reporting-only postActivationReport; cannot change verdict fields)
 → clusterio_api.send_json("surface_export_import_complete", result)
 ```
 
@@ -158,7 +160,7 @@ Assembles chunks, then calls `AsyncProcessor.queue_import(...)`.
 
 **[instance.ts](../docker/seed-data/external_plugins/surface_export/instance.ts)** → `server.handle("surface_export_import_complete", handleImportCompleteValidation)`
 
-`handleImportCompleteValidation()` pulls the validation result from Lua (`get_validation_result_json` remote interface) and sends a `TransferValidationEvent` to the controller.
+`handleImportCompleteValidation()` consumes the validation result embedded in the Lua completion payload and sends a `TransferValidationEvent` to the controller.
 
 **[controller.ts](../docker/seed-data/external_plugins/surface_export/controller.ts)** routes `TransferValidationEvent` to **[lib/transfer-orchestrator.ts](../docker/seed-data/external_plugins/surface_export/lib/transfer-orchestrator.ts)** → `handleTransferValidation()`
 
@@ -167,7 +169,7 @@ validation passed → sendTo(sourceInstance, DeleteSourcePlatformRequest)
                       (instance runs game.delete_surface(platform.surface) via RCON)
                  → logTransactionEvent("transfer_completed")
                  → persistTransactionLog()
-validation failed → platform left paused + deactivated for investigation
+validation failed → always-on black box written → destination discarded → source rollback
 ```
 
 ---

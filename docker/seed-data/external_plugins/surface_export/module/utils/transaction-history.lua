@@ -59,7 +59,11 @@ function TransactionHistory.record_import(job, validation_result, perf)
 		-- Plain data validation summary
 		validation = validation_result and {
 			success = validation_result.success,
-			mismatch_summary = validation_result.mismatchDetails
+			mismatch_summary = validation_result.mismatchDetails,
+			failed_stage = validation_result.failedStage,
+			failure_black_box = validation_result.failureBlackBox,
+			cleanup_failed = validation_result.cleanup_failed,
+			cleanup_error = validation_result.cleanup_error,
 		} or nil,
 		-- Additional metadata
 		transfer_id = job.transfer_id,

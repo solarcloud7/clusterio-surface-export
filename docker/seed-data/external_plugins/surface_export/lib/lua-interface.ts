@@ -133,14 +133,6 @@ export class LuaInterface {
 		);
 	}
 
-	/** Fetch the post-import validation result as a RAW rcon string; the caller parses/defaults it. */
-	async getValidationResultJson(platformName: string): Promise<string> {
-		return this.host.sendRcon(
-			`/sc rcon.print(remote.call("surface_export", "get_validation_result_json", "${escapeString(platformName)}"))`,
-		);
-	}
-
-
 	/**
 	 * Delete a transferred source platform. Returns RAW "SUCCESS" / "ERROR:<reason>".
 	 * Routes through the `delete_platform_for_transfer` remote, which (atomically, one tick): unlocks,

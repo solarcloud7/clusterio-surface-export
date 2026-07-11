@@ -99,9 +99,9 @@ function GameUtils.parse_fluid_temp_key(key)
   return key, 15
 end
 
---- Temperature threshold above which fluid packets may merge due to floating-point drift.
---- At >1,000,000°C IEEE 754 doubles lose precision; the engine may merge nearby packets
---- via weighted-average temperature, making exact-key validation unreliable.
+--- Policy threshold for selecting aggregate high-temperature reconciliation.
+--- R12 measured exact volume-weighted steam merging and prototype clamping at 5,000°C;
+--- it did not find a floating-point precision boundary that justifies this value. Task #30 owns it.
 GameUtils.HIGH_TEMP_THRESHOLD = 10000
 
 --- Parse a quality key back into components

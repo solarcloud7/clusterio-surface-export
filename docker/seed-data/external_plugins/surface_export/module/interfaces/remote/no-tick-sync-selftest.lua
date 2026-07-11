@@ -77,7 +77,7 @@ local function no_tick_sync_selftest()
 			item_counts = { [Util.make_quality_key("iron-plate", "normal")] = 1 },
 			fluid_counts = {},
 		},
-		{ skip_fluid_validation = true, strict = true }
+		{ strict = true }
 	)
 	local tick_after = game.tick
 	local crafting_progress_after = machine.crafting_progress

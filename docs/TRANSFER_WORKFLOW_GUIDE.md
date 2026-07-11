@@ -112,29 +112,28 @@ end
 DF->>DF: Deferred hub inventory restore
 DF->>DF: Belt restore (single tick)
 DF->>DF: Entity state/connections restore
-DF->>DF: TransferValidation.validate_import(skip_fluid_validation=true)
+DF->>DF: Complete held items + restore fluids while paused/deactivated
+DF->>DF: TransferValidation.validate_import(strict=true, segment_temps)
 
 alt validation success
   DF->>DF: Unpause platform
   DF->>DF: Restore active states from frozen_states
-  DF->>DF: Post-activation fluid restore
+  DF->>DF: Reporting-only post-activation recount
 else validation failure
-  DF->>DF: Keep destination paused/inactive for investigation
+  DF->>DF: Bank always-on black box
+  DF->>DF: Discard destination (unless debug preserve flag is armed)
 end
 
 DF->>DF: Store validation result
-DF->>DI: send_json event surface_export_import_complete
-DI->>DF: RCON get_validation_result_json(platform_name)
-DF-->>DI: Validation JSON
+DF->>DI: send_json event surface_export_import_complete (verdict payload)
 ```
 
 ## Validation Summary
-- Item gains greater than 5 are failure.
-- Very large item loss (greater than 95% and greater than 100 absolute) is failure.
-- Unexpected item types above threshold are flagged.
-- Fluid gains greater than 500 are failure.
-- If expected fluid is greater than 1000 and actual is near zero, failure.
-- Transfer path defers full fluid reconciliation until post-activation analysis.
+- Transfers require exact per-key item counts; gains, losses, and unexpected keys fail.
+- Transfers require exact aggregate-by-name fluid volume within `1e-6`.
+- Failed-entity items/fluids and engine-rejected output writes are subtracted before the gate; capacity drops are not.
+- `failedStage` is set once from the mismatched category. Post-activation analysis cannot change gate fields.
+- The loose non-strict policy remains only for non-transfer import callers.
 
 ## Transaction Log Flow
 Common progression:

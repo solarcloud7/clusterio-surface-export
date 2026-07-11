@@ -252,18 +252,17 @@ try {
             if ($event.PSObject.Properties['validation'] -and $event.validation) {
                 $v = $event.validation
                 Write-Host "    Validation: " -NoNewline -ForegroundColor Yellow
-                $postTag = if ($v.PSObject.Properties['postActivation'] -and $v.postActivation) { " (post-activation)" } else { "" }
-                Write-Host "items=$($v.itemCountMatch) fluids=$($v.fluidCountMatch) entities=$($v.entityCount)$postTag" -ForegroundColor Yellow
+                Write-Host "items=$($v.itemCountMatch) fluids=$($v.fluidCountMatch) entities=$($v.entityCount) (frozen exact gate)" -ForegroundColor Yellow
                 if ($v.PSObject.Properties['fluidReconciliation'] -and $v.fluidReconciliation) {
                     $fr = $v.fluidReconciliation
                     $pct = [Math]::Round($fr.fluidPreservedPct, 1)
                     $pctColor = if ($pct -ge 99.9) { "Green" } elseif ($pct -ge 99) { "Yellow" } else { "Red" }
                     Write-Host "    Fluids: " -NoNewline -ForegroundColor Yellow
                     Write-Host "$pct% preserved" -NoNewline -ForegroundColor $pctColor
-                    if ($fr.reconciledFluidLoss -eq 0 -and [Math]::Abs($fr.rawFluidDelta) -gt 1) {
+                    if ($fr.reconciledLoss -eq 0 -and [Math]::Abs($fr.rawFluidDelta) -gt 1) {
                         Write-Host " (raw delta=$([Math]::Round($fr.rawFluidDelta, 1)), reconciled to zero)" -ForegroundColor Green
-                    } elseif ($fr.reconciledFluidLoss -gt 0) {
-                        Write-Host " (loss=$([Math]::Round($fr.reconciledFluidLoss, 1)))" -ForegroundColor Yellow
+                    } elseif ($fr.reconciledLoss -gt 0) {
+                        Write-Host " (loss=$([Math]::Round($fr.reconciledLoss, 1)))" -ForegroundColor Yellow
                     } else {
                         Write-Host "" # newline
                     }
@@ -353,10 +352,7 @@ try {
             $v = $s.validation
             Write-Host "`n  Validation:" -ForegroundColor Green
             
-            # Post-activation indicator
-            if ($v.PSObject.Properties['postActivation'] -and $v.postActivation) {
-                Write-Host "    (post-activation segment-aware measurement)" -ForegroundColor DarkGray
-            }
+            Write-Host "    (frozen-world exact gate; post-activation recount is reporting only)" -ForegroundColor DarkGray
             
             $itemIcon = if ($v.itemCountMatch) { "`u{2705}" } else { "`u{274C}" }
             $fluidIcon = if ($v.fluidCountMatch) { "`u{2705}" } else { "`u{274C}" }
@@ -377,7 +373,7 @@ try {
             if ($v.PSObject.Properties['totalExpectedFluids'] -and $v.PSObject.Properties['totalActualFluids']) {
                 $fr = $v.fluidReconciliation
                 if ($fr) {
-                    $reconLoss = [Math]::Round($fr.reconciledFluidLoss, 1)
+                    $reconLoss = [Math]::Round($fr.reconciledLoss, 1)
                     $rawDelta = [Math]::Round($fr.rawFluidDelta, 1)
                     $pct = [Math]::Round($fr.fluidPreservedPct, 1)
                     $pctColor = if ($pct -ge 99.9) { "Green" } elseif ($pct -ge 99) { "Yellow" } else { "Red" }

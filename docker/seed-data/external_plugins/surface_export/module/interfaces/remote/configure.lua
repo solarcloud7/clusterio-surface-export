@@ -46,7 +46,16 @@ local function configure(config)
     -- two-phase commit preserves the source. See validation-timing-trilemma / gate-detects-loss test.
     storage.surface_export_config.test_force_item_loss = config.test_force_item_loss
   end
-
+  if config.test_force_fluid_loss ~= nil then
+    -- Test-only: inflate expected fluid count after frozen restoration but before the single gate.
+    storage.surface_export_config.test_force_fluid_loss = tonumber(config.test_force_fluid_loss)
+  end
+  if config.preserve_failed_destination ~= nil then
+    -- Debug-only escape hatch. Normal failed transfers always bank evidence and discard the destination.
+    local debug_enabled = config.debug_mode == true or storage.surface_export_config.debug_mode == true
+    storage.surface_export_config.preserve_failed_destination = debug_enabled
+      and config.preserve_failed_destination == true or false
+  end
   if config.gateways_json then
     -- Replace the whole gateway link map (controller is the source of truth). Decoded from JSON,
     -- never built as a Lua table literal, so arbitrary instance names cannot inject Lua.

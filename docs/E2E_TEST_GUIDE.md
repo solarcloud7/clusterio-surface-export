@@ -114,9 +114,10 @@ For a clean repeatable source, clone the seed platform first (so you keep the or
 Don't trust only the validator's self-report — cross-check with a **physical count**.
 
 ```pwsh
-# A) The gate's authoritative result (JSON) for the imported platform on host-2:
-./tools/rcon.ps1 21 "/sc rcon.print(remote.call('surface_export','get_validation_result_json','<platform_name>'))"
-#    look for: validation_success=true, totalItemLoss≈0, expectedItemCounts == actualItemCounts, entityCount matches
+# A) The controller's transaction record for the latest transfer (or pass -TransferId <canonical-id>):
+./tools/get-transaction-log.ps1
+#    look for: success, itemCountMatch=true, fluidCountMatch=true, and exact by-name totals.
+#    Transfer validation is carried in the import-complete event; do not refetch it by platform name.
 ```
 
 The conclusive artifact is the on-disk import result (debug_mode on):
@@ -127,7 +128,7 @@ docker exec surface-export-host-2 sh -c 'ls -t /clusterio/data/instances/cluster
 #          entityCount, failedEntityLosses (should be absent/empty), forceDataMismatches (raise-only warnings)
 ```
 
-> **Fidelity is solved** (proven 0-loss). A flaky *held-item* count is a measurement artifact, not loss —
+> **The transfer gate requires exact restorable data.** A flaky *held-item* sub-count is a measurement artifact, not loss —
 > held items cycle belt↔hand and are craftable, so dst-held ≠ src-held at zero loss. Trust
 > `totalItemLoss`/`expected==actual` + entity count, not a raw held sub-count. `get_item_count` is itself a
 > complete physical meter (it includes belt + held items).
@@ -326,6 +327,6 @@ manual refresh needed). Tick each feature:
 | Manual transfer | `./tools/transfer-platform.ps1 -PlatformIndex <idx> -Direction 1to2` |
 | RCON (host-1 / host-2) | `./tools/rcon.ps1 11 "<cmd>"` / `./tools/rcon.ps1 21 "<cmd>"` |
 | List platforms | `./tools/rcon.ps1 11 "/list-platforms"` |
-| Validation result | `remote.call('surface_export','get_validation_result_json', <name>)` |
+| Validation result | `./tools/get-transaction-log.ps1 [-TransferId <canonical-id>]` |
 | Trace a failure | `./tools/check-cluster-logs.ps1 -Grep "..."` |
 | Reset cluster | `./tools/patch-and-reset.ps1` |

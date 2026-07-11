@@ -65,8 +65,19 @@ fix-validation. Keep both, but the fluid measurement is where the gate calibrati
   read_entity:195]`. Reuse the SAME dedup the export uses so the comparison is exact.
 - Belt item positions (for drift diagnosis): `LuaTransportLine.get_detailed_contents()` / `get_line_item_position`
   `[doc-verified 2.0.76]` — sharper than manual reads.
-- Serialized side: read `debug_source_platform_*.json` `verification.{fluid_counts,item_counts}` (enable
-  `debug_mode=true`; dumps land in `script-output/`) `[plugin-proven — run-r10.mjs waitForDebugResult/compactDebugDump]`.
+- Serialized side — **ADJUDICATED 2026-07-09 (boundary stop, verified against code):** the
+  `debug_source_platform_*.json` dump is written ONLY when `job.destination_instance_id` is set (transfers —
+  `export-pipeline.lua` `if job.destination_instance_id then DebugExport.export_source_platform(...)`), so an
+  export-only run has no dump. **Read `storage.platform_exports[<export_id>].verification` instead** — it is the
+  SAME table by reference (`job.export_data.verification`, attached after the atomic belt scan) kept as a
+  plaintext top-level sibling of the compressed payload ("must be accessible without decompression"), and the
+  uncompressed-fallback record resolves `.verification` identically. Conditions: (1) record provenance in
+  evidence — `export_id`, `record.tick`, `record.stats.started_tick`, runner-observed completion tick, entity
+  count (this doubles as the multi-tick-span proof); (2) keep fixtures small so the RCON JSON print of the
+  verification table stays well under the ~8KB response comfort zone (or print per-name lines); (3) cite the
+  equivalence in the NOTEBOOK (export-pipeline.lua verification attach + plaintext-sibling store); (4) **the
+  zero-leftover contract gains a 7th check for this lab: no lab-created `storage.platform_exports` entries remain**
+  (delete them in cleanup — the standard 6 fields do not cover this layer).
 
 ## Runner build (Style B — copy `tests/fluid-lab/run-r10.mjs`)
 - New: `tests/gate-drift-lab/run-lab-a.mjs`. Change constants: `notebook`, `fixturePrefix="gate-drift-a"`,
@@ -74,8 +85,9 @@ fix-validation. Keep both, but the fluid measurement is where the gate calibrati
 - **Reuse unchanged** (per the scaffolding map): `rcon`/`lua`/`lastLine`/`stepTick`/`luaString`/`safeName`/
   `scriptOutput`/`listDebugFiles`/`readJsonFile`/`removeDebugFilesForName`/`getInstanceId`, and the transfer/dump
   layer — BUT LAB-A does NOT need a two-instance transfer for the drift measurement; it exports on host-1 and
-  reads the source dump + a same-tick physical census. (A transfer is only needed if we also want the dest side.)
-  So this is closer to a Style-A single-instance export probe that reads the debug_source dump.
+  reads the stored export's `verification` table (see the adjudicated Measurement-API note above — the debug
+  dump is transfer-only) + a same-tick physical census. (A transfer is only needed if we also want the dest side.)
+  So this is closer to a Style-A single-instance export probe reading `storage.platform_exports`.
 - Rewrite the install Lua: `mk` bare platform; build the flowing fixture (offshore/pump/pipe/tank + belt loop);
   a `census(platform)` helper returning `{fluid_by_name, item_by_name, tick}` using the dedup above; a
   `flowing_segment_probe` for step 0/precondition 3.
@@ -84,13 +96,55 @@ fix-validation. Keep both, but the fluid measurement is where the gate calibrati
 - Sections: `freeze0` (step-0 fluid-flow-while-locked probe), `control` (static exact), `fluidflow`, `beltflow`.
 
 ## Pass / decision (what LAB-A concludes)
-- **No drift (residual ≈ 0):** the gates can go near-exact — float-epsilon + a **complete-loss floor**; delete the
+**THE CONTRACT (owner, 2026-07-08): 100% parity before and after — totals per item (name,quality) and per fluid
+name are CONSERVED. A gate tolerance is only ever acceptable for a PROVEN measurement/timing artifact (e.g. the
+craft-window read effect), never for real material loss. Real loss is a BUG to fix, not a number to tolerate.**
+- **No drift (residual ≈ 0):** the gates go near-exact — float-epsilon + a **complete-loss floor**; delete the
   20/500/5% band. Strong, clean result.
-- **Drift = D on fluids:** (a) if giving fluids the same **atomic single-tick scan** belts have removes it → fix
-  the measurement (the belt precedent), then near-exact gate; (b) else set each fluid/item gate floor to ~3×D,
-  **measured** (like the item gate's belt floor, Pitfall #28) + complete-loss floor.
-- Either branch: this is the number that calibrates the #76 fluid gate fix. Do NOT hand-pick a threshold — LAB-A
-  produces it.
+- **Drift = D > 0:** D must be **root-caused before it may become anything**:
+  - *Measurement artifact* (snapshot inconsistency — serialized total matches no single tick): **fix the meter** —
+    give fluids the same atomic single-tick scan belts have (the Pitfall #16 belt precedent); then near-exact gate.
+  - *Real material loss on restore*: a **bug** — file it, fix it, regression-lock it. The gate does NOT get a
+    tolerance to paper over it.
+  - Only a residual that is proven-artifact AND proven-irreducible may become a gate floor, sized to the
+    measurement (like the item gate's belt floor claims to be — which is exactly the claim LAB-A checks), and a
+    **complete-loss floor lands regardless of every branch** (no type/name may ever vanish entirely and pass).
+- Either branch: this produces the number that calibrates the #76 fluid gate fix. Do NOT hand-pick a threshold —
+  LAB-A produces it, and the contract above bounds what it may be used for.
+
+## Execution clarifications (adjudicated 2026-07-09, on the implementer's pre-execution plan)
+1. **Span bar:** the flowing sections require an **observed export span ≥5 ticks** (add entities / shrink batch
+   size until reached), or report why unattainable — ">1 tick" under-powers the drift window.
+2. **freeze0 under the REAL lock:** observe under the production lock/freeze state the export pipeline actually
+   applies (ideally sampling during an actual export scan window), never a mere `platform.paused`; record the
+   mechanism used in evidence.
+3. **Atomic censuses:** each physical census = ONE `/sc` invocation computing and printing all totals within a
+   single tick — never assembled across multiple RCON round-trips (that would recreate the rolling-snapshot
+   problem the lab exists to measure).
+4. Accepted from the implementer's plan: section order `control → freeze0 → fluidflow → beltflow` (stricter
+   controls-first than the brief); LAB-A-prefix-only deletion of `storage.platform_exports` records.
+
+## Adjudication 3 (2026-07-09): the flowing-fixture pump stall
+The static control PASSED exactly (146-tick export, fluid residual 0, item residual 0 — instrument proven). The
+flowing prerequisite failed: a powered, `active=true` pump moved nothing between two connected segments across
+three grounded layouts. Ruling — **no fourth layout guess; one DIAGNOSTIC-ONLY pass, then one evidence-grounded
+change**:
+1. **Read `pump.status`** and map it against `defines.entity_status` (`working` / `no_power` /
+   `no_fluid_source` / `disabled` / …) — the engine names the cause directly; this read was missing from all
+   three attempts.
+2. **Read `prototypes.entity["pump"].surface_conditions`** vs the platform surface's properties — Space Age can
+   prototype-restrict an entity from FUNCTIONING on platforms even when script-placed (matches the observed
+   symptom exactly). Also read the live `pump.fluidbox.get_pipe_connections(1)` (flow direction + target
+   positions) and assert direction against `defines.direction.east` **by the define, not a numeric literal**
+   (2.0 uses 16-way directions; a hardcoded old-style value silently snaps).
+3. Then **at most ONE change**, dictated by those reads. If the pump is surface-restricted or still stalls:
+   **sanctioned fallback mechanism** — machine-driven flow via the fluid-lab R9-proven fixture (chemical plant +
+   `heavy-oil-cracking`, buffer-energized; proven on this cluster at 2.0.77). Scientifically valid for LAB-A:
+   crafting-driven fluid movement during the scan IS the real-world drift condition (the fluid craft-window);
+   the pump was merely the cleaner conserved-total isolate. If the fallback also fails → full stop, escalate.
+4. **Bank the evidence now**: append the NOTEBOOK with the control-exact result + the three-layout failure
+   ledger (honest negatives seed this lab's TRIED-&-SETTLED table). No api-notes promotion and no commit until
+   the flowing arm concludes.
 
 ## Discipline / done criteria
 Controls-first (static must read exact before believing any flowing number) · force multi-tick + confirm it ·

@@ -35,8 +35,9 @@ const ALLOW_MARKER = "lint-test-hooks:allow";
 // post-gate/destructive hook here would defeat the guard, so adding one is a reviewable act.
 const FAIL_SAFE_HOOKS = new Set([
 	"test_force_item_loss", // pre-gate: inflates the loss the strict gate counts → gate FAILS → source preserved
+	"test_force_fluid_loss", // pre-gate: inflates expected fluids before the single exact gate → gate FAILS → dest discarded/source preserved
 	"test_force_validation_failure", // pre-gate: forces validation FAIL → rollback → source preserved
-	"test_force_entity_failure", // pre-gate: one entity fails to place → attributed loss → gate catches it
+	"test_force_entity_failure", // pre-gate: marker forces verdict FAIL after attribution → source preserved
 ]);
 
 // A value that DISARMS a hook rather than arming it — these assignments are safe and don't require cleanup.
@@ -103,11 +104,11 @@ for (const { file } of findTestFiles()) {
 
 	// Every hook this file ARMS (assigns a value that is not a disarm).
 	const armed = new Set();
-	const re = /test_force_(\w+)\s*=\s*([^\s,;})]+)/g;
+	const re = /(?:test_force_(\w+)|(preserve_failed_destination))\s*=\s*([^\s,;})]+)/g;
 	let m;
 	while ((m = re.exec(code)) !== null) {
-		if (!DISARM_VALUES.has(m[2])) {
-			armed.add("test_force_" + m[1]);
+		if (!DISARM_VALUES.has(m[3])) {
+			armed.add(m[2] || "test_force_" + m[1]);
 		}
 	}
 

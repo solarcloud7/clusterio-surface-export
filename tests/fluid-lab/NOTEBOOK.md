@@ -4611,3 +4611,16972 @@ Decision status: no primitive design change yet. R6 did not reproduce the CI los
   "finished": "2026-07-06T18:40:11.973Z"
 }
 ```
+
+
+## 2026-07-08T19:18:10.771Z - R10 fluid-lab run (run-r10.mjs; sections=r10a,r10b)
+
+```json
+{
+  "script": "tests/fluid-lab/run-r10.mjs",
+  "started": "2026-07-08T19:17:43.547Z",
+  "sections": [
+    "r10a",
+    "r10b"
+  ],
+  "no_notebook": false,
+  "source": {
+    "host": 1,
+    "instance": "clusterio-host-1-instance-1"
+  },
+  "dest": {
+    "host": 2,
+    "instance": "clusterio-host-2-instance-1"
+  },
+  "rungs": {
+    "r10a": {
+      "success": true,
+      "rung": "R10a",
+      "platform": "fluid-lab-r10a-1783538269993",
+      "setup": {
+        "success": true,
+        "platform": {
+          "name": "fluid-lab-r10a-1783538269993",
+          "index": 8
+        },
+        "inserted": 2000,
+        "read": {
+          "label": "R10a after insert",
+          "tick": 3269917,
+          "game_paused": false,
+          "platform_paused": false,
+          "valid": true,
+          "name": "storage-tank",
+          "type": "storage-tank",
+          "direct_total": 2000,
+          "segment_total": 2000,
+          "boxes": [
+            {
+              "index": 1,
+              "direct": {
+                "name": "steam",
+                "amount": 2000,
+                "temperature": 165
+              },
+              "segment_id": 48,
+              "segment_contents": {
+                "steam": 2000
+              }
+            }
+          ]
+        }
+      },
+      "transfer": {
+        "dest_instance_id": 1351385547,
+        "command": "/transfer-platform 8 1351385547",
+        "output": "═══════════════════════════════════════\n🚀 Transfer Platform: fluid-lab-r10a-1783538269993\n═══════════════════════════════════════\nDestination: Instance 1351385547\nPlatform: [8] fluid-lab-r10a-1783538269993\n\n[1/2] Locking + queueing export...\n[2/2] ✓ Export queued: 005_fluid-lab-r10a-1783538269993\n⏳ Exporting asynchronously (this may take a while)...\n\nThe transfer will continue automatically:\n  1. Export completes → Sent to controller\n  2. Controller → Sends to destination instance\n  3. Destination imports → Validates counts\n  4. On success → Source deleted automatically\n  5. On failure → Source unlocked automatically\n\n💡 Use /list-platforms to track progress\n═══════════════════════════════════════",
+        "debug": {
+          "import_result_file": "/clusterio/data/instances/clusterio-host-2-instance-1/script-output/debug_import_result_fluid-lab-r10a-1783538269993_3203220.json",
+          "source_file": "/clusterio/data/instances/clusterio-host-1-instance-1/script-output/debug_source_platform_fluid-lab-r10a-1783538269993_3269997.json",
+          "import_result_keys": [
+            "duration_seconds",
+            "platform_name",
+            "total_entities",
+            "transfer_id",
+            "validation_result",
+            "validation_success"
+          ],
+          "validation_result_keys": [
+            "actualFluidCounts",
+            "actualItemCounts",
+            "entityCount",
+            "entityTypeBreakdown",
+            "expectedFluidCounts",
+            "expectedItemCounts",
+            "fluidCountMatch",
+            "fluidReconciliation",
+            "fluidTypesActual",
+            "fluidTypesExpected",
+            "itemCountMatch",
+            "itemLossByType",
+            "itemTypesActual",
+            "itemTypesExpected",
+            "postActivation",
+            "reportedEntityCount",
+            "success",
+            "totalActualFluids",
+            "totalActualItems",
+            "totalExpectedFluids",
+            "totalExpectedItems",
+            "totalItemLoss"
+          ],
+          "source_debug_keys": [
+            "entities",
+            "force_data",
+            "force_name",
+            "frozen_states",
+            "platform",
+            "platform_name",
+            "stats",
+            "tick",
+            "tiles",
+            "timestamp",
+            "verification"
+          ],
+          "source_verification_keys": [
+            "fluid_counts",
+            "item_counts"
+          ],
+          "validation": {
+            "validation_success": true,
+            "itemCountMatch": true,
+            "fluidCountMatch": true,
+            "failedStage": null,
+            "expectedFluidCounts": {
+              "steam@165.0C": 2000
+            },
+            "actualFluidCounts": {
+              "steam@165.0C": 2000
+            },
+            "totalExpectedFluids": 2000,
+            "totalActualFluids": 2000,
+            "fluidReconciliation": {
+              "highTempThreshold": 10000,
+              "rawFluidDelta": 0,
+              "reconciledFluidLoss": 0,
+              "lowTempLoss": 0,
+              "highTempReconciledLoss": 0,
+              "fluidPreservedPct": 100,
+              "highTempAggregates": {}
+            }
+          },
+          "source_verification": {
+            "fluid_counts": {
+              "steam@165.0C": 2000
+            },
+            "item_counts": {
+              "space-platform-foundation": 10
+            }
+          },
+          "source_platform": {
+            "name": "fluid-lab-r10a-1783538269993",
+            "index": 8,
+            "paused": false,
+            "schedule_records": 1
+          }
+        },
+        "dest_read": {
+          "success": true,
+          "platform": {
+            "name": "fluid-lab-r10a-1783538269993",
+            "index": 8,
+            "paused": false
+          },
+          "read": {
+            "label": "dest post-transfer fluid-lab-r10a-1783538269993",
+            "tick": 3203446,
+            "game_paused": false,
+            "platform_paused": false,
+            "valid": true,
+            "name": "storage-tank",
+            "type": "storage-tank",
+            "direct_total": 2000,
+            "segment_total": 2000,
+            "boxes": [
+              {
+                "index": 1,
+                "direct": {
+                  "name": "steam",
+                  "amount": 2000,
+                  "temperature": 165
+                },
+                "segment_id": 157,
+                "segment_contents": {
+                  "steam": 2000
+                }
+              }
+            ]
+          }
+        }
+      },
+      "gate": {
+        "validation_success": true,
+        "fluidCountMatch": true,
+        "failedStage": null,
+        "expectedFluidCounts": {
+          "steam@165.0C": 2000
+        },
+        "actualFluidCounts": {
+          "steam@165.0C": 2000
+        },
+        "totalExpectedFluids": 2000,
+        "totalActualFluids": 2000,
+        "fluidReconciliation": {
+          "highTempThreshold": 10000,
+          "rawFluidDelta": 0,
+          "reconciledFluidLoss": 0,
+          "lowTempLoss": 0,
+          "highTempReconciledLoss": 0,
+          "fluidPreservedPct": 100,
+          "highTempAggregates": {}
+        },
+        "sourceVerificationFluidCounts": {
+          "steam@165.0C": 2000
+        }
+      },
+      "assertions": {
+        "expected_key": "steam@165.0C",
+        "expected_volume": 2000,
+        "actual_volume": 2000,
+        "key_reproduced": true,
+        "volume_delta": 0,
+        "gate_passed": true
+      },
+      "conclusion": "R10a PASS: fixed steam@165.0C key reproduced through real transfer and the composite fluid gate passed."
+    },
+    "r10b": {
+      "success": true,
+      "rung": "R10b",
+      "platform": "fluid-lab-r10b-1783538276845",
+      "setup": {
+        "success": true,
+        "platform": {
+          "name": "fluid-lab-r10b-1783538276845",
+          "index": 9
+        },
+        "inserted1": 1000,
+        "inserted2": 1000,
+        "after_first": {
+          "label": "R10b after first insert",
+          "tick": 3270275,
+          "game_paused": false,
+          "platform_paused": false,
+          "valid": true,
+          "name": "storage-tank",
+          "type": "storage-tank",
+          "direct_total": 1000,
+          "segment_total": 1000,
+          "boxes": [
+            {
+              "index": 1,
+              "direct": {
+                "name": "steam",
+                "amount": 1000,
+                "temperature": 165
+              },
+              "segment_id": 49,
+              "segment_contents": {
+                "steam": 1000
+              }
+            }
+          ]
+        },
+        "after_second": {
+          "label": "R10b after second insert",
+          "tick": 3270275,
+          "game_paused": false,
+          "platform_paused": false,
+          "valid": true,
+          "name": "storage-tank",
+          "type": "storage-tank",
+          "direct_total": 2000,
+          "segment_total": 2000,
+          "boxes": [
+            {
+              "index": 1,
+              "direct": {
+                "name": "steam",
+                "amount": 2000,
+                "temperature": 332.5
+              },
+              "segment_id": 49,
+              "segment_contents": {
+                "steam": 2000
+              }
+            }
+          ]
+        },
+        "after_plus1": {
+          "success": true,
+          "platform": {
+            "name": "fluid-lab-r10b-1783538276845",
+            "index": 9,
+            "paused": false
+          },
+          "read": {
+            "label": "R10b +1 tick",
+            "tick": 3270346,
+            "game_paused": false,
+            "platform_paused": false,
+            "valid": true,
+            "name": "storage-tank",
+            "type": "storage-tank",
+            "direct_total": 2000,
+            "segment_total": 2000,
+            "boxes": [
+              {
+                "index": 1,
+                "direct": {
+                  "name": "steam",
+                  "amount": 2000,
+                  "temperature": 332.5
+                },
+                "segment_id": 49,
+                "segment_contents": {
+                  "steam": 2000
+                }
+              }
+            ]
+          }
+        },
+        "after_plus60": {
+          "success": true,
+          "platform": {
+            "name": "fluid-lab-r10b-1783538276845",
+            "index": 9,
+            "paused": false
+          },
+          "read": {
+            "label": "R10b +60 ticks",
+            "tick": 3270414,
+            "game_paused": false,
+            "platform_paused": false,
+            "valid": true,
+            "name": "storage-tank",
+            "type": "storage-tank",
+            "direct_total": 2000,
+            "segment_total": 2000,
+            "boxes": [
+              {
+                "index": 1,
+                "direct": {
+                  "name": "steam",
+                  "amount": 2000,
+                  "temperature": 332.5
+                },
+                "segment_id": 49,
+                "segment_contents": {
+                  "steam": 2000
+                }
+              }
+            ]
+          }
+        },
+        "pre_export": {
+          "success": true,
+          "platform": {
+            "name": "fluid-lab-r10b-1783538276845",
+            "index": 9,
+            "paused": false
+          },
+          "read": {
+            "label": "R10b pre-export",
+            "tick": 3270447,
+            "game_paused": false,
+            "platform_paused": false,
+            "valid": true,
+            "name": "storage-tank",
+            "type": "storage-tank",
+            "direct_total": 2000,
+            "segment_total": 2000,
+            "boxes": [
+              {
+                "index": 1,
+                "direct": {
+                  "name": "steam",
+                  "amount": 2000,
+                  "temperature": 332.5
+                },
+                "segment_id": 49,
+                "segment_contents": {
+                  "steam": 2000
+                }
+              }
+            ]
+          }
+        }
+      },
+      "transfer": {
+        "dest_instance_id": 1351385547,
+        "command": "/transfer-platform 9 1351385547",
+        "output": "═══════════════════════════════════════\n🚀 Transfer Platform: fluid-lab-r10b-1783538276845\n═══════════════════════════════════════\nDestination: Instance 1351385547\nPlatform: [9] fluid-lab-r10b-1783538276845\n\n[1/2] Locking + queueing export...\n[2/2] ✓ Export queued: 006_fluid-lab-r10b-1783538276845\n⏳ Exporting asynchronously (this may take a while)...\n\nThe transfer will continue automatically:\n  1. Export completes → Sent to controller\n  2. Controller → Sends to destination instance\n  3. Destination imports → Validates counts\n  4. On success → Source deleted automatically\n  5. On failure → Source unlocked automatically\n\n💡 Use /list-platforms to track progress\n═══════════════════════════════════════",
+        "debug": {
+          "import_result_file": "/clusterio/data/instances/clusterio-host-2-instance-1/script-output/debug_import_result_fluid-lab-r10b-1783538276845_3203762.json",
+          "source_file": "/clusterio/data/instances/clusterio-host-1-instance-1/script-output/debug_source_platform_fluid-lab-r10b-1783538276845_3270525.json",
+          "import_result_keys": [
+            "duration_seconds",
+            "platform_name",
+            "total_entities",
+            "transfer_id",
+            "validation_result",
+            "validation_success"
+          ],
+          "validation_result_keys": [
+            "actualFluidCounts",
+            "actualItemCounts",
+            "entityCount",
+            "entityTypeBreakdown",
+            "expectedFluidCounts",
+            "expectedItemCounts",
+            "fluidCountMatch",
+            "fluidReconciliation",
+            "fluidTypesActual",
+            "fluidTypesExpected",
+            "itemCountMatch",
+            "itemLossByType",
+            "itemTypesActual",
+            "itemTypesExpected",
+            "postActivation",
+            "reportedEntityCount",
+            "success",
+            "totalActualFluids",
+            "totalActualItems",
+            "totalExpectedFluids",
+            "totalExpectedItems",
+            "totalItemLoss"
+          ],
+          "source_debug_keys": [
+            "entities",
+            "force_data",
+            "force_name",
+            "frozen_states",
+            "platform",
+            "platform_name",
+            "stats",
+            "tick",
+            "tiles",
+            "timestamp",
+            "verification"
+          ],
+          "source_verification_keys": [
+            "fluid_counts",
+            "item_counts"
+          ],
+          "validation": {
+            "validation_success": true,
+            "itemCountMatch": true,
+            "fluidCountMatch": true,
+            "failedStage": null,
+            "expectedFluidCounts": {
+              "steam@332.5C": 2000
+            },
+            "actualFluidCounts": {
+              "steam@332.5C": 2000
+            },
+            "totalExpectedFluids": 2000,
+            "totalActualFluids": 2000,
+            "fluidReconciliation": {
+              "highTempThreshold": 10000,
+              "rawFluidDelta": 0,
+              "reconciledFluidLoss": 0,
+              "lowTempLoss": 0,
+              "highTempReconciledLoss": 0,
+              "fluidPreservedPct": 100,
+              "highTempAggregates": {}
+            }
+          },
+          "source_verification": {
+            "fluid_counts": {
+              "steam@332.5C": 2000
+            },
+            "item_counts": {
+              "space-platform-foundation": 10
+            }
+          },
+          "source_platform": {
+            "name": "fluid-lab-r10b-1783538276845",
+            "index": 9,
+            "paused": false,
+            "schedule_records": 1
+          }
+        },
+        "dest_read": {
+          "success": true,
+          "platform": {
+            "name": "fluid-lab-r10b-1783538276845",
+            "index": 9,
+            "paused": false
+          },
+          "read": {
+            "label": "dest post-transfer fluid-lab-r10b-1783538276845",
+            "tick": 3203987,
+            "game_paused": false,
+            "platform_paused": false,
+            "valid": true,
+            "name": "storage-tank",
+            "type": "storage-tank",
+            "direct_total": 2000,
+            "segment_total": 2000,
+            "boxes": [
+              {
+                "index": 1,
+                "direct": {
+                  "name": "steam",
+                  "amount": 2000,
+                  "temperature": 332.5
+                },
+                "segment_id": 158,
+                "segment_contents": {
+                  "steam": 2000
+                }
+              }
+            ]
+          }
+        }
+      },
+      "gate": {
+        "validation_success": true,
+        "fluidCountMatch": true,
+        "failedStage": null,
+        "expectedFluidCounts": {
+          "steam@332.5C": 2000
+        },
+        "actualFluidCounts": {
+          "steam@332.5C": 2000
+        },
+        "totalExpectedFluids": 2000,
+        "totalActualFluids": 2000,
+        "fluidReconciliation": {
+          "highTempThreshold": 10000,
+          "rawFluidDelta": 0,
+          "reconciledFluidLoss": 0,
+          "lowTempLoss": 0,
+          "highTempReconciledLoss": 0,
+          "fluidPreservedPct": 100,
+          "highTempAggregates": {}
+        },
+        "sourceVerificationFluidCounts": {
+          "steam@332.5C": 2000
+        }
+      },
+      "old_gate_simulation": {
+        "would_false_fail": false,
+        "false_fail_keys": []
+      },
+      "aggregates": {
+        "expectedByName": {
+          "steam": 2000
+        },
+        "actualByName": {
+          "steam": 2000
+        }
+      },
+      "source_cross_check": {
+        "verification_fluid_counts": {
+          "steam@332.5C": 2000
+        },
+        "matches_import_expected": true
+      },
+      "assertions": {
+        "new_gate_passed_valid_transfer": true,
+        "old_gate_would_false_fail": false
+      },
+      "conclusion": "R10b PASS: valid mixed-temp transfer passed; old exact-key gate would NOT have false-failed this measured export/import pair, so #76 is defensive for this case rather than proven necessary."
+    }
+  },
+  "errors": [],
+  "initial_reset": {
+    "cleanup": {
+      "source": {
+        "success": true,
+        "deleted": {},
+        "tick": 3269559,
+        "game_paused": false
+      },
+      "dest": {
+        "success": true,
+        "deleted": {},
+        "tick": 3202797,
+        "game_paused": false
+      }
+    },
+    "zero": {
+      "source": {
+        "success": true,
+        "tick": 3269705,
+        "game_paused": false,
+        "zero_surfaces": true,
+        "leftovers": {},
+        "zero_storage": true,
+        "destination_holds": 0,
+        "locked_platforms": 0,
+        "committed_source_transfer_tombstones": 0
+      },
+      "dest": {
+        "success": true,
+        "tick": 3202944,
+        "game_paused": false,
+        "zero_surfaces": true,
+        "leftovers": {},
+        "zero_storage": true,
+        "destination_holds": 0,
+        "locked_platforms": 0,
+        "committed_source_transfer_tombstones": 0
+      }
+    },
+    "ok": true
+  },
+  "install": {
+    "source": {
+      "success": true,
+      "tick": 3269773,
+      "base": "2.0.77"
+    },
+    "dest": {
+      "success": true,
+      "tick": 3203011,
+      "base": "2.0.77"
+    }
+  },
+  "final_reset": {
+    "cleanup": {
+      "source": {
+        "success": true,
+        "deleted": {},
+        "tick": 3270793,
+        "game_paused": false
+      },
+      "dest": {
+        "success": true,
+        "deleted": [
+          {
+            "name": "fluid-lab-r10a-1783538269993",
+            "ok": true
+          },
+          {
+            "name": "fluid-lab-r10b-1783538276845",
+            "ok": true
+          }
+        ],
+        "tick": 3204055,
+        "game_paused": false
+      }
+    },
+    "zero": {
+      "source": {
+        "success": true,
+        "tick": 3270938,
+        "game_paused": false,
+        "zero_surfaces": true,
+        "leftovers": {},
+        "zero_storage": true,
+        "destination_holds": 0,
+        "locked_platforms": 0,
+        "committed_source_transfer_tombstones": 0
+      },
+      "dest": {
+        "success": true,
+        "tick": 3204198,
+        "game_paused": false,
+        "zero_surfaces": true,
+        "leftovers": {},
+        "zero_storage": true,
+        "destination_holds": 0,
+        "locked_platforms": 0,
+        "committed_source_transfer_tombstones": 0
+      }
+    },
+    "ok": true
+  },
+  "finished": "2026-07-08T19:18:10.771Z"
+}
+```
+
+## 2026-07-08T19:18:46.992Z - R10 fluid-lab run (run-r10.mjs; sections=r10a,r10b)
+
+```json
+{
+  "script": "tests/fluid-lab/run-r10.mjs",
+  "started": "2026-07-08T19:18:19.919Z",
+  "sections": [
+    "r10a",
+    "r10b"
+  ],
+  "no_notebook": false,
+  "source": {
+    "host": 1,
+    "instance": "clusterio-host-1-instance-1"
+  },
+  "dest": {
+    "host": 2,
+    "instance": "clusterio-host-2-instance-1"
+  },
+  "rungs": {
+    "r10a": {
+      "success": true,
+      "rung": "R10a",
+      "platform": "fluid-lab-r10a-1783538306364",
+      "setup": {
+        "success": true,
+        "platform": {
+          "name": "fluid-lab-r10a-1783538306364",
+          "index": 10
+        },
+        "inserted": 2000,
+        "read": {
+          "label": "R10a after insert",
+          "tick": 3271861,
+          "game_paused": false,
+          "platform_paused": false,
+          "valid": true,
+          "name": "storage-tank",
+          "type": "storage-tank",
+          "direct_total": 2000,
+          "segment_total": 2000,
+          "boxes": [
+            {
+              "index": 1,
+              "direct": {
+                "name": "steam",
+                "amount": 2000,
+                "temperature": 165
+              },
+              "segment_id": 50,
+              "segment_contents": {
+                "steam": 2000
+              }
+            }
+          ]
+        }
+      },
+      "transfer": {
+        "dest_instance_id": 1351385547,
+        "command": "/transfer-platform 10 1351385547",
+        "output": "═══════════════════════════════════════\n🚀 Transfer Platform: fluid-lab-r10a-1783538306364\n═══════════════════════════════════════\nDestination: Instance 1351385547\nPlatform: [10] fluid-lab-r10a-1783538306364\n\n[1/2] Locking + queueing export...\n[2/2] ✓ Export queued: 007_fluid-lab-r10a-1783538306364\n⏳ Exporting asynchronously (this may take a while)...\n\nThe transfer will continue automatically:\n  1. Export completes → Sent to controller\n  2. Controller → Sends to destination instance\n  3. Destination imports → Validates counts\n  4. On success → Source deleted automatically\n  5. On failure → Source unlocked automatically\n\n💡 Use /list-platforms to track progress\n═══════════════════════════════════════",
+        "debug": {
+          "import_result_file": "/clusterio/data/instances/clusterio-host-2-instance-1/script-output/debug_import_result_fluid-lab-r10a-1783538306364_3205180.json",
+          "source_file": "/clusterio/data/instances/clusterio-host-1-instance-1/script-output/debug_source_platform_fluid-lab-r10a-1783538306364_3271944.json",
+          "import_result_keys": [
+            "duration_seconds",
+            "platform_name",
+            "total_entities",
+            "transfer_id",
+            "validation_result",
+            "validation_success"
+          ],
+          "validation_result_keys": [
+            "actualFluidCounts",
+            "actualItemCounts",
+            "entityCount",
+            "entityTypeBreakdown",
+            "expectedFluidCounts",
+            "expectedItemCounts",
+            "fluidCountMatch",
+            "fluidReconciliation",
+            "fluidTypesActual",
+            "fluidTypesExpected",
+            "itemCountMatch",
+            "itemLossByType",
+            "itemTypesActual",
+            "itemTypesExpected",
+            "postActivation",
+            "reportedEntityCount",
+            "success",
+            "totalActualFluids",
+            "totalActualItems",
+            "totalExpectedFluids",
+            "totalExpectedItems",
+            "totalItemLoss"
+          ],
+          "source_debug_keys": [
+            "entities",
+            "force_data",
+            "force_name",
+            "frozen_states",
+            "platform",
+            "platform_name",
+            "stats",
+            "tick",
+            "tiles",
+            "timestamp",
+            "verification"
+          ],
+          "source_verification_keys": [
+            "fluid_counts",
+            "item_counts"
+          ],
+          "validation": {
+            "validation_success": true,
+            "itemCountMatch": true,
+            "fluidCountMatch": true,
+            "failedStage": null,
+            "expectedFluidCounts": {
+              "steam@165.0C": 2000
+            },
+            "actualFluidCounts": {
+              "steam@165.0C": 2000
+            },
+            "totalExpectedFluids": 2000,
+            "totalActualFluids": 2000,
+            "fluidReconciliation": {
+              "highTempThreshold": 10000,
+              "rawFluidDelta": 0,
+              "reconciledFluidLoss": 0,
+              "lowTempLoss": 0,
+              "highTempReconciledLoss": 0,
+              "fluidPreservedPct": 100,
+              "highTempAggregates": {}
+            }
+          },
+          "source_verification": {
+            "fluid_counts": {
+              "steam@165.0C": 2000
+            },
+            "item_counts": {
+              "space-platform-foundation": 10
+            }
+          },
+          "source_platform": {
+            "name": "fluid-lab-r10a-1783538306364",
+            "index": 10,
+            "paused": false,
+            "schedule_records": 1
+          }
+        },
+        "dest_read": {
+          "success": true,
+          "platform": {
+            "name": "fluid-lab-r10a-1783538306364",
+            "index": 10,
+            "paused": false
+          },
+          "read": {
+            "label": "dest post-transfer fluid-lab-r10a-1783538306364",
+            "tick": 3205407,
+            "game_paused": false,
+            "platform_paused": false,
+            "valid": true,
+            "name": "storage-tank",
+            "type": "storage-tank",
+            "direct_total": 2000,
+            "segment_total": 2000,
+            "boxes": [
+              {
+                "index": 1,
+                "direct": {
+                  "name": "steam",
+                  "amount": 2000,
+                  "temperature": 165
+                },
+                "segment_id": 159,
+                "segment_contents": {
+                  "steam": 2000
+                }
+              }
+            ]
+          }
+        }
+      },
+      "gate": {
+        "validation_success": true,
+        "fluidCountMatch": true,
+        "failedStage": null,
+        "expectedFluidCounts": {
+          "steam@165.0C": 2000
+        },
+        "actualFluidCounts": {
+          "steam@165.0C": 2000
+        },
+        "totalExpectedFluids": 2000,
+        "totalActualFluids": 2000,
+        "fluidReconciliation": {
+          "highTempThreshold": 10000,
+          "rawFluidDelta": 0,
+          "reconciledFluidLoss": 0,
+          "lowTempLoss": 0,
+          "highTempReconciledLoss": 0,
+          "fluidPreservedPct": 100,
+          "highTempAggregates": {}
+        },
+        "sourceVerificationFluidCounts": {
+          "steam@165.0C": 2000
+        }
+      },
+      "assertions": {
+        "expected_key": "steam@165.0C",
+        "expected_volume": 2000,
+        "actual_volume": 2000,
+        "key_reproduced": true,
+        "volume_delta": 0,
+        "gate_passed": true
+      },
+      "conclusion": "R10a PASS: fixed steam@165.0C key reproduced through real transfer and the composite fluid gate passed."
+    },
+    "r10b": {
+      "success": true,
+      "rung": "R10b",
+      "platform": "fluid-lab-r10b-1783538313161",
+      "setup": {
+        "success": true,
+        "platform": {
+          "name": "fluid-lab-r10b-1783538313161",
+          "index": 11
+        },
+        "inserted1": 1000,
+        "inserted2": 1000,
+        "after_first": {
+          "label": "R10b after first insert",
+          "tick": 3272223,
+          "game_paused": false,
+          "platform_paused": false,
+          "valid": true,
+          "name": "storage-tank",
+          "type": "storage-tank",
+          "direct_total": 1000,
+          "segment_total": 1000,
+          "boxes": [
+            {
+              "index": 1,
+              "direct": {
+                "name": "steam",
+                "amount": 1000,
+                "temperature": 165
+              },
+              "segment_id": 51,
+              "segment_contents": {
+                "steam": 1000
+              }
+            }
+          ]
+        },
+        "after_second": {
+          "label": "R10b after second insert",
+          "tick": 3272223,
+          "game_paused": false,
+          "platform_paused": false,
+          "valid": true,
+          "name": "storage-tank",
+          "type": "storage-tank",
+          "direct_total": 2000,
+          "segment_total": 2000,
+          "boxes": [
+            {
+              "index": 1,
+              "direct": {
+                "name": "steam",
+                "amount": 2000,
+                "temperature": 332.5
+              },
+              "segment_id": 51,
+              "segment_contents": {
+                "steam": 2000
+              }
+            }
+          ]
+        },
+        "after_plus1": {
+          "success": true,
+          "platform": {
+            "name": "fluid-lab-r10b-1783538313161",
+            "index": 11,
+            "paused": false
+          },
+          "read": {
+            "label": "R10b +1 tick",
+            "tick": 3272290,
+            "game_paused": false,
+            "platform_paused": false,
+            "valid": true,
+            "name": "storage-tank",
+            "type": "storage-tank",
+            "direct_total": 2000,
+            "segment_total": 2000,
+            "boxes": [
+              {
+                "index": 1,
+                "direct": {
+                  "name": "steam",
+                  "amount": 2000,
+                  "temperature": 332.5
+                },
+                "segment_id": 51,
+                "segment_contents": {
+                  "steam": 2000
+                }
+              }
+            ]
+          }
+        },
+        "after_plus60": {
+          "success": true,
+          "platform": {
+            "name": "fluid-lab-r10b-1783538313161",
+            "index": 11,
+            "paused": false
+          },
+          "read": {
+            "label": "R10b +60 ticks",
+            "tick": 3272354,
+            "game_paused": false,
+            "platform_paused": false,
+            "valid": true,
+            "name": "storage-tank",
+            "type": "storage-tank",
+            "direct_total": 2000,
+            "segment_total": 2000,
+            "boxes": [
+              {
+                "index": 1,
+                "direct": {
+                  "name": "steam",
+                  "amount": 2000,
+                  "temperature": 332.5
+                },
+                "segment_id": 51,
+                "segment_contents": {
+                  "steam": 2000
+                }
+              }
+            ]
+          }
+        },
+        "pre_export": {
+          "success": true,
+          "platform": {
+            "name": "fluid-lab-r10b-1783538313161",
+            "index": 11,
+            "paused": false
+          },
+          "read": {
+            "label": "R10b pre-export",
+            "tick": 3272387,
+            "game_paused": false,
+            "platform_paused": false,
+            "valid": true,
+            "name": "storage-tank",
+            "type": "storage-tank",
+            "direct_total": 2000,
+            "segment_total": 2000,
+            "boxes": [
+              {
+                "index": 1,
+                "direct": {
+                  "name": "steam",
+                  "amount": 2000,
+                  "temperature": 332.5
+                },
+                "segment_id": 51,
+                "segment_contents": {
+                  "steam": 2000
+                }
+              }
+            ]
+          }
+        }
+      },
+      "transfer": {
+        "dest_instance_id": 1351385547,
+        "command": "/transfer-platform 11 1351385547",
+        "output": "═══════════════════════════════════════\n🚀 Transfer Platform: fluid-lab-r10b-1783538313161\n═══════════════════════════════════════\nDestination: Instance 1351385547\nPlatform: [11] fluid-lab-r10b-1783538313161\n\n[1/2] Locking + queueing export...\n[2/2] ✓ Export queued: 008_fluid-lab-r10b-1783538313161\n⏳ Exporting asynchronously (this may take a while)...\n\nThe transfer will continue automatically:\n  1. Export completes → Sent to controller\n  2. Controller → Sends to destination instance\n  3. Destination imports → Validates counts\n  4. On success → Source deleted automatically\n  5. On failure → Source unlocked automatically\n\n💡 Use /list-platforms to track progress\n═══════════════════════════════════════",
+        "debug": {
+          "import_result_file": "/clusterio/data/instances/clusterio-host-2-instance-1/script-output/debug_import_result_fluid-lab-r10b-1783538313161_3205720.json",
+          "source_file": "/clusterio/data/instances/clusterio-host-1-instance-1/script-output/debug_source_platform_fluid-lab-r10b-1783538313161_3272464.json",
+          "import_result_keys": [
+            "duration_seconds",
+            "platform_name",
+            "total_entities",
+            "transfer_id",
+            "validation_result",
+            "validation_success"
+          ],
+          "validation_result_keys": [
+            "actualFluidCounts",
+            "actualItemCounts",
+            "entityCount",
+            "entityTypeBreakdown",
+            "expectedFluidCounts",
+            "expectedItemCounts",
+            "fluidCountMatch",
+            "fluidReconciliation",
+            "fluidTypesActual",
+            "fluidTypesExpected",
+            "itemCountMatch",
+            "itemLossByType",
+            "itemTypesActual",
+            "itemTypesExpected",
+            "postActivation",
+            "reportedEntityCount",
+            "success",
+            "totalActualFluids",
+            "totalActualItems",
+            "totalExpectedFluids",
+            "totalExpectedItems",
+            "totalItemLoss"
+          ],
+          "source_debug_keys": [
+            "entities",
+            "force_data",
+            "force_name",
+            "frozen_states",
+            "platform",
+            "platform_name",
+            "stats",
+            "tick",
+            "tiles",
+            "timestamp",
+            "verification"
+          ],
+          "source_verification_keys": [
+            "fluid_counts",
+            "item_counts"
+          ],
+          "validation": {
+            "validation_success": true,
+            "itemCountMatch": true,
+            "fluidCountMatch": true,
+            "failedStage": null,
+            "expectedFluidCounts": {
+              "steam@332.5C": 2000
+            },
+            "actualFluidCounts": {
+              "steam@332.5C": 2000
+            },
+            "totalExpectedFluids": 2000,
+            "totalActualFluids": 2000,
+            "fluidReconciliation": {
+              "highTempThreshold": 10000,
+              "rawFluidDelta": 0,
+              "reconciledFluidLoss": 0,
+              "lowTempLoss": 0,
+              "highTempReconciledLoss": 0,
+              "fluidPreservedPct": 100,
+              "highTempAggregates": {}
+            }
+          },
+          "source_verification": {
+            "fluid_counts": {
+              "steam@332.5C": 2000
+            },
+            "item_counts": {
+              "space-platform-foundation": 10
+            }
+          },
+          "source_platform": {
+            "name": "fluid-lab-r10b-1783538313161",
+            "index": 11,
+            "paused": false,
+            "schedule_records": 1
+          }
+        },
+        "dest_read": {
+          "success": true,
+          "platform": {
+            "name": "fluid-lab-r10b-1783538313161",
+            "index": 11,
+            "paused": false
+          },
+          "read": {
+            "label": "dest post-transfer fluid-lab-r10b-1783538313161",
+            "tick": 3205946,
+            "game_paused": false,
+            "platform_paused": false,
+            "valid": true,
+            "name": "storage-tank",
+            "type": "storage-tank",
+            "direct_total": 2000,
+            "segment_total": 2000,
+            "boxes": [
+              {
+                "index": 1,
+                "direct": {
+                  "name": "steam",
+                  "amount": 2000,
+                  "temperature": 332.5
+                },
+                "segment_id": 160,
+                "segment_contents": {
+                  "steam": 2000
+                }
+              }
+            ]
+          }
+        }
+      },
+      "gate": {
+        "validation_success": true,
+        "fluidCountMatch": true,
+        "failedStage": null,
+        "expectedFluidCounts": {
+          "steam@332.5C": 2000
+        },
+        "actualFluidCounts": {
+          "steam@332.5C": 2000
+        },
+        "totalExpectedFluids": 2000,
+        "totalActualFluids": 2000,
+        "fluidReconciliation": {
+          "highTempThreshold": 10000,
+          "rawFluidDelta": 0,
+          "reconciledFluidLoss": 0,
+          "lowTempLoss": 0,
+          "highTempReconciledLoss": 0,
+          "fluidPreservedPct": 100,
+          "highTempAggregates": {}
+        },
+        "sourceVerificationFluidCounts": {
+          "steam@332.5C": 2000
+        }
+      },
+      "old_gate_simulation": {
+        "would_false_fail": false,
+        "false_fail_keys": []
+      },
+      "aggregates": {
+        "expectedByName": {
+          "steam": 2000
+        },
+        "actualByName": {
+          "steam": 2000
+        }
+      },
+      "source_cross_check": {
+        "verification_fluid_counts": {
+          "steam@332.5C": 2000
+        },
+        "matches_import_expected": true
+      },
+      "assertions": {
+        "new_gate_passed_valid_transfer": true,
+        "old_gate_would_false_fail": false
+      },
+      "conclusion": "R10b PASS: valid mixed-temp transfer passed; old exact-key gate would NOT have false-failed this measured export/import pair, so #76 is defensive for this case rather than proven necessary."
+    }
+  },
+  "errors": [],
+  "initial_reset": {
+    "cleanup": {
+      "source": {
+        "success": true,
+        "deleted": {},
+        "tick": 3271499,
+        "game_paused": false
+      },
+      "dest": {
+        "success": true,
+        "deleted": {},
+        "tick": 3204761,
+        "game_paused": false
+      }
+    },
+    "zero": {
+      "source": {
+        "success": true,
+        "tick": 3271640,
+        "game_paused": false,
+        "zero_surfaces": true,
+        "leftovers": {},
+        "zero_storage": true,
+        "destination_holds": 0,
+        "locked_platforms": 0,
+        "committed_source_transfer_tombstones": 0
+      },
+      "dest": {
+        "success": true,
+        "tick": 3204903,
+        "game_paused": false,
+        "zero_surfaces": true,
+        "leftovers": {},
+        "zero_storage": true,
+        "destination_holds": 0,
+        "locked_platforms": 0,
+        "committed_source_transfer_tombstones": 0
+      }
+    },
+    "ok": true
+  },
+  "install": {
+    "source": {
+      "success": true,
+      "tick": 3271709,
+      "base": "2.0.77"
+    },
+    "dest": {
+      "success": true,
+      "tick": 3204972,
+      "base": "2.0.77"
+    }
+  },
+  "final_reset": {
+    "cleanup": {
+      "source": {
+        "success": true,
+        "deleted": {},
+        "tick": 3272729,
+        "game_paused": false
+      },
+      "dest": {
+        "success": true,
+        "deleted": [
+          {
+            "name": "fluid-lab-r10a-1783538306364",
+            "ok": true
+          },
+          {
+            "name": "fluid-lab-r10b-1783538313161",
+            "ok": true
+          }
+        ],
+        "tick": 3206009,
+        "game_paused": false
+      }
+    },
+    "zero": {
+      "source": {
+        "success": true,
+        "tick": 3272871,
+        "game_paused": false,
+        "zero_surfaces": true,
+        "leftovers": {},
+        "zero_storage": true,
+        "destination_holds": 0,
+        "locked_platforms": 0,
+        "committed_source_transfer_tombstones": 0
+      },
+      "dest": {
+        "success": true,
+        "tick": 3206154,
+        "game_paused": false,
+        "zero_surfaces": true,
+        "leftovers": {},
+        "zero_storage": true,
+        "destination_holds": 0,
+        "locked_platforms": 0,
+        "committed_source_transfer_tombstones": 0
+      }
+    },
+    "ok": true
+  },
+  "finished": "2026-07-08T19:18:46.992Z"
+}
+```
+
+## 2026-07-08 - R10a/R10b conclusion summary
+
+R10a/R10b were run twice consecutively via `node tests/fluid-lab/run-r10.mjs --sections r10a,r10b` after one focused `--no-notebook` shakeout pass. Both evidence passes ended with host-1 and host-2 zero-leftover checks green: no lab surfaces, `storage.fluid_lab` cleared, `storage.destination_holds=0`, `storage.locked_platforms=0`, `storage.committed_source_transfer_tombstones=0`, and `game.tick_paused=false`.
+
+Conclusions:
+- R10a: fixed `steam@165.0C = 2000` reproduced exactly through the real transfer path; new composite gate passed.
+- R10b: `1000` steam at `165C` + `1000` steam at `500C` equilibrated in the storage-tank segment before export to `steam@332.5C = 2000`; source verification, destination expected, destination actual, direct meter, and segment meter all matched.
+- Old-gate simulation: no false-fail in this measured R10b case. #76 remains defensive for this case, not proven necessary by R10b.
+- R10c/R10d were not run.
+
+
+## 2026-07-10T04:59:16.973Z - R11 frozen-injection lab (sections=r11a,r11b,r11c,r11d)
+
+Prediction: **zero fluid loss and zero fluid gain at every rung**.
+
+```json
+{
+  "script": "tests/fluid-lab/run-r11.mjs",
+  "started": "2026-07-10T04:58:38.116Z",
+  "sections": [
+    "r11a",
+    "r11b",
+    "r11c",
+    "r11d"
+  ],
+  "prediction": "ZERO fluid loss and ZERO fluid gain at every R11 rung",
+  "epsilon": 0.000001,
+  "rungs": {
+    "r11a": {
+      "success": true,
+      "prediction": "zero loss and zero gain",
+      "cases": [
+        {
+          "machines": false,
+          "name": "fluid-lab-r11-a-control-1783659526620",
+          "setup": {
+            "success": true,
+            "inserted": 2000,
+            "platform": 4,
+            "read": {
+              "success": true,
+              "label": "same-tick frozen",
+              "tick": 180096,
+              "game_paused": false,
+              "platform_paused": true,
+              "totals": {
+                "water": 2000
+              },
+              "boxes": [
+                {
+                  "entity": "storage-tank",
+                  "type": "storage-tank",
+                  "unit_number": 15654,
+                  "index": 1,
+                  "direct": {
+                    "name": "water",
+                    "amount": 2000,
+                    "temperature": 25
+                  },
+                  "segment_id": 114,
+                  "segment_contents": {
+                    "water": 2000
+                  }
+                },
+                {
+                  "entity": "pipe",
+                  "type": "pipe",
+                  "unit_number": 15657,
+                  "index": 1,
+                  "segment_id": 115,
+                  "segment_contents": {}
+                },
+                {
+                  "entity": "pipe",
+                  "type": "pipe",
+                  "unit_number": 15656,
+                  "index": 1,
+                  "segment_id": 115
+                },
+                {
+                  "entity": "pipe",
+                  "type": "pipe",
+                  "unit_number": 15655,
+                  "index": 1,
+                  "segment_id": 115
+                }
+              ],
+              "entity_states": {}
+            }
+          },
+          "activation": {
+            "success": true,
+            "tick": 180157,
+            "changed": 0,
+            "read": {
+              "success": true,
+              "label": "activation same tick",
+              "tick": 180157,
+              "game_paused": false,
+              "platform_paused": false,
+              "totals": {
+                "water": 2000
+              },
+              "boxes": [
+                {
+                  "entity": "storage-tank",
+                  "type": "storage-tank",
+                  "unit_number": 15654,
+                  "index": 1,
+                  "direct": {
+                    "name": "water",
+                    "amount": 2000,
+                    "temperature": 25
+                  },
+                  "segment_id": 114,
+                  "segment_contents": {
+                    "water": 2000
+                  }
+                },
+                {
+                  "entity": "pipe",
+                  "type": "pipe",
+                  "unit_number": 15657,
+                  "index": 1,
+                  "segment_id": 115,
+                  "segment_contents": {}
+                },
+                {
+                  "entity": "pipe",
+                  "type": "pipe",
+                  "unit_number": 15656,
+                  "index": 1,
+                  "segment_id": 115
+                },
+                {
+                  "entity": "pipe",
+                  "type": "pipe",
+                  "unit_number": 15655,
+                  "index": 1,
+                  "segment_id": 115
+                }
+              ],
+              "entity_states": {}
+            }
+          },
+          "after": {
+            "success": true,
+            "label": "activation +60",
+            "tick": 180270,
+            "game_paused": false,
+            "platform_paused": false,
+            "totals": {
+              "water": 2000
+            },
+            "boxes": [
+              {
+                "entity": "storage-tank",
+                "type": "storage-tank",
+                "unit_number": 15654,
+                "index": 1,
+                "direct": {
+                  "name": "water",
+                  "amount": 2000,
+                  "temperature": 25
+                },
+                "segment_id": 114,
+                "segment_contents": {
+                  "water": 2000
+                }
+              },
+              {
+                "entity": "pipe",
+                "type": "pipe",
+                "unit_number": 15657,
+                "index": 1,
+                "segment_id": 115,
+                "segment_contents": {}
+              },
+              {
+                "entity": "pipe",
+                "type": "pipe",
+                "unit_number": 15656,
+                "index": 1,
+                "segment_id": 115
+              },
+              {
+                "entity": "pipe",
+                "type": "pipe",
+                "unit_number": 15655,
+                "index": 1,
+                "segment_id": 115
+              }
+            ],
+            "entity_states": {}
+          },
+          "activation_compare": {
+            "exact": true,
+            "epsilon": 0.000001,
+            "max_abs_delta": 0,
+            "classification": "exact",
+            "rows": [
+              {
+                "name": "water",
+                "expected": 2000,
+                "actual": 2000,
+                "delta": 0
+              }
+            ]
+          },
+          "after_compare": {
+            "exact": true,
+            "epsilon": 0.000001,
+            "max_abs_delta": 0,
+            "classification": "exact",
+            "rows": [
+              {
+                "name": "water",
+                "expected": 2000,
+                "actual": 2000,
+                "delta": 0
+              }
+            ]
+          }
+        },
+        {
+          "machines": true,
+          "name": "fluid-lab-r11-a-machines-1783659530182",
+          "setup": {
+            "success": true,
+            "inserted": 2000,
+            "platform": 5,
+            "read": {
+              "success": true,
+              "label": "same-tick frozen",
+              "tick": 180316,
+              "game_paused": false,
+              "platform_paused": true,
+              "totals": {
+                "water": 2000
+              },
+              "boxes": [
+                {
+                  "entity": "storage-tank",
+                  "type": "storage-tank",
+                  "unit_number": 15659,
+                  "index": 1,
+                  "direct": {
+                    "name": "water",
+                    "amount": 2000,
+                    "temperature": 25
+                  },
+                  "segment_id": 116,
+                  "segment_contents": {
+                    "water": 2000
+                  }
+                },
+                {
+                  "entity": "pipe",
+                  "type": "pipe",
+                  "unit_number": 15662,
+                  "index": 1,
+                  "segment_id": 117,
+                  "segment_contents": {}
+                },
+                {
+                  "entity": "pipe",
+                  "type": "pipe",
+                  "unit_number": 15661,
+                  "index": 1,
+                  "segment_id": 117
+                },
+                {
+                  "entity": "pipe",
+                  "type": "pipe",
+                  "unit_number": 15660,
+                  "index": 1,
+                  "segment_id": 117
+                },
+                {
+                  "entity": "pump",
+                  "type": "pump",
+                  "unit_number": 15663,
+                  "index": 1
+                },
+                {
+                  "entity": "chemical-plant",
+                  "type": "assembling-machine",
+                  "unit_number": 15664,
+                  "index": 1
+                },
+                {
+                  "entity": "chemical-plant",
+                  "type": "assembling-machine",
+                  "unit_number": 15664,
+                  "index": 2
+                },
+                {
+                  "entity": "chemical-plant",
+                  "type": "assembling-machine",
+                  "unit_number": 15664,
+                  "index": 3
+                }
+              ],
+              "entity_states": [
+                {
+                  "entity": "pump",
+                  "unit_number": 15663,
+                  "active": false,
+                  "frozen": {
+                    "ok": true,
+                    "value": false
+                  }
+                },
+                {
+                  "entity": "chemical-plant",
+                  "unit_number": 15664,
+                  "active": false,
+                  "frozen": {
+                    "ok": true,
+                    "value": false
+                  }
+                }
+              ]
+            }
+          },
+          "activation": {
+            "success": true,
+            "tick": 180370,
+            "changed": 2,
+            "read": {
+              "success": true,
+              "label": "activation same tick",
+              "tick": 180370,
+              "game_paused": false,
+              "platform_paused": false,
+              "totals": {
+                "water": 2000
+              },
+              "boxes": [
+                {
+                  "entity": "storage-tank",
+                  "type": "storage-tank",
+                  "unit_number": 15659,
+                  "index": 1,
+                  "direct": {
+                    "name": "water",
+                    "amount": 2000,
+                    "temperature": 25
+                  },
+                  "segment_id": 116,
+                  "segment_contents": {
+                    "water": 2000
+                  }
+                },
+                {
+                  "entity": "pipe",
+                  "type": "pipe",
+                  "unit_number": 15662,
+                  "index": 1,
+                  "segment_id": 117,
+                  "segment_contents": {}
+                },
+                {
+                  "entity": "pipe",
+                  "type": "pipe",
+                  "unit_number": 15661,
+                  "index": 1,
+                  "segment_id": 117
+                },
+                {
+                  "entity": "pipe",
+                  "type": "pipe",
+                  "unit_number": 15660,
+                  "index": 1,
+                  "segment_id": 117
+                },
+                {
+                  "entity": "pump",
+                  "type": "pump",
+                  "unit_number": 15663,
+                  "index": 1
+                },
+                {
+                  "entity": "chemical-plant",
+                  "type": "assembling-machine",
+                  "unit_number": 15664,
+                  "index": 1
+                },
+                {
+                  "entity": "chemical-plant",
+                  "type": "assembling-machine",
+                  "unit_number": 15664,
+                  "index": 2
+                },
+                {
+                  "entity": "chemical-plant",
+                  "type": "assembling-machine",
+                  "unit_number": 15664,
+                  "index": 3
+                }
+              ],
+              "entity_states": [
+                {
+                  "entity": "pump",
+                  "unit_number": 15663,
+                  "active": true,
+                  "frozen": {
+                    "ok": true,
+                    "value": false
+                  }
+                },
+                {
+                  "entity": "chemical-plant",
+                  "unit_number": 15664,
+                  "active": true,
+                  "frozen": {
+                    "ok": true,
+                    "value": false
+                  }
+                }
+              ]
+            }
+          },
+          "after": {
+            "success": true,
+            "label": "activation +60",
+            "tick": 180492,
+            "game_paused": false,
+            "platform_paused": false,
+            "totals": {
+              "water": 2000
+            },
+            "boxes": [
+              {
+                "entity": "storage-tank",
+                "type": "storage-tank",
+                "unit_number": 15659,
+                "index": 1,
+                "direct": {
+                  "name": "water",
+                  "amount": 2000,
+                  "temperature": 25
+                },
+                "segment_id": 116,
+                "segment_contents": {
+                  "water": 2000
+                }
+              },
+              {
+                "entity": "pipe",
+                "type": "pipe",
+                "unit_number": 15662,
+                "index": 1,
+                "segment_id": 117,
+                "segment_contents": {}
+              },
+              {
+                "entity": "pipe",
+                "type": "pipe",
+                "unit_number": 15661,
+                "index": 1,
+                "segment_id": 117
+              },
+              {
+                "entity": "pipe",
+                "type": "pipe",
+                "unit_number": 15660,
+                "index": 1,
+                "segment_id": 117
+              },
+              {
+                "entity": "pump",
+                "type": "pump",
+                "unit_number": 15663,
+                "index": 1
+              },
+              {
+                "entity": "chemical-plant",
+                "type": "assembling-machine",
+                "unit_number": 15664,
+                "index": 1
+              },
+              {
+                "entity": "chemical-plant",
+                "type": "assembling-machine",
+                "unit_number": 15664,
+                "index": 2
+              },
+              {
+                "entity": "chemical-plant",
+                "type": "assembling-machine",
+                "unit_number": 15664,
+                "index": 3
+              }
+            ],
+            "entity_states": [
+              {
+                "entity": "pump",
+                "unit_number": 15663,
+                "active": true,
+                "frozen": {
+                  "ok": true,
+                  "value": false
+                }
+              },
+              {
+                "entity": "chemical-plant",
+                "unit_number": 15664,
+                "active": true,
+                "frozen": {
+                  "ok": true,
+                  "value": false
+                }
+              }
+            ]
+          },
+          "activation_compare": {
+            "exact": true,
+            "epsilon": 0.000001,
+            "max_abs_delta": 0,
+            "classification": "exact",
+            "rows": [
+              {
+                "name": "water",
+                "expected": 2000,
+                "actual": 2000,
+                "delta": 0
+              }
+            ]
+          },
+          "after_compare": {
+            "exact": true,
+            "epsilon": 0.000001,
+            "max_abs_delta": 0,
+            "classification": "exact",
+            "rows": [
+              {
+                "name": "water",
+                "expected": 2000,
+                "actual": 2000,
+                "delta": 0
+              }
+            ]
+          }
+        }
+      ]
+    },
+    "r11b": {
+      "success": true,
+      "prediction": "zero loss and zero gain",
+      "name": "fluid-lab-r11-b-1783659533654",
+      "setup": {
+        "success": true,
+        "platform": 6,
+        "writes": [
+          {
+            "entity": "storage-tank",
+            "index": 1,
+            "write": {
+              "accepted": true,
+              "fluid": "water",
+              "amount": 98.81422919034958,
+              "attempts": [
+                {
+                  "fluid": "water",
+                  "ok": true,
+                  "read": {
+                    "name": "water",
+                    "amount": 98.81422919034958,
+                    "temperature": 25
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "entity": "pump",
+            "index": 1,
+            "write": {
+              "accepted": true,
+              "fluid": "water",
+              "amount": 100,
+              "attempts": [
+                {
+                  "fluid": "water",
+                  "ok": true,
+                  "read": {
+                    "name": "water",
+                    "amount": 100,
+                    "temperature": 25
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "entity": "chemical-plant",
+            "index": 1,
+            "write": {
+              "accepted": true,
+              "fluid": "water",
+              "amount": 60,
+              "attempts": [
+                {
+                  "fluid": "water",
+                  "ok": true,
+                  "read": {
+                    "name": "water",
+                    "amount": 60,
+                    "temperature": 25
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "entity": "chemical-plant",
+            "index": 2,
+            "write": {
+              "accepted": true,
+              "fluid": "heavy-oil",
+              "amount": 80,
+              "attempts": [
+                {
+                  "fluid": "water",
+                  "ok": true
+                },
+                {
+                  "fluid": "steam",
+                  "ok": true
+                },
+                {
+                  "fluid": "heavy-oil",
+                  "ok": true,
+                  "read": {
+                    "name": "heavy-oil",
+                    "amount": 80,
+                    "temperature": 25
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "entity": "chemical-plant",
+            "index": 3,
+            "write": {
+              "accepted": true,
+              "fluid": "light-oil",
+              "amount": 100,
+              "attempts": [
+                {
+                  "fluid": "water",
+                  "ok": true
+                },
+                {
+                  "fluid": "steam",
+                  "ok": true
+                },
+                {
+                  "fluid": "heavy-oil",
+                  "ok": true
+                },
+                {
+                  "fluid": "light-oil",
+                  "ok": true,
+                  "read": {
+                    "name": "light-oil",
+                    "amount": 100,
+                    "temperature": 25
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "entity": "boiler",
+            "index": 1,
+            "write": {
+              "accepted": true,
+              "fluid": "water",
+              "amount": 100,
+              "attempts": [
+                {
+                  "fluid": "water",
+                  "ok": true,
+                  "read": {
+                    "name": "water",
+                    "amount": 100,
+                    "temperature": 25
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "entity": "boiler",
+            "index": 2,
+            "write": {
+              "accepted": true,
+              "fluid": "steam",
+              "amount": 100,
+              "attempts": [
+                {
+                  "fluid": "water",
+                  "ok": true
+                },
+                {
+                  "fluid": "steam",
+                  "ok": true,
+                  "read": {
+                    "name": "steam",
+                    "amount": 100,
+                    "temperature": 165
+                  }
+                }
+              ]
+            }
+          }
+        ],
+        "read": {
+          "success": true,
+          "label": "R11b frozen same tick",
+          "tick": 180544,
+          "game_paused": false,
+          "platform_paused": true,
+          "totals": {
+            "water": 260,
+            "heavy-oil": 80,
+            "light-oil": 100,
+            "steam": 100
+          },
+          "boxes": [
+            {
+              "entity": "storage-tank",
+              "type": "storage-tank",
+              "unit_number": 15666,
+              "index": 1,
+              "direct": {
+                "name": "water",
+                "amount": 98.81422919034958,
+                "temperature": 25
+              },
+              "segment_id": 118,
+              "segment_contents": {
+                "water": 100
+              }
+            },
+            {
+              "entity": "pipe",
+              "type": "pipe",
+              "unit_number": 15669,
+              "index": 1,
+              "direct": {
+                "name": "water",
+                "amount": 0.3952568769454956,
+                "temperature": 25
+              },
+              "segment_id": 118
+            },
+            {
+              "entity": "pipe",
+              "type": "pipe",
+              "unit_number": 15667,
+              "index": 1,
+              "direct": {
+                "name": "water",
+                "amount": 0.3952568769454956,
+                "temperature": 25
+              },
+              "segment_id": 118
+            },
+            {
+              "entity": "pump",
+              "type": "pump",
+              "unit_number": 15670,
+              "index": 1,
+              "direct": {
+                "name": "water",
+                "amount": 100,
+                "temperature": 25
+              }
+            },
+            {
+              "entity": "pipe",
+              "type": "pipe",
+              "unit_number": 15668,
+              "index": 1,
+              "direct": {
+                "name": "water",
+                "amount": 0.3952568769454956,
+                "temperature": 25
+              },
+              "segment_id": 118
+            },
+            {
+              "entity": "pipe",
+              "type": "pipe",
+              "unit_number": 15671,
+              "index": 1,
+              "segment_id": 119,
+              "segment_contents": {}
+            },
+            {
+              "entity": "chemical-plant",
+              "type": "assembling-machine",
+              "unit_number": 15672,
+              "index": 1,
+              "direct": {
+                "name": "water",
+                "amount": 60,
+                "temperature": 25
+              }
+            },
+            {
+              "entity": "chemical-plant",
+              "type": "assembling-machine",
+              "unit_number": 15672,
+              "index": 2,
+              "direct": {
+                "name": "heavy-oil",
+                "amount": 80,
+                "temperature": 25
+              }
+            },
+            {
+              "entity": "chemical-plant",
+              "type": "assembling-machine",
+              "unit_number": 15672,
+              "index": 3,
+              "direct": {
+                "name": "light-oil",
+                "amount": 100,
+                "temperature": 25
+              }
+            },
+            {
+              "entity": "boiler",
+              "type": "boiler",
+              "unit_number": 15673,
+              "index": 1,
+              "direct": {
+                "name": "water",
+                "amount": 100,
+                "temperature": 25
+              },
+              "segment_id": 120,
+              "segment_contents": {}
+            },
+            {
+              "entity": "boiler",
+              "type": "boiler",
+              "unit_number": 15673,
+              "index": 2,
+              "direct": {
+                "name": "steam",
+                "amount": 100,
+                "temperature": 165
+              }
+            }
+          ],
+          "entity_states": [
+            {
+              "entity": "pump",
+              "unit_number": 15670,
+              "active": false,
+              "frozen": {
+                "ok": true,
+                "value": false
+              }
+            },
+            {
+              "entity": "chemical-plant",
+              "unit_number": 15672,
+              "active": false,
+              "frozen": {
+                "ok": true,
+                "value": false
+              }
+            },
+            {
+              "entity": "boiler",
+              "unit_number": 15673,
+              "active": false,
+              "frozen": {
+                "ok": true,
+                "value": false
+              }
+            }
+          ]
+        }
+      },
+      "activation": {
+        "success": true,
+        "tick": 180597,
+        "changed": 3,
+        "read": {
+          "success": true,
+          "label": "R11b activation same tick",
+          "tick": 180597,
+          "game_paused": false,
+          "platform_paused": false,
+          "totals": {
+            "water": 260,
+            "heavy-oil": 80,
+            "light-oil": 100,
+            "steam": 100
+          },
+          "boxes": [
+            {
+              "entity": "storage-tank",
+              "type": "storage-tank",
+              "unit_number": 15666,
+              "index": 1,
+              "direct": {
+                "name": "water",
+                "amount": 98.81422919034958,
+                "temperature": 25
+              },
+              "segment_id": 118,
+              "segment_contents": {
+                "water": 100
+              }
+            },
+            {
+              "entity": "pipe",
+              "type": "pipe",
+              "unit_number": 15669,
+              "index": 1,
+              "direct": {
+                "name": "water",
+                "amount": 0.3952568769454956,
+                "temperature": 25
+              },
+              "segment_id": 118
+            },
+            {
+              "entity": "pipe",
+              "type": "pipe",
+              "unit_number": 15667,
+              "index": 1,
+              "direct": {
+                "name": "water",
+                "amount": 0.3952568769454956,
+                "temperature": 25
+              },
+              "segment_id": 118
+            },
+            {
+              "entity": "pump",
+              "type": "pump",
+              "unit_number": 15670,
+              "index": 1
+            },
+            {
+              "entity": "pipe",
+              "type": "pipe",
+              "unit_number": 15668,
+              "index": 1,
+              "direct": {
+                "name": "water",
+                "amount": 0.3952568769454956,
+                "temperature": 25
+              },
+              "segment_id": 118
+            },
+            {
+              "entity": "pipe",
+              "type": "pipe",
+              "unit_number": 15671,
+              "index": 1,
+              "direct": {
+                "name": "water",
+                "amount": 100,
+                "temperature": 25
+              },
+              "segment_id": 119,
+              "segment_contents": {
+                "water": 100
+              }
+            },
+            {
+              "entity": "chemical-plant",
+              "type": "assembling-machine",
+              "unit_number": 15672,
+              "index": 1,
+              "direct": {
+                "name": "water",
+                "amount": 60,
+                "temperature": 25
+              }
+            },
+            {
+              "entity": "chemical-plant",
+              "type": "assembling-machine",
+              "unit_number": 15672,
+              "index": 2,
+              "direct": {
+                "name": "heavy-oil",
+                "amount": 80,
+                "temperature": 25
+              }
+            },
+            {
+              "entity": "chemical-plant",
+              "type": "assembling-machine",
+              "unit_number": 15672,
+              "index": 3,
+              "direct": {
+                "name": "light-oil",
+                "amount": 100,
+                "temperature": 25
+              }
+            },
+            {
+              "entity": "boiler",
+              "type": "boiler",
+              "unit_number": 15673,
+              "index": 1,
+              "direct": {
+                "name": "water",
+                "amount": 100,
+                "temperature": 25
+              },
+              "segment_id": 120,
+              "segment_contents": {}
+            },
+            {
+              "entity": "boiler",
+              "type": "boiler",
+              "unit_number": 15673,
+              "index": 2,
+              "direct": {
+                "name": "steam",
+                "amount": 100,
+                "temperature": 165
+              }
+            }
+          ],
+          "entity_states": [
+            {
+              "entity": "pump",
+              "unit_number": 15670,
+              "active": true,
+              "frozen": {
+                "ok": true,
+                "value": false
+              }
+            },
+            {
+              "entity": "chemical-plant",
+              "unit_number": 15672,
+              "active": true,
+              "frozen": {
+                "ok": true,
+                "value": false
+              }
+            },
+            {
+              "entity": "boiler",
+              "unit_number": 15673,
+              "active": true,
+              "frozen": {
+                "ok": true,
+                "value": false
+              }
+            }
+          ]
+        }
+      },
+      "after": {
+        "success": true,
+        "label": "R11b activation +60",
+        "tick": 180694,
+        "game_paused": false,
+        "platform_paused": false,
+        "totals": {
+          "water": 260,
+          "heavy-oil": 80,
+          "light-oil": 100,
+          "steam": 100
+        },
+        "boxes": [
+          {
+            "entity": "storage-tank",
+            "type": "storage-tank",
+            "unit_number": 15666,
+            "index": 1,
+            "direct": {
+              "name": "water",
+              "amount": 98.81422919034958,
+              "temperature": 25
+            },
+            "segment_id": 118,
+            "segment_contents": {
+              "water": 100
+            }
+          },
+          {
+            "entity": "pipe",
+            "type": "pipe",
+            "unit_number": 15669,
+            "index": 1,
+            "direct": {
+              "name": "water",
+              "amount": 0.3952568769454956,
+              "temperature": 25
+            },
+            "segment_id": 118
+          },
+          {
+            "entity": "pipe",
+            "type": "pipe",
+            "unit_number": 15667,
+            "index": 1,
+            "direct": {
+              "name": "water",
+              "amount": 0.3952568769454956,
+              "temperature": 25
+            },
+            "segment_id": 118
+          },
+          {
+            "entity": "pump",
+            "type": "pump",
+            "unit_number": 15670,
+            "index": 1
+          },
+          {
+            "entity": "pipe",
+            "type": "pipe",
+            "unit_number": 15668,
+            "index": 1,
+            "direct": {
+              "name": "water",
+              "amount": 0.3952568769454956,
+              "temperature": 25
+            },
+            "segment_id": 118
+          },
+          {
+            "entity": "pipe",
+            "type": "pipe",
+            "unit_number": 15671,
+            "index": 1,
+            "direct": {
+              "name": "water",
+              "amount": 100,
+              "temperature": 25
+            },
+            "segment_id": 119,
+            "segment_contents": {
+              "water": 100
+            }
+          },
+          {
+            "entity": "chemical-plant",
+            "type": "assembling-machine",
+            "unit_number": 15672,
+            "index": 1,
+            "direct": {
+              "name": "water",
+              "amount": 60,
+              "temperature": 25
+            }
+          },
+          {
+            "entity": "chemical-plant",
+            "type": "assembling-machine",
+            "unit_number": 15672,
+            "index": 2,
+            "direct": {
+              "name": "heavy-oil",
+              "amount": 80,
+              "temperature": 25
+            }
+          },
+          {
+            "entity": "chemical-plant",
+            "type": "assembling-machine",
+            "unit_number": 15672,
+            "index": 3,
+            "direct": {
+              "name": "light-oil",
+              "amount": 100,
+              "temperature": 25
+            }
+          },
+          {
+            "entity": "boiler",
+            "type": "boiler",
+            "unit_number": 15673,
+            "index": 1,
+            "direct": {
+              "name": "water",
+              "amount": 100,
+              "temperature": 25
+            },
+            "segment_id": 120,
+            "segment_contents": {}
+          },
+          {
+            "entity": "boiler",
+            "type": "boiler",
+            "unit_number": 15673,
+            "index": 2,
+            "direct": {
+              "name": "steam",
+              "amount": 100,
+              "temperature": 165
+            }
+          }
+        ],
+        "entity_states": [
+          {
+            "entity": "pump",
+            "unit_number": 15670,
+            "active": true,
+            "frozen": {
+              "ok": true,
+              "value": false
+            }
+          },
+          {
+            "entity": "chemical-plant",
+            "unit_number": 15672,
+            "active": true,
+            "frozen": {
+              "ok": true,
+              "value": false
+            }
+          },
+          {
+            "entity": "boiler",
+            "unit_number": 15673,
+            "active": true,
+            "frozen": {
+              "ok": true,
+              "value": false
+            }
+          }
+        ]
+      },
+      "immediate_compare": {
+        "exact": true,
+        "epsilon": 0.000001,
+        "max_abs_delta": 0,
+        "classification": "exact",
+        "rows": [
+          {
+            "name": "heavy-oil",
+            "expected": 80,
+            "actual": 80,
+            "delta": 0
+          },
+          {
+            "name": "light-oil",
+            "expected": 100,
+            "actual": 100,
+            "delta": 0
+          },
+          {
+            "name": "steam",
+            "expected": 100,
+            "actual": 100,
+            "delta": 0
+          },
+          {
+            "name": "water",
+            "expected": 260,
+            "actual": 260,
+            "delta": 0
+          }
+        ]
+      },
+      "settled_compare": {
+        "exact": true,
+        "epsilon": 0.000001,
+        "max_abs_delta": 0,
+        "classification": "exact",
+        "rows": [
+          {
+            "name": "heavy-oil",
+            "expected": 80,
+            "actual": 80,
+            "delta": 0
+          },
+          {
+            "name": "light-oil",
+            "expected": 100,
+            "actual": 100,
+            "delta": 0
+          },
+          {
+            "name": "steam",
+            "expected": 100,
+            "actual": 100,
+            "delta": 0
+          },
+          {
+            "name": "water",
+            "expected": 260,
+            "actual": 260,
+            "delta": 0
+          }
+        ]
+      }
+    },
+    "r11c": {
+      "success": true,
+      "prediction": "zero loss and zero gain",
+      "name": "fluid-lab-r11-c-1783659536788",
+      "import_state_replication": {
+        "entity_creation": "module/import_phases/entity_creation.lua:69 creates through Deserializer; lines 78-91 immediately set active=false for transfer entities",
+        "platform_pause": "module/core/import-pipeline.lua:240-245 pauses the transfer platform immediately after creation"
+      },
+      "setup": {
+        "success": true,
+        "platform": 7,
+        "rows": [
+          {
+            "name": "pipe",
+            "type": "pipe",
+            "activatable": false,
+            "before": {
+              "frozen": {
+                "ok": true,
+                "value": false
+              },
+              "tick": 180748
+            },
+            "writes": [
+              {
+                "index": 1,
+                "write": {
+                  "accepted": true,
+                  "fluid": "water",
+                  "amount": 50,
+                  "attempts": [
+                    {
+                      "fluid": "water",
+                      "ok": true,
+                      "read": {
+                        "name": "water",
+                        "amount": 50,
+                        "temperature": 25
+                      }
+                    }
+                  ]
+                }
+              }
+            ],
+            "accepted": true,
+            "fallback_used": false,
+            "after": {
+              "frozen": {
+                "ok": true,
+                "value": false
+              },
+              "tick": 180748
+            }
+          },
+          {
+            "name": "storage-tank",
+            "type": "storage-tank",
+            "activatable": false,
+            "before": {
+              "frozen": {
+                "ok": true,
+                "value": false
+              },
+              "tick": 180748
+            },
+            "writes": [
+              {
+                "index": 1,
+                "write": {
+                  "accepted": true,
+                  "fluid": "water",
+                  "amount": 50,
+                  "attempts": [
+                    {
+                      "fluid": "water",
+                      "ok": true,
+                      "read": {
+                        "name": "water",
+                        "amount": 50,
+                        "temperature": 25
+                      }
+                    }
+                  ]
+                }
+              }
+            ],
+            "accepted": true,
+            "fallback_used": false,
+            "after": {
+              "frozen": {
+                "ok": true,
+                "value": false
+              },
+              "tick": 180748
+            }
+          },
+          {
+            "name": "pump",
+            "type": "pump",
+            "activatable": true,
+            "before": {
+              "frozen": {
+                "ok": true,
+                "value": false
+              },
+              "tick": 180748
+            },
+            "writes": [
+              {
+                "index": 1,
+                "write": {
+                  "accepted": true,
+                  "fluid": "water",
+                  "amount": 50,
+                  "attempts": [
+                    {
+                      "fluid": "water",
+                      "ok": true,
+                      "read": {
+                        "name": "water",
+                        "amount": 50,
+                        "temperature": 25
+                      }
+                    }
+                  ]
+                }
+              }
+            ],
+            "accepted": true,
+            "fallback_used": false,
+            "after": {
+              "frozen": {
+                "ok": true,
+                "value": false
+              },
+              "tick": 180748
+            }
+          },
+          {
+            "name": "chemical-plant",
+            "type": "assembling-machine",
+            "activatable": true,
+            "before": {
+              "frozen": {
+                "ok": true,
+                "value": false
+              },
+              "tick": 180748
+            },
+            "writes": [
+              {
+                "index": 1,
+                "write": {
+                  "accepted": true,
+                  "fluid": "water",
+                  "amount": 50,
+                  "attempts": [
+                    {
+                      "fluid": "water",
+                      "ok": true,
+                      "read": {
+                        "name": "water",
+                        "amount": 50,
+                        "temperature": 25
+                      }
+                    }
+                  ]
+                }
+              },
+              {
+                "index": 2,
+                "write": {
+                  "accepted": true,
+                  "fluid": "heavy-oil",
+                  "amount": 50,
+                  "attempts": [
+                    {
+                      "fluid": "water",
+                      "ok": true
+                    },
+                    {
+                      "fluid": "steam",
+                      "ok": true
+                    },
+                    {
+                      "fluid": "heavy-oil",
+                      "ok": true,
+                      "read": {
+                        "name": "heavy-oil",
+                        "amount": 50,
+                        "temperature": 25
+                      }
+                    }
+                  ]
+                }
+              },
+              {
+                "index": 3,
+                "write": {
+                  "accepted": true,
+                  "fluid": "light-oil",
+                  "amount": 50,
+                  "attempts": [
+                    {
+                      "fluid": "water",
+                      "ok": true
+                    },
+                    {
+                      "fluid": "steam",
+                      "ok": true
+                    },
+                    {
+                      "fluid": "heavy-oil",
+                      "ok": true
+                    },
+                    {
+                      "fluid": "light-oil",
+                      "ok": true,
+                      "read": {
+                        "name": "light-oil",
+                        "amount": 50,
+                        "temperature": 25
+                      }
+                    }
+                  ]
+                }
+              }
+            ],
+            "accepted": true,
+            "fallback_used": false,
+            "after": {
+              "frozen": {
+                "ok": true,
+                "value": false
+              },
+              "tick": 180748
+            }
+          },
+          {
+            "name": "boiler",
+            "type": "boiler",
+            "activatable": true,
+            "before": {
+              "frozen": {
+                "ok": true,
+                "value": false
+              },
+              "tick": 180748
+            },
+            "writes": [
+              {
+                "index": 1,
+                "write": {
+                  "accepted": true,
+                  "fluid": "water",
+                  "amount": 50,
+                  "attempts": [
+                    {
+                      "fluid": "water",
+                      "ok": true,
+                      "read": {
+                        "name": "water",
+                        "amount": 50,
+                        "temperature": 25
+                      }
+                    }
+                  ]
+                }
+              },
+              {
+                "index": 2,
+                "write": {
+                  "accepted": true,
+                  "fluid": "steam",
+                  "amount": 50,
+                  "attempts": [
+                    {
+                      "fluid": "water",
+                      "ok": true
+                    },
+                    {
+                      "fluid": "steam",
+                      "ok": true,
+                      "read": {
+                        "name": "steam",
+                        "amount": 50,
+                        "temperature": 165
+                      }
+                    }
+                  ]
+                }
+              }
+            ],
+            "accepted": true,
+            "fallback_used": false,
+            "after": {
+              "frozen": {
+                "ok": true,
+                "value": false
+              },
+              "tick": 180748
+            }
+          }
+        ],
+        "read": {
+          "success": true,
+          "label": "R11c before first activation",
+          "tick": 180748,
+          "game_paused": false,
+          "platform_paused": true,
+          "totals": {
+            "water": 200,
+            "heavy-oil": 50,
+            "light-oil": 50,
+            "steam": 50
+          },
+          "boxes": [
+            {
+              "entity": "pipe",
+              "type": "pipe",
+              "unit_number": 15675,
+              "index": 1,
+              "direct": {
+                "name": "water",
+                "amount": 50,
+                "temperature": 25
+              },
+              "segment_id": 121,
+              "segment_contents": {
+                "water": 50
+              }
+            },
+            {
+              "entity": "storage-tank",
+              "type": "storage-tank",
+              "unit_number": 15676,
+              "index": 1,
+              "direct": {
+                "name": "water",
+                "amount": 50,
+                "temperature": 25
+              },
+              "segment_id": 122,
+              "segment_contents": {
+                "water": 50
+              }
+            },
+            {
+              "entity": "pump",
+              "type": "pump",
+              "unit_number": 15677,
+              "index": 1,
+              "direct": {
+                "name": "water",
+                "amount": 50,
+                "temperature": 25
+              }
+            },
+            {
+              "entity": "chemical-plant",
+              "type": "assembling-machine",
+              "unit_number": 15678,
+              "index": 1,
+              "direct": {
+                "name": "water",
+                "amount": 50,
+                "temperature": 25
+              }
+            },
+            {
+              "entity": "chemical-plant",
+              "type": "assembling-machine",
+              "unit_number": 15678,
+              "index": 2,
+              "direct": {
+                "name": "heavy-oil",
+                "amount": 50,
+                "temperature": 25
+              }
+            },
+            {
+              "entity": "chemical-plant",
+              "type": "assembling-machine",
+              "unit_number": 15678,
+              "index": 3,
+              "direct": {
+                "name": "light-oil",
+                "amount": 50,
+                "temperature": 25
+              }
+            },
+            {
+              "entity": "boiler",
+              "type": "boiler",
+              "unit_number": 15679,
+              "index": 1,
+              "direct": {
+                "name": "water",
+                "amount": 50,
+                "temperature": 25
+              },
+              "segment_id": 123,
+              "segment_contents": {}
+            },
+            {
+              "entity": "boiler",
+              "type": "boiler",
+              "unit_number": 15679,
+              "index": 2,
+              "direct": {
+                "name": "steam",
+                "amount": 50,
+                "temperature": 165
+              }
+            }
+          ],
+          "entity_states": [
+            {
+              "entity": "pump",
+              "unit_number": 15677,
+              "active": false,
+              "frozen": {
+                "ok": true,
+                "value": false
+              }
+            },
+            {
+              "entity": "chemical-plant",
+              "unit_number": 15678,
+              "active": false,
+              "frozen": {
+                "ok": true,
+                "value": false
+              }
+            },
+            {
+              "entity": "boiler",
+              "unit_number": 15679,
+              "active": false,
+              "frozen": {
+                "ok": true,
+                "value": false
+              }
+            }
+          ]
+        }
+      },
+      "activation": {
+        "success": true,
+        "tick": 180805,
+        "changed": 3,
+        "read": {
+          "success": true,
+          "label": "R11c activation same tick",
+          "tick": 180805,
+          "game_paused": false,
+          "platform_paused": false,
+          "totals": {
+            "water": 200,
+            "heavy-oil": 50,
+            "light-oil": 50,
+            "steam": 50
+          },
+          "boxes": [
+            {
+              "entity": "pipe",
+              "type": "pipe",
+              "unit_number": 15675,
+              "index": 1,
+              "direct": {
+                "name": "water",
+                "amount": 50,
+                "temperature": 25
+              },
+              "segment_id": 121,
+              "segment_contents": {
+                "water": 50
+              }
+            },
+            {
+              "entity": "storage-tank",
+              "type": "storage-tank",
+              "unit_number": 15676,
+              "index": 1,
+              "direct": {
+                "name": "water",
+                "amount": 50,
+                "temperature": 25
+              },
+              "segment_id": 122,
+              "segment_contents": {
+                "water": 50
+              }
+            },
+            {
+              "entity": "pump",
+              "type": "pump",
+              "unit_number": 15677,
+              "index": 1,
+              "direct": {
+                "name": "water",
+                "amount": 50,
+                "temperature": 25
+              }
+            },
+            {
+              "entity": "chemical-plant",
+              "type": "assembling-machine",
+              "unit_number": 15678,
+              "index": 1,
+              "direct": {
+                "name": "water",
+                "amount": 50,
+                "temperature": 25
+              }
+            },
+            {
+              "entity": "chemical-plant",
+              "type": "assembling-machine",
+              "unit_number": 15678,
+              "index": 2,
+              "direct": {
+                "name": "heavy-oil",
+                "amount": 50,
+                "temperature": 25
+              }
+            },
+            {
+              "entity": "chemical-plant",
+              "type": "assembling-machine",
+              "unit_number": 15678,
+              "index": 3,
+              "direct": {
+                "name": "light-oil",
+                "amount": 50,
+                "temperature": 25
+              }
+            },
+            {
+              "entity": "boiler",
+              "type": "boiler",
+              "unit_number": 15679,
+              "index": 1,
+              "direct": {
+                "name": "water",
+                "amount": 50,
+                "temperature": 25
+              },
+              "segment_id": 123,
+              "segment_contents": {}
+            },
+            {
+              "entity": "boiler",
+              "type": "boiler",
+              "unit_number": 15679,
+              "index": 2,
+              "direct": {
+                "name": "steam",
+                "amount": 50,
+                "temperature": 165
+              }
+            }
+          ],
+          "entity_states": [
+            {
+              "entity": "pump",
+              "unit_number": 15677,
+              "active": true,
+              "frozen": {
+                "ok": true,
+                "value": false
+              }
+            },
+            {
+              "entity": "chemical-plant",
+              "unit_number": 15678,
+              "active": true,
+              "frozen": {
+                "ok": true,
+                "value": false
+              }
+            },
+            {
+              "entity": "boiler",
+              "unit_number": 15679,
+              "active": true,
+              "frozen": {
+                "ok": true,
+                "value": false
+              }
+            }
+          ]
+        }
+      },
+      "after": {
+        "success": true,
+        "label": "R11c activation +60",
+        "tick": 180903,
+        "game_paused": false,
+        "platform_paused": false,
+        "totals": {
+          "water": 200,
+          "heavy-oil": 50,
+          "light-oil": 50,
+          "steam": 50
+        },
+        "boxes": [
+          {
+            "entity": "pipe",
+            "type": "pipe",
+            "unit_number": 15675,
+            "index": 1,
+            "direct": {
+              "name": "water",
+              "amount": 50,
+              "temperature": 25
+            },
+            "segment_id": 121,
+            "segment_contents": {
+              "water": 50
+            }
+          },
+          {
+            "entity": "storage-tank",
+            "type": "storage-tank",
+            "unit_number": 15676,
+            "index": 1,
+            "direct": {
+              "name": "water",
+              "amount": 50,
+              "temperature": 25
+            },
+            "segment_id": 122,
+            "segment_contents": {
+              "water": 50
+            }
+          },
+          {
+            "entity": "pump",
+            "type": "pump",
+            "unit_number": 15677,
+            "index": 1,
+            "direct": {
+              "name": "water",
+              "amount": 50,
+              "temperature": 25
+            }
+          },
+          {
+            "entity": "chemical-plant",
+            "type": "assembling-machine",
+            "unit_number": 15678,
+            "index": 1,
+            "direct": {
+              "name": "water",
+              "amount": 50,
+              "temperature": 25
+            }
+          },
+          {
+            "entity": "chemical-plant",
+            "type": "assembling-machine",
+            "unit_number": 15678,
+            "index": 2,
+            "direct": {
+              "name": "heavy-oil",
+              "amount": 50,
+              "temperature": 25
+            }
+          },
+          {
+            "entity": "chemical-plant",
+            "type": "assembling-machine",
+            "unit_number": 15678,
+            "index": 3,
+            "direct": {
+              "name": "light-oil",
+              "amount": 50,
+              "temperature": 25
+            }
+          },
+          {
+            "entity": "boiler",
+            "type": "boiler",
+            "unit_number": 15679,
+            "index": 1,
+            "direct": {
+              "name": "water",
+              "amount": 50,
+              "temperature": 25
+            },
+            "segment_id": 123,
+            "segment_contents": {}
+          },
+          {
+            "entity": "boiler",
+            "type": "boiler",
+            "unit_number": 15679,
+            "index": 2,
+            "direct": {
+              "name": "steam",
+              "amount": 50,
+              "temperature": 165
+            }
+          }
+        ],
+        "entity_states": [
+          {
+            "entity": "pump",
+            "unit_number": 15677,
+            "active": true,
+            "frozen": {
+              "ok": true,
+              "value": false
+            }
+          },
+          {
+            "entity": "chemical-plant",
+            "unit_number": 15678,
+            "active": true,
+            "frozen": {
+              "ok": true,
+              "value": false
+            }
+          },
+          {
+            "entity": "boiler",
+            "unit_number": 15679,
+            "active": true,
+            "frozen": {
+              "ok": true,
+              "value": false
+            }
+          }
+        ]
+      },
+      "immediate_compare": {
+        "exact": true,
+        "epsilon": 0.000001,
+        "max_abs_delta": 0,
+        "classification": "exact",
+        "rows": [
+          {
+            "name": "heavy-oil",
+            "expected": 50,
+            "actual": 50,
+            "delta": 0
+          },
+          {
+            "name": "light-oil",
+            "expected": 50,
+            "actual": 50,
+            "delta": 0
+          },
+          {
+            "name": "steam",
+            "expected": 50,
+            "actual": 50,
+            "delta": 0
+          },
+          {
+            "name": "water",
+            "expected": 200,
+            "actual": 200,
+            "delta": 0
+          }
+        ]
+      },
+      "settled_compare": {
+        "exact": true,
+        "epsilon": 0.000001,
+        "max_abs_delta": 0,
+        "classification": "exact",
+        "rows": [
+          {
+            "name": "heavy-oil",
+            "expected": 50,
+            "actual": 50,
+            "delta": 0
+          },
+          {
+            "name": "light-oil",
+            "expected": 50,
+            "actual": 50,
+            "delta": 0
+          },
+          {
+            "name": "steam",
+            "expected": 50,
+            "actual": 50,
+            "delta": 0
+          },
+          {
+            "name": "water",
+            "expected": 200,
+            "actual": 200,
+            "delta": 0
+          }
+        ]
+      }
+    },
+    "r11d": {
+      "success": true,
+      "prediction": "zero loss and zero gain",
+      "name": "fluid-lab-r11-d-1783659540034",
+      "seed": {
+        "success": true,
+        "index": 2,
+        "count": 1
+      },
+      "clone": {
+        "success": true,
+        "tick": 180999,
+        "remote": {
+          "success": true,
+          "job_id": "import_3",
+          "platform_name": "fluid-lab-r11-d-1783659540034",
+          "source_platform": "test",
+          "entity_count": 1359,
+          "message": "Clone job started - use /step-tick to process"
+        }
+      },
+      "clone_index": 8,
+      "armed": {
+        "success": true,
+        "tick": 123330
+      },
+      "transfer_output": "═══════════════════════════════════════\n🚀 Transfer Platform: fluid-lab-r11-d-1783659540034\n═══════════════════════════════════════\nDestination: Instance 1351385547\nPlatform: [8] fluid-lab-r11-d-1783659540034\n\n[1/2] Locking + queueing export...\n[2/2] ✓ Export queued: 004_fluid-lab-r11-d-1783659540034\n⏳ Exporting asynchronously (this may take a while)...\n\nThe transfer will continue automatically:\n  1. Export completes → Sent to controller\n  2. Controller → Sends to destination instance\n  3. Destination imports → Validates counts\n  4. On success → Source deleted automatically\n  5. On failure → Source unlocked automatically\n\n💡 Use /list-platforms to track progress\n═══════════════════════════════════════",
+      "wall_ms": 6691,
+      "debug_file": "/clusterio/data/instances/clusterio-host-2-instance-1/script-output/debug_import_result_fluid-lab-r11-d-1783659540034_123530.json",
+      "validation_success": true,
+      "failed_stage": null,
+      "hook_log": {
+        "needle": "[Import][TEST][R11] Frozen fluid injection measured for fluid-lab-r11-d-1783659540034",
+        "found": true,
+        "line": "95.860 Script @__level__/modules/surface_export/core/import-completion.lua:358: [Import][TEST][R11] Frozen fluid injection measured for fluid-lab-r11-d-1783659540034 at tick 123530"
+      },
+      "measurement": {
+        "hook_consumed": true,
+        "platform_name": "fluid-lab-r11-d-1783659540034",
+        "injection_started_tick": 123530,
+        "frozen_census_tick": 123530,
+        "platform_paused": true,
+        "expected_by_name": {
+          "molten-iron": 1041.3721179962158,
+          "thruster-fuel": 37180.338448643684,
+          "thruster-oxidizer": 37239.10695910454,
+          "water": 52739.19101476669,
+          "fluoroketone-cold": 223.25008112192154,
+          "fluoroketone-hot": 0.06601643562316895,
+          "fusion-plasma": 80,
+          "molten-copper": 1885
+        },
+        "expected_raw": {
+          "molten-iron@1500.0C": 1041.3721179962158,
+          "thruster-fuel@25.0C": 37180.338448643684,
+          "thruster-oxidizer@25.0C": 37239.10695910454,
+          "water@15.0C": 52739.19101476669,
+          "fluoroketone-cold@-150.0C": 223.25008112192154,
+          "fluoroketone-hot@180.0C": 0.06601643562316895,
+          "fusion-plasma@1081309.3C": 0,
+          "fusion-plasma@1167510.5C": 0,
+          "molten-copper@1100.0C": 1885,
+          "fusion-plasma@1954769.6C": 10,
+          "fusion-plasma@1167509.5C": 10,
+          "fusion-plasma@1081321.8C": 10,
+          "fusion-plasma@1079336.5C": 10,
+          "fusion-plasma@1163717.6C": 10,
+          "fusion-plasma@1957761.4C": 10,
+          "fusion-plasma@1163716.9C": 10,
+          "fusion-plasma@1079374.3C": 10
+        },
+        "frozen_actual_raw": {
+          "fluoroketone-hot@180.0C": 0.06601643562316895,
+          "fusion-plasma@1081309.3C": 10,
+          "fusion-plasma@1167510.5C": 10,
+          "fluoroketone-cold@-150.0C": 223.25008112192154,
+          "fusion-plasma@1081321.8C": 10,
+          "fusion-plasma@1167509.5C": 10,
+          "molten-iron@1500.0C": 1041.3721179962158,
+          "water@15.0C": 52739.19101476669,
+          "molten-copper@1100.0C": 1885,
+          "thruster-fuel@25.0C": 37180.338448643684,
+          "thruster-oxidizer@25.0C": 37239.10695910454,
+          "fusion-plasma@1079336.5C": 10,
+          "fusion-plasma@1163717.6C": 10,
+          "fusion-plasma@1079374.3C": 10,
+          "fusion-plasma@1163716.9C": 10
+        },
+        "frozen_actual_by_name": {
+          "fluoroketone-hot": 0.06601643562316895,
+          "fusion-plasma": 80,
+          "fluoroketone-cold": 223.25008112192154,
+          "molten-iron": 1041.3721179962158,
+          "water": 52739.19101476669,
+          "molten-copper": 1885,
+          "thruster-fuel": 37180.338448643684,
+          "thruster-oxidizer": 37239.10695910454
+        },
+        "frozen_actual_total": 130388.32463806868,
+        "write_rejected": {
+          "fusion-plasma": 20
+        },
+        "activation_census_tick": 123530,
+        "post_activation_actual_by_name": {
+          "fluoroketone-hot": 0.06601643562316895,
+          "fusion-plasma": 80,
+          "fluoroketone-cold": 223.25008112192154,
+          "molten-iron": 1041.3721179962158,
+          "water": 52739.19101476669,
+          "molten-copper": 1885,
+          "thruster-fuel": 37180.338448643684,
+          "thruster-oxidizer": 37239.10695910454
+        },
+        "post_activation_actual_raw": {
+          "fluoroketone-hot@180.0C": 0.06601643562316895,
+          "fusion-plasma@1081309.3C": 10,
+          "fusion-plasma@1167510.5C": 10,
+          "fluoroketone-cold@-150.0C": 223.25008112192154,
+          "fusion-plasma@1081321.8C": 10,
+          "fusion-plasma@1167509.5C": 10,
+          "molten-iron@1500.0C": 1041.3721179962158,
+          "water@15.0C": 52739.19101476669,
+          "molten-copper@1100.0C": 1885,
+          "thruster-fuel@25.0C": 37180.338448643684,
+          "thruster-oxidizer@25.0C": 37239.10695910454,
+          "fusion-plasma@1079336.5C": 10,
+          "fusion-plasma@1163717.6C": 10,
+          "fusion-plasma@1079374.3C": 10,
+          "fusion-plasma@1163716.9C": 10
+        },
+        "post_activation_actual_total": 130388.32463806868
+      },
+      "frozen_compare": {
+        "exact": true,
+        "epsilon": 0.000001,
+        "max_abs_delta": 0,
+        "classification": "exact",
+        "rows": [
+          {
+            "name": "fluoroketone-cold",
+            "expected": 223.25008112192154,
+            "actual": 223.25008112192154,
+            "delta": 0
+          },
+          {
+            "name": "fluoroketone-hot",
+            "expected": 0.06601643562316895,
+            "actual": 0.06601643562316895,
+            "delta": 0
+          },
+          {
+            "name": "fusion-plasma",
+            "expected": 80,
+            "actual": 80,
+            "delta": 0
+          },
+          {
+            "name": "molten-copper",
+            "expected": 1885,
+            "actual": 1885,
+            "delta": 0
+          },
+          {
+            "name": "molten-iron",
+            "expected": 1041.3721179962158,
+            "actual": 1041.3721179962158,
+            "delta": 0
+          },
+          {
+            "name": "thruster-fuel",
+            "expected": 37180.338448643684,
+            "actual": 37180.338448643684,
+            "delta": 0
+          },
+          {
+            "name": "thruster-oxidizer",
+            "expected": 37239.10695910454,
+            "actual": 37239.10695910454,
+            "delta": 0
+          },
+          {
+            "name": "water",
+            "expected": 52739.19101476669,
+            "actual": 52739.19101476669,
+            "delta": 0
+          }
+        ]
+      },
+      "post_activation_compare": {
+        "exact": true,
+        "epsilon": 0.000001,
+        "max_abs_delta": 0,
+        "classification": "exact",
+        "rows": [
+          {
+            "name": "fluoroketone-cold",
+            "expected": 223.25008112192154,
+            "actual": 223.25008112192154,
+            "delta": 0
+          },
+          {
+            "name": "fluoroketone-hot",
+            "expected": 0.06601643562316895,
+            "actual": 0.06601643562316895,
+            "delta": 0
+          },
+          {
+            "name": "fusion-plasma",
+            "expected": 80,
+            "actual": 80,
+            "delta": 0
+          },
+          {
+            "name": "molten-copper",
+            "expected": 1885,
+            "actual": 1885,
+            "delta": 0
+          },
+          {
+            "name": "molten-iron",
+            "expected": 1041.3721179962158,
+            "actual": 1041.3721179962158,
+            "delta": 0
+          },
+          {
+            "name": "thruster-fuel",
+            "expected": 37180.338448643684,
+            "actual": 37180.338448643684,
+            "delta": 0
+          },
+          {
+            "name": "thruster-oxidizer",
+            "expected": 37239.10695910454,
+            "actual": 37239.10695910454,
+            "delta": 0
+          },
+          {
+            "name": "water",
+            "expected": 52739.19101476669,
+            "actual": 52739.19101476669,
+            "delta": 0
+          }
+        ]
+      }
+    }
+  },
+  "errors": [],
+  "initial_reset": {
+    "cleanup": {
+      "source": {
+        "success": true,
+        "deleted": {},
+        "tick": 179668
+      },
+      "destination": {
+        "success": true,
+        "deleted": {},
+        "tick": 121882
+      }
+    },
+    "zero": {
+      "source": {
+        "success": true,
+        "tick": 179890,
+        "zero_surfaces": true,
+        "surfaces": {},
+        "zero_storage": true,
+        "game_paused": false,
+        "destination_holds": 0,
+        "locked_platforms": 0,
+        "committed_source_transfer_tombstones": 0,
+        "lab_platform_exports": 0
+      },
+      "destination": {
+        "success": true,
+        "tick": 122095,
+        "zero_surfaces": true,
+        "surfaces": {},
+        "zero_storage": true,
+        "game_paused": false,
+        "destination_holds": 0,
+        "locked_platforms": 0,
+        "committed_source_transfer_tombstones": 0,
+        "lab_platform_exports": 0
+      }
+    },
+    "ok": true
+  },
+  "install": {
+    "source": {
+      "success": true,
+      "tick": 179995,
+      "base": "2.0.77"
+    },
+    "destination": {
+      "success": true,
+      "tick": 122197,
+      "base": "2.0.77"
+    }
+  },
+  "final_reset": {
+    "cleanup": {
+      "source": {
+        "success": true,
+        "deleted": [
+          "fluid-lab-r11-a-control-1783659526620",
+          "fluid-lab-r11-a-machines-1783659530182",
+          "fluid-lab-r11-b-1783659533654",
+          "fluid-lab-r11-c-1783659536788"
+        ],
+        "tick": 181639
+      },
+      "destination": {
+        "success": true,
+        "deleted": [
+          "fluid-lab-r11-d-1783659540034"
+        ],
+        "tick": 123928
+      }
+    },
+    "zero": {
+      "source": {
+        "success": true,
+        "tick": 181836,
+        "zero_surfaces": true,
+        "surfaces": {},
+        "zero_storage": true,
+        "game_paused": false,
+        "destination_holds": 0,
+        "locked_platforms": 0,
+        "committed_source_transfer_tombstones": 0,
+        "lab_platform_exports": 0
+      },
+      "destination": {
+        "success": true,
+        "tick": 124120,
+        "zero_surfaces": true,
+        "surfaces": {},
+        "zero_storage": true,
+        "game_paused": false,
+        "destination_holds": 0,
+        "locked_platforms": 0,
+        "committed_source_transfer_tombstones": 0,
+        "lab_platform_exports": 0
+      }
+    },
+    "ok": true
+  },
+  "finished": "2026-07-10T04:59:16.973Z"
+}
+```
+
+
+## 2026-07-10T05:00:00.445Z - R11 frozen-injection lab (sections=r11a,r11b,r11c,r11d)
+
+Prediction: **zero fluid loss and zero fluid gain at every rung**.
+
+```json
+{
+  "script": "tests/fluid-lab/run-r11.mjs",
+  "started": "2026-07-10T04:59:22.599Z",
+  "sections": [
+    "r11a",
+    "r11b",
+    "r11c",
+    "r11d"
+  ],
+  "prediction": "ZERO fluid loss and ZERO fluid gain at every R11 rung",
+  "epsilon": 0.000001,
+  "rungs": {
+    "r11a": {
+      "success": true,
+      "prediction": "zero loss and zero gain",
+      "cases": [
+        {
+          "machines": false,
+          "name": "fluid-lab-r11-a-control-1783659570221",
+          "setup": {
+            "success": true,
+            "inserted": 2000,
+            "platform": 9,
+            "read": {
+              "success": true,
+              "label": "same-tick frozen",
+              "tick": 182779,
+              "game_paused": false,
+              "platform_paused": true,
+              "totals": {
+                "water": 2000
+              },
+              "boxes": [
+                {
+                  "entity": "storage-tank",
+                  "type": "storage-tank",
+                  "unit_number": 17039,
+                  "index": 1,
+                  "direct": {
+                    "name": "water",
+                    "amount": 2000,
+                    "temperature": 25
+                  },
+                  "segment_id": 194,
+                  "segment_contents": {
+                    "water": 2000
+                  }
+                },
+                {
+                  "entity": "pipe",
+                  "type": "pipe",
+                  "unit_number": 17042,
+                  "index": 1,
+                  "segment_id": 195,
+                  "segment_contents": {}
+                },
+                {
+                  "entity": "pipe",
+                  "type": "pipe",
+                  "unit_number": 17041,
+                  "index": 1,
+                  "segment_id": 195
+                },
+                {
+                  "entity": "pipe",
+                  "type": "pipe",
+                  "unit_number": 17040,
+                  "index": 1,
+                  "segment_id": 195
+                }
+              ],
+              "entity_states": {}
+            }
+          },
+          "activation": {
+            "success": true,
+            "tick": 182837,
+            "changed": 0,
+            "read": {
+              "success": true,
+              "label": "activation same tick",
+              "tick": 182837,
+              "game_paused": false,
+              "platform_paused": false,
+              "totals": {
+                "water": 2000
+              },
+              "boxes": [
+                {
+                  "entity": "storage-tank",
+                  "type": "storage-tank",
+                  "unit_number": 17039,
+                  "index": 1,
+                  "direct": {
+                    "name": "water",
+                    "amount": 2000,
+                    "temperature": 25
+                  },
+                  "segment_id": 194,
+                  "segment_contents": {
+                    "water": 2000
+                  }
+                },
+                {
+                  "entity": "pipe",
+                  "type": "pipe",
+                  "unit_number": 17042,
+                  "index": 1,
+                  "segment_id": 195,
+                  "segment_contents": {}
+                },
+                {
+                  "entity": "pipe",
+                  "type": "pipe",
+                  "unit_number": 17041,
+                  "index": 1,
+                  "segment_id": 195
+                },
+                {
+                  "entity": "pipe",
+                  "type": "pipe",
+                  "unit_number": 17040,
+                  "index": 1,
+                  "segment_id": 195
+                }
+              ],
+              "entity_states": {}
+            }
+          },
+          "after": {
+            "success": true,
+            "label": "activation +60",
+            "tick": 182940,
+            "game_paused": false,
+            "platform_paused": false,
+            "totals": {
+              "water": 2000
+            },
+            "boxes": [
+              {
+                "entity": "storage-tank",
+                "type": "storage-tank",
+                "unit_number": 17039,
+                "index": 1,
+                "direct": {
+                  "name": "water",
+                  "amount": 2000,
+                  "temperature": 25
+                },
+                "segment_id": 194,
+                "segment_contents": {
+                  "water": 2000
+                }
+              },
+              {
+                "entity": "pipe",
+                "type": "pipe",
+                "unit_number": 17042,
+                "index": 1,
+                "segment_id": 195,
+                "segment_contents": {}
+              },
+              {
+                "entity": "pipe",
+                "type": "pipe",
+                "unit_number": 17041,
+                "index": 1,
+                "segment_id": 195
+              },
+              {
+                "entity": "pipe",
+                "type": "pipe",
+                "unit_number": 17040,
+                "index": 1,
+                "segment_id": 195
+              }
+            ],
+            "entity_states": {}
+          },
+          "activation_compare": {
+            "exact": true,
+            "epsilon": 0.000001,
+            "max_abs_delta": 0,
+            "classification": "exact",
+            "rows": [
+              {
+                "name": "water",
+                "expected": 2000,
+                "actual": 2000,
+                "delta": 0
+              }
+            ]
+          },
+          "after_compare": {
+            "exact": true,
+            "epsilon": 0.000001,
+            "max_abs_delta": 0,
+            "classification": "exact",
+            "rows": [
+              {
+                "name": "water",
+                "expected": 2000,
+                "actual": 2000,
+                "delta": 0
+              }
+            ]
+          }
+        },
+        {
+          "machines": true,
+          "name": "fluid-lab-r11-a-machines-1783659573493",
+          "setup": {
+            "success": true,
+            "inserted": 2000,
+            "platform": 10,
+            "read": {
+              "success": true,
+              "label": "same-tick frozen",
+              "tick": 182994,
+              "game_paused": false,
+              "platform_paused": true,
+              "totals": {
+                "water": 2000
+              },
+              "boxes": [
+                {
+                  "entity": "storage-tank",
+                  "type": "storage-tank",
+                  "unit_number": 17044,
+                  "index": 1,
+                  "direct": {
+                    "name": "water",
+                    "amount": 2000,
+                    "temperature": 25
+                  },
+                  "segment_id": 196,
+                  "segment_contents": {
+                    "water": 2000
+                  }
+                },
+                {
+                  "entity": "pipe",
+                  "type": "pipe",
+                  "unit_number": 17047,
+                  "index": 1,
+                  "segment_id": 197,
+                  "segment_contents": {}
+                },
+                {
+                  "entity": "pipe",
+                  "type": "pipe",
+                  "unit_number": 17046,
+                  "index": 1,
+                  "segment_id": 197
+                },
+                {
+                  "entity": "pipe",
+                  "type": "pipe",
+                  "unit_number": 17045,
+                  "index": 1,
+                  "segment_id": 197
+                },
+                {
+                  "entity": "pump",
+                  "type": "pump",
+                  "unit_number": 17048,
+                  "index": 1
+                },
+                {
+                  "entity": "chemical-plant",
+                  "type": "assembling-machine",
+                  "unit_number": 17049,
+                  "index": 1
+                },
+                {
+                  "entity": "chemical-plant",
+                  "type": "assembling-machine",
+                  "unit_number": 17049,
+                  "index": 2
+                },
+                {
+                  "entity": "chemical-plant",
+                  "type": "assembling-machine",
+                  "unit_number": 17049,
+                  "index": 3
+                }
+              ],
+              "entity_states": [
+                {
+                  "entity": "pump",
+                  "unit_number": 17048,
+                  "active": false,
+                  "frozen": {
+                    "ok": true,
+                    "value": false
+                  }
+                },
+                {
+                  "entity": "chemical-plant",
+                  "unit_number": 17049,
+                  "active": false,
+                  "frozen": {
+                    "ok": true,
+                    "value": false
+                  }
+                }
+              ]
+            }
+          },
+          "activation": {
+            "success": true,
+            "tick": 183051,
+            "changed": 2,
+            "read": {
+              "success": true,
+              "label": "activation same tick",
+              "tick": 183051,
+              "game_paused": false,
+              "platform_paused": false,
+              "totals": {
+                "water": 2000
+              },
+              "boxes": [
+                {
+                  "entity": "storage-tank",
+                  "type": "storage-tank",
+                  "unit_number": 17044,
+                  "index": 1,
+                  "direct": {
+                    "name": "water",
+                    "amount": 2000,
+                    "temperature": 25
+                  },
+                  "segment_id": 196,
+                  "segment_contents": {
+                    "water": 2000
+                  }
+                },
+                {
+                  "entity": "pipe",
+                  "type": "pipe",
+                  "unit_number": 17047,
+                  "index": 1,
+                  "segment_id": 197,
+                  "segment_contents": {}
+                },
+                {
+                  "entity": "pipe",
+                  "type": "pipe",
+                  "unit_number": 17046,
+                  "index": 1,
+                  "segment_id": 197
+                },
+                {
+                  "entity": "pipe",
+                  "type": "pipe",
+                  "unit_number": 17045,
+                  "index": 1,
+                  "segment_id": 197
+                },
+                {
+                  "entity": "pump",
+                  "type": "pump",
+                  "unit_number": 17048,
+                  "index": 1
+                },
+                {
+                  "entity": "chemical-plant",
+                  "type": "assembling-machine",
+                  "unit_number": 17049,
+                  "index": 1
+                },
+                {
+                  "entity": "chemical-plant",
+                  "type": "assembling-machine",
+                  "unit_number": 17049,
+                  "index": 2
+                },
+                {
+                  "entity": "chemical-plant",
+                  "type": "assembling-machine",
+                  "unit_number": 17049,
+                  "index": 3
+                }
+              ],
+              "entity_states": [
+                {
+                  "entity": "pump",
+                  "unit_number": 17048,
+                  "active": true,
+                  "frozen": {
+                    "ok": true,
+                    "value": false
+                  }
+                },
+                {
+                  "entity": "chemical-plant",
+                  "unit_number": 17049,
+                  "active": true,
+                  "frozen": {
+                    "ok": true,
+                    "value": false
+                  }
+                }
+              ]
+            }
+          },
+          "after": {
+            "success": true,
+            "label": "activation +60",
+            "tick": 183150,
+            "game_paused": false,
+            "platform_paused": false,
+            "totals": {
+              "water": 2000
+            },
+            "boxes": [
+              {
+                "entity": "storage-tank",
+                "type": "storage-tank",
+                "unit_number": 17044,
+                "index": 1,
+                "direct": {
+                  "name": "water",
+                  "amount": 2000,
+                  "temperature": 25
+                },
+                "segment_id": 196,
+                "segment_contents": {
+                  "water": 2000
+                }
+              },
+              {
+                "entity": "pipe",
+                "type": "pipe",
+                "unit_number": 17047,
+                "index": 1,
+                "segment_id": 197,
+                "segment_contents": {}
+              },
+              {
+                "entity": "pipe",
+                "type": "pipe",
+                "unit_number": 17046,
+                "index": 1,
+                "segment_id": 197
+              },
+              {
+                "entity": "pipe",
+                "type": "pipe",
+                "unit_number": 17045,
+                "index": 1,
+                "segment_id": 197
+              },
+              {
+                "entity": "pump",
+                "type": "pump",
+                "unit_number": 17048,
+                "index": 1
+              },
+              {
+                "entity": "chemical-plant",
+                "type": "assembling-machine",
+                "unit_number": 17049,
+                "index": 1
+              },
+              {
+                "entity": "chemical-plant",
+                "type": "assembling-machine",
+                "unit_number": 17049,
+                "index": 2
+              },
+              {
+                "entity": "chemical-plant",
+                "type": "assembling-machine",
+                "unit_number": 17049,
+                "index": 3
+              }
+            ],
+            "entity_states": [
+              {
+                "entity": "pump",
+                "unit_number": 17048,
+                "active": true,
+                "frozen": {
+                  "ok": true,
+                  "value": false
+                }
+              },
+              {
+                "entity": "chemical-plant",
+                "unit_number": 17049,
+                "active": true,
+                "frozen": {
+                  "ok": true,
+                  "value": false
+                }
+              }
+            ]
+          },
+          "activation_compare": {
+            "exact": true,
+            "epsilon": 0.000001,
+            "max_abs_delta": 0,
+            "classification": "exact",
+            "rows": [
+              {
+                "name": "water",
+                "expected": 2000,
+                "actual": 2000,
+                "delta": 0
+              }
+            ]
+          },
+          "after_compare": {
+            "exact": true,
+            "epsilon": 0.000001,
+            "max_abs_delta": 0,
+            "classification": "exact",
+            "rows": [
+              {
+                "name": "water",
+                "expected": 2000,
+                "actual": 2000,
+                "delta": 0
+              }
+            ]
+          }
+        }
+      ]
+    },
+    "r11b": {
+      "success": true,
+      "prediction": "zero loss and zero gain",
+      "name": "fluid-lab-r11-b-1783659576772",
+      "setup": {
+        "success": true,
+        "platform": 11,
+        "writes": [
+          {
+            "entity": "storage-tank",
+            "index": 1,
+            "write": {
+              "accepted": true,
+              "fluid": "water",
+              "amount": 98.81422919034958,
+              "attempts": [
+                {
+                  "fluid": "water",
+                  "ok": true,
+                  "read": {
+                    "name": "water",
+                    "amount": 98.81422919034958,
+                    "temperature": 25
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "entity": "pump",
+            "index": 1,
+            "write": {
+              "accepted": true,
+              "fluid": "water",
+              "amount": 100,
+              "attempts": [
+                {
+                  "fluid": "water",
+                  "ok": true,
+                  "read": {
+                    "name": "water",
+                    "amount": 100,
+                    "temperature": 25
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "entity": "chemical-plant",
+            "index": 1,
+            "write": {
+              "accepted": true,
+              "fluid": "water",
+              "amount": 60,
+              "attempts": [
+                {
+                  "fluid": "water",
+                  "ok": true,
+                  "read": {
+                    "name": "water",
+                    "amount": 60,
+                    "temperature": 25
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "entity": "chemical-plant",
+            "index": 2,
+            "write": {
+              "accepted": true,
+              "fluid": "heavy-oil",
+              "amount": 80,
+              "attempts": [
+                {
+                  "fluid": "water",
+                  "ok": true
+                },
+                {
+                  "fluid": "steam",
+                  "ok": true
+                },
+                {
+                  "fluid": "heavy-oil",
+                  "ok": true,
+                  "read": {
+                    "name": "heavy-oil",
+                    "amount": 80,
+                    "temperature": 25
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "entity": "chemical-plant",
+            "index": 3,
+            "write": {
+              "accepted": true,
+              "fluid": "light-oil",
+              "amount": 100,
+              "attempts": [
+                {
+                  "fluid": "water",
+                  "ok": true
+                },
+                {
+                  "fluid": "steam",
+                  "ok": true
+                },
+                {
+                  "fluid": "heavy-oil",
+                  "ok": true
+                },
+                {
+                  "fluid": "light-oil",
+                  "ok": true,
+                  "read": {
+                    "name": "light-oil",
+                    "amount": 100,
+                    "temperature": 25
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "entity": "boiler",
+            "index": 1,
+            "write": {
+              "accepted": true,
+              "fluid": "water",
+              "amount": 100,
+              "attempts": [
+                {
+                  "fluid": "water",
+                  "ok": true,
+                  "read": {
+                    "name": "water",
+                    "amount": 100,
+                    "temperature": 25
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "entity": "boiler",
+            "index": 2,
+            "write": {
+              "accepted": true,
+              "fluid": "steam",
+              "amount": 100,
+              "attempts": [
+                {
+                  "fluid": "water",
+                  "ok": true
+                },
+                {
+                  "fluid": "steam",
+                  "ok": true,
+                  "read": {
+                    "name": "steam",
+                    "amount": 100,
+                    "temperature": 165
+                  }
+                }
+              ]
+            }
+          }
+        ],
+        "read": {
+          "success": true,
+          "label": "R11b frozen same tick",
+          "tick": 183207,
+          "game_paused": false,
+          "platform_paused": true,
+          "totals": {
+            "water": 260,
+            "heavy-oil": 80,
+            "light-oil": 100,
+            "steam": 100
+          },
+          "boxes": [
+            {
+              "entity": "storage-tank",
+              "type": "storage-tank",
+              "unit_number": 17051,
+              "index": 1,
+              "direct": {
+                "name": "water",
+                "amount": 98.81422919034958,
+                "temperature": 25
+              },
+              "segment_id": 198,
+              "segment_contents": {
+                "water": 100
+              }
+            },
+            {
+              "entity": "pipe",
+              "type": "pipe",
+              "unit_number": 17054,
+              "index": 1,
+              "direct": {
+                "name": "water",
+                "amount": 0.3952568769454956,
+                "temperature": 25
+              },
+              "segment_id": 198
+            },
+            {
+              "entity": "pipe",
+              "type": "pipe",
+              "unit_number": 17052,
+              "index": 1,
+              "direct": {
+                "name": "water",
+                "amount": 0.3952568769454956,
+                "temperature": 25
+              },
+              "segment_id": 198
+            },
+            {
+              "entity": "pump",
+              "type": "pump",
+              "unit_number": 17055,
+              "index": 1,
+              "direct": {
+                "name": "water",
+                "amount": 100,
+                "temperature": 25
+              }
+            },
+            {
+              "entity": "pipe",
+              "type": "pipe",
+              "unit_number": 17053,
+              "index": 1,
+              "direct": {
+                "name": "water",
+                "amount": 0.3952568769454956,
+                "temperature": 25
+              },
+              "segment_id": 198
+            },
+            {
+              "entity": "pipe",
+              "type": "pipe",
+              "unit_number": 17056,
+              "index": 1,
+              "segment_id": 199,
+              "segment_contents": {}
+            },
+            {
+              "entity": "chemical-plant",
+              "type": "assembling-machine",
+              "unit_number": 17057,
+              "index": 1,
+              "direct": {
+                "name": "water",
+                "amount": 60,
+                "temperature": 25
+              }
+            },
+            {
+              "entity": "chemical-plant",
+              "type": "assembling-machine",
+              "unit_number": 17057,
+              "index": 2,
+              "direct": {
+                "name": "heavy-oil",
+                "amount": 80,
+                "temperature": 25
+              }
+            },
+            {
+              "entity": "chemical-plant",
+              "type": "assembling-machine",
+              "unit_number": 17057,
+              "index": 3,
+              "direct": {
+                "name": "light-oil",
+                "amount": 100,
+                "temperature": 25
+              }
+            },
+            {
+              "entity": "boiler",
+              "type": "boiler",
+              "unit_number": 17058,
+              "index": 1,
+              "direct": {
+                "name": "water",
+                "amount": 100,
+                "temperature": 25
+              },
+              "segment_id": 200,
+              "segment_contents": {}
+            },
+            {
+              "entity": "boiler",
+              "type": "boiler",
+              "unit_number": 17058,
+              "index": 2,
+              "direct": {
+                "name": "steam",
+                "amount": 100,
+                "temperature": 165
+              }
+            }
+          ],
+          "entity_states": [
+            {
+              "entity": "pump",
+              "unit_number": 17055,
+              "active": false,
+              "frozen": {
+                "ok": true,
+                "value": false
+              }
+            },
+            {
+              "entity": "chemical-plant",
+              "unit_number": 17057,
+              "active": false,
+              "frozen": {
+                "ok": true,
+                "value": false
+              }
+            },
+            {
+              "entity": "boiler",
+              "unit_number": 17058,
+              "active": false,
+              "frozen": {
+                "ok": true,
+                "value": false
+              }
+            }
+          ]
+        }
+      },
+      "activation": {
+        "success": true,
+        "tick": 183258,
+        "changed": 3,
+        "read": {
+          "success": true,
+          "label": "R11b activation same tick",
+          "tick": 183258,
+          "game_paused": false,
+          "platform_paused": false,
+          "totals": {
+            "water": 260,
+            "heavy-oil": 80,
+            "light-oil": 100,
+            "steam": 100
+          },
+          "boxes": [
+            {
+              "entity": "storage-tank",
+              "type": "storage-tank",
+              "unit_number": 17051,
+              "index": 1,
+              "direct": {
+                "name": "water",
+                "amount": 98.81422919034958,
+                "temperature": 25
+              },
+              "segment_id": 198,
+              "segment_contents": {
+                "water": 100
+              }
+            },
+            {
+              "entity": "pipe",
+              "type": "pipe",
+              "unit_number": 17054,
+              "index": 1,
+              "direct": {
+                "name": "water",
+                "amount": 0.3952568769454956,
+                "temperature": 25
+              },
+              "segment_id": 198
+            },
+            {
+              "entity": "pipe",
+              "type": "pipe",
+              "unit_number": 17052,
+              "index": 1,
+              "direct": {
+                "name": "water",
+                "amount": 0.3952568769454956,
+                "temperature": 25
+              },
+              "segment_id": 198
+            },
+            {
+              "entity": "pump",
+              "type": "pump",
+              "unit_number": 17055,
+              "index": 1
+            },
+            {
+              "entity": "pipe",
+              "type": "pipe",
+              "unit_number": 17053,
+              "index": 1,
+              "direct": {
+                "name": "water",
+                "amount": 0.3952568769454956,
+                "temperature": 25
+              },
+              "segment_id": 198
+            },
+            {
+              "entity": "pipe",
+              "type": "pipe",
+              "unit_number": 17056,
+              "index": 1,
+              "direct": {
+                "name": "water",
+                "amount": 100,
+                "temperature": 25
+              },
+              "segment_id": 199,
+              "segment_contents": {
+                "water": 100
+              }
+            },
+            {
+              "entity": "chemical-plant",
+              "type": "assembling-machine",
+              "unit_number": 17057,
+              "index": 1,
+              "direct": {
+                "name": "water",
+                "amount": 60,
+                "temperature": 25
+              }
+            },
+            {
+              "entity": "chemical-plant",
+              "type": "assembling-machine",
+              "unit_number": 17057,
+              "index": 2,
+              "direct": {
+                "name": "heavy-oil",
+                "amount": 80,
+                "temperature": 25
+              }
+            },
+            {
+              "entity": "chemical-plant",
+              "type": "assembling-machine",
+              "unit_number": 17057,
+              "index": 3,
+              "direct": {
+                "name": "light-oil",
+                "amount": 100,
+                "temperature": 25
+              }
+            },
+            {
+              "entity": "boiler",
+              "type": "boiler",
+              "unit_number": 17058,
+              "index": 1,
+              "direct": {
+                "name": "water",
+                "amount": 100,
+                "temperature": 25
+              },
+              "segment_id": 200,
+              "segment_contents": {}
+            },
+            {
+              "entity": "boiler",
+              "type": "boiler",
+              "unit_number": 17058,
+              "index": 2,
+              "direct": {
+                "name": "steam",
+                "amount": 100,
+                "temperature": 165
+              }
+            }
+          ],
+          "entity_states": [
+            {
+              "entity": "pump",
+              "unit_number": 17055,
+              "active": true,
+              "frozen": {
+                "ok": true,
+                "value": false
+              }
+            },
+            {
+              "entity": "chemical-plant",
+              "unit_number": 17057,
+              "active": true,
+              "frozen": {
+                "ok": true,
+                "value": false
+              }
+            },
+            {
+              "entity": "boiler",
+              "unit_number": 17058,
+              "active": true,
+              "frozen": {
+                "ok": true,
+                "value": false
+              }
+            }
+          ]
+        }
+      },
+      "after": {
+        "success": true,
+        "label": "R11b activation +60",
+        "tick": 183349,
+        "game_paused": false,
+        "platform_paused": false,
+        "totals": {
+          "water": 260,
+          "heavy-oil": 80,
+          "light-oil": 100,
+          "steam": 100
+        },
+        "boxes": [
+          {
+            "entity": "storage-tank",
+            "type": "storage-tank",
+            "unit_number": 17051,
+            "index": 1,
+            "direct": {
+              "name": "water",
+              "amount": 98.81422919034958,
+              "temperature": 25
+            },
+            "segment_id": 198,
+            "segment_contents": {
+              "water": 100
+            }
+          },
+          {
+            "entity": "pipe",
+            "type": "pipe",
+            "unit_number": 17054,
+            "index": 1,
+            "direct": {
+              "name": "water",
+              "amount": 0.3952568769454956,
+              "temperature": 25
+            },
+            "segment_id": 198
+          },
+          {
+            "entity": "pipe",
+            "type": "pipe",
+            "unit_number": 17052,
+            "index": 1,
+            "direct": {
+              "name": "water",
+              "amount": 0.3952568769454956,
+              "temperature": 25
+            },
+            "segment_id": 198
+          },
+          {
+            "entity": "pump",
+            "type": "pump",
+            "unit_number": 17055,
+            "index": 1
+          },
+          {
+            "entity": "pipe",
+            "type": "pipe",
+            "unit_number": 17053,
+            "index": 1,
+            "direct": {
+              "name": "water",
+              "amount": 0.3952568769454956,
+              "temperature": 25
+            },
+            "segment_id": 198
+          },
+          {
+            "entity": "pipe",
+            "type": "pipe",
+            "unit_number": 17056,
+            "index": 1,
+            "direct": {
+              "name": "water",
+              "amount": 100,
+              "temperature": 25
+            },
+            "segment_id": 199,
+            "segment_contents": {
+              "water": 100
+            }
+          },
+          {
+            "entity": "chemical-plant",
+            "type": "assembling-machine",
+            "unit_number": 17057,
+            "index": 1,
+            "direct": {
+              "name": "water",
+              "amount": 60,
+              "temperature": 25
+            }
+          },
+          {
+            "entity": "chemical-plant",
+            "type": "assembling-machine",
+            "unit_number": 17057,
+            "index": 2,
+            "direct": {
+              "name": "heavy-oil",
+              "amount": 80,
+              "temperature": 25
+            }
+          },
+          {
+            "entity": "chemical-plant",
+            "type": "assembling-machine",
+            "unit_number": 17057,
+            "index": 3,
+            "direct": {
+              "name": "light-oil",
+              "amount": 100,
+              "temperature": 25
+            }
+          },
+          {
+            "entity": "boiler",
+            "type": "boiler",
+            "unit_number": 17058,
+            "index": 1,
+            "direct": {
+              "name": "water",
+              "amount": 100,
+              "temperature": 25
+            },
+            "segment_id": 200,
+            "segment_contents": {}
+          },
+          {
+            "entity": "boiler",
+            "type": "boiler",
+            "unit_number": 17058,
+            "index": 2,
+            "direct": {
+              "name": "steam",
+              "amount": 100,
+              "temperature": 165
+            }
+          }
+        ],
+        "entity_states": [
+          {
+            "entity": "pump",
+            "unit_number": 17055,
+            "active": true,
+            "frozen": {
+              "ok": true,
+              "value": false
+            }
+          },
+          {
+            "entity": "chemical-plant",
+            "unit_number": 17057,
+            "active": true,
+            "frozen": {
+              "ok": true,
+              "value": false
+            }
+          },
+          {
+            "entity": "boiler",
+            "unit_number": 17058,
+            "active": true,
+            "frozen": {
+              "ok": true,
+              "value": false
+            }
+          }
+        ]
+      },
+      "immediate_compare": {
+        "exact": true,
+        "epsilon": 0.000001,
+        "max_abs_delta": 0,
+        "classification": "exact",
+        "rows": [
+          {
+            "name": "heavy-oil",
+            "expected": 80,
+            "actual": 80,
+            "delta": 0
+          },
+          {
+            "name": "light-oil",
+            "expected": 100,
+            "actual": 100,
+            "delta": 0
+          },
+          {
+            "name": "steam",
+            "expected": 100,
+            "actual": 100,
+            "delta": 0
+          },
+          {
+            "name": "water",
+            "expected": 260,
+            "actual": 260,
+            "delta": 0
+          }
+        ]
+      },
+      "settled_compare": {
+        "exact": true,
+        "epsilon": 0.000001,
+        "max_abs_delta": 0,
+        "classification": "exact",
+        "rows": [
+          {
+            "name": "heavy-oil",
+            "expected": 80,
+            "actual": 80,
+            "delta": 0
+          },
+          {
+            "name": "light-oil",
+            "expected": 100,
+            "actual": 100,
+            "delta": 0
+          },
+          {
+            "name": "steam",
+            "expected": 100,
+            "actual": 100,
+            "delta": 0
+          },
+          {
+            "name": "water",
+            "expected": 260,
+            "actual": 260,
+            "delta": 0
+          }
+        ]
+      }
+    },
+    "r11c": {
+      "success": true,
+      "prediction": "zero loss and zero gain",
+      "name": "fluid-lab-r11-c-1783659579974",
+      "import_state_replication": {
+        "entity_creation": "module/import_phases/entity_creation.lua:69 creates through Deserializer; lines 78-91 immediately set active=false for transfer entities",
+        "platform_pause": "module/core/import-pipeline.lua:240-245 pauses the transfer platform immediately after creation"
+      },
+      "setup": {
+        "success": true,
+        "platform": 12,
+        "rows": [
+          {
+            "name": "pipe",
+            "type": "pipe",
+            "activatable": false,
+            "before": {
+              "frozen": {
+                "ok": true,
+                "value": false
+              },
+              "tick": 183403
+            },
+            "writes": [
+              {
+                "index": 1,
+                "write": {
+                  "accepted": true,
+                  "fluid": "water",
+                  "amount": 50,
+                  "attempts": [
+                    {
+                      "fluid": "water",
+                      "ok": true,
+                      "read": {
+                        "name": "water",
+                        "amount": 50,
+                        "temperature": 25
+                      }
+                    }
+                  ]
+                }
+              }
+            ],
+            "accepted": true,
+            "fallback_used": false,
+            "after": {
+              "frozen": {
+                "ok": true,
+                "value": false
+              },
+              "tick": 183403
+            }
+          },
+          {
+            "name": "storage-tank",
+            "type": "storage-tank",
+            "activatable": false,
+            "before": {
+              "frozen": {
+                "ok": true,
+                "value": false
+              },
+              "tick": 183403
+            },
+            "writes": [
+              {
+                "index": 1,
+                "write": {
+                  "accepted": true,
+                  "fluid": "water",
+                  "amount": 50,
+                  "attempts": [
+                    {
+                      "fluid": "water",
+                      "ok": true,
+                      "read": {
+                        "name": "water",
+                        "amount": 50,
+                        "temperature": 25
+                      }
+                    }
+                  ]
+                }
+              }
+            ],
+            "accepted": true,
+            "fallback_used": false,
+            "after": {
+              "frozen": {
+                "ok": true,
+                "value": false
+              },
+              "tick": 183403
+            }
+          },
+          {
+            "name": "pump",
+            "type": "pump",
+            "activatable": true,
+            "before": {
+              "frozen": {
+                "ok": true,
+                "value": false
+              },
+              "tick": 183403
+            },
+            "writes": [
+              {
+                "index": 1,
+                "write": {
+                  "accepted": true,
+                  "fluid": "water",
+                  "amount": 50,
+                  "attempts": [
+                    {
+                      "fluid": "water",
+                      "ok": true,
+                      "read": {
+                        "name": "water",
+                        "amount": 50,
+                        "temperature": 25
+                      }
+                    }
+                  ]
+                }
+              }
+            ],
+            "accepted": true,
+            "fallback_used": false,
+            "after": {
+              "frozen": {
+                "ok": true,
+                "value": false
+              },
+              "tick": 183403
+            }
+          },
+          {
+            "name": "chemical-plant",
+            "type": "assembling-machine",
+            "activatable": true,
+            "before": {
+              "frozen": {
+                "ok": true,
+                "value": false
+              },
+              "tick": 183403
+            },
+            "writes": [
+              {
+                "index": 1,
+                "write": {
+                  "accepted": true,
+                  "fluid": "water",
+                  "amount": 50,
+                  "attempts": [
+                    {
+                      "fluid": "water",
+                      "ok": true,
+                      "read": {
+                        "name": "water",
+                        "amount": 50,
+                        "temperature": 25
+                      }
+                    }
+                  ]
+                }
+              },
+              {
+                "index": 2,
+                "write": {
+                  "accepted": true,
+                  "fluid": "heavy-oil",
+                  "amount": 50,
+                  "attempts": [
+                    {
+                      "fluid": "water",
+                      "ok": true
+                    },
+                    {
+                      "fluid": "steam",
+                      "ok": true
+                    },
+                    {
+                      "fluid": "heavy-oil",
+                      "ok": true,
+                      "read": {
+                        "name": "heavy-oil",
+                        "amount": 50,
+                        "temperature": 25
+                      }
+                    }
+                  ]
+                }
+              },
+              {
+                "index": 3,
+                "write": {
+                  "accepted": true,
+                  "fluid": "light-oil",
+                  "amount": 50,
+                  "attempts": [
+                    {
+                      "fluid": "water",
+                      "ok": true
+                    },
+                    {
+                      "fluid": "steam",
+                      "ok": true
+                    },
+                    {
+                      "fluid": "heavy-oil",
+                      "ok": true
+                    },
+                    {
+                      "fluid": "light-oil",
+                      "ok": true,
+                      "read": {
+                        "name": "light-oil",
+                        "amount": 50,
+                        "temperature": 25
+                      }
+                    }
+                  ]
+                }
+              }
+            ],
+            "accepted": true,
+            "fallback_used": false,
+            "after": {
+              "frozen": {
+                "ok": true,
+                "value": false
+              },
+              "tick": 183403
+            }
+          },
+          {
+            "name": "boiler",
+            "type": "boiler",
+            "activatable": true,
+            "before": {
+              "frozen": {
+                "ok": true,
+                "value": false
+              },
+              "tick": 183403
+            },
+            "writes": [
+              {
+                "index": 1,
+                "write": {
+                  "accepted": true,
+                  "fluid": "water",
+                  "amount": 50,
+                  "attempts": [
+                    {
+                      "fluid": "water",
+                      "ok": true,
+                      "read": {
+                        "name": "water",
+                        "amount": 50,
+                        "temperature": 25
+                      }
+                    }
+                  ]
+                }
+              },
+              {
+                "index": 2,
+                "write": {
+                  "accepted": true,
+                  "fluid": "steam",
+                  "amount": 50,
+                  "attempts": [
+                    {
+                      "fluid": "water",
+                      "ok": true
+                    },
+                    {
+                      "fluid": "steam",
+                      "ok": true,
+                      "read": {
+                        "name": "steam",
+                        "amount": 50,
+                        "temperature": 165
+                      }
+                    }
+                  ]
+                }
+              }
+            ],
+            "accepted": true,
+            "fallback_used": false,
+            "after": {
+              "frozen": {
+                "ok": true,
+                "value": false
+              },
+              "tick": 183403
+            }
+          }
+        ],
+        "read": {
+          "success": true,
+          "label": "R11c before first activation",
+          "tick": 183403,
+          "game_paused": false,
+          "platform_paused": true,
+          "totals": {
+            "water": 200,
+            "heavy-oil": 50,
+            "light-oil": 50,
+            "steam": 50
+          },
+          "boxes": [
+            {
+              "entity": "pipe",
+              "type": "pipe",
+              "unit_number": 17060,
+              "index": 1,
+              "direct": {
+                "name": "water",
+                "amount": 50,
+                "temperature": 25
+              },
+              "segment_id": 201,
+              "segment_contents": {
+                "water": 50
+              }
+            },
+            {
+              "entity": "storage-tank",
+              "type": "storage-tank",
+              "unit_number": 17061,
+              "index": 1,
+              "direct": {
+                "name": "water",
+                "amount": 50,
+                "temperature": 25
+              },
+              "segment_id": 202,
+              "segment_contents": {
+                "water": 50
+              }
+            },
+            {
+              "entity": "pump",
+              "type": "pump",
+              "unit_number": 17062,
+              "index": 1,
+              "direct": {
+                "name": "water",
+                "amount": 50,
+                "temperature": 25
+              }
+            },
+            {
+              "entity": "chemical-plant",
+              "type": "assembling-machine",
+              "unit_number": 17063,
+              "index": 1,
+              "direct": {
+                "name": "water",
+                "amount": 50,
+                "temperature": 25
+              }
+            },
+            {
+              "entity": "chemical-plant",
+              "type": "assembling-machine",
+              "unit_number": 17063,
+              "index": 2,
+              "direct": {
+                "name": "heavy-oil",
+                "amount": 50,
+                "temperature": 25
+              }
+            },
+            {
+              "entity": "chemical-plant",
+              "type": "assembling-machine",
+              "unit_number": 17063,
+              "index": 3,
+              "direct": {
+                "name": "light-oil",
+                "amount": 50,
+                "temperature": 25
+              }
+            },
+            {
+              "entity": "boiler",
+              "type": "boiler",
+              "unit_number": 17064,
+              "index": 1,
+              "direct": {
+                "name": "water",
+                "amount": 50,
+                "temperature": 25
+              },
+              "segment_id": 203,
+              "segment_contents": {}
+            },
+            {
+              "entity": "boiler",
+              "type": "boiler",
+              "unit_number": 17064,
+              "index": 2,
+              "direct": {
+                "name": "steam",
+                "amount": 50,
+                "temperature": 165
+              }
+            }
+          ],
+          "entity_states": [
+            {
+              "entity": "pump",
+              "unit_number": 17062,
+              "active": false,
+              "frozen": {
+                "ok": true,
+                "value": false
+              }
+            },
+            {
+              "entity": "chemical-plant",
+              "unit_number": 17063,
+              "active": false,
+              "frozen": {
+                "ok": true,
+                "value": false
+              }
+            },
+            {
+              "entity": "boiler",
+              "unit_number": 17064,
+              "active": false,
+              "frozen": {
+                "ok": true,
+                "value": false
+              }
+            }
+          ]
+        }
+      },
+      "activation": {
+        "success": true,
+        "tick": 183457,
+        "changed": 3,
+        "read": {
+          "success": true,
+          "label": "R11c activation same tick",
+          "tick": 183457,
+          "game_paused": false,
+          "platform_paused": false,
+          "totals": {
+            "water": 200,
+            "heavy-oil": 50,
+            "light-oil": 50,
+            "steam": 50
+          },
+          "boxes": [
+            {
+              "entity": "pipe",
+              "type": "pipe",
+              "unit_number": 17060,
+              "index": 1,
+              "direct": {
+                "name": "water",
+                "amount": 50,
+                "temperature": 25
+              },
+              "segment_id": 201,
+              "segment_contents": {
+                "water": 50
+              }
+            },
+            {
+              "entity": "storage-tank",
+              "type": "storage-tank",
+              "unit_number": 17061,
+              "index": 1,
+              "direct": {
+                "name": "water",
+                "amount": 50,
+                "temperature": 25
+              },
+              "segment_id": 202,
+              "segment_contents": {
+                "water": 50
+              }
+            },
+            {
+              "entity": "pump",
+              "type": "pump",
+              "unit_number": 17062,
+              "index": 1,
+              "direct": {
+                "name": "water",
+                "amount": 50,
+                "temperature": 25
+              }
+            },
+            {
+              "entity": "chemical-plant",
+              "type": "assembling-machine",
+              "unit_number": 17063,
+              "index": 1,
+              "direct": {
+                "name": "water",
+                "amount": 50,
+                "temperature": 25
+              }
+            },
+            {
+              "entity": "chemical-plant",
+              "type": "assembling-machine",
+              "unit_number": 17063,
+              "index": 2,
+              "direct": {
+                "name": "heavy-oil",
+                "amount": 50,
+                "temperature": 25
+              }
+            },
+            {
+              "entity": "chemical-plant",
+              "type": "assembling-machine",
+              "unit_number": 17063,
+              "index": 3,
+              "direct": {
+                "name": "light-oil",
+                "amount": 50,
+                "temperature": 25
+              }
+            },
+            {
+              "entity": "boiler",
+              "type": "boiler",
+              "unit_number": 17064,
+              "index": 1,
+              "direct": {
+                "name": "water",
+                "amount": 50,
+                "temperature": 25
+              },
+              "segment_id": 203,
+              "segment_contents": {}
+            },
+            {
+              "entity": "boiler",
+              "type": "boiler",
+              "unit_number": 17064,
+              "index": 2,
+              "direct": {
+                "name": "steam",
+                "amount": 50,
+                "temperature": 165
+              }
+            }
+          ],
+          "entity_states": [
+            {
+              "entity": "pump",
+              "unit_number": 17062,
+              "active": true,
+              "frozen": {
+                "ok": true,
+                "value": false
+              }
+            },
+            {
+              "entity": "chemical-plant",
+              "unit_number": 17063,
+              "active": true,
+              "frozen": {
+                "ok": true,
+                "value": false
+              }
+            },
+            {
+              "entity": "boiler",
+              "unit_number": 17064,
+              "active": true,
+              "frozen": {
+                "ok": true,
+                "value": false
+              }
+            }
+          ]
+        }
+      },
+      "after": {
+        "success": true,
+        "label": "R11c activation +60",
+        "tick": 183554,
+        "game_paused": false,
+        "platform_paused": false,
+        "totals": {
+          "water": 200,
+          "heavy-oil": 50,
+          "light-oil": 50,
+          "steam": 50
+        },
+        "boxes": [
+          {
+            "entity": "pipe",
+            "type": "pipe",
+            "unit_number": 17060,
+            "index": 1,
+            "direct": {
+              "name": "water",
+              "amount": 50,
+              "temperature": 25
+            },
+            "segment_id": 201,
+            "segment_contents": {
+              "water": 50
+            }
+          },
+          {
+            "entity": "storage-tank",
+            "type": "storage-tank",
+            "unit_number": 17061,
+            "index": 1,
+            "direct": {
+              "name": "water",
+              "amount": 50,
+              "temperature": 25
+            },
+            "segment_id": 202,
+            "segment_contents": {
+              "water": 50
+            }
+          },
+          {
+            "entity": "pump",
+            "type": "pump",
+            "unit_number": 17062,
+            "index": 1,
+            "direct": {
+              "name": "water",
+              "amount": 50,
+              "temperature": 25
+            }
+          },
+          {
+            "entity": "chemical-plant",
+            "type": "assembling-machine",
+            "unit_number": 17063,
+            "index": 1,
+            "direct": {
+              "name": "water",
+              "amount": 50,
+              "temperature": 25
+            }
+          },
+          {
+            "entity": "chemical-plant",
+            "type": "assembling-machine",
+            "unit_number": 17063,
+            "index": 2,
+            "direct": {
+              "name": "heavy-oil",
+              "amount": 50,
+              "temperature": 25
+            }
+          },
+          {
+            "entity": "chemical-plant",
+            "type": "assembling-machine",
+            "unit_number": 17063,
+            "index": 3,
+            "direct": {
+              "name": "light-oil",
+              "amount": 50,
+              "temperature": 25
+            }
+          },
+          {
+            "entity": "boiler",
+            "type": "boiler",
+            "unit_number": 17064,
+            "index": 1,
+            "direct": {
+              "name": "water",
+              "amount": 50,
+              "temperature": 25
+            },
+            "segment_id": 203,
+            "segment_contents": {}
+          },
+          {
+            "entity": "boiler",
+            "type": "boiler",
+            "unit_number": 17064,
+            "index": 2,
+            "direct": {
+              "name": "steam",
+              "amount": 50,
+              "temperature": 165
+            }
+          }
+        ],
+        "entity_states": [
+          {
+            "entity": "pump",
+            "unit_number": 17062,
+            "active": true,
+            "frozen": {
+              "ok": true,
+              "value": false
+            }
+          },
+          {
+            "entity": "chemical-plant",
+            "unit_number": 17063,
+            "active": true,
+            "frozen": {
+              "ok": true,
+              "value": false
+            }
+          },
+          {
+            "entity": "boiler",
+            "unit_number": 17064,
+            "active": true,
+            "frozen": {
+              "ok": true,
+              "value": false
+            }
+          }
+        ]
+      },
+      "immediate_compare": {
+        "exact": true,
+        "epsilon": 0.000001,
+        "max_abs_delta": 0,
+        "classification": "exact",
+        "rows": [
+          {
+            "name": "heavy-oil",
+            "expected": 50,
+            "actual": 50,
+            "delta": 0
+          },
+          {
+            "name": "light-oil",
+            "expected": 50,
+            "actual": 50,
+            "delta": 0
+          },
+          {
+            "name": "steam",
+            "expected": 50,
+            "actual": 50,
+            "delta": 0
+          },
+          {
+            "name": "water",
+            "expected": 200,
+            "actual": 200,
+            "delta": 0
+          }
+        ]
+      },
+      "settled_compare": {
+        "exact": true,
+        "epsilon": 0.000001,
+        "max_abs_delta": 0,
+        "classification": "exact",
+        "rows": [
+          {
+            "name": "heavy-oil",
+            "expected": 50,
+            "actual": 50,
+            "delta": 0
+          },
+          {
+            "name": "light-oil",
+            "expected": 50,
+            "actual": 50,
+            "delta": 0
+          },
+          {
+            "name": "steam",
+            "expected": 50,
+            "actual": 50,
+            "delta": 0
+          },
+          {
+            "name": "water",
+            "expected": 200,
+            "actual": 200,
+            "delta": 0
+          }
+        ]
+      }
+    },
+    "r11d": {
+      "success": true,
+      "prediction": "zero loss and zero gain",
+      "name": "fluid-lab-r11-d-1783659583093",
+      "seed": {
+        "success": true,
+        "index": 2,
+        "count": 1
+      },
+      "clone": {
+        "success": true,
+        "tick": 183653,
+        "remote": {
+          "success": true,
+          "job_id": "import_5",
+          "platform_name": "fluid-lab-r11-d-1783659583093",
+          "source_platform": "test",
+          "entity_count": 1359,
+          "message": "Clone job started - use /step-tick to process"
+        }
+      },
+      "clone_index": 13,
+      "armed": {
+        "success": true,
+        "tick": 126082
+      },
+      "transfer_output": "═══════════════════════════════════════\n🚀 Transfer Platform: fluid-lab-r11-d-1783659583093\n═══════════════════════════════════════\nDestination: Instance 1351385547\nPlatform: [13] fluid-lab-r11-d-1783659583093\n\n[1/2] Locking + queueing export...\n[2/2] ✓ Export queued: 006_fluid-lab-r11-d-1783659583093\n⏳ Exporting asynchronously (this may take a while)...\n\nThe transfer will continue automatically:\n  1. Export completes → Sent to controller\n  2. Controller → Sends to destination instance\n  3. Destination imports → Validates counts\n  4. On success → Source deleted automatically\n  5. On failure → Source unlocked automatically\n\n💡 Use /list-platforms to track progress\n═══════════════════════════════════════",
+      "wall_ms": 6842,
+      "debug_file": "/clusterio/data/instances/clusterio-host-2-instance-1/script-output/debug_import_result_fluid-lab-r11-d-1783659583093_126290.json",
+      "validation_success": true,
+      "failed_stage": null,
+      "hook_log": {
+        "needle": "[Import][TEST][R11] Frozen fluid injection measured for fluid-lab-r11-d-1783659583093",
+        "found": true,
+        "line": "138.437 Script @__level__/modules/surface_export/core/import-completion.lua:358: [Import][TEST][R11] Frozen fluid injection measured for fluid-lab-r11-d-1783659583093 at tick 126290"
+      },
+      "measurement": {
+        "hook_consumed": true,
+        "platform_name": "fluid-lab-r11-d-1783659583093",
+        "injection_started_tick": 126290,
+        "frozen_census_tick": 126290,
+        "platform_paused": true,
+        "expected_by_name": {
+          "thruster-fuel": 37207.93553030491,
+          "thruster-oxidizer": 37266.64660573006,
+          "water": 52741.08721733093,
+          "fluoroketone-cold": 225.74026292562485,
+          "molten-iron": 20,
+          "fluoroketone-hot": 7.822311580181122,
+          "fusion-plasma": 80,
+          "molten-copper": 1865
+        },
+        "expected_raw": {
+          "thruster-fuel@25.0C": 37207.93553030491,
+          "thruster-oxidizer@25.0C": 37266.64660573006,
+          "water@15.0C": 52741.08721733093,
+          "fluoroketone-cold@-150.0C": 225.74026292562485,
+          "molten-iron@1500.0C": 20,
+          "fluoroketone-hot@180.0C": 7.822311580181122,
+          "fusion-plasma@1078000.1C": 0,
+          "fusion-plasma@1133709.0C": 0,
+          "molten-copper@1100.0C": 1865,
+          "fusion-plasma@1987980.5C": 10,
+          "fusion-plasma@1133708.9C": 10,
+          "fusion-plasma@1078011.1C": 10,
+          "fusion-plasma@1076037.0C": 10,
+          "fusion-plasma@1130066.0C": 10,
+          "fusion-plasma@1988620.3C": 10,
+          "fusion-plasma@1130065.1C": 10,
+          "fusion-plasma@1076067.4C": 10
+        },
+        "frozen_actual_raw": {
+          "fluoroketone-hot@180.0C": 7.822311580181122,
+          "fusion-plasma@1078000.1C": 10,
+          "fusion-plasma@1133709.0C": 10,
+          "fluoroketone-cold@-150.0C": 225.74026292562485,
+          "fusion-plasma@1078011.1C": 10,
+          "fusion-plasma@1133708.9C": 10,
+          "molten-iron@1500.0C": 20,
+          "water@15.0C": 52741.08721733093,
+          "molten-copper@1100.0C": 1865,
+          "thruster-fuel@25.0C": 37207.93553030491,
+          "thruster-oxidizer@25.0C": 37266.64660573006,
+          "fusion-plasma@1076037.0C": 10,
+          "fusion-plasma@1130066.0C": 10,
+          "fusion-plasma@1076067.4C": 10,
+          "fusion-plasma@1130065.1C": 10
+        },
+        "frozen_actual_by_name": {
+          "fluoroketone-hot": 7.822311580181122,
+          "fusion-plasma": 80,
+          "fluoroketone-cold": 225.74026292562485,
+          "molten-iron": 20,
+          "water": 52741.08721733093,
+          "molten-copper": 1865,
+          "thruster-fuel": 37207.93553030491,
+          "thruster-oxidizer": 37266.64660573006
+        },
+        "frozen_actual_total": 129414.2319278717,
+        "write_rejected": {
+          "fusion-plasma": 20
+        },
+        "activation_census_tick": 126290,
+        "post_activation_actual_by_name": {
+          "fluoroketone-hot": 7.822311580181122,
+          "fusion-plasma": 80,
+          "fluoroketone-cold": 225.74026292562485,
+          "molten-iron": 20,
+          "water": 52741.08721733093,
+          "molten-copper": 1865,
+          "thruster-fuel": 37207.93553030491,
+          "thruster-oxidizer": 37266.64660573006
+        },
+        "post_activation_actual_raw": {
+          "fluoroketone-hot@180.0C": 7.822311580181122,
+          "fusion-plasma@1078000.1C": 10,
+          "fusion-plasma@1133709.0C": 10,
+          "fluoroketone-cold@-150.0C": 225.74026292562485,
+          "fusion-plasma@1078011.1C": 10,
+          "fusion-plasma@1133708.9C": 10,
+          "molten-iron@1500.0C": 20,
+          "water@15.0C": 52741.08721733093,
+          "molten-copper@1100.0C": 1865,
+          "thruster-fuel@25.0C": 37207.93553030491,
+          "thruster-oxidizer@25.0C": 37266.64660573006,
+          "fusion-plasma@1076037.0C": 10,
+          "fusion-plasma@1130066.0C": 10,
+          "fusion-plasma@1076067.4C": 10,
+          "fusion-plasma@1130065.1C": 10
+        },
+        "post_activation_actual_total": 129414.2319278717
+      },
+      "frozen_compare": {
+        "exact": true,
+        "epsilon": 0.000001,
+        "max_abs_delta": 0,
+        "classification": "exact",
+        "rows": [
+          {
+            "name": "fluoroketone-cold",
+            "expected": 225.74026292562485,
+            "actual": 225.74026292562485,
+            "delta": 0
+          },
+          {
+            "name": "fluoroketone-hot",
+            "expected": 7.822311580181122,
+            "actual": 7.822311580181122,
+            "delta": 0
+          },
+          {
+            "name": "fusion-plasma",
+            "expected": 80,
+            "actual": 80,
+            "delta": 0
+          },
+          {
+            "name": "molten-copper",
+            "expected": 1865,
+            "actual": 1865,
+            "delta": 0
+          },
+          {
+            "name": "molten-iron",
+            "expected": 20,
+            "actual": 20,
+            "delta": 0
+          },
+          {
+            "name": "thruster-fuel",
+            "expected": 37207.93553030491,
+            "actual": 37207.93553030491,
+            "delta": 0
+          },
+          {
+            "name": "thruster-oxidizer",
+            "expected": 37266.64660573006,
+            "actual": 37266.64660573006,
+            "delta": 0
+          },
+          {
+            "name": "water",
+            "expected": 52741.08721733093,
+            "actual": 52741.08721733093,
+            "delta": 0
+          }
+        ]
+      },
+      "post_activation_compare": {
+        "exact": true,
+        "epsilon": 0.000001,
+        "max_abs_delta": 0,
+        "classification": "exact",
+        "rows": [
+          {
+            "name": "fluoroketone-cold",
+            "expected": 225.74026292562485,
+            "actual": 225.74026292562485,
+            "delta": 0
+          },
+          {
+            "name": "fluoroketone-hot",
+            "expected": 7.822311580181122,
+            "actual": 7.822311580181122,
+            "delta": 0
+          },
+          {
+            "name": "fusion-plasma",
+            "expected": 80,
+            "actual": 80,
+            "delta": 0
+          },
+          {
+            "name": "molten-copper",
+            "expected": 1865,
+            "actual": 1865,
+            "delta": 0
+          },
+          {
+            "name": "molten-iron",
+            "expected": 20,
+            "actual": 20,
+            "delta": 0
+          },
+          {
+            "name": "thruster-fuel",
+            "expected": 37207.93553030491,
+            "actual": 37207.93553030491,
+            "delta": 0
+          },
+          {
+            "name": "thruster-oxidizer",
+            "expected": 37266.64660573006,
+            "actual": 37266.64660573006,
+            "delta": 0
+          },
+          {
+            "name": "water",
+            "expected": 52741.08721733093,
+            "actual": 52741.08721733093,
+            "delta": 0
+          }
+        ]
+      }
+    }
+  },
+  "errors": [],
+  "initial_reset": {
+    "cleanup": {
+      "source": {
+        "success": true,
+        "deleted": {},
+        "tick": 182386
+      },
+      "destination": {
+        "success": true,
+        "deleted": {},
+        "tick": 124674
+      }
+    },
+    "zero": {
+      "source": {
+        "success": true,
+        "tick": 182581,
+        "zero_surfaces": true,
+        "surfaces": {},
+        "zero_storage": true,
+        "game_paused": false,
+        "destination_holds": 0,
+        "locked_platforms": 0,
+        "committed_source_transfer_tombstones": 0,
+        "lab_platform_exports": 0
+      },
+      "destination": {
+        "success": true,
+        "tick": 124870,
+        "zero_surfaces": true,
+        "surfaces": {},
+        "zero_storage": true,
+        "game_paused": false,
+        "destination_holds": 0,
+        "locked_platforms": 0,
+        "committed_source_transfer_tombstones": 0,
+        "lab_platform_exports": 0
+      }
+    },
+    "ok": true
+  },
+  "install": {
+    "source": {
+      "success": true,
+      "tick": 182681,
+      "base": "2.0.77"
+    },
+    "destination": {
+      "success": true,
+      "tick": 124969,
+      "base": "2.0.77"
+    }
+  },
+  "final_reset": {
+    "cleanup": {
+      "source": {
+        "success": true,
+        "deleted": [
+          "fluid-lab-r11-a-control-1783659570221",
+          "fluid-lab-r11-a-machines-1783659573493",
+          "fluid-lab-r11-b-1783659576772",
+          "fluid-lab-r11-c-1783659579974"
+        ],
+        "tick": 184314
+      },
+      "destination": {
+        "success": true,
+        "deleted": [
+          "fluid-lab-r11-d-1783659583093"
+        ],
+        "tick": 126700
+      }
+    },
+    "zero": {
+      "source": {
+        "success": true,
+        "tick": 184508,
+        "zero_surfaces": true,
+        "surfaces": {},
+        "zero_storage": true,
+        "game_paused": false,
+        "destination_holds": 0,
+        "locked_platforms": 0,
+        "committed_source_transfer_tombstones": 0,
+        "lab_platform_exports": 0
+      },
+      "destination": {
+        "success": true,
+        "tick": 126885,
+        "zero_surfaces": true,
+        "surfaces": {},
+        "zero_storage": true,
+        "game_paused": false,
+        "destination_holds": 0,
+        "locked_platforms": 0,
+        "committed_source_transfer_tombstones": 0,
+        "lab_platform_exports": 0
+      }
+    },
+    "ok": true
+  },
+  "finished": "2026-07-10T05:00:00.445Z"
+}
+```
+
+## 2026-07-10 - R11 frozen-world injection conclusion
+
+Prediction: **zero fluid loss and zero fluid gain at every rung**.
+
+Two consecutive full runs of `run-r11.mjs --sections r11a,r11b,r11c,r11d` completed at
+`2026-07-10T04:59:16.973Z` and `2026-07-10T05:00:00.445Z`. Both ended with the seven-field
+zero-leftover check green on host-1 and host-2: no R11 surfaces, no `storage.fluid_lab`, game unpaused,
+zero destination holds, zero locked platforms, zero committed source tombstones, and zero R11
+`storage.platform_exports` records.
+
+- R11a: the 2,000-water pipe/tank control and the machine-present variant both retained exact totals in
+  the frozen census, the same-tick activation census, and after 60 ticks.
+- R11b: pump, pipes, chemical plant, and boiler accepted every intended fluidbox write while inactive.
+  Water, heavy oil, light oil, and steam totals were exact immediately after activation and after 60 ticks.
+- R11c: pipe, storage tank, pump, chemical plant, and boiler all accepted writes before first activation;
+  no class needed the synchronous active-toggle fallback. This reproduces the import state documented in
+  `module/import_phases/entity_creation.lua:69,78-91` (Deserializer creation followed immediately by
+  `active=false` for transfer entities) and `module/core/import-pipeline.lua:240-245` (the transfer platform
+  is paused immediately after creation).
+- R11d: the one-shot unique-name hook positively fired in the destination Factorio log on both runs and
+  called production `FluidRestoration.restore()` while the 1,359-entity clone remained paused/deactivated.
+  All eight aggregate fluid names matched exactly at the frozen census and the same-tick post-activation
+  census (`max |delta| = 0`, comparison epsilon `1e-6`). Full-precision raw temperature-keyed values were
+  retained in the records. Each run measured 20 fusion-plasma units rejected by engine-managed output
+  fluidboxes; subtracting those writes left 80 plasma restored and counted exactly.
+
+Conclusion: on Factorio 2.0.77, the production restoration routine conserved every tested ordinary and
+high-temperature fluid exactly when invoked in the frozen destination world. The historical pre-activation
+loss did not reproduce in any isolated class or the real large-platform path. This is evidence for the next
+gate-design adjudication, not a production ordering or validator change.
+
+
+## 2026-07-10T05:03:56.146Z - R11 frozen-injection lab (sections=r11a,r11b,r11c,r11d)
+
+Prediction: **zero fluid loss and zero fluid gain at every rung**.
+
+```json
+{
+  "script": "tests/fluid-lab/run-r11.mjs",
+  "started": "2026-07-10T05:03:18.788Z",
+  "sections": [
+    "r11a",
+    "r11b",
+    "r11c",
+    "r11d"
+  ],
+  "prediction": "ZERO fluid loss and ZERO fluid gain at every R11 rung",
+  "epsilon": 0.000001,
+  "rungs": {
+    "r11a": {
+      "success": true,
+      "prediction": "zero loss and zero gain",
+      "cases": [
+        {
+          "machines": false,
+          "name": "fluid-lab-r11-a-control-1783659806383",
+          "setup": {
+            "success": true,
+            "inserted": 2000,
+            "platform": 3,
+            "read": {
+              "success": true,
+              "label": "same-tick frozen",
+              "tick": 178530,
+              "game_paused": false,
+              "platform_paused": true,
+              "totals": {
+                "water": 2000
+              },
+              "boxes": [
+                {
+                  "entity": "storage-tank",
+                  "type": "storage-tank",
+                  "unit_number": 14296,
+                  "index": 1,
+                  "direct": {
+                    "name": "water",
+                    "amount": 2000,
+                    "temperature": 25
+                  },
+                  "segment_id": 44,
+                  "segment_contents": {
+                    "water": 2000
+                  }
+                },
+                {
+                  "entity": "pipe",
+                  "type": "pipe",
+                  "unit_number": 14299,
+                  "index": 1,
+                  "segment_id": 45,
+                  "segment_contents": {}
+                },
+                {
+                  "entity": "pipe",
+                  "type": "pipe",
+                  "unit_number": 14298,
+                  "index": 1,
+                  "segment_id": 45
+                },
+                {
+                  "entity": "pipe",
+                  "type": "pipe",
+                  "unit_number": 14297,
+                  "index": 1,
+                  "segment_id": 45
+                }
+              ],
+              "entity_states": {}
+            }
+          },
+          "activation": {
+            "success": true,
+            "tick": 178586,
+            "changed": 0,
+            "read": {
+              "success": true,
+              "label": "activation same tick",
+              "tick": 178586,
+              "game_paused": false,
+              "platform_paused": false,
+              "totals": {
+                "water": 2000
+              },
+              "boxes": [
+                {
+                  "entity": "storage-tank",
+                  "type": "storage-tank",
+                  "unit_number": 14296,
+                  "index": 1,
+                  "direct": {
+                    "name": "water",
+                    "amount": 2000,
+                    "temperature": 25
+                  },
+                  "segment_id": 44,
+                  "segment_contents": {
+                    "water": 2000
+                  }
+                },
+                {
+                  "entity": "pipe",
+                  "type": "pipe",
+                  "unit_number": 14299,
+                  "index": 1,
+                  "segment_id": 45,
+                  "segment_contents": {}
+                },
+                {
+                  "entity": "pipe",
+                  "type": "pipe",
+                  "unit_number": 14298,
+                  "index": 1,
+                  "segment_id": 45
+                },
+                {
+                  "entity": "pipe",
+                  "type": "pipe",
+                  "unit_number": 14297,
+                  "index": 1,
+                  "segment_id": 45
+                }
+              ],
+              "entity_states": {}
+            }
+          },
+          "after": {
+            "success": true,
+            "label": "activation +60",
+            "tick": 178679,
+            "game_paused": false,
+            "platform_paused": false,
+            "totals": {
+              "water": 2000
+            },
+            "boxes": [
+              {
+                "entity": "storage-tank",
+                "type": "storage-tank",
+                "unit_number": 14296,
+                "index": 1,
+                "direct": {
+                  "name": "water",
+                  "amount": 2000,
+                  "temperature": 25
+                },
+                "segment_id": 44,
+                "segment_contents": {
+                  "water": 2000
+                }
+              },
+              {
+                "entity": "pipe",
+                "type": "pipe",
+                "unit_number": 14299,
+                "index": 1,
+                "segment_id": 45,
+                "segment_contents": {}
+              },
+              {
+                "entity": "pipe",
+                "type": "pipe",
+                "unit_number": 14298,
+                "index": 1,
+                "segment_id": 45
+              },
+              {
+                "entity": "pipe",
+                "type": "pipe",
+                "unit_number": 14297,
+                "index": 1,
+                "segment_id": 45
+              }
+            ],
+            "entity_states": {}
+          },
+          "activation_compare": {
+            "exact": true,
+            "epsilon": 0.000001,
+            "max_abs_delta": 0,
+            "classification": "exact",
+            "rows": [
+              {
+                "name": "water",
+                "expected": 2000,
+                "actual": 2000,
+                "delta": 0
+              }
+            ]
+          },
+          "after_compare": {
+            "exact": true,
+            "epsilon": 0.000001,
+            "max_abs_delta": 0,
+            "classification": "exact",
+            "rows": [
+              {
+                "name": "water",
+                "expected": 2000,
+                "actual": 2000,
+                "delta": 0
+              }
+            ]
+          }
+        },
+        {
+          "machines": true,
+          "name": "fluid-lab-r11-a-machines-1783659809420",
+          "setup": {
+            "success": true,
+            "inserted": 2000,
+            "platform": 4,
+            "read": {
+              "success": true,
+              "label": "same-tick frozen",
+              "tick": 178726,
+              "game_paused": false,
+              "platform_paused": true,
+              "totals": {
+                "water": 2000
+              },
+              "boxes": [
+                {
+                  "entity": "storage-tank",
+                  "type": "storage-tank",
+                  "unit_number": 14301,
+                  "index": 1,
+                  "direct": {
+                    "name": "water",
+                    "amount": 2000,
+                    "temperature": 25
+                  },
+                  "segment_id": 46,
+                  "segment_contents": {
+                    "water": 2000
+                  }
+                },
+                {
+                  "entity": "pipe",
+                  "type": "pipe",
+                  "unit_number": 14304,
+                  "index": 1,
+                  "segment_id": 47,
+                  "segment_contents": {}
+                },
+                {
+                  "entity": "pipe",
+                  "type": "pipe",
+                  "unit_number": 14303,
+                  "index": 1,
+                  "segment_id": 47
+                },
+                {
+                  "entity": "pipe",
+                  "type": "pipe",
+                  "unit_number": 14302,
+                  "index": 1,
+                  "segment_id": 47
+                },
+                {
+                  "entity": "pump",
+                  "type": "pump",
+                  "unit_number": 14305,
+                  "index": 1
+                },
+                {
+                  "entity": "chemical-plant",
+                  "type": "assembling-machine",
+                  "unit_number": 14306,
+                  "index": 1
+                },
+                {
+                  "entity": "chemical-plant",
+                  "type": "assembling-machine",
+                  "unit_number": 14306,
+                  "index": 2
+                },
+                {
+                  "entity": "chemical-plant",
+                  "type": "assembling-machine",
+                  "unit_number": 14306,
+                  "index": 3
+                }
+              ],
+              "entity_states": [
+                {
+                  "entity": "pump",
+                  "unit_number": 14305,
+                  "active": false,
+                  "frozen": {
+                    "ok": true,
+                    "value": false
+                  }
+                },
+                {
+                  "entity": "chemical-plant",
+                  "unit_number": 14306,
+                  "active": false,
+                  "frozen": {
+                    "ok": true,
+                    "value": false
+                  }
+                }
+              ]
+            }
+          },
+          "activation": {
+            "success": true,
+            "tick": 178779,
+            "changed": 2,
+            "read": {
+              "success": true,
+              "label": "activation same tick",
+              "tick": 178779,
+              "game_paused": false,
+              "platform_paused": false,
+              "totals": {
+                "water": 2000
+              },
+              "boxes": [
+                {
+                  "entity": "storage-tank",
+                  "type": "storage-tank",
+                  "unit_number": 14301,
+                  "index": 1,
+                  "direct": {
+                    "name": "water",
+                    "amount": 2000,
+                    "temperature": 25
+                  },
+                  "segment_id": 46,
+                  "segment_contents": {
+                    "water": 2000
+                  }
+                },
+                {
+                  "entity": "pipe",
+                  "type": "pipe",
+                  "unit_number": 14304,
+                  "index": 1,
+                  "segment_id": 47,
+                  "segment_contents": {}
+                },
+                {
+                  "entity": "pipe",
+                  "type": "pipe",
+                  "unit_number": 14303,
+                  "index": 1,
+                  "segment_id": 47
+                },
+                {
+                  "entity": "pipe",
+                  "type": "pipe",
+                  "unit_number": 14302,
+                  "index": 1,
+                  "segment_id": 47
+                },
+                {
+                  "entity": "pump",
+                  "type": "pump",
+                  "unit_number": 14305,
+                  "index": 1
+                },
+                {
+                  "entity": "chemical-plant",
+                  "type": "assembling-machine",
+                  "unit_number": 14306,
+                  "index": 1
+                },
+                {
+                  "entity": "chemical-plant",
+                  "type": "assembling-machine",
+                  "unit_number": 14306,
+                  "index": 2
+                },
+                {
+                  "entity": "chemical-plant",
+                  "type": "assembling-machine",
+                  "unit_number": 14306,
+                  "index": 3
+                }
+              ],
+              "entity_states": [
+                {
+                  "entity": "pump",
+                  "unit_number": 14305,
+                  "active": true,
+                  "frozen": {
+                    "ok": true,
+                    "value": false
+                  }
+                },
+                {
+                  "entity": "chemical-plant",
+                  "unit_number": 14306,
+                  "active": true,
+                  "frozen": {
+                    "ok": true,
+                    "value": false
+                  }
+                }
+              ]
+            }
+          },
+          "after": {
+            "success": true,
+            "label": "activation +60",
+            "tick": 178873,
+            "game_paused": false,
+            "platform_paused": false,
+            "totals": {
+              "water": 2000
+            },
+            "boxes": [
+              {
+                "entity": "storage-tank",
+                "type": "storage-tank",
+                "unit_number": 14301,
+                "index": 1,
+                "direct": {
+                  "name": "water",
+                  "amount": 2000,
+                  "temperature": 25
+                },
+                "segment_id": 46,
+                "segment_contents": {
+                  "water": 2000
+                }
+              },
+              {
+                "entity": "pipe",
+                "type": "pipe",
+                "unit_number": 14304,
+                "index": 1,
+                "segment_id": 47,
+                "segment_contents": {}
+              },
+              {
+                "entity": "pipe",
+                "type": "pipe",
+                "unit_number": 14303,
+                "index": 1,
+                "segment_id": 47
+              },
+              {
+                "entity": "pipe",
+                "type": "pipe",
+                "unit_number": 14302,
+                "index": 1,
+                "segment_id": 47
+              },
+              {
+                "entity": "pump",
+                "type": "pump",
+                "unit_number": 14305,
+                "index": 1
+              },
+              {
+                "entity": "chemical-plant",
+                "type": "assembling-machine",
+                "unit_number": 14306,
+                "index": 1
+              },
+              {
+                "entity": "chemical-plant",
+                "type": "assembling-machine",
+                "unit_number": 14306,
+                "index": 2
+              },
+              {
+                "entity": "chemical-plant",
+                "type": "assembling-machine",
+                "unit_number": 14306,
+                "index": 3
+              }
+            ],
+            "entity_states": [
+              {
+                "entity": "pump",
+                "unit_number": 14305,
+                "active": true,
+                "frozen": {
+                  "ok": true,
+                  "value": false
+                }
+              },
+              {
+                "entity": "chemical-plant",
+                "unit_number": 14306,
+                "active": true,
+                "frozen": {
+                  "ok": true,
+                  "value": false
+                }
+              }
+            ]
+          },
+          "activation_compare": {
+            "exact": true,
+            "epsilon": 0.000001,
+            "max_abs_delta": 0,
+            "classification": "exact",
+            "rows": [
+              {
+                "name": "water",
+                "expected": 2000,
+                "actual": 2000,
+                "delta": 0
+              }
+            ]
+          },
+          "after_compare": {
+            "exact": true,
+            "epsilon": 0.000001,
+            "max_abs_delta": 0,
+            "classification": "exact",
+            "rows": [
+              {
+                "name": "water",
+                "expected": 2000,
+                "actual": 2000,
+                "delta": 0
+              }
+            ]
+          }
+        }
+      ]
+    },
+    "r11b": {
+      "success": true,
+      "prediction": "zero loss and zero gain",
+      "name": "fluid-lab-r11-b-1783659812449",
+      "setup": {
+        "success": true,
+        "platform": 5,
+        "writes": [
+          {
+            "entity": "storage-tank",
+            "index": 1,
+            "write": {
+              "accepted": true,
+              "fluid": "water",
+              "amount": 98.81422919034958,
+              "attempts": [
+                {
+                  "fluid": "water",
+                  "ok": true,
+                  "read": {
+                    "name": "water",
+                    "amount": 98.81422919034958,
+                    "temperature": 25
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "entity": "pump",
+            "index": 1,
+            "write": {
+              "accepted": true,
+              "fluid": "water",
+              "amount": 100,
+              "attempts": [
+                {
+                  "fluid": "water",
+                  "ok": true,
+                  "read": {
+                    "name": "water",
+                    "amount": 100,
+                    "temperature": 25
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "entity": "chemical-plant",
+            "index": 1,
+            "write": {
+              "accepted": true,
+              "fluid": "water",
+              "amount": 60,
+              "attempts": [
+                {
+                  "fluid": "water",
+                  "ok": true,
+                  "read": {
+                    "name": "water",
+                    "amount": 60,
+                    "temperature": 25
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "entity": "chemical-plant",
+            "index": 2,
+            "write": {
+              "accepted": true,
+              "fluid": "heavy-oil",
+              "amount": 80,
+              "attempts": [
+                {
+                  "fluid": "water",
+                  "ok": true
+                },
+                {
+                  "fluid": "steam",
+                  "ok": true
+                },
+                {
+                  "fluid": "heavy-oil",
+                  "ok": true,
+                  "read": {
+                    "name": "heavy-oil",
+                    "amount": 80,
+                    "temperature": 25
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "entity": "chemical-plant",
+            "index": 3,
+            "write": {
+              "accepted": true,
+              "fluid": "light-oil",
+              "amount": 100,
+              "attempts": [
+                {
+                  "fluid": "water",
+                  "ok": true
+                },
+                {
+                  "fluid": "steam",
+                  "ok": true
+                },
+                {
+                  "fluid": "heavy-oil",
+                  "ok": true
+                },
+                {
+                  "fluid": "light-oil",
+                  "ok": true,
+                  "read": {
+                    "name": "light-oil",
+                    "amount": 100,
+                    "temperature": 25
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "entity": "boiler",
+            "index": 1,
+            "write": {
+              "accepted": true,
+              "fluid": "water",
+              "amount": 100,
+              "attempts": [
+                {
+                  "fluid": "water",
+                  "ok": true,
+                  "read": {
+                    "name": "water",
+                    "amount": 100,
+                    "temperature": 25
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "entity": "boiler",
+            "index": 2,
+            "write": {
+              "accepted": true,
+              "fluid": "steam",
+              "amount": 100,
+              "attempts": [
+                {
+                  "fluid": "water",
+                  "ok": true
+                },
+                {
+                  "fluid": "steam",
+                  "ok": true,
+                  "read": {
+                    "name": "steam",
+                    "amount": 100,
+                    "temperature": 165
+                  }
+                }
+              ]
+            }
+          }
+        ],
+        "read": {
+          "success": true,
+          "label": "R11b frozen same tick",
+          "tick": 178918,
+          "game_paused": false,
+          "platform_paused": true,
+          "totals": {
+            "water": 260,
+            "heavy-oil": 80,
+            "light-oil": 100,
+            "steam": 100
+          },
+          "boxes": [
+            {
+              "entity": "storage-tank",
+              "type": "storage-tank",
+              "unit_number": 14308,
+              "index": 1,
+              "direct": {
+                "name": "water",
+                "amount": 98.81422919034958,
+                "temperature": 25
+              },
+              "segment_id": 48,
+              "segment_contents": {
+                "water": 100
+              }
+            },
+            {
+              "entity": "pipe",
+              "type": "pipe",
+              "unit_number": 14311,
+              "index": 1,
+              "direct": {
+                "name": "water",
+                "amount": 0.3952568769454956,
+                "temperature": 25
+              },
+              "segment_id": 48
+            },
+            {
+              "entity": "pipe",
+              "type": "pipe",
+              "unit_number": 14309,
+              "index": 1,
+              "direct": {
+                "name": "water",
+                "amount": 0.3952568769454956,
+                "temperature": 25
+              },
+              "segment_id": 48
+            },
+            {
+              "entity": "pump",
+              "type": "pump",
+              "unit_number": 14312,
+              "index": 1,
+              "direct": {
+                "name": "water",
+                "amount": 100,
+                "temperature": 25
+              }
+            },
+            {
+              "entity": "pipe",
+              "type": "pipe",
+              "unit_number": 14310,
+              "index": 1,
+              "direct": {
+                "name": "water",
+                "amount": 0.3952568769454956,
+                "temperature": 25
+              },
+              "segment_id": 48
+            },
+            {
+              "entity": "pipe",
+              "type": "pipe",
+              "unit_number": 14313,
+              "index": 1,
+              "segment_id": 49,
+              "segment_contents": {}
+            },
+            {
+              "entity": "chemical-plant",
+              "type": "assembling-machine",
+              "unit_number": 14314,
+              "index": 1,
+              "direct": {
+                "name": "water",
+                "amount": 60,
+                "temperature": 25
+              }
+            },
+            {
+              "entity": "chemical-plant",
+              "type": "assembling-machine",
+              "unit_number": 14314,
+              "index": 2,
+              "direct": {
+                "name": "heavy-oil",
+                "amount": 80,
+                "temperature": 25
+              }
+            },
+            {
+              "entity": "chemical-plant",
+              "type": "assembling-machine",
+              "unit_number": 14314,
+              "index": 3,
+              "direct": {
+                "name": "light-oil",
+                "amount": 100,
+                "temperature": 25
+              }
+            },
+            {
+              "entity": "boiler",
+              "type": "boiler",
+              "unit_number": 14315,
+              "index": 1,
+              "direct": {
+                "name": "water",
+                "amount": 100,
+                "temperature": 25
+              },
+              "segment_id": 50,
+              "segment_contents": {}
+            },
+            {
+              "entity": "boiler",
+              "type": "boiler",
+              "unit_number": 14315,
+              "index": 2,
+              "direct": {
+                "name": "steam",
+                "amount": 100,
+                "temperature": 165
+              }
+            }
+          ],
+          "entity_states": [
+            {
+              "entity": "pump",
+              "unit_number": 14312,
+              "active": false,
+              "frozen": {
+                "ok": true,
+                "value": false
+              }
+            },
+            {
+              "entity": "chemical-plant",
+              "unit_number": 14314,
+              "active": false,
+              "frozen": {
+                "ok": true,
+                "value": false
+              }
+            },
+            {
+              "entity": "boiler",
+              "unit_number": 14315,
+              "active": false,
+              "frozen": {
+                "ok": true,
+                "value": false
+              }
+            }
+          ]
+        }
+      },
+      "activation": {
+        "success": true,
+        "tick": 178970,
+        "changed": 3,
+        "read": {
+          "success": true,
+          "label": "R11b activation same tick",
+          "tick": 178970,
+          "game_paused": false,
+          "platform_paused": false,
+          "totals": {
+            "water": 260,
+            "heavy-oil": 80,
+            "light-oil": 100,
+            "steam": 100
+          },
+          "boxes": [
+            {
+              "entity": "storage-tank",
+              "type": "storage-tank",
+              "unit_number": 14308,
+              "index": 1,
+              "direct": {
+                "name": "water",
+                "amount": 98.81422919034958,
+                "temperature": 25
+              },
+              "segment_id": 48,
+              "segment_contents": {
+                "water": 100
+              }
+            },
+            {
+              "entity": "pipe",
+              "type": "pipe",
+              "unit_number": 14311,
+              "index": 1,
+              "direct": {
+                "name": "water",
+                "amount": 0.3952568769454956,
+                "temperature": 25
+              },
+              "segment_id": 48
+            },
+            {
+              "entity": "pipe",
+              "type": "pipe",
+              "unit_number": 14309,
+              "index": 1,
+              "direct": {
+                "name": "water",
+                "amount": 0.3952568769454956,
+                "temperature": 25
+              },
+              "segment_id": 48
+            },
+            {
+              "entity": "pump",
+              "type": "pump",
+              "unit_number": 14312,
+              "index": 1
+            },
+            {
+              "entity": "pipe",
+              "type": "pipe",
+              "unit_number": 14310,
+              "index": 1,
+              "direct": {
+                "name": "water",
+                "amount": 0.3952568769454956,
+                "temperature": 25
+              },
+              "segment_id": 48
+            },
+            {
+              "entity": "pipe",
+              "type": "pipe",
+              "unit_number": 14313,
+              "index": 1,
+              "direct": {
+                "name": "water",
+                "amount": 100,
+                "temperature": 25
+              },
+              "segment_id": 49,
+              "segment_contents": {
+                "water": 100
+              }
+            },
+            {
+              "entity": "chemical-plant",
+              "type": "assembling-machine",
+              "unit_number": 14314,
+              "index": 1,
+              "direct": {
+                "name": "water",
+                "amount": 60,
+                "temperature": 25
+              }
+            },
+            {
+              "entity": "chemical-plant",
+              "type": "assembling-machine",
+              "unit_number": 14314,
+              "index": 2,
+              "direct": {
+                "name": "heavy-oil",
+                "amount": 80,
+                "temperature": 25
+              }
+            },
+            {
+              "entity": "chemical-plant",
+              "type": "assembling-machine",
+              "unit_number": 14314,
+              "index": 3,
+              "direct": {
+                "name": "light-oil",
+                "amount": 100,
+                "temperature": 25
+              }
+            },
+            {
+              "entity": "boiler",
+              "type": "boiler",
+              "unit_number": 14315,
+              "index": 1,
+              "direct": {
+                "name": "water",
+                "amount": 100,
+                "temperature": 25
+              },
+              "segment_id": 50,
+              "segment_contents": {}
+            },
+            {
+              "entity": "boiler",
+              "type": "boiler",
+              "unit_number": 14315,
+              "index": 2,
+              "direct": {
+                "name": "steam",
+                "amount": 100,
+                "temperature": 165
+              }
+            }
+          ],
+          "entity_states": [
+            {
+              "entity": "pump",
+              "unit_number": 14312,
+              "active": true,
+              "frozen": {
+                "ok": true,
+                "value": false
+              }
+            },
+            {
+              "entity": "chemical-plant",
+              "unit_number": 14314,
+              "active": true,
+              "frozen": {
+                "ok": true,
+                "value": false
+              }
+            },
+            {
+              "entity": "boiler",
+              "unit_number": 14315,
+              "active": true,
+              "frozen": {
+                "ok": true,
+                "value": false
+              }
+            }
+          ]
+        }
+      },
+      "after": {
+        "success": true,
+        "label": "R11b activation +60",
+        "tick": 179059,
+        "game_paused": false,
+        "platform_paused": false,
+        "totals": {
+          "water": 260,
+          "heavy-oil": 80,
+          "light-oil": 100,
+          "steam": 100
+        },
+        "boxes": [
+          {
+            "entity": "storage-tank",
+            "type": "storage-tank",
+            "unit_number": 14308,
+            "index": 1,
+            "direct": {
+              "name": "water",
+              "amount": 98.81422919034958,
+              "temperature": 25
+            },
+            "segment_id": 48,
+            "segment_contents": {
+              "water": 100
+            }
+          },
+          {
+            "entity": "pipe",
+            "type": "pipe",
+            "unit_number": 14311,
+            "index": 1,
+            "direct": {
+              "name": "water",
+              "amount": 0.3952568769454956,
+              "temperature": 25
+            },
+            "segment_id": 48
+          },
+          {
+            "entity": "pipe",
+            "type": "pipe",
+            "unit_number": 14309,
+            "index": 1,
+            "direct": {
+              "name": "water",
+              "amount": 0.3952568769454956,
+              "temperature": 25
+            },
+            "segment_id": 48
+          },
+          {
+            "entity": "pump",
+            "type": "pump",
+            "unit_number": 14312,
+            "index": 1
+          },
+          {
+            "entity": "pipe",
+            "type": "pipe",
+            "unit_number": 14310,
+            "index": 1,
+            "direct": {
+              "name": "water",
+              "amount": 0.3952568769454956,
+              "temperature": 25
+            },
+            "segment_id": 48
+          },
+          {
+            "entity": "pipe",
+            "type": "pipe",
+            "unit_number": 14313,
+            "index": 1,
+            "direct": {
+              "name": "water",
+              "amount": 100,
+              "temperature": 25
+            },
+            "segment_id": 49,
+            "segment_contents": {
+              "water": 100
+            }
+          },
+          {
+            "entity": "chemical-plant",
+            "type": "assembling-machine",
+            "unit_number": 14314,
+            "index": 1,
+            "direct": {
+              "name": "water",
+              "amount": 60,
+              "temperature": 25
+            }
+          },
+          {
+            "entity": "chemical-plant",
+            "type": "assembling-machine",
+            "unit_number": 14314,
+            "index": 2,
+            "direct": {
+              "name": "heavy-oil",
+              "amount": 80,
+              "temperature": 25
+            }
+          },
+          {
+            "entity": "chemical-plant",
+            "type": "assembling-machine",
+            "unit_number": 14314,
+            "index": 3,
+            "direct": {
+              "name": "light-oil",
+              "amount": 100,
+              "temperature": 25
+            }
+          },
+          {
+            "entity": "boiler",
+            "type": "boiler",
+            "unit_number": 14315,
+            "index": 1,
+            "direct": {
+              "name": "water",
+              "amount": 100,
+              "temperature": 25
+            },
+            "segment_id": 50,
+            "segment_contents": {}
+          },
+          {
+            "entity": "boiler",
+            "type": "boiler",
+            "unit_number": 14315,
+            "index": 2,
+            "direct": {
+              "name": "steam",
+              "amount": 100,
+              "temperature": 165
+            }
+          }
+        ],
+        "entity_states": [
+          {
+            "entity": "pump",
+            "unit_number": 14312,
+            "active": true,
+            "frozen": {
+              "ok": true,
+              "value": false
+            }
+          },
+          {
+            "entity": "chemical-plant",
+            "unit_number": 14314,
+            "active": true,
+            "frozen": {
+              "ok": true,
+              "value": false
+            }
+          },
+          {
+            "entity": "boiler",
+            "unit_number": 14315,
+            "active": true,
+            "frozen": {
+              "ok": true,
+              "value": false
+            }
+          }
+        ]
+      },
+      "immediate_compare": {
+        "exact": true,
+        "epsilon": 0.000001,
+        "max_abs_delta": 0,
+        "classification": "exact",
+        "rows": [
+          {
+            "name": "heavy-oil",
+            "expected": 80,
+            "actual": 80,
+            "delta": 0
+          },
+          {
+            "name": "light-oil",
+            "expected": 100,
+            "actual": 100,
+            "delta": 0
+          },
+          {
+            "name": "steam",
+            "expected": 100,
+            "actual": 100,
+            "delta": 0
+          },
+          {
+            "name": "water",
+            "expected": 260,
+            "actual": 260,
+            "delta": 0
+          }
+        ]
+      },
+      "settled_compare": {
+        "exact": true,
+        "epsilon": 0.000001,
+        "max_abs_delta": 0,
+        "classification": "exact",
+        "rows": [
+          {
+            "name": "heavy-oil",
+            "expected": 80,
+            "actual": 80,
+            "delta": 0
+          },
+          {
+            "name": "light-oil",
+            "expected": 100,
+            "actual": 100,
+            "delta": 0
+          },
+          {
+            "name": "steam",
+            "expected": 100,
+            "actual": 100,
+            "delta": 0
+          },
+          {
+            "name": "water",
+            "expected": 260,
+            "actual": 260,
+            "delta": 0
+          }
+        ]
+      }
+    },
+    "r11c": {
+      "success": true,
+      "prediction": "zero loss and zero gain",
+      "name": "fluid-lab-r11-c-1783659815353",
+      "import_state_replication": {
+        "entity_creation": "module/import_phases/entity_creation.lua:69 creates through Deserializer; lines 78-91 immediately set active=false for transfer entities",
+        "platform_pause": "module/core/import-pipeline.lua:240-245 pauses the transfer platform immediately after creation"
+      },
+      "setup": {
+        "success": true,
+        "platform": 6,
+        "rows": [
+          {
+            "name": "pipe",
+            "type": "pipe",
+            "activatable": false,
+            "before": {
+              "frozen": {
+                "ok": true,
+                "value": false
+              },
+              "tick": 179107
+            },
+            "writes": [
+              {
+                "index": 1,
+                "write": {
+                  "accepted": true,
+                  "fluid": "water",
+                  "amount": 50,
+                  "attempts": [
+                    {
+                      "fluid": "water",
+                      "ok": true,
+                      "read": {
+                        "name": "water",
+                        "amount": 50,
+                        "temperature": 25
+                      }
+                    }
+                  ]
+                }
+              }
+            ],
+            "accepted": true,
+            "fallback_used": false,
+            "after": {
+              "frozen": {
+                "ok": true,
+                "value": false
+              },
+              "tick": 179107
+            }
+          },
+          {
+            "name": "storage-tank",
+            "type": "storage-tank",
+            "activatable": false,
+            "before": {
+              "frozen": {
+                "ok": true,
+                "value": false
+              },
+              "tick": 179107
+            },
+            "writes": [
+              {
+                "index": 1,
+                "write": {
+                  "accepted": true,
+                  "fluid": "water",
+                  "amount": 50,
+                  "attempts": [
+                    {
+                      "fluid": "water",
+                      "ok": true,
+                      "read": {
+                        "name": "water",
+                        "amount": 50,
+                        "temperature": 25
+                      }
+                    }
+                  ]
+                }
+              }
+            ],
+            "accepted": true,
+            "fallback_used": false,
+            "after": {
+              "frozen": {
+                "ok": true,
+                "value": false
+              },
+              "tick": 179107
+            }
+          },
+          {
+            "name": "pump",
+            "type": "pump",
+            "activatable": true,
+            "before": {
+              "frozen": {
+                "ok": true,
+                "value": false
+              },
+              "tick": 179107
+            },
+            "writes": [
+              {
+                "index": 1,
+                "write": {
+                  "accepted": true,
+                  "fluid": "water",
+                  "amount": 50,
+                  "attempts": [
+                    {
+                      "fluid": "water",
+                      "ok": true,
+                      "read": {
+                        "name": "water",
+                        "amount": 50,
+                        "temperature": 25
+                      }
+                    }
+                  ]
+                }
+              }
+            ],
+            "accepted": true,
+            "fallback_used": false,
+            "after": {
+              "frozen": {
+                "ok": true,
+                "value": false
+              },
+              "tick": 179107
+            }
+          },
+          {
+            "name": "chemical-plant",
+            "type": "assembling-machine",
+            "activatable": true,
+            "before": {
+              "frozen": {
+                "ok": true,
+                "value": false
+              },
+              "tick": 179107
+            },
+            "writes": [
+              {
+                "index": 1,
+                "write": {
+                  "accepted": true,
+                  "fluid": "water",
+                  "amount": 50,
+                  "attempts": [
+                    {
+                      "fluid": "water",
+                      "ok": true,
+                      "read": {
+                        "name": "water",
+                        "amount": 50,
+                        "temperature": 25
+                      }
+                    }
+                  ]
+                }
+              },
+              {
+                "index": 2,
+                "write": {
+                  "accepted": true,
+                  "fluid": "heavy-oil",
+                  "amount": 50,
+                  "attempts": [
+                    {
+                      "fluid": "water",
+                      "ok": true
+                    },
+                    {
+                      "fluid": "steam",
+                      "ok": true
+                    },
+                    {
+                      "fluid": "heavy-oil",
+                      "ok": true,
+                      "read": {
+                        "name": "heavy-oil",
+                        "amount": 50,
+                        "temperature": 25
+                      }
+                    }
+                  ]
+                }
+              },
+              {
+                "index": 3,
+                "write": {
+                  "accepted": true,
+                  "fluid": "light-oil",
+                  "amount": 50,
+                  "attempts": [
+                    {
+                      "fluid": "water",
+                      "ok": true
+                    },
+                    {
+                      "fluid": "steam",
+                      "ok": true
+                    },
+                    {
+                      "fluid": "heavy-oil",
+                      "ok": true
+                    },
+                    {
+                      "fluid": "light-oil",
+                      "ok": true,
+                      "read": {
+                        "name": "light-oil",
+                        "amount": 50,
+                        "temperature": 25
+                      }
+                    }
+                  ]
+                }
+              }
+            ],
+            "accepted": true,
+            "fallback_used": false,
+            "after": {
+              "frozen": {
+                "ok": true,
+                "value": false
+              },
+              "tick": 179107
+            }
+          },
+          {
+            "name": "boiler",
+            "type": "boiler",
+            "activatable": true,
+            "before": {
+              "frozen": {
+                "ok": true,
+                "value": false
+              },
+              "tick": 179107
+            },
+            "writes": [
+              {
+                "index": 1,
+                "write": {
+                  "accepted": true,
+                  "fluid": "water",
+                  "amount": 50,
+                  "attempts": [
+                    {
+                      "fluid": "water",
+                      "ok": true,
+                      "read": {
+                        "name": "water",
+                        "amount": 50,
+                        "temperature": 25
+                      }
+                    }
+                  ]
+                }
+              },
+              {
+                "index": 2,
+                "write": {
+                  "accepted": true,
+                  "fluid": "steam",
+                  "amount": 50,
+                  "attempts": [
+                    {
+                      "fluid": "water",
+                      "ok": true
+                    },
+                    {
+                      "fluid": "steam",
+                      "ok": true,
+                      "read": {
+                        "name": "steam",
+                        "amount": 50,
+                        "temperature": 165
+                      }
+                    }
+                  ]
+                }
+              }
+            ],
+            "accepted": true,
+            "fallback_used": false,
+            "after": {
+              "frozen": {
+                "ok": true,
+                "value": false
+              },
+              "tick": 179107
+            }
+          }
+        ],
+        "read": {
+          "success": true,
+          "label": "R11c before first activation",
+          "tick": 179107,
+          "game_paused": false,
+          "platform_paused": true,
+          "totals": {
+            "water": 200,
+            "heavy-oil": 50,
+            "light-oil": 50,
+            "steam": 50
+          },
+          "boxes": [
+            {
+              "entity": "pipe",
+              "type": "pipe",
+              "unit_number": 14317,
+              "index": 1,
+              "direct": {
+                "name": "water",
+                "amount": 50,
+                "temperature": 25
+              },
+              "segment_id": 51,
+              "segment_contents": {
+                "water": 50
+              }
+            },
+            {
+              "entity": "storage-tank",
+              "type": "storage-tank",
+              "unit_number": 14318,
+              "index": 1,
+              "direct": {
+                "name": "water",
+                "amount": 50,
+                "temperature": 25
+              },
+              "segment_id": 52,
+              "segment_contents": {
+                "water": 50
+              }
+            },
+            {
+              "entity": "pump",
+              "type": "pump",
+              "unit_number": 14319,
+              "index": 1,
+              "direct": {
+                "name": "water",
+                "amount": 50,
+                "temperature": 25
+              }
+            },
+            {
+              "entity": "chemical-plant",
+              "type": "assembling-machine",
+              "unit_number": 14320,
+              "index": 1,
+              "direct": {
+                "name": "water",
+                "amount": 50,
+                "temperature": 25
+              }
+            },
+            {
+              "entity": "chemical-plant",
+              "type": "assembling-machine",
+              "unit_number": 14320,
+              "index": 2,
+              "direct": {
+                "name": "heavy-oil",
+                "amount": 50,
+                "temperature": 25
+              }
+            },
+            {
+              "entity": "chemical-plant",
+              "type": "assembling-machine",
+              "unit_number": 14320,
+              "index": 3,
+              "direct": {
+                "name": "light-oil",
+                "amount": 50,
+                "temperature": 25
+              }
+            },
+            {
+              "entity": "boiler",
+              "type": "boiler",
+              "unit_number": 14321,
+              "index": 1,
+              "direct": {
+                "name": "water",
+                "amount": 50,
+                "temperature": 25
+              },
+              "segment_id": 53,
+              "segment_contents": {}
+            },
+            {
+              "entity": "boiler",
+              "type": "boiler",
+              "unit_number": 14321,
+              "index": 2,
+              "direct": {
+                "name": "steam",
+                "amount": 50,
+                "temperature": 165
+              }
+            }
+          ],
+          "entity_states": [
+            {
+              "entity": "pump",
+              "unit_number": 14319,
+              "active": false,
+              "frozen": {
+                "ok": true,
+                "value": false
+              }
+            },
+            {
+              "entity": "chemical-plant",
+              "unit_number": 14320,
+              "active": false,
+              "frozen": {
+                "ok": true,
+                "value": false
+              }
+            },
+            {
+              "entity": "boiler",
+              "unit_number": 14321,
+              "active": false,
+              "frozen": {
+                "ok": true,
+                "value": false
+              }
+            }
+          ]
+        }
+      },
+      "activation": {
+        "success": true,
+        "tick": 179157,
+        "changed": 3,
+        "read": {
+          "success": true,
+          "label": "R11c activation same tick",
+          "tick": 179157,
+          "game_paused": false,
+          "platform_paused": false,
+          "totals": {
+            "water": 200,
+            "heavy-oil": 50,
+            "light-oil": 50,
+            "steam": 50
+          },
+          "boxes": [
+            {
+              "entity": "pipe",
+              "type": "pipe",
+              "unit_number": 14317,
+              "index": 1,
+              "direct": {
+                "name": "water",
+                "amount": 50,
+                "temperature": 25
+              },
+              "segment_id": 51,
+              "segment_contents": {
+                "water": 50
+              }
+            },
+            {
+              "entity": "storage-tank",
+              "type": "storage-tank",
+              "unit_number": 14318,
+              "index": 1,
+              "direct": {
+                "name": "water",
+                "amount": 50,
+                "temperature": 25
+              },
+              "segment_id": 52,
+              "segment_contents": {
+                "water": 50
+              }
+            },
+            {
+              "entity": "pump",
+              "type": "pump",
+              "unit_number": 14319,
+              "index": 1,
+              "direct": {
+                "name": "water",
+                "amount": 50,
+                "temperature": 25
+              }
+            },
+            {
+              "entity": "chemical-plant",
+              "type": "assembling-machine",
+              "unit_number": 14320,
+              "index": 1,
+              "direct": {
+                "name": "water",
+                "amount": 50,
+                "temperature": 25
+              }
+            },
+            {
+              "entity": "chemical-plant",
+              "type": "assembling-machine",
+              "unit_number": 14320,
+              "index": 2,
+              "direct": {
+                "name": "heavy-oil",
+                "amount": 50,
+                "temperature": 25
+              }
+            },
+            {
+              "entity": "chemical-plant",
+              "type": "assembling-machine",
+              "unit_number": 14320,
+              "index": 3,
+              "direct": {
+                "name": "light-oil",
+                "amount": 50,
+                "temperature": 25
+              }
+            },
+            {
+              "entity": "boiler",
+              "type": "boiler",
+              "unit_number": 14321,
+              "index": 1,
+              "direct": {
+                "name": "water",
+                "amount": 50,
+                "temperature": 25
+              },
+              "segment_id": 53,
+              "segment_contents": {}
+            },
+            {
+              "entity": "boiler",
+              "type": "boiler",
+              "unit_number": 14321,
+              "index": 2,
+              "direct": {
+                "name": "steam",
+                "amount": 50,
+                "temperature": 165
+              }
+            }
+          ],
+          "entity_states": [
+            {
+              "entity": "pump",
+              "unit_number": 14319,
+              "active": true,
+              "frozen": {
+                "ok": true,
+                "value": false
+              }
+            },
+            {
+              "entity": "chemical-plant",
+              "unit_number": 14320,
+              "active": true,
+              "frozen": {
+                "ok": true,
+                "value": false
+              }
+            },
+            {
+              "entity": "boiler",
+              "unit_number": 14321,
+              "active": true,
+              "frozen": {
+                "ok": true,
+                "value": false
+              }
+            }
+          ]
+        }
+      },
+      "after": {
+        "success": true,
+        "label": "R11c activation +60",
+        "tick": 179269,
+        "game_paused": false,
+        "platform_paused": false,
+        "totals": {
+          "water": 200,
+          "heavy-oil": 50,
+          "light-oil": 50,
+          "steam": 50
+        },
+        "boxes": [
+          {
+            "entity": "pipe",
+            "type": "pipe",
+            "unit_number": 14317,
+            "index": 1,
+            "direct": {
+              "name": "water",
+              "amount": 50,
+              "temperature": 25
+            },
+            "segment_id": 51,
+            "segment_contents": {
+              "water": 50
+            }
+          },
+          {
+            "entity": "storage-tank",
+            "type": "storage-tank",
+            "unit_number": 14318,
+            "index": 1,
+            "direct": {
+              "name": "water",
+              "amount": 50,
+              "temperature": 25
+            },
+            "segment_id": 52,
+            "segment_contents": {
+              "water": 50
+            }
+          },
+          {
+            "entity": "pump",
+            "type": "pump",
+            "unit_number": 14319,
+            "index": 1,
+            "direct": {
+              "name": "water",
+              "amount": 50,
+              "temperature": 25
+            }
+          },
+          {
+            "entity": "chemical-plant",
+            "type": "assembling-machine",
+            "unit_number": 14320,
+            "index": 1,
+            "direct": {
+              "name": "water",
+              "amount": 50,
+              "temperature": 25
+            }
+          },
+          {
+            "entity": "chemical-plant",
+            "type": "assembling-machine",
+            "unit_number": 14320,
+            "index": 2,
+            "direct": {
+              "name": "heavy-oil",
+              "amount": 50,
+              "temperature": 25
+            }
+          },
+          {
+            "entity": "chemical-plant",
+            "type": "assembling-machine",
+            "unit_number": 14320,
+            "index": 3,
+            "direct": {
+              "name": "light-oil",
+              "amount": 50,
+              "temperature": 25
+            }
+          },
+          {
+            "entity": "boiler",
+            "type": "boiler",
+            "unit_number": 14321,
+            "index": 1,
+            "direct": {
+              "name": "water",
+              "amount": 50,
+              "temperature": 25
+            },
+            "segment_id": 53,
+            "segment_contents": {}
+          },
+          {
+            "entity": "boiler",
+            "type": "boiler",
+            "unit_number": 14321,
+            "index": 2,
+            "direct": {
+              "name": "steam",
+              "amount": 50,
+              "temperature": 165
+            }
+          }
+        ],
+        "entity_states": [
+          {
+            "entity": "pump",
+            "unit_number": 14319,
+            "active": true,
+            "frozen": {
+              "ok": true,
+              "value": false
+            }
+          },
+          {
+            "entity": "chemical-plant",
+            "unit_number": 14320,
+            "active": true,
+            "frozen": {
+              "ok": true,
+              "value": false
+            }
+          },
+          {
+            "entity": "boiler",
+            "unit_number": 14321,
+            "active": true,
+            "frozen": {
+              "ok": true,
+              "value": false
+            }
+          }
+        ]
+      },
+      "immediate_compare": {
+        "exact": true,
+        "epsilon": 0.000001,
+        "max_abs_delta": 0,
+        "classification": "exact",
+        "rows": [
+          {
+            "name": "heavy-oil",
+            "expected": 50,
+            "actual": 50,
+            "delta": 0
+          },
+          {
+            "name": "light-oil",
+            "expected": 50,
+            "actual": 50,
+            "delta": 0
+          },
+          {
+            "name": "steam",
+            "expected": 50,
+            "actual": 50,
+            "delta": 0
+          },
+          {
+            "name": "water",
+            "expected": 200,
+            "actual": 200,
+            "delta": 0
+          }
+        ]
+      },
+      "settled_compare": {
+        "exact": true,
+        "epsilon": 0.000001,
+        "max_abs_delta": 0,
+        "classification": "exact",
+        "rows": [
+          {
+            "name": "heavy-oil",
+            "expected": 50,
+            "actual": 50,
+            "delta": 0
+          },
+          {
+            "name": "light-oil",
+            "expected": 50,
+            "actual": 50,
+            "delta": 0
+          },
+          {
+            "name": "steam",
+            "expected": 50,
+            "actual": 50,
+            "delta": 0
+          },
+          {
+            "name": "water",
+            "expected": 200,
+            "actual": 200,
+            "delta": 0
+          }
+        ]
+      }
+    },
+    "r11d": {
+      "success": true,
+      "prediction": "zero loss and zero gain",
+      "name": "fluid-lab-r11-d-1783659818631",
+      "seed": {
+        "success": true,
+        "index": 2,
+        "count": 1
+      },
+      "clone": {
+        "success": true,
+        "tick": 179364,
+        "remote": {
+          "success": true,
+          "job_id": "import_1",
+          "platform_name": "fluid-lab-r11-d-1783659818631",
+          "source_platform": "test",
+          "entity_count": 1359,
+          "message": "Clone job started - use /step-tick to process"
+        }
+      },
+      "clone_index": 7,
+      "armed": {
+        "success": true,
+        "tick": 121678
+      },
+      "transfer_output": "═══════════════════════════════════════\n🚀 Transfer Platform: fluid-lab-r11-d-1783659818631\n═══════════════════════════════════════\nDestination: Instance 1351385547\nPlatform: [7] fluid-lab-r11-d-1783659818631\n\n[1/2] Locking + queueing export...\n[2/2] ✓ Export queued: 002_fluid-lab-r11-d-1783659818631\n⏳ Exporting asynchronously (this may take a while)...\n\nThe transfer will continue automatically:\n  1. Export completes → Sent to controller\n  2. Controller → Sends to destination instance\n  3. Destination imports → Validates counts\n  4. On success → Source deleted automatically\n  5. On failure → Source unlocked automatically\n\n💡 Use /list-platforms to track progress\n═══════════════════════════════════════",
+      "wall_ms": 6786,
+      "debug_file": "/clusterio/data/instances/clusterio-host-2-instance-1/script-output/debug_import_result_fluid-lab-r11-d-1783659818631_121885.json",
+      "validation_success": true,
+      "failed_stage": null,
+      "hook_log": {
+        "needle": "[Import][TEST][R11] Frozen fluid injection measured for fluid-lab-r11-d-1783659818631",
+        "found": true,
+        "line": "69.253 Script @__level__/modules/surface_export/core/import-completion.lua:364: [Import][TEST][R11] Frozen fluid injection measured for fluid-lab-r11-d-1783659818631 at tick 121885"
+      },
+      "measurement": {
+        "hook_consumed": true,
+        "platform_name": "fluid-lab-r11-d-1783659818631",
+        "injection_started_tick": 121885,
+        "frozen_census_tick": 121885,
+        "platform_paused": true,
+        "expected_by_name": {
+          "molten-iron": 2331.4420278668404,
+          "thruster-fuel": 37177.8046015501,
+          "thruster-oxidizer": 37236.57823801041,
+          "water": 52709.01258826256,
+          "fluoroketone-cold": 223.314648270607,
+          "fluoroketone-hot": 9.601849794387817,
+          "fusion-plasma": 80,
+          "molten-copper": 1828.7102613449097
+        },
+        "expected_raw": {
+          "molten-iron@1500.0C": 2331.4420278668404,
+          "thruster-fuel@25.0C": 37177.8046015501,
+          "thruster-oxidizer@25.0C": 37236.57823801041,
+          "water@15.0C": 52709.01258826256,
+          "fluoroketone-cold@-150.0C": 223.314648270607,
+          "fluoroketone-hot@180.0C": 9.601849794387817,
+          "fusion-plasma@1082979.8C": 10,
+          "fusion-plasma@1172655.5C": 10,
+          "molten-copper@1100.0C": 1828.7102613449097,
+          "fusion-plasma@1961957.1C": 10,
+          "fusion-plasma@1172653.9C": 10,
+          "fusion-plasma@1082998.4C": 10,
+          "fusion-plasma@1081099.4C": 10,
+          "fusion-plasma@1168906.3C": 10,
+          "fusion-plasma@1963242.0C": 10,
+          "fusion-plasma@1168903.8C": 10,
+          "fusion-plasma@1081159.5C": 10
+        },
+        "frozen_actual_raw": {
+          "fluoroketone-hot@180.0C": 9.601849794387817,
+          "fusion-plasma@1082979.8C": 10,
+          "fusion-plasma@1172655.5C": 10,
+          "fluoroketone-cold@-150.0C": 223.314648270607,
+          "fusion-plasma@1082998.4C": 10,
+          "fusion-plasma@1172653.9C": 10,
+          "molten-iron@1500.0C": 2331.4420278668404,
+          "molten-copper@1100.0C": 1828.7102613449097,
+          "thruster-fuel@25.0C": 37177.8046015501,
+          "thruster-oxidizer@25.0C": 37236.57823801041,
+          "fusion-plasma@1081099.4C": 10,
+          "fusion-plasma@1168906.3C": 10,
+          "fusion-plasma@1081159.5C": 10,
+          "fusion-plasma@1168903.8C": 10,
+          "water@15.0C": 52709.01258826256
+        },
+        "frozen_actual_by_name": {
+          "fluoroketone-hot": 9.601849794387817,
+          "fusion-plasma": 80,
+          "fluoroketone-cold": 223.314648270607,
+          "molten-iron": 2331.4420278668404,
+          "molten-copper": 1828.7102613449097,
+          "thruster-fuel": 37177.8046015501,
+          "thruster-oxidizer": 37236.57823801041,
+          "water": 52709.01258826256
+        },
+        "frozen_actual_total": 131596.4642150998,
+        "write_rejected": {
+          "fusion-plasma": 20
+        },
+        "activation_census_tick": 121885,
+        "post_activation_actual_by_name": {
+          "fluoroketone-hot": 9.601849794387817,
+          "fusion-plasma": 80,
+          "fluoroketone-cold": 223.314648270607,
+          "molten-iron": 2331.4420278668404,
+          "molten-copper": 1828.7102613449097,
+          "thruster-fuel": 37177.8046015501,
+          "thruster-oxidizer": 37236.57823801041,
+          "water": 52709.01258826256
+        },
+        "post_activation_actual_raw": {
+          "fluoroketone-hot@180.0C": 9.601849794387817,
+          "fusion-plasma@1082979.8C": 10,
+          "fusion-plasma@1172655.5C": 10,
+          "fluoroketone-cold@-150.0C": 223.314648270607,
+          "fusion-plasma@1082998.4C": 10,
+          "fusion-plasma@1172653.9C": 10,
+          "molten-iron@1500.0C": 2331.4420278668404,
+          "molten-copper@1100.0C": 1828.7102613449097,
+          "thruster-fuel@25.0C": 37177.8046015501,
+          "thruster-oxidizer@25.0C": 37236.57823801041,
+          "fusion-plasma@1081099.4C": 10,
+          "fusion-plasma@1168906.3C": 10,
+          "fusion-plasma@1081159.5C": 10,
+          "fusion-plasma@1168903.8C": 10,
+          "water@15.0C": 52709.01258826256
+        },
+        "post_activation_actual_total": 131596.4642150998
+      },
+      "frozen_compare": {
+        "exact": true,
+        "epsilon": 0.000001,
+        "max_abs_delta": 0,
+        "classification": "exact",
+        "rows": [
+          {
+            "name": "fluoroketone-cold",
+            "expected": 223.314648270607,
+            "actual": 223.314648270607,
+            "delta": 0
+          },
+          {
+            "name": "fluoroketone-hot",
+            "expected": 9.601849794387817,
+            "actual": 9.601849794387817,
+            "delta": 0
+          },
+          {
+            "name": "fusion-plasma",
+            "expected": 80,
+            "actual": 80,
+            "delta": 0
+          },
+          {
+            "name": "molten-copper",
+            "expected": 1828.7102613449097,
+            "actual": 1828.7102613449097,
+            "delta": 0
+          },
+          {
+            "name": "molten-iron",
+            "expected": 2331.4420278668404,
+            "actual": 2331.4420278668404,
+            "delta": 0
+          },
+          {
+            "name": "thruster-fuel",
+            "expected": 37177.8046015501,
+            "actual": 37177.8046015501,
+            "delta": 0
+          },
+          {
+            "name": "thruster-oxidizer",
+            "expected": 37236.57823801041,
+            "actual": 37236.57823801041,
+            "delta": 0
+          },
+          {
+            "name": "water",
+            "expected": 52709.01258826256,
+            "actual": 52709.01258826256,
+            "delta": 0
+          }
+        ]
+      },
+      "post_activation_compare": {
+        "exact": true,
+        "epsilon": 0.000001,
+        "max_abs_delta": 0,
+        "classification": "exact",
+        "rows": [
+          {
+            "name": "fluoroketone-cold",
+            "expected": 223.314648270607,
+            "actual": 223.314648270607,
+            "delta": 0
+          },
+          {
+            "name": "fluoroketone-hot",
+            "expected": 9.601849794387817,
+            "actual": 9.601849794387817,
+            "delta": 0
+          },
+          {
+            "name": "fusion-plasma",
+            "expected": 80,
+            "actual": 80,
+            "delta": 0
+          },
+          {
+            "name": "molten-copper",
+            "expected": 1828.7102613449097,
+            "actual": 1828.7102613449097,
+            "delta": 0
+          },
+          {
+            "name": "molten-iron",
+            "expected": 2331.4420278668404,
+            "actual": 2331.4420278668404,
+            "delta": 0
+          },
+          {
+            "name": "thruster-fuel",
+            "expected": 37177.8046015501,
+            "actual": 37177.8046015501,
+            "delta": 0
+          },
+          {
+            "name": "thruster-oxidizer",
+            "expected": 37236.57823801041,
+            "actual": 37236.57823801041,
+            "delta": 0
+          },
+          {
+            "name": "water",
+            "expected": 52709.01258826256,
+            "actual": 52709.01258826256,
+            "delta": 0
+          }
+        ]
+      }
+    }
+  },
+  "errors": [],
+  "initial_reset": {
+    "cleanup": {
+      "source": {
+        "success": true,
+        "deleted": {},
+        "tick": 178148
+      },
+      "destination": {
+        "success": true,
+        "deleted": {},
+        "tick": 120337
+      }
+    },
+    "zero": {
+      "source": {
+        "success": true,
+        "tick": 178337,
+        "zero_surfaces": true,
+        "surfaces": {},
+        "zero_storage": true,
+        "game_paused": false,
+        "destination_holds": 0,
+        "locked_platforms": 0,
+        "committed_source_transfer_tombstones": 0,
+        "lab_platform_exports": 0
+      },
+      "destination": {
+        "success": true,
+        "tick": 120529,
+        "zero_surfaces": true,
+        "surfaces": {},
+        "zero_storage": true,
+        "game_paused": false,
+        "destination_holds": 0,
+        "locked_platforms": 0,
+        "committed_source_transfer_tombstones": 0,
+        "lab_platform_exports": 0
+      }
+    },
+    "ok": true
+  },
+  "install": {
+    "source": {
+      "success": true,
+      "tick": 178437,
+      "base": "2.0.77"
+    },
+    "destination": {
+      "success": true,
+      "tick": 120626,
+      "base": "2.0.77"
+    }
+  },
+  "final_reset": {
+    "cleanup": {
+      "source": {
+        "success": true,
+        "deleted": [
+          "fluid-lab-r11-a-control-1783659806383",
+          "fluid-lab-r11-a-machines-1783659809420",
+          "fluid-lab-r11-b-1783659812449",
+          "fluid-lab-r11-c-1783659815353"
+        ],
+        "tick": 180010
+      },
+      "destination": {
+        "success": true,
+        "deleted": [
+          "fluid-lab-r11-d-1783659818631"
+        ],
+        "tick": 122289
+      }
+    },
+    "zero": {
+      "source": {
+        "success": true,
+        "tick": 180225,
+        "zero_surfaces": true,
+        "surfaces": {},
+        "zero_storage": true,
+        "game_paused": false,
+        "destination_holds": 0,
+        "locked_platforms": 0,
+        "committed_source_transfer_tombstones": 0,
+        "lab_platform_exports": 0
+      },
+      "destination": {
+        "success": true,
+        "tick": 122508,
+        "zero_surfaces": true,
+        "surfaces": {},
+        "zero_storage": true,
+        "game_paused": false,
+        "destination_holds": 0,
+        "locked_platforms": 0,
+        "committed_source_transfer_tombstones": 0,
+        "lab_platform_exports": 0
+      }
+    },
+    "ok": true
+  },
+  "finished": "2026-07-10T05:03:56.146Z"
+}
+```
+
+
+## 2026-07-10T05:04:48.166Z - R11 frozen-injection lab (sections=r11a,r11b,r11c,r11d)
+
+Prediction: **zero fluid loss and zero fluid gain at every rung**.
+
+```json
+{
+  "script": "tests/fluid-lab/run-r11.mjs",
+  "started": "2026-07-10T05:04:08.945Z",
+  "sections": [
+    "r11a",
+    "r11b",
+    "r11c",
+    "r11d"
+  ],
+  "prediction": "ZERO fluid loss and ZERO fluid gain at every R11 rung",
+  "epsilon": 0.000001,
+  "rungs": {
+    "r11a": {
+      "success": true,
+      "prediction": "zero loss and zero gain",
+      "cases": [
+        {
+          "machines": false,
+          "name": "fluid-lab-r11-a-control-1783659858333",
+          "setup": {
+            "success": true,
+            "inserted": 2000,
+            "platform": 8,
+            "read": {
+              "success": true,
+              "label": "same-tick frozen",
+              "tick": 181760,
+              "game_paused": false,
+              "platform_paused": true,
+              "totals": {
+                "water": 2000
+              },
+              "boxes": [
+                {
+                  "entity": "storage-tank",
+                  "type": "storage-tank",
+                  "unit_number": 15681,
+                  "index": 1,
+                  "direct": {
+                    "name": "water",
+                    "amount": 2000,
+                    "temperature": 25
+                  },
+                  "segment_id": 124,
+                  "segment_contents": {
+                    "water": 2000
+                  }
+                },
+                {
+                  "entity": "pipe",
+                  "type": "pipe",
+                  "unit_number": 15684,
+                  "index": 1,
+                  "segment_id": 125,
+                  "segment_contents": {}
+                },
+                {
+                  "entity": "pipe",
+                  "type": "pipe",
+                  "unit_number": 15683,
+                  "index": 1,
+                  "segment_id": 125
+                },
+                {
+                  "entity": "pipe",
+                  "type": "pipe",
+                  "unit_number": 15682,
+                  "index": 1,
+                  "segment_id": 125
+                }
+              ],
+              "entity_states": {}
+            }
+          },
+          "activation": {
+            "success": true,
+            "tick": 181822,
+            "changed": 0,
+            "read": {
+              "success": true,
+              "label": "activation same tick",
+              "tick": 181822,
+              "game_paused": false,
+              "platform_paused": false,
+              "totals": {
+                "water": 2000
+              },
+              "boxes": [
+                {
+                  "entity": "storage-tank",
+                  "type": "storage-tank",
+                  "unit_number": 15681,
+                  "index": 1,
+                  "direct": {
+                    "name": "water",
+                    "amount": 2000,
+                    "temperature": 25
+                  },
+                  "segment_id": 124,
+                  "segment_contents": {
+                    "water": 2000
+                  }
+                },
+                {
+                  "entity": "pipe",
+                  "type": "pipe",
+                  "unit_number": 15684,
+                  "index": 1,
+                  "segment_id": 125,
+                  "segment_contents": {}
+                },
+                {
+                  "entity": "pipe",
+                  "type": "pipe",
+                  "unit_number": 15683,
+                  "index": 1,
+                  "segment_id": 125
+                },
+                {
+                  "entity": "pipe",
+                  "type": "pipe",
+                  "unit_number": 15682,
+                  "index": 1,
+                  "segment_id": 125
+                }
+              ],
+              "entity_states": {}
+            }
+          },
+          "after": {
+            "success": true,
+            "label": "activation +60",
+            "tick": 181932,
+            "game_paused": false,
+            "platform_paused": false,
+            "totals": {
+              "water": 2000
+            },
+            "boxes": [
+              {
+                "entity": "storage-tank",
+                "type": "storage-tank",
+                "unit_number": 15681,
+                "index": 1,
+                "direct": {
+                  "name": "water",
+                  "amount": 2000,
+                  "temperature": 25
+                },
+                "segment_id": 124,
+                "segment_contents": {
+                  "water": 2000
+                }
+              },
+              {
+                "entity": "pipe",
+                "type": "pipe",
+                "unit_number": 15684,
+                "index": 1,
+                "segment_id": 125,
+                "segment_contents": {}
+              },
+              {
+                "entity": "pipe",
+                "type": "pipe",
+                "unit_number": 15683,
+                "index": 1,
+                "segment_id": 125
+              },
+              {
+                "entity": "pipe",
+                "type": "pipe",
+                "unit_number": 15682,
+                "index": 1,
+                "segment_id": 125
+              }
+            ],
+            "entity_states": {}
+          },
+          "activation_compare": {
+            "exact": true,
+            "epsilon": 0.000001,
+            "max_abs_delta": 0,
+            "classification": "exact",
+            "rows": [
+              {
+                "name": "water",
+                "expected": 2000,
+                "actual": 2000,
+                "delta": 0
+              }
+            ]
+          },
+          "after_compare": {
+            "exact": true,
+            "epsilon": 0.000001,
+            "max_abs_delta": 0,
+            "classification": "exact",
+            "rows": [
+              {
+                "name": "water",
+                "expected": 2000,
+                "actual": 2000,
+                "delta": 0
+              }
+            ]
+          }
+        },
+        {
+          "machines": true,
+          "name": "fluid-lab-r11-a-machines-1783659861927",
+          "setup": {
+            "success": true,
+            "inserted": 2000,
+            "platform": 9,
+            "read": {
+              "success": true,
+              "label": "same-tick frozen",
+              "tick": 181990,
+              "game_paused": false,
+              "platform_paused": true,
+              "totals": {
+                "water": 2000
+              },
+              "boxes": [
+                {
+                  "entity": "storage-tank",
+                  "type": "storage-tank",
+                  "unit_number": 15686,
+                  "index": 1,
+                  "direct": {
+                    "name": "water",
+                    "amount": 2000,
+                    "temperature": 25
+                  },
+                  "segment_id": 126,
+                  "segment_contents": {
+                    "water": 2000
+                  }
+                },
+                {
+                  "entity": "pipe",
+                  "type": "pipe",
+                  "unit_number": 15689,
+                  "index": 1,
+                  "segment_id": 127,
+                  "segment_contents": {}
+                },
+                {
+                  "entity": "pipe",
+                  "type": "pipe",
+                  "unit_number": 15688,
+                  "index": 1,
+                  "segment_id": 127
+                },
+                {
+                  "entity": "pipe",
+                  "type": "pipe",
+                  "unit_number": 15687,
+                  "index": 1,
+                  "segment_id": 127
+                },
+                {
+                  "entity": "pump",
+                  "type": "pump",
+                  "unit_number": 15690,
+                  "index": 1
+                },
+                {
+                  "entity": "chemical-plant",
+                  "type": "assembling-machine",
+                  "unit_number": 15691,
+                  "index": 1
+                },
+                {
+                  "entity": "chemical-plant",
+                  "type": "assembling-machine",
+                  "unit_number": 15691,
+                  "index": 2
+                },
+                {
+                  "entity": "chemical-plant",
+                  "type": "assembling-machine",
+                  "unit_number": 15691,
+                  "index": 3
+                }
+              ],
+              "entity_states": [
+                {
+                  "entity": "pump",
+                  "unit_number": 15690,
+                  "active": false,
+                  "frozen": {
+                    "ok": true,
+                    "value": false
+                  }
+                },
+                {
+                  "entity": "chemical-plant",
+                  "unit_number": 15691,
+                  "active": false,
+                  "frozen": {
+                    "ok": true,
+                    "value": false
+                  }
+                }
+              ]
+            }
+          },
+          "activation": {
+            "success": true,
+            "tick": 182052,
+            "changed": 2,
+            "read": {
+              "success": true,
+              "label": "activation same tick",
+              "tick": 182052,
+              "game_paused": false,
+              "platform_paused": false,
+              "totals": {
+                "water": 2000
+              },
+              "boxes": [
+                {
+                  "entity": "storage-tank",
+                  "type": "storage-tank",
+                  "unit_number": 15686,
+                  "index": 1,
+                  "direct": {
+                    "name": "water",
+                    "amount": 2000,
+                    "temperature": 25
+                  },
+                  "segment_id": 126,
+                  "segment_contents": {
+                    "water": 2000
+                  }
+                },
+                {
+                  "entity": "pipe",
+                  "type": "pipe",
+                  "unit_number": 15689,
+                  "index": 1,
+                  "segment_id": 127,
+                  "segment_contents": {}
+                },
+                {
+                  "entity": "pipe",
+                  "type": "pipe",
+                  "unit_number": 15688,
+                  "index": 1,
+                  "segment_id": 127
+                },
+                {
+                  "entity": "pipe",
+                  "type": "pipe",
+                  "unit_number": 15687,
+                  "index": 1,
+                  "segment_id": 127
+                },
+                {
+                  "entity": "pump",
+                  "type": "pump",
+                  "unit_number": 15690,
+                  "index": 1
+                },
+                {
+                  "entity": "chemical-plant",
+                  "type": "assembling-machine",
+                  "unit_number": 15691,
+                  "index": 1
+                },
+                {
+                  "entity": "chemical-plant",
+                  "type": "assembling-machine",
+                  "unit_number": 15691,
+                  "index": 2
+                },
+                {
+                  "entity": "chemical-plant",
+                  "type": "assembling-machine",
+                  "unit_number": 15691,
+                  "index": 3
+                }
+              ],
+              "entity_states": [
+                {
+                  "entity": "pump",
+                  "unit_number": 15690,
+                  "active": true,
+                  "frozen": {
+                    "ok": true,
+                    "value": false
+                  }
+                },
+                {
+                  "entity": "chemical-plant",
+                  "unit_number": 15691,
+                  "active": true,
+                  "frozen": {
+                    "ok": true,
+                    "value": false
+                  }
+                }
+              ]
+            }
+          },
+          "after": {
+            "success": true,
+            "label": "activation +60",
+            "tick": 182167,
+            "game_paused": false,
+            "platform_paused": false,
+            "totals": {
+              "water": 2000
+            },
+            "boxes": [
+              {
+                "entity": "storage-tank",
+                "type": "storage-tank",
+                "unit_number": 15686,
+                "index": 1,
+                "direct": {
+                  "name": "water",
+                  "amount": 2000,
+                  "temperature": 25
+                },
+                "segment_id": 126,
+                "segment_contents": {
+                  "water": 2000
+                }
+              },
+              {
+                "entity": "pipe",
+                "type": "pipe",
+                "unit_number": 15689,
+                "index": 1,
+                "segment_id": 127,
+                "segment_contents": {}
+              },
+              {
+                "entity": "pipe",
+                "type": "pipe",
+                "unit_number": 15688,
+                "index": 1,
+                "segment_id": 127
+              },
+              {
+                "entity": "pipe",
+                "type": "pipe",
+                "unit_number": 15687,
+                "index": 1,
+                "segment_id": 127
+              },
+              {
+                "entity": "pump",
+                "type": "pump",
+                "unit_number": 15690,
+                "index": 1
+              },
+              {
+                "entity": "chemical-plant",
+                "type": "assembling-machine",
+                "unit_number": 15691,
+                "index": 1
+              },
+              {
+                "entity": "chemical-plant",
+                "type": "assembling-machine",
+                "unit_number": 15691,
+                "index": 2
+              },
+              {
+                "entity": "chemical-plant",
+                "type": "assembling-machine",
+                "unit_number": 15691,
+                "index": 3
+              }
+            ],
+            "entity_states": [
+              {
+                "entity": "pump",
+                "unit_number": 15690,
+                "active": true,
+                "frozen": {
+                  "ok": true,
+                  "value": false
+                }
+              },
+              {
+                "entity": "chemical-plant",
+                "unit_number": 15691,
+                "active": true,
+                "frozen": {
+                  "ok": true,
+                  "value": false
+                }
+              }
+            ]
+          },
+          "activation_compare": {
+            "exact": true,
+            "epsilon": 0.000001,
+            "max_abs_delta": 0,
+            "classification": "exact",
+            "rows": [
+              {
+                "name": "water",
+                "expected": 2000,
+                "actual": 2000,
+                "delta": 0
+              }
+            ]
+          },
+          "after_compare": {
+            "exact": true,
+            "epsilon": 0.000001,
+            "max_abs_delta": 0,
+            "classification": "exact",
+            "rows": [
+              {
+                "name": "water",
+                "expected": 2000,
+                "actual": 2000,
+                "delta": 0
+              }
+            ]
+          }
+        }
+      ]
+    },
+    "r11b": {
+      "success": true,
+      "prediction": "zero loss and zero gain",
+      "name": "fluid-lab-r11-b-1783659865590",
+      "setup": {
+        "success": true,
+        "platform": 10,
+        "writes": [
+          {
+            "entity": "storage-tank",
+            "index": 1,
+            "write": {
+              "accepted": true,
+              "fluid": "water",
+              "amount": 98.81422919034958,
+              "attempts": [
+                {
+                  "fluid": "water",
+                  "ok": true,
+                  "read": {
+                    "name": "water",
+                    "amount": 98.81422919034958,
+                    "temperature": 25
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "entity": "pump",
+            "index": 1,
+            "write": {
+              "accepted": true,
+              "fluid": "water",
+              "amount": 100,
+              "attempts": [
+                {
+                  "fluid": "water",
+                  "ok": true,
+                  "read": {
+                    "name": "water",
+                    "amount": 100,
+                    "temperature": 25
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "entity": "chemical-plant",
+            "index": 1,
+            "write": {
+              "accepted": true,
+              "fluid": "water",
+              "amount": 60,
+              "attempts": [
+                {
+                  "fluid": "water",
+                  "ok": true,
+                  "read": {
+                    "name": "water",
+                    "amount": 60,
+                    "temperature": 25
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "entity": "chemical-plant",
+            "index": 2,
+            "write": {
+              "accepted": true,
+              "fluid": "heavy-oil",
+              "amount": 80,
+              "attempts": [
+                {
+                  "fluid": "water",
+                  "ok": true
+                },
+                {
+                  "fluid": "steam",
+                  "ok": true
+                },
+                {
+                  "fluid": "heavy-oil",
+                  "ok": true,
+                  "read": {
+                    "name": "heavy-oil",
+                    "amount": 80,
+                    "temperature": 25
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "entity": "chemical-plant",
+            "index": 3,
+            "write": {
+              "accepted": true,
+              "fluid": "light-oil",
+              "amount": 100,
+              "attempts": [
+                {
+                  "fluid": "water",
+                  "ok": true
+                },
+                {
+                  "fluid": "steam",
+                  "ok": true
+                },
+                {
+                  "fluid": "heavy-oil",
+                  "ok": true
+                },
+                {
+                  "fluid": "light-oil",
+                  "ok": true,
+                  "read": {
+                    "name": "light-oil",
+                    "amount": 100,
+                    "temperature": 25
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "entity": "boiler",
+            "index": 1,
+            "write": {
+              "accepted": true,
+              "fluid": "water",
+              "amount": 100,
+              "attempts": [
+                {
+                  "fluid": "water",
+                  "ok": true,
+                  "read": {
+                    "name": "water",
+                    "amount": 100,
+                    "temperature": 25
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "entity": "boiler",
+            "index": 2,
+            "write": {
+              "accepted": true,
+              "fluid": "steam",
+              "amount": 100,
+              "attempts": [
+                {
+                  "fluid": "water",
+                  "ok": true
+                },
+                {
+                  "fluid": "steam",
+                  "ok": true,
+                  "read": {
+                    "name": "steam",
+                    "amount": 100,
+                    "temperature": 165
+                  }
+                }
+              ]
+            }
+          }
+        ],
+        "read": {
+          "success": true,
+          "label": "R11b frozen same tick",
+          "tick": 182221,
+          "game_paused": false,
+          "platform_paused": true,
+          "totals": {
+            "water": 260,
+            "heavy-oil": 80,
+            "light-oil": 100,
+            "steam": 100
+          },
+          "boxes": [
+            {
+              "entity": "storage-tank",
+              "type": "storage-tank",
+              "unit_number": 15693,
+              "index": 1,
+              "direct": {
+                "name": "water",
+                "amount": 98.81422919034958,
+                "temperature": 25
+              },
+              "segment_id": 128,
+              "segment_contents": {
+                "water": 100
+              }
+            },
+            {
+              "entity": "pipe",
+              "type": "pipe",
+              "unit_number": 15696,
+              "index": 1,
+              "direct": {
+                "name": "water",
+                "amount": 0.3952568769454956,
+                "temperature": 25
+              },
+              "segment_id": 128
+            },
+            {
+              "entity": "pipe",
+              "type": "pipe",
+              "unit_number": 15694,
+              "index": 1,
+              "direct": {
+                "name": "water",
+                "amount": 0.3952568769454956,
+                "temperature": 25
+              },
+              "segment_id": 128
+            },
+            {
+              "entity": "pump",
+              "type": "pump",
+              "unit_number": 15697,
+              "index": 1,
+              "direct": {
+                "name": "water",
+                "amount": 100,
+                "temperature": 25
+              }
+            },
+            {
+              "entity": "pipe",
+              "type": "pipe",
+              "unit_number": 15695,
+              "index": 1,
+              "direct": {
+                "name": "water",
+                "amount": 0.3952568769454956,
+                "temperature": 25
+              },
+              "segment_id": 128
+            },
+            {
+              "entity": "pipe",
+              "type": "pipe",
+              "unit_number": 15698,
+              "index": 1,
+              "segment_id": 129,
+              "segment_contents": {}
+            },
+            {
+              "entity": "chemical-plant",
+              "type": "assembling-machine",
+              "unit_number": 15699,
+              "index": 1,
+              "direct": {
+                "name": "water",
+                "amount": 60,
+                "temperature": 25
+              }
+            },
+            {
+              "entity": "chemical-plant",
+              "type": "assembling-machine",
+              "unit_number": 15699,
+              "index": 2,
+              "direct": {
+                "name": "heavy-oil",
+                "amount": 80,
+                "temperature": 25
+              }
+            },
+            {
+              "entity": "chemical-plant",
+              "type": "assembling-machine",
+              "unit_number": 15699,
+              "index": 3,
+              "direct": {
+                "name": "light-oil",
+                "amount": 100,
+                "temperature": 25
+              }
+            },
+            {
+              "entity": "boiler",
+              "type": "boiler",
+              "unit_number": 15700,
+              "index": 1,
+              "direct": {
+                "name": "water",
+                "amount": 100,
+                "temperature": 25
+              },
+              "segment_id": 130,
+              "segment_contents": {}
+            },
+            {
+              "entity": "boiler",
+              "type": "boiler",
+              "unit_number": 15700,
+              "index": 2,
+              "direct": {
+                "name": "steam",
+                "amount": 100,
+                "temperature": 165
+              }
+            }
+          ],
+          "entity_states": [
+            {
+              "entity": "pump",
+              "unit_number": 15697,
+              "active": false,
+              "frozen": {
+                "ok": true,
+                "value": false
+              }
+            },
+            {
+              "entity": "chemical-plant",
+              "unit_number": 15699,
+              "active": false,
+              "frozen": {
+                "ok": true,
+                "value": false
+              }
+            },
+            {
+              "entity": "boiler",
+              "unit_number": 15700,
+              "active": false,
+              "frozen": {
+                "ok": true,
+                "value": false
+              }
+            }
+          ]
+        }
+      },
+      "activation": {
+        "success": true,
+        "tick": 182283,
+        "changed": 3,
+        "read": {
+          "success": true,
+          "label": "R11b activation same tick",
+          "tick": 182283,
+          "game_paused": false,
+          "platform_paused": false,
+          "totals": {
+            "water": 260,
+            "heavy-oil": 80,
+            "light-oil": 100,
+            "steam": 100
+          },
+          "boxes": [
+            {
+              "entity": "storage-tank",
+              "type": "storage-tank",
+              "unit_number": 15693,
+              "index": 1,
+              "direct": {
+                "name": "water",
+                "amount": 98.81422919034958,
+                "temperature": 25
+              },
+              "segment_id": 128,
+              "segment_contents": {
+                "water": 100
+              }
+            },
+            {
+              "entity": "pipe",
+              "type": "pipe",
+              "unit_number": 15696,
+              "index": 1,
+              "direct": {
+                "name": "water",
+                "amount": 0.3952568769454956,
+                "temperature": 25
+              },
+              "segment_id": 128
+            },
+            {
+              "entity": "pipe",
+              "type": "pipe",
+              "unit_number": 15694,
+              "index": 1,
+              "direct": {
+                "name": "water",
+                "amount": 0.3952568769454956,
+                "temperature": 25
+              },
+              "segment_id": 128
+            },
+            {
+              "entity": "pump",
+              "type": "pump",
+              "unit_number": 15697,
+              "index": 1
+            },
+            {
+              "entity": "pipe",
+              "type": "pipe",
+              "unit_number": 15695,
+              "index": 1,
+              "direct": {
+                "name": "water",
+                "amount": 0.3952568769454956,
+                "temperature": 25
+              },
+              "segment_id": 128
+            },
+            {
+              "entity": "pipe",
+              "type": "pipe",
+              "unit_number": 15698,
+              "index": 1,
+              "direct": {
+                "name": "water",
+                "amount": 100,
+                "temperature": 25
+              },
+              "segment_id": 129,
+              "segment_contents": {
+                "water": 100
+              }
+            },
+            {
+              "entity": "chemical-plant",
+              "type": "assembling-machine",
+              "unit_number": 15699,
+              "index": 1,
+              "direct": {
+                "name": "water",
+                "amount": 60,
+                "temperature": 25
+              }
+            },
+            {
+              "entity": "chemical-plant",
+              "type": "assembling-machine",
+              "unit_number": 15699,
+              "index": 2,
+              "direct": {
+                "name": "heavy-oil",
+                "amount": 80,
+                "temperature": 25
+              }
+            },
+            {
+              "entity": "chemical-plant",
+              "type": "assembling-machine",
+              "unit_number": 15699,
+              "index": 3,
+              "direct": {
+                "name": "light-oil",
+                "amount": 100,
+                "temperature": 25
+              }
+            },
+            {
+              "entity": "boiler",
+              "type": "boiler",
+              "unit_number": 15700,
+              "index": 1,
+              "direct": {
+                "name": "water",
+                "amount": 100,
+                "temperature": 25
+              },
+              "segment_id": 130,
+              "segment_contents": {}
+            },
+            {
+              "entity": "boiler",
+              "type": "boiler",
+              "unit_number": 15700,
+              "index": 2,
+              "direct": {
+                "name": "steam",
+                "amount": 100,
+                "temperature": 165
+              }
+            }
+          ],
+          "entity_states": [
+            {
+              "entity": "pump",
+              "unit_number": 15697,
+              "active": true,
+              "frozen": {
+                "ok": true,
+                "value": false
+              }
+            },
+            {
+              "entity": "chemical-plant",
+              "unit_number": 15699,
+              "active": true,
+              "frozen": {
+                "ok": true,
+                "value": false
+              }
+            },
+            {
+              "entity": "boiler",
+              "unit_number": 15700,
+              "active": true,
+              "frozen": {
+                "ok": true,
+                "value": false
+              }
+            }
+          ]
+        }
+      },
+      "after": {
+        "success": true,
+        "label": "R11b activation +60",
+        "tick": 182387,
+        "game_paused": false,
+        "platform_paused": false,
+        "totals": {
+          "water": 260,
+          "heavy-oil": 80,
+          "light-oil": 100,
+          "steam": 100
+        },
+        "boxes": [
+          {
+            "entity": "storage-tank",
+            "type": "storage-tank",
+            "unit_number": 15693,
+            "index": 1,
+            "direct": {
+              "name": "water",
+              "amount": 98.81422919034958,
+              "temperature": 25
+            },
+            "segment_id": 128,
+            "segment_contents": {
+              "water": 100
+            }
+          },
+          {
+            "entity": "pipe",
+            "type": "pipe",
+            "unit_number": 15696,
+            "index": 1,
+            "direct": {
+              "name": "water",
+              "amount": 0.3952568769454956,
+              "temperature": 25
+            },
+            "segment_id": 128
+          },
+          {
+            "entity": "pipe",
+            "type": "pipe",
+            "unit_number": 15694,
+            "index": 1,
+            "direct": {
+              "name": "water",
+              "amount": 0.3952568769454956,
+              "temperature": 25
+            },
+            "segment_id": 128
+          },
+          {
+            "entity": "pump",
+            "type": "pump",
+            "unit_number": 15697,
+            "index": 1
+          },
+          {
+            "entity": "pipe",
+            "type": "pipe",
+            "unit_number": 15695,
+            "index": 1,
+            "direct": {
+              "name": "water",
+              "amount": 0.3952568769454956,
+              "temperature": 25
+            },
+            "segment_id": 128
+          },
+          {
+            "entity": "pipe",
+            "type": "pipe",
+            "unit_number": 15698,
+            "index": 1,
+            "direct": {
+              "name": "water",
+              "amount": 100,
+              "temperature": 25
+            },
+            "segment_id": 129,
+            "segment_contents": {
+              "water": 100
+            }
+          },
+          {
+            "entity": "chemical-plant",
+            "type": "assembling-machine",
+            "unit_number": 15699,
+            "index": 1,
+            "direct": {
+              "name": "water",
+              "amount": 60,
+              "temperature": 25
+            }
+          },
+          {
+            "entity": "chemical-plant",
+            "type": "assembling-machine",
+            "unit_number": 15699,
+            "index": 2,
+            "direct": {
+              "name": "heavy-oil",
+              "amount": 80,
+              "temperature": 25
+            }
+          },
+          {
+            "entity": "chemical-plant",
+            "type": "assembling-machine",
+            "unit_number": 15699,
+            "index": 3,
+            "direct": {
+              "name": "light-oil",
+              "amount": 100,
+              "temperature": 25
+            }
+          },
+          {
+            "entity": "boiler",
+            "type": "boiler",
+            "unit_number": 15700,
+            "index": 1,
+            "direct": {
+              "name": "water",
+              "amount": 100,
+              "temperature": 25
+            },
+            "segment_id": 130,
+            "segment_contents": {}
+          },
+          {
+            "entity": "boiler",
+            "type": "boiler",
+            "unit_number": 15700,
+            "index": 2,
+            "direct": {
+              "name": "steam",
+              "amount": 100,
+              "temperature": 165
+            }
+          }
+        ],
+        "entity_states": [
+          {
+            "entity": "pump",
+            "unit_number": 15697,
+            "active": true,
+            "frozen": {
+              "ok": true,
+              "value": false
+            }
+          },
+          {
+            "entity": "chemical-plant",
+            "unit_number": 15699,
+            "active": true,
+            "frozen": {
+              "ok": true,
+              "value": false
+            }
+          },
+          {
+            "entity": "boiler",
+            "unit_number": 15700,
+            "active": true,
+            "frozen": {
+              "ok": true,
+              "value": false
+            }
+          }
+        ]
+      },
+      "immediate_compare": {
+        "exact": true,
+        "epsilon": 0.000001,
+        "max_abs_delta": 0,
+        "classification": "exact",
+        "rows": [
+          {
+            "name": "heavy-oil",
+            "expected": 80,
+            "actual": 80,
+            "delta": 0
+          },
+          {
+            "name": "light-oil",
+            "expected": 100,
+            "actual": 100,
+            "delta": 0
+          },
+          {
+            "name": "steam",
+            "expected": 100,
+            "actual": 100,
+            "delta": 0
+          },
+          {
+            "name": "water",
+            "expected": 260,
+            "actual": 260,
+            "delta": 0
+          }
+        ]
+      },
+      "settled_compare": {
+        "exact": true,
+        "epsilon": 0.000001,
+        "max_abs_delta": 0,
+        "classification": "exact",
+        "rows": [
+          {
+            "name": "heavy-oil",
+            "expected": 80,
+            "actual": 80,
+            "delta": 0
+          },
+          {
+            "name": "light-oil",
+            "expected": 100,
+            "actual": 100,
+            "delta": 0
+          },
+          {
+            "name": "steam",
+            "expected": 100,
+            "actual": 100,
+            "delta": 0
+          },
+          {
+            "name": "water",
+            "expected": 260,
+            "actual": 260,
+            "delta": 0
+          }
+        ]
+      }
+    },
+    "r11c": {
+      "success": true,
+      "prediction": "zero loss and zero gain",
+      "name": "fluid-lab-r11-c-1783659869019",
+      "import_state_replication": {
+        "entity_creation": "module/import_phases/entity_creation.lua:69 creates through Deserializer; lines 78-91 immediately set active=false for transfer entities",
+        "platform_pause": "module/core/import-pipeline.lua:240-245 pauses the transfer platform immediately after creation"
+      },
+      "setup": {
+        "success": true,
+        "platform": 11,
+        "rows": [
+          {
+            "name": "pipe",
+            "type": "pipe",
+            "activatable": false,
+            "before": {
+              "frozen": {
+                "ok": true,
+                "value": false
+              },
+              "tick": 182438
+            },
+            "writes": [
+              {
+                "index": 1,
+                "write": {
+                  "accepted": true,
+                  "fluid": "water",
+                  "amount": 50,
+                  "attempts": [
+                    {
+                      "fluid": "water",
+                      "ok": true,
+                      "read": {
+                        "name": "water",
+                        "amount": 50,
+                        "temperature": 25
+                      }
+                    }
+                  ]
+                }
+              }
+            ],
+            "accepted": true,
+            "fallback_used": false,
+            "after": {
+              "frozen": {
+                "ok": true,
+                "value": false
+              },
+              "tick": 182438
+            }
+          },
+          {
+            "name": "storage-tank",
+            "type": "storage-tank",
+            "activatable": false,
+            "before": {
+              "frozen": {
+                "ok": true,
+                "value": false
+              },
+              "tick": 182438
+            },
+            "writes": [
+              {
+                "index": 1,
+                "write": {
+                  "accepted": true,
+                  "fluid": "water",
+                  "amount": 50,
+                  "attempts": [
+                    {
+                      "fluid": "water",
+                      "ok": true,
+                      "read": {
+                        "name": "water",
+                        "amount": 50,
+                        "temperature": 25
+                      }
+                    }
+                  ]
+                }
+              }
+            ],
+            "accepted": true,
+            "fallback_used": false,
+            "after": {
+              "frozen": {
+                "ok": true,
+                "value": false
+              },
+              "tick": 182438
+            }
+          },
+          {
+            "name": "pump",
+            "type": "pump",
+            "activatable": true,
+            "before": {
+              "frozen": {
+                "ok": true,
+                "value": false
+              },
+              "tick": 182438
+            },
+            "writes": [
+              {
+                "index": 1,
+                "write": {
+                  "accepted": true,
+                  "fluid": "water",
+                  "amount": 50,
+                  "attempts": [
+                    {
+                      "fluid": "water",
+                      "ok": true,
+                      "read": {
+                        "name": "water",
+                        "amount": 50,
+                        "temperature": 25
+                      }
+                    }
+                  ]
+                }
+              }
+            ],
+            "accepted": true,
+            "fallback_used": false,
+            "after": {
+              "frozen": {
+                "ok": true,
+                "value": false
+              },
+              "tick": 182438
+            }
+          },
+          {
+            "name": "chemical-plant",
+            "type": "assembling-machine",
+            "activatable": true,
+            "before": {
+              "frozen": {
+                "ok": true,
+                "value": false
+              },
+              "tick": 182438
+            },
+            "writes": [
+              {
+                "index": 1,
+                "write": {
+                  "accepted": true,
+                  "fluid": "water",
+                  "amount": 50,
+                  "attempts": [
+                    {
+                      "fluid": "water",
+                      "ok": true,
+                      "read": {
+                        "name": "water",
+                        "amount": 50,
+                        "temperature": 25
+                      }
+                    }
+                  ]
+                }
+              },
+              {
+                "index": 2,
+                "write": {
+                  "accepted": true,
+                  "fluid": "heavy-oil",
+                  "amount": 50,
+                  "attempts": [
+                    {
+                      "fluid": "water",
+                      "ok": true
+                    },
+                    {
+                      "fluid": "steam",
+                      "ok": true
+                    },
+                    {
+                      "fluid": "heavy-oil",
+                      "ok": true,
+                      "read": {
+                        "name": "heavy-oil",
+                        "amount": 50,
+                        "temperature": 25
+                      }
+                    }
+                  ]
+                }
+              },
+              {
+                "index": 3,
+                "write": {
+                  "accepted": true,
+                  "fluid": "light-oil",
+                  "amount": 50,
+                  "attempts": [
+                    {
+                      "fluid": "water",
+                      "ok": true
+                    },
+                    {
+                      "fluid": "steam",
+                      "ok": true
+                    },
+                    {
+                      "fluid": "heavy-oil",
+                      "ok": true
+                    },
+                    {
+                      "fluid": "light-oil",
+                      "ok": true,
+                      "read": {
+                        "name": "light-oil",
+                        "amount": 50,
+                        "temperature": 25
+                      }
+                    }
+                  ]
+                }
+              }
+            ],
+            "accepted": true,
+            "fallback_used": false,
+            "after": {
+              "frozen": {
+                "ok": true,
+                "value": false
+              },
+              "tick": 182438
+            }
+          },
+          {
+            "name": "boiler",
+            "type": "boiler",
+            "activatable": true,
+            "before": {
+              "frozen": {
+                "ok": true,
+                "value": false
+              },
+              "tick": 182438
+            },
+            "writes": [
+              {
+                "index": 1,
+                "write": {
+                  "accepted": true,
+                  "fluid": "water",
+                  "amount": 50,
+                  "attempts": [
+                    {
+                      "fluid": "water",
+                      "ok": true,
+                      "read": {
+                        "name": "water",
+                        "amount": 50,
+                        "temperature": 25
+                      }
+                    }
+                  ]
+                }
+              },
+              {
+                "index": 2,
+                "write": {
+                  "accepted": true,
+                  "fluid": "steam",
+                  "amount": 50,
+                  "attempts": [
+                    {
+                      "fluid": "water",
+                      "ok": true
+                    },
+                    {
+                      "fluid": "steam",
+                      "ok": true,
+                      "read": {
+                        "name": "steam",
+                        "amount": 50,
+                        "temperature": 165
+                      }
+                    }
+                  ]
+                }
+              }
+            ],
+            "accepted": true,
+            "fallback_used": false,
+            "after": {
+              "frozen": {
+                "ok": true,
+                "value": false
+              },
+              "tick": 182438
+            }
+          }
+        ],
+        "read": {
+          "success": true,
+          "label": "R11c before first activation",
+          "tick": 182438,
+          "game_paused": false,
+          "platform_paused": true,
+          "totals": {
+            "water": 200,
+            "heavy-oil": 50,
+            "light-oil": 50,
+            "steam": 50
+          },
+          "boxes": [
+            {
+              "entity": "pipe",
+              "type": "pipe",
+              "unit_number": 15702,
+              "index": 1,
+              "direct": {
+                "name": "water",
+                "amount": 50,
+                "temperature": 25
+              },
+              "segment_id": 131,
+              "segment_contents": {
+                "water": 50
+              }
+            },
+            {
+              "entity": "storage-tank",
+              "type": "storage-tank",
+              "unit_number": 15703,
+              "index": 1,
+              "direct": {
+                "name": "water",
+                "amount": 50,
+                "temperature": 25
+              },
+              "segment_id": 132,
+              "segment_contents": {
+                "water": 50
+              }
+            },
+            {
+              "entity": "pump",
+              "type": "pump",
+              "unit_number": 15704,
+              "index": 1,
+              "direct": {
+                "name": "water",
+                "amount": 50,
+                "temperature": 25
+              }
+            },
+            {
+              "entity": "chemical-plant",
+              "type": "assembling-machine",
+              "unit_number": 15705,
+              "index": 1,
+              "direct": {
+                "name": "water",
+                "amount": 50,
+                "temperature": 25
+              }
+            },
+            {
+              "entity": "chemical-plant",
+              "type": "assembling-machine",
+              "unit_number": 15705,
+              "index": 2,
+              "direct": {
+                "name": "heavy-oil",
+                "amount": 50,
+                "temperature": 25
+              }
+            },
+            {
+              "entity": "chemical-plant",
+              "type": "assembling-machine",
+              "unit_number": 15705,
+              "index": 3,
+              "direct": {
+                "name": "light-oil",
+                "amount": 50,
+                "temperature": 25
+              }
+            },
+            {
+              "entity": "boiler",
+              "type": "boiler",
+              "unit_number": 15706,
+              "index": 1,
+              "direct": {
+                "name": "water",
+                "amount": 50,
+                "temperature": 25
+              },
+              "segment_id": 133,
+              "segment_contents": {}
+            },
+            {
+              "entity": "boiler",
+              "type": "boiler",
+              "unit_number": 15706,
+              "index": 2,
+              "direct": {
+                "name": "steam",
+                "amount": 50,
+                "temperature": 165
+              }
+            }
+          ],
+          "entity_states": [
+            {
+              "entity": "pump",
+              "unit_number": 15704,
+              "active": false,
+              "frozen": {
+                "ok": true,
+                "value": false
+              }
+            },
+            {
+              "entity": "chemical-plant",
+              "unit_number": 15705,
+              "active": false,
+              "frozen": {
+                "ok": true,
+                "value": false
+              }
+            },
+            {
+              "entity": "boiler",
+              "unit_number": 15706,
+              "active": false,
+              "frozen": {
+                "ok": true,
+                "value": false
+              }
+            }
+          ]
+        }
+      },
+      "activation": {
+        "success": true,
+        "tick": 182492,
+        "changed": 3,
+        "read": {
+          "success": true,
+          "label": "R11c activation same tick",
+          "tick": 182492,
+          "game_paused": false,
+          "platform_paused": false,
+          "totals": {
+            "water": 200,
+            "heavy-oil": 50,
+            "light-oil": 50,
+            "steam": 50
+          },
+          "boxes": [
+            {
+              "entity": "pipe",
+              "type": "pipe",
+              "unit_number": 15702,
+              "index": 1,
+              "direct": {
+                "name": "water",
+                "amount": 50,
+                "temperature": 25
+              },
+              "segment_id": 131,
+              "segment_contents": {
+                "water": 50
+              }
+            },
+            {
+              "entity": "storage-tank",
+              "type": "storage-tank",
+              "unit_number": 15703,
+              "index": 1,
+              "direct": {
+                "name": "water",
+                "amount": 50,
+                "temperature": 25
+              },
+              "segment_id": 132,
+              "segment_contents": {
+                "water": 50
+              }
+            },
+            {
+              "entity": "pump",
+              "type": "pump",
+              "unit_number": 15704,
+              "index": 1,
+              "direct": {
+                "name": "water",
+                "amount": 50,
+                "temperature": 25
+              }
+            },
+            {
+              "entity": "chemical-plant",
+              "type": "assembling-machine",
+              "unit_number": 15705,
+              "index": 1,
+              "direct": {
+                "name": "water",
+                "amount": 50,
+                "temperature": 25
+              }
+            },
+            {
+              "entity": "chemical-plant",
+              "type": "assembling-machine",
+              "unit_number": 15705,
+              "index": 2,
+              "direct": {
+                "name": "heavy-oil",
+                "amount": 50,
+                "temperature": 25
+              }
+            },
+            {
+              "entity": "chemical-plant",
+              "type": "assembling-machine",
+              "unit_number": 15705,
+              "index": 3,
+              "direct": {
+                "name": "light-oil",
+                "amount": 50,
+                "temperature": 25
+              }
+            },
+            {
+              "entity": "boiler",
+              "type": "boiler",
+              "unit_number": 15706,
+              "index": 1,
+              "direct": {
+                "name": "water",
+                "amount": 50,
+                "temperature": 25
+              },
+              "segment_id": 133,
+              "segment_contents": {}
+            },
+            {
+              "entity": "boiler",
+              "type": "boiler",
+              "unit_number": 15706,
+              "index": 2,
+              "direct": {
+                "name": "steam",
+                "amount": 50,
+                "temperature": 165
+              }
+            }
+          ],
+          "entity_states": [
+            {
+              "entity": "pump",
+              "unit_number": 15704,
+              "active": true,
+              "frozen": {
+                "ok": true,
+                "value": false
+              }
+            },
+            {
+              "entity": "chemical-plant",
+              "unit_number": 15705,
+              "active": true,
+              "frozen": {
+                "ok": true,
+                "value": false
+              }
+            },
+            {
+              "entity": "boiler",
+              "unit_number": 15706,
+              "active": true,
+              "frozen": {
+                "ok": true,
+                "value": false
+              }
+            }
+          ]
+        }
+      },
+      "after": {
+        "success": true,
+        "label": "R11c activation +60",
+        "tick": 182596,
+        "game_paused": false,
+        "platform_paused": false,
+        "totals": {
+          "water": 200,
+          "heavy-oil": 50,
+          "light-oil": 50,
+          "steam": 50
+        },
+        "boxes": [
+          {
+            "entity": "pipe",
+            "type": "pipe",
+            "unit_number": 15702,
+            "index": 1,
+            "direct": {
+              "name": "water",
+              "amount": 50,
+              "temperature": 25
+            },
+            "segment_id": 131,
+            "segment_contents": {
+              "water": 50
+            }
+          },
+          {
+            "entity": "storage-tank",
+            "type": "storage-tank",
+            "unit_number": 15703,
+            "index": 1,
+            "direct": {
+              "name": "water",
+              "amount": 50,
+              "temperature": 25
+            },
+            "segment_id": 132,
+            "segment_contents": {
+              "water": 50
+            }
+          },
+          {
+            "entity": "pump",
+            "type": "pump",
+            "unit_number": 15704,
+            "index": 1,
+            "direct": {
+              "name": "water",
+              "amount": 50,
+              "temperature": 25
+            }
+          },
+          {
+            "entity": "chemical-plant",
+            "type": "assembling-machine",
+            "unit_number": 15705,
+            "index": 1,
+            "direct": {
+              "name": "water",
+              "amount": 50,
+              "temperature": 25
+            }
+          },
+          {
+            "entity": "chemical-plant",
+            "type": "assembling-machine",
+            "unit_number": 15705,
+            "index": 2,
+            "direct": {
+              "name": "heavy-oil",
+              "amount": 50,
+              "temperature": 25
+            }
+          },
+          {
+            "entity": "chemical-plant",
+            "type": "assembling-machine",
+            "unit_number": 15705,
+            "index": 3,
+            "direct": {
+              "name": "light-oil",
+              "amount": 50,
+              "temperature": 25
+            }
+          },
+          {
+            "entity": "boiler",
+            "type": "boiler",
+            "unit_number": 15706,
+            "index": 1,
+            "direct": {
+              "name": "water",
+              "amount": 50,
+              "temperature": 25
+            },
+            "segment_id": 133,
+            "segment_contents": {}
+          },
+          {
+            "entity": "boiler",
+            "type": "boiler",
+            "unit_number": 15706,
+            "index": 2,
+            "direct": {
+              "name": "steam",
+              "amount": 50,
+              "temperature": 165
+            }
+          }
+        ],
+        "entity_states": [
+          {
+            "entity": "pump",
+            "unit_number": 15704,
+            "active": true,
+            "frozen": {
+              "ok": true,
+              "value": false
+            }
+          },
+          {
+            "entity": "chemical-plant",
+            "unit_number": 15705,
+            "active": true,
+            "frozen": {
+              "ok": true,
+              "value": false
+            }
+          },
+          {
+            "entity": "boiler",
+            "unit_number": 15706,
+            "active": true,
+            "frozen": {
+              "ok": true,
+              "value": false
+            }
+          }
+        ]
+      },
+      "immediate_compare": {
+        "exact": true,
+        "epsilon": 0.000001,
+        "max_abs_delta": 0,
+        "classification": "exact",
+        "rows": [
+          {
+            "name": "heavy-oil",
+            "expected": 50,
+            "actual": 50,
+            "delta": 0
+          },
+          {
+            "name": "light-oil",
+            "expected": 50,
+            "actual": 50,
+            "delta": 0
+          },
+          {
+            "name": "steam",
+            "expected": 50,
+            "actual": 50,
+            "delta": 0
+          },
+          {
+            "name": "water",
+            "expected": 200,
+            "actual": 200,
+            "delta": 0
+          }
+        ]
+      },
+      "settled_compare": {
+        "exact": true,
+        "epsilon": 0.000001,
+        "max_abs_delta": 0,
+        "classification": "exact",
+        "rows": [
+          {
+            "name": "heavy-oil",
+            "expected": 50,
+            "actual": 50,
+            "delta": 0
+          },
+          {
+            "name": "light-oil",
+            "expected": 50,
+            "actual": 50,
+            "delta": 0
+          },
+          {
+            "name": "steam",
+            "expected": 50,
+            "actual": 50,
+            "delta": 0
+          },
+          {
+            "name": "water",
+            "expected": 200,
+            "actual": 200,
+            "delta": 0
+          }
+        ]
+      }
+    },
+    "r11d": {
+      "success": true,
+      "prediction": "zero loss and zero gain",
+      "name": "fluid-lab-r11-d-1783659872287",
+      "seed": {
+        "success": true,
+        "index": 2,
+        "count": 1
+      },
+      "clone": {
+        "success": true,
+        "tick": 182691,
+        "remote": {
+          "success": true,
+          "job_id": "import_3",
+          "platform_name": "fluid-lab-r11-d-1783659872287",
+          "source_platform": "test",
+          "entity_count": 1359,
+          "message": "Clone job started - use /step-tick to process"
+        }
+      },
+      "clone_index": 12,
+      "armed": {
+        "success": true,
+        "tick": 125070
+      },
+      "transfer_output": "═══════════════════════════════════════\n🚀 Transfer Platform: fluid-lab-r11-d-1783659872287\n═══════════════════════════════════════\nDestination: Instance 1351385547\nPlatform: [12] fluid-lab-r11-d-1783659872287\n\n[1/2] Locking + queueing export...\n[2/2] ✓ Export queued: 004_fluid-lab-r11-d-1783659872287\n⏳ Exporting asynchronously (this may take a while)...\n\nThe transfer will continue automatically:\n  1. Export completes → Sent to controller\n  2. Controller → Sends to destination instance\n  3. Destination imports → Validates counts\n  4. On success → Source deleted automatically\n  5. On failure → Source unlocked automatically\n\n💡 Use /list-platforms to track progress\n═══════════════════════════════════════",
+      "wall_ms": 6503,
+      "debug_file": "/clusterio/data/instances/clusterio-host-2-instance-1/script-output/debug_import_result_fluid-lab-r11-d-1783659872287_125257.json",
+      "validation_success": true,
+      "failed_stage": null,
+      "hook_log": {
+        "needle": "[Import][TEST][R11] Frozen fluid injection measured for fluid-lab-r11-d-1783659872287",
+        "found": true,
+        "line": "122.022 Script @__level__/modules/surface_export/core/import-completion.lua:364: [Import][TEST][R11] Frozen fluid injection measured for fluid-lab-r11-d-1783659872287 at tick 125257"
+      },
+      "measurement": {
+        "hook_consumed": true,
+        "platform_name": "fluid-lab-r11-d-1783659872287",
+        "injection_started_tick": 125257,
+        "frozen_census_tick": 125257,
+        "platform_paused": true,
+        "expected_by_name": {
+          "molten-iron": 2204.686939716339,
+          "thruster-fuel": 34129.08937370777,
+          "thruster-oxidizer": 34188.99511098862,
+          "water": 52987.509983778,
+          "fluoroketone-cold": 229.73599302768707,
+          "fluoroketone-hot": 8.98644632101059,
+          "fusion-plasma": 80,
+          "molten-copper": 1765
+        },
+        "expected_raw": {
+          "molten-iron@1500.0C": 2204.686939716339,
+          "thruster-fuel@25.0C": 34129.08937370777,
+          "thruster-oxidizer@25.0C": 34188.99511098862,
+          "water@15.0C": 52987.509983778,
+          "fluoroketone-cold@-150.0C": 229.73599302768707,
+          "fluoroketone-hot@180.0C": 8.98644632101059,
+          "fusion-plasma@1080571.9C": 10,
+          "fusion-plasma@1177711.4C": 10,
+          "molten-copper@1100.0C": 1765,
+          "fusion-plasma@1947419.4C": 10,
+          "fusion-plasma@1177710.8C": 10,
+          "fusion-plasma@1080582.1C": 10,
+          "fusion-plasma@1078515.5C": 10,
+          "fusion-plasma@1173900.9C": 10,
+          "fusion-plasma@1948321.6C": 10,
+          "fusion-plasma@1173899.9C": 10,
+          "fusion-plasma@1078549.4C": 10
+        },
+        "frozen_actual_raw": {
+          "fluoroketone-hot@180.0C": 8.98644632101059,
+          "fusion-plasma@1080571.9C": 10,
+          "fusion-plasma@1177711.4C": 10,
+          "fluoroketone-cold@-150.0C": 229.73599302768707,
+          "fusion-plasma@1080582.1C": 10,
+          "fusion-plasma@1177710.8C": 10,
+          "molten-iron@1500.0C": 2204.686939716339,
+          "molten-copper@1100.0C": 1765,
+          "thruster-fuel@25.0C": 34129.08937370777,
+          "thruster-oxidizer@25.0C": 34188.99511098862,
+          "fusion-plasma@1078515.5C": 10,
+          "fusion-plasma@1173900.9C": 10,
+          "fusion-plasma@1078549.4C": 10,
+          "fusion-plasma@1173899.9C": 10,
+          "water@15.0C": 52987.509983778
+        },
+        "frozen_actual_by_name": {
+          "fluoroketone-hot": 8.98644632101059,
+          "fusion-plasma": 80,
+          "fluoroketone-cold": 229.73599302768707,
+          "molten-iron": 2204.686939716339,
+          "molten-copper": 1765,
+          "thruster-fuel": 34129.08937370777,
+          "thruster-oxidizer": 34188.99511098862,
+          "water": 52987.509983778
+        },
+        "frozen_actual_total": 125594.00384753942,
+        "write_rejected": {
+          "fusion-plasma": 20
+        },
+        "activation_census_tick": 125257,
+        "post_activation_actual_by_name": {
+          "fluoroketone-hot": 8.98644632101059,
+          "fusion-plasma": 80,
+          "fluoroketone-cold": 229.73599302768707,
+          "molten-iron": 2204.686939716339,
+          "molten-copper": 1765,
+          "thruster-fuel": 34129.08937370777,
+          "thruster-oxidizer": 34188.99511098862,
+          "water": 52987.509983778
+        },
+        "post_activation_actual_raw": {
+          "fluoroketone-hot@180.0C": 8.98644632101059,
+          "fusion-plasma@1080571.9C": 10,
+          "fusion-plasma@1177711.4C": 10,
+          "fluoroketone-cold@-150.0C": 229.73599302768707,
+          "fusion-plasma@1080582.1C": 10,
+          "fusion-plasma@1177710.8C": 10,
+          "molten-iron@1500.0C": 2204.686939716339,
+          "molten-copper@1100.0C": 1765,
+          "thruster-fuel@25.0C": 34129.08937370777,
+          "thruster-oxidizer@25.0C": 34188.99511098862,
+          "fusion-plasma@1078515.5C": 10,
+          "fusion-plasma@1173900.9C": 10,
+          "fusion-plasma@1078549.4C": 10,
+          "fusion-plasma@1173899.9C": 10,
+          "water@15.0C": 52987.509983778
+        },
+        "post_activation_actual_total": 125594.00384753942
+      },
+      "frozen_compare": {
+        "exact": true,
+        "epsilon": 0.000001,
+        "max_abs_delta": 0,
+        "classification": "exact",
+        "rows": [
+          {
+            "name": "fluoroketone-cold",
+            "expected": 229.73599302768707,
+            "actual": 229.73599302768707,
+            "delta": 0
+          },
+          {
+            "name": "fluoroketone-hot",
+            "expected": 8.98644632101059,
+            "actual": 8.98644632101059,
+            "delta": 0
+          },
+          {
+            "name": "fusion-plasma",
+            "expected": 80,
+            "actual": 80,
+            "delta": 0
+          },
+          {
+            "name": "molten-copper",
+            "expected": 1765,
+            "actual": 1765,
+            "delta": 0
+          },
+          {
+            "name": "molten-iron",
+            "expected": 2204.686939716339,
+            "actual": 2204.686939716339,
+            "delta": 0
+          },
+          {
+            "name": "thruster-fuel",
+            "expected": 34129.08937370777,
+            "actual": 34129.08937370777,
+            "delta": 0
+          },
+          {
+            "name": "thruster-oxidizer",
+            "expected": 34188.99511098862,
+            "actual": 34188.99511098862,
+            "delta": 0
+          },
+          {
+            "name": "water",
+            "expected": 52987.509983778,
+            "actual": 52987.509983778,
+            "delta": 0
+          }
+        ]
+      },
+      "post_activation_compare": {
+        "exact": true,
+        "epsilon": 0.000001,
+        "max_abs_delta": 0,
+        "classification": "exact",
+        "rows": [
+          {
+            "name": "fluoroketone-cold",
+            "expected": 229.73599302768707,
+            "actual": 229.73599302768707,
+            "delta": 0
+          },
+          {
+            "name": "fluoroketone-hot",
+            "expected": 8.98644632101059,
+            "actual": 8.98644632101059,
+            "delta": 0
+          },
+          {
+            "name": "fusion-plasma",
+            "expected": 80,
+            "actual": 80,
+            "delta": 0
+          },
+          {
+            "name": "molten-copper",
+            "expected": 1765,
+            "actual": 1765,
+            "delta": 0
+          },
+          {
+            "name": "molten-iron",
+            "expected": 2204.686939716339,
+            "actual": 2204.686939716339,
+            "delta": 0
+          },
+          {
+            "name": "thruster-fuel",
+            "expected": 34129.08937370777,
+            "actual": 34129.08937370777,
+            "delta": 0
+          },
+          {
+            "name": "thruster-oxidizer",
+            "expected": 34188.99511098862,
+            "actual": 34188.99511098862,
+            "delta": 0
+          },
+          {
+            "name": "water",
+            "expected": 52987.509983778,
+            "actual": 52987.509983778,
+            "delta": 0
+          }
+        ]
+      }
+    }
+  },
+  "errors": [],
+  "initial_reset": {
+    "cleanup": {
+      "source": {
+        "success": true,
+        "deleted": {},
+        "tick": 181296
+      },
+      "destination": {
+        "success": true,
+        "deleted": {},
+        "tick": 123581
+      }
+    },
+    "zero": {
+      "source": {
+        "success": true,
+        "tick": 181530,
+        "zero_surfaces": true,
+        "surfaces": {},
+        "zero_storage": true,
+        "game_paused": false,
+        "destination_holds": 0,
+        "locked_platforms": 0,
+        "committed_source_transfer_tombstones": 0,
+        "lab_platform_exports": 0
+      },
+      "destination": {
+        "success": true,
+        "tick": 123812,
+        "zero_surfaces": true,
+        "surfaces": {},
+        "zero_storage": true,
+        "game_paused": false,
+        "destination_holds": 0,
+        "locked_platforms": 0,
+        "committed_source_transfer_tombstones": 0,
+        "lab_platform_exports": 0
+      }
+    },
+    "ok": true
+  },
+  "install": {
+    "source": {
+      "success": true,
+      "tick": 181646,
+      "base": "2.0.77"
+    },
+    "destination": {
+      "success": true,
+      "tick": 123930,
+      "base": "2.0.77"
+    }
+  },
+  "final_reset": {
+    "cleanup": {
+      "source": {
+        "success": true,
+        "deleted": [
+          "fluid-lab-r11-a-control-1783659858333",
+          "fluid-lab-r11-a-machines-1783659861927",
+          "fluid-lab-r11-b-1783659865590",
+          "fluid-lab-r11-c-1783659869019"
+        ],
+        "tick": 183303
+      },
+      "destination": {
+        "success": true,
+        "deleted": [
+          "fluid-lab-r11-d-1783659872287"
+        ],
+        "tick": 125642
+      }
+    },
+    "zero": {
+      "source": {
+        "success": true,
+        "tick": 183477,
+        "zero_surfaces": true,
+        "surfaces": {},
+        "zero_storage": true,
+        "game_paused": false,
+        "destination_holds": 0,
+        "locked_platforms": 0,
+        "committed_source_transfer_tombstones": 0,
+        "lab_platform_exports": 0
+      },
+      "destination": {
+        "success": true,
+        "tick": 125820,
+        "zero_surfaces": true,
+        "surfaces": {},
+        "zero_storage": true,
+        "game_paused": false,
+        "destination_holds": 0,
+        "locked_platforms": 0,
+        "committed_source_transfer_tombstones": 0,
+        "lab_platform_exports": 0
+      }
+    },
+    "ok": true
+  },
+  "finished": "2026-07-10T05:04:48.166Z"
+}
+```
+
+## 2026-07-10 - R11 final-instrument evidence addendum
+
+The first two green full runs above were followed by a line-read correction to the diagnostic only:
+`expected_raw` now copies the serialized table before the production fusion-rejection adjustment instead of
+retaining a mutable reference. No restoration or comparison behavior changed. The two consecutive evidence
+passes on that final instrument completed at `2026-07-10T05:03:56.146Z` and
+`2026-07-10T05:04:48.166Z`.
+
+Both final passes had no errors, exact frozen and post-activation aggregate comparisons (`max |delta| = 0`),
+positive hook-consumption log evidence, and both-instance seven-field cleanup. The untouched serialized raw
+records contained 100 fusion-plasma; production restoration reported 20 engine-rejected output units, and the
+adjusted expected 80 matched both physical censuses exactly. These final two passes are the acceptance evidence.
+
+
+## 2026-07-10T05:07:38.649Z - R11 frozen-injection lab (sections=r11a,r11b,r11c,r11d)
+
+Prediction: **zero fluid loss and zero fluid gain at every rung**.
+
+```json
+{
+  "script": "tests/fluid-lab/run-r11.mjs",
+  "started": "2026-07-10T05:07:02.231Z",
+  "sections": [
+    "r11a",
+    "r11b",
+    "r11c",
+    "r11d"
+  ],
+  "prediction": "ZERO fluid loss and ZERO fluid gain at every R11 rung",
+  "epsilon": 0.000001,
+  "rungs": {
+    "r11a": {
+      "success": true,
+      "prediction": "zero loss and zero gain",
+      "cases": [
+        {
+          "machines": false,
+          "name": "fluid-lab-r11-a-control-1783660030287",
+          "setup": {
+            "success": true,
+            "inserted": 2000,
+            "tank_segment": 207,
+            "member_segment": 207,
+            "shared_segment": true,
+            "platform": 15,
+            "read": {
+              "success": true,
+              "label": "same-tick frozen",
+              "tick": 192676,
+              "game_paused": false,
+              "platform_paused": true,
+              "totals": {
+                "water": 2000
+              },
+              "boxes": [
+                {
+                  "entity": "storage-tank",
+                  "type": "storage-tank",
+                  "unit_number": 17079,
+                  "index": 1,
+                  "direct": {
+                    "name": "water",
+                    "amount": 1976.2845849394798,
+                    "temperature": 25
+                  },
+                  "segment_id": 207,
+                  "segment_contents": {
+                    "water": 2000
+                  }
+                },
+                {
+                  "entity": "pipe",
+                  "type": "pipe",
+                  "unit_number": 17082,
+                  "index": 1,
+                  "direct": {
+                    "name": "water",
+                    "amount": 7.905138313770294,
+                    "temperature": 25
+                  },
+                  "segment_id": 207
+                },
+                {
+                  "entity": "pipe",
+                  "type": "pipe",
+                  "unit_number": 17080,
+                  "index": 1,
+                  "direct": {
+                    "name": "water",
+                    "amount": 7.905138313770294,
+                    "temperature": 25
+                  },
+                  "segment_id": 207
+                },
+                {
+                  "entity": "pipe",
+                  "type": "pipe",
+                  "unit_number": 17081,
+                  "index": 1,
+                  "direct": {
+                    "name": "water",
+                    "amount": 7.905138313770294,
+                    "temperature": 25
+                  },
+                  "segment_id": 207
+                }
+              ],
+              "entity_states": {}
+            }
+          },
+          "activation": {
+            "success": true,
+            "tick": 192727,
+            "changed": 0,
+            "read": {
+              "success": true,
+              "label": "activation same tick",
+              "tick": 192727,
+              "game_paused": false,
+              "platform_paused": false,
+              "totals": {
+                "water": 2000
+              },
+              "boxes": [
+                {
+                  "entity": "storage-tank",
+                  "type": "storage-tank",
+                  "unit_number": 17079,
+                  "index": 1,
+                  "direct": {
+                    "name": "water",
+                    "amount": 1976.2845849394798,
+                    "temperature": 25
+                  },
+                  "segment_id": 207,
+                  "segment_contents": {
+                    "water": 2000
+                  }
+                },
+                {
+                  "entity": "pipe",
+                  "type": "pipe",
+                  "unit_number": 17082,
+                  "index": 1,
+                  "direct": {
+                    "name": "water",
+                    "amount": 7.905138313770294,
+                    "temperature": 25
+                  },
+                  "segment_id": 207
+                },
+                {
+                  "entity": "pipe",
+                  "type": "pipe",
+                  "unit_number": 17080,
+                  "index": 1,
+                  "direct": {
+                    "name": "water",
+                    "amount": 7.905138313770294,
+                    "temperature": 25
+                  },
+                  "segment_id": 207
+                },
+                {
+                  "entity": "pipe",
+                  "type": "pipe",
+                  "unit_number": 17081,
+                  "index": 1,
+                  "direct": {
+                    "name": "water",
+                    "amount": 7.905138313770294,
+                    "temperature": 25
+                  },
+                  "segment_id": 207
+                }
+              ],
+              "entity_states": {}
+            }
+          },
+          "after": {
+            "success": true,
+            "label": "activation +60",
+            "tick": 192817,
+            "game_paused": false,
+            "platform_paused": false,
+            "totals": {
+              "water": 2000
+            },
+            "boxes": [
+              {
+                "entity": "storage-tank",
+                "type": "storage-tank",
+                "unit_number": 17079,
+                "index": 1,
+                "direct": {
+                  "name": "water",
+                  "amount": 1976.2845849394798,
+                  "temperature": 25
+                },
+                "segment_id": 207,
+                "segment_contents": {
+                  "water": 2000
+                }
+              },
+              {
+                "entity": "pipe",
+                "type": "pipe",
+                "unit_number": 17082,
+                "index": 1,
+                "direct": {
+                  "name": "water",
+                  "amount": 7.905138313770294,
+                  "temperature": 25
+                },
+                "segment_id": 207
+              },
+              {
+                "entity": "pipe",
+                "type": "pipe",
+                "unit_number": 17080,
+                "index": 1,
+                "direct": {
+                  "name": "water",
+                  "amount": 7.905138313770294,
+                  "temperature": 25
+                },
+                "segment_id": 207
+              },
+              {
+                "entity": "pipe",
+                "type": "pipe",
+                "unit_number": 17081,
+                "index": 1,
+                "direct": {
+                  "name": "water",
+                  "amount": 7.905138313770294,
+                  "temperature": 25
+                },
+                "segment_id": 207
+              }
+            ],
+            "entity_states": {}
+          },
+          "activation_compare": {
+            "exact": true,
+            "epsilon": 0.000001,
+            "max_abs_delta": 0,
+            "classification": "exact",
+            "rows": [
+              {
+                "name": "water",
+                "expected": 2000,
+                "actual": 2000,
+                "delta": 0
+              }
+            ]
+          },
+          "after_compare": {
+            "exact": true,
+            "epsilon": 0.000001,
+            "max_abs_delta": 0,
+            "classification": "exact",
+            "rows": [
+              {
+                "name": "water",
+                "expected": 2000,
+                "actual": 2000,
+                "delta": 0
+              }
+            ]
+          }
+        },
+        {
+          "machines": true,
+          "name": "fluid-lab-r11-a-machines-1783660033202",
+          "setup": {
+            "success": true,
+            "inserted": 2000,
+            "tank_segment": 208,
+            "member_segment": 208,
+            "shared_segment": true,
+            "platform": 16,
+            "read": {
+              "success": true,
+              "label": "same-tick frozen",
+              "tick": 192864,
+              "game_paused": false,
+              "platform_paused": true,
+              "totals": {
+                "water": 2000
+              },
+              "boxes": [
+                {
+                  "entity": "storage-tank",
+                  "type": "storage-tank",
+                  "unit_number": 17084,
+                  "index": 1,
+                  "direct": {
+                    "name": "water",
+                    "amount": 1976.2845849394798,
+                    "temperature": 25
+                  },
+                  "segment_id": 208,
+                  "segment_contents": {
+                    "water": 2000
+                  }
+                },
+                {
+                  "entity": "pipe",
+                  "type": "pipe",
+                  "unit_number": 17087,
+                  "index": 1,
+                  "direct": {
+                    "name": "water",
+                    "amount": 7.905138313770294,
+                    "temperature": 25
+                  },
+                  "segment_id": 208
+                },
+                {
+                  "entity": "pipe",
+                  "type": "pipe",
+                  "unit_number": 17085,
+                  "index": 1,
+                  "direct": {
+                    "name": "water",
+                    "amount": 7.905138313770294,
+                    "temperature": 25
+                  },
+                  "segment_id": 208
+                },
+                {
+                  "entity": "pump",
+                  "type": "pump",
+                  "unit_number": 17088,
+                  "index": 1
+                },
+                {
+                  "entity": "pipe",
+                  "type": "pipe",
+                  "unit_number": 17086,
+                  "index": 1,
+                  "direct": {
+                    "name": "water",
+                    "amount": 7.905138313770294,
+                    "temperature": 25
+                  },
+                  "segment_id": 208
+                },
+                {
+                  "entity": "pipe",
+                  "type": "pipe",
+                  "unit_number": 17089,
+                  "index": 1,
+                  "segment_id": 209,
+                  "segment_contents": {}
+                },
+                {
+                  "entity": "chemical-plant",
+                  "type": "assembling-machine",
+                  "unit_number": 17090,
+                  "index": 1
+                },
+                {
+                  "entity": "chemical-plant",
+                  "type": "assembling-machine",
+                  "unit_number": 17090,
+                  "index": 2
+                },
+                {
+                  "entity": "chemical-plant",
+                  "type": "assembling-machine",
+                  "unit_number": 17090,
+                  "index": 3
+                }
+              ],
+              "entity_states": [
+                {
+                  "entity": "pump",
+                  "unit_number": 17088,
+                  "active": false,
+                  "frozen": {
+                    "ok": true,
+                    "value": false
+                  }
+                },
+                {
+                  "entity": "chemical-plant",
+                  "unit_number": 17090,
+                  "active": false,
+                  "frozen": {
+                    "ok": true,
+                    "value": false
+                  }
+                }
+              ]
+            }
+          },
+          "activation": {
+            "success": true,
+            "tick": 192912,
+            "changed": 2,
+            "read": {
+              "success": true,
+              "label": "activation same tick",
+              "tick": 192912,
+              "game_paused": false,
+              "platform_paused": false,
+              "totals": {
+                "water": 2000
+              },
+              "boxes": [
+                {
+                  "entity": "storage-tank",
+                  "type": "storage-tank",
+                  "unit_number": 17084,
+                  "index": 1,
+                  "direct": {
+                    "name": "water",
+                    "amount": 1976.2845849394798,
+                    "temperature": 25
+                  },
+                  "segment_id": 208,
+                  "segment_contents": {
+                    "water": 2000
+                  }
+                },
+                {
+                  "entity": "pipe",
+                  "type": "pipe",
+                  "unit_number": 17087,
+                  "index": 1,
+                  "direct": {
+                    "name": "water",
+                    "amount": 7.905138313770294,
+                    "temperature": 25
+                  },
+                  "segment_id": 208
+                },
+                {
+                  "entity": "pipe",
+                  "type": "pipe",
+                  "unit_number": 17085,
+                  "index": 1,
+                  "direct": {
+                    "name": "water",
+                    "amount": 7.905138313770294,
+                    "temperature": 25
+                  },
+                  "segment_id": 208
+                },
+                {
+                  "entity": "pump",
+                  "type": "pump",
+                  "unit_number": 17088,
+                  "index": 1
+                },
+                {
+                  "entity": "pipe",
+                  "type": "pipe",
+                  "unit_number": 17086,
+                  "index": 1,
+                  "direct": {
+                    "name": "water",
+                    "amount": 7.905138313770294,
+                    "temperature": 25
+                  },
+                  "segment_id": 208
+                },
+                {
+                  "entity": "pipe",
+                  "type": "pipe",
+                  "unit_number": 17089,
+                  "index": 1,
+                  "segment_id": 209,
+                  "segment_contents": {}
+                },
+                {
+                  "entity": "chemical-plant",
+                  "type": "assembling-machine",
+                  "unit_number": 17090,
+                  "index": 1
+                },
+                {
+                  "entity": "chemical-plant",
+                  "type": "assembling-machine",
+                  "unit_number": 17090,
+                  "index": 2
+                },
+                {
+                  "entity": "chemical-plant",
+                  "type": "assembling-machine",
+                  "unit_number": 17090,
+                  "index": 3
+                }
+              ],
+              "entity_states": [
+                {
+                  "entity": "pump",
+                  "unit_number": 17088,
+                  "active": true,
+                  "frozen": {
+                    "ok": true,
+                    "value": false
+                  }
+                },
+                {
+                  "entity": "chemical-plant",
+                  "unit_number": 17090,
+                  "active": true,
+                  "frozen": {
+                    "ok": true,
+                    "value": false
+                  }
+                }
+              ]
+            }
+          },
+          "after": {
+            "success": true,
+            "label": "activation +60",
+            "tick": 193004,
+            "game_paused": false,
+            "platform_paused": false,
+            "totals": {
+              "water": 2000
+            },
+            "boxes": [
+              {
+                "entity": "storage-tank",
+                "type": "storage-tank",
+                "unit_number": 17084,
+                "index": 1,
+                "direct": {
+                  "name": "water",
+                  "amount": 1976.2845849394798,
+                  "temperature": 25
+                },
+                "segment_id": 208,
+                "segment_contents": {
+                  "water": 2000
+                }
+              },
+              {
+                "entity": "pipe",
+                "type": "pipe",
+                "unit_number": 17087,
+                "index": 1,
+                "direct": {
+                  "name": "water",
+                  "amount": 7.905138313770294,
+                  "temperature": 25
+                },
+                "segment_id": 208
+              },
+              {
+                "entity": "pipe",
+                "type": "pipe",
+                "unit_number": 17085,
+                "index": 1,
+                "direct": {
+                  "name": "water",
+                  "amount": 7.905138313770294,
+                  "temperature": 25
+                },
+                "segment_id": 208
+              },
+              {
+                "entity": "pump",
+                "type": "pump",
+                "unit_number": 17088,
+                "index": 1
+              },
+              {
+                "entity": "pipe",
+                "type": "pipe",
+                "unit_number": 17086,
+                "index": 1,
+                "direct": {
+                  "name": "water",
+                  "amount": 7.905138313770294,
+                  "temperature": 25
+                },
+                "segment_id": 208
+              },
+              {
+                "entity": "pipe",
+                "type": "pipe",
+                "unit_number": 17089,
+                "index": 1,
+                "segment_id": 209,
+                "segment_contents": {}
+              },
+              {
+                "entity": "chemical-plant",
+                "type": "assembling-machine",
+                "unit_number": 17090,
+                "index": 1
+              },
+              {
+                "entity": "chemical-plant",
+                "type": "assembling-machine",
+                "unit_number": 17090,
+                "index": 2
+              },
+              {
+                "entity": "chemical-plant",
+                "type": "assembling-machine",
+                "unit_number": 17090,
+                "index": 3
+              }
+            ],
+            "entity_states": [
+              {
+                "entity": "pump",
+                "unit_number": 17088,
+                "active": true,
+                "frozen": {
+                  "ok": true,
+                  "value": false
+                }
+              },
+              {
+                "entity": "chemical-plant",
+                "unit_number": 17090,
+                "active": true,
+                "frozen": {
+                  "ok": true,
+                  "value": false
+                }
+              }
+            ]
+          },
+          "activation_compare": {
+            "exact": true,
+            "epsilon": 0.000001,
+            "max_abs_delta": 0,
+            "classification": "exact",
+            "rows": [
+              {
+                "name": "water",
+                "expected": 2000,
+                "actual": 2000,
+                "delta": 0
+              }
+            ]
+          },
+          "after_compare": {
+            "exact": true,
+            "epsilon": 0.000001,
+            "max_abs_delta": 0,
+            "classification": "exact",
+            "rows": [
+              {
+                "name": "water",
+                "expected": 2000,
+                "actual": 2000,
+                "delta": 0
+              }
+            ]
+          }
+        }
+      ]
+    },
+    "r11b": {
+      "success": true,
+      "prediction": "zero loss and zero gain",
+      "name": "fluid-lab-r11-b-1783660036121",
+      "setup": {
+        "success": true,
+        "platform": 17,
+        "writes": [
+          {
+            "entity": "storage-tank",
+            "index": 1,
+            "write": {
+              "accepted": true,
+              "fluid": "water",
+              "amount": 98.81422919034958,
+              "attempts": [
+                {
+                  "fluid": "water",
+                  "ok": true,
+                  "read": {
+                    "name": "water",
+                    "amount": 98.81422919034958,
+                    "temperature": 25
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "entity": "pump",
+            "index": 1,
+            "write": {
+              "accepted": true,
+              "fluid": "water",
+              "amount": 100,
+              "attempts": [
+                {
+                  "fluid": "water",
+                  "ok": true,
+                  "read": {
+                    "name": "water",
+                    "amount": 100,
+                    "temperature": 25
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "entity": "chemical-plant",
+            "index": 1,
+            "write": {
+              "accepted": true,
+              "fluid": "water",
+              "amount": 60,
+              "attempts": [
+                {
+                  "fluid": "water",
+                  "ok": true,
+                  "read": {
+                    "name": "water",
+                    "amount": 60,
+                    "temperature": 25
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "entity": "chemical-plant",
+            "index": 2,
+            "write": {
+              "accepted": true,
+              "fluid": "heavy-oil",
+              "amount": 80,
+              "attempts": [
+                {
+                  "fluid": "water",
+                  "ok": true
+                },
+                {
+                  "fluid": "steam",
+                  "ok": true
+                },
+                {
+                  "fluid": "heavy-oil",
+                  "ok": true,
+                  "read": {
+                    "name": "heavy-oil",
+                    "amount": 80,
+                    "temperature": 25
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "entity": "chemical-plant",
+            "index": 3,
+            "write": {
+              "accepted": true,
+              "fluid": "light-oil",
+              "amount": 100,
+              "attempts": [
+                {
+                  "fluid": "water",
+                  "ok": true
+                },
+                {
+                  "fluid": "steam",
+                  "ok": true
+                },
+                {
+                  "fluid": "heavy-oil",
+                  "ok": true
+                },
+                {
+                  "fluid": "light-oil",
+                  "ok": true,
+                  "read": {
+                    "name": "light-oil",
+                    "amount": 100,
+                    "temperature": 25
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "entity": "boiler",
+            "index": 1,
+            "write": {
+              "accepted": true,
+              "fluid": "water",
+              "amount": 100,
+              "attempts": [
+                {
+                  "fluid": "water",
+                  "ok": true,
+                  "read": {
+                    "name": "water",
+                    "amount": 100,
+                    "temperature": 25
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "entity": "boiler",
+            "index": 2,
+            "write": {
+              "accepted": true,
+              "fluid": "steam",
+              "amount": 100,
+              "attempts": [
+                {
+                  "fluid": "water",
+                  "ok": true
+                },
+                {
+                  "fluid": "steam",
+                  "ok": true,
+                  "read": {
+                    "name": "steam",
+                    "amount": 100,
+                    "temperature": 165
+                  }
+                }
+              ]
+            }
+          }
+        ],
+        "read": {
+          "success": true,
+          "label": "R11b frozen same tick",
+          "tick": 193052,
+          "game_paused": false,
+          "platform_paused": true,
+          "totals": {
+            "water": 260,
+            "heavy-oil": 80,
+            "light-oil": 100,
+            "steam": 100
+          },
+          "boxes": [
+            {
+              "entity": "storage-tank",
+              "type": "storage-tank",
+              "unit_number": 17092,
+              "index": 1,
+              "direct": {
+                "name": "water",
+                "amount": 98.81422919034958,
+                "temperature": 25
+              },
+              "segment_id": 210,
+              "segment_contents": {
+                "water": 100
+              }
+            },
+            {
+              "entity": "pipe",
+              "type": "pipe",
+              "unit_number": 17095,
+              "index": 1,
+              "direct": {
+                "name": "water",
+                "amount": 0.3952568769454956,
+                "temperature": 25
+              },
+              "segment_id": 210
+            },
+            {
+              "entity": "pipe",
+              "type": "pipe",
+              "unit_number": 17093,
+              "index": 1,
+              "direct": {
+                "name": "water",
+                "amount": 0.3952568769454956,
+                "temperature": 25
+              },
+              "segment_id": 210
+            },
+            {
+              "entity": "pump",
+              "type": "pump",
+              "unit_number": 17096,
+              "index": 1,
+              "direct": {
+                "name": "water",
+                "amount": 100,
+                "temperature": 25
+              }
+            },
+            {
+              "entity": "pipe",
+              "type": "pipe",
+              "unit_number": 17094,
+              "index": 1,
+              "direct": {
+                "name": "water",
+                "amount": 0.3952568769454956,
+                "temperature": 25
+              },
+              "segment_id": 210
+            },
+            {
+              "entity": "pipe",
+              "type": "pipe",
+              "unit_number": 17097,
+              "index": 1,
+              "segment_id": 211,
+              "segment_contents": {}
+            },
+            {
+              "entity": "chemical-plant",
+              "type": "assembling-machine",
+              "unit_number": 17098,
+              "index": 1,
+              "direct": {
+                "name": "water",
+                "amount": 60,
+                "temperature": 25
+              }
+            },
+            {
+              "entity": "chemical-plant",
+              "type": "assembling-machine",
+              "unit_number": 17098,
+              "index": 2,
+              "direct": {
+                "name": "heavy-oil",
+                "amount": 80,
+                "temperature": 25
+              }
+            },
+            {
+              "entity": "chemical-plant",
+              "type": "assembling-machine",
+              "unit_number": 17098,
+              "index": 3,
+              "direct": {
+                "name": "light-oil",
+                "amount": 100,
+                "temperature": 25
+              }
+            },
+            {
+              "entity": "boiler",
+              "type": "boiler",
+              "unit_number": 17099,
+              "index": 1,
+              "direct": {
+                "name": "water",
+                "amount": 100,
+                "temperature": 25
+              },
+              "segment_id": 212,
+              "segment_contents": {}
+            },
+            {
+              "entity": "boiler",
+              "type": "boiler",
+              "unit_number": 17099,
+              "index": 2,
+              "direct": {
+                "name": "steam",
+                "amount": 100,
+                "temperature": 165
+              }
+            }
+          ],
+          "entity_states": [
+            {
+              "entity": "pump",
+              "unit_number": 17096,
+              "active": false,
+              "frozen": {
+                "ok": true,
+                "value": false
+              }
+            },
+            {
+              "entity": "chemical-plant",
+              "unit_number": 17098,
+              "active": false,
+              "frozen": {
+                "ok": true,
+                "value": false
+              }
+            },
+            {
+              "entity": "boiler",
+              "unit_number": 17099,
+              "active": false,
+              "frozen": {
+                "ok": true,
+                "value": false
+              }
+            }
+          ]
+        }
+      },
+      "activation": {
+        "success": true,
+        "tick": 193109,
+        "changed": 3,
+        "read": {
+          "success": true,
+          "label": "R11b activation same tick",
+          "tick": 193109,
+          "game_paused": false,
+          "platform_paused": false,
+          "totals": {
+            "water": 260,
+            "heavy-oil": 80,
+            "light-oil": 100,
+            "steam": 100
+          },
+          "boxes": [
+            {
+              "entity": "storage-tank",
+              "type": "storage-tank",
+              "unit_number": 17092,
+              "index": 1,
+              "direct": {
+                "name": "water",
+                "amount": 98.81422919034958,
+                "temperature": 25
+              },
+              "segment_id": 210,
+              "segment_contents": {
+                "water": 100
+              }
+            },
+            {
+              "entity": "pipe",
+              "type": "pipe",
+              "unit_number": 17095,
+              "index": 1,
+              "direct": {
+                "name": "water",
+                "amount": 0.3952568769454956,
+                "temperature": 25
+              },
+              "segment_id": 210
+            },
+            {
+              "entity": "pipe",
+              "type": "pipe",
+              "unit_number": 17093,
+              "index": 1,
+              "direct": {
+                "name": "water",
+                "amount": 0.3952568769454956,
+                "temperature": 25
+              },
+              "segment_id": 210
+            },
+            {
+              "entity": "pump",
+              "type": "pump",
+              "unit_number": 17096,
+              "index": 1
+            },
+            {
+              "entity": "pipe",
+              "type": "pipe",
+              "unit_number": 17094,
+              "index": 1,
+              "direct": {
+                "name": "water",
+                "amount": 0.3952568769454956,
+                "temperature": 25
+              },
+              "segment_id": 210
+            },
+            {
+              "entity": "pipe",
+              "type": "pipe",
+              "unit_number": 17097,
+              "index": 1,
+              "direct": {
+                "name": "water",
+                "amount": 100,
+                "temperature": 25
+              },
+              "segment_id": 211,
+              "segment_contents": {
+                "water": 100
+              }
+            },
+            {
+              "entity": "chemical-plant",
+              "type": "assembling-machine",
+              "unit_number": 17098,
+              "index": 1,
+              "direct": {
+                "name": "water",
+                "amount": 60,
+                "temperature": 25
+              }
+            },
+            {
+              "entity": "chemical-plant",
+              "type": "assembling-machine",
+              "unit_number": 17098,
+              "index": 2,
+              "direct": {
+                "name": "heavy-oil",
+                "amount": 80,
+                "temperature": 25
+              }
+            },
+            {
+              "entity": "chemical-plant",
+              "type": "assembling-machine",
+              "unit_number": 17098,
+              "index": 3,
+              "direct": {
+                "name": "light-oil",
+                "amount": 100,
+                "temperature": 25
+              }
+            },
+            {
+              "entity": "boiler",
+              "type": "boiler",
+              "unit_number": 17099,
+              "index": 1,
+              "direct": {
+                "name": "water",
+                "amount": 100,
+                "temperature": 25
+              },
+              "segment_id": 212,
+              "segment_contents": {}
+            },
+            {
+              "entity": "boiler",
+              "type": "boiler",
+              "unit_number": 17099,
+              "index": 2,
+              "direct": {
+                "name": "steam",
+                "amount": 100,
+                "temperature": 165
+              }
+            }
+          ],
+          "entity_states": [
+            {
+              "entity": "pump",
+              "unit_number": 17096,
+              "active": true,
+              "frozen": {
+                "ok": true,
+                "value": false
+              }
+            },
+            {
+              "entity": "chemical-plant",
+              "unit_number": 17098,
+              "active": true,
+              "frozen": {
+                "ok": true,
+                "value": false
+              }
+            },
+            {
+              "entity": "boiler",
+              "unit_number": 17099,
+              "active": true,
+              "frozen": {
+                "ok": true,
+                "value": false
+              }
+            }
+          ]
+        }
+      },
+      "after": {
+        "success": true,
+        "label": "R11b activation +60",
+        "tick": 193207,
+        "game_paused": false,
+        "platform_paused": false,
+        "totals": {
+          "water": 260,
+          "heavy-oil": 80,
+          "light-oil": 100,
+          "steam": 100
+        },
+        "boxes": [
+          {
+            "entity": "storage-tank",
+            "type": "storage-tank",
+            "unit_number": 17092,
+            "index": 1,
+            "direct": {
+              "name": "water",
+              "amount": 98.81422919034958,
+              "temperature": 25
+            },
+            "segment_id": 210,
+            "segment_contents": {
+              "water": 100
+            }
+          },
+          {
+            "entity": "pipe",
+            "type": "pipe",
+            "unit_number": 17095,
+            "index": 1,
+            "direct": {
+              "name": "water",
+              "amount": 0.3952568769454956,
+              "temperature": 25
+            },
+            "segment_id": 210
+          },
+          {
+            "entity": "pipe",
+            "type": "pipe",
+            "unit_number": 17093,
+            "index": 1,
+            "direct": {
+              "name": "water",
+              "amount": 0.3952568769454956,
+              "temperature": 25
+            },
+            "segment_id": 210
+          },
+          {
+            "entity": "pump",
+            "type": "pump",
+            "unit_number": 17096,
+            "index": 1
+          },
+          {
+            "entity": "pipe",
+            "type": "pipe",
+            "unit_number": 17094,
+            "index": 1,
+            "direct": {
+              "name": "water",
+              "amount": 0.3952568769454956,
+              "temperature": 25
+            },
+            "segment_id": 210
+          },
+          {
+            "entity": "pipe",
+            "type": "pipe",
+            "unit_number": 17097,
+            "index": 1,
+            "direct": {
+              "name": "water",
+              "amount": 100,
+              "temperature": 25
+            },
+            "segment_id": 211,
+            "segment_contents": {
+              "water": 100
+            }
+          },
+          {
+            "entity": "chemical-plant",
+            "type": "assembling-machine",
+            "unit_number": 17098,
+            "index": 1,
+            "direct": {
+              "name": "water",
+              "amount": 60,
+              "temperature": 25
+            }
+          },
+          {
+            "entity": "chemical-plant",
+            "type": "assembling-machine",
+            "unit_number": 17098,
+            "index": 2,
+            "direct": {
+              "name": "heavy-oil",
+              "amount": 80,
+              "temperature": 25
+            }
+          },
+          {
+            "entity": "chemical-plant",
+            "type": "assembling-machine",
+            "unit_number": 17098,
+            "index": 3,
+            "direct": {
+              "name": "light-oil",
+              "amount": 100,
+              "temperature": 25
+            }
+          },
+          {
+            "entity": "boiler",
+            "type": "boiler",
+            "unit_number": 17099,
+            "index": 1,
+            "direct": {
+              "name": "water",
+              "amount": 100,
+              "temperature": 25
+            },
+            "segment_id": 212,
+            "segment_contents": {}
+          },
+          {
+            "entity": "boiler",
+            "type": "boiler",
+            "unit_number": 17099,
+            "index": 2,
+            "direct": {
+              "name": "steam",
+              "amount": 100,
+              "temperature": 165
+            }
+          }
+        ],
+        "entity_states": [
+          {
+            "entity": "pump",
+            "unit_number": 17096,
+            "active": true,
+            "frozen": {
+              "ok": true,
+              "value": false
+            }
+          },
+          {
+            "entity": "chemical-plant",
+            "unit_number": 17098,
+            "active": true,
+            "frozen": {
+              "ok": true,
+              "value": false
+            }
+          },
+          {
+            "entity": "boiler",
+            "unit_number": 17099,
+            "active": true,
+            "frozen": {
+              "ok": true,
+              "value": false
+            }
+          }
+        ]
+      },
+      "immediate_compare": {
+        "exact": true,
+        "epsilon": 0.000001,
+        "max_abs_delta": 0,
+        "classification": "exact",
+        "rows": [
+          {
+            "name": "heavy-oil",
+            "expected": 80,
+            "actual": 80,
+            "delta": 0
+          },
+          {
+            "name": "light-oil",
+            "expected": 100,
+            "actual": 100,
+            "delta": 0
+          },
+          {
+            "name": "steam",
+            "expected": 100,
+            "actual": 100,
+            "delta": 0
+          },
+          {
+            "name": "water",
+            "expected": 260,
+            "actual": 260,
+            "delta": 0
+          }
+        ]
+      },
+      "settled_compare": {
+        "exact": true,
+        "epsilon": 0.000001,
+        "max_abs_delta": 0,
+        "classification": "exact",
+        "rows": [
+          {
+            "name": "heavy-oil",
+            "expected": 80,
+            "actual": 80,
+            "delta": 0
+          },
+          {
+            "name": "light-oil",
+            "expected": 100,
+            "actual": 100,
+            "delta": 0
+          },
+          {
+            "name": "steam",
+            "expected": 100,
+            "actual": 100,
+            "delta": 0
+          },
+          {
+            "name": "water",
+            "expected": 260,
+            "actual": 260,
+            "delta": 0
+          }
+        ]
+      }
+    },
+    "r11c": {
+      "success": true,
+      "prediction": "zero loss and zero gain",
+      "name": "fluid-lab-r11-c-1783660039293",
+      "import_state_replication": {
+        "entity_creation": "module/import_phases/entity_creation.lua:69 creates through Deserializer; lines 78-91 immediately set active=false for transfer entities",
+        "platform_pause": "module/core/import-pipeline.lua:240-245 pauses the transfer platform immediately after creation"
+      },
+      "setup": {
+        "success": true,
+        "platform": 18,
+        "rows": [
+          {
+            "name": "pipe",
+            "type": "pipe",
+            "activatable": false,
+            "before": {
+              "frozen": {
+                "ok": true,
+                "value": false
+              },
+              "tick": 193252
+            },
+            "writes": [
+              {
+                "index": 1,
+                "write": {
+                  "accepted": true,
+                  "fluid": "water",
+                  "amount": 50,
+                  "attempts": [
+                    {
+                      "fluid": "water",
+                      "ok": true,
+                      "read": {
+                        "name": "water",
+                        "amount": 50,
+                        "temperature": 25
+                      }
+                    }
+                  ]
+                }
+              }
+            ],
+            "accepted": true,
+            "fallback_used": false,
+            "after": {
+              "frozen": {
+                "ok": true,
+                "value": false
+              },
+              "tick": 193252
+            }
+          },
+          {
+            "name": "storage-tank",
+            "type": "storage-tank",
+            "activatable": false,
+            "before": {
+              "frozen": {
+                "ok": true,
+                "value": false
+              },
+              "tick": 193252
+            },
+            "writes": [
+              {
+                "index": 1,
+                "write": {
+                  "accepted": true,
+                  "fluid": "water",
+                  "amount": 50,
+                  "attempts": [
+                    {
+                      "fluid": "water",
+                      "ok": true,
+                      "read": {
+                        "name": "water",
+                        "amount": 50,
+                        "temperature": 25
+                      }
+                    }
+                  ]
+                }
+              }
+            ],
+            "accepted": true,
+            "fallback_used": false,
+            "after": {
+              "frozen": {
+                "ok": true,
+                "value": false
+              },
+              "tick": 193252
+            }
+          },
+          {
+            "name": "pump",
+            "type": "pump",
+            "activatable": true,
+            "before": {
+              "frozen": {
+                "ok": true,
+                "value": false
+              },
+              "tick": 193252
+            },
+            "writes": [
+              {
+                "index": 1,
+                "write": {
+                  "accepted": true,
+                  "fluid": "water",
+                  "amount": 50,
+                  "attempts": [
+                    {
+                      "fluid": "water",
+                      "ok": true,
+                      "read": {
+                        "name": "water",
+                        "amount": 50,
+                        "temperature": 25
+                      }
+                    }
+                  ]
+                }
+              }
+            ],
+            "accepted": true,
+            "fallback_used": false,
+            "after": {
+              "frozen": {
+                "ok": true,
+                "value": false
+              },
+              "tick": 193252
+            }
+          },
+          {
+            "name": "chemical-plant",
+            "type": "assembling-machine",
+            "activatable": true,
+            "before": {
+              "frozen": {
+                "ok": true,
+                "value": false
+              },
+              "tick": 193252
+            },
+            "writes": [
+              {
+                "index": 1,
+                "write": {
+                  "accepted": true,
+                  "fluid": "water",
+                  "amount": 50,
+                  "attempts": [
+                    {
+                      "fluid": "water",
+                      "ok": true,
+                      "read": {
+                        "name": "water",
+                        "amount": 50,
+                        "temperature": 25
+                      }
+                    }
+                  ]
+                }
+              },
+              {
+                "index": 2,
+                "write": {
+                  "accepted": true,
+                  "fluid": "heavy-oil",
+                  "amount": 50,
+                  "attempts": [
+                    {
+                      "fluid": "water",
+                      "ok": true
+                    },
+                    {
+                      "fluid": "steam",
+                      "ok": true
+                    },
+                    {
+                      "fluid": "heavy-oil",
+                      "ok": true,
+                      "read": {
+                        "name": "heavy-oil",
+                        "amount": 50,
+                        "temperature": 25
+                      }
+                    }
+                  ]
+                }
+              },
+              {
+                "index": 3,
+                "write": {
+                  "accepted": true,
+                  "fluid": "light-oil",
+                  "amount": 50,
+                  "attempts": [
+                    {
+                      "fluid": "water",
+                      "ok": true
+                    },
+                    {
+                      "fluid": "steam",
+                      "ok": true
+                    },
+                    {
+                      "fluid": "heavy-oil",
+                      "ok": true
+                    },
+                    {
+                      "fluid": "light-oil",
+                      "ok": true,
+                      "read": {
+                        "name": "light-oil",
+                        "amount": 50,
+                        "temperature": 25
+                      }
+                    }
+                  ]
+                }
+              }
+            ],
+            "accepted": true,
+            "fallback_used": false,
+            "after": {
+              "frozen": {
+                "ok": true,
+                "value": false
+              },
+              "tick": 193252
+            }
+          },
+          {
+            "name": "boiler",
+            "type": "boiler",
+            "activatable": true,
+            "before": {
+              "frozen": {
+                "ok": true,
+                "value": false
+              },
+              "tick": 193252
+            },
+            "writes": [
+              {
+                "index": 1,
+                "write": {
+                  "accepted": true,
+                  "fluid": "water",
+                  "amount": 50,
+                  "attempts": [
+                    {
+                      "fluid": "water",
+                      "ok": true,
+                      "read": {
+                        "name": "water",
+                        "amount": 50,
+                        "temperature": 25
+                      }
+                    }
+                  ]
+                }
+              },
+              {
+                "index": 2,
+                "write": {
+                  "accepted": true,
+                  "fluid": "steam",
+                  "amount": 50,
+                  "attempts": [
+                    {
+                      "fluid": "water",
+                      "ok": true
+                    },
+                    {
+                      "fluid": "steam",
+                      "ok": true,
+                      "read": {
+                        "name": "steam",
+                        "amount": 50,
+                        "temperature": 165
+                      }
+                    }
+                  ]
+                }
+              }
+            ],
+            "accepted": true,
+            "fallback_used": false,
+            "after": {
+              "frozen": {
+                "ok": true,
+                "value": false
+              },
+              "tick": 193252
+            }
+          }
+        ],
+        "read": {
+          "success": true,
+          "label": "R11c before first activation",
+          "tick": 193252,
+          "game_paused": false,
+          "platform_paused": true,
+          "totals": {
+            "water": 200,
+            "heavy-oil": 50,
+            "light-oil": 50,
+            "steam": 50
+          },
+          "boxes": [
+            {
+              "entity": "pipe",
+              "type": "pipe",
+              "unit_number": 17101,
+              "index": 1,
+              "direct": {
+                "name": "water",
+                "amount": 50,
+                "temperature": 25
+              },
+              "segment_id": 213,
+              "segment_contents": {
+                "water": 50
+              }
+            },
+            {
+              "entity": "storage-tank",
+              "type": "storage-tank",
+              "unit_number": 17102,
+              "index": 1,
+              "direct": {
+                "name": "water",
+                "amount": 50,
+                "temperature": 25
+              },
+              "segment_id": 214,
+              "segment_contents": {
+                "water": 50
+              }
+            },
+            {
+              "entity": "pump",
+              "type": "pump",
+              "unit_number": 17103,
+              "index": 1,
+              "direct": {
+                "name": "water",
+                "amount": 50,
+                "temperature": 25
+              }
+            },
+            {
+              "entity": "chemical-plant",
+              "type": "assembling-machine",
+              "unit_number": 17104,
+              "index": 1,
+              "direct": {
+                "name": "water",
+                "amount": 50,
+                "temperature": 25
+              }
+            },
+            {
+              "entity": "chemical-plant",
+              "type": "assembling-machine",
+              "unit_number": 17104,
+              "index": 2,
+              "direct": {
+                "name": "heavy-oil",
+                "amount": 50,
+                "temperature": 25
+              }
+            },
+            {
+              "entity": "chemical-plant",
+              "type": "assembling-machine",
+              "unit_number": 17104,
+              "index": 3,
+              "direct": {
+                "name": "light-oil",
+                "amount": 50,
+                "temperature": 25
+              }
+            },
+            {
+              "entity": "boiler",
+              "type": "boiler",
+              "unit_number": 17105,
+              "index": 1,
+              "direct": {
+                "name": "water",
+                "amount": 50,
+                "temperature": 25
+              },
+              "segment_id": 215,
+              "segment_contents": {}
+            },
+            {
+              "entity": "boiler",
+              "type": "boiler",
+              "unit_number": 17105,
+              "index": 2,
+              "direct": {
+                "name": "steam",
+                "amount": 50,
+                "temperature": 165
+              }
+            }
+          ],
+          "entity_states": [
+            {
+              "entity": "pump",
+              "unit_number": 17103,
+              "active": false,
+              "frozen": {
+                "ok": true,
+                "value": false
+              }
+            },
+            {
+              "entity": "chemical-plant",
+              "unit_number": 17104,
+              "active": false,
+              "frozen": {
+                "ok": true,
+                "value": false
+              }
+            },
+            {
+              "entity": "boiler",
+              "unit_number": 17105,
+              "active": false,
+              "frozen": {
+                "ok": true,
+                "value": false
+              }
+            }
+          ]
+        }
+      },
+      "activation": {
+        "success": true,
+        "tick": 193302,
+        "changed": 3,
+        "read": {
+          "success": true,
+          "label": "R11c activation same tick",
+          "tick": 193302,
+          "game_paused": false,
+          "platform_paused": false,
+          "totals": {
+            "water": 200,
+            "heavy-oil": 50,
+            "light-oil": 50,
+            "steam": 50
+          },
+          "boxes": [
+            {
+              "entity": "pipe",
+              "type": "pipe",
+              "unit_number": 17101,
+              "index": 1,
+              "direct": {
+                "name": "water",
+                "amount": 50,
+                "temperature": 25
+              },
+              "segment_id": 213,
+              "segment_contents": {
+                "water": 50
+              }
+            },
+            {
+              "entity": "storage-tank",
+              "type": "storage-tank",
+              "unit_number": 17102,
+              "index": 1,
+              "direct": {
+                "name": "water",
+                "amount": 50,
+                "temperature": 25
+              },
+              "segment_id": 214,
+              "segment_contents": {
+                "water": 50
+              }
+            },
+            {
+              "entity": "pump",
+              "type": "pump",
+              "unit_number": 17103,
+              "index": 1,
+              "direct": {
+                "name": "water",
+                "amount": 50,
+                "temperature": 25
+              }
+            },
+            {
+              "entity": "chemical-plant",
+              "type": "assembling-machine",
+              "unit_number": 17104,
+              "index": 1,
+              "direct": {
+                "name": "water",
+                "amount": 50,
+                "temperature": 25
+              }
+            },
+            {
+              "entity": "chemical-plant",
+              "type": "assembling-machine",
+              "unit_number": 17104,
+              "index": 2,
+              "direct": {
+                "name": "heavy-oil",
+                "amount": 50,
+                "temperature": 25
+              }
+            },
+            {
+              "entity": "chemical-plant",
+              "type": "assembling-machine",
+              "unit_number": 17104,
+              "index": 3,
+              "direct": {
+                "name": "light-oil",
+                "amount": 50,
+                "temperature": 25
+              }
+            },
+            {
+              "entity": "boiler",
+              "type": "boiler",
+              "unit_number": 17105,
+              "index": 1,
+              "direct": {
+                "name": "water",
+                "amount": 50,
+                "temperature": 25
+              },
+              "segment_id": 215,
+              "segment_contents": {}
+            },
+            {
+              "entity": "boiler",
+              "type": "boiler",
+              "unit_number": 17105,
+              "index": 2,
+              "direct": {
+                "name": "steam",
+                "amount": 50,
+                "temperature": 165
+              }
+            }
+          ],
+          "entity_states": [
+            {
+              "entity": "pump",
+              "unit_number": 17103,
+              "active": true,
+              "frozen": {
+                "ok": true,
+                "value": false
+              }
+            },
+            {
+              "entity": "chemical-plant",
+              "unit_number": 17104,
+              "active": true,
+              "frozen": {
+                "ok": true,
+                "value": false
+              }
+            },
+            {
+              "entity": "boiler",
+              "unit_number": 17105,
+              "active": true,
+              "frozen": {
+                "ok": true,
+                "value": false
+              }
+            }
+          ]
+        }
+      },
+      "after": {
+        "success": true,
+        "label": "R11c activation +60",
+        "tick": 193391,
+        "game_paused": false,
+        "platform_paused": false,
+        "totals": {
+          "water": 200,
+          "heavy-oil": 50,
+          "light-oil": 50,
+          "steam": 50
+        },
+        "boxes": [
+          {
+            "entity": "pipe",
+            "type": "pipe",
+            "unit_number": 17101,
+            "index": 1,
+            "direct": {
+              "name": "water",
+              "amount": 50,
+              "temperature": 25
+            },
+            "segment_id": 213,
+            "segment_contents": {
+              "water": 50
+            }
+          },
+          {
+            "entity": "storage-tank",
+            "type": "storage-tank",
+            "unit_number": 17102,
+            "index": 1,
+            "direct": {
+              "name": "water",
+              "amount": 50,
+              "temperature": 25
+            },
+            "segment_id": 214,
+            "segment_contents": {
+              "water": 50
+            }
+          },
+          {
+            "entity": "pump",
+            "type": "pump",
+            "unit_number": 17103,
+            "index": 1,
+            "direct": {
+              "name": "water",
+              "amount": 50,
+              "temperature": 25
+            }
+          },
+          {
+            "entity": "chemical-plant",
+            "type": "assembling-machine",
+            "unit_number": 17104,
+            "index": 1,
+            "direct": {
+              "name": "water",
+              "amount": 50,
+              "temperature": 25
+            }
+          },
+          {
+            "entity": "chemical-plant",
+            "type": "assembling-machine",
+            "unit_number": 17104,
+            "index": 2,
+            "direct": {
+              "name": "heavy-oil",
+              "amount": 50,
+              "temperature": 25
+            }
+          },
+          {
+            "entity": "chemical-plant",
+            "type": "assembling-machine",
+            "unit_number": 17104,
+            "index": 3,
+            "direct": {
+              "name": "light-oil",
+              "amount": 50,
+              "temperature": 25
+            }
+          },
+          {
+            "entity": "boiler",
+            "type": "boiler",
+            "unit_number": 17105,
+            "index": 1,
+            "direct": {
+              "name": "water",
+              "amount": 50,
+              "temperature": 25
+            },
+            "segment_id": 215,
+            "segment_contents": {}
+          },
+          {
+            "entity": "boiler",
+            "type": "boiler",
+            "unit_number": 17105,
+            "index": 2,
+            "direct": {
+              "name": "steam",
+              "amount": 50,
+              "temperature": 165
+            }
+          }
+        ],
+        "entity_states": [
+          {
+            "entity": "pump",
+            "unit_number": 17103,
+            "active": true,
+            "frozen": {
+              "ok": true,
+              "value": false
+            }
+          },
+          {
+            "entity": "chemical-plant",
+            "unit_number": 17104,
+            "active": true,
+            "frozen": {
+              "ok": true,
+              "value": false
+            }
+          },
+          {
+            "entity": "boiler",
+            "unit_number": 17105,
+            "active": true,
+            "frozen": {
+              "ok": true,
+              "value": false
+            }
+          }
+        ]
+      },
+      "immediate_compare": {
+        "exact": true,
+        "epsilon": 0.000001,
+        "max_abs_delta": 0,
+        "classification": "exact",
+        "rows": [
+          {
+            "name": "heavy-oil",
+            "expected": 50,
+            "actual": 50,
+            "delta": 0
+          },
+          {
+            "name": "light-oil",
+            "expected": 50,
+            "actual": 50,
+            "delta": 0
+          },
+          {
+            "name": "steam",
+            "expected": 50,
+            "actual": 50,
+            "delta": 0
+          },
+          {
+            "name": "water",
+            "expected": 200,
+            "actual": 200,
+            "delta": 0
+          }
+        ]
+      },
+      "settled_compare": {
+        "exact": true,
+        "epsilon": 0.000001,
+        "max_abs_delta": 0,
+        "classification": "exact",
+        "rows": [
+          {
+            "name": "heavy-oil",
+            "expected": 50,
+            "actual": 50,
+            "delta": 0
+          },
+          {
+            "name": "light-oil",
+            "expected": 50,
+            "actual": 50,
+            "delta": 0
+          },
+          {
+            "name": "steam",
+            "expected": 50,
+            "actual": 50,
+            "delta": 0
+          },
+          {
+            "name": "water",
+            "expected": 200,
+            "actual": 200,
+            "delta": 0
+          }
+        ]
+      }
+    },
+    "r11d": {
+      "success": true,
+      "prediction": "zero loss and zero gain",
+      "name": "fluid-lab-r11-d-1783660042166",
+      "seed": {
+        "success": true,
+        "index": 2,
+        "count": 1
+      },
+      "clone": {
+        "success": true,
+        "tick": 193482,
+        "remote": {
+          "success": true,
+          "job_id": "import_5",
+          "platform_name": "fluid-lab-r11-d-1783660042166",
+          "source_platform": "test",
+          "entity_count": 1359,
+          "message": "Clone job started - use /step-tick to process"
+        }
+      },
+      "clone_index": 19,
+      "armed": {
+        "success": true,
+        "tick": 135935
+      },
+      "transfer_output": "═══════════════════════════════════════\n🚀 Transfer Platform: fluid-lab-r11-d-1783660042166\n═══════════════════════════════════════\nDestination: Instance 1351385547\nPlatform: [19] fluid-lab-r11-d-1783660042166\n\n[1/2] Locking + queueing export...\n[2/2] ✓ Export queued: 006_fluid-lab-r11-d-1783660042166\n⏳ Exporting asynchronously (this may take a while)...\n\nThe transfer will continue automatically:\n  1. Export completes → Sent to controller\n  2. Controller → Sends to destination instance\n  3. Destination imports → Validates counts\n  4. On success → Source deleted automatically\n  5. On failure → Source unlocked automatically\n\n💡 Use /list-platforms to track progress\n═══════════════════════════════════════",
+      "wall_ms": 6845,
+      "debug_file": "/clusterio/data/instances/clusterio-host-2-instance-1/script-output/debug_import_result_fluid-lab-r11-d-1783660042166_136144.json",
+      "validation_success": true,
+      "failed_stage": null,
+      "hook_log": {
+        "needle": "[Import][TEST][R11] Frozen fluid injection measured for fluid-lab-r11-d-1783660042166",
+        "found": true,
+        "line": "292.417 Script @__level__/modules/surface_export/core/import-completion.lua:364: [Import][TEST][R11] Frozen fluid injection measured for fluid-lab-r11-d-1783660042166 at tick 136144"
+      },
+      "measurement": {
+        "hook_consumed": true,
+        "platform_name": "fluid-lab-r11-d-1783660042166",
+        "injection_started_tick": 136144,
+        "frozen_census_tick": 136144,
+        "platform_paused": true,
+        "expected_by_name": {
+          "molten-iron": 2311.302008152008,
+          "thruster-fuel": 37187.916553378105,
+          "thruster-oxidizer": 37246.66960835457,
+          "water": 52729.72016096115,
+          "fluoroketone-cold": 229.92952769994736,
+          "fluoroketone-hot": 5.8176186084747314,
+          "fusion-plasma": 80,
+          "molten-copper": 2063.7102615833282
+        },
+        "expected_raw": {
+          "molten-iron@1500.0C": 2311.302008152008,
+          "thruster-fuel@25.0C": 37187.916553378105,
+          "thruster-oxidizer@25.0C": 37246.66960835457,
+          "water@15.0C": 52729.72016096115,
+          "fluoroketone-cold@-150.0C": 229.92952769994736,
+          "fluoroketone-hot@180.0C": 5.8176186084747314,
+          "fusion-plasma@1074137.4C": 10,
+          "fusion-plasma@1186487.6C": 20,
+          "molten-copper@1100.0C": 2063.7102615833282,
+          "fusion-plasma@1921452.3C": 10,
+          "fusion-plasma@1074139.3C": 10,
+          "fusion-plasma@1071537.3C": 10,
+          "fusion-plasma@1182302.9C": 10,
+          "fusion-plasma@1922198.1C": 10,
+          "fusion-plasma@1182302.6C": 10,
+          "fusion-plasma@1071542.9C": 10
+        },
+        "frozen_actual_raw": {
+          "fluoroketone-hot@180.0C": 5.8176186084747314,
+          "fusion-plasma@1074137.4C": 10,
+          "fusion-plasma@1186487.6C": 20,
+          "fluoroketone-cold@-150.0C": 229.92952769994736,
+          "fusion-plasma@1074139.3C": 10,
+          "molten-iron@1500.0C": 2311.302008152008,
+          "molten-copper@1100.0C": 2063.7102615833282,
+          "thruster-fuel@25.0C": 37187.916553378105,
+          "thruster-oxidizer@25.0C": 37246.66960835457,
+          "fusion-plasma@1071537.3C": 10,
+          "fusion-plasma@1182302.9C": 10,
+          "fusion-plasma@1071542.9C": 10,
+          "fusion-plasma@1182302.6C": 10,
+          "water@15.0C": 52729.72016096115
+        },
+        "frozen_actual_by_name": {
+          "fluoroketone-hot": 5.8176186084747314,
+          "fusion-plasma": 80,
+          "fluoroketone-cold": 229.92952769994736,
+          "molten-iron": 2311.302008152008,
+          "molten-copper": 2063.7102615833282,
+          "thruster-fuel": 37187.916553378105,
+          "thruster-oxidizer": 37246.66960835457,
+          "water": 52729.72016096115
+        },
+        "frozen_actual_total": 131855.06573873758,
+        "write_rejected": {
+          "fusion-plasma": 20
+        },
+        "activation_census_tick": 136144,
+        "post_activation_actual_by_name": {
+          "fluoroketone-hot": 5.8176186084747314,
+          "fusion-plasma": 80,
+          "fluoroketone-cold": 229.92952769994736,
+          "molten-iron": 2311.302008152008,
+          "molten-copper": 2063.7102615833282,
+          "thruster-fuel": 37187.916553378105,
+          "thruster-oxidizer": 37246.66960835457,
+          "water": 52729.72016096115
+        },
+        "post_activation_actual_raw": {
+          "fluoroketone-hot@180.0C": 5.8176186084747314,
+          "fusion-plasma@1074137.4C": 10,
+          "fusion-plasma@1186487.6C": 20,
+          "fluoroketone-cold@-150.0C": 229.92952769994736,
+          "fusion-plasma@1074139.3C": 10,
+          "molten-iron@1500.0C": 2311.302008152008,
+          "molten-copper@1100.0C": 2063.7102615833282,
+          "thruster-fuel@25.0C": 37187.916553378105,
+          "thruster-oxidizer@25.0C": 37246.66960835457,
+          "fusion-plasma@1071537.3C": 10,
+          "fusion-plasma@1182302.9C": 10,
+          "fusion-plasma@1071542.9C": 10,
+          "fusion-plasma@1182302.6C": 10,
+          "water@15.0C": 52729.72016096115
+        },
+        "post_activation_actual_total": 131855.06573873758
+      },
+      "frozen_compare": {
+        "exact": true,
+        "epsilon": 0.000001,
+        "max_abs_delta": 0,
+        "classification": "exact",
+        "rows": [
+          {
+            "name": "fluoroketone-cold",
+            "expected": 229.92952769994736,
+            "actual": 229.92952769994736,
+            "delta": 0
+          },
+          {
+            "name": "fluoroketone-hot",
+            "expected": 5.8176186084747314,
+            "actual": 5.8176186084747314,
+            "delta": 0
+          },
+          {
+            "name": "fusion-plasma",
+            "expected": 80,
+            "actual": 80,
+            "delta": 0
+          },
+          {
+            "name": "molten-copper",
+            "expected": 2063.7102615833282,
+            "actual": 2063.7102615833282,
+            "delta": 0
+          },
+          {
+            "name": "molten-iron",
+            "expected": 2311.302008152008,
+            "actual": 2311.302008152008,
+            "delta": 0
+          },
+          {
+            "name": "thruster-fuel",
+            "expected": 37187.916553378105,
+            "actual": 37187.916553378105,
+            "delta": 0
+          },
+          {
+            "name": "thruster-oxidizer",
+            "expected": 37246.66960835457,
+            "actual": 37246.66960835457,
+            "delta": 0
+          },
+          {
+            "name": "water",
+            "expected": 52729.72016096115,
+            "actual": 52729.72016096115,
+            "delta": 0
+          }
+        ]
+      },
+      "post_activation_compare": {
+        "exact": true,
+        "epsilon": 0.000001,
+        "max_abs_delta": 0,
+        "classification": "exact",
+        "rows": [
+          {
+            "name": "fluoroketone-cold",
+            "expected": 229.92952769994736,
+            "actual": 229.92952769994736,
+            "delta": 0
+          },
+          {
+            "name": "fluoroketone-hot",
+            "expected": 5.8176186084747314,
+            "actual": 5.8176186084747314,
+            "delta": 0
+          },
+          {
+            "name": "fusion-plasma",
+            "expected": 80,
+            "actual": 80,
+            "delta": 0
+          },
+          {
+            "name": "molten-copper",
+            "expected": 2063.7102615833282,
+            "actual": 2063.7102615833282,
+            "delta": 0
+          },
+          {
+            "name": "molten-iron",
+            "expected": 2311.302008152008,
+            "actual": 2311.302008152008,
+            "delta": 0
+          },
+          {
+            "name": "thruster-fuel",
+            "expected": 37187.916553378105,
+            "actual": 37187.916553378105,
+            "delta": 0
+          },
+          {
+            "name": "thruster-oxidizer",
+            "expected": 37246.66960835457,
+            "actual": 37246.66960835457,
+            "delta": 0
+          },
+          {
+            "name": "water",
+            "expected": 52729.72016096115,
+            "actual": 52729.72016096115,
+            "delta": 0
+          }
+        ]
+      }
+    }
+  },
+  "errors": [],
+  "initial_reset": {
+    "cleanup": {
+      "source": {
+        "success": true,
+        "deleted": {},
+        "tick": 192283
+      },
+      "destination": {
+        "success": true,
+        "deleted": {},
+        "tick": 134627
+      }
+    },
+    "zero": {
+      "source": {
+        "success": true,
+        "tick": 192488,
+        "zero_surfaces": true,
+        "surfaces": {},
+        "zero_storage": true,
+        "game_paused": false,
+        "destination_holds": 0,
+        "locked_platforms": 0,
+        "committed_source_transfer_tombstones": 0,
+        "lab_platform_exports": 0
+      },
+      "destination": {
+        "success": true,
+        "tick": 134833,
+        "zero_surfaces": true,
+        "surfaces": {},
+        "zero_storage": true,
+        "game_paused": false,
+        "destination_holds": 0,
+        "locked_platforms": 0,
+        "committed_source_transfer_tombstones": 0,
+        "lab_platform_exports": 0
+      }
+    },
+    "ok": true
+  },
+  "install": {
+    "source": {
+      "success": true,
+      "tick": 192585,
+      "base": "2.0.77"
+    },
+    "destination": {
+      "success": true,
+      "tick": 134926,
+      "base": "2.0.77"
+    }
+  },
+  "final_reset": {
+    "cleanup": {
+      "source": {
+        "success": true,
+        "deleted": [
+          "fluid-lab-r11-a-control-1783660030287",
+          "fluid-lab-r11-a-machines-1783660033202",
+          "fluid-lab-r11-b-1783660036121",
+          "fluid-lab-r11-c-1783660039293"
+        ],
+        "tick": 194129
+      },
+      "destination": {
+        "success": true,
+        "deleted": [
+          "fluid-lab-r11-d-1783660042166"
+        ],
+        "tick": 136540
+      }
+    },
+    "zero": {
+      "source": {
+        "success": true,
+        "tick": 194305,
+        "zero_surfaces": true,
+        "surfaces": {},
+        "zero_storage": true,
+        "game_paused": false,
+        "destination_holds": 0,
+        "locked_platforms": 0,
+        "committed_source_transfer_tombstones": 0,
+        "lab_platform_exports": 0
+      },
+      "destination": {
+        "success": true,
+        "tick": 136719,
+        "zero_surfaces": true,
+        "surfaces": {},
+        "zero_storage": true,
+        "game_paused": false,
+        "destination_holds": 0,
+        "locked_platforms": 0,
+        "committed_source_transfer_tombstones": 0,
+        "lab_platform_exports": 0
+      }
+    },
+    "ok": true
+  },
+  "finished": "2026-07-10T05:07:38.649Z"
+}
+```
+
+
+## 2026-07-10T05:08:25.511Z - R11 frozen-injection lab (sections=r11a,r11b,r11c,r11d)
+
+Prediction: **zero fluid loss and zero fluid gain at every rung**.
+
+```json
+{
+  "script": "tests/fluid-lab/run-r11.mjs",
+  "started": "2026-07-10T05:07:49.812Z",
+  "sections": [
+    "r11a",
+    "r11b",
+    "r11c",
+    "r11d"
+  ],
+  "prediction": "ZERO fluid loss and ZERO fluid gain at every R11 rung",
+  "epsilon": 0.000001,
+  "rungs": {
+    "r11a": {
+      "success": true,
+      "prediction": "zero loss and zero gain",
+      "cases": [
+        {
+          "machines": false,
+          "name": "fluid-lab-r11-a-control-1783660077058",
+          "setup": {
+            "success": true,
+            "inserted": 2000,
+            "tank_segment": 286,
+            "member_segment": 286,
+            "shared_segment": true,
+            "platform": 20,
+            "read": {
+              "success": true,
+              "label": "same-tick frozen",
+              "tick": 195581,
+              "game_paused": false,
+              "platform_paused": true,
+              "totals": {
+                "water": 2000
+              },
+              "boxes": [
+                {
+                  "entity": "storage-tank",
+                  "type": "storage-tank",
+                  "unit_number": 18465,
+                  "index": 1,
+                  "direct": {
+                    "name": "water",
+                    "amount": 1976.2845849394798,
+                    "temperature": 25
+                  },
+                  "segment_id": 286,
+                  "segment_contents": {
+                    "water": 2000
+                  }
+                },
+                {
+                  "entity": "pipe",
+                  "type": "pipe",
+                  "unit_number": 18468,
+                  "index": 1,
+                  "direct": {
+                    "name": "water",
+                    "amount": 7.905138313770294,
+                    "temperature": 25
+                  },
+                  "segment_id": 286
+                },
+                {
+                  "entity": "pipe",
+                  "type": "pipe",
+                  "unit_number": 18466,
+                  "index": 1,
+                  "direct": {
+                    "name": "water",
+                    "amount": 7.905138313770294,
+                    "temperature": 25
+                  },
+                  "segment_id": 286
+                },
+                {
+                  "entity": "pipe",
+                  "type": "pipe",
+                  "unit_number": 18467,
+                  "index": 1,
+                  "direct": {
+                    "name": "water",
+                    "amount": 7.905138313770294,
+                    "temperature": 25
+                  },
+                  "segment_id": 286
+                }
+              ],
+              "entity_states": {}
+            }
+          },
+          "activation": {
+            "success": true,
+            "tick": 195630,
+            "changed": 0,
+            "read": {
+              "success": true,
+              "label": "activation same tick",
+              "tick": 195630,
+              "game_paused": false,
+              "platform_paused": false,
+              "totals": {
+                "water": 2000
+              },
+              "boxes": [
+                {
+                  "entity": "storage-tank",
+                  "type": "storage-tank",
+                  "unit_number": 18465,
+                  "index": 1,
+                  "direct": {
+                    "name": "water",
+                    "amount": 1976.2845849394798,
+                    "temperature": 25
+                  },
+                  "segment_id": 286,
+                  "segment_contents": {
+                    "water": 2000
+                  }
+                },
+                {
+                  "entity": "pipe",
+                  "type": "pipe",
+                  "unit_number": 18468,
+                  "index": 1,
+                  "direct": {
+                    "name": "water",
+                    "amount": 7.905138313770294,
+                    "temperature": 25
+                  },
+                  "segment_id": 286
+                },
+                {
+                  "entity": "pipe",
+                  "type": "pipe",
+                  "unit_number": 18466,
+                  "index": 1,
+                  "direct": {
+                    "name": "water",
+                    "amount": 7.905138313770294,
+                    "temperature": 25
+                  },
+                  "segment_id": 286
+                },
+                {
+                  "entity": "pipe",
+                  "type": "pipe",
+                  "unit_number": 18467,
+                  "index": 1,
+                  "direct": {
+                    "name": "water",
+                    "amount": 7.905138313770294,
+                    "temperature": 25
+                  },
+                  "segment_id": 286
+                }
+              ],
+              "entity_states": {}
+            }
+          },
+          "after": {
+            "success": true,
+            "label": "activation +60",
+            "tick": 195722,
+            "game_paused": false,
+            "platform_paused": false,
+            "totals": {
+              "water": 2000
+            },
+            "boxes": [
+              {
+                "entity": "storage-tank",
+                "type": "storage-tank",
+                "unit_number": 18465,
+                "index": 1,
+                "direct": {
+                  "name": "water",
+                  "amount": 1976.2845849394798,
+                  "temperature": 25
+                },
+                "segment_id": 286,
+                "segment_contents": {
+                  "water": 2000
+                }
+              },
+              {
+                "entity": "pipe",
+                "type": "pipe",
+                "unit_number": 18468,
+                "index": 1,
+                "direct": {
+                  "name": "water",
+                  "amount": 7.905138313770294,
+                  "temperature": 25
+                },
+                "segment_id": 286
+              },
+              {
+                "entity": "pipe",
+                "type": "pipe",
+                "unit_number": 18466,
+                "index": 1,
+                "direct": {
+                  "name": "water",
+                  "amount": 7.905138313770294,
+                  "temperature": 25
+                },
+                "segment_id": 286
+              },
+              {
+                "entity": "pipe",
+                "type": "pipe",
+                "unit_number": 18467,
+                "index": 1,
+                "direct": {
+                  "name": "water",
+                  "amount": 7.905138313770294,
+                  "temperature": 25
+                },
+                "segment_id": 286
+              }
+            ],
+            "entity_states": {}
+          },
+          "activation_compare": {
+            "exact": true,
+            "epsilon": 0.000001,
+            "max_abs_delta": 0,
+            "classification": "exact",
+            "rows": [
+              {
+                "name": "water",
+                "expected": 2000,
+                "actual": 2000,
+                "delta": 0
+              }
+            ]
+          },
+          "after_compare": {
+            "exact": true,
+            "epsilon": 0.000001,
+            "max_abs_delta": 0,
+            "classification": "exact",
+            "rows": [
+              {
+                "name": "water",
+                "expected": 2000,
+                "actual": 2000,
+                "delta": 0
+              }
+            ]
+          }
+        },
+        {
+          "machines": true,
+          "name": "fluid-lab-r11-a-machines-1783660080036",
+          "setup": {
+            "success": true,
+            "inserted": 2000,
+            "tank_segment": 287,
+            "member_segment": 287,
+            "shared_segment": true,
+            "platform": 21,
+            "read": {
+              "success": true,
+              "label": "same-tick frozen",
+              "tick": 195766,
+              "game_paused": false,
+              "platform_paused": true,
+              "totals": {
+                "water": 2000
+              },
+              "boxes": [
+                {
+                  "entity": "storage-tank",
+                  "type": "storage-tank",
+                  "unit_number": 18470,
+                  "index": 1,
+                  "direct": {
+                    "name": "water",
+                    "amount": 1976.2845849394798,
+                    "temperature": 25
+                  },
+                  "segment_id": 287,
+                  "segment_contents": {
+                    "water": 2000
+                  }
+                },
+                {
+                  "entity": "pipe",
+                  "type": "pipe",
+                  "unit_number": 18473,
+                  "index": 1,
+                  "direct": {
+                    "name": "water",
+                    "amount": 7.905138313770294,
+                    "temperature": 25
+                  },
+                  "segment_id": 287
+                },
+                {
+                  "entity": "pipe",
+                  "type": "pipe",
+                  "unit_number": 18471,
+                  "index": 1,
+                  "direct": {
+                    "name": "water",
+                    "amount": 7.905138313770294,
+                    "temperature": 25
+                  },
+                  "segment_id": 287
+                },
+                {
+                  "entity": "pump",
+                  "type": "pump",
+                  "unit_number": 18474,
+                  "index": 1
+                },
+                {
+                  "entity": "pipe",
+                  "type": "pipe",
+                  "unit_number": 18472,
+                  "index": 1,
+                  "direct": {
+                    "name": "water",
+                    "amount": 7.905138313770294,
+                    "temperature": 25
+                  },
+                  "segment_id": 287
+                },
+                {
+                  "entity": "pipe",
+                  "type": "pipe",
+                  "unit_number": 18475,
+                  "index": 1,
+                  "segment_id": 288,
+                  "segment_contents": {}
+                },
+                {
+                  "entity": "chemical-plant",
+                  "type": "assembling-machine",
+                  "unit_number": 18476,
+                  "index": 1
+                },
+                {
+                  "entity": "chemical-plant",
+                  "type": "assembling-machine",
+                  "unit_number": 18476,
+                  "index": 2
+                },
+                {
+                  "entity": "chemical-plant",
+                  "type": "assembling-machine",
+                  "unit_number": 18476,
+                  "index": 3
+                }
+              ],
+              "entity_states": [
+                {
+                  "entity": "pump",
+                  "unit_number": 18474,
+                  "active": false,
+                  "frozen": {
+                    "ok": true,
+                    "value": false
+                  }
+                },
+                {
+                  "entity": "chemical-plant",
+                  "unit_number": 18476,
+                  "active": false,
+                  "frozen": {
+                    "ok": true,
+                    "value": false
+                  }
+                }
+              ]
+            }
+          },
+          "activation": {
+            "success": true,
+            "tick": 195814,
+            "changed": 2,
+            "read": {
+              "success": true,
+              "label": "activation same tick",
+              "tick": 195814,
+              "game_paused": false,
+              "platform_paused": false,
+              "totals": {
+                "water": 2000
+              },
+              "boxes": [
+                {
+                  "entity": "storage-tank",
+                  "type": "storage-tank",
+                  "unit_number": 18470,
+                  "index": 1,
+                  "direct": {
+                    "name": "water",
+                    "amount": 1976.2845849394798,
+                    "temperature": 25
+                  },
+                  "segment_id": 287,
+                  "segment_contents": {
+                    "water": 2000
+                  }
+                },
+                {
+                  "entity": "pipe",
+                  "type": "pipe",
+                  "unit_number": 18473,
+                  "index": 1,
+                  "direct": {
+                    "name": "water",
+                    "amount": 7.905138313770294,
+                    "temperature": 25
+                  },
+                  "segment_id": 287
+                },
+                {
+                  "entity": "pipe",
+                  "type": "pipe",
+                  "unit_number": 18471,
+                  "index": 1,
+                  "direct": {
+                    "name": "water",
+                    "amount": 7.905138313770294,
+                    "temperature": 25
+                  },
+                  "segment_id": 287
+                },
+                {
+                  "entity": "pump",
+                  "type": "pump",
+                  "unit_number": 18474,
+                  "index": 1
+                },
+                {
+                  "entity": "pipe",
+                  "type": "pipe",
+                  "unit_number": 18472,
+                  "index": 1,
+                  "direct": {
+                    "name": "water",
+                    "amount": 7.905138313770294,
+                    "temperature": 25
+                  },
+                  "segment_id": 287
+                },
+                {
+                  "entity": "pipe",
+                  "type": "pipe",
+                  "unit_number": 18475,
+                  "index": 1,
+                  "segment_id": 288,
+                  "segment_contents": {}
+                },
+                {
+                  "entity": "chemical-plant",
+                  "type": "assembling-machine",
+                  "unit_number": 18476,
+                  "index": 1
+                },
+                {
+                  "entity": "chemical-plant",
+                  "type": "assembling-machine",
+                  "unit_number": 18476,
+                  "index": 2
+                },
+                {
+                  "entity": "chemical-plant",
+                  "type": "assembling-machine",
+                  "unit_number": 18476,
+                  "index": 3
+                }
+              ],
+              "entity_states": [
+                {
+                  "entity": "pump",
+                  "unit_number": 18474,
+                  "active": true,
+                  "frozen": {
+                    "ok": true,
+                    "value": false
+                  }
+                },
+                {
+                  "entity": "chemical-plant",
+                  "unit_number": 18476,
+                  "active": true,
+                  "frozen": {
+                    "ok": true,
+                    "value": false
+                  }
+                }
+              ]
+            }
+          },
+          "after": {
+            "success": true,
+            "label": "activation +60",
+            "tick": 195903,
+            "game_paused": false,
+            "platform_paused": false,
+            "totals": {
+              "water": 2000
+            },
+            "boxes": [
+              {
+                "entity": "storage-tank",
+                "type": "storage-tank",
+                "unit_number": 18470,
+                "index": 1,
+                "direct": {
+                  "name": "water",
+                  "amount": 1976.2845849394798,
+                  "temperature": 25
+                },
+                "segment_id": 287,
+                "segment_contents": {
+                  "water": 2000
+                }
+              },
+              {
+                "entity": "pipe",
+                "type": "pipe",
+                "unit_number": 18473,
+                "index": 1,
+                "direct": {
+                  "name": "water",
+                  "amount": 7.905138313770294,
+                  "temperature": 25
+                },
+                "segment_id": 287
+              },
+              {
+                "entity": "pipe",
+                "type": "pipe",
+                "unit_number": 18471,
+                "index": 1,
+                "direct": {
+                  "name": "water",
+                  "amount": 7.905138313770294,
+                  "temperature": 25
+                },
+                "segment_id": 287
+              },
+              {
+                "entity": "pump",
+                "type": "pump",
+                "unit_number": 18474,
+                "index": 1
+              },
+              {
+                "entity": "pipe",
+                "type": "pipe",
+                "unit_number": 18472,
+                "index": 1,
+                "direct": {
+                  "name": "water",
+                  "amount": 7.905138313770294,
+                  "temperature": 25
+                },
+                "segment_id": 287
+              },
+              {
+                "entity": "pipe",
+                "type": "pipe",
+                "unit_number": 18475,
+                "index": 1,
+                "segment_id": 288,
+                "segment_contents": {}
+              },
+              {
+                "entity": "chemical-plant",
+                "type": "assembling-machine",
+                "unit_number": 18476,
+                "index": 1
+              },
+              {
+                "entity": "chemical-plant",
+                "type": "assembling-machine",
+                "unit_number": 18476,
+                "index": 2
+              },
+              {
+                "entity": "chemical-plant",
+                "type": "assembling-machine",
+                "unit_number": 18476,
+                "index": 3
+              }
+            ],
+            "entity_states": [
+              {
+                "entity": "pump",
+                "unit_number": 18474,
+                "active": true,
+                "frozen": {
+                  "ok": true,
+                  "value": false
+                }
+              },
+              {
+                "entity": "chemical-plant",
+                "unit_number": 18476,
+                "active": true,
+                "frozen": {
+                  "ok": true,
+                  "value": false
+                }
+              }
+            ]
+          },
+          "activation_compare": {
+            "exact": true,
+            "epsilon": 0.000001,
+            "max_abs_delta": 0,
+            "classification": "exact",
+            "rows": [
+              {
+                "name": "water",
+                "expected": 2000,
+                "actual": 2000,
+                "delta": 0
+              }
+            ]
+          },
+          "after_compare": {
+            "exact": true,
+            "epsilon": 0.000001,
+            "max_abs_delta": 0,
+            "classification": "exact",
+            "rows": [
+              {
+                "name": "water",
+                "expected": 2000,
+                "actual": 2000,
+                "delta": 0
+              }
+            ]
+          }
+        }
+      ]
+    },
+    "r11b": {
+      "success": true,
+      "prediction": "zero loss and zero gain",
+      "name": "fluid-lab-r11-b-1783660082860",
+      "setup": {
+        "success": true,
+        "platform": 22,
+        "writes": [
+          {
+            "entity": "storage-tank",
+            "index": 1,
+            "write": {
+              "accepted": true,
+              "fluid": "water",
+              "amount": 98.81422919034958,
+              "attempts": [
+                {
+                  "fluid": "water",
+                  "ok": true,
+                  "read": {
+                    "name": "water",
+                    "amount": 98.81422919034958,
+                    "temperature": 25
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "entity": "pump",
+            "index": 1,
+            "write": {
+              "accepted": true,
+              "fluid": "water",
+              "amount": 100,
+              "attempts": [
+                {
+                  "fluid": "water",
+                  "ok": true,
+                  "read": {
+                    "name": "water",
+                    "amount": 100,
+                    "temperature": 25
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "entity": "chemical-plant",
+            "index": 1,
+            "write": {
+              "accepted": true,
+              "fluid": "water",
+              "amount": 60,
+              "attempts": [
+                {
+                  "fluid": "water",
+                  "ok": true,
+                  "read": {
+                    "name": "water",
+                    "amount": 60,
+                    "temperature": 25
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "entity": "chemical-plant",
+            "index": 2,
+            "write": {
+              "accepted": true,
+              "fluid": "heavy-oil",
+              "amount": 80,
+              "attempts": [
+                {
+                  "fluid": "water",
+                  "ok": true
+                },
+                {
+                  "fluid": "steam",
+                  "ok": true
+                },
+                {
+                  "fluid": "heavy-oil",
+                  "ok": true,
+                  "read": {
+                    "name": "heavy-oil",
+                    "amount": 80,
+                    "temperature": 25
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "entity": "chemical-plant",
+            "index": 3,
+            "write": {
+              "accepted": true,
+              "fluid": "light-oil",
+              "amount": 100,
+              "attempts": [
+                {
+                  "fluid": "water",
+                  "ok": true
+                },
+                {
+                  "fluid": "steam",
+                  "ok": true
+                },
+                {
+                  "fluid": "heavy-oil",
+                  "ok": true
+                },
+                {
+                  "fluid": "light-oil",
+                  "ok": true,
+                  "read": {
+                    "name": "light-oil",
+                    "amount": 100,
+                    "temperature": 25
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "entity": "boiler",
+            "index": 1,
+            "write": {
+              "accepted": true,
+              "fluid": "water",
+              "amount": 100,
+              "attempts": [
+                {
+                  "fluid": "water",
+                  "ok": true,
+                  "read": {
+                    "name": "water",
+                    "amount": 100,
+                    "temperature": 25
+                  }
+                }
+              ]
+            }
+          },
+          {
+            "entity": "boiler",
+            "index": 2,
+            "write": {
+              "accepted": true,
+              "fluid": "steam",
+              "amount": 100,
+              "attempts": [
+                {
+                  "fluid": "water",
+                  "ok": true
+                },
+                {
+                  "fluid": "steam",
+                  "ok": true,
+                  "read": {
+                    "name": "steam",
+                    "amount": 100,
+                    "temperature": 165
+                  }
+                }
+              ]
+            }
+          }
+        ],
+        "read": {
+          "success": true,
+          "label": "R11b frozen same tick",
+          "tick": 195951,
+          "game_paused": false,
+          "platform_paused": true,
+          "totals": {
+            "water": 260,
+            "heavy-oil": 80,
+            "light-oil": 100,
+            "steam": 100
+          },
+          "boxes": [
+            {
+              "entity": "storage-tank",
+              "type": "storage-tank",
+              "unit_number": 18478,
+              "index": 1,
+              "direct": {
+                "name": "water",
+                "amount": 98.81422919034958,
+                "temperature": 25
+              },
+              "segment_id": 289,
+              "segment_contents": {
+                "water": 100
+              }
+            },
+            {
+              "entity": "pipe",
+              "type": "pipe",
+              "unit_number": 18481,
+              "index": 1,
+              "direct": {
+                "name": "water",
+                "amount": 0.3952568769454956,
+                "temperature": 25
+              },
+              "segment_id": 289
+            },
+            {
+              "entity": "pipe",
+              "type": "pipe",
+              "unit_number": 18479,
+              "index": 1,
+              "direct": {
+                "name": "water",
+                "amount": 0.3952568769454956,
+                "temperature": 25
+              },
+              "segment_id": 289
+            },
+            {
+              "entity": "pump",
+              "type": "pump",
+              "unit_number": 18482,
+              "index": 1,
+              "direct": {
+                "name": "water",
+                "amount": 100,
+                "temperature": 25
+              }
+            },
+            {
+              "entity": "pipe",
+              "type": "pipe",
+              "unit_number": 18480,
+              "index": 1,
+              "direct": {
+                "name": "water",
+                "amount": 0.3952568769454956,
+                "temperature": 25
+              },
+              "segment_id": 289
+            },
+            {
+              "entity": "pipe",
+              "type": "pipe",
+              "unit_number": 18483,
+              "index": 1,
+              "segment_id": 290,
+              "segment_contents": {}
+            },
+            {
+              "entity": "chemical-plant",
+              "type": "assembling-machine",
+              "unit_number": 18484,
+              "index": 1,
+              "direct": {
+                "name": "water",
+                "amount": 60,
+                "temperature": 25
+              }
+            },
+            {
+              "entity": "chemical-plant",
+              "type": "assembling-machine",
+              "unit_number": 18484,
+              "index": 2,
+              "direct": {
+                "name": "heavy-oil",
+                "amount": 80,
+                "temperature": 25
+              }
+            },
+            {
+              "entity": "chemical-plant",
+              "type": "assembling-machine",
+              "unit_number": 18484,
+              "index": 3,
+              "direct": {
+                "name": "light-oil",
+                "amount": 100,
+                "temperature": 25
+              }
+            },
+            {
+              "entity": "boiler",
+              "type": "boiler",
+              "unit_number": 18485,
+              "index": 1,
+              "direct": {
+                "name": "water",
+                "amount": 100,
+                "temperature": 25
+              },
+              "segment_id": 291,
+              "segment_contents": {}
+            },
+            {
+              "entity": "boiler",
+              "type": "boiler",
+              "unit_number": 18485,
+              "index": 2,
+              "direct": {
+                "name": "steam",
+                "amount": 100,
+                "temperature": 165
+              }
+            }
+          ],
+          "entity_states": [
+            {
+              "entity": "pump",
+              "unit_number": 18482,
+              "active": false,
+              "frozen": {
+                "ok": true,
+                "value": false
+              }
+            },
+            {
+              "entity": "chemical-plant",
+              "unit_number": 18484,
+              "active": false,
+              "frozen": {
+                "ok": true,
+                "value": false
+              }
+            },
+            {
+              "entity": "boiler",
+              "unit_number": 18485,
+              "active": false,
+              "frozen": {
+                "ok": true,
+                "value": false
+              }
+            }
+          ]
+        }
+      },
+      "activation": {
+        "success": true,
+        "tick": 195999,
+        "changed": 3,
+        "read": {
+          "success": true,
+          "label": "R11b activation same tick",
+          "tick": 195999,
+          "game_paused": false,
+          "platform_paused": false,
+          "totals": {
+            "water": 260,
+            "heavy-oil": 80,
+            "light-oil": 100,
+            "steam": 100
+          },
+          "boxes": [
+            {
+              "entity": "storage-tank",
+              "type": "storage-tank",
+              "unit_number": 18478,
+              "index": 1,
+              "direct": {
+                "name": "water",
+                "amount": 98.81422919034958,
+                "temperature": 25
+              },
+              "segment_id": 289,
+              "segment_contents": {
+                "water": 100
+              }
+            },
+            {
+              "entity": "pipe",
+              "type": "pipe",
+              "unit_number": 18481,
+              "index": 1,
+              "direct": {
+                "name": "water",
+                "amount": 0.3952568769454956,
+                "temperature": 25
+              },
+              "segment_id": 289
+            },
+            {
+              "entity": "pipe",
+              "type": "pipe",
+              "unit_number": 18479,
+              "index": 1,
+              "direct": {
+                "name": "water",
+                "amount": 0.3952568769454956,
+                "temperature": 25
+              },
+              "segment_id": 289
+            },
+            {
+              "entity": "pump",
+              "type": "pump",
+              "unit_number": 18482,
+              "index": 1
+            },
+            {
+              "entity": "pipe",
+              "type": "pipe",
+              "unit_number": 18480,
+              "index": 1,
+              "direct": {
+                "name": "water",
+                "amount": 0.3952568769454956,
+                "temperature": 25
+              },
+              "segment_id": 289
+            },
+            {
+              "entity": "pipe",
+              "type": "pipe",
+              "unit_number": 18483,
+              "index": 1,
+              "direct": {
+                "name": "water",
+                "amount": 100,
+                "temperature": 25
+              },
+              "segment_id": 290,
+              "segment_contents": {
+                "water": 100
+              }
+            },
+            {
+              "entity": "chemical-plant",
+              "type": "assembling-machine",
+              "unit_number": 18484,
+              "index": 1,
+              "direct": {
+                "name": "water",
+                "amount": 60,
+                "temperature": 25
+              }
+            },
+            {
+              "entity": "chemical-plant",
+              "type": "assembling-machine",
+              "unit_number": 18484,
+              "index": 2,
+              "direct": {
+                "name": "heavy-oil",
+                "amount": 80,
+                "temperature": 25
+              }
+            },
+            {
+              "entity": "chemical-plant",
+              "type": "assembling-machine",
+              "unit_number": 18484,
+              "index": 3,
+              "direct": {
+                "name": "light-oil",
+                "amount": 100,
+                "temperature": 25
+              }
+            },
+            {
+              "entity": "boiler",
+              "type": "boiler",
+              "unit_number": 18485,
+              "index": 1,
+              "direct": {
+                "name": "water",
+                "amount": 100,
+                "temperature": 25
+              },
+              "segment_id": 291,
+              "segment_contents": {}
+            },
+            {
+              "entity": "boiler",
+              "type": "boiler",
+              "unit_number": 18485,
+              "index": 2,
+              "direct": {
+                "name": "steam",
+                "amount": 100,
+                "temperature": 165
+              }
+            }
+          ],
+          "entity_states": [
+            {
+              "entity": "pump",
+              "unit_number": 18482,
+              "active": true,
+              "frozen": {
+                "ok": true,
+                "value": false
+              }
+            },
+            {
+              "entity": "chemical-plant",
+              "unit_number": 18484,
+              "active": true,
+              "frozen": {
+                "ok": true,
+                "value": false
+              }
+            },
+            {
+              "entity": "boiler",
+              "unit_number": 18485,
+              "active": true,
+              "frozen": {
+                "ok": true,
+                "value": false
+              }
+            }
+          ]
+        }
+      },
+      "after": {
+        "success": true,
+        "label": "R11b activation +60",
+        "tick": 196091,
+        "game_paused": false,
+        "platform_paused": false,
+        "totals": {
+          "water": 260,
+          "heavy-oil": 80,
+          "light-oil": 100,
+          "steam": 100
+        },
+        "boxes": [
+          {
+            "entity": "storage-tank",
+            "type": "storage-tank",
+            "unit_number": 18478,
+            "index": 1,
+            "direct": {
+              "name": "water",
+              "amount": 98.81422919034958,
+              "temperature": 25
+            },
+            "segment_id": 289,
+            "segment_contents": {
+              "water": 100
+            }
+          },
+          {
+            "entity": "pipe",
+            "type": "pipe",
+            "unit_number": 18481,
+            "index": 1,
+            "direct": {
+              "name": "water",
+              "amount": 0.3952568769454956,
+              "temperature": 25
+            },
+            "segment_id": 289
+          },
+          {
+            "entity": "pipe",
+            "type": "pipe",
+            "unit_number": 18479,
+            "index": 1,
+            "direct": {
+              "name": "water",
+              "amount": 0.3952568769454956,
+              "temperature": 25
+            },
+            "segment_id": 289
+          },
+          {
+            "entity": "pump",
+            "type": "pump",
+            "unit_number": 18482,
+            "index": 1
+          },
+          {
+            "entity": "pipe",
+            "type": "pipe",
+            "unit_number": 18480,
+            "index": 1,
+            "direct": {
+              "name": "water",
+              "amount": 0.3952568769454956,
+              "temperature": 25
+            },
+            "segment_id": 289
+          },
+          {
+            "entity": "pipe",
+            "type": "pipe",
+            "unit_number": 18483,
+            "index": 1,
+            "direct": {
+              "name": "water",
+              "amount": 100,
+              "temperature": 25
+            },
+            "segment_id": 290,
+            "segment_contents": {
+              "water": 100
+            }
+          },
+          {
+            "entity": "chemical-plant",
+            "type": "assembling-machine",
+            "unit_number": 18484,
+            "index": 1,
+            "direct": {
+              "name": "water",
+              "amount": 60,
+              "temperature": 25
+            }
+          },
+          {
+            "entity": "chemical-plant",
+            "type": "assembling-machine",
+            "unit_number": 18484,
+            "index": 2,
+            "direct": {
+              "name": "heavy-oil",
+              "amount": 80,
+              "temperature": 25
+            }
+          },
+          {
+            "entity": "chemical-plant",
+            "type": "assembling-machine",
+            "unit_number": 18484,
+            "index": 3,
+            "direct": {
+              "name": "light-oil",
+              "amount": 100,
+              "temperature": 25
+            }
+          },
+          {
+            "entity": "boiler",
+            "type": "boiler",
+            "unit_number": 18485,
+            "index": 1,
+            "direct": {
+              "name": "water",
+              "amount": 100,
+              "temperature": 25
+            },
+            "segment_id": 291,
+            "segment_contents": {}
+          },
+          {
+            "entity": "boiler",
+            "type": "boiler",
+            "unit_number": 18485,
+            "index": 2,
+            "direct": {
+              "name": "steam",
+              "amount": 100,
+              "temperature": 165
+            }
+          }
+        ],
+        "entity_states": [
+          {
+            "entity": "pump",
+            "unit_number": 18482,
+            "active": true,
+            "frozen": {
+              "ok": true,
+              "value": false
+            }
+          },
+          {
+            "entity": "chemical-plant",
+            "unit_number": 18484,
+            "active": true,
+            "frozen": {
+              "ok": true,
+              "value": false
+            }
+          },
+          {
+            "entity": "boiler",
+            "unit_number": 18485,
+            "active": true,
+            "frozen": {
+              "ok": true,
+              "value": false
+            }
+          }
+        ]
+      },
+      "immediate_compare": {
+        "exact": true,
+        "epsilon": 0.000001,
+        "max_abs_delta": 0,
+        "classification": "exact",
+        "rows": [
+          {
+            "name": "heavy-oil",
+            "expected": 80,
+            "actual": 80,
+            "delta": 0
+          },
+          {
+            "name": "light-oil",
+            "expected": 100,
+            "actual": 100,
+            "delta": 0
+          },
+          {
+            "name": "steam",
+            "expected": 100,
+            "actual": 100,
+            "delta": 0
+          },
+          {
+            "name": "water",
+            "expected": 260,
+            "actual": 260,
+            "delta": 0
+          }
+        ]
+      },
+      "settled_compare": {
+        "exact": true,
+        "epsilon": 0.000001,
+        "max_abs_delta": 0,
+        "classification": "exact",
+        "rows": [
+          {
+            "name": "heavy-oil",
+            "expected": 80,
+            "actual": 80,
+            "delta": 0
+          },
+          {
+            "name": "light-oil",
+            "expected": 100,
+            "actual": 100,
+            "delta": 0
+          },
+          {
+            "name": "steam",
+            "expected": 100,
+            "actual": 100,
+            "delta": 0
+          },
+          {
+            "name": "water",
+            "expected": 260,
+            "actual": 260,
+            "delta": 0
+          }
+        ]
+      }
+    },
+    "r11c": {
+      "success": true,
+      "prediction": "zero loss and zero gain",
+      "name": "fluid-lab-r11-c-1783660085795",
+      "import_state_replication": {
+        "entity_creation": "module/import_phases/entity_creation.lua:69 creates through Deserializer; lines 78-91 immediately set active=false for transfer entities",
+        "platform_pause": "module/core/import-pipeline.lua:240-245 pauses the transfer platform immediately after creation"
+      },
+      "setup": {
+        "success": true,
+        "platform": 23,
+        "rows": [
+          {
+            "name": "pipe",
+            "type": "pipe",
+            "activatable": false,
+            "before": {
+              "frozen": {
+                "ok": true,
+                "value": false
+              },
+              "tick": 196134
+            },
+            "writes": [
+              {
+                "index": 1,
+                "write": {
+                  "accepted": true,
+                  "fluid": "water",
+                  "amount": 50,
+                  "attempts": [
+                    {
+                      "fluid": "water",
+                      "ok": true,
+                      "read": {
+                        "name": "water",
+                        "amount": 50,
+                        "temperature": 25
+                      }
+                    }
+                  ]
+                }
+              }
+            ],
+            "accepted": true,
+            "fallback_used": false,
+            "after": {
+              "frozen": {
+                "ok": true,
+                "value": false
+              },
+              "tick": 196134
+            }
+          },
+          {
+            "name": "storage-tank",
+            "type": "storage-tank",
+            "activatable": false,
+            "before": {
+              "frozen": {
+                "ok": true,
+                "value": false
+              },
+              "tick": 196134
+            },
+            "writes": [
+              {
+                "index": 1,
+                "write": {
+                  "accepted": true,
+                  "fluid": "water",
+                  "amount": 50,
+                  "attempts": [
+                    {
+                      "fluid": "water",
+                      "ok": true,
+                      "read": {
+                        "name": "water",
+                        "amount": 50,
+                        "temperature": 25
+                      }
+                    }
+                  ]
+                }
+              }
+            ],
+            "accepted": true,
+            "fallback_used": false,
+            "after": {
+              "frozen": {
+                "ok": true,
+                "value": false
+              },
+              "tick": 196134
+            }
+          },
+          {
+            "name": "pump",
+            "type": "pump",
+            "activatable": true,
+            "before": {
+              "frozen": {
+                "ok": true,
+                "value": false
+              },
+              "tick": 196134
+            },
+            "writes": [
+              {
+                "index": 1,
+                "write": {
+                  "accepted": true,
+                  "fluid": "water",
+                  "amount": 50,
+                  "attempts": [
+                    {
+                      "fluid": "water",
+                      "ok": true,
+                      "read": {
+                        "name": "water",
+                        "amount": 50,
+                        "temperature": 25
+                      }
+                    }
+                  ]
+                }
+              }
+            ],
+            "accepted": true,
+            "fallback_used": false,
+            "after": {
+              "frozen": {
+                "ok": true,
+                "value": false
+              },
+              "tick": 196134
+            }
+          },
+          {
+            "name": "chemical-plant",
+            "type": "assembling-machine",
+            "activatable": true,
+            "before": {
+              "frozen": {
+                "ok": true,
+                "value": false
+              },
+              "tick": 196134
+            },
+            "writes": [
+              {
+                "index": 1,
+                "write": {
+                  "accepted": true,
+                  "fluid": "water",
+                  "amount": 50,
+                  "attempts": [
+                    {
+                      "fluid": "water",
+                      "ok": true,
+                      "read": {
+                        "name": "water",
+                        "amount": 50,
+                        "temperature": 25
+                      }
+                    }
+                  ]
+                }
+              },
+              {
+                "index": 2,
+                "write": {
+                  "accepted": true,
+                  "fluid": "heavy-oil",
+                  "amount": 50,
+                  "attempts": [
+                    {
+                      "fluid": "water",
+                      "ok": true
+                    },
+                    {
+                      "fluid": "steam",
+                      "ok": true
+                    },
+                    {
+                      "fluid": "heavy-oil",
+                      "ok": true,
+                      "read": {
+                        "name": "heavy-oil",
+                        "amount": 50,
+                        "temperature": 25
+                      }
+                    }
+                  ]
+                }
+              },
+              {
+                "index": 3,
+                "write": {
+                  "accepted": true,
+                  "fluid": "light-oil",
+                  "amount": 50,
+                  "attempts": [
+                    {
+                      "fluid": "water",
+                      "ok": true
+                    },
+                    {
+                      "fluid": "steam",
+                      "ok": true
+                    },
+                    {
+                      "fluid": "heavy-oil",
+                      "ok": true
+                    },
+                    {
+                      "fluid": "light-oil",
+                      "ok": true,
+                      "read": {
+                        "name": "light-oil",
+                        "amount": 50,
+                        "temperature": 25
+                      }
+                    }
+                  ]
+                }
+              }
+            ],
+            "accepted": true,
+            "fallback_used": false,
+            "after": {
+              "frozen": {
+                "ok": true,
+                "value": false
+              },
+              "tick": 196134
+            }
+          },
+          {
+            "name": "boiler",
+            "type": "boiler",
+            "activatable": true,
+            "before": {
+              "frozen": {
+                "ok": true,
+                "value": false
+              },
+              "tick": 196134
+            },
+            "writes": [
+              {
+                "index": 1,
+                "write": {
+                  "accepted": true,
+                  "fluid": "water",
+                  "amount": 50,
+                  "attempts": [
+                    {
+                      "fluid": "water",
+                      "ok": true,
+                      "read": {
+                        "name": "water",
+                        "amount": 50,
+                        "temperature": 25
+                      }
+                    }
+                  ]
+                }
+              },
+              {
+                "index": 2,
+                "write": {
+                  "accepted": true,
+                  "fluid": "steam",
+                  "amount": 50,
+                  "attempts": [
+                    {
+                      "fluid": "water",
+                      "ok": true
+                    },
+                    {
+                      "fluid": "steam",
+                      "ok": true,
+                      "read": {
+                        "name": "steam",
+                        "amount": 50,
+                        "temperature": 165
+                      }
+                    }
+                  ]
+                }
+              }
+            ],
+            "accepted": true,
+            "fallback_used": false,
+            "after": {
+              "frozen": {
+                "ok": true,
+                "value": false
+              },
+              "tick": 196134
+            }
+          }
+        ],
+        "read": {
+          "success": true,
+          "label": "R11c before first activation",
+          "tick": 196134,
+          "game_paused": false,
+          "platform_paused": true,
+          "totals": {
+            "water": 200,
+            "heavy-oil": 50,
+            "light-oil": 50,
+            "steam": 50
+          },
+          "boxes": [
+            {
+              "entity": "pipe",
+              "type": "pipe",
+              "unit_number": 18487,
+              "index": 1,
+              "direct": {
+                "name": "water",
+                "amount": 50,
+                "temperature": 25
+              },
+              "segment_id": 292,
+              "segment_contents": {
+                "water": 50
+              }
+            },
+            {
+              "entity": "storage-tank",
+              "type": "storage-tank",
+              "unit_number": 18488,
+              "index": 1,
+              "direct": {
+                "name": "water",
+                "amount": 50,
+                "temperature": 25
+              },
+              "segment_id": 293,
+              "segment_contents": {
+                "water": 50
+              }
+            },
+            {
+              "entity": "pump",
+              "type": "pump",
+              "unit_number": 18489,
+              "index": 1,
+              "direct": {
+                "name": "water",
+                "amount": 50,
+                "temperature": 25
+              }
+            },
+            {
+              "entity": "chemical-plant",
+              "type": "assembling-machine",
+              "unit_number": 18490,
+              "index": 1,
+              "direct": {
+                "name": "water",
+                "amount": 50,
+                "temperature": 25
+              }
+            },
+            {
+              "entity": "chemical-plant",
+              "type": "assembling-machine",
+              "unit_number": 18490,
+              "index": 2,
+              "direct": {
+                "name": "heavy-oil",
+                "amount": 50,
+                "temperature": 25
+              }
+            },
+            {
+              "entity": "chemical-plant",
+              "type": "assembling-machine",
+              "unit_number": 18490,
+              "index": 3,
+              "direct": {
+                "name": "light-oil",
+                "amount": 50,
+                "temperature": 25
+              }
+            },
+            {
+              "entity": "boiler",
+              "type": "boiler",
+              "unit_number": 18491,
+              "index": 1,
+              "direct": {
+                "name": "water",
+                "amount": 50,
+                "temperature": 25
+              },
+              "segment_id": 294,
+              "segment_contents": {}
+            },
+            {
+              "entity": "boiler",
+              "type": "boiler",
+              "unit_number": 18491,
+              "index": 2,
+              "direct": {
+                "name": "steam",
+                "amount": 50,
+                "temperature": 165
+              }
+            }
+          ],
+          "entity_states": [
+            {
+              "entity": "pump",
+              "unit_number": 18489,
+              "active": false,
+              "frozen": {
+                "ok": true,
+                "value": false
+              }
+            },
+            {
+              "entity": "chemical-plant",
+              "unit_number": 18490,
+              "active": false,
+              "frozen": {
+                "ok": true,
+                "value": false
+              }
+            },
+            {
+              "entity": "boiler",
+              "unit_number": 18491,
+              "active": false,
+              "frozen": {
+                "ok": true,
+                "value": false
+              }
+            }
+          ]
+        }
+      },
+      "activation": {
+        "success": true,
+        "tick": 196186,
+        "changed": 3,
+        "read": {
+          "success": true,
+          "label": "R11c activation same tick",
+          "tick": 196186,
+          "game_paused": false,
+          "platform_paused": false,
+          "totals": {
+            "water": 200,
+            "heavy-oil": 50,
+            "light-oil": 50,
+            "steam": 50
+          },
+          "boxes": [
+            {
+              "entity": "pipe",
+              "type": "pipe",
+              "unit_number": 18487,
+              "index": 1,
+              "direct": {
+                "name": "water",
+                "amount": 50,
+                "temperature": 25
+              },
+              "segment_id": 292,
+              "segment_contents": {
+                "water": 50
+              }
+            },
+            {
+              "entity": "storage-tank",
+              "type": "storage-tank",
+              "unit_number": 18488,
+              "index": 1,
+              "direct": {
+                "name": "water",
+                "amount": 50,
+                "temperature": 25
+              },
+              "segment_id": 293,
+              "segment_contents": {
+                "water": 50
+              }
+            },
+            {
+              "entity": "pump",
+              "type": "pump",
+              "unit_number": 18489,
+              "index": 1,
+              "direct": {
+                "name": "water",
+                "amount": 50,
+                "temperature": 25
+              }
+            },
+            {
+              "entity": "chemical-plant",
+              "type": "assembling-machine",
+              "unit_number": 18490,
+              "index": 1,
+              "direct": {
+                "name": "water",
+                "amount": 50,
+                "temperature": 25
+              }
+            },
+            {
+              "entity": "chemical-plant",
+              "type": "assembling-machine",
+              "unit_number": 18490,
+              "index": 2,
+              "direct": {
+                "name": "heavy-oil",
+                "amount": 50,
+                "temperature": 25
+              }
+            },
+            {
+              "entity": "chemical-plant",
+              "type": "assembling-machine",
+              "unit_number": 18490,
+              "index": 3,
+              "direct": {
+                "name": "light-oil",
+                "amount": 50,
+                "temperature": 25
+              }
+            },
+            {
+              "entity": "boiler",
+              "type": "boiler",
+              "unit_number": 18491,
+              "index": 1,
+              "direct": {
+                "name": "water",
+                "amount": 50,
+                "temperature": 25
+              },
+              "segment_id": 294,
+              "segment_contents": {}
+            },
+            {
+              "entity": "boiler",
+              "type": "boiler",
+              "unit_number": 18491,
+              "index": 2,
+              "direct": {
+                "name": "steam",
+                "amount": 50,
+                "temperature": 165
+              }
+            }
+          ],
+          "entity_states": [
+            {
+              "entity": "pump",
+              "unit_number": 18489,
+              "active": true,
+              "frozen": {
+                "ok": true,
+                "value": false
+              }
+            },
+            {
+              "entity": "chemical-plant",
+              "unit_number": 18490,
+              "active": true,
+              "frozen": {
+                "ok": true,
+                "value": false
+              }
+            },
+            {
+              "entity": "boiler",
+              "unit_number": 18491,
+              "active": true,
+              "frozen": {
+                "ok": true,
+                "value": false
+              }
+            }
+          ]
+        }
+      },
+      "after": {
+        "success": true,
+        "label": "R11c activation +60",
+        "tick": 196302,
+        "game_paused": false,
+        "platform_paused": false,
+        "totals": {
+          "water": 200,
+          "heavy-oil": 50,
+          "light-oil": 50,
+          "steam": 50
+        },
+        "boxes": [
+          {
+            "entity": "pipe",
+            "type": "pipe",
+            "unit_number": 18487,
+            "index": 1,
+            "direct": {
+              "name": "water",
+              "amount": 50,
+              "temperature": 25
+            },
+            "segment_id": 292,
+            "segment_contents": {
+              "water": 50
+            }
+          },
+          {
+            "entity": "storage-tank",
+            "type": "storage-tank",
+            "unit_number": 18488,
+            "index": 1,
+            "direct": {
+              "name": "water",
+              "amount": 50,
+              "temperature": 25
+            },
+            "segment_id": 293,
+            "segment_contents": {
+              "water": 50
+            }
+          },
+          {
+            "entity": "pump",
+            "type": "pump",
+            "unit_number": 18489,
+            "index": 1,
+            "direct": {
+              "name": "water",
+              "amount": 50,
+              "temperature": 25
+            }
+          },
+          {
+            "entity": "chemical-plant",
+            "type": "assembling-machine",
+            "unit_number": 18490,
+            "index": 1,
+            "direct": {
+              "name": "water",
+              "amount": 50,
+              "temperature": 25
+            }
+          },
+          {
+            "entity": "chemical-plant",
+            "type": "assembling-machine",
+            "unit_number": 18490,
+            "index": 2,
+            "direct": {
+              "name": "heavy-oil",
+              "amount": 50,
+              "temperature": 25
+            }
+          },
+          {
+            "entity": "chemical-plant",
+            "type": "assembling-machine",
+            "unit_number": 18490,
+            "index": 3,
+            "direct": {
+              "name": "light-oil",
+              "amount": 50,
+              "temperature": 25
+            }
+          },
+          {
+            "entity": "boiler",
+            "type": "boiler",
+            "unit_number": 18491,
+            "index": 1,
+            "direct": {
+              "name": "water",
+              "amount": 50,
+              "temperature": 25
+            },
+            "segment_id": 294,
+            "segment_contents": {}
+          },
+          {
+            "entity": "boiler",
+            "type": "boiler",
+            "unit_number": 18491,
+            "index": 2,
+            "direct": {
+              "name": "steam",
+              "amount": 50,
+              "temperature": 165
+            }
+          }
+        ],
+        "entity_states": [
+          {
+            "entity": "pump",
+            "unit_number": 18489,
+            "active": true,
+            "frozen": {
+              "ok": true,
+              "value": false
+            }
+          },
+          {
+            "entity": "chemical-plant",
+            "unit_number": 18490,
+            "active": true,
+            "frozen": {
+              "ok": true,
+              "value": false
+            }
+          },
+          {
+            "entity": "boiler",
+            "unit_number": 18491,
+            "active": true,
+            "frozen": {
+              "ok": true,
+              "value": false
+            }
+          }
+        ]
+      },
+      "immediate_compare": {
+        "exact": true,
+        "epsilon": 0.000001,
+        "max_abs_delta": 0,
+        "classification": "exact",
+        "rows": [
+          {
+            "name": "heavy-oil",
+            "expected": 50,
+            "actual": 50,
+            "delta": 0
+          },
+          {
+            "name": "light-oil",
+            "expected": 50,
+            "actual": 50,
+            "delta": 0
+          },
+          {
+            "name": "steam",
+            "expected": 50,
+            "actual": 50,
+            "delta": 0
+          },
+          {
+            "name": "water",
+            "expected": 200,
+            "actual": 200,
+            "delta": 0
+          }
+        ]
+      },
+      "settled_compare": {
+        "exact": true,
+        "epsilon": 0.000001,
+        "max_abs_delta": 0,
+        "classification": "exact",
+        "rows": [
+          {
+            "name": "heavy-oil",
+            "expected": 50,
+            "actual": 50,
+            "delta": 0
+          },
+          {
+            "name": "light-oil",
+            "expected": 50,
+            "actual": 50,
+            "delta": 0
+          },
+          {
+            "name": "steam",
+            "expected": 50,
+            "actual": 50,
+            "delta": 0
+          },
+          {
+            "name": "water",
+            "expected": 200,
+            "actual": 200,
+            "delta": 0
+          }
+        ]
+      }
+    },
+    "r11d": {
+      "success": true,
+      "prediction": "zero loss and zero gain",
+      "name": "fluid-lab-r11-d-1783660089105",
+      "seed": {
+        "success": true,
+        "index": 2,
+        "count": 1
+      },
+      "clone": {
+        "success": true,
+        "tick": 196403,
+        "remote": {
+          "success": true,
+          "job_id": "import_7",
+          "platform_name": "fluid-lab-r11-d-1783660089105",
+          "source_platform": "test",
+          "entity_count": 1359,
+          "message": "Clone job started - use /step-tick to process"
+        }
+      },
+      "clone_index": 24,
+      "armed": {
+        "success": true,
+        "tick": 138927
+      },
+      "transfer_output": "═══════════════════════════════════════\n🚀 Transfer Platform: fluid-lab-r11-d-1783660089105\n═══════════════════════════════════════\nDestination: Instance 1351385547\nPlatform: [24] fluid-lab-r11-d-1783660089105\n\n[1/2] Locking + queueing export...\n[2/2] ✓ Export queued: 008_fluid-lab-r11-d-1783660089105\n⏳ Exporting asynchronously (this may take a while)...\n\nThe transfer will continue automatically:\n  1. Export completes → Sent to controller\n  2. Controller → Sends to destination instance\n  3. Destination imports → Validates counts\n  4. On success → Source deleted automatically\n  5. On failure → Source unlocked automatically\n\n💡 Use /list-platforms to track progress\n═══════════════════════════════════════",
+      "wall_ms": 6361,
+      "debug_file": "/clusterio/data/instances/clusterio-host-2-instance-1/script-output/debug_import_result_fluid-lab-r11-d-1783660089105_139106.json",
+      "validation_success": true,
+      "failed_stage": null,
+      "hook_log": {
+        "needle": "[Import][TEST][R11] Frozen fluid injection measured for fluid-lab-r11-d-1783660089105",
+        "found": true,
+        "line": "338.356 Script @__level__/modules/surface_export/core/import-completion.lua:364: [Import][TEST][R11] Frozen fluid injection measured for fluid-lab-r11-d-1783660089105 at tick 139106"
+      },
+      "measurement": {
+        "hook_consumed": true,
+        "platform_name": "fluid-lab-r11-d-1783660089105",
+        "injection_started_tick": 139106,
+        "frozen_census_tick": 139106,
+        "platform_paused": true,
+        "expected_by_name": {
+          "molten-iron": 2308.875861823559,
+          "thruster-fuel": 34126.50438582897,
+          "thruster-oxidizer": 34187.28570342064,
+          "water": 52987.4376475811,
+          "fluoroketone-cold": 229.22423404455185,
+          "fluoroketone-hot": 8.846314251422882,
+          "fusion-plasma": 80,
+          "molten-copper": 1943.7102615833282
+        },
+        "expected_raw": {
+          "molten-iron@1500.0C": 2308.875861823559,
+          "thruster-fuel@25.0C": 34126.50438582897,
+          "thruster-oxidizer@25.0C": 34187.28570342064,
+          "water@15.0C": 52987.4376475811,
+          "fluoroketone-cold@-150.0C": 229.22423404455185,
+          "fluoroketone-hot@180.0C": 8.846314251422882,
+          "fusion-plasma@1073447.5C": 10,
+          "fusion-plasma@1181850.9C": 20,
+          "molten-copper@1100.0C": 1943.7102615833282,
+          "fusion-plasma@1959391.1C": 10,
+          "fusion-plasma@1073448.5C": 10,
+          "fusion-plasma@1070755.6C": 10,
+          "fusion-plasma@1177594.8C": 10,
+          "fusion-plasma@1962191.4C": 10,
+          "fusion-plasma@1177594.4C": 10,
+          "fusion-plasma@1070759.1C": 10
+        },
+        "frozen_actual_raw": {
+          "fluoroketone-hot@180.0C": 8.846314251422882,
+          "fusion-plasma@1073447.5C": 10,
+          "fusion-plasma@1181850.9C": 20,
+          "fluoroketone-cold@-150.0C": 229.22423404455185,
+          "fusion-plasma@1073448.5C": 10,
+          "molten-iron@1500.0C": 2308.875861823559,
+          "molten-copper@1100.0C": 1943.7102615833282,
+          "thruster-fuel@25.0C": 34126.50438582897,
+          "thruster-oxidizer@25.0C": 34187.28570342064,
+          "fusion-plasma@1070755.6C": 10,
+          "fusion-plasma@1177594.8C": 10,
+          "fusion-plasma@1070759.1C": 10,
+          "fusion-plasma@1177594.4C": 10,
+          "water@15.0C": 52987.4376475811
+        },
+        "frozen_actual_by_name": {
+          "fluoroketone-hot": 8.846314251422882,
+          "fusion-plasma": 80,
+          "fluoroketone-cold": 229.22423404455185,
+          "molten-iron": 2308.875861823559,
+          "molten-copper": 1943.7102615833282,
+          "thruster-fuel": 34126.50438582897,
+          "thruster-oxidizer": 34187.28570342064,
+          "water": 52987.4376475811
+        },
+        "frozen_actual_total": 125871.88440853357,
+        "write_rejected": {
+          "fusion-plasma": 20
+        },
+        "activation_census_tick": 139106,
+        "post_activation_actual_by_name": {
+          "fluoroketone-hot": 8.846314251422882,
+          "fusion-plasma": 80,
+          "fluoroketone-cold": 229.22423404455185,
+          "molten-iron": 2308.875861823559,
+          "molten-copper": 1943.7102615833282,
+          "thruster-fuel": 34126.50438582897,
+          "thruster-oxidizer": 34187.28570342064,
+          "water": 52987.4376475811
+        },
+        "post_activation_actual_raw": {
+          "fluoroketone-hot@180.0C": 8.846314251422882,
+          "fusion-plasma@1073447.5C": 10,
+          "fusion-plasma@1181850.9C": 20,
+          "fluoroketone-cold@-150.0C": 229.22423404455185,
+          "fusion-plasma@1073448.5C": 10,
+          "molten-iron@1500.0C": 2308.875861823559,
+          "molten-copper@1100.0C": 1943.7102615833282,
+          "thruster-fuel@25.0C": 34126.50438582897,
+          "thruster-oxidizer@25.0C": 34187.28570342064,
+          "fusion-plasma@1070755.6C": 10,
+          "fusion-plasma@1177594.8C": 10,
+          "fusion-plasma@1070759.1C": 10,
+          "fusion-plasma@1177594.4C": 10,
+          "water@15.0C": 52987.4376475811
+        },
+        "post_activation_actual_total": 125871.88440853357
+      },
+      "frozen_compare": {
+        "exact": true,
+        "epsilon": 0.000001,
+        "max_abs_delta": 0,
+        "classification": "exact",
+        "rows": [
+          {
+            "name": "fluoroketone-cold",
+            "expected": 229.22423404455185,
+            "actual": 229.22423404455185,
+            "delta": 0
+          },
+          {
+            "name": "fluoroketone-hot",
+            "expected": 8.846314251422882,
+            "actual": 8.846314251422882,
+            "delta": 0
+          },
+          {
+            "name": "fusion-plasma",
+            "expected": 80,
+            "actual": 80,
+            "delta": 0
+          },
+          {
+            "name": "molten-copper",
+            "expected": 1943.7102615833282,
+            "actual": 1943.7102615833282,
+            "delta": 0
+          },
+          {
+            "name": "molten-iron",
+            "expected": 2308.875861823559,
+            "actual": 2308.875861823559,
+            "delta": 0
+          },
+          {
+            "name": "thruster-fuel",
+            "expected": 34126.50438582897,
+            "actual": 34126.50438582897,
+            "delta": 0
+          },
+          {
+            "name": "thruster-oxidizer",
+            "expected": 34187.28570342064,
+            "actual": 34187.28570342064,
+            "delta": 0
+          },
+          {
+            "name": "water",
+            "expected": 52987.4376475811,
+            "actual": 52987.4376475811,
+            "delta": 0
+          }
+        ]
+      },
+      "post_activation_compare": {
+        "exact": true,
+        "epsilon": 0.000001,
+        "max_abs_delta": 0,
+        "classification": "exact",
+        "rows": [
+          {
+            "name": "fluoroketone-cold",
+            "expected": 229.22423404455185,
+            "actual": 229.22423404455185,
+            "delta": 0
+          },
+          {
+            "name": "fluoroketone-hot",
+            "expected": 8.846314251422882,
+            "actual": 8.846314251422882,
+            "delta": 0
+          },
+          {
+            "name": "fusion-plasma",
+            "expected": 80,
+            "actual": 80,
+            "delta": 0
+          },
+          {
+            "name": "molten-copper",
+            "expected": 1943.7102615833282,
+            "actual": 1943.7102615833282,
+            "delta": 0
+          },
+          {
+            "name": "molten-iron",
+            "expected": 2308.875861823559,
+            "actual": 2308.875861823559,
+            "delta": 0
+          },
+          {
+            "name": "thruster-fuel",
+            "expected": 34126.50438582897,
+            "actual": 34126.50438582897,
+            "delta": 0
+          },
+          {
+            "name": "thruster-oxidizer",
+            "expected": 34187.28570342064,
+            "actual": 34187.28570342064,
+            "delta": 0
+          },
+          {
+            "name": "water",
+            "expected": 52987.4376475811,
+            "actual": 52987.4376475811,
+            "delta": 0
+          }
+        ]
+      }
+    }
+  },
+  "errors": [],
+  "initial_reset": {
+    "cleanup": {
+      "source": {
+        "success": true,
+        "deleted": {},
+        "tick": 195221
+      },
+      "destination": {
+        "success": true,
+        "deleted": {},
+        "tick": 137631
+      }
+    },
+    "zero": {
+      "source": {
+        "success": true,
+        "tick": 195395,
+        "zero_surfaces": true,
+        "surfaces": {},
+        "zero_storage": true,
+        "game_paused": false,
+        "destination_holds": 0,
+        "locked_platforms": 0,
+        "committed_source_transfer_tombstones": 0,
+        "lab_platform_exports": 0
+      },
+      "destination": {
+        "success": true,
+        "tick": 137808,
+        "zero_surfaces": true,
+        "surfaces": {},
+        "zero_storage": true,
+        "game_paused": false,
+        "destination_holds": 0,
+        "locked_platforms": 0,
+        "committed_source_transfer_tombstones": 0,
+        "lab_platform_exports": 0
+      }
+    },
+    "ok": true
+  },
+  "install": {
+    "source": {
+      "success": true,
+      "tick": 195485,
+      "base": "2.0.77"
+    },
+    "destination": {
+      "success": true,
+      "tick": 137898,
+      "base": "2.0.77"
+    }
+  },
+  "final_reset": {
+    "cleanup": {
+      "source": {
+        "success": true,
+        "deleted": [
+          "fluid-lab-r11-a-control-1783660077058",
+          "fluid-lab-r11-a-machines-1783660080036",
+          "fluid-lab-r11-b-1783660082860",
+          "fluid-lab-r11-c-1783660085795"
+        ],
+        "tick": 197018
+      },
+      "destination": {
+        "success": true,
+        "deleted": [
+          "fluid-lab-r11-d-1783660089105"
+        ],
+        "tick": 139509
+      }
+    },
+    "zero": {
+      "source": {
+        "success": true,
+        "tick": 197215,
+        "zero_surfaces": true,
+        "surfaces": {},
+        "zero_storage": true,
+        "game_paused": false,
+        "destination_holds": 0,
+        "locked_platforms": 0,
+        "committed_source_transfer_tombstones": 0,
+        "lab_platform_exports": 0
+      },
+      "destination": {
+        "success": true,
+        "tick": 139696,
+        "zero_surfaces": true,
+        "surfaces": {},
+        "zero_storage": true,
+        "game_paused": false,
+        "destination_holds": 0,
+        "locked_platforms": 0,
+        "committed_source_transfer_tombstones": 0,
+        "lab_platform_exports": 0
+      }
+    },
+    "ok": true
+  },
+  "finished": "2026-07-10T05:08:25.511Z"
+}
+```
+
+## 2026-07-10 - R11 shared-segment fixture correction and final evidence
+
+A final scope audit found that the earlier R11a tank and pipe run had distinct segment IDs, so those R11a
+records proved isolated segments rather than the specified shared segment. The runner was corrected to inject
+through a pipe member and to require the pipe and tank to report the same non-nil segment ID. The corrected
+focused run passed, with both members reporting segment `204` and conserving 2,000 water exactly.
+
+The definitive consecutive full passes completed at `2026-07-10T05:07:38.649Z` and
+`2026-07-10T05:08:25.511Z`. In both, corrected R11a asserted shared segment identity in both variants; R11b
+and R11c conserved every fluid exactly without fallback; and R11d retained positive hook/log proof, untouched
+raw serialized values, exact frozen and post-activation comparisons, and the measured 100 raw / 20 rejected /
+80 restored fusion-plasma accounting. Both passes ended with both-instance seven-field zero-leftover evidence.
+These are the final acceptance passes for the committed runner.
+
+
+## 2026-07-10T06:09:39.563Z - R12 / LAB-B6 temperature grounding
+
+Predictions stated before execution: unequal-volume temperature merges volume-weighted with exact volume conservation; key stability is measured without presuming the 10,000C threshold.
+
+```json
+{
+  "script": "tests/fluid-lab/run-r12.mjs",
+  "started": "2026-07-10T06:09:28.869Z",
+  "sections": [
+    "b6a",
+    "b6b"
+  ],
+  "predictions": {
+    "b6a": "volume-weighted merge with exact volume conservation",
+    "b6b": "measure key stability without presuming 10,000C"
+  },
+  "rungs": {
+    "b6a": {
+      "success": true,
+      "prediction": "2000 steam at 416.25C; water control clamps and cannot carry the requested temperatures",
+      "water_control": [
+        {
+          "asked": 165,
+          "read": 100,
+          "tick": 429192
+        },
+        {
+          "asked": 500,
+          "read": 100,
+          "tick": 429192
+        }
+      ],
+      "before": {
+        "a": {
+          "label": "isolated A",
+          "tick": 429192,
+          "game_paused": false,
+          "direct": {
+            "name": "steam",
+            "amount": 500,
+            "temperature": 165
+          },
+          "segment_id": 409,
+          "segment_contents": {
+            "steam": 500
+          }
+        },
+        "b": {
+          "label": "isolated B",
+          "tick": 429192,
+          "game_paused": false,
+          "direct": {
+            "name": "steam",
+            "amount": 1500,
+            "temperature": 500
+          },
+          "segment_id": 410,
+          "segment_contents": {
+            "steam": 1500
+          }
+        }
+      },
+      "topology_same_tick": {
+        "label": "connector same tick",
+        "tick": 429192,
+        "game_paused": false,
+        "direct": {
+          "name": "steam",
+          "amount": 3.9292730689048767,
+          "temperature": 416.25
+        },
+        "segment_id": 409,
+        "segment_contents": {
+          "steam": 2000
+        }
+      },
+      "merged": {
+        "label": "merged after elapsed tick",
+        "tick": 429244,
+        "game_paused": false,
+        "direct": {
+          "name": "steam",
+          "amount": 3.9292730689048767,
+          "temperature": 416.25
+        },
+        "segment_id": 409,
+        "segment_contents": {
+          "steam": 2000
+        }
+      },
+      "verdict": "volume-weighted temperature and volume conservation confirmed"
+    },
+    "b6b": {
+      "success": true,
+      "prediction": "identify the first engine-read key instability or collision without assuming a threshold",
+      "rows": [
+        {
+          "asked": 9999,
+          "tick": 429283,
+          "game_paused": false,
+          "direct": {
+            "name": "steam",
+            "amount": 100,
+            "temperature": 5000
+          },
+          "key": "steam@5000.0C"
+        },
+        {
+          "asked": 10001,
+          "tick": 429283,
+          "game_paused": false,
+          "direct": {
+            "name": "steam",
+            "amount": 100,
+            "temperature": 5000
+          },
+          "key": "steam@5000.0C"
+        },
+        {
+          "asked": 100000,
+          "tick": 429283,
+          "game_paused": false,
+          "direct": {
+            "name": "steam",
+            "amount": 100,
+            "temperature": 5000
+          },
+          "key": "steam@5000.0C"
+        },
+        {
+          "asked": 1000000,
+          "tick": 429283,
+          "game_paused": false,
+          "direct": {
+            "name": "steam",
+            "amount": 100,
+            "temperature": 5000
+          },
+          "key": "steam@5000.0C"
+        },
+        {
+          "asked": 10000000,
+          "tick": 429283,
+          "game_paused": false,
+          "direct": {
+            "name": "steam",
+            "amount": 100,
+            "temperature": 5000
+          },
+          "key": "steam@5000.0C"
+        }
+      ],
+      "reread": {
+        "success": true,
+        "rows": [
+          {
+            "tick": 429401,
+            "asked_index": 1,
+            "direct": {
+              "name": "steam",
+              "amount": 100,
+              "temperature": 5000
+            },
+            "key": "steam@5000.0C"
+          },
+          {
+            "tick": 429401,
+            "asked_index": 2,
+            "direct": {
+              "name": "steam",
+              "amount": 100,
+              "temperature": 5000
+            },
+            "key": "steam@5000.0C"
+          },
+          {
+            "tick": 429401,
+            "asked_index": 3,
+            "direct": {
+              "name": "steam",
+              "amount": 100,
+              "temperature": 5000
+            },
+            "key": "steam@5000.0C"
+          },
+          {
+            "tick": 429401,
+            "asked_index": 4,
+            "direct": {
+              "name": "steam",
+              "amount": 100,
+              "temperature": 5000
+            },
+            "key": "steam@5000.0C"
+          },
+          {
+            "tick": 429401,
+            "asked_index": 5,
+            "direct": {
+              "name": "steam",
+              "amount": 100,
+              "temperature": 5000
+            },
+            "key": "steam@5000.0C"
+          }
+        ]
+      },
+      "stable": true,
+      "collisions": [
+        "steam@5000.0C",
+        "steam@5000.0C",
+        "steam@5000.0C",
+        "steam@5000.0C"
+      ],
+      "verdict": "keys stable through 5000C at %.1f formatting"
+    }
+  },
+  "errors": [],
+  "initial_reset": {
+    "cleanup": {
+      "source": {
+        "success": true,
+        "deleted": {},
+        "tick": 428934
+      },
+      "destination": {
+        "success": true,
+        "deleted": {},
+        "tick": 373868
+      }
+    },
+    "zero": {
+      "source": {
+        "success": true,
+        "tick": 429034,
+        "zero_surfaces": true,
+        "surfaces": {},
+        "zero_storage": true,
+        "game_paused": false,
+        "destination_holds": 0,
+        "locked_platforms": 0,
+        "committed_source_transfer_tombstones": 0,
+        "lab_platform_exports": 0
+      },
+      "destination": {
+        "success": true,
+        "tick": 373967,
+        "zero_surfaces": true,
+        "surfaces": {},
+        "zero_storage": true,
+        "game_paused": false,
+        "destination_holds": 0,
+        "locked_platforms": 0,
+        "committed_source_transfer_tombstones": 0,
+        "lab_platform_exports": 0
+      }
+    },
+    "ok": true
+  },
+  "install": {
+    "source": {
+      "success": true,
+      "tick": 429114
+    },
+    "destination": {
+      "success": true,
+      "tick": 374047
+    }
+  },
+  "final_reset": {
+    "cleanup": {
+      "source": {
+        "success": true,
+        "deleted": [
+          "fluid-lab-r12-merge-1783663772929",
+          "fluid-lab-r12-keys-1783663774348"
+        ],
+        "tick": 429440
+      },
+      "destination": {
+        "success": true,
+        "deleted": {},
+        "tick": 374374
+      }
+    },
+    "zero": {
+      "source": {
+        "success": true,
+        "tick": 429538,
+        "zero_surfaces": true,
+        "surfaces": {},
+        "zero_storage": true,
+        "game_paused": false,
+        "destination_holds": 0,
+        "locked_platforms": 0,
+        "committed_source_transfer_tombstones": 0,
+        "lab_platform_exports": 0
+      },
+      "destination": {
+        "success": true,
+        "tick": 374470,
+        "zero_surfaces": true,
+        "surfaces": {},
+        "zero_storage": true,
+        "game_paused": false,
+        "destination_holds": 0,
+        "locked_platforms": 0,
+        "committed_source_transfer_tombstones": 0,
+        "lab_platform_exports": 0
+      }
+    },
+    "ok": true
+  },
+  "finished": "2026-07-10T06:09:39.563Z"
+}
+```
+
+
+## 2026-07-10T06:11:47.346Z - R12 / LAB-B6 temperature grounding
+
+Predictions stated before execution: unequal-volume temperature merges volume-weighted with exact volume conservation; key stability is measured without presuming the 10,000C threshold.
+
+```json
+{
+  "script": "tests/fluid-lab/run-r12.mjs",
+  "started": "2026-07-10T06:11:36.673Z",
+  "sections": [
+    "b6a",
+    "b6b"
+  ],
+  "predictions": {
+    "b6a": "volume-weighted merge with exact volume conservation",
+    "b6b": "measure key stability without presuming 10,000C"
+  },
+  "rungs": {
+    "b6a": {
+      "success": true,
+      "prediction": "2000 steam at 416.25C; water control clamps and cannot carry the requested temperatures",
+      "water_control": [
+        {
+          "asked": 165,
+          "read": 100,
+          "tick": 435134
+        },
+        {
+          "asked": 500,
+          "read": 100,
+          "tick": 435134
+        }
+      ],
+      "before": {
+        "a": {
+          "label": "isolated A",
+          "tick": 435134,
+          "game_paused": false,
+          "direct": {
+            "name": "steam",
+            "amount": 500,
+            "temperature": 165
+          },
+          "segment_id": 420,
+          "segment_contents": {
+            "steam": 500
+          }
+        },
+        "b": {
+          "label": "isolated B",
+          "tick": 435134,
+          "game_paused": false,
+          "direct": {
+            "name": "steam",
+            "amount": 1500,
+            "temperature": 500
+          },
+          "segment_id": 421,
+          "segment_contents": {
+            "steam": 1500
+          }
+        }
+      },
+      "topology_same_tick": {
+        "label": "connector same tick",
+        "tick": 435134,
+        "game_paused": false,
+        "direct": {
+          "name": "steam",
+          "amount": 3.9292730689048767,
+          "temperature": 416.25
+        },
+        "segment_id": 420,
+        "segment_contents": {
+          "steam": 2000
+        }
+      },
+      "merged": {
+        "label": "merged after elapsed tick",
+        "tick": 435189,
+        "game_paused": false,
+        "direct": {
+          "name": "steam",
+          "amount": 3.9292730689048767,
+          "temperature": 416.25
+        },
+        "segment_id": 420,
+        "segment_contents": {
+          "steam": 2000
+        }
+      },
+      "verdict": "volume-weighted temperature and volume conservation confirmed"
+    },
+    "b6b": {
+      "success": true,
+      "prediction": "identify the first engine-read key instability or collision without assuming a threshold",
+      "rows": [
+        {
+          "asked": 9999,
+          "tick": 435227,
+          "game_paused": false,
+          "direct": {
+            "name": "steam",
+            "amount": 100,
+            "temperature": 5000
+          },
+          "key": "steam@5000.0C"
+        },
+        {
+          "asked": 10001,
+          "tick": 435227,
+          "game_paused": false,
+          "direct": {
+            "name": "steam",
+            "amount": 100,
+            "temperature": 5000
+          },
+          "key": "steam@5000.0C"
+        },
+        {
+          "asked": 100000,
+          "tick": 435227,
+          "game_paused": false,
+          "direct": {
+            "name": "steam",
+            "amount": 100,
+            "temperature": 5000
+          },
+          "key": "steam@5000.0C"
+        },
+        {
+          "asked": 1000000,
+          "tick": 435227,
+          "game_paused": false,
+          "direct": {
+            "name": "steam",
+            "amount": 100,
+            "temperature": 5000
+          },
+          "key": "steam@5000.0C"
+        },
+        {
+          "asked": 10000000,
+          "tick": 435227,
+          "game_paused": false,
+          "direct": {
+            "name": "steam",
+            "amount": 100,
+            "temperature": 5000
+          },
+          "key": "steam@5000.0C"
+        }
+      ],
+      "reread": {
+        "success": true,
+        "rows": [
+          {
+            "tick": 435343,
+            "asked_index": 1,
+            "direct": {
+              "name": "steam",
+              "amount": 100,
+              "temperature": 5000
+            },
+            "key": "steam@5000.0C"
+          },
+          {
+            "tick": 435343,
+            "asked_index": 2,
+            "direct": {
+              "name": "steam",
+              "amount": 100,
+              "temperature": 5000
+            },
+            "key": "steam@5000.0C"
+          },
+          {
+            "tick": 435343,
+            "asked_index": 3,
+            "direct": {
+              "name": "steam",
+              "amount": 100,
+              "temperature": 5000
+            },
+            "key": "steam@5000.0C"
+          },
+          {
+            "tick": 435343,
+            "asked_index": 4,
+            "direct": {
+              "name": "steam",
+              "amount": 100,
+              "temperature": 5000
+            },
+            "key": "steam@5000.0C"
+          },
+          {
+            "tick": 435343,
+            "asked_index": 5,
+            "direct": {
+              "name": "steam",
+              "amount": 100,
+              "temperature": 5000
+            },
+            "key": "steam@5000.0C"
+          }
+        ]
+      },
+      "stable": true,
+      "collisions": [
+        "steam@5000.0C",
+        "steam@5000.0C",
+        "steam@5000.0C",
+        "steam@5000.0C"
+      ],
+      "verdict": "keys stable through 5000C at %.1f formatting"
+    }
+  },
+  "errors": [],
+  "initial_reset": {
+    "cleanup": {
+      "source": {
+        "success": true,
+        "deleted": {},
+        "tick": 434876
+      },
+      "destination": {
+        "success": true,
+        "deleted": {},
+        "tick": 382017
+      }
+    },
+    "zero": {
+      "source": {
+        "success": true,
+        "tick": 434978,
+        "zero_surfaces": true,
+        "surfaces": {},
+        "zero_storage": true,
+        "game_paused": false,
+        "destination_holds": 0,
+        "locked_platforms": 0,
+        "committed_source_transfer_tombstones": 0,
+        "lab_platform_exports": 0
+      },
+      "destination": {
+        "success": true,
+        "tick": 382116,
+        "zero_surfaces": true,
+        "surfaces": {},
+        "zero_storage": true,
+        "game_paused": false,
+        "destination_holds": 0,
+        "locked_platforms": 0,
+        "committed_source_transfer_tombstones": 0,
+        "lab_platform_exports": 0
+      }
+    },
+    "ok": true
+  },
+  "install": {
+    "source": {
+      "success": true,
+      "tick": 435055
+    },
+    "destination": {
+      "success": true,
+      "tick": 382194
+    }
+  },
+  "final_reset": {
+    "cleanup": {
+      "source": {
+        "success": true,
+        "deleted": [
+          "fluid-lab-r12-merge-1783663900713",
+          "fluid-lab-r12-keys-1783663902196"
+        ],
+        "tick": 435381
+      },
+      "destination": {
+        "success": true,
+        "deleted": {},
+        "tick": 382519
+      }
+    },
+    "zero": {
+      "source": {
+        "success": true,
+        "tick": 435478,
+        "zero_surfaces": true,
+        "surfaces": {},
+        "zero_storage": true,
+        "game_paused": false,
+        "destination_holds": 0,
+        "locked_platforms": 0,
+        "committed_source_transfer_tombstones": 0,
+        "lab_platform_exports": 0
+      },
+      "destination": {
+        "success": true,
+        "tick": 382617,
+        "zero_surfaces": true,
+        "surfaces": {},
+        "zero_storage": true,
+        "game_paused": false,
+        "destination_holds": 0,
+        "locked_platforms": 0,
+        "committed_source_transfer_tombstones": 0,
+        "lab_platform_exports": 0
+      }
+    },
+    "ok": true
+  },
+  "finished": "2026-07-10T06:11:47.346Z"
+}
+```

@@ -11,6 +11,37 @@
 >
 > ~68 deduplicated test items across 9 domains. Source keys: A#=code constant, B#=lab open item, plus pitfall #.
 
+## Progress
+- **2026-07-10 — R11 PASSED (commit `e8c7bbe`, audited):** frozen-world fluid injection conserves EXACTLY on
+  2.0.77 — segment write-while-off (R11a), full inactive mini-line (R11b), newly-created pre-first-activation
+  entities with no toggle fallback needed (R11c), and the shipped `FluidRestoration.restore()` invoked frozen on
+  the 1,359-entity clone via a one-shot name-scoped seam (R11d: max per-name |delta| = 0 at both the frozen and
+  same-tick post-activation censuses, all 8 names; fusion 100 raw / 20 engine-rejected / 80 restored exactly).
+  Two acceptance passes, seven-field zero-leftover both instances. The historical ~15% pre-activation loss did
+  NOT reproduce in any class. **Decision contract fires: the #30 rewrite is the SINGLE frozen-world exact gate**
+  (items+fluids, one verdict before activation; post-activation fluid gate + discard/quarantine path retired).
+  Closes FLUID-1/2; GATE-2/3/4 resolved by owner contract + this measurement. Companion audit:
+  `2026-07-10-welded-inference-sweep.md` (10 welded inferences catalogued; stale texts queued into the #30 PR).
+- **2026-07-10 — OWNER CONTRACT UPDATE + new rung R11 (fluid-lab) queued ahead of the #30 gate hardening:** the
+  fluid gate gets NO band and NO complete-loss floor — regular fluids are exact, black-or-white, same contract as
+  items (high-temp already solved via aggregate-by-name + write-rejection subtraction). The 2026-07-09
+  gate-hardening brief is ON HOLD. Root discovery: Pitfall #17's "gate must count a live world" is a WELDED
+  INFERENCE, not a measured fact — fluid-lab R2 already shows write-while-inactive works (machine buffer), and
+  `import-completion.lua`'s completion is one synchronous execution anyway (zero-tick window even today). **R11**
+  (`2026-07-10-fluid-r11-frozen-injection-rung-spec.md`) tests frozen-world injection at segment/line/real-path
+  scale; if it passes, the verdict collapses to a SINGLE frozen-world exact gate and the post-activation fluid
+  gate + discard/quarantine path is retired. Touches GATE-2/3/4 (fluid band items — now resolved by contract, not
+  calibration) and the FLUID-* mechanism rows.
+- **2026-07-09 — GATE-5 CLOSED (LAB-A, commit `d666b23`, audited):** export-scan residual measured **0** for both
+  fluids and items across two full passes (spans 144–240 ticks). Stronger than absence: **freeze0 proved the
+  mechanism** — the production export lock disables fluid movers (pump `disabled_by_script`; per-segment contents
+  static; segment IDs stable) while belts keep moving and the atomic scan preserves exact totals. Export-side
+  justification for the gate tolerance bands is dead. Also advanced: **BELT-2** (belts keep moving under a
+  production lock — now `[empirical, 2.0.77]`) and **BELT-1** (the atomic-scan fix re-validated under moving
+  belts; the historical mechanism story remains historical). Scope: source-export path only — restore-side
+  exactness rests on the end-to-end fidelity suite. GATE-1/2/3/4 now have their calibration input → the #76/gate
+  hardening task.
+
 ## Priority summary (where to start)
 - **P0 — the source-delete gate is calibrated on guesses that the labs already contradict.** `STRICT_ABS=20` /
   `STRICT_PCT=1.5%` authorize irreversible source deletion, are asserted ("~3× the irreducible belt floor"), and
@@ -36,7 +67,7 @@
 | GATE-3 | "3× the irreducible belt-restoration floor" justification (#28 / ±4–8 invariant) | C | is the "±4–8 belt floor" real and constant? belt-lab shows −8 settled → ~−33/item busy — NOT constant | GATE-1/2's entire rationale |
 | GATE-4 | Fluid loss band `max(25,min(500,5%))` + `FLUID_LOSS_TOLERANCE=500` + `FLUID_GAIN_TOLERANCE=500` (A1/A2/A3) | G | clean-transfer fluid-delta distribution → floor/fraction separating noise from real loss; **and a complete-loss floor** (≤25 fluid vanishes today) | fluid source-delete gate (#76); silent-loss holes |
 | GATE-5 | **Export residual: does the item/fluid TOTAL drift during the multi-tick export scan?** (the R11 question) | X | flowing item+fluid network on a locked platform: serialized-export total vs single-tick physical count, repeated over ticks → the true residual that every tolerance should equal | grounds GATE-1..4; decides "tighten band vs atomic-scan fix vs delete band" |
-| GATE-6 | `HIGH_TEMP_THRESHOLD=10000` splits per-key vs by-name fluid reconcile (A13) | G | temperature where the engine actually starts merging/losing key precision — comment cites >1,000,000°C, value is 10000 (2 orders off) | fluid reconcile path selection |
+| GATE-6 | `HIGH_TEMP_THRESHOLD=10000` splits per-key vs by-name fluid reconcile (A13) | R12 negative: threshold still unlicensed | steam requests 9,999→10,000,000°C all clamped to 5,000°C with stable keys; no precision boundary found | task #30 must justify policy from the actual fluid path |
 | GATE-7 | `LOSS_TOLERANCE_PCT=0.05` / `LOSS_TOLERANCE_ABS=25` high-temp reconcile (A11/A12) | G | volume drift from temperature-bucket merging at extreme temps, as a fraction | high-temp fluid report (non-gating today) |
 | GATE-8 | loose-path `STORAGE_TOLERANCE=5`, `TOTAL_LOSS_TOLERANCE=0.95`, `MIN_ABSOLUTE_LOSS=100`, unexpected `>20` (A4/A5/A6/A9) | G | spurious gain / real loss on **non-transfer** (upload) imports — acknowledged over-tolerant instrument | uploaded-JSON import verdict |
 
@@ -55,18 +86,18 @@
 | ID | Claim | Status | What a test MEASURES | Depends on |
 |---|---|---|---|---|
 | INS-1 | `set_stack` silently fails on a **settled-deactivated** inserter (#28 root cause) | X | `set_stack` on settled+deactivated vs briefly-toggled-active inserter: does the item seat? isolate "settled" vs "deactivated" | the `restore_held_items_only` "fix the clock" design |
-| INS-2 | busy-CI ~115-item loss = held items under-restored; partial hands never topped up (B14) | X | src-held vs dest-held per item on CI after a candidate fix (D1/D2 diagnostic) | busy-platform strict gate; GATE-1/2 |
-| INS-3 | Fix A failed — briefly-active+`set_stack` does NOT seat on CI inserters; candidates unprobed (override, bulk-needs-a-TICK, filter/pickup) (B15) | X | probe each candidate on a real CI inserter: hand fills after a full tick vs a synchronous toggle? does override cap it? | the entire pre-gate held-restore premise (no-tick-sync) |
-| INS-4 | held loss is environment/path-driven, not payload; only CI host-2 world reproduces it (B16) | U | load the CI save, toggle inserter active + step one tick → do held items recover? (gate-timing artifact vs real loss) | pre-gate fix vs post-activation-restore choice |
+| INS-2 | bonus-0 destination force previously under-restored held items | C — B1/B3 [empirical, 2.0.77] | player control and adversarial force both restored physical held 8 exactly | busy-platform strict gate; GATE-1/2 |
+| INS-3 | synchronous held-item top-up seats fully after force sync | C — B3 [empirical, 2.0.77] | adversarial destination physically held 8 with no residual after Phase-0 raised the force | the pre-gate held-restore premise |
+| INS-4 | held loss was destination-force state, not payload drift | C — B2 [empirical, 2.0.77] | destination entity force began bonus 0, rose to source 11, and restored the same payload exactly | pre-gate force sync |
 | INS-5 | no-tick-sync validated only an **empty/settled** hand, not a partial-filled bulk inserter (B24) | X | run the no-tick sync assertion against a partially-filled bulk inserter in CI-fresh state | ties INS-2/3; the "restore-held-before-gate, no tick" premise |
-| INS-6 | force-sync must be RAISE-ONLY — LOWERING a dest bonus "ejects other platforms' held items" (#29) | X | lower `bulk_inserter_capacity_bonus` on a force with seated over-capacity inserters → are held items ejected? | raise-only Phase-0 sync safety argument |
+| INS-6 | force-sync remains RAISE-ONLY; seated-hand ejection claim tested | C — B4 [empirical, 2.0.77] | hand stayed 8 across bonus 11→0, elapsed ticks, and `reset_technology_effects()`; no ejection | raise-only remains conservative state ownership |
 
 ## 4. Fluid fidelity & mechanisms (P1/P2/P3)
 | ID | Claim | Status | What a test MEASURES | Depends on |
 |---|---|---|---|---|
 | FLUID-1 | ghost-buffer / fluid-detach mechanism (frozen ⇒ detached; write ⇒ ghost buffer; merge wipes it) (#17 / api-7 / B9) | H + uninspectable | needs a modded/injected specimen that is BOTH segment-member AND deactivatable: write-inactive → read → reactivate → read (survives=refute / wiped=confirm). 4 sub-claims 3a–3d | inject-after-activation *rationale* (behavior stands independently) |
 | FLUID-2 | R7 unanswered — no activatable entity on 2.0.77 exposes a non-nil own-fluidbox segment id (B11 / api-4) | X | find an activatable entity whose fluidbox reports non-nil segment id, then test detach/merge | FLUID-1; the "merge favors larger segment" sub-claim |
-| FLUID-3 | temperature merge = **volume-weighted average**, general/unequal-volume (#23 / api-6) | H | inject unequal volumes at differing temps (`500@165+1500@500` → expect 416.25) via real transfer; confirm V×T-weighted, not simple mean; and V×T conserved | aggregate-by-name gate; thermal-energy validation |
+| FLUID-3 | temperature merge = **volume-weighted average**, unequal-volume (#23 / api-6) | C — R12/B6a [empirical, 2.0.77] | `500 steam@165 + 1500 steam@500` merged to exact `2000@416.25`; water control clamped to 100 | aggregate-by-name gate; thermal-energy validation |
 | FLUID-4 | `entity.fluidbox[i]` is a proxy window onto the segment, not a container (api-1) | X | write to one entity's fluidbox → read segment contents from a *different* entity on the same segment | segment read/dedup strategy |
 | FLUID-5 | fluidbox proxy reads stale (0/nil) for ≥1 tick after a state change (api-2) | P | sample `fluidbox[i]` every tick vs `get_fluid_segment_contents` after activate; count stale ticks | validate-via-segment rule; import timing |
 | FLUID-6 | summing per-entity fluidbox multiplies by segment size → dedup by segment id (api-3) | X | build K-entity segment, sum per-entity contents, confirm =K× true; dedup recovers 1× | network-wide fluid meter over-count |
@@ -95,14 +126,14 @@
 ## 7. Engine / API claims — re-verify on the 2.0.77 pin (P3/P4)
 | ID | Claim | Status | What a test MEASURES | Depends on |
 |---|---|---|---|---|
-| API-1 | `crafting_speed` updates **instantly** on beacon_modules populate — no tick, no power (api-15 / pitfall) | P/X | populate beacon_modules on a deactivated unpowered machine, read crafting_speed same tick; confirm set_stack slot-cap numbers (cs 17.375→12, 2.5→7) | beacon-before-crafter two-pass ordering |
-| API-2 | craft-in-the-gap: machines craft in the activation→count window → false GAINs (#15) | H | activate a deactivated furnace mid-inventory, count per-tick deltas — does crafting advance in the window and produce the GAIN magnitude? | "validate pre-activation" ordering |
+| API-1 | `crafting_speed` updates instantly on beacon module population, no power required | C — B8 [empirical, 2.0.77] | same-execution `1.25→3.125` powered and unpowered; stable after elapsed tick | beacon-before-crafter two-pass ordering |
+| API-2 | crafting does not advance without an elapsed tick; resumes after ticks | C — B5 [empirical, 2.0.77] | same-execution progress/input/output exact; later reads advanced | "count before elapsed tick" ordering |
 | API-3 | entity props read-only in 2.0 (quality, productivity_bonus aggregation) (api-14 / #6) | P/X | attempt post-create writes on the pin; confirm read-only; confirm bonus aggregation composition | set-at-create + pcall rule |
 | API-4 | LuaProfiler non-serializable; `{"", profiler}` bakes value on save/reload; display-only (api-12) | P | store `{"", profiler}`, save/reload, confirm baked+correct; confirm raw-profiler storage crashes | persisted timing/telemetry |
 | API-5 | LocalisedString capped at 20 params → crash `N > 20` (api-13 / #25) | P | print a 21-param LocalisedString, confirm crash on the pin | split-print rule in import completion |
 | API-6 | `set_inventory_size_override` arg-order changed post-2.0.76 (api-10) | X (inference) | call on the current engine, determine which positional order takes effect | future use on upgraded engine |
-| API-7 | `platform.destroy(ticks)` schedules deferred deletion in "latest" (no-op at 2.0.76) (api-11 / #19) | W | if upgraded past 2.0.76, confirm destroy(ticks) actually deletes | future switch off `game.delete_surface` |
-| API-8 | unknown items gracefully skipped w/ warning (v1.0.84+) (#7) | X | import an export with a dest-absent item; confirm skip+warn, no crash/corruption | cross-mod import robustness |
+| API-7 | `platform.destroy(ticks)` schedules deletion on 2.0.77; no-arg remains no-op | C — B7 [empirical, 2.0.77] | `destroy(0)` and `destroy(60)` deleted after ticks; `destroy()` remained valid | keep deterministic `game.delete_surface` route |
+| API-8 | unknown items gracefully skipped with warning (#7) | C — B9 [empirical, 2.0.77] | invalid item skipped, valid iron plates restored physically, warning count increased | cross-mod import robustness |
 | API-9 | throughput scales with segment fullness (api-23) | (API, marginal) | N/A in-plugin | contextual only |
 
 ## 8. Players / passengers — future feature (P5, gated on the feature)

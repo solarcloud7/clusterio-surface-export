@@ -715,39 +715,29 @@ export class InstancePlugin extends BaseInstancePlugin {
 		}
 
 		try {
-			// Get validation data from Lua
-			const validationStartMs = Date.now();
-			const validationResult = await this.lua.getValidationResultJson(String(data.platform_name || ""));
-			const validationDurationMs = Date.now() - validationStartMs;
-
-			this.logger.info(`Validation RCON call took ${validationDurationMs}ms, result: ${validationResult.substring(0, 200)}...`);
-
-			// Default to failed validation - only pass if we get actual validation data
+			// The Lua import-completion payload is the source of truth for the single frozen-world verdict.
+			// Do not re-fetch by platform name or re-derive success here: platform names are mutable,
+			// and Lua owns the exact item + fluid gate.
 			let validation: messages.ValidationResult = {
 				itemCountMatch: false,
 				fluidCountMatch: false,
 				entityCount: Number.isFinite(Number(data.entity_count)) ? Number(data.entity_count) : undefined,
-				mismatchDetails: "Validation data not retrieved",
+				mismatchDetails: "Validation payload not retrieved",
 			};
-			let validationRetrieved = false;
-
-			if (validationResult && validationResult !== "null" && validationResult.startsWith("{")) {
-				try {
-					const parsed = JSON.parse(validationResult) as Partial<messages.ValidationResult>;
-					validation = {
-						...parsed,
-						itemCountMatch: Boolean(parsed.itemCountMatch),
-						fluidCountMatch: Boolean(parsed.fluidCountMatch),
-					};
-					validationRetrieved = true;
-				} catch (parseErr: unknown) {
-					this.logger.error(`Failed to parse validation result (${getErrorMessage(parseErr)}): ${validationResult}`);
-					validation.mismatchDetails = "Failed to parse validation result";
-				}
-			} else if (validationResult && !validationResult.startsWith("{") && validationResult !== "null") {
-				this.logger.warn(`Unexpected validation result format: ${validationResult}`);
-				validation.mismatchDetails = `Validation error: ${validationResult.substring(0, 100)}`;
+			const hasValidationPayload = Boolean(data.validation && typeof data.validation === "object" && !Array.isArray(data.validation));
+			if (hasValidationPayload) {
+				const parsed = data.validation as Partial<messages.ValidationResult>;
+				validation = {
+					...parsed,
+					itemCountMatch: Boolean(parsed.itemCountMatch),
+					fluidCountMatch: Boolean(parsed.fluidCountMatch),
+				};
 			}
+			const validationSaysSuccess = validation.itemCountMatch && validation.fluidCountMatch;
+			const success = hasValidationPayload
+				&& typeof data.success === "boolean"
+				&& data.success === true
+				&& validationSaysSuccess;
 
 			let normalizedMetrics: Record<string, unknown> | undefined;
 			if (metrics && typeof metrics === "object") {
@@ -765,12 +755,12 @@ export class InstancePlugin extends BaseInstancePlugin {
 				transferId,
 				platformName: String(data.platform_name || "Unknown"),
 				sourceInstanceId,
-				success: Boolean(validation.itemCountMatch && validation.fluidCountMatch),
+				success,
 				validation,
 				metrics: normalizedMetrics, // Forward Lua import metrics to controller
 			}));
 
-			this.logger.info(`Validation event sent for transfer ${transferId}: success=${validation.itemCountMatch && validation.fluidCountMatch}`);
+			this.logger.info(`Validation event sent for transfer ${transferId}: success=${success}`);
 
 		} catch (err: unknown) {
 			const errMsg = getErrorMessage(err);

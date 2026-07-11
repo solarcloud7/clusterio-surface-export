@@ -43,8 +43,7 @@ false-refused → source survived + dest committed = two copies).
   (`SurfaceLock.find_lock_key_by_name`).
 - **Mechanically enforced:** `npm run lint:lua` rule `no-name-as-transfer-identity` fails on `platform.name` /
   `platform_name` used in an `==`/`~=` comparison within the delete + lock spine. See CLAUDE.md Pitfall #31.
-- Still name-keyed (lower-risk, follow-up): the dest-side `storage.validation_results[platform_name]` store and
-  `platform_flight_data[platform.name]` — a name collision there cross-wires or loses a record.
+- Still name-keyed (lower-risk, follow-up): `platform_flight_data[platform.name]` — a name collision there cross-wires or loses a record. The dest-side validation-result debug store was re-keyed by transfer/job id in the composite-verdict V1 PR.
 
 ## Phase 1 — source-side durable expiry (SHIPPED)
 The failsafe lives where the at-risk resource lives: the source instance's own Factorio save, driven by game
@@ -87,9 +86,12 @@ vote) → COMMIT (flip phase=committed FIRST, then evacuate + delete) → RELEAS
 DISCARD the sibling on abort)`.
 
 Load-bearing rules (each is a hard constraint, not a preference):
-- The dest VOTE means **fully finalized**, not just item-validated: import → item-validate (pre-activation,
-  Pitfall #15) → activate → restore fluids (post-activation, Pitfall #17) → fluid-validate → gateway park → only
-  then vote, holding the finished platform not-live. COMMIT can never race a later restoration failure.
+- The dest VOTE means **fully finalized**: import → complete held items → restore fluids while paused/deactivated
+  (Pitfall #17, Historical Pre-Activation Fluid Loss) → one exact item+fluid gate
+  (Pitfall #15, Entity Activation Before Validation) → activate → gateway park → only then vote, holding the
+  finished platform not-live. COMMIT can never race a later restoration failure.
+  **The single frozen-world verdict pre-implements this object** on the current live transfer path: one Lua payload carries
+  `success`, item/fluid validation, `failedStage`, and metrics; PR-3's VOTE consumes the same verdict shape.
 - `committed` is an **irreversible non-live tombstone**: every unlock/resume/expiry path REFUSES a `committed`
   lock; only delete clears it. GO-LIVE fires on source state `gone` OR `committed`.
 - **Handshake-or-discard (DECIDED 2026-07-06, supersedes the earlier unbounded never-discard rule):** after
@@ -168,7 +170,7 @@ Legend: **S**=source, **D**=dest, **C**=controller; `{}` = source lock phase (Ph
   handshake-or-discard contract). Re-audit hardening R1–R8
   shipped (`feat/106-hardening`): in-game double-transfer refuse guard, expiry-scan failure counter, derived TTL
   floor, order-independent + timer-spy test teeth, stale-comment cleanup.
-- **Follow-ups:** dest-side `validation_results` / `flight_data` re-key off name (collision); a true live
+- **Follow-ups:** dest-side `flight_data` re-key off name (collision); a true live
   `descending`/`parking` cargo-pod overflow specimen is still not constructed by PR-0A (the shared helper now routes
   those states through recover-and-spill, while the live specimen is `awaiting_launch`); a full controller/web-route
   behavior test for the double-transfer reject (the decision is unit-tested via

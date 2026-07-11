@@ -303,6 +303,7 @@ export class TransferOrchestrator {
 
 		if (importMetrics) transfer.importMetrics = importMetrics;
 		transfer.validationResult = event.validation || null;
+		transfer.failedStage = event.validation?.failedStage ?? null;
 
 		if (transfer.validationTimeout) {
 			clearTimeout(transfer.validationTimeout);
@@ -376,6 +377,9 @@ export class TransferOrchestrator {
 
 	async handleValidationFailure(transferId: string, transfer: ActiveTransfer, validation: ValidationResult | undefined) {
 		const errorMsg = validation?.mismatchDetails || "Unknown error";
+		const destinationCleanupError = validation?.cleanup_failed
+			? String(validation.cleanup_error || "destination discard failed")
+			: null;
 		this.txLogger.logTransactionEvent(transferId, "validation_failed",
 			`Validation failed: ${errorMsg}`, { validation });
 
@@ -392,12 +396,14 @@ export class TransferOrchestrator {
 		// cleanup_failed (not failed) so handleTransferValidation KEEPS the observability intent. Recovery is the
 		// SOURCE-SIDE TTL auto-unlock (the controller does not reconcile/retry on boot). Mirrors the success
 		// path's cleanup_failed on a failed source delete.
-		transfer.status = rollbackError ? "cleanup_failed" : "failed";
-		transfer.error = errorMsg;
+		transfer.status = rollbackError || destinationCleanupError ? "cleanup_failed" : "failed";
+		transfer.error = [errorMsg, rollbackError, destinationCleanupError].filter(Boolean).join("; ");
 		transfer.completedAt = Date.now();
 		this.txLogger.logTransactionEvent(transferId, "transfer_failed",
 			`Failed after ${Math.round((transfer.completedAt - transfer.startedAt) / 1000)}s`, {
-				durationMs: transfer.completedAt - transfer.startedAt, error: errorMsg,
+				durationMs: transfer.completedAt - transfer.startedAt,
+				error: transfer.error,
+				destinationCleanupError,
 			});
 		this.updateTransfer(transfer);
 		await this.txLogger.persistTransactionLog(transferId);

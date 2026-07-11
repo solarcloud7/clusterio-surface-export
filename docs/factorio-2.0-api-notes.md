@@ -48,9 +48,30 @@ Consequence: fluid does not live per-entity — it lives in the shared segment. 
   **may return `nil`** for fluid wagons, fluid-turret internal buffers, or any fluidbox not part of
   a segment (e.g. an isolated machine fluidbox) — handle the `nil` case by reading the proxy
   directly. **[API]**
-- **Use an epsilon** for high-temperature / large-volume fluids — floating-point drift and
-  temperature-weighted merges shift exact `fluid@temp` keys. Validate on volume (or thermal energy
-  V×T), not exact temperature buckets. **[empirical]**
+- **Temperature merging is volume-weighted and prototype bounds precede key precision.**
+  **[empirical, 2.0.77, fluid-lab R12]** Connecting `500 steam@165°C` to `1500 steam@500°C` produced one
+  `2000@416.25°C` segment in the same tick: volume and V×T were exact. Steam writes requested at 9,999 through
+  10,000,000°C all read back at the prototype maximum 5,000°C and remained one stable `steam@5000.0C` key.
+  R12 therefore found no generic floating-point boundary at 10,000°C; high-temperature policy thresholds must
+  be justified by the actual fluid prototype/path rather than the old ">1,000,000°C doubles" story.
+- **Storage-tank mixed-temperature steam equilibrates before export and round-trips as the equilibrated key.**
+  **[empirical, 2.0.77, fluid-lab R10a/R10b]** R10a proved a fixed `steam@165.0C` storage-tank segment
+  (`2000`) reproduces exactly through the real transfer path and passes validation. R10b wrote `1000` steam at
+  `165C` plus `1000` steam at `500C` into one storage tank; the same-tick read, +1 tick, +60 ticks, source
+  debug dump, destination validation, and destination direct/segment meters all reported a single equilibrated
+  `steam@332.5C = 2000` key. In this measured storage-tank case, the old exact-key gate would not have
+  false-failed; aggregate-by-name validation is defensive for this case rather than proven necessary by R10b.
+- **A production export lock freezes pump-driven segment transfer while belts keep moving.**
+  **[empirical, 2.0.77, gate-drift LAB-A]** A powered east-facing pump moved water between two connected
+  segments before export and resumed after unlock. During the real multi-tick `/export-platform` lock, the
+  pump reported `disabled_by_script`, four lock-window samples per flowing section showed unchanged per-segment
+  contents and stable segment IDs, while belt-position signatures continued changing. Two consecutive full
+  passes covered export spans of `144`–`240` ticks; serialized versus independent single-tick physical totals
+  were exact in every section (`max fluid residual=0`, `max item residual=0`). This grounds the tested source
+  export path only; it does not generalize exactness to untested fluids or restoration behavior.
+- **LAB-A found no source-export scan residual requiring a tolerance in its tested fixture.**
+  **[empirical, 2.0.77, gate-drift LAB-A]** The existing high-temperature/merge epsilon note concerns other
+  measurement domains; it is not evidence for a generic source-export volume-loss band.
 - **`get_capacity(i)`** is the segment capacity. **[API]** Empirically it returns the **full segment**
   capacity for pipes/tanks but only the **local** buffer capacity for machines/thrusters, because
   pipe prototypes define `base_area` (drives segment capacity) while machines define fixed local
@@ -59,18 +80,18 @@ Consequence: fluid does not live per-entity — it lives in the shared segment. 
 
 ## Fluid injection on import
 
-- **Inject fluid only after `entity.active = true` and `entity.frozen = false`.** **[empirical]** — the
-  behavioral rule is solid: injecting pre-activation reproducibly lost ~15% of fluids; the
-  inject-after-activation reorder eliminated the loss and has been regression-tested since.
-- *Mechanism explanation for the above* — "a frozen/inactive entity is detached from its segment; the write
+- **The old pipeline's pre-activation injection lost ~15%; its responsible class was never isolated.**
+  **[empirical, historical pipeline]** Moving injection after activation eliminated that whole-pipeline loss,
+  but R11 later measured exact conservation using the shipped restoration code in a frozen destination world.
+  Treat the old result as history, not as a current engine rule.
+- *Historical mechanism hypothesis* — "a frozen/inactive entity is detached from its segment; the write
   lands in a temporary ghost buffer that is wiped when the entity rejoins a live segment on unfreeze" —
   **[hypothesis]**. The cited internals (`FluidSystem::merge_segment()`, `FluidSystem::on_entity_unfrozen`)
   are closed-source and uninspectable ("expert analysis" ≠ verification). Fluid-lab tested the prediction set:
   isolated machine buffers survived deactivation/reactivation, `game.tick_paused` during destination-hold
   stage/read did not affect isolated machine buffers, and the attempted segment-connected activatable specimen
   was unconstructible on 2.0.77 because tested activatable fluid entities expose no non-nil own-fluidbox segment
-  ID. Retain the behavioral import rule on historical evidence; do not treat the ghost-buffer mechanism as
-  proven for current-engine destination-hold design.
+  ID. The predictions tested on 2.0.77 did not reproduce the mechanism; do not treat it as current-engine law.
 - **Isolated chemical-plant heavy-oil buffers survive `active=false` and platform pause.**
   **[empirical, 2.0.77, fluid-lab R1/R3]** With `heavy-oil-cracking` explicitly enabled and the write
   read back before proceeding, a chemical plant's isolated heavy-oil input (`get_fluid_segment_id(i) == nil`)
@@ -80,6 +101,18 @@ Consequence: fluid does not live per-entity — it lives in the shared segment. 
   the real destination-hold path also preserves an asserted isolated machine buffer while `game.tick_paused=true`;
   the hold keeps full deactivation. Directly setting `LuaEntity.frozen` failed in this lab because the property is
   read-only.
+- **Production fluid restoration conserved exact aggregate-by-name totals in a frozen destination world.**
+  **[empirical, 2.0.77, fluid-lab R11]** Controls covering a pipe/tank segment, a mixed pump/pipe/chemical-
+  plant/boiler fixture, and newly created paused/deactivated entities all retained exact totals through
+  activation and 60 ticks. Two consecutive real transfers of a 1,359-entity clone then invoked the shipped
+  `FluidRestoration.restore()` before activation through a one-shot, name-scoped diagnostic seam. All eight
+  fluid names matched their full-precision expected totals exactly in both the frozen and same-tick
+  post-activation censuses (`max |delta| = 0`, epsilon `1e-6`). Engine-rejected fusion-plasma output writes
+  were measured and subtracted before comparison. This refutes the historical rule's generalization to the
+  current engine/path; the old ~15% loss remains a historical observation whose responsible class was not
+  reproduced. The production path now uses this measured ordering: frozen restoration, one exact by-name fluid
+  gate (`epsilon=1e-6`), then activation. Five consecutive clean 1,359-entity transfers passed with exact item
+  and fluid verdicts. **[empirical, 2.0.77, single-gate acceptance]**
 - **Fusion-reactor *output* fluidboxes reject external writes.** The plasma output is engine-managed
   — [`FusionReactorPrototype.output_fluid_box`](https://lua-api.factorio.com/latest/prototypes/FusionReactorPrototype.html#output_fluid_box)
   with an engine `target_temperature`; the engine generates plasma during simulation. `fluidbox[i]=`
@@ -129,20 +162,30 @@ Consequence: fluid does not live per-entity — it lives in the shared segment. 
   physical total (catches both belt-item drop → meter < physical and a whole-line double-count → meter >
   physical) and asserts held-item inclusion whenever an inserter is holding.
 
-- **[empirical, 2.0.77, no-tick-sync-lab]** The strict-gate synchronous pass
+- **[empirical, 2.0.77, no-tick-sync-lab PR-0B/LAB-B5]** The strict-gate synchronous pass
   (`restore_held_items_only` → `validate_import(..., strict=true)`) does not advance `game.tick`, does not move
   a deactivated assembler's `crafting_progress`, and does not change the restored inserter hand before the strict
   count. Measured by `tests/no-tick-sync-lab/run-pr0b.mjs`: tick 187755→187755, crafting_progress
   0.42000000000000004→0.42000000000000004, held `iron-plate x1` unchanged after restore, strict validation green.
+  LAB-B5 repeated the boundary on a mid-craft furnace: reactivation plus an immediate read in one Lua execution
+  kept tick, progress, input, and output identical; progress and output changed only after ticks elapsed.
+
+- **[empirical, 2.0.77, inserter-lab B1-B4]** A player-force control and an adversarial platform containing a
+  legendary bulk inserter on a destination force initialized at bonus 0 both transferred a physical held stack
+  of 8 exactly. Phase-0 raised that entity force to source bonus 11 before restoration. Separately, an already
+  seated hand stayed at 8 when its force bonus dropped 11→0, through elapsed ticks and
+  `reset_technology_effects()`; no items appeared on the ground. Raise-only remains the import policy because
+  an import should not lower unrelated destination state, not because a seated hand was observed ejecting.
 
 ## Space platform deletion
 
-- **`LuaSpacePlatform.destroy()` is a no-op at 2.0.76 — use `game.delete_surface` instead.** Verified via
-  RCON on the pinned version: `destroy()`, `destroy(0)`, and `destroy(60)` all return `ok=true` but the
-  platform stays `valid` and present after 100+ ticks. `hub.destroy()` is auto-recovered by the engine.
-  `game.delete_surface(platform.surface)` does remove it (verified — end-of-tick deferred). **[empirical, 2.0.76]**
+- **`LuaSpacePlatform.destroy()` behavior changed between 2.0.76 and 2.0.77.** At 2.0.76, `destroy()`,
+  `destroy(0)`, and `destroy(60)` all returned success but remained valid after 100+ ticks. **[empirical, 2.0.76]**
+  LAB-I B7 on 2.0.77 measured `destroy()` with no argument still as a no-op, while `destroy(0)` deleted after
+  an elapsed tick and `destroy(60)` deleted on schedule. **[empirical, 2.0.77, engine-repin-lab B7]** Use
+  `game.delete_surface` through `GameUtils.delete_platform` for deterministic project teardown.
   The [latest docs](https://lua-api.factorio.com/latest/classes/LuaSpacePlatform.html#method_destroy) show
-  `destroy(ticks)` *scheduling* deferred deletion — a **post-2.0.76 change**, not functional at our pin. **[API, latest]**
+  `destroy(ticks)` scheduling deferred deletion, matching the measured 2.0.77 ticked forms. **[API, latest]**
 - **This project uses
   [`game.delete_surface(platform.surface)`](https://lua-api.factorio.com/latest/classes/LuaGameScript.html#method_delete_surface)**
   for immediate, deterministic teardown of a platform and all its entities. Route all platform
@@ -184,7 +227,14 @@ Consequence: fluid does not live per-entity — it lives in the shared segment. 
   `create_entity`, not after, and wrap optional writes in `pcall`. **[empirical]**
 - **`crafting_speed` updates instantly** when a nearby beacon's `beacon_modules` inventory is
   populated — no tick delay, no power needed. This is why import restores beacon module inventories
-  before crafter inputs, so `set_stack()` caps reflect the beacon-boosted speed. **[empirical]**
+  before crafter inputs, so `set_stack()` caps reflect the beacon-boosted speed. LAB-I B8 measured
+  `1.25→3.125` in the same module-population execution with two speed-module-3 modules, both powered and
+  unpowered; the first elapsed read stayed 3.125. **[empirical, 2.0.77, engine-repin-lab B8]**
+
+- **Unknown inventory items are skipped with a warning while valid siblings restore.** LAB-I B9 imported an
+  iron chest containing `iron-plate x10` plus a nonexistent item. The remote completed without error, the chest
+  physically held all ten valid plates, and the host log gained the expected "Skipped unknown item" warning.
+  **[empirical, 2.0.77, engine-repin-lab B9]**
 
 ## Players on space platforms + cross-server move
 
