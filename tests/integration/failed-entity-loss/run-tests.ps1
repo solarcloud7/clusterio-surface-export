@@ -85,7 +85,7 @@ if s then
       if e then
         e.set_recipe('heavy-oil-cracking')
         local inv=e.get_module_inventory()
-        out.item=inv and inv.insert({name='speed-module',count=4,quality='legendary'}) or 0
+        out.item=inv and inv.insert({name='speed-module',count=3,quality='legendary'}) or 0
         for i=1,#e.fluidbox do
           local ok=pcall(function() e.fluidbox[i]={name='heavy-oil',amount=20,temperature=25} end)
           local f=e.fluidbox[i]
@@ -101,7 +101,7 @@ if s then
 end
 rcon.print(helpers.table_to_json(out))
 "@
-if (-not $fixture.created -or [int]$fixture.item -ne 4 -or [double]$fixture.fluid -le 0) {
+if (-not $fixture.created -or [int]$fixture.item -ne 3 -or [double]$fixture.fluid -le 0) {
     throw "Could not build deterministic inventory+fluid failed-entity fixture"
 }
 Write-Status "Fixture ready (items=$($fixture.item), fluid=$($fixture.fluid))" -Type success
@@ -195,10 +195,10 @@ if ($valSuccess -eq $false -and (Get-SafeProperty $validation "testForcedEntityF
 
 $failedItems = Get-SafeProperty $fel "items"
 $legendaryModules = [int](Get-SafeProperty $failedItems "speed-module:legendary")
-if ($legendaryModules -eq 4) {
+if ($legendaryModules -eq 3) {
     Write-TestResult -TestId "fel-quality-key" -TestName "Failed legendary modules retain their quality key" -Status "passed"
 } else {
-    Write-TestResult -TestId "fel-quality-key" -TestName "Failed legendary modules retain their quality key" -Status "failed" -Message "speed-module:legendary=$legendaryModules (expected 4)"
+    Write-TestResult -TestId "fel-quality-key" -TestName "Failed legendary modules retain their quality key" -Status "failed" -Message "speed-module:legendary=$legendaryModules (expected 3)"
     $failed++
 }
 
