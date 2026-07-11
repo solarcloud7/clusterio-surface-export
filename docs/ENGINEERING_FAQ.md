@@ -64,9 +64,13 @@ spurious expiry.
 
 **Q: What if the source instance dies (or goes permanently unreachable) while the destination is reconstructing
 the platform?**
-A: ✅ DECIDED (2026-07-06): the transfer **fails — black and white**. The destination discards its staged copy at
-the handshake deadline (a staged copy never goes live without a completed handshake); the source's own TTL
-failsafe unlocks the original whenever that save next runs. We do not care WHY the handshake failed — host death,
+A: ⚠️ OPEN (policy DECIDED, wiring queued). 2PC wiring queued: `docs/superpowers/plans/2026-07-10-pr-3-executor-brief.md`.
+TODAY the destination goes live on its OWN validation passing (the single exact gate — it is not held pending a
+source-delete handshake), and the source is deleted only after. A source that dies inside that window can leave a
+live destination — a **recoverable dup** (the source's own TTL failsafe unlocks the original whenever that save
+next runs), never an unrecoverable deletion. The DECIDED (2026-07-06) end-state, once the handshake is wired: the
+transfer **fails — black and white**; the destination discards its staged copy at the handshake deadline (a staged
+copy never goes live without a completed handshake). We do not care WHY the handshake failed — host death,
 partition, timeout — and there is deliberately **no force-resolve, no operator attestation, no "is the host
 coming back" tracking**: a dest copy that never outlives a failed handshake can never collide with a resurrected
 source, so the entire recovery-console problem vanishes by construction. Accepted residual: a source that
@@ -77,9 +81,12 @@ it. Inventing a solution per failure reason is over-engineering: the contract is
 
 **Q: What if the destination host/instance isn't ready (offline, stopped, still booting) when the transfer needs
 it?**
-A: ✅ Fail fast. The controller already has the observability (host connected, instance running, healthchecks).
-If the destination can't shake hands by the deadline, the transfer fails: staged copy discarded if one exists,
-source unlocks via its TTL. A retry is a NEW transfer — no resume machinery.
+A: ✅ / ⚠️ OPEN (handshake wiring queued). TODAY: the `sendTo`/`sendRequest` to an unreachable destination
+instance rejects, the controller rolls back and unlocks the source at once (`tryUnlockSource`), and a retry is a
+NEW transfer — no resume machinery. The "discard the staged copy if the destination shook hands then failed by a
+deadline" half depends on the unbuilt handshake (2PC wiring queued:
+`docs/superpowers/plans/2026-07-10-pr-3-executor-brief.md`); until it lands, a destination that goes live on its
+own validation is not deadline-discarded.
 
 ## B. Concurrency
 
@@ -107,8 +114,13 @@ is never resolved by a non-unique key alone.
 ## C. Failure & rollback
 
 **Q: What if the destination rejects my platform (mod / prototype mismatch)?**
-A: ✅ Validation fails → the controller unlocks the source **immediately** (`tryUnlockSource`) and discards the
-dest copy. No loss; the source is restored, not trapped for the TTL.
+A: ✅ The single exact gate fails (`failedStage` = the mismatched category, `items` or `fluids`). The **instance**
+(Lua) then runs BLACK-BOX DISCARD: it banks an always-on forensic bundle to
+`script-output/failure_black_box_<platform>_<tick>.json` (expected/actual/diff, dest force state, mods, a physical
+entity scan of the dest), evacuates any passengers to Nauvis, and deletes the failed destination. The **controller**
+unlocks the source **immediately** (`tryUnlockSource`). No loss; the source is restored, not trapped for the TTL.
+(`import-completion.lua` bank+discard; Pitfall #28, the gate must count a complete state.) The unrelated
+uploaded-JSON / clone import path still uses the loose tolerances — the exact gate is transfer-only.
 
 **Q: What if my platform is too big and the RCON / import send fails?**
 A: ✅ A normal (non-session) error triggers controller rollback → source unlocked at once.
@@ -119,6 +131,18 @@ TTL backstop instead. A recoverable stuck-then-unlock beats a dup.
 
 **Q: What if validation fails AND the rollback unlock also fails?**
 A: ✅ Marked `cleanup_failed`, the observability record is kept, and the source-side TTL backstops the unlock.
+Symmetric on the destination side: if the black-box *banking itself* fails, the instance does NOT delete the
+destination — it preserves the failed surface paused (also `cleanup_failed`) rather than destroy the only
+remaining evidence.
+
+**Q: What happens to my platform if a transfer fails validation?**
+A: ✅ You keep your original — nothing is lost. The single exact gate runs in a paused, deactivated destination
+BEFORE activation, so a mismatch is caught before the destination ever goes live. On failure: the source stays
+put (unlocked, restored to your list), and the half-built destination is banked to a forensic black box and then
+discarded (`failedStage` in the transaction log tells you whether items or fluids didn't reconcile). There is no
+"partial" platform to clean up and no duplicate. (For deliberate post-mortem, an admin can arm the one-shot,
+debug-gated `preserve_failed_destination` flag to keep the failed surface paused instead of discarding it — it is
+consumed after a single use; Pitfall #30, mutating test hooks must be fail-safe on leak.)
 
 ## D. Data fidelity
 
@@ -215,6 +239,26 @@ destinations, the platform just sits parked (no chooser).
 A: ✅ The chooser's Transfer is gated by `GatewayGuard`: the platform must be docked and NOT already in-flight, so
 a double-click can't double-fire. Passengers do not block — they're evacuated to Nauvis at the delete chokepoint
 (same answer as §E, Passengers — evacuation at the sole delete chokepoint).
+
+## I. Persistence & degraded mode
+
+**Q: What do I do if the Exports tab is suddenly empty?**
+A: ✅ First check the controller log. The stored-exports file (`platformStorage`) is loaded once at controller
+startup; if it is present but unreadable/corrupt (a genuinely absent file is a normal fresh start, not degraded),
+the controller latches **degraded mode** — it keeps the existing
+file **untouched** and DISABLES persistence for the session rather than overwrite your exports with an empty set
+(the old wipe-on-read-failure bug, fixed in PR #81; guarded by the catch-swallow lint in PR #82). The log emits an
+actionable `error` line with the exact file path, the root read error, and the recovery steps. To recover: stop
+the controller, back up that file, repair it or move it aside, then restart so the load succeeds and your exports
+reappear. Heads-up: exports you CREATE while degraded will not survive a restart (persistence is off) — recover
+first.
+
+**Q: The Transaction Logs tab is empty after a restart — did I lose my history?**
+A: ✅ Same protection, different file. The transaction-history file is separate from stored exports; an unreadable
+history file is left **untouched** (never truncated) and the tab simply appears empty for that session, with an
+actionable `error` line naming the file and the recovery steps (restore from backup, or repair/move it aside, then
+restart). Nothing is overwritten, so the on-disk history is recoverable. (PR #81 persistence hardening;
+`lib/transaction-logger.ts`.)
 
 ---
 
