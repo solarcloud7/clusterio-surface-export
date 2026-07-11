@@ -271,8 +271,17 @@ export class TransactionLogger {
 			try {
 				const content = await fs.readFile(this.plugin.transactionLogPath, "utf8");
 				allLogs = JSON.parse(content);
-			} catch (_err) {
-				allLogs = [];
+			} catch (err: unknown) {
+				if ((err as { code?: string }).code === "ENOENT") {
+					allLogs = [];
+				} else {
+					this.plugin.logger.error(
+						`Transaction history file ${this.plugin.transactionLogPath} is unreadable (${getErrorMessage(err)}); `
+						+ "skipping this write so the existing history is not destroyed. New transfers will not be recorded "
+						+ "to disk until you repair or move the file aside and restart the controller.",
+					);
+					return;
+				}
 			}
 
 			const transferInfo = this.buildTransferInfo(transfer);
@@ -306,8 +315,16 @@ export class TransactionLogger {
 			const logs = JSON.parse(content);
 			this.plugin.persistedTransactionLogs = Array.isArray(logs) ? logs : [];
 			this.plugin.logger.info(`Loaded ${this.plugin.persistedTransactionLogs.length} transaction logs`);
-		} catch (_err) {
-			this.plugin.persistedTransactionLogs = [];
+		} catch (err: unknown) {
+			if ((err as { code?: string }).code === "ENOENT") {
+				this.plugin.persistedTransactionLogs = [];
+				return;
+			}
+			this.plugin.logger.error(
+				`Failed to load transaction history from ${this.plugin.transactionLogPath}: ${getErrorMessage(err)}. `
+				+ "The file was left untouched; the Transaction Logs tab will appear empty this session. "
+				+ "Restore from a backup, or repair or move the file aside, then restart the controller to recover the history.",
+			);
 		}
 	}
 }

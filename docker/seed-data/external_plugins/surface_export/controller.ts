@@ -59,6 +59,7 @@ export class ControllerPlugin extends BaseControllerPlugin {
 	logRevision!: number;
 	lastTreeForceName!: string;
 	storagePath!: string;
+	storageLoadError!: string | null;
 	transactionLogPath!: string;
 	platformTree!: PlatformTree;
 	txLogger!: TransactionLogger;
@@ -88,6 +89,7 @@ export class ControllerPlugin extends BaseControllerPlugin {
 		this.transferRevision = 0;
 		this.logRevision = 0;
 		this.lastTreeForceName = "player";
+		this.storageLoadError = null;
 
 		this.storagePath = path.resolve(
 			String(this.c.config.get("controller.database_directory")),
@@ -614,18 +616,34 @@ export class ControllerPlugin extends BaseControllerPlugin {
 					}
 				}
 			}
+			this.storageLoadError = null;
 			this.logger.info(`Loaded ${this.platformStorage.size} stored platforms from disk`);
 		} catch (err: unknown) {
 			const code = (err as { code?: string }).code;
 			if (code === "ENOENT") {
+				this.storageLoadError = null;
 				this.logger.verbose("No existing Surface Export storage found; starting fresh");
 				return;
 			}
-			this.logger.error(`Failed to load Surface Export storage: ${getErrorMessage(err)}`);
+			this.storageLoadError = getErrorMessage(err);
+			this.logger.error(
+				`Stored exports could not be loaded from ${this.storagePath}: ${this.storageLoadError}. `
+				+ "Persistence is DISABLED for this session to protect the existing file. To recover: stop the controller, "
+				+ `back up ${this.storagePath}, repair or move the file aside, then restart. Stored exports from before this `
+				+ "error will reappear after a successful load; exports created while degraded will NOT survive a restart.",
+			);
 		}
 	}
 
 	async persistStorage() {
+		if (this.storageLoadError !== null) {
+			this.logger.error(
+				`Refusing to persist stored exports to ${this.storagePath}: the startup load failed (${this.storageLoadError}) `
+				+ "and the file is being preserved as-is. This session's changes will not survive restart. "
+				+ "Repair or move the file and restart the controller to re-enable persistence.",
+			);
+			return;
+		}
 		try {
 			const payload = JSON.stringify(Array.from(this.platformStorage.values()), null, 2);
 			await lib.safeOutputFile(this.storagePath, payload);
