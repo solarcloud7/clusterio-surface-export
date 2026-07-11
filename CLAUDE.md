@@ -15,7 +15,7 @@ This project provides tools for exporting and importing Factorio Space Age platf
 - Async processing to prevent game freezing
 - Graceful handling of mod content mismatches
 - Factorio 2.0 compatibility (handles read-only properties)
-- Chunked RCON protocol for large payloads (>8KB)
+- Chunked RCON protocol for large payloads (100 KB chunks — `RCON_CHUNK_SIZE` in `helpers.ts`)
 - In-game transaction dashboard with persistent profiler snapshots
 - Platform schedule + interrupts preserved (stations, wait conditions, train group inheritance)
 - Ghost entities, tile ghosts, and item request proxies preserved
@@ -372,8 +372,7 @@ docker-compose.clusterio-src.yml  # Opt-in override: run a locally-built Cluster
 
 ### RCON Throughput Limits
 - **Factorio throttles RCON**: ~100 bytes/tick = ~6 KB/s
-- **Max single command**: ~8KB before timeout risks
-- **Solution**: Chunked import (4KB chunks) with async processing
+- **Chunking**: payloads split at `RCON_CHUNK_SIZE = 100000` bytes per command (`helpers.ts:11`), processed async; the old "~8KB max / 4KB chunks" figures were stale — the binding constraints are throughput and the >50-char command-reorder caveat (upstream writing-plugins.md)
 
 ### Async Processing Model
 - Import/Export use batched async processing (~100 entities/tick)
@@ -502,7 +501,7 @@ a reachability spike. Covered by `tests/integration/passenger-evacuate`; design 
 ### 2. Import Fails Silently
 **Symptom**: Import command returns but no platform created
 **Cause**: JSON too large for a single RCON command
-**Fix**: Import via the web UI **Import JSON** (Manual Transfer / Exports tab) or `/plugin-import-file <file> <name>` — both chunk automatically (the instance layer runs the 4KB-chunk RCON protocol). There is no standalone import script.
+**Fix**: Import via the web UI **Import JSON** (Manual Transfer / Exports tab) or `/plugin-import-file <file> <name>` — both chunk automatically (the instance layer runs the chunked RCON protocol, 100 KB chunks). There is no standalone import script.
 
 ### 3. Version Mismatch After Deploy
 **Symptom**: Old code still running after deploy
