@@ -257,8 +257,8 @@ test("single gate is exact for items and by-name fluids", () => {
 		"the only fluid comparison nuance is serializer-scale floating representation");
 	assert.doesNotMatch(transferValidation, /STRICT_ABS|STRICT_PCT|FLUID_GAIN_TOLERANCE|FLUID_LOSS_TOLERANCE/,
 		"destructive transfer parity must contain no band, floor, or percentage tolerance");
-	assert.match(transferValidation, /SurfaceCounter\.count_fluids\s*\(\s*surface\s*,\s*options\.segment_temps\s*\)/,
-		"the exact census must receive injection segment temperatures");
+	assert.match(transferValidation, /SurfaceCounter\.count_fluids\s*\(\s*surface\s*,\s*options\.segment_temps\s*,\s*strict\s*\)/,
+		"the exact census must receive injection segment temperatures and strict ownership exclusion");
 });
 
 test("failed single gate banks an always-on black box before discard", () => {
@@ -363,6 +363,37 @@ test("fluid restoration reports dropped fluids without subtracting them", () => 
 	const importCompletion = fs.readFileSync(path.join(moduleRoot, "core", "import-completion.lua"), "utf8");
 	assert.doesNotMatch(importCompletion, /expected_fluids_after_[^(]*drops|subtract[^\n]*dropped_fluids/i,
 		"real dropped fluid must fail exact parity, never be subtracted from expected");
+});
+
+test("engine-owned fluid classification is symmetric across export, restore, and census", () => {
+	const scanner = fs.readFileSync(path.join(moduleRoot, "export_scanners", "inventory-scanner.lua"), "utf8");
+	const ownership = fs.readFileSync(path.join(moduleRoot, "utils", "fluid-ownership.lua"), "utf8");
+	const verification = fs.readFileSync(path.join(moduleRoot, "validators", "verification.lua"), "utf8");
+	const restoration = fs.readFileSync(path.join(moduleRoot, "import_phases", "fluid_restoration.lua"), "utf8");
+	const counter = fs.readFileSync(path.join(moduleRoot, "validators", "surface-counter.lua"), "utf8");
+	assert.match(ownership, /pipe_connections[\s\S]*connection_category/,
+		"classification must derive ownership from the engine's fluid connection categories");
+	assert.match(ownership, /category\s*==\s*["']default["']/,
+		"any box accepting the player-pipe default category must remain accountable");
+	assert.doesNotMatch(ownership, /ENGINE_MANAGED_OUTPUT_ENTITIES|\[["']fusion-reactor["']\]/,
+		"classification must not hardcode a prototype allowlist");
+	assert.match(ownership, /WARNING[\s\S]*connection categor/i,
+		"future non-fusion categories must trip a loud export warning");
+	assert.match(scanner, /engine_owned\s*=\s*engine_owned/,
+		"serialized fluid records must retain the informational engine-owned classification");
+	assert.match(verification, /if\s+not\s+fluid\.engine_owned/,
+		"engine-owned records must be excluded from expected verification counts");
+	assert.match(restoration, /if\s+fluid_data\.engine_owned/,
+		"import must skip engine-owned writes rather than infer acceptance from readback");
+	assert.match(counter, /exclude_engine_owned[\s\S]*collect_engine_owned_segments/,
+		"gate census must independently apply the same engine-owned segment classification");
+});
+
+test("exact transfer gate requests engine-owned exclusion without changing epsilon", () => {
+	const validation = fs.readFileSync(path.join(moduleRoot, "validators", "transfer-validation.lua"), "utf8");
+	assert.match(validation, /SurfaceCounter\.count_fluids\s*\([^)]*strict\s*\)/,
+		"strict transfer census must exclude engine-owned fluid");
+	assert.match(validation, /EXACT_EPSILON\s*=\s*1e-6/);
 });
 
 test("post-activation reporting cannot overwrite frozen gate fields", () => {

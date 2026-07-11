@@ -5,6 +5,7 @@
 local InventoryScanner = require("modules/surface_export/export_scanners/inventory-scanner")
 local GameUtils = require("modules/surface_export/utils/game-utils")
 local Util = require("modules/surface_export/utils/util")
+local FluidOwnership = require("modules/surface_export/utils/fluid-ownership")
 
 local SurfaceCounter = {}
 
@@ -100,8 +101,9 @@ end
 --- @param segment_temps table|nil: Optional seg_id→{fluid,temp} map from FluidRestoration.restore().
 ---   When provided, temperatures are sourced from what was actually written rather than re-reading
 ---   from the proxy (which may lag for high-temp fluids like fusion-plasma).
+--- @param exclude_engine_owned boolean|nil: Exclude non-default-category segments for strict transfer validation
 --- @return table, number: fluid_key→amount map, total fluid amount
-function SurfaceCounter.count_fluids(surface, segment_temps)
+function SurfaceCounter.count_fluids(surface, segment_temps, exclude_engine_owned)
     if not surface or not surface.valid then
         return {}, 0
     end
@@ -113,6 +115,7 @@ function SurfaceCounter.count_fluids(surface, segment_temps)
     local seg_temps = segment_temps or {}
 
     local entities = surface.find_entities_filtered({})
+    local engine_owned_segments = exclude_engine_owned and FluidOwnership.collect_engine_owned_segments(entities) or {}
 
     -- First pass: collect known temperatures from entities with non-empty local fluidboxes.
     -- This is a fallback for segments not covered by segment_temps.
@@ -138,7 +141,8 @@ function SurfaceCounter.count_fluids(surface, segment_temps)
                     local seg_id = entity.fluidbox.get_fluid_segment_id(i)
                     if seg_id and not counted_segments[seg_id] then
                         counted_segments[seg_id] = true
-                        local contents = entity.fluidbox.get_fluid_segment_contents(i)
+                        local contents = not engine_owned_segments[seg_id]
+                            and entity.fluidbox.get_fluid_segment_contents(i) or nil
                         if contents then
                             for fluid_name, amount in pairs(contents) do
                                 local temp
@@ -154,7 +158,7 @@ function SurfaceCounter.count_fluids(surface, segment_temps)
                                 total = total + amount
                             end
                         end
-                    elseif not seg_id then
+                    elseif not seg_id and not (exclude_engine_owned and FluidOwnership.is_engine_owned_box(entity, i)) then
                         -- Isolated fluidbox: use local amount
                         local fluid = entity.fluidbox[i]
                         if fluid and fluid.name then
