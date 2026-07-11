@@ -58,7 +58,11 @@ isolated.fluidbox[1]={name='fusion-plasma',amount=5,temperature=1234567}
 local control=isolated.fluidbox[1]
 local reactors=p.surface.find_entities_filtered({name='fusion-reactor'})
 local managed=0
-for _,reactor in pairs(reactors) do local f=reactor.fluidbox[2];managed=managed+(f and f.amount or 0) end
+for _,reactor in pairs(reactors) do
+    reactor.fluidbox[2]={name='fusion-plasma',amount=10,temperature=1234567}
+    local f=reactor.fluidbox[2]
+    managed=managed+(f and f.amount or 0)
+end
 rcon.print(helpers.table_to_json({entities=#p.surface.find_entities_filtered({}),control=control and control.amount or 0,managed=managed,reactors=#reactors}))
 "@
     $fixtureData = $fixture | ConvertFrom-Json
