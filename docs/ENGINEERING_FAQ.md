@@ -124,7 +124,7 @@ A: ✅ Marked `cleanup_failed`, the observability record is kept, and the source
 
 **Q: What if my belts are packed with items?**
 A: ✅ 100% preserved. The source uses an atomic single-tick belt scan, and the historical restore-time
-residual once described as cosmetic ±4–8 drift has been fixed to zero (Pitfall #16).
+residual once described as cosmetic ±4–8 drift has been fixed to zero (Pitfall #16, Verification Counts From Live Scan vs Serialized Data).
 
 **Q: What if my inserters are holding items mid-swing?**
 A: ✅ Restored via a pre-gate inserter-only activation pass so the strict gate counts a complete state (Pitfall
