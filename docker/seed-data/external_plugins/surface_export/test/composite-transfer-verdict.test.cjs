@@ -289,6 +289,9 @@ test("failed-entity and overflow item losses retain quality keys end to end", ()
 		"failed-entity inventory losses must use the exported item quality");
 	assert.match(entityCreation, /Util\.make_quality_key\(held\.name,\s*held\.quality/,
 		"failed-entity held-item losses must use the exported item quality");
+	const entityQualityKeys = entityCreation.match(/Util\.make_quality_key\(/g) || [];
+	assert.equal(entityQualityKeys.length, 4,
+		"ground, inventory, belt, and held-item loss paths must each preserve quality");
 	assert.match(deserializer, /Util\.make_quality_key\(item\.name,\s*item\.quality/,
 		"overflow losses must use the exported item quality");
 	assert.match(importCompletion, /adjusted_verification\.item_counts\[item_key\]/,
