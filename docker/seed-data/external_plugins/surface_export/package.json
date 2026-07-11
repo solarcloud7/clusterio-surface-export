@@ -10,7 +10,7 @@
     "build:web": "webpack-cli --mode production",
     "build": "npm run build:node && npm run build:web",
     "prepare": "npm run build",
-    "lint": "npm run lint:js && npm run lint:lua && npm run lint:web-cache && npm run lint:test-grounding && npm run lint:pcall-logging && npm run lint:catch-swallow && npm run lint:test-hooks && npm run lint:doc-refs && npm run lint:allow-manifest",
+    "lint": "npm run lint:js && npm run lint:lua && npm run lint:web-cache && npm run lint:test-grounding && npm run lint:pcall-logging && npm run lint:catch-swallow && npm run lint:test-hooks && npm run lint:doc-refs && npm run lint:evidence-claims && npm run lint:version-certification && npm run lint:allow-manifest",
     "lint:js": "eslint . --max-warnings 0",
     "lint:lua": "node scripts/lint-lua-invariants.mjs",
     "lint:web-cache": "node scripts/lint-webpack-cache.mjs",
@@ -19,6 +19,8 @@
     "lint:catch-swallow": "node scripts/lint-catch-swallow.mjs",
     "lint:test-hooks": "node scripts/lint-test-hooks.mjs",
     "lint:doc-refs": "node scripts/lint-doc-refs.mjs",
+    "lint:evidence-claims": "node scripts/lint-evidence-claims.mjs",
+    "lint:version-certification": "node scripts/lint-version-certification.mjs",
     "lint:allow-manifest": "node scripts/lint-allow-manifest.mjs",
     "test": "npm run build:node && node --test test/messages.roundtrip.test.cjs test/transfer-orchestrator.rollback.test.cjs test/transfer-reconciliation.test.cjs test/lua-transfer-lock-phase1.test.cjs test/canonical-identity.test.cjs test/no-controller-auto-delete.test.cjs test/source-transfer-lock-state.test.cjs test/destination-hold.test.cjs test/persistence-read-failure.test.cjs test/lint-catch-swallow.test.cjs test/composite-transfer-verdict.test.cjs"
   },

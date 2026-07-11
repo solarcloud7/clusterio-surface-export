@@ -40,7 +40,7 @@ end
 --- lua-api.factorio.com/2.0.76/, NOT the "latest" docs which reorder the params):
 ---     insert_at(position, items, belt_stack_size?) -> bool     (position FIRST; belt_stack_size caps the slot)
 ---
---- THE FIX (verified empirically, apples-to-apples, on the pinned engine):
+--- THE FIX (verified empirically — belt-lab R1a/R1b, commit ce9f90a; apples-to-apples, on the pinned engine):
 --- Re-insert each captured slot at its EXACT position, but in ASCENDING POSITION ORDER. A controlled
 --- single-loop experiment (custom surface, items packed by real belt movement, source-vs-dest physical
 --- counts) showed:

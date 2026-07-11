@@ -13,7 +13,7 @@
 -- On import you READ per the source shape, WRITE per the runtime engine's API, and MIGRATE the shape
 -- in between when they differ.
 --
--- Phase 1 supports only the 2.0 bucket (Factorio 2.0.76, build 84451 — verified empirically). Every
+-- Phase 1 supports only the 2.0 bucket (the certified pin in tests/labs-certified.json, currently 2.0.77; lint-version-certification fails CI when pin and certification drift). Every
 -- dispatch resolves to today's verified behavior. Phase 2 adds PROFILES["2.1"] + cross-version
 -- migrate() entries after each candidate site is checked against lua-api.factorio.com/2.1.10/.
 --
