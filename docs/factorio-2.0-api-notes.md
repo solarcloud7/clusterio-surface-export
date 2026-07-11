@@ -19,6 +19,7 @@ was learned.
 - [Inventory sizing](#inventory-sizing)
 - [Item counting (get_item_count includes belts)](#item-counting)
 - [Space platform deletion](#space-platform-deletion)
+- [Save completion and atomic replacement](#save-completion-and-atomic-replacement)
 - [LuaProfiler and LocalisedString](#luaprofiler-and-localisedstring)
 - [Read-only entity properties](#read-only-entity-properties)
 - [Players on space platforms + cross-server move](#players-on-space-platforms--cross-server-move)
@@ -147,6 +148,22 @@ Consequence: fluid does not live per-entity — it lives in the shared segment. 
   for immediate, deterministic teardown of a platform and all its entities. Route all platform
   removal through `GameUtils.delete_platform` (`module/utils/game-utils.lua`); a lint guard
   (`npm run lint:lua`) blocks direct `*platform*.destroy()` calls.
+
+## Save completion and atomic replacement
+
+- **`/server-save` returning does not prove the save is durable yet.** The exact active save is written via
+  `<name>.tmp.zip` and then atomically replaces `<name>.zip`; a restart immediately after the RCON response can
+  therefore load the previous save. Wait for the active save's temporary file to disappear, mtime to advance,
+  inode to change, and final size to be nonzero before restarting or copying it. The destination-hold integration
+  harness measures this through `Get-ActiveSaveName`, `Get-SaveState`, and `Wait-ForCompletedSave`.
+  **[empirical, 2.0.77, destination-hold probe]**
+- **Stopping an instance produced a new, valid replacement save in CI.** In PR #83's deliberate failure run
+  `29139669590`, host-2's active `world.zip` changed from `mtime|size|inode`
+  `1783744275|724082|9180580` to `1783744647|843161|9180248`; the temporary file was absent and both captured
+  saves passed full ZIP validation. This proves stop-save replacement and validates polling the same physical
+  completion signals before forensic capture. **[empirical, 2.0.77, CI save-flush probe]** Whether
+  `clusterioctl instance stop` can return before that replacement completes remains **[hypothesis]**: the first
+  post-return poll in this run was already complete, so post-return asynchrony was not observed.
 
 ## LuaProfiler and LocalisedString
 
