@@ -66,26 +66,13 @@ function Verification.count_all_fluids(entity_data)
     -- Count fluids in fluidboxes
     if entity.specific_data and entity.specific_data.fluids then
       for _, fluid in ipairs(entity.specific_data.fluids) do
-        if not fluid.engine_owned then
-          local key = Util.make_fluid_temp_key(fluid.name, fluid.temperature)
-          fluid_totals[key] = (fluid_totals[key] or 0) + fluid.amount
-        end
+        -- Use temperature-aware key
+        local key = Util.make_fluid_temp_key(fluid.name, fluid.temperature)
+        fluid_totals[key] = (fluid_totals[key] or 0) + fluid.amount
       end
     end
   end
 
-  return fluid_totals
-end
-
-function Verification.count_engine_owned_fluids(entity_data)
-  local fluid_totals = {}
-  for _, entity in ipairs(entity_data) do
-    for _, fluid in ipairs((entity.specific_data and entity.specific_data.fluids) or {}) do
-      if fluid.engine_owned then
-        fluid_totals[fluid.name] = (fluid_totals[fluid.name] or 0) + fluid.amount
-      end
-    end
-  end
   return fluid_totals
 end
 

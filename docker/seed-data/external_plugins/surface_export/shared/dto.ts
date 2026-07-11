@@ -187,8 +187,6 @@ export interface ValidationResult {
 	actualItemCounts?: Record<string, number>;
 	expectedFluidCounts?: Record<string, number>;
 	actualFluidCounts?: Record<string, number>;
-	/** Informational source amounts excluded symmetrically because the engine owns their output boxes. */
-	engineOwnedFluids?: Record<string, number>;
 	entityTypeBreakdown?: Record<string, number>;
 	failedEntityLosses?: { items: Record<string, number>; fluids: Record<string, number> };
 	highTempAggregates?: Record<string, { expectedEnergy: number; actualEnergy: number; reconciled: boolean }>;

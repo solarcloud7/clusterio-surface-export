@@ -15,9 +15,6 @@ function FluidRestoration.restore(entities_to_create, entity_map)
       local entity = entity_map[entity_data.entity_id]
       if entity and entity.valid and entity_data.specific_data and entity_data.specific_data.fluids then
          for _, fluid_data in ipairs(entity_data.specific_data.fluids) do
-           if fluid_data.engine_owned then
-             log(string.format("[Fluid Restore] Skipping engine-owned %s=%.1f", fluid_data.name, fluid_data.amount or 0))
-           else
            local name = fluid_data.name
            local amount = fluid_data.amount or 0
            local temp = fluid_data.temperature or 15
@@ -68,7 +65,6 @@ function FluidRestoration.restore(entities_to_create, entity_map)
                   amount = amount, 
                   temperature = temp
               })
-           end
            end
          end
       end

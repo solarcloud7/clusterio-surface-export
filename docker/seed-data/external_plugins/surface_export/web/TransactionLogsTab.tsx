@@ -292,8 +292,6 @@ export default function TransactionLogsTab({ plugin, state }: { plugin: SurfaceE
 		|| (detailedSummary?.sourceVerification ? getProp(detailedSummary.sourceVerification as JsonObject, "fluidCounts", null) as Record<string, number> | null : null)
 		|| {};
 	const actualFluids = (validation ? getProp(validation, "actualFluidCounts", {}) as Record<string, number> : {});
-	const engineOwnedFluids = (validation ? getProp(validation, "engineOwnedFluids", {}) as Record<string, number> : {});
-	const engineOwnedTotal = Object.values(engineOwnedFluids).reduce((sum, amount) => sum + Number(amount || 0), 0);
 
 	const itemRows = useMemo(() => buildExpectedActualRows(expectedItems, actualItems), [expectedItems, actualItems]);
 	const fluidReconciliation = validation ? getProp(validation, "fluidReconciliation", null) as JsonObject | null : null;
@@ -308,15 +306,6 @@ export default function TransactionLogsTab({ plugin, state }: { plugin: SurfaceE
 		),
 		[expectedFluids, actualFluids, highTempThreshold, highTempAggregates],
 	);
-	const engineOwnedFluidAlert = engineOwnedTotal > 0 ? (
-		<Tooltip title={Object.entries(engineOwnedFluids).map(([name, amount]) => `${name}: ${formatNumeric(Number(amount), 3)}`).join("\n")}>
-			<Alert
-				type="info"
-				showIcon
-				message={`${formatNumeric(engineOwnedTotal, 3)} engine-owned fluid excluded symmetrically from transfer accounting`}
-			/>
-		</Tooltip>
-	) : null;
 
 	type InventoryOverflowEntity = {
 		name?: string;
@@ -679,7 +668,6 @@ export default function TransactionLogsTab({ plugin, state }: { plugin: SurfaceE
 												<Empty description="No item details available" />
 											)}
 											{inventoryOverflowAlert}
-											{engineOwnedFluidAlert}
 											{forceBonusAlert}
 										</Space>
 									) : (

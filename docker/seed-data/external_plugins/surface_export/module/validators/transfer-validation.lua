@@ -196,9 +196,8 @@ function TransferValidation.validate_import(surface, expected_verification, opti
         end
     end
     
-    local strict = options.strict == true
-    -- Strict transfer accounting excludes engine-owned output segments on both source and destination.
-    local actual_fluid_counts = SurfaceCounter.count_fluids(surface, options.segment_temps, strict)
+    -- Count fluids
+    local actual_fluid_counts = SurfaceCounter.count_fluids(surface, options.segment_temps)
 
     -- VALIDATION LOGIC:
     -- For total items: actual should be <= expected (we can lose items to machine limits, but not gain)
@@ -211,6 +210,7 @@ function TransferValidation.validate_import(surface, expected_verification, opti
     -- strict=true (transfers): LAB-A measured zero source-export residual for both items and fluids.
     -- The complete frozen world is therefore exact: any per-key item gain/loss fails. The loose path
     -- predates the destructive transfer gate and remains for non-transfer callers only.
+    local strict = options.strict == true
     local STORAGE_TOLERANCE = 5          -- loose: gain headroom
     local TOTAL_LOSS_TOLERANCE = 0.95    -- loose: up to 95% loss
     local MIN_ABSOLUTE_LOSS = 100        -- loose: and >100 absolute
@@ -315,7 +315,6 @@ function TransferValidation.validate_import(surface, expected_verification, opti
         actualItemCounts = total_item_counts,
         expectedFluidCounts = expected_verification.fluid_counts or {},
         actualFluidCounts = actual_fluid_counts,
-        engineOwnedFluids = expected_verification.engine_owned_fluid_counts or {},
         entityTypeBreakdown = entity_type_counts,
         -- Summary totals
         itemTypesExpected = table_size(expected_verification.item_counts or {}),
