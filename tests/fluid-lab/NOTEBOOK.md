@@ -22018,3 +22018,39 @@ Predictions stated before execution: R0 precision sweep; R1 isolated ownership s
   "finished": "2026-07-11T18:13:20.232Z"
 }
 ```
+## 2026-07-11 - Plasma engine-owned exclusion forensics and hard stop
+
+Prediction: the failed T2 transfer's `fusion-plasma` shortfall comes from engine reassertion of
+fusion-reactor output boxes, while isolated plasma remains exactly restorable.
+
+### Banked T2 black-box reconstruction
+
+- Raw source plasma: `100`.
+- Import write-rejected subtraction: `4.0278787612915` (inferred from raw `100` to expected
+  `95.9721212387085`).
+- Frozen gate actual: `80`.
+- Exact shortfall: `15.972121238708496`, entirely `fusion-plasma`.
+- Physical source scan: eight fusion-generator input buffers at `10` each plus two fusion-reactor
+  output boxes at approximately `10` each.
+- Classification: the old write/readback path falsely treated roughly `16` units as accepted before
+  the engine reasserted the reactor outputs. This explains the T2 plasma shortfall; T1c's VxT residual
+  remains `UNEXPLAINED` because this run does not reconstruct its temperature distribution.
+
+### First permanent-fixture run after symmetric plasma exclusion
+
+The fixture was a stripped clone retaining the hub, two fusion reactors, eight fusion generators,
+and one isolated pipe seeded with `5 fusion-plasma`. Both reactor output boxes were explicitly seeded
+with `10 fusion-plasma` and read back before transfer.
+
+- Engine-owned plasma surfaced informationally: `20`.
+- Restorable expected plasma: `85` (the stable generator inputs plus the isolated `5` control).
+- Plasma classification and skip logs fired for both reactor outputs.
+- The run stopped on a new frozen-census loss class before the N=3/N=5 package could continue:
+  `fluoroketone-cold expected 214.991133, actual 0, delta -214.991133`.
+- Restoration had logged `insert_fluid recovered 215.0/215.0` into the fusion-reactor input segment,
+  but the strict gate then observed zero. No tolerance or exact-gate code was changed.
+- Result: **HARD STOP** under the one-shot brief. The plasma hypothesis is supported but the complete
+  exclusion fix is not certified because the fixture revealed a separate reactor-input conservation
+  problem.
+- Cleanup proof: host-1 and host-2 each reported zero destination holds, zero locked platforms, zero
+  async jobs, zero committed tombstones, and `game.tick_paused=false`.
