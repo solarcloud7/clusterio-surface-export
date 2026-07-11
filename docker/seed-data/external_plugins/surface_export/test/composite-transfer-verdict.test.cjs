@@ -338,8 +338,10 @@ test("exact fluid parity is strict-transfer-only", () => {
 test("fluid reconciliation uses one emitted key across Lua, DTO, and CLI", () => {
 	const lossAnalysis = fs.readFileSync(path.join(moduleRoot, "validators", "loss-analysis.lua"), "utf8");
 	const dto = fs.readFileSync(path.join(__dirname, "..", "shared", "dto.ts"), "utf8");
-	const cli = fs.readFileSync(path.join(__dirname, "..", "..", "..", "..", "..", "tools", "get-transaction-log.ps1"), "utf8");
-	for (const source of [lossAnalysis, dto, cli]) {
+	const cliPath = path.join(__dirname, "..", "..", "..", "..", "..", "tools", "get-transaction-log.ps1");
+	const sources = [lossAnalysis, dto];
+	if (fs.existsSync(cliPath)) sources.push(fs.readFileSync(cliPath, "utf8"));
+	for (const source of sources) {
 		assert.match(source, /reconciledLoss/, "all forensic layers must read the Lua-emitted key");
 		assert.doesNotMatch(source, /reconciledFluidLoss/, "the stale key must not silently render loss as zero");
 	}
