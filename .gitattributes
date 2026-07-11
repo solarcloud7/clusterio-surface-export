@@ -1,9 +1,12 @@
 # ── Line endings ─────────────────────────────────────────────────────────────
-# Normalize all text to LF in the repository; check out native per platform
-# (CRLF on Windows via core.autocrlf, LF on Linux/macOS). This keeps the index
-# consistent regardless of each contributor's local git config — the index is
-# already LF today, this just makes it explicit and portable.
-* text=auto
+# Normalize all text to LF in the repository AND check out LF everywhere (2026-07-11; mirrors
+# clusterio-docker 984a5fc). Checkout-native (autocrlf) was tried first and produced constant
+# churn: every automated tool (agents, Node scripts) writes LF against a CRLF working tree,
+# accumulating mixed-ending files and defeating exact-string edits. The index was already all-LF,
+# so this changes CHECKOUT ONLY — no content rewrite. After pulling this, refresh your clone:
+#   git config core.autocrlf false && git rm -rf --cached . -q && git reset --hard
+# Windows-only script types below still check out CRLF (later rules win).
+* text=auto eol=lf
 
 # Scripts executed inside Linux containers MUST stay LF even on Windows checkouts
 # (a CRLF shebang or line-continuation breaks bash and Docker builds).
