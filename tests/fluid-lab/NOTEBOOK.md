@@ -22054,3 +22054,20 @@ with `10 fusion-plasma` and read back before transfer.
   problem.
 - Cleanup proof: host-1 and host-2 each reported zero destination holds, zero locked platforms, zero
   async jobs, zero committed tombstones, and `game.tick_paused=false`.
+
+### Adversarial design attack: segment-wide exclusion is unsafe
+
+The required pre-implementation attack was reconstructed after the first implementation pass and found
+a real-loss masking scenario. A pipe or storage tank connected to a fusion-reactor output shares that
+output's fluid segment. Fluid in the passive holder remains player-recoverable: the player can disconnect
+the holder and keep its contents. Classifying the entire shared segment as `engine_owned` excludes that
+recoverable amount from both export expected counts and the destination gate census. Symmetry keeps the
+comparison numerically commensurate, but it can make complete loss of the passive-holder fluid invisible.
+
+The permanent fixture did not challenge this case: it removed all connected pipes, retained reactor and
+generator machines, and placed the `5 fusion-plasma` control in an isolated pipe. It therefore proved only
+that isolated plasma remains counted and reactor-output plasma is excluded; it did not execute Phase 2's
+required output-connected pipe/tank case.
+
+Result: **HARD STOP**. The segment-wide exclusion design is not safe to certify or publish as implemented.
+No production change, gate change, or additional cluster run was made after this finding.
