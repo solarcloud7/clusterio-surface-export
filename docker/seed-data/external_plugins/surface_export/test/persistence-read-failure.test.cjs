@@ -77,7 +77,12 @@ test("transaction write-back preserves a corrupt on-disk history", async () => {
 	await txLogger.persistTransactionLog(transferId);
 
 	assert.equal(fs.readFileSync(file, "utf8"), corruptBytes);
-	assert.match(errors.join("\n"), /Failed to persist transaction log/);
+	const message = errors.join("\n");
+	assert.match(message, new RegExp(file.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+	assert.match(message, /unreadable/);
+	assert.match(message, /skipping this write/);
+	assert.match(message, /repair or move the file aside/i);
+	assert.match(message, /restart/);
 });
 
 test("transaction load failure keeps the history already served from memory", async () => {
@@ -90,7 +95,12 @@ test("transaction load failure keeps the history already served from memory", as
 	await txLogger.loadTransactionLogs();
 
 	assert.equal(plugin.persistedTransactionLogs, originalHistory);
-	assert.match(errors.join("\n"), /Failed to load transaction logs/);
+	const message = errors.join("\n");
+	assert.match(message, new RegExp(file.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+	assert.match(message, /file was left untouched/i);
+	assert.match(message, /Transaction Logs tab will appear empty/);
+	assert.match(message, /repair or move the file aside/i);
+	assert.match(message, /restart/);
 });
 
 test("degraded platform-storage load refuses to overwrite the unreadable file", async () => {
@@ -105,10 +115,18 @@ test("degraded platform-storage load refuses to overwrite the unreadable file", 
 	plugin.logger = logger;
 
 	await plugin.loadStorage();
+	const originalLoadError = plugin.storageLoadError;
+	assert.match(originalLoadError, /Expected property name or/);
 	plugin.platformStorage.set("1:new", { exportId: "1:new", exportData: { important: true } });
 	await plugin.persistStorage();
 
 	assert.equal(fs.readFileSync(file, "utf8"), corruptBytes);
-	assert.match(errors.join("\n"), /Failed to load Surface Export storage/);
-	assert.match(errors.join("\n"), /Refusing to persist Surface Export storage/);
+	const messages = errors.join("\n");
+	assert.match(messages, new RegExp(file.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+	assert.match(messages, /Persistence is DISABLED for this session/);
+	assert.match(messages, /back up/);
+	assert.match(messages, /repair or move the file aside/i);
+	assert.match(messages, /exports created while degraded will NOT survive a restart/);
+	assert.ok(messages.includes(`startup load failed (${originalLoadError})`));
+	assert.match(messages, /This session's changes will not survive restart/);
 });

@@ -275,7 +275,12 @@ export class TransactionLogger {
 				if ((err as { code?: string }).code === "ENOENT") {
 					allLogs = [];
 				} else {
-					throw err;
+					this.plugin.logger.error(
+						`Transaction history file ${this.plugin.transactionLogPath} is unreadable (${getErrorMessage(err)}); `
+						+ "skipping this write so the existing history is not destroyed. New transfers will not be recorded "
+						+ "to disk until you repair or move the file aside and restart the controller.",
+					);
+					return;
 				}
 			}
 
@@ -315,7 +320,11 @@ export class TransactionLogger {
 				this.plugin.persistedTransactionLogs = [];
 				return;
 			}
-			this.plugin.logger.error(`Failed to load transaction logs: ${getErrorMessage(err)}`);
+			this.plugin.logger.error(
+				`Failed to load transaction history from ${this.plugin.transactionLogPath}: ${getErrorMessage(err)}. `
+				+ "The file was left untouched; the Transaction Logs tab will appear empty this session. "
+				+ "Restore from a backup, or repair or move the file aside, then restart the controller to recover the history.",
+			);
 		}
 	}
 }
