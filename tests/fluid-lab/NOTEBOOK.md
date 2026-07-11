@@ -22071,3 +22071,29 @@ required output-connected pipe/tank case.
 
 Result: **HARD STOP**. The segment-wide exclusion design is not safe to certify or publish as implemented.
 No production change, gate change, or additional cluster run was made after this finding.
+
+## 2026-07-11 - P2 segment-persistence fixture boundary
+
+Prediction: ordinary pipes or tanks can share a fluid segment with a fusion-reactor plasma output, so
+P2 can distinguish engine-owned-box reassertion from whole-segment reassertion.
+
+The prediction was refuted before the N=5 matrix:
+
+- A focused `single` harness run completed cleanly, but the reactor output and visually adjacent pipes
+  had different segment IDs. The pipe-only segment conserved `100 -> 100 -> 100`; it was not evidence
+  about reactor-connected plasma.
+- Prototype inspection explains why. `fusion-reactor` output box 2 has connection category
+  `fusion-plasma`; ordinary `pipe` and `storage-tank` connections use category `default`.
+- An exhaustive census of every entity prototype on Factorio 2.0.77 found exactly three fluidboxes
+  accepting `fusion-plasma`: `fusion-reactor` output box 2, `fusion-generator` input box 1, and the
+  cheat-only `infinity-pipe`. No player-placeable passive holder supports the category.
+- Therefore P2 fixtures (a) single reactor + connected pipes, (b) two reactors sharing a pipe network,
+  and (c) reactor + connected pipes + tank are unconstructible on the pinned engine. The accepted
+  premise that a player can disconnect such a holder and retain plasma is false for ordinary gameplay.
+- The runner now asserts segment-ID equality for every purported connected fixture, preventing visual
+  adjacency from being mistaken for a shared segment.
+
+Result: **HARD STOP / OWNER ADJUDICATION REQUIRED**. No N=5 matrix was run, no exclusion redesign was
+attempted, and the exact gate remains untouched. The remaining constructible network is reactor output
+to fusion-generator input; whether that machine-only segment contains any player-recoverable state is
+the next design question, not something this rung may silently substitute.

@@ -74,6 +74,9 @@ function cleanup(instance) {
 		`then game.delete_surface(s) end end ` +
 		`local c=storage.surface_export_config or {};c.test_capture_p2_plasma=nil;` +
 		`c.test_force_validation_failure=nil;c.preserve_failed_destination=nil;storage.fluid_lab=nil;` +
+		`local remove={};for id,v in pairs(storage.platform_exports or {})do ` +
+		`if type(v)=='table' and string.find(v.platform_name or '','${prefix}',1,true)==1 then remove[#remove+1]=id end end;` +
+		`for _,id in ipairs(remove)do storage.platform_exports[id]=nil end;` +
 		`game.tick_paused=false;return {success=true}`);
 }
 
@@ -135,7 +138,9 @@ function buildFixture(name, kind) {
 	}[kind];
 	return lua(source, `local force=game.forces.player;local p=force.create_space_platform{` +
 		`name='${name}',planet='nauvis',starter_pack='space-platform-starter-pack'};p.apply_starter_pack();` +
-		`local tiles={};for x=-20,20 do for y=-20,20 do tiles[#tiles+1]={name='space-platform-foundation',position={x,y}} end end;` +
+		`local schedule=p.get_schedule();schedule.add_record({station='Nauvis',` +
+		`wait_conditions={{type='time',ticks=7200,compare_type='or'}}});` +
+		`local tiles={};for x=-10,10 do for y=-10,10 do tiles[#tiles+1]={name='space-platform-foundation',position={x,y}} end end;` +
 		`p.surface.set_tiles(tiles);for _,e in pairs(p.surface.find_entities_filtered({}))do ` +
 		`if e.name~='space-platform-hub'then e.destroy()end end;` +
 		`local function make(n,pos,dir)local e=p.surface.create_entity{name=n,position=pos,direction=dir or defines.direction.north,force=force};` +
@@ -143,7 +148,13 @@ function buildFixture(name, kind) {
 		`p.paused=true;${captureLua} local read=capture(p,'fixture-created');` +
 		`local total=0;local seen={};for _,h in ipairs(read.holders)do if h.segment_id and not seen[h.segment_id]then ` +
 		`seen[h.segment_id]=true;total=total+((h.segment_contents or {})['fusion-plasma']or 0)end end;` +
-		`if total<=0 then error('fixture plasma write not accepted')end;return {success=true,index=p.index,total=total,read=read}`);
+		`if total<=0 then error('fixture plasma write not accepted')end;` +
+		(kind === "isolated" ? "" : `local managed={};local passive={};for _,h in ipairs(read.holders)do ` +
+			`if h.entity=='fusion-reactor'and h.box==2 and h.segment_id then managed[h.segment_id]=true end;` +
+			`if (h.entity=='pipe'or h.entity=='storage-tank')and h.segment_id then passive[h.segment_id]=true end end;` +
+			`local joined=false;for sid in pairs(passive)do if managed[sid]then joined=true end end;` +
+			`if not joined then error('fixture contract failed: no passive holder shares the reactor output segment')end;`) +
+		`return {success=true,index=p.index,total=total,read=read}`);
 }
 
 function activateAndStep(name, ticks) {
@@ -189,13 +200,14 @@ function runOne(kind, run) {
 		`test_capture_p2_plasma={platform_name='${name}'},test_force_validation_failure=true,` +
 		`preserve_failed_destination=true});return {success=true,tick=game.tick}`);
 	rcon(source, `/transfer-platform ${fixture.index} ${destinationId}`);
+	rcon(destination, "/step-tick 2");
 	const ready = waitFor(() => {
 		const platform = findPlatform(destination, name);
 		if (!platform.index) return null;
-		const state = lua(destination, `local c=storage.surface_export_config or {};` +
-		`local cap=storage.fluid_lab and storage.fluid_lab.p2_capture;` +
-		`return {success=true,jobs=(function()local n=0 for _ in pairs(storage.async_jobs or {})do n=n+1 end return n end)(),` +
-		`armed=c.test_capture_p2_plasma~=nil,preserve=c.preserve_failed_destination,` +
+		const state = lua(destination, `game.tick_paused=false;local c=storage.surface_export_config or {};` +
+			`local cap=storage.fluid_lab and storage.fluid_lab.p2_capture;` +
+			`return {success=true,jobs=(function()local n=0 for _ in pairs(storage.async_jobs or {})do n=n+1 end return n end)(),` +
+			`tick=game.tick,armed=c.test_capture_p2_plasma~=nil,preserve=c.preserve_failed_destination,` +
 		`capture=cap and cap.platform_name or nil}`);
 		return state.jobs === 0 && !state.armed && state.preserve !== true && state.capture === name ? state : null;
 	}, 180000, `P2 frozen destination ${name}`);
