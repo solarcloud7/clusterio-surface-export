@@ -182,7 +182,8 @@ export class SubscriptionManager {
 					forceName: this.plugin.lastTreeForceName || "player",
 					tree,
 				}));
-			} catch (_err) {
+			} catch (err: unknown) {
+				this.plugin.logger.warn(`Failed to send initial tree snapshot to subscriber: ${getErrorMessage(err)}`);
 				this.plugin.surfaceExportSubscriptions.delete(link);
 				return;
 			}
@@ -201,7 +202,8 @@ export class SubscriptionManager {
 							this.plugin.txLogger.getLastEventTimestamp(transfer.transferId),
 						),
 					}));
-				} catch (_err) {
+				} catch (err: unknown) {
+					this.plugin.logger.warn(`Failed to send initial transfer snapshot to subscriber: ${getErrorMessage(err)}`);
 					this.plugin.surfaceExportSubscriptions.delete(link);
 					return;
 				}

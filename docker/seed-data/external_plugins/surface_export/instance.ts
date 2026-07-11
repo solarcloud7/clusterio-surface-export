@@ -740,8 +740,8 @@ export class InstancePlugin extends BaseInstancePlugin {
 						fluidCountMatch: Boolean(parsed.fluidCountMatch),
 					};
 					validationRetrieved = true;
-				} catch (_parseErr) {
-					this.logger.error(`Failed to parse validation result: ${validationResult}`);
+				} catch (parseErr: unknown) {
+					this.logger.error(`Failed to parse validation result (${getErrorMessage(parseErr)}): ${validationResult}`);
 					validation.mismatchDetails = "Failed to parse validation result";
 				}
 			} else if (validationResult && !validationResult.startsWith("{") && validationResult !== "null") {

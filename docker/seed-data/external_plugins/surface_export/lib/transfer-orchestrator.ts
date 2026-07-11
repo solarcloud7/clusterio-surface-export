@@ -50,7 +50,9 @@ export class TransferOrchestrator {
 			// Best-effort in-game status broadcast; the instance may legitimately be offline. The single
 			// catch handles both the sync throw and the promise rejection (no redundant inner `.catch`).
 			try { await this.plugin.controller.sendTo({ instanceId }, msg); }
-			catch (_err) { /* instance may be offline */ }
+			catch (err: unknown) {
+				this.logger.warn(`Failed to broadcast transfer status to instance ${instanceId}: ${getErrorMessage(err)}`);
+			}
 		}
 	}
 

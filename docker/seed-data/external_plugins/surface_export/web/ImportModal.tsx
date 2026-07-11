@@ -99,6 +99,7 @@ export default function ImportModal({ open, onClose, plugin, state }: ImportModa
 				antMessage.warning("JSON file is missing platform_name. Set an override below before import.", 8);
 			}
 		} catch (err: unknown) {
+			console.error("Failed to parse selected import file", err);
 			setParseError(getErrorMessage(err, "Invalid JSON file"));
 		}
 	}
