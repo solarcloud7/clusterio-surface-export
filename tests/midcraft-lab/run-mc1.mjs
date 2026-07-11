@@ -111,10 +111,16 @@ function setupFixture(name) {
 		local eei=p.surface.create_entity({name='electric-energy-interface',position={ox+5,oy},force=force})
 		pcall(function() eei.energy=eei.electric_buffer_size end)
 		p.surface.create_entity({name='medium-electric-pole',position={ox+3,oy},force=force})
+		-- INSTRUMENT GUARD (audit fix): the embodied-plate classifier assumes EXACTLY 1 gear per craft.
+		-- Any effective productivity (machine bonus or 2.0 force recipe productivity) breaks that math and
+		-- could misclassify an ordinary productivity payout as PHANTOM-GAIN. Measure both; require zero.
+		local mach_prod = m.productivity_bonus or 0
+		local recipe_prod = 0
+		pcall(function() recipe_prod = force.recipes['iron-gear-wheel'].productivity_bonus or 0 end)
 		local ins=m.insert({name='iron-plate',count=4})
 		storage.midcraft_lab={mc1={surface=p.surface.index,platform=p.index,name='${name}',unit=m.unit_number}}
 		game.tick_paused=false
-		return {success=(got=='iron-gear-wheel' and ins==4),recipe=got,inserted=ins,index=p.index,
+		return {success=(got=='iron-gear-wheel' and ins==4 and mach_prod==0 and recipe_prod==0),recipe=got,inserted=ins,index=p.index,machine_productivity=mach_prod,recipe_productivity=recipe_prod,
 			surface=p.surface.index,tick=game.tick,machine_active=m.active}
 	`);
 }

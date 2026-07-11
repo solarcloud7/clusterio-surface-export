@@ -184,8 +184,13 @@ function InventoryScanner.extract_equipment_grid(grid)
     -- Burner equipment (fuel items)
     if equip.burner then
       local burner = equip.burner
+      -- 2.0.77: currently_burning reads as ItemIDAndQualityIDPair whose .name is a PROTOTYPE, not a
+      -- string — resolve to plain strings (JSON-safe), mirroring EntityHandlers.extract_entity_burner.
+      local eq_burning = burner.currently_burning
+      local eq_burning_name = eq_burning and eq_burning.name or nil
+      if eq_burning_name ~= nil and type(eq_burning_name) ~= "string" then eq_burning_name = eq_burning_name.name end
       equip_data.burner = {
-        currently_burning = burner.currently_burning and burner.currently_burning.name or nil,
+        currently_burning = eq_burning_name,
         remaining_burning_fuel = burner.remaining_burning_fuel
       }
       

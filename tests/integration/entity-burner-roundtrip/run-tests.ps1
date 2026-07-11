@@ -152,8 +152,8 @@ rcon.print(helpers.table_to_json(out))
     Write-Status "Fixture ready: entity='$entityName' fuel_coal=$srcFuel currently_burning=$srcCbName/$srcCbQuality remaining=$srcRemaining" -Type success
 
     # A0. Fixture grounding: the source really holds a mid-burn state (else the roundtrip proves nothing).
-    Add-Result "burnerrt-fixture-grounded" "Source burner is mid-burn (coal in fuel inv, currently_burning=coal, remaining>0)" `
-        (($srcFuel -gt 0) -and ($srcCbName -eq "coal") -and ($srcRemaining -gt 0)) `
+    Add-Result "burnerrt-fixture-grounded" "Source burner is mid-burn (coal in fuel inv, currently_burning=solid-fuel — DISTINCT from inventory fuel, remaining>0)" `
+        (($srcFuel -gt 0) -and ($srcCbName -eq "solid-fuel") -and ($srcRemaining -gt 0)) `
         "fuel_coal=$srcFuel cb_name=$srcCbName remaining=$srcRemaining (fixture did not reach a mid-burn state)"
 
     # 2. Transfer the bare platform host -> host.
