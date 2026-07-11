@@ -196,8 +196,41 @@ jobs:
             exit 1
           fi
           echo "Both instances are running"
-          # Give Factorio a moment to finish loading the save before the test suites RCON in.
-          sleep 10
+
+          # `running` means the Factorio process exists, not that RCON or the save-patched module is ready.
+          # Require an exact sentinel from both instances before any integration probe can send RCON.
+          echo "Waiting for RCON and the surface_export module on both instances..."
+          READY_COMMAND='/sc rcon.print(remote.interfaces["surface_export"] and "ci-plugin-ready" or "ci-plugin-missing")'
+          READY_DEADLINE=$((SECONDS + 90))
+          READY_INSTANCES=(clusterio-host-1-instance-1 clusterio-host-2-instance-1)
+          declare -A LAST_READY_OUTPUT
+          while true; do
+            ALL_READY=true
+            for instance in "${READY_INSTANCES[@]}"; do
+              response="$($CTL --log-level error instance send-rcon "$instance" "$READY_COMMAND" 2>&1 || true)"
+              response="$(printf '%s' "$response" | tr -d '\r' | sed '/^[[:space:]]*$/d')"
+              LAST_READY_OUTPUT["$instance"]="$response"
+              if [ "$response" = "ci-plugin-ready" ]; then
+                echo "  $instance: ci-plugin-ready"
+              else
+                ALL_READY=false
+                echo "  $instance: not ready (response=${response:-<empty>})"
+              fi
+            done
+            if [ "$ALL_READY" = true ]; then
+              break
+            fi
+            if [ "$SECONDS" -ge "$READY_DEADLINE" ]; then
+              echo "::error::RCON/plugin readiness did not converge within 90s — see 'Collect logs on failure'"
+              $CTL instance list 2>&1 || true
+              for instance in "${READY_INSTANCES[@]}"; do
+                echo "  last response from $instance: ${LAST_READY_OUTPUT[$instance]:-<empty>}"
+              done
+              exit 1
+            fi
+            sleep 3
+          done
+          echo "Both instances are RCON/plugin ready"
           $CTL instance list
 
       # One auto-discovering runner over tests/integration/*/run-tests.{ps1,mjs} — the dir set is the single
@@ -254,12 +287,70 @@ jobs:
           mkdir -p ci-artifacts/host1-script-output ci-artifacts/host2-script-output ci-artifacts/host2-saves
           docker cp surface-export-host-1:/clusterio/data/instances/clusterio-host-1-instance-1/script-output/. ci-artifacts/host1-script-output/ 2>/dev/null || true
           docker cp surface-export-host-2:/clusterio/data/instances/clusterio-host-2-instance-1/script-output/. ci-artifacts/host2-script-output/ 2>/dev/null || true
-          # Stop host-2 to flush the latest save (with the failed dest) to disk, then copy it.
-          docker exec surface-export-controller sh -c 'npx clusterioctl --config /clusterio/tokens/config-control.json instance stop clusterio-host-2-instance-1' 2>/dev/null || true
-          sleep 5
+          # Stop host-2 to flush the failed destination. `instance stop` can return before the save's
+          # .tmp.zip is atomically renamed, so track the exact active save rather than an autosave/newest zip.
+          HOST2=surface-export-host-2
+          ACTIVE_SAVE_PATH="$(docker exec "$HOST2" sh -c '
+            log=/clusterio/data/instances/clusterio-host-2-instance-1/factorio-current.log
+            line=$(grep -m1 -- "--start-server" "$log" 2>/dev/null || true)
+            printf "%s\n" "$line" | sed -n "s#.*\(/clusterio/data/instances/[^\"]*/saves/[^\"]*\.zip\)\".*#\1#p"
+          ' 2>/dev/null || true)"
+          ACTIVE_SAVE_PATH="$(printf '%s' "$ACTIVE_SAVE_PATH" | tr -d '\r\n')"
+          BEFORE_STAT=absent
+          TMP_SAVE_PATH=
+          if [ -n "$ACTIVE_SAVE_PATH" ]; then
+            BEFORE_STAT="$(docker exec "$HOST2" stat -c '%Y|%s|%i' "$ACTIVE_SAVE_PATH" 2>/dev/null || true)"
+            [ -n "$BEFORE_STAT" ] || BEFORE_STAT=absent
+            TMP_SAVE_PATH="${ACTIVE_SAVE_PATH%.zip}.tmp.zip"
+            echo "Active host-2 save: $ACTIVE_SAVE_PATH (before=$BEFORE_STAT)"
+          else
+            echo "::warning::Could not resolve host-2's active save from factorio-current.log; skipping flush poll and copying any saves that exist"
+          fi
+
+          docker exec surface-export-controller sh -c 'npx clusterioctl --config /clusterio/tokens/config-control.json instance stop clusterio-host-2-instance-1' 2>&1 || true
+
+          OBSERVED_INCOMPLETE_AFTER_STOP=false
+          FINAL_STAT=absent
+          FINAL_TMP=unknown
+          if [ -n "$ACTIVE_SAVE_PATH" ]; then
+            FLUSH_DEADLINE=$((SECONDS + 60))
+            while true; do
+              FINAL_STAT="$(docker exec "$HOST2" stat -c '%Y|%s|%i' "$ACTIVE_SAVE_PATH" 2>/dev/null || true)"
+              [ -n "$FINAL_STAT" ] || FINAL_STAT=absent
+              if docker exec "$HOST2" test -e "$TMP_SAVE_PATH" 2>/dev/null; then FINAL_TMP=true; else FINAL_TMP=false; fi
+              IFS='|' read -r before_mtime _ before_inode <<< "${BEFORE_STAT//absent/0|0|0}"
+              IFS='|' read -r final_mtime final_size final_inode <<< "${FINAL_STAT//absent/0|0|0}"
+              if [ "$FINAL_TMP" = false ] \
+                && [ "${final_mtime:-0}" -gt "${before_mtime:-0}" ] \
+                && [ "${final_inode:-0}" -ne "${before_inode:-0}" ] \
+                && [ "${final_size:-0}" -gt 0 ]; then
+                echo "save-flush complete path=$ACTIVE_SAVE_PATH before=$BEFORE_STAT after=$FINAL_STAT tmp=$FINAL_TMP observed_incomplete_after_stop=$OBSERVED_INCOMPLETE_AFTER_STOP"
+                break
+              fi
+              OBSERVED_INCOMPLETE_AFTER_STOP=true
+              if [ "$SECONDS" -ge "$FLUSH_DEADLINE" ]; then
+                echo "::warning::Save flush did not complete within 60s; captured save may be stale or truncated. path=$ACTIVE_SAVE_PATH before=$BEFORE_STAT final=$FINAL_STAT tmp_exists=$FINAL_TMP"
+                break
+              fi
+              sleep 2
+            done
+          fi
+
           docker cp surface-export-host-2:/clusterio/data/instances/clusterio-host-2-instance-1/saves/. ci-artifacts/host2-saves/ 2>/dev/null || true
+          FOUND_SAVE=false
+          while IFS= read -r save; do
+            FOUND_SAVE=true
+            if unzip -t "$save" >/dev/null 2>&1; then
+              echo "save-zip valid: $save"
+            else
+              echo "::warning::Captured save is not unzip-valid: $save"
+            fi
+          done < <(find ci-artifacts/host2-saves -maxdepth 1 -type f -name '*.zip' -print 2>/dev/null)
+          if [ "$FOUND_SAVE" = false ]; then
+            echo "::warning::No host-2 save zip was captured"
+          fi
           echo "=== captured artifact sizes ===" ; du -sh ci-artifacts/* 2>/dev/null || true
-          ls -la ci-artifacts/host1-script-output/ 2>/dev/null | grep -i debug_source || true
+          find ci-artifacts/host1-script-output -maxdepth 1 -type f -iname '*debug_source*' -printf '%f\n' 2>/dev/null || true
 
       - name: Upload failing repro artifacts
         if: failure()
