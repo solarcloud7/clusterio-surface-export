@@ -26,6 +26,71 @@ function EntityHandlers.attach_missing_inventories(entity, data)
   return data
 end
 
+--- Extract an entity's burner (fuel) energy-source state. Mirrors the equipment-burner capture in
+--- inventory-scanner.lua (extract_equipment_grid) but ALSO records the burning item's quality, and
+--- deliberately OMITS the fuel / burnt-result inventories: those are already exported as normal
+--- entity inventories (defines.inventory.fuel / burnt_result), so re-capturing them here would
+--- double-count the fuel items.
+--- @param entity LuaEntity: an entity whose `.burner` is non-nil
+--- @return table: { currently_burning = {name, quality}|nil, remaining_burning_fuel = number }
+function EntityHandlers.extract_entity_burner(entity)
+  local burner = entity.burner
+  local currently_burning = nil
+  local burning = burner.currently_burning
+  if burning then
+    -- 2.0.77: LuaBurner.currently_burning reads as an ItemIDAndQualityIDPair whose `.name` is a
+    -- LuaItemPrototype and `.quality` a LuaQualityPrototype. Resolve both to plain strings (the only
+    -- JSON-safe form); stay defensive if a build ever returns bare-string ids instead.
+    local name = burning.name
+    if type(name) ~= "string" and name then
+      name = name.name
+    end
+    local quality = burning.quality
+    if type(quality) ~= "string" and quality then
+      quality = quality.name
+    end
+    currently_burning = {
+      name = name,
+      quality = quality or GameUtils.QUALITY_NORMAL
+    }
+  end
+  return {
+    currently_burning = currently_burning,
+    remaining_burning_fuel = burner.remaining_burning_fuel
+  }
+end
+
+--- Extract cross-cutting entity state (burner, energy buffer, heat buffer) that applies to ANY entity
+--- regardless of category. Merges directly into `data` (the specific_data table being assembled) so a
+--- single call in handle_entity covers every entity from BOTH export paths.
+--- @param entity LuaEntity
+--- @param data table: the specific_data table to populate in place
+function EntityHandlers.extract_common_state(entity, data)
+  -- BURNER (fuel) state — only the burning item + remaining-fuel scalar; the fuel/burnt inventories
+  -- ride the normal inventory export. `.burner` is nil (never an error) on non-burner entities.
+  if entity.burner then
+    data.burner = EntityHandlers.extract_entity_burner(entity)
+  end
+
+  -- ENERGY BUFFER — accumulators ALWAYS (their stored charge is the whole point of the entity); any
+  -- other entity only when it currently holds a positive buffer. Reading `.energy` throws on many
+  -- prototypes that have no energy source, so probe.
+  -- intentional probe; failure expected on entities without an energy buffer, no log
+  local energy_ok, energy = pcall(function() return entity.energy end)
+  if energy_ok and energy and (entity.type == "accumulator" or energy > 0) then
+    data.energy = energy
+  end
+
+  -- ENTITY HEAT BUFFER — nuclear reactors, heat pipes, and heat-consuming machines expose
+  -- `.temperature` (the entity's OWN heat buffer, NOT fluid temperature, which rides the fluidbox
+  -- export path). Reading `.temperature` throws on entities without a heat energy source, so probe.
+  -- intentional probe; failure expected on non-heat entities, no log
+  local temp_ok, temperature = pcall(function() return entity.temperature end)
+  if temp_ok and temperature ~= nil then
+    data.temperature = temperature
+  end
+end
+
 --- Main dispatcher for entity-specific data extraction
 --- @param entity LuaEntity: The entity to handle
 --- @param category string: Entity category (from Util.get_entity_category)
@@ -46,8 +111,17 @@ function EntityHandlers.handle_entity(entity, category)
   end
 
   -- Ordinary inventories are attached exactly once whether or not a category handler exists.
-  -- Specialized handlers that already use extract_all_inventories remain authoritative.
+  -- Specialized handlers that already use extract_all_inventories remain authoritative. This is the
+  -- path that seats burner-inserter fuel inventories (#98 specialized-inventory fix); the burner STATE
+  -- (currently_burning / remaining_burning_fuel) captured by extract_common_state complements it.
   data = EntityHandlers.attach_missing_inventories(entity, data)
+
+  -- Cross-cutting entity state (burner / energy buffer / heat buffer) applies to ANY entity type
+  -- regardless of category, so it is captured HERE in the shared dispatcher — both export paths
+  -- (sync EntityScanner.scan_surface and async ExportPipeline.process_batch) route through
+  -- EntityScanner.serialize_entity → handle_entity — rather than duplicated across every handler.
+  data = data or {}
+  EntityHandlers.extract_common_state(entity, data)
 
   if next(data) then
     return data

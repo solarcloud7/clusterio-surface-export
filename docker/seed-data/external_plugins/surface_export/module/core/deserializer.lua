@@ -75,6 +75,9 @@ end
 local SIMPLE_RESTORE_RULES = {
   { field = "crafting_progress" },
   { field = "productivity_bonus", safecall = true },
+  -- bonus_progress is RW at 2.0.77 (LuaEntity.bonus_progress); safecall-wrapped like the other
+  -- crafter progress fields since not every entity that reaches here exposes it.
+  { field = "bonus_progress", safecall = true },
   { field = "player_description", prop = "entity_label", safecall = true },
   { field = "ignore_unprioritised_targets", present = true, safecall = true, no_entity_guard = true },
   { field = "use_filters", present = true },
@@ -460,6 +463,56 @@ function Deserializer.restore_entity_state(entity, entity_data)
         end
       end)
     end
+  end
+
+  -- Restore burner (fuel) energy-source state. Set currently_burning FIRST: writing
+  -- remaining_burning_fuel silently no-ops when there is no currently_burning item (2.0.77 LuaBurner).
+  -- Resolve the serialized item name to a prototype so an unknown mod item is skipped (not crashed).
+  -- currently_burning is burn-progress, NOT an inventory slot, so neither the expected-count
+  -- (Verification.count_all_items) nor the dest census (SurfaceCounter.count_items) reads it directly.
+  -- UNVERIFIED (pending live-cluster validation by the closer agent): (a) whether this write is
+  -- ACCEPTED while the entity is still DEACTIVATED (transfers validate pre-activation); and (b) whether
+  -- the engine consumes/mutates the fuel inventory when currently_burning is set — this runs before
+  -- restore_inventories' clear()+refill, so any consumption is overwritten, but that ordering must be
+  -- confirmed on the cluster. If either fails, move this write to the post-validation activation pass.
+  if data.burner and entity.burner then
+    local burner_data = data.burner
+    local burning = burner_data.currently_burning
+    if burning and burning.name then
+      if prototypes.item[burning.name] then
+        safe_call(string.format("burner currently_burning for %s", entity.name), function()
+          entity.burner.currently_burning = {
+            name = burning.name,
+            quality = burning.quality or Util.QUALITY_NORMAL
+          }
+        end)
+      else
+        log(string.format("[Deserializer] Skipped burner currently_burning '%s' for %s (unknown item, mod missing?)",
+          tostring(burning.name), entity.name))
+      end
+    end
+    if burner_data.remaining_burning_fuel then
+      safe_call(string.format("burner remaining_burning_fuel for %s", entity.name),
+        function() entity.burner.remaining_burning_fuel = burner_data.remaining_burning_fuel end)
+    end
+  end
+
+  -- Restore entity energy buffer (accumulator charge, machine energy store).
+  -- UNVERIFIED (pending live-cluster validation by the closer agent): whether a write to `.energy` is
+  -- ACCEPTED while the entity is still DEACTIVATED (transfers validate pre-activation). If a
+  -- deactivated entity rejects/ignores it, this write should move to the post-validation activation
+  -- pass. Also unverified: whether restoring it perturbs the pre-activation gate census.
+  if data.energy ~= nil then
+    safe_call(string.format("energy for %s", entity.name),
+      function() entity.energy = data.energy end)
+  end
+
+  -- Restore entity heat buffer temperature (reactors, heat pipes, heat-consumers).
+  -- UNVERIFIED, same as `energy` above: deactivated-write acceptance is not yet confirmed on the live
+  -- cluster; the closer agent may relocate this to the activation pass.
+  if data.temperature ~= nil then
+    safe_call(string.format("temperature for %s", entity.name),
+      function() entity.temperature = data.temperature end)
   end
 end
 
