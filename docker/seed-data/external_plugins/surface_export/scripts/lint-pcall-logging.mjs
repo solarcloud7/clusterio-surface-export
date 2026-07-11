@@ -74,21 +74,33 @@ for (const file of luaFiles(MODULE_DIR)) {
       continue;
     }
     const vars = assign[1].split(",").map((s) => s.trim()).filter(Boolean);
+    const okVar = vars[0] && vars[0] !== "_" ? vars[0] : null; // 1st value = pcall ok flag
     const errVar = vars[1] && vars[1] !== "_" ? vars[1] : null; // 2nd value = error on failure
 
+    // Value-selection swallow (the known evasion, see pcall-catch-swallow-audit): `(ok and v) or default`
+    // REFERENCES the error-carrying variable but silently converts the failure into a default — the error
+    // never reaches a log or the caller distinctly. Such a reference must NOT count as propagation.
+    const maskRe = okVar && errVar
+      ? new RegExp(`\\b${okVar}\\s+and\\s+${errVar}\\b[^\\n]*?\\bor\\b`)
+      : null;
+
     let handled = false;
+    let maskedSelection = false;
     for (let j = i; j <= Math.min(lines.length - 1, i + LOG_WINDOW); j++) {
       const cj = lines[j].replace(/--.*$/, "");
       if (j > i && /\bpcall\s*\(/.test(cj)) break; // reached the next pcall — a new concern
       if (LOG_RE.test(lines[j])) { handled = true; break; } // logs OR re-raises via error(...)
       // error propagated to the caller (return ..., err / collected into an errors|warnings table):
       if (errVar && new RegExp(`\\b${errVar}\\b`).test(cj) && /\breturn\b|\berrors\b|\bwarnings\b|insert/.test(cj)) {
+        if (maskRe && maskRe.test(cj)) { maskedSelection = true; continue; } // `(ok and v) or …` = swallow, keep scanning
         handled = true;
         break;
       }
     }
     if (!handled) {
-      violations.push(`${rel}:${i + 1}  captured pcall whose error is neither logged nor propagated within ${LOG_WINDOW} lines`);
+      violations.push(maskedSelection
+        ? `${rel}:${i + 1}  pcall error consumed by \`(${okVar} and ${errVar}) or …\` value-selection — the failure is silently converted to a default; log it or propagate it distinctly`
+        : `${rel}:${i + 1}  captured pcall whose error is neither logged nor propagated within ${LOG_WINDOW} lines`);
     }
   }
 }
