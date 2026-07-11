@@ -397,3 +397,24 @@ test("fluid-loss hook is allowlisted and fires before the single gate", () => {
 	assert.match(hookLint, /"test_force_fluid_loss"[\s\S]*pre-gate/,
 		"test_force_fluid_loss must be explicitly listed as a reviewed fail-safe hook");
 });
+
+test("P2 plasma measurement hook is unique-name-scoped, one-shot, and pre-gate only", () => {
+	const configure = fs.readFileSync(path.join(moduleRoot, "interfaces", "remote", "configure.lua"), "utf8");
+	const importCompletion = fs.readFileSync(path.join(moduleRoot, "core", "import-completion.lua"), "utf8");
+	const restoreAt = importCompletion.indexOf("FluidRestoration.restore(entities_to_create, entity_map)");
+	const captureAt = importCompletion.indexOf("test_capture_p2_plasma", restoreAt);
+	const gateAt = importCompletion.indexOf("TransferValidation.validate_import", captureAt);
+
+	assert.match(configure, /config\.test_capture_p2_plasma[\s\S]*storage\.surface_export_config\.test_capture_p2_plasma/,
+		"configure must register the P2 arming key instead of silently dropping it");
+	assert.ok(restoreAt !== -1 && captureAt > restoreAt && gateAt > captureAt,
+		"P2 must capture the production restore readback before the frozen exact gate");
+	assert.match(importCompletion, /test_capture_p2_plasma\s*=\s*nil/,
+		"the measurement hook must consume itself when the unique platform matches");
+	assert.match(importCompletion, /platform_name\s*==\s*job\.platform_name/,
+		"an unrelated transfer must never consume or fire the hook");
+	assert.match(importCompletion, /storage\.fluid_lab\.p2_capture/,
+		"the runner needs a positive same-tick capture witness");
+	assert.doesNotMatch(importCompletion, /p2_capture[\s\S]{0,300}(?:result\.success|success\s*=\s*false)/,
+		"the diagnostic hook must not alter the transfer verdict");
+});

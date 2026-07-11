@@ -44,6 +44,44 @@ local function copy_counts(counts)
 	return copy
 end
 
+local function capture_p2_plasma(surface, platform_name)
+	local holders = {}
+	for _, entity in ipairs(surface.find_entities_filtered({})) do
+		if entity.valid and entity.fluidbox
+			and (entity.name == "fusion-reactor" or entity.name == "pipe" or entity.name == "storage-tank") then
+			for i = 1, #entity.fluidbox do
+				local direct = entity.fluidbox[i]
+				local segment_id = entity.fluidbox.get_fluid_segment_id(i)
+				local segment_contents = segment_id and entity.fluidbox.get_fluid_segment_contents(i) or nil
+				local prototype = entity.prototype.fluidbox_prototypes
+					and entity.prototype.fluidbox_prototypes[i] or nil
+				holders[#holders + 1] = {
+					entity = entity.name,
+					unit_number = entity.unit_number,
+					position = { x = entity.position.x, y = entity.position.y },
+					box = i,
+					production_type = prototype and prototype.production_type or nil,
+					active = entity.active,
+					segment_id = segment_id,
+					direct = direct and {
+						name = direct.name,
+						amount = direct.amount,
+						temperature = direct.temperature,
+					} or nil,
+					segment_contents = segment_contents,
+				}
+			end
+		end
+	end
+	return {
+		platform_name = platform_name,
+		tick = game.tick,
+		game_paused = game.tick_paused == true,
+		platform_paused = surface.platform and surface.platform.paused or nil,
+		holders = holders,
+	}
+end
+
 local function subtract_fluids_by_name(counts, subtractions)
 	local adjusted = copy_counts(counts)
 	for fluid_name, amount in pairs(subtractions or {}) do
@@ -271,6 +309,19 @@ function ImportCompletion.run_phase2(job)
 	job.metrics.fluids_completed_tick = game.tick
 	job.metrics.fluids_restored = fluids_result and fluids_result.count or 0
 	log(string.format("[Import] Frozen-world fluid restoration: %d fluids restored", job.metrics.fluids_restored))
+
+	do
+		local config = storage.surface_export_config
+		local hook = config and config.test_capture_p2_plasma
+		if config and config.debug_mode == true and type(hook) == "table"
+			and hook.platform_name == job.platform_name then
+			config.test_capture_p2_plasma = nil
+			storage.fluid_lab = storage.fluid_lab or {}
+			storage.fluid_lab.p2_capture = capture_p2_plasma(job.target_surface, job.platform_name)
+			log(string.format("[Import][TEST] P2 plasma capture consumed for %s at tick %d",
+				job.platform_name, game.tick))
+		end
+	end
 
 	if job.transfer_id then
 		log("[Import] Deferring active state restoration until after the exact transfer gate")

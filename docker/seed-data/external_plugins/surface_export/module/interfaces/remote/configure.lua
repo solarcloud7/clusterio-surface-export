@@ -50,6 +50,11 @@ local function configure(config)
     -- Test-only: inflate expected fluid count after frozen restoration but before the single gate.
     storage.surface_export_config.test_force_fluid_loss = tonumber(config.test_force_fluid_loss)
   end
+  if config.test_capture_p2_plasma ~= nil then
+    -- Measurement-only, one-shot capture for the P2 plasma segment-persistence lab.
+    -- The unique platform name prevents an unrelated transfer from consuming it.
+    storage.surface_export_config.test_capture_p2_plasma = config.test_capture_p2_plasma
+  end
   if config.preserve_failed_destination ~= nil then
     -- Debug-only escape hatch. Normal failed transfers always bank evidence and discard the destination.
     local debug_enabled = config.debug_mode == true or storage.surface_export_config.debug_mode == true
