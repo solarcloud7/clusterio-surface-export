@@ -21596,3 +21596,425 @@ Measured total fusion plasma: volume `100 -> 99.99038809537888`; VxT
 volume `1000 -> 1000`, VxT `165000 -> 165000`. The anomaly is not classified as transfer loss; current
 hypothesis is post-activation regeneration in engine-managed plasma outputs (Pitfall #21, fusion output fluid
 temperature is engine-managed).
+
+
+## 2026-07-11T18:12:43.727Z - T1c plasma decomposition
+
+Predictions stated before execution: R0 precision sweep; R1 isolated ownership stable and plumbed engine mechanics; R2 honest residual classification.
+
+```json
+{
+  "script": "tests/fluid-lab/run-t1c.mjs",
+  "started": "2026-07-11T18:12:06.052Z",
+  "sections": [
+    "r0",
+    "r1",
+    "r2"
+  ],
+  "predictions": {
+    "r0": "same-tick precision sweep",
+    "r1": "isolated stable; plumbed segment mechanics",
+    "r2": "recompute prior residual"
+  },
+  "rungs": {
+    "r0": {
+      "success": true,
+      "prediction": "same-tick float precision error grows with magnitude",
+      "rows": [
+        {
+          "tick": 1923785,
+          "written": 1000000,
+          "read": 1000000,
+          "error": 0,
+          "amount": 100
+        },
+        {
+          "tick": 1923785,
+          "written": 1234567,
+          "read": 1234567,
+          "error": 0,
+          "amount": 100
+        },
+        {
+          "tick": 1923785,
+          "written": 1252651,
+          "read": 1252651,
+          "error": 0,
+          "amount": 100
+        },
+        {
+          "tick": 1923785,
+          "written": 2000000,
+          "read": 2000000,
+          "error": 0,
+          "amount": 100
+        },
+        {
+          "tick": 1923785,
+          "written": 5000000,
+          "read": 5000000,
+          "error": 0,
+          "amount": 100
+        }
+      ]
+    },
+    "r1": {
+      "success": true,
+      "prediction": "isolated ownership stable; plumbed shares reactor segment",
+      "fixture": {
+        "success": true,
+        "tick": 1923939,
+        "isolated": {
+          "x": -12.5,
+          "y": -36.5,
+          "nearby_fluidboxes": 0,
+          "read": {
+            "amount": 100,
+            "temp": 1234567
+          }
+        },
+        "plumbed": {
+          "x": -4.5,
+          "y": -5.5
+        },
+        "reactor_output_segment": 3612,
+        "plumbed_segment": 3646
+      },
+      "before": {
+        "success": true,
+        "label": "source frozen",
+        "tick": 1924014,
+        "isolated": {
+          "entity": "pipe",
+          "tick": 1924014,
+          "direct": {
+            "name": "fusion-plasma",
+            "amount": 100,
+            "temp": 1234567,
+            "energy": 123456700
+          },
+          "segment_id": 3645,
+          "segment": {
+            "fusion-plasma": 100
+          }
+        },
+        "plumbed": {
+          "entity": "pipe",
+          "tick": 1924014,
+          "segment_id": 3646,
+          "segment": {}
+        }
+      },
+      "after": {
+        "success": true,
+        "label": "destination frozen",
+        "tick": 1866463,
+        "isolated": {
+          "entity": "pipe",
+          "tick": 1866463,
+          "direct": {
+            "name": "fusion-plasma",
+            "amount": 100,
+            "temp": 1234567,
+            "energy": 123456700
+          },
+          "segment_id": 3181,
+          "segment": {
+            "fusion-plasma": 100
+          }
+        },
+        "plumbed": {
+          "entity": "pipe",
+          "tick": 1866463,
+          "segment_id": 3185,
+          "segment": {}
+        }
+      },
+      "isolated": {
+        "source": {
+          "name": "fusion-plasma",
+          "amount": 100,
+          "temp": 1234567,
+          "energy": 123456700
+        },
+        "destination": {
+          "name": "fusion-plasma",
+          "amount": 100,
+          "temp": 1234567,
+          "energy": 123456700
+        },
+        "volume_delta": 0,
+        "energy_delta": 0
+      },
+      "plumbed_same_segment_source": false
+    },
+    "r2": {
+      "success": true,
+      "prediction": "quantization explains the prior residual or residual remains UNEXPLAINED",
+      "raw_delta": 681796.25,
+      "quantization_adjustment": 0,
+      "residual": 681796.25,
+      "classification": "UNEXPLAINED"
+    }
+  },
+  "errors": [],
+  "initial_reset": {
+    "source": {
+      "success": true,
+      "surfaces": 0,
+      "storage": false,
+      "game_paused": false,
+      "holds": 0,
+      "locks": 0,
+      "jobs": 0,
+      "tombstones": 0
+    },
+    "destination": {
+      "success": true,
+      "surfaces": 0,
+      "storage": false,
+      "game_paused": false,
+      "holds": 0,
+      "locks": 0,
+      "jobs": 0,
+      "tombstones": 0
+    },
+    "ok": true
+  },
+  "final_reset": {
+    "source": {
+      "success": true,
+      "surfaces": 0,
+      "storage": false,
+      "game_paused": false,
+      "holds": 0,
+      "locks": 0,
+      "jobs": 0,
+      "tombstones": 0
+    },
+    "destination": {
+      "success": true,
+      "surfaces": 0,
+      "storage": false,
+      "game_paused": false,
+      "holds": 0,
+      "locks": 0,
+      "jobs": 0,
+      "tombstones": 0
+    },
+    "ok": true
+  },
+  "finished": "2026-07-11T18:12:43.727Z"
+}
+```
+
+
+## 2026-07-11T18:13:20.232Z - T1c plasma decomposition
+
+Predictions stated before execution: R0 precision sweep; R1 isolated ownership stable and plumbed engine mechanics; R2 honest residual classification.
+
+```json
+{
+  "script": "tests/fluid-lab/run-t1c.mjs",
+  "started": "2026-07-11T18:12:43.776Z",
+  "sections": [
+    "r0",
+    "r1",
+    "r2"
+  ],
+  "predictions": {
+    "r0": "same-tick precision sweep",
+    "r1": "isolated stable; plumbed segment mechanics",
+    "r2": "recompute prior residual"
+  },
+  "rungs": {
+    "r0": {
+      "success": true,
+      "prediction": "same-tick float precision error grows with magnitude",
+      "rows": [
+        {
+          "tick": 1924683,
+          "written": 1000000,
+          "read": 1000000,
+          "error": 0,
+          "amount": 100
+        },
+        {
+          "tick": 1924683,
+          "written": 1234567,
+          "read": 1234567,
+          "error": 0,
+          "amount": 100
+        },
+        {
+          "tick": 1924683,
+          "written": 1252651,
+          "read": 1252651,
+          "error": 0,
+          "amount": 100
+        },
+        {
+          "tick": 1924683,
+          "written": 2000000,
+          "read": 2000000,
+          "error": 0,
+          "amount": 100
+        },
+        {
+          "tick": 1924683,
+          "written": 5000000,
+          "read": 5000000,
+          "error": 0,
+          "amount": 100
+        }
+      ]
+    },
+    "r1": {
+      "success": true,
+      "prediction": "isolated ownership stable; plumbed shares reactor segment",
+      "fixture": {
+        "success": true,
+        "tick": 1924837,
+        "isolated": {
+          "x": -12.5,
+          "y": -36.5,
+          "nearby_fluidboxes": 0,
+          "read": {
+            "amount": 100,
+            "temp": 1234567
+          }
+        },
+        "plumbed": {
+          "x": -4.5,
+          "y": -5.5
+        },
+        "reactor_output_segment": 3685,
+        "plumbed_segment": 3719
+      },
+      "before": {
+        "success": true,
+        "label": "source frozen",
+        "tick": 1924910,
+        "isolated": {
+          "entity": "pipe",
+          "tick": 1924910,
+          "direct": {
+            "name": "fusion-plasma",
+            "amount": 100,
+            "temp": 1234567,
+            "energy": 123456700
+          },
+          "segment_id": 3718,
+          "segment": {
+            "fusion-plasma": 100
+          }
+        },
+        "plumbed": {
+          "entity": "pipe",
+          "tick": 1924910,
+          "segment_id": 3719,
+          "segment": {}
+        }
+      },
+      "after": {
+        "success": true,
+        "label": "destination frozen",
+        "tick": 1868772,
+        "isolated": {
+          "entity": "pipe",
+          "tick": 1868772,
+          "direct": {
+            "name": "fusion-plasma",
+            "amount": 100,
+            "temp": 1234567,
+            "energy": 123456700
+          },
+          "segment_id": 3260,
+          "segment": {
+            "fusion-plasma": 100
+          }
+        },
+        "plumbed": {
+          "entity": "pipe",
+          "tick": 1868772,
+          "segment_id": 3264,
+          "segment": {}
+        }
+      },
+      "isolated": {
+        "source": {
+          "name": "fusion-plasma",
+          "amount": 100,
+          "temp": 1234567,
+          "energy": 123456700
+        },
+        "destination": {
+          "name": "fusion-plasma",
+          "amount": 100,
+          "temp": 1234567,
+          "energy": 123456700
+        },
+        "volume_delta": 0,
+        "energy_delta": 0
+      },
+      "plumbed_same_segment_source": false
+    },
+    "r2": {
+      "success": true,
+      "prediction": "quantization explains the prior residual or residual remains UNEXPLAINED",
+      "raw_delta": 681796.25,
+      "quantization_adjustment": 0,
+      "residual": 681796.25,
+      "classification": "UNEXPLAINED"
+    }
+  },
+  "errors": [],
+  "initial_reset": {
+    "source": {
+      "success": true,
+      "surfaces": 0,
+      "storage": false,
+      "game_paused": false,
+      "holds": 0,
+      "locks": 0,
+      "jobs": 0,
+      "tombstones": 0
+    },
+    "destination": {
+      "success": true,
+      "surfaces": 0,
+      "storage": false,
+      "game_paused": false,
+      "holds": 0,
+      "locks": 0,
+      "jobs": 0,
+      "tombstones": 0
+    },
+    "ok": true
+  },
+  "final_reset": {
+    "source": {
+      "success": true,
+      "surfaces": 0,
+      "storage": false,
+      "game_paused": false,
+      "holds": 0,
+      "locks": 0,
+      "jobs": 0,
+      "tombstones": 0
+    },
+    "destination": {
+      "success": true,
+      "surfaces": 0,
+      "storage": false,
+      "game_paused": false,
+      "holds": 0,
+      "locks": 0,
+      "jobs": 0,
+      "tombstones": 0
+    },
+    "ok": true
+  },
+  "finished": "2026-07-11T18:13:20.232Z"
+}
+```
