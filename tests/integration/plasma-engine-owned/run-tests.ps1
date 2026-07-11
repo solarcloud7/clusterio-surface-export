@@ -24,20 +24,18 @@ function Remove-Fixture {
     }
 }
 
-try {
-    Remove-Fixture
-    $sourceHost = Resolve-PlatformHost -PlatformName "test"
-    if (-not $sourceHost) { throw "test platform not found" }
-    $sourceInstance = "clusterio-host-$sourceHost-instance-1"
-    $clone = New-TestPlatform -Instance $sourceInstance -SourcePlatform "test" -DestPlatform $name
+function New-PlasmaFixture {
+    param([string]$Instance, [string]$PlatformName)
+
+    $clone = New-TestPlatform -Instance $Instance -SourcePlatform "test" -DestPlatform $PlatformName
     if (-not $clone.success) { throw "clone failed: $($clone.error)" }
     if ($clone.job_id) {
-        Wait-ForJob -Instances @($sourceInstance) -MaxWaitSeconds 90 -CheckScript "local j=(storage.async_jobs or {})['$($clone.job_id)']; rcon.print(j == nil and 'true' or 'false')" | Out-Null
+        Wait-ForJob -Instances @($Instance) -MaxWaitSeconds 90 -CheckScript "local j=(storage.async_jobs or {})['$($clone.job_id)']; rcon.print(j == nil and 'true' or 'false')" | Out-Null
     }
 
-    $fixture = Invoke-Lua -Instance $sourceInstance -Code @"
+    $fixture = Invoke-Lua -Instance $Instance -Code @"
 local p=nil
-for _,candidate in pairs(game.forces.player.platforms) do if candidate.name=='$name' then p=candidate end end
+for _,candidate in pairs(game.forces.player.platforms) do if candidate.name=='$PlatformName' then p=candidate end end
 if not p then error('fixture platform missing') end
 local isolated=nil
 for _,tile in pairs(p.surface.find_tiles_filtered({name='space-platform-foundation'})) do
@@ -66,23 +64,33 @@ rcon.print(helpers.table_to_json({entities=#p.surface.find_entities_filtered({})
     if ($fixtureData.control -ne 5 -or $fixtureData.managed -le 0 -or $fixtureData.reactors -le 0 -or $fixtureData.generators -le 0) {
         throw "fixture grounding failed: $fixture"
     }
+    return $fixtureData
+}
+
+try {
+    Remove-Fixture
+    $sourceHost = Resolve-PlatformHost -PlatformName "test"
+    if (-not $sourceHost) { throw "test platform not found" }
+    $sourceInstance = "clusterio-host-$sourceHost-instance-1"
+    $destHost = if ($sourceHost -eq 1) { 2 } else { 1 }
+    $destInstance = "clusterio-host-$destHost-instance-1"
+    $destContainer = "surface-export-host-$destHost"
+    $destId = Get-ClusterioInstanceId -InstanceName $destInstance
 
     for ($run = 1; $run -le $Runs; $run++) {
-        $destHost = if ($sourceHost -eq 1) { 2 } else { 1 }
-        $destInstance = "clusterio-host-$destHost-instance-1"
-        $destContainer = "surface-export-host-$destHost"
-        $destId = Get-ClusterioInstanceId -InstanceName $destInstance
-        $index = Get-PlatformIndex -Instance $sourceInstance -PlatformName $name
+        $runName = "$name-$run"
+        $fixtureData = New-PlasmaFixture -Instance $sourceInstance -PlatformName $runName
+        $index = Get-PlatformIndex -Instance $sourceInstance -PlatformName $runName
         if (-not $index) { throw "run $run source platform missing" }
         $scriptOut = "/clusterio/data/instances/$destInstance/script-output"
-        docker exec $destContainer sh -c "rm -f $scriptOut/debug_import_result_${name}_*.json 2>/dev/null" 2>$null | Out-Null
+        docker exec $destContainer sh -c "rm -f $scriptOut/debug_import_result_${runName}_*.json 2>/dev/null" 2>$null | Out-Null
         Send-Rcon -Instance $sourceInstance -Command "/transfer-platform $index $destId" | Out-Null
 
         $deadline = (Get-Date).AddSeconds($TimeoutSec)
         $resultFile = $null
         while (-not $resultFile -and (Get-Date) -lt $deadline) {
             Start-Sleep -Milliseconds 500
-            $files = @(Get-DebugFiles -Instance $destInstance -Container $destContainer -Pattern "debug_import_result_${name}_*.json")
+            $files = @(Get-DebugFiles -Instance $destInstance -Container $destContainer -Pattern "debug_import_result_${runName}_*.json")
             if ($files.Count -gt 0) { $resultFile = $files[0] }
         }
         if (-not $resultFile) { throw "run $run timed out" }
@@ -107,8 +115,7 @@ rcon.print(helpers.table_to_json({entities=#p.surface.find_entities_filtered({})
             $failed++
             break
         }
-        $sourceHost = $destHost
-        $sourceInstance = $destInstance
+        Remove-Fixture
     }
 } finally {
     Remove-Fixture
