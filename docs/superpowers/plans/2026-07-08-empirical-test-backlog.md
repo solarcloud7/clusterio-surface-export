@@ -11,6 +11,15 @@
 >
 > ~68 deduplicated test items across 9 domains. Source keys: A#=code constant, B#=lab open item, plus pitfall #.
 
+> **TRIAGE 2026-07-11:** entries annotated GROUNDED / SUPERSEDED / QUEUED against landed lab evidence; untagged
+> entries remain open. GROUNDED = measured by one of the six labs certified at pin 2.0.77 in
+> `tests/labs-certified.json` (gate-drift/LAB-A, fluid-lab R1/R7/R8/R9/R10/R11/R12, inserter-lab B1-B4,
+> no-tick-sync B5/PR0B, engine-repin B7-B9, hold-completeness PR0A). Doc-/`[API]`-verified-only or un-run rungs
+> (LAB-C/D/F/H/J/K, and LAB-I I1/I2) stay open. SUPERSEDED = the source-delete gate thresholds deleted by the
+> single frozen-world exact gate (PR #76, `c5d7437`). QUEUED = covered by the LAB-TAIL brief
+> (`2026-07-10-lab-tail-agent-brief.md`: T1 thermal V×T, T2 timeout wall-clock, T3 max RCON payload, T4
+> stored-export latency).
+
 ## Progress
 - **2026-07-10 — R11 PASSED (commit `e8c7bbe`, audited):** frozen-world fluid injection conserves EXACTLY on
   2.0.77 — segment write-while-off (R11a), full inactive mini-line (R11b), newly-created pre-first-activation
@@ -71,6 +80,21 @@
 | GATE-7 | `LOSS_TOLERANCE_PCT=0.05` / `LOSS_TOLERANCE_ABS=25` high-temp reconcile (A11/A12) | G | volume drift from temperature-bucket merging at extreme temps, as a fraction | high-temp fluid report (non-gating today) |
 | GATE-8 | loose-path `STORAGE_TOLERANCE=5`, `TOTAL_LOSS_TOLERANCE=0.95`, `MIN_ABSOLUTE_LOSS=100`, unexpected `>20` (A4/A5/A6/A9) | G | spurious gain / real loss on **non-transfer** (upload) imports — acknowledged over-tolerant instrument | uploaded-JSON import verdict |
 
+> **TRIAGE 2026-07-11:**
+> - **GATE-1 / GATE-2 / GATE-3 / GATE-4 — SUPERSEDED:** thresholds deleted by the single frozen-world exact gate
+>   (PR #76, `c5d7437`) — transfers are exact (items `0/0`, fluids by-name at `epsilon=1e-6`); the loose path remains
+>   for non-transfer callers only. (GATE-3's "±4–8 belt floor" premise was itself refuted: that residual was *real*
+>   restore-time loss, not a cosmetic floor — see CLAUDE.md belt invariant.)
+> - **GATE-5 — GROUNDED:** [empirical, 2.0.77, gate-drift LAB-A] export-scan residual measured **0** for items and
+>   fluids across two full passes; the production export lock freezes the fluid movers (freeze0) so drift is
+>   impossible by mechanism (commit `d666b23`; `tests/gate-drift-lab/NOTEBOOK.md`).
+> - **GATE-6 — GROUNDED (partial):** [empirical, 2.0.77, fluid-lab R12] steam clamped every write to 5,000°C with a
+>   stable key across the 9,999→10,000,000°C sweep — no precision boundary found. The `10000` threshold *value*
+>   itself remains unlicensed (open, task #30); the E3 sweep for its real placement did not run.
+> - **GATE-7 — QUEUED: LAB-TAIL T1** (high-temp reconcile tolerance rides the thermal V×T conservation rung; it is
+>   the non-gating display path — NOT deleted, unlike GATE-4).
+> - **GATE-8 — open:** the explicitly-retained non-transfer (upload/clone) loose path; no landed lab.
+
 ## 2. Belt / item fidelity (P0/P1)
 | ID | Claim | Status | What a test MEASURES | Depends on |
 |---|---|---|---|---|
@@ -82,6 +106,17 @@
 | BELT-6 | oversized-stack consolidation fix (B6) | X | busy real transfer with consolidation: gate GAINs=0 (no double-place) AND post-activation loss conserved; CONSOLIDATE-REJECT busy path | literal-zero without routing |
 | BELT-7 | belt_restoration spacing `(gi-1)*0.25`, end-clamp `len-0.05`, classifier `<0.25` (A24/A25/A26) | G/P | min inter-item separation & max edge position `insert_at` accepts on the pin | consolidated placement correctness |
 
+> **TRIAGE 2026-07-11:**
+> - **BELT-1 — GROUNDED:** [empirical, 2.0.77, gate-drift LAB-A] the atomic single-tick scan was re-validated under
+>   moving belts (residual 0); the "rolling snapshot" *mechanism* remains a historical hypothesis (Pitfall #16).
+> - **BELT-2 — GROUNDED, with a correction:** [empirical, 2.0.77, gate-drift LAB-A] belt lines keep advancing under a
+>   production lock — measured. But the "redistribution is cosmetic, not loss" reassurance was **REFUTED**: the ±4–8
+>   was *real* restore-time loss (CLAUDE.md belt invariant), since fixed to exact physical totals.
+> - **BELT-3 — GROUNDED (partial):** LAB-A measured export-scan residual **0**, so the residual is NOT an export
+>   double-count phantom on the export side; the restore-side belt floor was separately fixed to zero (CLAUDE.md belt
+>   invariant). The dedicated source-vs-serialized-vs-dest reconciliation (LAB-C C1) did not certify.
+> - **BELT-4 / BELT-5 / BELT-6 / BELT-7 — open:** LAB-C did not certify (not in `tests/labs-certified.json`).
+
 ## 3. Inserter / held-item fidelity (P0)
 | ID | Claim | Status | What a test MEASURES | Depends on |
 |---|---|---|---|---|
@@ -91,6 +126,14 @@
 | INS-4 | held loss was destination-force state, not payload drift | C — B2 [empirical, 2.0.77] | destination entity force began bonus 0, rose to source 11, and restored the same payload exactly | pre-gate force sync |
 | INS-5 | no-tick-sync validated only an **empty/settled** hand, not a partial-filled bulk inserter (B24) | X | run the no-tick sync assertion against a partially-filled bulk inserter in CI-fresh state | ties INS-2/3; the "restore-held-before-gate, no tick" premise |
 | INS-6 | force-sync remains RAISE-ONLY; seated-hand ejection claim tested | C — B4 [empirical, 2.0.77] | hand stayed 8 across bonus 11→0, elapsed ticks, and `reset_technology_effects()`; no ejection | raise-only remains conservative state ownership |
+
+> **TRIAGE 2026-07-11:**
+> - **INS-1 — GROUNDED:** [empirical, 2.0.77, inserter-lab B1-B4] `set_stack` silently truncates/fails to seat on a
+>   settled-deactivated hand (and the ok-bool lies); a briefly-active bulk hand seats full (`tests/inserter-lab/NOTEBOOK.md`).
+> - **INS-2 / INS-3 / INS-4 / INS-6 — already carry current-pin `[empirical, 2.0.77]` tags** (inserter-lab B1-B4,
+>   commit `8c61365`); synced, no change.
+> - **INS-5 — open:** the no-tick-sync assertion against a *partial-filled* bulk hand in CI-fresh state was not
+>   certified as a standalone conclusion (that thread resolved into the dest-force-research fix, Pitfall #29).
 
 ## 4. Fluid fidelity & mechanisms (P1/P2/P3)
 | ID | Claim | Status | What a test MEASURES | Depends on |
@@ -110,6 +153,24 @@
 | FLUID-13 | R10c/R10d never run; R9b (CI self-report) pending (B12/B13) | X | the unrun adversarial temperature-mix rungs; a CI run with the instrumented probe green | #76 gate "proven necessary" claim; "fluid fix done vs locally-green" |
 | FLUID-14 | R1 `frozen=true` half inconclusive (`.frozen` read-only, uninducible in lab) (B10) | X | an alternate way to induce engine-frozen state, or confirm production never sets `.frozen` (R8 found none) | frozen-vs-active=false fluid behavior |
 
+> **TRIAGE 2026-07-11:**
+> - **FLUID-1 — GROUNDED (mechanism refuted / unconstructible):** [empirical, 2.0.77, fluid-lab R7/R11] no
+>   segment-member *and* deactivatable specimen exists on 2.0.77 (R7); frozen-world injection conserved exactly
+>   (R11d, max |delta| = 0), so the ghost-buffer loss prediction did not reproduce. Behavioral rule stands
+>   independently (Pitfall #17); LAB-F remains BLOCKED (specimen unconstructible).
+> - **FLUID-2 — GROUNDED:** [empirical, 2.0.77, fluid-lab R7] no activatable entity's own fluidbox exposes a non-nil
+>   segment id (Pitfall #22) — the "R7 unanswered" title is stale; R7 answered it.
+> - **FLUID-3 — already `[empirical, 2.0.77]`** (fluid-lab R12/B6a); synced.
+> - **FLUID-9 — GROUNDED (partial):** [empirical, 2.0.77, fluid-lab R11] fusion **output** rejects writes / input
+>   accepts, measured 100 raw / 20 rejected / 80 restored; "systematic across all engine-driven outputs" stays open.
+> - **FLUID-13 — QUEUED: LAB-TAIL T1** (R10c thermal-energy half); R10d was adjudicated redundant by the exact fluid
+>   gate (`c5d7437`); the R9b CI self-report remainder is open.
+> - **FLUID-14 — GROUNDED:** [empirical, 2.0.77, fluid-lab R1/R8] `LuaEntity.frozen` is read-only and a module-tree
+>   grep found no production `.frozen =` write sites (R8).
+> - **FLUID-4 / 5 / 6 / 7 / 8 / 10 / 11 / 12 — open:** LAB-D did not certify; FLUID-4/7 are doc/`[API]`-verified only
+>   (not lab-measured on the pin); FLUID-12's `delta=20` was eliminated-by-fixture but its root cause was never
+>   isolated (UNEXPLAINED).
+
 ## 5. Destination-hold & cargo pods (P2, Phase-2 gated)
 | ID | Claim | Status | What a test MEASURES | Depends on |
 |---|---|---|---|---|
@@ -117,11 +178,22 @@
 | HOLD-2 | held platform "not-live" = drift ≤ live control (spoilage/asteroids advance) — accept-by-redefinition (B17) | X | held drift ≤ live drift, platform_damage=0, nothing-leaves — later runs assert; confirm the redefinition holds broadly | no-duplicates "not-live" contract |
 | HOLD-3 | held platform's asteroid is NOT contained (`held_asteroid_contained=false`) but terminal matches live (B19) | X | does asteroid ever leave the platform or damage it (both currently 0)? | user expectation of "not-live" |
 
+> **TRIAGE 2026-07-11:**
+> - **HOLD-1 — GROUNDED (partial):** [empirical, 2.0.77, hold-lab PR0A] an `awaiting_launch` pod staged to
+>   `pod_count=0` with cargo retained; the `descending`/`parking` states were not constructed as live specimens (open).
+> - **HOLD-2 / HOLD-3 — GROUNDED:** [empirical, 2.0.77, hold-lab PR0A] held drift ≤ live-control drift, platform
+>   damage 0, nothing leaves; the "not-live" redefinition held (commit `a007ecb`).
+
 ## 6. Transfer TTL & timing estimates (P2)
 | ID | Claim | Status | What a test MEASURES | Depends on |
 |---|---|---|---|---|
 | TTL-1 | `WORST_CASE_RCON=3000` / `SCAN_IMPORT=6000` / `MARGIN=3000` / `DEFAULT_TTL=36000` (A17/A19/A20/A21/A23) | G/semi | real end-to-end transfer wall-clock distribution for the largest platform → TTL must exceed p99 | source auto-unlock timing; committed-tombstone retention |
 | TTL-2 | `VALIDATION_TIMEOUT_TICKS=7200` == JS `VALIDATION_TIMEOUT_MS` (A18, grounded) | (drift check) | confirm the Lua constant still equals the JS constant | timeout consistency |
+
+> **TRIAGE 2026-07-11:**
+> - **TTL-1 — QUEUED: LAB-TAIL T2** (validation-timeout wall-clock distribution; its RCON/scan components also touch
+>   T3 max-RCON-payload and T4 stored-export latency).
+> - **TTL-2 — QUEUED: LAB-TAIL T2** (the JS↔Lua timeout-constant drift check is part of the T2 measurement scope).
 
 ## 7. Engine / API claims — re-verify on the 2.0.77 pin (P3/P4)
 | ID | Claim | Status | What a test MEASURES | Depends on |
@@ -136,6 +208,13 @@
 | API-8 | unknown items gracefully skipped with warning (#7) | C — B9 [empirical, 2.0.77] | invalid item skipped, valid iron plates restored physically, warning count increased | cross-mod import robustness |
 | API-9 | throughput scales with segment fullness (api-23) | (API, marginal) | N/A in-plugin | contextual only |
 
+> **TRIAGE 2026-07-11:**
+> - **API-1 / API-2 / API-7 / API-8 — already carry current-pin `[empirical, 2.0.77]` tags** (engine-repin-lab
+>   B7-B9 `00e44c7` / no-tick-sync B5); synced, no change.
+> - **API-3 / API-4 / API-5 / API-6 — open:** LAB-H (H3/H4) and LAB-I (I1 profiler bake, I2 LocalisedString 20-cap)
+>   did not run; API-3/API-6 are doc-verified only, not lab-measured on the pin. (Pitfalls #24/#25 document the
+>   profiler/LocalisedString behavior, but neither has a certified rung.)
+
 ## 8. Players / passengers — future feature (P5, gated on the feature)
 | ID | Claim | Status | What a test MEASURES | Depends on |
 |---|---|---|---|---|
@@ -144,6 +223,8 @@
 | PLAYER-3 | aboard-detection via `physical_surface_index`; watcher lacks it; no platform players accessor (api-18) | P | place pilot / disconnected-aboard / body / watcher; confirm each detector's indices | passenger-detection logic |
 | PLAYER-4 | `teleport` cleanly exits hub-lock for a **connected** player — hand-verified only (api-19) | to-verify | connected hub-locked remote-view player → teleport to planet → confirm clean exit | live-player evacuate path |
 | PLAYER-5 | `connect_to_server`: prompts peer, host no-op, no admin gate, `public_address` defaults localhost (api-20) | docs-spike | invoke as host vs connected peer; confirm no-op/prompt + no admin gate | Layer-2 "follow your platform" |
+
+> **TRIAGE 2026-07-11:** PLAYER-1..5 remain **open** — LAB-K is feature-gated (needs a connected player) and did not certify.
 
 ## 9. Doc hygiene / meta (P6)
 | ID | Item | Action |

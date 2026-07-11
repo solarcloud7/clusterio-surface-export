@@ -7,6 +7,11 @@
 > tick-stamped readings, `--reset` + two-instance zero-leftover, append-only NOTEBOOK, honest UNEXPLAINED,
 > promote to api-notes with `[empirical, 2.0.77]` on conclusion.
 
+> **TRIAGE 2026-07-11:** entries annotated GROUNDED / SUPERSEDED / QUEUED against landed lab evidence; untagged
+> entries remain open. Per-rung status added below. Six labs certified at pin 2.0.77
+> (`tests/labs-certified.json`): gate-drift/LAB-A, fluid-lab (R1/R7/R8/R9/R10/R11/R12), inserter-lab/LAB-B (B1-B4),
+> no-tick-sync (B5/PR0B), engine-repin (B7-B9), hold-completeness (PR0A). LAB-C/D/F/H/J/K and LAB-I I1/I2 did not run.
+
 ## Method (how these were designed, so it doesn't sprawl)
 - **11 rungs cover ~68 items** by grouping items that share a fixture/variable. A rung is justified only if a
   **live decision** rests on the belief (di-change #7); mechanism-only `[hypothesis]` items ride along a rung that
@@ -57,6 +62,7 @@ temp merge). **P2:** LAB-D (fluid segment mechanics), LAB-G (hold anomalies), LA
 ---
 
 ## LAB-A — Export-scan drift (the keystone) · Style B · P0
+> **TRIAGE 2026-07-11 — DONE (certified 2.0.77, gate-drift, `d666b23`):** GATE-5 closed, export-scan residual 0/0; BELT-1/2 advanced.
 **Question:** do item and fluid **totals** drift during the multi-tick export scan on a **flowing** platform — i.e.
 is any loss tolerance even needed, and if so, what is the true residual?
 **Closes:** GATE-5, and grounds GATE-1/2/3/4; answers BELT-1, BELT-2, BELT-3(partial); informs the "fix the
@@ -78,6 +84,7 @@ residual = D>0 ⇒ (a) if the atomic single-tick belt/fluid scan removes it, fix
 set each gate floor to ~3×D, **measured**. Either way add a complete-loss floor.
 
 ## LAB-B — Inserter held-item capacity & restore · Style A + CI-save · P0
+> **TRIAGE 2026-07-11 — DONE (certified 2.0.77, inserter-lab B1-B4 `8c61365` + no-tick-sync B5/PR0B):** INS-1/2/3/4/6 grounded (dest-force research governs hand capacity); INS-5 (partial-hand no-tick in CI-fresh) still open.
 **Question:** why do held items under-restore on busy/CI platforms, and what actually governs an inserter hand's
 capacity and whether `set_stack` seats?
 **Closes:** INS-1, INS-2, INS-3, INS-4, INS-5, INS-6 (raise-only); feeds GATE-1/2.
@@ -96,6 +103,7 @@ FORCE_SYNC_PROPS]`; `inserter_stack_size_override` `[UNKNOWN — this is the mea
 or a post-activation restore + gate-timing change is required (adjudicated separately).
 
 ## LAB-C — Belt reconstruction fidelity · Style A + B · P1
+> **TRIAGE 2026-07-11 — open:** not certified (not in `tests/labs-certified.json`). BELT-3 partly answered by LAB-A (export residual 0 → not an export-side phantom); the restore-side reconciliation is still un-run.
 **Question:** is the −8 settled / −135–143 busy belt residual real loss or an export double-count phantom, and can
 `insert_at` reconstruct a maximally-compressed line?
 **Closes:** BELT-3 (real-vs-phantom), BELT-4 (connect-vs-create), BELT-6 (oversized-stack), BELT-7 (spacing
@@ -114,6 +122,7 @@ constants A24–A26); confirms BELT-2.
 belts `[plugin-proven` — asserted `get-item-count-includes-belts` memory, re-confirm in C1].
 
 ## LAB-D — Fluid segment mechanics · Style A · P2
+> **TRIAGE 2026-07-11 — open:** not certified. FLUID-4/7 are `[API]`/doc-verified only (not lab-measured on the pin); FLUID-9 (fusion-output rejection) landed via fluid-lab R11.
 **Question:** confirm the segment read/dedup model the fluid accounting rests on, on the pin.
 **Closes:** FLUID-4 (proxy window), FLUID-5 (stale read), FLUID-6 (dedup), FLUID-7 (segment-id nil cases),
 FLUID-8 (get_capacity split), FLUID-9 (fusion output rejection).
@@ -128,6 +137,7 @@ FLUID-8 (get_capacity split), FLUID-9 (fusion output rejection).
 fusion write-rejection `[plugin-proven` behavior, `fusion-reactor-plasma-output` test] — this rung re-verifies on pin.
 
 ## LAB-E — Fluid temperature merge & thermal energy · Style A + B · P1
+> **TRIAGE 2026-07-11 — PARTIAL:** E1 volume-weighted merge measured [empirical, 2.0.77, fluid-lab R12] (`500@165 + 1500@500 → 416.25`); E2 thermal V×T = QUEUED LAB-TAIL T1; E3 threshold sweep not run (GATE-6 value still unlicensed).
 **Question:** is the merge a **volume-weighted** average for **unequal** volumes, is thermal energy conserved on
 transfer, and where does `HIGH_TEMP_THRESHOLD` actually belong?
 **Closes:** FLUID-3 (weighted-merge general), FLUID-13 (R10c/d), GATE-6 (HIGH_TEMP_THRESHOLD=10000), GATE-7.
@@ -142,6 +152,7 @@ transfer, and where does `HIGH_TEMP_THRESHOLD` actually belong?
 temp `[doc-verified]`; `read_entity` `[plugin-proven]`. Real transfer path for E2 `[plugin-proven` — `run-r10.mjs]`.
 
 ## LAB-F — Ghost-buffer / frozen fluid (blocked specimen) · Style A · P3
+> **TRIAGE 2026-07-11 — BLOCKED, confirmed on 2.0.77:** [fluid-lab R7] no segment-member deactivatable specimen; `.frozen` read-only [R1/R8]. Mechanism UNCONSTRUCTIBLE; the behavioral rule (inject-after-activation) stands independently on R11.
 **Question:** does a frozen/inactive segment-member entity route a fluid write to a wiped ghost buffer?
 **Closes:** FLUID-1 (ghost-buffer, 4 sub-claims), FLUID-2 (R7 unanswered), FLUID-14 (frozen half).
 **Status:** **BLOCKED** — fluid-lab R7 established no activatable entity on 2.0.77 exposes a non-nil own-fluidbox
@@ -153,6 +164,7 @@ the mechanism deferred-to-future-engine. **The behavioral rule (inject-after-act
 **API:** `frozen` `[UNKNOWN/read-only` — confirmed read-only by R1]`; `fluidbox[i]` write on inactive `[plugin-proven]`.
 
 ## LAB-G — Destination-hold anomalies · Style A/B · P2 (Phase-2 gated)
+> **TRIAGE 2026-07-11 — PARTIAL:** PR0A certified [empirical, 2.0.77] (HOLD-2/3; HOLD-1 `awaiting_launch` only, `descending`/`parking` not constructed); the delta=20 (G1 / FLUID-12) remains UNEXPLAINED (open).
 **Question:** isolate the delta=20, and prove the non-`awaiting_launch` pod states + asteroid containment.
 **Closes:** FLUID-12 (delta=20), HOLD-1 (descending/parking pods), HOLD-2/3 (hold not-live / asteroid).
 **Fixtures/rungs:**
@@ -166,6 +178,7 @@ the mechanism deferred-to-future-engine. **The behavioral rule (inject-after-act
 `get_inventory(defines.inventory.cargo_unit)` `[plugin-proven` — `run-pr0a.mjs:266]`.
 
 ## LAB-H — Machine / beacon behavior · Style A · P3
+> **TRIAGE 2026-07-11 — open:** did not run as LAB-H; API-1 (crafting_speed instant) landed via engine-repin B8 and API-2 (craft-in-the-gap) via no-tick-sync B5. H3 (arg-order) / H4 (read-only props) un-run.
 **Question:** re-verify the load-bearing crafting/inventory mechanisms on the pin.
 **Closes:** API-1 (crafting_speed instant on beacon), API-2 (craft-in-the-gap #15), API-6
 (set_inventory_size_override arg order), API-3 (read-only props).
@@ -181,6 +194,7 @@ the mechanism deferred-to-future-engine. **The behavioral rule (inject-after-act
 `[UNKNOWN — arg-order is the measurement]`; `beacon_modules`/`get_inventory` `[plugin-proven]`.
 
 ## LAB-I — Engine API re-verify (cheap) · Style A · P4
+> **TRIAGE 2026-07-11 — PARTIAL:** API-7/API-1/API-8 landed via engine-repin-lab B7-B9 (`00e44c7`); I1 (LuaProfiler bake) and I2 (LocalisedString 20-cap) did not run.
 **Question:** confirm the pinned-untested `[empirical]`-no-pin engine facts still hold on 2.0.77.
 **Closes:** API-4 (LuaProfiler bake), API-5 (LocalisedString 20-cap), API-7 (platform.destroy(ticks)), API-8
 (unknown-item skip); DOC-2 (re-pin sweep — issue #69 Tier B).
@@ -191,6 +205,7 @@ the mechanism deferred-to-future-engine. **The behavioral rule (inject-after-act
 no-op, Pitfall #19] — re-verify.
 
 ## LAB-J — Transfer TTL grounding · Style B (measurement) · P2
+> **TRIAGE 2026-07-11 — QUEUED: LAB-TAIL T2** (validation-timeout wall-clock distribution + TTL-2 JS↔Lua constant drift check).
 **Question:** replace the estimated TTL components with measured wall-clock.
 **Closes:** TTL-1 (RCON/scan/margin/DEFAULT estimates A17/A19/A20/A21/A23), TTL-2 (JS-Lua constant drift check).
 **Measurement:** transfer the largest real platform N times, record export-scan ticks, chunked-RCON ticks,
@@ -199,6 +214,7 @@ import+validate ticks, controller round-trip → build the distribution; DEFAULT
 **API:** `game.tick` stamping `[plugin-proven]`; real transfer `[plugin-proven` — `run-r10.mjs` transferFixture].
 
 ## LAB-K — Players / passengers (semi-manual, feature-gated) · Style A + manual · P5
+> **TRIAGE 2026-07-11 — open:** feature-gated (needs a connected player); did not run.
 **Question:** confirm the wiki/docs passenger claims on the pin, for the future follow-your-platform feature.
 **Closes:** PLAYER-1..5 (hub-lock/no-inventory, hub-loss-planet, physical_surface_index detection,
 teleport-exits-hublock connected, connect_to_server host-no-op/no-admin-gate).
