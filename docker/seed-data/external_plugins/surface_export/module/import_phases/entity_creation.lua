@@ -81,6 +81,13 @@ function EntityCreation.process_batch(job, get_batch_size, should_show_progress)
           local position_matches = fluid_x and fluid_y and entity_data.position
             and math.abs((entity_data.position.x or entity_data.position[1]) - tonumber(fluid_x)) < 0.001
             and math.abs((entity_data.position.y or entity_data.position[2]) - tonumber(fluid_y)) < 0.001
+          -- An armed string mode that parses to NEITHER pattern can never match any entity:
+          -- warn once per job instead of leaving the flag silently armed forever.
+          if type(failure_mode) == "string" and not fluid_target and not fluid_x
+              and not job.warned_unrecognized_failure_mode then
+            job.warned_unrecognized_failure_mode = true
+            log(string.format("[TEST HOOK] WARNING: test_force_entity_failure=%q matches no known pattern (inventory_and_fluid:<name> | inventory_and_fluid_at:<x>:<y> | true) — hook stays armed but will never fire", failure_mode))
+          end
           local matches_failure_mode = (fluid_target ~= nil
             and entity_data.name == fluid_target
             or position_matches)

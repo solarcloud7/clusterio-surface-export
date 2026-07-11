@@ -176,7 +176,7 @@ export interface PayloadMetrics {
 export interface ValidationResult {
 	itemCountMatch: boolean;
 	fluidCountMatch: boolean;
-	failedStage?: 'items' | 'fluids' | null;
+	failedStage?: 'items' | 'fluids' | 'test_hook' | null;
 	entityCount?: number;
 	// Informational (display-only): the SOURCE payload's entity total. `entityCount` above is the live
 	// destination count (from validate_import). These legitimately differ (failed-to-place / serialization-
