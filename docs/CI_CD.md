@@ -27,7 +27,10 @@ Two jobs:
 ## Integration test flow
 
 1. **Build plugin** — `npm ci && npm run build` (TypeScript → `dist/node`, webpack → `dist/web`).
-2. **Lint** — `npm run lint` (five correctness guards: TS/eslint, Lua invariants, webpack-cache, test-grounding, pcall-logging).
+2. **Lint** — `npm run lint` (nine correctness guards: TS/eslint, Lua invariants, webpack-cache,
+   test-grounding, pcall-logging, catch-swallow, test-hooks, doc-refs, allow-manifest — see the
+   guard list in CLAUDE.md "General Style"). A tenth, `lint-commit-labels`, runs as its own PR-gated
+   step (docs commits must touch only doc paths).
 3. **Test** — `npm test` (message round-trip + wire contract).
 4. **Resolve & verify pinned Factorio version** — see [Version pinning](#version-pinning-single-source-of-truth).
 5. **Build Factorio-baked host image** — see [Factorio in CI](#factorio-in-ci--why-we-bake-it).
@@ -38,13 +41,21 @@ Two jobs:
 8. **Wait for instances** — wait until both instances are *created/assigned*, then drive
    `clusterioctl instance start-all` (retried) until both reach `running`. This is the reliable
    equivalent of the seed script's per-instance start, which can race the host's asynchronous
-   instance-dir creation and silently leave an instance `stopped`.
+   instance-dir creation and silently leave an instance `stopped`. `running` only means the Factorio
+   process exists, so the step then deadline-polls (90s) an exact RCON sentinel on both instances —
+   `remote.interfaces["surface_export"]` must answer `ci-plugin-ready` — before any test may RCON in
+   (this poll has measured ~57s of real unreadiness that the old fixed 10s sleep missed).
 9. **Run integration suite** — `node tools/run-integration-tests.mjs` auto-discovers and runs every
    `tests/integration/*/run-tests.{ps1,mjs}` sequentially against the shared cluster (Node spawns `pwsh`
    for the `.ps1` tests). The job fails if any test fails.
 10. **On failure** — dump controller/host/Factorio logs, then capture and upload a re-importable repro
-    (serialized source payload + host-2 save) as the `failing-repro` artifact. The cluster is always torn
-    down (`docker compose down -v`) afterward.
+    (serialized source payload + host-2 save) as the `failing-repro` artifact. Saves complete
+    asynchronously (`.tmp.zip` → atomic rename; see the save-completion entry in
+    [factorio-2.0-api-notes.md](factorio-2.0-api-notes.md)), so the capture resolves host-2's exact
+    active save from `factorio-current.log`, deadline-polls tmp-gone + mtime + inode + size after the
+    stop, and `unzip -t`-validates every captured zip before upload — a stale or truncated capture
+    surfaces as a `::warning::`, never silently. The cluster is always torn down
+    (`docker compose down -v`) afterward.
 
 ## Factorio in CI — why we bake it
 
