@@ -402,7 +402,8 @@ remote.call("surface_export", "unlock_platform", platform_index_or_name)  -- uni
 
 -- Validation:
 remote.call("surface_export", "get_validation_result", platform_name)
-remote.call("surface_export", "get_validation_result_json", result_id)  -- Debug JSON lookup by canonical transfer id / job id
+-- Transfer verdicts are carried in the import-complete event and controller transaction log;
+-- do not refetch them by mutable platform name.
 
 -- Configuration:
 remote.call("surface_export", "configure", config_table)
