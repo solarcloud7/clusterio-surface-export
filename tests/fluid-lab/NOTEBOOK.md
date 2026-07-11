@@ -21580,3 +21580,19 @@ Predictions stated before execution: unequal-volume temperature merges volume-we
   "finished": "2026-07-10T06:11:47.346Z"
 }
 ```
+## 2026-07-11 - R13 T1 original anomaly (hard-stop record)
+
+Prediction: total fusion-plasma V and VxT would conserve across a real transfer. The steam control would
+conserve exactly.
+
+The source census was frozen and pre-export at tick `1058548`. The destination census labeled "frozen" was
+actually taken after the production transfer had completed its synchronous gate and activation path, at tick
+`994742`; the runner then re-paused the platform. It therefore did **not** measure pre-activation state, and the
+elapsed ticks from go-live were not instrumented. Plasma readings came from fusion-generator local buffers and
+fusion-reactor output fluidboxes; no passive pipe/tank plasma holder existed. This is the confound T1b isolates.
+
+Measured total fusion plasma: volume `100 -> 99.99038809537888`; VxT
+`125899506.25 -> 139043269.49285108` (`+10.439884662257028%`). Steam at `165C` remained exact:
+volume `1000 -> 1000`, VxT `165000 -> 165000`. The anomaly is not classified as transfer loss; current
+hypothesis is post-activation regeneration in engine-managed plasma outputs (Pitfall #21, fusion output fluid
+temperature is engine-managed).
