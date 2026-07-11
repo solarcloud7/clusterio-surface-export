@@ -48,7 +48,7 @@ local function configure(config)
   end
   if config.test_force_fluid_loss ~= nil then
     -- Test-only: inflate expected fluid count after frozen restoration but before the single gate.
-    storage.surface_export_config.test_force_fluid_loss = config.test_force_fluid_loss
+    storage.surface_export_config.test_force_fluid_loss = tonumber(config.test_force_fluid_loss)
   end
   if config.preserve_failed_destination ~= nil then
     -- Debug-only escape hatch. Normal failed transfers always bank evidence and discard the destination.

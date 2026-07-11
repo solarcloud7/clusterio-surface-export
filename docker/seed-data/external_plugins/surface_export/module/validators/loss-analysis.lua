@@ -334,7 +334,7 @@ function LossAnalysis.run(surface, entities_to_create, validation_result, segmen
         fluidReconciliation = {
             highTempThreshold = recon.highTempThreshold,
             rawFluidDelta = recon.rawDelta,
-            reconciledFluidLoss = recon.reconciledLoss,
+            reconciledLoss = recon.reconciledLoss,
             lowTempLoss = recon.lowTempLoss,
             highTempReconciledLoss = recon.highTempReconciledLoss,
             fluidPreservedPct = recon.fluidPreservedPct,

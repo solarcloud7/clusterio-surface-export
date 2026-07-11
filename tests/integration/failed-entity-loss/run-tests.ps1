@@ -1,8 +1,8 @@
 <#
 .SYNOPSIS
     Failed-entity-loss attribution test (Pitfall #20) — a transfer in which an inventory-bearing
-    entity fails to place must still VALIDATE, with the lost items attributed to failedEntityLosses
-    and SUBTRACTED from expected so they are not reported as a false "lost items" mismatch.
+    entity fails to place must retain quality-keyed attribution while the test hook deliberately
+    FAILS the overall verdict so a leaked hook cannot delete the source.
 
 .DESCRIPTION
     When create_entity returns nil (mod mismatch / prototype collision), the items inside that entity
@@ -55,7 +55,9 @@ Write-Host "  host-$SourceHost -> host-$DestHost   clone: $clone" -ForegroundCol
 Write-Host ""
 
 $failed = 0
-$TOTAL_ASSERTIONS = 7
+$TOTAL_ASSERTIONS = 9
+
+try {
 
 # 1. Clone a disposable platform on the source.
 Write-Status "Cloning '$SourcePlatform' -> '$clone'..." -Type info
@@ -83,7 +85,7 @@ if s then
       if e then
         e.set_recipe('heavy-oil-cracking')
         local inv=e.get_module_inventory()
-        out.item=inv and inv.insert({name='speed-module',count=1}) or 0
+        out.item=inv and inv.insert({name='speed-module',count=4,quality='legendary'}) or 0
         for i=1,#e.fluidbox do
           local ok=pcall(function() e.fluidbox[i]={name='heavy-oil',amount=20,temperature=25} end)
           local f=e.fluidbox[i]
@@ -99,7 +101,7 @@ if s then
 end
 rcon.print(helpers.table_to_json(out))
 "@
-if (-not $fixture.created -or [int]$fixture.item -lt 1 -or [double]$fixture.fluid -le 0) {
+if (-not $fixture.created -or [int]$fixture.item -ne 4 -or [double]$fixture.fluid -le 0) {
     throw "Could not build deterministic inventory+fluid failed-entity fixture"
 }
 Write-Status "Fixture ready (items=$($fixture.item), fluid=$($fixture.fluid))" -Type success
@@ -112,7 +114,8 @@ Write-Status "Armed inventory+fluid test_force_entity_failure on the destination
 # 3. Baseline the destination factorio log so we can scan ONLY the import window.
 $baseLines = [int]((docker exec $dstContainer sh -c "wc -l < $dstLog 2>/dev/null").Trim())
 
-# 4. Transfer; the destination import is expected to fail one entity but still validate.
+# 4. Transfer; the item/fluid parity checks should pass after attribution, while the test hook's
+# fail-safe marker forces the overall verdict to fail and preserve the source.
 $destId = Get-ClusterioInstanceId -InstanceName $dstInstance
 docker exec $dstContainer sh -c "rm -f $dstScriptOut/debug_import_result_${clone}_*.json 2>/dev/null" 2>$null | Out-Null
 Send-Rcon -Instance $srcInstance -Command "/transfer-platform $idx $destId" | Out-Null
@@ -182,15 +185,33 @@ if ((Get-SafeProperty $validation "itemCountMatch") -eq $true -and (Get-SafeProp
     $failed++
 }
 
-# D) Validation still PASSES despite the failed entity (the loss was accounted for, not a false mismatch).
-if ($valSuccess -eq $true) {
-    Write-TestResult -TestId "fel-validation-passes" -TestName "Validation passes despite the failed entity (loss subtracted, not a false mismatch)" -Status "passed"
+# D) The mutating hook forces the overall verdict to FAIL even though the accounting gates pass.
+if ($valSuccess -eq $false -and (Get-SafeProperty $validation "testForcedEntityFailure") -eq $true) {
+    Write-TestResult -TestId "fel-hook-fails-safe" -TestName "Forced entity hook fails overall verdict after exact attribution" -Status "passed"
 } else {
-    Write-TestResult -TestId "fel-validation-passes" -TestName "Validation passes despite the failed entity" -Status "failed" -Message "validation_success=$valSuccess (failed-entity items were NOT correctly subtracted from expected)"
+    Write-TestResult -TestId "fel-hook-fails-safe" -TestName "Forced entity hook fails overall verdict" -Status "failed" -Message "validation_success=$valSuccess testForcedEntityFailure=$(Get-SafeProperty $validation 'testForcedEntityFailure')"
     $failed++
 }
 
-# E) Robustness: failing an entity must not trip a downstream restoration phase (belt/circuit/inserter).
+$failedItems = Get-SafeProperty $fel "items"
+$legendaryModules = [int](Get-SafeProperty $failedItems "speed-module:legendary")
+if ($legendaryModules -eq 4) {
+    Write-TestResult -TestId "fel-quality-key" -TestName "Failed legendary modules retain their quality key" -Status "passed"
+} else {
+    Write-TestResult -TestId "fel-quality-key" -TestName "Failed legendary modules retain their quality key" -Status "failed" -Message "speed-module:legendary=$legendaryModules (expected 4)"
+    $failed++
+}
+
+# E) The source clone remains present because the fail-safe verdict blocks source deletion.
+$sourceStillPresent = Get-PlatformIndex -Instance $srcInstance -PlatformName $clone
+if ($sourceStillPresent) {
+    Write-TestResult -TestId "fel-source-preserved" -TestName "Source preserved after forced entity failure" -Status "passed"
+} else {
+    Write-TestResult -TestId "fel-source-preserved" -TestName "Source preserved after forced entity failure" -Status "failed" -Message "Source platform was deleted despite the fail-safe test-hook verdict"
+    $failed++
+}
+
+# F) Robustness: failing an entity must not trip a downstream restoration phase (belt/circuit/inserter).
 if ($newLogText -match "Error while running event") {
     Write-TestResult -TestId "fel-no-lua-error" -TestName "Import completes with no Lua error" -Status "failed" -Message "A Lua error appeared in the destination import window — failing an entity tripped a downstream restoration phase"
     $failed++
@@ -198,11 +219,13 @@ if ($newLogText -match "Error while running event") {
     Write-TestResult -TestId "fel-no-lua-error" -TestName "Import completes with no Lua error" -Status "passed"
 }
 
-# 6. Cleanup: disarm (defensive; one-shot) + remove the clone on both hosts.
-Invoke-Lua -Instance $dstInstance -Code "remote.call('surface_export','configure',{test_force_entity_failure=false}) rcon.print('disarmed')" | Out-Null
-Remove-PlatformSurfacesWhere -Instance $dstInstance -PredicateLua "p.name == '$clone'" | Out-Null
-Remove-PlatformSurfacesWhere -Instance $srcInstance -PredicateLua "p.name == '$clone'" | Out-Null
-Step-Tick -Instance $srcInstance -Ticks 5 | Out-Null
+} finally {
+    # Guaranteed cleanup: a failed assertion or early exit must never leak the mutating hook.
+    Invoke-Lua -Instance $dstInstance -Code "remote.call('surface_export','configure',{test_force_entity_failure=false}) rcon.print('disarmed')" | Out-Null
+    Remove-PlatformSurfacesWhere -Instance $dstInstance -PredicateLua "p.name == '$clone'" | Out-Null
+    Remove-PlatformSurfacesWhere -Instance $srcInstance -PredicateLua "p.name == '$clone'" | Out-Null
+    Step-Tick -Instance $srcInstance -Ticks 5 | Out-Null
+}
 
 Write-TestSummary -Passed ($TOTAL_ASSERTIONS - $failed) -Failed $failed
 if ($failed -gt 0) { exit 1 }

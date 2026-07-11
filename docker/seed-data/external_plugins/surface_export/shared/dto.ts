@@ -202,7 +202,7 @@ export interface ValidationResult {
 	fluidReconciliation?: {
 		highTempThreshold: number;
 		rawFluidDelta: number;
-		reconciledFluidLoss: number;
+		reconciledLoss: number;
 		lowTempLoss: number;
 		highTempReconciledLoss: number;
 		fluidPreservedPct: number;

@@ -20,6 +20,7 @@ local DebugExport = require("modules/surface_export/utils/debug-export")
 local PlatformSchedule = require("modules/surface_export/utils/platform-schedule")
 local EntityScanner = require("modules/surface_export/export_scanners/entity-scanner")
 local GameUtils = require("modules/surface_export/utils/game-utils")
+local Gateway = require("modules/surface_export/core/gateway")
 local Util = require("modules/surface_export/utils/util")
 local clusterio_api = require("modules/clusterio/api")
 local PhaseProfiler = require("modules/surface_export/utils/phase-profiler")
@@ -316,10 +317,10 @@ function ImportCompletion.run_phase2(job)
 		}
 		local fel = job.failed_entity_losses
 		if fel and fel.entity_count > 0 then
-			for item_name, lost_count in pairs(fel.items) do
-				if adjusted_verification.item_counts[item_name] then
-					adjusted_verification.item_counts[item_name] = math.max(
-						0, adjusted_verification.item_counts[item_name] - lost_count)
+			for item_key, lost_count in pairs(fel.items) do
+				if adjusted_verification.item_counts[item_key] then
+					adjusted_verification.item_counts[item_key] = math.max(
+						0, adjusted_verification.item_counts[item_key] - lost_count)
 				end
 			end
 			adjusted_verification.fluid_counts = subtract_fluids_by_name(
@@ -333,10 +334,10 @@ function ImportCompletion.run_phase2(job)
 		-- counting them as "expected" would cause false validation failures.
 		local iol = job.inventory_overflow_losses
 		if iol and iol.total > 0 then
-			for item_name, lost_count in pairs(iol.items) do
-				if adjusted_verification.item_counts[item_name] then
-					adjusted_verification.item_counts[item_name] = math.max(
-						0, adjusted_verification.item_counts[item_name] - lost_count)
+			for item_key, lost_count in pairs(iol.items) do
+				if adjusted_verification.item_counts[item_key] then
+					adjusted_verification.item_counts[item_key] = math.max(
+						0, adjusted_verification.item_counts[item_key] - lost_count)
 				end
 			end
 			log(string.format("[Import] Adjusted expected totals: subtracted %d items across %d item types due to inventory overflow (API stack cap)",
@@ -458,6 +459,15 @@ function ImportCompletion.run_phase2(job)
 			result.testForcedFailure = true
 			log("[TEST HOOK] Forcing validation failure to exercise rollback")
 		end
+		if job.test_forced_entity_failure then
+			success = false
+			result = result or {}
+			result.success = false
+			result.failedStage = "test_hook"
+			result.mismatchDetails = "TEST: forced entity placement failure (source preserved)"
+			result.testForcedEntityFailure = true
+			log("[TEST HOOK] Forced entity failure made the transfer verdict fail-safe")
+		end
 
 		PhaseProfiler.stop(job.job_id, "validation")
 		-- Clean validation-only boundary for the waterfall span (the existing
@@ -496,9 +506,6 @@ function ImportCompletion.run_phase2(job)
 		end
 
 		TransferValidation.store_validation_result(validation_result_id, result)
-		emit_debug_import_result(job, validation_result, duration_seconds)
-
-
 		-- Debug export: Always write destination platform data when debug_mode is enabled
 		-- This allows comparing source vs destination regardless of validation pass/fail
 		if job.transfer_id and job.target_surface and job.target_surface.valid then
@@ -556,15 +563,29 @@ function ImportCompletion.run_phase2(job)
 				local config = storage.surface_export_config or {}
 				local preserve_failed = config.debug_mode == true and config.preserve_failed_destination == true
 				if preserve_failed then
-					log("[Validation] Failed destination preserved paused by debug configuration")
+					config.preserve_failed_destination = nil
+					result.destinationPreserved = true
+					log("[Validation] Failed destination preserved paused by one-shot debug configuration; flag consumed")
 				else
-					local discarded = job.target_platform and job.target_platform.valid
-						and GameUtils.delete_platform(job.target_platform) == true
+					local evacuated, evacuation_err = pcall(function()
+						if not job.target_platform or not job.target_platform.valid then
+							error("target platform is not valid")
+						end
+						Gateway.evacuate_passengers(job.target_platform)
+					end)
+					local discarded = false
+					if evacuated then
+						local delete_ok, delete_result = pcall(GameUtils.delete_platform, job.target_platform)
+						discarded = delete_ok and delete_result == true
+						if not delete_ok then evacuation_err = delete_result end
+					end
 					if discarded then
 						log("[Validation] Failed destination discarded after black-box capture")
 					else
 						result.cleanup_failed = true
-						result.cleanup_error = "GameUtils.delete_platform returned false"
+						result.cleanup_error = evacuated
+							and string.format("GameUtils.delete_platform failed: %s", tostring(evacuation_err or "returned false"))
+							or string.format("Passenger evacuation failed: %s", tostring(evacuation_err))
 						log(string.format("[Validation] ERROR: cleanup_failed for %s: %s",
 							tostring(job.platform_name), result.cleanup_error))
 					end

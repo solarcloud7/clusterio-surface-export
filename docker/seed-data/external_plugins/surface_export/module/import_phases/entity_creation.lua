@@ -1,4 +1,5 @@
 local Deserializer = require("modules/surface_export/core/deserializer")
+local Util = require("modules/surface_export/utils/util")
 local EntityCreation = {}
 
 -- TEST-ONLY helper: does this serialized entity carry inventory items? The one-shot
@@ -56,7 +57,8 @@ function EntityCreation.process_batch(job, get_batch_size, should_show_progress)
               losses = { entity_count = 0, total_items = 0, total_fluids = 0.0, items = {}, fluids = {}, entities = {} }
               job.failed_entity_losses = losses
             end
-            losses.items[entity_data.name] = (losses.items[entity_data.name] or 0) + (entity_data.count or 0)
+            local item_key = Util.make_quality_key(entity_data.name, entity_data.quality or Util.QUALITY_NORMAL)
+            losses.items[item_key] = (losses.items[item_key] or 0) + (entity_data.count or 0)
             losses.total_items = losses.total_items + (entity_data.count or 0)
             losses.entity_count = losses.entity_count + 1
             log(string.format("[Entity Creation] FAILED to place ground item '%s' x%d at (%.1f,%.1f) -- tallied as loss",
@@ -87,6 +89,7 @@ function EntityCreation.process_batch(job, get_batch_size, should_show_progress)
           if _cfg and _cfg.debug_mode and matches_failure_mode
               and entity_data.name ~= "space-platform-hub" then
             _cfg.test_force_entity_failure = nil  -- consume: applies to one entity only
+            job.test_forced_entity_failure = true
             entity = nil
             log(string.format("[TEST HOOK] Forcing placement failure for %s entity '%s' to exercise failed-entity-loss attribution",
               tostring(failure_mode), entity_data.name))
@@ -148,7 +151,8 @@ function EntityCreation.process_batch(job, get_batch_size, should_show_progress)
                 if entity_data.specific_data.inventories then
                   for _, inv_data in ipairs(entity_data.specific_data.inventories) do
                     for _, item in ipairs(inv_data.items or {}) do
-                      losses.items[item.name] = (losses.items[item.name] or 0) + item.count
+                      local item_key = Util.make_quality_key(item.name, item.quality or Util.QUALITY_NORMAL)
+                      losses.items[item_key] = (losses.items[item_key] or 0) + item.count
                       entity_items = entity_items + item.count
                     end
                   end
@@ -157,7 +161,8 @@ function EntityCreation.process_batch(job, get_batch_size, should_show_progress)
                 if entity_data.specific_data.items then
                   for _, line_data in ipairs(entity_data.specific_data.items) do
                     for _, item in ipairs(line_data.items or {}) do
-                      losses.items[item.name] = (losses.items[item.name] or 0) + item.count
+                      local item_key = Util.make_quality_key(item.name, item.quality or Util.QUALITY_NORMAL)
+                      losses.items[item_key] = (losses.items[item_key] or 0) + item.count
                       entity_items = entity_items + item.count
                     end
                   end
@@ -165,7 +170,8 @@ function EntityCreation.process_batch(job, get_batch_size, should_show_progress)
                 -- Inserter held item
                 if entity_data.specific_data.held_item then
                   local held = entity_data.specific_data.held_item
-                  losses.items[held.name] = (losses.items[held.name] or 0) + held.count
+                  local item_key = Util.make_quality_key(held.name, held.quality or Util.QUALITY_NORMAL)
+                  losses.items[item_key] = (losses.items[item_key] or 0) + held.count
                   entity_items = entity_items + held.count
                 end
                 -- Fluids

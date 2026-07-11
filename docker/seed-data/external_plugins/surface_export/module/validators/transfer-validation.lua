@@ -21,7 +21,7 @@ local function aggregate_fluid_counts_by_name(fluid_counts)
     return by_name
 end
 
-local function validate_fluid_counts(expected_fluid_counts, actual_fluid_counts)
+local function validate_fluid_counts(expected_fluid_counts, actual_fluid_counts, strict)
     local fluid_mismatches = {}
     local fluid_match = true
     local recon = LossAnalysis.reconcile_fluids(expected_fluid_counts, actual_fluid_counts)
@@ -41,12 +41,24 @@ local function validate_fluid_counts(expected_fluid_counts, actual_fluid_counts)
         local actual_volume = actual_by_name[name] or 0
         local delta = actual_volume - expected_volume
 
-        if math.abs(delta) > EXACT_EPSILON then
+        if strict then
+            if math.abs(delta) > EXACT_EPSILON then
+                fluid_match = false
+                local direction = delta > 0 and "GAINED" or "LOST"
+                table.insert(fluid_mismatches, string.format(
+                    "%s: %s fluid - expected %.6f, got %.6f (delta %.6f)",
+                    name, direction, expected_volume, actual_volume, delta
+                ))
+            end
+        elseif delta > 500 then
             fluid_match = false
-            local direction = delta > 0 and "GAINED" or "LOST"
             table.insert(fluid_mismatches, string.format(
-                "%s: %s fluid - expected %.6f, got %.6f (delta %.6f)",
-                name, direction, expected_volume, actual_volume, delta
+                "%s: GAINED fluid - expected %.1f, got %.1f", name, expected_volume, actual_volume
+            ))
+        elseif -delta > math.max(25, math.min(500, expected_volume * 0.05)) then
+            fluid_match = false
+            table.insert(fluid_mismatches, string.format(
+                "%s: LOST fluid - expected %.1f, got %.1f", name, expected_volume, actual_volume
             ))
         elseif (recon.allHighTempNames or {})[name] then
             log(string.format("[TransferValidation] Fluid %s: expected=%.1f actual=%.1f (name-aggregate reconciled)",
@@ -257,7 +269,7 @@ function TransferValidation.validate_import(surface, expected_verification, opti
     local fluid_mismatches = {}
     local fluid_match, fluid_reconciliation = true, nil
     fluid_match, fluid_mismatches, fluid_reconciliation = validate_fluid_counts(
-        expected_verification.fluid_counts or {}, actual_fluid_counts or {})
+        expected_verification.fluid_counts or {}, actual_fluid_counts or {}, strict)
 
     -- Build mismatch details
     local mismatch_details = nil

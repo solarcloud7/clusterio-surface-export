@@ -572,7 +572,8 @@ function Deserializer.restore_inventories(entity, entity_data, overflow_losses)
               log(string.format("[FactorioSurfaceExport] Warning: set_stack partial for slot %d: %d/%d of %s into %s",
                 item.slot, actual_count, item.count, item.name, entity.name))
               if overflow_losses and lost > 0 then
-                overflow_losses.items[item.name] = (overflow_losses.items[item.name] or 0) + lost
+                local item_key = Util.make_quality_key(item.name, item.quality or Util.QUALITY_NORMAL)
+                overflow_losses.items[item_key] = (overflow_losses.items[item_key] or 0) + lost
                 overflow_losses.total = overflow_losses.total + lost
                 -- Record per-entity detail (capped at 50)
                 if #overflow_losses.entities < 50 then
@@ -580,6 +581,7 @@ function Deserializer.restore_inventories(entity, entity_data, overflow_losses)
                     name = entity.name,
                     position = entity.position,
                     item = item.name,
+                    quality = item.quality or Util.QUALITY_NORMAL,
                     lost = lost,
                     actual = actual_count,
                     expected = item.count,

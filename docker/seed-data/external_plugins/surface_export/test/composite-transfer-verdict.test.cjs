@@ -281,6 +281,76 @@ test("failed-entity fluids and engine-rejected writes adjust expectations before
 		"failed-entity fluids and rejected writes must adjust expected counts before the verdict");
 });
 
+test("failed-entity and overflow item losses retain quality keys end to end", () => {
+	const entityCreation = fs.readFileSync(path.join(moduleRoot, "import_phases", "entity_creation.lua"), "utf8");
+	const deserializer = fs.readFileSync(path.join(moduleRoot, "core", "deserializer.lua"), "utf8");
+	const importCompletion = fs.readFileSync(path.join(moduleRoot, "core", "import-completion.lua"), "utf8");
+	assert.match(entityCreation, /Util\.make_quality_key\(item\.name,\s*item\.quality/,
+		"failed-entity inventory losses must use the exported item quality");
+	assert.match(entityCreation, /Util\.make_quality_key\(held\.name,\s*held\.quality/,
+		"failed-entity held-item losses must use the exported item quality");
+	assert.match(deserializer, /Util\.make_quality_key\(item\.name,\s*item\.quality/,
+		"overflow losses must use the exported item quality");
+	assert.match(importCompletion, /adjusted_verification\.item_counts\[item_key\]/,
+		"quality-keyed losses must be subtracted from the same expected-count key");
+});
+
+test("forced entity failure is fail-safe and preservation is one-shot and visible", () => {
+	const entityCreation = fs.readFileSync(path.join(moduleRoot, "import_phases", "entity_creation.lua"), "utf8");
+	const importCompletion = fs.readFileSync(path.join(moduleRoot, "core", "import-completion.lua"), "utf8");
+	const hookLint = fs.readFileSync(path.join(__dirname, "..", "scripts", "lint-test-hooks.mjs"), "utf8");
+	assert.match(entityCreation, /job\.test_forced_entity_failure\s*=\s*true/,
+		"the mutating entity hook must leave a fail-safe verdict marker");
+	assert.match(importCompletion, /job\.test_forced_entity_failure[\s\S]*result\.success\s*=\s*false/,
+		"a leaked entity-failure hook must fail the transfer and preserve the source");
+	assert.match(importCompletion, /config\.preserve_failed_destination\s*=\s*nil/,
+		"debug destination preservation must be consumed when it fires");
+	assert.match(importCompletion, /destinationPreserved\s*=\s*true/,
+		"intentional preservation must be visible in the verdict");
+	assert.match(hookLint, /preserve_failed_destination/,
+		"the persistent mutating debug flag must be covered by the hook lint");
+});
+
+test("failed destination discard evacuates passengers before deletion", () => {
+	const importCompletion = fs.readFileSync(path.join(moduleRoot, "core", "import-completion.lua"), "utf8");
+	const failureAt = importCompletion.indexOf("if not validation_result.success then");
+	const evacuateAt = importCompletion.indexOf("Gateway.evacuate_passengers", failureAt);
+	const discardAt = importCompletion.indexOf("GameUtils.delete_platform", failureAt);
+	assert.ok(evacuateAt > failureAt && discardAt > evacuateAt,
+		"black-box discard must route passengers through evacuation before deleting the destination");
+	assert.match(importCompletion.slice(evacuateAt, discardAt), /pcall/,
+		"passenger evacuation must be protected so a failure preserves the destination");
+});
+
+test("exact fluid parity is strict-transfer-only", () => {
+	const transferValidation = fs.readFileSync(path.join(moduleRoot, "validators", "transfer-validation.lua"), "utf8");
+	assert.match(transferValidation, /validate_fluid_counts\([^)]*strict/,
+		"fluid validation must receive the strict-transfer decision");
+	assert.match(transferValidation, /if\s+strict\s+then[\s\S]*EXACT_EPSILON/,
+		"exact epsilon belongs to the strict transfer branch");
+	assert.match(transferValidation, /validate_fluid_counts\([\s\S]*strict\s*\)/,
+		"validate_import must pass strictness into fluid validation");
+});
+
+test("fluid reconciliation uses one emitted key across Lua, DTO, and CLI", () => {
+	const lossAnalysis = fs.readFileSync(path.join(moduleRoot, "validators", "loss-analysis.lua"), "utf8");
+	const dto = fs.readFileSync(path.join(__dirname, "..", "shared", "dto.ts"), "utf8");
+	const cli = fs.readFileSync(path.join(__dirname, "..", "..", "..", "..", "..", "tools", "get-transaction-log.ps1"), "utf8");
+	for (const source of [lossAnalysis, dto, cli]) {
+		assert.match(source, /reconciledLoss/, "all forensic layers must read the Lua-emitted key");
+		assert.doesNotMatch(source, /reconciledFluidLoss/, "the stale key must not silently render loss as zero");
+	}
+});
+
+test("fluid-loss configuration coerces unsafe input and debug result emits once", () => {
+	const configure = fs.readFileSync(path.join(moduleRoot, "interfaces", "remote", "configure.lua"), "utf8");
+	const importCompletion = fs.readFileSync(path.join(moduleRoot, "core", "import-completion.lua"), "utf8");
+	assert.match(configure, /tonumber\(config\.test_force_fluid_loss\)/,
+		"non-numeric debug input must not crash import completion");
+	const emits = importCompletion.match(/\n\s*emit_debug_import_result\(job, validation_result, duration_seconds\)/g) || [];
+	assert.equal(emits.length, 1, "debug import result must be emitted once per completion tick");
+});
+
 test("fluid restoration reports dropped fluids without subtracting them", () => {
 	const restoration = fs.readFileSync(path.join(moduleRoot, "import_phases", "fluid_restoration.lua"), "utf8");
 	assert.match(restoration, /return\s*\{[\s\S]*dropped_fluids\s*=\s*dropped_fluids[\s\S]*\}/,
@@ -317,7 +387,7 @@ test("fluid-loss hook is allowlisted and fires before the single gate", () => {
 		"hook should inflate expected fluids without mutating the destination");
 	assert.match(importCompletion, /\[TEST HOOK\] Forced fluid loss: inflated missing expected/,
 		"integration probe needs a direct log witness that the hook fired");
-	assert.match(configure, /config\.test_force_fluid_loss[\s\S]*storage\.surface_export_config\.test_force_fluid_loss\s*=\s*config\.test_force_fluid_loss/,
+	assert.match(configure, /config\.test_force_fluid_loss[\s\S]*storage\.surface_export_config\.test_force_fluid_loss\s*=\s*tonumber\(config\.test_force_fluid_loss\)/,
 		"configure allowlist must accept test_force_fluid_loss");
 	assert.match(hookLint, /"test_force_fluid_loss"[\s\S]*pre-gate/,
 		"test_force_fluid_loss must be explicitly listed as a reviewed fail-safe hook");
