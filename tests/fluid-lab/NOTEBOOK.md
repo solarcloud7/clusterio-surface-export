@@ -22097,3 +22097,24 @@ Result: **HARD STOP / OWNER ADJUDICATION REQUIRED**. No N=5 matrix was run, no e
 attempted, and the exact gate remains untouched. The remaining constructible network is reactor output
 to fusion-generator input; whether that machine-only segment contains any player-recoverable state is
 the next design question, not something this rung may silently substitute.
+
+## 2026-07-11 - Design v2 category-based engine ownership
+
+The owner re-adjudicated engine ownership from the P2 prototype census: any fluidbox whose connection
+categories omit `default` is inaccessible to ordinary player pipes and tanks. Classification is now
+derived generically from `fluidbox_prototype.pipe_connections[].connection_category`; no prototype
+allowlist participates in the decision. Export emits a warning if a non-default category or owning
+prototype falls outside today's measured fusion family.
+
+Permanent production-shaped fixture evidence (`tests/integration/plasma-engine-owned`):
+
+- Pre-fix RED: transfer validation passed physically, but `engineOwnedFluids` was absent (`owned=0`) and
+  managed plasma remained in expected accounting (`expectedPlasma=85`).
+- Post-fix GREEN: five independent disposable 1,359-entity clones, each with two fusion reactors, eight
+  fusion generators, read-back-asserted reactor output plasma, and one isolated 5-unit plasma control.
+- Result: exact gate green `5/5`; every run reported positive engine-owned plasma and retained at least
+  the isolated 5 units in restorable expected plasma.
+- The exact gate epsilon and verdict semantics remain unchanged.
+
+Design v2's dedicated fixture is green. LAB-TAIL certification is not complete: its subsequent T2 pass
+hard-stopped on an independent intermittent item mismatch, recorded in `tests/ops-lab/NOTEBOOK.md`.
