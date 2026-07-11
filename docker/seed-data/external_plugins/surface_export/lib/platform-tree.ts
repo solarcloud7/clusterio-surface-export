@@ -23,8 +23,8 @@ export class PlatformTree {
 				const name = inst.config.get("instance.name");
 				return typeof name === "string" && name ? name : null;
 			}
-		} catch (_err) {
-			// Ignore lookup errors
+		} catch (err: unknown) {
+			this.plugin.logger.warn(`Failed to resolve name for instance ${instanceId}: ${getErrorMessage(err)}`);
 		}
 		return null;
 	}

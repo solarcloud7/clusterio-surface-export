@@ -285,6 +285,7 @@ export class WebPlugin extends BaseWebPlugin {
 				treeError: null,
 			});
 		} catch (err: unknown) {
+			console.error("Failed to refresh Surface Export state", err);
 			this.setState({
 				loadingTree: false,
 				treeError: getErrorMessage(err, "Failed to refresh Surface Export state"),
