@@ -365,6 +365,33 @@ test("fluid restoration reports dropped fluids without subtracting them", () => 
 		"real dropped fluid must fail exact parity, never be subtracted from expected");
 });
 
+test("engine-owned fluid classification is symmetric across export, restore, and census", () => {
+	const scanner = fs.readFileSync(path.join(moduleRoot, "export_scanners", "inventory-scanner.lua"), "utf8");
+	const ownership = fs.readFileSync(path.join(moduleRoot, "utils", "fluid-ownership.lua"), "utf8");
+	const verification = fs.readFileSync(path.join(moduleRoot, "validators", "verification.lua"), "utf8");
+	const restoration = fs.readFileSync(path.join(moduleRoot, "import_phases", "fluid_restoration.lua"), "utf8");
+	const counter = fs.readFileSync(path.join(moduleRoot, "validators", "surface-counter.lua"), "utf8");
+	assert.match(ownership, /production_type\s*==\s*["']output["']/,
+		"classification must identify the measured output box, not every box on the prototype");
+	assert.match(ownership, /ENGINE_MANAGED_OUTPUT_ENTITIES[\s\S]*fusion-reactor/,
+		"only empirically proven engine-managed prototypes may be excluded");
+	assert.match(scanner, /engine_owned\s*=\s*engine_owned/,
+		"serialized fluid records must retain the informational engine-owned classification");
+	assert.match(verification, /if\s+not\s+fluid\.engine_owned/,
+		"engine-owned records must be excluded from expected verification counts");
+	assert.match(restoration, /if\s+fluid_data\.engine_owned/,
+		"import must skip engine-owned writes rather than infer acceptance from readback");
+	assert.match(counter, /exclude_engine_owned[\s\S]*collect_engine_owned_segments/,
+		"gate census must independently apply the same engine-owned segment classification");
+});
+
+test("exact transfer gate requests engine-owned exclusion without changing epsilon", () => {
+	const validation = fs.readFileSync(path.join(moduleRoot, "validators", "transfer-validation.lua"), "utf8");
+	assert.match(validation, /SurfaceCounter\.count_fluids\s*\([^)]*strict\s*\)/,
+		"strict transfer census must exclude engine-owned fluid");
+	assert.match(validation, /EXACT_EPSILON\s*=\s*1e-6/);
+});
+
 test("post-activation reporting cannot overwrite frozen gate fields", () => {
 	const lossAnalysis = fs.readFileSync(path.join(moduleRoot, "validators", "loss-analysis.lua"), "utf8");
 	assert.match(lossAnalysis, /result\.postActivationReport\s*=\s*{/,

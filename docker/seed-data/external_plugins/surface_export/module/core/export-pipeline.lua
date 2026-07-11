@@ -4,6 +4,7 @@
 local EntityScanner = require("modules/surface_export/export_scanners/entity-scanner")
 local EntityHandlers = require("modules/surface_export/export_scanners/entity-handlers")
 local InventoryScanner = require("modules/surface_export/export_scanners/inventory-scanner")
+local FluidOwnership = require("modules/surface_export/utils/fluid-ownership")
 local Verification = require("modules/surface_export/validators/verification")
 local Util = require("modules/surface_export/utils/util")
 local GameUtils = require("modules/surface_export/utils/game-utils")
@@ -218,6 +219,7 @@ function ExportPipeline.queue(platform_index, force_name, requester_name, destin
 		tostring(schedule_summary.group)))
 
 	local entities = surface.find_entities_filtered({})
+	local engine_owned_segments = FluidOwnership.collect_engine_owned_segments(entities)
 
 	-- Sort entities for proper placement order (inputs before outputs, etc.)
 	-- Do this once on export rather than re-sorting on every import
@@ -249,6 +251,7 @@ function ExportPipeline.queue(platform_index, force_name, requester_name, destin
 		-- Shared across all export batches so each segment is serialized exactly once
 		-- at the segment-level weighted-average temperature (matches FluidRestoration output)
 		fluid_segment_cache = {},
+		engine_owned_segments = engine_owned_segments,
 		export_data = {
 			platform_name = platform.name,
 			force_name = force_name,
@@ -297,6 +300,7 @@ function ExportPipeline.process_batch(job, get_batch_size, should_show_progress)
 	-- Wrapped to ensure flags are always cleared even if an error occurs mid-batch.
 	EntityHandlers.skip_belt_items = true
 	InventoryScanner.fluid_segment_cache = job.fluid_segment_cache
+	InventoryScanner.engine_owned_segments = job.engine_owned_segments
 	local batch_ok, batch_err = pcall(function()
 		for i = start_index, end_index do
 			local entity = job.entities[i]
@@ -321,6 +325,7 @@ function ExportPipeline.process_batch(job, get_batch_size, should_show_progress)
 	end)
 	EntityHandlers.skip_belt_items = false
 	InventoryScanner.fluid_segment_cache = nil
+	InventoryScanner.engine_owned_segments = nil
 	if not batch_ok then error(batch_err) end
 
 	job.current_index = end_index
@@ -403,11 +408,13 @@ function ExportPipeline.complete(job)
 	-- exactly match what will be restored on import (no rolling snapshot drift).
 	local item_counts = Verification.count_all_items(job.export_data.entities)
 	local fluid_counts = Verification.count_all_fluids(job.export_data.entities)
+	local engine_owned_fluid_counts = Verification.count_engine_owned_fluids(job.export_data.entities)
 	log(string.format("[Export] Generated verification from serialized entity data (%d item types, %d fluid types)",
 		table_size(item_counts), table_size(fluid_counts)))
 	job.export_data.verification = {
 		item_counts = item_counts,
-		fluid_counts = fluid_counts
+		fluid_counts = fluid_counts,
+		engine_owned_fluid_counts = engine_owned_fluid_counts
 	}
 
 	-- CRITICAL: Include frozen_states for restoring original active states on import

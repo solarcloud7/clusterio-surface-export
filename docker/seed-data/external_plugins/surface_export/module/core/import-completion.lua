@@ -314,6 +314,7 @@ function ImportCompletion.run_phase2(job)
 		local adjusted_verification = {
 			item_counts = copy_counts(job.platform_data.verification.item_counts),
 			fluid_counts = copy_counts(job.platform_data.verification.fluid_counts),
+			engine_owned_fluid_counts = copy_counts(job.platform_data.verification.engine_owned_fluid_counts),
 		}
 		local fel = job.failed_entity_losses
 		if fel and fel.entity_count > 0 then
