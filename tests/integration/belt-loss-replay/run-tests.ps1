@@ -83,6 +83,7 @@ try {
         }
         if (-not $resultFile) { throw "run $run transfer timed out" }
         $result = Read-DebugFile -Instance $destInstance -Container $destContainer -Filename $resultFile
+        Assert-TransferSucceeded -Result $result -Context "Belt replay run $run ($runName)"
         $validation = Get-SafeProperty $result "validation_result"
         $dest = Count-ProcessingUnits -Instance $destInstance -PlatformName $runName
         $ok = (Get-SafeProperty $result "validation_success") -eq $true -and
