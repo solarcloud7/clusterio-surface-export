@@ -84,8 +84,10 @@ for _, q in pairs(game.forces.player.platforms) do if q.valid and q.name == '$na
 if not p then return { success = false, error = 'platform missing' } end
 local s = p.surface
 local ox, oy = $Ox, $Oy
+-- Script-created 1x1 entities center at x+0.5,y+0.5; radius 0.8 reaches that 0.707 offset
+-- while excluding the adjacent lamp whose center is 1.58 tiles from the requested coordinate.
 local function at(nm, x, y)
-    local es = s.find_entities_filtered({ name = nm, position = { x, y }, radius = 0.6 })
+    local es = s.find_entities_filtered({ name = nm, position = { x, y }, radius = 0.8 })
     return es[1]
 end
 local out = { success = true, tick = game.tick, platform_paused = p.paused }
