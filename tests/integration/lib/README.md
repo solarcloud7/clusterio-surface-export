@@ -67,6 +67,7 @@ Step-Tick -Instance 1 -Ticks 60
 | `Clear-DebugFiles` | Remove debug files |
 | `Get-DebugFiles` | List debug files |
 | `Read-DebugFile` | Read and parse debug JSON |
+| `Assert-TransferSucceeded` | Stop success-path tests on a failed verdict before destination census |
 
 ### Test Infrastructure
 | Function | Description |

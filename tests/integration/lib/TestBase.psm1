@@ -743,6 +743,44 @@ function Get-SafeProperty {
     }
     return $null
 }
+<#
+.SYNOPSIS
+    Stop a success-path integration test before destination census when the transfer verdict failed.
+#>
+function Assert-TransferSucceeded {
+    param(
+        [Parameter(Mandatory=$false)]
+        [AllowNull()]
+        $Result,
+        [string]$Context = "Transfer"
+    )
+
+    if ($null -eq $Result) {
+        throw "$Context failed before destination census: debug result was missing or unreadable"
+    }
+
+    $success = Get-SafeProperty $Result "validation_success"
+    if ($success -is [bool] -and $success) { return }
+
+    $validation = Get-SafeProperty $Result "validation_result"
+    $failedStage = Get-SafeProperty $validation "failedStage"
+    if (-not $failedStage) { $failedStage = "not reported" }
+
+    $errorText = Get-SafeProperty $Result "error"
+    if (-not $errorText) { $errorText = Get-SafeProperty $validation "error" }
+    if (-not $errorText) {
+        $details = Get-SafeProperty $validation "mismatchDetails"
+        if ($details -is [System.Array]) { $errorText = $details -join "; " }
+        elseif ($null -ne $details) { $errorText = [string]$details }
+    }
+    if (-not $errorText) { $errorText = "not reported" }
+
+    $blackBox = Get-SafeProperty $validation "failureBlackBox"
+    $blackBoxPath = Get-SafeProperty $blackBox "file"
+    if (-not $blackBoxPath) { $blackBoxPath = "not reported" }
+
+    throw "$Context failed before destination census: validation_success=$success; failedStage=$failedStage; error=$errorText; blackBox=$blackBoxPath"
+}
 
 #endregion
 
@@ -1049,6 +1087,7 @@ Export-ModuleMember -Function @(
     'Get-TestCases',
     'Select-Tests',
     'Get-SafeProperty',
+    'Assert-TransferSucceeded',
     
     # Output
     'Write-TestHeader',

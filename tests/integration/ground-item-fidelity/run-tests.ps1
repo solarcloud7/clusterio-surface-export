@@ -92,13 +92,21 @@ Send-Rcon -Instance $srcInstance -Command "/transfer-platform $idx $destId" | Ou
 Write-Status "Transfer initiated..." -Type info
 
 # 5. Wait for the import-result, then let the destination settle (activation).
-$start = Get-Date; $found = $false
-while (-not $found -and ((Get-Date) - $start).TotalSeconds -lt $TimeoutSec) {
+$start = Get-Date; $resultFile = $null
+while (-not $resultFile -and ((Get-Date) - $start).TotalSeconds -lt $TimeoutSec) {
     Start-Sleep -Seconds 2
     $files = @(Get-DebugFiles -Instance $dstInstance -Container $dstContainer -Pattern "debug_import_result_${clone}_*.json")
-    if ($files.Count -gt 0) { $found = $true }
+    if ($files.Count -gt 0) { $resultFile = $files[0] }
 }
-if (-not $found) { Write-Status "No import-result after ${TimeoutSec}s (transfer may have stalled)" -Type error; exit 1 }
+if (-not $resultFile) { Write-Status "No import-result after ${TimeoutSec}s (transfer may have stalled)" -Type error; exit 1 }
+$resultData = Read-DebugFile -Instance $dstInstance -Container $dstContainer -Filename $resultFile
+try {
+    Assert-TransferSucceeded -Result $resultData -Context "Ground-item transfer '$clone'"
+} catch {
+    Remove-PlatformSurfacesWhere -Instance $dstInstance -PredicateLua "p.name == '$clone'" | Out-Null
+    Remove-PlatformSurfacesWhere -Instance $srcInstance -PredicateLua "p.name == '$clone'" | Out-Null
+    throw
+}
 Start-Sleep -Seconds 4
 
 # 6. Comprehensive destination count.
