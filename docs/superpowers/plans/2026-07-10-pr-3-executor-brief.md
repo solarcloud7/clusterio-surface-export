@@ -1,10 +1,9 @@
 # PR-3 executor brief — wire the two-phase-commit protocol (PREPARE→VOTE→COMMIT→RELEASED→GO-LIVE)
 
 > You are the **implementer** on a new branch cut from `main` **AFTER #76 (`codex/composite-transfer-verdict`,
-> the single frozen-world exact gate) squash-merges**. Dependency chain: **#77/#78 → #76 → PR-3**. This is THE
-> destructive spine of the transfer campaign — **`/di-change` applies in full**; any DI-lint firing =
-> **escalate, never self-approve an `*:allow`**; **stop for audit before any merge**. Commit-label discipline
-> enforced by CI. **No session URLs / `Claude-Session:` trailers.**
+> the single frozen-world exact gate) squash-merges**. Dependency chain: **#77/#78 → #76 → PR-3**. Follow the
+> [Agent execution discipline](../../AGENT_EXECUTION_DISCIPLINE.md). This is THE destructive spine of the
+> transfer campaign — **`/di-change` applies in full** and **stop for audit before any merge**.
 >
 > **Line-cite caveat:** every `file:line` below is at codex HEAD `31424eb` pre-squash-merge (a review-findings
 > fix pass may land after it). Re-confirm each cite after your branch-off. The TS-sweep's own line numbers are

@@ -1,11 +1,9 @@
 # Cheap-fixtures agent brief — standard test fixtures + clone allowlist (queued AFTER #76 merges)
 
 > You are the **implementer**, on a fresh branch off `main` taken AFTER PR #76 (the single-gate rewrite) has
-> merged — this work re-baselines tests that #76 also touches; do not start before it lands. Orchestrator
-> audits; **stop for audit before any merge.** Standard discipline: commit labels are audit boundaries
-> (`lint-commit-labels` is live — docs commits touch only doc paths), pitfall citations are number + short
-> name, DI-lint fires = escalate, package-lock byte-identical and never staged, no session URLs, one
-> cluster-touching agent at a time.
+> merged — this work re-baselines tests that #76 also touches; do not start before it lands. Follow the
+> [Agent execution discipline](../../AGENT_EXECUTION_DISCIPLINE.md). Orchestrator audits; **stop for audit
+> before any merge.** Pitfall citations are number + short name, and one agent owns the cluster at a time.
 
 ## Why (measured)
 15 of 19 integration tests clone the 1,359-entity platform (~60–90s each, the full async export→import

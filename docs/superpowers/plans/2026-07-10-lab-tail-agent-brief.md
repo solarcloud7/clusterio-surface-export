@@ -1,14 +1,9 @@
 # LAB-TAIL agent brief — thermal-energy conservation + the operational-constant measurements
 
-> You are the **implementer** on `codex/composite-transfer-verdict` (pull latest). Orchestrator audits;
-> **stop for audit at the end.** Measurement only — no gate/validator/production-ordering changes and **no
-> constant changes** (the measured values license follow-up PRs; you deliver the numbers). Same discipline as
-> LAB-B+ (it passed audit with ONE finding — see the new rule below).
->
-> **New rule, mechanically enforced on main soon (`lint-commit-labels`): a `docs(...)` commit must touch ONLY
-> `*.md`/`docs/` paths.** LAB-B+'s docs commit carried a comment-only .lua diff and had to be split in audit.
-> Even a comment-only code-file change gets its own `chore(...)` commit. Also: every pitfall citation is
-> "number + short name" (`lint:doc-refs` enforces this on main).
+> You are the **implementer** on `codex/composite-transfer-verdict` (pull latest). Follow the
+> [Agent execution discipline](../../AGENT_EXECUTION_DISCIPLINE.md). Orchestrator audits; **stop for audit at
+> the end.** Measurement only — no gate/validator/production-ordering or constant changes.
+
 
 ## Rungs (four; section-selectable; controls first; predictions up front)
 
@@ -53,11 +48,9 @@ synthetic. Deliverable: latency vs size + a recommended unified constant. No cod
   latency) marked MEASURED with the numbers.
 
 ## Discipline
-Identical to LAB-B+: controls first · tick-stamped/timestamped readings · physical counts · two consecutive
-clean full passes reported once · seven-field zero-leftover both instances · disposable fixtures cleaned ·
-append-only NOTEBOOKs · honest UNEXPLAINED · `./tools/rcon.ps1` · never `atlas-*` · DI-lint fires = escalate ·
-no session URLs/trailers · package-lock byte-identical, never staged · one `test(...)` commit per lab home +
-one pure-docs commit · **stop for audit**.
+The canonical discipline linked above applies. LAB-specific additions: controls first; tick-stamped readings;
+physical counts; append-only lab NOTEBOOKs; honest `UNEXPLAINED`; one `test(...)` commit per lab home; one
+pure-docs commit; and the stop conditions below.
 
 ## Stop conditions
 T1 shows V×T of the restored portion NOT conserving (beyond double precision) · T3's measured limit is BELOW
