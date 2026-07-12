@@ -427,3 +427,10 @@ The full-hub adversarial fixture exercised the fallback: belts retained 18 proce
 0, one ground item was created, and the physical total remained exactly 19. The permanent integration fixture
 then passed five of five real transfers under the unchanged exact gate, each preserving all 19 processing
 units. Pre-fix evidence for the same fixture was deterministic red (`19 -> 18`, five of five).
+### Final evidence
+
+Two consecutive complete integration suites passed `21/21`. Each suite included five deterministic
+`belt-loss-replay` transfers, so the post-fix fixture evidence is ten consecutive exact-gate passes in the
+final tree. The host-container suite passed 193 tests (181 passed, 12 expected skips), all eleven lint guards
+passed, and both instances ended with zero disposable lab surfaces, destination holds, transfer locks,
+committed tombstones, and async jobs; both games were unpaused.
