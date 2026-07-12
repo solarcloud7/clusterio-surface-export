@@ -6,7 +6,7 @@
 
 **Goal:** Ensure every ordinary entity inventory represented on the source is serialized, restored, and included symmetrically in the exact transfer gate before source deletion can occur.
 
-**Architecture:** Keep specialized handlers responsible for category-specific state, but make ordinary inventory capture a shared dispatcher invariant. The shared dispatcher adds `InventoryScanner.extract_all_inventories(entity)` only when a specialized handler did not already supply `data.inventories`, avoiding duplicate extraction while closing omissions such as burner-inserter fuel. The existing exact gate remains unchanged: once the payload contains the inventory, export verification and the destination physical census become commensurate automatically.
+**Architecture:** Cut the prerequisite PR from `main`, where specialized handlers return before the default inventory/fluid scanners and `extract_common_state` does not exist. Keep specialized handlers responsible for category-specific state, but make ordinary inventory capture a shared dispatcher invariant: attach `InventoryScanner.extract_all_inventories(entity)` only when a handler did not already supply `data.inventories`. A static ownership matrix covers both inventories and fluids and proves every handler claiming ownership calls the canonical scanner; any platform-reachable fluid omission receives the same shared-invariant repair in this PR. The existing exact gate remains unchanged.
 
 **Tech Stack:** Factorio 2.0.77 Lua runtime, save-patched module, PowerShell integration probes, Node test/lint harness, two-host Clusterio dev cluster.
 
@@ -14,7 +14,7 @@
 
 - Implement this as a separate prerequisite PR; do not hide it inside the unfinished `feat/state-dimensions` closer.
 - Do not alter exact-gate tolerances, expected-count subtraction, source-delete semantics, or item-quality key formatting.
-- `currently_burning` is engine state, not an inventory slot; do not count it as an item or duplicate it into `data.inventories`.
+- The prerequisite branch is cut from `main`; it must not call or test state-dimensions-only `extract_common_state`, `currently_burning`, or remaining burner energy. Those witnesses resume only in Task 6.
 - Reuse `InventoryScanner.extract_all_inventories(entity)`; do not introduce a second inventory scanner.
 - The successful fixture uses non-normal quality and more fuel than any other item name so the existing one-shot loss hook deterministically targets fuel.
 - Preserve `package-lock.json` byte-for-byte.
@@ -56,9 +56,9 @@ else
 end
 ```
 
-`EntityHandlers["inserter"]` is specialized, so it never executes the default inventory path. It serializes held-stack and inserter settings but not `defines.inventory.fuel`. `extract_common_state()` captures `currently_burning` and remaining fuel energy, but deliberately omits fuel inventory items under the false assumption that normal inventory export already captured them.
+`EntityHandlers["inserter"]` is specialized, so it never executes the default inventory path. On `main` it serializes held-stack and inserter settings but not `defines.inventory.fuel`; `extract_common_state()` is absent from `main` and exists only on the later state-dimensions branch. The prerequisite defect and repair concern ordinary inventories only. Burner engine-state capture is revalidated after the prerequisite merges and state-dimensions rebases.
 
-This is broader than one prototype. There are 28 specialized categories in `entity-handlers.lua`; only 14 visibly call `extract_all_inventories`. Some omitted categories may genuinely have no inventories in vanilla, but modded prototypes can add inventory-bearing energy sources or storage. The fix must establish the shared invariant without double-counting categories that already capture inventories.
+This is broader than one prototype. Main has roughly 29 specialized categories and only roughly 13 visibly call `extract_all_inventories`. Some omitted categories may genuinely have no inventories in vanilla, but modded prototypes can add inventory-bearing energy sources or storage. The same early-return class applies to `extract_fluids`, which the default path also supplies and which has already caused historical omissions. The repair must establish explicit inventory and fluid ownership without double-counting handlers that already use the canonical scanners.
 
 ## What We Tried and Learned
 
@@ -83,15 +83,16 @@ Success requires both directions of proof:
 
 ## Decisions Requested at Audit
 
-1. **Fix boundary:** Approve the shared-dispatcher invariant below rather than an inserter-only patch. Recommended: yes, because the defect class is “specialized handler bypasses default cross-cutting state.”
-2. **Existing handler ownership:** Approve “keep an existing non-`nil` `data.inventories`; otherwise attach the shared scan.” Recommended: yes, to avoid rescanning or duplicating the 14 handlers that already own inventory ordering.
-3. **Empty table semantics:** Treat `data.inventories = {}` as an explicit handler result and do not rescan, or rescan whenever `#data.inventories == 0`? Recommended: rescan only when the field is `nil`; audit must confirm no handler intentionally sets `{}` before later population.
-4. **PR sequencing:** Approve a separate prerequisite PR merged before the state-dimensions branch resumes. Recommended: yes.
-5. **Circuit-config test:** Keep its unresolved source-fixture failure out of this PR. Recommended: yes; it has no bearing on inventory accounting.
+1. **Fix boundary:** APPROVED: use the shared-dispatcher invariant below rather than an inserter-only patch, because the defect class is “specialized handler bypasses default cross-cutting state.”
+2. **Existing handler ownership:** APPROVED with a ratchet: keep existing non-`nil` `data.inventories`, but the matrix must prove every owning handler obtains it through `InventoryScanner.extract_all_inventories(entity)`, never a hand-built partial table.
+3. **Empty table semantics:** APPROVED: rescan only when `data.inventories` is `nil`; an owning handler returning `{}` remains authoritative.
+4. **PR sequencing:** APPROVED: merge a separate prerequisite PR before state-dimensions resumes.
+5. **Circuit-config test:** APPROVED out of scope; it has no bearing on inventory accounting.
+6. **Fluid ownership:** REQUIRED: classify fluids beside inventories. Repair a platform-reachable fluid omission in this PR if the matrix exposes one; otherwise bank the verified-clean result without speculative production changes.
 
 ---
 
-### Task 1: Inventory Ownership Matrix and Red Regression Teeth
+### Task 1: Inventory/Fluid Ownership Matrix and Red Regression Teeth
 
 **Files:**
 - Create: `docker/seed-data/external_plugins/surface_export/test/specialized-inventory-accounting.test.cjs`
@@ -100,33 +101,41 @@ Success requires both directions of proof:
 
 **Interfaces:**
 - Consumes: `EntityHandlers.handle_entity(entity, category)` and existing `test_force_item_loss` one-shot hook.
-- Produces: a red pre-fix integration fixture and a static ownership matrix that later tasks must satisfy.
+- Produces: a red pre-fix integration fixture and a static inventory/fluid ownership matrix that later tasks must satisfy.
 
-- [ ] **Step 1: Enumerate specialized handlers and their current inventory ownership**
+- [ ] **Step 1: Enumerate specialized handlers and both cross-cutting ownership axes**
 
 Create a table in the test containing every `EntityHandlers["category"]` definition and classify it as:
 
 ```js
 {
   category: "inserter",
-  handlerOwnsInventories: false,
-  sharedDispatcherMustAttach: true,
+  inventories: {
+    owner: "shared-dispatcher",
+    mechanism: null,
+  },
+  fluids: {
+    owner: "none-required",
+    mechanism: null,
+    platformReachableFluidCapable: false,
+  },
 }
 ```
 
-The test must parse `entity-handlers.lua` and fail if a new specialized category is added without an explicit classification. This is a test inventory, not production metadata.
+Allowed ownership values are `handler`, `shared-dispatcher`, and `none-required`. For every axis classified `handler`, the test must parse that handler body and prove the assignment comes from the canonical scanner: `InventoryScanner.extract_all_inventories(entity)` for inventories or `InventoryScanner.extract_fluids(entity)` for fluids. A hand-built or partial `data.inventories`/`data.fluids` table fails the ratchet even though the field is non-`nil`.
+
+The test must parse `entity-handlers.lua` and fail if a new specialized category is added without an explicit inventory and fluid classification. For fluids, the matrix must also state whether a platform-reachable prototype in that category can expose fluidboxes. If any such category is not already handler-owned, Task 2's conditional fluid repair becomes mandatory; otherwise the verified-clean fluid result is banked and no fluid production code changes. This is test metadata, not production metadata.
 
 - [ ] **Step 2: Strengthen the live burner fixture before changing production**
 
-Update the fixture to put 20 legendary coal in the burner-inserter fuel inventory while keeping current fuel distinct:
+Update the main-based fixture to put 20 legendary coal in the burner-inserter fuel inventory. Do not add `currently_burning` setup or assertions in the prerequisite PR:
 
 ```lua
 local fi = e.get_inventory(defines.inventory.fuel)
 local inserted = fi.insert({ name = "coal", quality = "legendary", count = 20 })
 if inserted ~= 20 then error("legendary coal fixture write rejected: " .. tostring(inserted)) end
 
-e.burner.currently_burning = { name = "solid-fuel", quality = "normal" }
-e.burner.remaining_burning_fuel = 2000000
+
 ```
 
 Twenty fuel items exceed the starter pack's ten foundations, making fuel the deterministic target of the existing “remove most abundant item” loss hook.
@@ -195,26 +204,62 @@ This helper does not count items, alter quality keys, inspect held stacks, or to
 
 - [ ] **Step 2: Route both dispatcher paths through the invariant**
 
-Replace the default-only inventory block with one shared call after the category handler returns:
+Move inventory attachment after the category choice while preserving main's existing default-only fluid scan:
 
 ```lua
-local data = handler and handler(entity) or {}
+local data
+if handler then
+  data = handler(entity) or {}
+else
+  data = {}
+  local fluids = InventoryScanner.extract_fluids(entity)
+  if #fluids > 0 then
+    data.fluids = fluids
+  end
+end
+
 data = EntityHandlers.attach_missing_inventories(entity, data)
-EntityHandlers.extract_common_state(entity, data)
 ```
 
-Preserve all existing handler behavior and the existing `next(data)` return contract.
+This is the required dispatcher shape when the fluid matrix is clean. It preserves default-category fluid behavior exactly while closing specialized inventory omissions. Preserve all existing handler behavior and the existing `next(data)` return contract.
 
-- [ ] **Step 3: Correct the false burner comment**
+- [ ] **Step 3: Apply the conditional fluid repair only if the matrix finds a reachable hole**
 
-Document the actual invariant beside `extract_common_state()`:
+If and only if Task 1 identifies a platform-reachable specialized category that can expose fluidboxes without calling `InventoryScanner.extract_fluids(entity)`, add the symmetric helper:
 
 ```lua
--- Burning item and remaining energy are engine state. Ordinary fuel and burnt-result inventories
--- are attached once by attach_missing_inventories(), whether or not a category handler exists.
+function EntityHandlers.attach_missing_fluids(entity, data)
+  data = data or {}
+  if data.fluids == nil then
+    local fluids = InventoryScanner.extract_fluids(entity)
+    if #fluids > 0 then
+      data.fluids = fluids
+    end
+  end
+  return data
+end
 ```
 
-- [ ] **Step 4: Run focused host tests**
+If this conditional helper is required, use this alternate dispatcher shape:
+
+```lua
+local data = handler and (handler(entity) or {}) or {}
+data = EntityHandlers.attach_missing_inventories(entity, data)
+data = EntityHandlers.attach_missing_fluids(entity, data)
+```
+
+Add a focused representative fixture proving source fluid, serialized payload, and destination physical fluid are equal. If the matrix finds no platform-reachable hole, do not add this helper and do not use the alternate shape; append the verified-clean matrix result to the notebook instead.
+
+- [ ] **Step 4: Document the main-branch dispatcher invariant**
+
+Document the actual invariant beside the shared dispatcher; do not reference the state-dimensions-only `extract_common_state()`:
+
+```lua
+-- Ordinary inventories are attached exactly once here whether or not a category handler exists.
+-- Specialized handlers that already use extract_all_inventories remain authoritative.
+```
+
+- [ ] **Step 5: Run focused host tests**
 
 Run:
 
@@ -224,11 +269,11 @@ docker exec surface-export-host-1 sh -c 'cd /clusterio/external_plugins/surface_
 
 Expected: all host tests pass, including the ownership matrix.
 
-- [ ] **Step 5: Commit the implementation**
+- [ ] **Step 6: Commit the implementation**
 
 ```powershell
 git add docker/seed-data/external_plugins/surface_export/module/export_scanners/entity-handlers.lua
-git commit -m "fix(serializer): capture inventories for specialized handlers"
+git commit -m "fix(serializer): capture missing specialized-handler state"
 ```
 
 ### Task 3: Successful Transfer and Exact-Gate Commensurability
@@ -251,7 +296,7 @@ Run the normal save-patch workflow from the dedicated branch, then poll both ins
 node tools/run-integration-tests.mjs --only '^entity-burner-roundtrip$'
 ```
 
-Expected: every source/payload/expected/frozen/actual/live witness reports `coal:legendary=20`; `currently_burning=solid-fuel/normal` remains distinct; source deletion occurs only after the exact gate succeeds.
+Expected: every source/payload/expected/frozen/actual/live witness reports `coal:legendary=20`; source deletion occurs only after the exact gate succeeds. Burner engine-state assertions are intentionally absent on the main-based prerequisite.
 
 - [ ] **Step 3: Verify no double counting**
 
@@ -412,18 +457,26 @@ Preserve the banked MC1 and hard-stop evidence. Resolve the burner integration t
 
 - [ ] **Step 3: Restart at the interrupted test boundary**
 
-Re-run `entity-burner-roundtrip` first to prove the merged fix in the closer context. Then continue the remaining state-dimension sections. Keep the unresolved circuit-config fixture in its own focused debugging loop; do not weaken its dynamic-evaluation claim.
+Re-run `entity-burner-roundtrip` first to prove the merged inventory fix in the closer context. Restore the state-dimensions-only witnesses for `currently_burning=solid-fuel/normal` and bounded remaining burner energy there, after `extract_common_state` is present again. Then continue the remaining state-dimension sections. Keep the unresolved circuit-config fixture in its own focused debugging loop; do not weaken its dynamic-evaluation claim.
 
 ## Acceptance
 
 - The pre-fix fixture is red for the exact omission observed in `burnerrt-163355`.
-- Every specialized handler's inventory ownership is explicit and mechanically guarded.
+- Every specialized handler's inventory and fluid ownership is explicit and mechanically guarded.
+- Every handler claiming ownership calls the canonical scanner for that axis; hand-built partial tables fail the matrix.
 - Ordinary inventories are serialized at most once for every handler path.
+- If the matrix exposes a platform-reachable fluid hole, that fluid is serialized at most once and receives source/payload/destination physical proof; otherwise no fluid production code changes.
 - Legendary burner fuel is `20` at physical source, payload, expected gate map, frozen destination, actual gate map, and live destination.
 - A forced legendary-fuel loss produces `20 -> 19`, fails the item gate, discards destination, and preserves source.
 - Exact-gate code and tolerances are unchanged.
 - Two consecutive full integration suites pass with both-host zero-state evidence.
 - The prerequisite PR receives adversarial `/di-change` review and merges before state-dimensions resumes.
+
+## Follow-Up Lane: Independent Source-Census Watchman
+
+This prerequisite fixes the mover-side omission but does not eliminate the structural blind spot: export expected counts are derived from the mover's own serialized payload. A future omission can still make expected and actual agree on the wrong universe.
+
+A separate follow-up plan should add an export-time, pre-transfer self-check comparing an independent physical source census with the serialized verification maps and fail closed before routing when they differ. `transfer-fidelity` already demonstrates the countermeasure shape. This watchman-side defense is intentionally outside this prerequisite PR because it changes the transfer admission boundary and deserves its own `/di-change`, fixtures, and audit.
 
 ## Explicit Non-Goals
 
@@ -431,5 +484,5 @@ Re-run `entity-burner-roundtrip` first to prove the merged fix in the closer con
 - Changing passenger visibility or the Phase-2 visibility barrier.
 - Changing burner simulation semantics.
 - Counting `currently_burning` as an inventory item.
-- Altering fluid accounting, belt recovery, gate tolerances, or controller 2PC wiring.
+- Altering fluid validation, fluid gate accounting, belt recovery, gate tolerances, or controller 2PC wiring. A serializer-only fluid attachment is permitted solely when the Task 1 matrix proves a platform-reachable omission.
 - Completing the remaining state-dimension tests in the prerequisite PR.
