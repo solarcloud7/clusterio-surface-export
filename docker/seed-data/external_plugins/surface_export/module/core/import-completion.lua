@@ -182,6 +182,7 @@ local function bank_failure_black_box(job, result)
 		physical_entities = EntityScanner.scan_surface(job.target_surface),
 		belt_lines = BeltRestoration.attribute_lines(job.entities_to_create or {}, job.entity_map or {}),
 		restore_time_belt_lines = job.belt_attribution,
+		belt_recovery = job.belt_recovery,
 		replay_payload = job.platform_data,
 	}
 	local written = DebugExport.write_failure_black_box(filename, bundle)

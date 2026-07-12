@@ -458,6 +458,12 @@ test("belt diagnostics census complete restored lines", () => {
 		"attribution rows must name a physical entity and line with both sides of the comparison");
 	assert.match(restoration, /attribution\.actual_total\s*-\s*attribution\.expected_total/,
 		"the diagnostic total must come from the completed physical census, not insert return values");
+	assert.match(restoration, /attribution\s*=\s*attribution/,
+		"restore must return its completed census so the black box retains restore-time evidence");
+	assert.match(restoration, /recover_deficits_to_hub[\s\S]*attribution\.expected[\s\S]*attribution\.actual/,
+		"belt recovery must use the whole-belt aggregate census, never per-window insert results");
+	assert.match(restoration, /hub_inventory\.insert[\s\S]*spill_item_stack[\s\S]*recovered[\s\S]*unrecovered/,
+		"a restore-side deficit must move recoverably to the hub and expose any insertion shortfall");
 });
 test("failed transfer banks gate-time belt attribution and replayable payload", () => {
 	const completion = fs.readFileSync(path.join(moduleRoot, "core", "import-completion.lua"), "utf8");
@@ -465,6 +471,8 @@ test("failed transfer banks gate-time belt attribution and replayable payload", 
 		"restore-time attribution must survive until the frozen verdict");
 	assert.match(completion, /belt_lines\s*=\s*BeltRestoration\.attribute_lines/,
 		"failure black box must refresh attribution at the frozen gate point");
+	assert.match(completion, /belt_recovery\s*=\s*job\.belt_recovery/,
+		"failure black box must explain any aggregate deficit moved to the hub");
 	assert.match(completion, /replay_payload\s*=\s*job\.platform_data/,
 		"every failed transfer must bank its exact replayable serialized input");
 });

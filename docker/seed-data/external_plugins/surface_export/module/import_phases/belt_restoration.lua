@@ -108,6 +108,53 @@ function BeltRestoration.attribute_lines(entities_to_create, entity_map)
     attribution.delta = attribution.actual_total - attribution.expected_total
     return attribution
 end
+--- Move only whole-belt aggregate deficits to the hub. Per-window insert deltas are unsound on merged lines;
+--- the completed census is the same meter used by the frozen exact gate. A partial hub insert remains visible
+--- as unrecovered so the gate still fails closed.
+local function recover_deficits_to_hub(attribution, entities_to_create, entity_map)
+    local recovery = { recovered = {}, unrecovered = {}, recovered_total = 0, unrecovered_total = 0 }
+    local hub = nil
+    for _, entity_data in ipairs(entities_to_create or {}) do
+        local entity = entity_map[entity_data.entity_id]
+        if entity and entity.valid and entity.name == "space-platform-hub" then hub = entity; break end
+    end
+    local hub_inventory = hub and hub.get_inventory(defines.inventory.hub_main) or nil
+    for key, expected in pairs(attribution.expected or {}) do
+        local deficit = expected - (attribution.actual[key] or 0)
+        if deficit > 0 then
+            local inserted = 0
+            if hub_inventory and hub_inventory.valid then
+                local item_name, quality = Util.parse_quality_key(key)
+                inserted = hub_inventory.insert({ name = item_name, count = deficit, quality = quality })
+            end
+            if inserted > 0 then recovery.recovered[key] = inserted; recovery.recovered_total = recovery.recovered_total + inserted end
+            local remainder = deficit - inserted
+            if remainder > 0 and hub then
+                local item_name, quality = Util.parse_quality_key(key)
+                local spill_ok, spill_err = pcall(function()
+                    hub.surface.spill_item_stack({
+                        position = hub.position,
+                        stack = { name = item_name, count = remainder, quality = quality },
+                    })
+                end)
+                if spill_ok then
+                    recovery.recovered[key] = (recovery.recovered[key] or 0) + remainder
+                    recovery.recovered_total = recovery.recovered_total + remainder
+                    remainder = 0
+                else
+                    log(string.format("[Belt Restore] Hub-full deficit spill failed for %s x%d: %s",
+                        key, remainder, tostring(spill_err)))
+                end
+            end
+            if remainder > 0 then recovery.unrecovered[key] = remainder; recovery.unrecovered_total = recovery.unrecovered_total + remainder end
+        end
+    end
+    if recovery.recovered_total > 0 or recovery.unrecovered_total > 0 then
+        log(string.format("[Belt Restore] Aggregate deficit recovery: recovered=%d to hub/ground, unrecovered=%d",
+            recovery.recovered_total, recovery.unrecovered_total))
+    end
+    return recovery
+end
 --- Restore all belt items synchronously in a single tick.
 --- CRITICAL: Belts are always active and cannot be deactivated, so items must be restored all at once.
 ---
@@ -293,6 +340,7 @@ function BeltRestoration.restore(entities_to_create, entity_map)
     end
 
     local attribution = BeltRestoration.attribute_lines(entities_to_create, entity_map)
+    local recovery = recover_deficits_to_hub(attribution, entities_to_create, entity_map)
     unplaced_diag = math.max(0, -attribution.delta)
     log(string.format(
         "[Import] Belt restoration complete. %d belts: expected=%d actual=%d delta=%d consolidated_lines=%d",
@@ -318,6 +366,8 @@ function BeltRestoration.restore(entities_to_create, entity_map)
         belts_processed = belt_count,
         items_restored = placed_count,
         expected_total = expected_total,
+        attribution = attribution,
+        recovery = recovery,
     }
 end
 
