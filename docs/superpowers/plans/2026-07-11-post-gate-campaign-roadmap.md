@@ -1,10 +1,9 @@
 # Post-gate campaign roadmap (2026-07-11)
 
 > Status snapshot at authoring: the single frozen-world exact gate (PR #76) squash-merged as `c5d7437`;
-> its post-merge main run was in flight. Owner-approved execution order below. Standing rules apply to
-> every lane: one cluster-touching agent at a time · stop-for-audit before merge · `/di-change` on any
-> gate/validation/rollback/source-delete path · lint allows are escalations · package-lock byte-identical ·
-> no session URLs · commit labels are audit boundaries · a merge isn't done until main's own run is green.
+> its post-merge main run was in flight. Owner-approved execution order below. Every lane follows the
+> [Agent execution discipline](../../AGENT_EXECUTION_DISCIPLINE.md); task-specific `/di-change`, ownership,
+> verification, and audit requirements below are additive.
 
 ## Gate 0 — main green after the gate-rewrite merge
 No lane branches off main until the post-merge run passes. Red ⇒ freeze lanes, diagnose on the cluster.
