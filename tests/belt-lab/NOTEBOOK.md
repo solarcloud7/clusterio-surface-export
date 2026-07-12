@@ -391,3 +391,39 @@ green; no second loss class and no capture under the new trap. Per the rung cont
 **OPEN-INSTRUMENTED**, not fixed and not explained. Replay, topology minimization, and a restoration change are
 not licensed until a natural recurrence supplies the new black box. LAB-TAIL certification remains held
 pending owner sign-off on this OPEN-INSTRUMENTED disposition.
+## 2026-07-11 - BELT-R1 natural capture, deterministic replay, and recovery
+
+The second full-suite evidence pass naturally triggered the permanent trap on `groundfid-222341`. The exact
+frozen gate measured `processing-unit expected=30 actual=29 delta=-1`; fluids and every other aggregate item
+name were exact. Black-Box Discard banked the payload, discarded the destination, and preserved the source.
+This was a new item signature but the same belt-only restore-loss class, not a second failure class.
+
+### Replay and minimization
+
+- The exact banked payload reproduced `processing-unit 30 -> 29` on five of five upload-import replays.
+- Removing non-belt entities retained the loss: 596 belts held `24 -> 23` processing units.
+- The implicated connected component alone conserved `19 -> 19`; adding its apparent threshold belt alone also
+  conserved. This refuted a single local-topology explanation.
+- Order-preserving prefix search found 549 belts conserved `24 -> 24`, while 550 belts lost `24 -> 23`.
+  The 550-belt boundary reproduced five of five.
+- Clearing cargo from every belt outside the implicated 40-entity component retained the deficit:
+  `processing-unit 19 -> 18`. The durable fixture therefore contains 550 belts but cargo only on the named
+  component. The remaining mechanism is workload-dependent restore behavior; it is **UNEXPLAINED**, not
+  attributed to export scanning or to one remote belt.
+
+The restore-time complete belt census is decisive here. Per-line insert return values remain inadmissible;
+individual line deltas move between connected windows, while the all-belt per-name aggregate identified the
+single real deficit.
+
+### Fix and proof
+
+After all belt inserts, restoration compares the complete per-name serialized belt census with the complete
+physical belt census. A positive deficit is moved to the platform hub. If the hub is full, only the remainder
+is spilled onto the same platform as a ground item. If either sink cannot preserve the full remainder, the
+unrecovered amount stays absent and the unchanged exact gate fails closed. Gains are never removed or hidden.
+The failure black box records both the restore-time census and recovery ledger.
+
+The full-hub adversarial fixture exercised the fallback: belts retained 18 processing units, the hub accepted
+0, one ground item was created, and the physical total remained exactly 19. The permanent integration fixture
+then passed five of five real transfers under the unchanged exact gate, each preserving all 19 processing
+units. Pre-fix evidence for the same fixture was deterministic red (`19 -> 18`, five of five).
