@@ -140,7 +140,7 @@ end
 if lamp then
     local lcb = lamp.get_control_behavior()
     if lcb then
-        local okd, dis = pcall(function() return lcb.disabled end)
+        local okd, dis = pcall(function() return lamp.disabled_by_control_behavior end)
         if okd then out.lamp_disabled = dis end
         local okc, cond = pcall(function() return lcb.circuit_condition end)
         if okc and cond then
@@ -156,7 +156,7 @@ end
 if lamp2 then
     local lcb2 = lamp2.get_control_behavior()
     if lcb2 then
-        local okd, dis = pcall(function() return lcb2.disabled end)
+        local okd, dis = pcall(function() return lamp2.disabled_by_control_behavior end)
         if okd then out.lamp2_disabled = dis end
     end
 end
