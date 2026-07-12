@@ -86,3 +86,127 @@ Verdict:
 ```
 
 *(append experiment entries below — script name, date, raw JSON, human observation notes, verdict)*
+
+
+## 2026-07-12T18:47:56.271Z - PR-0C hidden-semantics setup (run-pr0c.mjs)
+
+```json
+{
+  "script": "tests/hidden-semantics-lab/run-pr0c.mjs",
+  "instance": "clusterio-host-1-instance-1",
+  "controller": "surface-export-controller",
+  "started": "2026-07-12T18:47:52.424Z",
+  "manual": true,
+  "rungs": {
+    "setup": {
+      "success": true,
+      "instance_note": "connect a human client to the target instance before recording observations",
+      "tick": 465393,
+      "game_paused": false,
+      "transfer_id": "hidden-semantics-lab-transfer-465393",
+      "visible": {
+        "name": "hidden-semantics-lab-visible-control-465393",
+        "index": 3,
+        "surface_index": 7,
+        "hidden": false,
+        "paused": false
+      },
+      "held": {
+        "name": "hidden-semantics-lab-held-destination-465393",
+        "index": 4,
+        "surface_index": 8,
+        "hidden": true,
+        "paused": true,
+        "hold": {
+          "transfer_id": "hidden-semantics-lab-transfer-465393",
+          "force_name": "player",
+          "platform_index": 4,
+          "platform_name": "hidden-semantics-lab-held-destination-465393",
+          "surface_index": 8,
+          "original_hidden": false,
+          "original_paused": false,
+          "active_states": {
+            "14296": false
+          },
+          "deactivated_count": 0,
+          "pod_completion": {
+            "descending": 0,
+            "ascending": 0,
+            "items_recovered": 0
+          },
+          "held_tick": 465393
+        }
+      }
+    }
+  },
+  "errors": [],
+  "manual_observation_checklist": [
+    {
+      "id": "space-platform-list",
+      "prompt": "Open the in-game Space platforms list and search for both lab platform names.",
+      "expected": "visible-control appears; held-destination is absent."
+    },
+    {
+      "id": "remote-view-picker-map-search",
+      "prompt": "Use remote view and map-style platform navigation/search for both lab platform names.",
+      "expected": "visible-control can be selected normally; held-destination is absent or inert."
+    },
+    {
+      "id": "direct-references",
+      "prompt": "Watch alerts, dialogs, selectors, side panels, and player-facing platform references for the held platform name.",
+      "expected": "held-destination does not appear in ordinary player-facing UI."
+    },
+    {
+      "id": "attempted-interaction",
+      "prompt": "If the held platform is exposed anywhere, try the least destructive interaction and record whether it opens, enters, or changes the platform.",
+      "expected": "no interaction opens the held surface, moves a player, makes it live, or moves items/entities off-platform."
+    },
+    {
+      "id": "control-sanity",
+      "prompt": "Repeat the same path against the visible-control platform.",
+      "expected": "visible-control remains discoverable, proving the UI path was exercised."
+    },
+    {
+      "id": "cleanup-sanity",
+      "prompt": "Run the reset command and confirm neither lab platform remains visible.",
+      "expected": "zero lab platforms, zero lab holds, game unpaused."
+    }
+  ],
+  "expected_safe_results": {
+    "visible_control": "appears normally and proves the player-facing UI path was exercised",
+    "held_destination": "hidden from ordinary player-facing platform lists, remote view pickers, map search, alerts, dialogs, and selectors",
+    "exposed_text": "confusing but inert text is UX backlog if it cannot open, enter, observe, or mutate the held surface",
+    "unsafe_blocker": "any path that lets a connected player view, enter, interact with, or observe live state on the held destination blocks Phase-2 wiring",
+    "cleanup": "reset leaves zero lab destination holds, zero lab platforms, and game.tick_paused == false"
+  },
+  "initial_reset": {
+    "success": true,
+    "deleted": {},
+    "zero_storage": true,
+    "zero_surfaces": true,
+    "leftovers": {},
+    "hold_leftovers": {},
+    "game_paused": false,
+    "post_tick": {
+      "success": true,
+      "deleted": {},
+      "zero_storage": true,
+      "zero_surfaces": true,
+      "leftovers": {},
+      "hold_leftovers": {},
+      "game_paused": false
+    }
+  },
+  "finished": "2026-07-12T18:47:56.271Z"
+}
+```
+
+Human observation notes:
+
+- Observer: connected human client on host 1, Factorio 2.0.77.
+- Ordinary player-facing Space platforms UI exposed both `hidden-semantics-lab-visible-control-465393` and `hidden-semantics-lab-held-destination-465393`.
+- Both platform views exposed the hub inventory containing `10x space platform foundation`.
+- The held destination exposed its live `paused=true` state; the visible control exposed `paused=false`.
+- No mutation was attempted. Observing platform contents and pause state is sufficient to meet the lab's unsafe-blocker definition.
+- Classification: **UNSAFE BLOCKER**. `SpacePlatform.hidden=true` did not hide the held platform from this connected-player UI path.
+- Cleanup: runner reset succeeded; independent RCON check reported `lab_surfaces=0`, `destination_holds=0`, and `game_paused=false`.
