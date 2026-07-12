@@ -49,3 +49,20 @@ Prediction: the shared dispatcher keeps legendary burner fuel in the serialized 
 - The gate reported `coal:legendary 20 -> 19`, `validation_success=false`, and `failedStage=items`.
 - The source remained and the failed destination was discarded.
 - Result: 11/11 checks passed, including both-host zero leftover state.
+
+
+## 2026-07-12 - Final full-suite evidence
+
+Two consecutive complete suites ran without code, configuration, or cluster reset between them:
+
+- Pass 1: `22/22 passed`; `specialized-inventory-roundtrip` passed in `18.4s`.
+- Pass 2: `22/22 passed`; `specialized-inventory-roundtrip` passed in `17.4s`.
+- Full outputs: `C:\tmp\specinv-full-pass1.txt` and `C:\tmp\specinv-full-pass2.txt`.
+- The permanent runner executed both success and forced-loss sections in each suite.
+
+The first post-suite census found two disposable surfaces left by existing suite runners: `entity-test-20260712_193648` on host 1 and `integration-test-20260712_194117` on host 2. They were deleted by exact name and cleanup was stepped before the final census.
+
+Final state:
+
+- Host 1 platforms: protected fixture `test` only; holds=0, locks=0, async_jobs=0, committed tombstones=0, game unpaused.
+- Host 2 platforms: protected fixture `spikedoom08` only; holds=0, locks=0, async_jobs=0, committed tombstones=0, game unpaused.
