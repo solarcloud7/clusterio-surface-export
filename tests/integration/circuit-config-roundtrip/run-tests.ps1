@@ -177,6 +177,7 @@ local force = game.forces['player']
 local p = force.create_space_platform({ name = '$name', planet = 'nauvis', starter_pack = 'space-platform-starter-pack' })
 if not (p and p.valid) then return { success = false, error = 'create_space_platform failed' } end
 p.apply_starter_pack()
+  p.schedule = { current = 1, records = { { station = 'nauvis' } } }
 p.paused = false
 force.set_surface_hidden(p.surface, false)
 local s = p.surface

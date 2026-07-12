@@ -249,3 +249,184 @@ Measured reality: NONE (instrument failure)
   "finished": "2026-07-12T20:14:43.181Z"
 }
 ```
+
+
+## 2026-07-12T20:16:02.974Z - MC1 mid-craft pipeline run
+
+Question: does the crafting_progress restore write TAKE on a fresh deactivated machine, and does the engine then complete the craft producing outputs exactly once?
+Measured reality: RESUME-CLEAN
+
+```json
+{
+  "script": "tests/midcraft-lab/run-mc1.mjs",
+  "instance": "clusterio-host-1-instance-1",
+  "started": "2026-07-12T20:15:43.160Z",
+  "sections": [
+    "mc1"
+  ],
+  "status": "UNVALIDATED-UNTIL-EXECUTED",
+  "question": "does the crafting_progress restore write TAKE on a fresh deactivated machine, and does the engine then complete the craft producing outputs exactly once?",
+  "rungs": {
+    "mc1": {
+      "success": true,
+      "measured_reality": "RESUME-CLEAN",
+      "pass_fail_table": {
+        "RESUME-CLEAN": {
+          "criteria": "embodied delta == 0: outputs +1 exactly from the in-flight craft, physical inputs consumed once",
+          "measured": true
+        },
+        "RESET-LOSS": {
+          "criteria": "embodied delta == -2: progress dropped, the 2 already-consumed plates' value vanished, the in-flight output never appears",
+          "measured": false
+        },
+        "PHANTOM-GAIN": {
+          "criteria": "embodied delta > 0: outputs appear AND inputs not consumed -> item creation",
+          "measured": false
+        }
+      },
+      "embodied": {
+        "source_frozen": 4,
+        "dest_final": 4,
+        "delta": 0
+      },
+      "progress_write_took_on_frozen_dest": false,
+      "in_flight_gear_completed": 1,
+      "setup": {
+        "success": true,
+        "recipe": "iron-gear-wheel",
+        "inserted": 4,
+        "index": 6,
+        "machine_productivity": 0,
+        "recipe_productivity": 0,
+        "surface": 7,
+        "tick": 193272,
+        "machine_active": false
+      },
+      "drive_slices": 1,
+      "source_frozen": {
+        "success": true,
+        "tick": 193431,
+        "game_paused": false,
+        "platform_paused": false,
+        "active": false,
+        "status": 60,
+        "no_power": false,
+        "low_power": false,
+        "crafting_progress": 0.8666666666666677,
+        "input_plates": 2,
+        "output_gears": 0
+      },
+      "defer_armed": {
+        "success": true,
+        "tick": 193479
+      },
+      "clone": {
+        "success": true,
+        "job_id": "import_2",
+        "platform_name": "midcraft-lab-dst-1783887346942",
+        "source_platform": "midcraft-lab-src-1783887346942",
+        "entity_count": 4,
+        "message": "Clone job started - use /step-tick to process"
+      },
+      "job_wait": {
+        "success": true,
+        "tick": 193584,
+        "done": true
+      },
+      "dest_frozen": {
+        "success": true,
+        "tick": 193698,
+        "game_paused": false,
+        "platform_paused": true,
+        "active": false,
+        "status": 60,
+        "no_power": false,
+        "low_power": false,
+        "crafting_progress": 0.8833333333333344,
+        "input_plates": 2,
+        "output_gears": 0
+      },
+      "activation": {
+        "success": true,
+        "tick": 193748
+      },
+      "settled": {
+        "polls": 2,
+        "elapsed_ticks": 220,
+        "read": {
+          "success": true,
+          "tick": 193968,
+          "game_paused": false,
+          "platform_paused": false,
+          "active": true,
+          "status": 26,
+          "no_power": false,
+          "low_power": false,
+          "crafting_progress": 0,
+          "input_plates": 0,
+          "output_gears": 2
+        }
+      },
+      "note": "MEASUREMENT ONLY — no code change either way; refund-not-resume is the closer's adjudicated fix if RESET-LOSS or PHANTOM-GAIN"
+    }
+  },
+  "errors": [],
+  "initial_reset": {
+    "cleanup": {
+      "success": true,
+      "deleted": {},
+      "records": {},
+      "tick": 193055
+    },
+    "zero": {
+      "success": true,
+      "tick": 193166,
+      "zero_surfaces": true,
+      "surfaces": {},
+      "zero_storage": true,
+      "defer_flag_clear": true,
+      "game_paused": false,
+      "destination_holds": 0,
+      "locked_platforms": 0,
+      "committed_source_transfer_tombstones": 0,
+      "lab_platform_exports": 0
+    },
+    "ok": true
+  },
+  "prior_config": {
+    "success": true,
+    "debug_mode": true,
+    "had_debug": true,
+    "defer": false
+  },
+  "final_reset": {
+    "cleanup": {
+      "success": true,
+      "deleted": [
+        "platform-2",
+        "platform-3"
+      ],
+      "records": [
+        "export:midcraft-lab-src-1783887346942_193529",
+        "job_result:import_2"
+      ],
+      "tick": 194023
+    },
+    "zero": {
+      "success": true,
+      "tick": 194132,
+      "zero_surfaces": true,
+      "surfaces": {},
+      "zero_storage": true,
+      "defer_flag_clear": true,
+      "game_paused": false,
+      "destination_holds": 0,
+      "locked_platforms": 0,
+      "committed_source_transfer_tombstones": 0,
+      "lab_platform_exports": 0
+    },
+    "ok": true
+  },
+  "finished": "2026-07-12T20:16:02.974Z"
+}
+```

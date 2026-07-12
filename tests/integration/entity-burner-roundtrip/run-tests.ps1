@@ -97,6 +97,7 @@ local ok, err = pcall(function()
   local platform = force.create_space_platform({name='$clone', planet='nauvis', starter_pack='space-platform-starter-pack'})
   if not (platform and platform.valid) then error('create_space_platform failed') end
   platform.apply_starter_pack()
+  platform.schedule = { current = 1, records = { { station = 'nauvis' } } }
   if not (platform.surface and platform.surface.valid) then error('starter pack left no surface') end
   platform.paused = true
   force.set_surface_hidden(platform.surface, false)
@@ -130,8 +131,8 @@ local ok, err = pcall(function()
   out.remaining = b.remaining_burning_fuel or 0
   local cb = b.currently_burning
   if cb then
-    local n = cb.name; if type(n) == 'table' then n = n.name end; out.cb_name = n
-    local q = cb.quality; if type(q) == 'table' then q = q.name end; out.cb_quality = q
+    local n = cb.name; if type(n) ~= 'string' then n = n.name end; out.cb_name = n
+    local q = cb.quality; if type(q) ~= 'string' then q = q.name end; out.cb_quality = q
   end
   out.success = true
 end)
@@ -204,8 +205,8 @@ local ok, err = pcall(function()
     out.remaining = b.remaining_burning_fuel or 0
     local cb = b.currently_burning
     if cb then
-      local n = cb.name; if type(n) == 'table' then n = n.name end; out.cb_name = n
-      local q = cb.quality; if type(q) == 'table' then q = q.name end; out.cb_quality = q
+      local n = cb.name; if type(n) ~= 'string' then n = n.name end; out.cb_name = n
+      local q = cb.quality; if type(q) ~= 'string' then q = q.name end; out.cb_quality = q
     end
   end
 end)
