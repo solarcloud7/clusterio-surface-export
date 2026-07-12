@@ -101,6 +101,7 @@ function setupFixture(name) {
 		local force=game.forces.player
 		local p=force.create_space_platform({name='${name}',planet='nauvis',starter_pack='space-platform-starter-pack'})
 		p.apply_starter_pack(); p.paused=false; force.set_surface_hidden(p.surface,false)
+		p.schedule={current=1,records={{station='nauvis'}}}
 		local ox,oy=100+p.index*50,100
 		local tiles={}; for x=-8,8 do for y=-8,8 do tiles[#tiles+1]={name='space-platform-foundation',position={ox+x,oy+y}} end end
 		p.surface.set_tiles(tiles,true,false,true,false)

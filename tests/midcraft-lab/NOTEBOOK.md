@@ -171,3 +171,81 @@ Measured reality: NONE (instrument failure)
   "finished": "2026-07-12T20:13:28.452Z"
 }
 ```
+
+
+## 2026-07-12T20:14:43.181Z - MC1 mid-craft pipeline run
+
+Question: does the crafting_progress restore write TAKE on a fresh deactivated machine, and does the engine then complete the craft producing outputs exactly once?
+Measured reality: NONE (instrument failure)
+
+```json
+{
+  "script": "tests/midcraft-lab/run-mc1.mjs",
+  "instance": "clusterio-host-1-instance-1",
+  "started": "2026-07-12T20:14:30.866Z",
+  "sections": [
+    "mc1"
+  ],
+  "status": "UNVALIDATED-UNTIL-EXECUTED",
+  "question": "does the crafting_progress restore write TAKE on a fresh deactivated machine, and does the engine then complete the craft producing outputs exactly once?",
+  "rungs": {},
+  "errors": [
+    "Error: MC1 clone failed: {\"success\":false,\"error\":\"Failed to start import job: Failed to restore platform schedule: Failed to assign base platform.schedule: Index out of bounds.\"}\n    at runMC1 (file:///C:/Users/Solar/AppData/Local/Temp/claude/C--Users-Solar-source-FactorioSurfaceExport/3377b11d-8be9-44f4-b352-fe8637faa4a7/scratchpad/state-dim/tests/midcraft-lab/run-mc1.mjs:234:28)\n    at main (file:///C:/Users/Solar/AppData/Local/Temp/claude/C--Users-Solar-source-FactorioSurfaceExport/3377b11d-8be9-44f4-b352-fe8637faa4a7/scratchpad/state-dim/tests/midcraft-lab/run-mc1.mjs:370:53)\n    at file:///C:/Users/Solar/AppData/Local/Temp/claude/C--Users-Solar-source-FactorioSurfaceExport/3377b11d-8be9-44f4-b352-fe8637faa4a7/scratchpad/state-dim/tests/midcraft-lab/run-mc1.mjs:386:6\n    at ModuleJob.run (node:internal/modules/esm/module_job:439:25)\n    at async node:internal/modules/esm/loader:633:26\n    at async asyncRunEntryPointWithESMLoader (node:internal/modules/run_main:101:5)"
+  ],
+  "initial_reset": {
+    "cleanup": {
+      "success": true,
+      "deleted": {},
+      "records": {},
+      "tick": 188870
+    },
+    "zero": {
+      "success": true,
+      "tick": 188982,
+      "zero_surfaces": true,
+      "surfaces": {},
+      "zero_storage": true,
+      "defer_flag_clear": true,
+      "game_paused": false,
+      "destination_holds": 0,
+      "locked_platforms": 0,
+      "committed_source_transfer_tombstones": 0,
+      "lab_platform_exports": 0
+    },
+    "ok": true
+  },
+  "prior_config": {
+    "success": true,
+    "debug_mode": true,
+    "had_debug": true,
+    "defer": false
+  },
+  "final_reset": {
+    "cleanup": {
+      "success": true,
+      "deleted": [
+        "platform-2"
+      ],
+      "records": [
+        "export:midcraft-lab-src-1783887274574_189354"
+      ],
+      "tick": 189407
+    },
+    "zero": {
+      "success": true,
+      "tick": 189519,
+      "zero_surfaces": true,
+      "surfaces": {},
+      "zero_storage": true,
+      "defer_flag_clear": true,
+      "game_paused": false,
+      "destination_holds": 0,
+      "locked_platforms": 0,
+      "committed_source_transfer_tombstones": 0,
+      "lab_platform_exports": 0
+    },
+    "ok": true
+  },
+  "finished": "2026-07-12T20:14:43.181Z"
+}
+```
