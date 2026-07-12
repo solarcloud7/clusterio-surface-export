@@ -11,30 +11,44 @@ local EntityHandlers = {}
 -- Set by AsyncProcessor during multi-tick export, cleared in complete_export_job
 EntityHandlers.skip_belt_items = false
 
+--- Attach ordinary inventories when a specialized handler does not own them.
+--- @param entity LuaEntity
+--- @param data table|nil
+--- @return table
+function EntityHandlers.attach_missing_inventories(entity, data)
+  data = data or {}
+  if data.inventories == nil then
+    local inventories = InventoryScanner.extract_all_inventories(entity)
+    if #inventories > 0 then
+      data.inventories = inventories
+    end
+  end
+  return data
+end
+
 --- Main dispatcher for entity-specific data extraction
 --- @param entity LuaEntity: The entity to handle
 --- @param category string: Entity category (from Util.get_entity_category)
 --- @return table|nil: Entity-specific data, or nil if no special handling needed
 function EntityHandlers.handle_entity(entity, category)
   local handler = EntityHandlers[category]
+  local data
   if handler then
-    return handler(entity)
+    data = handler(entity) or {}
+  else
+    data = {}
+
+    -- Specialized fluid-capable platform entities own fluid extraction in their handlers.
+    local fluids = InventoryScanner.extract_fluids(entity)
+    if #fluids > 0 then
+      data.fluids = fluids
+    end
   end
 
-  -- Default: extract inventories AND fluids if present
-  -- This ensures entities without specific handlers still have their contents captured
-  local data = {}
-  
-  local inventories = InventoryScanner.extract_all_inventories(entity)
-  if #inventories > 0 then
-    data.inventories = inventories
-  end
-  
-  local fluids = InventoryScanner.extract_fluids(entity)
-  if #fluids > 0 then
-    data.fluids = fluids
-  end
-  
+  -- Ordinary inventories are attached exactly once whether or not a category handler exists.
+  -- Specialized handlers that already use extract_all_inventories remain authoritative.
+  data = EntityHandlers.attach_missing_inventories(entity, data)
+
   if next(data) then
     return data
   end
