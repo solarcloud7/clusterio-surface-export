@@ -4,7 +4,7 @@
 #>
 param(
     [ValidateSet("success", "loss")]
-    [string[]]$Sections = @("success"),
+    [string[]]$Sections = @("success", "loss"),
     [int]$SourceHost = 1,
     [int]$TimeoutSec = 150
 )
