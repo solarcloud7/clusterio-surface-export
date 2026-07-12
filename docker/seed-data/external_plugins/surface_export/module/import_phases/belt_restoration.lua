@@ -1,4 +1,5 @@
 local GameUtils = require("modules/surface_export/utils/game-utils")
+local Util = require("modules/surface_export/utils/util")
 local VersionCompat = require("modules/surface_export/utils/version-compat")
 
 local BeltRestoration = {}
@@ -33,6 +34,80 @@ local function line_needs_consolidation(sorted_slots, len)
     return false
 end
 
+local function add_items(totals, items)
+    local total = 0
+    for _, item in ipairs(items or {}) do
+        local count = item.count or 0
+        local key = Util.make_quality_key(item.name, item.quality or QUALITY_NORMAL)
+        totals[key] = (totals[key] or 0) + count
+        total = total + count
+    end
+    return total
+end
+
+local function live_line_items(line)
+    local items = {}
+    for _, item_data in ipairs(line.get_detailed_contents()) do
+        local stack = item_data.stack
+        if stack and stack.valid_for_read then
+            items[#items + 1] = { name = stack.name, quality = stack.quality and stack.quality.name or QUALITY_NORMAL,
+                count = stack.count, position = item_data.position }
+        end
+    end
+    return items
+end
+
+local function neighbour_units(entity)
+    local result = { inputs = {}, outputs = {} }
+    local ok, neighbours = pcall(function() return entity.belt_neighbours end)
+    if not ok or not neighbours then return result end
+    for _, neighbour in pairs(neighbours.inputs or {}) do result.inputs[#result.inputs + 1] = neighbour.unit_number end
+    for _, neighbour in pairs(neighbours.outputs or {}) do result.outputs[#result.outputs + 1] = neighbour.unit_number end
+    table.sort(result.inputs); table.sort(result.outputs)
+    return result
+end
+
+--- Census serialized-vs-live belt contents by physical entity and transport-line index.
+--- Called after restoration and again at the frozen gate point; insert return values are never evidence.
+function BeltRestoration.attribute_lines(entities_to_create, entity_map)
+    local attribution = { rows = {}, expected = {}, actual = {}, expected_total = 0, actual_total = 0 }
+    for _, entity_data in ipairs(entities_to_create or {}) do
+        local entity = entity_map[entity_data.entity_id]
+        if entity and entity.valid and GameUtils.BELT_ENTITY_TYPES[entity.type] then
+            local expected_lines = {}
+            for _, line_data in ipairs((entity_data.specific_data and entity_data.specific_data.items) or {}) do expected_lines[line_data.line] = line_data end
+            local neighbours = neighbour_units(entity)
+            for line_index = 1, entity.get_max_transport_line_index() do
+                local line = entity.get_transport_line(line_index)
+                if line and line.valid then
+                    local line_data = expected_lines[line_index] or { line = line_index, items = {} }
+                    local expected, actual = {}, {}
+                    local expected_total = add_items(expected, line_data.items)
+                    local actual_items = live_line_items(line)
+                    local actual_total = add_items(actual, actual_items)
+                    local delta, keys = {}, {}
+                    for key in pairs(expected) do keys[key] = true end
+                    for key in pairs(actual) do keys[key] = true end
+                    for key in pairs(keys) do local value = (actual[key] or 0) - (expected[key] or 0); if value ~= 0 then delta[key] = value end end
+                    attribution.expected_total = attribution.expected_total + expected_total
+                    attribution.actual_total = attribution.actual_total + actual_total
+                    for key, value in pairs(expected) do attribution.expected[key] = (attribution.expected[key] or 0) + value end
+                    for key, value in pairs(actual) do attribution.actual[key] = (attribution.actual[key] or 0) + value end
+                    attribution.rows[#attribution.rows + 1] = {
+                        unit_number = entity.unit_number, entity_id = entity_data.entity_id, entity_name = entity.name,
+                        entity_type = entity.type, position = { x = entity.position.x, y = entity.position.y },
+                        direction = entity.direction, line_index = line_index, line_length = line.line_length,
+                        neighbours = neighbours, compression = line_needs_consolidation(line_data.items or {}, line.line_length),
+                        expected = expected, actual = actual, delta = delta,
+                        expected_items = line_data.items or {}, actual_items = actual_items,
+                    }
+                end
+            end
+        end
+    end
+    attribution.delta = attribution.actual_total - attribution.expected_total
+    return attribution
+end
 --- Restore all belt items synchronously in a single tick.
 --- CRITICAL: Belts are always active and cannot be deactivated, so items must be restored all at once.
 ---
@@ -217,11 +292,11 @@ function BeltRestoration.restore(entities_to_create, entity_map)
         ::continue::
     end
 
-    -- Diagnostic summary (factorio log only). `unplaced` over-reports on merged segments — the transfer gate's
-    -- whole-surface physical count is the authoritative arbiter of real loss (proven: gate −8 vs per-line 507).
+    local attribution = BeltRestoration.attribute_lines(entities_to_create, entity_map)
+    unplaced_diag = math.max(0, -attribution.delta)
     log(string.format(
-        "[Import] Belt restoration complete. %d belts: expected=%d placed=%d unplaced_diag=%d consolidated_lines=%d (per-line; gate authoritative)",
-        belt_count, expected_total, placed_count, unplaced_diag, consolidated_lines))
+        "[Import] Belt restoration complete. %d belts: expected=%d actual=%d delta=%d consolidated_lines=%d",
+        belt_count, attribution.expected_total, attribution.actual_total, attribution.delta, consolidated_lines))
 
     -- Surface consolidation rejects to the cluster log (game.print mirrors to factorio log → cluster log,
     -- which CI captures even when belt_diag is off). consolidate_reject_total > 0 means the oversized-stack

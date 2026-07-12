@@ -449,3 +449,13 @@ test("P2 plasma measurement hook is unique-name-scoped, one-shot, and pre-gate o
 	assert.doesNotMatch(importCompletion, /p2_capture[\s\S]{0,300}(?:result\.success|success\s*=\s*false)/,
 		"the diagnostic hook must not alter the transfer verdict");
 });
+
+test("belt diagnostics census complete restored lines", () => {
+	const restoration = fs.readFileSync(path.join(moduleRoot, "import_phases", "belt_restoration.lua"), "utf8");
+	assert.match(restoration, /function BeltRestoration\.attribute_lines\s*\(/,
+		"belt attribution must be independently repeatable at restore and gate time");
+	assert.match(restoration, /entity\.unit_number[\s\S]*line_index[\s\S]*expected[\s\S]*actual[\s\S]*delta/,
+		"attribution rows must name a physical entity and line with both sides of the comparison");
+	assert.match(restoration, /attribution\.actual_total\s*-\s*attribution\.expected_total/,
+		"the diagnostic total must come from the completed physical census, not insert return values");
+});
