@@ -6,7 +6,7 @@ A task-specific brief may add stricter requirements, but it must not weaken thes
 
 ## Before work
 
-- Confirm the branch and fetched comparison base before editing; record any stale-base discrepancy in the [process notebook](superpowers/process/NOTEBOOK.md).
+- Run `./tools/check-pr-scope.ps1` before editing and again before opening a pull request; record any stale-base discrepancy in the [process notebook](superpowers/process/NOTEBOOK.md).
 - Use [`tools/rcon.ps1`](../CLAUDE.md#cluster--transfer--rcon-tools-tools) from non-interactive shells; profile aliases such as `rc11` are unavailable to agents.
 - Confirm ownership before touching the shared cluster and scope every predicate to `surface-export-*`; never inspect or alter `atlas-*`.
 - Leave `package-lock.json` byte-identical unless the task is an explicitly approved dependency update.

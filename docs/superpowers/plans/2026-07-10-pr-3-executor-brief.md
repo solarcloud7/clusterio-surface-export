@@ -2,7 +2,7 @@
 
 > You are the **implementer** on a new branch cut from `main` **AFTER #76 (`codex/composite-transfer-verdict`,
 > the single frozen-world exact gate) squash-merges**. Dependency chain: **#77/#78 → #76 → PR-3**. Follow the
-> [Agent execution discipline](../../AGENT_EXECUTION_DISCIPLINE.md). This is THE destructive spine of the
+> [Agent execution discipline](../../AGENT_EXECUTION_DISCIPLINE.md). Run `./tools/check-pr-scope.ps1` during orientation and immediately before opening the PR. This is THE destructive spine of the
 > transfer campaign — **`/di-change` applies in full** and **stop for audit before any merge**.
 >
 > **Line-cite caveat:** every `file:line` below is at codex HEAD `31424eb` pre-squash-merge (a review-findings

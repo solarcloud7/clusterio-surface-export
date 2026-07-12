@@ -1,7 +1,7 @@
 # LAB-TAIL agent brief — thermal-energy conservation + the operational-constant measurements
 
 > You are the **implementer** on `codex/composite-transfer-verdict` (pull latest). Follow the
-> [Agent execution discipline](../../AGENT_EXECUTION_DISCIPLINE.md). Orchestrator audits; **stop for audit at
+> [Agent execution discipline](../../AGENT_EXECUTION_DISCIPLINE.md). Run `./tools/check-pr-scope.ps1` during orientation and immediately before opening the PR. Orchestrator audits; **stop for audit at
 > the end.** Measurement only — no gate/validator/production-ordering or constant changes.
 
 
