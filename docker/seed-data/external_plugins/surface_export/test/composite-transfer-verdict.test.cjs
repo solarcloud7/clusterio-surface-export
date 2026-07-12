@@ -459,3 +459,12 @@ test("belt diagnostics census complete restored lines", () => {
 	assert.match(restoration, /attribution\.actual_total\s*-\s*attribution\.expected_total/,
 		"the diagnostic total must come from the completed physical census, not insert return values");
 });
+test("failed transfer banks gate-time belt attribution and replayable payload", () => {
+	const completion = fs.readFileSync(path.join(moduleRoot, "core", "import-completion.lua"), "utf8");
+	assert.match(completion, /job\.belt_attribution\s*=\s*belts_result\s+and\s+belts_result\.attribution/,
+		"restore-time attribution must survive until the frozen verdict");
+	assert.match(completion, /belt_lines\s*=\s*BeltRestoration\.attribute_lines/,
+		"failure black box must refresh attribution at the frozen gate point");
+	assert.match(completion, /replay_payload\s*=\s*job\.platform_data/,
+		"every failed transfer must bank its exact replayable serialized input");
+});

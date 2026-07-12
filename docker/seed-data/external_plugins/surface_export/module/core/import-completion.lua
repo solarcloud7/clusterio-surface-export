@@ -180,6 +180,9 @@ local function bank_failure_black_box(job, result)
 			),
 		},
 		physical_entities = EntityScanner.scan_surface(job.target_surface),
+		belt_lines = BeltRestoration.attribute_lines(job.entities_to_create or {}, job.entity_map or {}),
+		restore_time_belt_lines = job.belt_attribution,
+		replay_payload = job.platform_data,
 	}
 	local written = DebugExport.write_failure_black_box(filename, bundle)
 	result.failureBlackBox = { file = written, tick = game.tick }
@@ -210,6 +213,7 @@ function ImportCompletion.run_phase1(job)
 	PhaseProfiler.stop(job.job_id, "belts")
 	job.metrics.belts_completed_tick = game.tick
 	job.metrics.belt_items_restored = belts_result and belts_result.items_restored or 0
+	job.belt_attribution = belts_result and belts_result.attribution or nil
 
 	-- Steps 1-5: Restore localized entity state (Control Behavior, Filters, Connections)
 	job.metrics.state_started_tick = game.tick
