@@ -126,15 +126,15 @@ function setupFixture(name) {
 }
 
 // Shutter drive: activate -> let real ticks elapse -> deactivate+read in one execution. AM1 crafts
-// iron-gear-wheel in ~60 ticks (speed 0.5, energy 0.5s), each ~220ms slice advances ~13+ ticks, so a
-// mid-craft freeze should land within a few slices. Read the ACHIEVED progress — never assume 0.5.
+// iron-gear-wheel in ~60 ticks (speed 0.5, energy 0.5s). On this cluster a 220ms RCON sleep advanced
+// 117 ticks, skipping the full craft. A 30ms slice keeps the shutter comfortably below one craft. Read the ACHIEVED progress — never assume 0.5.
 function driveToMidCraft(name) {
 	const findM = `local p; for _,x in pairs(game.forces.player.platforms) do if x.valid and x.name=='${name}' then p=x; break end end local m=p.surface.find_entities_filtered({name='assembling-machine-1'})[1]`;
 	const slices = [];
 	let frozen = null;
 	for (let i = 0; i < 24 && !frozen; i += 1) {
 		lua(`${findM}; m.active=true; return {success=true,tick=game.tick}`);
-		sleep(220);
+		sleep(30);
 		const r = lua(`${findM}; m.active=false
 			return {success=true,tick=game.tick,game_paused=game.tick_paused==true,platform_paused=p.paused,
 				active=m.active,status=m.status,
