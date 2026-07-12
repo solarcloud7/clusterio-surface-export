@@ -23,6 +23,7 @@ A task-specific brief may add stricter requirements, but it must not weaken thes
 ## Before review
 
 - Keep commit labels honest audit boundaries; a `docs:` commit contains documentation only, as required by the [audit-boundary rules](../CLAUDE.md#empirical-lab-discipline-how-engine-lore-becomes-law--exemplar-testsfluid-lab).
+- Do not include session URLs or `Claude-Session:` trailers in commits or pull request bodies.
 - Re-run the task's focused verification and the required full verification on the final committed tree.
 - A passing integration claim requires two consecutive full green runs plus zero-leftover evidence, reported once, under [integration-probe rule 8](../CLAUDE.md#integration-probe-iteration-discipline-shared-live-cluster--read-before-debugging-testsintegration).
 - Stop at the brief's audit boundary; do not self-merge or silently broaden scope.
