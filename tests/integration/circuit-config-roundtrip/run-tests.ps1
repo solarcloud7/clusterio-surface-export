@@ -115,6 +115,13 @@ local function owners(entity, cid)
     table.sort(names)
     return table.concat(names, ',')
 end
+if con then
+    local ccb = con.get_control_behavior()
+    local sec = ccb and ccb.get_section(1)
+    local slot = sec and sec.get_slot(1)
+    out.constant_slot_signal = slot and slot.value and slot.value.name
+    out.constant_slot_min = slot and slot.min
+end
 if dec then
     local dcb = dec.get_control_behavior()
     local pok, pr = pcall(function() return dcb.parameters end)
@@ -142,6 +149,8 @@ end
 if lamp then
     local lcb = lamp.get_control_behavior()
     out.lamp_cb_present = lcb ~= nil
+    out.lamp_status = lamp.status
+    out.lamp_circuit_enable_disable = lcb and lcb.circuit_enable_disable
     if lcb then
         local okd, dis = pcall(function() return lamp.disabled_by_control_behavior end)
         out.lamp_disabled_read_ok = okd
@@ -160,6 +169,8 @@ end
 if lamp2 then
     local lcb2 = lamp2.get_control_behavior()
     out.lamp2_cb_present = lcb2 ~= nil
+    out.lamp2_status = lamp2.status
+    out.lamp2_circuit_enable_disable = lcb2 and lcb2.circuit_enable_disable
     if lcb2 then
         local okd, dis = pcall(function() return lamp2.disabled_by_control_behavior end)
         out.lamp2_disabled_read_ok = okd
@@ -246,7 +257,7 @@ Write-Status "Fixture ready (platform index $($fx.index), origin $ox,$oy)" -Type
 Start-Sleep -Seconds 3
 $src = Read-CircuitState -Instance $srcInstance -Ox $ox -Oy $oy
 if (-not $src.success) { Write-Status "Source read failed: $($src.error)" -Type error; exit 1 }
-Write-Host "  source: params=[$($src.cond1_signal) $($src.cond1_comparator) $($src.cond1_constant) -> $($src.out1_signal)] lamp_disabled=$($src.lamp_disabled) lamp2_disabled=$($src.lamp2_disabled) signal-A(in)=$($src.decider_in_signal_a) cb1=$($src.lamp_cb_present)/read=$($src.lamp_disabled_read_ok)/err=$($src.lamp_disabled_error) cb2=$($src.lamp2_cb_present)/read=$($src.lamp2_disabled_read_ok)/err=$($src.lamp2_disabled_error)" -ForegroundColor DarkGray
+Write-Host "  source: params=[$($src.cond1_signal) $($src.cond1_comparator) $($src.cond1_constant) -> $($src.out1_signal)] lamp_disabled=$($src.lamp_disabled) lamp2_disabled=$($src.lamp2_disabled) signal-A(in)=$($src.decider_in_signal_a) cb1=$($src.lamp_cb_present)/read=$($src.lamp_disabled_read_ok)/err=$($src.lamp_disabled_error) cb2=$($src.lamp2_cb_present)/read=$($src.lamp2_disabled_read_ok)/err=$($src.lamp2_disabled_error) slot=: wires-in=[] wires-out=[] lamp-status=/enabled= lamp2-status=/enabled=" -ForegroundColor DarkGray
 if ($src.lamp_disabled -ne $false -or $src.lamp2_disabled -ne $true) {
     Write-Status "Source fixture does not evaluate as designed (lamp_disabled=$($src.lamp_disabled), lamp2_disabled=$($src.lamp2_disabled)) — fixture bug, not a transfer bug" -Type error
     exit 1
