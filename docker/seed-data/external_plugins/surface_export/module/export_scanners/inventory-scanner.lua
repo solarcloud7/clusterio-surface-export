@@ -2,6 +2,7 @@
 -- Uses dynamic inventory discovery via get_max_inventory_index()
 
 local Util = require("modules/surface_export/utils/util")
+local FluidOwnership = require("modules/surface_export/utils/fluid-ownership")
 
 local InventoryScanner = {}
 
@@ -11,6 +12,7 @@ local InventoryScanner = {}
 -- FluidRestoration.restore() will later write, preventing cosmetic mismatches.
 -- Set by AsyncProcessor at export job start, cleared to nil at job completion.
 InventoryScanner.fluid_segment_cache = nil
+InventoryScanner.engine_owned_segments = nil
 
 --- Helper to safely extract item properties using pcall
 --- @param stack LuaItemStack: The item stack
@@ -311,6 +313,7 @@ function InventoryScanner.extract_fluids(entity)
 
   local fluids = {}
   local cache = InventoryScanner.fluid_segment_cache
+  local engine_owned_segments = InventoryScanner.engine_owned_segments or {}
 
   if cache then
     -- Segment-dedup mode: accumulate per-segment weighted-average temperature.
@@ -328,8 +331,14 @@ function InventoryScanner.extract_fluids(entity)
               local temp = (local_fluid and local_fluid.temperature) or 15
               log(string.format("[Fluid Export] Seg %d claimed by %s box %d: %s=%.1f temp=%.1f",
                   seg_id, entity.name, i, fluid_name, amount, temp))
-              cache[seg_id] = { fluid = fluid_name, amount = amount, temp = temp }
-              table.insert(fluids, { name = fluid_name, amount = amount, temperature = temp })
+              local engine_owned = engine_owned_segments[seg_id] == true
+              cache[seg_id] = { fluid = fluid_name, amount = amount, temp = temp, engine_owned = engine_owned }
+              table.insert(fluids, {
+                name = fluid_name,
+                amount = amount,
+                temperature = temp,
+                engine_owned = engine_owned
+              })
             end
           end
         end
@@ -344,7 +353,8 @@ function InventoryScanner.extract_fluids(entity)
           table.insert(fluids, {
             name = fluid.name,
             amount = fluid.amount,
-            temperature = fluid.temperature or 15
+            temperature = fluid.temperature or 15,
+            engine_owned = FluidOwnership.is_engine_owned_box(entity, i)
           })
         end
       elseif cache[seg_id] then
@@ -364,7 +374,8 @@ function InventoryScanner.extract_fluids(entity)
         table.insert(fluids, {
           name = fluid.name,
           amount = fluid.amount,
-          temperature = fluid.temperature
+          temperature = fluid.temperature,
+          engine_owned = FluidOwnership.is_engine_owned_box(entity, i)
         })
       end
     end

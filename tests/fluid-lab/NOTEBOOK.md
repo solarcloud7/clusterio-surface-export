@@ -21580,3 +21580,541 @@ Predictions stated before execution: unequal-volume temperature merges volume-we
   "finished": "2026-07-10T06:11:47.346Z"
 }
 ```
+## 2026-07-11 - R13 T1 original anomaly (hard-stop record)
+
+Prediction: total fusion-plasma V and VxT would conserve across a real transfer. The steam control would
+conserve exactly.
+
+The source census was frozen and pre-export at tick `1058548`. The destination census labeled "frozen" was
+actually taken after the production transfer had completed its synchronous gate and activation path, at tick
+`994742`; the runner then re-paused the platform. It therefore did **not** measure pre-activation state, and the
+elapsed ticks from go-live were not instrumented. Plasma readings came from fusion-generator local buffers and
+fusion-reactor output fluidboxes; no passive pipe/tank plasma holder existed. This is the confound T1b isolates.
+
+Measured total fusion plasma: volume `100 -> 99.99038809537888`; VxT
+`125899506.25 -> 139043269.49285108` (`+10.439884662257028%`). Steam at `165C` remained exact:
+volume `1000 -> 1000`, VxT `165000 -> 165000`. The anomaly is not classified as transfer loss; current
+hypothesis is post-activation regeneration in engine-managed plasma outputs (Pitfall #21, fusion output fluid
+temperature is engine-managed).
+
+
+## 2026-07-11T18:12:43.727Z - T1c plasma decomposition
+
+Predictions stated before execution: R0 precision sweep; R1 isolated ownership stable and plumbed engine mechanics; R2 honest residual classification.
+
+```json
+{
+  "script": "tests/fluid-lab/run-t1c.mjs",
+  "started": "2026-07-11T18:12:06.052Z",
+  "sections": [
+    "r0",
+    "r1",
+    "r2"
+  ],
+  "predictions": {
+    "r0": "same-tick precision sweep",
+    "r1": "isolated stable; plumbed segment mechanics",
+    "r2": "recompute prior residual"
+  },
+  "rungs": {
+    "r0": {
+      "success": true,
+      "prediction": "same-tick float precision error grows with magnitude",
+      "rows": [
+        {
+          "tick": 1923785,
+          "written": 1000000,
+          "read": 1000000,
+          "error": 0,
+          "amount": 100
+        },
+        {
+          "tick": 1923785,
+          "written": 1234567,
+          "read": 1234567,
+          "error": 0,
+          "amount": 100
+        },
+        {
+          "tick": 1923785,
+          "written": 1252651,
+          "read": 1252651,
+          "error": 0,
+          "amount": 100
+        },
+        {
+          "tick": 1923785,
+          "written": 2000000,
+          "read": 2000000,
+          "error": 0,
+          "amount": 100
+        },
+        {
+          "tick": 1923785,
+          "written": 5000000,
+          "read": 5000000,
+          "error": 0,
+          "amount": 100
+        }
+      ]
+    },
+    "r1": {
+      "success": true,
+      "prediction": "isolated ownership stable; plumbed shares reactor segment",
+      "fixture": {
+        "success": true,
+        "tick": 1923939,
+        "isolated": {
+          "x": -12.5,
+          "y": -36.5,
+          "nearby_fluidboxes": 0,
+          "read": {
+            "amount": 100,
+            "temp": 1234567
+          }
+        },
+        "plumbed": {
+          "x": -4.5,
+          "y": -5.5
+        },
+        "reactor_output_segment": 3612,
+        "plumbed_segment": 3646
+      },
+      "before": {
+        "success": true,
+        "label": "source frozen",
+        "tick": 1924014,
+        "isolated": {
+          "entity": "pipe",
+          "tick": 1924014,
+          "direct": {
+            "name": "fusion-plasma",
+            "amount": 100,
+            "temp": 1234567,
+            "energy": 123456700
+          },
+          "segment_id": 3645,
+          "segment": {
+            "fusion-plasma": 100
+          }
+        },
+        "plumbed": {
+          "entity": "pipe",
+          "tick": 1924014,
+          "segment_id": 3646,
+          "segment": {}
+        }
+      },
+      "after": {
+        "success": true,
+        "label": "destination frozen",
+        "tick": 1866463,
+        "isolated": {
+          "entity": "pipe",
+          "tick": 1866463,
+          "direct": {
+            "name": "fusion-plasma",
+            "amount": 100,
+            "temp": 1234567,
+            "energy": 123456700
+          },
+          "segment_id": 3181,
+          "segment": {
+            "fusion-plasma": 100
+          }
+        },
+        "plumbed": {
+          "entity": "pipe",
+          "tick": 1866463,
+          "segment_id": 3185,
+          "segment": {}
+        }
+      },
+      "isolated": {
+        "source": {
+          "name": "fusion-plasma",
+          "amount": 100,
+          "temp": 1234567,
+          "energy": 123456700
+        },
+        "destination": {
+          "name": "fusion-plasma",
+          "amount": 100,
+          "temp": 1234567,
+          "energy": 123456700
+        },
+        "volume_delta": 0,
+        "energy_delta": 0
+      },
+      "plumbed_same_segment_source": false
+    },
+    "r2": {
+      "success": true,
+      "prediction": "quantization explains the prior residual or residual remains UNEXPLAINED",
+      "raw_delta": 681796.25,
+      "quantization_adjustment": 0,
+      "residual": 681796.25,
+      "classification": "UNEXPLAINED"
+    }
+  },
+  "errors": [],
+  "initial_reset": {
+    "source": {
+      "success": true,
+      "surfaces": 0,
+      "storage": false,
+      "game_paused": false,
+      "holds": 0,
+      "locks": 0,
+      "jobs": 0,
+      "tombstones": 0
+    },
+    "destination": {
+      "success": true,
+      "surfaces": 0,
+      "storage": false,
+      "game_paused": false,
+      "holds": 0,
+      "locks": 0,
+      "jobs": 0,
+      "tombstones": 0
+    },
+    "ok": true
+  },
+  "final_reset": {
+    "source": {
+      "success": true,
+      "surfaces": 0,
+      "storage": false,
+      "game_paused": false,
+      "holds": 0,
+      "locks": 0,
+      "jobs": 0,
+      "tombstones": 0
+    },
+    "destination": {
+      "success": true,
+      "surfaces": 0,
+      "storage": false,
+      "game_paused": false,
+      "holds": 0,
+      "locks": 0,
+      "jobs": 0,
+      "tombstones": 0
+    },
+    "ok": true
+  },
+  "finished": "2026-07-11T18:12:43.727Z"
+}
+```
+
+
+## 2026-07-11T18:13:20.232Z - T1c plasma decomposition
+
+Predictions stated before execution: R0 precision sweep; R1 isolated ownership stable and plumbed engine mechanics; R2 honest residual classification.
+
+```json
+{
+  "script": "tests/fluid-lab/run-t1c.mjs",
+  "started": "2026-07-11T18:12:43.776Z",
+  "sections": [
+    "r0",
+    "r1",
+    "r2"
+  ],
+  "predictions": {
+    "r0": "same-tick precision sweep",
+    "r1": "isolated stable; plumbed segment mechanics",
+    "r2": "recompute prior residual"
+  },
+  "rungs": {
+    "r0": {
+      "success": true,
+      "prediction": "same-tick float precision error grows with magnitude",
+      "rows": [
+        {
+          "tick": 1924683,
+          "written": 1000000,
+          "read": 1000000,
+          "error": 0,
+          "amount": 100
+        },
+        {
+          "tick": 1924683,
+          "written": 1234567,
+          "read": 1234567,
+          "error": 0,
+          "amount": 100
+        },
+        {
+          "tick": 1924683,
+          "written": 1252651,
+          "read": 1252651,
+          "error": 0,
+          "amount": 100
+        },
+        {
+          "tick": 1924683,
+          "written": 2000000,
+          "read": 2000000,
+          "error": 0,
+          "amount": 100
+        },
+        {
+          "tick": 1924683,
+          "written": 5000000,
+          "read": 5000000,
+          "error": 0,
+          "amount": 100
+        }
+      ]
+    },
+    "r1": {
+      "success": true,
+      "prediction": "isolated ownership stable; plumbed shares reactor segment",
+      "fixture": {
+        "success": true,
+        "tick": 1924837,
+        "isolated": {
+          "x": -12.5,
+          "y": -36.5,
+          "nearby_fluidboxes": 0,
+          "read": {
+            "amount": 100,
+            "temp": 1234567
+          }
+        },
+        "plumbed": {
+          "x": -4.5,
+          "y": -5.5
+        },
+        "reactor_output_segment": 3685,
+        "plumbed_segment": 3719
+      },
+      "before": {
+        "success": true,
+        "label": "source frozen",
+        "tick": 1924910,
+        "isolated": {
+          "entity": "pipe",
+          "tick": 1924910,
+          "direct": {
+            "name": "fusion-plasma",
+            "amount": 100,
+            "temp": 1234567,
+            "energy": 123456700
+          },
+          "segment_id": 3718,
+          "segment": {
+            "fusion-plasma": 100
+          }
+        },
+        "plumbed": {
+          "entity": "pipe",
+          "tick": 1924910,
+          "segment_id": 3719,
+          "segment": {}
+        }
+      },
+      "after": {
+        "success": true,
+        "label": "destination frozen",
+        "tick": 1868772,
+        "isolated": {
+          "entity": "pipe",
+          "tick": 1868772,
+          "direct": {
+            "name": "fusion-plasma",
+            "amount": 100,
+            "temp": 1234567,
+            "energy": 123456700
+          },
+          "segment_id": 3260,
+          "segment": {
+            "fusion-plasma": 100
+          }
+        },
+        "plumbed": {
+          "entity": "pipe",
+          "tick": 1868772,
+          "segment_id": 3264,
+          "segment": {}
+        }
+      },
+      "isolated": {
+        "source": {
+          "name": "fusion-plasma",
+          "amount": 100,
+          "temp": 1234567,
+          "energy": 123456700
+        },
+        "destination": {
+          "name": "fusion-plasma",
+          "amount": 100,
+          "temp": 1234567,
+          "energy": 123456700
+        },
+        "volume_delta": 0,
+        "energy_delta": 0
+      },
+      "plumbed_same_segment_source": false
+    },
+    "r2": {
+      "success": true,
+      "prediction": "quantization explains the prior residual or residual remains UNEXPLAINED",
+      "raw_delta": 681796.25,
+      "quantization_adjustment": 0,
+      "residual": 681796.25,
+      "classification": "UNEXPLAINED"
+    }
+  },
+  "errors": [],
+  "initial_reset": {
+    "source": {
+      "success": true,
+      "surfaces": 0,
+      "storage": false,
+      "game_paused": false,
+      "holds": 0,
+      "locks": 0,
+      "jobs": 0,
+      "tombstones": 0
+    },
+    "destination": {
+      "success": true,
+      "surfaces": 0,
+      "storage": false,
+      "game_paused": false,
+      "holds": 0,
+      "locks": 0,
+      "jobs": 0,
+      "tombstones": 0
+    },
+    "ok": true
+  },
+  "final_reset": {
+    "source": {
+      "success": true,
+      "surfaces": 0,
+      "storage": false,
+      "game_paused": false,
+      "holds": 0,
+      "locks": 0,
+      "jobs": 0,
+      "tombstones": 0
+    },
+    "destination": {
+      "success": true,
+      "surfaces": 0,
+      "storage": false,
+      "game_paused": false,
+      "holds": 0,
+      "locks": 0,
+      "jobs": 0,
+      "tombstones": 0
+    },
+    "ok": true
+  },
+  "finished": "2026-07-11T18:13:20.232Z"
+}
+```
+## 2026-07-11 - Plasma engine-owned exclusion forensics and hard stop
+
+Prediction: the failed T2 transfer's `fusion-plasma` shortfall comes from engine reassertion of
+fusion-reactor output boxes, while isolated plasma remains exactly restorable.
+
+### Banked T2 black-box reconstruction
+
+- Raw source plasma: `100`.
+- Import write-rejected subtraction: `4.0278787612915` (inferred from raw `100` to expected
+  `95.9721212387085`).
+- Frozen gate actual: `80`.
+- Exact shortfall: `15.972121238708496`, entirely `fusion-plasma`.
+- Physical source scan: eight fusion-generator input buffers at `10` each plus two fusion-reactor
+  output boxes at approximately `10` each.
+- Classification: the old write/readback path falsely treated roughly `16` units as accepted before
+  the engine reasserted the reactor outputs. This explains the T2 plasma shortfall; T1c's VxT residual
+  remains `UNEXPLAINED` because this run does not reconstruct its temperature distribution.
+
+### First permanent-fixture run after symmetric plasma exclusion
+
+The fixture was a stripped clone retaining the hub, two fusion reactors, eight fusion generators,
+and one isolated pipe seeded with `5 fusion-plasma`. Both reactor output boxes were explicitly seeded
+with `10 fusion-plasma` and read back before transfer.
+
+- Engine-owned plasma surfaced informationally: `20`.
+- Restorable expected plasma: `85` (the stable generator inputs plus the isolated `5` control).
+- Plasma classification and skip logs fired for both reactor outputs.
+- The run stopped on a new frozen-census loss class before the N=3/N=5 package could continue:
+  `fluoroketone-cold expected 214.991133, actual 0, delta -214.991133`.
+- Restoration had logged `insert_fluid recovered 215.0/215.0` into the fusion-reactor input segment,
+  but the strict gate then observed zero. No tolerance or exact-gate code was changed.
+- Result: **HARD STOP** under the one-shot brief. The plasma hypothesis is supported but the complete
+  exclusion fix is not certified because the fixture revealed a separate reactor-input conservation
+  problem.
+- Cleanup proof: host-1 and host-2 each reported zero destination holds, zero locked platforms, zero
+  async jobs, zero committed tombstones, and `game.tick_paused=false`.
+
+### Adversarial design attack: segment-wide exclusion is unsafe
+
+The required pre-implementation attack was reconstructed after the first implementation pass and found
+a real-loss masking scenario. A pipe or storage tank connected to a fusion-reactor output shares that
+output's fluid segment. Fluid in the passive holder remains player-recoverable: the player can disconnect
+the holder and keep its contents. Classifying the entire shared segment as `engine_owned` excludes that
+recoverable amount from both export expected counts and the destination gate census. Symmetry keeps the
+comparison numerically commensurate, but it can make complete loss of the passive-holder fluid invisible.
+
+The permanent fixture did not challenge this case: it removed all connected pipes, retained reactor and
+generator machines, and placed the `5 fusion-plasma` control in an isolated pipe. It therefore proved only
+that isolated plasma remains counted and reactor-output plasma is excluded; it did not execute Phase 2's
+required output-connected pipe/tank case.
+
+Result: **HARD STOP**. The segment-wide exclusion design is not safe to certify or publish as implemented.
+No production change, gate change, or additional cluster run was made after this finding.
+
+## 2026-07-11 - P2 segment-persistence fixture boundary
+
+Prediction: ordinary pipes or tanks can share a fluid segment with a fusion-reactor plasma output, so
+P2 can distinguish engine-owned-box reassertion from whole-segment reassertion.
+
+The prediction was refuted before the N=5 matrix:
+
+- A focused `single` harness run completed cleanly, but the reactor output and visually adjacent pipes
+  had different segment IDs. The pipe-only segment conserved `100 -> 100 -> 100`; it was not evidence
+  about reactor-connected plasma.
+- Prototype inspection explains why. `fusion-reactor` output box 2 has connection category
+  `fusion-plasma`; ordinary `pipe` and `storage-tank` connections use category `default`.
+- An exhaustive census of every entity prototype on Factorio 2.0.77 found exactly three fluidboxes
+  accepting `fusion-plasma`: `fusion-reactor` output box 2, `fusion-generator` input box 1, and the
+  cheat-only `infinity-pipe`. No player-placeable passive holder supports the category.
+- Therefore P2 fixtures (a) single reactor + connected pipes, (b) two reactors sharing a pipe network,
+  and (c) reactor + connected pipes + tank are unconstructible on the pinned engine. The accepted
+  premise that a player can disconnect such a holder and retain plasma is false for ordinary gameplay.
+- The runner now asserts segment-ID equality for every purported connected fixture, preventing visual
+  adjacency from being mistaken for a shared segment.
+
+Result: **HARD STOP / OWNER ADJUDICATION REQUIRED**. No N=5 matrix was run, no exclusion redesign was
+attempted, and the exact gate remains untouched. The remaining constructible network is reactor output
+to fusion-generator input; whether that machine-only segment contains any player-recoverable state is
+the next design question, not something this rung may silently substitute.
+
+## 2026-07-11 - Design v2 category-based engine ownership
+
+The owner re-adjudicated engine ownership from the P2 prototype census: any fluidbox whose connection
+categories omit `default` is inaccessible to ordinary player pipes and tanks. Classification is now
+derived generically from `fluidbox_prototype.pipe_connections[].connection_category`; no prototype
+allowlist participates in the decision. Export emits a warning if a non-default category or owning
+prototype falls outside today's measured fusion family.
+
+Permanent production-shaped fixture evidence (`tests/integration/plasma-engine-owned`):
+
+- Pre-fix RED: transfer validation passed physically, but `engineOwnedFluids` was absent (`owned=0`) and
+  managed plasma remained in expected accounting (`expectedPlasma=85`).
+- Post-fix GREEN: five independent disposable 1,359-entity clones, each with two fusion reactors, eight
+  fusion generators, read-back-asserted reactor output plasma, and one isolated 5-unit plasma control.
+- Result: exact gate green `5/5`; every run reported positive engine-owned plasma and retained at least
+  the isolated 5 units in restorable expected plasma.
+- The exact gate epsilon and verdict semantics remain unchanged.
+
+Design v2's dedicated fixture is green. LAB-TAIL certification is not complete: its subsequent T2 pass
+hard-stopped on an independent intermittent item mismatch, recorded in `tests/ops-lab/NOTEBOOK.md`.

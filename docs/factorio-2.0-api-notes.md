@@ -119,6 +119,17 @@ Consequence: fluid does not live per-entity — it lives in the shared segment. 
   and `insert_fluid()` return without error but the value reads back `0`. Reactor/generator *input*
   fluidboxes accept writes normally. Track rejected writes and subtract from expected counts.
   **[empirical; aligns with the engine-managed output design per the API docs]**
+- **Non-`default` fluid connection categories identify vanilla 2.0.77's unpipeable, engine-owned fluidboxes.**
+  **[empirical, 2.0.77, fluid-lab P2 / plasma-engine-owned]** An exhaustive prototype census found that
+  ordinary pipes and storage tanks expose only the `default` category; the `fusion-plasma` category occurs
+  only on fusion-reactor outputs, fusion-generator inputs, and the cheat-only infinity pipe. A player cannot
+  connect an ordinary passive holder to those boxes. Five independent transfers of production-shaped
+  1,359-entity clones passed the exact gate after export expected counts, import writes, and the destination
+  census all classified non-`default` boxes identically. The restorable isolated-plasma control remained
+  counted in every run. Classification is derived from
+  `fluidbox_prototype.pipe_connections[].connection_category`, not prototype names. Export emits a warning
+  for any non-`default` category or owning prototype outside the measured fusion family; re-run this census
+  and review the classification whenever the engine pin changes.
 
 ## Inventory sizing
 
