@@ -117,6 +117,14 @@
 >   invariant). The dedicated source-vs-serialized-vs-dest reconciliation (LAB-C C1) did not certify.
 > - **BELT-4 / BELT-5 / BELT-6 / BELT-7 — open:** LAB-C did not certify (not in `tests/labs-certified.json`).
 
+> - **BELT-R1 — FIXED-PROVEN (2026-07-11):** the permanent trap naturally captured a new belt-only
+>   `processing-unit -1` deficit. The banked input reproduced `5/5`; an order-preserving prefix minimized the
+>   boundary to 550 belts, and a fixture with cargo only on the implicated 40-entity component still reproduced
+>   `19 -> 18`. Export scanning is exonerated; the workload-dependent restore mechanism remains UNEXPLAINED.
+>   Restoration now recovers only the complete all-belt per-name deficit to the hub, then to platform ground if
+>   the hub is full; unrecovered amounts remain gate-red. The full-hub fixture passed five real transfers under
+>   the unchanged exact gate, preserving `19 -> 19` each time.
+>
 ## 3. Inserter / held-item fidelity (P0)
 | ID | Claim | Status | What a test MEASURES | Depends on |
 |---|---|---|---|---|
