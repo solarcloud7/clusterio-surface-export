@@ -117,12 +117,13 @@
 >   invariant). The dedicated source-vs-serialized-vs-dest reconciliation (LAB-C C1) did not certify.
 > - **BELT-4 / BELT-5 / BELT-6 / BELT-7 — open:** LAB-C did not certify (not in `tests/labs-certified.json`).
 
-> - **BELT-R1 — OPEN-INSTRUMENTED (2026-07-11):** the exact gate twice caught an intermittent
->   `piercing-rounds-magazine -4` frozen-destination deficit and preserved the source. The old restore meter
->   over-reported `347` against the real `4`; it is replaced by a post-restoration per-entity/per-line census
->   that reconciled `8134 -> 8134` on a healthy production transfer. Failure black boxes now bank gate-time
->   line attribution plus the complete replay payload. A randomized 40-transfer fishing budget was green
->   `40/40`, so root cause and fix remain open; the next natural occurrence is self-capturing.
+> - **BELT-R1 — FIXED-PROVEN (2026-07-11):** the permanent trap naturally captured a new belt-only
+>   `processing-unit -1` deficit. The banked input reproduced `5/5`; an order-preserving prefix minimized the
+>   boundary to 550 belts, and a fixture with cargo only on the implicated 40-entity component still reproduced
+>   `19 -> 18`. Export scanning is exonerated; the workload-dependent restore mechanism remains UNEXPLAINED.
+>   Restoration now recovers only the complete all-belt per-name deficit to the hub, then to platform ground if
+>   the hub is full; unrecovered amounts remain gate-red. The full-hub fixture passed five real transfers under
+>   the unchanged exact gate, preserving `19 -> 19` each time.
 >
 ## 3. Inserter / held-item fidelity (P0)
 | ID | Claim | Status | What a test MEASURES | Depends on |
