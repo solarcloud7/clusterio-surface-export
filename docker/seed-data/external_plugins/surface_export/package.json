@@ -23,7 +23,7 @@
     "lint:version-certification": "node scripts/lint-version-certification.mjs",
     "lint:allow-manifest": "node scripts/lint-allow-manifest.mjs",
     "lint:brief-discipline": "node scripts/lint-brief-discipline.mjs",
-    "test": "npm run build:node && node --test test/messages.roundtrip.test.cjs test/transfer-orchestrator.rollback.test.cjs test/transfer-reconciliation.test.cjs test/lua-transfer-lock-phase1.test.cjs test/canonical-identity.test.cjs test/no-controller-auto-delete.test.cjs test/source-transfer-lock-state.test.cjs test/destination-hold.test.cjs test/persistence-read-failure.test.cjs test/lint-catch-swallow.test.cjs test/lint-brief-discipline.test.cjs test/composite-transfer-verdict.test.cjs"
+    "test": "npm run build:node && node --test test/messages.roundtrip.test.cjs test/transfer-orchestrator.rollback.test.cjs test/transfer-reconciliation.test.cjs test/lua-transfer-lock-phase1.test.cjs test/canonical-identity.test.cjs test/no-controller-auto-delete.test.cjs test/source-transfer-lock-state.test.cjs test/destination-hold.test.cjs test/persistence-read-failure.test.cjs test/lint-catch-swallow.test.cjs test/lint-brief-discipline.test.cjs test/check-pr-scope.test.cjs test/composite-transfer-verdict.test.cjs"
   },
   "keywords": [
     "clusterio",
