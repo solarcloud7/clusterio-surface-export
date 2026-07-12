@@ -354,3 +354,40 @@ CAPTURED positions + dest line_length whether it places slot-by-slot at >=0.25 s
 (exact layout). Over-compressed lines only: group items by (name,quality), place each group as ONE oversized
 stack at its min captured position (always fits; count exact). Validate end-to-end on a real transfer: gate
 clean (no GAINS = no double-place) AND post-activation loss-analysis conserved (interaction/drain safe).
+
+## 2026-07-11 - BELT-R1 exact-gate anomaly: OPEN-INSTRUMENTED
+
+Prediction: replacing per-insert `get_item_count()` deltas with a complete post-restoration census keyed by
+physical entity `unit_number` plus transport-line index would reconcile exactly with the frozen gate, and a
+bounded randomized run would reproduce the intermittent four-item belt loss for replay and minimization.
+
+### Trigger and instrument correction
+
+Main post-merge run `29175561208` reproduced the known fail-safe signature while running the unrelated plasma
+fixture: `piercing-rounds-magazine expected=7886 actual=7882 delta=-4`. Fluid parity passed, the destination was
+discarded, and the source was unlocked. The pre-BELT-R1 meter had previously reported `unplaced_diag=347` for
+a real four-item deficit, so it was not admissible attribution.
+
+BELT-R1 now censuses every serialized belt entity and line after all inserts complete, using the same physical
+`get_detailed_contents()` stack counts the exact gate trusts. A healthy 1,359-entity production transfer
+measured `expected=8134 actual=8134 delta=0`; the exact gate also passed. The instrument therefore reconciles
+on its control. Insert return values and per-insert window deltas no longer contribute to the diagnostic total.
+
+### Permanent trap
+
+Every failed transfer black box now carries:
+
+- restore-time and frozen-gate per-line expected/actual/delta rows;
+- entity unit number, entity id/name/type, position, direction, line index/length, neighbours, and compression;
+- serialized and physical positioned stacks for each line;
+- the complete imported `replay_payload` needed to repeat the exact input.
+
+This remains always-on under Black-Box Discard and does not alter the exact gate or failure disposition.
+
+### Bounded fishing verdict
+
+Forty fresh production-shaped transfers ran with randomized live-belt intervals. Result: `40/40` exact-gate
+green; no second loss class and no capture under the new trap. Per the rung contract, the anomaly is
+**OPEN-INSTRUMENTED**, not fixed and not explained. Replay, topology minimization, and a restoration change are
+not licensed until a natural recurrence supplies the new black box. LAB-TAIL certification remains held
+pending owner sign-off on this OPEN-INSTRUMENTED disposition.
