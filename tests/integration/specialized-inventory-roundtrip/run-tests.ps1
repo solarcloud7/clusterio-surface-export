@@ -51,11 +51,11 @@ function Wait-File([string]$Instance, [string]$Container, [string]$Pattern) {
 function Find-Fuel([string]$Instance, [string]$PlatformName) {
     return Invoke-Lua -Instance $Instance -ReturnJson -Code @"
 local out={present=false,count=-1}
-for _,p in pairs(game.forces[''player''].platforms or {}) do
-  if p.name==''$PlatformName'' then
-    for _,e in ipairs(p.surface.find_entities_filtered({name=''burner-inserter''})) do
+for _,p in pairs(game.forces['player'].platforms or {}) do
+  if p.name=='$PlatformName' then
+    for _,e in ipairs(p.surface.find_entities_filtered({name='burner-inserter'})) do
       local inv=e.get_inventory(defines.inventory.fuel)
-      if inv then out.present=true; out.count=inv.get_item_count({name=''coal'',quality=''legendary''}); break end
+      if inv then out.present=true; out.count=inv.get_item_count({name='coal',quality='legendary'}); break end
     end
   end
 end
@@ -64,25 +64,25 @@ rcon.print(helpers.table_to_json(out))
 }
 function Cleanup([string[]]$Instances) {
     foreach ($instance in $Instances) {
-        Remove-PlatformSurfacesWhere -Instance $instance -PredicateLua "string.find(p.name,''$prefix'',1,true)" | Out-Null
+        Remove-PlatformSurfacesWhere -Instance $instance -PredicateLua "string.find(p.name,'$prefix',1,true)" | Out-Null
         Invoke-Lua -Instance $instance -Code @"
 local function clear(tbl)
   for key,value in pairs(tbl or {}) do
-    if type(value)==''table'' and type(value.platform_name)==''string'' and string.find(value.platform_name,''$prefix'',1,true) then tbl[key]=nil end
+    if type(value)=='table' and type(value.platform_name)=='string' and string.find(value.platform_name,'$prefix',1,true) then tbl[key]=nil end
   end
 end
 clear(storage.locked_platforms); clear(storage.destination_holds); clear(storage.async_jobs)
-remote.call(''surface_export'',''configure'',{test_force_item_loss=0})
+remote.call('surface_export','configure',{test_force_item_loss=0})
 game.tick_paused=false
-rcon.print(''clean'')
+rcon.print('clean')
 "@ | Out-Null
     }
 }
 function Check-Zero([string]$Instance, [string]$Label) {
     $state = Invoke-Lua -Instance $Instance -ReturnJson -Code @"
-local function n(tbl) local c=0 for _,v in pairs(tbl or {}) do if type(v)==''table'' and type(v.platform_name)==''string'' and string.find(v.platform_name,''$prefix'',1,true) then c=c+1 end end return c end
+local function n(tbl) local c=0 for _,v in pairs(tbl or {}) do if type(v)=='table' and type(v.platform_name)=='string' and string.find(v.platform_name,'$prefix',1,true) then c=c+1 end end return c end
 local surfaces=0
-for _,p in pairs(game.forces[''player''].platforms or {}) do if string.find(p.name,''$prefix'',1,true) then surfaces=surfaces+1 end end
+for _,p in pairs(game.forces['player'].platforms or {}) do if string.find(p.name,'$prefix',1,true) then surfaces=surfaces+1 end end
 rcon.print(helpers.table_to_json({surfaces=surfaces,locks=n(storage.locked_platforms),holds=n(storage.destination_holds),jobs=n(storage.async_jobs),paused=game.tick_paused==true}))
 "@
     $ok = [int]$state.surfaces -eq 0 -and [int]$state.locks -eq 0 -and [int]$state.holds -eq 0 -and [int]$state.jobs -eq 0 -and $state.paused -eq $false
@@ -96,20 +96,20 @@ function Run-Section([string]$Section) {
     $dstContainer = "surface-export-host-$DestHost"
     $srcOut = "/clusterio/data/instances/$src/script-output"
     $dstOut = "/clusterio/data/instances/$dst/script-output"
-    $name = "$prefix$Section-$(Get-Date -Format ''HHmmss'')"
-    Invoke-Lua -Instance $src -Code "remote.call(''surface_export'',''configure'',{debug_mode=true}) rcon.print(''ok'')" | Out-Null
-    Invoke-Lua -Instance $dst -Code "remote.call(''surface_export'',''configure'',{debug_mode=true}) rcon.print(''ok'')" | Out-Null
+    $name = "$prefix$Section-$(Get-Date -Format 'HHmmss')"
+    Invoke-Lua -Instance $src -Code "remote.call('surface_export','configure',{debug_mode=true}) rcon.print('ok')" | Out-Null
+    Invoke-Lua -Instance $dst -Code "remote.call('surface_export','configure',{debug_mode=true}) rcon.print('ok')" | Out-Null
     $build = Invoke-Lua -Instance $src -ReturnJson -Code @"
 local out={success=false}
 local ok,err=pcall(function()
- local f=game.forces[''player'']; local p=f.create_space_platform({name=''$name'',planet=''nauvis'',starter_pack=''space-platform-starter-pack''})
- p.apply_starter_pack(); p.schedule={current=1,records={{station=''nauvis''}}}; p.paused=true
- local tiles={}; for x=314,326 do for y=314,326 do tiles[#tiles+1]={name=''space-platform-foundation'',position={x,y}} end end
+ local f=game.forces['player']; local p=f.create_space_platform({name='$name',planet='nauvis',starter_pack='space-platform-starter-pack'})
+ p.apply_starter_pack(); p.schedule={current=1,records={{station='nauvis'}}}; p.paused=true
+ local tiles={}; for x=314,326 do for y=314,326 do tiles[#tiles+1]={name='space-platform-foundation',position={x,y}} end end
  p.surface.set_tiles(tiles,true,false,true,false)
- local e=p.surface.create_entity({name=''burner-inserter'',position={320,320},force=f}); e.active=false
- local inv=e.get_inventory(defines.inventory.fuel); local inserted=inv.insert({name=''coal'',quality=''legendary'',count=20})
- if inserted~=20 then error(''legendary coal fixture write rejected: ''..tostring(inserted)) end
- out.success=true; out.index=p.index; out.count=inv.get_item_count({name=''coal'',quality=''legendary''})
+ local e=p.surface.create_entity({name='burner-inserter',position={320,320},force=f}); e.active=false
+ local inv=e.get_inventory(defines.inventory.fuel); local inserted=inv.insert({name='coal',quality='legendary',count=20})
+ if inserted~=20 then error('legendary coal fixture write rejected: '..tostring(inserted)) end
+ out.success=true; out.index=p.index; out.count=inv.get_item_count({name='coal',quality='legendary'})
 end)
 if not ok then out.error=tostring(err) end
 rcon.print(helpers.table_to_json(out))
@@ -118,7 +118,7 @@ rcon.print(helpers.table_to_json(out))
     Add-Result "specinv-$Section-source" "Source physically contains 20 legendary coal" ([int]$build.count -eq 20) "count=$($build.count)"
     docker exec $srcContainer sh -c "rm -f $srcOut/debug_source_platform_$($name)_*.json 2>/dev/null" 2>$null | Out-Null
     docker exec $dstContainer sh -c "rm -f $dstOut/debug_import_result_$($name)_*.json $dstOut/debug_destination_platform_$($name)_*.json 2>/dev/null" 2>$null | Out-Null
-    if ($Section -eq "loss") { Invoke-Lua -Instance $dst -Code "remote.call(''surface_export'',''configure'',{debug_mode=true,test_force_item_loss=1}) rcon.print(''armed'')" | Out-Null }
+    if ($Section -eq "loss") { Invoke-Lua -Instance $dst -Code "remote.call('surface_export','configure',{debug_mode=true,test_force_item_loss=1}) rcon.print('armed')" | Out-Null }
     $base = if ($Section -eq "loss") { [int]((docker exec $dstContainer sh -c "wc -l < /clusterio/data/instances/$dst/factorio-current.log").Trim()) } else { 0 }
     $destId = Get-ClusterioInstanceId -InstanceName $dst
     Send-Rcon -Instance $src -Command "/transfer-platform $($build.index) $destId" | Out-Null
