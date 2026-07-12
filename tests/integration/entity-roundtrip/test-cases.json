@@ -209,7 +209,7 @@
         "name": "storage-tank",
         "direction": 0,
         "specific_data": {
-          "fluids": [{ "name": "water", "amount": 10000, "temperature": 15 }]
+          "fluids": [{ "name": "water", "amount": 10000, "temperature": 15, "engine_owned": false }]
         }
       },
       "expect": { "success": true }
@@ -223,7 +223,7 @@
         "name": "storage-tank",
         "direction": 2,
         "specific_data": {
-          "fluids": [{ "name": "petroleum-gas", "amount": 5000, "temperature": 25 }]
+          "fluids": [{ "name": "petroleum-gas", "amount": 5000, "temperature": 25, "engine_owned": false }]
         }
       },
       "expect": { "success": true }
@@ -448,7 +448,7 @@
         "direction": 0,
         "specific_data": {
           "fluids": [
-            { "name": "fluoroketone-cold", "amount": 500, "temperature": -150 }
+            { "name": "fluoroketone-cold", "amount": 500, "temperature": -150, "engine_owned": false }
           ]
         }
       },
@@ -488,7 +488,7 @@
         "direction": 0,
         "specific_data": {
           "fluids": [
-            { "name": "fusion-plasma", "amount": 10, "temperature": 1066000 }
+            { "name": "fusion-plasma", "amount": 10, "temperature": 1066000, "engine_owned": true }
           ]
         }
       },
