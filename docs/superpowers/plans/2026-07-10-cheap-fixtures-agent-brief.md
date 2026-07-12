@@ -2,7 +2,7 @@
 
 > You are the **implementer**, on a fresh branch off `main` taken AFTER PR #76 (the single-gate rewrite) has
 > merged — this work re-baselines tests that #76 also touches; do not start before it lands. Follow the
-> [Agent execution discipline](../../AGENT_EXECUTION_DISCIPLINE.md). Orchestrator audits; **stop for audit
+> [Agent execution discipline](../../AGENT_EXECUTION_DISCIPLINE.md). Run `./tools/check-pr-scope.ps1` during orientation and immediately before opening the PR. Orchestrator audits; **stop for audit
 > before any merge.** Pitfall citations are number + short name, and one agent owns the cluster at a time.
 
 ## Why (measured)
