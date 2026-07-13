@@ -26,6 +26,83 @@ function EntityHandlers.attach_missing_inventories(entity, data)
   return data
 end
 
+--- Extract an entity's burner (fuel) energy-source state. Mirrors the equipment-burner capture in
+--- inventory-scanner.lua (extract_equipment_grid) but ALSO records the burning item's quality, and
+--- deliberately OMITS the fuel / burnt-result inventories: those are already exported as normal
+--- entity inventories (defines.inventory.fuel / burnt_result), so re-capturing them here would
+--- double-count the fuel items.
+--- @param entity LuaEntity: an entity whose `.burner` is non-nil
+--- @return table: { currently_burning = {name, quality}|nil, remaining_burning_fuel = number }
+function EntityHandlers.extract_entity_burner(entity)
+  local burner = entity.burner
+  local currently_burning = nil
+  local burning = burner.currently_burning
+  if burning then
+    -- 2.0.77: LuaBurner.currently_burning reads as an ItemIDAndQualityIDPair whose `.name` is a
+    -- LuaItemPrototype and `.quality` a LuaQualityPrototype. Resolve both to plain strings (the only
+    -- JSON-safe form); stay defensive if a build ever returns bare-string ids instead.
+    local name = burning.name
+    if type(name) ~= "string" and name then
+      name = name.name
+    end
+    local quality = burning.quality
+    if type(quality) ~= "string" and quality then
+      quality = quality.name
+    end
+    currently_burning = {
+      name = name,
+      quality = quality or GameUtils.QUALITY_NORMAL
+    }
+  end
+  return {
+    currently_burning = currently_burning,
+    remaining_burning_fuel = burner.remaining_burning_fuel
+  }
+end
+
+--- Extract cross-cutting entity state (burner, energy buffer, heat buffer) that applies to ANY entity
+--- regardless of category. Merges directly into `data` (the specific_data table being assembled) so a
+--- single call in handle_entity covers every entity from BOTH export paths.
+--- @param entity LuaEntity
+--- @param data table: the specific_data table to populate in place
+function EntityHandlers.extract_common_state(entity, data)
+  -- BURNER (fuel) state — only the burning item + remaining-fuel scalar; the fuel/burnt inventories
+  -- ride the normal inventory export. `.burner` is nil (never an error) on non-burner entities.
+  if entity.burner then
+    data.burner = EntityHandlers.extract_entity_burner(entity)
+  end
+
+  -- ENERGY BUFFER — accumulators ALWAYS (their stored charge is the whole point of the entity); any
+  -- other entity only when it currently holds a positive buffer. Reading `.energy` throws on many
+  -- prototypes that have no energy source, so probe.
+  -- intentional probe; failure expected on entities without an energy buffer, no log
+  local energy_ok, energy = pcall(function() return entity.energy end)
+  if energy_ok and energy and (entity.type == "accumulator" or energy > 0) then
+    data.energy = energy
+  end
+
+  -- ENTITY HEAT BUFFER — nuclear reactors, heat pipes, and heat-consuming machines expose
+  -- `.temperature` (the entity's OWN heat buffer, NOT fluid temperature, which rides the fluidbox
+  -- export path). Reading `.temperature` throws on entities without a heat energy source, so probe.
+  -- intentional probe; failure expected on non-heat entities, no log
+  local temp_ok, temperature = pcall(function() return entity.temperature end)
+  if temp_ok and temperature ~= nil then
+    data.temperature = temperature
+  end
+
+  -- BONUS PROGRESS — the banked productivity payout (0..1). Crafting machines, furnaces, labs and
+  -- mining drills all expose it; captured HERE in the shared dispatcher so no specialized handler can
+  -- silently drop the dimension (review finding: only the assembling-machine handler captured it, so a
+  -- foundry/furnace lost its banked productivity bar on transfer). Reading may throw on categories
+  -- without bonus production, so probe; 0 is the fresh-entity default, so only a positive value is
+  -- meaningful. Restore rides the generic SIMPLE_RESTORE_RULES bonus_progress row (deserializer.lua).
+  -- intentional probe; failure expected on entities without bonus production, no log
+  local bp_ok, bonus_progress = pcall(function() return entity.bonus_progress end)
+  if bp_ok and bonus_progress and bonus_progress > 0 then
+    data.bonus_progress = bonus_progress
+  end
+end
+
 --- Main dispatcher for entity-specific data extraction
 --- @param entity LuaEntity: The entity to handle
 --- @param category string: Entity category (from Util.get_entity_category)
@@ -46,8 +123,16 @@ function EntityHandlers.handle_entity(entity, category)
   end
 
   -- Ordinary inventories are attached exactly once whether or not a category handler exists.
-  -- Specialized handlers that already use extract_all_inventories remain authoritative.
+  -- Specialized handlers that already use extract_all_inventories remain authoritative. This is the
+  -- path that seats burner-inserter fuel inventories (#98 specialized-inventory fix); the burner STATE
+  -- (currently_burning / remaining_burning_fuel) captured by extract_common_state complements it.
   data = EntityHandlers.attach_missing_inventories(entity, data)
+
+  -- Cross-cutting entity state (burner / energy buffer / heat buffer / bonus progress) applies to ANY
+  -- entity type regardless of category, so it is captured HERE in the shared dispatcher — both export
+  -- paths (sync EntityScanner.scan_surface and async ExportPipeline.process_batch) route through
+  -- EntityScanner.serialize_entity → handle_entity — rather than duplicated across every handler.
+  EntityHandlers.extract_common_state(entity, data)
 
   if next(data) then
     return data
@@ -73,7 +158,7 @@ EntityHandlers["assembling-machine"] = function(entity)
     local recipe = entity.get_recipe()
     if recipe then
       data.recipe = recipe.name
-      
+
       -- Capture recipe properties that affect inventory limits (for validation)
       -- overload_multiplier determines how many extra items inserters put in
       -- allow_inserter_overload determines if stack bonus applies
@@ -84,12 +169,15 @@ EntityHandlers["assembling-machine"] = function(entity)
       end
     end
   end
-  
-  -- RECIPE QUALITY (Factorio 2.0+)
-  -- intentional probe; failure expected, no log
-  local recipe_quality_success, recipe_quality = pcall(function() return entity.get_recipe_quality() end)
-  if recipe_quality_success and recipe_quality and recipe_quality.name ~= GameUtils.QUALITY_NORMAL then
-    data.recipe_quality = recipe_quality.name
+
+  -- RECIPE QUALITY — measured on 2.0.77 (state-dimensions-lab notebook, closer probe):
+  -- LuaEntity.get_recipe_quality() does NOT exist (the old probe here silently never captured), and
+  -- quality is get_recipe()'s SECOND return value. Restore passes it atomically via set_recipe(name, q).
+  if entity.get_recipe then
+    local _, recipe_quality = entity.get_recipe()
+    if recipe_quality and recipe_quality.name ~= GameUtils.QUALITY_NORMAL then
+      data.recipe_quality = recipe_quality.name
+    end
   end
 
   -- Crafting progress
@@ -102,10 +190,7 @@ EntityHandlers["assembling-machine"] = function(entity)
     data.productivity_bonus = entity.productivity_bonus
   end
 
-  -- Bonus progress
-  if entity.bonus_progress then
-    data.bonus_progress = entity.bonus_progress
-  end
+  -- (bonus_progress is captured for ALL categories by extract_common_state in the shared dispatcher.)
 
   return data
 end
@@ -122,12 +207,13 @@ EntityHandlers["furnace"] = function(entity)
     data.fluids = fluids
   end
 
-  -- Recipe (smelting recipe)
+  -- Recipe (smelting recipe; quality is get_recipe()'s SECOND return at 2.0.77 — see the
+  -- assembling-machine handler)
   if entity.get_recipe then
-    local recipe = entity.get_recipe()
+    local recipe, recipe_quality = entity.get_recipe()
     if recipe then
       data.recipe = recipe.name
-      
+
       -- Capture recipe properties that affect inventory limits (for validation)
       -- This is especially important for foundries which have complex recipes
       local proto = recipe.prototype
@@ -135,6 +221,9 @@ EntityHandlers["furnace"] = function(entity)
         data.recipe_overload_multiplier = proto.overload_multiplier
         data.recipe_allow_inserter_overload = proto.allow_inserter_overload
       end
+    end
+    if recipe_quality and recipe_quality.name ~= GameUtils.QUALITY_NORMAL then
+      data.recipe_quality = recipe_quality.name
     end
   end
 
@@ -571,19 +660,16 @@ EntityHandlers["rocket-silo"] = function(entity)
     inventories = InventoryScanner.extract_all_inventories(entity)
   }
   
-  -- RECIPE
+  -- RECIPE (+ quality — get_recipe()'s SECOND return at 2.0.77; get_recipe_quality() does not exist,
+  -- so the old probe here silently never captured quality. See the assembling-machine handler.)
   if entity.get_recipe then
-    local recipe = entity.get_recipe()
+    local recipe, recipe_quality = entity.get_recipe()
     if recipe then
       data.recipe = recipe.name
     end
-  end
-  
-  -- RECIPE QUALITY (Factorio 2.0+)
-  -- intentional probe; failure expected, no log
-  local recipe_quality_success, recipe_quality = pcall(function() return entity.get_recipe_quality() end)
-  if recipe_quality_success and recipe_quality and recipe_quality.name ~= GameUtils.QUALITY_NORMAL then
-    data.recipe_quality = recipe_quality.name
+    if recipe_quality and recipe_quality.name ~= GameUtils.QUALITY_NORMAL then
+      data.recipe_quality = recipe_quality.name
+    end
   end
 
   -- Rocket parts

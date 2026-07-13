@@ -180,6 +180,17 @@ deactivated, then emits one exact item+fluid verdict before activation. Any mism
 black box, discards the destination, reports `failedStage=items|fluids`, and preserves/rolls back the source.
 Post-activation recounts are reporting only and cannot rewrite the verdict.
 
+**Q: What if I have circuit LATCHES, counters, or other circuit-network SIGNAL STATE?**
+A: ⚠️ Circuit-network SIGNAL STATE does NOT survive a transfer — only circuit STRUCTURE does (wires,
+combinator parameters, conditions all arrive verbatim). Measured live (2.0.77, `circuit-latch-state`): a
+self-feeding SR latch holding signal-S=1 on the source (verified holding with its seed removed, two reads
+apart) arrived with signal-S=0 — the latch RESETS. The serializer captures structure and parameters only
+(connection-scanner); network signal values are engine simulation state with no capture/restore API used.
+Any base whose behavior depends on a held latch value or an accumulated counter must expect that state to
+re-derive or reset after transfer. (An earlier "latch value survived" reading was an instrument bug — the
+seed combinator was never actually removed and kept feeding the latch; retracted in
+`tests/state-dimensions-lab/NOTEBOOK.md`.)
+
 **Q: What if some entities fail to place on the destination (missing mod)?**
 A: ✅ Their items/fluids are tallied as failed-entity-loss and subtracted from expected totals so validation is
 not falsely failed; each failure is logged per entity (Pitfall #20, failed-entity loss attribution).

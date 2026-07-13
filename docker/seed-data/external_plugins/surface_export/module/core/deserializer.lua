@@ -17,11 +17,13 @@ local function safe_call(context, func)
   return ok
 end
 
---- Restore additional properties on a placed item stack
---- (health, durability, ammo, spoil_percent, label, custom_description, grid, nested_inventory)
+--- Restore COUNT-NEUTRAL scalar item metadata (health, durability, ammo, spoil_percent, label,
+--- custom_description). None of these change an item count, so they are safe to apply on the set_stack
+--- (slotted) restore path without perturbing the exact gate census. Grid / nested-inventory restoration
+--- (which ADD items) is deliberately kept out of here and lives only in restore_item_properties below.
 --- @param stack LuaItemStack: The stack to restore properties on
 --- @param item_data table: Serialized item data with optional property fields
-local function restore_item_properties(stack, item_data)
+local function restore_item_scalar_properties(stack, item_data)
   if not stack or not stack.valid_for_read then return end
 
   if item_data.health and stack.health then
@@ -48,6 +50,17 @@ local function restore_item_properties(stack, item_data)
   if item_data.custom_description and stack.custom_description then
     stack.custom_description = item_data.custom_description
   end
+end
+
+--- Restore additional properties on a placed item stack
+--- (health, durability, ammo, spoil_percent, label, custom_description, grid, nested_inventory)
+--- @param stack LuaItemStack: The stack to restore properties on
+--- @param item_data table: Serialized item data with optional property fields
+local function restore_item_properties(stack, item_data)
+  if not stack or not stack.valid_for_read then return end
+
+  restore_item_scalar_properties(stack, item_data)
+
   if item_data.grid and stack.grid then
     Deserializer.restore_equipment_grid(stack.grid, item_data.grid)
   end
@@ -75,6 +88,9 @@ end
 local SIMPLE_RESTORE_RULES = {
   { field = "crafting_progress" },
   { field = "productivity_bonus", safecall = true },
+  -- bonus_progress is RW at 2.0.77 (LuaEntity.bonus_progress); safecall-wrapped like the other
+  -- crafter progress fields since not every entity that reaches here exposes it.
+  { field = "bonus_progress", safecall = true },
   { field = "player_description", prop = "entity_label", safecall = true },
   { field = "ignore_unprioritised_targets", present = true, safecall = true, no_entity_guard = true },
   { field = "use_filters", present = true },
@@ -89,7 +105,9 @@ local SIMPLE_RESTORE_RULES = {
   { field = "always_on", present = true, safecall = true },
   { field = "auto_launch", present = true },
   { field = "rocket_parts" },
-  { field = "recipe_quality", safecall = true },
+  -- (recipe_quality was removed: LuaEntity.recipe_quality does not exist at 2.0.77 — the row ALWAYS
+  -- threw into its safecall and quality silently reset to normal. Quality now rides set_recipe(name, q)
+  -- atomically at both restore sites; measured in the state-dimensions-lab notebook.)
   { field = "switch_state", present = true, safecall = true },
   { field = "artillery_auto_targeting", present = true, safecall = true },
   { field = "opened", present = true },
@@ -202,9 +220,13 @@ function Deserializer.create_entity(surface, entity_data)
   -- the direction/rotation for fluid port alignment. If recipe is set later,
   -- the fluid ports may not align correctly with the requested direction.
   if entity.valid and entity.set_recipe and entity_data.specific_data and entity_data.specific_data.recipe then
+    -- Quality is passed ATOMICALLY here: set_recipe(name) without it defaults the pair to normal, and
+    -- there is no post-hoc fix-up — LuaEntity.recipe_quality does not exist at 2.0.77 (measured; the old
+    -- SIMPLE_RESTORE_RULES row for it always threw into its safecall). nil quality = normal, correct for
+    -- exports that captured no quality.
     local recipe_success = safe_call(
       string.format("set_recipe %s for %s", entity_data.specific_data.recipe, entity.name),
-      function() entity.set_recipe(entity_data.specific_data.recipe) end
+      function() entity.set_recipe(entity_data.specific_data.recipe, entity_data.specific_data.recipe_quality) end
     )
     if recipe_success then
       -- After setting recipe, re-apply direction to ensure fluid ports align
@@ -283,13 +305,20 @@ function Deserializer.restore_entity_state(entity, entity_data)
   end
 
   -- Restore recipe (skip if already set during create_entity for fluid port alignment)
-  -- We check if recipe is already set to avoid overwriting and potentially breaking direction
+  -- We check if the (name, quality) PAIR is already set to avoid overwriting and potentially breaking
+  -- direction. Quality is get_recipe()'s second return and must be passed atomically to set_recipe —
+  -- see the create-time site above (LuaEntity.recipe_quality does not exist at 2.0.77).
   if data.recipe and entity.set_recipe then
-    local current_recipe = entity.get_recipe and entity.get_recipe()
+    local current_recipe, current_quality
+    if entity.get_recipe then
+      current_recipe, current_quality = entity.get_recipe()
+    end
     local current_recipe_name = current_recipe and current_recipe.name
-    if current_recipe_name ~= data.recipe then
-      safe_call(string.format("set_recipe %s for %s", data.recipe, entity.name),
-        function() entity.set_recipe(data.recipe) end)
+    local current_quality_name = (current_quality and current_quality.name) or Util.QUALITY_NORMAL
+    local wanted_quality_name = data.recipe_quality or Util.QUALITY_NORMAL
+    if current_recipe_name ~= data.recipe or current_quality_name ~= wanted_quality_name then
+      safe_call(string.format("set_recipe %s (quality %s) for %s", data.recipe, wanted_quality_name, entity.name),
+        function() entity.set_recipe(data.recipe, data.recipe_quality) end)
     end
   end
 
@@ -303,8 +332,8 @@ function Deserializer.restore_entity_state(entity, entity_data)
     end)
   end
 
-  -- Trivial single-field restorations (see SIMPLE_RESTORE_RULES). Placed here, after recipe
-  -- restoration, so recipe_quality (one of the rules) still applies after the recipe is set.
+  -- Trivial single-field restorations (see SIMPLE_RESTORE_RULES). Placed after recipe restoration so
+  -- recipe-dependent fields (crafting_progress, bonus_progress) apply to the already-set recipe.
   apply_simple_restore_rules(entity, data)
 
   -- Restore train schedule
@@ -461,6 +490,57 @@ function Deserializer.restore_entity_state(entity, entity_data)
       end)
     end
   end
+
+  -- Restore burner (fuel) energy-source state. Set currently_burning FIRST: writing
+  -- remaining_burning_fuel silently no-ops when there is no currently_burning item (2.0.77 LuaBurner).
+  -- Resolve the serialized item name to a prototype so an unknown mod item is skipped (not crashed).
+  -- currently_burning is burn-progress, NOT an inventory slot, so neither the expected-count
+  -- (Verification.count_all_items) nor the dest census (SurfaceCounter.count_items) reads it directly.
+  -- VERIFIED [empirical, 2.0.77] by the closer run (tests/state-dimensions-lab/NOTEBOOK.md + the passing
+  -- entity-burner-roundtrip; api-notes): (a) the write is ACCEPTED while the entity is DEACTIVATED — a deactivated
+  -- burner reads back currently_burning/remaining_burning_fuel exactly; (b) setting currently_burning does
+  -- NOT mutate the fuel inventory, and this running before restore_inventories' clear()+refill leaves the
+  -- burn state undisturbed. No relocation to the activation pass needed.
+  if data.burner and entity.burner then
+    local burner_data = data.burner
+    local burning = burner_data.currently_burning
+    if burning and burning.name then
+      if prototypes.item[burning.name] then
+        safe_call(string.format("burner currently_burning for %s", entity.name), function()
+          entity.burner.currently_burning = {
+            name = burning.name,
+            quality = burning.quality or Util.QUALITY_NORMAL
+          }
+        end)
+      else
+        log(string.format("[Deserializer] Skipped burner currently_burning '%s' for %s (unknown item, mod missing?)",
+          tostring(burning.name), entity.name))
+      end
+    end
+    if burner_data.remaining_burning_fuel then
+      safe_call(string.format("burner remaining_burning_fuel for %s", entity.name),
+        function() entity.burner.remaining_burning_fuel = burner_data.remaining_burning_fuel end)
+    end
+  end
+
+  -- Restore entity energy buffer (accumulator charge, machine energy store).
+  -- VERIFIED [empirical, 2.0.77] by the closer run (state-dimensions-lab NOTEBOOK + passing
+  -- energy-roundtrip; api-notes): a write to `.energy` is ACCEPTED while the entity is DEACTIVATED (accumulator
+  -- 0->123456 read back exactly; machine buffer written in-range read back exactly). Energy is not
+  -- item-counted, so it does not perturb the exact gate census. No relocation to the activation pass.
+  if data.energy ~= nil then
+    safe_call(string.format("energy for %s", entity.name),
+      function() entity.energy = data.energy end)
+  end
+
+  -- Restore entity heat buffer temperature (reactors, heat pipes, heat-consumers).
+  -- VERIFIED [empirical, 2.0.77] by the closer run (state-dimensions-lab NOTEBOOK + passing heat-roundtrip; api-notes):
+  -- a write to `.temperature` is ACCEPTED while the entity is DEACTIVATED (reactor 15->500 read back
+  -- exactly). Not item-counted; no gate perturbation; no relocation to the activation pass.
+  if data.temperature ~= nil then
+    safe_call(string.format("temperature for %s", entity.name),
+      function() entity.temperature = data.temperature end)
+  end
 end
 
 --- Restore inventories to an entity
@@ -566,6 +646,20 @@ function Deserializer.restore_inventories(entity, entity_data, overflow_losses)
           elseif item.slot and item.slot <= #inventory then
             -- Verify set_stack worked
             local slot = inventory[item.slot]
+            -- Restore FULL item metadata on the slotted stack. The set_stack path historically skipped
+            -- restore_item_properties entirely (only the no-slot insert fallback ran it), silently dropping
+            -- spoilage decay, health, durability, ammo, labels — AND equipment grids / nested inventories
+            -- (a slotted power armor arrived with an EMPTY grid; review finding at deserializer.lua:642).
+            -- EMPIRICAL (2.0.77, spoilage-roundtrip): bioflux spoil_percent 0.5003 -> 0 pre-fix.
+            -- Gate-neutrality of grid/nested restoration VERIFIED against both gate counters: the expected
+            -- side (Verification.count_all_items, verification.lua) sums only top-level
+            -- specific_data.inventories[].items[].count, and the dest census (SurfaceCounter.count_items ->
+            -- InventoryScanner.count_all_items) sums only top-level inv.items[].count — NEITHER recurses
+            -- into item.grid or item.nested_inventory, so restoring them cannot move either side of the
+            -- exact gate. Covered by tests/integration/item-grid-roundtrip (physical dest grid reads).
+            if slot.valid_for_read then
+              restore_item_properties(slot, item)
+            end
             if not slot.valid_for_read or slot.count < item.count then
               local actual_count = slot.valid_for_read and slot.count or 0
               local lost = item.count - actual_count
@@ -663,34 +757,55 @@ function Deserializer.restore_equipment_grid(grid, grid_data)
   local equipment_list = grid_data.equipment or grid_data
   
   for _, equip_data in ipairs(equipment_list) do
+    -- quality must be passed AT put() time — grid equipment quality is not writable afterwards, so
+    -- omitting it silently downgraded every restored piece to normal (review finding, deserializer.lua:741).
     local equipment = grid.put({
       name = equip_data.name,
-      position = equip_data.position
+      position = equip_data.position,
+      quality = equip_data.quality
     })
 
     if equipment then
-      -- Restore energy
-      if equip_data.energy and equipment.energy ~= nil then
-        equipment.energy = equip_data.energy
+      -- Restore energy / shield. EMPIRICAL (2.0.77, equipment-burner-roundtrip crash at tick 138282,
+      -- this file's restore_equipment_grid): LuaEquipment.shield (and .energy) READS 0 on equipment
+      -- that has no shield/energy buffer, so the old `equipment.X ~= nil` guard is a FALSE guard (a
+      -- read never returns nil) and export captures a truthy 0; the WRITE then throws "Equipment is not
+      -- shields" and killed the import on_tick. safe_call each write (it logs) so an unsupported buffer
+      -- is skipped, not fatal. Presence check stays: only attempt when a value was captured.
+      if equip_data.energy then
+        safe_call(string.format("equipment energy for %s", tostring(equip_data.name)),
+          function() equipment.energy = equip_data.energy end)
+      end
+
+      if equip_data.shield then
+        safe_call(string.format("equipment shield for %s", tostring(equip_data.name)),
+          function() equipment.shield = equip_data.shield end)
       end
       
-      -- Restore shield
-      if equip_data.shield and equipment.shield ~= nil then
-        equipment.shield = equip_data.shield
-      end
-      
-      -- Restore burner equipment fuel state
+      -- Restore burner equipment fuel state. Mirrors the entity-burner restore pattern (see
+      -- restore_entity_state): prototype-existence check so an unknown mod fuel item is SKIPPED (not
+      -- crashed — restore_equipment_grid runs unwrapped inside the import on_tick, the tick-138282 crash
+      -- class), safe_call on every engine write, and quality carried through. Accepts both the current
+      -- {name, quality} capture shape and the legacy bare-string shape from older exports.
       if equip_data.burner and equipment.burner then
         local burner = equipment.burner
-        
-        -- Restore currently burning fuel
-        if equip_data.burner.currently_burning then
-          burner.currently_burning = equip_data.burner.currently_burning
+
+        local eq_burning = equip_data.burner.currently_burning
+        if eq_burning then
+          local fuel_name = type(eq_burning) == "table" and eq_burning.name or eq_burning
+          local fuel_quality = (type(eq_burning) == "table" and eq_burning.quality) or Util.QUALITY_NORMAL
+          if fuel_name and prototypes.item[fuel_name] then
+            safe_call(string.format("equipment burner currently_burning for %s", tostring(equip_data.name)),
+              function() burner.currently_burning = { name = fuel_name, quality = fuel_quality } end)
+          elseif fuel_name then
+            log(string.format("[Deserializer] Skipped equipment burner currently_burning '%s' for %s (unknown item, mod missing?)",
+              tostring(fuel_name), tostring(equip_data.name)))
+          end
         end
-        
-        -- Restore remaining fuel
+
         if equip_data.burner.remaining_burning_fuel then
-          burner.remaining_burning_fuel = equip_data.burner.remaining_burning_fuel
+          safe_call(string.format("equipment burner remaining_burning_fuel for %s", tostring(equip_data.name)),
+            function() burner.remaining_burning_fuel = equip_data.burner.remaining_burning_fuel end)
         end
         
         -- Restore burner inventory
@@ -867,7 +982,13 @@ function Deserializer.restore_control_behavior(entity, entity_data)
     return
   end
 
-  local cb = entity.get_control_behavior()
+  -- get_or_create (NOT get): an entity may not have instantiated its control behavior yet at restore time
+  -- (a lamp has NO control behavior until it is wired, and wires are restored separately), so plain
+  -- get_control_behavior() returns nil and every setting below is silently skipped. EMPIRICAL (2.0.77,
+  -- circuit-config-roundtrip): an unwired lamp's get_control_behavior()=nil, so its restored
+  -- circuit_condition/circuit_enable_disable were dropped. The entity_data.control_behavior guard above
+  -- means we only ever create a CB on an entity that HAD one at export, so no spurious CB is created.
+  local cb = entity.get_or_create_control_behavior()
   if not cb then
     return
   end
