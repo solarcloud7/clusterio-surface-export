@@ -17,6 +17,8 @@ A task-specific brief may add stricter requirements, but it must not weaken thes
 - Build expensive integration probes in sections and iterate only the failing section, following the [integration-probe iteration discipline](../CLAUDE.md#integration-probe-iteration-discipline-shared-live-cluster--read-before-debugging-testsintegration).
 - Commit the real change before deliberately reverting or mutating it for a regression-tooth check, so the implementation cannot be lost during teeth testing.
 - Use the cheapest fixture that proves the invariant, derive totals from measurements, and preserve independent physical grounding.
+- When a directive, plan, or audit finding conditions production work on an engine or environment fact, it must name the evidence bar that decides it; prototype or static inference is a hypothesis until a live measurement confirms it.
+- A red test whose assertion encodes an unverified engine-behavior claim licenses a live measurement first, not production code.
 - Clean every state layer in `finally` and prove zero leftovers on both instances before releasing the cluster.
 - Record material execution anomalies and workarounds in the [append-only process notebook](superpowers/process/NOTEBOOK.md); routine command output does not belong there.
 
