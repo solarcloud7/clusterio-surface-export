@@ -84,7 +84,10 @@ for _, q in pairs(game.forces.player.platforms) do if q.valid and q.name == '$na
 if not p then return { success = false, error = 'platform missing' } end
 local s = p.surface
 local out = { success = true, tick = game.tick, platform_paused = p.paused }
-local chest = s.find_entities_filtered({ name = 'steel-chest', position = { $Ox, $Oy }, radius = 0.6 })[1]
+-- The bare fixture surface holds exactly one steel-chest. Locate it by name: a position+radius search
+-- misses it because create_entity snaps the 1x1 chest to tile-center (ox+0.5, oy+0.5), which is 0.707
+-- from the integer {ox,oy} — outside a 0.6 radius. Name-only is exact for this single-chest fixture.
+local chest = s.find_entities_filtered({ name = 'steel-chest' })[1]
 out.have_chest = chest ~= nil
 if chest then
     out.chest_count = chest.get_item_count('$Item')
@@ -196,6 +199,9 @@ if (-not $resultFile) { Write-Status "No import-result after ${TimeoutSec}s (tra
 $resultData = Read-DebugFile -Instance $dstInstance -Container $dstContainer -Filename $resultFile
 $valSuccess = Get-SafeProperty $resultData "validation_success"
 Add-Result "spo-gate-passed" "Transfer gate passed (validation_success=true)" ($valSuccess -eq $true) "validation_success=$valSuccess — on failure the destination is discarded and every physical read below will miss"
+# Grounding: HARD-STOP before any destination census — on a gate failure the destination is discarded, so
+# the physical chest reads below would census a platform that does not exist and silently mis-measure.
+Assert-TransferSucceeded -Result $resultData -Context "Spoilage transfer"
 
 # 5. Physical destination read (post-activation).
 Start-Sleep -Seconds 4

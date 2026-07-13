@@ -84,8 +84,10 @@ for _, q in pairs(game.forces.player.platforms) do if q.valid and q.name == '$na
 if not p then return { success = false, error = 'platform missing' } end
 local s = p.surface
 local ox, oy = $Ox, $Oy
--- Script-created 1x1 entities center at x+0.5,y+0.5; radius 0.8 reaches that 0.707 offset
--- while excluding the adjacent lamp whose center is 1.58 tiles from the requested coordinate.
+-- Script-created 1x1 entities center at x+0.5,y+0.5; radius 0.8 reaches that 0.707 offset while
+-- excluding any same-name entity >= 2 tiles away (its center is 1.58 tiles from the requested
+-- coordinate). The two lamps are deliberately spaced 2 tiles apart (ox+3, ox+5) so a lamp search never
+-- catches the wrong lamp — 1 tile apart, both lamp centers are 0.707 from either search point (ambiguous).
 local function at(nm, x, y)
     local es = s.find_entities_filtered({ name = nm, position = { x, y }, radius = 0.8 })
     return es[1]
@@ -94,7 +96,7 @@ local out = { success = true, tick = game.tick, platform_paused = p.paused }
 local dec = at('decider-combinator', ox, oy)
 local con = at('constant-combinator', ox - 3, oy)
 local lamp = at('small-lamp', ox + 3, oy)
-local lamp2 = at('small-lamp', ox + 4, oy)
+local lamp2 = at('small-lamp', ox + 5, oy)
 local ca = at('steel-chest', ox - 3, oy + 3)
 local cb2 = at('steel-chest', ox + 3, oy + 3)
 out.have_decider = dec ~= nil
@@ -152,7 +154,12 @@ if lamp then
     out.lamp_status = lamp.status
     out.lamp_circuit_enable_disable = lcb and lcb.circuit_enable_disable
     if lcb then
-        local okd, dis = pcall(function() return lamp.disabled_by_control_behavior end)
+        -- Detect circuit-disabled via runtime STATUS, not the disabled_by_control_behavior property:
+        -- on 2.0.77 a lamp genuinely disabled by its circuit condition reports
+        -- status == defines.entity_status.disabled_by_control_behavior (55) while the boolean property
+        -- .disabled_by_control_behavior reads FALSE (verified live: status=55 yet property=false). The
+        -- status is authoritative; an enabled/working lamp reports status=working, never 55.
+        local okd, dis = pcall(function() return lamp.status == defines.entity_status.disabled_by_control_behavior end)
         out.lamp_disabled_read_ok = okd
         if okd then out.lamp_disabled = dis else out.lamp_disabled_error = tostring(dis) end
         local okc, cond = pcall(function() return lcb.circuit_condition end)
@@ -172,7 +179,9 @@ if lamp2 then
     out.lamp2_status = lamp2.status
     out.lamp2_circuit_enable_disable = lcb2 and lcb2.circuit_enable_disable
     if lcb2 then
-        local okd, dis = pcall(function() return lamp2.disabled_by_control_behavior end)
+        -- Same as lamp above: circuit-disabled is read from runtime status, not the unreliable
+        -- .disabled_by_control_behavior boolean (verified live on 2.0.77).
+        local okd, dis = pcall(function() return lamp2.status == defines.entity_status.disabled_by_control_behavior end)
         out.lamp2_disabled_read_ok = okd
         if okd then out.lamp2_disabled = dis else out.lamp2_disabled_error = tostring(dis) end
     end
@@ -210,7 +219,8 @@ end
 local con = ent({ name = 'constant-combinator', position = { ox - 3, oy }, force = force })
 local dec = ent({ name = 'decider-combinator', position = { ox, oy }, direction = defines.direction.north, force = force })
 local lamp = ent({ name = 'small-lamp', position = { ox + 3, oy }, force = force })
-local lamp2 = ent({ name = 'small-lamp', position = { ox + 4, oy }, force = force })
+-- lamp2 is 2 tiles from lamp1 (not adjacent) so the position-based at() lookup can tell them apart.
+local lamp2 = ent({ name = 'small-lamp', position = { ox + 5, oy }, force = force })
 local ca = ent({ name = 'steel-chest', position = { ox - 3, oy + 3 }, force = force })
 local cb2 = ent({ name = 'steel-chest', position = { ox + 3, oy + 3 }, force = force })
 ent({ name = 'medium-electric-pole', position = { ox, oy + 2 }, force = force })
@@ -252,10 +262,17 @@ if (-not $fx.wired) { Write-Status "Fixture wires did not all connect (connect_t
 $ox = [double]$fx.ox; $oy = [double]$fx.oy
 Write-Status "Fixture ready (platform index $($fx.index), origin $ox,$oy)" -Type success
 
-# 2. Precondition: the circuit must WORK on the source before we blame the transfer. Let ticks flow so the
-#    combinator computes, then require lamp1 enabled + lamp2 disabled (the fixture provably evaluates).
-Start-Sleep -Seconds 3
-$src = Read-CircuitState -Instance $srcInstance -Ox $ox -Oy $oy
+# 2. Precondition: the circuit must WORK on the source before we blame the transfer. POLL (never a fixed
+#    sleep) until power settles and the combinator computes — a freshly created platform is in no_power for
+#    several seconds, and an unpowered lamp is not yet disabled_by_control_behavior. Require lamp1 enabled +
+#    lamp2 disabled (the fixture provably evaluates). Deadline then fails loud if it never settles.
+$src = $null
+$settleDeadline = (Get-Date).AddSeconds(30)
+while ((Get-Date) -lt $settleDeadline) {
+    Start-Sleep -Seconds 2
+    $src = Read-CircuitState -Instance $srcInstance -Ox $ox -Oy $oy
+    if ($src.success -and $src.lamp_disabled -eq $false -and $src.lamp2_disabled -eq $true) { break }
+}
 if (-not $src.success) { Write-Status "Source read failed: $($src.error)" -Type error; exit 1 }
 Write-Host "  source: params=[$($src.cond1_signal) $($src.cond1_comparator) $($src.cond1_constant) -> $($src.out1_signal)] lamp_disabled=$($src.lamp_disabled) lamp2_disabled=$($src.lamp2_disabled) signal-A(in)=$($src.decider_in_signal_a) cb1=$($src.lamp_cb_present)/read=$($src.lamp_disabled_read_ok)/err=$($src.lamp_disabled_error) cb2=$($src.lamp2_cb_present)/read=$($src.lamp2_disabled_read_ok)/err=$($src.lamp2_disabled_error) slot=: wires-in=[] wires-out=[] lamp-status=/enabled= lamp2-status=/enabled=" -ForegroundColor DarkGray
 if ($src.lamp_disabled -ne $false -or $src.lamp2_disabled -ne $true) {
@@ -284,10 +301,17 @@ $resultData = Read-DebugFile -Instance $dstInstance -Container $dstContainer -Fi
 $valSuccess = Get-SafeProperty $resultData "validation_success"
 Add-Result "ccr-gate-passed" "Transfer gate passed (validation_success=true)" ($valSuccess -eq $true) "validation_success=$valSuccess — on failure the destination is discarded and every physical read below will miss"
 
-# 5. Let the destination settle (activation happens after the verdict; then ticks must flow for the
-#    combinator to compute on the destination network) and read PHYSICAL destination state.
-Start-Sleep -Seconds 5
-$dst = Read-CircuitState -Instance $dstInstance -Ox $ox -Oy $oy
+# 5. Let the destination settle (activation happens after the verdict; then power must charge and ticks
+#    must flow for the combinator to compute on the destination network). POLL (never a fixed sleep) until
+#    the circuit re-evaluates as designed (lamp1 on, lamp2 off), then read PHYSICAL destination state. The
+#    deadline still lets the assertions below fail loud if the circuit does NOT survive the transfer.
+$dst = $null
+$dstSettleDeadline = (Get-Date).AddSeconds(30)
+while ((Get-Date) -lt $dstSettleDeadline) {
+    Start-Sleep -Seconds 2
+    $dst = Read-CircuitState -Instance $dstInstance -Ox $ox -Oy $oy
+    if ($dst.success -and $dst.lamp_disabled -eq $false -and $dst.lamp2_disabled -eq $true) { break }
+}
 if (-not $dst.success) { Write-Status "Destination read failed: $($dst.error)" -Type error; exit 1 }
 Write-Host "  dest:   params=[$($dst.cond1_signal) $($dst.cond1_comparator) $($dst.cond1_constant) -> $($dst.out1_signal)] lamp_disabled=$($dst.lamp_disabled) lamp2_disabled=$($dst.lamp2_disabled) in_red=[$($dst.decider_in_red)] out_red=[$($dst.decider_out_red)]" -ForegroundColor DarkGray
 
