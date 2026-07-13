@@ -24,11 +24,22 @@ const categories = [
 	"programmable-speaker", "lamp", "entity-ghost", "tile-ghost", "item-request-proxy",
 	"train-stop",
 ];
-const fluidCapableOnPlatforms = new Set(handlerFluidOwners);
+// Independent prototype/placement evidence from Factorio 2.0.77. This is deliberately
+// not derived from handlerFluidOwners: capability is the question, ownership is the answer.
+const specializedFluidCapabilities = new Map([
+	["assembling-machine", { platformReachable: true, evidence: "chemical-plant: 4 fluidboxes, can_place=true" }],
+	["fluid-storage", { platformReachable: true, evidence: "storage-tank: 1 fluidbox, can_place=true" }],
+	["pipe", { platformReachable: true, evidence: "pipe fluidbox on platform foundation" }],
+	["pipe-to-ground", { platformReachable: true, evidence: "pipe-to-ground fluidbox on platform foundation" }],
+	["pump", { platformReachable: true, evidence: "pump: 1 fluidbox, can_place=true" }],
+	["train", { platformReachable: false, evidence: "fluid-wagon requires gravity>=1; platform gravity=0" }],
+	["turret", { platformReachable: false, evidence: "flamethrower-turret requires pressure>=10; platform pressure=0" }],
+	["mining-drill", { platformReachable: true, evidence: "electric-mining-drill: 1 fluidbox, can_place=true" }],
+]);
 const ownership = new Map(categories.map(category => [category, {
 	inventories: handlerInventoryOwners.has(category) ? "handler" : "shared-dispatcher",
-	fluids: handlerFluidOwners.has(category) ? "handler" : "none-required",
-	platformReachableFluidCapable: fluidCapableOnPlatforms.has(category),
+	fluids: handlerFluidOwners.has(category) ? "handler" : "shared-dispatcher",
+	fluidCapability: specializedFluidCapabilities.get(category) || null,
 }]));
 
 function extractFunctionBody(category) {
@@ -51,7 +62,11 @@ test("every specialized handler has explicit inventory and fluid ownership", () 
 		assert.ok(entry, `${category} must have ownership metadata`);
 		assert.ok(["handler", "shared-dispatcher", "none-required"].includes(entry.inventories));
 		assert.ok(["handler", "shared-dispatcher", "none-required"].includes(entry.fluids));
-		assert.equal(typeof entry.platformReachableFluidCapable, "boolean");
+		if (entry.fluidCapability) {
+			assert.equal(typeof entry.fluidCapability.platformReachable, "boolean");
+			assert.ok(entry.fluidCapability.evidence.length > 0,
+				`${category} fluid capability needs independent prototype/placement evidence`);
+		}
 	}
 });
 
@@ -70,13 +85,22 @@ test("handler-owned cross-cutting state always uses the canonical scanners", () 
 	}
 });
 
-test("platform-reachable specialized fluidboxes are already handler-owned", () => {
+test("platform-reachable specialized fluidboxes have a canonical extraction owner", () => {
 	const uncovered = categories.filter(category => {
 		const entry = ownership.get(category);
-		return entry.platformReachableFluidCapable && entry.fluids !== "handler";
+		return entry.fluidCapability?.platformReachable && !["handler", "shared-dispatcher"].includes(entry.fluids);
 	});
 	assert.deepEqual(uncovered, [],
-		"a reachable specialized fluidbox omission requires the symmetric shared fluid repair");
+		"a reachable specialized fluidbox must be handler-owned or use the shared dispatcher");
+});
+
+test("the dispatcher attaches missing fluids after category dispatch", () => {
+	assert.match(source, /function\s+EntityHandlers\.attach_missing_fluids\s*\(\s*entity\s*,\s*data\s*\)/,
+		"shared fluid attachment helper is required");
+	assert.match(source, /data\s*=\s*EntityHandlers\.attach_missing_fluids\(entity,\s*data\)/,
+		"both specialized and default paths must pass through shared fluid attachment");
+	assert.match(source, /if\s+data\.fluids\s*==\s*nil\s+then[\s\S]*InventoryScanner\.extract_fluids\(entity\)/,
+		"existing handler-owned fluids must remain authoritative while missing fluids are scanned");
 });
 
 test("the dispatcher attaches missing ordinary inventories after category dispatch", () => {
