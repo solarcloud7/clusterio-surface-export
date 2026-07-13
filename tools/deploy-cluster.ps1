@@ -51,6 +51,11 @@ if (-not $SkipIncrement) {
     } else {
         Write-Warning "module.json not found at $ModuleJsonPath"
     }
+
+    # Keep the lockfile's version metadata in step, or npm's next lifecycle run rewrites the whole
+    # lockfile to "fix" the mismatch (untracked churn agents then get blamed for).
+    . "$PSScriptRoot/version-utils.ps1"
+    Update-PackageLockVersion -LockPath (Join-Path $PluginPath "package-lock.json") -NewVersion $NewVersion
 } else {
     $PluginJson = Get-Content $PluginJsonPath -Raw | ConvertFrom-Json
     $NewVersion = $PluginJson.version
