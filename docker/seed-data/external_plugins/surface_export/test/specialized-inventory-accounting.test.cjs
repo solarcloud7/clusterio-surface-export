@@ -34,11 +34,11 @@ const specializedFluidCapabilities = new Map([
 	["pump", { platformReachable: true, evidence: "pump: 1 fluidbox, can_place=true" }],
 	["train", { platformReachable: false, evidence: "fluid-wagon requires gravity>=1; platform gravity=0" }],
 	["turret", { platformReachable: false, evidence: "flamethrower-turret requires pressure>=10; platform pressure=0" }],
-	["mining-drill", { platformReachable: true, evidence: "electric-mining-drill: 1 fluidbox, can_place=true" }],
+	["mining-drill", { platformReachable: false, evidence: "placeable drill has mining_target=nil and live fluidbox length 0" }],
 ]);
 const ownership = new Map(categories.map(category => [category, {
 	inventories: handlerInventoryOwners.has(category) ? "handler" : "shared-dispatcher",
-	fluids: handlerFluidOwners.has(category) ? "handler" : "shared-dispatcher",
+	fluids: handlerFluidOwners.has(category) ? "handler" : "none-required",
 	fluidCapability: specializedFluidCapabilities.get(category) || null,
 }]));
 
@@ -85,23 +85,15 @@ test("handler-owned cross-cutting state always uses the canonical scanners", () 
 	}
 });
 
-test("platform-reachable specialized fluidboxes have a canonical extraction owner", () => {
+test("platform-reachable specialized fluidboxes are already handler-owned", () => {
 	const uncovered = categories.filter(category => {
 		const entry = ownership.get(category);
-		return entry.fluidCapability?.platformReachable && !["handler", "shared-dispatcher"].includes(entry.fluids);
+		return entry.fluidCapability?.platformReachable && entry.fluids !== "handler";
 	});
 	assert.deepEqual(uncovered, [],
-		"a reachable specialized fluidbox must be handler-owned or use the shared dispatcher");
+		"a reachable specialized fluidbox omission requires the symmetric shared fluid repair");
 });
 
-test("the dispatcher attaches missing fluids after category dispatch", () => {
-	assert.match(source, /function\s+EntityHandlers\.attach_missing_fluids\s*\(\s*entity\s*,\s*data\s*\)/,
-		"shared fluid attachment helper is required");
-	assert.match(source, /data\s*=\s*EntityHandlers\.attach_missing_fluids\(entity,\s*data\)/,
-		"both specialized and default paths must pass through shared fluid attachment");
-	assert.match(source, /if\s+data\.fluids\s*==\s*nil\s+then[\s\S]*InventoryScanner\.extract_fluids\(entity\)/,
-		"existing handler-owned fluids must remain authoritative while missing fluids are scanned");
-});
 
 test("the dispatcher attaches missing ordinary inventories after category dispatch", () => {
 	assert.match(source, /function\s+EntityHandlers\.attach_missing_inventories\s*\(\s*entity\s*,\s*data\s*\)/,

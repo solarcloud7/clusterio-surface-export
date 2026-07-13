@@ -26,21 +26,6 @@ function EntityHandlers.attach_missing_inventories(entity, data)
   return data
 end
 
---- Attach fluids when a specialized handler does not own them.
---- @param entity LuaEntity
---- @param data table|nil
---- @return table
-function EntityHandlers.attach_missing_fluids(entity, data)
-  data = data or {}
-  if data.fluids == nil then
-    local fluids = InventoryScanner.extract_fluids(entity)
-    if #fluids > 0 then
-      data.fluids = fluids
-    end
-  end
-  return data
-end
-
 --- Main dispatcher for entity-specific data extraction
 --- @param entity LuaEntity: The entity to handle
 --- @param category string: Entity category (from Util.get_entity_category)
@@ -52,11 +37,16 @@ function EntityHandlers.handle_entity(entity, category)
     data = handler(entity) or {}
   else
     data = {}
+
+    -- Specialized fluid-capable platform entities own fluid extraction in their handlers.
+    local fluids = InventoryScanner.extract_fluids(entity)
+    if #fluids > 0 then
+      data.fluids = fluids
+    end
   end
 
-  -- Cross-cutting state is attached exactly once whether or not a category handler exists.
-  -- Specialized handlers that already use the canonical scanners remain authoritative.
-  data = EntityHandlers.attach_missing_fluids(entity, data)
+  -- Ordinary inventories are attached exactly once whether or not a category handler exists.
+  -- Specialized handlers that already use extract_all_inventories remain authoritative.
   data = EntityHandlers.attach_missing_inventories(entity, data)
 
   if next(data) then
