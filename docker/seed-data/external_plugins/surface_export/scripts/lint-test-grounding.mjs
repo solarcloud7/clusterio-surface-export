@@ -108,14 +108,17 @@ export function findGroundingViolations(files) {
 
 function main() {
 	if (!existsSync(TESTS_DIR)) {
-		if (process.env.LINT_ALLOW_PARTIAL === "1") {
-			console.log(`lint:test-grounding - SKIPPED (tests/integration not found at ${TESTS_DIR}; LINT_ALLOW_PARTIAL=1)`);
+		// The ONLY sanctioned partial context is the plugin bind-mounted inside a cluster container at
+		// /clusterio/external_plugins (no repo-root tests/ there — CLAUDE.md's in-container lint flow).
+		// Positive path detection keeps the bypass reviewable: no ambient env-var can silence this
+		// guard from a broken checkout elsewhere.
+		if (/^([a-z]:)?\/clusterio\/external_plugins\//i.test(SCRIPT_DIR.replace(/\\/g, "/"))) {
+			console.log(`lint:test-grounding - SKIPPED (plugin-only container mount; tests/integration not present at ${TESTS_DIR})`);
 			return;
 		}
 		console.error(
 			`lint:test-grounding - FAILED: ran 0 checks (tests/integration not found at ${TESTS_DIR}).\n` +
-				"A missing scan surface is not a pass. Run from a full checkout, or set LINT_ALLOW_PARTIAL=1 " +
-				"only in a deliberately plugin-only context (e.g. the plugin-only container mount).",
+				"A missing scan surface is not a pass. Run from a full repository checkout.",
 		);
 		process.exit(1);
 	}
