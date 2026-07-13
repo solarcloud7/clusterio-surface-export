@@ -79,3 +79,16 @@ Tick-stamped live query on Factorio 2.0.77 (`game.tick=322800`, host 1 protected
 - `chemical-plant`, `storage-tank`, and `pump` were each independently observed with fluidboxes and `surface.can_place_entity=true`.
 
 Result: the prior "verified-clean" fluid conclusion is retracted. `mining-drill` was a real platform-reachable specialized-handler omission, so the symmetric keep-if-non-nil shared fluid attachment is required. The static tooth first failed with exactly `uncovered = ["mining-drill"]` before the repair.
+### Live-capability follow-up (supersedes the provisional repair conclusion)
+
+The first focused witness stopped during fixture construction before any transfer: writing `electric-mining-drill.fluidbox[1]` raised `Passed index is out of range.` Cleanup ran.
+
+A one-entity diagnostic on the same platform at `game.tick=179375` established the distinction the prototype query missed:
+
+- the electric mining drill was created at a position where `surface.can_place_entity=true`;
+- `mining_target=nil`;
+- live `#entity.fluidbox=0`;
+- both reading and writing `entity.fluidbox[1]` failed with `Passed index is out of range`;
+- the diagnostic entity was destroyed in the same command.
+
+Final classification: `mining-drill` has a fluidbox-capable prototype, but no live player-recoverable fluidbox on a space platform because the platform has no mining target. It is independently classified as `platformReachable=false` for fluid state. Together with the pressure-blocked turret and gravity-blocked fluid wagon, no platform-reachable specialized fluid omission exists outside the six canonical handler owners. The provisional shared-fluid production repair and synthetic fixture were therefore retracted; the exact inventory fix remains unchanged.
