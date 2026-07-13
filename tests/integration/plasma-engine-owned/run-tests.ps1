@@ -58,10 +58,44 @@ for _,reactor in pairs(reactors) do
     local f=reactor.fluidbox[2]
     managed=managed+(f and f.amount or 0)
 end
-rcon.print(helpers.table_to_json({entities=#p.surface.find_entities_filtered({}),control=control and control.amount or 0,managed=managed,reactors=#reactors,generators=#generators}))
+-- Quiesce dynamic asteroid-chunk motion BEFORE the export snapshot (fixture-hardening only; the
+-- exact gate stays exact). metallic-asteroid-chunk is stack-size 1 and circulates on unfreezable
+-- belts (Pitfall #16), so the captured belt PHASE varies between transfer start and the atomic belt
+-- scan, intermittently hitting belt_restoration's documented phase-sensitive geometry/compression
+-- floor -> flaky expected>got at the gate. We remove the MOTION, not the strictness: freeze every
+-- chunk-mover so nothing reintroduces chunks in the pre-lock window, then clear all chunks from
+-- belts, inventories, and inserter hands. Reactors/generators/pipes (the plasma fluidboxes) are
+-- untouched.
+local chunk='metallic-asteroid-chunk'
+local belt_types={'transport-belt','underground-belt','splitter','loader','loader-1x1','linked-belt'}
+for _,e in pairs(p.surface.find_entities_filtered({type={'inserter','asteroid-collector','assembling-machine'}})) do
+    if e.valid then e.active=false end
+end
+for _,e in pairs(p.surface.find_entities_filtered({type=belt_types})) do
+    if e.valid then
+        for i=1,e.get_max_transport_line_index() do e.get_transport_line(i).remove_item({name=chunk,count=1000000}) end
+    end
+end
+for _,e in pairs(p.surface.find_entities_filtered({})) do
+    if e.valid then
+        for invn=1,12 do local iv=e.get_inventory(invn) if iv then iv.remove({name=chunk,count=1000000}) end end
+        if e.type=='inserter' then local h=e.held_stack if h and h.valid_for_read and h.name==chunk then h.clear() end end
+    end
+end
+local chunks_left=0
+for _,e in pairs(p.surface.find_entities_filtered({type=belt_types})) do
+    if e.valid then for i=1,e.get_max_transport_line_index() do chunks_left=chunks_left+e.get_transport_line(i).get_item_count(chunk) end end
+end
+for _,e in pairs(p.surface.find_entities_filtered({})) do
+    if e.valid then
+        for invn=1,12 do local iv=e.get_inventory(invn) if iv then chunks_left=chunks_left+iv.get_item_count(chunk) end end
+        if e.type=='inserter' then local h=e.held_stack if h and h.valid_for_read and h.name==chunk then chunks_left=chunks_left+h.count end end
+    end
+end
+rcon.print(helpers.table_to_json({entities=#p.surface.find_entities_filtered({}),control=control and control.amount or 0,managed=managed,reactors=#reactors,generators=#generators,chunks=chunks_left}))
 "@
     $fixtureData = $fixture | ConvertFrom-Json
-    if ($fixtureData.control -ne 5 -or $fixtureData.managed -le 0 -or $fixtureData.reactors -le 0 -or $fixtureData.generators -le 0) {
+    if ($fixtureData.control -ne 5 -or $fixtureData.managed -le 0 -or $fixtureData.reactors -le 0 -or $fixtureData.generators -le 0 -or $fixtureData.chunks -ne 0) {
         throw "fixture grounding failed: $fixture"
     }
     return $fixtureData
