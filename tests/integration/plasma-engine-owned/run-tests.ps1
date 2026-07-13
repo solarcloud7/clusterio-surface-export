@@ -76,9 +76,13 @@ for _,e in pairs(p.surface.find_entities_filtered({type=belt_types})) do
         for i=1,e.get_max_transport_line_index() do e.get_transport_line(i).remove_item({name=chunk,count=1000000}) end
     end
 end
+-- Sweep + grounding are driven by get_max_inventory_index, COMMENSURATE with the gate census
+-- (InventoryScanner.extract_all_inventories iterates the same bound) — a hardcoded 1..12 left any
+-- higher-index inventory unswept-yet-gate-counted (review finding, this file:81).
 for _,e in pairs(p.surface.find_entities_filtered({})) do
     if e.valid then
-        for invn=1,12 do local iv=e.get_inventory(invn) if iv then iv.remove({name=chunk,count=1000000}) end end
+        local maxinv=e.get_max_inventory_index()
+        for invn=1,maxinv do local iv=e.get_inventory(invn) if iv then iv.remove({name=chunk,count=1000000}) end end
         if e.type=='inserter' then local h=e.held_stack if h and h.valid_for_read and h.name==chunk then h.clear() end end
     end
 end
@@ -88,7 +92,8 @@ for _,e in pairs(p.surface.find_entities_filtered({type=belt_types})) do
 end
 for _,e in pairs(p.surface.find_entities_filtered({})) do
     if e.valid then
-        for invn=1,12 do local iv=e.get_inventory(invn) if iv then chunks_left=chunks_left+iv.get_item_count(chunk) end end
+        local maxinv=e.get_max_inventory_index()
+        for invn=1,maxinv do local iv=e.get_inventory(invn) if iv then chunks_left=chunks_left+iv.get_item_count(chunk) end end
         if e.type=='inserter' then local h=e.held_stack if h and h.valid_for_read and h.name==chunk then chunks_left=chunks_left+h.count end end
     end
 end

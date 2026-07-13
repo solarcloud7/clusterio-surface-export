@@ -5,10 +5,8 @@
     remaining_burning_fuel is restored (non-default, within a small justified bound).
 
 .DESCRIPTION
-    UNVALIDATED — authored ahead of the serializer capability it exercises (workstream 3c item 7). It
-    is expected to be RED until the parallel implementer lands entity-burner serialization
-    (specific_data.burner = { currently_burning = {name, quality} or nil, remaining_burning_fuel }
-    restored post-creation). A closer agent executes it against the implementer's build.
+    VALIDATED live (2.0.77, closer run) — originally authored ahead of the serializer capability it
+    exercises; it now runs green against the shipped build and serves as the permanent regression tooth.
 
     Grounding (lint:test-grounding): assertions read the LIVE destination entity physically
     (get_inventory(defines.inventory.fuel).get_item_count, burner.currently_burning,
@@ -58,7 +56,7 @@ $ErrorActionPreference = "Stop"
 $ModulePath = Join-Path (Split-Path -Parent $PSScriptRoot) "lib\TestBase.psm1"
 Import-Module $ModulePath -Force
 
-Write-TestHeader "🔥 Entity-Burner Roundtrip (mid-burn fuel state survives a transfer) — UNVALIDATED"
+Write-TestHeader "🔥 Entity-Burner Roundtrip (mid-burn fuel state survives a transfer)"
 
 $clone     = "burnerrt-$(Get-Date -Format 'HHmmss')"
 $prefix    = "burnerrt-"

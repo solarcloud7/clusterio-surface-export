@@ -22,8 +22,10 @@
         that docs/ENGINEERING_FAQ.md needs a warning row (docs are the closer's to edit, not this test's).
         Per the integration-probe discipline: assert measured behavior, not desired architecture.
 
-    UNVALIDATED: authored offline against lua-api.factorio.com/2.0.77 + the plugin's scanner/deserializer
-    shapes; never executed against the live cluster. A closer agent runs and fixes it.
+    VALIDATED live (2.0.77, closer run): an earlier banked "latch VALUE survived" measurement was FALSE —
+    the 0.6-radius seed lookup never found (so never destroyed) the seed, which kept feeding the latch
+    through the transfer. Retracted in tests/state-dimensions-lab/NOTEBOOK.md; the current measurement is
+    recorded there and in the cls-latch-behavior-documented output.
 
 .PARAMETER SourceHost
     Host to build the fixture on (default 1; destination is the other host).
@@ -79,10 +81,13 @@ if not p then return { success = false, error = 'platform missing' } end
 local s = p.surface
 local ox, oy = $Ox, $Oy
 local out = { success = true, tick = game.tick, platform_paused = p.paused }
-local es = s.find_entities_filtered({ name = 'decider-combinator', position = { ox, oy }, radius = 0.6 })
+-- Radius 0.8: a script-created 1x1 entity snaps its center to tile-center, 0.707 from the integer
+-- placement coordinate — a 0.6 radius NEVER finds it (the review-confirmed bug that let the seed
+-- survive removal and feed the latch through the transfer, recording a FALSE 'value survived').
+local es = s.find_entities_filtered({ name = 'decider-combinator', position = { ox, oy }, radius = 0.8 })
 local dec = es[1]
 out.have_decider = dec ~= nil
-out.have_seed_constant = s.find_entities_filtered({ name = 'constant-combinator', position = { ox - 3, oy }, radius = 0.6 })[1] ~= nil
+out.have_seed_constant = s.find_entities_filtered({ name = 'constant-combinator', position = { ox - 3, oy }, radius = 0.8 })[1] ~= nil
 if dec then
     local dcb = dec.get_control_behavior()
     local pok, pr = pcall(function() return dcb.parameters end)
@@ -185,14 +190,20 @@ if (-not ([int]$pre.latch_value -ge 1)) {
     Write-Status "Latch never grabbed the seed on the source (signal-S=$($pre.latch_value)) — fixture bug, not a transfer bug" -Type error
     exit 1
 }
-Invoke-ProbeJson -Instance $srcInstance -Body @"
+# Radius 0.8 (see Read-LatchState) and the removal is ASSERTED — with the old 0.6 radius the seed was
+# silently never found/destroyed and kept feeding the latch through the transfer (review finding :192).
+$seedRemoval = Invoke-ProbeJson -Instance $srcInstance -Body @"
 local p = nil
 for _, q in pairs(game.forces.player.platforms) do if q.valid and q.name == '$name' then p = q break end end
 if not p then return { success = false, error = 'platform missing' } end
-local seed = p.surface.find_entities_filtered({ name = 'constant-combinator', position = { $ox - 3, $oy }, radius = 0.6 })[1]
+local seed = p.surface.find_entities_filtered({ name = 'constant-combinator', position = { $ox - 3, $oy }, radius = 0.8 })[1]
 if seed then seed.destroy() end
 return { success = true, seed_removed = seed ~= nil }
-"@ | Out-Null
+"@
+if (-not ($seedRemoval.success -and $seedRemoval.seed_removed -eq $true)) {
+    Write-Status "Seed constant was NOT found/removed (seed_removed=$($seedRemoval.seed_removed)) — fixture bug; a surviving seed makes every latch read vacuous" -Type error
+    exit 1
+}
 Start-Sleep -Seconds 2
 $srcA = Read-LatchState -Instance $srcInstance -Ox $ox -Oy $oy
 Start-Sleep -Seconds 1

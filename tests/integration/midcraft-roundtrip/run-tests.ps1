@@ -100,14 +100,17 @@ try {
         exit 1
     }
 
-    # 2. Drive to mid-craft with the machine.active shutter (activate -> ~220ms of real ticks ->
+    # 2. Drive to mid-craft with the machine.active shutter (activate -> a SHORT slice of real ticks ->
     #    deactivate+read in ONE Lua execution). Read the ACHIEVED progress — never assume 0.5.
+    #    Slice = 30ms, matching the tightened midcraft-lab run-mc1.mjs value: the lab NOTEBOOK banked 220ms
+    #    as an instrument FAILURE (a 220ms sleep advanced ~117 ticks and exhausted the ~60-tick craft before
+    #    a mid-craft freeze landed); 30ms + RCON round-trip reliably lands inside the window.
     Write-Status "Driving to a mid-craft freeze (shutter slices)..." -Type info
     $findM = "local p for _,x in pairs(game.forces.player.platforms) do if x.valid and x.name=='$fixture' then p=x break end end local m=p.surface.find_entities_filtered({name='assembling-machine-1'})[1]"
     $srcFrozen = $null
     for ($slice = 1; $slice -le 24 -and -not $srcFrozen; $slice++) {
         Invoke-Lua -Instance $instance -Code "$findM m.active=true rcon.print('on')" | Out-Null
-        Start-Sleep -Milliseconds 220
+        Start-Sleep -Milliseconds 30
         $r = Invoke-Lua -Instance $instance -Code "$findM m.active=false rcon.print(helpers.table_to_json({success=true,tick=game.tick,active=m.active,no_power=(m.status==defines.entity_status.no_power),low_power=(m.status==defines.entity_status.low_power),progress=m.crafting_progress,input=m.get_item_count('iron-plate'),output=m.get_item_count('iron-gear-wheel')}))" -ReturnJson
         if (-not $r -or -not $r.success) { Write-Status "Shutter read failed on slice $slice" -Type error; exit 1 }
         if ($r.no_power -or $r.low_power) { Write-Status "Instrument failure: machine unpowered during drive (slice $slice)" -Type error; exit 1 }

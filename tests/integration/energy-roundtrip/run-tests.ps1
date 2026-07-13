@@ -4,10 +4,8 @@
     nonzero energy buffer (energy serialized when > 0) must keep their stored joules across a transfer.
 
 .DESCRIPTION
-    UNVALIDATED — authored ahead of the serializer capability it exercises (workstream 3c item 8). It is
-    expected to be RED until the parallel implementer lands entity-energy serialization
-    (specific_data.energy = entity.energy — accumulators always; other entities when > 0 — restored
-    post-creation). A closer agent executes it against the implementer's build.
+    VALIDATED live (2.0.77, closer run) — originally authored ahead of the serializer capability it
+    exercises; it now runs green against the shipped build and serves as the permanent regression tooth.
 
     Grounding (lint:test-grounding): assertions read the LIVE destination entity's physical entity.energy
     — NEVER a serializer self-report field. A fresh, unpowered entity has energy=0, so "substantially
@@ -49,7 +47,7 @@ $ErrorActionPreference = "Stop"
 $ModulePath = Join-Path (Split-Path -Parent $PSScriptRoot) "lib\TestBase.psm1"
 Import-Module $ModulePath -Force
 
-Write-TestHeader "🔋 Energy Roundtrip (accumulator + machine buffer survive a transfer) — UNVALIDATED"
+Write-TestHeader "🔋 Energy Roundtrip (accumulator + machine buffer survive a transfer)"
 
 $clone     = "energyrt-$(Get-Date -Format 'HHmmss')"
 $prefix    = "energyrt-"

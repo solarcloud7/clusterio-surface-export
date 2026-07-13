@@ -25,8 +25,7 @@
     We multiply by 1.5 for UPS jitter / catch-up ticks and add 0.01 float slop. spoil_ticks is read
     PHYSICALLY from the item prototype on the source; if unreadable we fall back to a conservative 0.2.
 
-    UNVALIDATED: authored offline against lua-api.factorio.com/2.0.77 + the plugin's scanner/deserializer
-    shapes; never executed against the live cluster. A closer agent runs and fixes it.
+    VALIDATED live (2.0.77, closer run) — originally authored offline; it now runs green against the shipped build.
 
 .PARAMETER SourceHost
     Host to build the fixture on (default 1; destination is the other host).

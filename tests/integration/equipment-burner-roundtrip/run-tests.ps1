@@ -19,8 +19,7 @@
     All assertions are physical destination reads (grid contents, equipment energy, burner fields, fuel
     inventory counts via get_item_count) — never the validator's report.
 
-    UNVALIDATED: authored offline against lua-api.factorio.com/2.0.77 + the plugin's scanner/deserializer
-    shapes; never executed against the live cluster. A closer agent runs and fixes it.
+    VALIDATED live (2.0.77, closer run) — originally authored offline; it now runs green against the shipped build.
 
 .PARAMETER SourceHost
     Host to build the fixture on (default 1; destination is the other host).

@@ -24,8 +24,7 @@
       * wires via get_wire_connector(id).connections owner names (never the validator's report)
       * post-activation: lamp1 cb.disabled == false AND lamp2 cb.disabled == true (the condition EVALUATES)
 
-    UNVALIDATED: authored offline against lua-api.factorio.com/2.0.77 + the plugin's scanner/deserializer
-    shapes; never executed against the live cluster. A closer agent runs and fixes it.
+    VALIDATED live (2.0.77, closer run) — originally authored offline; it now runs green against the shipped build.
 
 .PARAMETER SourceHost
     Host to build the fixture on (default 1; destination is the other host).
@@ -274,7 +273,7 @@ while ((Get-Date) -lt $settleDeadline) {
     if ($src.success -and $src.lamp_disabled -eq $false -and $src.lamp2_disabled -eq $true) { break }
 }
 if (-not $src.success) { Write-Status "Source read failed: $($src.error)" -Type error; exit 1 }
-Write-Host "  source: params=[$($src.cond1_signal) $($src.cond1_comparator) $($src.cond1_constant) -> $($src.out1_signal)] lamp_disabled=$($src.lamp_disabled) lamp2_disabled=$($src.lamp2_disabled) signal-A(in)=$($src.decider_in_signal_a) cb1=$($src.lamp_cb_present)/read=$($src.lamp_disabled_read_ok)/err=$($src.lamp_disabled_error) cb2=$($src.lamp2_cb_present)/read=$($src.lamp2_disabled_read_ok)/err=$($src.lamp2_disabled_error) slot=: wires-in=[] wires-out=[] lamp-status=/enabled= lamp2-status=/enabled=" -ForegroundColor DarkGray
+Write-Host "  source: params=[$($src.cond1_signal) $($src.cond1_comparator) $($src.cond1_constant) -> $($src.out1_signal)] lamp_disabled=$($src.lamp_disabled) lamp2_disabled=$($src.lamp2_disabled) signal-A(in)=$($src.decider_in_signal_a) lamp-status=$($src.lamp_status) lamp2-status=$($src.lamp2_status)" -ForegroundColor DarkGray
 if ($src.lamp_disabled -ne $false -or $src.lamp2_disabled -ne $true) {
     Write-Status "Source fixture does not evaluate as designed (lamp_disabled=$($src.lamp_disabled), lamp2_disabled=$($src.lamp2_disabled)) — fixture bug, not a transfer bug" -Type error
     exit 1

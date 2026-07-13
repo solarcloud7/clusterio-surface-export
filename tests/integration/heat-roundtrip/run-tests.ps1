@@ -4,10 +4,8 @@
     (restored non-default, within a small justified bound of the frozen source value).
 
 .DESCRIPTION
-    UNVALIDATED — authored ahead of the serializer capability it exercises (workstream 3c item 9). It is
-    expected to be RED until the parallel implementer lands entity-heat serialization
-    (specific_data.temperature = entity.temperature — the entity heat buffer, NOT a fluid temperature —
-    restored post-creation). A closer agent executes it against the implementer's build.
+    VALIDATED live (2.0.77, closer run) — originally authored ahead of the serializer capability it
+    exercises; it now runs green against the shipped build and serves as the permanent regression tooth.
 
     Grounding (lint:test-grounding): the assertion reads the LIVE destination entity's physical
     entity.temperature — NEVER a serializer self-report field. A fresh heat entity sits at its default
@@ -39,7 +37,7 @@ $ErrorActionPreference = "Stop"
 $ModulePath = Join-Path (Split-Path -Parent $PSScriptRoot) "lib\TestBase.psm1"
 Import-Module $ModulePath -Force
 
-Write-TestHeader "🌡️ Heat Roundtrip (entity heat-buffer temperature survives a transfer) — UNVALIDATED"
+Write-TestHeader "🌡️ Heat Roundtrip (entity heat-buffer temperature survives a transfer)"
 
 $clone     = "heatrt-$(Get-Date -Format 'HHmmss')"
 $prefix    = "heatrt-"
