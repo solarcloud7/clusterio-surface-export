@@ -173,27 +173,37 @@ function InventoryScanner.extract_equipment_grid(grid)
   local equipment = {}
 
   for _, equip in ipairs(grid.equipment) do
-    -- energy/shield READ 0 on equipment with no such buffer (2.0.77); capture only a positive value so
-    -- the restore write is attempted only where it is meaningful (a 0 restores identically to a fresh-put
-    -- default, and writing shield to non-shield equipment throws — see restore_equipment_grid).
+    -- Measured on 2.0.77 (state-dimensions-lab notebook, closer probe): `energy = v` (including 0) is
+    -- ACCEPTED on every equipment type tested (battery/solar/shield/roboport), so energy is captured
+    -- UNCONDITIONALLY — an explicitly-drained buffer restores as drained. `shield = v` THROWS
+    -- ("Equipment is not shields.") on non-shield equipment even for 0, and `max_shield` reads 0 on
+    -- non-shields vs the real capacity on shields — so max_shield>0 is the capture discriminator: real
+    -- shields keep explicit zeros, non-shields never attempt the throwing write.
     local equip_data = {
       name = equip.name,
       position = equip.position,
-      energy = equip.energy and equip.energy > 0 and equip.energy or nil,
-      shield = equip.shield and equip.shield > 0 and equip.shield or nil,
+      energy = equip.energy,
+      shield = (equip.max_shield and equip.max_shield > 0) and equip.shield or nil,
       quality = equip.quality and equip.quality.name or Util.QUALITY_NORMAL
     }
     
     -- Burner equipment (fuel items)
     if equip.burner then
       local burner = equip.burner
-      -- 2.0.77: currently_burning reads as ItemIDAndQualityIDPair whose .name is a PROTOTYPE, not a
-      -- string — resolve to plain strings (JSON-safe), mirroring EntityHandlers.extract_entity_burner.
+      -- 2.0.77: currently_burning reads as ItemIDAndQualityIDPair whose .name is a PROTOTYPE (and
+      -- .quality a LuaQualityPrototype), not strings — resolve both to plain strings (JSON-safe),
+      -- TRULY mirroring EntityHandlers.extract_entity_burner's {name, quality} shape (review finding:
+      -- the old capture dropped quality, silently resetting quality fuel to normal on restore).
       local eq_burning = burner.currently_burning
       local eq_burning_name = eq_burning and eq_burning.name or nil
       if eq_burning_name ~= nil and type(eq_burning_name) ~= "string" then eq_burning_name = eq_burning_name.name end
+      local eq_burning_quality = eq_burning and eq_burning.quality or nil
+      if eq_burning_quality ~= nil and type(eq_burning_quality) ~= "string" then eq_burning_quality = eq_burning_quality.name end
       equip_data.burner = {
-        currently_burning = eq_burning_name,
+        currently_burning = eq_burning_name and {
+          name = eq_burning_name,
+          quality = eq_burning_quality or Util.QUALITY_NORMAL
+        } or nil,
         remaining_burning_fuel = burner.remaining_burning_fuel
       }
       
