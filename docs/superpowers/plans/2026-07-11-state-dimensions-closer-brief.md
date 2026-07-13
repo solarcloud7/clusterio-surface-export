@@ -1,5 +1,6 @@
 # ONE-SHOT closer brief — cluster-validate feat/state-dimensions → one PR
 
+> Follow the [Agent execution discipline](../../AGENT_EXECUTION_DISCIPLINE.md).
 > ONE-SHOT: decisions pre-adjudicated; do not stop to ask. Valid stops: (a) audit-ready, (b) a listed
 > hard stop. Standing discipline unchanged (LF clone refresh, tools/rcon.ps1 not rc11, commit-before-
 > teeth, zero-leftover proof, no self-approved allows, package-lock untouched, no session URLs).
