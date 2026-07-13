@@ -108,8 +108,16 @@ export function findGroundingViolations(files) {
 
 function main() {
 	if (!existsSync(TESTS_DIR)) {
-		console.log(`lint:test-grounding - SKIPPED (tests/integration not found at ${TESTS_DIR}; full checkout only)`);
-		return;
+		if (process.env.LINT_ALLOW_PARTIAL === "1") {
+			console.log(`lint:test-grounding - SKIPPED (tests/integration not found at ${TESTS_DIR}; LINT_ALLOW_PARTIAL=1)`);
+			return;
+		}
+		console.error(
+			`lint:test-grounding - FAILED: ran 0 checks (tests/integration not found at ${TESTS_DIR}).\n` +
+				"A missing scan surface is not a pass. Run from a full checkout, or set LINT_ALLOW_PARTIAL=1 " +
+				"only in a deliberately plugin-only context (e.g. the plugin-only container mount).",
+		);
+		process.exit(1);
 	}
 	const files = findTestFiles();
 	const violations = findGroundingViolations(files);

@@ -139,10 +139,19 @@ if (violations.length > 0) {
 }
 
 if (!existsSync(TESTS_DIR)) {
-	// Not a failure: the plugin-only container bind-mount has no repo-root tests/. CI runs `npm run lint` on
-	// the full checkout, where the tests ARE present and the rule is enforced. Make the no-op visible.
-	console.log(`lint:test-hooks — SKIPPED (tests/integration not found at ${TESTS_DIR}; full checkout only)`);
-	process.exit(0);
+	// A guard that ran 0 checks must not look like a pass: "no code failed" reads as green in a
+	// hurry. The plugin-only container bind-mount (no repo-root tests/) is the ONLY sanctioned
+	// partial context, and it must say so explicitly via LINT_ALLOW_PARTIAL=1.
+	if (process.env.LINT_ALLOW_PARTIAL === "1") {
+		console.log(`lint:test-hooks — SKIPPED (tests/integration not found at ${TESTS_DIR}; LINT_ALLOW_PARTIAL=1)`);
+		process.exit(0);
+	}
+	console.error(
+		`lint:test-hooks — FAILED: ran 0 checks (tests/integration not found at ${TESTS_DIR}).\n` +
+			"A missing scan surface is not a pass. Run from a full checkout, or set LINT_ALLOW_PARTIAL=1 " +
+			"only in a deliberately plugin-only context (e.g. the plugin-only container mount).",
+	);
+	process.exit(1);
 }
 console.log(
 	`lint:test-hooks — OK (${findTestFiles().length} integration test(s) checked; ` +
