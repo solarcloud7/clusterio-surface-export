@@ -133,3 +133,57 @@ reads back signal-B. Fix: `get_or_create_control_behavior()` (order-independent;
 `entity_data.control_behavior` guard means a CB is only created on an entity that had one at export).
 PRE-EXISTING latent restore gap (branch didn't touch CB restore) exposed by the new circuit test. Additive
 (control config, not gate-counted).
+
+## 2026-07-13 - PR #102 adversarial-review fix loop (probes + measurements)
+
+### Probe: ghost/proxy classes vs generic extraction (review finding 7) — REFUTED
+Live on 2.0.77 (host-1, same-command reads): entity-ghost (inner assembling-machine-2), tile-ghost
+(inner concrete), and item-request-proxy ALL return get_max_inventory_index()=8 WITHOUT throwing, and
+`.burner` reads nil without throwing; `.energy`/`.temperature`/`.bonus_progress` reads are pcall-probed
+already (bp threw only on tile-ghost/proxy — inside its probe). The hypothesized crash class (generic
+extraction now reaching ghost classes and throwing in the async export on_tick) does NOT exist at this
+pin. No code change; banked as the refutation evidence.
+
+### Probe: equipment buffer write semantics (review finding 8) — capture shape decided by measurement
+Live on 2.0.77, four equipment types in a power-armor-mk2 grid:
+| equipment | max_shield | shield=0 write | energy=0 write |
+|---|---|---|---|
+| battery-mk2 | 0 | THROWS "Equipment is not shields." | accepted |
+| solar-panel | 0 | THROWS | accepted |
+| energy-shield-mk2 | 150 | accepted | accepted |
+| personal-roboport | 0 | THROWS | accepted |
+`energy = v` (including 0) is accepted on EVERY type tested -> energy is captured UNCONDITIONALLY (an
+explicitly-drained buffer restores as drained, closing the review's zero-restore gap). `max_shield > 0`
+is the shield discriminator -> shield captured (including explicit 0) only on real shields; non-shields
+never attempt the throwing write.
+
+### Probe: recipe quality API shape (finding 11) — hypothesis CONFIRMED, both sides broken
+Live on 2.0.77: `LuaEntity.get_recipe_quality()` does NOT exist ("doesn't contain key") — the export
+probe NEVER captured recipe quality (swallowed by its intentional pcall); `LuaEntity.recipe_quality`
+attribute does NOT exist — the SIMPLE_RESTORE_RULES row ALWAYS threw into its safecall (log-and-swallow),
+so quality recipes silently reset to normal, gate-blind. The real API: quality is `get_recipe()`'s SECOND
+return (`local r, q = m.get_recipe()`), and `set_recipe(name, quality)` accepts a quality string —
+set('iron-gear-wheel','uncommon') reads back uncommon; without the arg reads back normal; 'legendary'
+reads back legendary. Fix: capture from the second return at all three export sites (assembling-machine,
+furnace, rocket-silo), pass quality atomically at both set_recipe restore sites, delete the dead rule.
+Finding 11(d): previous_recipe already captures/restores its {name, quality} pair and bonus_progress is a
+quality-agnostic scalar — the furnace bonus_progress capture makes no normal-quality assumption.
+
+### RETRACTION: "circuit-latch held signal survived the transfer" was a FALSE measurement
+
+The 2026-07-12/13 entries above record `circuit-latch-state | PASS 10/10; held signal survived` and the
+closer report repeated "latch VALUE survived (latch-resets=false)". That measurement was WRONG, and the
+mechanism was an instrument bug the adversarial review caught (finding at circuit-latch run-tests.ps1:192):
+the seed constant-combinator lookup used radius 0.6 around the integer placement coordinate, but a
+script-created 1x1 entity snaps to tile-center 0.707 away — so the seed was NEVER found, `seed.destroy()`
+never ran (result piped to Out-Null, unchecked), and the "latch held with no external input" precondition
+plus the destination "value survived" reading were BOTH vacuous: the seed rode along and kept feeding the
+latch on both sides. The `cls-seed-stays-gone` check also passed vacuously (same 0.6-radius probe).
+
+Corrected instrument (radius 0.8 + hard assertion that seed_removed=true) re-measured live [empirical,
+2.0.77]: the SOURCE latch genuinely holds signal-S=1 with the seed physically removed (two reads, ticks
+apart — the latch physics are real), and across the transfer **latch-resets=TRUE: src=1 -> dst=0**. The
+structural assertions all still pass (decider params verbatim, self-wire reconnected, seed stays gone —
+now non-vacuous). This matches the test's own prior: circuit-network signal values are engine simulation
+state the serializer does not capture. docs/ENGINEERING_FAQ.md now carries the warning row the test output
+demands. There is no "mechanism to investigate" — the previously-claimed survival never happened.

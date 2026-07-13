@@ -274,6 +274,21 @@ These drive the import restore path (all measured by the state-dimensions closer
 - **`LuaGenericOnOffControlBehavior.circuit_condition` is written in the FLAT form.** **[empirical, 2.0.77,
   circuit-config-roundtrip]** `cb.circuit_condition = {first_signal=..., comparator=..., constant=...}` takes
   (reads back the signal); a nested `{condition={...}}` form does not.
+- **Recipe quality is `get_recipe()`'s SECOND return; `get_recipe_quality()` and the `recipe_quality`
+  attribute do NOT exist.** **[empirical, 2.0.77, state-dimensions-lab + item-grid-roundtrip]** Both
+  `entity.get_recipe_quality()` and `entity.recipe_quality` throw "doesn't contain key" — a pcall-probed
+  capture or a safecall'd attribute write silently never works. Read quality via
+  `local recipe, quality = entity.get_recipe()`; set it ATOMICALLY via `entity.set_recipe(name, quality)` —
+  `set_recipe(name)` without the argument resets the pair to normal quality.
+- **Equipment buffers: `energy = v` (incl. 0) is accepted on every equipment type; `shield = v` throws
+  ("Equipment is not shields.") on non-shield equipment, and `max_shield` reads 0 there vs the real
+  capacity on shields.** **[empirical, 2.0.77, state-dimensions-lab probe]** Use `max_shield > 0` as the
+  shield-capture discriminator; energy can be captured/restored unconditionally. Grid equipment QUALITY
+  must be passed at `grid.put({name, position, quality})` time — it is not writable afterwards.
+- **Ghost/proxy classes are safe for generic inventory/state reads.** **[empirical, 2.0.77,
+  state-dimensions-lab probe]** entity-ghost, tile-ghost, and item-request-proxy all return
+  `get_max_inventory_index()` (8) without throwing and read `.burner` as nil without throwing — generic
+  extraction reaching these classes is not a crash vector at this pin.
 
 ## Players on space platforms + cross-server move
 
