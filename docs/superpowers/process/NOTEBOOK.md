@@ -104,3 +104,24 @@ Record an entry only when at least one of these occurs:
 - **Workaround:** None.
 - **Final disposition:** `FIXED-PROVEN` - shared helper behavior, two runner migrations, four lint fixtures, physical success runs, and an adversarial failed run all agree.
 - **Durable references:** `verdict-aware-fidelity.test.cjs`; `lint-test-grounding.test.cjs`; debug/black-box artifact above; both-host cleanup evidence in the W3 audit report.
+
+## 2026-07-13 - state-dimensions closer: stale bind-mount + @clusterio singleton (both recovered)
+
+- **Command/action:** (a) First entity-burner run against a freshly patch-and-reset cluster; (b) CI-parity
+  `npm ci && npm test/lint` in a node:24 container with the repo mounted at /repo.
+- **Expected result:** (a) The cluster runs the primary checkout's Lua; (b) an isolated dependency install.
+- **Actual result:** (a) The running containers were bind-mounted to a STALE codex worktree from a prior
+  lane (`docker inspect` showed `.codex/visualizations/.../inventory-accounting` as the external_plugins
+  source), so patch-and-reset patched saves with the WRONG tree's Lua — new serializer code silently absent.
+  (b) npm ci executed in the real (bind-mounted) plugin dir and re-added the `@clusterio/*` peers, breaking
+  clusterioctl with the documented duplicate-`@clusterio/lib` error.
+- **Affected paths:** docker-compose bind mount `./docker/seed-data/external_plugins`; plugin `node_modules/@clusterio`.
+- **Impact:** (a) One misleading red (burner state "not restored") + one wasted debug loop; (b) clusterioctl
+  down until recovery (running instances unaffected — plugin already in memory).
+- **Workaround/fix:** (a) `docker compose up -d --force-recreate` from the primary checkout, then
+  patch-and-reset; verify with `docker inspect ... Mounts`. (b) `rm -rf node_modules/@clusterio` (never
+  `npm prune`), verified clusterioctl + RCON + zero jobs/locks after.
+- **Final disposition:** RECOVERED-PROVEN — both verified by re-runs; nine-test sweep and 31/31 full suite
+  green afterwards.
+- **Durable references:** `.superpowers/sdd/state-dims-report.md`; CLAUDE.md "DO NOT npm install on a
+  running cluster" bullet; takeover addendum item 1 (primary-checkout requirement).
