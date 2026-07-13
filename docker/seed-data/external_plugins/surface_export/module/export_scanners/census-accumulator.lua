@@ -17,6 +17,9 @@
 -- Rows store scalars plus a COPIED position (never the entity or its position userdata), matching the
 -- belt-attribution row shape in import_phases/belt_restoration.lua.
 --
+-- BELT ITEMS TIMING: do not call record() on belt entities before belt items are serialized into
+-- entity_data — during async export, skip_belt_items defers them to the atomic pass (Pitfall #16).
+--
 -- FLUID AGGREGATION CHOICE: both the physical meter (count_entity_fluids) and the serialized meter
 -- (count_all_fluids) return TEMPERATURE-keyed maps. The verdict compares fluids aggregate-BY-NAME at
 -- EXACT_EPSILON, so we re-aggregate temp keys to per-name totals via Util.parse_fluid_temp_key. This
