@@ -122,6 +122,16 @@ unlocks the source **immediately** (`tryUnlockSource`). No loss; the source is r
 (`import-completion.lua` bank+discard; Pitfall #28, the gate must count a complete state.) The unrelated
 uploaded-JSON / clone import path still uses the loose tolerances — the exact gate is transfer-only.
 
+**Q: What if a serializer bug forgets a whole container of state (like the burner-fuel incident) — does the exact gate catch it?**
+A: ⚠️ Not by itself. The gate proves *serialized == restored*, not *source == destination* — an omission is absent
+from both sides of the comparison, so the gate passes and the loss is silent. Items and fluids are protected today
+by the CI meter-drift sentinel (`transfer-fidelity` compares the validator's expected counts against an independent
+physical count of the source) and by the owner-approved paired-reads source census (in progress), which converts
+any omission into a loud pre-transfer abort with the source preserved. Non-countable state (circuit configs,
+crafting progress, schedules, spoilage) is protected only by enumeration — per-category handlers plus per-dimension
+roundtrip fixtures. See the tier table in [parity-verification-model.md](parity-verification-model.md); never claim
+"100%" without scoping it to tier 1 plus the enumerated tier-2 dimensions.
+
 **Q: What if my platform is too big and the RCON / import send fails?**
 A: ✅ A normal (non-session) error triggers controller rollback → source unlocked at once.
 

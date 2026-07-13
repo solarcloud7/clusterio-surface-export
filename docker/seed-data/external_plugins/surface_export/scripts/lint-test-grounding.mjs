@@ -108,8 +108,19 @@ export function findGroundingViolations(files) {
 
 function main() {
 	if (!existsSync(TESTS_DIR)) {
-		console.log(`lint:test-grounding - SKIPPED (tests/integration not found at ${TESTS_DIR}; full checkout only)`);
-		return;
+		// The ONLY sanctioned partial context is the plugin bind-mounted inside a cluster container at
+		// /clusterio/external_plugins (no repo-root tests/ there — CLAUDE.md's in-container lint flow).
+		// Positive path detection keeps the bypass reviewable: no ambient env-var can silence this
+		// guard from a broken checkout elsewhere.
+		if (/^([a-z]:)?\/clusterio\/external_plugins\//i.test(SCRIPT_DIR.replace(/\\/g, "/"))) {
+			console.log(`lint:test-grounding - SKIPPED (plugin-only container mount; tests/integration not present at ${TESTS_DIR})`);
+			return;
+		}
+		console.error(
+			`lint:test-grounding - FAILED: ran 0 checks (tests/integration not found at ${TESTS_DIR}).\n` +
+				"A missing scan surface is not a pass. Run from a full repository checkout.",
+		);
+		process.exit(1);
 	}
 	const files = findTestFiles();
 	const violations = findGroundingViolations(files);

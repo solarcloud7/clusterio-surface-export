@@ -57,6 +57,11 @@ if (-not $SkipIncrement) {
     Write-Host "Using existing version: $NewVersion" -ForegroundColor Yellow
 }
 
+# Both branches: keep the lockfile's version metadata in step with package.json (a -SkipIncrement
+# run heals pre-existing drift too; idempotent — writes only on change). See tools/version-utils.ps1.
+. "$PSScriptRoot/version-utils.ps1"
+Update-PackageLockVersion -LockPath (Join-Path $PluginPath "package-lock.json") -NewVersion $NewVersion
+
 Write-Host "Using save-patched module architecture (no mod zip needed)" -ForegroundColor Cyan
 Write-Host "Lua code in module/ directory will be patched into saves by Clusterio" -ForegroundColor Green
 

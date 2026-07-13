@@ -139,10 +139,20 @@ if (violations.length > 0) {
 }
 
 if (!existsSync(TESTS_DIR)) {
-	// Not a failure: the plugin-only container bind-mount has no repo-root tests/. CI runs `npm run lint` on
-	// the full checkout, where the tests ARE present and the rule is enforced. Make the no-op visible.
-	console.log(`lint:test-hooks — SKIPPED (tests/integration not found at ${TESTS_DIR}; full checkout only)`);
-	process.exit(0);
+	// A guard that ran 0 checks must not look like a pass: "no code failed" reads as green in a
+	// hurry. The ONLY sanctioned partial context is the plugin bind-mounted inside a cluster
+	// container at /clusterio/external_plugins (no repo-root tests/ there — CLAUDE.md's
+	// in-container lint flow). Positive path detection keeps the bypass reviewable: no ambient
+	// env-var can silence this guard from a broken checkout elsewhere.
+	if (/^([a-z]:)?\/clusterio\/external_plugins\//i.test(SCRIPT_DIR.replace(/\\/g, "/"))) {
+		console.log(`lint:test-hooks — SKIPPED (plugin-only container mount; tests/integration not present at ${TESTS_DIR})`);
+		process.exit(0);
+	}
+	console.error(
+		`lint:test-hooks — FAILED: ran 0 checks (tests/integration not found at ${TESTS_DIR}).\n` +
+			"A missing scan surface is not a pass. Run from a full repository checkout.",
+	);
+	process.exit(1);
 }
 console.log(
 	`lint:test-hooks — OK (${findTestFiles().length} integration test(s) checked; ` +
