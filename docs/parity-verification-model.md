@@ -56,6 +56,29 @@ derive from the serializer's own output (verification is generated from serializ
 Pitfall #16, atomic belt scan, in [CLAUDE.md](../CLAUDE.md)). The meter-drift sentinel covers that
 axis in CI only.
 
+## Freeze policy by entity family
+
+Measurement and serialization are only meaningful against a non-moving target. Different entity
+families require different freeze mechanisms, and several intuitive ones are measured
+non-starters. Current policy, per family:
+
+| Family | Mechanism during export/import | Anchor |
+|---|---|---|
+| Machines, inserters, turrets, most activatables | `entity.active = false` at lock time; original states recorded and restored on unlock/activation ([surface-lock.lua](../docker/seed-data/external_plugins/surface_export/module/utils/surface-lock.lua) `freeze`, [active_state_restoration.lua](../docker/seed-data/external_plugins/surface_export/module/import_phases/active_state_restoration.lua)) | code |
+| Belts (transport-belt, underground, splitter) | **cannot be deactivated — items keep moving on locked platforms** (measured); read in one atomic Lua execution instead ([async-processor.lua](../docker/seed-data/external_plugins/surface_export/module/core/async-processor.lua) atomic belt scan; Pitfall #16, atomic belt scan, in [CLAUDE.md](../CLAUDE.md)) | measured |
+| Cargo pods in flight | not frozen — **completed** by the lock before export scanning ("completes cargo pods", [export-pipeline.lua](../docker/seed-data/external_plugins/surface_export/module/core/export-pipeline.lua)); a mover is retired, not paused | code |
+| Ground items (`item-entity`) | static entities; no freeze needed | code |
+| Beacons (import side) | deliberately kept **active** through restoration so `crafting_speed` propagates to crafters before inventory refill (see "Import Phase Ordering" in [CLAUDE.md](../CLAUDE.md)) | code |
+| Inserter held items (import side) | per-inserter brief active-toggle inside one synchronous pass — no tick elapses, so no swing occurs (Pitfall #28, the gate must count a complete state, in [CLAUDE.md](../CLAUDE.md)) | measured |
+| Whole platform (`platform.paused`) | parks held destinations; does **not** stop belt drift on the held surface (the observation behind Black-Box Discard's snapshot-then-delete design) | measured |
+| Whole game (`game.tick_paused`) | labs and tests only; also halts the plugin's own async processing (`/step-tick` exists to step past it) | code |
+
+The strongest freeze is not a pause mechanism at all: **within a single Lua execution, zero ticks
+elapse and nothing in the simulation moves** (measured — see the no-tick-sync results referenced
+from Pitfall #15, entity activation before validation, in [CLAUDE.md](../CLAUDE.md)). Reads that
+must be mutually consistent are placed in the same execution; freezing across ticks is required
+only when work cannot fit in one execution, and then only the families above that support it.
+
 ## The guarantee boundary — read this before claiming "100%"
 
 The gate's guarantee is precisely: **what was serialized equals what was restored.** It is *not*,
