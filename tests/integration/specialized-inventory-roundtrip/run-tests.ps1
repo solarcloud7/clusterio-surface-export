@@ -39,6 +39,19 @@ function Count-Payload($Data) {
     }
     return $total
 }
+function Count-PayloadFluid($Data) {
+    $total = 0.0
+    foreach ($entity in @((Get-SafeProperty $Data "entities"))) {
+        if ((Get-SafeProperty $entity "name") -ne "electric-mining-drill") { continue }
+        $specific = Get-SafeProperty $entity "specific_data"
+        foreach ($fluid in @((Get-SafeProperty $specific "fluids"))) {
+            if ((Get-SafeProperty $fluid "name") -eq "sulfuric-acid") {
+                $total += [double](Get-SafeProperty $fluid "amount")
+            }
+        }
+    }
+    return $total
+}
 function Wait-File([string]$Instance, [string]$Container, [string]$Pattern) {
     $start = Get-Date
     while (((Get-Date) - $start).TotalSeconds -lt $TimeoutSec) {
@@ -56,6 +69,20 @@ for _,p in pairs(game.forces['player'].platforms or {}) do
     for _,e in ipairs(p.surface.find_entities_filtered({name='burner-inserter'})) do
       local inv=e.get_inventory(defines.inventory.fuel)
       if inv then out.present=true; out.count=inv.get_item_count({name='coal',quality='legendary'}); break end
+    end
+  end
+end
+rcon.print(helpers.table_to_json(out))
+"@
+}
+function Find-Fluid([string]$Instance, [string]$PlatformName) {
+    return Invoke-Lua -Instance $Instance -ReturnJson -Code @"
+local out={present=false,amount=-1}
+for _,p in pairs(game.forces['player'].platforms or {}) do
+  if p.name=='$PlatformName' then
+    for _,e in ipairs(p.surface.find_entities_filtered({name='electric-mining-drill'})) do
+      local fluid=e.fluidbox and e.fluidbox[1]
+      if fluid and fluid.name=='sulfuric-acid' then out.present=true; out.amount=fluid.amount; break end
     end
   end
 end
@@ -109,13 +136,22 @@ local ok,err=pcall(function()
  local e=p.surface.create_entity({name='burner-inserter',position={320,320},force=f}); e.active=false
  local inv=e.get_inventory(defines.inventory.fuel); local inserted=inv.insert({name='coal',quality='legendary',count=20})
  if inserted~=20 then error('legendary coal fixture write rejected: '..tostring(inserted)) end
- out.success=true; out.index=p.index; out.count=inv.get_item_count({name='coal',quality='legendary'})
+ local drill=p.surface.create_entity({name='electric-mining-drill',position={324,320},force=f})
+ if not drill then error('electric mining drill fixture placement rejected') end
+ drill.active=false
+ drill.fluidbox[1]={name='sulfuric-acid',amount=50,temperature=25}
+ local fluid=drill.fluidbox[1]
+ if not fluid or fluid.name~='sulfuric-acid' or math.abs(fluid.amount-50)>0.000001 then
+   error('sulfuric acid fixture write rejected: '..serpent.line(fluid))
+ end
+ out.success=true; out.index=p.index; out.count=inv.get_item_count({name='coal',quality='legendary'}); out.fluid=fluid.amount
 end)
 if not ok then out.error=tostring(err) end
 rcon.print(helpers.table_to_json(out))
 "@
     if (-not $build.success) { throw "Fixture failed: $($build.error)" }
     Add-Result "specinv-$Section-source" "Source physically contains 20 legendary coal" ([int]$build.count -eq 20) "count=$($build.count)"
+    Add-Result "specinv-$Section-source-fluid" "Source physically contains 50 sulfuric acid" ([math]::Abs([double]$build.fluid - 50) -lt 0.000001) "fluid=$($build.fluid)"
     docker exec $srcContainer sh -c "rm -f $srcOut/debug_source_platform_$($name)_*.json 2>/dev/null" 2>$null | Out-Null
     docker exec $dstContainer sh -c "rm -f $dstOut/debug_import_result_$($name)_*.json $dstOut/debug_destination_platform_$($name)_*.json 2>/dev/null" 2>$null | Out-Null
     if ($Section -eq "loss") { Invoke-Lua -Instance $dst -Code "remote.call('surface_export','configure',{debug_mode=true,test_force_item_loss=1}) rcon.print('armed')" | Out-Null }
@@ -128,20 +164,33 @@ rcon.print(helpers.table_to_json(out))
     $source = Read-DebugFile -Instance $src -Container $srcContainer -Filename $sourceFile
     $validation = Get-SafeProperty $result "validation_result"
     $payload = Count-Payload $source
+    $payloadFluid = Count-PayloadFluid $source
     $export = Count-Key (Get-SafeProperty (Get-SafeProperty $source "verification") "item_counts") "coal:legendary"
+    $exportFluid = [double](Count-Key (Get-SafeProperty (Get-SafeProperty $source "verification") "fluid_counts") "sulfuric-acid@25.0C")
     $expected = Count-Key (Get-SafeProperty $validation "expectedItemCounts") "coal:legendary"
+    $expectedFluid = [double](Count-Key (Get-SafeProperty $validation "expectedFluidCounts") "sulfuric-acid")
     $actual = Count-Key (Get-SafeProperty $validation "actualItemCounts") "coal:legendary"
+    $actualFluid = [double](Count-Key (Get-SafeProperty $validation "actualFluidCounts") "sulfuric-acid")
     Add-Result "specinv-$Section-payload" "Serialized entity payload contains 20 legendary coal" ($payload -eq 20) "payload=$payload"
+    Add-Result "specinv-$Section-payload-fluid" "Serialized entity payload contains 50 sulfuric acid" ([math]::Abs($payloadFluid - 50) -lt 0.000001) "payloadFluid=$payloadFluid"
     Add-Result "specinv-$Section-export" "Export verification contains exactly 20 legendary coal" ($export -eq 20) "export=$export"
+    Add-Result "specinv-$Section-export-fluid" "Export verification contains exactly 50 sulfuric acid" ([math]::Abs($exportFluid - 50) -lt 0.000001) "exportFluid=$exportFluid"
     Add-Result "specinv-$Section-expected" "Gate expects exactly 20 legendary coal" ($expected -eq 20) "expected=$expected"
+    Add-Result "specinv-$Section-expected-fluid" "Gate expects exactly 50 sulfuric acid" ([math]::Abs($expectedFluid - 50) -lt 0.000001) "expectedFluid=$expectedFluid"
+    Add-Result "specinv-$Section-actual-fluid" "Gate sees exactly 50 sulfuric acid" ([math]::Abs($actualFluid - 50) -lt 0.000001) "actualFluid=$actualFluid"
     if ($Section -eq "success") {
         Assert-TransferSucceeded -Result $result -Context "Specialized inventory transfer $name"
         $destFile = Wait-File $dst $dstContainer "debug_destination_platform_$($name)_*.json"
-        $frozen = Count-Payload (Read-DebugFile -Instance $dst -Container $dstContainer -Filename $destFile)
+        $frozenData = Read-DebugFile -Instance $dst -Container $dstContainer -Filename $destFile
+        $frozen = Count-Payload $frozenData
+        $frozenFluid = Count-PayloadFluid $frozenData
         Add-Result "specinv-success-frozen" "Frozen destination contains 20 legendary coal" ($frozen -eq 20) "frozen=$frozen"
+        Add-Result "specinv-success-frozen-fluid" "Frozen destination contains 50 sulfuric acid" ([math]::Abs($frozenFluid - 50) -lt 0.000001) "frozenFluid=$frozenFluid"
         Add-Result "specinv-success-actual" "Gate sees exactly 20 legendary coal" ($actual -eq 20) "actual=$actual"
         $live = Find-Fuel $dst $name
         Add-Result "specinv-success-live" "Live destination contains 20 legendary coal" ($live.present -eq $true -and [int]$live.count -eq 20) ($live | ConvertTo-Json -Compress)
+        $liveFluid = Find-Fluid $dst $name
+        Add-Result "specinv-success-live-fluid" "Live destination contains 50 sulfuric acid" ($liveFluid.present -eq $true -and [math]::Abs([double]$liveFluid.amount - 50) -lt 0.000001) ($liveFluid | ConvertTo-Json -Compress)
         Add-Result "specinv-success-deleted" "Source deleted after exact success" (-not [bool](Get-PlatformIndex -Instance $src -PlatformName $name)) "source remained"
     } else {
         Start-Sleep -Seconds 2

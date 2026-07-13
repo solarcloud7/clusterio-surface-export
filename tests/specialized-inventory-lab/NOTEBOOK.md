@@ -66,3 +66,16 @@ Final state:
 
 - Host 1 platforms: protected fixture `test` only; holds=0, locks=0, async_jobs=0, committed tombstones=0, game unpaused.
 - Host 2 platforms: protected fixture `spikedoom08` only; holds=0, locks=0, async_jobs=0, committed tombstones=0, game unpaused.
+## 2026-07-12 - Audit correction: independent fluid capability evidence
+
+The original fluid matrix was vacuous: `fluidCapableOnPlatforms` copied `handlerFluidOwners`, so it encoded the ownership answer as the capability question. The corrected matrix is independent of handler ownership.
+
+Tick-stamped live query on Factorio 2.0.77 (`game.tick=322800`, host 1 protected `test` platform, surface `platform-1`):
+
+- platform properties: `pressure=0`, `gravity=0`;
+- `flamethrower-turret`: one fluidbox, `surface_conditions pressure>=10`, therefore not platform-reachable;
+- `electric-mining-drill`: one fluidbox, no surface conditions, and `surface.can_place_entity=true` on platform foundation;
+- `fluid-wagon`: gravity condition requires `gravity>=1`, therefore not platform-reachable;
+- `chemical-plant`, `storage-tank`, and `pump` were each independently observed with fluidboxes and `surface.can_place_entity=true`.
+
+Result: the prior "verified-clean" fluid conclusion is retracted. `mining-drill` was a real platform-reachable specialized-handler omission, so the symmetric keep-if-non-nil shared fluid attachment is required. The static tooth first failed with exactly `uncovered = ["mining-drill"]` before the repair.
