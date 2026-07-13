@@ -17,11 +17,13 @@ local function safe_call(context, func)
   return ok
 end
 
---- Restore additional properties on a placed item stack
---- (health, durability, ammo, spoil_percent, label, custom_description, grid, nested_inventory)
+--- Restore COUNT-NEUTRAL scalar item metadata (health, durability, ammo, spoil_percent, label,
+--- custom_description). None of these change an item count, so they are safe to apply on the set_stack
+--- (slotted) restore path without perturbing the exact gate census. Grid / nested-inventory restoration
+--- (which ADD items) is deliberately kept out of here and lives only in restore_item_properties below.
 --- @param stack LuaItemStack: The stack to restore properties on
 --- @param item_data table: Serialized item data with optional property fields
-local function restore_item_properties(stack, item_data)
+local function restore_item_scalar_properties(stack, item_data)
   if not stack or not stack.valid_for_read then return end
 
   if item_data.health and stack.health then
@@ -48,6 +50,17 @@ local function restore_item_properties(stack, item_data)
   if item_data.custom_description and stack.custom_description then
     stack.custom_description = item_data.custom_description
   end
+end
+
+--- Restore additional properties on a placed item stack
+--- (health, durability, ammo, spoil_percent, label, custom_description, grid, nested_inventory)
+--- @param stack LuaItemStack: The stack to restore properties on
+--- @param item_data table: Serialized item data with optional property fields
+local function restore_item_properties(stack, item_data)
+  if not stack or not stack.valid_for_read then return end
+
+  restore_item_scalar_properties(stack, item_data)
+
   if item_data.grid and stack.grid then
     Deserializer.restore_equipment_grid(stack.grid, item_data.grid)
   end
@@ -470,11 +483,11 @@ function Deserializer.restore_entity_state(entity, entity_data)
   -- Resolve the serialized item name to a prototype so an unknown mod item is skipped (not crashed).
   -- currently_burning is burn-progress, NOT an inventory slot, so neither the expected-count
   -- (Verification.count_all_items) nor the dest census (SurfaceCounter.count_items) reads it directly.
-  -- UNVERIFIED (pending live-cluster validation by the closer agent): (a) whether this write is
-  -- ACCEPTED while the entity is still DEACTIVATED (transfers validate pre-activation); and (b) whether
-  -- the engine consumes/mutates the fuel inventory when currently_burning is set — this runs before
-  -- restore_inventories' clear()+refill, so any consumption is overwritten, but that ordering must be
-  -- confirmed on the cluster. If either fails, move this write to the post-validation activation pass.
+  -- VERIFIED [empirical, 2.0.77] by the closer run (tests/state-dimensions-lab/NOTEBOOK.md + the passing
+  -- entity-burner-roundtrip; api-notes): (a) the write is ACCEPTED while the entity is DEACTIVATED — a deactivated
+  -- burner reads back currently_burning/remaining_burning_fuel exactly; (b) setting currently_burning does
+  -- NOT mutate the fuel inventory, and this running before restore_inventories' clear()+refill leaves the
+  -- burn state undisturbed. No relocation to the activation pass needed.
   if data.burner and entity.burner then
     local burner_data = data.burner
     local burning = burner_data.currently_burning
@@ -498,18 +511,19 @@ function Deserializer.restore_entity_state(entity, entity_data)
   end
 
   -- Restore entity energy buffer (accumulator charge, machine energy store).
-  -- UNVERIFIED (pending live-cluster validation by the closer agent): whether a write to `.energy` is
-  -- ACCEPTED while the entity is still DEACTIVATED (transfers validate pre-activation). If a
-  -- deactivated entity rejects/ignores it, this write should move to the post-validation activation
-  -- pass. Also unverified: whether restoring it perturbs the pre-activation gate census.
+  -- VERIFIED [empirical, 2.0.77] by the closer run (state-dimensions-lab NOTEBOOK + passing
+  -- energy-roundtrip; api-notes): a write to `.energy` is ACCEPTED while the entity is DEACTIVATED (accumulator
+  -- 0->123456 read back exactly; machine buffer written in-range read back exactly). Energy is not
+  -- item-counted, so it does not perturb the exact gate census. No relocation to the activation pass.
   if data.energy ~= nil then
     safe_call(string.format("energy for %s", entity.name),
       function() entity.energy = data.energy end)
   end
 
   -- Restore entity heat buffer temperature (reactors, heat pipes, heat-consumers).
-  -- UNVERIFIED, same as `energy` above: deactivated-write acceptance is not yet confirmed on the live
-  -- cluster; the closer agent may relocate this to the activation pass.
+  -- VERIFIED [empirical, 2.0.77] by the closer run (state-dimensions-lab NOTEBOOK + passing heat-roundtrip; api-notes):
+  -- a write to `.temperature` is ACCEPTED while the entity is DEACTIVATED (reactor 15->500 read back
+  -- exactly). Not item-counted; no gate perturbation; no relocation to the activation pass.
   if data.temperature ~= nil then
     safe_call(string.format("temperature for %s", entity.name),
       function() entity.temperature = data.temperature end)
@@ -619,6 +633,14 @@ function Deserializer.restore_inventories(entity, entity_data, overflow_losses)
           elseif item.slot and item.slot <= #inventory then
             -- Verify set_stack worked
             local slot = inventory[item.slot]
+            -- Restore count-neutral scalar metadata on the slotted stack. The set_stack path historically
+            -- skipped restore_item_properties entirely (only the no-slot insert fallback ran it), silently
+            -- dropping spoilage decay, health, durability, ammo and labels for every slotted item.
+            -- EMPIRICAL (2.0.77, spoilage-roundtrip): bioflux spoil_percent 0.5003 -> 0 pre-fix. Scalars
+            -- only here — grid/nested restoration ADD items and must not touch the gate census on this path.
+            if slot.valid_for_read then
+              restore_item_scalar_properties(slot, item)
+            end
             if not slot.valid_for_read or slot.count < item.count then
               local actual_count = slot.valid_for_read and slot.count or 0
               local lost = item.count - actual_count
@@ -722,14 +744,20 @@ function Deserializer.restore_equipment_grid(grid, grid_data)
     })
 
     if equipment then
-      -- Restore energy
-      if equip_data.energy and equipment.energy ~= nil then
-        equipment.energy = equip_data.energy
+      -- Restore energy / shield. EMPIRICAL (2.0.77, equipment-burner-roundtrip crash at tick 138282,
+      -- this file's restore_equipment_grid): LuaEquipment.shield (and .energy) READS 0 on equipment
+      -- that has no shield/energy buffer, so the old `equipment.X ~= nil` guard is a FALSE guard (a
+      -- read never returns nil) and export captures a truthy 0; the WRITE then throws "Equipment is not
+      -- shields" and killed the import on_tick. safe_call each write (it logs) so an unsupported buffer
+      -- is skipped, not fatal. Presence check stays: only attempt when a value was captured.
+      if equip_data.energy then
+        safe_call(string.format("equipment energy for %s", tostring(equip_data.name)),
+          function() equipment.energy = equip_data.energy end)
       end
-      
-      -- Restore shield
-      if equip_data.shield and equipment.shield ~= nil then
-        equipment.shield = equip_data.shield
+
+      if equip_data.shield then
+        safe_call(string.format("equipment shield for %s", tostring(equip_data.name)),
+          function() equipment.shield = equip_data.shield end)
       end
       
       -- Restore burner equipment fuel state
@@ -920,7 +948,13 @@ function Deserializer.restore_control_behavior(entity, entity_data)
     return
   end
 
-  local cb = entity.get_control_behavior()
+  -- get_or_create (NOT get): an entity may not have instantiated its control behavior yet at restore time
+  -- (a lamp has NO control behavior until it is wired, and wires are restored separately), so plain
+  -- get_control_behavior() returns nil and every setting below is silently skipped. EMPIRICAL (2.0.77,
+  -- circuit-config-roundtrip): an unwired lamp's get_control_behavior()=nil, so its restored
+  -- circuit_condition/circuit_enable_disable were dropped. The entity_data.control_behavior guard above
+  -- means we only ever create a CB on an entity that HAD one at export, so no spurious CB is created.
+  local cb = entity.get_or_create_control_behavior()
   if not cb then
     return
   end

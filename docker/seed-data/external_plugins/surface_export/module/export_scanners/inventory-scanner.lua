@@ -173,11 +173,14 @@ function InventoryScanner.extract_equipment_grid(grid)
   local equipment = {}
 
   for _, equip in ipairs(grid.equipment) do
+    -- energy/shield READ 0 on equipment with no such buffer (2.0.77); capture only a positive value so
+    -- the restore write is attempted only where it is meaningful (a 0 restores identically to a fresh-put
+    -- default, and writing shield to non-shield equipment throws — see restore_equipment_grid).
     local equip_data = {
       name = equip.name,
       position = equip.position,
-      energy = equip.energy,
-      shield = equip.shield,
+      energy = equip.energy and equip.energy > 0 and equip.energy or nil,
+      shield = equip.shield and equip.shield > 0 and equip.shield or nil,
       quality = equip.quality and equip.quality.name or Util.QUALITY_NORMAL
     }
     
