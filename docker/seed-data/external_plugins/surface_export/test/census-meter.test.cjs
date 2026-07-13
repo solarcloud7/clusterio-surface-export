@@ -54,3 +54,75 @@ test("surface-counter never references EntityHandlers (independence is structura
 	assert.doesNotMatch(surfaceCounter, /EntityHandlers/,
 		"the census meter must stay independent of the export-side EntityHandlers dispatch");
 });
+
+// -----------------------------------------------------------------------------
+// Task 3 (Phase 1): paired-reads census accumulator — source-contract assertions.
+// Read lazily so a missing module fails ONLY these tests (clean RED), not the
+// surface-counter tests above.
+// -----------------------------------------------------------------------------
+function accumulatorSource() {
+	return fs.readFileSync(
+		path.join(moduleRoot, "export_scanners", "census-accumulator.lua"),
+		"utf8",
+	);
+}
+
+test("census-accumulator defines new/record/verdict", () => {
+	const src = accumulatorSource();
+	assert.match(src, /function\s+CensusAccumulator\.new\s*\(/,
+		"CensusAccumulator.new() must create the accumulator");
+	assert.match(src, /function\s+CensusAccumulator\.record\s*\(\s*acc\s*,\s*entity\s*,\s*entity_data/,
+		"record(acc, entity, entity_data, ...) must take the paired reads for one entity");
+	assert.match(src, /function\s+CensusAccumulator\.verdict\s*\(\s*acc/,
+		"verdict(acc) must produce the census verdict");
+});
+
+test("record performs the paired PHYSICAL read via the Task-2 SurfaceCounter meters (real wiring, not a stub)", () => {
+	const body = functionBody(
+		accumulatorSource(),
+		"function CensusAccumulator.record(",
+		"function CensusAccumulator.verdict",
+	);
+	assert.match(body, /SurfaceCounter\.count_entity_items\s*\(\s*entity/,
+		"record must call SurfaceCounter.count_entity_items(entity) — the physical item read is the paired-read wiring");
+	assert.match(body, /SurfaceCounter\.count_entity_fluids\s*\(\s*entity/,
+		"record must call SurfaceCounter.count_entity_fluids(entity, ...) for the physical fluid read");
+});
+
+test("record's SERIALIZED side reuses Verification's counting rules (no re-implementation)", () => {
+	const body = functionBody(
+		accumulatorSource(),
+		"function CensusAccumulator.record(",
+		"function CensusAccumulator.verdict",
+	);
+	assert.match(body, /Verification\.count_all_items\s*\(/,
+		"the serialized item count must reuse Verification.count_all_items");
+	assert.match(body, /Verification\.count_all_fluids\s*\(/,
+		"the serialized fluid count must reuse Verification.count_all_fluids");
+});
+
+test("mismatch rows carry unit_number and per-key expected/actual/delta (belt-attribution row shape)", () => {
+	const src = accumulatorSource();
+	assert.match(src, /unit_number\s*=\s*entity\.unit_number/,
+		"rows must be entity-attributed by the stable unit_number");
+	assert.match(src, /entity_id\s*=/, "rows must carry the serialized entity_id");
+	assert.match(src, /position\s*=\s*\{\s*x\s*=\s*entity\.position\.x/,
+		"rows must carry a COPIED position (scalars only — storage-safe, never the position userdata)");
+	assert.match(src, /\bexpected\s*=/, "rows must carry per-key expected");
+	assert.match(src, /\bactual\s*=/, "rows must carry per-key actual");
+	assert.match(src, /\bdelta\s*=/, "rows must carry per-key delta");
+});
+
+test("verdict compares items EXACTLY and fluids within the 1e-6 epsilon constant", () => {
+	const src = accumulatorSource();
+	assert.match(src, /(?:EXACT_EPSILON|epsilon)\s*=\s*1e-6/,
+		"the fluid comparison must use the 1e-6 epsilon constant (mirrors the transfer gate)");
+	assert.match(src, /math\.abs\([^)]*\)\s*>\s*EXACT_EPSILON/,
+		"fluid names compare with |delta| > EXACT_EPSILON");
+});
+
+test("accumulator aggregates temp-keyed fluids to per-name totals for the verdict (mirrors the gate)", () => {
+	const src = accumulatorSource();
+	assert.match(src, /Util\.parse_fluid_temp_key\s*\(/,
+		"fluids must be re-aggregated temp-key → name via Util.parse_fluid_temp_key, as the gate does");
+});
