@@ -64,8 +64,7 @@ if (Test-Path $ModuleJsonPath) {
     $ModuleJson | ConvertTo-Json -Depth 10 | Set-Content $ModuleJsonPath -Encoding UTF8
 }
 
-# Keep the lockfile's version metadata in step, or npm's next lifecycle run rewrites the whole
-# lockfile to "fix" the mismatch (untracked churn agents then get blamed for).
+# Keep the lockfile's version metadata in step with package.json; see tools/version-utils.ps1.
 . "$PSScriptRoot/version-utils.ps1"
 Update-PackageLockVersion -LockPath (Join-Path $WorkspaceRoot "docker/seed-data/external_plugins/surface_export/package-lock.json") -NewVersion $NewVersion
 Write-Host "✓ Version updated" -ForegroundColor Green

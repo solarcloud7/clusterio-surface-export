@@ -51,16 +51,16 @@ if (-not $SkipIncrement) {
     } else {
         Write-Warning "module.json not found at $ModuleJsonPath"
     }
-
-    # Keep the lockfile's version metadata in step, or npm's next lifecycle run rewrites the whole
-    # lockfile to "fix" the mismatch (untracked churn agents then get blamed for).
-    . "$PSScriptRoot/version-utils.ps1"
-    Update-PackageLockVersion -LockPath (Join-Path $PluginPath "package-lock.json") -NewVersion $NewVersion
 } else {
     $PluginJson = Get-Content $PluginJsonPath -Raw | ConvertFrom-Json
     $NewVersion = $PluginJson.version
     Write-Host "Using existing version: $NewVersion" -ForegroundColor Yellow
 }
+
+# Both branches: keep the lockfile's version metadata in step with package.json (a -SkipIncrement
+# run heals pre-existing drift too; idempotent — writes only on change). See tools/version-utils.ps1.
+. "$PSScriptRoot/version-utils.ps1"
+Update-PackageLockVersion -LockPath (Join-Path $PluginPath "package-lock.json") -NewVersion $NewVersion
 
 Write-Host "Using save-patched module architecture (no mod zip needed)" -ForegroundColor Cyan
 Write-Host "Lua code in module/ directory will be patched into saves by Clusterio" -ForegroundColor Green
