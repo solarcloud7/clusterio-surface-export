@@ -247,6 +247,34 @@ Consequence: fluid does not live per-entity — it lives in the shared segment. 
   physically held all ten valid plates, and the host log gained the expected "Skipped unknown item" warning.
   **[empirical, 2.0.77, engine-repin-lab B9]**
 
+## Deactivated-entity state writes and control-behavior / equipment restore
+
+These drive the import restore path (all measured by the state-dimensions closer run; see
+`tests/state-dimensions-lab/NOTEBOOK.md` and the matching integration tests).
+
+- **Burner, energy, and heat writes are ACCEPTED while the entity is DEACTIVATED.** **[empirical, 2.0.77,
+  state-dimensions-lab + entity-burner/energy/heat-roundtrip]** A deactivated burner reads back
+  `currently_burning` / `remaining_burning_fuel` exactly; setting `currently_burning` does not mutate the fuel
+  inventory (so it may run before `restore_inventories` clear+refill). A deactivated accumulator/machine
+  accepts `entity.energy = v` exactly; a deactivated reactor accepts `entity.temperature = v` exactly. None of
+  these are item-counted, so they do not perturb the pre-activation exact gate. No relocation to activation.
+- **`LuaEquipment.shield` (and `.energy`) READS 0 on equipment with no such buffer, but WRITING throws.**
+  **[empirical, 2.0.77, equipment-burner-roundtrip]** Reading `.shield` on non-shield equipment returns `0`
+  (truthy in Lua), so a `~= nil` guard is a FALSE guard; writing `equipment.shield = v` on non-shield
+  equipment throws `"Equipment is not shields."` and killed an import on_tick. Guard the write with pcall and
+  capture shield/energy on export only when `> 0`.
+- **A `small-lamp` has NO control behavior until it is wired; `get_control_behavior()` returns nil.**
+  **[empirical, 2.0.77, circuit-config-roundtrip]** Restoring control-behavior config (circuit_condition,
+  circuit_enable_disable) must use `get_or_create_control_behavior()`, or the settings are silently dropped
+  for any entity whose CB is not yet instantiated at restore time (wires restore in a separate phase).
+- **`LuaEntity.disabled_by_control_behavior` (boolean) is unreliable; use `status`.** **[empirical, 2.0.77,
+  circuit-config-roundtrip]** A lamp genuinely disabled by its circuit condition reports
+  `status == defines.entity_status.disabled_by_control_behavior` (55) while the boolean property reads
+  `false`. Detect circuit-disabled state via `status`, not the property.
+- **`LuaGenericOnOffControlBehavior.circuit_condition` is written in the FLAT form.** **[empirical, 2.0.77,
+  circuit-config-roundtrip]** `cb.circuit_condition = {first_signal=..., comparator=..., constant=...}` takes
+  (reads back the signal); a nested `{condition={...}}` form does not.
+
 ## Players on space platforms + cross-server move
 
 These facts drive how cross-instance transfer handles a player who is "aboard" a platform
