@@ -106,17 +106,15 @@ const domains = [
 	},
 	{
 		id: "splitter-filter",
-		status: "static-gap",
-		producer: ["export_scanners/entity-handlers.lua", /data\.filter\s*=\s*entity\.splitter_filter\.name/],
+		status: "static-owned",
+		producer: ["export_scanners/entity-handlers.lua", /data\.filter\s*=\s*\{[\s\S]*name\s*=\s*entity\.splitter_filter\.name,[\s\S]*quality\s*=\s*entity\.splitter_filter\.quality and entity\.splitter_filter\.quality\.name or GameUtils\.QUALITY_NORMAL/],
 		consumer: ["core/deserializer.lua", /field\s*=\s*"filter",\s*prop\s*=\s*"splitter_filter"/],
-		gap: "capture reduces the filter to a bare name before shared restore",
 	},
 	{
 		id: "mining-drill-filter",
-		status: "static-gap",
+		status: "static-owned",
 		producer: ["export_scanners/entity-handlers.lua", /data\.filter\s*=\s*\{[\s\S]*quality\s*=\s*filter\.quality and filter\.quality\.name/],
-		consumer: ["core/deserializer.lua", /local filter_name[\s\S]*entity\.set_filter\(1, filter_name\)/],
-		gap: "restore extracts only filter.name and discards the captured quality",
+		consumer: ["core/deserializer.lua", /local filter_value[\s\S]*entity\.set_filter\(1, filter_value\)/],
 	},
 	{
 		id: "ghost-and-proxy-requests",
@@ -152,8 +150,6 @@ test("all non-owned rows state the exact unresolved boundary", () => {
 	assert.deepEqual(unresolved.map(row => [row.id, row.status]), [
 		["inserter-loader-wagon-filter", "live-pending"],
 		["constant-combinator-slot", "live-pending"],
-		["splitter-filter", "static-gap"],
-		["mining-drill-filter", "static-gap"],
 		["ghost-and-proxy-requests", "base-restoration-gap"],
 	]);
 	for (const row of unresolved.filter(row => row.status.endsWith("gap"))) {
@@ -161,9 +157,29 @@ test("all non-owned rows state the exact unresolved boundary", () => {
 	}
 });
 
-test("the three authorized live spot checks remain explicit", () => {
-	const liveTargets = domains.filter(row => row.status === "live-pending" || row.id === "splitter-filter")
+test("the authorized live spot checks remain explicit", () => {
+	const liveTargets = domains.filter(row =>
+		row.status === "live-pending" || row.id === "splitter-filter" || row.id === "mining-drill-filter")
 		.map(row => row.id)
 		.sort();
-	assert.deepEqual(liveTargets, ["constant-combinator-slot", "inserter-loader-wagon-filter", "splitter-filter"]);
+	assert.deepEqual(liveTargets, [
+		"constant-combinator-slot",
+		"inserter-loader-wagon-filter",
+		"mining-drill-filter",
+		"splitter-filter",
+	]);
+});
+
+test("quality filter roundtrip fixtures exercise both corrected domains", () => {
+	const suite = JSON.parse(fs.readFileSync(path.join(__dirname, "..", "..", "..", "..", "..",
+		"tests", "integration", "entity-roundtrip", "test-cases.json"), "utf8"));
+	const fixtures = new Map(suite.tests.map(fixture => [fixture.id, fixture]));
+	assert.deepEqual(fixtures.get("splitter-quality-filter").input.specific_data.filter,
+		{ name: "iron-plate", quality: "legendary" });
+	assert.deepEqual(fixtures.get("mining-drill-quality-filter").input.specific_data.filter,
+		{ name: "iron-ore", quality: "legendary" });
+
+	const roundtrip = source("interfaces/remote/test-import-entity.lua");
+	assert.match(roundtrip, /fields_to_compare\s*=\s*\{[\s\S]*"filter"/,
+		"entity roundtrip must compare filter payloads instead of treating the fixtures as decorative");
 });

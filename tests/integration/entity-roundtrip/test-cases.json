@@ -119,6 +119,21 @@
       "expect": { "success": true }
     },
     {
+      "id": "splitter-quality-filter",
+      "name": "Splitter with legendary-quality item filter",
+      "category": "belts",
+      "type": "entity",
+      "input": {
+        "name": "splitter",
+        "direction": 0,
+        "specific_data": {
+          "filter": { "name": "iron-plate", "quality": "legendary" },
+          "items": []
+        }
+      },
+      "expect": { "success": true }
+    },
+    {
       "id": "gun-turret-ammo",
       "name": "Gun Turret with ammo",
       "category": "turrets",
@@ -435,6 +450,20 @@
         "name": "electric-mining-drill",
         "direction": 0,
         "specific_data": {}
+      },
+      "expect": { "success": true }
+    },
+    {
+      "id": "mining-drill-quality-filter",
+      "name": "Electric Mining Drill with legendary-quality resource filter",
+      "category": "production",
+      "type": "entity",
+      "input": {
+        "name": "electric-mining-drill",
+        "direction": 0,
+        "specific_data": {
+          "filter": { "name": "iron-ore", "quality": "legendary" }
+        }
       },
       "expect": { "success": true }
     },

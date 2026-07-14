@@ -96,8 +96,8 @@ local SIMPLE_RESTORE_RULES = {
   { field = "use_filters", present = true },
   { field = "filter_mode", prop = "inserter_filter_mode" },
   { field = "stack_size_override", prop = "inserter_stack_size_override" },
-  -- Splitter filter: data.filter is a plain name string here (mining-drill data.filter is a
-  -- {name,quality} table handled by the inline set_filter block, gated on entity.set_filter).
+  -- Splitter filter: current exports carry {name,quality}; legacy bare-name exports remain
+  -- assignable through the same property restore.
   { field = "filter", prop = "splitter_filter" },
   { field = "input_priority", prop = "splitter_input_priority", safecall = true },
   { field = "output_priority", prop = "splitter_output_priority", safecall = true },
@@ -379,12 +379,19 @@ function Deserializer.restore_entity_state(entity, entity_data)
       function() entity.set_fluid_filter(data.fluid_filter) end)
   end
 
-  -- Restore mining drill resource filter
-  -- Export stores data.filter as {name=..., quality=...} table; handle legacy string format too
+  -- Restore mining drill resource filter.
+  -- Current exports carry {name,quality}; legacy exports used a bare item name.
   if data.filter and entity.set_filter then
-    local filter_name = type(data.filter) == "table" and data.filter.name or data.filter
+    local filter_value = data.filter
+    if type(data.filter) == "table" then
+      filter_value = {
+        name = data.filter.name,
+        quality = data.filter.quality or Util.QUALITY_NORMAL
+      }
+    end
     safe_call(string.format("set_filter for %s", entity.name),
-      function() entity.set_filter(1, filter_name) end)
+      -- Keep the engine call isolated: the pending live signature probe adjusts only this line.
+      function() entity.set_filter(1, filter_value) end)
   end
 
   -- Restore train station custom name and settings
