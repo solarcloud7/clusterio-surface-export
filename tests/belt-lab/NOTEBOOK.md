@@ -531,3 +531,11 @@ the Pass-2 hub clear()+refill. Fix: recover from the STORED belt-phase attributi
 the frozen transfer path; correct on both paths). cornerreplay3 deleted (polluted by the 321 insert).
 NEXT (BELT-R6): replay expecting belts delta=-5 and "Aggregate deficit recovery: recovered=5, unrecovered=0"
 from the stored attribution; hub gains exactly 4 explosive-rocket + 1 metallic-asteroid-chunk.
+
+## BELT-R7 [empirical, 2.0.77] - spilled ground items on a platform SURVIVE the commit window
+Review finding 2 probe (spill durability was an untested engine belief under the recovery design).
+Bare platform, paused: spill_item_stack of 20 iron-plate at hub.position -> 20 item-entities, ground
+count 20 (materialization on paused platform confirmed; matches R4a on a live platform). Unpaused,
+3669 ticks elapsed (61s, >> the seconds-scale source-delete commit window): ground_entities=20,
+ground_items=20 - zero despawn. Spill is a durable recovery route for the gate/commit window.
+Out of scope (normal gameplay): asteroid-impact destruction of ground items during flight.
