@@ -196,11 +196,21 @@ SurfaceExportModule.events = {
 	end,
 
 	[e.on_player_reverse_selected_area] = function(event)
-		SelectionLab.handle(event, "preview")
+		SelectionLab.handle(event, "audit")
 	end,
 
 	[e.on_player_alt_reverse_selected_area] = function(event)
 		SelectionLab.handle(event, "force")
+	end,
+
+	-- Selection Lab undo/redo (custom-input prototypes from the surfexp_gateways mod; string keys
+	-- pass through the event_handler to script.on_event, which accepts custom-input names).
+	["selection-lab-undo"] = function(event)
+		SelectionLab.undo(event)
+	end,
+
+	["selection-lab-redo"] = function(event)
+		SelectionLab.redo(event)
 	end,
 }
 

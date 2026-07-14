@@ -92,4 +92,16 @@ data:extend({
 		small_icon = "__base__/graphics/icons/blueprint.png",
 		small_icon_size = 64,
 	},
+	-- Selection Lab undo/redo hotkeys (explicit sequences — deliberately NOT linked to the vanilla
+	-- undo controls, so lab undo never collides with the game's own build-undo stack).
+	{
+		type = "custom-input",
+		name = "selection-lab-undo",
+		key_sequence = "CONTROL + SHIFT + Z",
+	},
+	{
+		type = "custom-input",
+		name = "selection-lab-redo",
+		key_sequence = "CONTROL + SHIFT + Y",
+	},
 })

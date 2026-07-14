@@ -1,4 +1,10 @@
 ---------------------------------------------------------------------------------------------------
+Version: 0.3.0
+Date: 2026-07-14
+  Changes:
+    - Selection Lab v3: all-or-nothing paste with error sound, force-replace with undo journal,
+      Ctrl+Shift+Z/Y undo-redo custom inputs, Ctrl+Drag repurposed as a gate-meter AUDIT mode.
+---------------------------------------------------------------------------------------------------
 Version: 0.2.1
 Date: 2026-07-14
   Changes:
