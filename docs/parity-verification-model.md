@@ -32,6 +32,8 @@ Evidence tags and measurement details are in
   not double-count a shared run.
 - Ground items are entities (`item-entity`) and are counted by the same enumeration
   (`count_items` has a dedicated ground-item pass).
+- Quality is a dimension of every item-domain reference (entities, stacks, held items, filters,
+  requests, recipes, equipment, and circuit signals); fluids are the exception and have no quality.
 - Counting must happen in a **frozen world** (entities deactivated, no elapsed tick between
   restoration and count), or machines craft in the gap and produce false deltas. The import
   pipeline's phase ordering exists to guarantee this (see "Import Phase Ordering" in
@@ -65,6 +67,7 @@ non-starters. Current policy, per family:
 | Family | Mechanism during export/import | Anchor |
 |---|---|---|
 | Machines, inserters, turrets, most activatables | `entity.active = false` at lock time; original states recorded and restored on unlock/activation ([surface-lock.lua](../docker/seed-data/external_plugins/surface_export/module/utils/surface-lock.lua) `freeze`, [active_state_restoration.lua](../docker/seed-data/external_plugins/surface_export/module/import_phases/active_state_restoration.lua)) | code |
+| Asteroid collectors | `entity.active = false` through the same lock/deactivation path; collectors are activatable and were measured frozen by the lock ([game-utils.lua](../docker/seed-data/external_plugins/surface_export/module/utils/game-utils.lua) `is_activatable_entity`) | code + measured |
 | Belts (transport-belt, underground, splitter) | **cannot be deactivated — items keep moving on locked platforms** (measured); read in one atomic Lua execution instead ([async-processor.lua](../docker/seed-data/external_plugins/surface_export/module/core/async-processor.lua) atomic belt scan; Pitfall #16, atomic belt scan, in [CLAUDE.md](../CLAUDE.md)) | measured |
 | Cargo pods in flight | not frozen — **completed** by the lock before export scanning ("completes cargo pods", [export-pipeline.lua](../docker/seed-data/external_plugins/surface_export/module/core/export-pipeline.lua)); a mover is retired, not paused | code |
 | Ground items (`item-entity`) | static entities; no freeze needed | code |
