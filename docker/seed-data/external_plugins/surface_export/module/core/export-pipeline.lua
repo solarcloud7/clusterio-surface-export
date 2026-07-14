@@ -16,8 +16,34 @@ local clusterio_api = require("modules/clusterio/api")
 local PhaseProfiler = require("modules/surface_export/utils/phase-profiler")
 local TransactionHistory = require("modules/surface_export/utils/transaction-history")
 local JobResults = require("modules/surface_export/core/job-results")
+local CensusAccumulator = require("modules/surface_export/export_scanners/census-accumulator")
 
 local ExportPipeline = {}
+
+--- Test-only ONE-SHOT: simulate a serializer omission the paired-read source census must catch.
+--- Drops one serialized inventory stack from THIS entity_data AFTER serialization and BEFORE the
+--- census records it, so physical (full) > serialized (short) and the verdict fails. Fires PRE-verdict,
+--- so a leaked flag makes the NEXT transfer export ABORT and PRESERVE its source (self-protecting —
+--- enumerated in lint:test-hooks FAIL_SAFE_HOOKS; Pitfall #30, mutating test hooks must be fail-safe on leak).
+--- @param entity_data table: the just-serialized entity form (mutated in place on a hit)
+local function maybe_inject_census_omission(entity_data)
+	local cfg = storage.surface_export_config
+	if not (cfg and cfg.test_force_census_omission) then return end
+	local invs = entity_data and entity_data.specific_data and entity_data.specific_data.inventories
+	if not invs then return end
+	for _, inv in ipairs(invs) do
+		if inv.items and #inv.items > 0 then
+			local removed = table.remove(inv.items, 1)  -- drop one serialized stack (physical still has it)
+			cfg.test_force_census_omission = nil          -- consume: one entity, one export
+			log(string.format(
+				"[Census][test hook] test_force_census_omission dropped serialized stack '%s' x%d from entity_id=%s",
+				tostring(removed and removed.name),
+				tonumber(removed and removed.count) or 0,
+				tostring(entity_data.entity_id)))
+			return
+		end
+	end
+end
 
 --- Sort entities for proper placement order
 --- Underground belts, pipes, etc. need special ordering
@@ -247,6 +273,10 @@ function ExportPipeline.queue(platform_index, force_name, requester_name, destin
 		-- Belt entities tracked for deferred atomic scan
 		-- Maps serialized entity index → live LuaEntity reference
 		belt_entities = {},
+		-- Paired-reads source census (Task 4). Storage-safe plain data — it lives here in
+		-- storage.async_jobs across the multi-tick walk; record() folds physical-vs-serialized
+		-- per entity in the SAME execution the entity is serialized in.
+		census = CensusAccumulator.new(),
 		-- Fluid segment dedup cache: seg_id → {fluid, amount, temp}
 		-- Shared across all export batches so each segment is serialized exactly once
 		-- at the segment-level weighted-average temperature (matches FluidRestoration output)
@@ -311,6 +341,10 @@ function ExportPipeline.process_batch(job, get_batch_size, should_show_progress)
 			if EntityScanner.is_exportable_entity(entity) then
 				local entity_data = EntityScanner.serialize_entity(entity)
 				if entity_data then
+					-- Test-only one-shot: drop a serialized stack to simulate a serializer omission the
+					-- census must catch (post-serialization, pre-record). No-op unless armed.
+					maybe_inject_census_omission(entity_data)
+
 					table.insert(job.export_data.entities, entity_data)
 
 					-- Track belt entities for deferred atomic item scan
@@ -318,6 +352,12 @@ function ExportPipeline.process_batch(job, get_batch_size, should_show_progress)
 					if GameUtils.BELT_ENTITY_TYPES[category] then
 						local serialized_index = #job.export_data.entities
 						job.belt_entities[serialized_index] = entity  -- Live LuaEntity reference
+					else
+						-- Paired source census (Task 4): fold the PHYSICAL and SERIALIZED reads of this ONE
+						-- entity in the SAME Lua execution it was serialized in. Belt-type entities are
+						-- DEFERRED — their items are not serialized until the atomic pass in complete()
+						-- (skip_belt_items) — so they are paired there instead (Pitfall #16, atomic belt scan).
+						CensusAccumulator.record(job.census, entity, entity_data)
 					end
 				end
 			end
@@ -372,6 +412,11 @@ function ExportPipeline.complete(job)
 			local entity_data = job.export_data.entities[serialized_index]
 			if entity_data and entity_data.specific_data then
 				entity_data.specific_data.items = belt_items
+				-- Paired source census (Task 4) for belts: the physical read re-derives belt contents via
+				-- extract_belt_items INDEPENDENTLY of the just-patched serialized copy. CRITICAL: belt pairing
+				-- is ONLY valid inside this single-tick atomic pass — belts cannot be frozen, so items move
+				-- between ticks; the physical read and the serialized items must be the SAME tick (Pitfall #16).
+				CensusAccumulator.record(job.census, live_entity, entity_data)
 				belt_scan_count = belt_scan_count + 1
 				-- Count items for logging
 				for _, line_data in ipairs(belt_items) do
@@ -396,6 +441,13 @@ function ExportPipeline.complete(job)
 	-- would emit a stackless, unrestorable record). Capture them here in one tick WITH their item
 	-- payload, BEFORE verification, so they are both counted and restorable. Fixes silent
 	-- ground-item loss on transfer.
+	-- DEVIATION (Task 4 item 4): ground items are intentionally NOT census-paired. count_entity_items
+	-- (validators/surface-counter.lua) has no item-entity branch, so a paired read of an item-entity
+	-- would be physical=0 vs serialized=N => a spurious census abort on EVERY loose ground item. There
+	-- is also no handler-dispatch layer to omit here (scan_items_on_ground reads stack.name/count directly),
+	-- so the census has no omission surface to catch; ground-item conservation is covered by the dest gate.
+	-- Making it commensurate would require editing the gate-feeding validator (out of scope) — adjudicate
+	-- at /di-change if independent ground coverage is wanted.
 	local ground_items = EntityScanner.scan_items_on_ground(job.surface)
 	for _, ground_item in ipairs(ground_items) do
 		table.insert(job.export_data.entities, ground_item)
@@ -416,6 +468,35 @@ function ExportPipeline.complete(job)
 		fluid_counts = fluid_counts,
 		engine_owned_fluid_counts = engine_owned_fluid_counts
 	}
+
+	-- ========================================
+	-- PAIRED-READS SOURCE CENSUS VERDICT (Task 4)
+	-- ========================================
+	-- Every entity was paired physical-vs-serialized in the SAME execution it was serialized in
+	-- (non-belts in process_batch, belts in the atomic pass above). The verdict applies the same
+	-- exact contract as the frozen transfer gate. This is a SOURCE-side omission check the destination
+	-- gate structurally cannot see: a serializer that drops an item makes BOTH the exported payload AND
+	-- the dest gate's "expected" wrong, so they agree while silently losing data.
+	job.census_verdict = CensusAccumulator.verdict(job.census)
+	if job.destination_instance_id then
+		-- TRANSFER: fail closed on a mismatch. Do NOT store or send the export; the destination is
+		-- never contacted (the surface_export_complete -> TransferPlatformRequest continuation cannot
+		-- run). The census totals are NOT attached to the transmitted payload — they would only bloat
+		-- the RCON-bottlenecked transfer path; a mismatch aborts and a clean verdict just proceeds.
+		if not job.census_verdict.ok then
+			ExportPipeline.abort_transfer_on_census_mismatch(job)
+			return
+		end
+	else
+		-- Non-transfer export (file / clone / uploaded-source): no source-delete risk, so NEVER abort.
+		-- Attach the verdict for inspection; log a loud warning on a mismatch, export the payload anyway.
+		job.export_data.census_verdict = job.census_verdict
+		if not job.census_verdict.ok then
+			log(string.format(
+				"[Census][WARN] Source census MISMATCH on non-transfer export '%s': %d mismatch row(s) — exporting anyway (no source-delete risk)",
+				job.platform_name, #job.census_verdict.mismatches))
+		end
+	end
 
 	-- CRITICAL: Include frozen_states for restoring original active states on import
 	-- The frozen_states map contains the ORIGINAL state of each entity BEFORE freezing.
@@ -612,6 +693,92 @@ function ExportPipeline.complete(job)
 	end
 
 	-- Cleanup
+	storage.async_jobs[job.job_id] = nil
+end
+
+--- Fail-closed abort for a TRANSFER export whose paired-read source census found a mismatch.
+--- The destination is NEVER contacted: the export is not stored or sent, so the
+--- surface_export_complete -> TransferPlatformRequest continuation cannot run. Banks an always-on
+--- forensic bundle (write_failure_black_box deliberately bypasses the debug gate),
+--- unlocks/preserves the source, marks the job failed, and signals the failure on the existing
+--- export-completion channel with an export_failed_* id (the TS handleExportComplete recognizer
+--- isInvalidExportId refuses it -> a double guard at the boundary).
+--- @param job table: the export job (destination_instance_id set, census_verdict not ok)
+function ExportPipeline.abort_transfer_on_census_mismatch(job)
+	local verdict = job.census_verdict or { mismatches = {}, totals = {} }
+	local mismatch_count = #(verdict.mismatches or {})
+	local safe_name = string.gsub(job.platform_name or "unknown", "[^%w_-]", "_")
+	local filename = string.format("census_%s_%d.json", safe_name, game.tick)
+
+	-- Always-on forensic bundle (bypasses the debug gate) — must exist before we discard the transfer.
+	local bundle = {
+		reason = "source_census_mismatch",
+		platform_name = job.platform_name,
+		platform_index = job.platform_index,
+		destination_instance_id = job.destination_instance_id,
+		gate_tick = game.tick,
+		started_tick = job.started_tick,
+		verdict_ok = verdict.ok,
+		mismatch_count = mismatch_count,
+		mismatches = verdict.mismatches,
+		totals = verdict.totals,
+	}
+	local written = DebugExport.write_failure_black_box(filename, bundle)
+
+	log(string.format(
+		"[Census][ABORT] Transfer export '%s' ABORTED — source census mismatch: %d row(s); destination NOT contacted; source preserved. Bundle=%s",
+		job.platform_name, mismatch_count, tostring(written)))
+	game.print(string.format(
+		"[Census] Transfer of '%s' ABORTED — source serialization mismatch detected; source preserved.",
+		job.platform_name), {1, 0.3, 0})
+
+	-- Unlock (preserve) the source — the same path a non-transfer/failed export uses.
+	local unlock_success = SurfaceLock.unlock_platform(job.platform_index)
+	if unlock_success and clusterio_api and clusterio_api.send_json then
+		GameUtils.pcall_warn("[ExportPipeline] send_json surface_platform_state_changed (census abort)", function()
+			clusterio_api.send_json("surface_platform_state_changed", {
+				platform_name = job.platform_name,
+				force_name = job.force_name,
+			})
+		end)
+	end
+
+	-- Signal the failure on the existing export-completion channel. isInvalidExportId(export_failed*)
+	-- makes the TS handler log-and-return WITHOUT contacting the destination (double guard).
+	if clusterio_api and clusterio_api.send_json then
+		GameUtils.pcall_warn("[ExportPipeline] send_json surface_export_complete (census abort)", function()
+			clusterio_api.send_json("surface_export_complete", {
+				export_id = "export_failed_census_" .. safe_name,
+				platform_name = job.platform_name,
+				platform_index = job.platform_index,
+				destination_instance_id = job.destination_instance_id,
+				census_failure = true,
+				census_mismatch_count = mismatch_count,
+				failure_black_box = written,
+			})
+		end)
+	end
+
+	if job.requester == "RCON" then
+		rcon.print(string.format("EXPORT_FAILED:census_mismatch:%s", job.platform_name))
+	end
+
+	-- Record a FAILED job result (mirror the success shape) so the job never looks green or leaks.
+	storage.async_job_results[job.job_id] = {
+		status = "failed",
+		complete = true,
+		failed = true,
+		type = "export",
+		job_id = job.job_id,
+		platform_name = job.platform_name,
+		error = "source_census_mismatch",
+		census_mismatch_count = mismatch_count,
+		requester = job.requester,
+	}
+	JobResults.prune(25)
+
+	-- Discard the completion profiler and clear the job so it cannot be reprocessed.
+	PhaseProfiler.discard(job.job_id)
 	storage.async_jobs[job.job_id] = nil
 end
 

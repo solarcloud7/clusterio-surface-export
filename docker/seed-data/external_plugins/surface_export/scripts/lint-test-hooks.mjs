@@ -38,6 +38,7 @@ const FAIL_SAFE_HOOKS = new Set([
 	"test_force_fluid_loss", // pre-gate: inflates expected fluids before the single exact gate → gate FAILS → dest discarded/source preserved
 	"test_force_validation_failure", // pre-gate: forces validation FAIL → rollback → source preserved
 	"test_force_entity_failure", // pre-gate: marker forces verdict FAIL after attribution → source preserved
+	"test_force_census_omission", // PRE-verdict: drops a serialized stack → source census FAILS → transfer export ABORTS → source preserved (owner-adjudicated Decision 5, paired-reads census plan)
 ]);
 
 // A value that DISARMS a hook rather than arming it — these assignments are safe and don't require cleanup.
