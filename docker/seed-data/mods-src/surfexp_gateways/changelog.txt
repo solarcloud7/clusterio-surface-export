@@ -1,4 +1,10 @@
 ---------------------------------------------------------------------------------------------------
+Version: 0.2.1
+Date: 2026-07-14
+  Changes:
+    - Selection Lab v2: true copy/paste semantics (paste at drag target, blueprint-style conflict
+      highlighting, Ctrl+Shift force-override). Locale strings + instructional tooltip added.
+---------------------------------------------------------------------------------------------------
 Version: 0.2.0
 Date: 2026-07-14
   Features:

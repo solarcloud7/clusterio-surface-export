@@ -188,11 +188,11 @@ SurfaceExportModule.events = {
 	-- Selection Lab (debug instrument; prototype ships in the surfexp_gateways mod, all logic here).
 	-- Each handler self-guards on event.item == "selection-lab-tool" and debug_mode.
 	[e.on_player_selected_area] = function(event)
-		SelectionLab.handle(event, "capture")
+		SelectionLab.handle(event, "copy")
 	end,
 
 	[e.on_player_alt_selected_area] = function(event)
-		SelectionLab.handle(event, "apply")
+		SelectionLab.handle(event, "paste")
 	end,
 
 	[e.on_player_reverse_selected_area] = function(event)
@@ -200,7 +200,7 @@ SurfaceExportModule.events = {
 	end,
 
 	[e.on_player_alt_reverse_selected_area] = function(event)
-		SelectionLab.handle(event, "clear")
+		SelectionLab.handle(event, "force")
 	end,
 }
 
