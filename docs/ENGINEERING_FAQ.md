@@ -154,6 +154,20 @@ discarded (`failedStage` in the transaction log tells you whether items or fluid
 debug-gated `preserve_failed_destination` flag to keep the failed surface paused instead of discarding it — it is
 consumed after a single use; Pitfall #30, mutating test hooks must be fail-safe on leak.)
 
+**Q: How should I triage a failure black box?**
+A: Start with `failedStage`, then compare the expected/actual per-name rows. These signatures are known classes;
+anything else stays unexplained until measured. Never loosen the exact gate to make a signature disappear.
+
+| Failure signature | Known class | Operator action |
+|---|---|---|
+| `items`; one belt-attributed item name; small, single-digit `LOST` delta | Belt restoration stack-1/compression floor | Retry the transfer **once**. The source is preserved by the failed gate. If the same signature repeats, stop retrying and retain the new black box for the belt-loss rung. |
+| `fluids`; mismatch is fusion plasma or another engine-managed output | Engine-owned fluid classification/exclusion issue | Do not compensate manually or relax the epsilon. Confirm the engine-owned category and symmetric export/restore/census exclusion for the current Factorio pin; preserve the source while correcting that classification. |
+| `items`; many unrelated names are `GAINED` together | Craft-window/non-frozen census | Treat this as an ordering or measurement failure, not created inventory. Check the black-box tick and paused/active state, and move the census back before any elapsed simulation tick. |
+
+The belt class is fail-closed and remains mechanistically `UNEXPLAINED`; the deterministic replay and recovery
+evidence live in [the belt lab notebook](../tests/belt-lab/NOTEBOOK.md). Engine-owned fluid handling is covered by
+the `plasma-engine-owned` integration fixture. A retry is authorized only for the first row and only once.
+
 ## D. Data fidelity
 
 **Q: What if my belts are packed with items?**
