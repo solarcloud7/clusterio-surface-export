@@ -126,3 +126,108 @@ test("accumulator aggregates temp-keyed fluids to per-name totals for the verdic
 	assert.match(src, /Util\.parse_fluid_temp_key\s*\(/,
 		"fluids must be re-aggregated temp-key → name via Util.parse_fluid_temp_key, as the gate does");
 });
+
+// -----------------------------------------------------------------------------
+// Task 4 (Phase 2): wire the paired reads into the export walk — source-contract
+// assertions over export-pipeline.lua / configure.lua / lint-test-hooks.mjs.
+// -----------------------------------------------------------------------------
+function exportPipelineSource() {
+	return fs.readFileSync(path.join(moduleRoot, "core", "export-pipeline.lua"), "utf8");
+}
+function configureSource() {
+	return fs.readFileSync(path.join(moduleRoot, "interfaces", "remote", "configure.lua"), "utf8");
+}
+
+test("queue() attaches a fresh storage-safe census accumulator to the job", () => {
+	const body = functionBody(
+		exportPipelineSource(),
+		"function ExportPipeline.queue(",
+		"function ExportPipeline.process_batch(",
+	);
+	assert.match(body, /census\s*=\s*CensusAccumulator\.new\s*\(/,
+		"queue() must attach CensusAccumulator.new() to the job (lives in storage.async_jobs across the walk)");
+});
+
+test("process_batch records paired reads in the SAME loop as serialize_entity, belts excluded", () => {
+	const body = functionBody(
+		exportPipelineSource(),
+		"function ExportPipeline.process_batch(",
+		"function ExportPipeline.complete(",
+	);
+	assert.match(body, /EntityScanner\.serialize_entity\s*\(\s*entity\s*\)/,
+		"process_batch must serialize each entity");
+	assert.match(body, /CensusAccumulator\.record\s*\(\s*job\.census\s*,\s*entity\s*,\s*entity_data/,
+		"process_batch must record the paired reads for the just-serialized entity, in the same loop iteration");
+	// The record must be the ELSE of the belt-deferral branch — belt-type entities are NOT recorded
+	// during the async walk (their items aren't serialized until the atomic pass in complete()).
+	assert.match(body, /BELT_ENTITY_TYPES\[category\][\s\S]*?\belse\b[\s\S]*?CensusAccumulator\.record\s*\(\s*job\.census/,
+		"belt entities must be deferred (paired in the atomic pass); only NON-belt entities are recorded in the walk");
+});
+
+test("the atomic belt scan pairs each belt AFTER its serialized items are patched (same tick)", () => {
+	const body = functionBody(
+		exportPipelineSource(),
+		"function ExportPipeline.complete(",
+		"function ExportPipeline.abort_transfer_on_census_mismatch(",
+	);
+	assert.match(
+		body,
+		/entity_data\.specific_data\.items\s*=\s*belt_items[\s\S]*?CensusAccumulator\.record\s*\(\s*job\.census\s*,\s*live_entity\s*,\s*entity_data/,
+		"the atomic belt scan must record each belt's paired reads AFTER patching its serialized items (single-tick execution)",
+	);
+});
+
+test("census verdict is computed BEFORE the export is stored/sent, and the transfer abort references it", () => {
+	const src = exportPipelineSource();
+	const verdictIdx = src.indexOf("CensusAccumulator.verdict(job.census)");
+	const storeIdx = src.indexOf("storage.platform_exports[export_id] =");
+	assert.notEqual(verdictIdx, -1, "complete() must compute CensusAccumulator.verdict(job.census)");
+	assert.notEqual(storeIdx, -1, "complete() must store the export somewhere");
+	assert.ok(verdictIdx < storeIdx,
+		"the census verdict must be computed BEFORE the export is stored/compressed/sent");
+	assert.match(src, /if\s+not\s+job\.census_verdict\.ok\s+then/,
+		"a failed verdict must gate the abort path");
+	assert.match(src, /job\.destination_instance_id[\s\S]*?abort_transfer_on_census_mismatch/,
+		"only TRANSFER exports (destination_instance_id set) abort on a failed verdict");
+});
+
+test("the census mismatch bundle is always-on (NOT debug-gated) and the abort preserves the source", () => {
+	const body = functionBody(
+		exportPipelineSource(),
+		"function ExportPipeline.abort_transfer_on_census_mismatch(",
+		"return ExportPipeline",
+	);
+	assert.match(body, /DebugExport\.write_failure_black_box\s*\(/,
+		"the mismatch bundle must use write_failure_black_box (always-on, bypasses debug_mode)");
+	assert.doesNotMatch(body, /DebugExport\.is_enabled|debug_mode/,
+		"the census mismatch bundle must NOT be gated on debug_mode / is_enabled");
+	assert.match(body, /SurfaceLock\.unlock_platform\s*\(\s*job\.platform_index/,
+		"the abort must unlock (preserve) the source platform");
+});
+
+test("ground items are intentionally NOT census-paired (documented deviation from task item 4)", () => {
+	const body = functionBody(
+		exportPipelineSource(),
+		"function ExportPipeline.complete(",
+		"function ExportPipeline.abort_transfer_on_census_mismatch(",
+	);
+	assert.match(body, /table\.insert\(job\.export_data\.entities, ground_item\)/,
+		"the ground-item scan must still append ground items to the payload");
+	assert.doesNotMatch(body, /CensusAccumulator\.record\s*\(\s*job\.census\s*,\s*(?:live_ground|ground_live|ground_item|ground_entity)/,
+		"ground items must NOT be census-paired: count_entity_items has no item-entity branch → phys=0/ser=N spurious abort");
+});
+
+test("test_force_census_omission is registered in the configure allowlist and consumed by the walk", () => {
+	assert.match(configureSource(), /config\.test_force_census_omission\s*~=\s*nil/,
+		"unregistered configure keys are silently dropped — the one-shot hook must be in the allowlist");
+	assert.match(configureSource(), /storage\.surface_export_config\.test_force_census_omission\s*=/,
+		"the hook value must be persisted into surface_export_config");
+	assert.match(exportPipelineSource(), /test_force_census_omission/,
+		"the export walk must consume the one-shot census-omission hook at the post-serialization point");
+});
+
+test("the census-omission hook is enumerated in lint:test-hooks FAIL_SAFE_HOOKS", () => {
+	const lint = fs.readFileSync(path.join(moduleRoot, "..", "scripts", "lint-test-hooks.mjs"), "utf8");
+	assert.match(lint, /FAIL_SAFE_HOOKS[\s\S]*?"test_force_census_omission"/,
+		"the pre-verdict hook must be whitelisted as fail-safe (leak ⇒ next export aborts + source preserved)");
+});
