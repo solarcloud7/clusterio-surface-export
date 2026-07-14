@@ -48,3 +48,48 @@ end
 
 data:extend(locations)
 data:extend(connections)
+
+-- ============================================================================
+-- Selection Lab tool — drag-select debug instrument for the surface_export module.
+-- Prototype ONLY (this mod stays data-stage); all four handlers live in the save-patched
+-- module (interfaces/gui/selection-lab.lua), gated on debug_mode:
+--   select              = CAPTURE selection via the real export serializer (RAM only)
+--   alt_select          = APPLY capture via the real import restores (in place)
+--   reverse_select      = PREVIEW: highlight ONLY blocks an apply would overwrite/conflict
+--   alt_reverse_select  = CLEAR selected belts' transport lanes
+-- ============================================================================
+local lab_select = function(color)
+	return {
+		border_color = color,
+		cursor_box_type = "entity",
+		mode = { "any-entity" },
+	}
+end
+
+data:extend({
+	{
+		type = "selection-tool",
+		name = "selection-lab-tool",
+		icons = {
+			{ icon = "__base__/graphics/icons/blueprint.png", icon_size = 64, tint = { r = 0.6, g = 1, b = 0.8 } },
+		},
+		subgroup = "tool",
+		order = "z[selection-lab-tool]",
+		stack_size = 1,
+		flags = { "only-in-cursor", "spawnable", "not-stackable" },
+		select = lab_select({ r = 0.25, g = 0.75, b = 1 }),          -- capture: blue
+		alt_select = lab_select({ r = 0.35, g = 1, b = 0.35 }),      -- apply: green
+		reverse_select = lab_select({ r = 1, g = 0.75, b = 0.25 }),  -- preview: orange
+		alt_reverse_select = lab_select({ r = 1, g = 0.3, b = 0.3 }),-- clear lanes: red
+	},
+	{
+		type = "shortcut",
+		name = "selection-lab-tool",
+		action = "spawn-item",
+		item_to_spawn = "selection-lab-tool",
+		icon = "__base__/graphics/icons/blueprint.png",
+		icon_size = 64,
+		small_icon = "__base__/graphics/icons/blueprint.png",
+		small_icon_size = 64,
+	},
+})
