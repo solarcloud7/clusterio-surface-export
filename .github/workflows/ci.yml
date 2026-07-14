@@ -26,7 +26,9 @@ jobs:
   integration-tests:
     name: Integration Tests
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    # 25, not 15: the suite outgrew 15 min when belt-corner-recovery (+2 min) landed — a job timeout
+    # surfaces as conclusion "cancelled" with zero failing steps, which reads as a mystery cancellation.
+    timeout-minutes: 25
 
     steps:
       - name: Checkout
