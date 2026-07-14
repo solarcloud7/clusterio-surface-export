@@ -434,3 +434,100 @@ Two consecutive complete integration suites passed `21/21`. Each suite included 
 final tree. The host-container suite passed 193 tests (181 passed, 12 expected skips), all eleven lint guards
 passed, and both instances ended with zero disposable lab surfaces, destination holds, transfer locks,
 committed tombstones, and async jobs; both games were unpaused.
+## 2026-07-14 - Offline forensic attribution of failure_black_box_DUP-233855_935331 (4th small-delta gate failure)
+Source: banked box from debt-suite run 2 (name-collision-delete clone of the 1359-entity platform), analyzed
+OFFLINE from tests/belt-lab/evidence/ - no cluster access. Readings [empirical, 2.0.77] from the box's own
+double physical census (attribute_lines at restore-time AND gate-time; live transport_line reads, not insert
+return values).
+
+- Gate diff: explosive-rocket -4, metallic-asteroid-chunk -1 (net, whole surface).
+- Both belt censuses agree EXACTLY (expected 15866 / actual 15861 at restore-time AND gate-time): the entire
+  loss exists the moment BeltRestoration.restore() returns, and nothing further leaks between restore and the
+  gate (items drift along shared lines between the two reads; totals identical).
+- Per-entity position-join of replay_payload.entities vs physical_entities (1359/1359 matched): every
+  mismatched entity is a belt piece; non-belt phases conserved everything.
+- Per-line attribution (149 nonzero-delta rows, most +/-paired adjacent-piece drift, net 0 for 9 of 11 names):
+  the residual loss lands on the ONLY compression=true rows among the lost names - CORNER lanes
+  (line_length 1.15234375 outside / 0.4140625 inside):
+    turbo-transport-belt@-16.5,-0.5  line1 (corner, comp=true)  metallic-asteroid-chunk -4
+    turbo-transport-belt@-16.5,-0.5  line2 (corner, comp=true)  explosive-rocket -8
+    turbo-transport-belt@-3.5,44.5   line2 (corner, comp=true)  explosive-rocket -20
+  with adjacent straight pieces reading +20/+4/+3 (overflow physically sat on neighboring segments of the
+  shared engine line), netting -4/-1 unrecoverable.
+- CONSISTENT WITH the 2026-07-11 corner measurement above (corner outside-lane ~1.15 vs straight 1.0;
+  insert_at_back fallback fails to recover): a fully-compressed corner lane on a live-flowing source holds
+  more than a freshly-rebuilt identical corner accepts via any insert method.
+- Mechanism status upgrade: the "configuration-dependent" trigger is now attributed - the failure fires when
+  the export snapshot catches a FULLY-COMPRESSED CORNER lane; magnitude scales with how many corner lanes were
+  compressed at snapshot time (-4/-4/-8/-5 across the four occurrences).
+- SECONDARY FINDING: belt_recovery is ABSENT from the box (job.belt_recovery nil at banking time) - the
+  recovery pass either did not run for these lines or does not record. The oversized-stack rebuild DID fire
+  elsewhere (an 18-count stack observed on a straight underground lane, conserving). OPEN: why the corner
+  path misses the oversized-stack/recovery route that keeps straight lanes at zero floor (belt-oversized-stack
+  fix dfdd59d claimed floor zero; corners are the surviving gap).
+- NEXT RUNG (live): rebuild a single fully-compressed corner lane from the replay payload and step the insert
+  paths one variable at a time (straight vs corner, inside vs outside lane, stacked vs unstacked items).
+
+### BELT-R2 designation
+The 2026-07-14 offline forensic attribution entry above is designated BELT-R2 (cited from code comments).
+
+## BELT-R3 [empirical, 2.0.77] - live replay reproduction + mechanism isolation + the recovery lie
+Cluster: host-2, replay import of tests/belt-lab/evidence/replay_payload_DUP-233855.json as 'cornerreplay1'
+(chunked /plugin-import-file; file must sit under the instance script-output dir), belt_diag=true.
+
+- REPRODUCED DETERMINISTICALLY (engine-second 19450, import job tick-window): identical summary to the
+  original failure at 14997: "596 belts: expected=15866 actual=15861 delta=-5 consolidated_lines=47".
+  Same payload -> same -5. The anomaly is NOT timing/load dependent given the same captured state.
+- BeltDiag classification: SUMMARY unplaced=5 -> geometry=0 compression=5 other=864 nopos=0. The 864
+  OTHER/nearest=999 readings are the documented merged-segment phantom reads (measurement, not loss).
+  The 5 real drops: "COMPRESSION: metallic-asteroid-chunk pos=0.8750 dest_len=1.0000 nearest=0.0000 short=1"
+  and "COMPRESSION: explosive-rocket pos=0.8750 dest_len=1.0000 nearest=0.0000 short=4" - STRAIGHT pieces
+  (len 1.0), occupier EXACTLY at the target position (nearest=0). Mechanism: the adjacent corner lane's
+  consolidated oversized stack physically sits on the shared engine line at the neighbor's slot position ->
+  the neighbor's own captured item is rejected. Corners are the PERPETRATOR, not the victim; BELT-R2's
+  corner-shortfall census rows were the corner's items sitting on neighbor segments.
+- Probe A [empirical, 2.0.77]: yellow belt, insert_at(0.5) twice -> both true, 2 stacks, total 8 (same-pos
+  insert does not reject on a sparse line).
+- Probe A2: line filled 4x4 at 0.25 spacing (total 16), insert_at(0.875) x4 -> TRUE, total 20 (a merely-full
+  line still accepts; the engine squeezes). The rejection requires the real turbo-line state (oversized
+  occupier + density); not reproduced on a scratch yellow belt.
+- Probe B: oversized 18-stack occupier at 0.875 + 3x4 fill (total 30), insert x4 -> TRUE, squeezed at 0.996.
+- Probe C [empirical, 2.0.77]: on the real cornerreplay1 turbo line, LuaItemStack.count WRITE on a belt stack
+  works: stack 4->8, line total 4->8 immediately. The slot-merge recovery lever is real.
+- THE RECOVERY LIE: the failing transfer AND the replay both log "[Belt Restore] Aggregate deficit recovery:
+  recovered=5 to hub/ground, unrecovered=0" (belt_restoration.lua:153, added in 29eead5 PR #93) - yet the
+  original gate physically counted all 5 missing. recover_deficits_to_hub spill branch counts "pcall did
+  not throw" as recovered and IGNORES spill_item_stack return (the created item-entities). With hub_main
+  full (1159 slots freshly restored), insert returns 0, spill materializes NOTHING, recovery reports total
+  success. On the transfer path the strict gate catches it (how we found it); on the non-strict upload path
+  this is SILENT LOSS. Fix: count materialized entities from the spill return; log requested vs materialized.
+- Cleanup: scratch belt destroyed, cornerreplay1 deleted via game.delete_surface, host-2 jobs=0, baseline
+  surfaces only. belt_diag left ON for the fix-teeth replay (BELT-R4); disable at rung end.
+- NEXT (BELT-R4): slot-merge recovery implemented at the per-slot failure site + honest spill accounting ->
+  replay the same payload -> expect delta=0 pre-recovery, slot_merge_recovered=5, recovery silent, per-name
+  census net zero (no duplication).
+
+## BELT-R4 FAILED [empirical, 2.0.77] - slot-merge recovery DUPLICATES; per-slot trigger is the forbidden meter
+Replay of the same payload on the fixed build: "expected=15866 actual=16207 delta=+341 consolidated_lines=47
+slot_merge_recovered=346". The slot-merge fired on the ~864 PHANTOM per-slot shorts (merged-segment
+measurement noise), not just the 5 real drops -> +341 duplicated items. The header rule ("runtime per-line
+measurement is unreliable on merged segments; never route/re-insert off these numbers - that path
+duplicated") applies to RECOVERY TRIGGERS too, not just diagnostics. Slot-merge REVERTED. TRIED-&-SETTLED:
+do not re-attempt per-slot-triggered recovery in any form; the only trustworthy meter is the aggregate
+attribute_lines total (matched the gate exactly in both real failures). Fix direction: make the AGGREGATE
+recover_deficits_to_hub actually materialize items (honest spill accounting + working placement).
+Gate-safety note: had this shipped, the strict gate would have FAILED the transfer on +341 GAINED
+(fail-closed both directions); the rung caught it pre-PR.
+
+## BELT-R5 [empirical, 2.0.77] - late recovery placement right, late MEASUREMENT wrong (321-item misread)
+Reworked build (recovery moved AFTER both inventory passes, honest spill accounting, job.belt_recovery
+banked - also found job.belt_recovery was NEVER assigned before, which is why the DUP box banked nil).
+Replay: belts phase reports the true "-5" (expected=15866 actual=15861), but the late recovery RECOMPUTED
+the census after inventory passes and recovered=321: on the live (non-transfer) import path, ticks elapse
+between async phases - belts drift and active machines consume - so a late census misreads legitimate
+movement as belt deficit and DUPLICATES it into the hub. Constraint pair now measured: deficit MEASUREMENT
+belongs at belt-phase end (the frozen-moment read, job.belt_attribution); deficit INSERTION belongs after
+the Pass-2 hub clear()+refill. Fix: recover from the STORED belt-phase attribution (equal to a recompute on
+the frozen transfer path; correct on both paths). cornerreplay3 deleted (polluted by the 321 insert).
+NEXT (BELT-R6): replay expecting belts delta=-5 and "Aggregate deficit recovery: recovered=5, unrecovered=0"
+from the stored attribution; hub gains exactly 4 explosive-rocket + 1 metallic-asteroid-chunk.
