@@ -539,3 +539,32 @@ count 20 (materialization on paused platform confirmed; matches R4a on a live pl
 3669 ticks elapsed (61s, >> the seconds-scale source-delete commit window): ground_entities=20,
 ground_items=20 - zero despawn. Spill is a durable recovery route for the gate/commit window.
 Out of scope (normal gameplay): asteroid-impact destruction of ground items during flight.
+
+## BELT-R8 [empirical, 2.0.77] - topology-first Plan A stops on the real DUP-233855 component
+
+Five consecutive current-main upload-import replays of the banked `DUP-233855` payload each reproduced the
+same belt-phase result: expected 15,866, actual 15,861, delta -5, consolidated lines 47. Every run then logged
+aggregate recovery recovered=5, unrecovered=0. This is deterministic baseline evidence, not a new fix claim.
+
+Every extraction produced 596 belt entities and 1,490 `(entity,line)` nodes. All runtime nodes joined uniquely
+to payload `entity_id` by name/type/position/direction. Within each disposable import, populated and cleared
+component memberships and unambiguous resolved canonical directed-edge multisets matched exactly. Across three
+identical-payload imports, however, the overall graph was run-dependent: 225/42/2,984, 215/75/3,114, and
+217/78/3,082 for components/ambiguous links/exact directed edges, with distinct edge hashes. This is another
+reason not to treat one imported graph as a stable export signature. Each post-import detailed-content read
+had raw rows equal to unique IDs, but these are not atomic-export ownership proofs.
+
+The required owner+narrowed-`line_equals` resolver produced multiple-match links in every run. The selector is
+anchored to the three exact black-box compressed-loss endpoints:
+`65243:1` metallic-asteroid-chunk -4, `65243:2` explosive-rocket -8, and `65907:2`
+explosive-rocket -20. Those endpoints fall into the same two ambiguous components in the two saved-runner
+reruns (278 and 270 nodes), with stable ambiguity nodes. The ambiguity comes from linked lines matching owner
+lines `[1,3]` or `[2,4]`; for example, `65188:1` can resolve to `65190:1` or `65190:3`, and `65188:2` can
+resolve to `65190:2` or `65190:4`.
+
+**STOP CONDITION FIRED:** the approved design declares zero/multiple matches ambiguous and unsupported, and
+requires every known loss endpoint's component to map one-to-one before production begins. Therefore the real
+loss class is not eligible and no production Plan A code was written. Scheduler, aliasing/landing, and
+performance rungs were not continued after this earlier mandatory stop. Full evidence:
+`results/plan-a-phase-a-stop-2.0.77.txt` and
+`results/plan-a-topology-endpoint-reruns-2.0.77.json`; rerun entrypoint: `run-plan-a-topology.ps1`.
