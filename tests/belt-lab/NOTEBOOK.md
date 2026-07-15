@@ -540,7 +540,11 @@ count 20 (materialization on paused platform confirmed; matches R4a on a live pl
 ground_items=20 - zero despawn. Spill is a durable recovery route for the gate/commit window.
 Out of scope (normal gameplay): asteroid-impact destruction of ground items during flight.
 
-## BELT-R8 [empirical, 2.0.77] - topology-first Plan A stops on the real DUP-233855 component
+## BELT-R9 [empirical, 2.0.77] - topology-first Plan A stops on the real DUP-233855 component
+
+> Rung ID note: BELT-R8 is the 2026-07-14 owner-witnessed cross-segment displacement demo (recorded on the
+> `feat/selection-lab-tool` notebook and already cited from `selection-lab.lua`); this rung is R9 to avoid
+> a duplicate citation anchor.
 
 Five consecutive current-main upload-import replays of the banked `DUP-233855` payload each reproduced the
 same belt-phase result: expected 15,866, actual 15,861, delta -5, consolidated lines 47. Every run then logged
