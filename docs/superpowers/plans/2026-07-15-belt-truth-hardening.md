@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Correct durable belt-restoration guidance so it distinguishes exact global conservation from unresolved same-logical-segment fidelity.
+**Goal:** Correct durable belt-restoration guidance so it distinguishes exact global conservation from unresolved whole-lane/side stack fidelity.
 
 **Architecture:** This is a documentation-only correction grounded in BELT-R9 and its saved Phase A stop result. Three durable guidance surfaces receive role-specific wording; historical plans and production behavior remain untouched.
 
@@ -13,6 +13,7 @@
 - Add no restoration code, serializer field, configuration, validation behavior, test hook, lint allow, or new guard.
 - Preserve the existing global exact item gate and hub/ground recovery behavior.
 - Preserve the 2.0.76 physical item-counting evidence; BELT-R9 invalidates durable engine-line mapping, not the counting meter.
+- Define the fidelity unit as one whole continuous belt lane/side: preserve its exact `(name, quality, stack count)` multiset and quantity; do not require exact order, coordinate, or belt-tile window.
 - Describe physical adjacency-walk restoration only as an unproven follow-up hypothesis.
 - Ground every new 2.0.77 claim in `tests/belt-lab/NOTEBOOK.md` BELT-R9 and `tests/belt-lab/results/plan-a-phase-a-stop-2.0.77.txt`.
 
@@ -27,7 +28,7 @@
 
 **Interfaces:**
 - Consumes: BELT-R9 notebook conclusion and the saved Phase A stop result.
-- Produces: one consistent three-part contract—global conservation is enforced, recovery may relocate belt deficits, and same-segment fidelity remains unresolved.
+- Produces: one consistent three-part contract—global conservation is enforced, recovery may relocate belt deficits, and whole-lane/side stack fidelity remains unresolved.
 
 - [ ] **Step 1: Confirm the stale claims are present**
 
@@ -47,7 +48,9 @@ Replace the existing “Historical belt restore loss” bullet with:
 - **Historical belt restore loss (formerly described as ±4–8 cosmetic drift).** The residual was real
   restore-time loss, not harmless redistribution. The frozen `items` verdict requires exact global
   conservation, and the existing hub/ground recovery can satisfy that verdict after a belt-phase deficit.
-  This does **not** guarantee that fully compressed items remain on the same logical belt segment. BELT-R9
+  This does **not** guarantee whole-lane fidelity for fully compressed belts. The required unit is one
+  continuous belt lane/side: preserve its exact `(name, quality, stack count)` multiset and quantity across
+  the entire lane; item order, exact coordinate, and individual belt-tile window are not invariants. BELT-R9
   proved that owner-narrowed `line_equals` resolution is ambiguous on the known DUP-233855 loss components
   and that the imported engine-line graph varies across identical imports, so engine transport-line identity
   is not a durable restoration key. See [the belt lab notebook](tests/belt-lab/NOTEBOOK.md#belt-r9-empirical-2077---topology-first-plan-a-stops-on-the-real-dup-233855-component).
@@ -60,11 +63,13 @@ Replace the answer under `Q: What if my belts are packed with items?` with:
 ```markdown
 A: Exact **global item conservation** is mandatory at the frozen `items` gate. When ordinary belt
 restoration cannot reproduce a fully compressed state, the shipped hub/ground recovery may conserve the
-deficit elsewhere and allow the transfer to pass. Exact same-logical-segment placement is therefore not yet
-guaranteed. BELT-R9 rejected cross-import engine transport-line identity as a restoration key for the known
+deficit elsewhere and allow the transfer to pass. Exact whole-lane fidelity is therefore not yet guaranteed:
+each continuous belt lane/side must retain its exact `(name, quality, stack count)` multiset and quantity,
+while order, exact coordinate, and individual belt-tile window may change. BELT-R9 rejected cross-import
+engine transport-line identity as a restoration key for the known
 DUP-233855 loss components; physical adjacency-walk restoration remains an unproven lab candidate. Preserve
 repeated small belt-loss black boxes as described above rather than treating a globally green transfer as
-proof of same-segment fidelity.
+proof of whole-lane fidelity.
 ```
 
 - [ ] **Step 4: Add the 2.0.77 topology limitation to the API notes**
@@ -77,7 +82,7 @@ Append this paragraph after the existing 2.0.76 `line_equals` warning and before
   recovery. Owner-narrowed `line_equals` resolution produced multiple matches on both known loss components,
   and three identical imports produced different component/ambiguity/resolved-edge counts. This does not
   invalidate `get_item_count` or unique-ID enumeration as physical meters; it invalidates using the engine
-  line graph to certify that a source line and an empty imported line are the same logical segment. See
+  line graph to certify that a source and imported line represent the same continuous physical lane/side. See
   [BELT-R9](../tests/belt-lab/NOTEBOOK.md#belt-r9-empirical-2077---topology-first-plan-a-stops-on-the-real-dup-233855-component).
 ```
 
@@ -87,7 +92,7 @@ Run:
 
 ```powershell
 rg -n "fixed to exact physical totals|A: ✅ 100% preserved|residual once described as cosmetic.*fixed to zero" CLAUDE.md docs/ENGINEERING_FAQ.md
-rg -n "same logical belt segment|same-logical-segment|durable cross-import restoration" CLAUDE.md docs/ENGINEERING_FAQ.md docs/factorio-2.0-api-notes.md
+rg -n "continuous belt lane/side|whole-lane fidelity|durable cross-import restoration" CLAUDE.md docs/ENGINEERING_FAQ.md docs/factorio-2.0-api-notes.md
 ```
 
 Expected: the first command returns no matches; the second returns one scoped statement in each changed file.

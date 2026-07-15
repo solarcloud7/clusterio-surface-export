@@ -173,11 +173,12 @@ the `plasma-engine-owned` integration fixture. A retry is authorized only for th
 **Q: What if my belts are packed with items?**
 A: Exact **global item conservation** is mandatory at the frozen `items` gate. When ordinary belt
 restoration cannot reproduce a fully compressed state, the shipped hub/ground recovery may conserve the
-deficit elsewhere and allow the transfer to pass. Exact same-logical-segment placement is therefore not yet
-guaranteed. BELT-R9 rejected cross-import engine transport-line identity as a restoration key for the known
-DUP-233855 loss components; physical adjacency-walk restoration remains an unproven lab candidate. Preserve
-repeated small belt-loss black boxes as described above rather than treating a globally green transfer as
-proof of same-segment fidelity.
+deficit elsewhere and allow the transfer to pass. Exact whole-lane fidelity is therefore not yet guaranteed:
+each continuous belt lane/side must retain its exact `(name, quality, stack count)` multiset and quantity,
+while order, exact coordinate, and individual belt-tile window may change. BELT-R9 rejected cross-import
+engine transport-line identity as a restoration key for the known DUP-233855 loss components; physical
+adjacency-walk restoration remains an unproven lab candidate. Preserve repeated small belt-loss black boxes
+as described above rather than treating a globally green transfer as proof of whole-lane fidelity.
 
 **Q: What if my inserters are holding items mid-swing?**
 A: ✅ Restored via a pre-gate inserter-only activation pass so the strict gate counts a complete state (Pitfall

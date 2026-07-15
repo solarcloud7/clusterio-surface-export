@@ -675,7 +675,9 @@ Project invariants that still bite if changed:
 - **Historical belt restore loss (formerly described as ±4–8 cosmetic drift).** The residual was real
   restore-time loss, not harmless redistribution. The frozen `items` verdict requires exact global
   conservation, and the existing hub/ground recovery can satisfy that verdict after a belt-phase deficit.
-  This does **not** guarantee that fully compressed items remain on the same logical belt segment. BELT-R9
+  This does **not** guarantee whole-lane fidelity for fully compressed belts. The required unit is one
+  continuous belt lane/side: preserve its exact `(name, quality, stack count)` multiset and quantity across
+  the entire lane; item order, exact coordinate, and individual belt-tile window are not invariants. BELT-R9
   proved that owner-narrowed `line_equals` resolution is ambiguous on the known DUP-233855 loss components
   and that the imported engine-line graph varies across identical imports, so engine transport-line identity
   is not a durable restoration key. See [the belt lab notebook](tests/belt-lab/NOTEBOOK.md#belt-r9-empirical-2077---topology-first-plan-a-stops-on-the-real-dup-233855-component).
