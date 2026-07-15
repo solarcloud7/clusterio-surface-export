@@ -673,8 +673,15 @@ Project invariants that still bite if changed:
   reflects beacon bonuses once the beacon's `beacon_modules` inventory is populated, so Phase 3 restores
   beacons first, then everything else. See [Import Phase Ordering](#import-phase-ordering-critical).
 - **Historical belt restore loss (formerly described as ±4–8 cosmetic drift).** The residual was real
-  restore-time loss, not harmless redistribution. Belt restoration was fixed to exact physical totals; the
-  atomic single-tick export scan prevents a rolling source snapshot (Pitfall #16, atomic belt scan).
+  restore-time loss, not harmless redistribution. The frozen `items` verdict requires exact global
+  conservation, and the existing hub/ground recovery can satisfy that verdict after a belt-phase deficit.
+  This does **not** guarantee whole-lane fidelity for fully compressed belts. The required unit is one
+  continuous belt lane/side: preserve its exact `(name, quality, stack count)` multiset and quantity across
+  the entire lane; item order, exact coordinate, and individual belt-tile window are not invariants. BELT-R9
+  proved that owner-narrowed `line_equals` resolution is ambiguous on the known DUP-233855 loss components
+  and that the imported engine-line graph varies across identical imports, so engine transport-line identity
+  is not a durable restoration key. The atomic single-tick export scan still prevents a rolling source
+  snapshot (Pitfall #16, atomic belt scan). See [the belt lab notebook](tests/belt-lab/NOTEBOOK.md#belt-r9-empirical-2077---topology-first-plan-a-stops-on-the-real-dup-233855-component).
 - **Fluid restoration runs in the frozen world before the exact gate.** R11 proved the shipped restoration code conserves exactly there (Pitfall #17, historical pre-activation fluid loss). **Fusion-reactor output rejects writes** (Pitfall #21, fusion outputs are engine-managed). Subtract
   only physically rejected writes from expected counts; capacity drops remain gate failures. One pre-activation verdict covers exact items and aggregate-by-name fluids (`epsilon=1e-6`).
 - **Entity inventory size** isn't changed by `LuaInventory.resize` (custom inventories only).
