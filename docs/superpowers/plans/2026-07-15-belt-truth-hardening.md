@@ -53,7 +53,8 @@ Replace the existing “Historical belt restore loss” bullet with:
   the entire lane; item order, exact coordinate, and individual belt-tile window are not invariants. BELT-R9
   proved that owner-narrowed `line_equals` resolution is ambiguous on the known DUP-233855 loss components
   and that the imported engine-line graph varies across identical imports, so engine transport-line identity
-  is not a durable restoration key. See [the belt lab notebook](tests/belt-lab/NOTEBOOK.md#belt-r9-empirical-2077---topology-first-plan-a-stops-on-the-real-dup-233855-component).
+  is not a durable restoration key. The atomic single-tick export scan still prevents a rolling source
+  snapshot (Pitfall #16, atomic belt scan). See [the belt lab notebook](tests/belt-lab/NOTEBOOK.md#belt-r9-empirical-2077---topology-first-plan-a-stops-on-the-real-dup-233855-component).
 ```
 
 - [ ] **Step 3: Replace the packed-belt FAQ answer**

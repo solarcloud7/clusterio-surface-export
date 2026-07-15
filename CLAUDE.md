@@ -680,7 +680,8 @@ Project invariants that still bite if changed:
   the entire lane; item order, exact coordinate, and individual belt-tile window are not invariants. BELT-R9
   proved that owner-narrowed `line_equals` resolution is ambiguous on the known DUP-233855 loss components
   and that the imported engine-line graph varies across identical imports, so engine transport-line identity
-  is not a durable restoration key. See [the belt lab notebook](tests/belt-lab/NOTEBOOK.md#belt-r9-empirical-2077---topology-first-plan-a-stops-on-the-real-dup-233855-component).
+  is not a durable restoration key. The atomic single-tick export scan still prevents a rolling source
+  snapshot (Pitfall #16, atomic belt scan). See [the belt lab notebook](tests/belt-lab/NOTEBOOK.md#belt-r9-empirical-2077---topology-first-plan-a-stops-on-the-real-dup-233855-component).
 - **Fluid restoration runs in the frozen world before the exact gate.** R11 proved the shipped restoration code conserves exactly there (Pitfall #17, historical pre-activation fluid loss). **Fusion-reactor output rejects writes** (Pitfall #21, fusion outputs are engine-managed). Subtract
   only physically rejected writes from expected counts; capacity drops remain gate failures. One pre-activation verdict covers exact items and aggregate-by-name fluids (`epsilon=1e-6`).
 - **Entity inventory size** isn't changed by `LuaInventory.resize` (custom inventories only).

@@ -27,7 +27,7 @@ Replace the unqualified statement that belt restoration is fixed to exact physic
 2. Existing hub/ground recovery can satisfy that global verdict after a belt-phase deficit.
 3. Whole-lane fidelity for fully compressed belts is not yet guaranteed; BELT-R9 rejects cross-import engine-line identity mapping as the solution.
 
-The text will point to the belt lab notebook and retain the existing warning that historical loss was real rather than cosmetic.
+The text will point to the belt lab notebook, retain the existing warning that historical loss was real rather than cosmetic, and retain the Pitfall #16 cross-reference establishing that the atomic single-tick export scan prevents a rolling source snapshot.
 
 ### `docs/ENGINEERING_FAQ.md`
 
