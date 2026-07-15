@@ -111,7 +111,7 @@ Run:
 
 ```powershell
 rg -n "^## BELT-R9 \[empirical, 2\.0\.77\]" tests/belt-lab/NOTEBOOK.md
-rg -n "VERDICT: PHASE A STOP|expected 15,866, actual 15,861|ambiguous" tests/belt-lab/results/plan-a-phase-a-stop-2.0.77.txt
+rg -n "VERDICT: PHASE A STOP|expected=15866 actual=15861 delta=-5|ambiguous" tests/belt-lab/results/plan-a-phase-a-stop-2.0.77.txt
 ```
 
 Expected: the BELT-R9 heading and the stop-result evidence all match.
