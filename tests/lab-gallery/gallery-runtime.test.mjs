@@ -11,8 +11,8 @@ test("gallery runtime is prefix-owned, version-pinned, and never changes pause o
 	assert.doesNotMatch(source, /clone|spill_item_stack|remote\.call/);
 });
 
-test("gallery runtime exposes bounded preflight, build, inspect, finalize, save, and cleanup operations", () => {
-	for (const operation of ["preflight", "build", "inspect", "finalize", "save", "cleanup"]) {
+test("gallery runtime exposes bounded paired-build and inspection operations", () => {
+	for (const operation of ["preflight", "normalize_source", "inspect", "prepare_destination", "save"]) {
 		assert.match(source, new RegExp(`operation == [\"']${operation}[\"']`));
 	}
 	for (const state of ["gamePaused", "jobs", "locks", "holds", "tombstones"]) assert.match(source, new RegExp(state));
@@ -20,7 +20,18 @@ test("gallery runtime exposes bounded preflight, build, inspect, finalize, save,
 	assert.match(source, /game\.delete_surface/);
 });
 
-test("visual catalog and belt pilot are grounded by physical unique-id census", () => {
+test("normalization removes broad world state and builds the first minimal space-platform fixture", () => {
+	assert.match(source, /default_enable_all_autoplace_controls\s*=\s*false/);
+	assert.match(source, /delete_chunk/);
+	assert.match(source, /platform\.destroy\(0\)/);
+	assert.match(source, /create_space_platform/);
+	assert.match(source, /apply_starter_pack/);
+	assert.match(source, /electric-mining-drill/);
+	assert.match(source, /specialized-fluid-reachability/);
+	assert.match(source, /prepare_destination/);
+});
+
+test("visual catalog, belt pilot, and reachability fixture have independent physical readings", () => {
 	assert.match(source, /rendering\.draw_text/);
 	assert.match(source, /add_chart_tag/);
 	assert.match(source, /get_detailed_contents/);
@@ -29,5 +40,9 @@ test("visual catalog and belt pilot are grounded by physical unique-id census", 
 	assert.match(source, /sourceQuantity == expected\.sourceQuantity/);
 	assert.match(source, /targetQuantity == expected\.targetQuantity/);
 	assert.match(source, /find_entity/);
+	assert.match(source, /surface\.get_property\("pressure"\)/);
+	assert.match(source, /surface\.get_property\("gravity"\)/);
+	assert.match(source, /#drill\.fluidbox/);
+	assert.match(source, /mining_target/);
 	assert.doesNotMatch(source, /insert_at_back|insert_at\(/);
 });

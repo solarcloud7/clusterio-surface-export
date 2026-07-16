@@ -29,3 +29,20 @@ export function buildBeltPilot() {
 		expected: { sourceQuantity: 125, sourceLineQuantities: [67, 58], targetQuantity: 0, maximumStack: 1 },
 	};
 }
+
+export function buildSpecializedReachabilityFixture() {
+	return {
+		id: "specialized-fluid-reachability",
+		revision: 1,
+		platformName: "lab-specialized-fluid-r1",
+		drillName: "electric-mining-drill",
+		expected: {
+			pressure: 0,
+			gravity: 0,
+			miningTarget: null,
+			liveFluidboxCount: 0,
+			readOk: false,
+			writeOk: false,
+		},
+	};
+}

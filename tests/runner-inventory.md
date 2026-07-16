@@ -17,7 +17,7 @@ and `obsolete/duplicate`. Allowed final dispositions are `retain`, `bake`, `simp
 | Executable | Current category | Contract or invariant | Setup and production path | Production-analytics overlap | Independent oracle | Lifecycle flags | Final disposition |
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | [`tests/ops-lab/run-lab-tail.mjs`](ops-lab/run-lab-tail.mjs) | `obsolete/duplicate` | Mixed: T2 transfer-duration sampling, T3 RCON command-capacity discovery, and T4 export-readiness scaling. | T2 invokes `/transfer-platform`; T3 sends direct RCON `/sc`; T4 calls the production `export_platform` interface. T2/T4 construct fixtures at runtime. | Yes for T2/T4: custom wall clocks, entity totals, payload bytes, worst-case margins, and pseudo-percentiles overlap the production transfer record. T3 measures a separate infrastructure boundary. | No. T2/T4 read production state and verdicts; they do not independently audit the production analytics. | Runtime clone: yes. Runtime construction: yes. Between-run cleanup: yes. Artificial large fixture: yes. Direct storage clear: yes. Unconditional unpause: yes. | `retire` after the approved T2 and T3 replacements exist; T4 has no replacement by default. |
-| [`tests/specialized-inventory-lab/run-reachability.mjs`](specialized-inventory-lab/run-reachability.mjs) | `physical lab` | At Factorio 2.0.77, classify platform-reachable specialized fluid state using prototype surface conditions and a live mining-drill fluidbox control. | Creates a temporary platform and live entity through direct Factorio APIs; intentionally does not invoke transfer production code. | No. | Yes: the direct prototype, surface-property, placement, and live-fluidbox reads are the physical oracle. | Runtime clone: no. Runtime construction: yes. Between-run cleanup: yes. Artificial large fixture: no. Direct storage clear: yes. Unconditional unpause: no. | `bake`: retain the minimal current-pin observation but consume a certified baked fixture and batch reload instead of constructing or cleaning it. |
+| [`tests/specialized-inventory-lab/run-reachability.mjs`](specialized-inventory-lab/run-reachability.mjs) | `physical lab` | At Factorio 2.0.77, classify platform-reachable specialized fluid state using prototype surface conditions and a baked mining-drill fluidbox control. | Loads the hash-pinned gallery source save in an isolated Factorio process and reads the existing fixture; it does not invoke transfer production code. | No. | Yes: direct prototype, surface-property, placement-capability, and live-fluidbox reads are the physical oracle. | Runtime clone: no. Runtime construction: no. Between-run cleanup: no; reset discards the loaded save. Artificial large fixture: no. Direct storage clear: no. Unconditional unpause: no. | `bake` completed: revision 1 is manifest-owned and consumes the paired source artifact. |
 | [`tests/specialized-inventory-lab/run-reachability.test.mjs`](specialized-inventory-lab/run-reachability.test.mjs) | `unit/contract` | The evidence classifier, section parser, tick handling, Lua failure boundary, preflight, and cleanup helpers reject invalid or incomplete evidence. | Node process-local fixtures; no Factorio process or production operation. | No. | Not applicable; this test validates software contracts around already-banked evidence. | No live fixture lifecycle behavior. | `retain`. |
 
 ### `ops-lab` section disposition
@@ -54,17 +54,16 @@ do not use the failed run as a performance baseline or promote a mechanism that 
 
 ### Specialized reachability disposition
 
-The live runner's prototype rung records pressure/gravity controls, prototype fluidbox counts, surface conditions,
-and placement capability ([prototype rung](specialized-inventory-lab/run-reachability.mjs#L63-L81)). Its placement
-rung creates one mining drill and proves that the live entity has no readable or writable fluidbox on the platform
-([placement rung](specialized-inventory-lab/run-reachability.mjs#L84-L98)). Both rungs answer the same engine-
+The baked meter's prototype rung records pressure/gravity controls, prototype fluidbox counts, surface conditions,
+and placement capability ([prototype rung](specialized-inventory-lab/baked-reachability-meter.cjs#L16-L32)). Its placement
+rung reads the single baked mining drill and proves that the live entity has no readable or writable fluidbox on the platform
+([placement rung](specialized-inventory-lab/baked-reachability-meter.cjs#L33-L43)). Both rungs answer the same engine-
 behavior question, so they remain one physical lab rather than being split by section.
 
-The current runner creates a starter platform, writes `storage.specialized_reachability_lab`, deletes its temporary
-surface, and clears that storage during cleanup
-([construction](specialized-inventory-lab/run-reachability.mjs#L48-L61),
-[cleanup](specialized-inventory-lab/run-reachability.mjs#L100-L111)). The baked replacement keeps the tick/version
-stamp and direct physical readings, but resolves a manifest fixture and relies on paired-save reload for reset.
+The runner verifies the committed source hash, loads it in a prefix-owned disposable Factorio process, and discards
+that loaded process for reset ([loaded-save boundary](specialized-inventory-lab/run-reachability.mjs#L55-L94)).
+It performs no fixture construction, storage clearing, or game unpause. The baked replacement keeps the tick/version
+stamp and direct physical readings while making the manifest fixture and paired-save reload the lifecycle boundary.
 It still does not invoke transfer code: this is the retained engine-recertification rung, not an integration test.
 
 The append-only notebook documents the controls-driven correction: prototype capability initially suggested an

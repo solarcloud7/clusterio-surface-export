@@ -92,3 +92,20 @@ A one-entity diagnostic on the same platform at `game.tick=179375` established t
 - the diagnostic entity was destroyed in the same command.
 
 Final classification: `mining-drill` has a fluidbox-capable prototype, but no live player-recoverable fluidbox on a space platform because the platform has no mining target. It is independently classified as `platformReachable=false` for fluid state. Together with the pressure-blocked turret and gravity-blocked fluid wagon, no platform-reachable specialized fluid omission exists outside the six canonical handler owners. The provisional shared-fluid production repair and synthetic fixture were therefore retracted; the exact inventory fix remains unchanged.
+
+## 2026-07-16 [empirical, 2.0.77] — Baked reachability fixture revision 1
+
+The physical control now lives in the paired lab-gallery source save as platform
+`lab-specialized-fluid-r1`. The migrated runner hash-checks and loads that committed save in an isolated Factorio
+process; it no longer creates a platform or entity, clears storage, unpauses a game, or performs between-run cleanup.
+
+An injected post-load failure exited 1 and the runner removed its prefix-owned runtime. The immediately following
+reload completed with no errors or contract failures and independently reproduced the prior classification:
+
+- platform pressure/gravity: `0/0`;
+- electric-mining-drill prototype fluidbox count: `1`, placement-capable;
+- baked drill: `mining_target=nil`, live fluidbox count `0`, read/write both rejected;
+- pressure-blocked flamethrower turret and gravity-blocked fluid wagon remained unreachable.
+
+The source artifact SHA-256 is
+`6F6DB4ADA0D6CF8747F01FA74880C5C6C272C7E4063BA2CE956ABF88D6E060A7`.

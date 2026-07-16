@@ -144,23 +144,16 @@ test("the drill conclusion depends on live entity state, not prototype capabilit
 
 test("runner measures the engine and cleans both instances without touching transfers", () => {
 	assert.match(runner, /--sections/);
-	assert.match(runner, /--reset/);
+	assert.match(runner, /--save/);
 	assert.match(runner, /--no-notebook/);
-	assert.match(runner, /surface\.get_property\("pressure"\)/);
-	assert.match(runner, /surface\.get_property\("gravity"\)/);
-	assert.match(runner, /prototypes\.entity/);
-	assert.match(runner, /surface\.can_place_entity/);
-	assert.match(runner, /#drill\.fluidbox/);
-	assert.match(runner, /mining_target/);
-	assert.match(runner, /clusterio-host-1-instance-1/);
-	assert.match(runner, /clusterio-host-2-instance-1/);
-	assert.match(runner, /storage\.destination_holds/);
-	assert.match(runner, /storage\.locked_platforms/);
-	assert.match(runner, /storage\.async_jobs/);
-	assert.match(runner, /storage\.committed_source_transfer_tombstones/);
-	assert.doesNotMatch(runner, /storage\.committed_source_tombstones/);
+	assert.match(runner, /lab-gallery-source-surface-export-2\.0\.77\.zip/);
+	assert.match(runner, /baked-reachability-meter\.cjs/);
+	assert.match(runner, /--start-server/);
+	assert.match(runner, /surface-export-host-2/);
+	assert.match(runner, /finally/);
+	assert.doesNotMatch(runner, /clusterioctl|send-rcon|clusterio-host-1-instance-1/);
+	assert.doesNotMatch(runner, /create_space_platform|create_entity|delete_surface|destroy\(\)|set_tiles/);
 	assert.doesNotMatch(runner, /game\.tick_paused\s*=\s*false/);
-	assert.match(runner, /requireLuaSuccess\(result, instance\)/);
 	assert.match(runner, /validateSelectedEvidence\(result, sections\)/);
 	assert.doesNotMatch(runner, /transfer_platform|import_platform|export_platform/);
 });

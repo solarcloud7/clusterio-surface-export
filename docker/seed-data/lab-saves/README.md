@@ -1,41 +1,48 @@
 # Surface Export Lab Gallery
 
-This directory contains generated, version-pinned Factorio saves for visually inspecting lab fixtures.
+This directory contains generated, version-pinned Factorio saves for visually inspecting and executing physical lab fixtures.
 
-The gallery save is an input, not a test oracle. Runners must independently meter source and destination
-state. Mutable destinations are not baked: a test must clear or create its destination and must never repair
-an immutable source fixture in place.
+The paired gallery saves are inputs, not test oracles. Runners independently meter source and destination state.
+The source contains single-use fixtures; the destination contains the matching empty world. A batch resets by
+reloading both artifacts, never by repairing, cloning, reconstructing, or cleaning a consumed fixture.
 
-Generation source lives in `tests/lab-gallery/`. The first pilot catalogs every `tests/*-lab` family and
-bakes the `belt-5x5-125-unstacked` source beside an empty matching target. Later lab fixtures move from
-`catalog` to `baked-source` only after a live builder rung and a saved-artifact reload verify them.
+Generation source lives in `tests/lab-gallery/`. The source currently bakes the
+`belt-5x5-125-unstacked` and `specialized-fluid-reachability` fixtures in the same game file. The destination
+retains the compact visual catalog but contains neither physical fixture. Exact mod pins, SHA-256 values, world
+censuses, fixture revisions, and physical fingerprints live in `tests/lab-gallery/manifest.json`.
 
 Regenerate for Factorio 2.0.77:
 
 ```powershell
 node tests/lab-gallery/build-save.mjs `
   --runtime-api C:\tmp\runtime-api-2.0.77.json `
-  --output docker/seed-data/lab-saves/lab-gallery-surface-export-2.0.77.zip
+  --seed docker/seed-data/lab-saves/lab-gallery-surface-export-2.0.77.zip `
+  --source-output docker/seed-data/lab-saves/lab-gallery-source-surface-export-2.0.77.zip `
+  --destination-output docker/seed-data/lab-saves/lab-gallery-destination-surface-export-2.0.77.zip
 ```
 
 The output is create-only. Remove or rename an obsolete artifact deliberately before regeneration; the
 builder never overwrites a committed save.
 
-Reload the generated artifact in a separate, time-bounded Factorio 2.0.77 process and independently meter
-the physical belts:
+Reload both generated artifacts in separate, time-bounded Factorio 2.0.77 processes and independently meter
+both physical contracts:
 
 ```powershell
 node tests/lab-gallery/verify-save.mjs `
-  --save docker/seed-data/lab-saves/lab-gallery-surface-export-2.0.77.zip
+  --source-save docker/seed-data/lab-saves/lab-gallery-source-surface-export-2.0.77.zip `
+  --destination-save docker/seed-data/lab-saves/lab-gallery-destination-surface-export-2.0.77.zip
 ```
 
 The verifier uses host 2 only as an isolated runtime: it does not stop or modify the managed instance, uses
 separate game/RCON ports and a prefix-owned `/tmp` write directory, asks the disposable server to quit after
 the census, and removes the directory in `finally`. Acceptance requires Factorio 2.0.77, the visual index,
-16 source belts, 16 target belts, 125 physical one-item source stacks split 67/58 by side, zero target
-items, 15 gallery text renderings, and 14 navigation tags.
+the compact visual catalog, the exact 125-stack belt source, the specialized drill's live zero-fluidbox state,
+and an empty destination with no conflicting platform identity.
 
-Current certified artifact:
+Current certified artifacts:
 
-- bytes: `1,191,252`
-- SHA-256: `2D1898E2D1FA9B48D39D04F79F8B88C41DA36F8243E6DA33A491D465DCC28A36`
+- source: `705,897` bytes; SHA-256 `6F6DB4ADA0D6CF8747F01FA74880C5C6C272C7E4063BA2CE956ABF88D6E060A7`
+- destination: `702,678` bytes; SHA-256 `9F89B25F9CFA605A25A02D7BD42F3CB12554B9594E1581F84D998F15566C2C23`
+
+The older single gallery save is retained only as the deterministic PR #111 generation seed. Test runners consume
+the paired artifacts, not that seed.
