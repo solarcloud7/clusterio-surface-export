@@ -111,7 +111,11 @@ end
 --- Move only whole-belt aggregate deficits to the hub. Per-window insert deltas are unsound on merged lines;
 --- the completed census is the same meter used by the frozen exact gate. A partial hub insert remains visible
 --- as unrecovered so the gate still fails closed.
-local function recover_deficits_to_hub(attribution, entities_to_create, entity_map)
+--- PUBLIC and called LATE (import-completion, after BOTH inventory passes) — BELT-R3/R5
+--- [empirical, 2.0.77, tests/belt-lab/NOTEBOOK.md]: when this ran inside restore(), Pass 2 inventory
+--- restoration re-cleared the hub two phases later and silently WIPED the recovered items; recovery
+--- reported success while the strict gate physically counted them missing.
+function BeltRestoration.recover_deficits_to_hub(attribution, entities_to_create, entity_map)
     local recovery = { recovered = {}, unrecovered = {}, recovered_total = 0, unrecovered_total = 0 }
     local hub = nil
     for _, entity_data in ipairs(entities_to_create or {}) do
@@ -131,19 +135,36 @@ local function recover_deficits_to_hub(attribution, entities_to_create, entity_m
             local remainder = deficit - inserted
             if remainder > 0 and hub then
                 local item_name, quality = Util.parse_quality_key(key)
-                local spill_ok, spill_err = pcall(function()
-                    hub.surface.spill_item_stack({
+                -- Count what PHYSICALLY materialized, not whether the call threw. [empirical, 2.0.77,
+                -- BELT-R3 in tests/belt-lab/NOTEBOOK.md]: with a full hub, this spill returned
+                -- without error but created ZERO item-entities on the platform — the old "didn't throw =
+                -- recovered" accounting reported recovered=5/unrecovered=0 while the strict gate physically
+                -- counted all 5 missing. Sum the returned entities' stack counts; only that is recovered.
+                local spill_ok, spilled_or_err = pcall(function()
+                    return hub.surface.spill_item_stack({
                         position = hub.position,
                         stack = { name = item_name, count = remainder, quality = quality },
                     })
                 end)
                 if spill_ok then
-                    recovery.recovered[key] = (recovery.recovered[key] or 0) + remainder
-                    recovery.recovered_total = recovery.recovered_total + remainder
-                    remainder = 0
+                    local materialized = 0
+                    for _, spilled_entity in ipairs(spilled_or_err or {}) do
+                        if spilled_entity.valid and spilled_entity.stack and spilled_entity.stack.valid_for_read then
+                            materialized = materialized + spilled_entity.stack.count
+                        end
+                    end
+                    if materialized > 0 then
+                        recovery.recovered[key] = (recovery.recovered[key] or 0) + materialized
+                        recovery.recovered_total = recovery.recovered_total + materialized
+                    end
+                    if materialized < remainder then
+                        log(string.format("[Belt Restore] Hub-full deficit spill for %s: requested %d, materialized %d",
+                            key, remainder, materialized))
+                    end
+                    remainder = remainder - materialized
                 else
                     log(string.format("[Belt Restore] Hub-full deficit spill failed for %s x%d: %s",
-                        key, remainder, tostring(spill_err)))
+                        key, remainder, tostring(spilled_or_err)))
                 end
             end
             if remainder > 0 then recovery.unrecovered[key] = remainder; recovery.unrecovered_total = recovery.unrecovered_total + remainder end
@@ -301,6 +322,13 @@ function BeltRestoration.restore(entities_to_create, entity_map)
                             entity.name, line_data.line, tostring(err)))
                     end
                     local placed = line.get_item_count() - before
+                    -- NO per-slot recovery here. BELT-R4 [empirical, 2.0.77, tests/belt-lab/NOTEBOOK.md]:
+                    -- a slot-merge triggered off this `placed < item.count` reading fired on the merged-
+                    -- segment PHANTOM shorts (not just real drops) and duplicated +341 items on the replay
+                    -- payload. The header rule — never route/re-insert off per-line measurements — applies
+                    -- to recovery triggers too. Real deficits are recovered AGGREGATE-level (name-keyed,
+                    -- from attribute_lines totals, the meter that matched the gate in both real failures)
+                    -- by recover_deficits_to_hub below.
                     placed_count = placed_count + placed
                     if placed < item.count then
                         local short = item.count - placed
@@ -340,7 +368,9 @@ function BeltRestoration.restore(entities_to_create, entity_map)
     end
 
     local attribution = BeltRestoration.attribute_lines(entities_to_create, entity_map)
-    local recovery = recover_deficits_to_hub(attribution, entities_to_create, entity_map)
+    -- Deficit recovery is NOT called here. It moved to import-completion AFTER the inventory passes
+    -- (see recover_deficits_to_hub's header) — anything inserted into the hub from this phase is
+    -- wiped by the Pass-2 hub inventory clear()+refill.
     unplaced_diag = math.max(0, -attribution.delta)
     log(string.format(
         "[Import] Belt restoration complete. %d belts: expected=%d actual=%d delta=%d consolidated_lines=%d",
@@ -367,7 +397,6 @@ function BeltRestoration.restore(entities_to_create, entity_map)
         items_restored = placed_count,
         expected_total = expected_total,
         attribution = attribution,
-        recovery = recovery,
     }
 end
 

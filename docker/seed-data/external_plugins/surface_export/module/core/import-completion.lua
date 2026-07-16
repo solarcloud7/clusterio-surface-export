@@ -286,6 +286,19 @@ function ImportCompletion.run_phase2(job)
 		log(string.format("[Import] Inventory overflow losses: %d items lost (set_stack API cap)", job.inventory_overflow_losses.total))
 	end
 
+	-- Belt aggregate-deficit recovery — deliberately HERE, after BOTH inventory passes, never inside the
+	-- belts phase: Pass 2 re-restores the hub's inventories with clear()+refill, which wiped anything the
+	-- old in-phase recovery had inserted (recovery reported success, the strict gate physically counted
+	-- the items missing — BELT-R3/R5 [empirical, 2.0.77, tests/belt-lab/NOTEBOOK.md]). The deficit is the
+	-- one MEASURED at belt-phase end (job.belt_attribution), NOT a census recomputed here: on the live
+	-- (non-transfer) import path, ticks elapse between phases, belts drift and machines consume — BELT-R5
+	-- measured a recomputed late census misreading that legitimate movement as a 321-item deficit and
+	-- duplicating it into the hub. On the frozen transfer path the two reads agree; the stored one is
+	-- correct on both. Result banked on the job for the failure black box.
+	if job.belt_attribution then
+		job.belt_recovery = BeltRestoration.recover_deficits_to_hub(job.belt_attribution, entities_to_create, entity_map)
+	end
+
 	-- Deactivate entities and re-pause platform after inventory restore.
 	-- Validation requires machines to be inactive so they cannot consume items between now and validation.
 	for _, entity_data in ipairs(entities_to_create) do

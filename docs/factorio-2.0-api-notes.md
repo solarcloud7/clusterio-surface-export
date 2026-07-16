@@ -169,6 +169,13 @@ Consequence: fluid does not live per-entity — it lives in the shared segment. 
   `true` for two belts whose lines hold *different* counts, so it is neither identity nor content equality).
   Ground belt totals on `get_item_count` (or unique `get_detailed_contents().unique_id` stacks), never on
   `line_equals` dedup.
+- **[empirical, 2.0.77, BELT-R9] Engine transport-line identity is not a durable cross-import restoration
+  key.** On five DUP-233855 baseline replays, the known belt-phase deficit was exactly five items before
+  recovery. Owner-narrowed `line_equals` resolution produced multiple matches on both known loss components,
+  and three identical imports produced different component/ambiguity/resolved-edge counts. This does not
+  invalidate `get_item_count` or unique-ID enumeration as physical meters; it invalidates using the engine
+  line graph to certify that a source and imported line represent the same continuous physical lane/side. See
+  [BELT-R9](../tests/belt-lab/NOTEBOOK.md#belt-r9-empirical-2077---topology-first-plan-a-stops-on-the-real-dup-233855-component).
 - **[empirical, 2.0.76]** `tests/integration/engine-invariants` grounds the belt meter against the unique-stack
   physical total (catches both belt-item drop → meter < physical and a whole-line double-count → meter >
   physical) and asserts held-item inclusion whenever an inserter is holding.

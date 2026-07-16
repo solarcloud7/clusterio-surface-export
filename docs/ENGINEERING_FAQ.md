@@ -154,11 +154,31 @@ discarded (`failedStage` in the transaction log tells you whether items or fluid
 debug-gated `preserve_failed_destination` flag to keep the failed surface paused instead of discarding it — it is
 consumed after a single use; Pitfall #30, mutating test hooks must be fail-safe on leak.)
 
+**Q: How should I triage a failure black box?**
+A: Start with `failedStage`, then compare the expected/actual per-name rows. These signatures are known classes;
+anything else stays unexplained until measured. Never loosen the exact gate to make a signature disappear.
+
+| Failure signature | Known class | Operator action |
+|---|---|---|
+| `items`; one belt-attributed item name; small, single-digit `LOST` delta | Belt restoration stack-1/compression floor | Retry the transfer **once**. The source is preserved by the failed gate. If the same signature repeats, stop retrying and retain the new black box for the belt-loss rung. |
+| `fluids`; mismatch is fusion plasma or another engine-managed output | Engine-owned fluid classification/exclusion issue | Do not compensate manually or relax the epsilon. Confirm the engine-owned category and symmetric export/restore/census exclusion for the current Factorio pin; preserve the source while correcting that classification. |
+| `items`; many unrelated names are `GAINED` together | Craft-window/non-frozen census | Treat this as an ordering or measurement failure, not created inventory. Check the black-box tick and paused/active state, and move the census back before any elapsed simulation tick. |
+
+The belt class is fail-closed and remains mechanistically `UNEXPLAINED`; the deterministic replay and recovery
+evidence live in [the belt lab notebook](../tests/belt-lab/NOTEBOOK.md). Engine-owned fluid handling is covered by
+the `plasma-engine-owned` integration fixture. A retry is authorized only for the first row and only once.
+
 ## D. Data fidelity
 
 **Q: What if my belts are packed with items?**
-A: ✅ 100% preserved. The source uses an atomic single-tick belt scan, and the historical restore-time
-residual once described as cosmetic ±4–8 drift has been fixed to zero (Pitfall #16, Verification Counts From Live Scan vs Serialized Data).
+A: Exact **global item conservation** is mandatory at the frozen `items` gate. When ordinary belt
+restoration cannot reproduce a fully compressed state, the shipped hub/ground recovery may conserve the
+deficit elsewhere and allow the transfer to pass. Exact whole-lane fidelity is therefore not yet guaranteed:
+each continuous belt lane/side must retain its exact `(name, quality, stack count)` multiset and quantity,
+while order, exact coordinate, and individual belt-tile window may change. BELT-R9 rejected cross-import
+engine transport-line identity as a restoration key for the known DUP-233855 loss components; physical
+adjacency-walk restoration remains an unproven lab candidate. Preserve repeated small belt-loss black boxes
+as described above rather than treating a globally green transfer as proof of whole-lane fidelity.
 
 **Q: What if my inserters are holding items mid-swing?**
 A: ✅ Restored via a pre-gate inserter-only activation pass so the strict gate counts a complete state (Pitfall
