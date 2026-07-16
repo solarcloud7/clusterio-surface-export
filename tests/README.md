@@ -23,6 +23,9 @@ question it answers and the oracle it requires.
 A baked batch consumes each certified fixture once, invokes the real production path, and reloads the paired
 golden saves in an unconditional batch finalizer. It does not clone, construct, clean, or reset fixtures between
 runs. A runner must own or exclusively lease both instances, refuse in-flight transient state, and verify the
-certified baseline again before releasing them. Operational drift uses the production transaction analytics plus
-fixture/save identity metadata. Correctness tests add an independent physical oracle only when the production
-serializer, restorer, validator, gate, or analytics meter is under test.
+certified baseline again before releasing them. The first fixture that leaves the per-fixture preflight
+unsatisfiable aborts the batch; unconsumed fixtures report BLOCKED, distinct from FAILED. Operational drift uses
+the production transaction analytics plus fixture/save identity metadata. Correctness tests add an independent
+physical oracle only when the production serializer, restorer, validator, gate, or analytics meter is under test.
+Golden saves are committed under `docker/seed-data/lab-saves/`; engine pin bumps load them through native save
+migration by owner ruling (see the standard).

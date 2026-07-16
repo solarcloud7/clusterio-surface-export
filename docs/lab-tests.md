@@ -53,6 +53,24 @@ A platform or surface name is a lookup label, not sufficient destructive identit
 whenever its physical state or expected invariant changes, and longitudinal results from different revisions are
 never compared as one series.
 
+### Storage and bake-time configuration
+
+Golden saves are committed to this repository under `docker/seed-data/lab-saves/`, beside their machine-readable
+manifest — the live cluster is never the only copy of the corpus. A save is baked WITH the plugin configuration
+it is meant to carry: `on_init` defaults apply only to fresh saves (Pitfall #13, debug mode lost after save
+reset), so a configuration default added after a save was baked never reaches that save without a deliberate
+re-bake or an explicit migration step recorded against the fixture revision.
+
+### Golden saves across engine pins (owner ruling, 2026-07-16)
+
+Golden saves are NOT re-baked when the Factorio pin bumps. Loading the existing save on the new engine and
+accepting its save migration is the deliberate policy: it exercises exactly what players' saves experience, the
+baked states are stable and human-inspectable, and re-baking from scripts would not by itself prevent
+migration-class drift. Watch release changelogs for migration risks before a pin bump, and rely on the engine and
+mod pins recorded in every longitudinal summary to attribute migration-coincident drift. A fixture revision does
+not change merely because the engine migrated the save; it changes when the physical state or expected invariant
+is deliberately edited.
+
 ### Minimality
 
 A fixture contains the smallest physical state that proves its invariant. A large fixture is allowed only when
@@ -67,7 +85,8 @@ A certified baked-fixture batch follows this lifecycle:
 1. Use a dedicated source/destination pair or acquire an exclusive lease on both instances before replacing any
    save. Refuse the batch if either instance has an instance-wide game tick pause, job, lock, hold, tombstone, or
    other in-flight operation; never clear or unpause that state to make preflight pass.
-2. Load the paired golden source and destination saves.
+2. Load the paired golden source and destination saves via Clusterio-native save assignment, on both instances
+   in lockstep.
 3. Poll both instances to readiness, verify the expected save/fixture revision, require
    `game.tick_paused == false`, and require zero transient plugin state.
 4. Resolve the exact named fixture and verify its minimal fingerprint.
@@ -81,6 +100,13 @@ A certified baked-fixture batch follows this lifecycle:
 Within a loaded batch, every baked fixture is single-use. A runner must not clone platforms, construct the
 physical case, scan prefixes for cleanup, delete prior fixtures, directly clear plugin storage, or unpause a game
 it did not pause. Tests that require incompatible global state use a different golden-save pair.
+
+**Failure attribution (owner ruling, 2026-07-16).** A production operation that reaches a terminal verdict —
+including a failed frozen verdict with its banked black box — is a valid FAILED result. Before consuming the
+next fixture, the runner re-verifies the same preflight it required at load (game unpaused, zero transient
+plugin state). The first fixture whose run leaves that preflight unsatisfiable ends the batch: the runner
+reloads the golden pair and reports every unconsumed fixture as **BLOCKED**, a status distinct from FAILED.
+One real failure must never read as ten; no repair of hostile state is permitted to keep a batch alive.
 
 There is no between-run cleanup for baked fixtures. Reloading the certified save pair is the normal reset. This
 does not retire cleanup-specific tests, and it does not authorize a legacy probe to leave state behind on the
@@ -123,6 +149,13 @@ Once a physical lab settles a contract, promote that contract into an integratio
 shipped production path and has an independent red tooth. Preserve the append-only notebook and original evidence.
 Retain only the minimal live rung needed to recertify engine-dependent behavior; do not keep exploratory setup in
 the integration runner.
+
+**The bake gate (owner ruling, 2026-07-16).** A lab conclusion is not SETTLED until its decisive fixture is
+baked into a golden save and the conclusion reproduces from the loaded save. A freshly constructed world and a
+save-loaded world are not automatically identical — save/load changes entity registration, storage identity, and
+`on_load` paths — so the reproduction gate catches contracts that hold only in the built-at-runtime state before
+they become permanent regressions. Labs iterate freely with disposable state while investigating; the baked
+lifecycle binds the permanent layers (integration and drift), and this gate is the bridge between the two.
 
 An engine-version change requires rerunning every executable `tests/*-lab/` runner before its conclusions are
 enabled at the new pin. [`tests/labs-certified.json`](../tests/labs-certified.json) records the resulting evidence
