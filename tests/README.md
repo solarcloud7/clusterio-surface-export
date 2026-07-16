@@ -11,6 +11,8 @@ The canonical testing taxonomy, baked-fixture lifecycle, measurement rules, and 
   Read the owning notebook before running an individual lab.
 - [`labs-certified.json`](labs-certified.json) records the engine pin and evidence commits covered by version
   certification.
+- [`runner-inventory.md`](runner-inventory.md) records each executable's evidence-backed category and disposition;
+  absent rows are unclassified while SC-41 remains in progress.
 - `docker/seed-data/external_plugins/surface_export/test/` contains Node unit and contract tests for the plugin.
 - `docker/seed-data/external_plugins/surface_export/scripts/` contains the static guards used by the plugin lint
   suite.
