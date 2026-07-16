@@ -64,14 +64,19 @@ default test pattern.
 
 A certified baked-fixture batch follows this lifecycle:
 
-1. Load the paired golden source and destination saves.
-2. Verify the expected save/fixture revision and require `game.tick_paused == false`; fail closed rather than
-   silently repairing a dirty or paused save.
-3. Resolve the exact named fixture and verify its minimal fingerprint.
-4. Invoke the real production operation, such as `/transfer-platform`.
-5. Capture the production transaction ID and wait for its terminal production record.
-6. Consume the next untouched baked fixture without cleaning, cloning, rebuilding, or resetting the prior one.
-7. Reload both golden saves at the batch boundary.
+1. Use a dedicated source/destination pair or acquire an exclusive lease on both instances before replacing any
+   save. Refuse the batch if either instance has an instance-wide game tick pause, job, lock, hold, tombstone, or
+   other in-flight operation; never clear or unpause that state to make preflight pass.
+2. Load the paired golden source and destination saves.
+3. Poll both instances to readiness, verify the expected save/fixture revision, require
+   `game.tick_paused == false`, and require zero transient plugin state.
+4. Resolve the exact named fixture and verify its minimal fingerprint.
+5. Invoke the real production operation, such as `/transfer-platform`.
+6. Capture the production transaction ID and wait for its terminal production record. An unexpected
+   `cleanup_failed` result aborts the batch.
+7. Consume the next untouched baked fixture without cleaning, cloning, rebuilding, or resetting the prior one.
+8. In an unconditional finalizer on success or failure, reload both golden saves, poll readiness, and re-verify
+   the save revisions, unpaused state, and zero transient plugin state before releasing the instance pair.
 
 Within a loaded batch, every baked fixture is single-use. A runner must not clone platforms, construct the
 physical case, scan prefixes for cleanup, delete prior fixtures, directly clear plugin storage, or unpause a game
@@ -87,6 +92,11 @@ in [CLAUDE.md](../CLAUDE.md).
 Use the production transfer record as the canonical operational-drift record. Do not add a second stopwatch,
 entity count, percentile calculation, or phase total that merely remeasures fields already produced by the
 production analytics. Compare a fixture only with earlier results carrying the same fixture ID and revision.
+
+The longitudinal harvester stores a provenance envelope alongside the untouched production summary: the
+preflight-verified fixture ID and revision, source/destination golden-save fingerprints, production transaction
+ID, plugin commit, and Factorio/mod pins. This envelope supplies identity and provenance; it must not copy,
+recompute, or reinterpret the production measurements.
 
 Independent physical grounding is required when the serializer, restorer, validator, gate, or analytics meter is
 itself under test. In that case, measure through an independent physical API and adjudicate the production verdict
@@ -114,8 +124,9 @@ shipped production path and has an independent red tooth. Preserve the append-on
 Retain only the minimal live rung needed to recertify engine-dependent behavior; do not keep exploratory setup in
 the integration runner.
 
-An engine-version change requires rerunning every applicable `tests/*-lab/` runner before its conclusions are
+An engine-version change requires rerunning every executable `tests/*-lab/` runner before its conclusions are
 enabled at the new pin. [`tests/labs-certified.json`](../tests/labs-certified.json) records the resulting evidence
-commits at the certified pin. Promotion never upgrades a hypothesis or unexplained observation into law.
+commits at the certified pin; it is an evidence ledger, not a substitute for inventorying every executable runner.
+Promotion never upgrades a hypothesis or unexplained observation into law.
 
 See [`tests/README.md`](../tests/README.md) for the repository test layout and entry points.

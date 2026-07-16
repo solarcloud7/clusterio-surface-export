@@ -21,6 +21,8 @@ question it answers and the oracle it requires.
 ## Baked physical batches
 
 A baked batch consumes each certified fixture once, invokes the real production path, and reloads the paired
-golden saves only at the batch boundary. It does not clone, construct, clean, or reset fixtures between runs.
-Operational drift uses the production transaction analytics. Correctness tests add an independent physical oracle
-only when the production serializer, restorer, validator, gate, or analytics meter is under test.
+golden saves in an unconditional batch finalizer. It does not clone, construct, clean, or reset fixtures between
+runs. A runner must own or exclusively lease both instances, refuse in-flight transient state, and verify the
+certified baseline again before releasing them. Operational drift uses the production transaction analytics plus
+fixture/save identity metadata. Correctness tests add an independent physical oracle only when the production
+serializer, restorer, validator, gate, or analytics meter is under test.
