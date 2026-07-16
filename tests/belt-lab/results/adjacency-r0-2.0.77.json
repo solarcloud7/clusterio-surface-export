@@ -3,8 +3,8 @@
   "rung": "ADJ-R0",
   "engine": "2.0.77",
   "status": "STOP",
-  "started": "2026-07-16T05:37:02.233Z",
-  "finished": "2026-07-16T05:40:48.659Z",
+  "started": "2026-07-16T16:29:52.343Z",
+  "finished": "2026-07-16T16:32:24.308Z",
   "pins": {
     "runtime_api_sha256": "594b4ec98cc5fbee322d7380db49a388ab38b0d69c06f00ead877cffbb37f578",
     "replay_sha256": "17d19ba522dcecdf9c259118e7bc875dc863da33042d2cd3bbd50f2fb91b9f4e",
@@ -78,42 +78,44 @@
     "prepare": {
       "chunks": 24,
       "rows": 596,
-      "maximumProfilerMs": 42.72455,
+      "maximumProfilerMs": 23.04507,
       "lastHeartbeat": {
         "success": true,
-        "tick": 6710676,
+        "tick": 8920566,
         "gamePaused": true,
-        "surface": "belt-adjacency-r0-injected-1784180222235",
+        "surface": "belt-adjacency-r0-injected-1784219392370",
         "prepared": 596,
         "constructed": 0,
-        "profiler": "Duration: 0.153579ms"
+        "profiler": "Duration: 0.129376ms"
       }
     },
     "construct": {
       "chunks": 24,
       "rows": 596,
-      "maximumProfilerMs": 5.210821,
+      "maximumProfilerMs": 1.672652,
       "lastHeartbeat": {
         "success": true,
-        "tick": 6710676,
+        "tick": 8920566,
         "gamePaused": true,
-        "surface": "belt-adjacency-r0-injected-1784180222235",
+        "surface": "belt-adjacency-r0-injected-1784219392370",
         "prepared": 596,
         "constructed": 596,
-        "profiler": "Duration: 0.168932ms"
+        "profiler": "Duration: 0.170785ms"
       }
     },
     "cleanup": [
       {
         "success": true,
-        "deleted": "belt-adjacency-r0-injected-1784180222235",
+        "deleted": [
+          "belt-adjacency-r0-injected-1784219392370"
+        ],
         "gamePaused": true,
-        "profiler": "Duration: 0.022377ms"
+        "profiler": "Duration: 0.036585ms"
       },
       {
         "success": true,
         "gamePaused": true,
-        "profiler": "Duration: 0.015031ms"
+        "profiler": "Duration: 0.035354ms"
       }
     ],
     "finalInspections": [
@@ -129,7 +131,7 @@
         "locks": 0,
         "holds": 0,
         "tombstones": 0,
-        "profiler": "Duration: 0.072024ms"
+        "profiler": "Duration: 0.028066ms"
       },
       {
         "success": true,
@@ -143,7 +145,7 @@
         "locks": 0,
         "holds": 0,
         "tombstones": 0,
-        "profiler": "Duration: 0.035682ms"
+        "profiler": "Duration: 0.034217ms"
       }
     ]
   },
@@ -151,42 +153,44 @@
     "prepare": {
       "chunks": 24,
       "rows": 596,
-      "maximumProfilerMs": 10.029683,
+      "maximumProfilerMs": 4.347647,
       "lastHeartbeat": {
         "success": true,
-        "tick": 6711244,
+        "tick": 8920894,
         "gamePaused": true,
-        "surface": "belt-adjacency-r0-live-1784180338213",
+        "surface": "belt-adjacency-r0-live-1784219467510",
         "prepared": 596,
         "constructed": 0,
-        "profiler": "Duration: 0.243948ms"
+        "profiler": "Duration: 0.168826ms"
       }
     },
     "construct": {
       "chunks": 24,
       "rows": 596,
-      "maximumProfilerMs": 2.844044,
+      "maximumProfilerMs": 1.468648,
       "lastHeartbeat": {
         "success": true,
-        "tick": 6711244,
+        "tick": 8920894,
         "gamePaused": true,
-        "surface": "belt-adjacency-r0-live-1784180338213",
+        "surface": "belt-adjacency-r0-live-1784219467510",
         "prepared": 596,
         "constructed": 596,
-        "profiler": "Duration: 0.183923ms"
+        "profiler": "Duration: 0.148752ms"
       }
     },
     "cleanup": [
       {
         "success": true,
-        "deleted": "belt-adjacency-r0-live-1784180338213",
+        "deleted": [
+          "belt-adjacency-r0-live-1784219467510"
+        ],
         "gamePaused": true,
-        "profiler": "Duration: 0.012525ms"
+        "profiler": "Duration: 0.015440ms"
       },
       {
         "success": true,
         "gamePaused": true,
-        "profiler": "Duration: 0.010637ms"
+        "profiler": "Duration: 0.023968ms"
       }
     ],
     "finalInspections": [
@@ -202,7 +206,7 @@
         "locks": 0,
         "holds": 0,
         "tombstones": 0,
-        "profiler": "Duration: 0.032944ms"
+        "profiler": "Duration: 0.024001ms"
       },
       {
         "success": true,
@@ -216,7 +220,7 @@
         "locks": 0,
         "holds": 0,
         "tombstones": 0,
-        "profiler": "Duration: 0.039359ms"
+        "profiler": "Duration: 0.032718ms"
       }
     ]
   },

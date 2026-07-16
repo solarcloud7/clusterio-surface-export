@@ -16,11 +16,22 @@ const savedR0 = JSON.parse(readFileSync(new URL("../results/adjacency-r0-2.0.77.
 
 test("runner accepts only the mandatory R0 rung", () => {
 	assert.deepEqual(parseArguments(["--rung", "r0", "--runtime-api", "api.json"]), {
-		rung: "r0", injectFailure: false, dryRun: false, runtimeApi: "api.json", writeEvidence: null,
+		rung: "r0", injectFailure: false, dryRun: false, runtimeApi: "api.json", writeEvidence: null, skipRehearsal: false,
 	});
 	assert.throws(() => parseArguments(["--rung", "r0"]), /--runtime-api/);
 	assert.throws(() => parseArguments(["--rung", "r1"]), /only r0/);
 	assert.throws(() => parseArguments(["--unknown"]), /unknown argument/);
+});
+
+test("debug reruns can skip the rehearsal, but never combined with --inject-failure", () => {
+	assert.equal(parseArguments(["--rung", "r0", "--runtime-api", "api.json", "--skip-rehearsal"]).skipRehearsal, true);
+	assert.throws(
+		() => parseArguments(["--rung", "r0", "--runtime-api", "api.json", "--skip-rehearsal", "--inject-failure"]),
+		/--skip-rehearsal contradicts --inject-failure/,
+	);
+	const gate = runnerSource.indexOf("if (options.skipRehearsal)");
+	const rehearsal = runnerSource.indexOf("belt-adjacency-r0-injected-");
+	assert.ok(gate !== -1 && gate < rehearsal, "the injected-failure rehearsal must be gated behind --skip-rehearsal");
 });
 
 test("evidence is never written unless an explicit output path is supplied", () => {

@@ -107,7 +107,7 @@ export function assertZeroLeftovers(state) {
 }
 
 export function parseArguments(argv) {
-	const result = { rung: null, injectFailure: false, dryRun: false, runtimeApi: null, writeEvidence: null };
+	const result = { rung: null, injectFailure: false, dryRun: false, runtimeApi: null, writeEvidence: null, skipRehearsal: false };
 	for (let index = 0; index < argv.length; index += 1) {
 		const argument = argv[index];
 		if (argument === "--rung") result.rung = argv[++index];
@@ -115,11 +115,13 @@ export function parseArguments(argv) {
 		else if (argument === "--dry-run") result.dryRun = true;
 		else if (argument === "--runtime-api") result.runtimeApi = argv[++index];
 		else if (argument === "--write-evidence") result.writeEvidence = argv[++index];
+		else if (argument === "--skip-rehearsal") result.skipRehearsal = true;
 		else throw new Error(`unknown argument ${argument}`);
 	}
 	if (result.rung !== "r0") throw new Error("this runner supports only r0");
 	if (!result.runtimeApi) throw new Error("--runtime-api <path> is required");
 	if (result.writeEvidence === undefined) throw new Error("--write-evidence requires a path");
+	if (result.skipRehearsal && result.injectFailure) throw new Error("--skip-rehearsal contradicts --inject-failure");
 	return result;
 }
 
@@ -256,16 +258,22 @@ async function main() {
 			new RuntimeClient({ transport: dockerTransport("clusterio-host-2-instance-1") }),
 			new RuntimeClient({ transport: dockerTransport("clusterio-host-1-instance-1") }),
 		];
-		let injectedStopped = false;
-		const injectedFailureBoundary = {};
-		try {
-			await executeR0({ clients, descriptors, surfaceName: `belt-adjacency-r0-injected-${Date.now()}`, injectFailure: true, evidence: injectedFailureBoundary });
-		} catch (error) {
-			if (!/injected post-construction failure/.test(error.message)) throw error;
-			injectedStopped = true;
+		if (options.skipRehearsal) {
+			// Debug-only section selection (integration-probe rule 1): a skipped rehearsal is
+			// recorded as skipped; a full evidence run must not use --skip-rehearsal.
+			result.injectedFailureBoundary = "SKIPPED (--skip-rehearsal debug run)";
+		} else {
+			let injectedStopped = false;
+			const injectedFailureBoundary = {};
+			try {
+				await executeR0({ clients, descriptors, surfaceName: `belt-adjacency-r0-injected-${Date.now()}`, injectFailure: true, evidence: injectedFailureBoundary });
+			} catch (error) {
+				if (!/injected post-construction failure/.test(error.message)) throw error;
+				injectedStopped = true;
+			}
+			if (!injectedStopped) throw new Error("cleanup rehearsal did not reach its injected failure");
+			result.injectedFailureBoundary = summarizeBoundary(injectedFailureBoundary);
 		}
-		if (!injectedStopped) throw new Error("cleanup rehearsal did not reach its injected failure");
-		result.injectedFailureBoundary = summarizeBoundary(injectedFailureBoundary);
 		if (options.injectFailure) {
 			result.injectedFailureOnly = true;
 			result.status = "INJECTED_FAILURE_CLEANUP_PROVEN";

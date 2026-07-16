@@ -95,6 +95,13 @@ test("runtime never unpauses when pause ownership was not acquired", async () =>
 	assert.deepEqual(calls, ["inspect"]);
 });
 
+test("Lua cleanup sweeps every prefixed surface, not only the storage-tracked one", () => {
+	const cleanupBody = luaSource.slice(luaSource.indexOf("local function cleanup()"), luaSource.indexOf('assert(type(request) == "table"'));
+	assert.match(cleanupBody, /for _, surface in pairs\(game\.surfaces\)/);
+	assert.match(cleanupBody, /string\.find\(surface\.name, prefix, 1, true\) == 1/);
+	assert.match(cleanupBody, /storage\.belt_adjacency_r0 = nil/);
+});
+
 test("R0 Lua runtime is prefix-scoped and contains no item insertion path", () => {
 	assert.match(luaSource, /belt-adjacency-r0-/);
 	assert.match(luaSource, /committed_source_transfer_tombstones/);

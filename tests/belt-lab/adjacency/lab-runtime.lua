@@ -278,14 +278,23 @@ local function observe_graph()
 end
 
 local function cleanup()
-    local state, surface = get_state()
-    local deleted = nil
-    if surface then
-        deleted = surface.name
-        game.delete_surface(surface)
+    -- Sweep by the same prefix predicate inspect() uses so an orphaned lab surface
+    -- (one with no storage record) can never permanently block preflight.
+    local deleted = {}
+    for _, surface in pairs(game.surfaces) do
+        if string.find(surface.name, prefix, 1, true) == 1 then
+            deleted[#deleted + 1] = surface.name
+            game.delete_surface(surface)
+        end
     end
+    table.sort(deleted)
     storage.belt_adjacency_r0 = nil
-    return {success = true, tick = game.tick, deleted = deleted, gamePaused = game.tick_paused == true}
+    return {
+        success = true,
+        tick = game.tick,
+        deleted = (#deleted > 0) and deleted or nil,
+        gamePaused = game.tick_paused == true,
+    }
 end
 
 assert(type(request) == "table" and type(request.operation) == "string", "missing ADJ-R0 request")

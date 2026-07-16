@@ -344,8 +344,9 @@ git commit -m "test(belt-lab): add fail-safe adjacency runtime"
 - Modify after execution only: `tests/belt-lab/NOTEBOOK.md`
 
 **Interfaces:**
-- CLI: `node run-adjacency.mjs --rung r0 --runtime-api <path> [--dry-run] [--inject-failure] [--write-evidence <new-path>]`.
+- CLI: `node run-adjacency.mjs --rung r0 --runtime-api <path> [--dry-run] [--inject-failure] [--skip-rehearsal] [--write-evidence <new-path>]`.
 - Evidence is printed to stdout by default. `--write-evidence` is explicit and create-only; it never overwrites a committed result.
+- `--skip-rehearsal` is a debug-loop section selector only; evidence runs must include the rehearsal, and it refuses to combine with `--inject-failure`.
 - `analyzeKnownLossTopology(payload, blackBox, graph) -> { endpoints, configuredSplitter, eligible, reasons }` anchors exactly `65243:1`, `65243:2`, and `65907:2`.
 - `assertStableSignatures(signatures)`, `assertGeometryControlShapes(controls)`, `assertGeometryAgreement(observations)`, `assertKnownLossEligibility(result)`, and `assertBudgetBelowFixedCeiling(budget)` throw a stop-condition error and never downgrade it to a warning.
 - R0 performs no `insert_chunk` operation.
