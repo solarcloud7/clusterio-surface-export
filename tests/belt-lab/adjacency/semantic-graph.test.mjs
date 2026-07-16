@@ -72,11 +72,19 @@ test("unknown roles, cross-side edges, and geometry disagreement fail closed", (
 
 test("inconsistent underground pairs and explicit reverse transitions fail closed", () => {
 	const nodes = [
-		node("u-in", "left_underground_line", "left", "u", { entityType: "underground-belt", undergroundPartner: "u-out" }),
-		node("u-out", "left_underground_line", "left", "u", { entityType: "underground-belt", undergroundPartner: "wrong" }),
+		node("u-in", "left_underground_line", "left", "u", { entityType: "underground-belt", expectsPartner: true, undergroundPartner: "u-out" }),
+		node("u-out", "left_underground_line", "left", "u", { entityType: "underground-belt", expectsPartner: true, undergroundPartner: "wrong" }),
 	];
 	assert.match(buildSemanticGraph({ nodes, transitions: [] }).reasons.join("\n"), /underground pair/);
 	assert.match(buildSemanticGraph({ nodes: [node("a", "left_line", "left"), node("b", "left_line", "left")], transitions: [{ from: "a:left_line", to: "b:left_line", kind: "reverse", geometryAgreement: true }] }).reasons.join("\n"), /reverse transition/);
+});
+
+test("a source-declared unpaired underground dead end is consistent", () => {
+	const graph = buildSemanticGraph({
+		nodes: [node("u", "left_underground_line", "left", "u", { entityType: "underground-belt", expectsPartner: false })],
+		transitions: [],
+	});
+	assert.equal(graph.supported, true);
 });
 
 test("canonical signature is independent of input ordering", () => {

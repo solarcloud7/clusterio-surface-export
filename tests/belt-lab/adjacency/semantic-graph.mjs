@@ -45,7 +45,7 @@ function reachable(start, adjacency) {
 }
 
 export function buildSemanticGraph(input) {
-	const reasons = [];
+	const reasons = [...(input?.reasons || [])];
 	const nodes = [];
 	const byKey = new Map();
 	for (const descriptor of input?.nodes || []) {
@@ -77,7 +77,9 @@ export function buildSemanticGraph(input) {
 	}
 	for (const node of undergroundByEntity.values()) {
 		const partner = undergroundByEntity.get(String(node.undergroundPartner));
-		if (!partner || String(partner.undergroundPartner) !== String(node.entityId)) {
+		if (node.expectsPartner === false && node.undergroundPartner != null) {
+			reasons.push(`unexpected underground partner ${node.entityId}->${node.undergroundPartner}`);
+		} else if (node.expectsPartner === true && (!partner || String(partner.undergroundPartner) !== String(node.entityId))) {
 			reasons.push(`inconsistent underground pair ${node.entityId}->${node.undergroundPartner ?? "missing"}`);
 		}
 	}

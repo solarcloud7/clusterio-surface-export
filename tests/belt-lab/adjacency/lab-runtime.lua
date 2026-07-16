@@ -90,34 +90,68 @@ local function ensure_surface(surface_name)
         return state, surface
     end
     assert(game.get_surface(surface_name) == nil, "refusing to adopt an existing surface")
-    surface = game.create_surface(surface_name, {width = 1, height = 1, default_enable_all_autoplace_controls = false})
+    surface = game.create_surface(surface_name, {default_enable_all_autoplace_controls = false})
     storage.belt_adjacency_r0 = {
         surface_name = surface_name,
         source_to_unit = {},
         unit_to_source = {},
         source_descriptors = {},
+        prepared_sources = {},
     }
     return storage.belt_adjacency_r0, surface
+end
+
+local function heartbeat()
+    local state, surface = get_state()
+    return {
+        success = true,
+        tick = game.tick,
+        gamePaused = game.tick_paused == true,
+        surface = surface and surface.name or nil,
+        prepared = count_table(state and state.prepared_sources),
+        constructed = count_table(state and state.source_to_unit),
+    }
+end
+
+local function prepare_terrain()
+    assert(type(request.entities) == "table", "prepare_terrain requires entities")
+    assert(#request.entities <= 25, "prepare_terrain chunk exceeds 25 entities")
+    local state, surface = ensure_surface(request.surfaceName)
+    local tiles = {}
+    local seen_tiles = {}
+    for _, descriptor in ipairs(request.entities) do
+        assert(descriptor.type == "transport-belt" or descriptor.type == "underground-belt" or descriptor.type == "splitter",
+            "unsupported belt entity type " .. tostring(descriptor.type))
+        local source_id = tostring(descriptor.entityId)
+        assert(state.prepared_sources[source_id] == nil, "duplicate terrain preparation " .. source_id)
+        state.prepared_sources[source_id] = true
+        local center_x = math.floor(descriptor.position.x)
+        local center_y = math.floor(descriptor.position.y)
+        for x = center_x - 1, center_x + 1 do
+            for y = center_y - 1, center_y + 1 do
+                local key = tostring(x) .. ":" .. tostring(y)
+                if not seen_tiles[key] then
+                    seen_tiles[key] = true
+                    tiles[#tiles + 1] = {name = "landfill", position = {x, y}}
+                end
+            end
+        end
+    end
+    if #tiles > 0 then surface.set_tiles(tiles, true, true, true, false) end
+    return {success = true, tick = game.tick, totalPrepared = count_table(state.prepared_sources)}
 end
 
 local function construct()
     assert(type(request.entities) == "table", "construct requires entities")
     assert(#request.entities <= 25, "construct chunk exceeds 25 entities")
     local state, surface = ensure_surface(request.surfaceName)
-    local tiles = {}
+    local created = {}
     for _, descriptor in ipairs(request.entities) do
         assert(descriptor.type == "transport-belt" or descriptor.type == "underground-belt" or descriptor.type == "splitter",
             "unsupported belt entity type " .. tostring(descriptor.type))
-        assert(state.source_to_unit[tostring(descriptor.entityId)] == nil,
-            "duplicate source entity " .. tostring(descriptor.entityId))
-        tiles[#tiles + 1] = {
-            name = "landfill",
-            position = {math.floor(descriptor.position.x), math.floor(descriptor.position.y)},
-        }
-    end
-    if #tiles > 0 then surface.set_tiles(tiles, true, false, false, false) end
-    local created = {}
-    for _, descriptor in ipairs(request.entities) do
+        local source_id = tostring(descriptor.entityId)
+        assert(state.prepared_sources[source_id] == true, "descriptor was not terrain-prepared " .. source_id)
+        assert(state.source_to_unit[source_id] == nil, "duplicate source entity " .. source_id)
         local specification = {
             name = descriptor.name,
             position = descriptor.position,
@@ -134,12 +168,18 @@ local function construct()
             entity.splitter_input_priority = descriptor.inputPriority or "none"
             entity.splitter_output_priority = descriptor.outputPriority or "none"
         end
-        local source_id = tostring(descriptor.entityId)
         state.source_to_unit[source_id] = entity.unit_number
         state.unit_to_source[tostring(entity.unit_number)] = source_id
         state.source_descriptors[source_id] = {
             name = entity.name,
+            type = entity.type,
             position = {x = entity.position.x, y = entity.position.y},
+            direction = entity.direction,
+            underground_type = descriptor.undergroundType,
+            expects_partner = descriptor.expectsPartner,
+            filter = descriptor.filter,
+            input_priority = descriptor.inputPriority,
+            output_priority = descriptor.outputPriority,
             unit_number = entity.unit_number,
         }
         created[#created + 1] = {entityId = descriptor.entityId, unitNumber = entity.unit_number}
@@ -184,17 +224,31 @@ local function observe_graph()
         assert(entity and entity.valid and entity.unit_number == unit_number,
             "constructed entity disappeared or changed identity: " .. source_id)
         local belt_neighbours = entity.belt_neighbours or {inputs = {}, outputs = {}}
-        local partner = entity.neighbours
+        local partner = nil
+        if entity.type == "underground-belt" then partner = entity.neighbours end
         local partner_id = nil
         if partner and partner.valid then partner_id = state.unit_to_source[tostring(partner.unit_number)] end
         local lines = {}
         for line_index = 1, entity.get_max_transport_line_index() do
+            local geometry_ok, geometry = pcall(geometry_for, entity, line_index)
+            assert(geometry_ok, "geometry failed for " .. source_id .. " (" .. entity.type .. ") line "
+                .. tostring(line_index) .. ": " .. tostring(geometry))
             lines[#lines + 1] = {
                 index = line_index,
                 role = role_by_index[line_index],
-                geometry = geometry_for(entity, line_index),
+                geometry = geometry,
             }
         end
+        local splitter_filter = nil
+        local input_priority = nil
+        local output_priority = nil
+        if entity.type == "splitter" then
+            splitter_filter = entity.splitter_filter and entity.splitter_filter.name or nil
+            input_priority = entity.splitter_input_priority
+            output_priority = entity.splitter_output_priority
+        end
+        local expects_partner = nil
+        if entity.type == "underground-belt" then expects_partner = descriptor.expects_partner == true end
         rows[#rows + 1] = {
             entityId = source_id,
             unitNumber = unit_number,
@@ -202,18 +256,28 @@ local function observe_graph()
             type = entity.type,
             position = {x = entity.position.x, y = entity.position.y},
             direction = entity.direction,
-            beltShape = entity.belt_shape,
+            beltShape = entity.type == "transport-belt" and entity.belt_shape or nil,
+            undergroundType = entity.type == "underground-belt" and entity.belt_to_ground_type or nil,
+            expectsPartner = expects_partner,
             inputs = neighbour_ids(belt_neighbours.inputs, state.unit_to_source),
             outputs = neighbour_ids(belt_neighbours.outputs, state.unit_to_source),
             undergroundPartner = partner_id,
-            splitterFilter = entity.splitter_filter and entity.splitter_filter.name or nil,
-            inputPriority = entity.splitter_input_priority,
-            outputPriority = entity.splitter_output_priority,
+            splitterFilter = splitter_filter,
+            inputPriority = input_priority,
+            outputPriority = output_priority,
             lines = lines,
         }
     end
     table.sort(rows, function(left, right) return tonumber(left.entityId) < tonumber(right.entityId) end)
-    return {success = true, version = script.active_mods.base, tick = game.tick, gamePaused = game.tick_paused == true, entities = rows}
+    return {
+        success = true,
+        version = script.active_mods.base,
+        tick = game.tick,
+        gamePaused = game.tick_paused == true,
+        surfaceItems = belt_item_count(surface),
+        groundItems = item_entity_count(surface),
+        entities = rows,
+    }
 end
 
 local function cleanup()
@@ -228,9 +292,16 @@ local function cleanup()
 end
 
 assert(type(request) == "table" and type(request.operation) == "string", "missing ADJ-R0 request")
-if request.operation == "inspect" then return inspect() end
-if request.operation == "set_pause" then return set_pause() end
-if request.operation == "construct" then return construct() end
-if request.operation == "observe_graph" then return observe_graph() end
-if request.operation == "cleanup" then return cleanup() end
-error("unsupported ADJ-R0 operation " .. request.operation)
+local profiler = game.create_profiler()
+local result = nil
+if request.operation == "inspect" then result = inspect()
+elseif request.operation == "set_pause" then result = set_pause()
+elseif request.operation == "heartbeat" then result = heartbeat()
+elseif request.operation == "prepare_terrain" then result = prepare_terrain()
+elseif request.operation == "construct" then result = construct()
+elseif request.operation == "observe_graph" then result = observe_graph()
+elseif request.operation == "cleanup" then result = cleanup()
+else error("unsupported ADJ-R0 operation " .. request.operation) end
+profiler.stop()
+result.profiler = profiler
+return result

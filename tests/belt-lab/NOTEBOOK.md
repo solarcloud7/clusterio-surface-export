@@ -572,3 +572,32 @@ loss class is not eligible and no production Plan A code was written. Scheduler,
 performance rungs were not continued after this earlier mandatory stop. Full evidence:
 `results/plan-a-phase-a-stop-2.0.77.txt` and
 `results/plan-a-topology-endpoint-reruns-2.0.77.json`; rerun entrypoint: `run-plan-a-topology.ps1`.
+
+## ADJ-R0 STOP [empirical, 2.0.77] - semantic adjacency cannot certify the real loss endpoints
+
+The mandatory kill-first rung constructed all 596 replay belt entities on a directly built empty target,
+verified zero belt and ground items, and joined all 596 entities exactly to their serialized IDs. Three paused
+observations produced the same structural signature
+`3783934efce8d99c7dd56abacb276b076a2471ff7533888781011ce7968c5b3c`. The controls covered 399 straight
+belts, 54 corners, three unconfigured splitters, 69 reciprocal underground pairs, and 1,490 named semantic
+line-role nodes. Source-declared unpaired underground endpoints remained legal dead ends; no configured
+splitter network was present.
+
+The separate engine-assisted geometry cross-check did not agree with the semantic adjacency candidate. It
+recorded 292 cases where `get_item_insert_specification` mapped a line endpoint back to a different local role,
+and the proposed endpoint-coordinate matcher rejected 1,135 of 1,490 candidate directed transitions. This is
+not evidence that 1,135 physical belt connections are malformed: the attempted matcher used coordinates from
+merged `LuaTransportLine` extents, so its readings are not commensurate with entity-local semantic edges. Using
+those readings as a transition key would reintroduce the engine-line axis that BELT-R9 already ruled out.
+
+**STOP CONDITION FIRED:** structural and engine-assisted geometry could not be made to agree without relaxing
+the approved criterion or inventing an unversioned role-transition table. Therefore none of the three exact
+known-loss endpoints (`65243:1`, `65243:2`, `65907:2`) received a certified legal region. Belt-item insertion
+was not performed. Scheduler, aliasing/landing, reconstruction, the synthetic ladder, and production
+restoration are **NOT TESTED**; no production code was written.
+
+The read ceiling passed (4,470 projected detailed-content line reads versus 5,000,000), every mutation chunk
+held at most 25 source rows, and every chunk had a read-free heartbeat plus rendered `LuaProfiler` timing. The
+injected post-construction failure and the normal rung both ended on both instances with game unpaused and
+zero lab surfaces, items, storage, jobs, locks, holds, and tombstones. Compact evidence:
+`results/adjacency-r0-2.0.77.json`; runner: `adjacency/run-adjacency.mjs`.
