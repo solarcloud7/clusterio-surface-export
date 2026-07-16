@@ -4,7 +4,7 @@
 
 **Goal:** Build a lab-only, topology-first demonstration that either reconstructs the real `DUP-233855` belt state with exact lane/side/stack fidelity or stops with a durable negative result before any production restoration code is written.
 
-**Architecture:** A host-side Node runner reads the external banked payload, builds stable semantic `(source_entity_id, semantic_line_role)` graphs from bounded live observations, and drives disposable Factorio surfaces through RCON. Pure modules own API certification, topology signatures, route legality, scheduling, and verdict calculation; Lua owns only live construction, measurement, and bounded insertion. Rung 0 is a hard gate: later scheduler and restoration tasks are not executed if the real known-loss topology is ambiguous, configured, nondeterministic, geometrically inconsistent, or over budget.
+**Architecture:** A host-side Node runner reads the committed hash-pinned replay and attribution fixtures, builds stable semantic `(source_entity_id, semantic_line_role)` graphs from bounded live observations, and drives disposable Factorio surfaces through RCON. Pure modules own API certification, topology signatures, route legality, scheduling, and verdict calculation; Lua owns only live construction, measurement, and bounded insertion. Rung 0 is a hard gate: later scheduler and restoration tasks are not executed if the real known-loss topology is ambiguous, configured, nondeterministic, geometrically inconsistent, or over budget.
 
 **Tech Stack:** Node.js 24 ESM and `node:test`; PowerShell only for existing cluster-suite orchestration; Factorio Lua runtime 2.0.77; Docker/Clusterio RCON; JSON evidence committed only with a notebook conclusion.
 
@@ -12,7 +12,7 @@
 
 - Production files under `docker/seed-data/external_plugins/surface_export/module/` must not change.
 - The engine contract is pinned to Factorio `2.0.77`; `/latest/` documentation is not evidence.
-- The external inputs are required CLI paths to `replay_payload_DUP-233855.json`, `failure_black_box_DUP-233855_935331.json`, and a downloaded official `runtime-api.json`; the multi-megabyte inputs are not copied into git.
+- The replay and extracted attribution fixtures are committed and hash-pinned. The downloaded official `runtime-api.json` remains a required CLI path and is certified before any cluster access.
 - The fidelity unit is a continuous logical lane/side. Preserve total quantity and the exact `(name, quality, count)` stack multiset; position, order, and tile window are not invariants.
 - An unconfigured splitter may use either forward output on the same side. A merge may retain its input or move to shared downstream, but never backward into the sibling input.
 - Any network containing a configured splitter is rejected before its first insertion.
@@ -344,7 +344,8 @@ git commit -m "test(belt-lab): add fail-safe adjacency runtime"
 - Modify after execution only: `tests/belt-lab/NOTEBOOK.md`
 
 **Interfaces:**
-- CLI: `node run-adjacency.mjs --sections r0 --payload <path> --black-box <path> --runtime-api <path> --instance clusterio-host-2-instance-1 --evidence-dir <path>`.
+- CLI: `node run-adjacency.mjs --rung r0 --runtime-api <path> [--dry-run] [--inject-failure] [--write-evidence <new-path>]`.
+- Evidence is printed to stdout by default. `--write-evidence` is explicit and create-only; it never overwrites a committed result.
 - `analyzeKnownLossTopology(payload, blackBox, graph) -> { endpoints, configuredSplitter, eligible, reasons }` anchors exactly `65243:1`, `65243:2`, and `65907:2`.
 - `assertStableSignatures(signatures)`, `assertGeometryControlShapes(controls)`, `assertGeometryAgreement(observations)`, `assertKnownLossEligibility(result)`, and `assertBudgetBelowFixedCeiling(budget)` throw a stop-condition error and never downgrade it to a warning.
 - R0 performs no `insert_chunk` operation.
@@ -418,7 +419,7 @@ Run the runner with `--inject-failure after-construction` on the selected idle h
 Run:
 
 ```powershell
-node tests/belt-lab/adjacency/run-adjacency.mjs --sections r0 --payload C:\Users\Solar\source\FactorioSurfaceExport\tests\belt-lab\evidence\replay_payload_DUP-233855.json --black-box C:\Users\Solar\source\FactorioSurfaceExport\tests\belt-lab\evidence\failure_black_box_DUP-233855_935331.json --runtime-api C:\tmp\runtime-api-2.0.77.json --instance clusterio-host-2-instance-1 --evidence-dir C:\tmp\belt-adjacency-r0
+node tests/belt-lab/adjacency/run-adjacency.mjs --rung r0 --runtime-api C:\tmp\runtime-api-2.0.77.json --write-evidence C:\tmp\adjacency-r0-fixed.json
 ```
 
 Expected: either `R0 PASS` with stable signatures, zero ambiguity, geometry agreement, known endpoints eligible, and budget below ceiling; or `R0 STOP` with one exact stop condition and zero leftovers.

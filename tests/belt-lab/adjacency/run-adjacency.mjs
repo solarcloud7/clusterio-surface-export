@@ -1,8 +1,9 @@
 import { execFileSync } from "node:child_process";
-import { readFileSync, writeFileSync } from "node:fs";
+import { closeSync, openSync, readFileSync, writeFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 
-import { certifyAttributionFixture, certifyReplayFixture } from "./fixture-contract.mjs";
+import { certifyRuntimeApiFile } from "./api-contract.mjs";
+import { EXPECTED_BLACK_BOX_SHA256, certifyAttributionFixture, certifyReplayFixture } from "./fixture-contract.mjs";
 import {
 	assertDeterministicObservations,
 	assertExactConstruction,
@@ -10,11 +11,86 @@ import {
 	certifyGeometryControls,
 	constructionDescriptors,
 	maximumLineNodes,
+	normalizeObservationRoles,
 	projectDetailedContentReads,
 } from "./dup-topology.mjs";
 import { RuntimeClient } from "./runtime-client.mjs";
 
 const MAX_CHUNK = 25;
+
+export class StopConditionError extends Error {
+	constructor(message, details = undefined) {
+		super(message);
+		this.name = "StopConditionError";
+		this.details = details;
+	}
+}
+
+export function classifyR0Error(error) {
+	return {
+		status: error instanceof StopConditionError ? "STOP" : "HARNESS_ERROR",
+		error: error instanceof Error ? `${error.name}: ${error.message}` : String(error),
+		stopDetails: error?.details,
+	};
+}
+
+export function runStopGate(label, operation) {
+	try {
+		return operation();
+	} catch (error) {
+		if (error instanceof StopConditionError) throw error;
+		const message = error instanceof Error ? error.message : String(error);
+		throw new StopConditionError(`${label}: ${message}`, { gate: label, cause: message });
+	}
+}
+
+export function buildDurableEvidence(result) {
+	return {
+		schema: "belt-adjacency-r0-v2",
+		rung: "ADJ-R0",
+		engine: result.apiCertification?.version || "UNKNOWN",
+		status: result.status,
+		started: result.started,
+		finished: result.finished,
+		pins: {
+			runtime_api_sha256: result.apiCertification?.sha256,
+			replay_sha256: result.fixture?.sha256,
+			black_box_sha256: EXPECTED_BLACK_BOX_SHA256,
+		},
+		api_certification: result.apiCertification,
+		fixture: result.fixture,
+		known_loss_endpoint_keys: result.endpoints,
+		budget: { projected_detailed_content_reads: result.projectedReads, fixed_ceiling: 5_000_000, source_rows_per_mutation_chunk: MAX_CHUNK },
+		dry_run: result.dryRun,
+		injected_failure_boundary: result.injectedFailureBoundary,
+		live_boundary: result.liveBoundary,
+		determinism: result.determinism,
+		geometry_controls: result.geometryControls,
+		graph: result.graph,
+		known_endpoints: result.knownEndpoints,
+		error: result.error,
+		stop_details: result.stopDetails,
+		belt_item_insertion: "NOT PERFORMED",
+		scheduler: "NOT TESTED",
+		restoration: "NOT TESTED",
+		production_changes: "NONE",
+	};
+}
+
+export function reserveEvidenceOutput(outputPath) {
+	if (!outputPath) return null;
+	return openSync(outputPath, "wx");
+}
+
+export function persistEvidence(evidence, outputHandle) {
+	if (outputHandle === null) return false;
+	try {
+		writeFileSync(outputHandle, `${JSON.stringify(evidence, null, 2)}\n`);
+	} finally {
+		closeSync(outputHandle);
+	}
+	return true;
+}
 
 export function assertIdlePreflight(state) {
 	for (const field of ["gamePaused", "surfaces", "labStorage", "jobs", "locks", "holds", "tombstones"]) {
@@ -31,15 +107,19 @@ export function assertZeroLeftovers(state) {
 }
 
 export function parseArguments(argv) {
-	const result = { rung: null, injectFailure: false, dryRun: false };
+	const result = { rung: null, injectFailure: false, dryRun: false, runtimeApi: null, writeEvidence: null };
 	for (let index = 0; index < argv.length; index += 1) {
 		const argument = argv[index];
 		if (argument === "--rung") result.rung = argv[++index];
 		else if (argument === "--inject-failure") result.injectFailure = true;
 		else if (argument === "--dry-run") result.dryRun = true;
+		else if (argument === "--runtime-api") result.runtimeApi = argv[++index];
+		else if (argument === "--write-evidence") result.writeEvidence = argv[++index];
 		else throw new Error(`unknown argument ${argument}`);
 	}
 	if (result.rung !== "r0") throw new Error("this runner supports only r0");
+	if (!result.runtimeApi) throw new Error("--runtime-api <path> is required");
+	if (result.writeEvidence === undefined) throw new Error("--write-evidence requires a path");
 	return result;
 }
 
@@ -155,19 +235,22 @@ export async function executeR0({ clients, descriptors, surfaceName, injectFailu
 
 async function main() {
 	const options = parseArguments(process.argv.slice(2));
+	const result = { rung: "ADJ-R0", dryRun: options.dryRun, started: new Date().toISOString() };
+	let stopped = false;
+	let outputHandle = null;
+	try {
+	outputHandle = reserveEvidenceOutput(options.writeEvidence);
+	result.apiCertification = certifyRuntimeApiFile(options.runtimeApi);
 	const replayRaw = readFileSync(new URL("../fixtures/replay_payload_DUP-233855.json", import.meta.url));
 	const replay = JSON.parse(replayRaw);
 	const attribution = JSON.parse(readFileSync(new URL("../fixtures/dup-233855-loss-attribution.json", import.meta.url), "utf8"));
-	const fixture = certifyReplayFixture(replayRaw);
-	const endpoints = certifyAttributionFixture(attribution).endpointKeys;
+	result.fixture = certifyReplayFixture(replayRaw);
+	result.endpoints = certifyAttributionFixture(attribution).endpointKeys;
 	const descriptors = constructionDescriptors(replay);
-	const projectedReads = projectDetailedContentReads({
+	result.projectedReads = runStopGate("read budget", () => projectDetailedContentReads({
 		observationRuns: 3,
 		maximumLineNodes: maximumLineNodes(replay),
-	});
-	const result = { rung: "ADJ-R0", fixture, endpoints, projectedReads, dryRun: options.dryRun, started: new Date().toISOString() };
-	let stopped = false;
-	try {
+	}));
 	if (!options.dryRun) {
 		const clients = [
 			new RuntimeClient({ transport: dockerTransport("clusterio-host-2-instance-1") }),
@@ -189,13 +272,15 @@ async function main() {
 		} else {
 			const liveBoundary = {};
 			const live = await executeR0({ clients, descriptors, surfaceName: `belt-adjacency-r0-live-${Date.now()}`, evidence: liveBoundary });
-			const observations = live.observations;
+			const observations = runStopGate("semantic role normalization", () => live.observations.map(normalizeObservationRoles));
 			result.liveBoundary = summarizeBoundary(liveBoundary);
-			result.determinism = assertDeterministicObservations(observations);
-			assertExactConstruction(descriptors, observations[0].entities);
-			if (observations.some(row => row.surfaceItems !== 0 || row.groundItems !== 0)) throw new Error("empty target contains items");
-			result.geometryControls = certifyGeometryControls(observations[0]);
-			const topology = buildDupTopology(observations[0], endpoints);
+			result.determinism = runStopGate("graph determinism", () => assertDeterministicObservations(observations));
+			runStopGate("exact construction", () => assertExactConstruction(descriptors, observations[0].entities));
+			if (observations.some(row => row.surfaceItems !== 0 || row.groundItems !== 0)) {
+				throw new StopConditionError("empty target contains items");
+			}
+			result.geometryControls = runStopGate("geometry controls", () => certifyGeometryControls(observations[0]));
+			const topology = runStopGate("known-loss topology", () => buildDupTopology(observations[0], result.endpoints));
 			const reasonKinds = {};
 			for (const reason of topology.graph.reasons) {
 				const kind = reason.startsWith("geometry disagreement") ? "geometry disagreement"
@@ -215,21 +300,34 @@ async function main() {
 			};
 			result.knownEndpoints = topology.knownEndpoints;
 			if (!topology.graph.supported || topology.knownEndpoints.some(row => row.legalRegion.length === 0)) {
-				throw new Error(`ADJ-R0 topology unsupported: ${JSON.stringify(result.graph)}`);
+				throw new StopConditionError("ADJ-R0 topology unsupported", {
+					graph: result.graph, knownEndpoints: result.knownEndpoints,
+				});
 			}
 			result.status = "PASS";
 		}
 	} else result.status = "DRY_RUN";
 	} catch (error) {
 		stopped = true;
-		result.status = "STOP";
+		const classified = classifyR0Error(error);
+		result.status = classified.status;
 		result.schedulerRestoration = "NOT TESTED";
-		result.error = error.stack || error.message;
-		if (error.details) result.stopDetails = error.details;
+		result.error = classified.error;
+		if (classified.stopDetails) result.stopDetails = classified.stopDetails;
 	}
 	result.finished = new Date().toISOString();
-	const output = JSON.stringify(result, null, 2);
-	writeFileSync(new URL("../results/adjacency-r0-2.0.77.json", import.meta.url), `${output}\n`);
+	let durable = buildDurableEvidence(result);
+	try {
+		persistEvidence(durable, outputHandle);
+	} catch (error) {
+		stopped = true;
+		const classified = classifyR0Error(error);
+		result.status = classified.status;
+		result.error = classified.error;
+		result.stopDetails = classified.stopDetails;
+		durable = buildDurableEvidence(result);
+	}
+	const output = JSON.stringify(durable, null, 2);
 	console.log(output);
 	if (stopped) process.exitCode = 1;
 }

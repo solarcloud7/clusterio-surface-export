@@ -164,7 +164,7 @@ local function construct()
         local entity = surface.create_entity(specification)
         assert(entity and entity.valid, "failed to construct source entity " .. tostring(descriptor.entityId))
         if descriptor.type == "splitter" then
-            entity.splitter_filter = descriptor.filter
+            entity.splitter_filter = descriptor.splitterFilter
             entity.splitter_input_priority = descriptor.inputPriority or "none"
             entity.splitter_output_priority = descriptor.outputPriority or "none"
         end
@@ -177,7 +177,7 @@ local function construct()
             direction = entity.direction,
             underground_type = descriptor.undergroundType,
             expects_partner = descriptor.expectsPartner,
-            filter = descriptor.filter,
+            splitter_filter = descriptor.splitterFilter,
             input_priority = descriptor.inputPriority,
             output_priority = descriptor.outputPriority,
             unit_number = entity.unit_number,
@@ -215,8 +215,6 @@ end
 local function observe_graph()
     local state, surface = get_state()
     assert(state and surface, "observe_graph requires a constructed surface")
-    local role_by_index = {}
-    for name, index in pairs(defines.transport_line) do role_by_index[index] = name end
     local rows = {}
     for source_id, descriptor in pairs(state.source_descriptors) do
         local unit_number = state.source_to_unit[source_id]
@@ -235,7 +233,6 @@ local function observe_graph()
                 .. tostring(line_index) .. ": " .. tostring(geometry))
             lines[#lines + 1] = {
                 index = line_index,
-                role = role_by_index[line_index],
                 geometry = geometry,
             }
         end

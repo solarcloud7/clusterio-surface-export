@@ -1,91 +1,401 @@
 {
-  "schema": "belt-adjacency-r0-v1",
+  "schema": "belt-adjacency-r0-v2",
   "rung": "ADJ-R0",
   "engine": "2.0.77",
   "status": "STOP",
-  "started": "2026-07-16T03:04:43.842Z",
-  "finished": "2026-07-16T03:07:35.904Z",
-  "stop_condition": "engine-assisted geometry cross-check is not commensurate with the semantic entity-adjacency edges",
-  "interpretation": "The 1135 mismatches do not prove 1135 physical connections are wrong. They prove this candidate cannot certify role transitions from merged transport-line endpoint coordinates without reintroducing the engine-line axis that BELT-R9 rejected.",
+  "started": "2026-07-16T05:37:02.233Z",
+  "finished": "2026-07-16T05:40:48.659Z",
   "pins": {
     "runtime_api_sha256": "594b4ec98cc5fbee322d7380db49a388ab38b0d69c06f00ead877cffbb37f578",
     "replay_sha256": "17d19ba522dcecdf9c259118e7bc875dc863da33042d2cd3bbd50f2fb91b9f4e",
     "black_box_sha256": "a939252add39f95d1cc96fc6873453e5edef4ff300346311ca68736e50875445"
   },
-  "fixture": {
-    "all_entities": 1359,
-    "belt_entities": 596,
-    "serialized_belt_lines": 974,
-    "serialized_belt_rows": 4247,
-    "serialized_belt_quantity": 15866
-  },
-  "known_loss_endpoints": [
-    { "source": "65243:1", "node": "65243:left_line", "eligible": false },
-    { "source": "65243:2", "node": "65243:right_line", "eligible": false },
-    { "source": "65907:2", "node": "65907:right_line", "eligible": false }
-  ],
-  "construction": {
-    "exact_entities": 596,
-    "initial_belt_items": 0,
-    "initial_ground_items": 0,
-    "configured_splitter_networks": 0
-  },
-  "determinism": {
-    "runs": 3,
-    "structural_signature": "3783934efce8d99c7dd56abacb276b076a2471ff7533888781011ce7968c5b3c"
-  },
-  "geometry_controls": {
-    "straight": 399,
-    "corners": 54,
-    "splitters": 3,
-    "underground_pairs": 69,
-    "lines": 1490,
-    "insert_specification_remaps": 292
-  },
-  "semantic_graph": {
-    "nodes": 1490,
-    "accepted_edges_before_global_stop": 335,
-    "geometry_cross_check_mismatches": 1135,
-    "examples": [
-      "geometry disagreement 64838:left_line>64839:left_line",
-      "geometry disagreement 64843:secondary_left_line>64845:left_line",
-      "geometry disagreement 64843:secondary_right_line>64845:right_line"
+  "api_certification": {
+    "sha256": "594b4ec98cc5fbee322d7380db49a388ab38b0d69c06f00ead877cffbb37f578",
+    "version": "2.0.77",
+    "behaviorScope": "signatures-only",
+    "methods": {
+      "get_item_insert_specification": {
+        "parameters": [
+          "MapPosition"
+        ],
+        "returns": [
+          "uint32",
+          "float"
+        ]
+      },
+      "get_line_item_position": {
+        "parameters": [
+          "defines.transport_line",
+          "float"
+        ],
+        "returns": [
+          "MapPosition"
+        ]
+      },
+      "get_transport_line": {
+        "parameters": [
+          "defines.transport_line"
+        ],
+        "returns": [
+          "LuaTransportLine"
+        ]
+      }
+    },
+    "transportLineRoles": [
+      "left_line",
+      "right_line",
+      "left_underground_line",
+      "right_underground_line",
+      "secondary_left_line",
+      "secondary_right_line",
+      "left_split_line",
+      "right_split_line",
+      "secondary_left_split_line",
+      "secondary_right_split_line"
     ]
   },
+  "fixture": {
+    "sha256": "17d19ba522dcecdf9c259118e7bc875dc863da33042d2cd3bbd50f2fb91b9f4e",
+    "allEntities": 1359,
+    "beltEntities": 596,
+    "serializedBeltLines": 974,
+    "serializedBeltRows": 4247,
+    "serializedBeltQuantity": 15866
+  },
+  "known_loss_endpoint_keys": [
+    "65243:1",
+    "65243:2",
+    "65907:2"
+  ],
   "budget": {
     "projected_detailed_content_reads": 4470,
     "fixed_ceiling": 5000000,
-    "maximum_reads_per_rcon_chunk": 1490,
     "source_rows_per_mutation_chunk": 25
   },
-  "runtime": {
-    "injected_failure": {
-      "prepare_chunks": 24,
-      "construct_chunks": 24,
-      "prepared_entities": 596,
-      "constructed_entities": 596,
-      "maximum_prepare_or_heartbeat_ms": 3.841288,
-      "maximum_construct_or_heartbeat_ms": 1.521173
+  "dry_run": false,
+  "injected_failure_boundary": {
+    "prepare": {
+      "chunks": 24,
+      "rows": 596,
+      "maximumProfilerMs": 42.72455,
+      "lastHeartbeat": {
+        "success": true,
+        "tick": 6710676,
+        "gamePaused": true,
+        "surface": "belt-adjacency-r0-injected-1784180222235",
+        "prepared": 596,
+        "constructed": 0,
+        "profiler": "Duration: 0.153579ms"
+      }
     },
-    "normal_r0": {
-      "prepare_chunks": 24,
-      "construct_chunks": 24,
-      "prepared_entities": 596,
-      "constructed_entities": 596,
-      "maximum_prepare_or_heartbeat_ms": 5.707324,
-      "maximum_construct_or_heartbeat_ms": 2.182084
+    "construct": {
+      "chunks": 24,
+      "rows": 596,
+      "maximumProfilerMs": 5.210821,
+      "lastHeartbeat": {
+        "success": true,
+        "tick": 6710676,
+        "gamePaused": true,
+        "surface": "belt-adjacency-r0-injected-1784180222235",
+        "prepared": 596,
+        "constructed": 596,
+        "profiler": "Duration: 0.168932ms"
+      }
     },
-    "final_zero_state_both_instances": {
-      "game_paused": false,
-      "lab_surfaces": 0,
-      "belt_items": 0,
-      "ground_items": 0,
-      "lab_storage": false,
-      "jobs": 0,
-      "locks": 0,
-      "holds": 0,
-      "tombstones": 0
+    "cleanup": [
+      {
+        "success": true,
+        "deleted": "belt-adjacency-r0-injected-1784180222235",
+        "gamePaused": true,
+        "profiler": "Duration: 0.022377ms"
+      },
+      {
+        "success": true,
+        "gamePaused": true,
+        "profiler": "Duration: 0.015031ms"
+      }
+    ],
+    "finalInspections": [
+      {
+        "success": true,
+        "version": "2.0.77",
+        "gamePaused": false,
+        "surfaces": 0,
+        "surfaceItems": 0,
+        "groundItems": 0,
+        "labStorage": false,
+        "jobs": 0,
+        "locks": 0,
+        "holds": 0,
+        "tombstones": 0,
+        "profiler": "Duration: 0.072024ms"
+      },
+      {
+        "success": true,
+        "version": "2.0.77",
+        "gamePaused": false,
+        "surfaces": 0,
+        "surfaceItems": 0,
+        "groundItems": 0,
+        "labStorage": false,
+        "jobs": 0,
+        "locks": 0,
+        "holds": 0,
+        "tombstones": 0,
+        "profiler": "Duration: 0.035682ms"
+      }
+    ]
+  },
+  "live_boundary": {
+    "prepare": {
+      "chunks": 24,
+      "rows": 596,
+      "maximumProfilerMs": 10.029683,
+      "lastHeartbeat": {
+        "success": true,
+        "tick": 6711244,
+        "gamePaused": true,
+        "surface": "belt-adjacency-r0-live-1784180338213",
+        "prepared": 596,
+        "constructed": 0,
+        "profiler": "Duration: 0.243948ms"
+      }
+    },
+    "construct": {
+      "chunks": 24,
+      "rows": 596,
+      "maximumProfilerMs": 2.844044,
+      "lastHeartbeat": {
+        "success": true,
+        "tick": 6711244,
+        "gamePaused": true,
+        "surface": "belt-adjacency-r0-live-1784180338213",
+        "prepared": 596,
+        "constructed": 596,
+        "profiler": "Duration: 0.183923ms"
+      }
+    },
+    "cleanup": [
+      {
+        "success": true,
+        "deleted": "belt-adjacency-r0-live-1784180338213",
+        "gamePaused": true,
+        "profiler": "Duration: 0.012525ms"
+      },
+      {
+        "success": true,
+        "gamePaused": true,
+        "profiler": "Duration: 0.010637ms"
+      }
+    ],
+    "finalInspections": [
+      {
+        "success": true,
+        "version": "2.0.77",
+        "gamePaused": false,
+        "surfaces": 0,
+        "surfaceItems": 0,
+        "groundItems": 0,
+        "labStorage": false,
+        "jobs": 0,
+        "locks": 0,
+        "holds": 0,
+        "tombstones": 0,
+        "profiler": "Duration: 0.032944ms"
+      },
+      {
+        "success": true,
+        "version": "2.0.77",
+        "gamePaused": false,
+        "surfaces": 0,
+        "surfaceItems": 0,
+        "groundItems": 0,
+        "labStorage": false,
+        "jobs": 0,
+        "locks": 0,
+        "holds": 0,
+        "tombstones": 0,
+        "profiler": "Duration: 0.039359ms"
+      }
+    ]
+  },
+  "determinism": {
+    "runs": 3,
+    "signature": "20634d726bc02fc236933fbf29e176c15e87c4805819d2121231d040b9dfc445"
+  },
+  "geometry_controls": {
+    "corners": 54,
+    "splitters": 3,
+    "straight": 399,
+    "undergroundPairs": 69,
+    "lines": 1490,
+    "insertRemaps": 292,
+    "remapExamples": [
+      {
+        "entityId": "64833",
+        "line": 3,
+        "startInsertLine": 1,
+        "finishInsertLine": 1
+      },
+      {
+        "entityId": "64833",
+        "line": 4,
+        "startInsertLine": 2,
+        "finishInsertLine": 2
+      },
+      {
+        "entityId": "64835",
+        "line": 3,
+        "startInsertLine": 1,
+        "finishInsertLine": 1
+      },
+      {
+        "entityId": "64835",
+        "line": 4,
+        "startInsertLine": 2,
+        "finishInsertLine": 2
+      },
+      {
+        "entityId": "64839",
+        "line": 3,
+        "startInsertLine": 1,
+        "finishInsertLine": 1
+      },
+      {
+        "entityId": "64839",
+        "line": 4,
+        "startInsertLine": 2,
+        "finishInsertLine": 2
+      },
+      {
+        "entityId": "64843",
+        "line": 3,
+        "startInsertLine": 1,
+        "finishInsertLine": 1
+      },
+      {
+        "entityId": "64843",
+        "line": 4,
+        "startInsertLine": 2,
+        "finishInsertLine": 2
+      },
+      {
+        "entityId": "64845",
+        "line": 3,
+        "startInsertLine": 1,
+        "finishInsertLine": 1
+      },
+      {
+        "entityId": "64845",
+        "line": 4,
+        "startInsertLine": 2,
+        "finishInsertLine": 2
+      }
+    ]
+  },
+  "graph": {
+    "supported": false,
+    "signature": "05f74d50d7e1ee1b116cbbbdf270fd63e9d1d892afad30d0c954194aeea43f18",
+    "reasonCount": 1135,
+    "reasonKinds": {
+      "geometry disagreement": 1135
+    },
+    "reasonExamples": [
+      "geometry disagreement 64838:left_line>64839:left_line",
+      "geometry disagreement 64843:left_underground_line>64845:left_line",
+      "geometry disagreement 64843:right_underground_line>64845:right_line",
+      "geometry disagreement 64849:left_underground_line>64851:left_line",
+      "geometry disagreement 64849:right_underground_line>64851:right_line",
+      "geometry disagreement 64855:left_underground_line>64857:left_line",
+      "geometry disagreement 64855:right_underground_line>64857:right_line",
+      "geometry disagreement 64861:left_line>64887:left_line",
+      "geometry disagreement 64861:right_line>64887:right_line",
+      "geometry disagreement 64862:left_line>64861:left_line",
+      "geometry disagreement 64862:left_underground_line>64861:left_line",
+      "geometry disagreement 64862:right_underground_line>64861:right_line",
+      "geometry disagreement 64868:left_line>64838:left_line",
+      "geometry disagreement 64868:right_line>64838:right_line",
+      "geometry disagreement 64869:left_line>64868:left_line",
+      "geometry disagreement 64869:right_line>64868:right_line",
+      "geometry disagreement 64886:left_line>64907:left_line",
+      "geometry disagreement 64886:right_line>64907:right_line",
+      "geometry disagreement 64887:left_line>64886:left_line",
+      "geometry disagreement 64887:right_line>64886:right_line"
+    ],
+    "unsupportedNetworks": {},
+    "nodes": 1490,
+    "edges": 335
+  },
+  "known_endpoints": [
+    {
+      "source": "65243:1",
+      "node": "65243:left_line",
+      "legalRegion": []
+    },
+    {
+      "source": "65243:2",
+      "node": "65243:right_line",
+      "legalRegion": []
+    },
+    {
+      "source": "65907:2",
+      "node": "65907:right_line",
+      "legalRegion": []
     }
+  ],
+  "error": "StopConditionError: ADJ-R0 topology unsupported",
+  "stop_details": {
+    "graph": {
+      "supported": false,
+      "signature": "05f74d50d7e1ee1b116cbbbdf270fd63e9d1d892afad30d0c954194aeea43f18",
+      "reasonCount": 1135,
+      "reasonKinds": {
+        "geometry disagreement": 1135
+      },
+      "reasonExamples": [
+        "geometry disagreement 64838:left_line>64839:left_line",
+        "geometry disagreement 64843:left_underground_line>64845:left_line",
+        "geometry disagreement 64843:right_underground_line>64845:right_line",
+        "geometry disagreement 64849:left_underground_line>64851:left_line",
+        "geometry disagreement 64849:right_underground_line>64851:right_line",
+        "geometry disagreement 64855:left_underground_line>64857:left_line",
+        "geometry disagreement 64855:right_underground_line>64857:right_line",
+        "geometry disagreement 64861:left_line>64887:left_line",
+        "geometry disagreement 64861:right_line>64887:right_line",
+        "geometry disagreement 64862:left_line>64861:left_line",
+        "geometry disagreement 64862:left_underground_line>64861:left_line",
+        "geometry disagreement 64862:right_underground_line>64861:right_line",
+        "geometry disagreement 64868:left_line>64838:left_line",
+        "geometry disagreement 64868:right_line>64838:right_line",
+        "geometry disagreement 64869:left_line>64868:left_line",
+        "geometry disagreement 64869:right_line>64868:right_line",
+        "geometry disagreement 64886:left_line>64907:left_line",
+        "geometry disagreement 64886:right_line>64907:right_line",
+        "geometry disagreement 64887:left_line>64886:left_line",
+        "geometry disagreement 64887:right_line>64886:right_line"
+      ],
+      "unsupportedNetworks": {},
+      "nodes": 1490,
+      "edges": 335
+    },
+    "knownEndpoints": [
+      {
+        "source": "65243:1",
+        "node": "65243:left_line",
+        "legalRegion": []
+      },
+      {
+        "source": "65243:2",
+        "node": "65243:right_line",
+        "legalRegion": []
+      },
+      {
+        "source": "65907:2",
+        "node": "65907:right_line",
+        "legalRegion": []
+      }
+    ]
   },
   "belt_item_insertion": "NOT PERFORMED",
   "scheduler": "NOT TESTED",

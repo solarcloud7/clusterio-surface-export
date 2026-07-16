@@ -573,31 +573,42 @@ performance rungs were not continued after this earlier mandatory stop. Full evi
 `results/plan-a-phase-a-stop-2.0.77.txt` and
 `results/plan-a-topology-endpoint-reruns-2.0.77.json`; rerun entrypoint: `run-plan-a-topology.ps1`.
 
-## ADJ-R0 STOP [empirical, 2.0.77] - semantic adjacency cannot certify the real loss endpoints
+## ADJ-R0 INVALIDATED [harness error, 2.0.77] - corrected rerun required
 
-The mandatory kill-first rung constructed all 596 replay belt entities on a directly built empty target,
-verified zero belt and ground items, and joined all 596 entities exactly to their serialized IDs. Three paused
-observations produced the same structural signature
-`3783934efce8d99c7dd56abacb276b076a2471ff7533888781011ce7968c5b3c`. The controls covered 399 straight
-belts, 54 corners, three unconfigured splitters, 69 reciprocal underground pairs, and 1,490 named semantic
-line-role nodes. Source-declared unpaired underground endpoints remained legal dead ends; no configured
-splitter network was present.
+The first ADJ-R0 result is not empirical evidence. Its Lua observer inverted `defines.transport_line` into a
+single role-per-integer table, but the live enum aliases underground roles 3/4 with splitter secondary roles
+3/4. Lua table iteration therefore selected an arbitrary alias, mislabeling every underground node and
+invalidating the graph signature, ambiguity counts, geometry mismatch count, endpoint coverage, and STOP.
 
-The separate engine-assisted geometry cross-check did not agree with the semantic adjacency candidate. It
-recorded 292 cases where `get_item_insert_specification` mapped a line endpoint back to a different local role,
-and the proposed endpoint-coordinate matcher rejected 1,135 of 1,490 candidate directed transitions. This is
-not evidence that 1,135 physical belt connections are malformed: the attempted matcher used coordinates from
-merged `LuaTransportLine` extents, so its readings are not commensurate with entity-local semantic edges. Using
-those readings as a transition key would reintroduce the engine-line axis that BELT-R9 already ruled out.
+The evidence boundary was also invalid: the runner could not emit the committed compact schema, overwrote the
+committed result even on `--dry-run`, classified infrastructure failures as `STOP`, and did not consume the
+pinned official runtime schema. The previous STOP text and hash are intentionally withdrawn rather than
+carried as a negative conclusion.
 
-**STOP CONDITION FIRED:** structural and engine-assisted geometry could not be made to agree without relaxing
-the approved criterion or inventing an unversioned role-transition table. Therefore none of the three exact
-known-loss endpoints (`65243:1`, `65243:2`, `65907:2`) received a certified legal region. Belt-item insertion
-was not performed. Scheduler, aliasing/landing, reconstruction, the synthetic ladder, and production
-restoration are **NOT TESTED**; no production code was written.
+The corrected runner derives roles explicitly from `(entity type, line index)`, records pause ownership
+immediately after a successful pause write, distinguishes `HARNESS_ERROR` from a valid-harness `STOP`, requires
+the pinned official `runtime-api.json`, and writes evidence only to an explicit new path.
 
-The read ceiling passed (4,470 projected detailed-content line reads versus 5,000,000), every mutation chunk
-held at most 25 source rows, and every chunk had a read-free heartbeat plus rendered `LuaProfiler` timing. The
-injected post-construction failure and the normal rung both ended on both instances with game unpaused and
-zero lab surfaces, items, storage, jobs, locks, holds, and tombstones. Compact evidence:
-`results/adjacency-r0-2.0.77.json`; runner: `adjacency/run-adjacency.mjs`.
+## ADJ-R0 STOP [empirical, 2.0.77] - corrected instrument reproduces the topology stop
+
+The fixed observer passed its injected post-construction failure boundary, then repeated the full empty-target
+rung against the hash-pinned 1,359-entity replay. The runner consumed and certified the official 2.0.77 schema
+at SHA-256 `594b4ec98cc5fbee322d7380db49a388ab38b0d69c06f00ead877cffbb37f578`, constructed all 596 belt entities,
+and observed zero belt and ground items. Three normalized observations produced structural signature
+`20634d726bc02fc236933fbf29e176c15e87c4805819d2121231d040b9dfc445`.
+
+The corrected roles changed every affected underground node from the arbitrary splitter aliases to
+`left_underground_line` / `right_underground_line`. With those correct names, the declared geometry agreement
+gate still rejected 1,135 transitions and produced graph signature
+`05f74d50d7e1ee1b116cbbbdf270fd63e9d1d892afad30d0c954194aeea43f18`. All three known-loss endpoints
+(`65243:1`, `65243:2`, `65907:2`) consequently had empty certified legal regions. This corrected reproduction,
+not the withdrawn first run, is the evidence that semantic adjacency cannot pass the approved geometry
+cross-check for the real loss topology.
+
+The controls covered 399 straight belts, 54 corners, three unconfigured splitters, 69 reciprocal underground
+pairs, and 1,490 line nodes. The read projection remained 4,470 versus the fixed 5,000,000 ceiling. Both the
+injected-failure and normal boundaries cleaned to zero lab surfaces, items, storage, jobs, locks, holds, and
+tombstones on both instances; both games were unpaused. A separate post-run RCON census independently confirmed
+the same zero state. Belt-item insertion was **NOT PERFORMED**; scheduler, aliasing/landing, reconstruction, the
+synthetic ladder, and production restoration remain **NOT TESTED**. Runner-emitted evidence:
+`results/adjacency-r0-2.0.77.json`.

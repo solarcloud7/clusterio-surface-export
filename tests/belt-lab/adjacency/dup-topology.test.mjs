@@ -11,6 +11,7 @@ import {
 	maximumLineNodes,
 	projectDetailedContentReads,
 } from "./dup-topology.mjs";
+import * as topology from "./dup-topology.mjs";
 
 const fixture = JSON.parse(readFileSync(new URL("../fixtures/replay_payload_DUP-233855.json", import.meta.url), "utf8"));
 
@@ -27,10 +28,39 @@ test("construction descriptors preserve all 596 belt entities and topology-affec
 		quality: undefined,
 		undergroundType: "input",
 		expectsPartner: true,
-		filter: undefined,
+		splitterFilter: undefined,
 		inputPriority: undefined,
 		outputPriority: undefined,
 	});
+});
+
+test("transport-line roles are explicit per entity type despite aliased define values", () => {
+	assert.equal(typeof topology.roleForEntityLine, "function");
+	assert.equal(topology.roleForEntityLine("underground-belt", 3), "left_underground_line");
+	assert.equal(topology.roleForEntityLine("splitter", 3), "secondary_left_line");
+	assert.equal(topology.roleForEntityLine("underground-belt", 4), "right_underground_line");
+	assert.equal(topology.roleForEntityLine("splitter", 4), "secondary_right_line");
+	assert.throws(() => topology.roleForEntityLine("transport-belt", 3), /unsupported transport line/);
+});
+
+test("observation normalization assigns roles from entity type and line index", () => {
+	assert.equal(typeof topology.normalizeObservationRoles, "function");
+	const normalized = topology.normalizeObservationRoles({ entities: [
+		{ entityId: "u", type: "underground-belt", lines: [{ index: 3, role: "secondary_left_line" }] },
+		{ entityId: "s", type: "splitter", lines: [{ index: 3, role: "left_underground_line" }] },
+	] });
+	assert.equal(normalized.entities[0].lines[0].role, "left_underground_line");
+	assert.equal(normalized.entities[1].lines[0].role, "secondary_left_line");
+});
+
+test("configured splitter descriptors use one field name through construction comparison", () => {
+	const descriptor = constructionDescriptors({ entities: [{
+		entity_id: 9, name: "splitter", type: "splitter", position: { x: 1, y: 2 }, direction: 2,
+		specific_data: { filter: "iron-plate", input_priority: "left", output_priority: "right" },
+	}] })[0];
+	assert.equal(descriptor.splitterFilter, "iron-plate");
+	assert.equal(Object.hasOwn(descriptor, "filter"), false);
+	assert.doesNotThrow(() => assertExactConstruction([descriptor], [{ ...descriptor, unitNumber: 123, lines: [] }]));
 });
 
 test("exact construction rejects missing, duplicate, or structurally changed entities", () => {

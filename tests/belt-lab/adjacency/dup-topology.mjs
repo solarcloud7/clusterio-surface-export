@@ -5,6 +5,15 @@ import { buildSemanticGraph, nodeKey, ROLE_SIDE } from "./semantic-graph.mjs";
 
 const READ_CEILING = 5_000_000;
 
+const TRANSPORT_LINE_ROLES = {
+	"transport-belt": ["left_line", "right_line"],
+	"underground-belt": ["left_line", "right_line", "left_underground_line", "right_underground_line"],
+	splitter: [
+		"left_line", "right_line", "secondary_left_line", "secondary_right_line",
+		"left_split_line", "right_split_line", "secondary_left_split_line", "secondary_right_split_line",
+	],
+};
+
 function canonical(value) {
 	if (Array.isArray(value)) return value.map(canonical);
 	if (!value || typeof value !== "object") return value;
@@ -32,7 +41,7 @@ export function constructionDescriptors(payload) {
 		quality: entity.quality,
 		undergroundType: entity.specific_data?.belt_to_ground_type,
 		expectsPartner: entity.type === "underground-belt" ? entity.specific_data?.has_partner === true : undefined,
-		filter: entity.specific_data?.filter,
+		splitterFilter: entity.specific_data?.filter,
 		inputPriority: entity.specific_data?.input_priority,
 		outputPriority: entity.specific_data?.output_priority,
 	})).sort((left, right) => Number(left.entityId) - Number(right.entityId));
@@ -44,7 +53,26 @@ function comparable(row) {
 		position: row.position, direction: row.direction,
 		undergroundType: row.undergroundType,
 		expectsPartner: row.expectsPartner,
-		filter: row.filter, inputPriority: row.inputPriority, outputPriority: row.outputPriority,
+		splitterFilter: row.splitterFilter, inputPriority: row.inputPriority, outputPriority: row.outputPriority,
+	};
+}
+
+export function roleForEntityLine(entityType, lineIndex) {
+	const role = TRANSPORT_LINE_ROLES[entityType]?.[Number(lineIndex) - 1];
+	if (!role) throw new Error(`unsupported transport line ${entityType}:${lineIndex}`);
+	return role;
+}
+
+export function normalizeObservationRoles(observation) {
+	return {
+		...observation,
+		entities: (observation?.entities || []).map(entity => ({
+			...entity,
+			lines: (entity.lines || []).map(line => ({
+				...line,
+				role: roleForEntityLine(entity.type, line.index),
+			})),
+		})),
 	};
 }
 
