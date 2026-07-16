@@ -31,6 +31,8 @@ At an unconfigured splitter, either forward output branch is acceptable when the
 
 Consolidating stacks, splitting stacks, changing quality, crossing belt sides, losing items, or moving items onto an illegal branch is a failure.
 
+These splitter and merge route rules are an explicit owner decision for this design, not an inference from BELT-R9 or the Factorio API.
+
 ## Scope
 
 ### Included
@@ -50,6 +52,28 @@ Consolidating stacks, splitting stacks, changing quality, crossing belt sides, l
 - Plan B consolidation or hub/ground recovery.
 - Support for filtered or priority-configured splitters.
 - Any claim that Factorio documents final `insert_at` landing behavior.
+
+## Mandatory Sequence
+
+The demo is deliberately ordered to fail at desk price before spending cluster time on restoration:
+
+1. **API prerequisite (offline):** certify the exact 2.0.77 method signatures and complete transport-line role set from the pinned runtime schema.
+2. **Rung 0 (pre-restoration topology kill check):** parse `DUP-233855`, construct its disposable empty belt topology, and test splitter eligibility, graph determinism, graph ambiguity, and structural-versus-geometric agreement. The payload is not modified and no belt items are inserted, but the lab does create and clean up a disposable surface.
+3. **Synthetic ladder:** run aliasing, landing, stack, side, corner, merge, splitter, underground, and closed-loop fixtures only if Rung 0 passes.
+4. **Closing gate:** run the full `DUP-233855` candidate restoration five consecutive times only after every synthetic prerequisite passes.
+
+The five deterministic current-main `-5` baselines already banked in BELT-R9 provide the red control. They are not rerun unless production belt restoration or the engine pin changes.
+
+### Pinned 2.0.77 API prerequisite
+
+Before runner code is written, the design checklist must record these exact contracts from the official [2.0.77 runtime schema](https://lua-api.factorio.com/2.0.77/runtime-api.json):
+
+- `get_item_insert_specification(position: MapPosition) -> uint32, float`;
+- `get_line_item_position(index: defines.transport_line, position: float) -> MapPosition`, with the line index 1-based and the position clamped to the line range;
+- `get_transport_line(index: defines.transport_line) -> LuaTransportLine`, with the line index 1-based;
+- all ten [`defines.transport_line`](https://lua-api.factorio.com/2.0.77/defines.html#transport_line) roles: `left_line`, `right_line`, `left_underground_line`, `right_underground_line`, `secondary_left_line`, `secondary_right_line`, `left_split_line`, `right_split_line`, `secondary_left_split_line`, and `secondary_right_split_line`.
+
+The pinned schema is the source of truth; `/latest/` documentation is not an acceptable citation. Rung 0 also calls the two geometry helpers on straight, corner, splitter, and underground controls and verifies their return shapes before trusting them as instruments.
 
 ## Architecture
 
@@ -141,6 +165,16 @@ The graph is built repeatedly on the same empty target. Different signatures fro
 
 Unsupported mapping is detected before mutation. There is no mixed partial run in which some stacks are placed before the topology is rejected.
 
+### 6. Clean replay target construction
+
+The `DUP-233855` candidate does not use a completed production import and then clear its belts. That path is invalid because production restoration and hub/ground recovery have already mutated the item census before the demo begins.
+
+Instead, a host-side lab constructor parses the banked payload and sends only belt-connectable entity records to a disposable lab surface in bounded RCON chunks. It creates ordinary belts, underground belts, and splitters with the payload's prototype, position, direction, force, quality, underground type, filter, and priority fields. The host retains a separate mapping from source entity ID to the created entity's runtime unit number and static descriptor; it does not attempt to assign Factorio's runtime identity. The constructor creates no belt items, hub inventory, ground items, recovery state, transfer job, lock, or hold, and it does not call the production import pipeline.
+
+Before graph construction, an independent read must prove a one-to-one match between payload belt entities and live target entities for every construction field. The target surface must contain zero items. Any creation failure, extra belt entity, missing belt entity, or field mismatch stops the rung before graph or restoration work.
+
+Because the disposable surface contains only the payload's belt topology and later the candidate belt items, its whole-surface item count is commensurate with the payload's canonical belt total. No subtraction or removal of production recovery artifacts is permitted.
+
 ## Demo Restoration Candidate
 
 The demo compares three schedules against the same captured rows:
@@ -157,7 +191,7 @@ If a source stack has `C_r` legal candidate pairs, its probe bound is `C_r`. For
 
 Each source stack therefore receives at most one `insert_at` attempt in a candidate round. The return boolean is logged but never treated as proof of full placement. There is no stack-by-stack retry, consolidation, splitting, or oversized insertion.
 
-After an attempt, the runner diffs detailed-content unique IDs across the complete eligible network. For every newly observed ID it records:
+After an attempt, the runner diffs detailed-content unique IDs only across that source row's legal placement region. For every newly observed ID it records:
 
 ```text
 requested node and position
@@ -169,7 +203,18 @@ source row association
 whether the actual node is in the allowed region
 ```
 
-Zero new IDs, multiple unexplained new IDs, partial counts, or a landing outside the allowed region are failures. At the first such failure, the runner records the target snapshot and performs no further mutation on that target. Other schedules or fixtures run only on newly created disposable targets. A failed schedule cannot be reported as faithful.
+Zero new IDs, multiple unexplained new IDs, partial counts, or a landing outside the allowed region are failures. A zero or unexplained result triggers one immediate full-network diagnostic read to locate an escaped ID, followed by no further mutation on that target. A full-network unique-ID and stack census also runs once at the end of every successful round. Other schedules or fixtures run only on newly created disposable targets. A failed schedule cannot be reported as faithful.
+
+Before mutation, the host computes and prints the exact projected unique-ID read budget:
+
+```text
+sum over source rows of line_count(legal placement region)
++ one final full-network line count
+```
+
+The full replay has a fixed ceiling of 5,000,000 detailed-content line reads. Exceeding that ceiling is a pre-mutation stop; the ceiling is not raised after seeing the payload. The runner also reports the maximum legal-region size and the full-network-per-row counterfactual so the saved evidence shows the avoided work.
+
+For the replay rung, each mutating `/sc` call is capped at both 25 source-row insertion attempts and 10,000 projected detailed-content line reads, whichever bound is reached first. Every attempt still receives its own legal-region diff while `game.tick_paused == true`. The host records a Lua profiler duration and verifies RCON responsiveness between calls. This prevents one long synchronous Lua execution from consuming the entire replay even when the total bounded work is large.
 
 For a closed loop with no sink, the reverse walk uses a deterministic canonical anchor derived from the smallest source entity ID and semantic role. The loop rung repeats with alternate anchors to prove success is not an accidental capture-order property.
 
@@ -190,20 +235,21 @@ After each schedule, independent reads calculate:
 
 The configured-splitter negative control additionally requires zero changed unique IDs and an unchanged whole-network multiset.
 
-## Demonstration Fixtures
+## Demonstration Rungs
 
-The first demo report contains these rungs:
+Runner filenames use provisional `ADJ-*` labels. Immediately before committing the notebook conclusion, the author must search all branches and worktrees for existing `BELT-R*` references and allocate the next unused rung ID. A provisional label is never promoted by guessing from the current branch alone.
 
-1. **125-item closed loop:** the existing 5x5 source with 67/58 lane totals and an empty matching target; maximum stack count one.
-2. **Natural stacks:** exact stack counts 1 through 4, with no consolidation or splitting.
-3. **Mixed keys:** multiple item names and qualities on both physical sides.
-4. **Corner and dead end:** short inside corner lane plus a saturated terminal section.
-5. **Merge:** distinct source keys on both inputs; each may reach only itself or shared downstream, never the sibling input.
-6. **Unconfigured splitter:** distinct traceable keys establish same-side branching to either forward output.
-7. **Configured splitter negative control:** filter, input priority, and output priority variants each reject the entire connected network before mutation.
-8. **Underground pair:** both sides across the paired gap.
-9. **Aliasing and landing:** requested position, actual position, semantic node, and unique ID.
-10. **`DUP-233855`:** five consecutive current-main baselines reproduce the belt-phase deficit; five candidate runs must produce lane-region delta zero with no consolidation or recovery.
+0. **`ADJ-R0`, pre-restoration `DUP-233855` certification:** inspect payload configuration and offline topology first, then—only if still eligible—perform the pinned-API control, clean target construction, repeated semantic graph hashes, ambiguity count, structural-versus-geometric agreement, and projected read/probe budgets. It performs no belt-item insertion. Any failure stops the entire demo.
+1. **`ADJ-R1`, aliasing and landing:** requested position, actual position, semantic node, and unique ID.
+2. **`ADJ-R2`, 125-item closed loop:** the existing 5x5 source with 67/58 lane totals and an empty matching target; maximum stack count one.
+3. **`ADJ-R3`, natural stacks:** exact stack counts 1 through 4, with no consolidation or splitting.
+4. **`ADJ-R4`, mixed keys:** multiple item names and qualities on both physical sides.
+5. **`ADJ-R5`, corner and dead end:** short inside corner lane plus a saturated terminal section.
+6. **`ADJ-R6`, merge:** distinct source keys on both inputs; each may reach only itself or shared downstream, never the sibling input.
+7. **`ADJ-R7`, unconfigured splitter:** distinct traceable keys establish same-side branching to either forward output.
+8. **`ADJ-R8`, configured splitter negative control:** filter, input priority, and output priority variants each reject the entire connected network before mutation.
+9. **`ADJ-R9`, underground pair:** both sides across the paired gap.
+10. **`ADJ-R10`, closing `DUP-233855` restoration:** five candidate runs must produce lane-region delta zero with no consolidation or recovery, grounded against BELT-R9's five banked current-main `-5` baselines.
 
 The synthetic split and merge fixtures use distinct names or qualities at each origin so an illegal branch movement remains independently observable even if the engine changes a landing immediately after insertion.
 
@@ -220,9 +266,12 @@ The demo produces:
 The discussion view should make these comparisons immediate:
 
 ```text
-fixture | schedule | source stacks | target stacks | quantity delta
+fixture | schedule role (candidate/control/oracle) | schedule
+        | source stacks | target stacks | quantity delta
         | side escapes | route escapes | stack changes | unsupported reason
 ```
+
+Capture-order replay is always printed with `schedule role=control, production candidate=false`, even when it is green.
 
 ## Stop Conditions
 
@@ -230,15 +279,19 @@ Stop without production implementation if any of the following occurs:
 
 - The semantic graph is ambiguous, state-dependent, or differs between source and empty target.
 - Structural and engine-assisted geometry disagree.
+- Clean target construction is not one-to-one or the target is not initially item-empty.
 - A configured splitter is mutated or must be crossed to cover the known loss network.
 - An accepted insertion lands outside its source stack's legal region.
 - An intact source stack is split, consolidated, partially placed, or has quality changed.
 - The 125-item loop cannot reach exact fidelity under the candidate schedule.
 - `DUP-233855` cannot reach zero lane-region delta without recovery in five consecutive runs.
 - Source ownership or final census cannot be made commensurate with the global item count.
+- The projected unique-ID read budget exceeds its fixed 5,000,000-line ceiling.
 - Synchronous work causes a heartbeat, profiler, or cleanup regression.
 
 Every stop is a valid lab result. No scheduler budget, topology eligibility rule, or fidelity criterion may be relaxed during the run to convert a negative result into a pass.
+
+The runner header must repeat this exact rule: **The demo must not weaken this rule to make the replay pass.**
 
 ## Cleanup and Cluster Discipline
 
