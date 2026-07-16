@@ -1,0 +1,111 @@
+{
+  "schema": "surface-export-lab-gallery-v1",
+  "engineVersion": "2.0.77",
+  "saveName": "lab-gallery-surface-export-2-0-77",
+  "surfaceName": "lab-gallery-index",
+  "contract": {
+    "fixtureIsOracle": false,
+    "mutableDestinationsAreBaked": false,
+    "independentOracle": "The runner independently meters source and destination state before accepting a result.",
+    "resetModel": "Reload the pristine gallery save; never repair a source fixture during a test."
+  },
+  "labs": [
+    {
+      "id": "belt-lab",
+      "title": "Belts and transport lines",
+      "purpose": "Visualize lane-side fidelity, native stacks, corners, splitters, undergrounds, and known loss replays.",
+      "sourcePath": "tests/belt-lab",
+      "mode": "baked-source",
+      "fixture": "belt-5x5-125-unstacked",
+      "zone": { "x": 0, "y": 0 }
+    },
+    {
+      "id": "engine-repin-lab",
+      "title": "Engine version repin",
+      "purpose": "Re-certify engine-sensitive runtime shapes and behavioral rungs after a Factorio version change.",
+      "sourcePath": "tests/engine-repin-lab",
+      "mode": "catalog",
+      "zone": { "x": 96, "y": 0 }
+    },
+    {
+      "id": "fluid-lab",
+      "title": "Fluid systems",
+      "purpose": "Inspect fluidbox ownership, frozen reads, pumps, plasma, and exact fluid accounting.",
+      "sourcePath": "tests/fluid-lab",
+      "mode": "catalog",
+      "zone": { "x": 192, "y": 0 }
+    },
+    {
+      "id": "gate-drift-lab",
+      "title": "Validation gate drift",
+      "purpose": "Exercise frozen-gate timing and detect source or destination state that escapes the exact verdict.",
+      "sourcePath": "tests/gate-drift-lab",
+      "mode": "catalog",
+      "zone": { "x": 288, "y": 0 }
+    },
+    {
+      "id": "hidden-semantics-lab",
+      "title": "Hidden state semantics",
+      "purpose": "Probe state that is structurally present but easy for serializers or validators to miss.",
+      "sourcePath": "tests/hidden-semantics-lab",
+      "mode": "catalog",
+      "zone": { "x": 0, "y": 96 }
+    },
+    {
+      "id": "hold-completeness-lab",
+      "title": "Destination hold completeness",
+      "purpose": "Demonstrate which entities and operations must remain frozen until transfer validation completes.",
+      "sourcePath": "tests/hold-completeness-lab",
+      "mode": "catalog",
+      "zone": { "x": 96, "y": 96 }
+    },
+    {
+      "id": "inserter-lab",
+      "title": "Inserter held stacks",
+      "purpose": "Visualize held-item reachability, quality, filters, and busy-state round trips.",
+      "sourcePath": "tests/inserter-lab",
+      "mode": "catalog",
+      "zone": { "x": 192, "y": 96 }
+    },
+    {
+      "id": "midcraft-lab",
+      "title": "Mid-craft machines",
+      "purpose": "Inspect recipe progress, ingredient embodiment, and partially completed machine state.",
+      "sourcePath": "tests/midcraft-lab",
+      "mode": "catalog",
+      "zone": { "x": 288, "y": 96 }
+    },
+    {
+      "id": "no-tick-sync-lab",
+      "title": "No-tick synchronization",
+      "purpose": "Prove restoration and validation behavior while the game is paused and no normal tick advances.",
+      "sourcePath": "tests/no-tick-sync-lab",
+      "mode": "catalog",
+      "zone": { "x": 0, "y": 192 }
+    },
+    {
+      "id": "ops-lab",
+      "title": "Operational tails",
+      "purpose": "Exercise cleanup, retry, timeout, and transaction-tail behavior around completed operations.",
+      "sourcePath": "tests/ops-lab",
+      "mode": "catalog",
+      "zone": { "x": 96, "y": 192 }
+    },
+    {
+      "id": "specialized-inventory-lab",
+      "title": "Specialized inventories",
+      "purpose": "Map reachable inventories and fluids owned by specialized entity handlers.",
+      "sourcePath": "tests/specialized-inventory-lab",
+      "mode": "catalog",
+      "zone": { "x": 192, "y": 192 }
+    },
+    {
+      "id": "state-dimensions-lab",
+      "title": "Serialized state dimensions",
+      "purpose": "Audit energy, temperature, burner, bonus progress, equipment, and other player-visible state dimensions.",
+      "sourcePath": "tests/state-dimensions-lab",
+      "mode": "catalog",
+      "zone": { "x": 288, "y": 192 }
+    }
+  ]
+}
