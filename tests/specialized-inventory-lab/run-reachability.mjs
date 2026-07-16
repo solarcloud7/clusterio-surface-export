@@ -2,7 +2,12 @@
 import { execFileSync } from "node:child_process";
 import { appendFileSync } from "node:fs";
 
-import { parseSections, validateEvidence } from "./reachability-contract.mjs";
+import { parseSections, validateSelectedEvidence } from "./reachability-contract.mjs";
+import {
+	assertSafeToMutate,
+	requireLuaSuccess,
+	runCleanupBoth,
+} from "./reachability-runner-helpers.mjs";
 
 const controller = "surface-export-controller";
 const instances = ["clusterio-host-1-instance-1", "clusterio-host-2-instance-1"];
@@ -36,7 +41,8 @@ function rcon(instance, command) {
 
 function lua(instance, body) {
 	const wrapped = `local ok,result=pcall(function() ${body} end);if ok then rcon.print(helpers.table_to_json(result)) else rcon.print(helpers.table_to_json({success=false,error=tostring(result)})) end`;
-	return JSON.parse(lastLine(rcon(instance, `/sc ${wrapped}`)));
+	const result = JSON.parse(lastLine(rcon(instance, `/sc ${wrapped}`)));
+	return requireLuaSuccess(result, instance);
 }
 
 const ensurePlatformLua = `
@@ -101,7 +107,6 @@ for _,surface in pairs(game.surfaces) do
 	end
 end
 storage.specialized_reachability_lab=nil
-game.tick_paused = false
 return {success=true,tick=game.tick,deleted=deleted}
 `;
 
@@ -112,17 +117,33 @@ for _,surface in pairs(game.surfaces) do
 	local platform=surface.platform
 	if platform and platform.valid and string.find(platform.name,"${prefix}",1,true)==1 then surfaces[#surfaces+1]=platform.name end
 end
-return {success=true,tick=game.tick,lab_surfaces=surfaces,lab_storage=storage.specialized_reachability_lab~=nil,game_paused=game.tick_paused==true,destination_holds=count(storage.destination_holds),locked_platforms=count(storage.locked_platforms),async_jobs=count(storage.async_jobs),committed_source_tombstones=count(storage.committed_source_tombstones)}
+return {success=true,tick=game.tick,lab_surfaces=surfaces,lab_storage=storage.specialized_reachability_lab~=nil,game_paused=game.tick_paused==true,destination_holds=count(storage.destination_holds),locked_platforms=count(storage.locked_platforms),async_jobs=count(storage.async_jobs),committed_source_tombstones=count(storage.committed_source_transfer_tombstones)}
 `;
 
+function inspectBoth() {
+	const inspection = {};
+	for (const instance of instances) {
+		const entry = { zero: null, errors: [] };
+		inspection[instance] = entry;
+		try {
+			entry.zero = lua(instance, zeroLua);
+		} catch (error) {
+			entry.errors.push(error.stack || error.message);
+		}
+	}
+	return inspection;
+}
+
 function cleanupBoth() {
-	const cleanup = {};
-	for (const instance of instances) cleanup[instance] = { action: lua(instance, cleanupLua), zero: lua(instance, zeroLua) };
-	return cleanup;
+	return runCleanupBoth(instances, {
+		action: instance => lua(instance, cleanupLua),
+		inspect: instance => lua(instance, zeroLua),
+	});
 }
 
 function assertZero(cleanup) {
 	for (const [instance, result] of Object.entries(cleanup)) {
+		if (result.errors?.length) throw new Error(`${instance} cleanup failed: ${result.errors.join("; ")}`);
 		const zero = result.zero;
 		if (zero.lab_surfaces.length || zero.lab_storage || zero.game_paused
 			|| zero.destination_holds || zero.locked_platforms || zero.async_jobs || zero.committed_source_tombstones) {
@@ -132,8 +153,10 @@ function assertZero(cleanup) {
 }
 
 if (resetOnly) {
+	const preflight = inspectBoth();
+	assertSafeToMutate(preflight);
 	const cleanup = cleanupBoth();
-	console.log(JSON.stringify(cleanup, null, 2));
+	console.log(JSON.stringify({ preflight, cleanup }, null, 2));
 	assertZero(cleanup);
 	process.exit();
 }
@@ -141,23 +164,31 @@ if (resetOnly) {
 const result = {
 	script: "tests/specialized-inventory-lab/run-reachability.mjs",
 	prediction: "Factorio 2.0.77 reproduces the final PR #98 reachability classification without transfer activity",
-	sections, started: new Date().toISOString(), prototype: null, placement: null,
+	sections, started: new Date().toISOString(), prototype: null, placement: null, preflight: null,
 	contract_failures: [], cleanup: null, errors: [],
 };
+let cleanupAuthorized = false;
 
 try {
-	cleanupBoth();
+	result.preflight = inspectBoth();
+	assertSafeToMutate(result.preflight);
+	cleanupAuthorized = true;
+	assertZero(cleanupBoth());
 	if (sections.includes("prototype")) result.prototype = lua(source, prototypeLua);
 	if (sections.includes("placement")) result.placement = lua(source, placementLua);
-	if (sections.length === 2) result.contract_failures = validateEvidence(result);
+	result.contract_failures = validateSelectedEvidence(result, sections);
 } catch (error) {
 	result.errors.push(error.stack || error.message);
 } finally {
-	try {
-		result.cleanup = cleanupBoth();
-		assertZero(result.cleanup);
-	} catch (error) {
-		result.errors.push(error.stack || error.message);
+	if (cleanupAuthorized) {
+		try {
+			result.cleanup = cleanupBoth();
+			assertZero(result.cleanup);
+		} catch (error) {
+			result.errors.push(error.stack || error.message);
+		}
+	} else {
+		result.cleanup = { skipped: "preflight did not authorize mutation" };
 	}
 	result.finished = new Date().toISOString();
 	if (!noNotebook) appendFileSync(notebook, `\n\n## ${result.finished} - Reachability recertification\n\n\`\`\`json\n${JSON.stringify(result, null, 2)}\n\`\`\`\n`);
