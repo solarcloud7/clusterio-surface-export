@@ -15,6 +15,7 @@ local AsyncProcessor = require("modules/surface_export/core/async-processor")
 local SurfaceLock = require("modules/surface_export/utils/surface-lock")
 local TransactionDashboard = require("modules/surface_export/interfaces/gui/transaction-dashboard")
 local GatewayTransferGui = require("modules/surface_export/interfaces/gui/gateway-transfer")
+local SelectionLab = require("modules/surface_export/interfaces/gui/selection-lab")
 local Gateway = require("modules/surface_export/core/gateway")
 local GameUtils = require("modules/surface_export/utils/game-utils")
 
@@ -183,7 +184,43 @@ SurfaceExportModule.events = {
 		TransactionDashboard.on_gui_closed(event)
 		GatewayTransferGui.on_gui_closed(event)
 	end,
+
+	-- Selection Lab (debug instrument; prototype ships in the surfexp_gateways mod, all logic here).
+	-- Each handler self-guards on event.item == "selection-lab-tool" and debug_mode.
+	[e.on_player_selected_area] = function(event)
+		SelectionLab.handle(event, "copy")
+	end,
+
+	[e.on_player_alt_selected_area] = function(event)
+		SelectionLab.handle(event, "paste")
+	end,
+
+	[e.on_player_reverse_selected_area] = function(event)
+		SelectionLab.handle(event, "audit")
+	end,
+
+	[e.on_player_alt_reverse_selected_area] = function(event)
+		SelectionLab.handle(event, "force")
+	end,
+
 }
+
+-- Selection Lab undo/redo (custom-input prototypes from the surfexp_gateways mod). Register these
+-- string-keyed handlers ONLY when the prototypes exist: script.on_event raises on an unknown
+-- custom-input name, so an instance still carrying a pre-0.3.0 gateway mod (or none) would crash-loop
+-- on module load. `prototypes` is readable at control.lua load (only `game`/`rendering` are not), and
+-- the `prototypes and` guard mirrors Clusterio's own defensive idiom (host/lua/export/control.lua).
+-- The selection-tool handlers above (on_player_selected_area etc.) are engine events — unconditional.
+if prototypes and prototypes.custom_input["selection-lab-undo"] then
+	SurfaceExportModule.events["selection-lab-undo"] = function(event)
+		SelectionLab.undo(event)
+	end
+end
+if prototypes and prototypes.custom_input["selection-lab-redo"] then
+	SurfaceExportModule.events["selection-lab-redo"] = function(event)
+		SelectionLab.redo(event)
+	end
+end
 
 -- ============================================================================
 -- API Documentation

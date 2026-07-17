@@ -400,4 +400,178 @@ function BeltRestoration.restore(entities_to_create, entity_map)
     }
 end
 
+-- === Side-scoped restore (BELT-R10..R12) ===================================================
+-- The canonical belt laws live in docs/factorio-2.0-api-notes.md "Belt transport-line laws
+-- (CANONICAL)". These two functions are the SINGLE implementation of the proven recipe; the
+-- selection-lab diagnostic tool is the first consumer, and the Phase 5 transfer rewrite will
+-- route restore() through them (capture at export's atomic scan, placement here), retiring the
+-- captured-position + consolidation path above.
+
+-- Same-execution line_equals partition of a POPULATED source = the lane sides (valid ONLY
+-- populated + same execution — never a cross-import key, BELT-R9). belt_pairs: array of
+-- { entity = <LuaEntity>, id = <the record entity_id the paste/import will key entity_map by> }.
+-- Returns storage-safe side groups: { { members = {{id=,li=},...}, slots = {{n=,q=,ct=},...} }, ... }
+function BeltRestoration.capture_side_groups(belt_pairs)
+    if not belt_pairs or #belt_pairs == 0 then return nil end
+    local groups = {}
+    for _, bp in ipairs(belt_pairs) do
+        for li = 1, bp.entity.get_max_transport_line_index() do
+            local line = bp.entity.get_transport_line(li)
+            local gi
+            for j, g in ipairs(groups) do
+                if line.line_equals(g.rep) then gi = j break end
+            end
+            if not gi then
+                gi = #groups + 1
+                groups[gi] = { rep = line, seen = {}, members = {}, slots = {} }
+            end
+            local g = groups[gi]
+            g.members[#g.members + 1] = { id = bp.id, li = li }
+            for _, it in ipairs(line.get_detailed_contents()) do
+                local uid = tostring(it.unique_id)
+                if not g.seen[uid] then
+                    g.seen[uid] = true
+                    g.slots[#g.slots + 1] = {
+                        n = it.stack.name,
+                        q = (it.stack.quality and it.stack.quality.name) or QUALITY_NORMAL,
+                        ct = it.stack.count,
+                    }
+                end
+            end
+        end
+    end
+    local out = {}
+    for _, g in ipairs(groups) do
+        out[#out + 1] = { members = g.members, slots = g.slots }
+    end
+    return out
+end
+
+-- Place each side's (name,quality,count) multiset by reverse first-fit over that side's own
+-- windows, position floored at one tick of belt_speed (BELT-R10 — the write-frame law), every
+-- placement validated by physical side-census delta plus a global bracket, NEVER return values.
+-- A cross-side leak (aged-handle class; measured zero on fresh same-execution targets) is
+-- removed and the search continues. No consolidation, no recovery, no fallback: unplaced and
+-- anomaly counts are returned for the caller to surface loudly.
+-- Line handles are fetched HERE, in the same execution that writes them (stale-handle hazard).
+function BeltRestoration.restore_side_groups(side_groups, entity_map)
+    local all_lines = {}
+    for _, g in ipairs(side_groups) do
+        for _, m in ipairs(g.members) do
+            local entity = entity_map[m.id]
+            if entity and entity.valid then all_lines[#all_lines + 1] = entity.get_transport_line(m.li) end
+        end
+    end
+    local function item_key(name, quality)
+        return name .. "\0" .. (quality or QUALITY_NORMAL)
+    end
+    local function snapshot(lines)
+        local result = { total = 0, by_key = {}, by_id = {} }
+        for _, line in ipairs(lines) do
+            for _, item in ipairs(line.get_detailed_contents()) do
+                local id = tostring(item.unique_id)
+                if not result.by_id[id] then
+                    local quality = (item.stack.quality and item.stack.quality.name) or QUALITY_NORMAL
+                    local key = item_key(item.stack.name, quality)
+                    local count = item.stack.count
+                    result.by_id[id] = { key = key, count = count }
+                    result.by_key[key] = (result.by_key[key] or 0) + count
+                    result.total = result.total + count
+                end
+            end
+        end
+        return result
+    end
+    local function changed_only(before, after, wanted_key, wanted_delta)
+        local keys = {}
+        for key in pairs(before.by_key) do keys[key] = true end
+        for key in pairs(after.by_key) do keys[key] = true end
+        for key in pairs(keys) do
+            local delta = (after.by_key[key] or 0) - (before.by_key[key] or 0)
+            if delta ~= (key == wanted_key and wanted_delta or 0) then return false end
+        end
+        return after.total - before.total == wanted_delta
+    end
+    local function same_snapshot(a, b)
+        return changed_only(a, b, "", 0)
+    end
+    local function undo_inserted_delta(before, after, name, quality, count)
+        local wanted_key = item_key(name, quality)
+        local handled, remaining = {}, count
+        for _, line in ipairs(all_lines) do
+            for _, item in ipairs(line.get_detailed_contents()) do
+                local id = tostring(item.unique_id)
+                if not handled[id] then
+                    handled[id] = true
+                    local q = (item.stack.quality and item.stack.quality.name) or QUALITY_NORMAL
+                    local key = item_key(item.stack.name, q)
+                    local old = before.by_id[id]
+                    local added = item.stack.count - (old and old.count or 0)
+                    if key == wanted_key and added > 0 and remaining > 0 then
+                        local request = math.min(added, remaining)
+                        local removed = line.remove_item({ name = name, quality = quality, count = request })
+                        remaining = remaining - removed
+                    end
+                end
+            end
+        end
+        return remaining == 0 and same_snapshot(before, snapshot(all_lines))
+    end
+    local placed, unplaced, leaks_undone, anomalies = 0, 0, 0, 0
+    for _, g in ipairs(side_groups) do
+        local wins = {}
+        for _, m in ipairs(g.members) do
+            local entity = entity_map[m.id]
+            if entity and entity.valid then
+                wins[#wins + 1] = {
+                    line = entity.get_transport_line(m.li),
+                    kmin = math.floor(entity.prototype.belt_speed * 256 + 0.5),
+                }
+            end
+        end
+        local function side_total()
+            local lines = {}
+            for _, w in ipairs(wins) do lines[#lines + 1] = w.line end
+            return snapshot(lines)
+        end
+        for _, slot in ipairs(g.slots) do
+            local done = false
+            local wanted_key = item_key(slot.n, slot.q)
+            for wj = #wins, 1, -1 do
+                local w = wins[wj]
+                local maxk = math.floor(w.line.line_length * 256 + 0.5)
+                for k = maxk, w.kmin, -1 do
+                    if w.line.can_insert_at(k / 256) then
+                        local sb = side_total()
+                        local ab = snapshot(all_lines)
+                        w.line.insert_at(k / 256, { name = slot.n, quality = slot.q, count = slot.ct }, slot.ct)
+                        local sa = side_total()
+                        local aa = snapshot(all_lines)
+                        if changed_only(sb, sa, wanted_key, slot.ct)
+                            and changed_only(ab, aa, wanted_key, slot.ct) then
+                            placed = placed + slot.ct
+                            done = true
+                            break
+                        elseif same_snapshot(sb, sa) and changed_only(ab, aa, wanted_key, slot.ct) then
+                            if not undo_inserted_delta(ab, aa, slot.n, slot.q, slot.ct) then
+                                anomalies = anomalies + 1
+                                done = true
+                                break
+                            end
+                            leaks_undone = leaks_undone + 1
+                        elseif not same_snapshot(sb, sa) or not same_snapshot(ab, aa) then
+                            anomalies = anomalies + 1
+                            done = true
+                            break
+                        end
+                    end
+                end
+                if done then break end
+            end
+            if not done then unplaced = unplaced + slot.ct end
+        end
+    end
+    return placed, unplaced, leaks_undone, anomalies
+end
+
 return BeltRestoration

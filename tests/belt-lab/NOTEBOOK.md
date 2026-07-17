@@ -540,6 +540,18 @@ count 20 (materialization on paused platform confirmed; matches R4a on a live pl
 ground_items=20 - zero despawn. Spill is a durable recovery route for the gate/commit window.
 Out of scope (normal gameplay): asteroid-impact destruction of ground items during flight.
 
+## BELT-R8 (informal, owner-witnessed) [empirical, 2.0.77] - cross-segment displacement demonstrated live on Nauvis
+Interactive demo on host-1 nauvis with the owner in-game (hybrid owner+agent corner fixture, turbo belts).
+(a) An ISOLATED overpacked corner lane (5 stacks, len 1.15, n*0.24>len flagged) rebuilt FINE after clear -
+insert_at accepted all 5 at their recorded positions: the consolidation predicate is conservative (safe
+direction) and lane-local tightness is NOT the refusal mechanism. (b) The production sequence reproduced the
+DISPLACEMENT: corner given its consolidated oversized stack (5) first, then the straight neighbor re-inserted
+its 4 items at recorded positions - all four insert_at calls returned TRUE, but the neighbor lane physically
+read 3 and the corner read 6: one item materialized on the corner segment of the shared line. Conservation
+held (9=5+4; both lanes had headroom) - in a full rebuild the displaced item occupies a slot the next insert
+needs, producing the refusal chain. Corroborates BELT-R3 mechanism + the "insert returns are never evidence"
+law with a two-piece minimal fixture.
+
 ## BELT-R9 [empirical, 2.0.77] - topology-first Plan A stops on the real DUP-233855 component
 
 > Rung ID note: BELT-R8 is the 2026-07-14 owner-witnessed cross-segment displacement demo (recorded on the

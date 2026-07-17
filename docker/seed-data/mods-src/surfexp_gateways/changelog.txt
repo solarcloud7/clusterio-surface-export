@@ -1,4 +1,30 @@
 ---------------------------------------------------------------------------------------------------
+Version: 0.3.1
+Date: 2026-07-17
+  Bugfixes:
+    - Rebind Selection Lab undo/redo to CONTROL+ALT+Z / CONTROL+ALT+Y. The former CONTROL+SHIFT+Z
+      undo binding collided with vanilla Redo (default CONTROL+Y or CONTROL+SHIFT+Z), firing lab
+      undo on a normal build-redo keystroke.
+---------------------------------------------------------------------------------------------------
+Version: 0.3.0
+Date: 2026-07-14
+  Changes:
+    - Selection Lab v3: all-or-nothing paste with error sound, force-replace with undo journal,
+      Ctrl+Shift+Z/Y undo-redo custom inputs, Ctrl+Drag repurposed as a gate-meter AUDIT mode.
+---------------------------------------------------------------------------------------------------
+Version: 0.2.1
+Date: 2026-07-14
+  Changes:
+    - Selection Lab v2: true copy/paste semantics (paste at drag target, blueprint-style conflict
+      highlighting, Ctrl+Shift force-override). Locale strings + instructional tooltip added.
+---------------------------------------------------------------------------------------------------
+Version: 0.2.0
+Date: 2026-07-14
+  Features:
+    - Add the selection-lab-tool: a drag-select debug instrument (capture / apply / preview-conflicts /
+      clear-lanes) for the surface_export module's selection-scoped export/import lab. Prototype only;
+      all logic lives in the save-patched module, gated on debug_mode.
+---------------------------------------------------------------------------------------------------
 Version: 0.1.0
 Date: 2026-06-28
   Features:

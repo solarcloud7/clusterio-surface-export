@@ -1,10 +1,10 @@
 {
 	"name": "surfexp_gateways",
-	"version": "0.1.0",
+	"version": "0.3.1",
 	"title": "Surface Export Gateways",
 	"author": "solarcloud7",
 	"homepage": "https://github.com/solarcloud7/clusterio-surface-export",
-	"description": "Surfaceless 'gateway' space-locations for the surface_export Clusterio plugin. A space platform that routes to and parks at a gateway is transferred to the linked instance. Pure data-stage mod (no control.lua) — all gateway logic lives in the save-patched surface_export module.",
+	"description": "Surfaceless 'gateway' space-locations for the surface_export Clusterio plugin. A space platform that routes to and parks at a gateway is transferred to the linked instance. Pure data-stage mod (no control.lua); also ships the selection-lab-tool debug prototype (logic in the module) — all gateway logic lives in the save-patched surface_export module.",
 	"factorio_version": "2.0",
 	"dependencies": ["base", "space-age"]
 }
