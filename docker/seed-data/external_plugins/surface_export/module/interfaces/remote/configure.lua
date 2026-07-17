@@ -50,6 +50,14 @@ local function configure(config)
     -- Test-only: inflate expected fluid count after frozen restoration but before the single gate.
     storage.surface_export_config.test_force_fluid_loss = tonumber(config.test_force_fluid_loss)
   end
+  if config.test_force_census_omission ~= nil then
+    -- Test-only ONE-SHOT: on the NEXT export, drop one serialized inventory stack post-serialization
+    -- and pre-census so the paired-read SOURCE census DETECTS the omission. Fires PRE-verdict, so a
+    -- leaked flag makes the next transfer export ABORT and PRESERVE its source (self-protecting).
+    -- Enumerated in lint:test-hooks FAIL_SAFE_HOOKS. See Pitfall #30, mutating test hooks must be
+    -- fail-safe on leak.
+    storage.surface_export_config.test_force_census_omission = config.test_force_census_omission
+  end
   if config.test_capture_p2_plasma ~= nil then
     -- Measurement-only, one-shot capture for the P2 plasma segment-persistence lab.
     -- The unique platform name prevents an unrelated transfer from consuming it.
