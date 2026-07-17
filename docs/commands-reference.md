@@ -28,11 +28,13 @@ All commands except `/plugin-import-file` require admin privileges. `[param]` is
 | `/export-platform-file` | `[platform_index]` | Export a platform to a JSON file on disk (async) |
 | `/export-sync-mode` | `[on\|off]` | Toggle synchronous export mode |
 | `/transfer-platform` | `<platform_index> <destination_instance_id>` | Transfer a platform to another instance |
+| `/gateway-transfer` | `<platform_index> <destination_instance_id>` | Transfer a platform parked at a gateway |
+| `/gateway-gui` | `<platform_index>` | Open the destination chooser for a platform parked at a gateway |
 | `/resume-platform` | `<platform_name_or_index>` | Unpause a platform and activate its entities |
 | `/lock-platform` | `[platform_name_or_index]` | Lock a platform (complete cargo pods, freeze entities) |
 | `/unlock-platform` | `[platform_name_or_index]` | Unlock a locked platform |
 | `/lock-status` | `[platform_name]` | Show status of locked platforms |
-| `/step-tick` | — | Unpause the game tick |
+| `/step-tick` | `[count]` | Unpause the game tick; `count` is currently accepted but ignored |
 | `/plugin-import-file` | `<filename> [new_name]` | Request the plugin to import a platform from a file (no admin) |
 | `/test-entity` | `<json>` | Import a single entity from JSON for debugging |
 | `/test-entity-at` | `<x> <y> <json>` | Import a single entity at a specific position |
@@ -255,6 +257,30 @@ The transfer will continue automatically:
 
 ---
 
+### `/gateway-transfer`
+Transfer a platform that is parked (`waiting_at_station`) at a `surfexp_gateway_*` location.
+
+**Usage:**
+```
+/gateway-transfer <platform_index> <destination_instance_id>
+```
+
+The destination copy is parked at the same gateway name. This explicit command does not require a saved web-UI link, but the source platform must already be waiting at a gateway.
+
+---
+
+### `/gateway-gui`
+Open the in-game destination chooser for a platform parked at a gateway.
+
+**Usage:**
+```
+/gateway-gui <platform_index>
+```
+
+This command must be run by a player. The chooser lists the destination links configured for that source instance and gateway in the web UI. If no links exist, it prints the configuration hint instead of opening an empty window.
+
+---
+
 ### `/resume-platform`
 Unpause a platform's space travel.
 
@@ -399,7 +425,7 @@ Unpause the game tick (debug utility).
 
 **Usage:**
 ```
-/step-tick
+/step-tick [count]
 ```
 
 **Output:**
@@ -410,7 +436,7 @@ Game unpaused at tick 12345
 **Notes:**
 - Sets `game.tick_paused = false` if the game is paused; otherwise prints "Game is already running"
 - Useful if the game gets stuck in a paused state during debugging
-- Takes no parameters (any argument is ignored)
+- The optional `count` is present in the registered command help but is currently ignored; the command only unpauses the game
 
 ---
 
@@ -565,4 +591,3 @@ Commands work via RCON but some require explicit parameters:
 - [README.md](README.md) — Remote Interface (Lua `remote.call` API) and `clusterioctl surface-export` CLI commands
 - [IMPLEMENTATION_SUMMARY.md](IMPLEMENTATION_SUMMARY.md) — Module structure and Factorio 2.0 compatibility
 - [async-processing.md](async-processing.md) — How async export/import works
-
