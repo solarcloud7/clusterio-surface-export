@@ -2,7 +2,11 @@
 --
 -- Owner-specified semantics (v3):
 --   COPY   (drag):            EntityScanner.serialize_entity per selected entity + bbox anchor.
---                             RAM only (storage.selection_export); never sent to the controller.
+--                             RAM only, PER-PLAYER (storage.selection_lab[player_index].export);
+--                             never sent to the controller. Capture, audit baseline, and the
+--                             undo/redo journals are all player-scoped; paste/force/redo are
+--                             TRANSACTIONAL (any create/restore failure rolls back every created
+--                             entity, resurrects force-destroyed blockers, journals nothing).
 --   PASTE  (shift+drag):      ALL-OR-NOTHING. Every entity target must be unoccupied (same-name
 --                             occupants included; ground item-entities and floor tiles never block).
 --                             Any conflict: place NOTHING, red-box every conflict, cannot_build sound.
@@ -150,6 +154,33 @@ local BELT_LINE_TYPES = {
 	["splitter"] = true, ["loader"] = true, ["loader-1x1"] = true,
 }
 
+-- Per-player state (review P1: capture/audit/undo/redo were global storage slots — a second
+-- connected admin could overwrite another player's capture and then undo/force-redo their
+-- mutations). Every state family is keyed by player_index. Pre-scoping legacy globals are
+-- adopted once by the first player who interacts (logged), so existing captures/undo history
+-- survive the upgrade.
+local function pstate(player_index)
+	storage.selection_lab = storage.selection_lab or {}
+	local t = storage.selection_lab[player_index]
+	if not t then
+		t = { undo = {}, redo = {} }
+		if storage.selection_export or storage.selection_lab_undo or storage.selection_lab_redo
+			or storage.selection_lab_audit_prev then
+			t.export = storage.selection_export
+			t.undo = storage.selection_lab_undo or {}
+			t.redo = storage.selection_lab_redo or {}
+			t.audit_prev = storage.selection_lab_audit_prev
+			storage.selection_export = nil
+			storage.selection_lab_undo = nil
+			storage.selection_lab_redo = nil
+			storage.selection_lab_audit_prev = nil
+			log("[SelectionLab] adopted legacy shared state into player_index " .. player_index)
+		end
+		storage.selection_lab[player_index] = t
+	end
+	return t
+end
+
 -- === COPY ==================================================================================
 
 function SelectionLab.copy(event)
@@ -179,7 +210,7 @@ function SelectionLab.copy(event)
 		return
 	end
 	local side_groups = BeltRestoration.capture_side_groups(belt_pairs)
-	storage.selection_export = {
+	pstate(event.player_index).export = {
 		records = records,
 		side_groups = side_groups,
 		anchor = { x = math.floor(minx), y = math.floor(miny) },
@@ -241,8 +272,12 @@ end
 -- side_groups (optional): captured lane sides — belt items then restore via the side-scoped
 -- BELT-R11/R12 path instead of the legacy captured-position path. Legacy captures / undo
 -- resurrections pass nil and take the old path.
--- Returns records, entity_map, created, create_failed.
-local function execute_create_and_restore(surface, recs, player, side_groups)
+-- transactional (review P1 — "ALL-OR-NOTHING ends at preflight"): when true, ANY create failure
+-- or restore error destroys every entity this call created and reports failure — the caller must
+-- not journal or report partial success. Undo resurrection passes false (best-effort, misses
+-- reported, never destroys what it managed to bring back).
+-- Returns records, entity_map, created, create_failed, ok, err.
+local function execute_create_and_restore(surface, recs, player, side_groups, transactional)
 	local records, entity_map = {}, {}
 	local created, create_failed = 0, 0
 	for _, rec in ipairs(recs) do
@@ -264,6 +299,18 @@ local function execute_create_and_restore(surface, recs, player, side_groups)
 				rec.name, rec.position.x, rec.position.y, ok and "returned nil" or tostring(entity)))
 		end
 	end
+	local function rollback(reason)
+		local destroyed = 0
+		for _, e in pairs(entity_map) do
+			if e and e.valid then e.destroy() destroyed = destroyed + 1 end
+		end
+		log(string.format("[SelectionLab] TRANSACTION ROLLBACK (%s): destroyed %d created entities", reason, destroyed))
+		return nil, nil, created, create_failed, false, reason
+	end
+	if transactional and create_failed > 0 then
+		return rollback(create_failed .. " creation failure(s)")
+	end
+	local function run_restores()
 	if side_groups then
 		local placed, unplaced, leaks_undone, anomalies = BeltRestoration.restore_side_groups(side_groups, entity_map)
 		if unplaced > 0 or anomalies > 0 then
@@ -328,15 +375,26 @@ local function execute_create_and_restore(surface, recs, player, side_groups)
 			entity.active = rec.lab_active
 		end
 	end
-	return records, entity_map, created, create_failed
+	end
+	local restore_ok, restore_err = pcall(run_restores)
+	if not restore_ok then
+		log("[SelectionLab] restore error: " .. tostring(restore_err))
+		if transactional then
+			return rollback("restore error: " .. tostring(restore_err))
+		end
+		if player then
+			player.print("[SelectionLab] restore error (best-effort path): " .. tostring(restore_err),
+				{ r = 1, g = 0.4, b = 0.4 })
+		end
+	end
+	return records, entity_map, created, create_failed, true, nil
 end
 
-local function push_undo(entry)
-	storage.selection_lab_undo = storage.selection_lab_undo or {}
-	local stack = storage.selection_lab_undo
+local function push_undo(st, entry)
+	local stack = st.undo
 	stack[#stack + 1] = entry
 	while #stack > UNDO_DEPTH do table.remove(stack, 1) end
-	storage.selection_lab_redo = {}
+	st.redo = {}
 end
 
 -- Journal each created entity by its STABLE unit_number (undo resolves identity by it, never by
@@ -359,7 +417,8 @@ end
 
 function SelectionLab.paste(event)
 	local player = game.get_player(event.player_index)
-	local cap = storage.selection_export
+	local st = pstate(event.player_index)
+	local cap = st.export
 	if not (cap and cap.records and #cap.records > 0) then
 		player.print("[SelectionLab] nothing copied — plain-drag a source selection first", { r = 1, g = 0.4, b = 0.4 })
 		return
@@ -381,11 +440,18 @@ function SelectionLab.paste(event)
 
 	local recs = {}
 	for _, c in ipairs(plan.clear) do recs[#recs + 1] = c.rec end
-	local records, entity_map, created, create_failed = execute_create_and_restore(surface, recs, player, cap.side_groups)
+	local records, entity_map, created, create_failed, exec_ok, exec_err =
+		execute_create_and_restore(surface, recs, player, cap.side_groups, true)
+	if not exec_ok then
+		player.play_sound({ path = "utility/cannot_build" })
+		player.print("[SelectionLab] PASTE ROLLED BACK (" .. tostring(exec_err) ..
+			") — every created entity was removed; nothing journaled.", { r = 1, g = 0.4, b = 0.4 })
+		return
+	end
 	for _, rec in ipairs(records) do
 		draw_box(surface, rec.position, { r = 0.3, g = 1, b = 0.3, a = 0.6 }, player.index)
 	end
-	push_undo({ mode = "paste", surface = surface.name, created = journal_created(records, entity_map),
+	push_undo(st, { mode = "paste", surface = surface.name, created = journal_created(records, entity_map),
 		destroyed_records = {}, plan_records = recs, side_groups = cap.side_groups })
 	player.print(string.format(
 		"[SelectionLab] PASTED %d entities (%d create-failed) at offset (%d,%d). Physical items on paste: %d (capture holds %d). Ctrl+Alt+Z undoes.",
@@ -396,7 +462,10 @@ end
 -- === FORCE PASTE ===========================================================================
 
 -- Shared by force and redo. destroyed_records are serialized BEFORE destruction so undo can
--- resurrect blockers with contents.
+-- resurrect blockers with contents. Transactional (review P1): if the create+restore fails,
+-- the created entities are rolled back AND the already-destroyed blockers are resurrected
+-- best-effort; callers must not journal on failure.
+-- Returns records, entity_map, created, create_failed, destroyed_records, guarded, ok, err, resurrected_on_fail.
 local function force_execute(surface, recs, player, side_groups)
 	local destroyed_records, guarded = {}, 0
 	for _, rec in ipairs(recs) do
@@ -423,13 +492,23 @@ local function force_execute(surface, recs, player, side_groups)
 			end
 		end
 	end
-	local records, entity_map, created, create_failed = execute_create_and_restore(surface, recs, player, side_groups)
-	return records, entity_map, created, create_failed, destroyed_records, guarded
+	local records, entity_map, created, create_failed, exec_ok, exec_err =
+		execute_create_and_restore(surface, recs, player, side_groups, true)
+	if not exec_ok then
+		local resurrected = 0
+		if #destroyed_records > 0 then
+			local rrecords = execute_create_and_restore(surface, destroyed_records, player, nil, false)
+			resurrected = rrecords and #rrecords or 0
+		end
+		return nil, nil, created, create_failed, destroyed_records, guarded, false, exec_err, resurrected
+	end
+	return records, entity_map, created, create_failed, destroyed_records, guarded, true, nil, 0
 end
 
 function SelectionLab.force(event)
 	local player = game.get_player(event.player_index)
-	local cap = storage.selection_export
+	local st = pstate(event.player_index)
+	local cap = st.export
 	if not (cap and cap.records and #cap.records > 0) then
 		player.print("[SelectionLab] nothing copied — plain-drag a source selection first", { r = 1, g = 0.4, b = 0.4 })
 		return
@@ -438,9 +517,16 @@ function SelectionLab.force(event)
 	local offset = paste_offset(cap, event)
 	local recs = {}
 	for _, rec in ipairs(cap.records) do recs[#recs + 1] = translate(rec, offset) end
-	local records, entity_map, created, create_failed, destroyed_records, guarded =
+	local records, entity_map, created, create_failed, destroyed_records, guarded, exec_ok, exec_err, resurrected =
 		force_execute(surface, recs, player, cap.side_groups)
-	push_undo({ mode = "force", surface = surface.name, created = journal_created(records, entity_map),
+	if not exec_ok then
+		player.play_sound({ path = "utility/cannot_build" })
+		player.print(string.format(
+			"[SelectionLab] FORCE ROLLED BACK (%s) — created entities removed, %d/%d replaced blockers resurrected. Nothing journaled.",
+			tostring(exec_err), resurrected, #destroyed_records), { r = 1, g = 0.4, b = 0.4 })
+		return
+	end
+	push_undo(st, { mode = "force", surface = surface.name, created = journal_created(records, entity_map),
 		destroyed_records = destroyed_records, plan_records = recs, side_groups = cap.side_groups })
 	player.print(string.format(
 		"[SelectionLab] FORCE-PASTED %d entities (%d create-failed, %d blockers replaced%s) at offset (%d,%d). Physical items: %d. Ctrl+Alt+Z undoes (blockers come back with contents).",
@@ -501,8 +587,9 @@ function SelectionLab.audit(event)
 	table.sort(lines)
 	player.print("  fluids: " .. (next(fluid_totals) and table.concat(lines, ", ") or "none"))
 
-	-- DELTA vs the previous audit (the before/after workflow).
-	local prev = storage.selection_lab_audit_prev
+	-- DELTA vs the previous audit (the before/after workflow). Player-scoped.
+	local ast = pstate(event.player_index)
+	local prev = ast.audit_prev
 	if prev then
 		local deltas = {}
 		local keys = {}
@@ -525,7 +612,7 @@ function SelectionLab.audit(event)
 			or "  DELTA vs previous audit: EXACT MATCH (zero drift on every key)",
 			#deltas > 0 and { r = 1, g = 0.7, b = 0.3 } or { r = 0.4, g = 1, b = 0.4 })
 	end
-	storage.selection_lab_audit_prev = { items = item_totals, fluids = fluid_totals, tick = game.tick }
+	ast.audit_prev = { items = item_totals, fluids = fluid_totals, tick = game.tick }
 end
 
 -- === UNDO / REDO ===========================================================================
@@ -533,7 +620,8 @@ end
 function SelectionLab.undo(event)
 	local player = game.get_player(event.player_index)
 	if not debug_enabled() then return end
-	local stack = storage.selection_lab_undo or {}
+	local st = pstate(event.player_index)
+	local stack = st.undo
 	local entry = table.remove(stack)
 	if not entry then
 		player.print("[SelectionLab] nothing to undo", { r = 1, g = 0.6, b = 0.3 })
@@ -559,11 +647,11 @@ function SelectionLab.undo(event)
 	end
 	local resurrected = 0
 	if #entry.destroyed_records > 0 then
-		local records = execute_create_and_restore(surface, entry.destroyed_records, player)
-		resurrected = #records
+		-- best-effort (non-transactional): a resurrection miss must never destroy what DID come back
+		local records = execute_create_and_restore(surface, entry.destroyed_records, player, nil, false)
+		resurrected = records and #records or 0
 	end
-	storage.selection_lab_redo = storage.selection_lab_redo or {}
-	table.insert(storage.selection_lab_redo, entry)
+	table.insert(st.redo, entry)
 	player.print(string.format(
 		"[SelectionLab] UNDO: removed %d pasted entities (%d already gone), resurrected %d replaced blockers with contents. Ctrl+Alt+Y redoes.",
 		removed, missed, resurrected), { r = 0.4, g = 0.9, b = 1 })
@@ -572,8 +660,8 @@ end
 function SelectionLab.redo(event)
 	local player = game.get_player(event.player_index)
 	if not debug_enabled() then return end
-	local stack = storage.selection_lab_redo or {}
-	storage.selection_lab_redo = stack
+	local st = pstate(event.player_index)
+	local stack = st.redo
 	local entry = table.remove(stack)
 	if not entry then
 		player.print("[SelectionLab] nothing to redo", { r = 1, g = 0.6, b = 0.3 })
@@ -601,23 +689,37 @@ function SelectionLab.redo(event)
 		end
 		local recs = {}
 		for _, c in ipairs(plan.clear) do recs[#recs + 1] = c.rec end
-		local records, entity_map, created = execute_create_and_restore(surface, recs, player, entry.side_groups)
+		local records, entity_map, created, _cf, exec_ok, exec_err =
+			execute_create_and_restore(surface, recs, player, entry.side_groups, true)
+		if not exec_ok then
+			player.play_sound({ path = "utility/cannot_build" })
+			player.print("[SelectionLab] REDO ROLLED BACK (" .. tostring(exec_err) .. ") — still redoable.",
+				{ r = 1, g = 0.4, b = 0.4 })
+			table.insert(stack, entry)
+			return
+		end
 		for _, rec in ipairs(records) do
 			draw_box(surface, rec.position, { r = 0.3, g = 1, b = 0.3, a = 0.6 }, player.index)
 		end
 		entry.created = journal_created(records, entity_map)
 		entry.destroyed_records = {}
-		storage.selection_lab_undo = storage.selection_lab_undo or {}
-		table.insert(storage.selection_lab_undo, entry)
+		table.insert(st.undo, entry)
 		player.print(string.format("[SelectionLab] REDO: re-pasted %d entities (all-or-nothing).", created),
 			{ r = 0.4, g = 0.9, b = 1 })
 	else
-		local records, entity_map, created, _create_failed, destroyed_records, guarded =
+		local records, entity_map, created, _create_failed, destroyed_records, guarded, exec_ok, exec_err, resurrected =
 			force_execute(surface, entry.plan_records, player, entry.side_groups)
+		if not exec_ok then
+			player.play_sound({ path = "utility/cannot_build" })
+			player.print(string.format(
+				"[SelectionLab] REDO ROLLED BACK (%s) — %d/%d replaced blockers resurrected; still redoable.",
+				tostring(exec_err), resurrected, #destroyed_records), { r = 1, g = 0.4, b = 0.4 })
+			table.insert(stack, entry)
+			return
+		end
 		entry.created = journal_created(records, entity_map)
 		entry.destroyed_records = destroyed_records
-		storage.selection_lab_undo = storage.selection_lab_undo or {}
-		table.insert(storage.selection_lab_undo, entry)
+		table.insert(st.undo, entry)
 		player.print(string.format(
 			"[SelectionLab] REDO: force re-pasted %d entities (%d blockers replaced%s).",
 			created, #destroyed_records, guarded > 0 and (", " .. guarded .. " protected kept") or ""),
