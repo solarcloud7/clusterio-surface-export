@@ -19,8 +19,10 @@
 --
 -- Debug instrument rules: gated on debug_mode; verdicts print PHYSICAL counts (insert returns are
 -- never evidence — tests/belt-lab/NOTEBOOK.md BELT-R8); no interaction with transfer jobs, locks,
--- or the controller. Known gaps: no circuit-wire reconnection on the copy, no rotation/flip, no
--- cross-surface paste.
+-- or the controller. Known gaps: no circuit-wire reconnection on the copy, no rotation/flip.
+-- Cross-surface paste measured WORKING at 2.0.77 (2026-07-17, gallery migration): paste plans
+-- against event.surface, so dragging on any surface pastes there. `active` is preserved via the
+-- lab-only `lab_active` record field (the production serializer deliberately does not carry it).
 
 local EntityScanner = require("modules/surface_export/export_scanners/entity-scanner")
 local Deserializer = require("modules/surface_export/core/deserializer")
@@ -85,6 +87,10 @@ function SelectionLab.copy(event)
 		if entity.valid and EntityScanner.is_exportable_entity(entity) then
 			local entity_data = EntityScanner.serialize_entity(entity)
 			if entity_data then
+				-- Lab-only field: the production serializer deliberately does not carry `active`
+				-- (activation is the transfer pipeline's phase); the paste path must, or frozen
+				-- fixtures (mid-craft machines) wake up and run on paste.
+				entity_data.lab_active = entity.active
 				records[#records + 1] = entity_data
 				minx = math.min(minx, entity_data.position.x)
 				miny = math.min(miny, entity_data.position.y)
@@ -183,6 +189,15 @@ local function execute_create_and_restore(surface, recs, player)
 	if not fluids_ok then
 		log("[SelectionLab] fluid restore failed: " .. tostring(fluids_err))
 		player.print("[SelectionLab] fluid restore skipped: " .. tostring(fluids_err), { r = 1, g = 0.7, b = 0.3 })
+	end
+	-- Applied LAST (after all restores) so restoration always sees the same entity state.
+	-- The paste keeps whatever active/inactive state the capture recorded — both directions
+	-- (owner ruling 2026-07-17). nil = pre-lab_active capture; leave the engine default.
+	for _, rec in ipairs(records) do
+		local entity = entity_map[rec.entity_id]
+		if entity and entity.valid and rec.lab_active ~= nil then
+			entity.active = rec.lab_active
+		end
 	end
 	return records, entity_map, created, create_failed
 end
