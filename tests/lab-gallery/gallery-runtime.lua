@@ -96,34 +96,236 @@ local function find_belts(surface, descriptors, required)
     return result
 end
 
-local function destroy_all_platforms()
-    local platforms = {}
+-- Verify-not-construct: the corpus is hand-curated in the seed. These helpers physically MEASURE
+-- each baked fixture and never build or mutate it.
+local function surface_for_platform(name)
     for _, platform in pairs(game.forces.player.platforms) do
-        if platform.valid then platforms[#platforms + 1] = platform end
+        if platform.valid and platform.name == name then return platform.surface, platform end
     end
-    for _, platform in ipairs(platforms) do
-        if platform.valid then platform.destroy(0) end
-    end
-    return #platforms
+    return nil, nil
 end
 
-local function minimize_nauvis(pilot)
-    local surface = assert(game.surfaces[pilot.sourceSurface], "missing belt source surface")
-    local source = find_belts(surface, pilot.sourceBelts, true)
-    local target = find_belts(surface, pilot.targetBelts, true)
-    local protected = {}
-    for _, entity in ipairs(source) do protected[entity.unit_number] = true end
-    for _, entity in ipairs(target) do protected[entity.unit_number] = true end
-    for _, entity in ipairs(surface.find_entities_filtered({})) do
-        if entity.valid and not protected[entity.unit_number] then entity.destroy() end
+local function at(surface, name, x, y)
+    return surface.find_entities_filtered({ name = name, area = { { x - 0.6, y - 0.6 }, { x + 0.6, y + 0.6 } } })[1]
+end
+
+local function measure_omnibus_adversarial(surface)
+    local chest = assert(at(surface, "steel-chest", 13, -3), "omnibus adversarial chest missing")
+    local inv = chest.get_inventory(defines.inventory.chest)
+    local armor
+    for i = 1, #inv do local s = inv[i] if s.valid_for_read and s.name == "power-armor-mk2" then armor = s break end end
+    armor = assert(armor, "omnibus adversarial power-armor-mk2 missing")
+    local r = {}
+    for _, eq in ipairs(armor.grid.equipment) do
+        if eq.name == "battery-mk2-equipment" then r.battEnergy = eq.energy r.battQuality = eq.quality.name end
+        if eq.name == "energy-shield-mk2-equipment" then r.shieldValue = eq.shield r.shieldMax = eq.max_shield r.shieldQuality = eq.quality.name end
     end
-    local keep = { ["-1,-1"] = true, ["0,-1"] = true }
-    local chunks = {}
-    for chunk in surface.get_chunks() do chunks[#chunks + 1] = { x = chunk.x, y = chunk.y } end
-    for _, chunk in ipairs(chunks) do
-        if not keep[tostring(chunk.x) .. "," .. tostring(chunk.y)] then surface.delete_chunk(chunk) end
+    local m = assert(at(surface, "assembling-machine-2", 16, -3), "omnibus adversarial machine missing")
+    local recipe, quality = m.get_recipe()
+    r.recipe = recipe and recipe.name or nil
+    r.recipeQuality = quality and quality.name or nil
+    return r
+end
+
+local function measure_omnibus_latch(surface)
+    local d = assert(at(surface, "decider-combinator", 36, 0), "omnibus latch decider missing")
+    local net = d.get_circuit_network(defines.wire_connector_id.combinator_output_red)
+    return { signalS = net and net.get_signal({ type = "virtual", name = "signal-S" }) or nil }
+end
+
+local function measure_omnibus_midcraft(surface)
+    local m = assert(at(surface, "assembling-machine-1", 47, -2), "omnibus midcraft machine missing")
+    local inv = m.get_inventory(defines.inventory.assembling_machine_input)
+    return { progress = m.crafting_progress, active = m.active, inputPlates = inv and inv.get_item_count("iron-plate") or nil }
+end
+
+local function measure_omnibus_burner(surface)
+    local bi = assert(at(surface, "burner-inserter", 63, 1), "omnibus burner inserter missing")
+    local fi = bi.get_inventory(defines.inventory.fuel)
+    return {
+        coal = fi and fi.get_item_count("coal") or nil,
+        active = bi.active,
+        burning = bi.burner and bi.burner.currently_burning and bi.burner.currently_burning.name.name or nil,
+        remaining = bi.burner and bi.burner.remaining_burning_fuel or nil,
+    }
+end
+
+local function measure_omnibus_equipment(surface)
+    local s = assert(at(surface, "spidertron", 74, 0), "omnibus spidertron missing")
+    local r = { holder = "spidertron" }
+    for _, eq in ipairs(s.grid.equipment) do
+        if eq.name == "battery-mk2-equipment" then r.battEnergy = eq.energy r.battMax = eq.max_energy end
     end
-    return surface, source, target
+    return r
+end
+
+local function measure_omnibus_circuit(surface)
+    local cc = assert(at(surface, "constant-combinator", 84, 1), "omnibus constant-combinator missing")
+    local behavior = cc.get_control_behavior()
+    local r = {}
+    local section = behavior.sections and behavior.sections[1]
+    if section then
+        local filter = section.filters and section.filters[1]
+        if filter then r.constantSignal = filter.value and filter.value.name or nil r.constantMin = filter.min end
+    end
+    local lamp = assert(at(surface, "small-lamp", 90, 1), "omnibus lamp missing")
+    local lb = lamp.get_control_behavior()
+    r.lampUseColors = lb and lb.use_colors or nil
+    return r
+end
+
+local function measure_omnibus_bonus(surface)
+    local m = assert(at(surface, "assembling-machine-2", 99, 1), "omnibus bonus machine missing")
+    local mi = m.get_module_inventory()
+    return { bonusProgress = m.bonus_progress, modules = mi and mi.get_item_count("productivity-module") or nil, active = m.active }
+end
+
+local function measure_omnibus_fluids(surface)
+    local r = {}
+    local tank = assert(at(surface, "storage-tank", 119, 1), "omnibus storage-tank missing")
+    if tank.fluidbox[1] then r.steam = tank.fluidbox[1].amount r.steamTemp = tank.fluidbox[1].temperature end
+    local chem = assert(at(surface, "chemical-plant", 123, 1), "omnibus chemical-plant missing")
+    for i = 1, #chem.fluidbox do
+        local f = chem.fluidbox[i]
+        if f then if f.name == "water" then r.chemWater = f.amount elseif f.name == "petroleum-gas" then r.chemGas = f.amount end end
+    end
+    local foundry = assert(at(surface, "foundry", 127, 1), "omnibus foundry missing")
+    for i = 1, #foundry.fluidbox do
+        local f = foundry.fluidbox[i]
+        if f and f.name == "molten-iron" then r.foundryMolten = f.amount r.foundryTemp = f.temperature end
+    end
+    return r
+end
+
+local function measure_omnibus_ghosts(surface)
+    local eg = surface.find_entities_filtered({ type = "entity-ghost" })[1]
+    return {
+        entityGhosts = #surface.find_entities_filtered({ type = "entity-ghost" }),
+        tileGhosts = #surface.find_entities_filtered({ type = "tile-ghost" }),
+        proxies = #surface.find_entities_filtered({ type = "item-request-proxy" }),
+        ghostInner = eg and eg.ghost_name or nil,
+    }
+end
+
+local function measure_omnibus_ground(surface)
+    local total = 0
+    for _, e in pairs(surface.find_entities_filtered({ type = "item-entity" })) do
+        local stack = e.stack
+        if stack and stack.valid_for_read and stack.name == "iron-plate" then total = total + stack.count end
+    end
+    return { ironPlate = total }
+end
+
+local function measure_omnibus_schedule(platform)
+    local schedule = platform.get_schedule()
+    local records = schedule.get_records()
+    local interrupts = schedule.get_interrupts()
+    return { records = #records, interrupts = #interrupts, interruptName = interrupts[1] and interrupts[1].name or nil }
+end
+
+local function measure_energy(surface)
+    local acc = surface.find_entities_filtered({ type = "accumulator" })[1]
+    local electric = 0
+    for _, e in pairs(surface.find_entities_filtered({})) do
+        if e.type ~= "space-platform-hub" and e.prototype.electric_energy_source_prototype then electric = electric + 1 end
+    end
+    return {
+        accEnergy = acc and acc.energy or nil,
+        accName = acc and acc.name or nil,
+        electricEntities = electric,
+        entities = #surface.find_entities_filtered({}),
+    }
+end
+
+local function measure_belt_corner(surface)
+    local belts = surface.find_entities_filtered({ type = "transport-belt" })
+    local total = 0
+    for _, b in ipairs(belts) do
+        for line_index = 1, b.get_max_transport_line_index() do
+            for _, row in ipairs(b.get_transport_line(line_index).get_detailed_contents()) do total = total + row.stack.count end
+        end
+    end
+    local corner = surface.find_entity("turbo-transport-belt", { 16.5, 0.5 })
+    local inside = corner and corner.get_transport_line(1) or nil
+    local inside_count = 0
+    if inside then for _, row in ipairs(inside.get_detailed_contents()) do inside_count = inside_count + row.stack.count end end
+    return {
+        beltCount = #belts,
+        totalIron = total,
+        cornerShape = corner and corner.belt_shape or nil,
+        cornerX = corner and corner.position.x or nil,
+        cornerY = corner and corner.position.y or nil,
+        insideItems = inside_count,
+        insideLength = inside and inside.line_length or nil,
+        entities = #surface.find_entities_filtered({}),
+    }
+end
+
+-- Measure the full baked corpus keyed by manifest fixture id. Locators are code; expected values
+-- come from the manifest fingerprints (single source of truth). Each measurement is pcall-guarded
+-- and SURFACES its error (never swallows) so a mid-deletion destination poll cannot abort inspect
+-- while a normalize-time locator failure still fails the gate loudly.
+local function measure_corpus()
+    local out = {}
+    local function safe(id, fn)
+        local ok, result = pcall(fn)
+        if ok then out[id] = result else out[id] = { error = tostring(result) } end
+    end
+    local omni, omni_platform = surface_for_platform("lab-omnibus-state-v1")
+    if omni then
+        safe("omnibus-adversarial-inventory", function() return measure_omnibus_adversarial(omni) end)
+        safe("omnibus-heat-temperature", function() return { temperature = assert(at(omni, "heat-pipe", 27, 1), "omnibus heat-pipe missing").temperature } end)
+        safe("omnibus-decider-latch", function() return measure_omnibus_latch(omni) end)
+        safe("omnibus-midcraft-progress", function() return measure_omnibus_midcraft(omni) end)
+        safe("omnibus-burner-fuel", function() return measure_omnibus_burner(omni) end)
+        safe("omnibus-equipment-grid", function() return measure_omnibus_equipment(omni) end)
+        safe("omnibus-circuit-config", function() return measure_omnibus_circuit(omni) end)
+        safe("omnibus-module-bonus-progress", function() return measure_omnibus_bonus(omni) end)
+        safe("omnibus-crafting-fluids", function() return measure_omnibus_fluids(omni) end)
+        safe("omnibus-ghosts-and-proxies", function() return measure_omnibus_ghosts(omni) end)
+        safe("omnibus-ground-items", function() return measure_omnibus_ground(omni) end)
+        safe("omnibus-platform-schedule", function() return measure_omnibus_schedule(omni_platform) end)
+    end
+    local energy = surface_for_platform("lab-energy-v1")
+    if energy then safe("energy-accumulator-drain", function() return measure_energy(energy) end) end
+    local corner = surface_for_platform("lab-belt-corner-v1")
+    if corner then safe("belt-corner-recovery", function() return measure_belt_corner(corner) end) end
+    local workhorse = surface_for_platform("lab-transfer-fixture-v1")
+    if workhorse then safe("transfer-workhorse", function() return { entities = #workhorse.find_entities_filtered({}) } end) end
+    for n = 1, 3 do
+        local consumable = surface_for_platform("lab-consumable-" .. n)
+        if consumable then safe("consumable-hub-" .. n, function() return { entities = #consumable.find_entities_filtered({}) } end) end
+    end
+    return out
+end
+
+local function approx_equal(a, b)
+    -- Absolute 1e-9 absorbs a crafting-progress save/load ULP while keeping every integer count,
+    -- temperature, and energy exact (a drift of 1 fails the gate).
+    if type(a) == "number" and type(b) == "number" then return math.abs(a - b) <= 1e-9 end
+    return a == b
+end
+
+-- Fail-loud gate: for every physically-measured fixture, every declared fingerprint field must be
+-- present and equal. A missing (nil) read fails approx_equal, so a dropped field cannot pass.
+local function corpus_gate(manifest, measured)
+    local mismatches = {}
+    local checked = 0
+    for _, fixture in ipairs(manifest.fixtures or {}) do
+        local reads = measured[fixture.id]
+        if reads ~= nil then
+            if reads.error then
+                mismatches[#mismatches + 1] = fixture.id .. " measurement error: " .. tostring(reads.error)
+            end
+            for key, expected in pairs(fixture.fingerprint or {}) do
+                checked = checked + 1
+                if not approx_equal(reads[key], expected) then
+                    mismatches[#mismatches + 1] = fixture.id .. "." .. key .. "=" .. tostring(reads[key]) .. " expected " .. tostring(expected)
+                end
+            end
+        end
+    end
+    return { exact = #mismatches == 0, mismatches = mismatches, fieldsChecked = checked, platformsMeasured = table_size(measured) }
 end
 
 local function replace_index_surface(manifest)
@@ -167,47 +369,6 @@ local function replace_index_surface(manifest)
     return surface, renderings, tags
 end
 
-local function remove_unrelated_surfaces(keep_names)
-    local names = {}
-    for name in pairs(game.surfaces) do
-        if not keep_names[name] then names[#names + 1] = name end
-    end
-    local refused = {}
-    for _, name in ipairs(names) do
-        local surface = game.surfaces[name]
-        if surface and not game.delete_surface(surface) then refused[#refused + 1] = name end
-    end
-    assert(#refused == 0, "engine refused unrelated surfaces: " .. table.concat(refused, ","))
-end
-
-local function create_reachability_fixture(specification)
-    local force = game.forces.player
-    local platform = assert(force.create_space_platform({
-        name = specification.platformName,
-        planet = "nauvis",
-        starter_pack = "space-platform-starter-pack",
-    }), "failed to create specialized reachability platform")
-    assert(platform.apply_starter_pack(), "failed to apply platform starter pack")
-    platform.paused = true
-    local surface = platform.surface
-    local foundation = {}
-    for x = 16, 24 do
-        for y = -4, 4 do foundation[#foundation + 1] = { name = "space-platform-foundation", position = { x, y } } end
-    end
-    surface.set_tiles(foundation, true, false, true, false)
-    local position = assert(surface.find_non_colliding_position(specification.drillName, { x = 20, y = 0 }, 8, 0.5),
-        "no platform position for electric-mining-drill")
-    assert(surface.can_place_entity({ name = specification.drillName, position = position, force = force }),
-        "platform rejected electric-mining-drill")
-    local drill = assert(surface.create_entity({
-        name = specification.drillName,
-        position = position,
-        force = force,
-        create_build_effect_smoke = false,
-    }), "electric-mining-drill creation failed")
-    return platform, drill
-end
-
 -- Read-only: inspect() must report what the save actually carries, never values the
 -- inspection itself just wrote — otherwise the builder's lab-safe gate can never fail.
 local function read_lab_surface_settings()
@@ -242,12 +403,8 @@ local function apply_lab_surface_settings()
 end
 
 local function inspect_reachability(specification)
-    local platform
-    for _, candidate in pairs(game.forces.player.platforms) do
-        if candidate.valid and candidate.name == specification.platformName then platform = candidate break end
-    end
+    local surface, platform = surface_for_platform(specification.platformName)
     if not platform then return { exists = false, id = reachability_id } end
-    local surface = platform.surface
     local drills = surface.find_entities_filtered({ name = specification.drillName })
     local drill = drills[1]
     if not (drill and drill.valid) then return { exists = true, drillExists = false, id = reachability_id } end
@@ -299,6 +456,7 @@ local function inspect()
     local source = find_belts(surface, pilot.sourceBelts, false)
     local target = find_belts(surface, pilot.targetBelts, false)
     local all = detailed_census(source)
+    local measured = measure_corpus()
     local reading = {
         success = true,
         version = script.active_mods.base,
@@ -317,6 +475,7 @@ local function inspect()
         surfaceSettings = read_lab_surface_settings(),
         transient = transient_state(),
         census = surface_census(),
+        corpus = measured,
     }
     local expected = pilot.expected
     reading.beltFixtureExact = reading.sourceBelts == 16 and reading.targetBelts == 16
@@ -335,6 +494,8 @@ local function inspect()
         and reading.reachability.miningTarget == wanted.miningTarget
         and reading.reachability.readOk == wanted.readOk
         and reading.reachability.writeOk == wanted.writeOk
+    reading.corpusGate = corpus_gate(manifest, measured)
+    reading.corpusExact = reading.corpusGate.exact
     return reading
 end
 
@@ -342,46 +503,51 @@ local function normalize_source()
     assert_idle()
     local manifest = assert(request.manifest, "missing manifest")
     local pilot = assert(request.beltPilot, "missing belt pilot")
-    local specialized = assert(request.specializedFixture, "missing specialized fixture")
+    assert(request.specializedFixture, "missing specialized fixture")
+    -- Verify-not-construct: no platform is created or destroyed and no platform surface is
+    -- minimized. The hand-curated corpus is normalized only by rebuilding the index catalog and
+    -- applying lab-safe settings to non-platform surfaces; then every fingerprint is physically
+    -- verified against the manifest.
     destroy_gallery_rendering()
-    destroy_all_platforms()
-    local source_surface, source_belts, target_belts = minimize_nauvis(pilot)
     local index_surface, renderings, tags = replace_index_surface(manifest)
-    remove_unrelated_surfaces({ [source_surface.name] = true, [index_surface.name] = true })
-    local platform, drill = create_reachability_fixture(specialized)
     apply_lab_surface_settings()
+    assert(game.surfaces[pilot.sourceSurface], "missing belt pilot surface")
     storage.lab_gallery = {
         schema = manifest.schema,
         saveRole = "source",
         indexSurfaceName = index_surface.name,
-        beltSurfaceName = source_surface.name,
-        reachabilityPlatformName = platform.name,
-        reachabilityDrillUnitNumber = drill.unit_number,
-        sourceBelts = source_belts,
-        targetBelts = target_belts,
+        beltSurfaceName = pilot.sourceSurface,
         renderings = renderings,
         tags = tags,
     }
     local reading = inspect()
     assert(reading.beltFixtureExact, "normalized belt fixture is not exact: " .. helpers.table_to_json(reading))
     assert(reading.reachabilityFixtureExact, "normalized reachability fixture is not exact: " .. helpers.table_to_json(reading))
+    assert(reading.corpusExact, "normalized corpus fingerprints are not exact: " .. helpers.table_to_json(reading.corpusGate))
     return reading
+end
+
+local function destroy_all_platforms()
+    local platforms = {}
+    for _, platform in pairs(game.forces.player.platforms) do
+        if platform.valid then platforms[#platforms + 1] = platform end
+    end
+    for _, platform in ipairs(platforms) do
+        if platform.valid then platform.destroy(0) end
+    end
+    return #platforms
 end
 
 local function prepare_destination()
     assert_idle()
     local state = assert(storage.lab_gallery, "gallery source has not been normalized")
     local pilot = assert(request.beltPilot, "missing belt pilot")
-    for _, platform in pairs(game.forces.player.platforms) do
-        if platform.valid and platform.name == state.reachabilityPlatformName then platform.destroy(0) end
-    end
+    local destroyed = destroy_all_platforms()
     local surface = game.surfaces[pilot.sourceSurface]
     for _, entity in ipairs(find_belts(surface, pilot.sourceBelts, false)) do if entity.valid then entity.destroy() end end
     for _, entity in ipairs(find_belts(surface, pilot.targetBelts, false)) do if entity.valid then entity.destroy() end end
-    state.sourceBelts = {}
-    state.targetBelts = {}
     state.saveRole = "destination"
-    return { success = true, scheduled = true, saveRole = state.saveRole }
+    return { success = true, scheduled = true, saveRole = state.saveRole, platformsScheduled = destroyed }
 end
 
 local function save()

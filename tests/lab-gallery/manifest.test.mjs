@@ -15,7 +15,7 @@ test("gallery manifest inventories every lab family exactly once", () => {
 		.sort();
 	assert.deepEqual(manifest.labs.map(lab => lab.id).sort(), actualLabs);
 	assert.deepEqual(validateGalleryManifest(manifest, { requireArtifacts: false }), {
-		labs: actualLabs.length, fixtures: 2, sourceFixtures: 2, destinationFixtures: 0,
+		labs: actualLabs.length, fixtures: 20, sourceFixtures: 20, destinationFixtures: 0,
 	});
 });
 
@@ -38,7 +38,7 @@ test("paired save roles, artifacts, censuses, and exact mod pins are final", () 
 	assert.deepEqual(manifest.saves.source.mods, manifest.mods);
 	assert.deepEqual(manifest.saves.destination.mods, manifest.mods);
 	assert.deepEqual(validateGalleryManifest(manifest), {
-		labs: 12, fixtures: 2, sourceFixtures: 2, destinationFixtures: 0,
+		labs: 12, fixtures: 20, sourceFixtures: 20, destinationFixtures: 0,
 	});
 });
 
@@ -61,27 +61,55 @@ test("baked fixtures remain inputs while direct physical meters remain the oracl
 	assert.equal(belt.saveRole, "source");
 	assert.equal(belt.revision, 1);
 	assert.equal(belt.independentOracleRequired, true);
+	// The reachability fixture advanced to revision 2 (drill recreated, all entities destructible=false).
 	const reachability = manifest.fixtures.find(fixture => fixture.id === "specialized-fluid-reachability");
-	assert.deepEqual(reachability, {
-		id: "specialized-fluid-reachability",
-		revision: 1,
-		labId: "specialized-inventory-lab",
-		name: "Specialized fluid reachability",
-		purpose: "Recertify platform-reachable specialized fluid state from prototype and live entity controls.",
-		category: "physical-lab",
-		owningRunner: "tests/specialized-inventory-lab/run-reachability.mjs",
-		saveRole: "source",
-		platformName: "lab-specialized-fluid-r1",
-		engineVersion: "2.0.77",
-		mods: manifest.mods,
-		invariant: "Space-platform pressure/gravity are zero and the baked electric mining drill has no live recoverable fluidbox.",
-		expectedTerminalVerdict: "observation-only",
-		independentOracleRequired: true,
-		fingerprint: {
-			pressure: 0, gravity: 0, drillName: "electric-mining-drill", miningTarget: null,
-			liveFluidboxCount: 0, readOk: false, writeOk: false,
-		},
+	assert.equal(reachability.revision, 2);
+	assert.equal(reachability.labId, "specialized-inventory-lab");
+	assert.match(reachability.invariant, /destructible=false/);
+	assert.deepEqual(reachability.fingerprint, {
+		pressure: 0, gravity: 0, drillName: "electric-mining-drill", miningTarget: null,
+		liveFluidboxCount: 0, readOk: false, writeOk: false,
 	});
+});
+
+test("the sixteen-family corpus is inventoried with independent oracles and stable fingerprints", () => {
+	const manifest = loadGalleryManifest(repoRoot);
+	const byId = Object.fromEntries(manifest.fixtures.map(fixture => [fixture.id, fixture]));
+
+	// Every omnibus family shares the one platform, carries an independent oracle, and a fingerprint.
+	const omnibus = manifest.fixtures.filter(fixture => fixture.id.startsWith("omnibus-"));
+	assert.equal(omnibus.length, 12);
+	for (const fixture of omnibus) {
+		assert.equal(fixture.platformName, "lab-omnibus-state-v1");
+		assert.equal(fixture.independentOracleRequired, true);
+		assert.ok(fixture.fingerprint && typeof fixture.fingerprint === "object");
+	}
+
+	// Exact frozen-state fingerprints (measured live 2026-07-17).
+	assert.equal(byId["omnibus-heat-temperature"].fingerprint.temperature, 500);
+	assert.equal(byId["omnibus-burner-fuel"].fingerprint.remaining, 2000000);
+	assert.equal(byId["omnibus-midcraft-progress"].fingerprint.progress, 0.7000000000000005);
+	assert.equal(byId["omnibus-adversarial-inventory"].fingerprint.battQuality, "legendary");
+	assert.equal(byId["omnibus-crafting-fluids"].fingerprint.foundryTemp, 1500);
+	assert.equal(byId["omnibus-platform-schedule"].fingerprint.interruptName, "lab-interrupt");
+	assert.equal(byId["energy-accumulator-drain"].fingerprint.electricEntities, 1);
+	assert.equal(byId["belt-corner-recovery"].fingerprint.cornerShape, "left");
+	assert.equal(byId["belt-corner-recovery"].fingerprint.insideLength, 0.4140625);
+
+	// The workhorse is structure-only: entity count fixed, item counts never fingerprinted (live drift).
+	assert.deepEqual(byId["transfer-workhorse"].fingerprint, { entities: 1359 });
+	assert.match(byId["transfer-workhorse"].note, /drift/i);
+
+	// Consumables are bare single-use hubs; they own no integration runner.
+	for (const n of [1, 2, 3]) {
+		assert.deepEqual(byId[`consumable-hub-${n}`].fingerprint, { entities: 1 });
+		assert.equal(byId[`consumable-hub-${n}`].owningRunner, undefined);
+	}
+
+	// Layout blueprints are captured for the three requested layouts.
+	for (const [id, prefix] of [["omnibus-adversarial-inventory", "0eNq"], ["energy-accumulator-drain", "0eNq"], ["belt-corner-recovery", "0eNq"]]) {
+		assert.ok(byId[id].layoutBlueprint.startsWith(prefix), `${id} layoutBlueprint`);
+	}
 });
 
 test("visual zones have stable unique coordinates and durable source paths", () => {

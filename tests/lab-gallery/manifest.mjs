@@ -45,7 +45,11 @@ export function validateGalleryManifest(manifest, { requireArtifacts = true } = 
 		fixtureIds.add(fixture.id);
 		if (!Number.isInteger(fixture.revision) || fixture.revision < 1) throw new Error(`invalid revision for ${fixture.id}`);
 		if (!ids.has(fixture.labId)) throw new Error(`unknown lab ${fixture.labId} for ${fixture.id}`);
-		if (!fixture.name || !fixture.purpose || !fixture.category || !fixture.owningRunner) throw new Error(`incomplete fixture ${fixture.id}`);
+		if (!fixture.name || !fixture.purpose || !fixture.category) throw new Error(`incomplete fixture ${fixture.id}`);
+		// owningRunner is optional (only where an owning runner exists); validate its shape when present.
+		if (fixture.owningRunner !== undefined && (typeof fixture.owningRunner !== "string" || !/^tests\/.+/.test(fixture.owningRunner))) {
+			throw new Error(`invalid owningRunner for ${fixture.id}`);
+		}
 		if (fixture.saveRole === "source") sourceFixtures += 1;
 		else if (fixture.saveRole === "destination") destinationFixtures += 1;
 		else throw new Error(`invalid save role for ${fixture.id}`);
