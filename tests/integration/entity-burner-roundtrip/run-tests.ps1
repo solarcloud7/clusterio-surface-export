@@ -28,7 +28,8 @@
 
     Fixture (cheap — never the 1,359-entity clone): a bare platform (create_space_platform +
     apply_starter_pack), PAUSED before the fixture is built so the burner cannot tick before the transfer
-    lock. A single burner entity is force-created on a foundation block far (offset 320) from the hub.
+    lock. A single burner entity is force-created on a foundation block near the hub (the offset is a
+    placement convention with no electrical effect).
     The destination is read promptly after the import-result (short settle) to minimise post-activation
     mutation of the engine-managed burner fields.
 

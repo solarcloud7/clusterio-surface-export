@@ -14,8 +14,10 @@
 
     Fixture (cheap — never the 1,359-entity clone): a bare platform (create_space_platform +
     apply_starter_pack), PAUSED before the fixture is built so buffers cannot tick-drift. Two entities are
-    force-created on a foundation block far (offset 320) from the hub, deliberately OFF any electric
-    network:
+    force-created near the hub on a starter platform that carries NO other electric participants (no
+    generation, no other consumers — the hub itself provides no power), so their buffers have nothing to
+    drain into. Every electric entity on a platform surface joins ONE network regardless of distance, so the
+    offset is a historical placement convention with no electrical effect. The two entities:
       * an accumulator, entity.energy set to ~3 MJ (accumulator capacity is 5 MJ) — exercises the
         "accumulators always" branch; with no discharge demand it holds charge post-activation.
       * an electric assembling-machine with NO recipe (idle), entity.energy set > 0 — exercises the
@@ -23,8 +25,8 @@
 
     The energy-may-drain caveat: there is no clean hook to read the destination BEFORE activation on a
     SUCCESSFUL transfer (preserve/defer is a failure-path debug feature), and the contract says
-    post-activation is what matters. Isolation from the hub network (far offset, no poles) makes the
-    hold near-exact; the bounds distinguish "restored" from "read the fresh-entity default of 0" while
+    post-activation is what matters. Nothing else on the platform generates or consumes power, so the
+    hold is near-exact; the bounds distinguish "restored" from "read the fresh-entity default of 0" while
     tolerating minor post-activation drain.
 
     Cluster-dependent assumptions (verify on execution; all RED-until-implementer):
