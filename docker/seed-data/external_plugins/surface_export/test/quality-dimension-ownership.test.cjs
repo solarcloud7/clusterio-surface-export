@@ -107,7 +107,9 @@ const domains = [
 	{
 		id: "splitter-filter",
 		status: "static-owned",
-		producer: ["export_scanners/entity-handlers.lua", /data\.filter\s*=\s*\{[\s\S]*name\s*=\s*entity\.splitter_filter\.name,[\s\S]*quality\s*=\s*entity\.splitter_filter\.quality and entity\.splitter_filter\.quality\.name or GameUtils\.QUALITY_NORMAL/],
+		// Defensive both-shapes capture (string at 2.0.77, prototype-safe): resolves sf.quality to a
+		// plain string, then falls back to QUALITY_NORMAL.
+		producer: ["export_scanners/entity-handlers.lua", /local sf = entity\.splitter_filter[\s\S]*if type\(quality\) ~= "string" and quality then[\s\S]*data\.filter\s*=\s*\{ name = sf\.name, quality = quality or GameUtils\.QUALITY_NORMAL \}/],
 		consumer: ["core/deserializer.lua", /field\s*=\s*"filter",\s*prop\s*=\s*"splitter_filter"/],
 	},
 	{
@@ -119,7 +121,9 @@ const domains = [
 	{
 		id: "ghost-and-proxy-requests",
 		status: "base-restoration-gap",
-		producer: ["export_scanners/entity-handlers.lua", /item_with_quality[\s\S]*quality\s*=\s*item_with_quality\.quality/],
+		// 2.0 array-of-ItemWithQualityCount capture (the old 1.1 item_with_quality dict iteration
+		// crashed serialize_entity on every proxy; replaced 2026-07-17).
+		producer: ["export_scanners/entity-handlers.lua", /item_requests[\s\S]*item\s*=\s*req\.name,\s*quality\s*=\s*req\.quality,\s*count\s*=\s*req\.count/],
 		consumer: ["core/deserializer.lua", /item_requests is read-only for proxies as well/],
 		gap: "request tables are reconstructed but never applied; this is broader than quality alone",
 	},
