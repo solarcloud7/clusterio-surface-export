@@ -624,14 +624,26 @@ EntityHandlers["mining-drill"] = function(entity)
     data.drop_target = Util.round_position(entity.drop_target.position, 2)
   end
   
-  -- FILTER (resource filter for mining drills)
-  -- intentional probe; failure expected, no log
-  local filter_success, filter = pcall(function() return entity.get_filter() end)
-  if filter_success and filter then
-    data.filter = {
-      name = filter.name,
-      quality = filter.quality and filter.quality.name or GameUtils.QUALITY_NORMAL
-    }
+  -- FILTER (resource filter for mining drills). Measured 2026-07-17 at 2.0.77 (see the
+  -- mining-drill filter entry in docs/factorio-2.0-api-notes.md): get_filter REQUIRES the slot
+  -- index (the old zero-arg call ALWAYS threw, silently killing this capture), every vanilla
+  -- drill has filter_slot_count == 0 (only modded drills can reach the read), and a drill
+  -- filter is an EntityID — no quality component. Resolve string/prototype shapes defensively.
+  if (entity.filter_slot_count or 0) > 0 then
+    local filter_success, filter = pcall(function() return entity.get_filter(1) end)
+    if not filter_success then
+      log(string.format("[EntityHandlers] mining-drill get_filter(1) failed on %s: %s",
+        entity.name, tostring(filter)))
+    elseif filter then
+      local name = filter
+      if type(name) ~= "string" then
+        name = filter.name
+        if type(name) ~= "string" and name then name = name.name end
+      end
+      if name then
+        data.filter = { name = name }
+      end
+    end
   end
 
   return data

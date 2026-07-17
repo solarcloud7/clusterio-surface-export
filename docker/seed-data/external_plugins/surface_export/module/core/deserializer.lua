@@ -403,19 +403,17 @@ function Deserializer.restore_entity_state(entity, entity_data)
       function() entity.set_fluid_filter(data.fluid_filter) end)
   end
 
-  -- Restore mining drill resource filter.
-  -- Current exports carry {name,quality}; legacy exports used a bare item name.
-  if data.filter and entity.set_filter then
-    local filter_value = data.filter
-    if type(data.filter) == "table" then
-      filter_value = {
-        name = data.filter.name,
-        quality = data.filter.quality or Util.QUALITY_NORMAL
-      }
-    end
+  -- Restore mining drill resource filter. Measured 2026-07-17 at 2.0.77 (see the mining-drill
+  -- filter entry in docs/factorio-2.0-api-notes.md): a drill filter is an EntityID — a resource
+  -- NAME string, no quality component (the {name,quality} table form throws "Invalid EntityID") —
+  -- and set_filter is "callable only on entities that have filters" (every vanilla drill measures
+  -- filter_slot_count == 0, so this only ever fires for modded drills with filter slots). The
+  -- explicit type gate also keeps this block off splitters, whose data.filter is owned by the
+  -- splitter_filter rule in SIMPLE_RESTORE_RULES.
+  if data.filter and entity.type == "mining-drill" and (entity.filter_slot_count or 0) > 0 then
+    local filter_name = type(data.filter) == "table" and data.filter.name or data.filter
     safe_call(string.format("set_filter for %s", entity.name),
-      -- Keep the engine call isolated: the pending live signature probe adjusts only this line.
-      function() entity.set_filter(1, filter_value) end)
+      function() entity.set_filter(1, filter_name) end)
   end
 
   -- Restore train station custom name and settings

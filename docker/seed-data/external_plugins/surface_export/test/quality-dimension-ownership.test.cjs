@@ -112,12 +112,13 @@ const domains = [
 		producer: ["export_scanners/entity-handlers.lua", /local sf = entity\.splitter_filter[\s\S]*if type\(quality\) ~= "string" and quality then[\s\S]*data\.filter\s*=\s*\{ name = sf\.name, quality = quality or GameUtils\.QUALITY_NORMAL \}/],
 		consumer: ["core/deserializer.lua", /field\s*=\s*"filter",\s*prop\s*=\s*"splitter_filter"/],
 	},
-	{
-		id: "mining-drill-filter",
-		status: "static-owned",
-		producer: ["export_scanners/entity-handlers.lua", /data\.filter\s*=\s*\{[\s\S]*quality\s*=\s*filter\.quality and filter\.quality\.name/],
-		consumer: ["core/deserializer.lua", /local filter_value[\s\S]*entity\.set_filter\(1, filter_value\)/],
-	},
+	// mining-drill-filter row REMOVED (2026-07-17, measured at 2.0.77 + API-confirmed): a mining-drill
+	// filter is an EntityID — a resource name with NO quality component — so there is no quality
+	// dimension to own here. Every vanilla drill also measures filter_slot_count == 0 (the capture
+	// only ever fires for modded drills with filter slots). The original row asserted a quality-keyed
+	// {name,quality} shape whose set_filter write the engine rejects ("Invalid EntityID") and whose
+	// zero-arg get_filter() capture always threw — see the mining-drill filter entry in
+	// docs/factorio-2.0-api-notes.md.
 	{
 		id: "ghost-and-proxy-requests",
 		status: "base-restoration-gap",
@@ -135,8 +136,10 @@ test("the quality ownership matrix independently covers every approved item-doma
 		"inserter-held-stack", "equipment-grid", "entity-burner-current-fuel",
 		"equipment-burner-current-fuel", "ground-item", "recipe-selection", "previous-recipe",
 		"inserter-loader-wagon-filter", "constant-combinator-slot", "logistic-request-slot",
-		"infinity-filter", "splitter-filter", "mining-drill-filter", "ghost-and-proxy-requests",
+		"infinity-filter", "splitter-filter", "ghost-and-proxy-requests",
 	]);
+	// mining-drill-filter is intentionally ABSENT: drill filters are quality-less EntityIDs
+	// (measured 2.0.77 + API — see the removed-row comment above and api-notes).
 	assert.equal(domains.some(row => row.id.includes("fluid")), false, "fluids have no quality dimension");
 });
 
@@ -163,25 +166,28 @@ test("all non-owned rows state the exact unresolved boundary", () => {
 
 test("the authorized live spot checks remain explicit", () => {
 	const liveTargets = domains.filter(row =>
-		row.status === "live-pending" || row.id === "splitter-filter" || row.id === "mining-drill-filter")
+		row.status === "live-pending" || row.id === "splitter-filter")
 		.map(row => row.id)
 		.sort();
 	assert.deepEqual(liveTargets, [
 		"constant-combinator-slot",
 		"inserter-loader-wagon-filter",
-		"mining-drill-filter",
 		"splitter-filter",
 	]);
+	// The mining-drill spot check was RETIRED with its row: the live probe ran 2026-07-17 and
+	// refuted the dimension (no quality on EntityID filters; vanilla drills have zero slots).
 });
 
-test("quality filter roundtrip fixtures exercise both corrected domains", () => {
+test("the quality-filter roundtrip fixture exercises the splitter domain (drill case retired)", () => {
 	const suite = JSON.parse(fs.readFileSync(path.join(__dirname, "..", "..", "..", "..", "..",
 		"tests", "integration", "entity-roundtrip", "test-cases.json"), "utf8"));
 	const fixtures = new Map(suite.tests.map(fixture => [fixture.id, fixture]));
 	assert.deepEqual(fixtures.get("splitter-quality-filter").input.specific_data.filter,
 		{ name: "iron-plate", quality: "legendary" });
-	assert.deepEqual(fixtures.get("mining-drill-quality-filter").input.specific_data.filter,
-		{ name: "iron-ore", quality: "legendary" });
+	// mining-drill-quality-filter was DELETED (unpassable): drill filters are quality-less
+	// EntityIDs and vanilla drills have zero filter slots — measured 2.0.77, see api-notes.
+	assert.equal(fixtures.has("mining-drill-quality-filter"), false,
+		"the refuted drill-quality case must stay deleted, not resurrected");
 
 	const roundtrip = source("interfaces/remote/test-import-entity.lua");
 	assert.match(roundtrip, /fields_to_compare\s*=\s*\{[\s\S]*"filter"/,

@@ -142,6 +142,19 @@ Consequence: fluid does not live per-entity — it lives in the shared segment. 
   segment set (or classify the introducing box). This exact gap caused the census phantom fusion-plasma
   `-20` abort on the first post-merge transfer (fail-closed; zero loss).
 
+## Mining-drill filters
+
+- **A mining-drill filter is an EntityID (resource name) — it has NO quality component — and every
+  vanilla drill has zero filter slots.** **[empirical, 2.0.77, live probe 2026-07-17; API-confirmed]**
+  `LuaEntity.set_filter`'s drill overload takes an `EntityID`; passing a `{name, quality}` table throws
+  `Invalid EntityID: expected LuaEntityPrototype, LuaEntity or string`. `get_filter` REQUIRES the slot
+  index (`get_filter()` throws an arguments-count error — a zero-arg call inside a swallowing pcall
+  silently disabled the drill-filter capture for its entire life). `filter_slot_count` measured `0` for
+  `electric-mining-drill`, `big-mining-drill`, and `burner-mining-drill` on the pinned modset, and
+  `set_filter` errors `Callable only on entities that have filters` — so drill-filter capture/restore
+  is reachable only for modded drills that define filter slots. Consequence: "quality-filtered mining
+  drill" is not a representable state at this pin; the sc-29 roundtrip case asserting it was removed.
+
 ## Inventory sizing
 
 - **[`LuaInventory.resize(size)`](https://lua-api.factorio.com/latest/classes/LuaInventory.html#method_resize)
