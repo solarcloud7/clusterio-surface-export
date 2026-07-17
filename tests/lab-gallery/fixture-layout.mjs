@@ -17,6 +17,9 @@ export function buildFiveByFiveLoop(origin) {
 	];
 }
 
+// Layout locators only. The expected fingerprint values (quantities, reachability controls) are
+// sourced from the manifest fingerprints by build-save, never duplicated here — the manifest is the
+// single source of truth for what is asserted.
 export function buildBeltPilot() {
 	const sourceOrigin = { x: -16.5, y: -25.5 };
 	const targetOrigin = { x: 4.5, y: -25.5 };
@@ -25,24 +28,13 @@ export function buildBeltPilot() {
 		sourceSurface: "nauvis",
 		sourceBelts: buildFiveByFiveLoop(sourceOrigin),
 		targetBelts: buildFiveByFiveLoop(targetOrigin),
-		sourceLineQuantities: [67, 58],
-		expected: { sourceQuantity: 125, sourceLineQuantities: [67, 58], targetQuantity: 0, maximumStack: 1 },
 	};
 }
 
 export function buildSpecializedReachabilityFixture() {
 	return {
 		id: "specialized-fluid-reachability",
-		revision: 1,
 		platformName: "lab-specialized-fluid-r1",
 		drillName: "electric-mining-drill",
-		expected: {
-			pressure: 0,
-			gravity: 0,
-			miningTarget: null,
-			liveFluidboxCount: 0,
-			readOk: false,
-			writeOk: false,
-		},
 	};
 }

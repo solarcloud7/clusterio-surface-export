@@ -52,6 +52,14 @@ test("the corpus gate measures every family platform against manifest fingerprin
 	assert.match(source, /get_circuit_network/);
 	// Measurement errors are surfaced, never swallowed.
 	assert.match(source, /measurement error/);
+	// Unsatisfiable by omission: the gate iterates the manifest roster and fails loudly when a
+	// non-excluded fixture has no measurement; exclusions are an explicit allowlist, not an
+	// absence-skip; the fixture tally is reported for the build-side count pin.
+	assert.match(source, /was not measured/);
+	assert.match(source, /corpus_excluded/);
+	assert.match(source, /expectedFixtures/);
+	// The 1e-9 tolerance is scoped to the progress doubles only, never applied blanket.
+	assert.match(source, /tolerant_double_fields/);
 });
 
 test("normalization applies lab settings to non-platform surfaces via the real write APIs", () => {

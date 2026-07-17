@@ -21,7 +21,7 @@ function sourceReading() {
 		source_belts: 16, target_belts: 16, source_quantity: 125, physical_stacks: 125,
 		maximum_stack: 1, source_line_quantities: [67, 58], target_quantity: 0,
 		index_texts: 12, index_tags: 12,
-		reachability: { exists: true, platform_name: "lab-specialized-fluid-r1", drill_name: "electric-mining-drill", pressure: 0, gravity: 0, mining_target: null, live_fluidbox_count: 0, read_ok: false, write_ok: false },
+		reachability: { exists: true, platform_name: "lab-specialized-fluid-r1", drill_name: "electric-mining-drill", pressure: 0, gravity: 0, mining_target: false, live_fluidbox_count: 0, read_ok: false, write_ok: false },
 		surface_settings: surfaceSettings,
 		surface_census: expectations.source.census,
 		corpus: structuredClone(expectations.source.corpus),
@@ -60,6 +60,12 @@ test("source acceptance includes belt pilot, reachability, and the full physical
 	const dropped = sourceReading();
 	delete dropped.corpus["omnibus-ground-items"];
 	assert.throws(() => assertReloadReading(dropped, "source", expectations.source), /corpus fixture set/);
+	// Red tooth (self-manufactured-PASS class): a dropped meter field on the reachability drill fails
+	// loudly instead of being normalized to a passing value. mining_target is emitted as an explicit
+	// `false`, so an absent field is a bug the gate rejects.
+	const droppedField = sourceReading();
+	delete droppedField.reachability.mining_target;
+	assert.throws(() => assertReloadReading(droppedField, "source", expectations.source), /mining_target/);
 });
 
 test("crafting-progress compares with a tolerance but rejects real drift", () => {

@@ -1,5 +1,21 @@
 import { readFileSync } from "node:fs";
 
+// Fixtures asserted by a SEPARATE physical path, not the corpus meter (measure_corpus). This is the
+// single source of truth for the corpus-excluded set shared by the build-side and reload-side
+// roster-completeness gates: the belt pilot is asserted by the belt census and the reachability
+// drill by the reachability block. Any OTHER fixture missing from the measured corpus fails loudly.
+export const CORPUS_EXCLUDED = new Set(["belt-5x5-125-unstacked", "specialized-fluid-reachability"]);
+
+// The reload meters build their reading from a Lua table, which cannot carry a JSON null (Lua drops
+// nil keys). They therefore represent the semantic "no mining target" (manifest miningTarget: null)
+// as the explicit sentinel `false`, which is ALWAYS present in the emitted reading — so a dropped
+// meter read is an absent field the gate rejects loudly, never normalized to a passing value. This
+// translates the manifest's semantic value to what the meter emits (the manifest stays the source of
+// truth; the meter merely cannot spell null).
+export function meterMiningTarget(manifestValue) {
+	return manifestValue === null ? false : manifestValue;
+}
+
 export function loadGalleryManifest(repoRoot) {
 	return JSON.parse(readFileSync(new URL("tests/lab-gallery/manifest.json", repoRoot), "utf8"));
 }
@@ -46,8 +62,16 @@ export function validateGalleryManifest(manifest, { requireArtifacts = true } = 
 		if (!Number.isInteger(fixture.revision) || fixture.revision < 1) throw new Error(`invalid revision for ${fixture.id}`);
 		if (!ids.has(fixture.labId)) throw new Error(`unknown lab ${fixture.labId} for ${fixture.id}`);
 		if (!fixture.name || !fixture.purpose || !fixture.category) throw new Error(`incomplete fixture ${fixture.id}`);
-		// owningRunner is optional (only where an owning runner exists); validate its shape when present.
-		if (fixture.owningRunner !== undefined && (typeof fixture.owningRunner !== "string" || !/^tests\/.+/.test(fixture.owningRunner))) {
+		// owningRunner is a REQUIRED provenance key with an EXPLICIT per-fixture opt-out — never a
+		// blanket relaxation. It is either a "tests/..." runner path, or null accompanied by an
+		// owningRunnerWaiver reason (the consumables own no single integration runner). A fixture that
+		// omits the key entirely is a validation error, so a real runner cannot be silently dropped.
+		if (!("owningRunner" in fixture)) throw new Error(`missing owningRunner for ${fixture.id}`);
+		if (fixture.owningRunner === null) {
+			if (typeof fixture.owningRunnerWaiver !== "string" || !fixture.owningRunnerWaiver) {
+				throw new Error(`owningRunner opt-out for ${fixture.id} needs an owningRunnerWaiver reason`);
+			}
+		} else if (typeof fixture.owningRunner !== "string" || !/^tests\/.+/.test(fixture.owningRunner)) {
 			throw new Error(`invalid owningRunner for ${fixture.id}`);
 		}
 		if (fixture.saveRole === "source") sourceFixtures += 1;

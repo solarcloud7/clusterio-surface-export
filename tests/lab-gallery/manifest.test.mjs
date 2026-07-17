@@ -100,16 +100,39 @@ test("the sixteen-family corpus is inventoried with independent oracles and stab
 	assert.deepEqual(byId["transfer-workhorse"].fingerprint, { entities: 1359 });
 	assert.match(byId["transfer-workhorse"].note, /drift/i);
 
-	// Consumables are bare single-use hubs; they own no integration runner.
+	// Consumables are bare single-use hubs; they explicitly opt out of an owning runner (null +
+	// waiver reason), never by silently omitting the key.
 	for (const n of [1, 2, 3]) {
 		assert.deepEqual(byId[`consumable-hub-${n}`].fingerprint, { entities: 1 });
-		assert.equal(byId[`consumable-hub-${n}`].owningRunner, undefined);
+		assert.equal(byId[`consumable-hub-${n}`].owningRunner, null);
+		assert.match(byId[`consumable-hub-${n}`].owningRunnerWaiver, /\S/);
 	}
 
 	// Layout blueprints are captured for the three requested layouts.
 	for (const [id, prefix] of [["omnibus-adversarial-inventory", "0eNq"], ["energy-accumulator-drain", "0eNq"], ["belt-corner-recovery", "0eNq"]]) {
 		assert.ok(byId[id].layoutBlueprint.startsWith(prefix), `${id} layoutBlueprint`);
 	}
+});
+
+test("owningRunner is a required provenance key with an explicit, reasoned opt-out", () => {
+	const manifest = loadGalleryManifest(repoRoot);
+	const clone = () => JSON.parse(JSON.stringify(manifest));
+	const withRunner = manifest.fixtures.find(fixture => typeof fixture.owningRunner === "string");
+	assert.ok(withRunner, "expected at least one fixture with a real owning runner");
+
+	// Red tooth: omitting the key entirely is a validation error (a real runner cannot be dropped silently).
+	const dropped = clone();
+	delete dropped.fixtures.find(fixture => fixture.id === withRunner.id).owningRunner;
+	assert.throws(() => validateGalleryManifest(dropped, { requireArtifacts: false }), /missing owningRunner/);
+
+	// Red tooth: a null opt-out without a waiver reason is rejected.
+	const unreasoned = clone();
+	const consumable = unreasoned.fixtures.find(fixture => fixture.id === "consumable-hub-1");
+	delete consumable.owningRunnerWaiver;
+	assert.throws(() => validateGalleryManifest(unreasoned, { requireArtifacts: false }), /owningRunnerWaiver/);
+
+	// The reasoned null opt-out (as shipped) validates.
+	assert.doesNotThrow(() => validateGalleryManifest(clone(), { requireArtifacts: false }));
 });
 
 test("visual zones have stable unique coordinates and durable source paths", () => {

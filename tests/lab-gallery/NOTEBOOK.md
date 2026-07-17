@@ -94,15 +94,18 @@ hand-curated corpus (physically measuring every fingerprint against the manifest
 mismatch), rebuilds only the index catalog, and applies lab-safe settings to non-platform surfaces only.
 `inspect` stays read-only and reports the full corpus census; `prepare_destination` ticked-destroys ALL
 platforms and clears the belt pilot. `reload-meter.cjs` independently measures the full corpus as the reload
-oracle; `verify-save.mjs` asserts it against the manifest fingerprints (integers/temperatures/energies
-exact, the crafting-progress double compared with a 1e-9 tolerance for a save/load ULP). Fingerprint values
+oracle; `verify-save.mjs` asserts it against the manifest fingerprints (every field exact — integers,
+temperatures, energies, fluid amounts, coordinates, strings, booleans — with a 1e-9 tolerance scoped to ONLY
+the crafting-progress and module-bonus-progress doubles for a save/load ULP). Fingerprint values
 are single-sourced from `manifest.json`; the runtime and reload meter hold only physical locators.
 
-**Bake + verify.** Bake PASS from `candidate-v9` (corpus gate: 55 fields across 18 measured platforms exact;
-destination settled to index + nauvis only). New pinned artifacts:
+**Bake + verify.** Bake PASS from `candidate-v9` (corpus gate: 55 fields across 18 measured fixtures on 7
+platforms exact — the eighth platform, `lab-specialized-fluid-r1`, is asserted separately by the reachability
+block, not the corpus meter; destination settled to index + nauvis only). The source save carries 10 surfaces:
+the 8 hand-built platforms plus nauvis and the index catalog. New pinned artifacts:
 source `7AA51AD67460B6AAE557F8ABC12C8C9167BE185FD77F6CCDB2A17A7831F627A5` (1488 entities / 5355 chunks over
 10 surfaces), destination `09B1FCCEAD5EF38395825775DA3942CDD9382F6D2B4FD217A2A701AF15293BE5` (0 entities /
-479 chunks). `verify-save.mjs` PASS on BOTH committed zips; `node --test` green in `tests/lab-gallery` (36)
+479 chunks). `verify-save.mjs` PASS on BOTH committed zips; `node --test` green in `tests/lab-gallery` (39)
 and `tests/specialized-inventory-lab` (10). Layout blueprints for the omnibus, energy, and belt-corner
 platforms are captured in `manifest.json` (`layoutBlueprint`); a blueprint records layout only, never
 crafting progress, fluid amounts, or burner fuel, so it is not a fingerprint substitute.

@@ -3,17 +3,12 @@ import { execFileSync } from "node:child_process";
 import { existsSync } from "node:fs";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
-import { loadGalleryManifest } from "./manifest.mjs";
+import { CORPUS_EXCLUDED, loadGalleryManifest, meterMiningTarget } from "./manifest.mjs";
 
 const REMOTE_ROOT = "/tmp/surface-export-lab-gallery-verify";
 const GAME_PORT = "34977";
 const RCON_PORT = "27977";
 const RCON_PASSWORD = "gallery-verify-only";
-
-// Fixtures whose physical state the reload meter measures into `corpus`. The belt pilot and the
-// reachability drill are asserted separately (belt census + reachability block), so they are NOT
-// in the corpus set.
-const CORPUS_EXCLUDED = new Set(["belt-5x5-125-unstacked", "specialized-fluid-reachability"]);
 
 export function parseArguments(argv) {
 	const result = { sourceSave: null, destinationSave: null, container: "surface-export-host-2" };
@@ -50,13 +45,13 @@ export function assertSurfaceSettings(settings) {
 	return settings;
 }
 
-// Physical fingerprints carry an exact crafting-progress double; compare numbers with a tiny
-// tolerance so a save/load ULP does not fail an otherwise-conserved frozen state, while strings,
-// booleans, and integer counts stay exact.
-function approxEqual(actual, expected) {
-	if (typeof actual === "number" && typeof expected === "number") {
-		// Absolute 1e-9 absorbs a crafting-progress save/load ULP (~1e-16) while keeping every
-		// integer count, temperature, and energy exact (a drift of 1 fails).
+// ONLY the crafting-progress and module-bonus-progress doubles absorb a save/load ULP; every OTHER
+// fingerprint field (integer counts, temperatures, energies, fluid amounts, coordinates, strings,
+// booleans) is compared with exact equality. The 1e-9 tolerance is never applied blanket.
+const TOLERANT_DOUBLE_FIELDS = new Set(["progress", "bonusProgress"]);
+
+function approxEqual(key, actual, expected) {
+	if (TOLERANT_DOUBLE_FIELDS.has(key) && typeof actual === "number" && typeof expected === "number") {
 		return Math.abs(actual - expected) <= 1e-9;
 	}
 	return actual === expected;
@@ -74,7 +69,7 @@ export function assertCorpus(actual, expected, role) {
 		const reads = observed[id] || {};
 		for (const [key, value] of Object.entries(expected[id])) {
 			// Red tooth: a dropped or drifted fingerprint field fails; a missing read is undefined.
-			if (!approxEqual(reads[key], value)) {
+			if (!approxEqual(key, reads[key], value)) {
 				throw new Error(`${role} corpus ${id}.${key} is ${JSON.stringify(reads[key])}, expected ${JSON.stringify(value)}`);
 			}
 		}
@@ -83,11 +78,13 @@ export function assertCorpus(actual, expected, role) {
 }
 
 export function buildExpectations(manifest) {
-	const corpusFor = role => Object.fromEntries(
+	const fixtureById = Object.fromEntries(manifest.fixtures.map(fixture => [fixture.id, fixture]));
+	// The source corpus is every source fixture the reload meter measures — the manifest roster minus
+	// the separately-asserted belt/reachability set. The destination clears every platform, so its
+	// corpus is empty.
+	const sourceCorpus = Object.fromEntries(
 		manifest.fixtures
 			.filter(fixture => fixture.saveRole === "source" && !CORPUS_EXCLUDED.has(fixture.id))
-			// Only the source save carries the platforms; the destination clears them all.
-			.filter(() => role === "source")
 			.map(fixture => [fixture.id, fixture.fingerprint]),
 	);
 	const censusFor = role => {
@@ -98,29 +95,42 @@ export function buildExpectations(manifest) {
 			surface_names: census.surfaces.map(surface => surface.name).sort(),
 		};
 	};
+	// The belt pilot and reachability drill are asserted separately from the corpus, but their
+	// EXPECTED values are sourced from the manifest fingerprints (single source of truth), never
+	// hardcoded literals — editing a manifest fingerprint changes what the reload gate asserts.
+	const beltFingerprint = fixtureById["belt-5x5-125-unstacked"].fingerprint;
+	const reachabilityFixture = fixtureById["specialized-fluid-reachability"];
+	const reachabilityFingerprint = reachabilityFixture.fingerprint;
+	const belt = {
+		source_belts: beltFingerprint.beltCount, target_belts: beltFingerprint.beltCount,
+		source_quantity: beltFingerprint.quantity, physical_stacks: beltFingerprint.physicalStacks,
+		maximum_stack: beltFingerprint.maximumStack, source_line_quantities: beltFingerprint.lineQuantities,
+		target_quantity: 0,
+	};
+	const reachability = {
+		exists: true, platform_name: reachabilityFixture.platformName, drill_name: reachabilityFingerprint.drillName,
+		pressure: reachabilityFingerprint.pressure, gravity: reachabilityFingerprint.gravity,
+		mining_target: meterMiningTarget(reachabilityFingerprint.miningTarget), live_fluidbox_count: reachabilityFingerprint.liveFluidboxCount,
+		read_ok: reachabilityFingerprint.readOk, write_ok: reachabilityFingerprint.writeOk,
+	};
 	return {
-		source: { corpus: corpusFor("source"), census: censusFor("source") },
-		destination: { corpus: corpusFor("destination"), census: censusFor("destination") },
+		source: { corpus: sourceCorpus, census: censusFor("source"), belt, reachability },
+		destination: { corpus: {}, census: censusFor("destination") },
 	};
 }
 
 export function assertReloadReading(reading, role, expected) {
-	if (reading?.reachability?.exists === true && !("mining_target" in reading.reachability)) reading.reachability.mining_target = null;
 	assertFields(reading, {
 		version: "2.0.77", save_role: role, gallery_storage: true, index_surface: true, game_paused: false,
 		transient: { jobs: 0, locks: 0, holds: 0, tombstones: 0 }, index_texts: 12, index_tags: 12,
 	});
 	assertSurfaceSettings(reading?.surface_settings);
 	if (role === "source") {
-		assertFields(reading, {
-			source_belts: 16, target_belts: 16, source_quantity: 125, physical_stacks: 125,
-			maximum_stack: 1, source_line_quantities: [67, 58], target_quantity: 0,
-			surface_census: expected.census,
-		});
-		assertFields(reading.reachability, {
-			exists: true, platform_name: "lab-specialized-fluid-r1", drill_name: "electric-mining-drill",
-			pressure: 0, gravity: 0, mining_target: null, live_fluidbox_count: 0, read_ok: false, write_ok: false,
-		});
+		// Belt + reachability EXPECTED values come from the manifest fingerprints (expected.belt /
+		// expected.reachability). mining_target is compared as the explicit `false` the meter always
+		// emits, so a dropped read is an absent field this assertion rejects — never self-manufactured.
+		assertFields(reading, { ...expected.belt, surface_census: expected.census });
+		assertFields(reading.reachability, expected.reachability);
 	} else if (role === "destination") {
 		assertFields(reading, {
 			source_belts: 0, target_belts: 0, source_quantity: 0, physical_stacks: 0,

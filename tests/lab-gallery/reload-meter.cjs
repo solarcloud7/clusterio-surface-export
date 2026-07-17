@@ -36,7 +36,7 @@ if platform then
     local write_ok,write_error=pcall(function()drill.fluidbox[1]={name="water",amount=1}end)
     reachability={exists=true,platform_name=platform.name,drill_name=drill.name,
       pressure=platform.surface.get_property("pressure"),gravity=platform.surface.get_property("gravity"),
-      mining_target=drill.mining_target and drill.mining_target.name or nil,live_fluidbox_count=#drill.fluidbox,
+      mining_target=drill.mining_target and drill.mining_target.name or false,live_fluidbox_count=#drill.fluidbox,
       read_ok=read_ok,read_error=read_ok and nil or tostring(read_value),
       write_ok=write_ok,write_error=write_ok and nil or tostring(write_error)}
   else reachability={exists=true,drill_name=nil} end
@@ -80,7 +80,7 @@ if omni then
   if ccs then local f=ccs.filters and ccs.filters[1] if f then circ.constantSignal=f.value and f.value.name or nil circ.constantMin=f.min end end
   local lamp=at(omni,"small-lamp",90,1)
   local lb=lamp.get_control_behavior()
-  circ.lampUseColors=lb and lb.use_colors or nil
+  if lb then circ.lampUseColors=lb.use_colors end
   corpus["omnibus-circuit-config"]=circ
   local bm=at(omni,"assembling-machine-2",99,1)
   local bmi=bm.get_module_inventory()
@@ -93,8 +93,8 @@ if omni then
   local foundry=at(omni,"foundry",127,1)
   for i=1,#foundry.fluidbox do local f=foundry.fluidbox[i] if f and f.name=="molten-iron" then fl.foundryMolten=f.amount fl.foundryTemp=f.temperature end end
   corpus["omnibus-crafting-fluids"]=fl
-  local ge=omni.find_entities_filtered{type="entity-ghost"}[1]
-  corpus["omnibus-ghosts-and-proxies"]={entityGhosts=#omni.find_entities_filtered{type="entity-ghost"},tileGhosts=#omni.find_entities_filtered{type="tile-ghost"},proxies=#omni.find_entities_filtered{type="item-request-proxy"},ghostInner=ge and ge.ghost_name or nil}
+  local egs=omni.find_entities_filtered{type="entity-ghost"}
+  corpus["omnibus-ghosts-and-proxies"]={entityGhosts=#egs,tileGhosts=#omni.find_entities_filtered{type="tile-ghost"},proxies=#omni.find_entities_filtered{type="item-request-proxy"},ghostInner=egs[1] and egs[1].ghost_name or nil}
   local gi=0
   for _,e in pairs(omni.find_entities_filtered{type="item-entity"}) do local st=e.stack if st and st.valid_for_read and st.name=="iron-plate" then gi=gi+st.count end end
   corpus["omnibus-ground-items"]={ironPlate=gi}

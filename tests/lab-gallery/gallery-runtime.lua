@@ -170,7 +170,9 @@ local function measure_omnibus_circuit(surface)
     end
     local lamp = assert(at(surface, "small-lamp", 90, 1), "omnibus lamp missing")
     local lb = lamp.get_control_behavior()
-    r.lampUseColors = lb and lb.use_colors or nil
+    -- Explicit if: `lb and lb.use_colors or nil` would collapse a legitimate `false` reading to nil,
+    -- silently dropping the boolean from certification (the false-collapsing and/or idiom).
+    if lb then r.lampUseColors = lb.use_colors end
     return r
 end
 
@@ -198,12 +200,12 @@ local function measure_omnibus_fluids(surface)
 end
 
 local function measure_omnibus_ghosts(surface)
-    local eg = surface.find_entities_filtered({ type = "entity-ghost" })[1]
+    local entity_ghosts = surface.find_entities_filtered({ type = "entity-ghost" })
     return {
-        entityGhosts = #surface.find_entities_filtered({ type = "entity-ghost" }),
+        entityGhosts = #entity_ghosts,
         tileGhosts = #surface.find_entities_filtered({ type = "tile-ghost" }),
         proxies = #surface.find_entities_filtered({ type = "item-request-proxy" }),
-        ghostInner = eg and eg.ghost_name or nil,
+        ghostInner = entity_ghosts[1] and entity_ghosts[1].ghost_name or nil,
     }
 end
 
@@ -299,33 +301,71 @@ local function measure_corpus()
     return out
 end
 
-local function approx_equal(a, b)
-    -- Absolute 1e-9 absorbs a crafting-progress save/load ULP while keeping every integer count,
-    -- temperature, and energy exact (a drift of 1 fails the gate).
-    if type(a) == "number" and type(b) == "number" then return math.abs(a - b) <= 1e-9 end
+-- ONLY the crafting-progress and module-bonus-progress doubles absorb a sub-ULP save/load drift;
+-- every OTHER fingerprint field (integer counts, temperatures, energies, fluid amounts, coordinates,
+-- strings, booleans) is compared with exact equality. The 1e-9 tolerance is never applied blanket.
+local tolerant_double_fields = { progress = true, bonusProgress = true }
+
+local function approx_equal(key, a, b)
+    if tolerant_double_fields[key] and type(a) == "number" and type(b) == "number" then
+        return math.abs(a - b) <= 1e-9
+    end
     return a == b
 end
 
--- Fail-loud gate: for every physically-measured fixture, every declared fingerprint field must be
--- present and equal. A missing (nil) read fails approx_equal, so a dropped field cannot pass.
+-- Fixtures measured by a SEPARATE physical path (not measure_corpus): the corpus gate must not
+-- expect them among the measured set. This is an EXPLICIT allowlist with reasons — never an
+-- absence-skip: any OTHER manifest fixture missing from the measured set fails the gate loudly.
+local corpus_excluded = {
+    ["belt-5x5-125-unstacked"] = "belt pilot asserted by the belt census (beltFixtureExact)",
+    ["specialized-fluid-reachability"] = "drill asserted by the reachability block (reachabilityFixtureExact)",
+}
+
+-- Fail-loud gate: every non-excluded manifest fixture MUST have a measurement, and every declared
+-- fingerprint field must be present and exactly equal. A missing fixture, a measurement error, a
+-- dropped/drifted field, an unexpected measured id, or an empty roster all fail loudly — the gate is
+-- unsatisfiable by omission.
 local function corpus_gate(manifest, measured)
     local mismatches = {}
     local checked = 0
+    local expected_fixtures = 0
+    local roster = {}
     for _, fixture in ipairs(manifest.fixtures or {}) do
-        local reads = measured[fixture.id]
-        if reads ~= nil then
-            if reads.error then
+        roster[fixture.id] = true
+        if not corpus_excluded[fixture.id] then
+            expected_fixtures = expected_fixtures + 1
+            local reads = measured[fixture.id]
+            if reads == nil then
+                mismatches[#mismatches + 1] = fixture.id .. " was not measured (missing platform or locator)"
+            elseif reads.error then
                 mismatches[#mismatches + 1] = fixture.id .. " measurement error: " .. tostring(reads.error)
-            end
-            for key, expected in pairs(fixture.fingerprint or {}) do
-                checked = checked + 1
-                if not approx_equal(reads[key], expected) then
-                    mismatches[#mismatches + 1] = fixture.id .. "." .. key .. "=" .. tostring(reads[key]) .. " expected " .. tostring(expected)
+            else
+                for key, expected in pairs(fixture.fingerprint or {}) do
+                    checked = checked + 1
+                    if not approx_equal(key, reads[key], expected) then
+                        mismatches[#mismatches + 1] = fixture.id .. "." .. key .. "=" .. tostring(reads[key]) .. " expected " .. tostring(expected)
+                    end
                 end
             end
         end
     end
-    return { exact = #mismatches == 0, mismatches = mismatches, fieldsChecked = checked, platformsMeasured = table_size(measured) }
+    for id in pairs(measured) do
+        if not roster[id] then
+            mismatches[#mismatches + 1] = id .. " was measured but is not in the manifest roster"
+        elseif corpus_excluded[id] then
+            mismatches[#mismatches + 1] = id .. " is corpus-excluded but was measured by measure_corpus"
+        end
+    end
+    if expected_fixtures == 0 then
+        mismatches[#mismatches + 1] = "manifest roster carried no measurable fixtures"
+    end
+    return {
+        exact = #mismatches == 0,
+        mismatches = mismatches,
+        fieldsChecked = checked,
+        fixturesMeasured = table_size(measured),
+        expectedFixtures = expected_fixtures,
+    }
 end
 
 local function replace_index_surface(manifest)
@@ -420,7 +460,9 @@ local function inspect_reachability(specification)
         pressure = surface.get_property("pressure"),
         gravity = surface.get_property("gravity"),
         liveFluidboxCount = #drill.fluidbox,
-        miningTarget = drill.mining_target and drill.mining_target.name or nil,
+        -- `or false` (never nil): the "no mining target" state is emitted EXPLICITLY so a dropped
+        -- read is an absent field the gate rejects, not a vacuous pass self-manufactured downstream.
+        miningTarget = drill.mining_target and drill.mining_target.name or false,
         readOk = read_ok,
         readValue = read_ok and read_value or nil,
         readError = read_ok and nil or tostring(read_value),
@@ -477,14 +519,16 @@ local function inspect()
         census = surface_census(),
         corpus = measured,
     }
+    -- expected is sourced from the manifest belt fingerprint (single source of truth), passed via
+    -- the belt pilot: beltCount/sourceQuantity/sourceLineQuantities/maximumStack/physicalStacks.
     local expected = pilot.expected
-    reading.beltFixtureExact = reading.sourceBelts == 16 and reading.targetBelts == 16
+    reading.beltFixtureExact = reading.sourceBelts == expected.beltCount and reading.targetBelts == expected.beltCount
         and reading.sourceQuantity == expected.sourceQuantity
         and reading.sourceLineQuantities[1] == expected.sourceLineQuantities[1]
         and reading.sourceLineQuantities[2] == expected.sourceLineQuantities[2]
         and reading.targetQuantity == expected.targetQuantity
         and reading.maximumStack == expected.maximumStack
-        and reading.physicalStacks == expected.sourceQuantity
+        and reading.physicalStacks == expected.physicalStacks
     local wanted = specialized.expected
     reading.reachabilityFixtureExact = reading.reachability.exists == true
         and reading.reachability.drillExists == true
