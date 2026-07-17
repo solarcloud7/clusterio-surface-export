@@ -125,3 +125,40 @@ Record an entry only when at least one of these occurs:
   green afterwards.
 - **Durable references:** `.superpowers/sdd/state-dims-report.md`; CLAUDE.md "DO NOT npm install on a
   running cluster" bullet; takeover addendum item 1 (primary-checkout requirement).
+
+
+
+### 2026-07-12 - Lockfile root version changed during non-dependency cluster activation `[empirical, process, 2026-07-12]`
+
+- **Command/action:** On `codex/specialized-inventory-accounting`, ran `patch-and-reset.ps1` once while the controller was stopped (version `0.10.88 -> 0.10.89`, isolated build, then precondition abort), started/recreated the `factoriosurfaceexport` cluster from that worktree, restored package/module versions, and ran `patch-and-reset.ps1` successfully. No dependency edit or dependency-update command was requested.
+- **Expected result:** `package-lock.json` would remain byte-identical because the task changed Lua, tests, and documentation only.
+- **Actual result:** The lockfile blob changed from `3430315b2a4f658f18010dda8215687ce219b100` to `c45eed25eff7588c9ceebaa6c6982c21acb9d69b`. The exact diff changed only the root package version and `packages[""]` version from `0.10.77` to `0.10.89`; dependency entries were unchanged.
+- **Affected paths:** `docker/seed-data/external_plugins/surface_export/package-lock.json`.
+- **Impact:** Non-dependency cluster activation can contaminate a focused task diff with unexplained lockfile churn.
+- **Workaround:** Captured pre/post hashes and the exact diff, then restored the lockfile from branch HEAD before continuing Plan A.
+- **Final disposition:** `OPEN-INSTRUMENTED` - the occurrence is reproduced and scoped, but the exact writer was not isolated because multiple activation steps occurred between hashes. Candidates are npm activity in the isolated build or external-plugin container startup. A future rung must hash after each individual command before authorizing a guard or assigning root cause.
+- **Durable references:** Pre-change blob `3430315b2a4f658f18010dda8215687ce219b100`; observed blob `c45eed25eff7588c9ceebaa6c6982c21acb9d69b`; `tools/patch-and-reset.ps1`; `tools/build-plugin.ps1`.
+
+
+### 2026-07-12 - Correction: lockfile churn bounded to one successful patch/reset `[empirical, process, 2026-07-12]`
+
+- **Command/action:** Restored `package-lock.json` to blob `3430315b2a4f658f18010dda8215687ce219b100`, then captured hashes immediately before and after one successful `./tools/patch-and-reset.ps1` invocation with the controller already running.
+- **Expected result:** The non-dependency Lua activation would leave the lockfile byte-identical.
+- **Actual result:** The before hash was `3430315b2a4f658f18010dda8215687ce219b100`; the after hash was `c45eed25eff7588c9ceebaa6c6982c21acb9d69b`. The invocation performed version mutation, isolated `build-plugin.ps1 all`, instance save reset, and controller/host restarts.
+- **Affected paths:** `docker/seed-data/external_plugins/surface_export/package-lock.json`.
+- **Impact:** This supersedes the prior entry's broader command window: the writer is inside the successful patch/reset sequence, not the separate cluster-create recovery.
+- **Workaround:** Restore only `package-lock.json` after activation; retain the intentional package/module version bump.
+- **Final disposition:** `OPEN-INSTRUMENTED` - occurrence boundary narrowed to one command, but the exact substep remains unknown. The B1 rung should hash after version mutation, isolated build, each restart, and instance startup.
+- **Durable references:** Before blob `3430315b2a4f658f18010dda8215687ce219b100`; after blob `c45eed25eff7588c9ceebaa6c6982c21acb9d69b`; successful `tools/patch-and-reset.ps1` output.
+
+
+### 2026-07-12 - Root cause isolated: npm lifecycle synchronizes lock root version `[empirical, process, 2026-07-12]`
+
+- **Command/action:** Restored `package-lock.json` to `3430315b2a4f658f18010dda8215687ce219b100` while `package.json` intentionally remained at `0.10.89`, then ran one isolated Node 24 container command: `npm run lint`.
+- **Expected result:** A read-only lint invocation would not change tracked package metadata.
+- **Actual result:** The lockfile changed again to `c45eed25eff7588c9ceebaa6c6982c21acb9d69b`, with only the root `version` and `packages[""].version` synchronized from `0.10.77` to `0.10.89`. No dependency entry changed.
+- **Affected paths:** `docker/seed-data/external_plugins/surface_export/package-lock.json`.
+- **Impact:** Any npm lifecycle command run after the plugin version bump can create lockfile churn even when the underlying lint/build/test is read-only.
+- **Workaround:** Restore the lockfile after npm lifecycle commands for this PR. For final post-restore checks, invoke the direct Node guard scripts rather than `npm run`.
+- **Final disposition:** `ROOT-CAUSE-PROVEN` - package/lock root-version mismatch plus npm lifecycle execution reproduces the exact two-line churn. B1 should decide whether version bumps intentionally synchronize the lock root or whether activation tooling must preserve the historical lock metadata.
+- **Durable references:** Before blob `3430315b2a4f658f18010dda8215687ce219b100`; after blob `c45eed25eff7588c9ceebaa6c6982c21acb9d69b`; isolated command `npm run lint` in `node:24-bookworm-slim`.
