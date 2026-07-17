@@ -171,6 +171,11 @@ other work may be in flight). The default agent failure mode is re-running a ful
 tail check — turning a 30-second fix into a 6-minute cycle that also churns cluster state. Rules (each was paid
 for in a real incident — the destination-hold probe audit):
 
+These rules govern probes that dynamically mutate the shared cluster. Certified single-use baked-fixture batches
+follow the lifecycle in [the Physical Truth Lab Standard](docs/lab-tests.md): they do not clean between fixtures
+and reload the paired golden saves at the batch boundary. Cleanup-specific tests and non-baked shared-cluster
+probes retain the zero-leftover obligations below.
+
 1. **Build probes in sections; iterate on sections.** Any `run-tests.ps1` using more than one expensive resource
    MUST take a section-selection param (e.g. `-Sections main,restart,ttl`). Debug loops run ONLY the failing
    section; the full unsegmented run is reserved for final evidence passes.
@@ -195,6 +200,9 @@ for in a real incident — the destination-hold probe audit):
    end.** No live-narration of running passes; no trusting a single lucky green.
 
 ### Empirical lab discipline (how engine lore becomes law — exemplar: `tests/fluid-lab/`)
+
+The canonical test taxonomy, baked-fixture contract, measurement boundary, and promotion path are defined in
+[the Physical Truth Lab Standard](docs/lab-tests.md). The evidence rules in this section remain mandatory.
 
 Engine-behavior knowledge carries evidence tags in [docs/factorio-2.0-api-notes.md](docs/factorio-2.0-api-notes.md):
 **[API]** / **[empirical, <pin>]** / **[hypothesis]**. A mechanism EXPLANATION is [hypothesis] until its
