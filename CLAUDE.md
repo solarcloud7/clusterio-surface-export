@@ -462,7 +462,7 @@ If the default was added after the current save was created, you need either:
 
 ### 16. Verification Counts From Live Scan vs Serialized Data (CRITICAL — Fixed)
 **Symptom**: Transfer validation fails with "GAINED items" across many item types (iron-plate, copper-cable, piercing-rounds-magazine, etc.). Gains are a fraction of belt item totals.
-**Cause**: Export verification used `Verification.count_surface_items()` (live scan) AFTER entity scanning completed across multiple ticks. **Belt items can't be deactivated** — they keep moving on locked platforms. During the multi-tick export, items move between belts causing a "rolling snapshot" effect: an item on belt A captured in tick 1 may move to belt B captured in tick 5 → double-counted in serialized data. Conversely, items can move from unscanned to already-scanned belts and be missed. The net result is the serialized data doesn't match the live surface state at any single point in time.
+**Cause**: Export verification used `Verification.count_surface_items()` (live scan) AFTER entity scanning completed across multiple ticks. **Belts keep moving** — belt-class `active` writes are rejected by the engine (BELT-R13; even on paused platforms), so belt items cannot be frozen during a multi-tick scan. During the multi-tick export, items move between belts causing a "rolling snapshot" effect: an item on belt A captured in tick 1 may move to belt B captured in tick 5 → double-counted in serialized data. Conversely, items can move from unscanned to already-scanned belts and be missed. The net result is the serialized data doesn't match the live surface state at any single point in time.
 **Evidence status**: the FIX (atomic single-tick belt scan) is [empirical] — the GAINED-items failures were reproducible and v2 eliminated them. The "rolling snapshot" mechanism is [hypothesis] (consistent with all observations, never isolated as its own rung).
 **Fix (v2 — Atomic Belt Scan)**: Belt item extraction is now **deferred** during async entity scanning. Entity structure (position, direction, type, belt_to_ground_type, etc.) is still captured async per-tick, but `extract_belt_items()` is skipped (controlled by `EntityHandlers.skip_belt_items` flag). When all entities are scanned, `complete_export_job` does a single-tick atomic pass over all tracked belt entities, calling `extract_belt_items()` and patching the serialized data. This gives a consistent snapshot: no items can move between belts within a single tick. Verification is then generated from this consistent serialized data.
 **Key files**: `entity-handlers.lua` (`skip_belt_items` flag on transport-belt/underground-belt/splitter handlers), `async-processor.lua` (`process_export_batch` sets flag + tracks belt entities, `complete_export_job` atomic belt scan block before verification)
@@ -541,16 +541,18 @@ Project invariants that still bite if changed:
 - **Beacon-before-crafter inventory order.** `crafting_speed` (which sets the `set_stack()` cap) only
   reflects beacon bonuses once the beacon's `beacon_modules` inventory is populated, so Phase 3 restores
   beacons first, then everything else. See [Import Phase Ordering](#import-phase-ordering-critical).
-- **Historical belt restore loss (formerly described as ±4–8 cosmetic drift).** The residual was real
-  restore-time loss, not harmless redistribution. The frozen `items` verdict requires exact global
-  conservation, and the existing hub/ground recovery can satisfy that verdict after a belt-phase deficit.
-  This does **not** guarantee whole-lane fidelity for fully compressed belts. The required unit is one
-  continuous belt lane/side: preserve its exact `(name, quality, stack count)` multiset and quantity across
-  the entire lane; item order, exact coordinate, and individual belt-tile window are not invariants. BELT-R9
-  proved that owner-narrowed `line_equals` resolution is ambiguous on the known DUP-233855 loss components
-  and that the imported engine-line graph varies across identical imports, so engine transport-line identity
-  is not a durable restoration key. The atomic single-tick export scan still prevents a rolling source
-  snapshot (Pitfall #16, atomic belt scan). See [the belt lab notebook](tests/belt-lab/NOTEBOOK.md#belt-r9-empirical-2077---topology-first-plan-a-stops-on-the-real-dup-233855-component).
+- **Belt restoration truth lives in ONE place**: the "Belt transport-line laws (CANONICAL)" section of
+  [factorio-2.0-api-notes.md](docs/factorio-2.0-api-notes.md) — recreated 2026-07-17 after a fact-regression
+  incident; do not restate belt physics elsewhere, point there. Summary only: the fidelity unit is one
+  continuous belt lane/side (`(name, quality, stack count)` multiset; position/order/window are NOT
+  invariants). The root cause of the historical belt restore loss class is the `insert_at` write-frame
+  offset (= one tick of `belt_speed`, tier-parametric — BELT-R10); side-scoped reverse first-fit with the
+  `belt_speed` k-floor reconstructs exactly, including filtered-splitter purity (BELT-R11/R12, committed
+  runners; production adoption pending the DUP-233855 kill-measurement). Engine transport-line identity is
+  still NOT a cross-import key (BELT-R9); populated-source same-execution `line_equals` grouping IS the
+  side partition. The current production path (captured positions + oversized-stack consolidation + hub
+  recovery) remains the shipped implementation until Phase 5 lands. The atomic single-tick export scan
+  remains required (Pitfall #16, atomic belt scan; belts keep moving — BELT-R13).
 - **Fluid restoration runs in the frozen world before the exact gate.** R11 proved the shipped restoration code conserves exactly there (Pitfall #17, historical pre-activation fluid loss). **Fusion-reactor output rejects writes** (Pitfall #21, fusion outputs are engine-managed). Subtract
   only physically rejected writes from expected counts; capacity drops remain gate failures. One pre-activation verdict covers exact items and aggregate-by-name fluids (`epsilon=1e-6`).
 - **Entity inventory size** isn't changed by `LuaInventory.resize` (custom inventories only).
@@ -563,7 +565,8 @@ The order of post-processing steps in `complete_import_job()` is critical for co
 
 ```
 1. Hub inventories        — restore after cargo bays exist (inventory size scales with bays)
-2. Belt items             — always-active, must restore in single tick
+2. Belt items             — belts keep moving (active-writes rejected, BELT-R13); single-tick restore is
+                            the current conservative implementation (see the canonical belt section)
 3. Entity state           — control behavior, filters, circuit connections
 4. Beacon activation      — activate beacons so crafting_speed bonus propagates instantly
 5. Inventories (2 passes) — Pass 1: beacons (populates beacon_modules, crafting_speed updates immediately)
