@@ -239,16 +239,27 @@ local function translate(rec, offset)
 	return copy
 end
 
+-- Placement-check spec for a record. Ghost records (entity-ghost / tile-ghost) REQUIRE
+-- inner_name — can_place_entity/create_entity reject a bare ghost name ("Unknown entity name:" /
+-- "Key inner_name not found"; measured 2026-07-17 via the drive battery).
+local function place_spec(rec, player)
+	local spec = {
+		name = rec.name, position = rec.position, direction = rec.direction,
+		force = rec.force or (player and player.force) or "player",
+	}
+	if rec.specific_data and rec.specific_data.ghost_name then
+		spec.inner_name = rec.specific_data.ghost_name
+	end
+	return spec
+end
+
 -- v3 plan over already-translated target records: every target either placeable or conflicted.
 -- Same-name occupants ARE conflicts; ground item-entities and tiles never block (can_place_entity
 -- ignores loose items). Blocker sweep uses the full footprint, not a 1x1 center probe.
 local function plan_targets(surface, targets, player)
 	local plan = { clear = {}, conflict = {} }
 	for _, t in ipairs(targets) do
-		local placeable = surface.can_place_entity({
-			name = t.name, position = t.position, direction = t.direction,
-			force = t.force or (player and player.force) or "player",
-		})
+		local placeable = surface.can_place_entity(place_spec(t, player))
 		if placeable then
 			plan.clear[#plan.clear + 1] = { rec = t }
 		else
@@ -280,15 +291,12 @@ end
 local function execute_create_and_restore(surface, recs, player, side_groups, transactional)
 	local records, entity_map = {}, {}
 	local created, create_failed = 0, 0
+	-- Creation goes through the PRODUCTION Deserializer.create_entity — the same function the
+	-- transfer import uses (ghost inner_name handling, underground type, recipe-at-create for
+	-- fluid port alignment). The tool must never hand-roll its own create spec (same-system rule;
+	-- the hand-rolled spec broke on ghosts).
 	for _, rec in ipairs(recs) do
-		local spec = {
-			name = rec.name, position = rec.position, direction = rec.direction,
-			force = rec.force or player.force, quality = rec.quality, raise_built = false,
-		}
-		if rec.specific_data and rec.specific_data.belt_to_ground_type then
-			spec.type = rec.specific_data.belt_to_ground_type
-		end
-		local ok, entity = pcall(function() return surface.create_entity(spec) end)
+		local ok, entity = pcall(function() return Deserializer.create_entity(surface, rec) end)
 		if ok and entity then
 			created = created + 1
 			records[#records + 1] = rec
@@ -314,9 +322,11 @@ local function execute_create_and_restore(surface, recs, player, side_groups, tr
 	if side_groups then
 		local placed, unplaced, leaks_undone, anomalies = BeltRestoration.restore_side_groups(side_groups, entity_map)
 		if unplaced > 0 or anomalies > 0 then
-			player.print(string.format(
+			local message = string.format(
 				"[SelectionLab] belt side-restore: %d placed, %d UNPLACED, %d anomalies (no fallback — canonical belt laws in api-notes)",
-				placed, unplaced, anomalies), { r = 1, g = 0.6, b = 0.3 })
+				placed, unplaced, anomalies)
+			if transactional then error(message) end
+			player.print(message, { r = 1, g = 0.6, b = 0.3 })
 		elseif leaks_undone > 0 then
 			player.print(string.format(
 				"[SelectionLab] belt side-restore: %d placed; %d cross-side leaks detected and undone",
@@ -363,6 +373,7 @@ local function execute_create_and_restore(surface, recs, player, side_groups, tr
 		local fluids_ok, fluids_err = pcall(function() FluidRestoration.restore(records, entity_map) end)
 		if not fluids_ok then
 			log("[SelectionLab] fluid restore failed: " .. tostring(fluids_err))
+			if transactional then error("fluid restore failed: " .. tostring(fluids_err)) end
 			player.print("[SelectionLab] fluid restore skipped: " .. tostring(fluids_err), { r = 1, g = 0.7, b = 0.3 })
 		end
 	end
@@ -469,10 +480,7 @@ end
 local function force_execute(surface, recs, player, side_groups)
 	local destroyed_records, guarded = {}, 0
 	for _, rec in ipairs(recs) do
-		if not surface.can_place_entity({
-			name = rec.name, position = rec.position, direction = rec.direction,
-			force = rec.force or player.force,
-		}) then
+		if not surface.can_place_entity(place_spec(rec, player)) then
 			for _, e in ipairs(surface.find_entities_filtered({ area = footprint_area(rec) })) do
 				if e.valid and e.unit_number and e.type ~= "item-entity" then
 					if e.type == "character" or e.name == "space-platform-hub" or e.force ~= player.force then

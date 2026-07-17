@@ -134,11 +134,18 @@ local function apply_simple_restore_rules(entity, data)
     local prop = rule.prop or rule.field
     -- rule.types: explicit entity-type gate for properties that read nil when unset (the
     -- entity[prop] ~= nil guard cannot distinguish "class lacks property" from "currently unset").
+    -- The guard READ itself is pcall-wrapped: on some entity classes (entity-ghosts proxying their
+    -- inner prototype's fields) reading a non-applicable property THROWS (e.g. crafting_progress →
+    -- "Entity is not crafting-machine."), which detonated before any safecall could catch the write.
     local applies
     if rule.types then
       applies = rule.types[entity.type] or false
+    elseif rule.no_entity_guard then
+      applies = true
     else
-      applies = rule.no_entity_guard or entity[prop] ~= nil
+      -- intentional probe; failure expected on classes where the read throws, no log
+      local read_ok, read_val = pcall(function() return entity[prop] end)
+      applies = read_ok and read_val ~= nil
     end
     if has_value and applies then
       if rule.safecall then

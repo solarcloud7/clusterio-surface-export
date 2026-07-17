@@ -755,18 +755,20 @@ EntityHandlers["entity-ghost"] = function(entity)
     ghost_type = entity.ghost_type
   }
   
-  -- Capture item requests for this ghost
+  -- Capture item requests for this ghost. 2.0 shape: ARRAY of ItemWithQualityCount
+  -- ({name, quality, count}) — same 1.1-era dict-iteration defect as the item-request-proxy
+  -- handler (fixed together, 2026-07-17, caught by the selection-lab drive battery).
   if entity.item_requests then
     data.item_requests = {}
-    for item_with_quality, count in pairs(entity.item_requests) do
+    for _, req in pairs(entity.item_requests) do
       table.insert(data.item_requests, {
-        item = item_with_quality.name,
-        quality = item_with_quality.quality,
-        count = count
+        item = req.name,
+        quality = req.quality,
+        count = req.count
       })
     end
   end
-  
+
   -- Ghost quality
   if entity.quality and entity.quality.name ~= GameUtils.QUALITY_NORMAL then
     data.ghost_quality = entity.quality.name
@@ -791,14 +793,17 @@ end
 EntityHandlers["item-request-proxy"] = function(entity)
   local data = {}
   
-  -- Capture item requests
+  -- Capture item requests. 2.0 shape: item_requests is an ARRAY of ItemWithQualityCount
+  -- ({name, quality, count}) — the old 1.1 dict iteration ({item_with_quality -> count}) indexed
+  -- the array KEY (a number) and crashed serialize_entity on every proxy (caught 2026-07-17 by the
+  -- selection-lab drive battery on the state fixture).
   if entity.item_requests then
     data.item_requests = {}
-    for item_with_quality, count in pairs(entity.item_requests) do
+    for _, req in pairs(entity.item_requests) do
       table.insert(data.item_requests, {
-        item = item_with_quality.name,
-        quality = item_with_quality.quality,
-        count = count
+        item = req.name,
+        quality = req.quality,
+        count = req.count
       })
     end
   end

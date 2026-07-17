@@ -462,10 +462,60 @@ function BeltRestoration.restore_side_groups(side_groups, entity_map)
             if entity and entity.valid then all_lines[#all_lines + 1] = entity.get_transport_line(m.li) end
         end
     end
-    local function global_total()
-        local n = 0
-        for _, l in ipairs(all_lines) do n = n + l.get_item_count() end
-        return n
+    local function item_key(name, quality)
+        return name .. "\0" .. (quality or QUALITY_NORMAL)
+    end
+    local function snapshot(lines)
+        local result = { total = 0, by_key = {}, by_id = {} }
+        for _, line in ipairs(lines) do
+            for _, item in ipairs(line.get_detailed_contents()) do
+                local id = tostring(item.unique_id)
+                if not result.by_id[id] then
+                    local quality = (item.stack.quality and item.stack.quality.name) or QUALITY_NORMAL
+                    local key = item_key(item.stack.name, quality)
+                    local count = item.stack.count
+                    result.by_id[id] = { key = key, count = count }
+                    result.by_key[key] = (result.by_key[key] or 0) + count
+                    result.total = result.total + count
+                end
+            end
+        end
+        return result
+    end
+    local function changed_only(before, after, wanted_key, wanted_delta)
+        local keys = {}
+        for key in pairs(before.by_key) do keys[key] = true end
+        for key in pairs(after.by_key) do keys[key] = true end
+        for key in pairs(keys) do
+            local delta = (after.by_key[key] or 0) - (before.by_key[key] or 0)
+            if delta ~= (key == wanted_key and wanted_delta or 0) then return false end
+        end
+        return after.total - before.total == wanted_delta
+    end
+    local function same_snapshot(a, b)
+        return changed_only(a, b, "", 0)
+    end
+    local function undo_inserted_delta(before, after, name, quality, count)
+        local wanted_key = item_key(name, quality)
+        local handled, remaining = {}, count
+        for _, line in ipairs(all_lines) do
+            for _, item in ipairs(line.get_detailed_contents()) do
+                local id = tostring(item.unique_id)
+                if not handled[id] then
+                    handled[id] = true
+                    local q = (item.stack.quality and item.stack.quality.name) or QUALITY_NORMAL
+                    local key = item_key(item.stack.name, q)
+                    local old = before.by_id[id]
+                    local added = item.stack.count - (old and old.count or 0)
+                    if key == wanted_key and added > 0 and remaining > 0 then
+                        local request = math.min(added, remaining)
+                        local removed = line.remove_item({ name = name, quality = quality, count = request })
+                        remaining = remaining - removed
+                    end
+                end
+            end
+        end
+        return remaining == 0 and same_snapshot(before, snapshot(all_lines))
     end
     local placed, unplaced, leaks_undone, anomalies = 0, 0, 0, 0
     for _, g in ipairs(side_groups) do
@@ -480,41 +530,36 @@ function BeltRestoration.restore_side_groups(side_groups, entity_map)
             end
         end
         local function side_total()
-            local seen, tot = {}, 0
-            for _, w in ipairs(wins) do
-                for _, it in ipairs(w.line.get_detailed_contents()) do
-                    local uid = tostring(it.unique_id)
-                    if not seen[uid] then seen[uid] = true tot = tot + it.stack.count end
-                end
-            end
-            return tot
+            local lines = {}
+            for _, w in ipairs(wins) do lines[#lines + 1] = w.line end
+            return snapshot(lines)
         end
         for _, slot in ipairs(g.slots) do
             local done = false
+            local wanted_key = item_key(slot.n, slot.q)
             for wj = #wins, 1, -1 do
                 local w = wins[wj]
                 local maxk = math.floor(w.line.line_length * 256 + 0.5)
                 for k = maxk, w.kmin, -1 do
                     if w.line.can_insert_at(k / 256) then
                         local sb = side_total()
-                        local ab = global_total()
-                        local pre = {}
-                        for i, l in ipairs(all_lines) do pre[i] = l.get_item_count() end
+                        local ab = snapshot(all_lines)
                         w.line.insert_at(k / 256, { name = slot.n, quality = slot.q, count = slot.ct }, slot.ct)
-                        local sd = side_total() - sb
-                        local ad = global_total() - ab
-                        if sd == slot.ct and ad == slot.ct then
-                            placed = placed + sd
+                        local sa = side_total()
+                        local aa = snapshot(all_lines)
+                        if changed_only(sb, sa, wanted_key, slot.ct)
+                            and changed_only(ab, aa, wanted_key, slot.ct) then
+                            placed = placed + slot.ct
                             done = true
                             break
-                        elseif sd == 0 and ad == slot.ct then
-                            for i, l in ipairs(all_lines) do
-                                local post = l.get_item_count()
-                                if post > pre[i] then l.remove_item({ name = slot.n, count = post - pre[i] }) end
+                        elseif same_snapshot(sb, sa) and changed_only(ab, aa, wanted_key, slot.ct) then
+                            if not undo_inserted_delta(ab, aa, slot.n, slot.q, slot.ct) then
+                                anomalies = anomalies + 1
+                                done = true
+                                break
                             end
-                            if global_total() ~= ab then anomalies = anomalies + 1 done = true break end
                             leaks_undone = leaks_undone + 1
-                        elseif sd ~= 0 or ad ~= 0 then
+                        elseif not same_snapshot(sb, sa) or not same_snapshot(ab, aa) then
                             anomalies = anomalies + 1
                             done = true
                             break
