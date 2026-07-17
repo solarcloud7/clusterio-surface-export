@@ -141,11 +141,20 @@ local function paste_touches_live_fluid_network(entity_map)
 	return false
 end
 
+-- Belt-connectable types whose lane sides the copy captures for the side-scoped restore
+-- (single implementation: BeltRestoration.capture_side_groups / restore_side_groups — the
+-- production module; this tool is a diagnostic consumer of the SAME system).
+local BELT_LINE_TYPES = {
+	["transport-belt"] = true, ["underground-belt"] = true,
+	["splitter"] = true, ["loader"] = true, ["loader-1x1"] = true,
+}
+
 -- === COPY ==================================================================================
 
 function SelectionLab.copy(event)
 	local player = game.get_player(event.player_index)
 	local records = {}
+	local belt_pairs = {}
 	local minx, miny = math.huge, math.huge
 	for _, entity in ipairs(event.entities) do
 		if entity.valid and EntityScanner.is_exportable_entity(entity) then
@@ -156,6 +165,9 @@ function SelectionLab.copy(event)
 				-- fixtures (mid-craft machines) wake up and run on paste.
 				entity_data.lab_active = entity.active
 				records[#records + 1] = entity_data
+				if BELT_LINE_TYPES[entity.type] then
+					belt_pairs[#belt_pairs + 1] = { entity = entity, id = entity_data.entity_id }
+				end
 				minx = math.min(minx, entity_data.position.x)
 				miny = math.min(miny, entity_data.position.y)
 			end
@@ -165,15 +177,18 @@ function SelectionLab.copy(event)
 		player.print("[SelectionLab] nothing exportable in the selection", { r = 1, g = 0.6, b = 0.3 })
 		return
 	end
+	local side_groups = BeltRestoration.capture_side_groups(belt_pairs)
 	storage.selection_export = {
 		records = records,
+		side_groups = side_groups,
 		anchor = { x = math.floor(minx), y = math.floor(miny) },
 		surface = event.surface.name,
 		tick = game.tick,
 	}
 	player.print(string.format(
-		"[SelectionLab] COPIED %d entities (%d items). Shift-drag = paste (all-or-nothing); Ctrl+Shift-drag = force.",
-		#records, capture_item_total(records)), { r = 0.4, g = 0.9, b = 1 })
+		"[SelectionLab] COPIED %d entities (%d items%s). Shift-drag = paste (all-or-nothing); Ctrl+Shift-drag = force.",
+		#records, capture_item_total(records),
+		side_groups and (", " .. #side_groups .. " belt sides") or ""), { r = 0.4, g = 0.9, b = 1 })
 end
 
 -- === paste planning ========================================================================
@@ -222,8 +237,11 @@ local function plan_paste(surface, cap, offset, player)
 end
 
 -- Create all records + run the REAL import restores (production phase order).
+-- side_groups (optional): captured lane sides — belt items then restore via the side-scoped
+-- BELT-R11/R12 path instead of the legacy captured-position path. Legacy captures / undo
+-- resurrections pass nil and take the old path.
 -- Returns records, entity_map, created, create_failed.
-local function execute_create_and_restore(surface, recs, player)
+local function execute_create_and_restore(surface, recs, player, side_groups)
 	local records, entity_map = {}, {}
 	local created, create_failed = 0, 0
 	for _, rec in ipairs(recs) do
@@ -245,7 +263,20 @@ local function execute_create_and_restore(surface, recs, player)
 				rec.name, rec.position.x, rec.position.y, ok and "returned nil" or tostring(entity)))
 		end
 	end
-	BeltRestoration.restore(records, entity_map)
+	if side_groups then
+		local placed, unplaced, leaks_undone, anomalies = BeltRestoration.restore_side_groups(side_groups, entity_map)
+		if unplaced > 0 or anomalies > 0 then
+			player.print(string.format(
+				"[SelectionLab] belt side-restore: %d placed, %d UNPLACED, %d anomalies (no fallback — canonical belt laws in api-notes)",
+				placed, unplaced, anomalies), { r = 1, g = 0.6, b = 0.3 })
+		elseif leaks_undone > 0 then
+			player.print(string.format(
+				"[SelectionLab] belt side-restore: %d placed; %d cross-side leaks detected and undone",
+				placed, leaks_undone), { r = 1, g = 0.8, b = 0.4 })
+		end
+	else
+		BeltRestoration.restore(records, entity_map)
+	end
 	-- Entity state (control behavior, filters, circuit) — any order.
 	for _, rec in ipairs(records) do
 		local entity = entity_map[rec.entity_id]
@@ -344,12 +375,12 @@ function SelectionLab.paste(event)
 
 	local recs = {}
 	for _, c in ipairs(plan.clear) do recs[#recs + 1] = c.rec end
-	local records, entity_map, created, create_failed = execute_create_and_restore(surface, recs, player)
+	local records, entity_map, created, create_failed = execute_create_and_restore(surface, recs, player, cap.side_groups)
 	for _, rec in ipairs(records) do
 		draw_box(surface, rec.position, { r = 0.3, g = 1, b = 0.3, a = 0.6 }, player.index)
 	end
 	push_undo({ mode = "paste", surface = surface.name, created = journal_created(records, entity_map),
-		destroyed_records = {}, plan_records = recs })
+		destroyed_records = {}, plan_records = recs, side_groups = cap.side_groups })
 	player.print(string.format(
 		"[SelectionLab] PASTED %d entities (%d create-failed) at offset (%d,%d). Physical items on paste: %d (capture holds %d). Ctrl+Shift+Z undoes.",
 		created, create_failed, offset.x, offset.y, physical_census(entity_map), capture_item_total(cap.records)),
@@ -360,7 +391,7 @@ end
 
 -- Shared by force and redo. destroyed_records are serialized BEFORE destruction so undo can
 -- resurrect blockers with contents.
-local function force_execute(surface, recs, player)
+local function force_execute(surface, recs, player, side_groups)
 	local destroyed_records, guarded = {}, 0
 	for _, rec in ipairs(recs) do
 		if not surface.can_place_entity({
@@ -386,7 +417,7 @@ local function force_execute(surface, recs, player)
 			end
 		end
 	end
-	local records, entity_map, created, create_failed = execute_create_and_restore(surface, recs, player)
+	local records, entity_map, created, create_failed = execute_create_and_restore(surface, recs, player, side_groups)
 	return records, entity_map, created, create_failed, destroyed_records, guarded
 end
 
@@ -402,9 +433,9 @@ function SelectionLab.force(event)
 	local recs = {}
 	for _, rec in ipairs(cap.records) do recs[#recs + 1] = translate(rec, offset) end
 	local records, entity_map, created, create_failed, destroyed_records, guarded =
-		force_execute(surface, recs, player)
+		force_execute(surface, recs, player, cap.side_groups)
 	push_undo({ mode = "force", surface = surface.name, created = journal_created(records, entity_map),
-		destroyed_records = destroyed_records, plan_records = recs })
+		destroyed_records = destroyed_records, plan_records = recs, side_groups = cap.side_groups })
 	player.print(string.format(
 		"[SelectionLab] FORCE-PASTED %d entities (%d create-failed, %d blockers replaced%s) at offset (%d,%d). Physical items: %d. Ctrl+Shift+Z undoes (blockers come back with contents).",
 		created, create_failed, #destroyed_records,
@@ -564,7 +595,7 @@ function SelectionLab.redo(event)
 		end
 		local recs = {}
 		for _, c in ipairs(plan.clear) do recs[#recs + 1] = c.rec end
-		local records, entity_map, created = execute_create_and_restore(surface, recs, player)
+		local records, entity_map, created = execute_create_and_restore(surface, recs, player, entry.side_groups)
 		for _, rec in ipairs(records) do
 			draw_box(surface, rec.position, { r = 0.3, g = 1, b = 0.3, a = 0.6 }, player.index)
 		end
@@ -576,7 +607,7 @@ function SelectionLab.redo(event)
 			{ r = 0.4, g = 0.9, b = 1 })
 	else
 		local records, entity_map, created, _create_failed, destroyed_records, guarded =
-			force_execute(surface, entry.plan_records, player)
+			force_execute(surface, entry.plan_records, player, entry.side_groups)
 		entry.created = journal_created(records, entity_map)
 		entry.destroyed_records = destroyed_records
 		storage.selection_lab_undo = storage.selection_lab_undo or {}

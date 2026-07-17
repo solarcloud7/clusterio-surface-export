@@ -400,4 +400,133 @@ function BeltRestoration.restore(entities_to_create, entity_map)
     }
 end
 
+-- === Side-scoped restore (BELT-R10..R12) ===================================================
+-- The canonical belt laws live in docs/factorio-2.0-api-notes.md "Belt transport-line laws
+-- (CANONICAL)". These two functions are the SINGLE implementation of the proven recipe; the
+-- selection-lab diagnostic tool is the first consumer, and the Phase 5 transfer rewrite will
+-- route restore() through them (capture at export's atomic scan, placement here), retiring the
+-- captured-position + consolidation path above.
+
+-- Same-execution line_equals partition of a POPULATED source = the lane sides (valid ONLY
+-- populated + same execution — never a cross-import key, BELT-R9). belt_pairs: array of
+-- { entity = <LuaEntity>, id = <the record entity_id the paste/import will key entity_map by> }.
+-- Returns storage-safe side groups: { { members = {{id=,li=},...}, slots = {{n=,q=,ct=},...} }, ... }
+function BeltRestoration.capture_side_groups(belt_pairs)
+    if not belt_pairs or #belt_pairs == 0 then return nil end
+    local groups = {}
+    for _, bp in ipairs(belt_pairs) do
+        for li = 1, bp.entity.get_max_transport_line_index() do
+            local line = bp.entity.get_transport_line(li)
+            local gi
+            for j, g in ipairs(groups) do
+                if line.line_equals(g.rep) then gi = j break end
+            end
+            if not gi then
+                gi = #groups + 1
+                groups[gi] = { rep = line, seen = {}, members = {}, slots = {} }
+            end
+            local g = groups[gi]
+            g.members[#g.members + 1] = { id = bp.id, li = li }
+            for _, it in ipairs(line.get_detailed_contents()) do
+                local uid = tostring(it.unique_id)
+                if not g.seen[uid] then
+                    g.seen[uid] = true
+                    g.slots[#g.slots + 1] = {
+                        n = it.stack.name,
+                        q = (it.stack.quality and it.stack.quality.name) or QUALITY_NORMAL,
+                        ct = it.stack.count,
+                    }
+                end
+            end
+        end
+    end
+    local out = {}
+    for _, g in ipairs(groups) do
+        out[#out + 1] = { members = g.members, slots = g.slots }
+    end
+    return out
+end
+
+-- Place each side's (name,quality,count) multiset by reverse first-fit over that side's own
+-- windows, position floored at one tick of belt_speed (BELT-R10 — the write-frame law), every
+-- placement validated by physical side-census delta plus a global bracket, NEVER return values.
+-- A cross-side leak (aged-handle class; measured zero on fresh same-execution targets) is
+-- removed and the search continues. No consolidation, no recovery, no fallback: unplaced and
+-- anomaly counts are returned for the caller to surface loudly.
+-- Line handles are fetched HERE, in the same execution that writes them (stale-handle hazard).
+function BeltRestoration.restore_side_groups(side_groups, entity_map)
+    local all_lines = {}
+    for _, g in ipairs(side_groups) do
+        for _, m in ipairs(g.members) do
+            local entity = entity_map[m.id]
+            if entity and entity.valid then all_lines[#all_lines + 1] = entity.get_transport_line(m.li) end
+        end
+    end
+    local function global_total()
+        local n = 0
+        for _, l in ipairs(all_lines) do n = n + l.get_item_count() end
+        return n
+    end
+    local placed, unplaced, leaks_undone, anomalies = 0, 0, 0, 0
+    for _, g in ipairs(side_groups) do
+        local wins = {}
+        for _, m in ipairs(g.members) do
+            local entity = entity_map[m.id]
+            if entity and entity.valid then
+                wins[#wins + 1] = {
+                    line = entity.get_transport_line(m.li),
+                    kmin = math.floor(entity.prototype.belt_speed * 256 + 0.5),
+                }
+            end
+        end
+        local function side_total()
+            local seen, tot = {}, 0
+            for _, w in ipairs(wins) do
+                for _, it in ipairs(w.line.get_detailed_contents()) do
+                    local uid = tostring(it.unique_id)
+                    if not seen[uid] then seen[uid] = true tot = tot + it.stack.count end
+                end
+            end
+            return tot
+        end
+        for _, slot in ipairs(g.slots) do
+            local done = false
+            for wj = #wins, 1, -1 do
+                local w = wins[wj]
+                local maxk = math.floor(w.line.line_length * 256 + 0.5)
+                for k = maxk, w.kmin, -1 do
+                    if w.line.can_insert_at(k / 256) then
+                        local sb = side_total()
+                        local ab = global_total()
+                        local pre = {}
+                        for i, l in ipairs(all_lines) do pre[i] = l.get_item_count() end
+                        w.line.insert_at(k / 256, { name = slot.n, quality = slot.q, count = slot.ct }, slot.ct)
+                        local sd = side_total() - sb
+                        local ad = global_total() - ab
+                        if sd == slot.ct and ad == slot.ct then
+                            placed = placed + sd
+                            done = true
+                            break
+                        elseif sd == 0 and ad == slot.ct then
+                            for i, l in ipairs(all_lines) do
+                                local post = l.get_item_count()
+                                if post > pre[i] then l.remove_item({ name = slot.n, count = post - pre[i] }) end
+                            end
+                            if global_total() ~= ab then anomalies = anomalies + 1 done = true break end
+                            leaks_undone = leaks_undone + 1
+                        elseif sd ~= 0 or ad ~= 0 then
+                            anomalies = anomalies + 1
+                            done = true
+                            break
+                        end
+                    end
+                end
+                if done then break end
+            end
+            if not done then unplaced = unplaced + slot.ct end
+        end
+    end
+    return placed, unplaced, leaks_undone, anomalies
+end
+
 return BeltRestoration
