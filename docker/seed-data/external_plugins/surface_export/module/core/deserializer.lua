@@ -230,7 +230,10 @@ function Deserializer.create_entity(surface, entity_data)
   -- we MUST set the recipe immediately after creation so the game respects
   -- the direction/rotation for fluid port alignment. If recipe is set later,
   -- the fluid ports may not align correctly with the requested direction.
-  if entity.valid and entity.set_recipe and entity_data.specific_data and entity_data.specific_data.recipe then
+  -- TYPE gate (see the restore_entity_state recipe site): set_recipe is a method on every
+  -- LuaEntity, so `entity.set_recipe` is always truthy; only real crafters may take a recipe.
+  if entity.valid and (entity.type == "assembling-machine" or entity.type == "furnace" or entity.type == "rocket-silo")
+    and entity_data.specific_data and entity_data.specific_data.recipe then
     -- Quality is passed ATOMICALLY here: set_recipe(name) without it defaults the pair to normal, and
     -- there is no post-hoc fix-up — LuaEntity.recipe_quality does not exist at 2.0.77 (measured; the old
     -- SIMPLE_RESTORE_RULES row for it always threw into its safecall). nil quality = normal, correct for
@@ -319,11 +322,14 @@ function Deserializer.restore_entity_state(entity, entity_data)
   -- We check if the (name, quality) PAIR is already set to avoid overwriting and potentially breaking
   -- direction. Quality is get_recipe()'s second return and must be passed atomically to set_recipe —
   -- see the create-time site above (LuaEntity.recipe_quality does not exist at 2.0.77).
-  if data.recipe and entity.set_recipe then
-    local current_recipe, current_quality
-    if entity.get_recipe then
-      current_recipe, current_quality = entity.get_recipe()
-    end
+  -- TYPE gate, not method presence: set_recipe/get_recipe are LuaEntity METHODS and exist on every
+  -- entity, so `entity.set_recipe` is always truthy — calling get_recipe() on a non-crafting entity
+  -- (e.g. an entity-GHOST whose inner record carries data.recipe) throws
+  -- "Entity is not crafting-machine." (caught live 2026-07-17 by a selection-lab force paste of a
+  -- fixture containing a ghost; the same guard shape as the splitter-filter nil-guard defect).
+  local IS_CRAFTER = { ["assembling-machine"] = true, ["furnace"] = true, ["rocket-silo"] = true }
+  if data.recipe and IS_CRAFTER[entity.type] then
+    local current_recipe, current_quality = entity.get_recipe()
     local current_recipe_name = current_recipe and current_recipe.name
     local current_quality_name = (current_quality and current_quality.name) or Util.QUALITY_NORMAL
     local wanted_quality_name = data.recipe_quality or Util.QUALITY_NORMAL

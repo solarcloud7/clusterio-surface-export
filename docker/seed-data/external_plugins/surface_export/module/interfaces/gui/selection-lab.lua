@@ -376,7 +376,7 @@ local function execute_create_and_restore(surface, recs, player, side_groups, tr
 		end
 	end
 	end
-	local restore_ok, restore_err = pcall(run_restores)
+	local restore_ok, restore_err = xpcall(run_restores, debug.traceback)
 	if not restore_ok then
 		log("[SelectionLab] restore error: " .. tostring(restore_err))
 		if transactional then
