@@ -1,4 +1,11 @@
 ---------------------------------------------------------------------------------------------------
+Version: 0.3.1
+Date: 2026-07-17
+  Bugfixes:
+    - Rebind Selection Lab undo/redo to CONTROL+ALT+Z / CONTROL+ALT+Y. The former CONTROL+SHIFT+Z
+      undo binding collided with vanilla Redo (default CONTROL+Y or CONTROL+SHIFT+Z), firing lab
+      undo on a normal build-redo keystroke.
+---------------------------------------------------------------------------------------------------
 Version: 0.3.0
 Date: 2026-07-14
   Changes:

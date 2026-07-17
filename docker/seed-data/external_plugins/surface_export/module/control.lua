@@ -203,16 +203,24 @@ SurfaceExportModule.events = {
 		SelectionLab.handle(event, "force")
 	end,
 
-	-- Selection Lab undo/redo (custom-input prototypes from the surfexp_gateways mod; string keys
-	-- pass through the event_handler to script.on_event, which accepts custom-input names).
-	["selection-lab-undo"] = function(event)
-		SelectionLab.undo(event)
-	end,
-
-	["selection-lab-redo"] = function(event)
-		SelectionLab.redo(event)
-	end,
 }
+
+-- Selection Lab undo/redo (custom-input prototypes from the surfexp_gateways mod). Register these
+-- string-keyed handlers ONLY when the prototypes exist: script.on_event raises on an unknown
+-- custom-input name, so an instance still carrying a pre-0.3.0 gateway mod (or none) would crash-loop
+-- on module load. `prototypes` is readable at control.lua load (only `game`/`rendering` are not), and
+-- the `prototypes and` guard mirrors Clusterio's own defensive idiom (host/lua/export/control.lua).
+-- The selection-tool handlers above (on_player_selected_area etc.) are engine events — unconditional.
+if prototypes and prototypes.custom_input["selection-lab-undo"] then
+	SurfaceExportModule.events["selection-lab-undo"] = function(event)
+		SelectionLab.undo(event)
+	end
+end
+if prototypes and prototypes.custom_input["selection-lab-redo"] then
+	SurfaceExportModule.events["selection-lab-redo"] = function(event)
+		SelectionLab.redo(event)
+	end
+end
 
 -- ============================================================================
 -- API Documentation

@@ -14,12 +14,22 @@
 --   FORCE  (ctrl+shift+drag): paste regardless — blockers are serialized (for undo), destroyed
 --                             (guards: never characters, never a space-platform-hub, never another
 --                             force's entities), then the paste proceeds; overlaps still red-boxed.
---   UNDO / REDO (Ctrl+Shift+Z / Ctrl+Shift+Y custom inputs): journal-based; undo destroys what the
---                             paste created and resurrects force-destroyed blockers WITH contents.
+--   UNDO / REDO (Ctrl+Alt+Z / Ctrl+Alt+Y custom inputs): journal-based. Undo destroys what the paste
+--                             created — resolved by stable unit_number (never name+position), so an
+--                             unrelated same-name entity built there later is never touched — and
+--                             resurrects force-destroyed blockers WITH contents and active state.
+--                             Redo is MODE-FAITHFUL: a plain paste replays through the all-or-nothing
+--                             plan (refuses with red boxes if the area is now occupied); a force paste
+--                             replays through force_execute. Redo never exceeds the original action's
+--                             destructiveness. Bindings are Ctrl+ALT (not Ctrl+Shift) so they do not
+--                             collide with vanilla Undo (Ctrl+Z) / Redo (Ctrl+Y, Ctrl+Shift+Z).
 --
 -- Debug instrument rules: gated on debug_mode; verdicts print PHYSICAL counts (insert returns are
 -- never evidence — tests/belt-lab/NOTEBOOK.md BELT-R8); no interaction with transfer jobs, locks,
--- or the controller. Known gaps: no circuit-wire reconnection on the copy, no rotation/flip.
+-- or the controller. FluidRestoration runs only on ISOLATED pastes: if any pasted fluidbox connects
+-- to an entity outside the pasted set, fluid restore is skipped (it writes SEGMENT totals and would
+-- clobber a live network; Pitfall #22, activatable entities expose no own segment id — connection-
+-- walking, not segment ids, is the detection). Known gaps: no circuit-wire reconnection, no rotation.
 -- Cross-surface paste measured WORKING at 2.0.77 (2026-07-17, gallery migration): paste plans
 -- against event.surface, so dragging on any surface pastes there. `active` is preserved via the
 -- lab-only `lab_active` record field (the production serializer deliberately does not carry it).
@@ -63,6 +73,10 @@ local function capture_item_total(records)
 			for _, line_data in ipairs(sd.items or {}) do
 				for _, item in ipairs(line_data.items or {}) do total = total + (item.count or 0) end
 			end
+			-- Inserter held items (entity-handlers records specific_data.held_item = {name,count,quality});
+			-- the paste path restores them (deserializer.lua), so the capture meter must count them too —
+			-- otherwise the "capture holds N" headline undercounts vs the physical census on paste.
+			if sd.held_item and sd.held_item.count then total = total + sd.held_item.count end
 		end
 	end
 	return total
@@ -75,6 +89,56 @@ local function draw_box(surface, position, color, player_index)
 		right_bottom = { position.x + 0.5, position.y + 0.5 },
 		surface = surface, time_to_live = HIGHLIGHT_TTL, players = { player_index },
 	})
+end
+
+-- Tile-bounds blocker-search area from the record's prototype collision box, translated to the
+-- target position. A fixed 1x1 center probe misses the edge tiles of a multi-tile footprint (e.g. a
+-- 3x3 assembler), leaving edge blockers neither destroyed nor red-boxed. Falls back to 1x1 when the
+-- prototype is unavailable (logged).
+local function footprint_area(rec)
+	local proto = prototypes.entity[rec.name]
+	if proto and proto.collision_box then
+		local cb = proto.collision_box
+		return {
+			{ math.floor(rec.position.x + cb.left_top.x), math.floor(rec.position.y + cb.left_top.y) },
+			{ math.ceil(rec.position.x + cb.right_bottom.x), math.ceil(rec.position.y + cb.right_bottom.y) },
+		}
+	end
+	log(string.format("[SelectionLab] no collision_box for %s — 1x1 blocker fallback", tostring(rec.name)))
+	return {
+		{ rec.position.x - 0.5, rec.position.y - 0.5 },
+		{ rec.position.x + 0.5, rec.position.y + 0.5 },
+	}
+end
+
+-- True if any pasted entity's fluidbox connects to an entity OUTSIDE the pasted set. FluidRestoration
+-- writes SEGMENT totals, so a pasted pipe merging into a live network would clobber it. Detect via
+-- connection-walking on the pasted entities' own fluidboxes (Pitfall #22, activatable entities expose
+-- no own segment id, so segment ids are not a reliable signal here). Fails SAFE: a probe error returns
+-- true (skip fluids) and surfaces via log.
+local function paste_touches_live_fluid_network(entity_map)
+	local pasted = {}
+	for _, e in pairs(entity_map) do
+		if e and e.valid and e.unit_number then pasted[e.unit_number] = true end
+	end
+	for _, e in pairs(entity_map) do
+		if e and e.valid and e.fluidbox then
+			for i = 1, #e.fluidbox do
+				local ok, conns = pcall(function() return e.fluidbox.get_connections(i) end)
+				if not ok then
+					log("[SelectionLab] fluid connection probe failed: " .. tostring(conns))
+					return true
+				end
+				for _, other_box in ipairs(conns or {}) do
+					local owner = other_box.owner
+					if owner and owner.valid and owner.unit_number and not pasted[owner.unit_number] then
+						return true
+					end
+				end
+			end
+		end
+	end
+	return false
 end
 
 -- === COPY ==================================================================================
@@ -128,12 +192,12 @@ local function translate(rec, offset)
 	return copy
 end
 
--- v3 plan: every target either placeable or conflicted. Same-name occupants ARE conflicts;
--- ground item-entities and tiles never block (can_place_entity ignores loose items).
-local function plan_paste(surface, cap, offset, player)
+-- v3 plan over already-translated target records: every target either placeable or conflicted.
+-- Same-name occupants ARE conflicts; ground item-entities and tiles never block (can_place_entity
+-- ignores loose items). Blocker sweep uses the full footprint, not a 1x1 center probe.
+local function plan_targets(surface, targets, player)
 	local plan = { clear = {}, conflict = {} }
-	for _, rec in ipairs(cap.records) do
-		local t = translate(rec, offset)
+	for _, t in ipairs(targets) do
 		local placeable = surface.can_place_entity({
 			name = t.name, position = t.position, direction = t.direction,
 			force = t.force or (player and player.force) or "player",
@@ -142,15 +206,19 @@ local function plan_paste(surface, cap, offset, player)
 			plan.clear[#plan.clear + 1] = { rec = t }
 		else
 			local blockers = {}
-			for _, e in ipairs(surface.find_entities_filtered({
-				area = { { t.position.x - 0.5, t.position.y - 0.5 }, { t.position.x + 0.5, t.position.y + 0.5 } },
-			})) do
+			for _, e in ipairs(surface.find_entities_filtered({ area = footprint_area(t) })) do
 				if e.valid and e.unit_number and e.type ~= "item-entity" then blockers[#blockers + 1] = e end
 			end
 			plan.conflict[#plan.conflict + 1] = { rec = t, blockers = blockers }
 		end
 	end
 	return plan
+end
+
+local function plan_paste(surface, cap, offset, player)
+	local targets = {}
+	for _, rec in ipairs(cap.records) do targets[#targets + 1] = translate(rec, offset) end
+	return plan_targets(surface, targets, player)
 end
 
 -- Create all records + run the REAL import restores (production phase order).
@@ -178,17 +246,41 @@ local function execute_create_and_restore(surface, recs, player)
 		end
 	end
 	BeltRestoration.restore(records, entity_map)
+	-- Entity state (control behavior, filters, circuit) — any order.
 	for _, rec in ipairs(records) do
 		local entity = entity_map[rec.entity_id]
 		if entity and entity.valid then
 			Deserializer.restore_entity_state(entity, rec)
+		end
+	end
+	-- Inventories in two passes: beacons FIRST so their beacon_modules populate and the boosted
+	-- crafting_speed sets the correct set_stack cap before crafter inputs restore (production Phase 2
+	-- ordering; CLAUDE.md Import Phase Ordering). A single record-order pass clamps overloaded inputs
+	-- when a crafter's record precedes its beacon's.
+	for _, rec in ipairs(records) do
+		local entity = entity_map[rec.entity_id]
+		if entity and entity.valid and rec.type == "beacon" then
 			Deserializer.restore_inventories(entity, rec)
 		end
 	end
-	local fluids_ok, fluids_err = pcall(function() FluidRestoration.restore(records, entity_map) end)
-	if not fluids_ok then
-		log("[SelectionLab] fluid restore failed: " .. tostring(fluids_err))
-		player.print("[SelectionLab] fluid restore skipped: " .. tostring(fluids_err), { r = 1, g = 0.7, b = 0.3 })
+	for _, rec in ipairs(records) do
+		local entity = entity_map[rec.entity_id]
+		if entity and entity.valid and rec.type ~= "beacon" then
+			Deserializer.restore_inventories(entity, rec)
+		end
+	end
+	-- FluidRestoration writes SEGMENT totals: a pasted pipe merging into a live network would set the
+	-- whole segment to the captured amount, silently clobbering pre-existing fluid. Only restore when
+	-- the pasted fluid system is ISOLATED (no fluidbox connects to an entity outside the paste).
+	if paste_touches_live_fluid_network(entity_map) then
+		player.print("[SelectionLab] fluids skipped: pasted fluid system connects to live network — fluid restore only runs on isolated pastes",
+			{ r = 1, g = 0.7, b = 0.3 })
+	else
+		local fluids_ok, fluids_err = pcall(function() FluidRestoration.restore(records, entity_map) end)
+		if not fluids_ok then
+			log("[SelectionLab] fluid restore failed: " .. tostring(fluids_err))
+			player.print("[SelectionLab] fluid restore skipped: " .. tostring(fluids_err), { r = 1, g = 0.7, b = 0.3 })
+		end
 	end
 	-- Applied LAST (after all restores) so restoration always sees the same entity state.
 	-- The paste keeps whatever active/inactive state the capture recorded — both directions
@@ -210,10 +302,18 @@ local function push_undo(entry)
 	storage.selection_lab_redo = {}
 end
 
-local function journal_created(records)
+-- Journal each created entity by its STABLE unit_number (undo resolves identity by it, never by
+-- name+position — which could destroy an unrelated same-name entity built there later). Position is
+-- kept only as a fallback search key, matched by unit_number, never as sole identity.
+local function journal_created(records, entity_map)
 	local created = {}
 	for _, rec in ipairs(records) do
-		created[#created + 1] = { name = rec.name, position = { x = rec.position.x, y = rec.position.y } }
+		local e = entity_map and entity_map[rec.entity_id]
+		created[#created + 1] = {
+			name = rec.name,
+			unit_number = (e and e.valid and e.unit_number) or nil,
+			position = { x = rec.position.x, y = rec.position.y },
+		}
 	end
 	return created
 end
@@ -248,7 +348,8 @@ function SelectionLab.paste(event)
 	for _, rec in ipairs(records) do
 		draw_box(surface, rec.position, { r = 0.3, g = 1, b = 0.3, a = 0.6 }, player.index)
 	end
-	push_undo({ surface = surface.name, created = journal_created(records), destroyed_records = {}, plan_records = recs })
+	push_undo({ mode = "paste", surface = surface.name, created = journal_created(records, entity_map),
+		destroyed_records = {}, plan_records = recs })
 	player.print(string.format(
 		"[SelectionLab] PASTED %d entities (%d create-failed) at offset (%d,%d). Physical items on paste: %d (capture holds %d). Ctrl+Shift+Z undoes.",
 		created, create_failed, offset.x, offset.y, physical_census(entity_map), capture_item_total(cap.records)),
@@ -266,16 +367,19 @@ local function force_execute(surface, recs, player)
 			name = rec.name, position = rec.position, direction = rec.direction,
 			force = rec.force or player.force,
 		}) then
-			for _, e in ipairs(surface.find_entities_filtered({
-				area = { { rec.position.x - 0.5, rec.position.y - 0.5 }, { rec.position.x + 0.5, rec.position.y + 0.5 } },
-			})) do
+			for _, e in ipairs(surface.find_entities_filtered({ area = footprint_area(rec) })) do
 				if e.valid and e.unit_number and e.type ~= "item-entity" then
 					if e.type == "character" or e.name == "space-platform-hub" or e.force ~= player.force then
 						guarded = guarded + 1
 					else
 						draw_box(surface, rec.position, { r = 1, g = 0.2, b = 0.2, a = 0.9 }, player.index)
 						local snapshot = EntityScanner.serialize_entity(e)
-						if snapshot then destroyed_records[#destroyed_records + 1] = snapshot end
+						if snapshot then
+							-- Lab-only field (like copy()): resurrection must restore the blocker's active
+							-- state, or a frozen fixture comes back active and corrupts the measured scene.
+							snapshot.lab_active = e.active
+							destroyed_records[#destroyed_records + 1] = snapshot
+						end
 						e.destroy()
 					end
 				end
@@ -299,7 +403,7 @@ function SelectionLab.force(event)
 	for _, rec in ipairs(cap.records) do recs[#recs + 1] = translate(rec, offset) end
 	local records, entity_map, created, create_failed, destroyed_records, guarded =
 		force_execute(surface, recs, player)
-	push_undo({ surface = surface.name, created = journal_created(records),
+	push_undo({ mode = "force", surface = surface.name, created = journal_created(records, entity_map),
 		destroyed_records = destroyed_records, plan_records = recs })
 	player.print(string.format(
 		"[SelectionLab] FORCE-PASTED %d entities (%d create-failed, %d blockers replaced%s) at offset (%d,%d). Physical items: %d. Ctrl+Shift+Z undoes (blockers come back with contents).",
@@ -403,10 +507,18 @@ function SelectionLab.undo(event)
 	local removed, missed = 0, 0
 	for _, c in ipairs(entry.created) do
 		local hit = nil
-		for _, e in ipairs(surface.find_entities_filtered({ position = c.position, radius = 0.4, name = c.name })) do
-			if e.valid then hit = e break end
+		if c.unit_number then
+			hit = game.get_entity_by_unit_number(c.unit_number)
+			if not (hit and hit.valid) then
+				-- fallback: search near the recorded position, match by unit_number ONLY (never by
+				-- name+position — that could destroy an unrelated entity placed here after the paste).
+				hit = nil
+				for _, e in ipairs(surface.find_entities_filtered({ position = c.position, radius = 0.4 })) do
+					if e.valid and e.unit_number == c.unit_number then hit = e break end
+				end
+			end
 		end
-		if hit then hit.destroy() removed = removed + 1 else missed = missed + 1 end
+		if hit and hit.valid then hit.destroy() removed = removed + 1 else missed = missed + 1 end
 	end
 	local resurrected = 0
 	if #entry.destroyed_records > 0 then
@@ -424,6 +536,7 @@ function SelectionLab.redo(event)
 	local player = game.get_player(event.player_index)
 	if not debug_enabled() then return end
 	local stack = storage.selection_lab_redo or {}
+	storage.selection_lab_redo = stack
 	local entry = table.remove(stack)
 	if not entry then
 		player.print("[SelectionLab] nothing to redo", { r = 1, g = 0.6, b = 0.3 })
@@ -431,16 +544,48 @@ function SelectionLab.redo(event)
 	end
 	local surface = game.surfaces[entry.surface]
 	if not surface then player.print("[SelectionLab] redo surface gone", { r = 1, g = 0.4, b = 0.4 }) return end
-	local records, entity_map, created, create_failed, destroyed_records, guarded =
-		force_execute(surface, entry.plan_records, player)
-	entry.created = journal_created(records)
-	entry.destroyed_records = destroyed_records
-	storage.selection_lab_undo = storage.selection_lab_undo or {}
-	table.insert(storage.selection_lab_undo, entry)
-	player.print(string.format(
-		"[SelectionLab] REDO: re-pasted %d entities (%d blockers replaced%s).",
-		created, #destroyed_records, guarded > 0 and (", " .. guarded .. " protected kept") or ""),
-		{ r = 0.4, g = 0.9, b = 1 })
+	-- Mode-faithful replay: a plain paste must NEVER escalate to destructive force on redo. Legacy
+	-- journal entries (pre-mode) infer their mode from whether they destroyed blockers.
+	local mode = entry.mode
+		or ((entry.destroyed_records and #entry.destroyed_records > 0) and "force" or "paste")
+
+	if mode == "paste" then
+		local plan = plan_targets(surface, entry.plan_records, player)
+		if #plan.conflict > 0 then
+			for _, c in ipairs(plan.conflict) do
+				draw_box(surface, c.rec.position, { r = 1, g = 0.2, b = 0.2, a = 0.9 }, player.index)
+			end
+			player.play_sound({ path = "utility/cannot_build" })
+			player.print(string.format(
+				"[SelectionLab] REDO REFUSED: %d of %d targets now occupied (red). Nothing re-pasted; still redoable.",
+				#plan.conflict, #entry.plan_records), { r = 1, g = 0.4, b = 0.4 })
+			table.insert(stack, entry) -- action did not happen → leave on the redo stack
+			return
+		end
+		local recs = {}
+		for _, c in ipairs(plan.clear) do recs[#recs + 1] = c.rec end
+		local records, entity_map, created = execute_create_and_restore(surface, recs, player)
+		for _, rec in ipairs(records) do
+			draw_box(surface, rec.position, { r = 0.3, g = 1, b = 0.3, a = 0.6 }, player.index)
+		end
+		entry.created = journal_created(records, entity_map)
+		entry.destroyed_records = {}
+		storage.selection_lab_undo = storage.selection_lab_undo or {}
+		table.insert(storage.selection_lab_undo, entry)
+		player.print(string.format("[SelectionLab] REDO: re-pasted %d entities (all-or-nothing).", created),
+			{ r = 0.4, g = 0.9, b = 1 })
+	else
+		local records, entity_map, created, _create_failed, destroyed_records, guarded =
+			force_execute(surface, entry.plan_records, player)
+		entry.created = journal_created(records, entity_map)
+		entry.destroyed_records = destroyed_records
+		storage.selection_lab_undo = storage.selection_lab_undo or {}
+		table.insert(storage.selection_lab_undo, entry)
+		player.print(string.format(
+			"[SelectionLab] REDO: force re-pasted %d entities (%d blockers replaced%s).",
+			created, #destroyed_records, guarded > 0 and (", " .. guarded .. " protected kept") or ""),
+			{ r = 0.4, g = 0.9, b = 1 })
+	end
 end
 
 -- === event router ==========================================================================

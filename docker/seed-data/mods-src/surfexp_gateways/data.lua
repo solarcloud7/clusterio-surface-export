@@ -92,16 +92,18 @@ data:extend({
 		small_icon = "__base__/graphics/icons/blueprint.png",
 		small_icon_size = 64,
 	},
-	-- Selection Lab undo/redo hotkeys (explicit sequences — deliberately NOT linked to the vanilla
-	-- undo controls, so lab undo never collides with the game's own build-undo stack).
+	-- Selection Lab undo/redo hotkeys. Bound to CONTROL+ALT (unbound in vanilla) rather than
+	-- CONTROL+SHIFT: vanilla Redo defaults to BOTH "CONTROL + Y" and "CONTROL + SHIFT + Z", so the
+	-- former CONTROL+SHIFT+Z lab-undo binding collided with vanilla Redo and fired lab undo on a normal
+	-- build-redo keystroke. CONTROL+ALT+Z / CONTROL+ALT+Y do not collide with any vanilla default.
 	{
 		type = "custom-input",
 		name = "selection-lab-undo",
-		key_sequence = "CONTROL + SHIFT + Z",
+		key_sequence = "CONTROL + ALT + Z",
 	},
 	{
 		type = "custom-input",
 		name = "selection-lab-redo",
-		key_sequence = "CONTROL + SHIFT + Y",
+		key_sequence = "CONTROL + ALT + Y",
 	},
 })
