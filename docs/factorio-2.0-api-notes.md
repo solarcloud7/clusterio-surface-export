@@ -196,9 +196,11 @@ Consequence: fluid does not live per-entity — it lives in the shared segment. 
 - **[empirical, 2.0.77, BELT-R10] `insert_at`'s write frame is offset from the `get_detailed_contents` read
   frame by exactly one tick of that entity's `belt_speed`** (transport 1/32, fast 2/32, express 3/32, turbo
   4/32 — `prototypes.entity[name].belt_speed` exactly; tier-parametric, NEVER a constant). Writing below
-  `belt_speed` silently materializes the item on the downstream entity with ret=TRUE; writing beyond
-  `line_length` honestly rejects. Any belt write must therefore use positions `>= belt_speed` (in /256 grid:
-  `k >= belt_speed*256`).
+  `belt_speed` returns TRUE and lands the item clamped at `max(0, write − belt_speed)` on a fresh separate
+  line (measured; fresh adjacent belts do NOT merge lines) — while in aged/merged-handle frames the landing
+  can be attributed to a downstream window (the BELT-R11 leak class; regime-dependent, do not conflate).
+  Writing beyond `line_length` honestly rejects. Any belt write must therefore use positions
+  `>= belt_speed` (in /256 grid: `k >= belt_speed*256`).
 - **[empirical, 2.0.77, BELT-R11/R12] Side-scoped reverse first-fit reconstructs belt contents exactly.**
   The fidelity unit is the continuous lane side (owner contract: `(name, quality, stack count)` multiset;
   position/order/window are NOT invariants). Partition the populated source by same-execution `line_equals`

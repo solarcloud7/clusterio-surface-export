@@ -84,6 +84,7 @@ local sgroups={}
 for _,r in ipairs(srefs) do local gi for j,g in ipairs(sgroups) do if r.line.line_equals(g.rep) then gi=j break end end
   if not gi then gi=#sgroups+1 sgroups[gi]={rep=r.line,refs={}} end
   sgroups[gi].refs[#sgroups[gi].refs+1]=r end
+local function mkey(nm,ql) return nm..'|'..ql end
 local totals={} local src_slots=0
 for gi,g in ipairs(sgroups) do
   local seen={} g.slots={} g.expected={}
@@ -93,7 +94,7 @@ for gi,g in ipairs(sgroups) do
       local nm=it.stack.name local ql=it.stack.quality and it.stack.quality.name or 'normal' local ct=it.stack.count
       totals[nm]=(totals[nm] or 0)+ct
       g.slots[#g.slots+1]={n=nm,q=ql,ct=ct}
-      g.expected[nm]=(g.expected[nm] or 0)+ct
+      g.expected[mkey(nm,ql)]=(g.expected[mkey(nm,ql)] or 0)+ct
       src_slots=src_slots+1
     end
   end end
@@ -114,13 +115,16 @@ local function gstats(g)
   end end
   return tot,sl
 end
-local function gnames(g)
-  local seen={} local names={}
+local function gmultiset(g)
+  local seen={} local ms={}
   for _,w in ipairs(g.wins) do for _,it in ipairs(w.line.get_detailed_contents()) do
     local id=tostring(it.unique_id)
-    if not seen[id] then seen[id]=true names[it.stack.name]=(names[it.stack.name] or 0)+it.stack.count end
+    if not seen[id] then seen[id]=true
+      local k=mkey(it.stack.name, it.stack.quality and it.stack.quality.name or 'normal')
+      ms[k]=(ms[k] or 0)+it.stack.count
+    end
   end end
-  return names
+  return ms
 end
 local function snap() local t={} for i,d in ipairs(dlines) do t[i]=d.line.get_item_count() end return t end
 local function gtotal() local n=0 for _,e in ipairs(dstE) do n=n+e.get_item_count() end return n end
@@ -172,19 +176,23 @@ local lr={} for k,v in pairs(leak_routes) do lr[#lr+1]=k..' x'..v end
 out.leak_routes=lr
 local vsum={} local all_ok=true local purity_ok=true local pure_sides=0
 for gi,g in ipairs(sgroups) do
-  local exp=0 local expnames=0 local expname=nil
-  for nm,v in pairs(g.expected) do exp=exp+v expnames=expnames+1 expname=nm end
+  local exp=0 local expkeys=0 local expkey=nil
+  for k,v in pairs(g.expected) do exp=exp+v expkeys=expkeys+1 expkey=k end
   local tot,sl=gstats(g)
-  local okc=(tot==exp and sl==#g.slots)
+  local actual=gmultiset(g)
+  local ms_ok=true
+  for k,v in pairs(g.expected) do if (actual[k] or 0)~=v then ms_ok=false end end
+  for k,v in pairs(actual) do if (g.expected[k] or 0)~=v then ms_ok=false end end
+  local okc=(ms_ok and sl==#g.slots)
   local pure=''
-  if expnames==1 and exp>0 then
+  if expkeys==1 and exp>0 then
     pure_sides=pure_sides+1
-    local an=gnames(g) local extra=0
-    for nm,v in pairs(an) do if nm~=expname then extra=extra+v end end
-    if extra>0 then purity_ok=false pure=' PURITY-VIOLATION +'..extra else pure=' PURE('..expname..')' end
+    local extra=0
+    for k,v in pairs(actual) do if k~=expkey then extra=extra+v end end
+    if extra>0 then purity_ok=false pure=' PURITY-VIOLATION +'..extra else pure=' PURE('..expkey..')' end
   end
   if not okc then all_ok=false end
-  if exp>0 or tot>0 then vsum[#vsum+1]=string.format('side g%d wins=%d expected=%d actual=%d slots=%d/%d %s%s',gi,#g.wins,exp,tot,sl,#g.slots,okc and 'OK' or 'DIFF',pure) end
+  if exp>0 or tot>0 then vsum[#vsum+1]=string.format('side g%d wins=%d expected=%d actual=%d multiset=%s slots=%d/%d %s%s',gi,#g.wins,exp,tot,ms_ok and 'EXACT' or 'MISMATCH',sl,#g.slots,okc and 'OK' or 'DIFF',pure) end
 end
 out.verify=vsum out.pure_sides=pure_sides out.purity_ok=purity_ok
 local names={}

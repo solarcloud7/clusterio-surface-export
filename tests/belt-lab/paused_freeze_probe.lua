@@ -65,13 +65,23 @@ elseif MODE=='cleanup' then
   end
   out.removed=removed
 end
-local vec={}
-local tot=0
+local seen={} local tot=0 local per={}
 for i,e in ipairs(es) do
   for li=1,e.get_max_transport_line_index() do
-    local c=e.get_transport_line(li).get_item_count()
-    tot=tot+c
-    if c>0 then vec[#vec+1]=string.format('b%d.L%d=%d',i,li,c) end
+    for _,it in ipairs(e.get_transport_line(li).get_detailed_contents()) do
+      local uid=tostring(it.unique_id)
+      if not seen[uid] then
+        seen[uid]=true tot=tot+it.stack.count
+        local k=i..'.'..li per[k]=(per[k] or 0)+it.stack.count
+      end
+    end
+  end
+end
+local vec={}
+for i,e in ipairs(es) do
+  for li=1,e.get_max_transport_line_index() do
+    local k=i..'.'..li
+    if per[k] then vec[#vec+1]=string.format('b%d.L%d=%d',i,li,per[k]) end
   end
 end
 out.vec=table.concat(vec,' ') out.total=tot

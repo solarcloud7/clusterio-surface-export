@@ -637,19 +637,26 @@ committed `results/adjacency-r0-2.0.77.json` is the fixed runner's own emission 
 
 ## BELT-R10 [empirical, 2.0.77] - insert_at write frame is offset by exactly one tick of belt_speed (tier-parametric)
 
-Coverage rack on the gallery platform (all four tiers x straight / corner-left / corner-right /
-underground lines 1-4 / splitter lines 1-8 / stacked-4): writing `insert_at(0.5)` read back via
-`get_detailed_contents` at 0.4688 / 0.4375 / 0.4063 / 0.3750 for transport / fast / express / turbo -
-offsets 1/32, 2/32, 3/32, 4/32 = `prototypes.entity[name].belt_speed` EXACTLY (double-sourced: physical
-probe + prototype read in the same session). Uniform across every geometry tested. Boundary laws:
-write < belt_speed -> the item materializes on the DOWNSTREAM entity with ret=TRUE (silent displacement);
-write > line_length -> ret=FALSE, nothing placed (honest reject). A frame-corrected replay of the 65-item
+Committed one-variable runner `run-r10-frame-offset.ps1` (+`frame_offset_probe.lua`), two consecutive
+full greens, all four tiers, each tier one atomic execution with full scratch cleanup:
+- OFFSET (isolated single belt): `insert_at(0.5)` reads back via `get_detailed_contents` at
+  0.46875 / 0.4375 / 0.40625 / 0.375 for transport / fast / express / turbo - offsets 1/32, 2/32,
+  3/32, 4/32 = `prototypes.entity[name].belt_speed` EXACTLY (tolerance 1/512; double-sourced against
+  the prototype read in the same execution). Tier-parametric: +0.125-as-constant is REFUTED (the owner
+  rejected single-tier evidence; this rung exists to prove parametricity).
+- UNDERFLOW (fresh two-belt run, lines measured NOT merged): a write one /256 step below
+  `belt_speed*256` returns TRUE and the item lands CLAMPED at `read = max(0, write - belt_speed)`
+  (measured read 0.0) on the same line, count conserved. The historical "materializes on the
+  DOWNSTREAM window" observable (session coverage rack; the 2026-07-14 R8 demo) belongs to
+  aged/merged-handle window frames - the BELT-R11 leak class - and is NOT reproduced by this fresh
+  one-variable fixture; do not conflate the two regimes.
+- OVERFLOW: a write at `line_length + 1/256` places nothing (honest reject).
+Session-era corroboration (not independently banked): a frame-corrected replay of the 65-item
 natural-compression fixture rebuilt 14/16 lanes exact in count AND position with 2 honest rejections
-(read_pos > line_length - belt_speed = the true unplaceable class). The owner rejected single-tier evidence
-for this law; the rack existed to prove tier-parametricity, and +0.125-as-constant is REFUTED (passes
-turbo-only, breaks mixed tiers). Instrument note: the rack was pruned in the 2026-07-17 save consolidation;
-the law is standing-corroborated by the R11/R12 committed runners, whose k-floor (`k >= belt_speed*256`)
-eliminated the displacement class in 674/674 placements.
+(read_pos > line_length - belt_speed = the true unplaceable class). The original coverage rack
+(all tiers x corners/undergrounds/splitters/stacked) was pruned in the 2026-07-17 save consolidation;
+tier-geometry uniformity beyond this runner's arms is standing-corroborated by the R11/R12 committed
+runners, whose k-floor eliminated the displacement class in 674/674 placements.
 
 ## BELT-R11 [empirical, 2.0.77] - side-scoped reverse first-fit reconstructs the saturated omnibus exactly
 
@@ -712,3 +719,16 @@ A mode-switched probe whose driver omits the global on read calls silently re-ru
 fabricates state changes (the RETRACTIONS artifact above). RULE: a probe driver must set EVERY injected
 global explicitly on EVERY call (send `MODE='read'`, never omit), and probe Lua should treat an unexpected
 mode value as abort. Inherited by all labs alongside the on_tick clobber and `platform.destroy` no-op hazards.
+
+## BELT-R10..R13 review hardening [empirical, 2.0.77] - verifier and census upgraded, all rungs re-passed
+
+PR review (3 P1 findings) hardened the instruments: (1) the side-restore verifier now compares per-side
+multisets keyed `name|quality` in BOTH directions (the prior verifier summed per-name totals per side, so
+a cross-name swap that conserved totals could false-green - never observed, but unprovable before); (2)
+the R13 probe census is distinct-`unique_id` over `get_detailed_contents` (the prior per-handle
+`get_item_count` sum could alias a stack exposed through multiple windows); (3) BELT-R10 gained its own
+committed one-variable runner (see the corrected R10 entry above - which also re-scoped the underflow law
+to the measured clamp on fresh separate lines). Under the hardened instruments, all rungs re-passed two
+consecutive full greens each: R10 (4 tiers x offset/underflow-clamp/overflow), R11 (243/243, every side
+multiset=EXACT), R12 (431/431, 21/21 pure sides, multiset=EXACT), R13 (movement + conservation 3/3 and
+4/4, active-write rejection, strip left empty).
