@@ -11,7 +11,7 @@
 --                             (SurfaceCounter.count_entity_items / count_entity_fluids) over the
 --                             dragged selection and prints entities/items/fluids totals — plus a
 --                             DELTA section vs the previous audit (before/after workflow).
---   FORCE  (ctrl+shift+drag): paste regardless — blockers are serialized (for undo), destroyed
+--   FORCE  (shift+right-drag): paste regardless — blockers are serialized (for undo), destroyed
 --                             (guards: never characters, never a space-platform-hub, never another
 --                             force's entities), then the paste proceeds; overlaps still red-boxed.
 --   UNDO / REDO (Ctrl+Alt+Z / Ctrl+Alt+Y custom inputs): journal-based. Undo destroys what the paste
@@ -37,6 +37,7 @@
 local EntityScanner = require("modules/surface_export/export_scanners/entity-scanner")
 local Deserializer = require("modules/surface_export/core/deserializer")
 local BeltRestoration = require("modules/surface_export/import_phases/belt_restoration")
+local EntityStateRestoration = require("modules/surface_export/import_phases/entity_state_restoration")
 local FluidRestoration = require("modules/surface_export/import_phases/fluid_restoration")
 local SurfaceCounter = require("modules/surface_export/validators/surface-counter")
 local Util = require("modules/surface_export/utils/util")
@@ -186,7 +187,7 @@ function SelectionLab.copy(event)
 		tick = game.tick,
 	}
 	player.print(string.format(
-		"[SelectionLab] COPIED %d entities (%d items%s). Shift-drag = paste (all-or-nothing); Ctrl+Shift-drag = force.",
+		"[SelectionLab] COPIED %d entities (%d items%s). Shift-drag = paste (all-or-nothing); Shift+Right-drag = force.",
 		#records, capture_item_total(records),
 		side_groups and (", " .. #side_groups .. " belt sides") or ""), { r = 0.4, g = 0.9, b = 1 })
 end
@@ -277,13 +278,18 @@ local function execute_create_and_restore(surface, recs, player, side_groups)
 	else
 		BeltRestoration.restore(records, entity_map)
 	end
-	-- Entity state (control behavior, filters, circuit) — any order.
+	-- Entity state: same two production steps, same order — the per-entity property restore
+	-- (creation-adjacent) then the FULL production phase (control behavior, entity filters —
+	-- splitter/loader/inserter/slot —, logistic requests, circuit + power connections).
+	-- Calling the phase module keeps the tool identical to the transfer pipeline; cherry-picking
+	-- Deserializer functions here is how paste silently lost loader/splitter filters.
 	for _, rec in ipairs(records) do
 		local entity = entity_map[rec.entity_id]
 		if entity and entity.valid then
 			Deserializer.restore_entity_state(entity, rec)
 		end
 	end
+	EntityStateRestoration.restore_all(records, entity_map)
 	-- Inventories in two passes: beacons FIRST so their beacon_modules populate and the boosted
 	-- crafting_speed sets the correct set_stack cap before crafter inputs restore (production Phase 2
 	-- ordering; CLAUDE.md Import Phase Ordering). A single record-order pass clamps overloaded inputs
@@ -368,7 +374,7 @@ function SelectionLab.paste(event)
 		end
 		player.play_sound({ path = "utility/cannot_build" })
 		player.print(string.format(
-			"[SelectionLab] PASTE REFUSED: %d of %d targets occupied (red). Nothing was placed. Ctrl+Shift-drag forces.",
+			"[SelectionLab] PASTE REFUSED: %d of %d targets occupied (red). Nothing was placed. Shift+Right-drag forces.",
 			#plan.conflict, #cap.records), { r = 1, g = 0.4, b = 0.4 })
 		return
 	end
@@ -382,7 +388,7 @@ function SelectionLab.paste(event)
 	push_undo({ mode = "paste", surface = surface.name, created = journal_created(records, entity_map),
 		destroyed_records = {}, plan_records = recs, side_groups = cap.side_groups })
 	player.print(string.format(
-		"[SelectionLab] PASTED %d entities (%d create-failed) at offset (%d,%d). Physical items on paste: %d (capture holds %d). Ctrl+Shift+Z undoes.",
+		"[SelectionLab] PASTED %d entities (%d create-failed) at offset (%d,%d). Physical items on paste: %d (capture holds %d). Ctrl+Alt+Z undoes.",
 		created, create_failed, offset.x, offset.y, physical_census(entity_map), capture_item_total(cap.records)),
 		{ r = 0.4, g = 1, b = 0.4 })
 end
@@ -437,7 +443,7 @@ function SelectionLab.force(event)
 	push_undo({ mode = "force", surface = surface.name, created = journal_created(records, entity_map),
 		destroyed_records = destroyed_records, plan_records = recs, side_groups = cap.side_groups })
 	player.print(string.format(
-		"[SelectionLab] FORCE-PASTED %d entities (%d create-failed, %d blockers replaced%s) at offset (%d,%d). Physical items: %d. Ctrl+Shift+Z undoes (blockers come back with contents).",
+		"[SelectionLab] FORCE-PASTED %d entities (%d create-failed, %d blockers replaced%s) at offset (%d,%d). Physical items: %d. Ctrl+Alt+Z undoes (blockers come back with contents).",
 		created, create_failed, #destroyed_records,
 		guarded > 0 and (", " .. guarded .. " protected blockers kept") or "",
 		offset.x, offset.y, physical_census(entity_map)), { r = 0.4, g = 1, b = 0.4 })
@@ -559,7 +565,7 @@ function SelectionLab.undo(event)
 	storage.selection_lab_redo = storage.selection_lab_redo or {}
 	table.insert(storage.selection_lab_redo, entry)
 	player.print(string.format(
-		"[SelectionLab] UNDO: removed %d pasted entities (%d already gone), resurrected %d replaced blockers with contents. Ctrl+Shift+Y redoes.",
+		"[SelectionLab] UNDO: removed %d pasted entities (%d already gone), resurrected %d replaced blockers with contents. Ctrl+Alt+Y redoes.",
 		removed, missed, resurrected), { r = 0.4, g = 0.9, b = 1 })
 end
 
