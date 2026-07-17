@@ -1,197 +1,201 @@
 #!/usr/bin/env node
 import { execFileSync } from "node:child_process";
-import { appendFileSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { appendFileSync, existsSync, readFileSync } from "node:fs";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 import { parseSections, validateSelectedEvidence } from "./reachability-contract.mjs";
-import {
-	assertSafeToMutate,
-	requireLuaSuccess,
-	runCleanupBoth,
-} from "./reachability-runner-helpers.mjs";
+import { requireLuaSuccess } from "./reachability-runner-helpers.mjs";
 
-const controller = "surface-export-controller";
-const instances = ["clusterio-host-1-instance-1", "clusterio-host-2-instance-1"];
-const source = instances[0];
-const prefix = "specialized-reachability-lab-";
-const notebook = "tests/specialized-inventory-lab/NOTEBOOK.md";
-let sections = ["prototype", "placement"];
-let resetOnly = false;
-let noNotebook = false;
+const root = new URL("../../", import.meta.url);
+const defaultSave = fileURLToPath(new URL("docker/seed-data/lab-saves/lab-gallery-source-surface-export-2.0.77.zip", root));
+const manifestPath = fileURLToPath(new URL("tests/lab-gallery/manifest.json", root));
+const notebook = fileURLToPath(new URL("tests/specialized-inventory-lab/NOTEBOOK.md", root));
+const config = fileURLToPath(new URL("./baked-config.ini", import.meta.url));
+const meter = fileURLToPath(new URL("./baked-reachability-meter.cjs", import.meta.url));
+const container = "surface-export-host-2";
+const remoteRoot = "/tmp/surface-export-specialized-reachability-baked";
+const gamePort = "34980";
+const rconPort = "27980";
+const rconPassword = "specialized-baked-only";
+const FIXTURE_ID = "specialized-fluid-reachability";
+const RELEASE_COMMAND = "node tests/specialized-inventory-lab/run-reachability.mjs --release-lease";
 
-for (let index = 2; index < process.argv.length; index += 1) {
-	const arg = process.argv[index];
-	if (arg === "--reset") resetOnly = true;
-	else if (arg === "--no-notebook") noNotebook = true;
-	else if (arg === "--sections") sections = parseSections(process.argv[++index] || "");
-	else if (arg.startsWith("--sections=")) sections = parseSections(arg.slice(11));
-	else throw new Error(`Unknown argument: ${arg}`);
-}
-
-function lastLine(value) {
-	return String(value).split(/\r?\n/).map(line => line.trim()).filter(Boolean).at(-1) || "";
-}
-
-function rcon(instance, command) {
-	return execFileSync("docker", [
-		"exec", controller, "npx", "clusterioctl", "--log-level", "error",
-		"instance", "send-rcon", instance, command,
-		"--config", "/clusterio/tokens/config-control.json",
-	], { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim();
-}
-
-function lua(instance, body) {
-	const wrapped = `local ok,result=pcall(function() ${body} end);if ok then rcon.print(helpers.table_to_json(result)) else rcon.print(helpers.table_to_json({success=false,error=tostring(result)})) end`;
-	const result = JSON.parse(lastLine(rcon(instance, `/sc ${wrapped}`)));
-	return requireLuaSuccess(result, instance);
-}
-
-const ensurePlatformLua = `
-local force=game.forces.player
-local platform=nil
-for _,candidate in pairs(force.platforms) do
-	if candidate.valid and string.find(candidate.name,"${prefix}",1,true)==1 then platform=candidate;break end
-end
-if not platform then
-	platform=force.create_space_platform{name="${prefix}"..tostring(game.tick),planet="nauvis",starter_pack="space-platform-starter-pack"}
-	platform.apply_starter_pack()
-end
-platform.paused=true
-storage.specialized_reachability_lab={platform_name=platform.name,platform_index=platform.index}
-return platform
-`;
-
-const prototypeLua = `
-local platform=(function() ${ensurePlatformLua} end)()
-local surface=platform.surface
-local force=game.forces.player
-local names={"chemical-plant","storage-tank","pump","flamethrower-turret","fluid-wagon","electric-mining-drill"}
-local entities={}
-for _,name in ipairs(names) do
-	local proto=prototypes.entity[name]
-	if not proto then error("missing prototype "..name) end
-	local conditions={}
-	for _,condition in ipairs(proto.surface_conditions or {}) do
-		local actual=surface.get_property(condition.property)
-		conditions[#conditions+1]={property=condition.property,min=condition.min,max=condition.max,actual=actual,passes=actual>=condition.min and actual<=condition.max}
-	end
-	local position=surface.find_non_colliding_position(name,{x=0,y=0},64,0.5)
-	local can_place=position~=nil and surface.can_place_entity{name=name,position=position,force=force} or false
-	entities[name]={fluidbox_count=#(proto.fluidbox_prototypes or {}),can_place=can_place,position=position,surface_conditions=conditions}
-end
-return {success=true,pin=script.active_mods.base,tick=game.tick,game_paused=game.tick_paused==true,platform_paused=platform.paused,platform={name=platform.name,index=platform.index,pressure=surface.get_property("pressure"),gravity=surface.get_property("gravity")},entities=entities}
-`;
-
-const placementLua = `
-local platform=(function() ${ensurePlatformLua} end)()
-local surface=platform.surface
-local force=game.forces.player
-local position=surface.find_non_colliding_position("electric-mining-drill",{x=0,y=0},64,0.5)
-if not position then error("no platform position for electric-mining-drill") end
-local can_place=surface.can_place_entity{name="electric-mining-drill",position=position,force=force}
-local drill=surface.create_entity{name="electric-mining-drill",position=position,force=force,create_build_effect_smoke=false}
-if not (drill and drill.valid) then error("electric-mining-drill creation failed") end
-local read_ok,read_value=pcall(function() return drill.fluidbox[1] end)
-local write_ok,write_error=pcall(function() drill.fluidbox[1]={name="water",amount=1} end)
-local result={success=true,pin=script.active_mods.base,tick=game.tick,game_paused=game.tick_paused==true,platform_paused=platform.paused,drill={created=true,can_place=can_place,position=position,mining_target=drill.mining_target and drill.mining_target.name or nil,live_fluidbox_count=#drill.fluidbox,read_ok=read_ok,read_value=read_ok and read_value or nil,read_error=read_ok and nil or tostring(read_value),write_ok=write_ok,write_error=write_ok and nil or tostring(write_error)}}
-drill.destroy()
-return result
-`;
-
-const cleanupLua = `
-local deleted={}
-for _,surface in pairs(game.surfaces) do
-	local platform=surface.platform
-	if platform and platform.valid and string.find(platform.name,"${prefix}",1,true)==1 then
-		deleted[#deleted+1]=platform.name
-		game.delete_surface(surface)
-	end
-end
-storage.specialized_reachability_lab=nil
-return {success=true,tick=game.tick,deleted=deleted}
-`;
-
-const zeroLua = `
-local function count(value)local n=0 for _ in pairs(value or {}) do n=n+1 end return n end
-local surfaces={}
-for _,surface in pairs(game.surfaces) do
-	local platform=surface.platform
-	if platform and platform.valid and string.find(platform.name,"${prefix}",1,true)==1 then surfaces[#surfaces+1]=platform.name end
-end
-return {success=true,tick=game.tick,lab_surfaces=surfaces,lab_storage=storage.specialized_reachability_lab~=nil,game_paused=game.tick_paused==true,destination_holds=count(storage.destination_holds),locked_platforms=count(storage.locked_platforms),async_jobs=count(storage.async_jobs),committed_source_tombstones=count(storage.committed_source_transfer_tombstones)}
-`;
-
-function inspectBoth() {
-	const inspection = {};
-	for (const instance of instances) {
-		const entry = { zero: null, errors: [] };
-		inspection[instance] = entry;
-		try {
-			entry.zero = lua(instance, zeroLua);
-		} catch (error) {
-			entry.errors.push(error.stack || error.message);
-		}
-	}
-	return inspection;
-}
-
-function cleanupBoth() {
-	return runCleanupBoth(instances, {
-		action: instance => lua(instance, cleanupLua),
-		inspect: instance => lua(instance, zeroLua),
-	});
-}
-
-function assertZero(cleanup) {
-	for (const [instance, result] of Object.entries(cleanup)) {
-		if (result.errors?.length) throw new Error(`${instance} cleanup failed: ${result.errors.join("; ")}`);
-		const zero = result.zero;
-		if (zero.lab_surfaces.length || zero.lab_storage || zero.game_paused
-			|| zero.destination_holds || zero.locked_platforms || zero.async_jobs || zero.committed_source_tombstones) {
-			throw new Error(`${instance} cleanup incomplete: ${JSON.stringify(zero)}`);
-		}
+export class LeaseBlockedError extends Error {
+	constructor(message) {
+		super(message);
+		this.name = "LeaseBlockedError";
 	}
 }
 
-if (resetOnly) {
-	const preflight = inspectBoth();
-	assertSafeToMutate(preflight);
-	const cleanup = cleanupBoth();
-	console.log(JSON.stringify({ preflight, cleanup }, null, 2));
-	assertZero(cleanup);
-	process.exit();
+export function resolveFixture(manifest, fixtureId = FIXTURE_ID) {
+	const fixture = (manifest?.fixtures || []).find(row => row.id === fixtureId);
+	if (!fixture) throw new Error(`manifest has no fixture ${fixtureId}`);
+	for (const field of ["revision", "fingerprint"]) {
+		if (fixture[field] === undefined) throw new Error(`fixture ${fixtureId} is missing ${field}`);
+	}
+	return fixture;
 }
 
-const result = {
-	script: "tests/specialized-inventory-lab/run-reachability.mjs",
-	prediction: "Factorio 2.0.77 reproduces the final PR #98 reachability classification without transfer activity",
-	sections, started: new Date().toISOString(), prototype: null, placement: null, preflight: null,
-	contract_failures: [], cleanup: null, errors: [],
-};
-let cleanupAuthorized = false;
-
-try {
-	result.preflight = inspectBoth();
-	assertSafeToMutate(result.preflight);
-	cleanupAuthorized = true;
-	assertZero(cleanupBoth());
-	if (sections.includes("prototype")) result.prototype = lua(source, prototypeLua);
-	if (sections.includes("placement")) result.placement = lua(source, placementLua);
-	result.contract_failures = validateSelectedEvidence(result, sections);
-} catch (error) {
-	result.errors.push(error.stack || error.message);
-} finally {
-	if (cleanupAuthorized) {
-		try {
-			result.cleanup = cleanupBoth();
-			assertZero(result.cleanup);
-		} catch (error) {
-			result.errors.push(error.stack || error.message);
-		}
-	} else {
-		result.cleanup = { skipped: "preflight did not authorize mutation" };
+// Machine-checks the manifest fingerprint against the measured evidence, per section run —
+// the standard requires the fixture ID/revision verified before use, and a re-baked
+// revision must never silently continue an older revision's evidence series.
+export function verifyFixtureFingerprint(fixture, evidence, sections) {
+	const failures = [];
+	const want = fixture.fingerprint;
+	const check = (field, actual, expected) => {
+		if (actual !== expected) failures.push(`fingerprint ${field}: measured ${JSON.stringify(actual)}, manifest rev ${fixture.revision} expects ${JSON.stringify(expected)}`);
+	};
+	if (sections.includes("prototype")) {
+		check("pressure", evidence.prototype?.platform?.pressure, want.pressure);
+		check("gravity", evidence.prototype?.platform?.gravity, want.gravity);
 	}
-	result.finished = new Date().toISOString();
-	if (!noNotebook) appendFileSync(notebook, `\n\n## ${result.finished} - Reachability recertification\n\n\`\`\`json\n${JSON.stringify(result, null, 2)}\n\`\`\`\n`);
-	console.log(JSON.stringify(result, null, 2));
-	if (result.errors.length || result.contract_failures.length) process.exitCode = 1;
+	if (sections.includes("placement")) {
+		const drill = evidence.placement?.drill;
+		check("drillName", drill?.name, want.drillName);
+		check("miningTarget", drill?.mining_target ?? null, want.miningTarget);
+		check("liveFluidboxCount", drill?.live_fluidbox_count, want.liveFluidboxCount);
+		check("readOk", drill?.read_ok, want.readOk);
+		check("writeOk", drill?.write_ok, want.writeOk);
+	}
+	return failures;
+}
+
+export function parseRunnerArguments(argv) {
+	const options = {
+		sections: ["prototype", "placement"], save: defaultSave,
+		noNotebook: false, injectAfterLoadFailure: false, releaseLease: false,
+	};
+	for (let index = 0; index < argv.length; index += 1) {
+		const argument = argv[index];
+		if (argument === "--no-notebook") options.noNotebook = true;
+		else if (argument === "--save") options.save = argv[++index];
+		else if (argument === "--sections") options.sections = parseSections(argv[++index] || "");
+		else if (argument.startsWith("--sections=")) options.sections = parseSections(argument.slice(11));
+		else if (argument === "--inject-after-load-failure") options.injectAfterLoadFailure = true;
+		else if (argument === "--release-lease") options.releaseLease = true;
+		else throw new Error(`Unknown argument: ${argument}`);
+	}
+	return options;
+}
+
+function docker(arguments_, options = {}) {
+	return execFileSync("docker", arguments_, { encoding: "utf8", timeout: 30_000, stdio: ["ignore", "pipe", "pipe"], ...options });
+}
+
+function sleep(milliseconds) { return new Promise(resolve => setTimeout(resolve, milliseconds)); }
+
+function hashFile(path) {
+	return createHash("sha256").update(readFileSync(path)).digest("hex").toUpperCase();
+}
+
+function normalizeLuaJsonEvidence(evidence) {
+	for (const row of Object.values(evidence.prototype?.entities || {})) {
+		if (!Array.isArray(row.surface_conditions) && row.surface_conditions && Object.keys(row.surface_conditions).length === 0) {
+			row.surface_conditions = [];
+		}
+	}
+	if (evidence.placement?.drill && !("mining_target" in evidence.placement.drill)) evidence.placement.drill.mining_target = null;
+	return evidence;
+}
+
+function acquireLease() {
+	try { docker(["exec", container, "test", "!", "-e", remoteRoot]); }
+	catch {
+		throw new LeaseBlockedError(
+			`stale lease ${remoteRoot} exists in ${container} (a previous run crashed before its finalizer). `
+			+ `This run is BLOCKED, not a measurement failure. Recover with: ${RELEASE_COMMAND}`,
+		);
+	}
+	docker(["exec", container, "mkdir", remoteRoot]);
+}
+
+function releaseLeaseNow() {
+	docker(["exec", container, "rm", "-rf", "--", remoteRoot]);
+	docker(["exec", container, "test", "!", "-e", remoteRoot]);
+	console.log(JSON.stringify({ status: "LEASE_RELEASED", container, remoteRoot }));
+}
+
+async function runLoadedSave(fixture, options) {
+	const { save, sections, injectAfterLoadFailure } = options;
+	if (!existsSync(save)) throw new Error(`baked source save does not exist: ${save}`);
+	const manifest = JSON.parse(readFileSync(manifestPath, "utf8"));
+	const expectedHash = manifest.saves?.source?.sha256;
+	const actualHash = hashFile(save);
+	if (actualHash !== expectedHash) throw new Error(`baked source SHA-256 is ${actualHash}, expected ${expectedHash}`);
+	acquireLease();
+	let launched = false;
+	try {
+		docker(["cp", save, `${container}:${remoteRoot}/source.zip`]);
+		docker(["cp", config, `${container}:${remoteRoot}/config.ini`]);
+		docker(["cp", meter, `${container}:${remoteRoot}/baked-reachability-meter.cjs`]);
+		const launch = `echo $$ > ${remoteRoot}/runner.pid; exec timeout 60 /opt/factorio/2.0.77/bin/x64/factorio --start-server ${remoteRoot}/source.zip --config ${remoteRoot}/config.ini --mod-directory /clusterio/data/instances/clusterio-host-2-instance-1/mods --port ${gamePort} --rcon-port ${rconPort} --rcon-password ${rconPassword}`;
+		docker(["exec", "-d", container, "setsid", "sh", "-c", launch]);
+		launched = true;
+		const encodedSections = Buffer.from(JSON.stringify(sections)).toString("base64");
+		const deadline = Date.now() + 30_000;
+		let output;
+		while (Date.now() < deadline) {
+			try {
+				output = docker(["exec", container, "node", `${remoteRoot}/baked-reachability-meter.cjs`, rconPort, rconPassword, encodedSections]);
+				break;
+			} catch (error) {
+				const detail = `${error.stderr || ""}\n${error.stdout || ""}\n${error.message || ""}`;
+				if (!detail.includes("ECONNREFUSED") && !detail.includes("ECONNRESET")) throw error;
+				await sleep(500);
+			}
+		}
+		if (!output) throw new Error("baked source RCON did not become ready within 30 seconds");
+		if (injectAfterLoadFailure) throw new Error("injected post-load failure");
+		const evidence = requireLuaSuccess(JSON.parse(output), `${container} baked meter`);
+		return { ...normalizeLuaJsonEvidence(evidence), save, sha256: actualHash, fixture: { id: fixture.id, revision: fixture.revision } };
+	} finally {
+		if (launched) {
+			try {
+				const pid = docker(["exec", container, "cat", `${remoteRoot}/runner.pid`]).trim();
+				if (/^\d+$/.test(pid)) try { docker(["exec", container, "kill", "-TERM", `-${pid}`]); } catch { /* meter normally quits */ }
+			} catch { /* launch can fail before pid write */ }
+		}
+		await sleep(500);
+		docker(["exec", container, "rm", "-rf", "--", remoteRoot]);
+		docker(["exec", container, "test", "!", "-e", remoteRoot]);
+	}
+}
+
+async function main() {
+	const options = parseRunnerArguments(process.argv.slice(2));
+	if (options.releaseLease) { releaseLeaseNow(); return; }
+	const result = {
+		script: "tests/specialized-inventory-lab/run-reachability.mjs",
+		prediction: "The pinned baked source reproduces the Factorio 2.0.77 specialized-fluid reachability classification without runtime fixture construction",
+		sections: options.sections, started: new Date().toISOString(), status: null, fixture: null, prototype: null, placement: null,
+		contract_failures: [], fingerprint_failures: [], errors: [], reset: "discard-loaded-source-save",
+	};
+	try {
+		const manifest = JSON.parse(readFileSync(manifestPath, "utf8"));
+		const fixture = resolveFixture(manifest);
+		result.fixture = { id: fixture.id, revision: fixture.revision };
+		const evidence = await runLoadedSave(fixture, options);
+		result.prototype = evidence.prototype || null;
+		result.placement = evidence.placement || null;
+		result.artifact = { path: evidence.save, sha256: evidence.sha256 };
+		result.contract_failures = validateSelectedEvidence(result, options.sections);
+		result.fingerprint_failures = verifyFixtureFingerprint(fixture, evidence, options.sections);
+		result.status = (result.contract_failures.length || result.fingerprint_failures.length) ? "FAILED" : "PASS";
+	} catch (error) {
+		// BLOCKED = the run never measured anything (stale lease); FAILED = a measurement or
+		// contract defect. The standard requires these never conflate (docs/lab-tests.md).
+		result.status = error instanceof LeaseBlockedError ? "BLOCKED" : "FAILED";
+		result.errors.push(error.stack || error.message);
+	} finally {
+		result.finished = new Date().toISOString();
+		const fixtureLabel = result.fixture ? `${result.fixture.id} rev ${result.fixture.revision}` : "unresolved fixture";
+		if (!options.noNotebook) appendFileSync(notebook, `\n\n## ${result.finished} - Baked reachability recertification (${fixtureLabel}) - ${result.status}\n\n\`\`\`json\n${JSON.stringify(result, null, 2)}\n\`\`\`\n`);
+		console.log(JSON.stringify(result, null, 2));
+		if (result.status !== "PASS") process.exitCode = 1;
+	}
+}
+
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+	main().catch(error => { console.error(error); process.exitCode = 1; });
 }

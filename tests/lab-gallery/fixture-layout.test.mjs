@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { buildBeltPilot, buildFiveByFiveLoop } from "./fixture-layout.mjs";
+import { buildBeltPilot, buildFiveByFiveLoop, buildSpecializedReachabilityFixture } from "./fixture-layout.mjs";
 
 test("5x5 loop has sixteen unique perimeter belts with four directed corners", () => {
 	const belts = buildFiveByFiveLoop({ x: 10, y: 20 });
@@ -26,4 +26,17 @@ test("belt pilot separates immutable 125-item source from empty target", () => {
 	assert.deepEqual(pilot.sourceBelts[0].position, { x: -16.5, y: -25.5 });
 	assert.deepEqual(pilot.targetBelts[0].position, { x: 4.5, y: -25.5 });
 	assert.equal(pilot.feeder, undefined);
+});
+
+test("specialized reachability fixture has one stable platform identity and live drill control", () => {
+	assert.deepEqual(buildSpecializedReachabilityFixture(), {
+		id: "specialized-fluid-reachability",
+		revision: 1,
+		platformName: "lab-specialized-fluid-r1",
+		drillName: "electric-mining-drill",
+		expected: {
+			pressure: 0, gravity: 0, miningTarget: null, liveFluidboxCount: 0,
+			readOk: false, writeOk: false,
+		},
+	});
 });

@@ -1,13 +1,76 @@
 {
-  "schema": "surface-export-lab-gallery-v1",
+  "schema": "surface-export-lab-gallery-v2",
   "engineVersion": "2.0.77",
-  "saveName": "lab-gallery-surface-export-2-0-77",
-  "surfaceName": "lab-gallery-index",
+  "surfaceName": "lab-gallery-index-v2",
+  "mods": {
+    "base": "2.0.77",
+    "elevated-rails": "2.0.77",
+    "FluidMustFlow": "1.4.4",
+    "quality": "2.0.77",
+    "SpidertronEnhancements": "1.10.8",
+    "space-age": "2.0.77",
+    "SpidertronPatrols": "2.6.3",
+    "surfexp_gateways": "0.3.0",
+    "maraxsis": "1.31.6"
+  },
+  "saves": {
+    "source": {
+      "role": "source",
+      "name": "lab-gallery-source-surface-export-2-0-77",
+      "artifact": "docker/seed-data/lab-saves/lab-gallery-source-surface-export-2.0.77.zip",
+      "sha256": "DFE388875B9CD9AAAB3A9DF74D5132121919915DBE432D1ED40225CF9BC7D027",
+      "expectedCensus": {
+        "totalEntities": 34,
+        "totalGeneratedChunks": 248,
+        "surfaces": [
+          { "name": "lab-gallery-index-v2", "entityCount": 0, "generatedChunks": 90 },
+          { "name": "nauvis", "entityCount": 32, "generatedChunks": 2, "planet": "nauvis" },
+          { "name": "platform-1", "entityCount": 2, "generatedChunks": 156, "platform": "lab-specialized-fluid-r1" }
+        ]
+      },
+      "mods": {
+        "base": "2.0.77",
+        "elevated-rails": "2.0.77",
+        "FluidMustFlow": "1.4.4",
+        "quality": "2.0.77",
+        "SpidertronEnhancements": "1.10.8",
+        "space-age": "2.0.77",
+        "SpidertronPatrols": "2.6.3",
+        "surfexp_gateways": "0.3.0",
+        "maraxsis": "1.31.6"
+      }
+    },
+    "destination": {
+      "role": "destination",
+      "name": "lab-gallery-destination-surface-export-2-0-77",
+      "artifact": "docker/seed-data/lab-saves/lab-gallery-destination-surface-export-2.0.77.zip",
+      "sha256": "D83697A32991154135EDC26708A4799F9339E71E67D0550BA4A4B1082A5C1F25",
+      "expectedCensus": {
+        "totalEntities": 0,
+        "totalGeneratedChunks": 92,
+        "surfaces": [
+          { "name": "lab-gallery-index-v2", "entityCount": 0, "generatedChunks": 90 },
+          { "name": "nauvis", "entityCount": 0, "generatedChunks": 2, "planet": "nauvis" }
+        ]
+      },
+      "mods": {
+        "base": "2.0.77",
+        "elevated-rails": "2.0.77",
+        "FluidMustFlow": "1.4.4",
+        "quality": "2.0.77",
+        "SpidertronEnhancements": "1.10.8",
+        "space-age": "2.0.77",
+        "SpidertronPatrols": "2.6.3",
+        "surfexp_gateways": "0.3.0",
+        "maraxsis": "1.31.6"
+      }
+    }
+  },
   "contract": {
     "fixtureIsOracle": false,
-    "mutableDestinationsAreBaked": false,
-    "independentOracle": "The runner independently meters source and destination state before accepting a result.",
-    "resetModel": "Reload the pristine gallery save; never repair a source fixture during a test."
+    "mutableDestinationsAreBaked": true,
+    "independentOracle": "A direct Factorio physical meter independently observes the loaded fixture before accepting a result.",
+    "resetModel": "Reload the paired source and destination golden saves at the batch boundary; never repair a consumed fixture."
   },
   "labs": [
     {
@@ -15,97 +78,156 @@
       "title": "Belts and transport lines",
       "purpose": "Visualize lane-side fidelity, native stacks, corners, splitters, undergrounds, and known loss replays.",
       "sourcePath": "tests/belt-lab",
-      "mode": "baked-source",
-      "fixture": "belt-5x5-125-unstacked",
-      "zone": { "x": 0, "y": 0 }
+      "zone": { "x": -36, "y": -18 }
     },
     {
       "id": "engine-repin-lab",
       "title": "Engine version repin",
       "purpose": "Re-certify engine-sensitive runtime shapes and behavioral rungs after a Factorio version change.",
       "sourcePath": "tests/engine-repin-lab",
-      "mode": "catalog",
-      "zone": { "x": 96, "y": 0 }
+      "zone": { "x": -12, "y": -18 }
     },
     {
       "id": "fluid-lab",
       "title": "Fluid systems",
       "purpose": "Inspect fluidbox ownership, frozen reads, pumps, plasma, and exact fluid accounting.",
       "sourcePath": "tests/fluid-lab",
-      "mode": "catalog",
-      "zone": { "x": 192, "y": 0 }
+      "zone": { "x": 12, "y": -18 }
     },
     {
       "id": "gate-drift-lab",
       "title": "Validation gate drift",
       "purpose": "Exercise frozen-gate timing and detect source or destination state that escapes the exact verdict.",
       "sourcePath": "tests/gate-drift-lab",
-      "mode": "catalog",
-      "zone": { "x": 288, "y": 0 }
+      "zone": { "x": 36, "y": -18 }
     },
     {
       "id": "hidden-semantics-lab",
       "title": "Hidden state semantics",
       "purpose": "Probe state that is structurally present but easy for serializers or validators to miss.",
       "sourcePath": "tests/hidden-semantics-lab",
-      "mode": "catalog",
-      "zone": { "x": 0, "y": 96 }
+      "zone": { "x": -36, "y": 0 }
     },
     {
       "id": "hold-completeness-lab",
       "title": "Destination hold completeness",
       "purpose": "Demonstrate which entities and operations must remain frozen until transfer validation completes.",
       "sourcePath": "tests/hold-completeness-lab",
-      "mode": "catalog",
-      "zone": { "x": 96, "y": 96 }
+      "zone": { "x": -12, "y": 0 }
     },
     {
       "id": "inserter-lab",
       "title": "Inserter held stacks",
       "purpose": "Visualize held-item reachability, quality, filters, and busy-state round trips.",
       "sourcePath": "tests/inserter-lab",
-      "mode": "catalog",
-      "zone": { "x": 192, "y": 96 }
+      "zone": { "x": 12, "y": 0 }
     },
     {
       "id": "midcraft-lab",
       "title": "Mid-craft machines",
       "purpose": "Inspect recipe progress, ingredient embodiment, and partially completed machine state.",
       "sourcePath": "tests/midcraft-lab",
-      "mode": "catalog",
-      "zone": { "x": 288, "y": 96 }
+      "zone": { "x": 36, "y": 0 }
     },
     {
       "id": "no-tick-sync-lab",
       "title": "No-tick synchronization",
       "purpose": "Prove restoration and validation behavior while the game is paused and no normal tick advances.",
       "sourcePath": "tests/no-tick-sync-lab",
-      "mode": "catalog",
-      "zone": { "x": 0, "y": 192 }
+      "zone": { "x": -36, "y": 18 }
     },
     {
       "id": "ops-lab",
       "title": "Operational tails",
       "purpose": "Exercise cleanup, retry, timeout, and transaction-tail behavior around completed operations.",
       "sourcePath": "tests/ops-lab",
-      "mode": "catalog",
-      "zone": { "x": 96, "y": 192 }
+      "zone": { "x": -12, "y": 18 }
     },
     {
       "id": "specialized-inventory-lab",
       "title": "Specialized inventories",
       "purpose": "Map reachable inventories and fluids owned by specialized entity handlers.",
       "sourcePath": "tests/specialized-inventory-lab",
-      "mode": "catalog",
-      "zone": { "x": 192, "y": 192 }
+      "zone": { "x": 12, "y": 18 }
     },
     {
       "id": "state-dimensions-lab",
       "title": "Serialized state dimensions",
       "purpose": "Audit energy, temperature, burner, bonus progress, equipment, and other player-visible state dimensions.",
       "sourcePath": "tests/state-dimensions-lab",
-      "mode": "catalog",
-      "zone": { "x": 288, "y": 192 }
+      "zone": { "x": 36, "y": 18 }
+    }
+  ],
+  "fixtures": [
+    {
+      "id": "belt-5x5-125-unstacked",
+      "revision": 1,
+      "labId": "belt-lab",
+      "name": "5x5 unstacked belt loop",
+      "purpose": "Preserve 125 one-item iron-plate stacks split 67/58 across the two physical sides.",
+      "category": "physical-lab",
+      "owningRunner": "tests/belt-lab/rung1b_corner_loop.lua",
+      "saveRole": "source",
+      "surfaceName": "nauvis",
+      "engineVersion": "2.0.77",
+      "mods": {
+        "base": "2.0.77",
+        "elevated-rails": "2.0.77",
+        "FluidMustFlow": "1.4.4",
+        "quality": "2.0.77",
+        "SpidertronEnhancements": "1.10.8",
+        "space-age": "2.0.77",
+        "SpidertronPatrols": "2.6.3",
+        "surfexp_gateways": "0.3.0",
+        "maraxsis": "1.31.6"
+      },
+      "invariant": "The source loop contains exactly 125 physical one-item iron-plate stacks, 67 on side one and 58 on side two.",
+      "expectedTerminalVerdict": "observation-only",
+      "independentOracleRequired": true,
+      "fingerprint": {
+        "beltName": "turbo-transport-belt",
+        "beltCount": 16,
+        "itemName": "iron-plate",
+        "quantity": 125,
+        "physicalStacks": 125,
+        "maximumStack": 1,
+        "lineQuantities": [67, 58]
+      }
+    },
+    {
+      "id": "specialized-fluid-reachability",
+      "revision": 1,
+      "labId": "specialized-inventory-lab",
+      "name": "Specialized fluid reachability",
+      "purpose": "Recertify platform-reachable specialized fluid state from prototype and live entity controls.",
+      "category": "physical-lab",
+      "owningRunner": "tests/specialized-inventory-lab/run-reachability.mjs",
+      "saveRole": "source",
+      "platformName": "lab-specialized-fluid-r1",
+      "engineVersion": "2.0.77",
+      "mods": {
+        "base": "2.0.77",
+        "elevated-rails": "2.0.77",
+        "FluidMustFlow": "1.4.4",
+        "quality": "2.0.77",
+        "SpidertronEnhancements": "1.10.8",
+        "space-age": "2.0.77",
+        "SpidertronPatrols": "2.6.3",
+        "surfexp_gateways": "0.3.0",
+        "maraxsis": "1.31.6"
+      },
+      "invariant": "Space-platform pressure/gravity are zero and the baked electric mining drill has no live recoverable fluidbox.",
+      "expectedTerminalVerdict": "observation-only",
+      "independentOracleRequired": true,
+      "fingerprint": {
+        "pressure": 0,
+        "gravity": 0,
+        "drillName": "electric-mining-drill",
+        "miningTarget": null,
+        "liveFluidboxCount": 0,
+        "readOk": false,
+        "writeOk": false
+      }
     }
   ]
 }

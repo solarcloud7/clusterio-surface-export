@@ -8,13 +8,16 @@ import {
 	validateSelectedEvidence,
 	validateEvidence,
 } from "./reachability-contract.mjs";
+import { requireLuaSuccess } from "./reachability-runner-helpers.mjs";
 import {
-	assertSafeToMutate,
-	requireLuaSuccess,
-	runCleanupBoth,
-} from "./reachability-runner-helpers.mjs";
+	LeaseBlockedError,
+	parseRunnerArguments,
+	resolveFixture,
+	verifyFixtureFingerprint,
+} from "./run-reachability.mjs";
 
 const runner = readFileSync(new URL("./run-reachability.mjs", import.meta.url), "utf8");
+const galleryManifest = JSON.parse(readFileSync(new URL("../lab-gallery/manifest.json", import.meta.url), "utf8"));
 
 const measuredEvidence = {
 	prototype: {
@@ -90,36 +93,36 @@ test("Lua failures are rejected instead of becoming evidence", () => {
 	);
 });
 
-test("cleanup attempts and inspects every instance after an earlier failure", () => {
-	const calls = [];
-	const cleanup = runCleanupBoth(["one", "two"], {
-		action(instance) {
-			calls.push(`action:${instance}`);
-			if (instance === "one") throw new Error("first failed");
-			return { success: true };
-		},
-		inspect(instance) {
-			calls.push(`inspect:${instance}`);
-			return { success: true };
-		},
-	});
-
-	assert.deepEqual(calls, ["action:one", "inspect:one", "action:two", "inspect:two"]);
-	assert.match(cleanup.one.errors.join("\n"), /first failed/);
-	assert.deepEqual(cleanup.two.errors, []);
+test("runner arguments include lease recovery and reject unknown flags", () => {
+	assert.equal(parseRunnerArguments([]).releaseLease, false);
+	assert.equal(parseRunnerArguments(["--release-lease"]).releaseLease, true);
+	assert.deepEqual(parseRunnerArguments(["--sections", "placement"]).sections, ["placement"]);
+	assert.throws(() => parseRunnerArguments(["--reset"]), /Unknown argument/);
 });
 
-test("preflight refuses to mutate while unrelated global state is active", () => {
-	const clear = {
-		one: { zero: { game_paused: false, destination_holds: 0, locked_platforms: 0, async_jobs: 0, committed_source_tombstones: 0 }, errors: [] },
-	};
-	assert.doesNotThrow(() => assertSafeToMutate(clear));
+test("a stale lease classifies as BLOCKED, distinct from a measurement failure", () => {
+	const blocked = new LeaseBlockedError("stale lease");
+	assert.equal(blocked instanceof LeaseBlockedError, true);
+	assert.equal(new Error("measurement failed") instanceof LeaseBlockedError, false);
+	assert.match(runner, /status = error instanceof LeaseBlockedError \? "BLOCKED" : "FAILED"/);
+	assert.match(runner, /--release-lease/);
+});
 
-	for (const field of ["game_paused", "destination_holds", "locked_platforms", "async_jobs", "committed_source_tombstones"]) {
-		const busy = structuredClone(clear);
-		busy.one.zero[field] = field === "game_paused" ? true : 1;
-		assert.throws(() => assertSafeToMutate(busy), new RegExp(field));
-	}
+test("the manifest fixture is resolved and its fingerprint machine-checked against evidence", () => {
+	const fixture = resolveFixture(galleryManifest);
+	assert.equal(fixture.id, "specialized-fluid-reachability");
+	assert.ok(Number.isInteger(fixture.revision));
+	assert.throws(() => resolveFixture({ fixtures: [] }), /no fixture/);
+
+	const matching = structuredClone(measuredEvidence);
+	matching.placement.drill.name = fixture.fingerprint.drillName;
+	assert.deepEqual(verifyFixtureFingerprint(fixture, matching, ["prototype", "placement"]), []);
+
+	const drifted = structuredClone(matching);
+	drifted.placement.drill.live_fluidbox_count = 1;
+	assert.match(verifyFixtureFingerprint(fixture, drifted, ["placement"]).join("\n"), /liveFluidboxCount/);
+	// A section that was not run must not be fingerprint-judged.
+	assert.deepEqual(verifyFixtureFingerprint(fixture, drifted, ["prototype"]), []);
 });
 
 test("current-pin evidence reproduces the final specialized-fluid classification", () => {
@@ -144,23 +147,17 @@ test("the drill conclusion depends on live entity state, not prototype capabilit
 
 test("runner measures the engine and cleans both instances without touching transfers", () => {
 	assert.match(runner, /--sections/);
-	assert.match(runner, /--reset/);
+	assert.match(runner, /--save/);
 	assert.match(runner, /--no-notebook/);
-	assert.match(runner, /surface\.get_property\("pressure"\)/);
-	assert.match(runner, /surface\.get_property\("gravity"\)/);
-	assert.match(runner, /prototypes\.entity/);
-	assert.match(runner, /surface\.can_place_entity/);
-	assert.match(runner, /#drill\.fluidbox/);
-	assert.match(runner, /mining_target/);
-	assert.match(runner, /clusterio-host-1-instance-1/);
-	assert.match(runner, /clusterio-host-2-instance-1/);
-	assert.match(runner, /storage\.destination_holds/);
-	assert.match(runner, /storage\.locked_platforms/);
-	assert.match(runner, /storage\.async_jobs/);
-	assert.match(runner, /storage\.committed_source_transfer_tombstones/);
-	assert.doesNotMatch(runner, /storage\.committed_source_tombstones/);
+	assert.match(runner, /lab-gallery-source-surface-export-2\.0\.77\.zip/);
+	assert.match(runner, /baked-reachability-meter\.cjs/);
+	assert.match(runner, /--start-server/);
+	assert.match(runner, /surface-export-host-2/);
+	assert.match(runner, /finally/);
+	assert.doesNotMatch(runner, /clusterioctl|send-rcon|clusterio-host-1-instance-1/);
+	assert.doesNotMatch(runner, /create_space_platform|create_entity|delete_surface|destroy\(\)|set_tiles/);
 	assert.doesNotMatch(runner, /game\.tick_paused\s*=\s*false/);
-	assert.match(runner, /requireLuaSuccess\(result, instance\)/);
-	assert.match(runner, /validateSelectedEvidence\(result, sections\)/);
+	assert.match(runner, /validateSelectedEvidence\(result, options\.sections\)/);
+	assert.match(runner, /verifyFixtureFingerprint\(fixture, evidence, options\.sections\)/);
 	assert.doesNotMatch(runner, /transfer_platform|import_platform|export_platform/);
 });

@@ -92,3 +92,185 @@ A one-entity diagnostic on the same platform at `game.tick=179375` established t
 - the diagnostic entity was destroyed in the same command.
 
 Final classification: `mining-drill` has a fluidbox-capable prototype, but no live player-recoverable fluidbox on a space platform because the platform has no mining target. It is independently classified as `platformReachable=false` for fluid state. Together with the pressure-blocked turret and gravity-blocked fluid wagon, no platform-reachable specialized fluid omission exists outside the six canonical handler owners. The provisional shared-fluid production repair and synthetic fixture were therefore retracted; the exact inventory fix remains unchanged.
+
+## 2026-07-16 [empirical, 2.0.77] — Baked reachability fixture revision 1
+
+The physical control now lives in the paired lab-gallery source save as platform
+`lab-specialized-fluid-r1`. The migrated runner hash-checks and loads that committed save in an isolated Factorio
+process; it no longer creates a platform or entity, clears storage, unpauses a game, or performs between-run cleanup.
+
+An injected post-load failure exited 1 and the runner removed its prefix-owned runtime. The immediately following
+reload completed with no errors or contract failures and independently reproduced the prior classification:
+
+- platform pressure/gravity: `0/0`;
+- electric-mining-drill prototype fluidbox count: `1`, placement-capable;
+- baked drill: `mining_target=nil`, live fluidbox count `0`, read/write both rejected;
+- pressure-blocked flamethrower turret and gravity-blocked fluid wagon remained unreachable.
+
+The source artifact SHA-256 is
+`6F6DB4ADA0D6CF8747F01FA74880C5C6C272C7E4063BA2CE956ABF88D6E060A7`.
+
+
+## 2026-07-17T02:22:32.721Z - Baked reachability recertification (specialized-fluid-reachability rev 1) - FAILED
+
+```json
+{
+  "script": "tests/specialized-inventory-lab/run-reachability.mjs",
+  "prediction": "The pinned baked source reproduces the Factorio 2.0.77 specialized-fluid reachability classification without runtime fixture construction",
+  "sections": [
+    "prototype",
+    "placement"
+  ],
+  "started": "2026-07-17T02:22:26.740Z",
+  "status": "FAILED",
+  "fixture": {
+    "id": "specialized-fluid-reachability",
+    "revision": 1
+  },
+  "prototype": null,
+  "placement": null,
+  "contract_failures": [],
+  "fingerprint_failures": [],
+  "errors": [
+    "Error: Command failed: docker exec surface-export-host-2 node /tmp/surface-export-specialized-reachability-baked/baked-reachability-meter.cjs 27980 specialized-baked-only WyJwcm90b3R5cGUiLCJwbGFjZW1lbnQiXQ==\nError: meter returned non-JSON RCON output (raw): \n    at main (/tmp/surface-export-specialized-reachability-baked/baked-reachability-meter.cjs:64:17)\n    at process.processTicksAndRejections (node:internal/process/task_queues:103:5)\n\n    at genericNodeError (node:internal/errors:985:15)\n    at wrappedFn (node:internal/errors:539:14)\n    at checkExecSyncError (node:child_process:925:11)\n    at execFileSync (node:child_process:961:15)\n    at docker (file:///C:/Users/Solar/source/FSE-113/tests/specialized-inventory-lab/run-reachability.mjs:83:9)\n    at runLoadedSave (file:///C:/Users/Solar/source/FSE-113/tests/specialized-inventory-lab/run-reachability.mjs:140:14)\n    at async main (file:///C:/Users/Solar/source/FSE-113/tests/specialized-inventory-lab/run-reachability.mjs:178:20)"
+  ],
+  "reset": "discard-loaded-source-save",
+  "finished": "2026-07-17T02:22:32.721Z"
+}
+```
+
+
+## 2026-07-17T02:23:33.040Z - Baked reachability recertification (specialized-fluid-reachability rev 1) - PASS
+
+```json
+{
+  "script": "tests/specialized-inventory-lab/run-reachability.mjs",
+  "prediction": "The pinned baked source reproduces the Factorio 2.0.77 specialized-fluid reachability classification without runtime fixture construction",
+  "sections": [
+    "prototype",
+    "placement"
+  ],
+  "started": "2026-07-17T02:23:27.198Z",
+  "status": "PASS",
+  "fixture": {
+    "id": "specialized-fluid-reachability",
+    "revision": 1
+  },
+  "prototype": {
+    "success": true,
+    "pin": "2.0.77",
+    "tick": 8413627,
+    "game_paused": false,
+    "platform_paused": true,
+    "platform": {
+      "name": "lab-specialized-fluid-r1",
+      "index": 4,
+      "pressure": 0,
+      "gravity": 0
+    },
+    "entities": {
+      "chemical-plant": {
+        "fluidbox_count": 4,
+        "can_place": true,
+        "position": {
+          "y": -2.5,
+          "x": 17.5
+        },
+        "surface_conditions": []
+      },
+      "storage-tank": {
+        "fluidbox_count": 1,
+        "can_place": true,
+        "position": {
+          "y": -2.5,
+          "x": 17.5
+        },
+        "surface_conditions": []
+      },
+      "pump": {
+        "fluidbox_count": 1,
+        "can_place": true,
+        "position": {
+          "y": -1.5,
+          "x": 18.5
+        },
+        "surface_conditions": []
+      },
+      "flamethrower-turret": {
+        "fluidbox_count": 1,
+        "can_place": false,
+        "position": {
+          "y": -2,
+          "x": 18
+        },
+        "surface_conditions": [
+          {
+            "property": "pressure",
+            "min": 10,
+            "max": 50000,
+            "actual": 0,
+            "passes": false
+          }
+        ]
+      },
+      "fluid-wagon": {
+        "fluidbox_count": 0,
+        "can_place": false,
+        "position": {
+          "y": 0,
+          "x": 20
+        },
+        "surface_conditions": [
+          {
+            "property": "gravity",
+            "min": 1,
+            "max": 1.7976931348623155e+308,
+            "actual": 0,
+            "passes": false
+          }
+        ]
+      },
+      "electric-mining-drill": {
+        "fluidbox_count": 1,
+        "can_place": true,
+        "position": {
+          "y": -2.5,
+          "x": 17.5
+        },
+        "surface_conditions": []
+      }
+    }
+  },
+  "placement": {
+    "success": true,
+    "pin": "2.0.77",
+    "tick": 8413627,
+    "game_paused": false,
+    "platform_paused": true,
+    "drill": {
+      "name": "electric-mining-drill",
+      "created": true,
+      "can_place": true,
+      "position": {
+        "y": 0.5,
+        "x": 20.5
+      },
+      "live_fluidbox_count": 0,
+      "read_ok": false,
+      "read_error": "Passed index is out of range.",
+      "write_ok": false,
+      "write_error": "Passed index is out of range.",
+      "mining_target": null
+    }
+  },
+  "contract_failures": [],
+  "fingerprint_failures": [],
+  "errors": [],
+  "reset": "discard-loaded-source-save",
+  "artifact": {
+    "path": "C:\\Users\\Solar\\source\\FSE-113\\docker\\seed-data\\lab-saves\\lab-gallery-source-surface-export-2.0.77.zip",
+    "sha256": "DFE388875B9CD9AAAB3A9DF74D5132121919915DBE432D1ED40225CF9BC7D027"
+  },
+  "finished": "2026-07-17T02:23:33.040Z"
+}
+```
