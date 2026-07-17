@@ -26,7 +26,7 @@ export function certifyRuntimeApiSchema(schema) {
 	}
 	const requiredAttributes = {
 		LuaGameScript: ["surfaces"],
-		LuaSurface: ["platform", "planet", "map_gen_settings"],
+		LuaSurface: ["platform", "planet", "map_gen_settings", "generate_with_lab_tiles", "has_global_electric_network", "ignore_surface_conditions"],
 		LuaForce: ["platforms"],
 		LuaSpacePlatform: ["surface", "paused", "name", "valid"],
 		LuaEntity: ["loader_type", "valid", "fluidbox", "mining_target", "name"],

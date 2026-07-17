@@ -202,6 +202,23 @@ local function create_reachability_fixture(specification)
     return platform, drill
 end
 
+local function configure_lab_surfaces()
+    local rows = {}
+    for _, surface in pairs(game.surfaces) do
+        surface.generate_with_lab_tiles = true
+        surface.has_global_electric_network = true
+        surface.ignore_surface_conditions = true
+        rows[#rows + 1] = {
+            name = surface.name,
+            generateWithLabTiles = surface.generate_with_lab_tiles,
+            hasGlobalElectricNetwork = surface.has_global_electric_network,
+            ignoreSurfaceConditions = surface.ignore_surface_conditions,
+        }
+    end
+    table.sort(rows, function(a, b) return a.name < b.name end)
+    return rows
+end
+
 local function inspect_reachability(specification)
     local platform
     for _, candidate in pairs(game.forces.player.platforms) do
@@ -275,6 +292,7 @@ local function inspect()
         maximumStack = all.maximumStack,
         physicalStacks = all.physicalStacks,
         reachability = inspect_reachability(specialized),
+        surfaceSettings = configure_lab_surfaces(),
         transient = transient_state(),
         census = surface_census(),
     }
@@ -309,6 +327,7 @@ local function normalize_source()
     local index_surface, renderings, tags = replace_index_surface(manifest)
     remove_unrelated_surfaces({ [source_surface.name] = true, [index_surface.name] = true })
     local platform, drill = create_reachability_fixture(specialized)
+    configure_lab_surfaces()
     storage.lab_gallery = {
         schema = manifest.schema,
         saveRole = "source",

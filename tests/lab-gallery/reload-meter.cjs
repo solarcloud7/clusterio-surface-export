@@ -41,12 +41,15 @@ if platform then
       write_ok=write_ok,write_error=write_ok and nil or tostring(write_error)}
   else reachability={exists=true,drill_name=nil} end
 end
-local surface_names,total_entities,total_chunks={},0,0
+local surface_names,surface_settings,total_entities,total_chunks={},{},0,0
 for _,row in pairs(game.surfaces)do
   local chunks=0 for _ in row.get_chunks()do chunks=chunks+1 end
   surface_names[#surface_names+1]=row.name;total_entities=total_entities+#row.find_entities_filtered({});total_chunks=total_chunks+chunks
+  surface_settings[#surface_settings+1]={name=row.name,generate_with_lab_tiles=row.generate_with_lab_tiles,
+    has_global_electric_network=row.has_global_electric_network,ignore_surface_conditions=row.ignore_surface_conditions}
 end
 table.sort(surface_names)
+table.sort(surface_settings,function(a,b)return a.name<b.name end)
 rcon.print(helpers.table_to_json({
   version=script.active_mods.base,save_role=storage.lab_gallery and storage.lab_gallery.saveRole or nil,
   gallery_storage=storage.lab_gallery~=nil,index_surface=index~=nil,game_paused=not not game.tick_paused,
@@ -54,7 +57,8 @@ rcon.print(helpers.table_to_json({
   source_belts=#source,target_belts=#target,source_quantity=all.quantity,physical_stacks=all.physical_stacks,
   maximum_stack=all.maximum_stack,source_line_quantities={line1.quantity,line2.quantity},target_quantity=empty.quantity,
   index_texts=index_texts,index_tags=index and #game.forces.player.find_chart_tags(index)or 0,
-  reachability=reachability,surface_census={total_entities=total_entities,total_generated_chunks=total_chunks,surface_names=surface_names}
+  reachability=reachability,surface_settings=surface_settings,
+  surface_census={total_entities=total_entities,total_generated_chunks=total_chunks,surface_names=surface_names}
 }))`;
 
 async function main() {

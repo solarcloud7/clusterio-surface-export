@@ -31,6 +31,13 @@ test("normalization removes broad world state and builds the first minimal space
 	assert.match(source, /prepare_destination/);
 });
 
+test("normalization enables all three editor lab settings on every retained surface", () => {
+	assert.match(source, /for _, surface in pairs\(game\.surfaces\)/);
+	assert.match(source, /surface\.generate_with_lab_tiles\s*=\s*true/);
+	assert.match(source, /surface\.has_global_electric_network\s*=\s*true/);
+	assert.match(source, /surface\.ignore_surface_conditions\s*=\s*true/);
+});
+
 test("visual catalog, belt pilot, and reachability fixture have independent physical readings", () => {
 	assert.match(source, /rendering\.draw_text/);
 	assert.match(source, /add_chart_tag/);

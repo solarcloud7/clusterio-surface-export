@@ -30,12 +30,23 @@ function assertFields(reading, expected) {
 	}
 }
 
+export function assertSurfaceSettings(settings) {
+	if (!Array.isArray(settings) || settings.length === 0) throw new Error("surface_settings is empty");
+	for (const row of settings) {
+		for (const field of ["generate_with_lab_tiles", "has_global_electric_network", "ignore_surface_conditions"]) {
+			if (row?.[field] !== true) throw new Error(`surface ${row?.name || "<unknown>"} ${field} is not true`);
+		}
+	}
+	return settings;
+}
+
 export function assertReloadReading(reading, role) {
 	if (reading?.reachability?.exists === true && !("mining_target" in reading.reachability)) reading.reachability.mining_target = null;
 	assertFields(reading, {
 		version: "2.0.77", save_role: role, gallery_storage: true, index_surface: true, game_paused: false,
 		transient: { jobs: 0, locks: 0, holds: 0, tombstones: 0 }, index_texts: 12, index_tags: 12,
 	});
+	assertSurfaceSettings(reading?.surface_settings);
 	if (role === "source") {
 		assertFields(reading, {
 			source_belts: 16, target_belts: 16, source_quantity: 125, physical_stacks: 125,

@@ -57,6 +57,12 @@ export function assertSourceReady(reading) {
 	if (reading?.saveRole !== "source") throw new Error(`source save role is ${reading?.saveRole}`);
 	if (reading.beltFixtureExact !== true) throw new Error("source belt fixture is not exact");
 	if (reading.reachabilityFixtureExact !== true) throw new Error("source reachability fixture is not exact");
+	for (const surface of reading.surfaceSettings || []) {
+		if (!surface.generateWithLabTiles || !surface.hasGlobalElectricNetwork || !surface.ignoreSurfaceConditions) {
+			throw new Error(`source surface settings are not lab-safe: ${JSON.stringify(surface)}`);
+		}
+	}
+	if (reading.surfaceSettings?.length !== reading.census?.surfaces?.length) throw new Error("source surface settings census is incomplete");
 	return reading;
 }
 
@@ -65,6 +71,12 @@ export function assertDestinationReady(reading) {
 	if (reading?.saveRole !== "destination") throw new Error(`destination save role is ${reading?.saveRole}`);
 	if (reading.sourceBelts !== 0 || reading.targetBelts !== 0) throw new Error("destination still contains baked belts");
 	if (reading.reachability?.exists !== false) throw new Error("destination still contains the specialized platform");
+	for (const surface of reading.surfaceSettings || []) {
+		if (!surface.generateWithLabTiles || !surface.hasGlobalElectricNetwork || !surface.ignoreSurfaceConditions) {
+			throw new Error(`destination surface settings are not lab-safe: ${JSON.stringify(surface)}`);
+		}
+	}
+	if (reading.surfaceSettings?.length !== reading.census?.surfaces?.length) throw new Error("destination surface settings census is incomplete");
 	return reading;
 }
 
