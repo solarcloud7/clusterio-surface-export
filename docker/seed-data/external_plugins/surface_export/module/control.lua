@@ -15,6 +15,7 @@ local AsyncProcessor = require("modules/surface_export/core/async-processor")
 local SurfaceLock = require("modules/surface_export/utils/surface-lock")
 local TransactionDashboard = require("modules/surface_export/interfaces/gui/transaction-dashboard")
 local GatewayTransferGui = require("modules/surface_export/interfaces/gui/gateway-transfer")
+local SelectionLab = require("modules/surface_export/interfaces/gui/selection-lab")
 local Gateway = require("modules/surface_export/core/gateway")
 local GameUtils = require("modules/surface_export/utils/game-utils")
 
@@ -182,6 +183,34 @@ SurfaceExportModule.events = {
 	[e.on_gui_closed] = function(event)
 		TransactionDashboard.on_gui_closed(event)
 		GatewayTransferGui.on_gui_closed(event)
+	end,
+
+	-- Selection Lab (debug instrument; prototype ships in the surfexp_gateways mod, all logic here).
+	-- Each handler self-guards on event.item == "selection-lab-tool" and debug_mode.
+	[e.on_player_selected_area] = function(event)
+		SelectionLab.handle(event, "copy")
+	end,
+
+	[e.on_player_alt_selected_area] = function(event)
+		SelectionLab.handle(event, "paste")
+	end,
+
+	[e.on_player_reverse_selected_area] = function(event)
+		SelectionLab.handle(event, "audit")
+	end,
+
+	[e.on_player_alt_reverse_selected_area] = function(event)
+		SelectionLab.handle(event, "force")
+	end,
+
+	-- Selection Lab undo/redo (custom-input prototypes from the surfexp_gateways mod; string keys
+	-- pass through the event_handler to script.on_event, which accepts custom-input names).
+	["selection-lab-undo"] = function(event)
+		SelectionLab.undo(event)
+	end,
+
+	["selection-lab-redo"] = function(event)
+		SelectionLab.redo(event)
 	end,
 }
 
