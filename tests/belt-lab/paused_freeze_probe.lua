@@ -1,11 +1,10 @@
--- BELT-R13 probe: paused-platform belt freeze [empirical, 2.0.77]
+-- BELT-R13 probe: paused-platform belt physics [empirical, 2.0.77]
 -- Instrument: the dedicated feeder-free probe strip on lab-omnibus-platform-v1 — six turbo belts
 -- at (-31.5..-26.5, 16.5), no loader/infinity-container within reach, outside every clone
 -- workspace (the R11/R12 clone sections wipe their own areas and must never touch the strip).
--- All line handles are fetched FRESH in the same execution as any write: BELT-R14 measured that
--- writing through an aged handle can materialize the item downstream AND a second time ticks
--- later (double-materialization) — stale handles are forbidden in instruments and production.
--- Modes (MODE global, set by run-r13-paused-freeze.ps1):
+-- All line handles are fetched FRESH in the same execution as any write (BELT-R11 aged-clone
+-- leak class: stale window handles can land writes in a downstream window's frame).
+-- Modes (MODE global, set by run-r13-paused-belt-physics.ps1):
 --   (none)         read: per-line item vector, totals, active counts, tick
 --   MODE='seed'    place 3 iron-plate on strip belts at k-floored positions
 --   MODE='thaw'    write active=true to all strip belts, read back same-execution (belts on a
@@ -56,7 +55,7 @@ elseif MODE=='insert' then
       break
     end
   end
-  out.insert_on_frozen=done
+  out.insert_ok=done
 elseif MODE=='cleanup' then
   local removed=0
   for _,e in ipairs(es) do
