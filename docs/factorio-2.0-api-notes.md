@@ -166,10 +166,14 @@ Consequence: fluid does not live per-entity — it lives in the shared segment. 
   belt-aware; the only residual is the craft window, which freezing the source eliminates).
 - **Do NOT add a separate `get_transport_line` pass on top of a `get_item_count` total — that double-counts the
   belts** (`get_item_count` already includes them).
-- **Do NOT reason about belt grouping via `line_equals` at 2.0.76 — it is unreliable here** (observed returning
-  `true` for two belts whose lines hold *different* counts, so it is neither identity nor content equality).
-  Ground belt totals on `get_item_count` (or unique `get_detailed_contents().unique_id` stacks), never on
-  `line_equals` dedup.
+- **`line_equals` is neither identity nor content equality — but it IS the same-execution side partition
+  on a populated source.** At 2.0.76 it was observed returning `true` for two belts whose lines hold
+  different counts, so never ground belt TOTALS on `line_equals` dedup (use `get_item_count` or unique
+  `get_detailed_contents().unique_id` stacks). At 2.0.77, however, grouping a POPULATED surface's transport
+  lines by `line_equals` within ONE Lua execution partitions them into physical lane sides (left/right lanes
+  never merge) — the partition that BELT-R11/R12 reconstruction is built on. The grouping is state-dependent
+  (an empty, topologically identical target groups differently) and is only valid same-execution,
+  same-surface, populated; it is NOT a cross-import key (see BELT-R9 below).
 - **[empirical, 2.0.77, BELT-R9] Engine transport-line identity is not a durable cross-import restoration
   key.** On five DUP-233855 baseline replays, the known belt-phase deficit was exactly five items before
   recovery. Owner-narrowed `line_equals` resolution produced multiple matches on both known loss components,
@@ -180,6 +184,48 @@ Consequence: fluid does not live per-entity — it lives in the shared segment. 
 - **[empirical, 2.0.76]** `tests/integration/engine-invariants` grounds the belt meter against the unique-stack
   physical total (catches both belt-item drop → meter < physical and a whole-line double-count → meter >
   physical) and asserts held-item inclusion whenever an inserter is holding.
+
+## Belt transport-line laws (CANONICAL — 2026-07-17 recreation)
+
+> This section is the single source of truth for belt insertion/restoration physics. Other docs must POINT
+> here, not restate. Every law carries its rung; the full ledgers are in
+> [tests/belt-lab/NOTEBOOK.md](../tests/belt-lab/NOTEBOOK.md), including the same-day RETRACTIONS entry
+> (a briefly-held "frozen platform" claim and an "insert_at duplication" claim were instrument artifacts —
+> the RCON-global lab hazard — and never reached law).
+
+- **[empirical, 2.0.77, BELT-R10] `insert_at`'s write frame is offset from the `get_detailed_contents` read
+  frame by exactly one tick of that entity's `belt_speed`** (transport 1/32, fast 2/32, express 3/32, turbo
+  4/32 — `prototypes.entity[name].belt_speed` exactly; tier-parametric, NEVER a constant). Writing below
+  `belt_speed` silently materializes the item on the downstream entity with ret=TRUE; writing beyond
+  `line_length` honestly rejects. Any belt write must therefore use positions `>= belt_speed` (in /256 grid:
+  `k >= belt_speed*256`).
+- **[empirical, 2.0.77, BELT-R11/R12] Side-scoped reverse first-fit reconstructs belt contents exactly.**
+  The fidelity unit is the continuous lane side (owner contract: `(name, quality, stack count)` multiset;
+  position/order/window are NOT invariants). Partition the populated source by same-execution `line_equals`
+  (= the lane sides); bridge to the destination by belt ordinal + line index (no engine graph — the empty
+  target's input/output_lines BFS shatters on real topologies); place each side's multiset by reverse
+  first-fit over that side's own windows with the R10 k-floor; validate every placement by physical
+  side-census delta, never return values. Measured: 243/243 (saturated mixed omnibus) and 431/431 with
+  **21/21 filtered-pure sides staying pure** (purity holds by construction). Splitter filter/priorities,
+  loader filters, and infinity-chest settings all copy cleanly entity-to-entity.
+- **[empirical, 2.0.77, BELT-R11] Fetch transport-line handles in the SAME execution that writes them.**
+  On an aged clone, writes through stale window handles landed li-preserving in a downstream window's frame
+  (864 detected-and-undone events); fresh same-execution handles produced zero. Same-side landing makes the
+  class contract-benign, but production code must not cache line handles across ticks.
+- **[empirical, 2.0.77, BELT-R13] Paused-platform belt physics: belts MOVE (items flow; there is no frozen
+  regime — saturated lanes are still only jam-stable), belt-class `active=true`/`false` writes are REJECTED
+  (reads stay false; loaders' flag IS writable — freeze feeders by deactivating loaders), and `insert_at`
+  conserves exactly (distinct-unique_id controls on platform and nauvis; no duplication).** This re-confirms
+  the long-standing "belts keep moving" law and is why the export-side atomic single-tick belt scan
+  (Pitfall #16, atomic belt scan) remains REQUIRED.
+- **Import-side single-tick belt restore is the current conservative implementation, not a proven
+  requirement.** Movement within a lane side between restore batches is contract-harmless (multiset unit);
+  the untested risk is items crossing SIDE boundaries (through splitters/sideloads) mid-restore before the
+  gate. Incremental (multi-tick) belt restore is a design candidate gated on that rung — do not assert
+  either "must be single-tick" or "safe to batch" beyond this.
+- **Standard fill instrument**: infinity chest (filtered, at-least N) + filtered loader saturates a belt
+  circuit to a deterministic steady state; loaders stay active on paused platforms (deactivate them to
+  freeze the feed). See the Physical Truth Lab Standard's fixture-contract section.
 
 - **[empirical, 2.0.77, no-tick-sync-lab PR-0B/LAB-B5]** The strict-gate synchronous pass
   (`restore_held_items_only` → `validate_import(..., strict=true)`) does not advance `game.tick`, does not move

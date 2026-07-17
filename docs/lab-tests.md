@@ -78,6 +78,19 @@ scale, capacity, batch size, or a workload boundary is the named variable and ev
 Historical reproductions may remain large until minimization preserves the failure; "small plus large" is not a
 default test pattern.
 
+### Standard fill harness (belt fixtures)
+
+The standard instrument for populating a belt fixture is an **infinity chest (filtered, `at-least N`) feeding
+a filtered loader** onto the circuit. It saturates the circuit to a deterministic steady state (owner-built
+exemplars: the green-belt omnibus and the filtered-splitter fixture on `lab-omnibus-platform-v1`), needs no
+hand-seeding, and reproduces natural kinetic compression — the hardest restore case. Operational facts
+(canonical citations in the belt section of [factorio-2.0-api-notes.md](factorio-2.0-api-notes.md)):
+loaders keep running on paused platforms and their `active` flag IS writable — deactivate the loaders to
+freeze the feed for a measurement window; belt-class `active` writes are rejected and belts keep moving
+(BELT-R13), so census reads must be same-execution. Clone the chests WITH the fixture
+(`infinity_container_filters` + `remove_unfiltered_items` copy cleanly) so a cloned fixture remains
+self-sustaining.
+
 ## Single-use batch lifecycle
 
 A certified baked-fixture batch follows this lifecycle:
