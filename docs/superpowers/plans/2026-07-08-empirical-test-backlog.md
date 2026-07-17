@@ -16,9 +16,9 @@
 > `tests/labs-certified.json` (gate-drift/LAB-A, fluid-lab R1/R7/R8/R9/R10/R11/R12, inserter-lab B1-B4,
 > no-tick-sync B5/PR0B, engine-repin B7-B9, hold-completeness PR0A). Doc-/`[API]`-verified-only or un-run rungs
 > (LAB-C/D/F/H/J/K, and LAB-I I1/I2) stay open. SUPERSEDED = the source-delete gate thresholds deleted by the
-> single frozen-world exact gate (PR #76, `c5d7437`). QUEUED = covered by the LAB-TAIL brief
-> (`2026-07-10-lab-tail-agent-brief.md`: T1 thermal V×T, T2 timeout wall-clock, T3 max RCON payload, T4
-> stored-export latency).
+> single frozen-world exact gate (PR #76, `c5d7437`). QUEUED = covered by the LAB-TAIL slate (the brief was
+> retired with the executed-plan purge of 2026-07-17): T1 thermal V×T, T2 timeout wall-clock, T3 max RCON
+> payload, T4 stored-export latency.
 
 ## Progress
 - **2026-07-10 — R11 PASSED (commit `e8c7bbe`, audited):** frozen-world fluid injection conserves EXACTLY on
