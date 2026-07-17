@@ -96,9 +96,12 @@ local SIMPLE_RESTORE_RULES = {
   { field = "use_filters", present = true },
   { field = "filter_mode", prop = "inserter_filter_mode" },
   { field = "stack_size_override", prop = "inserter_stack_size_override" },
-  -- Splitter filter: data.filter is a plain name string here (mining-drill data.filter is a
-  -- {name,quality} table handled by the inline set_filter block, gated on entity.set_filter).
-  { field = "filter", prop = "splitter_filter" },
+  -- Splitter filter: gated by TYPE, not by current value — a fresh splitter's splitter_filter
+  -- reads nil when unset, so the generic entity[prop] ~= nil guard silently SKIPPED this rule and
+  -- filters were lost on every transfer/paste (caught live 2026-07-17 via the selection-lab
+  -- filtered fixture; string and {name,quality} table writes both measured to stick at 2.0.77).
+  -- Mining-drill data.filter ({name,quality}) is unaffected: drills are not in the types gate.
+  { field = "filter", prop = "splitter_filter", types = { ["splitter"] = true, ["lane-splitter"] = true } },
   { field = "input_priority", prop = "splitter_input_priority", safecall = true },
   { field = "output_priority", prop = "splitter_output_priority", safecall = true },
   { field = "color", safecall = true },
@@ -129,7 +132,15 @@ local function apply_simple_restore_rules(entity, data)
       has_value = value and true or false -- truthy (these fields are never boolean)
     end
     local prop = rule.prop or rule.field
-    if has_value and (rule.no_entity_guard or entity[prop] ~= nil) then
+    -- rule.types: explicit entity-type gate for properties that read nil when unset (the
+    -- entity[prop] ~= nil guard cannot distinguish "class lacks property" from "currently unset").
+    local applies
+    if rule.types then
+      applies = rule.types[entity.type] or false
+    else
+      applies = rule.no_entity_guard or entity[prop] ~= nil
+    end
+    if has_value and applies then
       if rule.safecall then
         safe_call(string.format("%s for %s", prop, entity.name),
           function() entity[prop] = value end)

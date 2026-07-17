@@ -274,9 +274,11 @@ EntityHandlers["splitter"] = function(entity)
     items = EntityHandlers.skip_belt_items and {} or InventoryScanner.extract_belt_items(entity)
   }
 
-  -- Filter settings
+  -- Filter settings — capture quality too ({name,quality} table; the deserializer's splitter rule
+  -- assigns either shape directly, and legacy name-string exports still restore).
   if entity.splitter_filter then
-    data.filter = entity.splitter_filter.name
+    local sf = entity.splitter_filter
+    data.filter = { name = sf.name, quality = sf.quality }
   end
 
   -- Input/output priority
