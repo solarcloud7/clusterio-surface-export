@@ -1,905 +1,915 @@
 {
-  "schema": "surface-export-lab-gallery-v2",
-  "engineVersion": "2.0.77",
-  "surfaceName": "lab-gallery-index-v2",
-  "mods": {
-    "base": "2.0.77",
-    "elevated-rails": "2.0.77",
-    "FluidMustFlow": "1.4.4",
-    "quality": "2.0.77",
-    "SpidertronEnhancements": "1.10.8",
-    "space-age": "2.0.77",
-    "SpidertronPatrols": "2.6.3",
-    "surfexp_gateways": "0.3.0",
-    "maraxsis": "1.31.6"
-  },
-  "saves": {
-    "source": {
-      "role": "source",
-      "name": "lab-gallery-source-surface-export-2-0-77",
-      "artifact": "docker/seed-data/lab-saves/lab-gallery-source-surface-export-2.0.77.zip",
-      "sha256": "7AA51AD67460B6AAE557F8ABC12C8C9167BE185FD77F6CCDB2A17A7831F627A5",
-      "expectedCensus": {
-        "totalEntities": 1488,
-        "totalGeneratedChunks": 5355,
-        "surfaces": [
-          {
-            "name": "lab-gallery-index-v2",
-            "entityCount": 0,
-            "generatedChunks": 90
-          },
-          {
-            "name": "nauvis",
-            "entityCount": 32,
-            "generatedChunks": 389,
-            "planet": "nauvis"
-          },
-          {
-            "name": "platform-1",
-            "entityCount": 2,
-            "generatedChunks": 240,
-            "platform": "lab-specialized-fluid-r1"
-          },
-          {
-            "name": "platform-11",
-            "entityCount": 81,
-            "generatedChunks": 356,
-            "platform": "lab-omnibus-state-v1"
-          },
-          {
-            "name": "platform-2",
-            "entityCount": 1359,
-            "generatedChunks": 1603,
-            "platform": "lab-transfer-fixture-v1"
-          },
-          {
-            "name": "platform-3",
-            "entityCount": 1,
-            "generatedChunks": 798,
-            "platform": "lab-consumable-1"
-          },
-          {
-            "name": "platform-4",
-            "entityCount": 1,
-            "generatedChunks": 977,
-            "platform": "lab-consumable-2"
-          },
-          {
-            "name": "platform-5",
-            "entityCount": 1,
-            "generatedChunks": 225,
-            "platform": "lab-consumable-3"
-          },
-          {
-            "name": "platform-6",
-            "entityCount": 9,
-            "generatedChunks": 156,
-            "platform": "lab-belt-corner-v1"
-          },
-          {
-            "name": "platform-7",
-            "entityCount": 2,
-            "generatedChunks": 521,
-            "platform": "lab-energy-v1"
-          }
-        ]
-      },
-      "mods": {
-        "base": "2.0.77",
-        "elevated-rails": "2.0.77",
-        "FluidMustFlow": "1.4.4",
-        "quality": "2.0.77",
-        "SpidertronEnhancements": "1.10.8",
-        "space-age": "2.0.77",
-        "SpidertronPatrols": "2.6.3",
-        "surfexp_gateways": "0.3.0",
-        "maraxsis": "1.31.6"
-      }
-    },
-    "destination": {
-      "role": "destination",
-      "name": "lab-gallery-destination-surface-export-2-0-77",
-      "artifact": "docker/seed-data/lab-saves/lab-gallery-destination-surface-export-2.0.77.zip",
-      "sha256": "09B1FCCEAD5EF38395825775DA3942CDD9382F6D2B4FD217A2A701AF15293BE5",
-      "expectedCensus": {
-        "totalEntities": 0,
-        "totalGeneratedChunks": 479,
-        "surfaces": [
-          {
-            "name": "lab-gallery-index-v2",
-            "entityCount": 0,
-            "generatedChunks": 90
-          },
-          {
-            "name": "nauvis",
-            "entityCount": 0,
-            "generatedChunks": 389,
-            "planet": "nauvis"
-          }
-        ]
-      },
-      "mods": {
-        "base": "2.0.77",
-        "elevated-rails": "2.0.77",
-        "FluidMustFlow": "1.4.4",
-        "quality": "2.0.77",
-        "SpidertronEnhancements": "1.10.8",
-        "space-age": "2.0.77",
-        "SpidertronPatrols": "2.6.3",
-        "surfexp_gateways": "0.3.0",
-        "maraxsis": "1.31.6"
-      }
-    }
-  },
-  "contract": {
-    "fixtureIsOracle": false,
-    "mutableDestinationsAreBaked": true,
-    "independentOracle": "A direct Factorio physical meter independently observes the loaded fixture before accepting a result.",
-    "resetModel": "Reload the paired source and destination golden saves at the batch boundary; never repair a consumed fixture."
-  },
-  "labs": [
-    {
-      "id": "belt-lab",
-      "title": "Belts and transport lines",
-      "purpose": "Visualize lane-side fidelity, native stacks, corners, splitters, undergrounds, and known loss replays.",
-      "sourcePath": "tests/belt-lab",
-      "zone": {
-        "x": -36,
-        "y": -18
-      }
-    },
-    {
-      "id": "engine-repin-lab",
-      "title": "Engine version repin",
-      "purpose": "Re-certify engine-sensitive runtime shapes and behavioral rungs after a Factorio version change.",
-      "sourcePath": "tests/engine-repin-lab",
-      "zone": {
-        "x": -12,
-        "y": -18
-      }
-    },
-    {
-      "id": "fluid-lab",
-      "title": "Fluid systems",
-      "purpose": "Inspect fluidbox ownership, frozen reads, pumps, plasma, and exact fluid accounting.",
-      "sourcePath": "tests/fluid-lab",
-      "zone": {
-        "x": 12,
-        "y": -18
-      }
-    },
-    {
-      "id": "gate-drift-lab",
-      "title": "Validation gate drift",
-      "purpose": "Exercise frozen-gate timing and detect source or destination state that escapes the exact verdict.",
-      "sourcePath": "tests/gate-drift-lab",
-      "zone": {
-        "x": 36,
-        "y": -18
-      }
-    },
-    {
-      "id": "hidden-semantics-lab",
-      "title": "Hidden state semantics",
-      "purpose": "Probe state that is structurally present but easy for serializers or validators to miss.",
-      "sourcePath": "tests/hidden-semantics-lab",
-      "zone": {
-        "x": -36,
-        "y": 0
-      }
-    },
-    {
-      "id": "hold-completeness-lab",
-      "title": "Destination hold completeness",
-      "purpose": "Demonstrate which entities and operations must remain frozen until transfer validation completes.",
-      "sourcePath": "tests/hold-completeness-lab",
-      "zone": {
-        "x": -12,
-        "y": 0
-      }
-    },
-    {
-      "id": "inserter-lab",
-      "title": "Inserter held stacks",
-      "purpose": "Visualize held-item reachability, quality, filters, and busy-state round trips.",
-      "sourcePath": "tests/inserter-lab",
-      "zone": {
-        "x": 12,
-        "y": 0
-      }
-    },
-    {
-      "id": "midcraft-lab",
-      "title": "Mid-craft machines",
-      "purpose": "Inspect recipe progress, ingredient embodiment, and partially completed machine state.",
-      "sourcePath": "tests/midcraft-lab",
-      "zone": {
-        "x": 36,
-        "y": 0
-      }
-    },
-    {
-      "id": "no-tick-sync-lab",
-      "title": "No-tick synchronization",
-      "purpose": "Prove restoration and validation behavior while the game is paused and no normal tick advances.",
-      "sourcePath": "tests/no-tick-sync-lab",
-      "zone": {
-        "x": -36,
-        "y": 18
-      }
-    },
-    {
-      "id": "ops-lab",
-      "title": "Operational tails",
-      "purpose": "Exercise cleanup, retry, timeout, and transaction-tail behavior around completed operations.",
-      "sourcePath": "tests/ops-lab",
-      "zone": {
-        "x": -12,
-        "y": 18
-      }
-    },
-    {
-      "id": "specialized-inventory-lab",
-      "title": "Specialized inventories",
-      "purpose": "Map reachable inventories and fluids owned by specialized entity handlers.",
-      "sourcePath": "tests/specialized-inventory-lab",
-      "zone": {
-        "x": 12,
-        "y": 18
-      }
-    },
-    {
-      "id": "state-dimensions-lab",
-      "title": "Serialized state dimensions",
-      "purpose": "Audit energy, temperature, burner, bonus progress, equipment, and other player-visible state dimensions.",
-      "sourcePath": "tests/state-dimensions-lab",
-      "zone": {
-        "x": 36,
-        "y": 18
-      }
-    }
-  ],
-  "fixtures": [
-    {
-      "id": "belt-5x5-125-unstacked",
-      "revision": 1,
-      "labId": "belt-lab",
-      "name": "5x5 unstacked belt loop",
-      "purpose": "Preserve 125 one-item iron-plate stacks split 67/58 across the two physical sides.",
-      "category": "physical-lab",
-      "owningRunner": "tests/belt-lab/rung1b_corner_loop.lua",
-      "saveRole": "source",
-      "surfaceName": "nauvis",
-      "engineVersion": "2.0.77",
-      "mods": {
-        "base": "2.0.77",
-        "elevated-rails": "2.0.77",
-        "FluidMustFlow": "1.4.4",
-        "quality": "2.0.77",
-        "SpidertronEnhancements": "1.10.8",
-        "space-age": "2.0.77",
-        "SpidertronPatrols": "2.6.3",
-        "surfexp_gateways": "0.3.0",
-        "maraxsis": "1.31.6"
-      },
-      "invariant": "The source loop contains exactly 125 physical one-item iron-plate stacks, 67 on side one and 58 on side two.",
-      "expectedTerminalVerdict": "observation-only",
-      "independentOracleRequired": true,
-      "fingerprint": {
-        "beltName": "turbo-transport-belt",
-        "beltCount": 16,
-        "itemName": "iron-plate",
-        "quantity": 125,
-        "physicalStacks": 125,
-        "maximumStack": 1,
-        "lineQuantities": [
-          67,
-          58
-        ]
-      }
-    },
-    {
-      "id": "specialized-fluid-reachability",
-      "revision": 2,
-      "labId": "specialized-inventory-lab",
-      "name": "Specialized fluid reachability",
-      "purpose": "Recertify platform-reachable specialized fluid state from prototype and live entity controls.",
-      "category": "physical-lab",
-      "owningRunner": "tests/specialized-inventory-lab/run-reachability.mjs",
-      "saveRole": "source",
-      "platformName": "lab-specialized-fluid-r1",
-      "engineVersion": "2.0.77",
-      "mods": {
-        "base": "2.0.77",
-        "elevated-rails": "2.0.77",
-        "FluidMustFlow": "1.4.4",
-        "quality": "2.0.77",
-        "SpidertronEnhancements": "1.10.8",
-        "space-age": "2.0.77",
-        "SpidertronPatrols": "2.6.3",
-        "surfexp_gateways": "0.3.0",
-        "maraxsis": "1.31.6"
-      },
-      "note": "Revision 2: the drill was recreated after an asteroid loss and all platform entities are now destructible=false (asteroid-hardening).",
-      "invariant": "Space-platform pressure/gravity are zero and the baked electric mining drill has no live recoverable fluidbox; every fixture entity is destructible=false.",
-      "expectedTerminalVerdict": "observation-only",
-      "independentOracleRequired": true,
-      "fingerprint": {
-        "pressure": 0,
-        "gravity": 0,
-        "drillName": "electric-mining-drill",
-        "miningTarget": null,
-        "liveFluidboxCount": 0,
-        "readOk": false,
-        "writeOk": false
-      }
-    },
-    {
-      "id": "omnibus-adversarial-inventory",
-      "revision": 1,
-      "labId": "state-dimensions-lab",
-      "name": "Adversarial nested inventory + quality",
-      "purpose": "Preserve a steel-chest holding a power-armor-mk2 whose equipment grid carries a legendary battery and uncommon shield, beside an uncommon-quality iron-gear-wheel recipe.",
-      "category": "physical-lab",
-      "owningRunner": "tests/integration/active-state-roundtrip/run-tests.ps1",
-      "saveRole": "source",
-      "platformName": "lab-omnibus-state-v1",
-      "engineVersion": "2.0.77",
-      "mods": {
-        "base": "2.0.77",
-        "elevated-rails": "2.0.77",
-        "FluidMustFlow": "1.4.4",
-        "quality": "2.0.77",
-        "SpidertronEnhancements": "1.10.8",
-        "space-age": "2.0.77",
-        "SpidertronPatrols": "2.6.3",
-        "surfexp_gateways": "0.3.0",
-        "maraxsis": "1.31.6"
-      },
-      "invariant": "The chest holds a power-armor-mk2 with a legendary battery-mk2-equipment (energy 5000000) and an uncommon energy-shield-mk2-equipment (shield 97, max 195); the assembling-machine-2 runs the iron-gear-wheel recipe at uncommon quality.",
-      "expectedTerminalVerdict": "observation-only",
-      "independentOracleRequired": true,
-      "fingerprint": {
-        "battEnergy": 5000000,
-        "battQuality": "legendary",
-        "shieldValue": 97,
-        "shieldMax": 195,
-        "shieldQuality": "uncommon",
-        "recipe": "iron-gear-wheel",
-        "recipeQuality": "uncommon"
-      },
-      "layoutBlueprint": "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M08w8zczTzDzNzNPMPM3M08w8zczTzDzNzNPMPM3ME8080cwTzTzRzBPNPNHME8080cwTzTzRzBPNPNHME8080cwTzTzRzBPNPNHME8080cwTzTzRzBPNPNHME8080cwTzTzRzBPNPNHME8080cwTzTzRzBNz6onmnmjuieaeaO6J5p5o7onmnmjuieaeaO6J5p5o7onmnmjuieaeaO7Yl27Wl27Wl27Wl27Wl27Wl27Wl27Wl27Wl27Wl27Wl27Wl27Wl27Wl27Wl27Wl27Wl27Wl27Wl27Wl27Wl27Wl27Wl27Wl27Wl27Wl27Wl27Wl27Wl27Wl27Wl27Wl27Wl27Wl27Wl27Wl27Wl27Wl27Wl27Wl27Yl27Yl27Yl27Yl27Yl27Yl27Yl27Yl27Yl27Yl27Yl27Yl27Yl27Yl27Yl27Yl27Yl27Yl27Yl27Yl27Yl27Yl27Yl27Yl27Yl27Yl27Yl27Yl27Yl27Yl27Yl27Yl27Yl27Yl27Yl27Yl27Yl27Yl27Yl27Yl27Yl27Yl27Yl27Yl27Yl27Yl27Yl27Yl27Yl27Yl27Yl/57x78bDpaHbt0/6GZ17B52y81hMBx87Hb78xnHk5i3+Xw8a5Np/7/Hx/8F93J0iA=="
-    },
-    {
-      "id": "omnibus-heat-temperature",
-      "revision": 1,
-      "labId": "state-dimensions-lab",
-      "name": "Heat-pipe temperature",
-      "purpose": "Preserve a heat-pipe at a non-default temperature.",
-      "category": "physical-lab",
-      "owningRunner": "tests/integration/heat-roundtrip/run-tests.ps1",
-      "saveRole": "source",
-      "platformName": "lab-omnibus-state-v1",
-      "engineVersion": "2.0.77",
-      "mods": {
-        "base": "2.0.77",
-        "elevated-rails": "2.0.77",
-        "FluidMustFlow": "1.4.4",
-        "quality": "2.0.77",
-        "SpidertronEnhancements": "1.10.8",
-        "space-age": "2.0.77",
-        "SpidertronPatrols": "2.6.3",
-        "surfexp_gateways": "0.3.0",
-        "maraxsis": "1.31.6"
-      },
-      "invariant": "The heat-pipe holds temperature 500.",
-      "expectedTerminalVerdict": "observation-only",
-      "independentOracleRequired": true,
-      "fingerprint": {
-        "temperature": 500
-      }
-    },
-    {
-      "id": "omnibus-decider-latch",
-      "revision": 1,
-      "labId": "hidden-semantics-lab",
-      "name": "Self-feeding decider latch",
-      "purpose": "Preserve a decider-combinator latched on by its own red-wire self-feedback.",
-      "category": "physical-lab",
-      "owningRunner": "tests/integration/circuit-latch-state/run-tests.ps1",
-      "saveRole": "source",
-      "platformName": "lab-omnibus-state-v1",
-      "engineVersion": "2.0.77",
-      "mods": {
-        "base": "2.0.77",
-        "elevated-rails": "2.0.77",
-        "FluidMustFlow": "1.4.4",
-        "quality": "2.0.77",
-        "SpidertronEnhancements": "1.10.8",
-        "space-age": "2.0.77",
-        "SpidertronPatrols": "2.6.3",
-        "surfexp_gateways": "0.3.0",
-        "maraxsis": "1.31.6"
-      },
-      "invariant": "The decider-combinator's red output network carries signal-S = 1 from its own feedback.",
-      "expectedTerminalVerdict": "observation-only",
-      "independentOracleRequired": true,
-      "fingerprint": {
-        "signalS": 1
-      }
-    },
-    {
-      "id": "omnibus-midcraft-progress",
-      "revision": 1,
-      "labId": "midcraft-lab",
-      "name": "Mid-craft assembling machine",
-      "purpose": "Preserve a deactivated assembling-machine-1 frozen partway through a craft with embodied ingredients.",
-      "category": "physical-lab",
-      "owningRunner": "tests/integration/midcraft-roundtrip/run-tests.ps1",
-      "saveRole": "source",
-      "platformName": "lab-omnibus-state-v1",
-      "engineVersion": "2.0.77",
-      "mods": {
-        "base": "2.0.77",
-        "elevated-rails": "2.0.77",
-        "FluidMustFlow": "1.4.4",
-        "quality": "2.0.77",
-        "SpidertronEnhancements": "1.10.8",
-        "space-age": "2.0.77",
-        "SpidertronPatrols": "2.6.3",
-        "surfexp_gateways": "0.3.0",
-        "maraxsis": "1.31.6"
-      },
-      "invariant": "The assembling-machine-1 is inactive with crafting_progress ~0.70 and 2 iron-plate embodied in its input inventory.",
-      "expectedTerminalVerdict": "observation-only",
-      "independentOracleRequired": true,
-      "fingerprint": {
-        "progress": 0.7000000000000005,
-        "active": false,
-        "inputPlates": 2
-      }
-    },
-    {
-      "id": "omnibus-burner-fuel",
-      "revision": 1,
-      "labId": "state-dimensions-lab",
-      "name": "Burner inserter fuel state",
-      "purpose": "Preserve a deactivated burner-inserter mid-burn with a partly-consumed fuel item and fuel inventory.",
-      "category": "physical-lab",
-      "owningRunner": "tests/integration/entity-burner-roundtrip/run-tests.ps1",
-      "saveRole": "source",
-      "platformName": "lab-omnibus-state-v1",
-      "engineVersion": "2.0.77",
-      "mods": {
-        "base": "2.0.77",
-        "elevated-rails": "2.0.77",
-        "FluidMustFlow": "1.4.4",
-        "quality": "2.0.77",
-        "SpidertronEnhancements": "1.10.8",
-        "space-age": "2.0.77",
-        "SpidertronPatrols": "2.6.3",
-        "surfexp_gateways": "0.3.0",
-        "maraxsis": "1.31.6"
-      },
-      "invariant": "The burner-inserter is inactive, holds 10 coal, is currently burning solid-fuel, and has remaining_burning_fuel 2000000.",
-      "expectedTerminalVerdict": "observation-only",
-      "independentOracleRequired": true,
-      "fingerprint": {
-        "coal": 10,
-        "active": false,
-        "burning": "solid-fuel",
-        "remaining": 2000000
-      }
-    },
-    {
-      "id": "omnibus-equipment-grid",
-      "revision": 1,
-      "labId": "state-dimensions-lab",
-      "name": "Spidertron equipment grid",
-      "purpose": "Preserve a spidertron whose equipment grid carries a partly-charged battery.",
-      "category": "physical-lab",
-      "owningRunner": "tests/integration/item-grid-roundtrip/run-tests.ps1",
-      "saveRole": "source",
-      "platformName": "lab-omnibus-state-v1",
-      "engineVersion": "2.0.77",
-      "mods": {
-        "base": "2.0.77",
-        "elevated-rails": "2.0.77",
-        "FluidMustFlow": "1.4.4",
-        "quality": "2.0.77",
-        "SpidertronEnhancements": "1.10.8",
-        "space-age": "2.0.77",
-        "SpidertronPatrols": "2.6.3",
-        "surfexp_gateways": "0.3.0",
-        "maraxsis": "1.31.6"
-      },
-      "invariant": "The spidertron's grid holds a battery-mk2-equipment charged to 50000000 of 100000000.",
-      "expectedTerminalVerdict": "observation-only",
-      "independentOracleRequired": true,
-      "fingerprint": {
-        "holder": "spidertron",
-        "battEnergy": 50000000,
-        "battMax": 100000000
-      }
-    },
-    {
-      "id": "omnibus-circuit-config",
-      "revision": 1,
-      "labId": "hidden-semantics-lab",
-      "name": "Circuit configuration",
-      "purpose": "Preserve a constant-combinator section signal, a wired decider, and a color-using lamp.",
-      "category": "physical-lab",
-      "owningRunner": "tests/integration/circuit-config-roundtrip/run-tests.ps1",
-      "saveRole": "source",
-      "platformName": "lab-omnibus-state-v1",
-      "engineVersion": "2.0.77",
-      "mods": {
-        "base": "2.0.77",
-        "elevated-rails": "2.0.77",
-        "FluidMustFlow": "1.4.4",
-        "quality": "2.0.77",
-        "SpidertronEnhancements": "1.10.8",
-        "space-age": "2.0.77",
-        "SpidertronPatrols": "2.6.3",
-        "surfexp_gateways": "0.3.0",
-        "maraxsis": "1.31.6"
-      },
-      "invariant": "The constant-combinator's first section slot sets signal-A to 42 and the small-lamp uses colors.",
-      "expectedTerminalVerdict": "observation-only",
-      "independentOracleRequired": true,
-      "fingerprint": {
-        "constantSignal": "signal-A",
-        "constantMin": 42,
-        "lampUseColors": true
-      }
-    },
-    {
-      "id": "omnibus-module-bonus-progress",
-      "revision": 1,
-      "labId": "midcraft-lab",
-      "name": "Module bonus progress",
-      "purpose": "Preserve a deactivated assembling-machine-2 with productivity modules mid bonus progress.",
-      "category": "physical-lab",
-      "owningRunner": "tests/integration/bonus-progress-roundtrip/run-tests.ps1",
-      "saveRole": "source",
-      "platformName": "lab-omnibus-state-v1",
-      "engineVersion": "2.0.77",
-      "mods": {
-        "base": "2.0.77",
-        "elevated-rails": "2.0.77",
-        "FluidMustFlow": "1.4.4",
-        "quality": "2.0.77",
-        "SpidertronEnhancements": "1.10.8",
-        "space-age": "2.0.77",
-        "SpidertronPatrols": "2.6.3",
-        "surfexp_gateways": "0.3.0",
-        "maraxsis": "1.31.6"
-      },
-      "invariant": "The assembling-machine-2 is inactive with bonus_progress 0.5 and 2 productivity-module modules running the iron-gear-wheel recipe.",
-      "expectedTerminalVerdict": "observation-only",
-      "independentOracleRequired": true,
-      "fingerprint": {
-        "bonusProgress": 0.5,
-        "modules": 2,
-        "active": false
-      }
-    },
-    {
-      "id": "omnibus-crafting-fluids",
-      "revision": 1,
-      "labId": "fluid-lab",
-      "name": "Crafting-machine fluids",
-      "purpose": "Preserve a storage-tank of steam beside an inactive chemical-plant and foundry holding recipe fluids.",
-      "category": "physical-lab",
-      "owningRunner": "tests/integration/specialized-inventory-roundtrip/run-tests.ps1",
-      "saveRole": "source",
-      "platformName": "lab-omnibus-state-v1",
-      "engineVersion": "2.0.77",
-      "mods": {
-        "base": "2.0.77",
-        "elevated-rails": "2.0.77",
-        "FluidMustFlow": "1.4.4",
-        "quality": "2.0.77",
-        "SpidertronEnhancements": "1.10.8",
-        "space-age": "2.0.77",
-        "SpidertronPatrols": "2.6.3",
-        "surfexp_gateways": "0.3.0",
-        "maraxsis": "1.31.6"
-      },
-      "invariant": "The storage-tank holds 20000 steam at 500C; the chemical-plant holds 60 water and 60 petroleum-gas; the foundry holds 250 molten-iron at 1500C.",
-      "expectedTerminalVerdict": "observation-only",
-      "independentOracleRequired": true,
-      "fingerprint": {
-        "steam": 20000,
-        "steamTemp": 500,
-        "chemWater": 60,
-        "chemGas": 60,
-        "foundryMolten": 250,
-        "foundryTemp": 1500
-      }
-    },
-    {
-      "id": "omnibus-ghosts-and-proxies",
-      "revision": 1,
-      "labId": "hidden-semantics-lab",
-      "name": "Ghosts and item-request proxy",
-      "purpose": "Preserve one entity-ghost, one tile-ghost, and one item-request-proxy on a host machine.",
-      "category": "physical-lab",
-      "owningRunner": "tests/integration/entity-roundtrip/run-tests.ps1",
-      "saveRole": "source",
-      "platformName": "lab-omnibus-state-v1",
-      "engineVersion": "2.0.77",
-      "mods": {
-        "base": "2.0.77",
-        "elevated-rails": "2.0.77",
-        "FluidMustFlow": "1.4.4",
-        "quality": "2.0.77",
-        "SpidertronEnhancements": "1.10.8",
-        "space-age": "2.0.77",
-        "SpidertronPatrols": "2.6.3",
-        "surfexp_gateways": "0.3.0",
-        "maraxsis": "1.31.6"
-      },
-      "invariant": "The platform carries exactly 1 entity-ghost (assembling-machine-2), 1 tile-ghost, and 1 item-request-proxy.",
-      "expectedTerminalVerdict": "observation-only",
-      "independentOracleRequired": true,
-      "fingerprint": {
-        "entityGhosts": 1,
-        "tileGhosts": 1,
-        "proxies": 1,
-        "ghostInner": "assembling-machine-2"
-      }
-    },
-    {
-      "id": "omnibus-ground-items",
-      "revision": 1,
-      "labId": "hidden-semantics-lab",
-      "name": "Loose ground items",
-      "purpose": "Preserve loose item-entities lying on the platform floor.",
-      "category": "physical-lab",
-      "owningRunner": "tests/integration/ground-item-fidelity/run-tests.ps1",
-      "saveRole": "source",
-      "platformName": "lab-omnibus-state-v1",
-      "engineVersion": "2.0.77",
-      "mods": {
-        "base": "2.0.77",
-        "elevated-rails": "2.0.77",
-        "FluidMustFlow": "1.4.4",
-        "quality": "2.0.77",
-        "SpidertronEnhancements": "1.10.8",
-        "space-age": "2.0.77",
-        "SpidertronPatrols": "2.6.3",
-        "surfexp_gateways": "0.3.0",
-        "maraxsis": "1.31.6"
-      },
-      "invariant": "Exactly 50 iron-plate lie on the platform floor as item-entities.",
-      "expectedTerminalVerdict": "observation-only",
-      "independentOracleRequired": true,
-      "fingerprint": {
-        "ironPlate": 50
-      }
-    },
-    {
-      "id": "omnibus-platform-schedule",
-      "revision": 1,
-      "labId": "ops-lab",
-      "name": "Platform schedule and interrupt",
-      "purpose": "Preserve the platform-level schedule records and a named interrupt.",
-      "category": "physical-lab",
-      "owningRunner": "tests/integration/schedule-filter/run-tests.ps1",
-      "saveRole": "source",
-      "platformName": "lab-omnibus-state-v1",
-      "engineVersion": "2.0.77",
-      "mods": {
-        "base": "2.0.77",
-        "elevated-rails": "2.0.77",
-        "FluidMustFlow": "1.4.4",
-        "quality": "2.0.77",
-        "SpidertronEnhancements": "1.10.8",
-        "space-age": "2.0.77",
-        "SpidertronPatrols": "2.6.3",
-        "surfexp_gateways": "0.3.0",
-        "maraxsis": "1.31.6"
-      },
-      "invariant": "The platform schedule carries 2 records and 1 interrupt named 'lab-interrupt'.",
-      "expectedTerminalVerdict": "observation-only",
-      "independentOracleRequired": true,
-      "fingerprint": {
-        "records": 2,
-        "interrupts": 1,
-        "interruptName": "lab-interrupt"
-      }
-    },
-    {
-      "id": "energy-accumulator-drain",
-      "revision": 1,
-      "labId": "state-dimensions-lab",
-      "name": "Accumulator drain isolation",
-      "purpose": "Preserve a charged accumulator that is the sole electric entity, documenting the drain law.",
-      "category": "physical-lab",
-      "owningRunner": "tests/integration/energy-roundtrip/run-tests.ps1",
-      "saveRole": "source",
-      "platformName": "lab-energy-v1",
-      "engineVersion": "2.0.77",
-      "mods": {
-        "base": "2.0.77",
-        "elevated-rails": "2.0.77",
-        "FluidMustFlow": "1.4.4",
-        "quality": "2.0.77",
-        "SpidertronEnhancements": "1.10.8",
-        "space-age": "2.0.77",
-        "SpidertronPatrols": "2.6.3",
-        "surfexp_gateways": "0.3.0",
-        "maraxsis": "1.31.6"
-      },
-      "note": "Drain law: active=false does NOT stop accumulator discharge; a ~5kW deactivated machine measurably bled a deactivated accumulator, so the fixture carries no other electric entity.",
-      "invariant": "The accumulator holds energy 3000000 and is the sole electric entity on the platform; on a generation-free platform any consumer would bleed it, so it is kept alone (drain law).",
-      "expectedTerminalVerdict": "observation-only",
-      "independentOracleRequired": true,
-      "fingerprint": {
-        "accEnergy": 3000000,
-        "accName": "accumulator",
-        "electricEntities": 1,
-        "entities": 2
-      },
-      "layoutBlueprint": "0eNqlmd1u4jAQRt/F10GyDbQLr7JCUQhOaymxWf+grVDevXagbNVqVyudm4gQz4zH4ejTN1zFcczmHKxLYn8Vtvcuiv3Pq4j2xXVj/c51kxF7Ec9db1bnsUuDD9PqNR/F3AjrTua32Kv50Ajjkk3W3OKXm7fW5eloQlnQ/CNPI84+llDvar2STjbirVxL/mB+ZRNTO9gxmRDr82j6uvRW5lG/eXzWjejKikspNnRjNHVrjzTBT+0xD8OSK4VsPtWYbIzWvbT1DMqjpUo7daWuLXk+ln9rTT9a6/o+T7l05sP3ntT63lTdT+xfzSmP97Mafe8nX7dc79Wn5zU2mN6H0/2tpO6WspTMFxvFfFjyJfuR60vVlV6qrtbz317A4LM73bLW5r7GKxYvWTisDptfs/AN7J2eHTw8BU9PweNT9Py28Kd/719DdDRDRzN0NENHM3Q0Q0dDdDRER0N0NERHQ3Q0REdDdBRERzF0FENHMXQUQ0cxdBRER0F0FERHQXQUREdBdBRDRzJyJAJHIm4kwkYiaiSCRjJmJENGMmIkA0YyXiTDRTJaoM4wmWEqw0SGaQyTGKgwUGCgvkB5geoCxQVqCzQ0zM8wO8PcDDMzzMtAKwOdDDQy0MdAGwNdDDQxcHLGBmdsbsbGZmxqxoZmcGYGR2ZwYgYHZnBeBsdl/xd+aIRNZiqL/vx90IiLCXFJuH3Su81ut/2xeXoul3l+B+2yRWg="
-    },
-    {
-      "id": "belt-corner-recovery",
-      "revision": 1,
-      "labId": "belt-lab",
-      "name": "Over-packed belt corner",
-      "purpose": "Preserve an over-compressed turbo-belt left corner, the recovery-test replay state.",
-      "category": "physical-lab",
-      "owningRunner": "tests/integration/belt-corner-recovery/run-tests.ps1",
-      "saveRole": "source",
-      "platformName": "lab-belt-corner-v1",
-      "engineVersion": "2.0.77",
-      "mods": {
-        "base": "2.0.77",
-        "elevated-rails": "2.0.77",
-        "FluidMustFlow": "1.4.4",
-        "quality": "2.0.77",
-        "SpidertronEnhancements": "1.10.8",
-        "space-age": "2.0.77",
-        "SpidertronPatrols": "2.6.3",
-        "surfexp_gateways": "0.3.0",
-        "maraxsis": "1.31.6"
-      },
-      "invariant": "Eight turbo-transport-belts carry 65 iron-plate total; the corner belt at (16.5,0.5) has belt_shape 'left' with 2 items over-packed on its 0.4140625-long inside lane.",
-      "expectedTerminalVerdict": "observation-only",
-      "independentOracleRequired": true,
-      "fingerprint": {
-        "beltCount": 8,
-        "totalIron": 65,
-        "cornerShape": "left",
-        "cornerX": 16.5,
-        "cornerY": 0.5,
-        "insideItems": 2,
-        "insideLength": 0.4140625,
-        "entities": 9
-      },
-      "layoutBlueprint": "0eNqlmNFqgzAYhd/lv44lSdW2vsoow7bpCNgomo6V4rtP27LBNsay70ZQc45efBwO5yq75uy63oco1VX8vg2DVE9XGfxLqJv5WahPTiqJ537XZrGvw9C1fcx2rokyKvHh4N6kMuNWiQvRR+/uDreby3M4n3aunw6oX52UdO0widswf3M2LBeFkotUmV4U46i+GdpUQ/MwnP2UHHzv9vfX+Q/uy1R3neKep7ovU9yLVHeb4l6muhcp7qtU9zzFff1fCG8MToRH3zzw/nJyfWd1OX58Yejqvcu6po7Htj9lx/YcDvVNMf/YF/mGyY2GegP1FuqXUJ9DfQH1JdSvoB7i95BbRq+F9FpIr4X0WkivhfRaSK+F9FpIr4X0WkavYfQaSK+B9BpIr4H0GkivgfQaSK+B9BpIr0H0agSvZuxqhq5m5GoGrmbcaoatZtRqBq1mzGqELMtbGLcwbWHYwqyFUQuTFgYtzFkYsyxlWcGF/RbWW9huYbmF3RZWW9hsYbGFvZbVWrYowEEB7glwToBrAhwT4JYApwS4JMAh4W/yrRIf3Wk69DkiK3l1/XAzLEq7yTebYp2Xq+kyju/Dto5Q"
-    },
-    {
-      "id": "transfer-workhorse",
-      "revision": 1,
-      "labId": "gate-drift-lab",
-      "name": "1359-entity transfer workhorse",
-      "purpose": "Provide the large live-drift transfer workhorse whose structure is fixed but whose machine item counts drift by design.",
-      "category": "drift-benchmark",
-      "owningRunner": "tests/integration/transfer-fidelity/run-tests.ps1",
-      "saveRole": "source",
-      "platformName": "lab-transfer-fixture-v1",
-      "engineVersion": "2.0.77",
-      "mods": {
-        "base": "2.0.77",
-        "elevated-rails": "2.0.77",
-        "FluidMustFlow": "1.4.4",
-        "quality": "2.0.77",
-        "SpidertronEnhancements": "1.10.8",
-        "space-age": "2.0.77",
-        "SpidertronPatrols": "2.6.3",
-        "surfexp_gateways": "0.3.0",
-        "maraxsis": "1.31.6"
-      },
-      "note": "Structure-only fingerprint. Machines are live: measured iron-plate drifted 1688 -> 1680 over hours; only entity count is stable.",
-      "invariant": "The platform carries exactly 1359 entities; its machines are deliberately LIVE so item counts drift over time and must never be fingerprinted.",
-      "expectedTerminalVerdict": "observation-only",
-      "independentOracleRequired": true,
-      "fingerprint": {
-        "entities": 1359
-      }
-    },
-    {
-      "id": "consumable-hub-1",
-      "revision": 1,
-      "labId": "ops-lab",
-      "name": "Single-use consumable hub 1",
-      "purpose": "Provide a bare single-use platform (hub only) for the single-use batch lifecycle.",
-      "category": "physical-lab",
-      "owningRunner": null,
-      "owningRunnerWaiver": "Bare single-use hub owned by the single-use batch lifecycle, not a single integration runner.",
-      "saveRole": "source",
-      "platformName": "lab-consumable-1",
-      "engineVersion": "2.0.77",
-      "mods": {
-        "base": "2.0.77",
-        "elevated-rails": "2.0.77",
-        "FluidMustFlow": "1.4.4",
-        "quality": "2.0.77",
-        "SpidertronEnhancements": "1.10.8",
-        "space-age": "2.0.77",
-        "SpidertronPatrols": "2.6.3",
-        "surfexp_gateways": "0.3.0",
-        "maraxsis": "1.31.6"
-      },
-      "invariant": "The platform carries exactly 1 entity, the space-platform-hub, and is never repaired or reused within a batch.",
-      "expectedTerminalVerdict": "observation-only",
-      "independentOracleRequired": true,
-      "fingerprint": {
-        "entities": 1
-      }
-    },
-    {
-      "id": "consumable-hub-2",
-      "revision": 1,
-      "labId": "ops-lab",
-      "name": "Single-use consumable hub 2",
-      "purpose": "Provide a bare single-use platform (hub only) for the single-use batch lifecycle.",
-      "category": "physical-lab",
-      "owningRunner": null,
-      "owningRunnerWaiver": "Bare single-use hub owned by the single-use batch lifecycle, not a single integration runner.",
-      "saveRole": "source",
-      "platformName": "lab-consumable-2",
-      "engineVersion": "2.0.77",
-      "mods": {
-        "base": "2.0.77",
-        "elevated-rails": "2.0.77",
-        "FluidMustFlow": "1.4.4",
-        "quality": "2.0.77",
-        "SpidertronEnhancements": "1.10.8",
-        "space-age": "2.0.77",
-        "SpidertronPatrols": "2.6.3",
-        "surfexp_gateways": "0.3.0",
-        "maraxsis": "1.31.6"
-      },
-      "invariant": "The platform carries exactly 1 entity, the space-platform-hub, and is never repaired or reused within a batch.",
-      "expectedTerminalVerdict": "observation-only",
-      "independentOracleRequired": true,
-      "fingerprint": {
-        "entities": 1
-      }
-    },
-    {
-      "id": "consumable-hub-3",
-      "revision": 1,
-      "labId": "ops-lab",
-      "name": "Single-use consumable hub 3",
-      "purpose": "Provide a bare single-use platform (hub only) for the single-use batch lifecycle.",
-      "category": "physical-lab",
-      "owningRunner": null,
-      "owningRunnerWaiver": "Bare single-use hub owned by the single-use batch lifecycle, not a single integration runner.",
-      "saveRole": "source",
-      "platformName": "lab-consumable-3",
-      "engineVersion": "2.0.77",
-      "mods": {
-        "base": "2.0.77",
-        "elevated-rails": "2.0.77",
-        "FluidMustFlow": "1.4.4",
-        "quality": "2.0.77",
-        "SpidertronEnhancements": "1.10.8",
-        "space-age": "2.0.77",
-        "SpidertronPatrols": "2.6.3",
-        "surfexp_gateways": "0.3.0",
-        "maraxsis": "1.31.6"
-      },
-      "invariant": "The platform carries exactly 1 entity, the space-platform-hub, and is never repaired or reused within a batch.",
-      "expectedTerminalVerdict": "observation-only",
-      "independentOracleRequired": true,
-      "fingerprint": {
-        "entities": 1
-      }
-    }
-  ]
+	"schema": "surface-export-lab-gallery-v2",
+	"engineVersion": "2.0.77",
+	"surfaceName": "lab-gallery-index-v2",
+	"mods": {
+		"base": "2.0.77",
+		"elevated-rails": "2.0.77",
+		"FluidMustFlow": "1.4.4",
+		"quality": "2.0.77",
+		"SpidertronEnhancements": "1.10.8",
+		"space-age": "2.0.77",
+		"SpidertronPatrols": "2.6.3",
+		"surfexp_gateways": "0.3.0",
+		"maraxsis": "1.31.6"
+	},
+	"saves": {
+		"source": {
+			"role": "source",
+			"name": "lab-gallery-source-surface-export-2-0-77",
+			"artifact": "docker/seed-data/lab-saves/lab-gallery-source-surface-export-2.0.77.zip",
+			"sha256": "7AA51AD67460B6AAE557F8ABC12C8C9167BE185FD77F6CCDB2A17A7831F627A5",
+			"expectedCensus": {
+				"totalEntities": 1488,
+				"totalGeneratedChunks": 5355,
+				"surfaces": [
+					{
+						"name": "lab-gallery-index-v2",
+						"entityCount": 0,
+						"generatedChunks": 90
+					},
+					{
+						"name": "nauvis",
+						"entityCount": 32,
+						"generatedChunks": 389,
+						"planet": "nauvis"
+					},
+					{
+						"name": "platform-1",
+						"entityCount": 2,
+						"generatedChunks": 240,
+						"platform": "lab-specialized-fluid-r1"
+					},
+					{
+						"name": "platform-11",
+						"entityCount": 81,
+						"generatedChunks": 356,
+						"platform": "lab-omnibus-state-v1"
+					},
+					{
+						"name": "platform-2",
+						"entityCount": 1359,
+						"generatedChunks": 1603,
+						"platform": "lab-transfer-fixture-v1"
+					},
+					{
+						"name": "platform-3",
+						"entityCount": 1,
+						"generatedChunks": 798,
+						"platform": "lab-consumable-1"
+					},
+					{
+						"name": "platform-4",
+						"entityCount": 1,
+						"generatedChunks": 977,
+						"platform": "lab-consumable-2"
+					},
+					{
+						"name": "platform-5",
+						"entityCount": 1,
+						"generatedChunks": 225,
+						"platform": "lab-consumable-3"
+					},
+					{
+						"name": "platform-6",
+						"entityCount": 9,
+						"generatedChunks": 156,
+						"platform": "lab-belt-corner-v1"
+					},
+					{
+						"name": "platform-7",
+						"entityCount": 2,
+						"generatedChunks": 521,
+						"platform": "lab-energy-v1"
+					}
+				]
+			},
+			"mods": {
+				"base": "2.0.77",
+				"elevated-rails": "2.0.77",
+				"FluidMustFlow": "1.4.4",
+				"quality": "2.0.77",
+				"SpidertronEnhancements": "1.10.8",
+				"space-age": "2.0.77",
+				"SpidertronPatrols": "2.6.3",
+				"surfexp_gateways": "0.3.0",
+				"maraxsis": "1.31.6"
+			}
+		},
+		"destination": {
+			"role": "destination",
+			"name": "lab-gallery-destination-surface-export-2-0-77",
+			"artifact": "docker/seed-data/lab-saves/lab-gallery-destination-surface-export-2.0.77.zip",
+			"sha256": "09B1FCCEAD5EF38395825775DA3942CDD9382F6D2B4FD217A2A701AF15293BE5",
+			"expectedCensus": {
+				"totalEntities": 0,
+				"totalGeneratedChunks": 479,
+				"surfaces": [
+					{
+						"name": "lab-gallery-index-v2",
+						"entityCount": 0,
+						"generatedChunks": 90
+					},
+					{
+						"name": "nauvis",
+						"entityCount": 0,
+						"generatedChunks": 389,
+						"planet": "nauvis"
+					}
+				]
+			},
+			"mods": {
+				"base": "2.0.77",
+				"elevated-rails": "2.0.77",
+				"FluidMustFlow": "1.4.4",
+				"quality": "2.0.77",
+				"SpidertronEnhancements": "1.10.8",
+				"space-age": "2.0.77",
+				"SpidertronPatrols": "2.6.3",
+				"surfexp_gateways": "0.3.0",
+				"maraxsis": "1.31.6"
+			}
+		}
+	},
+	"contract": {
+		"fixtureIsOracle": false,
+		"mutableDestinationsAreBaked": true,
+		"independentOracle": "A direct Factorio physical meter independently observes the loaded fixture before accepting a result.",
+		"resetModel": "Reload the paired source and destination golden saves at the batch boundary; never repair a consumed fixture."
+	},
+	"labs": [
+		{
+			"id": "belt-lab",
+			"title": "Belts and transport lines",
+			"purpose": "Visualize lane-side fidelity, native stacks, corners, splitters, undergrounds, and known loss replays.",
+			"sourcePath": "tests/belt-lab",
+			"zone": {
+				"x": -36,
+				"y": -18
+			}
+		},
+		{
+			"id": "census-lab",
+			"title": "Paired-reads census",
+			"purpose": "Ground the per-entity paired-read census meter: stall budget and serialize-vs-physical commensurability at the export gate.",
+			"sourcePath": "tests/census-lab",
+			"zone": {
+				"x": -36,
+				"y": 36
+			}
+		},
+		{
+			"id": "engine-repin-lab",
+			"title": "Engine version repin",
+			"purpose": "Re-certify engine-sensitive runtime shapes and behavioral rungs after a Factorio version change.",
+			"sourcePath": "tests/engine-repin-lab",
+			"zone": {
+				"x": -12,
+				"y": -18
+			}
+		},
+		{
+			"id": "fluid-lab",
+			"title": "Fluid systems",
+			"purpose": "Inspect fluidbox ownership, frozen reads, pumps, plasma, and exact fluid accounting.",
+			"sourcePath": "tests/fluid-lab",
+			"zone": {
+				"x": 12,
+				"y": -18
+			}
+		},
+		{
+			"id": "gate-drift-lab",
+			"title": "Validation gate drift",
+			"purpose": "Exercise frozen-gate timing and detect source or destination state that escapes the exact verdict.",
+			"sourcePath": "tests/gate-drift-lab",
+			"zone": {
+				"x": 36,
+				"y": -18
+			}
+		},
+		{
+			"id": "hidden-semantics-lab",
+			"title": "Hidden state semantics",
+			"purpose": "Probe state that is structurally present but easy for serializers or validators to miss.",
+			"sourcePath": "tests/hidden-semantics-lab",
+			"zone": {
+				"x": -36,
+				"y": 0
+			}
+		},
+		{
+			"id": "hold-completeness-lab",
+			"title": "Destination hold completeness",
+			"purpose": "Demonstrate which entities and operations must remain frozen until transfer validation completes.",
+			"sourcePath": "tests/hold-completeness-lab",
+			"zone": {
+				"x": -12,
+				"y": 0
+			}
+		},
+		{
+			"id": "inserter-lab",
+			"title": "Inserter held stacks",
+			"purpose": "Visualize held-item reachability, quality, filters, and busy-state round trips.",
+			"sourcePath": "tests/inserter-lab",
+			"zone": {
+				"x": 12,
+				"y": 0
+			}
+		},
+		{
+			"id": "midcraft-lab",
+			"title": "Mid-craft machines",
+			"purpose": "Inspect recipe progress, ingredient embodiment, and partially completed machine state.",
+			"sourcePath": "tests/midcraft-lab",
+			"zone": {
+				"x": 36,
+				"y": 0
+			}
+		},
+		{
+			"id": "no-tick-sync-lab",
+			"title": "No-tick synchronization",
+			"purpose": "Prove restoration and validation behavior while the game is paused and no normal tick advances.",
+			"sourcePath": "tests/no-tick-sync-lab",
+			"zone": {
+				"x": -36,
+				"y": 18
+			}
+		},
+		{
+			"id": "ops-lab",
+			"title": "Operational tails",
+			"purpose": "Exercise cleanup, retry, timeout, and transaction-tail behavior around completed operations.",
+			"sourcePath": "tests/ops-lab",
+			"zone": {
+				"x": -12,
+				"y": 18
+			}
+		},
+		{
+			"id": "specialized-inventory-lab",
+			"title": "Specialized inventories",
+			"purpose": "Map reachable inventories and fluids owned by specialized entity handlers.",
+			"sourcePath": "tests/specialized-inventory-lab",
+			"zone": {
+				"x": 12,
+				"y": 18
+			}
+		},
+		{
+			"id": "state-dimensions-lab",
+			"title": "Serialized state dimensions",
+			"purpose": "Audit energy, temperature, burner, bonus progress, equipment, and other player-visible state dimensions.",
+			"sourcePath": "tests/state-dimensions-lab",
+			"zone": {
+				"x": 36,
+				"y": 18
+			}
+		}
+	],
+	"fixtures": [
+		{
+			"id": "belt-5x5-125-unstacked",
+			"revision": 1,
+			"labId": "belt-lab",
+			"name": "5x5 unstacked belt loop",
+			"purpose": "Preserve 125 one-item iron-plate stacks split 67/58 across the two physical sides.",
+			"category": "physical-lab",
+			"owningRunner": "tests/belt-lab/rung1b_corner_loop.lua",
+			"saveRole": "source",
+			"surfaceName": "nauvis",
+			"engineVersion": "2.0.77",
+			"mods": {
+				"base": "2.0.77",
+				"elevated-rails": "2.0.77",
+				"FluidMustFlow": "1.4.4",
+				"quality": "2.0.77",
+				"SpidertronEnhancements": "1.10.8",
+				"space-age": "2.0.77",
+				"SpidertronPatrols": "2.6.3",
+				"surfexp_gateways": "0.3.0",
+				"maraxsis": "1.31.6"
+			},
+			"invariant": "The source loop contains exactly 125 physical one-item iron-plate stacks, 67 on side one and 58 on side two.",
+			"expectedTerminalVerdict": "observation-only",
+			"independentOracleRequired": true,
+			"fingerprint": {
+				"beltName": "turbo-transport-belt",
+				"beltCount": 16,
+				"itemName": "iron-plate",
+				"quantity": 125,
+				"physicalStacks": 125,
+				"maximumStack": 1,
+				"lineQuantities": [
+					67,
+					58
+				]
+			}
+		},
+		{
+			"id": "specialized-fluid-reachability",
+			"revision": 2,
+			"labId": "specialized-inventory-lab",
+			"name": "Specialized fluid reachability",
+			"purpose": "Recertify platform-reachable specialized fluid state from prototype and live entity controls.",
+			"category": "physical-lab",
+			"owningRunner": "tests/specialized-inventory-lab/run-reachability.mjs",
+			"saveRole": "source",
+			"platformName": "lab-specialized-fluid-r1",
+			"engineVersion": "2.0.77",
+			"mods": {
+				"base": "2.0.77",
+				"elevated-rails": "2.0.77",
+				"FluidMustFlow": "1.4.4",
+				"quality": "2.0.77",
+				"SpidertronEnhancements": "1.10.8",
+				"space-age": "2.0.77",
+				"SpidertronPatrols": "2.6.3",
+				"surfexp_gateways": "0.3.0",
+				"maraxsis": "1.31.6"
+			},
+			"note": "Revision 2: the drill was recreated after an asteroid loss and all platform entities are now destructible=false (asteroid-hardening).",
+			"invariant": "Space-platform pressure/gravity are zero and the baked electric mining drill has no live recoverable fluidbox; every fixture entity is destructible=false.",
+			"expectedTerminalVerdict": "observation-only",
+			"independentOracleRequired": true,
+			"fingerprint": {
+				"pressure": 0,
+				"gravity": 0,
+				"drillName": "electric-mining-drill",
+				"miningTarget": null,
+				"liveFluidboxCount": 0,
+				"readOk": false,
+				"writeOk": false
+			}
+		},
+		{
+			"id": "omnibus-adversarial-inventory",
+			"revision": 1,
+			"labId": "state-dimensions-lab",
+			"name": "Adversarial nested inventory + quality",
+			"purpose": "Preserve a steel-chest holding a power-armor-mk2 whose equipment grid carries a legendary battery and uncommon shield, beside an uncommon-quality iron-gear-wheel recipe.",
+			"category": "physical-lab",
+			"owningRunner": "tests/integration/active-state-roundtrip/run-tests.ps1",
+			"saveRole": "source",
+			"platformName": "lab-omnibus-state-v1",
+			"engineVersion": "2.0.77",
+			"mods": {
+				"base": "2.0.77",
+				"elevated-rails": "2.0.77",
+				"FluidMustFlow": "1.4.4",
+				"quality": "2.0.77",
+				"SpidertronEnhancements": "1.10.8",
+				"space-age": "2.0.77",
+				"SpidertronPatrols": "2.6.3",
+				"surfexp_gateways": "0.3.0",
+				"maraxsis": "1.31.6"
+			},
+			"invariant": "The chest holds a power-armor-mk2 with a legendary battery-mk2-equipment (energy 5000000) and an uncommon energy-shield-mk2-equipment (shield 97, max 195); the assembling-machine-2 runs the iron-gear-wheel recipe at uncommon quality.",
+			"expectedTerminalVerdict": "observation-only",
+			"independentOracleRequired": true,
+			"fingerprint": {
+				"battEnergy": 5000000,
+				"battQuality": "legendary",
+				"shieldValue": 97,
+				"shieldMax": 195,
+				"shieldQuality": "uncommon",
+				"recipe": "iron-gear-wheel",
+				"recipeQuality": "uncommon"
+			},
+			"layoutBlueprint": "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M08w8zczTzDzNzNPMPM3M08w8zczTzDzNzNPMPM3ME8080cwTzTzRzBPNPNHME8080cwTzTzRzBPNPNHME8080cwTzTzRzBPNPNHME8080cwTzTzRzBPNPNHME8080cwTzTzRzBPNPNHME8080cwTzTzRzBNz6onmnmjuieaeaO6J5p5o7onmnmjuieaeaO6J5p5o7onmnmjuieaeaO7Yl27Wl27Wl27Wl27Wl27Wl27Wl27Wl27Wl27Wl27Wl27Wl27Wl27Wl27Wl27Wl27Wl27Wl27Wl27Wl27Wl27Wl27Wl27Wl27Wl27Wl27Wl27Wl27Wl27Wl27Wl27Wl27Wl27Wl27Wl27Wl27Wl27Wl27Wl27Wl27Yl27Yl27Yl27Yl27Yl27Yl27Yl27Yl27Yl27Yl27Yl27Yl27Yl27Yl27Yl27Yl27Yl27Yl27Yl27Yl27Yl27Yl27Yl27Yl27Yl27Yl27Yl27Yl27Yl27Yl27Yl27Yl27Yl27Yl27Yl27Yl27Yl27Yl27Yl27Yl27Yl27Yl27Yl27Yl27Yl27Yl27Yl27Yl27Yl27Yl27Yl/57x78bDpaHbt0/6GZ17B52y81hMBx87Hb78xnHk5i3+Xw8a5Np/7/Hx/8F93J0iA=="
+		},
+		{
+			"id": "omnibus-heat-temperature",
+			"revision": 1,
+			"labId": "state-dimensions-lab",
+			"name": "Heat-pipe temperature",
+			"purpose": "Preserve a heat-pipe at a non-default temperature.",
+			"category": "physical-lab",
+			"owningRunner": "tests/integration/heat-roundtrip/run-tests.ps1",
+			"saveRole": "source",
+			"platformName": "lab-omnibus-state-v1",
+			"engineVersion": "2.0.77",
+			"mods": {
+				"base": "2.0.77",
+				"elevated-rails": "2.0.77",
+				"FluidMustFlow": "1.4.4",
+				"quality": "2.0.77",
+				"SpidertronEnhancements": "1.10.8",
+				"space-age": "2.0.77",
+				"SpidertronPatrols": "2.6.3",
+				"surfexp_gateways": "0.3.0",
+				"maraxsis": "1.31.6"
+			},
+			"invariant": "The heat-pipe holds temperature 500.",
+			"expectedTerminalVerdict": "observation-only",
+			"independentOracleRequired": true,
+			"fingerprint": {
+				"temperature": 500
+			}
+		},
+		{
+			"id": "omnibus-decider-latch",
+			"revision": 1,
+			"labId": "hidden-semantics-lab",
+			"name": "Self-feeding decider latch",
+			"purpose": "Preserve a decider-combinator latched on by its own red-wire self-feedback.",
+			"category": "physical-lab",
+			"owningRunner": "tests/integration/circuit-latch-state/run-tests.ps1",
+			"saveRole": "source",
+			"platformName": "lab-omnibus-state-v1",
+			"engineVersion": "2.0.77",
+			"mods": {
+				"base": "2.0.77",
+				"elevated-rails": "2.0.77",
+				"FluidMustFlow": "1.4.4",
+				"quality": "2.0.77",
+				"SpidertronEnhancements": "1.10.8",
+				"space-age": "2.0.77",
+				"SpidertronPatrols": "2.6.3",
+				"surfexp_gateways": "0.3.0",
+				"maraxsis": "1.31.6"
+			},
+			"invariant": "The decider-combinator's red output network carries signal-S = 1 from its own feedback.",
+			"expectedTerminalVerdict": "observation-only",
+			"independentOracleRequired": true,
+			"fingerprint": {
+				"signalS": 1
+			}
+		},
+		{
+			"id": "omnibus-midcraft-progress",
+			"revision": 1,
+			"labId": "midcraft-lab",
+			"name": "Mid-craft assembling machine",
+			"purpose": "Preserve a deactivated assembling-machine-1 frozen partway through a craft with embodied ingredients.",
+			"category": "physical-lab",
+			"owningRunner": "tests/integration/midcraft-roundtrip/run-tests.ps1",
+			"saveRole": "source",
+			"platformName": "lab-omnibus-state-v1",
+			"engineVersion": "2.0.77",
+			"mods": {
+				"base": "2.0.77",
+				"elevated-rails": "2.0.77",
+				"FluidMustFlow": "1.4.4",
+				"quality": "2.0.77",
+				"SpidertronEnhancements": "1.10.8",
+				"space-age": "2.0.77",
+				"SpidertronPatrols": "2.6.3",
+				"surfexp_gateways": "0.3.0",
+				"maraxsis": "1.31.6"
+			},
+			"invariant": "The assembling-machine-1 is inactive with crafting_progress ~0.70 and 2 iron-plate embodied in its input inventory.",
+			"expectedTerminalVerdict": "observation-only",
+			"independentOracleRequired": true,
+			"fingerprint": {
+				"progress": 0.7000000000000005,
+				"active": false,
+				"inputPlates": 2
+			}
+		},
+		{
+			"id": "omnibus-burner-fuel",
+			"revision": 1,
+			"labId": "state-dimensions-lab",
+			"name": "Burner inserter fuel state",
+			"purpose": "Preserve a deactivated burner-inserter mid-burn with a partly-consumed fuel item and fuel inventory.",
+			"category": "physical-lab",
+			"owningRunner": "tests/integration/entity-burner-roundtrip/run-tests.ps1",
+			"saveRole": "source",
+			"platformName": "lab-omnibus-state-v1",
+			"engineVersion": "2.0.77",
+			"mods": {
+				"base": "2.0.77",
+				"elevated-rails": "2.0.77",
+				"FluidMustFlow": "1.4.4",
+				"quality": "2.0.77",
+				"SpidertronEnhancements": "1.10.8",
+				"space-age": "2.0.77",
+				"SpidertronPatrols": "2.6.3",
+				"surfexp_gateways": "0.3.0",
+				"maraxsis": "1.31.6"
+			},
+			"invariant": "The burner-inserter is inactive, holds 10 coal, is currently burning solid-fuel, and has remaining_burning_fuel 2000000.",
+			"expectedTerminalVerdict": "observation-only",
+			"independentOracleRequired": true,
+			"fingerprint": {
+				"coal": 10,
+				"active": false,
+				"burning": "solid-fuel",
+				"remaining": 2000000
+			}
+		},
+		{
+			"id": "omnibus-equipment-grid",
+			"revision": 1,
+			"labId": "state-dimensions-lab",
+			"name": "Spidertron equipment grid",
+			"purpose": "Preserve a spidertron whose equipment grid carries a partly-charged battery.",
+			"category": "physical-lab",
+			"owningRunner": "tests/integration/item-grid-roundtrip/run-tests.ps1",
+			"saveRole": "source",
+			"platformName": "lab-omnibus-state-v1",
+			"engineVersion": "2.0.77",
+			"mods": {
+				"base": "2.0.77",
+				"elevated-rails": "2.0.77",
+				"FluidMustFlow": "1.4.4",
+				"quality": "2.0.77",
+				"SpidertronEnhancements": "1.10.8",
+				"space-age": "2.0.77",
+				"SpidertronPatrols": "2.6.3",
+				"surfexp_gateways": "0.3.0",
+				"maraxsis": "1.31.6"
+			},
+			"invariant": "The spidertron's grid holds a battery-mk2-equipment charged to 50000000 of 100000000.",
+			"expectedTerminalVerdict": "observation-only",
+			"independentOracleRequired": true,
+			"fingerprint": {
+				"holder": "spidertron",
+				"battEnergy": 50000000,
+				"battMax": 100000000
+			}
+		},
+		{
+			"id": "omnibus-circuit-config",
+			"revision": 1,
+			"labId": "hidden-semantics-lab",
+			"name": "Circuit configuration",
+			"purpose": "Preserve a constant-combinator section signal, a wired decider, and a color-using lamp.",
+			"category": "physical-lab",
+			"owningRunner": "tests/integration/circuit-config-roundtrip/run-tests.ps1",
+			"saveRole": "source",
+			"platformName": "lab-omnibus-state-v1",
+			"engineVersion": "2.0.77",
+			"mods": {
+				"base": "2.0.77",
+				"elevated-rails": "2.0.77",
+				"FluidMustFlow": "1.4.4",
+				"quality": "2.0.77",
+				"SpidertronEnhancements": "1.10.8",
+				"space-age": "2.0.77",
+				"SpidertronPatrols": "2.6.3",
+				"surfexp_gateways": "0.3.0",
+				"maraxsis": "1.31.6"
+			},
+			"invariant": "The constant-combinator's first section slot sets signal-A to 42 and the small-lamp uses colors.",
+			"expectedTerminalVerdict": "observation-only",
+			"independentOracleRequired": true,
+			"fingerprint": {
+				"constantSignal": "signal-A",
+				"constantMin": 42,
+				"lampUseColors": true
+			}
+		},
+		{
+			"id": "omnibus-module-bonus-progress",
+			"revision": 1,
+			"labId": "midcraft-lab",
+			"name": "Module bonus progress",
+			"purpose": "Preserve a deactivated assembling-machine-2 with productivity modules mid bonus progress.",
+			"category": "physical-lab",
+			"owningRunner": "tests/integration/bonus-progress-roundtrip/run-tests.ps1",
+			"saveRole": "source",
+			"platformName": "lab-omnibus-state-v1",
+			"engineVersion": "2.0.77",
+			"mods": {
+				"base": "2.0.77",
+				"elevated-rails": "2.0.77",
+				"FluidMustFlow": "1.4.4",
+				"quality": "2.0.77",
+				"SpidertronEnhancements": "1.10.8",
+				"space-age": "2.0.77",
+				"SpidertronPatrols": "2.6.3",
+				"surfexp_gateways": "0.3.0",
+				"maraxsis": "1.31.6"
+			},
+			"invariant": "The assembling-machine-2 is inactive with bonus_progress 0.5 and 2 productivity-module modules running the iron-gear-wheel recipe.",
+			"expectedTerminalVerdict": "observation-only",
+			"independentOracleRequired": true,
+			"fingerprint": {
+				"bonusProgress": 0.5,
+				"modules": 2,
+				"active": false
+			}
+		},
+		{
+			"id": "omnibus-crafting-fluids",
+			"revision": 1,
+			"labId": "fluid-lab",
+			"name": "Crafting-machine fluids",
+			"purpose": "Preserve a storage-tank of steam beside an inactive chemical-plant and foundry holding recipe fluids.",
+			"category": "physical-lab",
+			"owningRunner": "tests/integration/specialized-inventory-roundtrip/run-tests.ps1",
+			"saveRole": "source",
+			"platformName": "lab-omnibus-state-v1",
+			"engineVersion": "2.0.77",
+			"mods": {
+				"base": "2.0.77",
+				"elevated-rails": "2.0.77",
+				"FluidMustFlow": "1.4.4",
+				"quality": "2.0.77",
+				"SpidertronEnhancements": "1.10.8",
+				"space-age": "2.0.77",
+				"SpidertronPatrols": "2.6.3",
+				"surfexp_gateways": "0.3.0",
+				"maraxsis": "1.31.6"
+			},
+			"invariant": "The storage-tank holds 20000 steam at 500C; the chemical-plant holds 60 water and 60 petroleum-gas; the foundry holds 250 molten-iron at 1500C.",
+			"expectedTerminalVerdict": "observation-only",
+			"independentOracleRequired": true,
+			"fingerprint": {
+				"steam": 20000,
+				"steamTemp": 500,
+				"chemWater": 60,
+				"chemGas": 60,
+				"foundryMolten": 250,
+				"foundryTemp": 1500
+			}
+		},
+		{
+			"id": "omnibus-ghosts-and-proxies",
+			"revision": 1,
+			"labId": "hidden-semantics-lab",
+			"name": "Ghosts and item-request proxy",
+			"purpose": "Preserve one entity-ghost, one tile-ghost, and one item-request-proxy on a host machine.",
+			"category": "physical-lab",
+			"owningRunner": "tests/integration/entity-roundtrip/run-tests.ps1",
+			"saveRole": "source",
+			"platformName": "lab-omnibus-state-v1",
+			"engineVersion": "2.0.77",
+			"mods": {
+				"base": "2.0.77",
+				"elevated-rails": "2.0.77",
+				"FluidMustFlow": "1.4.4",
+				"quality": "2.0.77",
+				"SpidertronEnhancements": "1.10.8",
+				"space-age": "2.0.77",
+				"SpidertronPatrols": "2.6.3",
+				"surfexp_gateways": "0.3.0",
+				"maraxsis": "1.31.6"
+			},
+			"invariant": "The platform carries exactly 1 entity-ghost (assembling-machine-2), 1 tile-ghost, and 1 item-request-proxy.",
+			"expectedTerminalVerdict": "observation-only",
+			"independentOracleRequired": true,
+			"fingerprint": {
+				"entityGhosts": 1,
+				"tileGhosts": 1,
+				"proxies": 1,
+				"ghostInner": "assembling-machine-2"
+			}
+		},
+		{
+			"id": "omnibus-ground-items",
+			"revision": 1,
+			"labId": "hidden-semantics-lab",
+			"name": "Loose ground items",
+			"purpose": "Preserve loose item-entities lying on the platform floor.",
+			"category": "physical-lab",
+			"owningRunner": "tests/integration/ground-item-fidelity/run-tests.ps1",
+			"saveRole": "source",
+			"platformName": "lab-omnibus-state-v1",
+			"engineVersion": "2.0.77",
+			"mods": {
+				"base": "2.0.77",
+				"elevated-rails": "2.0.77",
+				"FluidMustFlow": "1.4.4",
+				"quality": "2.0.77",
+				"SpidertronEnhancements": "1.10.8",
+				"space-age": "2.0.77",
+				"SpidertronPatrols": "2.6.3",
+				"surfexp_gateways": "0.3.0",
+				"maraxsis": "1.31.6"
+			},
+			"invariant": "Exactly 50 iron-plate lie on the platform floor as item-entities.",
+			"expectedTerminalVerdict": "observation-only",
+			"independentOracleRequired": true,
+			"fingerprint": {
+				"ironPlate": 50
+			}
+		},
+		{
+			"id": "omnibus-platform-schedule",
+			"revision": 1,
+			"labId": "ops-lab",
+			"name": "Platform schedule and interrupt",
+			"purpose": "Preserve the platform-level schedule records and a named interrupt.",
+			"category": "physical-lab",
+			"owningRunner": "tests/integration/schedule-filter/run-tests.ps1",
+			"saveRole": "source",
+			"platformName": "lab-omnibus-state-v1",
+			"engineVersion": "2.0.77",
+			"mods": {
+				"base": "2.0.77",
+				"elevated-rails": "2.0.77",
+				"FluidMustFlow": "1.4.4",
+				"quality": "2.0.77",
+				"SpidertronEnhancements": "1.10.8",
+				"space-age": "2.0.77",
+				"SpidertronPatrols": "2.6.3",
+				"surfexp_gateways": "0.3.0",
+				"maraxsis": "1.31.6"
+			},
+			"invariant": "The platform schedule carries 2 records and 1 interrupt named 'lab-interrupt'.",
+			"expectedTerminalVerdict": "observation-only",
+			"independentOracleRequired": true,
+			"fingerprint": {
+				"records": 2,
+				"interrupts": 1,
+				"interruptName": "lab-interrupt"
+			}
+		},
+		{
+			"id": "energy-accumulator-drain",
+			"revision": 1,
+			"labId": "state-dimensions-lab",
+			"name": "Accumulator drain isolation",
+			"purpose": "Preserve a charged accumulator that is the sole electric entity, documenting the drain law.",
+			"category": "physical-lab",
+			"owningRunner": "tests/integration/energy-roundtrip/run-tests.ps1",
+			"saveRole": "source",
+			"platformName": "lab-energy-v1",
+			"engineVersion": "2.0.77",
+			"mods": {
+				"base": "2.0.77",
+				"elevated-rails": "2.0.77",
+				"FluidMustFlow": "1.4.4",
+				"quality": "2.0.77",
+				"SpidertronEnhancements": "1.10.8",
+				"space-age": "2.0.77",
+				"SpidertronPatrols": "2.6.3",
+				"surfexp_gateways": "0.3.0",
+				"maraxsis": "1.31.6"
+			},
+			"note": "Drain law: active=false does NOT stop accumulator discharge; a ~5kW deactivated machine measurably bled a deactivated accumulator, so the fixture carries no other electric entity.",
+			"invariant": "The accumulator holds energy 3000000 and is the sole electric entity on the platform; on a generation-free platform any consumer would bleed it, so it is kept alone (drain law).",
+			"expectedTerminalVerdict": "observation-only",
+			"independentOracleRequired": true,
+			"fingerprint": {
+				"accEnergy": 3000000,
+				"accName": "accumulator",
+				"electricEntities": 1,
+				"entities": 2
+			},
+			"layoutBlueprint": "0eNqlmd1u4jAQRt/F10GyDbQLr7JCUQhOaymxWf+grVDevXagbNVqVyudm4gQz4zH4ejTN1zFcczmHKxLYn8Vtvcuiv3Pq4j2xXVj/c51kxF7Ec9db1bnsUuDD9PqNR/F3AjrTua32Kv50Ajjkk3W3OKXm7fW5eloQlnQ/CNPI84+llDvar2STjbirVxL/mB+ZRNTO9gxmRDr82j6uvRW5lG/eXzWjejKikspNnRjNHVrjzTBT+0xD8OSK4VsPtWYbIzWvbT1DMqjpUo7daWuLXk+ln9rTT9a6/o+T7l05sP3ntT63lTdT+xfzSmP97Mafe8nX7dc79Wn5zU2mN6H0/2tpO6WspTMFxvFfFjyJfuR60vVlV6qrtbz317A4LM73bLW5r7GKxYvWTisDptfs/AN7J2eHTw8BU9PweNT9Py28Kd/719DdDRDRzN0NENHM3Q0Q0dDdDRER0N0NERHQ3Q0REdDdBRERzF0FENHMXQUQ0cxdBRER0F0FERHQXQUREdBdBRDRzJyJAJHIm4kwkYiaiSCRjJmJENGMmIkA0YyXiTDRTJaoM4wmWEqw0SGaQyTGKgwUGCgvkB5geoCxQVqCzQ0zM8wO8PcDDMzzMtAKwOdDDQy0MdAGwNdDDQxcHLGBmdsbsbGZmxqxoZmcGYGR2ZwYgYHZnBeBsdl/xd+aIRNZiqL/vx90IiLCXFJuH3Su81ut/2xeXoul3l+B+2yRWg="
+		},
+		{
+			"id": "belt-corner-recovery",
+			"revision": 1,
+			"labId": "belt-lab",
+			"name": "Over-packed belt corner",
+			"purpose": "Preserve an over-compressed turbo-belt left corner, the recovery-test replay state.",
+			"category": "physical-lab",
+			"owningRunner": "tests/integration/belt-corner-recovery/run-tests.ps1",
+			"saveRole": "source",
+			"platformName": "lab-belt-corner-v1",
+			"engineVersion": "2.0.77",
+			"mods": {
+				"base": "2.0.77",
+				"elevated-rails": "2.0.77",
+				"FluidMustFlow": "1.4.4",
+				"quality": "2.0.77",
+				"SpidertronEnhancements": "1.10.8",
+				"space-age": "2.0.77",
+				"SpidertronPatrols": "2.6.3",
+				"surfexp_gateways": "0.3.0",
+				"maraxsis": "1.31.6"
+			},
+			"invariant": "Eight turbo-transport-belts carry 65 iron-plate total; the corner belt at (16.5,0.5) has belt_shape 'left' with 2 items over-packed on its 0.4140625-long inside lane.",
+			"expectedTerminalVerdict": "observation-only",
+			"independentOracleRequired": true,
+			"fingerprint": {
+				"beltCount": 8,
+				"totalIron": 65,
+				"cornerShape": "left",
+				"cornerX": 16.5,
+				"cornerY": 0.5,
+				"insideItems": 2,
+				"insideLength": 0.4140625,
+				"entities": 9
+			},
+			"layoutBlueprint": "0eNqlmNFqgzAYhd/lv44lSdW2vsoow7bpCNgomo6V4rtP27LBNsay70ZQc45efBwO5yq75uy63oco1VX8vg2DVE9XGfxLqJv5WahPTiqJ537XZrGvw9C1fcx2rokyKvHh4N6kMuNWiQvRR+/uDreby3M4n3aunw6oX52UdO0widswf3M2LBeFkotUmV4U46i+GdpUQ/MwnP2UHHzv9vfX+Q/uy1R3neKep7ovU9yLVHeb4l6muhcp7qtU9zzFff1fCG8MToRH3zzw/nJyfWd1OX58Yejqvcu6po7Htj9lx/YcDvVNMf/YF/mGyY2GegP1FuqXUJ9DfQH1JdSvoB7i95BbRq+F9FpIr4X0WkivhfRaSK+F9FpIr4X0WkavYfQaSK+B9BpIr4H0GkivgfQaSK+B9BpIr0H0agSvZuxqhq5m5GoGrmbcaoatZtRqBq1mzGqELMtbGLcwbWHYwqyFUQuTFgYtzFkYsyxlWcGF/RbWW9huYbmF3RZWW9hsYbGFvZbVWrYowEEB7glwToBrAhwT4JYApwS4JMAh4W/yrRIf3Wk69DkiK3l1/XAzLEq7yTebYp2Xq+kyju/Dto5Q"
+		},
+		{
+			"id": "transfer-workhorse",
+			"revision": 1,
+			"labId": "gate-drift-lab",
+			"name": "1359-entity transfer workhorse",
+			"purpose": "Provide the large live-drift transfer workhorse whose structure is fixed but whose machine item counts drift by design.",
+			"category": "drift-benchmark",
+			"owningRunner": "tests/integration/transfer-fidelity/run-tests.ps1",
+			"saveRole": "source",
+			"platformName": "lab-transfer-fixture-v1",
+			"engineVersion": "2.0.77",
+			"mods": {
+				"base": "2.0.77",
+				"elevated-rails": "2.0.77",
+				"FluidMustFlow": "1.4.4",
+				"quality": "2.0.77",
+				"SpidertronEnhancements": "1.10.8",
+				"space-age": "2.0.77",
+				"SpidertronPatrols": "2.6.3",
+				"surfexp_gateways": "0.3.0",
+				"maraxsis": "1.31.6"
+			},
+			"note": "Structure-only fingerprint. Machines are live: measured iron-plate drifted 1688 -> 1680 over hours; only entity count is stable.",
+			"invariant": "The platform carries exactly 1359 entities; its machines are deliberately LIVE so item counts drift over time and must never be fingerprinted.",
+			"expectedTerminalVerdict": "observation-only",
+			"independentOracleRequired": true,
+			"fingerprint": {
+				"entities": 1359
+			}
+		},
+		{
+			"id": "consumable-hub-1",
+			"revision": 1,
+			"labId": "ops-lab",
+			"name": "Single-use consumable hub 1",
+			"purpose": "Provide a bare single-use platform (hub only) for the single-use batch lifecycle.",
+			"category": "physical-lab",
+			"owningRunner": null,
+			"owningRunnerWaiver": "Bare single-use hub owned by the single-use batch lifecycle, not a single integration runner.",
+			"saveRole": "source",
+			"platformName": "lab-consumable-1",
+			"engineVersion": "2.0.77",
+			"mods": {
+				"base": "2.0.77",
+				"elevated-rails": "2.0.77",
+				"FluidMustFlow": "1.4.4",
+				"quality": "2.0.77",
+				"SpidertronEnhancements": "1.10.8",
+				"space-age": "2.0.77",
+				"SpidertronPatrols": "2.6.3",
+				"surfexp_gateways": "0.3.0",
+				"maraxsis": "1.31.6"
+			},
+			"invariant": "The platform carries exactly 1 entity, the space-platform-hub, and is never repaired or reused within a batch.",
+			"expectedTerminalVerdict": "observation-only",
+			"independentOracleRequired": true,
+			"fingerprint": {
+				"entities": 1
+			}
+		},
+		{
+			"id": "consumable-hub-2",
+			"revision": 1,
+			"labId": "ops-lab",
+			"name": "Single-use consumable hub 2",
+			"purpose": "Provide a bare single-use platform (hub only) for the single-use batch lifecycle.",
+			"category": "physical-lab",
+			"owningRunner": null,
+			"owningRunnerWaiver": "Bare single-use hub owned by the single-use batch lifecycle, not a single integration runner.",
+			"saveRole": "source",
+			"platformName": "lab-consumable-2",
+			"engineVersion": "2.0.77",
+			"mods": {
+				"base": "2.0.77",
+				"elevated-rails": "2.0.77",
+				"FluidMustFlow": "1.4.4",
+				"quality": "2.0.77",
+				"SpidertronEnhancements": "1.10.8",
+				"space-age": "2.0.77",
+				"SpidertronPatrols": "2.6.3",
+				"surfexp_gateways": "0.3.0",
+				"maraxsis": "1.31.6"
+			},
+			"invariant": "The platform carries exactly 1 entity, the space-platform-hub, and is never repaired or reused within a batch.",
+			"expectedTerminalVerdict": "observation-only",
+			"independentOracleRequired": true,
+			"fingerprint": {
+				"entities": 1
+			}
+		},
+		{
+			"id": "consumable-hub-3",
+			"revision": 1,
+			"labId": "ops-lab",
+			"name": "Single-use consumable hub 3",
+			"purpose": "Provide a bare single-use platform (hub only) for the single-use batch lifecycle.",
+			"category": "physical-lab",
+			"owningRunner": null,
+			"owningRunnerWaiver": "Bare single-use hub owned by the single-use batch lifecycle, not a single integration runner.",
+			"saveRole": "source",
+			"platformName": "lab-consumable-3",
+			"engineVersion": "2.0.77",
+			"mods": {
+				"base": "2.0.77",
+				"elevated-rails": "2.0.77",
+				"FluidMustFlow": "1.4.4",
+				"quality": "2.0.77",
+				"SpidertronEnhancements": "1.10.8",
+				"space-age": "2.0.77",
+				"SpidertronPatrols": "2.6.3",
+				"surfexp_gateways": "0.3.0",
+				"maraxsis": "1.31.6"
+			},
+			"invariant": "The platform carries exactly 1 entity, the space-platform-hub, and is never repaired or reused within a batch.",
+			"expectedTerminalVerdict": "observation-only",
+			"independentOracleRequired": true,
+			"fingerprint": {
+				"entities": 1
+			}
+		}
+	]
 }

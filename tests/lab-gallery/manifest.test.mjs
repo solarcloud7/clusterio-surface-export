@@ -38,7 +38,7 @@ test("paired save roles, artifacts, censuses, and exact mod pins are final", () 
 	assert.deepEqual(manifest.saves.source.mods, manifest.mods);
 	assert.deepEqual(manifest.saves.destination.mods, manifest.mods);
 	assert.deepEqual(validateGalleryManifest(manifest), {
-		labs: 12, fixtures: 20, sourceFixtures: 20, destinationFixtures: 0,
+		labs: 13, fixtures: 20, sourceFixtures: 20, destinationFixtures: 0,
 	});
 });
 
