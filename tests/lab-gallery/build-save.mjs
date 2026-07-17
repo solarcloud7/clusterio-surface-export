@@ -7,7 +7,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 
 import { certifyRuntimeApiFile } from "./api-contract.mjs";
 import { buildBeltPilot, buildSpecializedReachabilityFixture } from "./fixture-layout.mjs";
-import { loadGalleryManifest, validateGalleryManifest } from "./manifest.mjs";
+import { CORPUS_EXCLUDED, loadGalleryManifest, meterMiningTarget, validateGalleryManifest } from "./manifest.mjs";
 
 const REMOTE_ROOT = "/tmp/surface-export-lab-gallery-build";
 const GAME_PORT = "34979";
@@ -79,7 +79,63 @@ export function assertSourceReady(reading) {
 	if (reading?.saveRole !== "source") throw new Error(`source save role is ${reading?.saveRole}`);
 	if (reading.beltFixtureExact !== true) throw new Error("source belt fixture is not exact");
 	if (reading.reachabilityFixtureExact !== true) throw new Error("source reachability fixture is not exact");
+	if (reading.corpusExact !== true) {
+		throw new Error(`source corpus fingerprints are not exact: ${JSON.stringify(reading.corpusGate?.mismatches || reading.corpusGate)}`);
+	}
 	assertLabSafeSurfaces(reading, "source");
+	return reading;
+}
+
+// Roster-completeness gate, independent of the runtime's own corpusExact boolean: the MEASURED
+// corpus must cover exactly the manifest source roster minus the corpus-excluded set, and the gate's
+// fixture/field tallies must equal the counts DERIVED from the manifest (never hardcoded). A whole
+// fixture silently dropped from the measured set — the satisfiable-by-omission hole — fails here.
+export function expectedSourceRoster(manifest, excluded = CORPUS_EXCLUDED) {
+	return manifest.fixtures.filter(fixture => fixture.saveRole === "source" && !excluded.has(fixture.id));
+}
+
+export function assertCorpusRoster(reading, manifest, excluded = CORPUS_EXCLUDED) {
+	const expected = expectedSourceRoster(manifest, excluded);
+	const expectedIds = expected.map(fixture => fixture.id).sort();
+	const measured = Object.keys(reading?.corpus || {}).sort();
+	if (JSON.stringify(measured) !== JSON.stringify(expectedIds)) {
+		throw new Error(`source corpus roster is ${JSON.stringify(measured)}, expected ${JSON.stringify(expectedIds)}`);
+	}
+	const gate = reading?.corpusGate || {};
+	if (gate.fixturesMeasured !== expectedIds.length) {
+		throw new Error(`corpus fixturesMeasured is ${gate.fixturesMeasured}, expected ${expectedIds.length}`);
+	}
+	if (gate.expectedFixtures !== expectedIds.length) {
+		throw new Error(`corpus expectedFixtures is ${gate.expectedFixtures}, expected ${expectedIds.length}`);
+	}
+	const expectedFields = expected.reduce((sum, fixture) => sum + Object.keys(fixture.fingerprint || {}).length, 0);
+	if (gate.fieldsChecked !== expectedFields) {
+		throw new Error(`corpus fieldsChecked is ${gate.fieldsChecked}, expected ${expectedFields}`);
+	}
+	return reading;
+}
+
+// Census gate (replaces the deleted remove_unrelated_surfaces fail-loud control): the live surface
+// roster and per-surface entity counts must match the manifest census exactly, so a stray mod
+// surface, a lingering "-retired" index, or an unexpected entity fails the BUILD before a
+// non-reproducible census is baked and re-pinned.
+export function assertCensusMatches(reading, expectedCensus, role) {
+	const surfaces = reading?.census?.surfaces;
+	if (!Array.isArray(surfaces) || surfaces.length === 0) throw new Error(`${role} reading is missing census.surfaces`);
+	const actualNames = surfaces.map(surface => surface.name).sort();
+	const expectedNames = expectedCensus.surfaces.map(surface => surface.name).sort();
+	if (JSON.stringify(actualNames) !== JSON.stringify(expectedNames)) {
+		throw new Error(`${role} census surfaces are ${JSON.stringify(actualNames)}, expected ${JSON.stringify(expectedNames)}`);
+	}
+	const expectedEntities = Object.fromEntries(expectedCensus.surfaces.map(surface => [surface.name, surface.entityCount]));
+	for (const surface of surfaces) {
+		if (surface.entityCount !== expectedEntities[surface.name]) {
+			throw new Error(`${role} surface ${surface.name} has ${surface.entityCount} entities, expected ${expectedEntities[surface.name]}`);
+		}
+	}
+	if (reading.census.totalEntities !== expectedCensus.totalEntities) {
+		throw new Error(`${role} total entities ${reading.census.totalEntities}, expected ${expectedCensus.totalEntities}`);
+	}
 	return reading;
 }
 
@@ -88,6 +144,16 @@ export function assertDestinationReady(reading) {
 	if (reading?.saveRole !== "destination") throw new Error(`destination save role is ${reading?.saveRole}`);
 	if (reading.sourceBelts !== 0 || reading.targetBelts !== 0) throw new Error("destination still contains baked belts");
 	if (reading.reachability?.exists !== false) throw new Error("destination still contains the specialized platform");
+	// Generalized to the full roster: every one of the eight platforms must be gone, not just the
+	// reachability one, before the destination save is accepted. Key on surface NAME, not the
+	// `.platform` back-reference: after destroy(0) a surface can linger in game.surfaces mid-cleanup
+	// with its back-reference already nil, which would slip a truthy-.platform filter and bake a
+	// non-reproducible chunk total into the pin.
+	const platformSurfaces = (reading.census?.surfaces || []).filter(surface => surface.platform || /^platform-/.test(surface.name || ""));
+	if (platformSurfaces.length) throw new Error(`destination still has platform surfaces: ${platformSurfaces.map(surface => surface.platform || surface.name).join(",")}`);
+	if (reading.corpus && Object.keys(reading.corpus).length) {
+		throw new Error(`destination still measures corpus fixtures: ${Object.keys(reading.corpus).join(",")}`);
+	}
 	assertLabSafeSurfaces(reading, "destination");
 	return reading;
 }
@@ -133,7 +199,7 @@ async function waitForStableSave(container, remotePath, timeoutMs = 60_000) {
 	throw new Error(`save did not stabilize at ${remotePath}`);
 }
 
-async function waitForDestination(container, baseRequest, timeoutMs = 30_000) {
+async function waitForDestination(container, baseRequest, timeoutMs = 60_000) {
 	const deadline = Date.now() + timeoutMs;
 	let reading;
 	do {
@@ -163,8 +229,32 @@ async function main() {
 	const repoRoot = new URL("../../", import.meta.url);
 	const manifest = loadGalleryManifest(repoRoot);
 	const inventory = validateGalleryManifest(manifest, { requireArtifacts: false });
-	const beltPilot = buildBeltPilot();
-	const specializedFixture = buildSpecializedReachabilityFixture();
+	// The belt pilot layout and the reachability locators come from fixture-layout; their EXPECTED
+	// fingerprint values come from the manifest (single source of truth), never hardcoded copies.
+	const beltFixture = manifest.fixtures.find(fixture => fixture.id === "belt-5x5-125-unstacked");
+	const reachabilityFixture = manifest.fixtures.find(fixture => fixture.id === "specialized-fluid-reachability");
+	const beltPilot = {
+		...buildBeltPilot(),
+		expected: {
+			beltCount: beltFixture.fingerprint.beltCount,
+			sourceQuantity: beltFixture.fingerprint.quantity,
+			sourceLineQuantities: beltFixture.fingerprint.lineQuantities,
+			physicalStacks: beltFixture.fingerprint.physicalStacks,
+			maximumStack: beltFixture.fingerprint.maximumStack,
+			targetQuantity: 0,
+		},
+	};
+	const specializedFixture = {
+		...buildSpecializedReachabilityFixture(),
+		expected: {
+			pressure: reachabilityFixture.fingerprint.pressure,
+			gravity: reachabilityFixture.fingerprint.gravity,
+			miningTarget: meterMiningTarget(reachabilityFixture.fingerprint.miningTarget),
+			liveFluidboxCount: reachabilityFixture.fingerprint.liveFluidboxCount,
+			readOk: reachabilityFixture.fingerprint.readOk,
+			writeOk: reachabilityFixture.fingerprint.writeOk,
+		},
+	};
 	const plan = { schema: manifest.schema, api, inventory, seed: options.seed, saves: manifest.saves };
 	if (options.dryRun) { console.log(JSON.stringify({ status: "DRY_RUN", ...plan }, null, 2)); return; }
 
@@ -184,9 +274,20 @@ async function main() {
 		docker(["exec", "-d", options.container, "setsid", "sh", "-c", launch]);
 		launched = true;
 		assertIdlePreflight(await waitForRuntime(options.container, { operation: "preflight" }));
-		const baseRequest = { manifest, beltPilot, specializedFixture };
+		// The runtime only needs the index catalog and the fingerprints. Ship a lean manifest (no
+		// prose, per-fixture mod pins, saves, contract, or layout blueprints) so the base64 request
+		// stays well under the OS argv limit and cannot carry a Lua long-string delimiter.
+		const leanManifest = {
+			schema: manifest.schema,
+			surfaceName: manifest.surfaceName,
+			labs: manifest.labs.map(({ id, title, zone }) => ({ id, title, zone })),
+			fixtures: manifest.fixtures.map(({ id, fingerprint }) => ({ id, fingerprint })),
+		};
+		const baseRequest = { manifest: leanManifest, beltPilot, specializedFixture };
 		assertSourceReady(runtimeCall(options.container, { ...baseRequest, operation: "normalize_source" }));
 		const sourceReading = assertSourceReady(runtimeCall(options.container, { ...baseRequest, operation: "inspect" }));
+		assertCorpusRoster(sourceReading, manifest);
+		assertCensusMatches(sourceReading, manifest.saves.source.expectedCensus, "source");
 		runtimeCall(options.container, { operation: "save", saveName: manifest.saves.source.name });
 		const sourceRemote = `${REMOTE_ROOT}/saves/${manifest.saves.source.name}.zip`;
 		await waitForStableSave(options.container, sourceRemote);
@@ -196,6 +297,7 @@ async function main() {
 
 		runtimeCall(options.container, { ...baseRequest, operation: "prepare_destination" });
 		const destinationReading = await waitForDestination(options.container, baseRequest);
+		assertCensusMatches(destinationReading, manifest.saves.destination.expectedCensus, "destination");
 		runtimeCall(options.container, { operation: "save", saveName: manifest.saves.destination.name });
 		const destinationRemote = `${REMOTE_ROOT}/saves/${manifest.saves.destination.name}.zip`;
 		await waitForStableSave(options.container, destinationRemote);

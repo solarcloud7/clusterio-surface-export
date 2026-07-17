@@ -20,15 +20,46 @@ test("gallery runtime exposes bounded paired-build and inspection operations", (
 	assert.match(source, /game\.delete_surface/);
 });
 
-test("normalization removes broad world state and builds the first minimal space-platform fixture", () => {
+test("normalization verifies the hand-curated corpus and never constructs or minimizes it", () => {
+	// Verify-not-construct: the corpus is hand-built in the seed. Normalize must not create,
+	// destroy, or minimize any platform surface.
+	assert.doesNotMatch(source, /create_space_platform/);
+	assert.doesNotMatch(source, /apply_starter_pack/);
+	assert.doesNotMatch(source, /minimize_nauvis/);
+	assert.doesNotMatch(source, /delete_chunk/);
+	// Normalize rebuilds only the index catalog and applies lab-safe settings, then physically
+	// verifies every fingerprint against the manifest before it will accept the source.
 	assert.match(source, /default_enable_all_autoplace_controls\s*=\s*false/);
-	assert.match(source, /delete_chunk/);
-	assert.match(source, /platform\.destroy\(0\)/);
-	assert.match(source, /create_space_platform/);
-	assert.match(source, /apply_starter_pack/);
-	assert.match(source, /electric-mining-drill/);
+	assert.match(source, /reading\.corpusExact/);
 	assert.match(source, /specialized-fluid-reachability/);
+	// Only prepare_destination tears the roster down (ticked destroy of ALL platforms).
+	assert.match(source, /destroy_all_platforms/);
+	assert.match(source, /platform\.destroy\(0\)/);
 	assert.match(source, /prepare_destination/);
+});
+
+test("the corpus gate measures every family platform against manifest fingerprints", () => {
+	assert.match(source, /measure_corpus/);
+	assert.match(source, /corpus_gate/);
+	assert.match(source, /fixture\.fingerprint/);
+	// Physical locators for every hand-built platform.
+	for (const platform of ["lab-omnibus-state-v1", "lab-energy-v1", "lab-belt-corner-v1", "lab-transfer-fixture-v1", "lab-consumable-"]) {
+		assert.match(source, new RegExp(platform));
+	}
+	// A missing read fails approx_equal, so a dropped field cannot pass the gate.
+	assert.match(source, /approx_equal/);
+	assert.match(source, /crafting_progress/);
+	assert.match(source, /get_circuit_network/);
+	// Measurement errors are surfaced, never swallowed.
+	assert.match(source, /measurement error/);
+	// Unsatisfiable by omission: the gate iterates the manifest roster and fails loudly when a
+	// non-excluded fixture has no measurement; exclusions are an explicit allowlist, not an
+	// absence-skip; the fixture tally is reported for the build-side count pin.
+	assert.match(source, /was not measured/);
+	assert.match(source, /corpus_excluded/);
+	assert.match(source, /expectedFixtures/);
+	// The 1e-9 tolerance is scoped to the progress doubles only, never applied blanket.
+	assert.match(source, /tolerant_double_fields/);
 });
 
 test("normalization applies lab settings to non-platform surfaces via the real write APIs", () => {
