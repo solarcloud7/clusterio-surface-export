@@ -551,3 +551,98 @@ read 3 and the corner read 6: one item materialized on the corner segment of the
 held (9=5+4; both lanes had headroom) - in a full rebuild the displaced item occupies a slot the next insert
 needs, producing the refusal chain. Corroborates BELT-R3 mechanism + the "insert returns are never evidence"
 law with a two-piece minimal fixture.
+
+## BELT-R9 [empirical, 2.0.77] - topology-first Plan A stops on the real DUP-233855 component
+
+> Rung ID note: BELT-R8 is the 2026-07-14 owner-witnessed cross-segment displacement demo (recorded on the
+> `feat/selection-lab-tool` notebook and already cited from `selection-lab.lua`); this rung is R9 to avoid
+> a duplicate citation anchor.
+
+Five consecutive current-main upload-import replays of the banked `DUP-233855` payload each reproduced the
+same belt-phase result: expected 15,866, actual 15,861, delta -5, consolidated lines 47. Every run then logged
+aggregate recovery recovered=5, unrecovered=0. This is deterministic baseline evidence, not a new fix claim.
+
+Every extraction produced 596 belt entities and 1,490 `(entity,line)` nodes. All runtime nodes joined uniquely
+to payload `entity_id` by name/type/position/direction. Within each disposable import, populated and cleared
+component memberships and unambiguous resolved canonical directed-edge multisets matched exactly. Across three
+identical-payload imports, however, the overall graph was run-dependent: 225/42/2,984, 215/75/3,114, and
+217/78/3,082 for components/ambiguous links/exact directed edges, with distinct edge hashes. This is another
+reason not to treat one imported graph as a stable export signature. Each post-import detailed-content read
+had raw rows equal to unique IDs, but these are not atomic-export ownership proofs.
+
+The required owner+narrowed-`line_equals` resolver produced multiple-match links in every run. The selector is
+anchored to the three exact black-box compressed-loss endpoints:
+`65243:1` metallic-asteroid-chunk -4, `65243:2` explosive-rocket -8, and `65907:2`
+explosive-rocket -20. Those endpoints fall into the same two ambiguous components in the two saved-runner
+reruns (278 and 270 nodes), with stable ambiguity nodes. The ambiguity comes from linked lines matching owner
+lines `[1,3]` or `[2,4]`; for example, `65188:1` can resolve to `65190:1` or `65190:3`, and `65188:2` can
+resolve to `65190:2` or `65190:4`.
+
+**STOP CONDITION FIRED:** the approved design declares zero/multiple matches ambiguous and unsupported, and
+requires every known loss endpoint's component to map one-to-one before production begins. Therefore the real
+loss class is not eligible and no production Plan A code was written. Scheduler, aliasing/landing, and
+performance rungs were not continued after this earlier mandatory stop. Full evidence:
+`results/plan-a-phase-a-stop-2.0.77.txt` and
+`results/plan-a-topology-endpoint-reruns-2.0.77.json`; rerun entrypoint: `run-plan-a-topology.ps1`.
+
+## ADJ-R0 INVALIDATED [harness error, 2.0.77] - corrected rerun required
+
+The first ADJ-R0 result is not empirical evidence. Its Lua observer inverted `defines.transport_line` into a
+single role-per-integer table, but the live enum aliases underground roles 3/4 with splitter secondary roles
+3/4. Lua table iteration therefore selected an arbitrary alias, mislabeling every underground node and
+invalidating the graph signature, ambiguity counts, geometry mismatch count, endpoint coverage, and STOP.
+
+The evidence boundary was also invalid: the runner could not emit the committed compact schema, overwrote the
+committed result even on `--dry-run`, classified infrastructure failures as `STOP`, and did not consume the
+pinned official runtime schema. The previous STOP text and hash are intentionally withdrawn rather than
+carried as a negative conclusion.
+
+The corrected runner derives roles explicitly from `(entity type, line index)`, records pause ownership
+immediately after a successful pause write, distinguishes `HARNESS_ERROR` from a valid-harness `STOP`, requires
+the pinned official `runtime-api.json`, and writes evidence only to an explicit new path.
+
+## ADJ-R0 STOP [empirical, 2.0.77] - corrected instrument reproduces the topology stop
+
+The fixed observer passed its injected post-construction failure boundary, then repeated the full empty-target
+rung against the hash-pinned 1,359-entity replay. The runner consumed and certified the official 2.0.77 schema
+at SHA-256 `594b4ec98cc5fbee322d7380db49a388ab38b0d69c06f00ead877cffbb37f578`, constructed all 596 belt entities,
+and observed zero belt and ground items. Three normalized observations produced structural signature
+`20634d726bc02fc236933fbf29e176c15e87c4805819d2121231d040b9dfc445`.
+
+The corrected roles changed every affected underground node from the arbitrary splitter aliases to
+`left_underground_line` / `right_underground_line`. With those correct names, the declared geometry agreement
+gate still rejected 1,135 transitions and produced graph signature
+`05f74d50d7e1ee1b116cbbbdf270fd63e9d1d892afad30d0c954194aeea43f18`. All three known-loss endpoints
+(`65243:1`, `65243:2`, `65907:2`) consequently had empty certified legal regions. This corrected reproduction,
+not the withdrawn first run, is the evidence that semantic adjacency cannot pass the approved geometry
+cross-check for the real loss topology.
+
+The controls covered 399 straight belts, 54 corners, three unconfigured splitters, 69 reciprocal underground
+pairs, and 1,490 line nodes. The read projection remained 4,470 versus the fixed 5,000,000 ceiling. Both the
+injected-failure and normal boundaries cleaned to zero lab surfaces, items, storage, jobs, locks, holds, and
+tombstones on both instances; both games were unpaused. A separate post-run RCON census independently confirmed
+the same zero state. Belt-item insertion was **NOT PERFORMED**; scheduler, aliasing/landing, reconstruction, the
+synthetic ladder, and production restoration remain **NOT TESTED**. Runner-emitted evidence:
+`results/adjacency-r0-2.0.77.json`.
+
+## ADJ-R0 rerun [empirical, 2.0.77] - independent-review fixes reproduce the STOP; lab boundary is self-healing
+
+The independent PR #110 review confirmed the corrected-instrument STOP and its evidence chain (the pinned
+runtime-api SHA-256 `594b4ec98cc5fbee322d7380db49a388ab38b0d69c06f00ead877cffbb37f578` was independently
+re-verified against a fresh download of the official `lua-api.factorio.com/2.0.77/runtime-api.json`, and the
+committed evidence document was key-for-key identical to the runner's emitted schema), but found two residual
+lab-boundary gaps: `cleanup()` deleted only the storage-tracked surface, so an orphaned prefixed surface (no
+storage record) would block preflight forever with no automated recovery; and the injected-failure rehearsal
+ran unconditionally before every live rung with no debug section selection. Both are fixed: cleanup now sweeps
+every `belt-adjacency-r0-` surface by the same prefix predicate `inspect()` uses, and `--skip-rehearsal`
+(debug-only; refuses to combine with `--inject-failure`) gates the rehearsal.
+
+The full rung was rerun on the fixed runner (rehearsal included). It reproduced the STOP with the identical
+structural signature `20634d726bc02fc236933fbf29e176c15e87c4805819d2121231d040b9dfc445` and identical graph
+signature `05f74d50d7e1ee1b116cbbbdf270fd63e9d1d892afad30d0c954194aeea43f18` — 1,135 geometry disagreements
+and all three known-loss endpoints with empty legal regions — so the topology verdict is now deterministic at
+the RUN level across two independent full constructions, not only across the three observations within one
+run. A live orphan probe then created `belt-adjacency-r0-orphan-probe` with no storage record: before
+sweep surfaces=1/labStorage=false, cleanup returned deleted=["belt-adjacency-r0-orphan-probe"], and the
+post-probe census read zero surfaces/items/storage/jobs/locks/holds/tombstones with the game unpaused. The
+committed `results/adjacency-r0-2.0.77.json` is the fixed runner's own emission from this rerun.

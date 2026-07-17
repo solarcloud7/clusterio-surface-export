@@ -171,6 +171,11 @@ other work may be in flight). The default agent failure mode is re-running a ful
 tail check — turning a 30-second fix into a 6-minute cycle that also churns cluster state. Rules (each was paid
 for in a real incident — the destination-hold probe audit):
 
+These rules govern probes that dynamically mutate the shared cluster. Certified single-use baked-fixture batches
+follow the lifecycle in [the Physical Truth Lab Standard](docs/lab-tests.md): they do not clean between fixtures
+and reload the paired golden saves at the batch boundary. Cleanup-specific tests and non-baked shared-cluster
+probes retain the zero-leftover obligations below.
+
 1. **Build probes in sections; iterate on sections.** Any `run-tests.ps1` using more than one expensive resource
    MUST take a section-selection param (e.g. `-Sections main,restart,ttl`). Debug loops run ONLY the failing
    section; the full unsegmented run is reserved for final evidence passes.
@@ -195,6 +200,9 @@ for in a real incident — the destination-hold probe audit):
    end.** No live-narration of running passes; no trusting a single lucky green.
 
 ### Empirical lab discipline (how engine lore becomes law — exemplar: `tests/fluid-lab/`)
+
+The canonical test taxonomy, baked-fixture contract, measurement boundary, and promotion path are defined in
+[the Physical Truth Lab Standard](docs/lab-tests.md). The evidence rules in this section remain mandatory.
 
 Engine-behavior knowledge carries evidence tags in [docs/factorio-2.0-api-notes.md](docs/factorio-2.0-api-notes.md):
 **[API]** / **[empirical, <pin>]** / **[hypothesis]**. A mechanism EXPLANATION is [hypothesis] until its
@@ -673,8 +681,15 @@ Project invariants that still bite if changed:
   reflects beacon bonuses once the beacon's `beacon_modules` inventory is populated, so Phase 3 restores
   beacons first, then everything else. See [Import Phase Ordering](#import-phase-ordering-critical).
 - **Historical belt restore loss (formerly described as ±4–8 cosmetic drift).** The residual was real
-  restore-time loss, not harmless redistribution. Belt restoration was fixed to exact physical totals; the
-  atomic single-tick export scan prevents a rolling source snapshot (Pitfall #16, atomic belt scan).
+  restore-time loss, not harmless redistribution. The frozen `items` verdict requires exact global
+  conservation, and the existing hub/ground recovery can satisfy that verdict after a belt-phase deficit.
+  This does **not** guarantee whole-lane fidelity for fully compressed belts. The required unit is one
+  continuous belt lane/side: preserve its exact `(name, quality, stack count)` multiset and quantity across
+  the entire lane; item order, exact coordinate, and individual belt-tile window are not invariants. BELT-R9
+  proved that owner-narrowed `line_equals` resolution is ambiguous on the known DUP-233855 loss components
+  and that the imported engine-line graph varies across identical imports, so engine transport-line identity
+  is not a durable restoration key. The atomic single-tick export scan still prevents a rolling source
+  snapshot (Pitfall #16, atomic belt scan). See [the belt lab notebook](tests/belt-lab/NOTEBOOK.md#belt-r9-empirical-2077---topology-first-plan-a-stops-on-the-real-dup-233855-component).
 - **Fluid restoration runs in the frozen world before the exact gate.** R11 proved the shipped restoration code conserves exactly there (Pitfall #17, historical pre-activation fluid loss). **Fusion-reactor output rejects writes** (Pitfall #21, fusion outputs are engine-managed). Subtract
   only physically rejected writes from expected counts; capacity drops remain gate failures. One pre-activation verdict covers exact items and aggregate-by-name fluids (`epsilon=1e-6`).
 - **Entity inventory size** isn't changed by `LuaInventory.resize` (custom inventories only).

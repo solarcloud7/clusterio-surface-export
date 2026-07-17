@@ -23,7 +23,8 @@
     quality with 0 energy/shield, and a recipe set without quality reads NORMAL — so any non-default
     destination reading proves the specific restore ran.
 
-    Fixture (cheap — bare platform, no clone): a PAUSED bare platform far from the hub carrying
+    Fixture (cheap — bare platform, no clone): a PAUSED bare platform with no other electric participants
+    (no generation, no consumers — the offset is a placement convention with no electrical effect) carrying
       * steel chest -> power-armor-mk2 with grid: battery-mk2-equipment (quality legendary, energy 5 MJ)
         + energy-shield-mk2-equipment (quality uncommon, shield seeded to ~half capacity)
       * assembling-machine-2 with set_recipe('iron-gear-wheel', 'uncommon'), no ingredients (idle).

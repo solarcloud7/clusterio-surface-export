@@ -14,7 +14,8 @@
 
     Fixture (cheap — never the 1,359-entity clone): a bare platform (create_space_platform +
     apply_starter_pack), PAUSED before the fixture is built. A single heat entity is force-created on a
-    foundation block far (offset 320) from the hub and set to a distinctive 500 °C. Because it is
+    foundation block near the hub and set to a distinctive 500 °C (the offset is a placement convention
+    with no electrical effect; the hold is thermal, not electrical). Because it is
     isolated (no adjacent heat entity to conduct into), Factorio's heat model conserves its buffer — it
     holds temperature post-activation, so the bound only absorbs settling + float round-trip.
 
