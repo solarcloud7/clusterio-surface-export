@@ -1,5 +1,7 @@
 # ONE-SHOT agent brief — cheap fixtures (or LAB-TAIL fallback)
 
+[Agent execution discipline](../../AGENT_EXECUTION_DISCIPLINE.md)
+
 > ONE-SHOT TASK. Do not stop to ask questions: every decision you might need is pre-adjudicated below.
 > The ONLY valid stops are (a) finished and audit-ready, (b) a hard stop condition listed at the end.
 > Work the phases in order.

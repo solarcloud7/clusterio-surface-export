@@ -1,5 +1,7 @@
 # ONE-SHOT agent brief — T1c plasma decomposition → finish LAB-TAIL → state-dimension package
 
+[Agent execution discipline](../../AGENT_EXECUTION_DISCIPLINE.md)
+
 > ONE-SHOT: decisions pre-adjudicated; do not stop to ask. Valid stops: (a) audit-ready, (b) a listed
 > hard stop. Same standing discipline as your previous brief (LF clone refresh, tools/rcon.ps1 not
 > rc11, commit-before-teeth, per-section iteration, zero-leftover proof, no allows without

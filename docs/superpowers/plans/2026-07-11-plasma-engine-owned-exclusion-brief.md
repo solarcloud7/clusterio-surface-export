@@ -1,5 +1,7 @@
 # ONE-SHOT agent brief — plasma shortfall root-cause → engine-owned segment exclusion → resume the package
 
+[Agent execution discipline](../../AGENT_EXECUTION_DISCIPLINE.md)
+
 > ONE-SHOT: decisions pre-adjudicated; do not stop to ask. Valid stops: (a) audit-ready, (b) a listed
 > hard stop. Standing discipline unchanged (LF refresh, tools/rcon.ps1, commit-before-teeth,
 > per-section iteration, zero-leftover proof, no self-approved allows, package-lock untouched, no

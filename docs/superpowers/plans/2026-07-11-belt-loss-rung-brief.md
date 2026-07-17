@@ -1,5 +1,7 @@
 # ONE-SHOT agent brief — BELT-R1: isolate the nondeterministic -4 belt loss (capture → replay → attribute)
 
+[Agent execution discipline](../../AGENT_EXECUTION_DISCIPLINE.md)
+
 > ONE-SHOT: decisions pre-adjudicated. Valid stops: (a) audit-ready, (b) listed hard stops. Standing
 > discipline unchanged. You own the cluster. Context: a frozen-gate census caught -4
 > piercing-rounds-magazine, localized ENTIRELY to transport belts (all inventories/hands/turrets/fluids
