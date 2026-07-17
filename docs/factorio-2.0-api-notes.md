@@ -19,6 +19,7 @@ was learned.
 - [Inventory sizing](#inventory-sizing)
 - [Item counting (get_item_count includes belts)](#item-counting)
 - [Space platform deletion](#space-platform-deletion)
+- [Space platform electric network](#space-platform-electric-network)
 - [Save completion and atomic replacement](#save-completion-and-atomic-replacement)
 - [LuaProfiler and LocalisedString](#luaprofiler-and-localisedstring)
 - [Read-only entity properties](#read-only-entity-properties)
@@ -209,6 +210,28 @@ Consequence: fluid does not live per-entity — it lives in the shared segment. 
   for immediate, deterministic teardown of a platform and all its entities. Route all platform
   removal through `GameUtils.delete_platform` (`module/utils/game-utils.lua`); a lint guard
   (`npm run lint:lua`) blocks direct `*platform*.destroy()` calls.
+
+## Space platform electric network
+
+- **A space-platform surface has exactly ONE global electric network, and every electric entity on the
+  surface joins it — regardless of position, distance, or foundation connectivity.** **[empirical, 2.0.77,
+  live gallery-instance probes 2026-07-17]** Three controlled probes on throwaway platforms measured a lamp on
+  a disconnected foundation patch behind a 10-tile verified-void gap reading the SAME `electric_network_id` as a
+  lamp beside the hub; patches at axis distance 320 and Euclidean distance 452 (diagonal 320,320) joined the
+  same network too, as did entities created in the same Lua execution as the platform and minutes later. An
+  earlier reading of "separate networks per island" (ids 13/15/19) was one-network-per-PLATFORM across three
+  different platforms, misread as per-island isolation. Two explanations are **REFUTED** (record as refuted, not
+  fact): (a) "tiles are wires" — electricity conducting through contiguous foundation from the hub — the
+  verified-void gap did not isolate; (b) any distance/radius-based membership boundary — d=452 still joined.
+- **The hub reports `electric_network_id = nil` and generates no power.** **[empirical, 2.0.77, live
+  gallery-instance probes 2026-07-17]** Hubs are not electric-network members, and a bare starter platform's
+  network has no generation. `status = no_power` on an entity therefore means "this platform's network has no
+  generation," never "this entity is disconnected."
+- **`LuaSurface.has_global_electric_network` is READ-ONLY; the write path is
+  `create_global_electric_network()`.** **[API, 2.0.77]** The official runtime-api.json marks
+  `has_global_electric_network` with write=false; the network is created via
+  `LuaSurface.create_global_electric_network()`, and starter packs create it through the prototype property
+  `SpacePlatformStarterPackPrototype.create_electric_network` (boolean).
 
 ## Save completion and atomic replacement
 
