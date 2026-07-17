@@ -128,7 +128,13 @@ end
 
 local function replace_index_surface(manifest)
     local old = game.surfaces[manifest.surfaceName]
-    if old then assert(game.delete_surface(old), "failed to delete old gallery index") end
+    if old then
+        -- game.delete_surface only SCHEDULES deletion, so re-baking from a previous gallery
+        -- save would collide on the canonical name in this same execution. Rename first
+        -- (immediate), then schedule the delete.
+        old.name = manifest.surfaceName .. "-retired"
+        assert(game.delete_surface(old), "failed to delete old gallery index")
+    end
     local surface = game.create_surface(manifest.surfaceName, {
         width = 128,
         height = 96,
@@ -202,14 +208,14 @@ local function create_reachability_fixture(specification)
     return platform, drill
 end
 
-local function configure_lab_surfaces()
+-- Read-only: inspect() must report what the save actually carries, never values the
+-- inspection itself just wrote — otherwise the builder's lab-safe gate can never fail.
+local function read_lab_surface_settings()
     local rows = {}
     for _, surface in pairs(game.surfaces) do
-        surface.generate_with_lab_tiles = true
-        surface.has_global_electric_network = true
-        surface.ignore_surface_conditions = true
         rows[#rows + 1] = {
             name = surface.name,
+            isPlatform = surface.platform ~= nil,
             generateWithLabTiles = surface.generate_with_lab_tiles,
             hasGlobalElectricNetwork = surface.has_global_electric_network,
             ignoreSurfaceConditions = surface.ignore_surface_conditions,
@@ -217,6 +223,22 @@ local function configure_lab_surfaces()
     end
     table.sort(rows, function(a, b) return a.name < b.name end)
     return rows
+end
+
+local function apply_lab_surface_settings()
+    for _, surface in pairs(game.surfaces) do
+        -- Platform surfaces are MEASURED fixtures: ignore_surface_conditions would change
+        -- can_place semantics for the surface-condition entities the reachability lab
+        -- classifies, so their physics are never mutated — values recorded as measured.
+        if surface.platform == nil then
+            surface.generate_with_lab_tiles = true
+            -- has_global_electric_network is read-only at 2.0.77; the write path is
+            -- create_global_electric_network() and the attribute is its read-back.
+            if not surface.has_global_electric_network then surface.create_global_electric_network() end
+            surface.ignore_surface_conditions = true
+        end
+    end
+    return read_lab_surface_settings()
 end
 
 local function inspect_reachability(specification)
@@ -292,7 +314,7 @@ local function inspect()
         maximumStack = all.maximumStack,
         physicalStacks = all.physicalStacks,
         reachability = inspect_reachability(specialized),
-        surfaceSettings = configure_lab_surfaces(),
+        surfaceSettings = read_lab_surface_settings(),
         transient = transient_state(),
         census = surface_census(),
     }
@@ -327,7 +349,7 @@ local function normalize_source()
     local index_surface, renderings, tags = replace_index_surface(manifest)
     remove_unrelated_surfaces({ [source_surface.name] = true, [index_surface.name] = true })
     local platform, drill = create_reachability_fixture(specialized)
-    configure_lab_surfaces()
+    apply_lab_surface_settings()
     storage.lab_gallery = {
         schema = manifest.schema,
         saveRole = "source",

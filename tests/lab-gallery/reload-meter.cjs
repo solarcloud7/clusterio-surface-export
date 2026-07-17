@@ -45,7 +45,7 @@ local surface_names,surface_settings,total_entities,total_chunks={},{},0,0
 for _,row in pairs(game.surfaces)do
   local chunks=0 for _ in row.get_chunks()do chunks=chunks+1 end
   surface_names[#surface_names+1]=row.name;total_entities=total_entities+#row.find_entities_filtered({});total_chunks=total_chunks+chunks
-  surface_settings[#surface_settings+1]={name=row.name,generate_with_lab_tiles=row.generate_with_lab_tiles,
+  surface_settings[#surface_settings+1]={name=row.name,is_platform=row.platform~=nil,generate_with_lab_tiles=row.generate_with_lab_tiles,
     has_global_electric_network=row.has_global_electric_network,ignore_surface_conditions=row.ignore_surface_conditions}
 end
 table.sort(surface_names)

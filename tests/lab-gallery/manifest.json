@@ -18,14 +18,14 @@
       "role": "source",
       "name": "lab-gallery-source-surface-export-2-0-77",
       "artifact": "docker/seed-data/lab-saves/lab-gallery-source-surface-export-2.0.77.zip",
-      "sha256": "6F6DB4ADA0D6CF8747F01FA74880C5C6C272C7E4063BA2CE956ABF88D6E060A7",
+      "sha256": "DFE388875B9CD9AAAB3A9DF74D5132121919915DBE432D1ED40225CF9BC7D027",
       "expectedCensus": {
         "totalEntities": 34,
         "totalGeneratedChunks": 248,
         "surfaces": [
           { "name": "lab-gallery-index-v2", "entityCount": 0, "generatedChunks": 90 },
           { "name": "nauvis", "entityCount": 32, "generatedChunks": 2, "planet": "nauvis" },
-          { "name": "platform-2", "entityCount": 2, "generatedChunks": 156, "platform": "lab-specialized-fluid-r1" }
+          { "name": "platform-1", "entityCount": 2, "generatedChunks": 156, "platform": "lab-specialized-fluid-r1" }
         ]
       },
       "mods": {
@@ -44,7 +44,7 @@
       "role": "destination",
       "name": "lab-gallery-destination-surface-export-2-0-77",
       "artifact": "docker/seed-data/lab-saves/lab-gallery-destination-surface-export-2.0.77.zip",
-      "sha256": "9F89B25F9CFA605A25A02D7BD42F3CB12554B9594E1581F84D998F15566C2C23",
+      "sha256": "D83697A32991154135EDC26708A4799F9339E71E67D0550BA4A4B1082A5C1F25",
       "expectedCensus": {
         "totalEntities": 0,
         "totalGeneratedChunks": 92,

@@ -81,7 +81,7 @@ async function main() {
 				break;
 			} catch (error) {
 				const detail = `${error.stderr || ""}\n${error.stdout || ""}\n${error.message || ""}`;
-				if (!detail.includes("ECONNREFUSED")) throw error;
+				if (!detail.includes("ECONNREFUSED") && !detail.includes("ECONNRESET")) throw error;
 				await sleep(500);
 			}
 		}

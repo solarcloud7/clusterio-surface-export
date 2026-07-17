@@ -35,20 +35,71 @@ test("seed preflight permits the old gallery but refuses active global state", (
 	}
 });
 
+const labSafeSurface = name => ({ name, generateWithLabTiles: true, hasGlobalElectricNetwork: true, ignoreSurfaceConditions: true });
+const censusFor = settings => ({ surfaces: settings.map(row => ({ name: row.name, entityCount: 0, generatedChunks: 1 })) });
+
 test("source and destination readiness are role-specific physical verdicts", () => {
+	const sourceSettings = [labSafeSurface("lab-gallery-index-v2"), labSafeSurface("nauvis"), labSafeSurface("platform-2")];
 	const sourceReading = {
 		saveRole: "source", beltFixtureExact: true, reachabilityFixtureExact: true,
 		transient: { gamePaused: false, jobs: 0, locks: 0, holds: 0, tombstones: 0 },
+		surfaceSettings: sourceSettings, census: censusFor(sourceSettings),
 	};
 	assert.equal(assertSourceReady(sourceReading), sourceReading);
 	assert.throws(() => assertSourceReady({ ...sourceReading, reachabilityFixtureExact: false }), /reachability/i);
 
+	const destinationSettings = [labSafeSurface("lab-gallery-index-v2"), labSafeSurface("nauvis")];
 	const destinationReading = {
 		saveRole: "destination", sourceBelts: 0, targetBelts: 0,
 		reachability: { exists: false }, transient: sourceReading.transient,
+		surfaceSettings: destinationSettings, census: censusFor(destinationSettings),
 	};
 	assert.equal(assertDestinationReady(destinationReading), destinationReading);
 	assert.throws(() => assertDestinationReady({ ...destinationReading, sourceBelts: 1 }), /belt/i);
+});
+
+test("the lab-safe surface gate is unsatisfiable by omission", () => {
+	const settings = [labSafeSurface("nauvis")];
+	const base = {
+		saveRole: "source", beltFixtureExact: true, reachabilityFixtureExact: true,
+		transient: { gamePaused: false, jobs: 0, locks: 0, holds: 0, tombstones: 0 },
+		surfaceSettings: settings, census: censusFor(settings),
+	};
+	assert.equal(assertSourceReady(base), base);
+	// A dropped or renamed runtime field must FAIL the gate, not skip it (the vacuous-gate class).
+	assert.throws(() => assertSourceReady({ ...base, surfaceSettings: undefined }), /missing surfaceSettings/);
+	assert.throws(() => assertSourceReady({ ...base, surfaceSettings: [] }), /missing surfaceSettings/);
+	assert.throws(() => assertSourceReady({ ...base, census: undefined }), /missing census\.surfaces/);
+	assert.throws(
+		() => assertSourceReady({ ...base, census: { surfaces: [...censusFor(settings).surfaces, { name: "extra" }] } }),
+		/census is incomplete/,
+	);
+	assert.throws(
+		() => assertSourceReady({ ...base, surfaceSettings: [{ ...settings[0], ignoreSurfaceConditions: false }] }),
+		/not lab-safe/,
+	);
+	assert.throws(
+		() => assertSourceReady({ ...base, surfaceSettings: [{ name: "nauvis", generateWithLabTiles: 1, hasGlobalElectricNetwork: true, ignoreSurfaceConditions: true }] }),
+		/not lab-safe/,
+	);
+});
+
+test("platform surfaces are recorded as measured, never judged lab-safe", () => {
+	// A platform's physics are the fixture under measurement (ignore_surface_conditions would
+	// change can_place semantics for the reachability classification) — record, don't mutate.
+	const settings = [
+		labSafeSurface("lab-gallery-index-v2"), labSafeSurface("nauvis"),
+		{ name: "platform-2", isPlatform: true, generateWithLabTiles: false, hasGlobalElectricNetwork: false, ignoreSurfaceConditions: false },
+	];
+	const reading = {
+		saveRole: "source", beltFixtureExact: true, reachabilityFixtureExact: true,
+		transient: { gamePaused: false, jobs: 0, locks: 0, holds: 0, tombstones: 0 },
+		surfaceSettings: settings, census: censusFor(settings),
+	};
+	assert.equal(assertSourceReady(reading), reading);
+	// The same non-true trio on a NON-platform surface still fails.
+	const nonPlatform = settings.map(row => ({ ...row, isPlatform: undefined }));
+	assert.throws(() => assertSourceReady({ ...reading, surfaceSettings: nonPlatform, census: censusFor(nonPlatform) }), /not lab-safe/);
 });
 
 test("builder is isolated, bounded, and publishes neither half on failure", () => {

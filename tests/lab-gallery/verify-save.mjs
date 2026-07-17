@@ -33,6 +33,9 @@ function assertFields(reading, expected) {
 export function assertSurfaceSettings(settings) {
 	if (!Array.isArray(settings) || settings.length === 0) throw new Error("surface_settings is empty");
 	for (const row of settings) {
+		// Platform surfaces are measured fixtures (engine-managed physics); their row must be
+		// present and flagged, but the lab-safe trio is judged only on non-platform surfaces.
+		if (row?.is_platform === true) continue;
 		for (const field of ["generate_with_lab_tiles", "has_global_electric_network", "ignore_surface_conditions"]) {
 			if (row?.[field] !== true) throw new Error(`surface ${row?.name || "<unknown>"} ${field} is not true`);
 		}
@@ -51,7 +54,7 @@ export function assertReloadReading(reading, role) {
 		assertFields(reading, {
 			source_belts: 16, target_belts: 16, source_quantity: 125, physical_stacks: 125,
 			maximum_stack: 1, source_line_quantities: [67, 58], target_quantity: 0,
-			surface_census: { total_entities: 34, total_generated_chunks: 248, surface_names: ["lab-gallery-index-v2", "nauvis", "platform-2"] },
+			surface_census: { total_entities: 34, total_generated_chunks: 248, surface_names: ["lab-gallery-index-v2", "nauvis", "platform-1"] },
 		});
 		assertFields(reading.reachability, {
 			exists: true, platform_name: "lab-specialized-fluid-r1", drill_name: "electric-mining-drill",
@@ -74,7 +77,7 @@ function docker(arguments_, options = {}) {
 
 function sleep(milliseconds) { return new Promise(resolve => setTimeout(resolve, milliseconds)); }
 
-async function verifyOne(options, role, save) {
+async function verifyOne(options, role, save, boundaryErrors) {
 	const config = fileURLToPath(new URL("./isolated-config.ini", import.meta.url));
 	const meter = fileURLToPath(new URL("./reload-meter.cjs", import.meta.url));
 	docker(["exec", options.container, "test", "!", "-e", REMOTE_ROOT]);
@@ -104,11 +107,18 @@ async function verifyOne(options, role, save) {
 		if (launched) {
 			try {
 				const pid = docker(["exec", options.container, "cat", `${REMOTE_ROOT}/verifier.pid`]).trim();
-				if (/^\d+$/.test(pid)) try { docker(["exec", options.container, "kill", "-TERM", `-${pid}`]); } catch { /* meter normally quits */ }
-			} catch { /* launch may fail before pid write */ }
+				if (/^\d+$/.test(pid)) {
+					try { docker(["exec", options.container, "kill", "-TERM", `-${pid}`]); } catch { /* meter normally quits */ }
+				} else {
+					boundaryErrors.push(new Error(`${role} verifier pid file is invalid: ${JSON.stringify(pid)}`));
+				}
+			} catch (error) { boundaryErrors.push(new Error(`${role} verifier pid unreadable (launch may have died early): ${error.message}`)); }
 		}
 		await sleep(500);
 		docker(["exec", options.container, "rm", "-rf", "--", REMOTE_ROOT]);
+		// Zero-leftover proof at the boundary that can leak: a survived Factorio recreating its
+		// write-data after rm -rf must fail HERE, not poison the next role's verification.
+		docker(["exec", options.container, "test", "!", "-e", REMOTE_ROOT]);
 	}
 }
 
@@ -116,7 +126,9 @@ async function main() {
 	const options = parseArguments(process.argv.slice(2));
 	for (const path of [options.sourceSave, options.destinationSave]) if (!existsSync(path)) throw new Error(`save does not exist: ${path}`);
 	const readings = {};
-	for (const role of ["source", "destination"]) readings[role] = await verifyOne(options, role, options[`${role}Save`]);
+	const boundaryErrors = [];
+	for (const role of ["source", "destination"]) readings[role] = await verifyOne(options, role, options[`${role}Save`], boundaryErrors);
+	if (boundaryErrors.length) throw new AggregateError(boundaryErrors, "verification passed but the teardown boundary was not clean");
 	console.log(JSON.stringify({ status: "PASS", saves: { source: options.sourceSave, destination: options.destinationSave }, readings }, null, 2));
 }
 

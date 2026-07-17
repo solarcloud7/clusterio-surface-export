@@ -56,7 +56,7 @@ async function main() {
 		console.log(JSON.stringify({ status: "PASS", reading }, null, 2));
 		try { await rcon.send("/quit"); } catch { /* Expected when Factorio closes the socket first. */ }
 	} finally {
-		rcon.end();
+		try { rcon.end(); } catch { /* /quit can close first. */ }
 	}
 }
 

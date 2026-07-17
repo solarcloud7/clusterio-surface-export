@@ -31,11 +31,17 @@ test("normalization removes broad world state and builds the first minimal space
 	assert.match(source, /prepare_destination/);
 });
 
-test("normalization enables all three editor lab settings on every retained surface", () => {
+test("normalization applies lab settings to non-platform surfaces via the real write APIs", () => {
 	assert.match(source, /for _, surface in pairs\(game\.surfaces\)/);
 	assert.match(source, /surface\.generate_with_lab_tiles\s*=\s*true/);
-	assert.match(source, /surface\.has_global_electric_network\s*=\s*true/);
+	// has_global_electric_network is READ-ONLY at 2.0.77; the write path is the method.
+	assert.doesNotMatch(source, /surface\.has_global_electric_network\s*=[^=]/);
+	assert.match(source, /create_global_electric_network\(\)/);
 	assert.match(source, /surface\.ignore_surface_conditions\s*=\s*true/);
+	// Platform surfaces are measured fixtures: never mutated, values recorded as measured.
+	assert.match(source, /if surface\.platform == nil then/);
+	// inspect() must read settings without writing them (the self-manufactured-PASS class).
+	assert.match(source, /surfaceSettings = read_lab_surface_settings\(\)/);
 });
 
 test("visual catalog, belt pilot, and reachability fixture have independent physical readings", () => {

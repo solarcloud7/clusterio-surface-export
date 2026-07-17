@@ -27,8 +27,8 @@ test("source acceptance includes both independent physical fixtures", () => {
 		maximum_stack: 1, source_line_quantities: [67, 58], target_quantity: 0,
 		index_texts: 12, index_tags: 12,
 		reachability: { exists: true, platform_name: "lab-specialized-fluid-r1", drill_name: "electric-mining-drill", pressure: 0, gravity: 0, mining_target: null, live_fluidbox_count: 0, read_ok: false, write_ok: false },
-		surface_settings: [...surfaceSettings, { name: "platform-2", generate_with_lab_tiles: true, has_global_electric_network: true, ignore_surface_conditions: true }],
-		surface_census: { total_entities: 34, total_generated_chunks: 248, surface_names: ["lab-gallery-index-v2", "nauvis", "platform-2"] },
+		surface_settings: [...surfaceSettings, { name: "platform-1", generate_with_lab_tiles: true, has_global_electric_network: true, ignore_surface_conditions: true }],
+		surface_census: { total_entities: 34, total_generated_chunks: 248, surface_names: ["lab-gallery-index-v2", "nauvis", "platform-1"] },
 	};
 	assert.equal(assertReloadReading(reading, "source"), reading);
 	assert.throws(() => assertReloadReading({ ...reading, source_quantity: 124 }, "source"), /source_quantity/);
