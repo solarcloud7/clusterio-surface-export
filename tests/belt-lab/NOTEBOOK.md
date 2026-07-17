@@ -634,3 +634,81 @@ run. A live orphan probe then created `belt-adjacency-r0-orphan-probe` with no s
 sweep surfaces=1/labStorage=false, cleanup returned deleted=["belt-adjacency-r0-orphan-probe"], and the
 post-probe census read zero surfaces/items/storage/jobs/locks/holds/tombstones with the game unpaused. The
 committed `results/adjacency-r0-2.0.77.json` is the fixed runner's own emission from this rerun.
+
+## BELT-R10 [empirical, 2.0.77] - insert_at write frame is offset by exactly one tick of belt_speed (tier-parametric)
+
+Coverage rack on the gallery platform (all four tiers x straight / corner-left / corner-right /
+underground lines 1-4 / splitter lines 1-8 / stacked-4): writing `insert_at(0.5)` read back via
+`get_detailed_contents` at 0.4688 / 0.4375 / 0.4063 / 0.3750 for transport / fast / express / turbo -
+offsets 1/32, 2/32, 3/32, 4/32 = `prototypes.entity[name].belt_speed` EXACTLY (double-sourced: physical
+probe + prototype read in the same session). Uniform across every geometry tested. Boundary laws:
+write < belt_speed -> the item materializes on the DOWNSTREAM entity with ret=TRUE (silent displacement);
+write > line_length -> ret=FALSE, nothing placed (honest reject). A frame-corrected replay of the 65-item
+natural-compression fixture rebuilt 14/16 lanes exact in count AND position with 2 honest rejections
+(read_pos > line_length - belt_speed = the true unplaceable class). The owner rejected single-tier evidence
+for this law; the rack existed to prove tier-parametricity, and +0.125-as-constant is REFUTED (passes
+turbo-only, breaks mixed tiers). Instrument note: the rack was pruned in the 2026-07-17 save consolidation;
+the law is standing-corroborated by the R11/R12 committed runners, whose k-floor (`k >= belt_speed*256`)
+eliminated the displacement class in 674/674 placements.
+
+## BELT-R11 [empirical, 2.0.77] - side-scoped reverse first-fit reconstructs the saturated omnibus exactly
+
+Committed runner `run-r11-omnibus-side-restore.ps1` (+`side_restore_core.lua`), gallery platform
+`lab-omnibus-platform-v1`, omnibus fixture (29 belt-connectables: mixed copper/iron, unfiltered splitter,
+underground pair, four sideload junctions, two chest-fed loaders, saturated steady state). Method: clone
+geometry+settings to scratch; group the POPULATED source by `line_equals` in one execution (12 groups = the
+lane sides; left/right lanes never merge); bridge each group to the clone by belt ordinal + line index (NO
+dest-side engine graph - on this topology the empty-target input/output_lines BFS shattered 68 lines into
+54 components); place each side's (name,quality,count) multiset by reverse first-fit over the side's own
+windows at `k >= prototype.belt_speed*256`; validate every placement by same-execution physical side-census
+delta, never return values. Result: 243/243 placed, all sides exact multiset, clone-by-name == source-by-name
+(116 copper / 127 iron), zero anomalies, source untouched. Reproduced post-consolidation (two committed-runner
+passes). Aged-clone caveat: the first (pre-runner) session pass on an hours-old clone logged 864 leak events -
+every write on one window pair landed li-preserving on a downstream window (merged/stale handle frame),
+detected by side-census delta and undone exactly; fresh same-execution clones show ZERO leaks (2 runs).
+Same-side landing means the leak class is contract-benign, but production must fetch line handles in the same
+execution it writes them. Lineage: the method is the owner's nauvis 5x5 hybrid/reverse-first-fit experiment
+(125/125, informal - final command was never banked), fused with the R10 k-floor.
+
+## BELT-R12 [empirical, 2.0.77] - filtered-splitter purity survives side-scoped reconstruction
+
+Committed runner `run-r12-filtered-purity.ps1`, owner-built filtered fixture (59 belt-connectables incl. a
+`turbo-splitter` with filter=copper-plate/outpri=left, four chest-fed filtered loaders, post-filter pure
+lanes that re-merge). Clone copies splitter filter/priorities, loader filters, and infinity-chest settings
+(verified on the clone). Result: 431/431 placed across 30 sides, every side exact, **21/21 source-pure sides
+reconstructed single-name (purity gate green)** - purity holds BY CONSTRUCTION because the fidelity unit is
+the lane side and a post-filter lane is its own `line_equals` group; items past a filter cannot re-mix.
+215 copper / 216 iron exact, zero leaks (fresh clone), source untouched. Reproduced post-consolidation.
+
+## BELT-R13 [empirical, 2.0.77] - paused-platform belt physics: belts MOVE, active-writes are rejected, insert_at conserves
+
+Corrected rung (supersedes this session's briefly-held "engine-frozen" claim - see RETRACTIONS below).
+Measured on the dedicated feeder-free probe strip of `lab-omnibus-platform-v1` with leak-free inline
+executions: (1) belt-class entities on a paused platform report `active=false` and REJECT `active=true`
+writes (same-execution readback; loaders accept writes to their flag); (2) items on those belts MOVE -
+3 seeded plates flowed to the dead end within seconds, three controlled repetitions - so "belts keep moving"
+holds on paused platforms and there is NO frozen regime; the 2026-07-17 omnibus self-fill while paused is
+thereby explained; (3) `insert_at` on paused-platform belts CONSERVES: every controlled seed produced exactly
+its own distinct `unique_id` stacks (3 -> 3, repeated; nauvis control 1 -> 1), and the untouched R11 clone
+audits exactly 116/127 after hours live. Jammed/saturated lanes are statically stable (no gaps -> no motion);
+that stability is a property of saturation, not of pausing.
+
+## RETRACTIONS [instrument artifact, 2026-07-17] - the "frozen platform" and "insert_at duplication" claims
+
+Two same-day claims are formally retracted; neither reached any doc or law file. (1) "Belts on paused
+platforms are engine-frozen": refuted by the R13 strip controls - the stability first observed was
+saturation-jam, not freezing. (2) "insert_at double-materializes (immediate + deferred duplicate)": the six
+distinct unique_ids observed after seeding three were real items BOTH INSERTED BY THE INSTRUMENT - the probe
+took its mode as a Lua GLOBAL, and globals set by `/sc` PERSIST across RCON executions, so every subsequent
+"read" call that omitted MODE silently re-ran the previous seed/insert. The tell was present in the outputs
+("seeded":3 inside a drift-check read). Decisive proof: a later bare call read `MODE=clean_seed CYCLE=12`
+still set. All conservation anomalies re-attribute to instrument re-inserts plus live loader injection; no
+engine gain or loss exists anywhere in the corrected evidence.
+
+## LAB HAZARD - RCON `/sc` Lua globals persist across executions
+
+Any global assigned in one RCON execution (`MODE='seed'`) is still set in every later execution on that save.
+A mode-switched probe whose driver omits the global on read calls silently re-runs its previous mutation and
+fabricates state changes (the RETRACTIONS artifact above). RULE: a probe driver must set EVERY injected
+global explicitly on EVERY call (send `MODE='read'`, never omit), and probe Lua should treat an unexpected
+mode value as abort. Inherited by all labs alongside the on_tick clobber and `platform.destroy` no-op hazards.
