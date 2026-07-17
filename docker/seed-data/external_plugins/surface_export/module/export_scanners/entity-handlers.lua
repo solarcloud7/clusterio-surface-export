@@ -276,7 +276,10 @@ EntityHandlers["splitter"] = function(entity)
 
   -- Filter settings
   if entity.splitter_filter then
-    data.filter = entity.splitter_filter.name
+    data.filter = {
+      name = entity.splitter_filter.name,
+      quality = entity.splitter_filter.quality and entity.splitter_filter.quality.name or GameUtils.QUALITY_NORMAL
+    }
   end
 
   -- Input/output priority

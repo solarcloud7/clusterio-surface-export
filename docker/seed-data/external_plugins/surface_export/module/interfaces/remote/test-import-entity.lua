@@ -422,6 +422,7 @@ return function(entity_json, surface_index, position_override)
       -- Turret fields: priority_targets (array), ignore_unprioritised_targets (boolean)
       local fields_to_compare = {
         "fluids", "items",
+        "filter",
         "inserter_stack_size_override", "filter_mode",
         "recipe", "recipe_quality",
         "priority_targets", "ignore_unprioritised_targets"
