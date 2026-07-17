@@ -231,3 +231,29 @@ test("the census-omission hook is enumerated in lint:test-hooks FAIL_SAFE_HOOKS"
 	assert.match(lint, /FAIL_SAFE_HOOKS[\s\S]*?"test_force_census_omission"/,
 		"the pre-verdict hook must be whitelisted as fail-safe (leak ⇒ next export aborts + source preserved)");
 });
+
+test("the census physical read excludes the SAME engine-owned segments the serializer excludes (shared-segment fusion case)", () => {
+	// Measured live 2026-07-17 (2.0.77, workhorse platform): fusion-reactor plasma OUTPUT boxes expose
+	// real segment IDs shared with fusion-generator inputs (which read seg=nil — refining Pitfall #22,
+	// activatable entities expose no own segment ID). The
+	// serializer drops those segments via the job's engine_owned_segments pre-pass, but a census fluid
+	// state seeded with an EMPTY engine_owned_segments set counts them physically → phantom
+	// fusion-plasma delta → every transfer of a fusion platform aborts. The two reads must share ONE
+	// ownership source of truth: queue() hands the job's pre-passed set to CensusAccumulator.new().
+	const newBody = functionBody(
+		accumulatorSource(),
+		"function CensusAccumulator.new(",
+		"function CensusAccumulator.record(",
+	);
+	assert.match(newBody, /new_fluid_state\s*\(\s*engine_owned_segments\s*\)/,
+		"new() must THREAD the set into new_fluid_state (an empty/unthreaded set silently disables the segment-path exclusion)");
+	assert.match(newBody, /if not engine_owned_segments then\s*\n\s*error\(/,
+		"new() must fail LOUD on a nil set — Lua's silent-nil default would quietly resurrect the trap for a future caller");
+	const queueBody = functionBody(
+		exportPipelineSource(),
+		"function ExportPipeline.queue(",
+		"function ExportPipeline.process_batch(",
+	);
+	assert.match(queueBody, /CensusAccumulator\.new\s*\(\s*engine_owned_segments\s*\)/,
+		"queue() must pass its pre-passed engine_owned_segments — the serializer's OWN exclusion set — into the census");
+});

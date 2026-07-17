@@ -30,9 +30,15 @@
 --
 -- ENGINE-OWNED FLUIDS: Verification.count_all_fluids drops fluid.engine_owned unconditionally, so the
 -- physical read passes exclude_engine_owned = true to stay COMMENSURATE — otherwise a fusion-reactor
--- output box (engine-managed, Pitfall #21) throws a phantom census row. Isolated engine-owned boxes are
--- excluded on-the-fly by FluidOwnership.is_engine_owned_box (self-contained per box), so no all-entity
--- pre-pass is required for the realistic fusion case (Pitfall #22, fusion outputs are isolated boxes).
+-- output box (engine-managed, Pitfall #21) throws a phantom census delta. The on-the-fly
+-- FluidOwnership.is_engine_owned_box check only covers the ISOLATED (seg=nil) path; measured live
+-- 2026-07-17 [empirical, 2.0.77]: on a realistic reactor→generator layout the reactor's plasma OUTPUT
+-- boxes expose REAL segment IDs (shared with the generators' inputs, which read seg=nil — refining
+-- Pitfall #22, activatable entities expose no own segment ID; see the api-notes fusion entry),
+-- so the segment path consults fluid_state.engine_owned_segments and an EMPTY set silently disables the
+-- exclusion (the phantom fusion-plasma -20 that aborted the first post-merge transfer). new() therefore
+-- REQUIRES the caller's pre-passed engine-owned segment set — the SAME set the serializer excludes by
+-- (ExportPipeline.queue's FluidOwnership.collect_engine_owned_segments) — one ownership source of truth.
 -- The cross-entity fluid dedup `state` (segment set + temp fallbacks) is caller-owned and threaded so a
 -- segment spanning entities is counted once across the walk; it defaults to acc.fluid_state.
 
@@ -47,12 +53,16 @@ local EXACT_EPSILON = 1e-6
 
 --- Fresh cross-entity fluid fold state (plain data — storage-safe).
 --- Mirrors the shape SurfaceCounter.count_fluids builds so per-entity dedup keeps working.
-local function new_fluid_state()
+--- engine_owned_segments: the caller's pre-passed seg_id set, SHARED by reference (not copied) so the
+--- census and the serializer read one table — literally one ownership source of truth; the segment-path
+--- exclusion in count_entity_fluids is a no-op without it (see header note). Both references live in
+--- the same storage.async_jobs record; Factorio's storage serializer preserves shared-table identity.
+local function new_fluid_state(engine_owned_segments)
     return {
         counted_segments = {},      -- seg_id set already counted (segment dedup memory)
         known_fluid_temps = {},     -- fluid_name -> temp fallback
         seg_temps = {},             -- seg_id -> {fluid, temp} authoritative
-        engine_owned_segments = {}, -- seg_id set skipped when exclude_engine_owned is set
+        engine_owned_segments = engine_owned_segments, -- seg_id set skipped when exclude_engine_owned is set
     }
 end
 
@@ -123,8 +133,15 @@ local function build_row(entity, entity_data, phys_items, ser_items, item_delta)
 end
 
 --- Create a fresh, storage-safe accumulator.
+--- @param engine_owned_segments table: pre-passed engine-owned seg_id set — the SAME table the
+---        serializer excludes by (ExportPipeline.queue). REQUIRED (fail-loud): a nil set would
+---        silently disable the segment-path exclusion and resurrect the phantom-plasma abort.
 --- @return table: plain-data accumulator suitable for storage.async_jobs[job_id].census
-function CensusAccumulator.new()
+function CensusAccumulator.new(engine_owned_segments)
+    if not engine_owned_segments then
+        error("CensusAccumulator.new requires the pre-passed engine-owned segment set " ..
+            "(FluidOwnership.collect_engine_owned_segments) — see the ENGINE-OWNED FLUIDS header note")
+    end
     return {
         physical_items = {},    -- quality_key -> count (running total)
         serialized_items = {},  -- quality_key -> count
@@ -132,7 +149,8 @@ function CensusAccumulator.new()
         serialized_fluids = {}, -- fluid_temp_key -> amount
         mismatches = {},        -- entity-attributed rows
         entity_count = 0,
-        fluid_state = new_fluid_state(), -- cross-entity segment dedup, persists across the walk
+        -- cross-entity segment dedup, persists across the walk
+        fluid_state = new_fluid_state(engine_owned_segments),
     }
 end
 

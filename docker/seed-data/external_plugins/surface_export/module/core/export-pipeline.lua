@@ -275,8 +275,10 @@ function ExportPipeline.queue(platform_index, force_name, requester_name, destin
 		belt_entities = {},
 		-- Paired-reads source census (Task 4). Storage-safe plain data — it lives here in
 		-- storage.async_jobs across the multi-tick walk; record() folds physical-vs-serialized
-		-- per entity in the SAME execution the entity is serialized in.
-		census = CensusAccumulator.new(),
+		-- per entity in the SAME execution the entity is serialized in. The census shares the
+		-- serializer's pre-passed engine-owned segment set (rationale + measurement: the
+		-- ENGINE-OWNED FLUIDS note in census-accumulator.lua).
+		census = CensusAccumulator.new(engine_owned_segments),
 		-- Fluid segment dedup cache: seg_id → {fluid, amount, temp}
 		-- Shared across all export batches so each segment is serialized exactly once
 		-- at the segment-level weighted-average temperature (matches FluidRestoration output)

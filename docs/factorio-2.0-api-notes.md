@@ -131,6 +131,16 @@ Consequence: fluid does not live per-entity — it lives in the shared segment. 
   `fluidbox_prototype.pipe_connections[].connection_category`, not prototype names. Export emits a warning
   for any non-`default` category or owning prototype outside the measured fusion family; re-run this census
   and review the classification whenever the engine pin changes.
+- **Fusion-reactor OWN fluidboxes DO expose segment IDs; the generator inputs sharing the segment read nil.**
+  **[empirical, 2.0.77, live workhorse probe 2026-07-17 / census plasma-abort postmortem]** On a running
+  reactor→generator layout, `get_fluid_segment_id(i)` on the reactor returned real IDs for BOTH its coolant
+  input and its plasma output, while every fusion-generator plasma *input* on the same physical segment
+  returned `nil` (each generator's local `fluidbox[1]` still proxy-read the segment total). This REFINES
+  Pitfall #22, activatable entities expose no own segment ID — the blanket claim does not hold for the
+  fusion reactor. Consequence: an engine-owned-segment exclusion keyed only on a per-box `nil` check misses
+  the reactor's segmented plasma; the segment-path exclusion must consult the pre-passed engine-owned
+  segment set (or classify the introducing box). This exact gap caused the census phantom fusion-plasma
+  `-20` abort on the first post-merge transfer (fail-closed; zero loss).
 
 ## Inventory sizing
 
