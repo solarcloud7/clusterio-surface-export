@@ -114,7 +114,11 @@ elseif request.operation == "build_census_fusion" then
     platform.apply_starter_pack()
     local surface = platform.surface
     if not surface then return { success = false, error = "platform has no surface after starter pack" } end
-    platform.paused = true -- freeze travel/asteroids while we build; entity sim continues
+    -- UNPAUSED during ignition — the live-proven recipe (gallery HITL build 2026-07-18, 2.0.77)
+    -- ran the reactor to full_output on an unpaused platform; the earlier paused-ignition attempt
+    -- flowed plasma (generator in-transit stock) but never backed the segment up to parked stock.
+    -- freeze_census_fusion pauses the platform at the end.
+    platform.paused = false
 
     -- Foundation pad covering the fixture + temp power footprints.
     local tiles = {}
@@ -153,7 +157,7 @@ elseif request.operation == "build_census_fusion" then
         -- Find the coolant input purely by write-probe: attempt the write on each empty box and
         -- read back (no prototype/filter inspection is involved).
         if not reactor.fluidbox[i] then
-            reactor.fluidbox[i] = { name = "fluoroketone-cold", amount = 100 }
+            reactor.fluidbox[i] = { name = "fluoroketone-cold", amount = 1000 } -- FULL input: at ~10% fill the reactor throttles ~20x (measured 2026-07-18, 2.0.77; the live build parked plasma only after refilling to 1000)
             local written = reactor.fluidbox[i]
             if written and written.name == "fluoroketone-cold" then
                 coolant_seeded = true

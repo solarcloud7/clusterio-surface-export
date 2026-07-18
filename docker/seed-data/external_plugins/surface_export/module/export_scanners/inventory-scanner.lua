@@ -345,6 +345,14 @@ function InventoryScanner.extract_fluids(entity)
         -- the async transfer export captured NOTHING for a fusion-reactor buffer: silent physical
         -- loss the segment-blind census could not see either).
         local contents = FluidOwnership.effective_segment_contents(fluidbox, i)
+        -- Claim on FIRST SIGHT even when empty — the census's counted_segments does exactly this,
+        -- and the two claim disciplines MUST match: with claim-on-first-non-empty, a later member
+        -- box re-reads the segment at a LATER walk tick, and on a live platform the segment may
+        -- have refilled by then — the payload then carries fluid the census's earlier (empty)
+        -- claim never counted. Measured 2026-07-18 [empirical, 2.0.77]: +43.6 thruster-oxidizer /
+        -- +54.8 thruster-fuel phantom census delta aborting every transfer of a freshly-imported
+        -- platform (the gateway-transfer CI red; fluids' cousin of Pitfall #16, atomic belt scan).
+        cache[seg_id] = { claimed_empty = true }
         if contents then
           for fluid_name, amount in pairs(contents) do
             if amount > 0 then
