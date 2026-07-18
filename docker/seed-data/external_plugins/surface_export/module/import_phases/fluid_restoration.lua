@@ -133,9 +133,17 @@ function FluidRestoration.restore(entities_to_create, entity_map)
                    success_count = success_count + 1
                    segment_temps[seg_id] = { fluid = data.fluid, temp = avg_temp }
                    
-                   -- Verify actual amount written by checking segment contents
+                   -- Verify actual amount written. Trust the LARGER of the two reads: fusion-reactor-class
+                   -- buffer boxes expose a segment ID whose get_fluid_segment_contents reads EMPTY while the
+                   -- local proxy holds the fluid ([empirical, 2.0.77] — api-notes fusion segment-ID entry).
+                   -- The old contents-only verify declared a SUCCESSFUL write failed and double-filled via
+                   -- insert_fluid to capacity (the +30 conjured-coolant incident, census-fusion fixture).
                    local actual_contents = target.entity.fluidbox.get_fluid_segment_contents(target.index)
                    local actual_amount = actual_contents and actual_contents[data.fluid] or 0
+                   local local_fluid = target.entity.fluidbox[target.index]
+                   if local_fluid and local_fluid.name == data.fluid and local_fluid.amount > actual_amount then
+                       actual_amount = local_fluid.amount
+                   end
                    if actual_amount < final_amount - 0.5 then
                        local write_loss = final_amount - actual_amount
                        -- Fallback: some entities (fusion-reactor, etc.) silently reject fluidbox[i] writes.

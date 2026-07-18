@@ -342,6 +342,16 @@ function InventoryScanner.extract_fluids(entity)
       if seg_id and not cache[seg_id] then
         -- First entity to claim this segment: read authoritative contents
         local contents = fluidbox.get_fluid_segment_contents(i)
+        -- Buffer-class box: segment ID present but contents EMPTY while the local proxy holds
+        -- fluid (fusion-reactor coolant — [empirical, 2.0.77], api-notes fusion segment-ID
+        -- entry). Without this, the async transfer export captures NOTHING for the buffer —
+        -- silent physical loss the segment-blind census could not see either.
+        if contents and next(contents) == nil then
+          local buffered = fluidbox[i]
+          if buffered and buffered.name and buffered.amount and buffered.amount > 0 then
+            contents = { [buffered.name] = buffered.amount }
+          end
+        end
         if contents then
           for fluid_name, amount in pairs(contents) do
             if amount > 0 then
