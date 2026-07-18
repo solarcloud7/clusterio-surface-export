@@ -1177,13 +1177,18 @@ function Deserializer.restore_logistic_requests(entity, entity_data)
   end
 end
 
---- Restore entity filters (filter inserters, loaders, cargo wagons)
+--- Restore entity filters (filter inserters, loaders, cargo wagons, infinity containers)
 --- @param entity LuaEntity: The entity to restore to
 --- @param entity_data table: Serialized entity data
 function Deserializer.restore_entity_filters(entity, entity_data)
-  if not entity.valid or not entity_data.entity_filters then
+  if not entity.valid then
     return
   end
+  -- The slot-filter sections below need entity_filters, but the INFINITY block at the tail does
+  -- NOT — the old combined guard early-returned for a pure infinity chest (no inserter-style
+  -- slots) and silently dropped its infinity_container_filters on every transfer/paste (caught
+  -- 2026-07-18 by the belt fill-harness copy: pasted chests read filters=[]).
+  if entity_data.entity_filters then
 
   -- Filter inserters
   if entity.type == "inserter" then
@@ -1251,13 +1256,23 @@ function Deserializer.restore_entity_filters(entity, entity_data)
     end
   end
 
-  -- Infinity container filters
+  end -- entity_data.entity_filters
+
+  -- Infinity container filters (independent of entity_filters — see the guard note above)
   if entity_data.infinity_filters then
     local inf_ok, inf_err = pcall(function()
       entity.infinity_container_filters = entity_data.infinity_filters
     end)
     if not inf_ok then
       log(string.format("[Deserializer Error] infinity_container_filters for %s: %s", entity.name, tostring(inf_err)))
+    end
+  end
+  if entity_data.infinity_remove_unfiltered ~= nil then
+    local ru_ok, ru_err = pcall(function()
+      entity.remove_unfiltered_items = entity_data.infinity_remove_unfiltered
+    end)
+    if not ru_ok then
+      log(string.format("[Deserializer Error] remove_unfiltered_items for %s: %s", entity.name, tostring(ru_err)))
     end
   end
 end
