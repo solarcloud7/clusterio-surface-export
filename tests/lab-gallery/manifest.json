@@ -18,7 +18,7 @@
 			"role": "source",
 			"name": "lab-gallery-source-surface-export-2-0-77",
 			"artifact": "docker/seed-data/lab-saves/lab-gallery-source-surface-export-2.0.77.zip",
-			"sha256": "606E3354E788171ADBA831E5AE65F5A145BB53B0E7E4107241A871D8E76CF5B8",
+			"sha256": "C42B5F0249E225D19FDEF20D75A9A1EDCA8558ED5EAEC18CB2E6CE495F655287",
 			"expectedCensus": {
 				"totalEntities": 1491,
 				"totalGeneratedChunks": 5513,
@@ -106,7 +106,7 @@
 			"role": "destination",
 			"name": "lab-gallery-destination-surface-export-2-0-77",
 			"artifact": "docker/seed-data/lab-saves/lab-gallery-destination-surface-export-2.0.77.zip",
-			"sha256": "722056E40AD5F3AADBDCC1C08523A7AFA21FECECE6D4CEA199C046A88DBC5ED4",
+			"sha256": "2FABCB24A11270D96E6FCA0DE176D21BC20FFBB011905398089925DD74483829",
 			"expectedCensus": {
 				"totalEntities": 0,
 				"totalGeneratedChunks": 479,
