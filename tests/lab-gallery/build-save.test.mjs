@@ -181,7 +181,7 @@ test("census gate rejects stray surfaces and drifted entity counts (the deleted 
 });
 
 test("builder is isolated, bounded, and publishes neither half on failure", () => {
-	assert.match(source, /--start-server/);
+	assert.match(source, /launchIsolatedFactorio/);
 	assert.match(source, /surface-export-host-2/);
 	assert.match(source, /COPYFILE_EXCL/);
 	assert.match(source, /normalize_source/);

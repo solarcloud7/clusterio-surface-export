@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
-import { execFileSync } from "node:child_process";
 import { existsSync } from "node:fs";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
+import { docker, launchIsolatedFactorio, sleep, teardownIsolatedFactorio } from "./isolated-factorio.mjs";
 import { CORPUS_EXCLUDED, loadGalleryManifest, meterMiningTarget } from "./manifest.mjs";
 
 const REMOTE_ROOT = "/tmp/surface-export-lab-gallery-verify";
@@ -146,25 +146,18 @@ export function assertReloadReading(reading, role, expected) {
 	return reading;
 }
 
-function docker(arguments_, options = {}) {
-	return execFileSync("docker", arguments_, { encoding: "utf8", timeout: 30_000, stdio: ["ignore", "pipe", "pipe"], ...options });
-}
-
-function sleep(milliseconds) { return new Promise(resolve => setTimeout(resolve, milliseconds)); }
-
 async function verifyOne(options, role, save, expected, boundaryErrors) {
 	const config = fileURLToPath(new URL("./isolated-config.ini", import.meta.url));
 	const meter = fileURLToPath(new URL("./reload-meter.cjs", import.meta.url));
-	docker(["exec", options.container, "test", "!", "-e", REMOTE_ROOT]);
-	docker(["exec", options.container, "mkdir", REMOTE_ROOT]);
-	let launched = false;
+	// The reload meter is invoked directly (reload-meter.cjs over RCON), NOT the runtime-driver
+	// protocol, so this driver keeps its own poll loop while reusing the shared launch/teardown.
+	const teardownHandle = { container: options.container, remoteRoot: REMOTE_ROOT };
 	try {
-		docker(["cp", save, `${options.container}:${REMOTE_ROOT}/gallery.zip`]);
-		docker(["cp", config, `${options.container}:${REMOTE_ROOT}/config.ini`]);
-		docker(["cp", meter, `${options.container}:${REMOTE_ROOT}/reload-meter.cjs`]);
-		const launch = `echo $$ > ${REMOTE_ROOT}/verifier.pid; exec timeout 60 /opt/factorio/2.0.77/bin/x64/factorio --start-server ${REMOTE_ROOT}/gallery.zip --config ${REMOTE_ROOT}/config.ini --mod-directory /clusterio/data/instances/clusterio-host-2-instance-1/mods --port ${GAME_PORT} --rcon-port ${RCON_PORT} --rcon-password ${RCON_PASSWORD}`;
-		docker(["exec", "-d", options.container, "setsid", "sh", "-c", launch]);
-		launched = true;
+		launchIsolatedFactorio({
+			container: options.container, remoteRoot: REMOTE_ROOT,
+			seed: save, config, files: [[meter, "reload-meter.cjs"]],
+			gamePort: GAME_PORT, rconPort: RCON_PORT, rconPassword: RCON_PASSWORD, timeoutSeconds: 60,
+		});
 		const deadline = Date.now() + 30_000;
 		let output;
 		while (Date.now() < deadline) {
@@ -179,23 +172,7 @@ async function verifyOne(options, role, save, expected, boundaryErrors) {
 		const result = JSON.parse(output);
 		return assertReloadReading(result.reading, role, expected);
 	} finally {
-		if (launched) {
-			try {
-				const pid = docker(["exec", options.container, "cat", `${REMOTE_ROOT}/verifier.pid`]).trim();
-				if (/^\d+$/.test(pid)) {
-					// Shell form with `--`: the bare exec form silently strands the process group
-					// (measured — see isolated-factorio.mjs teardown; lifecycle dedup backlogged).
-					try { docker(["exec", options.container, "sh", "-c", `kill -TERM -- -${pid} 2>/dev/null || kill -TERM ${pid}`]); } catch { /* meter normally quits */ }
-				} else {
-					boundaryErrors.push(new Error(`${role} verifier pid file is invalid: ${JSON.stringify(pid)}`));
-				}
-			} catch (error) { boundaryErrors.push(new Error(`${role} verifier pid unreadable (launch may have died early): ${error.message}`)); }
-		}
-		await sleep(500);
-		docker(["exec", options.container, "rm", "-rf", "--", REMOTE_ROOT]);
-		// Zero-leftover proof at the boundary that can leak: a survived Factorio recreating its
-		// write-data after rm -rf must fail HERE, not poison the next role's verification.
-		docker(["exec", options.container, "test", "!", "-e", REMOTE_ROOT]);
+		await teardownIsolatedFactorio(teardownHandle, boundaryErrors);
 	}
 }
 

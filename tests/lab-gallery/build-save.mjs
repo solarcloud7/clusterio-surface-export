@@ -1,10 +1,13 @@
-import { execFileSync } from "node:child_process";
 import { constants, copyFileSync, createReadStream, existsSync, readFileSync, statSync, unlinkSync } from "node:fs";
 import { createHash, randomUUID } from "node:crypto";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
+import {
+	docker, launchIsolatedFactorio, runtimeCall, tailFactorioLog,
+	teardownIsolatedFactorio, waitForRuntime, waitForStableSave,
+} from "./isolated-factorio.mjs";
 import { certifyRuntimeApiFile } from "./api-contract.mjs";
 import { buildBeltPilot, buildSpecializedReachabilityFixture } from "./fixture-layout.mjs";
 import { CORPUS_EXCLUDED, loadGalleryManifest, meterMiningTarget, validateGalleryManifest } from "./manifest.mjs";
@@ -158,53 +161,12 @@ export function assertDestinationReady(reading) {
 	return reading;
 }
 
-function docker(arguments_, options = {}) {
-	return execFileSync("docker", arguments_, {
-		encoding: "utf8", timeout: 30_000, stdio: ["ignore", "pipe", "pipe"], ...options,
-	});
-}
-
-function runtimeCall(container, request) {
-	const encoded = Buffer.from(JSON.stringify(request)).toString("base64");
-	const output = docker(["exec", container, "node", `${REMOTE_ROOT}/runtime-driver.cjs`, RCON_PORT, RCON_PASSWORD, `${REMOTE_ROOT}/gallery-runtime.lua`, encoded], { timeout: 180_000 });
-	return JSON.parse(output.trim().split(/\r?\n/).filter(Boolean).at(-1));
-}
-
-async function waitForRuntime(container, request, timeoutMs = 45_000) {
-	const deadline = Date.now() + timeoutMs;
-	let lastError;
-	do {
-		try { return runtimeCall(container, request); }
-		catch (error) {
-			lastError = error;
-			const detail = `${error.stderr || ""}\n${error.stdout || ""}\n${error.message || ""}`;
-			if (!detail.includes("ECONNREFUSED") && !detail.includes("ECONNRESET")) throw error;
-			await sleep(500);
-		}
-	} while (Date.now() < deadline);
-	throw new Error(`isolated Factorio RCON did not become ready: ${lastError?.message}`);
-}
-
-async function waitForStableSave(container, remotePath, timeoutMs = 60_000) {
-	const deadline = Date.now() + timeoutMs;
-	let previous = null;
-	do {
-		try {
-			const size = Number(docker(["exec", container, "stat", "-c", "%s", remotePath]).trim());
-			if (size > 0 && size === previous) return size;
-			previous = size;
-		} catch { previous = null; }
-		await sleep(500);
-	} while (Date.now() < deadline);
-	throw new Error(`save did not stabilize at ${remotePath}`);
-}
-
-async function waitForDestination(container, baseRequest, timeoutMs = 60_000) {
+async function waitForDestination(call, baseRequest, timeoutMs = 60_000) {
 	const deadline = Date.now() + timeoutMs;
 	let reading;
 	do {
 		try {
-			reading = runtimeCall(container, { ...baseRequest, operation: "inspect" });
+			reading = call({ ...baseRequest, operation: "inspect" });
 			try { return assertDestinationReady(reading); } catch { /* scheduled deletion has not settled */ }
 		} catch (error) {
 			const detail = `${error.stderr || ""}\n${error.stdout || ""}\n${error.message || ""}`;
@@ -263,17 +225,22 @@ async function main() {
 	const driver = fileURLToPath(new URL("./runtime-driver.cjs", import.meta.url));
 	const localCopies = [];
 	const publishedPaths = [];
-	let launched = false;
+	const boundaryErrors = [];
+	// A plain teardown reference so the finally cleans up even if the launch itself dies mid-copy
+	// (self-clean parity with the pre-dedup driver, which always rm -rf'd the remote root).
+	const teardownHandle = { container: options.container, remoteRoot: REMOTE_ROOT };
+	const ports = { rconPort: RCON_PORT, rconPassword: RCON_PASSWORD };
+	let handle = null;
 	try {
-		docker(["exec", options.container, "test", "!", "-e", REMOTE_ROOT]);
-		docker(["exec", options.container, "mkdir", "-p", `${REMOTE_ROOT}/saves`]);
-		for (const [source, destination] of [[options.seed, "seed.zip"], [config, "config.ini"], [runtime, "gallery-runtime.lua"], [driver, "runtime-driver.cjs"]]) {
-			docker(["cp", source, `${options.container}:${REMOTE_ROOT}/${destination}`], { timeout: 180_000 });
-		}
-		const launch = `echo $$ > ${REMOTE_ROOT}/builder.pid; exec timeout 180 /opt/factorio/2.0.77/bin/x64/factorio --start-server ${REMOTE_ROOT}/seed.zip --config ${REMOTE_ROOT}/config.ini --mod-directory /clusterio/data/instances/clusterio-host-2-instance-1/mods --port ${GAME_PORT} --rcon-port ${RCON_PORT} --rcon-password ${RCON_PASSWORD} > ${REMOTE_ROOT}/factorio-stdout.log 2>&1`;
-		docker(["exec", "-d", options.container, "setsid", "sh", "-c", launch]);
-		launched = true;
-		assertIdlePreflight(await waitForRuntime(options.container, { operation: "preflight" }));
+		handle = launchIsolatedFactorio({
+			container: options.container, remoteRoot: REMOTE_ROOT,
+			seed: options.seed, config,
+			files: [[runtime, "gallery-runtime.lua"], [driver, "runtime-driver.cjs"]],
+			gamePort: GAME_PORT, rconPort: RCON_PORT, rconPassword: RCON_PASSWORD,
+			timeoutSeconds: 180, runtimeLuaName: "gallery-runtime.lua",
+		});
+		const call = request => runtimeCall(handle, ports, request);
+		assertIdlePreflight(await waitForRuntime(handle, ports, { operation: "preflight" }, 45_000));
 		// The runtime only needs the index catalog and the fingerprints. Ship a lean manifest (no
 		// prose, per-fixture mod pins, saves, contract, or layout blueprints) so the base64 request
 		// stays well under the OS argv limit and cannot carry a Lua long-string delimiter.
@@ -284,21 +251,21 @@ async function main() {
 			fixtures: manifest.fixtures.map(({ id, fingerprint }) => ({ id, fingerprint })),
 		};
 		const baseRequest = { manifest: leanManifest, beltPilot, specializedFixture };
-		assertSourceReady(runtimeCall(options.container, { ...baseRequest, operation: "normalize_source" }));
-		const sourceReading = assertSourceReady(runtimeCall(options.container, { ...baseRequest, operation: "inspect" }));
+		assertSourceReady(call({ ...baseRequest, operation: "normalize_source" }));
+		const sourceReading = assertSourceReady(call({ ...baseRequest, operation: "inspect" }));
 		assertCorpusRoster(sourceReading, manifest);
 		assertCensusMatches(sourceReading, manifest.saves.source.expectedCensus, "source");
-		runtimeCall(options.container, { operation: "save", saveName: manifest.saves.source.name });
+		call({ operation: "save", saveName: manifest.saves.source.name });
 		const sourceRemote = `${REMOTE_ROOT}/saves/${manifest.saves.source.name}.zip`;
 		await waitForStableSave(options.container, sourceRemote);
 		const sourceTemporary = join(tmpdir(), `${manifest.saves.source.name}-${randomUUID()}.zip`);
 		localCopies.push(sourceTemporary);
 		docker(["cp", `${options.container}:${sourceRemote}`, sourceTemporary], { timeout: 180_000 });
 
-		runtimeCall(options.container, { ...baseRequest, operation: "prepare_destination" });
-		const destinationReading = await waitForDestination(options.container, baseRequest);
+		call({ ...baseRequest, operation: "prepare_destination" });
+		const destinationReading = await waitForDestination(call, baseRequest);
 		assertCensusMatches(destinationReading, manifest.saves.destination.expectedCensus, "destination");
-		runtimeCall(options.container, { operation: "save", saveName: manifest.saves.destination.name });
+		call({ operation: "save", saveName: manifest.saves.destination.name });
 		const destinationRemote = `${REMOTE_ROOT}/saves/${manifest.saves.destination.name}.zip`;
 		await waitForStableSave(options.container, destinationRemote);
 		const destinationTemporary = join(tmpdir(), `${manifest.saves.destination.name}-${randomUUID()}.zip`);
@@ -314,26 +281,15 @@ async function main() {
 			artifacts: { source: await fileRecord(options.sourceOutput), destination: await fileRecord(options.destinationOutput) },
 		}, null, 2));
 	} catch (error) {
-		try {
-			const log = docker(["exec", options.container, "tail", "-n", "120", `${REMOTE_ROOT}/factorio-stdout.log`]);
-			console.error(`isolated Factorio tail:\n${log}`);
-		} catch { /* launch may fail before the log exists */ }
+		try { console.error(`isolated Factorio tail:\n${tailFactorioLog(teardownHandle)}`); }
+		catch { /* launch may fail before the log exists */ }
 		for (const path of publishedPaths) if (existsSync(path)) unlinkSync(path);
 		throw error;
 	} finally {
-		if (launched) {
-			try {
-				const pid = docker(["exec", options.container, "cat", `${REMOTE_ROOT}/builder.pid`]).trim();
-				// Shell form with `--`: the bare exec of `kill -TERM -<pid>` lets the kill binary parse
-				// the negative pgid as an option and silently strand the server (measured — see
-				// isolated-factorio.mjs teardown; full lifecycle dedup onto that module is backlogged).
-				if (/^\d+$/.test(pid)) try { docker(["exec", options.container, "sh", "-c", `kill -TERM -- -${pid} 2>/dev/null || kill -TERM ${pid}`]); } catch { /* bounded process may have exited */ }
-			} catch { /* launch can fail before pid write */ }
-		}
-		await sleep(500);
+		await teardownIsolatedFactorio(teardownHandle, boundaryErrors);
 		for (const path of localCopies) if (existsSync(path)) unlinkSync(path);
-		try { docker(["exec", options.container, "rm", "-rf", "--", REMOTE_ROOT]); } catch { /* preserve primary error */ }
 	}
+	if (boundaryErrors.length) throw new AggregateError(boundaryErrors, "build passed but the teardown boundary was not clean");
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
