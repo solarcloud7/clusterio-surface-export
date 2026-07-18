@@ -101,6 +101,14 @@ if omni then
   local sch=omniP.get_schedule()
   local ints=sch.get_interrupts()
   corpus["omnibus-platform-schedule"]={records=#sch.get_records(),interrupts=#ints,interruptName=ints[1] and ints[1].name or nil}
+  local ih=at(omni,"bulk-inserter",40.5,-122.5)
+  local ihh=ih.held_stack
+  corpus["inserter-held-capacity"]={heldCount=ihh.valid_for_read and ihh.count or 0,heldName=ihh.valid_for_read and ihh.name or nil,quality=ih.quality.name,active=ih.active,destructible=ih.destructible,forceBulkBonus=game.forces.player.bulk_inserter_capacity_bonus}
+  local ntm=at(omni,"assembling-machine-1",39.5,-108.5)
+  local nti=at(omni,"inserter",42.5,-108.5)
+  local ntinput=ntm.get_inventory(defines.inventory.crafter_input)
+  local ntrec=ntm.get_recipe()
+  corpus["no-tick-sync-frozen-pair"]={progress=ntm.crafting_progress,recipe=ntrec and ntrec.name or nil,inputPlates=ntinput and ntinput.get_item_count("iron-plate") or nil,assemblerActive=ntm.active,inserterActive=nti.active,inserterHandEmpty=not nti.held_stack.valid_for_read,allIndestructible=(not ntm.destructible)and(not nti.destructible)}
 end
 local es=platsurf("lab-energy-v1")
 if es then

@@ -263,6 +263,37 @@ local function measure_belt_corner(surface)
     }
 end
 
+-- Ported onto the golden omnibus (lab-omnibus-state-v1) by seed-prep-ops.lua; these read the SAME
+-- fields the seed-prep build/measure recorded, so the fingerprint gate is symmetric.
+local function measure_inserter_held(surface)
+    local inserter = assert(at(surface, "bulk-inserter", 40.5, -122.5), "inserter-held bulk-inserter missing")
+    local held = inserter.held_stack
+    return {
+        heldCount = held.valid_for_read and held.count or 0,
+        heldName = held.valid_for_read and held.name or nil,
+        quality = inserter.quality.name,
+        active = inserter.active,
+        destructible = inserter.destructible,
+        forceBulkBonus = game.forces.player.bulk_inserter_capacity_bonus,
+    }
+end
+
+local function measure_no_tick_pair(surface)
+    local machine = assert(at(surface, "assembling-machine-1", 39.5, -108.5), "no-tick assembling-machine-1 missing")
+    local inserter = assert(at(surface, "inserter", 42.5, -108.5), "no-tick inserter missing")
+    local input = machine.get_inventory(defines.inventory.crafter_input)
+    local recipe = machine.get_recipe()
+    return {
+        progress = machine.crafting_progress,
+        recipe = recipe and recipe.name or nil,
+        inputPlates = input and input.get_item_count("iron-plate") or nil,
+        assemblerActive = machine.active,
+        inserterActive = inserter.active,
+        inserterHandEmpty = not inserter.held_stack.valid_for_read,
+        allIndestructible = (not machine.destructible) and (not inserter.destructible),
+    }
+end
+
 -- Measure the full baked corpus keyed by manifest fixture id. Locators are code; expected values
 -- come from the manifest fingerprints (single source of truth). Each measurement is pcall-guarded
 -- and SURFACES its error (never swallows) so a mid-deletion destination poll cannot abort inspect
@@ -317,6 +348,8 @@ local function measure_corpus()
         safe("omnibus-ghosts-and-proxies", function() return measure_omnibus_ghosts(omni) end)
         safe("omnibus-ground-items", function() return measure_omnibus_ground(omni) end)
         safe("omnibus-platform-schedule", function() return measure_omnibus_schedule(omni_platform) end)
+        safe("inserter-held-capacity", function() return measure_inserter_held(omni) end)
+        safe("no-tick-sync-frozen-pair", function() return measure_no_tick_pair(omni) end)
     end
     local energy = surface_for_platform("lab-energy-v1")
     if energy then safe("energy-accumulator-drain", function() return measure_energy(energy) end) end

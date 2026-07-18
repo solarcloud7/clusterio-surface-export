@@ -27,6 +27,7 @@ local command_modules = {
   require("modules/surface_export/interfaces/commands/transaction-dashboard"),
   -- Debug/testing commands
   require("modules/surface_export/interfaces/commands/test-entity"),
+  require("modules/surface_export/interfaces/commands/run-tests"),
 }
 
 --- Register all console commands

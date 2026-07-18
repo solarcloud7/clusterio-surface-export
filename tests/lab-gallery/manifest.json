@@ -18,9 +18,9 @@
 			"role": "source",
 			"name": "lab-gallery-source-surface-export-2-0-77",
 			"artifact": "docker/seed-data/lab-saves/lab-gallery-source-surface-export-2.0.77.zip",
-			"sha256": "C42B5F0249E225D19FDEF20D75A9A1EDCA8558ED5EAEC18CB2E6CE495F655287",
+			"sha256": "F067494AC55C4B13CDFEBE60F23EBEF6A050FD8041E26C2412ACCB14E7216F09",
 			"expectedCensus": {
-				"totalEntities": 1491,
+				"totalEntities": 1500,
 				"totalGeneratedChunks": 5513,
 				"surfaces": [
 					{
@@ -42,7 +42,7 @@
 					},
 					{
 						"name": "platform-11",
-						"entityCount": 81,
+						"entityCount": 90,
 						"generatedChunks": 356,
 						"platform": "lab-omnibus-state-v1"
 					},
@@ -106,7 +106,7 @@
 			"role": "destination",
 			"name": "lab-gallery-destination-surface-export-2-0-77",
 			"artifact": "docker/seed-data/lab-saves/lab-gallery-destination-surface-export-2.0.77.zip",
-			"sha256": "2FABCB24A11270D96E6FCA0DE176D21BC20FFBB011905398089925DD74483829",
+			"sha256": "ABC369DBDC72CAC48C44E3A490132D83D79E6F68A157F1F990D9ADE369A0584F",
 			"expectedCensus": {
 				"totalEntities": 0,
 				"totalGeneratedChunks": 479,
@@ -871,6 +871,93 @@
 				"action": "Production /transfer-platform to the destination instance (census in the export walk; two-phase commit). Variant B: reload pair, arm test_force_census_omission, transfer again.",
 				"expected": "Census ok, fluid_delta empty; strict gate SUCCESS; coolant + fuel exact at destination (independent physical count); plasma absent at destination and validation passes; source deleted; fingerprint reproduces from the reloaded save. Variant B: abort, one attributed row, destination never contacted, source preserved.",
 				"forbidden": "Phantom census abort (plasma or thruster-style delta with zero item rows); plasma in serialized totals; census green over real coolant loss; armed omission hook not aborting; leftovers the golden-pair reload does not reset."
+			}
+		},
+		{
+			"id": "inserter-held-capacity",
+			"revision": 1,
+			"labId": "inserter-lab",
+			"name": "Held-item capacity on a less-researched destination",
+			"purpose": "Preserve a frozen legendary bulk-inserter whose hand is seated with 8 railgun-ammo under a baked >=11 player-force bulk-inserter capacity bonus - the adversarial state for dest-force research replication on import.",
+			"category": "physical-lab",
+			"owningRunner": null,
+			"owningRunnerWaiver": "batch runner lands after this bake; until then the selection-lab drive sequence is the manual runner",
+			"saveRole": "source",
+			"platformName": "lab-omnibus-state-v1",
+			"engineVersion": "2.0.77",
+			"mods": {
+				"base": "2.0.77",
+				"elevated-rails": "2.0.77",
+				"FluidMustFlow": "1.4.4",
+				"quality": "2.0.77",
+				"SpidertronEnhancements": "1.10.8",
+				"space-age": "2.0.77",
+				"SpidertronPatrols": "2.6.3",
+				"surfexp_gateways": "0.3.0",
+				"maraxsis": "1.31.6"
+			},
+			"note": "Script-built by tests/lab-gallery/seed-prep-ops.lua (build_inserter_held) onto the stamped inserter-held-capacity cell at (34,-128): raise the player force bulk_inserter_capacity_bonus to >=11 (raise-only, logged), create a legendary bulk-inserter at (40.5,-122.5), seat 8 railgun-ammo via plain held_stack.set_stack (no active toggle; inserter-lab B6), then freeze (active=false, destructible=false). forceBulkBonus is a placeholder floor; the live bake pins the exact baked value.",
+			"invariant": "A legendary bulk-inserter holds 8 railgun-ammo in its hand while inactive and indestructible; the player force bulk_inserter_capacity_bonus is >= 11 so the hand seats in full and survives save/load.",
+			"expectedTerminalVerdict": "transfer-committed-hand-full",
+			"independentOracleRequired": true,
+			"fingerprint": {
+				"heldCount": 8,
+				"heldName": "railgun-ammo",
+				"quality": "legendary",
+				"active": false,
+				"destructible": false,
+				"forceBulkBonus": 11
+			},
+			"testCard": {
+				"law": "Held items seat IN FULL on a less-researched destination: export captures the source-force inserter bonuses, import replicates them raise-only, and the strict gate counts the complete state (Pitfalls #28 count-a-complete-state / #29 dest-force research).",
+				"build": "lab-omnibus-state-v1 inserter-held-capacity cell (34,-128): a legendary bulk-inserter at (40.5,-122.5) holds 8 railgun-ammo via plain held_stack.set_stack (no active toggle); the player force bulk_inserter_capacity_bonus is baked >= 11; the inserter is frozen (active=false, destructible=false).",
+				"action": "Production /transfer-platform of the omnibus platform to a destination whose bulk_inserter_capacity_bonus is 0 (asserted, never forced).",
+				"expected": "A forceDataMismatches warning fires; the destination bonus is raised, never lowered; the hand seats 8/8 by physical count; the strict gate reports SUCCESS.",
+				"forbidden": "An under-seated hand; a gate pass over a short hand; any destination bonus lowered; the baked bonus not surviving save/load."
+			}
+		},
+		{
+			"id": "no-tick-sync-frozen-pair",
+			"revision": 1,
+			"labId": "no-tick-sync-lab",
+			"name": "No-tick synchronous held-item pair",
+			"purpose": "Preserve a frozen mid-craft assembling-machine-1 beside an inactive empty-handed inserter - the construct-free target proving the synchronous held-item pass advances no tick.",
+			"category": "physical-lab",
+			"owningRunner": null,
+			"owningRunnerWaiver": "batch runner lands after this bake; until then the selection-lab drive sequence is the manual runner",
+			"saveRole": "source",
+			"platformName": "lab-omnibus-state-v1",
+			"engineVersion": "2.0.77",
+			"mods": {
+				"base": "2.0.77",
+				"elevated-rails": "2.0.77",
+				"FluidMustFlow": "1.4.4",
+				"quality": "2.0.77",
+				"SpidertronEnhancements": "1.10.8",
+				"space-age": "2.0.77",
+				"SpidertronPatrols": "2.6.3",
+				"surfexp_gateways": "0.3.0",
+				"maraxsis": "1.31.6"
+			},
+			"note": "Script-built by tests/lab-gallery/seed-prep-ops.lua (build_no_tick_pair) onto the stamped no-tick-sync-frozen-pair cell at (34,-114): an assembling-machine-1 at (39.5,-108.5) set to iron-gear-wheel with 4 iron-plate in crafter_input and crafting_progress write-asserted to 0.42, then frozen; a plain west-facing inserter at (42.5,-108.5), empty-handed, frozen. progress absorbs a crafting-progress ULP on save/load.",
+			"invariant": "The assembling-machine-1 is inactive with crafting_progress ~0.42, iron-gear-wheel set, and 4 iron-plate embodied; the neighboring inserter is inactive with an empty hand; every fixture entity is destructible=false.",
+			"expectedTerminalVerdict": "no-tick-pass-progress-stable",
+			"independentOracleRequired": true,
+			"fingerprint": {
+				"progress": 0.42000000000000004,
+				"recipe": "iron-gear-wheel",
+				"inputPlates": 4,
+				"assemblerActive": false,
+				"inserterActive": false,
+				"inserterHandEmpty": true,
+				"allIndestructible": true
+			},
+			"testCard": {
+				"law": "The synchronous held-item pass leaves game.tick, crafting_progress, and machine inputs UNCHANGED while it seats the inserter hand, reproduced from a save-loaded world (no-tick-sync-lab).",
+				"build": "lab-omnibus-state-v1 no-tick-sync-frozen-pair cell (34,-114): an inactive assembling-machine-1 at (39.5,-108.5) frozen mid-craft (iron-gear-wheel, 4 iron-plate embodied, crafting_progress 0.42 write-asserted) beside an inactive west-facing empty-handed inserter at (42.5,-108.5); both destructible=false.",
+				"action": "Run the no_tick_sync_selftest remote in measure-baked-fixture (construct-free) mode against this pair under tick-pause - the strongest form.",
+				"expected": "game.tick unchanged; crafting_progress exactly 0.42 after the pass; the hand seats in full.",
+				"forbidden": "Any tick advance during the pass; crafting_progress drift; the selftest constructing anything on the golden world."
 			}
 		},
 		{

@@ -9,6 +9,9 @@
 -- measure_census_fusion | freeze_census_fusion | save.
 
 local FUSION_PLATFORM = "lab-census-fusion-v1"
+-- The two ported fixtures ride the EXISTING golden omnibus (lab-omnibus-state-v1, NOT the live design
+-- world lab-omnibus-platform-v1). The seed must already carry it; the build ops fail loud if absent.
+local OMNIBUS_PLATFORM = "lab-omnibus-state-v1"
 
 -- Fusion geometry from the measured workhorse layout (live probe 2026-07-17, 2.0.77): reactor at
 -- origin, ONE generator at offset (+0.5,-5.5), both facing north — the arrangement whose plasma
@@ -240,6 +243,240 @@ elseif request.operation == "save" then
     end
     game.server_save(request.save_name)
     return { success = true, save_name = request.save_name }
+
+elseif request.operation == "stamp_test_cell" then
+    -- Stamp a test-foundation cell (tile template + status-runner trio + name text) onto the golden
+    -- omnibus, replicating test-foundation.mjs's stamp: only-onto-empty tile refusal + idempotent
+    -- re-stamp. The tile TEMPLATE (rows + legend) is passed in from ONE source (test-foundation.mjs);
+    -- the card text is passed in from ONE source (manifest.json testCard).
+    local ox = math.floor(request.origin_x)
+    local oy = math.floor(request.origin_y)
+    local rows = request.rows
+    local legend = request.legend
+    local card = request.card or {}
+    if type(rows) ~= "table" or type(legend) ~= "table" then
+        return { success = false, error = "stamp_test_cell requires rows and legend tables" }
+    end
+    local platform = find_platform(OMNIBUS_PLATFORM)
+    if not platform or not platform.surface then
+        return { success = false, error = OMNIBUS_PLATFORM .. " not found for stamp_test_cell" }
+    end
+    local s = platform.surface
+
+    -- Tile stamp: only-onto-empty refusal + idempotent re-stamp (matches test-foundation.mjs).
+    local tiles, mismatch, already = {}, 0, 0
+    for r = 1, #rows do
+        local row = rows[r]
+        for c = 1, #row do
+            local ch = string.sub(row, c, c)
+            local want = legend[ch]
+            if want then
+                local x, y = ox + c - 1, oy + r - 1
+                local cur = s.get_tile(x, y).name
+                if cur == want then already = already + 1
+                elseif cur == "empty-space" then tiles[#tiles + 1] = { name = want, position = { x, y } }
+                else mismatch = mismatch + 1 end
+            end
+        end
+    end
+    if mismatch > 0 then
+        return { success = false, error = "REFUSED: " .. mismatch .. " target tile(s) hold foreign tiles (only-onto-empty rule)" }
+    end
+    if #tiles > 0 then s.set_tiles(tiles) end
+
+    -- Trio member 1: description display-panel on the bottom border at origin+(13.5,11.5), carrying the
+    -- LAW/ACTION/EXPECT/FORBIDDEN card text (real content substituted). Find-or-create for idempotency.
+    local dpx, dpy = ox + 13.5, oy + 11.5
+    local desc = s.find_entities_filtered({ name = "display-panel", area = { { dpx - 0.4, dpy - 0.4 }, { dpx + 0.4, dpy + 0.4 } } })[1]
+    if not desc then desc = s.create_entity({ name = "display-panel", position = { dpx, dpy }, force = "player" }) end
+    if not desc then return { success = false, error = "description display-panel placement failed" } end
+    local function card_field(field) return tostring(card[field] or "") end
+    desc.display_panel_text = "LAW: \n" .. card_field("law") .. "\n\nACTION: \n" .. card_field("action")
+        .. "\n\nEXPECT: \n" .. card_field("expect") .. "\n\nFORBIDDEN: \n" .. card_field("forbidden")
+
+    -- Trio member 2: constant-combinator at origin+(14.5,11.5) with TWO logistic sections (signal-check,
+    -- signal-deny), BOTH inactive (the waiting state). Section 1 exists by default; add a second.
+    local ccx, ccy = ox + 14.5, oy + 11.5
+    local comb = s.find_entities_filtered({ name = "constant-combinator", area = { { ccx - 0.4, ccy - 0.4 }, { ccx + 0.4, ccy + 0.4 } } })[1]
+    if not comb then comb = s.create_entity({ name = "constant-combinator", position = { ccx, ccy }, force = "player" }) end
+    if not comb then return { success = false, error = "constant-combinator placement failed" } end
+    local cb = comb.get_or_create_control_behavior()
+    local section1 = cb.sections[1] or cb.add_section()
+    local section2 = cb.sections[2] or cb.add_section()
+    section1.filters = { { value = { type = "virtual", name = "signal-check", quality = "normal", comparator = "=" }, min = 1 } }
+    section2.filters = { { value = { type = "virtual", name = "signal-deny", quality = "normal", comparator = "=" }, min = 1 } }
+    section1.active = false
+    section2.active = false
+
+    -- Trio member 3: status display-panel at origin+(15.5,11.5), RED-wired to the combinator, whose
+    -- control-behavior messages render Success on signal-check, Failure on signal-deny, else a waiting
+    -- clock. Find-or-create; connect_to on an already-connected wire is a no-op (idempotent).
+    local spx, spy = ox + 15.5, oy + 11.5
+    local status = s.find_entities_filtered({ name = "display-panel", area = { { spx - 0.4, spy - 0.4 }, { spx + 0.4, spy + 0.4 } } })[1]
+    if not status then status = s.create_entity({ name = "display-panel", position = { spx, spy }, force = "player" }) end
+    if not status then return { success = false, error = "status display-panel placement failed" } end
+    status.get_wire_connector(defines.wire_connector_id.circuit_red, true).connect_to(comb.get_wire_connector(defines.wire_connector_id.circuit_red, true))
+    status.get_or_create_control_behavior().messages = {
+        { icon = { type = "virtual", name = "signal-check" }, text = "Success", condition = { first_signal = { type = "virtual", name = "signal-check" }, comparator = ">", constant = 0 } },
+        { icon = { type = "virtual", name = "signal-alert" }, text = "Failure {failure-message}", condition = { first_signal = { type = "virtual", name = "signal-deny" }, comparator = ">", constant = 0 } },
+        { icon = { type = "virtual", name = "signal-clock" }, condition = { first_signal = { type = "virtual", name = "signal-everything" }, comparator = "=", constant = 0 } },
+    }
+
+    -- Name rendering text above the pad at origin+(6,-1.5), scale 2.5, waiting-blue. Idempotent: skip if
+    -- a text object already targets this position on this surface (test-foundation redraws; we don't).
+    local tx, ty = ox + 6, oy - 1.5
+    local has_name = false
+    for _, object in pairs(rendering.get_all_objects("")) do
+        if object.valid and object.type == "text" and object.surface == s then
+            local target = object.target
+            if target and target.position and target.position.x == tx and target.position.y == ty then
+                has_name = true
+                break
+            end
+        end
+    end
+    if not has_name then
+        rendering.draw_text({ text = request.name or "", surface = s, target = { tx, ty }, scale = 2.5, color = { r = 0.3, g = 0.85, b = 1, a = 1 } })
+    end
+
+    return {
+        success = true, origin = { ox, oy }, name = request.name,
+        wrote = #tiles, already = already,
+        panel = desc ~= nil, combinator = comb ~= nil, status = status ~= nil,
+    }
+
+elseif request.operation == "build_inserter_held" then
+    local platform = find_platform(OMNIBUS_PLATFORM)
+    if not platform or not platform.surface then
+        return { success = false, error = OMNIBUS_PLATFORM .. " not found for build_inserter_held" }
+    end
+    local s = platform.surface
+    local force = game.forces["player"]
+
+    -- OWNER-APPROVED baked global state: RAISE the player force bulk-inserter capacity bonus to >= 11
+    -- (raise-only; never lower) so the legendary hand can physically seat 8 railgun-ammo (Pitfall #29,
+    -- dest-force research governs held capacity). Record before/after and log the raise.
+    local bonus_before = force.bulk_inserter_capacity_bonus
+    if bonus_before < 11 then
+        force.bulk_inserter_capacity_bonus = 11
+        log(string.format("[seed-prep] raised player.bulk_inserter_capacity_bonus %s -> 11 for inserter-held-capacity fixture", tostring(bonus_before)))
+    end
+    local bonus_after = force.bulk_inserter_capacity_bonus
+
+    local pos = { x = 40.5, y = -122.5 }
+    local existing = s.find_entities_filtered({ name = "bulk-inserter", area = { { pos.x - 0.4, pos.y - 0.4 }, { pos.x + 0.4, pos.y + 0.4 } } })[1]
+    if existing then existing.destroy() end
+    local inserter = s.create_entity({ name = "bulk-inserter", position = pos, force = "player", quality = "legendary" })
+    if not inserter then return { success = false, error = "legendary bulk-inserter placement failed" } end
+
+    -- Seat 8 railgun-ammo via a PLAIN held_stack.set_stack — NO active toggle (seating is
+    -- activation-independent; inserter-lab B6). The raised bonus lets the whole 8 seat.
+    inserter.held_stack.set_stack({ name = "railgun-ammo", count = 8 })
+    local seated = inserter.held_stack.valid_for_read and inserter.held_stack.count or 0
+    if seated ~= 8 then
+        return { success = false, error = "held hand seated " .. tostring(seated) .. " railgun-ammo, expected 8 (force bonus " .. tostring(bonus_after) .. ")" }
+    end
+    inserter.active = false
+    inserter.destructible = false
+
+    return {
+        success = true,
+        heldCount = inserter.held_stack.count,
+        heldName = inserter.held_stack.name,
+        quality = inserter.quality.name,
+        active = inserter.active,
+        destructible = inserter.destructible,
+        forceBulkBonus = bonus_after,
+        bonusBefore = bonus_before,
+    }
+
+elseif request.operation == "measure_inserter_held" then
+    local platform = find_platform(OMNIBUS_PLATFORM)
+    if not platform or not platform.surface then
+        return { success = false, error = OMNIBUS_PLATFORM .. " not found for measure_inserter_held" }
+    end
+    local s = platform.surface
+    local inserter = s.find_entities_filtered({ name = "bulk-inserter", area = { { 40.5 - 0.4, -122.5 - 0.4 }, { 40.5 + 0.4, -122.5 + 0.4 } } })[1]
+    if not inserter then return { success = false, error = "bulk-inserter not found at (40.5,-122.5)" } end
+    local held = inserter.held_stack
+    return {
+        success = true,
+        heldCount = held.valid_for_read and held.count or 0,
+        heldName = held.valid_for_read and held.name or nil,
+        quality = inserter.quality.name,
+        active = inserter.active,
+        destructible = inserter.destructible,
+        forceBulkBonus = game.forces["player"].bulk_inserter_capacity_bonus,
+    }
+
+elseif request.operation == "build_no_tick_pair" then
+    local platform = find_platform(OMNIBUS_PLATFORM)
+    if not platform or not platform.surface then
+        return { success = false, error = OMNIBUS_PLATFORM .. " not found for build_no_tick_pair" }
+    end
+    local s = platform.surface
+
+    local mpos = { x = 39.5, y = -108.5 }
+    local existing_machine = s.find_entities_filtered({ name = "assembling-machine-1", area = { { mpos.x - 0.4, mpos.y - 0.4 }, { mpos.x + 0.4, mpos.y + 0.4 } } })[1]
+    if existing_machine then existing_machine.destroy() end
+    local machine = s.create_entity({ name = "assembling-machine-1", position = mpos, force = "player" })
+    if not machine then return { success = false, error = "assembling-machine-1 placement failed" } end
+    machine.set_recipe("iron-gear-wheel")
+    local input = machine.get_inventory(defines.inventory.crafter_input)
+    if not input then return { success = false, error = "assembling-machine-1 has no crafter_input inventory" } end
+    input.insert({ name = "iron-plate", count = 4 })
+
+    -- Write-assert the mid-craft progress: read back within a crafting-progress ULP or fail loud.
+    machine.crafting_progress = 0.42
+    local read_back = machine.crafting_progress
+    if math.abs(read_back - 0.42) > 1e-9 then
+        return { success = false, error = "crafting_progress write-assert failed: read " .. tostring(read_back) .. " expected 0.42" }
+    end
+    machine.active = false
+    machine.destructible = false
+
+    local ipos = { x = 42.5, y = -108.5 }
+    local existing_inserter = s.find_entities_filtered({ name = "inserter", area = { { ipos.x - 0.4, ipos.y - 0.4 }, { ipos.x + 0.4, ipos.y + 0.4 } } })[1]
+    if existing_inserter then existing_inserter.destroy() end
+    local inserter = s.create_entity({ name = "inserter", position = ipos, direction = defines.direction.west, force = "player" })
+    if not inserter then return { success = false, error = "inserter placement failed" } end
+    inserter.active = false
+    inserter.destructible = false
+
+    local recipe = machine.get_recipe()
+    return {
+        success = true,
+        progress = machine.crafting_progress,
+        recipe = recipe and recipe.name or nil,
+        inputPlates = input.get_item_count("iron-plate"),
+        assemblerActive = machine.active,
+        inserterActive = inserter.active,
+        inserterHandEmpty = not inserter.held_stack.valid_for_read,
+        allIndestructible = (not machine.destructible) and (not inserter.destructible),
+    }
+
+elseif request.operation == "measure_no_tick_pair" then
+    local platform = find_platform(OMNIBUS_PLATFORM)
+    if not platform or not platform.surface then
+        return { success = false, error = OMNIBUS_PLATFORM .. " not found for measure_no_tick_pair" }
+    end
+    local s = platform.surface
+    local machine = s.find_entities_filtered({ name = "assembling-machine-1", area = { { 39.5 - 0.4, -108.5 - 0.4 }, { 39.5 + 0.4, -108.5 + 0.4 } } })[1]
+    local inserter = s.find_entities_filtered({ name = "inserter", area = { { 42.5 - 0.4, -108.5 - 0.4 }, { 42.5 + 0.4, -108.5 + 0.4 } } })[1]
+    if not machine then return { success = false, error = "assembling-machine-1 not found at (39.5,-108.5)" } end
+    if not inserter then return { success = false, error = "inserter not found at (42.5,-108.5)" } end
+    local input = machine.get_inventory(defines.inventory.crafter_input)
+    local recipe = machine.get_recipe()
+    return {
+        success = true,
+        progress = machine.crafting_progress,
+        recipe = recipe and recipe.name or nil,
+        inputPlates = input and input.get_item_count("iron-plate") or nil,
+        assemblerActive = machine.active,
+        inserterActive = inserter.active,
+        inserterHandEmpty = not inserter.held_stack.valid_for_read,
+        allIndestructible = (not machine.destructible) and (not inserter.destructible),
+    }
 end
 
 return { success = false, error = "unknown operation " .. tostring(request.operation) }

@@ -22,7 +22,9 @@ export const CELL_HEIGHT = 12;
 export const CELL_PITCH = { x: 28, y: 14 };
 export const PANEL_TILE_OFFSET = { x: 13, y: 11 };
 export const NAME_TEXT_OFFSET = { x: 6, y: -1.5 };
-export const NAME_TEXT_STYLE = { scale: 2.5, color: { r: 0.3, g: 1, b: 1, a: 1 } };
+// Name-text color IS the test status (owner-designed runner display, 2026-07-18):
+// waiting = blue, pass = green, fail = red (driven by test-status.mjs). New stamps start waiting.
+export const NAME_TEXT_STYLE = { scale: 2.5, color: { r: 0.3, g: 0.85, b: 1, a: 1 } };
 
 export const LEGEND = {
 	T: "tutorial-grid",
@@ -83,8 +85,22 @@ export function buildFoundationLua(originX, originY, testName) {
 		if panel and (panel.display_panel_text==nil or panel.display_panel_text=="") then
 			panel.display_panel_text="LAW: \\n{law}\\n\\nACTION: \\n{action}\\n\\nEXPECT: \\n{expect}\\n\\nFORBIDDEN: \\n{forbidden}"
 		end
+		local comb=s.find_entities_filtered{name="constant-combinator",area={{px+0.5,py-0.5},{px+1.5,py+0.5}}}[1]
+		if not comb then comb=s.create_entity{name="constant-combinator",position={px+1,py},force="player"} end
+		local ccb=comb.get_or_create_control_behavior()
+		while #ccb.sections<2 do ccb.add_section() end
+		ccb.get_section(1).filters={{value={type="virtual",name="signal-check",quality="normal",comparator="="},min=1}}
+		ccb.get_section(2).filters={{value={type="virtual",name="signal-deny",quality="normal",comparator="="},min=1}}
+		ccb.get_section(1).active=false ccb.get_section(2).active=false
+		local status=s.find_entities_filtered{name="display-panel",area={{px+1.5,py-0.5},{px+2.5,py+0.5}}}[1]
+		if not status then status=s.create_entity{name="display-panel",position={px+2,py},force="player"} end
+		status.display_panel_always_show=true
+		status.display_panel_show_in_chart=true
+		local scb=status.get_or_create_control_behavior()
+		scb.messages={{icon={type="virtual",name="signal-check"},text="Success",condition={first_signal={type="virtual",name="signal-check"},comparator=">",constant=0}},{icon={type="virtual",name="signal-alert"},text="Failure {failure-message}",condition={first_signal={type="virtual",name="signal-deny"},comparator=">",constant=0}},{icon={type="virtual",name="signal-clock"},condition={first_signal={type="virtual",name="signal-everything"},comparator="=",constant=0}}}
+		status.get_wire_connector(defines.wire_connector_id.circuit_red,true).connect_to(comb.get_wire_connector(defines.wire_connector_id.circuit_red,true))
 		rendering.draw_text{text="${name}",surface=s,target={ox+${NAME_TEXT_OFFSET.x},oy+(${NAME_TEXT_OFFSET.y})},scale=${NAME_TEXT_STYLE.scale},color={r=${NAME_TEXT_STYLE.color.r},g=${NAME_TEXT_STYLE.color.g},b=${NAME_TEXT_STYLE.color.b},a=1}}
-		rcon.print("stamped origin=("..ox..","..oy..") wrote="..#tiles.." already="..already.." panel="..tostring(panel~=nil))
+		rcon.print("stamped origin=("..ox..","..oy..") wrote="..#tiles.." already="..already.." trio="..tostring(panel~=nil and comb~=nil and status~=nil))
 	end) if not ok then rcon.print("ERR: "..tostring(err)) end`.replace(/\n\t*/g, " ");
 }
 

@@ -17,6 +17,9 @@ import {
 	docker, launchIsolatedFactorio, runtimeCall, sleep, tailFactorioLog,
 	teardownIsolatedFactorio, waitForRuntime, waitForStableSave,
 } from "./isolated-factorio.mjs";
+import { loadGalleryManifest } from "./manifest.mjs";
+// ONE template source (test-foundation.mjs) for the stamped cells; ONE card source (manifest.json).
+import { LEGEND, TEMPLATE_ROWS } from "./test-foundation.mjs";
 
 const REMOTE_ROOT = "/tmp/surface-export-lab-gallery-seed-prep";
 const PORTS = { gamePort: "34976", rconPort: "27976", rconPassword: "seed-prep-only" };
@@ -58,32 +61,86 @@ async function main() {
 	const boundaryErrors = [];
 	try {
 		await waitForRuntime(handle, PORTS, { operation: "preflight" });
-		const built = runtimeCall(handle, PORTS, { operation: "build_census_fusion" });
-		console.error(`[seed-prep] built: ${JSON.stringify(built)}`);
 
-		// Run WITH the throttled load attached until the shared segment parks stock: the reactor
-		// outpaces the small draw, fills the segment, and stalls at full_output — the live-proven
-		// recipe (gallery HITL build, 2026-07-18, 2.0.77: full_output + plasma 10.00 reached with
-		// the 10 MW load present; removing the load entirely stops production instead of parking).
-		const parkDeadline = Date.now() + PLASMA_DEADLINE_MS;
-		let reading;
-		do {
-			await sleep(2_000);
-			reading = runtimeCall(handle, PORTS, { operation: "measure_census_fusion" });
-			console.error(`[seed-prep] plasma=${reading.plasma_segment} coolant=${reading.coolant} fuel=${reading.fuel_cells} reactor=${reading.reactor_status} generators=${JSON.stringify(reading.generator_status)}`);
-		} while (reading.plasma_segment < 5 && Date.now() < parkDeadline); // wait for real parked stock (steady state ~9-10), not the first trickle
-		if (reading.plasma_segment < 5) throw new Error(`no plasma parked in the shared segment before the deadline: ${JSON.stringify(reading)}`);
+		// IDEMPOTENT census stage: a seed that ALREADY carries the baked census-fusion fixture (every
+		// golden source since the first census bake) is VERIFIED in place — never rebuilt (the build op
+		// correctly refuses a rebuild). Only a pre-census seed runs the construct/park/freeze recipe.
+		let existing = null;
+		try { existing = runtimeCall(handle, PORTS, { operation: "measure_census_fusion" }); }
+		catch (error) { console.error(`[seed-prep] census probe on seed failed (pre-census seed assumed): ${error.message}`); }
+		let censusFingerprint;
+		if (existing && existing.success !== false && (existing.plasma_segment || 0) >= 5) {
+			console.error(`[seed-prep] census-fusion already baked (plasma=${existing.plasma_segment}) — verified, skipping rebuild`);
+			censusFingerprint = existing;
+		} else {
+			const built = runtimeCall(handle, PORTS, { operation: "build_census_fusion" });
+			console.error(`[seed-prep] built: ${JSON.stringify(built)}`);
 
-		const fingerprint = runtimeCall(handle, PORTS, { operation: "freeze_census_fusion" });
-		if (fingerprint.all_frozen !== true || fingerprint.all_indestructible !== true) {
-			throw new Error(`freeze incomplete: ${JSON.stringify(fingerprint)}`);
+			// Run WITH the throttled load attached until the shared segment parks stock: the reactor
+			// outpaces the small draw, fills the segment, and stalls at full_output — the live-proven
+			// recipe (gallery HITL build, 2026-07-18, 2.0.77: full_output + plasma 10.00 reached with
+			// the 10 MW load present; removing the load entirely stops production instead of parking).
+			const parkDeadline = Date.now() + PLASMA_DEADLINE_MS;
+			let reading;
+			do {
+				await sleep(2_000);
+				reading = runtimeCall(handle, PORTS, { operation: "measure_census_fusion" });
+				console.error(`[seed-prep] plasma=${reading.plasma_segment} coolant=${reading.coolant} fuel=${reading.fuel_cells} reactor=${reading.reactor_status} generators=${JSON.stringify(reading.generator_status)}`);
+			} while (reading.plasma_segment < 5 && Date.now() < parkDeadline); // wait for real parked stock (steady state ~9-10), not the first trickle
+			if (reading.plasma_segment < 5) throw new Error(`no plasma parked in the shared segment before the deadline: ${JSON.stringify(reading)}`);
+
+			const fingerprint = runtimeCall(handle, PORTS, { operation: "freeze_census_fusion" });
+			censusFingerprint = fingerprint;
+			if (fingerprint.all_frozen !== true || fingerprint.all_indestructible !== true) {
+				throw new Error(`freeze incomplete: ${JSON.stringify(fingerprint)}`);
+			}
+			// The law-bearing invariant: plasma present + the generator's plasma box reads a nil segment
+			// ID (buffer-class visibility). reactor_plasma_seg_visible is asserted only when the stock
+			// parked reactor-side (the isolated steady state parks it generator-side instead — measured
+			// 2026-07-18, 2.0.77).
+			if (fingerprint.plasma_segment <= 0 || fingerprint.generator_plasma_seg_nil !== true) {
+				throw new Error(`plasma/visibility invariant not reproduced: ${JSON.stringify(fingerprint)}`);
+			}
 		}
-		// The law-bearing invariant: plasma present + the generator's plasma box reads a nil segment
-		// ID (buffer-class visibility). reactor_plasma_seg_visible is asserted only when the stock
-		// parked reactor-side (the isolated steady state parks it generator-side instead — measured
-		// 2026-07-18, 2.0.77).
-		if (fingerprint.plasma_segment <= 0 || fingerprint.generator_plasma_seg_nil !== true) {
-			throw new Error(`plasma/visibility invariant not reproduced: ${JSON.stringify(fingerprint)}`);
+
+		// Port two fixtures onto the EXISTING golden omnibus platform (lab-omnibus-state-v1). Each cell is
+		// stamped from the shared test-foundation template, the fixture built, then physically measured
+		// and gated against the manifest fingerprint (single source of truth) before the save is taken.
+		const repoRoot = new URL("../../", import.meta.url);
+		const manifest = loadGalleryManifest(repoRoot);
+		const cardFor = id => {
+			const fixture = manifest.fixtures.find(entry => entry.id === id);
+			if (!fixture || !fixture.testCard) throw new Error(`manifest is missing a testCard for ${id}`);
+			const card = fixture.testCard;
+			return { law: card.law, action: card.action, expect: card.expected, forbidden: card.forbidden };
+		};
+		const cells = [
+			{ id: "inserter-held-capacity", originX: 34, originY: -128, build: "build_inserter_held", measure: "measure_inserter_held" },
+			{ id: "no-tick-sync-frozen-pair", originX: 34, originY: -114, build: "build_no_tick_pair", measure: "measure_no_tick_pair" },
+		];
+		const portedFixtures = {};
+		for (const cell of cells) {
+			runtimeCall(handle, PORTS, {
+				operation: "stamp_test_cell", origin_x: cell.originX, origin_y: cell.originY,
+				name: cell.id, rows: TEMPLATE_ROWS, legend: LEGEND, card: cardFor(cell.id),
+			});
+			const built = runtimeCall(handle, PORTS, { operation: cell.build });
+			const measured = runtimeCall(handle, PORTS, { operation: cell.measure });
+			portedFixtures[cell.id] = measured;
+			console.error(`[seed-prep] ported ${cell.id}: built=${JSON.stringify(built)} measured=${JSON.stringify(measured)}`);
+		}
+		// Verdict: every measured fingerprint field matches the manifest. crafting-progress absorbs a
+		// save/load ULP (1e-9); forceBulkBonus is raise-only so accept any actual at or above the floor.
+		for (const cell of cells) {
+			const fixture = manifest.fixtures.find(entry => entry.id === cell.id);
+			const measured = portedFixtures[cell.id];
+			for (const [key, expected] of Object.entries(fixture.fingerprint)) {
+				const actual = measured[key];
+				if (key === "forceBulkBonus" && typeof actual === "number" && typeof expected === "number" && actual >= expected) continue;
+				const ok = key === "progress" && typeof actual === "number" && typeof expected === "number"
+					? Math.abs(actual - expected) <= 1e-9 : actual === expected;
+				if (!ok) throw new Error(`${cell.id}.${key} measured ${JSON.stringify(actual)}, expected ${JSON.stringify(expected)}`);
+			}
 		}
 
 		const saveName = "seed-prep-candidate";
@@ -92,7 +149,7 @@ async function main() {
 		await waitForStableSave(options.container, remoteSave);
 		docker(["cp", `${options.container}:${remoteSave}`, options.output], { timeout: 180_000 });
 
-		console.log(JSON.stringify({ status: "PASS", candidate: options.output, fingerprint }, null, 2));
+		console.log(JSON.stringify({ status: "PASS", candidate: options.output, fingerprint: censusFingerprint, portedFixtures }, null, 2));
 	} catch (error) {
 		try { console.error(`isolated Factorio tail:\n${tailFactorioLog(handle)}`); } catch { /* launch may have died early */ }
 		throw error;
