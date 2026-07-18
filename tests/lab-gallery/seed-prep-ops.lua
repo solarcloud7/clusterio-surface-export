@@ -369,9 +369,11 @@ elseif request.operation == "build_inserter_held" then
     local inserter = s.create_entity({ name = "bulk-inserter", position = pos, force = "player", quality = "legendary" })
     if not inserter then return { success = false, error = "legendary bulk-inserter placement failed" } end
 
-    -- Seat 8 railgun-ammo via a PLAIN held_stack.set_stack — NO active toggle (seating is
-    -- activation-independent; inserter-lab B6). The raised bonus lets the whole 8 seat.
-    inserter.held_stack.set_stack({ name = "railgun-ammo", count = 8 })
+    -- Seat 8 LEGENDARY railgun-ammo via a PLAIN held_stack.set_stack — NO active toggle (seating is
+    -- activation-independent; inserter-lab B6). The raised bonus lets the whole 8 seat. The STACK
+    -- quality is the fixture's quality-keyed adversarial dimension — the entity quality alone is not
+    -- (B7 run 1b caught a normal-quality stack self-certified by an entity-quality read).
+    inserter.held_stack.set_stack({ name = "railgun-ammo", count = 8, quality = "legendary" })
     local seated = inserter.held_stack.valid_for_read and inserter.held_stack.count or 0
     if seated ~= 8 then
         return { success = false, error = "held hand seated " .. tostring(seated) .. " railgun-ammo, expected 8 (force bonus " .. tostring(bonus_after) .. ")" }
@@ -383,7 +385,8 @@ elseif request.operation == "build_inserter_held" then
         success = true,
         heldCount = inserter.held_stack.count,
         heldName = inserter.held_stack.name,
-        quality = inserter.quality.name,
+        quality = inserter.held_stack.quality and inserter.held_stack.quality.name or "normal",
+        inserterQuality = inserter.quality.name,
         active = inserter.active,
         destructible = inserter.destructible,
         forceBulkBonus = bonus_after,
@@ -403,7 +406,8 @@ elseif request.operation == "measure_inserter_held" then
         success = true,
         heldCount = held.valid_for_read and held.count or 0,
         heldName = held.valid_for_read and held.name or nil,
-        quality = inserter.quality.name,
+        quality = (held.valid_for_read and held.quality) and held.quality.name or nil,
+        inserterQuality = inserter.quality.name,
         active = inserter.active,
         destructible = inserter.destructible,
         forceBulkBonus = game.forces["player"].bulk_inserter_capacity_bonus,

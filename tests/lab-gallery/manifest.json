@@ -18,7 +18,7 @@
 			"role": "source",
 			"name": "lab-gallery-source-surface-export-2-0-77",
 			"artifact": "docker/seed-data/lab-saves/lab-gallery-source-surface-export-2.0.77.zip",
-			"sha256": "F067494AC55C4B13CDFEBE60F23EBEF6A050FD8041E26C2412ACCB14E7216F09",
+			"sha256": "6CD42299655069C24CF5C2EE5B5EAA4D0CA3528890D86DF70671E4EA70436552",
 			"expectedCensus": {
 				"totalEntities": 1500,
 				"totalGeneratedChunks": 5513,
@@ -106,7 +106,7 @@
 			"role": "destination",
 			"name": "lab-gallery-destination-surface-export-2-0-77",
 			"artifact": "docker/seed-data/lab-saves/lab-gallery-destination-surface-export-2.0.77.zip",
-			"sha256": "ABC369DBDC72CAC48C44E3A490132D83D79E6F68A157F1F990D9ADE369A0584F",
+			"sha256": "13A67B4A4C3C81BD2CEBB1DB9CBF3D5BD79A92FDB311A5E1CCCA9A51164E3893",
 			"expectedCensus": {
 				"totalEntities": 0,
 				"totalGeneratedChunks": 479,
@@ -895,7 +895,7 @@
 				"surfexp_gateways": "0.3.0",
 				"maraxsis": "1.31.6"
 			},
-			"note": "Script-built by tests/lab-gallery/seed-prep-ops.lua (build_inserter_held) onto the stamped inserter-held-capacity cell at (34,-128): raise the player force bulk_inserter_capacity_bonus to >=11 (raise-only, logged), create a legendary bulk-inserter at (40.5,-122.5), seat 8 railgun-ammo via plain held_stack.set_stack (no active toggle; inserter-lab B6), then freeze (active=false, destructible=false). forceBulkBonus is a placeholder floor; the live bake pins the exact baked value.",
+			"note": "Script-built by tests/lab-gallery/seed-prep-ops.lua (build_inserter_held) onto the stamped inserter-held-capacity cell at (34,-128): raise the player force bulk_inserter_capacity_bonus to >=11 (raise-only, logged), create a legendary bulk-inserter at (40.5,-122.5), seat 8 LEGENDARY railgun-ammo via plain held_stack.set_stack (no active toggle; inserter-lab B6), then freeze (active=false, destructible=false). Re-baked 2026-07-18: the original bake seated a NORMAL-quality stack and self-certified via the entity-quality meter (B7 run 1b caught it via the independent stack-quality read); the stack is now legendary and both meters read the STACK. forceBulkBonus is a placeholder floor; the live bake pins the exact baked value. The ADVERSARIAL destination state is baked too (2026-07-18): the golden dest descends from the long-lived local host-2 lineage whose player force had bulk 11 / stack 3 (B7 run 1 caught it — the fixture could not discriminate the Pitfall #29 fix), so both inserter bonuses were zeroed at bake time and the dest artifact re-pinned; the runner still ASSERTS 0 at load, never forces.",
 			"invariant": "A legendary bulk-inserter holds 8 railgun-ammo in its hand while inactive and indestructible; the player force bulk_inserter_capacity_bonus is >= 11 so the hand seats in full and survives save/load.",
 			"expectedTerminalVerdict": "transfer-committed-hand-full",
 			"independentOracleRequired": true,
@@ -905,7 +905,8 @@
 				"quality": "legendary",
 				"active": false,
 				"destructible": false,
-				"forceBulkBonus": 11
+				"forceBulkBonus": 11,
+				"destForceBulkBonus": 0
 			},
 			"testCard": {
 				"law": "Held items seat IN FULL on a less-researched destination: export captures the source-force inserter bonuses, import replicates them raise-only, and the strict gate counts the complete state (Pitfalls #28 count-a-complete-state / #29 dest-force research).",
