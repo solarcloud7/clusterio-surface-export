@@ -3,7 +3,9 @@
 -- tests could not exercise the selection-lab handlers and every tool regression had to be found
 -- by a human dragging in game. This remote builds the same event table the engine delivers and
 -- calls the REAL handler — the tool's actual code path, no duplication.
--- Modes: 'copy' | 'paste' | 'audit' | 'force' (area required) and 'undo' | 'redo' (area ignored).
+-- Modes: 'copy' | 'paste' | 'audit' | 'preview' | 'force' (area required) and 'undo' | 'redo'
+-- (area ignored). 'preview' is the dry-run paste: renders green/red placement boxes, creates
+-- nothing, and returns the same planner verdict the real paste would act on.
 
 local SelectionLab = require("modules/surface_export/interfaces/gui/selection-lab")
 
@@ -25,12 +27,14 @@ local function selection_lab_drive(mode, player_index, x1, y1, x2, y2)
   if not (x1 and y1 and x2 and y2) then return { ok = false, err = "area required" } end
   local surface = player.surface
   local entities = surface.find_entities_filtered({ area = { { x1, y1 }, { x2, y2 } } })
-  SelectionLab.handle({
+  local result = SelectionLab.handle({
     player_index = player.index, surface = surface,
     area = { left_top = { x = x1, y = y1 }, right_bottom = { x = x2, y = y2 } },
     item = "selection-lab-tool", entities = entities, tiles = {},
   }, mode)
-  return { ok = true, n = #entities }
+  -- Audit returns its full report table so a headless driver reads the meters directly
+  -- (RCON: helpers.table_to_json the return); other modes keep their chat-first contract.
+  return { ok = true, n = #entities, report = result }
 end
 
 return selection_lab_drive

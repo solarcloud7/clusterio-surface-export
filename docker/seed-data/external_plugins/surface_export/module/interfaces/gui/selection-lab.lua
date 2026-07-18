@@ -181,6 +181,15 @@ local function pstate(player_index)
 	return t
 end
 
+-- Machine-readable outcome: every copy/paste exit returns a typed result table AND logs it as
+-- one JSON line, so a headless driver (selection_lab_drive) and the log both carry the verdict —
+-- chat is a courtesy, never the only evidence (owner rule 2026-07-18: "fix this tool so you can
+-- see the results of it").
+local function lab_result(mode, result)
+	log("[SelectionLab][" .. string.upper(mode) .. "-JSON] " .. helpers.table_to_json(result))
+	return result
+end
+
 -- === COPY ==================================================================================
 
 function SelectionLab.copy(event)
@@ -207,13 +216,20 @@ function SelectionLab.copy(event)
 	end
 	if #records == 0 then
 		player.print("[SelectionLab] nothing exportable in the selection", { r = 1, g = 0.6, b = 0.3 })
-		return
+		return lab_result("copy", { outcome = "nothing_exportable", selected = #event.entities })
 	end
 	local side_groups = BeltRestoration.capture_side_groups(belt_pairs)
+	-- WYSIWYG anchor (owner request 2026-07-18): anchor to the DRAG RECTANGLE's corner, not the
+	-- entity-bounding min — pasted entities keep their offset from where the selection box started,
+	-- so a paste drag lands exactly where the box is drawn (the old entity-min anchor produced the
+	-- surprise (+14,-1) landing). Fallback to entity-min for area-less events.
+	local lt = event.area and event.area.left_top or nil
+	local anchor = lt and { x = math.floor(lt.x), y = math.floor(lt.y) }
+		or { x = math.floor(minx), y = math.floor(miny) }
 	pstate(event.player_index).export = {
 		records = records,
 		side_groups = side_groups,
-		anchor = { x = math.floor(minx), y = math.floor(miny) },
+		anchor = anchor,
 		surface = event.surface.name,
 		tick = game.tick,
 	}
@@ -221,6 +237,10 @@ function SelectionLab.copy(event)
 		"[SelectionLab] COPIED %d entities (%d items%s). Shift-drag = paste (all-or-nothing); Shift+Right-drag = force.",
 		#records, capture_item_total(records),
 		side_groups and (", " .. #side_groups .. " belt sides") or ""), { r = 0.4, g = 0.9, b = 1 })
+	return lab_result("copy", {
+		outcome = "copied", records = #records, item_total = capture_item_total(records),
+		belt_sides = side_groups and #side_groups or 0, anchor = anchor, surface = event.surface.name,
+	})
 end
 
 -- === paste planning ========================================================================
@@ -432,7 +452,7 @@ function SelectionLab.paste(event)
 	local cap = st.export
 	if not (cap and cap.records and #cap.records > 0) then
 		player.print("[SelectionLab] nothing copied — plain-drag a source selection first", { r = 1, g = 0.4, b = 0.4 })
-		return
+		return lab_result("paste", { outcome = "no_capture" })
 	end
 	local surface = event.surface
 	local offset = paste_offset(cap, event)
@@ -446,7 +466,7 @@ function SelectionLab.paste(event)
 		player.print(string.format(
 			"[SelectionLab] PASTE REFUSED: %d of %d targets occupied (red). Nothing was placed. Shift+Right-drag forces.",
 			#plan.conflict, #cap.records), { r = 1, g = 0.4, b = 0.4 })
-		return
+		return lab_result("paste", { outcome = "refused", conflicts = #plan.conflict, targets = #cap.records, offset = offset })
 	end
 
 	local recs = {}
@@ -457,7 +477,7 @@ function SelectionLab.paste(event)
 		player.play_sound({ path = "utility/cannot_build" })
 		player.print("[SelectionLab] PASTE ROLLED BACK (" .. tostring(exec_err) ..
 			") — every created entity was removed; nothing journaled.", { r = 1, g = 0.4, b = 0.4 })
-		return
+		return lab_result("paste", { outcome = "rolled_back", error = tostring(exec_err), offset = offset })
 	end
 	for _, rec in ipairs(records) do
 		draw_box(surface, rec.position, { r = 0.3, g = 1, b = 0.3, a = 0.6 }, player.index)
@@ -468,6 +488,40 @@ function SelectionLab.paste(event)
 		"[SelectionLab] PASTED %d entities (%d create-failed) at offset (%d,%d). Physical items on paste: %d (capture holds %d). Ctrl+Alt+Z undoes.",
 		created, create_failed, offset.x, offset.y, physical_census(entity_map), capture_item_total(cap.records)),
 		{ r = 0.4, g = 1, b = 0.4 })
+	return lab_result("paste", {
+		outcome = "pasted", created = created, create_failed = create_failed, offset = offset,
+		physical_items = physical_census(entity_map), capture_items = capture_item_total(cap.records),
+	})
+end
+
+-- === PREVIEW (dry-run paste) ===============================================================
+
+-- Renders where the capture WOULD land for this drag — green placeable, red conflicted — and
+-- creates nothing (owner request 2026-07-18: "a hint of where it would be at"). Uses the same
+-- planner as the real paste, so the preview can never disagree with the paste's own verdict.
+function SelectionLab.preview(event)
+	local player = game.get_player(event.player_index)
+	local st = pstate(event.player_index)
+	local cap = st.export
+	if not (cap and cap.records and #cap.records > 0) then
+		player.print("[SelectionLab] nothing copied — plain-drag a source selection first", { r = 1, g = 0.4, b = 0.4 })
+		return lab_result("preview", { outcome = "no_capture" })
+	end
+	local surface = event.surface
+	local offset = paste_offset(cap, event)
+	local plan = plan_paste(surface, cap, offset, player)
+	for _, c in ipairs(plan.clear) do
+		draw_box(surface, c.rec.position, { r = 0.3, g = 1, b = 0.3, a = 0.7 }, player.index)
+	end
+	for _, c in ipairs(plan.conflict) do
+		draw_box(surface, c.rec.position, { r = 1, g = 0.2, b = 0.2, a = 0.9 }, player.index)
+	end
+	player.print(string.format(
+		"[SelectionLab] PREVIEW: %d placeable (green), %d conflicted (red) at offset (%d,%d). Nothing was placed.",
+		#plan.clear, #plan.conflict, offset.x, offset.y), { r = 0.6, g = 0.9, b = 1 })
+	return lab_result("preview", {
+		outcome = "previewed", clear = #plan.clear, conflicts = #plan.conflict, offset = offset,
+	})
 end
 
 -- === FORCE PASTE ===========================================================================
@@ -621,6 +675,17 @@ function SelectionLab.audit(event)
 			#deltas > 0 and { r = 1, g = 0.7, b = 0.3 } or { r = 0.4, g = 1, b = 0.4 })
 	end
 	ast.audit_prev = { items = item_totals, fluids = fluid_totals, tick = game.tick }
+
+	-- Machine-readable evidence: the audit is an INSTRUMENT (the gate's own meters) — its readings
+	-- must land in the log and be returnable to a headless driver, not live only in player chat
+	-- (owner gap 2026-07-18: an agent-driven audit had no way to read the result).
+	local report = {
+		tick = game.tick,
+		entity_count = entity_n, item_count = item_n, fluid_total = fluid_n,
+		entities = entity_counts, items = item_totals, fluids = fluid_totals,
+	}
+	log("[SelectionLab][AUDIT-JSON] " .. helpers.table_to_json(report))
+	return report
 end
 
 -- === UNDO / REDO ===========================================================================
@@ -747,10 +812,11 @@ function SelectionLab.handle(event, mode)
 		if player then player.print("[SelectionLab] debug_mode is off — tool disabled", { r = 1, g = 0.4, b = 0.4 }) end
 		return
 	end
-	if mode == "copy" then SelectionLab.copy(event)
-	elseif mode == "paste" then SelectionLab.paste(event)
-	elseif mode == "audit" then SelectionLab.audit(event)
-	elseif mode == "force" then SelectionLab.force(event)
+	if mode == "copy" then return SelectionLab.copy(event)
+	elseif mode == "paste" then return SelectionLab.paste(event)
+	elseif mode == "audit" then return SelectionLab.audit(event)
+	elseif mode == "preview" then return SelectionLab.preview(event)
+	elseif mode == "force" then return SelectionLab.force(event)
 	else
 		log("[SelectionLab] unknown mode: " .. tostring(mode))
 	end
