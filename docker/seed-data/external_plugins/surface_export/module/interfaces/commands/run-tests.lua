@@ -33,8 +33,8 @@ local COLORS = {
 local CHAT_GREEN = { r = 0.3, g = 1, b = 0.3 }
 local CHAT_RED = { r = 1, g = 0.4, b = 0.4 }
 local FAILURE_TEMPLATE = "Failure {failure-message}"
-local RUN_PREFIX = "[font=default-bold][test-run][/font]"
-local CLEAR_PREFIX = "[font=default-bold][test-clear][/font]"
+local RUN_PREFIX = "[color=yellow][font=default-bold][test-run][/font][/color]"
+local CLEAR_PREFIX = "[color=yellow][font=default-bold][test-clear][/font][/color]"
 local CHECK = "[virtual-signal=signal-check]"
 local CROSS = "[virtual-signal=signal-deny]"
 
@@ -87,8 +87,8 @@ local function report_delta(left, right)
   local parts = {}
   local function item_tag(key)
     local name, quality = Util.parse_quality_key(key)
-    if quality and quality ~= "normal" then return string.format("[item=%s,quality=%s]", name, quality) end
-    return string.format("[item=%s]", name)
+    if quality and quality ~= "normal" then return string.format("[img=item.%s][img=quality.%s]", name, quality) end
+    return string.format("[img=item.%s]", name)
   end
   local function diff(kind, a, b)
     local seen = {}
@@ -96,13 +96,13 @@ local function report_delta(left, right)
       seen[name] = true
       local other = (b or {})[name] or 0
       if math.abs(count - other) > 1e-6 then
-        local tag = (kind == "item") and item_tag(name) or string.format("[fluid=%s]", name:match("^([^@]+)") or name)
+        local tag = (kind == "item") and item_tag(name) or string.format("[img=fluid.%s]", name:match("^([^@]+)") or name)
         parts[#parts + 1] = string.format("%s %s->%s", tag, count, other)
       end
     end
     for name, count in pairs(b or {}) do
       if not seen[name] and math.abs(count) > 1e-6 then
-        local tag = (kind == "item") and item_tag(name) or string.format("[fluid=%s]", name:match("^([^@]+)") or name)
+        local tag = (kind == "item") and item_tag(name) or string.format("[img=fluid.%s]", name:match("^([^@]+)") or name)
         parts[#parts + 1] = string.format("%s 0->%s", tag, count)
       end
     end
