@@ -272,13 +272,28 @@ function SelectionLab.copy(event)
 	local lt = event.area and event.area.left_top or nil
 	local anchor = lt and { x = math.floor(lt.x), y = math.floor(lt.y) }
 		or { x = math.floor(minx), y = math.floor(miny) }
-	pstate(event.player_index).export = {
+	local st = pstate(event.player_index)
+	st.export = {
 		records = records,
 		side_groups = side_groups,
 		anchor = anchor,
 		surface = event.surface.name,
 		tick = game.tick,
 	}
+	-- Persistent BLUE highlight of the copied area (owner request 2026-07-18): stays until the NEXT
+	-- copy replaces it, so the user always sees where/what the live capture came from.
+	if st.copy_box then
+		local prior = rendering.get_object_by_id(st.copy_box)
+		if prior and prior.valid then prior.destroy() end
+		st.copy_box = nil
+	end
+	if event.area then
+		st.copy_box = rendering.draw_rectangle({
+			color = { r = 0.3, g = 0.6, b = 1, a = 0.8 }, width = 2, filled = false,
+			left_top = event.area.left_top, right_bottom = event.area.right_bottom,
+			surface = event.surface, players = { event.player_index },
+		}).id
+	end
 	-- Single compute, used by BOTH chat and the logged result — they must never diverge.
 	local item_total = capture_item_total(records)
 	say(player, string.format(
@@ -697,8 +712,13 @@ function SelectionLab.audit(event)
 
 	-- Icon-rich audit chat (owner format): one labeled line per category, [item=]/[entity=]/[fluid=]
 	-- tags for every key, quality carried on item tags. Totals ride the header.
-	say(player, string.format("%s AUDIT — %d entities, %d items, %.1f fluids",
-		LAB_PREFIX, entity_n, item_n, fluid_n))
+	local dims = "?"
+	if event.area then
+		local w = math.ceil(event.area.right_bottom.x) - math.floor(event.area.left_top.x)
+		local h = math.ceil(event.area.right_bottom.y) - math.floor(event.area.left_top.y)
+		dims = w .. " x " .. h
+	end
+	say(player, string.format("%s Observing (%s)", LAB_PREFIX, dims))
 	-- One bold+cyan labeled line per NON-EMPTY category (empty categories are omitted entirely).
 	local function category_line(label, totals, render)
 		if not next(totals) then return end
@@ -711,43 +731,6 @@ function SelectionLab.audit(event)
 	category_line("Items", item_totals, icon_item)
 	category_line("Fluids", fluid_totals, icon_fluid)
 
-	-- DELTA vs the previous audit (the before/after workflow). Player-scoped. Signed counts are
-	-- colored (+green / -red) and every key renders as its icon.
-	local ast = pstate(event.player_index)
-	local prev = ast.audit_prev
-	if prev then
-		local deltas = {}
-		local function signed(d, is_fluid)
-			local body = is_fluid and string.format("%+.1f", d) or string.format("%+d", d)
-			return (d > 0) and ("[color=green]" .. body .. "[/color]") or ("[color=red]" .. body .. "[/color]")
-		end
-		local keys = {}
-		for k in pairs(prev.items or {}) do keys[k] = true end
-		for k in pairs(item_totals) do keys[k] = true end
-		for k in pairs(keys) do
-			local d = (item_totals[k] or 0) - ((prev.items or {})[k] or 0)
-			if d ~= 0 then
-				local name, quality = Util.parse_quality_key(k)
-				local tag = (quality and quality ~= "normal")
-					and string.format("[img=item.%s][img=quality.%s]", name, quality) or string.format("[img=item.%s]", name)
-				deltas[#deltas + 1] = tag .. " " .. signed(d, false)
-			end
-		end
-		keys = {}
-		for k in pairs(prev.fluids or {}) do keys[k] = true end
-		for k in pairs(fluid_totals) do keys[k] = true end
-		for k in pairs(keys) do
-			local d = (fluid_totals[k] or 0) - ((prev.fluids or {})[k] or 0)
-			if math.abs(d) > 1e-6 then
-				deltas[#deltas + 1] = string.format("[img=fluid.%s] %s", k:match("^([^@]+)") or k, signed(d, true))
-			end
-		end
-		table.sort(deltas)
-		say(player, #deltas > 0
-			and ("[font=default-bold][color=cyan]DELTA:[/color][/font] " .. table.concat(deltas, "  "))
-			or "[font=default-bold][color=cyan]DELTA:[/color][/font] [color=green]EXACT MATCH (zero drift on every key)[/color]")
-	end
-	ast.audit_prev = { items = item_totals, fluids = fluid_totals, tick = game.tick }
 
 	-- Machine-readable evidence: the audit is an INSTRUMENT (the gate's own meters) — its readings
 	-- must land in the log and be returnable to a headless driver, not live only in player chat
