@@ -56,6 +56,31 @@ local function warn_if_unexpected(entity, index, warned)
     ))
 end
 
+--- The ONE shared read for segment fluid contents, applying the buffer-class law
+--- ([empirical, 2.0.77], api-notes fusion segment-ID entry): a box exposing a segment ID whose
+--- get_fluid_segment_contents reads EMPTY while the local proxy holds fluid is a buffer-class box
+--- (fusion-reactor coolant/plasma family) — the LOCAL read is authoritative. Substituting here, in
+--- one place, keeps export capture, the census meters, and the restore verify read-identical
+--- (three hand-copied variants drifted within one day of existing — /code-review PR #120).
+--- contents is a SEGMENT-scoped query (identical from every member box), so an empty read cannot
+--- shadow a "real" total visible from another member; the substitution is safe by construction.
+--- KNOWN LIMITS (rung backlog): the connected-reactor (buffer + pipes, non-empty contents) case is
+--- uncharacterized and deliberately NOT substituted; non-strict counts can still see nil-seg-ID
+--- mirror boxes (generator inputs) additively — pre-existing behavior, unchanged here.
+--- @param fluidbox LuaFluidBox
+--- @param index number
+--- @return table|nil: fluid_name -> amount (segment contents, or the local buffer when contents is empty)
+function FluidOwnership.effective_segment_contents(fluidbox, index)
+    local contents = fluidbox.get_fluid_segment_contents(index)
+    if contents and next(contents) == nil then
+        local buffered = fluidbox[index]
+        if buffered and buffered.name and buffered.amount and buffered.amount > 0 then
+            return { [buffered.name] = buffered.amount }
+        end
+    end
+    return contents
+end
+
 function FluidOwnership.collect_engine_owned_segments(entities)
     local segments, warned = {}, {}
     for _, entity in ipairs(entities or {}) do

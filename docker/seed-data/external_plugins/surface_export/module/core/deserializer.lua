@@ -1177,11 +1177,13 @@ function Deserializer.restore_logistic_requests(entity, entity_data)
   end
 end
 
---- Restore entity filters (filter inserters, loaders, cargo wagons)
---- @param entity LuaEntity: The entity to restore to
---- @param entity_data table: Serialized entity data
-function Deserializer.restore_entity_filters(entity, entity_data)
-  if not entity.valid or not entity_data.entity_filters then
+--- Slot-filter restoration (filter inserters, loaders, cargo wagons). Split from
+--- restore_entity_filters so its entity_filters guard cannot swallow the INFINITY restore below —
+--- the old combined guard early-returned for a pure infinity chest (no inserter-style slots) and
+--- silently dropped its infinity_container_filters on every transfer/paste (caught 2026-07-18 by
+--- the belt fill-harness copy: pasted chests read filters=[]).
+local function restore_slot_filters(entity, entity_data)
+  if not entity_data.entity_filters then
     return
   end
 
@@ -1251,13 +1253,32 @@ function Deserializer.restore_entity_filters(entity, entity_data)
     end
   end
 
-  -- Infinity container filters
+end
+
+--- Restore entity filters (filter inserters, loaders, cargo wagons, infinity containers)
+--- @param entity LuaEntity: The entity to restore to
+--- @param entity_data table: Serialized entity data
+function Deserializer.restore_entity_filters(entity, entity_data)
+  if not entity.valid then
+    return
+  end
+  restore_slot_filters(entity, entity_data)
+
+  -- Infinity container filters (independent of entity_filters — see restore_slot_filters)
   if entity_data.infinity_filters then
     local inf_ok, inf_err = pcall(function()
       entity.infinity_container_filters = entity_data.infinity_filters
     end)
     if not inf_ok then
       log(string.format("[Deserializer Error] infinity_container_filters for %s: %s", entity.name, tostring(inf_err)))
+    end
+  end
+  if entity_data.infinity_remove_unfiltered ~= nil then
+    local ru_ok, ru_err = pcall(function()
+      entity.remove_unfiltered_items = entity_data.infinity_remove_unfiltered
+    end)
+    if not ru_ok then
+      log(string.format("[Deserializer Error] remove_unfiltered_items for %s: %s", entity.name, tostring(ru_err)))
     end
   end
 end

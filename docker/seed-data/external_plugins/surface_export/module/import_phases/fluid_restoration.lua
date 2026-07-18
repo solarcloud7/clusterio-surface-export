@@ -1,3 +1,5 @@
+local FluidOwnership = require("modules/surface_export/utils/fluid-ownership")
+
 local FluidRestoration = {}
 
 --- Restore fluids to entities with network-aware optimization for Factorio 2.0
@@ -133,8 +135,16 @@ function FluidRestoration.restore(entities_to_create, entity_map)
                    success_count = success_count + 1
                    segment_temps[seg_id] = { fluid = data.fluid, temp = avg_temp }
                    
-                   -- Verify actual amount written by checking segment contents
-                   local actual_contents = target.entity.fluidbox.get_fluid_segment_contents(target.index)
+                   -- Verify actual amount written through the ONE shared buffer-class-aware accessor:
+                   -- the old contents-only verify declared a SUCCESSFUL write to a fusion-reactor buffer
+                   -- failed (contents read empty while the local proxy held the fluid) and double-filled
+                   -- via insert_fluid to capacity (the +30 conjured-coolant incident, census-fusion
+                   -- fixture — [empirical, 2.0.77], api-notes fusion segment-ID entry). The accessor
+                   -- substitutes the local read ONLY when contents is empty, so a lagging proxy can
+                   -- never mask a genuine shortfall against non-empty segment contents (/code-review
+                   -- PR #120: an unconditional max() would extend the rule into the uncharacterized
+                   -- connected-reactor regime the api-notes entry forbids).
+                   local actual_contents = FluidOwnership.effective_segment_contents(target.entity.fluidbox, target.index)
                    local actual_amount = actual_contents and actual_contents[data.fluid] or 0
                    if actual_amount < final_amount - 0.5 then
                        local write_loss = final_amount - actual_amount

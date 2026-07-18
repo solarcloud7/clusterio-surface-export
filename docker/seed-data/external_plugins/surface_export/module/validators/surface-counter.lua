@@ -153,17 +153,17 @@ function SurfaceCounter.count_entity_fluids(entity, exclude_engine_owned, state)
             local seg_id = entity.fluidbox.get_fluid_segment_id(i)
             if seg_id and not counted_segments[seg_id] then
                 counted_segments[seg_id] = true
-                -- Engine-owned exclusion: the seeded set is authoritative (set-identity with the
-                -- serializer's pre-pass), but ALSO classify the introducing box on-the-fly so a
-                -- caller with a hand-built state can't silently disable the exclusion (the phantom
-                -- fusion-plasma abort of 2026-07-17). Sound because non-default-category segments
-                -- only span engine-owned boxes, so on-the-fly-excluded ⊆ the pre-passed set — a
-                -- no-op for seeded callers (refines Pitfall #22, activatable entities expose no own
-                -- segment ID: fusion-reactor OWN boxes DO expose seg IDs; see api-notes).
+                -- Engine-owned exclusion: seeded set authoritative (set-identity with the serializer's
+                -- pre-pass) PLUS on-the-fly introducing-box classification so a hand-built state can't
+                -- silently disable it (phantom fusion-plasma abort 2026-07-17; sound since non-default
+                -- category segments only span engine-owned boxes — refines Pitfall #22, activatable
+                -- entities expose no own segment ID; see api-notes).
                 local engine_owned = engine_owned_segments[seg_id]
                     or (exclude_engine_owned and FluidOwnership.is_engine_owned_box(entity, i))
+                -- Buffer-class-aware segment read via the ONE shared accessor, keeping the census
+                -- read-identical with the serializer (paired-reads commensurability).
                 local contents = not engine_owned
-                    and entity.fluidbox.get_fluid_segment_contents(i) or nil
+                    and FluidOwnership.effective_segment_contents(entity.fluidbox, i) or nil
                 if contents then
                     for fluid_name, amount in pairs(contents) do
                         local temp

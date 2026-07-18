@@ -340,8 +340,11 @@ function InventoryScanner.extract_fluids(entity)
     for i = 1, #fluidbox do
       local seg_id = fluidbox.get_fluid_segment_id(i)
       if seg_id and not cache[seg_id] then
-        -- First entity to claim this segment: read authoritative contents
-        local contents = fluidbox.get_fluid_segment_contents(i)
+        -- First entity to claim this segment: read authoritative contents through the ONE shared
+        -- buffer-class-aware accessor (see FluidOwnership.effective_segment_contents — without it
+        -- the async transfer export captured NOTHING for a fusion-reactor buffer: silent physical
+        -- loss the segment-blind census could not see either).
+        local contents = FluidOwnership.effective_segment_contents(fluidbox, i)
         if contents then
           for fluid_name, amount in pairs(contents) do
             if amount > 0 then

@@ -131,6 +131,18 @@ Consequence: fluid does not live per-entity — it lives in the shared segment. 
   `fluidbox_prototype.pipe_connections[].connection_category`, not prototype names. Export emits a warning
   for any non-`default` category or owning prototype outside the measured fusion family; re-run this census
   and review the classification whenever the engine pin changes.
+- **A fusion-reactor buffer box's segment CONTENTS read EMPTY while its local proxy holds the fluid.**
+  **[empirical, 2.0.77, census-fusion fixture 2026-07-18]** The isolated coolant input box exposes a real
+  `get_fluid_segment_id`, but `get_fluid_segment_contents` returns `{}` while `fluidbox[i]` reads the true
+  buffer amount (970 measured). This is the "internal buffer" family the API documents as "may return nil"
+  (wagons, turrets) — except this class returns *an ID with empty contents* instead of nil. Consequence: any
+  code assuming `segment contents ≥ local read` is blind to the buffer — measured breaking three consumers at
+  once (physical census/audit missed the coolant; the async export captured nothing for it; the restore's
+  contents-based write-verify declared a successful write failed and double-filled via `insert_fluid` to
+  capacity, conjuring +30). Rule: **empty segment contents + non-zero local proxy ⇒ buffer-class box; the
+  local read is authoritative** (`inventory-scanner.lua`, `surface-counter.lua`, `fluid_restoration.lua`).
+  The connected-reactor case (buffer box sharing a segment with pipes) is NOT yet characterized — do not
+  extend this rule there without a rung.
 - **Fusion-reactor OWN fluidboxes DO expose segment IDs; the generator inputs sharing the segment read nil.**
   **[empirical, 2.0.77, live workhorse probe 2026-07-17 / census plasma-abort postmortem]** On a running
   reactor→generator layout, `get_fluid_segment_id(i)` on the reactor returned real IDs for BOTH its coolant
