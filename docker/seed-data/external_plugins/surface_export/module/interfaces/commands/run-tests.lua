@@ -12,6 +12,7 @@
 -- measurement path is byte-identical to the manual selection-tool workflow.
 
 local Base = require("modules/surface_export/interfaces/commands/base")
+local SelectionLab = require("modules/surface_export/interfaces/gui/selection-lab")
 
 -- Cell geometry (mirrors tests/lab-gallery/test-foundation.mjs — the single template source):
 -- 26x12 cell; name text at origin+(6,-1.5); trio on the bottom border at +(13.5|14.5|15.5, 11.5);
@@ -108,8 +109,11 @@ local function run_one(player, surface, name, text_obj, ox, oy, ctx)
     set_status(text_obj, comb, panel, "fail", why)
     return "fail", why
   end
-  local left = drive("audit", ox + 1, oy, ox + 13, oy + 12)
-  local right = drive("audit", ox + 15, oy, ox + 27, oy + 12)
+  -- Audit windows stop at oy+11: the BORDER row (oy+11..+12) carries the status trio, and the
+  -- status panel at +15.5 sits inside a naive +15..+27 right window — the meter then counts its
+  -- own display and every test fails "entities N vs N+1" (measured on the first live /run-tests).
+  local left = drive("audit", ox + 1, oy, ox + 13, oy + 11)
+  local right = drive("audit", ox + 15, oy, ox + 27, oy + 11)
   if not (left and left.ok and left.report and right and right.ok and right.report) then
     set_status(text_obj, comb, panel, "fail", "audit failed")
     return "fail", "audit failed"
@@ -162,7 +166,11 @@ Base.admin_command("run-tests",
 
     local passed, failed = 0, 0
     for _, cell in ipairs(cells) do
+      -- QUIET: suppress the lab's per-action chat narration for the whole run (typed returns +
+      -- [MODE-JSON] log lines keep the evidence); restored unconditionally after the pcall.
+      SelectionLab.set_quiet(true)
       local ok, verdict_or_err, detail = pcall(run_one, player, surface, cell.name, cell.text_obj, cell.ox, cell.oy, ctx)
+      SelectionLab.set_quiet(false)
       if not ok then
         failed = failed + 1
         log("[run-tests] " .. cell.name .. " CRASHED: " .. tostring(verdict_or_err))
