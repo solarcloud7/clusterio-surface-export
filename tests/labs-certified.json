@@ -19,10 +19,10 @@
     },
     {
       "lab": "inserter-lab",
-      "runner": "tests/inserter-lab",
-      "rungs": "B1-B4",
-      "conclusion": "held-item capacity is governed by the dest force's inserter research (CI bonus 0 vs local 11); set_stack clamps to physical hand capacity",
-      "commits": ["8c61365"]
+      "runner": "tests/inserter-lab (run-b6-deactivated-setstack.mjs)",
+      "rungs": "B1-B4, B6",
+      "conclusion": "held-item capacity is governed by the dest force's inserter research (CI bonus 0 vs local 11); set_stack clamps to physical hand capacity — and seating is ACTIVATION-INDEPENDENT (B6 refutation: deactivated fresh/settled seats fully; bonus-0 clamp identical active vs inactive; the old wake-toggle lore was dead-code misattribution)",
+      "commits": ["8c61365", "54c38c0"]
     },
     {
       "lab": "no-tick-sync-lab",
