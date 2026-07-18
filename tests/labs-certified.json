@@ -19,17 +19,17 @@
     },
     {
       "lab": "inserter-lab",
-      "runner": "tests/inserter-lab (run-b6-deactivated-setstack.mjs)",
-      "rungs": "B1-B4, B6",
-      "conclusion": "held-item capacity is governed by the dest force's inserter research (CI bonus 0 vs local 11); set_stack clamps to physical hand capacity — and seating is ACTIVATION-INDEPENDENT (B6 refutation: deactivated fresh/settled seats fully; bonus-0 clamp identical active vs inactive; the old wake-toggle lore was dead-code misattribution)",
-      "commits": ["8c61365", "54c38c0"]
+      "runner": "tests/inserter-lab (run-b6-deactivated-setstack.mjs, run-b7-held-capacity-batch.mjs via tests/lab-gallery/run-golden-batch.mjs)",
+      "rungs": "B1-B4, B6, B7",
+      "conclusion": "held-item capacity is governed by the dest force's inserter research (CI bonus 0 vs local 11); set_stack clamps to physical hand capacity — and seating is ACTIVATION-INDEPENDENT (B6 refutation: deactivated fresh/settled seats fully; bonus-0 clamp identical active vs inactive; the old wake-toggle lore was dead-code misattribution). inserter-lab B7 (bake gate, unified golden-batch, two consecutive greens): a save-loaded legendary bulk-inserter holding 8 legendary railgun-ammo transfers to an asserted bonus-0 destination with the raise-only Phase-0 sync (0->11), a physically full hand, forceDataMismatches recorded, and the source deleted — the fixture's first live runs also caught and fixed two bake defects (dest lineage bonus 11; normal-quality stack self-certified by an entity-quality meter)",
+      "commits": ["8c61365", "54c38c0", "d3cac52"]
     },
     {
       "lab": "no-tick-sync-lab",
-      "runner": "tests/no-tick-sync-lab (run-pr0b.mjs)",
-      "rungs": "B5, PR0B",
-      "conclusion": "the synchronous held-item restore pass keeps game.tick, crafting_progress, and the restored inserter hand stable through the strict count (no craft window)",
-      "commits": ["be754fd", "5f7ca16"]
+      "runner": "tests/no-tick-sync-lab (run-pr0b.mjs, run-b8-baked-pair.mjs via tests/lab-gallery/run-golden-batch.mjs)",
+      "rungs": "B5, PR0B, B8",
+      "conclusion": "the synchronous held-item restore pass keeps game.tick, crafting_progress, and the restored inserter hand stable through the strict count (no craft window). no-tick-sync B8 (bake gate, unified golden-batch, two consecutive greens): the same pass reproduced construct-free from the save-loaded golden pair — fresh seating leaves tick/progress/input exactly unchanged, and a second pass under game.tick_paused=true is idempotent (restored=0, hand stays full, both entities inactive)",
+      "commits": ["be754fd", "5f7ca16", "d3cac52"]
     },
     {
       "lab": "engine-repin-lab",
