@@ -150,9 +150,8 @@ elseif request.operation == "build_census_fusion" then
     reactor.insert({ name = "fusion-power-cell", count = 5 })
     local coolant_seeded = false
     for i = 1, #reactor.fluidbox do
-        local prototype = reactor.fluidbox.get_prototype(i)
-        -- The coolant input is the box whose filter/first fluid accepts fluoroketone-cold; probe by
-        -- attempting the write on empty input boxes and reading back.
+        -- Find the coolant input purely by write-probe: attempt the write on each empty box and
+        -- read back (no prototype/filter inspection is involved).
         if not reactor.fluidbox[i] then
             reactor.fluidbox[i] = { name = "fluoroketone-cold", amount = 100 }
             local written = reactor.fluidbox[i]
@@ -192,8 +191,9 @@ elseif request.operation == "measure_census_fusion" then
 elseif request.operation == "park_census_fusion" then
     -- Park by removing the electric LOAD, leaving the generator ACTIVE but idle: with near-zero
     -- demand the reactor fills the shared segment to capacity and stalls at full_output — the
-    -- measured workhorse steady state (reactors full_output, plasma 10/segment). Deactivating the
-    -- generator instead BLOCKS the fill (measured: segment stayed 0 with the consumer inactive).
+    -- measured workhorse steady state (reactors full_output, plasma 10/segment; live probe
+    -- 2026-07-18, 2.0.77). Deactivating the generator instead BLOCKS the fill (measured on the
+    -- same date/pin during seed-prep trial runs: segment stayed 0 with the consumer inactive).
     local platform = find_platform(FUSION_PLATFORM)
     if not platform then return { success = false, error = FUSION_PLATFORM .. " does not exist" } end
     local surface = platform.surface

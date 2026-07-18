@@ -32,8 +32,9 @@ local function selection_lab_drive(mode, player_index, x1, y1, x2, y2)
     area = { left_top = { x = x1, y = y1 }, right_bottom = { x = x2, y = y2 } },
     item = "selection-lab-tool", entities = entities, tiles = {},
   }, mode)
-  -- Audit returns its full report table so a headless driver reads the meters directly
-  -- (RCON: helpers.table_to_json the return); other modes keep their chat-first contract.
+  -- Every selection mode returns its typed report table (copy/paste/audit/preview/force) so a
+  -- headless driver reads the meters and outcomes directly; a nil report can only mean an
+  -- unknown mode (logged by handle).
   return { ok = true, n = #entities, report = result }
 end
 

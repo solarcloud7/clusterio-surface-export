@@ -1177,18 +1177,15 @@ function Deserializer.restore_logistic_requests(entity, entity_data)
   end
 end
 
---- Restore entity filters (filter inserters, loaders, cargo wagons, infinity containers)
---- @param entity LuaEntity: The entity to restore to
---- @param entity_data table: Serialized entity data
-function Deserializer.restore_entity_filters(entity, entity_data)
-  if not entity.valid then
+--- Slot-filter restoration (filter inserters, loaders, cargo wagons). Split from
+--- restore_entity_filters so its entity_filters guard cannot swallow the INFINITY restore below —
+--- the old combined guard early-returned for a pure infinity chest (no inserter-style slots) and
+--- silently dropped its infinity_container_filters on every transfer/paste (caught 2026-07-18 by
+--- the belt fill-harness copy: pasted chests read filters=[]).
+local function restore_slot_filters(entity, entity_data)
+  if not entity_data.entity_filters then
     return
   end
-  -- The slot-filter sections below need entity_filters, but the INFINITY block at the tail does
-  -- NOT — the old combined guard early-returned for a pure infinity chest (no inserter-style
-  -- slots) and silently dropped its infinity_container_filters on every transfer/paste (caught
-  -- 2026-07-18 by the belt fill-harness copy: pasted chests read filters=[]).
-  if entity_data.entity_filters then
 
   -- Filter inserters
   if entity.type == "inserter" then
@@ -1256,9 +1253,18 @@ function Deserializer.restore_entity_filters(entity, entity_data)
     end
   end
 
-  end -- entity_data.entity_filters
+end
 
-  -- Infinity container filters (independent of entity_filters — see the guard note above)
+--- Restore entity filters (filter inserters, loaders, cargo wagons, infinity containers)
+--- @param entity LuaEntity: The entity to restore to
+--- @param entity_data table: Serialized entity data
+function Deserializer.restore_entity_filters(entity, entity_data)
+  if not entity.valid then
+    return
+  end
+  restore_slot_filters(entity, entity_data)
+
+  -- Infinity container filters (independent of entity_filters — see restore_slot_filters)
   if entity_data.infinity_filters then
     local inf_ok, inf_err = pcall(function()
       entity.infinity_container_filters = entity_data.infinity_filters

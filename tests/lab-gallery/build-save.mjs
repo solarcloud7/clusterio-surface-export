@@ -324,7 +324,10 @@ async function main() {
 		if (launched) {
 			try {
 				const pid = docker(["exec", options.container, "cat", `${REMOTE_ROOT}/builder.pid`]).trim();
-				if (/^\d+$/.test(pid)) try { docker(["exec", options.container, "kill", "-TERM", `-${pid}`]); } catch { /* bounded process may have exited */ }
+				// Shell form with `--`: the bare exec of `kill -TERM -<pid>` lets the kill binary parse
+				// the negative pgid as an option and silently strand the server (measured — see
+				// isolated-factorio.mjs teardown; full lifecycle dedup onto that module is backlogged).
+				if (/^\d+$/.test(pid)) try { docker(["exec", options.container, "sh", "-c", `kill -TERM -- -${pid} 2>/dev/null || kill -TERM ${pid}`]); } catch { /* bounded process may have exited */ }
 			} catch { /* launch can fail before pid write */ }
 		}
 		await sleep(500);

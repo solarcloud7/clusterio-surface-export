@@ -160,16 +160,10 @@ function SurfaceCounter.count_entity_fluids(entity, exclude_engine_owned, state)
                 -- entities expose no own segment ID; see api-notes).
                 local engine_owned = engine_owned_segments[seg_id]
                     or (exclude_engine_owned and FluidOwnership.is_engine_owned_box(entity, i))
+                -- Buffer-class-aware segment read via the ONE shared accessor, keeping the census
+                -- read-identical with the serializer (paired-reads commensurability).
                 local contents = not engine_owned
-                    and entity.fluidbox.get_fluid_segment_contents(i) or nil
-                -- Buffer-class box (seg ID + EMPTY contents + non-zero local proxy): local read is
-                -- authoritative — [empirical, 2.0.77], api-notes fusion segment-ID entry.
-                if contents and next(contents) == nil then
-                    local buffered = entity.fluidbox[i]
-                    if buffered and buffered.name and buffered.amount > 0 then
-                        contents = { [buffered.name] = buffered.amount }
-                    end
-                end
+                    and FluidOwnership.effective_segment_contents(entity.fluidbox, i) or nil
                 if contents then
                     for fluid_name, amount in pairs(contents) do
                         local temp

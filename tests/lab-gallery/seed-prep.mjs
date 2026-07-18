@@ -70,7 +70,9 @@ async function main() {
 		} while (reading.generator_status?.[0] !== "working" && Date.now() < flowDeadline);
 		if (reading.generator_status?.[0] !== "working") throw new Error(`generator never reached working: ${JSON.stringify(reading)}`);
 
-		// Phase 2: stop the consumer so the shared segment parks real stock, then wait for it.
+		// Phase 2: remove the LOAD (generator stays active-idle) so the reactor fills the shared
+		// segment to capacity and parks real stock (the workhorse parks ~10/segment under active
+		// flow — live probe 2026-07-18, 2.0.77), then wait for it.
 		runtimeCall(handle, PORTS, { operation: "park_census_fusion" });
 		const parkDeadline = Date.now() + PLASMA_DEADLINE_MS;
 		do {

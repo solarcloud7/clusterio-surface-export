@@ -180,7 +180,9 @@ async function verifyOne(options, role, save, expected, boundaryErrors) {
 			try {
 				const pid = docker(["exec", options.container, "cat", `${REMOTE_ROOT}/verifier.pid`]).trim();
 				if (/^\d+$/.test(pid)) {
-					try { docker(["exec", options.container, "kill", "-TERM", `-${pid}`]); } catch { /* meter normally quits */ }
+					// Shell form with `--`: the bare exec form silently strands the process group
+					// (measured — see isolated-factorio.mjs teardown; lifecycle dedup backlogged).
+					try { docker(["exec", options.container, "sh", "-c", `kill -TERM -- -${pid} 2>/dev/null || kill -TERM ${pid}`]); } catch { /* meter normally quits */ }
 				} else {
 					boundaryErrors.push(new Error(`${role} verifier pid file is invalid: ${JSON.stringify(pid)}`));
 				}
