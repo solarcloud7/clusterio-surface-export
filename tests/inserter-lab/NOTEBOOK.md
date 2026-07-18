@@ -906,3 +906,73 @@ Predictions: B1 held 8; B2 force sync raises bonus; B3 no residual; B4 open.
   "finished": "2026-07-10T06:11:23.677Z"
 }
 ```
+
+
+## 2026-07-18T19:35:49.751Z — B6 activation-refutation rung (Factorio 2.0.77)
+
+Runner: `tests/inserter-lab/run-b6-deactivated-setstack.mjs` on clusterio-host-1-instance-1 (player force bonuses at run: bulk 11, stack 3).
+
+- **B6a fresh-inactive**: bulk set_stack(8) → held 8; plain set_stack(4) → held 4.
+- **B6b settled-inactive** (312 elapsed ticks, still inactive=true): bulk set_stack(8) → held 8.
+- **B6c bonus-0 A/B** (temp force, bonus 0): INACTIVE → 1, ACTIVE → 1.
+
+**VERDICT: ACTIVATION-INDEPENDENT** — set_stack seating does not depend on entity.active in any tested condition; the capacity clamp is purely force-bonus-governed. SUPERSEDES: the D3/MECHANISM entry ('on a deactivated inserter the bulk capacity isn't active'), the LOCAL-vs-CI 'silently fails on a SETTLED-deactivated inserter' attribution, and FIX A ATTEMPT 1's settled-vs-fresh entity-state hypothesis — the un-isolated variable in all three was the FORCE BONUS, never activation. The real historical held phantom: the deserializer's held restore was DEAD CODE (stranded behind restore_inventories' has_inventories early-return), so held items were never attempted at all; on CI the Pitfall #29 bonus clamp shortened what the recovery pass then seated.
+
+Residual [hypothesis]: not yet reproduced in the exact import context (import-created entities on a paused platform); the inserter-held-capacity baked-fixture batch covers that end-to-end.
+
+Zero-leftover: platform deleted=true, post-run {"success":true,"leftover_platforms":0,"probe_storage":false,"probe_force":false,"tick":544076}.
+
+<details><summary>Raw results JSON</summary>
+
+```json
+{
+  "script": "tests/inserter-lab/run-b6-deactivated-setstack.mjs",
+  "started": "2026-07-18T19:35:38.307Z",
+  "errors": [],
+  "base_version": "2.0.77",
+  "setup": {
+    "success": true,
+    "surface": 2,
+    "player_bulk_bonus": 11,
+    "player_stack_bonus": 3
+  },
+  "fresh": {
+    "success": true,
+    "tick": 543598,
+    "bulk_ok": true,
+    "bulk_held": 8,
+    "plain_ok": true,
+    "plain_held": 4
+  },
+  "settled": {
+    "success": true,
+    "elapsed_ticks": 312,
+    "bulk_ok": true,
+    "bulk_held": 8,
+    "still_inactive": true
+  },
+  "bonus0": {
+    "success": true,
+    "force_bonus": 0,
+    "inactive_held": 1,
+    "active_held": 1,
+    "inactive_ok": true,
+    "active_ok": true
+  },
+  "verdict": "ACTIVATION-INDEPENDENT",
+  "cleanup": {
+    "success": true,
+    "deleted": true
+  },
+  "zero": {
+    "success": true,
+    "leftover_platforms": 0,
+    "probe_storage": false,
+    "probe_force": false,
+    "tick": 544076
+  },
+  "zero_ok": true,
+  "finished": "2026-07-18T19:35:49.751Z"
+}
+```
+</details>

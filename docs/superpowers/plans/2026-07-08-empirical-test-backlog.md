@@ -132,12 +132,15 @@
 | INS-2 | bonus-0 destination force previously under-restored held items | C — B1/B3 [empirical, 2.0.77] | player control and adversarial force both restored physical held 8 exactly | busy-platform strict gate; GATE-1/2 |
 | INS-3 | synchronous held-item top-up seats fully after force sync | C — B3 [empirical, 2.0.77] | adversarial destination physically held 8 with no residual after Phase-0 raised the force | the pre-gate held-restore premise |
 | INS-4 | held loss was destination-force state, not payload drift | C — B2 [empirical, 2.0.77] | destination entity force began bonus 0, rose to source 11, and restored the same payload exactly | pre-gate force sync |
-| INS-5 | no-tick-sync validated only an **empty/settled** hand, not a partial-filled bulk inserter (B24) | X | run the no-tick sync assertion against a partially-filled bulk inserter in CI-fresh state | ties INS-2/3; the "restore-held-before-gate, no tick" premise |
+| INS-5 | no-tick-sync validated only an **empty/settled** hand, not a partial-filled bulk inserter (B24) — note the "settled" framing was B6-refuted (activation/settling is not a variable); the partial-hand top-up remains the live sub-question | X | run the no-tick sync assertion against a partially-filled bulk inserter in CI-fresh state | ties INS-2/3; the "restore-held-before-gate, no tick" premise |
 | INS-6 | force-sync remains RAISE-ONLY; seated-hand ejection claim tested | C — B4 [empirical, 2.0.77] | hand stayed 8 across bonus 11→0, elapsed ticks, and `reset_technology_effects()`; no ejection | raise-only remains conservative state ownership |
 
 > **TRIAGE 2026-07-11:**
-> - **INS-1 — GROUNDED:** [empirical, 2.0.77, inserter-lab B1-B4] `set_stack` silently truncates/fails to seat on a
->   settled-deactivated hand (and the ok-bool lies); a briefly-active bulk hand seats full (`tests/inserter-lab/NOTEBOOK.md`).
+> - **INS-1 — ~~GROUNDED~~ REFUTED (2026-07-18, inserter-lab B6):** the 07-11 GROUNDED stamp cited B1-B4 — rungs
+>   that isolated FORCE BONUS, never activation (the claimed variable). B6 isolated it: `set_stack` seats a
+>   deactivated inserter FULLY (fresh and settled), and at bonus 0 the clamp is identical active vs inactive —
+>   activation is not a variable. The TRUE halves (truncation to capacity + the lying ok-bool) remain grounded
+>   under B1-B4/D3. Lesson: an [empirical] stamp must cite a rung that isolated the CLAIMED variable.
 > - **INS-2 / INS-3 / INS-4 / INS-6 — already carry current-pin `[empirical, 2.0.77]` tags** (inserter-lab B1-B4,
 >   commit `8c61365`); synced, no change.
 > - **INS-5 — open:** the no-tick-sync assertion against a *partial-filled* bulk hand in CI-fresh state was not

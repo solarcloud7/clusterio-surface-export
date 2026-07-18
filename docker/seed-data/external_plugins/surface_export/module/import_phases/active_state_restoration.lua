@@ -12,8 +12,12 @@ local ActiveStateRestoration = {}
 local ACTIVATABLE_ENTITY_TYPES = GameUtils.ACTIVATABLE_ENTITY_TYPES
 
 --- Restore an inserter's held item from its serialized data.
---- CRITICAL: held_stack.set_stack() silently fails on a SETTLED-deactivated inserter,
---- so the caller MUST ensure entity.active == true before calling this.
+--- Works regardless of entity.active — set_stack seating is ACTIVATION-INDEPENDENT
+--- [empirical, 2.0.77, inserter-lab B6 2026-07-18]: a deactivated inserter (fresh or settled)
+--- seats fully when force capacity allows, and at bonus 0 it clamps identically active or
+--- inactive. (The old "silently fails on a settled-deactivated inserter" claim was refuted;
+--- the historical missing-held phantom was the deserializer's DEAD held-restore — stranded
+--- behind its has_inventories early-return — plus the force-bonus clamp of Pitfall #29.)
 --- No-op (returns 0,0) for non-inserters, missing data, or an already-restored hand.
 --- @param entity LuaEntity
 --- @param entity_data table
@@ -25,10 +29,9 @@ local function restore_inserter_held(entity, entity_data)
     local want = sd.held_item.count or 1
     local have = entity.held_stack.valid_for_read and entity.held_stack.count or 0
     if have >= want then return have, 0 end                    -- already satisfied (idempotent top-up)
-    -- set_stack REPLACES the hand, so this tops up a PARTIALLY-filled hand too (the busy-loss case: the
-    -- deserializer under-fills a deactivated/bulk inserter, leaving a non-empty-but-short hand). Caller MUST
-    -- have set entity.active=true (set_stack under-fills a deactivated bulk inserter). The bool lies, so we
-    -- read back and return the genuine shortfall (now a VISIBLE loss, not silent).
+    -- set_stack REPLACES the hand, so this tops up a PARTIALLY-filled hand too (the busy-loss case:
+    -- a hand clamped short by an under-researched dest force before the Phase-0 bonus sync existed).
+    -- The bool lies, so we read back and return the genuine shortfall (a VISIBLE loss, not silent).
     local ok, err = pcall(function() entity.held_stack.set_stack(sd.held_item) end)
     if not ok then
         log(string.format("[Import] Failed to restore held item '%s' x%d for inserter: %s",
@@ -46,16 +49,18 @@ local function restore_inserter_held(entity, entity_data)
     return got, math.max(0, want - got)
 end
 
---- Restore inserter held items WITHOUT activating machines (pre-validation pass).
---- Held items are the only item category not present at the pre-activation validation gate
---- (set_stack fails on a settled-deactivated inserter, so they are normally restored only in the
---- post-activation restore() above). Restoring them here lets the STRICT transfer gate count them
---- while every machine stays deactivated — removing the "held phantom" (a few hundred items) from
---- the gate without opening a craft window (Pitfall #15: machines must stay inactive through
---- validation so they cannot consume/produce items between activation and counting).
---- Only inserters are briefly toggled active (within one synchronous pass, so they cannot swing);
---- each is returned to its prior (deactivated) state. Idempotent with restore(): its
---- `not valid_for_read` guard makes the later held-restore a no-op for hands filled here.
+--- Restore inserter held items with every machine still deactivated (pre-validation pass).
+--- This pass is the SINGLE OWNER of held-item seating: the deserializer's old held-restore was
+--- dead code (stranded behind restore_inventories' has_inventories early-return, unreachable for
+--- every bare inserter), so held items were never restored anywhere else — THAT, plus the
+--- force-bonus clamp (Pitfall #29, dest-force research governs hand capacity), was the real
+--- "held phantom" at the gate. Running this pass synchronously before validation lets the STRICT
+--- gate count a COMPLETE state without opening a craft window (Pitfall #15: machines must stay
+--- inactive through validation so they cannot consume/produce between activation and counting).
+--- No activation is needed for seating — set_stack is ACTIVATION-INDEPENDENT
+--- [empirical, 2.0.77, inserter-lab B6 2026-07-18]; the former wake-toggle ritual was removed.
+--- Idempotent with restore(): its top-up guard makes the later held-restore a no-op for hands
+--- filled here.
 --- @param entities_to_create table: List of entity data objects
 --- @param entity_map table: Map of entity_id to LuaEntity
 --- @return number, number: items restored, items failed
@@ -68,17 +73,14 @@ function ActiveStateRestoration.restore_held_items_only(entities_to_create, enti
            and entity_data.specific_data
            and entity_data.specific_data.held_item
            and entity.held_stack then
-            -- Trigger on EMPTY *or* PARTIALLY-filled hands (have < captured), not only empty. The busy held-item
-            -- loss is the deserializer leaving a hand partially filled (set_stack under-fills a deactivated bulk
-            -- inserter) — the old `not valid_for_read` (empty-only) guard skipped those, so they were never
-            -- topped up and vanished silently. Verified: src-held 80 -> dest-held 33 == gate loss 47.
+            -- Trigger on EMPTY *or* PARTIALLY-filled hands (have < captured), not only empty. A hand can
+            -- arrive partial when the dest force's capacity clamped it before the Phase-0 bonus sync ran
+            -- (Pitfall #29) — the old `not valid_for_read` (empty-only) guard skipped those, so they were
+            -- never topped up and vanished silently. Verified: src-held 80 -> dest-held 33 == gate loss 47.
             local want = entity_data.specific_data.held_item.count or 1
             local have = entity.held_stack.valid_for_read and entity.held_stack.count or 0
             if have < want then
-                local was_active = entity.active
-                entity.active = true  -- bulk-inserter capacity only applies when active; set_stack under-fills otherwise
                 local got, short = restore_inserter_held(entity, entity_data)
-                entity.active = was_active  -- restore prior (deactivated) state: machines-off invariant (Pitfall #15)
                 restored = restored + math.max(0, got - have)
                 failed = failed + short
             end
@@ -154,25 +156,23 @@ function ActiveStateRestoration.restore(entities_to_create, entity_map, frozen_s
                 activated_count = activated_count + 1
             end
 
-            -- Retry inserter held_stack restoration AFTER reactivation
-            -- (set_stack silently fails on a deactivated inserter; entity is active here).
+            -- Idempotent held top-up (covers paths that reach restore() without the pre-gate
+            -- pass; a hand already seated by restore_held_items_only is a no-op here).
             local restored, failed = restore_inserter_held(entity, entity_data)
             held_items_restored = held_items_restored + restored
             held_items_failed = held_items_failed + failed
         else
-            -- Entity was inactive before export - keep it inactive.
-            -- Held items must STILL be restored, but set_stack fails on a deactivated
-            -- inserter, so temporarily activate, restore, then re-deactivate. Verified on
-            -- 2.0.76: activate->set_stack->deactivate within one tick preserves the held
-            -- stack durably (no inserter logic runs mid-script), and it survives settled
-            -- deactivation. Without this, the frozen_states fix above would convert a
-            -- state-only bug into a held-item LOSS for inactive inserters.
+            -- Entity was inactive before export - keep it inactive. Held items are STILL
+            -- restored for inactive inserters — seating needs no activation (set_stack is
+            -- activation-independent [empirical, 2.0.77, inserter-lab B6 2026-07-18]; the old
+            -- activate->set_stack->deactivate ritual here was refuted cargo and was removed).
+            -- Without this, the frozen_states fix above would convert a state-only bug into a
+            -- held-item LOSS for inactive inserters.
             if entity.type == "inserter"
                and entity_data.specific_data
                and entity_data.specific_data.held_item
                and entity.held_stack
                and not entity.held_stack.valid_for_read then
-                entity.active = true
                 local restored, failed = restore_inserter_held(entity, entity_data)
                 held_items_restored = held_items_restored + restored
                 held_items_failed = held_items_failed + failed

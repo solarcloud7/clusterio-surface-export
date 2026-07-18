@@ -156,6 +156,19 @@ Engine knowledge keeps the evidence tags defined by the empirical-lab discipline
 API shape is not behavioral certification. A negative result is evidence, and an eliminated symptom without an
 isolated mechanism remains unexplained rather than being retconned into a proven fix.
 
+**Citation-variable match (rule added 2026-07-18, paid for by the inserter-lab B6 refutation).** An
+`[empirical]` tag on a MECHANISM claim must cite a rung that isolated **that claim's variable** — citation
+presence is not citation match. The refuted "set_stack fails while deactivated" lore wore a GROUNDED
+`[empirical]` stamp citing rungs that isolated force bonus, never activation. Corollary for instruments: **a
+probe harness may not embed the ritual under test** — the D3 probes ran "briefly-active, mimicking
+production," so the harness was structurally blind to the activation variable it existed to examine. When a
+claim names a variable, at least one rung must hold everything else constant and flip exactly that variable.
+
+**Bundled-fix attribution (same incident).** When a green fix ships multiple changes together, each component
+stays individually `[unverified]` until a kill-measurement separates causal from cargo — a fix that works
+does not certify every part of itself (the wake-toggle rode a working fix into the record as its mechanism
+for six months).
+
 ## Promotion and recertification
 
 Once a physical lab settles a contract, promote that contract into an integration regression that exercises the

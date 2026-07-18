@@ -11,8 +11,9 @@
     flipping inactive entities to ACTIVE on the destination. The lookup-tolerance fix (try the string key)
     alone would REGRESS held-item handling: an inactive inserter would move from the (buggy) active branch
     that restores its held item to the inactive branch that didn't — converting a state-only bug into a
-    held-item LOSS. So the fix also restores held items in the inactive branch (activate -> set_stack ->
-    deactivate, verified durable on 2.0.76).
+    held-item LOSS. So the fix also restores held items in the inactive branch via plain set_stack —
+    seating is activation-independent [empirical, 2.0.77, inserter-lab B6]; the original
+    activate->set_stack->deactivate ritual was refuted cargo and removed.
 
     This pins BOTH halves with INDEPENDENT PHYSICAL reads on the destination (held_stack / active — never the
     validator's report):
@@ -136,7 +137,7 @@ if ($bInfo -match 'active=false') {
 if ($bInfo -match "held=$([regex]::Escape($Item))x") {
     Write-TestResult -TestId "as-inactive-held" -TestName "Inactive inserter keeps its held item (dest: $bInfo)" -Status "passed"
 } else {
-    Write-TestResult -TestId "as-inactive-held" -TestName "Inactive inserter keeps its held item" -Status "failed" -Message "expected dest held=${Item}x.. but got '$bInfo' -- the state fix dropped the held item for an inactive inserter (set_stack failed on the deactivated entity)"
+    Write-TestResult -TestId "as-inactive-held" -TestName "Inactive inserter keeps its held item" -Status "failed" -Message "expected dest held=${Item}x.. but got '$bInfo' -- the state fix dropped the held item for an inactive inserter (the inactive-branch held restore did not run or did not seat)"
     $failed++
 }
 

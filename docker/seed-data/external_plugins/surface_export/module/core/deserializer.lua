@@ -96,6 +96,10 @@ local SIMPLE_RESTORE_RULES = {
   { field = "use_filters", present = true },
   { field = "filter_mode", prop = "inserter_filter_mode" },
   { field = "stack_size_override", prop = "inserter_stack_size_override" },
+  -- spoil_priority previously lived ONLY in restore_inventories' dead zone (stranded behind its
+  -- has_inventories early-return, unreachable for every bare inserter) — it was never restored on
+  -- any path until this row (found in the 2026-07-18 dead-code exhumation, inserter-lab B6).
+  { field = "spoil_priority", prop = "inserter_spoil_priority", safecall = true },
   -- Splitter filter: gated by TYPE, not by current value — a fresh splitter's splitter_filter
   -- reads nil when unset, so the generic entity[prop] ~= nil guard silently SKIPPED this rule and
   -- filters were lost on every transfer/paste (caught live 2026-07-17 via the selection-lab
@@ -738,38 +742,15 @@ function Deserializer.restore_inventories(entity, entity_data, overflow_losses)
   -- Items must be restored all at once to prevent partial restoration where
   -- some items get picked up by inserters before others are placed.
 
-  -- Restore inserter held item
-  if entity_data.specific_data.held_item and entity.held_stack then
-    local held = entity_data.specific_data.held_item
-    local ok, err = pcall(function()
-      entity.held_stack.set_stack(held)
-    end)
-    if not ok then
-      log(string.format("[FactorioSurfaceExport] Warning: Failed to restore held item '%s' x%d for %s: %s",
-        held.name or "?", held.count or 0, entity.name, tostring(err)))
-    elseif not entity.held_stack.valid_for_read then
-      log(string.format("[FactorioSurfaceExport] Warning: held_stack.set_stack succeeded but stack empty for %s (item=%s x%d)",
-        entity.name, held.name or "?", held.count or 0))
-    end
-  end
-
-  -- Restore inserter filter mode
-  if entity_data.specific_data.filter_mode and entity.inserter_filter_mode ~= nil then
-    safe_call(string.format("inserter_filter_mode for %s", entity.name),
-      function() entity.inserter_filter_mode = entity_data.specific_data.filter_mode end)
-  end
-
-  -- Restore inserter stack size override
-  if entity_data.specific_data.stack_size_override and entity.inserter_stack_size_override ~= nil then
-    safe_call(string.format("inserter_stack_size_override for %s", entity.name),
-      function() entity.inserter_stack_size_override = entity_data.specific_data.stack_size_override end)
-  end
-
-  -- Restore inserter spoil priority
-  if entity_data.specific_data.spoil_priority and entity.inserter_spoil_priority ~= nil then
-    safe_call(string.format("inserter_spoil_priority for %s", entity.name),
-      function() entity.inserter_spoil_priority = entity_data.specific_data.spoil_priority end)
-  end
+  -- TOMBSTONE (2026-07-18 dead-code exhumation, inserter-lab B6): four inserter blocks
+  -- (held_item, filter_mode, stack_size_override, spoil_priority) used to sit HERE — stranded
+  -- behind this function's has_inventories early-return, unreachable for every bare inserter
+  -- (an inserter record has held_item but no inventories field). They were the REAL cause of
+  -- the historical missing-held-items phantom (misattributed to "set_stack fails while
+  -- deactivated" — refuted; activation is not a variable in set_stack seating). Owners now:
+  --   held_item              -> ActiveStateRestoration.restore_held_items_only (single owner)
+  --   filter_mode / stack_size_override / spoil_priority -> SIMPLE_RESTORE_RULES
+  --                             (restore_entity_state; see the table's contract comment)
 end
 
 --- Restore equipment grid (for power armor, etc.)

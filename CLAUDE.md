@@ -571,7 +571,7 @@ The order of post-processing steps in `complete_import_job()` is critical for co
 4. Beacon activation      — activate beacons so crafting_speed bonus propagates instantly
 5. Inventories (2 passes) — Pass 1: beacons (populates beacon_modules, crafting_speed updates immediately)
                             Pass 2: everything else (set_stack cap now reflects beacon-boosted cs)
-6. Held-item completion   — inserter-only synchronous pass; no tick advances
+6. Held-item completion   — inserter-only synchronous pass (single owner of held seating; activation-independent, inserter-lab B6); no tick advances
 7. Fluid restoration      — inject while platform remains paused and entities deactivated
 8. Exact validation       — one immutable verdict: exact items + by-name fluids
 9. Activation             — only after the verdict passes; then gateway park if requested
@@ -703,18 +703,25 @@ Then **hard-refresh** the browser (the 404 is cached). After a `down -v`, fresh 
 transfer physically preserves ~100%. Tightening the loose tolerance to catch real loss then fails *every*
 transfer.
 **Root cause**: the gate counts the destination **pre-activation** (Pitfall #15 — machines must stay
-deactivated through validation or they craft in the gap and produce false GAINS), but inserter **held items**
-restore only via `set_stack`, which silently fails on a settled-deactivated inserter — so they're absent at
-the gate. The gate measures a *deliberately-incomplete* reality. The data is fine; the clock is wrong.
+deactivated through validation or they craft in the gap and produce false GAINS), and inserter **held items**
+had NO restore path that actually ran before the gate: `Deserializer.restore_inventories`' held block was
+**dead code** (stranded behind its `has_inventories` early-return, unreachable for every bare inserter), so
+hands were never seated — absent at the gate. The gate measured a *deliberately-incomplete* reality. The data
+was fine; nothing owned held seating at the right time.
+**Mechanism correction (2026-07-18, inserter-lab B6)**: the original diagnosis — "`set_stack` silently fails
+on a settled-deactivated inserter" — was REFUTED by measurement [empirical, 2.0.77, inserter-lab B6]:
+seating is **activation-independent** (a deactivated inserter, fresh or settled, seats fully when force
+capacity allows; at bonus 0 the clamp is identical active or inactive). The wake-toggle the fix originally
+carried was refuted cargo and has been removed.
 **DO NOT re-attempt** (each is a proven dead-end — see [memory] `validation-timing-trilemma`): (1) move
 validation after activation → craft-gain false failures; (2) subtract *predicted* held items from expected
-(PR #25, closed) → prediction ≠ restoration → an inactive inserter's item is subtracted, never restored →
+(PR #25, closed) → prediction ≠ restoration → the subtracted item is never physically restored →
 **silent permanent loss**; (3) gate-vs-display two-pass → coupling hell.
-**Fix (approach #4 — fix the clock)**: held items only need the *inserter* active, not the machines. A
-pre-gate pass (`ActiveStateRestoration.restore_held_items_only`) briefly toggles each inserter active →
-`set_stack` → back, in one synchronous pass (no engine tick → no swing, no crafting), so the gate counts a
-**complete** physical reality with every machine still deactivated. Fluid restoration then completes the same
-frozen world and `validate_import(..., {strict=true})` requires exact per-key items and exact aggregate-by-name fluids.
+**Fix (approach #4 — give held seating one owner that runs pre-gate)**: a synchronous pre-gate pass
+(`ActiveStateRestoration.restore_held_items_only`) — the SINGLE owner of held seating — seats every hand
+via plain `set_stack` (no engine tick → no swing, no crafting), so the gate counts a **complete** physical
+reality with every machine still deactivated. Fluid restoration then completes the same frozen world and
+`validate_import(..., {strict=true})` requires exact per-key items and exact aggregate-by-name fluids.
 **Rule**: a gate must measure a COMPLETE state, never a mid-process one — fix the timing, not the number. The current transfer verdict is one immutable pre-activation result; `failedStage` names the mismatched category (`items` or `fluids`).
 **Mechanical guard**: `tests/integration/gate-detects-loss` injects a real shortfall (`test_force_item_loss`)
 and asserts the strict gate FAILS + the source is preserved — so reverting to a loose gate goes RED in CI.

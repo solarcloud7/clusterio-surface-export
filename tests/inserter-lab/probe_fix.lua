@@ -1,3 +1,4 @@
+-- SUPERSEDED by B6 (run-b6-deactivated-setstack.mjs, 2026-07-18): the active-vs-deactivated A/B this probe frames shows NO difference — activation is not a variable; see NOTEBOOK B6.
 -- Fix-approach probe: reproduce the under-fill (set_stack on a deactivated bulk inserter) and verify the
 -- top-up fix (clear + briefly-active set_stack the FULL captured count) reaches the full amount.
 local sname = "inserter_fix_lab"

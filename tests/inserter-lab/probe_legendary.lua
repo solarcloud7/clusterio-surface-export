@@ -1,3 +1,4 @@
+-- SUPERSEDED by B6 (run-b6-deactivated-setstack.mjs, 2026-07-18): the active-vs-deactivated A/B this probe frames shows NO difference — activation is not a variable; see NOTEBOOK B6.
 -- Reproduce the "seats only 1" bug with the EXACT CI conditions: legendary bulk inserter, held_item dict
 -- {name,count=8,quality=normal}, deactivated set_stack (deserializer path) + the API levers.
 local sname = "inserter_leg_lab"

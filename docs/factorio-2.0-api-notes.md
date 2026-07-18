@@ -279,6 +279,17 @@ Consequence: fluid does not live per-entity — it lives in the shared segment. 
   `reset_technology_effects()`; no items appeared on the ground. Raise-only remains the import policy because
   an import should not lower unrelated destination state, not because a seated hand was observed ejecting.
 
+- **[empirical, 2.0.77, inserter-lab B6]** `held_stack.set_stack()` seating is **activation-independent**:
+  a DEACTIVATED inserter (freshly created AND after 300+ ticks of settled deactivation) seats a full hand
+  when force capacity allows (legendary bulk 8/8 at bulk bonus 11; plain 4/4 at stack bonus 3), and on a
+  bonus-0 force the clamp is IDENTICAL inactive vs active (both 8→1). The prior lore — "set_stack silently
+  fails/under-fills on a settled-deactivated inserter", "bulk capacity only applies when active" — is
+  REFUTED; no rung had ever isolated activation as its own variable (D3 ran briefly-active; B1-B4 isolated
+  force bonus). The historical missing-held phantom traces to the deserializer's DEAD held-restore
+  (unreachable behind `restore_inventories`' has_inventories early-return) plus the force-bonus clamp.
+  Residual [hypothesis]: not yet reproduced in the exact import context (import-created entities on a
+  paused platform); the inserter-held-capacity baked-fixture batch covers that end-to-end.
+
 ## Space platform deletion
 
 - **`LuaSpacePlatform.destroy()` behavior changed between 2.0.76 and 2.0.77.** At 2.0.76, `destroy()`,
