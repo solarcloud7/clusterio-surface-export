@@ -239,15 +239,34 @@ function PlatformSchedule.apply(platform, schedule_payload)
 		current = schedule_payload.current
 	end
 
-	local base_schedule = {
-		current = current,
-		records = records_copy or {},
-	}
-	local ok_set_base, set_base_err = pcall(function()
-		platform.schedule = base_schedule
-	end)
-	if not ok_set_base then
-		return false, "Failed to assign base platform.schedule: " .. tostring(set_base_err)
+	-- A SCHEDULE-LESS platform round-trips as {current=1, records={}} (capture reads the engine's
+	-- default cursor), and assigning an EMPTY records array is engine-rejected ("Index out of
+	-- bounds" — the same hazard the filter_for_import header refuses to introduce). On the first
+	-- schedule-less platform ever production-transferred (census-fusion R2 batch, 2026-07-18) this
+	-- hard-failed BOTH sides: the import queue deleted the destination before the job existed, and
+	-- the source unlock's schedule restore left the rollback stuck. Nothing to apply is SUCCESS:
+	-- skip the base assignment; interrupts/group below still apply when a LuaSchedule exists.
+	if #(records_copy or {}) == 0 then
+		log("[Schedule] Empty schedule payload (no records) — skipping base platform.schedule assignment")
+		if #(interrupts_copy or {}) == 0 and schedule_payload.group == nil then
+			-- Nothing at all to apply — done. (get_schedule() behavior on a platform that never had
+			-- a schedule assigned is unmeasured; do not touch it when there is no reason to.)
+			return true, nil
+		end
+		-- Degenerate payload: interrupts/group with ZERO records. Fall through and TRY get_schedule()
+		-- (it may exist on the hub), but if it is unavailable the failure message below must say the
+		-- base assignment was SKIPPED — not claim an assignment happened (/code-review, 2026-07-18).
+	else
+		local base_schedule = {
+			current = current,
+			records = records_copy,
+		}
+		local ok_set_base, set_base_err = pcall(function()
+			platform.schedule = base_schedule
+		end)
+		if not ok_set_base then
+			return false, "Failed to assign base platform.schedule: " .. tostring(set_base_err)
+		end
 	end
 
 	local ok_schedule, schedule_or_err = pcall(function()
@@ -261,6 +280,9 @@ function PlatformSchedule.apply(platform, schedule_payload)
 	if not schedule then
 		if #(interrupts_copy or {}) == 0 and schedule_payload.group == nil then
 			return true, nil
+		end
+		if #(records_copy or {}) == 0 then
+			return false, "LuaSchedule unavailable and base assignment was skipped (empty records) — cannot apply interrupts/group without schedule records"
 		end
 		return false, "LuaSchedule unavailable after assigning platform.schedule"
 	end

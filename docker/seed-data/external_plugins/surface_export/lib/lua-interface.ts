@@ -126,7 +126,10 @@ export class LuaInterface {
 	): Promise<void> {
 		await sendChunkedJson(
 			this.host,
-			`remote.call("surface_export", "import_platform_chunk", "${escapeString(targetName)}", %CHUNK%, %INDEX%, %TOTAL%, "${escapeString(forceName)}")`,
+			// rcon.print the remote's status string so sendChunkedJson can FAIL LOUD on "ERROR:..."
+			// (a queue failure — e.g. a rejected schedule — previously vanished: the Lua returned the
+			// error but nothing read it, and the caller logged "import queued" over a dead import).
+			`rcon.print(remote.call("surface_export", "import_platform_chunk", "${escapeString(targetName)}", %CHUNK%, %INDEX%, %TOTAL%, "${escapeString(forceName)}"))`,
 			exportData,
 			this.logger,
 			RCON_CHUNK_SIZE,

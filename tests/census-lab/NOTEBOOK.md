@@ -1295,3 +1295,88 @@ Fixture deleted: ["census-lab-probe-1011873"]. Post-run: zero_fixtures=true, asy
 }
 ```
 </details>
+
+## 2026-07-18 — R2 fusion-commensurability (bake gate): TWO CONSECUTIVE FULL GREENS
+
+**Runner**: `tests/census-lab/run-r2-fusion-commensurability.mjs` — the first certified single-use
+baked-fixture batch (docs/lab-tests.md lifecycle) and the owning runner of the
+`census-fusion-shared-plasma` fixture. Golden pair loaded onto the live cluster via Clusterio-native
+save assignment (host-1 = golden source, host-2 = golden destination); pre-batch saves recorded and
+restored (`test1.zip` / `test2.zip`); zero leftovers proven against the filesystem both runs.
+
+**Evidence runs** (identical physical results, reported once per probe rule 8):
+- Run 1 finished 2026-07-18T06:12:33Z — Variant A GREEN, Variant B GREEN.
+- Run 2 finished 2026-07-18T06:13:36Z — Variant A GREEN, Variant B GREEN; additionally exercised the
+  controller settled-record replacement live (`Replacing settled transfer record (status=completed)`
+  for the recycled deterministic export ID, twice).
+
+**Variant A (law)**: fingerprint reproduced EXACTLY from the save-loaded world (coolant
+990.0000005960464, plasma segment 5.033337473869324, all frozen+indestructible). Production
+`/transfer-platform` reached `validation_success=true` (debug_import_result on host-2). INDEPENDENT
+physical destination census: 3 entities, 4 fusion-power-cells, fluids
+`{fluoroketone-cold: 990.0000005960464, fluoroketone-hot: 4.9666619300842285}` — coolant exact at
+1e-6, **fusion-plasma ABSENT** (engine-owned: never serialized, never restored, and its absence
+failed nothing). Source deleted; zero census-abort artifacts.
+
+**Variant B (teeth)**: golden pair reloaded (the reset — no cleanup of the consumed fixture),
+fingerprint reproduced, `test_force_census_omission` armed (pre-gate fail-safe hook). Transfer
+ABORTED with `reason=source_census_mismatch` and EXACTLY ONE attributed row — the reactor at (0,0),
+`delta {fusion-power-cell: -4}` — bundle `failure_black_box_census_lab-census-fusion-v1_*.json`;
+source preserved (3 entities), destination never contacted (no import work), hook consumed.
+
+**Three production bugs found and fixed by this rung** (the fixture is the first schedule-less
+platform ever production-transferred):
+1. **Schedule-less platforms could not transfer** — `{current=1, records={}}` round-trips and the
+   empty-records assignment is engine-rejected ("Index out of bounds"), hard-failing BOTH the import
+   queue (destination deleted before the job existed — silently) AND the source unlock's schedule
+   restore (rollback stuck, source stranded locked). Fix: `PlatformSchedule.apply` skips the base
+   assignment on empty records (nothing-to-apply is success).
+2. **A settled transfer blocked its own retry** — terminal records stay in `activeTransfers` and the
+   dedupe short-circuited on ANY existing entry, reporting success while doing nothing. Golden-save
+   batches expose it (reload resets the Lua export counter → identical export IDs). Fix: dedupe only
+   on an ALLOWLIST of live states (transporting / awaiting_validation / awaiting_completion) — a
+   terminal-status blocklist missed `cleanup_failed` on its first attempt; allowlist polarity is the
+   law here.
+3. **A queue failure was silent** — the chunk remote returned `ERROR:<reason>` but `sendChunkedJson`
+   never read RCON replies and logged "import queued" over a dead import (only symptom: 120 s
+   validation timeout). Fix: the chunk template prints its status and the sender throws on `ERROR:`.
+   First-draft hazard, measured: `sendRcon(cmd, true)` means EXPECT-EMPTY and fails on any healthy
+   non-empty reply — read the reply without the flag instead.
+
+**Runner-methodology lessons banked** (each measured, each now encoded in the runner):
+- Capture golden-session `factorio-current.log` BEFORE restore — the restart rotates the evidence.
+- Deterministic worlds regenerate IDENTICAL debug filenames; "new paths only" detectors go blind on
+  the second run — detect via mtime-vs-marker (`find -newer`).
+- Golden reload order is STOP → COPY → START: stopping exit-saves the mutated world over a
+  pre-copied pristine zip.
+- Prove save cleanup against the FILESYSTEM; the controller's `save list` is a cache.
+- The runner's own first-draft fluid meter used the blind segment read and measured coolant 0 — the
+  buffer-class fixture caught its own instrument. The meter now mirrors
+  `FluidOwnership.effective_segment_contents` (segment contents; local proxy when the segment reads
+  empty). No Lua `--` comments in flattened one-line templates.
+
+**Also observed, not chased tonight**: the local host-1 `test1.zip` world has ZERO platforms — the
+1359-entity `test` platform is absent from the whole autosave lineage predating this batch (R1
+resolved it 2026-07-17; likely lost in a roll-forward save reset). Local fidelity runners that clone
+`test` need it re-imported. CI is unaffected (bakes its own).
+
+**Addendum (same day) — adversarial /code-review pass and re-certification.** The five-angle review
+of the fix set surfaced three CONFIRMED-class defects in the first-draft fixes, each corrected and
+re-evidenced:
+1. The retry dedupe's allowlist FALL-THROUGH re-ran settled records — but `cleanup_failed`/`error`
+   (and `completed`) mean the destination holds a committed copy, so a same-ID re-run DUPLICATES
+   (Pitfall #31 class). Hardened semantics: live states dedupe; ONLY `failed` (destination provably
+   discarded) is replaceable; completed/cleanup_failed/error/UNKNOWN statuses REFUSE loudly —
+   fail-safe polarity for a source-deleting path is "block the retry", never "re-run it".
+2. The `ERROR:` substring check missed raw Lua THROWS (whose RCON text lacks the token) — the old
+   expectEmpty flag caught those. Hardened: strict per-chunk token protocol (`CHUNK_OK:` /
+   `JOB_QUEUED:` prefixes only; anything else throws).
+3. `--sections=variant-b` displaced the live saves without arming the restore finalizer. Hardened:
+   displacing sections auto-append restore; variant-b sets the displaced flag.
+The refusal semantics make deterministic same-ID retries impossible by design, so the runner now
+offsets `storage.async_job_id_counter` after each golden load (instrumentation-level only) —
+collision-free IDs per run without weakening the production guard. The prior two greens were demoted
+to development evidence; the CERTIFYING evidence is two consecutive full greens on the hardened
+build (2026-07-18, runs `r2-final1`/`r2-final2`): identical physical results (coolant
+990.0000005960464 exact, plasma absent, `fusion-power-cell: -4` single attributed row on Variant B),
+clean restores, zero leftovers.

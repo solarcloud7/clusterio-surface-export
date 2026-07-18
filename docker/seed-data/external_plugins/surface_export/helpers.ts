@@ -204,7 +204,20 @@ export async function sendChunkedJson(
 			.replace(/%INDEX%/g, index.toString())
 			.replace(/%TOTAL%/g, total.toString());
 
-		await instance.sendRcon(`/sc ${command}`, true);
+		// NO expectEmpty flag: the template prints a status token, and sendRcon(cmd, true) treats ANY
+		// output as a protocol error (measured: it failed the transfer on the healthy "JOB_QUEUED"
+		// reply while the Lua import kept running — a spurious controller-side rollback against a
+		// live import). Instead enforce the remote's STRICT reply protocol: exactly one CHUNK_OK: or
+		// JOB_QUEUED: token per chunk. Anything else — the remote's own "ERROR:<reason>", a raw Lua
+		// runtime error ("Cannot execute command. ..."), or an empty reply — throws. This keeps the
+		// old expectEmpty flag's full detection strength (a Lua THROW never prints the token) while
+		// accepting the healthy tokens, and a queue failure on the FINAL chunk can no longer be
+		// logged over with a success line (the swallowed-response bug behind the silent dead import).
+		const response = await instance.sendRcon(`/sc ${command}`);
+		const reply = typeof response === "string" ? response.trim() : "";
+		if (!reply.startsWith("CHUNK_OK:") && !reply.startsWith("JOB_QUEUED:")) {
+			throw new Error(`Chunked import failed at chunk ${index}/${total}: ${reply || "<empty reply>"}`);
+		}
 
 		if (i % 10 === 0 || index === total) {
 			const percent = ((index / total) * 100).toFixed(1);

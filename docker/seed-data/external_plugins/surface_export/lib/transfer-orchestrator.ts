@@ -88,7 +88,33 @@ export class TransferOrchestrator {
 		const sourceExportId = exportData.sourceExportId || parseCanonicalTransferId(transferId)?.sourceJobId || transferId;
 		const existingTransfer = this.plugin.activeTransfers.get(transferId);
 		if (existingTransfer) {
-			return { success: true, transferId, message: `Transfer already active: ${transferId}` };
+			// Same-ID resubmit semantics, by what the existing record PROVES about the destination:
+			// - LIVE states dedupe (idempotent success — the transfer is in flight).
+			// - "failed" is the ONLY replaceable settled state: its rollback DISCARDED the destination,
+			//   so a re-run cannot duplicate. Deterministic worlds (golden-save batches reset the Lua
+			//   export counter) legitimately regenerate identical IDs after a failure, and the old
+			//   unconditional short-circuit silently swallowed that retry while REPORTING success
+			//   (measured: census-fusion R2, 2026-07-18).
+			// - Everything else — completed / cleanup_failed / error / any UNKNOWN status — REFUSES
+			//   loudly: those states mean the destination committed (or may have committed) a live
+			//   copy, and re-running the same export would import a SECOND copy (the duplication
+			//   class of Pitfall #31, platform identity is the stable index). Unknown statuses take
+			//   the refusing branch on purpose: for a source-deleting path the fail-safe direction is
+			//   "block the retry", never "re-run it" (/code-review finding, 2026-07-18).
+			const live = existingTransfer.status === "transporting"
+				|| existingTransfer.status === "awaiting_validation"
+				|| existingTransfer.status === "awaiting_completion"
+				|| existingTransfer.status === "in_progress";
+			if (live) {
+				return { success: true, transferId, message: `Transfer already active: ${transferId}` };
+			}
+			if (existingTransfer.status !== "failed") {
+				return { success: false, error:
+					`Refusing retry of settled transfer ${transferId} (status=${existingTransfer.status}): `
+					+ "the destination may hold a committed copy; create a NEW export to transfer again" };
+			}
+			this.plugin.logger.info(
+				`Replacing failed (destination-discarded) transfer record for retried export ${transferId}`);
 		}
 		const innerData = exportData.exportData;
 		const { payloadMetrics, itemCounts, fluidCounts } = buildPayloadMetrics(innerData);
