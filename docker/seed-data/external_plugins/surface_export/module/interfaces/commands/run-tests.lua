@@ -1,18 +1,24 @@
--- Command: /run-tests
--- The in-game gallery test runner (owner-designed, 2026-07-18). For every test cell on the
--- invoker's surface (discovered from the name rendering-text + the status trio at the derived
--- origin — no registry): RESET the right-half compare area and the status trio to WAITING, then
--- run the test fresh: selection-lab COPY of the left-half fixture -> PASTE onto the right half
--- (+14,0) -> AUDIT both halves with the real gate meters -> equal readings = PASS, any delta or
--- paste refusal = FAIL with the delta in the status panel's {failure-message} slot. Name text
--- color mirrors the state: blue waiting, green pass, red fail. Companion Node driver for batch
--- runners: tests/lab-gallery/test-status.mjs (same trio semantics — keep them in lockstep).
+-- Commands: /test-clear and /test-run — the in-game gallery test runner pair (owner design,
+-- 2026-07-18). Test cells are discovered by STRUCTURE (the name rendering-text + the status trio
+-- at the derived origin — no registry).
 --
--- Debug instrument (gated on debug_mode); runs through the selection_lab_drive remote so the
--- measurement path is byte-identical to the manual selection-tool workflow.
+--   /test-clear [name-filter]  RESET every cell: sweep the right-half compare area (the full paste
+--                              footprint), status trio to WAITING (clock icon), failure template
+--                              restored, name text blue. No copy/paste/audit.
+--   /test-run   [name-filter]  The SAME reset first (structural fresh-run guarantee), then run each
+--                              test: selection-lab COPY of the left-half fixture -> PASTE onto the
+--                              right half (+14,0) -> AUDIT both halves with the real gate meters.
+--                              Equal readings = green check; any delta or paste refusal = red X with
+--                              the icon-rich delta, which also lands in the status panel's
+--                              {failure-message} slot. Name color mirrors state.
+--
+-- Companion Node driver for batch runners: tests/lab-gallery/test-status.mjs (same trio semantics —
+-- keep them in lockstep). Debug instrument (gated on debug_mode); measurement rides the
+-- selection_lab_drive remote so it is byte-identical to the manual selection-tool workflow.
 
 local Base = require("modules/surface_export/interfaces/commands/base")
 local SelectionLab = require("modules/surface_export/interfaces/gui/selection-lab")
+local Util = require("modules/surface_export/utils/util")
 
 -- Cell geometry (mirrors tests/lab-gallery/test-foundation.mjs — the single template source):
 -- 26x12 cell; name text at origin+(6,-1.5); trio on the bottom border at +(13.5|14.5|15.5, 11.5);
@@ -24,7 +30,13 @@ local COLORS = {
   pass = { r = 0.3, g = 1, b = 0.3, a = 1 },
   fail = { r = 1, g = 0.3, b = 0.3, a = 1 },
 }
+local CHAT_GREEN = { r = 0.3, g = 1, b = 0.3 }
+local CHAT_RED = { r = 1, g = 0.4, b = 0.4 }
 local FAILURE_TEMPLATE = "Failure {failure-message}"
+local RUN_PREFIX = "[font=default-bold][test-run][/font]"
+local CLEAR_PREFIX = "[font=default-bold][test-clear][/font]"
+local CHECK = "[virtual-signal=signal-check]"
+local CROSS = "[virtual-signal=signal-deny]"
 
 local function find_trio(surface, ox, oy)
   local function at(name, x)
@@ -51,21 +63,48 @@ local function set_status(text_obj, comb, panel, status, failure_message)
   text_obj.color = COLORS[status]
 end
 
---- Compare two audit reports (entity/item/fluid maps). Returns nil on match, else a short delta text.
+--- The ONE reset both commands share: sweep the FULL paste footprint (the +14 offset from a left
+--- rect reaching col 13 can land entities up to ox+27.5 — the old ox+26 edge missed the right-most
+--- pasteable half-tile), never the trio row (y +11.5), then show WAITING.
+local function reset_cell(surface, cell)
+  local comb, panel = find_trio(surface, cell.ox, cell.oy)
+  if not (comb and panel) then error("status trio missing at origin (" .. cell.ox .. "," .. cell.oy .. ")") end
+  local cleared = 0
+  for _, e in ipairs(surface.find_entities_filtered({ area = { { cell.ox + 14, cell.oy }, { cell.ox + 27.5, cell.oy + 11 } } })) do
+    e.destroy()
+    cleared = cleared + 1
+  end
+  set_status(cell.text_obj, comb, panel, "waiting")
+  return cleared, comb, panel
+end
+
+--- Compare two audit reports. Returns nil on match, else an icon-rich delta (renders in chat AND
+--- in the status panel's {failure-message} slot).
 local function report_delta(left, right)
   if left.entity_count ~= right.entity_count then
     return string.format("entities %d vs %d", left.entity_count, right.entity_count)
   end
   local parts = {}
+  local function item_tag(key)
+    local name, quality = Util.parse_quality_key(key)
+    if quality and quality ~= "normal" then return string.format("[item=%s,quality=%s]", name, quality) end
+    return string.format("[item=%s]", name)
+  end
   local function diff(kind, a, b)
     local seen = {}
     for name, count in pairs(a or {}) do
       seen[name] = true
       local other = (b or {})[name] or 0
-      if math.abs(count - other) > 1e-6 then parts[#parts + 1] = string.format("%s %s %s->%s", kind, name, count, other) end
+      if math.abs(count - other) > 1e-6 then
+        local tag = (kind == "item") and item_tag(name) or string.format("[fluid=%s]", name:match("^([^@]+)") or name)
+        parts[#parts + 1] = string.format("%s %s->%s", tag, count, other)
+      end
     end
     for name, count in pairs(b or {}) do
-      if not seen[name] and math.abs(count) > 1e-6 then parts[#parts + 1] = string.format("%s %s 0->%s", kind, name, count) end
+      if not seen[name] and math.abs(count) > 1e-6 then
+        local tag = (kind == "item") and item_tag(name) or string.format("[fluid=%s]", name:match("^([^@]+)") or name)
+        parts[#parts + 1] = string.format("%s 0->%s", tag, count)
+      end
     end
   end
   diff("item", left.items, right.items)
@@ -77,28 +116,16 @@ local function report_delta(left, right)
   return table.concat(parts, "; ", 1, math.min(#parts, 4))
 end
 
-local function run_one(player, surface, name, text_obj, ox, oy, ctx)
-  local comb, panel = find_trio(surface, ox, oy)
-  if not (comb and panel) then
-    ctx.print(string.format("[run-tests] %s: SKIP (no status trio at origin %d,%d)", name, ox, oy))
-    return "skip"
-  end
+local function run_one(player, surface, cell)
+  local _, comb, panel = reset_cell(surface, cell)
 
-  -- RESET: clear the right-half compare area (never the trio row) and show WAITING while running.
-  local cleared = 0
-  for _, e in ipairs(surface.find_entities_filtered({ area = { { ox + 14, oy }, { ox + 26, oy + 11 } } })) do
-    e.destroy()
-    cleared = cleared + 1
-  end
-  set_status(text_obj, comb, panel, "waiting")
-
-  -- RUN: copy left fixture -> paste right (+14,0) -> audit both halves with the gate meters.
   local drive = function(mode, x1, y1, x2, y2)
     return remote.call("surface_export", "selection_lab_drive", mode, player.index, x1, y1, x2, y2)
   end
+  local ox, oy = cell.ox, cell.oy
   local copy = drive("copy", ox + 1, oy, ox + 13, oy + 12)
   if not (copy and copy.ok) then
-    set_status(text_obj, comb, panel, "fail", "copy failed")
+    set_status(cell.text_obj, comb, panel, "fail", "copy failed")
     return "fail", "copy failed"
   end
   local paste = drive("paste", ox + 15, oy, ox + 27, oy + 12)
@@ -106,75 +133,106 @@ local function run_one(player, surface, name, text_obj, ox, oy, ctx)
   if not (paste and paste.ok) or paste_report.outcome ~= "pasted" then
     local why = string.format("paste %s (%d conflicts)",
       tostring(paste_report.outcome or "error"), tonumber(paste_report.conflicts) or 0)
-    set_status(text_obj, comb, panel, "fail", why)
+    set_status(cell.text_obj, comb, panel, "fail", why)
     return "fail", why
   end
-  -- Audit windows stop at oy+11: the BORDER row (oy+11..+12) carries the status trio, and the
-  -- status panel at +15.5 sits inside a naive +15..+27 right window — the meter then counts its
-  -- own display and every test fails "entities N vs N+1" (measured on the first live /run-tests).
+  -- Audit windows stop at oy+11: the BORDER row (+11..+12) carries the status trio, and the status
+  -- panel at +15.5 sits inside a naive +15..+27 right window — the meter then counts its own
+  -- display and every test fails "entities N vs N+1" (measured on the first live run).
   local left = drive("audit", ox + 1, oy, ox + 13, oy + 11)
   local right = drive("audit", ox + 15, oy, ox + 27, oy + 11)
   if not (left and left.ok and left.report and right and right.ok and right.report) then
-    set_status(text_obj, comb, panel, "fail", "audit failed")
+    set_status(cell.text_obj, comb, panel, "fail", "audit failed")
     return "fail", "audit failed"
   end
 
   local delta = report_delta(left.report, right.report)
   if delta then
-    set_status(text_obj, comb, panel, "fail", delta)
+    set_status(cell.text_obj, comb, panel, "fail", delta)
     return "fail", delta
   end
-  set_status(text_obj, comb, panel, "pass")
+  set_status(cell.text_obj, comb, panel, "pass")
   return "pass"
 end
 
-Base.admin_command("run-tests",
-  "Reset every gallery test cell on this surface and run each fresh (copy -> paste -> audit compare). Usage: /run-tests [name-filter]",
-  function(cmd, ctx)
-    if not (storage.surface_export_config and storage.surface_export_config.debug_mode) then
-      ctx.print("Error: /run-tests is a debug instrument (enable debug_mode)")
-      return
-    end
-    local player = ctx.player or game.connected_players[1]
-    if not player then
-      ctx.print("Error: /run-tests needs a connected player (the selection lab is player-scoped)")
-      return
-    end
-    local surface = player.surface
-    local filter = cmd.parameter and cmd.parameter:gsub("%s+", "") or nil
-
-    -- Discover test cells: name texts whose derived origin carries a status trio.
-    local cells = {}
-    for _, o in pairs(rendering.get_all_objects()) do
-      if o.valid and o.type == "text" and o.surface and o.surface.index == surface.index then
-        local t = o.target and o.target.position
-        local name = tostring(o.text)
-        if t and (not filter or name:find(filter, 1, true)) then
-          local ox, oy = t.x - NAME_OFFSET_X, t.y - NAME_OFFSET_Y
-          if ox == math.floor(ox) and oy == math.floor(oy) then
-            local comb, panel = find_trio(surface, ox, oy)
-            if comb and panel then cells[#cells + 1] = { name = name, text_obj = o, ox = ox, oy = oy } end
-          end
+--- Structure-discovery shared by both commands.
+local function discover_cells(surface, filter)
+  local cells = {}
+  for _, o in pairs(rendering.get_all_objects()) do
+    if o.valid and o.type == "text" and o.surface and o.surface.index == surface.index then
+      local t = o.target and o.target.position
+      local name = tostring(o.text)
+      if t and (not filter or name:find(filter, 1, true)) then
+        local ox, oy = t.x - NAME_OFFSET_X, t.y - NAME_OFFSET_Y
+        if ox == math.floor(ox) and oy == math.floor(oy) then
+          local comb, panel = find_trio(surface, ox, oy)
+          if comb and panel then cells[#cells + 1] = { name = name, text_obj = o, ox = ox, oy = oy } end
         end
       end
     end
-    table.sort(cells, function(a, b) return a.name < b.name end)
+  end
+  table.sort(cells, function(a, b) return a.name < b.name end)
+  return cells
+end
+
+local function command_context(cmd, ctx)
+  if not (storage.surface_export_config and storage.surface_export_config.debug_mode) then
+    ctx.print("Error: this is a debug instrument (enable debug_mode)")
+    return nil
+  end
+  local player = ctx.player or game.connected_players[1]
+  if not player then
+    ctx.print("Error: needs a connected player (the selection lab is player-scoped)")
+    return nil
+  end
+  local filter = cmd.parameter and cmd.parameter:gsub("%s+", "") or nil
+  if filter == "" then filter = nil end
+  local cells = discover_cells(player.surface, filter)
+  return player, player.surface, cells, filter
+end
+
+Base.admin_command("test-clear",
+  "Reset every gallery test cell on this surface (right-half sweep + waiting status). Usage: /test-clear [name-filter]",
+  function(cmd, ctx)
+    local player, surface, cells, filter = command_context(cmd, ctx)
+    if not player then return end
     if #cells == 0 then
-      ctx.print("[run-tests] no test cells found on " .. surface.name .. (filter and (" matching '" .. filter .. "'") or ""))
+      ctx.print(CLEAR_PREFIX .. " no test cells found on " .. surface.name .. (filter and (" matching '" .. filter .. "'") or ""))
       return
     end
+    for _, cell in ipairs(cells) do
+      local ok, cleared_or_err = pcall(reset_cell, surface, cell)
+      if ok then
+        ctx.print(string.format("%s %s: reset (%d entities swept)", CLEAR_PREFIX, cell.name, cleared_or_err))
+      else
+        ctx.print(string.format("%s %s: FAILED to reset — %s", CLEAR_PREFIX, cell.name, tostring(cleared_or_err)))
+        log("[test-clear] " .. cell.name .. " reset failed: " .. tostring(cleared_or_err))
+      end
+    end
+    ctx.print(string.format("%s %d cell(s) reset on %s", CLEAR_PREFIX, #cells, surface.name))
+  end
+)
 
+Base.admin_command("test-run",
+  "Reset + run every gallery test cell fresh (copy -> paste -> audit compare). Usage: /test-run [name-filter]",
+  function(cmd, ctx)
+    local player, surface, cells, filter = command_context(cmd, ctx)
+    if not player then return end
+    if #cells == 0 then
+      ctx.print(RUN_PREFIX .. " no test cells found on " .. surface.name .. (filter and (" matching '" .. filter .. "'") or ""))
+      return
+    end
     local passed, failed = 0, 0
     for _, cell in ipairs(cells) do
       -- QUIET: suppress the lab's per-action chat narration for the whole run (typed returns +
       -- [MODE-JSON] log lines keep the evidence); restored unconditionally after the pcall.
       SelectionLab.set_quiet(true)
-      local ok, verdict_or_err, detail = pcall(run_one, player, surface, cell.name, cell.text_obj, cell.ox, cell.oy, ctx)
+      local ok, verdict_or_err, detail = pcall(run_one, player, surface, cell)
       SelectionLab.set_quiet(false)
       if not ok then
         failed = failed + 1
-        log("[run-tests] " .. cell.name .. " CRASHED: " .. tostring(verdict_or_err))
-        ctx.print(string.format("[run-tests] %s: FAIL (runner error: %s)", cell.name, tostring(verdict_or_err)))
+        log("[test-run] " .. cell.name .. " CRASHED: " .. tostring(verdict_or_err))
+        ctx.print(string.format("%s %s: %s runner error: %s", RUN_PREFIX, cell.name, CROSS, tostring(verdict_or_err)), CHAT_RED)
         local comb, panel = find_trio(surface, cell.ox, cell.oy)
         if comb and panel then
           -- intentional probe; status display is best-effort after a runner crash, error already surfaced above
@@ -182,13 +240,14 @@ Base.admin_command("run-tests",
         end
       elseif verdict_or_err == "pass" then
         passed = passed + 1
-        ctx.print(string.format("[run-tests] %s: PASS", cell.name))
+        ctx.print(string.format("%s %s: %s", RUN_PREFIX, cell.name, CHECK), CHAT_GREEN)
       elseif verdict_or_err == "fail" then
         failed = failed + 1
-        ctx.print(string.format("[run-tests] %s: FAIL — %s", cell.name, tostring(detail)))
+        ctx.print(string.format("%s %s: %s %s", RUN_PREFIX, cell.name, CROSS, tostring(detail)), CHAT_RED)
       end
     end
-    ctx.print(string.format("[run-tests] %d/%d passed on %s", passed, passed + failed, surface.name))
+    ctx.print(string.format("%s %d/%d passed on %s", RUN_PREFIX, passed, passed + failed, surface.name),
+      failed == 0 and CHAT_GREEN or CHAT_RED)
   end
 )
 

@@ -16,9 +16,10 @@ function Base.create_context(command)
   ctx.is_admin = not command.player_index or (game.players[command.player_index] and game.players[command.player_index].admin)
   ctx.param = command.parameter
   
-  -- Print function that works for both player and RCON
+  -- Print function that works for both player and RCON. The optional color rides through to
+  -- player chat (RCON output is colorless; the arg is simply ignored there).
   if ctx.player then
-    ctx.print = function(msg) ctx.player.print(msg) end
+    ctx.print = function(msg, color) ctx.player.print(msg, color) end
   else
     ctx.print = function(msg) rcon.print(msg) end
   end

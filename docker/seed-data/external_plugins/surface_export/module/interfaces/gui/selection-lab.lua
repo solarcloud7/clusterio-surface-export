@@ -64,6 +64,29 @@ local function say(player, message, color)
 	if not quiet then player.print(message, color) end
 end
 
+-- Rich-text chat formatting (owner design 2026-07-18, wiki.factorio.com/rich_text): icon tags
+-- wherever possible, bold labels, colored category words. CHAT ONLY — log() lines stay plain.
+-- An invalid tag degrades to visible text in chat; it never crashes.
+local LAB_PREFIX = "[font=default-bold][SelectionLab][/font]"
+
+local function icon_item(key, count)
+	local name, quality = Util.parse_quality_key(key)
+	if quality and quality ~= "normal" then
+		return string.format("[item=%s,quality=%s]x%s", name, quality, count)
+	end
+	return string.format("[item=%s]x%s", name, count)
+end
+
+local function icon_entity(name, count)
+	return string.format("[entity=%s]x%s", name, count)
+end
+
+local function icon_fluid(key, amount)
+	local name = key:match("^([^@]+)") or key
+	local suffix = (name ~= key) and (" (" .. key .. ")") or ""
+	return string.format("[fluid=%s]x%.1f%s", name, amount, suffix)
+end
+
 local function debug_enabled()
 	return storage.surface_export_config and storage.surface_export_config.debug_mode == true
 end
@@ -239,7 +262,7 @@ function SelectionLab.copy(event)
 		end
 	end
 	if #records == 0 then
-		say(player, "[SelectionLab] nothing exportable in the selection", { r = 1, g = 0.6, b = 0.3 })
+		say(player, "[font=default-bold][SelectionLab][/font] nothing exportable in the selection", { r = 1, g = 0.6, b = 0.3 })
 		return lab_result("copy", { outcome = "nothing_exportable", selected = #event.entities })
 	end
 	local side_groups = BeltRestoration.capture_side_groups(belt_pairs)
@@ -260,7 +283,7 @@ function SelectionLab.copy(event)
 	-- Single compute, used by BOTH chat and the logged result — they must never diverge.
 	local item_total = capture_item_total(records)
 	say(player, string.format(
-		"[SelectionLab] COPIED %d entities (%d items%s). Shift-drag = paste (all-or-nothing); Shift+Right-drag = force.",
+		"[font=default-bold][SelectionLab][/font] COPIED %d entities (%d items%s). Shift-drag = paste (all-or-nothing); Shift+Right-drag = force.",
 		#records, item_total,
 		side_groups and (", " .. #side_groups .. " belt sides") or ""), { r = 0.4, g = 0.9, b = 1 })
 	return lab_result("copy", {
@@ -369,13 +392,13 @@ local function execute_create_and_restore(surface, recs, player, side_groups, tr
 		local placed, unplaced, leaks_undone, anomalies = BeltRestoration.restore_side_groups(side_groups, entity_map)
 		if unplaced > 0 or anomalies > 0 then
 			local message = string.format(
-				"[SelectionLab] belt side-restore: %d placed, %d UNPLACED, %d anomalies (no fallback — canonical belt laws in api-notes)",
+				"[font=default-bold][SelectionLab][/font] belt side-restore: %d placed, %d UNPLACED, %d anomalies (no fallback — canonical belt laws in api-notes)",
 				placed, unplaced, anomalies)
 			if transactional then error(message) end
 			say(player, message, { r = 1, g = 0.6, b = 0.3 })
 		elseif leaks_undone > 0 then
 			say(player, string.format(
-				"[SelectionLab] belt side-restore: %d placed; %d cross-side leaks detected and undone",
+				"[font=default-bold][SelectionLab][/font] belt side-restore: %d placed; %d cross-side leaks detected and undone",
 				placed, leaks_undone), { r = 1, g = 0.8, b = 0.4 })
 		end
 	else
@@ -420,14 +443,14 @@ local function execute_create_and_restore(surface, recs, player, side_groups, tr
 	-- whole segment to the captured amount, silently clobbering pre-existing fluid. Only restore when
 	-- the pasted fluid system is ISOLATED (no fluidbox connects to an entity outside the paste).
 	if paste_touches_live_fluid_network(entity_map) then
-		say(player, "[SelectionLab] fluids skipped: pasted fluid system connects to live network — fluid restore only runs on isolated pastes",
+		say(player, "[font=default-bold][SelectionLab][/font] fluids skipped: pasted fluid system connects to live network — fluid restore only runs on isolated pastes",
 			{ r = 1, g = 0.7, b = 0.3 })
 	else
 		local fluids_ok, fluids_err = pcall(function() FluidRestoration.restore(records, entity_map) end)
 		if not fluids_ok then
 			log("[SelectionLab] fluid restore failed: " .. tostring(fluids_err))
 			if transactional then error("fluid restore failed: " .. tostring(fluids_err)) end
-			say(player, "[SelectionLab] fluid restore skipped: " .. tostring(fluids_err), { r = 1, g = 0.7, b = 0.3 })
+			say(player, "[font=default-bold][SelectionLab][/font] fluid restore skipped: " .. tostring(fluids_err), { r = 1, g = 0.7, b = 0.3 })
 		end
 	end
 	-- Applied LAST (after all restores) so restoration always sees the same entity state.
@@ -447,7 +470,7 @@ local function execute_create_and_restore(surface, recs, player, side_groups, tr
 			return rollback("restore error: " .. tostring(restore_err))
 		end
 		if player then
-			say(player, "[SelectionLab] restore error (best-effort path): " .. tostring(restore_err),
+			say(player, "[font=default-bold][SelectionLab][/font] restore error (best-effort path): " .. tostring(restore_err),
 				{ r = 1, g = 0.4, b = 0.4 })
 		end
 	end
@@ -484,7 +507,7 @@ function SelectionLab.paste(event)
 	local st = pstate(event.player_index)
 	local cap = st.export
 	if not (cap and cap.records and #cap.records > 0) then
-		say(player, "[SelectionLab] nothing copied — plain-drag a source selection first", { r = 1, g = 0.4, b = 0.4 })
+		say(player, "[font=default-bold][SelectionLab][/font] nothing copied — plain-drag a source selection first", { r = 1, g = 0.4, b = 0.4 })
 		return lab_result("paste", { outcome = "no_capture" })
 	end
 	local surface = event.surface
@@ -495,7 +518,7 @@ function SelectionLab.paste(event)
 		draw_plan_boxes(surface, plan.conflict, CONFLICT_RED, player.index)
 		player.play_sound({ path = "utility/cannot_build" })
 		say(player, string.format(
-			"[SelectionLab] PASTE REFUSED: %d of %d targets occupied (red). Nothing was placed. Shift+Right-drag forces.",
+			"[font=default-bold][SelectionLab][/font] PASTE REFUSED: %d of %d targets occupied (red). Nothing was placed. Shift+Right-drag forces.",
 			#plan.conflict, #cap.records), { r = 1, g = 0.4, b = 0.4 })
 		return lab_result("paste", { outcome = "refused", conflicts = #plan.conflict, targets = #cap.records, offset = offset })
 	end
@@ -506,7 +529,7 @@ function SelectionLab.paste(event)
 		execute_create_and_restore(surface, recs, player, cap.side_groups, true)
 	if not exec_ok then
 		player.play_sound({ path = "utility/cannot_build" })
-		say(player, "[SelectionLab] PASTE ROLLED BACK (" .. tostring(exec_err) ..
+		say(player, "[font=default-bold][SelectionLab][/font] PASTE ROLLED BACK (" .. tostring(exec_err) ..
 			") — every created entity was removed; nothing journaled.", { r = 1, g = 0.4, b = 0.4 })
 		return lab_result("paste", { outcome = "rolled_back", error = tostring(exec_err), offset = offset })
 	end
@@ -519,7 +542,7 @@ function SelectionLab.paste(event)
 	local physical_items = physical_census(entity_map)
 	local capture_items = capture_item_total(cap.records)
 	say(player, string.format(
-		"[SelectionLab] PASTED %d entities (%d create-failed) at offset (%d,%d). Physical items on paste: %d (capture holds %d). Ctrl+Alt+Z undoes.",
+		"[font=default-bold][SelectionLab][/font] PASTED %d entities (%d create-failed) at offset (%d,%d). Physical items on paste: %d (capture holds %d). Ctrl+Alt+Z undoes.",
 		created, create_failed, offset.x, offset.y, physical_items, capture_items),
 		{ r = 0.4, g = 1, b = 0.4 })
 	return lab_result("paste", {
@@ -538,7 +561,7 @@ function SelectionLab.preview(event)
 	local st = pstate(event.player_index)
 	local cap = st.export
 	if not (cap and cap.records and #cap.records > 0) then
-		say(player, "[SelectionLab] nothing copied — plain-drag a source selection first", { r = 1, g = 0.4, b = 0.4 })
+		say(player, "[font=default-bold][SelectionLab][/font] nothing copied — plain-drag a source selection first", { r = 1, g = 0.4, b = 0.4 })
 		return lab_result("preview", { outcome = "no_capture" })
 	end
 	local surface = event.surface
@@ -547,7 +570,7 @@ function SelectionLab.preview(event)
 	draw_plan_boxes(surface, plan.clear, PLACEABLE_GREEN, player.index)
 	draw_plan_boxes(surface, plan.conflict, CONFLICT_RED, player.index)
 	say(player, string.format(
-		"[SelectionLab] PREVIEW: %d placeable (green), %d conflicted (red) at offset (%d,%d). Nothing was placed.",
+		"[font=default-bold][SelectionLab][/font] PREVIEW: %d placeable (green), %d conflicted (red) at offset (%d,%d). Nothing was placed.",
 		#plan.clear, #plan.conflict, offset.x, offset.y), { r = 0.6, g = 0.9, b = 1 })
 	return lab_result("preview", {
 		outcome = "previewed", clear = #plan.clear, conflicts = #plan.conflict, offset = offset,
@@ -602,7 +625,7 @@ function SelectionLab.force(event)
 	local st = pstate(event.player_index)
 	local cap = st.export
 	if not (cap and cap.records and #cap.records > 0) then
-		say(player, "[SelectionLab] nothing copied — plain-drag a source selection first", { r = 1, g = 0.4, b = 0.4 })
+		say(player, "[font=default-bold][SelectionLab][/font] nothing copied — plain-drag a source selection first", { r = 1, g = 0.4, b = 0.4 })
 		return lab_result("force", { outcome = "no_capture" })
 	end
 	local surface = event.surface
@@ -614,7 +637,7 @@ function SelectionLab.force(event)
 	if not exec_ok then
 		player.play_sound({ path = "utility/cannot_build" })
 		say(player, string.format(
-			"[SelectionLab] FORCE ROLLED BACK (%s) — created entities removed, %d/%d replaced blockers resurrected. Nothing journaled.",
+			"[font=default-bold][SelectionLab][/font] FORCE ROLLED BACK (%s) — created entities removed, %d/%d replaced blockers resurrected. Nothing journaled.",
 			tostring(exec_err), resurrected, #destroyed_records), { r = 1, g = 0.4, b = 0.4 })
 		return lab_result("force", {
 			outcome = "rolled_back", error = tostring(exec_err),
@@ -625,7 +648,7 @@ function SelectionLab.force(event)
 		destroyed_records = destroyed_records, plan_records = recs, side_groups = cap.side_groups })
 	local physical_items = physical_census(entity_map)
 	say(player, string.format(
-		"[SelectionLab] FORCE-PASTED %d entities (%d create-failed, %d blockers replaced%s) at offset (%d,%d). Physical items: %d. Ctrl+Alt+Z undoes (blockers come back with contents).",
+		"[font=default-bold][SelectionLab][/font] FORCE-PASTED %d entities (%d create-failed, %d blockers replaced%s) at offset (%d,%d). Physical items: %d. Ctrl+Alt+Z undoes (blockers come back with contents).",
 		created, create_failed, #destroyed_records,
 		guarded > 0 and (", " .. guarded .. " protected blockers kept") or "",
 		offset.x, offset.y, physical_items), { r = 0.4, g = 1, b = 0.4 })
@@ -673,45 +696,58 @@ function SelectionLab.audit(event)
 		end
 	end
 
-	say(player, string.format("[SelectionLab] === AUDIT (the transfer gate's own meters) — %d entities, %d items, %.1f fluids ===",
-		entity_n, item_n, fluid_n), { r = 1, g = 0.9, b = 0.4 })
+	-- Icon-rich audit chat (owner format): one labeled line per category, [item=]/[entity=]/[fluid=]
+	-- tags for every key, quality carried on item tags. Totals ride the header.
+	say(player, string.format("%s [color=yellow]AUDIT[/color] — %d entities, %d items, %.1f fluids",
+		LAB_PREFIX, entity_n, item_n, fluid_n))
 	local lines = {}
-	for name, n in pairs(entity_counts) do lines[#lines + 1] = n .. "x " .. name end
+	for name, n in pairs(entity_counts) do lines[#lines + 1] = icon_entity(name, n) end
 	table.sort(lines)
-	say(player, "  entities: " .. (next(entity_counts) and table.concat(lines, ", ") or "none"))
+	say(player, "[color=cyan]Entities:[/color] " .. (next(entity_counts) and table.concat(lines, "  ") or "none"))
 	lines = {}
-	for key, n in pairs(item_totals) do lines[#lines + 1] = key .. "=" .. n end
+	for key, n in pairs(item_totals) do lines[#lines + 1] = icon_item(key, n) end
 	table.sort(lines)
-	say(player, "  items: " .. (next(item_totals) and table.concat(lines, ", ") or "none"))
+	say(player, "[color=cyan]Items:[/color] " .. (next(item_totals) and table.concat(lines, "  ") or "none"))
 	lines = {}
-	for name, amount in pairs(fluid_totals) do lines[#lines + 1] = string.format("%s=%.1f", name, amount) end
+	for name, amount in pairs(fluid_totals) do lines[#lines + 1] = icon_fluid(name, amount) end
 	table.sort(lines)
-	say(player, "  fluids: " .. (next(fluid_totals) and table.concat(lines, ", ") or "none"))
+	say(player, "[color=cyan]Fluids:[/color] " .. (next(fluid_totals) and table.concat(lines, "  ") or "none"))
 
-	-- DELTA vs the previous audit (the before/after workflow). Player-scoped.
+	-- DELTA vs the previous audit (the before/after workflow). Player-scoped. Signed counts are
+	-- colored (+green / -red) and every key renders as its icon.
 	local ast = pstate(event.player_index)
 	local prev = ast.audit_prev
 	if prev then
 		local deltas = {}
+		local function signed(d, is_fluid)
+			local body = is_fluid and string.format("%+.1f", d) or string.format("%+d", d)
+			return (d > 0) and ("[color=green]" .. body .. "[/color]") or ("[color=red]" .. body .. "[/color]")
+		end
 		local keys = {}
 		for k in pairs(prev.items or {}) do keys[k] = true end
 		for k in pairs(item_totals) do keys[k] = true end
 		for k in pairs(keys) do
 			local d = (item_totals[k] or 0) - ((prev.items or {})[k] or 0)
-			if d ~= 0 then deltas[#deltas + 1] = string.format("%s %+d", k, d) end
+			if d ~= 0 then
+				local name, quality = Util.parse_quality_key(k)
+				local tag = (quality and quality ~= "normal")
+					and string.format("[item=%s,quality=%s]", name, quality) or string.format("[item=%s]", name)
+				deltas[#deltas + 1] = tag .. " " .. signed(d, false)
+			end
 		end
 		keys = {}
 		for k in pairs(prev.fluids or {}) do keys[k] = true end
 		for k in pairs(fluid_totals) do keys[k] = true end
 		for k in pairs(keys) do
 			local d = (fluid_totals[k] or 0) - ((prev.fluids or {})[k] or 0)
-			if math.abs(d) > 1e-6 then deltas[#deltas + 1] = string.format("%s %+.1f", k, d) end
+			if math.abs(d) > 1e-6 then
+				deltas[#deltas + 1] = string.format("[fluid=%s] %s", k:match("^([^@]+)") or k, signed(d, true))
+			end
 		end
 		table.sort(deltas)
 		say(player, #deltas > 0
-			and ("  DELTA vs previous audit: " .. table.concat(deltas, ", "))
-			or "  DELTA vs previous audit: EXACT MATCH (zero drift on every key)",
-			#deltas > 0 and { r = 1, g = 0.7, b = 0.3 } or { r = 0.4, g = 1, b = 0.4 })
+			and ("[color=cyan]DELTA:[/color] " .. table.concat(deltas, "  "))
+			or "[color=cyan]DELTA:[/color] [color=green]EXACT MATCH (zero drift on every key)[/color]")
 	end
 	ast.audit_prev = { items = item_totals, fluids = fluid_totals, tick = game.tick }
 
@@ -736,11 +772,11 @@ function SelectionLab.undo(event)
 	local stack = st.undo
 	local entry = table.remove(stack)
 	if not entry then
-		say(player, "[SelectionLab] nothing to undo", { r = 1, g = 0.6, b = 0.3 })
+		say(player, "[font=default-bold][SelectionLab][/font] nothing to undo", { r = 1, g = 0.6, b = 0.3 })
 		return
 	end
 	local surface = game.surfaces[entry.surface]
-	if not surface then say(player, "[SelectionLab] undo surface gone", { r = 1, g = 0.4, b = 0.4 }) return end
+	if not surface then say(player, "[font=default-bold][SelectionLab][/font] undo surface gone", { r = 1, g = 0.4, b = 0.4 }) return end
 	local removed, missed = 0, 0
 	for _, c in ipairs(entry.created) do
 		local hit = nil
@@ -765,7 +801,7 @@ function SelectionLab.undo(event)
 	end
 	table.insert(st.redo, entry)
 	say(player, string.format(
-		"[SelectionLab] UNDO: removed %d pasted entities (%d already gone), resurrected %d replaced blockers with contents. Ctrl+Alt+Y redoes.",
+		"[font=default-bold][SelectionLab][/font] UNDO: removed %d pasted entities (%d already gone), resurrected %d replaced blockers with contents. Ctrl+Alt+Y redoes.",
 		removed, missed, resurrected), { r = 0.4, g = 0.9, b = 1 })
 end
 
@@ -776,11 +812,11 @@ function SelectionLab.redo(event)
 	local stack = st.redo
 	local entry = table.remove(stack)
 	if not entry then
-		say(player, "[SelectionLab] nothing to redo", { r = 1, g = 0.6, b = 0.3 })
+		say(player, "[font=default-bold][SelectionLab][/font] nothing to redo", { r = 1, g = 0.6, b = 0.3 })
 		return
 	end
 	local surface = game.surfaces[entry.surface]
-	if not surface then say(player, "[SelectionLab] redo surface gone", { r = 1, g = 0.4, b = 0.4 }) return end
+	if not surface then say(player, "[font=default-bold][SelectionLab][/font] redo surface gone", { r = 1, g = 0.4, b = 0.4 }) return end
 	-- Mode-faithful replay: a plain paste must NEVER escalate to destructive force on redo. Legacy
 	-- journal entries (pre-mode) infer their mode from whether they destroyed blockers.
 	local mode = entry.mode
@@ -794,7 +830,7 @@ function SelectionLab.redo(event)
 			end
 			player.play_sound({ path = "utility/cannot_build" })
 			say(player, string.format(
-				"[SelectionLab] REDO REFUSED: %d of %d targets now occupied (red). Nothing re-pasted; still redoable.",
+				"[font=default-bold][SelectionLab][/font] REDO REFUSED: %d of %d targets now occupied (red). Nothing re-pasted; still redoable.",
 				#plan.conflict, #entry.plan_records), { r = 1, g = 0.4, b = 0.4 })
 			table.insert(stack, entry) -- action did not happen → leave on the redo stack
 			return
@@ -805,7 +841,7 @@ function SelectionLab.redo(event)
 			execute_create_and_restore(surface, recs, player, entry.side_groups, true)
 		if not exec_ok then
 			player.play_sound({ path = "utility/cannot_build" })
-			say(player, "[SelectionLab] REDO ROLLED BACK (" .. tostring(exec_err) .. ") — still redoable.",
+			say(player, "[font=default-bold][SelectionLab][/font] REDO ROLLED BACK (" .. tostring(exec_err) .. ") — still redoable.",
 				{ r = 1, g = 0.4, b = 0.4 })
 			table.insert(stack, entry)
 			return
@@ -816,7 +852,7 @@ function SelectionLab.redo(event)
 		entry.created = journal_created(records, entity_map)
 		entry.destroyed_records = {}
 		table.insert(st.undo, entry)
-		say(player, string.format("[SelectionLab] REDO: re-pasted %d entities (all-or-nothing).", created),
+		say(player, string.format("[font=default-bold][SelectionLab][/font] REDO: re-pasted %d entities (all-or-nothing).", created),
 			{ r = 0.4, g = 0.9, b = 1 })
 	else
 		local records, entity_map, created, _create_failed, destroyed_records, guarded, exec_ok, exec_err, resurrected =
@@ -824,7 +860,7 @@ function SelectionLab.redo(event)
 		if not exec_ok then
 			player.play_sound({ path = "utility/cannot_build" })
 			say(player, string.format(
-				"[SelectionLab] REDO ROLLED BACK (%s) — %d/%d replaced blockers resurrected; still redoable.",
+				"[font=default-bold][SelectionLab][/font] REDO ROLLED BACK (%s) — %d/%d replaced blockers resurrected; still redoable.",
 				tostring(exec_err), resurrected, #destroyed_records), { r = 1, g = 0.4, b = 0.4 })
 			table.insert(stack, entry)
 			return
@@ -833,7 +869,7 @@ function SelectionLab.redo(event)
 		entry.destroyed_records = destroyed_records
 		table.insert(st.undo, entry)
 		say(player, string.format(
-			"[SelectionLab] REDO: force re-pasted %d entities (%d blockers replaced%s).",
+			"[font=default-bold][SelectionLab][/font] REDO: force re-pasted %d entities (%d blockers replaced%s).",
 			created, #destroyed_records, guarded > 0 and (", " .. guarded .. " protected kept") or ""),
 			{ r = 0.4, g = 0.9, b = 1 })
 	end
@@ -848,7 +884,7 @@ function SelectionLab.handle(event, mode)
 	if event.item ~= "selection-lab-tool" then return end
 	if not debug_enabled() then
 		local player = game.get_player(event.player_index)
-		if player then say(player, "[SelectionLab] debug_mode is off — tool disabled", { r = 1, g = 0.4, b = 0.4 }) end
+		if player then say(player, "[font=default-bold][SelectionLab][/font] debug_mode is off — tool disabled", { r = 1, g = 0.4, b = 0.4 }) end
 		return
 	end
 	if mode == "copy" then return SelectionLab.copy(event)
