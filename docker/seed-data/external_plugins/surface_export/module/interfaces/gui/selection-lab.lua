@@ -42,6 +42,7 @@ local EntityScanner = require("modules/surface_export/export_scanners/entity-sca
 local Deserializer = require("modules/surface_export/core/deserializer")
 local BeltRestoration = require("modules/surface_export/import_phases/belt_restoration")
 local EntityStateRestoration = require("modules/surface_export/import_phases/entity_state_restoration")
+local ActiveStateRestoration = require("modules/surface_export/import_phases/active_state_restoration")
 local FluidRestoration = require("modules/surface_export/import_phases/fluid_restoration")
 local SurfaceCounter = require("modules/surface_export/validators/surface-counter")
 local Util = require("modules/surface_export/utils/util")
@@ -396,6 +397,13 @@ local function execute_create_and_restore(surface, recs, player, side_groups, tr
 			Deserializer.restore_inventories(entity, rec)
 		end
 	end
+	-- Held items: the SAME production Phase-6 pass transfers use (wake the inserter, seat, sleep —
+	-- Pitfall #28, the gate counts a complete state). NOT covered by restore_inventories: its
+	-- has_inventories early-return skips the held block for every bare inserter (no inventories
+	-- field), so without this pass a pasted inserter's hand is silently empty — measured on the
+	-- inserter-held-capacity fixture (capture 8, physical 0), the same cherry-picking class the
+	-- header warns about.
+	ActiveStateRestoration.restore_held_items_only(records, entity_map)
 	-- FluidRestoration writes SEGMENT totals: a pasted pipe merging into a live network would set the
 	-- whole segment to the captured amount, silently clobbering pre-existing fluid. Only restore when
 	-- the pasted fluid system is ISOLATED (no fluidbox connects to an entity outside the paste).
