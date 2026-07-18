@@ -122,6 +122,25 @@ if bcs then
 end
 local ws=platsurf("lab-transfer-fixture-v1")
 if ws then corpus["transfer-workhorse"]={entities=#ws.find_entities_filtered{}} end
+local cfs=platsurf("lab-census-fusion-v1")
+if cfs then
+  local cfr=at(cfs,"fusion-reactor",0,0)
+  local cfg=at(cfs,"fusion-generator",0.5,-5.5)
+  local cf={entities=#cfs.find_entities_filtered{},generatorCount=#cfs.find_entities_filtered{name="fusion-generator"},
+    fuelCells=cfr.get_item_count("fusion-power-cell"),coolant=0,plasmaSegment=0,
+    reactorCoolantSegVisible=false,reactorPlasmaSegVisible=false,
+    generatorPlasmaSegNil=cfg.fluidbox.get_fluid_segment_id(1)==nil,
+    allFrozen=(not cfr.active)and(not cfg.active),
+    allIndestructible=(not cfr.destructible)and(not cfg.destructible)}
+  for i=1,#cfr.fluidbox do
+    local f=cfr.fluidbox[i] local sid=cfr.fluidbox.get_fluid_segment_id(i)
+    if f and f.name=="fluoroketone-cold" then cf.coolant=cf.coolant+f.amount cf.reactorCoolantSegVisible=sid~=nil
+    elseif f and f.name=="fusion-plasma" then cf.reactorPlasmaSegVisible=sid~=nil if f.amount>cf.plasmaSegment then cf.plasmaSegment=f.amount end end
+  end
+  local cgf=cfg.fluidbox[1]
+  if cgf and cgf.name=="fusion-plasma" and cgf.amount>cf.plasmaSegment then cf.plasmaSegment=cgf.amount end
+  corpus["census-fusion-shared-plasma"]=cf
+end
 for n=1,3 do local cs=platsurf("lab-consumable-"..n) if cs then corpus["consumable-hub-"..n]={entities=#cs.find_entities_filtered{}} end end
 local surface_names,surface_settings,total_entities,total_chunks={},{},0,0
 for _,row in pairs(game.surfaces)do

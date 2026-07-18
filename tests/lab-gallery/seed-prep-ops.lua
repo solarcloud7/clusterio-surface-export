@@ -89,6 +89,12 @@ local function measure(surface)
         reading.generator_local_plasma[index] = (fluid and fluid.name == "fusion-plasma" and fluid.amount) or 0
         reading.generator_status[index] = status_name(generator.status)
     end
+    -- The parked stock can sit REACTOR-side (live full_output steady state) or GENERATOR-side
+    -- (isolated-run steady state, measured 2026-07-18, 2.0.77: gen local 9.13 while the reactor
+    -- box read empty) — either way it is the fixture's plasma; report the larger reading.
+    for _, amount in ipairs(reading.generator_local_plasma) do
+        if amount > reading.plasma_segment then reading.plasma_segment = amount end
+    end
     local frozen_set = { reactor }
     for _, generator in ipairs(generators) do frozen_set[#frozen_set + 1] = generator end
     for _, entity in ipairs(frozen_set) do

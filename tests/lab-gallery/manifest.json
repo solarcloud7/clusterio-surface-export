@@ -18,10 +18,10 @@
 			"role": "source",
 			"name": "lab-gallery-source-surface-export-2-0-77",
 			"artifact": "docker/seed-data/lab-saves/lab-gallery-source-surface-export-2.0.77.zip",
-			"sha256": "7AA51AD67460B6AAE557F8ABC12C8C9167BE185FD77F6CCDB2A17A7831F627A5",
+			"sha256": "606E3354E788171ADBA831E5AE65F5A145BB53B0E7E4107241A871D8E76CF5B8",
 			"expectedCensus": {
-				"totalEntities": 1488,
-				"totalGeneratedChunks": 5355,
+				"totalEntities": 1491,
+				"totalGeneratedChunks": 5513,
 				"surfaces": [
 					{
 						"name": "lab-gallery-index-v2",
@@ -81,6 +81,12 @@
 						"entityCount": 2,
 						"generatedChunks": 521,
 						"platform": "lab-energy-v1"
+					},
+					{
+						"name": "platform-8",
+						"entityCount": 3,
+						"generatedChunks": 156,
+						"platform": "lab-census-fusion-v1"
 					}
 				]
 			},
@@ -100,7 +106,7 @@
 			"role": "destination",
 			"name": "lab-gallery-destination-surface-export-2-0-77",
 			"artifact": "docker/seed-data/lab-saves/lab-gallery-destination-surface-export-2.0.77.zip",
-			"sha256": "09B1FCCEAD5EF38395825775DA3942CDD9382F6D2B4FD217A2A701AF15293BE5",
+			"sha256": "722056E40AD5F3AADBDCC1C08523A7AFA21FECECE6D4CEA199C046A88DBC5ED4",
 			"expectedCensus": {
 				"totalEntities": 0,
 				"totalGeneratedChunks": 479,
@@ -819,6 +825,53 @@
 			"independentOracleRequired": true,
 			"fingerprint": {
 				"entities": 1359
+			}
+		},
+		{
+			"id": "census-fusion-shared-plasma",
+			"revision": 1,
+			"labId": "census-lab",
+			"name": "Census fusion shared-plasma commensurability",
+			"purpose": "Preserve a frozen fusion reactor + generator whose parked plasma and buffer-class coolant are physically present yet visible only through buffer-aware reads - the adversarial state for paired-reads census commensurability on engine-owned fluids.",
+			"category": "physical-lab",
+			"owningRunner": null,
+			"owningRunnerWaiver": "run-r2-fusion-commensurability lands with the golden-save Clusterio-loadability fix (control.lua publish); until then the selection-lab drive sequence (copy/paste/audit + transfer) is the manual runner.",
+			"saveRole": "source",
+			"platformName": "lab-census-fusion-v1",
+			"engineVersion": "2.0.77",
+			"mods": {
+				"base": "2.0.77",
+				"elevated-rails": "2.0.77",
+				"FluidMustFlow": "1.4.4",
+				"quality": "2.0.77",
+				"SpidertronEnhancements": "1.10.8",
+				"space-age": "2.0.77",
+				"SpidertronPatrols": "2.6.3",
+				"surfexp_gateways": "0.3.0",
+				"maraxsis": "1.31.6"
+			},
+			"note": "Script-built by tests/lab-gallery/seed-prep-ops.lua (build_census_fusion): ignite with full 1000 coolant + 10 MW throttled load, run until parked stock >= 5, freeze. Plasma parks GENERATOR-side in the isolated steady state (reactor box empty); the live full_output state parks it reactor-side - both satisfy the law.",
+			"invariant": "Physically present fusion-plasma (engine-owned, generator nil-seg buffer) and buffer-class coolant (reactor box with segment ID whose contents read empty) are captured, counted, and restored commensurately: a transfer passes the census with zero fluid delta and the strict gate exactly; the plasma is never serialized and never restored.",
+			"expectedTerminalVerdict": "census-ok-transfer-committed",
+			"independentOracleRequired": true,
+			"fingerprint": {
+				"entities": 3,
+				"generatorCount": 1,
+				"fuelCells": 4,
+				"coolant": 990.0000005960464,
+				"plasmaSegment": 5.033337473869324,
+				"reactorCoolantSegVisible": true,
+				"reactorPlasmaSegVisible": false,
+				"generatorPlasmaSegNil": true,
+				"allFrozen": true,
+				"allIndestructible": true
+			},
+			"testCard": {
+				"law": "Paired-reads census is commensurate on engine-owned fluids: transfer of a platform with live fusion plasma in shared/buffer segments yields census ok=true, zero fluid delta (fix 356c3c3; buffer-law + claim-discipline PR #120/b81a450). Teeth: a REAL omission still aborts.",
+				"build": "lab-census-fusion-v1: fusion reactor (0,0) + generator (0.5,-5.5), 4 fuel cells, 990 coolant, ~5 plasma parked generator-side; all frozen + indestructible; temps removed; platform paused.",
+				"action": "Production /transfer-platform to the destination instance (census in the export walk; two-phase commit). Variant B: reload pair, arm test_force_census_omission, transfer again.",
+				"expected": "Census ok, fluid_delta empty; strict gate SUCCESS; coolant + fuel exact at destination (independent physical count); plasma absent at destination and validation passes; source deleted; fingerprint reproduces from the reloaded save. Variant B: abort, one attributed row, destination never contacted, source preserved.",
+				"forbidden": "Phantom census abort (plasma or thruster-style delta with zero item rows); plasma in serialized totals; census green over real coolant loss; armed omission hook not aborting; leftovers the golden-pair reload does not reset."
 			}
 		},
 		{

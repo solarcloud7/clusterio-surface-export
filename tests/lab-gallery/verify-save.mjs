@@ -114,15 +114,18 @@ export function buildExpectations(manifest) {
 		read_ok: reachabilityFingerprint.readOk, write_ok: reachabilityFingerprint.writeOk,
 	};
 	return {
-		source: { corpus: sourceCorpus, census: censusFor("source"), belt, reachability },
-		destination: { corpus: {}, census: censusFor("destination") },
+		source: { corpus: sourceCorpus, census: censusFor("source"), belt, reachability, labCount: manifest.labs.length },
+		destination: { corpus: {}, census: censusFor("destination"), labCount: manifest.labs.length },
 	};
 }
 
 export function assertReloadReading(reading, role, expected) {
 	assertFields(reading, {
 		version: "2.0.77", save_role: role, gallery_storage: true, index_surface: true, game_paused: false,
-		transient: { jobs: 0, locks: 0, holds: 0, tombstones: 0 }, index_texts: 12, index_tags: 12,
+		transient: { jobs: 0, locks: 0, holds: 0, tombstones: 0 },
+		// One catalog label + chart tag per lab family — DERIVED from the manifest roster, never
+		// hardcoded (the hardcoded 12 went stale the day census-lab joined).
+		index_texts: expected.labCount, index_tags: expected.labCount,
 	});
 	assertSurfaceSettings(reading?.surface_settings);
 	if (role === "source") {

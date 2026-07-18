@@ -267,6 +267,36 @@ end
 -- come from the manifest fingerprints (single source of truth). Each measurement is pcall-guarded
 -- and SURFACES its error (never swallows) so a mid-deletion destination poll cannot abort inspect
 -- while a normalize-time locator failure still fails the gate loudly.
+local function measure_census_fusion(surface)
+    local reactor = assert(at(surface, "fusion-reactor", 0, 0), "census-fusion reactor missing")
+    local generator = assert(at(surface, "fusion-generator", 0.5, -5.5), "census-fusion generator missing")
+    local r = {
+        entities = #surface.find_entities_filtered({}),
+        generatorCount = #surface.find_entities_filtered({ name = "fusion-generator" }),
+        fuelCells = reactor.get_item_count("fusion-power-cell"),
+        coolant = 0, plasmaSegment = 0,
+        reactorCoolantSegVisible = false, reactorPlasmaSegVisible = false,
+        generatorPlasmaSegNil = generator.fluidbox.get_fluid_segment_id(1) == nil,
+        allFrozen = (not reactor.active) and (not generator.active),
+        allIndestructible = (not reactor.destructible) and (not generator.destructible),
+    }
+    for i = 1, #reactor.fluidbox do
+        local f = reactor.fluidbox[i]
+        local sid = reactor.fluidbox.get_fluid_segment_id(i)
+        if f and f.name == "fluoroketone-cold" then
+            r.coolant = r.coolant + f.amount
+            r.reactorCoolantSegVisible = sid ~= nil
+        elseif f and f.name == "fusion-plasma" then
+            r.reactorPlasmaSegVisible = sid ~= nil
+            if f.amount > r.plasmaSegment then r.plasmaSegment = f.amount end
+        end
+    end
+    -- Parked stock can sit generator-side (isolated steady state) — report the larger reading.
+    local gf = generator.fluidbox[1]
+    if gf and gf.name == "fusion-plasma" and gf.amount > r.plasmaSegment then r.plasmaSegment = gf.amount end
+    return r
+end
+
 local function measure_corpus()
     local out = {}
     local function safe(id, fn)
@@ -294,6 +324,8 @@ local function measure_corpus()
     if corner then safe("belt-corner-recovery", function() return measure_belt_corner(corner) end) end
     local workhorse = surface_for_platform("lab-transfer-fixture-v1")
     if workhorse then safe("transfer-workhorse", function() return { entities = #workhorse.find_entities_filtered({}) } end) end
+    local fusion = surface_for_platform("lab-census-fusion-v1")
+    if fusion then safe("census-fusion-shared-plasma", function() return measure_census_fusion(fusion) end) end
     for n = 1, 3 do
         local consumable = surface_for_platform("lab-consumable-" .. n)
         if consumable then safe("consumable-hub-" .. n, function() return { entities = #consumable.find_entities_filtered({}) } end) end

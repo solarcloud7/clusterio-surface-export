@@ -20,7 +20,7 @@ function sourceReading() {
 		game_paused: false, transient: { jobs: 0, locks: 0, holds: 0, tombstones: 0 },
 		source_belts: 16, target_belts: 16, source_quantity: 125, physical_stacks: 125,
 		maximum_stack: 1, source_line_quantities: [67, 58], target_quantity: 0,
-		index_texts: 12, index_tags: 12,
+		index_texts: expectations.source.labCount, index_tags: expectations.source.labCount,
 		reachability: { exists: true, platform_name: "lab-specialized-fluid-r1", drill_name: "electric-mining-drill", pressure: 0, gravity: 0, mining_target: false, live_fluidbox_count: 0, read_ok: false, write_ok: false },
 		surface_settings: surfaceSettings,
 		surface_census: expectations.source.census,
@@ -83,7 +83,7 @@ test("destination acceptance proves the paired absence contract with an empty co
 		game_paused: false, transient: { jobs: 0, locks: 0, holds: 0, tombstones: 0 },
 		source_belts: 0, target_belts: 0, source_quantity: 0, physical_stacks: 0,
 		maximum_stack: 0, source_line_quantities: [0, 0], target_quantity: 0,
-		index_texts: 12, index_tags: 12, reachability: { exists: false },
+		index_texts: expectations.destination.labCount, index_tags: expectations.destination.labCount, reachability: { exists: false },
 		surface_settings: expectations.destination.census.surface_names.map(name => ({
 			name, generate_with_lab_tiles: true, has_global_electric_network: true, ignore_surface_conditions: true,
 		})),
