@@ -191,6 +191,15 @@ test("builder is isolated, bounded, and publishes neither half on failure", () =
 	assert.doesNotMatch(source, /clusterioctl|instance send-rcon|game\.tick_paused\s*=/);
 });
 
+test("published artifacts are Clusterio-loadable: freeplay control.lua injected before publish/hash", () => {
+	// Dropping this injection ships golden saves the save patcher rejects ("unknown scenario") —
+	// see the publish-loadable.mjs header for the measured mechanism.
+	assert.match(source, /injectControlLua\(sourceTemporary/);
+	assert.match(source, /injectControlLua\(destinationTemporary/);
+	// The injection must land before COPYFILE_EXCL publish so fileRecord hashes injected bytes.
+	assert.ok(source.indexOf("injectControlLua(sourceTemporary") < source.indexOf("copyFileSync(sourceTemporary"));
+});
+
 test("bounded polling helper remains locally owned", async () => {
 	await sleep(0);
 });

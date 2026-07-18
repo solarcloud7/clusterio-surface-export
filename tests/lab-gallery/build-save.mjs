@@ -11,6 +11,7 @@ import {
 import { certifyRuntimeApiFile } from "./api-contract.mjs";
 import { buildBeltPilot, buildSpecializedReachabilityFixture } from "./fixture-layout.mjs";
 import { CORPUS_EXCLUDED, loadGalleryManifest, meterMiningTarget, validateGalleryManifest } from "./manifest.mjs";
+import { fetchFreeplayControl, injectControlLua } from "./publish-loadable.mjs";
 
 const REMOTE_ROOT = "/tmp/surface-export-lab-gallery-build";
 const GAME_PORT = "34979";
@@ -271,6 +272,14 @@ async function main() {
 		const destinationTemporary = join(tmpdir(), `${manifest.saves.destination.name}-${randomUUID()}.zip`);
 		localCopies.push(destinationTemporary);
 		docker(["cp", `${options.container}:${destinationRemote}`, destinationTemporary], { timeout: 180_000 });
+
+		// Loadability injection BEFORE publish/hash: the isolated Factorio strips every scenario
+		// script from its saves, and Clusterio's patcher refuses a save whose control.lua SHA1 is
+		// not a known freeplay scenario. Inject the engine's own canonical freeplay control.lua
+		// (fetched from this container, so it can never drift from the pin) into both temporaries.
+		const freeplayControl = fetchFreeplayControl(options.container);
+		injectControlLua(sourceTemporary, freeplayControl);
+		injectControlLua(destinationTemporary, freeplayControl);
 
 		copyFileSync(sourceTemporary, options.sourceOutput, constants.COPYFILE_EXCL);
 		publishedPaths.push(options.sourceOutput);
