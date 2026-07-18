@@ -44,6 +44,13 @@
       "rungs": "PR0A",
       "conclusion": "destination-hold stage/read completeness measured; isolated machine buffers survive the hold",
       "commits": ["a007ecb"]
+    },
+    {
+      "lab": "census-lab",
+      "runner": "tests/census-lab (run-r1-stall-budget.mjs, run-r2-fusion-commensurability.mjs)",
+      "rungs": "R1, R2",
+      "conclusion": "paired-reads census stall budget measured (R1); census commensurability on engine-owned fusion fluids proven from the save-loaded golden fixture with a working omission abort (R2, the first bake-gate batch) — the rung also exposed and fixed the schedule-less-platform transfer failure, the settled-retry duplication path, and the silent chunk-queue failure",
+      "commits": ["935e0b3", "5a2bc65"]
     }
   ]
 }
