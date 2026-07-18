@@ -1238,3 +1238,143 @@ Runner: `tests/lab-gallery/run-golden-batch.mjs` against the committed golden pa
 }
 ```
 </details>
+
+## 2026-07-18T23:48:53.198Z — B7 held-item capacity batch (bake gate, GREEN)
+
+Runner: `tests/lab-gallery/run-golden-batch.mjs` against the committed golden pair loaded via Clusterio-native save assignment (instances {"1":2119131471,"2":234487481}); pre-batch saves {"1":"test1.zip","2":"test2.zip"}, restored {"1":"test1.zip","2":"test2.zip","zeroLeftovers":true}.
+
+**Adversarial dest** — loaded golden destination bulk_inserter_capacity_bonus = 0 (asserted 0, never forced). **Source fingerprint** reproduced from the save-loaded world: bulk-inserter at (40.5,-122.5) held 8 railgun-ammo (legendary), inactive+indestructible, source force bonus 11.
+
+**Transfer** — production `/transfer-platform 16` reached terminal validation_success=true (/clusterio/data/instances/clusterio-host-2-instance-1/script-output/debug_import_result_lab-omnibus-state-v1_9267952.json). INDEPENDENT physical destination reads: force bonus RAISED 0 -> 11 (raise-only), hand physically seats 8 railgun-ammo at legendary, forceDataMismatches recorded ({"force":"player","property":"bulk_inserter_capacity_bonus","source":11,"destination":0,"synced_to":11}), source deleted. GREEN.
+
+<details><summary>Raw results JSON</summary>
+
+```json
+{
+  "script": "tests/lab-gallery/run-golden-batch.mjs",
+  "instanceIds": {
+    "1": 2119131471,
+    "2": 234487481
+  },
+  "preBatchSaves": {
+    "1": "test1.zip",
+    "2": "test2.zip"
+  },
+  "restored": {
+    "1": "test1.zip",
+    "2": "test2.zip",
+    "zeroLeftovers": true
+  },
+  "finished": "2026-07-18T23:48:53.198Z",
+  "green": true,
+  "errors": [],
+  "destBonusBefore": 0,
+  "sourceFingerprint": {
+    "success": true,
+    "platformIndex": 16,
+    "surfaceIndex": 13,
+    "heldCount": 8,
+    "heldName": "railgun-ammo",
+    "heldQuality": "legendary",
+    "active": false,
+    "destructible": false,
+    "forceBonus": 11
+  },
+  "transferCommand": {
+    "platformIndex": 16,
+    "out": "═══════════════════════════════════════"
+  },
+  "importResultPath": "/clusterio/data/instances/clusterio-host-2-instance-1/script-output/debug_import_result_lab-omnibus-state-v1_9267952.json",
+  "destBonusAfter": 11,
+  "destInserter": {
+    "success": true,
+    "platformIndex": 19,
+    "surfaceIndex": 2,
+    "heldCount": 8,
+    "heldName": "railgun-ammo",
+    "heldQuality": "legendary",
+    "active": false,
+    "destructible": true,
+    "forceBonus": 11
+  },
+  "forceDataMismatch": {
+    "force": "player",
+    "property": "bulk_inserter_capacity_bonus",
+    "source": 11,
+    "destination": 0,
+    "synced_to": 11
+  },
+  "verdict": "GREEN"
+}
+```
+</details>
+
+## 2026-07-18T23:50:31.945Z — B7 held-item capacity batch (bake gate, GREEN)
+
+Runner: `tests/lab-gallery/run-golden-batch.mjs` against the committed golden pair loaded via Clusterio-native save assignment (instances {"1":2119131471,"2":234487481}); pre-batch saves {"1":"test1.zip","2":"test2.zip"}, restored {"1":"test1.zip","2":"test2.zip","zeroLeftovers":true}.
+
+**Adversarial dest** — loaded golden destination bulk_inserter_capacity_bonus = 0 (asserted 0, never forced). **Source fingerprint** reproduced from the save-loaded world: bulk-inserter at (40.5,-122.5) held 8 railgun-ammo (legendary), inactive+indestructible, source force bonus 11.
+
+**Transfer** — production `/transfer-platform 16` reached terminal validation_success=true (/clusterio/data/instances/clusterio-host-2-instance-1/script-output/debug_import_result_lab-omnibus-state-v1_9268055.json). INDEPENDENT physical destination reads: force bonus RAISED 0 -> 11 (raise-only), hand physically seats 8 railgun-ammo at legendary, forceDataMismatches recorded ({"force":"player","property":"bulk_inserter_capacity_bonus","source":11,"destination":0,"synced_to":11}), source deleted. GREEN.
+
+<details><summary>Raw results JSON</summary>
+
+```json
+{
+  "script": "tests/lab-gallery/run-golden-batch.mjs",
+  "instanceIds": {
+    "1": 2119131471,
+    "2": 234487481
+  },
+  "preBatchSaves": {
+    "1": "test1.zip",
+    "2": "test2.zip"
+  },
+  "restored": {
+    "1": "test1.zip",
+    "2": "test2.zip",
+    "zeroLeftovers": true
+  },
+  "finished": "2026-07-18T23:50:31.945Z",
+  "green": true,
+  "errors": [],
+  "destBonusBefore": 0,
+  "sourceFingerprint": {
+    "success": true,
+    "platformIndex": 16,
+    "surfaceIndex": 13,
+    "heldCount": 8,
+    "heldName": "railgun-ammo",
+    "heldQuality": "legendary",
+    "active": false,
+    "destructible": false,
+    "forceBonus": 11
+  },
+  "transferCommand": {
+    "platformIndex": 16,
+    "out": "═══════════════════════════════════════"
+  },
+  "importResultPath": "/clusterio/data/instances/clusterio-host-2-instance-1/script-output/debug_import_result_lab-omnibus-state-v1_9268055.json",
+  "destBonusAfter": 11,
+  "destInserter": {
+    "success": true,
+    "platformIndex": 19,
+    "surfaceIndex": 2,
+    "heldCount": 8,
+    "heldName": "railgun-ammo",
+    "heldQuality": "legendary",
+    "active": false,
+    "destructible": true,
+    "forceBonus": 11
+  },
+  "forceDataMismatch": {
+    "force": "player",
+    "property": "bulk_inserter_capacity_bonus",
+    "source": 11,
+    "destination": 0,
+    "synced_to": 11
+  },
+  "verdict": "GREEN"
+}
+```
+</details>

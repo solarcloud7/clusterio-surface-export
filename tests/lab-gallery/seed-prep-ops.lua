@@ -481,6 +481,116 @@ elseif request.operation == "measure_no_tick_pair" then
         inserterHandEmpty = not inserter.held_stack.valid_for_read,
         allIndestructible = (not machine.destructible) and (not inserter.destructible),
     }
+
+elseif request.operation == "migrate_omnibus_zone" then
+    -- Pad migration (owner directive 2026-07-18): move one legacy fixture zone from the y=0 row
+    -- into a stamped test-foundation pad via surface.clone_area — the engine's exact-state copy
+    -- (wires, ghosts, item-request-proxies, ground items, burner state, heat, crafting progress
+    -- all ride), then destroy the originals and the old zone label. Idempotent: a zone already
+    -- empty with a populated pad returns already_migrated.
+    --
+    -- request: { source_center_x, dest_origin_x, dest_origin_y, label }
+    local platform = find_platform(OMNIBUS_PLATFORM)
+    if not platform or not platform.surface then
+        return { success = false, error = OMNIBUS_PLATFORM .. " not found for migrate_omnibus_zone" }
+    end
+    local s = platform.surface
+    local cx = request.source_center_x
+    local ox, oy = request.dest_origin_x, request.dest_origin_y
+    local source_area = { { cx - 6, -6 }, { cx + 6, 6 } }
+    -- Interior = the pad's copy window (run-tests.lua sweeps [ox+1,ox+13]x[oy,oy+12]); the clone
+    -- rectangle is source-aligned so entity sub-tile fractions are preserved exactly.
+    local dest_area = { { cx - 6 + (ox + 6 - cx), -6 + (oy + 6) }, { cx + 6 + (ox + 6 - cx), 6 + (oy + 6) } }
+    local interior_area = { { ox, oy }, { ox + 13.5, oy + 12 } }
+    -- The stamp's status trio lives ON the border row (y = oy+11.5, x >= ox+13.5); count only
+    -- entities whose POSITION is inside the copy window so the trio never reads as pad content.
+    local function interior_entities()
+        local inside = {}
+        for _, entity in ipairs(s.find_entities_filtered({ area = interior_area })) do
+            local p = entity.position
+            if p.x < ox + 13.25 and p.y < oy + 11.25 then inside[#inside + 1] = entity end
+        end
+        return inside
+    end
+
+    local source_entities = s.find_entities_filtered({ area = source_area })
+    local dest_before = interior_entities()
+    if #source_entities == 0 and #dest_before > 0 then
+        return { success = true, already_migrated = true, dest_count = #dest_before }
+    end
+    if #source_entities == 0 then
+        return { success = false, error = "zone at x=" .. tostring(cx) .. " is empty and pad is empty — nothing to migrate" }
+    end
+    if #dest_before > 0 then
+        return { success = false, error = "pad interior at (" .. ox .. "," .. oy .. ") already holds " .. #dest_before .. " entities while the zone still has " .. #source_entities }
+    end
+
+    s.clone_area({
+        source_area = source_area,
+        destination_area = dest_area,
+        clone_tiles = false,
+        clone_entities = true,
+        clone_decoratives = false,
+        clear_destination_entities = false,
+        expand_map = true,
+    })
+    local dest_after = interior_entities()
+    if #dest_after ~= #source_entities then
+        return { success = false, error = "clone count mismatch: source " .. #source_entities .. " vs pad " .. #dest_after .. " — originals NOT destroyed" }
+    end
+
+    -- Destroy the originals (spider legs die with their spidertron; proxies with their target —
+    -- re-check validity as we sweep) and the old zone label text.
+    local destroyed = 0
+    for _, entity in ipairs(source_entities) do
+        if entity.valid then
+            entity.destroy({ raise_destroy = false })
+            destroyed = destroyed + 1
+        end
+    end
+    local leftovers = s.find_entities_filtered({ area = source_area })
+    if #leftovers > 0 then
+        return { success = false, error = tostring(#leftovers) .. " source entities survived destroy at zone x=" .. tostring(cx) }
+    end
+    local labels_removed = 0
+    if request.label then
+        for _, object in pairs(rendering.get_all_objects()) do
+            if object.surface == s and object.type == "text" then
+                local t = object.text
+                if type(t) == "table" then t = tostring(t[1] or "") end
+                if tostring(t) == request.label then
+                    object.destroy()
+                    labels_removed = labels_removed + 1
+                end
+            end
+        end
+    end
+    return { success = true, migrated = #dest_after, destroyed = destroyed, labels_removed = labels_removed }
+
+elseif request.operation == "survey_omnibus" then
+    -- Recon for the pad migration: every rendering text and every entity (name, type, position)
+    -- on the golden omnibus platform, so the legacy fixture zones can be mapped from the repo
+    -- without hand-flying the world. Read-only.
+    local platform = find_platform(OMNIBUS_PLATFORM)
+    if not platform or not platform.surface then
+        return { success = false, error = OMNIBUS_PLATFORM .. " not found for survey_omnibus" }
+    end
+    local s = platform.surface
+    local texts = {}
+    for _, object in pairs(rendering.get_all_objects()) do
+        if object.surface == s and object.type == "text" then
+            local t = object.text
+            if type(t) == "table" then t = tostring(t[1] or "") end
+            texts[#texts + 1] = { text = tostring(t), x = object.target.position.x, y = object.target.position.y }
+        end
+    end
+    local entities = {}
+    for _, entity in ipairs(s.find_entities_filtered({})) do
+        entities[#entities + 1] = { name = entity.name, type = entity.type,
+            x = entity.position.x, y = entity.position.y }
+    end
+    return { success = true, surface = s.name, texts = texts, entities = entities,
+        entity_count = #entities }
 end
 
 return { success = false, error = "unknown operation " .. tostring(request.operation) }

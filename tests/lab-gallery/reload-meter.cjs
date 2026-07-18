@@ -46,7 +46,7 @@ local function platsurf(name) for _,p in pairs(game.forces.player.platforms) do 
 local corpus={}
 local omni,omniP=platsurf("lab-omnibus-state-v1")
 if omni then
-  local chest=at(omni,"steel-chest",13,-3)
+  local chest=at(omni,"steel-chest",39,-97)
   local cinv=chest.get_inventory(defines.inventory.chest)
   local armor
   for i=1,#cinv do local s=cinv[i] if s.valid_for_read and s.name=="power-armor-mk2" then armor=s break end end
@@ -55,42 +55,42 @@ if omni then
     if eq.name=="battery-mk2-equipment" then adv.battEnergy=eq.energy adv.battQuality=eq.quality.name end
     if eq.name=="energy-shield-mk2-equipment" then adv.shieldValue=eq.shield adv.shieldMax=eq.max_shield adv.shieldQuality=eq.quality.name end
   end
-  local am=at(omni,"assembling-machine-2",16,-3)
+  local am=at(omni,"assembling-machine-2",42,-97)
   local rec,qual=am.get_recipe()
   adv.recipe=rec and rec.name or nil adv.recipeQuality=qual and qual.name or nil
   corpus["omnibus-adversarial-inventory"]=adv
-  corpus["omnibus-heat-temperature"]={temperature=at(omni,"heat-pipe",27,1).temperature}
-  local dec=at(omni,"decider-combinator",36,0)
+  corpus["omnibus-heat-temperature"]={temperature=at(omni,"heat-pipe",69,-93).temperature}
+  local dec=at(omni,"decider-combinator",66,-108)
   local dnet=dec.get_circuit_network(defines.wire_connector_id.combinator_output_red)
   corpus["omnibus-decider-latch"]={signalS=dnet and dnet.get_signal{type="virtual",name="signal-S"} or nil}
-  local mc=at(omni,"assembling-machine-1",47,-2)
+  local mc=at(omni,"assembling-machine-1",65,-124)
   local mci=mc.get_inventory(defines.inventory.assembling_machine_input)
   corpus["omnibus-midcraft-progress"]={progress=mc.crafting_progress,active=mc.active,inputPlates=mci and mci.get_item_count("iron-plate") or nil}
-  local bi=at(omni,"burner-inserter",63,1)
+  local bi=at(omni,"burner-inserter",41,-135)
   local bfi=bi.get_inventory(defines.inventory.fuel)
   corpus["omnibus-burner-fuel"]={coal=bfi and bfi.get_item_count("coal") or nil,active=bi.active,burning=bi.burner and bi.burner.currently_burning and bi.burner.currently_burning.name.name or nil,remaining=bi.burner and bi.burner.remaining_burning_fuel or nil}
-  local sp=at(omni,"spidertron",74,0)
+  local sp=at(omni,"spidertron",68,-136)
   local grid={holder="spidertron"}
   for _,eq in ipairs(sp.grid.equipment) do if eq.name=="battery-mk2-equipment" then grid.battEnergy=eq.energy grid.battMax=eq.max_energy end end
   corpus["omnibus-equipment-grid"]=grid
-  local cc=at(omni,"constant-combinator",84,1)
+  local cc=at(omni,"constant-combinator",38,-149)
   local ccb=cc.get_control_behavior()
   local circ={}
   local ccs=ccb.sections and ccb.sections[1]
   if ccs then local f=ccs.filters and ccs.filters[1] if f then circ.constantSignal=f.value and f.value.name or nil circ.constantMin=f.min end end
-  local lamp=at(omni,"small-lamp",90,1)
+  local lamp=at(omni,"small-lamp",44,-149)
   local lb=lamp.get_control_behavior()
   if lb then circ.lampUseColors=lb.use_colors end
   corpus["omnibus-circuit-config"]=circ
-  local bm=at(omni,"assembling-machine-2",99,1)
+  local bm=at(omni,"assembling-machine-2",69,-149)
   local bmi=bm.get_module_inventory()
   corpus["omnibus-module-bonus-progress"]={bonusProgress=bm.bonus_progress,modules=bmi and bmi.get_item_count("productivity-module") or nil,active=bm.active}
   local fl={}
-  local tank=at(omni,"storage-tank",119,1)
+  local tank=at(omni,"storage-tank",37,-163)
   if tank.fluidbox[1] then fl.steam=tank.fluidbox[1].amount fl.steamTemp=tank.fluidbox[1].temperature end
-  local chem=at(omni,"chemical-plant",123,1)
+  local chem=at(omni,"chemical-plant",41,-163)
   for i=1,#chem.fluidbox do local f=chem.fluidbox[i] if f then if f.name=="water" then fl.chemWater=f.amount elseif f.name=="petroleum-gas" then fl.chemGas=f.amount end end end
-  local foundry=at(omni,"foundry",127,1)
+  local foundry=at(omni,"foundry",45,-163)
   for i=1,#foundry.fluidbox do local f=foundry.fluidbox[i] if f and f.name=="molten-iron" then fl.foundryMolten=f.amount fl.foundryTemp=f.temperature end end
   corpus["omnibus-crafting-fluids"]=fl
   local egs=omni.find_entities_filtered{type="entity-ghost"}

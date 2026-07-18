@@ -18,10 +18,10 @@
 			"role": "source",
 			"name": "lab-gallery-source-surface-export-2-0-77",
 			"artifact": "docker/seed-data/lab-saves/lab-gallery-source-surface-export-2.0.77.zip",
-			"sha256": "6CD42299655069C24CF5C2EE5B5EAA4D0CA3528890D86DF70671E4EA70436552",
+			"sha256": "7AC9F75ADB322018FF397DA13F704338B4D23C6D0E82DD230214D1881E3A6C32",
 			"expectedCensus": {
-				"totalEntities": 1500,
-				"totalGeneratedChunks": 5513,
+				"totalEntities": 1533,
+				"totalGeneratedChunks": 5532,
 				"surfaces": [
 					{
 						"name": "lab-gallery-index-v2",
@@ -42,8 +42,8 @@
 					},
 					{
 						"name": "platform-11",
-						"entityCount": 90,
-						"generatedChunks": 356,
+						"entityCount": 123,
+						"generatedChunks": 375,
 						"platform": "lab-omnibus-state-v1"
 					},
 					{
@@ -384,6 +384,13 @@
 				"recipe": "iron-gear-wheel",
 				"recipeQuality": "uncommon"
 			},
+			"testCard": {
+				"law": "Nested inventories survive exactly: a chest-held power-armor-mk2 keeps its equipment grid (battery energy, shield value, qualities) and the machine keeps its quality recipe.",
+				"build": "Migrated 2026-07-18 from the legacy y=0 zone onto the test-foundation pad at (34,-100) via surface.clone_area (seed-prep migrate_omnibus_zone; exact-state move, originals destroyed).",
+				"action": "/test-run: reset the compare area, selection-lab copy of the pad build area, paste at +14,0, physical audit of both halves.",
+				"expected": "Audit reports equal entities/items; the pasted armor's grid carries the same battery energy, shield value, and equipment qualities.",
+				"forbidden": "An emptied or flattened equipment grid; lost item quality; a dropped quality recipe."
+			},
 			"layoutBlueprint": "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M08w8zczTzDzNzNPMPM3M08w8zczTzDzNzNPMPM3ME8080cwTzTzRzBPNPNHME8080cwTzTzRzBPNPNHME8080cwTzTzRzBPNPNHME8080cwTzTzRzBPNPNHME8080cwTzTzRzBPNPNHME8080cwTzTzRzBNz6onmnmjuieaeaO6J5p5o7onmnmjuieaeaO6J5p5o7onmnmjuieaeaO7Yl27Wl27Wl27Wl27Wl27Wl27Wl27Wl27Wl27Wl27Wl27Wl27Wl27Wl27Wl27Wl27Wl27Wl27Wl27Wl27Wl27Wl27Wl27Wl27Wl27Wl27Wl27Wl27Wl27Wl27Wl27Wl27Wl27Wl27Wl27Wl27Wl27Wl27Wl27Wl27Yl27Yl27Yl27Yl27Yl27Yl27Yl27Yl27Yl27Yl27Yl27Yl27Yl27Yl27Yl27Yl27Yl27Yl27Yl27Yl27Yl27Yl27Yl27Yl27Yl27Yl27Yl27Yl27Yl27Yl27Yl27Yl27Yl27Yl27Yl27Yl27Yl27Yl27Yl27Yl27Yl27Yl27Yl27Yl27Yl27Yl27Yl27Yl27Yl27Yl27Yl/57x78bDpaHbt0/6GZ17B52y81hMBx87Hb78xnHk5i3+Xw8a5Np/7/Hx/8F93J0iA=="
 		},
 		{
@@ -413,6 +420,13 @@
 			"independentOracleRequired": true,
 			"fingerprint": {
 				"temperature": 500
+			},
+			"testCard": {
+				"law": "Heat-pipe temperature is physical state and transfers exactly.",
+				"build": "Migrated 2026-07-18 from the legacy y=0 zone onto the test-foundation pad at (62,-100) via surface.clone_area (seed-prep migrate_omnibus_zone; exact-state move, originals destroyed).",
+				"action": "/test-run: reset the compare area, selection-lab copy of the pad build area, paste at +14,0, physical audit of both halves.",
+				"expected": "Audit reports equal entities; the pasted heat-pipe reads the same temperature.",
+				"forbidden": "Temperature reset to ambient (15C); any temperature drift."
 			}
 		},
 		{
@@ -442,6 +456,13 @@
 			"independentOracleRequired": true,
 			"fingerprint": {
 				"signalS": 1
+			},
+			"testCard": {
+				"law": "A decider-combinator latched on by its own red-wire self-feedback stays latched: the red output network carries signal-S = 1.",
+				"build": "Migrated 2026-07-18 from the legacy y=0 zone onto the test-foundation pad at (62,-114) via surface.clone_area (seed-prep migrate_omnibus_zone; exact-state move, originals destroyed).",
+				"action": "/test-run: reset the compare area, selection-lab copy of the pad build area, paste at +14,0, physical audit of both halves.",
+				"expected": "Audit reports equal entities; the pasted decider's red output network still reads signal-S = 1.",
+				"forbidden": "An unlatched paste (signal-S absent/0); a dropped self-feedback wire."
 			}
 		},
 		{
@@ -473,6 +494,13 @@
 				"progress": 0.7000000000000005,
 				"active": false,
 				"inputPlates": 2
+			},
+			"testCard": {
+				"law": "A deactivated assembling-machine-1 frozen mid-craft keeps its exact crafting_progress and embodied input ingredients.",
+				"build": "Migrated 2026-07-18 from the legacy y=0 zone onto the test-foundation pad at (62,-128) via surface.clone_area (seed-prep migrate_omnibus_zone; exact-state move, originals destroyed).",
+				"action": "/test-run: reset the compare area, selection-lab copy of the pad build area, paste at +14,0, physical audit of both halves.",
+				"expected": "Audit reports equal entities/items; the pasted machine reads the same crafting_progress and input plate count, still inactive.",
+				"forbidden": "Progress reset or advanced; consumed or duplicated inputs; the machine arriving active."
 			}
 		},
 		{
@@ -505,6 +533,13 @@
 				"active": false,
 				"burning": "solid-fuel",
 				"remaining": 2000000
+			},
+			"testCard": {
+				"law": "Burner state transfers whole: fuel inventory, currently-burning item, and remaining_burning_fuel.",
+				"build": "Migrated 2026-07-18 from the legacy y=0 zone onto the test-foundation pad at (34,-142) via surface.clone_area (seed-prep migrate_omnibus_zone; exact-state move, originals destroyed).",
+				"action": "/test-run: reset the compare area, selection-lab copy of the pad build area, paste at +14,0, physical audit of both halves.",
+				"expected": "Audit reports equal entities/items; the pasted burner-inserter keeps its coal, burning item, and remaining fuel energy.",
+				"forbidden": "A cold burner (currently_burning lost); dropped fuel items; remaining fuel reset."
 			}
 		},
 		{
@@ -536,6 +571,13 @@
 				"holder": "spidertron",
 				"battEnergy": 50000000,
 				"battMax": 100000000
+			},
+			"testCard": {
+				"law": "A vehicle equipment grid transfers with its charge: the spidertron's battery-mk2-equipment keeps its stored energy.",
+				"build": "Migrated 2026-07-18 from the legacy y=0 zone onto the test-foundation pad at (62,-142) via surface.clone_area (seed-prep migrate_omnibus_zone; exact-state move, originals destroyed).",
+				"action": "/test-run: reset the compare area, selection-lab copy of the pad build area, paste at +14,0, physical audit of both halves.",
+				"expected": "Audit reports equal entities; the pasted spidertron's grid battery reads the same energy.",
+				"forbidden": "An emptied grid; battery energy reset to 0 or full."
 			}
 		},
 		{
@@ -567,6 +609,13 @@
 				"constantSignal": "signal-A",
 				"constantMin": 42,
 				"lampUseColors": true
+			},
+			"testCard": {
+				"law": "Control-behavior configuration transfers exactly: constant-combinator section filters (signal, min) and lamp use_colors, with circuit wiring intact.",
+				"build": "Migrated 2026-07-18 from the legacy y=0 zone onto the test-foundation pad at (34,-156) via surface.clone_area (seed-prep migrate_omnibus_zone; exact-state move, originals destroyed).",
+				"action": "/test-run: reset the compare area, selection-lab copy of the pad build area, paste at +14,0, physical audit of both halves.",
+				"expected": "Audit reports equal entities; the pasted combinator carries the same section filter and the lamp the same use_colors flag.",
+				"forbidden": "Dropped section filters; lost wire connections; a flipped or defaulted lamp flag."
 			}
 		},
 		{
@@ -598,6 +647,13 @@
 				"bonusProgress": 0.5,
 				"modules": 2,
 				"active": false
+			},
+			"testCard": {
+				"law": "Module inventory and accumulated bonus_progress transfer exactly on a deactivated crafter.",
+				"build": "Migrated 2026-07-18 from the legacy y=0 zone onto the test-foundation pad at (62,-156) via surface.clone_area (seed-prep migrate_omnibus_zone; exact-state move, originals destroyed).",
+				"action": "/test-run: reset the compare area, selection-lab copy of the pad build area, paste at +14,0, physical audit of both halves.",
+				"expected": "Audit reports equal entities/items; the pasted machine keeps its productivity modules and the same bonus_progress.",
+				"forbidden": "Missing modules; bonus_progress reset; the machine arriving active."
 			}
 		},
 		{
@@ -632,6 +688,13 @@
 				"chemGas": 60,
 				"foundryMolten": 250,
 				"foundryTemp": 1500
+			},
+			"testCard": {
+				"law": "Fluids transfer exactly in tanks AND in crafting-machine fluidboxes (Pitfall #18, entity handlers must export crafter fluids): steam with temperature, chem-plant water/gas, foundry molten iron.",
+				"build": "Migrated 2026-07-18 from the legacy y=0 zone onto the test-foundation pad at (34,-170) via surface.clone_area (seed-prep migrate_omnibus_zone; exact-state move, originals destroyed).",
+				"action": "/test-run: reset the compare area, selection-lab copy of the pad build area, paste at +14,0, physical audit of both halves.",
+				"expected": "Audit reports equal fluids by name and amount; the pasted tank/plant/foundry read the same amounts and temperatures.",
+				"forbidden": "Any fluid amount or temperature drift; crafter fluidboxes arriving empty."
 			}
 		},
 		{
@@ -664,6 +727,13 @@
 				"tileGhosts": 1,
 				"proxies": 1,
 				"ghostInner": "assembling-machine-2"
+			},
+			"testCard": {
+				"law": "Construction intent transfers: entity ghosts (with ghost_name), tile ghosts, and item-request-proxies are physical fixture content.",
+				"build": "Migrated 2026-07-18 from the legacy y=0 zone onto the test-foundation pad at (62,-170) via surface.clone_area (seed-prep migrate_omnibus_zone; exact-state move, originals destroyed).",
+				"action": "/test-run: reset the compare area, selection-lab copy of the pad build area, paste at +14,0, physical audit of both halves.",
+				"expected": "Audit reports equal entities including one entity-ghost, one tile-ghost, and one item-request-proxy on the pasted half.",
+				"forbidden": "A ghost or proxy silently dropped; a proxy detached from its target machine."
 			}
 		},
 		{
@@ -693,6 +763,13 @@
 			"independentOracleRequired": true,
 			"fingerprint": {
 				"ironPlate": 50
+			},
+			"testCard": {
+				"law": "Items on the ground are physical content (PR #24, ground-item export): the iron-plate scatter transfers at exact count and sub-tile positions.",
+				"build": "Migrated 2026-07-18 from the legacy y=0 zone onto the test-foundation pad at (34,-184) via surface.clone_area (seed-prep migrate_omnibus_zone; exact-state move, originals destroyed).",
+				"action": "/test-run: reset the compare area, selection-lab copy of the pad build area, paste at +14,0, physical audit of both halves.",
+				"expected": "Audit reports equal items; the pasted half carries the same iron-plate ground total at the same relative positions.",
+				"forbidden": "Any ground item lost or merged; count drift between halves."
 			}
 		},
 		{
@@ -724,6 +801,13 @@
 				"records": 2,
 				"interrupts": 1,
 				"interruptName": "lab-interrupt"
+			},
+			"testCard": {
+				"law": "The platform schedule (records + interrupts, read from hub_entity.platform via get_schedule) survives transfer whole.",
+				"build": "Hub-state fixture (hub (non-positional)); no pad — exercised by transfer, not by /test-run copy/paste.",
+				"action": "Production /transfer-platform of the omnibus platform; read the schedule on the destination.",
+				"expected": "Post-transfer schedule carries the same record count, interrupt count, and interrupt name.",
+				"forbidden": "Dropped interrupts; a schedule read from hub entity fields instead of the platform."
 			}
 		},
 		{
@@ -905,8 +989,7 @@
 				"quality": "legendary",
 				"active": false,
 				"destructible": false,
-				"forceBulkBonus": 11,
-				"destForceBulkBonus": 0
+				"forceBulkBonus": 11
 			},
 			"testCard": {
 				"law": "Held items seat IN FULL on a less-researched destination: export captures the source-force inserter bonuses, import replicates them raise-only, and the strict gate counts the complete state (Pitfalls #28 count-a-complete-state / #29 dest-force research).",

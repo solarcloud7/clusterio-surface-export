@@ -110,7 +110,9 @@ local function at(surface, name, x, y)
 end
 
 local function measure_omnibus_adversarial(surface)
-    local chest = assert(at(surface, "steel-chest", 13, -3), "omnibus adversarial chest missing")
+    -- Coordinates: the test-foundation pad grid (migrated 2026-07-18 from the legacy y=0 zones by
+    -- seed-prep's migrate_omnibus_zone; offsets are exact clone_area translations).
+    local chest = assert(at(surface, "steel-chest", 39, -97), "omnibus adversarial chest missing")
     local inv = chest.get_inventory(defines.inventory.chest)
     local armor
     for i = 1, #inv do local s = inv[i] if s.valid_for_read and s.name == "power-armor-mk2" then armor = s break end end
@@ -120,7 +122,7 @@ local function measure_omnibus_adversarial(surface)
         if eq.name == "battery-mk2-equipment" then r.battEnergy = eq.energy r.battQuality = eq.quality.name end
         if eq.name == "energy-shield-mk2-equipment" then r.shieldValue = eq.shield r.shieldMax = eq.max_shield r.shieldQuality = eq.quality.name end
     end
-    local m = assert(at(surface, "assembling-machine-2", 16, -3), "omnibus adversarial machine missing")
+    local m = assert(at(surface, "assembling-machine-2", 42, -97), "omnibus adversarial machine missing")
     local recipe, quality = m.get_recipe()
     r.recipe = recipe and recipe.name or nil
     r.recipeQuality = quality and quality.name or nil
@@ -128,19 +130,19 @@ local function measure_omnibus_adversarial(surface)
 end
 
 local function measure_omnibus_latch(surface)
-    local d = assert(at(surface, "decider-combinator", 36, 0), "omnibus latch decider missing")
+    local d = assert(at(surface, "decider-combinator", 66, -108), "omnibus latch decider missing")
     local net = d.get_circuit_network(defines.wire_connector_id.combinator_output_red)
     return { signalS = net and net.get_signal({ type = "virtual", name = "signal-S" }) or nil }
 end
 
 local function measure_omnibus_midcraft(surface)
-    local m = assert(at(surface, "assembling-machine-1", 47, -2), "omnibus midcraft machine missing")
+    local m = assert(at(surface, "assembling-machine-1", 65, -124), "omnibus midcraft machine missing")
     local inv = m.get_inventory(defines.inventory.assembling_machine_input)
     return { progress = m.crafting_progress, active = m.active, inputPlates = inv and inv.get_item_count("iron-plate") or nil }
 end
 
 local function measure_omnibus_burner(surface)
-    local bi = assert(at(surface, "burner-inserter", 63, 1), "omnibus burner inserter missing")
+    local bi = assert(at(surface, "burner-inserter", 41, -135), "omnibus burner inserter missing")
     local fi = bi.get_inventory(defines.inventory.fuel)
     return {
         coal = fi and fi.get_item_count("coal") or nil,
@@ -151,7 +153,7 @@ local function measure_omnibus_burner(surface)
 end
 
 local function measure_omnibus_equipment(surface)
-    local s = assert(at(surface, "spidertron", 74, 0), "omnibus spidertron missing")
+    local s = assert(at(surface, "spidertron", 68, -136), "omnibus spidertron missing")
     local r = { holder = "spidertron" }
     for _, eq in ipairs(s.grid.equipment) do
         if eq.name == "battery-mk2-equipment" then r.battEnergy = eq.energy r.battMax = eq.max_energy end
@@ -160,7 +162,7 @@ local function measure_omnibus_equipment(surface)
 end
 
 local function measure_omnibus_circuit(surface)
-    local cc = assert(at(surface, "constant-combinator", 84, 1), "omnibus constant-combinator missing")
+    local cc = assert(at(surface, "constant-combinator", 38, -149), "omnibus constant-combinator missing")
     local behavior = cc.get_control_behavior()
     local r = {}
     local section = behavior.sections and behavior.sections[1]
@@ -168,7 +170,7 @@ local function measure_omnibus_circuit(surface)
         local filter = section.filters and section.filters[1]
         if filter then r.constantSignal = filter.value and filter.value.name or nil r.constantMin = filter.min end
     end
-    local lamp = assert(at(surface, "small-lamp", 90, 1), "omnibus lamp missing")
+    local lamp = assert(at(surface, "small-lamp", 44, -149), "omnibus lamp missing")
     local lb = lamp.get_control_behavior()
     -- Explicit if: `lb and lb.use_colors or nil` would collapse a legitimate `false` reading to nil,
     -- silently dropping the boolean from certification (the false-collapsing and/or idiom).
@@ -177,21 +179,21 @@ local function measure_omnibus_circuit(surface)
 end
 
 local function measure_omnibus_bonus(surface)
-    local m = assert(at(surface, "assembling-machine-2", 99, 1), "omnibus bonus machine missing")
+    local m = assert(at(surface, "assembling-machine-2", 69, -149), "omnibus bonus machine missing")
     local mi = m.get_module_inventory()
     return { bonusProgress = m.bonus_progress, modules = mi and mi.get_item_count("productivity-module") or nil, active = m.active }
 end
 
 local function measure_omnibus_fluids(surface)
     local r = {}
-    local tank = assert(at(surface, "storage-tank", 119, 1), "omnibus storage-tank missing")
+    local tank = assert(at(surface, "storage-tank", 37, -163), "omnibus storage-tank missing")
     if tank.fluidbox[1] then r.steam = tank.fluidbox[1].amount r.steamTemp = tank.fluidbox[1].temperature end
-    local chem = assert(at(surface, "chemical-plant", 123, 1), "omnibus chemical-plant missing")
+    local chem = assert(at(surface, "chemical-plant", 41, -163), "omnibus chemical-plant missing")
     for i = 1, #chem.fluidbox do
         local f = chem.fluidbox[i]
         if f then if f.name == "water" then r.chemWater = f.amount elseif f.name == "petroleum-gas" then r.chemGas = f.amount end end
     end
-    local foundry = assert(at(surface, "foundry", 127, 1), "omnibus foundry missing")
+    local foundry = assert(at(surface, "foundry", 45, -163), "omnibus foundry missing")
     for i = 1, #foundry.fluidbox do
         local f = foundry.fluidbox[i]
         if f and f.name == "molten-iron" then r.foundryMolten = f.amount r.foundryTemp = f.temperature end
@@ -337,7 +339,7 @@ local function measure_corpus()
     local omni, omni_platform = surface_for_platform("lab-omnibus-state-v1")
     if omni then
         safe("omnibus-adversarial-inventory", function() return measure_omnibus_adversarial(omni) end)
-        safe("omnibus-heat-temperature", function() return { temperature = assert(at(omni, "heat-pipe", 27, 1), "omnibus heat-pipe missing").temperature } end)
+        safe("omnibus-heat-temperature", function() return { temperature = assert(at(omni, "heat-pipe", 69, -93), "omnibus heat-pipe missing").temperature } end)
         safe("omnibus-decider-latch", function() return measure_omnibus_latch(omni) end)
         safe("omnibus-midcraft-progress", function() return measure_omnibus_midcraft(omni) end)
         safe("omnibus-burner-fuel", function() return measure_omnibus_burner(omni) end)
