@@ -21,12 +21,14 @@ export const MOD_DIRECTORY = "/clusterio/data/instances/clusterio-host-2-instanc
 /**
  * Launch a bounded, detached headless Factorio on `seed` inside `container`.
  * The remote root must NOT pre-exist (exclusive-lease guard). `files` is a list of
- * [localPath, remoteName] extras (driver scripts, runtime Lua, config).
+ * [localPath, remoteName] extras (driver scripts, runtime Lua, config). `runtimeLuaName`
+ * is the remote name of the runtime-driver Lua file runtimeCall dispatches against
+ * (default "ops.lua"; build-save ships it as "gallery-runtime.lua").
  * Returns a handle for teardownIsolatedFactorio.
  */
 export function launchIsolatedFactorio({
 	container, remoteRoot, seed, config, files = [],
-	gamePort, rconPort, rconPassword, timeoutSeconds = 300,
+	gamePort, rconPort, rconPassword, timeoutSeconds = 300, runtimeLuaName = "ops.lua",
 }) {
 	docker(["exec", container, "test", "!", "-e", remoteRoot]);
 	docker(["exec", container, "mkdir", "-p", `${remoteRoot}/saves`]);
@@ -40,7 +42,7 @@ export function launchIsolatedFactorio({
 		`--port ${gamePort} --rcon-port ${rconPort} --rcon-password ${rconPassword} ` +
 		`> ${remoteRoot}/factorio-stdout.log 2>&1`;
 	docker(["exec", "-d", container, "setsid", "sh", "-c", launch]);
-	return { container, remoteRoot };
+	return { container, remoteRoot, runtimeLuaName };
 }
 
 /** Tail the isolated Factorio's stdout for failure diagnostics. */
@@ -107,10 +109,10 @@ export async function waitForStableSave(container, remotePath, timeoutMs = 60_00
  * Invoke a runtime Lua file (runtime-driver.cjs protocol) against the isolated server,
  * tolerating connection-refused while the server boots.
  */
-export function runtimeCall({ container, remoteRoot }, { rconPort, rconPassword }, request) {
+export function runtimeCall({ container, remoteRoot, runtimeLuaName = "ops.lua" }, { rconPort, rconPassword }, request) {
 	const encoded = Buffer.from(JSON.stringify(request)).toString("base64");
 	const output = docker(
-		["exec", container, "node", `${remoteRoot}/runtime-driver.cjs`, rconPort, rconPassword, `${remoteRoot}/ops.lua`, encoded],
+		["exec", container, "node", `${remoteRoot}/runtime-driver.cjs`, rconPort, rconPassword, `${remoteRoot}/${runtimeLuaName}`, encoded],
 		{ timeout: 180_000 },
 	);
 	return JSON.parse(output.trim().split(/\r?\n/).filter(Boolean).at(-1));

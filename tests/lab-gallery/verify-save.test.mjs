@@ -113,7 +113,7 @@ test("reload acceptance rejects any surface missing an editor lab setting", () =
 
 test("isolated verifier reloads each save and always removes its runtime", () => {
 	assert.match(source, /for \(const role of \["source", "destination"\]\)/);
-	assert.match(source, /--start-server/);
+	assert.match(source, /launchIsolatedFactorio/);
 	assert.match(source, /finally/);
 	assert.match(source, /surface-export-lab-gallery-verify/);
 	assert.doesNotMatch(source, /clusterioctl|send-rcon|game\.tick_paused\s*=/);
