@@ -124,15 +124,27 @@ local function run_one(player, surface, cell)
   end
   local ox, oy = cell.ox, cell.oy
   local copy = drive("copy", ox + 1, oy, ox + 13, oy + 12)
-  if not (copy and copy.ok) then
-    set_status(cell.text_obj, comb, panel, "fail", "copy failed")
-    return "fail", "copy failed"
+  local copy_report = copy and copy.report or {}
+  -- Outcome check, not just ok: a "nothing_exportable" copy still returns ok, and pasting then
+  -- uses the PREVIOUS cell's clipboard (measured: the ground-items cell pasted a stale anchor at
+  -- offset x=42 and misreported the neighbor's conflicts as its own).
+  if not (copy and copy.ok) or copy_report.outcome ~= "copied" then
+    local why = "copy " .. tostring(copy_report.outcome or "error")
+    set_status(cell.text_obj, comb, panel, "fail", why)
+    return "fail", why
   end
   local paste = drive("paste", ox + 15, oy, ox + 27, oy + 12)
   local paste_report = paste and paste.report or {}
   if not (paste and paste.ok) or paste_report.outcome ~= "pasted" then
-    local why = string.format("paste %s (%d conflicts)",
-      tostring(paste_report.outcome or "error"), tonumber(paste_report.conflicts) or 0)
+    -- Say WHAT failed, not just how many (owner feedback): the refused report carries per-conflict
+    -- names/positions/blockers.
+    local detail = ""
+    if type(paste_report.conflict_details) == "table" and #paste_report.conflict_details > 0 then
+      detail = ": " .. table.concat(paste_report.conflict_details, "; ")
+    elseif paste_report.error then
+      detail = ": " .. tostring(paste_report.error)
+    end
+    local why = string.format("paste %s%s", tostring(paste_report.outcome or "error"), detail)
     set_status(cell.text_obj, comb, panel, "fail", why)
     return "fail", why
   end

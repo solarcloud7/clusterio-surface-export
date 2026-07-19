@@ -315,6 +315,10 @@ elseif request.operation == "stamp_test_cell" then
     local status = s.find_entities_filtered({ name = "display-panel", area = { { spx - 0.4, spy - 0.4 }, { spx + 0.4, spy + 0.4 } } })[1]
     if not status then status = s.create_entity({ name = "display-panel", position = { spx, spy }, force = "player" }) end
     if not status then return { success = false, error = "status display-panel placement failed" } end
+    -- Owner format (test-foundation.mjs is canonical): the status panel is always visible in
+    -- alt-mode and shows its tag on the chart — this port dropped both once (caught in-game).
+    status.display_panel_always_show = true
+    status.display_panel_show_in_chart = true
     status.get_wire_connector(defines.wire_connector_id.circuit_red, true).connect_to(comb.get_wire_connector(defines.wire_connector_id.circuit_red, true))
     status.get_or_create_control_behavior().messages = {
         { icon = { type = "virtual", name = "signal-check" }, text = "Success", condition = { first_signal = { type = "virtual", name = "signal-check" }, comparator = ">", constant = 0 } },

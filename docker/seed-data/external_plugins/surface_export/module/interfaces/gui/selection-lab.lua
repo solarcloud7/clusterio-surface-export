@@ -329,6 +329,13 @@ local function place_spec(rec, player)
 	local spec = {
 		name = rec.name, position = rec.position, direction = rec.direction,
 		force = rec.force or (player and player.force) or "player",
+		-- SCRIPT check, not the default manual check: the paste creates via the production
+		-- Deserializer.create_entity (script semantics), and the manual check refuses entities the
+		-- engine restricts for HAND-building on platforms (spidertron, burner-inserter, chests)
+		-- even though script creation places them fine — measured 2026-07-19 on the delivered
+		-- omnibus (4 pads false-refused with zero blockers on buildable tiles). Same-system rule:
+		-- the preview must mirror the create path it fronts.
+		build_check_type = defines.build_check_type.script,
 	}
 	if rec.specific_data and rec.specific_data.ghost_name then
 		spec.inner_name = rec.specific_data.ghost_name
@@ -534,7 +541,21 @@ function SelectionLab.paste(event)
 		say(player, string.format(
 			"[color=yellow][font=default-bold][SelectionLab][/font][/color] PASTE REFUSED: %d of %d targets occupied (red). Nothing was placed. Shift+Right-drag forces.",
 			#plan.conflict, #cap.records), { r = 1, g = 0.4, b = 0.4 })
-		return lab_result("paste", { outcome = "refused", conflicts = #plan.conflict, targets = #cap.records, offset = offset })
+		-- Name the refusals (owner feedback 2026-07-19: "(1 conflicts)" says nothing) — each entry
+		-- carries the record name, its target position, and the first blocker if any.
+		local conflict_details = {}
+		for i, c in ipairs(plan.conflict) do
+			if i > 5 then
+				conflict_details[#conflict_details + 1] = "+" .. (#plan.conflict - 5) .. " more"
+				break
+			end
+			local blocker = c.blockers and c.blockers[1]
+			conflict_details[#conflict_details + 1] = string.format("%s at (%s,%s)%s",
+				c.rec.name, c.rec.position.x, c.rec.position.y,
+				blocker and (" blocked by " .. blocker.name) or " (placement check failed)")
+		end
+		return lab_result("paste", { outcome = "refused", conflicts = #plan.conflict, targets = #cap.records,
+			offset = offset, conflict_details = conflict_details })
 	end
 
 	local recs = {}

@@ -22,7 +22,13 @@ local EntityScanner = {}
 --- @param entity LuaEntity|nil
 --- @return boolean
 function EntityScanner.is_exportable_entity(entity)
+  -- spider-leg: legs are OWNED by their spider-vehicle (creating the vehicle spawns them; a
+  -- standalone leg create always fails). Serializing them only manufactures guaranteed creation
+  -- failures downstream — measured 2026-07-19: the selection-lab paste of the equipment-grid pad
+  -- rolled back on exactly its 8 leg records; transfers only balanced because 8 failed leg creates
+  -- happened to be replaced by the 8 legs the restored spidertron spawned itself.
   return entity ~= nil and entity.valid and entity.type ~= "item-entity" and entity.type ~= "character"
+    and entity.type ~= "spider-leg"
 end
 
 --- Scan all entities on a surface
