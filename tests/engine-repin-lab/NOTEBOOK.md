@@ -1635,3 +1635,273 @@ the lab snapshots at exactly +1/+61/+120, and restores the original handler auto
 The definitive consecutive full passes are `06:20:33Z` and `06:20:56Z`. In both, `destroy()` remained valid at
 all three exact boundaries, `destroy(0)` was invalid at +1, and `destroy(60)` was valid at +1 and invalid at
 +61/+120. Both passes also repeated green B8/B9 evidence and ended with both-instance zero-leftover proof.
+
+
+## 2026-07-19T06:33:42.628Z — repin-consumables batch (engine-repin B7+B9, RED)
+
+Runner: `tests/engine-repin-lab/run-repin-consumables.mjs` against the committed golden pair (instances {"1":2119131471,"2":234487481}); pre-batch saves {"1":"test1.zip","2":"test2.zip"}, restored {"1":"test1.zip","2":"test2.zip","zeroLeftovers":true}.
+
+**engine-repin B7 / lab-consumable-1** — `destroy()` at t0=9265225: alive=true at +40, alive=true at +129 — matches the pinned 2.0.77 table.
+
+**engine-repin B7 / lab-consumable-2** — `destroy(0)` at t0=9265428: alive=false at +35, alive=false at +128 — matches the pinned 2.0.77 table.
+
+**engine-repin B7 / lab-consumable-3** — `destroy(60)` at t0=9265630: alive=true at +37, alive=false at +129 — matches the pinned 2.0.77 table.
+
+**Errors:**
+- Error: B9 expected an unknown-item warning; none fired (silent drop?)
+    at main (file:///C:/Users/Solar/source/FactorioSurfaceExport/tests/engine-repin-lab/run-repin-consumables.mjs:218:11)
+
+<details><summary>Raw results JSON</summary>
+
+```json
+{
+  "script": "tests/engine-repin-lab/run-repin-consumables.mjs",
+  "started": "2026-07-19T06:32:56.461Z",
+  "sections": [
+    "preflight",
+    "load",
+    "b7",
+    "b9",
+    "restore"
+  ],
+  "errors": [
+    "Error: B9 expected an unknown-item warning; none fired (silent drop?)\n    at main (file:///C:/Users/Solar/source/FactorioSurfaceExport/tests/engine-repin-lab/run-repin-consumables.mjs:218:11)"
+  ],
+  "b7": {
+    "lab-consumable-1": {
+      "call": "destroy()",
+      "t0": 9265225,
+      "earlyTick": 40,
+      "earlyAlive": true,
+      "lateTick": 129,
+      "lateAlive": true
+    },
+    "lab-consumable-2": {
+      "call": "destroy(0)",
+      "t0": 9265428,
+      "earlyTick": 35,
+      "earlyAlive": false,
+      "lateTick": 128,
+      "lateAlive": false
+    },
+    "lab-consumable-3": {
+      "call": "destroy(60)",
+      "t0": 9265630,
+      "earlyTick": 37,
+      "earlyAlive": true,
+      "lateTick": 129,
+      "lateAlive": false
+    }
+  },
+  "instanceIds": {
+    "1": 2119131471,
+    "2": 234487481
+  },
+  "preBatchSaves": {
+    "1": "test1.zip",
+    "2": "test2.zip"
+  },
+  "lease": "clean",
+  "goldenLoaded": true,
+  "b7Verdict": "GREEN",
+  "b9": {
+    "success": true,
+    "importSuccess": true,
+    "errors": {},
+    "warnings": 0,
+    "warningText": "",
+    "platesPhysical": 25,
+    "chestExists": true
+  },
+  "goldenSessionLogTails": {
+    "1": "   0.009 Info ModManager.cpp:449: FeatureFlag spoiling = true\n   0.010 Loading mod settings FluidMustFlow 1.4.4 (settings.lua)\n   0.012 Loading mod settings SpidertronEnhancements 1.10.8 (settings.lua)\n   0.013 Loading mod settings SpidertronPatrols 2.6.3 (settings.lua)\n   0.015 Loading mod settings maraxsis 1.31.6 (settings.lua)\n   0.018 Loading mod settings maraxsis 1.31.6 (settings-updates.lua)\n   0.021 Loading mod core 0.0.0 (data.lua)\n   0.030 Loading mod base 2.0.77 (data.lua)\n   0.140 Loading mod elevated-rails 2.0.77 (data.lua)\n   0.154 Loading mod FluidMustFlow 1.4.4 (data.lua)\n   0.162 Loading mod quality 2.0.77 (data.lua)\n   0.173 Loading mod SpidertronEnhancements 1.10.8 (data.lua)\n   0.181 Loading mod space-age 2.0.77 (data.lua)\n   0.342 Loading mod SpidertronPatrols 2.6.3 (data.lua)\n   0.354 Loading mod surfexp_gateways 0.3.1 (data.lua)\n   0.363 Loading mod maraxsis 1.31.6 (data.lua)\n   0.427 Loading mod base 2.0.77 (data-updates.lua)\n   0.440 Loading mod quality 2.0.77 (data-updates.lua)\n   0.458 Loading mod SpidertronEnhancements 1.10.8 (data-updates.lua)\n   0.470 Loading mod space-age 2.0.77 (data-updates.lua)\n   0.482 Loading mod SpidertronPatrols 2.6.3 (data-updates.lua)\n   0.496 Loading mod maraxsis 1.31.6 (data-updates.lua)\n   0.512 Loading mod SpidertronEnhancements 1.10.8 (data-final-fixes.lua)\n   0.525 Loading mod SpidertronPatrols 2.6.3 (data-final-fixes.lua)\n   0.535 Loading mod maraxsis 1.31.6 (data-final-fixes.lua)\n   0.625 Checksum for core: 4187927925\n   0.626 Checksum of base: 1879415942\n   0.626 Checksum of elevated-rails: 70351106\n   0.626 Checksum of FluidMustFlow: 2741802744\n   0.626 Checksum of quality: 1142589254\n   0.626 Checksum of SpidertronEnhancements: 2802774701\n   0.626 Checksum of space-age: 1510664043\n   0.626 Checksum of SpidertronPatrols: 1814447366\n   0.626 Checksum of surfexp_gateways: 3113003946\n   0.626 Checksum of maraxsis: 2814018477\n   1.000 Prototype list checksum: 2702547635\n   1.072 Info PlayerData.cpp:64: Local player-data.json available, timestamp 1784442785\n   1.072 Info PlayerData.cpp:71: Cloud player-data.json unavailable\n   1.073 Info GlobalContext.cpp:1300: Resetting config.\n   1.074 Factorio initialised\n   1.074 Info ServerSynchronizer.cpp:22: nextHeartbeatSequenceNumber(0) initialized Synchronizer nextTickClosureTick(0).\n   1.074 Info ServerMultiplayerManager.cpp:808: updateTick(18446744073709551615) changing state from(Ready) to(PreparedToHostGame)\n   1.074 Info ServerMultiplayerManager.cpp:808: updateTick(18446744073709551615) changing state from(PreparedToHostGame) to(CreatingGame)\n   1.074 Loading map /clusterio/data/instances/clusterio-host-1-instance-1/saves/lab-repinc-golden-source.zip: 1186497 bytes.\n   1.084 Loading level.dat: 10784974 bytes.\n   1.084 Info Scenario.cpp:154: Map version 2.0.77-0\n   1.174 Blueprint storage \"blueprint-storage-2.dat\" was not found, trying to load previous version storage \"blueprint-storage.dat\"\n   1.174 Loading script.dat: 44018 bytes.\n   1.190 Checksum for script __level__/control.lua: 2401794522\n   1.191 Checksum for script __FluidMustFlow__/control.lua: 2342970735\n   1.193 Checksum for script __SpidertronEnhancements__/control.lua: 3957523864\n   1.197 Checksum for script __SpidertronPatrols__/control.lua: 591379248\n   1.201 Script @__maraxsis__/lib/events.lua:52: Finalized 67 events for maraxsis\n   1.202 Checksum for script __maraxsis__/control.lua: 2868601269\n   1.204 Info UDPSocket.cpp:38: Opening socket at (IP ADDR:({0.0.0.0:34100}))\n   1.204 Hosting game at IP ADDR:({0.0.0.0:34100})\n   1.204 Info HttpSharedState.cpp:57: Downloading https://auth.factorio.com/generate-server-padlock-2?api_version=6\n   1.406 Info AuthServerConnector.cpp:112: Obtained serverPadlock for serverHash (3wE8JU7RwWxM61YQ9MxhsIfoZBoC8nh1) from the auth server.\n   1.406 Info ServerMultiplayerManager.cpp:808: updateTick(9931134) changing state from(CreatingGame) to(InGame)\n   1.590 Info ServerRouter.cpp:668: Asking pingpong servers (pingpong1.factorio.com:34197, pingpong2.factorio.com:34197, pingpong3.factorio.com:34197, pingpong4.factorio.com:34197) for own address\n   1.590 Info UDPSocket.cpp:50: Opening socket for broadcast\n   1.590 Info RemoteCommandProcessor.cpp:126: Starting RCON interface at IP ADDR:({0.0.0.0:60920})\n   1.590 Info CommandLineMultiplayer.cpp:292: Maximum segment size = 100; minimum segment size = 25; maximum-segment-size peer count = 10; minimum-segment-size peer count = 20\n   1.591 Info RemoteCommandProcessor.cpp:245: New RCON connection from IP ADDR:({127.0.0.1:49390})\n   1.608 Script @__level__/modules/surface_export/core/gateway.lua:61: [Gateway] discover_and_unlock: 12 gateway/force unlocks\n   1.608 Script @__level__/modules/surface_export/control.lua:92: [Surface Export] Connected to Clusterio controller\n   1.624 Warning ServerRouter.cpp:543: Received own address message reply with conflicting address (got IP ADDR:({209.236.82.227:64943}), expected IP ADDR:({209.236.82.227:63376}))\n   1.624 Script @__level__/modules/surface_export/control.lua:96: [Surface Export] Instance configuration updated\n   1.624 Warning ServerMultiplayerManager.cpp:654: Determining own address has failed. Best guess: IP ADDR:({209.236.82.227:63376})\n   1.624 Info AuthServerConnector.cpp:620: Performing TLS check.\n   1.624 Info HttpSharedState.cpp:57: Downloading https://auth.factorio.com/tls-check/success\n   1.674 Script @__level__/modules/surface_export/interfaces/remote/configure.lua:86: [FactorioSurfaceExport] Configuration updated: batch_size=50, max_concurrent_jobs=3, show_progress=true, debug_mode=true\n   1.690 Warning ServerRouter.cpp:543: Received own address message reply with conflicting address (got IP ADDR:({209.236.82.227:50112}), expected IP ADDR:({209.236.82.227:63376}))\n   1.691 Script @__level__/modules/surface_export/interfaces/remote/configure.lua:80: [FactorioSurfaceExport] Gateway config updated: 0 gateway(s)\n   1.691 Script @__level__/modules/surface_export/interfaces/remote/configure.lua:86: [FactorioSurfaceExport] Configuration updated: batch_size=unchanged, max_concurrent_jobs=unchanged, show_progress=nil, debug_mode=nil\n   1.740 Warning ServerRouter.cpp:543: Received own address message reply with conflicting address (got IP ADDR:({209.236.82.227:56799}), expected IP ADDR:({209.236.82.227:63376}))\n   1.788 Info AuthServerConnector.cpp:653: TLS check success.\n   2.254 Info MatchingServer.cpp:129: Matching server game `961123` has been created.\n   2.257 Info ServerMultiplayerManager.cpp:738: Matching server connection resumed\n  18.272 Script @__level__/modules/surface_export/core/deserializer.lua:731: [FactorioSurfaceExport] Warning: Skipped unknown item 'repin-bogus-item-xyz' for steel-chest (mod missing?): Unknown item name: repin-bogus-item-xyz\n",
+    "2": "   0.007 Info ModManager.cpp:449: FeatureFlag space-travel = true\n   0.007 Info ModManager.cpp:449: FeatureFlag spoiling = true\n   0.009 Loading mod settings FluidMustFlow 1.4.4 (settings.lua)\n   0.010 Loading mod settings SpidertronEnhancements 1.10.8 (settings.lua)\n   0.012 Loading mod settings SpidertronPatrols 2.6.3 (settings.lua)\n   0.013 Loading mod settings maraxsis 1.31.6 (settings.lua)\n   0.015 Loading mod settings maraxsis 1.31.6 (settings-updates.lua)\n   0.017 Loading mod core 0.0.0 (data.lua)\n   0.026 Loading mod base 2.0.77 (data.lua)\n   0.186 Loading mod elevated-rails 2.0.77 (data.lua)\n   0.199 Loading mod FluidMustFlow 1.4.4 (data.lua)\n   0.205 Loading mod quality 2.0.77 (data.lua)\n   0.214 Loading mod SpidertronEnhancements 1.10.8 (data.lua)\n   0.219 Loading mod space-age 2.0.77 (data.lua)\n   0.338 Loading mod SpidertronPatrols 2.6.3 (data.lua)\n   0.348 Loading mod surfexp_gateways 0.3.1 (data.lua)\n   0.356 Loading mod maraxsis 1.31.6 (data.lua)\n   0.410 Loading mod base 2.0.77 (data-updates.lua)\n   0.420 Loading mod quality 2.0.77 (data-updates.lua)\n   0.434 Loading mod SpidertronEnhancements 1.10.8 (data-updates.lua)\n   0.444 Loading mod space-age 2.0.77 (data-updates.lua)\n   0.452 Loading mod SpidertronPatrols 2.6.3 (data-updates.lua)\n   0.461 Loading mod maraxsis 1.31.6 (data-updates.lua)\n   0.473 Loading mod SpidertronEnhancements 1.10.8 (data-final-fixes.lua)\n   0.484 Loading mod SpidertronPatrols 2.6.3 (data-final-fixes.lua)\n   0.492 Loading mod maraxsis 1.31.6 (data-final-fixes.lua)\n   0.555 Checksum for core: 4187927925\n   0.555 Checksum of base: 1879415942\n   0.555 Checksum of elevated-rails: 70351106\n   0.555 Checksum of FluidMustFlow: 2741802744\n   0.555 Checksum of quality: 1142589254\n   0.555 Checksum of SpidertronEnhancements: 2802774701\n   0.555 Checksum of space-age: 1510664043\n   0.555 Checksum of SpidertronPatrols: 1814447366\n   0.555 Checksum of surfexp_gateways: 3113003946\n   0.555 Checksum of maraxsis: 2814018477\n   0.936 Prototype list checksum: 2702547635\n   1.000 Info PlayerData.cpp:64: Local player-data.json available, timestamp 1784442788\n   1.000 Info PlayerData.cpp:71: Cloud player-data.json unavailable\n   1.001 Info GlobalContext.cpp:1300: Resetting config.\n   1.001 Factorio initialised\n   1.002 Info ServerSynchronizer.cpp:22: nextHeartbeatSequenceNumber(0) initialized Synchronizer nextTickClosureTick(0).\n   1.002 Info ServerMultiplayerManager.cpp:808: updateTick(18446744073709551615) changing state from(Ready) to(PreparedToHostGame)\n   1.002 Info ServerMultiplayerManager.cpp:808: updateTick(18446744073709551615) changing state from(PreparedToHostGame) to(CreatingGame)\n   1.002 Loading map /clusterio/data/instances/clusterio-host-2-instance-1/saves/lab-repinc-golden-dest.zip: 550461 bytes.\n   1.010 Loading level.dat: 3081268 bytes.\n   1.010 Info Scenario.cpp:154: Map version 2.0.77-0\n   1.023 Blueprint storage \"blueprint-storage-2.dat\" was not found, trying to load previous version storage \"blueprint-storage.dat\"\n   1.023 Loading script.dat: 44023 bytes.\n   1.036 Checksum for script __level__/control.lua: 2401794522\n   1.037 Checksum for script __FluidMustFlow__/control.lua: 2342970735\n   1.039 Checksum for script __SpidertronEnhancements__/control.lua: 3957523864\n   1.043 Checksum for script __SpidertronPatrols__/control.lua: 591379248\n   1.047 Script @__maraxsis__/lib/events.lua:52: Finalized 67 events for maraxsis\n   1.047 Checksum for script __maraxsis__/control.lua: 2868601269\n   1.049 Info UDPSocket.cpp:38: Opening socket at (IP ADDR:({0.0.0.0:34200}))\n   1.049 Hosting game at IP ADDR:({0.0.0.0:34200})\n   1.049 Info HttpSharedState.cpp:57: Downloading https://auth.factorio.com/generate-server-padlock-2?api_version=6\n   1.375 Info AuthServerConnector.cpp:112: Obtained serverPadlock for serverHash (gamJtIHKcmGygpfWY8lPaukq7jnbNMhW) from the auth server.\n   1.376 Info ServerMultiplayerManager.cpp:808: updateTick(9933208) changing state from(CreatingGame) to(InGame)\n   1.382 Info ServerRouter.cpp:668: Asking pingpong servers (pingpong1.factorio.com:34197, pingpong2.factorio.com:34197, pingpong3.factorio.com:34197, pingpong4.factorio.com:34197) for own address\n   1.382 Info UDPSocket.cpp:50: Opening socket for broadcast\n   1.382 Info RemoteCommandProcessor.cpp:126: Starting RCON interface at IP ADDR:({0.0.0.0:64038})\n   1.382 Info CommandLineMultiplayer.cpp:292: Maximum segment size = 100; minimum segment size = 25; maximum-segment-size peer count = 10; minimum-segment-size peer count = 20\n   1.383 Info RemoteCommandProcessor.cpp:245: New RCON connection from IP ADDR:({127.0.0.1:56984})\n   1.400 Script @__level__/modules/surface_export/core/gateway.lua:61: [Gateway] discover_and_unlock: 12 gateway/force unlocks\n   1.400 Script @__level__/modules/surface_export/control.lua:92: [Surface Export] Connected to Clusterio controller\n   1.416 Warning ServerRouter.cpp:543: Received own address message reply with conflicting address (got IP ADDR:({209.236.82.227:58846}), expected IP ADDR:({209.236.82.227:54239}))\n   1.416 Script @__level__/modules/surface_export/control.lua:96: [Surface Export] Instance configuration updated\n   1.416 Warning ServerMultiplayerManager.cpp:654: Determining own address has failed. Best guess: IP ADDR:({209.236.82.227:54239})\n   1.416 Info AuthServerConnector.cpp:620: Performing TLS check.\n   1.416 Info HttpSharedState.cpp:57: Downloading https://auth.factorio.com/tls-check/success\n   1.466 Script @__level__/modules/surface_export/interfaces/remote/configure.lua:86: [FactorioSurfaceExport] Configuration updated: batch_size=50, max_concurrent_jobs=3, show_progress=true, debug_mode=true\n   1.483 Warning ServerRouter.cpp:543: Received own address message reply with conflicting address (got IP ADDR:({209.236.82.227:57072}), expected IP ADDR:({209.236.82.227:54239}))\n   1.483 Script @__level__/modules/surface_export/interfaces/remote/configure.lua:80: [FactorioSurfaceExport] Gateway config updated: 0 gateway(s)\n   1.483 Script @__level__/modules/surface_export/interfaces/remote/configure.lua:86: [FactorioSurfaceExport] Configuration updated: batch_size=unchanged, max_concurrent_jobs=unchanged, show_progress=nil, debug_mode=nil\n   1.533 Warning ServerRouter.cpp:543: Received own address message reply with conflicting address (got IP ADDR:({209.236.82.227:58847}), expected IP ADDR:({209.236.82.227:54239}))\n   1.551 Info AuthServerConnector.cpp:653: TLS check success.\n   2.017 Info MatchingServer.cpp:129: Matching server game `961124` has been created.\n   2.033 Info ServerMultiplayerManager.cpp:738: Matching server connection resumed\n"
+  },
+  "restored": {
+    "1": "test1.zip",
+    "2": "test2.zip",
+    "zeroLeftovers": true
+  },
+  "finished": "2026-07-19T06:33:42.628Z",
+  "green": false
+}
+```
+</details>
+
+## 2026-07-19T06:35:27.295Z — repin-consumables batch (engine-repin B7+B9, GREEN)
+
+Runner: `tests/engine-repin-lab/run-repin-consumables.mjs` against the committed golden pair (instances {"1":2119131471,"2":234487481}); pre-batch saves {"1":"test1.zip","2":"test2.zip"}, restored {"1":"test1.zip","2":"test2.zip","zeroLeftovers":true}.
+
+**engine-repin B7 / lab-consumable-1** — `destroy()` at t0=9265214: alive=true at +36, alive=true at +133 — matches the pinned 2.0.77 table.
+
+**engine-repin B7 / lab-consumable-2** — `destroy(0)` at t0=9265429: alive=false at +37, alive=false at +127 — matches the pinned 2.0.77 table.
+
+**engine-repin B7 / lab-consumable-3** — `destroy(60)` at t0=9265626: alive=true at +36, alive=false at +127 — matches the pinned 2.0.77 table.
+
+**engine-repin B9 (unknown-item import)** — valid iron-plate restored physically (25/25), the 'Skipped unknown item' log warning fired (1x), no crash. Disposable surface removed.
+
+<details><summary>Raw results JSON</summary>
+
+```json
+{
+  "script": "tests/engine-repin-lab/run-repin-consumables.mjs",
+  "started": "2026-07-19T06:34:45.590Z",
+  "sections": [
+    "preflight",
+    "load",
+    "b7",
+    "b9",
+    "restore"
+  ],
+  "errors": [],
+  "b7": {
+    "lab-consumable-1": {
+      "call": "destroy()",
+      "t0": 9265214,
+      "earlyTick": 36,
+      "earlyAlive": true,
+      "lateTick": 133,
+      "lateAlive": true
+    },
+    "lab-consumable-2": {
+      "call": "destroy(0)",
+      "t0": 9265429,
+      "earlyTick": 37,
+      "earlyAlive": false,
+      "lateTick": 127,
+      "lateAlive": false
+    },
+    "lab-consumable-3": {
+      "call": "destroy(60)",
+      "t0": 9265626,
+      "earlyTick": 36,
+      "earlyAlive": true,
+      "lateTick": 127,
+      "lateAlive": false
+    }
+  },
+  "instanceIds": {
+    "1": 2119131471,
+    "2": 234487481
+  },
+  "preBatchSaves": {
+    "1": "test1.zip",
+    "2": "test2.zip"
+  },
+  "lease": "clean",
+  "goldenLoaded": true,
+  "b7Verdict": "GREEN",
+  "b9": {
+    "success": true,
+    "importSuccess": true,
+    "errors": {},
+    "warnings": 0,
+    "warningText": "",
+    "platesPhysical": 25,
+    "chestExists": true,
+    "skipWarningLogged": 1
+  },
+  "b9Verdict": "GREEN",
+  "goldenSessionLogTails": {
+    "1": "   0.007 Info ModManager.cpp:449: FeatureFlag spoiling = true\n   0.008 Loading mod settings FluidMustFlow 1.4.4 (settings.lua)\n   0.010 Loading mod settings SpidertronEnhancements 1.10.8 (settings.lua)\n   0.011 Loading mod settings SpidertronPatrols 2.6.3 (settings.lua)\n   0.012 Loading mod settings maraxsis 1.31.6 (settings.lua)\n   0.014 Loading mod settings maraxsis 1.31.6 (settings-updates.lua)\n   0.017 Loading mod core 0.0.0 (data.lua)\n   0.027 Loading mod base 2.0.77 (data.lua)\n   0.125 Loading mod elevated-rails 2.0.77 (data.lua)\n   0.141 Loading mod FluidMustFlow 1.4.4 (data.lua)\n   0.148 Loading mod quality 2.0.77 (data.lua)\n   0.158 Loading mod SpidertronEnhancements 1.10.8 (data.lua)\n   0.163 Loading mod space-age 2.0.77 (data.lua)\n   0.285 Loading mod SpidertronPatrols 2.6.3 (data.lua)\n   0.298 Loading mod surfexp_gateways 0.3.1 (data.lua)\n   0.305 Loading mod maraxsis 1.31.6 (data.lua)\n   0.369 Loading mod base 2.0.77 (data-updates.lua)\n   0.381 Loading mod quality 2.0.77 (data-updates.lua)\n   0.401 Loading mod SpidertronEnhancements 1.10.8 (data-updates.lua)\n   0.414 Loading mod space-age 2.0.77 (data-updates.lua)\n   0.423 Loading mod SpidertronPatrols 2.6.3 (data-updates.lua)\n   0.435 Loading mod maraxsis 1.31.6 (data-updates.lua)\n   0.450 Loading mod SpidertronEnhancements 1.10.8 (data-final-fixes.lua)\n   0.464 Loading mod SpidertronPatrols 2.6.3 (data-final-fixes.lua)\n   0.477 Loading mod maraxsis 1.31.6 (data-final-fixes.lua)\n   0.560 Checksum for core: 4187927925\n   0.560 Checksum of base: 1879415942\n   0.560 Checksum of elevated-rails: 70351106\n   0.560 Checksum of FluidMustFlow: 2741802744\n   0.560 Checksum of quality: 1142589254\n   0.560 Checksum of SpidertronEnhancements: 2802774701\n   0.560 Checksum of space-age: 1510664043\n   0.560 Checksum of SpidertronPatrols: 1814447366\n   0.560 Checksum of surfexp_gateways: 3113003946\n   0.560 Checksum of maraxsis: 2814018477\n   0.903 Prototype list checksum: 2702547635\n   1.001 Info PlayerData.cpp:64: Local player-data.json available, timestamp 1784442896\n   1.001 Info PlayerData.cpp:71: Cloud player-data.json unavailable\n   1.003 Info GlobalContext.cpp:1300: Resetting config.\n   1.003 Factorio initialised\n   1.003 Info ServerSynchronizer.cpp:22: nextHeartbeatSequenceNumber(0) initialized Synchronizer nextTickClosureTick(0).\n   1.003 Info ServerMultiplayerManager.cpp:808: updateTick(18446744073709551615) changing state from(Ready) to(PreparedToHostGame)\n   1.003 Info ServerMultiplayerManager.cpp:808: updateTick(18446744073709551615) changing state from(PreparedToHostGame) to(CreatingGame)\n   1.004 Loading map /clusterio/data/instances/clusterio-host-1-instance-1/saves/lab-repinc-golden-source.zip: 1186497 bytes.\n   1.014 Loading level.dat: 10784974 bytes.\n   1.014 Info Scenario.cpp:154: Map version 2.0.77-0\n   1.091 Blueprint storage \"blueprint-storage-2.dat\" was not found, trying to load previous version storage \"blueprint-storage.dat\"\n   1.092 Loading script.dat: 44018 bytes.\n   1.109 Checksum for script __level__/control.lua: 2401794522\n   1.110 Checksum for script __FluidMustFlow__/control.lua: 2342970735\n   1.112 Checksum for script __SpidertronEnhancements__/control.lua: 3957523864\n   1.117 Checksum for script __SpidertronPatrols__/control.lua: 591379248\n   1.121 Script @__maraxsis__/lib/events.lua:52: Finalized 67 events for maraxsis\n   1.121 Checksum for script __maraxsis__/control.lua: 2868601269\n   1.124 Info UDPSocket.cpp:38: Opening socket at (IP ADDR:({0.0.0.0:34100}))\n   1.125 Hosting game at IP ADDR:({0.0.0.0:34100})\n   1.125 Info HttpSharedState.cpp:57: Downloading https://auth.factorio.com/generate-server-padlock-2?api_version=6\n   1.273 Info AuthServerConnector.cpp:112: Obtained serverPadlock for serverHash (EfYw7usz7L9XMNeOiqF1FreYAyiMtTmu) from the auth server.\n   1.273 Info ServerMultiplayerManager.cpp:808: updateTick(9931134) changing state from(CreatingGame) to(InGame)\n   1.279 Info ServerRouter.cpp:668: Asking pingpong servers (pingpong1.factorio.com:34197, pingpong2.factorio.com:34197, pingpong3.factorio.com:34197, pingpong4.factorio.com:34197) for own address\n   1.280 Info UDPSocket.cpp:50: Opening socket for broadcast\n   1.280 Info RemoteCommandProcessor.cpp:126: Starting RCON interface at IP ADDR:({0.0.0.0:49778})\n   1.280 Info CommandLineMultiplayer.cpp:292: Maximum segment size = 100; minimum segment size = 25; maximum-segment-size peer count = 10; minimum-segment-size peer count = 20\n   1.281 Info RemoteCommandProcessor.cpp:245: New RCON connection from IP ADDR:({127.0.0.1:50620})\n   1.298 Script @__level__/modules/surface_export/core/gateway.lua:61: [Gateway] discover_and_unlock: 12 gateway/force unlocks\n   1.298 Script @__level__/modules/surface_export/control.lua:92: [Surface Export] Connected to Clusterio controller\n   1.314 Warning ServerRouter.cpp:543: Received own address message reply with conflicting address (got IP ADDR:({209.236.82.227:64943}), expected IP ADDR:({209.236.82.227:63376}))\n   1.314 Script @__level__/modules/surface_export/control.lua:96: [Surface Export] Instance configuration updated\n   1.314 Warning ServerMultiplayerManager.cpp:654: Determining own address has failed. Best guess: IP ADDR:({209.236.82.227:63376})\n   1.314 Info AuthServerConnector.cpp:620: Performing TLS check.\n   1.314 Info HttpSharedState.cpp:57: Downloading https://auth.factorio.com/tls-check/success\n   1.364 Script @__level__/modules/surface_export/interfaces/remote/configure.lua:86: [FactorioSurfaceExport] Configuration updated: batch_size=50, max_concurrent_jobs=3, show_progress=true, debug_mode=true\n   1.381 Warning ServerRouter.cpp:543: Received own address message reply with conflicting address (got IP ADDR:({209.236.82.227:50112}), expected IP ADDR:({209.236.82.227:63376}))\n   1.381 Script @__level__/modules/surface_export/interfaces/remote/configure.lua:80: [FactorioSurfaceExport] Gateway config updated: 0 gateway(s)\n   1.381 Script @__level__/modules/surface_export/interfaces/remote/configure.lua:86: [FactorioSurfaceExport] Configuration updated: batch_size=unchanged, max_concurrent_jobs=unchanged, show_progress=nil, debug_mode=nil\n   1.431 Warning ServerRouter.cpp:543: Received own address message reply with conflicting address (got IP ADDR:({209.236.82.227:56799}), expected IP ADDR:({209.236.82.227:63376}))\n   1.499 Info AuthServerConnector.cpp:653: TLS check success.\n   2.011 Info MatchingServer.cpp:129: Matching server game `961132` has been created.\n   2.014 Info ServerMultiplayerManager.cpp:738: Matching server connection resumed\n  17.889 Script @__level__/modules/surface_export/core/deserializer.lua:731: [FactorioSurfaceExport] Warning: Skipped unknown item 'repin-bogus-item-xyz' for steel-chest (mod missing?): Unknown item name: repin-bogus-item-xyz\n",
+    "2": "   0.008 Info ModManager.cpp:449: FeatureFlag space-travel = true\n   0.008 Info ModManager.cpp:449: FeatureFlag spoiling = true\n   0.010 Loading mod settings FluidMustFlow 1.4.4 (settings.lua)\n   0.011 Loading mod settings SpidertronEnhancements 1.10.8 (settings.lua)\n   0.012 Loading mod settings SpidertronPatrols 2.6.3 (settings.lua)\n   0.013 Loading mod settings maraxsis 1.31.6 (settings.lua)\n   0.014 Loading mod settings maraxsis 1.31.6 (settings-updates.lua)\n   0.016 Loading mod core 0.0.0 (data.lua)\n   0.025 Loading mod base 2.0.77 (data.lua)\n   0.113 Loading mod elevated-rails 2.0.77 (data.lua)\n   0.126 Loading mod FluidMustFlow 1.4.4 (data.lua)\n   0.132 Loading mod quality 2.0.77 (data.lua)\n   0.141 Loading mod SpidertronEnhancements 1.10.8 (data.lua)\n   0.145 Loading mod space-age 2.0.77 (data.lua)\n   0.259 Loading mod SpidertronPatrols 2.6.3 (data.lua)\n   0.281 Loading mod surfexp_gateways 0.3.1 (data.lua)\n   0.293 Loading mod maraxsis 1.31.6 (data.lua)\n   0.337 Loading mod base 2.0.77 (data-updates.lua)\n   0.348 Loading mod quality 2.0.77 (data-updates.lua)\n   0.363 Loading mod SpidertronEnhancements 1.10.8 (data-updates.lua)\n   0.373 Loading mod space-age 2.0.77 (data-updates.lua)\n   0.383 Loading mod SpidertronPatrols 2.6.3 (data-updates.lua)\n   0.393 Loading mod maraxsis 1.31.6 (data-updates.lua)\n   0.406 Loading mod SpidertronEnhancements 1.10.8 (data-final-fixes.lua)\n   0.421 Loading mod SpidertronPatrols 2.6.3 (data-final-fixes.lua)\n   0.431 Loading mod maraxsis 1.31.6 (data-final-fixes.lua)\n   0.506 Checksum for core: 4187927925\n   0.506 Checksum of base: 1879415942\n   0.506 Checksum of elevated-rails: 70351106\n   0.506 Checksum of FluidMustFlow: 2741802744\n   0.506 Checksum of quality: 1142589254\n   0.506 Checksum of SpidertronEnhancements: 2802774701\n   0.506 Checksum of space-age: 1510664043\n   0.506 Checksum of SpidertronPatrols: 1814447366\n   0.506 Checksum of surfexp_gateways: 3113003946\n   0.506 Checksum of maraxsis: 2814018477\n   0.813 Prototype list checksum: 2702547635\n   0.883 Info PlayerData.cpp:64: Local player-data.json available, timestamp 1784442898\n   0.883 Info PlayerData.cpp:71: Cloud player-data.json unavailable\n   0.885 Info GlobalContext.cpp:1300: Resetting config.\n   0.885 Factorio initialised\n   0.885 Info ServerSynchronizer.cpp:22: nextHeartbeatSequenceNumber(0) initialized Synchronizer nextTickClosureTick(0).\n   0.885 Info ServerMultiplayerManager.cpp:808: updateTick(18446744073709551615) changing state from(Ready) to(PreparedToHostGame)\n   0.885 Info ServerMultiplayerManager.cpp:808: updateTick(18446744073709551615) changing state from(PreparedToHostGame) to(CreatingGame)\n   0.885 Loading map /clusterio/data/instances/clusterio-host-2-instance-1/saves/lab-repinc-golden-dest.zip: 550461 bytes.\n   0.894 Loading level.dat: 3081268 bytes.\n   0.894 Info Scenario.cpp:154: Map version 2.0.77-0\n   0.914 Blueprint storage \"blueprint-storage-2.dat\" was not found, trying to load previous version storage \"blueprint-storage.dat\"\n   0.914 Loading script.dat: 44023 bytes.\n   0.931 Checksum for script __level__/control.lua: 2401794522\n   0.932 Checksum for script __FluidMustFlow__/control.lua: 2342970735\n   0.935 Checksum for script __SpidertronEnhancements__/control.lua: 3957523864\n   0.938 Checksum for script __SpidertronPatrols__/control.lua: 591379248\n   0.944 Script @__maraxsis__/lib/events.lua:52: Finalized 67 events for maraxsis\n   0.944 Checksum for script __maraxsis__/control.lua: 2868601269\n   0.948 Info UDPSocket.cpp:38: Opening socket at (IP ADDR:({0.0.0.0:34200}))\n   0.948 Hosting game at IP ADDR:({0.0.0.0:34200})\n   0.948 Info HttpSharedState.cpp:57: Downloading https://auth.factorio.com/generate-server-padlock-2?api_version=6\n   1.100 Info AuthServerConnector.cpp:112: Obtained serverPadlock for serverHash (X3eM17NuzX5p29OtmFrw9vfgYjVgEWLf) from the auth server.\n   1.100 Info ServerMultiplayerManager.cpp:808: updateTick(9933208) changing state from(CreatingGame) to(InGame)\n   1.105 Info ServerRouter.cpp:668: Asking pingpong servers (pingpong1.factorio.com:34197, pingpong2.factorio.com:34197, pingpong3.factorio.com:34197, pingpong4.factorio.com:34197) for own address\n   1.105 Info UDPSocket.cpp:50: Opening socket for broadcast\n   1.105 Info RemoteCommandProcessor.cpp:126: Starting RCON interface at IP ADDR:({0.0.0.0:53399})\n   1.105 Info CommandLineMultiplayer.cpp:292: Maximum segment size = 100; minimum segment size = 25; maximum-segment-size peer count = 10; minimum-segment-size peer count = 20\n   1.106 Info RemoteCommandProcessor.cpp:245: New RCON connection from IP ADDR:({127.0.0.1:34616})\n   1.122 Script @__level__/modules/surface_export/core/gateway.lua:61: [Gateway] discover_and_unlock: 12 gateway/force unlocks\n   1.122 Script @__level__/modules/surface_export/control.lua:92: [Surface Export] Connected to Clusterio controller\n   1.139 Warning ServerRouter.cpp:543: Received own address message reply with conflicting address (got IP ADDR:({209.236.82.227:58846}), expected IP ADDR:({209.236.82.227:54239}))\n   1.139 Script @__level__/modules/surface_export/control.lua:96: [Surface Export] Instance configuration updated\n   1.139 Warning ServerMultiplayerManager.cpp:654: Determining own address has failed. Best guess: IP ADDR:({209.236.82.227:54239})\n   1.139 Info AuthServerConnector.cpp:620: Performing TLS check.\n   1.139 Info HttpSharedState.cpp:57: Downloading https://auth.factorio.com/tls-check/success\n   1.189 Script @__level__/modules/surface_export/interfaces/remote/configure.lua:86: [FactorioSurfaceExport] Configuration updated: batch_size=50, max_concurrent_jobs=3, show_progress=true, debug_mode=true\n   1.205 Warning ServerRouter.cpp:543: Received own address message reply with conflicting address (got IP ADDR:({209.236.82.227:57072}), expected IP ADDR:({209.236.82.227:54239}))\n   1.206 Script @__level__/modules/surface_export/interfaces/remote/configure.lua:80: [FactorioSurfaceExport] Gateway config updated: 0 gateway(s)\n   1.206 Script @__level__/modules/surface_export/interfaces/remote/configure.lua:86: [FactorioSurfaceExport] Configuration updated: batch_size=unchanged, max_concurrent_jobs=unchanged, show_progress=nil, debug_mode=nil\n   1.255 Warning ServerRouter.cpp:543: Received own address message reply with conflicting address (got IP ADDR:({209.236.82.227:58847}), expected IP ADDR:({209.236.82.227:54239}))\n   1.337 Info AuthServerConnector.cpp:653: TLS check success.\n   1.817 Info MatchingServer.cpp:129: Matching server game `961133` has been created.\n   1.822 Info ServerMultiplayerManager.cpp:738: Matching server connection resumed\n"
+  },
+  "restored": {
+    "1": "test1.zip",
+    "2": "test2.zip",
+    "zeroLeftovers": true
+  },
+  "finished": "2026-07-19T06:35:27.295Z",
+  "green": true
+}
+```
+</details>
+
+## 2026-07-19T06:36:19.064Z — repin-consumables batch (engine-repin B7+B9, GREEN)
+
+Runner: `tests/engine-repin-lab/run-repin-consumables.mjs` against the committed golden pair (instances {"1":2119131471,"2":234487481}); pre-batch saves {"1":"test1.zip","2":"test2.zip"}, restored {"1":"test1.zip","2":"test2.zip","zeroLeftovers":true}.
+
+**engine-repin B7 / lab-consumable-1** — `destroy()` at t0=9265219: alive=true at +40, alive=true at +131 — matches the pinned 2.0.77 table.
+
+**engine-repin B7 / lab-consumable-2** — `destroy(0)` at t0=9265430: alive=false at +39, alive=false at +133 — matches the pinned 2.0.77 table.
+
+**engine-repin B7 / lab-consumable-3** — `destroy(60)` at t0=9265641: alive=true at +40, alive=false at +132 — matches the pinned 2.0.77 table.
+
+**engine-repin B9 (unknown-item import)** — valid iron-plate restored physically (25/25), the 'Skipped unknown item' log warning fired (1x), no crash. Disposable surface removed.
+
+<details><summary>Raw results JSON</summary>
+
+```json
+{
+  "script": "tests/engine-repin-lab/run-repin-consumables.mjs",
+  "started": "2026-07-19T06:35:37.304Z",
+  "sections": [
+    "preflight",
+    "load",
+    "b7",
+    "b9",
+    "restore"
+  ],
+  "errors": [],
+  "b7": {
+    "lab-consumable-1": {
+      "call": "destroy()",
+      "t0": 9265219,
+      "earlyTick": 40,
+      "earlyAlive": true,
+      "lateTick": 131,
+      "lateAlive": true
+    },
+    "lab-consumable-2": {
+      "call": "destroy(0)",
+      "t0": 9265430,
+      "earlyTick": 39,
+      "earlyAlive": false,
+      "lateTick": 133,
+      "lateAlive": false
+    },
+    "lab-consumable-3": {
+      "call": "destroy(60)",
+      "t0": 9265641,
+      "earlyTick": 40,
+      "earlyAlive": true,
+      "lateTick": 132,
+      "lateAlive": false
+    }
+  },
+  "instanceIds": {
+    "1": 2119131471,
+    "2": 234487481
+  },
+  "preBatchSaves": {
+    "1": "test1.zip",
+    "2": "test2.zip"
+  },
+  "lease": "clean",
+  "goldenLoaded": true,
+  "b7Verdict": "GREEN",
+  "b9": {
+    "success": true,
+    "importSuccess": true,
+    "errors": {},
+    "warnings": 0,
+    "warningText": "",
+    "platesPhysical": 25,
+    "chestExists": true,
+    "skipWarningLogged": 1
+  },
+  "b9Verdict": "GREEN",
+  "goldenSessionLogTails": {
+    "1": "   0.008 Info ModManager.cpp:449: FeatureFlag spoiling = true\n   0.009 Loading mod settings FluidMustFlow 1.4.4 (settings.lua)\n   0.010 Loading mod settings SpidertronEnhancements 1.10.8 (settings.lua)\n   0.011 Loading mod settings SpidertronPatrols 2.6.3 (settings.lua)\n   0.013 Loading mod settings maraxsis 1.31.6 (settings.lua)\n   0.014 Loading mod settings maraxsis 1.31.6 (settings-updates.lua)\n   0.016 Loading mod core 0.0.0 (data.lua)\n   0.025 Loading mod base 2.0.77 (data.lua)\n   0.111 Loading mod elevated-rails 2.0.77 (data.lua)\n   0.126 Loading mod FluidMustFlow 1.4.4 (data.lua)\n   0.132 Loading mod quality 2.0.77 (data.lua)\n   0.145 Loading mod SpidertronEnhancements 1.10.8 (data.lua)\n   0.151 Loading mod space-age 2.0.77 (data.lua)\n   0.286 Loading mod SpidertronPatrols 2.6.3 (data.lua)\n   0.297 Loading mod surfexp_gateways 0.3.1 (data.lua)\n   0.304 Loading mod maraxsis 1.31.6 (data.lua)\n   0.333 Loading mod base 2.0.77 (data-updates.lua)\n   0.341 Loading mod quality 2.0.77 (data-updates.lua)\n   0.357 Loading mod SpidertronEnhancements 1.10.8 (data-updates.lua)\n   0.369 Loading mod space-age 2.0.77 (data-updates.lua)\n   0.379 Loading mod SpidertronPatrols 2.6.3 (data-updates.lua)\n   0.390 Loading mod maraxsis 1.31.6 (data-updates.lua)\n   0.404 Loading mod SpidertronEnhancements 1.10.8 (data-final-fixes.lua)\n   0.422 Loading mod SpidertronPatrols 2.6.3 (data-final-fixes.lua)\n   0.433 Loading mod maraxsis 1.31.6 (data-final-fixes.lua)\n   0.523 Checksum for core: 4187927925\n   0.523 Checksum of base: 1879415942\n   0.523 Checksum of elevated-rails: 70351106\n   0.523 Checksum of FluidMustFlow: 2741802744\n   0.523 Checksum of quality: 1142589254\n   0.523 Checksum of SpidertronEnhancements: 2802774701\n   0.523 Checksum of space-age: 1510664043\n   0.523 Checksum of SpidertronPatrols: 1814447366\n   0.523 Checksum of surfexp_gateways: 3113003946\n   0.523 Checksum of maraxsis: 2814018477\n   0.832 Prototype list checksum: 2702547635\n   0.921 Info PlayerData.cpp:64: Local player-data.json available, timestamp 1784442946\n   0.921 Info PlayerData.cpp:71: Cloud player-data.json unavailable\n   0.922 Info GlobalContext.cpp:1300: Resetting config.\n   0.922 Factorio initialised\n   0.922 Info ServerSynchronizer.cpp:22: nextHeartbeatSequenceNumber(0) initialized Synchronizer nextTickClosureTick(0).\n   0.922 Info ServerMultiplayerManager.cpp:808: updateTick(18446744073709551615) changing state from(Ready) to(PreparedToHostGame)\n   0.922 Info ServerMultiplayerManager.cpp:808: updateTick(18446744073709551615) changing state from(PreparedToHostGame) to(CreatingGame)\n   0.923 Loading map /clusterio/data/instances/clusterio-host-1-instance-1/saves/lab-repinc-golden-source.zip: 1186497 bytes.\n   0.933 Loading level.dat: 10784974 bytes.\n   0.933 Info Scenario.cpp:154: Map version 2.0.77-0\n   1.000 Blueprint storage \"blueprint-storage-2.dat\" was not found, trying to load previous version storage \"blueprint-storage.dat\"\n   1.001 Loading script.dat: 44018 bytes.\n   1.017 Checksum for script __level__/control.lua: 2401794522\n   1.018 Checksum for script __FluidMustFlow__/control.lua: 2342970735\n   1.020 Checksum for script __SpidertronEnhancements__/control.lua: 3957523864\n   1.024 Checksum for script __SpidertronPatrols__/control.lua: 591379248\n   1.029 Script @__maraxsis__/lib/events.lua:52: Finalized 67 events for maraxsis\n   1.029 Checksum for script __maraxsis__/control.lua: 2868601269\n   1.032 Info UDPSocket.cpp:38: Opening socket at (IP ADDR:({0.0.0.0:34100}))\n   1.032 Hosting game at IP ADDR:({0.0.0.0:34100})\n   1.032 Info HttpSharedState.cpp:57: Downloading https://auth.factorio.com/generate-server-padlock-2?api_version=6\n   1.179 Info AuthServerConnector.cpp:112: Obtained serverPadlock for serverHash (oKz1AtJgKDkL7gR3GpnJ5dcJmW1VzsLf) from the auth server.\n   1.179 Info ServerMultiplayerManager.cpp:808: updateTick(9931134) changing state from(CreatingGame) to(InGame)\n   1.185 Info ServerRouter.cpp:668: Asking pingpong servers (pingpong1.factorio.com:34197, pingpong2.factorio.com:34197, pingpong3.factorio.com:34197, pingpong4.factorio.com:34197) for own address\n   1.185 Info UDPSocket.cpp:50: Opening socket for broadcast\n   1.186 Info RemoteCommandProcessor.cpp:126: Starting RCON interface at IP ADDR:({0.0.0.0:62527})\n   1.186 Info CommandLineMultiplayer.cpp:292: Maximum segment size = 100; minimum segment size = 25; maximum-segment-size peer count = 10; minimum-segment-size peer count = 20\n   1.187 Info RemoteCommandProcessor.cpp:245: New RCON connection from IP ADDR:({127.0.0.1:36874})\n   1.203 Script @__level__/modules/surface_export/core/gateway.lua:61: [Gateway] discover_and_unlock: 12 gateway/force unlocks\n   1.203 Script @__level__/modules/surface_export/control.lua:92: [Surface Export] Connected to Clusterio controller\n   1.219 Warning ServerRouter.cpp:543: Received own address message reply with conflicting address (got IP ADDR:({209.236.82.227:64943}), expected IP ADDR:({209.236.82.227:63376}))\n   1.220 Script @__level__/modules/surface_export/control.lua:96: [Surface Export] Instance configuration updated\n   1.220 Warning ServerMultiplayerManager.cpp:654: Determining own address has failed. Best guess: IP ADDR:({209.236.82.227:63376})\n   1.220 Info AuthServerConnector.cpp:620: Performing TLS check.\n   1.220 Info HttpSharedState.cpp:57: Downloading https://auth.factorio.com/tls-check/success\n   1.270 Script @__level__/modules/surface_export/interfaces/remote/configure.lua:86: [FactorioSurfaceExport] Configuration updated: batch_size=50, max_concurrent_jobs=3, show_progress=true, debug_mode=true\n   1.286 Warning ServerRouter.cpp:543: Received own address message reply with conflicting address (got IP ADDR:({209.236.82.227:50112}), expected IP ADDR:({209.236.82.227:63376}))\n   1.287 Script @__level__/modules/surface_export/interfaces/remote/configure.lua:80: [FactorioSurfaceExport] Gateway config updated: 0 gateway(s)\n   1.287 Script @__level__/modules/surface_export/interfaces/remote/configure.lua:86: [FactorioSurfaceExport] Configuration updated: batch_size=unchanged, max_concurrent_jobs=unchanged, show_progress=nil, debug_mode=nil\n   1.336 Warning ServerRouter.cpp:543: Received own address message reply with conflicting address (got IP ADDR:({209.236.82.227:56799}), expected IP ADDR:({209.236.82.227:63376}))\n   1.360 Info AuthServerConnector.cpp:653: TLS check success.\n   1.895 Info MatchingServer.cpp:129: Matching server game `961139` has been created.\n   1.903 Info ServerMultiplayerManager.cpp:738: Matching server connection resumed\n  21.462 Script @__level__/modules/surface_export/core/deserializer.lua:731: [FactorioSurfaceExport] Warning: Skipped unknown item 'repin-bogus-item-xyz' for steel-chest (mod missing?): Unknown item name: repin-bogus-item-xyz\n",
+    "2": "   0.008 Info ModManager.cpp:449: FeatureFlag space-travel = true\n   0.008 Info ModManager.cpp:449: FeatureFlag spoiling = true\n   0.009 Loading mod settings FluidMustFlow 1.4.4 (settings.lua)\n   0.010 Loading mod settings SpidertronEnhancements 1.10.8 (settings.lua)\n   0.012 Loading mod settings SpidertronPatrols 2.6.3 (settings.lua)\n   0.013 Loading mod settings maraxsis 1.31.6 (settings.lua)\n   0.015 Loading mod settings maraxsis 1.31.6 (settings-updates.lua)\n   0.019 Loading mod core 0.0.0 (data.lua)\n   0.026 Loading mod base 2.0.77 (data.lua)\n   0.122 Loading mod elevated-rails 2.0.77 (data.lua)\n   0.135 Loading mod FluidMustFlow 1.4.4 (data.lua)\n   0.145 Loading mod quality 2.0.77 (data.lua)\n   0.154 Loading mod SpidertronEnhancements 1.10.8 (data.lua)\n   0.159 Loading mod space-age 2.0.77 (data.lua)\n   0.274 Loading mod SpidertronPatrols 2.6.3 (data.lua)\n   0.287 Loading mod surfexp_gateways 0.3.1 (data.lua)\n   0.294 Loading mod maraxsis 1.31.6 (data.lua)\n   0.329 Loading mod base 2.0.77 (data-updates.lua)\n   0.338 Loading mod quality 2.0.77 (data-updates.lua)\n   0.352 Loading mod SpidertronEnhancements 1.10.8 (data-updates.lua)\n   0.360 Loading mod space-age 2.0.77 (data-updates.lua)\n   0.369 Loading mod SpidertronPatrols 2.6.3 (data-updates.lua)\n   0.380 Loading mod maraxsis 1.31.6 (data-updates.lua)\n   0.394 Loading mod SpidertronEnhancements 1.10.8 (data-final-fixes.lua)\n   0.415 Loading mod SpidertronPatrols 2.6.3 (data-final-fixes.lua)\n   0.425 Loading mod maraxsis 1.31.6 (data-final-fixes.lua)\n   0.511 Checksum for core: 4187927925\n   0.511 Checksum of base: 1879415942\n   0.511 Checksum of elevated-rails: 70351106\n   0.511 Checksum of FluidMustFlow: 2741802744\n   0.511 Checksum of quality: 1142589254\n   0.511 Checksum of SpidertronEnhancements: 2802774701\n   0.511 Checksum of space-age: 1510664043\n   0.511 Checksum of SpidertronPatrols: 1814447366\n   0.511 Checksum of surfexp_gateways: 3113003946\n   0.511 Checksum of maraxsis: 2814018477\n   0.832 Prototype list checksum: 2702547635\n   0.901 Info PlayerData.cpp:64: Local player-data.json available, timestamp 1784442948\n   0.901 Info PlayerData.cpp:71: Cloud player-data.json unavailable\n   0.902 Info GlobalContext.cpp:1300: Resetting config.\n   0.902 Factorio initialised\n   0.903 Info ServerSynchronizer.cpp:22: nextHeartbeatSequenceNumber(0) initialized Synchronizer nextTickClosureTick(0).\n   0.903 Info ServerMultiplayerManager.cpp:808: updateTick(18446744073709551615) changing state from(Ready) to(PreparedToHostGame)\n   0.903 Info ServerMultiplayerManager.cpp:808: updateTick(18446744073709551615) changing state from(PreparedToHostGame) to(CreatingGame)\n   0.903 Loading map /clusterio/data/instances/clusterio-host-2-instance-1/saves/lab-repinc-golden-dest.zip: 550461 bytes.\n   0.911 Loading level.dat: 3081268 bytes.\n   0.912 Info Scenario.cpp:154: Map version 2.0.77-0\n   0.925 Blueprint storage \"blueprint-storage-2.dat\" was not found, trying to load previous version storage \"blueprint-storage.dat\"\n   0.926 Loading script.dat: 44023 bytes.\n   0.938 Checksum for script __level__/control.lua: 2401794522\n   0.939 Checksum for script __FluidMustFlow__/control.lua: 2342970735\n   0.942 Checksum for script __SpidertronEnhancements__/control.lua: 3957523864\n   0.946 Checksum for script __SpidertronPatrols__/control.lua: 591379248\n   0.950 Script @__maraxsis__/lib/events.lua:52: Finalized 67 events for maraxsis\n   0.950 Checksum for script __maraxsis__/control.lua: 2868601269\n   0.953 Info UDPSocket.cpp:38: Opening socket at (IP ADDR:({0.0.0.0:34200}))\n   0.953 Hosting game at IP ADDR:({0.0.0.0:34200})\n   0.953 Info HttpSharedState.cpp:57: Downloading https://auth.factorio.com/generate-server-padlock-2?api_version=6\n   1.098 Info AuthServerConnector.cpp:112: Obtained serverPadlock for serverHash (BMM1Zaxyzt4GYCwJAEYAyc1fZuFkD7SM) from the auth server.\n   1.098 Info ServerMultiplayerManager.cpp:808: updateTick(9933208) changing state from(CreatingGame) to(InGame)\n   1.103 Info ServerRouter.cpp:668: Asking pingpong servers (pingpong1.factorio.com:34197, pingpong2.factorio.com:34197, pingpong3.factorio.com:34197, pingpong4.factorio.com:34197) for own address\n   1.103 Info UDPSocket.cpp:50: Opening socket for broadcast\n   1.104 Info RemoteCommandProcessor.cpp:126: Starting RCON interface at IP ADDR:({0.0.0.0:65479})\n   1.104 Info CommandLineMultiplayer.cpp:292: Maximum segment size = 100; minimum segment size = 25; maximum-segment-size peer count = 10; minimum-segment-size peer count = 20\n   1.104 Info RemoteCommandProcessor.cpp:245: New RCON connection from IP ADDR:({127.0.0.1:46794})\n   1.121 Script @__level__/modules/surface_export/core/gateway.lua:61: [Gateway] discover_and_unlock: 12 gateway/force unlocks\n   1.121 Script @__level__/modules/surface_export/control.lua:92: [Surface Export] Connected to Clusterio controller\n   1.137 Warning ServerRouter.cpp:543: Received own address message reply with conflicting address (got IP ADDR:({209.236.82.227:58846}), expected IP ADDR:({209.236.82.227:54239}))\n   1.137 Script @__level__/modules/surface_export/control.lua:96: [Surface Export] Instance configuration updated\n   1.137 Warning ServerMultiplayerManager.cpp:654: Determining own address has failed. Best guess: IP ADDR:({209.236.82.227:54239})\n   1.137 Info AuthServerConnector.cpp:620: Performing TLS check.\n   1.138 Info HttpSharedState.cpp:57: Downloading https://auth.factorio.com/tls-check/success\n   1.188 Script @__level__/modules/surface_export/interfaces/remote/configure.lua:86: [FactorioSurfaceExport] Configuration updated: batch_size=50, max_concurrent_jobs=3, show_progress=true, debug_mode=true\n   1.204 Warning ServerRouter.cpp:543: Received own address message reply with conflicting address (got IP ADDR:({209.236.82.227:57072}), expected IP ADDR:({209.236.82.227:54239}))\n   1.204 Script @__level__/modules/surface_export/interfaces/remote/configure.lua:80: [FactorioSurfaceExport] Gateway config updated: 0 gateway(s)\n   1.204 Script @__level__/modules/surface_export/interfaces/remote/configure.lua:86: [FactorioSurfaceExport] Configuration updated: batch_size=unchanged, max_concurrent_jobs=unchanged, show_progress=nil, debug_mode=nil\n   1.254 Warning ServerRouter.cpp:543: Received own address message reply with conflicting address (got IP ADDR:({209.236.82.227:58847}), expected IP ADDR:({209.236.82.227:54239}))\n   1.277 Info AuthServerConnector.cpp:653: TLS check success.\n   1.743 Info MatchingServer.cpp:129: Matching server game `961140` has been created.\n   1.754 Info ServerMultiplayerManager.cpp:738: Matching server connection resumed\n"
+  },
+  "restored": {
+    "1": "test1.zip",
+    "2": "test2.zip",
+    "zeroLeftovers": true
+  },
+  "finished": "2026-07-19T06:36:19.064Z",
+  "green": true
+}
+```
+</details>
