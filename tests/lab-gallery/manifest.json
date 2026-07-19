@@ -307,63 +307,6 @@
 	],
 	"fixtures": [
 		{
-			"id": "belt-5x5-125-unstacked",
-			"padKind": "pad",
-			"origin": {
-				"x": 92,
-				"y": 22
-			},
-			"revision": 1,
-			"labId": "belt-lab",
-			"name": "5x5 unstacked belt loop",
-			"purpose": "Preserve 123 one-item iron-plate stacks split 67/56 across the two physical sides of a jammed loop.",
-			"category": "physical-lab",
-			"owningRunner": "tests/lab-gallery/seed-prep-ops.lua",
-			"saveRole": "source",
-			"platformName": "lab-omnibus-state-v1",
-			"anchors": [
-				{
-					"entity": "turbo-transport-belt",
-					"x": 96.5,
-					"y": 25.5
-				}
-			],
-			"engineVersion": "2.0.77",
-			"mods": {
-				"base": "2.0.77",
-				"elevated-rails": "2.0.77",
-				"FluidMustFlow": "1.4.4",
-				"quality": "2.0.77",
-				"SpidertronEnhancements": "1.10.8",
-				"space-age": "2.0.77",
-				"SpidertronPatrols": "2.6.3",
-				"surfexp_gateways": "0.3.0",
-				"maraxsis": "1.31.6"
-			},
-			"invariant": "The source loop contains exactly 123 physical one-item iron-plate stacks, 67 on side one and 56 on side two.",
-			"expectedTerminalVerdict": "observation-only",
-			"independentOracleRequired": true,
-			"fingerprint": {
-				"beltName": "turbo-transport-belt",
-				"beltCount": 16,
-				"itemName": "iron-plate",
-				"quantity": 123,
-				"physicalStacks": 123,
-				"maximumStack": 1,
-				"lineQuantities": [
-					67,
-					56
-				]
-			},
-			"testCard": {
-				"law": "A jammed 5x5 turbo loop preserves its one-item stacks exactly: the physical stack count and per-side split survive transfer, and every stack stays unstacked (maximumStack 1).",
-				"build": "belt-5x5-125-unstacked pad at (92,22): a 16-belt clockwise turbo loop fed to 125 one-item iron-plate stacks; the corners jam the loop so items stay put.",
-				"action": "/test-run: reset the compare area, selection-lab copy of the pad build area, paste at +14,0, physical audit of both halves.",
-				"expected": "Audit reports equal belts and items; the pasted loop carries the same total stack count and per-side split, all one-item stacks.",
-				"forbidden": "A drifted split; merged stacks (maximumStack > 1); any item lost."
-			}
-		},
-		{
 			"id": "specialized-fluid-reachability",
 			"padKind": "platform",
 			"revision": 2,

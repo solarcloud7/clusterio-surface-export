@@ -278,3 +278,18 @@ retained (one relaxed as flow settled — over-pack pinned as PRESENCE, not exac
 
 `belt-corner-recovery` RETIRED as covered (manifest entry removed, pad cleared back to
 open-slot-64-22). `belt-combined-omnibus` re-pinned rev2 from measurement.
+
+## 2026-07-19 — Belt family consolidated to ONE fixture (owner-ruled): four retirements
+
+Owner rulings executed, each after coverage measurement:
+- `belt-5x5-125-unstacked` RETIRED (manifest + pad cleared, slot 92,22 reopened): both distinctive
+  properties (conservative loop, maxStack=1) are measured properties of `belt-combined-omnibus` rev2.
+- `lab-belt-corner-v1` platform DELETED (9 entities): over-pack class doubly superseded.
+- `lab-rig-belt-loss-replay-v1` (platform-17, 552 entities) DELETED: the class artifact remains
+  `tests/integration/belt-loss-replay/fixture.json` — the baked platform copy brought no value.
+- `lab-rig-probe-strip-v1` (platform-20, 7 entities) DELETED: 6 empty dead-end belts, trivially
+  reconstructible, no distinctive state.
+- nauvis cleared: 48 clutter belts (three stray loops incl. the old canonical 5x5 home) destroyed.
+
+The belt family is now ONE hand-built fixture (`belt-combined-omnibus`) + one replay monster
+(`lab-rig-dup233855-v1`) + the banked JSON payloads. Grid: 14 fixture pads + 13 open slots.

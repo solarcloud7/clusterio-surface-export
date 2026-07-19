@@ -15,7 +15,7 @@ test("gallery manifest inventories every lab family exactly once", () => {
 		.sort();
 	assert.deepEqual(manifest.labs.map(lab => lab.id).sort(), actualLabs);
 	assert.deepEqual(validateGalleryManifest(manifest, { requireArtifacts: false }), {
-		labs: actualLabs.length, fixtures: 27, sourceFixtures: 27, destinationFixtures: 0,
+		labs: actualLabs.length, fixtures: 26, sourceFixtures: 26, destinationFixtures: 0,
 	});
 });
 
@@ -38,7 +38,7 @@ test("paired save roles, artifacts, censuses, and exact mod pins are final", () 
 	assert.deepEqual(manifest.saves.source.mods, manifest.mods);
 	assert.deepEqual(manifest.saves.destination.mods, manifest.mods);
 	assert.deepEqual(validateGalleryManifest(manifest), {
-		labs: 13, fixtures: 27, sourceFixtures: 27, destinationFixtures: 0,
+		labs: 13, fixtures: 26, sourceFixtures: 26, destinationFixtures: 0,
 	});
 });
 
@@ -56,10 +56,11 @@ test("baked fixtures remain inputs while direct physical meters remain the oracl
 	assert.equal(manifest.contract.mutableDestinationsAreBaked, true);
 	assert.match(manifest.contract.independentOracle, /direct.*Factorio/i);
 	assert.match(manifest.contract.resetModel, /paired/i);
-	const belt = manifest.fixtures.find(fixture => fixture.id === "belt-5x5-125-unstacked");
+	// belt-5x5-125-unstacked retired 2026-07-19: covered by belt-combined-omnibus (conservative,
+	// maxStack=1, over-packed corners measured present — owner-adjudicated consolidation).
+	const belt = manifest.fixtures.find(fixture => fixture.id === "belt-combined-omnibus");
 	assert.equal(belt.labId, "belt-lab");
 	assert.equal(belt.saveRole, "source");
-	assert.equal(belt.revision, 1);
 	assert.equal(belt.independentOracleRequired, true);
 	// The reachability fixture advanced to revision 2 (drill recreated, all entities destructible=false).
 	const reachability = manifest.fixtures.find(fixture => fixture.id === "specialized-fluid-reachability");
