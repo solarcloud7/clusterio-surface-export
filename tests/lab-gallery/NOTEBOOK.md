@@ -160,3 +160,67 @@ pinned artifacts: source `C5F50C82008C07581239CAEC9995EB5209BC52390AC2759D6A9B1D
 (0 entities / 479 chunks). The belt loop stays corpus-EXCLUDED (its `lineQuantities` array is asserted by the
 belt special path via `deepEqual`, not the scalar corpus gate whose `approx_equal` does reference-equality on
 arrays); the corner folded into `measure_corpus` on the omnibus.
+
+## 2026-07-19 — Live gallery completed in place; source-of-truth snapshot banked (supersedes the baked golden)
+
+Owner directive: the LIVE `surface-export-lab-gallery` save (the owner was playing on it) becomes the canonical
+source of truth. Completed in place via RCON only — the instance was never stopped/restarted, no save was
+loaded, the owner was never teleported, and the omnibus platform was never deleted. Driver:
+`tests/lab-gallery/complete-live-gallery.mjs` (ports the seed-prep-ops construction recipes to run directly
+against the live gallery, following the rig-wave RCON-construction pattern; phases survey / build-beacon /
+build-belts / latch-repair / verify / census / checkpoint, all idempotent).
+
+**3 missing pads built live (measured fingerprints, never hand-authored):**
+- `repin-beacon-speed` (36,22): stamped test-foundation cell + `build_repin_beacon`. Measured EXACT vs
+  manifest — machineSpeed 0.75, beaconModulesEmpty true, beaconActive true, machineActive false,
+  allIndestructible true.
+- `belt-corner-recovery` (64,22): 6 turbo belts east into a north corner + dead-end, fed to two dry rounds
+  (fed 65, 12 rounds). Measured EXACT — beltCount 8, totalIron 65, cornerShape "left", cornerX 72.5,
+  cornerY 28.5, insideItems 2, insideLength 0.4140625; 4 over-packed lanes.
+- `belt-5x5-125-unstacked` (92,22): 16-belt 5x5 clockwise loop, fed toward 125, jam-stable across 3 polls.
+  CLASS satisfied (beltName turbo-transport-belt, beltCount 16, itemName iron-plate, **maximumStack 1** —
+  every stack unstacked). **Honest quantity difference:** the deterministic live feed jammed at **quantity 122,
+  physicalStacks 122, lineQuantities [67,55]** vs the golden [67,56]/123 — one item short on side two. NOT
+  forced (the loop jammed there on its own; owner precedent "state is the trigger, not history"). The pilot is
+  corpus-EXCLUDED and CLASS-gated, so this is a pinned observation, not a gate failure. Manifest pins were left
+  UNTOUCHED (harness re-pointing is a separate phase).
+
+**KEY ENGINE FACT re-confirmed [empirical, 2.0.77, this build]:** a paused platform halts belt travel; the
+build ops clear `platform.paused` for the feed and restore the captured state afterward (here the live omnibus
+was already unpaused, so it was restored unpaused). Only `platform.paused` was touched — the global
+`game.tick_paused` was never set, so the owner's running session was undisturbed. Belts reject `active=false`
+writes (BELT-R13), so the pads are frozen by `destructible=false` only.
+
+**4 live defects repaired to fingerprint spec** (b/c/d executed by the coordinating session directly; (a) by
+this driver):
+- (a) `omnibus-decider-latch`: the self-feeding decider (IF signal-S>0 THEN signal-S=1, output_red self-wired
+  to input_red — structure fully intact) had `active=false`, so it emitted nothing and the held signal had
+  dropped to 0. Repair: seed signal-S=1 once via a temp constant-combinator red-wired to the input, let ticks
+  settle (platform unpaused), remove the seed. **Engine fact [empirical, 2.0.77]:** a *deactivated* decider
+  RETAINS its last-computed output register on the network — after the seed grabbed, `outSignalS` holds 1 with
+  the decider `active=false` (recomputation stops but the held output persists). Final: signalS=1 stable,
+  active=false, destructible=false, no stray seed left. This is the ideal state — frozen-convention-compliant
+  AND latched.
+- (b) inserter-held-capacity bulk-inserter → `destructible=false`; (c) no-tick-sync-frozen-pair machine +
+  inserter → `destructible=false`; (d) `omnibus-ghosts-and-proxies` duplicate item-request-proxy at
+  (44.5,14.5) destroyed, exactly 1 proxy remaining (target assembling-machine-2, speed-module plan).
+
+**Verify (read-only, inline meters ported byte-faithfully from `fixture-meters.lua`; the module `require`
+path and the single-shot IIFE injection both proved unavailable on the live save — require returns false, the
+IIFE exceeds the Windows command-line length limit):** all 15 exact-fingerprint omnibus pads PASS — including
+the repaired latch (signalS 1), inserter-held (forceBulkBonus 11, held 8 legendary railgun-ammo, destructible
+false), no-tick pair (allIndestructible true), and ghosts-and-proxies (proxies 1). belt-corner PASS.
+belt-5x5 CLASS-pass with the pinned [67,55] observation above.
+
+**Census + zero-leftover proof:** 20 platforms (omnibus now 158 entities = the golden corpus target); the 5
+`lab-rig-*` reconstructions + legacy `lab-belt-corner-v1` are prior-session live content, left untouched.
+`storage.async_jobs` / `locked_platforms` / `destination_holds` all 0; no scratch surfaces (the temp latch seed
+was destroyed, strayConstantsInPad 0); omnibus pause restored (unpaused, as captured); owner `solarcloud7`
+still connected.
+
+**Checkpoint banked:** `game.server_save('gallery-source-of-truth-2026-07-19')` →
+`docker/seed-data/lab-saves/gallery-source-of-truth-2026-07-19.zip`, 1,310,765 bytes, SHA256
+`BD2E6320B378C58ED362F9F005F9482CF0ED28B457DB11F055BEA2A613EA68F0`. **This snapshot supersedes the baked
+golden (`lab-gallery-source-surface-export-2.0.77.zip`) as the canonical source of truth.** No `/test-run` was
+run before the checkpoint (owner rule — /test-run mutates). Manifest pins are unchanged; re-pointing the
+harness at this snapshot (and reconciling the belt-loop [67,55] observation) is a separate phase.
