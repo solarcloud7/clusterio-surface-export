@@ -4,7 +4,148 @@
 
 local BeltRestoration = require("modules/surface_export/import_phases/belt_restoration")
 
-local function belt_side_restore_selftest()
+--- DUP-KILL mode (BELT-R14, 2026-07-19): run the PRODUCTION capture_side_groups +
+--- restore_side_groups against a REAL platform's belts in ONE execution — capture the live
+--- side partition, rebuild the belt geometry on a scratch surface, restore, verdict by
+--- independent both-direction per-side multisets + whole-scratch distinct-uid census against
+--- the captured basis, then remove the scratch. RCON cannot require() at runtime, so this
+--- remote is the lab's only path to the production functions (the no-tick measure_baked
+--- pattern). Read-only on the platform; the scratch is created and deleted here.
+--- @param opts table: { mode = "dup_kill", platform = <name> }
+local function dup_kill(opts)
+  local plat
+  for _, p in pairs(game.forces.player.platforms) do
+    if p.valid and p.name == opts.platform then plat = p end
+  end
+  if not plat then return { success = false, error = "platform not found: " .. tostring(opts.platform) } end
+  local s = plat.surface
+  local live = s.find_entities_filtered({ type = { "transport-belt", "underground-belt", "splitter" } })
+  local out = { success = true, belt_count = #live }
+
+  local pairs_list = {}
+  for _, e in ipairs(live) do
+    pairs_list[#pairs_list + 1] = { entity = e, id = e.position.x .. "," .. e.position.y }
+  end
+  local t0 = game.tick
+  local groups = BeltRestoration.capture_side_groups(pairs_list)
+  out.capture_same_tick = (game.tick == t0)
+  if not groups then return { success = false, error = "capture returned nil" } end
+  local slots, captured_total = 0, 0
+  for _, g in ipairs(groups) do
+    for _, sl in ipairs(g.slots) do slots = slots + 1 captured_total = captured_total + sl.ct end
+  end
+  out.groups = #groups
+  out.slots = slots
+  out.captured_total = captured_total
+
+  local old = game.surfaces["belt-r14-scratch"]
+  if old then game.delete_surface(old) end
+  local minx, miny, maxx, maxy = math.huge, math.huge, -math.huge, -math.huge
+  for _, e in ipairs(live) do
+    local x, y = e.position.x, e.position.y
+    if x < minx then minx = x end
+    if x > maxx then maxx = x end
+    if y < miny then miny = y end
+    if y > maxy then maxy = y end
+  end
+  local half = math.max(math.abs(minx), math.abs(maxx), math.abs(miny), math.abs(maxy)) + 20
+  local sc = game.create_surface("belt-r14-scratch", { width = 2 * half, height = 2 * half })
+  sc.request_to_generate_chunks({ 0, 0 }, math.ceil(half / 32) + 1)
+  sc.force_generate_chunk_requests()
+  local tiles = {}
+  for x = math.floor(minx) - 3, math.ceil(maxx) + 3 do
+    for y = math.floor(miny) - 3, math.ceil(maxy) + 3 do
+      tiles[#tiles + 1] = { name = "lab-dark-1", position = { x, y } }
+    end
+  end
+  sc.set_tiles(tiles, true, false, true, false)
+
+  local emap, cfails = {}, 0
+  for _, e in ipairs(live) do
+    local args = { name = e.name, position = { e.position.x, e.position.y }, direction = e.direction, force = "player" }
+    if e.type == "underground-belt" then args.type = e.belt_to_ground_type end
+    local c = sc.create_entity(args)
+    if c and c.valid then emap[e.position.x .. "," .. e.position.y] = c else cfails = cfails + 1 end
+  end
+  out.create_fails = cfails
+  if cfails > 0 then
+    game.delete_surface(sc)
+    return { success = false, error = "rebuild create failures: " .. cfails }
+  end
+  local zero = 0
+  for _, e in ipairs(sc.find_entities_filtered({ type = { "transport-belt", "underground-belt", "splitter" } })) do
+    zero = zero + e.get_item_count()
+  end
+  if zero ~= 0 then
+    game.delete_surface(sc)
+    return { success = false, error = "scratch not empty pre-restore" }
+  end
+
+  local placed, unplaced, leaks_undone, anomalies = BeltRestoration.restore_side_groups(groups, emap)
+  out.placed = placed
+  out.unplaced = unplaced
+  out.leaks_undone = leaks_undone
+  out.anomalies = anomalies
+
+  local all_exact = true
+  local inexact = {}
+  for gi, g in ipairs(groups) do
+    local exp, expt = {}, 0
+    for _, sl in ipairs(g.slots) do
+      local k = sl.n .. "|" .. sl.q
+      exp[k] = (exp[k] or 0) + sl.ct
+      expt = expt + sl.ct
+    end
+    local seen, act, actt = {}, {}, 0
+    for _, m in ipairs(g.members) do
+      local e = emap[m.id]
+      if e and e.valid then
+        for _, it in ipairs(e.get_transport_line(m.li).get_detailed_contents()) do
+          local id = tostring(it.unique_id)
+          if not seen[id] then
+            seen[id] = true
+            local k = it.stack.name .. "|" .. ((it.stack.quality and it.stack.quality.name) or "normal")
+            act[k] = (act[k] or 0) + it.stack.count
+            actt = actt + it.stack.count
+          end
+        end
+      end
+    end
+    local exact = true
+    for k, v in pairs(exp) do if (act[k] or 0) ~= v then exact = false end end
+    for k, v in pairs(act) do if (exp[k] or 0) ~= v then exact = false end end
+    if not exact then
+      all_exact = false
+      inexact[#inexact + 1] = { g = gi, expected = expt, actual = actt }
+    end
+  end
+  out.all_sides_exact = all_exact
+  out.inexact_sides = inexact
+
+  local suid, stotal = {}, 0
+  for _, e in ipairs(sc.find_entities_filtered({ type = { "transport-belt", "underground-belt", "splitter" } })) do
+    for li = 1, e.get_max_transport_line_index() do
+      for _, it in ipairs(e.get_transport_line(li).get_detailed_contents()) do
+        local id = tostring(it.unique_id)
+        if not suid[id] then
+          suid[id] = true
+          stotal = stotal + it.stack.count
+        end
+      end
+    end
+  end
+  out.scratch_census = stotal
+
+  game.delete_surface(sc)
+  return out
+end
+
+local function belt_side_restore_selftest(opts)
+  -- Real-world DUP-kill measurement (opts-selected); the no-arg call keeps the fake-line unit
+  -- rung below unchanged.
+  if type(opts) == "table" and opts.mode == "dup_kill" then
+    return dup_kill(opts)
+  end
   local details = {}
   local passed, failed = 0, 0
 
