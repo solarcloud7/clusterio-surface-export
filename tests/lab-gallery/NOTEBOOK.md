@@ -293,3 +293,15 @@ Owner rulings executed, each after coverage measurement:
 
 The belt family is now ONE hand-built fixture (`belt-combined-omnibus`) + one replay monster
 (`lab-rig-dup233855-v1`) + the banked JSON payloads. Grid: 14 fixture pads + 13 open slots.
+
+## 2026-07-19 — lab-rig-green-omnibus-v1 retired (owner-ruled); the migration-first lesson closes
+
+Owner retired the last redundant belt rig: its three element classes (saturated sideloads,
+unfiltered splitter, underground pair) are all present on `belt-combined-omnibus`. Checkpoint
+gallery-source-of-truth-2026-07-19g. The belt family ends the night as: ONE hand-built pad +
+the DUP-233855 replay monster + the banked JSON payloads.
+
+Lesson, owner's words: this is why we did NOT repair every test that migrated — three of five
+reconstructed rigs were purged within hours of arriving, retired by seconds-long coverage
+measurements. Effort spent perfecting a fixture before the map adjudicates it is effort cremated.
+Get the state on the map; let coverage measurements decide what lives.
