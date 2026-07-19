@@ -60,8 +60,19 @@ function SelectionLab.set_quiet(value)
 	quiet = value == true
 end
 
+-- nil-safe: the headless /test-run drive (selection_lab_drive with a reserved player-less key) has
+-- no player, so `player` is nil on the copy/paste/audit path. quiet is forced on for that run, but the
+-- `and player` guard makes chat unconditionally safe even if a caller forgets to quiet.
 local function say(player, message, color)
-	if not quiet then player.print(message, color) end
+	if not quiet and player then player.print(message, color) end
+end
+
+-- Resolve the acting player nil-safe: the headless /test-run drive uses a reserved player_index (0)
+-- with no live player, and game.get_player rejects indices < 1 (it errors, it does not return nil).
+-- Every handler resolves the acting player through this so the player-less path never crashes.
+local function event_player(event)
+	local idx = event.player_index
+	return (idx and idx >= 1) and game.get_player(idx) or nil
 end
 
 -- Rich-text chat formatting (owner design 2026-07-18, wiki.factorio.com/rich_text): icon tags
@@ -241,7 +252,7 @@ end
 -- === COPY ==================================================================================
 
 function SelectionLab.copy(event)
-	local player = game.get_player(event.player_index)
+	local player = event_player(event)
 	local records = {}
 	local belt_pairs = {}
 	local minx, miny = math.huge, math.huge
@@ -305,7 +316,9 @@ function SelectionLab.copy(event)
 		if prior and prior.valid then prior.destroy() end
 		st.copy_box = nil
 	end
-	if event.area then
+	-- `and player`: a player-less headless drive has no viewer for the highlight, and rendering to a
+	-- non-existent reserved player_index would error.
+	if event.area and player then
 		st.copy_box = rendering.draw_rectangle({
 			color = { r = 0.3, g = 0.6, b = 1, a = 0.8 }, width = 2, filled = false,
 			left_top = event.area.left_top, right_bottom = event.area.right_bottom,
@@ -555,7 +568,7 @@ end
 -- === PASTE (all-or-nothing) ================================================================
 
 function SelectionLab.paste(event)
-	local player = game.get_player(event.player_index)
+	local player = event_player(event)
 	local st = pstate(event.player_index)
 	local cap = st.export
 	if not (cap and cap.records and #cap.records > 0) then
@@ -567,8 +580,11 @@ function SelectionLab.paste(event)
 	local plan = plan_paste(surface, cap, offset, player)
 
 	if #plan.conflict > 0 then
-		draw_plan_boxes(surface, plan.conflict, CONFLICT_RED, player.index)
-		player.play_sound({ path = "utility/cannot_build" })
+		-- player-guarded: headless drive has no viewer/sound; the typed report below carries the verdict.
+		if player then
+			draw_plan_boxes(surface, plan.conflict, CONFLICT_RED, player.index)
+			player.play_sound({ path = "utility/cannot_build" })
+		end
 		say(player, string.format(
 			"[color=yellow][font=default-bold][SelectionLab][/font][/color] PASTE REFUSED: %d of %d targets occupied (red). Nothing was placed. Shift+Right-drag forces.",
 			#plan.conflict, #cap.records), { r = 1, g = 0.4, b = 0.4 })
@@ -597,13 +613,15 @@ function SelectionLab.paste(event)
 	local records, entity_map, created, create_failed, exec_ok, exec_err =
 		execute_create_and_restore(surface, recs, player, cap.side_groups, true)
 	if not exec_ok then
-		player.play_sound({ path = "utility/cannot_build" })
+		if player then player.play_sound({ path = "utility/cannot_build" }) end
 		say(player, "[color=yellow][font=default-bold][SelectionLab][/font][/color] PASTE ROLLED BACK (" .. tostring(exec_err) ..
 			") — every created entity was removed; nothing journaled.", { r = 1, g = 0.4, b = 0.4 })
 		return lab_result("paste", { outcome = "rolled_back", error = tostring(exec_err), offset = offset })
 	end
-	for _, rec in ipairs(records) do
-		draw_box(surface, rec.position, PLACEABLE_GREEN, player.index)
+	if player then
+		for _, rec in ipairs(records) do
+			draw_box(surface, rec.position, PLACEABLE_GREEN, player.index)
+		end
 	end
 	push_undo(st, { mode = "paste", surface = surface.name, created = journal_created(records, entity_map),
 		destroyed_records = {}, plan_records = recs, side_groups = cap.side_groups })
@@ -626,7 +644,7 @@ end
 -- creates nothing (owner request 2026-07-18: "a hint of where it would be at"). Uses the same
 -- planner as the real paste, so the preview can never disagree with the paste's own verdict.
 function SelectionLab.preview(event)
-	local player = game.get_player(event.player_index)
+	local player = event_player(event)
 	local st = pstate(event.player_index)
 	local cap = st.export
 	if not (cap and cap.records and #cap.records > 0) then
@@ -690,7 +708,7 @@ local function force_execute(surface, recs, player, side_groups)
 end
 
 function SelectionLab.force(event)
-	local player = game.get_player(event.player_index)
+	local player = event_player(event)
 	local st = pstate(event.player_index)
 	local cap = st.export
 	if not (cap and cap.records and #cap.records > 0) then
@@ -735,7 +753,7 @@ local function fresh_fluid_state()
 end
 
 function SelectionLab.audit(event)
-	local player = game.get_player(event.player_index)
+	local player = event_player(event)
 	local entity_counts, item_totals, fluid_totals = {}, {}, {}
 	local entity_n, item_n, fluid_n = 0, 0, 0
 	local fluid_state = fresh_fluid_state()
@@ -802,7 +820,7 @@ end
 -- === UNDO / REDO ===========================================================================
 
 function SelectionLab.undo(event)
-	local player = game.get_player(event.player_index)
+	local player = event_player(event)
 	if not debug_enabled() then return end
 	local st = pstate(event.player_index)
 	local stack = st.undo
@@ -842,7 +860,7 @@ function SelectionLab.undo(event)
 end
 
 function SelectionLab.redo(event)
-	local player = game.get_player(event.player_index)
+	local player = event_player(event)
 	if not debug_enabled() then return end
 	local st = pstate(event.player_index)
 	local stack = st.redo
@@ -919,7 +937,7 @@ function SelectionLab.handle(event, mode)
 		tostring(event.item), event.entities and #event.entities or -1))
 	if event.item ~= "selection-lab-tool" then return end
 	if not debug_enabled() then
-		local player = game.get_player(event.player_index)
+		local player = event_player(event)
 		if player then say(player, "[color=yellow][font=default-bold][SelectionLab][/font][/color] debug_mode is off — tool disabled", { r = 1, g = 0.4, b = 0.4 }) end
 		return
 	end

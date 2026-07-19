@@ -1,24 +1,29 @@
 -- Commands: /test-clear and /test-run — the in-game gallery test runner pair (owner design,
--- 2026-07-18). Test cells are discovered by STRUCTURE (the name rendering-text + the status trio
--- at the derived origin — no registry).
+-- 2026-07-18/19). Test cells are discovered by STRUCTURE (the name rendering-text + the status trio
+-- at the derived origin — no registry), and RECONCILED against the pushed manifest roster: a rostered
+-- fixture with no live pad/platform is a FAILURE (MISSING), never silence (owner trust requirement —
+-- "do I know what tests are actually in play?").
 --
 --   /test-clear [name-filter]  RESET every cell: sweep the right-half compare area (the full paste
 --                              footprint), status trio to WAITING (clock icon), failure template
 --                              restored, name text blue. No copy/paste/audit.
---   /test-run   [name-filter]  The SAME reset first (structural fresh-run guarantee), then run each
---                              test: selection-lab COPY of the left-half fixture -> PASTE onto the
---                              right half (+14,0) -> AUDIT both halves with the real gate meters.
---                              Equal readings = green check; any delta or paste refusal = red X with
---                              the icon-rich delta, which also lands in the status panel's
---                              {failure-message} slot. Name color mirrors state.
+--   /test-run   [name-filter]  For each roster fixture: fingerprint the baked state with the shared
+--                              FixtureMeters, run its pad-kind check (pad = reset -> copy left ->
+--                              paste +14 -> audit both halves -> re-fingerprint the paste; platform/
+--                              surface = resolve by name + meter + fingerprint), and reconcile BOTH
+--                              ways (rostered fixture with no cell = MISSING red; discovered cell with
+--                              no roster id = UNKNOWN PAD yellow). A nil roster is a RED failing run.
+--                              Runs headless over RCON (no player) or in-game.
 --
--- Companion Node driver for batch runners: tests/lab-gallery/test-status.mjs (same trio semantics —
--- keep them in lockstep). Debug instrument (gated on debug_mode); measurement rides the
--- selection_lab_drive remote so it is byte-identical to the manual selection-tool workflow.
+-- Debug instrument (gated on debug_mode); pad measurement rides the selection_lab_drive remote so it
+-- is byte-identical to the manual selection-tool workflow. Machine-readable evidence is ONE
+-- [TESTRUN-JSON] line (log() always; rcon.print when no player drove it). Chat lines are plain
+-- concatenated strings (Pitfall #25, LocalisedString 20-param cap — never a big LocalisedString).
 
 local Base = require("modules/surface_export/interfaces/commands/base")
 local SelectionLab = require("modules/surface_export/interfaces/gui/selection-lab")
 local Util = require("modules/surface_export/utils/util")
+local FixtureMeters = require("modules/surface_export/utils/fixture-meters")
 
 -- Cell geometry (mirrors tests/lab-gallery/test-foundation.mjs — the single template source):
 -- 26x12 cell; name text at origin+(6,-1.5); trio on the bottom border at +(13.5|14.5|15.5, 11.5);
@@ -32,6 +37,7 @@ local COLORS = {
 }
 local CHAT_GREEN = { r = 0.3, g = 1, b = 0.3 }
 local CHAT_RED = { r = 1, g = 0.4, b = 0.4 }
+local CHAT_YELLOW = { r = 1, g = 0.8, b = 0.3 }
 local FAILURE_TEMPLATE = "Failure {failure-message}"
 local RUN_PREFIX = "[color=yellow][font=default-bold][test-run][/font][/color]"
 local CLEAR_PREFIX = "[color=yellow][font=default-bold][test-clear][/font][/color]"
@@ -116,58 +122,208 @@ local function report_delta(left, right)
   return table.concat(parts, "; ", 1, math.min(#parts, 4))
 end
 
-local function run_one(player, surface, cell)
+-- === fingerprint dispatch =====================================================================
+--
+-- Locators are code; expected values are the roster fingerprint (single source of truth). Every
+-- meter is the SHARED FixtureMeters implementation the seed-prep bake and corpus gate use, so a
+-- /test-run fingerprint reads the exact fields the bake certified. args:
+--   "anchor"   pad meter (surface, anchor_fn) — anchor_fn from anchor_lookup(roster, id, dx)
+--   "area"     pad meter (surface, area_rect) — area-scoped so a pasted right half is not double-counted
+--   "surface"  platform/surface meter (surface)
+--   "platform" platform meter (platform object)
+--   "none"     platform meter () — resolves its own platforms by name (hold pairs)
+local FM = FixtureMeters
+local function meter_entities(surface) return { entities = #surface.find_entities_filtered({}) } end
+local function meter_heat(surface, anchor)
+  return { temperature = FM.anchored(surface, anchor, "heat-pipe", "omnibus heat").temperature }
+end
+
+local DISPATCH = {
+  -- omnibus pads (copy/paste-audited), anchor-scoped fingerprints
+  ["omnibus-adversarial-inventory"] = { args = "anchor", meter = FM.measure_omnibus_adversarial },
+  ["omnibus-heat-temperature"]      = { args = "anchor", meter = meter_heat },
+  ["omnibus-decider-latch"]         = { args = "anchor", meter = FM.measure_omnibus_latch },
+  ["omnibus-midcraft-progress"]     = { args = "anchor", meter = FM.measure_omnibus_midcraft },
+  ["omnibus-burner-fuel"]           = { args = "anchor", meter = FM.measure_omnibus_burner },
+  ["omnibus-equipment-grid"]        = { args = "anchor", meter = FM.measure_omnibus_equipment },
+  ["omnibus-circuit-config"]        = { args = "anchor", meter = FM.measure_omnibus_circuit },
+  ["omnibus-module-bonus-progress"] = { args = "anchor", meter = FM.measure_omnibus_bonus },
+  ["omnibus-crafting-fluids"]       = { args = "anchor", meter = FM.measure_omnibus_fluids },
+  ["inserter-held-capacity"]        = { args = "anchor", meter = FM.measure_inserter_held },
+  ["no-tick-sync-frozen-pair"]      = { args = "anchor", meter = FM.measure_no_tick_pair },
+  ["repin-beacon-speed"]            = { args = "anchor", meter = FM.measure_repin_beacon },
+  -- omnibus pads, area-scoped fingerprints (whole-half scans)
+  ["omnibus-ghosts-and-proxies"]    = { args = "area", meter = FM.measure_omnibus_ghosts },
+  ["omnibus-ground-items"]          = { args = "area", meter = FM.measure_omnibus_ground },
+  -- platform-kind fixtures (no copy/paste; resolve by platformName)
+  ["omnibus-platform-schedule"]     = { args = "platform", meter = FM.measure_omnibus_schedule },
+  ["energy-accumulator-drain"]      = { args = "surface", meter = FM.measure_energy },
+  ["belt-corner-recovery"]          = { args = "surface", meter = FM.measure_belt_corner },
+  ["transfer-workhorse"]            = { args = "surface", meter = meter_entities },
+  ["census-fusion-shared-plasma"]   = { args = "surface", meter = FM.measure_census_fusion },
+  ["consumable-hub-1"]              = { args = "surface", meter = meter_entities },
+  ["consumable-hub-2"]              = { args = "surface", meter = meter_entities },
+  ["consumable-hub-3"]              = { args = "surface", meter = meter_entities },
+  ["hold-buffer-spoil"]             = { args = "none", meter = FM.measure_hold_spoil_pair },
+  ["hold-buffer-damage"]            = { args = "none", meter = FM.measure_hold_damage_pair },
+  ["hold-buffer-pod"]               = { args = "none", meter = FM.measure_hold_pod_pair },
+  -- belt-5x5-125-unstacked: no meter here yet (Lane B adds measure_belt_loop) -> SKIPPED (no meter)
+  -- specialized-fluid-reachability: roster marks runnerExcluded (mutating write-probe) -> SKIPPED
+}
+
+--- Compare a measured reading table against a roster fingerprint. Returns nil on match, else the
+--- first drifted "key=got exp want" (approx_equal applies the bake's ULP tolerance to the double
+--- fields only). Missing dispatch fields fail loudly (nil ~= expected).
+local function compare_fingerprint(reads, fingerprint)
+  for key, expected in pairs(fingerprint or {}) do
+    if not FM.approx_equal(key, reads and reads[key], expected) then
+      return string.format("%s=%s exp %s", key, tostring(reads and reads[key]), tostring(expected))
+    end
+  end
+  return nil
+end
+
+-- === pad reconcile (reset -> left fingerprint -> copy/paste/audit -> paste fingerprint) ========
+
+--- Read a pad fixture's fingerprint on one half. dx/rect select the half: left = (dx 0, left rect),
+--- paste = (dx 14, right rect). Anchor meters ignore rect; area meters ignore dx.
+local function pad_reading(surface, cell, fixture, dispatch, roster, dx, rect)
+  if dispatch.args == "area" then
+    return dispatch.meter(surface, rect)
+  end
+  return dispatch.meter(surface, FM.anchor_lookup(roster, fixture.id, dx))
+end
+
+--- Run one pad fixture. The measurement drives the REAL selection-lab handlers (copy/paste/audit)
+--- via selection_lab_drive so it is byte-identical to the manual tool; the added fingerprint depth
+--- (crafting_progress / signals / held / energy) is measured on the pristine LEFT half and again on
+--- the pasted right half. player may be nil (headless) — the drive runs player-less on `surface`.
+--- Returns "pass" or "fail", detail.
+local function run_pad(player, surface, cell, fixture, dispatch, roster)
   local _, comb, panel = reset_cell(surface, cell)
 
+  -- (a) LEFT fingerprint: the pristine baked source (unaffected by the paste, which lands right).
+  local ok_l, left_reads = pcall(pad_reading, surface, cell, fixture, dispatch, roster, 0,
+    { { cell.ox + 1, cell.oy }, { cell.ox + 13, cell.oy + 11 } })
+  if not ok_l then
+    set_status(cell.text_obj, comb, panel, "fail", "left meter error")
+    return "fail", "left meter error: " .. tostring(left_reads)
+  end
+  local left_drift = compare_fingerprint(left_reads, fixture.fingerprint)
+  if left_drift then
+    set_status(cell.text_obj, comb, panel, "fail", "left " .. left_drift)
+    return "fail", "left " .. left_drift
+  end
+
+  -- (b) the existing reset->copy->paste->audit compare (entity/item/fluid counts), unchanged.
+  local player_index = (player and player.index) or 0
   local drive = function(mode, x1, y1, x2, y2)
-    return remote.call("surface_export", "selection_lab_drive", mode, player.index, x1, y1, x2, y2)
+    return remote.call("surface_export", "selection_lab_drive", mode, player_index, x1, y1, x2, y2, surface.name)
   end
   local ox, oy = cell.ox, cell.oy
   local copy = drive("copy", ox + 1, oy, ox + 13, oy + 12)
   local copy_report = copy and copy.report or {}
   -- Outcome check, not just ok: a "nothing_exportable" copy still returns ok, and pasting then
-  -- uses the PREVIOUS cell's clipboard (measured: the ground-items cell pasted a stale anchor at
-  -- offset x=42 and misreported the neighbor's conflicts as its own).
+  -- uses the PREVIOUS cell's clipboard (measured: the ground-items cell pasted a stale anchor).
   if not (copy and copy.ok) or copy_report.outcome ~= "copied" then
-    local why = "copy " .. tostring(copy_report.outcome or "error")
+    local why = "copy " .. tostring(copy_report.outcome or (copy and copy.err) or "error")
     set_status(cell.text_obj, comb, panel, "fail", why)
     return "fail", why
   end
   local paste = drive("paste", ox + 15, oy, ox + 27, oy + 12)
   local paste_report = paste and paste.report or {}
   if not (paste and paste.ok) or paste_report.outcome ~= "pasted" then
-    -- Say WHAT failed, not just how many (owner feedback): the refused report carries per-conflict
-    -- names/positions/blockers.
     local detail = ""
     if type(paste_report.conflict_details) == "table" and #paste_report.conflict_details > 0 then
       detail = ": " .. table.concat(paste_report.conflict_details, "; ")
     elseif paste_report.error then
       detail = ": " .. tostring(paste_report.error)
     end
-    local why = string.format("paste %s%s", tostring(paste_report.outcome or "error"), detail)
+    local why = string.format("paste %s%s", tostring(paste_report.outcome or (paste and paste.err) or "error"), detail)
     set_status(cell.text_obj, comb, panel, "fail", why)
     return "fail", why
   end
-  -- Audit windows stop at oy+11: the BORDER row (+11..+12) carries the status trio, and the status
-  -- panel at +15.5 sits inside a naive +15..+27 right window — the meter then counts its own
-  -- display and every test fails "entities N vs N+1" (measured on the first live run).
+  -- Audit windows stop at oy+11: the BORDER row carries the status trio; a naive +15..+27 right
+  -- window would count the status panel and every test fails "entities N vs N+1".
   local left = drive("audit", ox + 1, oy, ox + 13, oy + 11)
   local right = drive("audit", ox + 15, oy, ox + 27, oy + 11)
   if not (left and left.ok and left.report and right and right.ok and right.report) then
     set_status(cell.text_obj, comb, panel, "fail", "audit failed")
     return "fail", "audit failed"
   end
-
   local delta = report_delta(left.report, right.report)
   if delta then
     set_status(cell.text_obj, comb, panel, "fail", delta)
     return "fail", delta
   end
+
+  -- (c) PASTE fingerprint: the same meter over the pasted right half (anchor +14 / right rect). The
+  -- new depth catches a paste that keeps entity/item COUNTS but drops progress/signal/held state.
+  local ok_p, paste_reads = pcall(pad_reading, surface, cell, fixture, dispatch, roster, 14,
+    { { cell.ox + 15, cell.oy }, { cell.ox + 27, cell.oy + 11 } })
+  if not ok_p then
+    set_status(cell.text_obj, comb, panel, "fail", "paste meter error")
+    return "fail", "paste meter error: " .. tostring(paste_reads)
+  end
+  local paste_drift = compare_fingerprint(paste_reads, fixture.fingerprint)
+  if paste_drift then
+    set_status(cell.text_obj, comb, panel, "fail", "paste " .. paste_drift)
+    return "fail", "paste " .. paste_drift
+  end
+
   set_status(cell.text_obj, comb, panel, "pass")
   return "pass"
 end
 
---- Structure-discovery shared by both commands.
+-- === platform / surface reconcile (resolve by name, meter, fingerprint) ========================
+
+--- The live/held hold pairs carry "<live> + <held>"; the meter resolves both by hardcoded name, so
+--- MISSING detection only needs the first (live) platform.
+local function first_platform_name(name)
+  if type(name) ~= "string" then return nil end
+  return (name:match("^([^+]+)") or name):gsub("%s+$", "")
+end
+
+--- Resolve a platform-kind fixture and fingerprint it. Returns "missing"|"pass"|"fail", detail.
+local function run_platform(fixture, dispatch)
+  local reads
+  if dispatch.args == "none" then
+    local first = first_platform_name(fixture.platformName)
+    if not first or not FM.surface_for_platform(first) then
+      return "missing", "platform " .. tostring(first) .. " absent"
+    end
+    reads = dispatch.meter()
+  else
+    local surface, platform = FM.surface_for_platform(fixture.platformName)
+    if not surface then
+      return "missing", "platform " .. tostring(fixture.platformName) .. " absent"
+    end
+    if dispatch.args == "platform" then
+      reads = dispatch.meter(platform)
+    else
+      reads = dispatch.meter(surface)
+    end
+  end
+  local drift = compare_fingerprint(reads, fixture.fingerprint)
+  if drift then return "fail", drift end
+  return "pass"
+end
+
+--- Resolve a surface-kind fixture (e.g. the nauvis belt loop) and fingerprint it.
+local function run_surface(fixture, dispatch)
+  local surface = fixture.surfaceName and game.surfaces[fixture.surfaceName]
+  if not surface then
+    return "missing", "surface " .. tostring(fixture.surfaceName) .. " absent"
+  end
+  local reads = dispatch.meter(surface)
+  local drift = compare_fingerprint(reads, fixture.fingerprint)
+  if drift then return "fail", drift end
+  return "pass"
+end
+
+-- === discovery ================================================================================
+
+--- Structure-discovery of the gallery test cells on one surface.
 local function discover_cells(surface, filter)
   local cells = {}
   for _, o in pairs(rendering.get_all_objects()) do
@@ -187,6 +343,26 @@ local function discover_cells(surface, filter)
   return cells
 end
 
+--- Match a discovered cell to a roster fixture: prefer origin (if the roster carries it), then the
+--- cell name text == fixture display name, then == fixture id.
+local function match_cell(cells, fixture)
+  if type(fixture.origin) == "table" then
+    for _, c in ipairs(cells) do
+      if c.ox == fixture.origin.x and c.oy == fixture.origin.y then return c end
+    end
+  end
+  for _, c in ipairs(cells) do
+    if c.name == fixture.name then return c end
+  end
+  for _, c in ipairs(cells) do
+    if c.name == fixture.id then return c end
+  end
+  return nil
+end
+
+-- === command context ==========================================================================
+
+--- /test-clear context: player-scoped (operates on the viewer's surface). Unchanged behavior.
 local function command_context(cmd, ctx)
   if not (storage.surface_export_config and storage.surface_export_config.debug_mode) then
     ctx.print("Error: this is a debug instrument (enable debug_mode)")
@@ -201,6 +377,31 @@ local function command_context(cmd, ctx)
   if filter == "" then filter = nil end
   local cells = discover_cells(player.surface, filter)
   return player, player.surface, cells, filter
+end
+
+--- /test-run context: debug-gated, but player-LESS is allowed (RCON headless run). Returns
+--- player (may be nil), filter.
+local function test_run_context(cmd, ctx)
+  if not (storage.surface_export_config and storage.surface_export_config.debug_mode) then
+    ctx.print("Error: this is a debug instrument (enable debug_mode)")
+    return nil, nil, false
+  end
+  local filter = cmd.parameter and cmd.parameter:gsub("%s+", "") or nil
+  if filter == "" then filter = nil end
+  return ctx.player, filter, true
+end
+
+local function fixture_matches_filter(fixture, filter)
+  if not filter then return true end
+  return (tostring(fixture.id):find(filter, 1, true) ~= nil)
+    or (fixture.name ~= nil and tostring(fixture.name):find(filter, 1, true) ~= nil)
+end
+
+--- Emit the single machine-readable summary line: log() always; rcon.print when no player drove it.
+local function emit_summary(summary, player)
+  local json = helpers.table_to_json(summary)
+  log("[TESTRUN-JSON] " .. json)
+  if not player then rcon.print("[TESTRUN-JSON] " .. json) end
 end
 
 Base.admin_command("test-clear",
@@ -226,40 +427,141 @@ Base.admin_command("test-clear",
 )
 
 Base.admin_command("test-run",
-  "Reset + run every gallery test cell fresh (copy -> paste -> audit compare). Usage: /test-run [name-filter]",
+  "Reconcile the pushed manifest roster against the live map and run each fixture. Usage: /test-run [name-filter]",
   function(cmd, ctx)
-    local player, surface, cells, filter = command_context(cmd, ctx)
-    if not player then return end
-    if #cells == 0 then
-      ctx.print(RUN_PREFIX .. " no test cells found on " .. surface.name .. (filter and (" matching '" .. filter .. "'") or ""))
+    local player, filter, ok = test_run_context(cmd, ctx)
+    if not ok then return end
+
+    local roster = storage.surface_export_test_roster
+    if not (roster and type(roster.fixtures) == "table" and #roster.fixtures > 0) then
+      ctx.print(RUN_PREFIX .. " " .. CROSS .. " no roster pushed — run seed-prep or push-roster", CHAT_RED)
+      emit_summary({
+        rosterHash = roster and roster.hash or nil,
+        fixtureCount = 0, passed = 0, failed = 1, missing = 0, unknown = 0, skipped = 0,
+        results = { { id = "(roster)", verdict = "fail", detail = "no roster pushed" } },
+      }, player)
       return
     end
-    local passed, failed = 0, 0
-    for _, cell in ipairs(cells) do
-      -- QUIET: suppress the lab's per-action chat narration for the whole run (typed returns +
-      -- [MODE-JSON] log lines keep the evidence); restored unconditionally after the pcall.
-      SelectionLab.set_quiet(true)
-      local ok, verdict_or_err, detail = pcall(run_one, player, surface, cell)
-      SelectionLab.set_quiet(false)
-      if not ok then
-        failed = failed + 1
-        log("[test-run] " .. cell.name .. " CRASHED: " .. tostring(verdict_or_err))
-        ctx.print(string.format("%s %s: %s runner error: %s", RUN_PREFIX, cell.name, CROSS, tostring(verdict_or_err)), CHAT_RED)
-        local comb, panel = find_trio(surface, cell.ox, cell.oy)
-        if comb and panel then
-          -- intentional probe; status display is best-effort after a runner crash, error already surfaced above
-          pcall(set_status, cell.text_obj, comb, panel, "fail", "runner error")
+
+    -- Per-surface discovery cache (pad reconcile + UNKNOWN PAD detection).
+    local disc = {}
+    local function cells_for(surface)
+      local key = surface.name
+      if not disc[key] then
+        disc[key] = { surface = surface, cells = discover_cells(surface, filter), matched = {} }
+      end
+      return disc[key]
+    end
+
+    local results = {}
+    local passed, failed, missing, unknown, skipped = 0, 0, 0, 0, 0
+    local considered = 0
+    local function record(id, verdict, detail)
+      results[#results + 1] = { id = id, verdict = verdict, detail = detail }
+    end
+
+    for _, fx in ipairs(roster.fixtures) do
+      if fixture_matches_filter(fx, filter) then
+        considered = considered + 1
+        local id = fx.id
+        if fx.runnerExcluded then
+          local reason = (type(fx.runnerExcluded) == "string" and fx.runnerExcluded) or "excluded"
+          skipped = skipped + 1
+          record(id, "skipped", "excluded: " .. reason)
+          ctx.print(string.format("%s %s: SKIPPED (excluded: %s)", RUN_PREFIX, id, reason), CHAT_YELLOW)
+        else
+          local dispatch = DISPATCH[id]
+          if not dispatch then
+            skipped = skipped + 1
+            record(id, "skipped", "no meter")
+            ctx.print(string.format("%s %s: SKIPPED (no meter)", RUN_PREFIX, id), CHAT_YELLOW)
+          elseif fx.padKind == "pad" then
+            local surface = FM.surface_for_platform(fx.platformName)
+            if not surface then
+              missing = missing + 1
+              record(id, "missing", "platform " .. tostring(fx.platformName) .. " absent")
+              ctx.print(string.format("%s %s: %s MISSING (platform %s absent)", RUN_PREFIX, id, CROSS, tostring(fx.platformName)), CHAT_RED)
+            else
+              local d = cells_for(surface)
+              local cell = match_cell(d.cells, fx)
+              if not cell then
+                missing = missing + 1
+                record(id, "missing", "no pad cell on " .. surface.name)
+                ctx.print(string.format("%s %s: %s MISSING (no pad cell)", RUN_PREFIX, id, CROSS), CHAT_RED)
+              else
+                d.matched[cell] = true
+                -- QUIET: suppress the lab's per-action chat narration for the whole run.
+                SelectionLab.set_quiet(true)
+                local run_ok, verdict, detail = pcall(run_pad, player, surface, cell, fx, dispatch, roster)
+                SelectionLab.set_quiet(false)
+                if not run_ok then
+                  failed = failed + 1
+                  record(id, "fail", "runner error: " .. tostring(verdict))
+                  log("[test-run] " .. id .. " CRASHED: " .. tostring(verdict))
+                  ctx.print(string.format("%s %s: %s runner error: %s", RUN_PREFIX, id, CROSS, tostring(verdict)), CHAT_RED)
+                elseif verdict == "pass" then
+                  passed = passed + 1
+                  record(id, "pass")
+                  ctx.print(string.format("%s %s: %s", RUN_PREFIX, id, CHECK), CHAT_GREEN)
+                else
+                  failed = failed + 1
+                  record(id, "fail", detail)
+                  ctx.print(string.format("%s %s: %s %s", RUN_PREFIX, id, CROSS, tostring(detail)), CHAT_RED)
+                end
+              end
+            end
+          elseif fx.padKind == "platform" or fx.padKind == "surface" then
+            local run_ok, verdict, detail = pcall(fx.padKind == "surface" and run_surface or run_platform, fx, dispatch)
+            if not run_ok then
+              failed = failed + 1
+              record(id, "fail", "runner error: " .. tostring(verdict))
+              log("[test-run] " .. id .. " CRASHED: " .. tostring(verdict))
+              ctx.print(string.format("%s %s: %s runner error: %s", RUN_PREFIX, id, CROSS, tostring(verdict)), CHAT_RED)
+            elseif verdict == "missing" then
+              missing = missing + 1
+              record(id, "missing", detail)
+              ctx.print(string.format("%s %s: %s MISSING (%s)", RUN_PREFIX, id, CROSS, tostring(detail)), CHAT_RED)
+            elseif verdict == "pass" then
+              passed = passed + 1
+              record(id, "pass")
+              ctx.print(string.format("%s %s: %s", RUN_PREFIX, id, CHECK), CHAT_GREEN)
+            else
+              failed = failed + 1
+              record(id, "fail", detail)
+              ctx.print(string.format("%s %s: %s %s", RUN_PREFIX, id, CROSS, tostring(detail)), CHAT_RED)
+            end
+          else
+            skipped = skipped + 1
+            record(id, "skipped", "unknown padKind " .. tostring(fx.padKind))
+            ctx.print(string.format("%s %s: SKIPPED (unknown padKind %s)", RUN_PREFIX, id, tostring(fx.padKind)), CHAT_YELLOW)
+          end
         end
-      elseif verdict_or_err == "pass" then
-        passed = passed + 1
-        ctx.print(string.format("%s %s: %s", RUN_PREFIX, cell.name, CHECK), CHAT_GREEN)
-      elseif verdict_or_err == "fail" then
-        failed = failed + 1
-        ctx.print(string.format("%s %s: %s %s", RUN_PREFIX, cell.name, CROSS, tostring(detail)), CHAT_RED)
       end
     end
-    ctx.print(string.format("%s %d/%d passed on %s", RUN_PREFIX, passed, passed + failed, surface.name),
-      failed == 0 and CHAT_GREEN or CHAT_RED)
+
+    -- Reconcile the OTHER way: a discovered cell matching no roster fixture is an UNKNOWN PAD (yellow
+    -- warning, not a failure). Include the viewer's surface so an in-game run also flags strays there.
+    if player then cells_for(player.surface) end
+    for _, d in pairs(disc) do
+      for _, c in ipairs(d.cells) do
+        if not d.matched[c] then
+          unknown = unknown + 1
+          record(c.name, "unknown", "discovered pad not in roster on " .. d.surface.name)
+          ctx.print(string.format("%s %s: UNKNOWN PAD (not in roster)", RUN_PREFIX, c.name), CHAT_YELLOW)
+        end
+      end
+    end
+
+    ctx.print(string.format("%s %d passed, %d failed, %d missing, %d unknown, %d skipped (roster %s)",
+      RUN_PREFIX, passed, failed, missing, unknown, skipped, tostring(roster.hash)),
+      (failed == 0 and missing == 0) and CHAT_GREEN or CHAT_RED)
+
+    emit_summary({
+      rosterHash = roster.hash,
+      fixtureCount = considered,
+      passed = passed, failed = failed, missing = missing, unknown = unknown, skipped = skipped,
+      results = results,
+    }, player)
   end
 )
 

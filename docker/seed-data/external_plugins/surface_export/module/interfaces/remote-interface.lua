@@ -33,6 +33,7 @@ local hold_aware_unlock_selftest = require("modules/surface_export/interfaces/re
 local delete_platform_for_transfer = require("modules/surface_export/interfaces/remote/delete-platform-for-transfer")
 local get_source_transfer_lock_state = require("modules/surface_export/interfaces/remote/get-source-transfer-lock-state")
 local destination_hold = require("modules/surface_export/interfaces/remote/destination-hold")
+local test_roster = require("modules/surface_export/interfaces/remote/test-roster")
 
 -- Expose functions for direct Lua access (not just remote interface)
 RemoteInterface.export_platform = export_platform
@@ -60,6 +61,8 @@ RemoteInterface.hold_aware_unlock_selftest = hold_aware_unlock_selftest
 RemoteInterface.delete_platform_for_transfer = delete_platform_for_transfer
 RemoteInterface.get_source_transfer_lock_state = get_source_transfer_lock_state
 RemoteInterface.destination_hold = destination_hold
+RemoteInterface.set_test_roster = test_roster.set_test_roster
+RemoteInterface.get_test_roster_summary = test_roster.get_test_roster_summary
 
 -- JSON-wrapped versions for RCON access
 RemoteInterface.get_export_json = Base.json_wrap(get_export)
@@ -122,6 +125,12 @@ function RemoteInterface.register()
     get_source_transfer_lock_state_json = Base.json_wrap(get_source_transfer_lock_state),
     destination_hold = destination_hold,
     destination_hold_json = Base.json_wrap(destination_hold),
+
+    -- Manifest-driven test roster (the /test-run trust anchor)
+    set_test_roster = test_roster.set_test_roster,
+    set_test_roster_json = Base.json_wrap(test_roster.set_test_roster),
+    get_test_roster_summary = test_roster.get_test_roster_summary,
+    get_test_roster_summary_json = Base.json_wrap(test_roster.get_test_roster_summary),
   })
 end
 
