@@ -42,8 +42,8 @@ import { loadGalleryManifest } from "../lab-gallery/manifest.mjs";
 const NOTEBOOK = fileURLToPath(new URL("./NOTEBOOK.md", import.meta.url));
 export const B8_FIXTURE_ID = "no-tick-sync-frozen-pair";
 const PLATFORM = "lab-omnibus-state-v1";
-const MACHINE_POS = { x: 39.5, y: -108.5 };
-const INSERTER_POS = { x: 42.5, y: -108.5 };
+const MACHINE_POS = { x: 13.5, y: 27.5 };
+const INSERTER_POS = { x: 16.5, y: 27.5 };
 export const B8_HELD = { name: "iron-plate", count: 1, quality: "normal" };
 
 // --- Fixture reads --------------------------------------------------------------------------------

@@ -18,7 +18,7 @@
 			"role": "source",
 			"name": "lab-gallery-source-surface-export-2-0-77",
 			"artifact": "docker/seed-data/lab-saves/lab-gallery-source-surface-export-2.0.77.zip",
-			"sha256": "7AC9F75ADB322018FF397DA13F704338B4D23C6D0E82DD230214D1881E3A6C32",
+			"sha256": "959E4B064139F21CEC4D979C50FDB3EE286B2E2F8BB7582D72DD83206DE8240C",
 			"expectedCensus": {
 				"totalEntities": 1533,
 				"totalGeneratedChunks": 5532,
@@ -386,7 +386,7 @@
 			},
 			"testCard": {
 				"law": "Nested inventories survive exactly: a chest-held power-armor-mk2 keeps its equipment grid (battery energy, shield value, qualities) and the machine keeps its quality recipe.",
-				"build": "Migrated 2026-07-18 from the legacy y=0 zone onto the test-foundation pad at (34,-100) via surface.clone_area (seed-prep migrate_omnibus_zone; exact-state move, originals destroyed).",
+				"build": "Migrated 2026-07-18 from the legacy y=0 zone onto the test-foundation pad at (8,-20) via surface.clone_area (seed-prep migrate_omnibus_zone; exact-state move, originals destroyed).",
 				"action": "/test-run: reset the compare area, selection-lab copy of the pad build area, paste at +14,0, physical audit of both halves.",
 				"expected": "Audit reports equal entities/items; the pasted armor's grid carries the same battery energy, shield value, and equipment qualities.",
 				"forbidden": "An emptied or flattened equipment grid; lost item quality; a dropped quality recipe."
@@ -423,7 +423,7 @@
 			},
 			"testCard": {
 				"law": "Heat-pipe temperature is physical state and transfers exactly.",
-				"build": "Migrated 2026-07-18 from the legacy y=0 zone onto the test-foundation pad at (62,-100) via surface.clone_area (seed-prep migrate_omnibus_zone; exact-state move, originals destroyed).",
+				"build": "Migrated 2026-07-18 from the legacy y=0 zone onto the test-foundation pad at (36,-20) via surface.clone_area (seed-prep migrate_omnibus_zone; exact-state move, originals destroyed).",
 				"action": "/test-run: reset the compare area, selection-lab copy of the pad build area, paste at +14,0, physical audit of both halves.",
 				"expected": "Audit reports equal entities; the pasted heat-pipe reads the same temperature.",
 				"forbidden": "Temperature reset to ambient (15C); any temperature drift."
@@ -459,7 +459,7 @@
 			},
 			"testCard": {
 				"law": "A decider-combinator latched on by its own red-wire self-feedback stays latched: the red output network carries signal-S = 1.",
-				"build": "Migrated 2026-07-18 from the legacy y=0 zone onto the test-foundation pad at (62,-114) via surface.clone_area (seed-prep migrate_omnibus_zone; exact-state move, originals destroyed).",
+				"build": "Migrated 2026-07-18 from the legacy y=0 zone onto the test-foundation pad at (64,-20) via surface.clone_area (seed-prep migrate_omnibus_zone; exact-state move, originals destroyed).",
 				"action": "/test-run: reset the compare area, selection-lab copy of the pad build area, paste at +14,0, physical audit of both halves.",
 				"expected": "Audit reports equal entities; the pasted decider's red output network still reads signal-S = 1.",
 				"forbidden": "An unlatched paste (signal-S absent/0); a dropped self-feedback wire."
@@ -497,7 +497,7 @@
 			},
 			"testCard": {
 				"law": "A deactivated assembling-machine-1 frozen mid-craft keeps its exact crafting_progress and embodied input ingredients.",
-				"build": "Migrated 2026-07-18 from the legacy y=0 zone onto the test-foundation pad at (62,-128) via surface.clone_area (seed-prep migrate_omnibus_zone; exact-state move, originals destroyed).",
+				"build": "Migrated 2026-07-18 from the legacy y=0 zone onto the test-foundation pad at (92,-20) via surface.clone_area (seed-prep migrate_omnibus_zone; exact-state move, originals destroyed).",
 				"action": "/test-run: reset the compare area, selection-lab copy of the pad build area, paste at +14,0, physical audit of both halves.",
 				"expected": "Audit reports equal entities/items; the pasted machine reads the same crafting_progress and input plate count, still inactive.",
 				"forbidden": "Progress reset or advanced; consumed or duplicated inputs; the machine arriving active."
@@ -536,7 +536,7 @@
 			},
 			"testCard": {
 				"law": "Burner state transfers whole: fuel inventory, currently-burning item, and remaining_burning_fuel.",
-				"build": "Migrated 2026-07-18 from the legacy y=0 zone onto the test-foundation pad at (34,-142) via surface.clone_area (seed-prep migrate_omnibus_zone; exact-state move, originals destroyed).",
+				"build": "Migrated 2026-07-18 from the legacy y=0 zone onto the test-foundation pad at (8,-6) via surface.clone_area (seed-prep migrate_omnibus_zone; exact-state move, originals destroyed).",
 				"action": "/test-run: reset the compare area, selection-lab copy of the pad build area, paste at +14,0, physical audit of both halves.",
 				"expected": "Audit reports equal entities/items; the pasted burner-inserter keeps its coal, burning item, and remaining fuel energy.",
 				"forbidden": "A cold burner (currently_burning lost); dropped fuel items; remaining fuel reset."
@@ -574,7 +574,7 @@
 			},
 			"testCard": {
 				"law": "A vehicle equipment grid transfers with its charge: the spidertron's battery-mk2-equipment keeps its stored energy.",
-				"build": "Migrated 2026-07-18 from the legacy y=0 zone onto the test-foundation pad at (62,-142) via surface.clone_area (seed-prep migrate_omnibus_zone; exact-state move, originals destroyed).",
+				"build": "Migrated 2026-07-18 from the legacy y=0 zone onto the test-foundation pad at (36,-6) via surface.clone_area (seed-prep migrate_omnibus_zone; exact-state move, originals destroyed).",
 				"action": "/test-run: reset the compare area, selection-lab copy of the pad build area, paste at +14,0, physical audit of both halves.",
 				"expected": "Audit reports equal entities; the pasted spidertron's grid battery reads the same energy.",
 				"forbidden": "An emptied grid; battery energy reset to 0 or full."
@@ -612,7 +612,7 @@
 			},
 			"testCard": {
 				"law": "Control-behavior configuration transfers exactly: constant-combinator section filters (signal, min) and lamp use_colors, with circuit wiring intact.",
-				"build": "Migrated 2026-07-18 from the legacy y=0 zone onto the test-foundation pad at (34,-156) via surface.clone_area (seed-prep migrate_omnibus_zone; exact-state move, originals destroyed).",
+				"build": "Migrated 2026-07-18 from the legacy y=0 zone onto the test-foundation pad at (64,-6) via surface.clone_area (seed-prep migrate_omnibus_zone; exact-state move, originals destroyed).",
 				"action": "/test-run: reset the compare area, selection-lab copy of the pad build area, paste at +14,0, physical audit of both halves.",
 				"expected": "Audit reports equal entities; the pasted combinator carries the same section filter and the lamp the same use_colors flag.",
 				"forbidden": "Dropped section filters; lost wire connections; a flipped or defaulted lamp flag."
@@ -650,7 +650,7 @@
 			},
 			"testCard": {
 				"law": "Module inventory and accumulated bonus_progress transfer exactly on a deactivated crafter.",
-				"build": "Migrated 2026-07-18 from the legacy y=0 zone onto the test-foundation pad at (62,-156) via surface.clone_area (seed-prep migrate_omnibus_zone; exact-state move, originals destroyed).",
+				"build": "Migrated 2026-07-18 from the legacy y=0 zone onto the test-foundation pad at (92,-6) via surface.clone_area (seed-prep migrate_omnibus_zone; exact-state move, originals destroyed).",
 				"action": "/test-run: reset the compare area, selection-lab copy of the pad build area, paste at +14,0, physical audit of both halves.",
 				"expected": "Audit reports equal entities/items; the pasted machine keeps its productivity modules and the same bonus_progress.",
 				"forbidden": "Missing modules; bonus_progress reset; the machine arriving active."
@@ -691,7 +691,7 @@
 			},
 			"testCard": {
 				"law": "Fluids transfer exactly in tanks AND in crafting-machine fluidboxes (Pitfall #18, entity handlers must export crafter fluids): steam with temperature, chem-plant water/gas, foundry molten iron.",
-				"build": "Migrated 2026-07-18 from the legacy y=0 zone onto the test-foundation pad at (34,-170) via surface.clone_area (seed-prep migrate_omnibus_zone; exact-state move, originals destroyed).",
+				"build": "Migrated 2026-07-18 from the legacy y=0 zone onto the test-foundation pad at (8,8) via surface.clone_area (seed-prep migrate_omnibus_zone; exact-state move, originals destroyed).",
 				"action": "/test-run: reset the compare area, selection-lab copy of the pad build area, paste at +14,0, physical audit of both halves.",
 				"expected": "Audit reports equal fluids by name and amount; the pasted tank/plant/foundry read the same amounts and temperatures.",
 				"forbidden": "Any fluid amount or temperature drift; crafter fluidboxes arriving empty."
@@ -730,7 +730,7 @@
 			},
 			"testCard": {
 				"law": "Construction intent transfers: entity ghosts (with ghost_name), tile ghosts, and item-request-proxies are physical fixture content.",
-				"build": "Migrated 2026-07-18 from the legacy y=0 zone onto the test-foundation pad at (62,-170) via surface.clone_area (seed-prep migrate_omnibus_zone; exact-state move, originals destroyed).",
+				"build": "Migrated 2026-07-18 from the legacy y=0 zone onto the test-foundation pad at (36,8) via surface.clone_area (seed-prep migrate_omnibus_zone; exact-state move, originals destroyed).",
 				"action": "/test-run: reset the compare area, selection-lab copy of the pad build area, paste at +14,0, physical audit of both halves.",
 				"expected": "Audit reports equal entities including one entity-ghost, one tile-ghost, and one item-request-proxy on the pasted half.",
 				"forbidden": "A ghost or proxy silently dropped; a proxy detached from its target machine."
@@ -766,7 +766,7 @@
 			},
 			"testCard": {
 				"law": "Items on the ground are physical content (PR #24, ground-item export): the iron-plate scatter transfers at exact count and sub-tile positions.",
-				"build": "Migrated 2026-07-18 from the legacy y=0 zone onto the test-foundation pad at (34,-184) via surface.clone_area (seed-prep migrate_omnibus_zone; exact-state move, originals destroyed).",
+				"build": "Migrated 2026-07-18 from the legacy y=0 zone onto the test-foundation pad at (64,8) via surface.clone_area (seed-prep migrate_omnibus_zone; exact-state move, originals destroyed).",
 				"action": "/test-run: reset the compare area, selection-lab copy of the pad build area, paste at +14,0, physical audit of both halves.",
 				"expected": "Audit reports equal items; the pasted half carries the same iron-plate ground total at the same relative positions.",
 				"forbidden": "Any ground item lost or merged; count drift between halves."
@@ -979,7 +979,7 @@
 				"surfexp_gateways": "0.3.0",
 				"maraxsis": "1.31.6"
 			},
-			"note": "Script-built by tests/lab-gallery/seed-prep-ops.lua (build_inserter_held) onto the stamped inserter-held-capacity cell at (34,-128): raise the player force bulk_inserter_capacity_bonus to >=11 (raise-only, logged), create a legendary bulk-inserter at (40.5,-122.5), seat 8 LEGENDARY railgun-ammo via plain held_stack.set_stack (no active toggle; inserter-lab B6), then freeze (active=false, destructible=false). Re-baked 2026-07-18: the original bake seated a NORMAL-quality stack and self-certified via the entity-quality meter (B7 run 1b caught it via the independent stack-quality read); the stack is now legendary and both meters read the STACK. forceBulkBonus is a placeholder floor; the live bake pins the exact baked value. The ADVERSARIAL destination state is baked too (2026-07-18): the golden dest descends from the long-lived local host-2 lineage whose player force had bulk 11 / stack 3 (B7 run 1 caught it — the fixture could not discriminate the Pitfall #29 fix), so both inserter bonuses were zeroed at bake time and the dest artifact re-pinned; the runner still ASSERTS 0 at load, never forces.",
+			"note": "Script-built by tests/lab-gallery/seed-prep-ops.lua (build_inserter_held) onto the stamped inserter-held-capacity cell at (92,8): raise the player force bulk_inserter_capacity_bonus to >=11 (raise-only, logged), create a legendary bulk-inserter at (98.5,13.5), seat 8 LEGENDARY railgun-ammo via plain held_stack.set_stack (no active toggle; inserter-lab B6), then freeze (active=false, destructible=false). Re-baked 2026-07-18: the original bake seated a NORMAL-quality stack and self-certified via the entity-quality meter (B7 run 1b caught it via the independent stack-quality read); the stack is now legendary and both meters read the STACK. forceBulkBonus is a placeholder floor; the live bake pins the exact baked value. The ADVERSARIAL destination state is baked too (2026-07-18): the golden dest descends from the long-lived local host-2 lineage whose player force had bulk 11 / stack 3 (B7 run 1 caught it — the fixture could not discriminate the Pitfall #29 fix), so both inserter bonuses were zeroed at bake time and the dest artifact re-pinned; the runner still ASSERTS 0 at load, never forces.",
 			"invariant": "A legendary bulk-inserter holds 8 railgun-ammo in its hand while inactive and indestructible; the player force bulk_inserter_capacity_bonus is >= 11 so the hand seats in full and survives save/load.",
 			"expectedTerminalVerdict": "transfer-committed-hand-full",
 			"independentOracleRequired": true,
@@ -993,7 +993,7 @@
 			},
 			"testCard": {
 				"law": "Held items seat IN FULL on a less-researched destination: export captures the source-force inserter bonuses, import replicates them raise-only, and the strict gate counts the complete state (Pitfalls #28 count-a-complete-state / #29 dest-force research).",
-				"build": "lab-omnibus-state-v1 inserter-held-capacity cell (34,-128): a legendary bulk-inserter at (40.5,-122.5) holds 8 railgun-ammo via plain held_stack.set_stack (no active toggle); the player force bulk_inserter_capacity_bonus is baked >= 11; the inserter is frozen (active=false, destructible=false).",
+				"build": "lab-omnibus-state-v1 inserter-held-capacity cell (34,-128): a legendary bulk-inserter at (98.5,13.5) holds 8 railgun-ammo via plain held_stack.set_stack (no active toggle); the player force bulk_inserter_capacity_bonus is baked >= 11; the inserter is frozen (active=false, destructible=false).",
 				"action": "Production /transfer-platform of the omnibus platform to a destination whose bulk_inserter_capacity_bonus is 0 (asserted, never forced).",
 				"expected": "A forceDataMismatches warning fires; the destination bonus is raised, never lowered; the hand seats 8/8 by physical count; the strict gate reports SUCCESS.",
 				"forbidden": "An under-seated hand; a gate pass over a short hand; any destination bonus lowered; the baked bonus not surviving save/load."
@@ -1021,7 +1021,7 @@
 				"surfexp_gateways": "0.3.0",
 				"maraxsis": "1.31.6"
 			},
-			"note": "Script-built by tests/lab-gallery/seed-prep-ops.lua (build_no_tick_pair) onto the stamped no-tick-sync-frozen-pair cell at (34,-114): an assembling-machine-1 at (39.5,-108.5) set to iron-gear-wheel with 4 iron-plate in crafter_input and crafting_progress write-asserted to 0.42, then frozen; a plain west-facing inserter at (42.5,-108.5), empty-handed, frozen. progress absorbs a crafting-progress ULP on save/load.",
+			"note": "Script-built by tests/lab-gallery/seed-prep-ops.lua (build_no_tick_pair) onto the stamped no-tick-sync-frozen-pair cell at (8,22): an assembling-machine-1 at (13.5,27.5) set to iron-gear-wheel with 4 iron-plate in crafter_input and crafting_progress write-asserted to 0.42, then frozen; a plain west-facing inserter at (16.5,27.5), empty-handed, frozen. progress absorbs a crafting-progress ULP on save/load.",
 			"invariant": "The assembling-machine-1 is inactive with crafting_progress ~0.42, iron-gear-wheel set, and 4 iron-plate embodied; the neighboring inserter is inactive with an empty hand; every fixture entity is destructible=false.",
 			"expectedTerminalVerdict": "no-tick-pass-progress-stable",
 			"independentOracleRequired": true,
@@ -1036,7 +1036,7 @@
 			},
 			"testCard": {
 				"law": "The synchronous held-item pass leaves game.tick, crafting_progress, and machine inputs UNCHANGED while it seats the inserter hand, reproduced from a save-loaded world (no-tick-sync-lab).",
-				"build": "lab-omnibus-state-v1 no-tick-sync-frozen-pair cell (34,-114): an inactive assembling-machine-1 at (39.5,-108.5) frozen mid-craft (iron-gear-wheel, 4 iron-plate embodied, crafting_progress 0.42 write-asserted) beside an inactive west-facing empty-handed inserter at (42.5,-108.5); both destructible=false.",
+				"build": "lab-omnibus-state-v1 no-tick-sync-frozen-pair cell (34,-114): an inactive assembling-machine-1 at (13.5,27.5) frozen mid-craft (iron-gear-wheel, 4 iron-plate embodied, crafting_progress 0.42 write-asserted) beside an inactive west-facing empty-handed inserter at (16.5,27.5); both destructible=false.",
 				"action": "Run the no_tick_sync_selftest remote in measure-baked-fixture (construct-free) mode against this pair under tick-pause - the strongest form.",
 				"expected": "game.tick unchanged; crafting_progress exactly 0.42 after the pass; the hand seats in full.",
 				"forbidden": "Any tick advance during the pass; crafting_progress drift; the selftest constructing anything on the golden world."

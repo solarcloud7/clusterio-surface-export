@@ -45,7 +45,7 @@ const NOTEBOOK = fileURLToPath(new URL("./NOTEBOOK.md", import.meta.url));
 export const B7_FIXTURE_ID = "inserter-held-capacity";
 const PLATFORM = "lab-omnibus-state-v1";
 const INSERTER_NAME = "bulk-inserter";
-const INSERTER_POS = { x: 40.5, y: -122.5 };
+const INSERTER_POS = { x: 98.5, y: 13.5 };
 const MIN_BONUS = 11;   // source (and post-transfer dest) bulk_inserter_capacity_bonus floor
 
 // --- Fixture reads (independent physical meters, never the validator's self-report) ---------------

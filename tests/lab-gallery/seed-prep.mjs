@@ -114,9 +114,48 @@ async function main() {
 			const card = fixture.testCard;
 			return { law: card.law, action: card.action, expect: card.expected, forbidden: card.forbidden };
 		};
+		// PAD RELOCATION (owner directive 2026-07-18): all 13 pads live in a hub-adjacent grid
+		// (columns x=8/36/64/92, rows y=-20/-6/8/22) so they are visible from the hub without the
+		// editor. clear_legacy_strip first clears the migrated-out zone row's plain foundation (the
+		// only-onto-empty stamp refuses foreign tiles); each relocation stamps the new pad then moves
+		// the interior via clone_area. Idempotent: already_relocated / skipped pads are verified, not
+		// rebuilt.
+		const RELOCATIONS = [
+			{ id: "omnibus-adversarial-inventory", oldX: 34, oldY: -100, newX: 8, newY: -20 },
+			{ id: "omnibus-heat-temperature", oldX: 62, oldY: -100, newX: 36, newY: -20 },
+			{ id: "omnibus-decider-latch", oldX: 62, oldY: -114, newX: 64, newY: -20 },
+			{ id: "omnibus-midcraft-progress", oldX: 62, oldY: -128, newX: 92, newY: -20 },
+			{ id: "omnibus-burner-fuel", oldX: 34, oldY: -142, newX: 8, newY: -6 },
+			{ id: "omnibus-equipment-grid", oldX: 62, oldY: -142, newX: 36, newY: -6 },
+			{ id: "omnibus-circuit-config", oldX: 34, oldY: -156, newX: 64, newY: -6 },
+			{ id: "omnibus-module-bonus-progress", oldX: 62, oldY: -156, newX: 92, newY: -6 },
+			{ id: "omnibus-crafting-fluids", oldX: 34, oldY: -170, newX: 8, newY: 8 },
+			{ id: "omnibus-ghosts-and-proxies", oldX: 62, oldY: -170, newX: 36, newY: 8 },
+			{ id: "omnibus-ground-items", oldX: 34, oldY: -184, newX: 64, newY: 8 },
+			{ id: "inserter-held-capacity", oldX: 34, oldY: -128, newX: 92, newY: 8 },
+			{ id: "no-tick-sync-frozen-pair", oldX: 34, oldY: -114, newX: 8, newY: 22 },
+		];
+		const strip = runtimeCall(handle, PORTS, { operation: "clear_legacy_strip" });
+		console.error(`[seed-prep] legacy strip: ${JSON.stringify(strip)}`);
+		const relocations = {};
+		for (const pad of RELOCATIONS) {
+			runtimeCall(handle, PORTS, {
+				operation: "stamp_test_cell", origin_x: pad.newX, origin_y: pad.newY,
+				name: pad.id, rows: TEMPLATE_ROWS, legend: LEGEND, card: cardFor(pad.id),
+			});
+			const moved = runtimeCall(handle, PORTS, {
+				operation: "relocate_pad", name: pad.id,
+				old_origin_x: pad.oldX, old_origin_y: pad.oldY,
+				new_origin_x: pad.newX, new_origin_y: pad.newY,
+			});
+			if (moved.success === false) throw new Error(`${pad.id} relocation failed: ${moved.error}`);
+			relocations[pad.id] = moved;
+			console.error(`[seed-prep] relocated ${pad.id}: ${JSON.stringify(moved)}`);
+		}
+
 		const cells = [
-			{ id: "inserter-held-capacity", originX: 34, originY: -128, build: "build_inserter_held", measure: "measure_inserter_held" },
-			{ id: "no-tick-sync-frozen-pair", originX: 34, originY: -114, build: "build_no_tick_pair", measure: "measure_no_tick_pair" },
+			{ id: "inserter-held-capacity", originX: 92, originY: 8, build: "build_inserter_held", measure: "measure_inserter_held" },
+			{ id: "no-tick-sync-frozen-pair", originX: 8, originY: 22, build: "build_no_tick_pair", measure: "measure_no_tick_pair" },
 		];
 		const portedFixtures = {};
 		for (const cell of cells) {
@@ -143,41 +182,12 @@ async function main() {
 			}
 		}
 
-		// Pad migration (owner directive 2026-07-18): move the 11 POSITIONAL legacy fixtures from the
-		// y=0 zone row into stamped test-foundation pads (two columns at x=34/62, pitch 28x14), so every
-		// fixture joins /test-run. surface.clone_area is the mover (exact state: wires, ghosts, proxies,
-		// ground items, burner state, heat, crafting progress); the op gates on count equality and only
-		// then destroys the originals + the old zone label. omnibus-platform-schedule is HUB state —
-		// non-positional, no pad. Idempotent: an already-migrated zone (empty source, populated pad) is
-		// verified in place. gallery-runtime.lua measures moved WITH the fixtures; verify-save is the
-		// physical acceptance gate for every invariant after the move.
-		const MIGRATIONS = [
-			{ id: "omnibus-adversarial-inventory", cx: 14, ox: 34, oy: -100, label: "[ ADVERSARIAL GRID ]" },
-			{ id: "omnibus-heat-temperature", cx: 26, ox: 62, oy: -100, label: "[ HEAT ]" },
-			{ id: "omnibus-decider-latch", cx: 38, ox: 62, oy: -114, label: "[ LATCH ]" },
-			{ id: "omnibus-midcraft-progress", cx: 50, ox: 62, oy: -128, label: "[ MIDCRAFT ]" },
-			{ id: "omnibus-burner-fuel", cx: 62, ox: 34, oy: -142, label: "[ BURNER ]" },
-			{ id: "omnibus-equipment-grid", cx: 74, ox: 62, oy: -142, label: "[ EQUIP GRID ]" },
-			{ id: "omnibus-circuit-config", cx: 86, ox: 34, oy: -156, label: "[ CIRCUIT CONFIG ]" },
-			{ id: "omnibus-module-bonus-progress", cx: 98, ox: 62, oy: -156, label: "[ BONUS PROGRESS ]" },
-			{ id: "omnibus-crafting-fluids", cx: 122, ox: 34, oy: -170, label: "[ FLUIDS ]" },
-			{ id: "omnibus-ghosts-and-proxies", cx: 136, ox: 62, oy: -170, label: "[ GHOSTS + PROXY ]" },
-			{ id: "omnibus-ground-items", cx: 148, ox: 34, oy: -184, label: "[ GROUND ITEMS ]" },
-		];
-		const migrations = {};
-		for (const zone of MIGRATIONS) {
-			runtimeCall(handle, PORTS, {
-				operation: "stamp_test_cell", origin_x: zone.ox, origin_y: zone.oy,
-				name: zone.id, rows: TEMPLATE_ROWS, legend: LEGEND, card: cardFor(zone.id),
-			});
-			const moved = runtimeCall(handle, PORTS, {
-				operation: "migrate_omnibus_zone", source_center_x: zone.cx,
-				dest_origin_x: zone.ox, dest_origin_y: zone.oy, label: zone.label,
-			});
-			if (moved.success === false) throw new Error(`${zone.id} migration failed: ${moved.error}`);
-			migrations[zone.id] = moved;
-			console.error(`[seed-prep] migrated ${zone.id}: ${JSON.stringify(moved)}`);
-		}
+		// HISTORICAL: the zone->pad MIGRATIONS stage (migrate_omnibus_zone, 2026-07-18) ran once
+		// against the pre-pad seed and its result is baked into the committed golden source; the stage
+		// was removed when the hub-adjacent relocation reused the old zone band (y=-6..6) for the new
+		// y=-6 pad row, which confounds the zone rectangles' idempotency predicate. The op remains in
+		// seed-prep-ops.lua; clear_legacy_strip refuses to run over an unmigrated strip.
+		const migrations = { removedStage: "zones migrated + relocated; see RELOCATIONS" };
 
 		const saveName = "seed-prep-candidate";
 		runtimeCall(handle, PORTS, { operation: "save", save_name: saveName });

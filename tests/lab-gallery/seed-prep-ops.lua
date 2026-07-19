@@ -363,7 +363,7 @@ elseif request.operation == "build_inserter_held" then
     end
     local bonus_after = force.bulk_inserter_capacity_bonus
 
-    local pos = { x = 40.5, y = -122.5 }
+    local pos = { x = 98.5, y = 13.5 }
     local existing = s.find_entities_filtered({ name = "bulk-inserter", area = { { pos.x - 0.4, pos.y - 0.4 }, { pos.x + 0.4, pos.y + 0.4 } } })[1]
     if existing then existing.destroy() end
     local inserter = s.create_entity({ name = "bulk-inserter", position = pos, force = "player", quality = "legendary" })
@@ -399,8 +399,8 @@ elseif request.operation == "measure_inserter_held" then
         return { success = false, error = OMNIBUS_PLATFORM .. " not found for measure_inserter_held" }
     end
     local s = platform.surface
-    local inserter = s.find_entities_filtered({ name = "bulk-inserter", area = { { 40.5 - 0.4, -122.5 - 0.4 }, { 40.5 + 0.4, -122.5 + 0.4 } } })[1]
-    if not inserter then return { success = false, error = "bulk-inserter not found at (40.5,-122.5)" } end
+    local inserter = s.find_entities_filtered({ name = "bulk-inserter", area = { { 98.5 - 0.4, 13.5 - 0.4 }, { 98.5 + 0.4, 13.5 + 0.4 } } })[1]
+    if not inserter then return { success = false, error = "bulk-inserter not found at (98.5,13.5)" } end
     local held = inserter.held_stack
     return {
         success = true,
@@ -420,7 +420,7 @@ elseif request.operation == "build_no_tick_pair" then
     end
     local s = platform.surface
 
-    local mpos = { x = 39.5, y = -108.5 }
+    local mpos = { x = 13.5, y = 27.5 }
     local existing_machine = s.find_entities_filtered({ name = "assembling-machine-1", area = { { mpos.x - 0.4, mpos.y - 0.4 }, { mpos.x + 0.4, mpos.y + 0.4 } } })[1]
     if existing_machine then existing_machine.destroy() end
     local machine = s.create_entity({ name = "assembling-machine-1", position = mpos, force = "player" })
@@ -439,7 +439,7 @@ elseif request.operation == "build_no_tick_pair" then
     machine.active = false
     machine.destructible = false
 
-    local ipos = { x = 42.5, y = -108.5 }
+    local ipos = { x = 16.5, y = 27.5 }
     local existing_inserter = s.find_entities_filtered({ name = "inserter", area = { { ipos.x - 0.4, ipos.y - 0.4 }, { ipos.x + 0.4, ipos.y + 0.4 } } })[1]
     if existing_inserter then existing_inserter.destroy() end
     local inserter = s.create_entity({ name = "inserter", position = ipos, direction = defines.direction.west, force = "player" })
@@ -465,10 +465,10 @@ elseif request.operation == "measure_no_tick_pair" then
         return { success = false, error = OMNIBUS_PLATFORM .. " not found for measure_no_tick_pair" }
     end
     local s = platform.surface
-    local machine = s.find_entities_filtered({ name = "assembling-machine-1", area = { { 39.5 - 0.4, -108.5 - 0.4 }, { 39.5 + 0.4, -108.5 + 0.4 } } })[1]
-    local inserter = s.find_entities_filtered({ name = "inserter", area = { { 42.5 - 0.4, -108.5 - 0.4 }, { 42.5 + 0.4, -108.5 + 0.4 } } })[1]
-    if not machine then return { success = false, error = "assembling-machine-1 not found at (39.5,-108.5)" } end
-    if not inserter then return { success = false, error = "inserter not found at (42.5,-108.5)" } end
+    local machine = s.find_entities_filtered({ name = "assembling-machine-1", area = { { 13.5 - 0.4, 27.5 - 0.4 }, { 13.5 + 0.4, 27.5 + 0.4 } } })[1]
+    local inserter = s.find_entities_filtered({ name = "inserter", area = { { 16.5 - 0.4, 27.5 - 0.4 }, { 16.5 + 0.4, 27.5 + 0.4 } } })[1]
+    if not machine then return { success = false, error = "assembling-machine-1 not found at (13.5,27.5)" } end
+    if not inserter then return { success = false, error = "inserter not found at (16.5,27.5)" } end
     local input = machine.get_inventory(defines.inventory.crafter_input)
     local recipe = machine.get_recipe()
     return {
@@ -481,6 +481,155 @@ elseif request.operation == "measure_no_tick_pair" then
         inserterHandEmpty = not inserter.held_stack.valid_for_read,
         allIndestructible = (not machine.destructible) and (not inserter.destructible),
     }
+
+elseif request.operation == "clear_legacy_strip" then
+    -- Relocation prep (owner directive 2026-07-18, pads near the hub): the migrated-out legacy zone
+    -- row left plain foundation tiles at y=-6..6, x=8..154 which the only-onto-empty stamp refuses.
+    -- Clear ONLY plain space-platform-foundation tiles in that strip (pad template tiles are
+    -- tutorial-grid/hazard — never plain foundation — so a re-run cannot eat a stamped pad), and
+    -- drop the retired "[ PASTE TEST - empty pad ]" label. Idempotent.
+    local platform = find_platform(OMNIBUS_PLATFORM)
+    if not platform or not platform.surface then
+        return { success = false, error = OMNIBUS_PLATFORM .. " not found for clear_legacy_strip" }
+    end
+    local s = platform.surface
+    -- FAIL-SAFE: clearing foundation under live entities would destroy them — refuse unless the
+    -- legacy zones are already migrated out (strip entity-free except relocated pads' own tiles,
+    -- which are never plain foundation and never counted here).
+    local strip_entities = 0
+    for _, entity in ipairs(s.find_entities_filtered({ area = { { 8, -6 }, { 154, 6 } } })) do
+        local tile = s.get_tile(math.floor(entity.position.x), math.floor(entity.position.y))
+        if tile.name == "space-platform-foundation" then strip_entities = strip_entities + 1 end
+    end
+    if strip_entities > 0 then
+        return { success = false, error = "REFUSED: " .. strip_entities .. " entities still stand on legacy-strip foundation — migrate the zones first" }
+    end
+    local cleared = {}
+    for x = 8, 154 do
+        for y = -6, 6 do
+            if s.get_tile(x, y).name == "space-platform-foundation" then
+                cleared[#cleared + 1] = { name = "empty-space", position = { x, y } }
+            end
+        end
+    end
+    if #cleared > 0 then s.set_tiles(cleared) end
+    local labels_removed = 0
+    for _, object in pairs(rendering.get_all_objects()) do
+        if object.valid and object.surface == s and object.type == "text" then
+            local t = object.text
+            if type(t) == "table" then t = tostring(t[1] or "") end
+            if tostring(t) == "[ PASTE TEST - empty pad ]" then
+                object.destroy()
+                labels_removed = labels_removed + 1
+            end
+        end
+    end
+    return { success = true, tiles_cleared = #cleared, labels_removed = labels_removed }
+
+elseif request.operation == "relocate_pad" then
+    -- Move one stamped pad (fixture content included) to a new origin near the hub. The NEW pad must
+    -- already be stamped (stamp_test_cell runs first — it owns tiles, trio, card, name text); this op
+    -- clones the INTERIOR entities across (exact state via clone_area), then destroys the old pad's
+    -- entities, name text, and template tiles. Idempotent: old interior empty + new interior
+    -- populated -> already_relocated; both empty -> skipped (a from-scratch seed migrates straight
+    -- into the new pads).
+    -- request: { name, old_origin_x, old_origin_y, new_origin_x, new_origin_y }
+    local platform = find_platform(OMNIBUS_PLATFORM)
+    if not platform or not platform.surface then
+        return { success = false, error = OMNIBUS_PLATFORM .. " not found for relocate_pad" }
+    end
+    local s = platform.surface
+    local sox, soy = request.old_origin_x, request.old_origin_y
+    local nox, noy = request.new_origin_x, request.new_origin_y
+    local function interior_of(px, py)
+        local inside = {}
+        for _, entity in ipairs(s.find_entities_filtered({ area = { { px, py }, { px + 13.5, py + 12 } } })) do
+            local p = entity.position
+            if p.x < px + 13.25 and p.y < py + 11.25 then inside[#inside + 1] = entity end
+        end
+        return inside
+    end
+    local old_interior = interior_of(sox, soy)
+    local new_interior = interior_of(nox, noy)
+    if #old_interior == 0 and #new_interior > 0 then
+        return { success = true, already_relocated = true, dest_count = #new_interior }
+    end
+    if #old_interior == 0 then
+        return { success = true, skipped = true, reason = "old pad empty; zone migration will fill the new pad directly" }
+    end
+    if #new_interior > 0 then
+        return { success = false, error = "new pad at (" .. nox .. "," .. noy .. ") already holds " .. #new_interior .. " entities while the old pad still has " .. #old_interior }
+    end
+
+    -- Old TRIO + name text die first so the generous clone rectangle cannot duplicate them into the
+    -- freshly stamped trio at the destination.
+    for _, entity in ipairs(s.find_entities_filtered({ area = { { sox + 13, soy + 11 }, { sox + 16.5, soy + 12 } } })) do
+        if entity.valid then entity.destroy({ raise_destroy = false }) end
+    end
+    for _, object in pairs(rendering.get_all_objects()) do
+        if object.valid and object.surface == s and object.type == "text" then
+            local target = object.target
+            if target and target.position and target.position.x == sox + 6 and target.position.y == soy - 1.5 then
+                object.destroy()
+            end
+        end
+    end
+
+    s.clone_area({
+        source_area = { { sox, soy }, { sox + 16, soy + 12 } },
+        destination_area = { { nox, noy }, { nox + 16, noy + 12 } },
+        clone_tiles = false,
+        clone_entities = true,
+        clone_decoratives = false,
+        clear_destination_entities = false,
+        expand_map = true,
+    })
+    local moved = interior_of(nox, noy)
+    if #moved ~= #old_interior then
+        return { success = false, error = "relocate clone mismatch: old " .. #old_interior .. " vs new " .. #moved .. " — originals NOT destroyed" }
+    end
+    local destroyed = 0
+    for _, entity in ipairs(old_interior) do
+        if entity.valid then
+            entity.destroy({ raise_destroy = false })
+            destroyed = destroyed + 1
+        end
+    end
+    -- Old template tiles (26x12 footprint) back to empty space.
+    local tiles = {}
+    for x = sox, sox + 25 do
+        for y = soy, soy + 11 do
+            if s.get_tile(x, y).name ~= "empty-space" then
+                tiles[#tiles + 1] = { name = "empty-space", position = { x, y } }
+            end
+        end
+    end
+    if #tiles > 0 then s.set_tiles(tiles) end
+    return { success = true, relocated = #moved, destroyed = destroyed, tiles_cleared = #tiles }
+
+elseif request.operation == "read_ghost_proxy" then
+    -- Read the ghosts-pad item-request-proxy's request payload (for hand-restoring the proxy on a
+    -- transfer-delivered copy until the proxy transfer-loss bug is fixed). Read-only.
+    local platform = find_platform(OMNIBUS_PLATFORM)
+    if not platform or not platform.surface then
+        return { success = false, error = OMNIBUS_PLATFORM .. " not found for read_ghost_proxy" }
+    end
+    local s = platform.surface
+    local proxy = s.find_entities_filtered({ type = "item-request-proxy" })[1]
+    if not proxy then return { success = false, error = "no item-request-proxy on the omnibus" } end
+    local plans = {}
+    for _, plan in ipairs(proxy.insert_plan or {}) do
+        local counts = {}
+        for _, spec in ipairs(plan.items and plan.items.in_inventory or {}) do
+            counts[#counts + 1] = { inventory = spec.inventory, stack = spec.stack, count = spec.count or 1 }
+        end
+        plans[#plans + 1] = {
+            name = plan.id and plan.id.name, quality = plan.id and plan.id.quality or "normal",
+            in_inventory = counts,
+        }
+    end
+    return { success = true, target = proxy.proxy_target and proxy.proxy_target.name,
+        position = { x = proxy.position.x, y = proxy.position.y }, plans = plans }
 
 elseif request.operation == "migrate_omnibus_zone" then
     -- Pad migration (owner directive 2026-07-18): move one legacy fixture zone from the y=0 row
