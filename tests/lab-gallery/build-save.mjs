@@ -224,6 +224,9 @@ async function main() {
 	const config = fileURLToPath(new URL("./build-config.ini", import.meta.url));
 	const runtime = fileURLToPath(new URL("./gallery-runtime.lua", import.meta.url));
 	const driver = fileURLToPath(new URL("./runtime-driver.cjs", import.meta.url));
+	// The shared measurement library rides along as the runtime-driver prelude (injected as
+	// FixtureMeters); gallery-runtime.lua measures the corpus through it (single source with reload-meter).
+	const meters = fileURLToPath(new URL("../../docker/seed-data/external_plugins/surface_export/module/utils/fixture-meters.lua", import.meta.url));
 	const localCopies = [];
 	const publishedPaths = [];
 	const boundaryErrors = [];
@@ -236,9 +239,9 @@ async function main() {
 		handle = launchIsolatedFactorio({
 			container: options.container, remoteRoot: REMOTE_ROOT,
 			seed: options.seed, config,
-			files: [[runtime, "gallery-runtime.lua"], [driver, "runtime-driver.cjs"]],
+			files: [[runtime, "gallery-runtime.lua"], [driver, "runtime-driver.cjs"], [meters, "fixture-meters.lua"]],
 			gamePort: GAME_PORT, rconPort: RCON_PORT, rconPassword: RCON_PASSWORD,
-			timeoutSeconds: 180, runtimeLuaName: "gallery-runtime.lua",
+			timeoutSeconds: 180, runtimeLuaName: "gallery-runtime.lua", metersLuaName: "fixture-meters.lua",
 		});
 		const call = request => runtimeCall(handle, ports, request);
 		assertIdlePreflight(await waitForRuntime(handle, ports, { operation: "preflight" }, 45_000));

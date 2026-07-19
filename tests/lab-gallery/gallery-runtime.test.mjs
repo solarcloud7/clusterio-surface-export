@@ -38,28 +38,17 @@ test("normalization verifies the hand-curated corpus and never constructs or min
 	assert.match(source, /prepare_destination/);
 });
 
-test("the corpus gate measures every family platform against manifest fingerprints", () => {
-	assert.match(source, /measure_corpus/);
-	assert.match(source, /corpus_gate/);
-	assert.match(source, /fixture\.fingerprint/);
-	// Physical locators for every hand-built platform.
-	for (const platform of ["lab-omnibus-state-v1", "lab-energy-v1", "lab-belt-corner-v1", "lab-transfer-fixture-v1", "lab-consumable-"]) {
-		assert.match(source, new RegExp(platform));
-	}
-	// A missing read fails approx_equal, so a dropped field cannot pass the gate.
-	assert.match(source, /approx_equal/);
-	assert.match(source, /crafting_progress/);
-	assert.match(source, /get_circuit_network/);
-	// Measurement errors are surfaced, never swallowed.
-	assert.match(source, /measurement error/);
-	// Unsatisfiable by omission: the gate iterates the manifest roster and fails loudly when a
-	// non-excluded fixture has no measurement; exclusions are an explicit allowlist, not an
-	// absence-skip; the fixture tally is reported for the build-side count pin.
-	assert.match(source, /was not measured/);
-	assert.match(source, /corpus_excluded/);
-	assert.match(source, /expectedFixtures/);
-	// The 1e-9 tolerance is scoped to the progress doubles only, never applied blanket.
-	assert.match(source, /tolerant_double_fields/);
+test("the corpus is measured and gated through the shared FixtureMeters library", () => {
+	// The measurement bodies live in module/utils/fixture-meters.lua (single source); gallery-runtime
+	// only orchestrates, calling the injected FixtureMeters prelude — so the meter internals are
+	// asserted in fixture-meters.test.mjs, not re-inlined here.
+	assert.match(source, /FixtureMeters\.measure_corpus\(manifest\)/);
+	assert.match(source, /FixtureMeters\.corpus_gate\(manifest, measured\)/);
+	assert.match(source, /reading\.corpusExact = reading\.corpusGate\.exact/);
+	// The meter bodies must NOT be re-inlined here (net-negative extraction; no drift risk).
+	assert.doesNotMatch(source, /local function measure_corpus/);
+	assert.doesNotMatch(source, /local function measure_omnibus/);
+	assert.doesNotMatch(source, /local function corpus_gate/);
 });
 
 test("normalization applies lab settings to non-platform surfaces via the real write APIs", () => {
@@ -78,8 +67,9 @@ test("normalization applies lab settings to non-platform surfaces via the real w
 test("visual catalog, belt pilot, and reachability fixture have independent physical readings", () => {
 	assert.match(source, /rendering\.draw_text/);
 	assert.match(source, /add_chart_tag/);
-	assert.match(source, /get_detailed_contents/);
-	assert.match(source, /unique_id/);
+	// Belt-pilot quantities are read through the shared library (get_detailed_contents/unique_id live
+	// in fixture-meters.lua now); the exact-match assertions against the pilot expectations stay here.
+	assert.match(source, /FixtureMeters\.detailed_census/);
 	assert.match(source, /maximumStack == expected\.maximumStack/);
 	assert.match(source, /sourceQuantity == expected\.sourceQuantity/);
 	assert.match(source, /targetQuantity == expected\.targetQuantity/);

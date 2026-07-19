@@ -152,13 +152,15 @@ async function verifyOne(options, role, save, expected, boundaryErrors) {
 	// manifest.json rides along: the meter reads its measure anchors from it (single source
 	// shared with gallery-runtime.lua).
 	const manifestFile = fileURLToPath(new URL("./manifest.json", import.meta.url));
+	// fixture-meters.lua is the shared measurement library the meter injects as its /c prelude.
+	const metersFile = fileURLToPath(new URL("../../docker/seed-data/external_plugins/surface_export/module/utils/fixture-meters.lua", import.meta.url));
 	// The reload meter is invoked directly (reload-meter.cjs over RCON), NOT the runtime-driver
 	// protocol, so this driver keeps its own poll loop while reusing the shared launch/teardown.
 	const teardownHandle = { container: options.container, remoteRoot: REMOTE_ROOT };
 	try {
 		launchIsolatedFactorio({
 			container: options.container, remoteRoot: REMOTE_ROOT,
-			seed: save, config, files: [[meter, "reload-meter.cjs"], [manifestFile, "manifest.json"]],
+			seed: save, config, files: [[meter, "reload-meter.cjs"], [manifestFile, "manifest.json"], [metersFile, "fixture-meters.lua"]],
 			gamePort: GAME_PORT, rconPort: RCON_PORT, rconPassword: RCON_PASSWORD, timeoutSeconds: 60,
 		});
 		const deadline = Date.now() + 30_000;
