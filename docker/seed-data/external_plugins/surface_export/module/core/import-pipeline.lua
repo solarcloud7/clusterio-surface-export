@@ -328,7 +328,19 @@ function ImportPipeline.queue(json_data, new_platform_name, force_name, requeste
 		target_surface = new_platform.surface,
 		tiles_to_place = platform_data.tiles or {},
 		tiles_placed = false,
-		entities_to_create = platform_data.entities or {},
+		entities_to_create = (function()
+			-- Item-request-proxies are created LAST: surface.create_entity for a proxy REQUIRES its
+			-- live target entity, and payload order (export scan order) carries no such guarantee —
+			-- every standalone proxy was silently dropped until 2026-07-19 (dest 122/123). Stable
+			-- partition: non-proxies in payload order, then proxies.
+			local ordered, proxies = {}, {}
+			for _, record in ipairs(platform_data.entities or {}) do
+				if record.type == "item-request-proxy" then proxies[#proxies + 1] = record
+				else ordered[#ordered + 1] = record end
+			end
+			for _, record in ipairs(proxies) do ordered[#ordered + 1] = record end
+			return ordered
+		end)(),
 		total_entities = #(platform_data.entities or {}),
 		total_items = total_items,
 		total_fluids = math.floor(total_fluids),  -- Fluids can be fractional

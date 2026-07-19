@@ -34,7 +34,7 @@
 import { appendFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
-import { createBatchLifecycle } from "./batch-lifecycle.mjs";
+import { createBatchLifecycle, lua } from "./batch-lifecycle.mjs";
 import { loadGalleryManifest } from "./manifest.mjs";
 import {
 	B7_FIXTURE_ID, b7AssertAdversarialDest, b7TransferSection, renderB7Notebook,
@@ -140,6 +140,23 @@ async function main() {
 			if (destPair.assemblerActive !== false || destPair.inserterActive !== false) {
 				throw new Error(`destination pair activated (assembler=${destPair.assemblerActive}, ` +
 					`inserter=${destPair.inserterActive}) — frozen fixture must arrive inactive`);
+			}
+			// PROXY KILL-MEASUREMENT (task: item-request-proxy transfer loss, fixed 2026-07-19): the
+			// ghosts-pad proxy must arrive as a live proxy WITH its request payload. Pre-fix this read
+			// proxies=0 on every transfer (the exact gate is blind to proxies — they hold no items).
+			const proxy = lua(2, `local surf; for _,p in pairs(game.forces.player.platforms) do ` +
+				`if p.valid and p.name=='lab-omnibus-state-v1' then surf=p.surface end end; ` +
+				`local proxies=surf.find_entities_filtered({type='item-request-proxy'}); ` +
+				`local first=proxies[1]; local plan=first and first.insert_plan and first.insert_plan[1]; ` +
+				`return {success=true,count=#proxies,targetName=first and first.proxy_target and first.proxy_target.name,` +
+				`planItem=plan and plan.id and plan.id.name}`);
+			results.destProxy = proxy;
+			if (!proxy.success || proxy.count !== 1) {
+				throw new Error(`destination proxies=${proxy.count ?? "unreadable"}, expected 1 — the proxy transfer-loss fix regressed`);
+			}
+			if (proxy.targetName !== "assembling-machine-2" || proxy.planItem !== "speed-module") {
+				throw new Error(`destination proxy payload wrong: target=${proxy.targetName} plan=${proxy.planItem}, ` +
+					`expected assembling-machine-2 / speed-module`);
 			}
 			results.riderVerdict = "GREEN";
 		}

@@ -114,7 +114,11 @@ function EntityCreation.process_batch(job, get_batch_size, should_show_progress)
             -- This prevents crafting machines from consuming items the moment a recipe is set.
             -- Passive entities (beacons, radars, walls) are excluded — they hold no items/fluids
             -- and must remain active so beacon speed bonuses apply to nearby machines as they are placed.
-            if job.transfer_id and entity.type ~= "beacon" and entity.type ~= "radar" then
+            -- item-request-proxy joins the exclusions (review F1, 2026-07-19): proxies consume
+            -- nothing, and they are absent from ACTIVATABLE_ENTITY_TYPES so a deactivated proxy
+            -- would NEVER be reactivated — arriving permanently inert.
+            if job.transfer_id and entity.type ~= "beacon" and entity.type ~= "radar"
+                and entity.type ~= "item-request-proxy" then
               local ok, err = pcall(function()
                 if entity.active then
                   entity.active = false

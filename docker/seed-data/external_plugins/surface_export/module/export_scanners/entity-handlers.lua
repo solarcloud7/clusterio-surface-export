@@ -831,9 +831,12 @@ EntityHandlers["item-request-proxy"] = function(entity)
     data.insert_plan = entity.insert_plan
   end
   
-  -- Target entity position (the entity this proxy is for)
+  -- Target entity position + NAME (the entity this proxy is for). The name lets the import
+  -- resolver verify identity instead of taking the first bbox-intersecting neighbor (review F2,
+  -- 2026-07-19); position alone is ambiguous when the true target failed to place.
   if entity.proxy_target and entity.proxy_target.valid then
     data.target_position = Util.round_position(entity.proxy_target.position, 2)
+    data.target_name = entity.proxy_target.name
   end
   
   return next(data) and data or nil

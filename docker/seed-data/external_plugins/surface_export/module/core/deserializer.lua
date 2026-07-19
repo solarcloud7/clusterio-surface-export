@@ -208,6 +208,46 @@ function Deserializer.create_entity(surface, entity_data)
     params.type = entity_data.specific_data.belt_to_ground_type  -- "input" or "output"
   end
 
+  -- item-request-proxy: the engine REQUIRES a live target entity (plus the request payload) at
+  -- creation — a bare {name, position} create throws, and the surrounding pcall turned that throw
+  -- into a silent drop on every transfer (the proxy transfer-loss bug, measured 2026-07-19 on the
+  -- delivered omnibus: dest 122/123 entities, ghosts-pad machine empty). The import orders proxy
+  -- records LAST (import-pipeline) so the target physically exists by now; resolve it at the
+  -- exported target_position.
+  if entity_data.type == "item-request-proxy" then
+    local sd = entity_data.specific_data or {}
+    local tp = sd.target_position or entity_data.position
+    local tpx, tpy = tp.x or tp[1], tp.y or tp[2]
+    -- Prefer the NAME-matched candidate (exported as target_name); fall back to the first
+    -- non-proxy candidate for legacy payloads without the field (review F2).
+    local target, fallback
+    for _, candidate in ipairs(surface.find_entities_filtered({
+      area = { { tpx - 0.3, tpy - 0.3 }, { tpx + 0.3, tpy + 0.3 } } })) do
+      if candidate.valid and candidate.unit_number and candidate.type ~= "item-request-proxy" then
+        if sd.target_name and candidate.name == sd.target_name then
+          target = candidate
+          break
+        end
+        fallback = fallback or candidate
+      end
+    end
+    target = target or (not sd.target_name and fallback) or nil
+    if not target and fallback then
+      log(string.format("[Deserializer] item-request-proxy target name '%s' not found at (%.1f, %.1f); nearest candidate '%s' NOT used — proxy dropped",
+        tostring(sd.target_name), tpx, tpy, fallback.name))
+    end
+    if not target then
+      log(string.format("[Deserializer Error] item-request-proxy at (%.1f, %.1f): no target entity at (%.1f, %.1f) — proxy dropped",
+        entity_data.position.x or entity_data.position[1] or 0,
+        entity_data.position.y or entity_data.position[2] or 0, tpx, tpy))
+      return nil
+    end
+    params.target = target
+    if sd.insert_plan then
+      params.modules = sd.insert_plan
+    end
+  end
+
   -- Handle ghost entities (entity-ghost, tile-ghost)
   if entity_data.type == "entity-ghost" and entity_data.specific_data then
     params.inner_name = entity_data.specific_data.ghost_name

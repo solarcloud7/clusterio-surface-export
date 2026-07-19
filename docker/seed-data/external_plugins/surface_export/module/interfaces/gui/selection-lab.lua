@@ -349,7 +349,11 @@ end
 local function plan_targets(surface, targets, player)
 	local plan = { clear = {}, conflict = {} }
 	for _, t in ipairs(targets) do
-		local placeable = surface.can_place_entity(place_spec(t, player))
+		-- item-request-proxy has no collision footprint and can_place_entity cannot validate one
+		-- (the create requires a live target, which only exists after the paste creates it) — the
+		-- production create path is the validator. Always planned clear; create runs proxies last.
+		local placeable = t.type == "item-request-proxy"
+			or surface.can_place_entity(place_spec(t, player))
 		if placeable then
 			plan.clear[#plan.clear + 1] = { rec = t }
 		else
@@ -558,8 +562,11 @@ function SelectionLab.paste(event)
 			offset = offset, conflict_details = conflict_details })
 	end
 
+	-- Proxies LAST (mirrors the import-pipeline partition): their creates need the just-pasted
+	-- target entities to exist first.
 	local recs = {}
-	for _, c in ipairs(plan.clear) do recs[#recs + 1] = c.rec end
+	for _, c in ipairs(plan.clear) do if c.rec.type ~= "item-request-proxy" then recs[#recs + 1] = c.rec end end
+	for _, c in ipairs(plan.clear) do if c.rec.type == "item-request-proxy" then recs[#recs + 1] = c.rec end end
 	local records, entity_map, created, create_failed, exec_ok, exec_err =
 		execute_create_and_restore(surface, recs, player, cap.side_groups, true)
 	if not exec_ok then

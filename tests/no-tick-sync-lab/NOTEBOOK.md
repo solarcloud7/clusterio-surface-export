@@ -1649,3 +1649,395 @@ Runner: `tests/lab-gallery/run-golden-batch.mjs` against the committed golden pa
 }
 ```
 </details>
+
+## 2026-07-19T02:28:34.967Z — B8 no-tick baked-pair batch (bake gate, GREEN)
+
+Runner: `tests/lab-gallery/run-golden-batch.mjs` against the committed golden pair loaded via Clusterio-native save assignment (instances {"1":2119131471,"2":234487481}); pre-batch saves {"1":"test1.zip","2":"test2.zip"}, restored {"1":"test1.zip","2":"test2.zip","zeroLeftovers":true}.
+
+**Fingerprint** reproduced from the save-loaded world: assembling-machine-1 at (13.5,27.5) crafting_progress 0.42000000000000004 (iron-gear-wheel, 4 plates, inactive), inserter at (16.5,27.5) inactive empty-handed, both indestructible.
+
+**Run 1 (normal, fresh seating)** — tick 9265245==9265245, crafting_progress 0.42000000000000004 unchanged, input 4 unchanged, seated_full=true (restored 1/failed 0), both inactive.
+
+**Run 2 (game.tick_paused, strongest form)** — game_paused=true, tick 9265292==9265292, crafting_progress 0.42000000000000004 EXACTLY unchanged, input 4 unchanged, hand STAYS full ({"name":"iron-plate","count":1,"quality":"normal"}, restored 0 idempotent), both inactive. Golden world unpaused after: true. GREEN.
+
+<details><summary>Raw results JSON</summary>
+
+```json
+{
+  "script": "tests/lab-gallery/run-golden-batch.mjs",
+  "instanceIds": {
+    "1": 2119131471,
+    "2": 234487481
+  },
+  "preBatchSaves": {
+    "1": "test1.zip",
+    "2": "test2.zip"
+  },
+  "restored": {
+    "1": "test1.zip",
+    "2": "test2.zip",
+    "zeroLeftovers": true
+  },
+  "finished": "2026-07-19T02:28:34.967Z",
+  "green": true,
+  "errors": [],
+  "fingerprint": {
+    "success": true,
+    "platformIndex": 16,
+    "progress": 0.42000000000000004,
+    "recipe": "iron-gear-wheel",
+    "inputPlates": 4,
+    "assemblerActive": false,
+    "inserterActive": false,
+    "inserterHandEmpty": true,
+    "heldCount": 0,
+    "allIndestructible": true
+  },
+  "run1": {
+    "status": "measured",
+    "mode": "measure_baked",
+    "platform": "lab-omnibus-state-v1",
+    "tick_before": 9265245,
+    "tick_after": 9265245,
+    "game_paused": false,
+    "crafting_progress_before": 0.42000000000000004,
+    "crafting_progress_after": 0.42000000000000004,
+    "input_count_before": 4,
+    "input_count_after": 4,
+    "machine_active_after": false,
+    "inserter_active_after": false,
+    "held_after": {
+      "name": "iron-plate",
+      "count": 1,
+      "quality": "normal"
+    },
+    "restored": 1,
+    "failed": 0,
+    "seated_full": true
+  },
+  "tickPauseRestored": true,
+  "run2": {
+    "status": "measured",
+    "mode": "measure_baked",
+    "platform": "lab-omnibus-state-v1",
+    "tick_before": 9265292,
+    "tick_after": 9265292,
+    "game_paused": true,
+    "crafting_progress_before": 0.42000000000000004,
+    "crafting_progress_after": 0.42000000000000004,
+    "input_count_before": 4,
+    "input_count_after": 4,
+    "machine_active_after": false,
+    "inserter_active_after": false,
+    "held_before": {
+      "name": "iron-plate",
+      "count": 1,
+      "quality": "normal"
+    },
+    "held_after": {
+      "name": "iron-plate",
+      "count": 1,
+      "quality": "normal"
+    },
+    "restored": 0,
+    "failed": 0,
+    "seated_full": false
+  },
+  "verdict": "GREEN"
+}
+```
+</details>
+
+## 2026-07-19T02:30:49.342Z — B8 no-tick baked-pair batch (bake gate, GREEN)
+
+Runner: `tests/lab-gallery/run-golden-batch.mjs` against the committed golden pair loaded via Clusterio-native save assignment (instances {"1":2119131471,"2":234487481}); pre-batch saves {"1":"test1.zip","2":"test2.zip"}, restored {"1":"test1.zip","2":"test2.zip","zeroLeftovers":true}.
+
+**Fingerprint** reproduced from the save-loaded world: assembling-machine-1 at (13.5,27.5) crafting_progress 0.42000000000000004 (iron-gear-wheel, 4 plates, inactive), inserter at (16.5,27.5) inactive empty-handed, both indestructible.
+
+**Run 1 (normal, fresh seating)** — tick 9265430==9265430, crafting_progress 0.42000000000000004 unchanged, input 4 unchanged, seated_full=true (restored 1/failed 0), both inactive.
+
+**Run 2 (game.tick_paused, strongest form)** — game_paused=true, tick 9265488==9265488, crafting_progress 0.42000000000000004 EXACTLY unchanged, input 4 unchanged, hand STAYS full ({"name":"iron-plate","count":1,"quality":"normal"}, restored 0 idempotent), both inactive. Golden world unpaused after: true. GREEN.
+
+<details><summary>Raw results JSON</summary>
+
+```json
+{
+  "script": "tests/lab-gallery/run-golden-batch.mjs",
+  "instanceIds": {
+    "1": 2119131471,
+    "2": 234487481
+  },
+  "preBatchSaves": {
+    "1": "test1.zip",
+    "2": "test2.zip"
+  },
+  "restored": {
+    "1": "test1.zip",
+    "2": "test2.zip",
+    "zeroLeftovers": true
+  },
+  "finished": "2026-07-19T02:30:49.342Z",
+  "green": true,
+  "errors": [],
+  "fingerprint": {
+    "success": true,
+    "platformIndex": 16,
+    "progress": 0.42000000000000004,
+    "recipe": "iron-gear-wheel",
+    "inputPlates": 4,
+    "assemblerActive": false,
+    "inserterActive": false,
+    "inserterHandEmpty": true,
+    "heldCount": 0,
+    "allIndestructible": true
+  },
+  "run1": {
+    "status": "measured",
+    "mode": "measure_baked",
+    "platform": "lab-omnibus-state-v1",
+    "tick_before": 9265430,
+    "tick_after": 9265430,
+    "game_paused": false,
+    "crafting_progress_before": 0.42000000000000004,
+    "crafting_progress_after": 0.42000000000000004,
+    "input_count_before": 4,
+    "input_count_after": 4,
+    "machine_active_after": false,
+    "inserter_active_after": false,
+    "held_after": {
+      "name": "iron-plate",
+      "count": 1,
+      "quality": "normal"
+    },
+    "restored": 1,
+    "failed": 0,
+    "seated_full": true
+  },
+  "tickPauseRestored": true,
+  "run2": {
+    "status": "measured",
+    "mode": "measure_baked",
+    "platform": "lab-omnibus-state-v1",
+    "tick_before": 9265488,
+    "tick_after": 9265488,
+    "game_paused": true,
+    "crafting_progress_before": 0.42000000000000004,
+    "crafting_progress_after": 0.42000000000000004,
+    "input_count_before": 4,
+    "input_count_after": 4,
+    "machine_active_after": false,
+    "inserter_active_after": false,
+    "held_before": {
+      "name": "iron-plate",
+      "count": 1,
+      "quality": "normal"
+    },
+    "held_after": {
+      "name": "iron-plate",
+      "count": 1,
+      "quality": "normal"
+    },
+    "restored": 0,
+    "failed": 0,
+    "seated_full": false
+  },
+  "verdict": "GREEN"
+}
+```
+</details>
+
+## 2026-07-19T02:45:05.321Z — B8 no-tick baked-pair batch (bake gate, GREEN)
+
+Runner: `tests/lab-gallery/run-golden-batch.mjs` against the committed golden pair loaded via Clusterio-native save assignment (instances {"1":2119131471,"2":234487481}); pre-batch saves {"1":"test1.zip","2":"test2.zip"}, restored {"1":"test1.zip","2":"test2.zip","zeroLeftovers":true}.
+
+**Fingerprint** reproduced from the save-loaded world: assembling-machine-1 at (13.5,27.5) crafting_progress 0.42000000000000004 (iron-gear-wheel, 4 plates, inactive), inserter at (16.5,27.5) inactive empty-handed, both indestructible.
+
+**Run 1 (normal, fresh seating)** — tick 9265644==9265644, crafting_progress 0.42000000000000004 unchanged, input 4 unchanged, seated_full=true (restored 1/failed 0), both inactive.
+
+**Run 2 (game.tick_paused, strongest form)** — game_paused=true, tick 9265767==9265767, crafting_progress 0.42000000000000004 EXACTLY unchanged, input 4 unchanged, hand STAYS full ({"name":"iron-plate","count":1,"quality":"normal"}, restored 0 idempotent), both inactive. Golden world unpaused after: true. GREEN.
+
+<details><summary>Raw results JSON</summary>
+
+```json
+{
+  "script": "tests/lab-gallery/run-golden-batch.mjs",
+  "instanceIds": {
+    "1": 2119131471,
+    "2": 234487481
+  },
+  "preBatchSaves": {
+    "1": "test1.zip",
+    "2": "test2.zip"
+  },
+  "restored": {
+    "1": "test1.zip",
+    "2": "test2.zip",
+    "zeroLeftovers": true
+  },
+  "finished": "2026-07-19T02:45:05.321Z",
+  "green": true,
+  "errors": [],
+  "fingerprint": {
+    "success": true,
+    "platformIndex": 16,
+    "progress": 0.42000000000000004,
+    "recipe": "iron-gear-wheel",
+    "inputPlates": 4,
+    "assemblerActive": false,
+    "inserterActive": false,
+    "inserterHandEmpty": true,
+    "heldCount": 0,
+    "allIndestructible": true
+  },
+  "run1": {
+    "status": "measured",
+    "mode": "measure_baked",
+    "platform": "lab-omnibus-state-v1",
+    "tick_before": 9265644,
+    "tick_after": 9265644,
+    "game_paused": false,
+    "crafting_progress_before": 0.42000000000000004,
+    "crafting_progress_after": 0.42000000000000004,
+    "input_count_before": 4,
+    "input_count_after": 4,
+    "machine_active_after": false,
+    "inserter_active_after": false,
+    "held_after": {
+      "name": "iron-plate",
+      "count": 1,
+      "quality": "normal"
+    },
+    "restored": 1,
+    "failed": 0,
+    "seated_full": true
+  },
+  "tickPauseRestored": true,
+  "run2": {
+    "status": "measured",
+    "mode": "measure_baked",
+    "platform": "lab-omnibus-state-v1",
+    "tick_before": 9265767,
+    "tick_after": 9265767,
+    "game_paused": true,
+    "crafting_progress_before": 0.42000000000000004,
+    "crafting_progress_after": 0.42000000000000004,
+    "input_count_before": 4,
+    "input_count_after": 4,
+    "machine_active_after": false,
+    "inserter_active_after": false,
+    "held_before": {
+      "name": "iron-plate",
+      "count": 1,
+      "quality": "normal"
+    },
+    "held_after": {
+      "name": "iron-plate",
+      "count": 1,
+      "quality": "normal"
+    },
+    "restored": 0,
+    "failed": 0,
+    "seated_full": false
+  },
+  "verdict": "GREEN"
+}
+```
+</details>
+
+## 2026-07-19T02:46:36.964Z — B8 no-tick baked-pair batch (bake gate, GREEN)
+
+Runner: `tests/lab-gallery/run-golden-batch.mjs` against the committed golden pair loaded via Clusterio-native save assignment (instances {"1":2119131471,"2":234487481}); pre-batch saves {"1":"test1.zip","2":"test2.zip"}, restored {"1":"test1.zip","2":"test2.zip","zeroLeftovers":true}.
+
+**Fingerprint** reproduced from the save-loaded world: assembling-machine-1 at (13.5,27.5) crafting_progress 0.42000000000000004 (iron-gear-wheel, 4 plates, inactive), inserter at (16.5,27.5) inactive empty-handed, both indestructible.
+
+**Run 1 (normal, fresh seating)** — tick 9265671==9265671, crafting_progress 0.42000000000000004 unchanged, input 4 unchanged, seated_full=true (restored 1/failed 0), both inactive.
+
+**Run 2 (game.tick_paused, strongest form)** — game_paused=true, tick 9265747==9265747, crafting_progress 0.42000000000000004 EXACTLY unchanged, input 4 unchanged, hand STAYS full ({"name":"iron-plate","count":1,"quality":"normal"}, restored 0 idempotent), both inactive. Golden world unpaused after: true. GREEN.
+
+<details><summary>Raw results JSON</summary>
+
+```json
+{
+  "script": "tests/lab-gallery/run-golden-batch.mjs",
+  "instanceIds": {
+    "1": 2119131471,
+    "2": 234487481
+  },
+  "preBatchSaves": {
+    "1": "test1.zip",
+    "2": "test2.zip"
+  },
+  "restored": {
+    "1": "test1.zip",
+    "2": "test2.zip",
+    "zeroLeftovers": true
+  },
+  "finished": "2026-07-19T02:46:36.964Z",
+  "green": true,
+  "errors": [],
+  "fingerprint": {
+    "success": true,
+    "platformIndex": 16,
+    "progress": 0.42000000000000004,
+    "recipe": "iron-gear-wheel",
+    "inputPlates": 4,
+    "assemblerActive": false,
+    "inserterActive": false,
+    "inserterHandEmpty": true,
+    "heldCount": 0,
+    "allIndestructible": true
+  },
+  "run1": {
+    "status": "measured",
+    "mode": "measure_baked",
+    "platform": "lab-omnibus-state-v1",
+    "tick_before": 9265671,
+    "tick_after": 9265671,
+    "game_paused": false,
+    "crafting_progress_before": 0.42000000000000004,
+    "crafting_progress_after": 0.42000000000000004,
+    "input_count_before": 4,
+    "input_count_after": 4,
+    "machine_active_after": false,
+    "inserter_active_after": false,
+    "held_after": {
+      "name": "iron-plate",
+      "count": 1,
+      "quality": "normal"
+    },
+    "restored": 1,
+    "failed": 0,
+    "seated_full": true
+  },
+  "tickPauseRestored": true,
+  "run2": {
+    "status": "measured",
+    "mode": "measure_baked",
+    "platform": "lab-omnibus-state-v1",
+    "tick_before": 9265747,
+    "tick_after": 9265747,
+    "game_paused": true,
+    "crafting_progress_before": 0.42000000000000004,
+    "crafting_progress_after": 0.42000000000000004,
+    "input_count_before": 4,
+    "input_count_after": 4,
+    "machine_active_after": false,
+    "inserter_active_after": false,
+    "held_before": {
+      "name": "iron-plate",
+      "count": 1,
+      "quality": "normal"
+    },
+    "held_after": {
+      "name": "iron-plate",
+      "count": 1,
+      "quality": "normal"
+    },
+    "restored": 0,
+    "failed": 0,
+    "seated_full": false
+  },
+  "verdict": "GREEN"
+}
+```
+</details>
