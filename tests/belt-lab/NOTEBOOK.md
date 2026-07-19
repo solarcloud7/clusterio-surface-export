@@ -875,3 +875,68 @@ stably at **123 items split 67/56** (the historic 67/58 at 125 is superseded —
 history); the corner reproduces `belt_shape "left"` with 2 items over-packed on its 0.4140625-long inside
 lane. Belt physics is location-independent, so these move no belt-lab conclusion; the pads are visualization
 + integration payload, not a lab rung.
+
+## RIG WAVE 2026-07-19 — baked the 5 missing belt rigs onto the live gallery (`surface-export-lab-gallery`)
+
+Construction wave (not a lab rung): the owner-directed bake of five belt reference rigs as SAVED STATE on
+the live gallery instance (owner playing on it; every rig built via RCON while it ran, never stopped/loaded).
+Helpers committed: `tests/lab-gallery/rig-wave-replay.mjs` (A4/A5) and `tests/lab-gallery/rig-wave-belt-rigs.mjs`
+(A1–A3). Checkpoint save: **`gallery-rigs-checkpoint-2026-07-19.zip`** (1,294,609 bytes, verified in the
+gallery saves dir). Host-1 never displaced (stayed on `test1.zip`). Post-wave gallery leftovers all zero
+(jobs/locks/holds/tombstones=0), no scratch surfaces, game unpaused, owner still connected.
+
+**Sourcing note (A1–A3 are RECONSTRUCTIONS, honest):** the original hand-built belt fixtures lived on the dev
+design world `lab-omnibus-platform-v1` / `lab-belt-r10-probe`, which is NOT in the current golden corpus. Hunt
+was covered as follows: host-1 saves (LOAD-VERIFIED — only `test1.zip` + autosaves, no dev world) and git
+history (no dev-world zip) are clean; the gallery-source candidates v3–v9 were NOT load-hunted — they are
+gallery-source iterations PRESUMED (from their names) to hold the STATE corpus, not the dev design world (the
+loaded `lab-omnibus-state-v1` was live-censused at ZERO belts, but that is the LOADED save, not proof of what
+those specific zips hold). A plaintext scan of every candidate `level.dat` for the platform names is
+inconclusive (double-compressed — even a save known to contain `lab-omnibus-state-v1` scans "none"), so the
+candidates' contents are genuinely unverified. The reconstruct decision rests on clean host-1/git, the
+inconclusive scan, and this NOTEBOOK's own record that the coverage rack "was pruned in the 2026-07-17 save
+consolidation" — NOT on a load-hunt of v3–v9 (optional; not run, priors strong the dev world is gone). A1–A3
+are therefore rebuilt fresh to the CLASS the R11/R12/R13 entries describe, saturated via `insert_at` stepping
+(the deterministic packer — `insert_at_back` only fills the back slot; ~3–4 items/tile/lane); the original
+chest-fed loaders are omitted (a 1×2 loader's placement is fragile and it was only a feed mechanism). Belts are
+frozen with `destructible=false` + `plat.paused=true`; belt-class `active` writes are skipped (BELT-R13 rejects
+them, 0 rejected observed), non-belt `active=false`. Belts still micro-move on a paused platform (R13) but the
+saturated lanes are jam-stable.
+
+Per-rig (measured at freeze):
+
+- **A4 `lab-rig-dup233855-v1`** [idx 35] — REPLAYED `evidence/replay_payload_DUP-233855.json` via the chunked
+  upload path (`/plugin-import-file`) directly onto the gallery. Import log `596 belts: expected=15866
+  actual=15861 delta=-5 consolidated_lines=47`. Frozen census: 1353 entities, **596 belts / 1490 lines**,
+  belt items **15955** (distinct-uid), oversized stacks 72 (max 40). CAVEAT (matches run-r14): the upload path
+  ACTIVATES the platform at completion and machines fed the belts before the atomic completion-pause, so the
+  live total (15955) exceeds the import basis (15866) — this is a live-activation static reference, not a
+  per-side-exact one. Freeze: 757 active-off, 596 belt active-skipped (0 rejected), all 1353 destructible-off.
+
+- **A5 `lab-rig-belt-loss-replay-v1`** [idx 36] — REPLAYED `tests/integration/belt-loss-replay/fixture.json`
+  (upload path). Import log `550 belts: expected=613 actual=612 delta=-1 consolidated_lines=8`. Frozen census:
+  **552 entities, 550 belts / 1398 lines**, belt items 612, oversized 8. Matches the integration fixture's
+  grounding fingerprint EXACTLY: processing-unit total **19** (belt 18 / hub 0 / ground 1, ground≥1) and 552
+  entities. Freeze: 2 active-off, 550 belt active-skipped, all 552 destructible-off.
+
+- **A1 `lab-rig-green-omnibus-v1`** [idx 42] — RECONSTRUCTED green(turbo)-belt saturated omnibus. **29
+  belt-connectables** (26 turbo-transport-belt + 2 turbo-underground-belt pair + 1 unfiltered turbo-splitter,
+  `output_priority=none`) + 2 S-facing sideloads (counted among the 26), 68 lines. Saturated: copper 112 /
+  iron 140 = **252 items** (original design world was 116/127 — same order, honest rebuild). 30 entities incl
+  hub, frozen (1 active-off, 29 belt active-skipped, all 30 destructible-off).
+
+- **A2 `lab-rig-filtered-splitter-v1`** [idx 43] — RECONSTRUCTED filtered-splitter rig. turbo-splitter with
+  **filter=copper-plate, output-priority=left** (verified on the entity), mixed feed (lane1 Cu / lane2 Fe),
+  two PURE post-filter fed lanes (left=copper, right=iron; purity by construction). **12 belt-connectables**
+  (11 belt + 1 splitter), 30 lines, copper 44 / iron 44 = 88 items (original was 59 connectables — smaller
+  rebuild, same class). 13 entities, frozen.
+
+- **A3 `lab-rig-probe-strip-v1`** [idx 39] — RECONSTRUCTED feeder-free 6-belt probe strip: **6 east
+  turbo-transport-belts, dead-end, EMPTY** (feeder-free = seeded by a probe at measure time, per the R13
+  paused-belt-physics instrument). 12 lines, 0 items. 7 entities, frozen. Given its own platform (A3's name
+  was the wave's discretion).
+
+Gaps/honesty: A1/A2/A3 are class reconstructions, not the retired original saturated state (exact item totals
+and connectable counts differ, recorded above); chest-fed loaders omitted; A4's belt total carries the
+documented live-activation drift. A4/A5 are faithful one-shot replays of their banked payloads. All five persist
+in the checkpoint save.
