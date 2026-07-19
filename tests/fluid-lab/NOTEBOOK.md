@@ -22118,3 +22118,21 @@ Permanent production-shaped fixture evidence (`tests/integration/plasma-engine-o
 
 Design v2's dedicated fixture is green. LAB-TAIL certification is not complete: its subsequent T2 pass
 hard-stopped on an independent intermittent item mismatch, recorded in `tests/ops-lab/NOTEBOOK.md`.
+
+## 2026-07-19 — LIVE PROBE challenges the fusion write-rejection law (Pitfall #21) — RUNG NEEDED
+
+Owner hand-built a full fusion fluid loop on pad slot (36,36) (cryo plant + reactor + generator +
+infinity-pipe seeding fusion-plasma) and observed the engine happily fills plasma boxes from an
+infinity pipe. Follow-up scratch probe [live gallery, 2.0.77, scratch entities created+destroyed
+same execution]: fusion-GENERATOR insert_fluid(plasma 10) -> readback 10 (both insert_fluid and
+fluidbox[] write stick); fusion-REACTOR insert_fluid(plasma 10) -> readback 10 — CONTRADICTS the
+blanket "fusion-reactor output fluidboxes reject writes" law. R11's write_rejected subtractions
+were real measurements during transfers, so the rejection is likely CONDITIONAL (entity state /
+segment connection / activation / fresh-vs-settled), not universal. The blanket generalization is
+WRONG as scoped.
+
+Consequence if a proper rung confirms: plasma is serializable+restorable; the engine-owned
+exclusion narrows or retires (/di-change — it sits on the strict gate); census-fusion's ignition
+ritual collapses to infinity-pipe seeding; the owner's hand-built loop becomes the fusion fixture.
+DO NOT change api-notes or the exclusion from this single probe — rung first (conditions matrix:
+fresh/connected/frozen/import-path), per [[lab-before-design]].
