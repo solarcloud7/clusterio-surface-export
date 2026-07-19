@@ -224,3 +224,23 @@ still connected.
 golden (`lab-gallery-source-surface-export-2.0.77.zip`) as the canonical source of truth.** No `/test-run` was
 run before the checkpoint (owner rule — /test-run mutates). Manifest pins are unchanged; re-pointing the
 harness at this snapshot (and reconciling the belt-loop [67,55] observation) is a separate phase.
+
+## 2026-07-19 — belt-combined-omnibus: first owner-hand-built fixture claims open-slot (8,36); STEADY-STATE class established
+
+The owner hand-built a combined belt lab on open slot (8,36) — 35 turbo belts (sideloads), 3
+splitters, 3 underground pairs, 2 filtered output loaders (iron-plate / copper-plate) draining into
+infinity chests pinned at 100 — and challenged the freeze-at-saturation convention. Measurement
+sided with the owner: the live circuit held exactly 578 items at tick 21308633 AND at tick 21308972
+(339 ticks later, fully active). A saturated closed belt circuit is a STEADY-STATE system — count
+constant by physics, no freeze required. The freeze convention is scoped to CONSUMING fixtures
+(crafters/burners); the fixture taxonomy is now frozen / steady-state / live-drift.
+
+Claimed as manifest fixture `belt-combined-omnibus` (padKind pad, origin (8,36), fingerprint from
+live measurement: 35/3/6/2/2 + steadyItems 578 + loader/chest filters). owningRunner: WAIVED —
+hand-built per the construct-once doctrine; the state is the artifact.
+
+**FIRST CATCH at claim time**: the serializer has NO `loader` handler (loader filters not carried —
+the splitter-filter types gate excludes loaders) and NO `infinity-container` handler (infinity
+filters not carried). A transfer would deliver hollow configs. Fix queued as a /di-change with this
+pad as its kill-measurement. Grid state: 16 fixture pads + 11 open slots (12 stamped 2026-07-19,
+one claimed same day).

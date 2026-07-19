@@ -309,7 +309,10 @@
 		{
 			"id": "belt-5x5-125-unstacked",
 			"padKind": "pad",
-			"origin": { "x": 92, "y": 22 },
+			"origin": {
+				"x": 92,
+				"y": 22
+			},
 			"revision": 1,
 			"labId": "belt-lab",
 			"name": "5x5 unstacked belt loop",
@@ -319,7 +322,11 @@
 			"saveRole": "source",
 			"platformName": "lab-omnibus-state-v1",
 			"anchors": [
-				{ "entity": "turbo-transport-belt", "x": 96.5, "y": 25.5 }
+				{
+					"entity": "turbo-transport-belt",
+					"x": 96.5,
+					"y": 25.5
+				}
 			],
 			"engineVersion": "2.0.77",
 			"mods": {
@@ -396,10 +403,21 @@
 		{
 			"id": "omnibus-adversarial-inventory",
 			"padKind": "pad",
-			"origin": { "x": 8, "y": -20 },
+			"origin": {
+				"x": 8,
+				"y": -20
+			},
 			"anchors": [
-				{ "entity": "steel-chest", "x": 13, "y": -17 },
-				{ "entity": "assembling-machine-2", "x": 16, "y": -17 }
+				{
+					"entity": "steel-chest",
+					"x": 13,
+					"y": -17
+				},
+				{
+					"entity": "assembling-machine-2",
+					"x": 16,
+					"y": -17
+				}
 			],
 			"revision": 1,
 			"labId": "state-dimensions-lab",
@@ -445,9 +463,16 @@
 		{
 			"id": "omnibus-heat-temperature",
 			"padKind": "pad",
-			"origin": { "x": 36, "y": -20 },
+			"origin": {
+				"x": 36,
+				"y": -20
+			},
 			"anchors": [
-				{ "entity": "heat-pipe", "x": 43, "y": -13 }
+				{
+					"entity": "heat-pipe",
+					"x": 43,
+					"y": -13
+				}
 			],
 			"revision": 1,
 			"labId": "state-dimensions-lab",
@@ -486,9 +511,16 @@
 		{
 			"id": "omnibus-decider-latch",
 			"padKind": "pad",
-			"origin": { "x": 64, "y": -20 },
+			"origin": {
+				"x": 64,
+				"y": -20
+			},
 			"anchors": [
-				{ "entity": "decider-combinator", "x": 68, "y": -14 }
+				{
+					"entity": "decider-combinator",
+					"x": 68,
+					"y": -14
+				}
 			],
 			"revision": 1,
 			"labId": "hidden-semantics-lab",
@@ -527,9 +559,16 @@
 		{
 			"id": "omnibus-midcraft-progress",
 			"padKind": "pad",
-			"origin": { "x": 92, "y": -20 },
+			"origin": {
+				"x": 92,
+				"y": -20
+			},
 			"anchors": [
-				{ "entity": "assembling-machine-1", "x": 95, "y": -16 }
+				{
+					"entity": "assembling-machine-1",
+					"x": 95,
+					"y": -16
+				}
 			],
 			"revision": 1,
 			"labId": "midcraft-lab",
@@ -570,9 +609,16 @@
 		{
 			"id": "omnibus-burner-fuel",
 			"padKind": "pad",
-			"origin": { "x": 8, "y": -6 },
+			"origin": {
+				"x": 8,
+				"y": -6
+			},
 			"anchors": [
-				{ "entity": "burner-inserter", "x": 15, "y": 1 }
+				{
+					"entity": "burner-inserter",
+					"x": 15,
+					"y": 1
+				}
 			],
 			"revision": 1,
 			"labId": "state-dimensions-lab",
@@ -614,9 +660,16 @@
 		{
 			"id": "omnibus-equipment-grid",
 			"padKind": "pad",
-			"origin": { "x": 36, "y": -6 },
+			"origin": {
+				"x": 36,
+				"y": -6
+			},
 			"anchors": [
-				{ "entity": "spidertron", "x": 42, "y": 0 }
+				{
+					"entity": "spidertron",
+					"x": 42,
+					"y": 0
+				}
 			],
 			"revision": 1,
 			"labId": "state-dimensions-lab",
@@ -657,10 +710,21 @@
 		{
 			"id": "omnibus-circuit-config",
 			"padKind": "pad",
-			"origin": { "x": 64, "y": -6 },
+			"origin": {
+				"x": 64,
+				"y": -6
+			},
 			"anchors": [
-				{ "entity": "constant-combinator", "x": 68, "y": 1 },
-				{ "entity": "small-lamp", "x": 74, "y": 1 }
+				{
+					"entity": "constant-combinator",
+					"x": 68,
+					"y": 1
+				},
+				{
+					"entity": "small-lamp",
+					"x": 74,
+					"y": 1
+				}
 			],
 			"revision": 1,
 			"labId": "hidden-semantics-lab",
@@ -701,9 +765,16 @@
 		{
 			"id": "omnibus-module-bonus-progress",
 			"padKind": "pad",
-			"origin": { "x": 92, "y": -6 },
+			"origin": {
+				"x": 92,
+				"y": -6
+			},
 			"anchors": [
-				{ "entity": "assembling-machine-2", "x": 99, "y": 1 }
+				{
+					"entity": "assembling-machine-2",
+					"x": 99,
+					"y": 1
+				}
 			],
 			"revision": 1,
 			"labId": "midcraft-lab",
@@ -744,11 +815,26 @@
 		{
 			"id": "omnibus-crafting-fluids",
 			"padKind": "pad",
-			"origin": { "x": 8, "y": 8 },
+			"origin": {
+				"x": 8,
+				"y": 8
+			},
 			"anchors": [
-				{ "entity": "storage-tank", "x": 11, "y": 15 },
-				{ "entity": "chemical-plant", "x": 15, "y": 15 },
-				{ "entity": "foundry", "x": 19, "y": 15 }
+				{
+					"entity": "storage-tank",
+					"x": 11,
+					"y": 15
+				},
+				{
+					"entity": "chemical-plant",
+					"x": 15,
+					"y": 15
+				},
+				{
+					"entity": "foundry",
+					"x": 19,
+					"y": 15
+				}
 			],
 			"revision": 1,
 			"labId": "fluid-lab",
@@ -792,7 +878,10 @@
 		{
 			"id": "omnibus-ghosts-and-proxies",
 			"padKind": "pad",
-			"origin": { "x": 36, "y": 8 },
+			"origin": {
+				"x": 36,
+				"y": 8
+			},
 			"revision": 1,
 			"labId": "hidden-semantics-lab",
 			"name": "Ghosts and item-request proxy",
@@ -833,7 +922,10 @@
 		{
 			"id": "omnibus-ground-items",
 			"padKind": "pad",
-			"origin": { "x": 64, "y": 8 },
+			"origin": {
+				"x": 64,
+				"y": 8
+			},
 			"revision": 1,
 			"labId": "hidden-semantics-lab",
 			"name": "Loose ground items",
@@ -945,7 +1037,10 @@
 		{
 			"id": "belt-corner-recovery",
 			"padKind": "pad",
-			"origin": { "x": 64, "y": 22 },
+			"origin": {
+				"x": 64,
+				"y": 22
+			},
 			"revision": 1,
 			"labId": "belt-lab",
 			"name": "Over-packed belt corner",
@@ -955,7 +1050,11 @@
 			"saveRole": "source",
 			"platformName": "lab-omnibus-state-v1",
 			"anchors": [
-				{ "entity": "turbo-transport-belt", "x": 72.5, "y": 28.5 }
+				{
+					"entity": "turbo-transport-belt",
+					"x": 72.5,
+					"y": 28.5
+				}
 			],
 			"engineVersion": "2.0.77",
 			"mods": {
@@ -1071,9 +1170,16 @@
 		{
 			"id": "inserter-held-capacity",
 			"padKind": "pad",
-			"origin": { "x": 92, "y": 8 },
+			"origin": {
+				"x": 92,
+				"y": 8
+			},
 			"anchors": [
-				{ "entity": "bulk-inserter", "x": 98.5, "y": 13.5 }
+				{
+					"entity": "bulk-inserter",
+					"x": 98.5,
+					"y": 13.5
+				}
 			],
 			"revision": 1,
 			"labId": "inserter-lab",
@@ -1118,10 +1224,21 @@
 		{
 			"id": "no-tick-sync-frozen-pair",
 			"padKind": "pad",
-			"origin": { "x": 8, "y": 22 },
+			"origin": {
+				"x": 8,
+				"y": 22
+			},
 			"anchors": [
-				{ "entity": "assembling-machine-1", "x": 13.5, "y": 27.5 },
-				{ "entity": "inserter", "x": 16.5, "y": 27.5 }
+				{
+					"entity": "assembling-machine-1",
+					"x": 13.5,
+					"y": 27.5
+				},
+				{
+					"entity": "inserter",
+					"x": 16.5,
+					"y": 27.5
+				}
 			],
 			"revision": 1,
 			"labId": "no-tick-sync-lab",
@@ -1167,7 +1284,10 @@
 		{
 			"id": "repin-beacon-speed",
 			"padKind": "pad",
-			"origin": { "x": 36, "y": 22 },
+			"origin": {
+				"x": 36,
+				"y": 22
+			},
 			"revision": 1,
 			"labId": "engine-repin-lab",
 			"name": "Beacon crafting_speed same-execution propagation",
@@ -1200,8 +1320,16 @@
 				"allIndestructible": true
 			},
 			"anchors": [
-				{ "entity": "beacon", "x": 40.5, "y": 26.5 },
-				{ "entity": "assembling-machine-2", "x": 44.5, "y": 26.5 }
+				{
+					"entity": "beacon",
+					"x": 40.5,
+					"y": 26.5
+				},
+				{
+					"entity": "assembling-machine-2",
+					"x": 44.5,
+					"y": 26.5
+				}
 			],
 			"testCard": {
 				"law": "Populating a beacon's module inventory raises nearby crafting_speed in the SAME Lua execution - no tick, no power (engine-repin B8; the mechanism behind the two-pass beacon-first inventory restore, CLAUDE.md Import Phase Ordering).",
@@ -1435,6 +1563,68 @@
 			"fingerprint": {
 				"entities": 1
 			}
+		},
+		{
+			"id": "belt-combined-omnibus",
+			"padKind": "pad",
+			"origin": {
+				"x": 8,
+				"y": 36
+			},
+			"anchors": [
+				{
+					"entity": "turbo-loader",
+					"x": 18,
+					"y": 45.5
+				},
+				{
+					"entity": "infinity-chest",
+					"x": 19.5,
+					"y": 45.5
+				}
+			],
+			"revision": 1,
+			"labId": "belt-lab",
+			"name": "Combined belt omnibus (steady-state, hand-built)",
+			"purpose": "One pad combining sideloads, 3 splitters, 3 underground pairs, and 2 filtered output loaders draining into infinity chests pinned at 100 - the steady-state fixture class exemplar: fully live, item count constant by saturation physics.",
+			"category": "physical-lab",
+			"owningRunner": null,
+			"owningRunnerWaiver": "Hand-built live by the owner 2026-07-19 (construct-once doctrine). No build script exists by design; the state itself is the artifact, banked in the source-of-truth checkpoint.",
+			"saveRole": "source",
+			"platformName": "lab-omnibus-state-v1",
+			"engineVersion": "2.0.77",
+			"mods": {
+				"base": "2.0.77",
+				"elevated-rails": "2.0.77",
+				"FluidMustFlow": "1.4.4",
+				"quality": "2.0.77",
+				"SpidertronEnhancements": "1.10.8",
+				"space-age": "2.0.77",
+				"SpidertronPatrols": "2.6.3",
+				"surfexp_gateways": "0.3.0",
+				"maraxsis": "1.31.6"
+			},
+			"invariant": "The live circuit holds exactly 578 items across 35 turbo belts / 3 splitters / 6 underground ends / 2 loaders / 2 chests; count is stationary while active (measured stable over 339 ticks). Loader filters (iron-plate, copper-plate) and infinity-chest 100-count filters are part of the state.",
+			"expectedTerminalVerdict": "observation-only",
+			"independentOracleRequired": true,
+			"fingerprint": {
+				"beltCount": 35,
+				"splitterCount": 3,
+				"undergroundCount": 6,
+				"loaderCount": 2,
+				"chestCount": 2,
+				"steadyItems": 578,
+				"loaderFilterIron": "iron-plate",
+				"loaderFilterCopper": "copper-plate",
+				"chestFilterCounts": 100
+			},
+			"testCard": {
+				"law": "A saturated closed belt circuit is STEADY-STATE: item count constant while fully live (no freeze needed - belts consume nothing; saturation is a fixed point).",
+				"action": "/test-run copies the live circuit and audits the copy in the same execution (atomic capture). Configs measured: loader filters + infinity settings.",
+				"expected": "Exact entity+item parity left vs right; 578 items stationary; loader/chest configs survive copy and transfer.",
+				"forbidden": "Do NOT freeze this pad (it is the steady-state class exemplar). Do NOT rebuild it from a script - the state is the artifact."
+			},
+			"note": "FIRST CATCH (2026-07-19, at claim time): serializer has NO loader handler (filters not carried; splitter types gate excludes loaders) and NO infinity-container handler (infinity filters not carried) - transfer would deliver hollow configs. Fix is queued; this pad is its kill-measurement."
 		}
 	]
 }
