@@ -802,3 +802,65 @@ Runner `tests/belt-lab/run-r14-dup-kill.mjs` (evidence `results/belt-r14-dup-kil
 **Run 1 (GREEN)** - belts 596, lines 1490, sides 432 (269605 line_equals calls, survey 751 ms); live total 15928, class presence 72 oversized stacks (max 40); capture 403 groups / 4168 slots / 15943 items in undefined ms (same-tick); restore placed 15943, unplaced 0, leaks_undone 0, anomalies 0, all sides exact=true, scratch census 15943 vs basis 15943, source census null (informational), kill step 165297 ms. Cleanup: {"replay":0,"scratch":false,"jobs":0,"locks":0,"holds":0,"r14":false,"paused":false,"success":true}.
 
 **Run 2 (GREEN)** - belts 596, lines 1490, sides 432 (269605 line_equals calls, survey 792 ms); live total 15928, class presence 72 oversized stacks (max 40); capture 405 groups / 4171 slots / 15946 items in undefined ms (same-tick); restore placed 15946, unplaced 0, leaks_undone 0, anomalies 0, all sides exact=true, scratch census 15946 vs basis 15946, source census null (informational), kill step 176969 ms. Cleanup: {"replay":0,"scratch":false,"jobs":0,"locks":0,"holds":0,"r14":false,"paused":false,"success":true}.
+
+## BELT-R15 [empirical, 2.0.77] - INCREMENTAL (multi-tick batched) side-scoped restore on the DUP-233855 class (INCOMPLETE)
+
+Runner `tests/belt-lab/run-r15-incremental-restore.mjs` (evidence `results/belt-r15-incremental-2.0.77.json`). Same fixture and production functions as BELT-R14; the restore is split into N-side batches across REAL elapsed ticks via the dup_kill_batched selftest mode (module-local cross-execution state; slice-per-call narrows the snapshot bracket to the batch — the batched-adoption semantics). Verdicts: (a) zero unplaced/anomalies; (b) whole-scratch census == same-instant captured basis; (c) per-side both-direction multisets exact AT COMPLETION INSTANT (post-completion drift is physics, observed separately as the direct crossing observation). Sweep per run: batch=32 then batch=1 (fresh capture + scratch each; 432 executions in the batch=1 sweep = maximal crossing exposure).
+
+**Run 1 (undefined)** - belts 596, live total 15955, class presence 72 oversized (max 40).
+- Cleanup: undefined.
+
+**Errors:**
+- Error: batched step failed at cursor: Error when running interface function surface_export.belt_side_restore_selftest: LuaItemStack API call when LuaItemStack was invalid.
+stack traceback:
+	[C]: in function '__index'
+	...odules/surface_export/import_phases/belt_restoration.lua:506: in function 'undo_inserted_delta'
+	...odules/surface_export/import_phases/belt_restoration.lua:556: in function 'restore_side_groups'
+	..._export/interfaces/remote/belt-side-restore-selftest.lua:262: in function <..._export/interfaces/remote/belt-side-restore-selftest.lua:180>
+	(...tail calls...)
+    at sweep (file:///C:/Users/Solar/source/FactorioSurfaceExport/tests/belt-lab/run-r15-incremental-restore.mjs:164:28)
+    at fullRun (file:///C:/Users/Solar/source/FactorioSurfaceExport/tests/belt-lab/run-r15-incremental-restore.mjs:222:23)
+    at async main (file:///C:/Users/Solar/source/FactorioSurfaceExport/tests/belt-lab/run-r15-incremental-restore.mjs:261:18)
+
+## BELT-R15 [empirical, 2.0.77] - incremental (multi-tick batched) restore: NO-GO AS MEASURED - the aged-target leak class activates
+
+Runner `tests/belt-lab/run-r15-incremental-restore.mjs` (evidence `results/belt-r15-incremental-2.0.77.json`;
+the INCOMPLETE entry above is run 1's interim record, kept per append-only). Same fixture and production
+functions as BELT-R14; restore split into N-side batches across real elapsed ticks via the selftest
+dup_kill_batched mode (module-local cross-execution state; production untouched).
+
+**Measured (two independent replays, both admissible: 596 belts, 72 oversized stacks, max 40):**
+- Run 1 (batch=32, sliced bracket): step 1 entered the production LEAK-UNDO path and CRASHED
+  (`LuaItemStack API call when LuaItemStack was invalid`, belt_restoration.lua:506 in undo_inserted_delta,
+  called from restore_side_groups:556).
+- DISCRIMINATOR (fresh replay, batch=432 = ONE full-bracket step, aged targets): IDENTICAL crash.
+  Slicing/bracket-narrowing is therefore NOT the trigger.
+- Control is BELT-R14 itself (2x GREEN, same topology + basis): create+capture+restore in ONE execution ->
+  zero leaks, all sides exact. The ONLY variable between R14-green and R15-crash is TARGET AGE: R15's
+  scratch entities were created in the START execution and restored in a LATER one.
+
+**Findings:**
+1. **AGED-TARGET LEAK CLASS IS REAL [empirical, 2.0.77]**: insert placements onto belt targets created in a
+   PRIOR Lua execution enter the leak path, while identical same-execution targets measure zero (R14 2x,
+   R11/R12). The production comment's precondition ("measured zero on fresh same-execution targets",
+   belt_restoration.lua:454) is LOAD-BEARING, not incidental. Any restore design where entity creation and
+   belt placement occur in different executions - batched restore AND a naive one-shot adoption that
+   creates belts in the general entity phase and restores later - activates this class.
+2. **LATENT PRODUCTION BUG (crash, not data loss - reachable the first time a leak fires on real lines)**:
+   `undo_inserted_delta` calls `line.remove_item` while iterating stack handles fetched from
+   `get_detailed_contents()` before the removal; the removal invalidates subsequent handles ->
+   hard error mid-undo. Unreachable in shipped paths today only because those paths are fresh-target
+   (selection-lab paste creates+restores same-execution). Fix belongs with Phase B (/di-change):
+   collect removal targets first, mutate after; add an aged-target unit case.
+
+**Phase B implications (design, for owner review):**
+- Incremental "create early, restore in later batches" is NO-GO on the current recipe.
+- The viable incremental shape preserves the fresh-target precondition PER BATCH: each batch CREATES its
+  belts and RESTORES their sides in the SAME execution. That requires side-closed batches (a side's lane
+  spans belts that must exist, connected, before its lines are written) - component-closure batching is
+  the Phase B design problem, plus the leak-undo crash fix either way.
+- The one-shot alternative (option A) also needs its belt phase shaped as create+restore-same-execution
+  (R14's proven shape), not create-early/restore-late.
+
+Cleanup proof both runs: replay platform deleted, scratch deleted, payload file removed, jobs/locks/holds 0,
+game unpaused (errorCleanup in evidence JSON; census re-verified post-run).

@@ -1,0 +1,32 @@
+{
+  "script": "tests/belt-lab/run-r15-incremental-restore.mjs",
+  "started": "2026-07-19T08:38:29.611Z",
+  "runs": [
+    {
+      "run": 1,
+      "started": "2026-07-19T08:38:30.311Z",
+      "sweeps": [],
+      "importCommand": "Check logs for import status",
+      "beltCount": 596,
+      "liveTotal": 15942,
+      "oversizedStacks": 72,
+      "maxStack": 40,
+      "admissible": true
+    }
+  ],
+  "errors": [
+    "Error: batched step failed at cursor: Error when running interface function surface_export.belt_side_restore_selftest: LuaItemStack API call when LuaItemStack was invalid.\nstack traceback:\n\t[C]: in function '__index'\n\t...odules/surface_export/import_phases/belt_restoration.lua:506: in function 'undo_inserted_delta'\n\t...odules/surface_export/import_phases/belt_restoration.lua:556: in function 'restore_side_groups'\n\t..._export/interfaces/remote/belt-side-restore-selftest.lua:262: in function <..._export/interfaces/remote/belt-side-restore-selftest.lua:180>\n\t(...tail calls...)\n    at sweep (file:///C:/Users/Solar/source/FactorioSurfaceExport/tests/belt-lab/run-r15-incremental-restore.mjs:164:28)\n    at fullRun (file:///C:/Users/Solar/source/FactorioSurfaceExport/tests/belt-lab/run-r15-incremental-restore.mjs:222:23)\n    at async main (file:///C:/Users/Solar/source/FactorioSurfaceExport/tests/belt-lab/run-r15-incremental-restore.mjs:265:18)"
+  ],
+  "errorCleanup": {
+    "replay": 0,
+    "scratch": false,
+    "jobs": 0,
+    "locks": 0,
+    "holds": 0,
+    "paused": false,
+    "success": true
+  },
+  "finished": "2026-07-19T08:38:45.978Z",
+  "verdict": "INCOMPLETE",
+  "note": "This file holds the DISCRIMINATOR invocation (--runs=1 --batches=432, full bracket on aged targets — identical undo crash). Run 1 (batch=32) verdict + stack is preserved in the NOTEBOOK's interim INCOMPLETE entry; consolidated conclusion in the BELT-R15 NOTEBOOK entry (NO-GO AS MEASURED — aged-target leak class + latent undo crash)."
+}

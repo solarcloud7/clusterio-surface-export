@@ -140,11 +140,217 @@ local function dup_kill(opts)
   return out
 end
 
+--- BATCHED dup-kill (BELT-R15, 2026-07-19): the INCREMENTAL-restore rung — same fixture and
+--- production functions as dup_kill, but the restore is split into N-side batches across REAL
+--- elapsed ticks (one remote call per batch), measuring the untested risk: items crossing SIDE
+--- boundaries (splitters cannot be deactivated — belt-class active writes are engine-rejected,
+--- R13) DURING the batched window. Verdicts: (a) zero unplaced/anomalies across all batches;
+--- (b) whole-scratch distinct-uid census == captured basis at finish; (c) per-side both-direction
+--- multiset exactness AT THE SIDE'S COMPLETION INSTANT (same execution as its final placement) —
+--- post-completion drift is legitimate physics, observed separately, never a verdict.
+--- Cross-execution state is MODULE-LOCAL (holds LuaEntity refs — never storage; the no-tick
+--- measure_baked precedent for additive lab instrumentation; production untouched).
+local batched = nil
+
+local function side_multiset(g, emap)
+  local seen, act, total = {}, {}, 0
+  for _, m in ipairs(g.members) do
+    local e = emap[m.id]
+    if e and e.valid then
+      for _, it in ipairs(e.get_transport_line(m.li).get_detailed_contents()) do
+        local id = tostring(it.unique_id)
+        if not seen[id] then
+          seen[id] = true
+          local k = it.stack.name .. "|" .. ((it.stack.quality and it.stack.quality.name) or "normal")
+          act[k] = (act[k] or 0) + it.stack.count
+          total = total + it.stack.count
+        end
+      end
+    end
+  end
+  return act, total
+end
+
+local function multiset_exact(exp, act)
+  for k, v in pairs(exp) do if (act[k] or 0) ~= v then return false end end
+  for k, v in pairs(act) do if (exp[k] or 0) ~= v then return false end end
+  return true
+end
+
+local function dup_kill_batched(opts)
+  if opts.op == "abort" then
+    local sc = game.surfaces["belt-r15-scratch"]
+    if sc then game.delete_surface(sc) end
+    batched = nil
+    return { success = true, aborted = true }
+  end
+
+  if opts.op == "start" then
+    if batched then return { success = false, error = "batched run already in progress (abort first)" } end
+    local plat
+    for _, p in pairs(game.forces.player.platforms) do
+      if p.valid and p.name == opts.platform then plat = p end
+    end
+    if not plat then return { success = false, error = "platform not found: " .. tostring(opts.platform) } end
+    local s = plat.surface
+    local live = s.find_entities_filtered({ type = { "transport-belt", "underground-belt", "splitter" } })
+    local pairs_list = {}
+    for _, e in ipairs(live) do
+      pairs_list[#pairs_list + 1] = { entity = e, id = e.position.x .. "," .. e.position.y }
+    end
+    local t0 = game.tick
+    local groups = BeltRestoration.capture_side_groups(pairs_list)
+    local capture_same_tick = (game.tick == t0)
+    if not groups then return { success = false, error = "capture returned nil" } end
+    local slots, captured_total = 0, 0
+    for _, g in ipairs(groups) do
+      for _, sl in ipairs(g.slots) do slots = slots + 1 captured_total = captured_total + sl.ct end
+    end
+
+    local old = game.surfaces["belt-r15-scratch"]
+    if old then game.delete_surface(old) end
+    local minx, miny, maxx, maxy = math.huge, math.huge, -math.huge, -math.huge
+    for _, e in ipairs(live) do
+      local x, y = e.position.x, e.position.y
+      if x < minx then minx = x end
+      if x > maxx then maxx = x end
+      if y < miny then miny = y end
+      if y > maxy then maxy = y end
+    end
+    local half = math.max(math.abs(minx), math.abs(maxx), math.abs(miny), math.abs(maxy)) + 20
+    local sc = game.create_surface("belt-r15-scratch", { width = 2 * half, height = 2 * half })
+    sc.request_to_generate_chunks({ 0, 0 }, math.ceil(half / 32) + 1)
+    sc.force_generate_chunk_requests()
+    local tiles = {}
+    for x = math.floor(minx) - 3, math.ceil(maxx) + 3 do
+      for y = math.floor(miny) - 3, math.ceil(maxy) + 3 do
+        tiles[#tiles + 1] = { name = "lab-dark-1", position = { x, y } }
+      end
+    end
+    sc.set_tiles(tiles, true, false, true, false)
+    local emap, cfails = {}, 0
+    for _, e in ipairs(live) do
+      local args = { name = e.name, position = { e.position.x, e.position.y }, direction = e.direction, force = "player" }
+      if e.type == "underground-belt" then args.type = e.belt_to_ground_type end
+      local c = sc.create_entity(args)
+      if c and c.valid then emap[e.position.x .. "," .. e.position.y] = c else cfails = cfails + 1 end
+    end
+    if cfails > 0 then
+      game.delete_surface(sc)
+      return { success = false, error = "rebuild create failures: " .. cfails }
+    end
+
+    batched = {
+      groups = groups, emap = emap, cursor = 0,
+      captured_total = captured_total, slots = slots,
+      start_tick = game.tick,
+      placed = 0, unplaced = 0, leaks_undone = 0, anomalies = 0,
+      per_side = {}, inexact = {},
+    }
+    return { success = true, belt_count = #live, groups = #groups, slots = slots,
+      captured_total = captured_total, capture_same_tick = capture_same_tick, tick = game.tick }
+  end
+
+  if opts.op == "step" then
+    if not batched then return { success = false, error = "no batched run in progress" } end
+    local batch = opts.batch or 32
+    local from = batched.cursor + 1
+    local to = math.min(batched.cursor + batch, #batched.groups)
+    if from > to then return { success = false, error = "cursor past end" } end
+    local slice = {}
+    for i = from, to do slice[#slice + 1] = batched.groups[i] end
+    local placed, unplaced, leaks_undone, anomalies = BeltRestoration.restore_side_groups(slice, batched.emap)
+    batched.placed = batched.placed + placed
+    batched.unplaced = batched.unplaced + unplaced
+    batched.leaks_undone = batched.leaks_undone + leaks_undone
+    batched.anomalies = batched.anomalies + anomalies
+    -- Verdict (c): each side's both-direction multiset at ITS completion instant, same execution.
+    local batch_exact = 0
+    local batch_inexact = {}
+    for i = from, to do
+      local g = batched.groups[i]
+      local exp, expt = {}, 0
+      for _, sl in ipairs(g.slots) do
+        local k = sl.n .. "|" .. sl.q
+        exp[k] = (exp[k] or 0) + sl.ct
+        expt = expt + sl.ct
+      end
+      local act, actt = side_multiset(g, batched.emap)
+      local exact = multiset_exact(exp, act)
+      batched.per_side[i] = { exact = exact, expected = expt, at_completion = act, at_completion_total = actt }
+      if exact then batch_exact = batch_exact + 1
+      else
+        batch_inexact[#batch_inexact + 1] = { g = i, expected = expt, actual = actt }
+        batched.inexact[#batched.inexact + 1] = { g = i, expected = expt, actual = actt }
+      end
+    end
+    batched.cursor = to
+    return { success = true, tick = game.tick, from = from, to = to,
+      placed = placed, unplaced = unplaced, leaks_undone = leaks_undone, anomalies = anomalies,
+      batch_exact = batch_exact, batch_inexact = batch_inexact, done = to >= #batched.groups }
+  end
+
+  if opts.op == "finish" then
+    if not batched then return { success = false, error = "no batched run in progress" } end
+    if batched.cursor < #batched.groups then
+      return { success = false, error = "finish before all sides restored: " .. batched.cursor .. "/" .. #batched.groups }
+    end
+    local sc = game.surfaces["belt-r15-scratch"]
+    local suid, stotal = {}, 0
+    if sc then
+      for _, e in ipairs(sc.find_entities_filtered({ type = { "transport-belt", "underground-belt", "splitter" } })) do
+        for li = 1, e.get_max_transport_line_index() do
+          for _, it in ipairs(e.get_transport_line(li).get_detailed_contents()) do
+            local id = tostring(it.unique_id)
+            if not suid[id] then
+              suid[id] = true
+              stotal = stotal + it.stack.count
+            end
+          end
+        end
+      end
+    end
+    -- Post-completion drift observation (physics, NOT a verdict): sides whose multiset now
+    -- differs from their completion-instant snapshot — the direct crossing observation.
+    local drifted, drift_abs = 0, 0
+    for i, g in ipairs(batched.groups) do
+      local act = side_multiset(g, batched.emap)
+      local snap = batched.per_side[i] and batched.per_side[i].at_completion or {}
+      local keys = {}
+      for k in pairs(act) do keys[k] = true end
+      for k in pairs(snap) do keys[k] = true end
+      local delta = 0
+      for k in pairs(keys) do delta = delta + math.abs((act[k] or 0) - (snap[k] or 0)) end
+      if delta > 0 then drifted = drifted + 1 drift_abs = drift_abs + delta end
+    end
+    local exact_at_completion = 0
+    for _, r in pairs(batched.per_side) do if r.exact then exact_at_completion = exact_at_completion + 1 end end
+    local out = {
+      success = true, tick = game.tick,
+      sides = #batched.groups, sides_exact_at_completion = exact_at_completion,
+      inexact_sides = batched.inexact,
+      placed = batched.placed, unplaced = batched.unplaced,
+      leaks_undone = batched.leaks_undone, anomalies = batched.anomalies,
+      captured_total = batched.captured_total, scratch_census = stotal,
+      drifted_after_completion = drifted, drift_abs = drift_abs,
+      elapsed_ticks = game.tick - batched.start_tick,
+    }
+    if sc then game.delete_surface(sc) end
+    batched = nil
+    return out
+  end
+
+  return { success = false, error = "unknown batched op: " .. tostring(opts.op) }
+end
+
 local function belt_side_restore_selftest(opts)
   -- Real-world DUP-kill measurement (opts-selected); the no-arg call keeps the fake-line unit
   -- rung below unchanged.
   if type(opts) == "table" and opts.mode == "dup_kill" then
     return dup_kill(opts)
+  end
+  if type(opts) == "table" and opts.mode == "dup_kill_batched" then
+    return dup_kill_batched(opts)
   end
   local details = {}
   local passed, failed = 0, 0

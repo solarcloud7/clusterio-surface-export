@@ -260,6 +260,15 @@ Consequence: fluid does not live per-entity — it lives in the shared segment. 
   the untested risk is items crossing SIDE boundaries (through splitters/sideloads) mid-restore before the
   gate. Incremental (multi-tick) belt restore is a design candidate gated on that rung — do not assert
   either "must be single-tick" or "safe to batch" beyond this.
+- **[empirical, 2.0.77, BELT-R15] AGED-TARGET leak class: `insert_at` onto belt targets created in a
+  PRIOR Lua execution enters the leak-undo path; identical fresh same-execution targets measure zero
+  leaks (BELT-R14 2x green, R11/R12 — same topology/basis, target age the only variable).** The
+  "fresh same-execution targets" precondition in belt_restoration.lua is LOAD-BEARING: any restore
+  design must create its belts and write their lines in the SAME execution (per batch, side-closed,
+  for incremental shapes). R15 also exposed a LATENT crash in `undo_inserted_delta`
+  (belt_restoration.lua:506): it iterates stack handles fetched before `remove_item` invalidates
+  them — a hard crash the first time a real leak fires; unreachable on shipped fresh-target paths,
+  MUST be fixed (/di-change) before any design that can reach the leak path.
 - **Standard fill instrument**: infinity chest (filtered, at-least N) + filtered loader saturates a belt
   circuit to a deterministic steady state; loaders stay active on paused platforms (deactivate them to
   freeze the feed). See the Physical Truth Lab Standard's fixture-contract section.
