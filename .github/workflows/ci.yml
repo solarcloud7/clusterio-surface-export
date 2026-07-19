@@ -59,8 +59,13 @@ jobs:
 
       - name: Build plugin
         working-directory: ${{ env.PLUGIN_DIR }}
+        # npm ci stalled twice on 2026-07-19 (registry metadata hangs) and, with no step timeout,
+        # each stall ate the full job budget before cancellation. Fail the step fast instead, give
+        # npm aggressive fetch retries, and allow one whole-command retry before going red.
+        timeout-minutes: 10
         run: |
-          npm ci
+          NPM_FLAGS="--fetch-retries=5 --fetch-timeout=120000 --fetch-retry-maxtimeout=60000"
+          npm ci $NPM_FLAGS || { echo "::warning::npm ci stalled/failed once — retrying"; npm ci $NPM_FLAGS; }
           npm run build
 
       - name: Lint (TS Link-method binding guard + Lua invariant guard)
