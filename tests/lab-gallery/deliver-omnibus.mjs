@@ -16,10 +16,11 @@
 // Full-delivery sequence: displace host-1 onto the committed golden source (stop -> docker cp ->
 // start --save), bump the export-ID counter (the settled-retry guard correctly refuses a reused
 // deterministic ID — measured 2026-07-19), production /transfer-platform to the gallery, poll for
-// arrival, redraw the 13 labels, ASSERT 123 entities + 1 item-request-proxy (assert, never
-// repair — a shortfall is a serializer regression), then restore host-1 to test1.zip and remove
-// the temp save with filesystem proof.
+// arrival, redraw the manifest's pad labels, ASSERT the manifest-pinned census + 1
+// item-request-proxy (assert, never repair — a shortfall is a serializer regression), then restore
+// host-1 to test1.zip and remove the temp save with filesystem proof.
 
+import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
 import { CONTROLLER, CTL_CONFIG, docker, lastLine, lua, rcon, sleep } from "./batch-lifecycle.mjs";
@@ -35,15 +36,11 @@ const RESTORE_SAVE = "test1.zip";
 const GOLDEN_SOURCE = "docker/seed-data/lab-saves/lab-gallery-source-surface-export-2.0.77.zip";
 
 // The pad grid (hub-adjacent, pitch 28x14); name labels live at origin+(6,-1.5).
-const PADS = [
-	["omnibus-adversarial-inventory", 8, -20], ["omnibus-heat-temperature", 36, -20],
-	["omnibus-decider-latch", 64, -20], ["omnibus-midcraft-progress", 92, -20],
-	["omnibus-burner-fuel", 8, -6], ["omnibus-equipment-grid", 36, -6],
-	["omnibus-circuit-config", 64, -6], ["omnibus-module-bonus-progress", 92, -6],
-	["omnibus-crafting-fluids", 8, 8], ["omnibus-ghosts-and-proxies", 36, 8],
-	["omnibus-ground-items", 64, 8], ["inserter-held-capacity", 92, 8],
-	["no-tick-sync-frozen-pair", 8, 22],
-];
+// Single-sourced from the manifest (padKind === "pad" carries origin) — never hardcode the roster.
+const MANIFEST = JSON.parse(readFileSync(new URL("./manifest.json", import.meta.url), "utf8"));
+const PADS = MANIFEST.fixtures
+	.filter((f) => f.padKind === "pad" && f.origin)
+	.map((f) => [f.id, f.origin.x, f.origin.y]);
 
 function ctl(...args) {
 	return docker(["exec", CONTROLLER, "npx", "clusterioctl", "--log-level", "error",

@@ -244,3 +244,21 @@ the splitter-filter types gate excludes loaders) and NO `infinity-container` han
 filters not carried). A transfer would deliver hollow configs. Fix queued as a /di-change with this
 pad as its kill-measurement. Grid state: 16 fixture pads + 11 open slots (12 stamped 2026-07-19,
 one claimed same day).
+
+## 2026-07-19 — Prune/combine session (owner-adjudicated, live)
+
+Owner ruling on coverage, each verified by measurement before acting:
+- `lab-rig-filtered-splitter-v1` RETIRED (platform deleted): its invariant (splitter filter +
+  output priority) is physically present on `belt-combined-omnibus` — measured filter=copper-plate,
+  outPrio=left at (19,39.5), plus two priority-splitters the rig lacked. Covered.
+- `belt-corner-recovery` KEPT: over-packed corner state is physically impossible on a
+  normally-saturated circuit — it is the historic loss-class trigger; not covered.
+- `belt-5x5-125-unstacked` KEPT: the closed conservative loop is the honest loss meter —
+  `belt-combined-omnibus` is infinity-fed and SELF-HEALS after a lossy paste (loaders refill),
+  so it can mask loss the pure loop keeps visible. Different instruments, both stay.
+
+Also pruned: `test-status.mjs` (superseded by [TESTRUN-JSON]); 11 stale saves from the gallery
+saves dir (candidates v3-v9, grid-wip, two old checkpoints, the pre-rework golden-source copy);
+`belt-corner-recovery.layoutBlueprint` (was the RETIRED platform's blueprint — stale display-only
+data). Deferred INTO the harness rework (dies with the rewrite; don't fix the dying): golden-batch
+b8/rider section trim, `buildBeltPilot` vestige.

@@ -1086,8 +1086,7 @@
 				"action": "/test-run: reset the compare area, selection-lab copy of the pad build area, paste at +14,0, physical audit of both halves.",
 				"expected": "Audit reports equal belts and items; the pasted corner keeps its belt_shape, inside-lane item count, and inside-lane length.",
 				"forbidden": "A relaxed corner (items advanced or lost); a dropped over-pack; belt_shape reset to straight."
-			},
-			"layoutBlueprint": "0eNqlmNFqgzAYhd/lv44lSdW2vsoow7bpCNgomo6V4rtP27LBNsay70ZQc45efBwO5yq75uy63oco1VX8vg2DVE9XGfxLqJv5WahPTiqJ537XZrGvw9C1fcx2rokyKvHh4N6kMuNWiQvRR+/uDreby3M4n3aunw6oX52UdO0widswf3M2LBeFkotUmV4U46i+GdpUQ/MwnP2UHHzv9vfX+Q/uy1R3neKep7ovU9yLVHeb4l6muhcp7qtU9zzFff1fCG8MToRH3zzw/nJyfWd1OX58Yejqvcu6po7Htj9lx/YcDvVNMf/YF/mGyY2GegP1FuqXUJ9DfQH1JdSvoB7i95BbRq+F9FpIr4X0WkivhfRaSK+F9FpIr4X0WkavYfQaSK+B9BpIr4H0GkivgfQaSK+B9BpIr0H0agSvZuxqhq5m5GoGrmbcaoatZtRqBq1mzGqELMtbGLcwbWHYwqyFUQuTFgYtzFkYsyxlWcGF/RbWW9huYbmF3RZWW9hsYbGFvZbVWrYowEEB7glwToBrAhwT4JYApwS4JMAh4W/yrRIf3Wk69DkiK3l1/XAzLEq7yTebYp2Xq+kyju/Dto5Q"
+			}
 		},
 		{
 			"id": "transfer-workhorse",

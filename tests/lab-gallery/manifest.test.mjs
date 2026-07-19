@@ -109,7 +109,7 @@ test("the sixteen-family corpus is inventoried with independent oracles and stab
 	}
 
 	// Layout blueprints are captured for the three requested layouts.
-	for (const [id, prefix] of [["omnibus-adversarial-inventory", "0eNq"], ["energy-accumulator-drain", "0eNq"], ["belt-corner-recovery", "0eNq"]]) {
+	for (const [id, prefix] of [["omnibus-adversarial-inventory", "0eNq"], ["energy-accumulator-drain", "0eNq"]]) {
 		assert.ok(byId[id].layoutBlueprint.startsWith(prefix), `${id} layoutBlueprint`);
 	}
 });
