@@ -352,6 +352,10 @@
 		},
 		{
 			"id": "omnibus-adversarial-inventory",
+			"anchors": [
+				{ "entity": "steel-chest", "x": 13, "y": -17 },
+				{ "entity": "assembling-machine-2", "x": 16, "y": -17 }
+			],
 			"revision": 1,
 			"labId": "state-dimensions-lab",
 			"name": "Adversarial nested inventory + quality",
@@ -395,6 +399,9 @@
 		},
 		{
 			"id": "omnibus-heat-temperature",
+			"anchors": [
+				{ "entity": "heat-pipe", "x": 43, "y": -13 }
+			],
 			"revision": 1,
 			"labId": "state-dimensions-lab",
 			"name": "Heat-pipe temperature",
@@ -431,6 +438,9 @@
 		},
 		{
 			"id": "omnibus-decider-latch",
+			"anchors": [
+				{ "entity": "decider-combinator", "x": 68, "y": -14 }
+			],
 			"revision": 1,
 			"labId": "hidden-semantics-lab",
 			"name": "Self-feeding decider latch",
@@ -467,6 +477,9 @@
 		},
 		{
 			"id": "omnibus-midcraft-progress",
+			"anchors": [
+				{ "entity": "assembling-machine-1", "x": 95, "y": -16 }
+			],
 			"revision": 1,
 			"labId": "midcraft-lab",
 			"name": "Mid-craft assembling machine",
@@ -505,6 +518,9 @@
 		},
 		{
 			"id": "omnibus-burner-fuel",
+			"anchors": [
+				{ "entity": "burner-inserter", "x": 15, "y": 1 }
+			],
 			"revision": 1,
 			"labId": "state-dimensions-lab",
 			"name": "Burner inserter fuel state",
@@ -544,6 +560,9 @@
 		},
 		{
 			"id": "omnibus-equipment-grid",
+			"anchors": [
+				{ "entity": "spidertron", "x": 42, "y": 0 }
+			],
 			"revision": 1,
 			"labId": "state-dimensions-lab",
 			"name": "Spidertron equipment grid",
@@ -582,6 +601,10 @@
 		},
 		{
 			"id": "omnibus-circuit-config",
+			"anchors": [
+				{ "entity": "constant-combinator", "x": 68, "y": 1 },
+				{ "entity": "small-lamp", "x": 74, "y": 1 }
+			],
 			"revision": 1,
 			"labId": "hidden-semantics-lab",
 			"name": "Circuit configuration",
@@ -620,6 +643,9 @@
 		},
 		{
 			"id": "omnibus-module-bonus-progress",
+			"anchors": [
+				{ "entity": "assembling-machine-2", "x": 99, "y": 1 }
+			],
 			"revision": 1,
 			"labId": "midcraft-lab",
 			"name": "Module bonus progress",
@@ -658,6 +684,11 @@
 		},
 		{
 			"id": "omnibus-crafting-fluids",
+			"anchors": [
+				{ "entity": "storage-tank", "x": 11, "y": 15 },
+				{ "entity": "chemical-plant", "x": 15, "y": 15 },
+				{ "entity": "foundry", "x": 19, "y": 15 }
+			],
 			"revision": 1,
 			"labId": "fluid-lab",
 			"name": "Crafting-machine fluids",
@@ -959,6 +990,9 @@
 		},
 		{
 			"id": "inserter-held-capacity",
+			"anchors": [
+				{ "entity": "bulk-inserter", "x": 98.5, "y": 13.5 }
+			],
 			"revision": 1,
 			"labId": "inserter-lab",
 			"name": "Held-item capacity on a less-researched destination",
@@ -1001,6 +1035,10 @@
 		},
 		{
 			"id": "no-tick-sync-frozen-pair",
+			"anchors": [
+				{ "entity": "assembling-machine-1", "x": 13.5, "y": 27.5 },
+				{ "entity": "inserter", "x": 16.5, "y": 27.5 }
+			],
 			"revision": 1,
 			"labId": "no-tick-sync-lab",
 			"name": "No-tick synchronous held-item pair",

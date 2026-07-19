@@ -109,10 +109,33 @@ local function at(surface, name, x, y)
     return surface.find_entities_filtered({ name = name, area = { { x - 0.6, y - 0.6 }, { x + 0.6, y + 0.6 } } })[1]
 end
 
-local function measure_omnibus_adversarial(surface)
-    -- Coordinates: the test-foundation pad grid (migrated 2026-07-18 from the legacy y=0 zones by
-    -- seed-prep's migrate_omnibus_zone; offsets are exact clone_area translations).
-    local chest = assert(at(surface, "steel-chest", 13, -17), "omnibus adversarial chest missing")
+-- Measure anchors come from manifest.json fixture `anchors` (single source of truth). The
+-- literal-coordinate duplication between this file and reload-meter.cjs cost a bake cycle during
+-- the pad migration (2026-07-18: one meter updated, the other not — verify-save went red on the
+-- stale copy); both meters now read the same manifest field. Fail-loud on any missing entry.
+local function anchor_lookup(manifest, fixture_id)
+    for _, fixture in ipairs(manifest and manifest.fixtures or {}) do
+        if fixture.id == fixture_id then
+            local anchors = assert(fixture.anchors, fixture_id .. " manifest entry has no anchors")
+            return function(entity_name)
+                for _, a in ipairs(anchors) do
+                    if a.entity == entity_name then return a.x, a.y end
+                end
+                error(fixture_id .. " manifest anchors missing entity " .. entity_name)
+            end
+        end
+    end
+    error("manifest fixture missing: " .. tostring(fixture_id))
+end
+
+local function anchored(surface, anchor, entity_name, label)
+    local x, y = anchor(entity_name)
+    return assert(at(surface, entity_name, x, y),
+        label .. " " .. entity_name .. " missing at (" .. x .. "," .. y .. ")")
+end
+
+local function measure_omnibus_adversarial(surface, anchor)
+    local chest = anchored(surface, anchor, "steel-chest", "omnibus adversarial")
     local inv = chest.get_inventory(defines.inventory.chest)
     local armor
     for i = 1, #inv do local s = inv[i] if s.valid_for_read and s.name == "power-armor-mk2" then armor = s break end end
@@ -122,27 +145,27 @@ local function measure_omnibus_adversarial(surface)
         if eq.name == "battery-mk2-equipment" then r.battEnergy = eq.energy r.battQuality = eq.quality.name end
         if eq.name == "energy-shield-mk2-equipment" then r.shieldValue = eq.shield r.shieldMax = eq.max_shield r.shieldQuality = eq.quality.name end
     end
-    local m = assert(at(surface, "assembling-machine-2", 16, -17), "omnibus adversarial machine missing")
+    local m = anchored(surface, anchor, "assembling-machine-2", "omnibus adversarial")
     local recipe, quality = m.get_recipe()
     r.recipe = recipe and recipe.name or nil
     r.recipeQuality = quality and quality.name or nil
     return r
 end
 
-local function measure_omnibus_latch(surface)
-    local d = assert(at(surface, "decider-combinator", 68, -14), "omnibus latch decider missing")
+local function measure_omnibus_latch(surface, anchor)
+    local d = anchored(surface, anchor, "decider-combinator", "omnibus latch")
     local net = d.get_circuit_network(defines.wire_connector_id.combinator_output_red)
     return { signalS = net and net.get_signal({ type = "virtual", name = "signal-S" }) or nil }
 end
 
-local function measure_omnibus_midcraft(surface)
-    local m = assert(at(surface, "assembling-machine-1", 95, -16), "omnibus midcraft machine missing")
+local function measure_omnibus_midcraft(surface, anchor)
+    local m = anchored(surface, anchor, "assembling-machine-1", "omnibus midcraft")
     local inv = m.get_inventory(defines.inventory.assembling_machine_input)
     return { progress = m.crafting_progress, active = m.active, inputPlates = inv and inv.get_item_count("iron-plate") or nil }
 end
 
-local function measure_omnibus_burner(surface)
-    local bi = assert(at(surface, "burner-inserter", 15, 1), "omnibus burner inserter missing")
+local function measure_omnibus_burner(surface, anchor)
+    local bi = anchored(surface, anchor, "burner-inserter", "omnibus burner")
     local fi = bi.get_inventory(defines.inventory.fuel)
     return {
         coal = fi and fi.get_item_count("coal") or nil,
@@ -152,8 +175,8 @@ local function measure_omnibus_burner(surface)
     }
 end
 
-local function measure_omnibus_equipment(surface)
-    local s = assert(at(surface, "spidertron", 42, 0), "omnibus spidertron missing")
+local function measure_omnibus_equipment(surface, anchor)
+    local s = anchored(surface, anchor, "spidertron", "omnibus equipment")
     local r = { holder = "spidertron" }
     for _, eq in ipairs(s.grid.equipment) do
         if eq.name == "battery-mk2-equipment" then r.battEnergy = eq.energy r.battMax = eq.max_energy end
@@ -161,8 +184,8 @@ local function measure_omnibus_equipment(surface)
     return r
 end
 
-local function measure_omnibus_circuit(surface)
-    local cc = assert(at(surface, "constant-combinator", 68, 1), "omnibus constant-combinator missing")
+local function measure_omnibus_circuit(surface, anchor)
+    local cc = anchored(surface, anchor, "constant-combinator", "omnibus circuit")
     local behavior = cc.get_control_behavior()
     local r = {}
     local section = behavior.sections and behavior.sections[1]
@@ -170,7 +193,7 @@ local function measure_omnibus_circuit(surface)
         local filter = section.filters and section.filters[1]
         if filter then r.constantSignal = filter.value and filter.value.name or nil r.constantMin = filter.min end
     end
-    local lamp = assert(at(surface, "small-lamp", 74, 1), "omnibus lamp missing")
+    local lamp = anchored(surface, anchor, "small-lamp", "omnibus circuit")
     local lb = lamp.get_control_behavior()
     -- Explicit if: `lb and lb.use_colors or nil` would collapse a legitimate `false` reading to nil,
     -- silently dropping the boolean from certification (the false-collapsing and/or idiom).
@@ -178,22 +201,22 @@ local function measure_omnibus_circuit(surface)
     return r
 end
 
-local function measure_omnibus_bonus(surface)
-    local m = assert(at(surface, "assembling-machine-2", 99, 1), "omnibus bonus machine missing")
+local function measure_omnibus_bonus(surface, anchor)
+    local m = anchored(surface, anchor, "assembling-machine-2", "omnibus bonus")
     local mi = m.get_module_inventory()
     return { bonusProgress = m.bonus_progress, modules = mi and mi.get_item_count("productivity-module") or nil, active = m.active }
 end
 
-local function measure_omnibus_fluids(surface)
+local function measure_omnibus_fluids(surface, anchor)
     local r = {}
-    local tank = assert(at(surface, "storage-tank", 11, 15), "omnibus storage-tank missing")
+    local tank = anchored(surface, anchor, "storage-tank", "omnibus fluids")
     if tank.fluidbox[1] then r.steam = tank.fluidbox[1].amount r.steamTemp = tank.fluidbox[1].temperature end
-    local chem = assert(at(surface, "chemical-plant", 15, 15), "omnibus chemical-plant missing")
+    local chem = anchored(surface, anchor, "chemical-plant", "omnibus fluids")
     for i = 1, #chem.fluidbox do
         local f = chem.fluidbox[i]
         if f then if f.name == "water" then r.chemWater = f.amount elseif f.name == "petroleum-gas" then r.chemGas = f.amount end end
     end
-    local foundry = assert(at(surface, "foundry", 19, 15), "omnibus foundry missing")
+    local foundry = anchored(surface, anchor, "foundry", "omnibus fluids")
     for i = 1, #foundry.fluidbox do
         local f = foundry.fluidbox[i]
         if f and f.name == "molten-iron" then r.foundryMolten = f.amount r.foundryTemp = f.temperature end
@@ -267,8 +290,8 @@ end
 
 -- Ported onto the golden omnibus (lab-omnibus-state-v1) by seed-prep-ops.lua; these read the SAME
 -- fields the seed-prep build/measure recorded, so the fingerprint gate is symmetric.
-local function measure_inserter_held(surface)
-    local inserter = assert(at(surface, "bulk-inserter", 98.5, 13.5), "inserter-held bulk-inserter missing")
+local function measure_inserter_held(surface, anchor)
+    local inserter = anchored(surface, anchor, "bulk-inserter", "inserter-held")
     local held = inserter.held_stack
     return {
         heldCount = held.valid_for_read and held.count or 0,
@@ -282,9 +305,9 @@ local function measure_inserter_held(surface)
     }
 end
 
-local function measure_no_tick_pair(surface)
-    local machine = assert(at(surface, "assembling-machine-1", 13.5, 27.5), "no-tick assembling-machine-1 missing")
-    local inserter = assert(at(surface, "inserter", 16.5, 27.5), "no-tick inserter missing")
+local function measure_no_tick_pair(surface, anchor)
+    local machine = anchored(surface, anchor, "assembling-machine-1", "no-tick")
+    local inserter = anchored(surface, anchor, "inserter", "no-tick")
     local input = machine.get_inventory(defines.inventory.crafter_input)
     local recipe = machine.get_recipe()
     return {
@@ -332,28 +355,33 @@ local function measure_census_fusion(surface)
     return r
 end
 
-local function measure_corpus()
+local function measure_corpus(manifest)
     local out = {}
     local function safe(id, fn)
         local ok, result = pcall(fn)
         if ok then out[id] = result else out[id] = { error = tostring(result) } end
     end
+    -- Anchored measures resolve their coordinates from the manifest INSIDE the pcall, so a
+    -- missing/incomplete anchors entry fails that fixture loudly instead of aborting the sweep.
+    local function anchored_safe(id, fn)
+        safe(id, function() return fn(anchor_lookup(manifest, id)) end)
+    end
     local omni, omni_platform = surface_for_platform("lab-omnibus-state-v1")
     if omni then
-        safe("omnibus-adversarial-inventory", function() return measure_omnibus_adversarial(omni) end)
-        safe("omnibus-heat-temperature", function() return { temperature = assert(at(omni, "heat-pipe", 43, -13), "omnibus heat-pipe missing").temperature } end)
-        safe("omnibus-decider-latch", function() return measure_omnibus_latch(omni) end)
-        safe("omnibus-midcraft-progress", function() return measure_omnibus_midcraft(omni) end)
-        safe("omnibus-burner-fuel", function() return measure_omnibus_burner(omni) end)
-        safe("omnibus-equipment-grid", function() return measure_omnibus_equipment(omni) end)
-        safe("omnibus-circuit-config", function() return measure_omnibus_circuit(omni) end)
-        safe("omnibus-module-bonus-progress", function() return measure_omnibus_bonus(omni) end)
-        safe("omnibus-crafting-fluids", function() return measure_omnibus_fluids(omni) end)
+        anchored_safe("omnibus-adversarial-inventory", function(a) return measure_omnibus_adversarial(omni, a) end)
+        anchored_safe("omnibus-heat-temperature", function(a) return { temperature = anchored(omni, a, "heat-pipe", "omnibus heat").temperature } end)
+        anchored_safe("omnibus-decider-latch", function(a) return measure_omnibus_latch(omni, a) end)
+        anchored_safe("omnibus-midcraft-progress", function(a) return measure_omnibus_midcraft(omni, a) end)
+        anchored_safe("omnibus-burner-fuel", function(a) return measure_omnibus_burner(omni, a) end)
+        anchored_safe("omnibus-equipment-grid", function(a) return measure_omnibus_equipment(omni, a) end)
+        anchored_safe("omnibus-circuit-config", function(a) return measure_omnibus_circuit(omni, a) end)
+        anchored_safe("omnibus-module-bonus-progress", function(a) return measure_omnibus_bonus(omni, a) end)
+        anchored_safe("omnibus-crafting-fluids", function(a) return measure_omnibus_fluids(omni, a) end)
         safe("omnibus-ghosts-and-proxies", function() return measure_omnibus_ghosts(omni) end)
         safe("omnibus-ground-items", function() return measure_omnibus_ground(omni) end)
         safe("omnibus-platform-schedule", function() return measure_omnibus_schedule(omni_platform) end)
-        safe("inserter-held-capacity", function() return measure_inserter_held(omni) end)
-        safe("no-tick-sync-frozen-pair", function() return measure_no_tick_pair(omni) end)
+        anchored_safe("inserter-held-capacity", function(a) return measure_inserter_held(omni, a) end)
+        anchored_safe("no-tick-sync-frozen-pair", function(a) return measure_no_tick_pair(omni, a) end)
     end
     local energy = surface_for_platform("lab-energy-v1")
     if energy then safe("energy-accumulator-drain", function() return measure_energy(energy) end) end
@@ -567,7 +595,7 @@ local function inspect()
     local source = find_belts(surface, pilot.sourceBelts, false)
     local target = find_belts(surface, pilot.targetBelts, false)
     local all = detailed_census(source)
-    local measured = measure_corpus()
+    local measured = measure_corpus(manifest)
     local reading = {
         success = true,
         version = script.active_mods.base,

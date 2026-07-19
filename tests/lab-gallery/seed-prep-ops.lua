@@ -367,7 +367,10 @@ elseif request.operation == "build_inserter_held" then
     end
     local bonus_after = force.bulk_inserter_capacity_bonus
 
-    local pos = { x = 98.5, y = 13.5 }
+    -- Position comes from the manifest anchors, passed in the request (single source shared with
+    -- gallery-runtime.lua and reload-meter.cjs); fail loud rather than fall back to a literal.
+    local pos = assert(request.anchors and request.anchors["bulk-inserter"],
+        "build_inserter_held requires request.anchors[bulk-inserter]")
     local existing = s.find_entities_filtered({ name = "bulk-inserter", area = { { pos.x - 0.4, pos.y - 0.4 }, { pos.x + 0.4, pos.y + 0.4 } } })[1]
     if existing then existing.destroy() end
     local inserter = s.create_entity({ name = "bulk-inserter", position = pos, force = "player", quality = "legendary" })
@@ -403,8 +406,10 @@ elseif request.operation == "measure_inserter_held" then
         return { success = false, error = OMNIBUS_PLATFORM .. " not found for measure_inserter_held" }
     end
     local s = platform.surface
-    local inserter = s.find_entities_filtered({ name = "bulk-inserter", area = { { 98.5 - 0.4, 13.5 - 0.4 }, { 98.5 + 0.4, 13.5 + 0.4 } } })[1]
-    if not inserter then return { success = false, error = "bulk-inserter not found at (98.5,13.5)" } end
+    local pos = assert(request.anchors and request.anchors["bulk-inserter"],
+        "measure_inserter_held requires request.anchors[bulk-inserter]")
+    local inserter = s.find_entities_filtered({ name = "bulk-inserter", area = { { pos.x - 0.4, pos.y - 0.4 }, { pos.x + 0.4, pos.y + 0.4 } } })[1]
+    if not inserter then return { success = false, error = "bulk-inserter not found at (" .. pos.x .. "," .. pos.y .. ")" } end
     local held = inserter.held_stack
     return {
         success = true,
@@ -424,7 +429,10 @@ elseif request.operation == "build_no_tick_pair" then
     end
     local s = platform.surface
 
-    local mpos = { x = 13.5, y = 27.5 }
+    -- Positions come from the manifest anchors, passed in the request (single source shared with
+    -- gallery-runtime.lua and reload-meter.cjs); fail loud rather than fall back to literals.
+    local mpos = assert(request.anchors and request.anchors["assembling-machine-1"],
+        "build_no_tick_pair requires request.anchors[assembling-machine-1]")
     local existing_machine = s.find_entities_filtered({ name = "assembling-machine-1", area = { { mpos.x - 0.4, mpos.y - 0.4 }, { mpos.x + 0.4, mpos.y + 0.4 } } })[1]
     if existing_machine then existing_machine.destroy() end
     local machine = s.create_entity({ name = "assembling-machine-1", position = mpos, force = "player" })
@@ -443,7 +451,8 @@ elseif request.operation == "build_no_tick_pair" then
     machine.active = false
     machine.destructible = false
 
-    local ipos = { x = 16.5, y = 27.5 }
+    local ipos = assert(request.anchors and request.anchors["inserter"],
+        "build_no_tick_pair requires request.anchors[inserter]")
     local existing_inserter = s.find_entities_filtered({ name = "inserter", area = { { ipos.x - 0.4, ipos.y - 0.4 }, { ipos.x + 0.4, ipos.y + 0.4 } } })[1]
     if existing_inserter then existing_inserter.destroy() end
     local inserter = s.create_entity({ name = "inserter", position = ipos, direction = defines.direction.west, force = "player" })
@@ -469,10 +478,14 @@ elseif request.operation == "measure_no_tick_pair" then
         return { success = false, error = OMNIBUS_PLATFORM .. " not found for measure_no_tick_pair" }
     end
     local s = platform.surface
-    local machine = s.find_entities_filtered({ name = "assembling-machine-1", area = { { 13.5 - 0.4, 27.5 - 0.4 }, { 13.5 + 0.4, 27.5 + 0.4 } } })[1]
-    local inserter = s.find_entities_filtered({ name = "inserter", area = { { 16.5 - 0.4, 27.5 - 0.4 }, { 16.5 + 0.4, 27.5 + 0.4 } } })[1]
-    if not machine then return { success = false, error = "assembling-machine-1 not found at (13.5,27.5)" } end
-    if not inserter then return { success = false, error = "inserter not found at (16.5,27.5)" } end
+    local mpos = assert(request.anchors and request.anchors["assembling-machine-1"],
+        "measure_no_tick_pair requires request.anchors[assembling-machine-1]")
+    local ipos = assert(request.anchors and request.anchors["inserter"],
+        "measure_no_tick_pair requires request.anchors[inserter]")
+    local machine = s.find_entities_filtered({ name = "assembling-machine-1", area = { { mpos.x - 0.4, mpos.y - 0.4 }, { mpos.x + 0.4, mpos.y + 0.4 } } })[1]
+    local inserter = s.find_entities_filtered({ name = "inserter", area = { { ipos.x - 0.4, ipos.y - 0.4 }, { ipos.x + 0.4, ipos.y + 0.4 } } })[1]
+    if not machine then return { success = false, error = "assembling-machine-1 not found at (" .. mpos.x .. "," .. mpos.y .. ")" } end
+    if not inserter then return { success = false, error = "inserter not found at (" .. ipos.x .. "," .. ipos.y .. ")" } end
     local input = machine.get_inventory(defines.inventory.crafter_input)
     local recipe = machine.get_recipe()
     return {

@@ -163,8 +163,13 @@ async function main() {
 				operation: "stamp_test_cell", origin_x: cell.originX, origin_y: cell.originY,
 				name: cell.id, rows: TEMPLATE_ROWS, legend: LEGEND, card: cardFor(cell.id),
 			});
-			const built = runtimeCall(handle, PORTS, { operation: cell.build });
-			const measured = runtimeCall(handle, PORTS, { operation: cell.measure });
+			// Build/measure positions come from the manifest anchors (single source shared with
+			// both meters) — the ops fail loud without them.
+			const fixtureEntry = manifest.fixtures.find(entry => entry.id === cell.id);
+			const anchors = Object.fromEntries((fixtureEntry.anchors || [])
+				.map(a => [a.entity, { x: a.x, y: a.y }]));
+			const built = runtimeCall(handle, PORTS, { operation: cell.build, anchors });
+			const measured = runtimeCall(handle, PORTS, { operation: cell.measure, anchors });
 			portedFixtures[cell.id] = measured;
 			console.error(`[seed-prep] ported ${cell.id}: built=${JSON.stringify(built)} measured=${JSON.stringify(measured)}`);
 		}

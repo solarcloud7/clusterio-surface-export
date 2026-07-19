@@ -1,4 +1,18 @@
 const { Rcon } = require("/clusterio/node_modules/rcon-client");
+const fs = require("node:fs");
+const path = require("node:path");
+
+// Measure anchors come from manifest.json (single source shared with gallery-runtime.lua; the
+// literal-coordinate duplication cost a bake cycle on 2026-07-18 when only one meter was updated).
+// verify-save stages manifest.json next to this meter inside the container.
+const manifest = JSON.parse(fs.readFileSync(path.join(__dirname, "manifest.json"), "utf8"));
+function A(fixtureId, entity) {
+	const fixture = manifest.fixtures.find(f => f.id === fixtureId);
+	if (!fixture || !fixture.anchors) throw new Error(`manifest anchors missing for ${fixtureId}`);
+	const anchor = fixture.anchors.find(a => a.entity === entity);
+	if (!anchor) throw new Error(`${fixtureId} anchors missing entity ${entity}`);
+	return `${anchor.x},${anchor.y}`;
+}
 
 const [port = "27977", password = "gallery-verify-only"] = process.argv.slice(2);
 
@@ -46,7 +60,7 @@ local function platsurf(name) for _,p in pairs(game.forces.player.platforms) do 
 local corpus={}
 local omni,omniP=platsurf("lab-omnibus-state-v1")
 if omni then
-  local chest=at(omni,"steel-chest",13,-17)
+  local chest=at(omni,"steel-chest",${A("omnibus-adversarial-inventory","steel-chest")})
   local cinv=chest.get_inventory(defines.inventory.chest)
   local armor
   for i=1,#cinv do local s=cinv[i] if s.valid_for_read and s.name=="power-armor-mk2" then armor=s break end end
@@ -55,42 +69,42 @@ if omni then
     if eq.name=="battery-mk2-equipment" then adv.battEnergy=eq.energy adv.battQuality=eq.quality.name end
     if eq.name=="energy-shield-mk2-equipment" then adv.shieldValue=eq.shield adv.shieldMax=eq.max_shield adv.shieldQuality=eq.quality.name end
   end
-  local am=at(omni,"assembling-machine-2",16,-17)
+  local am=at(omni,"assembling-machine-2",${A("omnibus-adversarial-inventory","assembling-machine-2")})
   local rec,qual=am.get_recipe()
   adv.recipe=rec and rec.name or nil adv.recipeQuality=qual and qual.name or nil
   corpus["omnibus-adversarial-inventory"]=adv
-  corpus["omnibus-heat-temperature"]={temperature=at(omni,"heat-pipe",43,-13).temperature}
-  local dec=at(omni,"decider-combinator",68,-14)
+  corpus["omnibus-heat-temperature"]={temperature=at(omni,"heat-pipe",${A("omnibus-heat-temperature","heat-pipe")}).temperature}
+  local dec=at(omni,"decider-combinator",${A("omnibus-decider-latch","decider-combinator")})
   local dnet=dec.get_circuit_network(defines.wire_connector_id.combinator_output_red)
   corpus["omnibus-decider-latch"]={signalS=dnet and dnet.get_signal{type="virtual",name="signal-S"} or nil}
-  local mc=at(omni,"assembling-machine-1",95,-16)
+  local mc=at(omni,"assembling-machine-1",${A("omnibus-midcraft-progress","assembling-machine-1")})
   local mci=mc.get_inventory(defines.inventory.assembling_machine_input)
   corpus["omnibus-midcraft-progress"]={progress=mc.crafting_progress,active=mc.active,inputPlates=mci and mci.get_item_count("iron-plate") or nil}
-  local bi=at(omni,"burner-inserter",15,1)
+  local bi=at(omni,"burner-inserter",${A("omnibus-burner-fuel","burner-inserter")})
   local bfi=bi.get_inventory(defines.inventory.fuel)
   corpus["omnibus-burner-fuel"]={coal=bfi and bfi.get_item_count("coal") or nil,active=bi.active,burning=bi.burner and bi.burner.currently_burning and bi.burner.currently_burning.name.name or nil,remaining=bi.burner and bi.burner.remaining_burning_fuel or nil}
-  local sp=at(omni,"spidertron",42,0)
+  local sp=at(omni,"spidertron",${A("omnibus-equipment-grid","spidertron")})
   local grid={holder="spidertron"}
   for _,eq in ipairs(sp.grid.equipment) do if eq.name=="battery-mk2-equipment" then grid.battEnergy=eq.energy grid.battMax=eq.max_energy end end
   corpus["omnibus-equipment-grid"]=grid
-  local cc=at(omni,"constant-combinator",68,1)
+  local cc=at(omni,"constant-combinator",${A("omnibus-circuit-config","constant-combinator")})
   local ccb=cc.get_control_behavior()
   local circ={}
   local ccs=ccb.sections and ccb.sections[1]
   if ccs then local f=ccs.filters and ccs.filters[1] if f then circ.constantSignal=f.value and f.value.name or nil circ.constantMin=f.min end end
-  local lamp=at(omni,"small-lamp",74,1)
+  local lamp=at(omni,"small-lamp",${A("omnibus-circuit-config","small-lamp")})
   local lb=lamp.get_control_behavior()
   if lb then circ.lampUseColors=lb.use_colors end
   corpus["omnibus-circuit-config"]=circ
-  local bm=at(omni,"assembling-machine-2",99,1)
+  local bm=at(omni,"assembling-machine-2",${A("omnibus-module-bonus-progress","assembling-machine-2")})
   local bmi=bm.get_module_inventory()
   corpus["omnibus-module-bonus-progress"]={bonusProgress=bm.bonus_progress,modules=bmi and bmi.get_item_count("productivity-module") or nil,active=bm.active}
   local fl={}
-  local tank=at(omni,"storage-tank",11,15)
+  local tank=at(omni,"storage-tank",${A("omnibus-crafting-fluids","storage-tank")})
   if tank.fluidbox[1] then fl.steam=tank.fluidbox[1].amount fl.steamTemp=tank.fluidbox[1].temperature end
-  local chem=at(omni,"chemical-plant",15,15)
+  local chem=at(omni,"chemical-plant",${A("omnibus-crafting-fluids","chemical-plant")})
   for i=1,#chem.fluidbox do local f=chem.fluidbox[i] if f then if f.name=="water" then fl.chemWater=f.amount elseif f.name=="petroleum-gas" then fl.chemGas=f.amount end end end
-  local foundry=at(omni,"foundry",19,15)
+  local foundry=at(omni,"foundry",${A("omnibus-crafting-fluids","foundry")})
   for i=1,#foundry.fluidbox do local f=foundry.fluidbox[i] if f and f.name=="molten-iron" then fl.foundryMolten=f.amount fl.foundryTemp=f.temperature end end
   corpus["omnibus-crafting-fluids"]=fl
   local egs=omni.find_entities_filtered{type="entity-ghost"}
@@ -101,11 +115,11 @@ if omni then
   local sch=omniP.get_schedule()
   local ints=sch.get_interrupts()
   corpus["omnibus-platform-schedule"]={records=#sch.get_records(),interrupts=#ints,interruptName=ints[1] and ints[1].name or nil}
-  local ih=at(omni,"bulk-inserter",98.5,13.5)
+  local ih=at(omni,"bulk-inserter",${A("inserter-held-capacity","bulk-inserter")})
   local ihh=ih.held_stack
   corpus["inserter-held-capacity"]={heldCount=ihh.valid_for_read and ihh.count or 0,heldName=ihh.valid_for_read and ihh.name or nil,quality=(ihh.valid_for_read and ihh.quality) and ihh.quality.name or nil,active=ih.active,destructible=ih.destructible,forceBulkBonus=game.forces.player.bulk_inserter_capacity_bonus}
-  local ntm=at(omni,"assembling-machine-1",13.5,27.5)
-  local nti=at(omni,"inserter",16.5,27.5)
+  local ntm=at(omni,"assembling-machine-1",${A("no-tick-sync-frozen-pair","assembling-machine-1")})
+  local nti=at(omni,"inserter",${A("no-tick-sync-frozen-pair","inserter")})
   local ntinput=ntm.get_inventory(defines.inventory.crafter_input)
   local ntrec=ntm.get_recipe()
   corpus["no-tick-sync-frozen-pair"]={progress=ntm.crafting_progress,recipe=ntrec and ntrec.name or nil,inputPlates=ntinput and ntinput.get_item_count("iron-plate") or nil,assemblerActive=ntm.active,inserterActive=nti.active,inserterHandEmpty=not nti.held_stack.valid_for_read,allIndestructible=(not ntm.destructible)and(not nti.destructible)}

@@ -249,7 +249,9 @@ async function main() {
 			schema: manifest.schema,
 			surfaceName: manifest.surfaceName,
 			labs: manifest.labs.map(({ id, title, zone }) => ({ id, title, zone })),
-			fixtures: manifest.fixtures.map(({ id, fingerprint }) => ({ id, fingerprint })),
+			// anchors ride along: gallery-runtime resolves its measure coordinates from them
+			// (single source with reload-meter.cjs — the literal duplication cost a bake cycle).
+			fixtures: manifest.fixtures.map(({ id, fingerprint, anchors }) => ({ id, fingerprint, anchors })),
 		};
 		const baseRequest = { manifest: leanManifest, beltPilot, specializedFixture };
 		assertSourceReady(call({ ...baseRequest, operation: "normalize_source" }));
