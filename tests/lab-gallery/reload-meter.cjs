@@ -168,6 +168,30 @@ if cfs then
   corpus["census-fusion-shared-plasma"]=cf
 end
 for n=1,3 do local cs=platsurf("lab-consumable-"..n) if cs then corpus["consumable-hub-"..n]={entities=#cs.find_entities_filtered{}} end end
+local function hold_pair(live_name,held_name)
+  local ls=platsurf(live_name) local hs=platsurf(held_name)
+  if ls and hs then return ls,hs end
+  return nil,nil
+end
+local hsl,hsh=hold_pair("lab-hold-spoil-live-v1","lab-hold-spoil-held-v1")
+if hsl then
+  local function rd(s) local c=s.find_entities_filtered{name="steel-chest"}[1] local st=c and c.get_inventory(defines.inventory.chest)[1] local ok,sp=pcall(function()return st.spoil_percent end) return {item=st and st.valid_for_read and st.name or nil,count=st and st.valid_for_read and st.count or nil,sp=ok and sp or nil} end
+  local lr,hr=rd(hsl),rd(hsh)
+  local function seeded(r) return r.sp~=nil and r.sp>0.5 and r.sp<1 end
+  corpus["hold-buffer-spoil"]={liveItem=lr.item,heldItem=hr.item,liveCount=lr.count,heldCount=hr.count,liveSpoilSeeded=seeded(lr),heldSpoilSeeded=seeded(hr),bothPaused=hsl.platform.paused==true and hsh.platform.paused==true}
+end
+local hdl,hdh=hold_pair("lab-hold-damage-live-v1","lab-hold-damage-held-v1")
+if hdl then
+  local function rd(s) local c=s.find_entities_filtered{name="steel-chest"}[1] local a=s.find_entities_filtered{force="neutral"}[1] return {chest=c~=nil,destr=c and c.destructible or false,full=c~=nil and c.health==c.max_health,ast=a and a.name or nil} end
+  local lr,hr=rd(hdl),rd(hdh)
+  corpus["hold-buffer-damage"]={liveChest=lr.chest,heldChest=hr.chest,liveChestDestructible=lr.destr,heldChestDestructible=hr.destr,liveChestHealthFull=lr.full,heldChestHealthFull=hr.full,liveAsteroid=lr.ast,heldAsteroid=hr.ast,bothPaused=hdl.platform.paused==true and hdh.platform.paused==true}
+end
+local hpl,hph=hold_pair("lab-hold-pod-live-v1","lab-hold-pod-held-v1")
+if hpl then
+  local function rd(s) local h=s.find_entities_filtered{name="space-platform-hub"}[1] local fe=0 if h then local i=h.get_inventory(defines.inventory.hub_main) fe=i and i.get_item_count("iron-plate") or 0 end return {pods=s.count_entities_filtered{name="cargo-pod"},fe=fe>0} end
+  local lr,hr=rd(hpl),rd(hph)
+  corpus["hold-buffer-pod"]={livePodCount=lr.pods,heldPodCount=hr.pods,liveHubIronSeeded=lr.fe,heldHubIronSeeded=hr.fe,bothPaused=hpl.platform.paused==true and hph.platform.paused==true}
+end
 local surface_names,surface_settings,total_entities,total_chunks={},{},0,0
 for _,row in pairs(game.surfaces)do
   local chunks=0 for _ in row.get_chunks()do chunks=chunks+1 end

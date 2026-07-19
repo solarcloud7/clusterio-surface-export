@@ -18,10 +18,10 @@
 			"role": "source",
 			"name": "lab-gallery-source-surface-export-2-0-77",
 			"artifact": "docker/seed-data/lab-saves/lab-gallery-source-surface-export-2.0.77.zip",
-			"sha256": "6ADD2B03BE5D8DC15E02ADA05AAD4E1DCD92F06BCBAEFDD1FD4C3B1CFCEA6FD9",
+			"sha256": "F8D9C8F768E69D29B45497364078437723C64DC7506120C06559B44D0CC3573F",
 			"expectedCensus": {
-				"totalEntities": 1538,
-				"totalGeneratedChunks": 5532,
+				"totalEntities": 1550,
+				"totalGeneratedChunks": 6468,
 				"surfaces": [
 					{
 						"name": "lab-gallery-index-v2",
@@ -47,9 +47,45 @@
 						"platform": "lab-omnibus-state-v1"
 					},
 					{
+						"name": "platform-9",
+						"entityCount": 2,
+						"generatedChunks": 156,
+						"platform": "lab-hold-spoil-live-v1"
+					},
+					{
+						"name": "platform-10",
+						"entityCount": 2,
+						"generatedChunks": 156,
+						"platform": "lab-hold-spoil-held-v1"
+					},
+					{
+						"name": "platform-12",
+						"entityCount": 3,
+						"generatedChunks": 156,
+						"platform": "lab-hold-damage-live-v1"
+					},
+					{
+						"name": "platform-13",
+						"entityCount": 3,
+						"generatedChunks": 156,
+						"platform": "lab-hold-damage-held-v1"
+					},
+					{
+						"name": "platform-14",
+						"entityCount": 1,
+						"generatedChunks": 156,
+						"platform": "lab-hold-pod-live-v1"
+					},
+					{
+						"name": "platform-15",
+						"entityCount": 1,
+						"generatedChunks": 156,
+						"platform": "lab-hold-pod-held-v1"
+					},
+					{
 						"name": "platform-2",
 						"entityCount": 1359,
-						"generatedChunks": 1603,
+						"generatedChunks": 1605,
 						"platform": "lab-transfer-fixture-v1"
 					},
 					{
@@ -1123,6 +1159,135 @@
 				"action": "Batch rung: insert 2 speed modules into beacon_modules, read machine.crafting_speed in the same execution, clear the modules, confirm the baseline returns.",
 				"expected": "Speed rises immediately upon module insertion (same execution, machine still inactive and unpowered) and returns to 0.75 when the modules clear.",
 				"forbidden": "Speed requiring elapsed ticks or power to update; a baseline that is not 0.75; modules left behind after the rung."
+			}
+		},
+		{
+			"id": "hold-buffer-spoil",
+			"revision": 1,
+			"labId": "hold-completeness-lab",
+			"name": "Hold buffer pair: spoilage",
+			"purpose": "Preserve a live/held pair of generation-free mini-platforms each holding one spoilable seeded to ~0.95 spoil - the baked baseline for the destination-hold spoilage drift law (held drift <= live-control drift over a ~5s window).",
+			"category": "physical-lab",
+			"owningRunner": "tests/hold-completeness-lab/run-hold-buffer-pairs.mjs",
+			"saveRole": "source",
+			"platformName": "lab-hold-spoil-live-v1 + lab-hold-spoil-held-v1",
+			"engineVersion": "2.0.77",
+			"mods": {
+				"base": "2.0.77",
+				"elevated-rails": "2.0.77",
+				"FluidMustFlow": "1.4.4",
+				"quality": "2.0.77",
+				"SpidertronEnhancements": "1.10.8",
+				"space-age": "2.0.77",
+				"SpidertronPatrols": "2.6.3",
+				"surfexp_gateways": "0.3.0",
+				"maraxsis": "1.31.6"
+			},
+			"note": "Script-built by seed-prep-ops.lua (build_hold_spoil): each platform carries a hub and one indestructible steel-chest with 1x of the longest-spoil-time spoilable seeded to spoil_percent 0.95 (RE-SEEDED on every bake - spoil_tick is engine-global and advances every loaded session). Platforms baked PAUSED for stability; the batch unpauses both before staging so the hold's own semantics govern the held side. spoilSeeded fingerprints are booleans (0.5 < spoil < 1) because the raw float drifts within every session.",
+			"invariant": "Both chests hold exactly one spoilable with spoil_percent in (0.5, 1); both platforms are paused; hold records are staged only at runtime via the production remote.",
+			"expectedTerminalVerdict": "held-drift-bounded-by-live",
+			"independentOracleRequired": true,
+			"fingerprint": {
+				"liveItem": "bioflux",
+				"heldItem": "bioflux",
+				"liveCount": 1,
+				"heldCount": 1,
+				"liveSpoilSeeded": true,
+				"heldSpoilSeeded": true,
+				"bothPaused": true
+			},
+			"testCard": {
+				"law": "A destination hold preserves spoilage state no worse than live drift: held spoil drift <= paired live-control drift, and nothing leaves the platform (PR0A lineage; test-contract boundaries - spoilage transfer is the WHOLE contract).",
+				"build": "lab-hold-spoil-{live,held}-v1: generation-free mini-platforms, one indestructible steel-chest each holding 1x spoilable at spoil ~0.95, baked paused.",
+				"action": "Batch: fingerprint-verify, unpause both, stage a hold on the HELD platform via the production destination_hold_json remote, wait ~5 seconds, measure spoil drift on both sides by independent physical read, discard the hold.",
+				"expected": "Held drift <= live drift; the chest and its stack survive on the held platform; discard leaves zero destination_holds; zero transient plugin state at exit.",
+				"forbidden": "Hold-side exclusive loss; a window stretched beyond ~5s or extra measurands (contract boundaries); leaked hold records; the runner repairing any fixture mid-batch."
+			}
+		},
+		{
+			"id": "hold-buffer-damage",
+			"revision": 1,
+			"labId": "hold-completeness-lab",
+			"name": "Hold buffer pair: damage",
+			"purpose": "Preserve a live/held pair whose DESTRUCTIBLE chest targets sit beside neutral asteroid specimens - the baked baseline for the zero-hold-attributable-damage law.",
+			"category": "physical-lab",
+			"owningRunner": "tests/hold-completeness-lab/run-hold-buffer-pairs.mjs",
+			"saveRole": "source",
+			"platformName": "lab-hold-damage-live-v1 + lab-hold-damage-held-v1",
+			"engineVersion": "2.0.77",
+			"mods": {
+				"base": "2.0.77",
+				"elevated-rails": "2.0.77",
+				"FluidMustFlow": "1.4.4",
+				"quality": "2.0.77",
+				"SpidertronEnhancements": "1.10.8",
+				"space-age": "2.0.77",
+				"SpidertronPatrols": "2.6.3",
+				"surfexp_gateways": "0.3.0",
+				"maraxsis": "1.31.6"
+			},
+			"note": "Script-built by seed-prep-ops.lua (build_hold_damage): a steel-chest target that STAYS DESTRUCTIBLE (owner adjudication: damage is the measurand - safe in the golden save because zips do not age and the platforms are baked paused) beside a neutral asteroid specimen at 2 tiles.",
+			"invariant": "Both chests are destructible at full health beside a valid neutral asteroid; both platforms paused.",
+			"expectedTerminalVerdict": "zero-hold-attributable-damage",
+			"independentOracleRequired": true,
+			"fingerprint": {
+				"liveChest": true,
+				"heldChest": true,
+				"liveChestDestructible": true,
+				"heldChestDestructible": true,
+				"liveChestHealthFull": true,
+				"heldChestHealthFull": true,
+				"liveAsteroid": "small-metallic-asteroid",
+				"heldAsteroid": "small-metallic-asteroid",
+				"bothPaused": true
+			},
+			"testCard": {
+				"law": "A destination hold causes zero hold-attributable platform damage: held-side target health never decreases below the live control's behavior, and the asteroid stays contained (or terminates identically to live).",
+				"build": "lab-hold-damage-{live,held}-v1: destructible steel-chest at full health + neutral asteroid specimen 2 tiles away, baked paused.",
+				"action": "Batch: fingerprint-verify, unpause both, stage a hold on the HELD platform via the production remote, wait ~5 seconds, measure target health + asteroid state on both sides, discard the hold.",
+				"expected": "Zero damage delta attributable to the hold (held target health non-decreasing); held drift <= live drift; discard leaves zero destination_holds.",
+				"forbidden": "Hold-side exclusive damage; an indestructible target (it would blind the measurand); leaked hold records; mid-batch fixture repair."
+			}
+		},
+		{
+			"id": "hold-buffer-pod",
+			"revision": 1,
+			"labId": "hold-completeness-lab",
+			"name": "Hold buffer pair: cargo pod",
+			"purpose": "Preserve a live/held pair with a FULL hub and a loaded cargo-pod - the baked baseline for the pod-absorption overflow law (staging leaves the held platform pod-free with all cargo retained on the platform).",
+			"category": "physical-lab",
+			"owningRunner": "tests/hold-completeness-lab/run-hold-buffer-pairs.mjs",
+			"saveRole": "source",
+			"platformName": "lab-hold-pod-live-v1 + lab-hold-pod-held-v1",
+			"engineVersion": "2.0.77",
+			"mods": {
+				"base": "2.0.77",
+				"elevated-rails": "2.0.77",
+				"FluidMustFlow": "1.4.4",
+				"quality": "2.0.77",
+				"SpidertronEnhancements": "1.10.8",
+				"space-age": "2.0.77",
+				"SpidertronPatrols": "2.6.3",
+				"surfexp_gateways": "0.3.0",
+				"maraxsis": "1.31.6"
+			},
+			"note": "Script-built by seed-prep-ops.lua (build_hold_pod): every hub_main slot filled with 100 iron-plate (a FULL hub forces the pod-absorption overflow branch), baked paused with NO pod. An in-flight pod is TRANSIENT state that cannot be baked - cargo_pod_state is READ-ONLY (measured v15: 'LuaEntity::cargo_pod_state is read only') and a baked pod decays to 'ascending', which the production hold force-finishes (cargo counted as sent, measured v15) - so the pod joins the runtime-staging deviation: the batch creates it loaded with 100 copper-plate in the SAME Lua execution as the stage call (the PR0A-proven recipe).",
+			"invariant": "Both platforms carry a hub with every slot iron-filled and ZERO baked pods; both platforms paused; the in-flight pod + hold record are runtime-staged only.",
+			"expectedTerminalVerdict": "staged-pod-free-cargo-retained",
+			"independentOracleRequired": true,
+			"fingerprint": {
+				"livePodCount": 0,
+				"heldPodCount": 0,
+				"liveHubIronSeeded": true,
+				"heldHubIronSeeded": true,
+				"bothPaused": true
+			},
+			"testCard": {
+				"law": "Staging a destination hold absorbs in-flight cargo pods without loss: the held platform becomes pod-free and every unit of the pod's cargo remains ON the platform (hub or ground) - nothing leaves.",
+				"build": "lab-hold-pod-{live,held}-v1: FULL iron-filled hub, baked paused, zero baked pods (an in-flight pod is unbakeable transient state - see note).",
+				"action": "Batch: fingerprint-verify, then in ONE Lua execution create a copper-loaded pod on each side and stage the hold on the HELD platform via the production remote; wait ~5 seconds; measure pod count + total platform copper (hub + ground + pod) on both sides; discard the hold.",
+				"expected": "Held platform pod-free after stage with >= 100 copper retained on-platform; live control keeps its pod; discard leaves zero destination_holds.",
+				"forbidden": "Any copper leaving the held platform; a hold leaving the pod behind un-absorbed while claiming staged; leaked hold records; mid-batch fixture repair (the runtime pod+hold staging is the ONE sanctioned exception, per the card note)."
 			}
 		},
 		{

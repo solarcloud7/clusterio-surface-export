@@ -336,6 +336,71 @@ local function measure_repin_beacon(surface, anchor)
     }
 end
 
+-- hold-buffer pairs (card 3): live/held mini-platform pairs, located by platform name. Fingerprint
+-- fields are the STABLE subset (booleans/names/integers); spoil floats are informational only
+-- (spoil_tick is engine-global and drifts every loaded session).
+local function measure_hold_spoil_pair()
+    local live = surface_for_platform("lab-hold-spoil-live-v1")
+    local held = surface_for_platform("lab-hold-spoil-held-v1")
+    assert(live and held, "hold-buffer-spoil platforms missing")
+    local function read(surface, label)
+        local chest = assert(surface.find_entities_filtered({ name = "steel-chest" })[1], label .. " chest missing")
+        local stack = chest.get_inventory(defines.inventory.chest)[1]
+        assert(stack and stack.valid_for_read, label .. " stack missing")
+        local ok, spoil = pcall(function() return stack.spoil_percent end)
+        return { item = stack.name, count = stack.count, spoil = ok and spoil or nil }
+    end
+    local lr, hr = read(live, "spoil live"), read(held, "spoil held")
+    local function seeded(row) return row.spoil ~= nil and row.spoil > 0.5 and row.spoil < 1 end
+    return {
+        liveItem = lr.item, heldItem = hr.item, liveCount = lr.count, heldCount = hr.count,
+        liveSpoilSeeded = seeded(lr), heldSpoilSeeded = seeded(hr),
+        bothPaused = live.platform.paused == true and held.platform.paused == true,
+    }
+end
+
+local function measure_hold_damage_pair()
+    local live = surface_for_platform("lab-hold-damage-live-v1")
+    local held = surface_for_platform("lab-hold-damage-held-v1")
+    assert(live and held, "hold-buffer-damage platforms missing")
+    local function read(surface, label)
+        local chest = assert(surface.find_entities_filtered({ name = "steel-chest" })[1], label .. " chest missing")
+        local asteroid = surface.find_entities_filtered({ force = "neutral" })[1]
+        return { chest = true, destructible = chest.destructible,
+            healthFull = chest.health == chest.max_health,
+            asteroid = asteroid and asteroid.name or nil }
+    end
+    local lr, hr = read(live, "damage live"), read(held, "damage held")
+    return {
+        liveChest = lr.chest, heldChest = hr.chest,
+        liveChestDestructible = lr.destructible, heldChestDestructible = hr.destructible,
+        liveChestHealthFull = lr.healthFull, heldChestHealthFull = hr.healthFull,
+        liveAsteroid = lr.asteroid, heldAsteroid = hr.asteroid,
+        bothPaused = live.platform.paused == true and held.platform.paused == true,
+    }
+end
+
+local function measure_hold_pod_pair()
+    local live = surface_for_platform("lab-hold-pod-live-v1")
+    local held = surface_for_platform("lab-hold-pod-held-v1")
+    assert(live and held, "hold-buffer-pod platforms missing")
+    local function read(surface)
+        local hub = surface.find_entities_filtered({ name = "space-platform-hub" })[1]
+        local iron = 0
+        if hub then
+            local inv = hub.get_inventory(defines.inventory.hub_main)
+            iron = inv and inv.get_item_count("iron-plate") or 0
+        end
+        return { pods = surface.count_entities_filtered({ name = "cargo-pod" }), ironSeeded = iron > 0 }
+    end
+    local lr, hr = read(live), read(held)
+    return {
+        livePodCount = lr.pods, heldPodCount = hr.pods,
+        liveHubIronSeeded = lr.ironSeeded, heldHubIronSeeded = hr.ironSeeded,
+        bothPaused = live.platform.paused == true and held.platform.paused == true,
+    }
+end
+
 -- Measure the full baked corpus keyed by manifest fixture id. Locators are code; expected values
 -- come from the manifest fingerprints (single source of truth). Each measurement is pcall-guarded
 -- and SURFACES its error (never swallows) so a mid-deletion destination poll cannot abort inspect
@@ -410,6 +475,19 @@ local function measure_corpus(manifest)
     for n = 1, 3 do
         local consumable = surface_for_platform("lab-consumable-" .. n)
         if consumable then safe("consumable-hub-" .. n, function() return { entities = #consumable.find_entities_filtered({}) } end) end
+    end
+    -- Platform-conditional like the other off-omnibus fixtures: the DESTINATION save has no
+    -- platforms, and an unconditional measure records an error row that blocks the dest settle
+    -- gate ("still measures corpus fixtures" — v15 bake). The SOURCE corpus gate still fails
+    -- loud on absence via the fixturesMeasured/expectedFixtures count.
+    if surface_for_platform("lab-hold-spoil-live-v1") then
+        safe("hold-buffer-spoil", function() return measure_hold_spoil_pair() end)
+    end
+    if surface_for_platform("lab-hold-damage-live-v1") then
+        safe("hold-buffer-damage", function() return measure_hold_damage_pair() end)
+    end
+    if surface_for_platform("lab-hold-pod-live-v1") then
+        safe("hold-buffer-pod", function() return measure_hold_pod_pair() end)
     end
     return out
 end

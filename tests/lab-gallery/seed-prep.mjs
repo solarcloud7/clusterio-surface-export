@@ -195,6 +195,32 @@ async function main() {
 		// seed-prep-ops.lua; clear_legacy_strip refuses to run over an unmigrated strip.
 		const migrations = { removedStage: "zones migrated + relocated; see RELOCATIONS" };
 
+		// HOLD-BUFFER PAIRS (card 3, owner-adjudicated 2026-07-18): three live/held pairs on six
+		// generation-free mini-platforms, baked PAUSED. Physical fixtures are baked; hold records
+		// stay runtime staging via the production remote (the accepted deviation). Build ops are
+		// idempotent and RE-SEED drifting state (spoil 0.95) on every bake.
+		const HOLD_PAIRS = [
+			{ id: "hold-buffer-spoil", build: "build_hold_spoil", measure: "measure_hold_spoil" },
+			{ id: "hold-buffer-damage", build: "build_hold_damage", measure: "measure_hold_damage" },
+			{ id: "hold-buffer-pod", build: "build_hold_pod", measure: "measure_hold_pod" },
+		];
+		const holdPairs = {};
+		for (const pair of HOLD_PAIRS) {
+			const built = runtimeCall(handle, PORTS, { operation: pair.build });
+			if (built.success === false) throw new Error(`${pair.id} build failed: ${built.error}`);
+			const measured = runtimeCall(handle, PORTS, { operation: pair.measure });
+			if (measured.success === false) throw new Error(`${pair.id} measure failed: ${measured.error}`);
+			holdPairs[pair.id] = measured;
+			console.error(`[seed-prep] hold pair ${pair.id}: built=${JSON.stringify(built)} measured=${JSON.stringify(measured)}`);
+			const fixture = manifest.fixtures.find(entry => entry.id === pair.id);
+			if (!fixture) throw new Error(`manifest is missing fixture ${pair.id}`);
+			for (const [key, expected] of Object.entries(fixture.fingerprint)) {
+				if (measured[key] !== expected) {
+					throw new Error(`${pair.id}.${key} measured ${JSON.stringify(measured[key])}, expected ${JSON.stringify(expected)}`);
+				}
+			}
+		}
+
 		// Walkable grid (owner request 2026-07-19): join the pads to the hub with foundation so a
 		// character can physically walk the whole test floor. Idempotent (fills empty-space only).
 		const walkways = runtimeCall(handle, PORTS, { operation: "fill_walkways" });
@@ -206,7 +232,7 @@ async function main() {
 		await waitForStableSave(options.container, remoteSave);
 		docker(["cp", `${options.container}:${remoteSave}`, options.output], { timeout: 180_000 });
 
-		console.log(JSON.stringify({ status: "PASS", candidate: options.output, fingerprint: censusFingerprint, portedFixtures, migrations }, null, 2));
+		console.log(JSON.stringify({ status: "PASS", candidate: options.output, fingerprint: censusFingerprint, portedFixtures, migrations, holdPairs }, null, 2));
 	} catch (error) {
 		try { console.error(`isolated Factorio tail:\n${tailFactorioLog(handle)}`); } catch { /* launch may have died early */ }
 		throw error;

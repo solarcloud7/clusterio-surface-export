@@ -34,6 +34,107 @@ local function find_platform(name)
     return nil
 end
 
+-- === hold-buffer-pairs (card 3, owner-adjudicated 2026-07-18) ====================================
+-- Three live/held pairs on six single-purpose GENERATION-FREE mini-platforms (memory:
+-- platform-global-electric-network — buffer-hold fixtures need generation-free platforms). The
+-- PHYSICAL fixtures are baked; hold records are plugin storage and stay a runtime staging call of
+-- the production destination_hold_json remote (the accepted standing deviation). Platforms are
+-- baked PAUSED for fixture stability (asteroids drift and spoilage advances on a running world);
+-- the batch runner unpauses both sides of a pair before staging so the hold's own semantics — not
+-- the bake's pause — govern the held platform.
+local HOLD_PAIRS = {
+    spoil = { live = "lab-hold-spoil-live-v1", held = "lab-hold-spoil-held-v1" },
+    damage = { live = "lab-hold-damage-live-v1", held = "lab-hold-damage-held-v1" },
+    pod = { live = "lab-hold-pod-live-v1", held = "lab-hold-pod-held-v1" },
+}
+local HOLD_CHEST_POS = { x = 2.5, y = -7.5 }
+local HOLD_ASTEROID_POS = { x = 0.5, y = -7.5 }
+
+local function hold_make_platform(name)
+    local existing = find_platform(name)
+    if existing then return existing, existing.surface, true end
+    local platform = game.forces["player"].create_space_platform({
+        name = name, planet = "nauvis", starter_pack = "space-platform-starter-pack",
+    })
+    if not platform then error("create_space_platform returned nil for " .. name) end
+    platform.apply_starter_pack()
+    local surface = platform.surface
+    if not surface then error(name .. " has no surface after starter pack") end
+    local tiles = {}
+    for x = -6, 6 do
+        for y = -12, 2 do
+            local tile = surface.get_tile(x, y)
+            if tile and tile.name ~= "space-platform-foundation" then
+                tiles[#tiles + 1] = { name = "space-platform-foundation", position = { x = x, y = y } }
+            end
+        end
+    end
+    if #tiles > 0 then surface.set_tiles(tiles) end
+    return platform, surface, false
+end
+
+local function hold_spoilable_item()
+    -- Prefer the LONGEST spoil time so the ~0.95 seed survives bake/verify session runtime
+    -- (spoil_tick is engine-global; each loaded session advances it — the build op re-seeds on
+    -- every bake so drift never accumulates across bakes).
+    local candidates = { "bioflux", "agricultural-science-pack", "pentapod-egg", "yumako", "jellynut", "nutrients" }
+    local best, best_ticks = nil, -1
+    for _, name in ipairs(candidates) do
+        local proto = prototypes.item[name]
+        if proto then
+            local ok, ticks = pcall(function() return proto.get_spoil_ticks() end)
+            if not ok then ticks = 0 end
+            if ticks and ticks > best_ticks then best, best_ticks = name, ticks end
+        end
+    end
+    return best
+end
+
+local function hold_read_spoil_chest(surface)
+    local chest = surface.find_entities_filtered({ name = "steel-chest" })[1]
+    if not chest then return nil end
+    local inv = chest.get_inventory(defines.inventory.chest)
+    local stack = inv and inv[1] or nil
+    local row = { chest = true, destructible = chest.destructible }
+    if stack and stack.valid_for_read then
+        row.item = stack.name
+        row.count = stack.count
+        local ok, spoil = pcall(function() return stack.spoil_percent end)
+        row.spoilPercent = ok and spoil or nil
+    end
+    return row
+end
+
+local function hold_read_damage(surface)
+    local chest = surface.find_entities_filtered({ name = "steel-chest" })[1]
+    local asteroid = surface.find_entities_filtered({ force = "neutral" })[1]
+    return {
+        chest = chest ~= nil,
+        chestDestructible = chest and chest.destructible or false,
+        chestHealthFull = chest ~= nil and chest.health == chest.max_health,
+        asteroid = asteroid ~= nil and asteroid.name or nil,
+        asteroidHealth = asteroid and asteroid.health or nil,
+    }
+end
+
+local function hold_read_pod(surface)
+    local pod = surface.find_entities_filtered({ name = "cargo-pod" })[1]
+    local hub = surface.find_entities_filtered({ name = "space-platform-hub" })[1]
+    local pod_copper = 0
+    if pod then
+        local inv = pod.get_inventory(defines.inventory.cargo_unit)
+        pod_copper = inv and inv.get_item_count("copper-plate") or 0
+    end
+    local hub_iron = 0
+    if hub then
+        local inv = hub.get_inventory(defines.inventory.hub_main)
+        hub_iron = inv and inv.get_item_count("iron-plate") or 0
+    end
+    return { podCount = surface.count_entities_filtered({ name = "cargo-pod" }),
+        podCopper = pod_copper, hubIronSeeded = hub_iron > 0,
+        podState = pod and pod.cargo_pod_state or nil }
+end
+
 local function fusion_entities(surface)
     local reactor = surface.find_entities_filtered({ name = "fusion-reactor" })[1]
     local generators = surface.find_entities_filtered({ name = "fusion-generator" })
@@ -351,6 +452,130 @@ elseif request.operation == "stamp_test_cell" then
         success = true, origin = { ox, oy }, name = request.name,
         wrote = #tiles, already = already,
         panel = desc ~= nil, combinator = comb ~= nil, status = status ~= nil,
+    }
+
+elseif request.operation == "build_hold_spoil" then
+    local item = hold_spoilable_item()
+    if not item then return { success = false, error = "no spoilable item candidate exists in this modset" } end
+    for _, name in pairs(HOLD_PAIRS.spoil) do
+        local platform, surface = hold_make_platform(name)
+        local chest = surface.find_entities_filtered({ name = "steel-chest" })[1]
+        if not chest then
+            chest = surface.create_entity({ name = "steel-chest", position = HOLD_CHEST_POS, force = "player" })
+            if not chest then return { success = false, error = "steel-chest placement failed on " .. name } end
+        end
+        chest.destructible = false
+        local inv = chest.get_inventory(defines.inventory.chest)
+        -- ALWAYS re-seed (spoil_tick is engine-global and advances every loaded session; re-seeding
+        -- on every bake keeps the committed baseline at 0.95 instead of accumulating drift to 1.0).
+        inv[1].set_stack({ name = item, count = 1 })
+        inv[1].spoil_percent = 0.95
+        platform.paused = true
+    end
+    return { success = true, item = item }
+
+elseif request.operation == "measure_hold_spoil" then
+    local live = find_platform(HOLD_PAIRS.spoil.live)
+    local held = find_platform(HOLD_PAIRS.spoil.held)
+    if not (live and held) then return { success = false, error = "spoil pair platforms missing" } end
+    local lr = hold_read_spoil_chest(live.surface)
+    local hr = hold_read_spoil_chest(held.surface)
+    if not (lr and hr) then return { success = false, error = "spoil pair chests missing" } end
+    local function seeded(row) return row.spoilPercent ~= nil and row.spoilPercent > 0.5 and row.spoilPercent < 1 end
+    return {
+        success = true,
+        liveItem = lr.item, heldItem = hr.item,
+        liveCount = lr.count, heldCount = hr.count,
+        liveSpoilSeeded = seeded(lr), heldSpoilSeeded = seeded(hr),
+        liveSpoilPercent = lr.spoilPercent, heldSpoilPercent = hr.spoilPercent,
+        bothPaused = live.paused == true and held.paused == true,
+    }
+
+elseif request.operation == "build_hold_damage" then
+    local asteroid_names = { "small-metallic-asteroid", "medium-metallic-asteroid", "small-carbonic-asteroid", "small-oxide-asteroid" }
+    local chosen
+    for _, name in pairs(HOLD_PAIRS.damage) do
+        local platform, surface = hold_make_platform(name)
+        local chest = surface.find_entities_filtered({ name = "steel-chest" })[1]
+        if not chest then
+            chest = surface.create_entity({ name = "steel-chest", position = HOLD_CHEST_POS, force = "player" })
+            if not chest then return { success = false, error = "steel-chest placement failed on " .. name } end
+        end
+        -- DESTRUCTIBLE by adjudication: damage is the measurand; safe in the golden save because
+        -- zips don't age (the platform is baked paused, so nothing moves until a batch unpauses it).
+        chest.destructible = true
+        local asteroid = surface.find_entities_filtered({ force = "neutral" })[1]
+        if not asteroid then
+            local errors = {}
+            for _, candidate in ipairs(asteroid_names) do
+                local ok, created = pcall(function()
+                    return surface.create_entity({ name = candidate, position = HOLD_ASTEROID_POS, force = "neutral" })
+                end)
+                if ok and created then asteroid = created break end
+                errors[#errors + 1] = candidate .. ": " .. tostring(created)
+            end
+            if not asteroid then
+                return { success = false, error = "no asteroid candidate constructible: " .. table.concat(errors, "; ") }
+            end
+        end
+        -- FROZEN specimen: an active asteroid vanished from the paused platform between build and
+        -- measure (v15 run 1); deactivating it removes the motion/despawn path while keeping it a
+        -- real destructible damage source the runner can re-activate for the window.
+        asteroid.active = false
+        chosen = asteroid.name
+        platform.paused = true
+    end
+    return { success = true, asteroid = chosen, asteroidActive = false }
+
+elseif request.operation == "measure_hold_damage" then
+    local live = find_platform(HOLD_PAIRS.damage.live)
+    local held = find_platform(HOLD_PAIRS.damage.held)
+    if not (live and held) then return { success = false, error = "damage pair platforms missing" } end
+    local lr = hold_read_damage(live.surface)
+    local hr = hold_read_damage(held.surface)
+    return {
+        success = true,
+        liveChest = lr.chest, heldChest = hr.chest,
+        liveChestDestructible = lr.chestDestructible, heldChestDestructible = hr.chestDestructible,
+        liveChestHealthFull = lr.chestHealthFull, heldChestHealthFull = hr.chestHealthFull,
+        liveAsteroid = lr.asteroid, heldAsteroid = hr.asteroid,
+        bothPaused = live.paused == true and held.paused == true,
+    }
+
+elseif request.operation == "build_hold_pod" then
+    for _, name in pairs(HOLD_PAIRS.pod) do
+        local platform, surface = hold_make_platform(name)
+        local hub = surface.find_entities_filtered({ name = "space-platform-hub" })[1]
+        if not hub then return { success = false, error = "hub missing on " .. name } end
+        local hub_inv = hub.get_inventory(defines.inventory.hub_main)
+        if not hub_inv then return { success = false, error = "hub_main inventory missing on " .. name } end
+        -- FULL hub (the pod-absorption overflow branch is the measurand: with no hub room the
+        -- staged pod's cargo must survive somewhere else on the platform). set_stack is idempotent.
+        for i = 1, #hub_inv do hub_inv[i].set_stack({ name = "iron-plate", count = 100 }) end
+        -- NO baked pod: an in-flight cargo pod is TRANSIENT state that cannot be baked —
+        -- cargo_pod_state is READ-ONLY ("LuaEntity::cargo_pod_state is read only", measured v15)
+        -- and a baked pod decays to 'ascending' (measured v15: the production hold then
+        -- force-finishes it, cargo counted as sent). The pod joins the runtime-staging deviation:
+        -- the batch creates it same-execution-with-stage (the PR0A-proven recipe). Any stray pod
+        -- from an earlier bake is removed here.
+        for _, stray in ipairs(surface.find_entities_filtered({ name = "cargo-pod" })) do
+            stray.destroy()
+        end
+        platform.paused = true
+    end
+    return { success = true }
+
+elseif request.operation == "measure_hold_pod" then
+    local live = find_platform(HOLD_PAIRS.pod.live)
+    local held = find_platform(HOLD_PAIRS.pod.held)
+    if not (live and held) then return { success = false, error = "pod pair platforms missing" } end
+    local lr = hold_read_pod(live.surface)
+    local hr = hold_read_pod(held.surface)
+    return {
+        success = true,
+        livePodCount = lr.podCount, heldPodCount = hr.podCount,
+        liveHubIronSeeded = lr.hubIronSeeded, heldHubIronSeeded = hr.hubIronSeeded,
+        bothPaused = live.paused == true and held.paused == true,
     }
 
 elseif request.operation == "build_repin_beacon" then
