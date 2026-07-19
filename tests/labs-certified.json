@@ -40,10 +40,10 @@
     },
     {
       "lab": "hold-completeness-lab",
-      "runner": "tests/hold-completeness-lab (run-pr0a.mjs)",
-      "rungs": "PR0A",
-      "conclusion": "destination-hold stage/read completeness measured; isolated machine buffers survive the hold",
-      "commits": ["a007ecb"]
+      "runner": "tests/hold-completeness-lab (run-pr0a.mjs, run-hold-buffer-pairs.mjs)",
+      "rungs": "PR0A, hold-buffer-pairs",
+      "conclusion": "destination-hold stage/read completeness measured; isolated machine buffers survive the hold. hold-buffer-pairs (baked pairs batch, two consecutive greens 2026-07-19): across a ~5s owner-scoped window, held spoilage drift == paired live drift, zero hold-attributable damage, staged platforms go pod-free with all cargo retained (100/100 copper at stage and after); holds discard to zero records. Evidence-forced deviations documented in the manifest (asteroids baked frozen — an active one despawned from the paused golden platform; the in-flight pod is runtime-created — cargo_pod_state is read-only and a baked pod decays to ascending/force-finishes)",
+      "commits": ["a007ecb", "b50831f"]
     },
     {
       "lab": "census-lab",
