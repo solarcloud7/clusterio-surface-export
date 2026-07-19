@@ -260,6 +260,7 @@ async function main() {
 		assertSourceReady(call({ ...baseRequest, operation: "normalize_source" }));
 		const sourceReading = assertSourceReady(call({ ...baseRequest, operation: "inspect" }));
 		assertCorpusRoster(sourceReading, manifest);
+		console.error(`[build-save] measured source census: ${JSON.stringify(sourceReading.census)}`);
 		assertCensusMatches(sourceReading, manifest.saves.source.expectedCensus, "source");
 		call({ operation: "save", saveName: manifest.saves.source.name });
 		const sourceRemote = `${REMOTE_ROOT}/saves/${manifest.saves.source.name}.zip`;
@@ -270,6 +271,7 @@ async function main() {
 
 		call({ ...baseRequest, operation: "prepare_destination" });
 		const destinationReading = await waitForDestination(call, baseRequest);
+		console.error(`[build-save] measured destination census: ${JSON.stringify(destinationReading.census)}`);
 		assertCensusMatches(destinationReading, manifest.saves.destination.expectedCensus, "destination");
 		call({ operation: "save", saveName: manifest.saves.destination.name });
 		const destinationRemote = `${REMOTE_ROOT}/saves/${manifest.saves.destination.name}.zip`;

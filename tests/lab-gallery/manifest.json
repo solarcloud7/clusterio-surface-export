@@ -18,10 +18,10 @@
 			"role": "source",
 			"name": "lab-gallery-source-surface-export-2-0-77",
 			"artifact": "docker/seed-data/lab-saves/lab-gallery-source-surface-export-2.0.77.zip",
-			"sha256": "F8D9C8F768E69D29B45497364078437723C64DC7506120C06559B44D0CC3573F",
+			"sha256": "C5F50C82008C07581239CAEC9995EB5209BC52390AC2759D6A9B1D207B048767",
 			"expectedCensus": {
-				"totalEntities": 1550,
-				"totalGeneratedChunks": 6468,
+				"totalEntities": 1539,
+				"totalGeneratedChunks": 6312,
 				"surfaces": [
 					{
 						"name": "lab-gallery-index-v2",
@@ -30,7 +30,7 @@
 					},
 					{
 						"name": "nauvis",
-						"entityCount": 32,
+						"entityCount": 0,
 						"generatedChunks": 389,
 						"planet": "nauvis"
 					},
@@ -42,7 +42,7 @@
 					},
 					{
 						"name": "platform-11",
-						"entityCount": 128,
+						"entityCount": 158,
 						"generatedChunks": 375,
 						"platform": "lab-omnibus-state-v1"
 					},
@@ -107,12 +107,6 @@
 						"platform": "lab-consumable-3"
 					},
 					{
-						"name": "platform-6",
-						"entityCount": 9,
-						"generatedChunks": 156,
-						"platform": "lab-belt-corner-v1"
-					},
-					{
 						"name": "platform-7",
 						"entityCount": 2,
 						"generatedChunks": 521,
@@ -142,7 +136,7 @@
 			"role": "destination",
 			"name": "lab-gallery-destination-surface-export-2-0-77",
 			"artifact": "docker/seed-data/lab-saves/lab-gallery-destination-surface-export-2.0.77.zip",
-			"sha256": "13A67B4A4C3C81BD2CEBB1DB9CBF3D5BD79A92FDB311A5E1CCCA9A51164E3893",
+			"sha256": "76C1A1B26B4EB1D2B6C6C6EEED0498A8AC949450BE2CD859D89C31EFB49E1FA1",
 			"expectedCensus": {
 				"totalEntities": 0,
 				"totalGeneratedChunks": 479,
@@ -319,7 +313,7 @@
 			"revision": 1,
 			"labId": "belt-lab",
 			"name": "5x5 unstacked belt loop",
-			"purpose": "Preserve 125 one-item iron-plate stacks split 67/58 across the two physical sides.",
+			"purpose": "Preserve 123 one-item iron-plate stacks split 67/56 across the two physical sides of a jammed loop.",
 			"category": "physical-lab",
 			"owningRunner": "tests/lab-gallery/seed-prep-ops.lua",
 			"saveRole": "source",
@@ -339,20 +333,27 @@
 				"surfexp_gateways": "0.3.0",
 				"maraxsis": "1.31.6"
 			},
-			"invariant": "The source loop contains exactly 125 physical one-item iron-plate stacks, 67 on side one and 58 on side two.",
+			"invariant": "The source loop contains exactly 123 physical one-item iron-plate stacks, 67 on side one and 56 on side two.",
 			"expectedTerminalVerdict": "observation-only",
 			"independentOracleRequired": true,
 			"fingerprint": {
 				"beltName": "turbo-transport-belt",
 				"beltCount": 16,
 				"itemName": "iron-plate",
-				"quantity": 125,
-				"physicalStacks": 125,
+				"quantity": 123,
+				"physicalStacks": 123,
 				"maximumStack": 1,
 				"lineQuantities": [
 					67,
-					58
+					56
 				]
+			},
+			"testCard": {
+				"law": "A jammed 5x5 turbo loop preserves its one-item stacks exactly: the physical stack count and per-side split survive transfer, and every stack stays unstacked (maximumStack 1).",
+				"build": "belt-5x5-125-unstacked pad at (92,22): a 16-belt clockwise turbo loop fed to 125 one-item iron-plate stacks; the corners jam the loop so items stay put.",
+				"action": "/test-run: reset the compare area, selection-lab copy of the pad build area, paste at +14,0, physical audit of both halves.",
+				"expected": "Audit reports equal belts and items; the pasted loop carries the same total stack count and per-side split, all one-item stacks.",
+				"forbidden": "A drifted split; merged stacks (maximumStack > 1); any item lost."
 			}
 		},
 		{
@@ -968,18 +969,24 @@
 				"surfexp_gateways": "0.3.0",
 				"maraxsis": "1.31.6"
 			},
-			"invariant": "Eight turbo-transport-belts carry 65 iron-plate total; the corner belt at (16.5,0.5) has belt_shape 'left' with 2 items over-packed on its 0.4140625-long inside lane.",
+			"invariant": "Eight turbo-transport-belts carry 65 iron-plate total; the corner belt at (72.5,28.5) has belt_shape 'left' with 2 items over-packed on its 0.4140625-long inside lane.",
 			"expectedTerminalVerdict": "observation-only",
 			"independentOracleRequired": true,
 			"fingerprint": {
 				"beltCount": 8,
 				"totalIron": 65,
 				"cornerShape": "left",
-				"cornerX": 16.5,
-				"cornerY": 0.5,
+				"cornerX": 72.5,
+				"cornerY": 28.5,
 				"insideItems": 2,
-				"insideLength": 0.4140625,
-				"entities": 9
+				"insideLength": 0.4140625
+			},
+			"testCard": {
+				"law": "An over-packed turbo-belt corner preserves its compressed inside lane exactly: the corner keeps belt_shape 'left' with its inside lane packed past natural spacing (n*0.24 > line_length).",
+				"build": "belt-corner-recovery pad at (64,22): 6 turbo belts flow east into a north corner + a north dead-end; a ticked feed loop compresses items through the corner until two dry rounds (nothing moving).",
+				"action": "/test-run: reset the compare area, selection-lab copy of the pad build area, paste at +14,0, physical audit of both halves.",
+				"expected": "Audit reports equal belts and items; the pasted corner keeps its belt_shape, inside-lane item count, and inside-lane length.",
+				"forbidden": "A relaxed corner (items advanced or lost); a dropped over-pack; belt_shape reset to straight."
 			},
 			"layoutBlueprint": "0eNqlmNFqgzAYhd/lv44lSdW2vsoow7bpCNgomo6V4rtP27LBNsay70ZQc45efBwO5yq75uy63oco1VX8vg2DVE9XGfxLqJv5WahPTiqJ537XZrGvw9C1fcx2rokyKvHh4N6kMuNWiQvRR+/uDreby3M4n3aunw6oX52UdO0widswf3M2LBeFkotUmV4U46i+GdpUQ/MwnP2UHHzv9vfX+Q/uy1R3neKep7ovU9yLVHeb4l6muhcp7qtU9zzFff1fCG8MToRH3zzw/nJyfWd1OX58Yejqvcu6po7Htj9lx/YcDvVNMf/YF/mGyY2GegP1FuqXUJ9DfQH1JdSvoB7i95BbRq+F9FpIr4X0WkivhfRaSK+F9FpIr4X0WkavYfQaSK+B9BpIr4H0GkivgfQaSK+B9BpIr0H0agSvZuxqhq5m5GoGrmbcaoatZtRqBq1mzGqELMtbGLcwbWHYwqyFUQuTFgYtzFkYsyxlWcGF/RbWW9huYbmF3RZWW9hsYbGFvZbVWrYowEEB7glwToBrAhwT4JYApwS4JMAh4W/yrRIf3Wk69DkiK3l1/XAzLEq7yTebYp2Xq+kyju/Dto5Q"
 		},

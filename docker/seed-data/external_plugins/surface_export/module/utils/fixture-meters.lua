@@ -236,7 +236,10 @@ local function measure_belt_corner(surface, anchor)
             for _, row in ipairs(b.get_transport_line(line_index).get_detailed_contents()) do total = total + row.stack.count end
         end
     end
-    local corner = at(surface, "turbo-transport-belt", cx, cy)
+    -- Exact-position lookup (NOT the 0.6-box `at`): on the shared grid the corner sits one tile from
+    -- its dead-end, whose collision box overlaps a 0.6 box and would be grabbed instead (measured: the
+    -- box read the straight dead-end, cornerShape=straight). find_entity keys on the exact belt centre.
+    local corner = surface.find_entity("turbo-transport-belt", { cx, cy })
     local inside = corner and corner.get_transport_line(1) or nil
     local inside_count = 0
     if inside then for _, row in ipairs(inside.get_detailed_contents()) do inside_count = inside_count + row.stack.count end end

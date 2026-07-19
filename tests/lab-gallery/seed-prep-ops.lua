@@ -1091,6 +1091,13 @@ elseif request.operation == "build_belt_corner_pad" then
     end
     local s = platform.surface
     local force = game.forces["player"]
+    -- Belts must SIMULATE to compress at the corner; both the platform pause AND the game tick-pause
+    -- halt belt travel. Clear both (safe: every other omnibus fixture is per-entity active=false, so it
+    -- does not drift; the game is unpaused for the belt feed and re-checked by the reload gate anyway).
+    local was_paused = platform.paused
+    local tick_paused_before = game.tick_paused
+    platform.paused = false
+    game.tick_paused = false
     local cp = assert(request.anchors and request.anchors["turbo-transport-belt"],
         "build_belt_corner_pad requires request.anchors[turbo-transport-belt]")
     local cx, cy = cp.x, cp.y
@@ -1111,7 +1118,8 @@ elseif request.operation == "build_belt_corner_pad" then
         e.destructible = false
         built = built + 1
     end
-    return { success = true, built = built, corner = { cx, cy }, entry = { x = cx - 6, y = cy } }
+    return { success = true, built = built, corner = { cx, cy }, entry = { x = cx - 6, y = cy },
+        paused_before = was_paused, tick_paused_before = tick_paused_before }
 
 elseif request.operation == "feed_belt_corner" then
     local platform = find_platform(OMNIBUS_PLATFORM)
@@ -1130,7 +1138,20 @@ elseif request.operation == "feed_belt_corner" then
             if line.insert_at(0.125 + slot * 0.25, { name = "iron-plate", count = 1 }, 1) then added = added + 1 end
         end
     end
-    return { success = true, added = added }
+    -- Diagnostic: total items on the corner structure and the corner's inside-lane count, so a stalled
+    -- feed (belts frozen vs items flowing off) is visible per round.
+    local total, inside = 0, 0
+    local cp = request.corner
+    if cp then
+        for _, b in ipairs(s.find_entities_filtered({ type = "transport-belt", area = { { cp.x - 8, cp.y - 4 }, { cp.x + 4, cp.y + 4 } } })) do
+            for li = 1, b.get_max_transport_line_index() do
+                total = total + #b.get_transport_line(li).get_detailed_contents()
+            end
+        end
+        local corner = s.find_entity("turbo-transport-belt", { cp.x, cp.y })
+        if corner then inside = #corner.get_transport_line(1).get_detailed_contents() end
+    end
+    return { success = true, added = added, total = total, inside = inside }
 
 elseif request.operation == "measure_belt_corner_pad" then
     local platform = find_platform(OMNIBUS_PLATFORM)
@@ -1164,6 +1185,9 @@ elseif request.operation == "build_belt_loop_pad" then
     end
     local s = platform.surface
     local force = game.forces["player"]
+    -- Belts must SIMULATE to circulate and jam the loop; platform pause halts belt travel. Unpause the
+    -- omnibus (safe: every other omnibus fixture is per-entity active=false, so it does not drift).
+    platform.paused = false
     local belts = assert(request.belts, "build_belt_loop_pad requires request.belts descriptors")
     local ap = assert(request.anchors and request.anchors["turbo-transport-belt"],
         "build_belt_loop_pad requires request.anchors[turbo-transport-belt]")
@@ -1249,6 +1273,15 @@ elseif request.operation == "clear_nauvis_belt_clutter" then
         if e.valid then e.destroy() removed = removed + 1 end
     end
     return { success = true, removed = removed }
+
+elseif request.operation == "set_omnibus_paused" then
+    -- Restore the omnibus platform's original pause state after the belt feed (which had to unpause it
+    -- to simulate the belts). The belts are jammed (stationary) by now, so re-pausing freezes them in
+    -- place; every other omnibus fixture is per-entity active=false.
+    local platform = find_platform(OMNIBUS_PLATFORM)
+    if not platform then return { success = false, error = OMNIBUS_PLATFORM .. " not found for set_omnibus_paused" } end
+    platform.paused = request.paused == true
+    return { success = true, paused = platform.paused }
 
 end
 

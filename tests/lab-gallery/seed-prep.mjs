@@ -248,24 +248,28 @@ async function main() {
 			const id = "belt-corner-recovery";
 			const origin = originOf(id);
 			const anchors = anchorsFor(id);
+			const anchor = anchors["turbo-transport-belt"];
 			runtimeCall(handle, PORTS, { operation: "stamp_test_cell", origin_x: origin.x, origin_y: origin.y,
 				name: id, rows: TEMPLATE_ROWS, legend: LEGEND, card: cardFor(id) });
 			const built = runtimeCall(handle, PORTS, { operation: "build_belt_corner_pad", anchors });
 			if (built.success === false) throw new Error(`belt corner build failed: ${built.error}`);
+			beltPads.omnibusPausedBefore = built.paused_before;
 			let fed = 0, stable = 0, rounds = 0;
-			while (stable < 2 && rounds < 40) {
+			while (stable < 3 && rounds < 60) {
 				rounds += 1;
-				const feed = runtimeCall(handle, PORTS, { operation: "feed_belt_corner", entry: built.entry });
+				const feed = runtimeCall(handle, PORTS, { operation: "feed_belt_corner", entry: built.entry, corner: anchor });
 				if (feed.success === false) throw new Error(`belt corner feed failed: ${feed.error}`);
 				fed += feed.added;
+				if (rounds % 5 === 0 || feed.added === 0) console.error(`[seed-prep] corner feed round ${rounds}: added=${feed.added} total=${feed.total} inside=${feed.inside}`);
+				// Stop once the inside lane is over-packed AND settled, or after enough dry rounds.
 				if (feed.added === 0) stable += 1; else stable = 0;
 				await sleep(600);
 			}
 			const measured = runtimeCall(handle, PORTS, { operation: "measure_belt_corner_pad", anchors });
 			if (measured.success === false) throw new Error(`belt corner measure failed: ${measured.error}`);
+			console.error(`[seed-prep] belt corner pad: pausedBefore=${built.paused_before} fed=${fed} rounds=${rounds} measured=${JSON.stringify(measured)}`);
 			if (!(measured.overpacked >= 1)) throw new Error(`belt corner not over-packed: ${JSON.stringify(measured)}`);
 			beltPads[id] = measured;
-			console.error(`[seed-prep] belt corner pad: fed=${fed} rounds=${rounds} measured=${JSON.stringify(measured)}`);
 		}
 		{
 			// Loop: 16-belt 5x5 from the shared fixture-layout geometry; feed toward 125 one-item stacks
@@ -309,6 +313,10 @@ async function main() {
 		await sleep(2000); // let destroy(0) settle before the census-bearing save
 		const nauvisClear = runtimeCall(handle, PORTS, { operation: "clear_nauvis_belt_clutter" });
 		console.error(`[seed-prep] clear nauvis belt clutter: ${JSON.stringify(nauvisClear)}`);
+		// Restore the omnibus's original pause state (the belt feed had to unpause it). Jammed belts are
+		// stationary, so this freezes them exactly where they settled.
+		const restorePause = runtimeCall(handle, PORTS, { operation: "set_omnibus_paused", paused: beltPads.omnibusPausedBefore === true });
+		console.error(`[seed-prep] restore omnibus pause (${beltPads.omnibusPausedBefore}): ${JSON.stringify(restorePause)}`);
 
 		// Walkable grid (owner request 2026-07-19): join the pads to the hub with foundation so a
 		// character can physically walk the whole test floor. Idempotent (fills empty-space only).

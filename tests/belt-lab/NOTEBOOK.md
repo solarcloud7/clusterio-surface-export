@@ -864,3 +864,14 @@ dup_kill_batched mode (module-local cross-execution state; production untouched)
 
 Cleanup proof both runs: replay platform deleted, scratch deleted, payload file removed, jobs/locks/holds 0,
 game unpaused (errorCleanup in evidence JSON; census re-verified post-run).
+
+## 2026-07-19 — The 5x5 loop + corner fixtures now live as lab-gallery pads (pointer)
+
+The belt corner (`belt-corner-recovery`) and the 5x5 unstacked loop (`belt-5x5-125-unstacked`) were rebuilt
+as stamped pads on the lab-gallery omnibus grid at `(64,22)` and `(92,22)`; their canonical build recipe,
+measured fingerprints, and re-bake evidence live in `tests/lab-gallery/NOTEBOOK.md` (2026-07-19). The old
+`lab-belt-corner-v1` platform and the nauvis loops were retired. Re-measured on the pad, the loop jams
+stably at **123 items split 67/56** (the historic 67/58 at 125 is superseded — state is the trigger, not
+history); the corner reproduces `belt_shape "left"` with 2 items over-packed on its 0.4140625-long inside
+lane. Belt physics is location-independent, so these move no belt-lab conclusion; the pads are visualization
++ integration payload, not a lab rung.

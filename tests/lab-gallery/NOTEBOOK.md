@@ -109,3 +109,54 @@ source `7AA51AD67460B6AAE557F8ABC12C8C9167BE185FD77F6CCDB2A17A7831F627A5` (1488 
 and `tests/specialized-inventory-lab` (10). Layout blueprints for the omnibus, energy, and belt-corner
 platforms are captured in `manifest.json` (`layoutBlueprint`); a blueprint records layout only, never
 crafting progress, fluid amounts, or burner fuel, so it is not a fingerprint substitute.
+
+## 2026-07-19 — Belt fixtures return as pads (manifest v3); golden re-baked, 2x verify green
+
+The two belt fixtures were moved off their old homes (a dedicated `lab-belt-corner-v1` platform and two
+nauvis 5x5 loops) onto stamped test-foundation pads on the omnibus grid at the two free slots — corner at
+`(64,22)`, loop at `(92,22)` — filling the grid to 16/16. `manifest.json` advanced to schema
+`surface-export-lab-gallery-v3`: every fixture now declares `padKind` (16 `pad` / 11 `platform`) and pads
+carry their grid `origin`; `seed-prep.mjs` reads pad origins from the manifest (the hardcoded literals were
+retired).
+
+**Build recipe (physics is emergent — let the sim do it).** The build ops only PLACE belts; a JS-side feed
+loop in `seed-prep.mjs` runs the running seed-prep server (sleeps between rounds) until the state settles —
+the same pattern `build_census_fusion` uses, not a no-tick construction. The corner ports the
+`belt-corner-recovery` recipe (6 turbo belts east into a north corner + a north dead-end; feed the entry
+until the inside lane over-packs). The loop builds the 16-belt clockwise geometry from `fixture-layout.mjs`
+and feeds toward 125 one-item stacks, then polls until the two-side split is stable across 3 reads.
+
+**Key engine fact [empirical, 2.0.77, this bake]:** the omnibus platform is baked PAUSED, and a paused
+platform HALTS belt travel — the first feed runs stalled at ~48 items with an empty corner (pausedBefore=true
+in the build return). Belts must SIMULATE to compress at a corner / jam a loop, so the build ops clear
+`platform.paused` (and `game.tick_paused`) for the feed and `set_omnibus_paused` restores the original pause
+afterwards; jammed belts are stationary, so re-pausing freezes them exactly where they settled. (Belts also
+reject `active=false` writes — Pitfall #16, atomic belt scan / BELT-R13 — so they are frozen by
+`destructible=false` only.)
+
+**Measured fingerprints (from the bake; never hand-authored):**
+- `belt-corner-recovery` (corner pad): `beltCount 8, totalIron 65, cornerShape "left", cornerX 72.5,
+  cornerY 28.5, insideItems 2, insideLength 0.4140625` (4 over-packed lanes). Matches the historic corner
+  exactly except the pad coordinates; the whole-surface `entities` field was dropped (meaningless on the
+  shared grid) and the meter is re-anchored + area-scoped.
+- `belt-5x5-125-unstacked` (loop pad): `beltCount 16, itemName iron-plate, quantity 123, physicalStacks 123,
+  maximumStack 1, lineQuantities [67, 56]`. **67/58 supersession (honest):** the historic split was 67/58 at
+  125 total; the rebuilt loop jams stably at 123 total split 67/56 (the owner precedent is "state is the
+  trigger, not history" — whatever the deterministic feed measures gets pinned). Stability was confirmed by
+  identical `[67,56]` readings across both verify-save reloads.
+
+**Retirements + census re-pin.** `retire_belt_platform` deletes `lab-belt-corner-v1` (`platform.destroy(0)` —
+Pitfall #19, platform.destroy no-op with no arg); `clear_nauvis_belt_clutter` removed all 32 nauvis belts
+(after the loop pad measured green in the same run). Source census re-pinned from measured bake output:
+nauvis `32 -> 0` entities, omnibus `platform-11` `128 -> 158` (+24 belts, +6 status-runner trio entities),
+the `platform-6` (`lab-belt-corner-v1`) row removed, total entities `1550 -> 1539`, generated chunks
+`6468 -> 6312`. Destination census unchanged (index + nauvis, 0 entities / 479 chunks).
+
+**Bake evidence.** seed-prep PASS from the committed golden source as seed; `build-save.mjs` PASS
+(beltFixtureExact + corpusExact + census all green); `verify-save.mjs` PASS on BOTH committed zips **twice
+consecutively**, with identical belt readings each pass. `node --test tests/lab-gallery` green (45). New
+pinned artifacts: source `C5F50C82008C07581239CAEC9995EB5209BC52390AC2759D6A9B1D207B048767` (1539 entities /
+6312 chunks over 16 surfaces), destination `76C1A1B26B4EB1D2B6C6C6EEED0498A8AC949450BE2CD859D89C31EFB49E1FA1`
+(0 entities / 479 chunks). The belt loop stays corpus-EXCLUDED (its `lineQuantities` array is asserted by the
+belt special path via `deepEqual`, not the scalar corpus gate whose `approx_equal` does reference-equality on
+arrays); the corner folded into `measure_corpus` on the omnibus.
