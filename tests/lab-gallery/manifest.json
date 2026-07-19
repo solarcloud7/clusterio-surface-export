@@ -18,7 +18,7 @@
 			"role": "source",
 			"name": "lab-gallery-source-surface-export-2-0-77",
 			"artifact": "docker/seed-data/lab-saves/lab-gallery-source-surface-export-2.0.77.zip",
-			"sha256": "959E4B064139F21CEC4D979C50FDB3EE286B2E2F8BB7582D72DD83206DE8240C",
+			"sha256": "EF132F1CEF1C2EEC4612978AC9CF4DD6991EAD81C20CF60331CA956666D29877",
 			"expectedCensus": {
 				"totalEntities": 1533,
 				"totalGeneratedChunks": 5532,

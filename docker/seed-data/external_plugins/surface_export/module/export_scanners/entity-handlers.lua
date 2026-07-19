@@ -842,6 +842,22 @@ EntityHandlers["item-request-proxy"] = function(entity)
   return next(data) and data or nil
 end
 
+--- Display panel handler (text + control-behavior messages + visibility flags). Without this
+--- handler the default path exported only inventories/fluids (a panel has neither), so EVERY
+--- transferred display panel arrived blank/unconfigured — measured 2026-07-19 on the delivered
+--- pad platform (description text len=0, status messages 1/3, both flags cleared).
+EntityHandlers["display-panel"] = function(entity)
+  local data = {}
+  data.display_panel_text = entity.display_panel_text
+  data.display_panel_always_show = entity.display_panel_always_show
+  data.display_panel_show_in_chart = entity.display_panel_show_in_chart
+  local behavior = entity.get_control_behavior()
+  if behavior and behavior.messages and #behavior.messages > 0 then
+    data.display_panel_messages = behavior.messages
+  end
+  return next(data) and data or nil
+end
+
 --- Train stop handler
 EntityHandlers["train-stop"] = function(entity)
   local data = {}

@@ -189,6 +189,11 @@ async function main() {
 		// seed-prep-ops.lua; clear_legacy_strip refuses to run over an unmigrated strip.
 		const migrations = { removedStage: "zones migrated + relocated; see RELOCATIONS" };
 
+		// Walkable grid (owner request 2026-07-19): join the pads to the hub with foundation so a
+		// character can physically walk the whole test floor. Idempotent (fills empty-space only).
+		const walkways = runtimeCall(handle, PORTS, { operation: "fill_walkways" });
+		console.error(`[seed-prep] walkways: ${JSON.stringify(walkways)}`);
+
 		const saveName = "seed-prep-candidate";
 		runtimeCall(handle, PORTS, { operation: "save", save_name: saveName });
 		const remoteSave = `${REMOTE_ROOT}/saves/${saveName}.zip`;

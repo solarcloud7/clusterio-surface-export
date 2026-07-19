@@ -346,6 +346,20 @@ function Deserializer.restore_entity_state(entity, entity_data)
     return  -- Ghosts don't have other state to restore
   end
 
+  -- Restore display-panel configuration (text + messages + visibility flags) — the export
+  -- handler pairs with this; without the pair every transferred panel arrived blank (2026-07-19).
+  if entity.type == "display-panel" then
+    if data.display_panel_text ~= nil then entity.display_panel_text = data.display_panel_text end
+    if data.display_panel_always_show ~= nil then entity.display_panel_always_show = data.display_panel_always_show end
+    if data.display_panel_show_in_chart ~= nil then entity.display_panel_show_in_chart = data.display_panel_show_in_chart end
+    if data.display_panel_messages then
+      safe_call(string.format("display-panel messages for %s", entity.name), function()
+        entity.get_or_create_control_behavior().messages = data.display_panel_messages
+      end)
+    end
+    return  -- Panels have no other state to restore
+  end
+
   -- Restore item-request-proxy properties
   if entity.type == "item-request-proxy" then
     -- Item requests

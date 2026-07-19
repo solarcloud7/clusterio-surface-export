@@ -158,6 +158,25 @@ async function main() {
 				throw new Error(`destination proxy payload wrong: target=${proxy.targetName} plan=${proxy.planItem}, ` +
 					`expected assembling-machine-2 / speed-module`);
 			}
+			// DISPLAY-PANEL KILL-MEASUREMENT (handler shipped 2026-07-19): the adversarial pad's
+			// description panel must arrive with its card text, both visibility flags, and the
+			// 3-message status set. Pre-handler this read len=0 / flags cleared / messages 1.
+			const panel = lua(2, `local surf; for _,p in pairs(game.forces.player.platforms) do ` +
+				`if p.valid and p.name=='lab-omnibus-state-v1' then surf=p.surface end end; ` +
+				`local d=surf.find_entities_filtered({name='display-panel',area={{21,-9},{22,-8}}})[1]; ` +
+				`local st=surf.find_entities_filtered({name='display-panel',area={{23,-9},{24,-8}}})[1]; ` +
+				`local scb=st and st.get_control_behavior(); ` +
+				`return {success=true,descLen=d and #d.display_panel_text or -1,` +
+				`descPrefix=d and d.display_panel_text:sub(1,5) or nil,` +
+				`alwaysShow=st and st.display_panel_always_show,showChart=st and st.display_panel_show_in_chart,` +
+				`messages=scb and #scb.messages or -1}`);
+			results.destPanel = panel;
+			if (panel.descPrefix !== "LAW: " || panel.descLen <= 0) {
+				throw new Error(`destination desc panel text wrong (len=${panel.descLen}, prefix='${panel.descPrefix}') — display-panel handler regressed`);
+			}
+			if (panel.alwaysShow !== true || panel.showChart !== true || panel.messages !== 3) {
+				throw new Error(`destination status panel config wrong (always=${panel.alwaysShow} chart=${panel.showChart} messages=${panel.messages})`);
+			}
 			results.riderVerdict = "GREEN";
 		}
 	} catch (error) {

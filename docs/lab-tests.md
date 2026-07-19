@@ -91,6 +91,36 @@ freeze the feed for a measurement window; belt-class `active` writes are rejecte
 (`infinity_container_filters` + `remove_unfiltered_items` copy cleanly) so a cloned fixture remains
 self-sustaining.
 
+## Test-foundation pads and the in-game runner
+
+Every positional fixture on the golden omnibus (`lab-omnibus-state-v1`) lives on a **test-foundation pad**: a
+26x12 stamped cell whose canonical tile/trio source is `tests/lab-gallery/test-foundation.mjs`
+(`seed-prep-ops.lua stamp_test_cell` is its bake-side port). A pad has a 12x12 build area holding the fixture,
+a divider column, and a clear compare area for paste-and-audit runs. Its border row carries the **status
+trio**: a description display-panel rendering the fixture's LAW/ACTION/EXPECT/FORBIDDEN card (single card
+source: the fixture's `testCard` in `tests/lab-gallery/manifest.json`), a constant combinator with
+`signal-check`/`signal-deny` sections (both inactive is the waiting state), and a red-wired status
+display-panel whose messages render Success, `Failure {failure-message}`, or a waiting clock — with
+always-show-in-alt-mode and show-tag-in-chart set. A name rendering text sits at origin+(6,-1.5): blue while
+waiting, green on pass, red on fail.
+
+The pads occupy a hub-adjacent, walkway-joined grid — columns x=8/36/64/92, rows y=-20/-6/8/22 — so the whole
+test floor is visible and walkable from the hub without the editor. `omnibus-platform-schedule` is the one
+hub-state fixture: non-positional, exercised by transfer rather than by a pad.
+
+`/test-clear` and `/test-run` are the in-game runner pair. Discovery is structural: a cell is a name text at
+the pad offset plus a present trio. Per cell, `/test-run` resets the compare area and trio, drives a
+selection-lab copy of the build area, pastes at +14,0, and physically audits both halves (audit windows stop
+at oy+11 so the trio never counts itself). Failures carry named conflict details — entity, position, blocker —
+into both chat and the status panel's `{failure-message}` slot. The runner tests real contracts through the
+production serialize/create/restore paths: its first full night (2026-07-18/19) surfaced 13 defects, including
+two measured transfer losses (item-request-proxy drop; display-panel configuration strip) that the strict
+item/fluid gate is structurally blind to.
+
+Engine limitation: rendering texts (the pad name labels) are script state and cannot ride a transfer; delivery
+tooling (`tests/lab-gallery/deliver-omnibus.mjs`) redraws them from the manifest after a pad platform is
+delivered.
+
 ## Single-use batch lifecycle
 
 A certified baked-fixture batch follows this lifecycle:

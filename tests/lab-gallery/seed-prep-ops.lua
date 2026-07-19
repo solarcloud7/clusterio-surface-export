@@ -530,6 +530,27 @@ elseif request.operation == "clear_legacy_strip" then
     end
     return { success = true, tiles_cleared = #cleared, labels_removed = labels_removed }
 
+elseif request.operation == "fill_walkways" then
+    -- Join the hub-adjacent pad grid into one walkable island (owner request 2026-07-19: a
+    -- character aboard can only walk on tiles; the pads were separate islands). Fills ONLY
+    -- empty-space cells in the grid's bounding region with plain foundation — template tiles and
+    -- the hub area are never touched. Idempotent.
+    local platform = find_platform(OMNIBUS_PLATFORM)
+    if not platform or not platform.surface then
+        return { success = false, error = OMNIBUS_PLATFORM .. " not found for fill_walkways" }
+    end
+    local s = platform.surface
+    local tiles = {}
+    for x = 4, 124 do
+        for y = -24, 36 do
+            if s.get_tile(x, y).name == "empty-space" then
+                tiles[#tiles + 1] = { name = "space-platform-foundation", position = { x, y } }
+            end
+        end
+    end
+    if #tiles > 0 then s.set_tiles(tiles) end
+    return { success = true, tiles_filled = #tiles }
+
 elseif request.operation == "relocate_pad" then
     -- Move one stamped pad (fixture content included) to a new origin near the hub. The NEW pad must
     -- already be stamped (stamp_test_cell runs first — it owns tiles, trio, card, name text); this op
