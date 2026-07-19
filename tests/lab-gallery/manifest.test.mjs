@@ -15,7 +15,7 @@ test("gallery manifest inventories every lab family exactly once", () => {
 		.sort();
 	assert.deepEqual(manifest.labs.map(lab => lab.id).sort(), actualLabs);
 	assert.deepEqual(validateGalleryManifest(manifest, { requireArtifacts: false }), {
-		labs: actualLabs.length, fixtures: 28, sourceFixtures: 28, destinationFixtures: 0,
+		labs: actualLabs.length, fixtures: 27, sourceFixtures: 27, destinationFixtures: 0,
 	});
 });
 
@@ -38,7 +38,7 @@ test("paired save roles, artifacts, censuses, and exact mod pins are final", () 
 	assert.deepEqual(manifest.saves.source.mods, manifest.mods);
 	assert.deepEqual(manifest.saves.destination.mods, manifest.mods);
 	assert.deepEqual(validateGalleryManifest(manifest), {
-		labs: 13, fixtures: 28, sourceFixtures: 28, destinationFixtures: 0,
+		labs: 13, fixtures: 27, sourceFixtures: 27, destinationFixtures: 0,
 	});
 });
 
@@ -93,8 +93,6 @@ test("the sixteen-family corpus is inventoried with independent oracles and stab
 	assert.equal(byId["omnibus-crafting-fluids"].fingerprint.foundryTemp, 1500);
 	assert.equal(byId["omnibus-platform-schedule"].fingerprint.interruptName, "lab-interrupt");
 	assert.equal(byId["energy-accumulator-drain"].fingerprint.electricEntities, 1);
-	assert.equal(byId["belt-corner-recovery"].fingerprint.cornerShape, "left");
-	assert.equal(byId["belt-corner-recovery"].fingerprint.insideLength, 0.4140625);
 
 	// The workhorse is structure-only: entity count fixed, item counts never fingerprinted (live drift).
 	assert.deepEqual(byId["transfer-workhorse"].fingerprint, { entities: 1359 });

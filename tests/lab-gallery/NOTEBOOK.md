@@ -262,3 +262,19 @@ saves dir (candidates v3-v9, grid-wip, two old checkpoints, the pre-rework golde
 `belt-corner-recovery.layoutBlueprint` (was the RETIRED platform's blueprint — stale display-only
 data). Deferred INTO the harness rework (dies with the rewrite; don't fix the dying): golden-batch
 b8/rider section trim, `buildBeltPilot` vestige.
+
+## 2026-07-19 — Owner rebuttal MEASURED AND VINDICATED: corners over-pack under normal flow; belt-corner-recovery retired
+
+Owner challenged "physics won't produce the over-pack on a saturated circuit" — measurement sided
+with the owner: `belt-combined-omnibus`'s 14 corner belts carry **19 over-packed inside lanes**
+(n*0.24 > line_length) under normal saturated flow, ~5x the dedicated fixture's 4. Corner geometry
+compresses inside lanes during flow; the earlier "physically impossible" claim reasoned about
+straight lanes and was WRONG.
+
+Owner also removed the pad's infinity chests (ruling: self-healing masks loss — a lossy paste
+would be refilled by the loaders before measurement). Post-removal: **conservative closed circuit,
+380 items stationary** (two reads, ~1200 ticks apart), maxStack=1 everywhere, 18 over-packed lanes
+retained (one relaxed as flow settled — over-pack pinned as PRESENCE, not exact count).
+
+`belt-corner-recovery` RETIRED as covered (manifest entry removed, pad cleared back to
+open-slot-64-22). `belt-combined-omnibus` re-pinned rev2 from measurement.

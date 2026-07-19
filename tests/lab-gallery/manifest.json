@@ -1035,60 +1035,6 @@
 			"layoutBlueprint": "0eNqlmd1u4jAQRt/F10GyDbQLr7JCUQhOaymxWf+grVDevXagbNVqVyudm4gQz4zH4ejTN1zFcczmHKxLYn8Vtvcuiv3Pq4j2xXVj/c51kxF7Ec9db1bnsUuDD9PqNR/F3AjrTua32Kv50Ajjkk3W3OKXm7fW5eloQlnQ/CNPI84+llDvar2STjbirVxL/mB+ZRNTO9gxmRDr82j6uvRW5lG/eXzWjejKikspNnRjNHVrjzTBT+0xD8OSK4VsPtWYbIzWvbT1DMqjpUo7daWuLXk+ln9rTT9a6/o+T7l05sP3ntT63lTdT+xfzSmP97Mafe8nX7dc79Wn5zU2mN6H0/2tpO6WspTMFxvFfFjyJfuR60vVlV6qrtbz317A4LM73bLW5r7GKxYvWTisDptfs/AN7J2eHTw8BU9PweNT9Py28Kd/719DdDRDRzN0NENHM3Q0Q0dDdDRER0N0NERHQ3Q0REdDdBRERzF0FENHMXQUQ0cxdBRER0F0FERHQXQUREdBdBRDRzJyJAJHIm4kwkYiaiSCRjJmJENGMmIkA0YyXiTDRTJaoM4wmWEqw0SGaQyTGKgwUGCgvkB5geoCxQVqCzQ0zM8wO8PcDDMzzMtAKwOdDDQy0MdAGwNdDDQxcHLGBmdsbsbGZmxqxoZmcGYGR2ZwYgYHZnBeBsdl/xd+aIRNZiqL/vx90IiLCXFJuH3Su81ut/2xeXoul3l+B+2yRWg="
 		},
 		{
-			"id": "belt-corner-recovery",
-			"padKind": "pad",
-			"origin": {
-				"x": 64,
-				"y": 22
-			},
-			"revision": 1,
-			"labId": "belt-lab",
-			"name": "Over-packed belt corner",
-			"purpose": "Preserve an over-compressed turbo-belt left corner, the recovery-test replay state.",
-			"category": "physical-lab",
-			"owningRunner": "tests/integration/belt-corner-recovery/run-tests.ps1",
-			"saveRole": "source",
-			"platformName": "lab-omnibus-state-v1",
-			"anchors": [
-				{
-					"entity": "turbo-transport-belt",
-					"x": 72.5,
-					"y": 28.5
-				}
-			],
-			"engineVersion": "2.0.77",
-			"mods": {
-				"base": "2.0.77",
-				"elevated-rails": "2.0.77",
-				"FluidMustFlow": "1.4.4",
-				"quality": "2.0.77",
-				"SpidertronEnhancements": "1.10.8",
-				"space-age": "2.0.77",
-				"SpidertronPatrols": "2.6.3",
-				"surfexp_gateways": "0.3.0",
-				"maraxsis": "1.31.6"
-			},
-			"invariant": "Eight turbo-transport-belts carry 65 iron-plate total; the corner belt at (72.5,28.5) has belt_shape 'left' with 2 items over-packed on its 0.4140625-long inside lane.",
-			"expectedTerminalVerdict": "observation-only",
-			"independentOracleRequired": true,
-			"fingerprint": {
-				"beltCount": 8,
-				"totalIron": 65,
-				"cornerShape": "left",
-				"cornerX": 72.5,
-				"cornerY": 28.5,
-				"insideItems": 2,
-				"insideLength": 0.4140625
-			},
-			"testCard": {
-				"law": "An over-packed turbo-belt corner preserves its compressed inside lane exactly: the corner keeps belt_shape 'left' with its inside lane packed past natural spacing (n*0.24 > line_length).",
-				"build": "belt-corner-recovery pad at (64,22): 6 turbo belts flow east into a north corner + a north dead-end; a ticked feed loop compresses items through the corner until two dry rounds (nothing moving).",
-				"action": "/test-run: reset the compare area, selection-lab copy of the pad build area, paste at +14,0, physical audit of both halves.",
-				"expected": "Audit reports equal belts and items; the pasted corner keeps its belt_shape, inside-lane item count, and inside-lane length.",
-				"forbidden": "A relaxed corner (items advanced or lost); a dropped over-pack; belt_shape reset to straight."
-			}
-		},
-		{
 			"id": "transfer-workhorse",
 			"padKind": "platform",
 			"revision": 1,
@@ -1582,7 +1528,7 @@
 					"y": 45.5
 				}
 			],
-			"revision": 1,
+			"revision": 2,
 			"labId": "belt-lab",
 			"name": "Combined belt omnibus (steady-state, hand-built)",
 			"purpose": "One pad combining sideloads, 3 splitters, 3 underground pairs, and 2 filtered output loaders draining into infinity chests pinned at 100 - the steady-state fixture class exemplar: fully live, item count constant by saturation physics.",
@@ -1603,7 +1549,7 @@
 				"surfexp_gateways": "0.3.0",
 				"maraxsis": "1.31.6"
 			},
-			"invariant": "The live circuit holds exactly 578 items across 35 turbo belts / 3 splitters / 6 underground ends / 2 loaders / 2 chests; count is stationary while active (measured stable over 339 ticks). Loader filters (iron-plate, copper-plate) and infinity-chest 100-count filters are part of the state.",
+			"invariant": "CONSERVATIVE closed circuit (owner removed the infinity chests 2026-07-19: self-healing masks loss): 380 items stationary across 35 turbo belts / 3 splitters / 6 underground ends / 2 filtered loaders; every stack one item; corner inside lanes carry the over-pack class (measured 18-19 lanes, pinned as presence). Covers the retired belt-corner-recovery invariant (over-pack, 18 lanes vs its 4) and the conservation-honesty property.",
 			"expectedTerminalVerdict": "observation-only",
 			"independentOracleRequired": true,
 			"fingerprint": {
@@ -1611,11 +1557,12 @@
 				"splitterCount": 3,
 				"undergroundCount": 6,
 				"loaderCount": 2,
-				"chestCount": 2,
-				"steadyItems": 578,
+				"chestCount": 0,
+				"steadyItems": 380,
+				"maxStack": 1,
+				"hasOverpackedCornerLanes": true,
 				"loaderFilterIron": "iron-plate",
-				"loaderFilterCopper": "copper-plate",
-				"chestFilterCounts": 100
+				"loaderFilterCopper": "copper-plate"
 			},
 			"testCard": {
 				"law": "A saturated closed belt circuit is STEADY-STATE: item count constant while fully live (no freeze needed - belts consume nothing; saturation is a fixed point).",
@@ -1623,7 +1570,7 @@
 				"expected": "Exact entity+item parity left vs right; 578 items stationary; loader/chest configs survive copy and transfer.",
 				"forbidden": "Do NOT freeze this pad (it is the steady-state class exemplar). Do NOT rebuild it from a script - the state is the artifact."
 			},
-			"note": "FIRST CATCH (2026-07-19, at claim time): serializer has NO loader handler (filters not carried; splitter types gate excludes loaders) and NO infinity-container handler (infinity filters not carried) - transfer would deliver hollow configs. Fix is queued; this pad is its kill-measurement."
+			"note": "FIRST CATCH (2026-07-19, at claim time): serializer has NO loader handler (filters not carried; splitter types gate excludes loaders) and NO infinity-container handler (infinity filters not carried) - transfer would deliver hollow configs. Fix is queued; this pad is its kill-measurement. REV2 2026-07-19: owner removed infinity chests (self-healing masked loss); circuit now conservative at 380; belt-corner-recovery retired as covered (over-pack measured present at ~5x the dedicated fixture)."
 		}
 	]
 }
