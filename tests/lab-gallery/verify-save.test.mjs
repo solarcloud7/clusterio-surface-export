@@ -18,8 +18,9 @@ function sourceReading() {
 	return {
 		version: "2.0.77", save_role: "source", gallery_storage: true, index_surface: true,
 		game_paused: false, transient: { jobs: 0, locks: 0, holds: 0, tombstones: 0 },
-		source_belts: 16, target_belts: 16, source_quantity: 125, physical_stacks: 125,
-		maximum_stack: 1, source_line_quantities: [67, 58], target_quantity: 0,
+		// Belt values are taken from the manifest-derived expectations so this mock never drifts from a
+		// re-pinned loop fingerprint (the loop is one pad now — target_belts/target_quantity are zero).
+		...expectations.source.belt,
 		index_texts: expectations.source.labCount, index_tags: expectations.source.labCount,
 		reachability: { exists: true, platform_name: "lab-specialized-fluid-r1", drill_name: "electric-mining-drill", pressure: 0, gravity: 0, mining_target: false, live_fluidbox_count: 0, read_ok: false, write_ok: false },
 		surface_settings: surfaceSettings,

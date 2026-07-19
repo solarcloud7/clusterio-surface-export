@@ -101,8 +101,10 @@ export function buildExpectations(manifest) {
 	const beltFingerprint = fixtureById["belt-5x5-125-unstacked"].fingerprint;
 	const reachabilityFixture = fixtureById["specialized-fluid-reachability"];
 	const reachabilityFingerprint = reachabilityFixture.fingerprint;
+	// The loop is now a single pad on the omnibus (was a source + empty-target pair on nauvis), so
+	// there is no second empty "target" loop: target_belts/target_quantity are always zero.
 	const belt = {
-		source_belts: beltFingerprint.beltCount, target_belts: beltFingerprint.beltCount,
+		source_belts: beltFingerprint.beltCount, target_belts: 0,
 		source_quantity: beltFingerprint.quantity, physical_stacks: beltFingerprint.physicalStacks,
 		maximum_stack: beltFingerprint.maximumStack, source_line_quantities: beltFingerprint.lineQuantities,
 		target_quantity: 0,

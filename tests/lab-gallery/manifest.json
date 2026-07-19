@@ -1,5 +1,5 @@
 {
-	"schema": "surface-export-lab-gallery-v2",
+	"schema": "surface-export-lab-gallery-v3",
 	"engineVersion": "2.0.77",
 	"surfaceName": "lab-gallery-index-v2",
 	"mods": {
@@ -314,14 +314,19 @@
 	"fixtures": [
 		{
 			"id": "belt-5x5-125-unstacked",
+			"padKind": "pad",
+			"origin": { "x": 92, "y": 22 },
 			"revision": 1,
 			"labId": "belt-lab",
 			"name": "5x5 unstacked belt loop",
 			"purpose": "Preserve 125 one-item iron-plate stacks split 67/58 across the two physical sides.",
 			"category": "physical-lab",
-			"owningRunner": "tests/belt-lab/rung1b_corner_loop.lua",
+			"owningRunner": "tests/lab-gallery/seed-prep-ops.lua",
 			"saveRole": "source",
-			"surfaceName": "nauvis",
+			"platformName": "lab-omnibus-state-v1",
+			"anchors": [
+				{ "entity": "turbo-transport-belt", "x": 96.5, "y": 25.5 }
+			],
 			"engineVersion": "2.0.77",
 			"mods": {
 				"base": "2.0.77",
@@ -352,6 +357,7 @@
 		},
 		{
 			"id": "specialized-fluid-reachability",
+			"padKind": "platform",
 			"revision": 2,
 			"labId": "specialized-inventory-lab",
 			"name": "Specialized fluid reachability",
@@ -388,6 +394,8 @@
 		},
 		{
 			"id": "omnibus-adversarial-inventory",
+			"padKind": "pad",
+			"origin": { "x": 8, "y": -20 },
 			"anchors": [
 				{ "entity": "steel-chest", "x": 13, "y": -17 },
 				{ "entity": "assembling-machine-2", "x": 16, "y": -17 }
@@ -435,6 +443,8 @@
 		},
 		{
 			"id": "omnibus-heat-temperature",
+			"padKind": "pad",
+			"origin": { "x": 36, "y": -20 },
 			"anchors": [
 				{ "entity": "heat-pipe", "x": 43, "y": -13 }
 			],
@@ -474,6 +484,8 @@
 		},
 		{
 			"id": "omnibus-decider-latch",
+			"padKind": "pad",
+			"origin": { "x": 64, "y": -20 },
 			"anchors": [
 				{ "entity": "decider-combinator", "x": 68, "y": -14 }
 			],
@@ -513,6 +525,8 @@
 		},
 		{
 			"id": "omnibus-midcraft-progress",
+			"padKind": "pad",
+			"origin": { "x": 92, "y": -20 },
 			"anchors": [
 				{ "entity": "assembling-machine-1", "x": 95, "y": -16 }
 			],
@@ -554,6 +568,8 @@
 		},
 		{
 			"id": "omnibus-burner-fuel",
+			"padKind": "pad",
+			"origin": { "x": 8, "y": -6 },
 			"anchors": [
 				{ "entity": "burner-inserter", "x": 15, "y": 1 }
 			],
@@ -596,6 +612,8 @@
 		},
 		{
 			"id": "omnibus-equipment-grid",
+			"padKind": "pad",
+			"origin": { "x": 36, "y": -6 },
 			"anchors": [
 				{ "entity": "spidertron", "x": 42, "y": 0 }
 			],
@@ -637,6 +655,8 @@
 		},
 		{
 			"id": "omnibus-circuit-config",
+			"padKind": "pad",
+			"origin": { "x": 64, "y": -6 },
 			"anchors": [
 				{ "entity": "constant-combinator", "x": 68, "y": 1 },
 				{ "entity": "small-lamp", "x": 74, "y": 1 }
@@ -679,6 +699,8 @@
 		},
 		{
 			"id": "omnibus-module-bonus-progress",
+			"padKind": "pad",
+			"origin": { "x": 92, "y": -6 },
 			"anchors": [
 				{ "entity": "assembling-machine-2", "x": 99, "y": 1 }
 			],
@@ -720,6 +742,8 @@
 		},
 		{
 			"id": "omnibus-crafting-fluids",
+			"padKind": "pad",
+			"origin": { "x": 8, "y": 8 },
 			"anchors": [
 				{ "entity": "storage-tank", "x": 11, "y": 15 },
 				{ "entity": "chemical-plant", "x": 15, "y": 15 },
@@ -766,6 +790,8 @@
 		},
 		{
 			"id": "omnibus-ghosts-and-proxies",
+			"padKind": "pad",
+			"origin": { "x": 36, "y": 8 },
 			"revision": 1,
 			"labId": "hidden-semantics-lab",
 			"name": "Ghosts and item-request proxy",
@@ -805,6 +831,8 @@
 		},
 		{
 			"id": "omnibus-ground-items",
+			"padKind": "pad",
+			"origin": { "x": 64, "y": 8 },
 			"revision": 1,
 			"labId": "hidden-semantics-lab",
 			"name": "Loose ground items",
@@ -841,6 +869,7 @@
 		},
 		{
 			"id": "omnibus-platform-schedule",
+			"padKind": "platform",
 			"revision": 1,
 			"labId": "ops-lab",
 			"name": "Platform schedule and interrupt",
@@ -879,6 +908,7 @@
 		},
 		{
 			"id": "energy-accumulator-drain",
+			"padKind": "platform",
 			"revision": 1,
 			"labId": "state-dimensions-lab",
 			"name": "Accumulator drain isolation",
@@ -913,6 +943,8 @@
 		},
 		{
 			"id": "belt-corner-recovery",
+			"padKind": "pad",
+			"origin": { "x": 64, "y": 22 },
 			"revision": 1,
 			"labId": "belt-lab",
 			"name": "Over-packed belt corner",
@@ -920,7 +952,10 @@
 			"category": "physical-lab",
 			"owningRunner": "tests/integration/belt-corner-recovery/run-tests.ps1",
 			"saveRole": "source",
-			"platformName": "lab-belt-corner-v1",
+			"platformName": "lab-omnibus-state-v1",
+			"anchors": [
+				{ "entity": "turbo-transport-belt", "x": 72.5, "y": 28.5 }
+			],
 			"engineVersion": "2.0.77",
 			"mods": {
 				"base": "2.0.77",
@@ -950,6 +985,7 @@
 		},
 		{
 			"id": "transfer-workhorse",
+			"padKind": "platform",
 			"revision": 1,
 			"labId": "gate-drift-lab",
 			"name": "1359-entity transfer workhorse",
@@ -980,6 +1016,7 @@
 		},
 		{
 			"id": "census-fusion-shared-plasma",
+			"padKind": "platform",
 			"revision": 1,
 			"labId": "census-lab",
 			"name": "Census fusion shared-plasma commensurability",
@@ -1026,6 +1063,8 @@
 		},
 		{
 			"id": "inserter-held-capacity",
+			"padKind": "pad",
+			"origin": { "x": 92, "y": 8 },
 			"anchors": [
 				{ "entity": "bulk-inserter", "x": 98.5, "y": 13.5 }
 			],
@@ -1071,6 +1110,8 @@
 		},
 		{
 			"id": "no-tick-sync-frozen-pair",
+			"padKind": "pad",
+			"origin": { "x": 8, "y": 22 },
 			"anchors": [
 				{ "entity": "assembling-machine-1", "x": 13.5, "y": 27.5 },
 				{ "entity": "inserter", "x": 16.5, "y": 27.5 }
@@ -1118,6 +1159,8 @@
 		},
 		{
 			"id": "repin-beacon-speed",
+			"padKind": "pad",
+			"origin": { "x": 36, "y": 22 },
 			"revision": 1,
 			"labId": "engine-repin-lab",
 			"name": "Beacon crafting_speed same-execution propagation",
@@ -1163,6 +1206,7 @@
 		},
 		{
 			"id": "hold-buffer-spoil",
+			"padKind": "platform",
 			"revision": 1,
 			"labId": "hold-completeness-lab",
 			"name": "Hold buffer pair: spoilage",
@@ -1206,6 +1250,7 @@
 		},
 		{
 			"id": "hold-buffer-damage",
+			"padKind": "platform",
 			"revision": 1,
 			"labId": "hold-completeness-lab",
 			"name": "Hold buffer pair: damage",
@@ -1251,6 +1296,7 @@
 		},
 		{
 			"id": "hold-buffer-pod",
+			"padKind": "platform",
 			"revision": 1,
 			"labId": "hold-completeness-lab",
 			"name": "Hold buffer pair: cargo pod",
@@ -1292,6 +1338,7 @@
 		},
 		{
 			"id": "consumable-hub-1",
+			"padKind": "platform",
 			"revision": 1,
 			"labId": "ops-lab",
 			"name": "Single-use consumable hub 1",
@@ -1322,6 +1369,7 @@
 		},
 		{
 			"id": "consumable-hub-2",
+			"padKind": "platform",
 			"revision": 1,
 			"labId": "ops-lab",
 			"name": "Single-use consumable hub 2",
@@ -1352,6 +1400,7 @@
 		},
 		{
 			"id": "consumable-hub-3",
+			"padKind": "platform",
 			"revision": 1,
 			"labId": "ops-lab",
 			"name": "Single-use consumable hub 3",

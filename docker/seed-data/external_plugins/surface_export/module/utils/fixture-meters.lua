@@ -221,15 +221,22 @@ local function measure_energy(surface)
     }
 end
 
-local function measure_belt_corner(surface)
-    local belts = surface.find_entities_filtered({ type = "transport-belt" })
+-- Re-anchored to the belt-corner PAD on the shared omnibus grid (was a dedicated-platform read at a
+-- fixed (16.5,0.5)). The corner belt position comes from the manifest anchor; the belt scan is scoped
+-- to a box around that anchor so the neighbouring loop pad on the SAME grid is never conflated (the
+-- two belt pads sit in non-overlapping columns). The old whole-surface `entities` field is dropped —
+-- meaningless once the corner shares a surface with 15 other pads.
+local function measure_belt_corner(surface, anchor)
+    local cx, cy = anchor("turbo-transport-belt")
+    local area = { { cx - 8, cy - 4 }, { cx + 4, cy + 4 } }
+    local belts = surface.find_entities_filtered({ type = "transport-belt", area = area })
     local total = 0
     for _, b in ipairs(belts) do
         for line_index = 1, b.get_max_transport_line_index() do
             for _, row in ipairs(b.get_transport_line(line_index).get_detailed_contents()) do total = total + row.stack.count end
         end
     end
-    local corner = surface.find_entity("turbo-transport-belt", { 16.5, 0.5 })
+    local corner = at(surface, "turbo-transport-belt", cx, cy)
     local inside = corner and corner.get_transport_line(1) or nil
     local inside_count = 0
     if inside then for _, row in ipairs(inside.get_detailed_contents()) do inside_count = inside_count + row.stack.count end end
@@ -241,7 +248,36 @@ local function measure_belt_corner(surface)
         cornerY = corner and corner.position.y or nil,
         insideItems = inside_count,
         insideLength = inside and inside.line_length or nil,
-        entities = #surface.find_entities_filtered({}),
+    }
+end
+
+-- The 5x5 unstacked loop PAD (belt-5x5-125-unstacked). It stays corpus-EXCLUDED from measure_corpus:
+-- its lineQuantities array is asserted by the belt special path (deepEqual), not the scalar corpus
+-- gate whose approx_equal does reference-equality on arrays. Scoped to a box around the loop anchor so
+-- the corner pad on the same grid is never conflated.
+local function measure_belt_loop(surface, anchor)
+    local ax, ay = anchor("turbo-transport-belt")
+    local area = { { ax - 1, ay - 1 }, { ax + 6, ay + 6 } }
+    local belts = surface.find_entities_filtered({ type = "transport-belt", area = area })
+    local all = detailed_census(belts)
+    local line1 = detailed_census(belts, 1)
+    local line2 = detailed_census(belts, 2)
+    local item_name = nil
+    for _, b in ipairs(belts) do
+        for line_index = 1, b.get_max_transport_line_index() do
+            local row = b.get_transport_line(line_index).get_detailed_contents()[1]
+            if row then item_name = row.stack.name break end
+        end
+        if item_name then break end
+    end
+    return {
+        beltName = belts[1] and belts[1].name or nil,
+        beltCount = #belts,
+        itemName = item_name,
+        quantity = all.quantity,
+        physicalStacks = all.physicalStacks,
+        maximumStack = all.maximumStack,
+        lineQuantities = { line1.quantity, line2.quantity },
     }
 end
 
@@ -423,11 +459,10 @@ local function measure_corpus(manifest)
         anchored_safe("inserter-held-capacity", function(a) return measure_inserter_held(omni, a) end)
         anchored_safe("no-tick-sync-frozen-pair", function(a) return measure_no_tick_pair(omni, a) end)
         anchored_safe("repin-beacon-speed", function(a) return measure_repin_beacon(omni, a) end)
+        anchored_safe("belt-corner-recovery", function(a) return measure_belt_corner(omni, a) end)
     end
     local energy = surface_for_platform("lab-energy-v1")
     if energy then safe("energy-accumulator-drain", function() return measure_energy(energy) end) end
-    local corner = surface_for_platform("lab-belt-corner-v1")
-    if corner then safe("belt-corner-recovery", function() return measure_belt_corner(corner) end) end
     local workhorse = surface_for_platform("lab-transfer-fixture-v1")
     if workhorse then safe("transfer-workhorse", function() return { entities = #workhorse.find_entities_filtered({}) } end) end
     local fusion = surface_for_platform("lab-census-fusion-v1")
@@ -538,6 +573,7 @@ M.measure_omnibus_ground = measure_omnibus_ground
 M.measure_omnibus_schedule = measure_omnibus_schedule
 M.measure_energy = measure_energy
 M.measure_belt_corner = measure_belt_corner
+M.measure_belt_loop = measure_belt_loop
 M.measure_inserter_held = measure_inserter_held
 M.measure_no_tick_pair = measure_no_tick_pair
 M.measure_repin_beacon = measure_repin_beacon

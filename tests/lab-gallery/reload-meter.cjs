@@ -25,13 +25,9 @@ const [port = "27977", password = "gallery-verify-only"] = process.argv.slice(2)
 const command = `/c local FixtureMeters=(function() ${meters} end)()
 local manifest=helpers.json_to_table([=[${leanManifest}]=])
 local function table_size(value) local n=0 for _ in pairs(value or {}) do n=n+1 end return n end
-local surface=game.surfaces.nauvis
-local source=surface.find_entities_filtered{area={{-17,-26},{-12,-21}},name="turbo-transport-belt"}
-local target=surface.find_entities_filtered{area={{4,-26},{9,-21}},name="turbo-transport-belt"}
-local all=FixtureMeters.detailed_census(source)
-local line1=FixtureMeters.detailed_census(source,1)
-local line2=FixtureMeters.detailed_census(source,2)
-local empty=FixtureMeters.detailed_census(target)
+local loop={beltCount=0,quantity=0,physicalStacks=0,maximumStack=0,lineQuantities={0,0}}
+local omni_platform=FixtureMeters.surface_for_platform("lab-omnibus-state-v1")
+if omni_platform then loop=FixtureMeters.measure_belt_loop(omni_platform,FixtureMeters.anchor_lookup(manifest,"belt-5x5-125-unstacked")) end
 local index=game.surfaces["lab-gallery-index-v2"]
 local index_texts=0
 for _,object in ipairs(rendering.get_all_objects(""))do if object.type=="text"and object.surface==index then index_texts=index_texts+1 end end
@@ -64,8 +60,8 @@ rcon.print(helpers.table_to_json({
   version=script.active_mods.base,save_role=storage.lab_gallery and storage.lab_gallery.saveRole or nil,
   gallery_storage=storage.lab_gallery~=nil,index_surface=index~=nil,game_paused=not not game.tick_paused,
   transient={jobs=table_size(storage.async_jobs),locks=table_size(storage.locked_platforms),holds=table_size(storage.destination_holds),tombstones=table_size(storage.committed_source_transfer_tombstones)},
-  source_belts=#source,target_belts=#target,source_quantity=all.quantity,physical_stacks=all.physicalStacks,
-  maximum_stack=all.maximumStack,source_line_quantities={line1.quantity,line2.quantity},target_quantity=empty.quantity,
+  source_belts=loop.beltCount,target_belts=0,source_quantity=loop.quantity,physical_stacks=loop.physicalStacks,
+  maximum_stack=loop.maximumStack,source_line_quantities=loop.lineQuantities,target_quantity=0,
   index_texts=index_texts,index_tags=index and #game.forces.player.find_chart_tags(index)or 0,
   reachability=reachability,surface_settings=surface_settings,corpus=corpus,
   surface_census={total_entities=total_entities,total_generated_chunks=total_chunks,surface_names=surface_names}

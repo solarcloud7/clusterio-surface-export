@@ -25,7 +25,7 @@ function sameJson(left, right) {
 }
 
 export function validateGalleryManifest(manifest, { requireArtifacts = true } = {}) {
-	if (manifest?.schema !== "surface-export-lab-gallery-v2") throw new Error("unexpected gallery schema");
+	if (manifest?.schema !== "surface-export-lab-gallery-v3") throw new Error("unexpected gallery schema");
 	if (manifest.engineVersion !== "2.0.77") throw new Error(`unsupported gallery engine ${manifest.engineVersion}`);
 	if (!manifest.mods || manifest.mods.base !== manifest.engineVersion || manifest.mods["space-age"] !== manifest.engineVersion) {
 		throw new Error("gallery mod pin set is incomplete");
@@ -84,6 +84,14 @@ export function validateGalleryManifest(manifest, { requireArtifacts = true } = 
 			throw new Error(`incomplete contract for ${fixture.id}`);
 		}
 		if (!fixture.fingerprint || typeof fixture.fingerprint !== "object") throw new Error(`missing fingerprint for ${fixture.id}`);
+		// v3: every fixture declares a padKind (pad = a stamped test-foundation cell on the omnibus
+		// grid; platform = its own platform/hub fixture; surface = a bare-surface fixture). Pads carry
+		// their grid origin {x,y}; the migration retired every surface fixture, so a `surface` padKind
+		// is accepted but no fixture uses it after the belt pads landed on the grid.
+		if (!["pad", "platform", "surface"].includes(fixture.padKind)) throw new Error(`invalid padKind for ${fixture.id}`);
+		if (fixture.padKind === "pad" && (!fixture.origin || !Number.isInteger(fixture.origin.x) || !Number.isInteger(fixture.origin.y))) {
+			throw new Error(`pad ${fixture.id} needs an integer origin {x,y}`);
+		}
 	}
 	return { labs: manifest.labs.length, fixtures: manifest.fixtures.length, sourceFixtures, destinationFixtures };
 }
