@@ -200,11 +200,15 @@ local function inspect()
     local pilot = request.beltPilot
     local specialized = request.specializedFixture
     assert(manifest and pilot and specialized, "inspect requires manifest and fixture specifications")
-    local surface = game.surfaces[pilot.sourceSurface]
-    local source = find_belts(surface, pilot.sourceBelts, false)
-    local target = find_belts(surface, pilot.targetBelts, false)
-    local all = FixtureMeters.detailed_census(source)
+    -- The 5x5 loop now rides the omnibus loop PAD (was two nauvis loops). Measure it through the shared
+    -- FixtureMeters.measure_belt_loop, anchored from the manifest, guarded so the DESTINATION (omnibus
+    -- destroyed) reads zeros. There is no empty "target" loop any more, so target* are always zero.
     local measured = FixtureMeters.measure_corpus(manifest)
+    local loop = { beltCount = 0, quantity = 0, physicalStacks = 0, maximumStack = 0, lineQuantities = { 0, 0 } }
+    local omni_surface = FixtureMeters.surface_for_platform("lab-omnibus-state-v1")
+    if omni_surface then
+        loop = FixtureMeters.measure_belt_loop(omni_surface, FixtureMeters.anchor_lookup(manifest, "belt-5x5-125-unstacked"))
+    end
     local reading = {
         success = true,
         version = script.active_mods.base,
@@ -212,13 +216,13 @@ local function inspect()
         saveRole = storage.lab_gallery and storage.lab_gallery.saveRole or nil,
         galleryStorage = storage.lab_gallery ~= nil,
         indexSurface = game.surfaces[manifest.surfaceName] ~= nil,
-        sourceBelts = #source,
-        targetBelts = #target,
-        sourceQuantity = all.quantity,
-        sourceLineQuantities = { FixtureMeters.detailed_census(source, 1).quantity, FixtureMeters.detailed_census(source, 2).quantity },
-        targetQuantity = FixtureMeters.detailed_census(target).quantity,
-        maximumStack = all.maximumStack,
-        physicalStacks = all.physicalStacks,
+        sourceBelts = loop.beltCount,
+        targetBelts = 0,
+        sourceQuantity = loop.quantity,
+        sourceLineQuantities = loop.lineQuantities,
+        targetQuantity = 0,
+        maximumStack = loop.maximumStack,
+        physicalStacks = loop.physicalStacks,
         reachability = inspect_reachability(specialized),
         surfaceSettings = read_lab_surface_settings(),
         transient = transient_state(),
@@ -228,7 +232,7 @@ local function inspect()
     -- expected is sourced from the manifest belt fingerprint (single source of truth), passed via
     -- the belt pilot: beltCount/sourceQuantity/sourceLineQuantities/maximumStack/physicalStacks.
     local expected = pilot.expected
-    reading.beltFixtureExact = reading.sourceBelts == expected.beltCount and reading.targetBelts == expected.beltCount
+    reading.beltFixtureExact = reading.sourceBelts == expected.beltCount
         and reading.sourceQuantity == expected.sourceQuantity
         and reading.sourceLineQuantities[1] == expected.sourceLineQuantities[1]
         and reading.sourceLineQuantities[2] == expected.sourceLineQuantities[2]

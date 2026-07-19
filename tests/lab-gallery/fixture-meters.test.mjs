@@ -38,7 +38,7 @@ test("fixture-meters carries every corpus measurement and the fail-loud gate", (
 	assert.match(source, /was not measured/);
 	assert.match(source, /measurement error/);
 	// Physical locators + reads for the family platforms.
-	for (const platform of ["lab-omnibus-state-v1", "lab-energy-v1", "lab-belt-corner-v1", "lab-transfer-fixture-v1", "lab-consumable-", "lab-census-fusion-v1"]) {
+	for (const platform of ["lab-omnibus-state-v1", "lab-energy-v1", "lab-transfer-fixture-v1", "lab-consumable-", "lab-census-fusion-v1"]) {
 		assert.match(source, new RegExp(platform));
 	}
 	assert.match(source, /crafting_progress/);

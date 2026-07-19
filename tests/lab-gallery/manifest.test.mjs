@@ -15,13 +15,13 @@ test("gallery manifest inventories every lab family exactly once", () => {
 		.sort();
 	assert.deepEqual(manifest.labs.map(lab => lab.id).sort(), actualLabs);
 	assert.deepEqual(validateGalleryManifest(manifest, { requireArtifacts: false }), {
-		labs: actualLabs.length, fixtures: 23, sourceFixtures: 23, destinationFixtures: 0,
+		labs: actualLabs.length, fixtures: 27, sourceFixtures: 27, destinationFixtures: 0,
 	});
 });
 
 test("paired save roles, artifacts, censuses, and exact mod pins are final", () => {
 	const manifest = loadGalleryManifest(repoRoot);
-	assert.equal(manifest.schema, "surface-export-lab-gallery-v2");
+	assert.equal(manifest.schema, "surface-export-lab-gallery-v3");
 	assert.equal(manifest.engineVersion, "2.0.77");
 	assert.deepEqual(Object.keys(manifest.saves).sort(), ["destination", "source"]);
 	for (const [role, save] of Object.entries(manifest.saves)) {
@@ -38,7 +38,7 @@ test("paired save roles, artifacts, censuses, and exact mod pins are final", () 
 	assert.deepEqual(manifest.saves.source.mods, manifest.mods);
 	assert.deepEqual(manifest.saves.destination.mods, manifest.mods);
 	assert.deepEqual(validateGalleryManifest(manifest), {
-		labs: 13, fixtures: 23, sourceFixtures: 23, destinationFixtures: 0,
+		labs: 13, fixtures: 27, sourceFixtures: 27, destinationFixtures: 0,
 	});
 });
 

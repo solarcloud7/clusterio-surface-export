@@ -67,9 +67,10 @@ test("normalization applies lab settings to non-platform surfaces via the real w
 test("visual catalog, belt pilot, and reachability fixture have independent physical readings", () => {
 	assert.match(source, /rendering\.draw_text/);
 	assert.match(source, /add_chart_tag/);
-	// Belt-pilot quantities are read through the shared library (get_detailed_contents/unique_id live
-	// in fixture-meters.lua now); the exact-match assertions against the pilot expectations stay here.
-	assert.match(source, /FixtureMeters\.detailed_census/);
+	// The 5x5 loop now rides the omnibus loop pad; it is read through the shared measure_belt_loop
+	// (get_detailed_contents/unique_id live in fixture-meters.lua). The exact-match assertions against
+	// the pilot expectations stay here.
+	assert.match(source, /FixtureMeters\.measure_belt_loop/);
 	assert.match(source, /maximumStack == expected\.maximumStack/);
 	assert.match(source, /sourceQuantity == expected\.sourceQuantity/);
 	assert.match(source, /targetQuantity == expected\.targetQuantity/);

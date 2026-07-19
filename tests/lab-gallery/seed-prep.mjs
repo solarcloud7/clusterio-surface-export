@@ -17,6 +17,7 @@ import {
 	docker, launchIsolatedFactorio, runtimeCall, sleep, tailFactorioLog,
 	teardownIsolatedFactorio, waitForRuntime, waitForStableSave,
 } from "./isolated-factorio.mjs";
+import { buildFiveByFiveLoop } from "./fixture-layout.mjs";
 import { loadGalleryManifest } from "./manifest.mjs";
 // ONE template source (test-foundation.mjs) for the stamped cells; ONE card source (manifest.json).
 import { LEGEND, TEMPLATE_ROWS } from "./test-foundation.mjs";
@@ -50,12 +51,16 @@ async function main() {
 	const opsLua = fileURLToPath(new URL("./seed-prep-ops.lua", import.meta.url));
 	const driver = fileURLToPath(new URL("./runtime-driver.cjs", import.meta.url));
 	const config = fileURLToPath(new URL("./seed-prep-config.ini", import.meta.url));
+	// Ship the shared meter library as the runtime-driver prelude (FixtureMeters) so the belt pad
+	// build/measure ops reuse the SAME measurement code as the bake and reload meters (single source).
+	const meters = fileURLToPath(new URL("../../docker/seed-data/external_plugins/surface_export/module/utils/fixture-meters.lua", import.meta.url));
 
 	const handle = launchIsolatedFactorio({
 		container: options.container, remoteRoot: REMOTE_ROOT,
 		seed: options.seed, config,
-		files: [[driver, "runtime-driver.cjs"], [opsLua, "ops.lua"]],
+		files: [[driver, "runtime-driver.cjs"], [meters, "fixture-meters.lua"], [opsLua, "ops.lua"]],
 		timeoutSeconds: 900,
+		runtimeLuaName: "ops.lua", metersLuaName: "fixture-meters.lua",
 		...PORTS,
 	});
 	const boundaryErrors = [];
@@ -114,6 +119,16 @@ async function main() {
 			const card = fixture.testCard;
 			return { law: card.law, action: card.action, expect: card.expected, forbidden: card.forbidden };
 		};
+		// Pad grid origins are read from the manifest (v3 `origin` field) — the single source of truth.
+		// The hardcoded newX/newY / originX/originY literals were retired here (they now live only in the
+		// manifest); the historical relocation SOURCE coords (oldX/oldY) are migration history, not origins.
+		const originOf = id => {
+			const fixture = manifest.fixtures.find(entry => entry.id === id);
+			if (!fixture || !fixture.origin) throw new Error(`manifest fixture ${id} has no pad origin`);
+			return fixture.origin;
+		};
+		const anchorsFor = id => Object.fromEntries(
+			((manifest.fixtures.find(entry => entry.id === id) || {}).anchors || []).map(a => [a.entity, { x: a.x, y: a.y }]));
 		// PAD RELOCATION (owner directive 2026-07-18): all 13 pads live in a hub-adjacent grid
 		// (columns x=8/36/64/92, rows y=-20/-6/8/22) so they are visible from the hub without the
 		// editor. clear_legacy_strip first clears the migrated-out zone row's plain foundation (the
@@ -121,32 +136,33 @@ async function main() {
 		// the interior via clone_area. Idempotent: already_relocated / skipped pads are verified, not
 		// rebuilt.
 		const RELOCATIONS = [
-			{ id: "omnibus-adversarial-inventory", oldX: 34, oldY: -100, newX: 8, newY: -20 },
-			{ id: "omnibus-heat-temperature", oldX: 62, oldY: -100, newX: 36, newY: -20 },
-			{ id: "omnibus-decider-latch", oldX: 62, oldY: -114, newX: 64, newY: -20 },
-			{ id: "omnibus-midcraft-progress", oldX: 62, oldY: -128, newX: 92, newY: -20 },
-			{ id: "omnibus-burner-fuel", oldX: 34, oldY: -142, newX: 8, newY: -6 },
-			{ id: "omnibus-equipment-grid", oldX: 62, oldY: -142, newX: 36, newY: -6 },
-			{ id: "omnibus-circuit-config", oldX: 34, oldY: -156, newX: 64, newY: -6 },
-			{ id: "omnibus-module-bonus-progress", oldX: 62, oldY: -156, newX: 92, newY: -6 },
-			{ id: "omnibus-crafting-fluids", oldX: 34, oldY: -170, newX: 8, newY: 8 },
-			{ id: "omnibus-ghosts-and-proxies", oldX: 62, oldY: -170, newX: 36, newY: 8 },
-			{ id: "omnibus-ground-items", oldX: 34, oldY: -184, newX: 64, newY: 8 },
-			{ id: "inserter-held-capacity", oldX: 34, oldY: -128, newX: 92, newY: 8 },
-			{ id: "no-tick-sync-frozen-pair", oldX: 34, oldY: -114, newX: 8, newY: 22 },
+			{ id: "omnibus-adversarial-inventory", oldX: 34, oldY: -100 },
+			{ id: "omnibus-heat-temperature", oldX: 62, oldY: -100 },
+			{ id: "omnibus-decider-latch", oldX: 62, oldY: -114 },
+			{ id: "omnibus-midcraft-progress", oldX: 62, oldY: -128 },
+			{ id: "omnibus-burner-fuel", oldX: 34, oldY: -142 },
+			{ id: "omnibus-equipment-grid", oldX: 62, oldY: -142 },
+			{ id: "omnibus-circuit-config", oldX: 34, oldY: -156 },
+			{ id: "omnibus-module-bonus-progress", oldX: 62, oldY: -156 },
+			{ id: "omnibus-crafting-fluids", oldX: 34, oldY: -170 },
+			{ id: "omnibus-ghosts-and-proxies", oldX: 62, oldY: -170 },
+			{ id: "omnibus-ground-items", oldX: 34, oldY: -184 },
+			{ id: "inserter-held-capacity", oldX: 34, oldY: -128 },
+			{ id: "no-tick-sync-frozen-pair", oldX: 34, oldY: -114 },
 		];
 		const strip = runtimeCall(handle, PORTS, { operation: "clear_legacy_strip" });
 		console.error(`[seed-prep] legacy strip: ${JSON.stringify(strip)}`);
 		const relocations = {};
 		for (const pad of RELOCATIONS) {
+			const origin = originOf(pad.id);
 			runtimeCall(handle, PORTS, {
-				operation: "stamp_test_cell", origin_x: pad.newX, origin_y: pad.newY,
+				operation: "stamp_test_cell", origin_x: origin.x, origin_y: origin.y,
 				name: pad.id, rows: TEMPLATE_ROWS, legend: LEGEND, card: cardFor(pad.id),
 			});
 			const moved = runtimeCall(handle, PORTS, {
 				operation: "relocate_pad", name: pad.id,
 				old_origin_x: pad.oldX, old_origin_y: pad.oldY,
-				new_origin_x: pad.newX, new_origin_y: pad.newY,
+				new_origin_x: origin.x, new_origin_y: origin.y,
 			});
 			if (moved.success === false) throw new Error(`${pad.id} relocation failed: ${moved.error}`);
 			relocations[pad.id] = moved;
@@ -154,21 +170,20 @@ async function main() {
 		}
 
 		const cells = [
-			{ id: "inserter-held-capacity", originX: 92, originY: 8, build: "build_inserter_held", measure: "measure_inserter_held" },
-			{ id: "no-tick-sync-frozen-pair", originX: 8, originY: 22, build: "build_no_tick_pair", measure: "measure_no_tick_pair" },
-			{ id: "repin-beacon-speed", originX: 36, originY: 22, build: "build_repin_beacon", measure: "measure_repin_beacon" },
+			{ id: "inserter-held-capacity", build: "build_inserter_held", measure: "measure_inserter_held" },
+			{ id: "no-tick-sync-frozen-pair", build: "build_no_tick_pair", measure: "measure_no_tick_pair" },
+			{ id: "repin-beacon-speed", build: "build_repin_beacon", measure: "measure_repin_beacon" },
 		];
 		const portedFixtures = {};
 		for (const cell of cells) {
+			const origin = originOf(cell.id);
 			runtimeCall(handle, PORTS, {
-				operation: "stamp_test_cell", origin_x: cell.originX, origin_y: cell.originY,
+				operation: "stamp_test_cell", origin_x: origin.x, origin_y: origin.y,
 				name: cell.id, rows: TEMPLATE_ROWS, legend: LEGEND, card: cardFor(cell.id),
 			});
 			// Build/measure positions come from the manifest anchors (single source shared with
 			// both meters) — the ops fail loud without them.
-			const fixtureEntry = manifest.fixtures.find(entry => entry.id === cell.id);
-			const anchors = Object.fromEntries((fixtureEntry.anchors || [])
-				.map(a => [a.entity, { x: a.x, y: a.y }]));
+			const anchors = anchorsFor(cell.id);
 			const built = runtimeCall(handle, PORTS, { operation: cell.build, anchors });
 			const measured = runtimeCall(handle, PORTS, { operation: cell.measure, anchors });
 			portedFixtures[cell.id] = measured;
@@ -221,6 +236,88 @@ async function main() {
 			}
 		}
 
+		// BELT PADS (Lane B): the belt fixtures return as pads on the two free grid slots (64,22) and
+		// (92,22). Physics (an over-packed corner, a jammed loop) are EMERGENT under elapsed ticks, so —
+		// like build_census_fusion — the build op only PLACES belts and a JS feed loop runs the sim
+		// (sleeps between rounds) until the state settles. Fingerprints are pinned from the SETTLED
+		// measured output, never hand-authored.
+		const beltPads = {};
+		{
+			// Corner: 6 east belts feeding a north corner + a north dead-end; feed the entry belt until
+			// two consecutive dry rounds (max compression, nothing moving) — the ported recovery recipe.
+			const id = "belt-corner-recovery";
+			const origin = originOf(id);
+			const anchors = anchorsFor(id);
+			const anchor = anchors["turbo-transport-belt"];
+			runtimeCall(handle, PORTS, { operation: "stamp_test_cell", origin_x: origin.x, origin_y: origin.y,
+				name: id, rows: TEMPLATE_ROWS, legend: LEGEND, card: cardFor(id) });
+			const built = runtimeCall(handle, PORTS, { operation: "build_belt_corner_pad", anchors });
+			if (built.success === false) throw new Error(`belt corner build failed: ${built.error}`);
+			beltPads.omnibusPausedBefore = built.paused_before;
+			let fed = 0, stable = 0, rounds = 0;
+			while (stable < 3 && rounds < 60) {
+				rounds += 1;
+				const feed = runtimeCall(handle, PORTS, { operation: "feed_belt_corner", entry: built.entry, corner: anchor });
+				if (feed.success === false) throw new Error(`belt corner feed failed: ${feed.error}`);
+				fed += feed.added;
+				if (rounds % 5 === 0 || feed.added === 0) console.error(`[seed-prep] corner feed round ${rounds}: added=${feed.added} total=${feed.total} inside=${feed.inside}`);
+				// Stop once the inside lane is over-packed AND settled, or after enough dry rounds.
+				if (feed.added === 0) stable += 1; else stable = 0;
+				await sleep(600);
+			}
+			const measured = runtimeCall(handle, PORTS, { operation: "measure_belt_corner_pad", anchors });
+			if (measured.success === false) throw new Error(`belt corner measure failed: ${measured.error}`);
+			console.error(`[seed-prep] belt corner pad: pausedBefore=${built.paused_before} fed=${fed} rounds=${rounds} measured=${JSON.stringify(measured)}`);
+			if (!(measured.overpacked >= 1)) throw new Error(`belt corner not over-packed: ${JSON.stringify(measured)}`);
+			beltPads[id] = measured;
+		}
+		{
+			// Loop: 16-belt 5x5 from the shared fixture-layout geometry; feed toward 125 one-item stacks
+			// with ticks, then poll until the two-side split is STABLE across 3 reads (a jammed loop).
+			const id = "belt-5x5-125-unstacked";
+			const origin = originOf(id);
+			const anchors = anchorsFor(id);
+			const anchor = anchors["turbo-transport-belt"];
+			runtimeCall(handle, PORTS, { operation: "stamp_test_cell", origin_x: origin.x, origin_y: origin.y,
+				name: id, rows: TEMPLATE_ROWS, legend: LEGEND, card: cardFor(id) });
+			const loopBelts = buildFiveByFiveLoop({ x: anchor.x, y: anchor.y });
+			const built = runtimeCall(handle, PORTS, { operation: "build_belt_loop_pad", anchors, belts: loopBelts });
+			if (built.success === false) throw new Error(`belt loop build failed: ${built.error}`);
+			let total = 0, dry = 0, rounds = 0;
+			while (total < 125 && dry < 3 && rounds < 200) {
+				rounds += 1;
+				const feed = runtimeCall(handle, PORTS, { operation: "feed_belt_loop", anchors, target: 125 });
+				if (feed.success === false) throw new Error(`belt loop feed failed: ${feed.error}`);
+				total = feed.total;
+				if (feed.added === 0) dry += 1; else dry = 0;
+				await sleep(600);
+			}
+			let last = null, stable = 0, polls = 0, measured = null;
+			while (stable < 3 && polls < 40) {
+				polls += 1;
+				measured = runtimeCall(handle, PORTS, { operation: "measure_belt_loop_pad", anchors });
+				if (measured.success === false) throw new Error(`belt loop measure failed: ${measured.error}`);
+				const key = JSON.stringify(measured.lineQuantities);
+				if (key === last) stable += 1; else stable = 0;
+				last = key;
+				await sleep(600);
+			}
+			if (stable < 3) throw new Error(`belt loop did not jam to a stable split: ${JSON.stringify(measured)}`);
+			beltPads[id] = measured;
+			console.error(`[seed-prep] belt loop pad: total=${total} rounds=${rounds} measured=${JSON.stringify(measured)}`);
+		}
+		// Retire the legacy belt-corner platform, then — ONLY after the loop pad measured green above —
+		// clear the nauvis belt clutter (the canonical content now lives on the pads).
+		const retire = runtimeCall(handle, PORTS, { operation: "retire_belt_platform" });
+		console.error(`[seed-prep] retire belt platform: ${JSON.stringify(retire)}`);
+		await sleep(2000); // let destroy(0) settle before the census-bearing save
+		const nauvisClear = runtimeCall(handle, PORTS, { operation: "clear_nauvis_belt_clutter" });
+		console.error(`[seed-prep] clear nauvis belt clutter: ${JSON.stringify(nauvisClear)}`);
+		// Restore the omnibus's original pause state (the belt feed had to unpause it). Jammed belts are
+		// stationary, so this freezes them exactly where they settled.
+		const restorePause = runtimeCall(handle, PORTS, { operation: "set_omnibus_paused", paused: beltPads.omnibusPausedBefore === true });
+		console.error(`[seed-prep] restore omnibus pause (${beltPads.omnibusPausedBefore}): ${JSON.stringify(restorePause)}`);
+
 		// Walkable grid (owner request 2026-07-19): join the pads to the hub with foundation so a
 		// character can physically walk the whole test floor. Idempotent (fills empty-space only).
 		const walkways = runtimeCall(handle, PORTS, { operation: "fill_walkways" });
@@ -232,7 +329,7 @@ async function main() {
 		await waitForStableSave(options.container, remoteSave);
 		docker(["cp", `${options.container}:${remoteSave}`, options.output], { timeout: 180_000 });
 
-		console.log(JSON.stringify({ status: "PASS", candidate: options.output, fingerprint: censusFingerprint, portedFixtures, migrations, holdPairs }, null, 2));
+		console.log(JSON.stringify({ status: "PASS", candidate: options.output, fingerprint: censusFingerprint, portedFixtures, migrations, holdPairs, beltPads }, null, 2));
 	} catch (error) {
 		try { console.error(`isolated Factorio tail:\n${tailFactorioLog(handle)}`); } catch { /* launch may have died early */ }
 		throw error;

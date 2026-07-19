@@ -1073,6 +1073,216 @@ elseif request.operation == "survey_omnibus" then
     end
     return { success = true, surface = s.name, texts = texts, entities = entities,
         entity_count = #entities }
+
+-- === belt pads (Lane B: belt fixtures return as pads on the omnibus grid) ========================
+-- The belt fixtures used to live on a dedicated platform (corner) and on nauvis (loop). They now ride
+-- two stamped test-foundation pads on the omnibus grid at the two free slots (64,22) and (92,22). The
+-- physics that make them stable (an over-packed corner, a jammed loop) are EMERGENT under elapsed
+-- ticks, so -- exactly like build_census_fusion -- the build op only PLACES the belts and a JS-side
+-- feed loop in seed-prep.mjs runs the sim (sleeps between rounds) until the state settles. Belts reject
+-- active writes (Pitfall #16 / BELT-R13), so they are frozen by destructible=false only (a saturated
+-- belt cannot move regardless). Measurement reuses FixtureMeters (shipped as the seed-prep prelude) so
+-- the seed-prep, bake, and reload meters are byte-identical.
+
+elseif request.operation == "build_belt_corner_pad" then
+    local platform = find_platform(OMNIBUS_PLATFORM)
+    if not platform or not platform.surface then
+        return { success = false, error = OMNIBUS_PLATFORM .. " not found for build_belt_corner_pad" }
+    end
+    local s = platform.surface
+    local force = game.forces["player"]
+    -- Belts must SIMULATE to compress at the corner; both the platform pause AND the game tick-pause
+    -- halt belt travel. Clear both (safe: every other omnibus fixture is per-entity active=false, so it
+    -- does not drift; the game is unpaused for the belt feed and re-checked by the reload gate anyway).
+    local was_paused = platform.paused
+    local tick_paused_before = game.tick_paused
+    platform.paused = false
+    game.tick_paused = false
+    local cp = assert(request.anchors and request.anchors["turbo-transport-belt"],
+        "build_belt_corner_pad requires request.anchors[turbo-transport-belt]")
+    local cx, cy = cp.x, cp.y
+    -- Ported from tests/integration/belt-corner-recovery/run-tests.ps1: 6 belts flowing EAST into a
+    -- NORTH-facing corner (an east->north LEFT turn), then one north dead-end. Nothing consumes at the
+    -- end, so the JS feed loop compresses items through the corner.
+    local specs = {}
+    for i = 6, 1, -1 do specs[#specs + 1] = { x = cx - i, y = cy, dir = defines.direction.east } end
+    specs[#specs + 1] = { x = cx, y = cy, dir = defines.direction.north }
+    specs[#specs + 1] = { x = cx, y = cy - 1, dir = defines.direction.north }
+    for _, e in ipairs(s.find_entities_filtered({ type = "transport-belt", area = { { cx - 8, cy - 4 }, { cx + 4, cy + 4 } } })) do
+        if e.valid then e.destroy() end
+    end
+    local built = 0
+    for _, spec in ipairs(specs) do
+        local e = s.create_entity({ name = "turbo-transport-belt", position = { spec.x, spec.y }, direction = spec.dir, force = force })
+        if not e then return { success = false, error = "turbo-transport-belt placement failed at (" .. spec.x .. "," .. spec.y .. ")" } end
+        e.destructible = false
+        built = built + 1
+    end
+    return { success = true, built = built, corner = { cx, cy }, entry = { x = cx - 6, y = cy },
+        paused_before = was_paused, tick_paused_before = tick_paused_before }
+
+elseif request.operation == "feed_belt_corner" then
+    local platform = find_platform(OMNIBUS_PLATFORM)
+    if not platform or not platform.surface then
+        return { success = false, error = OMNIBUS_PLATFORM .. " not found for feed_belt_corner" }
+    end
+    local s = platform.surface
+    local ep = assert(request.entry, "feed_belt_corner requires request.entry {x,y}")
+    -- radius 0.9: belts snap to tile centers; the 0.6-radius lesson from circuit-latch-state.
+    local entry = s.find_entities_filtered({ name = "turbo-transport-belt", position = { ep.x, ep.y }, radius = 0.9 })[1]
+    if not entry then return { success = false, error = "entry belt missing at (" .. ep.x .. "," .. ep.y .. ")" } end
+    local added = 0
+    for li = 1, 2 do
+        local line = entry.get_transport_line(li)
+        for slot = 0, 3 do
+            if line.insert_at(0.125 + slot * 0.25, { name = "iron-plate", count = 1 }, 1) then added = added + 1 end
+        end
+    end
+    -- Diagnostic: total items on the corner structure and the corner's inside-lane count, so a stalled
+    -- feed (belts frozen vs items flowing off) is visible per round.
+    local total, inside = 0, 0
+    local cp = request.corner
+    if cp then
+        for _, b in ipairs(s.find_entities_filtered({ type = "transport-belt", area = { { cp.x - 8, cp.y - 4 }, { cp.x + 4, cp.y + 4 } } })) do
+            for li = 1, b.get_max_transport_line_index() do
+                total = total + #b.get_transport_line(li).get_detailed_contents()
+            end
+        end
+        local corner = s.find_entity("turbo-transport-belt", { cp.x, cp.y })
+        if corner then inside = #corner.get_transport_line(1).get_detailed_contents() end
+    end
+    return { success = true, added = added, total = total, inside = inside }
+
+elseif request.operation == "measure_belt_corner_pad" then
+    local platform = find_platform(OMNIBUS_PLATFORM)
+    if not platform or not platform.surface then
+        return { success = false, error = OMNIBUS_PLATFORM .. " not found for measure_belt_corner_pad" }
+    end
+    local s = platform.surface
+    local anchors = assert(request.anchors, "measure_belt_corner_pad requires anchors")
+    local anchor = function(name) local a = assert(anchors[name], "missing anchor " .. name) return a.x, a.y end
+    local reading = FixtureMeters.measure_belt_corner(s, anchor)
+    -- Physical over-pack validity (NOT a manifest gate): >= 1 lane packed past insert_at rebuild spacing.
+    local cp = anchors["turbo-transport-belt"]
+    local overpacked, lanes = 0, 0
+    for _, b in ipairs(s.find_entities_filtered({ type = "transport-belt", area = { { cp.x - 8, cp.y - 4 }, { cp.x + 4, cp.y + 4 } } })) do
+        for li = 1, b.get_max_transport_line_index() do
+            local line = b.get_transport_line(li)
+            local n = #line.get_detailed_contents()
+            lanes = lanes + 1
+            if n > 0 and (n * 0.24) > line.line_length then overpacked = overpacked + 1 end
+        end
+    end
+    reading.success = true
+    reading.overpacked = overpacked
+    reading.lanes = lanes
+    return reading
+
+elseif request.operation == "build_belt_loop_pad" then
+    local platform = find_platform(OMNIBUS_PLATFORM)
+    if not platform or not platform.surface then
+        return { success = false, error = OMNIBUS_PLATFORM .. " not found for build_belt_loop_pad" }
+    end
+    local s = platform.surface
+    local force = game.forces["player"]
+    -- Belts must SIMULATE to circulate and jam the loop; platform pause halts belt travel. Unpause the
+    -- omnibus (safe: every other omnibus fixture is per-entity active=false, so it does not drift).
+    platform.paused = false
+    local belts = assert(request.belts, "build_belt_loop_pad requires request.belts descriptors")
+    local ap = assert(request.anchors and request.anchors["turbo-transport-belt"],
+        "build_belt_loop_pad requires request.anchors[turbo-transport-belt]")
+    for _, e in ipairs(s.find_entities_filtered({ type = "transport-belt", area = { { ap.x - 1, ap.y - 1 }, { ap.x + 6, ap.y + 6 } } })) do
+        if e.valid then e.destroy() end
+    end
+    local built = 0
+    for _, d in ipairs(belts) do
+        local dir = defines.direction[d.direction]
+        if dir == nil then return { success = false, error = "unknown belt direction " .. tostring(d.direction) } end
+        local e = s.create_entity({ name = d.name, position = { d.position.x, d.position.y }, direction = dir, force = force })
+        if not e then return { success = false, error = d.name .. " placement failed at (" .. d.position.x .. "," .. d.position.y .. ")" } end
+        e.destructible = false
+        built = built + 1
+    end
+    return { success = true, built = built }
+
+elseif request.operation == "feed_belt_loop" then
+    local platform = find_platform(OMNIBUS_PLATFORM)
+    if not platform or not platform.surface then
+        return { success = false, error = OMNIBUS_PLATFORM .. " not found for feed_belt_loop" }
+    end
+    local s = platform.surface
+    local ap = assert(request.anchors and request.anchors["turbo-transport-belt"],
+        "feed_belt_loop requires request.anchors[turbo-transport-belt]")
+    local target = request.target or 125
+    local belts = s.find_entities_filtered({ type = "transport-belt", area = { { ap.x - 1, ap.y - 1 }, { ap.x + 6, ap.y + 6 } } })
+    local function count_items()
+        local seen, total = {}, 0
+        for _, b in ipairs(belts) do
+            for li = 1, b.get_max_transport_line_index() do
+                for _, row in ipairs(b.get_transport_line(li).get_detailed_contents()) do
+                    if not seen[row.unique_id] then seen[row.unique_id] = true total = total + 1 end
+                end
+            end
+        end
+        return total
+    end
+    local before = count_items()
+    local added = 0
+    if before < target then
+        for _, b in ipairs(belts) do
+            for li = 1, b.get_max_transport_line_index() do
+                if before + added >= target then break end
+                local line = b.get_transport_line(li)
+                if line.insert_at(0.125, { name = "iron-plate", count = 1 }, 1) then added = added + 1 end
+            end
+            if before + added >= target then break end
+        end
+    end
+    return { success = true, added = added, total = before + added }
+
+elseif request.operation == "measure_belt_loop_pad" then
+    local platform = find_platform(OMNIBUS_PLATFORM)
+    if not platform or not platform.surface then
+        return { success = false, error = OMNIBUS_PLATFORM .. " not found for measure_belt_loop_pad" }
+    end
+    local s = platform.surface
+    local anchors = assert(request.anchors, "measure_belt_loop_pad requires anchors")
+    local anchor = function(name) local a = assert(anchors[name], "missing anchor " .. name) return a.x, a.y end
+    local reading = FixtureMeters.measure_belt_loop(s, anchor)
+    reading.success = true
+    return reading
+
+elseif request.operation == "retire_belt_platform" then
+    -- The corner fixture now rides the omnibus corner pad; retire the legacy lab-belt-corner-v1
+    -- PLATFORM. Pitfall #19: platform.destroy() with no arg is a no-op at 2.0.77; destroy(0) deletes
+    -- after an elapsed tick. lint:lua scans module/ only, so this tests-tree op needs no allow -- the
+    -- (0) form is kept deliberately.
+    local platform = find_platform("lab-belt-corner-v1")
+    if not platform then return { success = true, already_gone = true } end
+    platform.destroy(0)
+    return { success = true, retired = true }
+
+elseif request.operation == "clear_nauvis_belt_clutter" then
+    -- The 5x5 loop's canonical content now lives on the omnibus loop pad; remove ALL nauvis belt loops
+    -- (the historic source + empty target 5x5s). seed-prep.mjs orders this AFTER the loop pad measures
+    -- green so the canonical content is never destroyed before its replacement is proven.
+    local nauvis = game.surfaces.nauvis
+    if not nauvis then return { success = true, no_nauvis = true } end
+    local removed = 0
+    for _, e in ipairs(nauvis.find_entities_filtered({ type = "transport-belt" })) do
+        if e.valid then e.destroy() removed = removed + 1 end
+    end
+    return { success = true, removed = removed }
+
+elseif request.operation == "set_omnibus_paused" then
+    -- Restore the omnibus platform's original pause state after the belt feed (which had to unpause it
+    -- to simulate the belts). The belts are jammed (stationary) by now, so re-pausing freezes them in
+    -- place; every other omnibus fixture is per-entity active=false.
+    local platform = find_platform(OMNIBUS_PLATFORM)
+    if not platform then return { success = false, error = OMNIBUS_PLATFORM .. " not found for set_omnibus_paused" } end
+    platform.paused = request.paused == true
+    return { success = true, paused = platform.paused }
+
 end
 
 return { success = false, error = "unknown operation " .. tostring(request.operation) }
