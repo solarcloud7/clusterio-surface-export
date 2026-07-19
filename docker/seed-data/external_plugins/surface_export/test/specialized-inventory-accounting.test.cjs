@@ -21,7 +21,7 @@ const categories = [
 	"inserter", "container", "fluid-storage", "pipe", "pipe-to-ground", "pump", "train",
 	"car", "spider-vehicle", "combinator", "turret", "mining-drill", "lab", "roboport",
 	"artillery-turret", "rocket-silo", "gate", "power-switch", "agricultural-tower",
-	"programmable-speaker", "lamp", "entity-ghost", "tile-ghost", "item-request-proxy",
+	"programmable-speaker", "lamp", "display-panel", "entity-ghost", "tile-ghost", "item-request-proxy",
 	"train-stop",
 ];
 // Independent prototype/placement evidence from Factorio 2.0.77. This is deliberately
