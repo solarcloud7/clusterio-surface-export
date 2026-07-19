@@ -105,6 +105,8 @@ end
 local function capture_item_total(records)
 	local total = 0
 	for _, rec in ipairs(records) do
+		-- Ground pseudo-records carry their stack count directly (no specific_data).
+		if rec.type == "item-on-ground" then total = total + (rec.count or 0) end
 		local sd = rec.specific_data
 		if sd then
 			for _, inv in ipairs(sd.inventories or {}) do
@@ -244,7 +246,23 @@ function SelectionLab.copy(event)
 	local belt_pairs = {}
 	local minx, miny = math.huge, math.huge
 	for _, entity in ipairs(event.entities) do
-		if entity.valid and EntityScanner.is_exportable_entity(entity) then
+		-- Loose ground items: production excludes item-entity from entity records and captures them
+		-- as {type="item-on-ground"} pseudo-records instead (PR #24 shape, scan_items_on_ground);
+		-- the lab mirrors that so the ground-items pad is copyable (was "nothing_exportable").
+		-- Synthetic entity_id keys the create/rollback map (item-entities have no unit_number).
+		if entity.valid and entity.type == "item-entity" and entity.stack and entity.stack.valid_for_read then
+			local stack = entity.stack
+			records[#records + 1] = {
+				type = "item-on-ground",
+				entity_id = "ground-" .. (#records + 1),
+				name = stack.name,
+				count = stack.count,
+				position = { x = entity.position.x, y = entity.position.y },
+				quality = stack.quality and stack.quality.name or Util.QUALITY_NORMAL,
+			}
+			minx = math.min(minx, entity.position.x)
+			miny = math.min(miny, entity.position.y)
+		elseif entity.valid and EntityScanner.is_exportable_entity(entity) then
 			local entity_data = EntityScanner.serialize_entity(entity)
 			if entity_data then
 				-- Lab-only field: the production serializer deliberately does not carry `active`
@@ -352,7 +370,9 @@ local function plan_targets(surface, targets, player)
 		-- item-request-proxy has no collision footprint and can_place_entity cannot validate one
 		-- (the create requires a live target, which only exists after the paste creates it) — the
 		-- production create path is the validator. Always planned clear; create runs proxies last.
-		local placeable = t.type == "item-request-proxy"
+		-- item-on-ground pseudo-records likewise never block (loose items collide with nothing;
+		-- production create_ground_item retries at a non-colliding spot itself).
+		local placeable = t.type == "item-request-proxy" or t.type == "item-on-ground"
 			or surface.can_place_entity(place_spec(t, player))
 		if placeable then
 			plan.clear[#plan.clear + 1] = { rec = t }
@@ -390,7 +410,14 @@ local function execute_create_and_restore(surface, recs, player, side_groups, tr
 	-- fluid port alignment). The tool must never hand-roll its own create spec (same-system rule;
 	-- the hand-rolled spec broke on ghosts).
 	for _, rec in ipairs(recs) do
-		local ok, entity = pcall(function() return Deserializer.create_entity(surface, rec) end)
+		-- Ground pseudo-records use the PRODUCTION ground-item create (same-system rule) — the
+		-- entity create path would reject a stackless item-on-ground spec.
+		local ok, entity
+		if rec.type == "item-on-ground" then
+			ok, entity = pcall(function() return Deserializer.create_ground_item(surface, rec) end)
+		else
+			ok, entity = pcall(function() return Deserializer.create_entity(surface, rec) end)
+		end
 		if ok and entity then
 			created = created + 1
 			records[#records + 1] = rec
