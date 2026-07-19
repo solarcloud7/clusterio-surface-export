@@ -60,7 +60,7 @@ const {
 	loadGoldenPair, restoreLivePair, RESTORE_SAVES,
 } = L;
 
-const ALL_SECTIONS = ["preflight", "load", "b7", "b9", "restore"];
+const ALL_SECTIONS = ["preflight", "load", "b7", "b8", "b9", "restore"];
 let sections = [...ALL_SECTIONS];
 let noNotebook = false;
 let restoreOnly = false;
@@ -72,7 +72,7 @@ for (let i = 2; i < process.argv.length; i += 1) {
 	else throw new Error(`Unknown argument: ${arg}`);
 }
 for (const s of sections) if (!ALL_SECTIONS.includes(s)) throw new Error(`Unknown section: ${s}`);
-if (["load", "b7", "b9"].some(s => sections.includes(s)) && !sections.includes("restore")) {
+if (["load", "b7", "b8", "b9"].some(s => sections.includes(s)) && !sections.includes("restore")) {
 	sections.push("restore");
 	console.error("note: restore section auto-appended (displacing sections always restore)");
 }
@@ -206,6 +206,40 @@ async function main() {
 			results.b7Verdict = "GREEN";
 		}
 
+		if (runs("b8")) {
+			// engine-repin B8 (pause-free): module population raises nearby crafting_speed in the
+			// SAME Lua execution — no tick, no power (the mechanism behind the two-pass beacon-first
+			// inventory restore). Positions come from the manifest anchors (single source).
+			const fixture = manifest.fixtures.find(f => f.id === "repin-beacon-speed");
+			if (!fixture || !fixture.anchors) throw new Error("repin-beacon-speed anchors missing from manifest");
+			const anchor = Object.fromEntries(fixture.anchors.map(a => [a.entity, a]));
+			const b8 = lua(1, `local surf; for _,p in pairs(game.forces.player.platforms) do ` +
+				`if p.valid and p.name=='lab-omnibus-state-v1' then surf=p.surface end end; ` +
+				`local b=surf.find_entities_filtered({name='beacon',area={{${anchor.beacon.x - 0.4},${anchor.beacon.y - 0.4}},{${anchor.beacon.x + 0.4},${anchor.beacon.y + 0.4}}}})[1]; ` +
+				`local m=surf.find_entities_filtered({name='assembling-machine-2',area={{${anchor["assembling-machine-2"].x - 0.4},${anchor["assembling-machine-2"].y - 0.4}},{${anchor["assembling-machine-2"].x + 0.4},${anchor["assembling-machine-2"].y + 0.4}}}})[1]; ` +
+				`if not (b and m) then return {success=false,error='beacon pair not found at anchors'} end; ` +
+				`local inv=b.get_inventory(defines.inventory.beacon_modules); ` +
+				`local before=m.crafting_speed; local tick0=game.tick; ` +
+				`inv.insert({name='speed-module',count=2}); ` +
+				`local after=m.crafting_speed; ` +
+				`inv.clear(); ` +
+				`local restored=m.crafting_speed; ` +
+				`return {success=true,before=before,after=after,restored=restored,tick0=tick0,tick1=game.tick,` +
+				`machineActive=m.active,beaconActive=b.active,modulesEmpty=inv.is_empty()}`);
+			results.b8 = b8;
+			if (!b8.success) throw new Error(`B8 harness errored: ${b8.error}`);
+			if (b8.tick0 !== b8.tick1) throw new Error(`B8 execution spanned ticks ${b8.tick0}->${b8.tick1} — not same-execution`);
+			if (b8.machineActive !== false) throw new Error("B8 machine was active — the fixture must stay frozen");
+			if (!(b8.after > b8.before + 0.2)) {
+				throw new Error(`B8 crafting_speed did not rise same-execution: ${b8.before} -> ${b8.after} — PROPAGATION DRIFT`);
+			}
+			if (b8.restored !== b8.before) {
+				throw new Error(`B8 baseline did not return after module clear: ${b8.restored} vs ${b8.before}`);
+			}
+			if (b8.modulesEmpty !== true) throw new Error("B8 left modules behind — fixture not restored");
+			results.b8Verdict = "GREEN";
+		}
+
 		if (runs("b9")) {
 			const b9 = b9UnknownItemImport();
 			results.b9 = b9;
@@ -236,6 +270,7 @@ async function main() {
 		results.finished = new Date().toISOString();
 		results.green = results.errors.length === 0
 			&& (!runs("b7") || results.b7Verdict === "GREEN")
+			&& (!runs("b8") || results.b8Verdict === "GREEN")
 			&& (!runs("b9") || results.b9Verdict === "GREEN");
 		if (!noNotebook && !restoreOnly && sections.length === ALL_SECTIONS.length) {
 			appendFileSync(NOTEBOOK, renderNotebook(results));
@@ -256,6 +291,12 @@ function renderNotebook(results) {
 			rows.push(`\n**engine-repin B7 / ${platform}** — \`${r.call}\` at t0=${r.t0}: alive=${r.earlyAlive} at ` +
 				`+${r.earlyTick}, alive=${r.lateAlive} at +${r.lateTick} — matches the pinned 2.0.77 table.`);
 		}
+	}
+	if (results.b8Verdict) {
+		rows.push(`\n**engine-repin B8 (beacon crafting_speed, pause-free; distinct from no-tick-sync B8)** — ` +
+			`same-execution rise ${results.b8?.before} -> ${results.b8?.after} on module insert (tick ` +
+			`${results.b8?.tick0}==${results.b8?.tick1}, machine inactive), baseline ${results.b8?.restored} ` +
+			`restored on clear, modules left empty.`);
 	}
 	if (results.b9Verdict) {
 		rows.push(`\n**engine-repin B9 (unknown-item import)** — valid iron-plate restored physically ` +

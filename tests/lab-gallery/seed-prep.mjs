@@ -156,6 +156,7 @@ async function main() {
 		const cells = [
 			{ id: "inserter-held-capacity", originX: 92, originY: 8, build: "build_inserter_held", measure: "measure_inserter_held" },
 			{ id: "no-tick-sync-frozen-pair", originX: 8, originY: 22, build: "build_no_tick_pair", measure: "measure_no_tick_pair" },
+			{ id: "repin-beacon-speed", originX: 36, originY: 22, build: "build_repin_beacon", measure: "measure_repin_beacon" },
 		];
 		const portedFixtures = {};
 		for (const cell of cells) {

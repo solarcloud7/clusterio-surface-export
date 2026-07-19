@@ -33,10 +33,10 @@
     },
     {
       "lab": "engine-repin-lab",
-      "runner": "tests/engine-repin-lab",
+      "runner": "tests/engine-repin-lab (run-repin-consumables.mjs)",
       "rungs": "B7-B9",
-      "conclusion": "re-pinned engine behaviors on 2.0.77; measured the LuaSpacePlatform.destroy(0)/destroy(60) semantics drift from 2.0.76",
-      "commits": ["00e44c7"]
+      "conclusion": "re-pinned engine behaviors on 2.0.77; measured the LuaSpacePlatform.destroy(0)/destroy(60) semantics drift from 2.0.76. Now re-runnable on every pin bump via the repin-consumables batch (two consecutive greens, 2026-07-19): B7 consumes the three baked hub platforms against the pinned destroy table; B8 (beacon, DISTINCT from no-tick-sync B8) proves crafting_speed rises same-execution on module population (0.75->1.2, machine frozen, no ticks); B9 proves unknown-item imports skip loud and restore valid contents (25/25 physical)",
+      "commits": ["00e44c7", "f2cf844"]
     },
     {
       "lab": "hold-completeness-lab",

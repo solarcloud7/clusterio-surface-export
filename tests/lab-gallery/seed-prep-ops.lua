@@ -274,7 +274,11 @@ elseif request.operation == "stamp_test_cell" then
                 local x, y = ox + c - 1, oy + r - 1
                 local cur = s.get_tile(x, y).name
                 if cur == want then already = already + 1
-                elseif cur == "empty-space" then tiles[#tiles + 1] = { name = want, position = { x, y } }
+                -- Plain walkway foundation is reclaimable grid INFRASTRUCTURE (fill_walkways lays it
+                -- over every empty slot), not content — stampable like empty space. The refusal rule
+                -- still protects real content tiles (template/hazard/emblem).
+                elseif cur == "empty-space" or cur == "space-platform-foundation" then
+                    tiles[#tiles + 1] = { name = want, position = { x, y } }
                 else mismatch = mismatch + 1 end
             end
         end
@@ -347,6 +351,72 @@ elseif request.operation == "stamp_test_cell" then
         success = true, origin = { ox, oy }, name = request.name,
         wrote = #tiles, already = already,
         panel = desc ~= nil, combinator = comb ~= nil, status = status ~= nil,
+    }
+
+elseif request.operation == "build_repin_beacon" then
+    -- engine-repin B8 fixture (owner: "Omnibus zone"): an ACTIVE beacon with an EMPTY module
+    -- inventory beside a frozen recipe-set crafter. The batch rung populates the modules at
+    -- runtime and reads crafting_speed in the SAME execution (pause-free law); the baked state
+    -- is the pre-population baseline. Beacon stays active per the production convention
+    -- (beacons are never deactivated); the machine is frozen.
+    local platform = find_platform(OMNIBUS_PLATFORM)
+    if not platform or not platform.surface then
+        return { success = false, error = OMNIBUS_PLATFORM .. " not found for build_repin_beacon" }
+    end
+    local s = platform.surface
+    local force = game.forces["player"]
+    if force.recipes["iron-gear-wheel"] then force.recipes["iron-gear-wheel"].enabled = true end
+    local bp = assert(request.anchors and request.anchors["beacon"],
+        "build_repin_beacon requires request.anchors[beacon]")
+    local mp = assert(request.anchors and request.anchors["assembling-machine-2"],
+        "build_repin_beacon requires request.anchors[assembling-machine-2]")
+    for _, spec in ipairs({ { name = "beacon", pos = bp }, { name = "assembling-machine-2", pos = mp } }) do
+        local existing = s.find_entities_filtered({ name = spec.name,
+            area = { { spec.pos.x - 0.4, spec.pos.y - 0.4 }, { spec.pos.x + 0.4, spec.pos.y + 0.4 } } })[1]
+        if existing then existing.destroy() end
+    end
+    local beacon = s.create_entity({ name = "beacon", position = bp, force = "player" })
+    if not beacon then return { success = false, error = "beacon placement failed" } end
+    local machine = s.create_entity({ name = "assembling-machine-2", position = mp, force = "player" })
+    if not machine then return { success = false, error = "assembling-machine-2 placement failed" } end
+    machine.set_recipe("iron-gear-wheel")
+    machine.active = false
+    beacon.destructible = false
+    machine.destructible = false
+    local modules = beacon.get_inventory(defines.inventory.beacon_modules)
+    return {
+        success = true,
+        machineSpeed = machine.crafting_speed,
+        beaconModulesEmpty = modules ~= nil and modules.is_empty(),
+        beaconActive = beacon.active,
+        machineActive = machine.active,
+        allIndestructible = (not beacon.destructible) and (not machine.destructible),
+    }
+
+elseif request.operation == "measure_repin_beacon" then
+    local platform = find_platform(OMNIBUS_PLATFORM)
+    if not platform or not platform.surface then
+        return { success = false, error = OMNIBUS_PLATFORM .. " not found for measure_repin_beacon" }
+    end
+    local s = platform.surface
+    local bp = assert(request.anchors and request.anchors["beacon"],
+        "measure_repin_beacon requires request.anchors[beacon]")
+    local mp = assert(request.anchors and request.anchors["assembling-machine-2"],
+        "measure_repin_beacon requires request.anchors[assembling-machine-2]")
+    local beacon = s.find_entities_filtered({ name = "beacon",
+        area = { { bp.x - 0.4, bp.y - 0.4 }, { bp.x + 0.4, bp.y + 0.4 } } })[1]
+    local machine = s.find_entities_filtered({ name = "assembling-machine-2",
+        area = { { mp.x - 0.4, mp.y - 0.4 }, { mp.x + 0.4, mp.y + 0.4 } } })[1]
+    if not beacon then return { success = false, error = "beacon not found at anchor" } end
+    if not machine then return { success = false, error = "assembling-machine-2 not found at anchor" } end
+    local modules = beacon.get_inventory(defines.inventory.beacon_modules)
+    return {
+        success = true,
+        machineSpeed = machine.crafting_speed,
+        beaconModulesEmpty = modules ~= nil and modules.is_empty(),
+        beaconActive = beacon.active,
+        machineActive = machine.active,
+        allIndestructible = (not beacon.destructible) and (not machine.destructible),
     }
 
 elseif request.operation == "build_inserter_held" then

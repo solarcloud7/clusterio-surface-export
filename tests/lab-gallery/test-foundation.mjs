@@ -11,8 +11,10 @@
 //
 // Usage (stamp a new cell live):
 //   node tests/lab-gallery/test-foundation.mjs <originX> <originY> <test-name> [instance]
-// The stamp is REFUSED unless every target tile is empty-space (the only-onto-empty rule)
-// or the cell already matches the template exactly (idempotent re-stamp).
+// The stamp is REFUSED unless every target tile is empty-space or plain walkway foundation
+// (the only-onto-empty rule; fill_walkways lays reclaimable foundation over every empty grid
+// slot, so it stamps like empty space) or the cell already matches the template exactly
+// (idempotent re-stamp).
 
 import { execFileSync } from "node:child_process";
 import { pathToFileURL } from "node:url";
@@ -73,7 +75,7 @@ export function buildFoundationLua(originX, originY, testName) {
 				local x,y=ox+c-1,oy+r-1
 				local cur=s.get_tile(x,y).name
 				if cur==want then already=already+1
-				elseif cur=="empty-space" then tiles[#tiles+1]={name=want,position={x,y}}
+				elseif cur=="empty-space" or cur=="space-platform-foundation" then tiles[#tiles+1]={name=want,position={x,y}}
 				else mismatch=mismatch+1 end
 			end
 		end end

@@ -321,6 +321,21 @@ local function measure_no_tick_pair(surface, anchor)
     }
 end
 
+local function measure_repin_beacon(surface, anchor)
+    -- engine-repin B8 fixture (beacon crafting_speed same-execution propagation; distinct from
+    -- no-tick-sync B8): baked as an ACTIVE empty-module beacon beside a frozen recipe-set crafter.
+    local beacon = anchored(surface, anchor, "beacon", "repin beacon")
+    local machine = anchored(surface, anchor, "assembling-machine-2", "repin beacon")
+    local modules = beacon.get_inventory(defines.inventory.beacon_modules)
+    return {
+        machineSpeed = machine.crafting_speed,
+        beaconModulesEmpty = modules ~= nil and modules.is_empty(),
+        beaconActive = beacon.active,
+        machineActive = machine.active,
+        allIndestructible = (not beacon.destructible) and (not machine.destructible),
+    }
+end
+
 -- Measure the full baked corpus keyed by manifest fixture id. Locators are code; expected values
 -- come from the manifest fingerprints (single source of truth). Each measurement is pcall-guarded
 -- and SURFACES its error (never swallows) so a mid-deletion destination poll cannot abort inspect
@@ -382,6 +397,7 @@ local function measure_corpus(manifest)
         safe("omnibus-platform-schedule", function() return measure_omnibus_schedule(omni_platform) end)
         anchored_safe("inserter-held-capacity", function(a) return measure_inserter_held(omni, a) end)
         anchored_safe("no-tick-sync-frozen-pair", function(a) return measure_no_tick_pair(omni, a) end)
+        anchored_safe("repin-beacon-speed", function(a) return measure_repin_beacon(omni, a) end)
     end
     local energy = surface_for_platform("lab-energy-v1")
     if energy then safe("energy-accumulator-drain", function() return measure_energy(energy) end) end

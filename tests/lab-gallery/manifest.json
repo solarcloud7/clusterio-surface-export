@@ -18,9 +18,9 @@
 			"role": "source",
 			"name": "lab-gallery-source-surface-export-2-0-77",
 			"artifact": "docker/seed-data/lab-saves/lab-gallery-source-surface-export-2.0.77.zip",
-			"sha256": "EF132F1CEF1C2EEC4612978AC9CF4DD6991EAD81C20CF60331CA956666D29877",
+			"sha256": "6ADD2B03BE5D8DC15E02ADA05AAD4E1DCD92F06BCBAEFDD1FD4C3B1CFCEA6FD9",
 			"expectedCensus": {
-				"totalEntities": 1533,
+				"totalEntities": 1538,
 				"totalGeneratedChunks": 5532,
 				"surfaces": [
 					{
@@ -42,7 +42,7 @@
 					},
 					{
 						"name": "platform-11",
-						"entityCount": 123,
+						"entityCount": 128,
 						"generatedChunks": 375,
 						"platform": "lab-omnibus-state-v1"
 					},
@@ -1078,6 +1078,51 @@
 				"action": "Run the no_tick_sync_selftest remote in measure-baked-fixture (construct-free) mode against this pair under tick-pause - the strongest form.",
 				"expected": "game.tick unchanged; crafting_progress exactly 0.42 after the pass; the hand seats in full.",
 				"forbidden": "Any tick advance during the pass; crafting_progress drift; the selftest constructing anything on the golden world."
+			}
+		},
+		{
+			"id": "repin-beacon-speed",
+			"revision": 1,
+			"labId": "engine-repin-lab",
+			"name": "Beacon crafting_speed same-execution propagation",
+			"purpose": "Preserve an ACTIVE empty-module beacon beside a frozen recipe-set crafter - the baked baseline for the engine-repin B8 pause-free rung (module population must raise crafting_speed in the SAME Lua execution, no ticks, no power).",
+			"category": "physical-lab",
+			"owningRunner": "tests/engine-repin-lab/run-repin-consumables.mjs",
+			"saveRole": "source",
+			"platformName": "lab-omnibus-state-v1",
+			"engineVersion": "2.0.77",
+			"mods": {
+				"base": "2.0.77",
+				"elevated-rails": "2.0.77",
+				"FluidMustFlow": "1.4.4",
+				"quality": "2.0.77",
+				"SpidertronEnhancements": "1.10.8",
+				"space-age": "2.0.77",
+				"SpidertronPatrols": "2.6.3",
+				"surfexp_gateways": "0.3.0",
+				"maraxsis": "1.31.6"
+			},
+			"note": "Script-built by tests/lab-gallery/seed-prep-ops.lua (build_repin_beacon) onto the stamped repin-beacon-speed cell at (36,22): an active beacon with an EMPTY beacon_modules inventory at (40.5,26.5) and a frozen (active=false) assembling-machine-2 with iron-gear-wheel set at (44.5,26.5), both indestructible. The batch rung inserts 2 speed modules, reads crafting_speed same-execution, clears, and confirms the baseline - single-use per golden load; reload restores the empty-module baseline. NAMING: this is engine-repin B8, DISTINCT from no-tick-sync B8 - always cite lab-prefixed.",
+			"invariant": "The beacon is active with an empty module inventory; the machine reads crafting_speed 0.75 (unboosted assembling-machine-2), is inactive with iron-gear-wheel set; both are indestructible.",
+			"expectedTerminalVerdict": "same-execution-speed-propagation",
+			"independentOracleRequired": true,
+			"fingerprint": {
+				"machineSpeed": 0.75,
+				"beaconModulesEmpty": true,
+				"beaconActive": true,
+				"machineActive": false,
+				"allIndestructible": true
+			},
+			"anchors": [
+				{ "entity": "beacon", "x": 40.5, "y": 26.5 },
+				{ "entity": "assembling-machine-2", "x": 44.5, "y": 26.5 }
+			],
+			"testCard": {
+				"law": "Populating a beacon's module inventory raises nearby crafting_speed in the SAME Lua execution - no tick, no power (engine-repin B8; the mechanism behind the two-pass beacon-first inventory restore, CLAUDE.md Import Phase Ordering).",
+				"build": "repin-beacon-speed cell at (36,22): active empty-module beacon at (40.5,26.5), frozen assembling-machine-2 (iron-gear-wheel, crafting_speed 0.75) at (44.5,26.5), both indestructible.",
+				"action": "Batch rung: insert 2 speed modules into beacon_modules, read machine.crafting_speed in the same execution, clear the modules, confirm the baseline returns.",
+				"expected": "Speed rises immediately upon module insertion (same execution, machine still inactive and unpowered) and returns to 0.75 when the modules clear.",
+				"forbidden": "Speed requiring elapsed ticks or power to update; a baseline that is not 0.75; modules left behind after the rung."
 			}
 		},
 		{

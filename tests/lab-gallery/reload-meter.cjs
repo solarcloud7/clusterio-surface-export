@@ -123,6 +123,10 @@ if omni then
   local ntinput=ntm.get_inventory(defines.inventory.crafter_input)
   local ntrec=ntm.get_recipe()
   corpus["no-tick-sync-frozen-pair"]={progress=ntm.crafting_progress,recipe=ntrec and ntrec.name or nil,inputPlates=ntinput and ntinput.get_item_count("iron-plate") or nil,assemblerActive=ntm.active,inserterActive=nti.active,inserterHandEmpty=not nti.held_stack.valid_for_read,allIndestructible=(not ntm.destructible)and(not nti.destructible)}
+  local rbb=at(omni,"beacon",${A("repin-beacon-speed", "beacon")})
+  local rbm=at(omni,"assembling-machine-2",${A("repin-beacon-speed", "assembling-machine-2")})
+  local rbmods=rbb.get_inventory(defines.inventory.beacon_modules)
+  corpus["repin-beacon-speed"]={machineSpeed=rbm.crafting_speed,beaconModulesEmpty=rbmods~=nil and rbmods.is_empty(),beaconActive=rbb.active,machineActive=rbm.active,allIndestructible=(not rbb.destructible)and(not rbm.destructible)}
 end
 local es=platsurf("lab-energy-v1")
 if es then
