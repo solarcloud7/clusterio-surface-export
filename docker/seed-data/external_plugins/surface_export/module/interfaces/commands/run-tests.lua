@@ -544,17 +544,29 @@ Base.admin_command("test-run",
       if fixture_matches_filter(fx, filter) then
         considered = considered + 1
         local id = fx.id
+        -- A SKIPPED pad fixture still owns its live cell: claim it so the reverse reconcile does not
+        -- double-report a rostered-but-skipped pad as UNKNOWN (the skipped-no-meter wart, 2026-07-19).
+        local function claim_pad_cell()
+          if fx.padKind ~= "pad" then return end
+          local surface = FM.surface_for_platform(fx.platformName)
+          if not surface then return end
+          local d = cells_for(surface)
+          local cell = match_cell(d.cells, fx)
+          if cell then d.matched[cell] = true end
+        end
         if fx.runnerExcluded then
           local reason = (type(fx.runnerExcluded) == "string" and fx.runnerExcluded) or "excluded"
           skipped = skipped + 1
           record(id, "skipped", "excluded: " .. reason)
           ctx.print(string.format("%s %s: SKIPPED (excluded: %s)", RUN_PREFIX, id, reason), CHAT_YELLOW)
+          claim_pad_cell()
         else
           local dispatch = DISPATCH[id]
           if not dispatch then
             skipped = skipped + 1
             record(id, "skipped", "no meter")
             ctx.print(string.format("%s %s: SKIPPED (no meter)", RUN_PREFIX, id), CHAT_YELLOW)
+            claim_pad_cell()
           elseif fx.padKind == "pad" then
             local surface = FM.surface_for_platform(fx.platformName)
             if not surface then
@@ -626,14 +638,24 @@ Base.admin_command("test-run",
     -- Reconcile the OTHER way: a discovered cell matching no roster fixture is an UNKNOWN PAD (yellow
     -- warning, not a failure). Include the viewer's surface so an in-game run also flags strays there.
     if player then cells_for(player.surface) end
+    local open_slots = 0
     for _, d in pairs(disc) do
       for _, c in ipairs(d.cells) do
         if not d.matched[c] then
-          unknown = unknown + 1
-          record(c.name, "unknown", "discovered pad not in roster on " .. d.surface.name)
-          ctx.print(string.format("%s %s: UNKNOWN PAD (not in roster)", RUN_PREFIX, c.name), CHAT_YELLOW)
+          -- "open-slot-*" is the sanctioned empty-rack convention — infrastructure, not a stray
+          -- test. One summary count instead of a yellow warning per slot.
+          if type(c.name) == "string" and c.name:find("^open%-slot%-") then
+            open_slots = open_slots + 1
+          else
+            unknown = unknown + 1
+            record(c.name, "unknown", "discovered pad not in roster on " .. d.surface.name)
+            ctx.print(string.format("%s %s: UNKNOWN PAD (not in roster)", RUN_PREFIX, c.name), CHAT_YELLOW)
+          end
         end
       end
+    end
+    if open_slots > 0 then
+      ctx.print(string.format("%s %d open slot(s) available", RUN_PREFIX, open_slots), CHAT_YELLOW)
     end
 
     ctx.print(string.format("%s %d passed, %d failed, %d missing, %d unknown, %d skipped (roster %s)",
@@ -644,6 +666,7 @@ Base.admin_command("test-run",
       rosterHash = roster.hash,
       fixtureCount = considered,
       passed = passed, failed = failed, missing = missing, unknown = unknown, skipped = skipped,
+      openSlots = open_slots,
       results = results,
     }, player)
   end
