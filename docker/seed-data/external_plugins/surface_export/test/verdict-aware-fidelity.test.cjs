@@ -59,7 +59,8 @@ test("Assert-TransferSucceeded throws before census with failure diagnostics", {
 
 test("migrated fidelity runners adjudicate verdict before destination census", () => {
 	const cases = [
-		["ground-item-fidelity", "$dstOut = Count-Item"],
+		// ground-item-fidelity retired 2026-07-19 (absorbed by the omnibus-ground-items pad —
+		// tests/integration/MIGRATION.md); belt-loss-replay remains the Phase-5B instrument.
 		["belt-loss-replay", "$dest = Count-ProcessingUnits"],
 	];
 	for (const [name, censusMarker] of cases) {
