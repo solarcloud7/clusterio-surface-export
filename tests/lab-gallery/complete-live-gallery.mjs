@@ -27,13 +27,20 @@ const CTL_CONFIG = "/clusterio/tokens/config-control.json";
 const GALLERY = "surface-export-lab-gallery";
 const OMNIBUS = "lab-omnibus-state-v1";
 
+import { renderExpectFromLifecycle } from "./manifest.mjs";
+
 const manifest = JSON.parse(readFileSync(fileURLToPath(new URL("./manifest.json", import.meta.url)), "utf8"));
 const fixtureById = id => manifest.fixtures.find(f => f.id === id);
 const originOf = id => { const f = fixtureById(id); if (!f || !f.origin) throw new Error(`no origin for ${id}`); return f.origin; };
 const anchorsOf = id => Object.fromEntries(((fixtureById(id) || {}).anchors || []).map(a => [a.entity, { x: a.x, y: a.y }]));
 const cardOf = id => {
-	const c = (fixtureById(id) || {}).testCard || {};
-	return { law: c.law || "", action: c.action || "", expect: c.expected || "", forbidden: c.forbidden || "" };
+	const fx = fixtureById(id) || {};
+	const c = fx.testCard || {};
+	// EXPECT is GENERATED from the lifecycle verify list when one exists (single source — the
+	// declared checks ARE the description); authored testCard.expected is the fallback.
+	const generated = renderExpectFromLifecycle(fx);
+	const expect = generated && generated.length ? generated.join("; ") : (c.expected || "");
+	return { law: c.law || "", action: c.action || "", expect, forbidden: c.forbidden || "" };
 };
 
 function docker(args, timeout = 120_000) {
