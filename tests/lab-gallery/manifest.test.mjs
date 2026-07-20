@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { readFileSync, readdirSync } from "node:fs";
+import { readFileSync, readdirSync, existsSync } from "node:fs";
 import test from "node:test";
 
 import { loadGalleryManifest, renderExpectFromLifecycle, validateGalleryManifest } from "./manifest.mjs";
@@ -125,6 +125,19 @@ test("owningRunner is a required provenance key with an explicit, reasoned opt-o
 
 	// The reasoned null opt-out (as shipped) validates.
 	assert.doesNotThrow(() => validateGalleryManifest(clone(), { requireArtifacts: false }));
+});
+
+test("every string owningRunner points at a runner that actually exists", () => {
+	// A provenance key that names a DELETED runner is a lie about where the fixture's law lives —
+	// exactly what the SC-69/SC-6 integration-test deletions orphaned (14 dangling refs, repointed to
+	// null+waiver 2026-07-20). A `tests/...` owningRunner MUST resolve on disk; a fixture whose runner
+	// was retired uses the null + owningRunnerWaiver opt-out instead.
+	const manifest = loadGalleryManifest(repoRoot);
+	const dangling = manifest.fixtures
+		.filter(fixture => typeof fixture.owningRunner === "string")
+		.filter(fixture => !existsSync(new URL(fixture.owningRunner, repoRoot)))
+		.map(fixture => `${fixture.id} -> ${fixture.owningRunner}`);
+	assert.deepEqual(dangling, [], `dangling owningRunner(s): ${dangling.join("; ")}`);
 });
 
 test("visual zones have stable unique coordinates and durable source paths", () => {

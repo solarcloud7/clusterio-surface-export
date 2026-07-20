@@ -230,7 +230,7 @@
 			"name": "Adversarial nested inventory + quality",
 			"purpose": "Preserve a steel-chest holding a power-armor-mk2 whose equipment grid carries a legendary battery and uncommon shield, beside an uncommon-quality iron-gear-wheel recipe.",
 			"category": "physical-lab",
-			"owningRunner": "tests/integration/active-state-roundtrip/run-tests.ps1",
+			"owningRunner": null,
 			"saveRole": "source",
 			"platformName": "lab-omnibus-state-v1",
 			"engineVersion": "2.0.77",
@@ -267,7 +267,8 @@
 				"forbidden": "An emptied or flattened equipment grid; lost item quality; a dropped quality recipe."
 			},
 			"layoutBlueprint": "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M08w8zczTzDzNzNPMPM3M08w8zczTzDzNzNPMPM3ME8080cwTzTzRzBPNPNHME8080cwTzTzRzBPNPNHME8080cwTzTzRzBPNPNHME8080cwTzTzRzBPNPNHME8080cwTzTzRzBPNPNHME8080cwTzTzRzBNz6onmnmjuieaeaO6J5p5o7onmnmjuieaeaO6J5p5o7onmnmjuieaeaO7Yl27Wl27Wl27Wl27Wl27Wl27Wl27Wl27Wl27Wl27Wl27Wl27Wl27Wl27Wl27Wl27Wl27Wl27Wl27Wl27Wl27Wl27Wl27Wl27Wl27Wl27Wl27Wl27Wl27Wl27Wl27Wl27Wl27Wl27Wl27Wl27Wl27Wl27Wl27Wl27Yl27Yl27Yl27Yl27Yl27Yl27Yl27Yl27Yl27Yl27Yl27Yl27Yl27Yl27Yl27Yl27Yl27Yl27Yl27Yl27Yl27Yl27Yl27Yl27Yl27Yl27Yl27Yl27Yl27Yl27Yl27Yl27Yl27Yl27Yl27Yl27Yl27Yl27Yl27Yl27Yl27Yl27Yl27Yl27Yl27Yl27Yl27Yl27Yl27Yl27Yl/57x78bDpaHbt0/6GZ17B52y81hMBx87Hb78xnHk5i3+Xw8a5Np/7/Hx/8F93J0iA==",
-			"note": " VAULT ROLE (owner, 2026-07-19): the steel-chest at (12.5,-16.5) is the item-coverage vault — item-data classes needing serialization checking live here (blueprint w/ layout+label, blueprint-book w/ nested print, filtered decon planner, partial-durability repair pack, partial magazine, stable spoilage x10). Mid-spoil items are spawned ON DEMAND only (spoil timers tick even frozen). Meter fields unchanged (armor-specific)."
+			"note": " VAULT ROLE (owner, 2026-07-19): the steel-chest at (12.5,-16.5) is the item-coverage vault — item-data classes needing serialization checking live here (blueprint w/ layout+label, blueprint-book w/ nested print, filtered decon planner, partial-durability repair pack, partial magazine, stable spoilage x10). Mid-spoil items are spawned ON DEMAND only (spoil timers tick even frozen). Meter fields unchanged (armor-specific).",
+			"owningRunnerWaiver": "Absorbed onto this pad; the original runner (tests/integration/active-state-roundtrip/run-tests.ps1) was deleted, see tests/integration/MIGRATION.md. The law is now baked state run by /test-run (the pad system), not a standalone runner."
 		},
 		{
 			"id": "omnibus-heat-temperature",
@@ -288,7 +289,7 @@
 			"name": "Heat-pipe temperature",
 			"purpose": "Preserve a heat-pipe at a non-default temperature.",
 			"category": "physical-lab",
-			"owningRunner": "tests/integration/heat-roundtrip/run-tests.ps1",
+			"owningRunner": null,
 			"saveRole": "source",
 			"platformName": "lab-omnibus-state-v1",
 			"engineVersion": "2.0.77",
@@ -315,7 +316,8 @@
 				"action": "/test-run: reset the compare area, selection-lab copy of the pad build area, paste at +14,0, physical audit of both halves.",
 				"expected": "Audit reports equal entities; the pasted heat-pipe reads the same temperature.",
 				"forbidden": "Temperature reset to ambient (15C); any temperature drift."
-			}
+			},
+			"owningRunnerWaiver": "Absorbed onto this pad; the original runner (tests/integration/heat-roundtrip/run-tests.ps1) was deleted, see tests/integration/MIGRATION.md. The law is now baked state run by /test-run (the pad system), not a standalone runner."
 		},
 		{
 			"id": "omnibus-decider-latch",
@@ -336,7 +338,7 @@
 			"name": "Self-feeding decider latch",
 			"purpose": "Preserve a decider-combinator latched on by its own red-wire self-feedback.",
 			"category": "physical-lab",
-			"owningRunner": "tests/integration/circuit-latch-state/run-tests.ps1",
+			"owningRunner": null,
 			"saveRole": "source",
 			"platformName": "lab-omnibus-state-v1",
 			"engineVersion": "2.0.77",
@@ -367,7 +369,8 @@
 			"pasteExclude": [
 				"signalS"
 			],
-			"note": " pasteExclude signalS [empirical 2.0.77, live probe 2026-07-20]: the decider output register is not script-writable (signals_last_tick nil on fresh entities, writes rejected), so the self-held signal cannot ride a frozen paste/transfer — engine limit, per-field exclusion, never a blanket skip."
+			"note": " pasteExclude signalS [empirical 2.0.77, live probe 2026-07-20]: the decider output register is not script-writable (signals_last_tick nil on fresh entities, writes rejected), so the self-held signal cannot ride a frozen paste/transfer — engine limit, per-field exclusion, never a blanket skip.",
+			"owningRunnerWaiver": "Absorbed onto this pad; the original runner (tests/integration/circuit-latch-state/run-tests.ps1) was deleted, see tests/integration/MIGRATION.md. The law is now baked state run by /test-run (the pad system), not a standalone runner."
 		},
 		{
 			"id": "omnibus-midcraft-progress",
@@ -388,7 +391,7 @@
 			"name": "Mid-craft assembling machine",
 			"purpose": "Preserve a deactivated assembling-machine-1 frozen partway through a craft with embodied ingredients.",
 			"category": "physical-lab",
-			"owningRunner": "tests/integration/midcraft-roundtrip/run-tests.ps1",
+			"owningRunner": null,
 			"saveRole": "source",
 			"platformName": "lab-omnibus-state-v1",
 			"engineVersion": "2.0.77",
@@ -417,7 +420,8 @@
 				"action": "/test-run: reset the compare area, selection-lab copy of the pad build area, paste at +14,0, physical audit of both halves.",
 				"expected": "Audit reports equal entities/items; the pasted machine reads the same crafting_progress and input plate count, still inactive.",
 				"forbidden": "Progress reset or advanced; consumed or duplicated inputs; the machine arriving active."
-			}
+			},
+			"owningRunnerWaiver": "Absorbed onto this pad; the original runner (tests/integration/midcraft-roundtrip/run-tests.ps1) was deleted, see tests/integration/MIGRATION.md. The law is now baked state run by /test-run (the pad system), not a standalone runner."
 		},
 		{
 			"id": "omnibus-burner-fuel",
@@ -438,7 +442,7 @@
 			"name": "Burner inserter fuel state",
 			"purpose": "Preserve a deactivated burner-inserter mid-burn with a partly-consumed fuel item and fuel inventory.",
 			"category": "physical-lab",
-			"owningRunner": "tests/integration/entity-burner-roundtrip/run-tests.ps1",
+			"owningRunner": null,
 			"saveRole": "source",
 			"platformName": "lab-omnibus-state-v1",
 			"engineVersion": "2.0.77",
@@ -468,7 +472,8 @@
 				"action": "/test-run: reset the compare area, selection-lab copy of the pad build area, paste at +14,0, physical audit of both halves.",
 				"expected": "Audit reports equal entities/items; the pasted burner-inserter keeps its coal, burning item, and remaining fuel energy.",
 				"forbidden": "A cold burner (currently_burning lost); dropped fuel items; remaining fuel reset."
-			}
+			},
+			"owningRunnerWaiver": "Absorbed onto this pad; the original runner (tests/integration/entity-burner-roundtrip/run-tests.ps1) was deleted, see tests/integration/MIGRATION.md. The law is now baked state run by /test-run (the pad system), not a standalone runner."
 		},
 		{
 			"id": "omnibus-equipment-grid",
@@ -489,7 +494,7 @@
 			"name": "Spidertron equipment grid",
 			"purpose": "Preserve a spidertron whose equipment grid carries a partly-charged battery.",
 			"category": "physical-lab",
-			"owningRunner": "tests/integration/item-grid-roundtrip/run-tests.ps1",
+			"owningRunner": null,
 			"saveRole": "source",
 			"platformName": "lab-omnibus-state-v1",
 			"engineVersion": "2.0.77",
@@ -518,7 +523,8 @@
 				"action": "/test-run: reset the compare area, selection-lab copy of the pad build area, paste at +14,0, physical audit of both halves.",
 				"expected": "Audit reports equal entities; the pasted spidertron's grid battery reads the same energy.",
 				"forbidden": "An emptied grid; battery energy reset to 0 or full."
-			}
+			},
+			"owningRunnerWaiver": "Absorbed onto this pad; the original runner (tests/integration/item-grid-roundtrip/run-tests.ps1) was deleted, see tests/integration/MIGRATION.md. The law is now baked state run by /test-run (the pad system), not a standalone runner."
 		},
 		{
 			"id": "omnibus-circuit-config",
@@ -544,7 +550,7 @@
 			"name": "Circuit configuration",
 			"purpose": "Preserve a constant-combinator section signal, a wired decider, and a color-using lamp.",
 			"category": "physical-lab",
-			"owningRunner": "tests/integration/circuit-config-roundtrip/run-tests.ps1",
+			"owningRunner": null,
 			"saveRole": "source",
 			"platformName": "lab-omnibus-state-v1",
 			"engineVersion": "2.0.77",
@@ -573,7 +579,8 @@
 				"action": "/test-run: reset the compare area, selection-lab copy of the pad build area, paste at +14,0, physical audit of both halves.",
 				"expected": "Audit reports equal entities; the pasted combinator carries the same section filter and the lamp the same use_colors flag.",
 				"forbidden": "Dropped section filters; lost wire connections; a flipped or defaulted lamp flag."
-			}
+			},
+			"owningRunnerWaiver": "Absorbed onto this pad; the original runner (tests/integration/circuit-config-roundtrip/run-tests.ps1) was deleted, see tests/integration/MIGRATION.md. The law is now baked state run by /test-run (the pad system), not a standalone runner."
 		},
 		{
 			"id": "omnibus-module-bonus-progress",
@@ -594,7 +601,7 @@
 			"name": "Module bonus progress",
 			"purpose": "Preserve a deactivated assembling-machine-2 with productivity modules mid bonus progress.",
 			"category": "physical-lab",
-			"owningRunner": "tests/integration/bonus-progress-roundtrip/run-tests.ps1",
+			"owningRunner": null,
 			"saveRole": "source",
 			"platformName": "lab-omnibus-state-v1",
 			"engineVersion": "2.0.77",
@@ -623,7 +630,8 @@
 				"action": "/test-run: reset the compare area, selection-lab copy of the pad build area, paste at +14,0, physical audit of both halves.",
 				"expected": "Audit reports equal entities/items; the pasted machine keeps its productivity modules and the same bonus_progress.",
 				"forbidden": "Missing modules; bonus_progress reset; the machine arriving active."
-			}
+			},
+			"owningRunnerWaiver": "Absorbed onto this pad; the original runner (tests/integration/bonus-progress-roundtrip/run-tests.ps1) was deleted, see tests/integration/MIGRATION.md. The law is now baked state run by /test-run (the pad system), not a standalone runner."
 		},
 		{
 			"id": "omnibus-crafting-fluids",
@@ -654,7 +662,7 @@
 			"name": "Crafting-machine fluids",
 			"purpose": "Preserve a storage-tank of steam beside an inactive chemical-plant and foundry holding recipe fluids.",
 			"category": "physical-lab",
-			"owningRunner": "tests/integration/specialized-inventory-roundtrip/run-tests.ps1",
+			"owningRunner": null,
 			"saveRole": "source",
 			"platformName": "lab-omnibus-state-v1",
 			"engineVersion": "2.0.77",
@@ -686,7 +694,8 @@
 				"action": "/test-run: reset the compare area, selection-lab copy of the pad build area, paste at +14,0, physical audit of both halves.",
 				"expected": "Audit reports equal fluids by name and amount; the pasted tank/plant/foundry read the same amounts and temperatures.",
 				"forbidden": "Any fluid amount or temperature drift; crafter fluidboxes arriving empty."
-			}
+			},
+			"owningRunnerWaiver": "Absorbed onto this pad; the original runner (tests/integration/specialized-inventory-roundtrip/run-tests.ps1) was deleted, see tests/integration/MIGRATION.md. The law is now baked state run by /test-run (the pad system), not a standalone runner."
 		},
 		{
 			"id": "omnibus-ghosts-and-proxies",
@@ -700,7 +709,7 @@
 			"name": "Ghosts and item-request proxy",
 			"purpose": "Preserve one entity-ghost, one tile-ghost, and one item-request-proxy on a host machine.",
 			"category": "physical-lab",
-			"owningRunner": "tests/integration/entity-roundtrip/run-tests.ps1",
+			"owningRunner": null,
 			"saveRole": "source",
 			"platformName": "lab-omnibus-state-v1",
 			"engineVersion": "2.0.77",
@@ -730,7 +739,8 @@
 				"action": "/test-run: reset the compare area, selection-lab copy of the pad build area, paste at +14,0, physical audit of both halves.",
 				"expected": "Audit reports equal entities including one entity-ghost, one tile-ghost, and one item-request-proxy on the pasted half.",
 				"forbidden": "A ghost or proxy silently dropped; a proxy detached from its target machine."
-			}
+			},
+			"owningRunnerWaiver": "Absorbed onto this pad; the original runner (tests/integration/entity-roundtrip/run-tests.ps1) was deleted, see tests/integration/MIGRATION.md. The law is now baked state run by /test-run (the pad system), not a standalone runner."
 		},
 		{
 			"id": "omnibus-ground-items",
@@ -744,7 +754,7 @@
 			"name": "Loose ground items",
 			"purpose": "Preserve loose item-entities lying on the platform floor.",
 			"category": "physical-lab",
-			"owningRunner": "tests/integration/ground-item-fidelity/run-tests.ps1",
+			"owningRunner": null,
 			"saveRole": "source",
 			"platformName": "lab-omnibus-state-v1",
 			"engineVersion": "2.0.77",
@@ -771,7 +781,8 @@
 				"action": "/test-run: reset the compare area, selection-lab copy of the pad build area, paste at +14,0, physical audit of both halves.",
 				"expected": "Audit reports equal items; the pasted half carries the same iron-plate ground total at the same relative positions.",
 				"forbidden": "Any ground item lost or merged; count drift between halves."
-			}
+			},
+			"owningRunnerWaiver": "Absorbed onto this pad; the original runner (tests/integration/ground-item-fidelity/run-tests.ps1) was deleted, see tests/integration/MIGRATION.md. The law is now baked state run by /test-run (the pad system), not a standalone runner."
 		},
 		{
 			"id": "omnibus-platform-schedule",
@@ -887,7 +898,7 @@
 			"name": "Held-item capacity on a less-researched destination",
 			"purpose": "Preserve a frozen legendary bulk-inserter whose hand is seated with 8 railgun-ammo under a baked >=11 player-force bulk-inserter capacity bonus - the adversarial state for dest-force research replication on import.",
 			"category": "physical-lab",
-			"owningRunner": "tests/inserter-lab/run-b7-held-capacity-batch.mjs",
+			"owningRunner": null,
 			"saveRole": "source",
 			"platformName": "lab-omnibus-state-v1",
 			"engineVersion": "2.0.77",
@@ -920,7 +931,8 @@
 				"action": "Production /transfer-platform of the omnibus platform to a destination whose bulk_inserter_capacity_bonus is 0 (asserted, never forced).",
 				"expected": "A forceDataMismatches warning fires; the destination bonus is raised, never lowered; the hand seats 8/8 by physical count; the strict gate reports SUCCESS.",
 				"forbidden": "An under-seated hand; a gate pass over a short hand; any destination bonus lowered; the baked bonus not surviving save/load."
-			}
+			},
+			"owningRunnerWaiver": "Absorbed onto this pad; the original runner (tests/inserter-lab/run-b7-held-capacity-batch.mjs) was archived at git tag labs-archive-2026-07-19. The law is now baked state run by /test-run (the pad system), not a standalone runner."
 		},
 		{
 			"id": "no-tick-sync-frozen-pair",
@@ -946,7 +958,7 @@
 			"name": "No-tick synchronous held-item pair",
 			"purpose": "Preserve a frozen mid-craft assembling-machine-1 beside an inactive empty-handed inserter - the construct-free target proving the synchronous held-item pass advances no tick.",
 			"category": "physical-lab",
-			"owningRunner": "tests/no-tick-sync-lab/run-b8-baked-pair.mjs",
+			"owningRunner": null,
 			"saveRole": "source",
 			"platformName": "lab-omnibus-state-v1",
 			"engineVersion": "2.0.77",
@@ -980,7 +992,8 @@
 				"action": "Run the no_tick_sync_selftest remote in measure-baked-fixture (construct-free) mode against this pair under tick-pause - the strongest form.",
 				"expected": "game.tick unchanged; crafting_progress exactly 0.42 after the pass; the hand seats in full.",
 				"forbidden": "Any tick advance during the pass; crafting_progress drift; the selftest constructing anything on the golden world."
-			}
+			},
+			"owningRunnerWaiver": "Absorbed onto this pad; the original runner (tests/no-tick-sync-lab/run-b8-baked-pair.mjs) was archived at git tag labs-archive-2026-07-19. The law is now baked state run by /test-run (the pad system), not a standalone runner."
 		},
 		{
 			"id": "repin-beacon-speed",
@@ -994,7 +1007,7 @@
 			"name": "Beacon crafting_speed same-execution propagation",
 			"purpose": "Preserve an ACTIVE empty-module beacon beside a frozen recipe-set crafter - the baked baseline for the engine-repin B8 pause-free rung (module population must raise crafting_speed in the SAME Lua execution, no ticks, no power).",
 			"category": "physical-lab",
-			"owningRunner": "tests/engine-repin-lab/run-repin-consumables.mjs",
+			"owningRunner": null,
 			"saveRole": "source",
 			"platformName": "lab-omnibus-state-v1",
 			"engineVersion": "2.0.77",
@@ -1038,7 +1051,8 @@
 				"action": "Batch rung: insert 2 speed modules into beacon_modules, read machine.crafting_speed in the same execution, clear the modules, confirm the baseline returns.",
 				"expected": "Speed rises immediately upon module insertion (same execution, machine still inactive and unpowered) and returns to 0.75 when the modules clear.",
 				"forbidden": "Speed requiring elapsed ticks or power to update; a baseline that is not 0.75; modules left behind after the rung."
-			}
+			},
+			"owningRunnerWaiver": "Absorbed onto this pad; the original runner (tests/engine-repin-lab/run-repin-consumables.mjs) was archived at git tag labs-archive-2026-07-19. The law is now baked state run by /test-run (the pad system), not a standalone runner."
 		},
 		{
 			"id": "belt-combined-omnibus",
