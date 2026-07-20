@@ -147,8 +147,8 @@ repoOnlyTest("destination hold integration probe waits for the save atomic renam
 	assert.match(script, /\.tmp\.zip/);
 	assert.match(script, /saved_at -gt \$BeforeTimestamp/);
 	assert.ok(
-		script.indexOf("Wait-ForCompletedSave") < script.indexOf("docker restart $container"),
-		"completed-save wait must precede container restart",
+		script.indexOf("Wait-ForCompletedSave") < script.indexOf("clusterioctl --log-level error instance stop"),
+		"completed-save wait must precede the instance stop/start restart (docker restart retired 2026-07-19: the measurand is the Factorio process, not the container)",
 	);
 });
 repoOnlyTest("destination hold integration probe directly measures machine-buffer fluids", () => {

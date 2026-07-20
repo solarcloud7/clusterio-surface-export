@@ -301,7 +301,7 @@ test("failed-entity and overflow item losses retain quality keys end to end", ()
 test("forced entity failure is fail-safe and preservation is one-shot and visible", () => {
 	const entityCreation = fs.readFileSync(path.join(moduleRoot, "import_phases", "entity_creation.lua"), "utf8");
 	const importCompletion = fs.readFileSync(path.join(moduleRoot, "core", "import-completion.lua"), "utf8");
-	const hookLint = fs.readFileSync(path.join(__dirname, "..", "scripts", "lint-test-hooks.mjs"), "utf8");
+	const hookLint = fs.readFileSync(path.join(__dirname, "..", "scripts", "lint-test-hooks.mjs"), "utf8"); // reads the LINT (flag-coverage assertions); the hook ENUMERATION lives in fail-safe-hooks.mjs
 	assert.match(entityCreation, /job\.test_forced_entity_failure\s*=\s*true/,
 		"the mutating entity hook must leave a fail-safe verdict marker");
 	assert.match(importCompletion, /job\.test_forced_entity_failure[\s\S]*result\.success\s*=\s*false/,
@@ -413,7 +413,7 @@ test("LuaInterface has no production validation-result refetch helper", () => {
 test("fluid-loss hook is allowlisted and fires before the single gate", () => {
 	const importCompletion = fs.readFileSync(path.join(moduleRoot, "core", "import-completion.lua"), "utf8");
 	const configure = fs.readFileSync(path.join(moduleRoot, "interfaces", "remote", "configure.lua"), "utf8");
-	const hookLint = fs.readFileSync(path.join(__dirname, "..", "scripts", "lint-test-hooks.mjs"), "utf8");
+	const hookLint = fs.readFileSync(path.join(__dirname, "..", "scripts", "fail-safe-hooks.mjs"), "utf8"); // FAIL_SAFE_HOOKS moved to the shared declaration
 	const hookIndex = importCompletion.indexOf("test_force_fluid_loss");
 	const gateIndex = importCompletion.indexOf("TransferValidation.validate_import");
 
