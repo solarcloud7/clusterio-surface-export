@@ -22136,3 +22136,623 @@ exclusion narrows or retires (/di-change — it sits on the strict gate); census
 ritual collapses to infinity-pipe seeding; the owner's hand-built loop becomes the fusion fixture.
 DO NOT change api-notes or the exclusion from this single probe — rung first (conditions matrix:
 fresh/connected/frozen/import-path), per [[lab-before-design]].
+
+
+## 2026-07-20T00:02:40.207Z - fluid-lab R14 fusion write-rejection conditions matrix
+
+Prediction stated before execution. Scratch-only on host-1; owner gallery loop untouched. Cite as "fluid-lab R14" (distinct from belt-lab BELT-R14).
+
+```json
+{
+  "script": "tests/fluid-lab/run-r14-fusion-write-matrix.mjs",
+  "rung": "fluid-lab R14",
+  "started": "2026-07-20T00:02:33.330Z",
+  "prediction": "Fusion plasma writes (both fluidbox[i]= and insert_fluid) ACCEPT on fresh/inactive/settled reactor-output and generator-input boxes at 2.0.77; the blanket Pitfall #21 'reactor output rejects writes' does not reproduce under any cheaply-constructible scratch condition, meaning R11's write_rejected was a topology/capacity artifact of the live transfer segment, not a categorical output-box rejection.",
+  "errors": [],
+  "initial_reset": {
+    "success": true,
+    "surfaces": 0,
+    "storage": false,
+    "game_paused": false,
+    "holds": 0,
+    "locks": 0,
+    "jobs": 0,
+    "ok": true
+  },
+  "setup": {
+    "success": true,
+    "name": "fluid-lab-r14-865169",
+    "index": 5,
+    "settled_reactor": 14316,
+    "settled_generator": 14317,
+    "tick": 865169
+  },
+  "matrix": {
+    "tick_start": 865304,
+    "cells": [
+      {
+        "path": "fluidbox",
+        "box": 2,
+        "active": true,
+        "production_type": "output",
+        "categories": [
+          "fusion-plasma"
+        ],
+        "ok": true,
+        "readback": {
+          "name": "fusion-plasma",
+          "amount": 10,
+          "temp": 1000000
+        },
+        "seg_id": 69,
+        "seg_contents": {},
+        "accepted": true,
+        "tick": 865304,
+        "label": "reactor_output/fresh_active"
+      },
+      {
+        "path": "insert_fluid",
+        "box": 2,
+        "active": true,
+        "production_type": "output",
+        "categories": [
+          "fusion-plasma"
+        ],
+        "ok": true,
+        "inserted": 10,
+        "readback": {
+          "name": "fusion-plasma",
+          "amount": 10,
+          "temp": 1000000
+        },
+        "seg_id": 71,
+        "seg_contents": {},
+        "accepted": true,
+        "tick": 865304,
+        "label": "reactor_output/fresh_active"
+      },
+      {
+        "path": "fluidbox",
+        "box": 2,
+        "active": false,
+        "production_type": "output",
+        "categories": [
+          "fusion-plasma"
+        ],
+        "ok": true,
+        "readback": {
+          "name": "fusion-plasma",
+          "amount": 10,
+          "temp": 1000000
+        },
+        "seg_id": 73,
+        "seg_contents": {},
+        "accepted": true,
+        "tick": 865304,
+        "label": "reactor_output/fresh_inactive"
+      },
+      {
+        "path": "insert_fluid",
+        "box": 2,
+        "active": false,
+        "production_type": "output",
+        "categories": [
+          "fusion-plasma"
+        ],
+        "ok": true,
+        "inserted": 10,
+        "readback": {
+          "name": "fusion-plasma",
+          "amount": 10,
+          "temp": 1000000
+        },
+        "seg_id": 75,
+        "seg_contents": {},
+        "accepted": true,
+        "tick": 865304,
+        "label": "reactor_output/fresh_inactive"
+      },
+      {
+        "path": "fluidbox",
+        "box": 1,
+        "active": true,
+        "production_type": "input",
+        "categories": [
+          "fusion-plasma"
+        ],
+        "ok": true,
+        "readback": {
+          "name": "fusion-plasma",
+          "amount": 10,
+          "temp": 1000000
+        },
+        "accepted": true,
+        "tick": 865304,
+        "label": "generator_input/fresh_active"
+      },
+      {
+        "path": "insert_fluid",
+        "box": 1,
+        "active": true,
+        "production_type": "input",
+        "categories": [
+          "fusion-plasma"
+        ],
+        "ok": true,
+        "inserted": 10,
+        "readback": {
+          "name": "fusion-plasma",
+          "amount": 10,
+          "temp": 1000000
+        },
+        "accepted": true,
+        "tick": 865304,
+        "label": "generator_input/fresh_active"
+      },
+      {
+        "path": "fluidbox",
+        "box": 1,
+        "active": false,
+        "production_type": "input",
+        "categories": [
+          "fusion-plasma"
+        ],
+        "ok": true,
+        "readback": {
+          "name": "fusion-plasma",
+          "amount": 10,
+          "temp": 1000000
+        },
+        "accepted": true,
+        "tick": 865304,
+        "label": "generator_input/fresh_inactive"
+      },
+      {
+        "path": "insert_fluid",
+        "box": 1,
+        "active": false,
+        "production_type": "input",
+        "categories": [
+          "fusion-plasma"
+        ],
+        "ok": true,
+        "inserted": 10,
+        "readback": {
+          "name": "fusion-plasma",
+          "amount": 10,
+          "temp": 1000000
+        },
+        "accepted": true,
+        "tick": 865304,
+        "label": "generator_input/fresh_inactive"
+      },
+      {
+        "path": "fluidbox",
+        "box": 2,
+        "active": true,
+        "production_type": "output",
+        "categories": [
+          "fusion-plasma"
+        ],
+        "ok": true,
+        "readback": {
+          "name": "fusion-plasma",
+          "amount": 10,
+          "temp": 1000000
+        },
+        "seg_id": 65,
+        "seg_contents": {},
+        "accepted": true,
+        "tick": 865304,
+        "label": "reactor_output/settled",
+        "unit": 14316
+      },
+      {
+        "path": "insert_fluid",
+        "box": 2,
+        "active": true,
+        "production_type": "output",
+        "categories": [
+          "fusion-plasma"
+        ],
+        "ok": true,
+        "inserted": 10,
+        "readback": {
+          "name": "fusion-plasma",
+          "amount": 10,
+          "temp": 1000000
+        },
+        "seg_id": 65,
+        "seg_contents": {},
+        "accepted": true,
+        "tick": 865304,
+        "label": "reactor_output/settled",
+        "unit": 14316
+      },
+      {
+        "path": "fluidbox",
+        "box": 1,
+        "active": true,
+        "production_type": "input",
+        "categories": [
+          "fusion-plasma"
+        ],
+        "ok": true,
+        "readback": {
+          "name": "fusion-plasma",
+          "amount": 10,
+          "temp": 1000000
+        },
+        "accepted": true,
+        "tick": 865304,
+        "label": "generator_input/settled",
+        "unit": 14317
+      },
+      {
+        "path": "insert_fluid",
+        "box": 1,
+        "active": true,
+        "production_type": "input",
+        "categories": [
+          "fusion-plasma"
+        ],
+        "ok": true,
+        "inserted": 10,
+        "readback": {
+          "name": "fusion-plasma",
+          "amount": 10,
+          "temp": 1000000
+        },
+        "accepted": true,
+        "tick": 865304,
+        "label": "generator_input/settled",
+        "unit": 14317
+      }
+    ],
+    "box_layout": {
+      "reactor": [
+        {
+          "production_type": "input",
+          "categories": [
+            "default"
+          ]
+        },
+        {
+          "production_type": "output",
+          "categories": [
+            "fusion-plasma"
+          ]
+        }
+      ],
+      "generator": [
+        {
+          "production_type": "input",
+          "categories": [
+            "fusion-plasma"
+          ]
+        },
+        {
+          "production_type": "output",
+          "categories": [
+            "default"
+          ]
+        }
+      ]
+    },
+    "connected": {
+      "base_reactor_out_seg": 77,
+      "attempts": [
+        {
+          "off": [
+            0,
+            4
+          ],
+          "infinity_pipe_seg": 78,
+          "reactor_out_seg": 77,
+          "shares": false
+        },
+        {
+          "off": [
+            4,
+            0
+          ],
+          "infinity_pipe_seg": 79,
+          "reactor_out_seg": 77,
+          "shares": false
+        }
+      ],
+      "constructible": false
+    },
+    "import_path": {
+      "target": "fusion-reactor",
+      "box": 2,
+      "fluidbox_write_ok": true,
+      "verify_actual_amount": 10,
+      "retry_fired": false,
+      "classified": "accepted_first_write",
+      "final_readback": {
+        "name": "fusion-plasma",
+        "amount": 10
+      }
+    },
+    "tick_end": 865304
+  },
+  "box_layout": {
+    "reactor": [
+      {
+        "production_type": "input",
+        "categories": [
+          "default"
+        ]
+      },
+      {
+        "production_type": "output",
+        "categories": [
+          "fusion-plasma"
+        ]
+      }
+    ],
+    "generator": [
+      {
+        "production_type": "input",
+        "categories": [
+          "fusion-plasma"
+        ]
+      },
+      {
+        "production_type": "output",
+        "categories": [
+          "default"
+        ]
+      }
+    ]
+  },
+  "connected": {
+    "base_reactor_out_seg": 77,
+    "attempts": [
+      {
+        "off": [
+          0,
+          4
+        ],
+        "infinity_pipe_seg": 78,
+        "reactor_out_seg": 77,
+        "shares": false
+      },
+      {
+        "off": [
+          4,
+          0
+        ],
+        "infinity_pipe_seg": 79,
+        "reactor_out_seg": 77,
+        "shares": false
+      }
+    ],
+    "constructible": false
+  },
+  "import_path": {
+    "target": "fusion-reactor",
+    "box": 2,
+    "fluidbox_write_ok": true,
+    "verify_actual_amount": 10,
+    "retry_fired": false,
+    "classified": "accepted_first_write",
+    "final_readback": {
+      "name": "fusion-plasma",
+      "amount": 10
+    }
+  },
+  "summary": {
+    "rows": [
+      {
+        "cell": "reactor_output/fresh_active",
+        "path": "fluidbox",
+        "box_production_type": "output",
+        "categories": "fusion-plasma",
+        "active": true,
+        "write_ok": true,
+        "write_err": null,
+        "inserted": null,
+        "readback_amount": 10,
+        "seg_id": 69,
+        "accepted": true,
+        "tick": 865304
+      },
+      {
+        "cell": "reactor_output/fresh_active",
+        "path": "insert_fluid",
+        "box_production_type": "output",
+        "categories": "fusion-plasma",
+        "active": true,
+        "write_ok": true,
+        "write_err": null,
+        "inserted": 10,
+        "readback_amount": 10,
+        "seg_id": 71,
+        "accepted": true,
+        "tick": 865304
+      },
+      {
+        "cell": "reactor_output/fresh_inactive",
+        "path": "fluidbox",
+        "box_production_type": "output",
+        "categories": "fusion-plasma",
+        "active": false,
+        "write_ok": true,
+        "write_err": null,
+        "inserted": null,
+        "readback_amount": 10,
+        "seg_id": 73,
+        "accepted": true,
+        "tick": 865304
+      },
+      {
+        "cell": "reactor_output/fresh_inactive",
+        "path": "insert_fluid",
+        "box_production_type": "output",
+        "categories": "fusion-plasma",
+        "active": false,
+        "write_ok": true,
+        "write_err": null,
+        "inserted": 10,
+        "readback_amount": 10,
+        "seg_id": 75,
+        "accepted": true,
+        "tick": 865304
+      },
+      {
+        "cell": "generator_input/fresh_active",
+        "path": "fluidbox",
+        "box_production_type": "input",
+        "categories": "fusion-plasma",
+        "active": true,
+        "write_ok": true,
+        "write_err": null,
+        "inserted": null,
+        "readback_amount": 10,
+        "seg_id": null,
+        "accepted": true,
+        "tick": 865304
+      },
+      {
+        "cell": "generator_input/fresh_active",
+        "path": "insert_fluid",
+        "box_production_type": "input",
+        "categories": "fusion-plasma",
+        "active": true,
+        "write_ok": true,
+        "write_err": null,
+        "inserted": 10,
+        "readback_amount": 10,
+        "seg_id": null,
+        "accepted": true,
+        "tick": 865304
+      },
+      {
+        "cell": "generator_input/fresh_inactive",
+        "path": "fluidbox",
+        "box_production_type": "input",
+        "categories": "fusion-plasma",
+        "active": false,
+        "write_ok": true,
+        "write_err": null,
+        "inserted": null,
+        "readback_amount": 10,
+        "seg_id": null,
+        "accepted": true,
+        "tick": 865304
+      },
+      {
+        "cell": "generator_input/fresh_inactive",
+        "path": "insert_fluid",
+        "box_production_type": "input",
+        "categories": "fusion-plasma",
+        "active": false,
+        "write_ok": true,
+        "write_err": null,
+        "inserted": 10,
+        "readback_amount": 10,
+        "seg_id": null,
+        "accepted": true,
+        "tick": 865304
+      },
+      {
+        "cell": "reactor_output/settled",
+        "path": "fluidbox",
+        "box_production_type": "output",
+        "categories": "fusion-plasma",
+        "active": true,
+        "write_ok": true,
+        "write_err": null,
+        "inserted": null,
+        "readback_amount": 10,
+        "seg_id": 65,
+        "accepted": true,
+        "tick": 865304
+      },
+      {
+        "cell": "reactor_output/settled",
+        "path": "insert_fluid",
+        "box_production_type": "output",
+        "categories": "fusion-plasma",
+        "active": true,
+        "write_ok": true,
+        "write_err": null,
+        "inserted": 10,
+        "readback_amount": 10,
+        "seg_id": 65,
+        "accepted": true,
+        "tick": 865304
+      },
+      {
+        "cell": "generator_input/settled",
+        "path": "fluidbox",
+        "box_production_type": "input",
+        "categories": "fusion-plasma",
+        "active": true,
+        "write_ok": true,
+        "write_err": null,
+        "inserted": null,
+        "readback_amount": 10,
+        "seg_id": null,
+        "accepted": true,
+        "tick": 865304
+      },
+      {
+        "cell": "generator_input/settled",
+        "path": "insert_fluid",
+        "box_production_type": "input",
+        "categories": "fusion-plasma",
+        "active": true,
+        "write_ok": true,
+        "write_err": null,
+        "inserted": 10,
+        "readback_amount": 10,
+        "seg_id": null,
+        "accepted": true,
+        "tick": 865304
+      }
+    ],
+    "any_write_rejected": false
+  },
+  "final_reset": {
+    "success": true,
+    "surfaces": 0,
+    "storage": false,
+    "game_paused": false,
+    "holds": 0,
+    "locks": 0,
+    "jobs": 0,
+    "ok": true
+  },
+  "finished": "2026-07-20T00:02:40.207Z"
+}
+```
+
+## 2026-07-20 — fluid-lab R15 (inline): buffer-class segment read — the 271-drop mechanism ISOLATED
+
+Inline single-call rung on host-1 nauvis scratch (created+destroyed same execution, tick 869540):
+fusion-reactor + 4 connected pipes, insert_fluid(fluoroketone-cold 500) into the reactor.
+READINGS: reactor box local_amount=500, seg_id=82, get_fluid_segment_contents={} (EMPTY);
+pipe box local=0, same seg 82, contents={}.
+
+**Law confirmed [empirical, 2.0.77]: entity-buffered fluid is NOT part of segment contents even
+when the box exposes the segment ID** — the buffer-class law is engine semantics; the API doc's
+"counts of all fluids in the fluid segment" is incomplete, not wrong.
+
+**The audit's 271-drop on the owner's live loop (belt-combined-omnibus-adjacent fluid loop) is
+therefore OUR counter's bug — ORDER-DEPENDENT**: SurfaceCounter's segment pass marks a segment
+counted-once; an EMPTY pipe processed first claims the segment (buffer-class fallback reads the
+pipe's local 0), and the reactor's buffered amount is skipped as already-counted. census-fusion
+never exposed this: its reactor has no pipes, so nothing claims the segment first.
+
+**UNVERIFIED IMPLICATION (needs kill-measurement before asserting): silent transfer loss.** The
+serializer shares the accessor — if export drops the buffered amount and the dest census drops it
+identically, the strict gate passes while fluid is physically lost (blind both sides, the
+script-state blindness class). Fix + kill-measurement = /di-change on the shared accessor
+(read buffered boxes locally regardless of segment-counted state; dedupe only true shared volume).
+Companion: fluid-lab R14 (same date, runner committed) found NO fusion write rejection in any
+scratch condition at 2.0.77 — Pitfall #21's blanket law does not reproduce; R11's write_rejected
+remains real-but-unexplained (topology/capacity artifact hypothesis). Law revision gated on the
+same /di-change arc.
