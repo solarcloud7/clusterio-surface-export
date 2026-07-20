@@ -1119,7 +1119,7 @@
 			"category": "physical-lab",
 			"owningRunner": "tests/hold-completeness-lab/run-hold-buffer-pairs.mjs",
 			"saveRole": "source",
-			"platformName": "lab-hold-spoil-live-v1 + lab-hold-spoil-held-v1",
+			"platformName": "lab-hold-spoil-live-v1",
 			"engineVersion": "2.0.77",
 			"mods": {
 				"base": "2.0.77",
@@ -1132,18 +1132,15 @@
 				"surfexp_gateways": "0.3.0",
 				"maraxsis": "1.31.6"
 			},
-			"note": "Script-built by seed-prep-ops.lua (build_hold_spoil): each platform carries a hub and one indestructible steel-chest with 1x of the longest-spoil-time spoilable seeded to spoil_percent 0.95 (RE-SEEDED on every bake - spoil_tick is engine-global and advances every loaded session). Platforms baked PAUSED for stability; the batch unpauses both before staging so the hold's own semantics govern the held side. spoilSeeded fingerprints are booleans (0.5 < spoil < 1) because the raw float drifts within every session.",
-			"invariant": "Both chests hold exactly one spoilable with spoil_percent in (0.5, 1); both platforms are paused; hold records are staged only at runtime via the production remote.",
+			"note": "Script-built by seed-prep-ops.lua (build_hold_spoil): each platform carries a hub and one indestructible steel-chest with 1x of the longest-spoil-time spoilable seeded to spoil_percent 0.95 (RE-SEEDED on every bake - spoil_tick is engine-global and advances every loaded session). Platforms baked PAUSED for stability; the batch unpauses both before staging so the hold's own semantics govern the held side. spoilSeeded fingerprints are booleans (0.5 < spoil < 1) because the raw float drifts within every session. Held platform lab-hold-spoil-held-v1 deleted 2026-07-19 (owner: implement on the omnibus).",
+			"invariant": "The live chest holds exactly one spoilable with spoil_percent in (0.5, 1); the platform is paused; hold records are staged only at runtime via the production remote. Held-side state folds into the omnibus item vault (spoilage stocked; mid-spoil spawned on demand) — owner ruling 2026-07-19, held platform deleted.",
 			"expectedTerminalVerdict": "held-drift-bounded-by-live",
 			"independentOracleRequired": true,
 			"fingerprint": {
 				"liveItem": "bioflux",
-				"heldItem": "bioflux",
 				"liveCount": 1,
-				"heldCount": 1,
 				"liveSpoilSeeded": true,
-				"heldSpoilSeeded": true,
-				"bothPaused": true
+				"paused": true
 			},
 			"testCard": {
 				"law": "A destination hold preserves spoilage state no worse than live drift: held spoil drift <= paired live-control drift, and nothing leaves the platform (PR0A lineage; test-contract boundaries - spoilage transfer is the WHOLE contract).",
