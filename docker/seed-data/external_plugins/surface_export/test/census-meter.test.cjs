@@ -227,7 +227,9 @@ test("test_force_census_omission is registered in the configure allowlist and co
 });
 
 test("the census-omission hook is enumerated in lint:test-hooks FAIL_SAFE_HOOKS", () => {
-	const lint = fs.readFileSync(path.join(moduleRoot, "..", "scripts", "lint-test-hooks.mjs"), "utf8");
+	// FAIL_SAFE_HOOKS moved to the shared declaration (scripts/fail-safe-hooks.mjs) consumed by
+	// BOTH the lint guard and the manifest lifecycle allowlist — assert the shared source.
+	const lint = fs.readFileSync(path.join(moduleRoot, "..", "scripts", "fail-safe-hooks.mjs"), "utf8");
 	assert.match(lint, /FAIL_SAFE_HOOKS[\s\S]*?"test_force_census_omission"/,
 		"the pre-verdict hook must be whitelisted as fail-safe (leak ⇒ next export aborts + source preserved)");
 });
