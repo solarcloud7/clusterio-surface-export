@@ -6,7 +6,7 @@
     import-result signal, and reports PASS/FAIL with exit code 0/1. This is the driver the
     /repro-transfer skill points at — reproduce a transfer locally instead of parsing CI.
 
-    Mirrors what CI's tests/integration/platform-roundtrip/run-tests.ps1 does, but self-contained
+    Mirrors what the pad-transfer-suite's transfer legs do in CI, but self-contained
     and runnable against the running dev cluster with no CI env.
 .PARAMETER SourceHost
     Host number holding the source platform (default 2 — the dev cluster's 'test' lives on host-2).

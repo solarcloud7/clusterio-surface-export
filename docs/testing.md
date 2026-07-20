@@ -411,7 +411,7 @@ the CI step, so a green run here ≈ a green PR.
 ```pwsh
 node tools/run-integration-tests.mjs --list           # see all scenarios
 node tools/run-integration-tests.mjs                  # run the FULL suite (~3–4 min)
-node tools/run-integration-tests.mjs --only platform-roundtrip   # one scenario
+node tools/run-integration-tests.mjs --only pad-transfer-suite   # the pad transfer suite (incl. the 1359-entity workhorse scale leg)
 node tools/run-integration-tests.mjs --only 'fidelity|gate'      # regex filter
 ```
 

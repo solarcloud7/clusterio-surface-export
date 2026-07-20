@@ -234,7 +234,10 @@ end
 -- Resolve a physical_read locator to a surface + entity/area context.
 local function resolve_read_locator(surface, fixture, locator, dx)
 	dx = dx or 0
-	if locator.platform then
+	if locator.self then
+		-- the verify surface itself (platform-kind transfer fixtures: the arrived scratch platform)
+		return { kind = "self", surface = surface }
+	elseif locator.platform then
 		local psurface = FixtureMeters.surface_for_platform(locator.platform)
 		return { kind = "platform", platform_name = locator.platform, surface = psurface }
 	elseif locator.area then

@@ -69,7 +69,7 @@ test("baked fixtures remain inputs while direct physical meters remain the oracl
 	assert.equal(miner.labId, "specialized-inventory-lab");
 	assert.equal(miner.padKind, "pad");
 	assert.deepEqual(miner.fingerprint, {
-		tankAcid: 13050, drillAcid: 104, resourceCount: 4, resourceTotal: 30398,
+		tankAcid: 13050.78125, drillAcid: 104.40625, resourceCount: 4, resourceTotal: 30398,
 		groundItems: 1, drillName: "big-mining-drill",
 	});
 });

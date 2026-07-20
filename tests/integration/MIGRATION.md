@@ -30,7 +30,8 @@ never a vacuous pass.
 |---|---|
 | entity-roundtrip | `test/quality-dimension-ownership.test.cjs` pins its `test-cases.json` (splitter-quality-filter law); delete after that law lands on a pad |
 | ~~spoilage-roundtrip~~ | DELETED 2026-07-20: absorbed by `omnibus-spoilage-midspoil` through `pad-transfer-suite` (2× consecutive green, real transfer, physical dest reads) |
-| transfer-fidelity, platform-roundtrip | after a `workhorse-transfer` scale lifecycle exists — today they are the only 1359-entity-scale REAL transfers |
+| ~~platform-roundtrip~~ | DELETED 2026-07-20: absorbed by the `transfer-workhorse` transfer-act lifecycle (whole 1359-entity platform through the real transfer, exact dest `surface_entity_count`; 2× consecutive suite green) |
+| transfer-fidelity | KEEP until the paired-reads census (SC-6) ships — it is the meter-drift SENTINEL (serialized-expected vs SOURCE physical census), a law no pad fixture carries; the workhorse leg checks dest count + gate verdict only |
 | ~~gate-detects-loss, fluid-gate-detects-loss, failed-entity-loss, force-bonus-sync, rollback~~ | DELETED 2026-07-20: absorbed as sabotage pad fixtures (`gate-item-loss`, `gate-fluid-loss`, `failed-entity-attribution`, `force-bonus-held`, `rollback-validation-failure`) run through the REAL transfer by `pad-transfer-suite` — 2× consecutive green, opus di-change review MERGE-READY. Note the measured contract shift: a fired `test_force_entity_failure` hook forces a fail-safe refusal (`failedStage: "test_hook"`) with clean attribution — the legacy test's "validation passes" expectation predates that hardening. |
 
 ## Permanent — infrastructure / protocol, not absorbable by pads
