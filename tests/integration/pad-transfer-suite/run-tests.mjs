@@ -12,7 +12,7 @@
 // (no se-lifecycle-scratch-* platform anywhere, no lifecycle run records), restore the live pair.
 //
 // The suite NEVER touches the live gallery instance: host-1/host-2 run save COPIES of the banked
-// artifacts (certified single-use baked-fixture batch, docs/lab-tests.md lifecycle). Preflight
+// artifacts (certified single-use baked-fixture batch, docs/testing.md lifecycle). Preflight
 // asserts the banked source artifact's SHA equals the manifest pin, refusing to certify a stale
 // or tampered snapshot.
 
