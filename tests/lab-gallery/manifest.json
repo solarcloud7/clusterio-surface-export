@@ -16,107 +16,21 @@
 	"saves": {
 		"source": {
 			"role": "source",
-			"name": "lab-gallery-source-surface-export-2-0-77",
-			"artifact": "docker/seed-data/lab-saves/lab-gallery-source-surface-export-2.0.77.zip",
-			"sha256": "C5F50C82008C07581239CAEC9995EB5209BC52390AC2759D6A9B1D207B048767",
+			"name": "lab-gallery-source-of-truth",
+			"artifact": "docker/seed-data/lab-saves/lab-gallery-source-of-truth.zip",
+			"sha256": "F81D96D5D344B1FBFAB0DCB7DBE58EA6CDF42B5546036D3165CAA66F6FD1EDCE",
 			"expectedCensus": {
-				"totalEntities": 1539,
-				"totalGeneratedChunks": 6312,
+				"totalEntities": 1870,
+				"totalGeneratedChunks": 6740,
 				"surfaces": [
 					{
-						"name": "lab-gallery-index-v2",
-						"entityCount": 0,
-						"generatedChunks": 90
+						"name": "nauvis"
 					},
 					{
-						"name": "nauvis",
-						"entityCount": 0,
-						"generatedChunks": 389,
-						"planet": "nauvis"
+						"name": "platform-1"
 					},
 					{
-						"name": "platform-1",
-						"entityCount": 2,
-						"generatedChunks": 240,
-						"platform": "lab-specialized-fluid-r1"
-					},
-					{
-						"name": "platform-11",
-						"entityCount": 158,
-						"generatedChunks": 375,
-						"platform": "lab-omnibus-state-v1"
-					},
-					{
-						"name": "platform-9",
-						"entityCount": 2,
-						"generatedChunks": 156,
-						"platform": "lab-hold-spoil-live-v1"
-					},
-					{
-						"name": "platform-10",
-						"entityCount": 2,
-						"generatedChunks": 156,
-						"platform": "lab-hold-spoil-held-v1"
-					},
-					{
-						"name": "platform-12",
-						"entityCount": 3,
-						"generatedChunks": 156,
-						"platform": "lab-hold-damage-live-v1"
-					},
-					{
-						"name": "platform-13",
-						"entityCount": 3,
-						"generatedChunks": 156,
-						"platform": "lab-hold-damage-held-v1"
-					},
-					{
-						"name": "platform-14",
-						"entityCount": 1,
-						"generatedChunks": 156,
-						"platform": "lab-hold-pod-live-v1"
-					},
-					{
-						"name": "platform-15",
-						"entityCount": 1,
-						"generatedChunks": 156,
-						"platform": "lab-hold-pod-held-v1"
-					},
-					{
-						"name": "platform-2",
-						"entityCount": 1359,
-						"generatedChunks": 1605,
-						"platform": "lab-transfer-fixture-v1"
-					},
-					{
-						"name": "platform-3",
-						"entityCount": 1,
-						"generatedChunks": 798,
-						"platform": "lab-consumable-1"
-					},
-					{
-						"name": "platform-4",
-						"entityCount": 1,
-						"generatedChunks": 977,
-						"platform": "lab-consumable-2"
-					},
-					{
-						"name": "platform-5",
-						"entityCount": 1,
-						"generatedChunks": 225,
-						"platform": "lab-consumable-3"
-					},
-					{
-						"name": "platform-7",
-						"entityCount": 2,
-						"generatedChunks": 521,
-						"platform": "lab-energy-v1"
-					},
-					{
-						"name": "platform-8",
-						"entityCount": 3,
-						"generatedChunks": 156,
-						"platform": "lab-census-fusion-v1"
+						"name": "platform-2"
 					}
 				]
 			},
@@ -130,7 +44,8 @@
 				"SpidertronPatrols": "2.6.3",
 				"surfexp_gateways": "0.3.0",
 				"maraxsis": "1.31.6"
-			}
+			},
+			"note": "SNAPSHOT OF LIVE (2026-07-20): the canonical save is a verified server_save of the live gallery world — never a scripted-bake product. Re-bank by: server_save, docker cp, SHA re-pin, in one commit."
 		},
 		"destination": {
 			"role": "destination",

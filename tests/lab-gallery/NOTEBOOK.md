@@ -348,3 +348,13 @@ tests/integration/belt-loss-replay/ for Phase 5B). labs-certified.json stays as 
 certificate + campaign procedure; the version-certification guard still goes RED on a pin bump.
 manifest.labs is now the fixture-referenced category catalog (11). Bake-verify special paths
 existence-guarded pending harness-rework retirement. Unit suites 45/45 green.
+
+## 2026-07-20 — Save consolidation: ONE canonical artifact, snapshot-of-live
+
+lab-saves reduced to: `lab-gallery-source-of-truth.zip` (SHA F81D96D5…, 1870 entities / 6740
+chunks / 3 surfaces — a verified server_save of the live world, per the snapshot-of-live law) +
+the empty destination seed. Old golden-pair source, prior snapshot, and a stale third zip purged;
+the untracked /backups/ folder (3 old checkpoint copies) deleted. Manifest saves.source
+re-pointed with the re-bank procedure in its note. Pending owner-scoped next step: replace host
+seed saves test1/test2 with properly-seeded variants (host-1 = the snapshot), validated by a full
+integration-suite run.
