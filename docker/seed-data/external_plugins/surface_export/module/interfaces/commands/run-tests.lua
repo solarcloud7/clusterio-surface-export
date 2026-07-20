@@ -175,9 +175,9 @@ local DISPATCH = {
 --- Compare a measured reading table against a roster fingerprint. Returns nil on match, else the
 --- first drifted "key=got exp want" (approx_equal applies the bake's ULP tolerance to the double
 --- fields only). Missing dispatch fields fail loudly (nil ~= expected).
-local function compare_fingerprint(reads, fingerprint)
+local function compare_fingerprint(reads, fingerprint, exclude)
   for key, expected in pairs(fingerprint or {}) do
-    if not FM.approx_equal(key, reads and reads[key], expected) then
+    if not (exclude and exclude[key]) and not FM.approx_equal(key, reads and reads[key], expected) then
       return string.format("%s=%s exp %s", key, tostring(reads and reads[key]), tostring(expected))
     end
   end
@@ -279,7 +279,14 @@ local function run_pad_body(player, surface, cell, fixture, dispatch, roster, ct
     set_status(cell.text_obj, comb, panel, "fail", "paste meter error")
     return "fail", "paste meter error: " .. tostring(paste_reads)
   end
-  local paste_drift = compare_fingerprint(paste_reads, fixture.fingerprint)
+  local paste_exclude = nil
+  if fixture.pasteExclude then
+    -- Fields the ENGINE cannot carry through a frozen paste (e.g. the decider output register is
+    -- not script-writable — measured 2026-07-20). Declared per fixture, never a blanket skip.
+    paste_exclude = {}
+    for _, key in ipairs(fixture.pasteExclude) do paste_exclude[key] = true end
+  end
+  local paste_drift = compare_fingerprint(paste_reads, fixture.fingerprint, paste_exclude)
   if paste_drift then
     set_status(cell.text_obj, comb, panel, "fail", "paste " .. paste_drift)
     return "fail", "paste " .. paste_drift

@@ -62,6 +62,9 @@ RemoteInterface.delete_platform_for_transfer = delete_platform_for_transfer
 RemoteInterface.get_source_transfer_lock_state = get_source_transfer_lock_state
 RemoteInterface.destination_hold = destination_hold
 RemoteInterface.set_test_roster = test_roster.set_test_roster
+RemoteInterface.set_test_roster_begin = test_roster.set_test_roster_begin
+RemoteInterface.set_test_roster_chunk = test_roster.set_test_roster_chunk
+RemoteInterface.set_test_roster_commit = test_roster.set_test_roster_commit
 RemoteInterface.get_test_roster_summary = test_roster.get_test_roster_summary
 
 -- JSON-wrapped versions for RCON access
@@ -129,6 +132,9 @@ function RemoteInterface.register()
     -- Manifest-driven test roster (the /test-run trust anchor)
     set_test_roster = test_roster.set_test_roster,
     set_test_roster_json = Base.json_wrap(test_roster.set_test_roster),
+    set_test_roster_begin = test_roster.set_test_roster_begin,
+    set_test_roster_chunk = test_roster.set_test_roster_chunk,
+    set_test_roster_commit = test_roster.set_test_roster_commit,
     get_test_roster_summary = test_roster.get_test_roster_summary,
     get_test_roster_summary_json = Base.json_wrap(test_roster.get_test_roster_summary),
   })

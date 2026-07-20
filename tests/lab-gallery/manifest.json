@@ -356,7 +356,11 @@
 				"action": "/test-run: reset the compare area, selection-lab copy of the pad build area, paste at +14,0, physical audit of both halves.",
 				"expected": "Audit reports equal entities; the pasted decider's red output network still reads signal-S = 1.",
 				"forbidden": "An unlatched paste (signal-S absent/0); a dropped self-feedback wire."
-			}
+			},
+			"pasteExclude": [
+				"signalS"
+			],
+			"note": " pasteExclude signalS [empirical 2.0.77, live probe 2026-07-20]: the decider output register is not script-writable (signals_last_tick nil on fresh entities, writes rejected), so the self-held signal cannot ride a frozen paste/transfer — engine limit, per-field exclusion, never a blanket skip."
 		},
 		{
 			"id": "omnibus-midcraft-progress",

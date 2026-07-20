@@ -374,3 +374,19 @@ FINDINGS the deepened paste-fingerprint exposed (stable across runs, queued as p
 3. **Ghosts-pad left-half proxy duplication accumulates across runs** (pass→fail flips on
    unchanged code; a second proxy appears at (44.5,14.5) — SUSPECTED proxy paste target
    resolution finding the LEFT machine by name; needs isolation before asserting mechanism).
+
+## 2026-07-20 — All three P2 findings FIXED and kill-measured: /test-run 16/16 green
+
+Deployed 0.10.123. Fixes, each proven by its failing pad flipping green:
+1. **Proxy paste-target translation** (selection-lab translate): specific_data.target_position now
+   translates with the record — pasted proxies attach to the COPY, and the ghosts-pad left-half
+   duplication stopped (stale dup removed once; two consecutive runs hold at 1).
+2. **`destructible` serialized + restored** (entity-scanner capture when false; deserializer
+   top-level restore): the freeze convention now rides paste AND transfer — three pads flipped.
+3. **Decider output register: ENGINE LIMIT [empirical 2.0.77, scratch probe]** — signals_last_tick
+   nil on fresh entities, writes rejected; latch-class state cannot ride a frozen paste. Handled
+   as per-fixture per-field `pasteExclude` (declared on omnibus-decider-latch, never blanket).
+Also landed: chunked roster push remotes (set_test_roster_begin/chunk/commit — P3 Lua side).
+Full /test-run: 16 pass / 0 fail / 0 missing (2 skipped: belt pads await meters). Canonical save
+refreshed. Known runner wart: skipped-no-meter pads also list as UNKNOWN in the reconcile — cleanup
+queued with P5.

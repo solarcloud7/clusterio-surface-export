@@ -350,6 +350,19 @@ local function translate(rec, offset)
 	local copy = {}
 	for k, v in pairs(rec) do copy[k] = v end
 	copy.position = { x = rec.position.x + offset.x, y = rec.position.y + offset.y }
+	-- Absolute positions INSIDE specific_data must translate with the record, or the deserializer
+	-- resolves them against the ORIGINAL location. The item-request-proxy target_position was the
+	-- live case: an untranslated target made every pasted proxy name-match the SOURCE machine,
+	-- planting a duplicate proxy on the left half of the pad each run (the ghosts-pad flip).
+	local sd = rec.specific_data
+	if sd and sd.target_position then
+		copy.specific_data = {}
+		for k, v in pairs(sd) do copy.specific_data[k] = v end
+		copy.specific_data.target_position = {
+			x = sd.target_position.x + offset.x,
+			y = sd.target_position.y + offset.y,
+		}
+	end
 	return copy
 end
 

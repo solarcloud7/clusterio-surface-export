@@ -322,7 +322,20 @@ end
 --- @param entity LuaEntity: The entity to restore state to
 --- @param entity_data table: Serialized entity data
 function Deserializer.restore_entity_state(entity, entity_data)
-  if not entity.valid or not entity_data.specific_data then
+  if not entity.valid then
+    return
+  end
+
+  -- destructible is a top-level core prop: captured only when false (the freeze convention),
+  -- restored before the specific_data guard so a fixture entity with no handler data still keeps
+  -- its freeze flag (found live 2026-07-20: pasted copies read destructible=true where the source
+  -- was false — the flag was never serialized; the transfer path shared the same gap).
+  if entity_data.destructible == false then
+    local ok, err = pcall(function() entity.destructible = false end)
+    if not ok then log("[Deserializer] destructible restore failed for " .. entity.name .. ": " .. tostring(err)) end
+  end
+
+  if not entity_data.specific_data then
     return
   end
 

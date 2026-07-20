@@ -133,6 +133,13 @@ function EntityScanner.serialize_entity(entity)
     entity_data.orientation = entity.orientation
   end
 
+  -- destructible: captured only when false (default true is omitted — lean payload). The freeze
+  -- convention (fixtures set destructible=false) must survive paste AND transfer; found missing
+  -- live 2026-07-20 via the pad paste-fingerprint depth.
+  if entity.destructible == false then
+    entity_data.destructible = false
+  end
+
   -- Get entity category for handler dispatch
   local category = Util.get_entity_category(entity)
 

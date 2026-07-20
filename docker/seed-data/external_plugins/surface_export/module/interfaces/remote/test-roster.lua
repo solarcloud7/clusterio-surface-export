@@ -73,7 +73,42 @@ local function get_test_roster_summary()
   }
 end
 
+-- === chunked push (P3) ===========================================================================
+-- For rosters beyond a single RCON command's comfort: begin(hash) -> chunk(part)* -> commit(len).
+-- Commit concatenates, verifies length, and routes through the SAME set_test_roster validation —
+-- one decode/validate path, two transports. The staging buffer is transient scratch keyed by hash.
+
+local function set_test_roster_begin(hash)
+  if not (storage.surface_export_config and storage.surface_export_config.debug_mode) then
+    error("test roster requires debug_mode")
+  end
+  storage.surface_export_test_roster_staging = { hash = hash, parts = {} }
+  return { ok = true }
+end
+
+local function set_test_roster_chunk(part)
+  local staging = storage.surface_export_test_roster_staging
+  if not staging then error("no roster staging in progress (call set_test_roster_begin first)") end
+  staging.parts[#staging.parts + 1] = part
+  return { ok = true, parts = #staging.parts }
+end
+
+local function set_test_roster_commit(expected_len)
+  local staging = storage.surface_export_test_roster_staging
+  if not staging then error("no roster staging in progress") end
+  storage.surface_export_test_roster_staging = nil
+  local json = table.concat(staging.parts)
+  if expected_len and #json ~= expected_len then
+    error(string.format("roster staging length mismatch: got %d, expected %d", #json, expected_len))
+  end
+  set_test_roster(json, staging.hash)
+  return { ok = true, bytes = #json }
+end
+
 return {
   set_test_roster = set_test_roster,
+  set_test_roster_begin = set_test_roster_begin,
+  set_test_roster_chunk = set_test_roster_chunk,
+  set_test_roster_commit = set_test_roster_commit,
   get_test_roster_summary = get_test_roster_summary,
 }
