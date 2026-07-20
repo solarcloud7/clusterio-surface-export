@@ -37,7 +37,7 @@ module.exports = (env = {}, argv = {}) => merge(common(env, argv), {
 		// stale chunk. The Module-Federation remote entry is resolved via dist/web/manifest.json
 		// (shipped through /api/plugins — NOT the immutable /static cache), so the entry is safe to
 		// hash too. This restores @clusterio/web_ui's default; the prior fixed "static/[name].js"
-		// override silently defeated it. See docs/static-asset-caching.md.
+		// override silently defeated it (see the "Web cache" guard entry in CLAUDE.md).
 		filename: "static/[name].[contenthash].js",
 		chunkFilename: "static/[name].[contenthash].js",
 		clean: false, // safe: @clusterio/web_ui's CleanWebpackPlugin clears old hashes each build (no stale-file buildup)
