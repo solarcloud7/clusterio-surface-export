@@ -305,3 +305,12 @@ Lesson, owner's words: this is why we did NOT repair every test that migrated �
 reconstructed rigs were purged within hours of arriving, retired by seconds-long coverage
 measurements. Effort spent perfecting a fixture before the map adjudicates it is effort cremated.
 Get the state on the map; let coverage measurements decide what lives.
+
+## 2026-07-19 — census-fusion platform retired (owner); adversarial chest becomes the item-coverage vault
+
+`lab-census-fusion-v1` deleted (owner ruling; manifest entry removed, fixtures 26→25). Successor:
+the owner's hand-built fusion fluid loop at pad (36,36), to be claimed as the fusion fixture with
+the shared-accessor fix. The adversarial-inventory steel-chest (12.5,-16.5) is now the ITEM
+VAULT: blueprint(label+layout), blueprint-book(nested print), filtered decon planner,
+partial-durability repair pack, partial magazine, spoilage x10 — item-data classes never before
+in a fixture; mid-spoil items spawn on demand only. Checkpoint 19i.
