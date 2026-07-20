@@ -437,3 +437,11 @@ queued with P5.
 - quality-dimension-ownership.test.cjs repointed from the retired entity-roundtrip test-cases.json to the manifest pin; entity-roundtrip DELETED (MIGRATION.md updated).
 - specialized-inventory-accounting matrix updated: resource handler registered; mining-drill is now a fluid OWNER with platformReachable:true (the pad-measured refutation of the old "fluidbox length 0" evidence).
 - Snapshot re-banked clean-ish (SHA 6D05C939..., census 2020 - includes inert right-half compare residue, noted in the manifest; mutable anchors banked EMPTY). pad-transfer-suite ALL PASS on the new golden artifact.
+
+## 2026-07-20 — Phase 5B part 1: undo_inserted_delta crash FIXED + kill-measured
+
+- The BELT-R15 latent crash (belt_restoration.lua undo path iterated get_detailed_contents stack handles AFTER remove_item invalidated them): restructured into a PURE-READ pass (plain-number copies, cross-line unique_id dedup preserved per BELT-R9) then ONE untargeted remove_item per line, no handle reads after mutation. Semantics unchanged (line.remove_item was never stack-targeted).
+- Logic tooth: belt-side-restore fake-line selftest green (quality-aware rollback preserved).
+- Real-handle kill-measurement: the archived R15 batched driver restored as tests/integration/belt-loss-replay/run-r15-crashfix-probe.mjs (DUP-233855 payload, aged targets across executions). THOUSANDS of leak-undos fired (per-step leaks 1344/1808/2240...), ZERO anomalies, ZERO crashes, clean release state. Pre-fix the first leak hard-crashed.
+- The probe overall verdict stays NO-GO (inexact sides under aged-target batching) — that is the UNCHANGED R15 design law (Phase B must be side-closed same-execution batches), not a regression. Evidence banked at tests/integration/belt-loss-replay/r15-crashfix-evidence.json.
+- Note: restore_side_groups has NO production caller yet (selftest/lab only) — the crash was a landmine for the Phase-B adoption, now defused ahead of it.

@@ -499,6 +499,14 @@ function BeltRestoration.restore_side_groups(side_groups, entity_map)
         local wanted_key = item_key(name, quality)
         local handled, remaining = {}, count
         for _, line in ipairs(all_lines) do
+            if remaining <= 0 then break end
+            -- PURE-READ pass first: remove_item INVALIDATES every stack handle inside an
+            -- already-fetched get_detailed_contents() array, so reading item.stack after a removal
+            -- in the same loop hard-crashes (the BELT-R15 latent crash, api-notes AGED-TARGET
+            -- entry). Copy the per-stack facts into plain numbers, THEN mutate once per line.
+            -- `handled` dedups items seen through multiple line handles of a shared segment
+            -- (BELT-R9: line identity is segment-scoped, not entity-scoped).
+            local added_here = 0
             for _, item in ipairs(line.get_detailed_contents()) do
                 local id = tostring(item.unique_id)
                 if not handled[id] then
@@ -507,12 +515,17 @@ function BeltRestoration.restore_side_groups(side_groups, entity_map)
                     local key = item_key(item.stack.name, q)
                     local old = before.by_id[id]
                     local added = item.stack.count - (old and old.count or 0)
-                    if key == wanted_key and added > 0 and remaining > 0 then
-                        local request = math.min(added, remaining)
-                        local removed = line.remove_item({ name = name, quality = quality, count = request })
-                        remaining = remaining - removed
+                    if key == wanted_key and added > 0 then
+                        added_here = added_here + added
                     end
                 end
+            end
+            -- MUTATE pass: a single untargeted removal per line (same semantics the per-item loop
+            -- had — line.remove_item was never stack-targeted), no handle reads after it.
+            if added_here > 0 then
+                local removed = line.remove_item({ name = name, quality = quality,
+                    count = math.min(added_here, remaining) })
+                remaining = remaining - removed
             end
         end
         return remaining == 0 and same_snapshot(before, snapshot(all_lines))
