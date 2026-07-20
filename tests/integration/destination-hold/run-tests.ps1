@@ -619,8 +619,13 @@ try {
             Add-Result "dh-server-save-ok" "server save atomic rename completed before restart" $save.Ok $save.Message
             if (-not $save.Ok) { throw "server save failed before restart: $($save.Message)" }
             Wait-ForRconReady -Instance $instance -TimeoutSec 30 | Out-Null
-            Write-Status "Restarting $container mid-hold..." -Type info
-            docker restart $container | Out-Null
+            # Instance stop/start (not docker restart): the hold-durability measurand is the Factorio
+            # process dying — Lua VM teardown, real exit-save + reload, save-patching, on_load. The
+            # container/host-process layers belong to the deploy pipeline's coverage, and stop/start
+            # is ~3x faster. Owner-adjudicated 2026-07-19 (the suite no longer touches docker).
+            Write-Status "Restarting instance $instance mid-hold (clusterioctl stop/start)..." -Type info
+            docker exec surface-export-controller npx clusterioctl --log-level error instance stop $instance --config /clusterio/tokens/config-control.json | Out-Null
+            docker exec surface-export-controller npx clusterioctl --log-level error instance start $instance --config /clusterio/tokens/config-control.json | Out-Null
             Wait-ForRconReady -Instance $instance -TimeoutSec $RestartTimeoutSec | Out-Null
             $afterRestart = Get-Metrics -PlatformIndex $main.Index
             $cmpRestart = Assert-MetricsEqual -Expected $pre -Actual $afterRestart -Label "after-restart"

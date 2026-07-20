@@ -24,6 +24,7 @@ local Base = require("modules/surface_export/interfaces/commands/base")
 local SelectionLab = require("modules/surface_export/interfaces/gui/selection-lab")
 local Util = require("modules/surface_export/utils/util")
 local FixtureMeters = require("modules/surface_export/utils/fixture-meters")
+local LifecycleEngine = require("modules/surface_export/utils/lifecycle-engine")
 
 -- Cell geometry (mirrors tests/lab-gallery/test-foundation.mjs — the single template source):
 -- 26x12 cell; name text at origin+(6,-1.5); trio on the bottom border at +(13.5|14.5|15.5, 11.5);
@@ -194,13 +195,11 @@ local function pad_reading(surface, cell, fixture, dispatch, roster, dx, rect)
   return dispatch.meter(surface, FM.anchor_lookup(roster, fixture.id, dx))
 end
 
---- Run one pad fixture. The measurement drives the REAL selection-lab handlers (copy/paste/audit)
---- via selection_lab_drive so it is byte-identical to the manual tool; the added fingerprint depth
---- (crafting_progress / signals / held / energy) is measured on the pristine LEFT half and again on
---- the pasted right half. player may be nil (headless) — the drive runs player-less on `surface`.
---- Returns "pass" or "fail", detail.
-local function run_pad(player, surface, cell, fixture, dispatch, roster)
-  local _, comb, panel = reset_cell(surface, cell)
+--- The post-setup body of a pad run: LEFT fingerprint -> act -> (paste fingerprint) -> declared
+--- verify. Returns "pass"|"fail"|"skipped", detail; set_status is applied here on every terminal
+--- path. run_pad wraps this in a pcall so lifecycle cleanup ALWAYS runs afterwards.
+local function run_pad_body(player, surface, cell, fixture, dispatch, roster, ctx, comb, panel)
+  local has_lc = fixture.lifecycle ~= nil
 
   -- (a) LEFT fingerprint: the pristine baked source (unaffected by the paste, which lands right).
   local ok_l, left_reads = pcall(pad_reading, surface, cell, fixture, dispatch, roster, 0,
@@ -215,6 +214,21 @@ local function run_pad(player, surface, cell, fixture, dispatch, roster)
     return "fail", "left " .. left_drift
   end
 
+  -- act dispatch. The default copy-paste act keeps the historical copy/paste/audit + paste
+  -- fingerprint block verbatim (verify then reads the pasted +14 half); a transfer/clone act is
+  -- owned by the pad-transfer-suite and skipped in-game; an op-list act runs via the engine in place
+  -- (verify then reads the mutated left half).
+  local act = (has_lc and fixture.lifecycle.act) or "copy-paste"
+  local verify_dx = 0
+  if has_lc and (act == "transfer" or act == "clone") then
+    return "skipped", "transfer act (pad-transfer-suite)"
+  elseif has_lc and type(act) == "table" then
+    local ok_a, act_err = LifecycleEngine.run_act(surface, fixture, ctx)
+    if not ok_a then
+      set_status(cell.text_obj, comb, panel, "fail", "act error")
+      return "fail", tostring(act_err)
+    end
+  else
   -- (b) the existing reset->copy->paste->audit compare (entity/item/fluid counts), unchanged.
   local player_index = (player and player.index) or 0
   local drive = function(mode, x1, y1, x2, y2)
@@ -270,9 +284,68 @@ local function run_pad(player, surface, cell, fixture, dispatch, roster)
     set_status(cell.text_obj, comb, panel, "fail", "paste " .. paste_drift)
     return "fail", "paste " .. paste_drift
   end
+    verify_dx = 14
+  end
+
+  -- (d) declared verify (lifecycle only). Per-check summaries append into detail (clipped to 4 like
+  -- report_delta); a failing check flips the verdict. No-lifecycle fixtures keep the old pass path
+  -- (detail nil), so their verdicts are byte-identical to before this change.
+  local detail = nil
+  if has_lc then
+    local result = LifecycleEngine.run_verify(surface, fixture, ctx, { dx = verify_dx })
+    local parts = {}
+    for _, c in ipairs(result.checks) do
+      parts[#parts + 1] = c.name .. ":" .. c.verdict .. "(" .. tostring(c.detail) .. ")"
+    end
+    if #parts > 0 then detail = table.concat(parts, "; ", 1, math.min(#parts, 4)) end
+    if result.verdict == "fail" then
+      set_status(cell.text_obj, comb, panel, "fail", detail or "verify failed")
+      return "fail", detail or "verify failed"
+    end
+  end
 
   set_status(cell.text_obj, comb, panel, "pass")
-  return "pass"
+  return "pass", detail
+end
+
+--- Run one pad fixture. The measurement drives the REAL selection-lab handlers (copy/paste/audit)
+--- via selection_lab_drive so it is byte-identical to the manual tool; the added fingerprint depth
+--- (crafting_progress / signals / held / energy) is measured on the pristine LEFT half and again on
+--- the pasted right half. A lifecycle block (if present) runs setup before, verify after, and its
+--- cleanup ALWAYS afterwards (armed hooks disarmed, mutated force props restored). player may be nil
+--- (headless). Returns "pass"|"fail"|"skipped", detail.
+local function run_pad(player, surface, cell, fixture, dispatch, roster)
+  local ctx = { armed_hooks = {}, restores = {}, captured = {} }
+  local has_lc = fixture.lifecycle ~= nil
+  local _, comb, panel = reset_cell(surface, cell)
+
+  if has_lc then
+    LifecycleEngine.reset_mutable(surface, fixture, 0)
+    LifecycleEngine.reset_mutable(surface, fixture, 14)
+    local ok_s, setup_err = LifecycleEngine.run_setup(surface, fixture, ctx)
+    if not ok_s then
+      set_status(cell.text_obj, comb, panel, "fail", tostring(setup_err))
+      local clean_ok, clean_err = pcall(LifecycleEngine.cleanup, ctx)
+      if not clean_ok then log("[test-run] lifecycle cleanup error: " .. tostring(clean_err)) end
+      return "fail", "setup: " .. tostring(setup_err)
+    end
+  end
+
+  local body_ok, verdict, detail = pcall(run_pad_body, player, surface, cell, fixture, dispatch, roster, ctx, comb, panel)
+  -- Surface the body error BEFORE the cleanup pcall below (the pcall-logging guard stops scanning at
+  -- the next pcall). verdict holds the pcall error message on failure.
+  if not body_ok then log("[test-run] run_pad_body error for " .. tostring(fixture.id) .. ": " .. tostring(verdict)) end
+
+  if has_lc then
+    local clean_ok, clean_err = pcall(LifecycleEngine.cleanup, ctx)
+    if not clean_ok then log("[test-run] lifecycle cleanup error: " .. tostring(clean_err)) end
+  end
+
+  if not body_ok then
+    set_status(cell.text_obj, comb, panel, "fail", "runner body error")
+    return "fail", "runner body error: " .. tostring(verdict)
+  end
+  return verdict, detail
 end
 
 -- === platform / surface reconcile (resolve by name, meter, fingerprint) ========================
@@ -501,8 +574,12 @@ Base.admin_command("test-run",
                   ctx.print(string.format("%s %s: %s runner error: %s", RUN_PREFIX, id, CROSS, tostring(verdict)), CHAT_RED)
                 elseif verdict == "pass" then
                   passed = passed + 1
-                  record(id, "pass")
+                  record(id, "pass", detail)
                   ctx.print(string.format("%s %s: %s", RUN_PREFIX, id, CHECK), CHAT_GREEN)
+                elseif verdict == "skipped" then
+                  skipped = skipped + 1
+                  record(id, "skipped", detail)
+                  ctx.print(string.format("%s %s: SKIPPED (%s)", RUN_PREFIX, id, tostring(detail)), CHAT_YELLOW)
                 else
                   failed = failed + 1
                   record(id, "fail", detail)

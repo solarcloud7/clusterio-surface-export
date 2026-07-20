@@ -358,3 +358,19 @@ the untracked /backups/ folder (3 old checkpoint copies) deleted. Manifest saves
 re-pointed with the re-bank procedure in its note. Pending owner-scoped next step: replace host
 seed saves test1/test2 with properly-seeded variants (host-1 = the snapshot), validated by a full
 integration-suite run.
+
+## 2026-07-20 — P2: lifecycle engine live; verdict-identity + teeth proven; THREE new product findings
+
+P2 deployed (0.10.122). Verdict-identity: 16/18 fixtures identical before/after (flips: ghosts +
+workhorse — live-world reload effects, both toward correct). Teeth proven live: a failing declared
+verify check REDs the pad with per-check detail (bad locators fail loud, never skip); arming
+non-allowlisted 'test_disable_gate' → "not in the fail-safe allowlist" setup failure.
+
+FINDINGS the deepened paste-fingerprint exposed (stable across runs, queued as product fixes):
+1. **Decider output register does not ride copy/paste** — pasted latch reads signalS=0 (the
+   self-held output register is not serialized; same class as the display-panel/proxy gaps).
+2. **`destructible` does not ride copy/paste** — pasted copies read destructible=true where the
+   source is false (freeze flags stripped; check the transfer path too — likely the same).
+3. **Ghosts-pad left-half proxy duplication accumulates across runs** (pass→fail flips on
+   unchanged code; a second proxy appears at (44.5,14.5) — SUSPECTED proxy paste target
+   resolution finding the LEFT machine by name; needs isolation before asserting mechanism).
