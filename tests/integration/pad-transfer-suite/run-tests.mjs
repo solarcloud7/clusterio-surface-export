@@ -79,6 +79,59 @@ async function runFixture(fixture, runId, destInstanceId, results) {
 		console.log(`  [${id}] dest setup: hooks=${JSON.stringify(destSetup.armedHooks)} restores=${destSetup.restores}`);
 	}
 
+	// census-abort (SC-6): the SOURCE census refuses the export — the dest is NEVER contacted, so
+	// there is no import result to wait for. Evidence is the always-on forensic census bundle on
+	// HOST 1 plus the preserved, still-present source scratch.
+	if (expect === "census-abort") {
+		const sourceMarker = L.dropMarker(1, `${id}-census`);
+		const abortOut = L.lastLine(L.rcon(1, `/transfer-platform ${setup.scratchIndex} ${destInstanceId}`));
+		console.log(`  [${id}] transfer fired (census abort expected): ${abortOut}`);
+		let bundlePath = null;
+		const bundleDeadline = Date.now() + 120_000;
+		while (Date.now() < bundleDeadline) {
+			// the always-on forensic bundle is written by write_failure_black_box, which prepends
+			// "failure_black_box_" to the census_<plat>_<tick>.json name.
+			const fresh = L.docker(["exec", L.HOSTS[1].container, "sh", "-c",
+				`find ${L.instancePath(1, "script-output")} -maxdepth 1 -name 'failure_black_box_census_*.json' -newer ${sourceMarker} 2>/dev/null || true`])
+				.split(/\r?\n/).map(line => line.trim()).filter(Boolean);
+			if (fresh.length) { bundlePath = fresh.at(-1); break; }
+			await L.sleep(2000);
+		}
+		if (!bundlePath) throw new Error(`${id}: no census bundle appeared on host 1 within 120s (abort did not fire?)`);
+		const bundle = L.readContainerJson(1, bundlePath);
+		console.log(`  [${id}] census bundle: ${bundlePath} reason=${bundle.reason} mismatches=${bundle.mismatch_count}`);
+		for (const check of fixture.lifecycle.verify || []) {
+			if (check.check === "report_field") checks.push(evalReportField(check, bundle));
+		}
+		checks.push({ name: "bundle.mismatch_count", verdict: (bundle.mismatch_count || 0) >= 1 ? "pass" : "fail",
+			detail: `mismatch_count=${bundle.mismatch_count}` });
+		// Direct hook witness (test-hook-failure-fidelity rule): the consume log line, never inferred.
+		const hookLine = L.docker(["exec", L.HOSTS[1].container, "sh", "-c",
+			`grep -c 'test_force_census_omission dropped serialized stack' ${L.instancePath(1, "factorio-current.log")} || true`]).trim();
+		checks.push({ name: "hook.consumed", verdict: Number(hookLine) >= 1 ? "pass" : "fail",
+			detail: `consume log lines=${hookLine}` });
+		// Dest was never contacted: no scratch platform may exist there (single read — nothing async
+		// was ever sent toward it).
+		const payloadJson = JSON.stringify({ scratchName: setup.scratchName, captured: setup.captured || {} });
+		const destCheck = L.lua(2,
+			`return remote.call('surface_export','lifecycle_verify','${id}','dest',${bracketWrap(payloadJson)})`);
+		checks.push({ name: "dest.neverContacted", verdict: destCheck.platformPresent ? "fail" : "pass",
+			detail: `destPlatformPresent=${destCheck.platformPresent === true}` });
+		// Source preserved + source-end physical witnesses + source UNLOCKED (the abort's unlock).
+		const sourceAfter = L.lua(1, `return remote.call('surface_export','lifecycle_verify','${id}','source-after-act','')`);
+		checks.push({ name: "source.preserved", verdict: sourceAfter.scratchGone ? "fail" : "pass",
+			detail: `scratchGone=${sourceAfter.scratchGone} (must remain)` });
+		for (const check of sourceAfter.checks || []) checks.push(check);
+		const locks = L.lua(1, `return {ok=true, locks=table_size(storage.locked_platforms or {})}`);
+		checks.push({ name: "source.unlocked", verdict: locks.locks === 0 ? "pass" : "fail",
+			detail: `locked_platforms=${locks.locks}` });
+
+		const failedChecks = checks.filter(check => check.verdict === "fail");
+		results.fixtures.push({ id, verdict: failedChecks.length ? "fail" : "pass", checks });
+		for (const check of checks) console.log(`  [${id}] ${check.verdict.toUpperCase()} ${check.name}: ${check.detail}`);
+		return failedChecks.length === 0;
+	}
+
 	const marker = L.dropMarker(2, id);
 	const transferOut = L.lastLine(L.rcon(1, `/transfer-platform ${setup.scratchIndex} ${destInstanceId}`));
 	console.log(`  [${id}] transfer fired: ${transferOut}`);

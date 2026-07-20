@@ -18,9 +18,9 @@
 			"role": "source",
 			"name": "lab-gallery-source-of-truth",
 			"artifact": "docker/seed-data/lab-saves/lab-gallery-source-of-truth.zip",
-			"sha256": "6D05C93932889C5ED462E538BCCEAB8BF6B93FEB3D26A3C53D78344790DDEB11",
+			"sha256": "910637FFBB0C02E051DB73EB4B417F56FC688E2DD9FC825C824D41A787B36110",
 			"expectedCensus": {
-				"totalEntities": 2020,
+				"totalEntities": 2021,
 				"totalGeneratedChunks": 6740,
 				"surfaces": [
 					{
@@ -1743,6 +1743,102 @@
 				"action": "pad-transfer-suite: lifecycle setup (source) + dest-end sabotage, then the REAL /transfer-platform; /test-run locally pins the LEFT fingerprint and skips the act.",
 				"expected": "fingerprint matches the manifest pin; scratch: held eq 8; report validation_success eq true",
 				"forbidden": "Any outcome where the protective route did not run (a refused transfer leaving no source, or a passed gate hiding a shortfall)."
+			}
+		},
+		{
+			"id": "census-omission-abort",
+			"padKind": "pad",
+			"origin": {
+				"x": 92,
+				"y": 22
+			},
+			"revision": 1,
+			"labId": "gate-drift-lab",
+			"name": "Source census aborts on serializer omission",
+			"purpose": "The paired-reads SOURCE census must refuse a transfer whose serialized form omits physical content: export aborted, destination NEVER contacted, source preserved and unlocked, entity-attributed forensic bundle banked (SC-6; closes the burner-fuel serializer-omission class).",
+			"category": "protocol-teeth",
+			"owningRunner": "tests/integration/pad-transfer-suite/run-tests.mjs",
+			"saveRole": "source",
+			"platformName": "lab-omnibus-state-v1",
+			"engineVersion": "2.0.77",
+			"mods": {
+				"base": "2.0.77",
+				"elevated-rails": "2.0.77",
+				"FluidMustFlow": "1.4.4",
+				"quality": "2.0.77",
+				"SpidertronEnhancements": "1.10.8",
+				"space-age": "2.0.77",
+				"SpidertronPatrols": "2.6.3",
+				"surfexp_gateways": "0.3.0",
+				"maraxsis": "1.31.6"
+			},
+			"invariant": "With test_force_census_omission armed on the SOURCE, one serialized stack is dropped post-serialization; the census verdict fails, the export aborts with reason source_census_mismatch, no dest platform ever exists, and the source scratch survives with all 100 iron-plate, unlocked.",
+			"expectedTerminalVerdict": "census-abort-source-preserved",
+			"independentOracleRequired": true,
+			"anchors": [
+				{
+					"name": "scratch",
+					"entity": "steel-chest",
+					"x": 99.5,
+					"y": 27.5
+				}
+			],
+			"fingerprint": {
+				"scratchPresent": true,
+				"scratchName": "steel-chest"
+			},
+			"lifecycle": {
+				"version": 1,
+				"mutable": [
+					"scratch"
+				],
+				"setup": [
+					{
+						"op": "spawn_item",
+						"name": "iron-plate",
+						"count": 100,
+						"into": "scratch"
+					},
+					{
+						"op": "arm_hook",
+						"name": "test_force_census_omission",
+						"value": true
+					}
+				],
+				"act": "transfer",
+				"expect": "census-abort",
+				"verify": [
+					{
+						"check": "physical_read",
+						"end": "source",
+						"locator": {
+							"anchor": "scratch"
+						},
+						"read": "item_count",
+						"item": "iron-plate",
+						"op": "eq",
+						"expected": 100
+					},
+					{
+						"check": "report_field",
+						"path": "reason",
+						"op": "eq",
+						"expected": "source_census_mismatch"
+					},
+					{
+						"check": "report_field",
+						"path": "verdict_ok",
+						"op": "eq",
+						"expected": false
+					}
+				]
+			},
+			"testCard": {
+				"law": "The paired-reads SOURCE census must refuse a transfer whose serialized form omits physical content: export aborted, destination NEVER contacted, source preserved and unlocked, entity-attributed forensic bundle banked (SC-6; closes the burner-fuel serializer-omission class).",
+				"build": "Authored 2026-07-20 on open slot (92,22): one baked-EMPTY steel-chest scratch anchor; content created programmatically each run.",
+				"action": "pad-transfer-suite: setup spawns 100 iron-plate + arms test_force_census_omission SOURCE-side, fires the real /transfer-platform; the census must refuse before the destination is ever contacted.",
+				"expected": "CENSUS MUST REFUSE: export aborted, dest never contacted, source preserved + unlocked; fingerprint matches the manifest pin; [source] scratch: iron-plate item_count eq 100; report reason eq \"source_census_mismatch\"; report verdict_ok eq false",
+				"forbidden": "Any outcome where the omission ships (dest contacted / source deleted) or the abort strands the source locked."
 			}
 		}
 	]

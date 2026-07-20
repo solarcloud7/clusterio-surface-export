@@ -183,6 +183,7 @@ local DISPATCH = {
   ["rollback-validation-failure"]   = { args = "anchor", meter = function(s, a) return FM.measure_scratch_anchor(s, a, "steel-chest") end },
   ["failed-entity-attribution"]     = { args = "anchor", meter = function(s, a) return FM.measure_scratch_anchor(s, a, "steel-chest") end },
   ["force-bonus-held"]              = { args = "anchor", meter = function(s, a) return FM.measure_scratch_anchor(s, a, "bulk-inserter") end },
+  ["census-omission-abort"]         = { args = "anchor", meter = function(s, a) return FM.measure_scratch_anchor(s, a, "steel-chest") end },
   -- owner-hand-built pads (previously "skipped: no meter")
   ["belt-combined-omnibus"]         = { args = "area", meter = FM.measure_belt_combined },
   ["mining-drill-acid-feed"]        = { args = "both", meter = FM.measure_mining_drill_acid },
