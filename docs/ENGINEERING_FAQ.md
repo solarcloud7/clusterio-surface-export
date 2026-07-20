@@ -8,7 +8,7 @@
 > engineer; do not invent an answer to close the gap. Keep this current as part of the `/di-change` gate.
 >
 > Related: [`TRANSFER_2PC.md`](TRANSFER_2PC.md) (the durable transfer design + current state — single source of
-> truth), [`TRANSFER_WORKFLOW_GUIDE.md`](TRANSFER_WORKFLOW_GUIDE.md), and CLAUDE.md "Common Pitfalls" (`#NN`).
+> truth), [`EXPORT_IMPORT_FLOW.md`](EXPORT_IMPORT_FLOW.md), and CLAUDE.md "Common Pitfalls" (`#NN`).
 
 ## Status legend
 - ✅ **Handled** — shipped behavior today.
@@ -64,7 +64,7 @@ spurious expiry.
 
 **Q: What if the source instance dies (or goes permanently unreachable) while the destination is reconstructing
 the platform?**
-A: ⚠️ OPEN (policy DECIDED, wiring queued). 2PC wiring queued: `docs/superpowers/plans/2026-07-10-pr-3-executor-brief.md`.
+A: ⚠️ OPEN (policy DECIDED; the 2PC commit half — destination handshake before source delete — is designed but unwired).
 TODAY the destination goes live on its OWN validation passing (the single exact gate — it is not held pending a
 source-delete handshake), and the source is deleted only after. A source that dies inside that window can leave a
 live destination — a **recoverable dup** (the source's own TTL failsafe unlocks the original whenever that save
@@ -84,9 +84,19 @@ it?**
 A: ✅ / ⚠️ OPEN (handshake wiring queued). TODAY: the `sendTo`/`sendRequest` to an unreachable destination
 instance rejects, the controller rolls back and unlocks the source at once (`tryUnlockSource`), and a retry is a
 NEW transfer — no resume machinery. The "discard the staged copy if the destination shook hands then failed by a
-deadline" half depends on the unbuilt handshake (2PC wiring queued:
-`docs/superpowers/plans/2026-07-10-pr-3-executor-brief.md`); until it lands, a destination that goes live on its
+deadline" half depends on the unbuilt handshake; until it lands, a destination that goes live on its
 own validation is not deadline-discarded.
+
+**Q: What if a controller persistence store (`exports.json` / `transactions.json`) becomes unreadable
+(partial write, disk fault, hand-editing)?**
+A: ✅ Fail-safe (persistence hardening, PR #81): the plugin **never overwrites a file it could not read** —
+the load failure latches a degraded mode (`Refusing to persist …` / `skipping this write …` in the controller
+log), the on-disk file is preserved byte-for-byte, and only records created *during* the degraded session are
+at risk. **Recovery — never delete the damaged file** (that does by hand what the old bug did automatically):
+stop the controller, back up the file (the log line names the path), repair it or move it aside, restart;
+a clean load clears degraded mode and the UI tabs repopulate. The in-game `/transaction-dashboard` and banked
+failure black boxes are independent stores and stay available throughout. These conditions are log-visible
+only; there is no in-UI degraded banner.
 
 ## B. Concurrency
 
@@ -129,7 +139,7 @@ by the CI meter-drift sentinel (`transfer-fidelity` compares the validator's exp
 physical count of the source) and by the owner-approved paired-reads source census (in progress), which converts
 any omission into a loud pre-transfer abort with the source preserved. Non-countable state (circuit configs,
 crafting progress, schedules, spoilage) is protected only by enumeration — per-category handlers plus per-dimension
-roundtrip fixtures. See the tier table in [parity-verification-model.md](parity-verification-model.md); never claim
+roundtrip fixtures. See the tier table in the "guarantee boundary" section of [testing.md](testing.md); never claim
 "100%" without scoping it to tier 1 plus the enumerated tier-2 dimensions.
 
 **Q: What if my platform is too big and the RCON / import send fails?**
@@ -165,7 +175,7 @@ anything else stays unexplained until measured. Never loosen the exact gate to m
 | `items`; many unrelated names are `GAINED` together | Craft-window/non-frozen census | Treat this as an ordering or measurement failure, not created inventory. Check the black-box tick and paused/active state, and move the census back before any elapsed simulation tick. |
 
 The belt class is fail-closed and remains mechanistically `UNEXPLAINED`; the deterministic replay and recovery
-evidence live in [the belt lab notebook](../tests/belt-lab/NOTEBOOK.md). Engine-owned fluid handling is covered by
+evidence live in the belt-lab NOTEBOOK (archived at git tag `labs-archive-2026-07-19`). Engine-owned fluid handling is covered by
 the `plasma-engine-owned` integration fixture. A retry is authorized only for the first row and only once.
 
 ## D. Data fidelity
@@ -212,8 +222,8 @@ apart) arrived with signal-S=0 — the latch RESETS. The serializer captures str
 (connection-scanner); network signal values are engine simulation state with no capture/restore API used.
 Any base whose behavior depends on a held latch value or an accumulated counter must expect that state to
 re-derive or reset after transfer. (An earlier "latch value survived" reading was an instrument bug — the
-seed combinator was never actually removed and kept feeding the latch; retracted in
-`tests/state-dimensions-lab/NOTEBOOK.md`.)
+seed combinator was never actually removed and kept feeding the latch; retracted in the state-dimensions-lab
+NOTEBOOK, archived at git tag `labs-archive-2026-07-19`.)
 
 **Q: What if some entities fail to place on the destination (missing mod)?**
 A: ✅ Their items/fluids are tallied as failed-entity-loss and subtracted from expected totals so validation is

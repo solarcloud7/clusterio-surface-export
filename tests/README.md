@@ -1,14 +1,15 @@
 # Tests
 
 The canonical testing taxonomy, baked-fixture lifecycle, measurement rules, and promotion policy are in
-[`docs/lab-tests.md`](../docs/lab-tests.md).
+[`docs/testing.md`](../docs/testing.md).
 
 ## Repository layout
 
 - `tests/integration/` contains live regressions for established production contracts. Discover and run them with
   `node tools/run-integration-tests.mjs --list` and `node tools/run-integration-tests.mjs` from the repository root.
-- `tests/*-lab/` contains physical investigations, append-only notebooks, and current-pin recertification rungs.
-  Read the owning notebook before running an individual lab.
+- The standing lab suite was removed 2026-07-19 (owner ruling); its runners and notebooks are archived at git tag
+  `labs-archive-2026-07-19`. Engine re-certification is a calculated campaign at version-update time — restore
+  runners from the archive tag or author fresh probes, then record the evidence in the certificate.
 - [`labs-certified.json`](labs-certified.json) records the engine pin and evidence commits covered by version
   certification.
 - [`runner-inventory.md`](runner-inventory.md) records each executable's evidence-backed category and disposition;

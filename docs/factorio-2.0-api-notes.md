@@ -221,7 +221,7 @@ Consequence: fluid does not live per-entity — it lives in the shared segment. 
   and three identical imports produced different component/ambiguity/resolved-edge counts. This does not
   invalidate `get_item_count` or unique-ID enumeration as physical meters; it invalidates using the engine
   line graph to certify that a source and imported line represent the same continuous physical lane/side. See
-  [BELT-R9](../tests/belt-lab/NOTEBOOK.md#belt-r9-empirical-2077---topology-first-plan-a-stops-on-the-real-dup-233855-component).
+  BELT-R9 in the belt-lab NOTEBOOK (archived at git tag `labs-archive-2026-07-19`).
 - **[empirical, 2.0.76]** `tests/integration/engine-invariants` grounds the belt meter against the unique-stack
   physical total (catches both belt-item drop → meter < physical and a whole-line double-count → meter >
   physical) and asserts held-item inclusion whenever an inserter is holding.
@@ -229,8 +229,8 @@ Consequence: fluid does not live per-entity — it lives in the shared segment. 
 ## Belt transport-line laws (CANONICAL — 2026-07-17 recreation)
 
 > This section is the single source of truth for belt insertion/restoration physics. Other docs must POINT
-> here, not restate. Every law carries its rung; the full ledgers are in
-> [tests/belt-lab/NOTEBOOK.md](../tests/belt-lab/NOTEBOOK.md), including the same-day RETRACTIONS entry
+> here, not restate. Every law carries its rung; the full ledgers are in the belt-lab NOTEBOOK
+> (archived at git tag `labs-archive-2026-07-19`), including the same-day RETRACTIONS entry
 > (a briefly-held "frozen platform" claim and an "insert_at duplication" claim were instrument artifacts —
 > the RCON-global lab hazard — and never reached law).
 
@@ -282,7 +282,7 @@ Consequence: fluid does not live per-entity — it lives in the shared segment. 
 - **[empirical, 2.0.77, no-tick-sync-lab PR-0B/LAB-B5]** The strict-gate synchronous pass
   (`restore_held_items_only` → `validate_import(..., strict=true)`) does not advance `game.tick`, does not move
   a deactivated assembler's `crafting_progress`, and does not change the restored inserter hand before the strict
-  count. Measured by `tests/no-tick-sync-lab/run-pr0b.mjs`: tick 187755→187755, crafting_progress
+  count. Measured by the no-tick-sync-lab PR0b runner (archived at git tag `labs-archive-2026-07-19`): tick 187755→187755, crafting_progress
   0.42000000000000004→0.42000000000000004, held `iron-plate x1` unchanged after restore, strict validation green.
   LAB-B5 repeated the boundary on a mid-craft furnace: reactivation plus an immediate read in one Lua execution
   kept tick, progress, input, and output identical; progress and output changed only after ticks elapsed.
@@ -388,8 +388,8 @@ Consequence: fluid does not live per-entity — it lives in the shared segment. 
 
 ## Deactivated-entity state writes and control-behavior / equipment restore
 
-These drive the import restore path (all measured by the state-dimensions closer run; see
-`tests/state-dimensions-lab/NOTEBOOK.md` and the matching integration tests).
+These drive the import restore path (all measured by the state-dimensions closer run; see the
+state-dimensions-lab NOTEBOOK, archived at git tag `labs-archive-2026-07-19`, and the matching integration tests).
 
 - **Burner, energy, and heat writes are ACCEPTED while the entity is DEACTIVATED.** **[empirical, 2.0.77,
   state-dimensions-lab + entity-burner/energy/heat-roundtrip]** A deactivated burner reads back

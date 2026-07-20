@@ -171,7 +171,7 @@ Plugin root: `docker/seed-data/external_plugins/surface_export/`. The full proje
 | `scripts/` | Build/lint helpers (Lua-invariant and webpack-cache guards) |
 | `dist/` | Build output (`dist/node/`, `dist/web/`), gitignored |
 
-For the detailed Lua module breakdown, see [IMPLEMENTATION_SUMMARY.md](IMPLEMENTATION_SUMMARY.md).
+For the detailed Lua module breakdown, see the Code Reference Map in [EXPORT_IMPORT_FLOW.md](EXPORT_IMPORT_FLOW.md).
 
 ## Documentation
 
@@ -179,17 +179,11 @@ For the detailed Lua module breakdown, see [IMPLEMENTATION_SUMMARY.md](IMPLEMENT
 |-----|--------|
 | [QUICK_START.md](QUICK_START.md) | End-to-end platform transfer walkthrough |
 | [ENGINEERING_FAQ.md](ENGINEERING_FAQ.md) | "What if the user does X?" edge-case checklist — how each transfer/lock/failure case is engineered today, with OPEN items flagged for a human call |
-| [E2E_TEST_GUIDE.md](E2E_TEST_GUIDE.md) | Hands-on QA checklist to validate the full transfer pipeline (automated suite + manual flows + failure cases) |
+| [testing.md](testing.md) | The single testing doc: Physical Truth Lab Standard (taxonomy, baked-fixture lifecycle, evidence rules), how transfer fidelity is measured (two meters, freeze policy, guarantee boundary), and the hands-on E2E validation checklist |
 | [commands-reference.md](commands-reference.md) | All in-game / RCON console commands with usage |
 | [TRANSFER_2PC.md](TRANSFER_2PC.md) | Transfer durability, identity (surface.index not name), and two-phase-commit design + current state — single source of truth |
-| [TRANSFER_WORKFLOW_GUIDE.md](TRANSFER_WORKFLOW_GUIDE.md) | Transfer entry points, phases, critical invariants |
-| [parity-verification-model.md](parity-verification-model.md) | How fidelity is measured: the two independent meters (serializer walk vs physical census), where each comparison runs, and the exact boundary of the "100%" guarantee |
-| [TRANSFER_CODE_PATHS.md](TRANSFER_CODE_PATHS.md) | End-to-end code trace of a transfer, from UI click to completion |
-| [EXPORT_IMPORT_FLOW.md](EXPORT_IMPORT_FLOW.md) | Action trace of export/import/transfer with message names, channels, and handler locations |
+| [EXPORT_IMPORT_FLOW.md](EXPORT_IMPORT_FLOW.md) | Action trace of export/import/transfer: sequence diagrams, message names, channels, handler locations, and the import phase call tree (absorbed TRANSFER_WORKFLOW_GUIDE and TRANSFER_CODE_PATHS) |
 | [async-processing.md](async-processing.md) | Async batch-processing architecture for large exports/imports |
-| [IMPLEMENTATION_SUMMARY.md](IMPLEMENTATION_SUMMARY.md) | Plugin architecture deep-dive and Lua module structure |
-| [FAILED_ENTITY_LOSS_TRACKING.md](FAILED_ENTITY_LOSS_TRACKING.md) | How items/fluids in entities that fail to place are tallied and attributed |
 | [factorio-2.0-api-notes.md](factorio-2.0-api-notes.md) | Verified Factorio 2.0 API & fluid-simulation facts (fluid segments, profiler/LocalisedString, inventory/platform APIs) |
-| [static-asset-caching.md](static-asset-caching.md) | Webpack content-hashing requirement for web chunks and its dev-workflow consequence |
 | [CI_CD.md](CI_CD.md) | CI pipeline, integration-test flow, and how Factorio is provisioned in CI |
 | [GATEWAY_TRANSFER_PRD.md](GATEWAY_TRANSFER_PRD.md) | In-game gateway transfer — design + current state (what's shipped, verified 2.0.77 API facts, planned work) |

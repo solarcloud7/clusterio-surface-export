@@ -127,7 +127,7 @@ Transfer a platform between instances in a single command:
 /transfer-platform <platform_index_or_name> <target_instance>
 ```
 
-This performs the full pipeline: lock → export → transmit → import → validate → activate → unlock. Progress messages appear throughout. See [docs/TRANSFER_WORKFLOW_GUIDE.md](docs/TRANSFER_WORKFLOW_GUIDE.md) for the detailed phase breakdown.
+This performs the full pipeline: lock → export → transmit → import → validate → activate → unlock. Progress messages appear throughout. See [docs/EXPORT_IMPORT_FLOW.md](docs/EXPORT_IMPORT_FLOW.md) for the detailed phase breakdown.
 
 ### Export a Platform
 

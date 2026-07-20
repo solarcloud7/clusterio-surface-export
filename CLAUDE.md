@@ -142,71 +142,49 @@ node tools/run-integration-tests.mjs                 # or:  --only 'gateway' / -
 **Skills** (invoke with `/<name>`): `/cluster-logs` (find logs / trace a failure) and
 `/repro-transfer` (reproduce a transfer end-to-end locally). Prefer local repro over CI logs.
 
-### Integration-probe iteration discipline (shared live cluster — read BEFORE debugging tests/integration)
+### Testing discipline
 
-The cluster is a shared, stateful, EXPENSIVE test target (platform clone ≈60–90s async; docker restart ≈30–60s;
-other work may be in flight). The default agent failure mode is re-running a full multi-minute probe to debug one
-tail check — turning a 30-second fix into a 6-minute cycle that also churns cluster state. Rules (each was paid
-for in a real incident — the destination-hold probe audit):
+The canonical test taxonomy, baked-fixture lifecycle, measurement boundary, and promotion policy are in
+[docs/testing.md](docs/testing.md) (the Physical Truth Lab Standard + the fidelity-measurement model + the
+hands-on E2E checklist, one doc); repository test layout and entry points are in
+[tests/README.md](tests/README.md). Current facts:
 
-These rules govern probes that dynamically mutate the shared cluster. Certified single-use baked-fixture batches
-follow the lifecycle in [the Physical Truth Lab Standard](docs/lab-tests.md): they do not clean between fixtures
-and reload the paired golden saves at the batch boundary. Cleanup-specific tests and non-baked shared-cluster
-probes retain the zero-leftover obligations below.
+- **`tests/integration/`** holds live regressions for established production contracts; run with
+  `node tools/run-integration-tests.mjs` (cluster must be up). The one-test-save consolidation is tracked in
+  [tests/integration/MIGRATION.md](tests/integration/MIGRATION.md): most roundtrip tests are absorbed as pad
+  fixtures on the live gallery save (`tests/lab-gallery/`), where a missing pad reports a RED `MISSING`
+  verdict — never a vacuous pass.
+- **Baked-fixture batches** follow the lifecycle in the standard: consume each certified fixture once through
+  the real production path, no cleanup between fixtures, reload the paired golden saves
+  (`docker/seed-data/lab-saves/`) in an unconditional batch finalizer.
+- **The standing lab suite was removed 2026-07-19** (owner ruling; runners archived at git tag
+  `labs-archive-2026-07-19`). Engine re-certification is a calculated campaign at version-update time: restore
+  runners from the archive tag (or author fresh probes), re-measure every law production depends on, record the
+  evidence commits in `tests/labs-certified.json`, and bump the pin — all in the bump PR.
+  `npm run lint:version-certification` keeps the pin and the certificate equal; between pin bumps, the pads +
+  integration suite are the standing coverage.
+- **Ad-hoc probes that mutate the shared cluster** still owe zero-leftover cleanup (surfaces AND persistent
+  `storage.*` records, game unpaused) and must scope every predicate to `surface-export-*` containers — the
+  unrelated `atlas-*` cluster shares this machine.
+- **Working hygiene:** run `./tools/check-pr-scope.ps1` before editing and again before opening a PR; commit
+  the real change before deliberately reverting/mutating it for a regression-teeth check (so the implementation
+  cannot be lost during teeth testing); leave `package-lock.json` byte-identical outside approved dependency
+  updates.
 
-1. **Build probes in sections; iterate on sections.** Any `run-tests.ps1` using more than one expensive resource
-   MUST take a section-selection param (e.g. `-Sections main,restart,ttl`). Debug loops run ONLY the failing
-   section; the full unsegmented run is reserved for final evidence passes.
-2. **Cheapest fixture that proves the invariant.** A check that doesn't measure content uses a bare
-   `force.create_space_platform{...}` + `apply_starter_pack()` (instant) — NOT a clone of the 1359-entity test
-   platform. Clone only where fidelity is physically measured.
-3. **Never docker-restart per debug iteration.** Restart-durability sections run in final passes only. After any
-   restart, POLL for RCON readiness (deadline loop) — never a fixed sleep (a 30s sleep is a race you will lose).
-4. **Derive counts; never hardcode totals.** Summary math comes from actual recorded results (a hardcoded
-   `$total` overreported a phantom pass). Treat a new harness like production code: regression-test its
-   accounting before trusting its summary.
-5. **Clean up EVERY state layer, then assert zero leftovers.** Surfaces AND persistent Lua storage records
-   (`storage.destination_holds`, `storage.locked_platforms`, …) — a `finally` that deletes surfaces but strands
-   storage records leaks landmines into the shared cluster. Post-run: assert both empty and the game unpaused.
-6. **Scope every predicate to THIS cluster.** Only `surface-export-*` containers / this instance's own RCON
-   stream. `atlas-*` (a second, unrelated cluster on this machine) must never appear in a probe's input — if its
-   text shows up, find the cross-wire; do not widen the regex around it.
-7. **Assert measured behavior, not desired architecture.** When a probe exists to answer an unknown, the
-   assertion records the MEASURED fact (labelled a hazard if undesired); changing the behavior is a separate,
-   adjudicated design decision.
-8. **A "passed" claim requires two consecutive full green runs + zero-leftover evidence, reported ONCE at the
-   end.** No live-narration of running passes; no trusting a single lucky green.
-
-### Empirical lab discipline (how engine lore becomes law — exemplar: `tests/fluid-lab/`)
-
-The canonical test taxonomy, baked-fixture contract, measurement boundary, and promotion path are defined in
-[the Physical Truth Lab Standard](docs/lab-tests.md). The evidence rules in this section remain mandatory.
-
-Engine-behavior knowledge carries evidence tags in [docs/factorio-2.0-api-notes.md](docs/factorio-2.0-api-notes.md):
-**[API]** / **[empirical, <pin>]** / **[hypothesis]**. A mechanism EXPLANATION is [hypothesis] until its
+**Evidence discipline** (mechanized by `lint:evidence-claims` and `lint:version-certification`):
+engine-behavior knowledge carries evidence tags in [docs/factorio-2.0-api-notes.md](docs/factorio-2.0-api-notes.md)
+— **[API]** / **[empirical, <pin>]** / **[hypothesis]**. A mechanism EXPLANATION is [hypothesis] until its
 *predictions* are tested — a behavioral rule can be [empirical] while its explanation is lore, and an
 unverifiable source ("expert analysis" of closed-source internals) must NEVER be cited as "Confirmed by."
-(Paid for: Pitfall #17's ghost-buffer mechanism survived 4 months as law; the fluid-lab refuted it in hours and
-prevented two unnecessary primitive redesigns.)
+Rung IDs cited in code and docs (fluid-lab R11, inserter-lab B6, …) point at evidence commits reachable via the
+archive tag. Record negative and unexplained results honestly — an eliminated failure whose root cause was never
+isolated is UNEXPLAINED, not fixed.
 
-**A lab rung is MANDATORY when:** (a) a design decision rests on engine behavior not tagged
-`[empirical, <current pin>]`; (b) CI and local disagree on a physical measurement; (c) a mechanism explanation
-cites uninspectable internals; (d) the engine pin bumps — **re-run every `tests/*-lab/` runner** (the labs are
-the version-drift re-certification suite).
-
-**The pattern** (belt-lab → inserter-lab → fluid-lab → hold-completeness-lab → no-tick-sync-lab lineage): append-only NOTEBOOK; a rung ladder isolating ONE
-variable per rung; controls first (trust the instrument before the experiment); every reading tick-stamped and
-carrying ALL meters + paused flags; a TRIED-&-SETTLED do-not-repeat ledger; inherited LAB HAZARDS (the on_tick
-clobber, `platform.destroy` no-op, recipe-enable + write-assert); `--reset` + zero-leftover proof; untracked
-until a conclusion is worth committing — then commit the RUNNERS with the conclusions and promote facts to
-api-notes WITH tags. Record negative and unexplained results honestly (an eliminated failure whose root cause
-was never isolated is UNEXPLAINED, not fixed — never retcon green into understood).
-
-**Two audit-boundary rules (each paid for in a real incident):**
-- **Commit labels are audit boundaries.** A `docs:` commit must never carry code — reviewers allocate attention
-  by label, and a mislabeled rider evaded two review passes before fresh eyes caught the defect it contained.
-- **A merge isn't done until main's own post-merge run is green.** PR runs get watched; push runs don't — main
-  once sat red for 12+ hours because nobody looked. Watch the post-merge run, every time.
+**Two audit-boundary rules:**
+- **Commit labels are audit boundaries.** A `docs:` commit must never carry code (CI-enforced by
+  `scripts/lint-commit-labels.mjs`).
+- **A merge isn't done until main's own post-merge run is green.** PR runs get watched; push runs don't —
+  watch the post-merge run, every time.
 
 ## Clusterio Core Development
 
@@ -450,7 +428,7 @@ If the default was added after the current save was created, you need either:
 **Evidence status**: the FIX (validate pre-activation) is [empirical]. No-tick-sync LAB-B5 [empirical, 2.0.77] isolated the boundary: reactivating a mid-craft furnace and reading it again in the same Lua execution left `game.tick`, `crafting_progress`, input, and output unchanged; crafting resumed only after ticks elapsed. The ordering rule is therefore "count before an elapsed tick," not "never read after activation."
 **Fix**: For **transfers only**, Phase 7 (activation) is deferred until after validation passes. Entities stay deactivated through all restoration phases and validation. Activation happens via `ActiveStateRestoration.restore()` using `frozen_states` only after `TransferValidation.validate_import()` succeeds. On failure, entities are left deactivated for investigation.
 **Key files**: `async-processor.lua` (`complete_import_job` function), `active_state_restoration.lua`
-**See**: [TRANSFER_WORKFLOW_GUIDE.md](docs/TRANSFER_WORKFLOW_GUIDE.md) — "Entity Lifecycle (Critical Invariant)" section
+**See**: [EXPORT_IMPORT_FLOW.md](docs/EXPORT_IMPORT_FLOW.md) — import phase call tree and validation summary
 
 ### 20. Failed Entity Loss Attribution (Fixed)
 **Symptom**: Transfer validation fails or shows unexplained item/fluid losses when some entities fail to place (e.g., mod mismatch, prototype collision). Validation reports "expected 500 iron-plate, got 450" with no indication of why.
@@ -458,7 +436,6 @@ If the default was added after the current save was created, you need either:
 **Fix**: At the failure site in `entity_creation.lua`, tally items (inventories, belt lines, held item) and fluids from the serialized entity data into `job.failed_entity_losses`. In `async-processor.lua`, before calling `validate_import`, deep-copy and subtract failed-entity items from expected counts so validation only compares achievable totals. Attach `failedEntityLosses` to the validation result so it flows through `send_json` to the controller and web UI. In `loss-analysis.lua`, log a full per-entity breakdown.
 **Key files**: `entity_creation.lua` (tally at failure site), `async-processor.lua` (adjust expected + attach to result), `loss-analysis.lua` (report section)
 **Output**: Log lines like `[Entity Creation] FAILED to create 'foundry' (type=furnace) at (12.5,4.5) — lost 50 items, 200.0 fluids` and `[Loss Analysis] 1 entities failed to place — 50 items, 200.0 fluids unrestorable`. `failedEntityLosses` field in validation result JSON sent to controller.
-**See**: [docs/FAILED_ENTITY_LOSS_TRACKING.md](docs/FAILED_ENTITY_LOSS_TRACKING.md)
 
 ### 16. Verification Counts From Live Scan vs Serialized Data (CRITICAL — Fixed)
 **Symptom**: Transfer validation fails with "GAINED items" across many item types (iron-plate, copper-cable, piercing-rounds-magazine, etc.). Gains are a fraction of belt item totals.
@@ -490,7 +467,7 @@ For Clusterio core architecture, see [Clusterio docs](https://github.com/cluster
 > `npm run lint` runs eleven **correctness** guards, all gated in CI:
 > - **TS** — `eslint.config.js` in the plugin root (flat config, type-aware via `tsconfig.node.json`). The unbound Clusterio Link-method guard (Pitfall #26, call Link methods bound) via `@typescript-eslint/unbound-method` + a `no-restricted-syntax` selector, PLUS `no-empty` + an empty-arrow `.catch(() => {})` selector so a swallowed promise rejection can't ship silently (the TS analogue of the Lua pcall-logging guard below).
 > - **Lua** — `scripts/lint-lua-invariants.mjs` (`npm run lint:lua`), a static guard over the `module/` tree for documented Factorio/Clusterio footguns we've already been bitten by: `global` persistence (Pitfall #4, storage vs global), `__clusterio_lib__` require/`active_mods` guard (#12), and `*platform*.destroy()` no-op (#19). Each rule maps to a Pitfall and was verified clean when added. Add a `-- lint-lua:allow` comment (with a reason) to suppress a verified false positive.
-> - **Web cache** — `scripts/lint-webpack-cache.mjs` (`npm run lint:web-cache`), guards that `webpack.config.js` keeps its output filenames content-hashed. A fixed-name `filename`/`chunkFilename` override silently defeats `@clusterio/web_ui`'s hashed default and, with the controller's immutable 1y `/static` cache, serves returning users stale chunks (the regression that shipped in `94e1b8c`; see [docs/static-asset-caching.md](docs/static-asset-caching.md)). Add a `lint-webpack-cache:allow` comment (with a reason) to suppress a verified exception.
+> - **Web cache** — `scripts/lint-webpack-cache.mjs` (`npm run lint:web-cache`), guards that `webpack.config.js` keeps its output filenames content-hashed. A fixed-name `filename`/`chunkFilename` override silently defeats `@clusterio/web_ui`'s hashed default and, with the controller's immutable 1y `/static` cache, serves returning users stale chunks (the regression that shipped in `94e1b8c`). Add a `lint-webpack-cache:allow` comment (with a reason) to suppress a verified exception.
 > - **Test grounding** — `scripts/lint-test-grounding.mjs` (`npm run lint:test-grounding`), guards that integration tests measure fidelity **independently of the code under test**: a `*fidelity*` test MUST do a physical `get_item_count(...)` count, and any test reading a validator self-report field (`totalItemLoss`/`expectedItemCounts`/`actualItemCounts`) MUST cross-ground it with a physical count. Exists because a `transfer-fidelity` test that asserted on `totalItemLoss` (the value under test) would have gone green on a broken meter — the catch came from physical counts + adversarial review, never the self-report. **Rule of thumb: if the thing under test could be wrong and the test would still pass, it's grounded in the wrong place.** Rule 3 requires success-path tests to parse `debug_import_result`, call `Assert-TransferSucceeded`, and only then perform destination census; Black-Box Discard must not be misreported as physical loss. Also: ship the adversarial fixture (inactive inserter, failed entity, non-normal quality) WITH the fix, and run `/code-review` before merging any gate/validation/source-deletion change. Add a `lint-test-grounding:allow` comment (with a reason) to suppress a verified exception.
 > - **pcall logging** — `scripts/lint-pcall-logging.mjs` (`npm run lint:pcall-logging`), every `pcall`/`xpcall` in the `module/` tree must SURFACE its error (log it / route through `pcall_warn` / propagate it to the caller) or be an annotated `-- intentional probe` — never a silent swallow. Exists because a swallowed pcall hid a belt-API signature mismatch across two failed fix attempts. Add `-- pcall:allow` (with a reason) for a verified false positive.
 > - **Catch swallow** — `scripts/lint-catch-swallow.mjs` (`npm run lint:catch-swallow`), the TS analogue of the pcall guard, closing the blind spot the eslint empty-catch rules can't see: a catch that **substitutes a default** (`catch (err) { allLogs = []; }`) without surfacing the error. Every catch in plugin TS/TSX must reference its error binding in a log/throw/rejection/user-visible error, or carry an approved `// catch:allow <reason>`. Exists because exactly that shape hid the transaction-log and controller-storage wipe-on-read-failure bugs for months (fixed in PR #81; guard in PR #82). The guard exports `findCatchSwallows` and ships its own unit tests (`test/lint-catch-swallow.test.cjs`).
@@ -499,7 +476,7 @@ For Clusterio core architecture, see [Clusterio docs](https://github.com/cluster
 > - **Allow manifest** — `scripts/lint-allow-manifest.mjs` (`npm run lint:allow-manifest`), every `*:allow` escape-hatch annotation on any of the guards above must be enumerated in `scripts/lint-allow-manifest.json` with a reason and approver — an allow is an **escalation**, never self-approved (see [memory] `lint-allows-are-escalations`). The manifest must match reality exactly in both directions.
 >
 > - **Evidence claims** — `scripts/lint-evidence-claims.mjs` (`npm run lint:evidence-claims`), an empirical claim in a code comment ("verified empirically", "[empirical…") must carry a citation (lab rung / commit / Pitfall N + short name / api-notes) within ±3 lines of the claim, in the same comment block. Born from a false "tolerances verified empirically" comment that survived four months as law until the fluid-lab refuted it. Allow marker `lint-evidence-claims:allow` (manifest-gated).
-> - **Version certification** — `scripts/lint-version-certification.mjs` (`npm run lint:version-certification`), the pinned Factorio version must equal `tests/labs-certified.json` (which records each lab's evidence commits at the certified pin). An engine pin bump goes red until every `tests/*-lab/` runner re-runs on the new pin — mechanizing the pin-bump re-certification rule (2.0.76→2.0.77 shipped real `destroy()` semantics drift, caught by LAB-I B7). No allow marker: the only fix is re-certification.
+> - **Version certification** — `scripts/lint-version-certification.mjs` (`npm run lint:version-certification`), the pinned Factorio version must equal `tests/labs-certified.json` (the engine-pin certificate recording evidence commits at the certified pin). An engine pin bump goes red until a re-certification campaign lands new evidence in the certificate (restore runners from the `labs-archive-2026-07-19` tag or author fresh probes — see "Testing discipline" above). Real drift exists: 2.0.76→2.0.77 changed `destroy()` semantics, caught by LAB-I B7. No allow marker: the only fix is re-certification.
 > A twelfth guard runs as its own PR-gated CI step (not in `npm run lint`): **commit labels** — `scripts/lint-commit-labels.mjs` fails a PR whose `docs:`-labeled commit touches non-doc paths (commit labels are audit boundaries; a mislabeled rider once evaded two review passes).
 >
 > The cosmetic conventions below (indentation, quotes, naming) are **conventions, not yet all machine-enforced** — match the surrounding code.
@@ -725,7 +702,7 @@ reality with every machine still deactivated. Fluid restoration then completes t
 **Rule**: a gate must measure a COMPLETE state, never a mid-process one — fix the timing, not the number. The current transfer verdict is one immutable pre-activation result; `failedStage` names the mismatched category (`items` or `fluids`).
 **Mechanical guard**: `tests/integration/gate-detects-loss` injects a real shortfall (`test_force_item_loss`)
 and asserts the strict gate FAILS + the source is preserved — so reverting to a loose gate goes RED in CI.
-**Clock evidence (2026-07-07, 2.0.77)**: `tests/no-tick-sync-lab/run-pr0b.mjs` proves the synchronous pass
+**Clock evidence (2026-07-07, 2.0.77)**: the no-tick-sync-lab PR0b runner (archived at `labs-archive-2026-07-19`) proves the synchronous pass
 keeps `game.tick`, `crafting_progress`, and the restored inserter hand stable through the strict count.
 **Key files**: `module/import_phases/active_state_restoration.lua`, `module/core/import-completion.lua`,
 `module/validators/transfer-validation.lua`.
@@ -825,13 +802,10 @@ inject-after-activation requirement. Read it before touching fluid scanning or r
 - [docs/commands-reference.md](docs/commands-reference.md) - All available commands
 - [docs/QUICK_START.md](docs/QUICK_START.md) - End-to-end transfer walkthrough
 - [docs/CI_CD.md](docs/CI_CD.md) - CI pipeline, Factorio-baking for integration tests, and debugging failed runs
-- [docs/TRANSFER_WORKFLOW_GUIDE.md](docs/TRANSFER_WORKFLOW_GUIDE.md) - Transfer phases and validation
-- [docs/EXPORT_IMPORT_FLOW.md](docs/EXPORT_IMPORT_FLOW.md) - Complete action trace with debugging
-- [docs/IMPLEMENTATION_SUMMARY.md](docs/IMPLEMENTATION_SUMMARY.md) - Module structure and design decisions
+- [docs/TRANSFER_2PC.md](docs/TRANSFER_2PC.md) - Transfer durability, identity, and two-phase-commit design + current state
+- [docs/EXPORT_IMPORT_FLOW.md](docs/EXPORT_IMPORT_FLOW.md) - Complete action trace: sequence diagrams, phases, message names, debugging
 - [docs/async-processing.md](docs/async-processing.md) - Async batch processing architecture
-- [docs/TRANSFER_CODE_PATHS.md](docs/TRANSFER_CODE_PATHS.md) - Transfer feature mapped to its code paths
 - [docs/factorio-2.0-api-notes.md](docs/factorio-2.0-api-notes.md) - Verified Factorio 2.0 API & fluid-simulation facts
-- [docs/FAILED_ENTITY_LOSS_TRACKING.md](docs/FAILED_ENTITY_LOSS_TRACKING.md) - How losses from entities that fail to place are attributed
 
 ## Debugging Tips
 
@@ -867,9 +841,10 @@ docker exec surface-export-controller sh -c 'npx clusterioctl --config /clusteri
 The JSON log shape is `{"instance_id":…,"instance_name":…,"level":"info|error|server","message":"…","plugin":"surface_export","timestamp":"…"}`. Filter a single plugin with `grep '"plugin":"surface_export"'`. The `cluster-*.log` file is the single best place to trace a cross-instance transfer end-to-end (it has the host-1 export, the controller routing, AND the host-2 import in one stream).
 
 **Prometheus metrics are LIVE**: the `statistics_exporter` plugin exposes `http://localhost:8080/metrics` on the controller (process + cluster metrics, ~45 KB). **Custom surface_export transfer metrics are now implemented** — `lib/metrics.ts` defines collectors that register to Clusterio's default registry (so they surface on the same `/metrics` with no extra wiring) and `recordOperationOutcome()` is called from `SubscriptionManager.emitTransferUpdate` (the universal terminal chokepoint, idempotent per operation):
-- `surface_export_operations_total{operation,result}` — counter; `operation` ∈ transfer/export/import, `result` ∈ success/failure/cleanup_failed
-- `surface_export_operation_duration_seconds{operation,result}` — histogram (buckets 0.5s…300s)
+- `surface_export_operations_total{operation,result,failure_stage}` — counter; `operation` ∈ transfer/export/import, `result` ∈ success/failure/cleanup_failed, `failure_stage` ∈ items/fluids/none
+- `surface_export_operation_duration_seconds{operation,result,failure_stage}` — histogram (buckets 0.5s…300s)
 - `surface_export_entities_transferred_total{operation}` — counter (entities placed on the destination)
+- `surface_export_export_stall_seconds` — histogram; the source-side async export span (the tick-stall window that can heartbeat-drop a connected player)
 
 These complement, not replace, the JSON-file logs above — metrics tell you *that* transfers are failing and how long they take; the `cluster-*.log` files tell you *why*. Scrape with `docker exec surface-export-controller sh -c 'curl -s http://localhost:8080/metrics | grep ^surface_export_'`.
 

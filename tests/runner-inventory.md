@@ -1,8 +1,11 @@
 # Test Runner Inventory
 
 This is the canonical SC-41 inventory of executable tests and guards. The taxonomy and lifecycle rules are in
-[`docs/lab-tests.md`](../docs/lab-tests.md). The inventory is intentionally incomplete while SC-41 is in progress;
+[`docs/testing.md`](../docs/testing.md). The inventory is intentionally incomplete while SC-41 is in progress;
 an absent runner has not yet been classified.
+
+> The standing lab suite was removed 2026-07-19 (owner ruling); rows below that link `tests/*-lab/` paths refer
+> to runners now archived at git tag `labs-archive-2026-07-19`, not to files in the working tree.
 
 Each row owns exactly one current category and one final disposition. When one executable mixes unrelated
 questions, the row classifies the executable as `obsolete/duplicate`; the section table records the replacement
