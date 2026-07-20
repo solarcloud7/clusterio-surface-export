@@ -390,3 +390,12 @@ Also landed: chunked roster push remotes (set_test_roster_begin/chunk/commit —
 Full /test-run: 16 pass / 0 fail / 0 missing (2 skipped: belt pads await meters). Canonical save
 refreshed. Known runner wart: skipped-no-meter pads also list as UNKNOWN in the reconcile — cleanup
 queued with P5.
+
+## 2026-07-19 — P4b: omnibus-spoilage-midspoil authored on open slot (8,50) (the lifecycle worked example)
+
+- P3 landed first: `push-roster.mjs` (trim -> stable-hash -> chunked push via set_test_roster_begin/chunk/commit -> echo-verify). 19 fixtures, 6589 bytes, chunked transport proven live end-to-end (hash 610ff85d9e24).
+- Reconcile wart fixed: skipped pad fixtures now claim their discovered cell (no more double-report as UNKNOWN); `open-slot-*` cells are counted as one "N open slot(s) available" info line instead of per-slot UNKNOWN warnings. 0 unknown on a clean run.
+- Fixture: baked-EMPTY steel-chest scratch anchor at (15.5,55.5); lifecycle setup spawns 10 raw-fish at spoil 0.5 (write-asserted); act = transfer (pad-transfer-suite owns it; /test-run pins the LEFT fingerprint and skips the act); verify list declarative, EXPECT panel text GENERATED from it via renderExpectFromLifecycle.
+- Deployed 0.10.124 (meter measure_omnibus_spoilage + DISPATCH entry + wart fix). /test-run: 16 passed / 0 failed / 0 missing / 0 unknown / 3 skipped (belt-combined-omnibus + mining-drill-acid-feed no-meter, spoilage transfer-act) on roster 610ff85d9e24.
+- Snapshot re-banked (scratch chest cleared first — baked-empty invariant): SHA 54877DCB7DAB501FC2DDAF01A1DD45E29E721F33FE14F03F4AF30B6AA88FE136, census 1956 entities / 6740 chunks / 3 surfaces (grew from 1870: owner hand-builds + spoilage pad).
+- P6 wave 1 landed alongside: 13 vanity integration tests deleted with tests/integration/MIGRATION.md; entity-roundtrip held back (quality-dimension-ownership unit guard pins its test-cases.json).

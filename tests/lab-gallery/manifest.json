@@ -18,9 +18,9 @@
 			"role": "source",
 			"name": "lab-gallery-source-of-truth",
 			"artifact": "docker/seed-data/lab-saves/lab-gallery-source-of-truth.zip",
-			"sha256": "F81D96D5D344B1FBFAB0DCB7DBE58EA6CDF42B5546036D3165CAA66F6FD1EDCE",
+			"sha256": "54877DCB7DAB501FC2DDAF01A1DD45E29E721F33FE14F03F4AF30B6AA88FE136",
 			"expectedCensus": {
-				"totalEntities": 1870,
+				"totalEntities": 1956,
 				"totalGeneratedChunks": 6740,
 				"surfaces": [
 					{
@@ -45,7 +45,7 @@
 				"surfexp_gateways": "0.3.0",
 				"maraxsis": "1.31.6"
 			},
-			"note": "SNAPSHOT OF LIVE (2026-07-20): the canonical save is a verified server_save of the live gallery world — never a scripted-bake product. Re-bank by: server_save, docker cp, SHA re-pin, in one commit."
+			"note": "SNAPSHOT OF LIVE (2026-07-19): the canonical save is a verified server_save of the live gallery world - never a scripted-bake product. Re-bank by: server_save, docker cp, SHA re-pin, in one commit."
 		},
 		"destination": {
 			"role": "destination",
@@ -1129,6 +1129,110 @@
 				"forbidden": "Do not unfreeze the drill (consumes acid, depletes the patch)."
 			},
 			"note": "FIRST CATCH: no resource-type serializer handler (entity.amount not carried) - queued with the loader/infinity-container handler work."
+		},
+		{
+			"id": "omnibus-spoilage-midspoil",
+			"padKind": "pad",
+			"origin": {
+				"x": 8,
+				"y": 50
+			},
+			"revision": 1,
+			"labId": "hidden-semantics-lab",
+			"name": "Spoilage mid-spoil",
+			"purpose": "Preserve mid-spoil progress on spoilable items through a real cross-instance transfer (the pad-lifecycle worked example: programmatic setup, transfer act, declarative verify).",
+			"category": "physical-lab",
+			"owningRunner": "tests/integration/pad-transfer-suite/run-tests.mjs",
+			"saveRole": "source",
+			"platformName": "lab-omnibus-state-v1",
+			"engineVersion": "2.0.77",
+			"mods": {
+				"base": "2.0.77",
+				"elevated-rails": "2.0.77",
+				"FluidMustFlow": "1.4.4",
+				"quality": "2.0.77",
+				"SpidertronEnhancements": "1.10.8",
+				"space-age": "2.0.77",
+				"SpidertronPatrols": "2.6.3",
+				"surfexp_gateways": "0.3.0",
+				"maraxsis": "1.31.6"
+			},
+			"invariant": "The scratch chest is baked EMPTY; lifecycle setup spawns 10 raw-fish at spoil_percent 0.5 (write-asserted); after the act the fish count is exactly 10, no spoilage byproduct exists, and spoil progress is monotone from the captured baseline.",
+			"expectedTerminalVerdict": "strict-gate-success",
+			"independentOracleRequired": true,
+			"anchors": [
+				{
+					"name": "scratch",
+					"entity": "steel-chest",
+					"x": 15.5,
+					"y": 55.5
+				}
+			],
+			"fingerprint": {
+				"scratchPresent": true,
+				"scratchName": "steel-chest"
+			},
+			"lifecycle": {
+				"version": 1,
+				"mutable": [
+					"scratch"
+				],
+				"setup": [
+					{
+						"op": "spawn_item",
+						"name": "raw-fish",
+						"count": 10,
+						"spoil_percent": 0.5,
+						"into": "scratch"
+					}
+				],
+				"act": "transfer",
+				"verify": [
+					{
+						"check": "physical_read",
+						"locator": {
+							"anchor": "scratch"
+						},
+						"read": "item_count",
+						"item": "raw-fish",
+						"op": "eq",
+						"expected": 10
+					},
+					{
+						"check": "physical_read",
+						"locator": {
+							"anchor": "scratch"
+						},
+						"read": "item_count",
+						"item": "spoilage",
+						"op": "eq",
+						"expected": 0
+					},
+					{
+						"check": "physical_read",
+						"locator": {
+							"anchor": "scratch"
+						},
+						"read": "spoil_percent",
+						"item": "raw-fish",
+						"op": "monotone",
+						"driftTicks": 600
+					},
+					{
+						"check": "report_field",
+						"path": "itemCountMatch",
+						"op": "eq",
+						"expected": true
+					}
+				]
+			},
+			"testCard": {
+				"law": "Spoil progress is hidden item state: a mid-spoiled stack must ride a transfer with its spoil_percent intact, never reset to fresh and never prematurely spoiled (absorbs spoilage-roundtrip).",
+				"build": "Authored 2026-07-19 on open slot (8,50): one baked-EMPTY steel-chest scratch anchor at (15.5,55.5); all content is created programmatically by the lifecycle setup each run.",
+				"action": "Lifecycle: setup spawns 10 raw-fish at spoil 0.5 into the scratch chest (write-asserted); act = REAL cross-instance transfer (pad-transfer-suite); verify list below. Locally /test-run pins the LEFT fingerprint and skips the act.",
+				"expected": "fingerprint matches the manifest pin; scratch: raw-fish item_count eq 10; scratch: spoilage item_count eq 0; scratch: raw-fish spoil_percent monotone (<=600t drift); report itemCountMatch eq true",
+				"forbidden": "Fish count drift, any spoilage byproduct materializing during the frozen act, spoil_percent reset below the setup baseline."
+			}
 		}
 	]
 }

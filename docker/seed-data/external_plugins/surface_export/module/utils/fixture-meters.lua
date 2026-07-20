@@ -200,6 +200,14 @@ local function measure_omnibus_ground(surface, area)
     return { ironPlate = total }
 end
 
+local function measure_omnibus_spoilage(surface, anchor)
+    -- Structural fingerprint ONLY: the chest is a lifecycle `mutable` anchor (baked EMPTY, filled by
+    -- setup each run), so its contents are excluded — presence/name is the stable baked state.
+    local x, y = anchor("steel-chest")
+    local chest = at(surface, "steel-chest", x, y)
+    return { scratchPresent = chest ~= nil, scratchName = chest and chest.name or "absent" }
+end
+
 local function measure_omnibus_schedule(platform)
     local schedule = platform.get_schedule()
     local records = schedule.get_records()
@@ -458,6 +466,7 @@ local function measure_corpus(manifest)
         anchored_safe("omnibus-crafting-fluids", function(a) return measure_omnibus_fluids(omni, a) end)
         safe("omnibus-ghosts-and-proxies", function() return measure_omnibus_ghosts(omni) end)
         safe("omnibus-ground-items", function() return measure_omnibus_ground(omni) end)
+        anchored_safe("omnibus-spoilage-midspoil", function(a) return measure_omnibus_spoilage(omni, a) end)
         safe("omnibus-platform-schedule", function() return measure_omnibus_schedule(omni_platform) end)
         anchored_safe("inserter-held-capacity", function(a) return measure_inserter_held(omni, a) end)
         anchored_safe("no-tick-sync-frozen-pair", function(a) return measure_no_tick_pair(omni, a) end)
@@ -573,6 +582,7 @@ M.measure_omnibus_bonus = measure_omnibus_bonus
 M.measure_omnibus_fluids = measure_omnibus_fluids
 M.measure_omnibus_ghosts = measure_omnibus_ghosts
 M.measure_omnibus_ground = measure_omnibus_ground
+M.measure_omnibus_spoilage = measure_omnibus_spoilage
 M.measure_omnibus_schedule = measure_omnibus_schedule
 M.measure_energy = measure_energy
 M.measure_belt_corner = measure_belt_corner

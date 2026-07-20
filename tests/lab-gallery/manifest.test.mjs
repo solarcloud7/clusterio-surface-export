@@ -16,7 +16,7 @@ test("gallery manifest labs are the fixture-referenced categories (lab dirs remo
 	const referenced = [...new Set(manifest.fixtures.map(fixture => fixture.labId))].sort();
 	assert.deepEqual(manifest.labs.map(lab => lab.id).sort(), referenced);
 	assert.deepEqual(validateGalleryManifest(manifest, { requireArtifacts: false }), {
-		labs: referenced.length, fixtures: 18, sourceFixtures: 18, destinationFixtures: 0,
+		labs: referenced.length, fixtures: 19, sourceFixtures: 19, destinationFixtures: 0,
 	});
 });
 
@@ -39,7 +39,7 @@ test("paired save roles, artifacts, censuses, and exact mod pins are final", () 
 	assert.deepEqual(manifest.saves.source.mods, manifest.mods);
 	assert.deepEqual(manifest.saves.destination.mods, manifest.mods);
 	assert.deepEqual(validateGalleryManifest(manifest), {
-		labs: 11, fixtures: 18, sourceFixtures: 18, destinationFixtures: 0,
+		labs: 11, fixtures: 19, sourceFixtures: 19, destinationFixtures: 0,
 	});
 });
 
@@ -80,7 +80,7 @@ test("the sixteen-family corpus is inventoried with independent oracles and stab
 
 	// Every omnibus family shares the one platform, carries an independent oracle, and a fingerprint.
 	const omnibus = manifest.fixtures.filter(fixture => fixture.id.startsWith("omnibus-"));
-	assert.equal(omnibus.length, 12);
+	assert.equal(omnibus.length, 13);
 	for (const fixture of omnibus) {
 		assert.equal(fixture.platformName, "lab-omnibus-state-v1");
 		assert.equal(fixture.independentOracleRequired, true);

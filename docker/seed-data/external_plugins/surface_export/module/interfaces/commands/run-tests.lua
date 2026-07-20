@@ -153,6 +153,9 @@ local DISPATCH = {
   ["inserter-held-capacity"]        = { args = "anchor", meter = FM.measure_inserter_held },
   ["no-tick-sync-frozen-pair"]      = { args = "anchor", meter = FM.measure_no_tick_pair },
   ["repin-beacon-speed"]            = { args = "anchor", meter = FM.measure_repin_beacon },
+  -- transfer-act lifecycle fixture: locally /test-run validates the LEFT fingerprint then reports
+  -- "skipped (transfer act)"; the pad-transfer-suite (P5) owns the act + verify end of it.
+  ["omnibus-spoilage-midspoil"]     = { args = "anchor", meter = FM.measure_omnibus_spoilage },
   -- omnibus pads, area-scoped fingerprints (whole-half scans)
   ["omnibus-ghosts-and-proxies"]    = { args = "area", meter = FM.measure_omnibus_ghosts },
   ["omnibus-ground-items"]          = { args = "area", meter = FM.measure_omnibus_ground },
