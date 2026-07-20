@@ -338,3 +338,13 @@ Also retired (owner rulings): `lab-hold-pod-live/held-v1` (pod-hold contract fol
 destination-hold integration suite — "we already know this works") and `lab-energy-v1` ("covered
 on the other server"). Manifest 22→20. Live map: 6 platforms (omnibus, workhorse, 4 hold
 spoil/damage platforms). Checkpoints 19k, 19l.
+
+## 2026-07-19 — Standing lab suite removed (owner ruling): calculated re-certification at version-update
+
+Owner: engine re-certification runs as a CALCULATED CAMPAIGN when preparing a version update, not
+as a standing suite. All 13 tests/*-lab directories removed (archive: git tag
+labs-archive-2026-07-19; the DUP-233855 replay payload relocated to
+tests/integration/belt-loss-replay/ for Phase 5B). labs-certified.json stays as the 2.0.77
+certificate + campaign procedure; the version-certification guard still goes RED on a pin bump.
+manifest.labs is now the fixture-referenced category catalog (11). Bake-verify special paths
+existence-guarded pending harness-rework retirement. Unit suites 45/45 green.
