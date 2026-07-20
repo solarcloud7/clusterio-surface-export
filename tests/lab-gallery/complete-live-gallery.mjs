@@ -21,7 +21,6 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
 import { LEGEND, TEMPLATE_ROWS } from "./test-foundation.mjs";
-import { buildFiveByFiveLoop } from "./fixture-layout.mjs";
 
 const CONTROLLER = "surface-export-controller";
 const CTL_CONFIG = "/clusterio/tokens/config-control.json";

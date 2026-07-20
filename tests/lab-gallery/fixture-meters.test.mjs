@@ -66,10 +66,4 @@ test("the spoil probe pcall is annotated so lint:pcall-logging accepts it", () =
 	assert.match(source, /intentional probe;[^\n]*spoil_percent/);
 });
 
-test("runtime-driver ships the meters prelude, strips CRLF, and guards the delimiter on every file", () => {
-	const driver = readFileSync(new URL("./runtime-driver.cjs", import.meta.url), "utf8");
-	assert.ok(driver.includes("replace(/\\r/g"), "runtime-driver must strip \\r from every shipped Lua file");
-	assert.match(driver, /unsafe long-string delimiter/);
-	// Preludes are injected ahead of the runtime as the FixtureMeters library.
-	assert.match(driver, /local FixtureMeters=\(function\(\)/);
-});
+// (runtime-driver test removed 2026-07-19 with the bake pipeline — the driver is deleted.)

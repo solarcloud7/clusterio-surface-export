@@ -4,7 +4,7 @@ import { readFileSync } from "node:fs";
 // single source of truth for the corpus-excluded set shared by the build-side and reload-side
 // roster-completeness gates: the belt pilot is asserted by the belt census and the reachability
 // drill by the reachability block. Any OTHER fixture missing from the measured corpus fails loudly.
-export const CORPUS_EXCLUDED = new Set(["belt-5x5-125-unstacked", "specialized-fluid-reachability"]);
+export const CORPUS_EXCLUDED = new Set([]); // no special-path exclusions remain (2026-07-19 consolidation)
 
 // The reload meters build their reading from a Lua table, which cannot carry a JSON null (Lua drops
 // nil keys). They therefore represent the semantic "no mining target" (manifest miningTarget: null)
