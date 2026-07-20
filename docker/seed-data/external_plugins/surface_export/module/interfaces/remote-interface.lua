@@ -68,6 +68,7 @@ RemoteInterface.set_test_roster_chunk = test_roster.set_test_roster_chunk
 RemoteInterface.set_test_roster_commit = test_roster.set_test_roster_commit
 RemoteInterface.get_test_roster_summary = test_roster.get_test_roster_summary
 RemoteInterface.lifecycle_setup = lifecycle.lifecycle_setup
+RemoteInterface.lifecycle_dest_setup = lifecycle.lifecycle_dest_setup
 RemoteInterface.lifecycle_verify = lifecycle.lifecycle_verify
 RemoteInterface.lifecycle_teardown = lifecycle.lifecycle_teardown
 RemoteInterface.lifecycle_leftovers = lifecycle.lifecycle_leftovers
@@ -145,6 +146,7 @@ function RemoteInterface.register()
 
     -- Pad lifecycle transfer ends (pad-transfer-suite orchestrator, P5)
     lifecycle_setup = lifecycle.lifecycle_setup,
+    lifecycle_dest_setup = lifecycle.lifecycle_dest_setup,
     lifecycle_verify = lifecycle.lifecycle_verify,
     lifecycle_teardown = lifecycle.lifecycle_teardown,
     lifecycle_leftovers = lifecycle.lifecycle_leftovers,

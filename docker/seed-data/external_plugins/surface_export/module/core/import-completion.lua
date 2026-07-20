@@ -416,7 +416,7 @@ function ImportCompletion.run_phase2(job)
 
 		-- TEST HOOK (one-shot, debug-gated): inject a REAL, UNACCOUNTED item loss on the destination
 		-- AFTER held-restore but BEFORE the gate, to prove the STRICT gate DETECTS loss and the
-		-- two-phase commit preserves the source (gate-detects-loss test). Removes N of the most-abundant
+		-- two-phase commit preserves the source (the gate-item-loss pad fixture). Removes N of the most-abundant
 		-- (name,quality) from the surface — NOT routed through failed_entity_losses/overflow, so it is a
 		-- genuine shortfall the gate must catch. Set via configure({ test_force_item_loss = N }).
 		do

@@ -91,7 +91,7 @@ one-afternoon lab killed it and fixed CI with a meter change instead.
 docker exec surface-export-host-1 sh -c 'cd /clusterio/external_plugins/surface_export && \
   npm run lint:lua && npm run lint:test-grounding && npm run lint:pcall-logging && npm run lint:test-hooks'
 # adversarial + fidelity integration coverage (cluster up):
-node tools/run-integration-tests.mjs --only 'gate-detects-loss|force-bonus-sync|transfer-fidelity|rollback'
+node tools/run-integration-tests.mjs --only 'pad-transfer-suite|transfer-fidelity'   # the sabotage teeth are pad fixtures (gate-item-loss, gate-fluid-loss, rollback-validation-failure, failed-entity-attribution, force-bonus-held)
 ```
 
 ## Reference

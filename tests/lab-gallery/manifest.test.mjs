@@ -16,7 +16,7 @@ test("gallery manifest labs are the fixture-referenced categories (lab dirs remo
 	const referenced = [...new Set(manifest.fixtures.map(fixture => fixture.labId))].sort();
 	assert.deepEqual(manifest.labs.map(lab => lab.id).sort(), referenced);
 	assert.deepEqual(validateGalleryManifest(manifest, { requireArtifacts: false }), {
-		labs: referenced.length, fixtures: 19, sourceFixtures: 19, destinationFixtures: 0,
+		labs: referenced.length, fixtures: 24, sourceFixtures: 24, destinationFixtures: 0,
 	});
 });
 
@@ -39,7 +39,7 @@ test("paired save roles, artifacts, censuses, and exact mod pins are final", () 
 	assert.deepEqual(manifest.saves.source.mods, manifest.mods);
 	assert.deepEqual(manifest.saves.destination.mods, manifest.mods);
 	assert.deepEqual(validateGalleryManifest(manifest), {
-		labs: 11, fixtures: 19, sourceFixtures: 19, destinationFixtures: 0,
+		labs: 11, fixtures: 24, sourceFixtures: 24, destinationFixtures: 0,
 	});
 });
 
@@ -183,4 +183,45 @@ test("lifecycle validation teeth: hook allowlist, grounding rule, mutable-anchor
 	assert.doesNotThrow(() => validateGalleryManifest(ok, { requireArtifacts: false }));
 	const lines = renderExpectFromLifecycle(ok.fixtures.find(fixture => fixture.id === "belt-combined-omnibus"));
 	assert.ok(lines.some(line => /raw-fish item_count eq 10/.test(line)));
+
+	// --- gate-failure (sabotage teeth) rules -----------------------------------------------------
+	const SUITE = "tests/integration/pad-transfer-suite/run-tests.mjs";
+	const withTransferLifecycle = (lifecycle) => {
+		const m = clone();
+		const fx = m.fixtures.find(fixture => fixture.id === "belt-combined-omnibus");
+		fx.owningRunner = SUITE;
+		delete fx.owningRunnerWaiver;
+		fx.lifecycle = lifecycle;
+		fx.anchors = [{ entity: "steel-chest", x: 1, y: 1, name: "scratch" }];
+		return m;
+	};
+	// Red tooth: gate-failure without a declared dest-end sabotage op is rejected.
+	assert.throws(() => validateGalleryManifest(withTransferLifecycle({
+		version: 1, mutable: ["scratch"], act: "transfer", expect: "gate-failure",
+		setup: [{ op: "spawn_item", name: "iron-plate", count: 100, into: "scratch" }],
+		verify: [{ check: "physical_read", end: "source", locator: { anchor: "scratch" }, read: "item_count", item: "iron-plate", op: "eq", expected: 100 }],
+	}), { requireArtifacts: false }), /dest-end arm_hook/);
+	// Red tooth: gate-failure without a source-end physical witness is rejected.
+	assert.throws(() => validateGalleryManifest(withTransferLifecycle({
+		version: 1, mutable: ["scratch"], act: "transfer", expect: "gate-failure",
+		setup: [{ op: "arm_hook", name: "test_force_item_loss", value: 5, end: "dest" }],
+		verify: [{ check: "report_field", path: "validation_success", op: "eq", expected: false }],
+	}), { requireArtifacts: false }), /source-preserved witness|physical witness/);
+	// Red tooth: a gate-failure physical read that forgets end "source" points at a platform that
+	// never exists — rejected.
+	assert.throws(() => validateGalleryManifest(withTransferLifecycle({
+		version: 1, mutable: ["scratch"], act: "transfer", expect: "gate-failure",
+		setup: [{ op: "arm_hook", name: "test_force_item_loss", value: 5, end: "dest" }],
+		verify: [{ check: "physical_read", locator: { anchor: "scratch" }, read: "item_count", item: "iron-plate", op: "eq", expected: 100 }],
+	}), { requireArtifacts: false }), /end "source"/);
+	// Red tooth: dest-end ops are sabotage-only (no dest-end spawn_item).
+	assert.throws(() => validateGalleryManifest(withTransferLifecycle({
+		version: 1, mutable: ["scratch"], act: "transfer",
+		setup: [{ op: "spawn_item", name: "iron-plate", count: 100, into: "scratch", end: "dest" }],
+	}), { requireArtifacts: false }), /cannot run on the dest end/);
+	// Green path: the shipped gate-item-loss shape validates and renders the refusal banner.
+	const teeth = manifest.fixtures.find(fixture => fixture.id === "gate-item-loss");
+	assert.ok(teeth, "gate-item-loss fixture present");
+	assert.equal(teeth.lifecycle.expect, "gate-failure");
+	assert.ok(renderExpectFromLifecycle(teeth).some(line => /GATE MUST REFUSE/.test(line)));
 });

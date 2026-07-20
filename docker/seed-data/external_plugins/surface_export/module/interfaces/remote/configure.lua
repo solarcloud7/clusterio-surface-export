@@ -43,7 +43,7 @@ local function configure(config)
     -- Test-only: remove N items of the most-abundant type from the destination on the NEXT
     -- transfer, AFTER held-item restore but BEFORE the gate — an UNACCOUNTED loss (not routed
     -- through failed_entity_losses/overflow). Proves the STRICT gate DETECTS real loss and the
-    -- two-phase commit preserves the source. See validation-timing-trilemma / gate-detects-loss test.
+    -- two-phase commit preserves the source. See validation-timing-trilemma / the gate-item-loss pad fixture.
     storage.surface_export_config.test_force_item_loss = config.test_force_item_loss
   end
   if config.test_force_fluid_loss ~= nil then

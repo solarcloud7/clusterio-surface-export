@@ -156,6 +156,12 @@ local DISPATCH = {
   -- transfer-act lifecycle fixture: locally /test-run validates the LEFT fingerprint then reports
   -- "skipped (transfer act)"; the pad-transfer-suite (P5) owns the act + verify end of it.
   ["omnibus-spoilage-midspoil"]     = { args = "anchor", meter = FM.measure_omnibus_spoilage },
+  -- protocol-teeth pads (transfer-act; local /test-run pins the LEFT fingerprint then skips)
+  ["gate-item-loss"]                = { args = "anchor", meter = function(s, a) return FM.measure_scratch_anchor(s, a, "steel-chest") end },
+  ["gate-fluid-loss"]               = { args = "anchor", meter = function(s, a) return FM.measure_scratch_anchor(s, a, "storage-tank") end },
+  ["rollback-validation-failure"]   = { args = "anchor", meter = function(s, a) return FM.measure_scratch_anchor(s, a, "steel-chest") end },
+  ["failed-entity-attribution"]     = { args = "anchor", meter = function(s, a) return FM.measure_scratch_anchor(s, a, "steel-chest") end },
+  ["force-bonus-held"]              = { args = "anchor", meter = function(s, a) return FM.measure_scratch_anchor(s, a, "bulk-inserter") end },
   -- omnibus pads, area-scoped fingerprints (whole-half scans)
   ["omnibus-ghosts-and-proxies"]    = { args = "area", meter = FM.measure_omnibus_ghosts },
   ["omnibus-ground-items"]          = { args = "area", meter = FM.measure_omnibus_ground },

@@ -139,15 +139,54 @@ local function lifecycle_setup(fixture_id, run_id)
   }
 end
 
+--- Dest-end setup: runs ONLY the ops declared `end = "dest"` (sabotage hooks / force mutations)
+--- on this (destination) instance, recording the ctx so lifecycle_teardown here disarms/restores
+--- them even if the orchestrator dies mid-fixture. Surface-touching ops are source-end only
+--- (manifest-validated), so no surface is needed.
+local function lifecycle_dest_setup(fixture_id)
+  assert_debug()
+  local fixture = roster_fixture(fixture_id)
+  local ctx = { armed_hooks = {}, restores = {}, captured = {} }
+  local ok_s, setup_err = LifecycleEngine.run_setup(nil, fixture, ctx, "dest")
+  if not ok_s then
+    LifecycleEngine.cleanup(ctx)
+    error("dest setup failed: " .. tostring(setup_err))
+  end
+  local existing = runs_store()[fixture_id]
+  if existing then
+    -- merge so a later teardown cleans both (verify-created record + this one)
+    for name in pairs(ctx.armed_hooks) do existing.ctx.armed_hooks[name] = true end
+    for _, r in ipairs(ctx.restores) do existing.ctx.restores[#existing.ctx.restores + 1] = r end
+  else
+    -- scratch_name stays nil: this end owns hooks/restores only. The dest verify fills in the
+    -- REAL arrived platform name later so teardown can delete a leftover dest copy.
+    runs_store()[fixture_id] = { scratch_name = nil, ctx = ctx }
+  end
+  local armed = {}
+  for name in pairs(ctx.armed_hooks) do armed[#armed + 1] = name end
+  return { ok = true, armedHooks = armed, restores = #ctx.restores }
+end
+
 local function lifecycle_verify(fixture_id, phase, captured_json)
   assert_debug()
   local fixture = roster_fixture(fixture_id)
   local record = runs_store()[fixture_id]
   if phase == "source-after-act" then
     if not record then error("no lifecycle run recorded for '" .. fixture_id .. "'") end
-    -- Measurement only: the orchestrator asserts scratchGone (two-phase commit deleted the source
-    -- copy) — recording the measured fact, not enforcing desired architecture here.
-    return { ok = true, scratchGone = platform_by_name(record.scratch_name) == nil }
+    -- Measurement only: the orchestrator asserts scratchGone/preserved per the fixture's expect —
+    -- recording the measured fact, not enforcing desired architecture here. When the scratch is
+    -- still present (a refused transfer), the fixture's source-end checks run against it (the
+    -- source-preserved witness).
+    local platform = platform_by_name(record.scratch_name)
+    local out = { ok = true, scratchGone = platform == nil }
+    if platform and platform.surface then
+      local ctx = { armed_hooks = {}, restores = {}, captured = record.ctx and record.ctx.captured or {} }
+      local result = LifecycleEngine.run_verify(platform.surface, fixture, ctx,
+        { dx = 0, end_filter = "source" })
+      out.verdict = result.verdict
+      out.checks = result.checks
+    end
+    return out
   elseif phase == "dest" then
     -- Dest end has no run record (setup ran on the source): resolve the transferred platform by
     -- the namespaced scratch name the orchestrator passes through captured_json.scratchName.
@@ -167,11 +206,17 @@ local function lifecycle_verify(fixture_id, phase, captured_json)
         checks = { { name = "platform", verdict = "fail", detail = "scratch platform absent on dest" } } }
     end
     local ctx = { armed_hooks = {}, restores = {}, captured = payload.captured or {} }
-    local result = LifecycleEngine.run_verify(platform.surface, fixture, ctx, { dx = 0 })
+    local result = LifecycleEngine.run_verify(platform.surface, fixture, ctx, { dx = 0, end_filter = "dest" })
     result.ok = true
     result.platformPresent = true
-    -- Remember the name so teardown on THIS end can delete a leftover dest copy after a failure.
-    runs_store()[fixture_id] = runs_store()[fixture_id] or { scratch_name = scratch_name, ctx = { armed_hooks = {}, restores = {} } }
+    -- Remember the REAL arrived name so teardown on THIS end can delete a leftover dest copy after
+    -- a failure (fills in the nil left by a prior lifecycle_dest_setup record).
+    local existing = runs_store()[fixture_id]
+    if existing then
+      existing.scratch_name = existing.scratch_name or scratch_name
+    else
+      runs_store()[fixture_id] = { scratch_name = scratch_name, ctx = { armed_hooks = {}, restores = {} } }
+    end
     return result
   end
   error("unknown lifecycle_verify phase '" .. tostring(phase) .. "'")
@@ -185,7 +230,7 @@ local function lifecycle_teardown(fixture_id)
   local record = runs_store()[fixture_id]
   local deleted = false
   if record then
-    local platform = platform_by_name(record.scratch_name)
+    local platform = record.scratch_name and platform_by_name(record.scratch_name)
     if platform then
       GameUtils.delete_platform(platform)
       deleted = true
@@ -209,6 +254,7 @@ end
 
 return {
   lifecycle_setup = lifecycle_setup,
+  lifecycle_dest_setup = lifecycle_dest_setup,
   lifecycle_verify = lifecycle_verify,
   lifecycle_teardown = lifecycle_teardown,
   lifecycle_leftovers = lifecycle_leftovers,

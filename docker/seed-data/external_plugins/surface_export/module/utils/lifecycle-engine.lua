@@ -101,6 +101,20 @@ local function op_spawn_item(surface, fixture, ctx, op, index)
 	return true
 end
 
+local function op_spawn_fluid(surface, fixture, ctx, op)
+	local entity, err = resolve_target_entity(surface, fixture, op.into, 0)
+	if not entity then return false, "spawn_fluid: " .. err end
+	local inserted = entity.insert_fluid({ name = op.name, amount = op.amount })
+	if math.abs(inserted - op.amount) > 0.001 then
+		return false, "spawn_fluid: inserted " .. inserted .. " of " .. op.amount .. " " .. op.name
+	end
+	local readback = entity.get_fluid_count(op.name)
+	if math.abs(readback - op.amount) > 0.001 then
+		return false, "spawn_fluid: readback " .. readback .. " ~= " .. op.amount .. " " .. op.name
+	end
+	return true
+end
+
 local function op_set_stack_field(surface, fixture, ctx, op)
 	local entity, err = resolve_target_entity(surface, fixture, op.locator and op.locator.anchor, 0)
 	if not entity then return false, "set_stack_field: " .. err end
@@ -160,12 +174,18 @@ end
 
 -- Run a list of ops (shared by setup and an op-list act). Fails on the first bad op, prefixing the
 -- detail with `label` + the 1-based op index. ctx = {armed_hooks={}, restores={}, captured={}}.
-local function run_ops(surface, fixture, ctx, ops, label)
+-- end_filter (default "source"): only ops whose declared end matches run — dest-end sabotage ops
+-- (op.end = "dest") are executed ONLY by the dest instance's lifecycle_dest_setup, never locally.
+local function run_ops(surface, fixture, ctx, ops, label, end_filter)
 	if type(ops) ~= "table" then return true end
+	end_filter = end_filter or "source"
 	for index, op in ipairs(ops) do
+		if (op["end"] or "source") == end_filter then
 		local ok, err
 		if op.op == "spawn_item" then
 			ok, err = op_spawn_item(surface, fixture, ctx, op, index)
+		elseif op.op == "spawn_fluid" then
+			ok, err = op_spawn_fluid(surface, fixture, ctx, op)
 		elseif op.op == "set_stack_field" then
 			ok, err = op_set_stack_field(surface, fixture, ctx, op)
 		elseif op.op == "set_health" then
@@ -180,15 +200,18 @@ local function run_ops(surface, fixture, ctx, ops, label)
 			ok, err = false, "unknown op '" .. tostring(op.op) .. "'"
 		end
 		if not ok then return false, label .. " #" .. index .. " " .. tostring(err) end
+		end
 	end
 	return true
 end
 
--- run_setup(surface, fixture, ctx) -> ok, err. ctx = {armed_hooks={}, restores={}, captured={}}.
-function LifecycleEngine.run_setup(surface, fixture, ctx)
+-- run_setup(surface, fixture, ctx, end_filter) -> ok, err. ctx = {armed_hooks={}, restores={},
+-- captured={}}. end_filter defaults to "source" (the local runner and the source instance);
+-- "dest" runs only the dest-end sabotage ops.
+function LifecycleEngine.run_setup(surface, fixture, ctx, end_filter)
 	local lc = fixture.lifecycle
 	if not lc then return true end
-	return run_ops(surface, fixture, ctx, lc.setup, "setup op")
+	return run_ops(surface, fixture, ctx, lc.setup, "setup op", end_filter)
 end
 
 -- run_act(surface, fixture, ctx) -> ok, err. Executes an op-list `act` (a local mutation in place of
@@ -239,6 +262,10 @@ local function perform_read(loc, check)
 	local read = check.read
 	if read == "platform_present" then
 		return loc.surface ~= nil and 1 or 0
+	end
+	if read == "surface_entity_count" then
+		if not loc.surface then return nil, "no surface for surface_entity_count" end
+		return #loc.surface.find_entities_filtered({})
 	end
 	if read == "entity_present" then
 		if loc.kind == "area" then
@@ -311,17 +338,22 @@ local function check_physical_read(surface, fixture, ctx, check, dx)
 end
 
 -- run_verify(surface, fixture, ctx, extra) -> {verdict="pass"|"fail", checks={{name,verdict,detail}...}}.
--- extra.dx (default 0) selects the pad half read for anchor/area locators. fingerprint checks are the
--- caller's job (run-tests keeps its existing compare) and are skipped here.
+-- extra.dx (default 0) selects the pad half read for anchor/area locators. extra.end_filter (when
+-- set) runs only checks whose declared end matches — the orchestrator runs "dest" checks on the
+-- destination instance and "source" checks against the preserved source scratch after a refused
+-- transfer. fingerprint checks are the caller's job (run-tests keeps its existing compare).
 function LifecycleEngine.run_verify(surface, fixture, ctx, extra)
 	local lc = fixture.lifecycle
 	local dx = (extra and extra.dx) or 0
+	local end_filter = extra and extra.end_filter
 	local checks = {}
 	local verdict = "pass"
 	if not (lc and type(lc.verify) == "table") then return { verdict = verdict, checks = checks } end
 	for _, check in ipairs(lc.verify) do
 		local result
-		if check.check == "physical_read" then
+		if end_filter and (check["end"] or "dest") ~= end_filter then
+			result = nil -- other end's check; that end's runner owns it
+		elseif check.check == "physical_read" then
 			result = check_physical_read(surface, fixture, ctx, check, dx)
 		elseif check.check == "report_field" then
 			result = { name = "report_field", verdict = "skipped", detail = "report_field is orchestrator-side" }
@@ -369,6 +401,10 @@ function LifecycleEngine.reset_mutable(surface, fixture, dx)
 			if entity then
 				local inv = main_inventory(entity)
 				if inv then inv.clear() end
+				-- fluid-holding mutable anchors (storage tanks) reset via clear_fluid_inside;
+				-- intentional probe: errors only on fluidbox-less entities, where there is
+				-- nothing to clear (a nil-op, not a swallowed failure)
+				pcall(function() entity.clear_fluid_inside() end)
 			end
 		end
 	end

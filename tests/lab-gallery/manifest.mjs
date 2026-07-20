@@ -105,8 +105,10 @@ export function validateGalleryManifest(manifest, { requireArtifacts = true } = 
 // physical witness (the lint-test-grounding rule at manifest level); setup writes are confined to
 // declared mutable anchors (the pristine-left-half rule).
 const LIFECYCLE_ACTS = new Set(["copy-paste", "transfer", "clone"]);
-const PHYSICAL_READS = new Set(["item_count", "held", "crafting_progress", "spoil_percent", "fluid", "entity_present", "platform_present"]);
+const PHYSICAL_READS = new Set(["item_count", "held", "crafting_progress", "spoil_percent", "fluid", "entity_present", "platform_present", "surface_entity_count"]);
 const CHECK_OPS = new Set(["eq", "ge", "le", "between", "monotone"]);
+const LIFECYCLE_ENDS = new Set(["source", "dest"]);
+const LIFECYCLE_EXPECTS = new Set(["success", "gate-failure"]);
 const TRANSFER_SUITE = "tests/integration/pad-transfer-suite/run-tests.mjs";
 
 function validateLifecycle(fixture) {
@@ -124,8 +126,29 @@ function validateLifecycle(fixture) {
 	if (act === "transfer" && fixture.owningRunner !== TRANSFER_SUITE) {
 		throw new Error(`lifecycle for ${id}: act "transfer" requires owningRunner ${TRANSFER_SUITE}`);
 	}
+	// Sabotage lifecycles (the protocol teeth): `expect: "gate-failure"` means the PRODUCTION gate
+	// must REFUSE this transfer — dest discarded, source preserved. Only meaningful for transfer
+	// acts, and it must be caused by a declared dest-end sabotage op (never an implicit assumption).
+	const expect = lc.expect ?? "success";
+	if (!LIFECYCLE_EXPECTS.has(expect)) throw new Error(`lifecycle for ${id}: invalid expect ${expect}`);
+	if (expect === "gate-failure" && act !== "transfer") {
+		throw new Error(`lifecycle for ${id}: expect "gate-failure" requires act "transfer"`);
+	}
+	let hasDestSabotage = false;
 	for (const op of lc.setup || []) {
 		if (!op || typeof op !== "object" || typeof op.op !== "string") throw new Error(`lifecycle for ${id}: malformed setup op`);
+		const opEnd = op.end ?? "source";
+		if (!LIFECYCLE_ENDS.has(opEnd)) throw new Error(`lifecycle for ${id}: invalid op end "${op.end}"`);
+		if (opEnd === "dest") {
+			if (act !== "transfer") throw new Error(`lifecycle for ${id}: dest-end ops require act "transfer"`);
+			// arm_hook is allowlist-checked + cleanup-disarmed; mutate_force is restore-recorded. A
+			// dest-end lua op would be an UNRECORDED escape hatch on the sabotage end (review OBS-1)
+			// — not offered until a teardown-recording story exists for it.
+			if (!["arm_hook", "mutate_force"].includes(op.op)) {
+				throw new Error(`lifecycle for ${id}: op "${op.op}" cannot run on the dest end`);
+			}
+			hasDestSabotage = true;
+		}
 		if (op.op === "arm_hook") {
 			if (!FAIL_SAFE_HOOKS.has(op.name) && !NON_DESTRUCTIVE_HOOKS.has(op.name)) {
 				throw new Error(`lifecycle for ${id}: arm_hook "${op.name}" is not in the fail-safe allowlist`);
@@ -134,7 +157,7 @@ function validateLifecycle(fixture) {
 			if (op.restore !== true) throw new Error(`lifecycle for ${id}: mutate_force requires restore:true`);
 		} else if (op.op === "lua") {
 			if (typeof op.reason !== "string" || !op.reason.trim()) throw new Error(`lifecycle for ${id}: lua op requires a reason`);
-		} else if (op.op === "spawn_item" || op.op === "set_stack_field" || op.op === "set_health") {
+		} else if (op.op === "spawn_item" || op.op === "spawn_fluid" || op.op === "set_stack_field" || op.op === "set_health") {
 			const target = op.into ?? op.locator?.anchor;
 			const targetName = typeof target === "string" ? target.replace(/^anchor:/, "") : null;
 			if (!targetName || (targetName !== "vault" && !mutable.has(targetName))) {
@@ -144,11 +167,26 @@ function validateLifecycle(fixture) {
 			throw new Error(`lifecycle for ${id}: unknown setup op "${op.op}"`);
 		}
 	}
+	if (expect === "gate-failure" && !hasDestSabotage) {
+		throw new Error(`lifecycle for ${id}: expect "gate-failure" requires a dest-end arm_hook/mutate_force sabotage op`);
+	}
 	const checks = lc.verify || [];
 	let physicalWitness = !(checks.some(check => check?.check === "fingerprint" && check.enabled === false));
 	let hasReportField = false;
+	let hasSourcePreservedWitness = false;
 	for (const check of checks) {
 		if (!check || typeof check !== "object" || typeof check.check !== "string") throw new Error(`lifecycle for ${id}: malformed verify check`);
+		if (check.end !== undefined) {
+			if (!LIFECYCLE_ENDS.has(check.end)) throw new Error(`lifecycle for ${id}: invalid check end "${check.end}"`);
+			if (act !== "transfer") throw new Error(`lifecycle for ${id}: check ends require act "transfer"`);
+			if (check.end === "source" && check.check === "physical_read") hasSourcePreservedWitness = true;
+		}
+		// A refused transfer has NO dest platform: gate-failure physical reads must explicitly
+		// declare end "source" (the engine's default end is "dest" — an implicit default here
+		// would silently point the witness at a platform that never exists).
+		if (expect === "gate-failure" && check.check === "physical_read" && check.end !== "source") {
+			throw new Error(`lifecycle for ${id}: gate-failure physical_read checks must declare end "source"`);
+		}
 		if (check.check === "physical_read") {
 			if (!PHYSICAL_READS.has(check.read)) throw new Error(`lifecycle for ${id}: unknown physical read "${check.read}"`);
 			if (!CHECK_OPS.has(check.op)) throw new Error(`lifecycle for ${id}: unknown check op "${check.op}"`);
@@ -164,6 +202,11 @@ function validateLifecycle(fixture) {
 	if (hasReportField && !physicalWitness) {
 		throw new Error(`lifecycle for ${id}: report_field checks require at least one physical witness (grounding rule)`);
 	}
+	// A refused transfer's protective outcome is "source physically intact" — a gate-failure fixture
+	// that never physically reads the preserved source would go green on a broken preservation path.
+	if (expect === "gate-failure" && !hasSourcePreservedWitness) {
+		throw new Error(`lifecycle for ${id}: expect "gate-failure" requires a source-end physical_read (source-preserved witness)`);
+	}
 }
 
 // Render the pad's EXPECT panel section from the verify list — the single source the owner asked
@@ -173,19 +216,23 @@ export function renderExpectFromLifecycle(fixture) {
 	if (!lc) return null;
 	const lines = [];
 	const checks = lc.verify || [];
+	if ((lc.expect ?? "success") === "gate-failure") {
+		lines.push("GATE MUST REFUSE: dest discarded, source preserved");
+	}
 	if (!checks.some(check => check?.check === "fingerprint" && check.enabled === false)) {
 		lines.push("fingerprint matches the manifest pin");
 	}
 	for (const check of checks) {
+		const endTag = check.end ? `[${check.end}] ` : "";
 		if (check.check === "physical_read") {
 			const where = check.locator?.anchor || check.locator?.platform || "area";
 			const what = check.item ? `${check.item} ${check.read}` : check.read;
 			const bound = check.op === "monotone" ? `monotone (<=${check.driftTicks ?? "?"}t drift)` : `${check.op} ${JSON.stringify(check.expected)}`;
-			lines.push(`${where}: ${what} ${bound}`);
+			lines.push(`${endTag}${where}: ${what} ${bound}`);
 		} else if (check.check === "report_field") {
-			lines.push(`report ${check.path} ${check.op} ${JSON.stringify(check.expected)}`);
+			lines.push(`${endTag}report ${check.path} ${check.op} ${JSON.stringify(check.expected)}`);
 		} else if (check.check === "log_line") {
-			lines.push(`log line matches ${check.pattern}`);
+			lines.push(`${endTag}log line matches ${check.pattern}`);
 		}
 	}
 	return lines;

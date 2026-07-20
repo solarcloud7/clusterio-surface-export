@@ -700,7 +700,7 @@ via plain `set_stack` (no engine tick → no swing, no crafting), so the gate co
 reality with every machine still deactivated. Fluid restoration then completes the same frozen world and
 `validate_import(..., {strict=true})` requires exact per-key items and exact aggregate-by-name fluids.
 **Rule**: a gate must measure a COMPLETE state, never a mid-process one — fix the timing, not the number. The current transfer verdict is one immutable pre-activation result; `failedStage` names the mismatched category (`items` or `fluids`).
-**Mechanical guard**: `tests/integration/gate-detects-loss` injects a real shortfall (`test_force_item_loss`)
+**Mechanical guard**: the `gate-item-loss` pad fixture (run through `tests/integration/pad-transfer-suite`) injects a real shortfall (`test_force_item_loss`)
 and asserts the strict gate FAILS + the source is preserved — so reverting to a loose gate goes RED in CI.
 **Clock evidence (2026-07-07, 2.0.77)**: the no-tick-sync-lab PR0b runner (archived at `labs-archive-2026-07-19`) proves the synchronous pass
 keeps `game.tick`, `crafting_progress`, and the restored inserter hand stable through the strict count.
@@ -734,7 +734,7 @@ avoiding the (warned, raise-only) research-boost side effect; uploads delete no 
 either way.
 **Durability (verified on 2.0.77, inserter-lab B4)**: an unbacked direct write grants real seating capacity, and once seated a legendary bulk-inserter hand stayed at 8 when the bonus dropped 11→0, after elapsed ticks, and after `reset_technology_effects()` — so there is no
 post-commit loss path; the write need not be tech-backed.
-**Mechanical guard**: `tests/integration/force-bonus-sync` forces the dest bonus to 0, transfers, and asserts
+**Mechanical guard**: the `force-bonus-held` pad fixture (run through `tests/integration/pad-transfer-suite`) forces the dest bonus to 0, transfers, and asserts
 (physical held counts) the bonus is raised, held items seat in full, the strict gate passes, and the warning
 fired — reverting the sync goes RED. CI's native bonus-0 host-2 means platform-roundtrip / transfer-fidelity
 corroborate.

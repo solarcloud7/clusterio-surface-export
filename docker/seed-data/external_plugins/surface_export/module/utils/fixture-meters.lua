@@ -208,6 +208,21 @@ local function measure_omnibus_spoilage(surface, anchor)
     return { scratchPresent = chest ~= nil, scratchName = chest and chest.name or "absent" }
 end
 
+-- Generic scratch-anchor presence meter (the protocol-teeth pads): structural fingerprint of the
+-- single frozen anchor entity. Adds `held` only when the anchor is an inserter with a seated hand
+-- (the force-bonus pad pins it; container pads simply omit the key).
+local function measure_scratch_anchor(surface, anchor, ename)
+    local x, y = anchor(ename)
+    local e = at(surface, ename, x, y)
+    local out = { scratchPresent = e ~= nil, scratchName = e and e.name or "absent" }
+    if e then
+        -- intentional probe: held_stack only exists on inserters; absence is a valid non-reading
+        local hs_ok, hs = pcall(function() return e.held_stack end)
+        if hs_ok and hs and hs.valid_for_read then out.held = hs.count end
+    end
+    return out
+end
+
 local function measure_omnibus_schedule(platform)
     local schedule = platform.get_schedule()
     local records = schedule.get_records()
@@ -583,6 +598,7 @@ M.measure_omnibus_fluids = measure_omnibus_fluids
 M.measure_omnibus_ghosts = measure_omnibus_ghosts
 M.measure_omnibus_ground = measure_omnibus_ground
 M.measure_omnibus_spoilage = measure_omnibus_spoilage
+M.measure_scratch_anchor = measure_scratch_anchor
 M.measure_omnibus_schedule = measure_omnibus_schedule
 M.measure_energy = measure_energy
 M.measure_belt_corner = measure_belt_corner

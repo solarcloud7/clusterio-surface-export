@@ -284,7 +284,7 @@ Evidence tags and measurement details are in
 |---|---|---|---|
 | **Exact transfer gate** | serialized-expected vs **destination** physical census (items exact per key; fluids exact aggregate-by-name, epsilon 1e-6) | production, every transfer, before source deletion | [transfer-validation.lua](../docker/seed-data/external_plugins/surface_export/module/validators/transfer-validation.lua) |
 | **Meter-drift sentinel** | serialized-expected (`expectedItemCounts`) vs **source** physical census | integration test only | [transfer-fidelity](../tests/integration/transfer-fidelity/run-tests.ps1) |
-| **Loss-injection teeth** | gate behavior under a forced physical shortfall (must fail closed, preserve source) | integration tests | [gate-detects-loss](../tests/integration/gate-detects-loss/run-tests.ps1), [fluid-gate-detects-loss](../tests/integration/fluid-gate-detects-loss/run-tests.ps1) |
+| **Loss-injection teeth** | gate behavior under a forced physical shortfall (must fail closed, preserve source) | pad fixtures through the real transfer | the `gate-item-loss` / `gate-fluid-loss` / `rollback-validation-failure` pads, run by [pad-transfer-suite](../tests/integration/pad-transfer-suite/run-tests.mjs) |
 | **Fidelity fixtures** | source physical census vs destination physical census for a placed, known quantity | integration tests | the `omnibus-ground-items` pad fixture (see [MIGRATION.md](../tests/integration/MIGRATION.md)), [belt-loss-replay](../tests/integration/belt-loss-replay/run-tests.ps1) |
 
 The production export path performs **no source-side physical census**: the gate's expected counts
@@ -511,14 +511,9 @@ node tools/run-integration-tests.mjs --only passenger-evacuate
 ### 9. Failure / edge cases (the safety net)
 
 ```pwsh
-# Strict gate DETECTS real loss + preserves the source (must FAIL the gate, NOT delete source):
-node tools/run-integration-tests.mjs --only gate-detects-loss
-
-# Mid-flight rollback (session closed / import fails → source unlocked, not deleted):
-node tools/run-integration-tests.mjs --only rollback
-
-# Failed-entity loss attribution (mod-mismatch placements tallied, not silently dropped):
-node tools/run-integration-tests.mjs --only failed-entity-loss
+# The sabotage teeth (gate detects item/fluid loss, rollback, failed-entity attribution,
+# force-bonus sync) are pad fixtures run through the REAL transfer by one suite:
+node tools/run-integration-tests.mjs --only pad-transfer-suite
 
 # Name-collision delete (platforms with same name → keyed on unique index, correct one deleted):
 node tools/run-integration-tests.mjs --only name-collision-delete

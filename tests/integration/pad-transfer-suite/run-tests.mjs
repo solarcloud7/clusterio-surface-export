@@ -65,10 +65,19 @@ function evalReportField(check, importResult) {
 
 async function runFixture(fixture, runId, destInstanceId, results) {
 	const id = fixture.id;
+	const expect = fixture.lifecycle.expect ?? "success";
 	const checks = [];
 	const setup = L.lua(1, `return remote.call('surface_export','lifecycle_setup','${id}','${runId}')`);
 	if (!setup.ok) throw new Error(`${id}: lifecycle_setup failed: ${JSON.stringify(setup)}`);
-	console.log(`  [${id}] setup ok — scratch ${setup.scratchName} (index ${setup.scratchIndex})`);
+	console.log(`  [${id}] setup ok — scratch ${setup.scratchName} (index ${setup.scratchIndex}) expect=${expect}`);
+
+	// Dest-end sabotage ops (arm_hook / mutate_force) run on the destination BEFORE the act; the
+	// dest instance records them so its own teardown disarms even if this process dies.
+	if ((fixture.lifecycle.setup || []).some(op => op.end === "dest")) {
+		const destSetup = L.lua(2, `return remote.call('surface_export','lifecycle_dest_setup','${id}')`);
+		if (!destSetup.ok) throw new Error(`${id}: lifecycle_dest_setup failed: ${JSON.stringify(destSetup)}`);
+		console.log(`  [${id}] dest setup: hooks=${JSON.stringify(destSetup.armedHooks)} restores=${destSetup.restores}`);
+	}
 
 	const marker = L.dropMarker(2, id);
 	const transferOut = L.lastLine(L.rcon(1, `/transfer-platform ${setup.scratchIndex} ${destInstanceId}`));
@@ -77,32 +86,59 @@ async function runFixture(fixture, runId, destInstanceId, results) {
 	const { result: importResult, path: resultPath } = await L.waitForImportResult(2, marker);
 	console.log(`  [${id}] import result: ${resultPath} validation_success=${importResult.validation_success}`);
 
-	// report_field checks (orchestrator-side, grounded by the physical reads below).
+	// report_field checks (orchestrator-side, grounded by the physical reads — dest reads for
+	// success fixtures, preserved-source reads for gate-failure fixtures).
 	for (const check of fixture.lifecycle.verify || []) {
 		if (check.check === "report_field") checks.push(evalReportField(check, importResult));
 	}
 
-	// dest physical verify via the lifecycle engine (roster pushed on host-2 too).
 	const payload = JSON.stringify({ scratchName: setup.scratchName, captured: setup.captured || {} });
-	const destVerify = L.lua(2,
-		`return remote.call('surface_export','lifecycle_verify','${id}','dest',${bracketWrap(payload)})`);
-	if (!destVerify.ok) throw new Error(`${id}: dest lifecycle_verify errored: ${JSON.stringify(destVerify)}`);
-	for (const check of destVerify.checks || []) checks.push(check);
-	if (!destVerify.platformPresent) checks.push({ name: "dest.platform", verdict: "fail", detail: "scratch absent on dest" });
+	if (expect === "success") {
+		// dest physical verify via the lifecycle engine (roster pushed on host-2 too).
+		const destVerify = L.lua(2,
+			`return remote.call('surface_export','lifecycle_verify','${id}','dest',${bracketWrap(payload)})`);
+		if (!destVerify.ok) throw new Error(`${id}: dest lifecycle_verify errored: ${JSON.stringify(destVerify)}`);
+		for (const check of destVerify.checks || []) checks.push(check);
+		if (!destVerify.platformPresent) checks.push({ name: "dest.platform", verdict: "fail", detail: "scratch absent on dest" });
 
-	// source-after-act: two-phase commit must delete the source scratch — but that delete is the
-	// LAST 2PC step (dest gate -> controller round-trip -> host-1 delete, surface removal deferred
-	// to tick end), so a single immediate read races it (review finding F1; same reason
-	// deliver-all-fixtures polls srcGone). Poll on a deadline; false-FAIL direction only.
-	let scratchGone = false;
-	const deleteDeadline = Date.now() + 60_000;
-	while (Date.now() < deleteDeadline) {
+		// source-after-act: two-phase commit must delete the source scratch — but that delete is the
+		// LAST 2PC step (dest gate -> controller round-trip -> host-1 delete, surface removal deferred
+		// to tick end), so a single immediate read races it (review finding F1; same reason
+		// deliver-all-fixtures polls srcGone). Poll on a deadline; false-FAIL direction only.
+		let scratchGone = false;
+		const deleteDeadline = Date.now() + 60_000;
+		while (Date.now() < deleteDeadline) {
+			const sourceAfter = L.lua(1, `return remote.call('surface_export','lifecycle_verify','${id}','source-after-act','')`);
+			if (sourceAfter.scratchGone) { scratchGone = true; break; }
+			await L.sleep(2000);
+		}
+		checks.push({ name: "source.scratchGone", verdict: scratchGone ? "pass" : "fail",
+			detail: `scratchGone=${scratchGone}${scratchGone ? "" : " (still present after 60s poll)"}` });
+	} else {
+		// gate-failure: the PRODUCTION gate must have refused — dest copy discarded, source scratch
+		// preserved INTACT. Poll the dest platform AWAY (discard is async after the gate verdict).
+		let destGone = false;
+		const discardDeadline = Date.now() + 60_000;
+		while (Date.now() < discardDeadline) {
+			const destVerify = L.lua(2,
+				`return remote.call('surface_export','lifecycle_verify','${id}','dest',${bracketWrap(payload)})`);
+			if (!destVerify.platformPresent) { destGone = true; break; }
+			await L.sleep(2000);
+		}
+		checks.push({ name: "dest.discarded", verdict: destGone ? "pass" : "fail",
+			detail: `destGone=${destGone}${destGone ? "" : " (dest copy still present after 60s poll)"}` });
+
+		// Preserved-source witness: scratch still present on host-1 AND the fixture's source-end
+		// physical reads pass against it. Settle briefly first (unlock/rollback tail).
+		await L.sleep(3000);
 		const sourceAfter = L.lua(1, `return remote.call('surface_export','lifecycle_verify','${id}','source-after-act','')`);
-		if (sourceAfter.scratchGone) { scratchGone = true; break; }
-		await L.sleep(2000);
+		checks.push({ name: "source.preserved", verdict: sourceAfter.scratchGone ? "fail" : "pass",
+			detail: `scratchGone=${sourceAfter.scratchGone} (must remain)` });
+		for (const check of sourceAfter.checks || []) checks.push(check);
+		if (!sourceAfter.scratchGone && sourceAfter.verdict === undefined) {
+			checks.push({ name: "source.checks", verdict: "fail", detail: "no source-end checks ran" });
+		}
 	}
-	checks.push({ name: "source.scratchGone", verdict: scratchGone ? "pass" : "fail",
-		detail: `scratchGone=${scratchGone}${scratchGone ? "" : " (still present after 60s poll)"}` });
 
 	const failed = checks.filter(check => check.verdict === "fail");
 	results.fixtures.push({ id, verdict: failed.length ? "fail" : "pass", checks });
