@@ -15,7 +15,7 @@ test("gallery manifest inventories every lab family exactly once", () => {
 		.sort();
 	assert.deepEqual(manifest.labs.map(lab => lab.id).sort(), actualLabs);
 	assert.deepEqual(validateGalleryManifest(manifest, { requireArtifacts: false }), {
-		labs: actualLabs.length, fixtures: 25, sourceFixtures: 25, destinationFixtures: 0,
+		labs: actualLabs.length, fixtures: 22, sourceFixtures: 22, destinationFixtures: 0,
 	});
 });
 
@@ -38,7 +38,7 @@ test("paired save roles, artifacts, censuses, and exact mod pins are final", () 
 	assert.deepEqual(manifest.saves.source.mods, manifest.mods);
 	assert.deepEqual(manifest.saves.destination.mods, manifest.mods);
 	assert.deepEqual(validateGalleryManifest(manifest), {
-		labs: 13, fixtures: 25, sourceFixtures: 25, destinationFixtures: 0,
+		labs: 13, fixtures: 22, sourceFixtures: 22, destinationFixtures: 0,
 	});
 });
 
@@ -99,14 +99,6 @@ test("the sixteen-family corpus is inventoried with independent oracles and stab
 	assert.deepEqual(byId["transfer-workhorse"].fingerprint, { entities: 1359 });
 	assert.match(byId["transfer-workhorse"].note, /drift/i);
 
-	// Consumables are bare single-use hubs; they explicitly opt out of an owning runner (null +
-	// waiver reason), never by silently omitting the key.
-	for (const n of [1, 2, 3]) {
-		assert.deepEqual(byId[`consumable-hub-${n}`].fingerprint, { entities: 1 });
-		assert.equal(byId[`consumable-hub-${n}`].owningRunner, null);
-		assert.match(byId[`consumable-hub-${n}`].owningRunnerWaiver, /\S/);
-	}
-
 	// Layout blueprints are captured for the three requested layouts.
 	for (const [id, prefix] of [["omnibus-adversarial-inventory", "0eNq"], ["energy-accumulator-drain", "0eNq"]]) {
 		assert.ok(byId[id].layoutBlueprint.startsWith(prefix), `${id} layoutBlueprint`);
@@ -124,10 +116,11 @@ test("owningRunner is a required provenance key with an explicit, reasoned opt-o
 	delete dropped.fixtures.find(fixture => fixture.id === withRunner.id).owningRunner;
 	assert.throws(() => validateGalleryManifest(dropped, { requireArtifacts: false }), /missing owningRunner/);
 
-	// Red tooth: a null opt-out without a waiver reason is rejected.
+	// Red tooth: a null opt-out without a waiver reason is rejected (belt-combined-omnibus is the
+	// hand-built waived fixture).
 	const unreasoned = clone();
-	const consumable = unreasoned.fixtures.find(fixture => fixture.id === "consumable-hub-1");
-	delete consumable.owningRunnerWaiver;
+	const waived = unreasoned.fixtures.find(fixture => fixture.id === "belt-combined-omnibus");
+	delete waived.owningRunnerWaiver;
 	assert.throws(() => validateGalleryManifest(unreasoned, { requireArtifacts: false }), /owningRunnerWaiver/);
 
 	// The reasoned null opt-out (as shipped) validates.

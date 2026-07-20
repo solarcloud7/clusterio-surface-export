@@ -314,3 +314,13 @@ the shared-accessor fix. The adversarial-inventory steel-chest (12.5,-16.5) is n
 VAULT: blueprint(label+layout), blueprint-book(nested print), filtered decon planner,
 partial-durability repair pack, partial magazine, spoilage x10 — item-data classes never before
 in a fixture; mid-spoil items spawn on demand only. Checkpoint 19i.
+
+## 2026-07-19 — Platform purge (owner-ruled): consumables x3 + dup monster deleted
+
+Owner: "purge every platform we don't need." Deleted: lab-consumable-1/2/3 (batch supplies, not
+tests — their world is the golden-save batch lifecycle) and lab-rig-dup233855-v1 (class artifact
+= the banked replay JSON in tests/belt-lab/evidence/, replayable on demand — the owner's
+belt-loss-replay precedent). Manifest 25→22. KEPT with live jobs: omnibus (THE save), workhorse
+(sole 1359-entity scale coverage), energy (electric isolation requires own platform), reachability
+(surface-conditions fixture), hold pairs x6 (platform-level hold machinery, card-3 evidence).
+Live map now 10 platforms. Checkpoint 19j.
