@@ -29,7 +29,7 @@ never a vacuous pass.
 | Test | Gate |
 |---|---|
 | entity-roundtrip | `test/quality-dimension-ownership.test.cjs` pins its `test-cases.json` (splitter-quality-filter law); delete after that law lands on a pad |
-| spoilage-roundtrip | after the spoilage pad fixture exists (pad-lifecycle P4b) |
+| ~~spoilage-roundtrip~~ | DELETED 2026-07-20: absorbed by `omnibus-spoilage-midspoil` through `pad-transfer-suite` (2× consecutive green, real transfer, physical dest reads) |
 | transfer-fidelity, platform-roundtrip | after `pad-transfer-suite` (pad-lifecycle P5) passes 2× consecutive — today they are the only happy-path REAL cross-instance transfers |
 | gate-detects-loss, fluid-gate-detects-loss, failed-entity-loss, force-bonus-sync, rollback | the 5 protocol teeth: after their sabotage lifecycles run through the real transfer in `pad-transfer-suite`, 2× consecutive green |
 

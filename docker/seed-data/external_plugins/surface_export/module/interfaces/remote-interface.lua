@@ -34,6 +34,7 @@ local delete_platform_for_transfer = require("modules/surface_export/interfaces/
 local get_source_transfer_lock_state = require("modules/surface_export/interfaces/remote/get-source-transfer-lock-state")
 local destination_hold = require("modules/surface_export/interfaces/remote/destination-hold")
 local test_roster = require("modules/surface_export/interfaces/remote/test-roster")
+local lifecycle = require("modules/surface_export/interfaces/remote/lifecycle")
 
 -- Expose functions for direct Lua access (not just remote interface)
 RemoteInterface.export_platform = export_platform
@@ -66,6 +67,10 @@ RemoteInterface.set_test_roster_begin = test_roster.set_test_roster_begin
 RemoteInterface.set_test_roster_chunk = test_roster.set_test_roster_chunk
 RemoteInterface.set_test_roster_commit = test_roster.set_test_roster_commit
 RemoteInterface.get_test_roster_summary = test_roster.get_test_roster_summary
+RemoteInterface.lifecycle_setup = lifecycle.lifecycle_setup
+RemoteInterface.lifecycle_verify = lifecycle.lifecycle_verify
+RemoteInterface.lifecycle_teardown = lifecycle.lifecycle_teardown
+RemoteInterface.lifecycle_leftovers = lifecycle.lifecycle_leftovers
 
 -- JSON-wrapped versions for RCON access
 RemoteInterface.get_export_json = Base.json_wrap(get_export)
@@ -137,6 +142,12 @@ function RemoteInterface.register()
     set_test_roster_commit = test_roster.set_test_roster_commit,
     get_test_roster_summary = test_roster.get_test_roster_summary,
     get_test_roster_summary_json = Base.json_wrap(test_roster.get_test_roster_summary),
+
+    -- Pad lifecycle transfer ends (pad-transfer-suite orchestrator, P5)
+    lifecycle_setup = lifecycle.lifecycle_setup,
+    lifecycle_verify = lifecycle.lifecycle_verify,
+    lifecycle_teardown = lifecycle.lifecycle_teardown,
+    lifecycle_leftovers = lifecycle.lifecycle_leftovers,
   })
 end
 

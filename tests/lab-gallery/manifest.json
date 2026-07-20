@@ -1220,7 +1220,7 @@
 					},
 					{
 						"check": "report_field",
-						"path": "itemCountMatch",
+						"path": "validation_success",
 						"op": "eq",
 						"expected": true
 					}
@@ -1230,7 +1230,7 @@
 				"law": "Spoil progress is hidden item state: a mid-spoiled stack must ride a transfer with its spoil_percent intact, never reset to fresh and never prematurely spoiled (absorbs spoilage-roundtrip).",
 				"build": "Authored 2026-07-19 on open slot (8,50): one baked-EMPTY steel-chest scratch anchor at (15.5,55.5); all content is created programmatically by the lifecycle setup each run.",
 				"action": "Lifecycle: setup spawns 10 raw-fish at spoil 0.5 into the scratch chest (write-asserted); act = REAL cross-instance transfer (pad-transfer-suite); verify list below. Locally /test-run pins the LEFT fingerprint and skips the act.",
-				"expected": "fingerprint matches the manifest pin; scratch: raw-fish item_count eq 10; scratch: spoilage item_count eq 0; scratch: raw-fish spoil_percent monotone (<=600t drift); report itemCountMatch eq true",
+				"expected": "fingerprint matches the manifest pin; scratch: raw-fish item_count eq 10; scratch: spoilage item_count eq 0; scratch: raw-fish spoil_percent monotone (<=600t drift); report validation_success eq true",
 				"forbidden": "Fish count drift, any spoilage byproduct materializing during the frozen act, spoil_percent reset below the setup baseline."
 			}
 		}

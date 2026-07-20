@@ -7,14 +7,19 @@
 // validation as the single-shot path Lua-side, so the two transports cannot drift.
 //
 // Usage:
-//   node tests/lab-gallery/push-roster.mjs           # push + echo-verify
-//   node tests/lab-gallery/push-roster.mjs --dry-run # print payload stats, push nothing
+//   node tests/lab-gallery/push-roster.mjs                       # push to the gallery + echo-verify
+//   node tests/lab-gallery/push-roster.mjs --dry-run             # print payload stats, push nothing
+//   node tests/lab-gallery/push-roster.mjs --instance <name>     # push to another instance
+//     (the pad-transfer-suite pushes to BOTH transfer ends — dest-side lifecycle_verify resolves
+//      its fixture from the same roster)
 
 import { createHash } from "node:crypto";
 import { execFileSync } from "node:child_process";
 import { loadGalleryManifest, validateGalleryManifest } from "./manifest.mjs";
 
-const GALLERY_INSTANCE = "surface-export-lab-gallery";
+const instanceArg = process.argv.indexOf("--instance");
+const GALLERY_INSTANCE = instanceArg !== -1 ? process.argv[instanceArg + 1] : "surface-export-lab-gallery";
+if (!GALLERY_INSTANCE) throw new Error("--instance needs a value");
 const CONTROLLER = "surface-export-controller";
 const CTL_CONFIG = "/clusterio/tokens/config-control.json";
 

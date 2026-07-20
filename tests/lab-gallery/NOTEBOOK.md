@@ -399,3 +399,14 @@ queued with P5.
 - Deployed 0.10.124 (meter measure_omnibus_spoilage + DISPATCH entry + wart fix). /test-run: 16 passed / 0 failed / 0 missing / 0 unknown / 3 skipped (belt-combined-omnibus + mining-drill-acid-feed no-meter, spoilage transfer-act) on roster 610ff85d9e24.
 - Snapshot re-banked (scratch chest cleared first — baked-empty invariant): SHA 54877DCB7DAB501FC2DDAF01A1DD45E29E721F33FE14F03F4AF30B6AA88FE136, census 1956 entities / 6740 chunks / 3 surfaces (grew from 1870: owner hand-builds + spoilage pad).
 - P6 wave 1 landed alongside: 13 vanity integration tests deleted with tests/integration/MIGRATION.md; entity-roundtrip held back (quality-dimension-ownership unit guard pins its test-cases.json).
+
+## 2026-07-20 — P5: pad-transfer-suite orchestrator — FIRST 2x CONSECUTIVE GREEN
+
+- New remote `lifecycle.lua` (lifecycle_setup/verify/teardown/leftovers) + orchestrator `tests/integration/pad-transfer-suite/run-tests.mjs`. Deployed 0.10.125.
+- Batch shape: certified golden pair (SOURCE = the gallery snapshot-of-live artifact SHA 54877DCB, DEST = the empty destination save) loaded on hosts 1/2 via batch-lifecycle; SHA preflight refuses a stale artifact; the LIVE gallery is never touched.
+- Per fixture: reset+setup on source (write-asserted) -> scratch platform se-lifecycle-scratch-<id>-<runId> (create_space_platform + clone_area of the pad LEFT half at identical coords) -> PRODUCTION /transfer-platform -> dest verify via LifecycleEngine (physical reads, roster pushed on both ends) -> report_field vs debug_import_result -> source-after-act scratchGone -> guaranteed teardown both ends -> zero-leftover sweep -> restore live pair.
+- omnibus-spoilage-midspoil, run 1: validation_success=true; dest raw-fish=10, spoilage=0, spoil 0.50022958 (monotone from 0.5 baseline); scratchGone=true; zero leftovers; live pair restored.
+- Run 2 (consecutive): identical verdicts, spoil 0.50024062. ALL PASS both runs.
+- Spoil advanced ~0.0002 across a real transfer: no full-spoil race at raw-fish spoil rates; mid-spoil state RIDES the transfer physically.
+- Wave-2 deletion unlocked and taken: spoilage-roundtrip deleted (MIGRATION.md updated). Teeth + transfer-fidelity/platform-roundtrip remain until their sabotage/scale lifecycles are authored.
+- /di-change adversarial review (opus): 1 BLOCKER F1 (source-after-act read raced the tail of the 2PC delete — fixed with a 60s deadline poll, mirroring deliver-all-fixtures); F3 fixed (unknown report_field op now throws instead of silently always-failing); F4 noted in code (dest-no-record teardown is leftover-sweep + golden-discard backstopped); F2 accepted as-is (a no-start transfer burns the 240s import timeout — fail-slow, never false-pass). All DI lenses REFUTED: the suite cannot touch the live gallery or produce a false-PASS. 2x consecutive green RE-EARNED on the post-review code.
