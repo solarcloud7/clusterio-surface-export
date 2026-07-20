@@ -15,7 +15,7 @@ test("gallery manifest inventories every lab family exactly once", () => {
 		.sort();
 	assert.deepEqual(manifest.labs.map(lab => lab.id).sort(), actualLabs);
 	assert.deepEqual(validateGalleryManifest(manifest, { requireArtifacts: false }), {
-		labs: actualLabs.length, fixtures: 22, sourceFixtures: 22, destinationFixtures: 0,
+		labs: actualLabs.length, fixtures: 20, sourceFixtures: 20, destinationFixtures: 0,
 	});
 });
 
@@ -38,7 +38,7 @@ test("paired save roles, artifacts, censuses, and exact mod pins are final", () 
 	assert.deepEqual(manifest.saves.source.mods, manifest.mods);
 	assert.deepEqual(manifest.saves.destination.mods, manifest.mods);
 	assert.deepEqual(validateGalleryManifest(manifest), {
-		labs: 13, fixtures: 22, sourceFixtures: 22, destinationFixtures: 0,
+		labs: 13, fixtures: 20, sourceFixtures: 20, destinationFixtures: 0,
 	});
 });
 
@@ -62,14 +62,14 @@ test("baked fixtures remain inputs while direct physical meters remain the oracl
 	assert.equal(belt.labId, "belt-lab");
 	assert.equal(belt.saveRole, "source");
 	assert.equal(belt.independentOracleRequired, true);
-	// The reachability fixture advanced to revision 2 (drill recreated, all entities destructible=false).
-	const reachability = manifest.fixtures.find(fixture => fixture.id === "specialized-fluid-reachability");
-	assert.equal(reachability.revision, 2);
-	assert.equal(reachability.labId, "specialized-inventory-lab");
-	assert.match(reachability.invariant, /destructible=false/);
-	assert.deepEqual(reachability.fingerprint, {
-		pressure: 0, gravity: 0, drillName: "electric-mining-drill", miningTarget: null,
-		liveFluidboxCount: 0, readOk: false, writeOk: false,
+	// The mining fixture superseded the retired lab-specialized-fluid-r1 platform (owner ruling
+	// 2026-07-19: hand-built acid-fed uranium miner claims pad 64,22).
+	const miner = manifest.fixtures.find(fixture => fixture.id === "mining-drill-acid-feed");
+	assert.equal(miner.labId, "specialized-inventory-lab");
+	assert.equal(miner.padKind, "pad");
+	assert.deepEqual(miner.fingerprint, {
+		tankAcid: 13050, drillAcid: 104, resourceCount: 4, resourceTotal: 30398,
+		groundItems: 1, drillName: "big-mining-drill",
 	});
 });
 
@@ -93,14 +93,13 @@ test("the sixteen-family corpus is inventoried with independent oracles and stab
 	assert.equal(byId["omnibus-adversarial-inventory"].fingerprint.battQuality, "legendary");
 	assert.equal(byId["omnibus-crafting-fluids"].fingerprint.foundryTemp, 1500);
 	assert.equal(byId["omnibus-platform-schedule"].fingerprint.interruptName, "lab-interrupt");
-	assert.equal(byId["energy-accumulator-drain"].fingerprint.electricEntities, 1);
 
 	// The workhorse is structure-only: entity count fixed, item counts never fingerprinted (live drift).
 	assert.deepEqual(byId["transfer-workhorse"].fingerprint, { entities: 1359 });
 	assert.match(byId["transfer-workhorse"].note, /drift/i);
 
 	// Layout blueprints are captured for the three requested layouts.
-	for (const [id, prefix] of [["omnibus-adversarial-inventory", "0eNq"], ["energy-accumulator-drain", "0eNq"]]) {
+	for (const [id, prefix] of [["omnibus-adversarial-inventory", "0eNq"]]) {
 		assert.ok(byId[id].layoutBlueprint.startsWith(prefix), `${id} layoutBlueprint`);
 	}
 });

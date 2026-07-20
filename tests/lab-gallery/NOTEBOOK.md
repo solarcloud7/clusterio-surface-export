@@ -324,3 +324,17 @@ belt-loss-replay precedent). Manifest 25→22. KEPT with live jobs: omnibus (THE
 (sole 1359-entity scale coverage), energy (electric isolation requires own platform), reachability
 (surface-conditions fixture), hold pairs x6 (platform-level hold machinery, card-3 evidence).
 Live map now 10 platforms. Checkpoint 19j.
+
+## 2026-07-19 — Second hand-built claim (mining-drill-acid-feed) + three more owner retirements
+
+Owner built an acid-fed uranium miner on slot (64,22) — big drill + sulfuric tank + 4 real uranium
+resource patches + ground ore. Claimed as `mining-drill-acid-feed` (frozen-class; fingerprint from
+live measurement: tankAcid 13050, drillAcid 104, resources 4/30398, ground 1). FIRST CATCH at
+claim: resource-type entities ride NO serializer handler (entity.amount not carried) — third open
+handler gap (with loader + infinity-container). Superseded and deleted: `lab-specialized-fluid-r1`
+(owner: "platform-15 gets its own tile").
+
+Also retired (owner rulings): `lab-hold-pod-live/held-v1` (pod-hold contract folds into the
+destination-hold integration suite — "we already know this works") and `lab-energy-v1` ("covered
+on the other server"). Manifest 22→20. Live map: 6 platforms (omnibus, workhorse, 4 hold
+spoil/damage platforms). Checkpoints 19k, 19l.

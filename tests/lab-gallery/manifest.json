@@ -307,43 +307,6 @@
 	],
 	"fixtures": [
 		{
-			"id": "specialized-fluid-reachability",
-			"padKind": "platform",
-			"revision": 2,
-			"labId": "specialized-inventory-lab",
-			"name": "Specialized fluid reachability",
-			"purpose": "Recertify platform-reachable specialized fluid state from prototype and live entity controls.",
-			"category": "physical-lab",
-			"owningRunner": "tests/specialized-inventory-lab/run-reachability.mjs",
-			"saveRole": "source",
-			"platformName": "lab-specialized-fluid-r1",
-			"engineVersion": "2.0.77",
-			"mods": {
-				"base": "2.0.77",
-				"elevated-rails": "2.0.77",
-				"FluidMustFlow": "1.4.4",
-				"quality": "2.0.77",
-				"SpidertronEnhancements": "1.10.8",
-				"space-age": "2.0.77",
-				"SpidertronPatrols": "2.6.3",
-				"surfexp_gateways": "0.3.0",
-				"maraxsis": "1.31.6"
-			},
-			"note": "Revision 2: the drill was recreated after an asteroid loss and all platform entities are now destructible=false (asteroid-hardening).",
-			"invariant": "Space-platform pressure/gravity are zero and the baked electric mining drill has no live recoverable fluidbox; every fixture entity is destructible=false.",
-			"expectedTerminalVerdict": "observation-only",
-			"independentOracleRequired": true,
-			"fingerprint": {
-				"pressure": 0,
-				"gravity": 0,
-				"drillName": "electric-mining-drill",
-				"miningTarget": null,
-				"liveFluidboxCount": 0,
-				"readOk": false,
-				"writeOk": false
-			}
-		},
-		{
 			"id": "omnibus-adversarial-inventory",
 			"padKind": "pad",
 			"origin": {
@@ -944,41 +907,6 @@
 			}
 		},
 		{
-			"id": "energy-accumulator-drain",
-			"padKind": "platform",
-			"revision": 1,
-			"labId": "state-dimensions-lab",
-			"name": "Accumulator drain isolation",
-			"purpose": "Preserve a charged accumulator that is the sole electric entity, documenting the drain law.",
-			"category": "physical-lab",
-			"owningRunner": "tests/integration/energy-roundtrip/run-tests.ps1",
-			"saveRole": "source",
-			"platformName": "lab-energy-v1",
-			"engineVersion": "2.0.77",
-			"mods": {
-				"base": "2.0.77",
-				"elevated-rails": "2.0.77",
-				"FluidMustFlow": "1.4.4",
-				"quality": "2.0.77",
-				"SpidertronEnhancements": "1.10.8",
-				"space-age": "2.0.77",
-				"SpidertronPatrols": "2.6.3",
-				"surfexp_gateways": "0.3.0",
-				"maraxsis": "1.31.6"
-			},
-			"note": "Drain law: active=false does NOT stop accumulator discharge; a ~5kW deactivated machine measurably bled a deactivated accumulator, so the fixture carries no other electric entity.",
-			"invariant": "The accumulator holds energy 3000000 and is the sole electric entity on the platform; on a generation-free platform any consumer would bleed it, so it is kept alone (drain law).",
-			"expectedTerminalVerdict": "observation-only",
-			"independentOracleRequired": true,
-			"fingerprint": {
-				"accEnergy": 3000000,
-				"accName": "accumulator",
-				"electricEntities": 1,
-				"entities": 2
-			},
-			"layoutBlueprint": "0eNqlmd1u4jAQRt/F10GyDbQLr7JCUQhOaymxWf+grVDevXagbNVqVyudm4gQz4zH4ejTN1zFcczmHKxLYn8Vtvcuiv3Pq4j2xXVj/c51kxF7Ec9db1bnsUuDD9PqNR/F3AjrTua32Kv50Ajjkk3W3OKXm7fW5eloQlnQ/CNPI84+llDvar2STjbirVxL/mB+ZRNTO9gxmRDr82j6uvRW5lG/eXzWjejKikspNnRjNHVrjzTBT+0xD8OSK4VsPtWYbIzWvbT1DMqjpUo7daWuLXk+ln9rTT9a6/o+T7l05sP3ntT63lTdT+xfzSmP97Mafe8nX7dc79Wn5zU2mN6H0/2tpO6WspTMFxvFfFjyJfuR60vVlV6qrtbz317A4LM73bLW5r7GKxYvWTisDptfs/AN7J2eHTw8BU9PweNT9Py28Kd/719DdDRDRzN0NENHM3Q0Q0dDdDRER0N0NERHQ3Q0REdDdBRERzF0FENHMXQUQ0cxdBRER0F0FERHQXQUREdBdBRDRzJyJAJHIm4kwkYiaiSCRjJmJENGMmIkA0YyXiTDRTJaoM4wmWEqw0SGaQyTGKgwUGCgvkB5geoCxQVqCzQ0zM8wO8PcDDMzzMtAKwOdDDQy0MdAGwNdDDQxcHLGBmdsbsbGZmxqxoZmcGYGR2ZwYgYHZnBeBsdl/xd+aIRNZiqL/vx90IiLCXFJuH3Su81ut/2xeXoul3l+B+2yRWg="
-		},
-		{
 			"id": "transfer-workhorse",
 			"padKind": "platform",
 			"revision": 1,
@@ -1272,48 +1200,6 @@
 			}
 		},
 		{
-			"id": "hold-buffer-pod",
-			"padKind": "platform",
-			"revision": 1,
-			"labId": "hold-completeness-lab",
-			"name": "Hold buffer pair: cargo pod",
-			"purpose": "Preserve a live/held pair with a FULL hub and a loaded cargo-pod - the baked baseline for the pod-absorption overflow law (staging leaves the held platform pod-free with all cargo retained on the platform).",
-			"category": "physical-lab",
-			"owningRunner": "tests/hold-completeness-lab/run-hold-buffer-pairs.mjs",
-			"saveRole": "source",
-			"platformName": "lab-hold-pod-live-v1 + lab-hold-pod-held-v1",
-			"engineVersion": "2.0.77",
-			"mods": {
-				"base": "2.0.77",
-				"elevated-rails": "2.0.77",
-				"FluidMustFlow": "1.4.4",
-				"quality": "2.0.77",
-				"SpidertronEnhancements": "1.10.8",
-				"space-age": "2.0.77",
-				"SpidertronPatrols": "2.6.3",
-				"surfexp_gateways": "0.3.0",
-				"maraxsis": "1.31.6"
-			},
-			"note": "Script-built by seed-prep-ops.lua (build_hold_pod): every hub_main slot filled with 100 iron-plate (a FULL hub forces the pod-absorption overflow branch), baked paused with NO pod. An in-flight pod is TRANSIENT state that cannot be baked - cargo_pod_state is READ-ONLY (measured v15: 'LuaEntity::cargo_pod_state is read only') and a baked pod decays to 'ascending', which the production hold force-finishes (cargo counted as sent, measured v15) - so the pod joins the runtime-staging deviation: the batch creates it loaded with 100 copper-plate in the SAME Lua execution as the stage call (the PR0A-proven recipe).",
-			"invariant": "Both platforms carry a hub with every slot iron-filled and ZERO baked pods; both platforms paused; the in-flight pod + hold record are runtime-staged only.",
-			"expectedTerminalVerdict": "staged-pod-free-cargo-retained",
-			"independentOracleRequired": true,
-			"fingerprint": {
-				"livePodCount": 0,
-				"heldPodCount": 0,
-				"liveHubIronSeeded": true,
-				"heldHubIronSeeded": true,
-				"bothPaused": true
-			},
-			"testCard": {
-				"law": "Staging a destination hold absorbs in-flight cargo pods without loss: the held platform becomes pod-free and every unit of the pod's cargo remains ON the platform (hub or ground) - nothing leaves.",
-				"build": "lab-hold-pod-{live,held}-v1: FULL iron-filled hub, baked paused, zero baked pods (an in-flight pod is unbakeable transient state - see note).",
-				"action": "Batch: fingerprint-verify, then in ONE Lua execution create a copper-loaded pod on each side and stage the hold on the HELD platform via the production remote; wait ~5 seconds; measure pod count + total platform copper (hub + ground + pod) on both sides; discard the hold.",
-				"expected": "Held platform pod-free after stage with >= 100 copper retained on-platform; live control keeps its pod; discard leaves zero destination_holds.",
-				"forbidden": "Any copper leaving the held platform; a hold leaving the pod behind un-absorbed while claiming staged; leaked hold records; mid-batch fixture repair (the runtime pod+hold staging is the ONE sanctioned exception, per the card note)."
-			}
-		},
-		{
 			"id": "belt-combined-omnibus",
 			"padKind": "pad",
 			"origin": {
@@ -1375,6 +1261,65 @@
 				"forbidden": "Do NOT freeze this pad (it is the steady-state class exemplar). Do NOT rebuild it from a script - the state is the artifact."
 			},
 			"note": "FIRST CATCH (2026-07-19, at claim time): serializer has NO loader handler (filters not carried; splitter types gate excludes loaders) and NO infinity-container handler (infinity filters not carried) - transfer would deliver hollow configs. Fix is queued; this pad is its kill-measurement. REV2 2026-07-19: owner removed infinity chests (self-healing masked loss); circuit now conservative at 380; belt-corner-recovery retired as covered (over-pack measured present at ~5x the dedicated fixture)."
+		},
+		{
+			"id": "mining-drill-acid-feed",
+			"padKind": "pad",
+			"origin": {
+				"x": 64,
+				"y": 22
+			},
+			"anchors": [
+				{
+					"entity": "big-mining-drill",
+					"x": 71,
+					"y": 27
+				},
+				{
+					"entity": "storage-tank",
+					"x": 66.5,
+					"y": 24.5
+				}
+			],
+			"revision": 1,
+			"labId": "specialized-inventory-lab",
+			"name": "Acid-fed uranium miner (hand-built)",
+			"purpose": "Fluid-consuming big mining drill over real uranium resource patches with a sulfuric-acid tank feed - frozen-class; exercises resource entities, fluid-consuming mining, and acid plumbing in one pad.",
+			"category": "physical-lab",
+			"owningRunner": null,
+			"owningRunnerWaiver": "Hand-built live by the owner 2026-07-19 (construct-once doctrine); supersedes the retired lab-specialized-fluid-r1 platform (owner ruling: platform-15 gets its own tile).",
+			"saveRole": "source",
+			"platformName": "lab-omnibus-state-v1",
+			"engineVersion": "2.0.77",
+			"mods": {
+				"base": "2.0.77",
+				"elevated-rails": "2.0.77",
+				"FluidMustFlow": "1.4.4",
+				"quality": "2.0.77",
+				"SpidertronEnhancements": "1.10.8",
+				"space-age": "2.0.77",
+				"SpidertronPatrols": "2.6.3",
+				"surfexp_gateways": "0.3.0",
+				"maraxsis": "1.31.6"
+			},
+			"invariant": "Frozen: tank 13050 sulfuric-acid, drill 104 acid, 4 uranium resource patches totaling 30398 ore, 1 ground item. Resource entity amounts ride NO serializer handler (open coverage gap, first catch at claim).",
+			"expectedTerminalVerdict": "observation-only",
+			"independentOracleRequired": true,
+			"fingerprint": {
+				"tankAcid": 13050,
+				"drillAcid": 104,
+				"resourceCount": 4,
+				"resourceTotal": 30398,
+				"groundItems": 1,
+				"drillName": "big-mining-drill"
+			},
+			"testCard": {
+				"law": "A fluid-consuming miner over real resource patches is frozen-class state; resource amounts have no serializer handler yet.",
+				"action": "/test-run copy/paste + fingerprint; transfer must preserve acid, patch amounts, ground ore.",
+				"expected": "Acid exact, resource amounts exact, ground ore present.",
+				"forbidden": "Do not unfreeze the drill (consumes acid, depletes the patch)."
+			},
+			"note": "FIRST CATCH: no resource-type serializer handler (entity.amount not carried) - queued with the loader/infinity-container handler work."
 		}
 	]
 }
