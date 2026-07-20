@@ -1,9 +1,0 @@
-{
-  "name": "belt-lab-tool",
-  "version": "0.1.0",
-  "title": "Belt Lab Tool",
-  "author": "solarcloud7",
-  "factorio_version": "2.0",
-  "description": "Lab instrument for the FactorioSurfaceExport belt-restoration experiments: drag-select belts to capture lane contents (the transfer-record shape); alt-select to re-apply with the production per-piece algorithm; reverse-select to apply with the whole-line candidate algorithm; alt-reverse-select to clear lanes. Physical counts only — insert returns are never evidence.",
-  "dependencies": ["base >= 2.0"]
-}

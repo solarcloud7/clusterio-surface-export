@@ -140,7 +140,7 @@ test("corpus roster gate is unsatisfiable by omission (whole-fixture drop fails)
 
 	// Red tooth: a whole fixture silently missing from the measured corpus fails loudly, naming it.
 	const missing = fullCorpusReading();
-	delete missing.corpus["energy-accumulator-drain"];
+	delete missing.corpus["omnibus-burner-fuel"];
 	assert.throws(() => assertCorpusRoster(missing, manifest), /corpus roster/);
 
 	// Red tooth: the gate's own fixture tally must equal the manifest-derived count.

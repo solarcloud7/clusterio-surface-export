@@ -98,18 +98,21 @@ export function buildExpectations(manifest) {
 	// The belt pilot and reachability drill are asserted separately from the corpus, but their
 	// EXPECTED values are sourced from the manifest fingerprints (single source of truth), never
 	// hardcoded literals — editing a manifest fingerprint changes what the reload gate asserts.
-	const beltFingerprint = fixtureById["belt-5x5-125-unstacked"].fingerprint;
+	// Both special-path fixtures were retired 2026-07-19 (owner consolidation: belt loop covered by
+	// belt-combined-omnibus; reachability superseded by mining-drill-acid-feed). The special paths
+	// are existence-guarded until the whole bake-verify chain retires with the harness rework.
+	const beltFingerprint = fixtureById["belt-5x5-125-unstacked"]?.fingerprint;
 	const reachabilityFixture = fixtureById["specialized-fluid-reachability"];
-	const reachabilityFingerprint = reachabilityFixture.fingerprint;
+	const reachabilityFingerprint = reachabilityFixture?.fingerprint;
 	// The loop is now a single pad on the omnibus (was a source + empty-target pair on nauvis), so
 	// there is no second empty "target" loop: target_belts/target_quantity are always zero.
-	const belt = {
+	const belt = !beltFingerprint ? null : {
 		source_belts: beltFingerprint.beltCount, target_belts: 0,
 		source_quantity: beltFingerprint.quantity, physical_stacks: beltFingerprint.physicalStacks,
 		maximum_stack: beltFingerprint.maximumStack, source_line_quantities: beltFingerprint.lineQuantities,
 		target_quantity: 0,
 	};
-	const reachability = {
+	const reachability = !reachabilityFingerprint ? null : {
 		exists: true, platform_name: reachabilityFixture.platformName, drill_name: reachabilityFingerprint.drillName,
 		pressure: reachabilityFingerprint.pressure, gravity: reachabilityFingerprint.gravity,
 		mining_target: meterMiningTarget(reachabilityFingerprint.miningTarget), live_fluidbox_count: reachabilityFingerprint.liveFluidboxCount,
@@ -134,8 +137,8 @@ export function assertReloadReading(reading, role, expected) {
 		// Belt + reachability EXPECTED values come from the manifest fingerprints (expected.belt /
 		// expected.reachability). mining_target is compared as the explicit `false` the meter always
 		// emits, so a dropped read is an absent field this assertion rejects — never self-manufactured.
-		assertFields(reading, { ...expected.belt, surface_census: expected.census });
-		assertFields(reading.reachability, expected.reachability);
+		assertFields(reading, { ...(expected.belt || {}), surface_census: expected.census });
+		if (expected.reachability) assertFields(reading.reachability, expected.reachability);
 	} else if (role === "destination") {
 		assertFields(reading, {
 			source_belts: 0, target_belts: 0, source_quantity: 0, physical_stacks: 0,

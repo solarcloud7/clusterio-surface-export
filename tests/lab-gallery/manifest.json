@@ -185,16 +185,6 @@
 			}
 		},
 		{
-			"id": "census-lab",
-			"title": "Paired-reads census",
-			"purpose": "Ground the per-entity paired-read census meter: stall budget and serialize-vs-physical commensurability at the export gate.",
-			"sourcePath": "tests/census-lab",
-			"zone": {
-				"x": -36,
-				"y": 36
-			}
-		},
-		{
 			"id": "engine-repin-lab",
 			"title": "Engine version repin",
 			"purpose": "Re-certify engine-sensitive runtime shapes and behavioral rungs after a Factorio version change.",
@@ -231,16 +221,6 @@
 			"sourcePath": "tests/hidden-semantics-lab",
 			"zone": {
 				"x": -36,
-				"y": 0
-			}
-		},
-		{
-			"id": "hold-completeness-lab",
-			"title": "Destination hold completeness",
-			"purpose": "Demonstrate which entities and operations must remain frozen until transfer validation completes.",
-			"sourcePath": "tests/hold-completeness-lab",
-			"zone": {
-				"x": -12,
 				"y": 0
 			}
 		},

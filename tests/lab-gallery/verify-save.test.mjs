@@ -40,19 +40,16 @@ test("paired reload verifier requires both artifacts and an isolated host", () =
 test("buildExpectations measures every source platform fixture and clears the destination", () => {
 	const measured = Object.keys(expectations.source.corpus).sort();
 	// The belt pilot and the reachability drill are asserted separately, not in the corpus.
-	assert.ok(!measured.includes("belt-5x5-125-unstacked"));
-	assert.ok(!measured.includes("specialized-fluid-reachability"));
+	// belt-5x5 + reachability retired 2026-07-19 (owner consolidation) — no special-path exclusions remain.
 	assert.ok(measured.includes("omnibus-midcraft-progress"));
 	assert.ok(measured.includes("transfer-workhorse"));
-	assert.equal(measured.length, manifest.fixtures.filter(f => f.saveRole === "source").length - 2);
+	assert.equal(measured.length, manifest.fixtures.filter(f => f.saveRole === "source").length);
 	assert.deepEqual(expectations.destination.corpus, {});
 });
 
-test("source acceptance includes belt pilot, reachability, and the full physical corpus", () => {
+test("source acceptance asserts the full physical corpus (special paths retired 2026-07-19)", () => {
 	const reading = sourceReading();
 	assert.equal(assertReloadReading(reading, "source", expectations.source), reading);
-	assert.throws(() => assertReloadReading({ ...sourceReading(), source_quantity: 124 }, "source", expectations.source), /source_quantity/);
-	assert.throws(() => assertReloadReading({ ...sourceReading(), reachability: { ...sourceReading().reachability, read_ok: true } }, "source", expectations.source), /read_ok/);
 	// Red tooth: a drifted corpus fingerprint fails.
 	const drifted = sourceReading();
 	drifted.corpus["omnibus-heat-temperature"] = { temperature: 490 };
@@ -61,12 +58,7 @@ test("source acceptance includes belt pilot, reachability, and the full physical
 	const dropped = sourceReading();
 	delete dropped.corpus["omnibus-ground-items"];
 	assert.throws(() => assertReloadReading(dropped, "source", expectations.source), /corpus fixture set/);
-	// Red tooth (self-manufactured-PASS class): a dropped meter field on the reachability drill fails
-	// loudly instead of being normalized to a passing value. mining_target is emitted as an explicit
-	// `false`, so an absent field is a bug the gate rejects.
-	const droppedField = sourceReading();
-	delete droppedField.reachability.mining_target;
-	assert.throws(() => assertReloadReading(droppedField, "source", expectations.source), /mining_target/);
+	// (reachability special path retired 2026-07-19 with its fixture; its dropped-field red tooth went with it.)
 });
 
 test("crafting-progress compares with a tolerance but rejects real drift", () => {
