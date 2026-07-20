@@ -28,7 +28,7 @@ never a vacuous pass.
 
 | Test | Gate |
 |---|---|
-| entity-roundtrip | `test/quality-dimension-ownership.test.cjs` pins its `test-cases.json` (splitter-quality-filter law); delete after that law lands on a pad |
+| ~~entity-roundtrip~~ | DELETED 2026-07-20: the splitter-quality-filter law is baked on `omnibus-adversarial-inventory` (legendary iron-plate splitter filter, fingerprint-pinned, paste-verified live); `quality-dimension-ownership.test.cjs` now guards the manifest pin |
 | ~~spoilage-roundtrip~~ | DELETED 2026-07-20: absorbed by `omnibus-spoilage-midspoil` through `pad-transfer-suite` (2× consecutive green, real transfer, physical dest reads) |
 | ~~platform-roundtrip~~ | DELETED 2026-07-20: absorbed by the `transfer-workhorse` transfer-act lifecycle (whole 1359-entity platform through the real transfer, exact dest `surface_entity_count`; 2× consecutive suite green) |
 | transfer-fidelity | KEEP until the paired-reads census (SC-6) ships — it is the meter-drift SENTINEL (serialized-expected vs SOURCE physical census), a law no pad fixture carries; the workhorse leg checks dest count + gate verdict only |

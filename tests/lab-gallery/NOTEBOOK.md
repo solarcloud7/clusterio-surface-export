@@ -430,3 +430,10 @@ queued with P5.
 - KNOWN-OPEN HAZARD banked honestly: the belt pad PASTE loses 4 items on over-packed corner lanes (372 -> 368, aggregate audit) - the Phase-5B belt-restore class. Fixture runnerExcluded with the hazard as its visible reason; re-enable when side-closed batched restore lands. New auditAggregateOnly flag for LIVE steady-state fixtures (per-name audit false-fails while the mix rotates; the class law is the conserved TOTAL).
 - push-roster non-ASCII fail-loud guard fired on an em-dash in the hazard string (working as designed).
 - /test-run: 17 passed / 0 failed / 0 missing / 0 unknown / 7 skipped. platform-roundtrip DELETED (absorbed by the workhorse leg); transfer-fidelity KEPT as the meter-drift sentinel until SC-6 paired-reads census ships (MIGRATION.md corrected).
+
+## 2026-07-20 — SC-69 closeout: splitter-quality law on the adversarial pad; entity-roundtrip DELETED
+
+- Legendary iron-plate splitter filter baked at (15,-14.5) on omnibus-adversarial-inventory (rev2); meter reads splitter_filter name+quality; fingerprint pins both. /test-run 17/0/0/0 - the legendary quality SURVIVES the paste (LEFT + PASTE fingerprints).
+- quality-dimension-ownership.test.cjs repointed from the retired entity-roundtrip test-cases.json to the manifest pin; entity-roundtrip DELETED (MIGRATION.md updated).
+- specialized-inventory-accounting matrix updated: resource handler registered; mining-drill is now a fluid OWNER with platformReachable:true (the pad-measured refutation of the old "fluidbox length 0" evidence).
+- Snapshot re-banked clean-ish (SHA 6D05C939..., census 2020 - includes inert right-half compare residue, noted in the manifest; mutable anchors banked EMPTY). pad-transfer-suite ALL PASS on the new golden artifact.

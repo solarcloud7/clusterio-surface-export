@@ -104,6 +104,12 @@ local function measure_omnibus_adversarial(surface, anchor)
     local recipe, quality = m.get_recipe()
     r.recipe = recipe and recipe.name or nil
     r.recipeQuality = quality and quality.name or nil
+    -- Quality-keyed splitter filter (the splitter-quality-filter law, absorbed from the retired
+    -- entity-roundtrip suite 2026-07-20): quality must ride the filter through paste AND transfer.
+    local sp = anchored(surface, anchor, "splitter", "omnibus adversarial")
+    local sf = sp.splitter_filter
+    r.splitterFilter = sf and sf.name or "absent"
+    r.splitterFilterQuality = sf and sf.quality and (sf.quality.name or sf.quality) or "absent"
     return r
 end
 

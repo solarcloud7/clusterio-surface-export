@@ -18,9 +18,9 @@
 			"role": "source",
 			"name": "lab-gallery-source-of-truth",
 			"artifact": "docker/seed-data/lab-saves/lab-gallery-source-of-truth.zip",
-			"sha256": "3B98C305C81AF1BB0D0B412B551CC60477315AD705FE31EE5612404F7B541DA4",
+			"sha256": "6D05C93932889C5ED462E538BCCEAB8BF6B93FEB3D26A3C53D78344790DDEB11",
 			"expectedCensus": {
-				"totalEntities": 1961,
+				"totalEntities": 2020,
 				"totalGeneratedChunks": 6740,
 				"surfaces": [
 					{
@@ -45,7 +45,7 @@
 				"surfexp_gateways": "0.3.0",
 				"maraxsis": "1.31.6"
 			},
-			"note": "SNAPSHOT OF LIVE (2026-07-19): the canonical save is a verified server_save of the live gallery world - never a scripted-bake product. Re-bank by: server_save, docker cp, SHA re-pin, in one commit."
+			"note": "SNAPSHOT OF LIVE (2026-07-20): verified server_save of the live gallery world - never a scripted-bake product. Census includes inert right-half compare residue (each run sweeps its cell before measuring; mutable anchors banked EMPTY). Re-bank: server_save, docker cp, SHA re-pin, one commit."
 		},
 		"destination": {
 			"role": "destination",
@@ -218,9 +218,14 @@
 					"entity": "assembling-machine-2",
 					"x": 16,
 					"y": -17
+				},
+				{
+					"entity": "splitter",
+					"x": 15,
+					"y": -14.5
 				}
 			],
-			"revision": 1,
+			"revision": 2,
 			"labId": "state-dimensions-lab",
 			"name": "Adversarial nested inventory + quality",
 			"purpose": "Preserve a steel-chest holding a power-armor-mk2 whose equipment grid carries a legendary battery and uncommon shield, beside an uncommon-quality iron-gear-wheel recipe.",
@@ -250,7 +255,9 @@
 				"shieldMax": 195,
 				"shieldQuality": "uncommon",
 				"recipe": "iron-gear-wheel",
-				"recipeQuality": "uncommon"
+				"recipeQuality": "uncommon",
+				"splitterFilter": "iron-plate",
+				"splitterFilterQuality": "legendary"
 			},
 			"testCard": {
 				"law": "Nested inventories survive exactly: a chest-held power-armor-mk2 keeps its equipment grid (battery energy, shield value, qualities) and the machine keeps its quality recipe.",

@@ -252,8 +252,6 @@ Two test suites verify platform transfer correctness:
 # Pad transfer suite: real cross-instance transfers of every transfer-act pad fixture
 node tests/integration/pad-transfer-suite/run-tests.mjs
 
-# Entity roundtrip: per-entity-type verification (28 tests)
-.\tests\integration\entity-roundtrip\run-tests.ps1
 ```
 
 Tests run against the Docker cluster and verify item counts, entity positions, and data integrity.

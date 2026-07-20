@@ -178,18 +178,16 @@ test("the authorized live spot checks remain explicit", () => {
 	// refuted the dimension (no quality on EntityID filters; vanilla drills have zero slots).
 });
 
-test("the quality-filter roundtrip fixture exercises the splitter domain (drill case retired)", () => {
-	const suite = JSON.parse(fs.readFileSync(path.join(__dirname, "..", "..", "..", "..", "..",
-		"tests", "integration", "entity-roundtrip", "test-cases.json"), "utf8"));
-	const fixtures = new Map(suite.tests.map(fixture => [fixture.id, fixture]));
-	assert.deepEqual(fixtures.get("splitter-quality-filter").input.specific_data.filter,
-		{ name: "iron-plate", quality: "legendary" });
-	// mining-drill-quality-filter was DELETED (unpassable): drill filters are quality-less
-	// EntityIDs and vanilla drills have zero filter slots — measured 2.0.77, see api-notes.
-	assert.equal(fixtures.has("mining-drill-quality-filter"), false,
-		"the refuted drill-quality case must stay deleted, not resurrected");
-
-	const roundtrip = source("interfaces/remote/test-import-entity.lua");
-	assert.match(roundtrip, /fields_to_compare\s*=\s*\{[\s\S]*"filter"/,
-		"entity roundtrip must compare filter payloads instead of treating the fixtures as decorative");
+test("the splitter-quality-filter law lives on the adversarial pad (entity-roundtrip retired)", () => {
+	// The law moved from the retired entity-roundtrip suite onto the omnibus-adversarial-inventory
+	// pad (2026-07-20): a legendary iron-plate splitter filter is baked state, fingerprint-pinned,
+	// and physically re-read on every /test-run paste (and rides every real transfer of the pad
+	// platform). This guard pins the manifest so the law cannot be silently dropped.
+	const manifest = JSON.parse(fs.readFileSync(path.join(__dirname, "..", "..", "..", "..", "..",
+		"tests", "lab-gallery", "manifest.json"), "utf8"));
+	const pad = manifest.fixtures.find(fixture => fixture.id === "omnibus-adversarial-inventory");
+	assert.equal(pad.fingerprint.splitterFilter, "iron-plate");
+	assert.equal(pad.fingerprint.splitterFilterQuality, "legendary");
+	assert.ok(pad.anchors.some(anchor => anchor.entity === "splitter"),
+		"the pad must anchor the filtered splitter so the meter can resolve it");
 });
