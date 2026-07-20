@@ -30,16 +30,9 @@ const REPO_ROOT = join(SCRIPT_DIR, "..", "..", "..", "..", "..");
 const TESTS_DIR = join(REPO_ROOT, "tests", "integration");
 const ALLOW_MARKER = "lint-test-hooks:allow";
 
-// Hooks VERIFIED pre-gate / self-protecting: on a leaked flag the next transfer FAILS its item/validation
-// gate and PRESERVES its source, so a skipped disarm is fail-safe. Each entry MUST be pre-gate — a
-// post-gate/destructive hook here would defeat the guard, so adding one is a reviewable act.
-const FAIL_SAFE_HOOKS = new Set([
-	"test_force_item_loss", // pre-gate: inflates the loss the strict gate counts → gate FAILS → source preserved
-	"test_force_fluid_loss", // pre-gate: inflates expected fluids before the single exact gate → gate FAILS → dest discarded/source preserved
-	"test_force_validation_failure", // pre-gate: forces validation FAIL → rollback → source preserved
-	"test_force_entity_failure", // pre-gate: marker forces verdict FAIL after attribution → source preserved
-	"test_force_census_omission", // PRE-verdict: drops a serialized stack → source census FAILS → transfer export ABORTS → source preserved (owner-adjudicated Decision 5, paired-reads census plan)
-]);
+import { FAIL_SAFE_HOOKS } from "./fail-safe-hooks.mjs";
+// The FAIL_SAFE_HOOKS declaration moved to fail-safe-hooks.mjs (shared with the lifecycle
+// arm_hook allowlist in tests/lab-gallery/manifest.mjs) — same policy, one declaration point.
 
 // A value that DISARMS a hook rather than arming it — these assignments are safe and don't require cleanup.
 const DISARM_VALUES = new Set(["0", "false", "$false", "nil", "null", "$null"]);

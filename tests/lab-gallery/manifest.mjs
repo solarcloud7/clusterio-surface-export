@@ -1,4 +1,5 @@
 import { readFileSync } from "node:fs";
+import { FAIL_SAFE_HOOKS, NON_DESTRUCTIVE_HOOKS } from "../../docker/seed-data/external_plugins/surface_export/scripts/fail-safe-hooks.mjs";
 
 // Fixtures asserted by a SEPARATE physical path, not the corpus meter (measure_corpus). This is the
 // single source of truth for the corpus-excluded set shared by the build-side and reload-side
@@ -92,6 +93,100 @@ export function validateGalleryManifest(manifest, { requireArtifacts = true } = 
 		if (fixture.padKind === "pad" && (!fixture.origin || !Number.isInteger(fixture.origin.x) || !Number.isInteger(fixture.origin.y))) {
 			throw new Error(`pad ${fixture.id} needs an integer origin {x,y}`);
 		}
+		if ("lifecycle" in fixture) validateLifecycle(fixture);
 	}
 	return { labs: manifest.labs.length, fixtures: manifest.fixtures.length, sourceFixtures, destinationFixtures };
+}
+
+// ---- lifecycle (setup / act / verify) validation --------------------------------------------------
+// The pad lifecycle framework: declarative setup ops, an act selector, and a declarative verify
+// list. Rules enforced here are DI teeth, not style: arm_hook is restricted to the pre-gate
+// fail-safe set (a leaked hook must fail-safe, Pitfall #30 class); report_field checks require a
+// physical witness (the lint-test-grounding rule at manifest level); setup writes are confined to
+// declared mutable anchors (the pristine-left-half rule).
+const LIFECYCLE_ACTS = new Set(["copy-paste", "transfer", "clone"]);
+const PHYSICAL_READS = new Set(["item_count", "held", "crafting_progress", "spoil_percent", "fluid", "entity_present", "platform_present"]);
+const CHECK_OPS = new Set(["eq", "ge", "le", "between", "monotone"]);
+const TRANSFER_SUITE = "tests/integration/pad-transfer-suite/run-tests.mjs";
+
+function validateLifecycle(fixture) {
+	const lc = fixture.lifecycle;
+	const id = fixture.id;
+	if (!lc || typeof lc !== "object") throw new Error(`lifecycle for ${id} must be an object`);
+	if (lc.version !== 1) throw new Error(`lifecycle for ${id}: unsupported version ${lc.version}`);
+	const mutable = new Set(lc.mutable || []);
+	const anchorNames = new Set((fixture.anchors || []).map(anchor => anchor.name).filter(Boolean));
+	for (const name of mutable) {
+		if (name !== "vault" && !anchorNames.has(name)) throw new Error(`lifecycle for ${id}: mutable "${name}" is not a named anchor`);
+	}
+	const act = lc.act ?? "copy-paste";
+	if (!Array.isArray(act) && !LIFECYCLE_ACTS.has(act)) throw new Error(`lifecycle for ${id}: invalid act ${act}`);
+	if (act === "transfer" && fixture.owningRunner !== TRANSFER_SUITE) {
+		throw new Error(`lifecycle for ${id}: act "transfer" requires owningRunner ${TRANSFER_SUITE}`);
+	}
+	for (const op of lc.setup || []) {
+		if (!op || typeof op !== "object" || typeof op.op !== "string") throw new Error(`lifecycle for ${id}: malformed setup op`);
+		if (op.op === "arm_hook") {
+			if (!FAIL_SAFE_HOOKS.has(op.name) && !NON_DESTRUCTIVE_HOOKS.has(op.name)) {
+				throw new Error(`lifecycle for ${id}: arm_hook "${op.name}" is not in the fail-safe allowlist`);
+			}
+		} else if (op.op === "mutate_force") {
+			if (op.restore !== true) throw new Error(`lifecycle for ${id}: mutate_force requires restore:true`);
+		} else if (op.op === "lua") {
+			if (typeof op.reason !== "string" || !op.reason.trim()) throw new Error(`lifecycle for ${id}: lua op requires a reason`);
+		} else if (op.op === "spawn_item" || op.op === "set_stack_field" || op.op === "set_health") {
+			const target = op.into ?? op.locator?.anchor;
+			const targetName = typeof target === "string" ? target.replace(/^anchor:/, "") : null;
+			if (!targetName || (targetName !== "vault" && !mutable.has(targetName))) {
+				throw new Error(`lifecycle for ${id}: ${op.op} targets "${targetName}" which is not a declared mutable anchor`);
+			}
+		} else {
+			throw new Error(`lifecycle for ${id}: unknown setup op "${op.op}"`);
+		}
+	}
+	const checks = lc.verify || [];
+	let physicalWitness = !(checks.some(check => check?.check === "fingerprint" && check.enabled === false));
+	let hasReportField = false;
+	for (const check of checks) {
+		if (!check || typeof check !== "object" || typeof check.check !== "string") throw new Error(`lifecycle for ${id}: malformed verify check`);
+		if (check.check === "physical_read") {
+			if (!PHYSICAL_READS.has(check.read)) throw new Error(`lifecycle for ${id}: unknown physical read "${check.read}"`);
+			if (!CHECK_OPS.has(check.op)) throw new Error(`lifecycle for ${id}: unknown check op "${check.op}"`);
+			physicalWitness = true;
+		} else if (check.check === "report_field") {
+			hasReportField = true;
+		} else if (check.check === "log_line") {
+			if (act !== "transfer" && act !== "clone") throw new Error(`lifecycle for ${id}: log_line checks require a transfer/clone act`);
+		} else if (check.check !== "fingerprint") {
+			throw new Error(`lifecycle for ${id}: unknown check "${check.check}"`);
+		}
+	}
+	if (hasReportField && !physicalWitness) {
+		throw new Error(`lifecycle for ${id}: report_field checks require at least one physical witness (grounding rule)`);
+	}
+}
+
+// Render the pad's EXPECT panel section from the verify list — the single source the owner asked
+// for ("a list of things we verify programmatically that we put in the description of the test").
+export function renderExpectFromLifecycle(fixture) {
+	const lc = fixture.lifecycle;
+	if (!lc) return null;
+	const lines = [];
+	const checks = lc.verify || [];
+	if (!checks.some(check => check?.check === "fingerprint" && check.enabled === false)) {
+		lines.push("fingerprint matches the manifest pin");
+	}
+	for (const check of checks) {
+		if (check.check === "physical_read") {
+			const where = check.locator?.anchor || check.locator?.platform || "area";
+			const what = check.item ? `${check.item} ${check.read}` : check.read;
+			const bound = check.op === "monotone" ? `monotone (<=${check.driftTicks ?? "?"}t drift)` : `${check.op} ${JSON.stringify(check.expected)}`;
+			lines.push(`${where}: ${what} ${bound}`);
+		} else if (check.check === "report_field") {
+			lines.push(`report ${check.path} ${check.op} ${JSON.stringify(check.expected)}`);
+		} else if (check.check === "log_line") {
+			lines.push(`log line matches ${check.pattern}`);
+		}
+	}
+	return lines;
 }

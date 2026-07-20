@@ -3,7 +3,7 @@ import { createHash } from "node:crypto";
 import { readFileSync, readdirSync } from "node:fs";
 import test from "node:test";
 
-import { loadGalleryManifest, validateGalleryManifest } from "./manifest.mjs";
+import { loadGalleryManifest, renderExpectFromLifecycle, validateGalleryManifest } from "./manifest.mjs";
 
 const repoRoot = new URL("../../", import.meta.url);
 
@@ -140,4 +140,47 @@ test("visual zones have stable unique coordinates and durable source paths", () 
 		assert.equal(positions.has(key), false, `duplicate zone ${key}`);
 		positions.add(key);
 	}
+});
+
+test("lifecycle validation teeth: hook allowlist, grounding rule, mutable-anchor rule", () => {
+	const manifest = loadGalleryManifest(repoRoot);
+	const clone = () => JSON.parse(JSON.stringify(manifest));
+	const withLifecycle = (lifecycle, anchors) => {
+		const m = clone();
+		const fx = m.fixtures.find(fixture => fixture.id === "belt-combined-omnibus");
+		fx.lifecycle = lifecycle;
+		if (anchors) fx.anchors = anchors;
+		return m;
+	};
+	// Red tooth: arming a hook outside the fail-safe allowlist is rejected at validation.
+	assert.throws(() => validateGalleryManifest(withLifecycle({
+		version: 1, setup: [{ op: "arm_hook", name: "test_disable_gate", value: true }],
+	}), { requireArtifacts: false }), /fail-safe allowlist/);
+	// Green path: a fail-safe hook arms fine.
+	assert.doesNotThrow(() => validateGalleryManifest(withLifecycle({
+		version: 1, setup: [{ op: "arm_hook", name: "test_force_item_loss", value: 5 }],
+	}), { requireArtifacts: false }));
+	// Red tooth: report_field checks without any physical witness are rejected (grounding rule).
+	assert.throws(() => validateGalleryManifest(withLifecycle({
+		version: 1,
+		verify: [
+			{ check: "fingerprint", enabled: false },
+			{ check: "report_field", path: "validation.validation_success", op: "eq", expected: true },
+		],
+	}), { requireArtifacts: false }), /physical witness/);
+	// Red tooth: a setup op targeting an undeclared anchor is rejected (pristine-left-half rule).
+	assert.throws(() => validateGalleryManifest(withLifecycle({
+		version: 1, mutable: [],
+		setup: [{ op: "spawn_item", name: "raw-fish", count: 10, into: "anchor:scratch-chest" }],
+	}, [{ entity: "steel-chest", x: 1, y: 1, name: "scratch-chest" }]), { requireArtifacts: false }), /mutable anchor/);
+	// Green path: declared mutable anchor accepted; renderer emits lines.
+	const ok = withLifecycle({
+		version: 1, mutable: ["scratch-chest"],
+		setup: [{ op: "spawn_item", name: "raw-fish", count: 10, spoil_percent: 0.5, into: "anchor:scratch-chest" }],
+		act: "copy-paste",
+		verify: [{ check: "physical_read", locator: { anchor: "scratch-chest" }, read: "item_count", item: "raw-fish", op: "eq", expected: 10 }],
+	}, [{ entity: "steel-chest", x: 1, y: 1, name: "scratch-chest" }]);
+	assert.doesNotThrow(() => validateGalleryManifest(ok, { requireArtifacts: false }));
+	const lines = renderExpectFromLifecycle(ok.fixtures.find(fixture => fixture.id === "belt-combined-omnibus"));
+	assert.ok(lines.some(line => /raw-fish item_count eq 10/.test(line)));
 });
