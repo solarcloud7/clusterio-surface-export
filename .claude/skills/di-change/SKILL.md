@@ -72,7 +72,8 @@ Two failure classes #106 kept reproducing — check for them explicitly (memory:
 Check every engine-behavior assumption the change depends on against
 [docs/factorio-2.0-api-notes.md](../../../docs/factorio-2.0-api-notes.md): if it is not **[API]** or
 **[empirical, <current pin>]**, it is a **[hypothesis]** — run a lab rung BEFORE designing on it
-(pattern + triggers: CLAUDE.md § "Empirical lab discipline"; exemplar `tests/fluid-lab/`). A mechanism
+(pattern + triggers: CLAUDE.md § "Testing discipline"; the standing lab runners are archived at git tag
+`labs-archive-2026-07-19` — restore from the tag or author a fresh probe). A mechanism
 EXPLANATION is not a law until its predictions are tested; never cite an unverifiable source as "Confirmed by."
 Paid for: the ghost-buffer legend survived 4 months and nearly caused two unnecessary primitive redesigns; a
 one-afternoon lab killed it and fixed CI with a meter change instead.

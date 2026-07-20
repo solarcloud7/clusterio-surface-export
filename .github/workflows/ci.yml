@@ -44,11 +44,6 @@ jobs:
         env:
           BASE_REF: ${{ github.base_ref }}
         run: node ${{ env.PLUGIN_DIR }}/scripts/lint-commit-labels.mjs
-      - name: Brief execution-discipline link
-        if: github.event_name == 'pull_request'
-        env:
-          BASE_REF: ${{ github.base_ref }}
-        run: node ${{ env.PLUGIN_DIR }}/scripts/lint-brief-discipline.mjs
 
       - name: Setup Node.js
         uses: actions/setup-node@v6

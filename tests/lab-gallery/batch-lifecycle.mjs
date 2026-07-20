@@ -1,4 +1,4 @@
-// Shared single-use baked-fixture BATCH LIFECYCLE (docs/lab-tests.md).
+// Shared single-use baked-fixture BATCH LIFECYCLE (docs/testing.md).
 //
 // Extracted verbatim from the first certified batch runner (tests/census-lab/
 // run-r2-fusion-commensurability.mjs) so every owning batch runner drives the SAME lease preflight,

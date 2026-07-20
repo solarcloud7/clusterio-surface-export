@@ -4,7 +4,7 @@
     isolated Node container — no host Node required, and without corrupting the running cluster.
 
 .DESCRIPTION
-    Why this exists (see docs/static-asset-caching.md and CLAUDE.md):
+    Why this exists (see the Web cache guard entry and build notes in CLAUDE.md):
       * The host's system Node install is currently broken — C:\Program Files\nodejs was
         removed but left on PATH, so `node` does not resolve in a plain shell.
       * Building in the live plugin dir is unsafe while the cluster runs: `npm install` there

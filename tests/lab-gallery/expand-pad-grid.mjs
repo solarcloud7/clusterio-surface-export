@@ -19,7 +19,7 @@ const CTL_CONFIG = "/clusterio/tokens/config-control.json";
 const GALLERY = "surface-export-lab-gallery";
 const OMNIBUS = "lab-omnibus-state-v1";
 
-// Grid geometry (docs/lab-tests.md spare-slot policy): columns x=8/36/64/92, row pitch 14.
+// Grid geometry (docs/testing.md pad-grid layout): columns x=8/36/64/92, row pitch 14.
 const COLUMNS = [8, 36, 64, 92];
 const NEW_ROWS = [36, 50, 64];
 const OPEN_CARD = {

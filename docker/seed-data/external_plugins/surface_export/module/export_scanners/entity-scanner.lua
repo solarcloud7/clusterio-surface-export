@@ -186,7 +186,7 @@ function EntityScanner.serialize_entity(entity)
       entity_data.infinity_filters = infinity_filters
     end
     -- remove_unfiltered_items rides with the filters (the fill-harness contract in
-    -- docs/lab-tests.md depends on both surviving a clone/copy).
+    -- docs/testing.md depends on both surviving a clone/copy).
     -- intentional probe; failure expected on non-container infinity prototypes, no log
     local ru_ok, ru = pcall(function() return entity.remove_unfiltered_items end)
     if ru_ok and ru ~= nil then

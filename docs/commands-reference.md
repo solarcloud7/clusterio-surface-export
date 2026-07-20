@@ -589,5 +589,5 @@ Commands work via RCON but some require explicit parameters:
 ## See Also
 
 - [README.md](README.md) — Remote Interface (Lua `remote.call` API) and `clusterioctl surface-export` CLI commands
-- [IMPLEMENTATION_SUMMARY.md](IMPLEMENTATION_SUMMARY.md) — Module structure and Factorio 2.0 compatibility
+- [EXPORT_IMPORT_FLOW.md](EXPORT_IMPORT_FLOW.md) — Flow trace, module structure, and Factorio 2.0 constraints
 - [async-processing.md](async-processing.md) — How async export/import works

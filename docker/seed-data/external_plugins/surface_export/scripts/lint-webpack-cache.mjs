@@ -8,7 +8,7 @@
  * `output.filename`/`chunkFilename` — or a ModuleFederation `filename` — override WITHOUT a hash
  * token silently defeats that and pins stale chunks on returning users for up to a year. That exact
  * regression shipped once (commit 94e1b8c, "major refactor, WIP") and wasn't caught until it hit
- * prod. This guard is the catch. See docs/static-asset-caching.md.
+ * prod. This guard is the catch (see the "Web cache" guard entry in CLAUDE.md).
  *
  * Rule: every `filename:`/`chunkFilename:` string literal in webpack.config.js must contain a
  *       content-hash token ([contenthash] / [chunkhash] / [hash]). Omitting the keys entirely (to
@@ -78,7 +78,7 @@ function main() {
 		console.error(`    ${v.text}`);
 		console.error("    → The controller serves /static with an immutable 1y cache, so a fixed name pins this");
 		console.error("      chunk STALE on returning users. Add a [contenthash] token, or drop the override to");
-		console.error("      inherit @clusterio/web_ui's hashed default. See docs/static-asset-caching.md\n");
+		console.error("      inherit @clusterio/web_ui's hashed default. See the Web cache guard entry in CLAUDE.md\n");
 	}
 	console.error(`Fix the above, or add a "${ALLOW_MARKER} <reason>" comment on the line if it is a verified exception.`);
 	process.exit(1);
