@@ -252,4 +252,20 @@ test("lifecycle validation teeth: hook allowlist, grounding rule, mutable-anchor
 	assert.ok(census, "census-omission-abort fixture present");
 	assert.equal(census.lifecycle.expect, "census-abort");
 	assert.ok(renderExpectFromLifecycle(census).some(line => /CENSUS MUST REFUSE/.test(line)));
+
+	// Red tooth: a census_pass check on a non-success expect is rejected (it witnesses a CLEAN
+	// transfer's census; a refusal never produces the pass artifact).
+	assert.throws(() => validateGalleryManifest(withTransferLifecycle({
+		version: 1, mutable: ["scratch"], act: "transfer", expect: "gate-failure",
+		setup: [{ op: "arm_hook", name: "test_force_item_loss", value: 5, end: "dest" }],
+		verify: [
+			{ check: "physical_read", end: "source", locator: { anchor: "scratch" }, read: "item_count", item: "iron-plate", op: "eq", expected: 100 },
+			{ check: "census_pass" },
+		],
+	}), { requireArtifacts: false }), /census_pass checks require expect "success"/);
+	// Green path: the workhorse carries a census_pass witness on its clean transfer.
+	const workhorse = manifest.fixtures.find(fixture => fixture.id === "transfer-workhorse");
+	assert.ok((workhorse.lifecycle.verify || []).some(check => check.check === "census_pass"),
+		"the workhorse clean transfer must witness the source census ran + passed");
+	assert.ok(renderExpectFromLifecycle(workhorse).some(line => /source census ran \+ passed/.test(line)));
 });

@@ -132,12 +132,41 @@ async function runFixture(fixture, runId, destInstanceId, results) {
 		return failedChecks.length === 0;
 	}
 
+	// A source-census-pass marker on host 1, so a clean-transfer fixture can witness the census RAN
+	// and PASSED (SC-6 Phase 4) — the compact census_pass_*.json is banked on the source only.
+	const censusMarker = L.dropMarker(1, `${id}-cpass`);
 	const marker = L.dropMarker(2, id);
 	const transferOut = L.lastLine(L.rcon(1, `/transfer-platform ${setup.scratchIndex} ${destInstanceId}`));
 	console.log(`  [${id}] transfer fired: ${transferOut}`);
 
 	const { result: importResult, path: resultPath } = await L.waitForImportResult(2, marker);
 	console.log(`  [${id}] import result: ${resultPath} validation_success=${importResult.validation_success}`);
+
+	// census-pass witness (any success fixture that declares census report_field checks): read the
+	// banked source-side artifact. A clean transfer must have produced exactly one, with ok=true.
+	let censusPass = null;
+	const censusPassCheck = (fixture.lifecycle.verify || []).find(check => check.check === "census_pass");
+	if (censusPassCheck) {
+		const fresh = L.docker(["exec", L.HOSTS[1].container, "sh", "-c",
+			`find ${L.instancePath(1, "script-output")} -maxdepth 1 -name 'debug_census_pass_*.json' -newer ${censusMarker} 2>/dev/null || true`])
+			.split(/\r?\n/).map(line => line.trim()).filter(Boolean);
+		if (fresh.length) {
+			censusPass = L.readContainerJson(1, fresh.at(-1));
+			console.log(`  [${id}] census pass: ok=${censusPass.ok} entities=${censusPass.entity_count} items=${censusPass.item_total} mismatches=${censusPass.mismatch_count}`);
+		}
+		checks.push({ name: "census.ran", verdict: censusPass ? "pass" : "fail",
+			detail: censusPass ? "census_pass artifact banked" : "no census_pass artifact (census did not run?)" });
+		if (censusPass) {
+			checks.push({ name: "census.ok", verdict: censusPass.ok === true && censusPass.mismatch_count === 0 ? "pass" : "fail",
+				detail: `ok=${censusPass.ok} mismatch_count=${censusPass.mismatch_count}` });
+			// Non-vacuous: ok=true on a near-empty census would be a meaningless green. Floor the
+			// count commensurate with the fixture (the workhorse pairs ~1358 entities) so a degenerate
+			// 1-entity census cannot pass this witness.
+			const floor = censusPassCheck.minEntities ?? 1;
+			checks.push({ name: "census.nonVacuous", verdict: (censusPass.entity_count || 0) >= floor ? "pass" : "fail",
+				detail: `entity_count=${censusPass.entity_count} (>= ${floor})` });
+		}
+	}
 
 	// report_field checks (orchestrator-side, grounded by the physical reads — dest reads for
 	// success fixtures, preserved-source reads for gate-failure fixtures).

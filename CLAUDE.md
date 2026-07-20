@@ -736,7 +736,7 @@ either way.
 post-commit loss path; the write need not be tech-backed.
 **Mechanical guard**: the `force-bonus-held` pad fixture (run through `tests/integration/pad-transfer-suite`) forces the dest bonus to 0, transfers, and asserts
 (physical held counts) the bonus is raised, held items seat in full, the strict gate passes, and the warning
-fired — reverting the sync goes RED. CI's native bonus-0 host-2 means transfer-fidelity corroborates.
+fired — reverting the sync goes RED. CI's native bonus-0 host-2 means the force-bonus-held pad corroborates.
 **Key files**: `module/core/export-pipeline.lua` (capture), `module/core/import-pipeline.lua` (Phase-0 sync),
 `module/core/import-completion.lua` (warning), `module/import_phases/active_state_restoration.lua` (the
 disproven `count=` hack removed). Memory: [memory] `held-item-loss-is-dest-force-research`.

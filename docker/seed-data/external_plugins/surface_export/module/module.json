@@ -1,6 +1,6 @@
 {
   "name": "surface_export",
-  "version": "0.10.132",
+  "version": "0.10.134",
   "dependencies": {
     "clusterio": "*"
   },

@@ -211,6 +211,11 @@ function validateLifecycle(fixture) {
 			hasReportField = true;
 		} else if (check.check === "log_line") {
 			if (act !== "transfer" && act !== "clone") throw new Error(`lifecycle for ${id}: log_line checks require a transfer/clone act`);
+		} else if (check.check === "census_pass") {
+			// SC-6 Phase 4: assert the source census RAN and PASSED on a CLEAN transfer (the
+			// positive counterpart to census-abort). Only meaningful on a success transfer.
+			if (act !== "transfer") throw new Error(`lifecycle for ${id}: census_pass checks require act "transfer"`);
+			if (expect !== "success") throw new Error(`lifecycle for ${id}: census_pass checks require expect "success"`);
 		} else if (check.check !== "fingerprint") {
 			throw new Error(`lifecycle for ${id}: unknown check "${check.check}"`);
 		}
@@ -251,6 +256,8 @@ export function renderExpectFromLifecycle(fixture) {
 			lines.push(`${endTag}report ${check.path} ${check.op} ${JSON.stringify(check.expected)}`);
 		} else if (check.check === "log_line") {
 			lines.push(`${endTag}log line matches ${check.pattern}`);
+		} else if (check.check === "census_pass") {
+			lines.push("source census ran + passed (paired-reads, fail-closed)");
 		}
 	}
 	return lines;

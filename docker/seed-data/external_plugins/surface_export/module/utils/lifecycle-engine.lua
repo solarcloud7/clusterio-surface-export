@@ -362,6 +362,8 @@ function LifecycleEngine.run_verify(surface, fixture, ctx, extra)
 			result = { name = "report_field", verdict = "skipped", detail = "report_field is orchestrator-side" }
 		elseif check.check == "log_line" then
 			result = { name = "log_line", verdict = "skipped", detail = "log_line is orchestrator-side" }
+		elseif check.check == "census_pass" then
+			result = { name = "census_pass", verdict = "skipped", detail = "census_pass is orchestrator-side" }
 		elseif check.check == "fingerprint" then
 			result = nil -- caller owns the fingerprint compare
 		else

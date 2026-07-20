@@ -5,9 +5,10 @@
 .DESCRIPTION
     Two independent invariants, asserted on a disposable clone:
 
-    1. get_item_count is a COMPLETE, non-double-counting physical meter. The freeze-first
-       transfer-fidelity sentinel sums LuaEntity.get_item_count(item) over every entity as its
-       physical meter, so that sum must (a) INCLUDE belt-line + inserter-held items and (b) NOT
+    1. get_item_count is a COMPLETE, non-double-counting physical meter (a standing ENGINE-FACT
+       regression, not tied to any one meter — the production census reads through InventoryScanner,
+       not get_item_count). The invariant: LuaEntity.get_item_count(item) summed over every entity
+       must (a) INCLUDE belt-line + inserter-held items and (b) NOT
        over-count belts that share a run. We ground this against an INDEPENDENT truth — the count
        of unique physical item stacks (get_detailed_contents().unique_id, which cannot be inflated
        by a whole-line counting change) — NOT against a sibling belt API that moves in lockstep
@@ -124,7 +125,7 @@ if ($meterRaw -match 'bchecked=(\d+) bmeter=(\d+) bphys=(\d+) hchecked=(\d+) hba
         Write-TestResult -TestId "get-item-count-belt-meter" -TestName "get_item_count belt meter == physical unique-stack total" -Status "failed" -Message "No transport-belt on the clone carried any tracked item (bchecked=0) — a clone of '$SourcePlatform' must have belt items; the probe or fixture is broken ($meterRaw)"
         $failed++
     } elseif ($bMeter -ne $bPhys) {
-        Write-TestResult -TestId "get-item-count-belt-meter" -TestName "get_item_count belt meter == physical unique-stack total" -Status "failed" -Message "meter=$bMeter != physical=$bPhys over $bChecked belts — get_item_count is dropping belt items or double-counting shared runs; the freeze-first transfer-fidelity meter is BROKEN at this Factorio version (see docs/factorio-2.0-api-notes.md Item counting)"
+        Write-TestResult -TestId "get-item-count-belt-meter" -TestName "get_item_count belt meter == physical unique-stack total" -Status "failed" -Message "meter=$bMeter != physical=$bPhys over $bChecked belts — get_item_count is dropping belt items or double-counting shared runs; the get_item_count completeness engine-fact is BROKEN at this Factorio version (see docs/factorio-2.0-api-notes.md Item counting)"
         $failed++
     } else {
         Write-TestResult -TestId "get-item-count-belt-meter" -TestName "get_item_count belt meter == physical unique-stack total ($bChecked belts, $bMeter items)" -Status "passed"

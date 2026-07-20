@@ -860,6 +860,10 @@
 						"path": "validation_success",
 						"op": "eq",
 						"expected": true
+					},
+					{
+						"check": "census_pass",
+						"minEntities": 1000
 					}
 				]
 			}
