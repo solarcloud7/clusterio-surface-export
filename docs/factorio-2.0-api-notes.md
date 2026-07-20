@@ -114,12 +114,18 @@ Consequence: fluid does not live per-entity — it lives in the shared segment. 
   reproduced. The production path now uses this measured ordering: frozen restoration, one exact by-name fluid
   gate (`epsilon=1e-6`), then activation. Five consecutive clean 1,359-entity transfers passed with exact item
   and fluid verdicts. **[empirical, 2.0.77, single-gate acceptance]**
-- **Fusion-reactor *output* fluidboxes reject external writes.** The plasma output is engine-managed
-  — [`FusionReactorPrototype.output_fluid_box`](https://lua-api.factorio.com/latest/prototypes/FusionReactorPrototype.html#output_fluid_box)
-  with an engine `target_temperature`; the engine generates plasma during simulation. `fluidbox[i]=`
-  and `insert_fluid()` return without error but the value reads back `0`. Reactor/generator *input*
-  fluidboxes accept writes normally. Track rejected writes and subtract from expected counts.
-  **[empirical; aligns with the engine-managed output design per the API docs]**
+- **Fusion plasma writes DO NOT reject at 2.0.77.** `insert_fluid()` and `fluidbox[i]=` on fusion-reactor
+  output AND fusion-generator input boxes stick (10→10 readback) in every scratch condition tested:
+  fresh, inactive, settled-across-executions, segment-connected, active. **[empirical, 2.0.77, fluid-lab R14]**
+  One historical transfer-time `write_rejected` measurement (R11) remains real-but-unexplained. The plugin
+  currently still classifies these boxes engine-owned by connection category and never serializes/restores
+  plasma; revision is the queued shared-accessor /di-change.
+- **Entity-buffered fluid is NOT part of `get_fluid_segment_contents`** even when the box exposes a segment
+  ID — a reactor holding 500 locally reads `seg_contents = {}` on its own segment. **[empirical, 2.0.77,
+  fluid-lab R15]** KNOWN OPEN BUG: `SurfaceCounter`'s segment counted-once pass is order-dependent — an
+  empty pipe processed first claims the segment and buffered amounts are dropped (measured: a live audit
+  omitted a reactor's 271 fluoroketone). Shared-accessor symmetry means possible silent transfer loss
+  (unverified implication). Fix = the queued /di-change.
 - **Non-`default` fluid connection categories identify vanilla 2.0.77's unpipeable, engine-owned fluidboxes.**
   **[empirical, 2.0.77, fluid-lab P2 / plasma-engine-owned]** An exhaustive prototype census found that
   ordinary pipes and storage tanks expose only the `default` category; the `fusion-plasma` category occurs

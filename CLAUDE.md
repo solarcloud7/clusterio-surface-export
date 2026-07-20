@@ -607,8 +607,8 @@ At 2.0.77, LAB-I B7 measured `platform.destroy()` with no argument as a silent n
 **Cause**: `Number(null) === 0` in JS. Passing `0` as destination to Lua is truthy, so export is treated as transfer and unlock is skipped.
 **Fix**: In `instance.ts`, only treat `targetInstanceId` as a transfer destination if it is a positive integer (`> 0`); otherwise pass Lua `nil`.
 
-### 21. Fusion-Reactor Output Fluidboxes Reject Writes (Engine Limitation)
-Fusion-reactor **output** fluidboxes are engine-managed — `fluidbox[i]=` and `insert_fluid()` return without error but read back 0 (input fluidboxes accept writes normally). See [factorio-2.0-api-notes.md](docs/factorio-2.0-api-notes.md). The plugin tracks rejected writes in `fluid_restoration.lua` (`write_rejected`) and subtracts them from `expectedFluidCounts` before loss analysis. Covered by the `fusion-reactor-plasma-output` roundtrip test.
+### 21. Fusion Plasma Handling (revision queued)
+Fusion write rejection does NOT reproduce at 2.0.77 — reactor and generator plasma writes stick in every scratch condition (fluid-lab R14). Current shipped behavior still EXCLUDES plasma via prototype connection-category (`fluid-ownership.lua`) and tracks `write_rejected` in `fluid_restoration.lua`; revision is the queued shared-accessor /di-change. Until it lands, plasma never rides a transfer.
 
 ### 22. Activatable Entities Expose No Own Segment ID on 2.0.77 (REFINED: fusion reactor is the exception)
 Fluid-lab R7 found no tested activatable entity whose own fluidbox exposes a non-nil `get_fluid_segment_id(i)`, including a pump connected to segmented pipes/tanks; machine buffers likewise returned nil. Pipes/tanks expose segment IDs but are not activatable. `inventory-scanner.lua` handles the nil case by reading `fluidbox[i]` directly; without it, these fluids are silently dropped.

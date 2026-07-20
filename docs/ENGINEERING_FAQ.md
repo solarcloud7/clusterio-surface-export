@@ -194,8 +194,9 @@ A: ✅ Import replicates the source force's inserter bonuses onto the dest force
 **Q: What if I have fluids (chemical plants, foundries, fusion plasma)?**
 A: ✅ Measured exact and enforced exact. R10/R11 grounded aggregate-by-name conservation, including frozen-world
 injection at 1,359 entities (Pitfall #17, historical pre-activation fluid loss). The single gate requires zero
-volume drift within `1e-6`; only engine-rejected fusion output writes are subtracted (Pitfall #21, fusion outputs
-are engine-managed). Temperature remains diagnostic fidelity data (Pitfall #23, temperature merge and key boundaries).
+volume drift within `1e-6`; fusion plasma is currently excluded on both sides (Pitfall #21, fusion plasma
+handling — revision queued; write rejection does not reproduce at 2.0.77, fluid-lab R14). Temperature remains
+diagnostic fidelity data (Pitfall #23, temperature merge and key boundaries).
 
 **Q: What if fluids are lost after the item check?**
 A: There is no second check. Lua completes held items and fluid restoration while the destination is paused and
