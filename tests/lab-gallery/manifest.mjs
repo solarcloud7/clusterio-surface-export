@@ -108,7 +108,7 @@ const LIFECYCLE_ACTS = new Set(["copy-paste", "transfer", "clone"]);
 const PHYSICAL_READS = new Set(["item_count", "held", "crafting_progress", "spoil_percent", "fluid", "entity_present", "platform_present", "surface_entity_count"]);
 const CHECK_OPS = new Set(["eq", "ge", "le", "between", "monotone"]);
 const LIFECYCLE_ENDS = new Set(["source", "dest"]);
-const LIFECYCLE_EXPECTS = new Set(["success", "gate-failure"]);
+const LIFECYCLE_EXPECTS = new Set(["success", "gate-failure", "census-abort"]);
 const TRANSFER_SUITE = "tests/integration/pad-transfer-suite/run-tests.mjs";
 
 function validateLifecycle(fixture) {
@@ -170,6 +170,22 @@ function validateLifecycle(fixture) {
 	if (expect === "gate-failure" && !hasDestSabotage) {
 		throw new Error(`lifecycle for ${id}: expect "gate-failure" requires a dest-end arm_hook/mutate_force sabotage op`);
 	}
+	// census-abort (SC-6): the SOURCE census refuses the export — the destination is NEVER
+	// contacted. Sabotage is a SOURCE-end arm of the census-omission hook; dest-end anything is
+	// a contradiction (there is no dest side to this expect).
+	if (expect === "census-abort") {
+		const hasCensusArm = (lc.setup || []).some(op =>
+			op?.op === "arm_hook" && op.name === "test_force_census_omission" && (op.end ?? "source") === "source");
+		if (!hasCensusArm) {
+			throw new Error(`lifecycle for ${id}: expect "census-abort" requires a source-end arm_hook of test_force_census_omission`);
+		}
+		if ((lc.setup || []).some(op => (op?.end ?? "source") === "dest")) {
+			throw new Error(`lifecycle for ${id}: expect "census-abort" forbids dest-end ops (the dest is never contacted)`);
+		}
+		if ((lc.verify || []).some(check => check?.end === "dest")) {
+			throw new Error(`lifecycle for ${id}: expect "census-abort" forbids dest-end checks (no dest platform ever exists)`);
+		}
+	}
 	const checks = lc.verify || [];
 	let physicalWitness = !(checks.some(check => check?.check === "fingerprint" && check.enabled === false));
 	let hasReportField = false;
@@ -181,11 +197,11 @@ function validateLifecycle(fixture) {
 			if (act !== "transfer") throw new Error(`lifecycle for ${id}: check ends require act "transfer"`);
 			if (check.end === "source" && check.check === "physical_read") hasSourcePreservedWitness = true;
 		}
-		// A refused transfer has NO dest platform: gate-failure physical reads must explicitly
-		// declare end "source" (the engine's default end is "dest" — an implicit default here
-		// would silently point the witness at a platform that never exists).
-		if (expect === "gate-failure" && check.check === "physical_read" && check.end !== "source") {
-			throw new Error(`lifecycle for ${id}: gate-failure physical_read checks must declare end "source"`);
+		// A refused transfer has NO dest platform: gate-failure/census-abort physical reads must
+		// explicitly declare end "source" (the engine's default end is "dest" — an implicit
+		// default here would silently point the witness at a platform that never exists).
+		if ((expect === "gate-failure" || expect === "census-abort") && check.check === "physical_read" && check.end !== "source") {
+			throw new Error(`lifecycle for ${id}: ${expect} physical_read checks must declare end "source"`);
 		}
 		if (check.check === "physical_read") {
 			if (!PHYSICAL_READS.has(check.read)) throw new Error(`lifecycle for ${id}: unknown physical read "${check.read}"`);
@@ -195,6 +211,11 @@ function validateLifecycle(fixture) {
 			hasReportField = true;
 		} else if (check.check === "log_line") {
 			if (act !== "transfer" && act !== "clone") throw new Error(`lifecycle for ${id}: log_line checks require a transfer/clone act`);
+		} else if (check.check === "census_pass") {
+			// SC-6 Phase 4: assert the source census RAN and PASSED on a CLEAN transfer (the
+			// positive counterpart to census-abort). Only meaningful on a success transfer.
+			if (act !== "transfer") throw new Error(`lifecycle for ${id}: census_pass checks require act "transfer"`);
+			if (expect !== "success") throw new Error(`lifecycle for ${id}: census_pass checks require expect "success"`);
 		} else if (check.check !== "fingerprint") {
 			throw new Error(`lifecycle for ${id}: unknown check "${check.check}"`);
 		}
@@ -202,10 +223,10 @@ function validateLifecycle(fixture) {
 	if (hasReportField && !physicalWitness) {
 		throw new Error(`lifecycle for ${id}: report_field checks require at least one physical witness (grounding rule)`);
 	}
-	// A refused transfer's protective outcome is "source physically intact" — a gate-failure fixture
+	// A refused transfer's protective outcome is "source physically intact" — a refusal fixture
 	// that never physically reads the preserved source would go green on a broken preservation path.
-	if (expect === "gate-failure" && !hasSourcePreservedWitness) {
-		throw new Error(`lifecycle for ${id}: expect "gate-failure" requires a source-end physical_read (source-preserved witness)`);
+	if ((expect === "gate-failure" || expect === "census-abort") && !hasSourcePreservedWitness) {
+		throw new Error(`lifecycle for ${id}: expect "${expect}" requires a source-end physical_read (source-preserved witness)`);
 	}
 }
 
@@ -218,6 +239,8 @@ export function renderExpectFromLifecycle(fixture) {
 	const checks = lc.verify || [];
 	if ((lc.expect ?? "success") === "gate-failure") {
 		lines.push("GATE MUST REFUSE: dest discarded, source preserved");
+	} else if (lc.expect === "census-abort") {
+		lines.push("CENSUS MUST REFUSE: export aborted, dest never contacted, source preserved + unlocked");
 	}
 	if (!checks.some(check => check?.check === "fingerprint" && check.enabled === false)) {
 		lines.push("fingerprint matches the manifest pin");
@@ -233,6 +256,8 @@ export function renderExpectFromLifecycle(fixture) {
 			lines.push(`${endTag}report ${check.path} ${check.op} ${JSON.stringify(check.expected)}`);
 		} else if (check.check === "log_line") {
 			lines.push(`${endTag}log line matches ${check.pattern}`);
+		} else if (check.check === "census_pass") {
+			lines.push("source census ran + passed (paired-reads, fail-closed)");
 		}
 	}
 	return lines;

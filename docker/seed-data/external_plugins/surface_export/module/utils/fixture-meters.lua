@@ -104,6 +104,12 @@ local function measure_omnibus_adversarial(surface, anchor)
     local recipe, quality = m.get_recipe()
     r.recipe = recipe and recipe.name or nil
     r.recipeQuality = quality and quality.name or nil
+    -- Quality-keyed splitter filter (the splitter-quality-filter law, absorbed from the retired
+    -- entity-roundtrip suite 2026-07-20): quality must ride the filter through paste AND transfer.
+    local sp = anchored(surface, anchor, "splitter", "omnibus adversarial")
+    local sf = sp.splitter_filter
+    r.splitterFilter = sf and sf.name or "absent"
+    r.splitterFilterQuality = sf and sf.quality and (sf.quality.name or sf.quality) or "absent"
     return r
 end
 
@@ -221,6 +227,77 @@ local function measure_scratch_anchor(surface, anchor, ename)
         if hs_ok and hs and hs.valid_for_read then out.held = hs.count end
     end
     return out
+end
+
+-- Combined belt omnibus (steady-state class): structure counts + total belt-borne items (constant
+-- by saturation physics) + stacking + over-pack. DEFINITIONS (this meter is the law's instrument):
+--   * steadyItems = sum of get_item_count() over every belt-class entity in the pad area
+--   * maxStack    = max per-position stack count seen across all transport lines
+--   * overpackedLanes = transport lines on a single entity holding MORE than 4 items (over the
+--     nominal per-tile lane capacity — the owner's hand-built corner over-pack)
+local function measure_belt_combined(surface, area)
+    local belt_types = { "transport-belt", "underground-belt", "splitter", "loader", "loader-1x1" }
+    local counts = { ["transport-belt"] = 0, ["underground-belt"] = 0, ["splitter"] = 0, loader = 0 }
+    local steady, max_stack, overpacked = 0, 0, 0
+    local filters = {}
+    for _, e in pairs(surface.find_entities_filtered({ type = belt_types, area = area })) do
+        if e.type == "loader" or e.type == "loader-1x1" then
+            counts.loader = counts.loader + 1
+            -- intentional probe: get_filter errors past the loader's filter_slot_count; nil = unfiltered
+            local f_ok, f = pcall(function() return e.get_filter(1) end)
+            if f_ok and f and f.name then filters[(f.name.name or f.name)] = true end
+        else
+            counts[e.type] = counts[e.type] + 1
+        end
+        steady = steady + e.get_item_count()
+        for li = 1, e.get_max_transport_line_index() do
+            local line = e.get_transport_line(li)
+            local line_total = 0
+            for ci = 1, #line do
+                local stack = line[ci]
+                if stack.valid_for_read then
+                    line_total = line_total + stack.count
+                    if stack.count > max_stack then max_stack = stack.count end
+                end
+            end
+            if line_total > 4 then overpacked = overpacked + 1 end
+        end
+    end
+    return {
+        beltCount = counts["transport-belt"], splitterCount = counts["splitter"],
+        undergroundCount = counts["underground-belt"], loaderCount = counts.loader,
+        steadyItems = steady, maxStack = max_stack,
+        overpackedLanes = overpacked, hasOverpackedCornerLanes = overpacked > 0,
+        loaderFilterIron = filters["iron-plate"] and "iron-plate" or "absent",
+        loaderFilterCopper = filters["copper-plate"] and "copper-plate" or "absent",
+    }
+end
+
+-- Acid-fed uranium miner (owner-hand-built, frozen): tank + drill fluid, resources under the pad,
+-- loose ground items, drill identity.
+local function measure_mining_drill_acid(surface, area, anchor)
+    local dx, dy = anchor("big-mining-drill")
+    local drill = at(surface, "big-mining-drill", dx, dy)
+    local tx, ty = anchor("storage-tank")
+    local tank = at(surface, "storage-tank", tx, ty)
+    local drill_acid = 0
+    if drill then
+        local fb = drill.fluidbox
+        for i = 1, #fb do
+            local f = fb[i]
+            if f then drill_acid = drill_acid + f.amount end
+        end
+    end
+    local resources = surface.find_entities_filtered({ type = "resource", area = area })
+    local resource_total = 0
+    for _, r in pairs(resources) do resource_total = resource_total + r.amount end
+    return {
+        tankAcid = tank and tank.get_fluid_count("sulfuric-acid") or nil,
+        drillAcid = drill_acid,
+        resourceCount = #resources, resourceTotal = resource_total,
+        groundItems = #surface.find_entities_filtered({ type = "item-entity", area = area }),
+        drillName = drill and drill.name or "absent",
+    }
 end
 
 local function measure_omnibus_schedule(platform)
@@ -599,6 +676,8 @@ M.measure_omnibus_ghosts = measure_omnibus_ghosts
 M.measure_omnibus_ground = measure_omnibus_ground
 M.measure_omnibus_spoilage = measure_omnibus_spoilage
 M.measure_scratch_anchor = measure_scratch_anchor
+M.measure_belt_combined = measure_belt_combined
+M.measure_mining_drill_acid = measure_mining_drill_acid
 M.measure_omnibus_schedule = measure_omnibus_schedule
 M.measure_energy = measure_energy
 M.measure_belt_corner = measure_belt_corner

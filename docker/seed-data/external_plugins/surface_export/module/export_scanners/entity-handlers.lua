@@ -605,10 +605,22 @@ EntityHandlers["turret"] = function(entity)
   return data
 end
 
+--- Resource handler (ore patches on platform/surface fixtures): the ONLY state a resource carries
+--- is its remaining amount — without it, import recreates the patch at the engine default
+--- (50/tile; the mining-drill-acid-feed pad measured 30398 -> 200 on paste, 2026-07-20).
+EntityHandlers["resource"] = function(entity)
+  return { amount = entity.amount }
+end
+
 --- Mining drill handler
 EntityHandlers["mining-drill"] = function(entity)
   local data = {
-    inventories = InventoryScanner.extract_all_inventories(entity)
+    inventories = InventoryScanner.extract_all_inventories(entity),
+    -- fluids: acid-fed drills (big mining drill on uranium) hold sulfuric acid in a fluidbox.
+    -- Pitfall #18 class (a specific handler that only exports inventories silently drops fluid
+    -- data); caught live 2026-07-20 by the mining-drill-acid-feed pad audit (paste lost exactly
+    -- the drill's 104.4 acid).
+    fluids = InventoryScanner.extract_fluids(entity)
   }
 
   -- Mining target

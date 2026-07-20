@@ -15,6 +15,7 @@ const handlerInventoryOwners = new Set([
 ]);
 const handlerFluidOwners = new Set([
 	"assembling-machine", "furnace", "fluid-storage", "pipe", "pipe-to-ground", "pump",
+	"mining-drill",
 ]);
 const categories = [
 	"assembling-machine", "furnace", "transport-belt", "underground-belt", "splitter",
@@ -22,7 +23,7 @@ const categories = [
 	"car", "spider-vehicle", "combinator", "turret", "mining-drill", "lab", "roboport",
 	"artillery-turret", "rocket-silo", "gate", "power-switch", "agricultural-tower",
 	"programmable-speaker", "lamp", "display-panel", "entity-ghost", "tile-ghost", "item-request-proxy",
-	"train-stop",
+	"train-stop", "resource",
 ];
 // Independent prototype/placement evidence from Factorio 2.0.77. This is deliberately
 // not derived from handlerFluidOwners: capability is the question, ownership is the answer.
@@ -34,7 +35,10 @@ const specializedFluidCapabilities = new Map([
 	["pump", { platformReachable: true, evidence: "pump: 1 fluidbox, can_place=true" }],
 	["train", { platformReachable: false, evidence: "fluid-wagon requires gravity>=1; platform gravity=0" }],
 	["turret", { platformReachable: false, evidence: "flamethrower-turret requires pressure>=10; platform pressure=0" }],
-	["mining-drill", { platformReachable: false, evidence: "placeable drill has mining_target=nil and live fluidbox length 0" }],
+	// REFUTED 2026-07-20 by the mining-drill-acid-feed pad: an acid-fed big-mining-drill on the
+	// gallery platform (resources present in the gallery mod set) held 104.40625 sulfuric acid in
+	// its live fluidbox — the old "fluidbox length 0" reading was for a targetless drill only.
+	["mining-drill", { platformReachable: true, evidence: "big-mining-drill on the omnibus pad: live fluidbox amount 104.40625 measured 2026-07-20" }],
 ]);
 const ownership = new Map(categories.map(category => [category, {
 	inventories: handlerInventoryOwners.has(category) ? "handler" : "shared-dispatcher",

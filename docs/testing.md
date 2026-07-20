@@ -283,14 +283,21 @@ Evidence tags and measurement details are in
 | Check | Compares | Runs | Anchor |
 |---|---|---|---|
 | **Exact transfer gate** | serialized-expected vs **destination** physical census (items exact per key; fluids exact aggregate-by-name, epsilon 1e-6) | production, every transfer, before source deletion | [transfer-validation.lua](../docker/seed-data/external_plugins/surface_export/module/validators/transfer-validation.lua) |
-| **Meter-drift sentinel** | serialized-expected (`expectedItemCounts`) vs **source** physical census | integration test only | [transfer-fidelity](../tests/integration/transfer-fidelity/run-tests.ps1) |
+| **Source census (paired reads)** | serialized vs **source** physical census, per-entity, in the same Lua execution each is read; fail-closed abort on mismatch | production, every transfer export, before send | [export-pipeline.lua](../docker/seed-data/external_plugins/surface_export/module/core/export-pipeline.lua) + [census-accumulator.lua](../docker/seed-data/external_plugins/surface_export/module/export_scanners/census-accumulator.lua); witnessed live by the `census-omission-abort` + `transfer-workhorse` (census_pass) pads via [pad-transfer-suite](../tests/integration/pad-transfer-suite/run-tests.mjs) |
 | **Loss-injection teeth** | gate behavior under a forced physical shortfall (must fail closed, preserve source) | pad fixtures through the real transfer | the `gate-item-loss` / `gate-fluid-loss` / `rollback-validation-failure` pads, run by [pad-transfer-suite](../tests/integration/pad-transfer-suite/run-tests.mjs) |
 | **Fidelity fixtures** | source physical census vs destination physical census for a placed, known quantity | integration tests | the `omnibus-ground-items` pad fixture (see [MIGRATION.md](../tests/integration/MIGRATION.md)), [belt-loss-replay](../tests/integration/belt-loss-replay/run-tests.ps1) |
 
-The production export path performs **no source-side physical census**: the gate's expected counts
-derive from the serializer's own output (verification is generated from serialized data — see
-Pitfall #16, atomic belt scan, in [CLAUDE.md](../CLAUDE.md)). The meter-drift sentinel covers that
-axis in CI only.
+The frozen destination gate's expected counts derive from the serializer's own output (verification
+is generated from serialized data — see Pitfall #16, atomic belt scan, in [CLAUDE.md](../CLAUDE.md)),
+so a serializer that drops an item makes BOTH the payload and the gate's "expected" wrong and they
+agree while silently losing data. The **source census** closes that blind spot in PRODUCTION: it
+pairs a physical read of each entity with its serialized form in the same execution and aborts the
+transfer fail-closed on any mismatch (SC-6). It replaced the old CI-only meter-drift sentinel —
+stronger on frequency (every transfer, not CI-only), attribution (per-entity rows), and it fails
+closed. One caveat: the census physical read funnels through `InventoryScanner.extract_all_inventories`
+(the serializer's own primitive), NOT the sentinel's engine-native `get_item_count`, so a regression
+inside that shared enumerator is invisible to the census; the `engine-invariants` get_item_count-
+completeness test is the standing independent backstop for the enumerator itself.
 
 ### Freeze policy by entity family
 
@@ -411,7 +418,7 @@ the CI step, so a green run here ≈ a green PR.
 ```pwsh
 node tools/run-integration-tests.mjs --list           # see all scenarios
 node tools/run-integration-tests.mjs                  # run the FULL suite (~3–4 min)
-node tools/run-integration-tests.mjs --only platform-roundtrip   # one scenario
+node tools/run-integration-tests.mjs --only pad-transfer-suite   # the pad transfer suite (incl. the 1359-entity workhorse scale leg)
 node tools/run-integration-tests.mjs --only 'fidelity|gate'      # regex filter
 ```
 

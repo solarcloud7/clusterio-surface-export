@@ -32,7 +32,6 @@ const integrationDir = join(repoRoot, "tests", "integration");
 const SKIP = {};
 // Extra args forwarded to a specific test's script.
 const ARGS = {
-	"platform-roundtrip": ["-ShowDetails"],
 };
 
 // ── Args ────────────────────────────────────────────────────────────────────────────────────────

@@ -40,7 +40,7 @@ A Clusterio plugin and Factorio mod that serializes complete Space Age platform 
 - **Deferred Activation**: Entities stay deactivated through validation — machines never process resources during transfer
 - **Clusterio Integration**: Full plugin with controller storage, chunked RCON transport, and inter-instance transfer
 - **Transaction Logging**: Every transfer recorded with phase timing, entity breakdowns, per-item verification
-- **Integration Tests**: Automated platform-roundtrip (4 tests) and entity-roundtrip (28 tests) suites
+- **Integration Tests**: The pad-fixture system (`/test-run` + `pad-transfer-suite`) plus protocol/infra suites — see `tests/integration/MIGRATION.md`
 - **Factorio 2.0 / Space Age**: Handles quality, stacked belt items, fusion, cargo bays, and all read-only API changes
 
 ## Performance
@@ -249,11 +249,9 @@ these for you.
 Two test suites verify platform transfer correctness:
 
 ```powershell
-# Platform roundtrip: export → transfer → import → verify (4 tests)
-.\tests\integration\platform-roundtrip\run-tests.ps1
+# Pad transfer suite: real cross-instance transfers of every transfer-act pad fixture
+node tests/integration/pad-transfer-suite/run-tests.mjs
 
-# Entity roundtrip: per-entity-type verification (28 tests)
-.\tests\integration\entity-roundtrip\run-tests.ps1
 ```
 
 Tests run against the Docker cluster and verify item counts, entity positions, and data integrity.

@@ -123,6 +123,27 @@ local function report_delta(left, right)
   return table.concat(parts, "; ", 1, math.min(#parts, 4))
 end
 
+--- Aggregate audit for LIVE steady-state fixtures (fixture.auditAggregateOnly): a saturated belt
+--- loop rotates its item MIX between the copy tick and the audit tick, so a per-name compare
+--- false-fails on a physically perfect paste. The class law is the conserved TOTAL (the
+--- steady-state fixture class definition); per-name fidelity for frozen fixtures keeps the strict
+--- report_delta above.
+local function report_delta_aggregate(left, right)
+  if left.entity_count ~= right.entity_count then
+    return string.format("entities %d vs %d", left.entity_count, right.entity_count)
+  end
+  local function total(t)
+    local s = 0
+    for _, c in pairs(t or {}) do s = s + c end
+    return s
+  end
+  local li, ri = total(left.items), total(right.items)
+  if li ~= ri then return string.format("item total %s vs %s", li, ri) end
+  local lf, rf = total(left.fluids), total(right.fluids)
+  if math.abs(lf - rf) > 1e-6 then return string.format("fluid total %s vs %s", lf, rf) end
+  return nil
+end
+
 -- === fingerprint dispatch =====================================================================
 --
 -- Locators are code; expected values are the roster fingerprint (single source of truth). Every
@@ -162,6 +183,10 @@ local DISPATCH = {
   ["rollback-validation-failure"]   = { args = "anchor", meter = function(s, a) return FM.measure_scratch_anchor(s, a, "steel-chest") end },
   ["failed-entity-attribution"]     = { args = "anchor", meter = function(s, a) return FM.measure_scratch_anchor(s, a, "steel-chest") end },
   ["force-bonus-held"]              = { args = "anchor", meter = function(s, a) return FM.measure_scratch_anchor(s, a, "bulk-inserter") end },
+  ["census-omission-abort"]         = { args = "anchor", meter = function(s, a) return FM.measure_scratch_anchor(s, a, "steel-chest") end },
+  -- owner-hand-built pads (previously "skipped: no meter")
+  ["belt-combined-omnibus"]         = { args = "area", meter = FM.measure_belt_combined },
+  ["mining-drill-acid-feed"]        = { args = "both", meter = FM.measure_mining_drill_acid },
   -- omnibus pads, area-scoped fingerprints (whole-half scans)
   ["omnibus-ghosts-and-proxies"]    = { args = "area", meter = FM.measure_omnibus_ghosts },
   ["omnibus-ground-items"]          = { args = "area", meter = FM.measure_omnibus_ground },
@@ -200,6 +225,8 @@ end
 local function pad_reading(surface, cell, fixture, dispatch, roster, dx, rect)
   if dispatch.args == "area" then
     return dispatch.meter(surface, rect)
+  elseif dispatch.args == "both" then
+    return dispatch.meter(surface, rect, FM.anchor_lookup(roster, fixture.id, dx))
   end
   return dispatch.meter(surface, FM.anchor_lookup(roster, fixture.id, dx))
 end
@@ -274,7 +301,7 @@ local function run_pad_body(player, surface, cell, fixture, dispatch, roster, ct
     set_status(cell.text_obj, comb, panel, "fail", "audit failed")
     return "fail", "audit failed"
   end
-  local delta = report_delta(left.report, right.report)
+  local delta = (fixture.auditAggregateOnly and report_delta_aggregate or report_delta)(left.report, right.report)
   if delta then
     set_status(cell.text_obj, comb, panel, "fail", delta)
     return "fail", delta

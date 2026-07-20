@@ -489,6 +489,11 @@ function ExportPipeline.complete(job)
 			ExportPipeline.abort_transfer_on_census_mismatch(job)
 			return
 		end
+		-- CLEAN transfer: bank a compact debug-gated census-pass witness (SC-6 Phase 4). Proves the
+		-- paired-reads census RAN and PASSED on this real transfer — the destination import result
+		-- cannot show it (a clean verdict is never attached to the transmitted payload). No payload
+		-- change; source-side only; production (debug off) writes nothing.
+		DebugExport.export_census_pass(job.census_verdict, job.platform_name)
 	else
 		-- Non-transfer export (file / clone / uploaded-source): no source-delete risk, so NEVER abort.
 		-- Attach the verdict for inspection; log a loud warning on a mismatch, export the payload anyway.

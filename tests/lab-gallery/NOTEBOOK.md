@@ -420,3 +420,44 @@ queued with P5.
 - INCIDENT (self-inflicted, rule reaffirmed): the first pad build was LOST because patch-and-reset hard-restarts the gallery container without an exit-save and the build was not checkpointed first. Rebuild + immediate server_save; checkpoint BEFORE every deploy, always.
 - Evidence: pad-transfer-suite 2x consecutive ALL PASS on the final shapes (6 transfer fixtures) after the di-change review (MERGE-READY; OBS-1/OBS-2 fixed, re-earned 2x green). /test-run: 16 pass / 0 fail / 0 missing / 0 unknown / 8 skipped (6 transfer-act + 2 no-meter). Snapshot artifact 3B98C305 (1961 entities) pinned; suite preflight verifies it.
 - Deleted: gate-detects-loss, fluid-gate-detects-loss, rollback, failed-entity-loss, force-bonus-sync (MIGRATION.md updated; CLAUDE.md Pitfall #28/#29 guard citations + di-change skill + testing.md repointed at the pad fixtures).
+
+## 2026-07-20 — SC-69 wave 2: workhorse scale leg, two serializer gaps fixed, meters for the hand-built pads
+
+- transfer-workhorse gained a transfer-act lifecycle: the WHOLE 1359-entity platform is renamed into the scratch namespace (platform.name measured WRITABLE at 2.0.77; throwaway golden copy) and rides the real /transfer-platform; dest verify = surface_entity_count eq 1359 (new read, locator {self}) + validation_success. 2x consecutive suite ALL PASS (7 transfer fixtures).
+- SERIALIZER GAP 3 (Pitfall #18 recurrence): the mining-drill handler exported inventories but never fluids - an acid-fed big mining drill silently dropped its 104.40625 sulfuric acid on every paste AND transfer. Caught by the mining-drill-acid-feed pad audit (13364 -> 13259.59375). Fixed: handler now extracts fluids.
+- SERIALIZER GAP 4: resource entities carried NO amount - import recreated ore patches at the engine default (30398 -> 200 measured). Fixed: EntityHandlers["resource"] captures amount; create_entity passes it at creation. Kill-measurement: the pad audit now passes exactly.
+- New meters: measure_belt_combined (definitions ARE the instrument: steadyItems = sum get_item_count over belt-class, overpackedLanes = single-entity lanes holding >4) and measure_mining_drill_acid. Fingerprints re-pinned to the instrument readings (belt rev3: overpackedLanes 13, drops the stale chestCount; mining rev2: exact fluid doubles 13050.78125 / 104.40625).
+- KNOWN-OPEN HAZARD banked honestly: the belt pad PASTE loses 4 items on over-packed corner lanes (372 -> 368, aggregate audit) - the Phase-5B belt-restore class. Fixture runnerExcluded with the hazard as its visible reason; re-enable when side-closed batched restore lands. New auditAggregateOnly flag for LIVE steady-state fixtures (per-name audit false-fails while the mix rotates; the class law is the conserved TOTAL).
+- push-roster non-ASCII fail-loud guard fired on an em-dash in the hazard string (working as designed).
+- /test-run: 17 passed / 0 failed / 0 missing / 0 unknown / 7 skipped. platform-roundtrip DELETED (absorbed by the workhorse leg); transfer-fidelity KEPT as the meter-drift sentinel until SC-6 paired-reads census ships (MIGRATION.md corrected).
+
+## 2026-07-20 — SC-69 closeout: splitter-quality law on the adversarial pad; entity-roundtrip DELETED
+
+- Legendary iron-plate splitter filter baked at (15,-14.5) on omnibus-adversarial-inventory (rev2); meter reads splitter_filter name+quality; fingerprint pins both. /test-run 17/0/0/0 - the legendary quality SURVIVES the paste (LEFT + PASTE fingerprints).
+- quality-dimension-ownership.test.cjs repointed from the retired entity-roundtrip test-cases.json to the manifest pin; entity-roundtrip DELETED (MIGRATION.md updated).
+- specialized-inventory-accounting matrix updated: resource handler registered; mining-drill is now a fluid OWNER with platformReachable:true (the pad-measured refutation of the old "fluidbox length 0" evidence).
+- Snapshot re-banked clean-ish (SHA 6D05C939..., census 2020 - includes inert right-half compare residue, noted in the manifest; mutable anchors banked EMPTY). pad-transfer-suite ALL PASS on the new golden artifact.
+
+## 2026-07-20 — Phase 5B part 1: undo_inserted_delta crash FIXED + kill-measured
+
+- The BELT-R15 latent crash (belt_restoration.lua undo path iterated get_detailed_contents stack handles AFTER remove_item invalidated them): restructured into a PURE-READ pass (plain-number copies, cross-line unique_id dedup preserved per BELT-R9) then ONE untargeted remove_item per line, no handle reads after mutation. Semantics unchanged (line.remove_item was never stack-targeted).
+- Logic tooth: belt-side-restore fake-line selftest green (quality-aware rollback preserved).
+- Real-handle kill-measurement: the archived R15 batched driver restored as tests/integration/belt-loss-replay/run-r15-crashfix-probe.mjs (DUP-233855 payload, aged targets across executions). THOUSANDS of leak-undos fired (per-step leaks 1344/1808/2240...), ZERO anomalies, ZERO crashes, clean release state. Pre-fix the first leak hard-crashed.
+- The probe overall verdict stays NO-GO (inexact sides under aged-target batching) — that is the UNCHANGED R15 design law (Phase B must be side-closed same-execution batches), not a regression. Evidence banked at tests/integration/belt-loss-replay/r15-crashfix-evidence.json.
+- Note: restore_side_groups has NO production caller yet (selftest/lab only) — the crash was a landmine for the Phase-B adoption, now defused ahead of it.
+
+## 2026-07-20 — SC-6 Phase 3: paired-reads census proven LIVE through a real transfer
+
+- New lifecycle expect `census-abort`: SOURCE census refuses a serializer-omission transfer. Schema teeth (manifest.mjs): requires a source-end arm of test_force_census_omission, FORBIDS any dest-end op/check (the dest is never contacted), requires a source-end physical_read preserved-source witness; census-abort physical reads must declare end source. 3 red-path teeth + green.
+- Orchestrator census-abort branch: fires the real /transfer-platform, polls host-1 for the failure_black_box_census_*.json bundle, asserts reason=source_census_mismatch + verdict_ok=false + mismatch_count>=1 + the hook CONSUME LOG LINE (direct witness, grep factorio-current.log, never inferred) + dest.neverContacted + source.preserved + source-end physical + source.unlocked.
+- New pad census-omission-abort (slot 92,22); snapshot re-pinned (SHA 910637FF, census 2021).
+- STRUCTURAL SAFETY (opus di-change, MERGE-READY): the hook mutates the SERIALIZED entity_data only, never the physical entity; CensusAccumulator.record then compares live physical vs serialized IN THE SAME LOOP. So the source-preserved witness (physical chest=100) is invariant regardless of which entity the hook consumes (measured: it hit the hub's foundation, not the chest) - no flake path. Belts skip (skip_belt_items) so the hook only fires on a census-recorded non-belt entity - mismatch guaranteed.
+- pad-transfer-suite: 8 fixtures, 2x consecutive ALL PASS. transfer-fidelity RETAINED (MIGRATION.md) - deletion gated on SC-6 Phase 4 adding a dest-readable clean-transfer census witness.
+
+## 2026-07-20 — SC-6 Phase 4: positive census witness + transfer-fidelity sentinel absorbed/deleted
+
+- New debug-gated DebugExport.export_census_pass writes a COMPACT census_pass_<name>_<tick>.json on the CLEAN transfer branch (ok, entity_count, item/fluid totals, mismatch_count) - source-side, NO payload change, protective abort path untouched. Proves the census RAN + PASSED on a real transfer (the dest import result can't show a clean verdict - it's not attached to the payload).
+- New lifecycle check `census_pass` (act=transfer, expect=success; orchestrator-side + fixture minEntities floor). transfer-workhorse carries it: census.ran + census.ok(ok=true/0-mismatch) + census.nonVacuous(entity_count 1358 >= 1000). 2x consecutive suite ALL PASS.
+- transfer-fidelity (meter-drift sentinel) DELETED - absorbed by the production census: same serialized-vs-source-physical comparison, per-entity, fail-closed, EVERY transfer, now witnessed both directions (census-omission-abort refuses; workhorse census_pass proves clean).
+- opus di-change: MERGE-READY after fixing my own false doc repoints (BLOCKERS were docs-only, not code): I'd wrongly claimed the census uses get_item_count - it reads through InventoryScanner.extract_all_inventories (the serializer's own primitive). Corrected across api-notes + engine-invariants (rescoped to a standing get_item_count-completeness engine-fact, the independent backstop for the shared enumerator) + softened "strictly stronger" in MIGRATION/testing to name the one axis lost (engine-native oracle independence). ENGINEERING_FAQ tier boundary confirmed correct (top-level items+fluids only; never "100%" unqualified).
+- Residual honest caveat banked: a regression INSIDE extract_all_inventories nets to census delta 0 (both sides share it); engine-invariants get_item_count test is that enumerator's independent backstop.

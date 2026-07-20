@@ -202,9 +202,11 @@ Consequence: fluid does not live per-entity — it lives in the shared segment. 
   - On an inserter it **includes the held hand** (`held_stack`): measured `get_item_count(held.name) == held.count`
     across 8 holding inserters.
 - **So a physical total computed as `get_item_count` over every entity is complete** — inventories **+** belt
-  lines **+** inserter-held — and is not inflated by shared belt runs. This is what the freeze-first
-  `transfer-fidelity` sentinel relies on (its physical meter == the validator's `count_all_items`, both
-  belt-aware; the only residual is the craft window, which freezing the source eliminates).
+  lines **+** inserter-held — and is not inflated by shared belt runs (a general engine fact, guarded by
+  `tests/integration/engine-invariants`). NOTE: the production paired-reads source census does NOT use
+  `get_item_count` as its physical oracle — it reads through `InventoryScanner.extract_all_inventories`
+  (the same primitive the serializer uses); this completeness fact is what a `get_item_count`-based meter
+  would rely on, retained here as engine truth.
 - **Do NOT add a separate `get_transport_line` pass on top of a `get_item_count` total — that double-counts the
   belts** (`get_item_count` already includes them).
 - **`line_equals` is neither identity nor content equality — but it IS the same-execution side partition

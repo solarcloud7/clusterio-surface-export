@@ -234,7 +234,10 @@ end
 -- Resolve a physical_read locator to a surface + entity/area context.
 local function resolve_read_locator(surface, fixture, locator, dx)
 	dx = dx or 0
-	if locator.platform then
+	if locator.self then
+		-- the verify surface itself (platform-kind transfer fixtures: the arrived scratch platform)
+		return { kind = "self", surface = surface }
+	elseif locator.platform then
 		local psurface = FixtureMeters.surface_for_platform(locator.platform)
 		return { kind = "platform", platform_name = locator.platform, surface = psurface }
 	elseif locator.area then
@@ -359,6 +362,8 @@ function LifecycleEngine.run_verify(surface, fixture, ctx, extra)
 			result = { name = "report_field", verdict = "skipped", detail = "report_field is orchestrator-side" }
 		elseif check.check == "log_line" then
 			result = { name = "log_line", verdict = "skipped", detail = "log_line is orchestrator-side" }
+		elseif check.check == "census_pass" then
+			result = { name = "census_pass", verdict = "skipped", detail = "census_pass is orchestrator-side" }
 		elseif check.check == "fingerprint" then
 			result = nil -- caller owns the fingerprint compare
 		else

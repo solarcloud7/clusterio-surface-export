@@ -102,6 +102,37 @@ function DebugExport.export_source_platform(platform_data, platform_name)
   return DebugExport.write_json(filename, platform_data, "Source platform export: " .. (platform_name or "unknown"))
 end
 
+--- Bank a COMPACT source-census-pass witness on a CLEAN transfer (debug-gated; the positive
+--- counterpart to write_failure_black_box). Records only the verdict summary — ok flag, per-kind
+--- totals, mismatch count (always 0 on this path) — never the full totals maps or mismatch rows,
+--- so it stays tiny and never touches the transmitted payload. Lets a test witness that the
+--- paired-reads census actually RAN and PASSED on a real transfer (SC-6 Phase 4), which the
+--- destination import result cannot show (a clean verdict is not attached to the payload).
+--- @param verdict table: CensusAccumulator.verdict output ({ ok, mismatches, totals? })
+--- @param platform_name string
+function DebugExport.export_census_pass(verdict, platform_name)
+  if not DebugExport.is_enabled() then return false end
+  local safe_name = string.gsub(platform_name or "unknown", "[^%w_-]", "_")
+  local filename = string.format("census_pass_%s_%d.json", safe_name, game.tick)
+  local totals = verdict.totals or {}
+  local item_total = 0
+  for _, amount in pairs(totals.physical_items or {}) do item_total = item_total + amount end
+  local fluid_total = 0
+  for _, amount in pairs(totals.physical_fluids_by_name or {}) do fluid_total = fluid_total + amount end
+  local summary = {
+    ok = verdict.ok,
+    mismatch_count = verdict.mismatches and #verdict.mismatches or 0,
+    entity_count = totals.entity_count,
+    item_total = item_total,
+    fluid_total = fluid_total,
+    items_exact = totals.items_exact,
+    fluids_exact = totals.fluids_exact,
+    platform_name = platform_name,
+    gate_tick = game.tick,
+  }
+  return DebugExport.write_json(filename, summary, "Census pass: " .. (platform_name or "unknown"))
+end
+
 --- Export platform data after import (destination platform)
 --- @param platform_data table: The imported/scanned platform data
 --- @param platform_name string: Name of the platform

@@ -75,9 +75,6 @@ local function lifecycle_setup(fixture_id, run_id)
   if not (lc and lc.act == "transfer") then
     error("fixture '" .. fixture_id .. "' has no transfer-act lifecycle")
   end
-  if type(fixture.origin) ~= "table" then
-    error("fixture '" .. fixture_id .. "' has no pad origin")
-  end
   local surface = pad_surface(fixture)
 
   -- Same run shape as the local runner: reset both halves, then setup (write-asserted ops).
@@ -90,11 +87,31 @@ local function lifecycle_setup(fixture_id, run_id)
     error("setup failed: " .. tostring(setup_err))
   end
 
-  -- Scratch platform: pad LEFT half cloned at identical coordinates.
   local scratch_name = SCRATCH_PREFIX .. fixture_id .. "-" .. tostring(run_id)
   if platform_by_name(scratch_name) then
     LifecycleEngine.cleanup(ctx)
     error("scratch platform '" .. scratch_name .. "' already exists (stale run — teardown first)")
+  end
+
+  -- Platform-kind fixture (scale coverage): the WHOLE fixture platform is the payload. On this
+  -- throwaway golden copy we RENAME it into the scratch namespace (name is a display label, not
+  -- identity — Pitfall #31) so teardown/leftover sweeps and the dest verify resolve it uniformly.
+  -- The batch restore discards this world, so the rename never reaches the live gallery.
+  if fixture.padKind == "platform" then
+    local platform = platform_by_name(fixture.platformName)
+    if not platform then
+      LifecycleEngine.cleanup(ctx)
+      error("platform fixture '" .. tostring(fixture.platformName) .. "' missing")
+    end
+    platform.name = scratch_name
+    runs_store()[fixture_id] = { run_id = tostring(run_id), scratch_name = scratch_name, ctx = ctx }
+    log("[lifecycle] setup " .. fixture_id .. ": renamed platform to " .. scratch_name ..
+      " (index " .. tostring(platform.index) .. ")")
+    return { ok = true, scratchName = scratch_name, scratchIndex = platform.index, captured = ctx.captured }
+  end
+
+  if type(fixture.origin) ~= "table" then
+    error("fixture '" .. fixture_id .. "' has no pad origin")
   end
   local platform = game.forces.player.create_space_platform({
     name = scratch_name,

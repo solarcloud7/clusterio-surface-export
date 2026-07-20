@@ -208,6 +208,14 @@ function Deserializer.create_entity(surface, entity_data)
     params.type = entity_data.specific_data.belt_to_ground_type  -- "input" or "output"
   end
 
+  -- resource: without an explicit amount create_entity spawns the ENGINE DEFAULT (50/tile) —
+  -- 30398 ore came back as 200 on the mining-drill-acid-feed pad (measured 2026-07-20). The
+  -- amount rides specific_data (EntityHandlers["resource"]) and must be set at creation.
+  if entity_data.type == "resource" and entity_data.specific_data
+      and entity_data.specific_data.amount then
+    params.amount = entity_data.specific_data.amount
+  end
+
   -- item-request-proxy: the engine REQUIRES a live target entity (plus the request payload) at
   -- creation — a bare {name, position} create throws, and the surrounding pcall turned that throw
   -- into a silent drop on every transfer (the proxy transfer-loss bug, measured 2026-07-19 on the

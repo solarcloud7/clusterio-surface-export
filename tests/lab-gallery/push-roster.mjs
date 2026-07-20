@@ -31,7 +31,7 @@ const CHUNK_SIZE = 40_000;
 // artifact SHAs, notes) the runner must never depend on.
 const ROSTER_FIELDS = [
 	"id", "name", "padKind", "platformName", "surfaceName", "origin", "anchors",
-	"fingerprint", "runnerExcluded", "lifecycle", "pasteExclude",
+	"fingerprint", "runnerExcluded", "lifecycle", "pasteExclude", "auditAggregateOnly",
 ];
 
 function trimFixture(fixture) {

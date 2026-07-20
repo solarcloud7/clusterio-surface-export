@@ -133,14 +133,18 @@ unlocks the source **immediately** (`tryUnlockSource`). No loss; the source is r
 uploaded-JSON / clone import path still uses the loose tolerances — the exact gate is transfer-only.
 
 **Q: What if a serializer bug forgets a whole container of state (like the burner-fuel incident) — does the exact gate catch it?**
-A: ⚠️ Not by itself. The gate proves *serialized == restored*, not *source == destination* — an omission is absent
-from both sides of the comparison, so the gate passes and the loss is silent. Items and fluids are protected today
-by the CI meter-drift sentinel (`transfer-fidelity` compares the validator's expected counts against an independent
-physical count of the source) and by the owner-approved paired-reads source census (in progress), which converts
-any omission into a loud pre-transfer abort with the source preserved. Non-countable state (circuit configs,
-crafting progress, schedules, spoilage) is protected only by enumeration — per-category handlers plus per-dimension
-roundtrip fixtures. See the tier table in the "guarantee boundary" section of [testing.md](testing.md); never claim
-"100%" without scoping it to tier 1 plus the enumerated tier-2 dimensions.
+A: ⚠️ Not by the frozen gate alone. It proves *serialized == restored*, not *source == destination* — an omission is
+absent from both sides of that comparison, so the gate passes and the loss is silent. Top-level items and fluids are
+protected in PRODUCTION by the **paired-reads source census** (SC-6, shipped): each entity's physical read is paired
+with its serialized form in the same Lua execution, and any mismatch aborts the transfer fail-closed with the source
+preserved and an entity-attributed forensic bundle banked. It is witnessed live by two pad fixtures through
+`pad-transfer-suite` — `census-omission-abort` (the census refuses a forced omission) and `transfer-workhorse`
+(the census ran + passed clean on a 1359-entity transfer). It replaced the old CI-only meter-drift sentinel.
+Tier boundary: the census covers **top-level** items and fluids only — grid equipment and nested-inventory contents
+are counted by neither meter, and non-countable state (circuit configs, crafting progress, schedules, spoilage) is
+protected only by enumeration (per-category handlers plus the pad fixtures). See the tier table in the "guarantee
+boundary" section of [testing.md](testing.md); never claim "100%" without scoping it to tier 1 (top-level items +
+fluids) plus the enumerated tier-2 dimensions.
 
 **Q: What if my platform is too big and the RCON / import send fails?**
 A: ✅ A normal (non-session) error triggers controller rollback → source unlocked at once.

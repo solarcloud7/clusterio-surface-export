@@ -152,7 +152,7 @@ The runner needs `pwsh` for the `.ps1` tests (`brew install powershell` on macOS
 test directly:
 
 ```powershell
-pwsh ./tests/integration/platform-roundtrip/run-tests.ps1 -ShowDetails
+node tests/integration/pad-transfer-suite/run-tests.mjs
 ```
 
 Locally you usually don't hit the Factorio-download issue: with `FACTORIO_USERNAME` /

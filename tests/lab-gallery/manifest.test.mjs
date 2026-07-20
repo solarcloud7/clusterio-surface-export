@@ -16,7 +16,7 @@ test("gallery manifest labs are the fixture-referenced categories (lab dirs remo
 	const referenced = [...new Set(manifest.fixtures.map(fixture => fixture.labId))].sort();
 	assert.deepEqual(manifest.labs.map(lab => lab.id).sort(), referenced);
 	assert.deepEqual(validateGalleryManifest(manifest, { requireArtifacts: false }), {
-		labs: referenced.length, fixtures: 24, sourceFixtures: 24, destinationFixtures: 0,
+		labs: referenced.length, fixtures: 25, sourceFixtures: 25, destinationFixtures: 0,
 	});
 });
 
@@ -39,7 +39,7 @@ test("paired save roles, artifacts, censuses, and exact mod pins are final", () 
 	assert.deepEqual(manifest.saves.source.mods, manifest.mods);
 	assert.deepEqual(manifest.saves.destination.mods, manifest.mods);
 	assert.deepEqual(validateGalleryManifest(manifest), {
-		labs: 11, fixtures: 24, sourceFixtures: 24, destinationFixtures: 0,
+		labs: 11, fixtures: 25, sourceFixtures: 25, destinationFixtures: 0,
 	});
 });
 
@@ -69,7 +69,7 @@ test("baked fixtures remain inputs while direct physical meters remain the oracl
 	assert.equal(miner.labId, "specialized-inventory-lab");
 	assert.equal(miner.padKind, "pad");
 	assert.deepEqual(miner.fingerprint, {
-		tankAcid: 13050, drillAcid: 104, resourceCount: 4, resourceTotal: 30398,
+		tankAcid: 13050.78125, drillAcid: 104.40625, resourceCount: 4, resourceTotal: 30398,
 		groundItems: 1, drillName: "big-mining-drill",
 	});
 });
@@ -224,4 +224,48 @@ test("lifecycle validation teeth: hook allowlist, grounding rule, mutable-anchor
 	assert.ok(teeth, "gate-item-loss fixture present");
 	assert.equal(teeth.lifecycle.expect, "gate-failure");
 	assert.ok(renderExpectFromLifecycle(teeth).some(line => /GATE MUST REFUSE/.test(line)));
+
+	// --- census-abort (SC-6) rules ---------------------------------------------------------------
+	// Red tooth: census-abort without the source-end census hook is rejected.
+	assert.throws(() => validateGalleryManifest(withTransferLifecycle({
+		version: 1, mutable: ["scratch"], act: "transfer", expect: "census-abort",
+		setup: [{ op: "spawn_item", name: "iron-plate", count: 100, into: "scratch" }],
+		verify: [{ check: "physical_read", end: "source", locator: { anchor: "scratch" }, read: "item_count", item: "iron-plate", op: "eq", expected: 100 }],
+	}), { requireArtifacts: false }), /test_force_census_omission/);
+	// Red tooth: census-abort with ANY dest-end op is a contradiction (dest never contacted).
+	assert.throws(() => validateGalleryManifest(withTransferLifecycle({
+		version: 1, mutable: ["scratch"], act: "transfer", expect: "census-abort",
+		setup: [
+			{ op: "arm_hook", name: "test_force_census_omission", value: true },
+			{ op: "arm_hook", name: "test_force_item_loss", value: 5, end: "dest" },
+		],
+		verify: [{ check: "physical_read", end: "source", locator: { anchor: "scratch" }, read: "item_count", item: "iron-plate", op: "eq", expected: 100 }],
+	}), { requireArtifacts: false }), /forbids dest-end ops/);
+	// Red tooth: census-abort without a source-preserved physical witness is rejected.
+	assert.throws(() => validateGalleryManifest(withTransferLifecycle({
+		version: 1, mutable: ["scratch"], act: "transfer", expect: "census-abort",
+		setup: [{ op: "arm_hook", name: "test_force_census_omission", value: true }],
+		verify: [{ check: "report_field", path: "reason", op: "eq", expected: "source_census_mismatch" }],
+	}), { requireArtifacts: false }), /source-preserved witness|source-end physical_read/);
+	// Green path: the shipped census-omission-abort shape validates and renders its banner.
+	const census = manifest.fixtures.find(fixture => fixture.id === "census-omission-abort");
+	assert.ok(census, "census-omission-abort fixture present");
+	assert.equal(census.lifecycle.expect, "census-abort");
+	assert.ok(renderExpectFromLifecycle(census).some(line => /CENSUS MUST REFUSE/.test(line)));
+
+	// Red tooth: a census_pass check on a non-success expect is rejected (it witnesses a CLEAN
+	// transfer's census; a refusal never produces the pass artifact).
+	assert.throws(() => validateGalleryManifest(withTransferLifecycle({
+		version: 1, mutable: ["scratch"], act: "transfer", expect: "gate-failure",
+		setup: [{ op: "arm_hook", name: "test_force_item_loss", value: 5, end: "dest" }],
+		verify: [
+			{ check: "physical_read", end: "source", locator: { anchor: "scratch" }, read: "item_count", item: "iron-plate", op: "eq", expected: 100 },
+			{ check: "census_pass" },
+		],
+	}), { requireArtifacts: false }), /census_pass checks require expect "success"/);
+	// Green path: the workhorse carries a census_pass witness on its clean transfer.
+	const workhorse = manifest.fixtures.find(fixture => fixture.id === "transfer-workhorse");
+	assert.ok((workhorse.lifecycle.verify || []).some(check => check.check === "census_pass"),
+		"the workhorse clean transfer must witness the source census ran + passed");
+	assert.ok(renderExpectFromLifecycle(workhorse).some(line => /source census ran \+ passed/.test(line)));
 });

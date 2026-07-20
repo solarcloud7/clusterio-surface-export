@@ -1,0 +1,715 @@
+{
+  "script": "tests/belt-lab/run-r15-incremental-restore.mjs",
+  "started": "2026-07-20T06:49:14.101Z",
+  "runs": [
+    {
+      "run": 1,
+      "started": "2026-07-20T06:49:14.772Z",
+      "sweeps": [
+        {
+          "batchSize": 32,
+          "steps": [
+            {
+              "from": 1,
+              "to": 32,
+              "tick": 121418,
+              "ms": 6722,
+              "placed": 1801,
+              "unplaced": 0,
+              "leaks": 1344,
+              "anomalies": 0,
+              "exact": 32,
+              "inexact": {}
+            },
+            {
+              "from": 33,
+              "to": 64,
+              "tick": 121435,
+              "ms": 6354,
+              "placed": 930,
+              "unplaced": 0,
+              "leaks": 1808,
+              "anomalies": 0,
+              "exact": 30,
+              "inexact": [
+                {
+                  "g": 61,
+                  "expected": 12,
+                  "actual": 21
+                },
+                {
+                  "g": 62,
+                  "expected": 16,
+                  "actual": 52
+                }
+              ]
+            },
+            {
+              "from": 65,
+              "to": 96,
+              "tick": 121453,
+              "ms": 18575,
+              "placed": 3503,
+              "unplaced": 16,
+              "leaks": 416,
+              "anomalies": 0,
+              "exact": 28,
+              "inexact": [
+                {
+                  "g": 65,
+                  "expected": 2,
+                  "actual": 5
+                },
+                {
+                  "g": 66,
+                  "expected": 16,
+                  "actual": 24
+                },
+                {
+                  "g": 75,
+                  "expected": 15,
+                  "actual": 21
+                },
+                {
+                  "g": 76,
+                  "expected": 0,
+                  "actual": 16
+                }
+              ]
+            },
+            {
+              "from": 97,
+              "to": 128,
+              "tick": 121454,
+              "ms": 1978,
+              "placed": 1262,
+              "unplaced": 0,
+              "leaks": 234,
+              "anomalies": 0,
+              "exact": 31,
+              "inexact": [
+                {
+                  "g": 112,
+                  "expected": 12,
+                  "actual": 16
+                }
+              ]
+            },
+            {
+              "from": 129,
+              "to": 160,
+              "tick": 121493,
+              "ms": 7836,
+              "placed": 1523,
+              "unplaced": 0,
+              "leaks": 2240,
+              "anomalies": 0,
+              "exact": 32,
+              "inexact": {}
+            },
+            {
+              "from": 161,
+              "to": 192,
+              "tick": 121512,
+              "ms": 1972,
+              "placed": 1037,
+              "unplaced": 94,
+              "leaks": 0,
+              "anomalies": 0,
+              "exact": 27,
+              "inexact": [
+                {
+                  "g": 165,
+                  "expected": 12,
+                  "actual": 14
+                },
+                {
+                  "g": 186,
+                  "expected": 74,
+                  "actual": 112
+                },
+                {
+                  "g": 187,
+                  "expected": 92,
+                  "actual": 112
+                },
+                {
+                  "g": 190,
+                  "expected": 120,
+                  "actual": 188
+                },
+                {
+                  "g": 191,
+                  "expected": 192,
+                  "actual": 252
+                }
+              ]
+            },
+            {
+              "from": 193,
+              "to": 224,
+              "tick": 121549,
+              "ms": 1894,
+              "placed": 761,
+              "unplaced": 64,
+              "leaks": 0,
+              "anomalies": 0,
+              "exact": 25,
+              "inexact": [
+                {
+                  "g": 200,
+                  "expected": 2,
+                  "actual": 32
+                },
+                {
+                  "g": 201,
+                  "expected": 84,
+                  "actual": 148
+                },
+                {
+                  "g": 204,
+                  "expected": 3,
+                  "actual": 16
+                },
+                {
+                  "g": 205,
+                  "expected": 124,
+                  "actual": 136
+                },
+                {
+                  "g": 210,
+                  "expected": 44,
+                  "actual": 58
+                },
+                {
+                  "g": 211,
+                  "expected": 40,
+                  "actual": 68
+                },
+                {
+                  "g": 212,
+                  "expected": 288,
+                  "actual": 412
+                }
+              ]
+            },
+            {
+              "from": 225,
+              "to": 256,
+              "tick": 121588,
+              "ms": 1508,
+              "placed": 663,
+              "unplaced": 116,
+              "leaks": 33,
+              "anomalies": 0,
+              "exact": 26,
+              "inexact": [
+                {
+                  "g": 227,
+                  "expected": 16,
+                  "actual": 32
+                },
+                {
+                  "g": 230,
+                  "expected": 82,
+                  "actual": 136
+                },
+                {
+                  "g": 232,
+                  "expected": 36,
+                  "actual": 48
+                },
+                {
+                  "g": 233,
+                  "expected": 1,
+                  "actual": 4
+                },
+                {
+                  "g": 234,
+                  "expected": 12,
+                  "actual": 24
+                },
+                {
+                  "g": 238,
+                  "expected": 28,
+                  "actual": 20
+                }
+              ]
+            },
+            {
+              "from": 257,
+              "to": 288,
+              "tick": 121629,
+              "ms": 2448,
+              "placed": 1056,
+              "unplaced": 292,
+              "leaks": 128,
+              "anomalies": 0,
+              "exact": 21,
+              "inexact": [
+                {
+                  "g": 257,
+                  "expected": 12,
+                  "actual": 16
+                },
+                {
+                  "g": 258,
+                  "expected": 24,
+                  "actual": 48
+                },
+                {
+                  "g": 259,
+                  "expected": 8,
+                  "actual": 12
+                },
+                {
+                  "g": 260,
+                  "expected": 32,
+                  "actual": 36
+                },
+                {
+                  "g": 261,
+                  "expected": 100,
+                  "actual": 104
+                },
+                {
+                  "g": 265,
+                  "expected": 32,
+                  "actual": 40
+                },
+                {
+                  "g": 274,
+                  "expected": 24,
+                  "actual": 32
+                },
+                {
+                  "g": 275,
+                  "expected": 92,
+                  "actual": 76
+                },
+                {
+                  "g": 277,
+                  "expected": 400,
+                  "actual": 528
+                },
+                {
+                  "g": 278,
+                  "expected": 380,
+                  "actual": 508
+                },
+                {
+                  "g": 284,
+                  "expected": 40,
+                  "actual": 44
+                }
+              ]
+            },
+            {
+              "from": 289,
+              "to": 320,
+              "tick": 121661,
+              "ms": 1202,
+              "placed": 204,
+              "unplaced": 392,
+              "leaks": 72,
+              "anomalies": 0,
+              "exact": 31,
+              "inexact": [
+                {
+                  "g": 304,
+                  "expected": 64,
+                  "actual": 92
+                }
+              ]
+            },
+            {
+              "from": 321,
+              "to": 352,
+              "tick": 121705,
+              "ms": 3500,
+              "placed": 1388,
+              "unplaced": 182,
+              "leaks": 0,
+              "anomalies": 0,
+              "exact": 29,
+              "inexact": [
+                {
+                  "g": 326,
+                  "expected": 296,
+                  "actual": 350
+                },
+                {
+                  "g": 329,
+                  "expected": 40,
+                  "actual": 85
+                },
+                {
+                  "g": 330,
+                  "expected": 424,
+                  "actual": 600
+                }
+              ]
+            },
+            {
+              "from": 353,
+              "to": 384,
+              "tick": 121733,
+              "ms": 1746,
+              "placed": 629,
+              "unplaced": 0,
+              "leaks": 384,
+              "anomalies": 0,
+              "exact": 27,
+              "inexact": [
+                {
+                  "g": 353,
+                  "expected": 152,
+                  "actual": 156
+                },
+                {
+                  "g": 354,
+                  "expected": 8,
+                  "actual": 12
+                },
+                {
+                  "g": 363,
+                  "expected": 100,
+                  "actual": 104
+                },
+                {
+                  "g": 366,
+                  "expected": 36,
+                  "actual": 40
+                },
+                {
+                  "g": 371,
+                  "expected": 8,
+                  "actual": 12
+                }
+              ]
+            },
+            {
+              "from": 385,
+              "to": 403,
+              "tick": 121771,
+              "ms": 693,
+              "placed": 12,
+              "unplaced": 33,
+              "leaks": 0,
+              "anomalies": 0,
+              "exact": 17,
+              "inexact": [
+                {
+                  "g": 386,
+                  "expected": 0,
+                  "actual": 4
+                },
+                {
+                  "g": 397,
+                  "expected": 1,
+                  "actual": 18
+                }
+              ]
+            }
+          ],
+          "started": "2026-07-20T06:49:18.518Z",
+          "startMs": 953,
+          "groups": 403,
+          "slots": 4172,
+          "capturedTotal": 15958,
+          "startTick": 121379,
+          "finishMs": 703,
+          "finish": {
+            "success": true,
+            "tick": 121809,
+            "sides": 403,
+            "sides_exact_at_completion": 356,
+            "inexact_sides": [
+              {
+                "g": 61,
+                "expected": 12,
+                "actual": 21
+              },
+              {
+                "g": 62,
+                "expected": 16,
+                "actual": 52
+              },
+              {
+                "g": 65,
+                "expected": 2,
+                "actual": 5
+              },
+              {
+                "g": 66,
+                "expected": 16,
+                "actual": 24
+              },
+              {
+                "g": 75,
+                "expected": 15,
+                "actual": 21
+              },
+              {
+                "g": 76,
+                "expected": 0,
+                "actual": 16
+              },
+              {
+                "g": 112,
+                "expected": 12,
+                "actual": 16
+              },
+              {
+                "g": 165,
+                "expected": 12,
+                "actual": 14
+              },
+              {
+                "g": 186,
+                "expected": 74,
+                "actual": 112
+              },
+              {
+                "g": 187,
+                "expected": 92,
+                "actual": 112
+              },
+              {
+                "g": 190,
+                "expected": 120,
+                "actual": 188
+              },
+              {
+                "g": 191,
+                "expected": 192,
+                "actual": 252
+              },
+              {
+                "g": 200,
+                "expected": 2,
+                "actual": 32
+              },
+              {
+                "g": 201,
+                "expected": 84,
+                "actual": 148
+              },
+              {
+                "g": 204,
+                "expected": 3,
+                "actual": 16
+              },
+              {
+                "g": 205,
+                "expected": 124,
+                "actual": 136
+              },
+              {
+                "g": 210,
+                "expected": 44,
+                "actual": 58
+              },
+              {
+                "g": 211,
+                "expected": 40,
+                "actual": 68
+              },
+              {
+                "g": 212,
+                "expected": 288,
+                "actual": 412
+              },
+              {
+                "g": 227,
+                "expected": 16,
+                "actual": 32
+              },
+              {
+                "g": 230,
+                "expected": 82,
+                "actual": 136
+              },
+              {
+                "g": 232,
+                "expected": 36,
+                "actual": 48
+              },
+              {
+                "g": 233,
+                "expected": 1,
+                "actual": 4
+              },
+              {
+                "g": 234,
+                "expected": 12,
+                "actual": 24
+              },
+              {
+                "g": 238,
+                "expected": 28,
+                "actual": 20
+              },
+              {
+                "g": 257,
+                "expected": 12,
+                "actual": 16
+              },
+              {
+                "g": 258,
+                "expected": 24,
+                "actual": 48
+              },
+              {
+                "g": 259,
+                "expected": 8,
+                "actual": 12
+              },
+              {
+                "g": 260,
+                "expected": 32,
+                "actual": 36
+              },
+              {
+                "g": 261,
+                "expected": 100,
+                "actual": 104
+              },
+              {
+                "g": 265,
+                "expected": 32,
+                "actual": 40
+              },
+              {
+                "g": 274,
+                "expected": 24,
+                "actual": 32
+              },
+              {
+                "g": 275,
+                "expected": 92,
+                "actual": 76
+              },
+              {
+                "g": 277,
+                "expected": 400,
+                "actual": 528
+              },
+              {
+                "g": 278,
+                "expected": 380,
+                "actual": 508
+              },
+              {
+                "g": 284,
+                "expected": 40,
+                "actual": 44
+              },
+              {
+                "g": 304,
+                "expected": 64,
+                "actual": 92
+              },
+              {
+                "g": 326,
+                "expected": 296,
+                "actual": 350
+              },
+              {
+                "g": 329,
+                "expected": 40,
+                "actual": 85
+              },
+              {
+                "g": 330,
+                "expected": 424,
+                "actual": 600
+              },
+              {
+                "g": 353,
+                "expected": 152,
+                "actual": 156
+              },
+              {
+                "g": 354,
+                "expected": 8,
+                "actual": 12
+              },
+              {
+                "g": 363,
+                "expected": 100,
+                "actual": 104
+              },
+              {
+                "g": 366,
+                "expected": 36,
+                "actual": 40
+              },
+              {
+                "g": 371,
+                "expected": 8,
+                "actual": 12
+              },
+              {
+                "g": 386,
+                "expected": 0,
+                "actual": 4
+              },
+              {
+                "g": 397,
+                "expected": 1,
+                "actual": 18
+              }
+            ],
+            "placed": 14769,
+            "unplaced": 1189,
+            "leaks_undone": 6659,
+            "anomalies": 0,
+            "captured_total": 15958,
+            "scratch_census": 14858,
+            "drifted_after_completion": 135,
+            "drift_abs": 4852,
+            "elapsed_ticks": 430
+          },
+          "stepMsMedian": 1978,
+          "stepMsMax": 18575,
+          "executions": 13,
+          "elapsedTicks": 430,
+          "verdicts": {
+            "a_zero_unplaced_anomalies": false,
+            "b_census_equals_basis": false,
+            "c_all_sides_exact_at_completion": false,
+            "multi_tick_proven": true
+          },
+          "green": false,
+          "crossings": {
+            "drifted_after_completion": 135,
+            "drift_abs": 4852,
+            "leaks_undone": 6659
+          },
+          "noGoBranch": "unplaced/anomalies (crossing occupancy)"
+        }
+      ],
+      "importCommand": "Check logs for import status",
+      "beltCount": 596,
+      "liveTotal": 15954,
+      "oversizedStacks": 72,
+      "maxStack": 40,
+      "admissible": true,
+      "verdict": "RED",
+      "cleanState": {
+        "replay": 0,
+        "scratch": false,
+        "jobs": 0,
+        "locks": 0,
+        "holds": 0,
+        "paused": false,
+        "success": true
+      },
+      "finished": "2026-07-20T06:50:18.072Z"
+    }
+  ],
+  "errors": [],
+  "finished": "2026-07-20T06:50:18.072Z",
+  "verdict": "NO-GO"
+}

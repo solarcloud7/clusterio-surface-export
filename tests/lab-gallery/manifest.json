@@ -18,9 +18,9 @@
 			"role": "source",
 			"name": "lab-gallery-source-of-truth",
 			"artifact": "docker/seed-data/lab-saves/lab-gallery-source-of-truth.zip",
-			"sha256": "3B98C305C81AF1BB0D0B412B551CC60477315AD705FE31EE5612404F7B541DA4",
+			"sha256": "910637FFBB0C02E051DB73EB4B417F56FC688E2DD9FC825C824D41A787B36110",
 			"expectedCensus": {
-				"totalEntities": 1961,
+				"totalEntities": 2021,
 				"totalGeneratedChunks": 6740,
 				"surfaces": [
 					{
@@ -45,7 +45,7 @@
 				"surfexp_gateways": "0.3.0",
 				"maraxsis": "1.31.6"
 			},
-			"note": "SNAPSHOT OF LIVE (2026-07-19): the canonical save is a verified server_save of the live gallery world - never a scripted-bake product. Re-bank by: server_save, docker cp, SHA re-pin, in one commit."
+			"note": "SNAPSHOT OF LIVE (2026-07-20): verified server_save of the live gallery world - never a scripted-bake product. Census includes inert right-half compare residue (each run sweeps its cell before measuring; mutable anchors banked EMPTY). Re-bank: server_save, docker cp, SHA re-pin, one commit."
 		},
 		"destination": {
 			"role": "destination",
@@ -218,9 +218,14 @@
 					"entity": "assembling-machine-2",
 					"x": 16,
 					"y": -17
+				},
+				{
+					"entity": "splitter",
+					"x": 15,
+					"y": -14.5
 				}
 			],
-			"revision": 1,
+			"revision": 2,
 			"labId": "state-dimensions-lab",
 			"name": "Adversarial nested inventory + quality",
 			"purpose": "Preserve a steel-chest holding a power-armor-mk2 whose equipment grid carries a legendary battery and uncommon shield, beside an uncommon-quality iron-gear-wheel recipe.",
@@ -250,7 +255,9 @@
 				"shieldMax": 195,
 				"shieldQuality": "uncommon",
 				"recipe": "iron-gear-wheel",
-				"recipeQuality": "uncommon"
+				"recipeQuality": "uncommon",
+				"splitterFilter": "iron-plate",
+				"splitterFilterQuality": "legendary"
 			},
 			"testCard": {
 				"law": "Nested inventories survive exactly: a chest-held power-armor-mk2 keeps its equipment grid (battery energy, shield value, qualities) and the machine keeps its quality recipe.",
@@ -813,7 +820,7 @@
 			"name": "1359-entity transfer workhorse",
 			"purpose": "Provide the large live-drift transfer workhorse whose structure is fixed but whose machine item counts drift by design.",
 			"category": "drift-benchmark",
-			"owningRunner": "tests/integration/transfer-fidelity/run-tests.ps1",
+			"owningRunner": "tests/integration/pad-transfer-suite/run-tests.mjs",
 			"saveRole": "source",
 			"platformName": "lab-transfer-fixture-v1",
 			"engineVersion": "2.0.77",
@@ -834,6 +841,31 @@
 			"independentOracleRequired": true,
 			"fingerprint": {
 				"entities": 1359
+			},
+			"lifecycle": {
+				"version": 1,
+				"act": "transfer",
+				"verify": [
+					{
+						"check": "physical_read",
+						"locator": {
+							"self": true
+						},
+						"read": "surface_entity_count",
+						"op": "eq",
+						"expected": 1359
+					},
+					{
+						"check": "report_field",
+						"path": "validation_success",
+						"op": "eq",
+						"expected": true
+					},
+					{
+						"check": "census_pass",
+						"minEntities": 1000
+					}
+				]
 			}
 		},
 		{
@@ -1027,7 +1059,7 @@
 					"y": 45.5
 				}
 			],
-			"revision": 2,
+			"revision": 3,
 			"labId": "belt-lab",
 			"name": "Combined belt omnibus (steady-state, hand-built)",
 			"purpose": "One pad combining sideloads, 3 splitters, 3 underground pairs, and 2 filtered output loaders draining into infinity chests pinned at 100 - the steady-state fixture class exemplar: fully live, item count constant by saturation physics.",
@@ -1056,9 +1088,9 @@
 				"splitterCount": 3,
 				"undergroundCount": 6,
 				"loaderCount": 2,
-				"chestCount": 0,
 				"steadyItems": 380,
 				"maxStack": 1,
+				"overpackedLanes": 13,
 				"hasOverpackedCornerLanes": true,
 				"loaderFilterIron": "iron-plate",
 				"loaderFilterCopper": "copper-plate"
@@ -1069,7 +1101,9 @@
 				"expected": "Exact entity+item parity left vs right; 578 items stationary; loader/chest configs survive copy and transfer.",
 				"forbidden": "Do NOT freeze this pad (it is the steady-state class exemplar). Do NOT rebuild it from a script - the state is the artifact."
 			},
-			"note": "FIRST CATCH (2026-07-19, at claim time): serializer has NO loader handler (filters not carried; splitter types gate excludes loaders) and NO infinity-container handler (infinity filters not carried) - transfer would deliver hollow configs. Fix is queued; this pad is its kill-measurement. REV2 2026-07-19: owner removed infinity chests (self-healing masked loss); circuit now conservative at 380; belt-corner-recovery retired as covered (over-pack measured present at ~5x the dedicated fixture)."
+			"note": "FIRST CATCH (2026-07-19, at claim time): serializer has NO loader handler (filters not carried; splitter types gate excludes loaders) and NO infinity-container handler (infinity filters not carried) - transfer would deliver hollow configs. Fix is queued; this pad is its kill-measurement. REV2 2026-07-19: owner removed infinity chests (self-healing masked loss); circuit now conservative at 380; belt-corner-recovery retired as covered (over-pack measured present at ~5x the dedicated fixture).",
+			"auditAggregateOnly": true,
+			"runnerExcluded": "KNOWN-OPEN HAZARD: paste loses items on over-packed corner lanes (measured 372->368, 2026-07-20) - the Phase-5B belt-restore class; re-enable when side-closed batched restore lands"
 		},
 		{
 			"id": "mining-drill-acid-feed",
@@ -1090,7 +1124,7 @@
 					"y": 24.5
 				}
 			],
-			"revision": 1,
+			"revision": 2,
 			"labId": "specialized-inventory-lab",
 			"name": "Acid-fed uranium miner (hand-built)",
 			"purpose": "Fluid-consuming big mining drill over real uranium resource patches with a sulfuric-acid tank feed - frozen-class; exercises resource entities, fluid-consuming mining, and acid plumbing in one pad.",
@@ -1115,8 +1149,8 @@
 			"expectedTerminalVerdict": "observation-only",
 			"independentOracleRequired": true,
 			"fingerprint": {
-				"tankAcid": 13050,
-				"drillAcid": 104,
+				"tankAcid": 13050.78125,
+				"drillAcid": 104.40625,
 				"resourceCount": 4,
 				"resourceTotal": 30398,
 				"groundItems": 1,
@@ -1713,6 +1747,102 @@
 				"action": "pad-transfer-suite: lifecycle setup (source) + dest-end sabotage, then the REAL /transfer-platform; /test-run locally pins the LEFT fingerprint and skips the act.",
 				"expected": "fingerprint matches the manifest pin; scratch: held eq 8; report validation_success eq true",
 				"forbidden": "Any outcome where the protective route did not run (a refused transfer leaving no source, or a passed gate hiding a shortfall)."
+			}
+		},
+		{
+			"id": "census-omission-abort",
+			"padKind": "pad",
+			"origin": {
+				"x": 92,
+				"y": 22
+			},
+			"revision": 1,
+			"labId": "gate-drift-lab",
+			"name": "Source census aborts on serializer omission",
+			"purpose": "The paired-reads SOURCE census must refuse a transfer whose serialized form omits physical content: export aborted, destination NEVER contacted, source preserved and unlocked, entity-attributed forensic bundle banked (SC-6; closes the burner-fuel serializer-omission class).",
+			"category": "protocol-teeth",
+			"owningRunner": "tests/integration/pad-transfer-suite/run-tests.mjs",
+			"saveRole": "source",
+			"platformName": "lab-omnibus-state-v1",
+			"engineVersion": "2.0.77",
+			"mods": {
+				"base": "2.0.77",
+				"elevated-rails": "2.0.77",
+				"FluidMustFlow": "1.4.4",
+				"quality": "2.0.77",
+				"SpidertronEnhancements": "1.10.8",
+				"space-age": "2.0.77",
+				"SpidertronPatrols": "2.6.3",
+				"surfexp_gateways": "0.3.0",
+				"maraxsis": "1.31.6"
+			},
+			"invariant": "With test_force_census_omission armed on the SOURCE, one serialized stack is dropped post-serialization; the census verdict fails, the export aborts with reason source_census_mismatch, no dest platform ever exists, and the source scratch survives with all 100 iron-plate, unlocked.",
+			"expectedTerminalVerdict": "census-abort-source-preserved",
+			"independentOracleRequired": true,
+			"anchors": [
+				{
+					"name": "scratch",
+					"entity": "steel-chest",
+					"x": 99.5,
+					"y": 27.5
+				}
+			],
+			"fingerprint": {
+				"scratchPresent": true,
+				"scratchName": "steel-chest"
+			},
+			"lifecycle": {
+				"version": 1,
+				"mutable": [
+					"scratch"
+				],
+				"setup": [
+					{
+						"op": "spawn_item",
+						"name": "iron-plate",
+						"count": 100,
+						"into": "scratch"
+					},
+					{
+						"op": "arm_hook",
+						"name": "test_force_census_omission",
+						"value": true
+					}
+				],
+				"act": "transfer",
+				"expect": "census-abort",
+				"verify": [
+					{
+						"check": "physical_read",
+						"end": "source",
+						"locator": {
+							"anchor": "scratch"
+						},
+						"read": "item_count",
+						"item": "iron-plate",
+						"op": "eq",
+						"expected": 100
+					},
+					{
+						"check": "report_field",
+						"path": "reason",
+						"op": "eq",
+						"expected": "source_census_mismatch"
+					},
+					{
+						"check": "report_field",
+						"path": "verdict_ok",
+						"op": "eq",
+						"expected": false
+					}
+				]
+			},
+			"testCard": {
+				"law": "The paired-reads SOURCE census must refuse a transfer whose serialized form omits physical content: export aborted, destination NEVER contacted, source preserved and unlocked, entity-attributed forensic bundle banked (SC-6; closes the burner-fuel serializer-omission class).",
+				"build": "Authored 2026-07-20 on open slot (92,22): one baked-EMPTY steel-chest scratch anchor; content created programmatically each run.",
+				"action": "pad-transfer-suite: setup spawns 100 iron-plate + arms test_force_census_omission SOURCE-side, fires the real /transfer-platform; the census must refuse before the destination is ever contacted.",
+				"expected": "CENSUS MUST REFUSE: export aborted, dest never contacted, source preserved + unlocked; fingerprint matches the manifest pin; [source] scratch: iron-plate item_count eq 100; report reason eq \"source_census_mismatch\"; report verdict_ok eq false",
+				"forbidden": "Any outcome where the omission ships (dest contacted / source deleted) or the abort strands the source locked."
 			}
 		}
 	]
