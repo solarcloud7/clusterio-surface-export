@@ -2,17 +2,17 @@
 -- Uses dynamic inventory discovery via get_max_inventory_index()
 
 local Util = require("modules/surface_export/utils/util")
-local FluidOwnership = require("modules/surface_export/utils/fluid-ownership")
+local FluidRegistry = require("modules/surface_export/export_scanners/fluid-registry")
 
 local InventoryScanner = {}
 
--- When set to a table, extract_fluids uses segment-level deduplication:
--- seg_id → {fluid=name, amount=total, energy=total_temp_product}
--- This ensures export captures the same weighted-average temperature that
--- FluidRestoration.restore() will later write, preventing cosmetic mismatches.
--- Set by AsyncProcessor at export job start, cleared to nil at job completion.
-InventoryScanner.fluid_segment_cache = nil
-InventoryScanner.engine_owned_segments = nil
+-- THE single fluid-capture discipline (2.1 fluid API): every capture path (async transfer
+-- export, sync serializer, selection-lab copy) arms a FluidRegistry here before scanning and
+-- clears it after. There is deliberately NO fallback mode — capturing fluids without an armed
+-- registry is a discipline violation and fails loud (the 2.0-era dual-mode extract_fluids is
+-- what let three divergent fluid readers exist at once; see the fluid-law experiments,
+-- NOTEBOOK 2026-07-20/21).
+InventoryScanner.fluid_registry = nil
 
 --- Helper to safely extract item properties using pcall
 --- @param stack LuaItemStack: The item stack
@@ -319,108 +319,22 @@ end
 --- Extract fluids from an entity's fluidboxes
 --- @param entity LuaEntity: The entity with fluidboxes
 --- @return table: Array of fluid data
-function InventoryScanner.extract_fluids(entity)
+--- Capture an entity's fluid state through the armed FluidRegistry (2.1 fluid API).
+--- Returns the entity-side fluidboxes array ({box_index, segment_ref, local_amount,
+--- local_temperature}) or nil when the entity has no fluid storages.
+--- Errors loud when no registry is armed — structural enforcement that a second capture
+--- discipline can never silently exist again.
+function InventoryScanner.extract_fluidboxes(entity)
   if not entity or not entity.valid then
-    return {}
+    return nil
   end
-
-  local fluidbox = entity.fluidbox
-  if not fluidbox then
-    return {}
+  local registry = InventoryScanner.fluid_registry
+  if not registry then
+    error("[InventoryScanner] fluid capture without an armed FluidRegistry (single-discipline violation)")
   end
-
-  local fluids = {}
-  local cache = InventoryScanner.fluid_segment_cache
-  local engine_owned_segments = InventoryScanner.engine_owned_segments or {}
-
-  if cache then
-    -- Segment-dedup mode: accumulate per-segment weighted-average temperature.
-    -- This matches what FluidRestoration.restore() will write on import (one packet
-    -- per segment at avg_temp = energy/amount), preventing temperature key mismatches.
-    for i = 1, #fluidbox do
-      local seg_id = fluidbox.get_fluid_segment_id(i)
-      if seg_id and not cache[seg_id] then
-        -- First entity to claim this segment: read authoritative contents through the ONE shared
-        -- buffer-class-aware accessor (see FluidOwnership.effective_segment_contents — without it
-        -- the async transfer export captured NOTHING for a fusion-reactor buffer: silent physical
-        -- loss the segment-blind census could not see either).
-        local contents = FluidOwnership.effective_segment_contents(fluidbox, i)
-        -- Claim on FIRST SIGHT even when empty — the census's counted_segments does exactly this,
-        -- and the two claim disciplines MUST match: with claim-on-first-non-empty, a later member
-        -- box re-reads the segment at a LATER walk tick, and on a live platform the segment may
-        -- have refilled by then — the payload then carries fluid the census's earlier (empty)
-        -- claim never counted. Measured 2026-07-18 [empirical, 2.0.77]: +43.6 thruster-oxidizer /
-        -- +54.8 thruster-fuel phantom census delta aborting every transfer of a freshly-imported
-        -- platform (the gateway-transfer CI red; fluids' cousin of Pitfall #16, atomic belt scan).
-        cache[seg_id] = { claimed_empty = true }
-        if contents then
-          for fluid_name, amount in pairs(contents) do
-            if amount > 0 then
-              local local_fluid = fluidbox[i]
-              local temp = (local_fluid and local_fluid.temperature) or 15
-              log(string.format("[Fluid Export] Seg %d claimed by %s box %d: %s=%.1f temp=%.1f",
-                  seg_id, entity.name, i, fluid_name, amount, temp))
-              local engine_owned = engine_owned_segments[seg_id] == true
-              cache[seg_id] = { fluid = fluid_name, amount = amount, temp = temp, engine_owned = engine_owned }
-              table.insert(fluids, {
-                name = fluid_name,
-                amount = amount,
-                temperature = temp,
-                engine_owned = engine_owned
-              })
-            end
-          end
-        end
-      elseif not seg_id then
-        -- Fallback for isolated fluidboxes without a segment ID (e.g., machine
-        -- internal buffers not connected to a pipe network). Read the local proxy
-        -- directly — no dedup needed since there's no shared segment.
-        local fluid = fluidbox[i]
-        if fluid and fluid.amount and fluid.amount > 0 then
-          log(string.format("[Fluid Export] Isolated %s box %d (no seg_id): %s=%.1f temp=%.1f",
-              entity.name, i, fluid.name, fluid.amount, fluid.temperature or 15))
-          table.insert(fluids, {
-            name = fluid.name,
-            amount = fluid.amount,
-            temperature = fluid.temperature or 15,
-            engine_owned = FluidOwnership.is_engine_owned_box(entity, i)
-          })
-        end
-      elseif cache[seg_id] then
-        -- Already seen this segment — log for diagnostics
-        local local_fluid = fluidbox[i]
-        if local_fluid and local_fluid.amount and local_fluid.amount > 0 then
-          log(string.format("[Fluid Export] Seg %d already claimed, skipping %s box %d: local %s=%.1f",
-              seg_id, entity.name, i, local_fluid.name, local_fluid.amount))
-        end
-      end
-    end
-  else
-    -- Per-entity proxy mode (used for non-async scans like debug/validation)
-    for i = 1, #fluidbox do
-      local fluid = fluidbox[i]
-      if fluid then
-        table.insert(fluids, {
-          name = fluid.name,
-          amount = fluid.amount,
-          temperature = fluid.temperature,
-          engine_owned = FluidOwnership.is_engine_owned_box(entity, i)
-        })
-      end
-    end
-  end
-
-  return fluids
+  return FluidRegistry.capture_entity(registry, entity)
 end
 
---- Extract fluid from pipes
---- Pipes are a special case of fluidboxes
---- @param entity LuaEntity: The pipe entity
---- @return table: Fluid data
-function InventoryScanner.extract_pipe_fluids(entity)
-  -- Pipes use the same fluidbox system
-  return InventoryScanner.extract_fluids(entity)
-end
 
 --- Count all items in inventories (for verification)
 --- @param inventories table: Array of inventory data
@@ -436,21 +350,6 @@ function InventoryScanner.count_all_items(inventories)
         totals[key] = (totals[key] or 0) + item.count
       end
     end
-  end
-
-  return totals
-end
-
---- Count all fluids in fluidboxes (for verification)
---- @param fluids table: Array of fluid data
---- @return table: Table of fluid_name@temp = total_amount pairs
-function InventoryScanner.count_all_fluids(fluids)
-  local totals = {}
-
-  for _, fluid in ipairs(fluids) do
-    -- Create temperature-aware key
-    local key = Util.make_fluid_temp_key(fluid.name, fluid.temperature)
-    totals[key] = (totals[key] or 0) + fluid.amount
   end
 
   return totals

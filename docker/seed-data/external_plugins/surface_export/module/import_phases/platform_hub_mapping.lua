@@ -33,7 +33,7 @@ function PlatformHubMapping.process(job)
           -- Deactivate hub for transfers (consistent with entity_creation)
           if job.transfer_id then
             local ok, err = pcall(function()
-              if hub.active then hub.active = false end
+              if hub.active then hub.disabled_by_script = true end
             end)
             if not ok then
               log(string.format("[Import] Failed to deactivate hub: %s", tostring(err)))

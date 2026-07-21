@@ -38,7 +38,7 @@ local function capture_and_deactivate(surface, active_states)
 			local key = entity_key(entity)
 			active_states[key] = entity.active == true
 			if entity.active then
-				entity.active = false
+				entity.disabled_by_script = true
 				deactivated = deactivated + 1
 			end
 		end
@@ -55,12 +55,12 @@ local function restore_active_states(surface, active_states)
 			local was_active = active_states[entity_key(entity)]
 			if was_active then
 				if not entity.active then
-					entity.active = true
+					entity.disabled_by_script = false
 					restored = restored + 1
 				end
 			else
 				if entity.active then
-					entity.active = false
+					entity.disabled_by_script = true
 				end
 				kept_inactive = kept_inactive + 1
 			end

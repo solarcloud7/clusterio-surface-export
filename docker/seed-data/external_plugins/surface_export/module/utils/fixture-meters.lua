@@ -171,15 +171,16 @@ end
 local function measure_omnibus_fluids(surface, anchor)
     local r = {}
     local tank = anchored(surface, anchor, "storage-tank", "omnibus fluids")
-    if tank.fluidbox[1] then r.steam = tank.fluidbox[1].amount r.steamTemp = tank.fluidbox[1].temperature end
+    local tf = tank.get_fluid(1)
+    if tf then r.steam = tf.amount r.steamTemp = tf.temperature end
     local chem = anchored(surface, anchor, "chemical-plant", "omnibus fluids")
-    for i = 1, #chem.fluidbox do
-        local f = chem.fluidbox[i]
+    for i = 1, chem.fluids_count do
+        local f = chem.get_fluid(i)
         if f then if f.name == "water" then r.chemWater = f.amount elseif f.name == "petroleum-gas" then r.chemGas = f.amount end end
     end
     local foundry = anchored(surface, anchor, "foundry", "omnibus fluids")
-    for i = 1, #foundry.fluidbox do
-        local f = foundry.fluidbox[i]
+    for i = 1, foundry.fluids_count do
+        local f = foundry.get_fluid(i)
         if f and f.name == "molten-iron" then r.foundryMolten = f.amount r.foundryTemp = f.temperature end
     end
     return r
@@ -282,9 +283,8 @@ local function measure_mining_drill_acid(surface, area, anchor)
     local tank = at(surface, "storage-tank", tx, ty)
     local drill_acid = 0
     if drill then
-        local fb = drill.fluidbox
-        for i = 1, #fb do
-            local f = fb[i]
+        for i = 1, drill.fluids_count do
+            local f = drill.get_fluid(i)
             if f then drill_acid = drill_acid + f.amount end
         end
     end
@@ -499,6 +499,7 @@ local function measure_hold_pod_pair()
 end
 
 local function measure_census_fusion(surface)
+    -- 2.1 port: segment-visibility semantics changed at 2.1 (buffer/window duality removed); fingerprint re-pin pending (PR 3)
     local reactor = assert(at(surface, "fusion-reactor", 0, 0), "census-fusion reactor missing")
     local generator = assert(at(surface, "fusion-generator", 0.5, -5.5), "census-fusion generator missing")
     local r = {
@@ -507,13 +508,13 @@ local function measure_census_fusion(surface)
         fuelCells = reactor.get_item_count("fusion-power-cell"),
         coolant = 0, plasmaSegment = 0,
         reactorCoolantSegVisible = false, reactorPlasmaSegVisible = false,
-        generatorPlasmaSegNil = generator.fluidbox.get_fluid_segment_id(1) == nil,
+        generatorPlasmaSegNil = (not generator.has_fluid_segment(1)) or generator.get_fluid_segment_id(1) == nil,
         allFrozen = (not reactor.active) and (not generator.active),
         allIndestructible = (not reactor.destructible) and (not generator.destructible),
     }
-    for i = 1, #reactor.fluidbox do
-        local f = reactor.fluidbox[i]
-        local sid = reactor.fluidbox.get_fluid_segment_id(i)
+    for i = 1, reactor.fluids_count do
+        local f = reactor.get_fluid(i)
+        local sid = reactor.has_fluid_segment(i) and reactor.get_fluid_segment_id(i) or nil
         if f and f.name == "fluoroketone-cold" then
             r.coolant = r.coolant + f.amount
             r.reactorCoolantSegVisible = sid ~= nil
@@ -523,7 +524,7 @@ local function measure_census_fusion(surface)
         end
     end
     -- Parked stock can sit generator-side (isolated steady state) — report the larger reading.
-    local gf = generator.fluidbox[1]
+    local gf = generator.get_fluid(1)
     if gf and gf.name == "fusion-plasma" and gf.amount > r.plasmaSegment then r.plasmaSegment = gf.amount end
     return r
 end

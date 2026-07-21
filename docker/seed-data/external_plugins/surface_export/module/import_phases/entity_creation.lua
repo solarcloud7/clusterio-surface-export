@@ -16,9 +16,9 @@ end
 
 local function carries_fluids(entity_data)
   local sd = entity_data.specific_data
-  if not sd or not sd.fluids then return false end
-  for _, fluid in ipairs(sd.fluids) do
-    if (fluid.amount or 0) > 0 then return true end
+  if not sd or not sd.fluidboxes then return false end
+  for _, box in ipairs(sd.fluidboxes) do
+    if (box.local_amount or 0) > 0 then return true end
   end
   return false
 end
@@ -121,7 +121,7 @@ function EntityCreation.process_batch(job, get_batch_size, should_show_progress)
                 and entity.type ~= "item-request-proxy" then
               local ok, err = pcall(function()
                 if entity.active then
-                  entity.active = false
+                  entity.disabled_by_script = true
                 end
               end)
               if not ok then
@@ -185,12 +185,17 @@ function EntityCreation.process_batch(job, get_batch_size, should_show_progress)
                   losses.items[item_key] = (losses.items[item_key] or 0) + held.count
                   entity_items = entity_items + held.count
                 end
-                -- Fluids
-                if entity_data.specific_data.fluids then
-                  for _, fluid_data in ipairs(entity_data.specific_data.fluids) do
-                    local key = fluid_data.name
-                    losses.fluids[key] = (losses.fluids[key] or 0.0) + (fluid_data.amount or 0)
-                    entity_fluids = entity_fluids + (fluid_data.amount or 0)
+                -- Fluids: REPORTED only (per-box captured locals) — never subtracted from the
+                -- gate's expected counts (owner ruling 2026-07-20, fail => revert; a segment
+                -- short of a failed member's share fails the gate and the source is preserved).
+                if entity_data.specific_data.fluidboxes then
+                  for _, box in ipairs(entity_data.specific_data.fluidboxes) do
+                    local amount = box.local_amount or 0
+                    if amount > 0 then
+                      local key = "box" .. tostring(box.box_index)
+                      losses.fluids[key] = (losses.fluids[key] or 0.0) + amount
+                      entity_fluids = entity_fluids + amount
+                    end
                   end
                 end
               end

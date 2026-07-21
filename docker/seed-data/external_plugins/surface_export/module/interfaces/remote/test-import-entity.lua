@@ -155,18 +155,15 @@ return function(entity_json, surface_index, position_override)
   if entity_data.specific_data and entity_data.specific_data.fluids then
     local fluid_restore_success, fluid_error = pcall(function()
       -- Inline single-entity fluid restore (Deserializer.restore_fluids was removed)
-      -- This debug tool operates on a single activated entity, so direct fluidbox
-      -- assignment is appropriate (no segment-aware restoration needed)
-      local fluidbox = created_entity.fluidbox
-      if fluidbox then
-        for i, fluid_data in ipairs(entity_data.specific_data.fluids) do
-          if i <= #fluidbox then
-            fluidbox[i] = {
-              name = fluid_data.name,
-              amount = fluid_data.amount,
-              temperature = fluid_data.temperature
-            }
-          end
+      -- This debug tool operates on a single freshly-created (empty-box) entity, so
+      -- insert_fluid is equivalent to a per-box set (no segment-aware restoration needed)
+      for i, fluid_data in ipairs(entity_data.specific_data.fluids) do
+        if i <= created_entity.fluids_count then
+          created_entity.insert_fluid({
+            name = fluid_data.name,
+            amount = fluid_data.amount,
+            temperature = fluid_data.temperature
+          })
         end
       end
     end)
@@ -176,7 +173,7 @@ return function(entity_json, surface_index, position_override)
     end
     if fluid_restore_success then
       -- Verify fluids were restored
-      if created_entity.valid and created_entity.fluidbox then
+      if created_entity.valid then
         result.debug_info.fluids_restored = {}
         local total_expected = 0
         local total_actual = 0
@@ -186,8 +183,8 @@ return function(entity_json, surface_index, position_override)
           total_expected = total_expected + (fluid_data.amount or 0)
         end
 
-        for i = 1, #created_entity.fluidbox do
-          local fluid = created_entity.fluidbox[i]
+        for i = 1, created_entity.fluids_count do
+          local fluid = created_entity.get_fluid(i)
           if fluid then
             table.insert(result.debug_info.fluids_restored, {
               slot = i,

@@ -152,7 +152,7 @@ function ActiveStateRestoration.restore(entities_to_create, entity_map, frozen_s
         if was_active then
             -- Entity was active before export - re-enable it
             if not entity.active then
-                entity.active = true
+                entity.disabled_by_script = false
                 activated_count = activated_count + 1
             end
 
@@ -179,7 +179,7 @@ function ActiveStateRestoration.restore(entities_to_create, entity_map, frozen_s
             end
 
             if entity.active then
-                entity.active = false
+                entity.disabled_by_script = true
             end
             kept_inactive_count = kept_inactive_count + 1
         end

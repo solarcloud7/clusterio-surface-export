@@ -5,7 +5,6 @@
 local InventoryScanner = require("modules/surface_export/export_scanners/inventory-scanner")
 local GameUtils = require("modules/surface_export/utils/game-utils")
 local Util = require("modules/surface_export/utils/util")
-local FluidOwnership = require("modules/surface_export/utils/fluid-ownership")
 
 local SurfaceCounter = {}
 
@@ -116,77 +115,64 @@ function SurfaceCounter.count_items(surface)
     return item_totals, total
 end
 
---- Count all fluids held by a SINGLE entity (segment-aware second pass).
---- CRITICAL (Factorio 2.0): After writing segment totals, entity.fluidbox[i] returns
---- local buffer amounts that haven't redistributed yet. get_fluid_segment_contents()
---- returns the true segment total regardless of redistribution state.
---- Segment dedup is inherently CROSS-ENTITY: a fluid segment spans multiple entities and
---- must be counted exactly once across a full surface fold. That shared state therefore
---- lives in a caller-owned `state` table (NOT in this function), so the caller builds it
---- once and passes the SAME table for every entity — mirroring the previous single-loop
---- behavior exactly. This function READS and MUTATES `state.counted_segments`.
+--- Count all fluids held by a SINGLE entity (2.1 fluid API, segment-deduplicated).
+--- [empirical, 2.1.11, fluid-law experiments 2026-07-21]: get_fluid_segment_fluid(i) returns the
+--- EXACT segment total from any member box at any instant (the 2.0 buffer/window duality and the
+--- order-dependent claim bug are gone at 2.1), so counting a segment ONCE from whichever member
+--- the fold sees first is exact by construction. Segmentless boxes (machine buffers, fusion
+--- generators) are counted from their own storage via get_fluid(i). Segment getters THROW on
+--- segmentless boxes at 2.1 — has_fluid_segment(i) guards them.
+--- Segment dedup is inherently CROSS-ENTITY, so the dedup memory lives in the caller-owned
+--- `state` table passed to every entity of one fold.
 --- Preserves the pcall-with-logged-error pattern (the pcall-logging lint guard forbids a
 --- silent swallow). Independent of the export-side entity-handler dispatch by design.
 --- @param entity LuaEntity: The entity to count fluids for
---- @param exclude_engine_owned boolean|nil: Exclude engine-owned isolated boxes (strict transfer validation)
 --- @param state table: Shared cross-entity fold state, built once by count_fluids:
----   state.counted_segments      seg_id set already counted (read AND mutated here — the dedup memory)
----   state.known_fluid_temps      fluid_name→temp fallback (from count_fluids' first pass)
----   state.seg_temps              authoritative seg_id→{fluid,temp} from FluidRestoration.restore()
----   state.engine_owned_segments  seg_id set skipped when exclude_engine_owned is set
---- @return table: fluid_key→amount map contributed by this entity (empty if invalid / no fluidbox)
-function SurfaceCounter.count_entity_fluids(entity, exclude_engine_owned, state)
+---   state.counted_segments  seg_id set already counted (read AND mutated here — the dedup memory)
+---   state.seg_temps         authoritative seg_id→{fluid,temp} from FluidRestoration.restore()
+--- @return table: fluid_key→amount map contributed by this entity (empty if invalid / no storages)
+function SurfaceCounter.count_entity_fluids(entity, state)
     local totals = {}
-    if not entity or not entity.valid or not entity.fluidbox then
+    if not entity or not entity.valid then
         return totals
     end
 
     local counted_segments = state.counted_segments
-    local known_fluid_temps = state.known_fluid_temps
-    local seg_temps = state.seg_temps
-    local engine_owned_segments = state.engine_owned_segments
+    local seg_temps = state.seg_temps or {}
 
-    -- Count using segment contents (deduplicating by segment ID via the shared state).
-    -- Temperature priority: seg_temps (authoritative) > local proxy > known_fluid_temps > 15
     local success, err = pcall(function()
-        for i = 1, #entity.fluidbox do
-            local seg_id = entity.fluidbox.get_fluid_segment_id(i)
-            if seg_id and not counted_segments[seg_id] then
-                counted_segments[seg_id] = true
-                -- Engine-owned exclusion: seeded set authoritative (set-identity with the serializer's
-                -- pre-pass) PLUS on-the-fly introducing-box classification so a hand-built state can't
-                -- silently disable it (phantom fusion-plasma abort 2026-07-17; sound since non-default
-                -- category segments only span engine-owned boxes — refines Pitfall #22, activatable
-                -- entities expose no own segment ID; see api-notes).
-                local engine_owned = engine_owned_segments[seg_id]
-                    or (exclude_engine_owned and FluidOwnership.is_engine_owned_box(entity, i))
-                -- Buffer-class-aware segment read via the ONE shared accessor, keeping the census
-                -- read-identical with the serializer (paired-reads commensurability).
-                local contents = not engine_owned
-                    and FluidOwnership.effective_segment_contents(entity.fluidbox, i) or nil
-                if contents then
-                    for fluid_name, amount in pairs(contents) do
+        local count = entity.fluids_count
+        if not count or count == 0 then
+            return
+        end
+        for i = 1, count do
+            if entity.has_fluid_segment(i) then
+                local seg_id = entity.get_fluid_segment_id(i)
+                if seg_id and not counted_segments[seg_id] then
+                    counted_segments[seg_id] = true
+                    local seg_fluid = entity.get_fluid_segment_fluid(i)
+                    if seg_fluid and seg_fluid.name and (seg_fluid.amount or 0) > 0 then
                         local temp
                         local st = seg_temps[seg_id]
-                        if st and st.fluid == fluid_name then
+                        if st and st.fluid == seg_fluid.name then
                             temp = st.temp
                         else
-                            local local_fluid = entity.fluidbox[i]
-                            temp = (local_fluid and local_fluid.temperature) or known_fluid_temps[fluid_name] or 15
+                            temp = seg_fluid.temperature or 15
                         end
-                        local key = Util.make_fluid_temp_key(fluid_name, temp)
-                        totals[key] = (totals[key] or 0) + amount
+                        local key = Util.make_fluid_temp_key(seg_fluid.name, temp)
+                        totals[key] = (totals[key] or 0) + seg_fluid.amount
                     end
                 end
-            elseif not seg_id and not (exclude_engine_owned and FluidOwnership.is_engine_owned_box(entity, i)) then
-                -- Isolated fluidbox: use local amount
-                local fluid = entity.fluidbox[i]
-                if fluid and fluid.name then
-                    local key = Util.make_fluid_temp_key(fluid.name, fluid.temperature)
+                -- Already-counted segments: skip (exact by construction — every member reports
+                -- the same total).
+            else
+                -- Segmentless storage: the entity's own content is the whole truth for this box.
+                local fluid = entity.get_fluid(i)
+                if fluid and fluid.name and (fluid.amount or 0) > 0 then
+                    local key = Util.make_fluid_temp_key(fluid.name, fluid.temperature or 15)
                     totals[key] = (totals[key] or 0) + fluid.amount
                 end
             end
-            -- Already counted segments: skip
         end
     end)
 
@@ -197,16 +183,14 @@ function SurfaceCounter.count_entity_fluids(entity, exclude_engine_owned, state)
     return totals
 end
 
---- Count all fluids on a live surface using segment-aware reading.
---- Folds count_entity_fluids over every entity, sharing one cross-entity `state` (so a
---- segment spanning entities is counted once). The known-temperature first pass MUST run
---- to completion before the fold — an entity counted early relies on temperatures a later
---- entity contributes — so it stays a separate full pass, exactly as before.
+--- Count all fluids on a live surface (2.1 segment reads).
+--- Folds count_entity_fluids over every entity, sharing one cross-entity `state` so each
+--- segment is counted exactly once. Segment reads carry their own temperature, so the old
+--- known-temperature pre-pass is gone.
 --- @param surface LuaSurface: The surface to count fluids on
 --- @param segment_temps table|nil: Optional seg_id→{fluid,temp} map from FluidRestoration.restore()
---- @param exclude_engine_owned boolean|nil: Exclude non-default-category segments for strict transfer validation
 --- @return table, number: fluid_key→amount map, total fluid amount
-function SurfaceCounter.count_fluids(surface, segment_temps, exclude_engine_owned)
+function SurfaceCounter.count_fluids(surface, segment_temps)
     if not surface or not surface.valid then
         return {}, 0
     end
@@ -218,31 +202,12 @@ function SurfaceCounter.count_fluids(surface, segment_temps, exclude_engine_owne
 
     local state = {
         counted_segments = {},
-        known_fluid_temps = {},
         seg_temps = segment_temps or {},
-        engine_owned_segments =
-            exclude_engine_owned and FluidOwnership.collect_engine_owned_segments(entities) or {},
     }
 
-    -- First pass: collect known temperatures from entities with non-empty local fluidboxes.
-    -- This is a fallback for segments not covered by segment_temps.
     for _, entity in ipairs(entities) do
-        if entity.valid and entity.fluidbox then
-            Util.pcall_warn("[SurfaceCounter] Fluidbox temp read on " .. entity.name, function()
-                for i = 1, #entity.fluidbox do
-                    local fluid = entity.fluidbox[i]
-                    if fluid and fluid.name and fluid.temperature then
-                        state.known_fluid_temps[fluid.name] = fluid.temperature
-                    end
-                end
-            end)
-        end
-    end
-
-    -- Second pass: fold the per-entity fluid meter, deduplicating by segment ID via state.
-    for _, entity in ipairs(entities) do
-        if entity.valid and entity.fluidbox then
-            local entity_totals = SurfaceCounter.count_entity_fluids(entity, exclude_engine_owned, state)
+        if entity.valid then
+            local entity_totals = SurfaceCounter.count_entity_fluids(entity, state)
             for key, amount in pairs(entity_totals) do
                 fluid_totals[key] = (fluid_totals[key] or 0) + amount
                 total = total + amount

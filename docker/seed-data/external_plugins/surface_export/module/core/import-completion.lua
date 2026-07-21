@@ -44,43 +44,6 @@ local function copy_counts(counts)
 	return copy
 end
 
-local function capture_p2_plasma(surface, platform_name)
-	local holders = {}
-	for _, entity in ipairs(surface.find_entities_filtered({})) do
-		if entity.valid and entity.fluidbox
-			and (entity.name == "fusion-reactor" or entity.name == "pipe" or entity.name == "storage-tank") then
-			for i = 1, #entity.fluidbox do
-				local direct = entity.fluidbox[i]
-				local segment_id = entity.fluidbox.get_fluid_segment_id(i)
-				local segment_contents = segment_id and entity.fluidbox.get_fluid_segment_contents(i) or nil
-				local prototype = entity.prototype.fluidbox_prototypes
-					and entity.prototype.fluidbox_prototypes[i] or nil
-				holders[#holders + 1] = {
-					entity = entity.name,
-					unit_number = entity.unit_number,
-					position = { x = entity.position.x, y = entity.position.y },
-					box = i,
-					production_type = prototype and prototype.production_type or nil,
-					active = entity.active,
-					segment_id = segment_id,
-					direct = direct and {
-						name = direct.name,
-						amount = direct.amount,
-						temperature = direct.temperature,
-					} or nil,
-					segment_contents = segment_contents,
-				}
-			end
-		end
-	end
-	return {
-		platform_name = platform_name,
-		tick = game.tick,
-		game_paused = game.tick_paused == true,
-		platform_paused = surface.platform and surface.platform.paused or nil,
-		holders = holders,
-	}
-end
 
 local function subtract_fluids_by_name(counts, subtractions)
 	local adjusted = copy_counts(counts)
@@ -305,7 +268,7 @@ function ImportCompletion.run_phase2(job)
 		if entity_data and entity_data.entity_id then
 			local entity = entity_map[entity_data.entity_id]
 			if entity and entity.valid and GameUtils.ACTIVATABLE_ENTITY_TYPES[entity.type] then
-				entity.active = false
+				entity.disabled_by_script = true
 			end
 		end
 	end
@@ -322,24 +285,12 @@ function ImportCompletion.run_phase2(job)
 	ActiveStateRestoration.restore_held_items_only(entities_to_create, entity_map)
 	job.metrics.fluids_started_tick = game.tick
 	PhaseProfiler.start(job.job_id, "fluids")
-	local fluids_result = FluidRestoration.restore(entities_to_create, entity_map)
+	local fluids_result = FluidRestoration.restore(entities_to_create, entity_map,
+		job.platform_data and job.platform_data.fluid_segments)
 	PhaseProfiler.stop(job.job_id, "fluids")
 	job.metrics.fluids_completed_tick = game.tick
 	job.metrics.fluids_restored = fluids_result and fluids_result.count or 0
 	log(string.format("[Import] Frozen-world fluid restoration: %d fluids restored", job.metrics.fluids_restored))
-
-	do
-		local config = storage.surface_export_config
-		local hook = config and config.test_capture_p2_plasma
-		if config and config.debug_mode == true and type(hook) == "table"
-			and hook.platform_name == job.platform_name then
-			config.test_capture_p2_plasma = nil
-			storage.fluid_lab = storage.fluid_lab or {}
-			storage.fluid_lab.p2_capture = capture_p2_plasma(job.target_surface, job.platform_name)
-			log(string.format("[Import][TEST] P2 plasma capture consumed for %s at tick %d",
-				job.platform_name, game.tick))
-		end
-	end
 
 	if job.transfer_id then
 		log("[Import] Deferring active state restoration until after the exact transfer gate")
@@ -383,7 +334,6 @@ function ImportCompletion.run_phase2(job)
 		local adjusted_verification = {
 			item_counts = copy_counts(job.platform_data.verification.item_counts),
 			fluid_counts = copy_counts(job.platform_data.verification.fluid_counts),
-			engine_owned_fluid_counts = copy_counts(job.platform_data.verification.engine_owned_fluid_counts),
 		}
 		local fel = job.failed_entity_losses
 		if fel and fel.entity_count > 0 then
@@ -393,10 +343,11 @@ function ImportCompletion.run_phase2(job)
 						0, adjusted_verification.item_counts[item_key] - lost_count)
 				end
 			end
-			adjusted_verification.fluid_counts = subtract_fluids_by_name(
-				adjusted_verification.fluid_counts, fel.fluids)
-			log(string.format("[Import] Adjusted expected totals for %d failed entities: -%d items, -%.1f fluids",
-				fel.entity_count, fel.total_items, fel.total_fluids))
+			-- Fluids deliberately NOT adjusted for failed entities (owner ruling 2026-07-20,
+			-- "failure is not an option — fail => revert"): a segment short of a failed member's
+			-- share fails the exact gate and the two-phase commit preserves the source.
+			log(string.format("[Import] Adjusted expected ITEM totals for %d failed entities: -%d items (fluids never adjusted — fail => revert)",
+				fel.entity_count, fel.total_items))
 		end
 
 		-- Adjust expected counts for inventory overflow losses (set_stack API cap).

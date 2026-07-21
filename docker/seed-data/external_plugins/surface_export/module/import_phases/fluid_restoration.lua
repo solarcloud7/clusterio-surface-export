@@ -1,244 +1,282 @@
-local FluidOwnership = require("modules/surface_export/utils/fluid-ownership")
+-- FactorioSurfaceExport - Fluid Restoration (Factorio 2.1 fluid API, fluid-segment registry)
+--
+-- Consumes the payload's fluid-segment registry: `fluid_segments` (one record per source segment
+-- or segmentless storage, keyed by OUR id) plus per-entity `specific_data.fluidboxes` membership
+-- ({box_index, segment_ref, local_amount}). Engine segment ids differ across instances, so the
+-- destination groups members by RE-DERIVED dest segment id and writes each group once.
+--
+-- 2.1 write primitives [empirical, 2.1.11, fluid-law experiments 2026-07-21, NOTEBOOK]:
+--   * set_fluid_segment_fluid(i, fluid) writes the WHOLE segment in one call (wrote 400 coolant,
+--     read back exact) — no more highest-capacity-member workaround.
+--   * set_fluid(i, fluid) writes a segmentless storage; returns the accepted amount (capacity
+--     clamp measured: plasma 50 -> 10).
+--   * Segment getters/setters THROW on segmentless boxes — has_fluid_segment(i) guards every use.
+--
+-- Failure semantics (owner ruling 2026-07-20, "failure is not an option — fail => revert"):
+-- members whose entity failed to place are simply absent; no expected-count adjustment is made
+-- for them. A short segment fails the exact gate and the two-phase commit preserves the source.
+-- Only physically-measured shortfalls are classified: capacity overflow -> dropped_fluids (a gate
+-- failure by design), engine-rejected writes -> write_rejected (subtracted from expected, the one
+-- lawful subtraction).
 
 local FluidRestoration = {}
 
---- Restore fluids to entities with network-aware optimization for Factorio 2.0
---- @param entities_to_create table: List of entity data objects
---- @param entity_map table: Map of entity_id to LuaEntity
-function FluidRestoration.restore(entities_to_create, entity_map)
-    log("[Import] Restoring fluids using segment aggregation...")
+--- Restore fluids from the payload registry.
+--- @param entities_to_create table: entity data records (with specific_data.fluidboxes)
+--- @param entity_map table: entity_id -> LuaEntity
+--- @param fluid_segments table: the payload's fluid_segments array (our-id keyed records)
+--- @return table: { count, segments, isolated, segment_temps, write_rejected, dropped_fluids }
+function FluidRestoration.restore(entities_to_create, entity_map, fluid_segments)
+	log("[Import] Restoring fluids from the segment registry (2.1 segment writes)...")
 
-    -- Map segment_id -> {fluid=name, amount=total, energy=total_temp_product, targets={{ent, i}, ...}}
-    local segments_to_fill = {}
-    -- List of {entity, fluid, amount, temp} for entities not attached to valid segments
-    local isolated_fluids = {}
-    
-    for _, entity_data in ipairs(entities_to_create) do
-      local entity = entity_map[entity_data.entity_id]
-      if entity and entity.valid and entity_data.specific_data and entity_data.specific_data.fluids then
-         for _, fluid_data in ipairs(entity_data.specific_data.fluids) do
-           if fluid_data.engine_owned then
-             log(string.format("[Fluid Restore] Skipping engine-owned %s=%.1f", fluid_data.name, fluid_data.amount or 0))
-           else
-           local name = fluid_data.name
-           local amount = fluid_data.amount or 0
-           local temp = fluid_data.temperature or 15
-           local assigned = false
-  
-           -- Iterate fluidboxes to find which segment this fluid belongs to
-           if entity.fluidbox then
-               for i = 1, #entity.fluidbox do
-                  local seg_id = entity.fluidbox.get_fluid_segment_id(i)
-                  -- Only consider if we have a segment ID
-                  -- And if the box is compatible (no strict filter check here, relying on segment logic)
-                  -- Optimistic matching: if the segment is already tracked for this fluid, matches.
-                  -- Use the first compatible box/segment found.
-                  
-                  if seg_id then
-                      local seg = segments_to_fill[seg_id]
-                      local match = false
-                      
-                      if not seg then
-                          -- New segment discovered, claim it for this fluid
-                          segments_to_fill[seg_id] = {
-                              fluid = name,
-                              amount = 0,
-                              energy = 0,
-                              targets = {}
-                          }
-                          seg = segments_to_fill[seg_id]
-                          match = true
-                      elseif seg.fluid == name then
-                          match = true
-                      end
-                      
-                      if match then
-                          seg.amount = seg.amount + amount
-                          seg.energy = seg.energy + (amount * temp)
-                          table.insert(seg.targets, {entity=entity, index=i})
-                          assigned = true
-                          break -- Fluid amount assigned to this segment, stop looking for other boxes for THIS fluid packet
-                      end
-                  end
-               end
-           end
-           
-           if not assigned then
-              table.insert(isolated_fluids, {
-                  entity = entity,
-                  fluid = name,
-                  amount = amount, 
-                  temperature = temp
-              })
-           end
-           end
-         end
-      end
-    end
-  
-    -- Process Segments with Capacity Safety
-    -- CRITICAL (Factorio 2.0): get_capacity() returns INCONSISTENT values depending on entity type.
-    -- For pipes/tanks: returns the FULL segment capacity (e.g., 11800)
-    -- For thrusters/machines with internal buffers: returns LOCAL fluidbox capacity (e.g., 1000)
-    -- Writing fluidbox[i]= on a pipe sets the SEGMENT total; on a thruster it only sets local buffer.
-    -- Therefore we MUST pick the entity with the highest get_capacity() as injection target.
-    local dropped_fluids = {}
-    local dropped_count = 0
-    local success_count = 0
-    -- Track fluids that the engine silently rejects (e.g., fusion-reactor plasma output).
-    -- These are unrestorable via any API and must be excluded from expected totals.
-    local write_rejected = {}
-    -- Authoritative temperature record keyed by segment ID: seg_id → {fluid=name, temp=avg_temp}
-    -- Returned to callers so SurfaceCounter can use what was actually written rather than
-    -- re-reading from the proxy (entity.fluidbox[i].temperature), which may lag after injection.
-    local segment_temps = {}
+	-- Index payload segments by our id.
+	local by_id = {}
+	for _, rec in ipairs(fluid_segments or {}) do
+		by_id[rec.id] = rec
+	end
 
-    for seg_id, data in pairs(segments_to_fill) do
-        if data.amount > 0 and #data.targets > 0 then
-            -- Pick injection target: entity with highest get_capacity() to ensure we write to the segment
-            -- Entities like pipes/tanks return segment capacity; thrusters return local capacity only
-            local target = data.targets[1]
-            local best_cap = target.entity.valid and target.entity.fluidbox.get_capacity(target.index) or 0
-            for _, t in ipairs(data.targets) do
-                if t.entity.valid then
-                    local cap = t.entity.fluidbox.get_capacity(t.index)
-                    if cap > best_cap then
-                        target = t
-                        best_cap = cap
-                    end
-                end
-            end
-            
-            if target.entity.valid then
-               local max_cap = best_cap
-               
-               -- Clamp amount to prevent silent loss without tracking and ensure valid assignment
-               local final_amount = math.min(data.amount, max_cap)
-               local avg_temp = data.amount > 0 and (data.energy / data.amount) or 15
-               
-               -- Log capacity details for debugging
-               log(string.format("[Fluid Restore] Seg %d (%s): target=%s cap=%.0f data=%.1f final=%.1f targets=%d temp=%.1f",
-                   seg_id, data.fluid, target.entity.name, max_cap, data.amount, final_amount, #data.targets, avg_temp))
+	-- Collect surviving members per payload segment ref.
+	local members = {}  -- ref -> array of {entity, box_index, local_amount}
+	for _, entity_data in ipairs(entities_to_create) do
+		local sd = entity_data.specific_data
+		local boxes = sd and sd.fluidboxes
+		if boxes then
+			local entity = entity_map[entity_data.entity_id]
+				or entity_map[tostring(entity_data.entity_id)]  -- JSON numeric-key coercion (PR #29)
+			if entity and entity.valid then
+				for _, box in ipairs(boxes) do
+					local ref = box.segment_ref
+					if by_id[ref] then
+						members[ref] = members[ref] or {}
+						table.insert(members[ref], {
+							entity = entity,
+							box_index = box.box_index,
+							local_amount = box.local_amount or 0,
+						})
+					else
+						log(string.format("[Fluid Restore] WARNING: %s box %d references unknown segment %s",
+							entity.name, box.box_index or -1, tostring(ref)))
+					end
+				end
+			end
+		end
+	end
 
-               -- Use pcall for safety against "fluid mixing" errors if segment is somehow tainted
-               local ok, err = pcall(function() 
-                  target.entity.fluidbox[target.index] = {
-                      name = data.fluid,
-                      amount = final_amount,
-                      temperature = avg_temp
-                  }
-               end)
-               
-               if not ok then
-                   log(string.format("[Fluid Restore Error] Segment #%d (%s): %s", seg_id, data.fluid, err))
-               else
-                   success_count = success_count + 1
-                   segment_temps[seg_id] = { fluid = data.fluid, temp = avg_temp }
-                   
-                   -- Verify actual amount written through the ONE shared buffer-class-aware accessor:
-                   -- the old contents-only verify declared a SUCCESSFUL write to a fusion-reactor buffer
-                   -- failed (contents read empty while the local proxy held the fluid) and double-filled
-                   -- via insert_fluid to capacity (the +30 conjured-coolant incident, census-fusion
-                   -- fixture — [empirical, 2.0.77], api-notes fusion segment-ID entry). The accessor
-                   -- substitutes the local read ONLY when contents is empty, so a lagging proxy can
-                   -- never mask a genuine shortfall against non-empty segment contents (/code-review
-                   -- PR #120: an unconditional max() would extend the rule into the uncharacterized
-                   -- connected-reactor regime the api-notes entry forbids).
-                   local actual_contents = FluidOwnership.effective_segment_contents(target.entity.fluidbox, target.index)
-                   local actual_amount = actual_contents and actual_contents[data.fluid] or 0
-                   if actual_amount < final_amount - 0.5 then
-                       local write_loss = final_amount - actual_amount
-                       -- Fallback: some entities (fusion-reactor, etc.) silently reject fluidbox[i] writes.
-                       -- Retry with insert_fluid which uses a different engine path.
-                       local retry_ok, retry_inserted = pcall(function()
-                           return target.entity.insert_fluid({
-                               name = data.fluid,
-                               amount = final_amount,
-                               temperature = avg_temp
-                           })
-                       end)
-                       if retry_ok and retry_inserted and retry_inserted > 0.5 then
-                           log(string.format("[Fluid Restore] Seg %d (%s): fluidbox write failed on %s, insert_fluid recovered %.1f/%.1f",
-                               seg_id, data.fluid, target.entity.name, retry_inserted, final_amount))
-                           if retry_inserted < final_amount - 0.5 then
-                               local remaining_loss = final_amount - retry_inserted
-                               dropped_fluids[data.fluid] = (dropped_fluids[data.fluid] or 0) + remaining_loss
-                               dropped_count = dropped_count + 1
-                           end
-                       else
-                           if not retry_ok then
-                               log(string.format("[Fluid Restore] Seg %d (%s): insert_fluid ERROR on %s: %s",
-                                   seg_id, data.fluid, target.entity.name, tostring(retry_inserted)))
-                           end
-                           -- Engine silently rejected both write paths — this fluid is unrestorable
-                           -- (e.g., fusion-reactor plasma output). Track separately for validation adjustment.
-                           log(string.format("[Fluid Restore] Seg %d (%s): engine rejected write on %s (%.1f unrestorable)",
-                               seg_id, data.fluid, target.entity.name, write_loss))
-                           write_rejected[data.fluid] = (write_rejected[data.fluid] or 0) + write_loss
-                       end
-                   end
-                   
-                   -- Also check for pre-clamp overflow (source amount > segment capacity)
-                   if data.amount > max_cap + 0.01 then
-                      local diff = data.amount - max_cap
-                      dropped_fluids[data.fluid] = (dropped_fluids[data.fluid] or 0) + diff
-                      dropped_count = dropped_count + 1
-                      log(string.format("[Fluid Restore Warning] Seg %d (%s): capacity overflow %.1f > %.0f (lost %.1f)",
-                          seg_id, data.fluid, data.amount, max_cap, diff))
-                   end
-               end
-            end
-        end
-    end
-  
-    if dropped_count > 0 then
-        local msg = "[Fluid Restore Warning] Capacity limits reached! Dropped amounts: "
-        for name, amount in pairs(dropped_fluids) do
-            msg = msg .. string.format("%s=%.1f ", name, amount)
-        end
-        log(msg)
-        game.print(msg, {1, 0.5, 0})
-    end
-    
-    log(string.format("[Fluid Restore] Batch result: %d success, %d overflows.", success_count, dropped_count))
-  
-    -- Process Isolated Fluids (Fallback) - entities without a fluid segment ID
-    local isolated_count = 0
-    local isolated_lost = 0
-    for _, item in ipairs(isolated_fluids) do
-        if item.entity.valid then
-            local inserted = item.entity.insert_fluid({
-                name = item.fluid,
-                amount = item.amount,
-                temperature = item.temperature
-            })
-            isolated_count = isolated_count + 1
-            if inserted < item.amount - 0.1 then
-                local lost = item.amount - inserted
-                isolated_lost = isolated_lost + lost
-                log(string.format("[Fluid Restore Warning] Isolated %s on %s: wanted %.1f, inserted %.1f (lost %.1f)",
-                    item.fluid, item.entity.name, item.amount, inserted, lost))
-                dropped_fluids[item.fluid] = (dropped_fluids[item.fluid] or 0) + lost
-            end
-        end
-    end
-    
-    if isolated_lost > 0 then
-        log(string.format("[Fluid Restore Warning] Isolated entities lost %.1f total fluid", isolated_lost))
-    end
-    
-    local total_restored = success_count + isolated_count
-    log(string.format("[Import] Fluid restoration complete. Processed %d segments and %d isolated entities.", 
-        table_size(segments_to_fill), #isolated_fluids))
-    
-    return {
-        count = total_restored,
-        segments = success_count,
-        isolated = isolated_count,
-        segment_temps = segment_temps,
-        write_rejected = write_rejected,
-        dropped_fluids = dropped_fluids,
-    }
+	local dropped_fluids = {}
+	local write_rejected = {}
+	local segment_temps = {}
+	local segment_writes = 0
+	local storage_writes = 0
+	local dropped_count = 0
+
+	-- One write per (payload segment × dest segment group). Verify by re-read; retry the
+	-- remainder with insert_fluid; classify what still refuses.
+	local function write_segment_group(rec, group, share)
+		local anchor = group[1]
+		local cap_ok, cap = pcall(function()
+			return anchor.entity.get_fluid_segment_capacity(anchor.box_index)
+		end)
+		if not cap_ok or not cap then
+			log(string.format("[Fluid Restore] Seg cap read failed on %s box %d: %s",
+				anchor.entity.name, anchor.box_index, tostring(cap)))
+			cap = share
+		end
+		local final = math.min(share, cap)
+		if share > cap + 0.01 then
+			local diff = share - cap
+			dropped_fluids[rec.fluid] = (dropped_fluids[rec.fluid] or 0) + diff
+			dropped_count = dropped_count + 1
+			log(string.format("[Fluid Restore Warning] %s: capacity overflow %.2f > %.2f (lost %.2f)",
+				rec.fluid, share, cap, diff))
+		end
+		local temperature = rec.temperature or 15
+		local ok, err = pcall(function()
+			anchor.entity.set_fluid_segment_fluid(anchor.box_index, {
+				name = rec.fluid, amount = final, temperature = temperature,
+			})
+		end)
+		if not ok then
+			log(string.format("[Fluid Restore Error] segment write (%s=%.2f) on %s: %s",
+				rec.fluid, final, anchor.entity.name, tostring(err)))
+		end
+		-- Verify what the segment actually holds now.
+		local read_ok, seg_fluid = pcall(function()
+			return anchor.entity.get_fluid_segment_fluid(anchor.box_index)
+		end)
+		if not read_ok then
+			log(string.format("[Fluid Restore] segment verify read failed on %s box %d: %s",
+				anchor.entity.name, anchor.box_index, tostring(seg_fluid)))
+		end
+		local actual = (read_ok and seg_fluid and seg_fluid.name == rec.fluid) and seg_fluid.amount or 0
+		if actual < final - 0.5 then
+			local shortfall = final - actual
+			local retry_ok, retry_inserted = pcall(function()
+				return anchor.entity.insert_fluid({
+					name = rec.fluid, amount = shortfall, temperature = temperature,
+				})
+			end)
+			local recovered = (retry_ok and retry_inserted) or 0
+			if recovered > 0.5 then
+				log(string.format("[Fluid Restore] %s: segment write short on %s, insert_fluid recovered %.2f/%.2f",
+					rec.fluid, anchor.entity.name, recovered, shortfall))
+			end
+			if not retry_ok then
+				log(string.format("[Fluid Restore] insert_fluid ERROR on %s: %s",
+					anchor.entity.name, tostring(retry_inserted)))
+			end
+			local still_short = shortfall - recovered
+			if still_short > 0.5 then
+				log(string.format("[Fluid Restore] %s: engine rejected %.2f on %s (unrestorable)",
+					rec.fluid, still_short, anchor.entity.name))
+				write_rejected[rec.fluid] = (write_rejected[rec.fluid] or 0) + still_short
+			end
+		end
+		segment_writes = segment_writes + 1
+		local seg_id_ok, dest_seg_id = pcall(function()
+			return anchor.entity.get_fluid_segment_id(anchor.box_index)
+		end)
+		if not seg_id_ok then
+			log(string.format("[Fluid Restore] dest segment id read failed on %s box %d: %s",
+				anchor.entity.name, anchor.box_index, tostring(dest_seg_id)))
+		elseif dest_seg_id then
+			segment_temps[dest_seg_id] = { fluid = rec.fluid, temp = temperature }
+		end
+	end
+
+	-- Write a segmentless storage box.
+	local function write_storage(rec, member, amount)
+		local temperature = rec.temperature or 15
+		local ok, accepted = pcall(function()
+			return member.entity.set_fluid(member.box_index, {
+				name = rec.fluid, amount = amount, temperature = temperature,
+			})
+		end)
+		if not ok then
+			log(string.format("[Fluid Restore Error] storage write (%s=%.2f) on %s box %d: %s",
+				rec.fluid, amount, member.entity.name, member.box_index, tostring(accepted)))
+			accepted = 0
+		end
+		accepted = accepted or 0
+		if accepted < amount - 0.1 then
+			local shortfall = amount - accepted
+			local retry_ok, retry_inserted = pcall(function()
+				return member.entity.insert_fluid({
+					name = rec.fluid, amount = shortfall, temperature = temperature,
+				})
+			end)
+			local recovered = (retry_ok and retry_inserted) or 0
+			if not retry_ok then
+				log(string.format("[Fluid Restore] insert_fluid ERROR on %s: %s",
+					member.entity.name, tostring(retry_inserted)))
+			end
+			local still_short = shortfall - recovered
+			if still_short > 0.1 then
+				-- Storage boxes have a hard per-box capacity; a shortfall here is a capacity drop
+				-- unless the engine refused outright (both classify against the gate honestly).
+				log(string.format("[Fluid Restore Warning] storage %s on %s: wanted %.2f, seated %.2f",
+					rec.fluid, member.entity.name, amount, amount - still_short))
+				dropped_fluids[rec.fluid] = (dropped_fluids[rec.fluid] or 0) + still_short
+				dropped_count = dropped_count + 1
+			end
+		end
+		storage_writes = storage_writes + 1
+	end
+
+	for ref, rec in pairs(by_id) do
+		local group = members[ref]
+		if rec.fluid and (rec.total or 0) > 0 and group and #group > 0 then
+			-- Partition surviving members by DEST reality: segment-bearing groups vs segmentless.
+			local dest_groups = {}   -- dest seg id -> { members..., sum_local }
+			local segmentless = {}
+			for _, m in ipairs(group) do
+				local has_ok, has_seg = pcall(function()
+					return m.entity.has_fluid_segment(m.box_index)
+				end)
+				if not has_ok then
+					log(string.format("[Fluid Restore] has_fluid_segment probe failed on %s box %d: %s — treating as segmentless",
+						m.entity.name, m.box_index, tostring(has_seg)))
+				end
+				if has_ok and has_seg then
+					local id_ok, dest_id = pcall(function()
+						return m.entity.get_fluid_segment_id(m.box_index)
+					end)
+					if not id_ok then
+						log(string.format("[Fluid Restore] segment id read failed on %s box %d: %s",
+							m.entity.name, m.box_index, tostring(dest_id)))
+					end
+					if id_ok and dest_id then
+						local g = dest_groups[dest_id]
+						if not g then
+							g = { sum_local = 0 }
+							dest_groups[dest_id] = g
+						end
+						g[#g + 1] = m
+						g.sum_local = g.sum_local + (m.local_amount or 0)
+					end
+				else
+					segmentless[#segmentless + 1] = m
+				end
+			end
+
+			-- Count groups + total local weight for proportional distribution (a failed bridging
+			-- entity can split one source segment into several dest segments; per-member locals
+			-- are what make a faithful proportional split possible).
+			local group_list = {}
+			local total_weight = 0
+			for _, g in pairs(dest_groups) do
+				group_list[#group_list + 1] = g
+				total_weight = total_weight + g.sum_local
+			end
+
+			if #group_list > 0 then
+				for _, g in ipairs(group_list) do
+					local share
+					if #group_list == 1 then
+						share = rec.total
+					elseif total_weight > 0 then
+						share = rec.total * (g.sum_local / total_weight)
+					else
+						share = rec.total / #group_list
+					end
+					write_segment_group(rec, g, share)
+				end
+				-- Segmentless stragglers of a seg-bearing record (anomalous topology drift): seat
+				-- their captured local share directly so the fluid is not silently absent.
+				for _, m in ipairs(segmentless) do
+					if (m.local_amount or 0) > 0 then
+						log(string.format("[Fluid Restore] WARNING: %s box %d segmentless on dest for source segment %s — seating captured local %.2f",
+							m.entity.name, m.box_index, tostring(rec.source_segment_id), m.local_amount))
+						write_storage(rec, m, m.local_amount)
+					end
+				end
+			elseif #segmentless > 0 then
+				-- Pure storage record (source was segmentless too — machine buffers, generators):
+				-- one member by construction; seat the total.
+				write_storage(rec, segmentless[1], rec.total)
+			end
+		end
+	end
+
+	if dropped_count > 0 then
+		local msg = "[Fluid Restore Warning] Capacity limits reached! Dropped amounts: "
+		for name, amount in pairs(dropped_fluids) do
+			msg = msg .. string.format("%s=%.1f ", name, amount)
+		end
+		log(msg)
+		game.print(msg, { 1, 0.5, 0 })
+	end
+
+	log(string.format("[Import] Fluid restoration complete: %d segment writes, %d storage writes.",
+		segment_writes, storage_writes))
+
+	return {
+		count = segment_writes + storage_writes,
+		segments = segment_writes,
+		isolated = storage_writes,
+		segment_temps = segment_temps,
+		write_rejected = write_rejected,
+		dropped_fluids = dropped_fluids,
+	}
 end
 
 return FluidRestoration
