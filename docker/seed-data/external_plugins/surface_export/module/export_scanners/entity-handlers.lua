@@ -250,10 +250,7 @@ EntityHandlers["underground-belt"] = function(entity)
     belt_to_ground_type = entity.belt_to_ground_type  -- "input" or "output"
   }
 
-  -- Connection partner (for verification)
-  if entity.neighbours then
-    data.has_partner = true
-  end
+  -- (2.1: LuaEntity.neighbours removed; the old has_partner flag it fed had zero consumers and was deleted.)
 
   return data
 end

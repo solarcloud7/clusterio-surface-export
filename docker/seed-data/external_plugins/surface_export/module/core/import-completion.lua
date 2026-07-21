@@ -8,6 +8,8 @@
 --                         → activate → reporting → notify
 
 local Deserializer = require("modules/surface_export/core/deserializer")
+local InventoryScanner = require("modules/surface_export/export_scanners/inventory-scanner")
+local FluidRegistry = require("modules/surface_export/export_scanners/fluid-registry")
 local FluidRestoration = require("modules/surface_export/import_phases/fluid_restoration")
 local EntityStateRestoration = require("modules/surface_export/import_phases/entity_state_restoration")
 local BeltRestoration = require("modules/surface_export/import_phases/belt_restoration")
@@ -42,6 +44,23 @@ local function copy_counts(counts)
 	local copy = {}
 	for key, amount in pairs(counts or {}) do copy[key] = amount end
 	return copy
+end
+
+--- Forensic/debug surface scan with its own throwaway FluidRegistry armed. Every capture path
+--- must arm a registry (extract_fluidboxes fails loud otherwise — the single-discipline rule);
+--- these scans are read-only diagnostics, so their registry is local and discarded with the scan.
+--- @param surface LuaSurface
+--- @return table, table: entity records, fluid_segments list
+local function scan_surface_with_registry(surface)
+	local registry = FluidRegistry.new()
+	InventoryScanner.fluid_registry = registry
+	local ok, entities = pcall(EntityScanner.scan_surface, surface)
+	InventoryScanner.fluid_registry = nil
+	if not ok then
+		log("[Import] forensic surface scan failed: " .. tostring(entities))
+		return {}, {}
+	end
+	return entities, FluidRegistry.list(registry)
 end
 
 
@@ -125,6 +144,7 @@ local function bank_failure_black_box(job, result)
 	for name, version in pairs(script.active_mods or {}) do mods[name] = version end
 	local safe_name = string.gsub(job.platform_name or "unknown", "[^%w_-]", "_")
 	local filename = string.format("%s_%d.json", safe_name, game.tick)
+	local physical_entities, physical_fluid_segments = scan_surface_with_registry(job.target_surface)
 	local bundle = {
 		transfer_id = job.transfer_id,
 		platform_name = job.platform_name,
@@ -142,7 +162,8 @@ local function bank_failure_black_box(job, result)
 				aggregate_fluid_counts_by_name(result.actualFluidCounts)
 			),
 		},
-		physical_entities = EntityScanner.scan_surface(job.target_surface),
+		physical_entities = physical_entities,
+		physical_fluid_segments = physical_fluid_segments,
 		belt_lines = BeltRestoration.attribute_lines(job.entities_to_create or {}, job.entity_map or {}),
 		restore_time_belt_lines = job.belt_attribution,
 		belt_recovery = job.belt_recovery,
@@ -532,7 +553,7 @@ function ImportCompletion.run_phase2(job)
 		if job.transfer_id and job.target_surface and job.target_surface.valid then
 			local debug_success, debug_err = pcall(function()
 				if DebugExport.is_enabled() then
-					local scanned_entities = EntityScanner.scan_surface(job.target_surface)
+					local scanned_entities, scanned_fluid_segments = scan_surface_with_registry(job.target_surface)
 					local destination_schedule = nil
 					if job.target_platform and job.target_platform.valid then
 						local captured_schedule, schedule_err = PlatformSchedule.capture(job.target_platform, job.target_platform.hub)
@@ -546,6 +567,7 @@ function ImportCompletion.run_phase2(job)
 						platform_name = job.platform_name,
 						tick = game.tick,
 						entities = scanned_entities,
+						fluid_segments = scanned_fluid_segments,
 						entity_count = #scanned_entities,
 						platform = {
 							name = job.target_platform and job.target_platform.name or job.platform_name,
