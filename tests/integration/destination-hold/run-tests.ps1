@@ -445,13 +445,20 @@ for _, e in ipairs(s.find_entities_filtered({})) do
             local ok_iron, n_iron = pcall(function() return e.get_item_count('uranium-235') end)
             if ok_iron and n_iron then belt_iron = belt_iron + n_iron end
         end
-        if e.fluidbox then
+        -- 2.1 fluid API: entity.fluidbox is removed; index-based reads, has_fluid_segment-guarded
+        -- (segment getters THROW on segmentless boxes). get_fluid_segment_fluid returns the exact
+        -- single-fluid segment total (2.1: contents map replaced by one fluid per segment).
+        local ok_fc, fc = pcall(function() return e.fluids_count end)
+        if ok_fc and fc and fc > 0 then
             pcall(function()
-                for i = 1, #e.fluidbox do
-                    local f = e.fluidbox[i]
-                    local seg_id = e.fluidbox.get_fluid_segment_id(i)
+                for i = 1, fc do
+                    local f = e.get_fluid(i)
+                    local seg_id = e.has_fluid_segment(i) and e.get_fluid_segment_id(i) or nil
                     local seg_contents = nil
-                    if seg_id then seg_contents = e.fluidbox.get_fluid_segment_contents(i) end
+                    if seg_id then
+                        local sf = e.get_fluid_segment_fluid(i)
+                        if sf then seg_contents = { [sf.name] = sf.amount } end
+                    end
                     if e.type == 'assembling-machine' then
                         local machine_box = {entity=e.name, unit_number=e.unit_number, index=i, segment_id=seg_id}
                         if f and f.amount and tracked_fluids[f.name] then
@@ -553,18 +560,18 @@ local furnace = ent{name='stone-furnace', position={ox+2, oy}, force=force}
 if furnace then
     pcall(function() furnace.insert{name='iron-ore', count=20} end)
     pcall(function() furnace.insert{name='coal', count=10} end)
-    furnace.active = true
+    furnace.disabled_by_script = false  -- 2.1: active is read-only; disabled_by_script drives it
 end
 local belt1 = ent{name='transport-belt', position={ox, oy+2}, direction=defines.direction.east, force=force}
 local belt2 = ent{name='transport-belt', position={ox+1, oy+2}, direction=defines.direction.east, force=force}
 if belt1 then pcall(function() belt1.insert{name='uranium-235', count=4} end) end
 if belt2 then pcall(function() belt2.insert{name='uranium-235', count=4} end) end
 local ins = ent{name='fast-inserter', position={ox+3, oy}, direction=defines.direction.west, force=force}
-if ins and ins.held_stack then pcall(function() ins.held_stack.set_stack{name='uranium-238', count=1} end); ins.active = true end
+if ins and ins.held_stack then pcall(function() ins.held_stack.set_stack{name='uranium-238', count=1} end); ins.disabled_by_script = false end
 local pipe = ent{name='pipe', position={ox, oy+4}, force=force}
 local tank = ent{name='storage-tank', position={ox+2, oy+4}, force=force}
-if tank and tank.fluidbox then pcall(function() tank.fluidbox[1] = {name='crude-oil', amount=1000, temperature=25} end) end
-if pipe and pipe.fluidbox then pcall(function() pipe.fluidbox[1] = {name='crude-oil', amount=100, temperature=25} end) end
+if tank then pcall(function() tank.set_fluid(1, {name='crude-oil', amount=1000, temperature=25}) end) end
+if pipe then pcall(function() pipe.set_fluid(1, {name='crude-oil', amount=100, temperature=25}) end) end
 local plant = ent{name='chemical-plant', position={ox+5, oy+4}, force=force}
 local plant_fluid_written = 0
 if plant then
@@ -573,19 +580,18 @@ if plant then
     end
     local recipe_ok, recipe_err = pcall(function() plant.set_recipe('heavy-oil-cracking') end)
     if not recipe_ok then return {success=false,error='set_recipe heavy-oil-cracking failed: '..tostring(recipe_err)} end
-    if plant.fluidbox then
-        local write_errors = {}
-        for i = 1, #plant.fluidbox do
-            local write_ok, write_err = pcall(function() plant.fluidbox[i] = {name='heavy-oil', amount=40, temperature=25} end)
-            if not write_ok then write_errors[#write_errors + 1] = tostring(i) .. ':' .. tostring(write_err) end
-            local written = plant.fluidbox[i]
-            if written and written.name == 'heavy-oil' and written.amount and written.amount > 0 then
-                plant_fluid_written = plant_fluid_written + written.amount
-            end
+    -- 2.1: entity.fluidbox removed; index-based set_fluid/get_fluid on the plant's boxes.
+    local write_errors = {}
+    for i = 1, plant.fluids_count do
+        local write_ok, write_err = pcall(function() plant.set_fluid(i, {name='heavy-oil', amount=40, temperature=25}) end)
+        if not write_ok then write_errors[#write_errors + 1] = tostring(i) .. ':' .. tostring(write_err) end
+        local read_ok, written = pcall(function() return plant.get_fluid(i) end)
+        if read_ok and written and written.name == 'heavy-oil' and written.amount and written.amount > 0 then
+            plant_fluid_written = plant_fluid_written + written.amount
         end
-        if plant_fluid_written <= 0 then return {success=false,error='chemical plant heavy-oil write was rejected: '..table.concat(write_errors, '; ')} end
     end
-    plant.active = true
+    if plant_fluid_written <= 0 then return {success=false,error='chemical plant heavy-oil write was rejected: '..table.concat(write_errors, '; ')} end
+    plant.disabled_by_script = false
 end
 return {success=true, created=created, plant_fluid_written=plant_fluid_written}
 "@

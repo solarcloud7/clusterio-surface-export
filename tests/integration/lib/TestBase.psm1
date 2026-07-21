@@ -107,7 +107,7 @@ function Invoke-Lua {
 # between Factorio versions (belt insert_at param order, platform destroy(), fluidbox writes, ...), so a
 # silent engine bump must fail LOUDLY rather than let a test pass on untested behavior. Bump this in
 # lockstep with the instances' factorio.version (and the version-compat.lua PROFILES) when upgrading.
-$script:ExpectedFactorioVersion = "2.0.77"
+$script:ExpectedFactorioVersion = "2.1.11"
 
 <#
 .SYNOPSIS

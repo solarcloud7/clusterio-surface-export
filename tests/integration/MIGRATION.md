@@ -38,4 +38,10 @@ never a vacuous pass.
 
 engine-invariants, gateway-guard, gateway-transfer, transfer-lock-expiry, version-dispatch,
 name-collision-delete, passenger-evacuate, destination-hold, schedule-filter,
-plasma-engine-owned, belt-loss-replay, belt-side-restore (Phase 5B instruments), `lib/`.
+belt-loss-replay, belt-side-restore (Phase 5B instruments), `lib/`.
+
+## Wave 3 — retired with its subject (2.1 fluid-segment registry, 2026-07-21)
+
+| Deleted test | Why | Coverage now |
+|---|---|---|
+| plasma-engine-owned | Its entire premise — the `engine_owned` connection-category exclusion — was DELETED from production by owner ruling 2026-07-20/21 (plasma rides transfers like any fluid; the only lawful fluid subtraction is physically-measured `write_rejected`). The test asserted behavior that no longer exists and cannot be made to pass against the registry build. | The INVERSE law is what production now guarantees, and it is covered live on 2.1.11: the `fluid-segment-law` selftest (plasma capacity-clamp + segmentless generator boxes + whole-segment writes), the `fusion-loop` pad (ACTIVE fusion rig: plasma + buffered coolant ride copy/paste with nothing engine-excluded), and the strict fluid gate exercised by `pad-transfer-suite`. |
