@@ -414,7 +414,11 @@ function ExportPipeline.complete(job)
 		if live_entity and live_entity.valid then
 			local belt_items = InventoryScanner.extract_belt_items(live_entity)
 			local entity_data = job.export_data.entities[serialized_index]
-			if entity_data and entity_data.specific_data then
+			if entity_data then
+				-- Loaders ride the DEFAULT handler, which returns nil specific_data when nothing else
+				-- was captured — create it here rather than silently skipping the patch AND the census
+				-- pairing below (a skipped patch = loader line items never serialized).
+				entity_data.specific_data = entity_data.specific_data or {}
 				entity_data.specific_data.items = belt_items
 				-- Paired source census (Task 4) for belts: the physical read re-derives belt contents via
 				-- extract_belt_items INDEPENDENTLY of the just-patched serialized copy. CRITICAL: belt pairing

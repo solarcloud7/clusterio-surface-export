@@ -171,12 +171,18 @@ GameUtils.ACTIVATABLE_ENTITY_TYPES = {
   ["cargo-landing-pad"] = true,
 }
 
---- Belt entity types (transport-belt, underground-belt, splitter).
---- Items on belts cannot be deactivated and require special handling during export/import.
+--- Belt-connectable entity types whose TRANSPORT LINES hold items (get_transport_line).
+--- Consumers: the gate/audit census (SurfaceCounter.count_entity_items), transfer-validation,
+--- loss-analysis, the export atomic belt scan, and belt_restoration attribution.
+--- Loaders were MISSING until 2026-07-21: the lab paste path (its own list) placed loader line
+--- items while every counter read 0 for them — both gate sides equally blind, so a transfer
+--- would have stripped loader items silently. Found by the owner via the belt-combined pad audit.
 GameUtils.BELT_ENTITY_TYPES = {
   ["transport-belt"] = true,
   ["underground-belt"] = true,
   ["splitter"] = true,
+  ["loader"] = true,
+  ["loader-1x1"] = true,
 }
 
 -- ============================================================================

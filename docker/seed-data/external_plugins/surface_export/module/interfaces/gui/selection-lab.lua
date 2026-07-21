@@ -208,10 +208,10 @@ end
 -- Belt-connectable types whose lane sides the copy captures for the side-scoped restore
 -- (single implementation: BeltRestoration.capture_side_groups / restore_side_groups — the
 -- production module; this tool is a diagnostic consumer of the SAME system).
-local BELT_LINE_TYPES = {
-	["transport-belt"] = true, ["underground-belt"] = true,
-	["splitter"] = true, ["loader"] = true, ["loader-1x1"] = true,
-}
+-- Aliased to the shared table (2026-07-21): this local shadow list was the ONLY place loaders
+-- were belt-classified, which is how paste placed loader line items while the shared-table
+-- counters (audit + gate census) read 0 for them.
+local BELT_LINE_TYPES = Util.BELT_ENTITY_TYPES
 
 -- Per-player state (review P1: capture/audit/undo/redo were global storage slots — a second
 -- connected admin could overwrite another player's capture and then undo/force-redo their
