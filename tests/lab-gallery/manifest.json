@@ -1927,21 +1927,21 @@
 			"padKind": "pad",
 			"origin": {
 				"x": 92,
-				"y": 36
+				"y": 64
 			},
 			"anchors": [
 				{
 					"entity": "thruster",
-					"x": 98,
-					"y": 44.5
+					"x": 96,
+					"y": 75.5
 				},
 				{
 					"entity": "thruster",
-					"x": 106,
-					"y": 44.5
+					"x": 101,
+					"y": 75.5
 				}
 			],
-			"revision": 1,
+			"revision": 2,
 			"labId": "fluid-lab",
 			"name": "Shared-segment thruster pair",
 			"purpose": "Preserve two thrusters whose west fuel ports share ONE buffer-class-topology fluid segment - the kill-measurement topology of the reverted 2026-07-19 fusion/thruster fix (per-box locals double-counted a shared thruster buffer).",
@@ -1961,7 +1961,7 @@
 				"surfexp_gateways": "0.3.0",
 				"maraxsis": "1.31.6"
 			},
-			"invariant": "Two thrusters at cell-relative (+6,+8.5) and (+14,+8.5) share one thruster-fuel segment via an 11-pipe west-fuel-port path along row +5.5, holding 500 thruster-fuel total; both are disabled_by_script and destructible=false.",
+			"invariant": "Two thrusters at cell-relative (+4,+11.5) and (+9,+11.5) - flush with the platform SOUTH edge, the only legal thruster placement (measured live 2026-07-21: can_place_entity fails everywhere except exhaust-overhang row y 75.5) - share one thruster-fuel segment via an 8-pipe west-fuel-port bridge over the top (ports measured: fuel west-upper, oxidizer west-middle), holding 500 thruster-fuel total (segment capacity 2800); oxidizer segments stay separate; both thrusters disabled_by_script and all 10 entities destructible=false.",
 			"expectedTerminalVerdict": "observation-only",
 			"independentOracleRequired": true,
 			"fingerprint": {
@@ -1971,14 +1971,13 @@
 			},
 			"testCard": {
 				"law": "a shared buffer-class-topology segment rides copy/paste/transfer exactly (the kill-measurement topology of the reverted 2026-07-19 fix)",
-				"build": "PENDING - not yet built. Script-build spec (run seed-prep to construct): place two thrusters at cell-relative (+6,+8.5) and (+14,+8.5); connect their west fuel ports along row +5.5 with an 11-pipe path so both fuel boxes share ONE fluid segment; inject 500 thruster-fuel into that shared segment; set both disabled_by_script=true and every entity destructible=false.",
+				"build": "Script-built live 2026-07-21 on bottom-row slot (92,64) - RELOCATED from (92,36): thrusters can ONLY be placed flush with the platform south edge (engine rule, measured live), so no mid-grid cell can ever host one. Two thrusters at (96,75.5) and (101,75.5) (1-tile gap so t2's west ports stay reachable; snug placement buries them - measured), west fuel ports (93.5,73.5) and (98.5,73.5) bridged by an 8-pipe path over the top row y 72.5, 500 thruster-fuel injected via set_fluid_segment_fluid (read back exact), both disabled_by_script=true, all 10 entities destructible=false.",
 				"action": "Once built and un-excluded: /test-run copy/paste the pad and confirm the shared fuel segment (segment id equal across both thruster fuel boxes) and its 500 thruster-fuel ride exactly; a real transfer must carry the shared buffer without double-counting.",
 				"expected": "The pasted/transferred half shows 2 thrusters, ONE shared fuel segment id across both fuel boxes, and 500 thruster-fuel in that segment.",
 				"forbidden": "a split or dropped segment; the shared buffer double-counted or under-counted; thruster-fuel amount drift."
 			},
-			"runnerExcluded": "pad not yet built - script-build spec in the note/testCard.build; run seed-prep to construct, then re-pin the fingerprint from live measurement and un-exclude. The meter (measure_thruster_pair) ships ready.",
-			"note": "MANIFEST-ONLY PENDING fixture authored 2026-07-20 on free open slot (92,36). Build spec: two thrusters at cell-relative (+6,+8.5) and (+14,+8.5) with the 11-pipe west-fuel-port path from the fluid-law experiments (west fuel ports connected along row +5.5), 500 thruster-fuel injected into the shared segment, both disabled_by_script=true, all destructible=false. Fingerprint {thrusterCount:2, sharedFuelSegment:true, fuelTotal:500} is the TARGET spec (not yet live-measured); re-pin from live once built. NOT in measure_corpus; wired to DISPATCH only and stays unreached while runnerExcluded.",
-			"owningRunnerWaiver": "Hand-built-to-be by the owner (construct-once doctrine); pending seed-prep construction 2026-07-20 - no standalone runner, the state will be the artifact."
+			"note": "Authored manifest-only 2026-07-20 on (92,36); RELOCATED to bottom-row slot (92,64) and script-built live 2026-07-21 after the south-edge engine rule was measured (thruster can_place_entity passes ONLY with the exhaust overhanging the platform's southern rim - the bottom cell row touches it; a bigger pad would NOT have helped). Fingerprint {thrusterCount:2, sharedFuelSegment:true, fuelTotal:500} VERIFIED live post-build: shared segment id equal across both fuel boxes, 500.00 read back, oxidizer segments distinct. Paste half placement pre-verified legal (same south-edge row, +14 shifts x only; pasted t1 bbox x 108.0 clears the cell trio bbox 107.8). At 2.1 even unconnected thruster boxes carry singleton segments (drift from the 2.0.77 buffer-class picture this pad was authored under - the shared-buffer double-count topology is now a shared-SEGMENT exactness claim). NOT in measure_corpus; wired to DISPATCH.",
+			"owningRunnerWaiver": "Script-built live 2026-07-21 (construct-once doctrine); no standalone runner - the banked state is the artifact, the build record lives in testCard.build."
 		}
 	]
 }

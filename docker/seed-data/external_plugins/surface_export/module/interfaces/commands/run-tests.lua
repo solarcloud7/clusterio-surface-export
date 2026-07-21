@@ -190,7 +190,7 @@ local DISPATCH = {
   -- fusion loop (owner-hand-built, ACTIVE): compacted into cols 1-12 by the owner 2026-07-21 and
   -- un-excluded — runs the full copy/paste pad. Scans the half by name, area-scoped.
   ["fusion-loop"]                   = { args = "area", meter = FM.measure_fusion_loop },
-  -- thruster pair: manifest-only PENDING (runnerExcluded until seed-prep builds it); stays UNREACHED.
+  -- thruster pair: script-built 2026-07-21 on the south-edge bottom-row slot (92,64) and un-excluded.
   ["thruster-pair"]                 = { args = "area", meter = FM.measure_thruster_pair },
   -- omnibus pads, area-scoped fingerprints (whole-half scans)
   ["omnibus-ghosts-and-proxies"]    = { args = "area", meter = FM.measure_omnibus_ghosts },
