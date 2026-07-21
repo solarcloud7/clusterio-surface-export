@@ -187,6 +187,12 @@ local DISPATCH = {
   -- owner-hand-built pads (previously "skipped: no meter")
   ["belt-combined-omnibus"]         = { args = "area", meter = FM.measure_belt_combined },
   ["mining-drill-acid-feed"]        = { args = "both", meter = FM.measure_mining_drill_acid },
+  -- fusion loop (owner-hand-built, ACTIVE): runnerExcluded (build spans past col 12 — reset_cell
+  -- would destroy the reactor), so this dispatch stays UNREACHED; the meter ships ready for when the
+  -- build is compacted into cols 1-12. Scans the rig area by name (nil area = whole surface).
+  ["fusion-loop"]                   = { args = "area", meter = FM.measure_fusion_loop },
+  -- thruster pair: manifest-only PENDING (runnerExcluded until seed-prep builds it); stays UNREACHED.
+  ["thruster-pair"]                 = { args = "area", meter = FM.measure_thruster_pair },
   -- omnibus pads, area-scoped fingerprints (whole-half scans)
   ["omnibus-ghosts-and-proxies"]    = { args = "area", meter = FM.measure_omnibus_ghosts },
   ["omnibus-ground-items"]          = { args = "area", meter = FM.measure_omnibus_ground },
@@ -195,7 +201,6 @@ local DISPATCH = {
   ["energy-accumulator-drain"]      = { args = "surface", meter = FM.measure_energy },
   ["belt-corner-recovery"]          = { args = "surface", meter = FM.measure_belt_corner },
   ["transfer-workhorse"]            = { args = "surface", meter = meter_entities },
-  ["census-fusion-shared-plasma"]   = { args = "surface", meter = FM.measure_census_fusion },
   ["consumable-hub-1"]              = { args = "surface", meter = meter_entities },
   ["consumable-hub-2"]              = { args = "surface", meter = meter_entities },
   ["consumable-hub-3"]              = { args = "surface", meter = meter_entities },

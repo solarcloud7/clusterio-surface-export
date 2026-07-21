@@ -461,3 +461,60 @@ queued with P5.
 - transfer-fidelity (meter-drift sentinel) DELETED - absorbed by the production census: same serialized-vs-source-physical comparison, per-entity, fail-closed, EVERY transfer, now witnessed both directions (census-omission-abort refuses; workhorse census_pass proves clean).
 - opus di-change: MERGE-READY after fixing my own false doc repoints (BLOCKERS were docs-only, not code): I'd wrongly claimed the census uses get_item_count - it reads through InventoryScanner.extract_all_inventories (the serializer's own primitive). Corrected across api-notes + engine-invariants (rescoped to a standing get_item_count-completeness engine-fact, the independent backstop for the shared enumerator) + softened "strictly stronger" in MIGRATION/testing to name the one axis lost (engine-native oracle independence). ENGINEERING_FAQ tier boundary confirmed correct (top-level items+fluids only; never "100%" unqualified).
 - Residual honest caveat banked: a regression INSIDE extract_all_inventories nets to census delta 0 (both sides share it); engine-invariants get_item_count test is that enumerator's independent backstop.
+
+## 2026-07-21 — fluid-segment registry + 2.1.11 port
+
+The fluid layer was rewritten onto a payload-level fluid-segment registry and fully ported to Factorio 2.1.11.
+Two measurement campaigns backed it, both recorded here; the durable laws live in the rewritten
+`docs/factorio-2.0-api-notes.md` "Fluid model at 2.1.11" section, cited by these plain-English experiment names.
+
+**2.0.77 experiments (the pre-port basis, live probes 2026-07-20).** `[empirical, 2.0.77]`
+- **Buffer-class claim bug reproduced live.** On the fusion loop, segment 155 held `fluoroketone-cold=276` in
+  the fusion-REACTOR coolant box (connection category `default`, so it SHOULD ride), but three empty `default`
+  pipes shared seg 155 and all read `get_fluid_segment_contents = EMPTY`. Whichever box the walk claimed first
+  won: an empty pipe first dropped the 276 coolant (or, with census/serializer walk-order disagreement, a
+  spurious census abort). The order-dependent claim was real.
+- **Thruster locals refuted the double-count interpretation.** Two thrusters sharing a segment held DIFFERENT
+  member locals (368.038 vs 364.930) — member locals are per-box capacity shares that sum, NOT a shared buffer
+  each box repeats. This killed the reverted 2026-07-19 fix's "summing locals double-counts" premise (that fix
+  had over-captured thruster oxidizer 34801→32700 at the dest gate).
+- **Mixed-regime law.** A reactor buffer sharing a segment with fluid-bearing pipes measured `contents 150 +
+  buffer 300 = 450` true total; naive `contents`-only under-counted and naive `Σ locals` over-counted. The
+  2.0.77 law was `total = contents if non-empty else Σ non-window member locals`, time-invariant across six
+  regimes.
+
+**2.1.11 re-run (live probes 2026-07-21, migrated save on clusterio-host-2-instance-1).**
+`[empirical, 2.1.11]`
+- **The buffer/window duality is GONE.** `get_fluid_segment_fluid(i)` reads the EXACT segment total from any
+  member at any instant (thruster fuel 500 exact; reactor coolant 300→450 exact mid-transient AND settled).
+  The mixed-regime problem, order-dependent claims, and the `production_type` classifier are all unnecessary.
+- **Trivial capture law.** Per segment (dedup by `get_fluid_segment_id`) call `get_fluid_segment_fluid`;
+  segmentless box (`has_fluid_segment` false — fusion-generator boxes are segmentless) call `get_fluid`.
+  Segment getters THROW on segmentless boxes at 2.1 (2.0 returned nil) — `has_fluid_segment` is the guard.
+- **Segment write primitive.** `set_fluid_segment_fluid` wrote a whole segment in one call (wrote 400 coolant,
+  read back 400) — no highest-capacity-member workaround.
+- **Plasma clamps.** `set_fluid` of plasma sticks, clamped to box capacity (reactor output 50→10, generator
+  input 25→10). Plasma rides transfers now (the `engine_owned` classification was deleted per owner ruling).
+- `entity.fluidbox` is hard-removed (attribute read throws); `get_fluid(i)` returns float32 capacity shares
+  (12 pipes summed 999.9999997615814 of 1000; thruster:pipe share ratio 10:1). The prototype coverage sweep is
+  banked in the api-notes coverage table (boiler, steam-engine, pump, pipe-to-ground, chemical-plant,
+  flamethrower-turret, big-mining-drill, offshore-pump, valve, maraxsis fluid-burner).
+
+**Five 2.1 drifts flushed out by FAILING runs (each crashed the source mid-export or stalled a path; the
+two-phase commit preserved every source).** `[empirical, 2.1.11]`
+- `game.create_profiler` → `helpers.create_profiler`.
+- `LuaEntity.neighbours` removed (the underground-belt `has_partner` flag it fed had zero consumers, deleted).
+- `LuaDisplayPanelControlBehavior.messages` → `.records` (2.1 record API).
+- `defines.inventory.assembling_machine_input` alias removed (nil) — `crafter_input` survives.
+- `LuaEntity.active` is READ-ONLY — the writable control is `disabled_by_script`, verified to drive `active`
+  both directions; the whole freeze convention ported mechanically.
+
+**Suite evidence on 2.1.11 through the registry.**
+- `/test-run`: 17 passed / 0 failed / 0 missing / 0 unknown (8 skipped, the known baseline) — including
+  omnibus-crafting-fluids and mining-drill-acid-feed conserving exactly through copy-paste-audit, and every
+  frozen fixture holding under the `disabled_by_script` freeze.
+- `pad-transfer-suite`: ALL PASS, 2x consecutive. The workhorse source census read 1358 entities with 0
+  mismatches, the strict gate was exact including thruster fluids, the dest landed 1359 exact with a 2PC source
+  delete; all five sabotage teeth (gate-item-loss, gate-fluid-loss, rollback, failed-entity-attribution,
+  force-bonus-held) REFUSED with the dest discarded and the source preserved; census-omission-abort refused the
+  export, banked its forensic bundle, and left the source preserved and unlocked.

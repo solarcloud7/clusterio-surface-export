@@ -13,9 +13,8 @@ was learned.
 
 ## Contents
 
-- [Fluid segment system](#fluid-segment-system)
-- [Reading fluid safely](#reading-fluid-safely)
-- [Fluid injection on import](#fluid-injection-on-import)
+- [Fluid model at 2.1.11](#fluid-model-at-2111)
+- [2.0.x fluid model (superseded)](#20x-fluid-model-superseded)
 - [Inventory sizing](#inventory-sizing)
 - [Item counting (get_item_count includes belts)](#item-counting)
 - [Space platform deletion](#space-platform-deletion)
@@ -26,139 +25,109 @@ was learned.
 - [Players on space platforms + cross-server move](#players-on-space-platforms--cross-server-move)
 - [Space platform hold semantics](#space-platform-hold-semantics)
 
-## Fluid segment system
+## Fluid model at 2.1.11
 
-**[API]** Factorio 2.0.7 reworked fluid flow ([FFF-416](https://factorio.com/blog/post/fff-416)):
-contiguous pipes + storage tanks are merged into **segments**; **each segment holds a single
-fluid**, and throughput scales with how full the segment is. Fluids no longer mix.
+> The dev cluster and the plugin's fluid layer run **Factorio 2.1.11** (all instances since 2026-07-21);
+> the repo's certified pin (`tests/labs-certified.json`) is still 2.0.77 pending the re-certification
+> campaign. The laws below were measured by live fluid-law experiments on 2.1.11 (see the
+> `tests/lab-gallery/NOTEBOOK.md` entry dated 2026-07-21). The pre-port 2.0.x model is kept for the
+> transition period under [2.0.x fluid model (superseded)](#20x-fluid-model-superseded).
 
-Consequence: fluid does not live per-entity — it lives in the shared segment. Entity fluidboxes
-(`entity.fluidbox[i]`) are a **proxy window** onto the segment, not a container.
+- **`entity.fluidbox` is HARD-REMOVED — reading the attribute THROWS.** **[empirical, 2.1.11, live probes
+  2026-07-21]** Fluid access is index-based LuaEntity/LuaFluidBox methods: `fluids_count`, `get_fluid(i)`,
+  `set_fluid(i, fluid)`, `has_fluid_segment(i)`, `get_fluid_segment_id(i)`, `get_fluid_segment_fluid(i)`,
+  `set_fluid_segment_fluid(i, fluid)`, `get_fluid_segment_capacity(i)`, `get_fluid_box_prototype(i)`,
+  `fluidbox_neighbours`. **Segment getters THROW on a segmentless box** (2.0 returned `nil`) — always guard
+  with `has_fluid_segment(i)` before any `get_fluid_segment_*` call.
+- **The buffer/window duality is GONE.** **[empirical, 2.1.11, live probes 2026-07-21]**
+  `get_fluid_segment_fluid(i)` returns the EXACT single-fluid segment total from ANY member box at ANY
+  instant — a thruster fuel box read 500 exact, and a fusion-reactor coolant box read 300→450 exact both
+  mid-transient and settled. There is no order-dependent claim, no mixed-regime "contents + Σ locals" law, and
+  no `production_type` classifier needed. `get_fluid(i)` instead returns the box's own **capacity share** of
+  the segment (float32: 12 pipes on one 1000-unit segment summed to `999.9999997615814`; a thruster:pipe share
+  ratio was 10:1 by capacity), which the registry keeps for census attribution and split-segment
+  proportioning.
+- **`set_fluid_segment_fluid(i, fluid)` writes a WHOLE segment in one call.** **[empirical, 2.1.11, live
+  probes 2026-07-21]** Writing 400 coolant to a segment read back 400 exact — no highest-capacity-member
+  workaround. A segmentless storage is written with `set_fluid(i, fluid)`, which returns the accepted amount.
+- **Plasma writes STICK, clamped to box capacity.** **[empirical, 2.1.11, live probes 2026-07-21]**
+  `set_fluid` of 50 plasma onto a fusion-reactor OUTPUT box read back 10 (capacity clamp); 25 onto a
+  fusion-generator INPUT box read back 10. **Fusion-generator boxes are segmentless.** Plasma rides transfers
+  like any fluid — the `engine_owned` connection-category classification is deleted (owner ruling
+  2026-07-20/21); the only lawful fluid subtraction from expected counts is a physically-measured
+  `write_rejected`, never a category prediction.
 
-## Reading fluid safely
+### Prototype fluid-box coverage sweep
 
-- **`entity.fluidbox[i]` reads stale after a state change.** When an entity is activated or a
-  platform unpaused, the local fluidbox may read `0`/`nil` for one or more ticks while it syncs
-  with the segment. **[empirical]**
-- **Use [`LuaFluidBox.get_fluid_segment_contents(i)`](https://lua-api.factorio.com/latest/classes/LuaFluidBox.html#method_get_fluid_segment_contents)**
-  for validation — it queries the segment directly. It returns at most one fluid (segments are
-  single-fluid). **[API]**
-- **Deduplicate by segment ID** when summing across a network: every entity on a segment reports
-  the same segment total, so summing per-entity multiplies the result.
-  [`get_fluid_segment_id(i)`](https://lua-api.factorio.com/latest/classes/LuaFluidBox.html#method_get_fluid_segment_id)
-  **may return `nil`** for fluid wagons, fluid-turret internal buffers, or any fluidbox not part of
-  a segment (e.g. an isolated machine fluidbox) — handle the `nil` case by reading the proxy
-  directly. **[API]**
-- **Temperature merging is volume-weighted and prototype bounds precede key precision.**
-  **[empirical, 2.0.77, fluid-lab R12]** Connecting `500 steam@165°C` to `1500 steam@500°C` produced one
-  `2000@416.25°C` segment in the same tick: volume and V×T were exact. Steam writes requested at 9,999 through
-  10,000,000°C all read back at the prototype maximum 5,000°C and remained one stable `steam@5000.0C` key.
-  R12 therefore found no generic floating-point boundary at 10,000°C; high-temperature policy thresholds must
-  be justified by the actual fluid prototype/path rather than the old ">1,000,000°C doubles" story.
-- **Storage-tank mixed-temperature steam equilibrates before export and round-trips as the equilibrated key.**
-  **[empirical, 2.0.77, fluid-lab R10a/R10b]** R10a proved a fixed `steam@165.0C` storage-tank segment
-  (`2000`) reproduces exactly through the real transfer path and passes validation. R10b wrote `1000` steam at
-  `165C` plus `1000` steam at `500C` into one storage tank; the same-tick read, +1 tick, +60 ticks, source
-  debug dump, destination validation, and destination direct/segment meters all reported a single equilibrated
-  `steam@332.5C = 2000` key. In this measured storage-tank case, the old exact-key gate would not have
-  false-failed; aggregate-by-name validation is defensive for this case rather than proven necessary by R10b.
-- **A production export lock freezes pump-driven segment transfer while belts keep moving.**
-  **[empirical, 2.0.77, gate-drift LAB-A]** A powered east-facing pump moved water between two connected
-  segments before export and resumed after unlock. During the real multi-tick `/export-platform` lock, the
-  pump reported `disabled_by_script`, four lock-window samples per flowing section showed unchanged per-segment
-  contents and stable segment IDs, while belt-position signatures continued changing. Two consecutive full
-  passes covered export spans of `144`–`240` ticks; serialized versus independent single-tick physical totals
-  were exact in every section (`max fluid residual=0`, `max item residual=0`). This grounds the tested source
-  export path only; it does not generalize exactness to untested fluids or restoration behavior.
-- **LAB-A found no source-export scan residual requiring a tolerance in its tested fixture.**
-  **[empirical, 2.0.77, gate-drift LAB-A]** The existing high-temperature/merge epsilon note concerns other
-  measurement domains; it is not evidence for a generic source-export volume-loss band.
-- **`get_capacity(i)`** is the segment capacity. **[API]** Empirically it returns the **full segment**
-  capacity for pipes/tanks but only the **local** buffer capacity for machines/thrusters, because
-  pipe prototypes define `base_area` (drives segment capacity) while machines define fixed local
-  `fluid_box` buffers. When injecting, pick the entity with the **highest** `get_capacity()` (a
-  pipe/tank) as the target. **[empirical]**
+**[empirical, 2.1.11, live probes 2026-07-21]** One live instance per prototype slot; each box was measured for
+`production_type`, segment presence (`has_fluid_segment`), and the segment-total law. The sweep drives the
+permanent coverage matrix — a new prototype fluid-box slot without a row is a finding.
 
-## Fluid injection on import
+| Prototype | Box(es) | production_type | Segment present |
+| --- | --- | --- | --- |
+| boiler | box1 input / box2 output | input / output | box1 YES / box2 NO |
+| steam-engine | input | input | YES |
+| pump (standalone) | 1 | none | NO |
+| pipe-to-ground | 1 | none | YES |
+| chemical-plant | 4 (in, in, out, out) | input/input/output/output | all NO |
+| flamethrower-turret | internal | none | YES |
+| big-mining-drill (off-patch) | 0 (dynamic count) | — | — |
+| offshore-pump | output | output | NO |
+| valve | 1 | none | YES |
+| maraxsis fluid-burner | input | input | YES |
 
-- **The old pipeline's pre-activation injection lost ~15%; its responsible class was never isolated.**
-  **[empirical, historical pipeline]** Moving injection after activation eliminated that whole-pipeline loss,
-  but R11 later measured exact conservation using the shipped restoration code in a frozen destination world.
-  Treat the old result as history, not as a current engine rule.
-- *Historical mechanism hypothesis* — "a frozen/inactive entity is detached from its segment; the write
-  lands in a temporary ghost buffer that is wiped when the entity rejoins a live segment on unfreeze" —
-  **[hypothesis]**. The cited internals (`FluidSystem::merge_segment()`, `FluidSystem::on_entity_unfrozen`)
-  are closed-source and uninspectable ("expert analysis" ≠ verification). Fluid-lab tested the prediction set:
-  isolated machine buffers survived deactivation/reactivation, `game.tick_paused` during destination-hold
-  stage/read did not affect isolated machine buffers, and the attempted segment-connected activatable specimen
-  was unconstructible on 2.0.77 because tested activatable fluid entities expose no non-nil own-fluidbox segment
-  ID. The predictions tested on 2.0.77 did not reproduce the mechanism; do not treat it as current-engine law.
-- **Isolated chemical-plant heavy-oil buffers survive `active=false` and platform pause.**
-  **[empirical, 2.0.77, fluid-lab R1/R3]** With `heavy-oil-cracking` explicitly enabled and the write
-  read back before proceeding, a chemical plant's isolated heavy-oil input (`get_fluid_segment_id(i) == nil`)
-  stayed at 20 units immediately after `active=false`, after +60 ticks, after `active=true`, and after another
-  +60 ticks. Writing the same buffer while inactive also survived immediate reactivation (R2). A paused platform
-  with the plant left active preserved the same 20 units across +600 ticks and after unpause (R3). R9 then proved
-  the real destination-hold path also preserves an asserted isolated machine buffer while `game.tick_paused=true`;
-  the hold keeps full deactivation. Directly setting `LuaEntity.frozen` failed in this lab because the property is
-  read-only.
-- **Production fluid restoration conserved exact aggregate-by-name totals in a frozen destination world.**
-  **[empirical, 2.0.77, fluid-lab R11]** Controls covering a pipe/tank segment, a mixed pump/pipe/chemical-
-  plant/boiler fixture, and newly created paused/deactivated entities all retained exact totals through
-  activation and 60 ticks. Two consecutive real transfers of a 1,359-entity clone then invoked the shipped
-  `FluidRestoration.restore()` before activation through a one-shot, name-scoped diagnostic seam. All eight
-  fluid names matched their full-precision expected totals exactly in both the frozen and same-tick
-  post-activation censuses (`max |delta| = 0`, epsilon `1e-6`). Engine-rejected fusion-plasma output writes
-  were measured and subtracted before comparison. This refutes the historical rule's generalization to the
-  current engine/path; the old ~15% loss remains a historical observation whose responsible class was not
-  reproduced. The production path now uses this measured ordering: frozen restoration, one exact by-name fluid
-  gate (`epsilon=1e-6`), then activation. Five consecutive clean 1,359-entity transfers passed with exact item
-  and fluid verdicts. **[empirical, 2.0.77, single-gate acceptance]**
-- **Fusion plasma writes DO NOT reject at 2.0.77.** `insert_fluid()` and `fluidbox[i]=` on fusion-reactor
-  output AND fusion-generator input boxes stick (10→10 readback) in every scratch condition tested:
-  fresh, inactive, settled-across-executions, segment-connected, active. **[empirical, 2.0.77, fluid-lab R14]**
-  One historical transfer-time `write_rejected` measurement (R11) remains real-but-unexplained. The plugin
-  currently still classifies these boxes engine-owned by connection category and never serializes/restores
-  plasma; revision is the queued shared-accessor /di-change.
-- **Entity-buffered fluid is NOT part of `get_fluid_segment_contents`** even when the box exposes a segment
-  ID — a reactor holding 500 locally reads `seg_contents = {}` on its own segment. **[empirical, 2.0.77,
-  fluid-lab R15]** KNOWN OPEN BUG: `SurfaceCounter`'s segment counted-once pass is order-dependent — an
-  empty pipe processed first claims the segment and buffered amounts are dropped (measured: a live audit
-  omitted a reactor's 271 fluoroketone). Shared-accessor symmetry means possible silent transfer loss
-  (unverified implication). Fix = the queued /di-change.
-- **Non-`default` fluid connection categories identify vanilla 2.0.77's unpipeable, engine-owned fluidboxes.**
-  **[empirical, 2.0.77, fluid-lab P2 / plasma-engine-owned]** An exhaustive prototype census found that
-  ordinary pipes and storage tanks expose only the `default` category; the `fusion-plasma` category occurs
-  only on fusion-reactor outputs, fusion-generator inputs, and the cheat-only infinity pipe. A player cannot
-  connect an ordinary passive holder to those boxes. Five independent transfers of production-shaped
-  1,359-entity clones passed the exact gate after export expected counts, import writes, and the destination
-  census all classified non-`default` boxes identically. The restorable isolated-plasma control remained
-  counted in every run. Classification is derived from
-  `fluidbox_prototype.pipe_connections[].connection_category`, not prototype names. Export emits a warning
-  for any non-`default` category or owning prototype outside the measured fusion family; re-run this census
-  and review the classification whenever the engine pin changes.
-- **A fusion-reactor buffer box's segment CONTENTS read EMPTY while its local proxy holds the fluid.**
-  **[empirical, 2.0.77, census-fusion fixture 2026-07-18]** The isolated coolant input box exposes a real
-  `get_fluid_segment_id`, but `get_fluid_segment_contents` returns `{}` while `fluidbox[i]` reads the true
-  buffer amount (970 measured). This is the "internal buffer" family the API documents as "may return nil"
-  (wagons, turrets) — except this class returns *an ID with empty contents* instead of nil. Consequence: any
-  code assuming `segment contents ≥ local read` is blind to the buffer — measured breaking three consumers at
-  once (physical census/audit missed the coolant; the async export captured nothing for it; the restore's
-  contents-based write-verify declared a successful write failed and double-filled via `insert_fluid` to
-  capacity, conjuring +30). Rule: **empty segment contents + non-zero local proxy ⇒ buffer-class box; the
-  local read is authoritative** (`inventory-scanner.lua`, `surface-counter.lua`, `fluid_restoration.lua`).
-  The connected-reactor case (buffer box sharing a segment with pipes) is NOT yet characterized — do not
-  extend this rule there without a rung.
-- **Fusion-reactor OWN fluidboxes DO expose segment IDs; the generator inputs sharing the segment read nil.**
-  **[empirical, 2.0.77, live workhorse probe 2026-07-17 / census plasma-abort postmortem]** On a running
-  reactor→generator layout, `get_fluid_segment_id(i)` on the reactor returned real IDs for BOTH its coolant
-  input and its plasma output, while every fusion-generator plasma *input* on the same physical segment
-  returned `nil` (each generator's local `fluidbox[1]` still proxy-read the segment total). This REFINES
-  Pitfall #22, activatable entities expose no own segment ID — the blanket claim does not hold for the
-  fusion reactor. Consequence: an engine-owned-segment exclusion keyed only on a per-box `nil` check misses
-  the reactor's segmented plasma; the segment-path exclusion must consult the pre-passed engine-owned
-  segment set (or classify the introducing box). This exact gap caused the census phantom fusion-plasma
-  `-20` abort on the first post-merge transfer (fail-closed; zero loss).
+Notes: the big-mining-drill's fluidbox count is **dynamic** — 0 when off a resource patch. FluidEnergySource
+("burner fluid") boxes ARE runtime-enumerable and index-reachable (the maraxsis fluid-burner input box carries
+a segment) — they are not a capture blind spot at 2.1.11.
+
+### 2.1.11 engine drift beyond fluids
+
+Non-fluid 2.1.11 API drift the port swept, each **[empirical, 2.1.11, live probes 2026-07-21]**:
+
+- **`LuaEntity.active` is READ-ONLY**; the writable control is **`disabled_by_script`**, verified to drive
+  `active` both directions (`disabled_by_script=true` → `active=false`, and back). The whole freeze convention
+  (ActiveStateRestoration, `frozen_states`, pad freezes, selection-lab) ported mechanically: `e.active = x`
+  becomes `e.disabled_by_script = not x`; reads stay `e.active`.
+- **`defines.inventory.assembling_machine_input`** alias is removed (reads `nil`) — `crafter_input` survives
+  and is the replacement.
+- **`LuaDisplayPanelControlBehavior.messages`** was renamed to **`.records`** (the 2.1 record API) — serializer
+  capture, deserializer restore, and the `/test-run` status-panel writer all repointed.
+- **`LuaEntity.neighbours`** was removed (the underground-belt `has_partner` flag it fed had zero consumers and
+  was deleted; the copper-wire capture in `connection-scanner` degrades logged pending a `get_wire_connectors`
+  port).
+- **`game.create_profiler`** moved to **`helpers.create_profiler`** (`phase-profiler.lua`).
+
+## 2.0.x fluid model (superseded)
+
+Kept for the transition period only — the gallery/host-1 ran 2.0.77 until the module port; these facts do NOT
+describe the 2.1.11 fluid API above. All tags are the original measurements.
+
+- **Fluid segments (FFF-416).** **[API]** 2.0.7 merged contiguous pipes + storage tanks into single-fluid
+  **segments**; entity fluidboxes were a proxy window onto the shared segment, read via
+  `get_fluid_segment_contents(i)` and deduplicated by `get_fluid_segment_id(i)` (which could return `nil` for
+  wagons / turret buffers / isolated machine fluidboxes).
+- **Buffer-class law.** **[empirical, 2.0.77, fluid-lab R15 / census-fusion 2026-07-18]** A buffer box
+  (thruster fuel, fusion-reactor coolant/plasma) read `get_fluid_segment_contents = {}` while its local proxy
+  held the fluid, so the segment total was `contents if non-empty else Σ non-window member locals`. This
+  order-dependent claim was the root of a silent coolant-drop (a live audit omitted a reactor's 271
+  fluoroketone) — structurally impossible at 2.1.11, where `get_fluid_segment_fluid` reads the exact total.
+- **Fusion segment IDs.** **[empirical, 2.0.77, live probe 2026-07-17]** The fusion reactor's OWN boxes exposed
+  segment IDs (coolant input AND plasma output) while generator inputs on the same segment read `nil`;
+  non-`default` connection categories (`fusion-plasma`) marked the then-excluded engine-owned boxes. The
+  exclusion is deleted at 2.1 (plasma rides).
+- **Temperature merge.** **[empirical, 2.0.77, fluid-lab R12]** `500 steam@165°C` + `1500 steam@500°C` merged
+  to one exact `2000@416.25°C` segment (volume-weighted); a 9,999→10,000,000°C key sweep exposed no
+  floating-point boundary because the steam prototype clamped every write to 5,000°C. The ">1,000,000°C doubles
+  lose precision" story was disproven.
+- **Pre-activation loss (historical).** **[empirical, historical pipeline]** An old pipeline lost ~15% when
+  fluids were injected pre-activation; the responsible class was never isolated. Fluid-lab R11
+  **[empirical, 2.0.77]** later measured the shipped restoration exact in a frozen destination world across two
+  1,359-entity transfers (`max |delta| = 0`, epsilon `1e-6`), retiring the old rule.
+- **Segment membership / paused holds.** **[empirical, 2.0.77, fluid-lab R7/R9]** No tested activatable entity
+  exposed a non-nil own-fluidbox segment ID; isolated machine buffers survived `active=false`, platform pause,
+  and the real destination-hold primitive (a 20-unit heavy-oil buffer held across stage → +600 ticks →
+  go-live). `LuaEntity.frozen` was read-only. A CI-only `fluids 1120→1100 delta=20` was eliminated by fixture
+  determinism but its root cause was never isolated **[unexplained, 2.0.77]**.
 
 ## Mining-drill filters
 
@@ -467,9 +436,3 @@ These facts drive how cross-instance transfer handles a player who is "aboard" a
 
 - **[empirical, 2.0.77, hold-lab PR-0A]** Spoilage is anchored to global game ticks and continues under `platform.paused`. In the hold-completeness lab, a held yumako stack drifted by the same spoil percent as the live-control stack while the platform was hidden, paused, and held. This is acceptable destination-hold behavior: the not-live contract is no observable side effects, held drift no worse than the live control, zero platform damage, and nothing leaving the platform — not frozen time.
 - **[empirical, 2.0.77, hold-lab PR-0A]** Cargo-pod state machines are pause-exempt. Before the primitive fix, a held cargo pod advanced while `platform.paused=true`; `DestinationHold.stage()` now reuses `SurfaceLock.complete_cargo_pods` after pausing/hiding/deactivating the held platform, so a staged destination hold is pod-free. The PR-0A live specimen was an `awaiting_launch` pod: it verified `pod_count=0` immediately after stage and after the hold window, with overflow cargo retained on the platform as item-on-ground when the hub was full. The shared helper also routes `descending`/`parking` pods through the same recover-and-spill path, but PR-0A did not construct that state as a separate live specimen.
-
-## Fluid segment membership and paused destination holds
-
-- **[empirical, 2.0.77, fluid-lab R9]** A deterministic chemical-plant `heavy-oil-cracking` fixture with a verified 20 heavy-oil direct buffer preserved that buffer through the real destination-hold primitive while the game was held paused: pre-read -> stage -> +600 held ticks -> go-live -> +60 -> unpaused +120 all read direct machine fluid = 20. The plant buffer remained isolated (`segment_id=nil`, segment meter = 0). `game.tick_paused=true` during stage/read does not affect isolated machine buffers; fixture/meter hardening was sufficient and the destination-hold primitive remains unchanged.
-- **[empirical, 2.0.77, fluid-lab R7]** Tested activatable fluid entities did not expose non-nil fluid segment IDs on their own fluidboxes: chemical-plant buffers were isolated, and a pump connected to adjacent pipes still returned no pump-side segment ID after tick updates while the pipes/tanks reported segment IDs. Pipes/tanks are segment-meter surfaces but are not activatable. For the tested engine surface, no activatable entity's own fluidbox exposes a non-nil segment ID; the ghost-buffer mechanism's current constructible domain is empty.
-- **[unexplained, 2.0.77, destination-hold CI delta=20]** The original CI-only `fluids 1120→1100 delta=20` was eliminated by fixture determinism and direct-machine meter hardening, but its root cause was never isolated. Remaining candidates are the fresh-force recipe-less write path and meter staleness. The instrumented probe now reports tick, `game.tick_paused`, platform pause, direct machine buffers, and segment meters so any recurrence self-diagnoses instead of becoming a silent fidelity claim.

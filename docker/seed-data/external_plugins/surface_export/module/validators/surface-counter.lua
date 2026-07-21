@@ -116,7 +116,7 @@ function SurfaceCounter.count_items(surface)
 end
 
 --- Count all fluids held by a SINGLE entity (2.1 fluid API, segment-deduplicated).
---- [empirical, 2.1.11, fluid-law experiments 2026-07-21]: get_fluid_segment_fluid(i) returns the
+--- [empirical, 2.1.11, fluid-law experiments 2026-07-21, api-notes fluid section]: get_fluid_segment_fluid(i) returns the
 --- EXACT segment total from any member box at any instant (the 2.0 buffer/window duality and the
 --- order-dependent claim bug are gone at 2.1), so counting a segment ONCE from whichever member
 --- the fold sees first is exact by construction. Segmentless boxes (machine buffers, fusion

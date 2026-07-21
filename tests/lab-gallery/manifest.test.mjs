@@ -16,7 +16,7 @@ test("gallery manifest labs are the fixture-referenced categories (lab dirs remo
 	const referenced = [...new Set(manifest.fixtures.map(fixture => fixture.labId))].sort();
 	assert.deepEqual(manifest.labs.map(lab => lab.id).sort(), referenced);
 	assert.deepEqual(validateGalleryManifest(manifest, { requireArtifacts: false }), {
-		labs: referenced.length, fixtures: 25, sourceFixtures: 25, destinationFixtures: 0,
+		labs: referenced.length, fixtures: 27, sourceFixtures: 27, destinationFixtures: 0,
 	});
 });
 
@@ -39,7 +39,7 @@ test("paired save roles, artifacts, censuses, and exact mod pins are final", () 
 	assert.deepEqual(manifest.saves.source.mods, manifest.mods);
 	assert.deepEqual(manifest.saves.destination.mods, manifest.mods);
 	assert.deepEqual(validateGalleryManifest(manifest), {
-		labs: 11, fixtures: 25, sourceFixtures: 25, destinationFixtures: 0,
+		labs: 11, fixtures: 27, sourceFixtures: 27, destinationFixtures: 0,
 	});
 });
 

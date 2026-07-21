@@ -5,7 +5,7 @@
 -- ({box_index, segment_ref, local_amount}). Engine segment ids differ across instances, so the
 -- destination groups members by RE-DERIVED dest segment id and writes each group once.
 --
--- 2.1 write primitives [empirical, 2.1.11, fluid-law experiments 2026-07-21, NOTEBOOK]:
+-- 2.1 write primitives [empirical, 2.1.11, fluid-law experiments 2026-07-21, NOTEBOOK + api-notes fluid section]:
 --   * set_fluid_segment_fluid(i, fluid) writes the WHOLE segment in one call (wrote 400 coolant,
 --     read back exact) — no more highest-capacity-member workaround.
 --   * set_fluid(i, fluid) writes a segmentless storage; returns the accepted amount (capacity

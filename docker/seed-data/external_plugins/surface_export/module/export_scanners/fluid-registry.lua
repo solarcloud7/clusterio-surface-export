@@ -9,7 +9,7 @@
 --                                     (capacity shares on 2.1), kept for census attribution and
 --                                     split-segment restore proportioning.
 --
--- 2.1 measurement basis [empirical, 2.1.11, fluid-law experiments 2026-07-21, NOTEBOOK]:
+-- 2.1 measurement basis [empirical, 2.1.11, fluid-law experiments 2026-07-21, NOTEBOOK + api-notes fluid section]:
 --   * get_fluid_segment_fluid(i) returns the EXACT segment total from any member box at any
 --     instant (the 2.0 buffer/window duality is gone — thruster 500 and reactor 300→450 read
 --     exact from every member, mid-transient and settled).

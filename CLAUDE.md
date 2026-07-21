@@ -530,8 +530,17 @@ Project invariants that still bite if changed:
   side partition. The current production path (captured positions + oversized-stack consolidation + hub
   recovery) remains the shipped implementation until Phase 5 lands. The atomic single-tick export scan
   remains required (Pitfall #16, atomic belt scan; belts keep moving — BELT-R13).
-- **Fluid restoration runs in the frozen world before the exact gate.** R11 proved the shipped restoration code conserves exactly there (Pitfall #17, historical pre-activation fluid loss). **Fusion-reactor output rejects writes** (Pitfall #21, fusion outputs are engine-managed). Subtract
-  only physically rejected writes from expected counts; capacity drops remain gate failures. One pre-activation verdict covers exact items and aggregate-by-name fluids (`epsilon=1e-6`).
+- **Fluid restoration runs in the frozen world (`disabled_by_script`) before the exact gate.** The payload
+  carries a top-level **fluid-segment registry** (one record per source segment or segmentless storage, keyed
+  by our incremental id — engine segment ids differ across instances); entities reference it via
+  `specific_data.fluidboxes`. Restore writes each segment **once** via `set_fluid_segment_fluid` (segmentless
+  storages via `set_fluid`). Plasma rides like any fluid — the `engine_owned` connection-category
+  classification is **deleted** (owner ruling 2026-07-20/21). A member whose entity failed to place is simply
+  absent: there is **no failed-member fluid accounting**, so a short segment fails the exact gate and the
+  two-phase commit preserves the source (fail => revert). The ONLY lawful fluid subtraction from expected
+  counts is `write_rejected` (a physical post-write measurement, not a category prediction); capacity overflow
+  (`dropped_fluids`) remains a gate failure. One pre-activation verdict covers exact items and aggregate-by-name
+  fluids (`epsilon=1e-6`). See docs/factorio-2.0-api-notes.md fluid section.
 - **Entity inventory size** isn't changed by `LuaInventory.resize` (custom inventories only).
   `LuaEntity.set_inventory_size_override` overrides **container** sizes but is a **no-op for crafter inputs**
   at 2.0.76 (verified) — so it is *not* a lever for overloaded-crafter-input loss (already handled by the
@@ -549,7 +558,9 @@ The order of post-processing steps in `complete_import_job()` is critical for co
 5. Inventories (2 passes) — Pass 1: beacons (populates beacon_modules, crafting_speed updates immediately)
                             Pass 2: everything else (set_stack cap now reflects beacon-boosted cs)
 6. Held-item completion   — inserter-only synchronous pass (single owner of held seating; activation-independent, inserter-lab B6); no tick advances
-7. Fluid restoration      — inject while platform remains paused and entities deactivated
+7. Fluid restoration      — write the payload's fluid-segment registry (one set_fluid_segment_fluid per
+                            segment; segmentless storages via set_fluid) while the platform stays paused and
+                            entities disabled_by_script; plasma rides like any fluid, no engine-owned subtraction
 8. Exact validation       — one immutable verdict: exact items + by-name fluids
 9. Activation             — only after the verdict passes; then gateway park if requested
 10. Loss analysis         — post-activation reporting under `postActivationReport`; never changes verdict
@@ -558,21 +569,18 @@ The order of post-processing steps in `complete_import_job()` is critical for co
 **Why this order matters**:
 - Step 4 (beacon activation): beacons are kept active during entity creation (never deactivated). Phase 2 explicitly activates them and fills their energy buffer. This is necessary but not sufficient — beacons need their **module inventory populated** before `crafting_speed` reflects the beacon bonus.
 - Step 5 (inventories, 2 passes): The two-pass approach is critical. `crafting_speed` on a machine updates **immediately** when its nearby beacon's `beacon_modules` inventory is populated — no tick delay, no power required. Pass 1 populates all beacon modules. Pass 2 then restores crafter inputs with `set_stack()`, which uses the now-correct beacon-boosted cap (e.g. cs=17.375 → 12 slots instead of cs=2.5 → 7 slots). Machines remain deactivated throughout — they cannot consume items.
-- Steps 6→8 are one synchronous frozen-world completion and verdict pass. The old pipeline's ~15% pre-activation loss was historical and class-unisolated; R11 measured the current restoration path exact before activation, and five consecutive 1,359-entity transfers grounded the production ordering. A failure banks an always-on black box, then discards the destination unless the debug-gated preserve flag is explicitly armed.
+- Steps 6→8 are one synchronous frozen-world completion and verdict pass. Fluids are restored from the payload's fluid-segment registry (one `set_fluid_segment_fluid` write per segment) into the paused, `disabled_by_script` destination before the gate; there is no failed-member fluid accounting, so any missing member fails the exact gate and the source is preserved (fail => revert). A failure banks an always-on black box, then discards the destination unless the debug-gated preserve flag is explicitly armed. The historical ~15% pre-activation loss is retired (Pitfall #17, historical pre-activation fluid loss); the pad-transfer-suite workhorse census and strict gate exercise this ordering on 2.1.11.
 
-### 17. Historical Pre-Activation Fluid Loss (Class Unisolated)
-**Measured history**: an old import pipeline lost ~15% when fluids were injected pre-activation; moving injection after activation eliminated that whole-pipeline loss. The responsible entity/topology class was never isolated.
-**Current-pin result**: fluid-lab R11 [empirical, 2.0.77] ran the shipped `FluidRestoration.restore()` in a paused, deactivated destination world, including two real 1,359-entity transfers. Frozen and same-tick post-activation censuses conserved all eight fluid names exactly (`max |delta| = 0`, comparison epsilon `1e-6`), after subtracting only engine-rejected fusion output writes.
-**Historical hypothesis, not law**: the old "detached ghost buffer overwritten on segment merge" explanation cited closed-source internals and its constructible predictions did not reproduce. Tested activatable entities expose no non-nil segment ID on their own fluidboxes at 2.0.77; `LuaEntity.frozen` is read-only. Keep the old loss as an honest historical fact, not as proof that current restoration requires a live world.
-**Production state**: the production path now restores fluids in the paused/deactivated world, applies the single exact gate, and activates only after success. Post-activation fluid counts are telemetry only.
-**Key files**: `async-processor.lua` (`complete_import_job`), `fluid_restoration.lua`, `active_state_restoration.lua`
+### 17. Historical Pre-Activation Fluid Loss (RETIRED 2026-07-21)
+**RETIRED 2026-07-21**: superseded by the 2.1 fluid-segment registry — see docs/factorio-2.0-api-notes.md fluid section. The historical ~15% pre-activation loss and its unisolated "detached ghost buffer" hypothesis are no longer load-bearing: at 2.1.11 the buffer/window duality is gone, `get_fluid_segment_fluid` reads the exact segment total from any member box at any instant, and fluids are restored in the frozen (`disabled_by_script`) world in one `set_fluid_segment_fluid` write per segment before the single exact gate. Frozen restoration is the shipped ordering; there is no measured pre-activation loss to work around.
 
 ### 18. Entity Handlers Must Export Fluids for Crafting Machines
 **Symptom**: Assembling machines (chemical plants, oil refineries) and furnaces (foundries) lose all fluid on transfer, even though pipes/tanks preserve fluid correctly.
 **Root Cause**: `EntityHandlers["assembling-machine"]` and `EntityHandlers["furnace"]` in `entity-handlers.lua` only exported `inventories`, not `fluids`. These entity types have fluidboxes (chemical plants hold fluid reagents, foundries hold molten metals), but the handler never called `InventoryScanner.extract_fluids(entity)`. Entities without a specific handler use the default handler, which correctly exports both inventories AND fluids — so pipes, tanks, pumps, and thrusters (no specific handler) worked fine.
-**Fix**: Added `fluids = InventoryScanner.extract_fluids(entity)` to both the `assembling-machine` and `furnace` handlers.
-**Key files**: `entity-handlers.lua` (lines ~45 and ~92)
-**Lesson**: When adding a new entity handler, always check if the entity type has a fluidbox. The default handler exports both inventories and fluids — a specific handler that only exports inventories silently drops fluid data.
+**Historical fix**: Added the fluid extraction (then `InventoryScanner.extract_fluids(entity)`) to both the `assembling-machine` and `furnace` handlers.
+**Status (2026-07-21, 2.1 fluid-segment registry port)**: handlers no longer call `extract_fluids` — the registry port replaced the dual-mode `extract_fluids` reader with `FluidRegistry.capture_entity` / `InventoryScanner.extract_fluidboxes(entity)`, which **errors loudly when no registry is armed**, so a handler site that emits `data.fluidboxes` cannot silently degrade to inventory-only capture. This same gap recurred once more for the mining-drill handler (acid-fed drill dropped its sulfuric acid), fixed and caught by the `mining-drill-acid-feed` pad audit.
+**Key files**: `entity-handlers.lua` (the 7 handler sites that emit `data.fluidboxes`), `export_scanners/fluid-registry.lua`.
+**Lesson**: When adding a new entity handler, always check if the entity type has a fluidbox and emit `fluidboxes`. The fail-loud registry arming makes a forgotten fluid capture a structural error rather than silent data loss.
 
 ### 19. Removing a Space Platform — use `game.delete_surface`, not `platform.destroy()` (CRITICAL)
 At 2.0.77, LAB-I B7 measured `platform.destroy()` with no argument as a silent no-op, while `destroy(0)` deleted after an elapsed tick and `destroy(60)` deleted on the deferred schedule. Keep `game.delete_surface(platform.surface)` as this project's deterministic removal route through `GameUtils.delete_platform(platform)` (`module/utils/game-utils.lua`), which also handles the surfaceless edge case; do not generalize the old 2.0.76 all-no-op result to ticked calls on 2.0.77.
@@ -584,16 +592,14 @@ At 2.0.77, LAB-I B7 measured `platform.destroy()` with no argument as a silent n
 **Cause**: `Number(null) === 0` in JS. Passing `0` as destination to Lua is truthy, so export is treated as transfer and unlock is skipped.
 **Fix**: In `instance.ts`, only treat `targetInstanceId` as a transfer destination if it is a positive integer (`> 0`); otherwise pass Lua `nil`.
 
-### 21. Fusion Plasma Handling (revision queued)
-Fusion write rejection does NOT reproduce at 2.0.77 — reactor and generator plasma writes stick in every scratch condition (fluid-lab R14). Current shipped behavior still EXCLUDES plasma via prototype connection-category (`fluid-ownership.lua`) and tracks `write_rejected` in `fluid_restoration.lua`; revision is the queued shared-accessor /di-change. Until it lands, plasma never rides a transfer.
+### 21. Fusion Plasma Handling (RETIRED 2026-07-21)
+**RETIRED 2026-07-21**: superseded by the 2.1 fluid-segment registry and the owner ruling (2026-07-20/21) that the `engine_owned` classification plays no role — see docs/factorio-2.0-api-notes.md fluid section. Plasma now rides transfers like any fluid: the connection-category exclusion is deleted (`FluidOwnership.is_engine_owned_box`, `collect_engine_owned_segments`, `warn_if_unexpected`, and every `engine_owned` payload/param field are gone), and the only lawful fluid subtraction is `write_rejected` (a physical post-write measurement). At 2.1.11 plasma writes stick capacity-clamped (reactor output `set_fluid` 50→10, generator input 25→10); fusion-generator boxes are segmentless.
 
-### 22. Activatable Entities Expose No Own Segment ID on 2.0.77 (REFINED: fusion reactor is the exception)
-Fluid-lab R7 found no tested activatable entity whose own fluidbox exposes a non-nil `get_fluid_segment_id(i)`, including a pump connected to segmented pipes/tanks; machine buffers likewise returned nil. Pipes/tanks expose segment IDs but are not activatable. `inventory-scanner.lua` handles the nil case by reading `fluidbox[i]` directly; without it, these fluids are silently dropped.
-**Refinement [empirical, 2.0.77, live probe 2026-07-17]:** the **fusion reactor's OWN boxes DO expose segment IDs** (coolant input AND plasma output), while the fusion-generator plasma inputs sharing the same segment read nil. So "activatable ⇒ nil segment ID" is not a law — an engine-owned exclusion keyed on the nil check alone misses the reactor's segmented plasma (the census phantom-plasma abort; see the fusion segment-ID entry in [docs/factorio-2.0-api-notes.md](docs/factorio-2.0-api-notes.md)).
+### 22. Activatable Entities Expose No Own Segment ID on 2.0.77 (RETIRED 2026-07-21)
+**RETIRED 2026-07-21**: superseded by the 2.1 fluid-segment registry — see docs/factorio-2.0-api-notes.md fluid section. The per-box `nil`-segment-id classification and its fusion-reactor refinement were 2.0.77 concerns; at 2.1.11 `entity.fluidbox` is hard-removed and segment getters THROW on segmentless boxes (they no longer return nil), so capture guards every read with `has_fluid_segment(i)` and reads segmentless boxes (fusion-generator boxes, machine buffers) via `get_fluid(i)`. Segment identity is captured once and deduplicated by source segment id; no engine-owned segment set is consulted.
 
-### 23. Temperature Merge and Key Boundaries
-Fluid-lab R12 [empirical, 2.0.77] connected `500 steam@165°C` to `1500 steam@500°C` and read one exact `2000@416.25°C` segment: volume and V×T were conserved by a volume-weighted merge. The requested key sweep from 9,999 through 10,000,000°C did not expose floating-point drift because the steam prototype clamped every write to 5,000°C, producing one stable `steam@5000.0C` key. The generic ">1,000,000°C doubles lose precision" story does not license the current 10,000 threshold; the threshold value remains task #30 territory.
-**Key files**: `loss-analysis.lua` (`reconcile_fluids` → `highTempAggregates`), `web/utils.js`, `web/TransactionLogsTab.jsx`.
+### 23. Temperature Merge and Key Boundaries (RETIRED 2026-07-21)
+**RETIRED 2026-07-21**: superseded by the 2.1 fluid-segment registry — see docs/factorio-2.0-api-notes.md fluid section. Temperature is now carried per registry segment record (energy-weighted at capture) and validated aggregate-by-name at `epsilon=1e-6`; the 2.0.77 volume-weighted merge measurement and the disproven ">1,000,000°C doubles lose precision" key-boundary story are no longer load-bearing. `loss-analysis.lua reconcile_fluids` still aggregates by name for the UI.
 
 ### 24. LuaProfiler Serialization — LocalisedString Snapshots (CRITICAL)
 `LuaProfiler` cannot be serialized and `tostring()` returns a memory address, not a time — see [factorio-2.0-api-notes.md](docs/factorio-2.0-api-notes.md). To persist timing across save/load, embed the profiler in a LocalisedString array (`{"", profiler}`); the engine bakes the value in and a GUI label renders it. Keep live profilers in module-local tables (never `storage`), and snapshot them to LocalisedStrings at job completion. Display-only — no math, no JSON.

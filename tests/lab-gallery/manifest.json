@@ -1858,6 +1858,128 @@
 				"expected": "CENSUS MUST REFUSE: export aborted, dest never contacted, source preserved + unlocked; fingerprint matches the manifest pin; [source] scratch: iron-plate item_count eq 100; report reason eq \"source_census_mismatch\"; report verdict_ok eq false",
 				"forbidden": "Any outcome where the omission ships (dest contacted / source deleted) or the abort strands the source locked."
 			}
+		},
+		{
+			"id": "fusion-loop",
+			"padKind": "pad",
+			"origin": {
+				"x": 36,
+				"y": 36
+			},
+			"anchors": [
+				{
+					"entity": "fusion-generator",
+					"x": 46.5,
+					"y": 44.5
+				},
+				{
+					"entity": "infinity-pipe",
+					"x": 40.5,
+					"y": 46.5
+				}
+			],
+			"revision": 1,
+			"labId": "fluid-lab",
+			"name": "Fusion loop plasma and coolant",
+			"purpose": "Preserve a hand-built ACTIVE fusion rig - two reactors, a generator, a cryogenic plant, a coolant pipe loop, and a self-refilling infinity-pipe plasma source - whose plasma and buffered coolant ride the 2.1 fluid-segment registry with nothing engine-excluded.",
+			"category": "physical-lab",
+			"owningRunner": null,
+			"saveRole": "source",
+			"platformName": "lab-omnibus-state-v1",
+			"engineVersion": "2.0.77",
+			"mods": {
+				"base": "2.0.77",
+				"elevated-rails": "2.0.77",
+				"FluidMustFlow": "1.4.4",
+				"quality": "2.0.77",
+				"SpidertronEnhancements": "1.10.8",
+				"space-age": "2.0.77",
+				"SpidertronPatrols": "2.6.3",
+				"surfexp_gateways": "0.3.0",
+				"maraxsis": "1.31.6"
+			},
+			"invariant": "The rig carries 2 fusion-reactors, 1 fusion-generator, 1 cryogenic-plant, 1 infinity-pipe and 6 pipes; the infinity-pipe holds fusion-plasma 100 (self-refilling, stable); the generator's own plasma box exposes NO fluid segment at 2.1; fusion-plasma and coolant (fluoroketone) fluid names are present. The reactors are ACTIVE, so plasma and coolant AMOUNTS drift and are recorded as presence booleans, never exact.",
+			"expectedTerminalVerdict": "observation-only",
+			"independentOracleRequired": true,
+			"fingerprint": {
+				"reactorCount": 2,
+				"generatorCount": 1,
+				"cryoCount": 1,
+				"infinityPipeCount": 1,
+				"pipeCount": 6,
+				"infinityPipePlasma": 100,
+				"generatorPlasmaSegNil": true,
+				"plasmaPresent": true,
+				"coolantPresent": true
+			},
+			"testCard": {
+				"law": "plasma and buffered fluids ride copy/paste and transfer via the segment registry; nothing is engine-excluded",
+				"build": "Hand-built live by the owner 2026-07-20 on open slot (36,36): two fusion-reactors (one at (55,41), one at (41,42)), a fusion-generator at (46.5,44.5), a cryogenic-plant at (46.5,39.5), an accumulator + medium-electric-pole, an infinity-pipe at (40.5,46.5) self-refilling fusion-plasma to 100, and a 6-pipe fluoroketone coolant loop; the reactors are ACTIVE so plasma/coolant amounts drift.",
+				"action": "Fingerprint the STABLE rig facts (entity counts, infinity-pipe plasma 100, generator-no-segment, plasma/coolant presence). A real transfer must carry every fluid name including plasma via the segment registry.",
+				"expected": "The transferred half carries the same entity counts, infinity-pipe plasma 100, and every fluid name present on the left including fusion-plasma.",
+				"forbidden": "any fluid name absent on the pasted half that exists on the left; plasma dropped"
+			},
+			"runnerExcluded": "build spans past col 12 - the reactor at (55,41) sits at column 19, inside the right compare/paste half (cols 14-27). /test-run's reset_cell sweep (ox+14..ox+27.5 = x 50..63.5) would DESTROY the hand-built reactor, and the +14 paste would overflow the cell. auditAggregateOnly does NOT solve this (it only changes the delta comparison, not the destructive reset_cell sweep). Owner to compact the build into cols 1-12 or accept audit-only; the meter (measure_fusion_loop) ships ready for that day.",
+			"note": "CLAIM 2026-07-20 of the hand-built fusion rig at open slot (36,36); fingerprint pinned from LIVE RCON measurement. The reactors are ACTIVE so coolant/plasma amounts DRIFT: coolant fluoroketone-cold measured 0.00 in reactor box1 and 0.01 in the loop pipes, fluoroketone-hot 9.29 in the cryogenic-plant; reactor fusion-plasma outputs measured 10.00 (at cap) on the (55,41) reactor and 4.09 on the (41,42) reactor; the generator's own plasma box measured 10.00 (at cap) but reads NO fluid segment id at 2.1 (2.1 buffer/window duality removed). Only STABLE facts are pinned exact: entity counts, the self-refilling infinity-pipe fusion-plasma 100, and the generator-no-segment structural fact; drifting fluids are presence booleans (plasmaPresent/coolantPresent). reactorPlasmaMax is measured for diagnostics but NEVER pinned. NOT in measure_corpus (drifting + runnerExcluded); wired to DISPATCH only.",
+			"owningRunnerWaiver": "Hand-built live by the owner 2026-07-20 (construct-once doctrine); no build script exists by design - the state itself is the artifact, banked in the source-of-truth checkpoint."
+		},
+		{
+			"id": "thruster-pair",
+			"padKind": "pad",
+			"origin": {
+				"x": 92,
+				"y": 36
+			},
+			"anchors": [
+				{
+					"entity": "thruster",
+					"x": 98,
+					"y": 44.5
+				},
+				{
+					"entity": "thruster",
+					"x": 106,
+					"y": 44.5
+				}
+			],
+			"revision": 1,
+			"labId": "fluid-lab",
+			"name": "Shared-segment thruster pair",
+			"purpose": "Preserve two thrusters whose west fuel ports share ONE buffer-class-topology fluid segment - the kill-measurement topology of the reverted 2026-07-19 fusion/thruster fix (per-box locals double-counted a shared thruster buffer).",
+			"category": "physical-lab",
+			"owningRunner": null,
+			"saveRole": "source",
+			"platformName": "lab-omnibus-state-v1",
+			"engineVersion": "2.0.77",
+			"mods": {
+				"base": "2.0.77",
+				"elevated-rails": "2.0.77",
+				"FluidMustFlow": "1.4.4",
+				"quality": "2.0.77",
+				"SpidertronEnhancements": "1.10.8",
+				"space-age": "2.0.77",
+				"SpidertronPatrols": "2.6.3",
+				"surfexp_gateways": "0.3.0",
+				"maraxsis": "1.31.6"
+			},
+			"invariant": "Two thrusters at cell-relative (+6,+8.5) and (+14,+8.5) share one thruster-fuel segment via an 11-pipe west-fuel-port path along row +5.5, holding 500 thruster-fuel total; both are disabled_by_script and destructible=false.",
+			"expectedTerminalVerdict": "observation-only",
+			"independentOracleRequired": true,
+			"fingerprint": {
+				"thrusterCount": 2,
+				"sharedFuelSegment": true,
+				"fuelTotal": 500
+			},
+			"testCard": {
+				"law": "a shared buffer-class-topology segment rides copy/paste/transfer exactly (the kill-measurement topology of the reverted 2026-07-19 fix)",
+				"build": "PENDING - not yet built. Script-build spec (run seed-prep to construct): place two thrusters at cell-relative (+6,+8.5) and (+14,+8.5); connect their west fuel ports along row +5.5 with an 11-pipe path so both fuel boxes share ONE fluid segment; inject 500 thruster-fuel into that shared segment; set both disabled_by_script=true and every entity destructible=false.",
+				"action": "Once built and un-excluded: /test-run copy/paste the pad and confirm the shared fuel segment (segment id equal across both thruster fuel boxes) and its 500 thruster-fuel ride exactly; a real transfer must carry the shared buffer without double-counting.",
+				"expected": "The pasted/transferred half shows 2 thrusters, ONE shared fuel segment id across both fuel boxes, and 500 thruster-fuel in that segment.",
+				"forbidden": "a split or dropped segment; the shared buffer double-counted or under-counted; thruster-fuel amount drift."
+			},
+			"runnerExcluded": "pad not yet built - script-build spec in the note/testCard.build; run seed-prep to construct, then re-pin the fingerprint from live measurement and un-exclude. The meter (measure_thruster_pair) ships ready.",
+			"note": "MANIFEST-ONLY PENDING fixture authored 2026-07-20 on free open slot (92,36). Build spec: two thrusters at cell-relative (+6,+8.5) and (+14,+8.5) with the 11-pipe west-fuel-port path from the fluid-law experiments (west fuel ports connected along row +5.5), 500 thruster-fuel injected into the shared segment, both disabled_by_script=true, all destructible=false. Fingerprint {thrusterCount:2, sharedFuelSegment:true, fuelTotal:500} is the TARGET spec (not yet live-measured); re-pin from live once built. NOT in measure_corpus; wired to DISPATCH only and stays unreached while runnerExcluded.",
+			"owningRunnerWaiver": "Hand-built-to-be by the owner (construct-once doctrine); pending seed-prep construction 2026-07-20 - no standalone runner, the state will be the artifact."
 		}
 	]
 }

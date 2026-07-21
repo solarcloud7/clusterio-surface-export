@@ -69,21 +69,36 @@ function ConnectionScanner.extract_power_connections(entity)
   end
 
   local connections = {}
-  
-  local success, neighbours = pcall(function() return entity.neighbours end)
-  if not success then log(string.format("[connection-scanner] read neighbours failed on %s: %s", entity.name, tostring(neighbours))) end
-  if not success or not neighbours or not neighbours.copper then
+
+  -- Factorio 2.1 removed LuaEntity.neighbours; copper wiring between poles is now read
+  -- through the wire-connector API. The pole_copper connector carries the copper cables.
+  local success, wire_connectors = pcall(function() return entity.get_wire_connectors(false) end)
+  if not success then log(string.format("[connection-scanner] get_wire_connectors failed on %s: %s", entity.name, tostring(wire_connectors))) end
+  if not success or not wire_connectors then
     return {}
   end
 
-  for _, neighbour in ipairs(neighbours.copper) do
-    if neighbour.valid then
+  local copper_connector = wire_connectors[defines.wire_connector_id.pole_copper]
+  if not copper_connector or not copper_connector.connections then
+    return {}
+  end
+
+  -- Semantic delta vs the removed neighbours.copper list: that list did not distinguish
+  -- wire origin (player/script), so we mirror it by capturing every copper connection
+  -- regardless of conn.origin. Each conn is a WireConnection whose .target is the peer
+  -- LuaWireConnector and .target.owner is the connected pole.
+  for _, conn in ipairs(copper_connector.connections) do
+    local neighbour = conn.target and conn.target.owner
+    if neighbour and neighbour.valid then
+      -- Emit the same shape as before: an array of unit_number target ids. Copper cables
+      -- only connect electric poles, which always carry a unit_number; if one is missing
+      -- that is a surprise worth surfacing rather than silently emitting a pos_ fallback.
       local target_id = neighbour.unit_number
-      if not target_id then
-        local pos = neighbour.position
-        target_id = string.format("pos_%.2f_%.2f", pos.x, pos.y)
+      if target_id then
+        table.insert(connections, target_id)
+      else
+        log(string.format("[connection-scanner] copper neighbour of %s has no unit_number (type=%s) — skipped", entity.name, tostring(neighbour.type)))
       end
-      table.insert(connections, target_id)
     end
   end
 
