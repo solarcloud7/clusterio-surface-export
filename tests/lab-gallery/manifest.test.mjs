@@ -23,7 +23,7 @@ test("gallery manifest labs are the fixture-referenced categories (lab dirs remo
 test("paired save roles, artifacts, censuses, and exact mod pins are final", () => {
 	const manifest = loadGalleryManifest(repoRoot);
 	assert.equal(manifest.schema, "surface-export-lab-gallery-v3");
-	assert.equal(manifest.engineVersion, "2.0.77");
+	assert.equal(manifest.engineVersion, "2.1.11");
 	assert.deepEqual(Object.keys(manifest.saves).sort(), ["destination", "source"]);
 	for (const [role, save] of Object.entries(manifest.saves)) {
 		assert.equal(save.role, role);
@@ -34,8 +34,8 @@ test("paired save roles, artifacts, censuses, and exact mod pins are final", () 
 		assert.ok(save.expectedCensus.totalGeneratedChunks >= 0);
 		assert.ok(Array.isArray(save.expectedCensus.surfaces));
 	}
-	assert.equal(manifest.mods.base, "2.0.77");
-	assert.equal(manifest.mods["space-age"], "2.0.77");
+	assert.equal(manifest.mods.base, "2.1.11");
+	assert.equal(manifest.mods["space-age"], "2.1.11");
 	assert.deepEqual(manifest.saves.source.mods, manifest.mods);
 	assert.deepEqual(manifest.saves.destination.mods, manifest.mods);
 	assert.deepEqual(validateGalleryManifest(manifest), {
