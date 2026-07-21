@@ -60,13 +60,13 @@ local function set_status(text_obj, comb, panel, status, failure_message)
   s1.active = (status == "pass")
   s2.active = (status == "fail")
   local pcb = panel.get_or_create_control_behavior()
-  local msgs = pcb.messages
+  local msgs = pcb.records  -- 2.1: messages renamed to records
   for _, m in ipairs(msgs) do
     if m.text and m.text:find("Failure", 1, true) == 1 then
       m.text = (status == "fail") and ("Failure " .. (failure_message or "?")) or FAILURE_TEMPLATE
     end
   end
-  pcb.messages = msgs
+  pcb.records = msgs
   text_obj.color = COLORS[status]
 end
 

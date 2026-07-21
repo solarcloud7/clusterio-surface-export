@@ -375,7 +375,7 @@ function Deserializer.restore_entity_state(entity, entity_data)
     if data.display_panel_show_in_chart ~= nil then entity.display_panel_show_in_chart = data.display_panel_show_in_chart end
     if data.display_panel_messages then
       safe_call(string.format("display-panel messages for %s", entity.name), function()
-        entity.get_or_create_control_behavior().messages = data.display_panel_messages
+        entity.get_or_create_control_behavior().records = data.display_panel_messages  -- 2.1: messages renamed to records
       end)
     end
     return  -- Panels have no other state to restore

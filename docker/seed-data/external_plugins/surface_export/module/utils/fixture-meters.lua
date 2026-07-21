@@ -121,7 +121,7 @@ end
 
 local function measure_omnibus_midcraft(surface, anchor)
     local m = anchored(surface, anchor, "assembling-machine-1", "omnibus midcraft")
-    local inv = m.get_inventory(defines.inventory.assembling_machine_input)
+    local inv = m.get_inventory(defines.inventory.crafter_input)
     return { progress = m.crafting_progress, active = m.active, inputPlates = inv and inv.get_item_count("iron-plate") or nil }
 end
 

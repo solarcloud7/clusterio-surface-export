@@ -855,8 +855,8 @@ EntityHandlers["display-panel"] = function(entity)
   data.display_panel_always_show = entity.display_panel_always_show
   data.display_panel_show_in_chart = entity.display_panel_show_in_chart
   local behavior = entity.get_control_behavior()
-  if behavior and behavior.messages and #behavior.messages > 0 then
-    data.display_panel_messages = behavior.messages
+  if behavior and behavior.records and #behavior.records > 0 then  -- 2.1: messages renamed to records
+    data.display_panel_messages = behavior.records
   end
   return next(data) and data or nil
 end
