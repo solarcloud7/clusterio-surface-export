@@ -548,39 +548,45 @@ local function measure_fusion_loop(surface, area)
     }
 end
 
--- Thruster pair (manifest-only PENDING; the build spec lives in the manifest note). The
--- kill-measurement topology of the reverted 2026-07-19 fusion/thruster fix: two thrusters sharing ONE
--- buffer-class fuel segment (per-box locals must NOT be summed for a shared buffer). Asserts 2
--- thrusters, one shared thruster-fuel segment id across both fuel boxes, and the segment fuel total
--- (counted ONCE per shared segment). Stays UNREACHED while the fixture is runnerExcluded — ships ready.
--- All segment reads are has_fluid_segment-guarded.
+-- Thruster pair (owner-hand-built 2026-07-21 on the south-edge slot (92,64)). The kill-measurement
+-- topology of the reverted 2026-07-19 fusion/thruster fix: two thrusters sharing ONE fuel segment
+-- AND one oxidizer segment (per-box locals must NOT be summed for a shared buffer). Asserts 2
+-- thrusters and, per fluid, one shared segment id across both boxes plus the segment total
+-- (counted ONCE per shared segment). All segment reads are has_fluid_segment-guarded.
 local function measure_thruster_pair(surface, area)
     local thrusters = surface.find_entities_filtered({ name = "thruster", area = area })
-    local seg_ids = {}
-    local counted, fuel_total = {}, 0
-    for _, t in ipairs(thrusters) do
-        for i = 1, t.fluids_count do
-            if t.has_fluid_segment(i) then
-                local sf = t.get_fluid_segment_fluid(i)
-                if sf and sf.name == "thruster-fuel" then
-                    local sid = t.get_fluid_segment_id(i)
-                    if sid then
-                        seg_ids[#seg_ids + 1] = sid
-                        if not counted[sid] then
-                            counted[sid] = true
-                            fuel_total = fuel_total + sf.amount
+    local function shared_total(fluid_name)
+        local seg_ids = {}
+        local counted, total = {}, 0
+        for _, t in ipairs(thrusters) do
+            for i = 1, t.fluids_count do
+                if t.has_fluid_segment(i) then
+                    local sf = t.get_fluid_segment_fluid(i)
+                    if sf and sf.name == fluid_name then
+                        local sid = t.get_fluid_segment_id(i)
+                        if sid then
+                            seg_ids[#seg_ids + 1] = sid
+                            if not counted[sid] then
+                                counted[sid] = true
+                                total = total + sf.amount
+                            end
                         end
                     end
                 end
             end
         end
+        local shared = #seg_ids >= 2
+        for _, sid in ipairs(seg_ids) do if sid ~= seg_ids[1] then shared = false end end
+        return shared, total
     end
-    local shared = #seg_ids >= 2
-    for _, sid in ipairs(seg_ids) do if sid ~= seg_ids[1] then shared = false end end
+    local fuel_shared, fuel_total = shared_total("thruster-fuel")
+    local oxidizer_shared, oxidizer_total = shared_total("thruster-oxidizer")
     return {
         thrusterCount = #thrusters,
-        sharedFuelSegment = shared,
+        sharedFuelSegment = fuel_shared,
         fuelTotal = fuel_total,
+        sharedOxidizerSegment = oxidizer_shared,
+        oxidizerTotal = oxidizer_total,
     }
 end
 
