@@ -218,41 +218,44 @@ function FluidRestoration.restore(entities_to_create, entity_map, fluid_segments
 				end
 			end
 
-			-- Count groups + total local weight for proportional distribution (a failed bridging
-			-- entity can split one source segment into several dest segments; per-member locals
-			-- are what make a faithful proportional split possible).
-			local group_list = {}
+			-- ONE conserving split across EVERY surviving destination unit — dest segment groups
+			-- AND segmentless stragglers alike — weighted by captured member locals, so the sum
+			-- of writes is exactly rec.total in every topology. (di-change review 2026-07-21,
+			-- SHOULD-FIX: the earlier shape wrote the FULL total into the segment groups and then
+			-- ADDED straggler locals on top — a mixed segment/segmentless dest topology over-filled
+			-- and false-failed the gate as a GAIN. Fails safe, but red on a legitimate transfer.)
+			-- A failed bridging entity can split one source segment into several dest segments;
+			-- per-member locals are what make a faithful proportional split possible. The pure
+			-- storage record (source segmentless, one member) falls out as the single-unit case.
+			local units = {}
 			local total_weight = 0
 			for _, g in pairs(dest_groups) do
-				group_list[#group_list + 1] = g
+				units[#units + 1] = { group = g, weight = g.sum_local }
 				total_weight = total_weight + g.sum_local
 			end
+			for _, m in ipairs(segmentless) do
+				units[#units + 1] = { member = m, weight = m.local_amount or 0 }
+				total_weight = total_weight + (m.local_amount or 0)
+				if rec.source_segment_id then
+					log(string.format("[Fluid Restore] WARNING: %s box %d segmentless on dest for source segment %s — included in the conserving split",
+						m.entity.name, m.box_index, tostring(rec.source_segment_id)))
+				end
+			end
 
-			if #group_list > 0 then
-				for _, g in ipairs(group_list) do
-					local share
-					if #group_list == 1 then
-						share = rec.total
-					elseif total_weight > 0 then
-						share = rec.total * (g.sum_local / total_weight)
-					else
-						share = rec.total / #group_list
-					end
-					write_segment_group(rec, g, share)
+			for _, unit in ipairs(units) do
+				local share
+				if #units == 1 then
+					share = rec.total
+				elseif total_weight > 0 then
+					share = rec.total * (unit.weight / total_weight)
+				else
+					share = rec.total / #units
 				end
-				-- Segmentless stragglers of a seg-bearing record (anomalous topology drift): seat
-				-- their captured local share directly so the fluid is not silently absent.
-				for _, m in ipairs(segmentless) do
-					if (m.local_amount or 0) > 0 then
-						log(string.format("[Fluid Restore] WARNING: %s box %d segmentless on dest for source segment %s — seating captured local %.2f",
-							m.entity.name, m.box_index, tostring(rec.source_segment_id), m.local_amount))
-						write_storage(rec, m, m.local_amount)
-					end
+				if unit.group then
+					write_segment_group(rec, unit.group, share)
+				elseif share > 0 then
+					write_storage(rec, unit.member, share)
 				end
-			elseif #segmentless > 0 then
-				-- Pure storage record (source was segmentless too — machine buffers, generators):
-				-- one member by construction; seat the total.
-				write_storage(rec, segmentless[1], rec.total)
 			end
 		end
 	end
