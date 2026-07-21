@@ -1869,7 +1869,7 @@
 			"anchors": [
 				{
 					"entity": "fusion-generator",
-					"x": 46.5,
+					"x": 45.5,
 					"y": 44.5
 				},
 				{
@@ -1878,7 +1878,7 @@
 					"y": 46.5
 				}
 			],
-			"revision": 1,
+			"revision": 2,
 			"labId": "fluid-lab",
 			"name": "Fusion loop plasma and coolant",
 			"purpose": "Preserve a hand-built ACTIVE fusion rig - two reactors, a generator, a cryogenic plant, a coolant pipe loop, and a self-refilling infinity-pipe plasma source - whose plasma and buffered coolant ride the 2.1 fluid-segment registry with nothing engine-excluded.",
@@ -1898,11 +1898,11 @@
 				"surfexp_gateways": "0.3.0",
 				"maraxsis": "1.31.6"
 			},
-			"invariant": "The rig carries 2 fusion-reactors, 1 fusion-generator, 1 cryogenic-plant, 1 infinity-pipe and 6 pipes; the infinity-pipe holds fusion-plasma 100 (self-refilling, stable); the generator's own plasma box exposes NO fluid segment at 2.1; fusion-plasma and coolant (fluoroketone) fluid names are present. The reactors are ACTIVE, so plasma and coolant AMOUNTS drift and are recorded as presence booleans, never exact.",
+			"invariant": "The rig carries 1 fusion-reactor, 1 fusion-generator, 1 cryogenic-plant, 1 infinity-pipe and 6 pipes; the infinity-pipe holds fusion-plasma 100 (self-refilling, stable); the generator's own plasma box exposes NO fluid segment at 2.1; fusion-plasma and coolant (fluoroketone) fluid names are present. The reactor is ACTIVE, so plasma and coolant AMOUNTS drift and are recorded as presence booleans, never exact.",
 			"expectedTerminalVerdict": "observation-only",
 			"independentOracleRequired": true,
 			"fingerprint": {
-				"reactorCount": 2,
+				"reactorCount": 1,
 				"generatorCount": 1,
 				"cryoCount": 1,
 				"infinityPipeCount": 1,
@@ -1914,13 +1914,12 @@
 			},
 			"testCard": {
 				"law": "plasma and buffered fluids ride copy/paste and transfer via the segment registry; nothing is engine-excluded",
-				"build": "Hand-built live by the owner 2026-07-20 on open slot (36,36): two fusion-reactors (one at (55,41), one at (41,42)), a fusion-generator at (46.5,44.5), a cryogenic-plant at (46.5,39.5), an accumulator + medium-electric-pole, an infinity-pipe at (40.5,46.5) self-refilling fusion-plasma to 100, and a 6-pipe fluoroketone coolant loop; the reactors are ACTIVE so plasma/coolant amounts drift.",
+				"build": "Hand-built live by the owner 2026-07-20 on open slot (36,36); compacted live by the owner 2026-07-21 into the left interior (cols 1-12): one fusion-reactor at (40,42), a fusion-generator at (45.5,44.5), a cryogenic-plant at (45.5,39.5), an accumulator + medium-electric-pole, an infinity-pipe at (40.5,46.5) self-refilling fusion-plasma to 100, and a 6-pipe fluoroketone coolant loop; the reactor is ACTIVE so plasma/coolant amounts drift.",
 				"action": "Fingerprint the STABLE rig facts (entity counts, infinity-pipe plasma 100, generator-no-segment, plasma/coolant presence). A real transfer must carry every fluid name including plasma via the segment registry.",
 				"expected": "The transferred half carries the same entity counts, infinity-pipe plasma 100, and every fluid name present on the left including fusion-plasma.",
 				"forbidden": "any fluid name absent on the pasted half that exists on the left; plasma dropped"
 			},
-			"runnerExcluded": "build spans past col 12 - the reactor at (55,41) sits at column 19, inside the right compare/paste half (cols 14-27). /test-run's reset_cell sweep (ox+14..ox+27.5 = x 50..63.5) would DESTROY the hand-built reactor, and the +14 paste would overflow the cell. auditAggregateOnly does NOT solve this (it only changes the delta comparison, not the destructive reset_cell sweep). Owner to compact the build into cols 1-12 or accept audit-only; the meter (measure_fusion_loop) ships ready for that day.",
-			"note": "CLAIM 2026-07-20 of the hand-built fusion rig at open slot (36,36); fingerprint pinned from LIVE RCON measurement. The reactors are ACTIVE so coolant/plasma amounts DRIFT: coolant fluoroketone-cold measured 0.00 in reactor box1 and 0.01 in the loop pipes, fluoroketone-hot 9.29 in the cryogenic-plant; reactor fusion-plasma outputs measured 10.00 (at cap) on the (55,41) reactor and 4.09 on the (41,42) reactor; the generator's own plasma box measured 10.00 (at cap) but reads NO fluid segment id at 2.1 (2.1 buffer/window duality removed). Only STABLE facts are pinned exact: entity counts, the self-refilling infinity-pipe fusion-plasma 100, and the generator-no-segment structural fact; drifting fluids are presence booleans (plasmaPresent/coolantPresent). reactorPlasmaMax is measured for diagnostics but NEVER pinned. NOT in measure_corpus (drifting + runnerExcluded); wired to DISPATCH only.",
+			"note": "CLAIM 2026-07-20 of the hand-built fusion rig at open slot (36,36); UN-EXCLUDED + fingerprint re-pinned 2026-07-21 after the owner compacted the rig into the left interior (second reactor at (55,41) REMOVED, coolant loop rerouted). Live-verified before un-excluding: every rig entity's bbox sits within x 37..48 / y 37..47 (left interior x 37..49) and the destructive reset_cell sweep zone (x 50..63.5) is EMPTY. Re-pinned from LIVE RCON measurement: entity counts 1/1/1/1/6, self-refilling infinity-pipe fusion-plasma 100, generator-no-segment structural fact; drifting fluids stay presence booleans (plasmaPresent/coolantPresent); reactorPlasmaMax measured 10.00 (at cap) for diagnostics, NEVER pinned. NOT in measure_corpus (drifting); wired to DISPATCH.",
 			"owningRunnerWaiver": "Hand-built live by the owner 2026-07-20 (construct-once doctrine); no build script exists by design - the state itself is the artifact, banked in the source-of-truth checkpoint."
 		},
 		{

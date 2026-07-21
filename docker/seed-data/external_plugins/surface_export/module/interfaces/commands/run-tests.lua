@@ -187,9 +187,8 @@ local DISPATCH = {
   -- owner-hand-built pads (previously "skipped: no meter")
   ["belt-combined-omnibus"]         = { args = "area", meter = FM.measure_belt_combined },
   ["mining-drill-acid-feed"]        = { args = "both", meter = FM.measure_mining_drill_acid },
-  -- fusion loop (owner-hand-built, ACTIVE): runnerExcluded (build spans past col 12 — reset_cell
-  -- would destroy the reactor), so this dispatch stays UNREACHED; the meter ships ready for when the
-  -- build is compacted into cols 1-12. Scans the rig area by name (nil area = whole surface).
+  -- fusion loop (owner-hand-built, ACTIVE): compacted into cols 1-12 by the owner 2026-07-21 and
+  -- un-excluded — runs the full copy/paste pad. Scans the half by name, area-scoped.
   ["fusion-loop"]                   = { args = "area", meter = FM.measure_fusion_loop },
   -- thruster pair: manifest-only PENDING (runnerExcluded until seed-prep builds it); stays UNREACHED.
   ["thruster-pair"]                 = { args = "area", meter = FM.measure_thruster_pair },
