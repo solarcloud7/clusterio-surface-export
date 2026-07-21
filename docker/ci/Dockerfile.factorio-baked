@@ -23,7 +23,7 @@ FROM ${HOST_IMAGE}
 # (docker/seed-data/hosts/clusterio-host-1/.../instance.json); CI resolves it and passes it as
 # this build-arg, and a CI guard fails the build if host-2 or this default disagree. The default
 # below is only a fallback for local `docker build` without the arg — keep it equal to the pin.
-ARG FACTORIO_HEADLESS_TAG=2.0.77
+ARG FACTORIO_HEADLESS_TAG=2.1.11
 
 # Replicate the base image's supported bake (Dockerfile.host): extract into the /opt/factorio
 # multi-version PARENT so Clusterio finds the version already present and skips the runtime

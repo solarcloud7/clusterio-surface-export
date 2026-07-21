@@ -1,78 +1,56 @@
 {
-  "_comment": "Engine-pin certificate. The pinned Factorio version (host-1 instance.json) MUST equal factorio_version below or lint-version-certification FAILS. STANDING LAB SUITE REMOVED 2026-07-19 (owner ruling): engine re-certification is a CALCULATED CAMPAIGN at version-update time — restore the runners from the labs-archive-2026-07-19 git tag (or author fresh probes), re-measure every law production depends on, record evidence commits here, bump factorio_version, all in the bump PR. Between deploys on the same pin, the pads + /test-run + the integration suite are the standing coverage. The evidence[] below stands as the 2.0.77 certificate; its commits remain valid git-history pointers.",
-  "factorio_version": "2.0.77",
-  "certified_at": "2026-07-10",
+  "_comment": "Engine-pin certificate. The pinned Factorio version (host-1 instance.json) MUST equal factorio_version below or lint-version-certification FAILS. STANDING LAB SUITE REMOVED 2026-07-19 (owner ruling): engine re-certification is a CALCULATED CAMPAIGN at version-update time. The evidence[] below is the 2.1.11 certificate (campaign 2026-07-20/21, branch fluid-segment-registry-21); the prior 2.0.77 certificate remains in git history at the pre-bump revision of this file, and the labs_archive_tag still points at the archived 2.0-era runners.",
+  "factorio_version": "2.1.11",
+  "certified_at": "2026-07-21",
   "evidence": [
     {
-      "lab": "gate-drift-lab",
-      "runner": "tests/gate-drift-lab",
-      "rungs": "LAB-A",
-      "conclusion": "measured export-scan residuals (the belt-restoration drift floor behind the strict gate)",
+      "lab": "fluid-segment-law",
+      "runner": "tests/integration/fluid-segment-law (in-suite re-certification instrument; module/interfaces/remote/fluid-segment-law-selftest.lua)",
+      "rungs": "plain-English experiments 1-8",
+      "conclusion": "The 2.1.11 fluid model measured and pinned: whole-segment writes read back exact from any member box (buffer/window duality removed); get_fluid capacity shares; plasma capacity-clamps and RIDES (engine_owned exclusion deleted by owner ruling); segment getters THROW on segmentless boxes (has_fluid_segment guard mandatory); fusion-generator boxes segmentless; 12-prototype fluid-box coverage sweep incl. the flamethrower-turret second-box drift 2.0.77->2.1.11 the instrument itself caught. ALL PASS 8/8, teardown clean, zero leftovers, live on 2.1.11.",
       "commits": [
-        "d666b23"
+        "627cebc",
+        "ca791e5",
+        "4459c66"
       ]
     },
     {
-      "lab": "fluid-lab",
-      "runner": "tests/fluid-lab (run-r*.mjs)",
-      "rungs": "R10, R11, R12",
-      "conclusion": "temperature-key drift is a phantom (steam merges pre-export + round-trips exactly); frozen-world fluid injection + temperature-merge boundaries measured",
+      "lab": "pads + transfer suite (standing coverage re-earned on the new pin)",
+      "runner": "tests/lab-gallery via /test-run; tests/integration/pad-transfer-suite",
+      "rungs": "full 27-fixture roster; 8 transfer-act fixtures + workhorse",
+      "conclusion": "Every baked law re-verified live on 2.1.11: /test-run 19 passed / 0 failed / 0 missing (fusion-loop and thruster-pair join as ACTIVE fluid pads: plasma + buffered coolant + dual shared thruster segments ride copy/paste exactly); pad-transfer-suite ALL PASS repeatedly on the re-banked 2.1.11 golden pair (strict exact gate, gate-teeth sabotage fixtures, census-omission abort, force-bonus raise, rollback preservation all green through REAL transfers). Inserter held-seating and no-tick laws stand via the inserter-held-capacity and no-tick-sync-frozen-pair pads on the same roster.",
       "commits": [
-        "ae1efe6",
-        "e8c7bbe",
-        "f8cea7f"
+        "7272355",
+        "f980b05",
+        "ed8a1fa",
+        "36c0ccf"
       ]
     },
     {
-      "lab": "inserter-lab",
-      "runner": "tests/inserter-lab (run-b6-deactivated-setstack.mjs, run-b7-held-capacity-batch.mjs via tests/lab-gallery/run-golden-batch.mjs)",
-      "rungs": "B1-B4, B6, B7",
-      "conclusion": "held-item capacity is governed by the dest force's inserter research (CI bonus 0 vs local 11); set_stack clamps to physical hand capacity — and seating is ACTIVATION-INDEPENDENT (B6 refutation: deactivated fresh/settled seats fully; bonus-0 clamp identical active vs inactive; the old wake-toggle lore was dead-code misattribution). inserter-lab B7 (bake gate, unified golden-batch, two consecutive greens): a save-loaded legendary bulk-inserter holding 8 legendary railgun-ammo transfers to an asserted bonus-0 destination with the raise-only Phase-0 sync (0->11), a physically full hand, forceDataMismatches recorded, and the source deleted — the fixture's first live runs also caught and fixed two bake defects (dest lineage bonus 11; normal-quality stack self-certified by an entity-quality meter)",
+      "lab": "engine-invariants",
+      "runner": "tests/integration/engine-invariants",
+      "rungs": "standing",
+      "conclusion": "The engine-fact backstops (incl. get_item_count completeness, the independent oracle behind the census enumerator) re-verified green on 2.1.11.",
       "commits": [
-        "8c61365",
-        "54c38c0",
-        "d3cac52"
+        "0f71ac7"
       ]
     },
     {
-      "lab": "no-tick-sync-lab",
-      "runner": "tests/no-tick-sync-lab (run-pr0b.mjs, run-b8-baked-pair.mjs via tests/lab-gallery/run-golden-batch.mjs)",
-      "rungs": "B5, PR0B, B8",
-      "conclusion": "the synchronous held-item restore pass keeps game.tick, crafting_progress, and the restored inserter hand stable through the strict count (no craft window). no-tick-sync B8 (bake gate, unified golden-batch, two consecutive greens): the same pass reproduced construct-free from the save-loaded golden pair — fresh seating leaves tick/progress/input exactly unchanged, and a second pass under game.tick_paused=true is idempotent (restored=0, hand stays full, both entities inactive)",
+      "lab": "belt behavioral coverage (offset law NOT re-isolated)",
+      "runner": "tests/integration/belt-side-restore; tests/integration/belt-loss-replay (fixture re-exported by a current 2.1.11 source)",
+      "rungs": "behavioral",
+      "conclusion": "HONEST PARTIAL: belt-side-restore (R11/R12 side-scoped recipe) and the 550-belt deficit replay run green on 2.1.11, and the atomic single-tick export scan + oversized-stack consolidation hold through the pad suite. The tier-parametric insert_at write-frame offset law (BELT-R10) and the 2.1 belt entries in version-compat PROFILES remain [hypothesis]-tagged best-effort carries - not re-isolated on 2.1.11. Re-isolate from the labs-archive tag before building anything new on the offset value.",
       "commits": [
-        "be754fd",
-        "5f7ca16",
-        "d3cac52"
+        "627cebc"
       ]
     },
     {
-      "lab": "engine-repin-lab",
-      "runner": "tests/engine-repin-lab (run-repin-consumables.mjs)",
-      "rungs": "B7-B9",
-      "conclusion": "re-pinned engine behaviors on 2.0.77; measured the LuaSpacePlatform.destroy(0)/destroy(60) semantics drift from 2.0.76. Now re-runnable on every pin bump via the repin-consumables batch (two consecutive greens, 2026-07-19): B7 consumes the three baked hub platforms against the pinned destroy table; B8 (beacon, DISTINCT from no-tick-sync B8) proves crafting_speed rises same-execution on module population (0.75->1.2, machine frozen, no ticks); B9 proves unknown-item imports skip loud and restore valid contents (25/25 physical)",
+      "lab": "platform teardown route",
+      "runner": "tests/integration/name-collision-delete + every suite finalizer",
+      "rungs": "behavioral",
+      "conclusion": "game.delete_surface via GameUtils.delete_platform remains the deterministic removal route on 2.1.11 (the 2.0.77 destroy() drift that motivated the certificate is bypassed by design; lint:lua still blocks platform.destroy()).",
       "commits": [
-        "00e44c7",
-        "f2cf844"
-      ]
-    },
-    {
-      "lab": "hold-completeness-lab",
-      "runner": "tests/hold-completeness-lab (run-pr0a.mjs, run-hold-buffer-pairs.mjs)",
-      "rungs": "PR0A, hold-buffer-pairs",
-      "conclusion": "destination-hold stage/read completeness measured; isolated machine buffers survive the hold. hold-buffer-pairs (baked pairs batch, two consecutive greens 2026-07-19): across a ~5s owner-scoped window, held spoilage drift == paired live drift, zero hold-attributable damage, staged platforms go pod-free with all cargo retained (100/100 copper at stage and after); holds discard to zero records. Evidence-forced deviations documented in the manifest (asteroids baked frozen — an active one despawned from the paused golden platform; the in-flight pod is runtime-created — cargo_pod_state is read-only and a baked pod decays to ascending/force-finishes)",
-      "commits": [
-        "a007ecb",
-        "b50831f"
-      ]
-    },
-    {
-      "lab": "census-lab",
-      "runner": "tests/census-lab (run-r1-stall-budget.mjs, run-r2-fusion-commensurability.mjs)",
-      "rungs": "R1, R2",
-      "conclusion": "paired-reads census stall budget measured (R1); census commensurability on engine-owned fusion fluids proven from the save-loaded golden fixture with a working omission abort (R2, the first bake-gate batch) — the rung also exposed and fixed the schedule-less-platform transfer failure, the settled-retry duplication path, and the silent chunk-queue failure",
-      "commits": [
-        "935e0b3",
-        "5a2bc65"
+        "0f71ac7"
       ]
     }
   ],
