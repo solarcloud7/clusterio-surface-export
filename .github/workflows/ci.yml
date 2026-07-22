@@ -130,11 +130,12 @@ jobs:
 
       - name: Create external factorio-client volume
         run: |
-          # docker-compose declares `factorio-client` as an external volume (shared across
-          # projects in local dev). CI has no Factorio credentials, so host-1 falls back to
-          # headless mode (auto-downloads the headless server) — but compose still mounts the
-          # volume, so it must exist or `up` fails with "external volume not found".
-          docker volume create factorio-client
+          # docker-compose declares `factorio-client-2111` as an external volume (renamed in the
+          # Factorio 2.1.11 migration; the old shared `factorio-client` volume is the 2.0.77 client
+          # and belongs to a different project on the dev machine). CI has no Factorio credentials,
+          # so host-1 falls back to headless mode (auto-downloads the headless server) — but compose
+          # still mounts the volume, so it must exist or `up` fails with "external volume not found".
+          docker volume create factorio-client-2111
 
       - name: Pull Docker images
         run: |
