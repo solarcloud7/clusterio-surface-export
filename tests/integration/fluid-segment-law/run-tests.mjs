@@ -1,8 +1,11 @@
 #!/usr/bin/env node
 // fluid-segment-law — driver for the debug-gated fluid_segment_law_selftest remote.
 //
-// Invokes the selftest (module/interfaces/remote/fluid-segment-law-selftest.lua) on the gallery
-// instance, prints one PASS/FAIL line per fluid-segment law measured live at 2.1.11, and exits 0 iff
+// Invokes the selftest (module/interfaces/remote/fluid-segment-law-selftest.lua) on the target
+// instance (default clusterio-host-1-instance-1 so it runs in CI as well as locally; the selftest
+// builds+tears down its OWN scratch platform, so no gallery pads are needed — override with
+// --instance/SE_LAB_INSTANCE to run it on the local gallery). Prints one PASS/FAIL line per
+// fluid-segment law measured live at 2.1.11, and exits 0 iff
 // every law re-certified AND teardown was clean AND zero scratch platforms leaked. The selftest owns
 // the scratch platform lifecycle; this driver only invokes, parses, and confirms zero leftovers.
 //
@@ -21,7 +24,7 @@ const SCRATCH_NAME = "fluid-law-selftest-scratch";
 
 const instanceArg = process.argv.indexOf("--instance");
 const INSTANCE = instanceArg !== -1 ? process.argv[instanceArg + 1]
-	: (process.env.SE_LAB_INSTANCE || "surface-export-lab-gallery");
+	: (process.env.SE_LAB_INSTANCE || "clusterio-host-1-instance-1");
 if (!INSTANCE) throw new Error("--instance needs a value");
 
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
@@ -50,6 +53,10 @@ function countLeftovers() {
 
 async function main() {
 	console.log(`fluid-segment-law: invoking fluid_segment_law_selftest on ${INSTANCE} ...`);
+	// The selftest is debug-gated. Enable debug_mode on the target instance so the driver is
+	// self-sufficient on a fresh CI seed as well as locally (debug_mode is the dev-cluster default
+	// per Pitfall #13; the CI cluster is torn down after the suite, so this leaves no lasting state).
+	lua(`remote.call('surface_export','configure',{debug_mode=true}); return {ok=true}`);
 	const result = lua(`return remote.call('surface_export','fluid_segment_law_selftest')`);
 
 	if (result.err) {
