@@ -89,16 +89,23 @@ test("record performs the paired PHYSICAL read via the Task-2 SurfaceCounter met
 		"record must call SurfaceCounter.count_entity_fluids(entity, ...) for the physical fluid read");
 });
 
-test("record's SERIALIZED side reuses Verification's counting rules (no re-implementation)", () => {
+test("record's SERIALIZED side reuses Verification's item rules and reads fluids from the job registry", () => {
 	const body = functionBody(
 		accumulatorSource(),
 		"function CensusAccumulator.record(",
 		"function CensusAccumulator.verdict",
 	);
 	assert.match(body, /Verification\.count_all_items\s*\(/,
-		"the serialized item count must reuse Verification.count_all_items");
-	assert.match(body, /Verification\.count_all_fluids\s*\(/,
-		"the serialized fluid count must reuse Verification.count_all_fluids");
+		"the serialized item count must reuse Verification.count_all_items (no re-implementation)");
+	// 2.1 registry port: the serialized FLUID truth is the job's FluidRegistry (the same segment
+	// records the payload carries), first-seer deduped over segment_ref — NOT a recount of the live
+	// surface. This keeps the two census sides commensurate (engine-vs-payload) per Pitfall #16.
+	assert.match(body, /acc\.fluid_registry\.segments\[\s*ref\s*\]/,
+		"the serialized fluid count must read the job's FluidRegistry segment records");
+	assert.match(body, /acc\.seen_segment_refs\[\s*ref\s*\]/,
+		"registry fluid reads must be first-seer deduped by segment_ref (each segment attributed once)");
+	assert.doesNotMatch(body, /Verification\.count_all_fluids\s*\(/,
+		"the retired serialized-fluid recount must not resurrect — fluids come from the registry now");
 });
 
 test("mismatch rows carry unit_number and per-key expected/actual/delta (belt-attribution row shape)", () => {
@@ -234,28 +241,27 @@ test("the census-omission hook is enumerated in lint:test-hooks FAIL_SAFE_HOOKS"
 		"the pre-verdict hook must be whitelisted as fail-safe (leak ⇒ next export aborts + source preserved)");
 });
 
-test("the census physical read excludes the SAME engine-owned segments the serializer excludes (shared-segment fusion case)", () => {
-	// Measured live 2026-07-17 (2.0.77, workhorse platform): fusion-reactor plasma OUTPUT boxes expose
-	// real segment IDs shared with fusion-generator inputs (which read seg=nil — refining Pitfall #22,
-	// activatable entities expose no own segment ID). The
-	// serializer drops those segments via the job's engine_owned_segments pre-pass, but a census fluid
-	// state seeded with an EMPTY engine_owned_segments set counts them physically → phantom
-	// fusion-plasma delta → every transfer of a fusion platform aborts. The two reads must share ONE
-	// ownership source of truth: queue() hands the job's pre-passed set to CensusAccumulator.new().
+test("the census threads the job's FluidRegistry as the single serialized-fluid source (fail-loud, no silent-nil)", () => {
+	// 2.1 registry port (owner ruling 2026-07-20): the engine_owned segment exclusion is DELETED —
+	// plasma rides like any fluid. The census's serialized-fluid truth is now the job's FluidRegistry,
+	// shared by reference with the export walk so the two sides can never diverge in how a segment is
+	// folded. A nil registry would silently stop checking fluids, so new() must fail LOUD.
 	const newBody = functionBody(
 		accumulatorSource(),
 		"function CensusAccumulator.new(",
 		"function CensusAccumulator.record(",
 	);
-	assert.match(newBody, /new_fluid_state\s*\(\s*engine_owned_segments\s*\)/,
-		"new() must THREAD the set into new_fluid_state (an empty/unthreaded set silently disables the segment-path exclusion)");
-	assert.match(newBody, /if not engine_owned_segments then\s*\n\s*error\(/,
-		"new() must fail LOUD on a nil set — Lua's silent-nil default would quietly resurrect the trap for a future caller");
+	assert.match(newBody, /function\s+CensusAccumulator\.new\s*\(\s*fluid_registry\s*\)/,
+		"new() must take the job's FluidRegistry (the serialized-side fluid truth)");
+	assert.match(newBody, /if not fluid_registry then\s*\n\s*error\(/,
+		"new() must fail LOUD on a nil registry — a silent-nil default would quietly stop checking fluids");
+	assert.doesNotMatch(newBody, /engine_owned/,
+		"the deleted engine-owned exclusion must not resurrect in the census constructor");
 	const queueBody = functionBody(
 		exportPipelineSource(),
 		"function ExportPipeline.queue(",
 		"function ExportPipeline.process_batch(",
 	);
-	assert.match(queueBody, /CensusAccumulator\.new\s*\(\s*engine_owned_segments\s*\)/,
-		"queue() must pass its pre-passed engine_owned_segments — the serializer's OWN exclusion set — into the census");
+	assert.match(queueBody, /CensusAccumulator\.new\s*\(\s*fluid_registry\s*\)/,
+		"queue() must pass its own fluid_registry — the payload's serialized fluid truth — into the census");
 });
