@@ -188,45 +188,11 @@ isolated is UNEXPLAINED, not fixed.
 
 ## Clusterio Core Development
 
-This repo is a **plugin + dev cluster**; the dev cluster runs **published** `@clusterio/* 2.0.0-alpha.25`
-baked into the `ghcr.io/solarcloud7/clusterio-docker-*` images. When you need to change **Clusterio core
-itself** (lib/host/controller/ctl), here is where that work lives and how to test it with `surface_export`.
-
-### Home: the sibling fork checkout `../clusterio`
-All Clusterio core development lives in the **canonical fork** at `C:\Users\Solar\source\clusterio`
-(`origin` = your fork `solarcloud7/clusterio`, `upstream` = `clusterio/clusterio`) — a **sibling** of this
-repo, NOT an in-repo checkout (the old `FactorioSurfaceExport/clusterio` was retired; the `/clusterio/`
-.gitignore line is a guard so it can't be re-committed). Clusterio uses a **fork-based, pnpm** workflow
-(see its `docs/contributing.md`):
-- `git fetch upstream` (never `git pull upstream`) → branch off `upstream/master` → push to `origin` →
-  PR to `clusterio/clusterio`. Update a branch by rebasing (`git rebase upstream/master`, force-push `+branch`).
-- Long-lived fork-only work (e.g. `ExtendedExportData`) stays on its own fork branch.
-- Add a changelog entry for user-visible changes; run `pnpm test` + `pnpm lint`.
-- To touch a different branch without disturbing in-progress work, use a `git worktree` off `upstream/master`.
-
-### Two ways to test a core change with the plugin
-1. **Native pnpm dev env (recommended for *iterating* on a core feature).** Per Clusterio's contributing.md,
-   in `../clusterio`: `pnpm install`, put/junction the plugin into `external_plugins/surface_export`,
-   `node packages/ctl plugin add ./external_plugins/surface_export`, run `node packages/controller run` +
-   `node packages/host run`, iterate with `pnpm watch`. Core edits go live immediately, with source maps.
-   The upstream-blessed loop; no version-compat hacks.
-2. **Full-cluster Docker override (this repo's 2-host cluster running your fork build).** `pnpm build` the
-   fork, then layer `docker-compose.clusterio-src.yml` (bind-mounts each `../clusterio/packages/<pkg>/dist`
-   over the image's `@clusterio/<pkg>/dist`):
-   ```powershell
-   ./tools/rebuild-clusterio.ps1          # pnpm build the fork + recreate the cluster on it
-   # revert to the published image:  docker compose up -d --force-recreate
-   ```
-   **Compatibility caveat:** the fork build must be API-compatible with the plugin's pinned `@clusterio`
-   version (alpha.25). Build a branch CLOSE to that release; a heavily-diverged branch may not drop in — if
-   instances fail to start, use loop 1 instead. `CLUSTERIO_SRC` overrides the fork path (default `../clusterio`).
-
-### Promoting a change
-- **General fix/feature** → verify (loop 1 or 2) → upstream PR to `clusterio/clusterio`. When merged & released,
-  the published `@clusterio` version advances.
-- **Fork-baseline feature the cluster must persist on** → bake into the images via the **`clusterio-docker`**
-  builder (`C:\Users\Solar\source\clusterio-docker`: build from the fork or publish fork packages, bump
-  `CLUSTERIO_VERSION`), then bump the pinned tag in `docker-compose.yml` + the plugin `package.json`.
+This repo runs **published** `@clusterio/* 2.0.0-alpha.25` from the baked images. To change Clusterio core
+itself (lib/host/controller/ctl): the canonical fork checkout is the SIBLING `../clusterio` (fork-based pnpm
+workflow, never an in-repo checkout). The two test loops (native pnpm dev env vs full-cluster Docker override
+via `./tools/rebuild-clusterio.ps1`) and the promotion paths are in
+[docs/clusterio-core-dev.md](docs/clusterio-core-dev.md).
 
 ## Project File Structure
 
@@ -234,7 +200,6 @@ Plugin root: `docker/seed-data/external_plugins/surface_export/` (`module/` = sa
 `lib/` = TS modules, `web/` = React UI, `scripts/` = lint guards, `dist/` = gitignored build output).
 Helper scripts: run `ls tools/`. Cluster definition: `docker-compose.yml` (+ `docker-compose.clusterio-src.yml`
 opt-in fork override); all environment config in gitignored `.env`.
-
 
 ### Build Architecture
 
@@ -352,99 +317,47 @@ a reachability spike. Covered by `tests/integration/passenger-evacuate`; design 
 - **Admin features**: Clear history button, adjustable row limits (10/25/50/100)
 - **See**: Pitfall #24 for LocalisedString profiler serialization requirements
 
-## Common Pitfalls & Solutions
+## Common Pitfalls (index)
 
-> Numbering note (2026-07-08): #8 does not exist (retired); #20 (Failed Entity Loss) sits out of sequence between
-> #15 and #16 for historical reasons — do not renumber it, code comments cite it; the former *second* #20
-> (Export-Only Destination) was renumbered to #32. When citing a pitfall, always write number + short name
-> (e.g. "Pitfall #19, platform.destroy is a no-op") so the reference survives renumbering and means something
-> to a human without a lookup.
+Full corpus — mechanism, fix, evidence, key files per entry — in [docs/pitfalls.md](docs/pitfalls.md);
+registry (slug, status, guard) in [docs/pitfalls.json](docs/pitfalls.json); consistency enforced by
+`npm run lint:doc-refs`. Cite as "Pitfall #N, short name". Numbers are frozen aliases (#8 retired —
+never renumber). Statuses: unmarked = active law; *(historical)* = fixed, lesson recorded;
+*(revision-queued)* = partially refuted, revision adjudicated.
 
-### 1. Empty RCON Response
-**Symptom**: `rc11` returns nothing (or, in a non-interactive/agent shell, `rc11: not recognized` — the aliases are interactive-profile-only; use `./tools/rcon.ps1 11 "..."`)
-**Cause**: Instance not running or mod not loaded
-**Fix**: Run `./tools/show-cluster-status.ps1` to check status, then `./tools/check-cluster-logs.ps1` for errors
-
-### 2. Import Fails Silently
-**Symptom**: Import command returns but no platform created
-**Cause**: JSON too large for a single RCON command
-**Fix**: Import via the web UI **Import JSON** (Manual Transfer / Exports tab) or `/plugin-import-file <file> <name>` — both chunk automatically (the instance layer runs the chunked RCON protocol, 100 KB chunks). There is no standalone import script.
-
-### 3. Version Mismatch After Deploy
-**Symptom**: Old code still running after deploy
-**Fix**: Ensure `deploy-cluster.ps1` completed successfully, check for container restart
-
-### 4. Lua `storage` vs `global`
-**Important**: Factorio 2.0 renamed `global` to `storage`. Always use `storage.` for persistent data.
-**Enforced**: the Lua guard (`npm run lint:lua` → `scripts/lint-lua-invariants.mjs`, gated in CI) fails on any `global.`/`global[`/`global =` in the module tree.
-
-### 5. Finding Platform Index
-Platform indices are **per-force** and **1-based**. Use `/list-platforms` to find correct index.
-
-### 6. Read-Only Entity Properties (Factorio 2.0)
-**Symptom**: Crash with "property is read only" error
-**Cause**: Factorio 2.0 made many properties read-only (quality, productivity_bonus, etc.)
-**Fix**: Set properties during entity creation, not after. Use pcall for optional properties.
-
-### 7. Unknown Items During Import
-**Symptom**: Import crashes with "Unknown item name: ..." 
-**Cause**: Export from modded game, importing to instance with different mods
-**Expected**: v1.0.84+ gracefully skips unknown items with warnings. Check logs for what was skipped.
-
-### 9. Duplicate Instances on Restart — FIXED IN BASE IMAGE
-`docker compose restart` is safe — the base image's `seed-instances.sh` is idempotent (checks for the instance before creating, writes a `.seed-complete` marker, and reconfigures on host token desync). Use `docker compose down -v` only for a full volume wipe.
-
-### 10. Instances Missing Space Age Mods
-**Symptom**: Platforms don't exist, Space Age entities missing, game runs in base-game-only mode
-**Cause**: `DEFAULT_MOD_PACK` defaults to `"Base Game 2.0"` in the base image controller entrypoint
-**Fix**: Set `DEFAULT_MOD_PACK=Space Age 2.0` in `.env`. Requires `docker compose down -v` since mod pack is assigned on first run only.
-
-### 11. Both Instances Have Same Game Port — FIXED IN BASE IMAGE
-The base image's `host-entrypoint.sh` auto-derives the port range from HOST_ID (host N → `34N00-34N99`); docker-compose mappings must match. A `down -v` + image pull is needed when upgrading from an older base image.
-
-### 12. Clusterio API Require Path (CRITICAL)
-Use `require("modules/clusterio/api")` — the save-patched module path — NOT `require("__clusterio_lib__/api")`. `clusterio_lib` is not a Factorio mod (Clusterio injects its API via save-patching under `modules/`, not as a registered mod), so an `__clusterio_lib__` require or a `script.active_mods["clusterio_lib"]` guard is always nil → "Clusterio API not available - aborting".
-**Enforced**: `npm run lint:lua` (gated in CI) fails on any `__clusterio_lib__` reference or `active_mods[...clusterio_lib...]` guard in the module tree.
-
-### 13. Debug Mode Lost After Save Reset
-**Symptom**: Integration tests fail with "Debug mode not enabled on source instance" after patch-and-reset
-**Cause**: `debug_mode` is stored in `storage.surface_export_config`, which lives in the save file. When saves are wiped (by `patch-and-reset.ps1`), the config is gone.
-**Fix**: `on_init()` in `control.lua` now defaults `debug_mode = true` for fresh saves:
-```lua
-storage.surface_export_config = storage.surface_export_config or { debug_mode = true }
-```
-If the default was added after the current save was created, you need either:
-- A `patch-and-reset` (since the default only runs on `on_init`, which only fires for fresh saves)
-- Or manual enable: `rc11 "/sc remote.call('surface_export', 'configure', {debug_mode = true})"`
-
-### 14. Instance 2 "Platform Hasn't Been Built Yet"
-**Symptom**: Connecting to instance 2 shows "space platform hasn't been built yet" for spikedoom08, `/list-platforms` shows 0 entities
-**Cause**: Instance 2 uses a **minimal seed save** (`test2.zip`) that has a platform stub in save metadata but no physical space platform hub entity. The surface doesn't actually exist.
-**Expected behavior**: Instance 2 is the **import target**. Integration tests clone from the fully-built "test" platform on host 1 (1359 entities) and transfer it to host 2. The empty spikedoom08 is not used for exports.
-
-### 15. Entity Activation Before Validation (Historical Bug, Fixed)
-**Symptom**: Transfer validation fails with "Item mismatches: iron-plate: GAINED items — expected 590, got 600"
-**Cause**: `ActiveStateRestoration.restore()` was called as Phase 7 of import (before validation), which re-activated machines. In the ticks between activation and item counting, furnaces processed iron ore → iron plate, causing a net gain that triggered validation failure.
-**Evidence status**: the FIX (validate pre-activation) is [empirical]. No-tick-sync LAB-B5 [empirical, 2.0.77] isolated the boundary: reactivating a mid-craft furnace and reading it again in the same Lua execution left `game.tick`, `crafting_progress`, input, and output unchanged; crafting resumed only after ticks elapsed. The ordering rule is therefore "count before an elapsed tick," not "never read after activation."
-**Fix**: For **transfers only**, Phase 7 (activation) is deferred until after validation passes. Entities stay deactivated through all restoration phases and validation. Activation happens via `ActiveStateRestoration.restore()` using `frozen_states` only after `TransferValidation.validate_import()` succeeds. On failure, entities are left deactivated for investigation.
-**Key files**: `async-processor.lua` (`complete_import_job` function), `active_state_restoration.lua`
-**See**: [EXPORT_IMPORT_FLOW.md](docs/EXPORT_IMPORT_FLOW.md) — import phase call tree and validation summary
-
-### 20. Failed Entity Loss Attribution (Fixed)
-**Symptom**: Transfer validation fails or shows unexplained item/fluid losses when some entities fail to place (e.g., mod mismatch, prototype collision). Validation reports "expected 500 iron-plate, got 450" with no indication of why.
-**Cause**: When `create_entity` returns nil, all downstream restoration phases skip that entity silently (they check `entity_map[id]` and move on). Items and fluids inside the failed entity are never placed, but they remain in the "expected" totals from verification data, causing false validation failures or unexplained loss.
-**Fix**: At the failure site in `entity_creation.lua`, tally items (inventories, belt lines, held item) and fluids from the serialized entity data into `job.failed_entity_losses`. In `async-processor.lua`, before calling `validate_import`, deep-copy and subtract failed-entity items from expected counts so validation only compares achievable totals. Attach `failedEntityLosses` to the validation result so it flows through `send_json` to the controller and web UI. In `loss-analysis.lua`, log a full per-entity breakdown.
-**Key files**: `entity_creation.lua` (tally at failure site), `async-processor.lua` (adjust expected + attach to result), `loss-analysis.lua` (report section)
-**Output**: Log lines like `[Entity Creation] FAILED to create 'foundry' (type=furnace) at (12.5,4.5) — lost 50 items, 200.0 fluids` and `[Loss Analysis] 1 entities failed to place — 50 items, 200.0 fluids unrestorable`. `failedEntityLosses` field in validation result JSON sent to controller.
-
-### 16. Verification Counts From Live Scan vs Serialized Data (CRITICAL — Fixed)
-**Symptom**: Transfer validation fails with "GAINED items" across many item types (iron-plate, copper-cable, piercing-rounds-magazine, etc.). Gains are a fraction of belt item totals.
-**Cause**: Export verification used `Verification.count_surface_items()` (live scan) AFTER entity scanning completed across multiple ticks. **Belts keep moving** — belt-class `active` writes are rejected by the engine (BELT-R13; even on paused platforms), so belt items cannot be frozen during a multi-tick scan. During the multi-tick export, items move between belts causing a "rolling snapshot" effect: an item on belt A captured in tick 1 may move to belt B captured in tick 5 → double-counted in serialized data. Conversely, items can move from unscanned to already-scanned belts and be missed. The net result is the serialized data doesn't match the live surface state at any single point in time.
-**Evidence status**: the FIX (atomic single-tick belt scan) is [empirical] — the GAINED-items failures were reproducible and v2 eliminated them. The "rolling snapshot" mechanism is [hypothesis] (consistent with all observations, never isolated as its own rung).
-**Fix (v2 — Atomic Belt Scan)**: Belt item extraction is now **deferred** during async entity scanning. Entity structure (position, direction, type, belt_to_ground_type, etc.) is still captured async per-tick, but `extract_belt_items()` is skipped (controlled by `EntityHandlers.skip_belt_items` flag). When all entities are scanned, `complete_export_job` does a single-tick atomic pass over all tracked belt entities, calling `extract_belt_items()` and patching the serialized data. This gives a consistent snapshot: no items can move between belts within a single tick. Verification is then generated from this consistent serialized data.
-**Key files**: `entity-handlers.lua` (`skip_belt_items` flag on transport-belt/underground-belt/splitter handlers), `async-processor.lua` (`process_export_batch` sets flag + tracks belt entities, `complete_export_job` atomic belt scan block before verification)
-**Previous approach (v1)**: Used `Verification.count_all_items()` from serialized data for verification (self-consistent but inaccurate). This masked the problem — verification matched import, but both were based on inconsistent belt data.
-
+| # | Slug | Rule | Guard |
+|---|------|------|-------|
+| 1 | `empty-rcon-response` | Empty rc11 reply (or 'not recognized' in agent shells) = instance down or mod unloaded; check cluster status + logs, use tools/rcon.ps1 | — |
+| 2 | `import-chunking-required` | Large imports must go through a chunking path (web UI Import JSON or /plugin-import-file) — a single RCON command silently truncates | — |
+| 3 | `version-mismatch-after-deploy` | Old code after deploy = deploy-cluster.ps1 didn't finish or containers didn't restart | — |
+| 4 | `storage-not-global` | Factorio 2.0 renamed global to storage; never write global.* | `lint:lua` |
+| 5 | `platform-index-per-force` | Platform indices are per-force and 1-based; find them with /list-platforms | — |
+| 6 | `readonly-entity-properties` | Factorio 2.0 made many entity properties read-only; set them at create_entity time, pcall optional ones | — |
+| 7 | `unknown-items-graceful-skip` | Mod-mismatch imports skip unknown items with logged warnings, never crash | — |
+| 9 | `idempotent-seeding` | Fixed in base image: seeding is idempotent, docker compose restart is safe; down -v only for a full wipe *(historical)* | — |
+| 10 | `default-mod-pack` | Set DEFAULT_MOD_PACK=Space Age 2.0 in .env; mod pack binds on first seed only (needs down -v to change) | — |
+| 11 | `port-range-auto-derived` | Fixed in base image: host N auto-derives ports 34N00-34N99; compose mappings must match *(historical)* | — |
+| 12 | `clusterio-api-require-path` | require("modules/clusterio/api") — never __clusterio_lib__ (not a mod; save-patched under modules/) | `lint:lua` |
+| 13 | `debug-mode-lost-on-save-reset` | debug_mode lives in the save; on_init defaults it true for FRESH saves only — patch-and-reset or configure() to re-enable | — |
+| 14 | `instance2-minimal-seed` | Host-2's seed save has a platform stub with no physical hub — it is the import target, not an export source | — |
+| 15 | `validate-before-activation` | The gate counts BEFORE any elapsed tick after activation — active machines craft in the gap and fake GAINS; activation only after the verdict | `gate-item-loss` pad (pad-transfer-suite) |
+| 16 | `atomic-belt-scan` | Belts keep moving (active-writes rejected): belt items must be extracted in ONE atomic tick, verification built from that consistent serialized data | — |
+| 17 | `pre-activation-fluid-loss` | An old pipeline lost ~15% fluids pre-activation (class never isolated); fluid-lab R11 measured the CURRENT path exact in the frozen world — do not cite this as proof restoration needs a live world *(historical)* | — |
+| 18 | `crafter-handlers-export-fluids` | A specific entity handler must export fluids too if the type has a fluidbox (the default handler does; a partial handler silently drops fluid) | — |
+| 19 | `platform-destroy-noop` | Remove platforms via GameUtils.delete_platform (game.delete_surface) — argless platform.destroy() silently no-ops at 2.0.77 | `lint:lua` |
+| 20 | `failed-entity-loss-attribution` | When create_entity fails, tally the entity's items/fluids into failed_entity_losses and subtract from expected — otherwise validation blames a phantom loss | — |
+| 21 | `fusion-plasma-exclusion` | Plasma is excluded from transfer by prototype connection-category; the write-rejection law did NOT reproduce at 2.0.77 (fluid-lab R14) — revision is the queued shared-accessor /di-change *(revision-queued)* | — |
+| 22 | `fluidbox-segment-id-nil` | Most activatables return nil from get_fluid_segment_id — read fluidbox[i] directly or fluids silently drop; EXCEPTION: fusion reactor's own boxes DO expose segment IDs | — |
+| 23 | `fluid-temperature-merge` | Segment merges are volume-weighted and exact (R12); prototype max-temp clamps writes — the 10,000 threshold in reconcile_fluids is unlicensed by measurement | — |
+| 24 | `profiler-localisedstring-snapshots` | LuaProfiler cannot serialize; persist timing by embedding profilers in LocalisedStrings at job completion, keep live profilers OUT of storage, display-only | — |
+| 25 | `localisedstring-20-param-limit` | One LocalisedString over 20 parameters hard-crashes the instance — split multi-value prints into one line per call | — |
+| 26 | `call-link-methods-bound` | Never extract/cast a Link method (handle, sendTo, ...) to a value — this loses, crashes at runtime; cast the arguments, never the method | `lint:js (unbound-method + no-restricted-syntax)` |
+| 27 | `icons-need-export-data` | Blank ? icons = mod pack has no export-data; needs the graphical client on host-1 (never SKIP_CLIENT there), FACTORIO_CLIENT_TAG in lockstep with the instance version, regenerate via clusterioctl instance export-data | — |
+| 28 | `gate-counts-complete-state` | The pre-activation gate must measure a COMPLETE frozen world — held items seated by the single pre-gate owner pass; fix the timing, never the number | `gate-item-loss` pad (pad-transfer-suite) |
+| 29 | `dest-force-research-held-capacity` | Inserter hand capacity = the DESTINATION force's research bonuses; Phase-0 raise-only force sync replicates source bonuses before any entity is created | `force-bonus-held` pad (pad-transfer-suite) |
+| 30 | `test-hooks-fail-safe-on-leak` | A state-mutating test_force_* hook must be pre-gate, disarmed in finally/trap, or non-destructive — a leaked post-gate hook is silent data loss on the NEXT transfer | `lint:test-hooks` |
+| 31 | `identity-is-surface-index` | platform.name is mutable and collidable — every lock/delete/transfer identity decision keys on surface.index or the unique per-force index; name resolves only at the tooling boundary, loud on ambiguity | `lint:lua (no-name-as-transfer-identity)` |
+| 32 | `export-only-destination-nil` | Number(null)===0 and 0 is Lua-truthy: only a positive integer targetInstanceId is a transfer destination; anything else passes Lua nil or the source stays locked | — |
 ## Architecture Overview
 
 For Clusterio core architecture, see [Clusterio docs](https://github.com/clusterio/clusterio).
@@ -464,20 +377,29 @@ For Clusterio core architecture, see [Clusterio docs](https://github.com/cluster
 
 ### General Style (partially enforced by ESLint — `npm run lint`, gated in CI)
 
-> `npm run lint` runs eleven **correctness** guards, all gated in CI:
-> - **TS** — `eslint.config.js` in the plugin root (flat config, type-aware via `tsconfig.node.json`). The unbound Clusterio Link-method guard (Pitfall #26, call Link methods bound) via `@typescript-eslint/unbound-method` + a `no-restricted-syntax` selector, PLUS `no-empty` + an empty-arrow `.catch(() => {})` selector so a swallowed promise rejection can't ship silently (the TS analogue of the Lua pcall-logging guard below).
-> - **Lua** — `scripts/lint-lua-invariants.mjs` (`npm run lint:lua`), a static guard over the `module/` tree for documented Factorio/Clusterio footguns we've already been bitten by: `global` persistence (Pitfall #4, storage vs global), `__clusterio_lib__` require/`active_mods` guard (#12), and `*platform*.destroy()` no-op (#19). Each rule maps to a Pitfall and was verified clean when added. Add a `-- lint-lua:allow` comment (with a reason) to suppress a verified false positive.
-> - **Web cache** — `scripts/lint-webpack-cache.mjs` (`npm run lint:web-cache`), guards that `webpack.config.js` keeps its output filenames content-hashed. A fixed-name `filename`/`chunkFilename` override silently defeats `@clusterio/web_ui`'s hashed default and, with the controller's immutable 1y `/static` cache, serves returning users stale chunks (the regression that shipped in `94e1b8c`). Add a `lint-webpack-cache:allow` comment (with a reason) to suppress a verified exception.
-> - **Test grounding** — `scripts/lint-test-grounding.mjs` (`npm run lint:test-grounding`), guards that integration tests measure fidelity **independently of the code under test**: a `*fidelity*` test MUST do a physical `get_item_count(...)` count, and any test reading a validator self-report field (`totalItemLoss`/`expectedItemCounts`/`actualItemCounts`) MUST cross-ground it with a physical count. Exists because a `transfer-fidelity` test that asserted on `totalItemLoss` (the value under test) would have gone green on a broken meter — the catch came from physical counts + adversarial review, never the self-report. **Rule of thumb: if the thing under test could be wrong and the test would still pass, it's grounded in the wrong place.** Rule 3 requires success-path tests to parse `debug_import_result`, call `Assert-TransferSucceeded`, and only then perform destination census; Black-Box Discard must not be misreported as physical loss. Also: ship the adversarial fixture (inactive inserter, failed entity, non-normal quality) WITH the fix, and run `/code-review` before merging any gate/validation/source-deletion change. Add a `lint-test-grounding:allow` comment (with a reason) to suppress a verified exception.
-> - **pcall logging** — `scripts/lint-pcall-logging.mjs` (`npm run lint:pcall-logging`), every `pcall`/`xpcall` in the `module/` tree must SURFACE its error (log it / route through `pcall_warn` / propagate it to the caller) or be an annotated `-- intentional probe` — never a silent swallow. Exists because a swallowed pcall hid a belt-API signature mismatch across two failed fix attempts. Add `-- pcall:allow` (with a reason) for a verified false positive.
-> - **Catch swallow** — `scripts/lint-catch-swallow.mjs` (`npm run lint:catch-swallow`), the TS analogue of the pcall guard, closing the blind spot the eslint empty-catch rules can't see: a catch that **substitutes a default** (`catch (err) { allLogs = []; }`) without surfacing the error. Every catch in plugin TS/TSX must reference its error binding in a log/throw/rejection/user-visible error, or carry an approved `// catch:allow <reason>`. Exists because exactly that shape hid the transaction-log and controller-storage wipe-on-read-failure bugs for months (fixed in PR #81; guard in PR #82). The guard exports `findCatchSwallows` and ships its own unit tests (`test/lint-catch-swallow.test.cjs`).
-> - **Test hooks** — `scripts/lint-test-hooks.mjs` (`npm run lint:test-hooks`), an integration test arming a `test_force_*` hook must disarm it in a guaranteed `finally`/`trap`, unless the hook is verified pre-gate and enumerated in `FAIL_SAFE_HOOKS` (a reviewable act). See Pitfall #30, mutating test hooks must be fail-safe on leak.
-> - **Doc refs** — `scripts/lint-doc-refs.mjs` (`npm run lint:doc-refs`), guards the pitfall corpus itself: duplicate pitfall numbers, references to nonexistent pitfalls, and pure-pointer citations (a bare "#N" with no short name — write number + short name so the reference survives renumbering).
-> - **Allow manifest** — `scripts/lint-allow-manifest.mjs` (`npm run lint:allow-manifest`), every `*:allow` escape-hatch annotation on any of the guards above must be enumerated in `scripts/lint-allow-manifest.json` with a reason and approver — an allow is an **escalation**, never self-approved (see [memory] `lint-allows-are-escalations`). The manifest must match reality exactly in both directions.
+> `npm run lint` runs eleven **correctness** guards, all gated in CI; a twelfth (**commit labels**,
+> `scripts/lint-commit-labels.mjs`) runs as its own PR-gated CI step. Each script header carries the full
+> rationale and incident history. Every `*:allow` escape hatch MUST be enumerated in
+> `scripts/lint-allow-manifest.json` with a reason and approver — an allow is an **escalation**, never
+> self-approved.
 >
-> - **Evidence claims** — `scripts/lint-evidence-claims.mjs` (`npm run lint:evidence-claims`), an empirical claim in a code comment ("verified empirically", "[empirical…") must carry a citation (lab rung / commit / Pitfall N + short name / api-notes) within ±3 lines of the claim, in the same comment block. Born from a false "tolerances verified empirically" comment that survived four months as law until the fluid-lab refuted it. Allow marker `lint-evidence-claims:allow` (manifest-gated).
-> - **Version certification** — `scripts/lint-version-certification.mjs` (`npm run lint:version-certification`), the pinned Factorio version must equal `tests/labs-certified.json` (the engine-pin certificate recording evidence commits at the certified pin). An engine pin bump goes red until a re-certification campaign lands new evidence in the certificate (restore runners from the `labs-archive-2026-07-19` tag or author fresh probes — see "Testing discipline" above). Real drift exists: 2.0.76→2.0.77 changed `destroy()` semantics, caught by LAB-I B7. No allow marker: the only fix is re-certification.
-> A twelfth guard runs as its own PR-gated CI step (not in `npm run lint`): **commit labels** — `scripts/lint-commit-labels.mjs` fails a PR whose `docs:`-labeled commit touches non-doc paths (commit labels are audit boundaries; a mislabeled rider once evaded two review passes).
+> | Guard | Command | Rule | Allow marker |
+> |-------|---------|------|--------------|
+> | TS | `lint:js` (eslint) | never extract/cast a Link method — `call-link-methods-bound` (#26); no empty catch or bare `.catch(() => {})` | eslint-disable |
+> | Lua invariants | `lint:lua` | no `global.*` — `storage-not-global` (#4); no `__clusterio_lib__` — `clusterio-api-require-path` (#12); no `platform.destroy()` — `platform-destroy-noop` (#19); no name-keyed transfer identity — `identity-is-surface-index` (#31) | `-- lint-lua:allow` |
+> | Web cache | `lint:web-cache` | webpack output filenames stay content-hashed (immutable 1y `/static` cache serves stale chunks otherwise) | `lint-webpack-cache:allow` |
+> | Test grounding | `lint:test-grounding` | fidelity/gate tests measure PHYSICALLY, never the validator self-report alone; success-path = parse `debug_import_result` + `Assert-TransferSucceeded` before census | `lint-test-grounding:allow` |
+> | pcall logging | `lint:pcall-logging` | every `pcall` surfaces its error or is an annotated `-- intentional probe` | `-- pcall:allow` |
+> | Catch swallow | `lint:catch-swallow` | no TS catch substitutes a default without surfacing the error binding | `// catch:allow` |
+> | Test hooks | `lint:test-hooks` | a `test_force_*` hook disarms in `finally`/`trap` or is enumerated in `FAIL_SAFE_HOOKS` — `test-hooks-fail-safe-on-leak` (#30) | `FAIL_SAFE_HOOKS` entry |
+> | Doc refs | `lint:doc-refs` | pitfall registry/bodies/index consistent; citations resolvable + human-readable (number + short name) | see guard header |
+> | Allow manifest | `lint:allow-manifest` | manifest matches reality exactly, both directions | — |
+> | Evidence claims | `lint:evidence-claims` | an empirical claim in a code comment carries its citation within ±3 lines | `lint-evidence-claims:allow` |
+> | Version certification | `lint:version-certification` | pinned Factorio version == `tests/labs-certified.json`; a pin bump goes red until the re-certification campaign lands | none — recertify |
+> | Commit labels | (own CI step) | a `docs:`-labeled commit touches only doc paths — labels are audit boundaries | — |
+>
+> Discipline the guards cannot fully mechanize: ship the adversarial fixture WITH the fix, and run
+> `/di-change` (or `/code-review`) before merging any gate/validation/rollback/source-delete/test-hook change.
 >
 > The cosmetic conventions below (indentation, quotes, naming) are **conventions, not yet all machine-enforced** — match the surrounding code.
 
@@ -570,230 +492,6 @@ The order of post-processing steps in `complete_import_job()` is critical for co
 - Step 4 (beacon activation): beacons are kept active during entity creation (never deactivated). Phase 2 explicitly activates them and fills their energy buffer. This is necessary but not sufficient — beacons need their **module inventory populated** before `crafting_speed` reflects the beacon bonus.
 - Step 5 (inventories, 2 passes): The two-pass approach is critical. `crafting_speed` on a machine updates **immediately** when its nearby beacon's `beacon_modules` inventory is populated — no tick delay, no power required. Pass 1 populates all beacon modules. Pass 2 then restores crafter inputs with `set_stack()`, which uses the now-correct beacon-boosted cap (e.g. cs=17.375 → 12 slots instead of cs=2.5 → 7 slots). Machines remain deactivated throughout — they cannot consume items.
 - Steps 6→8 are one synchronous frozen-world completion and verdict pass. Fluids are restored from the payload's fluid-segment registry (one `set_fluid_segment_fluid` write per segment) into the paused, `disabled_by_script` destination before the gate; there is no failed-member fluid accounting, so any missing member fails the exact gate and the source is preserved (fail => revert). A failure banks an always-on black box, then discards the destination unless the debug-gated preserve flag is explicitly armed. The historical ~15% pre-activation loss is retired (Pitfall #17, historical pre-activation fluid loss); the pad-transfer-suite workhorse census and strict gate exercise this ordering on 2.1.11.
-
-### 17. Historical Pre-Activation Fluid Loss (RETIRED 2026-07-21)
-**RETIRED 2026-07-21**: superseded by the 2.1 fluid-segment registry — see docs/factorio-2.0-api-notes.md fluid section. The historical ~15% pre-activation loss and its unisolated "detached ghost buffer" hypothesis are no longer load-bearing: at 2.1.11 the buffer/window duality is gone, `get_fluid_segment_fluid` reads the exact segment total from any member box at any instant, and fluids are restored in the frozen (`disabled_by_script`) world in one `set_fluid_segment_fluid` write per segment before the single exact gate. Frozen restoration is the shipped ordering; there is no measured pre-activation loss to work around.
-
-### 18. Entity Handlers Must Export Fluids for Crafting Machines
-**Symptom**: Assembling machines (chemical plants, oil refineries) and furnaces (foundries) lose all fluid on transfer, even though pipes/tanks preserve fluid correctly.
-**Root Cause**: `EntityHandlers["assembling-machine"]` and `EntityHandlers["furnace"]` in `entity-handlers.lua` only exported `inventories`, not `fluids`. These entity types have fluidboxes (chemical plants hold fluid reagents, foundries hold molten metals), but the handler never called `InventoryScanner.extract_fluids(entity)`. Entities without a specific handler use the default handler, which correctly exports both inventories AND fluids — so pipes, tanks, pumps, and thrusters (no specific handler) worked fine.
-**Historical fix**: Added the fluid extraction (then `InventoryScanner.extract_fluids(entity)`) to both the `assembling-machine` and `furnace` handlers.
-**Status (2026-07-21, 2.1 fluid-segment registry port)**: handlers no longer call `extract_fluids` — the registry port replaced the dual-mode `extract_fluids` reader with `FluidRegistry.capture_entity` / `InventoryScanner.extract_fluidboxes(entity)`, which **errors loudly when no registry is armed**, so a handler site that emits `data.fluidboxes` cannot silently degrade to inventory-only capture. This same gap recurred once more for the mining-drill handler (acid-fed drill dropped its sulfuric acid), fixed and caught by the `mining-drill-acid-feed` pad audit.
-**Key files**: `entity-handlers.lua` (the 7 handler sites that emit `data.fluidboxes`), `export_scanners/fluid-registry.lua`.
-**Lesson**: When adding a new entity handler, always check if the entity type has a fluidbox and emit `fluidboxes`. The fail-loud registry arming makes a forgotten fluid capture a structural error rather than silent data loss.
-
-### 19. Removing a Space Platform — use `game.delete_surface`, not `platform.destroy()` (CRITICAL)
-At 2.0.77, LAB-I B7 measured `platform.destroy()` with no argument as a silent no-op, while `destroy(0)` deleted after an elapsed tick and `destroy(60)` deleted on the deferred schedule. Keep `game.delete_surface(platform.surface)` as this project's deterministic removal route through `GameUtils.delete_platform(platform)` (`module/utils/game-utils.lua`), which also handles the surfaceless edge case; do not generalize the old 2.0.76 all-no-op result to ticked calls on 2.0.77.
-**Enforced**: `npm run lint:lua` (gated in CI) fails on any `*platform*.destroy()` call.
-**Key files**: `instance.ts` (`handleDeleteSourcePlatform`), `module/core/import-pipeline.lua` (import rollback paths).
-
-### 32. Export-Only Destination Must Be `nil` (Not `0`)
-**Symptom**: Export succeeds but source platform remains locked (looks stuck in UI).
-**Cause**: `Number(null) === 0` in JS. Passing `0` as destination to Lua is truthy, so export is treated as transfer and unlock is skipped.
-**Fix**: In `instance.ts`, only treat `targetInstanceId` as a transfer destination if it is a positive integer (`> 0`); otherwise pass Lua `nil`.
-
-### 21. Fusion Plasma Handling (RETIRED 2026-07-21)
-**RETIRED 2026-07-21**: superseded by the 2.1 fluid-segment registry and the owner ruling (2026-07-20/21) that the `engine_owned` classification plays no role — see docs/factorio-2.0-api-notes.md fluid section. Plasma now rides transfers like any fluid: the connection-category exclusion is deleted (`FluidOwnership.is_engine_owned_box`, `collect_engine_owned_segments`, `warn_if_unexpected`, and every `engine_owned` payload/param field are gone), and the only lawful fluid subtraction is `write_rejected` (a physical post-write measurement). At 2.1.11 plasma writes stick capacity-clamped (reactor output `set_fluid` 50→10, generator input 25→10); fusion-generator boxes are segmentless.
-
-### 22. Activatable Entities Expose No Own Segment ID on 2.0.77 (RETIRED 2026-07-21)
-**RETIRED 2026-07-21**: superseded by the 2.1 fluid-segment registry — see docs/factorio-2.0-api-notes.md fluid section. The per-box `nil`-segment-id classification and its fusion-reactor refinement were 2.0.77 concerns; at 2.1.11 `entity.fluidbox` is hard-removed and segment getters THROW on segmentless boxes (they no longer return nil), so capture guards every read with `has_fluid_segment(i)` and reads segmentless boxes (fusion-generator boxes, machine buffers) via `get_fluid(i)`. Segment identity is captured once and deduplicated by source segment id; no engine-owned segment set is consulted.
-
-### 23. Temperature Merge and Key Boundaries (RETIRED 2026-07-21)
-**RETIRED 2026-07-21**: superseded by the 2.1 fluid-segment registry — see docs/factorio-2.0-api-notes.md fluid section. Temperature is now carried per registry segment record (energy-weighted at capture) and validated aggregate-by-name at `epsilon=1e-6`; the 2.0.77 volume-weighted merge measurement and the disproven ">1,000,000°C doubles lose precision" key-boundary story are no longer load-bearing. `loss-analysis.lua reconcile_fluids` still aggregates by name for the UI.
-
-### 24. LuaProfiler Serialization — LocalisedString Snapshots (CRITICAL)
-`LuaProfiler` cannot be serialized and `tostring()` returns a memory address, not a time — see [factorio-2.0-api-notes.md](docs/factorio-2.0-api-notes.md). To persist timing across save/load, embed the profiler in a LocalisedString array (`{"", profiler}`); the engine bakes the value in and a GUI label renders it. Keep live profilers in module-local tables (never `storage`), and snapshot them to LocalisedStrings at job completion. Display-only — no math, no JSON.
-**Key files**: `utils/phase-profiler.lua`, `utils/transaction-history.lua`, `interfaces/gui/transaction-dashboard.lua`, `core/import-completion.lua`, `core/export-pipeline.lua`.
-
-### 25. LocalisedString 20-Parameter Limit Can Crash on_tick (CRITICAL)
-**Symptom**: Instance shuts down with code 255 during import completion/validation, RCON drops with `Connection closed`, and host logs show `Factorio server unexpectedly shut down`.
-**Root Cause**: A single `game.print({...})` LocalisedString exceeded Factorio's hard parameter cap: `Too many parameters for localised string: 39 > 20 (limit)`. This occurred when printing all phase profiler values in one array.
-**Error signature**:
-```text
-Error while running event level::on_tick (ID 0)
-Too many parameters for localised string: 39 > 20 (limit)
-... import-completion.lua:479 ...
-```
-**Fix**: Split output into multiple `game.print({"", ...})` calls (one line per phase) so each LocalisedString stays under 20 parameters. Do not pack full perf summaries into one LocalisedString.
-**Key file**: `module/core/import-completion.lua`
-
-### 26. NEVER Extract a Clusterio Link Method — Call It Bound (CRITICAL, caused 2 crashes)
-**Symptom**: `Cannot read properties of undefined (reading 'handleRequest')` at instance **start**, or `Cannot read properties of undefined (reading 'sendRequest')` during a **transfer**. The instance may even start fine and only crash later when the broken path runs.
-**Root Cause**: Clusterio's `Link` methods (`handle`, `sendTo`, `send`, `sendRequest`, `subscribe`, …) rely on `this`. **Extracting one as a value** — directly OR via a cast — loses the binding, so the method runs with `this === undefined` and throws inside `@clusterio/lib`:
-```ts
-// BROKEN — both of these lose `this`:
-const handleMessage = this.i.handle as (cls, h) => void;   // → "reading 'handleRequest'" at start
-handleMessage(messages.TransferStatusUpdate, …);
-const sendToController = this.i.sendTo as (...) => …;       // → "reading 'sendRequest'" on transfer
-await sendToController("controller", new messages.TransferPlatformRequest({…}));
-```
-Both were introduced by PR #2 (`902c5f8`) as "permissive casts" for Request/Response type mismatches — the `as (...) => …` cast on the *method* silenced the type error AND would silence the lint rule meant to catch it.
-**Fix**: ALWAYS call the method **bound** (`this.i.handle(...)`, `this.i.sendTo(...)`). When the plugin's duck-typed message classes don't satisfy the strict overloads, cast the **arguments/result**, never the method:
-```ts
-this.i.handle(messages.TransferStatusUpdate as never, this.handleTransferStatusUpdate.bind(this) as never);
-const resp = await this.i.sendTo(
-  "controller",
-  new messages.TransferPlatformRequest({ exportId, targetInstanceId }) as never,
-) as messages.SimpleResponse & { transferId?: string };
-```
-**Diagnosing it**: the `this.logger` lines around the throw are in the host log file, not `docker logs` — see Observability above. Read `/clusterio/logs/host/host-*.log` for the exact `Error handling … : Cannot read properties of undefined (reading 'sendRequest')`.
-**Mechanical guard**: `npm run lint` (eslint `@typescript-eslint/unbound-method` + a `no-restricted-syntax` rule flagging extraction/cast of any Link method) catches this — and is enforced in CI. This Pitfall exists because a manual audit caught the `handle` site but **missed** the identical `sendTo` site; do not rely on manual review for this class of bug.
-**Key file**: `instance.ts` (handler registration ~line 79, `handleExportComplete` sendTo sites).
-
-### 27. Web-UI Icons Blank ("?") — export-data / game-client persistence (CRITICAL)
-**Symptom**: Transfer Details / Entities tab shows `?` placeholder icons; browser console/network shows
-`Failed to fetch prototype metadata for mod pack <id>, server returned: 404 Not Found`.
-**Cause**: the mod pack has no **export-data** (icon spritesheets + prototype metadata). In alpha.25 the icon
-system is upstream-native (`FactorioIcon` + `useExportPrototypeMetadata`, [PR #875]; the old `ExtendedExportData`
-fork is retired — see [[clusterio-alpha25-migration]]). The data is produced by **`clusterioctl instance
-export-data <instance>`**, which is **never** generated unless the export host actually runs the **graphical game
-client** (headless has no sprites). Two things silently break it:
-  1. **`SKIP_CLIENT=true` on the EXPORT_HOST (host-1).** The base image's `seed-instances.sh` auto-runs
-     `export-data` on first seed **only** when `EXPORT_HOST` is set (controller has `EXPORT_HOST=1`) **and** the
-     host has a client. With `SKIP_CLIENT=true`, host-1 runs headless-only → export skipped, icons blank. A
-     `docker-compose.debug.yml` override once set this on host-1 — **never set `SKIP_CLIENT=true` on host-1**
-     (host-2 is import-only and keeps it).
-  2. **Stale client version after a Factorio bump.** host-1 uses the client as its `factorio_directory`, a
-     single-version **direct install** (clusterio-docker Pitfall #11 — client & multi-version headless are
-     mutually exclusive). Clusterio auto-downloads the **free headless** for any version, but **NOT** the
-     **owned graphics client** (needs the account token), so the client is a hand-managed install that does
-     **not** move when you bump the instance `factorio.version`. A 2.0.x **client** can export icons for any
-     2.0.y pack (icons are version-agnostic), but Clusterio refuses to *run the instance* on a mismatched
-     binary → export fails. Keep them in lockstep via **`FACTORIO_CLIENT_TAG`** in `.env` (= the instances'
-     `factorio.version`; `FACTORIO_CLIENT_BUILD=expansion` for Space Age).
-**How it works / where it lands**: `export-data` (instance must be **stopped**) launches the client with
-`--export-data` → assets written to the controller's **`/clusterio/static/<kind>.<hash>.{json,png}`**
-(prototypes/spritesheet/metadata/locale/defines/settings), referenced by an **`export_manifest`** on the mod-pack
-record in `mod-packs.json`, served at **`/static/...`**; `FactorioIcon` fetches them. Verify:
-`curl -s -o /dev/null -w '%{http_code}' http://localhost:8080/static/<prototypes-asset>` → `200`.
-**Persistence (3 invariants)**: (a) host-1 (=`EXPORT_HOST`) never `SKIP_CLIENT=true`; (b) `FACTORIO_CLIENT_TAG`
-pinned in `.env` to the instance version — **bump both together**; (c) the **external** `factorio-client` volume
-persists the client across `down -v`, so fresh-seed auto-export always has a client. After a manual version bump
-(no `down -v`), the seed-time auto-export does **not** re-run (`.seed-complete`); regenerate by hand:
-```powershell
-# host-1 must already have a client matching the instance version (FACTORIO_CLIENT_TAG)
-./tools/rcon.ps1 ...                                  # (not needed) — use clusterioctl directly:
-docker exec surface-export-controller sh -c 'npx clusterioctl --config /clusterio/tokens/config-control.json instance stop clusterio-host-1-instance-1'
-docker exec surface-export-controller sh -c 'npx clusterioctl --config /clusterio/tokens/config-control.json instance export-data clusterio-host-1-instance-1'  # "Export complete: N icons"
-docker exec surface-export-controller sh -c 'npx clusterioctl --config /clusterio/tokens/config-control.json instance start clusterio-host-1-instance-1'
-```
-Then **hard-refresh** the browser (the 404 is cached). After a `down -v`, fresh seed regenerates it automatically.
-**Key files/config**: `.env` (`FACTORIO_CLIENT_TAG`/`FACTORIO_CLIENT_BUILD`), `docker-compose.debug.yml` (no
-`SKIP_CLIENT` on host-1), clusterio-docker `scripts/seed-instances.sh` (auto-export), `web/icons.tsx`.
-
-### 28. Transfer Validation Timing — the gate must count a COMPLETE state (CRITICAL, data-integrity)
-**Symptom**: the transfer gate reports a few hundred items "lost" (the phantom 382/417) even though the
-transfer physically preserves ~100%. Tightening the loose tolerance to catch real loss then fails *every*
-transfer.
-**Root cause**: the gate counts the destination **pre-activation** (Pitfall #15 — machines must stay
-deactivated through validation or they craft in the gap and produce false GAINS), and inserter **held items**
-had NO restore path that actually ran before the gate: `Deserializer.restore_inventories`' held block was
-**dead code** (stranded behind its `has_inventories` early-return, unreachable for every bare inserter), so
-hands were never seated — absent at the gate. The gate measured a *deliberately-incomplete* reality. The data
-was fine; nothing owned held seating at the right time.
-**Mechanism correction (2026-07-18, inserter-lab B6)**: the original diagnosis — "`set_stack` silently fails
-on a settled-deactivated inserter" — was REFUTED by measurement [empirical, 2.0.77, inserter-lab B6]:
-seating is **activation-independent** (a deactivated inserter, fresh or settled, seats fully when force
-capacity allows; at bonus 0 the clamp is identical active or inactive). The wake-toggle the fix originally
-carried was refuted cargo and has been removed.
-**DO NOT re-attempt** (each is a proven dead-end — see [memory] `validation-timing-trilemma`): (1) move
-validation after activation → craft-gain false failures; (2) subtract *predicted* held items from expected
-(PR #25, closed) → prediction ≠ restoration → the subtracted item is never physically restored →
-**silent permanent loss**; (3) gate-vs-display two-pass → coupling hell.
-**Fix (approach #4 — give held seating one owner that runs pre-gate)**: a synchronous pre-gate pass
-(`ActiveStateRestoration.restore_held_items_only`) — the SINGLE owner of held seating — seats every hand
-via plain `set_stack` (no engine tick → no swing, no crafting), so the gate counts a **complete** physical
-reality with every machine still deactivated. Fluid restoration then completes the same frozen world and
-`validate_import(..., {strict=true})` requires exact per-key items and exact aggregate-by-name fluids.
-**Rule**: a gate must measure a COMPLETE state, never a mid-process one — fix the timing, not the number. The current transfer verdict is one immutable pre-activation result; `failedStage` names the mismatched category (`items` or `fluids`).
-**Mechanical guard**: the `gate-item-loss` pad fixture (run through `tests/integration/pad-transfer-suite`) injects a real shortfall (`test_force_item_loss`)
-and asserts the strict gate FAILS + the source is preserved — so reverting to a loose gate goes RED in CI.
-**Clock evidence (2026-07-07, 2.0.77)**: the no-tick-sync-lab PR0b runner (archived at `labs-archive-2026-07-19`) proves the synchronous pass
-keeps `game.tick`, `crafting_progress`, and the restored inserter hand stable through the strict count.
-**Key files**: `module/import_phases/active_state_restoration.lua`, `module/core/import-completion.lua`,
-`module/validators/transfer-validation.lua`.
-**Deeper root cause (the CI-only residual): see Pitfall #29** — `restore_held_items_only` (the timing fix
-above) is necessary but NOT sufficient on an under-researched destination: `set_stack` clamps to the dest
-inserter's *physical* hand capacity, which the dest **force's** research governs. The phantom 382/417 was that
-clamp, not the clock alone.
-
-### 29. Inserter Held-Item Capacity Is Governed by the DEST Force's Research — Replicate It On Import (CRITICAL, data-integrity)
-**Symptom**: a transfer of a busy platform fails the strict gate **only on CI** (railgun-ammo 80→33,
-"held_failed=214"), while the *same payload + same code* restores held items fully **locally**. "Same bytes,
-different by machine."
-**Root cause**: a bulk-inserter hand's physical capacity = the **destination force's**
-`bulk_inserter_capacity_bonus` (normal inserters: `inserter_stack_size_bonus`) — research-derived scalars that
-live in the **dest save**, which the plugin did not transfer. Measured on 2.0.76: CI's fresh `test2.zip` seed
-has `bulk_inserter_capacity_bonus = 0` → a fresh legendary bulk inserter caps at 1 (`set_stack(8)→1`,
-`.count=8→1`); a long-lived local host-2 has bonus 11 → seats 8. So the held items the source legitimately held
-are **genuinely unplaceable** on a less-researched dest, and the strict gate (Pitfall #28, count a complete state) **correctly** refuses
-(two-phase commit preserves the source). NOT a restoration bug. This also overturns the "`held_stack.count` has
-no capacity cap" assumption — it clamps (CI: `.count=8→1`).
-**Fix — Pre-Hydration Force Sync**: export captures the source force's inserter bonuses (`force_data`); import
-replicates them onto the dest force in a one-shot **Phase 0** (`ImportPipeline.process_batch`) **before** any
-entity is created — **RAISE-ONLY** (`math.max`; never lower an unrelated destination force's state during an import). It raises **every distinct force the entities land on** (`entity_data.force or "player"`), not just
-the platform force, so a differently-forced inserter can't be left under-capacity (silent loss). The property
-list is a single source of truth: `GameUtils.FORCE_SYNC_PROPS`. The existing `restore_held_items_only` → strict
-gate then seats full and passes **natively** — the gate is unchanged. A non-fatal `forceDataMismatches` warning
-surfaces the raise in the UI. **Applies to ALL imports (transfer AND uploaded-JSON), by design** — fidelity over
-avoiding the (warned, raise-only) research-boost side effect; uploads delete no source, so there is no loss risk
-either way.
-**Durability (verified on 2.0.77, inserter-lab B4)**: an unbacked direct write grants real seating capacity, and once seated a legendary bulk-inserter hand stayed at 8 when the bonus dropped 11→0, after elapsed ticks, and after `reset_technology_effects()` — so there is no
-post-commit loss path; the write need not be tech-backed.
-**Mechanical guard**: the `force-bonus-held` pad fixture (run through `tests/integration/pad-transfer-suite`) forces the dest bonus to 0, transfers, and asserts
-(physical held counts) the bonus is raised, held items seat in full, the strict gate passes, and the warning
-fired — reverting the sync goes RED. CI's native bonus-0 host-2 means the force-bonus-held pad corroborates.
-**Key files**: `module/core/export-pipeline.lua` (capture), `module/core/import-pipeline.lua` (Phase-0 sync),
-`module/core/import-completion.lua` (warning), `module/import_phases/active_state_restoration.lua` (the
-disproven `count=` hack removed). Memory: [memory] `held-item-loss-is-dest-force-research`.
-
-### 30. A Mutating Debug/Test Hook Must Be Fail-Safe On LEAK (CRITICAL, data-integrity)
-**Symptom**: a debug-gated `test_force_*` hook silently corrupts the NEXT unrelated transfer (not the one under
-test) — e.g. destroys destination entities *after* the gate passed, so the transfer still reports SUCCESS and the
-source is deleted = unattributed data loss, firing only on the flaky/error path (hardest to notice).
-**Root cause**: `debug_mode` defaults **true** on the always-up shared cluster (Pitfall #13, debug mode defaults true on fresh saves) and hook flags
-persist in `storage.surface_export_config`. If the arming integration test disarms only on its **success path**
-(no `finally`/`trap`; an early `exit 1` skips the cleanup), a leaked flag stays armed and detonates on a later
-transfer. `/code-review` (not the author) caught exactly this in `test_force_entity_loss`: post-gate, destructive,
-persisted, non-blocking — the worst combination.
-**Rule**: a hook that MUTATES game state must be fail-safe on leak. Prefer **PRE-gate** placement (a leak makes
-the next transfer FAIL its gate + PRESERVE its source — self-protecting, like `test_force_item_loss`); if it must
-be post-gate/destructive, the arming test MUST disarm in a guaranteed `finally`/`trap` (PowerShell runs `finally`
-even on `exit`); best of all, use a **non-destructive** hook (inflate the *expected* value, don't destroy real
-state).
-**Mechanical guard**: `npm run lint:test-hooks` (`scripts/lint-test-hooks.mjs`, gated in CI) fails when an
-integration test arms a `test_force_*` hook without a `finally`/`trap`, UNLESS the hook is verified pre-gate and
-listed in `FAIL_SAFE_HOOKS` (a reviewable act). Run the **`/di-change`** skill before merging any
-gate/validation/rollback/source-delete/test-hook change — it codifies this plus the grounding / commensurate /
-two-phase-commit rules. Memory: [memory] `test-hook-mutating-must-be-fail-safe`.
-
-### 31. Platform Identity Is `surface.index` / Unique Index — NEVER the Mutable `platform.name` (CRITICAL, data-integrity + exploit)
-**Symptom**: transferring a platform that a player RENAMES mid-flight produces a DUPLICATE (two live copies on
-different instances). A malicious player can farm duplicates on demand.
-**Root cause**: `LuaSpacePlatform.name` is MUTABLE — a player can rename a platform any time from the hub GUI
-(verified: Factorio wiki, *"space platforms can later be renamed from the menus of their space platform hubs"*;
-`surface.index` and `platform.index` are the STABLE unique identifiers). The sole source-delete path
-(`delete-platform-for-transfer.lua`) keyed its identity cross-check on the name (`platform.name ~= expected` →
-refuse). On a rename mid-transfer the LIVE name no longer matched the name captured at lock time → the delete
-REFUSED → the source survived while the destination copy had already committed = two live copies. (Names also
-COLLIDE — two platforms can share one — so name-based identity can match the WRONG platform.)
-**Fix**: key EVERY transfer/lock/delete IDENTITY decision on the STABLE `surface.index` (recorded in the lock at
-lock time) or the unique `platform.index` — never `platform.name`. The delete gate reads `lock.surface_index`
-(before the best-effort unlock clears it) and compares it to the current `platform.surface.index` via the pure
-`SurfaceLock.transfer_delete_identity_ok(lock, surface)`; a rename is then correctly IGNORED (same surface ⇒ same
-platform ⇒ proceed), a released/reused lock is REFUSED. Resolve a user-supplied NAME→index ONLY at the admin
-tooling boundary, failing LOUD on ambiguity (`find_lock_key_by_name`).
-**Rule**: NAME is a display label, NEVER an identity/join key for a destructive or lock decision. Same owner rule
-as [memory] `lookup-by-unique-id-not-name` — now mechanically enforced.
-**Mechanical guard**: `npm run lint:lua` (`scripts/lint-lua-invariants.mjs`, gated in CI) — the
-`no-name-as-transfer-identity` rule fails on `platform.name`/`platform_name` used in an `==`/`~=` comparison
-within the source-delete + lock-identity spine (`delete-platform-for-transfer.lua`, `surface-lock.lua`,
-`transfer-trigger.lua`, `export-pipeline.lua`). Sanctioned name→index boundary lookups carry a
-`-- lint-lua:allow <reason>` annotation. Teeth verified: reverting the delete gate to a name comparison goes RED.
-**Key files**: `module/interfaces/remote/delete-platform-for-transfer.lua`, `module/utils/surface-lock.lua`
-(`transfer_delete_identity_ok`; the lock record stores `surface_index`), `scripts/lint-lua-invariants.mjs`.
-Behavioral teeth: the `transfer_delete_identity_ok` checks in `transfer-lock-selftest.lua` (a renamed source
-STILL deletes). Memory: [memory] `lookup-by-unique-id-not-name`.
 
 ## Factorio 2.0 Fluid API & Simulation Behavior
 

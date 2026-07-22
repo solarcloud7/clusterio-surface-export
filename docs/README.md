@@ -182,6 +182,8 @@ For the detailed Lua module breakdown, see the Code Reference Map in [EXPORT_IMP
 | [testing.md](testing.md) | The single testing doc: Physical Truth Lab Standard (taxonomy, baked-fixture lifecycle, evidence rules), how transfer fidelity is measured (two meters, freeze policy, guarantee boundary), and the hands-on E2E validation checklist |
 | [commands-reference.md](commands-reference.md) | All in-game / RCON console commands with usage |
 | [TRANSFER_2PC.md](TRANSFER_2PC.md) | Transfer durability, identity (surface.index not name), and two-phase-commit design + current state — single source of truth |
+| [pitfalls.md](pitfalls.md) | The full pitfall corpus (every hard-won lesson: mechanism, fix, evidence, key files); metadata registry in [pitfalls.json](pitfalls.json); compact index table in CLAUDE.md — all guard-synced |
+| [clusterio-core-dev.md](clusterio-core-dev.md) | Working on Clusterio core itself: the sibling fork checkout, the two test loops, and promotion paths |
 | [EXPORT_IMPORT_FLOW.md](EXPORT_IMPORT_FLOW.md) | Action trace of export/import/transfer: sequence diagrams, message names, channels, handler locations, and the import phase call tree (absorbed TRANSFER_WORKFLOW_GUIDE and TRANSFER_CODE_PATHS) |
 | [async-processing.md](async-processing.md) | Async batch-processing architecture for large exports/imports |
 | [factorio-2.0-api-notes.md](factorio-2.0-api-notes.md) | Verified Factorio 2.0 API & fluid-simulation facts (fluid segments, profiler/LocalisedString, inventory/platform APIs) |
