@@ -36,3 +36,15 @@ RUN set -eux; \
     tar -xJf /tmp/factorio-headless.tar.xz -C /opt/factorio; \
     rm -f /tmp/factorio-headless.tar.xz; \
     test -x /opt/factorio/factorio/bin/x64/factorio
+
+# CI STOPGAP — whitelist Factorio "2.1" in @clusterio/lib's ApiVersions.
+# The pinned alpha.25 @clusterio/lib hard-codes ApiVersions WITHOUT "2.1" (verified in the base
+# image), so ModInfo validation rejects a 2.1-flagged mod with "Mod's info.json is not valid" when
+# the host prepares the instance's mods. This bakes the same one-line whitelist the local dev
+# cluster applies by hand (see the "cluster-on-2111-experimental" note) so a fresh CI host can load
+# the 2.1 surfexp_gateways gateway mod. NOT the durable fix — the base-image bake + upstream PR are
+# tracked separately (durable @clusterio 2.1 fix) and need an owner-authorized GHCR republish.
+RUN set -eux; \
+    f=/clusterio/node_modules/@clusterio/lib/dist/node/src/data/version.js; \
+    grep -q 'ApiVersions.*"2.1"' "$f" || sed -i '/exports.ApiVersions/ s/\("2\.0"\)\]/\1, "2.1"]/' "$f"; \
+    grep -q 'ApiVersions.*"2.1"' "$f"

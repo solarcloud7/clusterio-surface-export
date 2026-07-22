@@ -1,0 +1,28 @@
+# syntax=docker/dockerfile:1
+#
+# CI-ONLY image: whitelist Factorio "2.1" in the controller's @clusterio/lib ApiVersions.
+#
+# Why: the pinned alpha.25 @clusterio/lib hard-codes ApiVersions WITHOUT "2.1", so the controller's
+# seed-time mod upload rejects a 2.1-flagged mod (surfexp_gateways 0.4.0) with "Mod's info.json is
+# not valid" (ModInfo.js validates factorio_version against ApiVersionSchema). This bakes the same
+# one-line whitelist the local dev cluster applies by hand (see the "cluster-on-2111-experimental"
+# note), so a fresh CI controller can seed the 2.1 gateway mod. The host side gets the identical
+# stopgap in Dockerfile.factorio-baked.
+#
+# NOT the durable fix: the real resolution is baking "2.1" into the base images (+ an upstream
+# clusterio PR), tracked as the "durable @clusterio 2.1 fix" task — that needs an owner-authorized
+# GHCR republish and is intentionally out of scope for this CI-green stopgap.
+#
+# Built and used ONLY on the CI runner, never pushed to a registry (docker-compose.ci.yml overrides
+# the controller service to this local tag with pull_policy: never).
+
+ARG CONTROLLER_IMAGE=ghcr.io/solarcloud7/clusterio-docker-controller:2.0.0-alpha.25
+FROM ${CONTROLLER_IMAGE}
+
+# The base image's final USER is root (it gosu-drops to clusterio at runtime), so this build-time
+# RUN already runs as root and can write the clusterio-owned file — do NOT add a USER line, which
+# would change the runtime user and break the entrypoint's gosu drop.
+RUN set -eux; \
+    f=/clusterio/node_modules/@clusterio/lib/dist/node/src/data/version.js; \
+    grep -q 'ApiVersions.*"2.1"' "$f" || sed -i '/exports.ApiVersions/ s/\("2\.0"\)\]/\1, "2.1"]/' "$f"; \
+    grep -q 'ApiVersions.*"2.1"' "$f"
