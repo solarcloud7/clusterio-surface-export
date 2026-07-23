@@ -27,7 +27,7 @@ function sameJson(left, right) {
 
 export function validateGalleryManifest(manifest, { requireArtifacts = true } = {}) {
 	if (manifest?.schema !== "surface-export-lab-gallery-v3") throw new Error("unexpected gallery schema");
-	if (manifest.engineVersion !== "2.0.77") throw new Error(`unsupported gallery engine ${manifest.engineVersion}`);
+	if (manifest.engineVersion !== "2.1.11") throw new Error(`unsupported gallery engine ${manifest.engineVersion}`);
 	if (!manifest.mods || manifest.mods.base !== manifest.engineVersion || manifest.mods["space-age"] !== manifest.engineVersion) {
 		throw new Error("gallery mod pin set is incomplete");
 	}

@@ -119,8 +119,8 @@ local function no_tick_sync_selftest(opts)
 
 	machine.set_recipe("iron-gear-wheel")
 	machine.crafting_progress = 0.42
-	machine.active = false
-	inserter.active = false
+	machine.disabled_by_script = true
+	inserter.disabled_by_script = true
 
 	local entity_data = {
 		entity_id = inserter.unit_number,

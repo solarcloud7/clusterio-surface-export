@@ -3,9 +3,12 @@
 
 local Util = require("modules/surface_export/utils/util")
 local EntityScanner = require("modules/surface_export/export_scanners/entity-scanner")
+local InventoryScanner = require("modules/surface_export/export_scanners/inventory-scanner")
+local FluidRegistry = require("modules/surface_export/export_scanners/fluid-registry")
 local TileScanner = require("modules/surface_export/export_scanners/tile_scanner")
 local Verification = require("modules/surface_export/validators/verification")
 local PlatformSchedule = require("modules/surface_export/utils/platform-schedule")
+local VersionCompat = require("modules/surface_export/utils/version-compat")
 
 local Serializer = {}
 
@@ -50,9 +53,16 @@ function Serializer.export_platform(platform_index, force_name)
   log(string.format("[FactorioSurfaceExport] Starting export of platform '%s' (index %d)", platform.name, platform_index))
   game.print(string.format("Exporting platform '%s'...", platform.name))
 
-  -- Step 3: Scan all entities
+  -- Step 3: Scan all entities (fluid registry armed for the whole sync scan — ONE discipline;
+  -- cleared in a pcall-safe wrap so an error can never leave a stale registry armed).
   game.print("Scanning entities...")
-  local entity_data = EntityScanner.scan_surface(surface)
+  local fluid_registry = FluidRegistry.new()
+  InventoryScanner.fluid_registry = fluid_registry
+  local scan_ok, entity_data = pcall(EntityScanner.scan_surface, surface)
+  InventoryScanner.fluid_registry = nil
+  if not scan_ok then
+    return nil, "Entity scan failed: " .. tostring(entity_data)
+  end
   log(string.format("[FactorioSurfaceExport] Scanned %d entities", #entity_data))
 
   -- Step 3.5: Scan all tiles
@@ -66,9 +76,10 @@ function Serializer.export_platform(platform_index, force_name)
   local total_items = Util.sum_items(item_counts)
   log(string.format("[FactorioSurfaceExport] Counted %d total items across %d types", total_items, table_size(item_counts)))
 
-  -- Step 5: Count fluids
+  -- Step 5: Count fluids (from the segment registry — the payload's fluid truth)
   game.print("Counting fluids...")
-  local fluid_counts = Verification.count_all_fluids(entity_data)
+  local fluid_segments = FluidRegistry.list(fluid_registry)
+  local fluid_counts = Verification.count_fluid_segments(fluid_segments)
   local total_fluids = Util.sum_fluids(fluid_counts)
   log(string.format("[FactorioSurfaceExport] Counted %.1f total fluid volume across %d types", total_fluids, table_size(fluid_counts)))
 
@@ -76,8 +87,8 @@ function Serializer.export_platform(platform_index, force_name)
   local active_mods = (script and script.active_mods) or (game and game.active_mods) or {}
 
   local export_data = {
-    schema_version = "1.0.0",
-    factorio_version = active_mods.base or "2.0",
+    schema_version = VersionCompat.PAYLOAD_SCHEMA_VERSION,
+    factorio_version = active_mods.base or "2.1",
     mod_version = active_mods["FactorioSurfaceExport"] or "1.0.0",
     export_timestamp = game.tick,
     platform = {
@@ -97,6 +108,7 @@ function Serializer.export_platform(platform_index, force_name)
     },
     entities = entity_data,
     tiles = tile_data,
+    fluid_segments = fluid_segments,
     verification = {
       item_counts = item_counts,
       fluid_counts = fluid_counts

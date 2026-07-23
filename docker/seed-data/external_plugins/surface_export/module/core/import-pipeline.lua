@@ -109,6 +109,15 @@ function ImportPipeline.queue(json_data, new_platform_name, force_name, requeste
 		tostring(platform_data.factorio_version), tostring(source_bucket), tostring(runtime_bucket)))
 	platform_data = VersionCompat.migrate(platform_data, source_bucket, runtime_bucket)
 
+	-- HARD SCHEMA CUT (owner ruling 2026-07-20): refuse any payload that doesn't stamp the
+	-- current schema (fluid-segment registry). This runs BEFORE any restoration read and before
+	-- any destructive step — a refused transfer fails closed and the source is retained.
+	local schema_ok, schema_err = VersionCompat.check_payload_schema(platform_data)
+	if not schema_ok then
+		log("[Import Queue] REFUSED payload: " .. tostring(schema_err))
+		return nil, schema_err
+	end
+
 	-- Forward-only transfer schema cutover:
 	-- Transfer imports must include full platform schedule payload.
 	local is_transfer = (platform_data._transferId or parsed_data._transferId) ~= nil

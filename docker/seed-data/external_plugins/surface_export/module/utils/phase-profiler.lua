@@ -28,7 +28,7 @@ local active = {}
 function PhaseProfiler.init(job_id, phase_names)
 	active[job_id] = {}
 	for _, name in ipairs(phase_names) do
-		active[job_id][name] = game.create_profiler(true)  -- created stopped
+		active[job_id][name] = helpers.create_profiler(true)  -- created stopped (2.1: moved off LuaGameScript to helpers)
 	end
 end
 

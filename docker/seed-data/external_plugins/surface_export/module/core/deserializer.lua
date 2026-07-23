@@ -375,7 +375,7 @@ function Deserializer.restore_entity_state(entity, entity_data)
     if data.display_panel_show_in_chart ~= nil then entity.display_panel_show_in_chart = data.display_panel_show_in_chart end
     if data.display_panel_messages then
       safe_call(string.format("display-panel messages for %s", entity.name), function()
-        entity.get_or_create_control_behavior().messages = data.display_panel_messages
+        entity.get_or_create_control_behavior().records = data.display_panel_messages  -- 2.1: messages renamed to records
       end)
     end
     return  -- Panels have no other state to restore
@@ -1454,13 +1454,22 @@ function Deserializer.restore_power_connections(entity, entity_data, entity_map)
     end
 
     if target and target.valid then
+      -- Factorio 2.1 removed LuaEntity.connect_neighbour; copper cables are now joined
+      -- through the pole_copper wire connectors. reach_check=false because scripted
+      -- restores may re-link poles that are "out of reach". origin defaults to player,
+      -- matching the old connect_neighbour behaviour.
       local ok, result = pcall(function()
-        return entity.connect_neighbour(target)
+        local source_connector = entity.get_wire_connector(defines.wire_connector_id.pole_copper, true)
+        local target_connector = target.get_wire_connector(defines.wire_connector_id.pole_copper, true)
+        if source_connector and target_connector then
+          return source_connector.connect_to(target_connector, false)
+        end
+        return false
       end)
       if ok and result then
         connected_count = connected_count + 1
       elseif not ok then
-        log(string.format("[Deserializer] connect_neighbour failed for pole %s -> %s: %s",
+        log(string.format("[Deserializer] copper connect_to failed for pole %s -> %s: %s",
           entity.name, tostring(target_id), tostring(result)))
       end
     else

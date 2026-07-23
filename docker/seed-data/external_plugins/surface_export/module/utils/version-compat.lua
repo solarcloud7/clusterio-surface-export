@@ -25,7 +25,32 @@ local VersionCompat = {}
 
 -- The newest engine bucket this module has a profile for. Used as the fallback target when the
 -- runtime engine is newer/unknown (with a loud warning — never a silent wrong-version dispatch).
-local NEWEST_KNOWN = "2.0"
+local NEWEST_KNOWN = "2.1"
+
+-- ---------------------------------------------------------------------------
+-- Payload schema stamp (hard cut, owner ruling 2026-07-20)
+-- ---------------------------------------------------------------------------
+
+-- Bumped to 2.0.0 with the fluid-segment registry payload (fluid_segments list + per-entity
+-- specific_data.fluidboxes refs; flat specific_data.fluids removed). Import REFUSES payloads
+-- that don't stamp exactly this version — there is deliberately no legacy translator.
+VersionCompat.PAYLOAD_SCHEMA_VERSION = "2.0.0"
+
+--- Refuse-loudly gate for incoming payloads. Runs BEFORE any restoration read, so a refused
+--- transfer fails closed (two-phase commit retains the source).
+--- @param payload table: decompressed export payload
+--- @return boolean, string|nil: ok, error message when refused
+function VersionCompat.check_payload_schema(payload)
+  local got = payload and payload.schema_version
+  if got ~= VersionCompat.PAYLOAD_SCHEMA_VERSION then
+    return false, string.format(
+      "Payload schema %s is not importable (this build requires schema %s — the fluid-segment " ..
+      "registry payload). Old exports must be re-exported by a current source; there is no " ..
+      "legacy translator by design.",
+      tostring(got), VersionCompat.PAYLOAD_SCHEMA_VERSION)
+  end
+  return true, nil
+end
 
 -- ---------------------------------------------------------------------------
 -- Version parsing & bucketing
@@ -90,6 +115,16 @@ PROFILES["2.0"] = {
   delete_platform = function(platform)
     game.delete_surface(platform.surface)
   end,
+}
+
+PROFILES["2.1"] = {
+  -- Belt insertion signatures NOT yet re-certified on 2.1.x — carried from 2.0 as best-effort
+  -- pending the belt-lab re-certification leg of the 2.1 campaign. [hypothesis until re-measured]
+  belt_insert_at = PROFILES["2.0"].belt_insert_at,
+  belt_insert_at_back = PROFILES["2.0"].belt_insert_at_back,
+  -- game.delete_surface remains the deterministic platform-removal route on 2.1.11 (used live by
+  -- the fluid-law experiments' scratch teardown, 2026-07-21 — platform deleted, zero leftovers).
+  delete_platform = PROFILES["2.0"].delete_platform,
 }
 
 -- ---------------------------------------------------------------------------

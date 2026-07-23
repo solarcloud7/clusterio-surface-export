@@ -33,21 +33,23 @@ local function version_selftest()
   check("parse_garbage_nil", VersionCompat.parse("not-a-version") == nil, "garbage should parse to nil")
   check("parse_nil_nil", VersionCompat.parse(nil) == nil, "nil should parse to nil")
 
-  -- runtime_bucket(): this engine is 2.0.x
-  check("runtime_bucket_2_0", VersionCompat.runtime_bucket() == "2.0",
-    "expected runtime 2.0, got " .. tostring(VersionCompat.runtime_bucket()))
+  -- runtime_bucket(): this engine is 2.1.x (cluster + CI on Factorio 2.1.11 since 2026-07-21)
+  check("runtime_bucket_2_1", VersionCompat.runtime_bucket() == "2.1",
+    "expected runtime 2.1, got " .. tostring(VersionCompat.runtime_bucket()))
 
-  -- has_profile()
+  -- has_profile(): both dispatch profiles exist (2.0 retained for source-data-shape dispatch)
   check("has_profile_2_0", VersionCompat.has_profile("2.0") == true, "2.0 profile must exist")
-  check("no_profile_2_1", VersionCompat.has_profile("2.1") == false, "2.1 profile must NOT exist in phase 1")
+  check("has_profile_2_1", VersionCompat.has_profile("2.1") == true, "2.1 profile must exist")
 
-  -- resolve_for(): known bucket resolves itself; unknown/nil falls back loudly to newest known
+  -- resolve_for(): known bucket resolves itself; unknown/nil falls back loudly to newest known (2.1)
   local used20, fb20 = VersionCompat.resolve_for("2.0")
   check("resolve_2_0", used20 == "2.0" and fb20 == false, "2.0 should resolve to 2.0 without fallback")
+  local used21, fb21 = VersionCompat.resolve_for("2.1")
+  check("resolve_2_1", used21 == "2.1" and fb21 == false, "2.1 should resolve to 2.1 without fallback")
   local used99, fb99 = VersionCompat.resolve_for("9.9")
-  check("resolve_unknown_fallback", used99 == "2.0" and fb99 == true, "unknown bucket should fall back to 2.0")
+  check("resolve_unknown_fallback", used99 == "2.1" and fb99 == true, "unknown bucket should fall back to newest known (2.1)")
   local usednil, fbnil = VersionCompat.resolve_for(nil)
-  check("resolve_nil_fallback", usednil == "2.0" and fbnil == true, "nil bucket should fall back to 2.0")
+  check("resolve_nil_fallback", usednil == "2.1" and fbnil == true, "nil bucket should fall back to newest known (2.1)")
 
   -- migrate(): identity when source == runtime; best-effort (non-nil) on a mismatch
   local payload = { factorio_version = "2.0.76", marker = 1 }

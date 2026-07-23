@@ -20,27 +20,18 @@
 -- BELT ITEMS TIMING: do not call record() on belt entities before belt items are serialized into
 -- entity_data — during async export, skip_belt_items defers them to the atomic pass (Pitfall #16).
 --
--- FLUID AGGREGATION CHOICE: both the physical meter (count_entity_fluids) and the serialized meter
--- (count_all_fluids) return TEMPERATURE-keyed maps. The verdict compares fluids aggregate-BY-NAME at
--- EXACT_EPSILON, so we re-aggregate temp keys to per-name totals via Util.parse_fluid_temp_key. This
--- mirrors TransferValidation's file-local aggregate_fluid_counts_by_name (transfer-validation.lua) and
--- its EXACT_EPSILON = 1e-6 — the gate's rule is aggregate-by-name, so the source census uses the same
--- rule rather than re-deriving one. We replicate (not export) that ~6-line helper to keep the DI-gate
--- file's blast radius zero.
+-- FLUID AGGREGATION CHOICE: both fluid sides carry TEMPERATURE-keyed maps; the verdict compares
+-- fluids aggregate-BY-NAME at EXACT_EPSILON via Util.parse_fluid_temp_key — the same rule as the
+-- transfer gate (TransferValidation's file-local aggregate_fluid_counts_by_name, 1e-6).
 --
--- ENGINE-OWNED FLUIDS: Verification.count_all_fluids drops fluid.engine_owned unconditionally, so the
--- physical read passes exclude_engine_owned = true to stay COMMENSURATE — otherwise a fusion-reactor
--- output box (engine-managed, Pitfall #21) throws a phantom census delta. The on-the-fly
--- FluidOwnership.is_engine_owned_box check only covers the ISOLATED (seg=nil) path; measured live
--- 2026-07-17 [empirical, 2.0.77]: on a realistic reactor→generator layout the reactor's plasma OUTPUT
--- boxes expose REAL segment IDs (shared with the generators' inputs, which read seg=nil — refining
--- Pitfall #22, activatable entities expose no own segment ID; see the api-notes fusion entry),
--- so the segment path consults fluid_state.engine_owned_segments and an EMPTY set silently disables the
--- exclusion (the phantom fusion-plasma -20 that aborted the first post-merge transfer). new() therefore
--- REQUIRES the caller's pre-passed engine-owned segment set — the SAME set the serializer excludes by
--- (ExportPipeline.queue's FluidOwnership.collect_engine_owned_segments) — one ownership source of truth.
--- The cross-entity fluid dedup `state` (segment set + temp fallbacks) is caller-owned and threaded so a
--- segment spanning entities is counted once across the walk; it defaults to acc.fluid_state.
+-- FLUIDS ON 2.1 (registry-paired): the PHYSICAL side reads the engine directly through
+-- SurfaceCounter.count_entity_fluids (segment reads, first-seer dedup via acc.fluid_state); the
+-- SERIALIZED side reads the job's FluidRegistry — the same records the payload will carry — with
+-- its own first-seer dedup over segment_refs. Both sides attribute a segment to the FIRST entity
+-- of the walk that touches it, so they stay commensurate per entity and equal in aggregate. The
+-- physical side never reads the registry (that would blind the census to capture omissions —
+-- the whole point is engine-vs-payload). No engine-owned exclusion exists on either side
+-- (owner ruling 2026-07-20: the classification is deleted; plasma rides like any fluid).
 
 local SurfaceCounter = require("modules/surface_export/validators/surface-counter")
 local Verification = require("modules/surface_export/validators/verification")
@@ -53,16 +44,10 @@ local EXACT_EPSILON = 1e-6
 
 --- Fresh cross-entity fluid fold state (plain data — storage-safe).
 --- Mirrors the shape SurfaceCounter.count_fluids builds so per-entity dedup keeps working.
---- engine_owned_segments: the caller's pre-passed seg_id set, SHARED by reference (not copied) so the
---- census and the serializer read one table — literally one ownership source of truth; the segment-path
---- exclusion in count_entity_fluids is a no-op without it (see header note). Both references live in
---- the same storage.async_jobs record; Factorio's storage serializer preserves shared-table identity.
-local function new_fluid_state(engine_owned_segments)
+local function new_fluid_state()
     return {
-        counted_segments = {},      -- seg_id set already counted (segment dedup memory)
-        known_fluid_temps = {},     -- fluid_name -> temp fallback
-        seg_temps = {},             -- seg_id -> {fluid, temp} authoritative
-        engine_owned_segments = engine_owned_segments, -- seg_id set skipped when exclude_engine_owned is set
+        counted_segments = {},  -- seg_id set already counted (segment dedup memory)
+        seg_temps = {},         -- seg_id -> {fluid, temp} authoritative (unused on source counts)
     }
 end
 
@@ -133,14 +118,15 @@ local function build_row(entity, entity_data, phys_items, ser_items, item_delta)
 end
 
 --- Create a fresh, storage-safe accumulator.
---- @param engine_owned_segments table: pre-passed engine-owned seg_id set — the SAME table the
----        serializer excludes by (ExportPipeline.queue). REQUIRED (fail-loud): a nil set would
----        silently disable the segment-path exclusion and resurrect the phantom-plasma abort.
+--- @param fluid_registry table: the job's FluidRegistry (the serialized fluid truth the payload
+---        will carry). REQUIRED (fail-loud): without it the serialized fluid side would have no
+---        source and the census would silently stop checking fluids. Shared by reference with the
+---        job record (Factorio's storage serializer preserves shared-table identity).
 --- @return table: plain-data accumulator suitable for storage.async_jobs[job_id].census
-function CensusAccumulator.new(engine_owned_segments)
-    if not engine_owned_segments then
-        error("CensusAccumulator.new requires the pre-passed engine-owned segment set " ..
-            "(FluidOwnership.collect_engine_owned_segments) — see the ENGINE-OWNED FLUIDS header note")
+function CensusAccumulator.new(fluid_registry)
+    if not fluid_registry then
+        error("CensusAccumulator.new requires the job's FluidRegistry " ..
+            "(the serialized-side fluid truth) — see the FLUIDS ON 2.1 header note")
     end
     return {
         physical_items = {},    -- quality_key -> count (running total)
@@ -149,8 +135,10 @@ function CensusAccumulator.new(engine_owned_segments)
         serialized_fluids = {}, -- fluid_temp_key -> amount
         mismatches = {},        -- entity-attributed rows
         entity_count = 0,
-        -- cross-entity segment dedup, persists across the walk
-        fluid_state = new_fluid_state(engine_owned_segments),
+        fluid_registry = fluid_registry, -- serialized-side fluid truth (shared reference)
+        seen_segment_refs = {},          -- serialized-side first-seer dedup over segment_refs
+        -- cross-entity physical segment dedup, persists across the walk
+        fluid_state = new_fluid_state(),
     }
 end
 
@@ -165,16 +153,29 @@ function CensusAccumulator.record(acc, entity, entity_data, fluid_state)
     acc.entity_count = acc.entity_count + 1
 
     -- Physical side: the shared per-entity meters (no shadow counting — call the Task-2 meters).
-    -- exclude_engine_owned = true keeps the physical read commensurate with the serializer, which
-    -- drops engine_owned fluids (fusion outputs) unconditionally.
     local phys_items = SurfaceCounter.count_entity_items(entity)
-    local phys_fluids = SurfaceCounter.count_entity_fluids(entity, true, fluid_state)
+    local phys_fluids = SurfaceCounter.count_entity_fluids(entity, fluid_state)
 
-    -- Serialized side: reuse Verification's serialized-data counting rules via a single-element fold
-    -- (Verification.count_all_* iterate an entity array; a 1-element array counts this one entity).
+    -- Serialized side: items via Verification's counting rules over a single-element fold; fluids
+    -- via the registry records this entity's fluidboxes reference, first-seer deduped so the same
+    -- segment is attributed to the same entity on both sides of the pairing.
     local one = { entity_data }
     local ser_items = Verification.count_all_items(one)
-    local ser_fluids = Verification.count_all_fluids(one)
+    local ser_fluids = {}
+    local boxes = entity_data.specific_data and entity_data.specific_data.fluidboxes
+    if boxes then
+        for _, box in ipairs(boxes) do
+            local ref = box.segment_ref
+            if ref and not acc.seen_segment_refs[ref] then
+                acc.seen_segment_refs[ref] = true
+                local rec = acc.fluid_registry.segments[ref]
+                if rec and rec.fluid and (rec.total or 0) > 0 then
+                    local key = Util.make_fluid_temp_key(rec.fluid, rec.temperature or 15)
+                    ser_fluids[key] = (ser_fluids[key] or 0) + rec.total
+                end
+            end
+        end
+    end
 
     -- Fold into running totals. Fluids are accumulated for the aggregate-by-name verdict check only
     -- (the per-entity physical fluid read is segment-deduped, so it is not row-attributable — see

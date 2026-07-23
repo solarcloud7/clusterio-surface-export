@@ -44,6 +44,8 @@ local BeltRestoration = require("modules/surface_export/import_phases/belt_resto
 local EntityStateRestoration = require("modules/surface_export/import_phases/entity_state_restoration")
 local ActiveStateRestoration = require("modules/surface_export/import_phases/active_state_restoration")
 local FluidRestoration = require("modules/surface_export/import_phases/fluid_restoration")
+local InventoryScanner = require("modules/surface_export/export_scanners/inventory-scanner")
+local FluidRegistry = require("modules/surface_export/export_scanners/fluid-registry")
 local SurfaceCounter = require("modules/surface_export/validators/surface-counter")
 local Util = require("modules/surface_export/utils/util")
 
@@ -175,26 +177,24 @@ local function footprint_area(rec)
 	}
 end
 
--- True if any pasted entity's fluidbox connects to an entity OUTSIDE the pasted set. FluidRestoration
--- writes SEGMENT totals, so a pasted pipe merging into a live network would clobber it. Detect via
--- connection-walking on the pasted entities' own fluidboxes (Pitfall #22, activatable entities expose
--- no own segment id, so segment ids are not a reliable signal here). Fails SAFE: a probe error returns
--- true (skip fluids) and surfaces via log.
+-- True if any pasted entity's fluid boxes connect to an entity OUTSIDE the pasted set.
+-- FluidRestoration writes SEGMENT totals, so a pasted pipe merging into a live network would
+-- clobber it. 2.1 API: LuaEntity.fluidbox_neighbours returns one array of connected entities per
+-- fluid storage. Fails SAFE: a probe error returns true (skip fluids) and surfaces via log.
 local function paste_touches_live_fluid_network(entity_map)
 	local pasted = {}
 	for _, e in pairs(entity_map) do
 		if e and e.valid and e.unit_number then pasted[e.unit_number] = true end
 	end
 	for _, e in pairs(entity_map) do
-		if e and e.valid and e.fluidbox then
-			for i = 1, #e.fluidbox do
-				local ok, conns = pcall(function() return e.fluidbox.get_connections(i) end)
-				if not ok then
-					log("[SelectionLab] fluid connection probe failed: " .. tostring(conns))
-					return true
-				end
-				for _, other_box in ipairs(conns or {}) do
-					local owner = other_box.owner
+		if e and e.valid then
+			local ok, per_box = pcall(function() return e.fluidbox_neighbours end)
+			if not ok then
+				log("[SelectionLab] fluid neighbour probe failed: " .. tostring(per_box))
+				return true
+			end
+			for _, neighbours in ipairs(per_box or {}) do
+				for _, owner in ipairs(neighbours or {}) do
 					if owner and owner.valid and owner.unit_number and not pasted[owner.unit_number] then
 						return true
 					end
@@ -208,10 +208,10 @@ end
 -- Belt-connectable types whose lane sides the copy captures for the side-scoped restore
 -- (single implementation: BeltRestoration.capture_side_groups / restore_side_groups — the
 -- production module; this tool is a diagnostic consumer of the SAME system).
-local BELT_LINE_TYPES = {
-	["transport-belt"] = true, ["underground-belt"] = true,
-	["splitter"] = true, ["loader"] = true, ["loader-1x1"] = true,
-}
+-- Aliased to the shared table (2026-07-21): this local shadow list was the ONLY place loaders
+-- were belt-classified, which is how paste placed loader line items while the shared-table
+-- counters (audit + gate census) read 0 for them.
+local BELT_LINE_TYPES = Util.BELT_ENTITY_TYPES
 
 -- Per-player state (review P1: capture/audit/undo/redo were global storage slots — a second
 -- connected admin could overwrite another player's capture and then undo/force-redo their
@@ -256,6 +256,11 @@ function SelectionLab.copy(event)
 	local records = {}
 	local belt_pairs = {}
 	local minx, miny = math.huge, math.huge
+	-- ONE fluid-capture discipline: the copy arms its own registry for the scan (cleared in the
+	-- pcall-safe wrap below); the capture stores the resulting segment records beside the records.
+	local fluid_registry = FluidRegistry.new()
+	InventoryScanner.fluid_registry = fluid_registry
+	local copy_ok, copy_err = pcall(function()
 	for _, entity in ipairs(event.entities) do
 		-- Loose ground items: production excludes item-entity from entity records and captures them
 		-- as {type="item-on-ground"} pseudo-records instead (PR #24 shape, scan_items_on_ground);
@@ -289,6 +294,9 @@ function SelectionLab.copy(event)
 			end
 		end
 	end
+	end)
+	InventoryScanner.fluid_registry = nil
+	if not copy_ok then error(copy_err) end
 	if #records == 0 then
 		say(player, "[color=yellow][font=default-bold][SelectionLab][/font][/color] nothing exportable in the selection", { r = 1, g = 0.6, b = 0.3 })
 		return lab_result("copy", { outcome = "nothing_exportable", selected = #event.entities })
@@ -305,6 +313,7 @@ function SelectionLab.copy(event)
 	st.export = {
 		records = records,
 		side_groups = side_groups,
+		fluid_segments = FluidRegistry.list(fluid_registry),
 		anchor = anchor,
 		surface = event.surface.name,
 		tick = game.tick,
@@ -428,7 +437,7 @@ end
 -- not journal or report partial success. Undo resurrection passes false (best-effort, misses
 -- reported, never destroys what it managed to bring back).
 -- Returns records, entity_map, created, create_failed, ok, err.
-local function execute_create_and_restore(surface, recs, player, side_groups, transactional)
+local function execute_create_and_restore(surface, recs, player, side_groups, fluid_segments, transactional)
 	local records, entity_map = {}, {}
 	local created, create_failed = 0, 0
 	-- Creation goes through the PRODUCTION Deserializer.create_entity — the same function the
@@ -524,7 +533,7 @@ local function execute_create_and_restore(surface, recs, player, side_groups, tr
 		say(player, "[color=yellow][font=default-bold][SelectionLab][/font][/color] fluids skipped: pasted fluid system connects to live network — fluid restore only runs on isolated pastes",
 			{ r = 1, g = 0.7, b = 0.3 })
 	else
-		local fluids_ok, fluids_err = pcall(function() FluidRestoration.restore(records, entity_map) end)
+		local fluids_ok, fluids_err = pcall(function() FluidRestoration.restore(records, entity_map, fluid_segments) end)
 		if not fluids_ok then
 			log("[SelectionLab] fluid restore failed: " .. tostring(fluids_err))
 			if transactional then error("fluid restore failed: " .. tostring(fluids_err)) end
@@ -537,7 +546,9 @@ local function execute_create_and_restore(surface, recs, player, side_groups, tr
 	for _, rec in ipairs(records) do
 		local entity = entity_map[rec.entity_id]
 		if entity and entity.valid and rec.lab_active ~= nil then
-			entity.active = rec.lab_active
+			-- 2.1: LuaEntity.active is READ-ONLY; disabled_by_script is the writable control
+			-- (verified live 2026-07-21: it drives active both directions).
+			entity.disabled_by_script = not rec.lab_active
 		end
 	end
 	end
@@ -624,7 +635,7 @@ function SelectionLab.paste(event)
 	for _, c in ipairs(plan.clear) do if c.rec.type ~= "item-request-proxy" then recs[#recs + 1] = c.rec end end
 	for _, c in ipairs(plan.clear) do if c.rec.type == "item-request-proxy" then recs[#recs + 1] = c.rec end end
 	local records, entity_map, created, create_failed, exec_ok, exec_err =
-		execute_create_and_restore(surface, recs, player, cap.side_groups, true)
+		execute_create_and_restore(surface, recs, player, cap.side_groups, cap.fluid_segments, true)
 	if not exec_ok then
 		if player then player.play_sound({ path = "utility/cannot_build" }) end
 		say(player, "[color=yellow][font=default-bold][SelectionLab][/font][/color] PASTE ROLLED BACK (" .. tostring(exec_err) ..
@@ -637,7 +648,7 @@ function SelectionLab.paste(event)
 		end
 	end
 	push_undo(st, { mode = "paste", surface = surface.name, created = journal_created(records, entity_map),
-		destroyed_records = {}, plan_records = recs, side_groups = cap.side_groups })
+		destroyed_records = {}, plan_records = recs, side_groups = cap.side_groups, fluid_segments = cap.fluid_segments })
 	-- Single compute, used by BOTH chat and the logged result — they must never diverge.
 	local physical_items = physical_census(entity_map)
 	local capture_items = capture_item_total(cap.records)
@@ -684,7 +695,7 @@ end
 -- the created entities are rolled back AND the already-destroyed blockers are resurrected
 -- best-effort; callers must not journal on failure.
 -- Returns records, entity_map, created, create_failed, destroyed_records, guarded, ok, err, resurrected_on_fail.
-local function force_execute(surface, recs, player, side_groups)
+local function force_execute(surface, recs, player, side_groups, fluid_segments)
 	local destroyed_records, guarded = {}, 0
 	for _, rec in ipairs(recs) do
 		if not surface.can_place_entity(place_spec(rec, player)) then
@@ -708,11 +719,11 @@ local function force_execute(surface, recs, player, side_groups)
 		end
 	end
 	local records, entity_map, created, create_failed, exec_ok, exec_err =
-		execute_create_and_restore(surface, recs, player, side_groups, true)
+		execute_create_and_restore(surface, recs, player, side_groups, fluid_segments, true)
 	if not exec_ok then
 		local resurrected = 0
 		if #destroyed_records > 0 then
-			local rrecords = execute_create_and_restore(surface, destroyed_records, player, nil, false)
+			local rrecords = execute_create_and_restore(surface, destroyed_records, player, nil, nil, false)
 			resurrected = rrecords and #rrecords or 0
 		end
 		return nil, nil, created, create_failed, destroyed_records, guarded, false, exec_err, resurrected
@@ -733,7 +744,7 @@ function SelectionLab.force(event)
 	local recs = {}
 	for _, rec in ipairs(cap.records) do recs[#recs + 1] = translate(rec, offset) end
 	local records, entity_map, created, create_failed, destroyed_records, guarded, exec_ok, exec_err, resurrected =
-		force_execute(surface, recs, player, cap.side_groups)
+		force_execute(surface, recs, player, cap.side_groups, cap.fluid_segments)
 	if not exec_ok then
 		player.play_sound({ path = "utility/cannot_build" })
 		say(player, string.format(
@@ -745,7 +756,7 @@ function SelectionLab.force(event)
 		})
 	end
 	push_undo(st, { mode = "force", surface = surface.name, created = journal_created(records, entity_map),
-		destroyed_records = destroyed_records, plan_records = recs, side_groups = cap.side_groups })
+		destroyed_records = destroyed_records, plan_records = recs, side_groups = cap.side_groups, fluid_segments = cap.fluid_segments })
 	local physical_items = physical_census(entity_map)
 	say(player, string.format(
 		"[color=yellow][font=default-bold][SelectionLab][/font][/color] FORCE-PASTED %d entities (%d create-failed, %d blockers replaced%s) at offset (%d,%d). Physical items: %d. Ctrl+Alt+Z undoes (blockers come back with contents).",
@@ -762,7 +773,7 @@ end
 -- === AUDIT (the gate meters, made visible) =================================================
 
 local function fresh_fluid_state()
-	return { counted_segments = {}, known_fluid_temps = {}, seg_temps = {}, engine_owned_segments = {} }
+	return { counted_segments = {}, seg_temps = {} }
 end
 
 function SelectionLab.audit(event)
@@ -787,7 +798,7 @@ function SelectionLab.audit(event)
 					item_totals[key] = (item_totals[key] or 0) + count
 					item_n = item_n + count
 				end
-				for key, amount in pairs(SurfaceCounter.count_entity_fluids(e, true, fluid_state)) do
+				for key, amount in pairs(SurfaceCounter.count_entity_fluids(e, fluid_state)) do
 					local name = Util.parse_fluid_temp_key(key)
 					fluid_totals[name] = (fluid_totals[name] or 0) + amount
 					fluid_n = fluid_n + amount
@@ -863,7 +874,7 @@ function SelectionLab.undo(event)
 	local resurrected = 0
 	if #entry.destroyed_records > 0 then
 		-- best-effort (non-transactional): a resurrection miss must never destroy what DID come back
-		local records = execute_create_and_restore(surface, entry.destroyed_records, player, nil, false)
+		local records = execute_create_and_restore(surface, entry.destroyed_records, player, nil, nil, false)
 		resurrected = records and #records or 0
 	end
 	table.insert(st.redo, entry)
@@ -905,7 +916,7 @@ function SelectionLab.redo(event)
 		local recs = {}
 		for _, c in ipairs(plan.clear) do recs[#recs + 1] = c.rec end
 		local records, entity_map, created, _cf, exec_ok, exec_err =
-			execute_create_and_restore(surface, recs, player, entry.side_groups, true)
+			execute_create_and_restore(surface, recs, player, entry.side_groups, entry.fluid_segments, true)
 		if not exec_ok then
 			player.play_sound({ path = "utility/cannot_build" })
 			say(player, "[color=yellow][font=default-bold][SelectionLab][/font][/color] REDO ROLLED BACK (" .. tostring(exec_err) .. ") — still redoable.",
@@ -923,7 +934,7 @@ function SelectionLab.redo(event)
 			{ r = 0.4, g = 0.9, b = 1 })
 	else
 		local records, entity_map, created, _create_failed, destroyed_records, guarded, exec_ok, exec_err, resurrected =
-			force_execute(surface, entry.plan_records, player, entry.side_groups)
+			force_execute(surface, entry.plan_records, player, entry.side_groups, entry.fluid_segments)
 		if not exec_ok then
 			player.play_sound({ path = "utility/cannot_build" })
 			say(player, string.format(

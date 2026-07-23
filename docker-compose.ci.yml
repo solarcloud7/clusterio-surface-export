@@ -15,6 +15,15 @@
 # workflow builds + loads the baked image. `pull_policy: never` keeps `docker compose pull`
 # from trying to fetch this local-only tag from a registry.
 services:
+  # CI STOPGAP — points the controller at a locally-built image that whitelists Factorio "2.1" in
+  # @clusterio/lib's ApiVersions (see docker/ci/Dockerfile.controller-patched). Without it, the
+  # controller's seed-time upload of the 2.1-flagged surfexp_gateways mod fails "Mod's info.json is
+  # not valid". `pull_policy: never` keeps `docker compose pull` from fetching this local-only tag.
+  # NOT the durable fix (base-image bake + upstream PR); see the "durable @clusterio 2.1 fix" task.
+  surface-export-controller:
+    image: clusterio-docker-controller:patched
+    pull_policy: never
+
   surface-export-host-1:
     image: clusterio-docker-host:factorio-baked
     pull_policy: never

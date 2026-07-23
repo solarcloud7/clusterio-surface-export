@@ -57,7 +57,7 @@ local function make_platform(label)
 	surface.set_tiles(tiles, true, false, true, false)
 	local entity = surface.create_entity({ name = "assembling-machine-1", position = { anchor.x + 2, anchor.y }, force = force })
 	if not (entity and entity.valid) then error("failed to create activatable selftest entity") end
-	entity.active = true
+	entity.disabled_by_script = false
 	return force, platform, entity
 end
 
@@ -139,7 +139,7 @@ local function unlock_after_hold_removed(details)
 	local transfer_id = stage_hold("removed", force, platform)
 	storage.destination_holds[transfer_id] = nil
 	force.set_surface_hidden(platform.surface, true)
-	entity.active = false
+	entity.disabled_by_script = true
 	platform.paused = true
 	install_lock(force, platform, entity, { kind = "transfer" })
 	local ok, err = SurfaceLock.unlock_platform(platform.index, platform.name)
@@ -154,7 +154,7 @@ local function unlock_after_go_live(details)
 	local live_ok, live_err = DestinationHold.go_live(transfer_id)
 	check(details, "unlock_after_go_live_release", live_ok == true, tostring(live_err))
 	force.set_surface_hidden(platform.surface, true)
-	entity.active = false
+	entity.disabled_by_script = true
 	platform.paused = true
 	install_lock(force, platform, entity, { kind = "transfer" })
 	local ok, err = SurfaceLock.unlock_platform(platform.index, platform.name)
@@ -166,7 +166,7 @@ end
 local function double_unlock(details)
 	local force, platform, entity = make_platform("double")
 	force.set_surface_hidden(platform.surface, true)
-	entity.active = false
+	entity.disabled_by_script = true
 	install_lock(force, platform, entity, { kind = "transfer" })
 	local first_ok, first_err = SurfaceLock.unlock_platform(platform.index, platform.name)
 	local second_ok, second_err = SurfaceLock.unlock_platform(platform.index, platform.name)
@@ -177,7 +177,7 @@ end
 local function non_held_unlock_restores(details)
 	local force, platform, entity = make_platform("normal")
 	force.set_surface_hidden(platform.surface, true)
-	entity.active = false
+	entity.disabled_by_script = true
 	install_lock(force, platform, entity, { kind = "transfer" })
 	local ok, err = SurfaceLock.unlock_platform(platform.index, platform.name)
 	check(details, "non_held_unlock_restores", ok == true, tostring(err))

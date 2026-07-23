@@ -128,13 +128,29 @@ jobs:
             HOST_IMAGE=ghcr.io/solarcloud7/clusterio-docker-host:2.0.0-alpha.25
             FACTORIO_HEADLESS_TAG=${{ steps.factorio_version.outputs.version }}
 
+      - name: Build ApiVersions-patched controller image
+        # CI STOPGAP: bakes the Factorio "2.1" whitelist into the controller's @clusterio/lib so the
+        # seed-time upload of the 2.1-flagged surfexp_gateways mod is accepted (the pinned alpha.25
+        # @clusterio hard-codes ApiVersions without "2.1"). docker-compose.ci.yml overrides the
+        # controller service to this local tag. NOT the durable fix — see the "durable @clusterio
+        # 2.1 fix" task (base-image bake + upstream PR, owner-authorized GHCR republish).
+        uses: docker/build-push-action@v7
+        with:
+          context: docker/ci
+          file: docker/ci/Dockerfile.controller-patched
+          tags: clusterio-docker-controller:patched
+          load: true
+          build-args: |
+            CONTROLLER_IMAGE=ghcr.io/solarcloud7/clusterio-docker-controller:2.0.0-alpha.25
+
       - name: Create external factorio-client volume
         run: |
-          # docker-compose declares `factorio-client` as an external volume (shared across
-          # projects in local dev). CI has no Factorio credentials, so host-1 falls back to
-          # headless mode (auto-downloads the headless server) — but compose still mounts the
-          # volume, so it must exist or `up` fails with "external volume not found".
-          docker volume create factorio-client
+          # docker-compose declares `factorio-client-2111` as an external volume (renamed in the
+          # Factorio 2.1.11 migration; the old shared `factorio-client` volume is the 2.0.77 client
+          # and belongs to a different project on the dev machine). CI has no Factorio credentials,
+          # so host-1 falls back to headless mode (auto-downloads the headless server) — but compose
+          # still mounts the volume, so it must exist or `up` fails with "external volume not found".
+          docker volume create factorio-client-2111
 
       - name: Pull Docker images
         run: |

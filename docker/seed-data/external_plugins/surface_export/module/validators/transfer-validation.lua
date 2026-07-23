@@ -197,8 +197,9 @@ function TransferValidation.validate_import(surface, expected_verification, opti
     end
     
     local strict = options.strict == true
-    -- Strict transfer accounting excludes engine-owned output segments on both source and destination.
-    local actual_fluid_counts = SurfaceCounter.count_fluids(surface, options.segment_temps, strict)
+    -- 2.1 segment reads count EVERYTHING — no engine-owned exclusion exists (owner ruling
+    -- 2026-07-20: the classification is deleted; plasma rides and is gated like any fluid).
+    local actual_fluid_counts = SurfaceCounter.count_fluids(surface, options.segment_temps)
 
     -- VALIDATION LOGIC:
     -- For total items: actual should be <= expected (we can lose items to machine limits, but not gain)
@@ -315,7 +316,6 @@ function TransferValidation.validate_import(surface, expected_verification, opti
         actualItemCounts = total_item_counts,
         expectedFluidCounts = expected_verification.fluid_counts or {},
         actualFluidCounts = actual_fluid_counts,
-        engineOwnedFluids = expected_verification.engine_owned_fluid_counts or {},
         entityTypeBreakdown = entity_type_counts,
         -- Summary totals
         itemTypesExpected = table_size(expected_verification.item_counts or {}),

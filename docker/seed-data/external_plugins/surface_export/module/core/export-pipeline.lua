@@ -4,7 +4,8 @@
 local EntityScanner = require("modules/surface_export/export_scanners/entity-scanner")
 local EntityHandlers = require("modules/surface_export/export_scanners/entity-handlers")
 local InventoryScanner = require("modules/surface_export/export_scanners/inventory-scanner")
-local FluidOwnership = require("modules/surface_export/utils/fluid-ownership")
+local FluidRegistry = require("modules/surface_export/export_scanners/fluid-registry")
+local VersionCompat = require("modules/surface_export/utils/version-compat")
 local Verification = require("modules/surface_export/validators/verification")
 local Util = require("modules/surface_export/utils/util")
 local GameUtils = require("modules/surface_export/utils/game-utils")
@@ -245,7 +246,9 @@ function ExportPipeline.queue(platform_index, force_name, requester_name, destin
 		tostring(schedule_summary.group)))
 
 	local entities = surface.find_entities_filtered({})
-	local engine_owned_segments = FluidOwnership.collect_engine_owned_segments(entities)
+	-- ONE fluid-capture discipline for the whole job (2.1 segment API): the registry dedups
+	-- segments across entities AND batches, and the census reads serialized fluids from it.
+	local fluid_registry = FluidRegistry.new()
 
 	-- Sort entities for proper placement order (inputs before outputs, etc.)
 	-- Do this once on export rather than re-sorting on every import
@@ -276,15 +279,16 @@ function ExportPipeline.queue(platform_index, force_name, requester_name, destin
 		-- Paired-reads source census (Task 4). Storage-safe plain data — it lives here in
 		-- storage.async_jobs across the multi-tick walk; record() folds physical-vs-serialized
 		-- per entity in the SAME execution the entity is serialized in. The census shares the
-		-- serializer's pre-passed engine-owned segment set (rationale + measurement: the
-		-- ENGINE-OWNED FLUIDS note in census-accumulator.lua).
-		census = CensusAccumulator.new(engine_owned_segments),
-		-- Fluid segment dedup cache: seg_id → {fluid, amount, temp}
-		-- Shared across all export batches so each segment is serialized exactly once
-		-- at the segment-level weighted-average temperature (matches FluidRestoration output)
-		fluid_segment_cache = {},
-		engine_owned_segments = engine_owned_segments,
+		-- job's FluidRegistry (serialized-side fluid truth) so the two can never diverge in
+		-- how fluids are folded.
+		census = CensusAccumulator.new(fluid_registry),
+		-- The job-wide fluid segment registry (armed onto InventoryScanner per batch).
+		fluid_registry = fluid_registry,
 		export_data = {
+			-- Hard schema cut (owner ruling 2026-07-20): the payload stamps its schema version and
+			-- producing engine version; import refuses absent/mismatched stamps LOUDLY before any read.
+			schema_version = VersionCompat.PAYLOAD_SCHEMA_VERSION,
+			factorio_version = script.active_mods.base,
 			platform_name = platform.name,
 			force_name = force_name,
 			tick = game.tick,
@@ -331,8 +335,7 @@ function ExportPipeline.process_batch(job, get_batch_size, should_show_progress)
 	-- temperature exactly once, matching what FluidRestoration.restore() will write.
 	-- Wrapped to ensure flags are always cleared even if an error occurs mid-batch.
 	EntityHandlers.skip_belt_items = true
-	InventoryScanner.fluid_segment_cache = job.fluid_segment_cache
-	InventoryScanner.engine_owned_segments = job.engine_owned_segments
+	InventoryScanner.fluid_registry = job.fluid_registry
 	local batch_ok, batch_err = pcall(function()
 		for i = start_index, end_index do
 			local entity = job.entities[i]
@@ -366,8 +369,7 @@ function ExportPipeline.process_batch(job, get_batch_size, should_show_progress)
 		end
 	end)
 	EntityHandlers.skip_belt_items = false
-	InventoryScanner.fluid_segment_cache = nil
-	InventoryScanner.engine_owned_segments = nil
+	InventoryScanner.fluid_registry = nil
 	if not batch_ok then error(batch_err) end
 
 	job.current_index = end_index
@@ -412,7 +414,11 @@ function ExportPipeline.complete(job)
 		if live_entity and live_entity.valid then
 			local belt_items = InventoryScanner.extract_belt_items(live_entity)
 			local entity_data = job.export_data.entities[serialized_index]
-			if entity_data and entity_data.specific_data then
+			if entity_data then
+				-- Loaders ride the DEFAULT handler, which returns nil specific_data when nothing else
+				-- was captured — create it here rather than silently skipping the patch AND the census
+				-- pairing below (a skipped patch = loader line items never serialized).
+				entity_data.specific_data = entity_data.specific_data or {}
 				entity_data.specific_data.items = belt_items
 				-- Paired source census (Task 4) for belts: the physical read re-derives belt contents via
 				-- extract_belt_items INDEPENDENTLY of the just-patched serialized copy. CRITICAL: belt pairing
@@ -457,18 +463,20 @@ function ExportPipeline.complete(job)
 	log(string.format("[Export] Atomic ground-item scan: %d loose item stack(s) captured", #ground_items))
 	-- ========================================
 
-	-- CRITICAL: Generate verification data from SERIALIZED entity data
-	-- Now includes the atomically-scanned belt items, so verification counts
-	-- exactly match what will be restored on import (no rolling snapshot drift).
+	-- The fluid-segment registry IS the payload's fluid truth: one record per segment (our ids),
+	-- entities reference it via specific_data.fluidboxes. Attach it before verification so the
+	-- expected counts and the payload can never diverge.
+	job.export_data.fluid_segments = FluidRegistry.list(job.fluid_registry)
+
+	-- CRITICAL: Generate verification data from SERIALIZED data
+	-- Items now include the atomically-scanned belt items; fluids fold the segment registry.
 	local item_counts = Verification.count_all_items(job.export_data.entities)
-	local fluid_counts = Verification.count_all_fluids(job.export_data.entities)
-	local engine_owned_fluid_counts = Verification.count_engine_owned_fluids(job.export_data.entities)
-	log(string.format("[Export] Generated verification from serialized entity data (%d item types, %d fluid types)",
-		table_size(item_counts), table_size(fluid_counts)))
+	local fluid_counts = Verification.count_fluid_segments(job.export_data.fluid_segments)
+	log(string.format("[Export] Generated verification from serialized data (%d item types, %d fluid types, %d fluid segments)",
+		table_size(item_counts), table_size(fluid_counts), #job.export_data.fluid_segments))
 	job.export_data.verification = {
 		item_counts = item_counts,
 		fluid_counts = fluid_counts,
-		engine_owned_fluid_counts = engine_owned_fluid_counts
 	}
 
 	-- ========================================

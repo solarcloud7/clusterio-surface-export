@@ -116,10 +116,7 @@ function EntityHandlers.handle_entity(entity, category)
     data = {}
 
     -- Specialized fluid-capable platform entities own fluid extraction in their handlers.
-    local fluids = InventoryScanner.extract_fluids(entity)
-    if #fluids > 0 then
-      data.fluids = fluids
-    end
+    data.fluidboxes = InventoryScanner.extract_fluidboxes(entity)
   end
 
   -- Ordinary inventories are attached exactly once whether or not a category handler exists.
@@ -148,10 +145,7 @@ EntityHandlers["assembling-machine"] = function(entity)
   }
 
   -- Fluids (chemical plants, oil refineries, etc. all use assembling-machine type)
-  local fluids = InventoryScanner.extract_fluids(entity)
-  if #fluids > 0 then
-    data.fluids = fluids
-  end
+  data.fluidboxes = InventoryScanner.extract_fluidboxes(entity)
 
   -- Recipe
   if entity.get_recipe then
@@ -202,10 +196,7 @@ EntityHandlers["furnace"] = function(entity)
   }
 
   -- Fluids (foundries have fluidboxes for molten metals)
-  local fluids = InventoryScanner.extract_fluids(entity)
-  if #fluids > 0 then
-    data.fluids = fluids
-  end
+  data.fluidboxes = InventoryScanner.extract_fluidboxes(entity)
 
   -- Recipe (smelting recipe; quality is get_recipe()'s SECOND return at 2.0.77 — see the
   -- assembling-machine handler)
@@ -259,10 +250,7 @@ EntityHandlers["underground-belt"] = function(entity)
     belt_to_ground_type = entity.belt_to_ground_type  -- "input" or "output"
   }
 
-  -- Connection partner (for verification)
-  if entity.neighbours then
-    data.has_partner = true
-  end
+  -- (2.1: LuaEntity.neighbours removed; the old has_partner flag it fed had zero consumers and was deleted.)
 
   return data
 end
@@ -352,28 +340,28 @@ end
 --- Fluid storage (tanks) handler
 EntityHandlers["fluid-storage"] = function(entity)
   return {
-    fluids = InventoryScanner.extract_fluids(entity)
+    fluidboxes = InventoryScanner.extract_fluidboxes(entity)
   }
 end
 
 --- Pipe handler
 EntityHandlers["pipe"] = function(entity)
   return {
-    fluids = InventoryScanner.extract_fluids(entity)
+    fluidboxes = InventoryScanner.extract_fluidboxes(entity)
   }
 end
 
 --- Underground pipe handler
 EntityHandlers["pipe-to-ground"] = function(entity)
   return {
-    fluids = InventoryScanner.extract_fluids(entity)
+    fluidboxes = InventoryScanner.extract_fluidboxes(entity)
   }
 end
 
 --- Pump handler
 EntityHandlers["pump"] = function(entity)
   local data = {
-    fluids = InventoryScanner.extract_fluids(entity)
+    fluidboxes = InventoryScanner.extract_fluidboxes(entity)
   }
   
   -- FLUID FILTER
@@ -620,7 +608,7 @@ EntityHandlers["mining-drill"] = function(entity)
     -- Pitfall #18 class (a specific handler that only exports inventories silently drops fluid
     -- data); caught live 2026-07-20 by the mining-drill-acid-feed pad audit (paste lost exactly
     -- the drill's 104.4 acid).
-    fluids = InventoryScanner.extract_fluids(entity)
+    fluidboxes = InventoryScanner.extract_fluidboxes(entity)
   }
 
   -- Mining target
@@ -864,8 +852,8 @@ EntityHandlers["display-panel"] = function(entity)
   data.display_panel_always_show = entity.display_panel_always_show
   data.display_panel_show_in_chart = entity.display_panel_show_in_chart
   local behavior = entity.get_control_behavior()
-  if behavior and behavior.messages and #behavior.messages > 0 then
-    data.display_panel_messages = behavior.messages
+  if behavior and behavior.records and #behavior.records > 0 then  -- 2.1: messages renamed to records
+    data.display_panel_messages = behavior.records
   end
   return next(data) and data or nil
 end

@@ -302,9 +302,8 @@ local function perform_read(loc, check)
 		return nil, "no stack to read spoil_percent"
 	elseif read == "fluid" then
 		local total = 0
-		local fb = loc.entity.fluidbox
-		for i = 1, #fb do
-			local f = fb[i]
+		for i = 1, loc.entity.fluids_count do
+			local f = loc.entity.get_fluid(i)
 			if f and (not check.item or f.name == check.item) then total = total + f.amount end
 		end
 		return total

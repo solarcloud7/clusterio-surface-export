@@ -121,7 +121,7 @@ end
 
 local function measure_omnibus_midcraft(surface, anchor)
     local m = anchored(surface, anchor, "assembling-machine-1", "omnibus midcraft")
-    local inv = m.get_inventory(defines.inventory.assembling_machine_input)
+    local inv = m.get_inventory(defines.inventory.crafter_input)
     return { progress = m.crafting_progress, active = m.active, inputPlates = inv and inv.get_item_count("iron-plate") or nil }
 end
 
@@ -171,15 +171,16 @@ end
 local function measure_omnibus_fluids(surface, anchor)
     local r = {}
     local tank = anchored(surface, anchor, "storage-tank", "omnibus fluids")
-    if tank.fluidbox[1] then r.steam = tank.fluidbox[1].amount r.steamTemp = tank.fluidbox[1].temperature end
+    local tf = tank.get_fluid(1)
+    if tf then r.steam = tf.amount r.steamTemp = tf.temperature end
     local chem = anchored(surface, anchor, "chemical-plant", "omnibus fluids")
-    for i = 1, #chem.fluidbox do
-        local f = chem.fluidbox[i]
+    for i = 1, chem.fluids_count do
+        local f = chem.get_fluid(i)
         if f then if f.name == "water" then r.chemWater = f.amount elseif f.name == "petroleum-gas" then r.chemGas = f.amount end end
     end
     local foundry = anchored(surface, anchor, "foundry", "omnibus fluids")
-    for i = 1, #foundry.fluidbox do
-        local f = foundry.fluidbox[i]
+    for i = 1, foundry.fluids_count do
+        local f = foundry.get_fluid(i)
         if f and f.name == "molten-iron" then r.foundryMolten = f.amount r.foundryTemp = f.temperature end
     end
     return r
@@ -282,9 +283,8 @@ local function measure_mining_drill_acid(surface, area, anchor)
     local tank = at(surface, "storage-tank", tx, ty)
     local drill_acid = 0
     if drill then
-        local fb = drill.fluidbox
-        for i = 1, #fb do
-            local f = fb[i]
+        for i = 1, drill.fluids_count do
+            local f = drill.get_fluid(i)
             if f then drill_acid = drill_acid + f.amount end
         end
     end
@@ -498,34 +498,96 @@ local function measure_hold_pod_pair()
     }
 end
 
-local function measure_census_fusion(surface)
-    local reactor = assert(at(surface, "fusion-reactor", 0, 0), "census-fusion reactor missing")
-    local generator = assert(at(surface, "fusion-generator", 0.5, -5.5), "census-fusion generator missing")
-    local r = {
-        entities = #surface.find_entities_filtered({}),
-        generatorCount = #surface.find_entities_filtered({ name = "fusion-generator" }),
-        fuelCells = reactor.get_item_count("fusion-power-cell"),
-        coolant = 0, plasmaSegment = 0,
-        reactorCoolantSegVisible = false, reactorPlasmaSegVisible = false,
-        generatorPlasmaSegNil = generator.fluidbox.get_fluid_segment_id(1) == nil,
-        allFrozen = (not reactor.active) and (not generator.active),
-        allIndestructible = (not reactor.destructible) and (not generator.destructible),
-    }
-    for i = 1, #reactor.fluidbox do
-        local f = reactor.fluidbox[i]
-        local sid = reactor.fluidbox.get_fluid_segment_id(i)
-        if f and f.name == "fluoroketone-cold" then
-            r.coolant = r.coolant + f.amount
-            r.reactorCoolantSegVisible = sid ~= nil
-        elseif f and f.name == "fusion-plasma" then
-            r.reactorPlasmaSegVisible = sid ~= nil
-            if f.amount > r.plasmaSegment then r.plasmaSegment = f.amount end
+-- Fusion loop (owner-hand-built, ACTIVE): the plasma-and-coolant rig proving buffered fluids and
+-- plasma ride the 2.1 fluid-segment registry with nothing engine-excluded. The reactors are ACTIVE,
+-- so coolant/plasma AMOUNTS drift — only STABLE facts are fingerprinted: entity counts, the
+-- self-refilling infinity-pipe plasma (exact 100), the generator's own-box no-segment structural fact
+-- (2.1 buffer/window duality removed), and fluid-name presence booleans for plasma + coolant.
+-- reactorPlasmaMax is diagnostic only (drifts, never pinned). `area` scopes the scan (nil = whole
+-- surface). All segment reads are has_fluid_segment-guarded.
+local function measure_fusion_loop(surface, area)
+    local function count(name) return #surface.find_entities_filtered({ name = name, area = area }) end
+    local plasma_present, coolant_present, reactor_plasma_max, infinity_plasma = false, false, 0, 0
+    local generator_plasma_seg_nil = true
+    local function scan(entities, is_reactor, is_generator, is_infinity)
+        for _, e in pairs(entities) do
+            for i = 1, e.fluids_count do
+                local f = e.get_fluid(i)
+                if f and f.amount > 0 then
+                    if f.name == "fusion-plasma" then
+                        plasma_present = true
+                        if is_reactor and f.amount > reactor_plasma_max then reactor_plasma_max = f.amount end
+                        if is_infinity then infinity_plasma = infinity_plasma + f.amount end
+                    elseif f.name == "fluoroketone-cold" or f.name == "fluoroketone-hot" then
+                        coolant_present = true
+                    end
+                end
+                -- 2.1 structural fact: the generator's own plasma box exposes no fluid segment id.
+                if is_generator and f and f.name == "fusion-plasma" then
+                    generator_plasma_seg_nil = (not e.has_fluid_segment(i)) or e.get_fluid_segment_id(i) == nil
+                end
+            end
         end
     end
-    -- Parked stock can sit generator-side (isolated steady state) — report the larger reading.
-    local gf = generator.fluidbox[1]
-    if gf and gf.name == "fusion-plasma" and gf.amount > r.plasmaSegment then r.plasmaSegment = gf.amount end
-    return r
+    scan(surface.find_entities_filtered({ name = "fusion-reactor", area = area }), true, false, false)
+    scan(surface.find_entities_filtered({ name = "fusion-generator", area = area }), false, true, false)
+    scan(surface.find_entities_filtered({ name = "cryogenic-plant", area = area }), false, false, false)
+    scan(surface.find_entities_filtered({ name = "pipe", area = area }), false, false, false)
+    scan(surface.find_entities_filtered({ name = "infinity-pipe", area = area }), false, false, true)
+    return {
+        reactorCount = count("fusion-reactor"),
+        generatorCount = count("fusion-generator"),
+        cryoCount = count("cryogenic-plant"),
+        infinityPipeCount = count("infinity-pipe"),
+        pipeCount = count("pipe"),
+        infinityPipePlasma = infinity_plasma,
+        generatorPlasmaSegNil = generator_plasma_seg_nil,
+        plasmaPresent = plasma_present,
+        coolantPresent = coolant_present,
+        reactorPlasmaMax = reactor_plasma_max,
+    }
+end
+
+-- Thruster pair (owner-hand-built 2026-07-21 on the south-edge slot (92,64)). The kill-measurement
+-- topology of the reverted 2026-07-19 fusion/thruster fix: two thrusters sharing ONE fuel segment
+-- AND one oxidizer segment (per-box locals must NOT be summed for a shared buffer). Asserts 2
+-- thrusters and, per fluid, one shared segment id across both boxes plus the segment total
+-- (counted ONCE per shared segment). All segment reads are has_fluid_segment-guarded.
+local function measure_thruster_pair(surface, area)
+    local thrusters = surface.find_entities_filtered({ name = "thruster", area = area })
+    local function shared_total(fluid_name)
+        local seg_ids = {}
+        local counted, total = {}, 0
+        for _, t in ipairs(thrusters) do
+            for i = 1, t.fluids_count do
+                if t.has_fluid_segment(i) then
+                    local sf = t.get_fluid_segment_fluid(i)
+                    if sf and sf.name == fluid_name then
+                        local sid = t.get_fluid_segment_id(i)
+                        if sid then
+                            seg_ids[#seg_ids + 1] = sid
+                            if not counted[sid] then
+                                counted[sid] = true
+                                total = total + sf.amount
+                            end
+                        end
+                    end
+                end
+            end
+        end
+        local shared = #seg_ids >= 2
+        for _, sid in ipairs(seg_ids) do if sid ~= seg_ids[1] then shared = false end end
+        return shared, total
+    end
+    local fuel_shared, fuel_total = shared_total("thruster-fuel")
+    local oxidizer_shared, oxidizer_total = shared_total("thruster-oxidizer")
+    return {
+        thrusterCount = #thrusters,
+        sharedFuelSegment = fuel_shared,
+        fuelTotal = fuel_total,
+        sharedOxidizerSegment = oxidizer_shared,
+        oxidizerTotal = oxidizer_total,
+    }
 end
 
 -- Measure the full baked corpus keyed by manifest fixture id. Locators are code; expected values
@@ -569,8 +631,6 @@ local function measure_corpus(manifest)
     if energy then safe("energy-accumulator-drain", function() return measure_energy(energy) end) end
     local workhorse = surface_for_platform("lab-transfer-fixture-v1")
     if workhorse then safe("transfer-workhorse", function() return { entities = #workhorse.find_entities_filtered({}) } end) end
-    local fusion = surface_for_platform("lab-census-fusion-v1")
-    if fusion then safe("census-fusion-shared-plasma", function() return measure_census_fusion(fusion) end) end
     for n = 1, 3 do
         local consumable = surface_for_platform("lab-consumable-" .. n)
         if consumable then safe("consumable-hub-" .. n, function() return { entities = #consumable.find_entities_filtered({}) } end) end
@@ -688,7 +748,8 @@ M.measure_repin_beacon = measure_repin_beacon
 M.measure_hold_spoil_pair = measure_hold_spoil_pair
 M.measure_hold_damage_pair = measure_hold_damage_pair
 M.measure_hold_pod_pair = measure_hold_pod_pair
-M.measure_census_fusion = measure_census_fusion
+M.measure_fusion_loop = measure_fusion_loop
+M.measure_thruster_pair = measure_thruster_pair
 M.measure_corpus = measure_corpus
 M.approx_equal = approx_equal
 M.tolerant_double_fields = tolerant_double_fields

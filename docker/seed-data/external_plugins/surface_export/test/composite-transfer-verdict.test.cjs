@@ -237,7 +237,8 @@ test("operation outcome metrics expose bounded failure_stage label", () => {
 test("Lua import completion injects fluids and renders one verdict before activation", () => {
 	const importCompletion = fs.readFileSync(path.join(moduleRoot, "core", "import-completion.lua"), "utf8");
 	const heldAt = importCompletion.indexOf("ActiveStateRestoration.restore_held_items_only");
-	const injectAt = importCompletion.indexOf("FluidRestoration.restore(entities_to_create, entity_map)", heldAt);
+	// 2.1 registry port: restore now takes the payload's fluid-segment registry as a third arg.
+	const injectAt = importCompletion.indexOf("FluidRestoration.restore(entities_to_create, entity_map,", heldAt);
 	const gateAt = importCompletion.indexOf("TransferValidation.validate_import", injectAt);
 	const activateAt = importCompletion.indexOf("ActiveStateRestoration.restore(job.entities_to_create", gateAt);
 	assert.ok(heldAt !== -1 && injectAt > heldAt, "frozen fluid injection must follow held-item completion");
@@ -257,8 +258,8 @@ test("single gate is exact for items and by-name fluids", () => {
 		"the only fluid comparison nuance is serializer-scale floating representation");
 	assert.doesNotMatch(transferValidation, /STRICT_ABS|STRICT_PCT|FLUID_GAIN_TOLERANCE|FLUID_LOSS_TOLERANCE/,
 		"destructive transfer parity must contain no band, floor, or percentage tolerance");
-	assert.match(transferValidation, /SurfaceCounter\.count_fluids\s*\(\s*surface\s*,\s*options\.segment_temps\s*,\s*strict\s*\)/,
-		"the exact census must receive injection segment temperatures and strict ownership exclusion");
+	assert.match(transferValidation, /SurfaceCounter\.count_fluids\s*\(\s*surface\s*,\s*options\.segment_temps\s*\)/,
+		"the exact census must receive injection segment temperatures (2.1 registry: no ownership-exclusion arg)");
 });
 
 test("failed single gate banks an always-on black box before discard", () => {
@@ -272,13 +273,25 @@ test("failed single gate banks an always-on black box before discard", () => {
 		"retired quarantine and consumer-less destination fields must be gone");
 });
 
-test("failed-entity fluids and engine-rejected writes adjust expectations before the gate", () => {
+test("failed-entity ITEMS are subtracted, failed-entity FLUIDS are not, and only write_rejected adjusts fluids pre-gate", () => {
 	const importCompletion = fs.readFileSync(path.join(moduleRoot, "core", "import-completion.lua"), "utf8");
-	const failedFluidsAt = importCompletion.indexOf("fel.fluids");
-	const rejectedAt = importCompletion.indexOf("write_rejected", failedFluidsAt);
+	// Failed-entity ITEM losses are subtracted from expected before the gate: a failed placement can't
+	// hold its items, so counting them as expected would be a false shortfall.
+	const felItemsAt = importCompletion.indexOf("pairs(fel.items)");
+	const felGateAt = importCompletion.indexOf("TransferValidation.validate_import", felItemsAt);
+	assert.ok(felItemsAt !== -1 && felGateAt > felItemsAt,
+		"failed-entity item losses must adjust expected item counts before the verdict");
+	// Failed-entity FLUIDS are DELIBERATELY not subtracted (owner ruling 2026-07-20, "fail => revert"):
+	// a segment short of a failed member's share must FAIL the exact gate so the two-phase commit
+	// preserves the source. There is no failed-member fluid accounting.
+	assert.doesNotMatch(importCompletion, /fel\.fluids/,
+		"failed-entity fluids must NOT be subtracted — a short segment fails the exact gate (fail => revert)");
+	// The ONLY lawful fluid subtraction is write_rejected — a PHYSICAL post-write measurement, not a
+	// category prediction — and it must land before the single exact gate.
+	const rejectedAt = importCompletion.indexOf("write_rejected");
 	const gateAt = importCompletion.indexOf("TransferValidation.validate_import", rejectedAt);
-	assert.ok(failedFluidsAt !== -1 && rejectedAt > failedFluidsAt && gateAt > rejectedAt,
-		"failed-entity fluids and rejected writes must adjust expected counts before the verdict");
+	assert.ok(rejectedAt !== -1 && gateAt > rejectedAt,
+		"physically-measured write_rejected must adjust expected fluids before the verdict");
 });
 
 test("failed-entity and overflow item losses retain quality keys end to end", () => {
@@ -365,36 +378,11 @@ test("fluid restoration reports dropped fluids without subtracting them", () => 
 		"real dropped fluid must fail exact parity, never be subtracted from expected");
 });
 
-test("engine-owned fluid classification is symmetric across export, restore, and census", () => {
-	const scanner = fs.readFileSync(path.join(moduleRoot, "export_scanners", "inventory-scanner.lua"), "utf8");
-	const ownership = fs.readFileSync(path.join(moduleRoot, "utils", "fluid-ownership.lua"), "utf8");
-	const verification = fs.readFileSync(path.join(moduleRoot, "validators", "verification.lua"), "utf8");
-	const restoration = fs.readFileSync(path.join(moduleRoot, "import_phases", "fluid_restoration.lua"), "utf8");
-	const counter = fs.readFileSync(path.join(moduleRoot, "validators", "surface-counter.lua"), "utf8");
-	assert.match(ownership, /pipe_connections[\s\S]*connection_category/,
-		"classification must derive ownership from the engine's fluid connection categories");
-	assert.match(ownership, /category\s*==\s*["']default["']/,
-		"any box accepting the player-pipe default category must remain accountable");
-	assert.doesNotMatch(ownership, /ENGINE_MANAGED_OUTPUT_ENTITIES|\[["']fusion-reactor["']\]/,
-		"classification must not hardcode a prototype allowlist");
-	assert.match(ownership, /WARNING[\s\S]*connection categor/i,
-		"future non-fusion categories must trip a loud export warning");
-	assert.match(scanner, /engine_owned\s*=\s*engine_owned/,
-		"serialized fluid records must retain the informational engine-owned classification");
-	assert.match(verification, /if\s+not\s+fluid\.engine_owned/,
-		"engine-owned records must be excluded from expected verification counts");
-	assert.match(restoration, /if\s+fluid_data\.engine_owned/,
-		"import must skip engine-owned writes rather than infer acceptance from readback");
-	assert.match(counter, /exclude_engine_owned[\s\S]*collect_engine_owned_segments/,
-		"gate census must independently apply the same engine-owned segment classification");
-});
-
-test("exact transfer gate requests engine-owned exclusion without changing epsilon", () => {
-	const validation = fs.readFileSync(path.join(moduleRoot, "validators", "transfer-validation.lua"), "utf8");
-	assert.match(validation, /SurfaceCounter\.count_fluids\s*\([^)]*strict\s*\)/,
-		"strict transfer census must exclude engine-owned fluid");
-	assert.match(validation, /EXACT_EPSILON\s*=\s*1e-6/);
-});
+// RETIRED (2.1 fluid-segment registry, owner ruling 2026-07-20): the `engine_owned` connection-category
+// classification is DELETED — plasma rides transfers like any fluid; the only lawful fluid subtraction is
+// physically-measured `write_rejected` (guarded above). The two former tests here asserted the symmetry of
+// that deleted classification across export/restore/census and the strict census's engine-owned exclusion.
+// The surviving epsilon/no-band invariant is guarded by "single gate is exact for items and by-name fluids".
 
 test("post-activation reporting cannot overwrite frozen gate fields", () => {
 	const lossAnalysis = fs.readFileSync(path.join(moduleRoot, "validators", "loss-analysis.lua"), "utf8");
@@ -429,26 +417,9 @@ test("fluid-loss hook is allowlisted and fires before the single gate", () => {
 		"test_force_fluid_loss must be explicitly listed as a reviewed fail-safe hook");
 });
 
-test("P2 plasma measurement hook is unique-name-scoped, one-shot, and pre-gate only", () => {
-	const configure = fs.readFileSync(path.join(moduleRoot, "interfaces", "remote", "configure.lua"), "utf8");
-	const importCompletion = fs.readFileSync(path.join(moduleRoot, "core", "import-completion.lua"), "utf8");
-	const restoreAt = importCompletion.indexOf("FluidRestoration.restore(entities_to_create, entity_map)");
-	const captureAt = importCompletion.indexOf("test_capture_p2_plasma", restoreAt);
-	const gateAt = importCompletion.indexOf("TransferValidation.validate_import", captureAt);
-
-	assert.match(configure, /config\.test_capture_p2_plasma[\s\S]*storage\.surface_export_config\.test_capture_p2_plasma/,
-		"configure must register the P2 arming key instead of silently dropping it");
-	assert.ok(restoreAt !== -1 && captureAt > restoreAt && gateAt > captureAt,
-		"P2 must capture the production restore readback before the frozen exact gate");
-	assert.match(importCompletion, /test_capture_p2_plasma\s*=\s*nil/,
-		"the measurement hook must consume itself when the unique platform matches");
-	assert.match(importCompletion, /platform_name\s*==\s*job\.platform_name/,
-		"an unrelated transfer must never consume or fire the hook");
-	assert.match(importCompletion, /storage\.fluid_lab\.p2_capture/,
-		"the runner needs a positive same-tick capture witness");
-	assert.doesNotMatch(importCompletion, /p2_capture[\s\S]{0,300}(?:result\.success|success\s*=\s*false)/,
-		"the diagnostic hook must not alter the transfer verdict");
-});
+// RETIRED (2.1 fluid-segment registry): the P2 plasma measurement hook (`test_capture_p2_plasma`) was a
+// 2.0.77 fluid-lab instrument for the buffer/window duality that no longer exists at 2.1 — plasma is no
+// longer special (owner ruling 2026-07-20). Its consumer is gone from import-completion; the hook is deleted.
 
 test("belt diagnostics census complete restored lines", () => {
 	const restoration = fs.readFileSync(path.join(moduleRoot, "import_phases", "belt_restoration.lua"), "utf8");

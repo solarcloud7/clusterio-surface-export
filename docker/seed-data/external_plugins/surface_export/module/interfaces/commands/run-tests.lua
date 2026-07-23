@@ -60,13 +60,13 @@ local function set_status(text_obj, comb, panel, status, failure_message)
   s1.active = (status == "pass")
   s2.active = (status == "fail")
   local pcb = panel.get_or_create_control_behavior()
-  local msgs = pcb.messages
+  local msgs = pcb.records  -- 2.1: messages renamed to records
   for _, m in ipairs(msgs) do
     if m.text and m.text:find("Failure", 1, true) == 1 then
       m.text = (status == "fail") and ("Failure " .. (failure_message or "?")) or FAILURE_TEMPLATE
     end
   end
-  pcb.messages = msgs
+  pcb.records = msgs
   text_obj.color = COLORS[status]
 end
 
@@ -187,6 +187,11 @@ local DISPATCH = {
   -- owner-hand-built pads (previously "skipped: no meter")
   ["belt-combined-omnibus"]         = { args = "area", meter = FM.measure_belt_combined },
   ["mining-drill-acid-feed"]        = { args = "both", meter = FM.measure_mining_drill_acid },
+  -- fusion loop (owner-hand-built, ACTIVE): compacted into cols 1-12 by the owner 2026-07-21 and
+  -- un-excluded — runs the full copy/paste pad. Scans the half by name, area-scoped.
+  ["fusion-loop"]                   = { args = "area", meter = FM.measure_fusion_loop },
+  -- thruster pair: script-built 2026-07-21 on the south-edge bottom-row slot (92,64) and un-excluded.
+  ["thruster-pair"]                 = { args = "area", meter = FM.measure_thruster_pair },
   -- omnibus pads, area-scoped fingerprints (whole-half scans)
   ["omnibus-ghosts-and-proxies"]    = { args = "area", meter = FM.measure_omnibus_ghosts },
   ["omnibus-ground-items"]          = { args = "area", meter = FM.measure_omnibus_ground },
@@ -195,7 +200,6 @@ local DISPATCH = {
   ["energy-accumulator-drain"]      = { args = "surface", meter = FM.measure_energy },
   ["belt-corner-recovery"]          = { args = "surface", meter = FM.measure_belt_corner },
   ["transfer-workhorse"]            = { args = "surface", meter = meter_entities },
-  ["census-fusion-shared-plasma"]   = { args = "surface", meter = FM.measure_census_fusion },
   ["consumable-hub-1"]              = { args = "surface", meter = meter_entities },
   ["consumable-hub-2"]              = { args = "surface", meter = meter_entities },
   ["consumable-hub-3"]              = { args = "surface", meter = meter_entities },

@@ -83,8 +83,8 @@ test("handler-owned cross-cutting state always uses the canonical scanners", () 
 				`${category} owns inventories but does not use extract_all_inventories`);
 		}
 		if (entry.fluids === "handler") {
-			assert.match(body, /InventoryScanner\.extract_fluids\(entity\)/,
-				`${category} owns fluids but does not use extract_fluids`);
+			assert.match(body, /InventoryScanner\.extract_fluidboxes\(entity\)/,
+				`${category} owns fluids but does not use extract_fluidboxes (2.1 registry capture)`);
 		}
 	}
 });

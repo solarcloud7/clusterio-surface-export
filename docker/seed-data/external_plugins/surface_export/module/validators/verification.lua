@@ -56,34 +56,16 @@ function Verification.count_all_items(entity_data)
   return item_totals
 end
 
---- Count all fluids in serialized entity data
---- @param entity_data table: Array of serialized entities
+--- Count all fluids from the payload's fluid-segment registry (the ONLY serialized fluid truth;
+--- the flat per-entity fluids list no longer exists — hard schema cut 2026-07-20).
+--- @param fluid_segments table: Array of segment records {id, fluid, total, temperature, ...}
 --- @return table: Table of fluid_key = total_amount pairs
-function Verification.count_all_fluids(entity_data)
+function Verification.count_fluid_segments(fluid_segments)
   local fluid_totals = {}
-
-  for _, entity in ipairs(entity_data) do
-    -- Count fluids in fluidboxes
-    if entity.specific_data and entity.specific_data.fluids then
-      for _, fluid in ipairs(entity.specific_data.fluids) do
-        if not fluid.engine_owned then
-          local key = Util.make_fluid_temp_key(fluid.name, fluid.temperature)
-          fluid_totals[key] = (fluid_totals[key] or 0) + fluid.amount
-        end
-      end
-    end
-  end
-
-  return fluid_totals
-end
-
-function Verification.count_engine_owned_fluids(entity_data)
-  local fluid_totals = {}
-  for _, entity in ipairs(entity_data) do
-    for _, fluid in ipairs((entity.specific_data and entity.specific_data.fluids) or {}) do
-      if fluid.engine_owned then
-        fluid_totals[fluid.name] = (fluid_totals[fluid.name] or 0) + fluid.amount
-      end
+  for _, seg in ipairs(fluid_segments or {}) do
+    if seg.fluid and (seg.total or 0) > 0 then
+      local key = Util.make_fluid_temp_key(seg.fluid, seg.temperature or 15)
+      fluid_totals[key] = (fluid_totals[key] or 0) + seg.total
     end
   end
   return fluid_totals
@@ -148,8 +130,8 @@ function Verification.verify_export(export_data)
     end
   end
 
-  -- Verify fluid counts
-  local calculated_fluids = Verification.count_all_fluids(export_data.entities)
+  -- Verify fluid counts against the segment registry (the payload's fluid truth)
+  local calculated_fluids = Verification.count_fluid_segments(export_data.fluid_segments)
   local stored_fluids = export_data.verification.fluid_counts
 
   for fluid_key, calc_amount in pairs(calculated_fluids) do

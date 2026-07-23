@@ -62,7 +62,7 @@ local function freeze_entities(surface)
                 
                 -- Freeze the entity
                 if was_active then
-                    entity.active = false
+                    entity.disabled_by_script = true
                     frozen_count = frozen_count + 1
                 end
             end
@@ -93,7 +93,7 @@ local function unfreeze_entities(surface, original_states)
             
             -- Restore original active state
             if was_active ~= nil then
-                local ok, err = pcall(function() entity.active = was_active end)
+                local ok, err = pcall(function() entity.disabled_by_script = not was_active end)
                 if not ok then
                     log(string.format("[SurfaceLock] unfreeze: restoring entity.active failed for '%s': %s",
                         tostring(entity.name), tostring(err)))
@@ -110,7 +110,7 @@ end
 
 --- Activate all freezable entities on a surface
 --- Used after successful validation to bring an imported platform to life
---- Sets entity.active = true for all freezable entity types
+--- Sets entity.disabled_by_script = false for all freezable entity types
 --- @param surface LuaSurface: Surface to activate
 --- @return number: Count of entities activated
 function SurfaceLock.activate_all(surface)
@@ -121,7 +121,7 @@ function SurfaceLock.activate_all(surface)
         if entity.valid and ACTIVATABLE_ENTITY_TYPES[entity.type] then
             GameUtils.pcall_warn("[SurfaceLock] activate_all: activating entity '" .. tostring(entity.name) .. "'", function()
                 if not entity.active then
-                    entity.active = true
+                    entity.disabled_by_script = false
                     activated_count = activated_count + 1
                 end
             end)

@@ -342,13 +342,13 @@ never renumber). Statuses: unmarked = active law; *(historical)* = fixed, lesson
 | 14 | `instance2-minimal-seed` | Host-2's seed save has a platform stub with no physical hub — it is the import target, not an export source | — |
 | 15 | `validate-before-activation` | The gate counts BEFORE any elapsed tick after activation — active machines craft in the gap and fake GAINS; activation only after the verdict | `gate-item-loss` pad (pad-transfer-suite) |
 | 16 | `atomic-belt-scan` | Belts keep moving (active-writes rejected): belt items must be extracted in ONE atomic tick, verification built from that consistent serialized data | — |
-| 17 | `pre-activation-fluid-loss` | An old pipeline lost ~15% fluids pre-activation (class never isolated); fluid-lab R11 measured the CURRENT path exact in the frozen world — do not cite this as proof restoration needs a live world *(historical)* | — |
-| 18 | `crafter-handlers-export-fluids` | A specific entity handler must export fluids too if the type has a fluidbox (the default handler does; a partial handler silently drops fluid) | — |
+| 17 | `pre-activation-fluid-loss` | RETIRED by the 2.1 fluid-segment registry — the old ~15% pre-activation loss (class never isolated) no longer applies; fluids restore in the frozen disabled_by_script world via set_fluid_segment_fluid before the single exact gate, no live-world restoration needed *(historical)* | — |
+| 18 | `crafter-handlers-export-fluids` | A specific entity handler must emit data.fluidboxes (InventoryScanner.extract_fluidboxes) if the type has a fluidbox — the fail-loud registry arming turns a forgotten fluid capture into a structural error, not silent loss | — |
 | 19 | `platform-destroy-noop` | Remove platforms via GameUtils.delete_platform (game.delete_surface) — argless platform.destroy() silently no-ops at 2.0.77 | `lint:lua` |
 | 20 | `failed-entity-loss-attribution` | When create_entity fails, tally the entity's items/fluids into failed_entity_losses and subtract from expected — otherwise validation blames a phantom loss | — |
-| 21 | `fusion-plasma-exclusion` | Plasma is excluded from transfer by prototype connection-category; the write-rejection law did NOT reproduce at 2.0.77 (fluid-lab R14) — revision is the queued shared-accessor /di-change *(revision-queued)* | — |
-| 22 | `fluidbox-segment-id-nil` | Most activatables return nil from get_fluid_segment_id — read fluidbox[i] directly or fluids silently drop; EXCEPTION: fusion reactor's own boxes DO expose segment IDs | — |
-| 23 | `fluid-temperature-merge` | Segment merges are volume-weighted and exact (R12); prototype max-temp clamps writes — the 10,000 threshold in reconcile_fluids is unlicensed by measurement | — |
+| 21 | `fusion-plasma-exclusion` | RETIRED — plasma rides transfers like any fluid; the engine_owned connection-category exclusion is deleted (2.1 registry + owner ruling 2026-07-20/21), and the only lawful fluid subtraction is physically-measured write_rejected *(refuted)* | — |
+| 22 | `fluidbox-segment-id-nil` | RETIRED — at 2.1.11 entity.fluidbox is removed and segment getters THROW on segmentless boxes (they no longer return nil); capture guards every read with has_fluid_segment(i) and reads segmentless boxes via get_fluid(i) *(historical)* | — |
+| 23 | `fluid-temperature-merge` | RETIRED — temperature rides per fluid-segment registry record (energy-weighted at capture), validated aggregate-by-name at 1e-6; the 2.0.77 volume-weighted merge and the >1,000,000C key-boundary story are no longer load-bearing *(historical)* | — |
 | 24 | `profiler-localisedstring-snapshots` | LuaProfiler cannot serialize; persist timing by embedding profilers in LocalisedStrings at job completion, keep live profilers OUT of storage, display-only | — |
 | 25 | `localisedstring-20-param-limit` | One LocalisedString over 20 parameters hard-crashes the instance — split multi-value prints into one line per call | — |
 | 26 | `call-link-methods-bound` | Never extract/cast a Link method (handle, sendTo, ...) to a value — this loses, crashes at runtime; cast the arguments, never the method | `lint:js (unbound-method + no-restricted-syntax)` |
@@ -452,8 +452,17 @@ Project invariants that still bite if changed:
   side partition. The current production path (captured positions + oversized-stack consolidation + hub
   recovery) remains the shipped implementation until Phase 5 lands. The atomic single-tick export scan
   remains required (Pitfall #16, atomic belt scan; belts keep moving — BELT-R13).
-- **Fluid restoration runs in the frozen world before the exact gate.** R11 proved the shipped restoration code conserves exactly there (Pitfall #17, historical pre-activation fluid loss). **Fusion-reactor output rejects writes** (Pitfall #21, fusion outputs are engine-managed). Subtract
-  only physically rejected writes from expected counts; capacity drops remain gate failures. One pre-activation verdict covers exact items and aggregate-by-name fluids (`epsilon=1e-6`).
+- **Fluid restoration runs in the frozen world (`disabled_by_script`) before the exact gate.** The payload
+  carries a top-level **fluid-segment registry** (one record per source segment or segmentless storage, keyed
+  by our incremental id — engine segment ids differ across instances); entities reference it via
+  `specific_data.fluidboxes`. Restore writes each segment **once** via `set_fluid_segment_fluid` (segmentless
+  storages via `set_fluid`). Plasma rides like any fluid — the `engine_owned` connection-category
+  classification is **deleted** (owner ruling 2026-07-20/21). A member whose entity failed to place is simply
+  absent: there is **no failed-member fluid accounting**, so a short segment fails the exact gate and the
+  two-phase commit preserves the source (fail => revert). The ONLY lawful fluid subtraction from expected
+  counts is `write_rejected` (a physical post-write measurement, not a category prediction); capacity overflow
+  (`dropped_fluids`) remains a gate failure. One pre-activation verdict covers exact items and aggregate-by-name
+  fluids (`epsilon=1e-6`). See docs/factorio-2.0-api-notes.md fluid section.
 - **Entity inventory size** isn't changed by `LuaInventory.resize` (custom inventories only).
   `LuaEntity.set_inventory_size_override` overrides **container** sizes but is a **no-op for crafter inputs**
   at 2.0.76 (verified) — so it is *not* a lever for overloaded-crafter-input loss (already handled by the
@@ -471,7 +480,9 @@ The order of post-processing steps in `complete_import_job()` is critical for co
 5. Inventories (2 passes) — Pass 1: beacons (populates beacon_modules, crafting_speed updates immediately)
                             Pass 2: everything else (set_stack cap now reflects beacon-boosted cs)
 6. Held-item completion   — inserter-only synchronous pass (single owner of held seating; activation-independent, inserter-lab B6); no tick advances
-7. Fluid restoration      — inject while platform remains paused and entities deactivated
+7. Fluid restoration      — write the payload's fluid-segment registry (one set_fluid_segment_fluid per
+                            segment; segmentless storages via set_fluid) while the platform stays paused and
+                            entities disabled_by_script; plasma rides like any fluid, no engine-owned subtraction
 8. Exact validation       — one immutable verdict: exact items + by-name fluids
 9. Activation             — only after the verdict passes; then gateway park if requested
 10. Loss analysis         — post-activation reporting under `postActivationReport`; never changes verdict
@@ -480,7 +491,7 @@ The order of post-processing steps in `complete_import_job()` is critical for co
 **Why this order matters**:
 - Step 4 (beacon activation): beacons are kept active during entity creation (never deactivated). Phase 2 explicitly activates them and fills their energy buffer. This is necessary but not sufficient — beacons need their **module inventory populated** before `crafting_speed` reflects the beacon bonus.
 - Step 5 (inventories, 2 passes): The two-pass approach is critical. `crafting_speed` on a machine updates **immediately** when its nearby beacon's `beacon_modules` inventory is populated — no tick delay, no power required. Pass 1 populates all beacon modules. Pass 2 then restores crafter inputs with `set_stack()`, which uses the now-correct beacon-boosted cap (e.g. cs=17.375 → 12 slots instead of cs=2.5 → 7 slots). Machines remain deactivated throughout — they cannot consume items.
-- Steps 6→8 are one synchronous frozen-world completion and verdict pass. The old pipeline's ~15% pre-activation loss was historical and class-unisolated; R11 measured the current restoration path exact before activation, and five consecutive 1,359-entity transfers grounded the production ordering. A failure banks an always-on black box, then discards the destination unless the debug-gated preserve flag is explicitly armed.
+- Steps 6→8 are one synchronous frozen-world completion and verdict pass. Fluids are restored from the payload's fluid-segment registry (one `set_fluid_segment_fluid` write per segment) into the paused, `disabled_by_script` destination before the gate; there is no failed-member fluid accounting, so any missing member fails the exact gate and the source is preserved (fail => revert). A failure banks an always-on black box, then discards the destination unless the debug-gated preserve flag is explicitly armed. The historical ~15% pre-activation loss is retired (Pitfall #17, historical pre-activation fluid loss); the pad-transfer-suite workhorse census and strict gate exercise this ordering on 2.1.11.
 
 ## Factorio 2.0 Fluid API & Simulation Behavior
 

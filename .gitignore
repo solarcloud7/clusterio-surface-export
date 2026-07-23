@@ -40,6 +40,8 @@ docker/server-settings.json
 *.zip
 # Seed saves needed for CI integration tests
 !docker/seed-data/hosts/**/*.zip
+# Banked golden gallery saves (paired artifacts pinned by tests/lab-gallery/manifest.json)
+!docker/seed-data/lab-saves/*.zip
 
 # Built plugin artifacts (rebuild with npm run build)
 docker/seed-data/external_plugins/surface_export/dist/
