@@ -271,12 +271,13 @@ Evidence tags and measurement details are in
   restoration and count), or machines craft in the gap and produce false deltas. The import
   pipeline's phase ordering exists to guarantee this (see "Import Phase Ordering" in
   [CLAUDE.md](../CLAUDE.md)).
-- Reconciled conventions, applied on **both** sides of every comparison: any restoration write the engine
-  rejects is subtracted from expected (see
-  [fluid_restoration.lua](../docker/seed-data/external_plugins/surface_export/module/import_phases/fluid_restoration.lua)),
-  and engine-owned-category fluids (fusion plasma) are excluded
-  (`count_fluids(..., exclude_engine_owned)`). Note: fusion write rejection does not reproduce at 2.0.77
-  (fluid-lab R14); the exclusion's revision is the queued shared-accessor /di-change.
+- Reconciled conventions, applied on **both** sides of every comparison: the ONLY lawful subtraction from
+  expected fluids is a restoration write the engine physically rejected (`write_rejected`, see
+  [fluid_restoration.lua](../docker/seed-data/external_plugins/surface_export/module/import_phases/fluid_restoration.lua)).
+  There is **no engine-owned exclusion** — that connection-category classification was deleted (owner ruling
+  2026-07-20/21) and plasma rides a transfer like any other fluid; the census signature is
+  `count_fluids(surface, segment_temps)`. A category-based prediction is never a lawful subtraction: only a
+  physical post-write measurement is.
 
 ### Where each comparison runs today
 
