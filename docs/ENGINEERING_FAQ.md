@@ -175,12 +175,14 @@ anything else stays unexplained until measured. Never loosen the exact gate to m
 | Failure signature | Known class | Operator action |
 |---|---|---|
 | `items`; one belt-attributed item name; small, single-digit `LOST` delta | Belt restoration stack-1/compression floor | Retry the transfer **once**. The source is preserved by the failed gate. If the same signature repeats, stop retrying and retain the new black box for the belt-loss rung. |
-| `fluids`; mismatch is fusion plasma or another engine-managed output | Engine-owned fluid classification/exclusion issue | Do not compensate manually or relax the epsilon. Confirm the engine-owned category and symmetric export/restore/census exclusion for the current Factorio pin; preserve the source while correcting that classification. |
+| `fluids`; mismatch is fusion plasma or another machine-buffered fluid | **Real fluid loss** — plasma is not special | Treat it as genuine loss, not a classification artifact. Do not compensate manually, do not relax the epsilon, and do not "exclude" the fluid. The gate refused correctly and the source is preserved; retain the black box and investigate the capture/restore path for that segment. |
 | `items`; many unrelated names are `GAINED` together | Craft-window/non-frozen census | Treat this as an ordering or measurement failure, not created inventory. Check the black-box tick and paused/active state, and move the census back before any elapsed simulation tick. |
 
 The belt class is fail-closed and remains mechanistically `UNEXPLAINED`; the deterministic replay and recovery
-evidence live in the belt-lab NOTEBOOK (archived at git tag `labs-archive-2026-07-19`). Engine-owned fluid handling is covered by
-the `plasma-engine-owned` integration fixture. A retry is authorized only for the first row and only once.
+evidence live in the belt-lab NOTEBOOK (archived at git tag `labs-archive-2026-07-19`). Fluid handling — including
+plasma, which rides a transfer like any other fluid — is covered by the `fluid-segment-law` selftest, the
+`fusion-loop` pad, and the strict gate exercised by `pad-transfer-suite`. A retry is authorized only for the first
+row and only once.
 
 ## D. Data fidelity
 
