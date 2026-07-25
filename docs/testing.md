@@ -127,8 +127,8 @@ two measured transfer losses (item-request-proxy drop; display-panel configurati
 item/fluid gate is structurally blind to.
 
 Engine limitation: rendering texts (the pad name labels) are script state and cannot ride a transfer; delivery
-tooling (`tests/lab-gallery/deliver-omnibus.mjs`) redraws them from the manifest after a pad platform is
-delivered.
+tooling (`tests/lab-gallery/deliver-all-fixtures.mjs`) redraws them from the manifest after a pad platform
+is delivered.
 
 ### Single-use batch lifecycle
 
@@ -314,13 +314,12 @@ non-starters. Current policy, per family:
 | Cargo pods in flight | not frozen — **completed** by the lock before export scanning ("completes cargo pods", [export-pipeline.lua](../docker/seed-data/external_plugins/surface_export/module/core/export-pipeline.lua)); a mover is retired, not paused | code |
 | Ground items (`item-entity`) | static entities; no freeze needed | code |
 | Beacons (import side) | deliberately kept **active** through restoration so `crafting_speed` propagates to crafters before inventory refill (see "Import Phase Ordering" in [CLAUDE.md](../CLAUDE.md)) | code |
-| Inserter held items (import side) | per-inserter brief active-toggle inside one synchronous pass — no tick elapses, so no swing occurs (the gate must count a complete state, in [CLAUDE.md](../CLAUDE.md)) | measured |
+| Inserter held items (import side) | per-inserter brief active-toggle inside one synchronous pass — no tick elapses, so no swing occurs | measured |
 | Whole platform (`platform.paused`) | parks held destinations; does **not** stop belt drift on the held surface (the observation behind Black-Box Discard's snapshot-then-delete design) | measured |
 | Whole game (`game.tick_paused`) | labs and tests only; also halts the plugin's own async processing (`/step-tick` exists to step past it) | code |
 
 The strongest freeze is not a pause mechanism at all: **within a single Lua execution, zero ticks
-elapse and nothing in the simulation moves** (measured — see the no-tick-sync results referenced
-from entity activation before validation, in [CLAUDE.md](../CLAUDE.md)). Reads that
+elapse and nothing in the simulation moves** (measured). Reads that
 must be mutually consistent are placed in the same execution; freezing across ticks is required
 only when work cannot fit in one execution, and then only the families above that support it.
 
@@ -629,7 +628,8 @@ manual refresh needed). Tick each feature:
 
 #### 11.7 Icons / export-data sanity
 - [ ] Item / entity / fluid / planet icons render everywhere they appear (Logs details, tree, Import planet
-      picker). Blank `?` placeholders ⇒ the mod pack has no export-data — regenerate it (**web-UI icons blank — export-data/game-client**) and hard-refresh (the 404 is cached).
+      picker). Blank `?` placeholders ⇒ the mod pack has no export-data — regenerate it (the mod pack needs export-data, which requires the game client on the export host) and
+      hard-refresh (the 404 is cached).
 
 ### 12. Cleanup / reset
 

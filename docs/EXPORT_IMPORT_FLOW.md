@@ -343,8 +343,8 @@ controller for `TransferPlatformRequest`, `StartPlatformTransferRequest`, and
 5. **Cleanup.** On a validated transfer the controller asks the source instance to
    remove the source platform via a **`DeleteSourcePlatformRequest`**
    (`instance.ts` → `handleDeleteSourcePlatform`, which uses
-   `game.delete_surface(...)` — `platform.destroy()` is a no-op in Factorio 2.0, see
-   CLAUDE.md: platform.destroy() is a no-op — use GameUtils.delete_platform). On failure the source is unlocked via a
+   `game.delete_surface(...)` — `platform.destroy()` is a silent no-op, so teardown goes through
+   `GameUtils.delete_platform`). On failure the source is unlocked via a
    **`UnlockSourcePlatformRequest`** (`handleUnlockSourcePlatform`).
 
 In-game status messages are pushed to the source instance with

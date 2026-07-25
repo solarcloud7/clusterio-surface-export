@@ -27,11 +27,11 @@ Two jobs:
 ## Integration test flow
 
 1. **Build plugin** — `npm ci && npm run build` (TypeScript → `dist/node`, webpack → `dist/web`).
-2. **Lint** — `npm run lint` (eleven correctness guards: TS/eslint, Lua invariants, webpack-cache,
-   test-grounding, pcall-logging, catch-swallow, test-hooks, doc-refs, evidence-claims,
-   version-certification, allow-manifest — see the
-   guard list in CLAUDE.md "General Style"). A twelfth, `lint-commit-labels`, runs as its own PR-gated
-   step (docs commits must touch only doc paths).
+2. **Lint** — `npm run lint` (nine correctness guards: TS/eslint, Lua invariants, webpack-cache,
+   test-grounding, pcall-logging, catch-swallow, test-hooks, version-certification, allow-manifest — see
+   the guard list in CLAUDE.md "General Style"). A tenth, `lint-commit-labels`, runs as its own PR-gated
+   step (docs commits must touch only doc paths). (`doc-refs` and `evidence-claims` were deleted with the
+   pitfall/evidence corpus they policed.)
 3. **Test** — `npm test` (message round-trip + wire contract).
 4. **Resolve & verify pinned Factorio version** — see [Version pinning](#version-pinning-single-source-of-truth).
 5. **Build Factorio-baked host image** — see [Factorio in CI](#factorio-in-ci--why-we-bake-it).
@@ -98,11 +98,11 @@ cache-hit runs ~3 min.
 ### Version pinning (single source of truth)
 
 The baked version **must equal the instances' pinned `factorio.version`** (in both
-`docker/seed-data/hosts/.../instance.json`, currently `2.0.77`). Clusterio's host resolves the
+`docker/seed-data/hosts/.../instance.json`, currently `2.1.11`). Clusterio's host resolves the
 Factorio install by version (`findVersion` in `@clusterio/host`'s `server.js`): the multi-version
 `/opt/factorio` dir **downloads** the requested version if the baked one differs, and a *direct*
-install **throws** "Unable to find Factorio version X" — so an instance pinned to `2.0.77` must
-have `2.0.77` baked.
+install **throws** "Unable to find Factorio version X" — so an instance pinned to `2.1.11` must
+have `2.1.11` baked.
 
 **Single source + guard.** `host-1`'s `instance.json` is the canonical version. CI's **Resolve &
 verify** step reads it, passes it as the `FACTORIO_HEADLESS_TAG` build-arg, and **fails the build**

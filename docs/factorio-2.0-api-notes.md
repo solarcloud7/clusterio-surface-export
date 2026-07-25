@@ -38,10 +38,11 @@ When the official docs and our pinned engine disagree, the pinned-engine measure
 
 ## Fluid model at 2.1.11
 
-> The dev cluster and the plugin's fluid layer run **Factorio 2.1.11** (all instances since 2026-07-21);
-> the repo's certified pin (`tests/labs-certified.json`) is still 2.0.77 pending the re-certification
-> campaign. The laws below were measured by live fluid-law experiments on 2.1.11 (see the
-> `tests/lab-gallery/NOTEBOOK.md` entry dated 2026-07-21).
+> The dev cluster and the plugin's fluid layer run **Factorio 2.1.11** (all instances since 2026-07-21),
+> and `tests/labs-certified.json` is certified at 2.1.11 (`certified_at` 2026-07-21) — the
+> re-certification campaign landed, so `lint:version-certification` is green rather than pending.
+> The laws below were measured by live fluid-law experiments on 2.1.11; the running instrument is
+> `tests/integration/fluid-segment-law/run-tests.mjs`, which re-measures them on demand.
 
 - **`entity.fluidbox` is HARD-REMOVED — reading the attribute THROWS.** **[API]** Fluid access is index-based LuaEntity/LuaFluidBox methods: `fluids_count`, `get_fluid(i)`,
   `set_fluid(i, fluid)`, `has_fluid_segment(i)`, `get_fluid_segment_id(i)`, `get_fluid_segment_fluid(i)`,

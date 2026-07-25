@@ -39,6 +39,8 @@ All commands except `/plugin-import-file` require admin privileges. `[param]` is
 | `/test-entity` | `<json>` | Import a single entity from JSON for debugging |
 | `/test-entity-at` | `<x> <y> <json>` | Import a single entity at a specific position |
 | `/transaction-dashboard` | `[limit]` | Open the in-game transaction history GUI |
+| `/test-run` | `[name-filter]` | Reconcile the pushed manifest roster against the live map and run each fixture |
+| `/test-clear` | `[name-filter]` | Reset every gallery test cell on this surface (right-half sweep + waiting status) |
 
 ---
 

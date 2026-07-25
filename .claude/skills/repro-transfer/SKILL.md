@@ -67,4 +67,4 @@ Where it stops = the layer at fault:
 - `game.delete_surface(platform.surface)` is the only reliable platform delete — `platform.destroy()` is a silent no-op; use `GameUtils.delete_platform`.
 
 ## Reference
-- Reading logs: the **`/cluster-logs`** skill. CLAUDE.md → "Export/Import Workflow Notes", Pitfalls #19, #26.
+- Reading logs: the **`/cluster-logs`** skill. CLAUDE.md → "Export/Import Workflow Notes" and "Observability".

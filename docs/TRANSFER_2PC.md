@@ -3,7 +3,7 @@
 Single source of truth for how a cross-instance platform transfer stays safe under restarts, crashes, renames,
 and concurrency.
 
-Related: CLAUDE.md Pitfalls #15/#16/#28/#29/#30/#31, [ENGINEERING_FAQ.md](ENGINEERING_FAQ.md) (per-scenario
+Related: [ENGINEERING_FAQ.md](ENGINEERING_FAQ.md) (per-scenario
 behavior), [EXPORT_IMPORT_FLOW.md](EXPORT_IMPORT_FLOW.md) (the message-level flow trace).
 
 ## The core invariant
@@ -170,7 +170,7 @@ Legend: **S**=source, **D**=dest, **C**=controller; `{}` = source lock phase (Ph
 
 ## Critical files
 `module/utils/surface-lock.lua` (lock, scan_transfer_expiries, transfer_delete_identity_ok) ·
-`module/interfaces/remote/delete-platform-for-transfer.lua` (the sole source-delete) · `module/core/control.lua`
+`module/interfaces/remote/delete-platform-for-transfer.lua` (the sole source-delete) · `module/control.lua`
 (on_tick scan) · `module/core/transfer-trigger.lua` · `module/core/export-pipeline.lua` (universal lock stamp) ·
 `lib/transfer-orchestrator.ts` · `controller.ts`
 (observability store) · `messages.ts` · `instance.ts` · `scripts/lint-lua-invariants.mjs` (identity guard).

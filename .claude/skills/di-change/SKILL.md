@@ -97,5 +97,5 @@ node tools/run-integration-tests.mjs --only 'pad-transfer-suite'   # the sabotag
 ## Reference
 Related discipline memories (all in the project memory): `data-integrity-test-grounding`,
 `test-hook-mutating-must-be-fail-safe`, `check-commensurate-not-redundant`, `validation-timing-trilemma`,
-`held-items-non-conserved-test-the-total`, `verified-the-easy-part`. CLAUDE.md Pitfalls #15, #16, #28, #29, #30. The `/repro-transfer`
+`held-items-non-conserved-test-the-total`, `verified-the-easy-part`. The `/repro-transfer`
 skill reproduces a transfer end-to-end locally to exercise a change.
