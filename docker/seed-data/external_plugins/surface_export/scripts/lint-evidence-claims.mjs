@@ -61,7 +61,10 @@ const REPO_DIR = join(PLUGIN_DIR, "..", "..", "..", "..");
 const SELF = fileURLToPath(import.meta.url);
 
 const CLAIM_RE = /verified empirically|empirically (verified|measured|proven)|\[empirical/i;
-const CITATION_RE = /LAB-[A-Z]|R\d+[a-d]?|B\d\b|\b[0-9a-f]{7,}\b|Pitfall #\d+|api-notes/;
+// Pass-1 shapes. Now also matches the LAB-QUALIFIED form pass 2 requires ("hold-lab PR-0A",
+// "fluid-lab R12"), live-instrument citations, and the PR-0x rung format — none of which the
+// original pattern matched, so a correctly-qualified citation used to fail pass 1.
+const CITATION_RE = /[a-z][a-z0-9-]*-lab\s+\S|tests\/integration\/|pad\s+[a-z0-9-]+|LAB-[A-Z]|PR-0[A-Z]|R\d+[a-d]?|B\d\b|\b[0-9a-f]{7,}\b|Pitfall #\d+|api-notes/;
 const ALLOW_MARKER = "lint-evidence-claims:allow";
 const WINDOW = 3;
 

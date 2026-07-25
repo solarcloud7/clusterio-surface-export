@@ -30,7 +30,10 @@ When the official docs and our pinned engine disagree, the pinned-engine measure
 - [Fluid model at 2.1.11](#fluid-model-at-2111)
 - [Inventory sizing](#inventory-sizing)
 - [Item counting (get_item_count includes belts)](#item-counting)
+- [Belt transport-line laws (CANONICAL)](#belt-transport-line-laws-canonical--2026-07-17-recreation)
 - [Space platform deletion](#space-platform-deletion)
+- [Read-only entity properties](#read-only-entity-properties)
+- [Deactivated-entity state writes and control-behavior / equipment restore](#deactivated-entity-state-writes-and-control-behavior--equipment-restore)
 - [Read-only entity properties](#read-only-entity-properties)
 
 ## Fluid model at 2.1.11
@@ -40,11 +43,12 @@ When the official docs and our pinned engine disagree, the pinned-engine measure
 > campaign. The laws below were measured by live fluid-law experiments on 2.1.11 (see the
 > `tests/lab-gallery/NOTEBOOK.md` entry dated 2026-07-21).
 
-- **`entity.fluidbox` is HARD-REMOVED — reading the attribute THROWS.** **[empirical, 2.1.11, tests/integration/fluid-segment-law]** Fluid access is index-based LuaEntity/LuaFluidBox methods: `fluids_count`, `get_fluid(i)`,
+- **`entity.fluidbox` is HARD-REMOVED — reading the attribute THROWS.** **[API]** Fluid access is index-based LuaEntity/LuaFluidBox methods: `fluids_count`, `get_fluid(i)`,
   `set_fluid(i, fluid)`, `has_fluid_segment(i)`, `get_fluid_segment_id(i)`, `get_fluid_segment_fluid(i)`,
   `set_fluid_segment_fluid(i, fluid)`, `get_fluid_segment_capacity(i)`, `get_fluid_box_prototype(i)`,
   `fluidbox_neighbours`. **Segment getters THROW on a segmentless box** (2.0 returned `nil`) — always guard
   with `has_fluid_segment(i)` before any `get_fluid_segment_*` call.
+  **[empirical, 2.1.11, tests/integration/fluid-segment-law]** (rung: segment getters throw on segmentless)
 - **The buffer/window duality is GONE.** **[empirical, 2.1.11, tests/integration/fluid-segment-law]**
   `get_fluid_segment_fluid(i)` returns the EXACT single-fluid segment total from ANY member box at ANY
   instant — a thruster fuel box read 500 exact, and a fusion-reactor coolant box read 300→450 exact both
@@ -208,7 +212,7 @@ a segment) — they are not a capture blind spot at 2.1.11.
   `reset_technology_effects()`; no items appeared on the ground. Raise-only remains the import policy because
   an import should not lower unrelated destination state, not because a seated hand was observed ejecting.
 
-- **[empirical, 2.0.77, inserter-lab B6]** `held_stack.set_stack()` seating is **activation-independent**:
+- **[empirical, 2.0.77, inserter-lab B6 + pad inserter-held-capacity]** `held_stack.set_stack()` seating is **activation-independent**:
   a DEACTIVATED inserter (freshly created AND after 300+ ticks of settled deactivation) seats a full hand
   when force capacity allows (legendary bulk 8/8 at bulk bonus 11; plain 4/4 at stack bonus 3), and on a
   bonus-0 force the clamp is IDENTICAL inactive vs active (both 8→1). The prior lore — "set_stack silently
@@ -260,7 +264,7 @@ state-dimensions-lab NOTEBOOK, archived at git tag `labs-archive-2026-07-19`, an
   accepts `entity.energy = v` exactly; a deactivated reactor accepts `entity.temperature = v` exactly. None of
   these are item-counted, so they do not perturb the pre-activation exact gate. No relocation to activation.
 - **`LuaEquipment.shield` (and `.energy`) READS 0 on equipment with no such buffer, but WRITING throws.**
-  **[empirical, 2.0.77, pad omnibus-equipment-grid]** Reading `.shield` on non-shield equipment returns `0`
+  **[empirical, 2.0.77, pad omnibus-adversarial-inventory]** Reading `.shield` on non-shield equipment returns `0`
   (truthy in Lua), so a `~= nil` guard is a FALSE guard; writing `equipment.shield = v` on non-shield
   equipment throws `"Equipment is not shields."` and killed an import on_tick. Guard the write with pcall and
   capture shield/energy on export only when `> 0`.
@@ -268,13 +272,8 @@ state-dimensions-lab NOTEBOOK, archived at git tag `labs-archive-2026-07-19`, an
   **[empirical, 2.0.77, pad omnibus-circuit-config]** Restoring control-behavior config (circuit_condition,
   circuit_enable_disable) must use `get_or_create_control_behavior()`, or the settings are silently dropped
   for any entity whose CB is not yet instantiated at restore time (wires restore in a separate phase).
-- **`LuaEntity.disabled_by_control_behavior` (boolean) is unreliable; use `status`.** **[empirical, 2.0.77, pad omnibus-circuit-config]** A lamp genuinely disabled by its circuit condition reports
-  `status == defines.entity_status.disabled_by_control_behavior` (55) while the boolean property reads
-  `false`. Detect circuit-disabled state via `status`, not the property.
-- **`LuaGenericOnOffControlBehavior.circuit_condition` is written in the FLAT form.** **[empirical, 2.0.77, pad omnibus-circuit-config]** `cb.circuit_condition = {first_signal=..., comparator=..., constant=...}` takes
-  (reads back the signal); a nested `{condition={...}}` form does not.
 - **Recipe quality is `get_recipe()`'s SECOND return; `get_recipe_quality()` and the `recipe_quality`
-  attribute do NOT exist.** **[empirical, 2.0.77, state-dimensions-lab + pad omnibus-equipment-grid]** Both
+  attribute do NOT exist.** **[empirical, 2.0.77, state-dimensions-lab + pad omnibus-adversarial-inventory]** Both
   `entity.get_recipe_quality()` and `entity.recipe_quality` throw "doesn't contain key" — a pcall-probed
   capture or a safecall'd attribute write silently never works. Read quality via
   `local recipe, quality = entity.get_recipe()`; set it ATOMICALLY via `entity.set_recipe(name, quality)` —

@@ -175,6 +175,10 @@ function Gateway.evacuate_passengers(platform)
 	-- 1) Aboard players first (connected + disconnected) — physical_surface_index match. teleport moves the
 	-- player AND their character together; check the boolean return so a failed placement is counted, not lost.
 	local aboard_players = Gateway.collect_passengers(platform)
+	-- teleport(), NOT land_on_planet(): the engine's landing API is useless at a SURFACELESS gateway
+	-- (there is no platform surface to descend from), so it was evaluated and rejected — do not
+	-- "simplify" back to it. Likewise the game.players scan above IS the workaround: LuaSpacePlatform
+	-- exposes no players/characters accessor, so aboard detection must scan and filter.
 	for _, player in ipairs(aboard_players) do
 		local ref = (player.character and player.character.valid and player.character.name) or "character"
 		local ok, moved = pcall(function() return player.teleport(safe_pos(ref), dest) end)

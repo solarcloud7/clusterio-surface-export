@@ -625,7 +625,7 @@ EntityHandlers["mining-drill"] = function(entity)
   end
   
   -- FILTER (resource filter for mining drills). Measured 2026-07-17 at 2.0.77 (see the
-  -- mining-drill filter entry in docs/factorio-2.0-api-notes.md): get_filter REQUIRES the slot
+  -- mining-drill filter overload of LuaEntity.set_filter in the official API): get_filter REQUIRES the slot
   -- index (the old zero-arg call ALWAYS threw, silently killing this capture), every vanilla
   -- drill has filter_slot_count == 0 (only modded drills can reach the read), and a drill
   -- filter is an EntityID — no quality component. Resolve string/prototype shapes defensively.

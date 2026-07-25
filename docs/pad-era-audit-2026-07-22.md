@@ -118,7 +118,7 @@ is a **real fluid loss** that must fail the transfer and preserve the source. Th
 operator to treat it as a misclassification to be "corrected" — i.e. it advises explaining away a
 genuine data-loss signal. This is the single most dangerous item in the audit.
 
-Clean (correctly written as history, no action): `docs/factorio-2.0-api-notes.md:116`
+Clean (correctly written as history, no action): `docs/factorio-2.0-api-notes.md` (the 2.0.x fluid section, since purged)
 ("then-excluded"), `census-accumulator.lua:33` ("No engine-owned exclusion exists on either side").
 
 ---
