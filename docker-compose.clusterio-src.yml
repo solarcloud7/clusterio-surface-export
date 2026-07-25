@@ -1,5 +1,5 @@
 # Opt-in override: run a LOCALLY-BUILT Clusterio fork in the dev cluster instead of the published
-# alpha.27 image — so you can test a Clusterio core change alongside the surface_export plugin.
+# published image — so you can test a Clusterio core change alongside the surface_export plugin.
 #
 # This is NOT auto-loaded (only docker-compose.yml / docker-compose.override.yml are). It activates
 # only when you pass it explicitly with -f.
@@ -20,7 +20,7 @@
 # CLUSTERIO_SRC overrides the fork location (default: the sibling ../clusterio).
 #
 # COMPATIBILITY: the fork build must be API-compatible with what the dev cluster's pinned plugin
-# expects (currently @clusterio/* 2.0.0-alpha.27). To test against the current cluster, build the fork
+# expects (the version behind CLUSTERIO_IMAGE_TAG in .env). To test against the current cluster, build the fork
 # on a branch CLOSE to that release. A heavily-diverged branch (e.g. ExtendedExportData) may not drop
 # in cleanly — if it doesn't, use Clusterio's native pnpm dev env instead. See CLAUDE.md "Clusterio
 # core development".

@@ -77,6 +77,18 @@ jobs:
           # Set required values for CI
           sed -i 's/^INIT_CLUSTERIO_ADMIN=$/INIT_CLUSTERIO_ADMIN=ci-admin/' .env
 
+      - name: Resolve Clusterio image tag
+        id: clusterio_tag
+        # DERIVED, never restated. .env (from .env.example, one step above) is the single source
+        # for which base images this cluster runs; compose reads it directly, and the baked-host
+        # build-arg below reads it from here. A hardcoded tag in this workflow would be a second
+        # copy that silently wins when .env moves on.
+        run: |
+          v=$(grep -E '^CLUSTERIO_IMAGE_TAG=' .env | head -1 | cut -d= -f2-)
+          test -n "$v" || { echo "::error::CLUSTERIO_IMAGE_TAG missing from .env (.env.example)"; exit 1; }
+          echo "tag=$v" >> "$GITHUB_OUTPUT"
+          echo "Clusterio image tag: $v"
+
       - name: Resolve & verify pinned Factorio version
         id: factorio_version
         run: |
@@ -125,7 +137,7 @@ jobs:
           cache-from: type=gha,scope=factorio-headless
           cache-to: type=gha,mode=max,scope=factorio-headless
           build-args: |
-            HOST_IMAGE=ghcr.io/solarcloud7/clusterio-docker-host:2.0.0-alpha.27
+            HOST_IMAGE=ghcr.io/solarcloud7/clusterio-docker-host:${{ steps.clusterio_tag.outputs.tag }}
             FACTORIO_HEADLESS_TAG=${{ steps.factorio_version.outputs.version }}
 
       # (The "Build ApiVersions-patched controller image" step is gone. It existed solely to sed

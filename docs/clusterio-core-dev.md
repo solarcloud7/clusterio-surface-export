@@ -1,6 +1,6 @@
 # Clusterio Core Development
 
-This repo is a **plugin + dev cluster**; the dev cluster runs **published** `@clusterio/* 2.0.0-alpha.27`
+This repo is a **plugin + dev cluster**; the dev cluster runs the **published** `@clusterio/*` pinned by `CLUSTERIO_IMAGE_TAG` in `.env`
 baked into the `ghcr.io/solarcloud7/clusterio-docker-*` images. When you need to change **Clusterio core
 itself** (lib/host/controller/ctl), here is where that work lives and how to test it with `surface_export`.
 
@@ -30,7 +30,7 @@ repo, NOT an in-repo checkout (the old `FactorioSurfaceExport/clusterio` was ret
    # revert to the published image:  docker compose up -d --force-recreate
    ```
    **Compatibility caveat:** the fork build must be API-compatible with the plugin's pinned `@clusterio`
-   version (alpha.27). Build a branch CLOSE to that release; a heavily-diverged branch may not drop in — if
+   version (see `CLUSTERIO_IMAGE_TAG` in `.env`). Build a branch CLOSE to that release; a heavily-diverged branch may not drop in — if
    instances fail to start, use loop 1 instead. `CLUSTERIO_SRC` overrides the fork path (default `../clusterio`).
 
 ### Promoting a change

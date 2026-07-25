@@ -161,7 +161,16 @@ Locally you usually don't hit the Factorio-download issue: with `FACTORIO_USERNA
 same fast, credential-free cold-start CI uses, layer the baked image locally:
 
 ```powershell
-$env:COMPOSE_FILE = "docker-compose.yml:docker-compose.ci.yml"
-docker build -f docker/ci/Dockerfile.factorio-baked -t clusterio-docker-host:factorio-baked docker/ci
-docker compose up -d
+# COMPOSE_FILE separator is ';' on Windows and ':' on Linux. This block previously used ':' and
+# failed on Windows with "CreateFile ...docker-compose.yml:docker-compose.ci.yml: The system
+# cannot find the file specified." Explicit -f flags avoid the platform difference entirely.
+$tag = (Select-String '^CLUSTERIO_IMAGE_TAG=' .env).Line.Split('=')[1]
+docker build -f docker/ci/Dockerfile.factorio-baked `
+  --build-arg HOST_IMAGE="ghcr.io/solarcloud7/clusterio-docker-host:$tag" `
+  -t clusterio-docker-host:factorio-baked docker/ci
+docker compose -f docker-compose.yml -f docker-compose.ci.yml up -d
 ```
+
+`HOST_IMAGE` is required — `Dockerfile.factorio-baked` deliberately has no default so a stale
+base cannot be baked silently. The tag comes from `.env` (`CLUSTERIO_IMAGE_TAG`), the same
+single source compose and CI read.
