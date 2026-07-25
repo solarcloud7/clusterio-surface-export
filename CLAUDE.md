@@ -28,21 +28,20 @@ This project provides tools for exporting and importing Factorio Space Age platf
 - Host 1: `clusterio-host-1` → Instance: `clusterio-host-1-instance-1` (ports 34100-34109)
 - Host 2: `clusterio-host-2` → Instance: `clusterio-host-2-instance-1` (ports 34200-34209)
 - Runtime data in Docker volumes (not bind-mounted directories)
-- `factorio-client` external volume on host-1 (shared with clusterio-docker project, persists across `down -v`)
+- Client volume is **per-cluster and must NOT be shared**: ours is `factorio-client-2111` (external, survives `down -v`). External volume names are GLOBAL to the Docker host, so two clusters sharing one clobber each other's client install — the bare `factorio-client` belongs to another project on this machine, and atlas uses its own. Never mutate a volume you did not create.
 - Host-2 uses `SKIP_CLIENT=true` (no game client needed)
 - Seed data convention from [solarcloud7/clusterio-docker](https://github.com/solarcloud7/clusterio-docker)
 - **Seeding is idempotent**: Fixed in base image — `seed-instances.sh` checks if instance exists before creating, controller writes `.seed-complete` marker, hosts detect token desync. `docker compose restart` is safe; `docker compose down -v` for full wipe.
 
-**Base Image Capabilities** (from `solarcloud7/clusterio-docker`):
-- **Factorio download hardening**: SHA256 verification (optional), `--retry 8` on curl, `SHELL ["/bin/bash", "-eo", "pipefail", "-c"]`
-- **Game client support**: Two paths available:
-  - **Runtime download** (recommended): Set `FACTORIO_USERNAME` + `FACTORIO_TOKEN` env vars — host downloads the client on first startup into the `factorio-client` external volume. Persists across restarts and `docker compose down -v`.
-  - **Build-time bake**: `INSTALL_FACTORIO_CLIENT=true` build arg downloads during `docker build`. Credentials appear in `docker history` — only for private images.
-  - The game client enables Clusterio's export-data flow for graphical asset export (icon spritesheets). Only host-1 needs it; host-2 uses `SKIP_CLIENT=true`.
-- **External factorio-client volume**: Declared as `external: true` in docker-compose.yml. Must be created once with `docker volume create factorio-client`. Shared across projects (clusterio-docker and FactorioSurfaceExport use the same volume).
-- **Port range auto-derivation**: Host N → port range `34N00-34N99` (no manual port config needed)
-- **Mod seeding before instances**: Mods are uploaded to controller before instances are created/started
-- **External plugins must be read-write**: Mount without `:ro` — entrypoint runs `npm install` inside each plugin
+**Base image behavior** (Factorio download hardening, game-client paths, port auto-derivation, mod
+seeding, plugin-mount rules) is the base image's to document, not restated here — see
+`docs/consumer-integration.md` in [solarcloud7/clusterio-docker](https://github.com/solarcloud7/clusterio-docker)
+and its "Key Constraints" table. This section used to carry a curated copy of those facts; the copy
+drifted (it named the wrong client volume and recommended sharing it), so it was deleted rather than
+re-curated. The constraints worth repeating here are the ones that fail SILENTLY:
+- the controller's hostname must stay `clusterio-controller` — hosts default `CONTROLLER_URL` to it
+- the `external_plugins` mount must NOT be `:ro` — the entrypoint runs `npm install` inside it
+- pin the immutable `:<version>-rN` image tag; `:latest` and the bare `:<version>` MOVE on rebuild
 
 ## RCON Commands (PowerShell Profile Aliases)
 
