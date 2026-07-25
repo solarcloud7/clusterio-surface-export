@@ -188,7 +188,7 @@ isolated is UNEXPLAINED, not fixed.
 
 ## Clusterio Core Development
 
-This repo runs **published** `@clusterio/* 2.0.0-alpha.25` from the baked images. To change Clusterio core
+This repo runs **published** `@clusterio/* 2.0.0-alpha.27` from the baked images. To change Clusterio core
 itself (lib/host/controller/ctl): the canonical fork checkout is the SIBLING `../clusterio` (fork-based pnpm
 workflow, never an in-repo checkout). The two test loops (native pnpm dev env vs full-cluster Docker override
 via `./tools/rebuild-clusterio.ps1`) and the promotion paths are in

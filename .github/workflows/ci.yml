@@ -125,23 +125,14 @@ jobs:
           cache-from: type=gha,scope=factorio-headless
           cache-to: type=gha,mode=max,scope=factorio-headless
           build-args: |
-            HOST_IMAGE=ghcr.io/solarcloud7/clusterio-docker-host:2.0.0-alpha.25
+            HOST_IMAGE=ghcr.io/solarcloud7/clusterio-docker-host:2.0.0-alpha.27
             FACTORIO_HEADLESS_TAG=${{ steps.factorio_version.outputs.version }}
 
-      - name: Build ApiVersions-patched controller image
-        # CI STOPGAP: bakes the Factorio "2.1" whitelist into the controller's @clusterio/lib so the
-        # seed-time upload of the 2.1-flagged surfexp_gateways mod is accepted (the pinned alpha.25
-        # @clusterio hard-codes ApiVersions without "2.1"). docker-compose.ci.yml overrides the
-        # controller service to this local tag. NOT the durable fix — see the "durable @clusterio
-        # 2.1 fix" task (base-image bake + upstream PR, owner-authorized GHCR republish).
-        uses: docker/build-push-action@v7
-        with:
-          context: docker/ci
-          file: docker/ci/Dockerfile.controller-patched
-          tags: clusterio-docker-controller:patched
-          load: true
-          build-args: |
-            CONTROLLER_IMAGE=ghcr.io/solarcloud7/clusterio-docker-controller:2.0.0-alpha.25
+      # (The "Build ApiVersions-patched controller image" step is gone. It existed solely to sed
+      # Factorio "2.1" into alpha.25's @clusterio/lib ApiVersions so the seed-time upload of the
+      # 2.1-flagged surfexp_gateways mod would be accepted. alpha.27 ships "2.1" in the list, so the
+      # controller now runs the published image directly — no local tag, no override, one fewer
+      # image build per CI run.)
 
       - name: Create external factorio-client volume
         run: |

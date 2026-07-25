@@ -48,17 +48,17 @@
     "package.json"
   ],
   "peerDependencies": {
-    "@clusterio/controller": "2.0.0-alpha.25",
-    "@clusterio/ctl": "2.0.0-alpha.25",
-    "@clusterio/host": "2.0.0-alpha.25",
-    "@clusterio/lib": "2.0.0-alpha.25"
+    "@clusterio/controller": "2.0.0-alpha.27",
+    "@clusterio/ctl": "2.0.0-alpha.27",
+    "@clusterio/host": "2.0.0-alpha.27",
+    "@clusterio/lib": "2.0.0-alpha.27"
   },
   "devDependencies": {
-    "@clusterio/controller": "2.0.0-alpha.25",
-    "@clusterio/ctl": "2.0.0-alpha.25",
-    "@clusterio/host": "2.0.0-alpha.25",
-    "@clusterio/lib": "2.0.0-alpha.25",
-    "@clusterio/web_ui": "2.0.0-alpha.25",
+    "@clusterio/controller": "2.0.0-alpha.27",
+    "@clusterio/ctl": "2.0.0-alpha.27",
+    "@clusterio/host": "2.0.0-alpha.27",
+    "@clusterio/lib": "2.0.0-alpha.27",
+    "@clusterio/web_ui": "2.0.0-alpha.27",
     "@types/node": "^20.11.30",
     "@types/react": "^18.2.65",
     "@types/react-dom": "^18.2.22",

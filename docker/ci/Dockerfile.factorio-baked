@@ -16,7 +16,7 @@
 # The build layer is cached across runs via GitHub Actions cache (buildx type=gha), so the
 # Factorio download happens at most once per cache lifetime, not once per CI run.
 
-ARG HOST_IMAGE=ghcr.io/solarcloud7/clusterio-docker-host:2.0.0-alpha.25
+ARG HOST_IMAGE=ghcr.io/solarcloud7/clusterio-docker-host:2.0.0-alpha.27
 FROM ${HOST_IMAGE}
 
 # Headless version to bake. The single source of truth is host-1's `factorio.version`
@@ -37,14 +37,10 @@ RUN set -eux; \
     rm -f /tmp/factorio-headless.tar.xz; \
     test -x /opt/factorio/factorio/bin/x64/factorio
 
-# CI STOPGAP — whitelist Factorio "2.1" in @clusterio/lib's ApiVersions.
-# The pinned alpha.25 @clusterio/lib hard-codes ApiVersions WITHOUT "2.1" (verified in the base
-# image), so ModInfo validation rejects a 2.1-flagged mod with "Mod's info.json is not valid" when
-# the host prepares the instance's mods. This bakes the same one-line whitelist the local dev
-# cluster applies by hand (see the "cluster-on-2111-experimental" note) so a fresh CI host can load
-# the 2.1 surfexp_gateways gateway mod. NOT the durable fix — the base-image bake + upstream PR are
-# tracked separately (durable @clusterio 2.1 fix) and need an owner-authorized GHCR republish.
-RUN set -eux; \
-    f=/clusterio/node_modules/@clusterio/lib/dist/node/src/data/version.js; \
-    grep -q 'ApiVersions.*"2.1"' "$f" || sed -i '/exports.ApiVersions/ s/\("2\.0"\)\]/\1, "2.1"]/' "$f"; \
-    grep -q 'ApiVersions.*"2.1"' "$f"
+# NOTE: this file used to carry a second RUN that sed-patched Factorio "2.1" into @clusterio/lib's
+# ApiVersions, because alpha.25 hard-coded the list without it and ModInfo rejected the 2.1-flagged
+# surfexp_gateways mod. alpha.27 ships "2.1" in the list, so the stopgap is deleted rather than left
+# as an idempotent no-op. Verified in the pinned image:
+#   ApiVersions = ["0.13", …, "1.1", "2.0", "2.1"]
+# If a future base image regresses this, the failure is loud (seed-time "Mod's info.json is not
+# valid"), not silent — do not re-add a patch that would mask it.
