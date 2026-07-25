@@ -14,16 +14,11 @@
 # Activated in CI via `COMPOSE_FILE=docker-compose.yml:docker-compose.ci.yml`, after the CI
 # workflow builds + loads the baked image. `pull_policy: never` keeps `docker compose pull`
 # from trying to fetch this local-only tag from a registry.
+# NOTE: the controller is deliberately NOT overridden here. It used to point at a locally-built
+# `clusterio-docker-controller:patched` tag that sed'd Factorio "2.1" into alpha.25's @clusterio/lib
+# ApiVersions. alpha.27 ships "2.1", so the controller runs the published image from
+# docker-compose.yml unchanged — only the hosts need a local image, and only to bake Factorio.
 services:
-  # CI STOPGAP — points the controller at a locally-built image that whitelists Factorio "2.1" in
-  # @clusterio/lib's ApiVersions (see docker/ci/Dockerfile.controller-patched). Without it, the
-  # controller's seed-time upload of the 2.1-flagged surfexp_gateways mod fails "Mod's info.json is
-  # not valid". `pull_policy: never` keeps `docker compose pull` from fetching this local-only tag.
-  # NOT the durable fix (base-image bake + upstream PR); see the "durable @clusterio 2.1 fix" task.
-  surface-export-controller:
-    image: clusterio-docker-controller:patched
-    pull_policy: never
-
   surface-export-host-1:
     image: clusterio-docker-host:factorio-baked
     pull_policy: never
