@@ -16,7 +16,12 @@
 # The build layer is cached across runs via GitHub Actions cache (buildx type=gha), so the
 # Factorio download happens at most once per cache lifetime, not once per CI run.
 
-ARG HOST_IMAGE=ghcr.io/solarcloud7/clusterio-docker-host:2.0.0-alpha.27
+# REQUIRED — deliberately no default. This used to carry its own copy of the image tag under a
+# comment telling the next human to "keep it equal to the pin", which is a maintained duplicate
+# and exactly how a stale base gets baked silently. The single source is CLUSTERIO_IMAGE_TAG in
+# .env (see .env.example); CI derives this arg from it. An unset ARG fails the build loudly,
+# which is strictly better than baking the wrong base.
+ARG HOST_IMAGE
 FROM ${HOST_IMAGE}
 
 # Headless version to bake. The single source of truth is host-1's `factorio.version`
