@@ -24,9 +24,10 @@ This project provides tools for exporting and importing Factorio Space Age platf
 
 **Current Cluster Configuration:**
 - Uses pre-built images from `ghcr.io/solarcloud7/clusterio-docker-controller` and `ghcr.io/solarcloud7/clusterio-docker-host`
-- Controller: `clusterio-controller` (Web UI: http://localhost:8080)
-- Host 1: `clusterio-host-1` → Instance: `clusterio-host-1-instance-1` (ports 34100-34109)
-- Host 2: `clusterio-host-2` → Instance: `clusterio-host-2-instance-1` (ports 34200-34209)
+- **`docker exec` takes the CONTAINER name (`surface-export-*`), NOT the hostname.** The `clusterio-*` names are `hostname:` values — how services find each other on the Docker network and how Clusterio derives host IDs. `docker exec clusterio-host-1 …` fails with "No such container".
+- Controller: container `surface-export-controller`, hostname `clusterio-controller` (Web UI: http://localhost:8080)
+- Host 1: container `surface-export-host-1`, hostname `clusterio-host-1` → Instance: `clusterio-host-1-instance-1` (ports 34100-34109)
+- Host 2: container `surface-export-host-2`, hostname `clusterio-host-2` → Instance: `clusterio-host-2-instance-1` (ports 34200-34209)
 - Runtime data in Docker volumes (not bind-mounted directories)
 - Client volume is **per-cluster and must NOT be shared**: ours is `factorio-client-2111` (external, survives `down -v`). External volume names are GLOBAL to the Docker host, so two clusters sharing one clobber each other's client install — the bare `factorio-client` belongs to another project on this machine, and atlas uses its own. Never mutate a volume you did not create.
 - Host-2 uses `SKIP_CLIENT=true` (no game client needed)
@@ -81,7 +82,7 @@ docker exec surface-export-controller npx clusterioctl --log-level error instanc
 
 The plugin uses **TypeScript** with bind-mounted source and **save patching** for Lua:
 - Plugin location: `docker/seed-data/external_plugins/surface_export/`
-- Mounted into containers via `external_plugins/` volume (auto-installed by base image)
+- **Bind-mounted** into containers at `/clusterio/external_plugins` (not a named volume — the distinction the @clusterio-singleton hazard rests on); plugins are auto-installed by the base image
 - Contains TypeScript plugin code (`*.ts`), React web UI (`web/`), and Lua `module/` directory
 - Build output: `dist/node/` (Node.js runtime), `dist/web/` (browser bundle)
 
@@ -134,7 +135,7 @@ node tools/run-integration-tests.mjs                 # or:  --only 'gateway' / -
 ./tools/list-platforms.ps1
 . ./tools/cluster-utils.ps1                       # dot-source for Send-RCON / Get-InstanceList
 
-# Import an export file: use the web UI "Import JSON" (Manual Transfer / Exports tab) or the in-game
+# Import an export file: use the web UI "Import JSON" (Manual Transfer tab) or the in-game
 # /plugin-import-file <file> <name> command — both chunk automatically. There is no CLI import script.
 ```
 
@@ -202,14 +203,17 @@ opt-in fork override); all environment config in gitignored `.env`.
 
 ### Build Architecture
 
-- **Language**: TypeScript 5.5.4 (strict mode) for plugin code, Lua 5.2 for Factorio module
+- **Language**: TypeScript 5.x (`^5.5.4`; the lockfile resolves 5.9.3), strict mode, for plugin code; Lua 5.2 for the Factorio module
 - **Runtime entrypoints**: `index.ts` declares `instanceEntrypoint: "dist/node/instance"`, etc.
 - **Build pipeline**: `npm run build` compiles TypeScript → `dist/node/*.js` and bundles React → `dist/web/*`
-- **Clean source tree**: Only `.ts` and `.jsx` files in source directories; all generated artifacts in `dist/`
+- **Clean source tree**: Only `.ts` and `.tsx` files in source directories; all generated artifacts in `dist/`
 - **Deploy integration**: `deploy-cluster.ps1` runs `npm run build` before Docker compose up
 - **Git hygiene**: `dist/` is gitignored; fresh builds ensure consistency
-- **Tests**: `npm test` (gated in CI) builds `dist/node` then runs the message round-trip harness
-  (`test/messages.roundtrip.test.cjs`, built-in `node --test`, zero deps). It self-discovers every
+- **Tests**: `npm test` (gated in CI) builds `dist/node` then runs **17 test files** under built-in
+  `node --test` (zero deps) — not just the wire contract. They include transfer-orchestrator rollback,
+  transfer-lock state, canonical identity, destination-hold, persistence-read-failure, census-meter,
+  verdict-aware fidelity and the guard self-tests, so a regression in any of those fires here.
+  The message round-trip harness (`test/messages.roundtrip.test.cjs`) self-discovers every
   message class in `messages.ts` and, per class, asserts the static wire contract
   (`plugin/type/src/dst/jsonSchema/fromJSON`), a stable `toJSON`→`fromJSON` round-trip, and that
   `toJSON` fields agree with `jsonSchema` (catches the field-drift / "Unregistered Event class" /
@@ -282,13 +286,13 @@ a reachability spike. Covered by `tests/integration/passenger-evacuate`; design 
 ## Export/Import Workflow Notes (Current)
 
 ### Export for download
-- UI path: Manual Transfer per-platform **Export JSON** and Exports tab download action.
+- UI path: Manual Transfer per-platform **Export JSON**. (There is no "Exports" tab — the tabs are Manual Transfer / Transaction Logs / Gateways.)
 - Controller path: `ExportPlatformForDownloadRequest` sends `ExportPlatformRequest` with `targetInstanceId: null`.
 - Instance/Lua path: destination must be Lua `nil` for export-only; otherwise export is treated as transfer.
 - Export-only jobs unlock the source platform after completion; transfer jobs keep source locked until cleanup.
 
 ### Upload-import JSON
-- UI path: Manual Transfer per-instance **Import JSON** and Exports tab upload/import action.
+- UI path: Manual Transfer per-instance **Import JSON**.
 - Controller path: `ImportUploadedExportRequest` forwards payload via `ImportPlatformRequest` to target instance.
 - Controller injects `_operationId` into payload; Lua emits completion with `operation_id`.
 - Instance forwards `ImportOperationCompleteEvent` to controller so non-transfer imports can complete their transaction logs.
@@ -327,7 +331,7 @@ For Clusterio core architecture, see [Clusterio docs](https://github.com/cluster
 - Save patching to inject Clusterio code at runtime
 - RCON protocol for server communication
 - JSON serialization for data exchange
-- Lua modules located in `/packages/host/modules/` and `/packages/host/lua/`
+- This repo's Lua lives in `docker/seed-data/external_plugins/surface_export/module/`. (`/packages/host/modules/` and `/packages/host/lua/` are Clusterio-core paths in the sibling fork, not here.)
 - **Clusterio API path**: Always `require("modules/clusterio/api")` for save-patched modules (the Clusterio API require path)
 - **Clusterio send_json event channel (Lua→Node)**: `clusterio_api.send_json("channel_name", data_table)` — plugin listens via `server.handle("channel_name", handler)`
 - **RCON transport (Node→Lua)**: `this.sendRcon("/sc ...")` to execute Lua via RCON
@@ -336,7 +340,7 @@ For Clusterio core architecture, see [Clusterio docs](https://github.com/cluster
 
 ### General Style (partially enforced by ESLint — `npm run lint`, gated in CI)
 
-> `npm run lint` runs nine **correctness** guards, all gated in CI; a twelfth (**commit labels**,
+> `npm run lint` runs nine **correctness** guards, all gated in CI; a tenth (**commit labels**,
 > `scripts/lint-commit-labels.mjs`) runs as its own PR-gated CI step. Each script header carries the full
 > rationale and incident history. Every `*:allow` escape hatch MUST be enumerated in
 > `scripts/lint-allow-manifest.json` with a reason and approver — an allow is an **escalation**, never
@@ -344,13 +348,13 @@ For Clusterio core architecture, see [Clusterio docs](https://github.com/cluster
 >
 > | Guard | Command | Rule | Allow marker |
 > |-------|---------|------|--------------|
-> | TS | `lint:js` (eslint) | never extract/cast a Link method — `call-link-methods-bound` (#26); no empty catch or bare `.catch(() => {})` | eslint-disable |
-> | Lua invariants | `lint:lua` | no `global.*` — `storage-not-global` (#4); no `__clusterio_lib__` — `clusterio-api-require-path` (#12); no `platform.destroy()` — `platform-destroy-noop` (#19); no name-keyed transfer identity — `identity-is-surface-index` (#31) | `-- lint-lua:allow` |
+> | TS | `lint:js` (eslint) | never extract/cast a Link method (unnamed `no-restricted-syntax` selectors, `eslint.config.js`); no empty catch or bare `.catch(() => {})` | eslint-disable |
+> | Lua invariants | `lint:lua` | no `global.*` — `no-global-persistence-table`; no `__clusterio_lib__` — `no-clusterio-lib-mod-path`; no `platform.destroy()` — `no-platform-destroy`; no name-keyed transfer identity — `no-name-as-transfer-identity` | `-- lint-lua:allow` |
 > | Web cache | `lint:web-cache` | webpack output filenames stay content-hashed (immutable 1y `/static` cache serves stale chunks otherwise) | `lint-webpack-cache:allow` |
 > | Test grounding | `lint:test-grounding` | fidelity/gate tests measure PHYSICALLY, never the validator self-report alone; success-path = parse `debug_import_result` + `Assert-TransferSucceeded` before census | `lint-test-grounding:allow` |
 > | pcall logging | `lint:pcall-logging` | every `pcall` surfaces its error or is an annotated `-- intentional probe` | `-- pcall:allow` |
 > | Catch swallow | `lint:catch-swallow` | no TS catch substitutes a default without surfacing the error binding | `// catch:allow` |
-> | Test hooks | `lint:test-hooks` | a `test_force_*` hook disarms in `finally`/`trap` or is enumerated in `FAIL_SAFE_HOOKS` — `test-hooks-fail-safe-on-leak` (#30) | `FAIL_SAFE_HOOKS` entry |
+> | Test hooks | `lint:test-hooks` | a `test_force_*` hook disarms in `finally`/`trap` or is enumerated in `FAIL_SAFE_HOOKS` (`scripts/fail-safe-hooks.mjs`) | `FAIL_SAFE_HOOKS` entry |
 > | Allow manifest | `lint:allow-manifest` | manifest matches reality exactly, both directions | — |
 > | Version certification | `lint:version-certification` | pinned Factorio version == `tests/labs-certified.json`; a pin bump goes red until the re-certification campaign lands | none — recertify |
 > | Commit labels | (own CI step) | a `docs:`-labeled commit touches only doc paths — labels are audit boundaries | — |
@@ -402,7 +406,9 @@ Project invariants that still bite if changed:
   incident; do not restate belt physics elsewhere, point there. Summary only: the fidelity unit is one
   continuous belt lane/side (`(name, quality, stack count)` multiset; position/order/window are NOT
   invariants). The root cause of the historical belt restore loss class is the `insert_at` write-frame
-  offset (= one tick of `belt_speed`, tier-parametric — BELT-R10); side-scoped reverse first-fit with the
+  offset (= one tick of `belt_speed`, tier-parametric — BELT-R10, measured at **2.0.77** and per
+  `tests/labs-certified.json` NOT re-isolated on the 2.1.11 pin — re-measure before building on the value);
+  side-scoped reverse first-fit with the
   `belt_speed` k-floor reconstructs exactly, including filtered-splitter purity (BELT-R11/R12, committed
   runners; production adoption pending the DUP-233855 kill-measurement). Engine transport-line identity is
   still NOT a cross-import key (BELT-R9); populated-source same-execution `line_equals` grouping IS the
@@ -422,33 +428,32 @@ Project invariants that still bite if changed:
   fluids (`epsilon=1e-6`). See docs/factorio-2.0-api-notes.md fluid section.
 - **Entity inventory size** isn't changed by `LuaInventory.resize` (custom inventories only).
   `LuaEntity.set_inventory_size_override` overrides **container** sizes but is a **no-op for crafter inputs**
-  at 2.0.76 (verified) — so it is *not* a lever for overloaded-crafter-input loss (already handled by the
+  at 2.0.76 (verified there; **not re-verified on the 2.1.11 pin**) — so it is *not* a lever for overloaded-crafter-input loss (already handled by the
   beacon-first ordering). See the API notes.
 
 ### Import Phase Ordering (Critical)
-The order of post-processing steps in `complete_import_job()` is critical for correctness:
+The order of post-processing steps in `ImportCompletion.run_phase1` / `run_phase2` (`module/core/import-completion.lua:180,222`) is critical for correctness:
 
 ```
 1. Hub inventories        — restore after cargo bays exist (inventory size scales with bays)
 2. Belt items             — belts keep moving (active-writes rejected, BELT-R13); single-tick restore is
                             the current conservative implementation (see the canonical belt section)
 3. Entity state           — control behavior, filters, circuit connections
-4. Beacon activation      — activate beacons so crafting_speed bonus propagates instantly
-5. Inventories (2 passes) — Pass 1: beacons (populates beacon_modules, crafting_speed updates immediately)
+4. Inventories (2 passes) — Pass 1: beacons (populates beacon_modules, crafting_speed updates immediately)
                             Pass 2: everything else (set_stack cap now reflects beacon-boosted cs)
-6. Held-item completion   — inserter-only synchronous pass (single owner of held seating; activation-independent, inserter-lab B6); no tick advances
-7. Fluid restoration      — write the payload's fluid-segment registry (one set_fluid_segment_fluid per
+5. Held-item completion   — inserter-only synchronous pass (single owner of held seating; activation-independent, inserter-lab B6); no tick advances
+6. Fluid restoration      — write the payload's fluid-segment registry (one set_fluid_segment_fluid per
                             segment; segmentless storages via set_fluid) while the platform stays paused and
                             entities disabled_by_script; plasma rides like any fluid, no engine-owned subtraction
-8. Exact validation       — one immutable verdict: exact items + by-name fluids
-9. Activation             — only after the verdict passes; then gateway park if requested
-10. Loss analysis         — post-activation reporting under `postActivationReport`; never changes verdict
+7. Exact validation       — one immutable verdict: exact items + by-name fluids
+8. Activation             — only after the verdict passes; then gateway park if requested
+9. Loss analysis          — post-activation reporting under `postActivationReport`; never changes verdict
 ```
 
 **Why this order matters**:
-- Step 4 (beacon activation): beacons are kept active during entity creation (never deactivated). Phase 2 explicitly activates them and fills their energy buffer. This is necessary but not sufficient — beacons need their **module inventory populated** before `crafting_speed` reflects the beacon bonus.
-- Step 5 (inventories, 2 passes): The two-pass approach is critical. `crafting_speed` on a machine updates **immediately** when its nearby beacon's `beacon_modules` inventory is populated — no tick delay, no power required. Pass 1 populates all beacon modules. Pass 2 then restores crafter inputs with `set_stack()`, which uses the now-correct beacon-boosted cap (e.g. cs=17.375 → 12 slots instead of cs=2.5 → 7 slots). Machines remain deactivated throughout — they cannot consume items.
-- Steps 6→8 are one synchronous frozen-world completion and verdict pass. Fluids are restored from the payload's fluid-segment registry (one `set_fluid_segment_fluid` write per segment) into the paused, `disabled_by_script` destination before the gate; there is no failed-member fluid accounting, so any missing member fails the exact gate and the source is preserved (fail => revert). A failure banks an always-on black box, then discards the destination unless the debug-gated preserve flag is explicitly armed. The historical ~15% pre-activation loss is retired (historical pre-activation fluid loss); the pad-transfer-suite workhorse census and strict gate exercise this ordering on 2.1.11.
+- There is **no beacon-activation step** — this list used to claim one. Beacons are simply never deactivated during entity creation (`module/import_phases/entity_creation.lua:116`), and nothing fills an energy buffer. `import-completion.lua:211-213` states it directly: populating `beacon_modules` in Pass 1 "immediately updates crafting_speed on nearby machines — no pre-activation needed."
+- Step 4 (inventories, 2 passes): The two-pass approach is critical. `crafting_speed` on a machine updates **immediately** when its nearby beacon's `beacon_modules` inventory is populated — no tick delay, no power required. Pass 1 populates all beacon modules. Pass 2 then restores crafter inputs with `set_stack()`, which uses the now-correct beacon-boosted cap (e.g. cs=17.375 → 12 slots instead of cs=2.5 → 7 slots). Machines remain deactivated throughout — they cannot consume items.
+- Steps 5→7 are one synchronous frozen-world completion and verdict pass. Fluids are restored from the payload's fluid-segment registry (one `set_fluid_segment_fluid` write per segment) into the paused, `disabled_by_script` destination before the gate; there is no failed-member fluid accounting, so any missing member fails the exact gate and the source is preserved (fail => revert). A failure banks an always-on black box, then discards the destination unless the debug-gated preserve flag is explicitly armed. The historical ~15% pre-activation loss is retired (historical pre-activation fluid loss); the pad-transfer-suite workhorse census and strict gate exercise this ordering on 2.1.11.
 
 ## Factorio 2.0 Fluid API & Simulation Behavior
 
