@@ -35,7 +35,7 @@ Two jobs:
 3. **Test** — `npm test` (message round-trip + wire contract).
 4. **Resolve & verify pinned Factorio version** — see [Version pinning](#version-pinning-single-source-of-truth).
 5. **Build Factorio-baked host image** — see [Factorio in CI](#factorio-in-ci--why-we-bake-it).
-6. **Create `factorio-client` volume** — compose declares it `external: true`; CI has no
+6. **Create `factorio-client-2111` volume** — compose declares it `external: true`; CI has no
    game client, but the volume must exist or `docker compose up` fails with
    "external volume not found".
 7. **Start cluster** — `docker compose up -d`, then wait for controller health.
@@ -157,7 +157,7 @@ node tests/integration/pad-transfer-suite/run-tests.mjs
 
 Locally you usually don't hit the Factorio-download issue: with `FACTORIO_USERNAME` /
 `FACTORIO_TOKEN` set, host-1 caches the game client in the persistent external
-`factorio-client` volume (which survives `down -v`), and you rarely `down -v`. To get the
+`factorio-client-2111` volume (which survives `down -v`), and you rarely `down -v`. To get the
 same fast, credential-free cold-start CI uses, layer the baked image locally:
 
 ```powershell

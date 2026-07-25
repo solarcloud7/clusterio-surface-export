@@ -382,7 +382,7 @@ A transfer is **correct** when, on the destination, all of the following hold an
 ### 1. Prerequisites — bring the cluster up
 
 ```pwsh
-docker volume create factorio-client          # one-time
+docker volume create factorio-client-2111     # one-time
 docker compose up -d                            # or: ./tools/deploy-cluster.ps1 -SkipIncrement -KeepData
 ./tools/show-cluster-status.ps1                 # controller healthy + both instances running
 ```
