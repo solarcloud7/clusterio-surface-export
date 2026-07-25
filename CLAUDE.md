@@ -339,7 +339,7 @@ never renumber). Statuses: unmarked = active law; *(historical)* = fixed, lesson
 | 11 | `port-range-auto-derived` | Fixed in base image: host N auto-derives ports 34N00-34N99; compose mappings must match *(historical)* | — |
 | 12 | `clusterio-api-require-path` | require("modules/clusterio/api") — never __clusterio_lib__ (not a mod; save-patched under modules/) | `lint:lua` |
 | 13 | `debug-mode-lost-on-save-reset` | debug_mode lives in the save; on_init defaults it true for FRESH saves only — patch-and-reset or configure() to re-enable | — |
-| 14 | `instance2-minimal-seed` | Host-2's seed save has a platform stub with no physical hub — it is the import target, not an export source | — |
+| 14 | `instance2-minimal-seed` | The seed saves ARE the banked gallery pair: host-2 seeds from the 0-entity destination save and is the import target, never an export source; host-1 boots the pad grid + the 1359-entity lab-transfer-fixture-v1 that tests clone from | — |
 | 15 | `validate-before-activation` | The gate counts BEFORE any elapsed tick after activation — active machines craft in the gap and fake GAINS; activation only after the verdict | `gate-item-loss` pad (pad-transfer-suite) |
 | 16 | `atomic-belt-scan` | Belts keep moving (active-writes rejected): belt items must be extracted in ONE atomic tick, verification built from that consistent serialized data | — |
 | 17 | `pre-activation-fluid-loss` | RETIRED by the 2.1 fluid-segment registry — the old ~15% pre-activation loss (class never isolated) no longer applies; fluids restore in the frozen disabled_by_script world via set_fluid_segment_fluid before the single exact gate, no live-world restoration needed *(historical)* | — |

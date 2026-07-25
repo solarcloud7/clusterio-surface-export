@@ -24,7 +24,7 @@
     gateway record still present); without discover_and_unlock the route to the gateway fails (A flips).
 
 .PARAMETER SourcePlatform
-    Platform to clone as the transfer subject (default: test — a realistic, schedule-bearing platform).
+    Platform to clone as the transfer subject (default: lab-transfer-fixture-v1 — a realistic, schedule-bearing platform from the seeded gallery pair).
 .PARAMETER Gateway
     Gateway space-location to park at + transfer through (default: surfexp_gateway_1).
 .PARAMETER EntityTolPct
@@ -33,7 +33,7 @@
     Max seconds to wait for the destination import-result (default: 180).
 #>
 param(
-    [string]$SourcePlatform = "test",
+    [string]$SourcePlatform = "",
     [string]$Gateway = "surfexp_gateway_1",
     [double]$EntityTolPct = 0.02,
     [int]$TimeoutSec = 180
@@ -42,6 +42,7 @@ param(
 $ErrorActionPreference = "Stop"
 $ModulePath = Join-Path (Split-Path -Parent $PSScriptRoot) "lib\TestBase.psm1"
 Import-Module $ModulePath -Force
+if (-not $SourcePlatform) { $SourcePlatform = Get-TransferFixturePlatform }
 $repoRoot = Split-Path -Parent (Split-Path -Parent (Split-Path -Parent $PSScriptRoot))
 
 Write-TestHeader "🛰  Gateway Transfer (park at gateway -> transfer -> arrive paused, hop stripped)"
@@ -60,6 +61,22 @@ Write-Host ""
 $failed = 0
 $TOTAL_ASSERTIONS = 9
 $normClone = $null   # 2nd clone (normal-transfer regression); cleaned in finally
+
+# Fuel every thruster on a platform — a TEST-OWNED PRECONDITION, not a fixture assumption.
+# Flying to a gateway burns thruster fuel, and the fixture carries only what it happens to be baked
+# with (measured 2026-07-25: lab-transfer-fixture-v1 ~2442 fuel / ~2386 oxidizer, vs 9000/9000 on the
+# retired `test` seed). Inheriting ambient save fuel made this test fail as "route failed" when the
+# seed changed — a starting-state dependency, not a gateway bug. ONE helper, called for EVERY clone
+# this test routes: the first fix fueled only the main clone and the regression clone still starved.
+function Set-ThrusterFuel([string]$instance, [int]$platformIndex, [string]$label) {
+    $lua = "local p=game.forces['player'].platforms[$platformIndex] local n=0 " +
+           "for _,t in pairs(p.surface.find_entities_filtered{name='thruster'}) do " +
+           "for i=1,t.fluids_count do local f=t.get_fluid(i) " +
+           "local nm=(f and f.name) or (i==1 and 'thruster-fuel' or 'thruster-oxidizer') " +
+           "if pcall(function() t.set_fluid(i,{name=nm,amount=1000}) end) then n=n+1 end end end rcon.print('fueled '..n)"
+    Write-Status "Fueling '$label' thrusters (test-owned precondition)..." -Type info
+    Invoke-Lua -Instance $instance -Code $lua | Out-Null
+}
 
 # Physical entity count on a named platform (independent of any validator self-report).
 function Get-EntityCount([string]$instance, [string]$name) {
@@ -102,6 +119,8 @@ try {
     Start-Sleep -Seconds 1
     $idx = Get-PlatformIndex -Instance $srcInstance -PlatformName $clone
     if (-not $idx) { Write-Status "Clone did not materialize" -Type error; exit 1 }
+
+    Set-ThrusterFuel $srcInstance $idx $clone
 
     # ---- Route the clone to the gateway with a holding wait condition; wait until it PARKS there. ----
     Write-Status "Routing '$clone' -> '$Gateway' (holding wait condition)..." -Type info
@@ -217,7 +236,8 @@ try {
     $nidx = Get-PlatformIndex -Instance $srcInstance -PlatformName $normClone
     if (-not $nidx) { Write-Status "Regression clone did not materialize" -Type error; exit 1 }
 
-    # Park it at the gateway (same technique as the main scenario).
+    # Park it at the gateway (same technique as the main scenario) — fuel it FIRST, same as the main clone.
+    Set-ThrusterFuel $srcInstance $nidx $normClone
     Invoke-Lua -Instance $srcInstance -Code "local p=game.forces['player'].platforms[$nidx] local s=p.get_schedule() local i=s.add_record({station='$Gateway', wait_conditions={{type='time', ticks=7200, compare_type='or'}}}) s.go_to_station(i) s.set_stopped(false) rcon.print('routed')" | Out-Null
     $nparked = $false
     for ($i = 0; $i -lt 40; $i++) {

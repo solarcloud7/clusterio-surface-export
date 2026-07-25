@@ -255,14 +255,21 @@ local function run_pad_body(player, surface, cell, fixture, dispatch, roster, ct
   end
 
   -- act dispatch. The default copy-paste act keeps the historical copy/paste/audit + paste
-  -- fingerprint block verbatim (verify then reads the pasted +14 half); a transfer/clone act is
-  -- owned by the pad-transfer-suite and skipped in-game; an op-list act runs via the engine in place
-  -- (verify then reads the mutated left half).
+  -- fingerprint block verbatim (verify then reads the pasted +14 half); a transfer/clone act runs
+  -- that SAME instance-local block (see below) while its declared verify stays owned by
+  -- pad-transfer-suite; an op-list act runs via the engine in place (verify reads the mutated left half).
   local act = (has_lc and fixture.lifecycle.act) or "copy-paste"
   local verify_dx = 0
-  if has_lc and (act == "transfer" or act == "clone") then
-    return "skipped", "transfer act (pad-transfer-suite)"
-  elseif has_lc and type(act) == "table" then
+  -- A transfer/clone act used to RETURN here, which silently dropped this pad's instance-local
+  -- coverage: the copy/paste/audit delta (b) and the paste-half fingerprint (c). Only the LEFT
+  -- fingerprint above survived. Those two are instance-local and independent of the transfer, so a
+  -- transfer pad runs them too — the promotion of a pad to transfer-act is now a pure ADD.
+  -- What a transfer pad does NOT run here is its DECLARED verify (d): those checks describe the
+  -- dest/source ends of a REAL cross-instance transfer (arrived platform, discarded dest, preserved
+  -- source) and are owned by tests/integration/pad-transfer-suite. Evaluating them against a local
+  -- pasted half would be meaningless and would fail honest fixtures.
+  local transfer_act = has_lc and (act == "transfer" or act == "clone")
+  if has_lc and type(act) == "table" then
     local ok_a, act_err = LifecycleEngine.run_act(surface, fixture, ctx)
     if not ok_a then
       set_status(cell.text_obj, comb, panel, "fail", "act error")
@@ -338,7 +345,7 @@ local function run_pad_body(player, surface, cell, fixture, dispatch, roster, ct
   -- report_delta); a failing check flips the verdict. No-lifecycle fixtures keep the old pass path
   -- (detail nil), so their verdicts are byte-identical to before this change.
   local detail = nil
-  if has_lc then
+  if has_lc and not transfer_act then
     local result = LifecycleEngine.run_verify(surface, fixture, ctx, { dx = verify_dx })
     local parts = {}
     for _, c in ipairs(result.checks) do
