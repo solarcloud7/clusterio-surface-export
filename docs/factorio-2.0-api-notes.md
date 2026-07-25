@@ -13,13 +13,17 @@ API reference.
 - **What earns a place:** behavior discovered by measurement — segment semantics, belt transport-line laws,
   counting completeness, ordering/freeze effects — i.e. the things that cost us a bug to learn.
 
-Every empirical entry must carry a citation that **resolves to something checkable**: an integration test
-(`tests/integration/<name>`), a lab NOTEBOOK rung at tag `labs-archive-2026-07-19` (qualified by lab, e.g.
-`fluid-lab R12` — bare `R12` is ambiguous across labs), or a commit. A claim whose only evidence is an
-undocumented one-off probe is **[hypothesis]**, not [empirical] — say so plainly rather than implying rigor
-that no artifact backs. Tags: **[API]** (Wube-documented, kept only where a subtlety bites us),
-**[empirical, `<pin>`, `<citation>`]**, **[hypothesis]**. When the official docs and our pinned engine
-disagree, the pinned-engine measurement wins for this codebase.
+**The one test for inclusion: does this help us transfer a platform between instances with ZERO loss and
+ZERO gain?** If it does not serve that goal, it does not belong here — however interesting it is. Feature
+behavior, dashboards, CI forensics, and passenger mechanics all live elsewhere.
+
+Every entry must carry a citation that **resolves to something checkable**: an integration test or pad
+(`tests/integration/<name>`, `pad <fixture-id>`), or a lab NOTEBOOK rung at tag `labs-archive-2026-07-19`
+*qualified by lab* (`fluid-lab R12` — bare `R12` is ambiguous across labs). **There is no [hypothesis] tier.**
+A claim whose only evidence is an undocumented one-off probe gets **deleted**, not demoted: an unprovable
+claim in a reference doc is a liability, and the git history keeps it if anyone ever needs it. Tags are
+**[API]** (Wube-documented, kept only where a subtlety bites us) and **[empirical, `<pin>`, `<citation>`]**.
+When the official docs and our pinned engine disagree, the pinned-engine measurement wins.
 
 ## Contents
 
@@ -27,12 +31,7 @@ disagree, the pinned-engine measurement wins for this codebase.
 - [Inventory sizing](#inventory-sizing)
 - [Item counting (get_item_count includes belts)](#item-counting)
 - [Space platform deletion](#space-platform-deletion)
-- [Space platform electric network](#space-platform-electric-network)
-- [Save completion and atomic replacement](#save-completion-and-atomic-replacement)
-- [LuaProfiler and LocalisedString](#luaprofiler-and-localisedstring)
 - [Read-only entity properties](#read-only-entity-properties)
-- [Players on space platforms + cross-server move](#players-on-space-platforms--cross-server-move)
-- [Space platform hold semantics](#space-platform-hold-semantics)
 
 ## Fluid model at 2.1.11
 
@@ -85,20 +84,6 @@ permanent coverage matrix — a new prototype fluid-box slot without a row is a 
 Notes: the big-mining-drill's fluidbox count is **dynamic** — 0 when off a resource patch. FluidEnergySource
 ("burner fluid") boxes ARE runtime-enumerable and index-reachable (the maraxsis fluid-burner input box carries
 a segment) — they are not a capture blind spot at 2.1.11.
-
-
-## Mining-drill filters
-
-- **A mining-drill filter is an EntityID (resource name) — it has NO quality component — and every
-  vanilla drill has zero filter slots.** **[API]**
-  `LuaEntity.set_filter`'s drill overload takes an `EntityID`; passing a `{name, quality}` table throws
-  `Invalid EntityID: expected LuaEntityPrototype, LuaEntity or string`. `get_filter` REQUIRES the slot
-  index (`get_filter()` throws an arguments-count error — a zero-arg call inside a swallowing pcall
-  silently disabled the drill-filter capture for its entire life). `filter_slot_count` measured `0` for
-  `electric-mining-drill`, `big-mining-drill`, and `burner-mining-drill` on the pinned modset, and
-  `set_filter` errors `Callable only on entities that have filters` — so drill-filter capture/restore
-  is reachable only for modded drills that define filter slots. Consequence: "quality-filtered mining
-  drill" is not a representable state at this pin; the sc-29 roundtrip case asserting it was removed.
 
 ## Inventory sizing
 
@@ -231,8 +216,6 @@ a segment) — they are not a capture blind spot at 2.1.11.
   REFUTED; no rung had ever isolated activation as its own variable (D3 ran briefly-active; B1-B4 isolated
   force bonus). The historical missing-held phantom traces to the deserializer's DEAD held-restore
   (unreachable behind `restore_inventories`' has_inventories early-return) plus the force-bonus clamp.
-  Residual [hypothesis]: not yet reproduced in the exact import context (import-created entities on a
-  paused platform); the inserter-held-capacity baked-fixture batch covers that end-to-end.
 
 ## Space platform deletion
 
@@ -248,53 +231,6 @@ a segment) — they are not a capture blind spot at 2.1.11.
   for immediate, deterministic teardown of a platform and all its entities. Route all platform
   removal through `GameUtils.delete_platform` (`module/utils/game-utils.lua`); a lint guard
   (`npm run lint:lua`) blocks direct `*platform*.destroy()` calls.
-
-## Space platform electric network
-
-- **A space-platform surface has exactly ONE global electric network, and every electric entity on the
-  surface joins it — regardless of position, distance, or foundation connectivity.** **[hypothesis] (measured on 2.0.77 by ad-hoc gallery probes; no durable artifact, not re-measured at the 2.1.11 pin)** Three controlled probes on throwaway platforms measured a lamp on
-  a disconnected foundation patch behind a 10-tile verified-void gap reading the SAME `electric_network_id` as a
-  lamp beside the hub; patches at axis distance 320 and Euclidean distance 452 (diagonal 320,320) joined the
-  same network too, as did entities created in the same Lua execution as the platform and minutes later. An
-  earlier reading of "separate networks per island" (ids 13/15/19) was one-network-per-PLATFORM across three
-  different platforms, misread as per-island isolation. Two explanations are **REFUTED** (record as refuted, not
-  fact): (a) "tiles are wires" — electricity conducting through contiguous foundation from the hub — the
-  verified-void gap did not isolate; (b) any distance/radius-based membership boundary — d=452 still joined.
-- **The hub reports `electric_network_id = nil` and generates no power.** **[hypothesis] (measured on 2.0.77 by ad-hoc gallery probes; no durable artifact, not re-measured at the 2.1.11 pin)** Hubs are not electric-network members, and a bare starter platform's
-  network has no generation. `status = no_power` on an entity therefore means "this platform's network has no
-  generation," never "this entity is disconnected."
-- **`LuaSurface.has_global_electric_network` is READ-ONLY; the write path is
-  `create_global_electric_network()`.** **[API, 2.0.77]** The official runtime-api.json marks
-  `has_global_electric_network` with write=false; the network is created via
-  `LuaSurface.create_global_electric_network()`, and starter packs create it through the prototype property
-  `SpacePlatformStarterPackPrototype.create_electric_network` (boolean).
-
-## Save completion and atomic replacement
-
-- **`/server-save` returning does not prove the save is durable yet.** The exact active save is written via
-  `<name>.tmp.zip` and then atomically replaces `<name>.zip`; a restart immediately after the RCON response can
-  therefore load the previous save. Wait for the active save's temporary file to disappear, mtime to advance,
-  inode to change, and final size to be nonzero before restarting or copying it. The destination-hold integration
-  harness measures this through `Get-ActiveSaveName`, `Get-SaveState`, and `Wait-ForCompletedSave`.
-  **[empirical, 2.0.77, tests/integration/destination-hold]**
-- **Stopping an instance produced a new, valid replacement save in CI.** In PR #83's deliberate failure run
-  `29139669590`, host-2's active `world.zip` changed from `mtime|size|inode`
-  `1783744275|724082|9180580` to `1783744647|843161|9180248`; the temporary file was absent and both captured
-  saves passed full ZIP validation. This proves stop-save replacement and validates polling the same physical
-  completion signals before forensic capture. **[hypothesis]** (measured once on 2.0.77 via an ad-hoc CI probe; no durable artifact, not re-measured at the 2.1.11 pin) Whether
-  `clusterioctl instance stop` can return before that replacement completes remains **[hypothesis]**: the first
-  post-return poll in this run was already complete, so post-return asynchrony was not observed.
-
-## LuaProfiler and LocalisedString
-
-- **[`LuaProfiler` cannot be serialized](https://lua-api.factorio.com/latest/classes/LuaGameScript.html#method_create_profiler).**
-  **[API]** It cannot be stored in `storage` (crashes on save) and `tostring(profiler)` returns a
-  memory address (`userdata: 0x...`), not a time. The **only** persistable form is a LocalisedString
-  array `{"", profiler}` — the engine bakes the current value in during serialization; it renders
-  correctly after reload but is display-only (no math, no JSON). **[empirical]**
-- **A single LocalisedString is capped at 20 parameters.** Exceeding it crashes the event with
-  `Too many parameters for localised string: N > 20 (limit)` — observed crashing `on_tick` during
-  import completion. Split into multiple `game.print({"", ...})` calls. **[empirical]**
 
 ## Read-only entity properties
 
@@ -343,48 +279,3 @@ state-dimensions-lab NOTEBOOK, archived at git tag `labs-archive-2026-07-19`, an
   capture or a safecall'd attribute write silently never works. Read quality via
   `local recipe, quality = entity.get_recipe()`; set it ATOMICALLY via `entity.set_recipe(name, quality)` —
   `set_recipe(name)` without the argument resets the pair to normal quality.
-- **Equipment buffers: `energy = v` (incl. 0) is accepted on every equipment type; `shield = v` throws
-  ("Equipment is not shields.") on non-shield equipment, and `max_shield` reads 0 there vs the real
-  capacity on shields.** **[hypothesis]** (measured once on 2.0.77 via an ad-hoc lab probe; no durable artifact, not re-measured at the 2.1.11 pin) Use `max_shield > 0` as the
-  shield-capture discriminator; energy can be captured/restored unconditionally. Grid equipment QUALITY
-  must be passed at `grid.put({name, position, quality})` time — it is not writable afterwards.
-- **Ghost/proxy classes are safe for generic inventory/state reads.** **[hypothesis] (measured once on 2.0.77 via an ad-hoc lab probe; no durable artifact, not re-measured at the 2.1.11 pin)** entity-ghost, tile-ghost, and item-request-proxy all return
-  `get_max_inventory_index()` (8) without throwing and read `.burner` as nil without throwing — generic
-  extraction reaching these classes is not a crash vector at this pin.
-
-## Players on space platforms + cross-server move
-
-These facts drive how cross-instance transfer handles a player who is "aboard" a platform
-(see [GATEWAY_TRANSFER_PRD.md](GATEWAY_TRANSFER_PRD.md) and the passenger-evacuate test).
-
-- **A player on a platform is hub-locked in remote view with ~no inventory.** Official wiki
-  (Space platform → Passengers): a character traveling to a platform "is **not allowed to carry any items
-  in their inventory, except for their equipped weapons and armor (but not ammunition)**"; players aboard are
-  "**locked inside the space platform hub, unable to move … locked into remote view** until they drop their
-  character to a planetary surface", and "**there is no way to access a player's inventory while in this
-  state.**" So a "passenger" carries essentially nothing to sync. **[wiki, verified]**
-- **Native hub-loss returns the player to the planet they were last at.** This is why evacuating an aboard
-  player to a planet on transfer is *native-aligned*, not a hack. **[wiki]**
-- **Detecting an aboard player**: `player.physical_surface_index == platform.surface.index` (catches a
-  connected pilot AND a disconnected player still on it) ∪ `surface.count_entities_filtered{type="character"}`
-  (abandoned bodies). A remote-view *watcher* has `surface_index` but not `physical_surface_index` → NOT
-  aboard. `LuaSpacePlatform` has no players/characters accessor — go through the surface. **[empirical]**
-- **Moving a player off a platform**: `LuaPlayer.land_on_planet()` lands on "the current planet" → **useless
-  at a surfaceless gateway** (no planet); use `player.teleport(pos, planet_surface)` instead.
-  `enter_space_platform(space_platform) → boolean` (takes a **LuaSpacePlatform object**, not a name; returns
-  whether the player entered) / `leave_space_platform()` are the on/off-platform primitives. **[API, 2.0.77]**
-  (Whether `teleport` cleanly exits a hub-locked remote-view session for a *connected* player is verified by
-  hand — the automated test exercises an abandoned character body.) **[docs + to-verify]**
-- **Redirecting a player's client to another server**: `LuaPlayer.connect_to_server{address, name,
-  description, password}` — "**Asks** the player if they would like to connect" (a PROMPT the player accepts;
-  it is a **no-op on a host / single-player**, only works on a connected multiplayer *peer*). Address comes
-  from Clusterio's `host.public_address` + instance `game_port` (the `server_select` plugin pattern). Not
-  silent; **no engine permission/admin gate** (the client just accepts the prompt); engine API since 2.0.47.
-  `public_address` defaults to `"localhost"` (must be client-routable). Basis of the future Layer-2 "follow
-  your platform" feature — spike done 2026-07-03 (**CONDITIONAL GO**), see
-  [GATEWAY_TRANSFER_PRD.md](GATEWAY_TRANSFER_PRD.md). **[docs 2.0.77, verified]**
-
-## Space platform hold semantics
-
-- **[empirical, 2.0.77, hold-lab PR-0A]** Spoilage is anchored to global game ticks and continues under `platform.paused`. In the hold-completeness lab, a held yumako stack drifted by the same spoil percent as the live-control stack while the platform was hidden, paused, and held. This is acceptable destination-hold behavior: the not-live contract is no observable side effects, held drift no worse than the live control, zero platform damage, and nothing leaving the platform — not frozen time.
-- **[empirical, 2.0.77, hold-lab PR-0A]** Cargo-pod state machines are pause-exempt. Before the primitive fix, a held cargo pod advanced while `platform.paused=true`; `DestinationHold.stage()` now reuses `SurfaceLock.complete_cargo_pods` after pausing/hiding/deactivating the held platform, so a staged destination hold is pod-free. The PR-0A live specimen was an `awaiting_launch` pod: it verified `pod_count=0` immediately after stage and after the hold window, with overflow cargo retained on the platform as item-on-ground when the hub was full. The shared helper also routes `descending`/`parking` pods through the same recover-and-spill path, but PR-0A did not construct that state as a separate live specimen.
