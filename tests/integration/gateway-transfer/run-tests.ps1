@@ -33,7 +33,7 @@
     Max seconds to wait for the destination import-result (default: 180).
 #>
 param(
-    [string]$SourcePlatform = "lab-transfer-fixture-v1",
+    [string]$SourcePlatform = "",
     [string]$Gateway = "surfexp_gateway_1",
     [double]$EntityTolPct = 0.02,
     [int]$TimeoutSec = 180
@@ -42,6 +42,7 @@ param(
 $ErrorActionPreference = "Stop"
 $ModulePath = Join-Path (Split-Path -Parent $PSScriptRoot) "lib\TestBase.psm1"
 Import-Module $ModulePath -Force
+if (-not $SourcePlatform) { $SourcePlatform = Get-TransferFixturePlatform }
 $repoRoot = Split-Path -Parent (Split-Path -Parent (Split-Path -Parent $PSScriptRoot))
 
 Write-TestHeader "🛰  Gateway Transfer (park at gateway -> transfer -> arrive paused, hop stripped)"

@@ -29,13 +29,14 @@
     Host holding the source platform (default: auto-detect).
 #>
 param(
-    [string]$SourcePlatform = "lab-transfer-fixture-v1",
+    [string]$SourcePlatform = "",
     [int]$SourceHost = 0
 )
 
 $ErrorActionPreference = "Stop"
 $ModulePath = Join-Path (Split-Path -Parent $PSScriptRoot) "lib\TestBase.psm1"
 Import-Module $ModulePath -Force
+if (-not $SourcePlatform) { $SourcePlatform = Get-TransferFixturePlatform }
 
 Write-TestHeader "🔬 Engine API Invariants"
 

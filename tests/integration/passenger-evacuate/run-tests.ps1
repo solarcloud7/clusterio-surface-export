@@ -26,13 +26,14 @@
     Max seconds to wait for the destination import-result (default: 180).
 #>
 param(
-    [string]$SourcePlatform = "lab-transfer-fixture-v1",
+    [string]$SourcePlatform = "",
     [int]$TimeoutSec = 180
 )
 
 $ErrorActionPreference = "Stop"
 $ModulePath = Join-Path (Split-Path -Parent $PSScriptRoot) "lib\TestBase.psm1"
 Import-Module $ModulePath -Force
+if (-not $SourcePlatform) { $SourcePlatform = Get-TransferFixturePlatform }
 
 Write-TestHeader "🛟 Passenger Evacuate (transfer with someone aboard -> evacuated to Nauvis, not orphaned)"
 

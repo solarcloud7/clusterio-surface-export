@@ -17,14 +17,25 @@
 $script:DefaultController = "surface-export-controller"
 $script:ControlConfig = "/clusterio/tokens/config-control.json"
 
-# Real platforms that must NEVER be deleted by any cleanup/sweep — the single source of truth,
-# consumed by Remove-PlatformSurfacesWhere (and thus by every deletion path here and in the sweep tool).
-# The gallery names are the CURRENT fixtures: the seed saves ARE the banked gallery pair, so host-1
-# boots with the pad grid (lab-omnibus-state-v1) and the 1359-entity transfer fixture
-# (lab-transfer-fixture-v1). 'test'/'spikedoom08' are the retired legacy seed names, kept so a
-# not-yet-reseeded cluster (the seed is written on FIRST seed only — Pitfall #9) is still protected.
+# ---- Seeded fixture platform names — THE single source of truth. ----
+# The seed saves ARE the banked gallery pair, so host-1 boots with the pad grid and the 1359-entity
+# transfer fixture. These names were previously hardcoded in six places across five test scripts; a
+# rename then failed one test at a time (belt-loss-replay had it inline rather than as a parameter
+# default, so a grep for the parameter form missed it entirely). Never re-inline these — take them
+# from Get-TransferFixturePlatform / Get-PadGridPlatform.
+$script:TransferFixturePlatform = 'lab-transfer-fixture-v1'  # 1359 entities; the clone source for transfer tests
+$script:PadGridPlatform         = 'lab-omnibus-state-v1'     # the pad grid /test-run reconciles
+
+function Get-TransferFixturePlatform { return $script:TransferFixturePlatform }
+function Get-PadGridPlatform { return $script:PadGridPlatform }
+
+# Real platforms that must NEVER be deleted by any cleanup/sweep — consumed by
+# Remove-PlatformSurfacesWhere (and thus by every deletion path here and in the sweep tool).
+# DERIVED from the constants above so the protection list can never drift from the fixtures it guards.
+# 'test'/'spikedoom08' are the retired legacy seed names, kept so a not-yet-reseeded cluster (the seed
+# is written on FIRST seed only — Pitfall #9) is still protected.
 $script:ProtectedFixtures = @(
-	'lab-transfer-fixture-v1', 'lab-omnibus-state-v1',
+	$script:TransferFixturePlatform, $script:PadGridPlatform,
 	'test', 'spikedoom08', 'ptB'
 )
 
@@ -1107,5 +1118,9 @@ Export-ModuleMember -Function @(
     'Start-PlatformTransfer',
     
     # Instance Resolution
-    'Get-ClusterioInstanceId'
+    'Get-ClusterioInstanceId',
+
+    # Seeded fixture platform names (single source of truth — never re-inline these)
+    'Get-TransferFixturePlatform',
+    'Get-PadGridPlatform'
 )

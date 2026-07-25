@@ -15,7 +15,7 @@
       * an expired transfer lock respects an active destination hold: hidden, hold retained, lock cleared
 #>
 param(
-    [string]$SourcePlatform = "lab-transfer-fixture-v1",
+    [string]$SourcePlatform = "",
     [int]$SourceHost = 0,
     [double]$FluidEpsilon = 0.01,
     [int]$RestartTimeoutSec = 120,
@@ -25,6 +25,7 @@ param(
 $ErrorActionPreference = "Stop"
 $ModulePath = Join-Path (Split-Path -Parent $PSScriptRoot) "lib\TestBase.psm1"
 Import-Module $ModulePath -Force
+if (-not $SourcePlatform) { $SourcePlatform = Get-TransferFixturePlatform }
 $repoRoot = Split-Path -Parent (Split-Path -Parent (Split-Path -Parent $PSScriptRoot))
 
 Write-TestHeader "Destination Hold Primitive (not-live, fidelity, reversible)"
