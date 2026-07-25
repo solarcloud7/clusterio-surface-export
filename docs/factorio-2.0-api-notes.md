@@ -1,45 +1,51 @@
 # Factorio 2.0 (Space Age) API & Simulation Notes
 
-Durable Factorio 2.0 API facts this plugin depends on. Each entry is marked **[API]**
-(verified against [lua-api.factorio.com](https://lua-api.factorio.com/latest/)),
-**[empirical]** (observed via RCON testing in this project; not stated in the docs), or
-**[hypothesis]** (a mechanism EXPLANATION whose predictions have not been isolated and tested — treat as a
-lead, not a law; a behavioral rule can be [empirical] while its explanation is only [hypothesis]). A version
-qualifier may be appended — **[empirical, 2.0.76]** means checked against our pinned engine, and
-**[API, latest]** means the current published docs, which can differ from our pin (the API drifts —
-see [Space platform deletion](#space-platform-deletion)). When they disagree, the pinned-version fact
-wins for this codebase. This is reference knowledge, not a changelog — see git history for when each
-was learned.
+**Charter — what belongs here, and what does NOT.** This file records **only simulation behavior we had to
+measure ourselves because Wube does not document it.** It is deliberately *not* a second copy of the Factorio
+API reference.
+
+- **If [lua-api.factorio.com](https://lua-api.factorio.com/latest/) documents it, it does not belong here** —
+  link the official docs instead. We do not maintain prose that Wube already maintains, and a stale local copy
+  of a documented signature is worse than no copy.
+- **If it is no longer true of the pinned engine, delete it** — do not keep it as history. A retired law lives
+  in git history and, where a lesson is load-bearing, as a *pitfall*. Superseded prose in a reference doc gets
+  read as current.
+- **What earns a place:** behavior discovered by measurement — segment semantics, belt transport-line laws,
+  counting completeness, ordering/freeze effects — i.e. the things that cost us a bug to learn.
+
+**The one test for inclusion: does this help us transfer a platform between instances with ZERO loss and
+ZERO gain?** If it does not serve that goal, it does not belong here — however interesting it is. Feature
+behavior, dashboards, CI forensics, and passenger mechanics all live elsewhere.
+
+Every entry must carry a citation that **resolves to something checkable**: an integration test or pad
+(`tests/integration/<name>`, `pad <fixture-id>`), or a lab NOTEBOOK rung at tag `labs-archive-2026-07-19`
+*qualified by lab* (`fluid-lab R12` — bare `R12` is ambiguous across labs). **There is no [hypothesis] tier.**
+A claim whose only evidence is an undocumented one-off probe gets **deleted**, not demoted: an unprovable
+claim in a reference doc is a liability, and the git history keeps it if anyone ever needs it. Tags are
+**[API]** (Wube-documented, kept only where a subtlety bites us) and **[empirical, `<pin>`, `<citation>`]**.
+When the official docs and our pinned engine disagree, the pinned-engine measurement wins.
 
 ## Contents
 
 - [Fluid model at 2.1.11](#fluid-model-at-2111)
-- [2.0.x fluid model (superseded)](#20x-fluid-model-superseded)
 - [Inventory sizing](#inventory-sizing)
 - [Item counting (get_item_count includes belts)](#item-counting)
 - [Space platform deletion](#space-platform-deletion)
-- [Space platform electric network](#space-platform-electric-network)
-- [Save completion and atomic replacement](#save-completion-and-atomic-replacement)
-- [LuaProfiler and LocalisedString](#luaprofiler-and-localisedstring)
 - [Read-only entity properties](#read-only-entity-properties)
-- [Players on space platforms + cross-server move](#players-on-space-platforms--cross-server-move)
-- [Space platform hold semantics](#space-platform-hold-semantics)
 
 ## Fluid model at 2.1.11
 
 > The dev cluster and the plugin's fluid layer run **Factorio 2.1.11** (all instances since 2026-07-21);
 > the repo's certified pin (`tests/labs-certified.json`) is still 2.0.77 pending the re-certification
 > campaign. The laws below were measured by live fluid-law experiments on 2.1.11 (see the
-> `tests/lab-gallery/NOTEBOOK.md` entry dated 2026-07-21). The pre-port 2.0.x model is kept for the
-> transition period under [2.0.x fluid model (superseded)](#20x-fluid-model-superseded).
+> `tests/lab-gallery/NOTEBOOK.md` entry dated 2026-07-21).
 
-- **`entity.fluidbox` is HARD-REMOVED — reading the attribute THROWS.** **[empirical, 2.1.11, live probes
-  2026-07-21]** Fluid access is index-based LuaEntity/LuaFluidBox methods: `fluids_count`, `get_fluid(i)`,
+- **`entity.fluidbox` is HARD-REMOVED — reading the attribute THROWS.** **[empirical, 2.1.11, tests/integration/fluid-segment-law]** Fluid access is index-based LuaEntity/LuaFluidBox methods: `fluids_count`, `get_fluid(i)`,
   `set_fluid(i, fluid)`, `has_fluid_segment(i)`, `get_fluid_segment_id(i)`, `get_fluid_segment_fluid(i)`,
   `set_fluid_segment_fluid(i, fluid)`, `get_fluid_segment_capacity(i)`, `get_fluid_box_prototype(i)`,
   `fluidbox_neighbours`. **Segment getters THROW on a segmentless box** (2.0 returned `nil`) — always guard
   with `has_fluid_segment(i)` before any `get_fluid_segment_*` call.
-- **The buffer/window duality is GONE.** **[empirical, 2.1.11, live probes 2026-07-21]**
+- **The buffer/window duality is GONE.** **[empirical, 2.1.11, tests/integration/fluid-segment-law]**
   `get_fluid_segment_fluid(i)` returns the EXACT single-fluid segment total from ANY member box at ANY
   instant — a thruster fuel box read 500 exact, and a fusion-reactor coolant box read 300→450 exact both
   mid-transient and settled. There is no order-dependent claim, no mixed-regime "contents + Σ locals" law, and
@@ -47,10 +53,9 @@ was learned.
   the segment (float32: 12 pipes on one 1000-unit segment summed to `999.9999997615814`; a thruster:pipe share
   ratio was 10:1 by capacity), which the registry keeps for census attribution and split-segment
   proportioning.
-- **`set_fluid_segment_fluid(i, fluid)` writes a WHOLE segment in one call.** **[empirical, 2.1.11, live
-  probes 2026-07-21]** Writing 400 coolant to a segment read back 400 exact — no highest-capacity-member
+- **`set_fluid_segment_fluid(i, fluid)` writes a WHOLE segment in one call.** **[empirical, 2.1.11, tests/integration/fluid-segment-law]** Writing 400 coolant to a segment read back 400 exact — no highest-capacity-member
   workaround. A segmentless storage is written with `set_fluid(i, fluid)`, which returns the accepted amount.
-- **Plasma writes STICK, clamped to box capacity.** **[empirical, 2.1.11, live probes 2026-07-21]**
+- **Plasma writes STICK, clamped to box capacity.** **[empirical, 2.1.11, tests/integration/fluid-segment-law]**
   `set_fluid` of 50 plasma onto a fusion-reactor OUTPUT box read back 10 (capacity clamp); 25 onto a
   fusion-generator INPUT box read back 10. **Fusion-generator boxes are segmentless.** Plasma rides transfers
   like any fluid — the `engine_owned` connection-category classification is deleted (owner ruling
@@ -59,7 +64,7 @@ was learned.
 
 ### Prototype fluid-box coverage sweep
 
-**[empirical, 2.1.11, live probes 2026-07-21]** One live instance per prototype slot; each box was measured for
+**[empirical, 2.1.11, tests/integration/fluid-segment-law]** One live instance per prototype slot; each box was measured for
 `production_type`, segment presence (`has_fluid_segment`), and the segment-total law. The sweep drives the
 permanent coverage matrix — a new prototype fluid-box slot without a row is a finding.
 
@@ -79,68 +84,6 @@ permanent coverage matrix — a new prototype fluid-box slot without a row is a 
 Notes: the big-mining-drill's fluidbox count is **dynamic** — 0 when off a resource patch. FluidEnergySource
 ("burner fluid") boxes ARE runtime-enumerable and index-reachable (the maraxsis fluid-burner input box carries
 a segment) — they are not a capture blind spot at 2.1.11.
-
-### 2.1.11 engine drift beyond fluids
-
-Non-fluid 2.1.11 API drift the port swept, each **[empirical, 2.1.11, live probes 2026-07-21]**:
-
-- **`LuaEntity.active` is READ-ONLY**; the writable control is **`disabled_by_script`**, verified to drive
-  `active` both directions (`disabled_by_script=true` → `active=false`, and back). The whole freeze convention
-  (ActiveStateRestoration, `frozen_states`, pad freezes, selection-lab) ported mechanically: `e.active = x`
-  becomes `e.disabled_by_script = not x`; reads stay `e.active`.
-- **`defines.inventory.assembling_machine_input`** alias is removed (reads `nil`) — `crafter_input` survives
-  and is the replacement.
-- **`LuaDisplayPanelControlBehavior.messages`** was renamed to **`.records`** (the 2.1 record API) — serializer
-  capture, deserializer restore, and the `/test-run` status-panel writer all repointed.
-- **`LuaEntity.neighbours`** was removed (the underground-belt `has_partner` flag it fed had zero consumers and
-  was deleted; the copper-wire capture in `connection-scanner` degrades logged pending a `get_wire_connectors`
-  port).
-- **`game.create_profiler`** moved to **`helpers.create_profiler`** (`phase-profiler.lua`).
-
-## 2.0.x fluid model (superseded)
-
-Kept for the transition period only — the gallery/host-1 ran 2.0.77 until the module port; these facts do NOT
-describe the 2.1.11 fluid API above. All tags are the original measurements.
-
-- **Fluid segments (FFF-416).** **[API]** 2.0.7 merged contiguous pipes + storage tanks into single-fluid
-  **segments**; entity fluidboxes were a proxy window onto the shared segment, read via
-  `get_fluid_segment_contents(i)` and deduplicated by `get_fluid_segment_id(i)` (which could return `nil` for
-  wagons / turret buffers / isolated machine fluidboxes).
-- **Buffer-class law.** **[empirical, 2.0.77, fluid-lab R15 / census-fusion 2026-07-18]** A buffer box
-  (thruster fuel, fusion-reactor coolant/plasma) read `get_fluid_segment_contents = {}` while its local proxy
-  held the fluid, so the segment total was `contents if non-empty else Σ non-window member locals`. This
-  order-dependent claim was the root of a silent coolant-drop (a live audit omitted a reactor's 271
-  fluoroketone) — structurally impossible at 2.1.11, where `get_fluid_segment_fluid` reads the exact total.
-- **Fusion segment IDs.** **[empirical, 2.0.77, live probe 2026-07-17]** The fusion reactor's OWN boxes exposed
-  segment IDs (coolant input AND plasma output) while generator inputs on the same segment read `nil`;
-  non-`default` connection categories (`fusion-plasma`) marked the then-excluded engine-owned boxes. The
-  exclusion is deleted at 2.1 (plasma rides).
-- **Temperature merge.** **[empirical, 2.0.77, fluid-lab R12]** `500 steam@165°C` + `1500 steam@500°C` merged
-  to one exact `2000@416.25°C` segment (volume-weighted); a 9,999→10,000,000°C key sweep exposed no
-  floating-point boundary because the steam prototype clamped every write to 5,000°C. The ">1,000,000°C doubles
-  lose precision" story was disproven.
-- **Pre-activation loss (historical).** **[empirical, historical pipeline]** An old pipeline lost ~15% when
-  fluids were injected pre-activation; the responsible class was never isolated. Fluid-lab R11
-  **[empirical, 2.0.77]** later measured the shipped restoration exact in a frozen destination world across two
-  1,359-entity transfers (`max |delta| = 0`, epsilon `1e-6`), retiring the old rule.
-- **Segment membership / paused holds.** **[empirical, 2.0.77, fluid-lab R7/R9]** No tested activatable entity
-  exposed a non-nil own-fluidbox segment ID; isolated machine buffers survived `active=false`, platform pause,
-  and the real destination-hold primitive (a 20-unit heavy-oil buffer held across stage → +600 ticks →
-  go-live). `LuaEntity.frozen` was read-only. A CI-only `fluids 1120→1100 delta=20` was eliminated by fixture
-  determinism but its root cause was never isolated **[unexplained, 2.0.77]**.
-
-## Mining-drill filters
-
-- **A mining-drill filter is an EntityID (resource name) — it has NO quality component — and every
-  vanilla drill has zero filter slots.** **[empirical, 2.0.77, live probe 2026-07-17; API-confirmed]**
-  `LuaEntity.set_filter`'s drill overload takes an `EntityID`; passing a `{name, quality}` table throws
-  `Invalid EntityID: expected LuaEntityPrototype, LuaEntity or string`. `get_filter` REQUIRES the slot
-  index (`get_filter()` throws an arguments-count error — a zero-arg call inside a swallowing pcall
-  silently disabled the drill-filter capture for its entire life). `filter_slot_count` measured `0` for
-  `electric-mining-drill`, `big-mining-drill`, and `burner-mining-drill` on the pinned modset, and
-  `set_filter` errors `Callable only on entities that have filters` — so drill-filter capture/restore
-  is reachable only for modded drills that define filter slots. Consequence: "quality-filtered mining
-  drill" is not a representable state at this pin; the sc-29 roundtrip case asserting it was removed.
 
 ## Inventory sizing
 
@@ -273,8 +216,6 @@ describe the 2.1.11 fluid API above. All tags are the original measurements.
   REFUTED; no rung had ever isolated activation as its own variable (D3 ran briefly-active; B1-B4 isolated
   force bonus). The historical missing-held phantom traces to the deserializer's DEAD held-restore
   (unreachable behind `restore_inventories`' has_inventories early-return) plus the force-bonus clamp.
-  Residual [hypothesis]: not yet reproduced in the exact import context (import-created entities on a
-  paused platform); the inserter-held-capacity baked-fixture batch covers that end-to-end.
 
 ## Space platform deletion
 
@@ -290,55 +231,6 @@ describe the 2.1.11 fluid API above. All tags are the original measurements.
   for immediate, deterministic teardown of a platform and all its entities. Route all platform
   removal through `GameUtils.delete_platform` (`module/utils/game-utils.lua`); a lint guard
   (`npm run lint:lua`) blocks direct `*platform*.destroy()` calls.
-
-## Space platform electric network
-
-- **A space-platform surface has exactly ONE global electric network, and every electric entity on the
-  surface joins it — regardless of position, distance, or foundation connectivity.** **[empirical, 2.0.77,
-  live gallery-instance probes 2026-07-17]** Three controlled probes on throwaway platforms measured a lamp on
-  a disconnected foundation patch behind a 10-tile verified-void gap reading the SAME `electric_network_id` as a
-  lamp beside the hub; patches at axis distance 320 and Euclidean distance 452 (diagonal 320,320) joined the
-  same network too, as did entities created in the same Lua execution as the platform and minutes later. An
-  earlier reading of "separate networks per island" (ids 13/15/19) was one-network-per-PLATFORM across three
-  different platforms, misread as per-island isolation. Two explanations are **REFUTED** (record as refuted, not
-  fact): (a) "tiles are wires" — electricity conducting through contiguous foundation from the hub — the
-  verified-void gap did not isolate; (b) any distance/radius-based membership boundary — d=452 still joined.
-- **The hub reports `electric_network_id = nil` and generates no power.** **[empirical, 2.0.77, live
-  gallery-instance probes 2026-07-17]** Hubs are not electric-network members, and a bare starter platform's
-  network has no generation. `status = no_power` on an entity therefore means "this platform's network has no
-  generation," never "this entity is disconnected."
-- **`LuaSurface.has_global_electric_network` is READ-ONLY; the write path is
-  `create_global_electric_network()`.** **[API, 2.0.77]** The official runtime-api.json marks
-  `has_global_electric_network` with write=false; the network is created via
-  `LuaSurface.create_global_electric_network()`, and starter packs create it through the prototype property
-  `SpacePlatformStarterPackPrototype.create_electric_network` (boolean).
-
-## Save completion and atomic replacement
-
-- **`/server-save` returning does not prove the save is durable yet.** The exact active save is written via
-  `<name>.tmp.zip` and then atomically replaces `<name>.zip`; a restart immediately after the RCON response can
-  therefore load the previous save. Wait for the active save's temporary file to disappear, mtime to advance,
-  inode to change, and final size to be nonzero before restarting or copying it. The destination-hold integration
-  harness measures this through `Get-ActiveSaveName`, `Get-SaveState`, and `Wait-ForCompletedSave`.
-  **[empirical, 2.0.77, destination-hold probe]**
-- **Stopping an instance produced a new, valid replacement save in CI.** In PR #83's deliberate failure run
-  `29139669590`, host-2's active `world.zip` changed from `mtime|size|inode`
-  `1783744275|724082|9180580` to `1783744647|843161|9180248`; the temporary file was absent and both captured
-  saves passed full ZIP validation. This proves stop-save replacement and validates polling the same physical
-  completion signals before forensic capture. **[empirical, 2.0.77, CI save-flush probe]** Whether
-  `clusterioctl instance stop` can return before that replacement completes remains **[hypothesis]**: the first
-  post-return poll in this run was already complete, so post-return asynchrony was not observed.
-
-## LuaProfiler and LocalisedString
-
-- **[`LuaProfiler` cannot be serialized](https://lua-api.factorio.com/latest/classes/LuaGameScript.html#method_create_profiler).**
-  **[API]** It cannot be stored in `storage` (crashes on save) and `tostring(profiler)` returns a
-  memory address (`userdata: 0x...`), not a time. The **only** persistable form is a LocalisedString
-  array `{"", profiler}` — the engine bakes the current value in during serialization; it renders
-  correctly after reload but is display-only (no math, no JSON). **[empirical]**
-- **A single LocalisedString is capped at 20 parameters.** Exceeding it crashes the event with
-  `Too many parameters for localised string: N > 20 (limit)` — observed crashing `on_tick` during
-  import completion. Split into multiple `game.print({"", ...})` calls. **[empirical]**
 
 ## Read-only entity properties
 
@@ -362,77 +254,28 @@ describe the 2.1.11 fluid API above. All tags are the original measurements.
 These drive the import restore path (all measured by the state-dimensions closer run; see the
 state-dimensions-lab NOTEBOOK, archived at git tag `labs-archive-2026-07-19`, and the matching integration tests).
 
-- **Burner, energy, and heat writes are ACCEPTED while the entity is DEACTIVATED.** **[empirical, 2.0.77,
-  state-dimensions-lab + entity-burner/energy/heat-roundtrip]** A deactivated burner reads back
+- **Burner, energy, and heat writes are ACCEPTED while the entity is DEACTIVATED.** **[empirical, 2.0.77, state-dimensions-lab + pads omnibus-burner-fuel/omnibus-heat-temperature]** A deactivated burner reads back
   `currently_burning` / `remaining_burning_fuel` exactly; setting `currently_burning` does not mutate the fuel
   inventory (so it may run before `restore_inventories` clear+refill). A deactivated accumulator/machine
   accepts `entity.energy = v` exactly; a deactivated reactor accepts `entity.temperature = v` exactly. None of
   these are item-counted, so they do not perturb the pre-activation exact gate. No relocation to activation.
 - **`LuaEquipment.shield` (and `.energy`) READS 0 on equipment with no such buffer, but WRITING throws.**
-  **[empirical, 2.0.77, equipment-burner-roundtrip]** Reading `.shield` on non-shield equipment returns `0`
+  **[empirical, 2.0.77, pad omnibus-equipment-grid]** Reading `.shield` on non-shield equipment returns `0`
   (truthy in Lua), so a `~= nil` guard is a FALSE guard; writing `equipment.shield = v` on non-shield
   equipment throws `"Equipment is not shields."` and killed an import on_tick. Guard the write with pcall and
   capture shield/energy on export only when `> 0`.
 - **A `small-lamp` has NO control behavior until it is wired; `get_control_behavior()` returns nil.**
-  **[empirical, 2.0.77, circuit-config-roundtrip]** Restoring control-behavior config (circuit_condition,
+  **[empirical, 2.0.77, pad omnibus-circuit-config]** Restoring control-behavior config (circuit_condition,
   circuit_enable_disable) must use `get_or_create_control_behavior()`, or the settings are silently dropped
   for any entity whose CB is not yet instantiated at restore time (wires restore in a separate phase).
-- **`LuaEntity.disabled_by_control_behavior` (boolean) is unreliable; use `status`.** **[empirical, 2.0.77,
-  circuit-config-roundtrip]** A lamp genuinely disabled by its circuit condition reports
+- **`LuaEntity.disabled_by_control_behavior` (boolean) is unreliable; use `status`.** **[empirical, 2.0.77, pad omnibus-circuit-config]** A lamp genuinely disabled by its circuit condition reports
   `status == defines.entity_status.disabled_by_control_behavior` (55) while the boolean property reads
   `false`. Detect circuit-disabled state via `status`, not the property.
-- **`LuaGenericOnOffControlBehavior.circuit_condition` is written in the FLAT form.** **[empirical, 2.0.77,
-  circuit-config-roundtrip]** `cb.circuit_condition = {first_signal=..., comparator=..., constant=...}` takes
+- **`LuaGenericOnOffControlBehavior.circuit_condition` is written in the FLAT form.** **[empirical, 2.0.77, pad omnibus-circuit-config]** `cb.circuit_condition = {first_signal=..., comparator=..., constant=...}` takes
   (reads back the signal); a nested `{condition={...}}` form does not.
 - **Recipe quality is `get_recipe()`'s SECOND return; `get_recipe_quality()` and the `recipe_quality`
-  attribute do NOT exist.** **[empirical, 2.0.77, state-dimensions-lab + item-grid-roundtrip]** Both
+  attribute do NOT exist.** **[empirical, 2.0.77, state-dimensions-lab + pad omnibus-equipment-grid]** Both
   `entity.get_recipe_quality()` and `entity.recipe_quality` throw "doesn't contain key" — a pcall-probed
   capture or a safecall'd attribute write silently never works. Read quality via
   `local recipe, quality = entity.get_recipe()`; set it ATOMICALLY via `entity.set_recipe(name, quality)` —
   `set_recipe(name)` without the argument resets the pair to normal quality.
-- **Equipment buffers: `energy = v` (incl. 0) is accepted on every equipment type; `shield = v` throws
-  ("Equipment is not shields.") on non-shield equipment, and `max_shield` reads 0 there vs the real
-  capacity on shields.** **[empirical, 2.0.77, state-dimensions-lab probe]** Use `max_shield > 0` as the
-  shield-capture discriminator; energy can be captured/restored unconditionally. Grid equipment QUALITY
-  must be passed at `grid.put({name, position, quality})` time — it is not writable afterwards.
-- **Ghost/proxy classes are safe for generic inventory/state reads.** **[empirical, 2.0.77,
-  state-dimensions-lab probe]** entity-ghost, tile-ghost, and item-request-proxy all return
-  `get_max_inventory_index()` (8) without throwing and read `.burner` as nil without throwing — generic
-  extraction reaching these classes is not a crash vector at this pin.
-
-## Players on space platforms + cross-server move
-
-These facts drive how cross-instance transfer handles a player who is "aboard" a platform
-(see [GATEWAY_TRANSFER_PRD.md](GATEWAY_TRANSFER_PRD.md) and the passenger-evacuate test).
-
-- **A player on a platform is hub-locked in remote view with ~no inventory.** Official wiki
-  (Space platform → Passengers): a character traveling to a platform "is **not allowed to carry any items
-  in their inventory, except for their equipped weapons and armor (but not ammunition)**"; players aboard are
-  "**locked inside the space platform hub, unable to move … locked into remote view** until they drop their
-  character to a planetary surface", and "**there is no way to access a player's inventory while in this
-  state.**" So a "passenger" carries essentially nothing to sync. **[wiki, verified]**
-- **Native hub-loss returns the player to the planet they were last at.** This is why evacuating an aboard
-  player to a planet on transfer is *native-aligned*, not a hack. **[wiki]**
-- **Detecting an aboard player**: `player.physical_surface_index == platform.surface.index` (catches a
-  connected pilot AND a disconnected player still on it) ∪ `surface.count_entities_filtered{type="character"}`
-  (abandoned bodies). A remote-view *watcher* has `surface_index` but not `physical_surface_index` → NOT
-  aboard. `LuaSpacePlatform` has no players/characters accessor — go through the surface. **[empirical]**
-- **Moving a player off a platform**: `LuaPlayer.land_on_planet()` lands on "the current planet" → **useless
-  at a surfaceless gateway** (no planet); use `player.teleport(pos, planet_surface)` instead.
-  `enter_space_platform(space_platform) → boolean` (takes a **LuaSpacePlatform object**, not a name; returns
-  whether the player entered) / `leave_space_platform()` are the on/off-platform primitives. **[API, 2.0.77]**
-  (Whether `teleport` cleanly exits a hub-locked remote-view session for a *connected* player is verified by
-  hand — the automated test exercises an abandoned character body.) **[docs + to-verify]**
-- **Redirecting a player's client to another server**: `LuaPlayer.connect_to_server{address, name,
-  description, password}` — "**Asks** the player if they would like to connect" (a PROMPT the player accepts;
-  it is a **no-op on a host / single-player**, only works on a connected multiplayer *peer*). Address comes
-  from Clusterio's `host.public_address` + instance `game_port` (the `server_select` plugin pattern). Not
-  silent; **no engine permission/admin gate** (the client just accepts the prompt); engine API since 2.0.47.
-  `public_address` defaults to `"localhost"` (must be client-routable). Basis of the future Layer-2 "follow
-  your platform" feature — spike done 2026-07-03 (**CONDITIONAL GO**), see
-  [GATEWAY_TRANSFER_PRD.md](GATEWAY_TRANSFER_PRD.md). **[docs 2.0.77, verified]**
-
-## Space platform hold semantics
-
-- **[empirical, 2.0.77, hold-lab PR-0A]** Spoilage is anchored to global game ticks and continues under `platform.paused`. In the hold-completeness lab, a held yumako stack drifted by the same spoil percent as the live-control stack while the platform was hidden, paused, and held. This is acceptable destination-hold behavior: the not-live contract is no observable side effects, held drift no worse than the live control, zero platform damage, and nothing leaving the platform — not frozen time.
-- **[empirical, 2.0.77, hold-lab PR-0A]** Cargo-pod state machines are pause-exempt. Before the primitive fix, a held cargo pod advanced while `platform.paused=true`; `DestinationHold.stage()` now reuses `SurfaceLock.complete_cargo_pods` after pausing/hiding/deactivating the held platform, so a staged destination hold is pod-free. The PR-0A live specimen was an `awaiting_launch` pod: it verified `pod_count=0` immediately after stage and after the hold window, with overflow cargo retained on the platform as item-on-ground when the hub was full. The shared helper also routes `descending`/`parking` pods through the same recover-and-spill path, but PR-0A did not construct that state as a separate live specimen.

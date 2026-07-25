@@ -122,7 +122,9 @@ At 2.0.77, LAB-I B7 measured `platform.destroy()` with no argument as a silent n
 **Key files**: `validators/loss-analysis.lua` (`reconcile_fluids`), `export_scanners/fluid-registry.lua`.
 
 ### 24. LuaProfiler Serialization — LocalisedString Snapshots (CRITICAL)
-`LuaProfiler` cannot be serialized and `tostring()` returns a memory address, not a time — see [factorio-2.0-api-notes.md](factorio-2.0-api-notes.md). To persist timing across save/load, embed the profiler in a LocalisedString array (`{"", profiler}`); the engine bakes the value in and a GUI label renders it. Keep live profilers in module-local tables (never `storage`), and snapshot them to LocalisedStrings at job completion. Display-only — no math, no JSON.
+`LuaProfiler` cannot be serialized and `tostring()` returns a memory address, not a time — see the
+[official `create_profiler` docs](https://lua-api.factorio.com/latest/classes/LuaGameScript.html#method_create_profiler).
+To persist timing across save/load, embed the profiler in a LocalisedString array (`{"", profiler}`); the engine bakes the value in and a GUI label renders it. Keep live profilers in module-local tables (never `storage`), and snapshot them to LocalisedStrings at job completion. Display-only — no math, no JSON.
 **Key files**: `utils/phase-profiler.lua`, `utils/transaction-history.lua`, `interfaces/gui/transaction-dashboard.lua`, `core/import-completion.lua`, `core/export-pipeline.lua`.
 
 ### 25. LocalisedString 20-Parameter Limit Can Crash on_tick (CRITICAL)
