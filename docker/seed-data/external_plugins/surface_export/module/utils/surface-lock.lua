@@ -625,7 +625,7 @@ function SurfaceLock.get_lock_data(platform_index)
     return storage.locked_platforms[platform_index]
 end
 
---- Pure identity check for the source-delete-for-transfer precondition (Pitfall #31 — identity = surface.index,
+--- Pure identity check for the source-delete-for-transfer precondition (platform identity is surface.index, never the mutable name — identity = surface.index,
 --- NEVER platform.name). Given the stored lock record (captured BEFORE any unlock, since unlock clears it) and
 --- the CURRENT surface at that platform index, decide whether it is safe to delete the source:
 ---   (1) the source must still be locked-for-transfer  — lock present with kind=="transfer" (a source released

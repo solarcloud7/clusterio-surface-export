@@ -128,26 +128,6 @@ export interface FactorioInstance {
 	sendRcon(command: string, expectEmpty?: boolean): Promise<string>;
 }
 
-/**
- * Send JSON data to Factorio using optimal escaping method.
- * Automatically chooses between [[...]] (fast) and '...' (safe) based on content.
- */
-export async function sendJsonToFactorio(
-	instance: FactorioInstance,
-	luaFunction: string,
-	data: unknown,
-	logger: { verbose(msg: string): void },
-): Promise<void> {
-	const json = JSON.stringify(data);
-
-	if (json.includes("]]")) {
-		logger.verbose(`Data contains ]], using escaped string (${json.length} bytes)`);
-		const escaped = libEscapeString(json);
-		await instance.sendRcon(`/sc ${luaFunction}('${escaped}')`, true);
-	} else {
-		await instance.sendRcon(`/sc ${luaFunction}([[${json}]])`, true);
-	}
-}
 
 /**
  * Split data into chunks for RCON transfer.

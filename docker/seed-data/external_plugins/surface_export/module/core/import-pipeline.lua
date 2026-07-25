@@ -184,7 +184,7 @@ function ImportPipeline.queue(json_data, new_platform_name, force_name, requeste
 	local target_planet = platform_data._targetPlanet or parsed_data._targetPlanet or "nauvis"
 	-- create_space_platform raises if the planet name is invalid or not present on this instance
 	-- (e.g. mod mismatch). Guard it so a bad destination returns a clean error instead of crashing
-	-- the instance (cf. Pitfall #25). The UI restricts choices, but RCON/API callers do not.
+	-- the instance (cf. a LocalisedString is capped at 20 parameters). The UI restricts choices, but RCON/API callers do not.
 	-- Call via a closure: force.create_space_platform binds self on access, so it takes ONLY the
 	-- table (passing force explicitly gives an "Expected 1 argument but 2 were given" error).
 	local ok_create, new_platform = pcall(function()
@@ -437,7 +437,7 @@ function ImportPipeline.process_batch(job, get_batch_size, should_show_progress)
 	-- (export-pipeline force_data); replicate them onto the destination force(s) BEFORE any entity is created or
 	-- any held item is seated, so a less-researched dest can physically hold what the source held. Without this,
 	-- set_stack/count silently clamp to the dest's lower capacity and the held items are genuinely unplaceable
-	-- (the held-item root cause; see Pitfall #29).
+	-- (the held-item root cause; see inserter hand capacity is governed by the DEST force's research).
 	-- Raise EVERY distinct force the entities land on (the deserializer creates each entity on
 	-- entity_data.force or "player"), not just job.force_name — they normally match, but syncing only the
 	-- platform force would leave a differently-forced inserter under-capacity → silent held-item loss.

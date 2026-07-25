@@ -25,7 +25,7 @@ local ExportPipeline = {}
 --- Drops one serialized inventory stack from THIS entity_data AFTER serialization and BEFORE the
 --- census records it, so physical (full) > serialized (short) and the verdict fails. Fires PRE-verdict,
 --- so a leaked flag makes the NEXT transfer export ABORT and PRESERVE its source (self-protecting —
---- enumerated in lint:test-hooks FAIL_SAFE_HOOKS; Pitfall #30, mutating test hooks must be fail-safe on leak).
+--- enumerated in lint:test-hooks FAIL_SAFE_HOOKS; mutating test hooks must be fail-safe on leak).
 --- @param entity_data table: the just-serialized entity form (mutated in place on a hit)
 local function maybe_inject_census_omission(entity_data)
 	local cfg = storage.surface_export_config
@@ -361,7 +361,7 @@ function ExportPipeline.process_batch(job, get_batch_size, should_show_progress)
 						-- Paired source census (Task 4): fold the PHYSICAL and SERIALIZED reads of this ONE
 						-- entity in the SAME Lua execution it was serialized in. Belt-type entities are
 						-- DEFERRED — their items are not serialized until the atomic pass in complete()
-						-- (skip_belt_items) — so they are paired there instead (Pitfall #16, atomic belt scan).
+						-- (skip_belt_items) — so they are paired there instead (atomic belt scan).
 						CensusAccumulator.record(job.census, entity, entity_data)
 					end
 				end
@@ -423,7 +423,7 @@ function ExportPipeline.complete(job)
 				-- Paired source census (Task 4) for belts: the physical read re-derives belt contents via
 				-- extract_belt_items INDEPENDENTLY of the just-patched serialized copy. CRITICAL: belt pairing
 				-- is ONLY valid inside this single-tick atomic pass — belts cannot be frozen, so items move
-				-- between ticks; the physical read and the serialized items must be the SAME tick (Pitfall #16).
+				-- between ticks; the physical read and the serialized items must be the SAME tick (belts keep moving — belt items must be extracted in ONE atomic tick).
 				CensusAccumulator.record(job.census, live_entity, entity_data)
 				belt_scan_count = belt_scan_count + 1
 				-- Count items for logging
@@ -526,7 +526,7 @@ function ExportPipeline.complete(job)
 	-- Source force research bonuses that govern INSERTER HAND CAPACITY. These are not entity data — they
 	-- live in the source force's tech tree — so the import side replicates them onto the destination force
 	-- BEFORE hydration; otherwise a less-researched dest physically caps each inserter hand below what the
-	-- source held, and the held items are genuinely unplaceable (see Pitfall #28 / the held-item root cause).
+	-- source held, and the held items are genuinely unplaceable (see the gate must count a COMPLETE frozen world / the held-item root cause).
 	local src_force = game.forces[job.force_name]
 	if src_force and src_force.valid then
 		local force_data = {}

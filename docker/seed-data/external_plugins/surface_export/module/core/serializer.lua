@@ -17,7 +17,7 @@ local Serializer = {}
 --- integration-test fixture (New-TestPlatform), plus /export-sync-mode for debugging.
 --- Production transfer/export uses the async ExportPipeline (AsyncProcessor.queue_export()), which adds
 --- multi-tick batching + the atomic single-tick belt scan that this path lacks (so this path has the
---- belt rolling-snapshot limitation, Pitfall #16). Collapsing to one path would require an async clone —
+--- belt rolling-snapshot limitation: belts keep moving — belt items must be extracted in ONE atomic tick). Collapsing to one path would require an async clone —
 --- deferred. Do NOT delete this without first making clone async (it would break the test fixture).
 --- @param platform_index number: Index of the platform to export (1-based)
 --- @param force_name string|nil: Optional force name the platform belongs to

@@ -1070,7 +1070,7 @@ export class DeleteSourcePlatformRequest {
 	forceName: string;
 	// The source-generated export/transfer id (== the source lock's transfer_job_id). A NAME-FREE correlation
 	// token: the Lua delete refuses if this doesn't match the lock at the index, so a stale/duplicate/reused-index
-	// delete can't unlock or tear down an UNRELATED in-flight transfer's platform (Pitfall #31 / re-audit P1).
+	// delete can't unlock or tear down an UNRELATED in-flight transfer's platform (platform identity is surface.index, never the mutable name / re-audit P1).
 	exportId: string | null;
 
 	constructor(json: { platformIndex: number; platformName: string; forceName?: string; exportId?: string | null }) {

@@ -171,7 +171,7 @@ hands-on E2E checklist, one doc); repository test layout and entry points are in
   cannot be lost during teeth testing); leave `package-lock.json` byte-identical outside approved dependency
   updates.
 
-**Evidence discipline** (mechanized by `lint:evidence-claims` and `lint:version-certification`):
+**Evidence discipline** (mechanized by `lint:version-certification`):
 engine-behavior knowledge carries evidence tags in [docs/factorio-2.0-api-notes.md](docs/factorio-2.0-api-notes.md)
 — **[API]** / **[empirical, <pin>, <citation>]**. There is NO [hypothesis] tier in api-notes: a claim whose only evidence is an undocumented one-off probe is DELETED, not demoted (git history keeps it). Elsewhere, a mechanism EXPLANATION is a lead until its
 *predictions* are tested — a behavioral rule can be [empirical] while its explanation is lore, and an
@@ -315,49 +315,9 @@ a reachability spike. Covered by `tests/integration/passenger-evacuate`; design 
   2. `interfaces/gui/transaction-dashboard.lua` — GUI rendering (assigns snapshots to labels)
   3. `core/import-completion.lua` + `core/export-pipeline.lua` — History recording hooks
 - **Admin features**: Clear history button, adjustable row limits (10/25/50/100)
-- **See**: Pitfall #24 for LocalisedString profiler serialization requirements
+- **See**: LuaProfiler cannot be serialized for LocalisedString profiler serialization requirements
 
-## Common Pitfalls (index)
 
-Full corpus — mechanism, fix, evidence, key files per entry — in [docs/pitfalls.md](docs/pitfalls.md);
-registry (slug, status, guard) in [docs/pitfalls.json](docs/pitfalls.json); consistency enforced by
-`npm run lint:doc-refs`. Cite as "Pitfall #N, short name". Numbers are frozen aliases (#8 retired —
-never renumber). Statuses: unmarked = active law; *(historical)* = fixed, lesson recorded;
-*(revision-queued)* = partially refuted, revision adjudicated.
-
-| # | Slug | Rule | Guard |
-|---|------|------|-------|
-| 1 | `empty-rcon-response` | Empty rc11 reply (or 'not recognized' in agent shells) = instance down or mod unloaded; check cluster status + logs, use tools/rcon.ps1 | — |
-| 2 | `import-chunking-required` | Large imports must go through a chunking path (web UI Import JSON or /plugin-import-file) — a single RCON command silently truncates | — |
-| 3 | `version-mismatch-after-deploy` | Old code after deploy = deploy-cluster.ps1 didn't finish or containers didn't restart | — |
-| 4 | `storage-not-global` | Factorio 2.0 renamed global to storage; never write global.* | `lint:lua` |
-| 5 | `platform-index-per-force` | Platform indices are per-force and 1-based; find them with /list-platforms | — |
-| 6 | `readonly-entity-properties` | Factorio 2.0 made many entity properties read-only; set them at create_entity time, pcall optional ones | — |
-| 7 | `unknown-items-graceful-skip` | Mod-mismatch imports skip unknown items with logged warnings, never crash | — |
-| 9 | `idempotent-seeding` | Fixed in base image: seeding is idempotent, docker compose restart is safe; down -v only for a full wipe *(historical)* | — |
-| 10 | `default-mod-pack` | Set DEFAULT_MOD_PACK=Space Age 2.0 in .env; mod pack binds on first seed only (needs down -v to change) | — |
-| 11 | `port-range-auto-derived` | Fixed in base image: host N auto-derives ports 34N00-34N99; compose mappings must match *(historical)* | — |
-| 12 | `clusterio-api-require-path` | require("modules/clusterio/api") — never __clusterio_lib__ (not a mod; save-patched under modules/) | `lint:lua` |
-| 13 | `debug-mode-lost-on-save-reset` | debug_mode lives in the save; on_init defaults it true for FRESH saves only — patch-and-reset or configure() to re-enable | — |
-| 14 | `instance2-minimal-seed` | The seed saves ARE the banked gallery pair: host-2 seeds from the 0-entity destination save and is the import target, never an export source; host-1 boots the pad grid + the 1359-entity lab-transfer-fixture-v1 that tests clone from | — |
-| 15 | `validate-before-activation` | The gate counts BEFORE any elapsed tick after activation — active machines craft in the gap and fake GAINS; activation only after the verdict | `gate-item-loss` pad (pad-transfer-suite) |
-| 16 | `atomic-belt-scan` | Belts keep moving (active-writes rejected): belt items must be extracted in ONE atomic tick, verification built from that consistent serialized data | — |
-| 17 | `pre-activation-fluid-loss` | RETIRED by the 2.1 fluid-segment registry — the old ~15% pre-activation loss (class never isolated) no longer applies; fluids restore in the frozen disabled_by_script world via set_fluid_segment_fluid before the single exact gate, no live-world restoration needed *(historical)* | — |
-| 18 | `crafter-handlers-export-fluids` | A specific entity handler must emit data.fluidboxes (InventoryScanner.extract_fluidboxes) if the type has a fluidbox — the fail-loud registry arming turns a forgotten fluid capture into a structural error, not silent loss | — |
-| 19 | `platform-destroy-noop` | Remove platforms via GameUtils.delete_platform (game.delete_surface) — argless platform.destroy() silently no-ops at 2.0.77 | `lint:lua` |
-| 20 | `failed-entity-loss-attribution` | When create_entity fails, tally the entity's items/fluids into failed_entity_losses and subtract from expected — otherwise validation blames a phantom loss | — |
-| 21 | `fusion-plasma-exclusion` | RETIRED — plasma rides transfers like any fluid; the engine_owned connection-category exclusion is deleted (2.1 registry + owner ruling 2026-07-20/21), and the only lawful fluid subtraction is physically-measured write_rejected *(refuted)* | — |
-| 22 | `fluidbox-segment-id-nil` | RETIRED — at 2.1.11 entity.fluidbox is removed and segment getters THROW on segmentless boxes (they no longer return nil); capture guards every read with has_fluid_segment(i) and reads segmentless boxes via get_fluid(i) *(historical)* | — |
-| 23 | `fluid-temperature-merge` | RETIRED — temperature rides per fluid-segment registry record (energy-weighted at capture), validated aggregate-by-name at 1e-6; the 2.0.77 volume-weighted merge and the >1,000,000C key-boundary story are no longer load-bearing *(historical)* | — |
-| 24 | `profiler-localisedstring-snapshots` | LuaProfiler cannot serialize; persist timing by embedding profilers in LocalisedStrings at job completion, keep live profilers OUT of storage, display-only | — |
-| 25 | `localisedstring-20-param-limit` | One LocalisedString over 20 parameters hard-crashes the instance — split multi-value prints into one line per call | — |
-| 26 | `call-link-methods-bound` | Never extract/cast a Link method (handle, sendTo, ...) to a value — this loses, crashes at runtime; cast the arguments, never the method | `lint:js (unbound-method + no-restricted-syntax)` |
-| 27 | `icons-need-export-data` | Blank ? icons = mod pack has no export-data; needs the graphical client on host-1 (never SKIP_CLIENT there), FACTORIO_CLIENT_TAG in lockstep with the instance version, regenerate via clusterioctl instance export-data | — |
-| 28 | `gate-counts-complete-state` | The pre-activation gate must measure a COMPLETE frozen world — held items seated by the single pre-gate owner pass; fix the timing, never the number | `gate-item-loss` pad (pad-transfer-suite) |
-| 29 | `dest-force-research-held-capacity` | Inserter hand capacity = the DESTINATION force's research bonuses; Phase-0 raise-only force sync replicates source bonuses before any entity is created | `force-bonus-held` pad (pad-transfer-suite) |
-| 30 | `test-hooks-fail-safe-on-leak` | A state-mutating test_force_* hook must be pre-gate, disarmed in finally/trap, or non-destructive — a leaked post-gate hook is silent data loss on the NEXT transfer | `lint:test-hooks` |
-| 31 | `identity-is-surface-index` | platform.name is mutable and collidable — every lock/delete/transfer identity decision keys on surface.index or the unique per-force index; name resolves only at the tooling boundary, loud on ambiguity | `lint:lua (no-name-as-transfer-identity)` |
-| 32 | `export-only-destination-nil` | Number(null)===0 and 0 is Lua-truthy: only a positive integer targetInstanceId is a transfer destination; anything else passes Lua nil or the source stays locked | — |
 ## Architecture Overview
 
 For Clusterio core architecture, see [Clusterio docs](https://github.com/clusterio/clusterio).
@@ -369,7 +329,7 @@ For Clusterio core architecture, see [Clusterio docs](https://github.com/cluster
 - RCON protocol for server communication
 - JSON serialization for data exchange
 - Lua modules located in `/packages/host/modules/` and `/packages/host/lua/`
-- **Clusterio API path**: Always `require("modules/clusterio/api")` for save-patched modules (Pitfall #12, the Clusterio API require path)
+- **Clusterio API path**: Always `require("modules/clusterio/api")` for save-patched modules (the Clusterio API require path)
 - **Clusterio send_json event channel (Lua→Node)**: `clusterio_api.send_json("channel_name", data_table)` — plugin listens via `server.handle("channel_name", handler)`
 - **RCON transport (Node→Lua)**: `this.sendRcon("/sc ...")` to execute Lua via RCON
 
@@ -377,7 +337,7 @@ For Clusterio core architecture, see [Clusterio docs](https://github.com/cluster
 
 ### General Style (partially enforced by ESLint — `npm run lint`, gated in CI)
 
-> `npm run lint` runs eleven **correctness** guards, all gated in CI; a twelfth (**commit labels**,
+> `npm run lint` runs nine **correctness** guards, all gated in CI; a twelfth (**commit labels**,
 > `scripts/lint-commit-labels.mjs`) runs as its own PR-gated CI step. Each script header carries the full
 > rationale and incident history. Every `*:allow` escape hatch MUST be enumerated in
 > `scripts/lint-allow-manifest.json` with a reason and approver — an allow is an **escalation**, never
@@ -392,9 +352,7 @@ For Clusterio core architecture, see [Clusterio docs](https://github.com/cluster
 > | pcall logging | `lint:pcall-logging` | every `pcall` surfaces its error or is an annotated `-- intentional probe` | `-- pcall:allow` |
 > | Catch swallow | `lint:catch-swallow` | no TS catch substitutes a default without surfacing the error binding | `// catch:allow` |
 > | Test hooks | `lint:test-hooks` | a `test_force_*` hook disarms in `finally`/`trap` or is enumerated in `FAIL_SAFE_HOOKS` — `test-hooks-fail-safe-on-leak` (#30) | `FAIL_SAFE_HOOKS` entry |
-> | Doc refs | `lint:doc-refs` | pitfall registry/bodies/index consistent; citations resolvable + human-readable (number + short name) | see guard header |
 > | Allow manifest | `lint:allow-manifest` | manifest matches reality exactly, both directions | — |
-> | Evidence claims | `lint:evidence-claims` | an empirical claim in a code comment carries its citation within ±3 lines | `lint-evidence-claims:allow` |
 > | Version certification | `lint:version-certification` | pinned Factorio version == `tests/labs-certified.json`; a pin bump goes red until the re-certification campaign lands | none — recertify |
 > | Commit labels | (own CI step) | a `docs:`-labeled commit touches only doc paths — labels are audit boundaries | — |
 >
@@ -451,7 +409,7 @@ Project invariants that still bite if changed:
   still NOT a cross-import key (BELT-R9); populated-source same-execution `line_equals` grouping IS the
   side partition. The current production path (captured positions + oversized-stack consolidation + hub
   recovery) remains the shipped implementation until Phase 5 lands. The atomic single-tick export scan
-  remains required (Pitfall #16, atomic belt scan; belts keep moving — BELT-R13).
+  remains required (atomic belt scan; belts keep moving — BELT-R13).
 - **Fluid restoration runs in the frozen world (`disabled_by_script`) before the exact gate.** The payload
   carries a top-level **fluid-segment registry** (one record per source segment or segmentless storage, keyed
   by our incremental id — engine segment ids differ across instances); entities reference it via
@@ -491,7 +449,7 @@ The order of post-processing steps in `complete_import_job()` is critical for co
 **Why this order matters**:
 - Step 4 (beacon activation): beacons are kept active during entity creation (never deactivated). Phase 2 explicitly activates them and fills their energy buffer. This is necessary but not sufficient — beacons need their **module inventory populated** before `crafting_speed` reflects the beacon bonus.
 - Step 5 (inventories, 2 passes): The two-pass approach is critical. `crafting_speed` on a machine updates **immediately** when its nearby beacon's `beacon_modules` inventory is populated — no tick delay, no power required. Pass 1 populates all beacon modules. Pass 2 then restores crafter inputs with `set_stack()`, which uses the now-correct beacon-boosted cap (e.g. cs=17.375 → 12 slots instead of cs=2.5 → 7 slots). Machines remain deactivated throughout — they cannot consume items.
-- Steps 6→8 are one synchronous frozen-world completion and verdict pass. Fluids are restored from the payload's fluid-segment registry (one `set_fluid_segment_fluid` write per segment) into the paused, `disabled_by_script` destination before the gate; there is no failed-member fluid accounting, so any missing member fails the exact gate and the source is preserved (fail => revert). A failure banks an always-on black box, then discards the destination unless the debug-gated preserve flag is explicitly armed. The historical ~15% pre-activation loss is retired (Pitfall #17, historical pre-activation fluid loss); the pad-transfer-suite workhorse census and strict gate exercise this ordering on 2.1.11.
+- Steps 6→8 are one synchronous frozen-world completion and verdict pass. Fluids are restored from the payload's fluid-segment registry (one `set_fluid_segment_fluid` write per segment) into the paused, `disabled_by_script` destination before the gate; there is no failed-member fluid accounting, so any missing member fails the exact gate and the source is preserved (fail => revert). A failure banks an always-on black box, then discards the destination unless the debug-gated preserve flag is explicitly armed. The historical ~15% pre-activation loss is retired (historical pre-activation fluid loss); the pad-transfer-suite workhorse census and strict gate exercise this ordering on 2.1.11.
 
 ## Factorio 2.0 Fluid API & Simulation Behavior
 

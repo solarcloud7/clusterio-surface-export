@@ -113,11 +113,19 @@ docker compose pull
 # Run up -d twice: first pass starts the controller; second pass ensures hosts
 # are started after the controller is healthy (Docker Compose timing quirk with
 # depends_on: service_healthy can leave dependent containers in Created state).
+# The FIRST pass is ALLOWED to fail — recovering from that is the entire reason the retry exists.
+# Only the second pass is load-bearing, so only it is checked. (An earlier commit on this branch
+# deleted the retry in the same edit that made the downstream instance timeout fatal: two changes,
+# one attribution. A compose hiccup that used to self-heal became a hard abort.)
 Write-Host "Starting cluster..." -ForegroundColor Cyan
 docker compose up -d
 docker compose up -d
+if ($LASTEXITCODE -ne 0) { throw "docker compose up -d failed (exit $LASTEXITCODE) — refusing to report a started cluster." }
 
-Write-Host "Cluster started with plugin version $NewVersion" -ForegroundColor Green
+# NOTE: this printed "Cluster started with plugin version $NewVersion" using the version it had just
+# WRITTEN to package.json — never a value read back from the running cluster. A deploy that silently
+# failed to take still announced the new version, which is exactly the "old code after deploy"
+# confusion the pitfall corpus documented. The real assertion happens after startup, below.
 Write-Host ""
 
 # 8. Follow controller logs until initialization completes
@@ -211,7 +219,38 @@ if ($instancesDone) {
     $elapsed = [int]$instanceSw.Elapsed.TotalSeconds
     Write-Host "All instances running! (+${elapsed}s)" -ForegroundColor Green
 } else {
-    Write-Host "(Instance startup timeout after ${instanceTimeout}s)" -ForegroundColor Yellow
+    Write-Host "X Instance startup TIMED OUT after ${instanceTimeout}s" -ForegroundColor Red
+    throw "Instances did not reach running within ${instanceTimeout}s. The cluster is NOT deployed; do not trust a later success message."
+}
+
+# ---- POST-DEPLOY LIVENESS PROBE ----
+# What this proves, and what it does NOT, stated plainly.
+#
+# The previous version of this block claimed to "verify the running cluster loaded $NewVersion" by
+# cat-ing module.json out of host-1. It was wrong twice over:
+#   1. docker-compose.yml bind-mounts ./docker/seed-data/external_plugins into BOTH hosts, so that
+#      cat re-read the exact file this script had just written at the top. A tautology, not a check.
+#   2. `docker exec ... 2>&1` yields a string ARRAY. `-match` against a collection FILTERS and does
+#      not populate $Matches, so it silently reused the capture from the instance poll loop above
+#      and compared the version against an instance NAME — hard-failing every single deploy.
+#
+# There is no runtime version oracle to fix this with: no Lua reads module.json, and clusterioctl
+# prints no plugin version. So assert only what is genuinely observable — that each instance is up
+# and its save-patched module answers RCON.
+#
+# LIMIT: this is a LIVENESS check, not a freshness check. On `-SkipIncrement -KeepData` the volumes
+# and their already-patched saves survive, so Lua edits do NOT take and this probe still goes green.
+# Only the default `down -v` path re-seeds and re-patches.
+Write-Host ""
+Write-Host "Verifying the save-patched module answers on both instances..." -ForegroundColor Cyan
+foreach ($probeInstance in @("clusterio-host-1-instance-1", "clusterio-host-2-instance-1")) {
+    $probe = docker exec surface-export-controller npx clusterioctl --config /clusterio/tokens/config-control.json `
+        --log-level error instance send-rcon $probeInstance "/sc rcon.print(remote.interfaces['surface_export'] ~= nil)" 2>&1
+    $probeText = ($probe | Out-String).Trim()
+    if ($LASTEXITCODE -ne 0 -or $probeText -notmatch 'true') {
+        throw "surface_export interface is NOT loaded on ${probeInstance} (exit $LASTEXITCODE): $probeText"
+    }
+    Write-Host "  OK - $probeInstance has the surface_export interface loaded" -ForegroundColor Green
 }
 
 # 10. Retrieve admin token

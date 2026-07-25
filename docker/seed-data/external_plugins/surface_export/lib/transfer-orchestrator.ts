@@ -98,7 +98,7 @@ export class TransferOrchestrator {
 			// - Everything else — completed / cleanup_failed / error / any UNKNOWN status — REFUSES
 			//   loudly: those states mean the destination committed (or may have committed) a live
 			//   copy, and re-running the same export would import a SECOND copy (the duplication
-			//   class of Pitfall #31, platform identity is the stable index). Unknown statuses take
+			//   class of platform identity is the stable index). Unknown statuses take
 			//   the refusing branch on purpose: for a source-deleting path the fail-safe direction is
 			//   "block the retry", never "re-run it" (/code-review finding, 2026-07-18).
 			const live = existingTransfer.status === "transporting"

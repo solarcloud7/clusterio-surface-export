@@ -81,6 +81,15 @@ services:
     hostname: clusterio-host-1
     environment:
       - HOST_NAME=clusterio-host-1
+      # PINNED, not inherited. host-1 is the EXPORT host: it runs the graphical client, which is the
+      # only thing that can produce the icon spritesheets (`clusterioctl instance export-data`);
+      # headless has no sprites. Both hosts share the x-host-base `env_file: .env`, so without this
+      # line a `SKIP_CLIENT=true` in .env would silently strip host-1's client and icons would break
+      # with no error. `environment:` overrides `env_file:`, so it cannot be turned off from .env.
+      # (.env today carries only a commented-out `SKIP_CLIENT=false`, which would be a no-op if
+      # uncommented — the hazard is someone setting it to true, not the comment being removed.)
+      # host-2 pins the opposite (SKIP_CLIENT=true): it needs no client.
+      - SKIP_CLIENT=false
     ports:
       - "34100-34109:34100-34109/udp"
     volumes:

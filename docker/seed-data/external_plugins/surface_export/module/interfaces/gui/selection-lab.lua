@@ -32,7 +32,7 @@
 -- never evidence — tests/belt-lab/NOTEBOOK.md BELT-R8); no interaction with transfer jobs, locks,
 -- or the controller. FluidRestoration runs only on ISOLATED pastes: if any pasted fluidbox connects
 -- to an entity outside the pasted set, fluid restore is skipped (it writes SEGMENT totals and would
--- clobber a live network; Pitfall #22, activatable entities expose no own segment id — connection-
+-- clobber a live network; activatable entities expose no own segment id — connection-
 -- walking, not segment ids, is the detection). Known gaps: no circuit-wire reconnection, no rotation.
 -- Cross-surface paste measured WORKING at 2.0.77 (2026-07-17, gallery migration): paste plans
 -- against event.surface, so dragging on any surface pastes there. `active` is preserved via the

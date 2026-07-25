@@ -29,7 +29,7 @@ export const HOSTS = {
 	2: { container: "surface-export-host-2", instance: "clusterio-host-2-instance-1" },
 };
 // The shared dev cluster's "release" saves — the pre-batch live worlds every batch restores to.
-export const RESTORE_SAVES = { 1: "test1.zip", 2: "test2.zip" };
+export const RESTORE_SAVES = { 1: "lab-gallery-source.zip", 2: "lab-gallery-destination.zip" };
 export const FLUID_EPSILON = 1e-6;   // the gate's aggregate-by-name epsilon
 export const DOUBLE_EPSILON = 1e-9;  // save/load ULP allowance on fingerprint doubles (verify-save convention)
 

@@ -102,7 +102,7 @@ if (-not $found) { Die "no import-result on destination after ${TimeoutSec}s (tr
 Ok "import-result present (${elapsed}s)"
 
 # 6. Confirm the platform landed on the destination (primary success signal) AND that the transfer
-#    removed it from the source (game.delete_surface — Pitfall #19; a no-op would leave a duplicate).
+#    removed it from the source (game.delete_surface — platform.destroy is a no-op; a no-op would leave a duplicate).
 $dstList = (Send-RCON -InstanceName $dst.Name -Command "/list-platforms") -join "`n"
 $srcList = (Send-RCON -InstanceName $src.Name -Command "/list-platforms") -join "`n"
 $onDest      = $dstList -match "\b$([regex]::Escape($clone))\b"
@@ -112,9 +112,9 @@ $valLine = (docker exec surface-export-controller sh -c "cat /clusterio/logs/clu
 Write-Host ""
 if ($onDest) {
     Write-Host "  PASS  transfer completed — '$clone' is on $($dst.Name). $valLine" -ForegroundColor Green
-    if (-not $goneFromSrc) { Write-Host "  WARN  source still has '$clone' — source delete did not take (check Pitfall #19)." -ForegroundColor DarkYellow }
+    if (-not $goneFromSrc) { Write-Host "  WARN  source still has '$clone' — source delete did not take (check platform.destroy is a no-op)." -ForegroundColor DarkYellow }
     if (-not $KeepResult) {
-        Step "Cleanup: deleting '$clone' on destination (game.delete_surface — Pitfall #19)..."
+        Step "Cleanup: deleting '$clone' on destination (game.delete_surface — platform.destroy is a no-op)..."
         $del = "/sc for _,s in pairs(game.surfaces) do if s.platform and s.platform.name=='$cloneLuaName' then game.delete_surface(s) end end rcon.print('deleted')"
         Send-RCON -InstanceName $dst.Name -Command $del | Out-Null
         Ok "cleaned up"

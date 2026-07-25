@@ -15,7 +15,7 @@
        with get_item_count. See docs/factorio-2.0-api-notes.md "Item counting".
 
     2. game.delete_surface() removes a space platform, because LuaSpacePlatform.destroy() is a no-op
-       at our pinned Factorio version (Pitfall #19, verified 2.0.76). destroy() is probed WARN-ONLY
+       at our pinned Factorio version (verified 2.0.76). destroy() is probed WARN-ONLY
        (a benign upstream fix that makes it functional must never fail the build); delete_surface is
        the MUST-PASS our code actually relies on, and is asserted UNCONDITIONALLY on a live clone.
 
@@ -163,11 +163,11 @@ Start-Sleep -Seconds 1
 
 if (-not (Test-PlatformPresent -Name $cloneName)) {
     Write-Status "destroy() REMOVED the platform — it is FUNCTIONAL at this Factorio version." -Type warning
-    Write-Status "Revisit Pitfall #19 / docs/factorio-2.0-api-notes.md (they document destroy() as a no-op)." -Type warning
+    Write-Status "Revisit platform.destroy is a no-op / docs/factorio-2.0-api-notes.md (they document destroy() as a no-op)." -Type warning
     Write-Status "Re-cloning so the delete_surface MUST-PASS still runs on a live platform..." -Type info
     $cloneName = New-DisposableClone
 } else {
-    Write-Status "destroy() left the platform intact — no-op, as documented (Pitfall #19)." -Type info
+    Write-Status "destroy() left the platform intact — no-op, as documented (platform.destroy is a no-op)." -Type info
 }
 Write-Host ""
 

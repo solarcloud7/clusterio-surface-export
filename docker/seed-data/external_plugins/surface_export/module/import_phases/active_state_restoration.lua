@@ -17,7 +17,7 @@ local ACTIVATABLE_ENTITY_TYPES = GameUtils.ACTIVATABLE_ENTITY_TYPES
 --- seats fully when force capacity allows, and at bonus 0 it clamps identically active or
 --- inactive. (The old "silently fails on a settled-deactivated inserter" claim was refuted;
 --- the historical missing-held phantom was the deserializer's DEAD held-restore — stranded
---- behind its has_inventories early-return — plus the force-bonus clamp of Pitfall #29.)
+--- behind its has_inventories early-return — plus the force-bonus clamp of inserter hand capacity is governed by the DEST force's research.)
 --- No-op (returns 0,0) for non-inserters, missing data, or an already-restored hand.
 --- @param entity LuaEntity
 --- @param entity_data table
@@ -53,9 +53,9 @@ end
 --- This pass is the SINGLE OWNER of held-item seating: the deserializer's old held-restore was
 --- dead code (stranded behind restore_inventories' has_inventories early-return, unreachable for
 --- every bare inserter), so held items were never restored anywhere else — THAT, plus the
---- force-bonus clamp (Pitfall #29, dest-force research governs hand capacity), was the real
+--- force-bonus clamp (dest-force research governs hand capacity), was the real
 --- "held phantom" at the gate. Running this pass synchronously before validation lets the STRICT
---- gate count a COMPLETE state without opening a craft window (Pitfall #15: machines must stay
+--- gate count a COMPLETE state without opening a craft window (the gate counts BEFORE activation: machines must stay
 --- inactive through validation so they cannot consume/produce between activation and counting).
 --- No activation is needed for seating — set_stack is ACTIVATION-INDEPENDENT
 --- [empirical, 2.0.77, inserter-lab B6 2026-07-18]; the former wake-toggle ritual was removed.
@@ -75,7 +75,7 @@ function ActiveStateRestoration.restore_held_items_only(entities_to_create, enti
            and entity.held_stack then
             -- Trigger on EMPTY *or* PARTIALLY-filled hands (have < captured), not only empty. A hand can
             -- arrive partial when the dest force's capacity clamped it before the Phase-0 bonus sync ran
-            -- (Pitfall #29) — the old `not valid_for_read` (empty-only) guard skipped those, so they were
+            -- (inserter hand capacity is governed by the DEST force's research) — the old `not valid_for_read` (empty-only) guard skipped those, so they were
             -- never topped up and vanished silently. Verified: src-held 80 -> dest-held 33 == gate loss 47.
             local want = entity_data.specific_data.held_item.count or 1
             local have = entity.held_stack.valid_for_read and entity.held_stack.count or 0

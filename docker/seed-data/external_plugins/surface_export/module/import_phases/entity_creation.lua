@@ -68,7 +68,7 @@ function EntityCreation.process_batch(job, get_batch_size, should_show_progress)
           local entity
           -- TEST HOOK (one-shot, debug-gated): simulate a failed placement for the first
           -- inventory-bearing entity, exercising failed-entity-loss attribution + the expected-count
-          -- subtraction so validation still passes (Pitfall #20). Set via
+          -- subtraction so validation still passes (failed-entity losses are tallied and subtracted from expected). Set via
           -- configure({ test_force_entity_failure = true }).
           local _cfg = storage.surface_export_config
           local failure_mode = _cfg and _cfg.test_force_entity_failure

@@ -99,7 +99,7 @@ test("record's SERIALIZED side reuses Verification's item rules and reads fluids
 		"the serialized item count must reuse Verification.count_all_items (no re-implementation)");
 	// 2.1 registry port: the serialized FLUID truth is the job's FluidRegistry (the same segment
 	// records the payload carries), first-seer deduped over segment_ref — NOT a recount of the live
-	// surface. This keeps the two census sides commensurate (engine-vs-payload) per Pitfall #16.
+	// surface. This keeps the two census sides commensurate (engine-vs-payload) — belts keep moving — belt items must be extracted in ONE atomic tick.
 	assert.match(body, /acc\.fluid_registry\.segments\[\s*ref\s*\]/,
 		"the serialized fluid count must read the job's FluidRegistry segment records");
 	assert.match(body, /acc\.seen_segment_refs\[\s*ref\s*\]/,

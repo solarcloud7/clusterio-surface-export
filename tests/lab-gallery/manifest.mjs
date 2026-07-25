@@ -101,7 +101,7 @@ export function validateGalleryManifest(manifest, { requireArtifacts = true } = 
 // ---- lifecycle (setup / act / verify) validation --------------------------------------------------
 // The pad lifecycle framework: declarative setup ops, an act selector, and a declarative verify
 // list. Rules enforced here are DI teeth, not style: arm_hook is restricted to the pre-gate
-// fail-safe set (a leaked hook must fail-safe, Pitfall #30 class); report_field checks require a
+// fail-safe set (a leaked hook must fail-safe, a mutating test hook must be fail-safe on leak class); report_field checks require a
 // physical witness (the lint-test-grounding rule at manifest level); setup writes are confined to
 // declared mutable anchors (the pristine-left-half rule).
 const LIFECYCLE_ACTS = new Set(["copy-paste", "transfer", "clone"]);

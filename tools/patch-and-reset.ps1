@@ -94,11 +94,158 @@ Write-Host "✓ Controller running" -ForegroundColor Green
 
 # Stop instances (use instance names, not numeric IDs which don't match)
 Write-Host ""
-$ctlConfig = "--config=/clusterio/tokens/config-control.json"
+# CORRECTION (2026-07-25): an earlier commit here claimed clusterioctl rejects the `--config=<path>`
+# form and that all 11 calls in this script were failing silently. That was WRONG — measured in
+# PowerShell, BOTH `--config=<path>` and `--config <path>` work, including the original single-string
+# variable. The real variable is GIT BASH: MSYS mangles a leading /path into C:/Program Files/Git/...
+# (proved: `docker run --rm alpine echo /clusterio/x` -> `C:/Program Files/Git/clusterio/x`), which is
+# why the same command fails there and works with MSYS_NO_PATHCONV=1 or inside `sh -c '...'`. This
+# script is PowerShell, so it was never affected. The array form is kept only because it is clearer.
+$ctlConfig = @("--config", "/clusterio/tokens/config-control.json")
 
+# ---------------------------------------------------------------------------------------------
+# Every clusterioctl / docker-exec call in this script used to end in `2>$null`, so a FAILING call
+# looked identical to a succeeding one. That is how the --config= bug above survived: 11 broken
+# calls, zero output, script reports success. Route every meaningful call through this instead —
+# it surfaces stderr and the exit code, and by default ABORTS rather than continuing on a lie.
+#
+# -AllowFail is for calls where failure is genuinely expected and harmless (e.g. deleting saves
+# that may not exist). Those still LOG; they just do not abort. There is no silent path.
+# ---------------------------------------------------------------------------------------------
+function Invoke-Step {
+    param(
+        [Parameter(Mandatory=$true)][string]$What,
+        [Parameter(Mandatory=$true)][scriptblock]$Command,
+        [switch]$AllowFail
+    )
+    $out = & $Command 2>&1
+    $code = $LASTEXITCODE
+    $text = ($out | Out-String).Trim()
+    if ($code -ne 0) {
+        if ($AllowFail) {
+            Write-Host "  ~ $What — non-fatal failure (exit $code): $text" -ForegroundColor DarkYellow
+        } else {
+            Write-Host "  X $What FAILED (exit $code)" -ForegroundColor Red
+            if ($text) { Write-Host "    $text" -ForegroundColor Red }
+            throw "$What failed (exit $code). Refusing to continue and report a false success."
+        }
+    } elseif ($text -match 'error|Missing URL|not recognized|Cannot') {
+        # Exit 0 with an error-shaped message is the other half of the trap (clusterioctl has done
+        # exactly this). Surface it rather than let it scroll past.
+        Write-Host "  ! $What — exit 0 but output looks like an error: $text" -ForegroundColor Yellow
+    }
+    return $text
+}
+
+# ---------------------------------------------------------------------------------------------
+# clusterioctl exits 1 on the two BENIGN instance-lifecycle cases:
+#   stop  on an already-stopped instance -> "Instance is not running."
+#   start on an already-running instance -> "Instance is already running."
+# Both are normal here: hosts auto-start their instances after a container restart, and this script
+# is frequently run after an instance crashed. Routing those calls through a bare Invoke-Step made a
+# FULLY SUCCESSFUL patch-and-reset abort and report failure.
+#
+# Tolerate ONLY the specific benign message; any other exit-1 is a real failure and still aborts.
+# A blanket -AllowFail would have swallowed genuine start failures — the exact silence this file
+# was rewritten to remove.
+# ---------------------------------------------------------------------------------------------
+function Invoke-InstanceLifecycle {
+    param(
+        [Parameter(Mandatory=$true)][string]$What,
+        [Parameter(Mandatory=$true)][string]$BenignPattern,
+        [Parameter(Mandatory=$true)][scriptblock]$Command
+    )
+    $out = Invoke-Step $What -AllowFail $Command
+    if ($LASTEXITCODE -ne 0) {
+        if ($out -match $BenignPattern) {
+            Write-Host "    (already in the desired state — continuing)" -ForegroundColor DarkGray
+        } else {
+            throw "$What failed (exit $LASTEXITCODE): $out"
+        }
+    }
+}
+
+
+# ---------------------------------------------------------------------------------------------
+# SAVE EVERY RUNNING INSTANCE FIRST — including ones this script does not manage.
+#
+# This script stops the two SEEDED instances by name, but later hard-restarts the CONTAINERS
+# (docker restart surface-export-host-1 surface-export-host-2). Any other instance living in those
+# containers is killed mid-flight with no exit-save. That is not hypothetical: a hand-built pad
+# gallery was lost to exactly this, and the response was a prose rule ("checkpoint before every
+# deploy") that nothing enforced — so the hazard stayed armed.
+#
+# Enumerate every RUNNING instance and server_save it before anything stops. Seeded instances lose
+# nothing by being saved (their saves are reset below anyway); unseeded ones are rescued.
+# ---------------------------------------------------------------------------------------------
+Write-Host "Saving every running instance before restart (no silent data loss)..." -ForegroundColor Yellow
+
+# NOT -AllowFail, and NOT 2>$null. If the enumeration itself fails we do not know what is running,
+# and the next thing this script does is hard-restart both host containers. Proceeding on a silently
+# empty list is precisely how the pad gallery was lost. No list => no restart.
+$instanceList = Invoke-Step "enumerate running instances" {
+    docker exec surface-export-controller npx clusterioctl $ctlConfig --log-level error instance list
+}
+
+$pendingSaves = @()
+foreach ($line in ($instanceList -split "`r?`n")) {
+    # "name | id | assignedHost | gamePort | status | ..." — only running instances can be saved.
+    # ONE regex capturing BOTH name and assignedHost. A second -match to grab the host would clobber
+    # $Matches — the same defect that produced 3 empty names here, and that made the deploy script's
+    # version assertion compare against an instance name. Header/separator rows fail this pattern.
+    if ($line -match '^\s*([A-Za-z0-9._-]+)\s*\|\s*\d+\s*\|\s*(\d+)\s*\|\s*\d+\s*\|\s*running\s*\|') {
+        $inst = $Matches[1]
+        $hostContainer = "surface-export-host-$($Matches[2])"
+        $stamp = Get-Date -Format 'yyyyMMdd-HHmmss'
+        # Route through Invoke-Step: this used to print "✓ saved" unconditionally, so a FAILED
+        # rescue-save looked identical to a successful one — the very pattern this block exists to
+        # prevent. -AllowFail because one un-saveable instance must not abort rescuing the others.
+        Invoke-Step "save $inst before restart" -AllowFail {
+            docker exec surface-export-controller npx clusterioctl $ctlConfig --log-level error `
+                instance send-rcon $inst "/sc game.server_save('predeploy-$stamp')"
+        } | Out-Null
+        $pendingSaves += [pscustomobject]@{
+            Instance  = $inst
+            Container = $hostContainer
+            Path      = "/clusterio/data/instances/$inst/saves/predeploy-$stamp.zip"
+        }
+    }
+}
+
+if ($pendingSaves.Count -eq 0) {
+    Write-Host "  (no running instances to save)" -ForegroundColor Gray
+} else {
+    # POLL for the file, do not sleep and hope. This script sets non_blocking_saving=$true below, so
+    # game.server_save returns BEFORE the write lands — a fixed Start-Sleep is a guess that silently
+    # becomes wrong on a bigger save or a slower disk. Wait for the file to exist AND stop growing.
+    Write-Host "  Waiting for save writes to land on disk..." -ForegroundColor Gray
+    $saveDeadline = (Get-Date).AddSeconds(120)
+    foreach ($p in $pendingSaves) {
+        $lastSize = -1; $stable = 0; $landed = $false
+        while ((Get-Date) -lt $saveDeadline) {
+            $sizeText = (docker exec $p.Container sh -c "stat -c %s '$($p.Path)' 2>/dev/null" 2>&1 | Out-String).Trim()
+            if ($sizeText -match '^\d+$') {
+                $size = [int64]$sizeText
+                if ($size -gt 0 -and $size -eq $lastSize) { $stable++ } else { $stable = 0 }
+                $lastSize = $size
+                if ($stable -ge 2) { $landed = $true; break }
+            }
+            Start-Sleep -Milliseconds 500
+        }
+        if ($landed) {
+            Write-Host "    ✓ $($p.Instance): $([math]::Round($lastSize/1MB,2)) MB" -ForegroundColor Green
+        } else {
+            # Loud, and fatal. The whole point of this block is that unsaved work must not be
+            # restarted over. If the rescue save did not land, do not proceed to restart.
+            throw "Rescue save for '$($p.Instance)' never landed at $($p.Path) within 120s. Refusing to restart containers over unsaved work."
+        }
+    }
+}
+
+Write-Host ""
 Write-Host "Stopping Factorio instances..." -ForegroundColor Yellow
-docker exec surface-export-controller npx clusterioctl $ctlConfig instance stop "clusterio-host-1-instance-1" 2>$null
-docker exec surface-export-controller npx clusterioctl $ctlConfig instance stop "clusterio-host-2-instance-1" 2>$null
+Invoke-InstanceLifecycle "stop host-1 instance" 'not running' { docker exec surface-export-controller npx clusterioctl $ctlConfig instance stop "clusterio-host-1-instance-1" }
+Invoke-InstanceLifecycle "stop host-2 instance" 'not running' { docker exec surface-export-controller npx clusterioctl $ctlConfig instance stop "clusterio-host-2-instance-1" }
 Start-Sleep -Seconds 2
 Write-Host "✓ Instances stopped" -ForegroundColor Green
 
@@ -107,20 +254,9 @@ Write-Host ""
 Write-Host "Resetting instance saves to seed saves..." -ForegroundColor Yellow
 
 # Load save names from .env file
-$envPath = "docker/.env"
-$instance1SaveName = "test.zip"  # Default
-$instance2SaveName = "MinSeed.zip"  # Default
-
-if (Test-Path $envPath) {
-    Get-Content $envPath | ForEach-Object {
-        if ($_ -match '^INSTANCE1_SAVE_NAME=(.+)$') {
-            $instance1SaveName = $matches[1]
-        }
-        if ($_ -match '^INSTANCE2_SAVE_NAME=(.+)$') {
-            $instance2SaveName = $matches[1]
-        }
-    }
-}
+# (Removed: INSTANCE1/2_SAVE_NAME parsing. It read `docker/.env`, a file that does not exist, and
+# the parsed values were never used again — the seed paths below are hardcoded. Dead config that
+# looked configurable.)
 
 # IMPORTANT: Clusterio stores instance data under /clusterio/data/instances/
 # Lua module code is embedded in save files via save-patching during instance start.
@@ -129,32 +265,32 @@ if (Test-Path $envPath) {
 
 # Instance 1 - Delete old saves and re-upload seed save
 $inst1SavePath = "/clusterio/data/instances/clusterio-host-1-instance-1/saves"
-docker exec surface-export-host-1 sh -c "rm -f $inst1SavePath/*.zip" 2>$null
+Invoke-Step "clear host-1 saves" -AllowFail { docker exec surface-export-host-1 sh -c "rm -f $inst1SavePath/*.zip" } | Out-Null
 if ($LASTEXITCODE -eq 0) {
     Write-Host "  ✓ Cleared instance 1 saves" -ForegroundColor Green
 } else {
     Write-Host "  ✗ Failed to clear instance 1 saves" -ForegroundColor Red
 }
-$inst1SeedSave = "/clusterio/seed-data/hosts/clusterio-host-1/clusterio-host-1-instance-1/test1.zip"
-docker exec surface-export-controller npx clusterioctl $ctlConfig --log-level error instance save upload "clusterio-host-1-instance-1" $inst1SeedSave 2>$null
+$inst1SeedSave = "/clusterio/seed-data/hosts/clusterio-host-1/clusterio-host-1-instance-1/lab-gallery-source.zip"
+Invoke-Step "upload host-1 seed save" { docker exec surface-export-controller npx clusterioctl $ctlConfig --log-level error instance save upload "clusterio-host-1-instance-1" $inst1SeedSave } | Out-Null
 if ($LASTEXITCODE -eq 0) {
-    Write-Host "  ✓ Re-uploaded seed save for instance 1 (test1.zip)" -ForegroundColor Green
+    Write-Host "  ✓ Re-uploaded seed save for instance 1 (lab-gallery-source.zip)" -ForegroundColor Green
 } else {
     Write-Host "  ✗ Failed to upload seed save for instance 1" -ForegroundColor Red
 }
 
 # Instance 2 - Delete old saves and re-upload seed save
 $inst2SavePath = "/clusterio/data/instances/clusterio-host-2-instance-1/saves"
-docker exec surface-export-host-2 sh -c "rm -f $inst2SavePath/*.zip" 2>$null
+Invoke-Step "clear host-2 saves" -AllowFail { docker exec surface-export-host-2 sh -c "rm -f $inst2SavePath/*.zip" } | Out-Null
 if ($LASTEXITCODE -eq 0) {
     Write-Host "  ✓ Cleared instance 2 saves" -ForegroundColor Green
 } else {
     Write-Host "  ✗ Failed to clear instance 2 saves" -ForegroundColor Red
 }
-$inst2SeedSave = "/clusterio/seed-data/hosts/clusterio-host-2/clusterio-host-2-instance-1/test2.zip"
-docker exec surface-export-controller npx clusterioctl $ctlConfig --log-level error instance save upload "clusterio-host-2-instance-1" $inst2SeedSave 2>$null
+$inst2SeedSave = "/clusterio/seed-data/hosts/clusterio-host-2/clusterio-host-2-instance-1/lab-gallery-destination.zip"
+Invoke-Step "upload host-2 seed save" { docker exec surface-export-controller npx clusterioctl $ctlConfig --log-level error instance save upload "clusterio-host-2-instance-1" $inst2SeedSave } | Out-Null
 if ($LASTEXITCODE -eq 0) {
-    Write-Host "  ✓ Re-uploaded seed save for instance 2 (test2.zip)" -ForegroundColor Green
+    Write-Host "  ✓ Re-uploaded seed save for instance 2 (lab-gallery-destination.zip)" -ForegroundColor Green
 } else {
     Write-Host "  ✗ Failed to upload seed save for instance 2" -ForegroundColor Red
 }
@@ -201,21 +337,15 @@ $inst2Settings = $settingsBase.Clone(); $inst2Settings["name"] = "instance 2"
 $inst1Json = ($inst1Settings | ConvertTo-Json -Compress)
 $inst2Json = ($inst2Settings | ConvertTo-Json -Compress)
 
-docker exec surface-export-controller npx clusterioctl $ctlConfig instance config set "clusterio-host-1-instance-1" "factorio.settings" $inst1Json 2>$null
-docker exec surface-export-controller npx clusterioctl $ctlConfig instance config set "clusterio-host-2-instance-1" "factorio.settings" $inst2Json 2>$null
+Invoke-Step "set host-1 factorio.settings" { docker exec surface-export-controller npx clusterioctl $ctlConfig instance config set "clusterio-host-1-instance-1" "factorio.settings" $inst1Json } | Out-Null
+Invoke-Step "set host-2 factorio.settings" { docker exec surface-export-controller npx clusterioctl $ctlConfig instance config set "clusterio-host-2-instance-1" "factorio.settings" $inst2Json } | Out-Null
 Write-Host "✓ auto_pause disabled" -ForegroundColor Green
 
 # Start instances (may already be running if hosts auto-started them after container restart)
 Write-Host ""
 Write-Host "Starting instances (loading patched plugin code)..." -ForegroundColor Yellow
-docker exec surface-export-controller npx clusterioctl $ctlConfig instance start "clusterio-host-1-instance-1" 2>$null
-if ($LASTEXITCODE -ne 0) {
-    Write-Host "  Instance 1 already running" -ForegroundColor DarkGray
-}
-docker exec surface-export-controller npx clusterioctl $ctlConfig instance start "clusterio-host-2-instance-1" 2>$null
-if ($LASTEXITCODE -ne 0) {
-    Write-Host "  Instance 2 already running" -ForegroundColor DarkGray
-}
+Invoke-InstanceLifecycle "start host-1 instance" 'already running' { docker exec surface-export-controller npx clusterioctl $ctlConfig instance start "clusterio-host-1-instance-1" }
+Invoke-InstanceLifecycle "start host-2 instance" 'already running' { docker exec surface-export-controller npx clusterioctl $ctlConfig instance start "clusterio-host-2-instance-1" }
 Start-Sleep -Seconds 3
 Write-Host "✓ Instances started" -ForegroundColor Green
 Write-Host ""
@@ -230,8 +360,8 @@ Write-Host "  2. Test export: docker exec surface-export-controller npx clusteri
 Write-Host "  3. Test import: docker exec surface-export-controller npx clusterioctl instance send-rcon 2 '/import-platform <filename>'" -ForegroundColor White
 
 # Reaching here means every fail-fast step above passed ($ErrorActionPreference=Stop, plus explicit
-# `throw`/`exit 1` on build + health failures). The final `instance start` leaks a non-zero
-# $LASTEXITCODE when an instance was already running (handled gracefully above), which otherwise makes
-# a fully SUCCESSFUL run report exit 1 — confusing automation/CI and masking real failures. Force a
-# clean success so the exit code is trustworthy.
+# `throw`/`exit 1` on build + health failures). The final `instance start` still leaks a non-zero
+# $LASTEXITCODE when an instance was already running — Invoke-InstanceLifecycle deliberately tolerates
+# that message rather than aborting, but it cannot un-set the native exit code. Without this, a fully
+# SUCCESSFUL run would report exit 1, confusing automation/CI and masking real failures.
 exit 0

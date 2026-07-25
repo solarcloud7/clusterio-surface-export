@@ -8,7 +8,7 @@
 > engineer; do not invent an answer to close the gap. Keep this current as part of the `/di-change` gate.
 >
 > Related: [`TRANSFER_2PC.md`](TRANSFER_2PC.md) (the durable transfer design + current state — single source of
-> truth), [`EXPORT_IMPORT_FLOW.md`](EXPORT_IMPORT_FLOW.md), and CLAUDE.md "Common Pitfalls" (`#NN`).
+> truth), [`EXPORT_IMPORT_FLOW.md`](EXPORT_IMPORT_FLOW.md).
 
 ## Status legend
 - ✅ **Handled** — shipped behavior today.
@@ -34,7 +34,7 @@ completed handshake.
 
 *Resolved since first draft:* cargo-pod `awaiting_launch` loss → **fixed** zero-loss (§D, Data fidelity); rename-mid-transfer →
 **confirmed a real duplication exploit + fixed** via `surface.index` identity, lint-enforced (§B Concurrency;
-Pitfall #31, identity = `surface.index`, never the mutable name); source-dies-mid-transfer /
+identity = `surface.index`, never the mutable name); source-dies-mid-transfer /
 unrecoverable-counterpart policy → **DECIDED** handshake-or-discard, no force-resolve,
 no admin recovery console (§A Interruptions & durability; TRANSFER_2PC.md core invariant).
 
@@ -114,7 +114,7 @@ A: ✅ Handled — and it was a real **duplication exploit**: renaming mid-trans
 check refuse the delete → source survived + dest committed = two copies. Renaming is a standard hub-GUI action
 (wiki-confirmed). The transfer/delete identity now keys on the STABLE `surface.index` (never the mutable name), so
 a rename is correctly IGNORED — same surface ⇒ same platform ⇒ the delete proceeds. Enforced by `lint:lua`
-(Pitfall #31, identity = surface.index). Fixed 2026-07-04.
+(identity = surface.index). Fixed 2026-07-04.
 
 **Q: What if a platform index is reused by a new platform during my transfer?**
 A: ✅ The delete/unlock identity keys on `surface.index` (recorded at lock time): a reused per-force index points
@@ -129,7 +129,7 @@ A: ✅ The single exact gate fails (`failedStage` = the mismatched category, `it
 `script-output/failure_black_box_<platform>_<tick>.json` (expected/actual/diff, dest force state, mods, a physical
 entity scan of the dest), evacuates any passengers to Nauvis, and deletes the failed destination. The **controller**
 unlocks the source **immediately** (`tryUnlockSource`). No loss; the source is restored, not trapped for the TTL.
-(`import-completion.lua` bank+discard; Pitfall #28, the gate must count a complete state.) The unrelated
+(`import-completion.lua` bank+discard; the gate must count a complete state.) The unrelated
 uploaded-JSON / clone import path still uses the loose tolerances — the exact gate is transfer-only.
 
 **Q: What if a serializer bug forgets a whole container of state (like the burner-fuel incident) — does the exact gate catch it?**
@@ -166,7 +166,7 @@ put (unlocked, restored to your list), and the half-built destination is banked 
 discarded (`failedStage` in the transaction log tells you whether items or fluids didn't reconcile). There is no
 "partial" platform to clean up and no duplicate. (For deliberate post-mortem, an admin can arm the one-shot,
 debug-gated `preserve_failed_destination` flag to keep the failed surface paused instead of discarding it — it is
-consumed after a single use; Pitfall #30, mutating test hooks must be fail-safe on leak.)
+consumed after a single use; mutating test hooks must be fail-safe on leak.)
 
 **Q: How should I triage a failure black box?**
 A: Start with `failedStage`, then compare the expected/actual per-name rows. These signatures are known classes;
@@ -205,14 +205,14 @@ A: ✅ Restored via a pre-gate inserter-only activation pass so the strict gate 
 
 **Q: What if the destination force has less inserter-capacity research than mine?**
 A: ✅ Import replicates the source force's inserter bonuses onto the dest force (raise-only) so held items seat
-(Pitfall #29, dest-force research governs hand capacity).
+(dest-force research governs hand capacity).
 
 **Q: What if I have fluids (chemical plants, foundries, fusion plasma)?**
 A: ✅ Measured exact and enforced exact. R10/R11 grounded aggregate-by-name conservation, including frozen-world
-injection at 1,359 entities (Pitfall #17, historical pre-activation fluid loss). The single gate requires zero
-volume drift within `1e-6`; fusion plasma is currently excluded on both sides (Pitfall #21, fusion plasma
+injection at 1,359 entities (historical pre-activation fluid loss). The single gate requires zero
+volume drift within `1e-6`; fusion plasma is currently excluded on both sides (fusion plasma
 handling — revision queued; write rejection does not reproduce at 2.0.77, fluid-lab R14). Temperature remains
-diagnostic fidelity data (Pitfall #23, temperature merge and key boundaries).
+diagnostic fidelity data (temperature merge and key boundaries).
 
 **Q: What if fluids are lost after the item check?**
 A: There is no second check. Lua completes held items and fluid restoration while the destination is paused and
@@ -233,7 +233,7 @@ NOTEBOOK, archived at git tag `labs-archive-2026-07-19`.)
 
 **Q: What if some entities fail to place on the destination (missing mod)?**
 A: ✅ Their items/fluids are tallied as failed-entity-loss and subtracted from expected totals so validation is
-not falsely failed; each failure is logged per entity (Pitfall #20, failed-entity loss attribution).
+not falsely failed; each failure is logged per entity (failed-entity loss attribution).
 
 **Q: What if I have cargo pods waiting to launch (`awaiting_launch`) when I transfer?**
 A: ✅ Zero loss. `complete_cargo_pods` (during the lock step, before the export scan) recovers the pod's loaded

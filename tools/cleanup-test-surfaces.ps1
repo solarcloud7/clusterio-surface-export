@@ -5,7 +5,7 @@
 .DESCRIPTION
     Routine test runs and repro-transfer create disposable platform clones
     (reprotest_*, integration-test-*, entity-test-*, engineinv-*, *probe*, mytestclone…). This removes
-    them via game.delete_surface (platform.destroy() is a no-op — Pitfall #19), reusing TestBase's
+    them via game.delete_surface (platform.destroy() is a no-op), reusing TestBase's
     Remove-PlatformSurfacesWhere so the deletion logic AND the protected-fixtures list
     ($script:ProtectedFixtures = test/spikedoom08/ptB, never deleted) live in exactly one place.
 

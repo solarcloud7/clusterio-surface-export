@@ -40,7 +40,7 @@ false-refused → source survived + dest committed = two copies).
 - A user-supplied NAME is resolved to an index ONLY at the admin tooling boundary, failing loud on ambiguity
   (`SurfaceLock.find_lock_key_by_name`).
 - **Mechanically enforced:** `npm run lint:lua` rule `no-name-as-transfer-identity` fails on `platform.name` /
-  `platform_name` used in an `==`/`~=` comparison within the delete + lock spine. See CLAUDE.md Pitfall #31.
+  `platform_name` used in an `==`/`~=` comparison within the delete + lock spine. See CLAUDE.md identity is surface.index, never the mutable name.
 - Still name-keyed (lower-risk, follow-up): `platform_flight_data[platform.name]` — a name collision there
   cross-wires or loses a record. The dest-side validation-result debug store is keyed by transfer/job id.
 
@@ -85,7 +85,7 @@ DISCARD the sibling on abort)`.
 
 Load-bearing rules (each is a hard constraint, not a preference):
 - The dest VOTE means **fully finalized**: import → complete held items → restore fluids while paused/deactivated
-  → one exact item+fluid gate (Pitfall #15, Entity Activation Before Validation) → activate → gateway park →
+  → one exact item+fluid gate (the verdict lands BEFORE activation) → activate → gateway park →
   only then vote, holding the finished platform not-live. COMMIT can never race a later restoration failure.
   **The single frozen-world verdict pre-implements this object** on the current live transfer path: one Lua
   payload carries `success`, item/fluid validation, `failedStage`, and metrics; PR-3's VOTE consumes the same

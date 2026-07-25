@@ -5,7 +5,7 @@
  * See the `test-hook-mutating-must-be-fail-safe` memory + CLAUDE.md. `/code-review` (not the author) caught
  * `test_force_entity_loss`: a POST-gate, destructive, persisted hook whose arming integration test disarmed
  * only on its success path (5 early `exit 1` paths skipped the cleanup). On a leaked flag (`debug_mode`
- * defaults true on the always-up shared cluster, Pitfall #13) the NEXT unrelated transfer silently destroyed
+ * defaults true on the always-up shared cluster, debug_mode lives in the save and defaults true on a FRESH save) the NEXT unrelated transfer silently destroyed
  * dest entities AFTER its gate passed → still SUCCESS → source deleted = real, unattributed data loss, firing
  * only on the flaky/error path (hardest to notice).
  *

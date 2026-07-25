@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
  * lint-lua-invariants.mjs — static guard for the Lua module's documented-but-otherwise-unenforced
- * invariants. ESLint covers the TypeScript side (incl. Pitfall #26, the unbound Link-method guard);
+ * invariants. ESLint covers the TypeScript side (incl. the unbound Link-method guard);
  * the Lua module has no linter, so the footguns we have already been bitten by used to ship through
  * review with nothing to catch a regression. This script is that catch.
  *

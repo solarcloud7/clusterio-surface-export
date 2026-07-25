@@ -18,7 +18,7 @@
 -- Debug instrument (gated on debug_mode); pad measurement rides the selection_lab_drive remote so it
 -- is byte-identical to the manual selection-tool workflow. Machine-readable evidence is ONE
 -- [TESTRUN-JSON] line (log() always; rcon.print when no player drove it). Chat lines are plain
--- concatenated strings (Pitfall #25, LocalisedString 20-param cap — never a big LocalisedString).
+-- concatenated strings (LocalisedString 20-param cap — never a big LocalisedString).
 
 local Base = require("modules/surface_export/interfaces/commands/base")
 local SelectionLab = require("modules/surface_export/interfaces/gui/selection-lab")

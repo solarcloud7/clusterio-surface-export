@@ -41,5 +41,5 @@ The `rc11`/`rc21`/`rclist` profile aliases are **not** available to an agent. Us
 ```
 
 ## Reference
-- CLAUDE.md → "Observability — WHERE EACH LOG ACTUALLY LIVES" and Pitfall #26.
+- CLAUDE.md → "Observability — WHERE EACH LOG ACTUALLY LIVES" and never extract a Clusterio Link method — call it bound.
 - Prometheus metrics are live at `http://localhost:8080/metrics` (controller).

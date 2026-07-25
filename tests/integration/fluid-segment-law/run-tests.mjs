@@ -55,7 +55,7 @@ async function main() {
 	console.log(`fluid-segment-law: invoking fluid_segment_law_selftest on ${INSTANCE} ...`);
 	// The selftest is debug-gated. Enable debug_mode on the target instance so the driver is
 	// self-sufficient on a fresh CI seed as well as locally (debug_mode is the dev-cluster default
-	// per Pitfall #13; the CI cluster is torn down after the suite, so this leaves no lasting state).
+	// per debug_mode lives in the save and defaults true on a FRESH save; the CI cluster is torn down after the suite, so this leaves no lasting state).
 	lua(`remote.call('surface_export','configure',{debug_mode=true}); return {ok=true}`);
 	const result = lua(`return remote.call('surface_export','fluid_segment_law_selftest')`);
 

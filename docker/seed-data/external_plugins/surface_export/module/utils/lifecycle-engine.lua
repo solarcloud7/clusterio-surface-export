@@ -5,7 +5,7 @@
 -- authority; this engine re-checks the DI-critical arm_hook allowlist in-game (defense in depth).
 --
 -- Detail strings are PLAIN concatenation and short — a large LocalisedString hits the engine's hard
--- parameter cap (Pitfall #25). Every pcall here surfaces its error (returned or logged), never
+-- parameter cap (a LocalisedString is capped at 20 parameters). Every pcall here surfaces its error (returned or logged), never
 -- swallowed (lint:pcall-logging). Removal uses game.delete_surface via callers, never platform.destroy.
 local FixtureMeters = require("modules/surface_export/utils/fixture-meters")
 

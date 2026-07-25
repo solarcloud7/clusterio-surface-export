@@ -32,7 +32,7 @@ on the NEXT transfer. So the hook must be **pre-gate/self-protecting** (a leak m
 gate + PRESERVE its source) OR the arming test must disarm in a **guaranteed `finally`/`trap`** (never only the
 success path). Prefer a **non-destructive** hook (inflate the *expected* value) over destroying real state.
 `npm run lint:test-hooks` enforces the arm→guaranteed-disarm rule; a new pre-gate hook goes in its
-`FAIL_SAFE_HOOKS` list (a reviewable act). (memory: `test-hook-mutating-must-be-fail-safe`; CLAUDE.md Pitfall #30.)
+`FAIL_SAFE_HOOKS` list (a reviewable act). (memory: `test-hook-mutating-must-be-fail-safe`; CLAUDE.md: a mutating test hook must be fail-safe on leak.)
 
 ## 4. If the change adds a "catch"/validation next to an authoritative gate — is it COMMENSURATE and NON-REDUNDANT?
 Two sides you compare must be commensurate (a source entity-total vs a dest entity-total is NOT — failed-to-
@@ -43,7 +43,7 @@ erodes trust in the real gate; downgrade it to a neutral INFORMATIONAL display i
 
 ## 5. Does the change preserve the two-phase-commit invariant?
 Source is deleted **only after** the destination validates SUCCESS; on failure the source is unlocked and the
-dest copy is discarded. Watch the timing traps: the gate must count a **COMPLETE** state (Pitfall #28 — held
+dest copy is discarded. Watch the timing traps: the gate must count a **COMPLETE** state (the gate must count a COMPLETE frozen world — held
 items restore post-activation), never a mid-process snapshot; an ambiguous `SessionLost` on the import send is
 **possibly-delivered** — do NOT unlock (that duplicates). When in doubt, a recoverable stuck-lock beats an
 unrecoverable duplication. (memories: `validation-timing-trilemma`, `held-item-loss-is-dest-force-research`.)
