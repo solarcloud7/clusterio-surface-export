@@ -103,6 +103,13 @@
       "heading": "(lab-level citation — see NOTEBOOK)",
       "claim": "Entity state-dimension sweep: which restorable dimensions exist per entity class (equipment grids, burner fuel, heat, energy buffers).",
       "note": "Cited at lab level rather than a specific rung; the pad fixtures named alongside it carry the live coverage."
+    },
+    "hold-lab PR-0A": {
+      "measured_on": "2.0.77",
+      "notebook": "tests/hold-completeness-lab/NOTEBOOK.md",
+      "heading": "PR-0A hold-completeness lab",
+      "claim": "Cargo-pod state machines are PAUSE-EXEMPT (a held pod advanced while platform.paused=true); spoilage is anchored to global ticks and continues under pause. Basis of the complete_cargo_pods call in DestinationHold.stage().",
+      "note": "Cited from module/core/destination-hold.lua at the call site the law justifies."
     }
   }
 }

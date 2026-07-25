@@ -186,6 +186,6 @@ For the detailed Lua module breakdown, see the Code Reference Map in [EXPORT_IMP
 | [clusterio-core-dev.md](clusterio-core-dev.md) | Working on Clusterio core itself: the sibling fork checkout, the two test loops, and promotion paths |
 | [EXPORT_IMPORT_FLOW.md](EXPORT_IMPORT_FLOW.md) | Action trace of export/import/transfer: sequence diagrams, message names, channels, handler locations, and the import phase call tree (absorbed TRANSFER_WORKFLOW_GUIDE and TRANSFER_CODE_PATHS) |
 | [async-processing.md](async-processing.md) | Async batch-processing architecture for large exports/imports |
-| [factorio-2.0-api-notes.md](factorio-2.0-api-notes.md) | Verified Factorio 2.0 API & fluid-simulation facts (fluid segments, profiler/LocalisedString, inventory/platform APIs) |
+| [factorio-2.0-api-notes.md](factorio-2.0-api-notes.md) | Measured simulation behavior Wube does NOT document, scoped to zero-loss/zero-gain transfer (fluid segments, belt transport-line laws, item counting, inventory sizing) |
 | [CI_CD.md](CI_CD.md) | CI pipeline, integration-test flow, and how Factorio is provisioned in CI |
 | [GATEWAY_TRANSFER_PRD.md](GATEWAY_TRANSFER_PRD.md) | In-game gateway transfer — design + current state (what's shipped, verified 2.0.77 API facts, planned work) |

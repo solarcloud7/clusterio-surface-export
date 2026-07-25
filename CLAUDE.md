@@ -173,7 +173,7 @@ hands-on E2E checklist, one doc); repository test layout and entry points are in
 
 **Evidence discipline** (mechanized by `lint:evidence-claims` and `lint:version-certification`):
 engine-behavior knowledge carries evidence tags in [docs/factorio-2.0-api-notes.md](docs/factorio-2.0-api-notes.md)
-— **[API]** / **[empirical, <pin>]** / **[hypothesis]**. A mechanism EXPLANATION is [hypothesis] until its
+— **[API]** / **[empirical, <pin>, <citation>]**. There is NO [hypothesis] tier in api-notes: a claim whose only evidence is an undocumented one-off probe is DELETED, not demoted (git history keeps it). Elsewhere, a mechanism EXPLANATION is a lead until its
 *predictions* are tested — a behavioral rule can be [empirical] while its explanation is lore, and an
 unverifiable source ("expert analysis" of closed-source internals) must NEVER be cited as "Confirmed by."
 Rung IDs cited in code and docs (fluid-lab R11, inserter-lab B6, …) point at evidence commits reachable via the

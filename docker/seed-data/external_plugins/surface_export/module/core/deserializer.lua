@@ -483,7 +483,7 @@ function Deserializer.restore_entity_state(entity, entity_data)
   end
 
   -- Restore mining drill resource filter. Measured 2026-07-17 at 2.0.77 (see the mining-drill
-  -- filter entry in docs/factorio-2.0-api-notes.md): a drill filter is an EntityID — a resource
+  -- filter overload of LuaEntity.set_filter in the official API): a drill filter is an EntityID — a resource
   -- NAME string, no quality component (the {name,quality} table form throws "Invalid EntityID") —
   -- and set_filter is "callable only on entities that have filters" (every vanilla drill measures
   -- filter_slot_count == 0, so this only ever fires for modded drills with filter slots). The

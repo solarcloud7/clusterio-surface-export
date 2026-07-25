@@ -220,6 +220,10 @@ function Wait-ForCompletedSave {
     )
     $deadline = (Get-Date).AddSeconds($TimeoutSec)
     $last = $null
+    # Four signals, not one: Factorio writes `<name>.tmp.zip` and ATOMICALLY RENAMES it over the
+    # target, so `/server-save` returning does NOT mean the save is durable. Polling only mtime (or
+    # only tmp-gone) captures a stale or truncated zip. Require: tmp gone AND mtime advanced AND
+    # inode changed (proves the rename happened, not an in-place rewrite) AND size > 0.
     while ((Get-Date) -lt $deadline) {
         $last = Get-SaveState -Container $Container -Instance $Instance -SaveName $SaveName
         if ((-not $last.tmp_exists) -and ($last.saved_at -gt $BeforeTimestamp) `
