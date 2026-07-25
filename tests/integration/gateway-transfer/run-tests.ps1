@@ -61,6 +61,22 @@ $failed = 0
 $TOTAL_ASSERTIONS = 9
 $normClone = $null   # 2nd clone (normal-transfer regression); cleaned in finally
 
+# Fuel every thruster on a platform — a TEST-OWNED PRECONDITION, not a fixture assumption.
+# Flying to a gateway burns thruster fuel, and the fixture carries only what it happens to be baked
+# with (measured 2026-07-25: lab-transfer-fixture-v1 ~2442 fuel / ~2386 oxidizer, vs 9000/9000 on the
+# retired `test` seed). Inheriting ambient save fuel made this test fail as "route failed" when the
+# seed changed — a starting-state dependency, not a gateway bug. ONE helper, called for EVERY clone
+# this test routes: the first fix fueled only the main clone and the regression clone still starved.
+function Set-ThrusterFuel([string]$instance, [int]$platformIndex, [string]$label) {
+    $lua = "local p=game.forces['player'].platforms[$platformIndex] local n=0 " +
+           "for _,t in pairs(p.surface.find_entities_filtered{name='thruster'}) do " +
+           "for i=1,t.fluids_count do local f=t.get_fluid(i) " +
+           "local nm=(f and f.name) or (i==1 and 'thruster-fuel' or 'thruster-oxidizer') " +
+           "if pcall(function() t.set_fluid(i,{name=nm,amount=1000}) end) then n=n+1 end end end rcon.print('fueled '..n)"
+    Write-Status "Fueling '$label' thrusters (test-owned precondition)..." -Type info
+    Invoke-Lua -Instance $instance -Code $lua | Out-Null
+}
+
 # Physical entity count on a named platform (independent of any validator self-report).
 function Get-EntityCount([string]$instance, [string]$name) {
     $lua = "local function fp(n) for _,q in pairs(game.forces['player'].platforms or {}) do if q.name==n then return q end end end local p=fp('$name') if not p then rcon.print('ENT=-1') return end rcon.print('ENT='..#p.surface.find_entities_filtered{})"
@@ -103,13 +119,7 @@ try {
     $idx = Get-PlatformIndex -Instance $srcInstance -PlatformName $clone
     if (-not $idx) { Write-Status "Clone did not materialize" -Type error; exit 1 }
 
-    # ---- Fuel the clone's thrusters. The test must guarantee its own precondition: FLYING to a gateway
-    # burns thruster fuel, and the fixture platform carries only what it happens to be baked with
-    # (measured 2026-07-25: lab-transfer-fixture-v1 ~2442 fuel / ~2386 oxidizer, vs 9000/9000 on the
-    # retired `test` seed). Inheriting ambient save fuel made this test fail as "route failed" when the
-    # seed changed — a starting-state dependency, not a gateway bug. Top every thruster box up instead.
-    Write-Status "Fueling '$clone' thrusters (test-owned precondition)..." -Type info
-    Invoke-Lua -Instance $srcInstance -Code "local p=game.forces['player'].platforms[$idx] local n=0 for _,t in pairs(p.surface.find_entities_filtered{name='thruster'}) do for i=1,t.fluids_count do local f=t.get_fluid(i) local nm=(f and f.name) or (i==1 and 'thruster-fuel' or 'thruster-oxidizer') local ok=pcall(function() t.set_fluid(i,{name=nm,amount=1000}) end) if ok then n=n+1 end end end rcon.print('fueled '..n)" | Out-Null
+    Set-ThrusterFuel $srcInstance $idx $clone
 
     # ---- Route the clone to the gateway with a holding wait condition; wait until it PARKS there. ----
     Write-Status "Routing '$clone' -> '$Gateway' (holding wait condition)..." -Type info
@@ -225,7 +235,8 @@ try {
     $nidx = Get-PlatformIndex -Instance $srcInstance -PlatformName $normClone
     if (-not $nidx) { Write-Status "Regression clone did not materialize" -Type error; exit 1 }
 
-    # Park it at the gateway (same technique as the main scenario).
+    # Park it at the gateway (same technique as the main scenario) — fuel it FIRST, same as the main clone.
+    Set-ThrusterFuel $srcInstance $nidx $normClone
     Invoke-Lua -Instance $srcInstance -Code "local p=game.forces['player'].platforms[$nidx] local s=p.get_schedule() local i=s.add_record({station='$Gateway', wait_conditions={{type='time', ticks=7200, compare_type='or'}}}) s.go_to_station(i) s.set_stopped(false) rcon.print('routed')" | Out-Null
     $nparked = $false
     for ($i = 0; $i -lt 40; $i++) {
