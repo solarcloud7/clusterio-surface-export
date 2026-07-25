@@ -62,20 +62,45 @@ $failed = 0
 $TOTAL_ASSERTIONS = 9
 $normClone = $null   # 2nd clone (normal-transfer regression); cleaned in finally
 
-# Fuel every thruster on a platform — a TEST-OWNED PRECONDITION, not a fixture assumption.
-# Flying to a gateway burns thruster fuel, and the fixture carries only what it happens to be baked
-# with (measured 2026-07-25: lab-transfer-fixture-v1 ~2442 fuel / ~2386 oxidizer, vs 9000/9000 on the
-# retired `test` seed). Inheriting ambient save fuel made this test fail as "route failed" when the
-# seed changed — a starting-state dependency, not a gateway bug. ONE helper, called for EVERY clone
-# this test routes: the first fix fueled only the main clone and the regression clone still starved.
-function Set-ThrusterFuel([string]$instance, [int]$platformIndex, [string]$label) {
-    $lua = "local p=game.forces['player'].platforms[$platformIndex] local n=0 " +
-           "for _,t in pairs(p.surface.find_entities_filtered{name='thruster'}) do " +
-           "for i=1,t.fluids_count do local f=t.get_fluid(i) " +
-           "local nm=(f and f.name) or (i==1 and 'thruster-fuel' or 'thruster-oxidizer') " +
-           "if pcall(function() t.set_fluid(i,{name=nm,amount=1000}) end) then n=n+1 end end end rcon.print('fueled '..n)"
-    Write-Status "Fueling '$label' thrusters (test-owned precondition)..." -Type info
+# PARK a platform at a gateway — directly, without flying it there.
+#
+# The gateway is a PARKING SPOT. Nothing this test asserts is about flight: the plugin's predicate
+# (Gateway.parked_at_gateway) needs exactly two things — state == waiting_at_station AND
+# space_location is a gateway. Flying was merely how the old version manufactured those, and it cost
+# ~80s of polling per clone plus a fuel dependency that made a starved platform report "route failed"
+# (a fuel shortage misdiagnosed as a gateway bug, which cost a CI round-trip).
+#
+# Measured on 2.1.11 (2026-07-25, throwaway platform, host-1):
+#   LuaSpacePlatform.state          is READ-ONLY ("LuaSpacePlatform::state is read only.")
+#   LuaSpacePlatform.space_location is WRITABLE
+#   state enum: paused=7, waiting_at_station=6
+# So: teleport via space_location, unpause, THEN add the gateway schedule record. Because the platform
+# is already AT the location, the engine settles to waiting_at_station (6) IMMEDIATELY — no travel, no
+# fuel, no poll. Order matters: schedule-then-teleport would make it fly.
+#
+# The gateway record is still added (not faked), because witness E asserts the hop is STRIPPED from the
+# landed schedule — so it must genuinely be in the schedule before the transfer.
+function Set-ParkedAtGateway([string]$instance, [int]$platformIndex, [string]$gateway, [string]$label) {
+    $lua = "local p=game.forces['player'].platforms[$platformIndex] " +
+           "p.space_location='$gateway' p.paused=false " +
+           "local s=p.get_schedule() " +
+           "local i=s.add_record({station='$gateway', wait_conditions={{type='time', ticks=7200, compare_type='or'}}}) " +
+           "s.go_to_station(i) s.set_stopped(false) " +
+           "rcon.print('parked state='..tostring(p.state)..' loc='..tostring(p.space_location and p.space_location.name))"
+    Write-Status "Parking '$label' AT '$gateway' directly (no flight)..." -Type info
     Invoke-Lua -Instance $instance -Code $lua | Out-Null
+}
+
+# Confirm a platform really is parked AT the gateway. The direct park settles immediately, so this is
+# a short bounded confirm (not an 80s travel poll) — it exists so a silent failure to park still reports
+# as "did not park" rather than surfacing later as a confusing transfer error.
+function Test-ParkedAtGateway([string]$instance, [int]$platformIndex, [string]$gateway) {
+    for ($i = 0; $i -lt 5; $i++) {
+        $st = (Invoke-Lua -Instance $instance -Code "local p=game.forces['player'].platforms[$platformIndex] local sps=defines.space_platform_state rcon.print(tostring(p.state==sps.waiting_at_station)..' '..tostring(p.space_location and p.space_location.name))" | Out-String)
+        if ($st -match "true\s+$([regex]::Escape($gateway))") { return $true }
+        Start-Sleep -Seconds 1
+    }
+    return $false
 }
 
 # Physical entity count on a named platform (independent of any validator self-report).
@@ -120,19 +145,10 @@ try {
     $idx = Get-PlatformIndex -Instance $srcInstance -PlatformName $clone
     if (-not $idx) { Write-Status "Clone did not materialize" -Type error; exit 1 }
 
-    Set-ThrusterFuel $srcInstance $idx $clone
-
-    # ---- Route the clone to the gateway with a holding wait condition; wait until it PARKS there. ----
-    Write-Status "Routing '$clone' -> '$Gateway' (holding wait condition)..." -Type info
-    Invoke-Lua -Instance $srcInstance -Code "local p=game.forces['player'].platforms[$idx] local s=p.get_schedule() local i=s.add_record({station='$Gateway', wait_conditions={{type='time', ticks=7200, compare_type='or'}}}) s.go_to_station(i) s.set_stopped(false) rcon.print('routed')" | Out-Null
-
-    $parked = $false
-    for ($i = 0; $i -lt 40; $i++) {
-        Start-Sleep -Seconds 2
-        $st = (Invoke-Lua -Instance $srcInstance -Code "local p=game.forces['player'].platforms[$idx] local sps=defines.space_platform_state rcon.print(tostring(p.state==sps.waiting_at_station)..' '..tostring(p.space_location and p.space_location.name))" | Out-String)
-        if ($st -match "true\s+$([regex]::Escape($Gateway))") { $parked = $true; break }
+    Set-ParkedAtGateway $srcInstance $idx $Gateway $clone
+    if (-not (Test-ParkedAtGateway $srcInstance $idx $Gateway)) {
+        Write-Status "Clone did not park at '$Gateway' (direct park failed — state/space_location did not settle)" -Type error; exit 1
     }
-    if (-not $parked) { Write-Status "Clone never parked at '$Gateway' (route failed)" -Type error; exit 1 }
     Write-Status "Parked at '$Gateway'." -Type info
 
     # Capture the SOURCE physical entity count (fidelity baseline) while it is parked.
@@ -236,16 +252,11 @@ try {
     $nidx = Get-PlatformIndex -Instance $srcInstance -PlatformName $normClone
     if (-not $nidx) { Write-Status "Regression clone did not materialize" -Type error; exit 1 }
 
-    # Park it at the gateway (same technique as the main scenario) — fuel it FIRST, same as the main clone.
-    Set-ThrusterFuel $srcInstance $nidx $normClone
-    Invoke-Lua -Instance $srcInstance -Code "local p=game.forces['player'].platforms[$nidx] local s=p.get_schedule() local i=s.add_record({station='$Gateway', wait_conditions={{type='time', ticks=7200, compare_type='or'}}}) s.go_to_station(i) s.set_stopped(false) rcon.print('routed')" | Out-Null
-    $nparked = $false
-    for ($i = 0; $i -lt 40; $i++) {
-        Start-Sleep -Seconds 2
-        $st = (Invoke-Lua -Instance $srcInstance -Code "local p=game.forces['player'].platforms[$nidx] local sps=defines.space_platform_state rcon.print(tostring(p.state==sps.waiting_at_station)..' '..tostring(p.space_location and p.space_location.name))" | Out-String)
-        if ($st -match "true\s+$([regex]::Escape($Gateway))") { $nparked = $true; break }
+    # Park it at the gateway (same technique as the main scenario).
+    Set-ParkedAtGateway $srcInstance $nidx $Gateway $normClone
+    if (-not (Test-ParkedAtGateway $srcInstance $nidx $Gateway)) {
+        Write-Status "Regression clone did not park at '$Gateway' (direct park failed)" -Type error; exit 1
     }
-    if (-not $nparked) { Write-Status "Regression clone never parked at '$Gateway'" -Type error; exit 1 }
 
     # Fire the NORMAL /transfer-platform (NOT /gateway-transfer) of the gateway-parked platform.
     docker exec $dstContainer sh -c "rm -f $dstScriptOut/debug_import_result_${normClone}_*.json 2>/dev/null" 2>$null | Out-Null
