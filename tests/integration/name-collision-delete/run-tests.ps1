@@ -27,7 +27,7 @@
     Max seconds to wait for the destination import-result (default: 180).
 #>
 param(
-    [string]$SourcePlatform = "test",
+    [string]$SourcePlatform = "lab-transfer-fixture-v1",
     [int]$TimeoutSec = 180
 )
 

@@ -29,7 +29,7 @@
     Host holding the source platform (default: auto-detect).
 #>
 param(
-    [string]$SourcePlatform = "test",
+    [string]$SourcePlatform = "lab-transfer-fixture-v1",
     [int]$SourceHost = 0
 )
 

@@ -67,10 +67,18 @@ If the default was added after the current save was created, you need either:
 - A `patch-and-reset` (since the default only runs on `on_init`, which only fires for fresh saves)
 - Or manual enable: `rc11 "/sc remote.call('surface_export', 'configure', {debug_mode = true})"`
 
-### 14. Instance 2 "Platform Hasn't Been Built Yet"
-**Symptom**: Connecting to instance 2 shows "space platform hasn't been built yet" for spikedoom08, `/list-platforms` shows 0 entities
-**Cause**: Instance 2 uses a **minimal seed save** (`test2.zip`) that has a platform stub in save metadata but no physical space platform hub entity. The surface doesn't actually exist.
-**Expected behavior**: Instance 2 is the **import target**. Integration tests clone from the fully-built "test" platform on host 1 (1359 entities) and transfer it to host 2. The empty spikedoom08 is not used for exports.
+### 14. Instance 2 Is the Import Target (Empty by Design)
+**Symptom**: Connecting to instance 2 shows an empty platform / `/list-platforms` shows 0 entities.
+**Cause**: By design. **The seed saves ARE the banked gallery pair** (2026-07-25): host-1 seeds from
+`lab-gallery-source-of-truth.zip` and host-2 from `lab-gallery-destination-*.zip`, whose census is
+**0 entities** — an empty destination is exactly the import-target role.
+**Expected behavior**: Instance 2 is the **import target**, never an export source. Integration tests clone
+from the fully-built `lab-transfer-fixture-v1` platform on host 1 (1359 entities) and transfer it to host 2.
+**Why the seeds are the fixtures**: the pads are the test suite, so the instances should BOOT as the suite —
+one save family instead of two, no per-run copy-in, and no divergent "which save is this instance on?" state.
+(Historical: the legacy seeds were `test1.zip` with a platform named `test` and a `spikedoom08` stub on host-2.
+Both names are still in `$ProtectedFixtures` so a not-yet-reseeded cluster stays protected — the seed is
+written on FIRST seed only, Pitfall #9.)
 
 ### 15. Entity Activation Before Validation (Historical Bug, Fixed)
 **Symptom**: Transfer validation fails with "Item mismatches: iron-plate: GAINED items — expected 590, got 600"

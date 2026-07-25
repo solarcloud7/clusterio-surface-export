@@ -19,7 +19,14 @@ $script:ControlConfig = "/clusterio/tokens/config-control.json"
 
 # Real platforms that must NEVER be deleted by any cleanup/sweep — the single source of truth,
 # consumed by Remove-PlatformSurfacesWhere (and thus by every deletion path here and in the sweep tool).
-$script:ProtectedFixtures = @('test', 'spikedoom08', 'ptB')
+# The gallery names are the CURRENT fixtures: the seed saves ARE the banked gallery pair, so host-1
+# boots with the pad grid (lab-omnibus-state-v1) and the 1359-entity transfer fixture
+# (lab-transfer-fixture-v1). 'test'/'spikedoom08' are the retired legacy seed names, kept so a
+# not-yet-reseeded cluster (the seed is written on FIRST seed only — Pitfall #9) is still protected.
+$script:ProtectedFixtures = @(
+	'lab-transfer-fixture-v1', 'lab-omnibus-state-v1',
+	'test', 'spikedoom08', 'ptB'
+)
 
 # Escape a string for safe embedding inside a Lua single-quoted '...' literal. Send-Rcon passes the
 # command to `docker exec` as a single argv element (no shell layer), so the only quoting that matters

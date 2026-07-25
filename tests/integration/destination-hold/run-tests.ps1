@@ -15,7 +15,7 @@
       * an expired transfer lock respects an active destination hold: hidden, hold retained, lock cleared
 #>
 param(
-    [string]$SourcePlatform = "test",
+    [string]$SourcePlatform = "lab-transfer-fixture-v1",
     [int]$SourceHost = 0,
     [double]$FluidEpsilon = 0.01,
     [int]$RestartTimeoutSec = 120,
