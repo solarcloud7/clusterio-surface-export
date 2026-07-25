@@ -45,8 +45,8 @@ rcon.print(helpers.table_to_json({belt=belt,hub=hub,ground=ground,total=belt+hub
 
 try {
     Remove-Fixture
-    $sourceHost = Resolve-PlatformHost -PlatformName "test"
-    if (-not $sourceHost) { throw "test platform not found" }
+    $sourceHost = Resolve-PlatformHost -PlatformName "lab-transfer-fixture-v1"
+    if (-not $sourceHost) { throw "lab-transfer-fixture-v1 platform not found" }
     $sourceInstance = "clusterio-host-$sourceHost-instance-1"
     $sourceId = Get-ClusterioInstanceId -InstanceName $sourceInstance
     $destHost = if ($sourceHost -eq 1) { 2 } else { 1 }

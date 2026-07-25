@@ -24,7 +24,7 @@
     gateway record still present); without discover_and_unlock the route to the gateway fails (A flips).
 
 .PARAMETER SourcePlatform
-    Platform to clone as the transfer subject (default: test — a realistic, schedule-bearing platform).
+    Platform to clone as the transfer subject (default: lab-transfer-fixture-v1 — a realistic, schedule-bearing platform from the seeded gallery pair).
 .PARAMETER Gateway
     Gateway space-location to park at + transfer through (default: surfexp_gateway_1).
 .PARAMETER EntityTolPct
@@ -102,6 +102,14 @@ try {
     Start-Sleep -Seconds 1
     $idx = Get-PlatformIndex -Instance $srcInstance -PlatformName $clone
     if (-not $idx) { Write-Status "Clone did not materialize" -Type error; exit 1 }
+
+    # ---- Fuel the clone's thrusters. The test must guarantee its own precondition: FLYING to a gateway
+    # burns thruster fuel, and the fixture platform carries only what it happens to be baked with
+    # (measured 2026-07-25: lab-transfer-fixture-v1 ~2442 fuel / ~2386 oxidizer, vs 9000/9000 on the
+    # retired `test` seed). Inheriting ambient save fuel made this test fail as "route failed" when the
+    # seed changed — a starting-state dependency, not a gateway bug. Top every thruster box up instead.
+    Write-Status "Fueling '$clone' thrusters (test-owned precondition)..." -Type info
+    Invoke-Lua -Instance $srcInstance -Code "local p=game.forces['player'].platforms[$idx] local n=0 for _,t in pairs(p.surface.find_entities_filtered{name='thruster'}) do for i=1,t.fluids_count do local f=t.get_fluid(i) local nm=(f and f.name) or (i==1 and 'thruster-fuel' or 'thruster-oxidizer') local ok=pcall(function() t.set_fluid(i,{name=nm,amount=1000}) end) if ok then n=n+1 end end end rcon.print('fueled '..n)" | Out-Null
 
     # ---- Route the clone to the gateway with a holding wait condition; wait until it PARKS there. ----
     Write-Status "Routing '$clone' -> '$Gateway' (holding wait condition)..." -Type info
