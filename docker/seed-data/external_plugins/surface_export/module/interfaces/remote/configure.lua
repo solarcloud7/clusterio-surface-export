@@ -30,7 +30,7 @@ local function configure(config)
   end
   if config.test_force_entity_failure ~= nil then
     -- Test-only: make the NEXT inventory-bearing entity fail to place (exercises the
-    -- failed-entity-loss attribution + expected-count subtraction, Pitfall #20).
+    -- failed-entity-loss attribution + expected-count subtraction, failed-entity losses are tallied and subtracted from expected).
     storage.surface_export_config.test_force_entity_failure = config.test_force_entity_failure
   end
   if config.test_defer_clone_activation ~= nil then
@@ -54,7 +54,7 @@ local function configure(config)
     -- Test-only ONE-SHOT: on the NEXT export, drop one serialized inventory stack post-serialization
     -- and pre-census so the paired-read SOURCE census DETECTS the omission. Fires PRE-verdict, so a
     -- leaked flag makes the next transfer export ABORT and PRESERVE its source (self-protecting).
-    -- Enumerated in lint:test-hooks FAIL_SAFE_HOOKS. See Pitfall #30, mutating test hooks must be
+    -- Enumerated in lint:test-hooks FAIL_SAFE_HOOKS. See CLAUDE.md: a mutating test hook must be
     -- fail-safe on leak.
     storage.surface_export_config.test_force_census_omission = config.test_force_census_omission
   end

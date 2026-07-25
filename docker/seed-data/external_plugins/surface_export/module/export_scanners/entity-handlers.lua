@@ -605,7 +605,7 @@ EntityHandlers["mining-drill"] = function(entity)
   local data = {
     inventories = InventoryScanner.extract_all_inventories(entity),
     -- fluids: acid-fed drills (big mining drill on uranium) hold sulfuric acid in a fluidbox.
-    -- Pitfall #18 class (a specific handler that only exports inventories silently drops fluid
+    -- a handler whose type has a fluidbox must emit data.fluidboxes class (a specific handler that only exports inventories silently drops fluid
     -- data); caught live 2026-07-20 by the mining-drill-acid-feed pad audit (paste lost exactly
     -- the drill's 104.4 acid).
     fluidboxes = InventoryScanner.extract_fluidboxes(entity)

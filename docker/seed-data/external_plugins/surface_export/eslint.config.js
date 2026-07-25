@@ -4,7 +4,7 @@
  * ESLint flat config (type-aware) for the surface_export plugin's Node TypeScript.
  *
  * Primary purpose: mechanically guard the Clusterio Link-method binding footgun that
- * caused TWO production crashes (CLAUDE.md Pitfall #26). PR #2 introduced
+ * caused TWO production crashes (CLAUDE.md: never extract a Clusterio Link method — call it bound). PR #2 introduced
  *   const handleMessage = this.i.handle as (...) => void;   // crashed instance START
  *   const sendToController = this.i.sendTo as (...) => ...;  // crashed the TRANSFER
  * Extracting/casting a Link method as a value loses `this`, so it runs with
@@ -58,13 +58,13 @@ module.exports = tseslint.config(
 					message:
 						"Do not cast a Clusterio Link method as a value (e.g. `this.i.sendTo as (...)`). " +
 						"The cast loses `this` -> runtime crash ('reading sendRequest'/'handleRequest'). " +
-						"Call it BOUND (`this.i.sendTo(...)`) and cast the ARGS/result instead. See CLAUDE.md Pitfall #26.",
+						"Call it BOUND (`this.i.sendTo(...)`) and cast the ARGS/result instead. See CLAUDE.md: never extract a Clusterio Link method — call it bound.",
 				},
 				{
 					selector: `VariableDeclarator > MemberExpression.init[property.name=/^(${LINK_METHODS})$/]`,
 					message:
 						"Do not assign a Clusterio Link method to a variable (e.g. `const h = this.i.handle`). " +
-						"Extracting it loses `this` -> runtime crash. Call it BOUND. See CLAUDE.md Pitfall #26.",
+						"Extracting it loses `this` -> runtime crash. Call it BOUND. See CLAUDE.md: never extract a Clusterio Link method — call it bound.",
 				},
 				{
 					// `.catch(() => {})` / `.catch((e) => {})` with an empty body silently swallows a promise

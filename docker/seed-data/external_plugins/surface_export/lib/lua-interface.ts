@@ -141,13 +141,13 @@ export class LuaInterface {
 	 * Routes through the `delete_platform_for_transfer` remote, which (atomically, one tick): unlocks,
 	 * EVACUATES any aboard players/characters to a planet (so a passenger is never orphaned when the surface
 	 * vanishes), then tears down via `GameUtils.delete_platform` (version-correct; `game.delete_surface`
-	 * under the hood — `LuaSpacePlatform.destroy()` is a NO-OP at 2.0.76, Pitfall #19). Keeping all of that
+	 * under the hood — `LuaSpacePlatform.destroy()` is a NO-OP at 2.0.76, platform.destroy is a no-op). Keeping all of that
 	 * in one remote (a) makes evacuation atomic with the delete and (b) fixes the prior inline-RCON that
 	 * bypassed GameUtils.delete_platform.
 	 */
 	async deleteSourcePlatform(platformIndex: number, platformName: string, forceName: string, exportId?: string | null): Promise<string> {
 		// Resolve+delete by the UNIQUE index (emitted unquoted → a Lua number). Identity is surface.index
-		// (rename-safe, Pitfall #31); the 4th arg is the transfer's exportId (== the source lock's
+		// (rename-safe, platform identity is surface.index, never the mutable name); the 4th arg is the transfer's exportId (== the source lock's
 		// transfer_job_id) — a NAME-FREE request-vs-lock correlation so a stale/reused-index delete can't tear
 		// down an unrelated transfer. platformName is display/logging only; a missing exportId degrades to the
 		// surface.index check.

@@ -50,7 +50,7 @@ docker restart surface-export-host-1 surface-export-host-2
 `Auto-transfer requested` → `Transfer initiated: <id>` → `transfer_created` → `import_started` → `validation_received: Validation: SUCCESS` → `transfer_completed`.
 
 Where it stops = the layer at fault:
-- Stops after **export stored**, no `transfer_created` → the instance never sent `TransferPlatformRequest`. Check the host JSON log for `Error handling export completion: … reading 'sendRequest'` — the unbound-method footgun (CLAUDE.md Pitfall #26).
+- Stops after **export stored**, no `transfer_created` → the instance never sent `TransferPlatformRequest`. Check the host JSON log for `Error handling export completion: … reading 'sendRequest'` — the unbound-method footgun (CLAUDE.md: never extract a Clusterio Link method — call it bound).
 - `import_started` then `validation_timeout` (120s) → destination import never emitted validation. Read host-2's host JSON log + factorio log.
 - `validation_received: FAILED` → real item/fluid mismatch. Read `[Loss Analysis]` / `[Validation]` in the destination factorio log.
 
@@ -64,7 +64,7 @@ Where it stops = the layer at fault:
 ## Gotchas
 - **Never `npm install`/`npm install --include=dev`/`npm prune` in the plugin dir while the cluster is up.** The plugin lists `@clusterio/*` as peer+dev deps; npm 7+ auto-installs peers, dropping a 2nd `@clusterio/lib` into the shared bind-mounted `node_modules` → `clusterioctl` dies with `Attempt to import duplicate copy of @clusterio/lib` (and this driver hangs on its RCON calls). Recover: `docker exec surface-export-host-1 sh -c 'rm -rf /clusterio/external_plugins/surface_export/node_modules/@clusterio'`. To build locally use `npx tsc` (above), not `npm install`.
 - A successful transfer **deletes the source and creates on the destination**; the driver cleans up its own clone afterward unless `-KeepResult`.
-- `game.delete_surface(platform.surface)` is the only reliable platform delete (Pitfall #19) — `platform.destroy()` is a no-op.
+- `game.delete_surface(platform.surface)` is the only reliable platform delete — `platform.destroy()` is a silent no-op; use `GameUtils.delete_platform`.
 
 ## Reference
 - Reading logs: the **`/cluster-logs`** skill. CLAUDE.md → "Export/Import Workflow Notes", Pitfalls #19, #26.

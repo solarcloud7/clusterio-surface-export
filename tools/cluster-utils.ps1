@@ -27,7 +27,7 @@ function Get-InstanceList {
     .OUTPUTS
         Array of objects with Name, Id, Host, GamePort, Status properties.
     #>
-    $raw = docker exec surface-export-controller npx clusterioctl --log-level error --config=$script:ControlConfig instance list 2>&1
+    $raw = docker exec surface-export-controller npx clusterioctl --log-level error --config $script:ControlConfig instance list 2>&1
 
     # Skip header lines (first 2: column headers + separator)
     $lines = ($raw -split "`n") | Select-Object -Skip 2 | Where-Object { $_.Trim() -ne "" }
@@ -75,5 +75,15 @@ function Send-RCON {
         [string]$InstanceName,
         [string]$Command
     )
-    docker exec surface-export-controller npx clusterioctl --log-level error instance send-rcon $InstanceName $Command --config $script:ControlConfig 2>$null
+    # Do NOT swallow stderr. This used to end in `2>$null` with no exit-code check, which made
+    # instance-down, a bad token, an RCON timeout, and a genuinely EMPTY Lua reply all look
+    # identical: an empty string. Callers then reported "no platforms" for a dead cluster.
+    # A transport failure is now LOUD; an empty reply from a healthy instance still returns empty,
+    # which is the one case callers legitimately need to distinguish.
+    $out = docker exec surface-export-controller npx clusterioctl --log-level error `
+        instance send-rcon $InstanceName $Command --config $script:ControlConfig 2>&1
+    if ($LASTEXITCODE -ne 0) {
+        throw "Send-RCON failed on '$InstanceName' (exit $LASTEXITCODE): $(($out | Out-String).Trim())"
+    }
+    return $out
 }

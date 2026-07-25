@@ -709,7 +709,7 @@
 				"foundryTemp": 1500
 			},
 			"testCard": {
-				"law": "Fluids transfer exactly in tanks AND in crafting-machine fluidboxes (Pitfall #18, entity handlers must export crafter fluids): steam with temperature, chem-plant water/gas, foundry molten iron.",
+				"law": "Fluids transfer exactly in tanks AND in crafting-machine fluidboxes (entity handlers must export crafter fluids): steam with temperature, chem-plant water/gas, foundry molten iron.",
 				"build": "Migrated 2026-07-18 from the legacy y=0 zone onto the test-foundation pad at (8,8) via surface.clone_area (seed-prep migrate_omnibus_zone; exact-state move, originals destroyed).",
 				"action": "/test-run: reset the compare area, selection-lab copy of the pad build area, paste at +14,0, physical audit of both halves.",
 				"expected": "Audit reports equal fluids by name and amount; the pasted tank/plant/foundry read the same amounts and temperatures.",
@@ -943,7 +943,7 @@
 				"surfexp_gateways": "0.4.0",
 				"maraxsis": "1.34.51"
 			},
-			"note": "Script-built by tests/lab-gallery/seed-prep-ops.lua (build_inserter_held) onto the stamped inserter-held-capacity cell at (92,8): raise the player force bulk_inserter_capacity_bonus to >=11 (raise-only, logged), create a legendary bulk-inserter at (98.5,13.5), seat 8 LEGENDARY railgun-ammo via plain held_stack.set_stack (no active toggle; inserter-lab B6), then freeze (active=false, destructible=false). Re-baked 2026-07-18: the original bake seated a NORMAL-quality stack and self-certified via the entity-quality meter (B7 run 1b caught it via the independent stack-quality read); the stack is now legendary and both meters read the STACK. forceBulkBonus is a placeholder floor; the live bake pins the exact baked value. The ADVERSARIAL destination state is baked too (2026-07-18): the golden dest descends from the long-lived local host-2 lineage whose player force had bulk 11 / stack 3 (B7 run 1 caught it — the fixture could not discriminate the Pitfall #29 fix), so both inserter bonuses were zeroed at bake time and the dest artifact re-pinned; the runner still ASSERTS 0 at load, never forces.",
+			"note": "Script-built by tests/lab-gallery/seed-prep-ops.lua (build_inserter_held) onto the stamped inserter-held-capacity cell at (92,8): raise the player force bulk_inserter_capacity_bonus to >=11 (raise-only, logged), create a legendary bulk-inserter at (98.5,13.5), seat 8 LEGENDARY railgun-ammo via plain held_stack.set_stack (no active toggle; inserter-lab B6), then freeze (active=false, destructible=false). Re-baked 2026-07-18: the original bake seated a NORMAL-quality stack and self-certified via the entity-quality meter (B7 run 1b caught it via the independent stack-quality read); the stack is now legendary and both meters read the STACK. forceBulkBonus is a placeholder floor; the live bake pins the exact baked value. The ADVERSARIAL destination state is baked too (2026-07-18): the golden dest descends from the long-lived local host-2 lineage whose player force had bulk 11 / stack 3 (B7 run 1 caught it — the fixture could not discriminate the pre-hydration dest-force bonus-sync fix), so both inserter bonuses were zeroed at bake time and the dest artifact re-pinned; the runner still ASSERTS 0 at load, never forces.",
 			"invariant": "A legendary bulk-inserter holds 8 railgun-ammo in its hand while inactive and indestructible; the player force bulk_inserter_capacity_bonus is >= 11 so the hand seats in full and survives save/load.",
 			"expectedTerminalVerdict": "transfer-committed-hand-full",
 			"independentOracleRequired": true,
@@ -1648,7 +1648,7 @@
 				"y": 36
 			},
 			"name": "Failed-entity loss attribution",
-			"purpose": "An entity that fails to place must have its contents attributed as failed-entity losses so the gate passes on achievable totals (absorbs failed-entity-loss; Pitfall #20, failed entity loss attribution).",
+			"purpose": "An entity that fails to place must have its contents attributed as failed-entity losses so the gate passes on achievable totals (absorbs failed-entity-loss; failed entity loss attribution).",
 			"invariant": "With test_force_entity_failure=true armed on the dest, the scratch chest fails to place; its 100 iron-plate are attributed as failedEntityLosses (totalItemLoss stays 0 — no phantom loss) and the verdict is forced fail-safe: dest discarded, source preserved intact.",
 			"expectedTerminalVerdict": "gate-refusal-with-clean-attribution",
 			"anchors": [
@@ -1723,7 +1723,7 @@
 				"expect": "gate-failure"
 			},
 			"testCard": {
-				"law": "An entity that fails to place must have its contents attributed as failed-entity losses so the gate passes on achievable totals (absorbs failed-entity-loss; Pitfall #20, failed entity loss attribution).",
+				"law": "An entity that fails to place must have its contents attributed as failed-entity losses so the gate passes on achievable totals (absorbs failed-entity-loss; failed entity loss attribution).",
 				"build": "Authored 2026-07-20 on the open slot at (64,36); frozen anchor(s) only, content created programmatically each run.",
 				"action": "pad-transfer-suite: lifecycle setup (source) + dest-end sabotage, then the REAL /transfer-platform; /test-run locally pins the LEFT fingerprint and skips the act.",
 				"expected": "GATE MUST REFUSE: dest discarded, source preserved; fingerprint matches the manifest pin; [source] scratch: iron-plate item_count eq 100; report validation_success eq false; report validation_result.failedStage eq \"test_hook\"; report validation_result.failedEntityLosses.total_items eq 100; report validation_result.totalItemLoss eq 0",
@@ -1759,7 +1759,7 @@
 				"y": 50
 			},
 			"name": "Force-bonus sync seats held items",
-			"purpose": "Pre-Hydration Force Sync must raise an under-researched dest force so held items seat in full (absorbs force-bonus-sync; Pitfall #29, dest force research governs held capacity).",
+			"purpose": "Pre-Hydration Force Sync must raise an under-researched dest force so held items seat in full (absorbs force-bonus-sync; dest force research governs held capacity).",
 			"invariant": "With the dest bulk_inserter_capacity_bonus forced to 0 (restored after), the transferred bulk inserter still seats its full held stack of 8.",
 			"expectedTerminalVerdict": "strict-gate-success",
 			"anchors": [
@@ -1806,7 +1806,7 @@
 				]
 			},
 			"testCard": {
-				"law": "Pre-Hydration Force Sync must raise an under-researched dest force so held items seat in full (absorbs force-bonus-sync; Pitfall #29, dest force research governs held capacity).",
+				"law": "Pre-Hydration Force Sync must raise an under-researched dest force so held items seat in full (absorbs force-bonus-sync; dest force research governs held capacity).",
 				"build": "Authored 2026-07-20 on the open slot at (64,50); frozen anchor(s) only, content created programmatically each run.",
 				"action": "pad-transfer-suite: lifecycle setup (source) + dest-end sabotage, then the REAL /transfer-platform; /test-run locally pins the LEFT fingerprint and skips the act.",
 				"expected": "fingerprint matches the manifest pin; scratch: held eq 8; report validation_success eq true",

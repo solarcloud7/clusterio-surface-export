@@ -1,48 +1,60 @@
-# Surface Export Lab Gallery
+# Lab gallery saves
 
-This directory contains generated, version-pinned Factorio saves for visually inspecting and executing physical lab fixtures.
+Version-pinned Factorio saves backing the pad gallery. `tests/lab-gallery/manifest.json` is the single
+source of truth for what each artifact contains; this file documents how to *change* one.
 
-The paired gallery saves are inputs, not test oracles. Runners independently meter source and destination state.
-The source contains single-use fixtures; the destination contains the matching empty world. A batch resets by
-reloading both artifacts, never by repairing, cloning, reconstructing, or cleaning a consumed fixture.
+## What is here
 
-Generation source lives in `tests/lab-gallery/`. The source currently bakes the
-`belt-5x5-125-unstacked` and `specialized-fluid-reachability` fixtures in the same game file. The destination
-retains the compact visual catalog but contains neither physical fixture. Exact mod pins, SHA-256 values, world
-censuses, fixture revisions, and physical fingerprints live in `tests/lab-gallery/manifest.json`.
+| Artifact | Role | Pinned in manifest? |
+|---|---|---|
+| `lab-gallery-source-of-truth.zip` | Golden **source** — the pad grid (`lab-omnibus-state-v1`) and the transfer fixture (`lab-transfer-fixture-v1`) | yes, `saves.source.sha256` |
+| `lab-gallery-destination-surface-export-2.1.11.zip` | Golden **destination** — the matching empty world | yes, `saves.destination.sha256` |
+| `lab-gallery-snapshot-2026-07-25.zip` | Dated **restore point**, taken from the live gallery before an in-game audit | **no — deliberately unpinned insurance** |
 
-Regenerate for Factorio 2.0.77:
+The two goldens are also the cluster's seed saves — byte-identical copies, verified:
 
-```powershell
-node tests/lab-gallery/build-save.mjs `
-  --runtime-api C:\tmp\runtime-api-2.0.77.json `
-  --seed docker/seed-data/lab-saves/lab-gallery-surface-export-2.0.77.zip `
-  --source-output docker/seed-data/lab-saves/lab-gallery-source-surface-export-2.0.77.zip `
-  --destination-output docker/seed-data/lab-saves/lab-gallery-destination-surface-export-2.0.77.zip
+```
+docker/seed-data/hosts/clusterio-host-1/clusterio-host-1-instance-1/lab-gallery-source.zip
+docker/seed-data/hosts/clusterio-host-2/clusterio-host-2-instance-1/lab-gallery-destination.zip
 ```
 
-The output is create-only. Remove or rename an obsolete artifact deliberately before regeneration; the
-builder never overwrites a committed save.
+Re-banking a golden therefore means writing **two** files. Change only one and the cluster boots
+something other than what the tests verify.
 
-Reload both generated artifacts in separate, time-bounded Factorio 2.0.77 processes and independently meter
-both physical contracts:
+## The saves are inputs, not oracles
 
-```powershell
-node tests/lab-gallery/verify-save.mjs `
-  --source-save docker/seed-data/lab-saves/lab-gallery-source-surface-export-2.0.77.zip `
-  --destination-save docker/seed-data/lab-saves/lab-gallery-destination-surface-export-2.0.77.zip
+Runners meter source and destination state independently. Fixtures are single-use: a batch resets by
+reloading both artifacts, never by repairing, cloning, or cleaning a consumed fixture.
+
+## Re-banking a golden
+
+There is no build script. Earlier revisions of this file documented `build-save.mjs` and
+`verify-save.mjs`; neither has ever existed in this repo. The real procedure is manual:
+
+1. **Save the live instance** — `/sc game.server_save('rebank-<date>')`, then wait for the file to stop
+   growing. `non_blocking_saving` is on, so `server_save` returns *before* the write lands.
+2. **Copy it out** — `docker cp <container>:/clusterio/data/instances/<instance>/saves/<name>.zip <artifact>`
+3. **Copy it to the seed path as well** (see the table above).
+4. **Re-pin the SHA-256** in `tests/lab-gallery/manifest.json`.
+5. **Re-measure `expectedCensus`** — see the warning below.
+
+Verify:
+
+```bash
+node --test tests/lab-gallery/manifest.test.mjs
 ```
 
-The verifier uses host 2 only as an isolated runtime: it does not stop or modify the managed instance, uses
-separate game/RCON ports and a prefix-owned `/tmp` write directory, asks the disposable server to quit after
-the census, and removes the directory in `finally`. Acceptance requires Factorio 2.0.77, the visual index,
-the compact visual catalog, the exact 125-stack belt source, the specialized drill's live zero-fluidbox state,
-and an empty destination with no conflicting platform identity.
+`manifest.test.mjs` hashes both artifacts against their pins; `pad-transfer-suite` re-checks the source
+SHA as a preflight and refuses to run on a mismatch.
 
-Current certified artifacts:
+## Warning: `expectedCensus` is decorative
 
-- source: `705,897` bytes; SHA-256 `6F6DB4ADA0D6CF8747F01FA74880C5C6C272C7E4063BA2CE956ABF88D6E060A7`
-- destination: `702,678` bytes; SHA-256 `9F89B25F9CFA605A25A02D7BD42F3CB12554B9594E1581F84D998F15566C2C23`
+Only the SHA is enforced. Nothing censuses a golden save and compares it against `expectedCensus`, so a
+re-bank carrying wrong entity or chunk counts passes every gate in this repo. Those numbers must be
+**measured** on the live instance before they are written down — never carried over or estimated.
 
-The older single gallery save is retained only as the deterministic PR #111 generation seed. Test runners consume
-the paired artifacts, not that seed.
+## Warning: the seed rename needs a reseed
+
+The seed files were renamed from `test1.zip` / `test2.zip` on 2026-07-25. A cluster seeded before that
+still has the old names in its instance saves directory. Run `docker compose down -v` (or
+`tools/patch-and-reset.ps1`) before the gallery runners will resolve them.

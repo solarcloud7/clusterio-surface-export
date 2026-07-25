@@ -125,7 +125,7 @@ local function transfer_lock_selftest()
 		details[#details + 1] = { name = "selftest_exception", ok = false, msg = tostring(err) }
 	end
 
--- Pitfall #31 — the source-delete identity gate keys on surface.index, NEVER platform.name. Exercise the pure
+-- platform identity is surface.index, never the mutable name — the source-delete identity gate keys on surface.index, NEVER platform.name. Exercise the pure
 	-- SurfaceLock.transfer_delete_identity_ok directly (no storage/game state needed).
 	local function fake_surface(index, valid) return { index = index, valid = valid ~= false } end
 	check("delete_identity_same_surface_ok",

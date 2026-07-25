@@ -18,7 +18,7 @@
 --     whether the scratch platform is gone (the two-phase-commit source delete) — a MEASUREMENT,
 --     the orchestrator asserts.
 --   lifecycle_teardown(fixture_id)  [BOTH ends, idempotent]
---     delete the scratch platform if present (game.delete_surface route — Pitfall #19, platform
+--     delete the scratch platform if present (game.delete_surface route — platform
 --     .destroy is a no-op), run LifecycleEngine.cleanup on the persisted ctx (disarm hooks,
 --     restore force props), clear the run record. Safe to call on an end that has no record.
 --
@@ -95,7 +95,7 @@ local function lifecycle_setup(fixture_id, run_id)
 
   -- Platform-kind fixture (scale coverage): the WHOLE fixture platform is the payload. On this
   -- throwaway golden copy we RENAME it into the scratch namespace (name is a display label, not
-  -- identity — Pitfall #31) so teardown/leftover sweeps and the dest verify resolve it uniformly.
+  -- identity — platform identity is surface.index, never the mutable name) so teardown/leftover sweeps and the dest verify resolve it uniformly.
   -- The batch restore discards this world, so the rename never reaches the live gallery.
   if fixture.padKind == "platform" then
     local platform = platform_by_name(fixture.platformName)

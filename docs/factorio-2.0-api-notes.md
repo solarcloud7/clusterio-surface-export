@@ -178,7 +178,7 @@ a segment) — they are not a capture blind spot at 2.1.11.
   (reads stay false; loaders' flag IS writable — freeze feeders by deactivating loaders), and `insert_at`
   conserves exactly (distinct-unique_id controls on platform and nauvis; no duplication).** This re-confirms
   the long-standing "belts keep moving" law and is why the export-side atomic single-tick belt scan
-  (Pitfall #16, atomic belt scan) remains REQUIRED.
+  (atomic belt scan) remains REQUIRED.
 - **Import-side single-tick belt restore is the current conservative implementation, not a proven
   requirement.** Movement within a lane side between restore batches is contract-harmless (multiset unit);
   the untested risk is items crossing SIDE boundaries (through splitters/sideloads) mid-restore before the

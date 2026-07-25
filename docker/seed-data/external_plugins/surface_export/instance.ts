@@ -19,7 +19,7 @@ import { parseSourceTransferLockStateJson } from "./lib/source-lock-state";
  * duck-typed (they don't extend lib.Request/Event), so they don't satisfy Link's strict overloads.
  * We cast the OBJECT to this and call methods ON it — we never extract or cast a Link *method*
  * (`const h = this.i.handle` / `this.i.sendTo as ...`), which loses `this` and crashes
- * Link.handle/sendTo ("reading 'handleRequest'"/"'sendRequest'") at runtime. See CLAUDE.md Pitfall #26.
+ * Link.handle/sendTo ("reading 'handleRequest'"/"'sendRequest'") at runtime. See CLAUDE.md: never extract a Clusterio Link method — call it bound.
  */
 type PermissiveLink = {
 	handle(messageClass: unknown, handler: (...args: never[]) => unknown): void;
@@ -99,14 +99,14 @@ export class InstancePlugin extends BaseInstancePlugin {
 		this.i.handle(messages.ImportPlatformRequest, this.handleImportPlatformRequest.bind(this));
 		this.i.handle(messages.ImportPlatformFromFileRequest, this.handleImportPlatformFromFileRequest.bind(this));
 		this.i.handle(messages.DeleteSourcePlatformRequest, this.handleDeleteSourcePlatform.bind(this));
-		// Cast the ARGUMENTS (never the bound method — Pitfall #26): the optional nullable platformName makes
+		// Cast the ARGUMENTS (never the bound method — never extract a Clusterio Link method — call it bound): the optional nullable platformName makes
 		// the duck-typed Request class miss Link.handle's strict overload.
 		this.i.handle(messages.UnlockSourcePlatformRequest as never, this.handleUnlockSourcePlatform.bind(this) as never);
 		this.i.handle(messages.GetSourceTransferLockStateRequest, this.handleGetSourceTransferLockState.bind(this));
 		// TransferStatusUpdate.color (string|null) and InstanceListPlatformsRequest's Response
 		// optionals don't line up with their handlers' declared shapes. Register them through the
 		// permissive `this.link` view (see PermissiveLink) — a BOUND method call on the object,
-		// never an extracted/cast method (Pitfall #26).
+		// never an extracted/cast method (never extract a Clusterio Link method — call it bound).
 		this.link.handle(messages.TransferStatusUpdate, this.handleTransferStatusUpdate.bind(this));
 		this.link.handle(messages.InstanceListPlatformsRequest, this.handleInstanceListPlatformsRequest.bind(this));
 		this.link.handle(messages.PushGatewayConfigRequest, this.handlePushGatewayConfig.bind(this));
@@ -239,7 +239,7 @@ export class InstancePlugin extends BaseInstancePlugin {
 				this.logger.info(`  Sending TransferPlatformRequest to controller: exportId=${canonicalExportId}, targetInstanceId=${data.destination_instance_id}`);
 
 				// Send transfer request to controller through the permissive `this.link` view (see
-				// PermissiveLink) — a BOUND call on the object, never an extracted/cast method (Pitfall #26).
+				// PermissiveLink) — a BOUND call on the object, never an extracted/cast method (never extract a Clusterio Link method — call it bound).
 				const transferResponse = await this.link.sendTo(
 					"controller",
 					new messages.TransferPlatformRequest({

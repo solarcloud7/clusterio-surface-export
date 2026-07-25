@@ -5,12 +5,12 @@
 --   1. IDENTITY GATE (before any destructive step): correlate the request to the lock by the NAME-FREE transfer
 --      id (the request's exportId == the lock's transfer_job_id) AND match the lock's stored surface.index to the
 --      live platform's surface.index (STABLE across a rename; platform.name is never consulted). Refuse otherwise
---      (SurfaceLock.transfer_delete_identity_ok, Pitfall #31 / re-audit P1),
+--      (SurfaceLock.transfer_delete_identity_ok, platform identity is surface.index, never the mutable name / re-audit P1),
 --   2. best-effort unlock — only once the gate proved this is THIS transfer's platform (clears the lock entry),
 --   3. EVACUATE anyone bodily aboard to a planet (never orphan a player when the surface vanishes —
 --      Gateway.evacuate_passengers; native-aligned with how the engine handles hub loss),
 --   4. delete the platform via GameUtils.delete_platform (game.delete_surface under the hood — NOT raw, so it
---      goes through the version-correct teardown seam; Pitfall #19 / memory delete-bypasses-gateway-teardown).
+--      goes through the version-correct teardown seam; platform.destroy is a no-op / memory delete-bypasses-gateway-teardown).
 --
 -- INDEX is the join key (Factorio's own `force.platforms` is keyed by the unique platform.index). Identity is
 -- the STABLE surface.index — a player can RENAME a platform mid-transfer from the hub GUI, so the old name-based

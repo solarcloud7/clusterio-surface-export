@@ -33,7 +33,7 @@ function Get-PadGridPlatform { return $script:PadGridPlatform }
 # Remove-PlatformSurfacesWhere (and thus by every deletion path here and in the sweep tool).
 # DERIVED from the constants above so the protection list can never drift from the fixtures it guards.
 # 'test'/'spikedoom08' are the retired legacy seed names, kept so a not-yet-reseeded cluster (the seed
-# is written on FIRST seed only — Pitfall #9) is still protected.
+# is written on FIRST seed only — seeding is idempotent) is still protected.
 $script:ProtectedFixtures = @(
 	$script:TransferFixturePlatform, $script:PadGridPlatform,
 	'test', 'spikedoom08', 'ptB'
@@ -307,7 +307,7 @@ function Get-Platforms {
 
 .DESCRIPTION
     Protected fixtures ($script:ProtectedFixtures) are never deleted. platform.destroy() is a no-op at
-    our pinned Factorio (Pitfall #19), so removal goes through game.delete_surface, which is deferred to
+    our pinned Factorio (platform.destroy is a no-op), so removal goes through game.delete_surface, which is deferred to
     end of tick — step a tick afterward to finalize.
 
 .PARAMETER Instance
@@ -363,7 +363,7 @@ rcon.print(helpers.table_to_json({deleted = deleted, names = names}))
 
 .DESCRIPTION
     Deletes all platform surfaces whose names contain the specified pattern, via
-    game.delete_surface (platform.destroy() is a no-op at our pinned Factorio — Pitfall #19).
+    game.delete_surface (platform.destroy() is a no-op at our pinned Factorio).
     Only affects space platform surfaces.
 
     After calling this function, you must step at least one tick for the deletions
@@ -394,131 +394,6 @@ function Remove-TestSurfaces {
     $luaPat = $TestName -replace "'", ""
     $res = Remove-PlatformSurfacesWhere -Instance $Instance -PredicateLua "string.find(p.name, '$luaPat', 1, true)"
     return @{ deleted = $res.deleted; failed = 0; names = $res.names }
-}
-
-<#
-.SYNOPSIS
-    Create an isolated test surface with automatic cleanup of old test surfaces.
-
-.DESCRIPTION
-    This function handles the complete workflow for creating an isolated test surface:
-    1. Cleans up old test surfaces matching the test prefix
-    2. Steps ticks to finalize any scheduled deletions
-    3. Generates a unique test surface name with timestamp
-    4. Clones the source platform to create the test surface
-    5. Steps ticks to wait for clone completion
-
-.PARAMETER Instance
-    Instance name or ID (e.g., "clusterio-host-1-instance-1")
-
-.PARAMETER TestPrefix
-    Prefix for test surface names (e.g., "entity-test-" or "integration-test-")
-    Old surfaces matching this prefix will be cleaned up.
-
-.PARAMETER SourcePlatform
-    Name of the platform to clone (default: "test")
-
-.PARAMETER ShowProgress
-    If true, write progress messages to console
-
-.OUTPUTS
-    Hashtable with:
-    - success: Boolean indicating if surface was created
-    - platformName: Name of the created test surface (or source platform if failed)
-    - entityCount: Number of entities cloned (if successful)
-    - cleanedUp: Number of old surfaces cleaned up
-    - error: Error message (if failed)
-#>
-function New-IsolatedTestSurface {
-    param(
-        [Parameter(Mandatory=$true)]
-        [string]$Instance,
-        [Parameter(Mandatory=$true)]
-        [string]$TestPrefix,
-        [string]$SourcePlatform = "test",
-        [switch]$ShowProgress
-    )
-    
-    $result = @{
-        success = $false
-        platformName = $SourcePlatform
-        entityCount = 0
-        cleanedUp = 0
-        error = $null
-    }
-    
-    # Step 0: Version audit — fail loudly if the engine isn't the version these tests target, so an
-    # engine bump can't silently change export/import API behavior under us (version-drift trap).
-    Assert-FactorioVersion -Instance $Instance | Out-Null
-
-    # Step 1: Clean up old test surfaces
-    if ($ShowProgress) {
-        Write-Host "  Cleaning up old test surfaces..." -ForegroundColor Gray
-    }
-    
-    $cleanup = Remove-TestSurfaces -Instance $Instance -TestName $TestPrefix
-    $result.cleanedUp = $cleanup.deleted
-    
-    if ($ShowProgress -and $cleanup.deleted -gt 0) {
-        Write-Status "Scheduled $($cleanup.deleted) old test surface(s) for deletion" -Type success
-    }
-    
-    # Step 2: Wait briefly for any scheduled deletions to process
-    Start-Sleep -Seconds 1
-    
-    # Step 3: Generate unique test surface name
-    $TestRunId = Get-Date -Format "yyyyMMdd_HHmmss"
-    $TestPlatformName = "$TestPrefix$TestRunId"
-    
-    # Step 4: Clone the source platform
-    if ($ShowProgress) {
-        Write-Host "  Creating isolated test surface..." -ForegroundColor Gray
-    }
-    
-    $cloneResult = New-TestPlatform -Instance $Instance -SourcePlatform $SourcePlatform -DestPlatform $TestPlatformName
-    
-    if (-not $cloneResult.success) {
-        $result.error = $cloneResult.error
-        if ($ShowProgress) {
-            Write-Status "Failed to create test surface: $($cloneResult.error)" -Type error
-            Write-Status "Using source platform directly (tests may affect it)" -Type warning
-        }
-        return $result
-    }
-    
-    $result.success = $true
-    $result.platformName = $TestPlatformName
-    $result.entityCount = $cloneResult.entity_count
-    
-    if ($ShowProgress) {
-        Write-Status "Created test surface '$TestPlatformName'" -Type success
-    }
-    
-    # Step 5: Wait for clone import job to complete
-    # The clone starts an async import job that processes entities in batches per tick.
-    # We must wait for it to finish before the surface has all entities.
-    $jobId = $cloneResult.job_id
-    if ($jobId) {
-        if ($ShowProgress) {
-            Write-Host "  Waiting for clone import job '$jobId' to complete..." -ForegroundColor Gray
-        }
-        
-        $checkScript = "local jobs = storage.async_jobs or {}; local j = jobs['$jobId']; rcon.print(j == nil and 'true' or 'false')"
-        $jobDone = Wait-ForJob -Instances @($Instance) -MaxWaitSeconds 60 -CheckScript $checkScript
-        
-        if (-not $jobDone) {
-            if ($ShowProgress) {
-                Write-Status "Clone import job '$jobId' timed out after 60s" -Type warning
-            }
-        } elseif ($ShowProgress) {
-            Write-Status "Clone import job completed" -Type success
-        }
-    } else {
-        # Fallback: no job_id returned, wait for processing
-        Start-Sleep -Seconds 5
-    }
-    
-    return $result
 }
 
 #endregion
@@ -1090,7 +965,6 @@ Export-ModuleMember -Function @(
     'Remove-PlatformSurfacesWhere',
     # Surface Management
     'Remove-TestSurfaces',
-    'New-IsolatedTestSurface',
     
     # Tick Control
     'Step-Tick',

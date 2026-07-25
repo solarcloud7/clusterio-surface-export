@@ -2,7 +2,6 @@
 -- CRITICAL: Ensures zero item loss and zero duplication through verification
 
 local Util = require("modules/surface_export/utils/util")
-local SurfaceCounter = require("modules/surface_export/validators/surface-counter")
 
 local Verification = {}
 
@@ -148,23 +147,6 @@ function Verification.verify_export(export_data)
   return true
 end
 
---- Count all items on a live surface (for post-import verification)
---- Delegates to SurfaceCounter.count_items for the canonical implementation.
---- @param surface LuaSurface: The surface to count items on
---- @return table: Table of item_key = count pairs
-function Verification.count_surface_items(surface)
-  local counts, _ = SurfaceCounter.count_items(surface)
-  return counts
-end
-
---- Count all fluids on a live surface (segment-aware)
---- Delegates to SurfaceCounter.count_fluids for the canonical implementation.
---- @param surface LuaSurface: The surface to count fluids on
---- @return table: Table of fluid_key = amount pairs
-function Verification.count_surface_fluids(surface)
-  local counts, _ = SurfaceCounter.count_fluids(surface)
-  return counts
-end
 
 --- Generate a verification report comparing expected vs actual counts
 --- @param expected table: Expected item counts

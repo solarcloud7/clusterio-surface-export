@@ -5,7 +5,7 @@
 -- SERIALIZED read (Verification's serialized-data counting rules over the entity_data we captured).
 -- record() folds both into running totals and appends an entity-attributed mismatch row whenever the
 -- two disagree. verdict() then applies the SAME exact contract the frozen transfer gate applies:
--- item keys exact, fluid names within 1e-6 (Pitfall #16, atomic belt scan — a per-entity paired read
+-- item keys exact, fluid names within 1e-6 (atomic belt scan — a per-entity paired read
 -- in the serialization tick makes a rolling source snapshot impossible to hide).
 --
 -- Direction convention (documented so rows read consistently): the PHYSICAL read is ground truth, so
@@ -18,7 +18,7 @@
 -- belt-attribution row shape in import_phases/belt_restoration.lua.
 --
 -- BELT ITEMS TIMING: do not call record() on belt entities before belt items are serialized into
--- entity_data — during async export, skip_belt_items defers them to the atomic pass (Pitfall #16).
+-- entity_data — during async export, skip_belt_items defers them to the atomic pass (belts keep moving — belt items must be extracted in ONE atomic tick).
 --
 -- FLUID AGGREGATION CHOICE: both fluid sides carry TEMPERATURE-keyed maps; the verdict compares
 -- fluids aggregate-BY-NAME at EXACT_EPSILON via Util.parse_fluid_temp_key — the same rule as the
@@ -99,7 +99,7 @@ end
 --- Rows are ITEM-attributed only. Items are self-contained per entity, so a per-entity physical-vs-
 --- serialized comparison is commensurate. Fluids are NOT row-attributed: count_entity_fluids dedups
 --- a fluid segment across the entities it spans (the first entity in a pipe run counts the whole
---- segment, later ones read 0 — Pitfall #22, pipes/tanks are the segment-bearing entities), while the
+--- segment, later ones read 0 — pipes/tanks are the segment-bearing entities), while the
 --- serialized side attributes each entity its own share. A per-entity fluid comparison would therefore
 --- be non-commensurate and fire a spurious row on every multi-entity segment even when the aggregate is
 --- exact. Fluids are checked aggregate-by-name in verdict() instead, the only commensurate granularity.

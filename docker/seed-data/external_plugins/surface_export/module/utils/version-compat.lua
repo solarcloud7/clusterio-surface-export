@@ -109,7 +109,7 @@ PROFILES["2.0"] = {
   belt_insert_at_back = function(line, stack, belt_stack_size)
     return line.insert_at_back(stack, belt_stack_size)
   end,
-  -- Platform teardown. LuaSpacePlatform.destroy() is a SILENT no-op at 2.0.76 (Pitfall #19) — the
+  -- Platform teardown. LuaSpacePlatform.destroy() is a SILENT no-op (measured 2.0.76; RE-MEASURED at the 2.1.11 pin 2026-07-25: destroy() returns without error and the platform is STILL present) (platform.destroy is a no-op) — the
   -- only API that actually removes a platform is game.delete_surface(). The caller (GameUtils.
   -- delete_platform) owns the validity checks and the surfaceless-leak logging.
   delete_platform = function(platform)

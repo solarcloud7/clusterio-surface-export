@@ -186,7 +186,7 @@ remote.call("surface_export", "export_platform", platformIndex, forceName, targe
 The export job is processed across multiple ticks by the async processor and export
 pipeline. Entity structure, inventories, fluids, and tiles are scanned in batches;
 belt-item extraction is deferred to a single atomic pass at completion (see the
-belt-scan note in CLAUDE.md, Pitfall #16). On completion the serialized export is
+belts keep moving — belt items must be extracted in ONE atomic tick). On completion the serialized export is
 stored in the mod and the plugin is notified via the `surface_export_complete`
 send_json channel.
 
@@ -287,7 +287,7 @@ the mod emits `surface_export_import_complete` with validation and import metric
 ```
 AsyncProcessor.process_tick()                     [core/async-processor.lua]
   → ImportPipeline.process_batch()                [core/import-pipeline.lua]  (async, multiple ticks)
-      → Phase-0 force sync (raise-only inserter bonuses — Pitfall #29, dest-force research replication)
+      → Phase-0 force sync (raise-only inserter bonuses — dest-force research replication)
       → TileRestoration.process()                 [import_phases/tile_restoration.lua]
       → EntityCreation.process_batch()            [import_phases/entity_creation.lua]  (entities kept inactive)
 
@@ -303,7 +303,7 @@ ImportCompletion.run_phase2()  (single tick)      [core/import-completion.lua]
   → Deserializer.restore_inventories()  PASS 2: all other entities
      (set_stack cap now uses beacon-boosted crafting_speed)
   → deactivate all entities, re-pause platform
-  → ActiveStateRestoration.restore_held_items_only()   (single owner of held seating — Pitfall #28, gate counts a complete state)
+  → ActiveStateRestoration.restore_held_items_only()   (single owner of held seating — gate counts a complete state)
   → FluidRestoration.restore()                    [import_phases/fluid_restoration.lua]  (paused/deactivated)
   → TransferValidation.validate_import(strict=true)    [validators/transfer-validation.lua]
      (ONE immutable exact item + by-name fluid verdict)
@@ -344,7 +344,7 @@ controller for `TransferPlatformRequest`, `StartPlatformTransferRequest`, and
    remove the source platform via a **`DeleteSourcePlatformRequest`**
    (`instance.ts` → `handleDeleteSourcePlatform`, which uses
    `game.delete_surface(...)` — `platform.destroy()` is a no-op in Factorio 2.0, see
-   CLAUDE.md Pitfall #19). On failure the source is unlocked via a
+   CLAUDE.md: platform.destroy() is a no-op — use GameUtils.delete_platform). On failure the source is unlocked via a
    **`UnlockSourcePlatformRequest`** (`handleUnlockSourcePlatform`).
 
 In-game status messages are pushed to the source instance with

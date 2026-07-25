@@ -15,7 +15,7 @@
 -- Zero-leftover is mandatory on the shared cluster: a stale scratch from a prior crashed run is swept
 -- at start, and the platform this run creates is torn down through the HELD reference.
 --
--- teardown_clean note: game.delete_surface is DEFERRED to end of tick (Pitfall #19; the belt selftest
+-- teardown_clean note: game.delete_surface is DEFERRED to end of tick (platform.destroy is a no-op; the belt selftest
 -- and the delete-platform memory both rely on the surface staying enumerable within the same
 -- execution), so a same-execution rescan would still see the platform. teardown_clean therefore means
 -- "delete issued without error"; the driver (tests/integration/fluid-segment-law/run-tests.mjs) does

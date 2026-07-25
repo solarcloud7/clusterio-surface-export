@@ -10,7 +10,7 @@ GameUtils.QUALITY_NORMAL = "normal"
 
 --- LuaForce research bonuses that govern INSERTER HAND CAPACITY (how many items an inserter hand holds).
 --- These ride in the export payload (force_data) and are replicated RAISE-ONLY onto the destination force(s)
---- before import hydration so a less-researched dest can physically hold the source's held items (Pitfall #29).
+--- before import hydration so a less-researched dest can physically hold the source's held items (inserter hand capacity is governed by the DEST force's research).
 --- Single source of truth for BOTH the export capture and the import apply — keep them in lockstep here.
 GameUtils.FORCE_SYNC_PROPS = { "bulk_inserter_capacity_bonus", "inserter_stack_size_bonus" }
 
@@ -243,7 +243,7 @@ function GameUtils.pcall_warn(context, fn)
 end
 
 --- Reliably remove a space platform (its surface and all entities).
---- Pitfall #19: LuaSpacePlatform.destroy() is a SILENT no-op in Factorio 2.0 Space Age — it
+--- platform.destroy is a no-op: LuaSpacePlatform.destroy() is a SILENT no-op in Factorio 2.0 Space Age — it
 --- returns without error but leaves the platform and surface fully intact (verified empirically:
 --- after `platform.destroy()`, `platform.valid` is still true and the platform count is unchanged).
 --- `game.delete_surface()` is the ONLY API that actually tears a platform down. Always route
@@ -256,7 +256,7 @@ function GameUtils.delete_platform(platform)
   local surface = platform.surface
   if surface and surface.valid then
     -- Version-correct teardown primitive (2.0.76: game.delete_surface; platform.destroy() is a
-    -- no-op — Pitfall #19). Routed through VersionCompat so an engine bump can change just the seam.
+    -- no-op — platform.destroy is a no-op). Routed through VersionCompat so an engine bump can change just the seam.
     VersionCompat.delete_platform(platform)  -- deferred to end of tick; fully removes platform + surface
     return true
   end
@@ -264,7 +264,7 @@ function GameUtils.delete_platform(platform)
   -- platform.destroy() is a no-op, and there is no other API to remove a surfaceless platform —
   -- log so the leak is visible rather than silent.
   log(string.format(
-    "[GameUtils] delete_platform: platform '%s' has no valid surface; cannot fully remove (Pitfall #19)",
+    "[GameUtils] delete_platform: platform '%s' has no valid surface; cannot fully remove (platform.destroy is a no-op)",
     tostring(platform.name)))
   return false
 end

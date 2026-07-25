@@ -14,7 +14,7 @@
 // self-increments from the bumped base, so one bump covers the whole wave), then per missing platform:
 // resolve its per-force index by NAME (tooling boundary), /transfer-platform to the gallery, poll for
 // a two-phase-committed arrival, light census. Per-platform failures are captured (cluster-*.log
-// evidence + best-effort unlock) and DO NOT abort the wave. Finally: restore host-1 to test1.zip and
+// evidence + best-effort unlock) and DO NOT abort the wave. Finally: restore host-1 to lab-gallery-source.zip and
 // remove the temp golden save with filesystem proof (unconditional finalizer). The gallery (host-2)
 // is NEVER stopped/started/loaded — arrivals via transfer are the whole point.
 
@@ -30,8 +30,11 @@ const HOST1_INSTANCE = "clusterio-host-1-instance-1";
 const HOST1_CONTAINER = "surface-export-host-1";
 const HOST1_SAVES = `/clusterio/data/instances/${HOST1_INSTANCE}/saves`;
 const DELIVER_SAVE = "lab-gallery-deliver-all.zip";
-const RESTORE_SAVE = "test1.zip";
-const GOLDEN_SOURCE = "docker/seed-data/lab-saves/lab-gallery-source-surface-export-2.0.77.zip";
+const RESTORE_SAVE = "lab-gallery-source.zip";
+// Must match manifest.json saves.source.artifact — that pin is the one the SHA preflight enforces.
+// (This pointed at lab-gallery-source-surface-export-2.0.77.zip, a file deleted in the 2.1.11
+// migration, so the copy at line ~220 could only ever fail.)
+const GOLDEN_SOURCE = "docker/seed-data/lab-saves/lab-gallery-source-of-truth.zip";
 const MANIFEST = "tests/lab-gallery/manifest.json";
 
 const PER_PLATFORM_TIMEOUT_MS = 300_000; // small platforms clear in ~60-90 s; census-fusion is novel
@@ -241,7 +244,7 @@ async function main() {
 			summary.deliveries.push(outcome);
 		}
 	} finally {
-		// Unconditional restore: land host-1 back on test1.zip and PROVE the temp save is gone.
+		// Unconditional restore: land host-1 back on lab-gallery-source.zip and PROVE the temp save is gone.
 		if (displaced) {
 			ctl("instance", "stop", HOST1_INSTANCE);
 			ctl("instance", "start", HOST1_INSTANCE, "--save", RESTORE_SAVE);
@@ -254,7 +257,7 @@ async function main() {
 
 	// Post-wave state: the final gallery platform list + zero-leftover check on BOTH ends (the gallery
 	// is the load-bearing side — host-2 is never restored, so its leftovers are the ones that matter;
-	// host-1 was just restored to test1.zip which wipes any mid-wave locks/jobs/holds there).
+	// host-1 was just restored to lab-gallery-source.zip which wipes any mid-wave locks/jobs/holds there).
 	summary.galleryAfter = galleryPlatformNames().sort();
 	summary.galleryPlatformCount = summary.galleryAfter.length;
 	summary.leftovers = { gallery: leftovers(galleryLua), host1: leftovers(body => lua(1, body)) };

@@ -34,7 +34,6 @@ docker/server-settings.json
 # Codex agent tooling (the .claude analogue for Codex) — local dev config, not tracked
 /.agents/
 /.codex/
-/AGENTS.md
 
 # Mod packaging
 *.zip
