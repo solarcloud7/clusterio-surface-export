@@ -91,7 +91,9 @@ This guarantees a point-in-time consistent snapshot of all belt contents.
 
 ```lua
 /export-platform 1
-/export-platform "Alpha"
+# NOTE: the argument is the platform INDEX, never a name — the command does
+# tonumber(params[1]), so a name yields nil and over RCON prints
+# "Error: Platform index required when using RCON". Use /list-platforms to get the index.
 ```
 
 ### Via Remote Interface
@@ -128,27 +130,36 @@ remote.call("surface_export", "import_platform_chunk", name, chunk, n, total, fo
 
 1. Parse and decompress JSON data
 2. Create platform with tiles (single tick)
-3. Entity creation — async batches (50/tick), entities deactivated
-4. Inventory restoration
-5. Belt item restoration (single tick — belts can't be deactivated)
-6. Circuit connection restoration
-7. Platform paused (fuel protection during validation)
-8. Validation (compare item/fluid counts)
-9. Activation + unpause (on success)
+3. Entity creation — async batches, entities deactivated (beacons deliberately stay active)
+4. Hub inventories (after cargo bays exist — inventory size scales with bays)
+5. Belt items (single tick — belts can't be deactivated)
+6. Entity state — control behavior, filters, circuit connections
+7. Inventories, 2 passes — beacons FIRST (populating beacon_modules updates crafting_speed
+   immediately, so pass 2's set_stack cap is beacon-correct)
+8. Held-item completion — inserter-only synchronous pass
+9. Fluid restoration — the payload's fluid-segment registry, written while paused and
+   disabled_by_script
+10. Exact validation — one immutable verdict: exact items + by-name fluids
+11. Activation + unpause — only after the verdict passes
+12. Loss analysis — post-activation reporting; never changes the verdict
+
+This ordering is load-bearing and `module/core/import-completion.lua:5-6` marks it
+"CRITICAL — do not reorder". The authoritative list is "Import Phase Ordering" in CLAUDE.md.
 
 ## Async Processor API
 
 ### Queue Export
 
 ```lua
-AsyncProcessor.queue_export(platform_index, force_name, requester_name)
+AsyncProcessor.queue_export(platform_index, force_name, requester_name, destination_instance_id, gateway_target)
+-- destination_instance_id is what makes an export a TRANSFER; nil = export-only
 -- Returns: job_id (string) or nil, error (string)
 ```
 
 ### Queue Import
 
 ```lua
-AsyncProcessor.queue_import(json_data, platform_name, force_name, requester_name)
+AsyncProcessor.queue_import(json_data, new_platform_name, force_name, requester_name, receive_timing)
 -- Returns: job_id (string) or nil, error (string)
 ```
 

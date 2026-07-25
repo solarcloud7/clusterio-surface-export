@@ -23,7 +23,7 @@ a feature of this repo, not a separate project.
 
 | Piece | Home | What it does |
 |---|---|---|
-| **Gateway mod** (data-stage) | `docker/seed-data/mods-src/surfexp_gateways/` → built `docker/seed-data/mods/surfexp_gateways_0.1.0.zip` | 4 surfaceless gateway `space-location`s + `nauvis` connections; pure data, no control.lua |
+| **Gateway mod** (data-stage) | `docker/seed-data/mods-src/surfexp_gateways/` → built `docker/seed-data/mods/surfexp_gateways_0.4.0.zip` | 4 surfaceless gateway `space-location`s + `nauvis` connections; pure data, no control.lua |
 | **Gateway logic** | [gateway.lua](../docker/seed-data/external_plugins/surface_export/module/core/gateway.lua) | discovery + per-force unlock, arrival detection, passenger evacuation, schedule hop-strip |
 | **Commands** | `module/interfaces/commands/{gateway-transfer,gateway-gui}.lua` | `/gateway-transfer <index> <dest_id>`, `/gateway-gui <index>` |
 | **On-arrival chooser GUI** | [gui/gateway-transfer.lua](../docker/seed-data/external_plugins/surface_export/module/interfaces/gui/gateway-transfer.lua) | opens for viewers when a platform parks at a gateway that has configured targets |

@@ -200,8 +200,7 @@ kill-measurement). Belt physics facts live ONLY in the canonical belt section of
 as described above rather than treating a globally green transfer as proof of whole-lane fidelity.
 
 **Q: What if my inserters are holding items mid-swing?**
-A: ✅ Restored via a pre-gate inserter-only activation pass so the strict gate counts a complete state (Pitfall
-#28, the gate must count a complete state).
+A: ✅ Restored via a pre-gate inserter-only activation pass so the strict gate counts a complete state.
 
 **Q: What if the destination force has less inserter-capacity research than mine?**
 A: ✅ Import replicates the source force's inserter bonuses onto the dest force (raise-only) so held items seat
