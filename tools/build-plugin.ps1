@@ -5,8 +5,6 @@
 
 .DESCRIPTION
     Why this exists (see the Web cache guard entry and build notes in CLAUDE.md):
-      * The host's system Node install is currently broken — C:\Program Files\nodejs was
-        removed but left on PATH, so `node` does not resolve in a plain shell.
       * Building in the live plugin dir is unsafe while the cluster runs: `npm install` there
         re-adds the `@clusterio/*` peers into the bind-mounted node_modules and breaks
         clusterioctl with "duplicate copy of @clusterio/lib" (CLAUDE.md, Hot-Reload section).
@@ -72,6 +70,7 @@ $BuildScript = switch ($Target) {
 
 if ($Fresh) {
     Write-Host "Dropping cached deps volume ($DepsVolume) for a clean npm ci..." -ForegroundColor Yellow
+    # Deliberately quiet: the volume may not exist yet, which is the normal first-run case.
     docker volume rm $DepsVolume 2>$null | Out-Null
 }
 

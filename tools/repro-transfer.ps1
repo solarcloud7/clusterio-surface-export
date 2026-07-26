@@ -82,6 +82,8 @@ $idx = $Matches[1]
 Ok "clone at index $idx"
 
 # 4. Clear any stale result file, then trigger the transfer.
+# Deliberately quiet: pre-clean of a file that usually does not exist yet. Nothing depends on it
+# succeeding — the poll below is what actually decides whether the import produced a result.
 docker exec $dstContainer sh -c "rm -f $dstScriptOut/debug_import_result_${clone}_*.json 2>/dev/null" 2>$null | Out-Null
 Step "Triggering transfer (index $idx -> instance $($dst.Id))..."
 $xfer = (Send-RCON -InstanceName $src.Name -Command "/transfer-platform $idx $($dst.Id)") -join "`n"
@@ -94,6 +96,8 @@ $start = Get-Date
 $found = $false
 while (-not $found -and ((Get-Date) - $start).TotalSeconds -lt $TimeoutSec) {
     Start-Sleep -Seconds 2
+    # Deliberately quiet: POLL inside a timeout loop. A failed read is indistinguishable from
+    # "not there yet" and both mean keep waiting; the Die below is the real gate.
     $count = (docker exec $dstContainer sh -c "ls $dstScriptOut/debug_import_result_${clone}_*.json 2>/dev/null | wc -l" 2>$null).Trim()
     if ($count -match '^\d+$' -and [int]$count -gt 0) { $found = $true }
 }
@@ -107,7 +111,11 @@ $dstList = (Send-RCON -InstanceName $dst.Name -Command "/list-platforms") -join 
 $srcList = (Send-RCON -InstanceName $src.Name -Command "/list-platforms") -join "`n"
 $onDest      = $dstList -match "\b$([regex]::Escape($clone))\b"
 $goneFromSrc = -not ($srcList -match "\b$([regex]::Escape($clone))\b")
-$valLine = (docker exec surface-export-controller sh -c "cat /clusterio/logs/cluster/cluster-*.log 2>/dev/null | grep -aoE '\""message\"":\""[^\""]*\""' | grep -E 'Validation: (SUCCESS|FAILED)' | tail -1" 2>$null)
+# The inner 2>/dev/null is the container-side glob miss (harmless). The OUTER stream is kept:
+# if the exec itself fails we must not silently report a transfer with no validation line, which
+# reads as "validation absent" rather than "could not read the log".
+$valLine = (docker exec surface-export-controller sh -c "cat /clusterio/logs/cluster/cluster-*.log 2>/dev/null | grep -aoE '\""message\"":\""[^\""]*\""' | grep -E 'Validation: (SUCCESS|FAILED)' | tail -1" 2>&1)
+if ($LASTEXITCODE -ne 0) { $valLine = "(could not read controller log: $valLine)" }
 
 Write-Host ""
 if ($onDest) {
