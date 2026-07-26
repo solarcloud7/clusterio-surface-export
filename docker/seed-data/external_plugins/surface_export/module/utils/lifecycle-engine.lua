@@ -249,8 +249,24 @@ local function resolve_read_locator(surface, fixture, locator, dx)
 	return { kind = "none", err = "locator has no anchor/area/platform" }
 end
 
+-- Property paths are walked by INDEXING only; the cap bounds a malformed roster, not real fixtures
+-- (the deepest measured live path, "burner.currently_burning.name.name", is 4).
+local PROPERTY_MAX_DEPTH = 8
+
+-- Save/load ULP allowance, mirroring DOUBLE_EPSILON in tests/lab-gallery/batch-lifecycle.mjs.
+local DOUBLE_EPSILON = 1e-9
+
 local function compare_op(op, actual, expected)
 	if op == "eq" then return actual == expected end
+	-- `approx` exists because engine floats do not survive a round-trip bit-exact and the fixtures
+	-- already record that: omnibus-midcraft-progress pins 0.7000000000000005 and no-tick-sync-frozen
+	-- pins 0.42000000000000004. A bare `eq` on those fails on ULP noise, and the tempting "fix" is to
+	-- loosen the comparison — so the epsilon is a named constant equal to the Node side's, NOT a
+	-- widened eq. `eq` keeps exact semantics for every existing check.
+	if op == "approx" then
+		return type(actual) == "number" and type(expected) == "number"
+			and math.abs(actual - expected) <= DOUBLE_EPSILON
+	end
 	if op == "ge" then return type(actual) == "number" and actual >= expected end
 	if op == "le" then return type(actual) == "number" and actual <= expected end
 	if op == "between" then
@@ -258,6 +274,27 @@ local function compare_op(op, actual, expected)
 			and actual >= expected[1] and actual <= expected[2]
 	end
 	return false
+end
+
+--- Resolve exactly ONE entity of `name` inside an area locator's rect.
+---
+--- Fails loud on BOTH zero and 2+. The 2+ case is the one that matters: picking `found[1]` out of a
+--- multi-match reads an ARBITRARY entity, so a fixture with two same-name entities silently asserts
+--- against whichever the engine happened to return first — a pass that means nothing, or a flake.
+--- That is the name-vs-unique-identity rule the repo already applies to platform lookups, and the
+--- reason this is a shared helper rather than two copies: `infinity_pipe_filter` and `property` both
+--- need it, and a parity to maintain is a parity that drifts.
+--- @return LuaEntity|nil, string|nil
+local function resolve_area_entity(loc, name, what)
+	local found = loc.surface.find_entities_filtered({ area = loc.area, name = name })
+	if #found == 0 then
+		return nil, string.format("no %s in pad area for %s", tostring(name), what)
+	end
+	if #found > 1 then
+		return nil, string.format("%d %s entities in pad area for %s — the locator does not identify one; "
+			.. "narrow the area or use an anchor", #found, tostring(name), what)
+	end
+	return found[1]
 end
 
 -- Read the numeric value a physical_read requests from a resolved locator.
@@ -288,9 +325,9 @@ local function perform_read(loc, check)
 	if read == "infinity_pipe_filter" then
 		local pipe = loc.entity
 		if loc.kind == "area" then
-			local found = loc.surface.find_entities_filtered({ area = loc.area, name = "infinity-pipe" })
-			if #found == 0 then return nil, "no infinity-pipe in pad area" end
-			pipe = found[1]
+			local resolved, err = resolve_area_entity(loc, "infinity-pipe", "infinity_pipe_filter")
+			if not resolved then return nil, err end
+			pipe = resolved
 		end
 		if not pipe then return nil, loc.err or "no entity for infinity_pipe_filter" end
 		local ok, filter = pcall(function() return pipe.get_infinity_pipe_filter() end)
@@ -298,6 +335,79 @@ local function perform_read(loc, check)
 		if not filter then return nil, "infinity-pipe has NO filter (dropped?)" end
 		local field = check.field or "name"
 		return filter[field]
+	end
+
+	-- DECLARATIVE PROPERTY READ — the one read kind that removes the need for new read kinds.
+	--
+	-- `path` is a dotted string naming a read-only property chain on the resolved entity:
+	--   "temperature"                          -> 500
+	--   "bonus_progress"                       -> 0.5
+	--   "burner.remaining_burning_fuel"        -> 2000000
+	--   "burner.currently_burning.name.name"   -> "solid-fuel"
+	-- (all four measured live on the 2.1.11 gallery, 2026-07-26, matching their fingerprints).
+	--
+	-- WHY IT EXISTS. Asserting a new engine property used to cost FOUR files: a branch here, an entry
+	-- in manifest.mjs PHYSICAL_READS, a count bump in manifest.test.mjs, and the fixture itself. That
+	-- is one read kind declared in three places. With this, a fixture asserting a property the engine
+	-- already exposes is a manifest.json edit ALONE.
+	--
+	-- SECURITY. The roster crosses `json_to_table_compat` specifically so an arbitrary payload cannot
+	-- inject Lua, which makes the validation HERE load-bearing — this is data from outside, and a
+	-- Node-side check alone would not be a boundary. Keys must match a strict identifier charset,
+	-- depth is capped, and only INDEXING ever happens: nothing is called, so there is no argument and
+	-- no mutation surface. (Reading `entity.destroy` yields a function value; it is never invoked.)
+	--
+	-- FAIL-CLOSED. A step that THROWS and a step that resolves NIL are both red, with distinguishable
+	-- messages. An invalid LuaEntity throws on property access, while a real-but-unset property reads
+	-- nil — collapsing those would let a typo'd path masquerade as data loss, the exact false-finding
+	-- class the payload inspector had to be fixed for.
+	if read == "property" then
+		local path = check.path
+		if type(path) ~= "string" or path == "" then
+			return nil, "property read requires a non-empty dotted `path` string"
+		end
+		local entity = loc.entity
+		if loc.kind == "area" then
+			if not check.entity_name then
+				return nil, "property read on an area locator requires `entity_name`"
+			end
+			local resolved, err = resolve_area_entity(loc, check.entity_name, "property read " .. tostring(path))
+			if not resolved then return nil, err end
+			entity = resolved
+		end
+		if not entity then return nil, loc.err or "no entity for property read" end
+
+		local cursor, depth = entity, 0
+		for key in string.gmatch(path, "[^%.]+") do
+			depth = depth + 1
+			if depth > PROPERTY_MAX_DEPTH then
+				return nil, string.format("property path %q exceeds max depth %d", path, PROPERTY_MAX_DEPTH)
+			end
+			if not string.match(key, "^[A-Za-z_][A-Za-z0-9_]*$") then
+				return nil, string.format("property path %q has illegal segment %q (identifiers only)", path, key)
+			end
+			local ok, value = pcall(function() return cursor[key] end)
+			if not ok then
+				-- The engine's own message is the precise one and is quoted verbatim; do not guess a
+				-- cause alongside it. Measured 2026-07-26: a typo'd key reads "LuaEntity doesn't contain
+				-- key temperature_bogus", NOT nil — so an unknown property lands here, not in the nil
+				-- branch below. Both are red either way; this note exists so the next reader does not
+				-- assume a typo is the nil case.
+				return nil, string.format("property path %q THREW at %q: %s", path, key, tostring(value))
+			end
+			if value == nil then
+				return nil, string.format("property path %q resolved NIL at %q — the property is unset, or the "
+					.. "path is wrong; either way this is not a pass", path, key)
+			end
+			cursor = value
+		end
+
+		local kind = type(cursor)
+		if kind ~= "number" and kind ~= "string" and kind ~= "boolean" then
+			return nil, string.format("property path %q ended on a %s; comparison needs a scalar "
+				.. "(extend the path to reach one, e.g. \"...name.name\")", path, kind)
+		end
+		return cursor
 	end
 
 	if loc.kind == "anchor" and not loc.entity then return nil, loc.err end

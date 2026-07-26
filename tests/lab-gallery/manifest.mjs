@@ -105,8 +105,16 @@ export function validateGalleryManifest(manifest, { requireArtifacts = true } = 
 // physical witness (the lint-test-grounding rule at manifest level); setup writes are confined to
 // declared mutable anchors (the pristine-left-half rule).
 const LIFECYCLE_ACTS = new Set(["copy-paste", "transfer", "clone"]);
-const PHYSICAL_READS = new Set(["item_count", "held", "crafting_progress", "spoil_percent", "fluid", "entity_present", "platform_present", "surface_entity_count", "infinity_pipe_filter"]);
-const CHECK_OPS = new Set(["eq", "ge", "le", "between", "monotone"]);
+// "property" is the LAST entry this set should ever need for a plain engine property. It takes a
+// dotted `path` and reads it off the resolved entity, so a fixture asserting a property the engine
+// already exposes ("temperature", "burner.remaining_burning_fuel") is a manifest.json edit alone —
+// where each such property previously cost a branch in lifecycle-engine.lua, an entry here, and a
+// count bump in manifest.test.mjs. Add a named read kind only for something a property walk cannot
+// express (aggregation over an area, a method call, a derived value).
+const PHYSICAL_READS = new Set(["item_count", "held", "crafting_progress", "spoil_percent", "fluid", "entity_present", "platform_present", "surface_entity_count", "infinity_pipe_filter", "property"]);
+// "approx" compares with the same 1e-9 ULP allowance as DOUBLE_EPSILON in batch-lifecycle.mjs, for
+// the engine floats the fixtures pin exactly (0.7000000000000005). "eq" stays bit-exact.
+const CHECK_OPS = new Set(["eq", "approx", "ge", "le", "between", "monotone"]);
 const LIFECYCLE_ENDS = new Set(["source", "dest"]);
 const LIFECYCLE_EXPECTS = new Set(["success", "gate-failure", "census-abort"]);
 const TRANSFER_SUITE = "tests/integration/pad-transfer-suite/run-tests.mjs";
@@ -206,6 +214,18 @@ function validateLifecycle(fixture) {
 		if (check.check === "physical_read") {
 			if (!PHYSICAL_READS.has(check.read)) throw new Error(`lifecycle for ${id}: unknown physical read "${check.read}"`);
 			if (!CHECK_OPS.has(check.op)) throw new Error(`lifecycle for ${id}: unknown check op "${check.op}"`);
+			if (check.read === "property") {
+				// The Lua reader re-validates this — that check is the real boundary, since the roster is
+				// data from outside. This one exists so a typo fails at manifest-validation time (fast,
+				// no cluster) instead of surfacing as a mid-suite red.
+				if (typeof check.path !== "string" || !/^[A-Za-z_][A-Za-z0-9_]*(\.[A-Za-z_][A-Za-z0-9_]*)*$/.test(check.path)) {
+					throw new Error(`lifecycle for ${id}: property read needs a dotted identifier "path" ` +
+						`(got ${JSON.stringify(check.path)})`);
+				}
+				if (check.locator?.area && !check.entity_name) {
+					throw new Error(`lifecycle for ${id}: property read on an area locator needs "entity_name"`);
+				}
+			}
 			physicalWitness = true;
 		} else if (check.check === "report_field") {
 			hasReportField = true;
