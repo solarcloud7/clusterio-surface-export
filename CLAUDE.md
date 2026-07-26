@@ -130,6 +130,16 @@ The plugin uses **TypeScript** with bind-mounted source and **save patching** fo
 # powershell). Filter with --only <regex>; dry-run with --list.
 node tools/run-integration-tests.mjs                 # or:  --only 'gateway' / --skip 'fidelity' / --list
 
+# testkit — ask what the export payload ACTUALLY carries, and check cross-references resolve.
+# A property survives a transfer only if a handler put it in the payload, so `inspect --field` is
+# the cheapest screen for silent serializer omission (the class that dropped the infinity-pipe
+# filter on every transfer). Read-only: no lock, no source delete.
+node tools/testkit/cli.mjs check                 # cross-refs resolve (no cluster needed)
+node tools/testkit/cli.mjs check --live          # + every fixture anchor resolves in a real payload
+node tools/testkit/cli.mjs inspect <platform> --field 'infinity-pipe@40.5,46.5:infinity_pipe_filter'
+# Exit 1 = absent (cannot survive). Exit 2 = your query path is wrong (it tells you the real one).
+# "Present" NEVER means "survives" — restoration is only proven by a transfer + physical dest read.
+
 # Status / listing:
 ./tools/show-cluster-status.ps1
 ./tools/list-platforms.ps1
