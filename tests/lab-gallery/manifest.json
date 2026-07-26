@@ -293,7 +293,6 @@
 			"name": "Heat-pipe temperature",
 			"purpose": "Preserve a heat-pipe at a non-default temperature.",
 			"category": "physical-lab",
-			"owningRunner": null,
 			"saveRole": "source",
 			"platformName": "lab-omnibus-state-v1",
 			"engineVersion": "2.1.11",
@@ -311,7 +310,7 @@
 				"maraxsis": "1.34.51"
 			},
 			"invariant": "The heat-pipe holds temperature 500.",
-			"expectedTerminalVerdict": "observation-only",
+			"expectedTerminalVerdict": "strict-gate-success",
 			"independentOracleRequired": true,
 			"fingerprint": {
 				"temperature": 500
@@ -319,11 +318,35 @@
 			"testCard": {
 				"law": "Heat-pipe temperature is physical state and transfers exactly.",
 				"build": "Migrated 2026-07-18 from the legacy y=0 zone onto the test-foundation pad at (36,-20) via surface.clone_area (seed-prep migrate_omnibus_zone; exact-state move, originals destroyed).",
-				"action": "/test-run: reset the compare area, selection-lab copy of the pad build area, paste at +14,0, physical audit of both halves.",
-				"expected": "Audit reports equal entities; the pasted heat-pipe reads the same temperature.",
+				"action": "pad-transfer-suite runs the pad through a REAL transfer and reads the destination heat-pipe's temperature directly.",
+				"expected": "The destination heat-pipe reads temperature 500 and the strict gate passes.",
 				"forbidden": "Temperature reset to ambient (15C); any temperature drift."
 			},
-			"owningRunnerWaiver": "Absorbed onto this pad; the original runner (tests/integration/heat-roundtrip/run-tests.ps1) was deleted, see tests/integration/MIGRATION.md. The law is now baked state run by /test-run (the pad system), not a standalone runner."
+			"note": "PROMOTED 2026-07-26 by a manifest.json edit ALONE — the demonstration that the declarative `property` read collapsed the cost of a new-property fixture from four files to one. Before it, asserting temperature would have needed a branch in lifecycle-engine.lua, an entry in manifest.mjs PHYSICAL_READS, and a count bump in manifest.test.mjs.",
+			"lifecycle": {
+				"version": 1,
+				"act": "transfer",
+				"verify": [
+					{
+						"check": "physical_read",
+						"locator": {
+							"area": true
+						},
+						"read": "property",
+						"entity_name": "heat-pipe",
+						"path": "temperature",
+						"op": "eq",
+						"expected": 500
+					},
+					{
+						"check": "report_field",
+						"path": "validation_success",
+						"op": "eq",
+						"expected": true
+					}
+				]
+			},
+			"owningRunner": "tests/integration/pad-transfer-suite/run-tests.mjs"
 		},
 		{
 			"id": "omnibus-decider-latch",
