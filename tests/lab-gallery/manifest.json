@@ -330,10 +330,9 @@
 					{
 						"check": "physical_read",
 						"locator": {
-							"area": true
+							"anchor": "heat-pipe"
 						},
 						"read": "property",
-						"entity_name": "heat-pipe",
 						"path": "temperature",
 						"op": "eq",
 						"expected": 500

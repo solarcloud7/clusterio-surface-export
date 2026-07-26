@@ -232,8 +232,12 @@ function validateLifecycle(fixture) {
 					throw new Error(`lifecycle for ${id}: property read needs a dotted identifier "path" ` +
 						`(got ${JSON.stringify(check.path)})`);
 				}
-				if (check.locator?.area && !check.entity_name) {
-					throw new Error(`lifecycle for ${id}: property read on an area locator needs "entity_name"`);
+				// The entity comes from the fixture's anchors, so there is no prototype name on the check
+				// to validate — the "entity_name" rule that used to live here was deleted along with the
+				// duplication it policed. An anchor locator is required and resolves against a closed set.
+				if (!check.locator?.anchor) {
+					throw new Error(`lifecycle for ${id}: property read needs locator.anchor — the anchor ` +
+						`carries the entity, so the prototype name is never restated on the check`);
 				}
 			}
 			physicalWitness = true;
@@ -287,8 +291,11 @@ export function renderExpectFromLifecycle(fixture) {
 			// A property read's identity is its PATH, not the word "property" — without it every
 			// property check on a pad renders as the same "area: property eq 500" line, and two on one
 			// pad are indistinguishable both on the in-world EXPECT panel and in a failure message.
+			// A property read's identity is its PATH, not the word "property" — without it every
+			// property check renders as "area: property eq 500" and two on one pad are identical.
+			// The locator already supplies the entity (it names an anchor), so `where` carries it.
 			const what = check.read === "property"
-				? `${check.entity_name ? `${check.entity_name}.` : ""}${check.path}`
+				? check.path
 				: (check.item ? `${check.item} ${check.read}` : check.read);
 			const bound = check.op === "monotone" ? `monotone (<=${check.driftTicks ?? "?"}t drift)` : `${check.op} ${JSON.stringify(check.expected)}`;
 			lines.push(`${endTag}${where}: ${what} ${bound}`);

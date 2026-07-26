@@ -285,24 +285,26 @@ test("lifecycle validation teeth: hook allowlist, grounding rule, mutable-anchor
 	});
 	// Red tooth: a property read with no path.
 	assert.throws(() => validateGalleryManifest(withPropertyVerify([
-		{ check: "physical_read", locator: { area: true }, read: "property", entity_name: "heat-pipe", op: "eq", expected: 500 },
+		{ check: "physical_read", locator: { anchor: "scratch" }, read: "property", op: "eq", expected: 500 },
 	]), { requireArtifacts: false }), /dotted identifier "path"/);
 	// Red tooth: a path that is not a dotted identifier chain (the charset is the security boundary;
 	// the Lua reader re-checks it, but a typo must not need a cluster to surface).
 	assert.throws(() => validateGalleryManifest(withPropertyVerify([
-		{ check: "physical_read", locator: { area: true }, read: "property", entity_name: "heat-pipe",
+		{ check: "physical_read", locator: { anchor: "scratch" }, read: "property",
 			path: "burner.remaining-burning-fuel", op: "eq", expected: 1 },
 	]), { requireArtifacts: false }), /dotted identifier "path"/);
-	// Red tooth: an area locator without entity_name cannot identify an entity.
+	// Red tooth: an area locator cannot identify an entity for a property read. There is deliberately
+	// NO "entity_name" escape hatch — restating the prototype name is the duplication that made a
+	// typo possible in the first place, so the anchor is the only way in.
 	assert.throws(() => validateGalleryManifest(withPropertyVerify([
 		{ check: "physical_read", locator: { area: true }, read: "property", path: "temperature", op: "eq", expected: 500 },
-	]), { requireArtifacts: false }), /needs "entity_name"/);
+	]), { requireArtifacts: false }), /needs locator\.anchor/);
 	// Red tooth: an op the ORCHESTRATOR cannot run must fail here, not after the transfer fires.
 	// evalReportField implements only "eq"; "approx" is valid for physical reads and not for these.
 	assert.throws(() => validateGalleryManifest(withTransferLifecycle({
 		version: 1, mutable: ["scratch"], act: "transfer",
 		verify: [
-			{ check: "physical_read", locator: { area: true }, read: "property", entity_name: "heat-pipe",
+			{ check: "physical_read", locator: { anchor: "scratch" }, read: "property",
 				path: "temperature", op: "eq", expected: 500 },
 			{ check: "report_field", path: "validation_success", op: "approx", expected: true },
 		],
@@ -311,7 +313,7 @@ test("lifecycle validation teeth: hook allowlist, grounding rule, mutable-anchor
 	// property checks on one pad render identically and a failure cannot say which broke.
 	const heat = manifest.fixtures.find(fixture => fixture.id === "omnibus-heat-temperature");
 	assert.equal(heat.lifecycle.act, "transfer");
-	assert.ok(renderExpectFromLifecycle(heat).some(line => /heat-pipe\.temperature eq 500/.test(line)),
+	assert.ok(renderExpectFromLifecycle(heat).some(line => /heat-pipe: temperature eq 500/.test(line)),
 		`expected a line naming the property path, got: ${renderExpectFromLifecycle(heat).join(" | ")}`);
 
 	// Green path: the workhorse carries a census_pass witness on its clean transfer.
