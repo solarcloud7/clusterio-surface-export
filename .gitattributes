@@ -28,9 +28,7 @@
 *.woff  binary
 *.woff2 binary
 
-# ── CI Docker assets ─────────────────────────────────────────────────────────
-# The working tree is otherwise CRLF (Windows dev), but these files are consumed on Linux.
-# A CRLF Dockerfile breaks `RUN ... \` line continuations during the Docker build, so force
-# LF for the CI Docker/compose assets regardless of local autocrlf settings.
-docker/ci/Dockerfile.factorio-baked text eol=lf
-docker-compose.ci.yml text eol=lf
+# (The "CI Docker assets" block is gone. It forced LF on docker/ci/Dockerfile.factorio-baked and
+# docker-compose.ci.yml so a CRLF checkout could not break `RUN ... \` line continuations. Both
+# files were deleted with the Factorio bake — the rules named paths that no longer exist. The
+# blanket `* text=auto eol=lf` above already covers any future Linux-consumed file.)
