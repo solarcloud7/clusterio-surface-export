@@ -105,7 +105,7 @@ export function validateGalleryManifest(manifest, { requireArtifacts = true } = 
 // physical witness (the lint-test-grounding rule at manifest level); setup writes are confined to
 // declared mutable anchors (the pristine-left-half rule).
 const LIFECYCLE_ACTS = new Set(["copy-paste", "transfer", "clone"]);
-const PHYSICAL_READS = new Set(["item_count", "held", "crafting_progress", "spoil_percent", "fluid", "entity_present", "platform_present", "surface_entity_count"]);
+const PHYSICAL_READS = new Set(["item_count", "held", "crafting_progress", "spoil_percent", "fluid", "entity_present", "platform_present", "surface_entity_count", "infinity_pipe_filter"]);
 const CHECK_OPS = new Set(["eq", "ge", "le", "between", "monotone"]);
 const LIFECYCLE_ENDS = new Set(["source", "dest"]);
 const LIFECYCLE_EXPECTS = new Set(["success", "gate-failure", "census-abort"]);

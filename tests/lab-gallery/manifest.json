@@ -816,7 +816,7 @@
 			"name": "Platform schedule and interrupt",
 			"purpose": "Preserve the platform-level schedule records and a named interrupt.",
 			"category": "physical-lab",
-			"owningRunner": "tests/integration/schedule-filter/run-tests.ps1",
+			"owningRunner": "tests/integration/selftests/run-tests.mjs",
 			"saveRole": "source",
 			"platformName": "lab-omnibus-state-v1",
 			"engineVersion": "2.1.11",
@@ -1112,7 +1112,7 @@
 			"name": "Combined belt omnibus (steady-state, hand-built)",
 			"purpose": "One pad combining sideloads, 3 splitters, 3 underground pairs, and 2 filtered output loaders draining into infinity chests pinned at 100 - the steady-state fixture class exemplar: fully live, item count constant by saturation physics.",
 			"category": "physical-lab",
-			"owningRunner": null,
+			"owningRunner": "tests/integration/pad-transfer-suite/run-tests.mjs",
 			"owningRunnerWaiver": "Hand-built live by the owner 2026-07-19 (construct-once doctrine). No build script exists by design; the state itself is the artifact, banked in the source-of-truth checkpoint.",
 			"saveRole": "source",
 			"platformName": "lab-omnibus-state-v1",
@@ -1153,7 +1153,28 @@
 			},
 			"note": "FIRST CATCH (2026-07-19, at claim time): serializer has NO loader handler (filters not carried; splitter types gate excludes loaders) and NO infinity-container handler (infinity filters not carried) - transfer would deliver hollow configs. Fix is queued; this pad is its kill-measurement. REV2 2026-07-19: owner removed infinity chests (self-healing masked loss); circuit now conservative at 380; belt-corner-recovery retired as covered (over-pack measured present at ~5x the dedicated fixture).",
 			"auditAggregateOnly": true,
-			"runnerExcluded": "KNOWN-OPEN HAZARD: paste loses items on over-packed corner lanes (measured 372->368, 2026-07-20) - the Phase-5B belt-restore class; re-enable when side-closed batched restore lands"
+			"runnerExcluded": "KNOWN-OPEN HAZARD: paste loses items on over-packed corner lanes (measured 372->368, 2026-07-20) - the Phase-5B belt-restore class; re-enable when side-closed batched restore lands",
+			"lifecycle": {
+				"version": 1,
+				"act": "transfer",
+				"verify": [
+					{
+						"check": "physical_read",
+						"locator": {
+							"area": true
+						},
+						"read": "item_count",
+						"op": "eq",
+						"expected": 380
+					},
+					{
+						"check": "report_field",
+						"path": "validation_success",
+						"op": "eq",
+						"expected": true
+					}
+				]
+			}
 		},
 		{
 			"id": "mining-drill-acid-feed",
@@ -1935,7 +1956,7 @@
 			"name": "Fusion loop plasma and coolant",
 			"purpose": "Preserve a hand-built ACTIVE fusion rig - two reactors, a generator, a cryogenic plant, a coolant pipe loop, and a self-refilling infinity-pipe plasma source - whose plasma and buffered coolant ride the 2.1 fluid-segment registry with nothing engine-excluded.",
 			"category": "physical-lab",
-			"owningRunner": null,
+			"owningRunner": "tests/integration/pad-transfer-suite/run-tests.mjs",
 			"saveRole": "source",
 			"platformName": "lab-omnibus-state-v1",
 			"engineVersion": "2.1.11",
@@ -1974,7 +1995,39 @@
 				"forbidden": "any fluid name absent on the pasted half that exists on the left; plasma dropped"
 			},
 			"note": "CLAIM 2026-07-20 of the hand-built fusion rig at open slot (36,36); UN-EXCLUDED + fingerprint re-pinned 2026-07-21 after the owner compacted the rig into the left interior (second reactor at (55,41) REMOVED, coolant loop rerouted). Live-verified before un-excluding: every rig entity's bbox sits within x 37..48 / y 37..47 (left interior x 37..49) and the destructive reset_cell sweep zone (x 50..63.5) is EMPTY. Re-pinned from LIVE RCON measurement: entity counts 1/1/1/1/6, self-refilling infinity-pipe fusion-plasma 100, generator-no-segment structural fact; drifting fluids stay presence booleans (plasmaPresent/coolantPresent); reactorPlasmaMax measured 10.00 (at cap) for diagnostics, NEVER pinned. NOT in measure_corpus (drifting); wired to DISPATCH.",
-			"owningRunnerWaiver": "Hand-built live by the owner 2026-07-20 (construct-once doctrine); no build script exists by design - the state itself is the artifact, banked in the source-of-truth checkpoint."
+			"owningRunnerWaiver": "Hand-built live by the owner 2026-07-20 (construct-once doctrine); no build script exists by design - the state itself is the artifact, banked in the source-of-truth checkpoint.",
+			"lifecycle": {
+				"version": 1,
+				"act": "transfer",
+				"verify": [
+					{
+						"check": "physical_read",
+						"locator": {
+							"area": true
+						},
+						"read": "infinity_pipe_filter",
+						"field": "name",
+						"op": "eq",
+						"expected": "fusion-plasma"
+					},
+					{
+						"check": "physical_read",
+						"locator": {
+							"area": true
+						},
+						"read": "infinity_pipe_filter",
+						"field": "temperature",
+						"op": "eq",
+						"expected": 1000000
+					},
+					{
+						"check": "report_field",
+						"path": "validation_success",
+						"op": "eq",
+						"expected": true
+					}
+				]
+			}
 		},
 		{
 			"id": "thruster-pair",
