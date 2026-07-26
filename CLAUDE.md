@@ -137,8 +137,10 @@ node tools/run-integration-tests.mjs                 # or:  --only 'gateway' / -
 node tools/testkit/cli.mjs check                 # cross-refs resolve (no cluster needed)
 node tools/testkit/cli.mjs check --live          # + every fixture anchor resolves in a real payload
 node tools/testkit/cli.mjs inspect <platform> --field 'infinity-pipe@40.5,46.5:infinity_pipe_filter'
+node tools/testkit/cli.mjs probe <platform> 'heat-pipe@43,-13:temperature'   # LIVE property at a position
 # Exit 1 = absent (cannot survive). Exit 2 = your query path is wrong (it tells you the real one).
 # "Present" NEVER means "survives" — restoration is only proven by a transfer + physical dest read.
+# The full test workflow (run suites, promote a pad, teeth discipline) is the `/tests` project skill.
 
 # Status / listing:
 ./tools/show-cluster-status.ps1
