@@ -1,11 +1,9 @@
 import { readFileSync } from "node:fs";
 import { FAIL_SAFE_HOOKS, NON_DESTRUCTIVE_HOOKS } from "../../docker/seed-data/external_plugins/surface_export/scripts/fail-safe-hooks.mjs";
 
-// Fixtures asserted by a SEPARATE physical path, not the corpus meter (measure_corpus). This is the
-// single source of truth for the corpus-excluded set shared by the build-side and reload-side
-// roster-completeness gates: the belt pilot is asserted by the belt census and the reachability
-// drill by the reachability block. Any OTHER fixture missing from the measured corpus fails loudly.
-export const CORPUS_EXCLUDED = new Set([]); // no special-path exclusions remain (2026-07-19 consolidation)
+// (CORPUS_EXCLUDED is GONE: exported, imported by nothing, already empty — and it had drifted from
+// the Lua corpus_excluded table it claimed to mirror, which itself belonged to a census gate that
+// was never called. Both copies deleted 2026-07-26.)
 
 // The reload meters build their reading from a Lua table, which cannot carry a JSON null (Lua drops
 // nil keys). They therefore represent the semantic "no mining target" (manifest miningTarget: null)

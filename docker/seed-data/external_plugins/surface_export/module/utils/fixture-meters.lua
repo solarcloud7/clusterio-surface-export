@@ -119,22 +119,10 @@ local function measure_omnibus_latch(surface, anchor)
     return { signalS = net and net.get_signal({ type = "virtual", name = "signal-S" }) or nil }
 end
 
-local function measure_omnibus_midcraft(surface, anchor)
-    local m = anchored(surface, anchor, "assembling-machine-1", "omnibus midcraft")
-    local inv = m.get_inventory(defines.inventory.crafter_input)
-    return { progress = m.crafting_progress, active = m.active, inputPlates = inv and inv.get_item_count("iron-plate") or nil }
-end
-
-local function measure_omnibus_burner(surface, anchor)
-    local bi = anchored(surface, anchor, "burner-inserter", "omnibus burner")
-    local fi = bi.get_inventory(defines.inventory.fuel)
-    return {
-        coal = fi and fi.get_item_count("coal") or nil,
-        active = bi.active,
-        burning = bi.burner and bi.burner.currently_burning and bi.burner.currently_burning.name.name or nil,
-        remaining = bi.burner and bi.burner.remaining_burning_fuel or nil,
-    }
-end
+-- (measure_omnibus_midcraft / measure_omnibus_burner / measure_omnibus_bonus /
+-- measure_inserter_held are GONE: their fixtures migrated to declared lifecycle verifies, and the
+-- only remaining reference — measure_corpus — turned out to be called by NOTHING. Deleted with the
+-- dead census 2026-07-26; git history keeps them.)
 
 local function measure_omnibus_equipment(surface, anchor)
     local s = anchored(surface, anchor, "spidertron", "omnibus equipment")
@@ -160,12 +148,6 @@ local function measure_omnibus_circuit(surface, anchor)
     -- silently dropping the boolean from certification (the false-collapsing and/or idiom).
     if lb then r.lampUseColors = lb.use_colors end
     return r
-end
-
-local function measure_omnibus_bonus(surface, anchor)
-    local m = anchored(surface, anchor, "assembling-machine-2", "omnibus bonus")
-    local mi = m.get_module_inventory()
-    return { bonusProgress = m.bonus_progress, modules = mi and mi.get_item_count("productivity-module") or nil, active = m.active }
 end
 
 local function measure_omnibus_fluids(surface, anchor)
@@ -354,8 +336,8 @@ local function measure_belt_corner(surface, anchor)
     }
 end
 
--- The 5x5 unstacked loop PAD (belt-5x5-125-unstacked). It stays corpus-EXCLUDED from measure_corpus:
--- its lineQuantities array is asserted by the belt special path (deepEqual), not the scalar corpus
+-- The 5x5 unstacked loop PAD (belt-5x5-125-unstacked). Its lineQuantities array is asserted by the
+-- belt special path (deepEqual), never a scalar fingerprint compare
 -- gate whose approx_equal does reference-equality on arrays. Scoped to a box around the loop anchor so
 -- the corner pad on the same grid is never conflated.
 local function measure_belt_loop(surface, anchor)
@@ -386,21 +368,6 @@ end
 
 -- Ported onto the golden omnibus (lab-omnibus-state-v1) by seed-prep-ops.lua; these read the SAME
 -- fields the seed-prep build/measure recorded, so the fingerprint gate is symmetric.
-local function measure_inserter_held(surface, anchor)
-    local inserter = anchored(surface, anchor, "bulk-inserter", "inserter-held")
-    local held = inserter.held_stack
-    return {
-        heldCount = held.valid_for_read and held.count or 0,
-        heldName = held.valid_for_read and held.name or nil,
-        -- STACK quality, not entity quality (the entity-quality read self-certified a normal stack
-        -- as legendary once — B7 run 1b, 2026-07-18).
-        quality = (held.valid_for_read and held.quality) and held.quality.name or nil,
-        active = inserter.active,
-        destructible = inserter.destructible,
-        forceBulkBonus = game.forces.player.bulk_inserter_capacity_bonus,
-    }
-end
-
 local function measure_no_tick_pair(surface, anchor)
     local machine = anchored(surface, anchor, "assembling-machine-1", "no-tick")
     local inserter = anchored(surface, anchor, "inserter", "no-tick")
@@ -590,67 +557,6 @@ local function measure_thruster_pair(surface, area)
     }
 end
 
--- Measure the full baked corpus keyed by manifest fixture id. Locators are code; expected values
--- come from the manifest fingerprints (single source of truth). Each measurement is pcall-guarded
--- and SURFACES its error (never swallows) so a mid-deletion destination poll cannot abort inspect
--- while a normalize-time locator failure still fails the gate loudly.
-local function measure_corpus(manifest)
-    local out = {}
-    local function safe(id, fn)
-        -- failure expected per-fixture: the error is not swallowed but captured into out[id].error and
-        -- surfaced loudly by corpus_gate ("measurement error: ..."), so one fixture's locator failure
-        local ok, result = pcall(fn)
-        if ok then out[id] = result else out[id] = { error = tostring(result) } end
-    end
-    -- Anchored measures resolve their coordinates from the manifest INSIDE the pcall, so a
-    -- missing/incomplete anchors entry fails that fixture loudly instead of aborting the sweep.
-    local function anchored_safe(id, fn)
-        safe(id, function() return fn(anchor_lookup(manifest, id)) end)
-    end
-    local omni, omni_platform = surface_for_platform("lab-omnibus-state-v1")
-    if omni then
-        anchored_safe("omnibus-adversarial-inventory", function(a) return measure_omnibus_adversarial(omni, a) end)
-        anchored_safe("omnibus-heat-temperature", function(a) return { temperature = anchored(omni, a, "heat-pipe", "omnibus heat").temperature } end)
-        anchored_safe("omnibus-decider-latch", function(a) return measure_omnibus_latch(omni, a) end)
-        anchored_safe("omnibus-midcraft-progress", function(a) return measure_omnibus_midcraft(omni, a) end)
-        anchored_safe("omnibus-burner-fuel", function(a) return measure_omnibus_burner(omni, a) end)
-        anchored_safe("omnibus-equipment-grid", function(a) return measure_omnibus_equipment(omni, a) end)
-        anchored_safe("omnibus-circuit-config", function(a) return measure_omnibus_circuit(omni, a) end)
-        anchored_safe("omnibus-module-bonus-progress", function(a) return measure_omnibus_bonus(omni, a) end)
-        anchored_safe("omnibus-crafting-fluids", function(a) return measure_omnibus_fluids(omni, a) end)
-        safe("omnibus-ghosts-and-proxies", function() return measure_omnibus_ghosts(omni) end)
-        safe("omnibus-ground-items", function() return measure_omnibus_ground(omni) end)
-        anchored_safe("omnibus-spoilage-midspoil", function(a) return measure_omnibus_spoilage(omni, a) end)
-        safe("omnibus-platform-schedule", function() return measure_omnibus_schedule(omni_platform) end)
-        anchored_safe("inserter-held-capacity", function(a) return measure_inserter_held(omni, a) end)
-        anchored_safe("no-tick-sync-frozen-pair", function(a) return measure_no_tick_pair(omni, a) end)
-        anchored_safe("repin-beacon-speed", function(a) return measure_repin_beacon(omni, a) end)
-        anchored_safe("belt-corner-recovery", function(a) return measure_belt_corner(omni, a) end)
-    end
-    local energy = surface_for_platform("lab-energy-v1")
-    if energy then safe("energy-accumulator-drain", function() return measure_energy(energy) end) end
-    local workhorse = surface_for_platform("lab-transfer-fixture-v1")
-    if workhorse then safe("transfer-workhorse", function() return { entities = #workhorse.find_entities_filtered({}) } end) end
-    for n = 1, 3 do
-        local consumable = surface_for_platform("lab-consumable-" .. n)
-        if consumable then safe("consumable-hub-" .. n, function() return { entities = #consumable.find_entities_filtered({}) } end) end
-    end
-    -- Platform-conditional like the other off-omnibus fixtures: the DESTINATION save has no
-    -- platforms, and an unconditional measure records an error row that blocks the dest settle
-    -- gate ("still measures corpus fixtures" — v15 bake). The SOURCE corpus gate still fails
-    -- loud on absence via the fixturesMeasured/expectedFixtures count.
-    if surface_for_platform("lab-hold-spoil-live-v1") then
-        safe("hold-buffer-spoil", function() return measure_hold_spoil_pair() end)
-    end
-    if surface_for_platform("lab-hold-damage-live-v1") then
-        safe("hold-buffer-damage", function() return measure_hold_damage_pair() end)
-    end
-    if surface_for_platform("lab-hold-pod-live-v1") then
-        safe("hold-buffer-pod", function() return measure_hold_pod_pair() end)
-    end
-    return out
-end
-
 -- ONLY the crafting-progress and module-bonus-progress doubles absorb a sub-ULP save/load drift;
 -- every OTHER fingerprint field (integer counts, temperatures, energies, fluid amounts, coordinates,
 -- strings, booleans) is compared with exact equality. The 1e-9 tolerance is never applied blanket.
@@ -663,60 +569,7 @@ local function approx_equal(key, a, b)
     return a == b
 end
 
--- Fixtures measured by a SEPARATE physical path (not measure_corpus): the corpus gate must not
--- expect them among the measured set. This is an EXPLICIT allowlist with reasons — never an
--- absence-skip: any OTHER manifest fixture missing from the measured set fails the gate loudly.
-local corpus_excluded = {
-    ["belt-5x5-125-unstacked"] = "belt pilot asserted by the belt census (beltFixtureExact)",
-    ["specialized-fluid-reachability"] = "drill asserted by the reachability block (reachabilityFixtureExact)",
-}
 
--- Fail-loud gate: every non-excluded manifest fixture MUST have a measurement, and every declared
--- fingerprint field must be present and exactly equal. A missing fixture, a measurement error, a
--- dropped/drifted field, an unexpected measured id, or an empty roster all fail loudly — the gate is
--- unsatisfiable by omission.
-local function corpus_gate(manifest, measured)
-    local mismatches = {}
-    local checked = 0
-    local expected_fixtures = 0
-    local roster = {}
-    for _, fixture in ipairs(manifest.fixtures or {}) do
-        roster[fixture.id] = true
-        if not corpus_excluded[fixture.id] then
-            expected_fixtures = expected_fixtures + 1
-            local reads = measured[fixture.id]
-            if reads == nil then
-                mismatches[#mismatches + 1] = fixture.id .. " was not measured (missing platform or locator)"
-            elseif reads.error then
-                mismatches[#mismatches + 1] = fixture.id .. " measurement error: " .. tostring(reads.error)
-            else
-                for key, expected in pairs(fixture.fingerprint or {}) do
-                    checked = checked + 1
-                    if not approx_equal(key, reads[key], expected) then
-                        mismatches[#mismatches + 1] = fixture.id .. "." .. key .. "=" .. tostring(reads[key]) .. " expected " .. tostring(expected)
-                    end
-                end
-            end
-        end
-    end
-    for id in pairs(measured) do
-        if not roster[id] then
-            mismatches[#mismatches + 1] = id .. " was measured but is not in the manifest roster"
-        elseif corpus_excluded[id] then
-            mismatches[#mismatches + 1] = id .. " is corpus-excluded but was measured by measure_corpus"
-        end
-    end
-    if expected_fixtures == 0 then
-        mismatches[#mismatches + 1] = "manifest roster carried no measurable fixtures"
-    end
-    return {
-        exact = #mismatches == 0,
-        mismatches = mismatches,
-        fieldsChecked = checked,
-        fixturesMeasured = table_size(measured),
-        expectedFixtures = expected_fixtures,
-    }
-end
 
 M.table_size = table_size
 M.detailed_census = detailed_census
@@ -726,11 +579,11 @@ M.anchor_lookup = anchor_lookup
 M.anchored = anchored
 M.measure_omnibus_adversarial = measure_omnibus_adversarial
 M.measure_omnibus_latch = measure_omnibus_latch
-M.measure_omnibus_midcraft = measure_omnibus_midcraft
-M.measure_omnibus_burner = measure_omnibus_burner
+
+
 M.measure_omnibus_equipment = measure_omnibus_equipment
 M.measure_omnibus_circuit = measure_omnibus_circuit
-M.measure_omnibus_bonus = measure_omnibus_bonus
+
 M.measure_omnibus_fluids = measure_omnibus_fluids
 M.measure_omnibus_ghosts = measure_omnibus_ghosts
 M.measure_omnibus_ground = measure_omnibus_ground
@@ -742,7 +595,7 @@ M.measure_omnibus_schedule = measure_omnibus_schedule
 M.measure_energy = measure_energy
 M.measure_belt_corner = measure_belt_corner
 M.measure_belt_loop = measure_belt_loop
-M.measure_inserter_held = measure_inserter_held
+
 M.measure_no_tick_pair = measure_no_tick_pair
 M.measure_repin_beacon = measure_repin_beacon
 M.measure_hold_spoil_pair = measure_hold_spoil_pair
@@ -750,10 +603,10 @@ M.measure_hold_damage_pair = measure_hold_damage_pair
 M.measure_hold_pod_pair = measure_hold_pod_pair
 M.measure_fusion_loop = measure_fusion_loop
 M.measure_thruster_pair = measure_thruster_pair
-M.measure_corpus = measure_corpus
+
 M.approx_equal = approx_equal
 M.tolerant_double_fields = tolerant_double_fields
-M.corpus_excluded = corpus_excluded
-M.corpus_gate = corpus_gate
+
+
 
 return M
