@@ -15,8 +15,13 @@ test("gallery manifest labs are the fixture-referenced categories (lab dirs remo
 	const manifest = loadGalleryManifest(repoRoot);
 	const referenced = [...new Set(manifest.fixtures.map(fixture => fixture.labId))].sort();
 	assert.deepEqual(manifest.labs.map(lab => lab.id).sort(), referenced);
+	// Derived, not pinned. The old hardcoded `fixtures: 27` was a second copy of a count the manifest
+	// already owns — every added pad turned CI red until someone bumped a number here, which punished
+	// growth without protecting anything (a dropped pad is caught by the roster-completeness gate,
+	// which reports RED MISSING in-world, and by review of the manifest diff).
 	assert.deepEqual(validateGalleryManifest(manifest, { requireArtifacts: false }), {
-		labs: referenced.length, fixtures: 27, sourceFixtures: 27, destinationFixtures: 0,
+		labs: referenced.length, fixtures: manifest.fixtures.length,
+		sourceFixtures: manifest.fixtures.length, destinationFixtures: 0,
 	});
 });
 
@@ -39,7 +44,8 @@ test("paired save roles, artifacts, censuses, and exact mod pins are final", () 
 	assert.deepEqual(manifest.saves.source.mods, manifest.mods);
 	assert.deepEqual(manifest.saves.destination.mods, manifest.mods);
 	assert.deepEqual(validateGalleryManifest(manifest), {
-		labs: 11, fixtures: 27, sourceFixtures: 27, destinationFixtures: 0,
+		labs: manifest.labs.length, fixtures: manifest.fixtures.length,
+		sourceFixtures: manifest.fixtures.length, destinationFixtures: 0,
 	});
 });
 
@@ -68,38 +74,37 @@ test("baked fixtures remain inputs while direct physical meters remain the oracl
 	const miner = manifest.fixtures.find(fixture => fixture.id === "mining-drill-acid-feed");
 	assert.equal(miner.labId, "specialized-inventory-lab");
 	assert.equal(miner.padKind, "pad");
-	assert.deepEqual(miner.fingerprint, {
-		tankAcid: 13050.78125, drillAcid: 104.40625, resourceCount: 4, resourceTotal: 30398,
-		groundItems: 1, drillName: "big-mining-drill",
-	});
+	// Shape, not values — the exact numbers live in the manifest alone (one-truth ruling 2026-07-26).
+	assert.deepEqual(Object.keys(miner.fingerprint).sort(),
+		["drillAcid", "drillName", "groundItems", "resourceCount", "resourceTotal", "tankAcid"]);
 });
 
-test("the sixteen-family corpus is inventoried with independent oracles and stable fingerprints", () => {
+test("the corpus is inventoried with independent oracles and stable fingerprints", () => {
 	const manifest = loadGalleryManifest(repoRoot);
 	const byId = Object.fromEntries(manifest.fixtures.map(fixture => [fixture.id, fixture]));
 
 	// Every omnibus family shares the one platform, carries an independent oracle, and a fingerprint.
+	// STRUCTURE only — this test used to also copy six exact fingerprint VALUES (temperature 500,
+	// remaining 2000000, ...) out of the manifest and assert the manifest still said them. A second
+	// copy of a fact the manifest owns: it could only catch "someone edited the manifest", which the
+	// manifest diff in review already shows, while the LIVE drift it looked like it guarded is
+	// actually caught by the runners measuring the real pads against the manifest. Deleted 2026-07-26
+	// (owner one-truth ruling); shape and cross-reference claims below are the real contract.
 	const omnibus = manifest.fixtures.filter(fixture => fixture.id.startsWith("omnibus-"));
-	assert.equal(omnibus.length, 13);
+	assert.ok(omnibus.length > 0, "omnibus family present");
 	for (const fixture of omnibus) {
 		assert.equal(fixture.platformName, "lab-omnibus-state-v1");
 		assert.equal(fixture.independentOracleRequired, true);
 		assert.ok(fixture.fingerprint && typeof fixture.fingerprint === "object");
 	}
 
-	// Exact frozen-state fingerprints (measured live 2026-07-17).
-	assert.equal(byId["omnibus-heat-temperature"].fingerprint.temperature, 500);
-	assert.equal(byId["omnibus-burner-fuel"].fingerprint.remaining, 2000000);
-	assert.equal(byId["omnibus-midcraft-progress"].fingerprint.progress, 0.7000000000000005);
-	assert.equal(byId["omnibus-adversarial-inventory"].fingerprint.battQuality, "legendary");
-	assert.equal(byId["omnibus-crafting-fluids"].fingerprint.foundryTemp, 1500);
-	assert.equal(byId["omnibus-platform-schedule"].fingerprint.interruptName, "lab-interrupt");
-
-	// The workhorse is structure-only: entity count fixed, item counts never fingerprinted (live drift).
-	assert.deepEqual(byId["transfer-workhorse"].fingerprint, { entities: 1359 });
+	// The workhorse is structure-only: ONLY an entity count is fingerprinted — item counts must never
+	// be (live drift). The keys are the contract; the count value lives in the manifest alone.
+	assert.deepEqual(Object.keys(byId["transfer-workhorse"].fingerprint), ["entities"]);
+	assert.equal(typeof byId["transfer-workhorse"].fingerprint.entities, "number");
 	assert.match(byId["transfer-workhorse"].note, /drift/i);
 
-	// Layout blueprints are captured for the three requested layouts.
+	// Layout blueprints are captured for the requested layouts.
 	for (const [id, prefix] of [["omnibus-adversarial-inventory", "0eNq"]]) {
 		assert.ok(byId[id].layoutBlueprint.startsWith(prefix), `${id} layoutBlueprint`);
 	}

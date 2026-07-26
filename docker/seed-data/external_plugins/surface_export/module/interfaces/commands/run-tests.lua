@@ -156,14 +156,12 @@ end
 --   "none"     platform meter () — resolves its own platforms by name (hold pairs)
 local FM = FixtureMeters
 local function meter_entities(surface) return { entities = #surface.find_entities_filtered({}) } end
-local function meter_heat(surface, anchor)
-  return { temperature = FM.anchored(surface, anchor, "heat-pipe", "omnibus heat").temperature }
-end
 
 local DISPATCH = {
   -- omnibus pads (copy/paste-audited), anchor-scoped fingerprints
+  -- omnibus-heat-temperature: MIGRATED to a declarative verify (manifest lifecycle.verify property
+  -- read) — no entry needed; has_declared_reads routes it. First fixture through the unification.
   ["omnibus-adversarial-inventory"] = { args = "anchor", meter = FM.measure_omnibus_adversarial },
-  ["omnibus-heat-temperature"]      = { args = "anchor", meter = meter_heat },
   ["omnibus-decider-latch"]         = { args = "anchor", meter = FM.measure_omnibus_latch },
   ["omnibus-midcraft-progress"]     = { args = "anchor", meter = FM.measure_omnibus_midcraft },
   ["omnibus-burner-fuel"]           = { args = "anchor", meter = FM.measure_omnibus_burner },
@@ -222,6 +220,37 @@ local function compare_fingerprint(reads, fingerprint, exclude)
   return nil
 end
 
+-- Declarative half-reading: run the fixture's OWN dest-end physical_read checks against one pad
+-- half (dx 0 = left, 14 = pasted right) via the lifecycle engine — the SAME checks
+-- pad-transfer-suite evaluates on a real transfer's destination. One verify list, every runner:
+-- a fixture with these checks needs no DISPATCH entry and no bespoke meter, so promoting a pad
+-- stops costing Lua. Returns nil on pass, else the first failure detail.
+-- REFUSES a vacuous pass: zero evaluated physical reads is a FAIL, not a green — the engine skips
+-- orchestrator-side checks (report_field/census_pass), so a verify list of only those must not
+-- read as covered.
+local function lifecycle_reading(surface, fixture, dx)
+  local result = LifecycleEngine.run_verify(surface, fixture, { captured = {} },
+    { dx = dx, end_filter = "dest" })
+  local evaluated = 0
+  for _, c in ipairs(result.checks or {}) do
+    if c.verdict == "fail" then return c.name .. ": " .. tostring(c.detail) end
+    if c.verdict == "pass" then evaluated = evaluated + 1 end
+  end
+  if evaluated == 0 then
+    return "declared verify evaluated ZERO physical reads — refusing a vacuous pass"
+  end
+  return nil
+end
+
+-- A fixture whose verify list carries at least one dest-end physical_read is metered declaratively.
+local function has_declared_reads(fixture)
+  for _, c in ipairs((fixture.lifecycle and fixture.lifecycle.verify) or {}) do
+    if c.check == "physical_read" and (c["end"] or "dest") == "dest" then return true end
+  end
+  return false
+end
+local LIFECYCLE_DISPATCH = { args = "lifecycle" }
+
 -- === pad reconcile (reset -> left fingerprint -> copy/paste/audit -> paste fingerprint) ========
 
 --- Read a pad fixture's fingerprint on one half. dx/rect select the half: left = (dx 0, left rect),
@@ -241,14 +270,28 @@ end
 local function run_pad_body(player, surface, cell, fixture, dispatch, roster, ctx, comb, panel)
   local has_lc = fixture.lifecycle ~= nil
 
-  -- (a) LEFT fingerprint: the pristine baked source (unaffected by the paste, which lands right).
-  local ok_l, left_reads = pcall(pad_reading, surface, cell, fixture, dispatch, roster, 0,
-    { { cell.ox + 1, cell.oy }, { cell.ox + 13, cell.oy + 11 } })
-  if not ok_l then
-    set_status(cell.text_obj, comb, panel, "fail", "left meter error")
-    return "fail", "left meter error: " .. tostring(left_reads)
+  -- (a) LEFT reading: the pristine baked source (unaffected by the paste, which lands right).
+  -- Declarative fixtures read their OWN verify list; dispatch fixtures keep their bespoke meter.
+  local left_drift
+  if dispatch.args == "lifecycle" then
+    local ok_l, drift = pcall(lifecycle_reading, surface, fixture, 0)
+    -- NOT ok and drift or msg: on a PASS drift is nil, and 	rue and nil or msg = msg — the
+    -- documented and/or blind spot (pcall-catch-swallow-audit), hit live here before this comment.
+    if ok_l then
+      left_drift = drift
+    else
+      log("[test-run] " .. fixture.id .. " left declarative verify errored: " .. tostring(drift))
+      left_drift = "verify error: " .. tostring(drift)
+    end
+  else
+    local ok_l, left_reads = pcall(pad_reading, surface, cell, fixture, dispatch, roster, 0,
+      { { cell.ox + 1, cell.oy }, { cell.ox + 13, cell.oy + 11 } })
+    if not ok_l then
+      set_status(cell.text_obj, comb, panel, "fail", "left meter error")
+      return "fail", "left meter error: " .. tostring(left_reads)
+    end
+    left_drift = compare_fingerprint(left_reads, fixture.fingerprint)
   end
-  local left_drift = compare_fingerprint(left_reads, fixture.fingerprint)
   if left_drift then
     set_status(cell.text_obj, comb, panel, "fail", "left " .. left_drift)
     return "fail", "left " .. left_drift
@@ -318,22 +361,33 @@ local function run_pad_body(player, surface, cell, fixture, dispatch, roster, ct
     return "fail", delta
   end
 
-  -- (c) PASTE fingerprint: the same meter over the pasted right half (anchor +14 / right rect). The
-  -- new depth catches a paste that keeps entity/item COUNTS but drops progress/signal/held state.
-  local ok_p, paste_reads = pcall(pad_reading, surface, cell, fixture, dispatch, roster, 14,
-    { { cell.ox + 15, cell.oy }, { cell.ox + 27, cell.oy + 11 } })
-  if not ok_p then
-    set_status(cell.text_obj, comb, panel, "fail", "paste meter error")
-    return "fail", "paste meter error: " .. tostring(paste_reads)
+  -- (c) PASTE reading: the same reads over the pasted right half (anchor +14 / right rect). The
+  -- depth catches a paste that keeps entity/item COUNTS but drops progress/signal/held state.
+  local paste_drift
+  if dispatch.args == "lifecycle" then
+    local ok_p, drift = pcall(lifecycle_reading, surface, fixture, 14)
+    if ok_p then
+      paste_drift = drift
+    else
+      log("[test-run] " .. fixture.id .. " paste declarative verify errored: " .. tostring(drift))
+      paste_drift = "verify error: " .. tostring(drift)
+    end
+  else
+    local ok_p, paste_reads = pcall(pad_reading, surface, cell, fixture, dispatch, roster, 14,
+      { { cell.ox + 15, cell.oy }, { cell.ox + 27, cell.oy + 11 } })
+    if not ok_p then
+      set_status(cell.text_obj, comb, panel, "fail", "paste meter error")
+      return "fail", "paste meter error: " .. tostring(paste_reads)
+    end
+    local paste_exclude = nil
+    if fixture.pasteExclude then
+      -- Fields the ENGINE cannot carry through a frozen paste (e.g. the decider output register is
+      -- not script-writable — measured 2026-07-20). Declared per fixture, never a blanket skip.
+      paste_exclude = {}
+      for _, key in ipairs(fixture.pasteExclude) do paste_exclude[key] = true end
+    end
+    paste_drift = compare_fingerprint(paste_reads, fixture.fingerprint, paste_exclude)
   end
-  local paste_exclude = nil
-  if fixture.pasteExclude then
-    -- Fields the ENGINE cannot carry through a frozen paste (e.g. the decider output register is
-    -- not script-writable — measured 2026-07-20). Declared per fixture, never a blanket skip.
-    paste_exclude = {}
-    for _, key in ipairs(fixture.pasteExclude) do paste_exclude[key] = true end
-  end
-  local paste_drift = compare_fingerprint(paste_reads, fixture.fingerprint, paste_exclude)
   if paste_drift then
     set_status(cell.text_obj, comb, panel, "fail", "paste " .. paste_drift)
     return "fail", "paste " .. paste_drift
@@ -609,6 +663,11 @@ Base.admin_command("test-run",
           claim_pad_cell()
         else
           local dispatch = DISPATCH[id]
+          if not dispatch and has_declared_reads(fx) then
+            -- MIGRATED fixture: its declared verify list IS its meter (one verify list, every
+            -- runner). No DISPATCH entry, no bespoke meter function — promotion costs no Lua.
+            dispatch = LIFECYCLE_DISPATCH
+          end
           if not dispatch then
             skipped = skipped + 1
             record(id, "skipped", "no meter")

@@ -8,6 +8,7 @@
 //
 // Exit codes: 0 clean, 1 findings, 2 usage/operational error.
 import { testkit } from "./index.mjs";
+import { probeProperty } from "./live-probe.mjs";
 
 const [, , command, ...rest] = process.argv;
 const flag = name => rest.includes(name);
@@ -76,7 +77,16 @@ async function cmdInspect() {
 	process.exit(0);
 }
 
-const COMMANDS = { check: cmdCheck, inspect: cmdInspect };
+async function cmdProbe() {
+	const [platform, target] = rest.filter(a => !a.startsWith("--"));
+	if (!platform || !target) fail("usage: probe <platform> <entity>@<x>,<y>:<dotted.path> [--host N]");
+	const host = Number(valueOf("--host") || 1);
+	const result = probeProperty({ platform, target, host });
+	console.log(JSON.stringify(result, null, 2));
+	process.exit(0);
+}
+
+const COMMANDS = { check: cmdCheck, inspect: cmdInspect, probe: cmdProbe };
 if (!COMMANDS[command]) {
 	fail(`usage: node tools/testkit/cli.mjs <${Object.keys(COMMANDS).join("|")}> [...]`);
 }
