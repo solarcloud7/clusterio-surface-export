@@ -8,7 +8,7 @@
     "build:node": "tsc -p tsconfig.node.json",
     "build:browser": "tsc -p tsconfig.browser.json --noEmit",
     "build:web": "webpack-cli --mode production",
-    "build": "npm run build:node && npm run build:web",
+    "build": "npm run build:node && npm run build:browser && npm run build:web",
     "prepare": "npm run build",
     "lint": "npm run lint:js && npm run lint:lua && npm run lint:web-cache && npm run lint:test-grounding && npm run lint:pcall-logging && npm run lint:catch-swallow && npm run lint:test-hooks && npm run lint:version-certification && npm run lint:allow-manifest",
     "lint:js": "eslint . --max-warnings 0",

@@ -60,8 +60,12 @@ $Image = 'node:24-bookworm-slim'
 docker version --format '{{.Server.Version}}' 2>$null | Out-Null
 if ($LASTEXITCODE -ne 0) { throw "Docker does not appear to be running. Start Docker Desktop and retry." }
 
+# 'web' typechecks BEFORE bundling. webpack treats @clusterio/lib and @clusterio/web_ui as
+# Module-Federation externals (`import: false`), so it never checks them — a removed upstream
+# export compiles fine here and surfaces as a blank tab in the browser. `build:browser` is the
+# only thing that catches it, and `-Target web` is exactly what you run after editing .tsx.
 $BuildScript = switch ($Target) {
-    'web'  { 'npm run build:web' }
+    'web'  { 'npm run build:browser && npm run build:web' }
     'node' { 'npm run build:node' }
     default { 'npm run build' }
 }
