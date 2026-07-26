@@ -1329,6 +1329,17 @@ function Deserializer.restore_entity_filters(entity, entity_data)
       log(string.format("[Deserializer Error] infinity_container_filters for %s: %s", entity.name, tostring(inf_err)))
     end
   end
+  -- Infinity PIPE filter — set_infinity_pipe_filter() is a METHOD; there is no settable
+  -- `infinity_pipe_filter` property (reading one THROWS — probed on the 2.1.11 pin 2026-07-26).
+  -- The stored table carries name/percentage/temperature/mode; pass it through whole.
+  if entity_data.infinity_pipe_filter then
+    local pf_ok, pf_err = pcall(function()
+      entity.set_infinity_pipe_filter(entity_data.infinity_pipe_filter)
+    end)
+    if not pf_ok then
+      log(string.format("[Deserializer Error] set_infinity_pipe_filter for %s: %s", entity.name, tostring(pf_err)))
+    end
+  end
   if entity_data.infinity_remove_unfiltered ~= nil then
     local ru_ok, ru_err = pcall(function()
       entity.remove_unfiltered_items = entity_data.infinity_remove_unfiltered
