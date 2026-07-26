@@ -276,6 +276,27 @@ local function compare_op(op, actual, expected)
 	return false
 end
 
+--- Resolve exactly ONE entity of `name` inside an area locator's rect.
+---
+--- Fails loud on BOTH zero and 2+. The 2+ case is the one that matters: picking `found[1]` out of a
+--- multi-match reads an ARBITRARY entity, so a fixture with two same-name entities silently asserts
+--- against whichever the engine happened to return first — a pass that means nothing, or a flake.
+--- That is the name-vs-unique-identity rule the repo already applies to platform lookups, and the
+--- reason this is a shared helper rather than two copies: `infinity_pipe_filter` and `property` both
+--- need it, and a parity to maintain is a parity that drifts.
+--- @return LuaEntity|nil, string|nil
+local function resolve_area_entity(loc, name, what)
+	local found = loc.surface.find_entities_filtered({ area = loc.area, name = name })
+	if #found == 0 then
+		return nil, string.format("no %s in pad area for %s", tostring(name), what)
+	end
+	if #found > 1 then
+		return nil, string.format("%d %s entities in pad area for %s — the locator does not identify one; "
+			.. "narrow the area or use an anchor", #found, tostring(name), what)
+	end
+	return found[1]
+end
+
 -- Read the numeric value a physical_read requests from a resolved locator.
 local function perform_read(loc, check)
 	local read = check.read
@@ -304,9 +325,9 @@ local function perform_read(loc, check)
 	if read == "infinity_pipe_filter" then
 		local pipe = loc.entity
 		if loc.kind == "area" then
-			local found = loc.surface.find_entities_filtered({ area = loc.area, name = "infinity-pipe" })
-			if #found == 0 then return nil, "no infinity-pipe in pad area" end
-			pipe = found[1]
+			local resolved, err = resolve_area_entity(loc, "infinity-pipe", "infinity_pipe_filter")
+			if not resolved then return nil, err end
+			pipe = resolved
 		end
 		if not pipe then return nil, loc.err or "no entity for infinity_pipe_filter" end
 		local ok, filter = pcall(function() return pipe.get_infinity_pipe_filter() end)
@@ -350,11 +371,9 @@ local function perform_read(loc, check)
 			if not check.entity_name then
 				return nil, "property read on an area locator requires `entity_name`"
 			end
-			local found = loc.surface.find_entities_filtered({ area = loc.area, name = check.entity_name })
-			if #found == 0 then
-				return nil, "no " .. tostring(check.entity_name) .. " in pad area for property read"
-			end
-			entity = found[1]
+			local resolved, err = resolve_area_entity(loc, check.entity_name, "property read " .. tostring(path))
+			if not resolved then return nil, err end
+			entity = resolved
 		end
 		if not entity then return nil, loc.err or "no entity for property read" end
 
