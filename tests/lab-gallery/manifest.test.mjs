@@ -277,6 +277,45 @@ test("lifecycle validation teeth: hook allowlist, grounding rule, mutable-anchor
 			{ check: "census_pass" },
 		],
 	}), { requireArtifacts: false }), /census_pass checks require expect "success"/);
+	// --- declarative property read rules ---------------------------------------------------------
+	// These shipped without teeth in #141 and the review caught it; every other rule in this test has
+	// an assert.throws, and a validator rule with no red tooth is a rule nobody has proven fires.
+	const withPropertyVerify = (verify) => withTransferLifecycle({
+		version: 1, mutable: ["scratch"], act: "transfer", verify,
+	});
+	// Red tooth: a property read with no path.
+	assert.throws(() => validateGalleryManifest(withPropertyVerify([
+		{ check: "physical_read", locator: { anchor: "scratch" }, read: "property", op: "eq", expected: 500 },
+	]), { requireArtifacts: false }), /dotted identifier "path"/);
+	// Red tooth: a path that is not a dotted identifier chain (the charset is the security boundary;
+	// the Lua reader re-checks it, but a typo must not need a cluster to surface).
+	assert.throws(() => validateGalleryManifest(withPropertyVerify([
+		{ check: "physical_read", locator: { anchor: "scratch" }, read: "property",
+			path: "burner.remaining-burning-fuel", op: "eq", expected: 1 },
+	]), { requireArtifacts: false }), /dotted identifier "path"/);
+	// Red tooth: an area locator cannot identify an entity for a property read. There is deliberately
+	// NO "entity_name" escape hatch — restating the prototype name is the duplication that made a
+	// typo possible in the first place, so the anchor is the only way in.
+	assert.throws(() => validateGalleryManifest(withPropertyVerify([
+		{ check: "physical_read", locator: { area: true }, read: "property", path: "temperature", op: "eq", expected: 500 },
+	]), { requireArtifacts: false }), /needs locator\.anchor/);
+	// Red tooth: an op the ORCHESTRATOR cannot run must fail here, not after the transfer fires.
+	// evalReportField implements only "eq"; "approx" is valid for physical reads and not for these.
+	assert.throws(() => validateGalleryManifest(withTransferLifecycle({
+		version: 1, mutable: ["scratch"], act: "transfer",
+		verify: [
+			{ check: "physical_read", locator: { anchor: "scratch" }, read: "property",
+				path: "temperature", op: "eq", expected: 500 },
+			{ check: "report_field", path: "validation_success", op: "approx", expected: true },
+		],
+	}), { requireArtifacts: false }), /report_field op "approx" is not implemented/);
+	// Green path: the shipped shape validates, and the rendered line names the PATH — without it two
+	// property checks on one pad render identically and a failure cannot say which broke.
+	const heat = manifest.fixtures.find(fixture => fixture.id === "omnibus-heat-temperature");
+	assert.equal(heat.lifecycle.act, "transfer");
+	assert.ok(renderExpectFromLifecycle(heat).some(line => /heat-pipe: temperature eq 500/.test(line)),
+		`expected a line naming the property path, got: ${renderExpectFromLifecycle(heat).join(" | ")}`);
+
 	// Green path: the workhorse carries a census_pass witness on its clean transfer.
 	const workhorse = manifest.fixtures.find(fixture => fixture.id === "transfer-workhorse");
 	assert.ok((workhorse.lifecycle.verify || []).some(check => check.check === "census_pass"),

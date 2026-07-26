@@ -32,6 +32,21 @@ local function anchor_pos(fixture, name)
 	for _, a in ipairs(fixture.anchors or {}) do
 		if a.name == name then return a.x, a.y, a.entity end
 	end
+	-- Fall back to the anchor's declared ENTITY. Most fixtures' anchors carry no `name` (only the
+	-- scratch anchors of sabotage fixtures do), which left them unreferenceable — and that gap is
+	-- what pushed a check into restating the prototype name itself, the duplication a typo could then
+	-- exploit. Matching the entity keeps the reference inside the fixture's own closed anchor set: an
+	-- unknown value fails loud here, it never reaches find_entities_filtered. Ambiguity is refused
+	-- rather than guessed, for the same reason resolve_area_entity refuses a multi-match.
+	local found_x, found_y, found_entity, matches = nil, nil, nil, 0
+	for _, a in ipairs(fixture.anchors or {}) do
+		if a.entity == name then
+			matches = matches + 1
+			found_x, found_y, found_entity = a.x, a.y, a.entity
+		end
+	end
+	if matches == 1 then return found_x, found_y, found_entity end
+	if matches > 1 then return nil, nil, nil, matches end
 	return nil
 end
 
@@ -49,8 +64,14 @@ end
 local function resolve_target_entity(surface, fixture, target, dx)
 	dx = dx or 0
 	local name = tostring(target):gsub("^anchor:", "")
-	local x, y, ename = anchor_pos(fixture, name)
-	if not x then return nil, "anchor '" .. name .. "' not in fixture anchors" end
+	local x, y, ename, ambiguous = anchor_pos(fixture, name)
+	if not x then
+		if ambiguous then
+			return nil, string.format("anchor '%s' matches %d anchors on this fixture — name one of them "
+				.. "explicitly (add a `name` to the anchor)", name, ambiguous)
+		end
+		return nil, "anchor '" .. name .. "' not in fixture anchors"
+	end
 	local entity = find_at(surface, ename, x + dx, y)
 	if not entity then
 		return nil, "entity " .. tostring(ename) .. " missing at (" .. (x + dx) .. "," .. y .. ")"
@@ -286,7 +307,17 @@ end
 --- need it, and a parity to maintain is a parity that drifts.
 --- @return LuaEntity|nil, string|nil
 local function resolve_area_entity(loc, name, what)
-	local found = loc.surface.find_entities_filtered({ area = loc.area, name = name })
+	-- find_entities_filtered THROWS on an unknown prototype name, and an uncaught throw here escapes
+	-- lifecycle_verify entirely — aborting every REMAINING check in the fixture rather than failing
+	-- this one. That asymmetry is the bug: the `path` walk one branch down is carefully fail-closed
+	-- per-check, so a typo'd `entity_name` must be too. Both are external roster data.
+	local ok, found = pcall(function()
+		return loc.surface.find_entities_filtered({ area = loc.area, name = name })
+	end)
+	if not ok then
+		return nil, string.format("entity_name %q is not a valid prototype for %s: %s",
+			tostring(name), what, tostring(found))
+	end
 	if #found == 0 then
 		return nil, string.format("no %s in pad area for %s", tostring(name), what)
 	end
@@ -366,16 +397,17 @@ local function perform_read(loc, check)
 		if type(path) ~= "string" or path == "" then
 			return nil, "property read requires a non-empty dotted `path` string"
 		end
+		-- The entity comes from the fixture's own ANCHOR, never from a name restated on the check.
+		-- An earlier cut took an `entity_name` string and passed it straight to find_entities_filtered,
+		-- which meant the prototype name existed in two places (here and anchors[].entity) and a typo
+		-- was possible — so it grew a validator, a pcall guard, and a red tooth to survive one. All
+		-- three are deleted with the duplication: `locator.anchor` names an entry in THIS fixture's
+		-- anchors, a closed local set that fails loud ("anchor 'x' not in fixture anchors"), and
+		-- anchor_pos hands back the prototype name the fixture already declared. Nothing to mistype.
 		local entity = loc.entity
-		if loc.kind == "area" then
-			if not check.entity_name then
-				return nil, "property read on an area locator requires `entity_name`"
-			end
-			local resolved, err = resolve_area_entity(loc, check.entity_name, "property read " .. tostring(path))
-			if not resolved then return nil, err end
-			entity = resolved
+		if not entity then
+			return nil, loc.err or "property read needs an anchor locator (the anchor carries the entity)"
 		end
-		if not entity then return nil, loc.err or "no entity for property read" end
 
 		local cursor, depth = entity, 0
 		for key in string.gmatch(path, "[^%.]+") do
@@ -453,14 +485,24 @@ local function monotone_baseline(ctx)
 	return 0
 end
 
+--- A check's reported name must IDENTIFY it. For most reads the read kind is enough, but a property
+--- read's identity is its path: without it, every property check reports as "area.property", so two
+--- on one pad produce identical failure names and the message cannot tell you which one broke.
+local function read_label(check)
+	if check.read == "property" then
+		return "property(" .. tostring(check.path) .. ")"
+	end
+	return tostring(check.read) .. (check.item and ("(" .. check.item .. ")") or "")
+end
+
 local function check_physical_read(surface, fixture, ctx, check, dx)
 	local loc = resolve_read_locator(surface, fixture, check.locator or {}, dx)
 	local where = (check.locator and (check.locator.anchor or check.locator.platform)) or "area"
 	local actual, read_err = perform_read(loc, check)
 	if read_err then
-		return { name = where .. "." .. tostring(check.read), verdict = "fail", detail = tostring(read_err) }
+		return { name = where .. "." .. read_label(check), verdict = "fail", detail = tostring(read_err) }
 	end
-	local name = where .. "." .. tostring(check.read) .. (check.item and ("(" .. check.item .. ")") or "")
+	local name = where .. "." .. read_label(check)
 	local pass, detail
 	if check.op == "monotone" then
 		local baseline = monotone_baseline(ctx)
