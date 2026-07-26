@@ -112,9 +112,19 @@ const LIFECYCLE_ACTS = new Set(["copy-paste", "transfer", "clone"]);
 // count bump in manifest.test.mjs. Add a named read kind only for something a property walk cannot
 // express (aggregation over an area, a method call, a derived value).
 const PHYSICAL_READS = new Set(["item_count", "held", "crafting_progress", "spoil_percent", "fluid", "entity_present", "platform_present", "surface_entity_count", "infinity_pipe_filter", "property"]);
+// TWO evaluators, two capability sets — and conflating them is a real bug, not pedantry. A
+// physical_read is compared in Lua by lifecycle-engine's compare_op, which implements all of these.
+// A report_field is compared in NODE by evalReportField (pad-transfer-suite/run-tests.mjs), which
+// implements ONLY eq and throws on anything else. Validating a report_field against the physical set
+// let `approx` pass manifest validation and then throw AFTER the real transfer had already fired —
+// a full suite run spent to surface a typo that is knowable statically.
+//
 // "approx" compares with the same 1e-9 ULP allowance as DOUBLE_EPSILON in batch-lifecycle.mjs, for
 // the engine floats the fixtures pin exactly (0.7000000000000005). "eq" stays bit-exact.
 const CHECK_OPS = new Set(["eq", "approx", "ge", "le", "between", "monotone"]);
+// Keep in step with evalReportField: widening it there without widening this only costs a late
+// failure, but widening THIS without widening there produces a manifest that validates and cannot run.
+const REPORT_FIELD_OPS = new Set(["eq"]);
 const LIFECYCLE_ENDS = new Set(["source", "dest"]);
 const LIFECYCLE_EXPECTS = new Set(["success", "gate-failure", "census-abort"]);
 const TRANSFER_SUITE = "tests/integration/pad-transfer-suite/run-tests.mjs";
@@ -228,6 +238,11 @@ function validateLifecycle(fixture) {
 			}
 			physicalWitness = true;
 		} else if (check.check === "report_field") {
+			if (!REPORT_FIELD_OPS.has(check.op)) {
+				throw new Error(`lifecycle for ${id}: report_field op "${check.op}" is not implemented by the ` +
+					`orchestrator (evalReportField supports: ${[...REPORT_FIELD_OPS].join(", ")}) — this must fail ` +
+					`here, not after the transfer has already run`);
+			}
 			hasReportField = true;
 		} else if (check.check === "log_line") {
 			if (act !== "transfer" && act !== "clone") throw new Error(`lifecycle for ${id}: log_line checks require a transfer/clone act`);
@@ -269,7 +284,12 @@ export function renderExpectFromLifecycle(fixture) {
 		const endTag = check.end ? `[${check.end}] ` : "";
 		if (check.check === "physical_read") {
 			const where = check.locator?.anchor || check.locator?.platform || "area";
-			const what = check.item ? `${check.item} ${check.read}` : check.read;
+			// A property read's identity is its PATH, not the word "property" — without it every
+			// property check on a pad renders as the same "area: property eq 500" line, and two on one
+			// pad are indistinguishable both on the in-world EXPECT panel and in a failure message.
+			const what = check.read === "property"
+				? `${check.entity_name ? `${check.entity_name}.` : ""}${check.path}`
+				: (check.item ? `${check.item} ${check.read}` : check.read);
 			const bound = check.op === "monotone" ? `monotone (<=${check.driftTicks ?? "?"}t drift)` : `${check.op} ${JSON.stringify(check.expected)}`;
 			lines.push(`${endTag}${where}: ${what} ${bound}`);
 		} else if (check.check === "report_field") {

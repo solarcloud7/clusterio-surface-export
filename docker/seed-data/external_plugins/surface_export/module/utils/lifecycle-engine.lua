@@ -286,7 +286,17 @@ end
 --- need it, and a parity to maintain is a parity that drifts.
 --- @return LuaEntity|nil, string|nil
 local function resolve_area_entity(loc, name, what)
-	local found = loc.surface.find_entities_filtered({ area = loc.area, name = name })
+	-- find_entities_filtered THROWS on an unknown prototype name, and an uncaught throw here escapes
+	-- lifecycle_verify entirely — aborting every REMAINING check in the fixture rather than failing
+	-- this one. That asymmetry is the bug: the `path` walk one branch down is carefully fail-closed
+	-- per-check, so a typo'd `entity_name` must be too. Both are external roster data.
+	local ok, found = pcall(function()
+		return loc.surface.find_entities_filtered({ area = loc.area, name = name })
+	end)
+	if not ok then
+		return nil, string.format("entity_name %q is not a valid prototype for %s: %s",
+			tostring(name), what, tostring(found))
+	end
 	if #found == 0 then
 		return nil, string.format("no %s in pad area for %s", tostring(name), what)
 	end
@@ -453,14 +463,24 @@ local function monotone_baseline(ctx)
 	return 0
 end
 
+--- A check's reported name must IDENTIFY it. For most reads the read kind is enough, but a property
+--- read's identity is its path: without it, every property check reports as "area.property", so two
+--- on one pad produce identical failure names and the message cannot tell you which one broke.
+local function read_label(check)
+	if check.read == "property" then
+		return "property(" .. (check.entity_name and (check.entity_name .. ".") or "") .. tostring(check.path) .. ")"
+	end
+	return tostring(check.read) .. (check.item and ("(" .. check.item .. ")") or "")
+end
+
 local function check_physical_read(surface, fixture, ctx, check, dx)
 	local loc = resolve_read_locator(surface, fixture, check.locator or {}, dx)
 	local where = (check.locator and (check.locator.anchor or check.locator.platform)) or "area"
 	local actual, read_err = perform_read(loc, check)
 	if read_err then
-		return { name = where .. "." .. tostring(check.read), verdict = "fail", detail = tostring(read_err) }
+		return { name = where .. "." .. read_label(check), verdict = "fail", detail = tostring(read_err) }
 	end
-	local name = where .. "." .. tostring(check.read) .. (check.item and ("(" .. check.item .. ")") or "")
+	local name = where .. "." .. read_label(check)
 	local pass, detail
 	if check.op == "monotone" then
 		local baseline = monotone_baseline(ctx)
