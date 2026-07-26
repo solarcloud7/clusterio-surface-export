@@ -116,10 +116,11 @@ test("owningRunner is a required provenance key with an explicit, reasoned opt-o
 	delete dropped.fixtures.find(fixture => fixture.id === withRunner.id).owningRunner;
 	assert.throws(() => validateGalleryManifest(dropped, { requireArtifacts: false }), /missing owningRunner/);
 
-	// Red tooth: a null opt-out without a waiver reason is rejected (belt-combined-omnibus is the
-	// hand-built waived fixture).
+	// Red tooth: a null opt-out without a waiver reason is rejected. (This used belt-combined-omnibus
+	// until it was promoted to a transfer-act fixture with a real owningRunner; any still-waived
+	// hand-built pad serves — inserter-held-capacity is one.)
 	const unreasoned = clone();
-	const waived = unreasoned.fixtures.find(fixture => fixture.id === "belt-combined-omnibus");
+	const waived = unreasoned.fixtures.find(fixture => fixture.id === "inserter-held-capacity");
 	delete waived.owningRunnerWaiver;
 	assert.throws(() => validateGalleryManifest(unreasoned, { requireArtifacts: false }), /owningRunnerWaiver/);
 

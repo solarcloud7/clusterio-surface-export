@@ -82,7 +82,14 @@ docker compose down
 # 4. Clean Docker volumes (unless -KeepData)
 if (-not $KeepData) {
     Write-Host "Removing Docker volumes (clean slate)..." -ForegroundColor Yellow
-    docker compose down -v 2>$null
+    # NOT silent: the default deploy path promises a fresh seed, and this line IS that promise.
+    # If the wipe fails the cluster comes up on STALE data and every later success message lies.
+    # `down -v` on an already-down cluster succeeds, so a non-zero exit here is a real failure.
+    $downOut = docker compose down -v 2>&1
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host ($downOut | Out-String) -ForegroundColor Red
+        throw "docker compose down -v failed (exit $LASTEXITCODE) — volumes were NOT wiped, so this is not the clean slate it claims. Re-run, or pass -KeepData if you meant to keep them."
+    }
 } else {
     Write-Host "Keeping existing data volumes (-KeepData)" -ForegroundColor Yellow
 }
@@ -91,10 +98,19 @@ if (-not $KeepData) {
 Write-Host "Building plugin artifacts (node + web)..." -ForegroundColor Cyan
 Push-Location $PluginPath
 try {
+    # These used to end in `2>$null` with NO exit check. A failed dependency install was totally
+    # silent, and the NEXT command (npm run build) then failed against missing deps — so a broken
+    # install masqueraded as "Plugin build failed" with its stderr already discarded.
     if (Test-Path (Join-Path $PluginPath "package-lock.json")) {
-        npm ci --silent 2>$null
+        $installCmd = "npm ci"
+        $installOut = npm ci 2>&1
     } else {
-        npm install --silent 2>$null
+        $installCmd = "npm install"
+        $installOut = npm install 2>&1
+    }
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host ($installOut | Out-String) -ForegroundColor Red
+        throw "$installCmd failed (exit $LASTEXITCODE) — dependencies are NOT installed; the build below would fail for the wrong reason."
     }
     npm run build
     if ($LASTEXITCODE -ne 0) {
@@ -183,6 +199,8 @@ $instancesDone = $false
 while (-not $instancesDone -and $instanceSw.Elapsed.TotalSeconds -lt $instanceTimeout) {
     Start-Sleep -Seconds 3
 
+    # Deliberately quiet: this is a POLL. The controller legitimately refuses while still booting,
+    # and the exit code IS checked on the next line — a failure retries rather than being swallowed.
     $listOut = docker exec surface-export-controller sh -c 'npx clusterioctl --config /clusterio/tokens/config-control.json --log-level error instance list 2>/dev/null' 2>$null
     if ($LASTEXITCODE -ne 0 -or -not $listOut) { continue }
 

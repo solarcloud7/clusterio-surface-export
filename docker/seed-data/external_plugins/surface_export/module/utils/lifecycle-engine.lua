@@ -276,6 +276,30 @@ local function perform_read(loc, check)
 		end
 		return loc.entity ~= nil and 1 or 0
 	end
+	-- INFINITY PIPE FILTER. Works on an AREA locator (find the pipe in the pad rect) or an anchor.
+	-- The filter is a TABLE {name, percentage, temperature, mode}, and compare_op only does scalar
+	-- comparison — so `field` selects which member to assert (default "name"). Assert temperature
+	-- as its own check when it matters: a plasma pipe at 1e6 K is not the same fixture as one at
+	-- default temperature, and name-only would not notice.
+	--
+	-- A REGRESSED filter reads nil here, so `eq` fails and the fixture goes RED. That is the teeth:
+	-- nothing else in the suite can see this, because a filter is a SETTING, not contents, and the
+	-- exact gate counts only items and fluids.
+	if read == "infinity_pipe_filter" then
+		local pipe = loc.entity
+		if loc.kind == "area" then
+			local found = loc.surface.find_entities_filtered({ area = loc.area, name = "infinity-pipe" })
+			if #found == 0 then return nil, "no infinity-pipe in pad area" end
+			pipe = found[1]
+		end
+		if not pipe then return nil, loc.err or "no entity for infinity_pipe_filter" end
+		local ok, filter = pcall(function() return pipe.get_infinity_pipe_filter() end)
+		if not ok then return nil, "get_infinity_pipe_filter threw: " .. tostring(filter) end
+		if not filter then return nil, "infinity-pipe has NO filter (dropped?)" end
+		local field = check.field or "name"
+		return filter[field]
+	end
+
 	if loc.kind == "anchor" and not loc.entity then return nil, loc.err end
 	if read == "item_count" then
 		if loc.kind == "area" then

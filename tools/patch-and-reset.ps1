@@ -314,6 +314,8 @@ do {
     $elapsed += 3
     $allHealthy = $true
     foreach ($c in $containers) {
+        # Deliberately quiet: health POLL inside a bounded loop. A transient failure just means
+        # "not healthy yet" and the loop retries; the timeout below is the real gate.
         $s = docker ps --filter "name=$c" --format "{{.Status}}" 2>$null
         if ($s -notmatch "\(healthy\)") { $allHealthy = $false }
     }

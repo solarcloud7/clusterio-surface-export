@@ -5,8 +5,6 @@
 
 .DESCRIPTION
     Why this exists (see the Web cache guard entry and build notes in CLAUDE.md):
-      * The host's system Node install is currently broken — C:\Program Files\nodejs was
-        removed but left on PATH, so `node` does not resolve in a plain shell.
       * Building in the live plugin dir is unsafe while the cluster runs: `npm install` there
         re-adds the `@clusterio/*` peers into the bind-mounted node_modules and breaks
         clusterioctl with "duplicate copy of @clusterio/lib" (CLAUDE.md, Hot-Reload section).
@@ -60,14 +58,19 @@ $Image = 'node:24-bookworm-slim'
 docker version --format '{{.Server.Version}}' 2>$null | Out-Null
 if ($LASTEXITCODE -ne 0) { throw "Docker does not appear to be running. Start Docker Desktop and retry." }
 
+# 'web' typechecks BEFORE bundling. webpack treats @clusterio/lib and @clusterio/web_ui as
+# Module-Federation externals (`import: false`), so it never checks them — a removed upstream
+# export compiles fine here and surfaces as a blank tab in the browser. `build:browser` is the
+# only thing that catches it, and `-Target web` is exactly what you run after editing .tsx.
 $BuildScript = switch ($Target) {
-    'web'  { 'npm run build:web' }
+    'web'  { 'npm run build:browser && npm run build:web' }
     'node' { 'npm run build:node' }
     default { 'npm run build' }
 }
 
 if ($Fresh) {
     Write-Host "Dropping cached deps volume ($DepsVolume) for a clean npm ci..." -ForegroundColor Yellow
+    # Deliberately quiet: the volume may not exist yet, which is the normal first-run case.
     docker volume rm $DepsVolume 2>$null | Out-Null
 }
 

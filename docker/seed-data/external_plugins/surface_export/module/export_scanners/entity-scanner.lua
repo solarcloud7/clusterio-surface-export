@@ -192,6 +192,31 @@ function EntityScanner.serialize_entity(entity)
     if ru_ok and ru ~= nil then
       entity_data.infinity_remove_unfiltered = ru
     end
+
+    -- INFINITY PIPE — a METHOD pair, not a property. The chest above uses the
+    -- `infinity_container_filters` PROPERTY; the pipe uses get_/set_infinity_pipe_filter().
+    -- Probed live on the 2.1.11 pin (2026-07-26): reading `entity.infinity_pipe_filter` THROWS,
+    -- and `infinity_container_filters` THROWS on a pipe — so mirroring the chest's shape here,
+    -- the obvious move, would have been wrong. get() returns nil (unfiltered) or
+    --   { name = "fusion-plasma", percentage = 1, temperature = 1000000, mode = "at-least" }
+    -- Store the WHOLE table: temperature and mode are load-bearing (a fusion-plasma pipe filtered
+    -- at 1e6 K is not the same fixture as an unfiltered one), and a partial {name, percentage}
+    -- capture would drop them silently — the same partial-capture bug one layer down.
+    --
+    -- Until now nothing carried this at all: an infinity pipe transferred as an ordinary pipe and
+    -- lost its filter. The exact gate cannot see it, because a filter is a SETTING, not contents —
+    -- the platform arrives with correct items and fluids and passes clean. That is precisely how
+    -- the CHEST version (restore_slot_filters, deserializer.lua) went unnoticed until 2026-07-18.
+    local pipe_ok, pipe_filter = pcall(function() return entity.get_infinity_pipe_filter() end)
+    if not pipe_ok then
+      -- Only log where the method should exist; other "infinity*" prototypes legitimately lack it.
+      if entity.name == "infinity-pipe" then
+        log(string.format("[entity-scanner] get_infinity_pipe_filter failed on %s: %s",
+          entity.name, tostring(pipe_filter)))
+      end
+    elseif pipe_filter then
+      entity_data.infinity_pipe_filter = pipe_filter
+    end
   end
 
   -- Train station name (custom backer name)
