@@ -39,4 +39,4 @@ repo, NOT an in-repo checkout (the old `FactorioSurfaceExport/clusterio` was ret
 - **Fork-baseline feature the cluster must persist on** → bake into the images via the **`clusterio-docker`**
   builder (`C:\Users\Solar\source\clusterio-docker`: build from the fork or publish fork packages, bump
   `CLUSTERIO_VERSION`), then bump `CLUSTERIO_IMAGE_TAG` in `.env` (the single source — `docker-compose.yml`
-  interpolates it and CI derives the baked-host build-arg from it) + the plugin `package.json` peer/dev pins.
+  interpolates it and CI asserts it is set) + the plugin `package.json` peer/dev pins.
