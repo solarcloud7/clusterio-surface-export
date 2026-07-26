@@ -36,9 +36,35 @@ never a vacuous pass.
 
 ## Permanent — infrastructure / protocol, not absorbable by pads
 
-engine-invariants, gateway-guard, gateway-transfer, transfer-lock-expiry, version-dispatch,
-name-collision-delete, passenger-evacuate, destination-hold, schedule-filter,
-belt-loss-replay, belt-side-restore (Phase 5B instruments), `lib/`.
+Still their own dirs (each needs a live cluster, a platform, or a real transfer):
+engine-invariants, gateway-transfer, name-collision-delete, passenger-evacuate, destination-hold,
+belt-loss-replay (Phase 5B instrument), fluid-segment-law (the fluid-law re-certification
+instrument — builds and tears down its own scratch platform), `lib/`.
+
+### Wave 4 — five drivers folded into one call (2026-07-26)
+
+Five of the above were PURE: they pinned a decision function, a filter, a lock sweep or a version
+seam against injected inputs. They needed the Factorio Lua runtime only because `require` does not
+resolve from the `/sc` sandbox — no world, no platform, no transfer. Each shipped a near-identical
+PowerShell driver (~250 lines total) doing one RCON call → parse JSON → report.
+
+The **assertions are unchanged**; only the drivers went away. All now run in ONE RCON call via
+[`selftests/run-tests.mjs`](selftests/run-tests.mjs):
+
+| Retired driver | Self-test it now runs as |
+|---|---|
+| gateway-guard | `gateway` |
+| transfer-lock-expiry | `transfer_lock` |
+| version-dispatch | `version` |
+| schedule-filter | `schedule` |
+| belt-side-restore | `belt_side_restore` |
+
+The fold also picked up two self-tests that were registered on the remote interface and driven by
+**nothing** — `hold_aware_unlock` (26 assertions) and `no_tick_sync` were dead coverage.
+
+Searching for one of the retired names is how you find this table; the coverage did not go
+anywhere. Note that `--only 'gateway'` now matches the live `gateway-transfer` test ONLY — add
+`|selftests` to include the guard decision.
 
 ## Wave 3 — retired with its subject (2.1 fluid-segment registry, 2026-07-21)
 
