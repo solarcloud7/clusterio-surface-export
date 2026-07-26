@@ -68,6 +68,23 @@ jobs:
         working-directory: ${{ env.PLUGIN_DIR }}
         run: npm test
 
+      # Repo-root tests: the lab-gallery manifest/meter checks. These are pure (node builtins +
+      # repo-relative imports only — no install needed here, which is why this runs with no npm ci)
+      # and take ~100ms, so they belong BEFORE the cluster spins up: a manifest defect should fail
+      # in seconds, not 9 minutes in.
+      #
+      # They ran NOWHERE until now. `manifest.test.mjs` caught a dangling owningRunner during the
+      # self-test consolidation (#138) and CI missed it, because the only thing that ever invoked
+      # this file was a human reading docker/seed-data/lab-saves/README.md. A test written and never
+      # invoked is the same shape as the two orphaned self-tests that consolidation picked up.
+      #
+      # The glob is deliberate. `node --test tests/` would ALSO match Node's `**/test-*.?(c|m)js`
+      # discovery pattern and execute tests/lab-gallery/test-foundation.mjs — a captured-layout DATA
+      # module, not a test. `tests/**/*.test.mjs` matches exactly the intended files and auto-wires
+      # any future *.test.mjs, so the next one cannot become an orphan the same way.
+      - name: Test (lab-gallery manifest + fixture meters)
+        run: npm test
+
       - name: Create env file from example
         run: |
           cp .env.example .env

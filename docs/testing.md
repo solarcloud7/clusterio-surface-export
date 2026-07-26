@@ -502,7 +502,10 @@ Or use the **web UI** (§11) → Manual Transfer per-platform **Export JSON**, o
 ./tools/rcon.ps1 11 "/gateway-gui <idx>"
 ```
 
-Automated coverage: `--only 'gateway'` (`gateway-transfer`, `gateway-guard`).
+Automated coverage: `--only 'gateway|selftests'` — the live transfer is `gateway-transfer`; the pure guard
+decision (docked + not already transferring, and that `start_fn` is never reached on a block) is the
+`gateway` self-test inside `tests/integration/selftests`. `--only 'gateway'` alone matches the live test
+ONLY and silently leaves the guard unrun.
 
 ### 8. Passenger evacuate (no hard block)
 

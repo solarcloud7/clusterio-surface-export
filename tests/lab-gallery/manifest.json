@@ -1100,17 +1100,12 @@
 					"entity": "turbo-loader",
 					"x": 18,
 					"y": 45.5
-				},
-				{
-					"entity": "infinity-chest",
-					"x": 19.5,
-					"y": 45.5
 				}
 			],
-			"revision": 3,
+			"revision": 4,
 			"labId": "belt-lab",
 			"name": "Combined belt omnibus (steady-state, hand-built)",
-			"purpose": "One pad combining sideloads, 3 splitters, 3 underground pairs, and 2 filtered output loaders draining into infinity chests pinned at 100 - the steady-state fixture class exemplar: fully live, item count constant by saturation physics.",
+			"purpose": "One pad combining sideloads, 3 splitters, 3 underground pairs, and 2 filtered output loaders - the CONSERVATIVE closed-circuit exemplar: 380 items recirculate forever with no source and no sink, so any loss is visible instead of self-healed.",
 			"category": "physical-lab",
 			"owningRunner": "tests/integration/pad-transfer-suite/run-tests.mjs",
 			"owningRunnerWaiver": "Hand-built live by the owner 2026-07-19 (construct-once doctrine). No build script exists by design; the state itself is the artifact, banked in the source-of-truth checkpoint.",
@@ -1130,8 +1125,8 @@
 				"surfexp_gateways": "0.4.0",
 				"maraxsis": "1.34.51"
 			},
-			"invariant": "CONSERVATIVE closed circuit (owner removed the infinity chests 2026-07-19: self-healing masks loss): 380 items stationary across 35 turbo belts / 3 splitters / 6 underground ends / 2 filtered loaders; every stack one item; corner inside lanes carry the over-pack class (measured 18-19 lanes, pinned as presence). Covers the retired belt-corner-recovery invariant (over-pack, 18 lanes vs its 4) and the conservation-honesty property.",
-			"expectedTerminalVerdict": "observation-only",
+			"invariant": "CONSERVATIVE closed circuit (owner removed the infinity chests 2026-07-19: self-healing masks loss): 380 items stationary across 35 turbo belts / 3 splitters / 6 underground ends / 2 filtered loaders; every stack one item; corner inside lanes carry the over-pack class (13 lanes, pinned as presence). Covers the retired belt-corner-recovery invariant (over-pack, 13 lanes vs its 4) and the conservation-honesty property.",
+			"expectedTerminalVerdict": "strict-gate-success",
 			"independentOracleRequired": true,
 			"fingerprint": {
 				"beltCount": 35,
@@ -1147,13 +1142,13 @@
 			},
 			"testCard": {
 				"law": "A saturated closed belt circuit is STEADY-STATE: item count constant while fully live (no freeze needed - belts consume nothing; saturation is a fixed point).",
-				"action": "/test-run copies the live circuit and audits the copy in the same execution (atomic capture). Configs measured: loader filters + infinity settings.",
-				"expected": "Exact entity+item parity left vs right; 578 items stationary; loader/chest configs survive copy and transfer.",
+				"action": "pad-transfer-suite runs the pad through a REAL transfer and physically reads the destination. (/test-run's copy-paste audit SKIPS this pad - see runnerExcluded.) Configs measured: loader filters.",
+				"expected": "380 items stationary on the destination after transfer, and the strict gate passes; loader filters survive.",
 				"forbidden": "Do NOT freeze this pad (it is the steady-state class exemplar). Do NOT rebuild it from a script - the state is the artifact."
 			},
-			"note": "FIRST CATCH (2026-07-19, at claim time): serializer has NO loader handler (filters not carried; splitter types gate excludes loaders) and NO infinity-container handler (infinity filters not carried) - transfer would deliver hollow configs. Fix is queued; this pad is its kill-measurement. REV2 2026-07-19: owner removed infinity chests (self-healing masked loss); circuit now conservative at 380; belt-corner-recovery retired as covered (over-pack measured present at ~5x the dedicated fixture).",
+			"note": "FIRST CATCH (2026-07-19, at claim time): serializer has NO loader handler (filters not carried; splitter types gate excludes loaders) and NO infinity-container handler (infinity filters not carried) - transfer would deliver hollow configs. Fix is queued; this pad is its kill-measurement. REV2 2026-07-19: owner removed infinity chests (self-healing masked loss); circuit now conservative at 380; belt-corner-recovery retired as covered (over-pack measured present at 13 lanes vs its 4). REV4 2026-07-26: re-measured live on the 2.1.11 cluster - entities 35/3/6/2, belt items 380, over-packed lanes 13, and the declared infinity-chest anchor at (19.5,45.5) resolved to NOTHING (removed in REV2), so it was dropped; prose that still said 578 items / 18-19 lanes was corrected to the measured values the fingerprint already carried.",
 			"auditAggregateOnly": true,
-			"runnerExcluded": "KNOWN-OPEN HAZARD: paste loses items on over-packed corner lanes (measured 372->368, 2026-07-20) - the Phase-5B belt-restore class; re-enable when side-closed batched restore lands",
+			"runnerExcluded": "SCOPE: this excludes the pad from /test-run's COPY-PASTE audit ONLY (module/interfaces/commands/run-tests.lua reads this key; pad-transfer-suite does not - it selects on lifecycle.act). KNOWN-OPEN HAZARD: paste loses items on over-packed corner lanes (measured 372->368, 2026-07-20) - the Phase-5B belt-restore class; re-enable for paste when side-closed batched restore lands. The pad DOES run its real TRANSFER through pad-transfer-suite, which is green.",
 			"lifecycle": {
 				"version": 1,
 				"act": "transfer",
@@ -1973,8 +1968,8 @@
 				"surfexp_gateways": "0.4.0",
 				"maraxsis": "1.34.51"
 			},
-			"invariant": "The rig carries 1 fusion-reactor, 1 fusion-generator, 1 cryogenic-plant, 1 infinity-pipe and 6 pipes; the infinity-pipe holds fusion-plasma 100 (self-refilling, stable); the generator's own plasma box exposes NO fluid segment at 2.1; fusion-plasma and coolant (fluoroketone) fluid names are present. The reactor is ACTIVE, so plasma and coolant AMOUNTS drift and are recorded as presence booleans, never exact.",
-			"expectedTerminalVerdict": "observation-only",
+			"invariant": "The rig carries 1 fusion-reactor, 1 fusion-generator, 1 cryogenic-plant, 1 infinity-pipe and 6 pipes; the infinity-pipe holds fusion-plasma 100 (self-refilling, stable); the generator's own plasma box exposes NO fluid segment at 2.1; fusion-plasma and coolant (fluoroketone) fluid names are present. The reactor is ACTIVE, so plasma and coolant AMOUNTS drift and are recorded as presence booleans, never exact. The infinity-pipe's FILTER (fusion-plasma at 1000000 K) is exact and asserted on the destination - it is a SETTING, so the exact gate is structurally blind to it and only this physical read catches its loss.",
+			"expectedTerminalVerdict": "strict-gate-success",
 			"independentOracleRequired": true,
 			"fingerprint": {
 				"reactorCount": 1,
