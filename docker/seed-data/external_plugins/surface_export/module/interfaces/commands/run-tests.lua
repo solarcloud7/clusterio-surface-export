@@ -159,17 +159,16 @@ local function meter_entities(surface) return { entities = #surface.find_entitie
 
 local DISPATCH = {
   -- omnibus pads (copy/paste-audited), anchor-scoped fingerprints
-  -- omnibus-heat-temperature: MIGRATED to a declarative verify (manifest lifecycle.verify property
-  -- read) — no entry needed; has_declared_reads routes it. First fixture through the unification.
+  -- MIGRATED to declarative verifies (manifest lifecycle.verify; has_declared_reads routes them —
+  -- no entry, no bespoke /test-run meter): omnibus-heat-temperature, omnibus-midcraft-progress,
+  -- omnibus-burner-fuel, omnibus-module-bonus-progress, inserter-held-capacity. Their measure_*
+  -- functions survive in fixture-meters.lua ONLY because measure_corpus (the census/bake gate)
+  -- still consumes them; they die when that gate migrates to the same verify lists.
   ["omnibus-adversarial-inventory"] = { args = "anchor", meter = FM.measure_omnibus_adversarial },
   ["omnibus-decider-latch"]         = { args = "anchor", meter = FM.measure_omnibus_latch },
-  ["omnibus-midcraft-progress"]     = { args = "anchor", meter = FM.measure_omnibus_midcraft },
-  ["omnibus-burner-fuel"]           = { args = "anchor", meter = FM.measure_omnibus_burner },
   ["omnibus-equipment-grid"]        = { args = "anchor", meter = FM.measure_omnibus_equipment },
   ["omnibus-circuit-config"]        = { args = "anchor", meter = FM.measure_omnibus_circuit },
-  ["omnibus-module-bonus-progress"] = { args = "anchor", meter = FM.measure_omnibus_bonus },
   ["omnibus-crafting-fluids"]       = { args = "anchor", meter = FM.measure_omnibus_fluids },
-  ["inserter-held-capacity"]        = { args = "anchor", meter = FM.measure_inserter_held },
   ["no-tick-sync-frozen-pair"]      = { args = "anchor", meter = FM.measure_no_tick_pair },
   ["repin-beacon-speed"]            = { args = "anchor", meter = FM.measure_repin_beacon },
   -- transfer-act lifecycle fixture: locally /test-run validates the LEFT fingerprint then reports

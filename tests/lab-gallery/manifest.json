@@ -442,6 +442,42 @@
 				"active": false,
 				"inputPlates": 2
 			},
+			"lifecycle": {
+				"version": 1,
+				"act": "copy-paste",
+				"verify": [
+					{
+						"check": "physical_read",
+						"locator": {
+							"anchor": "assembling-machine-1"
+						},
+						"read": "property",
+						"path": "crafting_progress",
+						"op": "approx",
+						"expected": 0.7000000000000005
+					},
+					{
+						"check": "physical_read",
+						"locator": {
+							"anchor": "assembling-machine-1"
+						},
+						"read": "property",
+						"path": "active",
+						"op": "eq",
+						"expected": false
+					},
+					{
+						"check": "physical_read",
+						"locator": {
+							"anchor": "assembling-machine-1"
+						},
+						"read": "item_count",
+						"item": "iron-plate",
+						"op": "eq",
+						"expected": 2
+					}
+				]
+			},
 			"testCard": {
 				"law": "A deactivated assembling-machine-1 frozen mid-craft keeps its exact crafting_progress and embodied input ingredients.",
 				"build": "Migrated 2026-07-18 from the legacy y=0 zone onto the test-foundation pad at (92,-20) via surface.clone_area (seed-prep migrate_omnibus_zone; exact-state move, originals destroyed).",
@@ -494,6 +530,52 @@
 				"active": false,
 				"burning": "solid-fuel",
 				"remaining": 2000000
+			},
+			"lifecycle": {
+				"version": 1,
+				"act": "copy-paste",
+				"verify": [
+					{
+						"check": "physical_read",
+						"locator": {
+							"anchor": "burner-inserter"
+						},
+						"read": "item_count",
+						"item": "coal",
+						"op": "eq",
+						"expected": 10
+					},
+					{
+						"check": "physical_read",
+						"locator": {
+							"anchor": "burner-inserter"
+						},
+						"read": "property",
+						"path": "active",
+						"op": "eq",
+						"expected": false
+					},
+					{
+						"check": "physical_read",
+						"locator": {
+							"anchor": "burner-inserter"
+						},
+						"read": "property",
+						"path": "burner.currently_burning.name.name",
+						"op": "eq",
+						"expected": "solid-fuel"
+					},
+					{
+						"check": "physical_read",
+						"locator": {
+							"anchor": "burner-inserter"
+						},
+						"read": "property",
+						"path": "burner.remaining_burning_fuel",
+						"op": "eq",
+						"expected": 2000000
+					}
+				]
 			},
 			"testCard": {
 				"law": "Burner state transfers whole: fuel inventory, currently-burning item, and remaining_burning_fuel.",
@@ -655,6 +737,42 @@
 				"bonusProgress": 0.5,
 				"modules": 2,
 				"active": false
+			},
+			"lifecycle": {
+				"version": 1,
+				"act": "copy-paste",
+				"verify": [
+					{
+						"check": "physical_read",
+						"locator": {
+							"anchor": "assembling-machine-2"
+						},
+						"read": "property",
+						"path": "bonus_progress",
+						"op": "eq",
+						"expected": 0.5
+					},
+					{
+						"check": "physical_read",
+						"locator": {
+							"anchor": "assembling-machine-2"
+						},
+						"read": "item_count",
+						"item": "productivity-module",
+						"op": "eq",
+						"expected": 2
+					},
+					{
+						"check": "physical_read",
+						"locator": {
+							"anchor": "assembling-machine-2"
+						},
+						"read": "property",
+						"path": "active",
+						"op": "eq",
+						"expected": false
+					}
+				]
 			},
 			"testCard": {
 				"law": "Module inventory and accumulated bonus_progress transfer exactly on a deactivated crafter.",
@@ -962,6 +1080,71 @@
 				"active": false,
 				"destructible": false,
 				"forceBulkBonus": 11
+			},
+			"lifecycle": {
+				"version": 1,
+				"act": "copy-paste",
+				"verify": [
+					{
+						"check": "physical_read",
+						"locator": {
+							"anchor": "bulk-inserter"
+						},
+						"read": "held",
+						"op": "eq",
+						"expected": 8
+					},
+					{
+						"check": "physical_read",
+						"locator": {
+							"anchor": "bulk-inserter"
+						},
+						"read": "property",
+						"path": "held_stack.name",
+						"op": "eq",
+						"expected": "railgun-ammo"
+					},
+					{
+						"check": "physical_read",
+						"locator": {
+							"anchor": "bulk-inserter"
+						},
+						"read": "property",
+						"path": "held_stack.quality.name",
+						"op": "eq",
+						"expected": "legendary"
+					},
+					{
+						"check": "physical_read",
+						"locator": {
+							"anchor": "bulk-inserter"
+						},
+						"read": "property",
+						"path": "active",
+						"op": "eq",
+						"expected": false
+					},
+					{
+						"check": "physical_read",
+						"locator": {
+							"anchor": "bulk-inserter"
+						},
+						"read": "property",
+						"path": "destructible",
+						"op": "eq",
+						"expected": false
+					},
+					{
+						"check": "physical_read",
+						"locator": {
+							"anchor": "bulk-inserter"
+						},
+						"read": "property",
+						"path": "force.bulk_inserter_capacity_bonus",
+						"op": "eq",
+						"expected": 11
+					}
+				]
 			},
 			"testCard": {
 				"law": "Held items seat IN FULL on a less-researched destination: export captures the source-force inserter bonuses, import replicates them raise-only, and the strict gate counts the complete state (Pitfalls #28 count-a-complete-state / #29 dest-force research).",
