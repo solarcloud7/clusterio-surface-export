@@ -156,7 +156,11 @@ jobs:
           # passes, so the instances may not be in `instance list` yet. Waiting here decouples us
           # from the seed script's own (racy) per-instance start.
           echo "Waiting for both instances to be created & assigned..."
-          if ! timeout 60 bash -c '
+          # 60 -> 120. PRE-EXISTING tightness, NOT caused by removing the bake: this phase is
+          # controller-side seeding and never touched Factorio. It surfaced only because the bake
+          # measurement put a timer on the step — run 30180479602 spent ~52.5s here against the
+          # 60s limit, i.e. ~7s of headroom. Raised on the measurement, not on a hunch.
+          if ! timeout 120 bash -c '
             until [ "$(docker exec surface-export-controller npx clusterioctl \
                        --config=/clusterio/tokens/config-control.json --log-level error instance list 2>/dev/null \
                        | grep -cE "clusterio-host-[12]-instance-1")" -ge 2 ]; do
