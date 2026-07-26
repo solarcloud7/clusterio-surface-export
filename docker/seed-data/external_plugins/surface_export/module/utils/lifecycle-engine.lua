@@ -369,8 +369,12 @@ local function perform_read(loc, check)
 			end
 			local ok, value = pcall(function() return cursor[key] end)
 			if not ok then
-				return nil, string.format("property path %q THREW at %q: %s (dead entity, or not a table)",
-					path, key, tostring(value))
+				-- The engine's own message is the precise one and is quoted verbatim; do not guess a
+				-- cause alongside it. Measured 2026-07-26: a typo'd key reads "LuaEntity doesn't contain
+				-- key temperature_bogus", NOT nil — so an unknown property lands here, not in the nil
+				-- branch below. Both are red either way; this note exists so the next reader does not
+				-- assume a typo is the nil case.
+				return nil, string.format("property path %q THREW at %q: %s", path, key, tostring(value))
 			end
 			if value == nil then
 				return nil, string.format("property path %q resolved NIL at %q — the property is unset, or the "
