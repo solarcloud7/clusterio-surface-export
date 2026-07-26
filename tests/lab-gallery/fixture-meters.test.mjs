@@ -22,29 +22,17 @@ test("fixture-meters is injection-safe: no require, no long-string delimiter, si
 	assert.match(source, /\nreturn M\s*$/);
 });
 
-test("fixture-meters carries every corpus measurement and the fail-loud gate", () => {
-	assert.match(source, /function measure_corpus/);
-	assert.match(source, /function corpus_gate/);
-	assert.match(source, /fixture\.fingerprint/);
-	// A missing read fails approx_equal, so a dropped field cannot pass the gate; the 1e-9 tolerance
-	// is scoped to the progress doubles only, never applied blanket.
-	assert.match(source, /approx_equal/);
-	assert.match(source, /tolerant_double_fields/);
-	// Exclusions are an explicit allowlist, not an absence-skip; the fixture tally is reported for the
-	// build-side count pin.
-	assert.match(source, /corpus_excluded/);
-	assert.match(source, /expectedFixtures/);
-	// Unsatisfiable by omission: a missing measurement / measurement error fails the gate loudly.
-	assert.match(source, /was not measured/);
-	assert.match(source, /measurement error/);
-	// Physical locators + reads for the family platforms.
-	for (const platform of ["lab-omnibus-state-v1", "lab-energy-v1", "lab-transfer-fixture-v1", "lab-consumable-"]) {
-		assert.match(source, new RegExp(platform));
-	}
-	assert.match(source, /crafting_progress/);
-	assert.match(source, /get_circuit_network/);
-	assert.match(source, /get_detailed_contents/);
-	assert.match(source, /unique_id/);
+// (The "carries every corpus measurement and the fail-loud gate" test is GONE with its subject:
+// measure_corpus and corpus_gate were defined, exported, and called by NOTHING — the test asserted
+// the SOURCE TEXT of dead code existed, which is exactly the pin-the-wrong-thing shape the one-truth
+// ruling names. What was still true of live code survives below.)
+
+test("the fingerprint tolerance policy is scoped, never blanket", () => {
+	// compare_fingerprint (run-tests.lua) still rides these: ONLY the crafting/bonus progress doubles
+	// absorb the 1e-9 save/load ULP window; every other field compares exactly.
+	assert.match(source, /local tolerant_double_fields = \{ progress = true, bonusProgress = true \}/);
+	assert.match(source, /function approx_equal/);
+	assert.match(source, /1e-9/);
 });
 
 test("fixture-meters additive refactors preserve default behavior", () => {

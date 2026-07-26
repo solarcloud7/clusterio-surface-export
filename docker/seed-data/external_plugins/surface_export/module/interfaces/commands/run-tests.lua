@@ -162,8 +162,8 @@ local DISPATCH = {
   -- MIGRATED to declarative verifies (manifest lifecycle.verify; has_declared_reads routes them —
   -- no entry, no bespoke /test-run meter): omnibus-heat-temperature, omnibus-midcraft-progress,
   -- omnibus-burner-fuel, omnibus-module-bonus-progress, inserter-held-capacity. Their measure_*
-  -- functions survive in fixture-meters.lua ONLY because measure_corpus (the census/bake gate)
-  -- still consumes them; they die when that gate migrates to the same verify lists.
+  -- functions were kept one PR on the belief measure_corpus (the census gate) consumed them —
+  -- verified false: measure_corpus itself was called by nothing. All deleted 2026-07-26.
   ["omnibus-adversarial-inventory"] = { args = "anchor", meter = FM.measure_omnibus_adversarial },
   ["omnibus-decider-latch"]         = { args = "anchor", meter = FM.measure_omnibus_latch },
   ["omnibus-equipment-grid"]        = { args = "anchor", meter = FM.measure_omnibus_equipment },
