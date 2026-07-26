@@ -15,9 +15,6 @@ concurrency:
 
 env:
   PLUGIN_DIR: docker/seed-data/external_plugins/surface_export
-  # Layer the CI override onto the base compose so every `docker compose` command uses the
-  # host image with Factorio headless baked in (docker-compose.ci.yml).
-  COMPOSE_FILE: docker-compose.yml:docker-compose.ci.yml
 
 jobs:
   # ===========================================================================
@@ -77,68 +74,46 @@ jobs:
           # Set required values for CI
           sed -i 's/^INIT_CLUSTERIO_ADMIN=$/INIT_CLUSTERIO_ADMIN=ci-admin/' .env
 
-      - name: Resolve Clusterio image tag
-        id: clusterio_tag
-        # DERIVED, never restated. .env (from .env.example, one step above) is the single source
-        # for which base images this cluster runs; compose reads it directly, and the baked-host
-        # build-arg below reads it from here. A hardcoded tag in this workflow would be a second
-        # copy that silently wins when .env moves on.
+      - name: Verify Clusterio image tag is pinned
+        # A GUARD, not a resolver. .env (from .env.example, one step above) is the single source for
+        # which base images this cluster runs, and compose interpolates it directly — nothing here
+        # needs the value. This step used to export it for the Factorio-bake build-arg; that consumer
+        # is gone, so only the assertion remains: fail early and clearly rather than let compose fail
+        # later with a bare interpolation error.
         run: |
           v=$(grep -E '^CLUSTERIO_IMAGE_TAG=' .env | head -1 | cut -d= -f2-)
           test -n "$v" || { echo "::error::CLUSTERIO_IMAGE_TAG missing from .env (.env.example)"; exit 1; }
-          echo "tag=$v" >> "$GITHUB_OUTPUT"
           echo "Clusterio image tag: $v"
 
-      - name: Resolve & verify pinned Factorio version
-        id: factorio_version
+      - name: Verify both instances pin the same Factorio version
         run: |
-          # Single source of truth = host-1 instance.json's factorio.version. We bake exactly that
-          # version (FACTORIO_HEADLESS_TAG) so Clusterio finds it present and neither re-downloads
-          # nor fails findVersion(). host-2's instance.json and the Dockerfile fallback default MUST
-          # match it — a mismatch breaks the "one version, one place" invariant, so fail loudly
-          # instead of baking the wrong version.
+          # A GUARD, not a resolver. Nothing consumes the version any more — it used to feed the
+          # bake's FACTORIO_HEADLESS_TAG build-arg. What still matters is that host-1 and host-2
+          # AGREE: Clusterio downloads each instance's pinned version at runtime, so a mismatch
+          # silently makes the hosts fetch two different engines instead of failing.
           read_ver() {
             grep -oE '"factorio\.version"[^"]*"[0-9]+\.[0-9]+\.[0-9]+"' "$1" \
               | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1
           }
           H1=docker/seed-data/hosts/clusterio-host-1/clusterio-host-1-instance-1/instance.json
           H2=docker/seed-data/hosts/clusterio-host-2/clusterio-host-2-instance-1/instance.json
-          DF=docker/ci/Dockerfile.factorio-baked
-          # Best-effort extraction: a grep no-match (exit 1, propagated by pipefail) must NOT abort
-          # the step under `set -e` before the explicit `test -n` checks below can emit a clear
-          # ::error::. Let each assignment yield empty on failure; the checks are the real gate.
+          # The Dockerfile leg of this guard went with the bake (there is no baked version to agree
+          # with any more). host-1 vs host-2 is still asserted — they must agree, or the two
+          # instances want different engines and Clusterio downloads two.
           v=$(read_ver "$H1")  || true
           v2=$(read_ver "$H2") || true
-          vdf=$(grep -oE 'FACTORIO_HEADLESS_TAG=[0-9]+\.[0-9]+\.[0-9]+' "$DF" | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1) || true
           test -n "$v"   || { echo "::error::could not resolve factorio.version from $H1"; exit 1; }
           test -n "$v2"  || { echo "::error::could not resolve factorio.version from $H2"; exit 1; }
-          test -n "$vdf" || { echo "::error::could not resolve FACTORIO_HEADLESS_TAG default from $DF"; exit 1; }
-          if [ "$v" != "$v2" ] || [ "$v" != "$vdf" ]; then
-            echo "::error::Factorio version mismatch — single source host-1=$v disagrees with host-2=$v2 and/or Dockerfile default=$vdf. Set all three to the same version."
+          if [ "$v" != "$v2" ]; then
+            echo "::error::Factorio version mismatch — host-1=$v disagrees with host-2=$v2."
             exit 1
           fi
-          echo "version=$v" >> "$GITHUB_OUTPUT"
-          echo "Pinned Factorio version (verified consistent across host-1/host-2/Dockerfile): $v"
+          echo "Pinned Factorio version (host-1 == host-2): $v — Clusterio downloads it at runtime"
 
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v4
-
-      - name: Build Factorio-baked host image (layer-cached)
-        # Bakes the headless server onto the public host image so instances don't download
-        # Factorio at runtime. The build layer is cached across runs via GitHub Actions cache,
-        # so the Factorio download happens at most once per cache lifetime. `load` makes the
-        # image available to the local Docker daemon for `docker compose`.
-        uses: docker/build-push-action@v7
-        with:
-          context: docker/ci
-          file: docker/ci/Dockerfile.factorio-baked
-          tags: clusterio-docker-host:factorio-baked
-          load: true
-          cache-from: type=gha,scope=factorio-headless
-          cache-to: type=gha,mode=max,scope=factorio-headless
-          build-args: |
-            HOST_IMAGE=ghcr.io/solarcloud7/clusterio-docker-host:${{ steps.clusterio_tag.outputs.tag }}
-            FACTORIO_HEADLESS_TAG=${{ steps.factorio_version.outputs.version }}
+      # No buildx, no Factorio bake. Clusterio downloads the mod-pack's target headless version at
+      # runtime into /opt/factorio (a multi-version parent) — the base image's DESIGNED path, not a
+      # workaround. Measured 2026-07-25: the download costs ~14s more than a pre-baked image, while
+      # the bake itself cost 86s per run with the cache warm. See docs/CI_CD.md.
 
       # (The "Build ApiVersions-patched controller image" step is gone. It existed solely to sed
       # Factorio "2.1" into alpha.25's @clusterio/lib ApiVersions so the seed-time upload of the
@@ -181,7 +156,11 @@ jobs:
           # passes, so the instances may not be in `instance list` yet. Waiting here decouples us
           # from the seed script's own (racy) per-instance start.
           echo "Waiting for both instances to be created & assigned..."
-          if ! timeout 60 bash -c '
+          # 60 -> 120. PRE-EXISTING tightness, NOT caused by removing the bake: this phase is
+          # controller-side seeding and never touched Factorio. It surfaced only because the bake
+          # measurement put a timer on the step — run 30180479602 spent ~52.5s here against the
+          # 60s limit, i.e. ~7s of headroom. Raised on the measurement, not on a hunch.
+          if ! timeout 120 bash -c '
             until [ "$(docker exec surface-export-controller npx clusterioctl \
                        --config=/clusterio/tokens/config-control.json --log-level error instance list 2>/dev/null \
                        | grep -cE "clusterio-host-[12]-instance-1")" -ge 2 ]; do
@@ -202,9 +181,15 @@ jobs:
           # the instance dir, and swallows the failure with `|| true` — so an instance can silently
           # stay `stopped`. `instance start-all` is the reliable, retryable equivalent: it (re)starts
           # every `stopped` instance and is a no-op for running ones, so looping it converges. With
-          # the baked image there's no Factorio download, so starts complete in seconds.
+          # no baked image, this phase includes Factorio's download — measured ~34s (see the TIMER
+          # lines below), not the sub-second start a pre-baked image gave.
           echo "Driving 'instance start-all' until both instances report running..."
-          if ! timeout 90 bash -c '
+          echo "TIMER instances-running START $(date -u +%H:%M:%S)"
+          # 90 -> 180. Instances DOWNLOAD Factorio here (no bake), which was measured at ~34s on a
+          # clean runner — well inside the old 90s. Doubled anyway because this phase now depends on
+          # factorio.com throughput, which we do not control. The TIMER lines bracket the phase so
+          # every run reports the real number instead of us guessing at it again.
+          if ! timeout 180 bash -c '
             until [ "$(docker exec surface-export-controller npx clusterioctl \
                        --config=/clusterio/tokens/config-control.json --log-level error instance list 2>/dev/null \
                        | grep -E "clusterio-host-[12]-instance-1" | grep -c "running")" -ge 2 ]; do
@@ -221,6 +206,7 @@ jobs:
             $CTL instance list 2>&1 || true
             exit 1
           fi
+          echo "TIMER instances-running END $(date -u +%H:%M:%S)"
           echo "Both instances are running"
 
           # `running` means the Factorio process exists, not that RCON or the save-patched module is ready.
@@ -272,7 +258,7 @@ jobs:
         run: |
           # Surface the start-failure reason first. The most common opaque failure is the host
           # rejecting an instance before Factorio launches (e.g. Clusterio's findVersion()
-          # throwing "Unable to find Factorio version X" when the baked/installed version does
+          # throwing "Unable to find Factorio version X" when the downloaded/installed version does
           # not match the instance's pinned factorio.version) — that throw lands in the HOST
           # log, NOT factorio-current.log (which stays empty). Earlier runs truncated it with
           # `--tail 100`; we now grep the FULL host logs for it and dump instance status.
