@@ -81,7 +81,9 @@ export function validateGalleryManifest(manifest, { requireArtifacts = true } = 
 		if (fixture.engineVersion !== manifest.engineVersion || !sameJson(fixture.mods, manifest.mods)) {
 			throw new Error(`engine or mod pins differ for ${fixture.id}`);
 		}
-		if (!fixture.invariant || !fixture.expectedTerminalVerdict || fixture.independentOracleRequired !== true) {
+		// (expectedTerminalVerdict was deleted 2026-07-26: declared on all 27 fixtures, validated here,
+		// consumed by NOTHING — and its values had already drifted into disagreement. Dead schema.)
+		if (!fixture.invariant || fixture.independentOracleRequired !== true) {
 			throw new Error(`incomplete contract for ${fixture.id}`);
 		}
 		if (!fixture.fingerprint || typeof fixture.fingerprint !== "object") throw new Error(`missing fingerprint for ${fixture.id}`);

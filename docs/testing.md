@@ -54,7 +54,7 @@ Every fixture has:
 - a stable fixture ID and revision;
 - a human-readable purpose and owning test;
 - the Factorio version and exact enabled-mod set;
-- a source/destination role, physical invariant, and expected terminal verdict;
+- a source/destination role and physical invariant;
 - a minimal machine-readable fingerprint; and
 - provenance when derived from an incident or failure black box.
 
