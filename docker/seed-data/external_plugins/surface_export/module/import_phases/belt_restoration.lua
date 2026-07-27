@@ -593,12 +593,64 @@ function BeltRestoration.restore_side_groups(side_groups, entity_map)
     for key in pairs(global_before.by_key) do keys[key] = true end
     for key in pairs(global_after.by_key) do keys[key] = true end
     for key in pairs(expected_by_key) do keys[key] = true end
+    local mismatched = {}
     for key in pairs(keys) do
         local delta = (global_after.by_key[key] or 0) - (global_before.by_key[key] or 0)
         if delta ~= (expected_by_key[key] or 0) then
             anomalies = anomalies + 1
+            mismatched[key] = true
             log(string.format("[BeltRestoration] GLOBAL BRACKET MISMATCH %q: physical delta %d ~= placed %d",
                 key, delta, expected_by_key[key] or 0))
+        end
+    end
+    -- ATTRIBUTION DUMP (instrument, mismatch-only): the bracket says WHAT drifted; this says WHERE.
+    -- After three refuted mechanism theories (spill, aliasing, aged-handle retry — all exonerated by
+    -- isolation rungs 2026-07-27) the mechanism gets read off the map, not guessed. Two signals:
+    --   STRAY  = a new item of a mismatched key on a line whose side never carried that key at all
+    --            (cross-side landing — logged with world coordinates to fly to)
+    --   totals = new items per mismatched key vs placed (excess WITHIN legitimate sides shows here
+    --            with no STRAY lines — a different mechanism class than cross-side)
+    if anomalies > 0 then
+        local side_of = {}
+        for gi, g in ipairs(side_groups) do
+            local legit = {}
+            for _, sl in ipairs(g.slots) do legit[item_key(sl.n, sl.q)] = true end
+            for _, m in ipairs(g.members) do
+                local entity = entity_map[m.id]
+                if entity and entity.valid then
+                    side_of[entity.unit_number .. "/" .. m.li] = { legit = legit, gi = gi }
+                end
+            end
+        end
+        local seen_dump, new_by_key = {}, {}
+        for _, g in ipairs(side_groups) do
+            for _, m in ipairs(g.members) do
+                local entity = entity_map[m.id]
+                if entity and entity.valid then
+                    for _, it in ipairs(entity.get_transport_line(m.li).get_detailed_contents()) do
+                        local uid = tostring(it.unique_id)
+                        if not seen_dump[uid] and not global_before.by_id[uid] then
+                            seen_dump[uid] = true
+                            local q = (it.stack.quality and it.stack.quality.name) or QUALITY_NORMAL
+                            local key = item_key(it.stack.name, q)
+                            if mismatched[key] then
+                                new_by_key[key] = (new_by_key[key] or 0) + it.stack.count
+                                local info = side_of[entity.unit_number .. "/" .. m.li]
+                                if info and not info.legit[key] then
+                                    log(string.format(
+                                        "[BeltRestoration] STRAY %s x%d on %s at (%.1f, %.1f) line %d linepos %.3f — side %d never carried it",
+                                        it.stack.name, it.stack.count, entity.name,
+                                        entity.position.x, entity.position.y, m.li, it.position or -1, info.gi))
+                                end
+                            end
+                        end
+                    end
+                end
+            end
+        end
+        for key in pairs(mismatched) do
+            log(string.format("[BeltRestoration] ATTRIB %q: new-on-lines %d vs placed %d",
+                key, new_by_key[key] or 0, expected_by_key[key] or 0))
         end
     end
     return placed, unplaced, anomalies
