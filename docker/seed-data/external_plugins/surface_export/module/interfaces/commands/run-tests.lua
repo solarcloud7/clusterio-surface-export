@@ -155,7 +155,9 @@ end
 --   "platform" platform meter (platform object)
 --   "none"     platform meter () — resolves its own platforms by name (hold pairs)
 local FM = FixtureMeters
-local function meter_entities(surface) return { entities = #surface.find_entities_filtered({}) } end
+-- Stable STRUCTURE count (transient debris excluded) — see FixtureMeters.count_stable_entities
+-- for the rationale; a raw count on a live-factory platform flips with spills/effects.
+local function meter_entities(surface) return { entities = FM.count_stable_entities(surface) } end
 
 local DISPATCH = {
   -- omnibus pads (copy/paste-audited), anchor-scoped fingerprints

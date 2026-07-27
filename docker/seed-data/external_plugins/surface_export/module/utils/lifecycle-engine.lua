@@ -338,6 +338,13 @@ local function perform_read(loc, check)
 		if not loc.surface then return nil, "no surface for surface_entity_count" end
 		return #loc.surface.find_entities_filtered({})
 	end
+	-- STRUCTURE count for live-factory fixtures — a DELEGATION to the canonical counter (same
+	-- pattern as belt_stats below): FixtureMeters.count_stable_entities carries the rationale and
+	-- the transient-class list; a second copy here would drift.
+	if read == "surface_entity_count_stable" then
+		if not loc.surface then return nil, "no surface for surface_entity_count_stable" end
+		return FixtureMeters.count_stable_entities(loc.surface)
+	end
 	if read == "entity_present" then
 		if loc.kind == "area" then
 			return #loc.surface.find_entities_filtered({ area = loc.area })

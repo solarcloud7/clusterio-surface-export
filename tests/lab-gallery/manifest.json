@@ -980,7 +980,7 @@
 		{
 			"id": "transfer-workhorse",
 			"padKind": "platform",
-			"revision": 1,
+			"revision": 2,
 			"labId": "gate-drift-lab",
 			"name": "1359-entity transfer workhorse",
 			"purpose": "Provide the large live-drift transfer workhorse whose structure is fixed but whose machine item counts drift by design.",
@@ -1002,11 +1002,11 @@
 				"surfexp_gateways": "0.4.0",
 				"maraxsis": "1.34.51"
 			},
-			"note": "Structure-only fingerprint. Machines are live: measured iron-plate drifted 1688 -> 1680 over hours; only entity count is stable.",
-			"invariant": "The platform carries exactly 1359 entities; its machines are deliberately LIVE so item counts drift over time and must never be fingerprinted.",
+			"note": "Structure-only fingerprint. Machines are live: measured iron-plate drifted 1688 -> 1680 over hours. Even the raw entity count is NOT stable (measured 2026-07-27: a spilled item-on-ground and asteroid-explosion effects flipped the raw count 1359 to 1360 between runs; platform pause stops travel, not machines) - so the pin is the STRUCTURE count, excluding transient debris classes.",
+			"invariant": "The platform carries exactly 1358 structural entities (transient debris - spills, explosion effects - excluded); its machines are deliberately LIVE so item counts AND raw entity count drift over time and must never be fingerprinted.",
 			"independentOracleRequired": true,
 			"fingerprint": {
-				"entities": 1359
+				"entities": 1358
 			},
 			"lifecycle": {
 				"version": 1,
@@ -1017,9 +1017,9 @@
 						"locator": {
 							"self": true
 						},
-						"read": "surface_entity_count",
+						"read": "surface_entity_count_stable",
 						"op": "eq",
-						"expected": 1359
+						"expected": 1358
 					},
 					{
 						"check": "report_field",

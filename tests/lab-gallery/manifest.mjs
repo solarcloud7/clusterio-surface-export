@@ -114,7 +114,10 @@ const LIFECYCLE_ACTS = new Set(["copy-paste", "transfer", "clone"]);
 // "belt_stats" selects one field of FixtureMeters.measure_belt_combined (the canonical belt
 // instrument — delegation, never a second copy of its definitions). It exists to carry a belt
 // fixture's FULL law to the transfer destination (the 37-vs-13 over-compression incident).
-const PHYSICAL_READS = new Set(["item_count", "held", "crafting_progress", "spoil_percent", "fluid", "entity_present", "platform_present", "surface_entity_count", "infinity_pipe_filter", "property", "belt_stats"]);
+// "surface_entity_count_stable" = surface_entity_count minus transient debris classes (spills,
+// explosion effects, projectiles) — the pin for LIVE-factory fixtures whose raw count breathes
+// (measured 2026-07-27 on the workhorse: 1359<->1360 between runs from a spill + explosions).
+const PHYSICAL_READS = new Set(["item_count", "held", "crafting_progress", "spoil_percent", "fluid", "entity_present", "platform_present", "surface_entity_count", "surface_entity_count_stable", "infinity_pipe_filter", "property", "belt_stats"]);
 // TWO evaluators, two capability sets — and conflating them is a real bug, not pedantry. A
 // physical_read is compared in Lua by lifecycle-engine's compare_op, which implements all of these.
 // A report_field is compared in NODE by evalReportField (pad-transfer-suite/run-tests.mjs), which

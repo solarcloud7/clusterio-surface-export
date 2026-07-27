@@ -289,6 +289,22 @@ local function measure_omnibus_schedule(platform)
     return { records = #records, interrupts = #interrupts, interruptName = interrupts[1] and interrupts[1].name or nil }
 end
 
+-- STRUCTURE entity count: every entity EXCEPT transient debris classes (spilled items, explosion
+-- effects, projectiles, smoke, corpses). THE canonical counter for live-factory fixture pins: a
+-- platform baked mid-production dribbles spills and effects (measured 2026-07-27 on the workhorse:
+-- raw count flipped 1359<->1360 between /test-run invocations; platform pause stops travel, NOT
+-- machines), so a raw-count pin measures weather. Structure is what corruption would change; the
+-- transfer census still counts every physical item, ground stacks included. Consumers: the
+-- meter_entities dispatch meter (run-tests.lua) and lifecycle-engine's
+-- surface_entity_count_stable read — both delegate here, never a second copy.
+local function count_stable_entities(surface)
+    local total = #surface.find_entities_filtered({})
+    local transient = #surface.find_entities_filtered({
+        type = { "explosion", "item-entity", "projectile", "beam", "smoke-with-trigger", "corpse" },
+    })
+    return total - transient
+end
+
 local function measure_energy(surface)
     local acc = surface.find_entities_filtered({ type = "accumulator" })[1]
     local electric = 0
@@ -606,6 +622,7 @@ M.measure_thruster_pair = measure_thruster_pair
 
 M.approx_equal = approx_equal
 M.tolerant_double_fields = tolerant_double_fields
+M.count_stable_entities = count_stable_entities
 
 
 
