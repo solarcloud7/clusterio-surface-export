@@ -469,12 +469,20 @@ end
 -- Line handles are fetched HERE, in the same execution that writes them (stale-handle hazard).
 -- Returns placed, unplaced, anomalies.
 function BeltRestoration.restore_side_groups(side_groups, entity_map)
-    local all_lines = {}
-    for _, g in ipairs(side_groups) do
-        for _, m in ipairs(g.members) do
-            local entity = entity_map[m.id]
-            if entity and entity.valid then all_lines[#all_lines + 1] = entity.get_transport_line(m.li) end
+    -- Handle freshness is per-READ, not per-function: ~20k inserts split segments, and a handle
+    -- fetched before a split is AGED — an aged read double-sees items (BELT-R12 applied to the
+    -- WITNESS itself; measured live 2026-07-27: phantom +2/+16 bracket excesses on the workhorse
+    -- import while the independent dup_kill verdict was 19,696/19,696 exact). The global bracket
+    -- therefore re-fetches every line handle at each snapshot instant.
+    local function fresh_all_lines()
+        local lines = {}
+        for _, g in ipairs(side_groups) do
+            for _, m in ipairs(g.members) do
+                local entity = entity_map[m.id]
+                if entity and entity.valid then lines[#lines + 1] = entity.get_transport_line(m.li) end
+            end
         end
+        return lines
     end
     local function item_key(name, quality)
         return name .. "\0" .. (quality or QUALITY_NORMAL)
@@ -511,7 +519,7 @@ function BeltRestoration.restore_side_groups(side_groups, entity_map)
     end
     -- (undo_inserted_delta is GONE with the per-placement leak machinery — see the header. The
     -- BELT-R15 pure-read-before-mutate lesson it carried lives on in api-notes' AGED-TARGET entry.)
-    local global_before = snapshot(all_lines)
+    local global_before = snapshot(fresh_all_lines())
     local expected_by_key = {}
     local placed, unplaced, anomalies = 0, 0, 0
     for _, g in ipairs(side_groups) do
@@ -525,17 +533,23 @@ function BeltRestoration.restore_side_groups(side_groups, entity_map)
                 }
             end
         end
+        local side_lines = {}
+        for _, w in ipairs(wins) do side_lines[#side_lines + 1] = w.line end
         local function side_total()
-            local lines = {}
-            for _, w in ipairs(wins) do lines[#lines + 1] = w.line end
-            return snapshot(lines)
+            return snapshot(side_lines)
         end
         for _, slot in ipairs(g.slots) do
             local done = false
             local wanted_key = item_key(slot.n, slot.q)
             for wj = #wins, 1, -1 do
                 local w = wins[wj]
-                local maxk = math.floor(w.line.line_length * 256 + 0.5)
+                -- Per-window descending CURSOR (the second quadratic, measured 2026-07-27): starting
+                -- every slot's scan at the line top made slot N wade through N occupied positions —
+                -- O(N^2) can_insert_at calls per dense line, a second workhorse-scale stall after the
+                -- snapshot one. Reverse first-fit only ever places BELOW the previous success, so
+                -- everything above the cursor is occupied by construction: resuming there finds the
+                -- IDENTICAL positions a full rescan would (semantics unchanged, cost linear).
+                local maxk = w.cursor or math.floor(w.line.line_length * 256 + 0.5)
                 for k = maxk, w.kmin, -1 do
                     if w.line.can_insert_at(k / 256) then
                         local sb = side_total()
@@ -544,6 +558,7 @@ function BeltRestoration.restore_side_groups(side_groups, entity_map)
                         if changed_only(sb, sa, wanted_key, slot.ct) then
                             placed = placed + slot.ct
                             expected_by_key[wanted_key] = (expected_by_key[wanted_key] or 0) + slot.ct
+                            w.cursor = k
                             done = true
                             break
                         elseif same_snapshot(sb, sa) then
@@ -566,7 +581,7 @@ function BeltRestoration.restore_side_groups(side_groups, entity_map)
     -- The restore-granularity bracket: the global physical delta must equal the placed sums for
     -- EVERY key, gains and absences alike. This is what catches anything the per-side deltas
     -- cannot attribute — including the mechanism-impossible-but-never-trusted cross-side leak.
-    local global_after = snapshot(all_lines)
+    local global_after = snapshot(fresh_all_lines())
     local keys = {}
     for key in pairs(global_before.by_key) do keys[key] = true end
     for key in pairs(global_after.by_key) do keys[key] = true end
