@@ -214,11 +214,12 @@ function ImportCompletion.run_phase1(job)
 			log(string.format("[Import] Side restore UNPLACED: placed=%d unplaced=%d", placed, unplaced))
 		end
 		if anomalies > 0 then
-			-- An anomaly is corruption the COUNTS cannot see (a bracket mismatch keeps totals right
-			-- while structure lands wrong), so the gate would pass it. Fail the import instead:
-			-- error() routes to the failure path => banked box, dest discarded, source preserved.
-			error(string.format("[Import] Belt side restore reported %d anomalies (placed=%d unplaced=%d) — "
-				.. "refusing to certify a structurally corrupt restore", anomalies, placed, unplaced))
+			-- NEVER error() here: an uncaught Lua error inside on_tick KILLS the headless server
+			-- ("Quitting: multiplayer error", exit 255 — measured live 2026-07-27, twice). The
+			-- fail-closed routing happens at the validation verdict below (failedStage "belts"),
+			-- which discards the dest and preserves the source through the normal 2PC path.
+			log(string.format("[Import] BELT ANOMALIES: %d (placed=%d unplaced=%d) — verdict will refuse",
+				anomalies, placed, unplaced))
 		end
 	else
 		-- Legacy payload (no side partition): the count-conserving consolidation restore. Kept ONLY
@@ -539,6 +540,20 @@ function ImportCompletion.run_phase2(job)
 			result.mismatchDetails = "TEST: forced entity placement failure (source preserved)"
 			result.testForcedEntityFailure = true
 			log("[TEST HOOK] Forced entity failure made the transfer verdict fail-safe")
+		end
+		-- Belt structural anomalies (side-restore witness): corruption the COUNTS cannot see — a
+		-- bracket mismatch can keep totals right while structure lands wrong, so the item/fluid
+		-- gate alone would certify it. Refuse through the NORMAL verdict path (fail => revert);
+		-- never via error(), which kills the server (measured 2026-07-27).
+		if (job.metrics and job.metrics.belt_anomalies or 0) > 0 then
+			success = false
+			result = result or {}
+			result.success = false
+			result.failedStage = "belts"
+			result.mismatchDetails = string.format(
+				"belt side-restore reported %d structural anomalies (bracket/side witness)",
+				job.metrics.belt_anomalies)
+			log("[Import] Verdict REFUSED on belt structural anomalies: " .. tostring(job.metrics.belt_anomalies))
 		end
 
 		PhaseProfiler.stop(job.job_id, "validation")

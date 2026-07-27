@@ -527,16 +527,22 @@ function BeltRestoration.restore_side_groups(side_groups, entity_map)
         for _, m in ipairs(g.members) do
             local entity = entity_map[m.id]
             if entity and entity.valid then
+                -- (entity, li) — the LINE is fetched fresh at every use, never stored: a side's own
+                -- inserts split its segments, and both READS and WRITES through a pre-split handle
+                -- are the aged-handle class (R12). An aged READ that misses a landed item made the
+                -- retry below DOUBLE-PLACE it — the import-context excess signature (physical >
+                -- placed by small counts) that the fresh-per-run dup_kill never reproduced.
                 wins[#wins + 1] = {
-                    line = entity.get_transport_line(m.li),
+                    entity = entity,
+                    li = m.li,
                     kmin = math.floor(entity.prototype.belt_speed * 256 + 0.5),
                 }
             end
         end
-        local side_lines = {}
-        for _, w in ipairs(wins) do side_lines[#side_lines + 1] = w.line end
         local function side_total()
-            return snapshot(side_lines)
+            local lines = {}
+            for _, w in ipairs(wins) do lines[#lines + 1] = w.entity.get_transport_line(w.li) end
+            return snapshot(lines)
         end
         for _, slot in ipairs(g.slots) do
             local done = false
@@ -549,11 +555,12 @@ function BeltRestoration.restore_side_groups(side_groups, entity_map)
                 -- snapshot one. Reverse first-fit only ever places BELOW the previous success, so
                 -- everything above the cursor is occupied by construction: resuming there finds the
                 -- IDENTICAL positions a full rescan would (semantics unchanged, cost linear).
-                local maxk = w.cursor or math.floor(w.line.line_length * 256 + 0.5)
+                local line = w.entity.get_transport_line(w.li)
+                local maxk = w.cursor or math.floor(line.line_length * 256 + 0.5)
                 for k = maxk, w.kmin, -1 do
-                    if w.line.can_insert_at(k / 256) then
+                    if line.can_insert_at(k / 256) then
                         local sb = side_total()
-                        w.line.insert_at(k / 256, { name = slot.n, quality = slot.q, count = slot.ct }, slot.ct)
+                        line.insert_at(k / 256, { name = slot.n, quality = slot.q, count = slot.ct }, slot.ct)
                         local sa = side_total()
                         if changed_only(sb, sa, wanted_key, slot.ct) then
                             placed = placed + slot.ct
