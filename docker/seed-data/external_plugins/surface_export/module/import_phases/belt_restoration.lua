@@ -448,12 +448,26 @@ function BeltRestoration.capture_side_groups(belt_pairs)
 end
 
 -- Place each side's (name,quality,count) multiset by reverse first-fit over that side's own
--- windows, position floored at one tick of belt_speed (BELT-R10 — the write-frame law), every
--- placement validated by physical side-census delta plus a global bracket, NEVER return values.
--- A cross-side leak (aged-handle class; measured zero on fresh same-execution targets) is
--- removed and the search continues. No consolidation, no recovery, no fallback: unplaced and
--- anomaly counts are returned for the caller to surface loudly.
+-- windows, position floored at one tick of belt_speed (BELT-R10 — the write-frame law). Every
+-- placement is validated by a physical SIDE-census delta (never insert_at return values), and the
+-- WHOLE restore is bracketed by ONE global before/after census that must equal the placed sums
+-- key-for-key — any mismatch is a loud anomaly. No consolidation, no recovery, no fallback.
+--
+-- SCALE (owner ruling 2026-07-26; the "perf measure-first" adjudication vindicated live): the
+-- original implementation took TWO global snapshots inside the innermost placement loop for
+-- per-placement cross-side leak undo. At workhorse scale (5,776 slots x ~1,200 line reads per
+-- snapshot) that is ~14M engine calls in one tick — measured as a hard import stall. The leak
+-- class it undid is the AGED-HANDLE class (BELT-R12): a handle whose segment reshaped under it.
+-- Every handle here is fetched fresh in THIS execution (below) and no belt topology mutates
+-- during placement, so the aging mechanism cannot occur (R14 live 2026-07-26: 372/372,
+-- leaks 0, anomalies 0). Leak detection therefore moves to the restore-granularity bracket: a
+-- leak can no longer be attributed to one placement and undone, but it can NEVER pass silently —
+-- the bracket mismatch is an anomaly the callers treat as failure. Cost: O(slots x side + lines).
+--
+-- MULTI-STACK (owner requirement 2026-07-26): a slot's ct places as ONE stack of ct — a stack of
+-- 2 restores as a stack of 2. The multiset IS (name, quality, stack count); nothing clamps.
 -- Line handles are fetched HERE, in the same execution that writes them (stale-handle hazard).
+-- Returns placed, unplaced, anomalies.
 function BeltRestoration.restore_side_groups(side_groups, entity_map)
     local all_lines = {}
     for _, g in ipairs(side_groups) do
@@ -495,42 +509,11 @@ function BeltRestoration.restore_side_groups(side_groups, entity_map)
     local function same_snapshot(a, b)
         return changed_only(a, b, "", 0)
     end
-    local function undo_inserted_delta(before, after, name, quality, count)
-        local wanted_key = item_key(name, quality)
-        local handled, remaining = {}, count
-        for _, line in ipairs(all_lines) do
-            if remaining <= 0 then break end
-            -- PURE-READ pass first: remove_item INVALIDATES every stack handle inside an
-            -- already-fetched get_detailed_contents() array, so reading item.stack after a removal
-            -- in the same loop hard-crashes (the BELT-R15 latent crash, api-notes AGED-TARGET
-            -- entry). Copy the per-stack facts into plain numbers, THEN mutate once per line.
-            -- `handled` dedups items seen through multiple line handles of a shared segment
-            -- (BELT-R9: line identity is segment-scoped, not entity-scoped).
-            local added_here = 0
-            for _, item in ipairs(line.get_detailed_contents()) do
-                local id = tostring(item.unique_id)
-                if not handled[id] then
-                    handled[id] = true
-                    local q = (item.stack.quality and item.stack.quality.name) or QUALITY_NORMAL
-                    local key = item_key(item.stack.name, q)
-                    local old = before.by_id[id]
-                    local added = item.stack.count - (old and old.count or 0)
-                    if key == wanted_key and added > 0 then
-                        added_here = added_here + added
-                    end
-                end
-            end
-            -- MUTATE pass: a single untargeted removal per line (same semantics the per-item loop
-            -- had — line.remove_item was never stack-targeted), no handle reads after it.
-            if added_here > 0 then
-                local removed = line.remove_item({ name = name, quality = quality,
-                    count = math.min(added_here, remaining) })
-                remaining = remaining - removed
-            end
-        end
-        return remaining == 0 and same_snapshot(before, snapshot(all_lines))
-    end
-    local placed, unplaced, leaks_undone, anomalies = 0, 0, 0, 0
+    -- (undo_inserted_delta is GONE with the per-placement leak machinery — see the header. The
+    -- BELT-R15 pure-read-before-mutate lesson it carried lives on in api-notes' AGED-TARGET entry.)
+    local global_before = snapshot(all_lines)
+    local expected_by_key = {}
+    local placed, unplaced, anomalies = 0, 0, 0
     for _, g in ipairs(side_groups) do
         local wins = {}
         for _, m in ipairs(g.members) do
@@ -556,23 +539,19 @@ function BeltRestoration.restore_side_groups(side_groups, entity_map)
                 for k = maxk, w.kmin, -1 do
                     if w.line.can_insert_at(k / 256) then
                         local sb = side_total()
-                        local ab = snapshot(all_lines)
                         w.line.insert_at(k / 256, { name = slot.n, quality = slot.q, count = slot.ct }, slot.ct)
                         local sa = side_total()
-                        local aa = snapshot(all_lines)
-                        if changed_only(sb, sa, wanted_key, slot.ct)
-                            and changed_only(ab, aa, wanted_key, slot.ct) then
+                        if changed_only(sb, sa, wanted_key, slot.ct) then
                             placed = placed + slot.ct
+                            expected_by_key[wanted_key] = (expected_by_key[wanted_key] or 0) + slot.ct
                             done = true
                             break
-                        elseif same_snapshot(sb, sa) and changed_only(ab, aa, wanted_key, slot.ct) then
-                            if not undo_inserted_delta(ab, aa, slot.n, slot.q, slot.ct) then
-                                anomalies = anomalies + 1
-                                done = true
-                                break
-                            end
-                            leaks_undone = leaks_undone + 1
-                        elseif not same_snapshot(sb, sa) or not same_snapshot(ab, aa) then
+                        elseif same_snapshot(sb, sa) then
+                            -- Nothing landed on THIS side. In the fresh-handle regime nothing landed
+                            -- anywhere (the aged-handle leak mechanism cannot occur), so trying the
+                            -- next position is safe; if something DID land elsewhere, the final
+                            -- bracket below surfaces it as an anomaly — never silently.
+                        else
                             anomalies = anomalies + 1
                             done = true
                             break
@@ -584,7 +563,23 @@ function BeltRestoration.restore_side_groups(side_groups, entity_map)
             if not done then unplaced = unplaced + slot.ct end
         end
     end
-    return placed, unplaced, leaks_undone, anomalies
+    -- The restore-granularity bracket: the global physical delta must equal the placed sums for
+    -- EVERY key, gains and absences alike. This is what catches anything the per-side deltas
+    -- cannot attribute — including the mechanism-impossible-but-never-trusted cross-side leak.
+    local global_after = snapshot(all_lines)
+    local keys = {}
+    for key in pairs(global_before.by_key) do keys[key] = true end
+    for key in pairs(global_after.by_key) do keys[key] = true end
+    for key in pairs(expected_by_key) do keys[key] = true end
+    for key in pairs(keys) do
+        local delta = (global_after.by_key[key] or 0) - (global_before.by_key[key] or 0)
+        if delta ~= (expected_by_key[key] or 0) then
+            anomalies = anomalies + 1
+            log(string.format("[BeltRestoration] GLOBAL BRACKET MISMATCH %q: physical delta %d ~= placed %d",
+                key, delta, expected_by_key[key] or 0))
+        end
+    end
+    return placed, unplaced, anomalies
 end
 
 return BeltRestoration

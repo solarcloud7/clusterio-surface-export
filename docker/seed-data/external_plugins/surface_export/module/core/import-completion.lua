@@ -194,7 +194,37 @@ function ImportCompletion.run_phase1(job)
 	-- Must restore all belt items in a single tick to prevent partial restoration
 	job.metrics.belts_started_tick = game.tick
 	PhaseProfiler.start(job.job_id, "belts")
-	local belts_result = BeltRestoration.restore(entities_to_create, entity_map)
+	local belts_result
+	local side_groups = job.platform_data and job.platform_data.belt_side_groups
+	if side_groups and #side_groups > 0 then
+		-- Phase 5B: side-closed restore — each lane side's (name,quality,count) multiset placed by
+		-- reverse first-fit with the belt_speed k-floor (BELT-R11/R12; R14 GO measured live
+		-- 2026-07-26: 372/372 all_sides_exact). Replaces the consolidation stopgap that conserved
+		-- counts but manufactured structure (dest maxStack 5-vs-1, overpackedLanes 21-vs-13).
+		-- Unplaced items are surfaced here AND caught by the exact gate (missing from the dest
+		-- count) — fail => revert, source preserved; nothing here is best-effort.
+		local placed, unplaced, anomalies = BeltRestoration.restore_side_groups(side_groups, entity_map)
+		belts_result = { items_restored = placed, attribution = nil }
+		job.metrics.belt_side_groups = #side_groups
+		job.metrics.belt_unplaced = unplaced
+		job.metrics.belt_anomalies = anomalies
+		if unplaced > 0 then
+			-- Surfaced here AND caught by the exact gate (the shortfall is missing from the dest
+			-- count) — fail => revert, source preserved.
+			log(string.format("[Import] Side restore UNPLACED: placed=%d unplaced=%d", placed, unplaced))
+		end
+		if anomalies > 0 then
+			-- An anomaly is corruption the COUNTS cannot see (a bracket mismatch keeps totals right
+			-- while structure lands wrong), so the gate would pass it. Fail the import instead:
+			-- error() routes to the failure path => banked box, dest discarded, source preserved.
+			error(string.format("[Import] Belt side restore reported %d anomalies (placed=%d unplaced=%d) — "
+				.. "refusing to certify a structurally corrupt restore", anomalies, placed, unplaced))
+		end
+	else
+		-- Legacy payload (no side partition): the count-conserving consolidation restore. Kept ONLY
+		-- for old exports/upload-import files; every new export carries belt_side_groups.
+		belts_result = BeltRestoration.restore(entities_to_create, entity_map)
+	end
 	PhaseProfiler.stop(job.job_id, "belts")
 	job.metrics.belts_completed_tick = game.tick
 	job.metrics.belt_items_restored = belts_result and belts_result.items_restored or 0

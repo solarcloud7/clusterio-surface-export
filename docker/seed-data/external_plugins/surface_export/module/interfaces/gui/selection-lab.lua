@@ -476,20 +476,25 @@ local function execute_create_and_restore(surface, recs, player, side_groups, fl
 	end
 	local function run_restores()
 	if side_groups then
-		local placed, unplaced, leaks_undone, anomalies = BeltRestoration.restore_side_groups(side_groups, entity_map)
+		local placed, unplaced, anomalies = BeltRestoration.restore_side_groups(side_groups, entity_map)
 		if unplaced > 0 or anomalies > 0 then
 			local message = string.format(
 				"[color=yellow][font=default-bold][SelectionLab][/font][/color] belt side-restore: %d placed, %d UNPLACED, %d anomalies (no fallback — canonical belt laws in api-notes)",
 				placed, unplaced, anomalies)
 			if transactional then error(message) end
 			say(player, message, { r = 1, g = 0.6, b = 0.3 })
-		elseif leaks_undone > 0 then
-			say(player, string.format(
-				"[color=yellow][font=default-bold][SelectionLab][/font][/color] belt side-restore: %d placed; %d cross-side leaks detected and undone",
-				placed, leaks_undone), { r = 1, g = 0.8, b = 0.4 })
 		end
 	else
-		BeltRestoration.restore(records, entity_map)
+		-- The legacy consolidation restore is DELETED from this path (owner order 2026-07-26): it
+		-- conserved counts but manufactured structure (oversized stacks — the maxStack 5-vs-1
+		-- incident), and with capture_side_groups running on every belt-bearing copy its only
+		-- reachable case here was belt-less selections. Refuse loudly rather than degrade silently
+		-- if a belt record somehow arrives without its side partition.
+		for _, rec in ipairs(records) do
+			if rec.type and BELT_LINE_TYPES[rec.type] and rec.specific_data and rec.specific_data.items then
+				error("[SelectionLab] belt records present but NO side partition was captured — refusing the deleted legacy consolidation restore")
+			end
+		end
 	end
 	-- Entity state: same two production steps, same order — the per-entity property restore
 	-- (creation-adjacent) then the FULL production phase (control behavior, entity filters —

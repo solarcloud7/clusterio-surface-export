@@ -1291,7 +1291,7 @@
 					"y": 45.5
 				}
 			],
-			"revision": 4,
+			"revision": 5,
 			"labId": "belt-lab",
 			"name": "Combined belt omnibus (steady-state, hand-built)",
 			"purpose": "One pad combining sideloads, 3 splitters, 3 underground pairs, and 2 filtered output loaders - the CONSERVATIVE closed-circuit exemplar: 380 items recirculate forever with no source and no sink, so any loss is visible instead of self-healed.",
@@ -1330,13 +1330,15 @@
 			},
 			"testCard": {
 				"law": "A saturated closed belt circuit is STEADY-STATE: item count constant while fully live (no freeze needed - belts consume nothing; saturation is a fixed point).",
-				"action": "pad-transfer-suite runs the pad through a REAL transfer and physically reads the destination. (/test-run's copy-paste audit SKIPS this pad - see runnerExcluded.) Configs measured: loader filters.",
+				"action": "pad-transfer-suite runs the pad through a REAL transfer and physically reads the destination law (belt_stats); /test-run pastes and fingerprints BOTH halves. Configs measured: loader filters.",
 				"expected": "380 items stationary on the destination after transfer, and the strict gate passes; loader filters survive.",
 				"forbidden": "Do NOT freeze this pad (it is the steady-state class exemplar). Do NOT rebuild it from a script - the state is the artifact."
 			},
-			"note": "FIRST CATCH (2026-07-19, at claim time): serializer has NO loader handler (filters not carried; splitter types gate excludes loaders) and NO infinity-container handler (infinity filters not carried) - transfer would deliver hollow configs. Fix is queued; this pad is its kill-measurement. REV2 2026-07-19: owner removed infinity chests (self-healing masked loss); circuit now conservative at 380; belt-corner-recovery retired as covered (over-pack measured present at 13 lanes vs its 4). REV4 2026-07-26: re-measured live on the 2.1.11 cluster - entities 35/3/6/2, belt items 380, over-packed lanes 13, and the declared infinity-chest anchor at (19.5,45.5) resolved to NOTHING (removed in REV2), so it was dropped; prose that still said 578 items / 18-19 lanes was corrected to the measured values the fingerprint already carried.",
+			"note": "FIRST CATCH (2026-07-19, at claim time): serializer has NO loader handler (filters not carried; splitter types gate excludes loaders) and NO infinity-container handler (infinity filters not carried) - transfer would deliver hollow configs. Fix is queued; this pad is its kill-measurement. REV2 2026-07-19: owner removed infinity chests (self-healing masked loss); circuit now conservative at 380; belt-corner-recovery retired as covered (over-pack measured present at 13 lanes vs its 4). REV4 2026-07-26: re-measured live on the 2.1.11 cluster - entities 35/3/6/2, belt items 380, over-packed lanes 13, and the declared infinity-chest anchor at (19.5,45.5) resolved to NOTHING (removed in REV2), so it was dropped; prose that still said 578 items / 18-19 lanes was corrected to the measured values the fingerprint already carried. REV5 2026-07-26 (OWNER RULING): overpackedLanes is an ARRANGEMENT statistic, not an invariant — measured settling 37->17->18 on a healthy paste while the side multisets stayed exact (R14), and the canonical law names position/order/window non-invariants. Paste compare now excludes it per-field (pasteExclude); the dest law asserts the true invariants (maxStack — the tooth that caught the transfer consolidation defect 5-vs-1 — plus counts, presence, filters). The left-half pin 13 stays as source-drift detection. runnerExcluded DELETED: the pad runs everywhere again. Multi-stack is load-bearing: a slot restores as ONE stack of its captured count.",
 			"auditAggregateOnly": true,
-			"runnerExcluded": "SCOPE: this excludes the pad from /test-run's COPY-PASTE audit ONLY (module/interfaces/commands/run-tests.lua reads this key; pad-transfer-suite does not - it selects on lifecycle.act). KNOWN-OPEN HAZARD: paste loses items on over-packed corner lanes (measured 372->368, 2026-07-20) - the Phase-5B belt-restore class; re-enable for paste when side-closed batched restore lands. The pad DOES run its real TRANSFER through pad-transfer-suite, which is green.",
+			"pasteExclude": [
+				"overpackedLanes"
+			],
 			"lifecycle": {
 				"version": 1,
 				"act": "transfer",
@@ -1366,9 +1368,9 @@
 							"area": true
 						},
 						"read": "belt_stats",
-						"field": "overpackedLanes",
+						"field": "hasOverpackedCornerLanes",
 						"op": "eq",
-						"expected": 13
+						"expected": true
 					},
 					{
 						"check": "physical_read",

@@ -81,10 +81,9 @@ local function dup_kill(opts)
     return { success = false, error = "scratch not empty pre-restore" }
   end
 
-  local placed, unplaced, leaks_undone, anomalies = BeltRestoration.restore_side_groups(groups, emap)
+  local placed, unplaced, anomalies = BeltRestoration.restore_side_groups(groups, emap)
   out.placed = placed
   out.unplaced = unplaced
-  out.leaks_undone = leaks_undone
   out.anomalies = anomalies
 
   local all_exact = true
@@ -244,7 +243,7 @@ local function dup_kill_batched(opts)
       groups = groups, emap = emap, cursor = 0,
       captured_total = captured_total, slots = slots,
       start_tick = game.tick,
-      placed = 0, unplaced = 0, leaks_undone = 0, anomalies = 0,
+      placed = 0, unplaced = 0, anomalies = 0,
       per_side = {}, inexact = {},
     }
     return { success = true, belt_count = #live, groups = #groups, slots = slots,
@@ -259,10 +258,9 @@ local function dup_kill_batched(opts)
     if from > to then return { success = false, error = "cursor past end" } end
     local slice = {}
     for i = from, to do slice[#slice + 1] = batched.groups[i] end
-    local placed, unplaced, leaks_undone, anomalies = BeltRestoration.restore_side_groups(slice, batched.emap)
+    local placed, unplaced, anomalies = BeltRestoration.restore_side_groups(slice, batched.emap)
     batched.placed = batched.placed + placed
     batched.unplaced = batched.unplaced + unplaced
-    batched.leaks_undone = batched.leaks_undone + leaks_undone
     batched.anomalies = batched.anomalies + anomalies
     -- Verdict (c): each side's both-direction multiset at ITS completion instant, same execution.
     local batch_exact = 0
@@ -286,7 +284,7 @@ local function dup_kill_batched(opts)
     end
     batched.cursor = to
     return { success = true, tick = game.tick, from = from, to = to,
-      placed = placed, unplaced = unplaced, leaks_undone = leaks_undone, anomalies = anomalies,
+      placed = placed, unplaced = unplaced, anomalies = anomalies,
       batch_exact = batch_exact, batch_inexact = batch_inexact, done = to >= #batched.groups }
   end
 
@@ -329,8 +327,7 @@ local function dup_kill_batched(opts)
       success = true, tick = game.tick,
       sides = #batched.groups, sides_exact_at_completion = exact_at_completion,
       inexact_sides = batched.inexact,
-      placed = batched.placed, unplaced = batched.unplaced,
-      leaks_undone = batched.leaks_undone, anomalies = batched.anomalies,
+      placed = batched.placed, unplaced = batched.unplaced, anomalies = batched.anomalies,
       captured_total = batched.captured_total, scratch_census = stotal,
       drifted_after_completion = drifted, drift_abs = drift_abs,
       elapsed_ticks = game.tick - batched.start_tick,
@@ -429,11 +426,18 @@ local function belt_side_restore_selftest(opts)
     { members = { { id = 3, li = 1 } }, slots = {} },
   }
 
-  local placed, unplaced, leaks_undone, anomalies = BeltRestoration.restore_side_groups(groups, entity_map)
-  check("aliased_windows_do_not_double_count", placed == 1 and unplaced == 0 and anomalies == 0,
-    string.format("placed=%d unplaced=%d anomalies=%d", placed, unplaced, anomalies))
-  check("cross_side_leak_is_detected", leaks_undone == 1,
-    "expected one detected and undone leak, got " .. tostring(leaks_undone))
+  -- CONTRACT (changed 2026-07-26, owner scale ruling): the per-placement leak UNDO is gone with
+  -- the per-placement global snapshots that stalled the workhorse import (~14M engine calls). The
+  -- leak this fake manufactures is the AGED-HANDLE class, which the fresh-handle production regime
+  -- cannot produce (handles fetched in the writing execution; no topology mutation mid-restore).
+  -- What the contract now guarantees is DETECTION, never silence: a leak that somehow occurs shows
+  -- up as a restore-granularity GLOBAL BRACKET mismatch -> anomalies > 0, and every caller treats
+  -- anomalies as failure (SelectionLab errors the transaction; the import fails => 2PC revert).
+  local placed, unplaced, anomalies = BeltRestoration.restore_side_groups(groups, entity_map)
+  check("aliased_windows_do_not_double_count", placed == 1 and unplaced == 0,
+    string.format("placed=%d unplaced=%d", placed, unplaced))
+  check("leak_surfaces_as_bracket_anomaly", anomalies >= 1,
+    "a leaked placement must fail the global bracket, got anomalies=" .. tostring(anomalies))
 
   local function count(line, quality)
     local total = 0
@@ -444,8 +448,10 @@ local function belt_side_restore_selftest(opts)
   end
   check("target_receives_exact_quality", count(target, "legendary") == 1 and count(target, "normal") == 0,
     "target did not receive exactly one legendary plate")
-  check("leak_undo_preserves_neighbour_quality", count(neighbour, "normal") == 5 and count(neighbour, "legendary") == 0,
-    "leak undo changed the neighbour's mixed-quality multiset")
+  -- The leaked stack now REMAINS on the neighbour (no undo) — the point is it cannot remain
+  -- silently: the bracket anomaly above is the loud witness the callers fail on.
+  check("leak_is_visible_not_silent", count(neighbour, "legendary") == 1 and count(neighbour, "normal") == 5,
+    "expected the leaked legendary plate to sit on the neighbour, witnessed by the anomaly")
 
   return { passed = passed, failed = failed, total = passed + failed, details = details }
 end
