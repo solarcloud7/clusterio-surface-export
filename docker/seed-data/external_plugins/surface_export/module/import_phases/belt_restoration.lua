@@ -407,6 +407,44 @@ end
 -- route restore() through them (capture at export's atomic scan, placement here), retiring the
 -- captured-position + consolidation path above.
 
+-- Shape validator for a payload's belt_side_groups (review finding F1, 2026-07-27): the restore
+-- runs in on_tick context where an uncaught throw KILLS the headless server (exit 255, measured
+-- twice), and upload-import payloads are user-supplied JSON that the schema check never inspects
+-- beyond schema_version. The import REFUSES a payload failing this (through the verdict, never
+-- error()). Pure SHAPE only — content problems (unknown prototypes at the destination) are
+-- handled gracefully inside the restore itself.
+function BeltRestoration.validate_side_groups(side_groups)
+    if type(side_groups) ~= "table" then return false, "belt_side_groups is not a table" end
+    for gi, g in ipairs(side_groups) do
+        if type(g) ~= "table" then return false, "group " .. gi .. " is not a table" end
+        if type(g.members) ~= "table" then return false, "group " .. gi .. " has no members table" end
+        if type(g.slots) ~= "table" then return false, "group " .. gi .. " has no slots table" end
+        for mi, m in ipairs(g.members) do
+            if type(m) ~= "table" or m.id == nil or type(m.li) ~= "number" then
+                return false, string.format("group %d member %d malformed", gi, mi)
+            end
+        end
+        for si, slot in ipairs(g.slots) do
+            if type(slot) ~= "table" or type(slot.n) ~= "string"
+                or type(slot.ct) ~= "number" or slot.ct <= 0
+                or (slot.q ~= nil and type(slot.q) ~= "string") then
+                return false, string.format("group %d slot %d malformed", gi, si)
+            end
+        end
+        if g.seats ~= nil then
+            if type(g.seats) ~= "table" or #g.seats % 3 ~= 0 then
+                return false, string.format("group %d seats malformed", gi)
+            end
+            for vi, v in ipairs(g.seats) do
+                if type(v) ~= "number" then
+                    return false, string.format("group %d seats[%d] is not a number", gi, vi)
+                end
+            end
+        end
+    end
+    return true
+end
+
 -- Same-execution line_equals partition of a POPULATED source = the lane sides (valid ONLY
 -- populated + same execution — never a cross-import key, BELT-R9). belt_pairs: array of
 -- { entity = <LuaEntity>, id = <the record entity_id the paste/import will key entity_map by> }.
@@ -542,11 +580,16 @@ function BeltRestoration.restore_side_groups(side_groups, entity_map)
     -- (and through slot.src, back to its SOURCE seat). In-memory only, never rides a payload.
     local ledger = {}
     local unplaced_list = {}
+    local unknown_logged = 0
     -- Rehydrate the payload's compact seats array (see capture_side_groups) into per-slot
     -- src = { id, li, k } working form. Old payloads without seats simply get no src — every
     -- consumer below degrades to the first-fit fallback.
     for _, g in ipairs(side_groups) do
-        if g.seats then
+        -- Misaligned seats (not a multiple of 3) would rehydrate half-seats (li/k nil) that throw
+        -- later — skip the whole group's seats instead; every slot degrades to first-fit. The
+        -- production import refuses such payloads at validate_side_groups; this guard covers
+        -- direct callers (selftest instruments, selection-lab).
+        if type(g.seats) == "table" and #g.seats % 3 == 0 then
             for si, slot in ipairs(g.slots) do
                 local base = (si - 1) * 3
                 local id = g.seats[base + 1]
@@ -554,6 +597,9 @@ function BeltRestoration.restore_side_groups(side_groups, entity_map)
                     slot.src = { id = id, li = g.seats[base + 2], k = g.seats[base + 3] }
                 end
             end
+        elseif g.seats ~= nil then
+            log(string.format("[BeltRestoration] seats array misaligned (len %d) — group falls back to first-fit",
+                type(g.seats) == "table" and #g.seats or -1))
         end
     end
     for _, g in ipairs(side_groups) do
@@ -585,7 +631,11 @@ function BeltRestoration.restore_side_groups(side_groups, entity_map)
         local function try_insert(line, w_entity, w_li, k, slot, wanted_key)
             if not line.can_insert_at(k / 256) then return nil end
             local sb = side_total()
-            line.insert_at(k / 256, { name = slot.n, quality = slot.q, count = slot.ct }, slot.ct)
+            -- Through the version seam (review F3): the seam exists because "latest" docs reorder
+            -- insert_at's parameters and using that order on 2.0.76 places nothing — production
+            -- belt writes must not bypass it. slot.ct as belt_stack_size seats an oversized
+            -- (fossil) stack as ONE stack — the multi-stack owner requirement.
+            VersionCompat.belt_insert_at(line, k / 256, { name = slot.n, quality = slot.q, count = slot.ct }, slot.ct)
             local sa = side_total()
             if changed_only(sb, sa, wanted_key, slot.ct) then
                 placed = placed + slot.ct
@@ -600,6 +650,19 @@ function BeltRestoration.restore_side_groups(side_groups, entity_map)
             end
         end
         for _, slot in ipairs(g.slots) do
+          -- Prototype-existence screen (review F1b): a belt item from a mod the DESTINATION lacks
+          -- must not reach insert_at (a throw here is server death in on_tick). Skip gracefully —
+          -- the shortfall is honest unplaced loss: strict transfers fail the exact gate => revert;
+          -- the loose upload path reports it (the documented mod-mismatch posture).
+          if not prototypes.item[slot.n] or (slot.q and not prototypes.quality[slot.q]) then
+            unplaced = unplaced + slot.ct
+            unplaced_list[#unplaced_list + 1] = slot
+            unknown_logged = unknown_logged + 1
+            if unknown_logged <= 10 then
+                log(string.format("[BeltRestoration] UNKNOWN PROTOTYPE %s (quality %s) x%d — skipped, counts as unplaced",
+                    slot.n, tostring(slot.q), slot.ct))
+            end
+          else
             local done = false
             local wanted_key = item_key(slot.n, slot.q)
             if slot.src then
@@ -634,10 +697,13 @@ function BeltRestoration.restore_side_groups(side_groups, entity_map)
                     -- every slot's scan at the line top made slot N wade through N occupied positions —
                     -- O(N^2) can_insert_at calls per dense line, a second workhorse-scale stall after the
                     -- snapshot one. Reverse first-fit only ever places BELOW the previous success, so
-                    -- everything above the cursor is occupied by construction: resuming there finds the
-                    -- IDENTICAL positions a full rescan would (semantics unchanged, cost linear). The
-                    -- seat-first path never moves a cursor: it only ever ADDS occupancy, so "above the
-                    -- cursor is occupied" stays true and the fallback semantics are unchanged.
+                    -- everything above the cursor is occupied by construction and resuming there is
+                    -- sound for THIS slot. (Not literally "semantics unchanged": a position skipped
+                    -- after a nothing-landed probe stays skipped for later slots that might have fit
+                    -- it — the consequence is under-placement, which surfaces as unplaced and fails
+                    -- the exact gate. Fail-closed, never silent.) The seat-first path never moves a
+                    -- cursor: it only ever ADDS occupancy, so "above the cursor is occupied" stays
+                    -- true and the fallback semantics are unchanged.
                     local line = w.entity.get_transport_line(w.li)
                     local maxk = w.cursor or math.floor(line.line_length * 256 + 0.5)
                     for k = maxk, w.kmin, -1 do
@@ -658,6 +724,7 @@ function BeltRestoration.restore_side_groups(side_groups, entity_map)
                 unplaced = unplaced + slot.ct
                 unplaced_list[#unplaced_list + 1] = slot
             end
+          end
         end
     end
     -- The restore-granularity bracket: the global physical delta must equal the placed sums for

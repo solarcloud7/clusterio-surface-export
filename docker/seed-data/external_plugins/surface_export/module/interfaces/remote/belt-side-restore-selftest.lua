@@ -614,6 +614,23 @@ local function belt_side_restore_selftest(opts)
   check("leak_is_visible_not_silent", count(neighbour, "legendary") == 1 and count(neighbour, "normal") == 5,
     "expected the leaked legendary plate to sit on the neighbour, witnessed by the anomaly")
 
+  -- F1 regression (review 2026-07-27): malformed belt_side_groups must be REFUSED by the shape
+  -- validator before restore ever runs — an uncaught throw on the import's on_tick path kills the
+  -- headless server (exit 255, measured twice). These are the exact adversarial payloads from the
+  -- review: an empty group, bare scalars, and a misaligned seats array.
+  local v1 = BeltRestoration.validate_side_groups({ {} })
+  check("shape_guard_refuses_empty_group", v1 == false, "group {} must fail shape validation")
+  local v2 = BeltRestoration.validate_side_groups({ 1, 2, 3 })
+  check("shape_guard_refuses_scalars", v2 == false, "scalar groups must fail shape validation")
+  local v3 = BeltRestoration.validate_side_groups({
+    { members = { { id = 1, li = 1 } }, slots = { { n = "iron-plate", q = "normal", ct = 1 } }, seats = { 1, 1 } },
+  })
+  check("shape_guard_refuses_misaligned_seats", v3 == false, "seats not a multiple of 3 must fail")
+  local v4 = BeltRestoration.validate_side_groups({
+    { members = { { id = 1, li = 1 } }, slots = { { n = "iron-plate", q = "normal", ct = 1 } }, seats = { 1, 1, 64 } },
+  })
+  check("shape_guard_accepts_wellformed", v4 == true, "a well-formed group must pass shape validation")
+
   return { passed = passed, failed = failed, total = passed + failed, details = details }
 end
 

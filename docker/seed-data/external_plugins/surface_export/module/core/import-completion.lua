@@ -203,7 +203,27 @@ function ImportCompletion.run_phase1(job)
 		-- counts but manufactured structure (dest maxStack 5-vs-1, overpackedLanes 21-vs-13).
 		-- Unplaced items are surfaced here AND caught by the exact gate (missing from the dest
 		-- count) — fail => revert, source preserved; nothing here is best-effort.
-		local placed, unplaced, anomalies = BeltRestoration.restore_side_groups(side_groups, entity_map)
+		-- REVIEW F1 (2026-07-27): this call is on the bare on_tick path where any throw kills the
+		-- headless server (exit 255, measured twice) — and belt_side_groups on the upload-import
+		-- path is user-supplied JSON nothing else validates. Shape-refuse first, pcall the rest;
+		-- either failure routes through the verdict as a belt anomaly, never a crash.
+		local placed, unplaced, anomalies
+		local shape_ok, shape_err = BeltRestoration.validate_side_groups(side_groups)
+		if not shape_ok then
+			log(string.format("[Import] belt_side_groups REFUSED (malformed payload): %s", tostring(shape_err)))
+			job.metrics.belt_shape_error = tostring(shape_err)
+			placed, unplaced, anomalies = 0, 0, 1
+		else
+			local ok_restore, r_placed, r_unplaced, r_anomalies = pcall(BeltRestoration.restore_side_groups, side_groups, entity_map)
+			if not ok_restore then
+				log(string.format("[Import] belt side-restore THREW (routed to verdict, never error()): %s",
+					tostring(r_placed)))
+				job.metrics.belt_restore_error = tostring(r_placed)
+				placed, unplaced, anomalies = 0, 0, 1
+			else
+				placed, unplaced, anomalies = r_placed, r_unplaced, r_anomalies
+			end
+		end
 		belts_result = { items_restored = placed, attribution = nil }
 		job.metrics.belt_side_groups = #side_groups
 		job.metrics.belt_unplaced = unplaced
@@ -549,10 +569,13 @@ function ImportCompletion.run_phase2(job)
 			success = false
 			result = result or {}
 			result.success = false
-			result.failedStage = "belts"
+			-- Do not CLOBBER a failedStage already set above (test hooks): first cause wins.
+			result.failedStage = result.failedStage or "belts"
 			result.mismatchDetails = string.format(
-				"belt side-restore reported %d structural anomalies (bracket/side witness)",
-				job.metrics.belt_anomalies)
+				"belt side-restore reported %d structural anomalies (bracket/side witness)%s",
+				job.metrics.belt_anomalies,
+				job.metrics.belt_shape_error and (" — payload refused: " .. job.metrics.belt_shape_error)
+					or (job.metrics.belt_restore_error and (" — restore error: " .. job.metrics.belt_restore_error) or ""))
 			log("[Import] Verdict REFUSED on belt structural anomalies: " .. tostring(job.metrics.belt_anomalies))
 		end
 
@@ -740,6 +763,28 @@ function ImportCompletion.run_phase2(job)
 			-- ========================================
 		end
 
+	end
+
+	-- REVIEW F2 (2026-07-27): belt structural anomalies must fail EVERY caller, not only
+	-- transfers. Upload-import and clone have no 2PC verdict, but a bracket mismatch means the
+	-- destination's belt structure is KNOWN-corrupt — reporting success would certify it. The
+	-- platform is kept (no source was deleted; recovery is the ops layer's job — the
+	-- contract-over-recovery ruling), the operation reports failure, loudly. Consistent with the
+	-- selftest contract ("every caller treats anomalies as failure") and selection-lab's
+	-- transaction error.
+	if not (is_transfer and has_verification) and (job.metrics and job.metrics.belt_anomalies or 0) > 0 then
+		validation_result = {
+			success = false,
+			failedStage = "belts",
+			mismatchDetails = string.format(
+				"belt side-restore reported %d structural anomalies on a non-transfer import%s — platform kept, operation FAILED",
+				job.metrics.belt_anomalies,
+				job.metrics.belt_shape_error and (" — payload refused: " .. job.metrics.belt_shape_error)
+					or (job.metrics.belt_restore_error and (" — restore error: " .. job.metrics.belt_restore_error) or "")),
+		}
+		game.print(string.format("[Import FAILED] %s", validation_result.mismatchDetails), {1, 0, 0})
+		log("[Import] Non-transfer import FAILED on belt structural anomalies: "
+			.. tostring(job.metrics.belt_anomalies))
 	end
 
 	-- Mark validation complete
