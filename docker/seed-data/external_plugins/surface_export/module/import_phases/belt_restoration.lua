@@ -414,10 +414,11 @@ end
 function BeltRestoration.capture_side_groups(belt_pairs)
     if not belt_pairs or #belt_pairs == 0 then return nil end
     -- DEBUG-GATED PROVENANCE (owner scope ruling 2026-07-27): on debug clusters each slot records
-    -- where it was captured (src = {id, li}), so a stray on any destination gets a birth
-    -- certificate ("came from belt X line 2"). Production payloads stay lean — the gate is
-    -- debug_mode, on for the dev cluster, off in production. Zero extra reads: the loop already
-    -- holds both values.
+    -- where it was captured (src = {id, li, k}) — source entity, transport-line index, and the
+    -- item's exact position on that line in 1/256ths — so every destination item can be traced
+    -- back to its source seat (or exposed as born-at-dest when nothing traces). Production
+    -- payloads stay lean — the gate is debug_mode, on for the dev cluster, off in production.
+    -- Zero extra reads: the loop already holds all three values.
     local with_src = storage.surface_export_config and storage.surface_export_config.debug_mode
     local groups = {}
     for _, bp in ipairs(belt_pairs) do
@@ -442,7 +443,9 @@ function BeltRestoration.capture_side_groups(belt_pairs)
                         q = (it.stack.quality and it.stack.quality.name) or QUALITY_NORMAL,
                         ct = it.stack.count,
                     }
-                    if with_src then slot.src = { id = bp.id, li = li } end
+                    if with_src then
+                        slot.src = { id = bp.id, li = li, k = math.floor((it.position or 0) * 256 + 0.5) }
+                    end
                     g.slots[#g.slots + 1] = slot
                 end
             end
@@ -530,6 +533,19 @@ function BeltRestoration.restore_side_groups(side_groups, entity_map)
     local global_before = snapshot(fresh_all_lines())
     local expected_by_key = {}
     local placed, unplaced, anomalies = 0, 0, 0
+    -- PLACEMENT LEDGER (owner direction 2026-07-27): every validated landing is recorded —
+    -- { e = <dest entity>, li, k = <requested 1/256 position>, slot } — so the reconciliation
+    -- pass below can match each PHYSICAL destination item back to the placement that made it
+    -- (and through slot.src, back to its SOURCE seat). In-memory only, never rides a payload.
+    local ledger = {}
+    local unplaced_list = {}
+    -- EXPERIMENT KNOB (owner direction 2026-07-27: "items should stay on the same belt LINE if
+    -- possible"): when set (/sc storage.surface_export_config.debug_belt_prefer_src = true) each
+    -- slot is first offered its OWN captured seat — src entity, src line, src position minus one
+    -- write-frame (BELT-R10: the landing comes out at request + one tick of belt_speed) — before
+    -- the reverse first-fit fallback. Default off: production placement policy unchanged pending
+    -- the owner's read of the measurement (discuss-first rule for belts).
+    local prefer_src = storage.surface_export_config and storage.surface_export_config.debug_belt_prefer_src
     for _, g in ipairs(side_groups) do
         local wins = {}
         for _, m in ipairs(g.members) do
@@ -552,45 +568,80 @@ function BeltRestoration.restore_side_groups(side_groups, entity_map)
             for _, w in ipairs(wins) do lines[#lines + 1] = w.entity.get_transport_line(w.li) end
             return snapshot(lines)
         end
+        -- One validated insert, shared by the seat-first attempt and the first-fit fallback.
+        -- Returns true (landed, ledgered), false (landed WRONG — anomaly, abandon slot), or
+        -- nil (nothing landed anywhere — the fresh-handle regime guarantee — keep scanning; if
+        -- something DID land elsewhere the final bracket surfaces it, never silently).
+        local function try_insert(line, w_entity, w_li, k, slot, wanted_key)
+            if not line.can_insert_at(k / 256) then return nil end
+            local sb = side_total()
+            line.insert_at(k / 256, { name = slot.n, quality = slot.q, count = slot.ct }, slot.ct)
+            local sa = side_total()
+            if changed_only(sb, sa, wanted_key, slot.ct) then
+                placed = placed + slot.ct
+                expected_by_key[wanted_key] = (expected_by_key[wanted_key] or 0) + slot.ct
+                ledger[#ledger + 1] = { e = w_entity, li = w_li, k = k, slot = slot }
+                return true
+            elseif same_snapshot(sb, sa) then
+                return nil
+            else
+                anomalies = anomalies + 1
+                return false
+            end
+        end
         for _, slot in ipairs(g.slots) do
             local done = false
             local wanted_key = item_key(slot.n, slot.q)
-            for wj = #wins, 1, -1 do
-                local w = wins[wj]
-                -- Per-window descending CURSOR (the second quadratic, measured 2026-07-27): starting
-                -- every slot's scan at the line top made slot N wade through N occupied positions —
-                -- O(N^2) can_insert_at calls per dense line, a second workhorse-scale stall after the
-                -- snapshot one. Reverse first-fit only ever places BELOW the previous success, so
-                -- everything above the cursor is occupied by construction: resuming there finds the
-                -- IDENTICAL positions a full rescan would (semantics unchanged, cost linear).
-                local line = w.entity.get_transport_line(w.li)
-                local maxk = w.cursor or math.floor(line.line_length * 256 + 0.5)
-                for k = maxk, w.kmin, -1 do
-                    if line.can_insert_at(k / 256) then
-                        local sb = side_total()
-                        line.insert_at(k / 256, { name = slot.n, quality = slot.q, count = slot.ct }, slot.ct)
-                        local sa = side_total()
-                        if changed_only(sb, sa, wanted_key, slot.ct) then
-                            placed = placed + slot.ct
-                            expected_by_key[wanted_key] = (expected_by_key[wanted_key] or 0) + slot.ct
-                            w.cursor = k
-                            done = true
-                            break
-                        elseif same_snapshot(sb, sa) then
-                            -- Nothing landed on THIS side. In the fresh-handle regime nothing landed
-                            -- anywhere (the aged-handle leak mechanism cannot occur), so trying the
-                            -- next position is safe; if something DID land elsewhere, the final
-                            -- bracket below surfaces it as an anomaly — never silently.
-                        else
-                            anomalies = anomalies + 1
+            if prefer_src and slot.src then
+                -- Seat-first: scan DOWN from the captured seat so the item lands as close to its
+                -- original position as capacity allows, on its original line. src belongs to this
+                -- same group by construction, so side_total() covers the write.
+                local se = entity_map[slot.src.id]
+                if se and se.valid then
+                    local skmin = math.floor(se.prototype.belt_speed * 256 + 0.5)
+                    local sline = se.get_transport_line(slot.src.li)
+                    local top = math.floor(sline.line_length * 256 + 0.5)
+                    local want = math.min(top, math.max(skmin, (slot.src.k or skmin) - skmin))
+                    for k = want, skmin, -1 do
+                        local r = try_insert(sline, se, slot.src.li, k, slot, wanted_key)
+                        if r ~= nil then
                             done = true
                             break
                         end
                     end
                 end
-                if done then break end
             end
-            if not done then unplaced = unplaced + slot.ct end
+            if not done then
+                for wj = #wins, 1, -1 do
+                    local w = wins[wj]
+                    -- Per-window descending CURSOR (the second quadratic, measured 2026-07-27): starting
+                    -- every slot's scan at the line top made slot N wade through N occupied positions —
+                    -- O(N^2) can_insert_at calls per dense line, a second workhorse-scale stall after the
+                    -- snapshot one. Reverse first-fit only ever places BELOW the previous success, so
+                    -- everything above the cursor is occupied by construction: resuming there finds the
+                    -- IDENTICAL positions a full rescan would (semantics unchanged, cost linear). The
+                    -- seat-first path never moves a cursor: it only ever ADDS occupancy, so "above the
+                    -- cursor is occupied" stays true and the fallback semantics are unchanged.
+                    local line = w.entity.get_transport_line(w.li)
+                    local maxk = w.cursor or math.floor(line.line_length * 256 + 0.5)
+                    for k = maxk, w.kmin, -1 do
+                        local r = try_insert(line, w.entity, w.li, k, slot, wanted_key)
+                        if r == true then
+                            w.cursor = k
+                            done = true
+                            break
+                        elseif r == false then
+                            done = true
+                            break
+                        end
+                    end
+                    if done then break end
+                end
+            end
+            if not done then
+                unplaced = unplaced + slot.ct
+                unplaced_list[#unplaced_list + 1] = slot
+            end
         end
     end
     -- The restore-granularity bracket: the global physical delta must equal the placed sums for
@@ -601,68 +652,114 @@ function BeltRestoration.restore_side_groups(side_groups, entity_map)
     for key in pairs(global_before.by_key) do keys[key] = true end
     for key in pairs(global_after.by_key) do keys[key] = true end
     for key in pairs(expected_by_key) do keys[key] = true end
-    local mismatched = {}
     for key in pairs(keys) do
         local delta = (global_after.by_key[key] or 0) - (global_before.by_key[key] or 0)
         if delta ~= (expected_by_key[key] or 0) then
             anomalies = anomalies + 1
-            mismatched[key] = true
             log(string.format("[BeltRestoration] GLOBAL BRACKET MISMATCH %q: physical delta %d ~= placed %d",
                 key, delta, expected_by_key[key] or 0))
         end
     end
-    -- ATTRIBUTION DUMP (instrument, mismatch-only): the bracket says WHAT drifted; this says WHERE.
-    -- After three refuted mechanism theories (spill, aliasing, aged-handle retry — all exonerated by
-    -- isolation rungs 2026-07-27) the mechanism gets read off the map, not guessed. Two signals:
-    --   STRAY  = a new item of a mismatched key on a line whose side never carried that key at all
-    --            (cross-side landing — logged with world coordinates to fly to)
-    --   totals = new items per mismatched key vs placed (excess WITHIN legitimate sides shows here
-    --            with no STRAY lines — a different mechanism class than cross-side)
-    if anomalies > 0 then
-        local side_of = {}
-        for gi, g in ipairs(side_groups) do
-            local legit = {}
-            for _, sl in ipairs(g.slots) do legit[item_key(sl.n, sl.q)] = true end
-            for _, m in ipairs(g.members) do
-                local entity = entity_map[m.id]
-                if entity and entity.valid then
-                    side_of[entity.unit_number .. "/" .. m.li] = { legit = legit, gi = gi }
+    -- RECONCILIATION (dump v3, owner direction 2026-07-27 — replaces the uid-counting attribution
+    -- dump, whose "new uid" totals rested on an unproven identity assumption): match every PHYSICAL
+    -- item on the side lines to a recorded placement by (line, position, key) — position-based, so
+    -- uid semantics never enter it. Each physical item is then exactly one of:
+    --   TRACED       — matches a placement; through slot.src it names its SOURCE seat, and the
+    --                  match says whether it stayed on its source line (same-line vs moved-line)
+    --   PREEXISTING  — was on the lines before restore began (paste-over contexts)
+    --   BORN-AT-DEST — nothing placed it (the defect's fingerprint), logged with coordinates
+    -- and each unmatched placement is VANISHED. Tolerance = one write-frame + 2 (BELT-R10: a
+    -- landing comes out at request + one tick of belt_speed, clamped inward at line ends).
+    local dbg = storage.surface_export_config and storage.surface_export_config.debug_mode
+    if dbg or anomalies > 0 then
+        local by_line = {}
+        for _, p in ipairs(ledger) do
+            if p.e.valid then
+                local lk = p.e.unit_number .. "/" .. p.li
+                local t = by_line[lk]
+                if not t then
+                    t = {}
+                    by_line[lk] = t
                 end
+                t[#t + 1] = p
             end
         end
-        local seen_dump, new_by_key = {}, {}
+        local stats = { phys = 0, traced = 0, same_line = 0, moved_line = 0, no_src = 0,
+            preexisting = 0, born = 0, vanished = 0, ct_drift = 0, aliased = 0 }
+        local born_by_key, van_by_key = {}, {}
+        local born_logged, van_logged, moved_logged = 0, 0, 0
+        local dk_sum, dk_n, dk_max = 0, 0, 0
+        local seen_recon = {}
         for _, g in ipairs(side_groups) do
             for _, m in ipairs(g.members) do
                 local entity = entity_map[m.id]
                 if entity and entity.valid then
+                    local plist = by_line[entity.unit_number .. "/" .. m.li] or {}
+                    local tol = math.floor(entity.prototype.belt_speed * 256 + 0.5) + 2
                     for _, it in ipairs(entity.get_transport_line(m.li).get_detailed_contents()) do
                         local uid = tostring(it.unique_id)
-                        if not seen_dump[uid] and not global_before.by_id[uid] then
-                            seen_dump[uid] = true
+                        if seen_recon[uid] then
+                            stats.aliased = stats.aliased + 1
+                        else
+                            seen_recon[uid] = true
+                            stats.phys = stats.phys + 1
+                            local kphys = math.floor((it.position or 0) * 256 + 0.5)
                             local q = (it.stack.quality and it.stack.quality.name) or QUALITY_NORMAL
                             local key = item_key(it.stack.name, q)
-                            if mismatched[key] then
-                                new_by_key[key] = (new_by_key[key] or 0) + it.stack.count
-                                local info = side_of[entity.unit_number .. "/" .. m.li]
-                                if info and not info.legit[key] then
-                                    -- Birth certificate (dump v2): name the slots this stray could BE —
-                                    -- same key, provenance recorded at capture (debug-gated src).
-                                    local origins, listed = {}, 0
-                                    for ogi, og in ipairs(side_groups) do
-                                        for _, sl in ipairs(og.slots) do
-                                            if listed < 3 and sl.src
-                                                and item_key(sl.n, sl.q) == key then
-                                                listed = listed + 1
-                                                origins[#origins + 1] = string.format("side %d from entity %s line %d",
-                                                    ogi, tostring(sl.src.id), sl.src.li)
-                                            end
+                            local best, bestd
+                            for _, p in ipairs(plist) do
+                                if not p.hit and item_key(p.slot.n, p.slot.q) == key then
+                                    local d = math.abs(kphys - p.k)
+                                    if d <= tol and (bestd == nil or d < bestd) then
+                                        best, bestd = p, d
+                                    end
+                                end
+                            end
+                            if best then
+                                best.hit = true
+                                stats.traced = stats.traced + 1
+                                if it.stack.count ~= best.slot.ct then
+                                    stats.ct_drift = stats.ct_drift + 1
+                                    log(string.format(
+                                        "[BeltRestoration] CT-DRIFT %s at %s (%.1f, %.1f) line %d k %d: placed ct %d, physical ct %d",
+                                        it.stack.name, entity.name, entity.position.x, entity.position.y,
+                                        m.li, kphys, best.slot.ct, it.stack.count))
+                                end
+                                local src = best.slot.src
+                                if src then
+                                    local se = entity_map[src.id]
+                                    if se and se.valid and se.unit_number == entity.unit_number and src.li == m.li then
+                                        stats.same_line = stats.same_line + 1
+                                        if src.k then
+                                            local dk = math.abs(kphys - src.k)
+                                            dk_sum = dk_sum + dk
+                                            dk_n = dk_n + 1
+                                            if dk > dk_max then dk_max = dk end
+                                        end
+                                    else
+                                        stats.moved_line = stats.moved_line + 1
+                                        if moved_logged < 5 then
+                                            moved_logged = moved_logged + 1
+                                            log(string.format(
+                                                "[BeltRestoration] MOVED-LINE %s: captured entity %s line %d k %s -> placed %s (%.1f, %.1f) line %d k %d",
+                                                it.stack.name, tostring(src.id), src.li, tostring(src.k),
+                                                entity.name, entity.position.x, entity.position.y, m.li, best.k))
                                         end
                                     end
+                                else
+                                    stats.no_src = stats.no_src + 1
+                                end
+                            elseif global_before.by_id[uid] then
+                                stats.preexisting = stats.preexisting + 1
+                            else
+                                stats.born = stats.born + 1
+                                born_by_key[key] = (born_by_key[key] or 0) + it.stack.count
+                                if born_logged < 30 then
+                                    born_logged = born_logged + 1
                                     log(string.format(
-                                        "[BeltRestoration] STRAY %s x%d on %s at (%.1f, %.1f) line %d linepos %.3f — side %d never carried it%s",
+                                        "[BeltRestoration] BORN-AT-DEST %s x%d at %s (%.1f, %.1f) line %d linepos %.3f (k %d) — no placement within %d/256 matches it",
                                         it.stack.name, it.stack.count, entity.name,
-                                        entity.position.x, entity.position.y, m.li, it.position or -1, info.gi,
-                                        #origins > 0 and (" [candidate origins: " .. table.concat(origins, "; ") .. "]") or ""))
+                                        entity.position.x, entity.position.y, m.li, it.position or -1, kphys, tol))
                                 end
                             end
                         end
@@ -670,10 +767,36 @@ function BeltRestoration.restore_side_groups(side_groups, entity_map)
                 end
             end
         end
-        for key in pairs(mismatched) do
-            log(string.format("[BeltRestoration] ATTRIB %q: new-on-lines %d vs placed %d",
-                key, new_by_key[key] or 0, expected_by_key[key] or 0))
+        for _, p in ipairs(ledger) do
+            if not p.hit then
+                stats.vanished = stats.vanished + 1
+                local key = item_key(p.slot.n, p.slot.q)
+                van_by_key[key] = (van_by_key[key] or 0) + p.slot.ct
+                if van_logged < 30 and p.e.valid then
+                    van_logged = van_logged + 1
+                    log(string.format(
+                        "[BeltRestoration] VANISHED %s x%d: placed at %s (%.1f, %.1f) line %d k %d, nothing physical within tolerance",
+                        p.slot.n, p.slot.ct, p.e.name, p.e.position.x, p.e.position.y, p.li, p.k))
+                end
+            end
         end
+        for key, n in pairs(born_by_key) do
+            log(string.format("[BeltRestoration] BORN-BY-KEY %q: %d items with no matching placement", key, n))
+        end
+        for key, n in pairs(van_by_key) do
+            log(string.format("[BeltRestoration] VANISHED-BY-KEY %q: %d placed items with no physical match", key, n))
+        end
+        for i, slot in ipairs(unplaced_list) do
+            if i > 10 then break end
+            log(string.format("[BeltRestoration] UNPLACED %s x%d%s", slot.n, slot.ct,
+                slot.src and string.format(" (captured from entity %s line %d k %s)",
+                    tostring(slot.src.id), slot.src.li, tostring(slot.src.k)) or ""))
+        end
+        log(string.format(
+            "[BeltRestoration] RECON: physical %d | traced %d (same-line %d, moved-line %d, no-src %d) | preexisting %d | BORN %d | VANISHED %d | ct-drift %d | aliased %d | unplaced-slots %d | seat-offset avg %.1f max %d (n=%d)",
+            stats.phys, stats.traced, stats.same_line, stats.moved_line, stats.no_src,
+            stats.preexisting, stats.born, stats.vanished, stats.ct_drift, stats.aliased,
+            #unplaced_list, dk_n > 0 and dk_sum / dk_n or 0, dk_max, dk_n))
     end
     return placed, unplaced, anomalies
 end
