@@ -413,13 +413,14 @@ end
 -- Returns storage-safe side groups: { { members = {{id=,li=},...}, slots = {{n=,q=,ct=},...} }, ... }
 function BeltRestoration.capture_side_groups(belt_pairs)
     if not belt_pairs or #belt_pairs == 0 then return nil end
-    -- DEBUG-GATED PROVENANCE (owner scope ruling 2026-07-27): on debug clusters each slot records
-    -- where it was captured (src = {id, li, k}) — source entity, transport-line index, and the
-    -- item's exact position on that line in 1/256ths — so every destination item can be traced
-    -- back to its source seat (or exposed as born-at-dest when nothing traces). Production
-    -- payloads stay lean — the gate is debug_mode, on for the dev cluster, off in production.
-    -- Zero extra reads: the loop already holds all three values.
-    local with_src = storage.surface_export_config and storage.surface_export_config.debug_mode
+    -- SEAT METADATA (owner ruling 2026-07-27, PRODUCTION — supersedes the earlier debug-gate
+    -- scoping): each side carries a compact flat array `seats` = { id1, li1, k1, id2, li2, k2, … },
+    -- three numbers per slot in slot order — the source entity, transport-line index, and exact
+    -- position (1/256ths) the slot was captured from. Restore seats each item back onto its OWN
+    -- line at its OWN position (seat-first), which is what kills the boundary-handoff duplication
+    -- class; the reconciliation instrument reads the same data. Compact by design: numbers only,
+    -- one field name per side — the per-slot {id,li,k} object form nearly doubled the workhorse
+    -- payload. Zero extra reads: the loop already holds all three values.
     local groups = {}
     for _, bp in ipairs(belt_pairs) do
         for li = 1, bp.entity.get_max_transport_line_index() do
@@ -430,7 +431,7 @@ function BeltRestoration.capture_side_groups(belt_pairs)
             end
             if not gi then
                 gi = #groups + 1
-                groups[gi] = { rep = line, seen = {}, members = {}, slots = {} }
+                groups[gi] = { rep = line, seen = {}, members = {}, slots = {}, seats = {} }
             end
             local g = groups[gi]
             g.members[#g.members + 1] = { id = bp.id, li = li }
@@ -438,31 +439,33 @@ function BeltRestoration.capture_side_groups(belt_pairs)
                 local uid = tostring(it.unique_id)
                 if not g.seen[uid] then
                     g.seen[uid] = true
-                    local slot = {
+                    g.slots[#g.slots + 1] = {
                         n = it.stack.name,
                         q = (it.stack.quality and it.stack.quality.name) or QUALITY_NORMAL,
                         ct = it.stack.count,
                     }
-                    if with_src then
-                        slot.src = { id = bp.id, li = li, k = math.floor((it.position or 0) * 256 + 0.5) }
-                    end
-                    g.slots[#g.slots + 1] = slot
+                    local s = g.seats
+                    s[#s + 1] = bp.id
+                    s[#s + 1] = li
+                    s[#s + 1] = math.floor((it.position or 0) * 256 + 0.5)
                 end
             end
         end
     end
     local out = {}
     for _, g in ipairs(groups) do
-        out[#out + 1] = { members = g.members, slots = g.slots }
+        out[#out + 1] = { members = g.members, slots = g.slots, seats = g.seats }
     end
     return out
 end
 
--- Place each side's (name,quality,count) multiset by reverse first-fit over that side's own
--- windows, position floored at one tick of belt_speed (BELT-R10 — the write-frame law). Every
--- placement is validated by a physical SIDE-census delta (never insert_at return values), and the
--- WHOLE restore is bracketed by ONE global before/after census that must equal the placed sums
--- key-for-key — any mismatch is a loud anomaly. No consolidation, no recovery, no fallback.
+-- Place each side's (name,quality,count) multiset SEAT-FIRST — each slot back onto its own
+-- captured line/position (rehydrated from the side's compact seats array) — with reverse
+-- first-fit over the side's own windows as the fallback (seatless old payloads, geometry drift),
+-- positions floored at one tick of belt_speed (BELT-R10 — the write-frame law). Every placement
+-- is validated by a physical SIDE-census delta (never insert_at return values), and the WHOLE
+-- restore is bracketed by ONE global before/after census that must equal the placed sums
+-- key-for-key — any mismatch is a loud anomaly. No consolidation, no recovery, no legacy path.
 --
 -- SCALE (owner ruling 2026-07-26; the "perf measure-first" adjudication vindicated live): the
 -- original implementation took TWO global snapshots inside the innermost placement loop for
@@ -539,13 +542,20 @@ function BeltRestoration.restore_side_groups(side_groups, entity_map)
     -- (and through slot.src, back to its SOURCE seat). In-memory only, never rides a payload.
     local ledger = {}
     local unplaced_list = {}
-    -- EXPERIMENT KNOB (owner direction 2026-07-27: "items should stay on the same belt LINE if
-    -- possible"): when set (/sc storage.surface_export_config.debug_belt_prefer_src = true) each
-    -- slot is first offered its OWN captured seat — src entity, src line, src position minus one
-    -- write-frame (BELT-R10: the landing comes out at request + one tick of belt_speed) — before
-    -- the reverse first-fit fallback. Default off: production placement policy unchanged pending
-    -- the owner's read of the measurement (discuss-first rule for belts).
-    local prefer_src = storage.surface_export_config and storage.surface_export_config.debug_belt_prefer_src
+    -- Rehydrate the payload's compact seats array (see capture_side_groups) into per-slot
+    -- src = { id, li, k } working form. Old payloads without seats simply get no src — every
+    -- consumer below degrades to the first-fit fallback.
+    for _, g in ipairs(side_groups) do
+        if g.seats then
+            for si, slot in ipairs(g.slots) do
+                local base = (si - 1) * 3
+                local id = g.seats[base + 1]
+                if id ~= nil then
+                    slot.src = { id = id, li = g.seats[base + 2], k = g.seats[base + 3] }
+                end
+            end
+        end
+    end
     for _, g in ipairs(side_groups) do
         local wins = {}
         for _, m in ipairs(g.members) do
@@ -592,10 +602,16 @@ function BeltRestoration.restore_side_groups(side_groups, entity_map)
         for _, slot in ipairs(g.slots) do
             local done = false
             local wanted_key = item_key(slot.n, slot.q)
-            if prefer_src and slot.src then
-                -- Seat-first: scan DOWN from the captured seat so the item lands as close to its
-                -- original position as capacity allows, on its original line. src belongs to this
-                -- same group by construction, so side_total() covers the write.
+            if slot.src then
+                -- SEAT-FIRST (production placement, owner ruling 2026-07-27): scan DOWN from the
+                -- captured seat — request = src.k minus one write-frame, so the landing (request +
+                -- one tick of belt_speed, BELT-R10) comes out on the seat — putting the item on its
+                -- OWN line as close to its original position as capacity allows. This is what kills
+                -- the boundary-handoff class: first-fit's top-of-line writes seated items across
+                -- piece boundaries (underground internal lines at k=kfloor), duplicating on
+                -- census-invisible cross-side handoffs (measured live 2026-07-27; seat-first run:
+                -- 5777/5777 same-line, BORN 0, full exact gate PASS). src belongs to this same
+                -- group by construction, so side_total() covers the write.
                 local se = entity_map[slot.src.id]
                 if se and se.valid then
                     local skmin = math.floor(se.prototype.belt_speed * 256 + 0.5)
@@ -672,10 +688,23 @@ function BeltRestoration.restore_side_groups(side_groups, entity_map)
     -- landing comes out at request + one tick of belt_speed, clamped inward at line ends).
     local dbg = storage.surface_export_config and storage.surface_export_config.debug_mode
     if dbg or anomalies > 0 then
+        -- Identity + location helpers tolerant of minimal entities (the selftest drives this path
+        -- with pure-Lua fakes that have no unit_number/name/position): unit_number when present,
+        -- table/userdata identity otherwise; coordinates degrade to a bare name.
+        local function line_key_of(entity, li)
+            return tostring(entity.unit_number or entity) .. "/" .. li
+        end
+        local function loc(entity)
+            local p = entity.position
+            if p then
+                return string.format("%s (%.1f, %.1f)", tostring(entity.name), p.x, p.y)
+            end
+            return tostring(entity.name)
+        end
         local by_line = {}
         for _, p in ipairs(ledger) do
             if p.e.valid then
-                local lk = p.e.unit_number .. "/" .. p.li
+                local lk = line_key_of(p.e, p.li)
                 local t = by_line[lk]
                 if not t then
                     t = {}
@@ -694,7 +723,7 @@ function BeltRestoration.restore_side_groups(side_groups, entity_map)
             for _, m in ipairs(g.members) do
                 local entity = entity_map[m.id]
                 if entity and entity.valid then
-                    local plist = by_line[entity.unit_number .. "/" .. m.li] or {}
+                    local plist = by_line[line_key_of(entity, m.li)] or {}
                     local tol = math.floor(entity.prototype.belt_speed * 256 + 0.5) + 2
                     for _, it in ipairs(entity.get_transport_line(m.li).get_detailed_contents()) do
                         local uid = tostring(it.unique_id)
@@ -721,14 +750,13 @@ function BeltRestoration.restore_side_groups(side_groups, entity_map)
                                 if it.stack.count ~= best.slot.ct then
                                     stats.ct_drift = stats.ct_drift + 1
                                     log(string.format(
-                                        "[BeltRestoration] CT-DRIFT %s at %s (%.1f, %.1f) line %d k %d: placed ct %d, physical ct %d",
-                                        it.stack.name, entity.name, entity.position.x, entity.position.y,
-                                        m.li, kphys, best.slot.ct, it.stack.count))
+                                        "[BeltRestoration] CT-DRIFT %s at %s line %d k %d: placed ct %d, physical ct %d",
+                                        it.stack.name, loc(entity), m.li, kphys, best.slot.ct, it.stack.count))
                                 end
                                 local src = best.slot.src
                                 if src then
                                     local se = entity_map[src.id]
-                                    if se and se.valid and se.unit_number == entity.unit_number and src.li == m.li then
+                                    if se and se.valid and se == entity and src.li == m.li then
                                         stats.same_line = stats.same_line + 1
                                         if src.k then
                                             local dk = math.abs(kphys - src.k)
@@ -741,9 +769,9 @@ function BeltRestoration.restore_side_groups(side_groups, entity_map)
                                         if moved_logged < 5 then
                                             moved_logged = moved_logged + 1
                                             log(string.format(
-                                                "[BeltRestoration] MOVED-LINE %s: captured entity %s line %d k %s -> placed %s (%.1f, %.1f) line %d k %d",
+                                                "[BeltRestoration] MOVED-LINE %s: captured entity %s line %d k %s -> placed %s line %d k %d",
                                                 it.stack.name, tostring(src.id), src.li, tostring(src.k),
-                                                entity.name, entity.position.x, entity.position.y, m.li, best.k))
+                                                loc(entity), m.li, best.k))
                                         end
                                     end
                                 else
@@ -757,9 +785,9 @@ function BeltRestoration.restore_side_groups(side_groups, entity_map)
                                 if born_logged < 30 then
                                     born_logged = born_logged + 1
                                     log(string.format(
-                                        "[BeltRestoration] BORN-AT-DEST %s x%d at %s (%.1f, %.1f) line %d linepos %.3f (k %d) — no placement within %d/256 matches it",
-                                        it.stack.name, it.stack.count, entity.name,
-                                        entity.position.x, entity.position.y, m.li, it.position or -1, kphys, tol))
+                                        "[BeltRestoration] BORN-AT-DEST %s x%d at %s line %d linepos %.3f (k %d) — no placement within %d/256 matches it",
+                                        it.stack.name, it.stack.count, loc(entity),
+                                        m.li, it.position or -1, kphys, tol))
                                 end
                             end
                         end
@@ -775,8 +803,8 @@ function BeltRestoration.restore_side_groups(side_groups, entity_map)
                 if van_logged < 30 and p.e.valid then
                     van_logged = van_logged + 1
                     log(string.format(
-                        "[BeltRestoration] VANISHED %s x%d: placed at %s (%.1f, %.1f) line %d k %d, nothing physical within tolerance",
-                        p.slot.n, p.slot.ct, p.e.name, p.e.position.x, p.e.position.y, p.li, p.k))
+                        "[BeltRestoration] VANISHED %s x%d: placed at %s line %d k %d, nothing physical within tolerance",
+                        p.slot.n, p.slot.ct, loc(p.e), p.li, p.k))
                 end
             end
         end

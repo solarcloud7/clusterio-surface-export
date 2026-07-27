@@ -161,15 +161,34 @@ a segment) — they are not a capture blind spot at 2.1.11.
   can be attributed to a downstream window (the BELT-R11 leak class; regime-dependent, do not conflate).
   Writing beyond `line_length` honestly rejects. Any belt write must therefore use positions
   `>= belt_speed` (in /256 grid: `k >= belt_speed*256`).
-- **[empirical, 2.0.77, BELT-R11/R12] Side-scoped reverse first-fit reconstructs belt contents exactly.**
-  The fidelity unit is the continuous lane side (owner contract: `(name, quality, stack count)` multiset;
-  position/order/window are NOT invariants). Partition the populated source by same-execution `line_equals`
-  (= the lane sides); bridge to the destination by belt ordinal + line index (no engine graph — the empty
-  target's input/output_lines BFS shatters on real topologies); place each side's multiset by reverse
-  first-fit over that side's own windows with the R10 k-floor; validate every placement by physical
-  side-census delta, never return values. Measured: 243/243 (saturated mixed omnibus) and 431/431 with
-  **21/21 filtered-pure sides staying pure** (purity holds by construction). Splitter filter/priorities,
-  loader filters, and infinity-chest settings all copy cleanly entity-to-entity.
+- **[empirical, 2.1.11, BELT-R16 — live workhorse transfer 2026-07-27] BOUNDARY HANDOFF: an `insert_at`
+  near the TOP of a line (within one write-frame of `line_length`) seats the item ACROSS the piece
+  boundary on the downstream entity's line** — measured landings: turbo-underground-belt INTERNAL lines
+  (3/4) at k=31 ≈ one write-frame, for placements requested at feeding-line tops (k 255/294). Item count
+  conserves per handoff, but position and line do not. When the landing line is in the SAME side, a
+  side-census validation passes (wrong-position only: 248 born = 248 vanished pairs per key in the
+  placement-ledger reconciliation); when it crosses SIDES, the census reads "nothing landed" and a
+  retry loop DUPLICATES (net +34 items across exactly the 6 bracket-mismatch keys). The cross-side
+  retry-duplication step is a strong inference fitting all data (an underground-free fixture measured
+  exact in every leg; the underground-riddled workhorse always drifted), not yet isolated as its own
+  rung. Consequence: never write at line tops near piece boundaries — the production restore is
+  seat-first (below) precisely to avoid this class.
+- **[empirical, 2.0.77, BELT-R11/R12] Side-scoped reverse first-fit reconstructs belt contents exactly**
+  — on underground-free topologies; at scale the top-of-line writes it leans on trip BELT-R16 handoffs,
+  so production placement is now SEAT-FIRST (each slot back onto its captured entity/line/position via
+  the payload's compact per-side `seats` array, requesting `src.k − belt_speed·256` per R10; reverse
+  first-fit remains the fallback for seatless old payloads and geometry drift). Measured seat-first at
+  workhorse scale [empirical, 2.1.11, 2026-07-27]: 5777/5777 stacks traced same-line, BORN 0, VANISHED 0,
+  seat-offset avg 19.3/256, full frozen-world exact gate PASS. The rest of the R11/R12 recipe is
+  unchanged and load-bearing: the fidelity unit is the continuous lane side (owner contract:
+  `(name, quality, stack count)` multiset; position/order/window are NOT invariants — seat-first
+  restores position as a COURTESY and a handoff-avoidance measure, not as a new invariant). Partition
+  the populated source by same-execution `line_equals` (= the lane sides); bridge to the destination by
+  belt ordinal + line index (no engine graph — the empty target's input/output_lines BFS shatters on
+  real topologies); validate every placement by physical side-census delta, never return values.
+  Measured: 243/243 (saturated mixed omnibus) and 431/431 with **21/21 filtered-pure sides staying
+  pure** (purity holds by construction). Splitter filter/priorities, loader filters, and infinity-chest
+  settings all copy cleanly entity-to-entity.
 - **[empirical, 2.0.77, BELT-R11] Fetch transport-line handles in the SAME execution that writes them.**
   On an aged clone, writes through stale window handles landed li-preserving in a downstream window's frame
   (864 detected-and-undone events); fresh same-execution handles produced zero. Same-side landing makes the
