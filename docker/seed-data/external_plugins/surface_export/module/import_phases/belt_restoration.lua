@@ -413,6 +413,12 @@ end
 -- Returns storage-safe side groups: { { members = {{id=,li=},...}, slots = {{n=,q=,ct=},...} }, ... }
 function BeltRestoration.capture_side_groups(belt_pairs)
     if not belt_pairs or #belt_pairs == 0 then return nil end
+    -- DEBUG-GATED PROVENANCE (owner scope ruling 2026-07-27): on debug clusters each slot records
+    -- where it was captured (src = {id, li}), so a stray on any destination gets a birth
+    -- certificate ("came from belt X line 2"). Production payloads stay lean — the gate is
+    -- debug_mode, on for the dev cluster, off in production. Zero extra reads: the loop already
+    -- holds both values.
+    local with_src = storage.surface_export_config and storage.surface_export_config.debug_mode
     local groups = {}
     for _, bp in ipairs(belt_pairs) do
         for li = 1, bp.entity.get_max_transport_line_index() do
@@ -431,11 +437,13 @@ function BeltRestoration.capture_side_groups(belt_pairs)
                 local uid = tostring(it.unique_id)
                 if not g.seen[uid] then
                     g.seen[uid] = true
-                    g.slots[#g.slots + 1] = {
+                    local slot = {
                         n = it.stack.name,
                         q = (it.stack.quality and it.stack.quality.name) or QUALITY_NORMAL,
                         ct = it.stack.count,
                     }
+                    if with_src then slot.src = { id = bp.id, li = li } end
+                    g.slots[#g.slots + 1] = slot
                 end
             end
         end
@@ -637,10 +645,24 @@ function BeltRestoration.restore_side_groups(side_groups, entity_map)
                                 new_by_key[key] = (new_by_key[key] or 0) + it.stack.count
                                 local info = side_of[entity.unit_number .. "/" .. m.li]
                                 if info and not info.legit[key] then
+                                    -- Birth certificate (dump v2): name the slots this stray could BE —
+                                    -- same key, provenance recorded at capture (debug-gated src).
+                                    local origins, listed = {}, 0
+                                    for ogi, og in ipairs(side_groups) do
+                                        for _, sl in ipairs(og.slots) do
+                                            if listed < 3 and sl.src
+                                                and item_key(sl.n, sl.q) == key then
+                                                listed = listed + 1
+                                                origins[#origins + 1] = string.format("side %d from entity %s line %d",
+                                                    ogi, tostring(sl.src.id), sl.src.li)
+                                            end
+                                        end
+                                    end
                                     log(string.format(
-                                        "[BeltRestoration] STRAY %s x%d on %s at (%.1f, %.1f) line %d linepos %.3f — side %d never carried it",
+                                        "[BeltRestoration] STRAY %s x%d on %s at (%.1f, %.1f) line %d linepos %.3f — side %d never carried it%s",
                                         it.stack.name, it.stack.count, entity.name,
-                                        entity.position.x, entity.position.y, m.li, it.position or -1, info.gi))
+                                        entity.position.x, entity.position.y, m.li, it.position or -1, info.gi,
+                                        #origins > 0 and (" [candidate origins: " .. table.concat(origins, "; ") .. "]") or ""))
                                 end
                             end
                         end
