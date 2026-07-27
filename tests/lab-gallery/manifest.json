@@ -1351,6 +1351,56 @@
 						"expected": 380
 					},
 					{
+						"check": "physical_read",
+						"locator": {
+							"area": true
+						},
+						"read": "belt_stats",
+						"field": "maxStack",
+						"op": "eq",
+						"expected": 1
+					},
+					{
+						"check": "physical_read",
+						"locator": {
+							"area": true
+						},
+						"read": "belt_stats",
+						"field": "overpackedLanes",
+						"op": "eq",
+						"expected": 13
+					},
+					{
+						"check": "physical_read",
+						"locator": {
+							"area": true
+						},
+						"read": "belt_stats",
+						"field": "beltCount",
+						"op": "eq",
+						"expected": 35
+					},
+					{
+						"check": "physical_read",
+						"locator": {
+							"area": true
+						},
+						"read": "belt_stats",
+						"field": "loaderFilterIron",
+						"op": "eq",
+						"expected": "iron-plate"
+					},
+					{
+						"check": "physical_read",
+						"locator": {
+							"area": true
+						},
+						"read": "belt_stats",
+						"field": "loaderFilterCopper",
+						"op": "eq",
+						"expected": "copper-plate"
+					},
+					{
 						"check": "report_field",
 						"path": "validation_success",
 						"op": "eq",

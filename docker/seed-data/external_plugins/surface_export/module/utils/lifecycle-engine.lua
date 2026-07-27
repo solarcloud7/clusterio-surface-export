@@ -368,6 +368,29 @@ local function perform_read(loc, check)
 		return filter[field]
 	end
 
+	-- BELT LANE STATS — the belt law's aggregate readings (beltCount / steadyItems / maxStack /
+	-- overpackedLanes / loaderFilterIron / ...), read by THE canonical instrument:
+	-- FixtureMeters.measure_belt_combined. Deliberately a DELEGATION, not a reimplementation — the
+	-- definitions ("over-packed = a transport line holding >4 items") must have exactly one home, and
+	-- the paste fingerprint already uses that home. This is what carries a belt fixture's FULL law to
+	-- a transfer DESTINATION: until 2026-07-26 the dest asserted only item counts, and structure
+	-- infidelity rode through green (the 37-vs-13 over-compression incident).
+	if read == "belt_stats" then
+		if loc.kind ~= "area" then return nil, "belt_stats requires an area locator (the pad rect)" end
+		local field = check.field
+		if type(field) ~= "string" or field == "" then return nil, "belt_stats requires a `field` string" end
+		local ok, reading = pcall(FixtureMeters.measure_belt_combined, loc.surface, loc.area)
+		if not ok then return nil, "belt_stats meter threw: " .. tostring(reading) end
+		local value = reading[field]
+		if value == nil then
+			local keys = {}
+			for k in pairs(reading) do keys[#keys + 1] = k end
+			table.sort(keys)
+			return nil, string.format("belt_stats has no field %q (fields: %s)", field, table.concat(keys, ", "))
+		end
+		return value
+	end
+
 	-- DECLARATIVE PROPERTY READ — the one read kind that removes the need for new read kinds.
 	--
 	-- `path` is a dotted string naming a read-only property chain on the resolved entity:
@@ -491,6 +514,9 @@ end
 local function read_label(check)
 	if check.read == "property" then
 		return "property(" .. tostring(check.path) .. ")"
+	end
+	if check.read == "belt_stats" then
+		return "belt_stats(" .. tostring(check.field) .. ")"
 	end
 	return tostring(check.read) .. (check.item and ("(" .. check.item .. ")") or "")
 end
