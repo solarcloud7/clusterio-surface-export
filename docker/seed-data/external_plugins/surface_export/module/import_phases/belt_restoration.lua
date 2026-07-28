@@ -137,7 +137,7 @@ end
 -- Returns storage-safe side groups: { { members = {{id=,li=},...}, slots = {{n=,q=,ct=},...} }, ... }
 function BeltRestoration.capture_side_groups(belt_pairs)
     if not belt_pairs or #belt_pairs == 0 then return nil end
-    -- SEAT METADATA (owner ruling 2026-07-27, PRODUCTION — supersedes the earlier debug-gate
+    -- CAPTURED SOURCE POSITIONS (owner ruling 2026-07-27, PRODUCTION — supersedes the earlier debug-gate
     -- scoping): each side carries a compact flat array `item_source_positions` = { id1, li1, k1, id2, li2, k2, … },
     -- three numbers per slot in slot order — the source entity, transport-line index, and exact
     -- position (1/256ths) the slot was captured from. Restore seats each item back onto its OWN
@@ -184,7 +184,8 @@ function BeltRestoration.capture_side_groups(belt_pairs)
 end
 
 -- Place each side's (name,quality,count) multiset AT CAPTURED SOURCE POSITIONS — each slot back onto its own
--- captured line at its own captured position (rehydrated from the side's compact seats array),
+-- captured line at its own captured position (rehydrated from the side's compact
+-- item_source_positions array),
 -- request floored at one tick of belt_speed (BELT-R10 — the write-frame law). There is NO
 -- fallback placement (owner order 2026-07-27): a slot whose captured source position cannot place is honest unplaced
 -- loss the exact gate refuses. Every placement is validated by a physical SIDE-census delta
@@ -366,7 +367,7 @@ function BeltRestoration.restore_side_groups(side_groups, entity_map)
                             break
                         end
                     end
-                    -- A scan-exhausted slot goes to the IN-TRANSIT boundary re-home pass below —
+                    -- A scan-exhausted slot goes to the OVER-COMPRESSION MERGE pass below —
                     -- never straight to unplaced.
                 end
             end
@@ -420,6 +421,7 @@ function BeltRestoration.restore_side_groups(side_groups, entity_map)
                 -- FRESH line handle per call — remove_item reshapes the line, and both reads and
                 -- writes through a pre-mutation handle are the aged-handle class (this exact
                 -- pattern failed live with a fixed-position re-insert before this scan existed).
+                -- Returns the request k it inserted at (nil if nothing fit).
                 local function scan_place(count)
                     local mline = se.get_transport_line(slot.src.li)
                     local mkmin = math.floor(se.prototype.belt_speed * 256 + 0.5)
@@ -428,14 +430,14 @@ function BeltRestoration.restore_side_groups(side_groups, entity_map)
                         if mline.can_insert_at(k / 256) then
                             VersionCompat.belt_insert_at(mline, k / 256,
                                 { name = slot.n, quality = slot.q, count = count }, count)
-                            return
+                            return k
                         end
                     end
                     for k = partner.k + 1, mtop - mkmin do
                         if mline.can_insert_at(k / 256) then
                             VersionCompat.belt_insert_at(mline, k / 256,
                                 { name = slot.n, quality = slot.q, count = count }, count)
-                            return
+                            return k
                         end
                     end
                 end
@@ -443,8 +445,9 @@ function BeltRestoration.restore_side_groups(side_groups, entity_map)
                 local sb = side_total_merge()
                 local removed = se.get_transport_line(slot.src.li).remove_item(
                     { name = slot.n, quality = slot.q, count = partner.slot.ct })
+                local landed_k = nil
                 if removed == partner.slot.ct then
-                    scan_place(merged_ct)
+                    landed_k = scan_place(merged_ct)
                 end
                 local sa = side_total_merge()
                 if changed_only(sb, sa, wanted_key, slot.ct) then
@@ -453,6 +456,9 @@ function BeltRestoration.restore_side_groups(side_groups, entity_map)
                     -- One merged oversized stack now carries both slots — update the ledger entry
                     -- so the reconciliation matches the physical stack it will actually find.
                     partner.slot = { n = slot.n, q = slot.q, ct = merged_ct, src = partner.slot.src }
+                    -- Review F4: record the merged stack's actual landing so the reconciliation
+                    -- does not report it as spurious BORN + VANISHED.
+                    if landed_k then partner.k = landed_k end
                     log(string.format(
                         "[BeltRestoration] OVER-COMPRESSION MERGE: %s x%d joined the stack near entity %s line %d (now x%d) — engine packed tighter than insert_at can recreate",
                         slot.n, slot.ct, tostring(slot.src.id), slot.src.li, merged_ct))

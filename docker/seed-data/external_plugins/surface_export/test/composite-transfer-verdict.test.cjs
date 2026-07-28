@@ -433,6 +433,10 @@ test("belt forensic census survives the legacy purge; recovery machinery is gone
 		"attribution rows must name a physical entity and line with both sides of the comparison");
 	assert.match(restoration, /attribution\.actual_total\s*-\s*attribution\.expected_total/,
 		"the forensic total must come from the completed physical census, not insert return values");
+	assert.match(restoration, /OVER-COMPRESSION MERGE/,
+		"the restored over-compression merge must stay PRESENT - deleting it re-opens the 2026-07-27 incident (a purge must account for this class)");
+	assert.match(restoration, /scan_place/,
+		"the merge must remove-and-reinsert via the census-validated scan, never a fixed-position write");
 	assert.doesNotMatch(restoration, /recover_deficits_to_hub|function BeltRestoration\.restore\s*\(|line_needs_consolidation|MIN_SPACING/,
 		"the legacy consolidation restore and hub-deficit recovery must stay deleted (owner order 2026-07-27)");
 });

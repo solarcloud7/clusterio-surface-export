@@ -177,16 +177,19 @@ a segment) — they are not a capture blind spot at 2.1.11.
   ITEM: a line captured MID-MOTION can carry ONE MORE item than its rest capacity** — the front item
   is in transit across the piece boundary at the capture instant. Measured from the banked black
   box: a 1-tile turbo line (rest capacity 4) captured with FIVE items, the front one at position
-  0.9375 only 14/256 behind its neighbour (overlapping by rest-spacing rules). Reconstruction of
-  the fifth item on its captured line is PHYSICALLY impossible; its rest home is the BACK of the
-  DOWNSTREAM line. **Production behavior (owner ruling 2026-07-27 — a platform must transfer
-  WHENEVER, mid-motion included; refusing a live capture is not acceptable): the restore re-homes
-  such a slot to the downstream line's back** — same line index on the entity's single output
-  neighbour, first free position scanning up from the line back, validated by the downstream side's
-  own physical census. This is the one sanctioned cross-side placement (the per-side multiset unit
-  bends by exactly the items caught mid-handoff); a slot even that cannot place is honest unplaced
-  loss and the exact gate refuses. Frozen sources (paused platforms, frozen-feed fixtures) never
-  produce the class at all.
+  0.9375 only 14/256 behind its neighbour (overlapping by rest-spacing rules). That fifth item
+  cannot be placed at any free position on its captured line. **Production behavior (owner ruling
+  2026-07-27 — a platform must transfer WHENEVER, mid-motion included): the OVER-COMPRESSION MERGE**
+  — the slot merges into an already-placed stack of the SAME (name, quality) on its OWN captured
+  line, as ONE oversized stack (the established oversized-stack law: insert_at accepts an arbitrary
+  belt_stack_size and the engine keeps it), validated by the side census with a partner-restore
+  recovery on failure. Same line, no cross-side placement. **The merge REQUIRES a same-key partner
+  on the line**: a mid-hop slot that is the only item of its (name, quality) on its line — e.g. a
+  mixed-content lane — has no merge target and stays honest unplaced loss (exact gate refuses,
+  fail => revert, retry captures a different instant). That partner-less corner is the one known
+  remaining refusal on live sources. Frozen sources (paused platforms, frozen-feed fixtures) never
+  produce the class at all. Kill-measured: 6/6 consecutive live-clone transfers with the merge
+  witness firing.
 - **[empirical, 2.0.77, BELT-R11/R12] Side-scoped reverse first-fit reconstructs belt contents exactly**
   — on underground-free topologies; at scale the top-of-line writes it leans on trip BELT-R16 handoffs,
   so production placement puts each slot back onto its captured entity/line/position (via the payload's
