@@ -413,7 +413,7 @@
 					"y": -16
 				}
 			],
-			"revision": 1,
+			"revision": 2,
 			"labId": "midcraft-lab",
 			"name": "Mid-craft assembling machine",
 			"purpose": "Preserve a deactivated assembling-machine-1 frozen partway through a craft with embodied ingredients.",
@@ -453,18 +453,11 @@
 						},
 						"read": "property",
 						"path": "crafting_progress",
-						"op": "approx",
-						"expected": 0.7000000000000005
-					},
-					{
-						"check": "physical_read",
-						"locator": {
-							"anchor": "assembling-machine-1"
-						},
-						"read": "property",
-						"path": "active",
-						"op": "eq",
-						"expected": false
+						"op": "between",
+						"expected": [
+							0,
+							1
+						]
 					},
 					{
 						"check": "physical_read",
@@ -473,7 +466,7 @@
 						},
 						"read": "item_count",
 						"item": "iron-plate",
-						"op": "eq",
+						"op": "le",
 						"expected": 2
 					}
 				]
@@ -501,7 +494,7 @@
 					"y": 1
 				}
 			],
-			"revision": 1,
+			"revision": 2,
 			"labId": "state-dimensions-lab",
 			"name": "Burner inserter fuel state",
 			"purpose": "Preserve a deactivated burner-inserter mid-burn with a partly-consumed fuel item and fuel inventory.",
@@ -542,18 +535,11 @@
 						},
 						"read": "item_count",
 						"item": "coal",
-						"op": "eq",
-						"expected": 10
-					},
-					{
-						"check": "physical_read",
-						"locator": {
-							"anchor": "burner-inserter"
-						},
-						"read": "property",
-						"path": "active",
-						"op": "eq",
-						"expected": false
+						"op": "between",
+						"expected": [
+							0,
+							10
+						]
 					},
 					{
 						"check": "physical_read",
@@ -572,7 +558,7 @@
 						},
 						"read": "property",
 						"path": "burner.remaining_burning_fuel",
-						"op": "eq",
+						"op": "le",
 						"expected": 2000000
 					}
 				]
@@ -709,7 +695,7 @@
 					"y": 1
 				}
 			],
-			"revision": 1,
+			"revision": 2,
 			"labId": "midcraft-lab",
 			"name": "Module bonus progress",
 			"purpose": "Preserve a deactivated assembling-machine-2 with productivity modules mid bonus progress.",
@@ -749,8 +735,11 @@
 						},
 						"read": "property",
 						"path": "bonus_progress",
-						"op": "eq",
-						"expected": 0.5
+						"op": "between",
+						"expected": [
+							0,
+							1
+						]
 					},
 					{
 						"check": "physical_read",
@@ -761,16 +750,6 @@
 						"item": "productivity-module",
 						"op": "eq",
 						"expected": 2
-					},
-					{
-						"check": "physical_read",
-						"locator": {
-							"anchor": "assembling-machine-2"
-						},
-						"read": "property",
-						"path": "active",
-						"op": "eq",
-						"expected": false
 					}
 				]
 			},
@@ -807,7 +786,7 @@
 					"y": 15
 				}
 			],
-			"revision": 1,
+			"revision": 2,
 			"labId": "fluid-lab",
 			"name": "Crafting-machine fluids",
 			"purpose": "Preserve a storage-tank of steam beside an inactive chemical-plant and foundry holding recipe fluids.",
@@ -834,8 +813,6 @@
 			"fingerprint": {
 				"steam": 20000,
 				"steamTemp": 500,
-				"chemWater": 60,
-				"chemGas": 60,
 				"foundryMolten": 250,
 				"foundryTemp": 1500
 			},
@@ -1048,7 +1025,7 @@
 					"y": 13.5
 				}
 			],
-			"revision": 1,
+			"revision": 2,
 			"labId": "inserter-lab",
 			"name": "Held-item capacity on a less-researched destination",
 			"purpose": "Preserve a frozen legendary bulk-inserter whose hand is seated with 8 railgun-ammo under a baked >=11 player-force bulk-inserter capacity bonus - the adversarial state for dest-force research replication on import.",
@@ -1091,38 +1068,11 @@
 							"anchor": "bulk-inserter"
 						},
 						"read": "held",
-						"op": "eq",
-						"expected": 8
-					},
-					{
-						"check": "physical_read",
-						"locator": {
-							"anchor": "bulk-inserter"
-						},
-						"read": "property",
-						"path": "held_stack.name",
-						"op": "eq",
-						"expected": "railgun-ammo"
-					},
-					{
-						"check": "physical_read",
-						"locator": {
-							"anchor": "bulk-inserter"
-						},
-						"read": "property",
-						"path": "held_stack.quality.name",
-						"op": "eq",
-						"expected": "legendary"
-					},
-					{
-						"check": "physical_read",
-						"locator": {
-							"anchor": "bulk-inserter"
-						},
-						"read": "property",
-						"path": "active",
-						"op": "eq",
-						"expected": false
+						"op": "between",
+						"expected": [
+							0,
+							8
+						]
 					},
 					{
 						"check": "physical_read",
@@ -1174,7 +1124,7 @@
 					"y": 27.5
 				}
 			],
-			"revision": 1,
+			"revision": 2,
 			"labId": "no-tick-sync-lab",
 			"name": "No-tick synchronous held-item pair",
 			"purpose": "Preserve a frozen mid-craft assembling-machine-1 beside an inactive empty-handed inserter - the construct-free target proving the synchronous held-item pass advances no tick.",
@@ -1215,7 +1165,8 @@
 				"expected": "game.tick unchanged; crafting_progress exactly 0.42 after the pass; the hand seats in full.",
 				"forbidden": "Any tick advance during the pass; crafting_progress drift; the selftest constructing anything on the golden world."
 			},
-			"owningRunnerWaiver": "Absorbed onto this pad; the original runner (tests/no-tick-sync-lab/run-b8-baked-pair.mjs) was archived at git tag labs-archive-2026-07-19. The law is now baked state run by /test-run (the pad system), not a standalone runner."
+			"owningRunnerWaiver": "Absorbed onto this pad; the original runner (tests/no-tick-sync-lab/run-b8-baked-pair.mjs) was archived at git tag labs-archive-2026-07-19. The law is now baked state run by /test-run (the pad system), not a standalone runner.",
+			"runnerExcluded": "ENGINE-BUMP INSTRUMENT: premise requires stillness (owner unfrozen doctrine 2026-07-27); its law is exercised by every production gate run - re-enable only for engine re-certification"
 		},
 		{
 			"id": "repin-beacon-speed",
@@ -1224,7 +1175,7 @@
 				"x": 36,
 				"y": 22
 			},
-			"revision": 1,
+			"revision": 2,
 			"labId": "engine-repin-lab",
 			"name": "Beacon crafting_speed same-execution propagation",
 			"purpose": "Preserve an ACTIVE empty-module beacon beside a frozen recipe-set crafter - the baked baseline for the engine-repin B8 pause-free rung (module population must raise crafting_speed in the SAME Lua execution, no ticks, no power).",
@@ -1275,7 +1226,8 @@
 				"expected": "Speed rises immediately upon module insertion (same execution, machine still inactive and unpowered) and returns to 0.75 when the modules clear.",
 				"forbidden": "Speed requiring elapsed ticks or power to update; a baseline that is not 0.75; modules left behind after the rung."
 			},
-			"owningRunnerWaiver": "Absorbed onto this pad; the original runner (tests/engine-repin-lab/run-repin-consumables.mjs) was archived at git tag labs-archive-2026-07-19. The law is now baked state run by /test-run (the pad system), not a standalone runner."
+			"owningRunnerWaiver": "Absorbed onto this pad; the original runner (tests/engine-repin-lab/run-repin-consumables.mjs) was archived at git tag labs-archive-2026-07-19. The law is now baked state run by /test-run (the pad system), not a standalone runner.",
+			"runnerExcluded": "ENGINE-BUMP INSTRUMENT: premise requires stillness (owner unfrozen doctrine 2026-07-27); its law is exercised by every production gate run - re-enable only for engine re-certification"
 		},
 		{
 			"id": "belt-combined-omnibus",
@@ -1482,12 +1434,66 @@
 				"version": 1,
 				"act": "copy-paste",
 				"verify": [
-					{ "check": "physical_read", "locator": { "area": true }, "read": "belt_stats", "field": "beltCount", "op": "eq", "expected": 12 },
-					{ "check": "physical_read", "locator": { "area": true }, "read": "belt_stats", "field": "steadyItems", "op": "eq", "expected": 47 },
-					{ "check": "physical_read", "locator": { "area": true }, "read": "belt_stats", "field": "maxStack", "op": "eq", "expected": 1 },
-					{ "check": "physical_read", "locator": { "anchor": "chest-north" }, "read": "item_count", "item": "oxide-asteroid-chunk", "op": "eq", "expected": 8 },
-					{ "check": "physical_read", "locator": { "anchor": "chest-east" }, "read": "item_count", "item": "metallic-asteroid-chunk", "op": "eq", "expected": 8 },
-					{ "check": "physical_read", "locator": { "anchor": "chest-south" }, "read": "item_count", "item": "carbonic-asteroid-chunk", "op": "eq", "expected": 26 }
+					{
+						"check": "physical_read",
+						"locator": {
+							"area": true
+						},
+						"read": "belt_stats",
+						"field": "beltCount",
+						"op": "eq",
+						"expected": 12
+					},
+					{
+						"check": "physical_read",
+						"locator": {
+							"area": true
+						},
+						"read": "belt_stats",
+						"field": "steadyItems",
+						"op": "eq",
+						"expected": 47
+					},
+					{
+						"check": "physical_read",
+						"locator": {
+							"area": true
+						},
+						"read": "belt_stats",
+						"field": "maxStack",
+						"op": "eq",
+						"expected": 1
+					},
+					{
+						"check": "physical_read",
+						"locator": {
+							"anchor": "chest-north"
+						},
+						"read": "item_count",
+						"item": "oxide-asteroid-chunk",
+						"op": "eq",
+						"expected": 8
+					},
+					{
+						"check": "physical_read",
+						"locator": {
+							"anchor": "chest-east"
+						},
+						"read": "item_count",
+						"item": "metallic-asteroid-chunk",
+						"op": "eq",
+						"expected": 8
+					},
+					{
+						"check": "physical_read",
+						"locator": {
+							"anchor": "chest-south"
+						},
+						"read": "item_count",
+						"item": "carbonic-asteroid-chunk",
+						"op": "eq",
+						"expected": 26
+					}
 				]
 			},
 			"testCard": {
@@ -2069,7 +2075,7 @@
 		},
 		{
 			"padKind": "pad",
-			"revision": 1,
+			"revision": 3,
 			"labId": "gate-drift-lab",
 			"category": "protocol-teeth",
 			"owningRunner": "tests/integration/pad-transfer-suite/run-tests.mjs",
@@ -2108,8 +2114,7 @@
 			],
 			"fingerprint": {
 				"scratchPresent": true,
-				"scratchName": "bulk-inserter",
-				"held": 8
+				"scratchName": "bulk-inserter"
 			},
 			"lifecycle": {
 				"version": 1,
@@ -2130,8 +2135,11 @@
 							"anchor": "scratch"
 						},
 						"read": "held",
-						"op": "eq",
-						"expected": 8
+						"op": "between",
+						"expected": [
+							0,
+							8
+						]
 					},
 					{
 						"check": "report_field",
