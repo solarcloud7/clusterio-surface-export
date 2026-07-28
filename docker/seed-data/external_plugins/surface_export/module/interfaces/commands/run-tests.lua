@@ -700,6 +700,23 @@ Base.admin_command("test-run",
             else
               local d = cells_for(surface)
               local cell = match_cell(d.cells, fx)
+              if not cell and type(fx.origin) == "table" then
+                -- Renderings NEVER transfer (the transfer-strips-script-state law), so a
+                -- TRANSFERRED copy of the gallery has no discoverable name text and the board
+                -- read MISSING for every pad (measured 2026-07-28, the consolidated suite's
+                -- destination board). Recover by STRUCTURE: the status-trio ENTITIES do
+                -- transfer — find them at the roster origin and recreate the name rendering.
+                local comb, panel = find_trio(surface, fx.origin.x, fx.origin.y)
+                if comb and panel then
+                  local text_obj = rendering.draw_text({
+                    text = fx.name or id, surface = surface,
+                    target = { fx.origin.x + NAME_OFFSET_X, fx.origin.y + NAME_OFFSET_Y },
+                    color = COLORS.waiting, scale = 1.5, alignment = "center",
+                  })
+                  cell = { name = fx.name or id, text_obj = text_obj, ox = fx.origin.x, oy = fx.origin.y }
+                  d.cells[#d.cells + 1] = cell
+                end
+              end
               if not cell then
                 missing = missing + 1
                 record(id, "missing", "no pad cell on " .. surface.name)

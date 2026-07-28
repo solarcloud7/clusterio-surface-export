@@ -30,6 +30,19 @@ export const HOSTS = {
 };
 // The shared dev cluster's "release" saves — the pre-batch live worlds every batch restores to.
 export const RESTORE_SAVES = { 1: "lab-gallery-source.zip", 2: "lab-gallery-destination.zip" };
+// ...and the pristine bytes they are restored FROM. Restoring by NAME alone is not a restore: an
+// instance exit-saves its (possibly consumed) world into the file it started from, so a live save is
+// a MUTABLE file that a transfer test can empty. Measured 2026-07-28 — the suite transferred the
+// gallery platform away, the stop wrote the gallery-less world into lab-gallery-source.zip, and every
+// later start from that name faithfully reloaded the empty world; the cluster stayed displaced until
+// the bytes were copied back. Restore copies bytes FIRST, then starts, then verifies content.
+export const RESTORE_ARTIFACTS = {
+	1: "docker/seed-data/hosts/clusterio-host-1/clusterio-host-1-instance-1/lab-gallery-source.zip",
+	2: "docker/seed-data/hosts/clusterio-host-2/clusterio-host-2-instance-1/lab-gallery-destination.zip",
+};
+// The platform the restored source world MUST contain — the restore's content teeth.
+export const RESTORE_SOURCE_PLATFORM = "lab-omnibus-state-v1";
+export const REPO_ROOT = fileURLToPath(new URL("../../", import.meta.url));
 export const FLUID_EPSILON = 1e-6;   // the gate's aggregate-by-name epsilon
 export const DOUBLE_EPSILON = 1e-9;  // save/load ULP allowance on fingerprint doubles (verify-save convention)
 
@@ -132,6 +145,8 @@ export async function waitReady(host, timeoutMs = 180_000) {
 	throw new Error(`host ${host} did not become RCON-ready: ${lastError?.message}`);
 }
 
+// LOADS a named save. It is NOT a restore: the named file is mutable (exit-save), so putting a world
+// BACK means copying pristine bytes over it first — see RESTORE_ARTIFACTS / restoreLivePair.
 export async function assignSave(host, saveName) {
 	ctl("instance", "stop", HOSTS[host].instance);
 	ctl("instance", "start", HOSTS[host].instance, "--save", saveName);
@@ -149,7 +164,7 @@ export function createBatchLifecycle({ goldenSourceSave, goldenDestSave, markerP
 	}
 
 	async function loadGoldenPair(manifest, phase) {
-		const repoRoot = fileURLToPath(new URL("../../", import.meta.url));
+		const repoRoot = REPO_ROOT;
 		// STOP FIRST, copy SECOND: stopping a running instance EXIT-SAVES its (possibly mutated) world
 		// back into the save file it was started from — copying the pristine golden zip before the stop
 		// gets clobbered by that exit-save (measured: variant B reloaded a world whose fixture the
@@ -225,9 +240,28 @@ export function createBatchLifecycle({ goldenSourceSave, goldenDestSave, markerP
 						`tail -n 80 ${instancePath(host, "factorio-current.log")}`]);
 				} catch (error) { results.goldenSessionLogTails[host] = `unreadable: ${error.message}`; }
 			}
-			// Release the pair: restore the pre-batch live saves, then prove zero leftovers.
-			await assignSave(1, RESTORE_SAVES[1]);
-			await assignSave(2, RESTORE_SAVES[2]);
+			// Release the pair by rewriting the live saves from their PRISTINE artifacts. Re-assigning
+			// by name (assignSave) restores NOTHING once the batch consumed the world — see
+			// RESTORE_ARTIFACTS. Bytes first, then start, then read the content back.
+			ctl("instance", "stop", HOSTS[1].instance);
+			ctl("instance", "stop", HOSTS[2].instance);
+			for (const host of [1, 2]) {
+				docker(["cp", `${REPO_ROOT}${RESTORE_ARTIFACTS[host]}`,
+					`${HOSTS[host].container}:${instancePath(host, `saves/${RESTORE_SAVES[host]}`)}`],
+				{ timeout: 180_000 });
+			}
+			for (const host of [1, 2]) {
+				ctl("instance", "start", HOSTS[host].instance, "--save", RESTORE_SAVES[host]);
+				await waitReady(host);
+			}
+			// TEETH: the displacement was SILENT because nothing read the restored world's CONTENT.
+			const restoredSource = lua(1, `for _,p in pairs(game.forces.player.platforms) do ` +
+				`if p.valid and p.name=='${RESTORE_SOURCE_PLATFORM}' then return {success=true,present=true} end end ` +
+				`return {success=true,present=false}`);
+			if (restoredSource.present !== true) {
+				throw new Error(`restore verification FAILED: ${RESTORE_SOURCE_PLATFORM} absent from the restored ` +
+					`host-1 world (artifact ${RESTORE_ARTIFACTS[1]} may be stale or empty)`);
+			}
 			// NOTE: stopping a golden session re-saves its file (Factorio saves on exit), so the
 			// rm must come AFTER the restore-assign; the proof reads the FILESYSTEM (the
 			// controller's `save list` is a cache that can list a deleted file).

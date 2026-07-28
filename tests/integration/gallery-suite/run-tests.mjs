@@ -129,8 +129,14 @@ async function main() {
 
 		// C. The board on the transferred copy — destination parity for every fixture.
 		const boardC = runBoard(2);
-		step("board.host2.transferred", boardOk(boardC, manifest),
-			`passed=${boardC.passed} failed=${boardC.failed} skipped=${boardC.skipped}`);
+		const cOk = boardOk(boardC, manifest);
+		step("board.host2.transferred", cOk,
+			`passed=${boardC.passed} failed=${boardC.failed} missing=${boardC.missing} unknown=${boardC.unknown} skipped=${boardC.skipped}`);
+		if (!cOk) {
+			const bad = (boardC.results || []).filter(r => r.verdict !== "pass");
+			console.log("  board.host2 non-pass verdicts: " +
+				bad.map(r => `${r.id}=${r.verdict}${r.detail ? `(${String(r.detail).slice(0, 80)})` : ""}`).join(" | "));
+		}
 
 		// D. Hook-armed refusal transfer back (2PC contract). The hook is in FAIL_SAFE_HOOKS and
 		// consumed by the import; the finally below also disarms it defensively.
