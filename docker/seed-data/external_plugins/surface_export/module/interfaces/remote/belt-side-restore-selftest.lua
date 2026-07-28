@@ -582,9 +582,13 @@ local function belt_side_restore_selftest(opts)
     [3] = { valid = true, prototype = prototype, get_transport_line = function() return neighbour end },
   }
   local groups = {
+    -- item_source_positions is REQUIRED (no fallback path): the slot's captured source position
+    -- is entity 1 line 1 k 200 — the source-position scan drives the same aliased-window leak
+    -- the fake's insert redirect manufactures.
     { members = { { id = 1, li = 1 }, { id = 2, li = 1 } },
-      slots = { { n = "iron-plate", q = "legendary", ct = 1 } } },
-    { members = { { id = 3, li = 1 } }, slots = {} },
+      slots = { { n = "iron-plate", q = "legendary", ct = 1 } },
+      item_source_positions = { 1, 1, 200 } },
+    { members = { { id = 3, li = 1 } }, slots = {}, item_source_positions = {} },
   }
 
   -- CONTRACT (changed 2026-07-26, owner scale ruling): the per-placement leak UNDO is gone with
@@ -617,17 +621,17 @@ local function belt_side_restore_selftest(opts)
   -- F1 regression (review 2026-07-27): malformed belt_side_groups must be REFUSED by the shape
   -- validator before restore ever runs — an uncaught throw on the import's on_tick path kills the
   -- headless server (exit 255, measured twice). These are the exact adversarial payloads from the
-  -- review: an empty group, bare scalars, and a misaligned seats array.
+  -- review: an empty group, bare scalars, and a misaligned item_source_positions array.
   local v1 = BeltRestoration.validate_side_groups({ {} })
   check("shape_guard_refuses_empty_group", v1 == false, "group {} must fail shape validation")
   local v2 = BeltRestoration.validate_side_groups({ 1, 2, 3 })
   check("shape_guard_refuses_scalars", v2 == false, "scalar groups must fail shape validation")
   local v3 = BeltRestoration.validate_side_groups({
-    { members = { { id = 1, li = 1 } }, slots = { { n = "iron-plate", q = "normal", ct = 1 } }, seats = { 1, 1 } },
+    { members = { { id = 1, li = 1 } }, slots = { { n = "iron-plate", q = "normal", ct = 1 } }, item_source_positions = { 1, 1 } },
   })
-  check("shape_guard_refuses_misaligned_seats", v3 == false, "seats not a multiple of 3 must fail")
+  check("shape_guard_refuses_misaligned_source_positions", v3 == false, "item_source_positions not a multiple of 3 must fail")
   local v4 = BeltRestoration.validate_side_groups({
-    { members = { { id = 1, li = 1 } }, slots = { { n = "iron-plate", q = "normal", ct = 1 } }, seats = { 1, 1, 64 } },
+    { members = { { id = 1, li = 1 } }, slots = { { n = "iron-plate", q = "normal", ct = 1 } }, item_source_positions = { 1, 1, 64 } },
   })
   check("shape_guard_accepts_wellformed", v4 == true, "a well-formed group must pass shape validation")
 

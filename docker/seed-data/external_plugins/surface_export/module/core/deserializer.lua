@@ -812,7 +812,7 @@ function Deserializer.restore_inventories(entity, entity_data, overflow_losses)
   end -- end of if has_inventories
 
   -- NOTE: Belt items are NOT restored here!
-  -- Belt items are restored synchronously in post-processing phase (BeltRestoration.restore)
+  -- Belt items are restored synchronously in the post-processing belts phase (restore_side_groups, each item placed at its captured source position)
   -- This is CRITICAL because belts are always active and cannot be deactivated.
   -- Items must be restored all at once to prevent partial restoration where
   -- some items get picked up by inserters before others are placed.

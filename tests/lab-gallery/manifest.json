@@ -1444,13 +1444,13 @@
 					"name": "chest-south"
 				}
 			],
-			"revision": 1,
+			"revision": 2,
 			"labId": "belt-lab",
 			"name": "Clean compression loop (owner-built, frozen feed)",
 			"purpose": "OWNER THEORY FIXTURE (2026-07-27): restore-order sideload over-saturation - if feeder lines restore before the main line, boundary writes can silently over-saturate the main. A 12-belt closed turbo loop compressed NATURALLY by four bulk inserters (no fossils: worst density 1.085, every stack 1) then frozen via disabled_by_script - the clean-state control the workhorse cannot be (its golden save carries legacy 28-stacks).",
 			"category": "physical-lab",
 			"owningRunner": null,
-			"owningRunnerWaiver": "Experiment fixture for the capture/restore isolation protocol (same multiset restored to scratch-normal vs scratch-platform vs real transfer). Wired to no standing runner until the protocol lands; hand-built by the owner 2026-07-27, state IS the artifact, banked in lab-gallery-snapshot-2026-07-27-compression-loop.zip.",
+			"owningRunnerWaiver": "Hand-built by the owner 2026-07-27; state IS the artifact, banked in lab-gallery-snapshot-2026-07-27-compression-loop.zip. Wired into /test-run 2026-07-27 with a declarative copy-paste lifecycle (owner order: the compression fixture must RUN, not sit as a waived exhibit).",
 			"saveRole": "source",
 			"platformName": "lab-omnibus-state-v1",
 			"engineVersion": "2.1.11",
@@ -1477,6 +1477,18 @@
 				"handItems": 4,
 				"chestItems": 42,
 				"maxStack": 1
+			},
+			"lifecycle": {
+				"version": 1,
+				"act": "copy-paste",
+				"verify": [
+					{ "check": "physical_read", "locator": { "area": true }, "read": "belt_stats", "field": "beltCount", "op": "eq", "expected": 12 },
+					{ "check": "physical_read", "locator": { "area": true }, "read": "belt_stats", "field": "steadyItems", "op": "eq", "expected": 47 },
+					{ "check": "physical_read", "locator": { "area": true }, "read": "belt_stats", "field": "maxStack", "op": "eq", "expected": 1 },
+					{ "check": "physical_read", "locator": { "anchor": "chest-north" }, "read": "item_count", "item": "oxide-asteroid-chunk", "op": "eq", "expected": 8 },
+					{ "check": "physical_read", "locator": { "anchor": "chest-east" }, "read": "item_count", "item": "metallic-asteroid-chunk", "op": "eq", "expected": 8 },
+					{ "check": "physical_read", "locator": { "anchor": "chest-south" }, "read": "item_count", "item": "carbonic-asteroid-chunk", "op": "eq", "expected": 26 }
+				]
 			},
 			"testCard": {
 				"law": "A naturally-compressed closed loop's multiset survives capture and restore EXACTLY, with no cross-side leakage - and per-slot provenance (test-instrument-only metadata) names any stray's origin.",

@@ -415,15 +415,17 @@ Project invariants that still bite if changed:
   [factorio-2.0-api-notes.md](docs/factorio-2.0-api-notes.md) — recreated 2026-07-17 after a fact-regression
   incident; do not restate belt physics elsewhere, point there. Summary only: the fidelity unit is one
   continuous belt lane/side (`(name, quality, stack count)` multiset; position/order/window are NOT
-  invariants). The root cause of the historical belt restore loss class is the `insert_at` write-frame
-  offset (= one tick of `belt_speed`, tier-parametric — BELT-R10, measured at **2.0.77** and per
-  `tests/labs-certified.json` NOT re-isolated on the 2.1.11 pin — re-measure before building on the value);
-  side-scoped reverse first-fit with the
-  `belt_speed` k-floor reconstructs exactly, including filtered-splitter purity (BELT-R11/R12, committed
-  runners; production adoption pending the DUP-233855 kill-measurement). Engine transport-line identity is
-  still NOT a cross-import key (BELT-R9); populated-source same-execution `line_equals` grouping IS the
-  side partition. The current production path (captured positions + oversized-stack consolidation + hub
-  recovery) remains the shipped implementation until Phase 5 lands. The atomic single-tick export scan
+  invariants — restoring position is handoff avoidance, not a new invariant). The production restore
+  places every item **at its captured source position** (2026-07-27): each payload side carries a compact
+  `item_source_positions` array (source entity/line/position per stack, ~12 bytes/stack) and each item is
+  placed back onto its own line at its own captured position, request offset one write-frame per BELT-R10
+  (re-isolated at 2.1.11: the landing comes out at request + one tick of `belt_speed`, clamped inward).
+  `item_source_positions` is REQUIRED — payloads without it are refused; the legacy consolidation
+  restore/hub recovery/first-fit fallback are DELETED (owner order 2026-07-27). Why placement at captured
+  positions: top-of-line writes trip the BELT-R16 boundary handoff (the item lands across the piece
+  boundary; cross-side handoffs are census-invisible and retried into duplicates — the measured workhorse
+  excess). Engine transport-line identity is still NOT a cross-import key (BELT-R9); populated-source
+  same-execution `line_equals` grouping IS the side partition. The atomic single-tick export scan
   remains required (atomic belt scan; belts keep moving — BELT-R13).
 - **Fluid restoration runs in the frozen world (`disabled_by_script`) before the exact gate.** The payload
   carries a top-level **fluid-segment registry** (one record per source segment or segmentless storage, keyed

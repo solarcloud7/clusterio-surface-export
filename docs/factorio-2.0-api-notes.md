@@ -172,17 +172,36 @@ a segment) — they are not a capture blind spot at 2.1.11.
   retry-duplication step is a strong inference fitting all data (an underground-free fixture measured
   exact in every leg; the underground-riddled workhorse always drifted), not yet isolated as its own
   rung. Consequence: never write at line tops near piece boundaries — the production restore is
-  seat-first (below) precisely to avoid this class.
+  placement at captured source positions (below) precisely to avoid this class.
+- **[empirical, 2.1.11, black box on the passenger-evacuate refusal 2026-07-27] IN-TRANSIT BOUNDARY
+  ITEM: a line captured MID-MOTION can carry ONE MORE item than its rest capacity** — the front item
+  is in transit across the piece boundary at the capture instant. Measured from the banked black
+  box: a 1-tile turbo line (rest capacity 4) captured with FIVE items, the front one at position
+  0.9375 only 14/256 behind its neighbour (overlapping by rest-spacing rules). Reconstruction of
+  the fifth item on its captured line is PHYSICALLY impossible; its rest home is the BACK of the
+  DOWNSTREAM line. **Production behavior (owner ruling 2026-07-27 — a platform must transfer
+  WHENEVER, mid-motion included; refusing a live capture is not acceptable): the restore re-homes
+  such a slot to the downstream line's back** — same line index on the entity's single output
+  neighbour, first free position scanning up from the line back, validated by the downstream side's
+  own physical census. This is the one sanctioned cross-side placement (the per-side multiset unit
+  bends by exactly the items caught mid-handoff); a slot even that cannot place is honest unplaced
+  loss and the exact gate refuses. Frozen sources (paused platforms, frozen-feed fixtures) never
+  produce the class at all.
 - **[empirical, 2.0.77, BELT-R11/R12] Side-scoped reverse first-fit reconstructs belt contents exactly**
   — on underground-free topologies; at scale the top-of-line writes it leans on trip BELT-R16 handoffs,
-  so production placement is now SEAT-FIRST (each slot back onto its captured entity/line/position via
-  the payload's compact per-side `seats` array, requesting `src.k − belt_speed·256` per R10; reverse
-  first-fit remains the fallback for seatless old payloads and geometry drift). Measured seat-first at
+  so production placement puts each slot back onto its captured entity/line/position (via the payload's
+  compact per-side `item_source_positions` array, requesting `src.k − belt_speed·256` per R10).
+  `item_source_positions` is REQUIRED and there is NO fallback placement (owner order 2026-07-27: the
+  reverse first-fit fallback, the legacy consolidation restore, and hub-deficit recovery are DELETED; a
+  payload without it is refused at import; a slot whose captured position cannot place is honest
+  unplaced loss the exact gate refuses — the
+  BELT-R3/R5 hub-recovery lesson, anything inserted into the hub before inventory Pass 2 is wiped by the
+  clear()+refill, is retained here). Measured captured-source-position placement at
   workhorse scale [empirical, 2.1.11, 2026-07-27]: 5777/5777 stacks traced same-line, BORN 0, VANISHED 0,
-  seat-offset avg 19.3/256, full frozen-world exact gate PASS. The rest of the R11/R12 recipe is
+  source-position offset avg 19.3/256, full frozen-world exact gate PASS. The rest of the R11/R12 recipe is
   unchanged and load-bearing: the fidelity unit is the continuous lane side (owner contract:
-  `(name, quality, stack count)` multiset; position/order/window are NOT invariants — seat-first
-  restores position as a COURTESY and a handoff-avoidance measure, not as a new invariant). Partition
+  `(name, quality, stack count)` multiset; position/order/window are NOT invariants —
+  restoring position is a COURTESY and a handoff-avoidance measure, not a new invariant). Partition
   the populated source by same-execution `line_equals` (= the lane sides); bridge to the destination by
   belt ordinal + line index (no engine graph — the empty target's input/output_lines BFS shatters on
   real topologies); validate every placement by physical side-census delta, never return values.

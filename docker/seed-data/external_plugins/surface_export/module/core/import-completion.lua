@@ -165,8 +165,6 @@ local function bank_failure_black_box(job, result)
 		physical_entities = physical_entities,
 		physical_fluid_segments = physical_fluid_segments,
 		belt_lines = BeltRestoration.attribute_lines(job.entities_to_create or {}, job.entity_map or {}),
-		restore_time_belt_lines = job.belt_attribution,
-		belt_recovery = job.belt_recovery,
 		replay_payload = job.platform_data,
 	}
 	local written = DebugExport.write_failure_black_box(filename, bundle)
@@ -242,14 +240,36 @@ function ImportCompletion.run_phase1(job)
 				anomalies, placed, unplaced))
 		end
 	else
-		-- Legacy payload (no side partition): the count-conserving consolidation restore. Kept ONLY
-		-- for old exports/upload-import files; every new export carries belt_side_groups.
-		belts_result = BeltRestoration.restore(entities_to_create, entity_map)
+		-- Payload without item_source_positions (no belt_side_groups): the legacy captured-position + consolidation
+		-- restore is DELETED (owner order 2026-07-27 — one path, no fallback). REFUSE if the
+		-- payload actually carries belt items (a platform with no belts has nothing to restore
+		-- and skips the phase cleanly). Detection: the legacy per-entity belt field is
+		-- specific_data.items = { { line = <n>, items = {...} }, ... }.
+		local has_belt_items = false
+		for _, entity_data in ipairs(entities_to_create or {}) do
+			local line_list = entity_data.specific_data and entity_data.specific_data.items
+			if type(line_list) == "table" then
+				for _, line_data in ipairs(line_list) do
+					if type(line_data) == "table" and line_data.line ~= nil
+						and type(line_data.items) == "table" and #line_data.items > 0 then
+						has_belt_items = true
+						break
+					end
+				end
+			end
+			if has_belt_items then break end
+		end
+		if has_belt_items then
+			log("[Import] REFUSED: payload carries belt items but no belt_side_groups (export predates captured source positions)"
+				.. " — re-export from the source with the current version")
+			job.metrics.belt_shape_error = "payload predates captured source positions (no belt_side_groups); the legacy restore is deleted"
+			job.metrics.belt_anomalies = 1
+		end
+		belts_result = { items_restored = 0 }
 	end
 	PhaseProfiler.stop(job.job_id, "belts")
 	job.metrics.belts_completed_tick = game.tick
 	job.metrics.belt_items_restored = belts_result and belts_result.items_restored or 0
-	job.belt_attribution = belts_result and belts_result.attribution or nil
 
 	-- Steps 1-5: Restore localized entity state (Control Behavior, Filters, Connections)
 	job.metrics.state_started_tick = game.tick
@@ -321,18 +341,10 @@ function ImportCompletion.run_phase2(job)
 		log(string.format("[Import] Inventory overflow losses: %d items lost (set_stack API cap)", job.inventory_overflow_losses.total))
 	end
 
-	-- Belt aggregate-deficit recovery — deliberately HERE, after BOTH inventory passes, never inside the
-	-- belts phase: Pass 2 re-restores the hub's inventories with clear()+refill, which wiped anything the
-	-- old in-phase recovery had inserted (recovery reported success, the strict gate physically counted
-	-- the items missing — BELT-R3/R5 [empirical, 2.0.77, tests/belt-lab/NOTEBOOK.md]). The deficit is the
-	-- one MEASURED at belt-phase end (job.belt_attribution), NOT a census recomputed here: on the live
-	-- (non-transfer) import path, ticks elapse between phases, belts drift and machines consume — BELT-R5
-	-- measured a recomputed late census misreading that legitimate movement as a 321-item deficit and
-	-- duplicating it into the hub. On the frozen transfer path the two reads agree; the stored one is
-	-- correct on both. Result banked on the job for the failure black box.
-	if job.belt_attribution then
-		job.belt_recovery = BeltRestoration.recover_deficits_to_hub(job.belt_attribution, entities_to_create, entity_map)
-	end
+	-- (Belt aggregate-deficit recovery is GONE with the legacy restore it compensated for — owner
+	-- order 2026-07-27. Source-position placement places every slot or reports it unplaced; a shortfall fails the
+	-- exact gate. The BELT-R3/R5 lesson it carried — anything inserted into the hub before Pass 2
+	-- is wiped by the clear()+refill — remains true and lives in the api-notes belt section.)
 
 	-- Deactivate entities and re-pause platform after inventory restore.
 	-- Validation requires machines to be inactive so they cannot consume items between now and validation.

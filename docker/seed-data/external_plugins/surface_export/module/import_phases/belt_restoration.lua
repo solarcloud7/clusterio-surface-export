@@ -6,34 +6,6 @@ local BeltRestoration = {}
 
 local QUALITY_NORMAL = GameUtils.QUALITY_NORMAL
 
--- insert_at's minimum lengthwise spacing between item groups (~0.25 on turbo). A captured line whose slots are
--- packed tighter than this (a backed-up belt at max compression) CANNOT be rebuilt slot-by-slot — insert_at
--- rejects the over-compressed tail (the documented −8/−143 floor). Detected purely from the CAPTURED positions
--- + dest line_length, so no runtime per-line measurement (which is unreliable on merged segments → the 267
--- phantom drops / the +108 duplication). See tests/belt-lab/NOTEBOOK.md.
-local MIN_SPACING = 0.24
-
--- True if the sorted captured slots can't be placed at insert_at's min spacing within the dest line.
-local function line_needs_consolidation(sorted_slots, len)
-    local n = #sorted_slots
-    if n == 0 then return false end
-    -- TOO MANY SLOTS to place at min spacing within the line — even if every individual adjacent gap looks
-    -- OK, N groups need ~(N)·MIN_SPACING of length. This catches the busy-case miss the pairwise-adjacent
-    -- check below does NOT: a line (esp. a short curve/underground lane) carrying more item-groups than fit,
-    -- where greedy forward-packing would push the tail past the end → per-slot drop. (consolidate_reject=0 on
-    -- CI proved consolidation always places; the loss is lines that BYPASS it — this closes that gap.)
-    if n * MIN_SPACING > len then return true end
-    local prev = nil
-    for _, item in ipairs(sorted_slots) do
-        local p = item.position
-        if not p then return false end                -- no position → insert_at_back path handles it
-        if p > len then return true end               -- captured past the dest line end
-        if prev and (p - prev) < MIN_SPACING then return true end
-        prev = p
-    end
-    return false
-end
-
 local function add_items(totals, items)
     local total = 0
     for _, item in ipairs(items or {}) do
@@ -68,7 +40,10 @@ local function neighbour_units(entity)
 end
 
 --- Census serialized-vs-live belt contents by physical entity and transport-line index.
---- Called after restoration and again at the frozen gate point; insert return values are never evidence.
+--- FORENSIC INSTRUMENT ONLY (its restore-path consumers — the legacy consolidation restore and
+--- hub-deficit recovery — were DELETED 2026-07-27, owner order): the failure black box banks this
+--- per-line expected-vs-actual attribution as evidence before a failed destination is discarded.
+--- Insert return values are never evidence.
 function BeltRestoration.attribute_lines(entities_to_create, entity_map)
     local attribution = { rows = {}, expected = {}, actual = {}, expected_total = 0, actual_total = 0 }
     for _, entity_data in ipairs(entities_to_create or {}) do
@@ -97,7 +72,7 @@ function BeltRestoration.attribute_lines(entities_to_create, entity_map)
                         unit_number = entity.unit_number, entity_id = entity_data.entity_id, entity_name = entity.name,
                         entity_type = entity.type, position = { x = entity.position.x, y = entity.position.y },
                         direction = entity.direction, line_index = line_index, line_length = line.line_length,
-                        neighbours = neighbours, compression = line_needs_consolidation(line_data.items or {}, line.line_length),
+                        neighbours = neighbours,
                         expected = expected, actual = actual, delta = delta,
                         expected_items = line_data.items or {}, actual_items = actual_items,
                     }
@@ -108,304 +83,13 @@ function BeltRestoration.attribute_lines(entities_to_create, entity_map)
     attribution.delta = attribution.actual_total - attribution.expected_total
     return attribution
 end
---- Move only whole-belt aggregate deficits to the hub. Per-window insert deltas are unsound on merged lines;
---- the completed census is the same meter used by the frozen exact gate. A partial hub insert remains visible
---- as unrecovered so the gate still fails closed.
---- PUBLIC and called LATE (import-completion, after BOTH inventory passes) — BELT-R3/R5
---- [empirical, 2.0.77, tests/belt-lab/NOTEBOOK.md]: when this ran inside restore(), Pass 2 inventory
---- restoration re-cleared the hub two phases later and silently WIPED the recovered items; recovery
---- reported success while the strict gate physically counted them missing.
-function BeltRestoration.recover_deficits_to_hub(attribution, entities_to_create, entity_map)
-    local recovery = { recovered = {}, unrecovered = {}, recovered_total = 0, unrecovered_total = 0 }
-    local hub = nil
-    for _, entity_data in ipairs(entities_to_create or {}) do
-        local entity = entity_map[entity_data.entity_id]
-        if entity and entity.valid and entity.name == "space-platform-hub" then hub = entity; break end
-    end
-    local hub_inventory = hub and hub.get_inventory(defines.inventory.hub_main) or nil
-    for key, expected in pairs(attribution.expected or {}) do
-        local deficit = expected - (attribution.actual[key] or 0)
-        if deficit > 0 then
-            local inserted = 0
-            if hub_inventory and hub_inventory.valid then
-                local item_name, quality = Util.parse_quality_key(key)
-                inserted = hub_inventory.insert({ name = item_name, count = deficit, quality = quality })
-            end
-            if inserted > 0 then recovery.recovered[key] = inserted; recovery.recovered_total = recovery.recovered_total + inserted end
-            local remainder = deficit - inserted
-            if remainder > 0 and hub then
-                local item_name, quality = Util.parse_quality_key(key)
-                -- Count what PHYSICALLY materialized, not whether the call threw. [empirical, 2.0.77,
-                -- BELT-R3 in tests/belt-lab/NOTEBOOK.md]: with a full hub, this spill returned
-                -- without error but created ZERO item-entities on the platform — the old "didn't throw =
-                -- recovered" accounting reported recovered=5/unrecovered=0 while the strict gate physically
-                -- counted all 5 missing. Sum the returned entities' stack counts; only that is recovered.
-                local spill_ok, spilled_or_err = pcall(function()
-                    return hub.surface.spill_item_stack({
-                        position = hub.position,
-                        stack = { name = item_name, count = remainder, quality = quality },
-                    })
-                end)
-                if spill_ok then
-                    local materialized = 0
-                    for _, spilled_entity in ipairs(spilled_or_err or {}) do
-                        if spilled_entity.valid and spilled_entity.stack and spilled_entity.stack.valid_for_read then
-                            materialized = materialized + spilled_entity.stack.count
-                        end
-                    end
-                    if materialized > 0 then
-                        recovery.recovered[key] = (recovery.recovered[key] or 0) + materialized
-                        recovery.recovered_total = recovery.recovered_total + materialized
-                    end
-                    if materialized < remainder then
-                        log(string.format("[Belt Restore] Hub-full deficit spill for %s: requested %d, materialized %d",
-                            key, remainder, materialized))
-                    end
-                    remainder = remainder - materialized
-                else
-                    log(string.format("[Belt Restore] Hub-full deficit spill failed for %s x%d: %s",
-                        key, remainder, tostring(spilled_or_err)))
-                end
-            end
-            if remainder > 0 then recovery.unrecovered[key] = remainder; recovery.unrecovered_total = recovery.unrecovered_total + remainder end
-        end
-    end
-    if recovery.recovered_total > 0 or recovery.unrecovered_total > 0 then
-        log(string.format("[Belt Restore] Aggregate deficit recovery: recovered=%d to hub/ground, unrecovered=%d",
-            recovery.recovered_total, recovery.unrecovered_total))
-    end
-    return recovery
-end
---- Restore all belt items synchronously in a single tick.
---- CRITICAL: Belts are always active and cannot be deactivated, so items must be restored all at once.
----
---- Factorio 2.0.76 LuaTransportLine API (signature routed through version-compat.lua; source of truth is
---- lua-api.factorio.com/2.0.76/, NOT the "latest" docs which reorder the params):
----     insert_at(position, items, belt_stack_size?) -> bool     (position FIRST; belt_stack_size caps the slot)
----
---- THE FIX (verified empirically — belt-lab R1a/R1b, commit ce9f90a; apples-to-apples, on the pinned engine):
---- Re-insert each captured slot at its EXACT position, but in ASCENDING POSITION ORDER. A controlled
---- single-loop experiment (custom surface, items packed by real belt movement, source-vs-dest physical
---- counts) showed:
----   * Inserting in the captured (UNSORTED) order lets an earlier insert occupy a slot a later item needs, so
----     insert_at PARTIAL-places and returns true anyway (the bool lies) → a few items silently dropped.
----   * Inserting SORTED BY POSITION (ascending) makes every item land at its exact position because each new
----     item goes ahead of all already-placed ones — no collisions. Result: 100% on-belt across single items
----     (belt_stack_size 1) and full stacks (4) on every ISOLATED topology (R0–R1e in tests/belt-lab/).
----
---- WHY THERE IS NO OVERFLOW ROUTING (proven dead-end — see tests/belt-lab/NOTEBOOK.md "DECISIVE A/B"):
---- A post-pass that re-routed `insert_at`-rejected items to connected lines was tried and REMOVED. It
---- DUPLICATED items (+108 gain on a real transfer, totalItemLoss=0). Root cause: belts are "windows" onto a
---- shared merged internal line, so a per-window `get_item_count()` delta cannot see placement that landed on a
---- sibling window. That under-count both (a) inflates the unplaced remainder → routing re-places items that
---- were already on the belt → duplication, and (b) makes the per-line "terminal_failed" tally over-report
---- massively (observed 507 "unplaceable" while the authoritative whole-surface gate showed only −8 truly
---- missing). You cannot reliably measure per-window placement on a merged segment, so routing has no sound
---- foundation. The residual −8 (iron-plate, output-edge item that max-compression can't reconstruct) is the
---- documented sub-0.1% belt floor and is well within the strict transfer gate. The GATE — a whole-surface
---- physical count — is the authoritative loss instrument here, NOT these per-line counters.
----
---- @param entities_to_create table: List of entity data objects
---- @param entity_map table: Map of entity_id to LuaEntity
-function BeltRestoration.restore(entities_to_create, entity_map)
-    log("[Import] Restoring belt items (2.0.76: sort slots by position, then insert_at — 100% on-belt)...")
-
-    local belt_count = 0
-    local placed_count = 0      -- items physically placed (per-line get_item_count delta — see caveat below)
-    local expected_total = 0    -- total belt items the payload says should be on belts
-    -- NOTE: per-line `placed`/`unplaced` OVER-report misses on merged segments (a sibling window absorbs the
-    -- item invisibly). They are a rough diagnostic only — the transfer gate's whole-surface physical count is
-    -- authoritative. We do NOT route, re-insert, or raise a user-facing alarm off these numbers (that path
-    -- duplicated; see header + NOTEBOOK).
-    local unplaced_diag = 0
-
-    -- Opt-in diagnostic (default OFF, zero prod impact; set storage.surface_export_config.belt_diag=true):
-    -- classify each dropped item as GEOMETRY (captured pos beyond the dest line's end — source lane was
-    -- longer, e.g. a curve outside-lane) vs COMPRESSION (in-bounds but too tight for insert_at's ~0.25 min
-    -- spacing). Decides whether multi-tick (helps compression only) can reach literal-zero, or whether the
-    -- loss is geometry (needs dest-geometry preservation instead). See tests/belt-lab/NOTEBOOK.md.
-    local diag = storage.surface_export_config and storage.surface_export_config.belt_diag == true
-    local geom_items, comp_items, other_items, nopos_items = 0, 0, 0, 0
-
-    -- Oversized-stack consolidation: over-compressed lines (whose captured slots are packed tighter than
-    -- insert_at's min spacing — the −8/−143 floor) are rebuilt as one oversized stack per (name,quality)
-    -- instead of dropping the un-placeable tail. insert_at accepts an arbitrary belt_stack_size and the engine
-    -- keeps it — VERIFIED end-to-end: survives save/load, gate reports literal-zero with no duplication, and
-    -- post-activation loss-analysis is ZERO (a powered factory draining the over-stacks conserves). ON by
-    -- default (preserving items beats cosmetic layout; the belt self-heals as the factory pulls). Set
-    -- storage.surface_export_config.belt_consolidate=false to fall back to the lossy −8 floor.
-    local consolidate_enabled = not (storage.surface_export_config and storage.surface_export_config.belt_consolidate == false)
-    local consolidated_lines = 0
-    local consolidate_reject_count = 0   -- consolidated groups insert_at rejected (always tracked — the busy-case signal)
-    local consolidate_reject_total = 0   -- items in those rejected groups
-
-    for _, entity_data in ipairs(entities_to_create) do
-        local entity = entity_map[entity_data.entity_id]
-
-        if not entity or not entity.valid then goto continue end
-        if not entity_data.specific_data or not entity_data.specific_data.items then goto continue end
-        if not entity.get_transport_line then goto continue end
-
-        belt_count = belt_count + 1
-
-        for _, line_data in ipairs(entity_data.specific_data.items) do
-            local line = entity.get_transport_line(line_data.line)
-            if line and line.valid then
-                -- Collect this line's slots and the expected total, then SORT BY POSITION ASCENDING.
-                -- Position order = collision-free placement (see header).
-                local slots = {}
-                local expected = 0
-                for _, item in ipairs(line_data.items) do
-                    slots[#slots + 1] = item
-                    expected = expected + item.count
-                end
-                expected_total = expected_total + expected
-                table.sort(slots, function(a, b) return (a.position or 0) < (b.position or 0) end)
-
-                if consolidate_enabled and line_needs_consolidation(slots, line.line_length) then
-                    -- Over-compressed line: group items by (name,quality) and place each group as ONE oversized
-                    -- stack at a spread position. insert_at takes an arbitrary belt_stack_size, so all items fit
-                    -- → zero loss (vs dropping the over-compressed tail). Positions are cosmetic on a maxed belt
-                    -- and self-heal as the factory pulls items. Deterministic (no per-line measurement → no dup).
-                    local groups, order = {}, {}
-                    for _, item in ipairs(slots) do
-                        local q = item.quality or QUALITY_NORMAL
-                        local key = item.name .. "\0" .. q
-                        local g = groups[key]
-                        if not g then g = { name = item.name, quality = q, count = 0 }; groups[key] = g; order[#order + 1] = key end
-                        g.count = g.count + item.count
-                    end
-                    local len = line.line_length
-                    for gi, key in ipairs(order) do
-                        local g = groups[key]
-                        local pos = math.min((gi - 1) * 0.25, len - 0.05)
-                        local before = line.get_item_count()
-                        local ok, ret = pcall(function()
-                            return VersionCompat.belt_insert_at(line, pos, { name = g.name, count = g.count, quality = g.quality }, g.count)
-                        end)
-                        if not ok then
-                            log(string.format("[Belt Restore] consolidate insert ERROR on %s line %d: %s",
-                                entity.name, line_data.line, tostring(ret)))
-                        end
-                        placed_count = placed_count + (line.get_item_count() - before)
-                        -- A false return = the consolidated group was REJECTED (likely a multi-type line where
-                        -- N groups × 0.25 overran the line, or two types within 0.25). This is exactly the
-                        -- busy-case failure mode single-type over-compression doesn't show. Track always.
-                        if ret == false then
-                            consolidate_reject_count = consolidate_reject_count + 1
-                            consolidate_reject_total = consolidate_reject_total + g.count
-                            if diag then
-                                log(string.format("[BeltDiag] CONSOLIDATE-REJECT: %s x%d at pos=%.4f line_len=%.4f group %d/%d on %s line %d",
-                                    g.name, g.count, pos, len, gi, #order, entity.name, line_data.line))
-                            end
-                        end
-                    end
-                    consolidated_lines = consolidated_lines + 1
-                else
-                for _, item in ipairs(slots) do
-                    local stack = {
-                        name = item.name,
-                        count = item.count,
-                        quality = item.quality or QUALITY_NORMAL,
-                    }
-                    local before = line.get_item_count()
-                    local ok, err = pcall(function()
-                        if item.position then
-                            return VersionCompat.belt_insert_at(line, item.position, stack, item.count)
-                        else
-                            return VersionCompat.belt_insert_at_back(line, stack, item.count)
-                        end
-                    end)
-                    if not ok then
-                        -- A genuine insert exception (signature/API misuse) — reliable, log it loud.
-                        log(string.format("[Belt Restore] insert ERROR on %s line %d: %s",
-                            entity.name, line_data.line, tostring(err)))
-                    end
-                    local placed = line.get_item_count() - before
-                    -- NO per-slot recovery here. BELT-R4 [empirical, 2.0.77, tests/belt-lab/NOTEBOOK.md]:
-                    -- a slot-merge triggered off this `placed < item.count` reading fired on the merged-
-                    -- segment PHANTOM shorts (not just real drops) and duplicated +341 items on the replay
-                    -- payload. The header rule — never route/re-insert off per-line measurements — applies
-                    -- to recovery triggers too. Real deficits are recovered AGGREGATE-level (name-keyed,
-                    -- from attribute_lines totals, the meter that matched the gate in both real failures)
-                    -- by recover_deficits_to_hub below.
-                    placed_count = placed_count + placed
-                    if placed < item.count then
-                        local short = item.count - placed
-                        unplaced_diag = unplaced_diag + short
-                        if diag then
-                            local pos = item.position
-                            local len = line.line_length
-                            if not pos then
-                                nopos_items = nopos_items + short
-                            elseif pos > len then
-                                geom_items = geom_items + short
-                                log(string.format("[BeltDiag] GEOMETRY off-end: %s pos=%.4f > dest_len=%.4f (over %.4f) short=%d",
-                                    item.name, pos, len, pos - len, short))
-                            else
-                                local nearest = 999
-                                for _, e in ipairs(line.get_detailed_contents()) do
-                                    local d = math.abs(e.position - pos); if d < nearest then nearest = d end
-                                end
-                                if nearest < 0.25 then
-                                    comp_items = comp_items + short
-                                    log(string.format("[BeltDiag] COMPRESSION: %s pos=%.4f dest_len=%.4f nearest=%.4f short=%d",
-                                        item.name, pos, len, nearest, short))
-                                else
-                                    other_items = other_items + short
-                                    log(string.format("[BeltDiag] OTHER inbounds: %s pos=%.4f dest_len=%.4f nearest=%.4f short=%d",
-                                        item.name, pos, len, nearest, short))
-                                end
-                            end
-                        end
-                    end
-                end
-                end
-            end
-        end
-
-        ::continue::
-    end
-
-    local attribution = BeltRestoration.attribute_lines(entities_to_create, entity_map)
-    -- Deficit recovery is NOT called here. It moved to import-completion AFTER the inventory passes
-    -- (see recover_deficits_to_hub's header) — anything inserted into the hub from this phase is
-    -- wiped by the Pass-2 hub inventory clear()+refill.
-    unplaced_diag = math.max(0, -attribution.delta)
-    log(string.format(
-        "[Import] Belt restoration complete. %d belts: expected=%d actual=%d delta=%d consolidated_lines=%d",
-        belt_count, attribution.expected_total, attribution.actual_total, attribution.delta, consolidated_lines))
-
-    -- Surface consolidation rejects to the cluster log (game.print mirrors to factorio log → cluster log,
-    -- which CI captures even when belt_diag is off). consolidate_reject_total > 0 means the oversized-stack
-    -- fix could not place some groups — the busy-case signal we can't otherwise see from CI.
-    if consolidate_reject_count > 0 then
-        game.print(string.format("[BeltConsolidate] %d groups REJECTED (%d items) across %d consolidated lines",
-            consolidate_reject_count, consolidate_reject_total, consolidated_lines), { 1, 0.5, 0 })
-    end
-
-    if diag then
-        log(string.format("[BeltDiag] SUMMARY unplaced=%d -> geometry=%d compression=%d other=%d nopos=%d",
-            unplaced_diag, geom_items, comp_items, other_items, nopos_items))
-        -- game.print mirrors to the factorio log → cluster log → CI capture (log() above does NOT reach CI).
-        game.print(string.format("[BeltDiag] unplaced=%d geom=%d comp=%d other=%d | consolidated_lines=%d reject=%d(%d items)",
-            unplaced_diag, geom_items, comp_items, other_items, consolidated_lines, consolidate_reject_count, consolidate_reject_total), { 0.6, 0.8, 1 })
-    end
-
-    return {
-        belts_processed = belt_count,
-        items_restored = placed_count,
-        expected_total = expected_total,
-        attribution = attribution,
-    }
-end
-
--- === Side-scoped restore (BELT-R10..R12) ===================================================
+-- === Captured-source-position side-scoped restore (BELT-R10..R12, R16) ====================================
 -- The canonical belt laws live in docs/factorio-2.0-api-notes.md "Belt transport-line laws
--- (CANONICAL)". These two functions are the SINGLE implementation of the proven recipe; the
--- selection-lab diagnostic tool is the first consumer, and the Phase 5 transfer rewrite will
--- route restore() through them (capture at export's atomic scan, placement here), retiring the
--- captured-position + consolidation path above.
+-- (CANONICAL)". capture_side_groups + restore_side_groups are THE belt restore — the ONLY
+-- placement path (owner order 2026-07-27: the legacy captured-position + consolidation restore,
+-- hub-deficit recovery, and the first-fit fallback are DELETED; a payload without
+-- item_source_positions is REFUSED at import). Consumers: the transfer/upload import, selection-lab paste, and the
+-- selftest instruments.
 
 -- Shape validator for a payload's belt_side_groups (review finding F1, 2026-07-27): the restore
 -- runs in on_tick context where an uncaught throw KILLS the headless server (exit 255, measured
@@ -431,14 +115,16 @@ function BeltRestoration.validate_side_groups(side_groups)
                 return false, string.format("group %d slot %d malformed", gi, si)
             end
         end
-        if g.seats ~= nil then
-            if type(g.seats) ~= "table" or #g.seats % 3 ~= 0 then
-                return false, string.format("group %d seats malformed", gi)
-            end
-            for vi, v in ipairs(g.seats) do
-                if type(v) ~= "number" then
-                    return false, string.format("group %d seats[%d] is not a number", gi, vi)
-                end
+        -- item_source_positions is REQUIRED (owner order 2026-07-27: no fallback path) — exactly
+        -- three numbers per slot. A payload without it fails here and the import refuses it;
+        -- re-export from the source with the current version.
+        if type(g.item_source_positions) ~= "table" or #g.item_source_positions ~= 3 * #g.slots then
+            return false, string.format("group %d item_source_positions missing or misaligned (need %d values, got %s) — payloads without captured source positions are no longer importable, re-export from the source",
+                gi, 3 * #g.slots, type(g.item_source_positions) == "table" and tostring(#g.item_source_positions) or type(g.item_source_positions))
+        end
+        for vi, v in ipairs(g.item_source_positions) do
+            if type(v) ~= "number" then
+                return false, string.format("group %d item_source_positions[%d] is not a number", gi, vi)
             end
         end
     end
@@ -452,10 +138,10 @@ end
 function BeltRestoration.capture_side_groups(belt_pairs)
     if not belt_pairs or #belt_pairs == 0 then return nil end
     -- SEAT METADATA (owner ruling 2026-07-27, PRODUCTION — supersedes the earlier debug-gate
-    -- scoping): each side carries a compact flat array `seats` = { id1, li1, k1, id2, li2, k2, … },
+    -- scoping): each side carries a compact flat array `item_source_positions` = { id1, li1, k1, id2, li2, k2, … },
     -- three numbers per slot in slot order — the source entity, transport-line index, and exact
     -- position (1/256ths) the slot was captured from. Restore seats each item back onto its OWN
-    -- line at its OWN position (seat-first), which is what kills the boundary-handoff duplication
+    -- line at its OWN position (each item placed back at its captured source position), which is what kills the boundary-handoff duplication
     -- class; the reconciliation instrument reads the same data. Compact by design: numbers only,
     -- one field name per side — the per-slot {id,li,k} object form nearly doubled the workhorse
     -- payload. Zero extra reads: the loop already holds all three values.
@@ -469,7 +155,7 @@ function BeltRestoration.capture_side_groups(belt_pairs)
             end
             if not gi then
                 gi = #groups + 1
-                groups[gi] = { rep = line, seen = {}, members = {}, slots = {}, seats = {} }
+                groups[gi] = { rep = line, seen = {}, members = {}, slots = {}, item_source_positions = {} }
             end
             local g = groups[gi]
             g.members[#g.members + 1] = { id = bp.id, li = li }
@@ -482,7 +168,7 @@ function BeltRestoration.capture_side_groups(belt_pairs)
                         q = (it.stack.quality and it.stack.quality.name) or QUALITY_NORMAL,
                         ct = it.stack.count,
                     }
-                    local s = g.seats
+                    local s = g.item_source_positions
                     s[#s + 1] = bp.id
                     s[#s + 1] = li
                     s[#s + 1] = math.floor((it.position or 0) * 256 + 0.5)
@@ -492,18 +178,19 @@ function BeltRestoration.capture_side_groups(belt_pairs)
     end
     local out = {}
     for _, g in ipairs(groups) do
-        out[#out + 1] = { members = g.members, slots = g.slots, seats = g.seats }
+        out[#out + 1] = { members = g.members, slots = g.slots, item_source_positions = g.item_source_positions }
     end
     return out
 end
 
--- Place each side's (name,quality,count) multiset SEAT-FIRST — each slot back onto its own
--- captured line/position (rehydrated from the side's compact seats array) — with reverse
--- first-fit over the side's own windows as the fallback (seatless old payloads, geometry drift),
--- positions floored at one tick of belt_speed (BELT-R10 — the write-frame law). Every placement
--- is validated by a physical SIDE-census delta (never insert_at return values), and the WHOLE
--- restore is bracketed by ONE global before/after census that must equal the placed sums
--- key-for-key — any mismatch is a loud anomaly. No consolidation, no recovery, no legacy path.
+-- Place each side's (name,quality,count) multiset AT CAPTURED SOURCE POSITIONS — each slot back onto its own
+-- captured line at its own captured position (rehydrated from the side's compact seats array),
+-- request floored at one tick of belt_speed (BELT-R10 — the write-frame law). There is NO
+-- fallback placement (owner order 2026-07-27): a slot whose captured source position cannot place is honest unplaced
+-- loss the exact gate refuses. Every placement is validated by a physical SIDE-census delta
+-- (never insert_at return values), and the WHOLE restore is bracketed by ONE global before/after
+-- census that must equal the placed sums key-for-key — any mismatch is a loud anomaly. No
+-- consolidation, no recovery, no legacy path.
 --
 -- SCALE (owner ruling 2026-07-26; the "perf measure-first" adjudication vindicated live): the
 -- original implementation took TWO global snapshots inside the innermost placement loop for
@@ -581,53 +268,43 @@ function BeltRestoration.restore_side_groups(side_groups, entity_map)
     local ledger = {}
     local unplaced_list = {}
     local unknown_logged = 0
-    -- Rehydrate the payload's compact seats array (see capture_side_groups) into per-slot
-    -- src = { id, li, k } working form. Old payloads without seats simply get no src — every
-    -- consumer below degrades to the first-fit fallback.
+    -- Rehydrate the payload's compact item_source_positions array (see capture_side_groups) into per-slot
+    -- src = { id, li, k } working form. item_source_positions is REQUIRED on the production path
+    -- (the validator refuses payloads without it); this guard covers direct callers (selftest instruments,
+    -- selection-lab) — a slot left without src is honest unplaced loss, there is no fallback.
     for _, g in ipairs(side_groups) do
-        -- Misaligned seats (not a multiple of 3) would rehydrate half-seats (li/k nil) that throw
-        -- later — skip the whole group's seats instead; every slot degrades to first-fit. The
-        -- production import refuses such payloads at validate_side_groups; this guard covers
-        -- direct callers (selftest instruments, selection-lab).
-        if type(g.seats) == "table" and #g.seats % 3 == 0 then
+        if type(g.item_source_positions) == "table" and #g.item_source_positions % 3 == 0 then
             for si, slot in ipairs(g.slots) do
                 local base = (si - 1) * 3
-                local id = g.seats[base + 1]
+                local id = g.item_source_positions[base + 1]
                 if id ~= nil then
-                    slot.src = { id = id, li = g.seats[base + 2], k = g.seats[base + 3] }
+                    slot.src = { id = id, li = g.item_source_positions[base + 2], k = g.item_source_positions[base + 3] }
                 end
             end
-        elseif g.seats ~= nil then
-            log(string.format("[BeltRestoration] seats array misaligned (len %d) — group falls back to first-fit",
-                type(g.seats) == "table" and #g.seats or -1))
+        elseif g.item_source_positions ~= nil then
+            log(string.format("[BeltRestoration] item_source_positions misaligned (len %d) — group's slots will be UNPLACED",
+                type(g.item_source_positions) == "table" and #g.item_source_positions or -1))
         end
     end
+    -- Slots whose captured-line scan exhausted; the over-compression merge pass below owns them
+    -- (recorded with their side group so the merge validates through the same side census).
+    local pending = {}
     for _, g in ipairs(side_groups) do
-        local wins = {}
-        for _, m in ipairs(g.members) do
-            local entity = entity_map[m.id]
-            if entity and entity.valid then
-                -- (entity, li) — the LINE is fetched fresh at every use, never stored: a side's own
-                -- inserts split its segments, and both READS and WRITES through a pre-split handle
-                -- are the aged-handle class (R12). An aged READ that misses a landed item made the
-                -- retry below DOUBLE-PLACE it — the import-context excess signature (physical >
-                -- placed by small counts) that the fresh-per-run dup_kill never reproduced.
-                wins[#wins + 1] = {
-                    entity = entity,
-                    li = m.li,
-                    kmin = math.floor(entity.prototype.belt_speed * 256 + 0.5),
-                }
-            end
-        end
+        -- Lines are fetched fresh at every use, never stored: a side's own inserts split its
+        -- segments, and both READS and WRITES through a pre-split handle are the aged-handle
+        -- class (R12).
         local function side_total()
             local lines = {}
-            for _, w in ipairs(wins) do lines[#lines + 1] = w.entity.get_transport_line(w.li) end
+            for _, m in ipairs(g.members) do
+                local entity = entity_map[m.id]
+                if entity and entity.valid then lines[#lines + 1] = entity.get_transport_line(m.li) end
+            end
             return snapshot(lines)
         end
-        -- One validated insert, shared by the seat-first attempt and the first-fit fallback.
-        -- Returns true (landed, ledgered), false (landed WRONG — anomaly, abandon slot), or
-        -- nil (nothing landed anywhere — the fresh-handle regime guarantee — keep scanning; if
-        -- something DID land elsewhere the final bracket surfaces it, never silently).
+        -- One validated insert. Returns true (landed, ledgered), false (landed WRONG — anomaly,
+        -- abandon slot), or nil (nothing landed anywhere — the fresh-handle regime guarantee —
+        -- keep scanning; if something DID land elsewhere the final bracket surfaces it, never
+        -- silently).
         local function try_insert(line, w_entity, w_li, k, slot, wanted_key)
             if not line.can_insert_at(k / 256) then return nil end
             local sb = side_total()
@@ -666,14 +343,15 @@ function BeltRestoration.restore_side_groups(side_groups, entity_map)
             local done = false
             local wanted_key = item_key(slot.n, slot.q)
             if slot.src then
-                -- SEAT-FIRST (production placement, owner ruling 2026-07-27): scan DOWN from the
-                -- captured seat — request = src.k minus one write-frame, so the landing (request +
-                -- one tick of belt_speed, BELT-R10) comes out on the seat — putting the item on its
+                -- CAPTURED SOURCE POSITION placement (production, owner ruling 2026-07-27): scan DOWN
+                -- from the captured position — request = src.k minus one write-frame, so the landing
+                -- (request + one tick of belt_speed, BELT-R10) comes out at the captured position —
+                -- putting the item on its
                 -- OWN line as close to its original position as capacity allows. This is what kills
                 -- the boundary-handoff class: first-fit's top-of-line writes seated items across
                 -- piece boundaries (underground internal lines at k=kfloor), duplicating on
-                -- census-invisible cross-side handoffs (measured live 2026-07-27; seat-first run:
-                -- 5777/5777 same-line, BORN 0, full exact gate PASS). src belongs to this same
+                -- census-invisible cross-side handoffs (measured live 2026-07-27; source-position
+                -- run: 5777/5777 same-line, BORN 0, full exact gate PASS). src belongs to this same
                 -- group by construction, so side_total() covers the write.
                 local se = entity_map[slot.src.id]
                 if se and se.valid then
@@ -688,43 +366,120 @@ function BeltRestoration.restore_side_groups(side_groups, entity_map)
                             break
                         end
                     end
+                    -- A scan-exhausted slot goes to the IN-TRANSIT boundary re-home pass below —
+                    -- never straight to unplaced.
                 end
             end
+            -- A slot whose captured line cannot hold it goes to the over-compression merge pass
+            -- below; anything that pass cannot place is honest unplaced loss. The reverse
+            -- first-fit window fallback that used to catch this is the machinery whose
+            -- top-of-line writes caused the BELT-R16 boundary-handoff duplication class — it stays
+            -- deleted.
             if not done then
-                for wj = #wins, 1, -1 do
-                    local w = wins[wj]
-                    -- Per-window descending CURSOR (the second quadratic, measured 2026-07-27): starting
-                    -- every slot's scan at the line top made slot N wade through N occupied positions —
-                    -- O(N^2) can_insert_at calls per dense line, a second workhorse-scale stall after the
-                    -- snapshot one. Reverse first-fit only ever places BELOW the previous success, so
-                    -- everything above the cursor is occupied by construction and resuming there is
-                    -- sound for THIS slot. (Not literally "semantics unchanged": a position skipped
-                    -- after a nothing-landed probe stays skipped for later slots that might have fit
-                    -- it — the consequence is under-placement, which surfaces as unplaced and fails
-                    -- the exact gate. Fail-closed, never silent.) The seat-first path never moves a
-                    -- cursor: it only ever ADDS occupancy, so "above the cursor is occupied" stays
-                    -- true and the fallback semantics are unchanged.
-                    local line = w.entity.get_transport_line(w.li)
-                    local maxk = w.cursor or math.floor(line.line_length * 256 + 0.5)
-                    for k = maxk, w.kmin, -1 do
-                        local r = try_insert(line, w.entity, w.li, k, slot, wanted_key)
-                        if r == true then
-                            w.cursor = k
-                            done = true
-                            break
-                        elseif r == false then
-                            done = true
-                            break
-                        end
-                    end
-                    if done then break end
-                end
-            end
-            if not done then
-                unplaced = unplaced + slot.ct
-                unplaced_list[#unplaced_list + 1] = slot
+                pending[#pending + 1] = { slot = slot, g = g }
             end
           end
+        end
+    end
+    -- OVER-COMPRESSION MERGE (owner ruling 2026-07-27: a platform must transfer WHENEVER —
+    -- refusing a live capture is not acceptable — and the remedy is the ESTABLISHED oversized-stack
+    -- law, not a new placement concept). The engine under pressure packs a line tighter than
+    -- insert_at can recreate: measured from the banked black box, a 1-tile turbo line captured
+    -- with FIVE items, the front one 14/256 behind its neighbour — the same class as the historic
+    -- legacy belt floor. The tested engine fact (api-notes; the fix that took that floor to zero):
+    -- insert_at accepts an arbitrary belt_stack_size and the engine KEEPS the oversized stack.
+    -- So an unplaceable slot MERGES into an already-placed stack of the SAME (name, quality) on
+    -- its OWN captured line — remove that stack, re-insert at the same position with the combined
+    -- count as ONE oversized stack — validated by the same side census as every other write, and
+    -- self-healing as the factory drains the lane. Same line, same item; no cross-side placement,
+    -- no graph reasoning. A slot with no same-item partner on its line stays honest unplaced loss.
+    for _, entry in ipairs(pending) do
+        local slot, g = entry.slot, entry.g
+        local done = false
+        local se = slot.src and entity_map[slot.src.id]
+        if se and se.valid then
+            local wanted_key = item_key(slot.n, slot.q)
+            local partner
+            for _, ledger_entry in ipairs(ledger) do
+                if ledger_entry.e == se and ledger_entry.li == slot.src.li
+                    and item_key(ledger_entry.slot.n, ledger_entry.slot.q) == wanted_key then
+                    partner = ledger_entry
+                end
+            end
+            if partner then
+                local function side_total_merge()
+                    local lines = {}
+                    for _, m in ipairs(g.members) do
+                        local e2 = entity_map[m.id]
+                        if e2 and e2.valid then lines[#lines + 1] = e2.get_transport_line(m.li) end
+                    end
+                    return snapshot(lines)
+                end
+                -- Scan-place a stack near the partner's position: down from it first, then up,
+                -- staying one write-frame short of the line end (the BELT-R16 handoff zone). A
+                -- FRESH line handle per call — remove_item reshapes the line, and both reads and
+                -- writes through a pre-mutation handle are the aged-handle class (this exact
+                -- pattern failed live with a fixed-position re-insert before this scan existed).
+                local function scan_place(count)
+                    local mline = se.get_transport_line(slot.src.li)
+                    local mkmin = math.floor(se.prototype.belt_speed * 256 + 0.5)
+                    local mtop = math.floor(mline.line_length * 256 + 0.5)
+                    for k = math.min(partner.k, mtop - mkmin), mkmin, -1 do
+                        if mline.can_insert_at(k / 256) then
+                            VersionCompat.belt_insert_at(mline, k / 256,
+                                { name = slot.n, quality = slot.q, count = count }, count)
+                            return
+                        end
+                    end
+                    for k = partner.k + 1, mtop - mkmin do
+                        if mline.can_insert_at(k / 256) then
+                            VersionCompat.belt_insert_at(mline, k / 256,
+                                { name = slot.n, quality = slot.q, count = count }, count)
+                            return
+                        end
+                    end
+                end
+                local merged_ct = partner.slot.ct + slot.ct
+                local sb = side_total_merge()
+                local removed = se.get_transport_line(slot.src.li).remove_item(
+                    { name = slot.n, quality = slot.q, count = partner.slot.ct })
+                if removed == partner.slot.ct then
+                    scan_place(merged_ct)
+                end
+                local sa = side_total_merge()
+                if changed_only(sb, sa, wanted_key, slot.ct) then
+                    placed = placed + slot.ct
+                    expected_by_key[wanted_key] = (expected_by_key[wanted_key] or 0) + slot.ct
+                    -- One merged oversized stack now carries both slots — update the ledger entry
+                    -- so the reconciliation matches the physical stack it will actually find.
+                    partner.slot = { n = slot.n, q = slot.q, ct = merged_ct, src = partner.slot.src }
+                    log(string.format(
+                        "[BeltRestoration] OVER-COMPRESSION MERGE: %s x%d joined the stack near entity %s line %d (now x%d) — engine packed tighter than insert_at can recreate",
+                        slot.n, slot.ct, tostring(slot.src.id), slot.src.li, merged_ct))
+                    done = true
+                else
+                    -- The merge did not land exactly. Put the partner stack back (if removed) and
+                    -- re-check; any residue is an anomaly the verdict refuses.
+                    if removed > 0 then
+                        scan_place(removed)
+                    end
+                    local sr = side_total_merge()
+                    if same_snapshot(sb, sr) then
+                        log(string.format(
+                            "[BeltRestoration] OVER-COMPRESSION MERGE could not land for %s x%d — partner restored, slot stays unplaced",
+                            slot.n, slot.ct))
+                    else
+                        anomalies = anomalies + 1
+                        log(string.format(
+                            "[BeltRestoration] OVER-COMPRESSION MERGE left residue for %s x%d (removed=%d) — anomaly, verdict will refuse",
+                            slot.n, slot.ct, removed))
+                    end
+                end
+            end
+        end
+        if not done then
+            unplaced = unplaced + slot.ct
+            unplaced_list[#unplaced_list + 1] = slot
         end
     end
     -- The restore-granularity bracket: the global physical delta must equal the placed sums for
@@ -888,7 +643,7 @@ function BeltRestoration.restore_side_groups(side_groups, entity_map)
                     tostring(slot.src.id), slot.src.li, tostring(slot.src.k)) or ""))
         end
         log(string.format(
-            "[BeltRestoration] RECON: physical %d | traced %d (same-line %d, moved-line %d, no-src %d) | preexisting %d | BORN %d | VANISHED %d | ct-drift %d | aliased %d | unplaced-slots %d | seat-offset avg %.1f max %d (n=%d)",
+            "[BeltRestoration] RECON: physical %d | traced %d (same-line %d, moved-line %d, no-src %d) | preexisting %d | BORN %d | VANISHED %d | ct-drift %d | aliased %d | unplaced-slots %d | source-pos-offset avg %.1f max %d (n=%d)",
             stats.phys, stats.traced, stats.same_line, stats.moved_line, stats.no_src,
             stats.preexisting, stats.born, stats.vanished, stats.ct_drift, stats.aliased,
             #unplaced_list, dk_n > 0 and dk_sum / dk_n or 0, dk_max, dk_n))

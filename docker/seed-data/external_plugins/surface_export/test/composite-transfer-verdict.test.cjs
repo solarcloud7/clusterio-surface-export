@@ -421,29 +421,43 @@ test("fluid-loss hook is allowlisted and fires before the single gate", () => {
 // 2.0.77 fluid-lab instrument for the buffer/window duality that no longer exists at 2.1 — plasma is no
 // longer special (owner ruling 2026-07-20). Its consumer is gone from import-completion; the hook is deleted.
 
-test("belt diagnostics census complete restored lines", () => {
+// REWRITTEN 2026-07-27 (owner order: legacy purge): the consolidation restore, hub-deficit
+// recovery, and the first-fit fallback are DELETED. attribute_lines survives as the
+// black box's forensic instrument; the production restore contract is captured-source-position placement with a shape
+// validator guarding the on_tick path (review F1) and anomalies failing every import path (F2).
+test("belt forensic census survives the legacy purge; recovery machinery is gone", () => {
 	const restoration = fs.readFileSync(path.join(moduleRoot, "import_phases", "belt_restoration.lua"), "utf8");
 	assert.match(restoration, /function BeltRestoration\.attribute_lines\s*\(/,
-		"belt attribution must be independently repeatable at restore and gate time");
+		"the black box's per-line expected-vs-actual attribution must remain independently repeatable");
 	assert.match(restoration, /entity\.unit_number[\s\S]*line_index[\s\S]*expected[\s\S]*actual[\s\S]*delta/,
 		"attribution rows must name a physical entity and line with both sides of the comparison");
 	assert.match(restoration, /attribution\.actual_total\s*-\s*attribution\.expected_total/,
-		"the diagnostic total must come from the completed physical census, not insert return values");
-	assert.match(restoration, /attribution\s*=\s*attribution/,
-		"restore must return its completed census so the black box retains restore-time evidence");
-	assert.match(restoration, /recover_deficits_to_hub[\s\S]*attribution\.expected[\s\S]*attribution\.actual/,
-		"belt recovery must use the whole-belt aggregate census, never per-window insert results");
-	assert.match(restoration, /hub_inventory\.insert[\s\S]*spill_item_stack[\s\S]*recovered[\s\S]*unrecovered/,
-		"a restore-side deficit must move recoverably to the hub and expose any insertion shortfall");
+		"the forensic total must come from the completed physical census, not insert return values");
+	assert.doesNotMatch(restoration, /recover_deficits_to_hub|function BeltRestoration\.restore\s*\(|line_needs_consolidation|MIN_SPACING/,
+		"the legacy consolidation restore and hub-deficit recovery must stay deleted (owner order 2026-07-27)");
+});
+test("source-position restore is guarded on the on_tick path and anomalies fail every import", () => {
+	const restoration = fs.readFileSync(path.join(moduleRoot, "import_phases", "belt_restoration.lua"), "utf8");
+	const completion = fs.readFileSync(path.join(moduleRoot, "core", "import-completion.lua"), "utf8");
+	assert.match(restoration, /function BeltRestoration\.validate_side_groups\s*\(/,
+		"the shape validator must exist — an uncaught throw on the import's on_tick path kills the server");
+	assert.match(restoration, /item_source_positions missing or misaligned[\s\S]*payloads without captured source positions are no longer importable/,
+		"item_source_positions must be REQUIRED: a payload without it is refused, never routed to a fallback");
+	assert.match(completion, /validate_side_groups\(side_groups\)/,
+		"the import must shape-validate belt_side_groups before restoring");
+	assert.match(completion, /pcall\(BeltRestoration\.restore_side_groups/,
+		"the restore call must be pcall-wrapped: a throw becomes a verdict refusal, never server death");
+	assert.match(completion, /belt_anomalies[\s\S]*failedStage = result\.failedStage or "belts"/,
+		"belt anomalies must refuse the transfer verdict without clobbering an earlier failure stage");
+	assert.match(completion, /not \(is_transfer and has_verification\)[\s\S]*belt_anomalies[\s\S]*failedStage = "belts"/,
+		"belt anomalies must fail NON-transfer imports too (upload/clone) — never a silent success");
+	assert.match(completion, /predates captured source positions/,
+		"a legacy payload carrying belt items without side groups must be refused loudly");
 });
 test("failed transfer banks gate-time belt attribution and replayable payload", () => {
 	const completion = fs.readFileSync(path.join(moduleRoot, "core", "import-completion.lua"), "utf8");
-	assert.match(completion, /job\.belt_attribution\s*=\s*belts_result\s+and\s+belts_result\.attribution/,
-		"restore-time attribution must survive until the frozen verdict");
 	assert.match(completion, /belt_lines\s*=\s*BeltRestoration\.attribute_lines/,
 		"failure black box must refresh attribution at the frozen gate point");
-	assert.match(completion, /belt_recovery\s*=\s*job\.belt_recovery/,
-		"failure black box must explain any aggregate deficit moved to the hub");
 	assert.match(completion, /replay_payload\s*=\s*job\.platform_data/,
 		"every failed transfer must bank its exact replayable serialized input");
 });

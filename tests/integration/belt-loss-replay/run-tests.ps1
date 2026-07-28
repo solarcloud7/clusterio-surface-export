@@ -1,18 +1,34 @@
 <#
 .SYNOPSIS
-    Deterministic replay of the 550-belt aggregate restoration deficit.
+    Missing-source-positions payload refusal — the successor contract of the 550-belt aggregate-deficit replay.
+
+.DESCRIPTION
+    HISTORY: this test replayed a banked 550-belt payload through the legacy consolidation
+    restore and asserted the exact gate preserved 19 processing units across 5 runs — the
+    kill-measurement for the aggregate-deficit loss class. The legacy restore (consolidation +
+    hub-deficit recovery + first-fit fallback) was DELETED 2026-07-27 (owner purge
+    order): item_source_positions is REQUIRED and a payload without it is REFUSED at import, so the loss class
+    this replay measured is structurally impossible — there is no path left that can lose items.
+
+    THE FIXTURE IS NOW THE ADVERSARY: fixture.json is a REAL historical payload without item_source_positions, which
+    makes it the perfect end-to-end probe for the refusal contract (review finding F1: this
+    import runs on the bare on_tick path where an uncaught throw kills the headless server).
+    The upload must:
+      1. complete WITHOUT killing the server (the F1 crash class),
+      2. report the operation FAILED (failedStage "belts", missing-source-positions refusal — review F2: belt
+         anomalies must fail non-transfer imports too, never a silent success),
+      3. physically restore ZERO belt items (nothing routed to any fallback), and
+      4. log the loud refusal line.
 #>
 param(
-    [int]$Runs = 5,
     [int]$TimeoutSec = 150
 )
 
 $ErrorActionPreference = "Stop"
 $ModulePath = Join-Path (Split-Path -Parent $PSScriptRoot) "lib\TestBase.psm1"
 Import-Module $ModulePath -Force
-$repoRoot = Split-Path -Parent (Split-Path -Parent (Split-Path -Parent $PSScriptRoot))
 
-Write-TestHeader "Belt aggregate deficit recovery"
+Write-TestHeader "Missing-source-positions payload refusal (legacy replay retired)"
 $prefix = "belt-loss-replay-"
 $instances = @("clusterio-host-1-instance-1", "clusterio-host-2-instance-1")
 $failed = 0
@@ -24,7 +40,7 @@ function Remove-Fixture {
     }
 }
 
-function Count-ProcessingUnits([string]$Instance, [string]$PlatformName) {
+function Count-BeltProcessingUnits([string]$Instance, [string]$PlatformName) {
     $json = Invoke-Lua -Instance $Instance -Code @"
 local p=nil
 for _,candidate in pairs(game.forces.player.platforms or {}) do if candidate.name=='$PlatformName' then p=candidate break end end
@@ -33,12 +49,7 @@ local belt=0
 for _,e in ipairs(p.surface.find_entities_filtered({type={'transport-belt','underground-belt','splitter','linked-belt','loader','loader-1x1'}})) do
     for line=1,e.get_max_transport_line_index() do belt=belt+e.get_transport_line(line).get_item_count('processing-unit') end
 end
-local hub=p.hub.get_inventory(defines.inventory.hub_main).get_item_count('processing-unit')
-local ground=0
-for _,e in ipairs(p.surface.find_entities_filtered({type='item-entity'})) do
-    if e.stack and e.stack.valid_for_read and e.stack.name=='processing-unit' then ground=ground+e.stack.count end
-end
-rcon.print(helpers.table_to_json({belt=belt,hub=hub,ground=ground,total=belt+hub+ground,entities=#p.surface.find_entities_filtered({})}))
+rcon.print(helpers.table_to_json({belt=belt,entities=#p.surface.find_entities_filtered({})}))
 "@
     return $json | ConvertFrom-Json
 }
@@ -48,57 +59,78 @@ try {
     $sourceHost = Resolve-PlatformHost -PlatformName (Get-TransferFixturePlatform)
     if (-not $sourceHost) { throw "transfer fixture platform not found" }
     $sourceInstance = "clusterio-host-$sourceHost-instance-1"
+    $sourceContainer = "surface-export-host-$sourceHost"
     $sourceId = Get-ClusterioInstanceId -InstanceName $sourceInstance
-    $destHost = if ($sourceHost -eq 1) { 2 } else { 1 }
-    $destInstance = "clusterio-host-$destHost-instance-1"
-    $destContainer = "surface-export-host-$destHost"
-    $destId = Get-ClusterioInstanceId -InstanceName $destInstance
     $fixture = Join-Path $PSScriptRoot "fixture.json"
     docker cp $fixture surface-export-controller:/tmp/belt-loss-replay.json | Out-Null
 
-    for ($run = 1; $run -le $Runs; $run++) {
-        $runName = "$prefix$(Get-Date -Format 'HHmmss')-$run"
-        $upload = docker exec surface-export-controller sh -c "npx clusterioctl --config /clusterio/tokens/config-control.json --log-level error surface-export upload-import /tmp/belt-loss-replay.json $sourceId player $runName"
-        if ($LASTEXITCODE -ne 0) { throw "run $run fixture upload failed: $upload" }
-        $deadline = (Get-Date).AddSeconds($TimeoutSec)
-        $index = $null
-        while (-not $index -and (Get-Date) -lt $deadline) {
-            Start-Sleep -Milliseconds 500
-            $index = Get-PlatformIndex -Instance $sourceInstance -PlatformName $runName
-        }
-        if (-not $index) { throw "run $run source fixture timed out" }
-        $source = Count-ProcessingUnits -Instance $sourceInstance -PlatformName $runName
-        if ($source.total -ne 19 -or $source.entities -ne 552) {
-            throw "run $run fixture grounding failed: entities=$($source.entities) belt=$($source.belt) hub=$($source.hub) ground=$($source.ground) total=$($source.total)"
-        }
+    $runName = "$prefix$(Get-Date -Format 'HHmmss')"
+    $upload = docker exec surface-export-controller sh -c "npx clusterioctl --config /clusterio/tokens/config-control.json --log-level error surface-export upload-import /tmp/belt-loss-replay.json $sourceId player $runName"
+    if ($LASTEXITCODE -ne 0) { throw "fixture upload failed: $upload" }
 
-        $scriptOut = "/clusterio/data/instances/$destInstance/script-output"
-        docker exec $destContainer sh -c "rm -f $scriptOut/debug_import_result_${runName}_*.json 2>/dev/null" 2>$null | Out-Null
-        Send-Rcon -Instance $sourceInstance -Command "/transfer-platform $index $destId" | Out-Null
-        $resultFile = $null
-        while (-not $resultFile -and (Get-Date) -lt $deadline) {
-            Start-Sleep -Milliseconds 500
-            $files = @(Get-DebugFiles -Instance $destInstance -Container $destContainer -Pattern "debug_import_result_${runName}_*.json")
-            if ($files.Count -gt 0) { $resultFile = $files[0] }
-        }
-        if (-not $resultFile) { throw "run $run transfer timed out" }
-        $result = Read-DebugFile -Instance $destInstance -Container $destContainer -Filename $resultFile
-        Assert-TransferSucceeded -Result $result -Context "Belt replay run $run ($runName)"
-        $validation = Get-SafeProperty $result "validation_result"
-        $dest = Count-ProcessingUnits -Instance $destInstance -PlatformName $runName
-        $ok = (Get-SafeProperty $result "validation_success") -eq $true -and
-            (Get-SafeProperty $validation "itemCountMatch") -eq $true -and
-            $dest.total -eq 19 -and $dest.ground -ge 1
-        $id = "belt-loss-replay-run-$run"
-        if ($ok) {
-            Write-TestResult -TestId $id -TestName "Run ${run}: exact gate preserves 19 processing units across the 550-belt replay" -Status passed
-            $passed++
-        } else {
-            Write-TestResult -TestId $id -TestName "Run ${run}: deterministic belt deficit recovery" -Status failed -Message "success=$($result.validation_success) itemMatch=$($validation.itemCountMatch) belt=$($dest.belt) hub=$($dest.hub) ground=$($dest.ground) total=$($dest.total)"
-            $failed++
-            break
-        }
-        Remove-Fixture
+    # The import creates the platform's entities; only the belts phase refuses. Wait for the job
+    # to COMPLETE (result record present), not just the platform to exist.
+    $deadline = (Get-Date).AddSeconds($TimeoutSec)
+    $verdict = $null
+    while (-not $verdict -and (Get-Date) -lt $deadline) {
+        Start-Sleep -Milliseconds 500
+        $json = Invoke-Lua -Instance $sourceInstance -Code @"
+local out={}
+for id,r in pairs(storage.async_job_results or {}) do
+    if r.type=='import' and r.platform_name=='$runName' and r.complete then
+        out={found=true, status=r.status,
+            success=(r.validation and r.validation.success),
+            failedStage=(r.validation and r.validation.failedStage),
+            details=(r.validation and r.validation.mismatchDetails)}
+    end
+end
+rcon.print(helpers.table_to_json(out))
+"@
+        $parsed = $json | ConvertFrom-Json
+        if (Get-SafeProperty $parsed "found") { $verdict = $parsed }
+    }
+    if (-not $verdict) { throw "upload-import job never completed — if the instance died, this is the F1 crash class" }
+
+    # 1. Server alive after importing a hostile-shaped payload (any successful RCON proves it,
+    #    and the verdict read above already did one — assert explicitly anyway).
+    $alive = Invoke-Lua -Instance $sourceInstance -Code "rcon.print('alive')"
+    if ($alive -match "alive") {
+        Write-TestResult -TestId "missing-source-positions-server-alive" -TestName "Server survives importing a real payload without item_source_positions (F1 crash class closed)" -Status passed
+        $passed++
+    } else {
+        Write-TestResult -TestId "missing-source-positions-server-alive" -TestName "Server survives importing a real payload without item_source_positions" -Status failed -Message "post-import RCON failed: $alive"
+        $failed++
+    }
+
+    # 2. The operation reports FAILURE with the missing-source-positions belt refusal — never a silent success.
+    $stage = Get-SafeProperty $verdict "failedStage"
+    $details = [string](Get-SafeProperty $verdict "details")
+    if ((Get-SafeProperty $verdict "success") -eq $false -and $stage -eq "belts" -and $details -match "predates captured source positions") {
+        Write-TestResult -TestId "missing-source-positions-operation-failed" -TestName "Upload-import reports FAILED (failedStage belts, missing source positions) — F2 contract" -Status passed
+        $passed++
+    } else {
+        Write-TestResult -TestId "missing-source-positions-operation-failed" -TestName "Upload-import reports FAILED (failedStage belts, missing source positions)" -Status failed -Message "success=$($verdict.success) failedStage=$stage details=$details"
+        $failed++
+    }
+
+    # 3. PHYSICAL: zero belt items restored — nothing was routed to any fallback path.
+    $physical = Count-BeltProcessingUnits -Instance $sourceInstance -PlatformName $runName
+    if (-not (Get-SafeProperty $physical "missing") -and $physical.belt -eq 0 -and $physical.entities -gt 500) {
+        Write-TestResult -TestId "missing-source-positions-zero-belt-restore" -TestName "Zero belt items physically restored from the refused payload (entities=$($physical.entities))" -Status passed
+        $passed++
+    } else {
+        Write-TestResult -TestId "missing-source-positions-zero-belt-restore" -TestName "Zero belt items physically restored from the refused payload" -Status failed -Message "belt=$($physical.belt) entities=$($physical.entities) missing=$($physical.missing)"
+        $failed++
+    }
+
+    # 4. The loud refusal line reached the log (the operator-visible witness).
+    $logHit = docker exec $sourceContainer sh -c "grep -a 'predates captured source positions' /clusterio/data/instances/$sourceInstance/factorio-current.log | tail -1"
+    if ($logHit -match "predates captured source positions") {
+        Write-TestResult -TestId "missing-source-positions-loud-log" -TestName "Refusal logged loudly (re-export guidance present)" -Status passed
+        $passed++
+    } else {
+        Write-TestResult -TestId "missing-source-positions-loud-log" -TestName "Refusal logged loudly" -Status failed -Message "no 'predates captured source positions' line in $sourceInstance factorio-current.log"
+        $failed++
     }
 } finally {
     Remove-Fixture
@@ -106,4 +138,4 @@ try {
 }
 
 Write-TestSummary -Passed $passed -Failed $failed
-if ($failed -gt 0 -or $passed -ne $Runs) { exit 1 }
+if ($failed -gt 0 -or $passed -ne 4) { exit 1 }
