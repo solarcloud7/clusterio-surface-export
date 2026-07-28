@@ -84,6 +84,7 @@ function subjectPlatform(fixture) {
 // fixture added tomorrow is adjudicated the day it lands.
 function adjudicateBoard(board, manifest, onlyPlatform) {
 	const problems = [];
+	const gaps = [];
 	const byId = new Map(manifest.fixtures.map(f => [f.id, f]));
 	const seen = new Set();
 	for (const result of board.results || []) {
@@ -91,17 +92,26 @@ function adjudicateBoard(board, manifest, onlyPlatform) {
 		const fixture = byId.get(result.id);
 		if (!fixture) { problems.push(`${result.id}: on the board but absent from the manifest`); continue; }
 		const inScope = !onlyPlatform || subjectPlatform(fixture) === onlyPlatform;
-		const expected = fixture.runnerExcluded ? "skipped" : (inScope ? "pass" : "missing");
+		// A KNOWN, DOCUMENTED product gap is expected to FAIL at the destination — and the moment it
+		// stops failing this is a problem too, so the exemption cannot rot into a silent skip. The
+		// source board is unaffected: the gap is in the transfer, not the fixture.
+		const knownGap = onlyPlatform && inScope && fixture.destinationGap;
+		const expected = fixture.runnerExcluded ? "skipped"
+			: knownGap ? "fail" : (inScope ? "pass" : "missing");
 		if (result.verdict !== expected) {
 			problems.push(`${result.id}: ${result.verdict} (expected ${expected})` +
+				(knownGap ? ` — KNOWN GAP NOW ${result.verdict.toUpperCase()}: ${fixture.destinationGap} ` +
+					`(if this is fixed, drop destinationGap and re-pin)` : "") +
 				(result.detail ? ` — ${String(result.detail).slice(0, 120)}` : ""));
+		} else if (knownGap) {
+			gaps.push(`${result.id}: ${fixture.destinationGap}`);
 		}
 	}
 	for (const fixture of manifest.fixtures) {
 		if (!seen.has(fixture.id)) problems.push(`${fixture.id}: rostered but never adjudicated by the board`);
 	}
 	if (board.unknown !== 0) problems.push(`${board.unknown} unknown pad(s) discovered on the board`);
-	return problems;
+	return { problems, gaps };
 }
 
 function platformIndex(host, name) {
@@ -141,9 +151,9 @@ async function main() {
 
 		// A. The board on the live source world.
 		const boardA = runBoard(1);
-		const problemsA = adjudicateBoard(boardA, manifest);
-		step("board.host1", problemsA.length === 0,
-			problemsA.length ? problemsA.join(" | ")
+		const verdictA = adjudicateBoard(boardA, manifest);
+		step("board.host1", verdictA.problems.length === 0,
+			verdictA.problems.length ? verdictA.problems.join(" | ")
 				: `every rostered fixture adjudicated: passed=${boardA.passed} skipped=${boardA.skipped}`);
 
 		// B. ONE production transfer of the whole live gallery platform.
@@ -161,11 +171,13 @@ async function main() {
 		// C. The board on the transferred copy — destination parity for every fixture.
 		const boardC = runBoard(2);
 		const outOfScope = manifest.fixtures.filter(f => subjectPlatform(f) !== platformName).map(f => f.id);
-		const problemsC = adjudicateBoard(boardC, manifest, platformName);
-		step("board.host2.transferred", problemsC.length === 0,
-			problemsC.length ? problemsC.join(" | ")
+		const verdictC = adjudicateBoard(boardC, manifest, platformName);
+		step("board.host2.transferred", verdictC.problems.length === 0,
+			verdictC.problems.length ? verdictC.problems.join(" | ")
 				: `every rostered fixture adjudicated: passed=${boardC.passed} skipped=${boardC.skipped}` +
 					`, out-of-scope (must be missing): ${outOfScope.join(", ") || "none"}`);
+		// Known gaps are printed EVERY run, green or not — an exemption nobody reads is a silent skip.
+		for (const gap of verdictC.gaps) console.log(`  KNOWN DESTINATION GAP — ${gap}`);
 
 		// D. Hook-armed refusal transfer back (2PC contract). The hook is in FAIL_SAFE_HOOKS and
 		// consumed by the import; the finally below also disarms it defensively.

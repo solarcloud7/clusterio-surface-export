@@ -314,6 +314,28 @@ state-dimensions-lab NOTEBOOK, archived at git tag `labs-archive-2026-07-19`, an
   **[empirical, 2.0.77, pad omnibus-circuit-config]** Restoring control-behavior config (circuit_condition,
   circuit_enable_disable) must use `get_or_create_control_behavior()`, or the settings are silently dropped
   for any entity whose CB is not yet instantiated at restore time (wires restore in a separate phase).
+- **A decider combinator's OUTPUT REGISTER is not script-writable, and `disabled_by_script` is a
+  no-op on combinators.** **[empirical, 2.1.11, circuit-latch-rearm R1/R2]**
+  `LuaDeciderCombinatorControlBehavior` has no `set_signal` ("doesn't contain key"), and writing
+  `disabled_by_script = true` on a combinator reads back `false`. So a self-feedback (SR) latch cannot
+  be restored by any serializer: it arrives with its register at 0, reads its own 0 through the
+  feedback wire, and is stable at 0 — the source's held signal is LOST on transfer. Combinators are
+  also never actually disabled during the import window; only the platform pause stops them.
+- **A cleared latch CAN be re-armed by temporarily rewriting the decider's CONDITION.**
+  **[empirical, 2.1.11, circuit-latch-rearm R3]** Control behaviour IS writable: forcing the condition
+  true, letting it evaluate, then restoring the captured condition leaves the latch holding itself
+  (measured `(empty)` → `signal-S=1` → `signal-S=1` after restore). NOT IMPLEMENTED in production, and
+  two caveats gate it: (a) it needs at least one UNPAUSED tick, so it cannot run inside the frozen
+  pre-gate window — it would have to be a post-activation pass, which is lawful only because circuit
+  signals are not part of the exact gate (items + fluids); (b) an output with
+  `copy_count_from_input=false` always emits 1, so a source register holding a count other than 1 is
+  still not reproduced, and forcing a condition true momentarily pulses whatever the network drives.
+- **Decider and arithmetic combinators DRAW POWER (16.67 J/tick); constant combinators do not.**
+  **[empirical, 2.1.11, circuit-latch-rearm build guard]** Read off the prototypes:
+  `prototypes.entity["decider-combinator"].electric_energy_source_prototype` is non-nil with
+  `energy_usage = 16.666…`, while the constant combinator's is nil. An unpowered decider reports
+  `status = no_power` and never evaluates, so any circuit probe built without a power source measures
+  a vacuous zero — the rung asserts `status == "working"` before trusting a single later reading.
 - **Recipe quality is `get_recipe()`'s SECOND return; `get_recipe_quality()` and the `recipe_quality`
   attribute do NOT exist.** **[empirical, 2.0.77, state-dimensions-lab + pad omnibus-adversarial-inventory]** Both
   `entity.get_recipe_quality()` and `entity.recipe_quality` throw "doesn't contain key" — a pcall-probed
