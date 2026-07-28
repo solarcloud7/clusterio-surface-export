@@ -20,7 +20,7 @@
 			"role": "source",
 			"name": "lab-gallery-source-of-truth",
 			"artifact": "docker/seed-data/lab-saves/lab-gallery-snapshot-2026-07-28-owner-rig-rebuilt.zip",
-			"sha256": "A52B242FAC773CB7F1811B2884365EF1D040A76AB831373A42F249A984C52BC8",
+			"sha256": "60444EF200E5C52A7DD02F49F710AE0CF09878852E44123A38333686EE00B27B",
 			"expectedCensus": {
 				"totalEntities": 2118,
 				"totalGeneratedChunks": 6893,

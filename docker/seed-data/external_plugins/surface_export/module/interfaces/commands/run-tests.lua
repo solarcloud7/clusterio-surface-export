@@ -77,9 +77,26 @@ local function reset_cell(surface, cell)
   local comb, panel = find_trio(surface, cell.ox, cell.oy)
   if not (comb and panel) then error("status trio missing at origin (" .. cell.ox .. "," .. cell.oy .. ")") end
   local cleared = 0
-  for _, e in ipairs(surface.find_entities_filtered({ area = { { cell.ox + 14, cell.oy }, { cell.ox + 27.5, cell.oy + 11 } } })) do
-    e.destroy()
-    cleared = cleared + 1
+  -- FULL paste height including the oy+11.5 half-row (measured 2026-07-28: the thruster-pair
+  -- pad's pasted pipes at oy+11.5 sat BELOW the old oy+11 sweep edge and accumulated one
+  -- Lua-created overlapping pipe PER BOARD RUN — 12 stacked pipes per tile, physically-impossible
+  -- co-located segments, and the whole-gallery transfer's fluid clobber). Only the status trio's
+  -- own entities survive the sweep.
+  local sweep_area = { { cell.ox + 14, cell.oy }, { cell.ox + 27.5, cell.oy + 12 } }
+  for _, e in ipairs(surface.find_entities_filtered({ area = sweep_area })) do
+    if e ~= comb and e ~= panel then
+      e.destroy()
+      cleared = cleared + 1
+    end
+  end
+  -- GUARD: a sweep that leaves anything behind re-accumulates silently forever — refuse loudly
+  -- (both callers pcall this; command context, never on_tick).
+  local leftover = 0
+  for _, e in ipairs(surface.find_entities_filtered({ area = sweep_area })) do
+    if e ~= comb and e ~= panel then leftover = leftover + 1 end
+  end
+  if leftover > 0 then
+    error("paste-half sweep left " .. leftover .. " entities at origin (" .. cell.ox .. "," .. cell.oy .. ")")
   end
   set_status(cell.text_obj, comb, panel, "waiting")
   return cleared, comb, panel
