@@ -19,8 +19,8 @@
 		"source": {
 			"role": "source",
 			"name": "lab-gallery-source-of-truth",
-			"artifact": "docker/seed-data/lab-saves/lab-gallery-snapshot-2026-07-28-unfrozen.zip",
-			"sha256": "0A94DFD37AA5A404C7CA9908389D950DAC1DC685EC86F94960A792168968AE3F",
+			"artifact": "docker/seed-data/lab-saves/lab-gallery-snapshot-2026-07-28-owner-rig-rebuilt.zip",
+			"sha256": "A52B242FAC773CB7F1811B2884365EF1D040A76AB831373A42F249A984C52BC8",
 			"expectedCensus": {
 				"totalEntities": 2118,
 				"totalGeneratedChunks": 6893,
@@ -2437,7 +2437,7 @@
 					"name": "pump-south"
 				}
 			],
-			"revision": 1,
+			"revision": 2,
 			"labId": "fluid-lab",
 			"name": "Underground-pipe pairing omnibus (owner-built)",
 			"purpose": "OWNER FIXTURE (2026-07-28): underground-pipe PAIRING integrity. Eight pipe-to-ground pairs feeding THREE segments, two of them carrying the SAME fluid (petroleum-gas 342 + 800) - a mis-paired underground at creation MERGES segments invisibly to fluid names; only segmentCount and per-fluid totals expose it. Built after the first live gallery transfer clobbered thruster fluids via exactly this class (10 source segments -> 9 dest, last-write-wins).",
@@ -2460,15 +2460,15 @@
 				"surfexp_gateways": "0.4.0",
 				"maraxsis": "1.34.51"
 			},
-			"invariant": "16 pipe-to-grounds (8 pairs), 12 pipes, 2 pumps forming exactly THREE fluid segments; light-oil total 585 and petroleum-gas total 1142 conserved (pumps may shift gas between its two segments live - totals, not per-segment amounts, are the invariant).",
+			"invariant": "20 pipe-to-grounds (10 pairs), 8 pipes, 2 pumps forming exactly THREE fluid segments; light-oil total 1151 and petroleum-gas total 143 conserved (pumps may shift fluid between same-fluid segments live - totals, not per-segment amounts, are the invariant). Rebuilt by hand by the owner 2026-07-28 after the reset-loss incident; banked immediately.",
 			"independentOracleRequired": true,
 			"fingerprint": {
-				"pipeToGroundCount": 16,
-				"pipeCount": 12,
+				"pipeToGroundCount": 20,
+				"pipeCount": 8,
 				"pumpCount": 2,
 				"segmentCount": 3,
-				"lightOilTotal": 585,
-				"petroleumGasTotal": 1142
+				"lightOilTotal": 1151,
+				"petroleumGasTotal": 143
 			},
 			"lifecycle": {
 				"version": 1,
@@ -2492,7 +2492,7 @@
 						"read": "fluid_stats",
 						"field": "pipeToGroundCount",
 						"op": "eq",
-						"expected": 16
+						"expected": 20
 					},
 					{
 						"check": "physical_read",
@@ -2502,7 +2502,7 @@
 						"read": "fluid_stats",
 						"field": "pipeCount",
 						"op": "eq",
-						"expected": 12
+						"expected": 8
 					},
 					{
 						"check": "physical_read",
@@ -2513,8 +2513,8 @@
 						"field": "lightOilTotal",
 						"op": "between",
 						"expected": [
-							584,
-							586
+							1150,
+							1152
 						]
 					},
 					{
@@ -2526,8 +2526,8 @@
 						"field": "petroleumGasTotal",
 						"op": "between",
 						"expected": [
-							1141,
-							1143
+							142,
+							144
 						]
 					}
 				]
