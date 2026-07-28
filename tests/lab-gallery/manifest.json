@@ -19,11 +19,11 @@
 		"source": {
 			"role": "source",
 			"name": "lab-gallery-source-of-truth",
-			"artifact": "docker/seed-data/lab-saves/lab-gallery-source-of-truth.zip",
-			"sha256": "DB21B79BF92CD7972E0521ED4FC9E308F3C1FEDD5AC510A354DBBF8445E14750",
+			"artifact": "docker/seed-data/lab-saves/lab-gallery-snapshot-2026-07-28-unfrozen.zip",
+			"sha256": "0A94DFD37AA5A404C7CA9908389D950DAC1DC685EC86F94960A792168968AE3F",
 			"expectedCensus": {
-				"totalEntities": 2013,
-				"totalGeneratedChunks": 6891,
+				"totalEntities": 2118,
+				"totalGeneratedChunks": 6893,
 				"surfaces": [
 					{
 						"name": "nauvis"
@@ -49,7 +49,7 @@
 				"surfexp_gateways": "0.4.0",
 				"maraxsis": "1.34.51"
 			},
-			"note": "SNAPSHOT OF LIVE (re-banked 2026-07-21 on Factorio 2.1.11, rev: owner thruster-pair hand-rebuild): verified server_save of the live gallery world - never a scripted-bake product. Banks the owner-compacted fusion rig, the owner-hand-rebuilt dual-fluid thruster-pair (shared fuel 1300 + oxidizer 1100, carved exhaust notch + its +14 paste mirror), both cell label renames, and the module 0.10.144 re-patch (dual-fluid thruster meter). Census includes inert right-half compare residue (each run sweeps its cell before measuring; mutable anchors banked EMPTY). Re-bank: server_save, docker cp, SHA re-pin, one commit."
+			"note": "SNAPSHOT OF LIVE (re-banked 2026-07-28, UNFROZEN doctrine): the gallery runs live - all 34 formerly disabled entities re-enabled, stillness pins re-pinned to live invariants, roster baked in storage, leaked lab surface swept before banking. Never a scripted-bake product. Re-bank: server_save, docker cp, SHA re-pin, one commit."
 		},
 		"destination": {
 			"role": "destination",
@@ -343,7 +343,7 @@
 					}
 				]
 			},
-			"owningRunner": "tests/integration/pad-transfer-suite/run-tests.mjs"
+			"owningRunner": "tests/integration/gallery-suite/run-tests.mjs"
 		},
 		{
 			"id": "omnibus-decider-latch",
@@ -922,7 +922,7 @@
 			"name": "Platform schedule and interrupt",
 			"purpose": "Preserve the platform-level schedule records and a named interrupt.",
 			"category": "physical-lab",
-			"owningRunner": "tests/integration/selftests/run-tests.mjs",
+			"owningRunner": "tests/integration/gallery-suite/run-tests.mjs",
 			"saveRole": "source",
 			"platformName": "lab-omnibus-state-v1",
 			"engineVersion": "2.1.11",
@@ -962,7 +962,7 @@
 			"name": "1359-entity transfer workhorse",
 			"purpose": "Provide the large live-drift transfer workhorse whose structure is fixed but whose machine item counts drift by design.",
 			"category": "drift-benchmark",
-			"owningRunner": "tests/integration/pad-transfer-suite/run-tests.mjs",
+			"owningRunner": "tests/integration/gallery-suite/run-tests.mjs",
 			"saveRole": "source",
 			"platformName": "lab-transfer-fixture-v1",
 			"engineVersion": "2.1.11",
@@ -1248,7 +1248,7 @@
 			"name": "Combined belt omnibus (steady-state, hand-built)",
 			"purpose": "One pad combining sideloads, 3 splitters, 3 underground pairs, and 2 filtered output loaders - the CONSERVATIVE closed-circuit exemplar: 380 items recirculate forever with no source and no sink, so any loss is visible instead of self-healed.",
 			"category": "physical-lab",
-			"owningRunner": "tests/integration/pad-transfer-suite/run-tests.mjs",
+			"owningRunner": "tests/integration/gallery-suite/run-tests.mjs",
 			"owningRunnerWaiver": "Hand-built live by the owner 2026-07-19 (construct-once doctrine). No build script exists by design; the state itself is the artifact, banked in the source-of-truth checkpoint.",
 			"saveRole": "source",
 			"platformName": "lab-omnibus-state-v1",
@@ -1576,7 +1576,7 @@
 			"name": "Spoilage mid-spoil",
 			"purpose": "Preserve mid-spoil progress on spoilable items through a real cross-instance transfer (the pad-lifecycle worked example: programmatic setup, transfer act, declarative verify).",
 			"category": "physical-lab",
-			"owningRunner": "tests/integration/pad-transfer-suite/run-tests.mjs",
+			"owningRunner": "tests/integration/gallery-suite/run-tests.mjs",
 			"saveRole": "source",
 			"platformName": "lab-omnibus-state-v1",
 			"engineVersion": "2.1.11",
@@ -1674,7 +1674,7 @@
 			"revision": 1,
 			"labId": "gate-drift-lab",
 			"category": "protocol-teeth",
-			"owningRunner": "tests/integration/pad-transfer-suite/run-tests.mjs",
+			"owningRunner": "tests/integration/gallery-suite/run-tests.mjs",
 			"saveRole": "source",
 			"platformName": "lab-omnibus-state-v1",
 			"engineVersion": "2.1.11",
@@ -1772,7 +1772,7 @@
 			"revision": 1,
 			"labId": "gate-drift-lab",
 			"category": "protocol-teeth",
-			"owningRunner": "tests/integration/pad-transfer-suite/run-tests.mjs",
+			"owningRunner": "tests/integration/gallery-suite/run-tests.mjs",
 			"saveRole": "source",
 			"platformName": "lab-omnibus-state-v1",
 			"engineVersion": "2.1.11",
@@ -1870,7 +1870,7 @@
 			"revision": 1,
 			"labId": "gate-drift-lab",
 			"category": "protocol-teeth",
-			"owningRunner": "tests/integration/pad-transfer-suite/run-tests.mjs",
+			"owningRunner": "tests/integration/gallery-suite/run-tests.mjs",
 			"saveRole": "source",
 			"platformName": "lab-omnibus-state-v1",
 			"engineVersion": "2.1.11",
@@ -1968,7 +1968,7 @@
 			"revision": 1,
 			"labId": "gate-drift-lab",
 			"category": "protocol-teeth",
-			"owningRunner": "tests/integration/pad-transfer-suite/run-tests.mjs",
+			"owningRunner": "tests/integration/gallery-suite/run-tests.mjs",
 			"saveRole": "source",
 			"platformName": "lab-omnibus-state-v1",
 			"engineVersion": "2.1.11",
@@ -2078,7 +2078,7 @@
 			"revision": 3,
 			"labId": "gate-drift-lab",
 			"category": "protocol-teeth",
-			"owningRunner": "tests/integration/pad-transfer-suite/run-tests.mjs",
+			"owningRunner": "tests/integration/gallery-suite/run-tests.mjs",
 			"saveRole": "source",
 			"platformName": "lab-omnibus-state-v1",
 			"engineVersion": "2.1.11",
@@ -2169,7 +2169,7 @@
 			"name": "Source census aborts on serializer omission",
 			"purpose": "The paired-reads SOURCE census must refuse a transfer whose serialized form omits physical content: export aborted, destination NEVER contacted, source preserved and unlocked, entity-attributed forensic bundle banked (SC-6; closes the burner-fuel serializer-omission class).",
 			"category": "protocol-teeth",
-			"owningRunner": "tests/integration/pad-transfer-suite/run-tests.mjs",
+			"owningRunner": "tests/integration/gallery-suite/run-tests.mjs",
 			"saveRole": "source",
 			"platformName": "lab-omnibus-state-v1",
 			"engineVersion": "2.1.11",
@@ -2278,7 +2278,7 @@
 			"name": "Fusion loop plasma and coolant",
 			"purpose": "Preserve a hand-built ACTIVE fusion rig - two reactors, a generator, a cryogenic plant, a coolant pipe loop, and a self-refilling infinity-pipe plasma source - whose plasma and buffered coolant ride the 2.1 fluid-segment registry with nothing engine-excluded.",
 			"category": "physical-lab",
-			"owningRunner": "tests/integration/pad-transfer-suite/run-tests.mjs",
+			"owningRunner": "tests/integration/gallery-suite/run-tests.mjs",
 			"saveRole": "source",
 			"platformName": "lab-omnibus-state-v1",
 			"engineVersion": "2.1.11",
@@ -2409,6 +2409,136 @@
 			},
 			"note": "Authored manifest-only 2026-07-20 on (92,36); relocated + script-built on (92,64) 2026-07-21, then HAND-REBUILT by the owner the same day (rev 3): tighter two-column layout, BOTH fluids shared, second thruster on a carved notch. The notch refines the placement rule measured at rev 2: legality = the platform tiles behind the exhaust are ABSENT (a local carved edge works; the outermost rim was just the common case). Fingerprint {2, sharedFuel, 1300, sharedOxidizer, 1100} VERIFIED live post-rebuild (segment ids equal across both thrusters per fluid; meter extended to measure both fluids at rev 3). Paste-half legality re-verified after mirroring the notch at +14 (can_place true for both pasted thrusters). At 2.1 even unconnected thruster boxes carry singleton segments (drift from the 2.0.77 buffer-class picture this pad was authored under - the shared-buffer double-count topology is now a shared-SEGMENT exactness claim). Wired to DISPATCH.",
 			"owningRunnerWaiver": "Script-built then owner-hand-rebuilt live 2026-07-21 (construct-once doctrine); no standalone runner - the banked state is the artifact, the build record lives in testCard.build."
+		},
+		{
+			"id": "underground-pipe-pairing-omnibus",
+			"padKind": "pad",
+			"origin": {
+				"x": 92,
+				"y": 50
+			},
+			"anchors": [
+				{
+					"entity": "display-panel",
+					"x": 105.5,
+					"y": 61.5,
+					"name": "panel"
+				},
+				{
+					"entity": "pump",
+					"x": 99,
+					"y": 53.5,
+					"name": "pump-north"
+				},
+				{
+					"entity": "pump",
+					"x": 99,
+					"y": 56.5,
+					"name": "pump-south"
+				}
+			],
+			"revision": 1,
+			"labId": "fluid-lab",
+			"name": "Underground-pipe pairing omnibus (owner-built)",
+			"purpose": "OWNER FIXTURE (2026-07-28): underground-pipe PAIRING integrity. Eight pipe-to-ground pairs feeding THREE segments, two of them carrying the SAME fluid (petroleum-gas 342 + 800) - a mis-paired underground at creation MERGES segments invisibly to fluid names; only segmentCount and per-fluid totals expose it. Built after the first live gallery transfer clobbered thruster fluids via exactly this class (10 source segments -> 9 dest, last-write-wins).",
+			"category": "physical-lab",
+			"owningRunner": null,
+			"owningRunnerWaiver": "Runs under /test-run via its declarative lifecycle and rides the whole-gallery transfer in gallery-suite; no separate standing runner by design (one-test-save doctrine).",
+			"saveRole": "source",
+			"platformName": "lab-omnibus-state-v1",
+			"engineVersion": "2.1.11",
+			"mods": {
+				"base": "2.1.11",
+				"elevated-rails": "2.1.11",
+				"FluidMustFlow": "1.5.0",
+				"PlanetsLib": "1.22.0",
+				"quality": "2.1.11",
+				"recycler": "2.1.11",
+				"SpidertronEnhancements": "1.11.0",
+				"space-age": "2.1.11",
+				"SpidertronPatrols": "2.7.0",
+				"surfexp_gateways": "0.4.0",
+				"maraxsis": "1.34.51"
+			},
+			"invariant": "16 pipe-to-grounds (8 pairs), 12 pipes, 2 pumps forming exactly THREE fluid segments; light-oil total 585 and petroleum-gas total 1142 conserved (pumps may shift gas between its two segments live - totals, not per-segment amounts, are the invariant).",
+			"independentOracleRequired": true,
+			"fingerprint": {
+				"pipeToGroundCount": 16,
+				"pipeCount": 12,
+				"pumpCount": 2,
+				"segmentCount": 3,
+				"lightOilTotal": 585,
+				"petroleumGasTotal": 1142
+			},
+			"lifecycle": {
+				"version": 1,
+				"act": "copy-paste",
+				"verify": [
+					{
+						"check": "physical_read",
+						"locator": {
+							"area": true
+						},
+						"read": "fluid_stats",
+						"field": "segmentCount",
+						"op": "eq",
+						"expected": 3
+					},
+					{
+						"check": "physical_read",
+						"locator": {
+							"area": true
+						},
+						"read": "fluid_stats",
+						"field": "pipeToGroundCount",
+						"op": "eq",
+						"expected": 16
+					},
+					{
+						"check": "physical_read",
+						"locator": {
+							"area": true
+						},
+						"read": "fluid_stats",
+						"field": "pipeCount",
+						"op": "eq",
+						"expected": 12
+					},
+					{
+						"check": "physical_read",
+						"locator": {
+							"area": true
+						},
+						"read": "fluid_stats",
+						"field": "lightOilTotal",
+						"op": "between",
+						"expected": [
+							584,
+							586
+						]
+					},
+					{
+						"check": "physical_read",
+						"locator": {
+							"area": true
+						},
+						"read": "fluid_stats",
+						"field": "petroleumGasTotal",
+						"op": "between",
+						"expected": [
+							1141,
+							1143
+						]
+					}
+				]
+			},
+			"testCard": {
+				"law": "Underground-pipe pairing survives creation: the destination forms the SAME segment topology as the source (segmentCount exact), so no whole-segment write can clobber another.",
+				"build": "Hand-built by the owner 2026-07-28 at open slot (92,50) after the thruster-fluid clobber incident.",
+				"action": "Copy/paste locally under /test-run; the whole-gallery transfer carries it to the destination board.",
+				"expected": "segmentCount 3 on both boards and at the destination; per-fluid totals conserved.",
+				"forbidden": "Segment merge (count < 3), fluid mixing across the light-oil/gas boundary, per-segment exact pins (pumps move gas between its two segments live)."
+			}
 		}
 	]
 }

@@ -305,6 +305,38 @@ local function count_stable_entities(surface)
     return total - transient
 end
 
+-- Fluid-segment census over an area — THE canonical meter for underground-pipe PAIRING integrity.
+-- segmentCount is the pairing detector: a pipe-to-ground that pairs with the wrong counterpart at
+-- creation MERGES segments the source kept apart (measured 2026-07-28: the gallery transfer's
+-- thruster-fluid clobber, 10 source segments -> 9 dest). Two same-fluid segments make the merge
+-- invisible to fluid names — only the count and per-fluid totals expose it. Consumers: the
+-- fluid_stats lifecycle read — delegation, never a second copy.
+local function measure_fluid_segments(surface, area)
+    local counts = { ["pipe-to-ground"] = 0, pipe = 0, pump = 0 }
+    local seen, segment_count = {}, 0
+    local totals = {}
+    for _, e in pairs(surface.find_entities_filtered({ type = { "pipe-to-ground", "pipe", "pump" }, area = area })) do
+        counts[e.type] = counts[e.type] + 1
+        for i = 1, e.fluids_count do
+            if e.has_fluid_segment(i) then
+                local id = e.get_fluid_segment_id(i)
+                if not seen[id] then
+                    seen[id] = true
+                    segment_count = segment_count + 1
+                    local f = e.get_fluid_segment_fluid(i)
+                    if f then totals[f.name] = (totals[f.name] or 0) + f.amount end
+                end
+            end
+        end
+    end
+    return {
+        pipeToGroundCount = counts["pipe-to-ground"], pipeCount = counts.pipe, pumpCount = counts.pump,
+        segmentCount = segment_count,
+        lightOilTotal = totals["light-oil"] or 0,
+        petroleumGasTotal = totals["petroleum-gas"] or 0,
+    }
+end
+
 local function measure_energy(surface)
     local acc = surface.find_entities_filtered({ type = "accumulator" })[1]
     local electric = 0
@@ -623,6 +655,7 @@ M.measure_thruster_pair = measure_thruster_pair
 M.approx_equal = approx_equal
 M.tolerant_double_fields = tolerant_double_fields
 M.count_stable_entities = count_stable_entities
+M.measure_fluid_segments = measure_fluid_segments
 
 
 

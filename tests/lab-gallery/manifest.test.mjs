@@ -204,7 +204,7 @@ test("lifecycle validation teeth: hook allowlist, grounding rule, mutable-anchor
 	assert.ok(lines.some(line => /raw-fish item_count eq 10/.test(line)));
 
 	// --- gate-failure (sabotage teeth) rules -----------------------------------------------------
-	const SUITE = "tests/integration/pad-transfer-suite/run-tests.mjs";
+	const SUITE = "tests/integration/gallery-suite/run-tests.mjs";
 	const withTransferLifecycle = (lifecycle) => {
 		const m = clone();
 		const fx = m.fixtures.find(fixture => fixture.id === "belt-combined-omnibus");

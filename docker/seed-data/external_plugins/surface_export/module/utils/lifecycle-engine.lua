@@ -345,6 +345,16 @@ local function perform_read(loc, check)
 		if not loc.surface then return nil, "no surface for surface_entity_count_stable" end
 		return FixtureMeters.count_stable_entities(loc.surface)
 	end
+	-- Fluid-segment stats over the pad area — DELEGATION to the canonical meter (belt_stats
+	-- pattern). segmentCount is the underground-pipe PAIRING detector; see the meter's header.
+	if read == "fluid_stats" then
+		if loc.kind ~= "area" then return nil, "fluid_stats needs an area locator" end
+		local ok, reading = pcall(FixtureMeters.measure_fluid_segments, loc.surface, loc.area)
+		if not ok then return nil, "fluid_stats meter error: " .. tostring(reading) end
+		local value = reading[check.field]
+		if value == nil then return nil, "fluid_stats has no field " .. tostring(check.field) end
+		return value
+	end
 	if read == "entity_present" then
 		if loc.kind == "area" then
 			return #loc.surface.find_entities_filtered({ area = loc.area })
@@ -524,6 +534,9 @@ local function read_label(check)
 	end
 	if check.read == "belt_stats" then
 		return "belt_stats(" .. tostring(check.field) .. ")"
+	end
+	if check.read == "fluid_stats" then
+		return "fluid_stats(" .. tostring(check.field) .. ")"
 	end
 	return tostring(check.read) .. (check.item and ("(" .. check.item .. ")") or "")
 end

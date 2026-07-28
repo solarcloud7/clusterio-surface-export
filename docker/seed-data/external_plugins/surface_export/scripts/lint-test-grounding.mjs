@@ -45,15 +45,49 @@ function findTestFiles() {
 	for (const name of readdirSync(TESTS_DIR)) {
 		const directory = join(TESTS_DIR, name);
 		if (!statSync(directory).isDirectory()) continue;
-		const file = join(directory, "run-tests.ps1");
-		if (!existsSync(file)) continue;
-		files.push({
-			name,
-			path: relative(REPO_ROOT, file).replace(/\\/g, "/"),
-			source: readFileSync(file, "utf8"),
-		});
+		// Both runner dialects are in scope (2026-07-28 consolidation): the ps1 rules below, and
+		// the mjs verdict-before-census rule in findMjsGroundingViolations.
+		for (const runner of ["run-tests.ps1", "run-tests.mjs"]) {
+			const file = join(directory, runner);
+			if (!existsSync(file)) continue;
+			files.push({
+				name,
+				dialect: runner.endsWith(".mjs") ? "mjs" : "ps1",
+				path: relative(REPO_ROOT, file).replace(/\\/g, "/"),
+				source: readFileSync(file, "utf8"),
+			});
+		}
 	}
 	return files;
+}
+
+// mjs runners (the consolidated gallery-suite class): the disposition blind spot rule translated —
+// a runner that reads debug_import_result must ADJUDICATE the verdict (validation_success) before
+// any destination-side board/census call, so a refused transfer is never misread as physical loss.
+export function findMjsGroundingViolations(files) {
+	const violations = [];
+	for (const { dialect, path, source } of files) {
+		if (dialect !== "mjs" || source.includes(ALLOW_MARKER)) continue;
+		const code = source.replace(/^\s*\/\/.*$/gm, "");
+		const debugIndex = code.indexOf("waitForImportResult");
+		if (debugIndex === -1) continue;
+		const verdictIndex = code.indexOf("validation_success", debugIndex);
+		const destReadIndex = (() => {
+			for (const marker of ["runBoard(2", "runBoard(destHost", "Count-", "census"]) {
+				const i = code.indexOf(marker, debugIndex);
+				if (i !== -1) return i;
+			}
+			return -1;
+		})();
+		if (destReadIndex !== -1 && (verdictIndex === -1 || verdictIndex > destReadIndex)) {
+			violations.push({
+				path,
+				rule: 3,
+				message: "mjs runner must adjudicate validation_success before any destination board/census",
+			});
+		}
+	}
+	return violations;
 }
 
 function firstDestinationCensusAfter(source, startIndex) {
@@ -67,7 +101,8 @@ function firstDestinationCensusAfter(source, startIndex) {
 
 export function findGroundingViolations(files) {
 	const violations = [];
-	for (const { name, path, source } of files) {
+	for (const { name, dialect, path, source } of files) {
+		if (dialect === "mjs") continue; // mjs rules live in findMjsGroundingViolations
 		if (source.includes(ALLOW_MARKER)) continue;
 		const code = stripComments(source);
 		const hasPhysical = code.includes(PHYSICAL_COUNT);
@@ -123,7 +158,7 @@ function main() {
 		process.exit(1);
 	}
 	const files = findTestFiles();
-	const violations = findGroundingViolations(files);
+	const violations = [...findGroundingViolations(files), ...findMjsGroundingViolations(files)];
 	if (violations.length > 0) {
 		console.error("lint:test-grounding - FAILED\n");
 		for (const violation of violations) {

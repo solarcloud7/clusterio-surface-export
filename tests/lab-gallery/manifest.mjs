@@ -117,7 +117,7 @@ const LIFECYCLE_ACTS = new Set(["copy-paste", "transfer", "clone"]);
 // "surface_entity_count_stable" = surface_entity_count minus transient debris classes (spills,
 // explosion effects, projectiles) — the pin for LIVE-factory fixtures whose raw count breathes
 // (measured 2026-07-27 on the workhorse: 1359<->1360 between runs from a spill + explosions).
-const PHYSICAL_READS = new Set(["item_count", "held", "crafting_progress", "spoil_percent", "fluid", "entity_present", "platform_present", "surface_entity_count", "surface_entity_count_stable", "infinity_pipe_filter", "property", "belt_stats"]);
+const PHYSICAL_READS = new Set(["item_count", "held", "crafting_progress", "spoil_percent", "fluid", "entity_present", "platform_present", "surface_entity_count", "surface_entity_count_stable", "fluid_stats", "infinity_pipe_filter", "property", "belt_stats"]);
 // TWO evaluators, two capability sets — and conflating them is a real bug, not pedantry. A
 // physical_read is compared in Lua by lifecycle-engine's compare_op, which implements all of these.
 // A report_field is compared in NODE by evalReportField (pad-transfer-suite/run-tests.mjs), which
@@ -133,7 +133,7 @@ const CHECK_OPS = new Set(["eq", "approx", "ge", "le", "between", "monotone"]);
 const REPORT_FIELD_OPS = new Set(["eq"]);
 const LIFECYCLE_ENDS = new Set(["source", "dest"]);
 const LIFECYCLE_EXPECTS = new Set(["success", "gate-failure", "census-abort"]);
-const TRANSFER_SUITE = "tests/integration/pad-transfer-suite/run-tests.mjs";
+const TRANSFER_SUITE = "tests/integration/gallery-suite/run-tests.mjs";
 
 function validateLifecycle(fixture) {
 	const lc = fixture.lifecycle;
