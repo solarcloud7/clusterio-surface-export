@@ -182,6 +182,12 @@ function FluidRestoration.restore(entities_to_create, entity_map, fluid_segments
 		storage_writes = storage_writes + 1
 	end
 
+	-- DEFERRED per-destination-segment accumulation (2026-07-28, the ghost-pipe clobber class):
+	-- multiple payload records can resolve to ONE destination segment under any topology
+	-- divergence (measured live: Lua-created overlapping pipes). set_fluid_segment_fluid REPLACES
+	-- the whole segment, so per-record writes were last-write-wins. Records accumulate here and
+	-- every destination segment is written ONCE with the sum, after the records loop.
+	local pending_segments = {}
 	for ref, rec in pairs(by_id) do
 		local group = members[ref]
 		if rec.fluid and (rec.total or 0) > 0 and group and #group > 0 then
@@ -229,8 +235,8 @@ function FluidRestoration.restore(entities_to_create, entity_map, fluid_segments
 			-- storage record (source segmentless, one member) falls out as the single-unit case.
 			local units = {}
 			local total_weight = 0
-			for _, g in pairs(dest_groups) do
-				units[#units + 1] = { group = g, weight = g.sum_local }
+			for dest_id, g in pairs(dest_groups) do
+				units[#units + 1] = { group = g, dest_id = dest_id, weight = g.sum_local }
 				total_weight = total_weight + g.sum_local
 			end
 			for _, m in ipairs(segmentless) do
@@ -252,11 +258,43 @@ function FluidRestoration.restore(entities_to_create, entity_map, fluid_segments
 					share = rec.total / #units
 				end
 				if unit.group then
-					write_segment_group(rec, unit.group, share)
+					local plan = pending_segments[unit.dest_id]
+					if not plan then
+						plan = { group = unit.group, by_fluid = {} }
+						pending_segments[unit.dest_id] = plan
+					end
+					local acc = plan.by_fluid[rec.fluid]
+					if not acc then
+						acc = { amount = 0, temp_weighted = 0 }
+						plan.by_fluid[rec.fluid] = acc
+					end
+					acc.amount = acc.amount + share
+					acc.temp_weighted = acc.temp_weighted + share * (rec.temperature or 15)
 				elseif share > 0 then
 					write_storage(rec, unit.member, share)
 				end
 			end
+		end
+	end
+
+	-- The summed flush: ONE write per destination segment. Records of DIFFERENT fluids resolving
+	-- to one destination segment are a topology conflict — nothing is written for that segment
+	-- (loud log; the exact gate refuses => fail => revert). Never a silent last-write-wins.
+	for dest_id, plan in pairs(pending_segments) do
+		local fluid_names = {}
+		for fluid_name in pairs(plan.by_fluid) do fluid_names[#fluid_names + 1] = fluid_name end
+		if #fluid_names > 1 then
+			table.sort(fluid_names)
+			log(string.format(
+				"[Fluid Restore] CONFLICT: dest segment %s received records of %d fluids (%s) — nothing written, the gate will refuse",
+				tostring(dest_id), #fluid_names, table.concat(fluid_names, ", ")))
+		else
+			local fluid_name = fluid_names[1]
+			local acc = plan.by_fluid[fluid_name]
+			write_segment_group({
+				fluid = fluid_name,
+				temperature = acc.amount > 0 and (acc.temp_weighted / acc.amount) or 15,
+			}, plan.group, acc.amount)
 		end
 	end
 
