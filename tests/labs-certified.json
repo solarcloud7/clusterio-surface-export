@@ -5,7 +5,7 @@
   "evidence": [
     {
       "lab": "fluid-segment-law",
-      "runner": "tests/integration/fluid-segment-law (in-suite re-certification instrument; module/interfaces/remote/fluid-segment-law-selftest.lua)",
+      "runner": "tests/instruments/fluid-segment-law (in-suite re-certification instrument; module/interfaces/remote/fluid-segment-law-selftest.lua)",
       "rungs": "plain-English experiments 1-8",
       "conclusion": "The 2.1.11 fluid model measured and pinned: whole-segment writes read back exact from any member box (buffer/window duality removed); get_fluid capacity shares; plasma capacity-clamps and RIDES (engine_owned exclusion deleted by owner ruling); segment getters THROW on segmentless boxes (has_fluid_segment guard mandatory); fusion-generator boxes segmentless; 12-prototype fluid-box coverage sweep incl. the flamethrower-turret second-box drift 2.0.77->2.1.11 the instrument itself caught. ALL PASS 8/8, teardown clean, zero leftovers, live on 2.1.11.",
       "commits": [
@@ -16,7 +16,7 @@
     },
     {
       "lab": "pads + transfer suite (standing coverage re-earned on the new pin)",
-      "runner": "tests/lab-gallery via /test-run; tests/integration/pad-transfer-suite",
+      "runner": "tests/lab-gallery via /test-run; tests/integration/gallery-suite",
       "rungs": "full 27-fixture roster; 8 transfer-act fixtures + workhorse",
       "conclusion": "Every baked law re-verified live on 2.1.11: /test-run 19 passed / 0 failed / 0 missing (fusion-loop and thruster-pair join as ACTIVE fluid pads: plasma + buffered coolant + dual shared thruster segments ride copy/paste exactly); pad-transfer-suite ALL PASS repeatedly on the re-banked 2.1.11 golden pair (strict exact gate, gate-teeth sabotage fixtures, census-omission abort, force-bonus raise, rollback preservation all green through REAL transfers). Inserter held-seating and no-tick laws stand via the inserter-held-capacity and no-tick-sync-frozen-pair pads on the same roster.",
       "commits": [
@@ -28,7 +28,7 @@
     },
     {
       "lab": "engine-invariants",
-      "runner": "tests/integration/engine-invariants",
+      "runner": "tests/instruments/engine-invariants",
       "rungs": "standing",
       "conclusion": "The engine-fact backstops (incl. get_item_count completeness, the independent oracle behind the census enumerator) re-verified green on 2.1.11.",
       "commits": [
@@ -37,7 +37,7 @@
     },
     {
       "lab": "belt behavioral coverage (offset law NOT re-isolated)",
-      "runner": "tests/integration/belt-side-restore; tests/integration/belt-loss-replay (fixture re-exported by a current 2.1.11 source)",
+      "runner": "tests/integration/gallery-suite (the belt-combined-omnibus and belt-compression-loop pads through a real transfer, plus the web-UI import probe replaying the banked fixture.json); the belt-side-restore and belt-loss-replay runners were absorbed there 2026-07-27",
       "rungs": "behavioral",
       "conclusion": "HONEST PARTIAL: belt-side-restore (R11/R12 side-scoped recipe) and the 550-belt deficit replay run green on 2.1.11, and the atomic single-tick export scan + oversized-stack consolidation hold through the pad suite. The tier-parametric insert_at write-frame offset law (BELT-R10) and the 2.1 belt entries in version-compat PROFILES remain [hypothesis]-tagged best-effort carries - not re-isolated on 2.1.11. Re-isolate from the labs-archive tag before building anything new on the offset value.",
       "commits": [
@@ -46,7 +46,7 @@
     },
     {
       "lab": "platform teardown route",
-      "runner": "tests/integration/name-collision-delete + every suite finalizer",
+      "runner": "every suite finalizer plus the gallery-suite whole-platform transfer, whose two-phase commit deletes the source on success; the name-collision-delete runner was deleted 2026-07-27 (owner ruling: identity is the surface index, never the name, and lint:lua no-name-as-transfer-identity enforces it)",
       "rungs": "behavioral",
       "conclusion": "game.delete_surface via GameUtils.delete_platform remains the deterministic removal route on 2.1.11 (the 2.0.77 destroy() drift that motivated the certificate is bypassed by design; lint:lua still blocks platform.destroy()).",
       "commits": [

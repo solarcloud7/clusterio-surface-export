@@ -15,8 +15,8 @@
 // is the fluid-law re-certification instrument, so it keeps its own driver and lifecycle.
 //
 // Usage:
-//   node tests/integration/selftests/run-tests.mjs
-//   node tests/integration/selftests/run-tests.mjs --instance <name>   (or env SE_LAB_INSTANCE)
+//   node tests/instruments/selftests/run-tests.mjs
+//   node tests/instruments/selftests/run-tests.mjs --instance <name>   (or env SE_LAB_INSTANCE)
 
 import { execFileSync } from "node:child_process";
 

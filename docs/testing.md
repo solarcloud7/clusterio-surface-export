@@ -284,9 +284,9 @@ Evidence tags and measurement details are in
 | Check | Compares | Runs | Anchor |
 |---|---|---|---|
 | **Exact transfer gate** | serialized-expected vs **destination** physical census (items exact per key; fluids exact aggregate-by-name, epsilon 1e-6) | production, every transfer, before source deletion | [transfer-validation.lua](../docker/seed-data/external_plugins/surface_export/module/validators/transfer-validation.lua) |
-| **Source census (paired reads)** | serialized vs **source** physical census, per-entity, in the same Lua execution each is read; fail-closed abort on mismatch | production, every transfer export, before send | [export-pipeline.lua](../docker/seed-data/external_plugins/surface_export/module/core/export-pipeline.lua) + [census-accumulator.lua](../docker/seed-data/external_plugins/surface_export/module/export_scanners/census-accumulator.lua); witnessed live by the `census-omission-abort` + `transfer-workhorse` (census_pass) pads via [pad-transfer-suite](../tests/integration/pad-transfer-suite/run-tests.mjs) |
-| **Loss-injection teeth** | gate behavior under a forced physical shortfall (must fail closed, preserve source) | pad fixtures through the real transfer | the `gate-item-loss` / `gate-fluid-loss` / `rollback-validation-failure` pads, run by [pad-transfer-suite](../tests/integration/pad-transfer-suite/run-tests.mjs) |
-| **Fidelity fixtures** | source physical census vs destination physical census for a placed, known quantity | integration tests | the `omnibus-ground-items` pad fixture (see [MIGRATION.md](../tests/integration/MIGRATION.md)), [belt-loss-replay](../tests/integration/belt-loss-replay/run-tests.ps1) |
+| **Source census (paired reads)** | serialized vs **source** physical census, per-entity, in the same Lua execution each is read; fail-closed abort on mismatch | production, every transfer export, before send | [export-pipeline.lua](../docker/seed-data/external_plugins/surface_export/module/core/export-pipeline.lua) + [census-accumulator.lua](../docker/seed-data/external_plugins/surface_export/module/export_scanners/census-accumulator.lua); witnessed live by the `census-omission-abort` + `transfer-workhorse` (census_pass) pads via [pad-transfer-suite](../tests/integration/gallery-suite/run-tests.mjs) |
+| **Loss-injection teeth** | gate behavior under a forced physical shortfall (must fail closed, preserve source) | pad fixtures through the real transfer | the `gate-item-loss` / `gate-fluid-loss` / `rollback-validation-failure` pads, run by [gallery-suite](../tests/integration/gallery-suite/run-tests.mjs) |
+| **Fidelity fixtures** | source physical census vs destination physical census for a placed, known quantity | integration tests | the `omnibus-ground-items` pad fixture (see [MIGRATION.md](../tests/integration/MIGRATION.md)), the belt pads plus the web-UI import probe in [gallery-suite](../tests/integration/gallery-suite/run-tests.mjs), which replays the banked `fixture.json` payload that belt-loss-replay used to drive |
 
 The frozen destination gate's expected counts derive from the serializer's own output (verification
 is generated from serialized data — see atomic belt scan, in [CLAUDE.md](../CLAUDE.md)),
@@ -504,7 +504,7 @@ Or use the **web UI** (§11) → Manual Transfer per-platform **Export JSON**, o
 
 Automated coverage: `--only 'gateway|selftests'` — the live transfer is `gateway-transfer`; the pure guard
 decision (docked + not already transferring, and that `start_fn` is never reached on a block) is the
-`gateway` self-test inside `tests/integration/selftests`. `--only 'gateway'` alone matches the live test
+`gateway` self-test inside `tests/instruments/selftests`. `--only 'gateway'` alone matches the live test
 ONLY and silently leaves the guard unrun.
 
 ### 8. Passenger evacuate (no hard block)

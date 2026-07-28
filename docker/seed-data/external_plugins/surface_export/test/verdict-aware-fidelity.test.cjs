@@ -2,7 +2,6 @@
 
 const { test } = require("node:test");
 const assert = require("node:assert/strict");
-const { readFileSync } = require("node:fs");
 const { spawnSync } = require("node:child_process");
 const path = require("node:path");
 
@@ -57,19 +56,11 @@ test("Assert-TransferSucceeded throws before census with failure diagnostics", {
 	assert.match(result.stderr, /failure_black_box_fixture\.json/);
 });
 
-test("migrated fidelity runners adjudicate verdict before destination census", () => {
-	const cases = [
-		// ground-item-fidelity retired 2026-07-19 (absorbed by the omnibus-ground-items pad —
-		// tests/integration/MIGRATION.md); belt-loss-replay remains the Phase-5B instrument.
-		["belt-loss-replay", "$dest = Count-ProcessingUnits"],
-	];
-	for (const [name, censusMarker] of cases) {
-		const source = readFileSync(path.join(repoRoot, "tests", "integration", name, "run-tests.ps1"), "utf8");
-		const readIndex = source.indexOf("Read-DebugFile");
-		const assertIndex = source.indexOf("Assert-TransferSucceeded");
-		const censusIndex = source.indexOf(censusMarker);
-		assert.ok(readIndex >= 0, `${name} must parse the debug result`);
-		assert.ok(assertIndex > readIndex, `${name} must assert success after parsing`);
-		assert.ok(censusIndex > assertIndex, `${name} must assert success before destination census`);
-	}
-});
+// REMOVED 2026-07-28: "migrated fidelity runners adjudicate verdict before destination census".
+// It read tests/integration/belt-loss-replay/run-tests.ps1 BY PATH and hard-failed with ENOENT once
+// that runner was absorbed into gallery-suite. The class it guarded - parse the debug result, decide
+// validation_success, and only THEN census the destination, so a refused transfer is never misread
+// as physical loss - is now enforced mechanically for EVERY runner by scripts/lint-test-grounding.mjs
+// (findMjsGroundingViolations for the .mjs dialect, the ps1 rules for the other). That guard scales to
+// runners this test could never name, so the coverage moved UP, not away. The Assert-TransferSucceeded
+// cases above still cover the helper's own contract.

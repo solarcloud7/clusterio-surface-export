@@ -764,7 +764,8 @@ function Deserializer.restore_inventories(entity, entity_data, overflow_losses)
             -- specific_data.inventories[].items[].count, and the dest census (SurfaceCounter.count_items ->
             -- InventoryScanner.count_all_items) sums only top-level inv.items[].count — NEITHER recurses
             -- into item.grid or item.nested_inventory, so restoring them cannot move either side of the
-            -- exact gate. Covered by tests/integration/item-grid-roundtrip (physical dest grid reads).
+            -- exact gate. Covered by the omnibus-equipment-grid pad (physical dest grid reads); its
+            -- former standalone runner tests/integration/item-grid-roundtrip was absorbed 2026-07-27.
             if slot.valid_for_read then
               restore_item_properties(slot, item)
             end

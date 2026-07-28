@@ -42,15 +42,15 @@ When the official docs and our pinned engine disagree, the pinned-engine measure
 > and `tests/labs-certified.json` is certified at 2.1.11 (`certified_at` 2026-07-21) — the
 > re-certification campaign landed, so `lint:version-certification` is green rather than pending.
 > The laws below were measured by live fluid-law experiments on 2.1.11; the running instrument is
-> `tests/integration/fluid-segment-law/run-tests.mjs`, which re-measures them on demand.
+> `tests/instruments/fluid-segment-law/run-tests.mjs`, which re-measures them on demand.
 
 - **`entity.fluidbox` is HARD-REMOVED — reading the attribute THROWS.** **[API]** Fluid access is index-based LuaEntity/LuaFluidBox methods: `fluids_count`, `get_fluid(i)`,
   `set_fluid(i, fluid)`, `has_fluid_segment(i)`, `get_fluid_segment_id(i)`, `get_fluid_segment_fluid(i)`,
   `set_fluid_segment_fluid(i, fluid)`, `get_fluid_segment_capacity(i)`, `get_fluid_box_prototype(i)`,
   `fluidbox_neighbours`. **Segment getters THROW on a segmentless box** (2.0 returned `nil`) — always guard
   with `has_fluid_segment(i)` before any `get_fluid_segment_*` call.
-  **[empirical, 2.1.11, tests/integration/fluid-segment-law]** (rung: segment getters throw on segmentless)
-- **The buffer/window duality is GONE.** **[empirical, 2.1.11, tests/integration/fluid-segment-law]**
+  **[empirical, 2.1.11, tests/instruments/fluid-segment-law]** (rung: segment getters throw on segmentless)
+- **The buffer/window duality is GONE.** **[empirical, 2.1.11, tests/instruments/fluid-segment-law]**
   `get_fluid_segment_fluid(i)` returns the EXACT single-fluid segment total from ANY member box at ANY
   instant — a thruster fuel box read 500 exact, and a fusion-reactor coolant box read 300→450 exact both
   mid-transient and settled. There is no order-dependent claim, no mixed-regime "contents + Σ locals" law, and
@@ -58,9 +58,9 @@ When the official docs and our pinned engine disagree, the pinned-engine measure
   the segment (float32: 12 pipes on one 1000-unit segment summed to `999.9999997615814`; a thruster:pipe share
   ratio was 10:1 by capacity), which the registry keeps for census attribution and split-segment
   proportioning.
-- **`set_fluid_segment_fluid(i, fluid)` writes a WHOLE segment in one call.** **[empirical, 2.1.11, tests/integration/fluid-segment-law]** Writing 400 coolant to a segment read back 400 exact — no highest-capacity-member
+- **`set_fluid_segment_fluid(i, fluid)` writes a WHOLE segment in one call.** **[empirical, 2.1.11, tests/instruments/fluid-segment-law]** Writing 400 coolant to a segment read back 400 exact — no highest-capacity-member
   workaround. A segmentless storage is written with `set_fluid(i, fluid)`, which returns the accepted amount.
-- **Plasma writes STICK, clamped to box capacity.** **[empirical, 2.1.11, tests/integration/fluid-segment-law]**
+- **Plasma writes STICK, clamped to box capacity.** **[empirical, 2.1.11, tests/instruments/fluid-segment-law]**
   `set_fluid` of 50 plasma onto a fusion-reactor OUTPUT box read back 10 (capacity clamp); 25 onto a
   fusion-generator INPUT box read back 10. **Fusion-generator boxes are segmentless.** Plasma rides transfers
   like any fluid — the `engine_owned` connection-category classification is deleted (owner ruling
@@ -69,7 +69,7 @@ When the official docs and our pinned engine disagree, the pinned-engine measure
 
 ### Prototype fluid-box coverage sweep
 
-**[empirical, 2.1.11, tests/integration/fluid-segment-law]** One live instance per prototype slot; each box was measured for
+**[empirical, 2.1.11, tests/instruments/fluid-segment-law]** One live instance per prototype slot; each box was measured for
 `production_type`, segment presence (`has_fluid_segment`), and the segment-total law. The sweep drives the
 permanent coverage matrix — a new prototype fluid-box slot without a row is a finding.
 
@@ -120,7 +120,7 @@ a segment) — they are not a capture blind spot at 2.1.11.
     across 8 holding inserters.
 - **So a physical total computed as `get_item_count` over every entity is complete** — inventories **+** belt
   lines **+** inserter-held — and is not inflated by shared belt runs (a general engine fact, guarded by
-  `tests/integration/engine-invariants`). NOTE: the production paired-reads source census does NOT use
+  `tests/instruments/engine-invariants`). NOTE: the production paired-reads source census does NOT use
   `get_item_count` as its physical oracle — it reads through `InventoryScanner.extract_all_inventories`
   (the same primitive the serializer uses); this completeness fact is what a `get_item_count`-based meter
   would rely on, retained here as engine truth.
@@ -141,7 +141,7 @@ a segment) — they are not a capture blind spot at 2.1.11.
   invalidate `get_item_count` or unique-ID enumeration as physical meters; it invalidates using the engine
   line graph to certify that a source and imported line represent the same continuous physical lane/side. See
   BELT-R9 in the belt-lab NOTEBOOK (archived at git tag `labs-archive-2026-07-19`).
-- **[empirical, 2.0.76]** `tests/integration/engine-invariants` grounds the belt meter against the unique-stack
+- **[empirical, 2.0.76]** `tests/instruments/engine-invariants` grounds the belt meter against the unique-stack
   physical total (catches both belt-item drop → meter < physical and a whole-line double-count → meter >
   physical) and asserts held-item inclusion whenever an inserter is holding.
 

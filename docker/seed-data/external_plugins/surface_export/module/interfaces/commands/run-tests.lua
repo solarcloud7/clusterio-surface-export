@@ -327,7 +327,7 @@ local function run_pad_body(player, surface, cell, fixture, dispatch, roster, ct
   -- transfer pad runs them too — the promotion of a pad to transfer-act is now a pure ADD.
   -- What a transfer pad does NOT run here is its DECLARED verify (d): those checks describe the
   -- dest/source ends of a REAL cross-instance transfer (arrived platform, discarded dest, preserved
-  -- source) and are owned by tests/integration/pad-transfer-suite. Evaluating them against a local
+  -- source) and are owned by tests/integration/gallery-suite. Evaluating them against a local
   -- pasted half would be meaningless and would fail honest fixtures.
   local transfer_act = has_lc and (act == "transfer" or act == "clone")
   if has_lc and type(act) == "table" then

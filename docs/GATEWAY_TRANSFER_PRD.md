@@ -111,7 +111,8 @@ A transfer is **not** blocked when players are aboard. A platform passenger is h
 roughly no inventory (only equipped gear). Everyone aboard, and any abandoned character bodies, are
 **evacuated to Nauvis** at the sole source-delete chokepoint (`delete_platform_for_transfer` →
 `Gateway.evacuate_passengers`, run before `game.delete_surface`) — never orphaned, never duplicated (the
-destination copy is already committed). Covered by `tests/integration/passenger-evacuate`; see the passenger
+destination copy is already committed). The `passenger-evacuate` runner was retired 2026-07-27 in the
+one-test-save consolidation and the evacuation branch has no standing test today; see the passenger
 section of [CLAUDE.md](../CLAUDE.md).
 
 ## Planned work

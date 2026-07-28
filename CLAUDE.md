@@ -290,7 +290,10 @@ character bodies are **EVACUATED to Nauvis** at the SOLE source-delete chokepoin
 surface is torn down — never orphaned, never duplicated (native-aligned with how the engine returns a player
 to a planet on hub-loss). This replaced an earlier passenger hard-block. Carrying the player **with** the
 platform to the destination (`connect_to_server` + `enter_space_platform`) is a future Layer-2 feature gated on
-a reachability spike. Covered by `tests/integration/passenger-evacuate`; design in
+a reachability spike. The dedicated `passenger-evacuate` runner was RETIRED 2026-07-27 (owner
+consolidation): evacuation happens at the single source-delete chokepoint named above, which every
+gallery-suite transfer executes, but no standing test puts a player aboard first — the evacuation
+branch itself is currently uncovered. Design in
 [docs/GATEWAY_TRANSFER_PRD.md](docs/GATEWAY_TRANSFER_PRD.md).
 
 ## Export/Import Workflow Notes (Current)

@@ -250,7 +250,7 @@ Two test suites verify platform transfer correctness:
 
 ```powershell
 # Pad transfer suite: real cross-instance transfers of every transfer-act pad fixture
-node tests/integration/pad-transfer-suite/run-tests.mjs
+node tests/integration/gallery-suite/run-tests.mjs
 
 ```
 
