@@ -217,7 +217,11 @@ end
 --   * steadyItems = sum of get_item_count() over every belt-class entity in the pad area
 --   * maxStack    = max per-position stack count seen across all transport lines
 --   * overpackedLanes = transport lines on a single entity holding MORE than 4 items (over the
---     nominal per-tile lane capacity — the owner's hand-built corner over-pack)
+--     nominal per-tile lane capacity — the owner's hand-built corner over-pack). This is a
+--     DISTRIBUTION reading, diagnostic only: how many lanes are over-packed depends on where the
+--     items happen to sit at the measurement instant, so it drifts on a moving world (measured
+--     2026-07-28: 13 at the source bake, 15 on the transferred copy, conservation untouched).
+--     Pin hasOverpackedCornerLanes — the law is that the over-pack class survives, not its tally.
 local function measure_belt_combined(surface, area)
     local belt_types = { "transport-belt", "underground-belt", "splitter", "loader", "loader-1x1" }
     local counts = { ["transport-belt"] = 0, ["underground-belt"] = 0, ["splitter"] = 0, loader = 0 }
@@ -256,8 +260,15 @@ local function measure_belt_combined(surface, area)
     }
 end
 
--- Acid-fed uranium miner (owner-hand-built, frozen): tank + drill fluid, resources under the pad,
--- loose ground items, drill identity.
+-- Acid-fed uranium miner (owner-hand-built): the pad's acid POOL, resources under the pad, loose
+-- ground items, drill identity.
+--
+-- The tank and the drill sit on ONE fluid segment (measured 2026-07-28: both report segment id 12).
+-- Restoration writes a segment ONCE via set_fluid_segment_fluid and the engine then redistributes it
+-- across the members by capacity, so the per-entity SPLIT is an engine distribution, not a conserved
+-- quantity — the transferred copy read drill 104.33 against a source bake of 104.40625 at an
+-- unchanged pool. Pin the SEGMENT TOTAL (which is also what the production gate enforces: fluids
+-- aggregate by name) plus the qualitative fact that the drill arrived holding acid at all.
 local function measure_mining_drill_acid(surface, area, anchor)
     local dx, dy = anchor("big-mining-drill")
     local drill = at(surface, "big-mining-drill", dx, dy)
@@ -270,12 +281,29 @@ local function measure_mining_drill_acid(surface, area, anchor)
             if f then drill_acid = drill_acid + f.amount end
         end
     end
+    -- Sum the acid pool over the anchors' segments, deduped by segment id: one shared segment counts
+    -- once, and a topology SPLIT (the pairing-defect class) still totals both halves honestly.
+    local seen, acid_total = {}, 0
+    local holders = {}
+    if tank then holders[#holders + 1] = tank end
+    if drill then holders[#holders + 1] = drill end
+    for _, e in ipairs(holders) do
+        for i = 1, e.fluids_count do
+            if e.has_fluid_segment(i) then
+                local id = e.get_fluid_segment_id(i)
+                if id and not seen[id] then
+                    seen[id] = true
+                    local f = e.get_fluid_segment_fluid(i)
+                    if f and f.name == "sulfuric-acid" then acid_total = acid_total + f.amount end
+                end
+            end
+        end
+    end
     local resources = surface.find_entities_filtered({ type = "resource", area = area })
     local resource_total = 0
     for _, r in pairs(resources) do resource_total = resource_total + r.amount end
     return {
-        tankAcid = tank and tank.get_fluid_count("sulfuric-acid") or nil,
-        drillAcid = drill_acid,
+        acidSegmentTotal = acid_total, drillHasAcid = drill_acid > 0,
         resourceCount = #resources, resourceTotal = resource_total,
         groundItems = #surface.find_entities_filtered({ type = "item-entity", area = area }),
         drillName = drill and drill.name or "absent",

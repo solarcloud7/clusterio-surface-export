@@ -1243,7 +1243,7 @@
 					"y": 45.5
 				}
 			],
-			"revision": 5,
+			"revision": 6,
 			"labId": "belt-lab",
 			"name": "Combined belt omnibus (steady-state, hand-built)",
 			"purpose": "One pad combining sideloads, 3 splitters, 3 underground pairs, and 2 filtered output loaders - the CONSERVATIVE closed-circuit exemplar: 380 items recirculate forever with no source and no sink, so any loss is visible instead of self-healed.",
@@ -1266,7 +1266,7 @@
 				"surfexp_gateways": "0.4.0",
 				"maraxsis": "1.34.51"
 			},
-			"invariant": "CONSERVATIVE closed circuit (owner removed the infinity chests 2026-07-19: self-healing masks loss): 380 items stationary across 35 turbo belts / 3 splitters / 6 underground ends / 2 filtered loaders; every stack one item; corner inside lanes carry the over-pack class (13 lanes, pinned as presence). Covers the retired belt-corner-recovery invariant (over-pack, 13 lanes vs its 4) and the conservation-honesty property.",
+			"invariant": "CONSERVATIVE closed circuit (owner removed the infinity chests 2026-07-19: self-healing masks loss): 380 items stationary across 35 turbo belts / 3 splitters / 6 underground ends / 2 filtered loaders; every stack one item; corner inside lanes carry the over-pack class. Conservation (380) and the PRESENCE of over-packed corner lanes are the invariants; HOW MANY lanes are over-packed is a distribution reading that drifts on a moving world (13 at bake, 15 on the transferred copy at unchanged conservation) and is not pinned.",
 			"independentOracleRequired": true,
 			"fingerprint": {
 				"beltCount": 35,
@@ -1275,7 +1275,6 @@
 				"loaderCount": 2,
 				"steadyItems": 380,
 				"maxStack": 1,
-				"overpackedLanes": 13,
 				"hasOverpackedCornerLanes": true,
 				"loaderFilterIron": "iron-plate",
 				"loaderFilterCopper": "copper-plate"
@@ -1284,7 +1283,7 @@
 				"law": "A saturated closed belt circuit is STEADY-STATE: item count constant while fully live (no freeze needed - belts consume nothing; saturation is a fixed point).",
 				"action": "pad-transfer-suite runs the pad through a REAL transfer and physically reads the destination law (belt_stats); /test-run pastes and fingerprints BOTH halves. Configs measured: loader filters.",
 				"expected": "380 items stationary on the destination after transfer, and the strict gate passes; loader filters survive.",
-				"forbidden": "Do NOT freeze this pad (it is the steady-state class exemplar). Do NOT rebuild it from a script - the state is the artifact."
+				"forbidden": "Do not pin the over-packed LANE COUNT: it is where the items happen to sit at the measurement instant, not a conserved quantity. Pin conservation and the class."
 			},
 			"note": "FIRST CATCH (2026-07-19, at claim time): serializer has NO loader handler (filters not carried; splitter types gate excludes loaders) and NO infinity-container handler (infinity filters not carried) - transfer would deliver hollow configs. Fix is queued; this pad is its kill-measurement. REV2 2026-07-19: owner removed infinity chests (self-healing masked loss); circuit now conservative at 380; belt-corner-recovery retired as covered (over-pack measured present at 13 lanes vs its 4). REV4 2026-07-26: re-measured live on the 2.1.11 cluster - entities 35/3/6/2, belt items 380, over-packed lanes 13, and the declared infinity-chest anchor at (19.5,45.5) resolved to NOTHING (removed in REV2), so it was dropped; prose that still said 578 items / 18-19 lanes was corrected to the measured values the fingerprint already carried. REV5 2026-07-26 (OWNER RULING): overpackedLanes is an ARRANGEMENT statistic, not an invariant — measured settling 37->17->18 on a healthy paste while the side multisets stayed exact (R14), and the canonical law names position/order/window non-invariants. Paste compare now excludes it per-field (pasteExclude); the dest law asserts the true invariants (maxStack — the tooth that caught the transfer consolidation defect 5-vs-1 — plus counts, presence, filters). The left-half pin 13 stays as source-drift detection. runnerExcluded DELETED: the pad runs everywhere again. Multi-stack is load-bearing: a slot restores as ONE stack of its captured count.",
 			"auditAggregateOnly": true,
@@ -1523,10 +1522,10 @@
 					"y": 24.5
 				}
 			],
-			"revision": 2,
+			"revision": 3,
 			"labId": "specialized-inventory-lab",
 			"name": "Acid-fed uranium miner (hand-built)",
-			"purpose": "Fluid-consuming big mining drill over real uranium resource patches with a sulfuric-acid tank feed - frozen-class; exercises resource entities, fluid-consuming mining, and acid plumbing in one pad.",
+			"purpose": "Fluid-consuming big mining drill over real uranium resource patches with a sulfuric-acid tank feed; exercises resource entities, fluid-consuming mining, and acid plumbing in one pad.",
 			"category": "physical-lab",
 			"owningRunner": null,
 			"owningRunnerWaiver": "Hand-built live by the owner 2026-07-19 (construct-once doctrine); supersedes the retired lab-specialized-fluid-r1 platform (owner ruling: platform-15 gets its own tile).",
@@ -1546,21 +1545,21 @@
 				"surfexp_gateways": "0.4.0",
 				"maraxsis": "1.34.51"
 			},
-			"invariant": "Frozen: tank 13050 sulfuric-acid, drill 104 acid, 4 uranium resource patches totaling 30398 ore, 1 ground item. Resource entity amounts ride NO serializer handler (open coverage gap, first catch at claim).",
+			"invariant": "The pad's acid POOL is one fluid segment spanning tank, pipes and drill: 13364 sulfuric-acid conserved, with the drill holding some of it. The per-entity SPLIT is an engine distribution, NOT an invariant - restoration writes the segment once and the engine redistributes by capacity (measured 2026-07-28: same segment id on both entities; the transferred copy read drill 104.33 vs a 104.40625 bake at an unchanged pool). Also: 4 uranium resource patches totaling 30398 ore and 1 ground item. Resource entity amounts ride NO serializer handler (open coverage gap, first catch at claim).",
 			"independentOracleRequired": true,
 			"fingerprint": {
-				"tankAcid": 13050.78125,
-				"drillAcid": 104.40625,
+				"acidSegmentTotal": 13364,
+				"drillHasAcid": true,
 				"resourceCount": 4,
 				"resourceTotal": 30398,
 				"groundItems": 1,
 				"drillName": "big-mining-drill"
 			},
 			"testCard": {
-				"law": "A fluid-consuming miner over real resource patches is frozen-class state; resource amounts have no serializer handler yet.",
-				"action": "/test-run copy/paste + fingerprint; transfer must preserve acid, patch amounts, ground ore.",
-				"expected": "Acid exact, resource amounts exact, ground ore present.",
-				"forbidden": "Do not unfreeze the drill (consumes acid, depletes the patch)."
+				"law": "A fluid-consuming miner's acid POOL survives transfer as a conserved segment total, and the drill arrives still holding acid; resource amounts have no serializer handler yet.",
+				"action": "/test-run copy/paste + fingerprint; the whole-gallery transfer carries it to the destination board.",
+				"expected": "Acid segment total conserved, drill non-empty, resource amounts exact, ground ore present.",
+				"forbidden": "Do not pin the tank/drill acid SPLIT - it is an engine distribution within one segment and pinning it fails a lossless transfer."
 			},
 			"note": "FIRST CATCH: no resource-type serializer handler (entity.amount not carried) - queued with the loader/infinity-container handler work."
 		},

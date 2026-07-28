@@ -69,10 +69,39 @@ function runBoard(host) {
 	return JSON.parse(line.slice(line.indexOf("{")));
 }
 
-function boardOk(board, manifest) {
-	const excluded = manifest.fixtures.filter(f => f.runnerExcluded).length;
-	return board.failed === 0 && board.missing === 0 && board.unknown === 0
-		&& board.skipped === excluded;
+// The platform a fixture measures. Mirrors the Lua board's first_platform_name for the composite
+// "<live> + <held>" form. Compared EXACTLY, never by substring — platform names are collidable and
+// name-as-identity is a standing lint rule here.
+function subjectPlatform(fixture) {
+	return String(fixture.platformName || "").split("+")[0].trim();
+}
+
+// Adjudicate a board fixture-by-fixture rather than by tally: a tally can be green while the wrong
+// fixtures produced it. `onlyPlatform` narrows the IN-SCOPE set for a DESTINATION board — exactly one
+// platform rode the transfer, so a fixture whose subject is a different platform is REQUIRED to report
+// missing (its platform genuinely is not on this instance) and anything else, a silent pass included,
+// is a defect. The scope is COMPUTED from the manifest, never an enumerated exception list, so a
+// fixture added tomorrow is adjudicated the day it lands.
+function adjudicateBoard(board, manifest, onlyPlatform) {
+	const problems = [];
+	const byId = new Map(manifest.fixtures.map(f => [f.id, f]));
+	const seen = new Set();
+	for (const result of board.results || []) {
+		seen.add(result.id);
+		const fixture = byId.get(result.id);
+		if (!fixture) { problems.push(`${result.id}: on the board but absent from the manifest`); continue; }
+		const inScope = !onlyPlatform || subjectPlatform(fixture) === onlyPlatform;
+		const expected = fixture.runnerExcluded ? "skipped" : (inScope ? "pass" : "missing");
+		if (result.verdict !== expected) {
+			problems.push(`${result.id}: ${result.verdict} (expected ${expected})` +
+				(result.detail ? ` — ${String(result.detail).slice(0, 120)}` : ""));
+		}
+	}
+	for (const fixture of manifest.fixtures) {
+		if (!seen.has(fixture.id)) problems.push(`${fixture.id}: rostered but never adjudicated by the board`);
+	}
+	if (board.unknown !== 0) problems.push(`${board.unknown} unknown pad(s) discovered on the board`);
+	return problems;
 }
 
 function platformIndex(host, name) {
@@ -112,8 +141,10 @@ async function main() {
 
 		// A. The board on the live source world.
 		const boardA = runBoard(1);
-		step("board.host1", boardOk(boardA, manifest),
-			`passed=${boardA.passed} failed=${boardA.failed} skipped=${boardA.skipped}`);
+		const problemsA = adjudicateBoard(boardA, manifest);
+		step("board.host1", problemsA.length === 0,
+			problemsA.length ? problemsA.join(" | ")
+				: `every rostered fixture adjudicated: passed=${boardA.passed} skipped=${boardA.skipped}`);
 
 		// B. ONE production transfer of the whole live gallery platform.
 		const index = platformIndex(1, platformName);
@@ -129,14 +160,12 @@ async function main() {
 
 		// C. The board on the transferred copy — destination parity for every fixture.
 		const boardC = runBoard(2);
-		const cOk = boardOk(boardC, manifest);
-		step("board.host2.transferred", cOk,
-			`passed=${boardC.passed} failed=${boardC.failed} missing=${boardC.missing} unknown=${boardC.unknown} skipped=${boardC.skipped}`);
-		if (!cOk) {
-			const bad = (boardC.results || []).filter(r => r.verdict !== "pass");
-			console.log("  board.host2 non-pass verdicts: " +
-				bad.map(r => `${r.id}=${r.verdict}${r.detail ? `(${String(r.detail).slice(0, 80)})` : ""}`).join(" | "));
-		}
+		const outOfScope = manifest.fixtures.filter(f => subjectPlatform(f) !== platformName).map(f => f.id);
+		const problemsC = adjudicateBoard(boardC, manifest, platformName);
+		step("board.host2.transferred", problemsC.length === 0,
+			problemsC.length ? problemsC.join(" | ")
+				: `every rostered fixture adjudicated: passed=${boardC.passed} skipped=${boardC.skipped}` +
+					`, out-of-scope (must be missing): ${outOfScope.join(", ") || "none"}`);
 
 		// D. Hook-armed refusal transfer back (2PC contract). The hook is in FAIL_SAFE_HOOKS and
 		// consumed by the import; the finally below also disarms it defensively.
