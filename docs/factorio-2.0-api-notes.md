@@ -314,13 +314,33 @@ state-dimensions-lab NOTEBOOK, archived at git tag `labs-archive-2026-07-19`, an
   **[empirical, 2.0.77, pad omnibus-circuit-config]** Restoring control-behavior config (circuit_condition,
   circuit_enable_disable) must use `get_or_create_control_behavior()`, or the settings are silently dropped
   for any entity whose CB is not yet instantiated at restore time (wires restore in a separate phase).
-- **A decider combinator's OUTPUT REGISTER is not script-writable, and `disabled_by_script` is a
-  no-op on combinators.** **[empirical, 2.1.11, circuit-latch-rearm R1/R2]**
-  `LuaDeciderCombinatorControlBehavior` has no `set_signal` ("doesn't contain key"), and writing
-  `disabled_by_script = true` on a combinator reads back `false`. So a self-feedback (SR) latch cannot
+- **Most entity types are natively `active == false`, so "active" is not a fidelity axis for them.**
+  **[empirical, 2.1.11, gallery source-vs-destination control 2026-07-28]** On the untouched gallery
+  source, 486 of 542 entities read `active == false`: pipes, pipe-to-grounds, belts, splitters,
+  containers, storage tanks, electric poles, solar panels, accumulators, lamps, display panels,
+  combinators, resources, ground items — and the space-platform-hub itself. These are passive
+  entities with no per-tick update. Never diff raw `active` counts between source and destination and
+  read the difference as damage; diff them PER TYPE against the source control, or the ~490 natively
+  inactive entities swamp the handful that matter.
+- **The import freezes nearly every type but only wakes `ACTIVATABLE_ENTITY_TYPES`, so a type that is
+  natively ACTIVE and absent from that list arrives permanently disabled.**
+  **[empirical, 2.1.11, gallery whole-platform transfer 2026-07-28]** `entity_creation.lua` disables
+  everything except beacon/radar/item-request-proxy; `SurfaceLock.activate_all` and
+  `ActiveStateRestoration` both filter by `ACTIVATABLE_ENTITY_TYPES`. Measured on a real transfer,
+  the source-vs-destination difference is exactly **infinity-pipe x2 and spider-vehicle x2** — active
+  at the source, inactive at the destination. The gate cannot see this (it counts items and fluids,
+  not activity). A spidertron riding a transferred platform arrives disabled.
+- **A decider combinator's OUTPUT REGISTER is not script-writable.**
+  **[empirical, 2.1.11, circuit-latch-rearm R1]**
+  `LuaDeciderCombinatorControlBehavior` has no `set_signal` ("doesn't contain key"). So a self-feedback (SR) latch cannot
   be restored by any serializer: it arrives with its register at 0, reads its own 0 through the
-  feedback wire, and is stable at 0 — the source's held signal is LOST on transfer. Combinators are
-  also never actually disabled during the import window; only the platform pause stops them.
+  feedback wire, and is stable at 0 — the source's held signal is LOST on transfer.
+  (An earlier revision of this entry also claimed `disabled_by_script` is a NO-OP on combinators,
+  from a rung that wrote `true` and read the property back as `false`. RETRACTED 2026-07-28: that
+  test was confounded — combinators are natively `active == false` (see the entry above), so neither
+  the readback nor an `active` check distinguishes "the write was ignored" from "it was already
+  off". Whether the write takes effect on a combinator is UNMEASURED; a correct rung must record
+  `active` BEFORE the write.)
 - **A cleared latch CAN be re-armed by temporarily rewriting the decider's CONDITION.**
   **[empirical, 2.1.11, circuit-latch-rearm R3]** Control behaviour IS writable: forcing the condition
   true, letting it evaluate, then restoring the captured condition leaves the latch holding itself
