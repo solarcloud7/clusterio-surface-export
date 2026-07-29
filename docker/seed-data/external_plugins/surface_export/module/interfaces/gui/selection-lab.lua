@@ -457,6 +457,24 @@ local function execute_create_and_restore(surface, recs, player, side_groups, fl
 			created = created + 1
 			records[#records + 1] = rec
 			entity_map[rec.entity_id] = entity
+			-- FREEZE AT CREATE — the same step, the same exclusions, the same execution as the
+			-- transfer import (import_phases/entity_creation.lua). The tool exists to represent a
+			-- real transfer, and until 2026-07-28 this was the one place it did not: pasted entities
+			-- came up LIVE and only had their captured state applied after every restore, so a
+			-- pasted assembler, drill or furnace was a running machine for the whole restore window.
+			-- Beacons/radars stay live for the same reason the import keeps them live (the beacon
+			-- speed bonus must apply as crafters are placed); an item-request-proxy is never frozen
+			-- because nothing here would bring it back.
+			if entity.type ~= "beacon" and entity.type ~= "radar"
+				and entity.type ~= "item-request-proxy" then
+				local frozen_ok, frozen_err = pcall(function()
+					if entity.active then entity.disabled_by_script = true end
+				end)
+				if not frozen_ok then
+					log(string.format("[SelectionLab] failed to freeze %s at (%.1f,%.1f): %s",
+						rec.name, rec.position.x, rec.position.y, tostring(frozen_err)))
+				end
+			end
 		else
 			create_failed = create_failed + 1
 			log(string.format("[SelectionLab] create_entity failed for %s at (%.1f,%.1f): %s",
@@ -545,15 +563,20 @@ local function execute_create_and_restore(surface, recs, player, side_groups, fl
 			say(player, "[color=yellow][font=default-bold][SelectionLab][/font][/color] fluid restore skipped: " .. tostring(fluids_err), { r = 1, g = 0.7, b = 0.3 })
 		end
 	end
-	-- Applied LAST (after all restores) so restoration always sees the same entity state.
-	-- The paste keeps whatever active/inactive state the capture recorded — both directions
-	-- (owner ruling 2026-07-17). nil = pre-lab_active capture; leave the engine default.
+	-- ACTIVATION — the paste's counterpart to the transfer's activation phase, applied LAST so every
+	-- restore above ran against a frozen world. The paste keeps whatever active/inactive state the
+	-- capture recorded, both directions (owner ruling 2026-07-17).
+	--
+	-- A nil lab_active (a pre-lab_active capture) must UN-freeze, not fall through: since 2026-07-28
+	-- everything is frozen at create, so "leave the engine default" would now strand the entity
+	-- disabled forever. Absent a recorded state, active is the right default — it is what the entity
+	-- would have been before the freeze existed.
 	for _, rec in ipairs(records) do
 		local entity = entity_map[rec.entity_id]
-		if entity and entity.valid and rec.lab_active ~= nil then
+		if entity and entity.valid then
 			-- 2.1: LuaEntity.active is READ-ONLY; disabled_by_script is the writable control
 			-- (verified live 2026-07-21: it drives active both directions).
-			entity.disabled_by_script = not rec.lab_active
+			entity.disabled_by_script = (rec.lab_active == false)
 		end
 	end
 	end
