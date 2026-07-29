@@ -2539,6 +2539,48 @@
 				"expected": "segmentCount 3 on both boards and at the destination; per-fluid totals conserved.",
 				"forbidden": "Segment merge (count < 3), fluid mixing across the light-oil/gas boundary, per-segment exact pins (pumps move gas between its two segments live)."
 			}
+		},
+		{
+			"id": "active-state-parity",
+			"padKind": "platform",
+			"revision": 1,
+			"labId": "state-dimensions-lab",
+			"name": "Active-state parity across a transfer",
+			"purpose": "Entities must arrive in the active state they left. Three passes disable entities on DIFFERENT sets - the source lock (ACTIVATABLE_ENTITY_TYPES), entity_creation (everything except beacon/radar/item-request-proxy) and the pre-validation re-pause (ACTIVATABLE) - and only one set was ever restored. Measured 2026-07-28 on a real whole-platform transfer: infinity-pipe x2 and spider-vehicle x2 arrived permanently inactive, so a spidertron riding a transferred platform arrived disabled. The exact gate is structurally blind to this: it counts items and fluids, not activity.",
+			"category": "physical-lab",
+			"owningRunner": null,
+			"owningRunnerWaiver": "Rides the whole-gallery transfer in gallery-suite and is read on both boards by /test-run; no separate standing runner by design (one-test-save doctrine).",
+			"saveRole": "source",
+			"platformName": "lab-omnibus-state-v1",
+			"engineVersion": "2.1.11",
+			"mods": {
+				"base": "2.1.11",
+				"elevated-rails": "2.1.11",
+				"FluidMustFlow": "1.5.0",
+				"PlanetsLib": "1.22.0",
+				"quality": "2.1.11",
+				"recycler": "2.1.11",
+				"SpidertronEnhancements": "1.11.0",
+				"space-age": "2.1.11",
+				"SpidertronPatrols": "2.7.0",
+				"surfexp_gateways": "0.4.0",
+				"maraxsis": "1.34.51"
+			},
+			"invariant": "Zero entities of the natively-active classes arrive inactive. The pin is 0, not a total inactive count: 486 of the gallery's 542 entities are natively inactive (pipes, belts, containers, poles, the hub), so a total would swamp the signal.",
+			"independentOracleRequired": true,
+			"fingerprint": {
+				"spiderVehiclesInactive": 0,
+				"infinityPipesInactive": 0,
+				"beaconsInactive": 0
+			},
+			"testCard": {
+				"law": "An entity arrives in the active state it left - the wake set must cover every disable set, in both directions.",
+				"build": "Reads the live platform; no pad geometry. The three classes are the exact corners the disable sets disagreed about.",
+				"action": "Read on the source board, ride the whole-gallery transfer, read again on the destination board.",
+				"expected": "All three counts 0 on both boards.",
+				"forbidden": "Do not re-pin this to a TOTAL inactive count - most entities are natively inactive and the signal disappears. Do not narrow the restore pass to a type list; two different lists have already drifted (ACTIVATABLE left spidertrons dead, beacon/radar/proxy left a beacon dead)."
+			},
+			"note": "Companion to the fix in surface-lock.lua (capture wider than freeze) and active_state_restoration.lua (restore with NO type filter)."
 		}
 	]
 }

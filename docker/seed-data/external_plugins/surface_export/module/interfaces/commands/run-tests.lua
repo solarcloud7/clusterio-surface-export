@@ -216,6 +216,7 @@ local DISPATCH = {
   ["energy-accumulator-drain"]      = { args = "surface", meter = FM.measure_energy },
   ["belt-corner-recovery"]          = { args = "surface", meter = FM.measure_belt_corner },
   ["transfer-workhorse"]            = { args = "surface", meter = meter_entities },
+  ["active-state-parity"]           = { args = "surface", meter = FM.measure_active_state },
   ["consumable-hub-1"]              = { args = "surface", meter = meter_entities },
   ["consumable-hub-2"]              = { args = "surface", meter = meter_entities },
   ["consumable-hub-3"]              = { args = "surface", meter = meter_entities },

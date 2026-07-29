@@ -365,6 +365,36 @@ local function measure_fluid_segments(surface, area)
     }
 end
 
+-- ACTIVE-STATE PARITY. Counts entities that arrive INACTIVE among classes that are natively active,
+-- so the pin is 0 and any regression shows as a non-zero count on the destination board.
+--
+-- Why these three: they are the exact classes the three disable passes disagreed about. infinity-pipe
+-- and spider-vehicle are frozen by entity_creation but were outside ACTIVATABLE_ENTITY_TYPES, so
+-- nothing woke them (measured 2026-07-28: a spidertron arrived disabled). beacon is the opposite
+-- corner — never frozen at create, but disabled by the pre-validation re-pause, so it needs the
+-- restore pass to wake it; an exclusion list that skipped beacons left one dead, caught while
+-- verifying the fix for the first case. A count of anything but zero means a disable set and the
+-- restore set have drifted apart again.
+--
+-- Deliberately NOT a total inactive count: 486 of the gallery's 542 entities are natively inactive
+-- (pipes, belts, containers, poles, the hub), so a total would be noise that swamps the signal.
+local function measure_active_state(surface)
+    local out = { spiderVehiclesInactive = 0, infinityPipesInactive = 0, beaconsInactive = 0 }
+    local function count_inactive(filter)
+        local n = 0
+        for _, e in pairs(surface.find_entities_filtered(filter)) do
+            -- intentional probe: a type without .active is not a finding, it is not in scope here
+            local ok, active = pcall(function() return e.active end)
+            if e.valid and ok and active == false then n = n + 1 end
+        end
+        return n
+    end
+    out.spiderVehiclesInactive = count_inactive({ type = "spider-vehicle" })
+    out.infinityPipesInactive = count_inactive({ name = "infinity-pipe" })
+    out.beaconsInactive = count_inactive({ type = "beacon" })
+    return out
+end
+
 local function measure_energy(surface)
     local acc = surface.find_entities_filtered({ type = "accumulator" })[1]
     local electric = 0
@@ -669,6 +699,7 @@ M.measure_belt_combined = measure_belt_combined
 M.measure_mining_drill_acid = measure_mining_drill_acid
 M.measure_omnibus_schedule = measure_omnibus_schedule
 M.measure_energy = measure_energy
+M.measure_active_state = measure_active_state
 M.measure_belt_corner = measure_belt_corner
 M.measure_belt_loop = measure_belt_loop
 
