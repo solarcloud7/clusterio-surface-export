@@ -121,10 +121,16 @@ function ActiveStateRestoration.restore(entities_to_create, entity_map, frozen_s
             goto continue
         end
         
-        -- Only process entity types that can be activated/deactivated
-        if not ACTIVATABLE_ENTITY_TYPES[entity.type] then
-            goto continue
-        end
+        -- NO TYPE FILTER. This loop restores the CAPTURED state, so it must cover every entity that
+        -- anything upstream may have disabled — and three separate passes disable on different sets:
+        -- entity_creation (all but beacon/radar/item-request-proxy), the pre-validation re-pause in
+        -- import-completion (ACTIVATABLE_ENTITY_TYPES), and the source lock. Any filter here is a set
+        -- that must stay in sync with all three, and both times we tried one it silently drifted:
+        -- filtering by ACTIVATABLE left infinity-pipe x2 and spider-vehicle x2 frozen forever
+        -- (measured 2026-07-28), and excluding beacon/radar/proxy instead left a beacon disabled by
+        -- the re-pause pass with nothing to wake it (measured the same day, on the fix for the
+        -- first). Restoring everything is the only version that cannot drift; an entity already in
+        -- its captured state costs one guarded read.
         
         -- Look up the ORIGINAL active state from frozen_states.
         -- The entity_id in entity_data is the ORIGINAL unit_number from export.
@@ -145,15 +151,29 @@ function ActiveStateRestoration.restore(entities_to_create, entity_map, frozen_s
             was_active = true
         end
         
-        -- Restore the original active state
-        -- Note: pcall removed for performance - we filter by ACTIVATABLE_ENTITY_TYPES
-        -- so entity.active is guaranteed to exist. If a modded entity causes issues,
-        -- add error handling back or exclude that entity type.
+        -- Reading .active is now GUARDED. The guard was removed when this loop was filtered to
+        -- ACTIVATABLE_ENTITY_TYPES, where .active is guaranteed to exist; the loop now covers every
+        -- type the import freezes and the read throws on some of them. Only the active read/write is
+        -- wrapped — the held-item restore below must stay unguarded so a seating failure still
+        -- surfaces. Cost is measured, not assumed: a pcall-per-entity pass over 542 entities is
+        -- 0.174 ms versus 0.088 ms direct (helpers.create_profiler, 20 reps), against a
+        -- full-surface find_entities_filtered at 0.93 ms.
+        local read_ok, is_active = pcall(function() return entity.active end)
+        if not read_ok or is_active == nil then
+            skipped_count = skipped_count + 1
+            goto continue
+        end
+
         if was_active then
             -- Entity was active before export - re-enable it
-            if not entity.active then
-                entity.disabled_by_script = false
-                activated_count = activated_count + 1
+            if not is_active then
+                local wake_ok, wake_err = pcall(function() entity.disabled_by_script = false end)
+                if wake_ok then
+                    activated_count = activated_count + 1
+                else
+                    log(string.format("[Import] activate failed for '%s': %s",
+                        tostring(entity.name), tostring(wake_err)))
+                end
             end
 
             -- Idempotent held top-up (covers paths that reach restore() without the pre-gate
@@ -178,8 +198,12 @@ function ActiveStateRestoration.restore(entities_to_create, entity_map, frozen_s
                 held_items_failed = held_items_failed + failed
             end
 
-            if entity.active then
-                entity.disabled_by_script = true
+            if is_active then
+                local off_ok, off_err = pcall(function() entity.disabled_by_script = true end)
+                if not off_ok then
+                    log(string.format("[Import] keep-inactive failed for '%s': %s",
+                        tostring(entity.name), tostring(off_err)))
+                end
             end
             kept_inactive_count = kept_inactive_count + 1
         end
