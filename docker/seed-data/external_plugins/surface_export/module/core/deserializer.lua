@@ -87,6 +87,11 @@ end
 ---                     `ignore_unprioritised_targets` did this — its assignment is safe_call-wrapped)
 local SIMPLE_RESTORE_RULES = {
   { field = "crafting_progress" },
+  -- NOTE: mining_progress / bonus_mining_progress are deliberately NOT rules here. They belong to
+  -- the same family as crafting_progress but cannot be restored at creation time: a
+  -- big-mining-drill's fluidbox count is dynamic and its mining target may not exist yet, so the
+  -- write silently no-ops (measured 2026-07-28: a 0.77 marker arrived as 0.02). They are restored in
+  -- EntityStateRestoration.restore_all, after every entity is placed.
   { field = "productivity_bonus", safecall = true },
   -- bonus_progress is RW at 2.0.77 (LuaEntity.bonus_progress); safecall-wrapped like the other
   -- crafter progress fields since not every entity that reaches here exposes it.
