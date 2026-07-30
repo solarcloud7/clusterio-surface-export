@@ -314,6 +314,30 @@ state-dimensions-lab NOTEBOOK, archived at git tag `labs-archive-2026-07-19`, an
   **[empirical, 2.0.77, pad omnibus-circuit-config]** Restoring control-behavior config (circuit_condition,
   circuit_enable_disable) must use `get_or_create_control_behavior()`, or the settings are silently dropped
   for any entity whose CB is not yet instantiated at restore time (wires restore in a separate phase).
+- **A drill's `mining_progress` is defined RELATIVE TO `mining_target`, which is read-only and nil
+  until the drill's first update — so restore must be deferred until the target binds.**
+  **[empirical, 2.1.11, gallery acid-drill pad + marker transfers 2026-07-29]** The clause is in
+  `LuaControl.mining_progress`: "For mining drills the number is with the range
+  [0, mining_target.prototype.mineable_properties.mining_time]." A write before the target exists
+  reads back but is unanchored and is replaced at cycle start (three same-execution restore points
+  all landed-then-lost this way); a write to a drill whose target is bound sticks permanently.
+  `update_connections()` does NOT bind the target. Production defers the write via a pending queue
+  serviced on_tick (`active_state_restoration.lua`).
+- **A BLOCKED mining drill holds its finished product in an engine-internal slot with NO API
+  accessor, so the held product cannot ride a transfer — the destination re-mines it, spending
+  exactly one cycle's fluid and one patch unit.**
+  **[empirical, 2.1.11, gallery acid-drill pad 2026-07-29]** The slot is in no inventory (a big
+  mining drill exposes only its module inventory). Proof it exists and is the payer: clearing the
+  destination drill's occupied drop tile made an ore appear instantly with the acid pool AND the
+  patch total both unchanged — it came from the held slot, not a new cycle. The measured transfer
+  delta is exactly one refill cycle per blocked drill: −10 sulfuric acid and −1 patch ore for
+  uranium, after which the drill blocks identically to the source. No duplication (the source's held
+  product is destroyed with the source platform), and the exact gate is blind to it SYMMETRICALLY —
+  held drill output is census-invisible on both sides, the same non-conserved class as inserter
+  hands. Pads shipping a blocked fluid-drill allow one refill cycle in their acid AND patch pins and
+  no more (`mining-drill-acid-feed`); topping either back up would manufacture resources the source
+  never sent. A blocked drill's terminal `mining_progress` is engine-settled (the refill cycle wraps
+  past the restored value), so progress on a blocked drill is not a fidelity axis.
 - **Most entity types are natively `active == false`, so "active" is not a fidelity axis for them.**
   **[empirical, 2.1.11, gallery source-vs-destination control 2026-07-28]** On the untouched gallery
   source, 486 of 542 entities read `active == false`: pipes, pipe-to-grounds, belts, splitters,

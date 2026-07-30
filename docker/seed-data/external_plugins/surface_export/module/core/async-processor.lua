@@ -7,6 +7,7 @@ local ImportSession = require("modules/surface_export/core/import-session")
 local ExportPipeline = require("modules/surface_export/core/export-pipeline")
 local ImportPipeline = require("modules/surface_export/core/import-pipeline")
 local ImportCompletion = require("modules/surface_export/core/import-completion")
+local ActiveStateRestoration = require("modules/surface_export/import_phases/active_state_restoration")
 
 local AsyncProcessor = {}
 
@@ -150,6 +151,10 @@ end
 
 --- Process all active async jobs (called on_tick)
 function AsyncProcessor.process_tick()
+	-- Deferred mining-progress writes drain BEFORE the jobs early-return: the queue outlives its
+	-- import job (the drill's mining_target binds a tick or more after the job completes), and the
+	-- paste path feeds it with no async job in flight at all.
+	ActiveStateRestoration.service_pending_mining_progress()
 	if not storage.async_jobs then return end
 	ImportSession.prune()
 

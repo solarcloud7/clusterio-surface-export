@@ -150,8 +150,8 @@ GameUtils.ACTIVATABLE_ENTITY_TYPES = {
   ["fusion-generator"] = true,
   -- Logistics - Item transport
   ["inserter"] = true,
-  -- Note: Belts cannot be disabled (since Factorio 0.17). This is fine -
-  -- with inserters/loaders frozen, no items can enter or leave belts.
+  -- Belts are absent deliberately: with inserters/loaders frozen, no items can enter or
+  -- leave a belt, so freezing the belt itself buys nothing.
   ["loader"] = true,
   ["loader-1x1"] = true,
   -- Logistics - Fluid transport

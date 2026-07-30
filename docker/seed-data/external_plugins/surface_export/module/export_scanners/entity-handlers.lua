@@ -218,7 +218,7 @@ EntityHandlers["furnace"] = function(entity)
     end
   end
 
-  -- Previous recipe (Factorio 2.0+ - for foundries and other furnaces)
+  -- Previous recipe
   if entity.previous_recipe then
     data.previous_recipe = {
       name = entity.previous_recipe.name,

@@ -574,9 +574,14 @@ local function execute_create_and_restore(surface, recs, player, side_groups, fl
 	for _, rec in ipairs(records) do
 		local entity = entity_map[rec.entity_id]
 		if entity and entity.valid then
-			-- 2.1: LuaEntity.active is READ-ONLY; disabled_by_script is the writable control
-			-- (verified live 2026-07-21: it drives active both directions).
 			entity.disabled_by_script = (rec.lab_active == false)
+			-- Drill mining progress rides the SAME deferred queue the transfer uses: for drills the
+			-- value is defined relative to mining_target (LuaControl), which is nil until the first
+			-- update, so a same-execution write here is unanchored and lost at cycle start.
+			if entity.type == "mining-drill" and rec.specific_data
+				and rec.specific_data.mining_progress then
+				ActiveStateRestoration.queue_mining_progress(entity, rec.specific_data)
+			end
 		end
 	end
 	end

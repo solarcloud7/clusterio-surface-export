@@ -93,6 +93,58 @@ function ActiveStateRestoration.restore_held_items_only(entities_to_create, enti
     return restored, failed
 end
 
+--- Queue a mining drill's captured progress for a DEFERRED write once its mining_target binds.
+--- Why deferred (the LuaControl clause this whole bug hid behind): mining_progress for drills is
+--- in range [0, mining_target.prototype.mineable_properties.mining_time] — defined relative to a
+--- target that is READ-ONLY and nil until the drill's first update. A pre-update write is
+--- unanchored and lost at cycle start; a post-binding write sticks (both measured 2026-07-29).
+--- @param entity LuaEntity: a mining drill, already woken
+--- @param sd table: the entity's specific_data carrying mining_progress / bonus_mining_progress
+function ActiveStateRestoration.queue_mining_progress(entity, sd)
+    storage.pending_mining_progress = storage.pending_mining_progress or {}
+    storage.pending_mining_progress[#storage.pending_mining_progress + 1] = {
+        entity = entity,
+        mining_progress = sd.mining_progress,
+        bonus_mining_progress = sd.bonus_mining_progress,
+        expires_tick = game.tick + 300,
+    }
+end
+
+--- Service the deferred queue (called from AsyncProcessor.process_tick — on_tick context, so every
+--- failure is logged, never thrown: a raw error() here kills the headless server). Each entry
+--- writes as soon as its drill has a bound mining_target; an entry whose target never binds within
+--- its window is dropped LOUDLY, not silently.
+function ActiveStateRestoration.service_pending_mining_progress()
+    local pending = storage.pending_mining_progress
+    if not pending or #pending == 0 then return end
+    local keep = {}
+    for _, rec in ipairs(pending) do
+        local done = true
+        if rec.entity and rec.entity.valid then
+            local ok, bound = pcall(function() return rec.entity.mining_target ~= nil end)
+            if ok and bound then
+                for _, field in ipairs({ "mining_progress", "bonus_mining_progress" }) do
+                    if rec[field] then
+                        local w_ok, w_err = pcall(function() rec.entity[field] = rec[field] end)
+                        if not w_ok then
+                            log(string.format("[Import] deferred %s write failed for '%s': %s",
+                                field, tostring(rec.entity.name), tostring(w_err)))
+                        end
+                    end
+                end
+            elseif game.tick < rec.expires_tick then
+                done = false
+            else
+                log(string.format(
+                    "[Import] mining_target never bound for '%s' within %d ticks — captured mining_progress %s DROPPED",
+                    tostring(rec.entity.name), 300, tostring(rec.mining_progress)))
+            end
+        end
+        if not done then keep[#keep + 1] = rec end
+    end
+    storage.pending_mining_progress = (#keep > 0) and keep or nil
+end
+
 --- Restore all entities to their original active state
 --- This is the FINAL step of import, after all entities are created and configured.
 ---
@@ -176,45 +228,18 @@ function ActiveStateRestoration.restore(entities_to_create, entity_map, frozen_s
                 end
             end
 
-            -- MINING PROGRESS, applied immediately after the wake in the SAME execution. This is the
-            -- THIRD restore point tried and it does not hold either — the drain is NOT fixed. Kept
-            -- because it is the correct place and costs nothing, and because the comment is the
-            -- record of what has been eliminated.
-            --
-            -- The problem: a fluid-consuming drill charges its ENTIRE cycle cost up front, so a drill
-            -- that starts a fresh cycle pays again — a silent 10 sulfuric-acid drain per transfer on
-            -- the acid-drill pad, invisible to the gate because the gate closes before activation.
-            --
-            -- Measured 2026-07-29 with a 0.77 marker (mining_progress is LuaControl-inherited and RW
-            -- on 2.0+, so writability is not the obstacle):
-            --   * capture works — 0.77 is in the source payload
-            --   * restore LANDS — the pre-gate destination scan records mining_progress 0.77, so the
-            --     creation-time row and the EntityStateRestoration pass both applied correctly
-            --   * yet the drill reads ~0 once activated, having charged the acid
-            --   * this pass, after the wake and before any tick, ALSO does not hold
-            --   * BUT writing to a transferred drill that has already been RUNNING sticks perfectly
-            --     and survives deactivate -> write -> reactivate and many seconds of updates
-            -- So a FRESHLY CREATED drill discards a script-set progress on its first update, while an
-            -- established one keeps it. The distinguishing variable is the entity's age, not the
-            -- write, the phase, or activation.
-            --
-            -- UNRESOLVED, and possibly engine-bound. The next experiment is a DEFERRED write one or
-            -- more ticks after activation: if that holds, progress becomes faithful but the 10 acid
-            -- is already spent by then, so the honest options narrow to (a) accept and document a
-            -- bounded one-cycle fluid charge per transferred fluid-consuming drill and re-pin the
-            -- fixture to it, or (b) record it as an engine limit. Do NOT top the fluid back up: that
-            -- manufactures fluid the source never sent.
+            -- MINING PROGRESS is QUEUED here, not written. LuaControl.mining_progress: "For mining
+            -- drills the number is with the range [0, mining_target.prototype.mineable_properties
+            -- .mining_time]" — the value is DEFINED RELATIVE TO mining_target, mining_target is
+            -- read-only, and it is nil until the drill's first update (update_connections does not
+            -- bind it — measured 2026-07-29). So any write before that update lands (reads back) but
+            -- is unanchored, and the cycle-start on first update replaces it: three same-execution
+            -- restore points all "landed and lost" this way, while every write to a drill whose
+            -- target was already bound stuck permanently. The queue is serviced by
+            -- AsyncProcessor.process_tick and writes once mining_target exists.
             local sd = entity_data.specific_data
-            if sd then
-                for _, field in ipairs({ "mining_progress", "bonus_mining_progress" }) do
-                    if sd[field] then
-                        local mp_ok, mp_err = pcall(function() entity[field] = sd[field] end)
-                        if not mp_ok then
-                            log(string.format("[Import] %s restore failed for '%s': %s",
-                                field, tostring(entity.name), tostring(mp_err)))
-                        end
-                    end
-                end
+            if sd and sd.mining_progress and entity.type == "mining-drill" then
+                ActiveStateRestoration.queue_mining_progress(entity, sd)
             end
 
             -- Idempotent held top-up (covers paths that reach restore() without the pre-gate

@@ -669,6 +669,15 @@ end
 local tolerant_double_fields = { progress = true, bonusProgress = true }
 
 local function approx_equal(key, a, b)
+    -- A 2-number array expectation is an INCLUSIVE RANGE. Added 2026-07-29 because the unfrozen
+    -- doctrine makes bounded quantities a recurring need: some readings are not constants on a
+    -- running world, and the alternatives are both worse than a range — pinning an exact value that
+    -- a lossless transfer fails, or dropping the check and measuring nothing. The bound must be
+    -- MECHANISM-derived and the fixture must say what derives it; a band fitted around an observed
+    -- failure is exactly what this must not become.
+    if type(b) == "table" and #b == 2 and type(b[1]) == "number" and type(b[2]) == "number" then
+        return type(a) == "number" and a >= b[1] and a <= b[2]
+    end
     if tolerant_double_fields[key] and type(a) == "number" and type(b) == "number" then
         return math.abs(a - b) <= 1e-9
     end

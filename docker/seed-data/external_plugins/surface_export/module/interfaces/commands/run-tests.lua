@@ -233,7 +233,12 @@ local DISPATCH = {
 local function compare_fingerprint(reads, fingerprint, exclude)
   for key, expected in pairs(fingerprint or {}) do
     if not (exclude and exclude[key]) and not FM.approx_equal(key, reads and reads[key], expected) then
-      return string.format("%s=%s exp %s", key, tostring(reads and reads[key]), tostring(expected))
+      -- Render a 2-number range expectation readably; tostring(table) prints an address.
+      local want = tostring(expected)
+      if type(expected) == "table" and #expected == 2 then
+        want = string.format("[%s..%s]", tostring(expected[1]), tostring(expected[2]))
+      end
+      return string.format("%s=%s exp %s", key, tostring(reads and reads[key]), want)
     end
   end
   return nil

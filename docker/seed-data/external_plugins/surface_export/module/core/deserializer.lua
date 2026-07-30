@@ -93,8 +93,7 @@ local SIMPLE_RESTORE_RULES = {
   -- write silently no-ops (measured 2026-07-28: a 0.77 marker arrived as 0.02). They are restored in
   -- EntityStateRestoration.restore_all, after every entity is placed.
   { field = "productivity_bonus", safecall = true },
-  -- bonus_progress is RW at 2.0.77 (LuaEntity.bonus_progress); safecall-wrapped like the other
-  -- crafter progress fields since not every entity that reaches here exposes it.
+  -- safecall: not every entity that reaches here exposes this field.
   { field = "bonus_progress", safecall = true },
   { field = "player_description", prop = "entity_label", safecall = true },
   { field = "ignore_unprioritised_targets", present = true, safecall = true, no_entity_guard = true },
@@ -366,8 +365,6 @@ function Deserializer.restore_entity_state(entity, entity_data)
         }
         requests[item_with_quality] = req.count
       end
-      -- Note: item_requests is read-only, it's set during ghost creation
-      -- This is captured here for documentation but may not be settable
     end
     return  -- Ghosts don't have other state to restore
   end
@@ -398,7 +395,6 @@ function Deserializer.restore_entity_state(entity, entity_data)
         }
         requests[item_with_quality] = req.count
       end
-      -- Note: item_requests is read-only for proxies as well
     end
     
     -- Insert plan (inventory positions)
@@ -459,7 +455,6 @@ function Deserializer.restore_entity_state(entity, entity_data)
   end
 
   -- Restore turret priority targets using set_priority_target(index, entity_id)
-  -- Note: priority_targets property is read-only, use set_priority_target method
   if data.priority_targets and #data.priority_targets > 0 then
     for _, target in ipairs(data.priority_targets) do
       safe_call(string.format("set_priority_target %d=%s for %s", target.index, target.name, entity.name),
@@ -1129,7 +1124,7 @@ function Deserializer.restore_control_behavior(entity, entity_data)
   -- Combinator parameters
   safe_set("parameters", cb_data.parameters)
 
-  -- Constant combinator sections (Factorio 2.0+)
+  -- Constant combinator sections
   if cb_data.constant_sections then
     -- Clear existing sections
     local clear_ok, clear_err = pcall(function()

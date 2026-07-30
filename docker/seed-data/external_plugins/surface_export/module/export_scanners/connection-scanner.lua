@@ -160,7 +160,7 @@ function ConnectionScanner.extract_control_behavior(entity)
   -- Combinator parameters (arithmetic, decider)
   data.parameters = safe_get("parameters")
   
-  -- Constant combinator signals (Factorio 2.0+ uses sections instead of signals_count)
+  -- Constant combinator signals
   if entity.name:find("constant%-combinator") then
     local sections_data = {}
     local success, sections = pcall(function() return cb.sections end)
