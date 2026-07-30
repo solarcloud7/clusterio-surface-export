@@ -11,9 +11,9 @@ description: Find what actually happened in the local Clusterio cluster — plug
 
 ```powershell
 # One command dumps everything from the right places (plugin JSON logs + factorio + status):
-./tools/check-cluster-logs.ps1
+./tools/clusterio/check-cluster-logs.ps1
 # Hunting a specific failure? Filter the aggregated plugin log:
-./tools/check-cluster-logs.ps1 -Grep "sendRequest|handleRequest|undefined|error|fail"
+./tools/clusterio/check-cluster-logs.ps1 -Grep "sendRequest|handleRequest|undefined|error|fail"
 ```
 
 If that surfaces the answer, you're done. The sections below are for targeted follow-up.
@@ -36,8 +36,8 @@ Notes:
 
 The `rc11`/`rc21`/`rclist` profile aliases are **not** available to an agent. Use:
 ```powershell
-./tools/rcon.ps1 11 "/list-platforms"      # host-1/instance-1
-./tools/rcon.ps1 21 "/list-surfaces"       # host-2/instance-1
+./tools/clusterio/rcon.ps1 11 "/list-platforms"      # host-1/instance-1
+./tools/clusterio/rcon.ps1 21 "/list-surfaces"       # host-2/instance-1
 ```
 
 ## Reference

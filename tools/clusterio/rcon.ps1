@@ -11,9 +11,9 @@
 .PARAMETER Command
     The RCON command (quote it), e.g. "/list-platforms" or "/sc rcon.print(game.tick)".
 .EXAMPLE
-    ./tools/rcon.ps1 11 "/list-platforms"
+    ./tools/clusterio/rcon.ps1 11 "/list-platforms"
 .EXAMPLE
-    ./tools/rcon.ps1 21 "/sc rcon.print(#game.surfaces)"
+    ./tools/clusterio/rcon.ps1 21 "/sc rcon.print(#game.surfaces)"
 #>
 param(
     [Parameter(Mandatory, Position = 0)]
@@ -22,7 +22,7 @@ param(
     [string[]]$Command
 )
 
-. "$PSScriptRoot\cluster-utils.ps1"
+. "$PSScriptRoot\..\shared\cluster-utils.ps1"
 
 $cmd = $Command -join " "
 

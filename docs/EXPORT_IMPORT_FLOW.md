@@ -152,10 +152,10 @@ runs after the destination import is validated.
 
 ```powershell
 # View locked platforms
-./tools/rcon.ps1 11 "/sc for name, data in pairs(storage.locked_platforms or {}) do game.print(name) end"
+./tools/clusterio/rcon.ps1 11 "/sc for name, data in pairs(storage.locked_platforms or {}) do game.print(name) end"
 
 # Force unlock one platform (use with caution)
-./tools/rcon.ps1 11 "/unlock-platform <platform_name>"
+./tools/clusterio/rcon.ps1 11 "/unlock-platform <platform_name>"
 ```
 
 ## Export Flow: Instance to Controller
@@ -378,13 +378,13 @@ then rollback.
 
 ```powershell
 # Latest transaction
-./tools/get-transaction-log.ps1
+./tools/surface-export/get-transaction-log.ps1
 
 # Specific transaction
-./tools/get-transaction-log.ps1 -TransferId "<transferId>"
+./tools/surface-export/get-transaction-log.ps1 -TransferId "<transferId>"
 
 # List all transactions
-./tools/list-transaction-logs.ps1
+./tools/surface-export/list-transaction-logs.ps1
 ```
 
 ## Code Reference Map
@@ -517,17 +517,17 @@ strings terminate on `]]`). Chunking is `sendChunkedJson` at `RCON_CHUNK_SIZE = 
 
 ```powershell
 # List platforms / exports on an instance (11 = host-1, 21 = host-2)
-./tools/rcon.ps1 11 "/list-platforms"
-./tools/rcon.ps1 11 "/list-exports"
+./tools/clusterio/rcon.ps1 11 "/list-platforms"
+./tools/clusterio/rcon.ps1 11 "/list-exports"
 
 # List exports as JSON (for scripting)
-./tools/rcon.ps1 11 "/sc rcon.print(remote.call('surface_export', 'list_exports_json'))"
+./tools/clusterio/rcon.ps1 11 "/sc rcon.print(remote.call('surface_export', 'list_exports_json'))"
 
 # Lock status of all platforms
-./tools/rcon.ps1 11 "/lock-status"
+./tools/clusterio/rcon.ps1 11 "/lock-status"
 
 # Confirm the remote interface is loaded
-./tools/rcon.ps1 11 "/sc rcon.print(remote.interfaces['surface_export'] ~= nil)"
+./tools/clusterio/rcon.ps1 11 "/sc rcon.print(remote.interfaces['surface_export'] ~= nil)"
 ```
 
 For questions or issues, see [README.md](../README.md).

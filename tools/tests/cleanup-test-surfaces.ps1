@@ -20,9 +20,9 @@
     List what WOULD be deleted without deleting anything.
 
 .EXAMPLE
-    ./tools/cleanup-test-surfaces.ps1
+    ./tools/tests/cleanup-test-surfaces.ps1
 .EXAMPLE
-    ./tools/cleanup-test-surfaces.ps1 -DryRun
+    ./tools/tests/cleanup-test-surfaces.ps1 -DryRun
 #>
 [CmdletBinding()]
 param(
@@ -32,7 +32,7 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
-Import-Module (Join-Path $PSScriptRoot "..\tests\integration\lib\TestBase.psm1") -Force
+Import-Module (Join-Path $PSScriptRoot "..\..\tests\integration\lib\TestBase.psm1") -Force
 
 # Build a Lua predicate: platform name starts with any of the throwaway prefixes. The protected-fixture
 # guard lives inside Remove-PlatformSurfacesWhere, so real fixtures are excluded regardless of prefixes.

@@ -7,8 +7,8 @@
 # See CLAUDE.md "Clusterio core development" for the full workflow + compatibility caveats.
 #
 # Usage:
-#   ./tools/rebuild-clusterio.ps1            # pnpm build the fork, then bring the cluster up on it
-#   ./tools/rebuild-clusterio.ps1 -SkipUp    # build only (no container recreate)
+#   ./tools/clusterio/rebuild-clusterio.ps1            # pnpm build the fork, then bring the cluster up on it
+#   ./tools/clusterio/rebuild-clusterio.ps1 -SkipUp    # build only (no container recreate)
 #
 # To revert the cluster to the published image:
 #   docker compose up -d --force-recreate
@@ -20,14 +20,14 @@ param(
 $ErrorActionPreference = "Stop"
 
 # Resolve the fork checkout: $env:CLUSTERIO_SRC if set, else the sibling ../clusterio (source/clusterio).
-$forkDir = if ($env:CLUSTERIO_SRC) { $env:CLUSTERIO_SRC } else { Join-Path $PSScriptRoot "..\..\clusterio" }
+$forkDir = if ($env:CLUSTERIO_SRC) { $env:CLUSTERIO_SRC } else { Join-Path $PSScriptRoot "..\..\..\clusterio" }
 if (-not (Test-Path (Join-Path $forkDir "pnpm-workspace.yaml"))) {
     Write-Host "Clusterio fork not found at '$forkDir'." -ForegroundColor Red
     Write-Host "Set `$env:CLUSTERIO_SRC to your fork checkout (origin = your fork, upstream = clusterio/clusterio)." -ForegroundColor Red
     exit 1
 }
 $forkDir = (Resolve-Path $forkDir).Path
-$repoDir = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
+$repoDir = (Resolve-Path (Join-Path $PSScriptRoot "..\..")).Path
 
 # Deps must be installed once before `pnpm build` works — fail fast with a clear message instead of a
 # confusing build error on a fresh checkout. (We don't run `pnpm install` here: it's slow and only

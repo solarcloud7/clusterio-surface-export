@@ -5,7 +5,7 @@
 .DESCRIPTION
     Shows a summary of all persisted transaction logs (last 10)
 .EXAMPLE
-    .\tools\list-transaction-logs.ps1
+    .\tools\surface-export\list-transaction-logs.ps1
 #>
 
 $ErrorActionPreference = "Stop"
@@ -78,9 +78,9 @@ try {
     }
 
     Write-Host "`nTo view details: " -NoNewline -ForegroundColor Yellow
-    Write-Host ".\tools\get-transaction-log.ps1 -TransferId <transfer_id>" -ForegroundColor White
+    Write-Host ".\tools\surface-export\get-transaction-log.ps1 -TransferId <transfer_id>" -ForegroundColor White
     Write-Host "Latest transfer:  " -NoNewline -ForegroundColor Yellow
-    Write-Host ".\tools\get-transaction-log.ps1`n" -ForegroundColor White
+    Write-Host ".\tools\surface-export\get-transaction-log.ps1`n" -ForegroundColor White
 
 } catch {
     Write-Host "Error: $_" -ForegroundColor Red

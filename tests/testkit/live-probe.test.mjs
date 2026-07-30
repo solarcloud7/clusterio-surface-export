@@ -4,7 +4,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { parseTarget } from "../../tools/testkit/live-probe.mjs";
+import { parseTarget } from "../../tools/tests/testkit/live-probe.mjs";
 
 test("valid targets parse to typed parts", () => {
 	assert.deepEqual(parseTarget("heat-pipe@43,-13:temperature"),

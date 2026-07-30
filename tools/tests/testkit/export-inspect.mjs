@@ -17,7 +17,7 @@
 //
 // Read-only: exports to a scratch file, reads it back, deletes it. No lock, no source delete, no
 // mutation of the platform.
-import { docker, instancePath, lua } from "../../tests/lab-gallery/batch-lifecycle.mjs";
+import { docker, instancePath, lua } from "../../../tests/lab-gallery/batch-lifecycle.mjs";
 import { readFileSync } from "node:fs";
 import { inflateSync } from "node:zlib";
 

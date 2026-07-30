@@ -229,9 +229,9 @@ isolated `node:24` container, so it never touches the running cluster's `node_mo
 
 | Changed | Command |
 |---------|---------|
-| Web UI (`*.tsx` / `*.css`) | `.\tools\build-plugin.ps1 web -RestartController` |
-| TypeScript (`*.ts`) | `.\tools\build-plugin.ps1 node -RestartHosts` |
-| Lua (`module/`) | `.\tools\patch-and-reset.ps1` |
+| Web UI (`*.tsx` / `*.css`) | `.\tools\clusterio\build-plugin.ps1 web -RestartController` |
+| TypeScript (`*.ts`) | `.\tools\clusterio\build-plugin.ps1 node -RestartHosts` |
+| Lua (`module/`) | `.\tools\clusterio\patch-and-reset.ps1` |
 
 Lua is **save-patched**, so a Lua change needs the save reset that `patch-and-reset.ps1` performs (it
 also rebuilds the plugin and restarts the cluster — the one-shot for a mixed change). A plain container
@@ -261,8 +261,8 @@ Tests run against the Docker cluster and verify item counts, entity positions, a
 Every transfer is logged with phase timing and per-item breakdowns:
 
 ```powershell
-.\tools\list-transaction-logs.ps1      # List all transfers
-.\tools\get-transaction-log.ps1        # Show latest transfer details
+.\tools\surface-export\list-transaction-logs.ps1      # List all transfers
+.\tools\surface-export\get-transaction-log.ps1        # Show latest transfer details
 ```
 
 Or use VS Code tasks: "List Transaction Logs", "Get Latest Transaction Log".

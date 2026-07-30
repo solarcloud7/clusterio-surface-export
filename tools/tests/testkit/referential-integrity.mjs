@@ -15,8 +15,8 @@
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { join, relative, sep } from "node:path";
 
-const REPO_ROOT = new URL("../../", import.meta.url);
-const rootPath = () => new URL("../../", import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, "$1");
+const REPO_ROOT = new URL("../../../", import.meta.url);
+const rootPath = () => new URL("../../../", import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, "$1");
 
 function walk(dir, filter, out = []) {
 	for (const name of readdirSync(dir)) {

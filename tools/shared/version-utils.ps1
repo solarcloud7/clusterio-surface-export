@@ -39,7 +39,7 @@ function Update-PackageLockVersion {
     $pkgOk  = $updated -match ('("packages":\s*\{\s*"":\s*\{\s*"name":\s*"[^"]+",\s*"version":\s*")' + $escaped + '(")')
     if (-not ($rootOk -and $pkgOk)) {
         Write-Warning ("package-lock.json version sync did not match the expected format; lockfile left " +
-            "unchanged (npm may rewrite it on its next lifecycle run). Update the patterns in tools/version-utils.ps1.")
+            "unchanged (npm may rewrite it on its next lifecycle run). Update the patterns in tools/shared/version-utils.ps1.")
         return
     }
     if ($updated -ne $raw) {

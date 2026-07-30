@@ -268,7 +268,7 @@ jobs:
       # Node spawns pwsh for the .ps1 tests (ubuntu-latest ships both); each test's output folds under
       # ::group:: in the log. Runs everything, then fails the job if any test failed.
       - name: Run integration suite
-        run: node tools/run-integration-tests.mjs
+        run: node tools/tests/run-integration-tests.mjs
 
       - name: Collect logs on failure
         if: failure()

@@ -6,7 +6,7 @@ The canonical testing taxonomy, baked-fixture lifecycle, measurement rules, and 
 ## Repository layout
 
 - `tests/integration/` contains live regressions for established production contracts. Discover and run them with
-  `node tools/run-integration-tests.mjs --list` and `node tools/run-integration-tests.mjs` from the repository root.
+  `node tools/tests/run-integration-tests.mjs --list` and `node tools/tests/run-integration-tests.mjs` from the repository root.
 - The standing lab suite was removed 2026-07-19 (owner ruling); its runners and notebooks are archived at git tag
   `labs-archive-2026-07-19`. Engine re-certification is a calculated campaign at version-update time — restore
   runners from the archive tag or author fresh probes, then record the evidence in the certificate.

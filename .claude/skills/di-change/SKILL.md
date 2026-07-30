@@ -91,7 +91,7 @@ one-afternoon lab killed it and fixed CI with a meter change instead.
 docker exec surface-export-host-1 sh -c 'cd /clusterio/external_plugins/surface_export && \
   npm run lint:lua && npm run lint:test-grounding && npm run lint:pcall-logging && npm run lint:test-hooks'
 # adversarial + fidelity integration coverage (cluster up):
-node tools/run-integration-tests.mjs --only 'gallery-suite'   # the consolidated suite: boards, transfer gate, refusal teeth, web-import probe
+node tools/tests/run-integration-tests.mjs --only 'gallery-suite'   # the consolidated suite: boards, transfer gate, refusal teeth, web-import probe
 ```
 
 ## Reference

@@ -18,7 +18,7 @@ Usage:
 
 This script:
 1. Bumps the plugin version (cache-bust marker)
-2. Builds plugin artifacts (dist/node + dist/web) via tools/build-plugin.ps1 — an isolated
+2. Builds plugin artifacts (dist/node + dist/web) via tools/clusterio/build-plugin.ps1 — an isolated
    node:24 container, so it never pollutes the running cluster's bind-mounted node_modules
 3. Stops Factorio instances (keeps controller running)
 4. Resets save files to seed saves (required to apply Lua code changes)
@@ -29,7 +29,7 @@ Note: Save reset is REQUIRED because Lua code is embedded in save files via save
       Without reset, old embedded script.dat prevents Lua code updates from taking effect.
 
       For a web-ONLY or TypeScript-ONLY change you do NOT need this heavy reset — use
-      `tools/build-plugin.ps1 web -RestartController` or `... node -RestartHosts` instead.
+      `tools/clusterio/build-plugin.ps1 web -RestartController` or `... node -RestartHosts` instead.
 "@
     exit 0
 }
@@ -41,7 +41,7 @@ Write-Host ""
 
 # Increment version to ensure no caching
 Write-Host "Incrementing plugin version..." -ForegroundColor Yellow
-$WorkspaceRoot = Split-Path $PSScriptRoot -Parent
+$WorkspaceRoot = Split-Path (Split-Path $PSScriptRoot -Parent) -Parent
 $PluginJsonPath = Join-Path $WorkspaceRoot "docker/seed-data/external_plugins/surface_export/package.json"
 $ModuleJsonPath = Join-Path $WorkspaceRoot "docker/seed-data/external_plugins/surface_export/module/module.json"
 
@@ -64,8 +64,8 @@ if (Test-Path $ModuleJsonPath) {
     $ModuleJson | ConvertTo-Json -Depth 10 | Set-Content $ModuleJsonPath -Encoding UTF8
 }
 
-# Keep the lockfile's version metadata in step with package.json; see tools/version-utils.ps1.
-. "$PSScriptRoot/version-utils.ps1"
+# Keep the lockfile's version metadata in step with package.json; see tools/shared/version-utils.ps1.
+. "$PSScriptRoot/../shared/version-utils.ps1"
 Update-PackageLockVersion -LockPath (Join-Path $WorkspaceRoot "docker/seed-data/external_plugins/surface_export/package-lock.json") -NewVersion $NewVersion
 Write-Host "✓ Version updated" -ForegroundColor Green
 Write-Host ""
@@ -361,7 +361,7 @@ Write-Host "Plugin changes from docker/seed-data/external_plugins/surface_export
 Write-Host "Instances have been reset to seed save state with fresh Lua code." -ForegroundColor White
 Write-Host ""
 Write-Host "Next steps:" -ForegroundColor Yellow
-Write-Host "  1. Check logs: .\tools\check-cluster-logs.ps1" -ForegroundColor White
+Write-Host "  1. Check logs: .\tools\clusterio\check-cluster-logs.ps1" -ForegroundColor White
 Write-Host "  2. Test export: docker exec surface-export-controller npx clusterioctl instance send-rcon 1 '/export-platform 2 2'" -ForegroundColor White
 Write-Host "  3. Test import: docker exec surface-export-controller npx clusterioctl instance send-rcon 2 '/import-platform <filename>'" -ForegroundColor White
 

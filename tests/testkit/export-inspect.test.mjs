@@ -6,7 +6,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { inspectPayloadObject } from "../../tools/testkit/export-inspect.mjs";
+import { inspectPayloadObject } from "../../tools/tests/testkit/export-inspect.mjs";
 
 // Two same-name entities half a tile apart, one carrying a top-level field and one a nested one —
 // enough to exercise anchor tolerance, ambiguity, and both dig() outcomes.

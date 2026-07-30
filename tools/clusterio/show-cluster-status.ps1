@@ -9,7 +9,7 @@ Write-Host ""
 Write-Host "=== Plugin Version ===" -ForegroundColor Cyan
 
 # Get dev plugin version
-$DevPluginPath = "$PSScriptRoot\..\docker\seed-data\external_plugins\surface_export\package.json"
+$DevPluginPath = "$PSScriptRoot\..\..\docker\seed-data\external_plugins\surface_export\package.json"
 if (Test-Path $DevPluginPath) {
     $DevPlugin = Get-Content $DevPluginPath -Raw | ConvertFrom-Json
     Write-Host "Dev Plugin (package.json):     $($DevPlugin.version)" -ForegroundColor Green
@@ -18,7 +18,7 @@ if (Test-Path $DevPluginPath) {
 }
 
 # Get module version
-$ModuleJsonPath = "$PSScriptRoot\..\docker\seed-data\external_plugins\surface_export\module\module.json"
+$ModuleJsonPath = "$PSScriptRoot\..\..\docker\seed-data\external_plugins\surface_export\module\module.json"
 if (Test-Path $ModuleJsonPath) {
     $ModuleJson = Get-Content $ModuleJsonPath -Raw | ConvertFrom-Json
     if ($ModuleJson.version -eq $DevPlugin.version) {

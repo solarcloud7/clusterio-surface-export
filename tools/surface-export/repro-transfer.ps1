@@ -17,9 +17,9 @@
 .PARAMETER KeepResult
     Do not delete the transferred platform on the destination afterward.
 .EXAMPLE
-    ./tools/repro-transfer.ps1
+    ./tools/surface-export/repro-transfer.ps1
 .EXAMPLE
-    ./tools/repro-transfer.ps1 -SourceHost 2 -SourcePlatform test -TimeoutSec 180
+    ./tools/surface-export/repro-transfer.ps1 -SourceHost 2 -SourcePlatform test -TimeoutSec 180
 #>
 [CmdletBinding()]
 param(
@@ -30,7 +30,7 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
-. "$PSScriptRoot\cluster-utils.ps1"
+. "$PSScriptRoot\..\shared\cluster-utils.ps1"
 
 function Step($m) { Write-Host "  $m" -ForegroundColor Gray }
 function Ok($m)   { Write-Host "  OK  $m" -ForegroundColor Green }
@@ -102,7 +102,7 @@ while (-not $found -and ((Get-Date) - $start).TotalSeconds -lt $TimeoutSec) {
     if ($count -match '^\d+$' -and [int]$count -gt 0) { $found = $true }
 }
 $elapsed = [math]::Round(((Get-Date) - $start).TotalSeconds)
-if (-not $found) { Die "no import-result on destination after ${TimeoutSec}s (transfer stalled — see ./tools/check-cluster-logs.ps1 -Grep 'sendRequest|validation|import_started')" }
+if (-not $found) { Die "no import-result on destination after ${TimeoutSec}s (transfer stalled — see ./tools/clusterio/check-cluster-logs.ps1 -Grep 'sendRequest|validation|import_started')" }
 Ok "import-result present (${elapsed}s)"
 
 # 6. Confirm the platform landed on the destination (primary success signal) AND that the transfer
@@ -130,6 +130,6 @@ if ($onDest) {
     exit 0
 } else {
     Write-Host "  FAIL  import-result appeared but '$clone' is NOT on $($dst.Name) — validation likely failed/rolled back. $valLine" -ForegroundColor Red
-    Write-Host "        Inspect: ./tools/check-cluster-logs.ps1 -Grep 'validation|rollback|Loss'" -ForegroundColor DarkYellow
+    Write-Host "        Inspect: ./tools/clusterio/check-cluster-logs.ps1 -Grep 'validation|rollback|Loss'" -ForegroundColor DarkYellow
     exit 1
 }

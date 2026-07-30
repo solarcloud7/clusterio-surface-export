@@ -7,14 +7,14 @@ description: Reproduce a Factorio platform transfer (export → controller route
 
 Drive the full transfer pipeline against the running local cluster and see exactly where it stalls. Faster and more debuggable than CI. **Debug locally first** — do not parse CI logs unless asked.
 
-Paths below are relative to the repo root. The driver is `tools/repro-transfer.ps1`.
+Paths below are relative to the repo root. The driver is `tools/surface-export/repro-transfer.ps1`.
 
 ## Run it (the driver — start here)
 
 One command clones a real platform, transfers it across instances, waits for the destination success signal, and exits 0 (PASS) / 1 (FAIL):
 
 ```powershell
-./tools/repro-transfer.ps1
+./tools/surface-export/repro-transfer.ps1
 ```
 
 Verified PASS output (this is what success looks like — ~30s, the `test` platform is 1359 entities):
@@ -34,7 +34,7 @@ If it exits 1, the line tells you the failing layer; then read the logs (next se
 ## Preconditions
 ```powershell
 docker ps --format "{{.Names}}: {{.Status}}"        # controller + host-1 + host-2 healthy
-./tools/rcon.ps1 11 "/sc rcon.print(remote.interfaces['surface_export'] ~= nil)"   # -> true
+./tools/clusterio/rcon.ps1 11 "/sc rcon.print(remote.interfaces['surface_export'] ~= nil)"   # -> true
 ```
 After a host plugin (`*.ts`) change, rebuild dist in-container and restart hosts so the new module loads:
 ```powershell
@@ -44,7 +44,7 @@ docker restart surface-export-host-1 surface-export-host-2
 
 ## When it FAILS — find the layer
 ```powershell
-./tools/check-cluster-logs.ps1 -Grep "transfer_created|import_started|validation|transfer_completed|sendRequest|Error handling|rollback"
+./tools/clusterio/check-cluster-logs.ps1 -Grep "transfer_created|import_started|validation|transfer_completed|sendRequest|Error handling|rollback"
 ```
 (Use the `/cluster-logs` skill for the full log map.) Happy path in the aggregated cluster log:
 `Auto-transfer requested` → `Transfer initiated: <id>` → `transfer_created` → `import_started` → `validation_received: Validation: SUCCESS` → `transfer_completed`.
@@ -56,7 +56,7 @@ Where it stops = the layer at fault:
 
 ## What the driver does (manual equivalent, for one-off control)
 1. Clone a realistic source (async). `clone_platform` keys the source on the unique per-force **index** (names aren't unique), so resolve the index first, then clone: `local i; for k,p in pairs(game.forces.player.platforms) do if p.name=='test' then i=k end end; remote.call('surface_export','clone_platform', i, '<newname>')` on the source host, then wait for `storage.async_jobs` to drain. Prefer the real `test` platform (host-2, ~1359 entities, has a schedule) — a hub-only stub has no schedule and hits a benign `Index out of bounds` on unlock/rollback that is NOT representative.
-2. `./tools/transfer-platform.ps1 -PlatformIndex <idx> -Direction 2to1` (or `/transfer-platform <idx> <destId>`). If "already locked" from a prior run: `./tools/rcon.ps1 21 "/unlock-platform <name>"`.
+2. `./tools/surface-export/transfer-platform.ps1 -PlatformIndex <idx> -Direction 2to1` (or `/transfer-platform <idx> <destId>`). If "already locked" from a prior run: `./tools/clusterio/rcon.ps1 21 "/unlock-platform <name>"`.
 3. Poll the destination success signal (what CI's integration test waits on):
    `docker exec surface-export-host-1 sh -c 'ls /clusterio/data/instances/clusterio-host-1-instance-1/script-output/debug_import_result_*.json'`
    (`/clusterio/data/instances/…`, NOT `/clusterio/instances/…`. Requires `debug_mode`, default true on fresh saves.)

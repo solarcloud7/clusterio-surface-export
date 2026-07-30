@@ -7,10 +7,10 @@
 .PARAMETER TransferId
     The transfer ID to retrieve logs for. If not specified, shows the latest transfer.
 .EXAMPLE
-    .\tools\get-transaction-log.ps1
+    .\tools\surface-export\get-transaction-log.ps1
     Shows the latest transfer log
 .EXAMPLE
-    .\tools\get-transaction-log.ps1 -TransferId "transfer_1769126198841_ghkd99"
+    .\tools\surface-export\get-transaction-log.ps1 -TransferId "transfer_1769126198841_ghkd99"
     Shows a specific transfer log
 #>
 

@@ -364,7 +364,7 @@ checklist. The single source of truth for "does it all work" is the automated su
 exist to inspect, debug, or demo individual flows.
 
 > **Shell note (agents / non-interactive):** the `rc11`/`rc21` profile aliases are interactive-only. Use
-> `./tools/rcon.ps1 11 "<cmd>"` (host-1) and `./tools/rcon.ps1 21 "<cmd>"` (host-2). All commands below assume
+> `./tools/clusterio/rcon.ps1 11 "<cmd>"` (host-1) and `./tools/clusterio/rcon.ps1 21 "<cmd>"` (host-2). All commands below assume
 > repo root and PowerShell 7 (`pwsh`).
 
 ### 0. What "pass" means
@@ -382,29 +382,29 @@ A transfer is **correct** when, on the destination, all of the following hold an
 
 ```pwsh
 docker volume create factorio-client-2111     # one-time
-docker compose up -d                            # or: ./tools/deploy-cluster.ps1 -SkipIncrement -KeepData
-./tools/show-cluster-status.ps1                 # controller healthy + both instances running
+docker compose up -d                            # or: ./tools/clusterio/deploy-cluster.ps1 -SkipIncrement -KeepData
+./tools/clusterio/show-cluster-status.ps1                 # controller healthy + both instances running
 ```
 
 Expect: `surface-export-controller`, `surface-export-host-1`, `surface-export-host-2` all **Up (healthy)**,
 and both instances `running`.
 
 If you changed plugin code first:
-- **TS only:** `./tools/build-plugin.ps1 node -RestartHosts` (controller changes also need `-RestartController`)
-- **Lua / full:** `./tools/patch-and-reset.ps1` (rebuilds + resets saves to re-patch Lua + restarts)
+- **TS only:** `./tools/clusterio/build-plugin.ps1 node -RestartHosts` (controller changes also need `-RestartController`)
+- **Lua / full:** `./tools/clusterio/patch-and-reset.ps1` (rebuilds + resets saves to re-patch Lua + restarts)
 
 ### 2. Smoke test — plugin loaded, debug on
 
 ```pwsh
 # Remote interface is registered (must print 'true'):
-./tools/rcon.ps1 11 "/sc rcon.print(remote.interfaces['surface_export'] ~= nil)"
+./tools/clusterio/rcon.ps1 11 "/sc rcon.print(remote.interfaces['surface_export'] ~= nil)"
 
 # Debug mode on BOTH instances (writes debug_*.json artifacts used for inspection):
-./tools/rcon.ps1 11 "/sc remote.call('surface_export','configure',{debug_mode=true})"
-./tools/rcon.ps1 21 "/sc remote.call('surface_export','configure',{debug_mode=true})"
+./tools/clusterio/rcon.ps1 11 "/sc remote.call('surface_export','configure',{debug_mode=true})"
+./tools/clusterio/rcon.ps1 21 "/sc remote.call('surface_export','configure',{debug_mode=true})"
 
 # Source platforms exist on host-1 (the seed 'test' platform = ~1359 entities):
-./tools/rcon.ps1 11 "/list-platforms"
+./tools/clusterio/rcon.ps1 11 "/list-platforms"
 ```
 
 > Note the per-force **unique index** from `/list-platforms` — it is the key for every command below
@@ -416,10 +416,10 @@ One auto-discovering runner drives every `tests/integration/*` scenario against 
 the CI step, so a green run here ≈ a green PR.
 
 ```pwsh
-node tools/run-integration-tests.mjs --list           # see all scenarios
-node tools/run-integration-tests.mjs                  # run the FULL suite (~3–4 min)
-node tools/run-integration-tests.mjs --only gallery-suite   # the consolidated suite (boards on both hosts, the
-node tools/run-integration-tests.mjs --only 'fidelity|gate'      # regex filter
+node tools/tests/run-integration-tests.mjs --list           # see all scenarios
+node tools/tests/run-integration-tests.mjs                  # run the FULL suite (~3–4 min)
+node tools/tests/run-integration-tests.mjs --only gallery-suite   # the consolidated suite (boards on both hosts, the
+node tools/tests/run-integration-tests.mjs --only 'fidelity|gate'      # regex filter
 ```
 
 Expect the summary to end `N/N passed`. The scenario set is auto-discovered from
@@ -434,7 +434,7 @@ The remaining sections reproduce individual flows **manually** for inspection/de
 
 ```pwsh
 # Pick a source index from /list-platforms (e.g. the 'test' platform). Then:
-./tools/transfer-platform.ps1 -PlatformIndex <idx> -Direction 1to2
+./tools/surface-export/transfer-platform.ps1 -PlatformIndex <idx> -Direction 1to2
 ```
 
 This wraps the full `/transfer-platform` workflow (lock → export → route → import → validate → delete source
@@ -443,15 +443,15 @@ This wraps the full `/transfer-platform` workflow (lock → export → route →
 ```pwsh
 # Source side (host-1):  export progress + "Export Complete"
 # Dest side  (host-2):  import progress + "Import Complete"
-./tools/rcon.ps1 21 "/list-platforms"     # platform now on host-2
-./tools/rcon.ps1 11 "/list-platforms"     # gone from host-1 (deleted on success)
+./tools/clusterio/rcon.ps1 21 "/list-platforms"     # platform now on host-2
+./tools/clusterio/rcon.ps1 11 "/list-platforms"     # gone from host-1 (deleted on success)
 ```
 
 For a clean repeatable source, clone the seed platform first (so you keep the original):
 
 ```pwsh
 # clone_platform(source_index, dest_name) — source keyed on UNIQUE index, 2 args
-./tools/rcon.ps1 11 "/sc remote.call('surface_export','clone_platform', <test_idx>, 'e2e-demo')"
+./tools/clusterio/rcon.ps1 11 "/sc remote.call('surface_export','clone_platform', <test_idx>, 'e2e-demo')"
 ```
 
 ### 5. Validation & fidelity — prove conservation independently
@@ -460,7 +460,7 @@ Don't trust only the validator's self-report — cross-check with a **physical c
 
 ```pwsh
 # A) The controller's transaction record for the latest transfer (or pass -TransferId <canonical-id>):
-./tools/get-transaction-log.ps1
+./tools/surface-export/get-transaction-log.ps1
 #    look for: success, itemCountMatch=true, fluidCountMatch=true, and exact by-name totals.
 #    Transfer validation is carried in the import-complete event; do not refetch it by platform name.
 ```
@@ -482,14 +482,14 @@ docker exec surface-export-host-2 sh -c 'ls -t /clusterio/data/instances/cluster
 
 ```pwsh
 # Export to controller storage only (source stays put, then unlocks):
-./tools/rcon.ps1 11 "/export-platform <idx>"
-./tools/rcon.ps1 11 "/sc rcon.print(remote.call('surface_export','list_exports_json'))"
+./tools/clusterio/rcon.ps1 11 "/export-platform <idx>"
+./tools/clusterio/rcon.ps1 11 "/sc rcon.print(remote.call('surface_export','list_exports_json'))"
 
 # Export to a disk file:
-./tools/rcon.ps1 11 "/export-platform-file <idx>"   # lands in host-1 script-output/
+./tools/clusterio/rcon.ps1 11 "/export-platform-file <idx>"   # lands in host-1 script-output/
 
 # Re-import a JSON file onto host-2 (chunks automatically; no source deleted):
-./tools/rcon.ps1 21 "/plugin-import-file <filename> <new_platform_name>"
+./tools/clusterio/rcon.ps1 21 "/plugin-import-file <filename> <new_platform_name>"
 ```
 
 Or use the **web UI** (§11) → Manual Transfer per-platform **Export JSON**, or the global **Import JSON** button.
@@ -498,9 +498,9 @@ Or use the **web UI** (§11) → Manual Transfer per-platform **Export JSON**, o
 
 ```pwsh
 # Park a platform at a gateway, then:
-./tools/rcon.ps1 11 "/gateway-transfer <idx> <dest_instance_id>"   # arrives paused at the gateway, hop stripped
+./tools/clusterio/rcon.ps1 11 "/gateway-transfer <idx> <dest_instance_id>"   # arrives paused at the gateway, hop stripped
 # Or open the on-arrival chooser GUI (Model A):
-./tools/rcon.ps1 11 "/gateway-gui <idx>"
+./tools/clusterio/rcon.ps1 11 "/gateway-gui <idx>"
 ```
 
 Automated coverage: the dedicated gateway-transfer runner was deleted 2026-07-27 (owner law: no
@@ -514,7 +514,7 @@ A transfer is **not** blocked when players/character bodies are aboard — they'
 sole source-delete chokepoint before teardown. Validate via the suite:
 
 ```pwsh
-node tools/run-integration-tests.mjs --only passenger-evacuate
+node tools/tests/run-integration-tests.mjs --only passenger-evacuate
 ```
 
 (Manual connected-player verification is tracked separately.)
@@ -524,30 +524,30 @@ node tools/run-integration-tests.mjs --only passenger-evacuate
 ```pwsh
 # The sabotage teeth (gate detects item/fluid loss, rollback, failed-entity attribution,
 # force-bonus sync) are pad fixtures run through the REAL transfer by one suite:
-node tools/run-integration-tests.mjs --only gallery-suite
+node tools/tests/run-integration-tests.mjs --only gallery-suite
 # Name-collision delete (platforms with same name → keyed on unique index, correct one deleted):
-node tools/run-integration-tests.mjs --only name-collision-delete
+node tools/tests/run-integration-tests.mjs --only name-collision-delete
 ```
 
 Manual lock/rollback inspection:
 
 ```pwsh
-./tools/rcon.ps1 11 "/lock-status"                  # show locked platforms
-./tools/rcon.ps1 11 "/unlock-platform <name_or_index>"
+./tools/clusterio/rcon.ps1 11 "/lock-status"                  # show locked platforms
+./tools/clusterio/rcon.ps1 11 "/unlock-platform <name_or_index>"
 ```
 
 ### 10. Persistence & observability
 
 ```pwsh
 # In-game transaction dashboard (history + per-phase timing):
-./tools/rcon.ps1 11 "/transaction-dashboard 25"
+./tools/clusterio/rcon.ps1 11 "/transaction-dashboard 25"
 
 # Controller persistence files (written atomically via safeOutputFile — should be valid JSON, no *.tmp):
 docker exec surface-export-controller sh -c 'ls -la /clusterio/data/database/surface_export_*.json'
 
 # Trace a transfer end-to-end (the aggregated JSON logs docker logs hides):
-./tools/check-cluster-logs.ps1
-./tools/check-cluster-logs.ps1 -Grep "transfer|validation|fail"
+./tools/clusterio/check-cluster-logs.ps1
+./tools/clusterio/check-cluster-logs.ps1 -Grep "transfer|validation|fail"
 
 # Prometheus metrics:
 docker exec surface-export-controller sh -c 'curl -s http://localhost:8080/metrics | grep ^surface_export_'
@@ -559,7 +559,7 @@ Log homes (see [CLAUDE.md](../CLAUDE.md) "Observability"): controller `/clusteri
 
 ### 11. Web UI walkthrough (per-feature checklist)
 
-Open `http://localhost:8080` → **Surface Export** in the sidebar (auth: `./tools/get-admin-token.ps1` copies a
+Open `http://localhost:8080` → **Surface Export** in the sidebar (auth: `./tools/clusterio/get-admin-token.ps1` copies a
 login token). The page has three tabs — **Manual Transfer**, **Transaction Logs**, **Gateways** — plus an
 **Import JSON** button (top-right, shown **only on the Manual Transfer tab**) and a live WebSocket feed (no
 manual refresh needed). Tick each feature:
@@ -638,10 +638,10 @@ manual refresh needed). Tick each feature:
 
 ```pwsh
 # Remove a leftover test platform on an instance:
-./tools/rcon.ps1 21 "/sc local p=game.forces['player'].platforms[<idx>]; if p then game.delete_surface(p.surface) end"
+./tools/clusterio/rcon.ps1 21 "/sc local p=game.forces['player'].platforms[<idx>]; if p then game.delete_surface(p.surface) end"
 
 # Full clean re-seed (wipes runtime state back to the seed saves):
-./tools/patch-and-reset.ps1
+./tools/clusterio/patch-and-reset.ps1
 # Hard wipe (volumes):  docker compose down -v   then   docker compose up -d
 ```
 
@@ -649,11 +649,11 @@ manual refresh needed). Tick each feature:
 
 | Goal | Command |
 |------|---------|
-| Full E2E (all scenarios) | `node tools/run-integration-tests.mjs` |
-| One scenario | `node tools/run-integration-tests.mjs --only <regex>` |
-| Manual transfer | `./tools/transfer-platform.ps1 -PlatformIndex <idx> -Direction 1to2` |
-| RCON (host-1 / host-2) | `./tools/rcon.ps1 11 "<cmd>"` / `./tools/rcon.ps1 21 "<cmd>"` |
-| List platforms | `./tools/rcon.ps1 11 "/list-platforms"` |
-| Validation result | `./tools/get-transaction-log.ps1 [-TransferId <canonical-id>]` |
-| Trace a failure | `./tools/check-cluster-logs.ps1 -Grep "..."` |
-| Reset cluster | `./tools/patch-and-reset.ps1` |
+| Full E2E (all scenarios) | `node tools/tests/run-integration-tests.mjs` |
+| One scenario | `node tools/tests/run-integration-tests.mjs --only <regex>` |
+| Manual transfer | `./tools/surface-export/transfer-platform.ps1 -PlatformIndex <idx> -Direction 1to2` |
+| RCON (host-1 / host-2) | `./tools/clusterio/rcon.ps1 11 "<cmd>"` / `./tools/clusterio/rcon.ps1 21 "<cmd>"` |
+| List platforms | `./tools/clusterio/rcon.ps1 11 "/list-platforms"` |
+| Validation result | `./tools/surface-export/get-transaction-log.ps1 [-TransferId <canonical-id>]` |
+| Trace a failure | `./tools/clusterio/check-cluster-logs.ps1 -Grep "..."` |
+| Reset cluster | `./tools/clusterio/patch-and-reset.ps1` |

@@ -8,7 +8,7 @@
 // Read-only. Same property-walk rules as the lifecycle engine's `property` read (identifier-only
 // segments, depth cap, indexing only, throw≠nil distinguished) so what probe reports is what a
 // fixture's declared verify would see.
-import { lua } from "../../tests/lab-gallery/batch-lifecycle.mjs";
+import { lua } from "../../../tests/lab-gallery/batch-lifecycle.mjs";
 import { resolvePlatformIndex } from "./export-inspect.mjs";
 
 const IDENT = /^[A-Za-z_][A-Za-z0-9_]*(\.[A-Za-z_][A-Za-z0-9_]*)*$/;

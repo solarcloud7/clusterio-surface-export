@@ -19,7 +19,7 @@ Two jobs:
 
 - **Integration Tests** (every PR/push) — build the plugin, stand up the full Docker
   cluster (controller + 2 hosts + 2 instances), and run the full integration suite
-  against it via `tools/run-integration-tests.mjs`, which auto-discovers every
+  against it via `tools/tests/run-integration-tests.mjs`, which auto-discovers every
   `tests/integration/*/run-tests.{ps1,mjs}`.
 - **Publish to npm** (tags only) — build and publish the plugin after tests pass,
   verifying the git tag matches `package.json`'s version (`--provenance`).
@@ -47,7 +47,7 @@ Two jobs:
    process exists, so the step then deadline-polls (90s) an exact RCON sentinel on both instances —
    `remote.interfaces["surface_export"]` must answer `ci-plugin-ready` — before any test may RCON in
    (this poll has measured ~57s of real unreadiness that the old fixed 10s sleep missed).
-8. **Run integration suite** — `node tools/run-integration-tests.mjs` auto-discovers and runs every
+8. **Run integration suite** — `node tools/tests/run-integration-tests.mjs` auto-discovers and runs every
    `tests/integration/*/run-tests.{ps1,mjs}` sequentially against the shared cluster (Node spawns `pwsh`
    for the `.ps1` tests). The job fails if any test fails.
 9. **On failure** — dump controller/host/Factorio logs, then capture and upload a re-importable repro
@@ -144,13 +144,13 @@ logs, and each host's `factorio-current.log`.
 
 ## Running the integration tests locally
 
-Bring up the cluster with `tools/deploy-cluster.ps1` (or `docker compose up -d`), then run the whole
+Bring up the cluster with `tools/clusterio/deploy-cluster.ps1` (or `docker compose up -d`), then run the whole
 suite the same way CI does:
 
 ```powershell
-node tools/run-integration-tests.mjs                # every tests/integration/*/run-tests.{ps1,mjs}
-node tools/run-integration-tests.mjs --only gateway # filter by dir-name regex
-node tools/run-integration-tests.mjs --list         # dry-run: list discovered tests
+node tools/tests/run-integration-tests.mjs                # every tests/integration/*/run-tests.{ps1,mjs}
+node tools/tests/run-integration-tests.mjs --only gateway # filter by dir-name regex
+node tools/tests/run-integration-tests.mjs --list         # dry-run: list discovered tests
 ```
 
 The runner needs `pwsh` for the `.ps1` tests (`brew install powershell` on macOS). To run a single

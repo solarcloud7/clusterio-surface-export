@@ -6,7 +6,7 @@ param (
 $ErrorActionPreference = "Stop"
 
 # Paths
-$WorkspaceRoot = Resolve-Path "$PSScriptRoot/.."
+$WorkspaceRoot = Resolve-Path "$PSScriptRoot/../.."
 $PluginPathCandidates = @(
     (Join-Path $WorkspaceRoot "docker\seed-data\external_plugins\surface_export"),
     (Join-Path $WorkspaceRoot "docker\seed-data\external_plugins\surface-export")
@@ -58,8 +58,8 @@ if (-not $SkipIncrement) {
 }
 
 # Both branches: keep the lockfile's version metadata in step with package.json (a -SkipIncrement
-# run heals pre-existing drift too; idempotent — writes only on change). See tools/version-utils.ps1.
-. "$PSScriptRoot/version-utils.ps1"
+# run heals pre-existing drift too; idempotent — writes only on change). See tools/shared/version-utils.ps1.
+. "$PSScriptRoot/../shared/version-utils.ps1"
 Update-PackageLockVersion -LockPath (Join-Path $PluginPath "package-lock.json") -NewVersion $NewVersion
 
 Write-Host "Using save-patched module architecture (no mod zip needed)" -ForegroundColor Cyan

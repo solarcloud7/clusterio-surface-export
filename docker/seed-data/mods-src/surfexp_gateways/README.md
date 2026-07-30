@@ -6,8 +6,8 @@ gets it). **After editing anything here, rebuild the zip** — otherwise the sou
 drift:
 
 ```powershell
-./tools/build-gateway-mod.ps1            # zip source -> docker/seed-data/mods/
-./tools/build-gateway-mod.ps1 -Upload    # also upload to the running cluster + add to the
+./tools/surface-export/build-gateway-mod.ps1            # zip source -> docker/seed-data/mods/
+./tools/surface-export/build-gateway-mod.ps1 -Upload    # also upload to the running cluster + add to the
                                          # "Space Age 2.0" pack + restart hosts (no down -v)
 ```
 
