@@ -48,6 +48,6 @@ try {
     $Token | Set-Clipboard
     Write-Host "(Copied to clipboard)" -ForegroundColor Green
 } catch {
-    # Clipboard not available
+    Write-Host "(Clipboard unavailable — copy the token above manually)" -ForegroundColor DarkGray
 }
 

@@ -38,11 +38,18 @@ const REPO_ROOT = join(SCRIPT_DIR, "..", "..", "..", "..", "..");
 const SCAN_DIRS = [join(REPO_ROOT, "tools"), join(REPO_ROOT, "tests")];
 
 const ANNOTATION = /deliberately quiet|intentional probe/i;
+// checkMark: which exit-status token counts as CHECKED for this rule. Cmdlet-level suppression
+// (-ErrorAction) never sets $LASTEXITCODE — only native exes do — so only $? is a real check there
+// (review-caught: accepting $LASTEXITCODE made that rule's CHECKED shape semantically vacuous).
 const SUPPRESSIONS = [
-	{ id: "stderr-to-null", regex: /2>\s*\$null/i, checkable: true },
-	{ id: "silently-continue", regex: /-ErrorAction\s+(?:SilentlyContinue|Ignore)\b/i, checkable: true },
-	{ id: "empty-catch", regex: /\bcatch\s*\{\s*\}/, checkable: false },
+	{ id: "stderr-to-null", regex: /[2*]>\s*\$null/i, checkMark: /\$LASTEXITCODE|\$\?/ },
+	{ id: "merged-discard", regex: /2>&1\s*\|\s*Out-Null/i, checkMark: /\$LASTEXITCODE|\$\?/ },
+	{ id: "silently-continue", regex: /-(?:EA|ErrorAction)[\s:]+['"]?(?:SilentlyContinue|Ignore)\b/i, checkMark: /\$\?/ },
+	{ id: "preference-silence", regex: /\$ErrorActionPreference\s*=\s*['"](?:SilentlyContinue|Ignore)['"]/i, checkMark: null },
 ];
+// The empty-catch rule runs over the whole comment-stripped text, not per line — `catch {` with the
+// brace closed on a later line (or a comment-only body) is the same swallow (review-caught miss).
+const EMPTY_CATCH = /\bcatch\s*\{\s*\}/g;
 
 function collectPsFiles(dir) {
 	const out = [];
@@ -67,36 +74,46 @@ function stripComment(line) {
 function lintFile(file) {
 	const relPath = relative(REPO_ROOT, file).replace(/\\/g, "/");
 	const lines = readFileSync(file, "utf8").split(/\r?\n/);
+	const stripped = lines.map(stripComment);
 	const violations = [];
-	lines.forEach((line, i) => {
-		const code = stripComment(line);
+
+	const annotated = (i) => ANNOTATION.test(lines.slice(Math.max(0, i - 3), i + 1).join("\n"));
+	// CHECKED reads the comment-STRIPPED window: a prose mention of $LASTEXITCODE must not
+	// satisfy the check (review-caught masking path).
+	const checked = (i, mark) => mark !== null && mark.test(stripped.slice(i, Math.min(stripped.length, i + 4)).join("\n"));
+
+	stripped.forEach((code, i) => {
 		for (const rule of SUPPRESSIONS) {
 			if (!rule.regex.test(code)) continue;
-			// ANNOTATED: same line or up to 3 lines above carries the stated reason.
-			const context = lines.slice(Math.max(0, i - 3), i + 1).join("\n");
-			if (ANNOTATION.test(context)) continue;
-			// CHECKED: the exit code is consulted within the next 3 lines (probe pattern).
-			if (rule.checkable) {
-				const below = lines.slice(i, Math.min(lines.length, i + 4)).join("\n");
-				if (/\$LASTEXITCODE|\$\?/.test(below)) continue;
-			}
-			violations.push({ file: relPath, line: i + 1, id: rule.id, text: line.trim() });
+			if (annotated(i) || checked(i, rule.checkMark)) continue;
+			violations.push({ file: relPath, line: i + 1, id: rule.id, text: lines[i].trim() });
 		}
 	});
+
+	// Empty catch over the whole stripped text (multi-line and comment-only bodies included).
+	// An empty catch checks nothing by definition — annotation is its only lawful shape.
+	const text = stripped.join("\n");
+	for (const m of text.matchAll(EMPTY_CATCH)) {
+		const line = text.slice(0, m.index).split("\n").length - 1;
+		if (annotated(line)) continue;
+		violations.push({ file: relPath, line: line + 1, id: "empty-catch", text: lines[line].trim() });
+	}
 	return violations;
 }
 
 function main() {
-	const present = SCAN_DIRS.filter((d) => existsSync(d));
-	if (present.length === 0) {
+	const missing = SCAN_DIRS.filter((d) => !existsSync(d));
+	if (missing.length > 0) {
 		if (/^([a-z]:)?\/clusterio\/external_plugins\//i.test(SCRIPT_DIR.replace(/\\/g, "/"))) {
 			console.log("lint:ps-silent — SKIPPED (plugin-only container mount; repo tools/ and tests/ not present)");
 			return;
 		}
-		console.error("lint:ps-silent — FAILED: neither tools/ nor tests/ found at the repo root. A missing scan surface is not a pass.");
+		// ANY missing scan dir fails — silently scanning half the surface while printing OK was a
+		// review-caught defect (the sibling lua-syntax guard already took this posture).
+		console.error(`lint:ps-silent — FAILED: missing scan director${missing.length > 1 ? "ies" : "y"}: ${missing.join(", ")}. A missing scan surface is not a pass.`);
 		process.exit(1);
 	}
-	const files = present.flatMap(collectPsFiles);
+	const files = SCAN_DIRS.flatMap(collectPsFiles);
 	if (files.length === 0) {
 		console.error("lint:ps-silent — FAILED: scan directories exist but contain zero .ps1/.psm1 files. Ran 0 checks; refusing to report a pass.");
 		process.exit(1);

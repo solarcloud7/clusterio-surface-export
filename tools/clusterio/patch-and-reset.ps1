@@ -63,17 +63,35 @@ if ($LuaOnly) {
     if (-not (Test-Path $distNode) -or -not (Test-Path $distWeb)) {
         throw "-LuaOnly refused: dist/node or dist/web is missing. Run without -LuaOnly to build first."
     }
-    $srcNewest = Get-ChildItem $pluginRoot -Recurse -File |
-        Where-Object { $_.FullName -notmatch '\\(dist|node_modules|module)\\' } |
-        Where-Object { $_.Extension -in '.ts', '.tsx', '.css', '.json', '.js' -or $_.Name -eq '.npmrc' } |
-        Sort-Object LastWriteTimeUtc -Descending | Select-Object -First 1
+    # The source set is the ENUMERATED build inputs (lib/, web/, plugin-root *.ts, tsconfig*.json,
+    # webpack.config.js, .npmrc) — NOT a recursive walk of the plugin root. Review-caught defect:
+    # a walk that included root .json/.js compared against files this script itself rewrites every
+    # run (package.json/package-lock.json version bump) and against non-build files
+    # (eslint.config.js, scripts/*), so run N's bump made run N+1 always refuse. Known accepted
+    # gap: a DEPENDENCY-only edit (package.json) is not detected — after dependency changes, run
+    # without -LuaOnly.
+    $srcCandidates = @(
+        Get-ChildItem (Join-Path $pluginRoot "lib"), (Join-Path $pluginRoot "web") -Recurse -File -ErrorAction Stop
+        Get-ChildItem $pluginRoot -File | Where-Object {
+            $_.Extension -in '.ts', '.tsx' -or $_.Name -like 'tsconfig*.json' -or $_.Name -eq 'webpack.config.js' -or $_.Name -eq '.npmrc'
+        }
+    )
+    $srcNewest = $srcCandidates | Sort-Object LastWriteTimeUtc -Descending | Select-Object -First 1
     $distNewest = Get-ChildItem $distNode, $distWeb -Recurse -File |
         Sort-Object LastWriteTimeUtc -Descending | Select-Object -First 1
-    if ($srcNewest -and $distNewest -and $srcNewest.LastWriteTimeUtc -gt $distNewest.LastWriteTimeUtc) {
+    # Empty dist dirs (interrupted build, wiped contents) must REFUSE, not fall through the
+    # comparison as "fresh" — that fail-open was a review-caught defect.
+    if (-not $distNewest) {
+        throw "-LuaOnly refused: dist/node and dist/web exist but contain no files. Run without -LuaOnly to build first."
+    }
+    if (-not $srcNewest) {
+        throw "-LuaOnly refused: found zero TS/web build inputs to compare against — this tree looks wrong; refusing to guess."
+    }
+    if ($srcNewest.LastWriteTimeUtc -gt $distNewest.LastWriteTimeUtc) {
         throw ("-LuaOnly refused: '$($srcNewest.FullName)' ($($srcNewest.LastWriteTimeUtc)) is newer than the newest dist artifact " +
             "'$($distNewest.Name)' ($($distNewest.LastWriteTimeUtc)). A stale dist would ship old plugin code — run without -LuaOnly.")
     }
-    Write-Host "LuaOnly: dist/ is fresh (newest source: $($srcNewest.Name)) — container build will be skipped" -ForegroundColor Yellow
+    Write-Host "LuaOnly: dist/ is fresh (newest build input: $($srcNewest.Name)) — container build will be skipped" -ForegroundColor Yellow
     Write-Host ""
 }
 
@@ -418,7 +436,7 @@ foreach ($h in 1, 2) {
         # "still booting" and the loop retries; the throw below is the real gate.
         $ping = docker exec surface-export-controller npx clusterioctl $ctlConfig --log-level error `
             instance send-rcon $inst "/sc rcon.print(remote.interfaces['surface_export'] ~= nil)" 2>&1
-        if ($LASTEXITCODE -eq 0 -and ($ping | Out-String) -match '\btrue\b') { $bootOk = $true; break }
+        if ($LASTEXITCODE -eq 0 -and ($ping | Out-String) -match '(?m)^\s*true\s*$') { $bootOk = $true; break }
         Start-Sleep -Seconds 3
     }
     if ($bootOk) {

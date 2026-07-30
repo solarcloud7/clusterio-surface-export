@@ -152,6 +152,9 @@ node tools/tests/testkit/cli.mjs inspect <platform> --field 'infinity-pipe@40.5,
 ./tools/surface-export/list-platforms.ps1
 . ./tools/shared/cluster-utils.ps1                       # dot-source for Send-RCON / Get-InstanceList
 
+# Sweep leftover throwaway test/clone surfaces (zero-leftover discipline; protected fixtures never touched):
+./tools/tests/cleanup-test-surfaces.ps1 -DryRun          # then rerun without -DryRun to delete
+
 # Import an export file: use the web UI "Import JSON" (Manual Transfer tab) or the in-game
 # /plugin-import-file <file> <name> command — both chunk automatically. There is no CLI import script.
 ```
