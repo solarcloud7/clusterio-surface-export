@@ -14,9 +14,9 @@
 .PARAMETER Lines
     How many tail lines of docker/factorio logs to show (default 30).
 .EXAMPLE
-    ./tools/check-cluster-logs.ps1
+    ./tools/clusterio/check-cluster-logs.ps1
 .EXAMPLE
-    ./tools/check-cluster-logs.ps1 -Grep "sendRequest|handleRequest|undefined"
+    ./tools/clusterio/check-cluster-logs.ps1 -Grep "sendRequest|handleRequest|undefined"
 #>
 param(
     [string]$Grep = "error|transfer|import|export|validation",

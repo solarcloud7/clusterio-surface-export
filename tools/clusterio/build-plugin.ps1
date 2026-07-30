@@ -30,15 +30,15 @@
     (node) changes to show up, because the hosts load the plugin's node bundle at startup.
 
 .EXAMPLE
-    ./tools/build-plugin.ps1 web -RestartController     # rebuild web UI and serve it live
+    ./tools/clusterio/build-plugin.ps1 web -RestartController     # rebuild web UI and serve it live
 .EXAMPLE
-    ./tools/build-plugin.ps1 node -RestartHosts        # rebuild TypeScript and reload it on the hosts
+    ./tools/clusterio/build-plugin.ps1 node -RestartHosts        # rebuild TypeScript and reload it on the hosts
 .EXAMPLE
-    ./tools/build-plugin.ps1 all -RestartController -RestartHosts   # full build + reload everything
+    ./tools/clusterio/build-plugin.ps1 all -RestartController -RestartHosts   # full build + reload everything
 .EXAMPLE
-    ./tools/build-plugin.ps1                            # full build (node + web)
+    ./tools/clusterio/build-plugin.ps1                            # full build (node + web)
 .EXAMPLE
-    ./tools/build-plugin.ps1 -Fresh                     # clean reinstall + full build
+    ./tools/clusterio/build-plugin.ps1 -Fresh                     # clean reinstall + full build
 #>
 param(
     [ValidateSet('all', 'node', 'web')][string]$Target = 'all',
@@ -49,7 +49,7 @@ param(
 
 $ErrorActionPreference = 'Stop'
 
-$PluginPath = (Resolve-Path "$PSScriptRoot/../docker/seed-data/external_plugins/surface_export").Path
+$PluginPath = (Resolve-Path "$PSScriptRoot/../../docker/seed-data/external_plugins/surface_export").Path
 $DepsVolume = 'se_plugin_build_nm'
 $Image = 'node:24-bookworm-slim'
 

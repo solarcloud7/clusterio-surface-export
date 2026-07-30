@@ -60,7 +60,7 @@ export const testkit = {
 
 	reset: notYet("reset", "createBatchLifecycle().loadGoldenPair() in tests/lab-gallery/batch-lifecycle.mjs"),
 	executeTransfer: notYet("executeTransfer", "tests/integration/gallery-suite/run-tests.mjs, " +
-		"or tools/transfer-platform.ps1 for a one-off"),
+		"or tools/surface-export/transfer-platform.ps1 for a one-off"),
 	registerTest: notYet("registerTest", "a fixture entry in tests/lab-gallery/manifest.json"),
 	enable: notYet("enable", "the fixture's lifecycle.act / runnerExcluded keys in manifest.json"),
 	disable: notYet("disable", "the fixture's lifecycle.act / runnerExcluded keys in manifest.json"),

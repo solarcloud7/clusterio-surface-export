@@ -13,18 +13,18 @@
 //   .mjs tests → run natively via `node` (so tests can be migrated off PowerShell one at a time)
 //
 // Usage:
-//   node tools/run-integration-tests.mjs                 # run the whole suite
-//   node tools/run-integration-tests.mjs --only <regex>  # only tests whose dir name matches
-//   node tools/run-integration-tests.mjs --skip <regex>  # skip tests whose dir name matches
-//   node tools/run-integration-tests.mjs --fail-fast     # stop at the first failure
-//   node tools/run-integration-tests.mjs --list          # dry-run: list what would run (+ skip-list)
+//   node tools/tests/run-integration-tests.mjs                 # run the whole suite
+//   node tools/tests/run-integration-tests.mjs --only <regex>  # only tests whose dir name matches
+//   node tools/tests/run-integration-tests.mjs --skip <regex>  # skip tests whose dir name matches
+//   node tools/tests/run-integration-tests.mjs --fail-fast     # stop at the first failure
+//   node tools/tests/run-integration-tests.mjs --list          # dry-run: list what would run (+ skip-list)
 
 import { spawnSync } from "node:child_process";
 import { readdirSync, existsSync, statSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const integrationDir = join(repoRoot, "tests", "integration");
 
 // ── Single source of truth for suite-level config ──────────────────────────────────────────────

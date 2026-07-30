@@ -26,7 +26,7 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
-$RepoRoot = Split-Path -Parent $PSScriptRoot
+$RepoRoot = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
 $SrcDir = Join-Path $RepoRoot "docker/seed-data/mods-src/surfexp_gateways"
 $ModsDir = Join-Path $RepoRoot "docker/seed-data/mods"
 
@@ -71,4 +71,4 @@ Write-Host "Restarting hosts to reload the mod pack..." -ForegroundColor Cyan
 docker restart surface-export-host-1 surface-export-host-2 | Out-Null
 
 Write-Host "Done. Verify with:" -ForegroundColor Green
-Write-Host "  ./tools/rcon.ps1 11 `"/sc rcon.print(script.active_mods['$modName'])`"" -ForegroundColor Gray
+Write-Host "  ./tools/clusterio/rcon.ps1 11 `"/sc rcon.print(script.active_mods['$modName'])`"" -ForegroundColor Gray

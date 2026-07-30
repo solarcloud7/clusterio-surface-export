@@ -1,10 +1,10 @@
 #!/usr/bin/env node
 // testkit CLI — the one-shot front door.
 //
-//   node tools/testkit/cli.mjs check                      # static referential integrity (no cluster)
-//   node tools/testkit/cli.mjs check --live               # + anchors resolve against a real payload
-//   node tools/testkit/cli.mjs inspect <platform>         # payload summary + record types
-//   node tools/testkit/cli.mjs inspect <platform> --field <name>@<x>,<y>:<dotted.path>
+//   node tools/tests/testkit/cli.mjs check                      # static referential integrity (no cluster)
+//   node tools/tests/testkit/cli.mjs check --live               # + anchors resolve against a real payload
+//   node tools/tests/testkit/cli.mjs inspect <platform>         # payload summary + record types
+//   node tools/tests/testkit/cli.mjs inspect <platform> --field <name>@<x>,<y>:<dotted.path>
 //
 // Exit codes: 0 clean, 1 findings, 2 usage/operational error.
 import { testkit } from "./index.mjs";
@@ -88,6 +88,6 @@ async function cmdProbe() {
 
 const COMMANDS = { check: cmdCheck, inspect: cmdInspect, probe: cmdProbe };
 if (!COMMANDS[command]) {
-	fail(`usage: node tools/testkit/cli.mjs <${Object.keys(COMMANDS).join("|")}> [...]`);
+	fail(`usage: node tools/tests/testkit/cli.mjs <${Object.keys(COMMANDS).join("|")}> [...]`);
 }
 COMMANDS[command]().catch(error => fail(`testkit ${command} failed: ${error.message}`, 2));

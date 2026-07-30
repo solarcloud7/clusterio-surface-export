@@ -54,7 +54,7 @@ re-curated. The constraints worth repeating here are the ones that fail SILENTLY
 docker exec surface-export-controller sh -c 'npx clusterioctl --config /clusterio/tokens/config-control.json --log-level error instance send-rcon "clusterio-host-1-instance-1" "<cmd>"'
 # rc21 "<cmd>" → swap to "clusterio-host-2-instance-1"
 ```
-A reusable wrapper lives in `tools/rcon.ps1` (see "Development Tools"). When you see `rc11 "X"` below, mentally expand it to the raw form above.
+A reusable wrapper lives in `tools/clusterio/rcon.ps1` (see "Development Tools"). When you see `rc11 "X"` below, mentally expand it to the raw form above.
 
 ### Core RCON Aliases
 ```powershell
@@ -73,9 +73,9 @@ docker exec surface-export-controller npx clusterioctl --log-level error instanc
 
 ### Primary Deployment Script
 ```powershell
-./tools/deploy-cluster.ps1                 # Full deployment: increment version, pull images, start cluster
-./tools/deploy-cluster.ps1 -SkipIncrement  # Deploy without version bump
-./tools/deploy-cluster.ps1 -SkipIncrement -KeepData  # Restart without wiping volumes
+./tools/clusterio/deploy-cluster.ps1                 # Full deployment: increment version, pull images, start cluster
+./tools/clusterio/deploy-cluster.ps1 -SkipIncrement  # Deploy without version bump
+./tools/clusterio/deploy-cluster.ps1 -SkipIncrement -KeepData  # Restart without wiping volumes
 ```
 
 ### Hot Reload Development (Recommended)
@@ -87,63 +87,73 @@ The plugin uses **TypeScript** with bind-mounted source and **save patching** fo
 - Build output: `dist/node/` (Node.js runtime), `dist/web/` (browser bundle)
 
 **Plugin Changes** (TypeScript):
-- Edit `*.ts` files in plugin root or `lib/` → `./tools/build-plugin.ps1 node -RestartHosts` (rebuild + reload the hosts)
+- Edit `*.ts` files in plugin root or `lib/` → `./tools/clusterio/build-plugin.ps1 node -RestartHosts` (rebuild + reload the hosts)
 - Build generates `dist/node/*.js` from TypeScript sources
 - Deploy script automatically rebuilds before Docker startup
-- Host Node (24.x, matching CI) is available in shells — but **do not** `npm install`/`npm run build` in the live plugin dir while the cluster runs (see the next bullet: it re-adds the `@clusterio` peers and breaks `clusterioctl`; the cluster also strips them, so an in-place build can't resolve `@clusterio` anyway). Use **`./tools/build-plugin.ps1 [all|node|web] [-RestartController] [-RestartHosts]`** — it builds in an isolated `node:24` container (CI parity) with a named volume shadowing `node_modules`, writing `dist/` back to the host; pass `-RestartController` for web changes (the controller caches each plugin's `manifest.json` at startup), or `-RestartHosts` for node changes (the hosts load `dist/node` at startup). Quick node-only compile alternative: `docker exec surface-export-host-1 sh -c 'cd /clusterio/external_plugins/surface_export && npx tsc -p tsconfig.node.json'` then `docker restart surface-export-host-1 surface-export-host-2`.
+- Host Node (24.x, matching CI) is available in shells — but **do not** `npm install`/`npm run build` in the live plugin dir while the cluster runs (see the next bullet: it re-adds the `@clusterio` peers and breaks `clusterioctl`; the cluster also strips them, so an in-place build can't resolve `@clusterio` anyway). Use **`./tools/clusterio/build-plugin.ps1 [all|node|web] [-RestartController] [-RestartHosts]`** — it builds in an isolated `node:24` container (CI parity) with a named volume shadowing `node_modules`, writing `dist/` back to the host; pass `-RestartController` for web changes (the controller caches each plugin's `manifest.json` at startup), or `-RestartHosts` for node changes (the hosts load `dist/node` at startup). Quick node-only compile alternative: `docker exec surface-export-host-1 sh -c 'cd /clusterio/external_plugins/surface_export && npx tsc -p tsconfig.node.json'` then `docker restart surface-export-host-1 surface-export-host-2`.
 - **DO NOT** run `npm install`/`npm install --include=dev`/`npm prune` in the plugin dir on a running cluster: the plugin lists `@clusterio/*` as **peer+dev** deps and npm 7+ auto-installs peers, so a second copy of `@clusterio/lib` lands in the shared (bind-mounted) `node_modules` and breaks `clusterioctl` with `Error: Attempt to import duplicate copy of @clusterio/lib`. The base-image entrypoint avoids this by deleting them after install (log line "Removing local @clusterio packages"). **Recover with** `docker exec surface-export-host-1 sh -c 'rm -rf /clusterio/external_plugins/surface_export/node_modules/@clusterio'` (NOT `npm prune` — that re-adds the peers). To lint/build locally, install only the tool you need (`npm install --no-save eslint typescript-eslint`) then remove `@clusterio` again. CI is unaffected — it runs `npm ci` in a clean runner.
 
 **Web UI Changes** (React):
-- Edit `*.tsx`/`*.css` files in `web/` → `./tools/build-plugin.ps1 web -RestartController` → reload browser (chunks are content-hashed, so a normal reload suffices — no hard-refresh)
+- Edit `*.tsx`/`*.css` files in `web/` → `./tools/clusterio/build-plugin.ps1 web -RestartController` → reload browser (chunks are content-hashed, so a normal reload suffices — no hard-refresh)
 - Build generates `dist/web/` bundle via Webpack Module Federation
 - Deploy script automatically rebuilds before Docker startup
 
 **Module Changes** (Lua - Save Patched):
-- Edit `*.lua` files in `module/` directory → `./tools/patch-and-reset.ps1` (rebuilds the plugin, resets saves so Clusterio re-patches the Lua, restarts the cluster)
+- Edit `*.lua` files in `module/` directory → `./tools/clusterio/patch-and-reset.ps1` (rebuilds the plugin, resets saves so Clusterio re-patches the Lua, restarts the cluster)
 - Clusterio automatically injects Lua code into saves at startup
 - No compile step for Lua itself — but the save MUST be reset (a plain restart reuses the old patched `script.dat`); `patch-and-reset.ps1` does that for you
 
 **Development Workflow**:
 1. Start cluster: `docker compose up -d`
-2. Edit TypeScript files → `./tools/build-plugin.ps1 node -RestartHosts`
-3. Edit web (`*.tsx`) files → `./tools/build-plugin.ps1 web -RestartController` → reload browser
-4. Edit Lua files → `./tools/patch-and-reset.ps1` (rebuild + reset saves to re-patch Lua + restart)
-5. **Or use deploy script** for full rebuild: `.\tools\deploy-cluster.ps1 -SkipIncrement`
+2. Edit TypeScript files → `./tools/clusterio/build-plugin.ps1 node -RestartHosts`
+3. Edit web (`*.tsx`) files → `./tools/clusterio/build-plugin.ps1 web -RestartController` → reload browser
+4. Edit Lua files → `./tools/clusterio/patch-and-reset.ps1 -LuaOnly` (skips the ~3-min container build —
+   Lua is save-patched from source; a staleness tripwire refuses the skip if any TS/web source is newer
+   than dist/. Omit `-LuaOnly` when TS/web changed too.) Every run ends with a boot check: both
+   instances must answer RCON with the plugin loaded, so a Lua error at save-load fails the deploy
+   loudly instead of killing the instance silently.
+5. **Or use deploy script** for full rebuild: `.\tools\clusterio\deploy-cluster.ps1 -SkipIncrement`
 
 ### Cluster / transfer / RCON tools (`tools/`)
 
-> Run `ls tools/` for the full set — this list is the agent-relevant subset. The `rc11`/`rc21`
-> profile aliases do NOT work in a non-interactive (agent/CI) shell; use `tools/rcon.ps1` instead.
+> Tools are organized by domain: `tools/clusterio/` (build, deploy, cluster ops), `tools/surface-export/`
+> (plugin-domain: transfers, platforms, transaction logs), `tools/tests/` (integration runner, testkit,
+> surface sweeper), `tools/shared/` (dot-sourced libraries — `cluster-utils.ps1`, `version-utils.ps1`);
+> `check-pr-scope.ps1` stays at the root. This list is the agent-relevant subset. The `rc11`/`rc21`
+> profile aliases do NOT work in a non-interactive (agent/CI) shell; use `tools/clusterio/rcon.ps1` instead.
 
 ```powershell
 # RCON (agent-friendly; replaces the rc11/rc21 profile aliases):
-./tools/rcon.ps1 11 "/list-platforms"            # host-1/instance-1   (21 = host-2)
+./tools/clusterio/rcon.ps1 11 "/list-platforms"            # host-1/instance-1   (21 = host-2)
 
 # Find what happened (plugin errors, transfer traces) — reads the JSON logs docker logs hides:
-./tools/check-cluster-logs.ps1                   # or -Grep "sendRequest|validation|fail"
+./tools/clusterio/check-cluster-logs.ps1                   # or -Grep "sendRequest|validation|fail"
 
 # Transfer a platform between instances (then prints post-transfer state):
-./tools/transfer-platform.ps1 -PlatformIndex <idx> -Direction 2to1   # or 1to2
+./tools/surface-export/transfer-platform.ps1 -PlatformIndex <idx> -Direction 2to1   # or 1to2
 
 # Run the WHOLE integration suite (auto-discovers tests/integration/*/run-tests.{ps1,mjs}; cluster must be
 # UP). One source of truth — also the single CI step. Node spawns pwsh per .ps1 test (macOS: brew install
 # powershell). Filter with --only <regex>; dry-run with --list.
-node tools/run-integration-tests.mjs                 # or:  --only 'gateway' / --skip 'fidelity' / --list
+node tools/tests/run-integration-tests.mjs                 # or:  --only 'gateway' / --skip 'fidelity' / --list
 
 # testkit — ask what the export payload ACTUALLY carries, and check cross-references resolve.
 # A property survives a transfer only if a handler put it in the payload, so `inspect --field` is
 # the cheapest screen for silent serializer omission (the class that dropped the infinity-pipe
 # filter on every transfer). Read-only: no lock, no source delete.
-node tools/testkit/cli.mjs check                 # cross-refs resolve (no cluster needed)
-node tools/testkit/cli.mjs check --live          # + every fixture anchor resolves in a real payload
-node tools/testkit/cli.mjs inspect <platform> --field 'infinity-pipe@40.5,46.5:infinity_pipe_filter'
+node tools/tests/testkit/cli.mjs check                 # cross-refs resolve (no cluster needed)
+node tools/tests/testkit/cli.mjs check --live          # + every fixture anchor resolves in a real payload
+node tools/tests/testkit/cli.mjs inspect <platform> --field 'infinity-pipe@40.5,46.5:infinity_pipe_filter'
 # Exit 1 = absent (cannot survive). Exit 2 = your query path is wrong (it tells you the real one).
 # "Present" NEVER means "survives" — restoration is only proven by a transfer + physical dest read.
 
 # Status / listing:
-./tools/show-cluster-status.ps1
-./tools/list-platforms.ps1
-. ./tools/cluster-utils.ps1                       # dot-source for Send-RCON / Get-InstanceList
+./tools/clusterio/show-cluster-status.ps1
+./tools/surface-export/list-platforms.ps1
+. ./tools/shared/cluster-utils.ps1                       # dot-source for Send-RCON / Get-InstanceList
+
+# Sweep leftover throwaway test/clone surfaces (zero-leftover discipline; protected fixtures never touched):
+./tools/tests/cleanup-test-surfaces.ps1 -DryRun          # then rerun without -DryRun to delete
 
 # Import an export file: use the web UI "Import JSON" (Manual Transfer tab) or the in-game
 # /plugin-import-file <file> <name> command — both chunk automatically. There is no CLI import script.
@@ -160,7 +170,7 @@ hands-on E2E checklist, one doc); repository test layout and entry points are in
 [tests/README.md](tests/README.md). Current facts:
 
 - **`tests/integration/`** holds live regressions for established production contracts; run with
-  `node tools/run-integration-tests.mjs` (cluster must be up). The one-test-save consolidation is tracked in
+  `node tools/tests/run-integration-tests.mjs` (cluster must be up). The one-test-save consolidation is tracked in
   the gallery-suite runner header (tests/integration/gallery-suite/run-tests.mjs), which accounts
   each deleted runner by problem class: most roundtrip tests are absorbed as pad
   fixtures on the live gallery save (`tests/lab-gallery/`), where a missing pad reports a RED `MISSING`
@@ -202,14 +212,15 @@ isolated is UNEXPLAINED, not fixed.
 This repo runs **published** `@clusterio/*` from the baked images, at the version pinned by `CLUSTERIO_IMAGE_TAG` in `.env` (see `.env.example` — pin the immutable `-rN` tag; the bare version and `:latest` MOVE). To change Clusterio core
 itself (lib/host/controller/ctl): the canonical fork checkout is the SIBLING `../clusterio` (fork-based pnpm
 workflow, never an in-repo checkout). The two test loops (native pnpm dev env vs full-cluster Docker override
-via `./tools/rebuild-clusterio.ps1`) and the promotion paths are in
+via `./tools/clusterio/rebuild-clusterio.ps1`) and the promotion paths are in
 [docs/clusterio-core-dev.md](docs/clusterio-core-dev.md).
 
 ## Project File Structure
 
 Plugin root: `docker/seed-data/external_plugins/surface_export/` (`module/` = save-patched Lua,
 `lib/` = TS modules, `web/` = React UI, `scripts/` = lint guards, `dist/` = gitignored build output).
-Helper scripts: run `ls tools/`. Cluster definition: `docker-compose.yml` (+ `docker-compose.clusterio-src.yml`
+Helper scripts: `tools/{clusterio,surface-export,tests,shared}/` (see the tools section above).
+Cluster definition: `docker-compose.yml` (+ `docker-compose.clusterio-src.yml`
 opt-in fork override); all environment config in gitignored `.env`.
 
 ### Build Architecture
@@ -354,7 +365,7 @@ For Clusterio core architecture, see [Clusterio docs](https://github.com/cluster
 
 ### General Style (partially enforced by ESLint — `npm run lint`, gated in CI)
 
-> `npm run lint` runs nine **correctness** guards, all gated in CI; a tenth (**commit labels**,
+> `npm run lint` runs eleven **correctness** guards, all gated in CI; a twelfth (**commit labels**,
 > `scripts/lint-commit-labels.mjs`) runs as its own PR-gated CI step. Each script header carries the full
 > rationale and incident history. Every `*:allow` escape hatch MUST be enumerated in
 > `scripts/lint-allow-manifest.json` with a reason and approver — an allow is an **escalation**, never
@@ -364,10 +375,12 @@ For Clusterio core architecture, see [Clusterio docs](https://github.com/cluster
 > |-------|---------|------|--------------|
 > | TS | `lint:js` (eslint) | never extract/cast a Link method (unnamed `no-restricted-syntax` selectors, `eslint.config.js`); no empty catch or bare `.catch(() => {})` | eslint-disable |
 > | Lua invariants | `lint:lua` | no `global.*` — `no-global-persistence-table`; no `__clusterio_lib__` — `no-clusterio-lib-mod-path`; no `platform.destroy()` — `no-platform-destroy`; no name-keyed transfer identity — `no-name-as-transfer-identity` | `-- lint-lua:allow` |
+> | Lua syntax | `lint:lua-syntax` | every module/mods-src .lua parses as Lua 5.2 AND names no undefined global (a parse error ships to a dead instance at save-load; a misspelled module-table name — the FixtureMeters-vs-M incident — surfaces as an undefined global) | none — fix the name or extend the whitelist in the script (reviewed change) |
 > | Web cache | `lint:web-cache` | webpack output filenames stay content-hashed (immutable 1y `/static` cache serves stale chunks otherwise) | `lint-webpack-cache:allow` |
 > | Test grounding | `lint:test-grounding` | fidelity/gate tests measure PHYSICALLY, never the validator self-report alone; success-path = parse `debug_import_result` + `Assert-TransferSucceeded` before census | `lint-test-grounding:allow` |
 > | pcall logging | `lint:pcall-logging` | every `pcall` surfaces its error or is an annotated `-- intentional probe` | `-- pcall:allow` |
 > | Catch swallow | `lint:catch-swallow` | no TS catch substitutes a default without surfacing the error binding | `// catch:allow` |
+> | PS silent-failure | `lint:ps-silent` | no PowerShell-stream suppression (`2>$null`, `-ErrorAction SilentlyContinue/Ignore`, empty `catch {}`) in tools/tests ps1 unless CHECKED (`$LASTEXITCODE`/`$?` within 3 lines) or ANNOTATED (`deliberately quiet` + real reason) — the 11-broken-calls incident class | annotation IS the mechanism (reason required, reviewable) |
 > | Test hooks | `lint:test-hooks` | a `test_force_*` hook disarms in `finally`/`trap` or is enumerated in `FAIL_SAFE_HOOKS` (`scripts/fail-safe-hooks.mjs`) | `FAIL_SAFE_HOOKS` entry |
 > | Allow manifest | `lint:allow-manifest` | manifest matches reality exactly, both directions | — |
 > | Version certification | `lint:version-certification` | pinned Factorio version == `tests/labs-certified.json`; a pin bump goes red until the re-certification campaign lands | none — recertify |
@@ -564,7 +577,7 @@ rc11 "/sc for name, _ in pairs(remote.interfaces) do rcon.print(name) end"
   walk; the repo root is never bind-mounted) plus a plugin-level `.npmrc` with
   `legacy-peer-deps=true` so npm 7+ never auto-installs the peers back. See
   `FactorioMap/docs/lessons-learned.md` § "Wave C". Worth adopting here as a complement to the
-  isolated `tools/build-plugin.ps1` container build.
+  isolated `tools/clusterio/build-plugin.ps1` container build.
 - **Multi-cluster coexistence**: this cluster (controller :8080, game 34100–34209) shares the
   machine with the atlas cluster (controller :8090, game host-port 34300 → container 34100;
   containers prefixed `atlas-`). The authoritative port/coexistence map lives in

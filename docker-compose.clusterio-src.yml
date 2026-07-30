@@ -6,7 +6,7 @@
 #
 # Usage (from the repo root):
 #   # 1. build the fork (it lives in the SIBLING checkout ../clusterio):
-#   ./tools/rebuild-clusterio.ps1            # (pnpm build + bring the cluster up with this override)
+#   ./tools/clusterio/rebuild-clusterio.ps1            # (pnpm build + bring the cluster up with this override)
 #   # ...or manually:
 #   pnpm -C ../clusterio install ; pnpm -C ../clusterio build
 #   docker compose -f docker-compose.yml -f docker-compose.clusterio-src.yml up -d --force-recreate

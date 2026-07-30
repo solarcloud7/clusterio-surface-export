@@ -1,7 +1,7 @@
 $ErrorActionPreference = "Stop"
 
 # Get admin username from env file or use default
-$EnvFile = Join-Path $PSScriptRoot "../.env"
+$EnvFile = Join-Path $PSScriptRoot "../../.env"
 $AdminUser = "admin"
 if (Test-Path $EnvFile) {
     $EnvContent = Get-Content $EnvFile
@@ -48,6 +48,6 @@ try {
     $Token | Set-Clipboard
     Write-Host "(Copied to clipboard)" -ForegroundColor Green
 } catch {
-    # Clipboard not available
+    Write-Host "(Clipboard unavailable — copy the token above manually)" -ForegroundColor DarkGray
 }
 

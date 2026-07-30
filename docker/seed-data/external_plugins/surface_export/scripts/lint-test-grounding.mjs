@@ -158,6 +158,17 @@ function main() {
 		process.exit(1);
 	}
 	const files = findTestFiles();
+	if (files.length === 0) {
+		// The directory-present-but-empty case is the RECORDED incident shape: the ps1 runners were
+		// deleted while tests/integration remained, and this guard printed "OK (0 tests checked)" —
+		// a green guard scanning nothing, caught only by a human reading the count. Zero subjects
+		// is not a pass any more than a missing scan surface is.
+		console.error(
+			`lint:test-grounding - FAILED: ${TESTS_DIR} exists but contains zero run-tests.{ps1,mjs} runners.\n` +
+				"Ran 0 checks; refusing to report a pass on an empty scan surface.",
+		);
+		process.exit(1);
+	}
 	const violations = [...findGroundingViolations(files), ...findMjsGroundingViolations(files)];
 	if (violations.length > 0) {
 		console.error("lint:test-grounding - FAILED\n");

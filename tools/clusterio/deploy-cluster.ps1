@@ -6,7 +6,7 @@ param (
 $ErrorActionPreference = "Stop"
 
 # Paths
-$WorkspaceRoot = Resolve-Path "$PSScriptRoot/.."
+$WorkspaceRoot = Resolve-Path "$PSScriptRoot/../.."
 $PluginPathCandidates = @(
     (Join-Path $WorkspaceRoot "docker\seed-data\external_plugins\surface_export"),
     (Join-Path $WorkspaceRoot "docker\seed-data\external_plugins\surface-export")
@@ -58,8 +58,8 @@ if (-not $SkipIncrement) {
 }
 
 # Both branches: keep the lockfile's version metadata in step with package.json (a -SkipIncrement
-# run heals pre-existing drift too; idempotent — writes only on change). See tools/version-utils.ps1.
-. "$PSScriptRoot/version-utils.ps1"
+# run heals pre-existing drift too; idempotent — writes only on change). See tools/shared/version-utils.ps1.
+. "$PSScriptRoot/../shared/version-utils.ps1"
 Update-PackageLockVersion -LockPath (Join-Path $PluginPath "package-lock.json") -NewVersion $NewVersion
 
 Write-Host "Using save-patched module architecture (no mod zip needed)" -ForegroundColor Cyan
@@ -179,6 +179,8 @@ try {
     }
 } finally {
     if ($logJob) {
+        # Deliberately quiet: best-effort teardown of the log-streaming job in a finally block —
+        # the job may have already completed/failed, and teardown noise would mask the real outcome.
         Stop-Job $logJob -ErrorAction SilentlyContinue
         Remove-Job $logJob -ErrorAction SilentlyContinue
     }
@@ -283,7 +285,8 @@ if ($LASTEXITCODE -eq 0 -and $tokenJson) {
         $adminToken = $tokenConfig.'control.controller_token'
         if ($adminToken) {
             Write-Host "Admin Token: $adminToken" -ForegroundColor Yellow
-            try { $adminToken | Set-Clipboard; Write-Host "(Copied to clipboard)" -ForegroundColor Green } catch {}
+            try { $adminToken | Set-Clipboard; Write-Host "(Copied to clipboard)" -ForegroundColor Green }
+            catch { Write-Host "(Clipboard unavailable — copy the token above manually)" -ForegroundColor DarkGray }
         }
     } catch {
         Write-Host "Could not parse token from config" -ForegroundColor Yellow

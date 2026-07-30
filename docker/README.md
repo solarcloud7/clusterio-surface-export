@@ -45,13 +45,13 @@ seed-data/
 
 ```powershell
 # Full deployment (increments plugin version, pulls images, starts cluster)
-./tools/deploy-cluster.ps1
+./tools/clusterio/deploy-cluster.ps1
 
 # Without version bump
-./tools/deploy-cluster.ps1 -SkipIncrement
+./tools/clusterio/deploy-cluster.ps1 -SkipIncrement
 
 # Keep existing data volumes
-./tools/deploy-cluster.ps1 -SkipIncrement -KeepData
+./tools/clusterio/deploy-cluster.ps1 -SkipIncrement -KeepData
 ```
 
 Or manually:

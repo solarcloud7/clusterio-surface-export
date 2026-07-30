@@ -26,7 +26,7 @@ repo, NOT an in-repo checkout (the old `FactorioSurfaceExport/clusterio` was ret
    fork, then layer `docker-compose.clusterio-src.yml` (bind-mounts each `../clusterio/packages/<pkg>/dist`
    over the image's `@clusterio/<pkg>/dist`):
    ```powershell
-   ./tools/rebuild-clusterio.ps1          # pnpm build the fork + recreate the cluster on it
+   ./tools/clusterio/rebuild-clusterio.ps1          # pnpm build the fork + recreate the cluster on it
    # revert to the published image:  docker compose up -d --force-recreate
    ```
    **Compatibility caveat:** the fork build must be API-compatible with the plugin's pinned `@clusterio`

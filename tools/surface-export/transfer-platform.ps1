@@ -15,7 +15,7 @@ param(
     [string]$Direction
 )
 
-. "$PSScriptRoot\cluster-utils.ps1"
+. "$PSScriptRoot\..\shared\cluster-utils.ps1"
 
 # Discover instance names and IDs dynamically
 $Inst1 = Get-InstanceByHostNumber "1"

@@ -9,7 +9,7 @@ param(
     [string]$Instance = ""
 )
 
-. "$PSScriptRoot\cluster-utils.ps1"
+. "$PSScriptRoot\..\shared\cluster-utils.ps1"
 
 if ($Instance -eq "" -or $Instance -eq "1") {
     $Inst1 = Get-InstanceByHostNumber "1"
