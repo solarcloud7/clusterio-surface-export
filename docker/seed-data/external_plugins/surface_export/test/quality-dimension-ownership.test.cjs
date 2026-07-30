@@ -139,7 +139,9 @@ const domains = [
 		// 2.0 array-of-ItemWithQualityCount capture (the old 1.1 item_with_quality dict iteration
 		// crashed serialize_entity on every proxy; replaced 2026-07-17).
 		producer: ["export_scanners/entity-handlers.lua", /item_requests[\s\S]*item\s*=\s*req\.name,\s*quality\s*=\s*req\.quality,\s*count\s*=\s*req\.count/],
-		consumer: ["core/deserializer.lua", /item_requests is read-only for proxies as well/],
+		// Anchored to the CODE that rebuilds the quality-keyed request table (the comment this
+		// previously matched was an API restatement, swept 2026-07-30 — anchors must point at code).
+		consumer: ["core/deserializer.lua", /item_requests and #data\.item_requests > 0[\s\S]*?requests\[item_with_quality\] = req\.count/],
 		gap: "request tables are reconstructed but never applied; this is broader than quality alone",
 	},
 ];

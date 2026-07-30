@@ -437,6 +437,34 @@ end
 -- not journal or report partial success. Undo resurrection passes false (best-effort, misses
 -- reported, never destroys what it managed to bring back).
 -- Returns records, entity_map, created, create_failed, ok, err.
+-- ACTIVATION — the paste's counterpart to the transfer's activation phase, applied LAST so every
+-- restore ran against a frozen world. Keeps whatever active/inactive state the capture recorded,
+-- both directions (owner ruling 2026-07-17); a nil lab_active (pre-lab_active capture) UN-freezes,
+-- since freeze-at-create (2026-07-28) would otherwise strand it disabled forever. Each write is
+-- guarded (review 2026-07-30): the freeze site pcalls its write, so an entity type whose write
+-- throws would otherwise freeze fine and then THROW here, killing the loop for every later entity.
+local function apply_paste_activation(records, entity_map)
+	for _, rec in ipairs(records) do
+		local entity = entity_map[rec.entity_id]
+		if entity and entity.valid then
+			local ok, err = pcall(function()
+				entity.disabled_by_script = (rec.lab_active == false)
+			end)
+			if not ok then
+				log(string.format("[SelectionLab] activation write failed for %s at (%.1f,%.1f): %s",
+					rec.name, rec.position.x, rec.position.y, tostring(err)))
+			end
+			-- Drill mining progress rides the SAME deferred queue the transfer uses: for drills the
+			-- value is defined relative to mining_target (LuaControl), which is nil until the first
+			-- update, so a same-execution write here is unanchored and lost at cycle start.
+			if entity.type == "mining-drill" and rec.specific_data
+				and rec.specific_data.mining_progress then
+				ActiveStateRestoration.queue_mining_progress(entity, rec.specific_data)
+			end
+		end
+	end
+end
+
 local function execute_create_and_restore(surface, recs, player, side_groups, fluid_segments, transactional)
 	local records, entity_map = {}, {}
 	local created, create_failed = 0, 0
@@ -563,27 +591,7 @@ local function execute_create_and_restore(surface, recs, player, side_groups, fl
 			say(player, "[color=yellow][font=default-bold][SelectionLab][/font][/color] fluid restore skipped: " .. tostring(fluids_err), { r = 1, g = 0.7, b = 0.3 })
 		end
 	end
-	-- ACTIVATION — the paste's counterpart to the transfer's activation phase, applied LAST so every
-	-- restore above ran against a frozen world. The paste keeps whatever active/inactive state the
-	-- capture recorded, both directions (owner ruling 2026-07-17).
-	--
-	-- A nil lab_active (a pre-lab_active capture) must UN-freeze, not fall through: since 2026-07-28
-	-- everything is frozen at create, so "leave the engine default" would now strand the entity
-	-- disabled forever. Absent a recorded state, active is the right default — it is what the entity
-	-- would have been before the freeze existed.
-	for _, rec in ipairs(records) do
-		local entity = entity_map[rec.entity_id]
-		if entity and entity.valid then
-			entity.disabled_by_script = (rec.lab_active == false)
-			-- Drill mining progress rides the SAME deferred queue the transfer uses: for drills the
-			-- value is defined relative to mining_target (LuaControl), which is nil until the first
-			-- update, so a same-execution write here is unanchored and lost at cycle start.
-			if entity.type == "mining-drill" and rec.specific_data
-				and rec.specific_data.mining_progress then
-				ActiveStateRestoration.queue_mining_progress(entity, rec.specific_data)
-			end
-		end
-	end
+	apply_paste_activation(records, entity_map)
 	end
 	local restore_ok, restore_err = xpcall(run_restores, debug.traceback)
 	if not restore_ok then
@@ -591,6 +599,11 @@ local function execute_create_and_restore(surface, recs, player, side_groups, fl
 		if transactional then
 			return rollback("restore error: " .. tostring(restore_err))
 		end
+		-- BEST-EFFORT path keeps the entities, so it must ALSO reach activation: a throw anywhere in
+		-- run_restores used to skip the activation loop entirely, leaving every freeze-at-create
+		-- entity disabled_by_script forever — a silently-frozen pad, exactly what the unfrozen
+		-- doctrine forbids (review 2026-07-30). Errors here are already reported above.
+		apply_paste_activation(records, entity_map)
 		if player then
 			say(player, "[color=yellow][font=default-bold][SelectionLab][/font][/color] restore error (best-effort path): " .. tostring(restore_err),
 				{ r = 1, g = 0.4, b = 0.4 })

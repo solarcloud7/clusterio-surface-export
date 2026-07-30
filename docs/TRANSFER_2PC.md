@@ -166,10 +166,13 @@ Legend: **S**=source, **D**=dest, **C**=controller; `{}` = source lock phase (Ph
 - **Destination-hold primitive proof:** the live `destination-hold` runner was deleted 2026-07-27
   (owner ruling: destination holds are not useful to test). The primitive itself still ships and is
   covered by `test/destination-hold.test.cjs` — registration, stage/rollback ordering, index-based
-  lookup, fail-loud force resolution, and that the normal transfer path is NOT gated on it. What the
+  lookup, cargo-pod completion + recover-and-spill item conservation, hold-aware unlock ordering,
+  fail-loud force resolution, and that the normal transfer path is NOT gated on it. What the
   deleted runner uniquely proved — live restart survival and zero leftover
   `storage.destination_holds`, zero `storage.locked_platforms`, zero `desthold-*` surfaces, and
-  `game.tick_paused == false` after cleanup.
+  `game.tick_paused == false` after cleanup — is now UNCOVERED by any standing test; if destination
+  holds are ever promoted into the transfer path, re-author that proof (the deleted runner is
+  recoverable from git history) before shipping the promotion.
 - Run `/di-change` before merging any change to the gate / rollback / source-delete / identity paths.
 
 ## Critical files

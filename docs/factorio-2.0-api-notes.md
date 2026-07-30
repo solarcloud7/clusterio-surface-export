@@ -346,14 +346,16 @@ state-dimensions-lab NOTEBOOK, archived at git tag `labs-archive-2026-07-19`, an
   entities with no per-tick update. Never diff raw `active` counts between source and destination and
   read the difference as damage; diff them PER TYPE against the source control, or the ~490 natively
   inactive entities swamp the handful that matter.
-- **The import freezes nearly every type but only wakes `ACTIVATABLE_ENTITY_TYPES`, so a type that is
-  natively ACTIVE and absent from that list arrives permanently disabled.**
-  **[empirical, 2.1.11, gallery whole-platform transfer 2026-07-28]** `entity_creation.lua` disables
-  everything except beacon/radar/item-request-proxy; `SurfaceLock.activate_all` and
-  `ActiveStateRestoration` both filter by `ACTIVATABLE_ENTITY_TYPES`. Measured on a real transfer,
-  the source-vs-destination difference is exactly **infinity-pipe x2 and spider-vehicle x2** — active
-  at the source, inactive at the destination. The gate cannot see this (it counts items and fluids,
-  not activity). A spidertron riding a transferred platform arrives disabled.
+- **Disable sets DRIFT: any restore pass that filters by a type list will strand the difference
+  between that list and what upstream passes actually disabled.** **[empirical, 2.1.11, gallery
+  whole-platform transfer 2026-07-28 — product defect, FIXED same day]** Measured before the fix:
+  `entity_creation.lua` disabled everything except beacon/radar/item-request-proxy while the restore
+  woke only `ACTIVATABLE_ENTITY_TYPES`, so infinity-pipe x2 and spider-vehicle x2 arrived permanently
+  disabled (a spidertron riding a transferred platform arrived dead); the first attempted fix swapped
+  one filter for another and stranded a beacon instead. The durable form: the restore pass has NO
+  type filter (it restores captured state, so it must cover anything any pass disabled), and the
+  `active-state-parity` fixture pins the corner classes with totals on both boards. The gate cannot
+  see this class — it counts items and fluids, not activity.
 - **A decider combinator's OUTPUT REGISTER is not script-writable.**
   **[empirical, 2.1.11, circuit-latch-rearm R1]**
   `LuaDeciderCombinatorControlBehavior` has no `set_signal` ("doesn't contain key"). So a self-feedback (SR) latch cannot

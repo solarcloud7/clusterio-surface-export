@@ -414,7 +414,7 @@
 					"y": -16
 				}
 			],
-			"revision": 2,
+			"revision": 3,
 			"labId": "midcraft-lab",
 			"name": "Mid-craft assembling machine",
 			"purpose": "Preserve a deactivated assembling-machine-1 frozen partway through a craft with embodied ingredients.",
@@ -436,7 +436,7 @@
 				"surfexp_gateways": "0.4.0",
 				"maraxsis": "1.34.51"
 			},
-			"invariant": "The assembling-machine-1 is inactive with crafting_progress ~0.70 and 2 iron-plate embodied in its input inventory.",
+			"invariant": "Live mid-craft machine: input iron-plate never exceeds the recipe cap of 2 (a gain fails; a live crafter legitimately drains to 0). crafting_progress is deliberately UNPINNED (review 2026-07-30): on a running machine it spans its whole [0,1] domain, so any bound wide enough to be honest is vacuous - progress fidelity at the transfer instant is the exact gate's item census plus the crafting_progress serializer field, not a board read.",
 			"independentOracleRequired": true,
 			"fingerprint": {
 				"progress": 0.7000000000000005,
@@ -447,19 +447,6 @@
 				"version": 1,
 				"act": "copy-paste",
 				"verify": [
-					{
-						"check": "physical_read",
-						"locator": {
-							"anchor": "assembling-machine-1"
-						},
-						"read": "property",
-						"path": "crafting_progress",
-						"op": "between",
-						"expected": [
-							0,
-							1
-						]
-					},
 					{
 						"check": "physical_read",
 						"locator": {
@@ -696,7 +683,7 @@
 					"y": 1
 				}
 			],
-			"revision": 2,
+			"revision": 3,
 			"labId": "midcraft-lab",
 			"name": "Module bonus progress",
 			"purpose": "Preserve a deactivated assembling-machine-2 with productivity modules mid bonus progress.",
@@ -718,7 +705,7 @@
 				"surfexp_gateways": "0.4.0",
 				"maraxsis": "1.34.51"
 			},
-			"invariant": "The assembling-machine-2 is inactive with bonus_progress 0.5 and 2 productivity-module modules running the iron-gear-wheel recipe.",
+			"invariant": "Two productivity modules present, exactly (eq 2 - loss OR gain fails). bonus_progress is deliberately UNPINNED (review 2026-07-30): the banked productivity bar spans its whole [0,1] domain on a live machine and wraps on payout, so a board bound is vacuous; the serializer's bonus_progress field carries it at transfer time.",
 			"independentOracleRequired": true,
 			"fingerprint": {
 				"bonusProgress": 0.5,
@@ -729,19 +716,6 @@
 				"version": 1,
 				"act": "copy-paste",
 				"verify": [
-					{
-						"check": "physical_read",
-						"locator": {
-							"anchor": "assembling-machine-2"
-						},
-						"read": "property",
-						"path": "bonus_progress",
-						"op": "between",
-						"expected": [
-							0,
-							1
-						]
-					},
 					{
 						"check": "physical_read",
 						"locator": {
@@ -787,7 +761,7 @@
 					"y": 15
 				}
 			],
-			"revision": 2,
+			"revision": 3,
 			"labId": "fluid-lab",
 			"name": "Crafting-machine fluids",
 			"purpose": "Preserve a storage-tank of steam beside an inactive chemical-plant and foundry holding recipe fluids.",
@@ -822,7 +796,7 @@
 				"build": "Migrated 2026-07-18 from the legacy y=0 zone onto the test-foundation pad at (8,8) via surface.clone_area (seed-prep migrate_omnibus_zone; exact-state move, originals destroyed).",
 				"action": "/test-run: reset the compare area, selection-lab copy of the pad build area, paste at +14,0, physical audit of both halves.",
 				"expected": "Audit reports equal fluids by name and amount; the pasted tank/plant/foundry read the same amounts and temperatures.",
-				"forbidden": "Any fluid amount or temperature drift; crafter fluidboxes arriving empty."
+				"forbidden": "Crafter fluidboxes arriving empty is a TRANSFER failure, and it is the exact gate that catches it (fluids aggregate-by-name at 1e-6, pre-activation) - the destination board does not re-read crafter fluid levels because a live plant legitimately drains them (review 2026-07-30: the old text promised board detection that did not exist)."
 			},
 			"owningRunnerWaiver": "Absorbed onto this pad; the original runner (tests/integration/specialized-inventory-roundtrip/run-tests.ps1) was deleted; deletions are accounted by problem class in the class ledger in tests/integration/gallery-suite/run-tests.mjs. The law is now baked state run by /test-run (the pad system), not a standalone runner."
 		},
@@ -1026,7 +1000,7 @@
 					"y": 13.5
 				}
 			],
-			"revision": 2,
+			"revision": 3,
 			"labId": "inserter-lab",
 			"name": "Held-item capacity on a less-researched destination",
 			"purpose": "Preserve a frozen legendary bulk-inserter whose hand is seated with 8 railgun-ammo under a baked >=11 player-force bulk-inserter capacity bonus - the adversarial state for dest-force research replication on import.",
@@ -1049,7 +1023,7 @@
 				"maraxsis": "1.34.51"
 			},
 			"note": "Script-built by tests/lab-gallery/seed-prep-ops.lua (build_inserter_held) onto the stamped inserter-held-capacity cell at (92,8): raise the player force bulk_inserter_capacity_bonus to >=11 (raise-only, logged), create a legendary bulk-inserter at (98.5,13.5), seat 8 LEGENDARY railgun-ammo via plain held_stack.set_stack (no active toggle; inserter-lab B6), then freeze (active=false, destructible=false). Re-baked 2026-07-18: the original bake seated a NORMAL-quality stack and self-certified via the entity-quality meter (B7 run 1b caught it via the independent stack-quality read); the stack is now legendary and both meters read the STACK. forceBulkBonus is a placeholder floor; the live bake pins the exact baked value. The ADVERSARIAL destination state is baked too (2026-07-18): the golden dest descends from the long-lived local host-2 lineage whose player force had bulk 11 / stack 3 (B7 run 1 caught it — the fixture could not discriminate the pre-hydration dest-force bonus-sync fix), so both inserter bonuses were zeroed at bake time and the dest artifact re-pinned; the runner still ASSERTS 0 at load, never forces.",
-			"invariant": "A legendary bulk-inserter holds 8 railgun-ammo in its hand while inactive and indestructible; the player force bulk_inserter_capacity_bonus is >= 11 so the hand seats in full and survives save/load.",
+			"invariant": "Bulk inserter over railgun-ammo (legendary): held count bounded by the force capacity bonus (0..8 - a live hand legitimately reads empty mid-swing; >8 fails), destructible false, and force.bulk_inserter_capacity_bonus exactly 11 (the MECHANISM of the measured held-loss class: an under-researched dest force clamps hands). Held ITEM IDENTITY and QUALITY are not board-read on a live world (an empty mid-swing hand has no name to read); they are enforced by the exact gate, whose census counts held items quality-keyed - a hand arriving as the wrong item or quality fails the transfer itself (review 2026-07-30).",
 			"independentOracleRequired": true,
 			"fingerprint": {
 				"heldCount": 8,
@@ -2081,7 +2055,7 @@
 		},
 		{
 			"padKind": "pad",
-			"revision": 3,
+			"revision": 4,
 			"labId": "gate-drift-lab",
 			"category": "protocol-teeth",
 			"owningRunner": "tests/integration/gallery-suite/run-tests.mjs",
@@ -2152,6 +2126,16 @@
 						"path": "validation_success",
 						"op": "eq",
 						"expected": true
+					},
+					{
+						"check": "physical_read",
+						"locator": {
+							"anchor": "scratch"
+						},
+						"read": "property",
+						"path": "force.bulk_inserter_capacity_bonus",
+						"op": "eq",
+						"expected": 11
 					}
 				]
 			},
@@ -2549,7 +2533,7 @@
 		{
 			"id": "active-state-parity",
 			"padKind": "platform",
-			"revision": 1,
+			"revision": 2,
 			"labId": "state-dimensions-lab",
 			"name": "Active-state parity across a transfer",
 			"purpose": "Entities must arrive in the active state they left. Three passes disable entities on DIFFERENT sets - the source lock (ACTIVATABLE_ENTITY_TYPES), entity_creation (everything except beacon/radar/item-request-proxy) and the pre-validation re-pause (ACTIVATABLE) - and only one set was ever restored. Measured 2026-07-28 on a real whole-platform transfer: infinity-pipe x2 and spider-vehicle x2 arrived permanently inactive, so a spidertron riding a transferred platform arrived disabled. The exact gate is structurally blind to this: it counts items and fluids, not activity.",
@@ -2572,11 +2556,14 @@
 				"surfexp_gateways": "0.4.0",
 				"maraxsis": "1.34.51"
 			},
-			"invariant": "Zero entities of the natively-active classes arrive inactive. The pin is 0, not a total inactive count: 486 of the gallery's 542 entities are natively inactive (pipes, belts, containers, poles, the hub), so a total would swamp the signal.",
+			"invariant": "Zero entities of the natively-active classes arrive inactive, AND the classes arrive at all: totals pinned (2 spidertrons, 2 infinity-pipes, 1 beacon) because every inactive pin is 0 and 0 is also what an absent class reads - without totals the fixture passes green if the entities never arrive (review 2026-07-30). Not a total inactive count: 486 of the gallery's 542 entities are natively inactive and would swamp the signal.",
 			"independentOracleRequired": true,
 			"fingerprint": {
+				"spiderVehicles": 2,
 				"spiderVehiclesInactive": 0,
+				"infinityPipes": 2,
 				"infinityPipesInactive": 0,
+				"beacons": 1,
 				"beaconsInactive": 0
 			},
 			"testCard": {

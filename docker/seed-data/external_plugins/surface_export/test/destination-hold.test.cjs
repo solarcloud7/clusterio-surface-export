@@ -103,3 +103,70 @@ test("normal transfer import path is not yet gated on destination hold", () => {
 	assert.doesNotMatch(importCompletion, /DestinationHold/);
 	assert.match(importCompletion, /Platform .* UNPAUSED after successful validation/);
 });
+
+// The four cases below assert LIVE production Lua (cargo-pod completion via the SurfaceLock
+// helper, recover-and-spill item conservation, hold-aware unlock ordering, and the hold-aware
+// unlock selftest). They were wrongly removed with the twelve dead script-text cases on
+// 2026-07-28 (the prune cut from the first repoOnlyTest CALL to end of file, and these sat
+// after it); restored verbatim from git 2026-07-30 per the post-block review.
+test("destination hold stage completes cargo pods by reusing SurfaceLock helper", () => {
+	const hold = read("module/core/destination-hold.lua");
+	const lock = read("module/utils/surface-lock.lua");
+	assert.match(lock, /SurfaceLock\.complete_cargo_pods\s*=\s*complete_cargo_pods/);
+	assert.match(hold, /local SurfaceLock = require\("modules\/surface_export\/utils\/surface-lock"\)/);
+	assert.match(hold, /SurfaceLock\.complete_cargo_pods\(surface, hub\)/);
+	assert.ok(hold.indexOf("platform.paused = true") < hold.indexOf("SurfaceLock.complete_cargo_pods(surface, hub)"));
+	assert.ok(hold.indexOf("force.set_surface_hidden(surface, true)") < hold.indexOf("SurfaceLock.complete_cargo_pods(surface, hub)"));
+	assert.match(hold, /pod_completion = \{/);
+	assert.doesNotMatch(hold, /function complete_cargo_pods/);
+});
+
+test("surface lock cargo pod completion preserves descending overflow via recover-and-spill", () => {
+	const lock = read("module/utils/surface-lock.lua");
+	assert.match(lock, /state == "descending" or state == "parking"/);
+	assert.match(lock, /recover_pod_cargo_to_hub_and_spill\(pod, hub, surface\)/);
+	assert.match(lock, /stack\.count = remainder/);
+	assert.match(lock, /stack\.clear\(\)/);
+	assert.match(lock, /surface\.spill_item_stack/);
+	assert.doesNotMatch(lock, /pod\.force_finish_descending\(/);
+});
+test("unlock_platform defers not-live ownership to an active destination hold", () => {
+	const lock = read("module/utils/surface-lock.lua");
+	const unlockAt = lock.indexOf("function SurfaceLock.unlock_platform(platform_index, expected_name)");
+	const identityAt = lock.indexOf("Platform index reused since lock", unlockAt);
+	const holdCheckAt = lock.indexOf("SurfaceLock.destination_hold_owns_surface", unlockAt);
+	const restoreAt = lock.indexOf("local restored = unfreeze_entities", unlockAt);
+	const holdBranch = lock.slice(holdCheckAt, restoreAt);
+
+	assert.match(lock, /function SurfaceLock\.destination_hold_owns_surface\(surface, platform\)/);
+	assert.notEqual(unlockAt, -1);
+	assert.notEqual(identityAt, -1);
+	assert.notEqual(holdCheckAt, -1);
+	assert.notEqual(restoreAt, -1);
+	assert.ok(identityAt < holdCheckAt, "hold ownership check must run after the existing surface identity tripwire");
+	assert.ok(holdCheckAt < restoreAt, "hold ownership check must run before any restore side effects");
+	assert.match(holdBranch, /storage\.locked_platforms\[platform_index\] = nil/);
+	assert.match(holdBranch, /destination hold .* owns .* not restoring/i);
+	assert.doesNotMatch(holdBranch, /unfreeze_entities/);
+	assert.doesNotMatch(holdBranch, /set_surface_hidden/);
+	assert.doesNotMatch(holdBranch, /platform\.paused/);
+	const helper = lock.slice(lock.indexOf("function SurfaceLock.destination_hold_owns_surface"), lock.indexOf("--- Lock a platform surface"));
+	assert.doesNotMatch(helper, /force_name/);
+});
+
+test("hold-aware unlock selftest traces held and non-held lifecycle cases", () => {
+	const selftest = read("module/interfaces/remote/hold-aware-unlock-selftest.lua");
+	const remote = read("module/interfaces/remote-interface.lua");
+	assert.match(remote, /hold_aware_unlock_selftest_json = Base\.json_wrap\(hold_aware_unlock_selftest\)/);
+	assert.match(selftest, /ttl_expiry_unlock_over_hold/);
+	assert.match(selftest, /manual_unlock_over_hold/);
+	assert.match(selftest, /unlock_after_hold_removed/);
+	assert.match(selftest, /unlock_after_go_live/);
+	assert.match(selftest, /double_unlock/);
+	assert.match(selftest, /non_held_unlock_restores/);
+	assert.match(selftest, /hidden = true/);
+	assert.match(selftest, /active = false/);
+	assert.match(selftest, /paused = true/);
+	assert.match(selftest, /hidden = false/);
+	assert.match(selftest, /active = true/);
+});

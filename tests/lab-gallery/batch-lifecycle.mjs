@@ -256,6 +256,19 @@ export function createBatchLifecycle({ goldenSourceSave, goldenDestSave, markerP
 			// the golden saves.
 			ctl("instance", "stop", HOSTS[1].instance);
 			ctl("instance", "stop", HOSTS[2].instance);
+			// RESCUE BEFORE OVERWRITE (review must-fix 5, mirroring bc68a5e in patch-and-reset): the
+			// live save at this point holds the exit-save from loadGoldenPair's stop — i.e. the live
+			// world as of suite start, which is the ONLY copy of any owner hand-built pad not yet
+			// banked into the seed. Overwriting it with the pinned artifact without a copy-aside
+			// destroyed exactly that once (the 92,50 pairing rig). The predeploy- prefix is what
+			// patch-and-reset's save-clearing preserves; only the latest rescue is kept per host.
+			const rescueStamp = Date.now();
+			for (const host of [1, 2]) {
+				const live = instancePath(host, `saves/${RESTORE_SAVES[host]}`);
+				docker(["exec", HOSTS[host].container, "sh", "-c",
+					`rm -f ${instancePath(host, "saves/predeploy-suiterescue-")}*.zip; ` +
+					`if [ -f ${live} ]; then cp ${live} ${instancePath(host, `saves/predeploy-suiterescue-${rescueStamp}.zip`)}; fi`]);
+			}
 			for (const host of [1, 2]) {
 				docker(["cp", `${REPO_ROOT}${restoreArtifacts[host]}`,
 					`${HOSTS[host].container}:${instancePath(host, `saves/${RESTORE_SAVES[host]}`)}`],

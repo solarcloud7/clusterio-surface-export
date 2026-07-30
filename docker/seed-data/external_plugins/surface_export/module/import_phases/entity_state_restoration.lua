@@ -18,37 +18,11 @@ function EntityStateRestoration.restore_all(entities_to_create, entity_map)
       end
     end
     
-    -- Step 1b: MINING PROGRESS. NECESSARY BUT NOT YET SUFFICIENT — the drain below is NOT fixed.
-    --
-    -- The problem: a fluid-consuming drill charges its whole cycle cost UP FRONT, so one that
-    -- arrives at progress 0 starts a fresh cycle and pays again — a silent 10 sulfuric-acid drain
-    -- per transfer on the acid-drill pad. The exact gate cannot see it: the gate closes
-    -- pre-activation and the drill spends the acid once it is woken.
-    --
-    -- Measured 2026-07-28/29, transferring a drill with a marker progress of 0.77:
-    --   * capture WORKS — mining_progress is in the payload
-    --   * a direct write STICKS, including across deactivate -> write -> reactivate, and holds
-    --   * restoring at CREATION (a SIMPLE_RESTORE_RULES row) did not stick: the marker arrived 0.02
-    --   * restoring HERE, after every entity is placed, ALSO did not stick: still 0.02
-    -- So something after this pass resets it, or this pass is not reached on the transfer path.
-    -- UNRESOLVED — do not describe this as fixed. Next step is to log the value immediately after
-    -- the write and again just before activation, to find which of the two it is.
-    log("[Import] Restoring mining progress...")
-    for _, entity_data in ipairs(entities_to_create) do
-      local entity = entity_map[entity_data.entity_id]
-      local sd = entity_data.specific_data
-      if entity and entity.valid and sd then
-        for _, field in ipairs({ "mining_progress", "bonus_mining_progress" }) do
-          if sd[field] then
-            local ok, err = pcall(function() entity[field] = sd[field] end)
-            if not ok then
-              log(string.format("[Import] %s restore failed for '%s': %s",
-                field, tostring(entity.name), tostring(err)))
-            end
-          end
-        end
-      end
-    end
+    -- NOTE: mining_progress is deliberately NOT restored here. A pre-binding write is unanchored
+    -- (LuaControl: the value's range is defined by mining_target, nil until the drill's first
+    -- update) — it rides the deferred queue in active_state_restoration.lua instead, which writes
+    -- once the target binds. An abandoned same-execution pass lived here 2026-07-28/29; deleted
+    -- with the mechanism resolved (review must-fix 3).
 
     -- Step 2: Restore entity filters (inserter filters, loader filters)
     log("[Import] Restoring entity filters...")

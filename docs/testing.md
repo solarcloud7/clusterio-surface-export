@@ -418,7 +418,7 @@ the CI step, so a green run here ≈ a green PR.
 ```pwsh
 node tools/run-integration-tests.mjs --list           # see all scenarios
 node tools/run-integration-tests.mjs                  # run the FULL suite (~3–4 min)
-node tools/run-integration-tests.mjs --only pad-transfer-suite   # the pad transfer suite (incl. the 1359-entity workhorse scale leg)
+node tools/run-integration-tests.mjs --only gallery-suite   # the consolidated suite (boards on both hosts, the
 node tools/run-integration-tests.mjs --only 'fidelity|gate'      # regex filter
 ```
 
@@ -503,8 +503,8 @@ Or use the **web UI** (§11) → Manual Transfer per-platform **Export JSON**, o
 ./tools/rcon.ps1 11 "/gateway-gui <idx>"
 ```
 
-Automated coverage: `--only 'gateway|selftests'` — the live transfer is `gateway-transfer`; the pure guard
-decision (docked + not already transferring, and that `start_fn` is never reached on a block) is the
+Automated coverage: the dedicated gateway-transfer runner was deleted 2026-07-27 (owner law: no
+testing of WHEN a platform may teleport); the gateway selftests ride `tests/instruments/selftests`.
 `gateway` self-test inside `tests/instruments/selftests`. `--only 'gateway'` alone matches the live test
 ONLY and silently leaves the guard unrun.
 
@@ -524,8 +524,7 @@ node tools/run-integration-tests.mjs --only passenger-evacuate
 ```pwsh
 # The sabotage teeth (gate detects item/fluid loss, rollback, failed-entity attribution,
 # force-bonus sync) are pad fixtures run through the REAL transfer by one suite:
-node tools/run-integration-tests.mjs --only pad-transfer-suite
-
+node tools/run-integration-tests.mjs --only gallery-suite
 # Name-collision delete (platforms with same name → keyed on unique index, correct one deleted):
 node tools/run-integration-tests.mjs --only name-collision-delete
 ```

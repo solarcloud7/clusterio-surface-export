@@ -230,6 +230,18 @@ function validateLifecycle(fixture) {
 		if (check.check === "physical_read") {
 			if (!PHYSICAL_READS.has(check.read)) throw new Error(`lifecycle for ${id}: unknown physical read "${check.read}"`);
 			if (!CHECK_OPS.has(check.op)) throw new Error(`lifecycle for ${id}: unknown check op "${check.op}"`);
+			// FULL-DOMAIN VACUITY GUARD (review 2026-07-30): a progress property is engine-bounded to
+			// [0,1], so `between [0,1]` evaluates and satisfies the zero-reads guard yet no input can
+			// ever fail it — the exact shape two unfrozen re-pins quietly took. A live progress value
+			// spans its whole domain; the honest options are a NARROWER mechanism-derived bound or no
+			// check at all, never the domain itself.
+			if (check.op === "between" && Array.isArray(check.expected)
+				&& typeof check.path === "string" && /progress$/.test(check.path)
+				&& check.expected[0] <= 0 && check.expected[1] >= 1) {
+				throw new Error(`lifecycle for ${id}: "${check.path}" between [${check.expected}] spans the ` +
+					`property's entire domain — the check cannot fail. Use a narrower mechanism-derived bound ` +
+					`or drop the check with the reason recorded in the invariant.`);
+			}
 			if (check.read === "belt_stats") {
 				// Lua re-validates (the boundary); this fails a typo fast without a cluster.
 				if (typeof check.field !== "string" || !/^[A-Za-z][A-Za-z0-9]*$/.test(check.field)) {

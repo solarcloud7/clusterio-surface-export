@@ -379,19 +379,27 @@ end
 -- Deliberately NOT a total inactive count: 486 of the gallery's 542 entities are natively inactive
 -- (pipes, belts, containers, poles, the hub), so a total would be noise that swamps the signal.
 local function measure_active_state(surface)
-    local out = { spiderVehiclesInactive = 0, infinityPipesInactive = 0, beaconsInactive = 0 }
-    local function count_inactive(filter)
-        local n = 0
+    -- Class TOTALS ride alongside the inactive counts (review should-fix A): all three inactive
+    -- pins are 0, and 0 is also what an ABSENT class reads — without the totals, the fixture that
+    -- certifies "entities arrive in the active state they left" would pass green if the
+    -- spidertrons, infinity-pipes and beacons did not arrive at all.
+    local out = {}
+    local function count_pair(key, filter)
+        local total, inactive = 0, 0
         for _, e in pairs(surface.find_entities_filtered(filter)) do
-            -- intentional probe: a type without .active is not a finding, it is not in scope here
-            local ok, active = pcall(function() return e.active end)
-            if e.valid and ok and active == false then n = n + 1 end
+            if e.valid then
+                total = total + 1
+                -- intentional probe: a type without .active is not a finding, it is not in scope here
+                local ok, active = pcall(function() return e.active end)
+                if ok and active == false then inactive = inactive + 1 end
+            end
         end
-        return n
+        out[key] = total
+        out[key .. "Inactive"] = inactive
     end
-    out.spiderVehiclesInactive = count_inactive({ type = "spider-vehicle" })
-    out.infinityPipesInactive = count_inactive({ name = "infinity-pipe" })
-    out.beaconsInactive = count_inactive({ type = "beacon" })
+    count_pair("spiderVehicles", { type = "spider-vehicle" })
+    count_pair("infinityPipes", { name = "infinity-pipe" })
+    count_pair("beacons", { type = "beacon" })
     return out
 end
 

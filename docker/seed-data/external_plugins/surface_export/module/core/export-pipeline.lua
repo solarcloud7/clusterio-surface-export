@@ -457,11 +457,12 @@ function ExportPipeline.complete(job)
 			job.export_data.belt_side_groups = side_groups
 			log(string.format("[Export] Belt side partition: %d side groups captured (same tick)", #side_groups))
 		elseif not sg_ok then
-			-- Fail LOUD, not silent: without side groups the import falls back to the legacy
-			-- consolidation restore, which conserves counts but manufactures structure (maxStack
-			-- 5-vs-1 incident). The census/gate still protect counts either way.
+			-- Fail LOUD, not silent — and tell the truth about the consequence: the legacy
+			-- consolidation restore is DELETED (owner order 2026-07-27), so a belt-bearing payload
+			-- without its side partition is REFUSED at import (import-completion's
+			-- pre-positions/validate_side_groups refusal), fail => revert, source preserved.
 			log("[Export] WARNING: capture_side_groups threw: " .. tostring(side_groups)
-				.. " — payload carries NO side partition; import will use the legacy count-only restore")
+				.. " — payload carries NO side partition; a belt-bearing import will REFUSE it (no legacy fallback exists)")
 		end
 	end
 	-- ========================================

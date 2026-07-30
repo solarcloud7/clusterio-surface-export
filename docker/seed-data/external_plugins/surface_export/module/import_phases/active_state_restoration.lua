@@ -120,7 +120,12 @@ function ActiveStateRestoration.service_pending_mining_progress()
     local keep = {}
     for _, rec in ipairs(pending) do
         local done = true
-        if rec.entity and rec.entity.valid then
+        if not (rec.entity and rec.entity.valid) then
+            -- Loud, not silent (review 2026-07-30): an invalid entity here means the drill was
+            -- destroyed (or the ref crossed a save/load) before its progress could land.
+            log(string.format("[Import] deferred mining_progress DROPPED: entity invalid (captured %s)",
+                tostring(rec.mining_progress)))
+        elseif rec.entity and rec.entity.valid then
             local ok, bound = pcall(function() return rec.entity.mining_target ~= nil end)
             if ok and bound then
                 for _, field in ipairs({ "mining_progress", "bonus_mining_progress" }) do
@@ -135,9 +140,22 @@ function ActiveStateRestoration.service_pending_mining_progress()
             elseif game.tick < rec.expires_tick then
                 done = false
             else
-                log(string.format(
-                    "[Import] mining_target never bound for '%s' within %d ticks — captured mining_progress %s DROPPED",
-                    tostring(rec.entity.name), 300, tostring(rec.mining_progress)))
+                -- PAUSE-AWARE expiry (review 2026-07-30): a paused platform's drills never update,
+                -- so mining_target cannot bind — the gateway-park path re-pauses right after
+                -- activation and would otherwise burn the whole window and DROP the captured
+                -- progress before the player ever resumes. Slide the window while paused; the
+                -- clock only runs against an unpaused platform that genuinely failed to bind.
+                local paused_ok, is_paused = pcall(function()
+                    return rec.entity.surface.platform and rec.entity.surface.platform.paused
+                end)
+                if paused_ok and is_paused then
+                    rec.expires_tick = game.tick + 300
+                    done = false
+                else
+                    log(string.format(
+                        "[Import] mining_target never bound for '%s' within %d ticks — captured mining_progress %s DROPPED",
+                        tostring(rec.entity.name), 300, tostring(rec.mining_progress)))
+                end
             end
         end
         if not done then keep[#keep + 1] = rec end

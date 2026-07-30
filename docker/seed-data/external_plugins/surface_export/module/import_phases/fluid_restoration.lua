@@ -257,7 +257,11 @@ function FluidRestoration.restore(entities_to_create, entity_map, fluid_segments
 				else
 					share = rec.total / #units
 				end
-				if unit.group then
+				-- share > 0 guard (review must-fix 6): a ZERO-share contribution must not register its
+				-- fluid on the destination segment — a record whose members all captured local_amount 0
+				-- would otherwise add a second fluid name to the plan and manufacture a CONFLICT that
+				-- refuses a legitimate transfer (fail-safe direction, but a false red).
+				if unit.group and share > 0 then
 					local plan = pending_segments[unit.dest_id]
 					if not plan then
 						plan = { group = unit.group, by_fluid = {} }
@@ -270,7 +274,7 @@ function FluidRestoration.restore(entities_to_create, entity_map, fluid_segments
 					end
 					acc.amount = acc.amount + share
 					acc.temp_weighted = acc.temp_weighted + share * (rec.temperature or 15)
-				elseif share > 0 then
+				elseif not unit.group and share > 0 then
 					write_storage(rec, unit.member, share)
 				end
 			end
