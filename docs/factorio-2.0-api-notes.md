@@ -359,12 +359,14 @@ state-dimensions-lab NOTEBOOK, archived at git tag `labs-archive-2026-07-19`, an
   `LuaDeciderCombinatorControlBehavior` has no `set_signal` ("doesn't contain key"). So a self-feedback (SR) latch cannot
   be restored by any serializer: it arrives with its register at 0, reads its own 0 through the
   feedback wire, and is stable at 0 — the source's held signal is LOST on transfer.
-  (An earlier revision of this entry also claimed `disabled_by_script` is a NO-OP on combinators,
-  from a rung that wrote `true` and read the property back as `false`. RETRACTED 2026-07-28: that
-  test was confounded — combinators are natively `active == false` (see the entry above), so neither
-  the readback nor an `active` check distinguishes "the write was ignored" from "it was already
-  off". Whether the write takes effect on a combinator is UNMEASURED; a correct rung must record
-  `active` BEFORE the write.)
+- **`disabled_by_script` does NOT stop a combinator evaluating.** **[empirical, 2.1.11,
+  circuit-latch-rearm R2 (behavioral rewrite 2026-07-30)]** Measured as a TRANSITION, not a property
+  readback: a decider with condition `A > 0` and empty output was set `disabled_by_script = true`,
+  its input raised 0→5, and the output FIRED (`signal-S=1`). Combinators cannot be script-disabled;
+  during the import window only the platform pause stops them. (The first version of this rung wrote
+  the property and read it back — confounded, since combinators are natively `active == false`, so a
+  readback cannot distinguish "ignored" from "already off". Retracted 2026-07-28; re-established
+  behaviorally with a pre-write baseline.)
 - **A cleared latch CAN be re-armed by temporarily rewriting the decider's CONDITION.**
   **[empirical, 2.1.11, circuit-latch-rearm R3]** Control behaviour IS writable: forcing the condition
   true, letting it evaluate, then restoring the captured condition leaves the latch holding itself

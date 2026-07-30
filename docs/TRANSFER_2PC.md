@@ -159,8 +159,8 @@ Legend: **S**=source, **D**=dest, **C**=controller; `{}` = source lock phase (Ph
 - **In-module selftest (RCON):** `transfer-lock-selftest` — `scan_transfer_expiries` behavior (expired unlocks,
   manual/old-save skipped, TTL sizing) + `transfer_delete_identity_ok` (a renamed source still deletes;
   released/reused/invalid refuse). Run by `tests/instruments/selftests` (which drives every in-module
-  self-test in one RCON call); its former standalone driver `tests/integration/transfer-lock-expiry` was
-  folded in, not retired — the assertions are unchanged.
+  self-test in one RCON call); its former standalone transfer-lock-expiry driver was folded in, not
+  retired — the assertions are unchanged.
 - **Live:** start a transfer, `docker restart` the controller during `awaiting_validation`, confirm the source
   auto-unlocks after the TTL with no admin action and a normal transfer is unaffected.
 - **Destination-hold primitive proof:** the live `destination-hold` runner was deleted 2026-07-27

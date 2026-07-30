@@ -286,7 +286,7 @@ Evidence tags and measurement details are in
 | **Exact transfer gate** | serialized-expected vs **destination** physical census (items exact per key; fluids exact aggregate-by-name, epsilon 1e-6) | production, every transfer, before source deletion | [transfer-validation.lua](../docker/seed-data/external_plugins/surface_export/module/validators/transfer-validation.lua) |
 | **Source census (paired reads)** | serialized vs **source** physical census, per-entity, in the same Lua execution each is read; fail-closed abort on mismatch | production, every transfer export, before send | [export-pipeline.lua](../docker/seed-data/external_plugins/surface_export/module/core/export-pipeline.lua) + [census-accumulator.lua](../docker/seed-data/external_plugins/surface_export/module/export_scanners/census-accumulator.lua); witnessed live by the `census-omission-abort` + `transfer-workhorse` (census_pass) pads via [pad-transfer-suite](../tests/integration/gallery-suite/run-tests.mjs) |
 | **Loss-injection teeth** | gate behavior under a forced physical shortfall (must fail closed, preserve source) | pad fixtures through the real transfer | the `gate-item-loss` / `gate-fluid-loss` / `rollback-validation-failure` pads, run by [gallery-suite](../tests/integration/gallery-suite/run-tests.mjs) |
-| **Fidelity fixtures** | source physical census vs destination physical census for a placed, known quantity | integration tests | the `omnibus-ground-items` pad fixture (see [MIGRATION.md](../tests/integration/MIGRATION.md)), the belt pads plus the web-UI import probe in [gallery-suite](../tests/integration/gallery-suite/run-tests.mjs), which replays the banked `fixture.json` payload that belt-loss-replay used to drive |
+| **Fidelity fixtures** | source physical census vs destination physical census for a placed, known quantity | integration tests | the `omnibus-ground-items` pad fixture (absorbed per the class ledger in tests/integration/gallery-suite/run-tests.mjs), the belt pads plus the web-UI import probe in [gallery-suite](../tests/integration/gallery-suite/run-tests.mjs), which replays the banked `fixture.json` payload that belt-loss-replay used to drive |
 
 The frozen destination gate's expected counts derive from the serializer's own output (verification
 is generated from serialized data — see atomic belt scan, in [CLAUDE.md](../CLAUDE.md)),
@@ -423,9 +423,10 @@ node tools/run-integration-tests.mjs --only 'fidelity|gate'      # regex filter
 ```
 
 Expect the summary to end `N/N passed`. The scenario set is auto-discovered from
-`tests/integration/*/run-tests.{ps1,mjs}` — `--list` prints the current roster. Roundtrip scenarios are
-progressively absorbed as pad fixtures on the lab-gallery save; the deleted-test → pad-fixture mapping is in
-[tests/integration/MIGRATION.md](../tests/integration/MIGRATION.md).
+`tests/integration/*/run-tests.{ps1,mjs}` — `--list` prints the current roster. The roundtrip scenarios are
+absorbed as pad fixtures on the lab-gallery save: each fixture's `owningRunnerWaiver` in
+`tests/lab-gallery/manifest.json` names the runner it absorbed, and the gallery-suite runner header
+(`tests/integration/gallery-suite/run-tests.mjs`) accounts every deleted standing runner by problem class.
 
 The remaining sections reproduce individual flows **manually** for inspection/demo/debugging.
 

@@ -153,10 +153,39 @@ async function main() {
 		record("R1", `decider output register directly writable: ${write.wrote ? "YES" : "NO"}`,
 			String(write.err));
 
-		const dis = lua(PRE + `dc.disabled_by_script = true
-			return { success=true, readBack = dc.disabled_by_script }`);
-		record("R2", `disabled_by_script honoured by a combinator: ${dis.readBack ? "YES" : "NO"}`,
-			`write of true reads back ${dis.readBack}`);
+		// R2 is BEHAVIORAL, not a property readback. The first version of this rung wrote
+		// disabled_by_script and read the property back — confounded: combinators are natively
+		// active == false, so neither the readback nor an active check can distinguish "the write
+		// was ignored" from "it was already off" (retracted 2026-07-28). The observable that CAN
+		// answer it is evaluation: give the decider a plain non-latching condition, "disable" it,
+		// change its input, and watch whether the output responds. Baseline recorded BEFORE the
+		// write, transition measured across it, latch condition restored after (the plain condition
+		// prevents the probe from arming the latch and destroying the cleared state R3 needs).
+		lua(PRE + `dc.get_control_behavior().parameters = {
+			conditions = {{ first_signal={type='virtual',name='signal-A'}, comparator='>', constant=0 }},
+			outputs = {{ signal={type='virtual',name='signal-S'}, copy_count_from_input=false }} }
+			dc.disabled_by_script = true
+			return { success=true }`);
+		const disBefore = lua(READ);
+		lua(PRE + "setA(5) return { success=true }");
+		await L.sleep(3000);
+		const disAfter = lua(READ);
+		lua(PRE + `dc.disabled_by_script = false
+			setA(0)
+			return { success=true }`);
+		await L.sleep(3000);
+		lua(PRE + "dc.get_control_behavior().parameters = LATCH return { success=true }");
+		await L.sleep(3000);
+		const disRestored = lua(READ);
+		if (/signal-S/.test(disRestored.net)) {
+			throw new Error("rung invalid: R2 probe left the latch armed; later readings would be polluted");
+		}
+		const evaluatedWhileDisabled = /signal-S=1/.test(disAfter.net);
+		record("R2", `disabled_by_script stops a combinator evaluating: ${evaluatedWhileDisabled ? "NO" : "YES"}`,
+			`while 'disabled': input 0->5 with condition A>0; output before="${disBefore.net}" ` +
+			`after="${disAfter.net}" (${evaluatedWhileDisabled
+				? "output fired — the combinator still evaluates, the disable is ineffective"
+				: "output stayed silent — the disable is honoured"}); state restored="${disRestored.net}"`);
 
 		// THE RE-ARM: rewrite the condition so it fires from present inputs, evaluate, restore.
 		lua(PRE + `dc.get_control_behavior().parameters = {

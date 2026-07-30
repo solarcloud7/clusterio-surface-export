@@ -161,7 +161,8 @@ hands-on E2E checklist, one doc); repository test layout and entry points are in
 
 - **`tests/integration/`** holds live regressions for established production contracts; run with
   `node tools/run-integration-tests.mjs` (cluster must be up). The one-test-save consolidation is tracked in
-  [tests/integration/MIGRATION.md](tests/integration/MIGRATION.md): most roundtrip tests are absorbed as pad
+  the gallery-suite runner header (tests/integration/gallery-suite/run-tests.mjs), which accounts
+  each deleted runner by problem class: most roundtrip tests are absorbed as pad
   fixtures on the live gallery save (`tests/lab-gallery/`), where a missing pad reports a RED `MISSING`
   verdict — never a vacuous pass.
 - **Baked-fixture batches** follow the lifecycle in the standard: consume each certified fixture once through
