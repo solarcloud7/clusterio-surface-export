@@ -1,6 +1,6 @@
 -- Remote Interface: lifecycle (P5 of the pad lifecycle framework)
 -- Drives a transfer-act fixture's setup / verify / teardown ends for the pad-transfer-suite
--- orchestrator (tests/integration/pad-transfer-suite/run-tests.mjs). The orchestrator owns the act
+-- orchestrator (tests/integration/gallery-suite/run-tests.mjs). The orchestrator owns the act
 -- itself (the PRODUCTION /transfer-platform of the scratch platform); this remote only arranges and
 -- measures state, so the thing under test is the real transfer pipeline, never a bespoke path.
 --

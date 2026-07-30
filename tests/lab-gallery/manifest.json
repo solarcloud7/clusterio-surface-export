@@ -19,11 +19,11 @@
 		"source": {
 			"role": "source",
 			"name": "lab-gallery-source-of-truth",
-			"artifact": "docker/seed-data/lab-saves/lab-gallery-source-of-truth.zip",
-			"sha256": "DB21B79BF92CD7972E0521ED4FC9E308F3C1FEDD5AC510A354DBBF8445E14750",
+			"artifact": "docker/seed-data/lab-saves/lab-gallery-snapshot-2026-07-28-owner-rig-rebuilt.zip",
+			"sha256": "60444EF200E5C52A7DD02F49F710AE0CF09878852E44123A38333686EE00B27B",
 			"expectedCensus": {
-				"totalEntities": 2013,
-				"totalGeneratedChunks": 6891,
+				"totalEntities": 2118,
+				"totalGeneratedChunks": 6893,
 				"surfaces": [
 					{
 						"name": "nauvis"
@@ -49,7 +49,7 @@
 				"surfexp_gateways": "0.4.0",
 				"maraxsis": "1.34.51"
 			},
-			"note": "SNAPSHOT OF LIVE (re-banked 2026-07-21 on Factorio 2.1.11, rev: owner thruster-pair hand-rebuild): verified server_save of the live gallery world - never a scripted-bake product. Banks the owner-compacted fusion rig, the owner-hand-rebuilt dual-fluid thruster-pair (shared fuel 1300 + oxidizer 1100, carved exhaust notch + its +14 paste mirror), both cell label renames, and the module 0.10.144 re-patch (dual-fluid thruster meter). Census includes inert right-half compare residue (each run sweeps its cell before measuring; mutable anchors banked EMPTY). Re-bank: server_save, docker cp, SHA re-pin, one commit."
+			"note": "SNAPSHOT OF LIVE (re-banked 2026-07-28, UNFROZEN doctrine): the gallery runs live - all 34 formerly disabled entities re-enabled, stillness pins re-pinned to live invariants, roster baked in storage, leaked lab surface swept before banking. Never a scripted-bake product. Re-bank: server_save, docker cp, SHA re-pin, one commit."
 		},
 		"destination": {
 			"role": "destination",
@@ -271,7 +271,7 @@
 			},
 			"layoutBlueprint": "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M08w8zczTzDzNzNPMPM3M08w8zczTzDzNzNPMPM3ME8080cwTzTzRzBPNPNHME8080cwTzTzRzBPNPNHME8080cwTzTzRzBPNPNHME8080cwTzTzRzBPNPNHME8080cwTzTzRzBPNPNHME8080cwTzTzRzBNz6onmnmjuieaeaO6J5p5o7onmnmjuieaeaO6J5p5o7onmnmjuieaeaO7Yl27Wl27Wl27Wl27Wl27Wl27Wl27Wl27Wl27Wl27Wl27Wl27Wl27Wl27Wl27Wl27Wl27Wl27Wl27Wl27Wl27Wl27Wl27Wl27Wl27Wl27Wl27Wl27Wl27Wl27Wl27Wl27Wl27Wl27Wl27Wl27Wl27Wl27Wl27Wl27Yl27Yl27Yl27Yl27Yl27Yl27Yl27Yl27Yl27Yl27Yl27Yl27Yl27Yl27Yl27Yl27Yl27Yl27Yl27Yl27Yl27Yl27Yl27Yl27Yl27Yl27Yl27Yl27Yl27Yl27Yl27Yl27Yl27Yl27Yl27Yl27Yl27Yl27Yl27Yl27Yl27Yl27Yl27Yl27Yl27Yl27Yl27Yl27Yl27Yl27Yl/57x78bDpaHbt0/6GZ17B52y81hMBx87Hb78xnHk5i3+Xw8a5Np/7/Hx/8F93J0iA==",
 			"note": " VAULT ROLE (owner, 2026-07-19): the steel-chest at (12.5,-16.5) is the item-coverage vault — item-data classes needing serialization checking live here (blueprint w/ layout+label, blueprint-book w/ nested print, filtered decon planner, partial-durability repair pack, partial magazine, stable spoilage x10). Mid-spoil items are spawned ON DEMAND only (spoil timers tick even frozen). Meter fields unchanged (armor-specific).",
-			"owningRunnerWaiver": "Absorbed onto this pad; the original runner (tests/integration/active-state-roundtrip/run-tests.ps1) was deleted, see tests/integration/MIGRATION.md. The law is now baked state run by /test-run (the pad system), not a standalone runner."
+			"owningRunnerWaiver": "Absorbed onto this pad; the original runner (tests/integration/active-state-roundtrip/run-tests.ps1) was deleted; deletions are accounted by problem class in the class ledger in tests/integration/gallery-suite/run-tests.mjs. The law is now baked state run by /test-run (the pad system), not a standalone runner."
 		},
 		{
 			"id": "omnibus-heat-temperature",
@@ -343,7 +343,7 @@
 					}
 				]
 			},
-			"owningRunner": "tests/integration/pad-transfer-suite/run-tests.mjs"
+			"owningRunner": "tests/integration/gallery-suite/run-tests.mjs"
 		},
 		{
 			"id": "omnibus-decider-latch",
@@ -359,7 +359,7 @@
 					"y": -14
 				}
 			],
-			"revision": 1,
+			"revision": 2,
 			"labId": "hidden-semantics-lab",
 			"name": "Self-feeding decider latch",
 			"purpose": "Preserve a decider-combinator latched on by its own red-wire self-feedback.",
@@ -381,7 +381,7 @@
 				"surfexp_gateways": "0.4.0",
 				"maraxsis": "1.34.51"
 			},
-			"invariant": "The decider-combinator's red output network carries signal-S = 1 from its own feedback.",
+			"invariant": "The decider-combinator's red output network carries signal-S = 1 from its own feedback. This holds on any world that has RUN; it does NOT survive a transfer (see destinationGap) - the destination board asserts the gap is still there, and goes RED if the latch ever starts arriving armed, so the exemption cannot rot.",
 			"independentOracleRequired": true,
 			"fingerprint": {
 				"signalS": 1
@@ -397,7 +397,8 @@
 				"signalS"
 			],
 			"note": " pasteExclude signalS [empirical 2.0.77, live probe 2026-07-20]: the decider output register is not script-writable (signals_last_tick nil on fresh entities, writes rejected), so the self-held signal cannot ride a frozen paste/transfer — engine limit, per-field exclusion, never a blanket skip.",
-			"owningRunnerWaiver": "Absorbed onto this pad; the original runner (tests/integration/circuit-latch-state/run-tests.ps1) was deleted, see tests/integration/MIGRATION.md. The law is now baked state run by /test-run (the pad system), not a standalone runner."
+			"owningRunnerWaiver": "Absorbed onto this pad; the original runner (tests/integration/circuit-latch-state/run-tests.ps1) was deleted; deletions are accounted by problem class in the class ledger in tests/integration/gallery-suite/run-tests.mjs. The law is now baked state run by /test-run (the pad system), not a standalone runner.",
+			"destinationGap": "Circuit latch state does not survive transfer: a decider's output register is not script-writable and an SR latch reads its own 0 back through the feedback wire, so it arrives stable at 0. Measured on the 2.1.11 pin by tests/instruments/circuit-latch-rearm (R1/R2/R3); a post-activation condition-rewrite re-arm is proven possible but NOT implemented - see docs/factorio-2.0-api-notes.md for the two caveats gating it."
 		},
 		{
 			"id": "omnibus-midcraft-progress",
@@ -413,7 +414,7 @@
 					"y": -16
 				}
 			],
-			"revision": 1,
+			"revision": 3,
 			"labId": "midcraft-lab",
 			"name": "Mid-craft assembling machine",
 			"purpose": "Preserve a deactivated assembling-machine-1 frozen partway through a craft with embodied ingredients.",
@@ -435,7 +436,7 @@
 				"surfexp_gateways": "0.4.0",
 				"maraxsis": "1.34.51"
 			},
-			"invariant": "The assembling-machine-1 is inactive with crafting_progress ~0.70 and 2 iron-plate embodied in its input inventory.",
+			"invariant": "Live mid-craft machine: input iron-plate never exceeds the recipe cap of 2 (a gain fails; a live crafter legitimately drains to 0). crafting_progress is deliberately UNPINNED (review 2026-07-30): on a running machine it spans its whole [0,1] domain, so any bound wide enough to be honest is vacuous - progress fidelity at the transfer instant is the exact gate's item census plus the crafting_progress serializer field, not a board read.",
 			"independentOracleRequired": true,
 			"fingerprint": {
 				"progress": 0.7000000000000005,
@@ -451,29 +452,9 @@
 						"locator": {
 							"anchor": "assembling-machine-1"
 						},
-						"read": "property",
-						"path": "crafting_progress",
-						"op": "approx",
-						"expected": 0.7000000000000005
-					},
-					{
-						"check": "physical_read",
-						"locator": {
-							"anchor": "assembling-machine-1"
-						},
-						"read": "property",
-						"path": "active",
-						"op": "eq",
-						"expected": false
-					},
-					{
-						"check": "physical_read",
-						"locator": {
-							"anchor": "assembling-machine-1"
-						},
 						"read": "item_count",
 						"item": "iron-plate",
-						"op": "eq",
+						"op": "le",
 						"expected": 2
 					}
 				]
@@ -485,7 +466,7 @@
 				"expected": "Audit reports equal entities/items; the pasted machine reads the same crafting_progress and input plate count, still inactive.",
 				"forbidden": "Progress reset or advanced; consumed or duplicated inputs; the machine arriving active."
 			},
-			"owningRunnerWaiver": "Absorbed onto this pad; the original runner (tests/integration/midcraft-roundtrip/run-tests.ps1) was deleted, see tests/integration/MIGRATION.md. The law is now baked state run by /test-run (the pad system), not a standalone runner."
+			"owningRunnerWaiver": "Absorbed onto this pad; the original runner (tests/integration/midcraft-roundtrip/run-tests.ps1) was deleted; deletions are accounted by problem class in the class ledger in tests/integration/gallery-suite/run-tests.mjs. The law is now baked state run by /test-run (the pad system), not a standalone runner."
 		},
 		{
 			"id": "omnibus-burner-fuel",
@@ -501,7 +482,7 @@
 					"y": 1
 				}
 			],
-			"revision": 1,
+			"revision": 2,
 			"labId": "state-dimensions-lab",
 			"name": "Burner inserter fuel state",
 			"purpose": "Preserve a deactivated burner-inserter mid-burn with a partly-consumed fuel item and fuel inventory.",
@@ -542,18 +523,11 @@
 						},
 						"read": "item_count",
 						"item": "coal",
-						"op": "eq",
-						"expected": 10
-					},
-					{
-						"check": "physical_read",
-						"locator": {
-							"anchor": "burner-inserter"
-						},
-						"read": "property",
-						"path": "active",
-						"op": "eq",
-						"expected": false
+						"op": "between",
+						"expected": [
+							0,
+							10
+						]
 					},
 					{
 						"check": "physical_read",
@@ -572,7 +546,7 @@
 						},
 						"read": "property",
 						"path": "burner.remaining_burning_fuel",
-						"op": "eq",
+						"op": "le",
 						"expected": 2000000
 					}
 				]
@@ -584,7 +558,7 @@
 				"expected": "Audit reports equal entities/items; the pasted burner-inserter keeps its coal, burning item, and remaining fuel energy.",
 				"forbidden": "A cold burner (currently_burning lost); dropped fuel items; remaining fuel reset."
 			},
-			"owningRunnerWaiver": "Absorbed onto this pad; the original runner (tests/integration/entity-burner-roundtrip/run-tests.ps1) was deleted, see tests/integration/MIGRATION.md. The law is now baked state run by /test-run (the pad system), not a standalone runner."
+			"owningRunnerWaiver": "Absorbed onto this pad; the original runner (tests/integration/entity-burner-roundtrip/run-tests.ps1) was deleted; deletions are accounted by problem class in the class ledger in tests/integration/gallery-suite/run-tests.mjs. The law is now baked state run by /test-run (the pad system), not a standalone runner."
 		},
 		{
 			"id": "omnibus-equipment-grid",
@@ -636,7 +610,7 @@
 				"expected": "Audit reports equal entities; the pasted spidertron's grid battery reads the same energy.",
 				"forbidden": "An emptied grid; battery energy reset to 0 or full."
 			},
-			"owningRunnerWaiver": "Absorbed onto this pad; the original runner (tests/integration/item-grid-roundtrip/run-tests.ps1) was deleted, see tests/integration/MIGRATION.md. The law is now baked state run by /test-run (the pad system), not a standalone runner."
+			"owningRunnerWaiver": "Absorbed onto this pad; the original runner (tests/integration/item-grid-roundtrip/run-tests.ps1) was deleted; deletions are accounted by problem class in the class ledger in tests/integration/gallery-suite/run-tests.mjs. The law is now baked state run by /test-run (the pad system), not a standalone runner."
 		},
 		{
 			"id": "omnibus-circuit-config",
@@ -693,7 +667,7 @@
 				"expected": "Audit reports equal entities; the pasted combinator carries the same section filter and the lamp the same use_colors flag.",
 				"forbidden": "Dropped section filters; lost wire connections; a flipped or defaulted lamp flag."
 			},
-			"owningRunnerWaiver": "Absorbed onto this pad; the original runner (tests/integration/circuit-config-roundtrip/run-tests.ps1) was deleted, see tests/integration/MIGRATION.md. The law is now baked state run by /test-run (the pad system), not a standalone runner."
+			"owningRunnerWaiver": "Absorbed onto this pad; the original runner (tests/integration/circuit-config-roundtrip/run-tests.ps1) was deleted; deletions are accounted by problem class in the class ledger in tests/integration/gallery-suite/run-tests.mjs. The law is now baked state run by /test-run (the pad system), not a standalone runner."
 		},
 		{
 			"id": "omnibus-module-bonus-progress",
@@ -709,7 +683,7 @@
 					"y": 1
 				}
 			],
-			"revision": 1,
+			"revision": 3,
 			"labId": "midcraft-lab",
 			"name": "Module bonus progress",
 			"purpose": "Preserve a deactivated assembling-machine-2 with productivity modules mid bonus progress.",
@@ -731,7 +705,7 @@
 				"surfexp_gateways": "0.4.0",
 				"maraxsis": "1.34.51"
 			},
-			"invariant": "The assembling-machine-2 is inactive with bonus_progress 0.5 and 2 productivity-module modules running the iron-gear-wheel recipe.",
+			"invariant": "Two productivity modules present, exactly (eq 2 - loss OR gain fails). bonus_progress is deliberately UNPINNED (review 2026-07-30): the banked productivity bar spans its whole [0,1] domain on a live machine and wraps on payout, so a board bound is vacuous; the serializer's bonus_progress field carries it at transfer time.",
 			"independentOracleRequired": true,
 			"fingerprint": {
 				"bonusProgress": 0.5,
@@ -747,30 +721,10 @@
 						"locator": {
 							"anchor": "assembling-machine-2"
 						},
-						"read": "property",
-						"path": "bonus_progress",
-						"op": "eq",
-						"expected": 0.5
-					},
-					{
-						"check": "physical_read",
-						"locator": {
-							"anchor": "assembling-machine-2"
-						},
 						"read": "item_count",
 						"item": "productivity-module",
 						"op": "eq",
 						"expected": 2
-					},
-					{
-						"check": "physical_read",
-						"locator": {
-							"anchor": "assembling-machine-2"
-						},
-						"read": "property",
-						"path": "active",
-						"op": "eq",
-						"expected": false
 					}
 				]
 			},
@@ -781,7 +735,7 @@
 				"expected": "Audit reports equal entities/items; the pasted machine keeps its productivity modules and the same bonus_progress.",
 				"forbidden": "Missing modules; bonus_progress reset; the machine arriving active."
 			},
-			"owningRunnerWaiver": "Absorbed onto this pad; the original runner (tests/integration/bonus-progress-roundtrip/run-tests.ps1) was deleted, see tests/integration/MIGRATION.md. The law is now baked state run by /test-run (the pad system), not a standalone runner."
+			"owningRunnerWaiver": "Absorbed onto this pad; the original runner (tests/integration/bonus-progress-roundtrip/run-tests.ps1) was deleted; deletions are accounted by problem class in the class ledger in tests/integration/gallery-suite/run-tests.mjs. The law is now baked state run by /test-run (the pad system), not a standalone runner."
 		},
 		{
 			"id": "omnibus-crafting-fluids",
@@ -807,7 +761,7 @@
 					"y": 15
 				}
 			],
-			"revision": 1,
+			"revision": 3,
 			"labId": "fluid-lab",
 			"name": "Crafting-machine fluids",
 			"purpose": "Preserve a storage-tank of steam beside an inactive chemical-plant and foundry holding recipe fluids.",
@@ -834,8 +788,6 @@
 			"fingerprint": {
 				"steam": 20000,
 				"steamTemp": 500,
-				"chemWater": 60,
-				"chemGas": 60,
 				"foundryMolten": 250,
 				"foundryTemp": 1500
 			},
@@ -844,9 +796,9 @@
 				"build": "Migrated 2026-07-18 from the legacy y=0 zone onto the test-foundation pad at (8,8) via surface.clone_area (seed-prep migrate_omnibus_zone; exact-state move, originals destroyed).",
 				"action": "/test-run: reset the compare area, selection-lab copy of the pad build area, paste at +14,0, physical audit of both halves.",
 				"expected": "Audit reports equal fluids by name and amount; the pasted tank/plant/foundry read the same amounts and temperatures.",
-				"forbidden": "Any fluid amount or temperature drift; crafter fluidboxes arriving empty."
+				"forbidden": "Crafter fluidboxes arriving empty is a TRANSFER failure, and it is the exact gate that catches it (fluids aggregate-by-name at 1e-6, pre-activation) - the destination board does not re-read crafter fluid levels because a live plant legitimately drains them (review 2026-07-30: the old text promised board detection that did not exist)."
 			},
-			"owningRunnerWaiver": "Absorbed onto this pad; the original runner (tests/integration/specialized-inventory-roundtrip/run-tests.ps1) was deleted, see tests/integration/MIGRATION.md. The law is now baked state run by /test-run (the pad system), not a standalone runner."
+			"owningRunnerWaiver": "Absorbed onto this pad; the original runner (tests/integration/specialized-inventory-roundtrip/run-tests.ps1) was deleted; deletions are accounted by problem class in the class ledger in tests/integration/gallery-suite/run-tests.mjs. The law is now baked state run by /test-run (the pad system), not a standalone runner."
 		},
 		{
 			"id": "omnibus-ghosts-and-proxies",
@@ -892,7 +844,7 @@
 				"expected": "Audit reports equal entities including one entity-ghost, one tile-ghost, and one item-request-proxy on the pasted half.",
 				"forbidden": "A ghost or proxy silently dropped; a proxy detached from its target machine."
 			},
-			"owningRunnerWaiver": "Absorbed onto this pad; the original runner (tests/integration/entity-roundtrip/run-tests.ps1) was deleted, see tests/integration/MIGRATION.md. The law is now baked state run by /test-run (the pad system), not a standalone runner."
+			"owningRunnerWaiver": "Absorbed onto this pad; the original runner (tests/integration/entity-roundtrip/run-tests.ps1) was deleted; deletions are accounted by problem class in the class ledger in tests/integration/gallery-suite/run-tests.mjs. The law is now baked state run by /test-run (the pad system), not a standalone runner."
 		},
 		{
 			"id": "omnibus-ground-items",
@@ -935,7 +887,7 @@
 				"expected": "Audit reports equal items; the pasted half carries the same iron-plate ground total at the same relative positions.",
 				"forbidden": "Any ground item lost or merged; count drift between halves."
 			},
-			"owningRunnerWaiver": "Absorbed onto this pad; the original runner (tests/integration/ground-item-fidelity/run-tests.ps1) was deleted, see tests/integration/MIGRATION.md. The law is now baked state run by /test-run (the pad system), not a standalone runner."
+			"owningRunnerWaiver": "Absorbed onto this pad; the original runner (tests/integration/ground-item-fidelity/run-tests.ps1) was deleted; deletions are accounted by problem class in the class ledger in tests/integration/gallery-suite/run-tests.mjs. The law is now baked state run by /test-run (the pad system), not a standalone runner."
 		},
 		{
 			"id": "omnibus-platform-schedule",
@@ -945,7 +897,7 @@
 			"name": "Platform schedule and interrupt",
 			"purpose": "Preserve the platform-level schedule records and a named interrupt.",
 			"category": "physical-lab",
-			"owningRunner": "tests/integration/selftests/run-tests.mjs",
+			"owningRunner": "tests/integration/gallery-suite/run-tests.mjs",
 			"saveRole": "source",
 			"platformName": "lab-omnibus-state-v1",
 			"engineVersion": "2.1.11",
@@ -980,12 +932,12 @@
 		{
 			"id": "transfer-workhorse",
 			"padKind": "platform",
-			"revision": 1,
+			"revision": 2,
 			"labId": "gate-drift-lab",
 			"name": "1359-entity transfer workhorse",
 			"purpose": "Provide the large live-drift transfer workhorse whose structure is fixed but whose machine item counts drift by design.",
 			"category": "drift-benchmark",
-			"owningRunner": "tests/integration/pad-transfer-suite/run-tests.mjs",
+			"owningRunner": "tests/integration/gallery-suite/run-tests.mjs",
 			"saveRole": "source",
 			"platformName": "lab-transfer-fixture-v1",
 			"engineVersion": "2.1.11",
@@ -1002,11 +954,11 @@
 				"surfexp_gateways": "0.4.0",
 				"maraxsis": "1.34.51"
 			},
-			"note": "Structure-only fingerprint. Machines are live: measured iron-plate drifted 1688 -> 1680 over hours; only entity count is stable.",
-			"invariant": "The platform carries exactly 1359 entities; its machines are deliberately LIVE so item counts drift over time and must never be fingerprinted.",
+			"note": "Structure-only fingerprint. Machines are live: measured iron-plate drifted 1688 -> 1680 over hours. Even the raw entity count is NOT stable (measured 2026-07-27: a spilled item-on-ground and asteroid-explosion effects flipped the raw count 1359 to 1360 between runs; platform pause stops travel, not machines) - so the pin is the STRUCTURE count, excluding transient debris classes.",
+			"invariant": "The platform carries exactly 1358 structural entities (transient debris - spills, explosion effects - excluded); its machines are deliberately LIVE so item counts AND raw entity count drift over time and must never be fingerprinted.",
 			"independentOracleRequired": true,
 			"fingerprint": {
-				"entities": 1359
+				"entities": 1358
 			},
 			"lifecycle": {
 				"version": 1,
@@ -1017,9 +969,9 @@
 						"locator": {
 							"self": true
 						},
-						"read": "surface_entity_count",
+						"read": "surface_entity_count_stable",
 						"op": "eq",
-						"expected": 1359
+						"expected": 1358
 					},
 					{
 						"check": "report_field",
@@ -1048,7 +1000,7 @@
 					"y": 13.5
 				}
 			],
-			"revision": 1,
+			"revision": 3,
 			"labId": "inserter-lab",
 			"name": "Held-item capacity on a less-researched destination",
 			"purpose": "Preserve a frozen legendary bulk-inserter whose hand is seated with 8 railgun-ammo under a baked >=11 player-force bulk-inserter capacity bonus - the adversarial state for dest-force research replication on import.",
@@ -1071,7 +1023,7 @@
 				"maraxsis": "1.34.51"
 			},
 			"note": "Script-built by tests/lab-gallery/seed-prep-ops.lua (build_inserter_held) onto the stamped inserter-held-capacity cell at (92,8): raise the player force bulk_inserter_capacity_bonus to >=11 (raise-only, logged), create a legendary bulk-inserter at (98.5,13.5), seat 8 LEGENDARY railgun-ammo via plain held_stack.set_stack (no active toggle; inserter-lab B6), then freeze (active=false, destructible=false). Re-baked 2026-07-18: the original bake seated a NORMAL-quality stack and self-certified via the entity-quality meter (B7 run 1b caught it via the independent stack-quality read); the stack is now legendary and both meters read the STACK. forceBulkBonus is a placeholder floor; the live bake pins the exact baked value. The ADVERSARIAL destination state is baked too (2026-07-18): the golden dest descends from the long-lived local host-2 lineage whose player force had bulk 11 / stack 3 (B7 run 1 caught it — the fixture could not discriminate the pre-hydration dest-force bonus-sync fix), so both inserter bonuses were zeroed at bake time and the dest artifact re-pinned; the runner still ASSERTS 0 at load, never forces.",
-			"invariant": "A legendary bulk-inserter holds 8 railgun-ammo in its hand while inactive and indestructible; the player force bulk_inserter_capacity_bonus is >= 11 so the hand seats in full and survives save/load.",
+			"invariant": "Bulk inserter over railgun-ammo (legendary): held count bounded by the force capacity bonus (0..8 - a live hand legitimately reads empty mid-swing; >8 fails), destructible false, and force.bulk_inserter_capacity_bonus exactly 11 (the MECHANISM of the measured held-loss class: an under-researched dest force clamps hands). Held ITEM IDENTITY and QUALITY are not board-read on a live world (an empty mid-swing hand has no name to read); they are enforced by the exact gate, whose census counts held items quality-keyed - a hand arriving as the wrong item or quality fails the transfer itself (review 2026-07-30).",
 			"independentOracleRequired": true,
 			"fingerprint": {
 				"heldCount": 8,
@@ -1091,38 +1043,11 @@
 							"anchor": "bulk-inserter"
 						},
 						"read": "held",
-						"op": "eq",
-						"expected": 8
-					},
-					{
-						"check": "physical_read",
-						"locator": {
-							"anchor": "bulk-inserter"
-						},
-						"read": "property",
-						"path": "held_stack.name",
-						"op": "eq",
-						"expected": "railgun-ammo"
-					},
-					{
-						"check": "physical_read",
-						"locator": {
-							"anchor": "bulk-inserter"
-						},
-						"read": "property",
-						"path": "held_stack.quality.name",
-						"op": "eq",
-						"expected": "legendary"
-					},
-					{
-						"check": "physical_read",
-						"locator": {
-							"anchor": "bulk-inserter"
-						},
-						"read": "property",
-						"path": "active",
-						"op": "eq",
-						"expected": false
+						"op": "between",
+						"expected": [
+							0,
+							8
+						]
 					},
 					{
 						"check": "physical_read",
@@ -1174,7 +1099,7 @@
 					"y": 27.5
 				}
 			],
-			"revision": 1,
+			"revision": 2,
 			"labId": "no-tick-sync-lab",
 			"name": "No-tick synchronous held-item pair",
 			"purpose": "Preserve a frozen mid-craft assembling-machine-1 beside an inactive empty-handed inserter - the construct-free target proving the synchronous held-item pass advances no tick.",
@@ -1215,7 +1140,8 @@
 				"expected": "game.tick unchanged; crafting_progress exactly 0.42 after the pass; the hand seats in full.",
 				"forbidden": "Any tick advance during the pass; crafting_progress drift; the selftest constructing anything on the golden world."
 			},
-			"owningRunnerWaiver": "Absorbed onto this pad; the original runner (tests/no-tick-sync-lab/run-b8-baked-pair.mjs) was archived at git tag labs-archive-2026-07-19. The law is now baked state run by /test-run (the pad system), not a standalone runner."
+			"owningRunnerWaiver": "Absorbed onto this pad; the original runner (tests/no-tick-sync-lab/run-b8-baked-pair.mjs) was archived at git tag labs-archive-2026-07-19. The law is now baked state run by /test-run (the pad system), not a standalone runner.",
+			"runnerExcluded": "ENGINE-BUMP INSTRUMENT: premise requires stillness (owner unfrozen doctrine 2026-07-27); its law is exercised by every production gate run - re-enable only for engine re-certification"
 		},
 		{
 			"id": "repin-beacon-speed",
@@ -1224,7 +1150,7 @@
 				"x": 36,
 				"y": 22
 			},
-			"revision": 1,
+			"revision": 2,
 			"labId": "engine-repin-lab",
 			"name": "Beacon crafting_speed same-execution propagation",
 			"purpose": "Preserve an ACTIVE empty-module beacon beside a frozen recipe-set crafter - the baked baseline for the engine-repin B8 pause-free rung (module population must raise crafting_speed in the SAME Lua execution, no ticks, no power).",
@@ -1275,7 +1201,8 @@
 				"expected": "Speed rises immediately upon module insertion (same execution, machine still inactive and unpowered) and returns to 0.75 when the modules clear.",
 				"forbidden": "Speed requiring elapsed ticks or power to update; a baseline that is not 0.75; modules left behind after the rung."
 			},
-			"owningRunnerWaiver": "Absorbed onto this pad; the original runner (tests/engine-repin-lab/run-repin-consumables.mjs) was archived at git tag labs-archive-2026-07-19. The law is now baked state run by /test-run (the pad system), not a standalone runner."
+			"owningRunnerWaiver": "Absorbed onto this pad; the original runner (tests/engine-repin-lab/run-repin-consumables.mjs) was archived at git tag labs-archive-2026-07-19. The law is now baked state run by /test-run (the pad system), not a standalone runner.",
+			"runnerExcluded": "ENGINE-BUMP INSTRUMENT: premise requires stillness (owner unfrozen doctrine 2026-07-27); its law is exercised by every production gate run - re-enable only for engine re-certification"
 		},
 		{
 			"id": "belt-combined-omnibus",
@@ -1291,12 +1218,12 @@
 					"y": 45.5
 				}
 			],
-			"revision": 4,
+			"revision": 6,
 			"labId": "belt-lab",
 			"name": "Combined belt omnibus (steady-state, hand-built)",
 			"purpose": "One pad combining sideloads, 3 splitters, 3 underground pairs, and 2 filtered output loaders - the CONSERVATIVE closed-circuit exemplar: 380 items recirculate forever with no source and no sink, so any loss is visible instead of self-healed.",
 			"category": "physical-lab",
-			"owningRunner": "tests/integration/pad-transfer-suite/run-tests.mjs",
+			"owningRunner": "tests/integration/gallery-suite/run-tests.mjs",
 			"owningRunnerWaiver": "Hand-built live by the owner 2026-07-19 (construct-once doctrine). No build script exists by design; the state itself is the artifact, banked in the source-of-truth checkpoint.",
 			"saveRole": "source",
 			"platformName": "lab-omnibus-state-v1",
@@ -1314,7 +1241,7 @@
 				"surfexp_gateways": "0.4.0",
 				"maraxsis": "1.34.51"
 			},
-			"invariant": "CONSERVATIVE closed circuit (owner removed the infinity chests 2026-07-19: self-healing masks loss): 380 items stationary across 35 turbo belts / 3 splitters / 6 underground ends / 2 filtered loaders; every stack one item; corner inside lanes carry the over-pack class (13 lanes, pinned as presence). Covers the retired belt-corner-recovery invariant (over-pack, 13 lanes vs its 4) and the conservation-honesty property.",
+			"invariant": "CONSERVATIVE closed circuit (owner removed the infinity chests 2026-07-19: self-healing masks loss): 380 items stationary across 35 turbo belts / 3 splitters / 6 underground ends / 2 filtered loaders; every stack one item; corner inside lanes carry the over-pack class. Conservation (380) and the PRESENCE of over-packed corner lanes are the invariants; HOW MANY lanes are over-packed is a distribution reading that drifts on a moving world (13 at bake, 15 on the transferred copy at unchanged conservation) and is not pinned.",
 			"independentOracleRequired": true,
 			"fingerprint": {
 				"beltCount": 35,
@@ -1323,20 +1250,21 @@
 				"loaderCount": 2,
 				"steadyItems": 380,
 				"maxStack": 1,
-				"overpackedLanes": 13,
 				"hasOverpackedCornerLanes": true,
 				"loaderFilterIron": "iron-plate",
 				"loaderFilterCopper": "copper-plate"
 			},
 			"testCard": {
 				"law": "A saturated closed belt circuit is STEADY-STATE: item count constant while fully live (no freeze needed - belts consume nothing; saturation is a fixed point).",
-				"action": "pad-transfer-suite runs the pad through a REAL transfer and physically reads the destination. (/test-run's copy-paste audit SKIPS this pad - see runnerExcluded.) Configs measured: loader filters.",
+				"action": "pad-transfer-suite runs the pad through a REAL transfer and physically reads the destination law (belt_stats); /test-run pastes and fingerprints BOTH halves. Configs measured: loader filters.",
 				"expected": "380 items stationary on the destination after transfer, and the strict gate passes; loader filters survive.",
-				"forbidden": "Do NOT freeze this pad (it is the steady-state class exemplar). Do NOT rebuild it from a script - the state is the artifact."
+				"forbidden": "Do not pin the over-packed LANE COUNT: it is where the items happen to sit at the measurement instant, not a conserved quantity. Pin conservation and the class."
 			},
-			"note": "FIRST CATCH (2026-07-19, at claim time): serializer has NO loader handler (filters not carried; splitter types gate excludes loaders) and NO infinity-container handler (infinity filters not carried) - transfer would deliver hollow configs. Fix is queued; this pad is its kill-measurement. REV2 2026-07-19: owner removed infinity chests (self-healing masked loss); circuit now conservative at 380; belt-corner-recovery retired as covered (over-pack measured present at 13 lanes vs its 4). REV4 2026-07-26: re-measured live on the 2.1.11 cluster - entities 35/3/6/2, belt items 380, over-packed lanes 13, and the declared infinity-chest anchor at (19.5,45.5) resolved to NOTHING (removed in REV2), so it was dropped; prose that still said 578 items / 18-19 lanes was corrected to the measured values the fingerprint already carried.",
+			"note": "FIRST CATCH (2026-07-19, at claim time): serializer has NO loader handler (filters not carried; splitter types gate excludes loaders) and NO infinity-container handler (infinity filters not carried) - transfer would deliver hollow configs. Fix is queued; this pad is its kill-measurement. REV2 2026-07-19: owner removed infinity chests (self-healing masked loss); circuit now conservative at 380; belt-corner-recovery retired as covered (over-pack measured present at 13 lanes vs its 4). REV4 2026-07-26: re-measured live on the 2.1.11 cluster - entities 35/3/6/2, belt items 380, over-packed lanes 13, and the declared infinity-chest anchor at (19.5,45.5) resolved to NOTHING (removed in REV2), so it was dropped; prose that still said 578 items / 18-19 lanes was corrected to the measured values the fingerprint already carried. REV5 2026-07-26 (OWNER RULING): overpackedLanes is an ARRANGEMENT statistic, not an invariant — measured settling 37->17->18 on a healthy paste while the side multisets stayed exact (R14), and the canonical law names position/order/window non-invariants. Paste compare now excludes it per-field (pasteExclude); the dest law asserts the true invariants (maxStack — the tooth that caught the transfer consolidation defect 5-vs-1 — plus counts, presence, filters). The left-half pin 13 stays as source-drift detection. runnerExcluded DELETED: the pad runs everywhere again. Multi-stack is load-bearing: a slot restores as ONE stack of its captured count.",
 			"auditAggregateOnly": true,
-			"runnerExcluded": "SCOPE: this excludes the pad from /test-run's COPY-PASTE audit ONLY (module/interfaces/commands/run-tests.lua reads this key; pad-transfer-suite does not - it selects on lifecycle.act). KNOWN-OPEN HAZARD: paste loses items on over-packed corner lanes (measured 372->368, 2026-07-20) - the Phase-5B belt-restore class; re-enable for paste when side-closed batched restore lands. The pad DOES run its real TRANSFER through pad-transfer-suite, which is green.",
+			"pasteExclude": [
+				"overpackedLanes"
+			],
 			"lifecycle": {
 				"version": 1,
 				"act": "transfer",
@@ -1351,12 +1279,203 @@
 						"expected": 380
 					},
 					{
+						"check": "physical_read",
+						"locator": {
+							"area": true
+						},
+						"read": "belt_stats",
+						"field": "maxStack",
+						"op": "eq",
+						"expected": 1
+					},
+					{
+						"check": "physical_read",
+						"locator": {
+							"area": true
+						},
+						"read": "belt_stats",
+						"field": "hasOverpackedCornerLanes",
+						"op": "eq",
+						"expected": true
+					},
+					{
+						"check": "physical_read",
+						"locator": {
+							"area": true
+						},
+						"read": "belt_stats",
+						"field": "beltCount",
+						"op": "eq",
+						"expected": 35
+					},
+					{
+						"check": "physical_read",
+						"locator": {
+							"area": true
+						},
+						"read": "belt_stats",
+						"field": "loaderFilterIron",
+						"op": "eq",
+						"expected": "iron-plate"
+					},
+					{
+						"check": "physical_read",
+						"locator": {
+							"area": true
+						},
+						"read": "belt_stats",
+						"field": "loaderFilterCopper",
+						"op": "eq",
+						"expected": "copper-plate"
+					},
+					{
 						"check": "report_field",
 						"path": "validation_success",
 						"op": "eq",
 						"expected": true
 					}
 				]
+			}
+		},
+		{
+			"id": "belt-compression-loop",
+			"padKind": "pad",
+			"origin": {
+				"x": 64,
+				"y": 64
+			},
+			"anchors": [
+				{
+					"entity": "steel-chest",
+					"x": 70.5,
+					"y": 66.5,
+					"name": "chest-north"
+				},
+				{
+					"entity": "steel-chest",
+					"x": 66.5,
+					"y": 70.5,
+					"name": "chest-west"
+				},
+				{
+					"entity": "steel-chest",
+					"x": 74.5,
+					"y": 70.5,
+					"name": "chest-east"
+				},
+				{
+					"entity": "steel-chest",
+					"x": 70.5,
+					"y": 74.5,
+					"name": "chest-south"
+				}
+			],
+			"revision": 2,
+			"labId": "belt-lab",
+			"name": "Clean compression loop (owner-built, frozen feed)",
+			"purpose": "OWNER THEORY FIXTURE (2026-07-27): restore-order sideload over-saturation - if feeder lines restore before the main line, boundary writes can silently over-saturate the main. A 12-belt closed turbo loop compressed NATURALLY by four bulk inserters (no fossils: worst density 1.085, every stack 1) then frozen via disabled_by_script - the clean-state control the workhorse cannot be (its golden save carries legacy 28-stacks).",
+			"category": "physical-lab",
+			"owningRunner": null,
+			"owningRunnerWaiver": "Hand-built by the owner 2026-07-27; state IS the artifact, banked in lab-gallery-snapshot-2026-07-27-compression-loop.zip. Wired into /test-run 2026-07-27 with a declarative copy-paste lifecycle (owner order: the compression fixture must RUN, not sit as a waived exhibit).",
+			"saveRole": "source",
+			"platformName": "lab-omnibus-state-v1",
+			"engineVersion": "2.1.11",
+			"mods": {
+				"base": "2.1.11",
+				"elevated-rails": "2.1.11",
+				"FluidMustFlow": "1.5.0",
+				"PlanetsLib": "1.22.0",
+				"quality": "2.1.11",
+				"recycler": "2.1.11",
+				"SpidertronEnhancements": "1.11.0",
+				"space-age": "2.1.11",
+				"SpidertronPatrols": "2.7.0",
+				"surfexp_gateways": "0.4.0",
+				"maraxsis": "1.34.51"
+			},
+			"invariant": "Frozen feed: 47 items on the 12-belt closed loop, 4 held in frozen inserter hands, 42 in the four chests; maxStack=1 everywhere (clean natural compression, worst line density 1.085); 4 bulk inserters disabled_by_script.",
+			"independentOracleRequired": true,
+			"fingerprint": {
+				"beltCount": 12,
+				"inserterCount": 4,
+				"chestCount": 4,
+				"loopItems": 47,
+				"handItems": 4,
+				"chestItems": 42,
+				"maxStack": 1
+			},
+			"lifecycle": {
+				"version": 1,
+				"act": "copy-paste",
+				"verify": [
+					{
+						"check": "physical_read",
+						"locator": {
+							"area": true
+						},
+						"read": "belt_stats",
+						"field": "beltCount",
+						"op": "eq",
+						"expected": 12
+					},
+					{
+						"check": "physical_read",
+						"locator": {
+							"area": true
+						},
+						"read": "belt_stats",
+						"field": "steadyItems",
+						"op": "eq",
+						"expected": 47
+					},
+					{
+						"check": "physical_read",
+						"locator": {
+							"area": true
+						},
+						"read": "belt_stats",
+						"field": "maxStack",
+						"op": "eq",
+						"expected": 1
+					},
+					{
+						"check": "physical_read",
+						"locator": {
+							"anchor": "chest-north"
+						},
+						"read": "item_count",
+						"item": "oxide-asteroid-chunk",
+						"op": "eq",
+						"expected": 8
+					},
+					{
+						"check": "physical_read",
+						"locator": {
+							"anchor": "chest-east"
+						},
+						"read": "item_count",
+						"item": "metallic-asteroid-chunk",
+						"op": "eq",
+						"expected": 8
+					},
+					{
+						"check": "physical_read",
+						"locator": {
+							"anchor": "chest-south"
+						},
+						"read": "item_count",
+						"item": "carbonic-asteroid-chunk",
+						"op": "eq",
+						"expected": 26
+					}
+				]
+			},
+			"testCard": {
+				"law": "A naturally-compressed closed loop's multiset survives capture and restore EXACTLY, with no cross-side leakage - and per-slot provenance (test-instrument-only metadata) names any stray's origin.",
+				"build": "Hand-built by the owner 2026-07-27 on open slot (64,64): 12-belt turbo donut, four bulk inserters feeding from four chests until saturation, then feed frozen (disabled_by_script; hands hold 4 mid-swing).",
+				"action": "Isolation protocol: capture ONCE, restore the identical side-group data three ways - scratch normal surface, scratch platform surface, real cross-instance transfer - one variable per comparison.",
+				"expected": "47 loop items reconstruct exactly per side in every context; any divergence isolates the context variable (surface class, frozen state, or wire).",
+				"forbidden": "Re-enabling the inserters without re-pinning; measuring against the workhorse (contaminated with legacy oversized stacks) instead of this clean control."
 			}
 		},
 		{
@@ -1378,10 +1497,10 @@
 					"y": 24.5
 				}
 			],
-			"revision": 2,
+			"revision": 5,
 			"labId": "specialized-inventory-lab",
 			"name": "Acid-fed uranium miner (hand-built)",
-			"purpose": "Fluid-consuming big mining drill over real uranium resource patches with a sulfuric-acid tank feed - frozen-class; exercises resource entities, fluid-consuming mining, and acid plumbing in one pad.",
+			"purpose": "Fluid-consuming big mining drill over real uranium resource patches with a sulfuric-acid tank feed; exercises resource entities, fluid-consuming mining, and acid plumbing in one pad.",
 			"category": "physical-lab",
 			"owningRunner": null,
 			"owningRunnerWaiver": "Hand-built live by the owner 2026-07-19 (construct-once doctrine); supersedes the retired lab-specialized-fluid-r1 platform (owner ruling: platform-15 gets its own tile).",
@@ -1401,23 +1520,29 @@
 				"surfexp_gateways": "0.4.0",
 				"maraxsis": "1.34.51"
 			},
-			"invariant": "Frozen: tank 13050 sulfuric-acid, drill 104 acid, 4 uranium resource patches totaling 30398 ore, 1 ground item. Resource entity amounts ride NO serializer handler (open coverage gap, first catch at claim).",
+			"invariant": "The pad's acid POOL is one fluid segment spanning tank, pipes and drill: 13364 sulfuric-acid and 30398 patch ore at bake, each allowing exactly ONE refill cycle per blocked fluid-consuming drill (acid 13354..13364, patch 30397..30398). Mechanism, verified 2026-07-29: a blocked drill holds a finished product in an engine-internal slot with NO API accessor, so it cannot ride the payload; the destination drill re-mines one cycle to refill it (10 acid + 1 patch ore for uranium) and then blocks identically to the source. Proven by clearing the destination drill's drop tile: the ore reappeared with acid AND patch unchanged - it came from the held slot, not a new cycle. No duplication: the source's held product is destroyed with the source platform. The per-entity acid SPLIT is an engine distribution, not an invariant. mining_progress rides the payload and is written after mining_target binds (LuaControl: the value is defined relative to the target), but a blocked drill's refill cycle wraps past it - terminal progress is engine-settled.",
 			"independentOracleRequired": true,
 			"fingerprint": {
-				"tankAcid": 13050.78125,
-				"drillAcid": 104.40625,
+				"acidSegmentTotal": [
+					13354,
+					13364
+				],
+				"drillHasAcid": true,
 				"resourceCount": 4,
-				"resourceTotal": 30398,
+				"resourceTotal": [
+					30397,
+					30398
+				],
 				"groundItems": 1,
 				"drillName": "big-mining-drill"
 			},
 			"testCard": {
-				"law": "A fluid-consuming miner over real resource patches is frozen-class state; resource amounts have no serializer handler yet.",
-				"action": "/test-run copy/paste + fingerprint; transfer must preserve acid, patch amounts, ground ore.",
-				"expected": "Acid exact, resource amounts exact, ground ore present.",
-				"forbidden": "Do not unfreeze the drill (consumes acid, depletes the patch)."
+				"law": "A blocked fluid-consuming drill's held product is unserializable; the destination re-buys it for exactly one cycle's fluid and one patch unit, and no more.",
+				"action": "/test-run copy/paste + fingerprint; the whole-gallery transfer carries it to the destination board.",
+				"expected": "Acid and patch each within one refill cycle of the bake; drill non-empty; ground ore present.",
+				"forbidden": "Do not pin acid or patch EXACTLY - the one-cycle refill is engine behaviour a lossless transfer cannot avoid. Do not widen either range beyond one cycle per drill; a second cycle's worth is a real regression. Do not top up acid or patch to hide the refill: that manufactures resources the source never sent."
 			},
-			"note": "FIRST CATCH: no resource-type serializer handler (entity.amount not carried) - queued with the loader/infinity-container handler work."
+			"note": "Held-product refill mechanism and the LuaControl mining_progress clause are recorded in docs/factorio-2.0-api-notes.md; the deferred mining_progress queue lives in active_state_restoration.lua (serviced by AsyncProcessor.process_tick)."
 		},
 		{
 			"id": "omnibus-spoilage-midspoil",
@@ -1431,7 +1556,7 @@
 			"name": "Spoilage mid-spoil",
 			"purpose": "Preserve mid-spoil progress on spoilable items through a real cross-instance transfer (the pad-lifecycle worked example: programmatic setup, transfer act, declarative verify).",
 			"category": "physical-lab",
-			"owningRunner": "tests/integration/pad-transfer-suite/run-tests.mjs",
+			"owningRunner": "tests/integration/gallery-suite/run-tests.mjs",
 			"saveRole": "source",
 			"platformName": "lab-omnibus-state-v1",
 			"engineVersion": "2.1.11",
@@ -1529,7 +1654,7 @@
 			"revision": 1,
 			"labId": "gate-drift-lab",
 			"category": "protocol-teeth",
-			"owningRunner": "tests/integration/pad-transfer-suite/run-tests.mjs",
+			"owningRunner": "tests/integration/gallery-suite/run-tests.mjs",
 			"saveRole": "source",
 			"platformName": "lab-omnibus-state-v1",
 			"engineVersion": "2.1.11",
@@ -1627,7 +1752,7 @@
 			"revision": 1,
 			"labId": "gate-drift-lab",
 			"category": "protocol-teeth",
-			"owningRunner": "tests/integration/pad-transfer-suite/run-tests.mjs",
+			"owningRunner": "tests/integration/gallery-suite/run-tests.mjs",
 			"saveRole": "source",
 			"platformName": "lab-omnibus-state-v1",
 			"engineVersion": "2.1.11",
@@ -1725,7 +1850,7 @@
 			"revision": 1,
 			"labId": "gate-drift-lab",
 			"category": "protocol-teeth",
-			"owningRunner": "tests/integration/pad-transfer-suite/run-tests.mjs",
+			"owningRunner": "tests/integration/gallery-suite/run-tests.mjs",
 			"saveRole": "source",
 			"platformName": "lab-omnibus-state-v1",
 			"engineVersion": "2.1.11",
@@ -1823,7 +1948,7 @@
 			"revision": 1,
 			"labId": "gate-drift-lab",
 			"category": "protocol-teeth",
-			"owningRunner": "tests/integration/pad-transfer-suite/run-tests.mjs",
+			"owningRunner": "tests/integration/gallery-suite/run-tests.mjs",
 			"saveRole": "source",
 			"platformName": "lab-omnibus-state-v1",
 			"engineVersion": "2.1.11",
@@ -1930,10 +2055,10 @@
 		},
 		{
 			"padKind": "pad",
-			"revision": 1,
+			"revision": 4,
 			"labId": "gate-drift-lab",
 			"category": "protocol-teeth",
-			"owningRunner": "tests/integration/pad-transfer-suite/run-tests.mjs",
+			"owningRunner": "tests/integration/gallery-suite/run-tests.mjs",
 			"saveRole": "source",
 			"platformName": "lab-omnibus-state-v1",
 			"engineVersion": "2.1.11",
@@ -1969,8 +2094,7 @@
 			],
 			"fingerprint": {
 				"scratchPresent": true,
-				"scratchName": "bulk-inserter",
-				"held": 8
+				"scratchName": "bulk-inserter"
 			},
 			"lifecycle": {
 				"version": 1,
@@ -1991,14 +2115,27 @@
 							"anchor": "scratch"
 						},
 						"read": "held",
-						"op": "eq",
-						"expected": 8
+						"op": "between",
+						"expected": [
+							0,
+							8
+						]
 					},
 					{
 						"check": "report_field",
 						"path": "validation_success",
 						"op": "eq",
 						"expected": true
+					},
+					{
+						"check": "physical_read",
+						"locator": {
+							"anchor": "scratch"
+						},
+						"read": "property",
+						"path": "force.bulk_inserter_capacity_bonus",
+						"op": "eq",
+						"expected": 11
 					}
 				]
 			},
@@ -2022,7 +2159,7 @@
 			"name": "Source census aborts on serializer omission",
 			"purpose": "The paired-reads SOURCE census must refuse a transfer whose serialized form omits physical content: export aborted, destination NEVER contacted, source preserved and unlocked, entity-attributed forensic bundle banked (SC-6; closes the burner-fuel serializer-omission class).",
 			"category": "protocol-teeth",
-			"owningRunner": "tests/integration/pad-transfer-suite/run-tests.mjs",
+			"owningRunner": "tests/integration/gallery-suite/run-tests.mjs",
 			"saveRole": "source",
 			"platformName": "lab-omnibus-state-v1",
 			"engineVersion": "2.1.11",
@@ -2131,7 +2268,7 @@
 			"name": "Fusion loop plasma and coolant",
 			"purpose": "Preserve a hand-built ACTIVE fusion rig - two reactors, a generator, a cryogenic plant, a coolant pipe loop, and a self-refilling infinity-pipe plasma source - whose plasma and buffered coolant ride the 2.1 fluid-segment registry with nothing engine-excluded.",
 			"category": "physical-lab",
-			"owningRunner": "tests/integration/pad-transfer-suite/run-tests.mjs",
+			"owningRunner": "tests/integration/gallery-suite/run-tests.mjs",
 			"saveRole": "source",
 			"platformName": "lab-omnibus-state-v1",
 			"engineVersion": "2.1.11",
@@ -2262,6 +2399,181 @@
 			},
 			"note": "Authored manifest-only 2026-07-20 on (92,36); relocated + script-built on (92,64) 2026-07-21, then HAND-REBUILT by the owner the same day (rev 3): tighter two-column layout, BOTH fluids shared, second thruster on a carved notch. The notch refines the placement rule measured at rev 2: legality = the platform tiles behind the exhaust are ABSENT (a local carved edge works; the outermost rim was just the common case). Fingerprint {2, sharedFuel, 1300, sharedOxidizer, 1100} VERIFIED live post-rebuild (segment ids equal across both thrusters per fluid; meter extended to measure both fluids at rev 3). Paste-half legality re-verified after mirroring the notch at +14 (can_place true for both pasted thrusters). At 2.1 even unconnected thruster boxes carry singleton segments (drift from the 2.0.77 buffer-class picture this pad was authored under - the shared-buffer double-count topology is now a shared-SEGMENT exactness claim). Wired to DISPATCH.",
 			"owningRunnerWaiver": "Script-built then owner-hand-rebuilt live 2026-07-21 (construct-once doctrine); no standalone runner - the banked state is the artifact, the build record lives in testCard.build."
+		},
+		{
+			"id": "underground-pipe-pairing-omnibus",
+			"padKind": "pad",
+			"origin": {
+				"x": 92,
+				"y": 50
+			},
+			"anchors": [
+				{
+					"entity": "display-panel",
+					"x": 105.5,
+					"y": 61.5,
+					"name": "panel"
+				},
+				{
+					"entity": "pump",
+					"x": 99,
+					"y": 53.5,
+					"name": "pump-north"
+				},
+				{
+					"entity": "pump",
+					"x": 99,
+					"y": 56.5,
+					"name": "pump-south"
+				}
+			],
+			"revision": 2,
+			"labId": "fluid-lab",
+			"name": "Underground-pipe pairing omnibus (owner-built)",
+			"purpose": "OWNER FIXTURE (2026-07-28): underground-pipe PAIRING integrity. Eight pipe-to-ground pairs feeding THREE segments, two of them carrying the SAME fluid (petroleum-gas 342 + 800) - a mis-paired underground at creation MERGES segments invisibly to fluid names; only segmentCount and per-fluid totals expose it. Built after the first live gallery transfer clobbered thruster fluids via exactly this class (10 source segments -> 9 dest, last-write-wins).",
+			"category": "physical-lab",
+			"owningRunner": null,
+			"owningRunnerWaiver": "Runs under /test-run via its declarative lifecycle and rides the whole-gallery transfer in gallery-suite; no separate standing runner by design (one-test-save doctrine).",
+			"saveRole": "source",
+			"platformName": "lab-omnibus-state-v1",
+			"engineVersion": "2.1.11",
+			"mods": {
+				"base": "2.1.11",
+				"elevated-rails": "2.1.11",
+				"FluidMustFlow": "1.5.0",
+				"PlanetsLib": "1.22.0",
+				"quality": "2.1.11",
+				"recycler": "2.1.11",
+				"SpidertronEnhancements": "1.11.0",
+				"space-age": "2.1.11",
+				"SpidertronPatrols": "2.7.0",
+				"surfexp_gateways": "0.4.0",
+				"maraxsis": "1.34.51"
+			},
+			"invariant": "20 pipe-to-grounds (10 pairs), 8 pipes, 2 pumps forming exactly THREE fluid segments; light-oil total 1151 and petroleum-gas total 143 conserved (pumps may shift fluid between same-fluid segments live - totals, not per-segment amounts, are the invariant). Rebuilt by hand by the owner 2026-07-28 after the reset-loss incident; banked immediately.",
+			"independentOracleRequired": true,
+			"fingerprint": {
+				"pipeToGroundCount": 20,
+				"pipeCount": 8,
+				"pumpCount": 2,
+				"segmentCount": 3,
+				"lightOilTotal": 1151,
+				"petroleumGasTotal": 143
+			},
+			"lifecycle": {
+				"version": 1,
+				"act": "copy-paste",
+				"verify": [
+					{
+						"check": "physical_read",
+						"locator": {
+							"area": true
+						},
+						"read": "fluid_stats",
+						"field": "segmentCount",
+						"op": "eq",
+						"expected": 3
+					},
+					{
+						"check": "physical_read",
+						"locator": {
+							"area": true
+						},
+						"read": "fluid_stats",
+						"field": "pipeToGroundCount",
+						"op": "eq",
+						"expected": 20
+					},
+					{
+						"check": "physical_read",
+						"locator": {
+							"area": true
+						},
+						"read": "fluid_stats",
+						"field": "pipeCount",
+						"op": "eq",
+						"expected": 8
+					},
+					{
+						"check": "physical_read",
+						"locator": {
+							"area": true
+						},
+						"read": "fluid_stats",
+						"field": "lightOilTotal",
+						"op": "between",
+						"expected": [
+							1150,
+							1152
+						]
+					},
+					{
+						"check": "physical_read",
+						"locator": {
+							"area": true
+						},
+						"read": "fluid_stats",
+						"field": "petroleumGasTotal",
+						"op": "between",
+						"expected": [
+							142,
+							144
+						]
+					}
+				]
+			},
+			"testCard": {
+				"law": "Underground-pipe pairing survives creation: the destination forms the SAME segment topology as the source (segmentCount exact), so no whole-segment write can clobber another.",
+				"build": "Hand-built by the owner 2026-07-28 at open slot (92,50) after the thruster-fluid clobber incident.",
+				"action": "Copy/paste locally under /test-run; the whole-gallery transfer carries it to the destination board.",
+				"expected": "segmentCount 3 on both boards and at the destination; per-fluid totals conserved.",
+				"forbidden": "Segment merge (count < 3), fluid mixing across the light-oil/gas boundary, per-segment exact pins (pumps move gas between its two segments live)."
+			}
+		},
+		{
+			"id": "active-state-parity",
+			"padKind": "platform",
+			"revision": 2,
+			"labId": "state-dimensions-lab",
+			"name": "Active-state parity across a transfer",
+			"purpose": "Entities must arrive in the active state they left. Three passes disable entities on DIFFERENT sets - the source lock (ACTIVATABLE_ENTITY_TYPES), entity_creation (everything except beacon/radar/item-request-proxy) and the pre-validation re-pause (ACTIVATABLE) - and only one set was ever restored. Measured 2026-07-28 on a real whole-platform transfer: infinity-pipe x2 and spider-vehicle x2 arrived permanently inactive, so a spidertron riding a transferred platform arrived disabled. The exact gate is structurally blind to this: it counts items and fluids, not activity.",
+			"category": "physical-lab",
+			"owningRunner": null,
+			"owningRunnerWaiver": "Rides the whole-gallery transfer in gallery-suite and is read on both boards by /test-run; no separate standing runner by design (one-test-save doctrine).",
+			"saveRole": "source",
+			"platformName": "lab-omnibus-state-v1",
+			"engineVersion": "2.1.11",
+			"mods": {
+				"base": "2.1.11",
+				"elevated-rails": "2.1.11",
+				"FluidMustFlow": "1.5.0",
+				"PlanetsLib": "1.22.0",
+				"quality": "2.1.11",
+				"recycler": "2.1.11",
+				"SpidertronEnhancements": "1.11.0",
+				"space-age": "2.1.11",
+				"SpidertronPatrols": "2.7.0",
+				"surfexp_gateways": "0.4.0",
+				"maraxsis": "1.34.51"
+			},
+			"invariant": "Zero entities of the natively-active classes arrive inactive, AND the classes arrive at all: totals pinned (2 spidertrons, 2 infinity-pipes, 1 beacon) because every inactive pin is 0 and 0 is also what an absent class reads - without totals the fixture passes green if the entities never arrive (review 2026-07-30). Not a total inactive count: 486 of the gallery's 542 entities are natively inactive and would swamp the signal.",
+			"independentOracleRequired": true,
+			"fingerprint": {
+				"spiderVehicles": 2,
+				"spiderVehiclesInactive": 0,
+				"infinityPipes": 2,
+				"infinityPipesInactive": 0,
+				"beacons": 1,
+				"beaconsInactive": 0
+			},
+			"testCard": {
+				"law": "An entity arrives in the active state it left - the wake set must cover every disable set, in both directions.",
+				"build": "Reads the live platform; no pad geometry. The three classes are the exact corners the disable sets disagreed about.",
+				"action": "Read on the source board, ride the whole-gallery transfer, read again on the destination board.",
+				"expected": "All three counts 0 on both boards.",
+				"forbidden": "Do not re-pin this to a TOTAL inactive count - most entities are natively inactive and the signal disappears. Do not narrow the restore pass to a type list; two different lists have already drifted (ACTIVATABLE left spidertrons dead, beacon/radar/proxy left a beacon dead)."
+			},
+			"note": "Companion to the fix in surface-lock.lua (capture wider than freeze) and active_state_restoration.lua (restore with NO type filter)."
 		}
 	]
 }

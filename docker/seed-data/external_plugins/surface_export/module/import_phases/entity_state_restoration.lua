@@ -18,6 +18,12 @@ function EntityStateRestoration.restore_all(entities_to_create, entity_map)
       end
     end
     
+    -- NOTE: mining_progress is deliberately NOT restored here. A pre-binding write is unanchored
+    -- (LuaControl: the value's range is defined by mining_target, nil until the drill's first
+    -- update) — it rides the deferred queue in active_state_restoration.lua instead, which writes
+    -- once the target binds. An abandoned same-execution pass lived here 2026-07-28/29; deleted
+    -- with the mechanism resolved (review must-fix 3).
+
     -- Step 2: Restore entity filters (inserter filters, loader filters)
     log("[Import] Restoring entity filters...")
     for _, entity_data in ipairs(entities_to_create) do

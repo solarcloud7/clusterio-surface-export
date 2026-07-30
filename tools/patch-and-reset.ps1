@@ -263,9 +263,13 @@ Write-Host "Resetting instance saves to seed saves..." -ForegroundColor Yellow
 # To apply Lua code changes, we MUST delete old saves and re-upload the seed saves
 # so Clusterio re-patches them with the updated module code.
 
-# Instance 1 - Delete old saves and re-upload seed save
+# Instance 1 - Delete old saves and re-upload seed save. PREDEPLOY RESCUE SAVES ARE PRESERVED:
+# the rescue block above saves every running world, and this delete step used to REMOVE ITS OWN
+# RESCUE - measured 2026-07-28: an owner-hand-built fixture (the 92,50 pairing rig) existed only
+# in the live world and was destroyed with no recovery path. Never again: predeploy-*.zip survives
+# every reset (clean them up manually once banked).
 $inst1SavePath = "/clusterio/data/instances/clusterio-host-1-instance-1/saves"
-Invoke-Step "clear host-1 saves" -AllowFail { docker exec surface-export-host-1 sh -c "rm -f $inst1SavePath/*.zip" } | Out-Null
+Invoke-Step "clear host-1 saves" -AllowFail { docker exec surface-export-host-1 sh -c "find $inst1SavePath -maxdepth 1 -name \"*.zip\" ! -name \"predeploy-*.zip\" -delete" } | Out-Null
 if ($LASTEXITCODE -eq 0) {
     Write-Host "  ✓ Cleared instance 1 saves" -ForegroundColor Green
 } else {
@@ -281,7 +285,7 @@ if ($LASTEXITCODE -eq 0) {
 
 # Instance 2 - Delete old saves and re-upload seed save
 $inst2SavePath = "/clusterio/data/instances/clusterio-host-2-instance-1/saves"
-Invoke-Step "clear host-2 saves" -AllowFail { docker exec surface-export-host-2 sh -c "rm -f $inst2SavePath/*.zip" } | Out-Null
+Invoke-Step "clear host-2 saves" -AllowFail { docker exec surface-export-host-2 sh -c "find $inst2SavePath -maxdepth 1 -name \"*.zip\" ! -name \"predeploy-*.zip\" -delete" } | Out-Null
 if ($LASTEXITCODE -eq 0) {
     Write-Host "  ✓ Cleared instance 2 saves" -ForegroundColor Green
 } else {

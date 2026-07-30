@@ -42,15 +42,15 @@ When the official docs and our pinned engine disagree, the pinned-engine measure
 > and `tests/labs-certified.json` is certified at 2.1.11 (`certified_at` 2026-07-21) — the
 > re-certification campaign landed, so `lint:version-certification` is green rather than pending.
 > The laws below were measured by live fluid-law experiments on 2.1.11; the running instrument is
-> `tests/integration/fluid-segment-law/run-tests.mjs`, which re-measures them on demand.
+> `tests/instruments/fluid-segment-law/run-tests.mjs`, which re-measures them on demand.
 
 - **`entity.fluidbox` is HARD-REMOVED — reading the attribute THROWS.** **[API]** Fluid access is index-based LuaEntity/LuaFluidBox methods: `fluids_count`, `get_fluid(i)`,
   `set_fluid(i, fluid)`, `has_fluid_segment(i)`, `get_fluid_segment_id(i)`, `get_fluid_segment_fluid(i)`,
   `set_fluid_segment_fluid(i, fluid)`, `get_fluid_segment_capacity(i)`, `get_fluid_box_prototype(i)`,
   `fluidbox_neighbours`. **Segment getters THROW on a segmentless box** (2.0 returned `nil`) — always guard
   with `has_fluid_segment(i)` before any `get_fluid_segment_*` call.
-  **[empirical, 2.1.11, tests/integration/fluid-segment-law]** (rung: segment getters throw on segmentless)
-- **The buffer/window duality is GONE.** **[empirical, 2.1.11, tests/integration/fluid-segment-law]**
+  **[empirical, 2.1.11, tests/instruments/fluid-segment-law]** (rung: segment getters throw on segmentless)
+- **The buffer/window duality is GONE.** **[empirical, 2.1.11, tests/instruments/fluid-segment-law]**
   `get_fluid_segment_fluid(i)` returns the EXACT single-fluid segment total from ANY member box at ANY
   instant — a thruster fuel box read 500 exact, and a fusion-reactor coolant box read 300→450 exact both
   mid-transient and settled. There is no order-dependent claim, no mixed-regime "contents + Σ locals" law, and
@@ -58,9 +58,9 @@ When the official docs and our pinned engine disagree, the pinned-engine measure
   the segment (float32: 12 pipes on one 1000-unit segment summed to `999.9999997615814`; a thruster:pipe share
   ratio was 10:1 by capacity), which the registry keeps for census attribution and split-segment
   proportioning.
-- **`set_fluid_segment_fluid(i, fluid)` writes a WHOLE segment in one call.** **[empirical, 2.1.11, tests/integration/fluid-segment-law]** Writing 400 coolant to a segment read back 400 exact — no highest-capacity-member
+- **`set_fluid_segment_fluid(i, fluid)` writes a WHOLE segment in one call.** **[empirical, 2.1.11, tests/instruments/fluid-segment-law]** Writing 400 coolant to a segment read back 400 exact — no highest-capacity-member
   workaround. A segmentless storage is written with `set_fluid(i, fluid)`, which returns the accepted amount.
-- **Plasma writes STICK, clamped to box capacity.** **[empirical, 2.1.11, tests/integration/fluid-segment-law]**
+- **Plasma writes STICK, clamped to box capacity.** **[empirical, 2.1.11, tests/instruments/fluid-segment-law]**
   `set_fluid` of 50 plasma onto a fusion-reactor OUTPUT box read back 10 (capacity clamp); 25 onto a
   fusion-generator INPUT box read back 10. **Fusion-generator boxes are segmentless.** Plasma rides transfers
   like any fluid — the `engine_owned` connection-category classification is deleted (owner ruling
@@ -69,7 +69,7 @@ When the official docs and our pinned engine disagree, the pinned-engine measure
 
 ### Prototype fluid-box coverage sweep
 
-**[empirical, 2.1.11, tests/integration/fluid-segment-law]** One live instance per prototype slot; each box was measured for
+**[empirical, 2.1.11, tests/instruments/fluid-segment-law]** One live instance per prototype slot; each box was measured for
 `production_type`, segment presence (`has_fluid_segment`), and the segment-total law. The sweep drives the
 permanent coverage matrix — a new prototype fluid-box slot without a row is a finding.
 
@@ -120,7 +120,7 @@ a segment) — they are not a capture blind spot at 2.1.11.
     across 8 holding inserters.
 - **So a physical total computed as `get_item_count` over every entity is complete** — inventories **+** belt
   lines **+** inserter-held — and is not inflated by shared belt runs (a general engine fact, guarded by
-  `tests/integration/engine-invariants`). NOTE: the production paired-reads source census does NOT use
+  `tests/instruments/engine-invariants`). NOTE: the production paired-reads source census does NOT use
   `get_item_count` as its physical oracle — it reads through `InventoryScanner.extract_all_inventories`
   (the same primitive the serializer uses); this completeness fact is what a `get_item_count`-based meter
   would rely on, retained here as engine truth.
@@ -141,7 +141,7 @@ a segment) — they are not a capture blind spot at 2.1.11.
   invalidate `get_item_count` or unique-ID enumeration as physical meters; it invalidates using the engine
   line graph to certify that a source and imported line represent the same continuous physical lane/side. See
   BELT-R9 in the belt-lab NOTEBOOK (archived at git tag `labs-archive-2026-07-19`).
-- **[empirical, 2.0.76]** `tests/integration/engine-invariants` grounds the belt meter against the unique-stack
+- **[empirical, 2.0.76]** `tests/instruments/engine-invariants` grounds the belt meter against the unique-stack
   physical total (catches both belt-item drop → meter < physical and a whole-line double-count → meter >
   physical) and asserts held-item inclusion whenever an inserter is holding.
 
@@ -161,15 +161,56 @@ a segment) — they are not a capture blind spot at 2.1.11.
   can be attributed to a downstream window (the BELT-R11 leak class; regime-dependent, do not conflate).
   Writing beyond `line_length` honestly rejects. Any belt write must therefore use positions
   `>= belt_speed` (in /256 grid: `k >= belt_speed*256`).
-- **[empirical, 2.0.77, BELT-R11/R12] Side-scoped reverse first-fit reconstructs belt contents exactly.**
-  The fidelity unit is the continuous lane side (owner contract: `(name, quality, stack count)` multiset;
-  position/order/window are NOT invariants). Partition the populated source by same-execution `line_equals`
-  (= the lane sides); bridge to the destination by belt ordinal + line index (no engine graph — the empty
-  target's input/output_lines BFS shatters on real topologies); place each side's multiset by reverse
-  first-fit over that side's own windows with the R10 k-floor; validate every placement by physical
-  side-census delta, never return values. Measured: 243/243 (saturated mixed omnibus) and 431/431 with
-  **21/21 filtered-pure sides staying pure** (purity holds by construction). Splitter filter/priorities,
-  loader filters, and infinity-chest settings all copy cleanly entity-to-entity.
+- **[empirical, 2.1.11, BELT-R16 — live workhorse transfer 2026-07-27] BOUNDARY HANDOFF: an `insert_at`
+  near the TOP of a line (within one write-frame of `line_length`) seats the item ACROSS the piece
+  boundary on the downstream entity's line** — measured landings: turbo-underground-belt INTERNAL lines
+  (3/4) at k=31 ≈ one write-frame, for placements requested at feeding-line tops (k 255/294). Item count
+  conserves per handoff, but position and line do not. When the landing line is in the SAME side, a
+  side-census validation passes (wrong-position only: 248 born = 248 vanished pairs per key in the
+  placement-ledger reconciliation); when it crosses SIDES, the census reads "nothing landed" and a
+  retry loop DUPLICATES (net +34 items across exactly the 6 bracket-mismatch keys). The cross-side
+  retry-duplication step is a strong inference fitting all data (an underground-free fixture measured
+  exact in every leg; the underground-riddled workhorse always drifted), not yet isolated as its own
+  rung. Consequence: never write at line tops near piece boundaries — the production restore is
+  placement at captured source positions (below) precisely to avoid this class.
+- **[empirical, 2.1.11, black box on the passenger-evacuate refusal 2026-07-27] IN-TRANSIT BOUNDARY
+  ITEM: a line captured MID-MOTION can carry ONE MORE item than its rest capacity** — the front item
+  is in transit across the piece boundary at the capture instant. Measured from the banked black
+  box: a 1-tile turbo line (rest capacity 4) captured with FIVE items, the front one at position
+  0.9375 only 14/256 behind its neighbour (overlapping by rest-spacing rules). That fifth item
+  cannot be placed at any free position on its captured line. **Production behavior (owner ruling
+  2026-07-27 — a platform must transfer WHENEVER, mid-motion included): the OVER-COMPRESSION MERGE**
+  — the slot merges into an already-placed stack of the SAME (name, quality) on its OWN captured
+  line, as ONE oversized stack (the established oversized-stack law: insert_at accepts an arbitrary
+  belt_stack_size and the engine keeps it), validated by the side census with a partner-restore
+  recovery on failure. Same line, no cross-side placement. **The merge REQUIRES a same-key partner
+  on the line**: a mid-hop slot that is the only item of its (name, quality) on its line — e.g. a
+  mixed-content lane — has no merge target and stays honest unplaced loss (exact gate refuses,
+  fail => revert, retry captures a different instant). That partner-less corner is the one known
+  remaining refusal on live sources. Frozen sources (paused platforms, frozen-feed fixtures) never
+  produce the class at all. Kill-measured: 6/6 consecutive live-clone transfers with the merge
+  witness firing.
+- **[empirical, 2.0.77, BELT-R11/R12] Side-scoped reverse first-fit reconstructs belt contents exactly**
+  — on underground-free topologies; at scale the top-of-line writes it leans on trip BELT-R16 handoffs,
+  so production placement puts each slot back onto its captured entity/line/position (via the payload's
+  compact per-side `item_source_positions` array, requesting `src.k − belt_speed·256` per R10).
+  `item_source_positions` is REQUIRED and there is NO fallback placement (owner order 2026-07-27: the
+  reverse first-fit fallback, the legacy consolidation restore, and hub-deficit recovery are DELETED; a
+  payload without it is refused at import; a slot whose captured position cannot place is honest
+  unplaced loss the exact gate refuses — the
+  BELT-R3/R5 hub-recovery lesson, anything inserted into the hub before inventory Pass 2 is wiped by the
+  clear()+refill, is retained here). Measured captured-source-position placement at
+  workhorse scale [empirical, 2.1.11, 2026-07-27]: 5777/5777 stacks traced same-line, BORN 0, VANISHED 0,
+  source-position offset avg 19.3/256, full frozen-world exact gate PASS. The rest of the R11/R12 recipe is
+  unchanged and load-bearing: the fidelity unit is the continuous lane side (owner contract:
+  `(name, quality, stack count)` multiset; position/order/window are NOT invariants —
+  restoring position is a COURTESY and a handoff-avoidance measure, not a new invariant). Partition
+  the populated source by same-execution `line_equals` (= the lane sides); bridge to the destination by
+  belt ordinal + line index (no engine graph — the empty target's input/output_lines BFS shatters on
+  real topologies); validate every placement by physical side-census delta, never return values.
+  Measured: 243/243 (saturated mixed omnibus) and 431/431 with **21/21 filtered-pure sides staying
+  pure** (purity holds by construction). Splitter filter/priorities, loader filters, and infinity-chest
+  settings all copy cleanly entity-to-entity.
 - **[empirical, 2.0.77, BELT-R11] Fetch transport-line handles in the SAME execution that writes them.**
   On an aged clone, writes through stale window handles landed li-preserving in a downstream window's frame
   (864 detected-and-undone events); fresh same-execution handles produced zero. Same-side landing makes the
@@ -273,6 +314,76 @@ state-dimensions-lab NOTEBOOK, archived at git tag `labs-archive-2026-07-19`, an
   **[empirical, 2.0.77, pad omnibus-circuit-config]** Restoring control-behavior config (circuit_condition,
   circuit_enable_disable) must use `get_or_create_control_behavior()`, or the settings are silently dropped
   for any entity whose CB is not yet instantiated at restore time (wires restore in a separate phase).
+- **A drill's `mining_progress` is defined RELATIVE TO `mining_target`, which is read-only and nil
+  until the drill's first update — so restore must be deferred until the target binds.**
+  **[empirical, 2.1.11, gallery acid-drill pad + marker transfers 2026-07-29]** The clause is in
+  `LuaControl.mining_progress`: "For mining drills the number is with the range
+  [0, mining_target.prototype.mineable_properties.mining_time]." A write before the target exists
+  reads back but is unanchored and is replaced at cycle start (three same-execution restore points
+  all landed-then-lost this way); a write to a drill whose target is bound sticks permanently.
+  `update_connections()` does NOT bind the target. Production defers the write via a pending queue
+  serviced on_tick (`active_state_restoration.lua`).
+- **A BLOCKED mining drill holds its finished product in an engine-internal slot with NO API
+  accessor, so the held product cannot ride a transfer — the destination re-mines it, spending
+  exactly one cycle's fluid and one patch unit.**
+  **[empirical, 2.1.11, gallery acid-drill pad 2026-07-29]** The slot is in no inventory (a big
+  mining drill exposes only its module inventory). Proof it exists and is the payer: clearing the
+  destination drill's occupied drop tile made an ore appear instantly with the acid pool AND the
+  patch total both unchanged — it came from the held slot, not a new cycle. The measured transfer
+  delta is exactly one refill cycle per blocked drill: −10 sulfuric acid and −1 patch ore for
+  uranium, after which the drill blocks identically to the source. No duplication (the source's held
+  product is destroyed with the source platform), and the exact gate is blind to it SYMMETRICALLY —
+  held drill output is census-invisible on both sides, the same non-conserved class as inserter
+  hands. Pads shipping a blocked fluid-drill allow one refill cycle in their acid AND patch pins and
+  no more (`mining-drill-acid-feed`); topping either back up would manufacture resources the source
+  never sent. A blocked drill's terminal `mining_progress` is engine-settled (the refill cycle wraps
+  past the restored value), so progress on a blocked drill is not a fidelity axis.
+- **Most entity types are natively `active == false`, so "active" is not a fidelity axis for them.**
+  **[empirical, 2.1.11, gallery source-vs-destination control 2026-07-28]** On the untouched gallery
+  source, 486 of 542 entities read `active == false`: pipes, pipe-to-grounds, belts, splitters,
+  containers, storage tanks, electric poles, solar panels, accumulators, lamps, display panels,
+  combinators, resources, ground items — and the space-platform-hub itself. These are passive
+  entities with no per-tick update. Never diff raw `active` counts between source and destination and
+  read the difference as damage; diff them PER TYPE against the source control, or the ~490 natively
+  inactive entities swamp the handful that matter.
+- **Disable sets DRIFT: any restore pass that filters by a type list will strand the difference
+  between that list and what upstream passes actually disabled.** **[empirical, 2.1.11, gallery
+  whole-platform transfer 2026-07-28 — product defect, FIXED same day]** Measured before the fix:
+  `entity_creation.lua` disabled everything except beacon/radar/item-request-proxy while the restore
+  woke only `ACTIVATABLE_ENTITY_TYPES`, so infinity-pipe x2 and spider-vehicle x2 arrived permanently
+  disabled (a spidertron riding a transferred platform arrived dead); the first attempted fix swapped
+  one filter for another and stranded a beacon instead. The durable form: the restore pass has NO
+  type filter (it restores captured state, so it must cover anything any pass disabled), and the
+  `active-state-parity` fixture pins the corner classes with totals on both boards. The gate cannot
+  see this class — it counts items and fluids, not activity.
+- **A decider combinator's OUTPUT REGISTER is not script-writable.**
+  **[empirical, 2.1.11, circuit-latch-rearm R1]**
+  `LuaDeciderCombinatorControlBehavior` has no `set_signal` ("doesn't contain key"). So a self-feedback (SR) latch cannot
+  be restored by any serializer: it arrives with its register at 0, reads its own 0 through the
+  feedback wire, and is stable at 0 — the source's held signal is LOST on transfer.
+- **`disabled_by_script` does NOT stop a combinator evaluating.** **[empirical, 2.1.11,
+  circuit-latch-rearm R2 (behavioral rewrite 2026-07-30)]** Measured as a TRANSITION, not a property
+  readback: a decider with condition `A > 0` and empty output was set `disabled_by_script = true`,
+  its input raised 0→5, and the output FIRED (`signal-S=1`). Combinators cannot be script-disabled;
+  during the import window only the platform pause stops them. (The first version of this rung wrote
+  the property and read it back — confounded, since combinators are natively `active == false`, so a
+  readback cannot distinguish "ignored" from "already off". Retracted 2026-07-28; re-established
+  behaviorally with a pre-write baseline.)
+- **A cleared latch CAN be re-armed by temporarily rewriting the decider's CONDITION.**
+  **[empirical, 2.1.11, circuit-latch-rearm R3]** Control behaviour IS writable: forcing the condition
+  true, letting it evaluate, then restoring the captured condition leaves the latch holding itself
+  (measured `(empty)` → `signal-S=1` → `signal-S=1` after restore). NOT IMPLEMENTED in production, and
+  two caveats gate it: (a) it needs at least one UNPAUSED tick, so it cannot run inside the frozen
+  pre-gate window — it would have to be a post-activation pass, which is lawful only because circuit
+  signals are not part of the exact gate (items + fluids); (b) an output with
+  `copy_count_from_input=false` always emits 1, so a source register holding a count other than 1 is
+  still not reproduced, and forcing a condition true momentarily pulses whatever the network drives.
+- **Decider and arithmetic combinators DRAW POWER (16.67 J/tick); constant combinators do not.**
+  **[empirical, 2.1.11, circuit-latch-rearm build guard]** Read off the prototypes:
+  `prototypes.entity["decider-combinator"].electric_energy_source_prototype` is non-nil with
+  `energy_usage = 16.666…`, while the constant combinator's is nil. An unpowered decider reports
+  `status = no_power` and never evaluates, so any circuit probe built without a power source measures
+  a vacuous zero — the rung asserts `status == "working"` before trusting a single later reading.
 - **Recipe quality is `get_recipe()`'s SECOND return; `get_recipe_quality()` and the `recipe_quality`
   attribute do NOT exist.** **[empirical, 2.0.77, state-dimensions-lab + pad omnibus-adversarial-inventory]** Both
   `entity.get_recipe_quality()` and `entity.recipe_quality` throw "doesn't contain key" — a pcall-probed

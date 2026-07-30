@@ -13,8 +13,8 @@
 // issued". The authoritative zero-leftover count runs HERE on a later tick (a separate RCON call).
 //
 // Usage:
-//   node tests/integration/fluid-segment-law/run-tests.mjs
-//   node tests/integration/fluid-segment-law/run-tests.mjs --instance <name>   (or env SE_LAB_INSTANCE)
+//   node tests/instruments/fluid-segment-law/run-tests.mjs
+//   node tests/instruments/fluid-segment-law/run-tests.mjs --instance <name>   (or env SE_LAB_INSTANCE)
 
 import { execFileSync } from "node:child_process";
 

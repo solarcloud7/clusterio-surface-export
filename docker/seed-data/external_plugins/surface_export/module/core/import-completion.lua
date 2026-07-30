@@ -165,8 +165,6 @@ local function bank_failure_black_box(job, result)
 		physical_entities = physical_entities,
 		physical_fluid_segments = physical_fluid_segments,
 		belt_lines = BeltRestoration.attribute_lines(job.entities_to_create or {}, job.entity_map or {}),
-		restore_time_belt_lines = job.belt_attribution,
-		belt_recovery = job.belt_recovery,
 		replay_payload = job.platform_data,
 	}
 	local written = DebugExport.write_failure_black_box(filename, bundle)
@@ -194,11 +192,84 @@ function ImportCompletion.run_phase1(job)
 	-- Must restore all belt items in a single tick to prevent partial restoration
 	job.metrics.belts_started_tick = game.tick
 	PhaseProfiler.start(job.job_id, "belts")
-	local belts_result = BeltRestoration.restore(entities_to_create, entity_map)
+	local belts_result
+	local side_groups = job.platform_data and job.platform_data.belt_side_groups
+	if side_groups and #side_groups > 0 then
+		-- Phase 5B: side-closed restore — each lane side's (name,quality,count) multiset placed by
+		-- reverse first-fit with the belt_speed k-floor (BELT-R11/R12; R14 GO measured live
+		-- 2026-07-26: 372/372 all_sides_exact). Replaces the consolidation stopgap that conserved
+		-- counts but manufactured structure (dest maxStack 5-vs-1, overpackedLanes 21-vs-13).
+		-- Unplaced items are surfaced here AND caught by the exact gate (missing from the dest
+		-- count) — fail => revert, source preserved; nothing here is best-effort.
+		-- REVIEW F1 (2026-07-27): this call is on the bare on_tick path where any throw kills the
+		-- headless server (exit 255, measured twice) — and belt_side_groups on the upload-import
+		-- path is user-supplied JSON nothing else validates. Shape-refuse first, pcall the rest;
+		-- either failure routes through the verdict as a belt anomaly, never a crash.
+		local placed, unplaced, anomalies
+		local shape_ok, shape_err = BeltRestoration.validate_side_groups(side_groups)
+		if not shape_ok then
+			log(string.format("[Import] belt_side_groups REFUSED (malformed payload): %s", tostring(shape_err)))
+			job.metrics.belt_shape_error = tostring(shape_err)
+			placed, unplaced, anomalies = 0, 0, 1
+		else
+			local ok_restore, r_placed, r_unplaced, r_anomalies = pcall(BeltRestoration.restore_side_groups, side_groups, entity_map)
+			if not ok_restore then
+				log(string.format("[Import] belt side-restore THREW (routed to verdict, never error()): %s",
+					tostring(r_placed)))
+				job.metrics.belt_restore_error = tostring(r_placed)
+				placed, unplaced, anomalies = 0, 0, 1
+			else
+				placed, unplaced, anomalies = r_placed, r_unplaced, r_anomalies
+			end
+		end
+		belts_result = { items_restored = placed, attribution = nil }
+		job.metrics.belt_side_groups = #side_groups
+		job.metrics.belt_unplaced = unplaced
+		job.metrics.belt_anomalies = anomalies
+		if unplaced > 0 then
+			-- Surfaced here AND caught by the exact gate (the shortfall is missing from the dest
+			-- count) — fail => revert, source preserved.
+			log(string.format("[Import] Side restore UNPLACED: placed=%d unplaced=%d", placed, unplaced))
+		end
+		if anomalies > 0 then
+			-- NEVER error() here: an uncaught Lua error inside on_tick KILLS the headless server
+			-- ("Quitting: multiplayer error", exit 255 — measured live 2026-07-27, twice). The
+			-- fail-closed routing happens at the validation verdict below (failedStage "belts"),
+			-- which discards the dest and preserves the source through the normal 2PC path.
+			log(string.format("[Import] BELT ANOMALIES: %d (placed=%d unplaced=%d) — verdict will refuse",
+				anomalies, placed, unplaced))
+		end
+	else
+		-- Payload without item_source_positions (no belt_side_groups): the legacy captured-position + consolidation
+		-- restore is DELETED (owner order 2026-07-27 — one path, no fallback). REFUSE if the
+		-- payload actually carries belt items (a platform with no belts has nothing to restore
+		-- and skips the phase cleanly). Detection: the legacy per-entity belt field is
+		-- specific_data.items = { { line = <n>, items = {...} }, ... }.
+		local has_belt_items = false
+		for _, entity_data in ipairs(entities_to_create or {}) do
+			local line_list = entity_data.specific_data and entity_data.specific_data.items
+			if type(line_list) == "table" then
+				for _, line_data in ipairs(line_list) do
+					if type(line_data) == "table" and line_data.line ~= nil
+						and type(line_data.items) == "table" and #line_data.items > 0 then
+						has_belt_items = true
+						break
+					end
+				end
+			end
+			if has_belt_items then break end
+		end
+		if has_belt_items then
+			log("[Import] REFUSED: payload carries belt items but no belt_side_groups (export predates captured source positions)"
+				.. " — re-export from the source with the current version")
+			job.metrics.belt_shape_error = "payload predates captured source positions (no belt_side_groups); the legacy restore is deleted"
+			job.metrics.belt_anomalies = 1
+		end
+		belts_result = { items_restored = 0 }
+	end
 	PhaseProfiler.stop(job.job_id, "belts")
 	job.metrics.belts_completed_tick = game.tick
 	job.metrics.belt_items_restored = belts_result and belts_result.items_restored or 0
-	job.belt_attribution = belts_result and belts_result.attribution or nil
 
 	-- Steps 1-5: Restore localized entity state (Control Behavior, Filters, Connections)
 	job.metrics.state_started_tick = game.tick
@@ -270,18 +341,10 @@ function ImportCompletion.run_phase2(job)
 		log(string.format("[Import] Inventory overflow losses: %d items lost (set_stack API cap)", job.inventory_overflow_losses.total))
 	end
 
-	-- Belt aggregate-deficit recovery — deliberately HERE, after BOTH inventory passes, never inside the
-	-- belts phase: Pass 2 re-restores the hub's inventories with clear()+refill, which wiped anything the
-	-- old in-phase recovery had inserted (recovery reported success, the strict gate physically counted
-	-- the items missing — BELT-R3/R5 [empirical, 2.0.77, tests/belt-lab/NOTEBOOK.md]). The deficit is the
-	-- one MEASURED at belt-phase end (job.belt_attribution), NOT a census recomputed here: on the live
-	-- (non-transfer) import path, ticks elapse between phases, belts drift and machines consume — BELT-R5
-	-- measured a recomputed late census misreading that legitimate movement as a 321-item deficit and
-	-- duplicating it into the hub. On the frozen transfer path the two reads agree; the stored one is
-	-- correct on both. Result banked on the job for the failure black box.
-	if job.belt_attribution then
-		job.belt_recovery = BeltRestoration.recover_deficits_to_hub(job.belt_attribution, entities_to_create, entity_map)
-	end
+	-- (Belt aggregate-deficit recovery is GONE with the legacy restore it compensated for — owner
+	-- order 2026-07-27. Source-position placement places every slot or reports it unplaced; a shortfall fails the
+	-- exact gate. The BELT-R3/R5 lesson it carried — anything inserted into the hub before Pass 2
+	-- is wiped by the clear()+refill — remains true and lives in the api-notes belt section.)
 
 	-- Deactivate entities and re-pause platform after inventory restore.
 	-- Validation requires machines to be inactive so they cannot consume items between now and validation.
@@ -510,6 +573,23 @@ function ImportCompletion.run_phase2(job)
 			result.testForcedEntityFailure = true
 			log("[TEST HOOK] Forced entity failure made the transfer verdict fail-safe")
 		end
+		-- Belt structural anomalies (side-restore witness): corruption the COUNTS cannot see — a
+		-- bracket mismatch can keep totals right while structure lands wrong, so the item/fluid
+		-- gate alone would certify it. Refuse through the NORMAL verdict path (fail => revert);
+		-- never via error(), which kills the server (measured 2026-07-27).
+		if (job.metrics and job.metrics.belt_anomalies or 0) > 0 then
+			success = false
+			result = result or {}
+			result.success = false
+			-- Do not CLOBBER a failedStage already set above (test hooks): first cause wins.
+			result.failedStage = result.failedStage or "belts"
+			result.mismatchDetails = string.format(
+				"belt side-restore reported %d structural anomalies (bracket/side witness)%s",
+				job.metrics.belt_anomalies,
+				job.metrics.belt_shape_error and (" — payload refused: " .. job.metrics.belt_shape_error)
+					or (job.metrics.belt_restore_error and (" — restore error: " .. job.metrics.belt_restore_error) or ""))
+			log("[Import] Verdict REFUSED on belt structural anomalies: " .. tostring(job.metrics.belt_anomalies))
+		end
 
 		PhaseProfiler.stop(job.job_id, "validation")
 		-- Clean validation-only boundary for the waterfall span (the existing
@@ -695,6 +775,28 @@ function ImportCompletion.run_phase2(job)
 			-- ========================================
 		end
 
+	end
+
+	-- REVIEW F2 (2026-07-27): belt structural anomalies must fail EVERY caller, not only
+	-- transfers. Upload-import and clone have no 2PC verdict, but a bracket mismatch means the
+	-- destination's belt structure is KNOWN-corrupt — reporting success would certify it. The
+	-- platform is kept (no source was deleted; recovery is the ops layer's job — the
+	-- contract-over-recovery ruling), the operation reports failure, loudly. Consistent with the
+	-- selftest contract ("every caller treats anomalies as failure") and selection-lab's
+	-- transaction error.
+	if not (is_transfer and has_verification) and (job.metrics and job.metrics.belt_anomalies or 0) > 0 then
+		validation_result = {
+			success = false,
+			failedStage = "belts",
+			mismatchDetails = string.format(
+				"belt side-restore reported %d structural anomalies on a non-transfer import%s — platform kept, operation FAILED",
+				job.metrics.belt_anomalies,
+				job.metrics.belt_shape_error and (" — payload refused: " .. job.metrics.belt_shape_error)
+					or (job.metrics.belt_restore_error and (" — restore error: " .. job.metrics.belt_restore_error) or "")),
+		}
+		game.print(string.format("[Import FAILED] %s", validation_result.mismatchDetails), {1, 0, 0})
+		log("[Import] Non-transfer import FAILED on belt structural anomalies: "
+			.. tostring(job.metrics.belt_anomalies))
 	end
 
 	-- Mark validation complete

@@ -30,6 +30,18 @@ export const HOSTS = {
 };
 // The shared dev cluster's "release" saves — the pre-batch live worlds every batch restores to.
 export const RESTORE_SAVES = { 1: "lab-gallery-source.zip", 2: "lab-gallery-destination.zip" };
+// Restoring by NAME alone is not a restore: an instance exit-saves its (possibly consumed) world into
+// the file it started from, so a live save is a MUTABLE file that a transfer test can empty. Measured
+// 2026-07-28 — the suite transferred the gallery platform away, the stop wrote the gallery-less world
+// into lab-gallery-source.zip, and every later start from that name faithfully reloaded the empty
+// world; the cluster stayed displaced until the bytes were copied back. So restoreLivePair copies
+// PRISTINE BYTES first, then starts, then reads the content back. The bytes come from the manifest
+// artifacts captured at load time (see loadGoldenPair) — the same SHA-pinned files the suite preflight
+// verified. A second hardcoded copy of those paths would drift silently on the next manifest re-pin.
+//
+// The platform the restored source world MUST contain — the restore's content teeth.
+export const RESTORE_SOURCE_PLATFORM = "lab-omnibus-state-v1";
+export const REPO_ROOT = fileURLToPath(new URL("../../", import.meta.url));
 export const FLUID_EPSILON = 1e-6;   // the gate's aggregate-by-name epsilon
 export const DOUBLE_EPSILON = 1e-9;  // save/load ULP allowance on fingerprint doubles (verify-save convention)
 
@@ -132,6 +144,8 @@ export async function waitReady(host, timeoutMs = 180_000) {
 	throw new Error(`host ${host} did not become RCON-ready: ${lastError?.message}`);
 }
 
+// LOADS a named save. It is NOT a restore: the named file is mutable (exit-save), so putting a world
+// BACK means copying pristine bytes over it first — see RESTORE_ARTIFACTS / restoreLivePair.
 export async function assignSave(host, saveName) {
 	ctl("instance", "stop", HOSTS[host].instance);
 	ctl("instance", "start", HOSTS[host].instance, "--save", saveName);
@@ -148,8 +162,13 @@ export function createBatchLifecycle({ goldenSourceSave, goldenDestSave, markerP
 		throw new Error("createBatchLifecycle needs goldenSourceSave, goldenDestSave, markerPrefix");
 	}
 
+	// Set the instant a load begins, so ANY later failure restores from the pinned artifacts. While it
+	// is null the live pair has not been touched and there is nothing to restore.
+	let restoreArtifacts = null;
+
 	async function loadGoldenPair(manifest, phase) {
-		const repoRoot = fileURLToPath(new URL("../../", import.meta.url));
+		const repoRoot = REPO_ROOT;
+		restoreArtifacts = { 1: manifest.saves.source.artifact, 2: manifest.saves.destination.artifact };
 		// STOP FIRST, copy SECOND: stopping a running instance EXIT-SAVES its (possibly mutated) world
 		// back into the save file it was started from — copying the pristine golden zip before the stop
 		// gets clobbered by that exit-save (measured: variant B reloaded a world whose fixture the
@@ -215,6 +234,12 @@ export function createBatchLifecycle({ goldenSourceSave, goldenDestSave, markerP
 	// passed results (renderNotebook reads them); pushes a RESTORE-FAILED line onto boundaryErrors.
 	async function restoreLivePair(results, boundaryErrors) {
 		try {
+			if (!restoreArtifacts) {
+				// The golden pair never loaded, so the live pair was never displaced. Restoring
+				// anyway would restart both instances for nothing.
+				results.restored = { skipped: "golden pair never loaded; live pair untouched" };
+				return;
+			}
 			// EVIDENCE FIRST: restarting an instance rotates factorio-current.log — capture the
 			// golden sessions' logs into the results before the restore destroys them (paid for:
 			// run 1's stall evidence was lost to exactly this rotation).
@@ -225,9 +250,34 @@ export function createBatchLifecycle({ goldenSourceSave, goldenDestSave, markerP
 						`tail -n 80 ${instancePath(host, "factorio-current.log")}`]);
 				} catch (error) { results.goldenSessionLogTails[host] = `unreadable: ${error.message}`; }
 			}
-			// Release the pair: restore the pre-batch live saves, then prove zero leftovers.
-			await assignSave(1, RESTORE_SAVES[1]);
-			await assignSave(2, RESTORE_SAVES[2]);
+			// Release the pair by rewriting the live saves from their PRISTINE artifacts. Re-assigning
+			// by name (assignSave) restores NOTHING once the batch consumed the world. Bytes first,
+			// then start; the content is read back AFTER cleanup so a bad restore cannot also leak
+			// the golden saves.
+			ctl("instance", "stop", HOSTS[1].instance);
+			ctl("instance", "stop", HOSTS[2].instance);
+			// RESCUE BEFORE OVERWRITE (review must-fix 5, mirroring bc68a5e in patch-and-reset): the
+			// live save at this point holds the exit-save from loadGoldenPair's stop — i.e. the live
+			// world as of suite start, which is the ONLY copy of any owner hand-built pad not yet
+			// banked into the seed. Overwriting it with the pinned artifact without a copy-aside
+			// destroyed exactly that once (the 92,50 pairing rig). The predeploy- prefix is what
+			// patch-and-reset's save-clearing preserves; only the latest rescue is kept per host.
+			const rescueStamp = Date.now();
+			for (const host of [1, 2]) {
+				const live = instancePath(host, `saves/${RESTORE_SAVES[host]}`);
+				docker(["exec", HOSTS[host].container, "sh", "-c",
+					`rm -f ${instancePath(host, "saves/predeploy-suiterescue-")}*.zip; ` +
+					`if [ -f ${live} ]; then cp ${live} ${instancePath(host, `saves/predeploy-suiterescue-${rescueStamp}.zip`)}; fi`]);
+			}
+			for (const host of [1, 2]) {
+				docker(["cp", `${REPO_ROOT}${restoreArtifacts[host]}`,
+					`${HOSTS[host].container}:${instancePath(host, `saves/${RESTORE_SAVES[host]}`)}`],
+				{ timeout: 180_000 });
+			}
+			for (const host of [1, 2]) {
+				ctl("instance", "start", HOSTS[host].instance, "--save", RESTORE_SAVES[host]);
+				await waitReady(host);
+			}
 			// NOTE: stopping a golden session re-saves its file (Factorio saves on exit), so the
 			// rm must come AFTER the restore-assign; the proof reads the FILESYSTEM (the
 			// controller's `save list` is a cache that can list a deleted file).
@@ -243,7 +293,17 @@ export function createBatchLifecycle({ goldenSourceSave, goldenDestSave, markerP
 				assertLeaseClean(host, preflightState(host), "release");
 			}
 			if (leftovers.length) throw new Error(`temporary golden saves leaked: ${leftovers.join("; ")}`);
-			results.restored = { 1: RESTORE_SAVES[1], 2: RESTORE_SAVES[2], zeroLeftovers: true };
+			// TEETH, last: the displacement was SILENT because nothing read the restored world's
+			// CONTENT. Checked after cleanup so a stale artifact cannot also leak the golden saves.
+			const restoredSource = lua(1, `for _,p in pairs(game.forces.player.platforms) do ` +
+				`if p.valid and p.name=='${RESTORE_SOURCE_PLATFORM}' then return {success=true,present=true} end end ` +
+				`return {success=true,present=false}`);
+			if (restoredSource.present !== true) {
+				throw new Error(`restore verification FAILED — ${RESTORE_SOURCE_PLATFORM} is absent from the ` +
+					`restored host-1 world; the cluster IS displaced. Artifact ${restoreArtifacts[1]} is stale ` +
+					`or empty; recover with docker cp (clusterioctl save upload does not overwrite).`);
+			}
+			results.restored = { 1: RESTORE_SAVES[1], 2: RESTORE_SAVES[2], zeroLeftovers: true, sourceVerified: true };
 		} catch (error) {
 			boundaryErrors.push(`RESTORE FAILED (cluster may be displaced!): ${error.stack || error.message}`);
 		}

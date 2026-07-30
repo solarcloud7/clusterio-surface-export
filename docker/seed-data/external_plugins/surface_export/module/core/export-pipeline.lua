@@ -7,6 +7,7 @@ local InventoryScanner = require("modules/surface_export/export_scanners/invento
 local FluidRegistry = require("modules/surface_export/export_scanners/fluid-registry")
 local VersionCompat = require("modules/surface_export/utils/version-compat")
 local Verification = require("modules/surface_export/validators/verification")
+local BeltRestoration = require("modules/surface_export/import_phases/belt_restoration")
 local Util = require("modules/surface_export/utils/util")
 local GameUtils = require("modules/surface_export/utils/game-utils")
 local SurfaceLock = require("modules/surface_export/utils/surface-lock")
@@ -410,11 +411,16 @@ function ExportPipeline.complete(job)
 	-- ========================================
 	local belt_scan_count = 0
 	local belt_item_total = 0
+	-- Phase 5B: pair every live belt with its record id INSIDE this same atomic tick — the
+	-- line_equals side partition below is valid ONLY on a populated source in the same execution
+	-- (BELT-R9: engine line identity is never a cross-import key; the partition IS the key).
+	local belt_pairs = {}
 	for serialized_index, live_entity in pairs(job.belt_entities or {}) do
 		if live_entity and live_entity.valid then
 			local belt_items = InventoryScanner.extract_belt_items(live_entity)
 			local entity_data = job.export_data.entities[serialized_index]
 			if entity_data then
+				belt_pairs[#belt_pairs + 1] = { entity = live_entity, id = entity_data.entity_id }
 				-- Loaders ride the DEFAULT handler, which returns nil specific_data when nothing else
 				-- was captured — create it here rather than silently skipping the patch AND the census
 				-- pairing below (a skipped patch = loader line items never serialized).
@@ -440,6 +446,25 @@ function ExportPipeline.complete(job)
 	end
 	log(string.format("[Export] Atomic belt scan: %d belts scanned, %d item stacks captured (single tick)",
 		belt_scan_count, belt_item_total))
+	-- Phase 5B: capture the side partition in the SAME atomic tick as the scan above. The payload
+	-- carries one record per lane side ({members={{id,li}...}, slots={{n,q,ct}...}}); the import
+	-- restores each side's multiset by reverse first-fit (BELT-R11/R12, R14 GO measured live
+	-- 2026-07-26: 372/372 all_sides_exact on the owner-built over-packed circuit). The per-entity
+	-- specific_data.items above still ride for the census pairing and old-importer compatibility.
+	if #belt_pairs > 0 then
+		local sg_ok, side_groups = pcall(BeltRestoration.capture_side_groups, belt_pairs)
+		if sg_ok and side_groups then
+			job.export_data.belt_side_groups = side_groups
+			log(string.format("[Export] Belt side partition: %d side groups captured (same tick)", #side_groups))
+		elseif not sg_ok then
+			-- Fail LOUD, not silent — and tell the truth about the consequence: the legacy
+			-- consolidation restore is DELETED (owner order 2026-07-27), so a belt-bearing payload
+			-- without its side partition is REFUSED at import (import-completion's
+			-- pre-positions/validate_side_groups refusal), fail => revert, source preserved.
+			log("[Export] WARNING: capture_side_groups threw: " .. tostring(side_groups)
+				.. " — payload carries NO side partition; a belt-bearing import will REFUSE it (no legacy fallback exists)")
+		end
+	end
 	-- ========================================
 
 	-- ========================================

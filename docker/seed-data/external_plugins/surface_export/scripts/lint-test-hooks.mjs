@@ -83,8 +83,13 @@ function findTestFiles() {
 	for (const name of readdirSync(TESTS_DIR)) {
 		const dir = join(TESTS_DIR, name);
 		if (!statSync(dir).isDirectory()) continue;
-		const f = join(dir, "run-tests.ps1");
-		if (existsSync(f)) out.push({ name, file: f });
+		// Both runner dialects are in scope (2026-07-28 consolidation): JS `finally` gives the same
+		// every-exit-path guarantee the PowerShell rule leans on, and the brace-matched extractor
+		// below parses both languages' `finally { ... }` blocks identically.
+		for (const runner of ["run-tests.ps1", "run-tests.mjs"]) {
+			const f = join(dir, runner);
+			if (existsSync(f)) out.push({ name, file: f });
+		}
 	}
 	return out;
 }

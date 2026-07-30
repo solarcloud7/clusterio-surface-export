@@ -8,6 +8,16 @@ const path = require("node:path");
 const moduleRoot = path.join(__dirname, "..", "module");
 const files = new Map();
 
+// Only the plugin directory is bind-mounted into the host containers, so a test that reads a
+// REPO-level file (the gallery manifest) has nothing to read when npm test is run in the container —
+// it resolved a repo root of "/" and died on ENOENT. CI runs npm test inside a full checkout, so the
+// guarded test always executes for real there; this skip narrows a dev convenience, never CI.
+const galleryManifestPath = path.join(__dirname, "..", "..", "..", "..", "..",
+	"tests", "lab-gallery", "manifest.json");
+const repoSkip = fs.existsSync(galleryManifestPath)
+	? false
+	: `repo checkout not mounted here (looked for ${galleryManifestPath}) — run from the repo, as CI does`;
+
 function source(relativePath) {
 	if (!files.has(relativePath)) files.set(relativePath, fs.readFileSync(path.join(moduleRoot, relativePath), "utf8"));
 	return files.get(relativePath);
@@ -36,7 +46,11 @@ const domains = [
 		id: "belt-stack",
 		status: "static-owned",
 		producer: ["export_scanners/inventory-scanner.lua", /extract_belt_items[\s\S]*quality\s*=\s*stack\.quality and stack\.quality\.name/],
-		consumer: ["import_phases/belt_restoration.lua", /name\s*=\s*g\.name,\s*count\s*=\s*g\.count,\s*quality\s*=\s*g\.quality/],
+		// Re-anchored 2026-07-28: the old pattern named the CONSOLIDATION restore's insert, deleted
+		// with that path (owner order 2026-07-27). The single surviving belt write is the
+		// captured-source-position insert, and it still carries quality — as slot.q.
+		consumer: ["import_phases/belt_restoration.lua",
+			/belt_insert_at\([\s\S]{0,80}name\s*=\s*slot\.n,\s*quality\s*=\s*slot\.q,\s*count\s*=\s*slot\.ct/],
 	},
 	{
 		id: "inserter-held-stack",
@@ -125,7 +139,9 @@ const domains = [
 		// 2.0 array-of-ItemWithQualityCount capture (the old 1.1 item_with_quality dict iteration
 		// crashed serialize_entity on every proxy; replaced 2026-07-17).
 		producer: ["export_scanners/entity-handlers.lua", /item_requests[\s\S]*item\s*=\s*req\.name,\s*quality\s*=\s*req\.quality,\s*count\s*=\s*req\.count/],
-		consumer: ["core/deserializer.lua", /item_requests is read-only for proxies as well/],
+		// Anchored to the CODE that rebuilds the quality-keyed request table (the comment this
+		// previously matched was an API restatement, swept 2026-07-30 — anchors must point at code).
+		consumer: ["core/deserializer.lua", /item_requests and #data\.item_requests > 0[\s\S]*?requests\[item_with_quality\] = req\.count/],
 		gap: "request tables are reconstructed but never applied; this is broader than quality alone",
 	},
 ];
@@ -178,7 +194,7 @@ test("the authorized live spot checks remain explicit", () => {
 	// refuted the dimension (no quality on EntityID filters; vanilla drills have zero slots).
 });
 
-test("the splitter-quality-filter law lives on the adversarial pad (entity-roundtrip retired)", () => {
+test("the splitter-quality-filter law lives on the adversarial pad (entity-roundtrip retired)", { skip: repoSkip }, () => {
 	// The law moved from the retired entity-roundtrip suite onto the omnibus-adversarial-inventory
 	// pad (2026-07-20): a legendary iron-plate splitter filter is baked state, fingerprint-pinned,
 	// and physically re-read on every /test-run paste (and rides every real transfer of the pad

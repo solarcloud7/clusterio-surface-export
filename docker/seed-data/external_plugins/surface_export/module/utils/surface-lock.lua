@@ -42,35 +42,61 @@ local function freeze_entities(surface)
     local original_states = {}
     local frozen_count = 0
     
+    local captured_count = 0
     local entities = surface.find_entities_filtered({})
     for _, entity in pairs(entities) do
-        if entity.valid and ACTIVATABLE_ENTITY_TYPES[entity.type] then
-            -- Use unit_number if available, otherwise generate stable ID
-            -- MUST match the entity_id format used in EntityScanner.serialize_entity()
-            local unit_id = entity.unit_number or GameUtils.make_stable_id(entity)
-            
+        if entity.valid then
+            local activatable = ACTIVATABLE_ENTITY_TYPES[entity.type]
             -- Check if entity has an active property
             local ok, has_active = pcall(function() return entity.active ~= nil end)
             if not ok then
-                -- Entity is in ACTIVATABLE_ENTITY_TYPES, so reading .active should succeed.
-                log(string.format("[SurfaceLock] freeze: reading entity.active failed for '%s': %s",
-                    tostring(entity.name), tostring(has_active)))
+                if activatable then
+                    -- Entity is in ACTIVATABLE_ENTITY_TYPES, so reading .active should succeed.
+                    log(string.format("[SurfaceLock] freeze: reading entity.active failed for '%s': %s",
+                        tostring(entity.name), tostring(has_active)))
+                end
             elseif has_active then
                 -- CRITICAL: Capture the active state BEFORE we freeze
                 local was_active = entity.active
-                original_states[unit_id] = was_active
-                
-                -- Freeze the entity
-                if was_active then
-                    entity.disabled_by_script = true
-                    frozen_count = frozen_count + 1
+                -- CAPTURE is wider than FREEZE (2026-07-28). We still freeze only the activatable
+                -- types — the source's export behaviour is unchanged — but the DESTINATION disables
+                -- every type except beacon/radar/item-request-proxy at create, and it can only put
+                -- back what the payload told it. Anything natively active and outside this list used
+                -- to be frozen there with no recorded state and no wake-up, so it arrived
+                -- permanently dead: measured on a real transfer as infinity-pipe x2 and
+                -- spider-vehicle x2 (a spidertron riding a transferred platform arrived disabled).
+                -- Recording only false keys keeps the destination's missing-key default (active)
+                -- doing the work for the natively-active set — but be honest about which set is
+                -- big (review 2026-07-30, correcting this comment's earlier inverted claim): the
+                -- INACTIVE set is the large one (~486 of the gallery's 542 entities — pipes,
+                -- belts, containers, poles are natively inactive), so this records roughly one key
+                -- per entity: ~8 KB on the gallery, ~20 KB on the workhorse, seconds at the
+                -- ~6 KB/s RCON transport. The cost is paid for one correctness corner: a
+                -- SCRIPT-DISABLED non-activatable entity (a mod-disabled pipe, a parked spider)
+                -- must arrive disabled, and without its false key the destination default would
+                -- wake it. If payload size ever becomes the binding constraint, the lever is
+                -- recording only deviations from per-type native defaults — which requires
+                -- measuring those defaults per type first, not assuming them.
+                if activatable then
+                    -- Use unit_number if available, otherwise generate stable ID
+                    -- MUST match the entity_id format used in EntityScanner.serialize_entity()
+                    original_states[entity.unit_number or GameUtils.make_stable_id(entity)] = was_active
+                    captured_count = captured_count + 1
+                    -- Freeze the entity
+                    if was_active then
+                        entity.disabled_by_script = true
+                        frozen_count = frozen_count + 1
+                    end
+                elseif was_active == false then
+                    original_states[entity.unit_number or GameUtils.make_stable_id(entity)] = false
+                    captured_count = captured_count + 1
                 end
             end
         end
     end
-    
-    log(string.format("[SurfaceLock] Froze %d entities, captured %d original states", 
-        frozen_count, frozen_count))
+
+    log(string.format("[SurfaceLock] Froze %d entities, captured %d original states",
+        frozen_count, captured_count))
     return original_states, frozen_count
 end
 

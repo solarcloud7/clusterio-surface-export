@@ -111,7 +111,13 @@ const LIFECYCLE_ACTS = new Set(["copy-paste", "transfer", "clone"]);
 // where each such property previously cost a branch in lifecycle-engine.lua, an entry here, and a
 // count bump in manifest.test.mjs. Add a named read kind only for something a property walk cannot
 // express (aggregation over an area, a method call, a derived value).
-const PHYSICAL_READS = new Set(["item_count", "held", "crafting_progress", "spoil_percent", "fluid", "entity_present", "platform_present", "surface_entity_count", "infinity_pipe_filter", "property"]);
+// "belt_stats" selects one field of FixtureMeters.measure_belt_combined (the canonical belt
+// instrument — delegation, never a second copy of its definitions). It exists to carry a belt
+// fixture's FULL law to the transfer destination (the 37-vs-13 over-compression incident).
+// "surface_entity_count_stable" = surface_entity_count minus transient debris classes (spills,
+// explosion effects, projectiles) — the pin for LIVE-factory fixtures whose raw count breathes
+// (measured 2026-07-27 on the workhorse: 1359<->1360 between runs from a spill + explosions).
+const PHYSICAL_READS = new Set(["item_count", "held", "crafting_progress", "spoil_percent", "fluid", "entity_present", "platform_present", "surface_entity_count", "surface_entity_count_stable", "fluid_stats", "infinity_pipe_filter", "property", "belt_stats"]);
 // TWO evaluators, two capability sets — and conflating them is a real bug, not pedantry. A
 // physical_read is compared in Lua by lifecycle-engine's compare_op, which implements all of these.
 // A report_field is compared in NODE by evalReportField (pad-transfer-suite/run-tests.mjs), which
@@ -127,7 +133,7 @@ const CHECK_OPS = new Set(["eq", "approx", "ge", "le", "between", "monotone"]);
 const REPORT_FIELD_OPS = new Set(["eq"]);
 const LIFECYCLE_ENDS = new Set(["source", "dest"]);
 const LIFECYCLE_EXPECTS = new Set(["success", "gate-failure", "census-abort"]);
-const TRANSFER_SUITE = "tests/integration/pad-transfer-suite/run-tests.mjs";
+const TRANSFER_SUITE = "tests/integration/gallery-suite/run-tests.mjs";
 
 function validateLifecycle(fixture) {
 	const lc = fixture.lifecycle;
@@ -224,6 +230,27 @@ function validateLifecycle(fixture) {
 		if (check.check === "physical_read") {
 			if (!PHYSICAL_READS.has(check.read)) throw new Error(`lifecycle for ${id}: unknown physical read "${check.read}"`);
 			if (!CHECK_OPS.has(check.op)) throw new Error(`lifecycle for ${id}: unknown check op "${check.op}"`);
+			// FULL-DOMAIN VACUITY GUARD (review 2026-07-30): a progress property is engine-bounded to
+			// [0,1], so `between [0,1]` evaluates and satisfies the zero-reads guard yet no input can
+			// ever fail it — the exact shape two unfrozen re-pins quietly took. A live progress value
+			// spans its whole domain; the honest options are a NARROWER mechanism-derived bound or no
+			// check at all, never the domain itself.
+			if (check.op === "between" && Array.isArray(check.expected)
+				&& typeof check.path === "string" && /progress$/.test(check.path)
+				&& check.expected[0] <= 0 && check.expected[1] >= 1) {
+				throw new Error(`lifecycle for ${id}: "${check.path}" between [${check.expected}] spans the ` +
+					`property's entire domain — the check cannot fail. Use a narrower mechanism-derived bound ` +
+					`or drop the check with the reason recorded in the invariant.`);
+			}
+			if (check.read === "belt_stats") {
+				// Lua re-validates (the boundary); this fails a typo fast without a cluster.
+				if (typeof check.field !== "string" || !/^[A-Za-z][A-Za-z0-9]*$/.test(check.field)) {
+					throw new Error(`lifecycle for ${id}: belt_stats needs a "field" name (a measure_belt_combined key)`);
+				}
+				if (!check.locator?.area) {
+					throw new Error(`lifecycle for ${id}: belt_stats needs an area locator (the pad rect)`);
+				}
+			}
 			if (check.read === "property") {
 				// The Lua reader re-validates this — that check is the real boundary, since the roster is
 				// data from outside. This one exists so a typo fails at manifest-validation time (fast,

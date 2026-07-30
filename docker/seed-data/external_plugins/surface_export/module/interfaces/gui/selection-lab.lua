@@ -437,6 +437,34 @@ end
 -- not journal or report partial success. Undo resurrection passes false (best-effort, misses
 -- reported, never destroys what it managed to bring back).
 -- Returns records, entity_map, created, create_failed, ok, err.
+-- ACTIVATION — the paste's counterpart to the transfer's activation phase, applied LAST so every
+-- restore ran against a frozen world. Keeps whatever active/inactive state the capture recorded,
+-- both directions (owner ruling 2026-07-17); a nil lab_active (pre-lab_active capture) UN-freezes,
+-- since freeze-at-create (2026-07-28) would otherwise strand it disabled forever. Each write is
+-- guarded (review 2026-07-30): the freeze site pcalls its write, so an entity type whose write
+-- throws would otherwise freeze fine and then THROW here, killing the loop for every later entity.
+local function apply_paste_activation(records, entity_map)
+	for _, rec in ipairs(records) do
+		local entity = entity_map[rec.entity_id]
+		if entity and entity.valid then
+			local ok, err = pcall(function()
+				entity.disabled_by_script = (rec.lab_active == false)
+			end)
+			if not ok then
+				log(string.format("[SelectionLab] activation write failed for %s at (%.1f,%.1f): %s",
+					rec.name, rec.position.x, rec.position.y, tostring(err)))
+			end
+			-- Drill mining progress rides the SAME deferred queue the transfer uses: for drills the
+			-- value is defined relative to mining_target (LuaControl), which is nil until the first
+			-- update, so a same-execution write here is unanchored and lost at cycle start.
+			if entity.type == "mining-drill" and rec.specific_data
+				and rec.specific_data.mining_progress then
+				ActiveStateRestoration.queue_mining_progress(entity, rec.specific_data)
+			end
+		end
+	end
+end
+
 local function execute_create_and_restore(surface, recs, player, side_groups, fluid_segments, transactional)
 	local records, entity_map = {}, {}
 	local created, create_failed = 0, 0
@@ -457,6 +485,24 @@ local function execute_create_and_restore(surface, recs, player, side_groups, fl
 			created = created + 1
 			records[#records + 1] = rec
 			entity_map[rec.entity_id] = entity
+			-- FREEZE AT CREATE — the same step, the same exclusions, the same execution as the
+			-- transfer import (import_phases/entity_creation.lua). The tool exists to represent a
+			-- real transfer, and until 2026-07-28 this was the one place it did not: pasted entities
+			-- came up LIVE and only had their captured state applied after every restore, so a
+			-- pasted assembler, drill or furnace was a running machine for the whole restore window.
+			-- Beacons/radars stay live for the same reason the import keeps them live (the beacon
+			-- speed bonus must apply as crafters are placed); an item-request-proxy is never frozen
+			-- because nothing here would bring it back.
+			if entity.type ~= "beacon" and entity.type ~= "radar"
+				and entity.type ~= "item-request-proxy" then
+				local frozen_ok, frozen_err = pcall(function()
+					if entity.active then entity.disabled_by_script = true end
+				end)
+				if not frozen_ok then
+					log(string.format("[SelectionLab] failed to freeze %s at (%.1f,%.1f): %s",
+						rec.name, rec.position.x, rec.position.y, tostring(frozen_err)))
+				end
+			end
 		else
 			create_failed = create_failed + 1
 			log(string.format("[SelectionLab] create_entity failed for %s at (%.1f,%.1f): %s",
@@ -476,20 +522,25 @@ local function execute_create_and_restore(surface, recs, player, side_groups, fl
 	end
 	local function run_restores()
 	if side_groups then
-		local placed, unplaced, leaks_undone, anomalies = BeltRestoration.restore_side_groups(side_groups, entity_map)
+		local placed, unplaced, anomalies = BeltRestoration.restore_side_groups(side_groups, entity_map)
 		if unplaced > 0 or anomalies > 0 then
 			local message = string.format(
 				"[color=yellow][font=default-bold][SelectionLab][/font][/color] belt side-restore: %d placed, %d UNPLACED, %d anomalies (no fallback — canonical belt laws in api-notes)",
 				placed, unplaced, anomalies)
 			if transactional then error(message) end
 			say(player, message, { r = 1, g = 0.6, b = 0.3 })
-		elseif leaks_undone > 0 then
-			say(player, string.format(
-				"[color=yellow][font=default-bold][SelectionLab][/font][/color] belt side-restore: %d placed; %d cross-side leaks detected and undone",
-				placed, leaks_undone), { r = 1, g = 0.8, b = 0.4 })
 		end
 	else
-		BeltRestoration.restore(records, entity_map)
+		-- The legacy consolidation restore is DELETED from this path (owner order 2026-07-26): it
+		-- conserved counts but manufactured structure (oversized stacks — the maxStack 5-vs-1
+		-- incident), and with capture_side_groups running on every belt-bearing copy its only
+		-- reachable case here was belt-less selections. Refuse loudly rather than degrade silently
+		-- if a belt record somehow arrives without its side partition.
+		for _, rec in ipairs(records) do
+			if rec.type and BELT_LINE_TYPES[rec.type] and rec.specific_data and rec.specific_data.items then
+				error("[SelectionLab] belt records present but NO side partition was captured — refusing the deleted legacy consolidation restore")
+			end
+		end
 	end
 	-- Entity state: same two production steps, same order — the per-entity property restore
 	-- (creation-adjacent) then the FULL production phase (control behavior, entity filters —
@@ -540,17 +591,7 @@ local function execute_create_and_restore(surface, recs, player, side_groups, fl
 			say(player, "[color=yellow][font=default-bold][SelectionLab][/font][/color] fluid restore skipped: " .. tostring(fluids_err), { r = 1, g = 0.7, b = 0.3 })
 		end
 	end
-	-- Applied LAST (after all restores) so restoration always sees the same entity state.
-	-- The paste keeps whatever active/inactive state the capture recorded — both directions
-	-- (owner ruling 2026-07-17). nil = pre-lab_active capture; leave the engine default.
-	for _, rec in ipairs(records) do
-		local entity = entity_map[rec.entity_id]
-		if entity and entity.valid and rec.lab_active ~= nil then
-			-- 2.1: LuaEntity.active is READ-ONLY; disabled_by_script is the writable control
-			-- (verified live 2026-07-21: it drives active both directions).
-			entity.disabled_by_script = not rec.lab_active
-		end
-	end
+	apply_paste_activation(records, entity_map)
 	end
 	local restore_ok, restore_err = xpcall(run_restores, debug.traceback)
 	if not restore_ok then
@@ -558,6 +599,11 @@ local function execute_create_and_restore(surface, recs, player, side_groups, fl
 		if transactional then
 			return rollback("restore error: " .. tostring(restore_err))
 		end
+		-- BEST-EFFORT path keeps the entities, so it must ALSO reach activation: a throw anywhere in
+		-- run_restores used to skip the activation loop entirely, leaving every freeze-at-create
+		-- entity disabled_by_script forever — a silently-frozen pad, exactly what the unfrozen
+		-- doctrine forbids (review 2026-07-30). Errors here are already reported above.
+		apply_paste_activation(records, entity_map)
 		if player then
 			say(player, "[color=yellow][font=default-bold][SelectionLab][/font][/color] restore error (best-effort path): " .. tostring(restore_err),
 				{ r = 1, g = 0.4, b = 0.4 })

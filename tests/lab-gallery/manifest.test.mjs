@@ -75,8 +75,11 @@ test("baked fixtures remain inputs while direct physical meters remain the oracl
 	assert.equal(miner.labId, "specialized-inventory-lab");
 	assert.equal(miner.padKind, "pad");
 	// Shape, not values — the exact numbers live in the manifest alone (one-truth ruling 2026-07-26).
+	// The acid is pinned as ONE segment total plus a boolean, never as a tank/drill SPLIT: both sit on
+	// the same fluid segment, restoration writes a segment once and the engine redistributes across
+	// its members, so a split pin fails a lossless transfer (measured 2026-07-28).
 	assert.deepEqual(Object.keys(miner.fingerprint).sort(),
-		["drillAcid", "drillName", "groundItems", "resourceCount", "resourceTotal", "tankAcid"]);
+		["acidSegmentTotal", "drillHasAcid", "drillName", "groundItems", "resourceCount", "resourceTotal"]);
 });
 
 test("the corpus is inventoried with independent oracles and stable fingerprints", () => {
@@ -204,7 +207,7 @@ test("lifecycle validation teeth: hook allowlist, grounding rule, mutable-anchor
 	assert.ok(lines.some(line => /raw-fish item_count eq 10/.test(line)));
 
 	// --- gate-failure (sabotage teeth) rules -----------------------------------------------------
-	const SUITE = "tests/integration/pad-transfer-suite/run-tests.mjs";
+	const SUITE = "tests/integration/gallery-suite/run-tests.mjs";
 	const withTransferLifecycle = (lifecycle) => {
 		const m = clone();
 		const fx = m.fixtures.find(fixture => fixture.id === "belt-combined-omnibus");

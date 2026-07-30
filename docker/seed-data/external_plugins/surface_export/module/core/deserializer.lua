@@ -87,9 +87,13 @@ end
 ---                     `ignore_unprioritised_targets` did this — its assignment is safe_call-wrapped)
 local SIMPLE_RESTORE_RULES = {
   { field = "crafting_progress" },
+  -- NOTE: mining_progress / bonus_mining_progress are deliberately NOT rules here. For drills the
+  -- value's range is defined by mining_target (LuaControl), which is read-only and nil until the
+  -- drill's first update — a creation-time write is unanchored and lost at cycle start (measured
+  -- 2026-07-29: a 0.77 marker arrived ~0). They ride the deferred queue in
+  -- active_state_restoration.lua (queue_mining_progress), which writes once the target binds.
   { field = "productivity_bonus", safecall = true },
-  -- bonus_progress is RW at 2.0.77 (LuaEntity.bonus_progress); safecall-wrapped like the other
-  -- crafter progress fields since not every entity that reaches here exposes it.
+  -- safecall: not every entity that reaches here exposes this field.
   { field = "bonus_progress", safecall = true },
   { field = "player_description", prop = "entity_label", safecall = true },
   { field = "ignore_unprioritised_targets", present = true, safecall = true, no_entity_guard = true },
@@ -361,8 +365,6 @@ function Deserializer.restore_entity_state(entity, entity_data)
         }
         requests[item_with_quality] = req.count
       end
-      -- Note: item_requests is read-only, it's set during ghost creation
-      -- This is captured here for documentation but may not be settable
     end
     return  -- Ghosts don't have other state to restore
   end
@@ -393,7 +395,6 @@ function Deserializer.restore_entity_state(entity, entity_data)
         }
         requests[item_with_quality] = req.count
       end
-      -- Note: item_requests is read-only for proxies as well
     end
     
     -- Insert plan (inventory positions)
@@ -454,7 +455,6 @@ function Deserializer.restore_entity_state(entity, entity_data)
   end
 
   -- Restore turret priority targets using set_priority_target(index, entity_id)
-  -- Note: priority_targets property is read-only, use set_priority_target method
   if data.priority_targets and #data.priority_targets > 0 then
     for _, target in ipairs(data.priority_targets) do
       safe_call(string.format("set_priority_target %d=%s for %s", target.index, target.name, entity.name),
@@ -764,7 +764,8 @@ function Deserializer.restore_inventories(entity, entity_data, overflow_losses)
             -- specific_data.inventories[].items[].count, and the dest census (SurfaceCounter.count_items ->
             -- InventoryScanner.count_all_items) sums only top-level inv.items[].count — NEITHER recurses
             -- into item.grid or item.nested_inventory, so restoring them cannot move either side of the
-            -- exact gate. Covered by tests/integration/item-grid-roundtrip (physical dest grid reads).
+            -- exact gate. Covered by the omnibus-equipment-grid pad (physical dest grid reads); its
+            -- former standalone runner tests/integration/item-grid-roundtrip was absorbed 2026-07-27.
             if slot.valid_for_read then
               restore_item_properties(slot, item)
             end
@@ -812,7 +813,7 @@ function Deserializer.restore_inventories(entity, entity_data, overflow_losses)
   end -- end of if has_inventories
 
   -- NOTE: Belt items are NOT restored here!
-  -- Belt items are restored synchronously in post-processing phase (BeltRestoration.restore)
+  -- Belt items are restored synchronously in the post-processing belts phase (restore_side_groups, each item placed at its captured source position)
   -- This is CRITICAL because belts are always active and cannot be deactivated.
   -- Items must be restored all at once to prevent partial restoration where
   -- some items get picked up by inserters before others are placed.
@@ -1123,7 +1124,7 @@ function Deserializer.restore_control_behavior(entity, entity_data)
   -- Combinator parameters
   safe_set("parameters", cb_data.parameters)
 
-  -- Constant combinator sections (Factorio 2.0+)
+  -- Constant combinator sections
   if cb_data.constant_sections then
     -- Clear existing sections
     local clear_ok, clear_err = pcall(function()

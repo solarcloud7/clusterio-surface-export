@@ -158,16 +158,21 @@ Legend: **S**=source, **D**=dest, **C**=controller; `{}` = source lock phase (Ph
 - **Headless:** `npm run lint:lua` (incl. the identity guard) + `npm run lint:pcall-logging` + `npm test`.
 - **In-module selftest (RCON):** `transfer-lock-selftest` — `scan_transfer_expiries` behavior (expired unlocks,
   manual/old-save skipped, TTL sizing) + `transfer_delete_identity_ok` (a renamed source still deletes;
-  released/reused/invalid refuse). Run by `tests/integration/selftests` (which drives every in-module
-  self-test in one RCON call); its former standalone driver `tests/integration/transfer-lock-expiry` was
-  folded in, not retired — the assertions are unchanged.
+  released/reused/invalid refuse). Run by `tests/instruments/selftests` (which drives every in-module
+  self-test in one RCON call); its former standalone transfer-lock-expiry driver was folded in, not
+  retired — the assertions are unchanged.
 - **Live:** start a transfer, `docker restart` the controller during `awaiting_validation`, confirm the source
   auto-unlocks after the TTL with no admin action and a normal transfer is unaffected.
-- **Destination-hold primitive proof:** `tests/integration/destination-hold` (`-Sections
-  main,restart,lifecycle,double,discard,ttl,cleanup` by default) records the
-  not-live/fidelity/restart/go-live/discard/TTL-hazard evidence and asserts zero leftover
+- **Destination-hold primitive proof:** the live `destination-hold` runner was deleted 2026-07-27
+  (owner ruling: destination holds are not useful to test). The primitive itself still ships and is
+  covered by `test/destination-hold.test.cjs` — registration, stage/rollback ordering, index-based
+  lookup, cargo-pod completion + recover-and-spill item conservation, hold-aware unlock ordering,
+  fail-loud force resolution, and that the normal transfer path is NOT gated on it. What the
+  deleted runner uniquely proved — live restart survival and zero leftover
   `storage.destination_holds`, zero `storage.locked_platforms`, zero `desthold-*` surfaces, and
-  `game.tick_paused == false` after cleanup.
+  `game.tick_paused == false` after cleanup — is now UNCOVERED by any standing test; if destination
+  holds are ever promoted into the transfer path, re-author that proof (the deleted runner is
+  recoverable from git history) before shipping the promotion.
 - Run `/di-change` before merging any change to the gate / rollback / source-delete / identity paths.
 
 ## Critical files

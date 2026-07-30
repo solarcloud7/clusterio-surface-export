@@ -217,7 +217,11 @@ end
 --   * steadyItems = sum of get_item_count() over every belt-class entity in the pad area
 --   * maxStack    = max per-position stack count seen across all transport lines
 --   * overpackedLanes = transport lines on a single entity holding MORE than 4 items (over the
---     nominal per-tile lane capacity — the owner's hand-built corner over-pack)
+--     nominal per-tile lane capacity — the owner's hand-built corner over-pack). This is a
+--     DISTRIBUTION reading, diagnostic only: how many lanes are over-packed depends on where the
+--     items happen to sit at the measurement instant, so it drifts on a moving world (measured
+--     2026-07-28: 13 at the source bake, 15 on the transferred copy, conservation untouched).
+--     Pin hasOverpackedCornerLanes — the law is that the over-pack class survives, not its tally.
 local function measure_belt_combined(surface, area)
     local belt_types = { "transport-belt", "underground-belt", "splitter", "loader", "loader-1x1" }
     local counts = { ["transport-belt"] = 0, ["underground-belt"] = 0, ["splitter"] = 0, loader = 0 }
@@ -256,8 +260,15 @@ local function measure_belt_combined(surface, area)
     }
 end
 
--- Acid-fed uranium miner (owner-hand-built, frozen): tank + drill fluid, resources under the pad,
--- loose ground items, drill identity.
+-- Acid-fed uranium miner (owner-hand-built): the pad's acid POOL, resources under the pad, loose
+-- ground items, drill identity.
+--
+-- The tank and the drill sit on ONE fluid segment (measured 2026-07-28: both report segment id 12).
+-- Restoration writes a segment ONCE via set_fluid_segment_fluid and the engine then redistributes it
+-- across the members by capacity, so the per-entity SPLIT is an engine distribution, not a conserved
+-- quantity — the transferred copy read drill 104.33 against a source bake of 104.40625 at an
+-- unchanged pool. Pin the SEGMENT TOTAL (which is also what the production gate enforces: fluids
+-- aggregate by name) plus the qualitative fact that the drill arrived holding acid at all.
 local function measure_mining_drill_acid(surface, area, anchor)
     local dx, dy = anchor("big-mining-drill")
     local drill = at(surface, "big-mining-drill", dx, dy)
@@ -270,12 +281,29 @@ local function measure_mining_drill_acid(surface, area, anchor)
             if f then drill_acid = drill_acid + f.amount end
         end
     end
+    -- Sum the acid pool over the anchors' segments, deduped by segment id: one shared segment counts
+    -- once, and a topology SPLIT (the pairing-defect class) still totals both halves honestly.
+    local seen, acid_total = {}, 0
+    local holders = {}
+    if tank then holders[#holders + 1] = tank end
+    if drill then holders[#holders + 1] = drill end
+    for _, e in ipairs(holders) do
+        for i = 1, e.fluids_count do
+            if e.has_fluid_segment(i) then
+                local id = e.get_fluid_segment_id(i)
+                if id and not seen[id] then
+                    seen[id] = true
+                    local f = e.get_fluid_segment_fluid(i)
+                    if f and f.name == "sulfuric-acid" then acid_total = acid_total + f.amount end
+                end
+            end
+        end
+    end
     local resources = surface.find_entities_filtered({ type = "resource", area = area })
     local resource_total = 0
     for _, r in pairs(resources) do resource_total = resource_total + r.amount end
     return {
-        tankAcid = tank and tank.get_fluid_count("sulfuric-acid") or nil,
-        drillAcid = drill_acid,
+        acidSegmentTotal = acid_total, drillHasAcid = drill_acid > 0,
         resourceCount = #resources, resourceTotal = resource_total,
         groundItems = #surface.find_entities_filtered({ type = "item-entity", area = area }),
         drillName = drill and drill.name or "absent",
@@ -287,6 +315,92 @@ local function measure_omnibus_schedule(platform)
     local records = schedule.get_records()
     local interrupts = schedule.get_interrupts()
     return { records = #records, interrupts = #interrupts, interruptName = interrupts[1] and interrupts[1].name or nil }
+end
+
+-- STRUCTURE entity count: every entity EXCEPT transient debris classes (spilled items, explosion
+-- effects, projectiles, smoke, corpses). THE canonical counter for live-factory fixture pins: a
+-- platform baked mid-production dribbles spills and effects (measured 2026-07-27 on the workhorse:
+-- raw count flipped 1359<->1360 between /test-run invocations; platform pause stops travel, NOT
+-- machines), so a raw-count pin measures weather. Structure is what corruption would change; the
+-- transfer census still counts every physical item, ground stacks included. Consumers: the
+-- meter_entities dispatch meter (run-tests.lua) and lifecycle-engine's
+-- surface_entity_count_stable read — both delegate here, never a second copy.
+local function count_stable_entities(surface)
+    local total = #surface.find_entities_filtered({})
+    local transient = #surface.find_entities_filtered({
+        type = { "explosion", "item-entity", "projectile", "beam", "smoke-with-trigger", "corpse" },
+    })
+    return total - transient
+end
+
+-- Fluid-segment census over an area — THE canonical meter for underground-pipe PAIRING integrity.
+-- segmentCount is the pairing detector: a pipe-to-ground that pairs with the wrong counterpart at
+-- creation MERGES segments the source kept apart (measured 2026-07-28: the gallery transfer's
+-- thruster-fluid clobber, 10 source segments -> 9 dest). Two same-fluid segments make the merge
+-- invisible to fluid names — only the count and per-fluid totals expose it. Consumers: the
+-- fluid_stats lifecycle read — delegation, never a second copy.
+local function measure_fluid_segments(surface, area)
+    local counts = { ["pipe-to-ground"] = 0, pipe = 0, pump = 0 }
+    local seen, segment_count = {}, 0
+    local totals = {}
+    for _, e in pairs(surface.find_entities_filtered({ type = { "pipe-to-ground", "pipe", "pump" }, area = area })) do
+        counts[e.type] = counts[e.type] + 1
+        for i = 1, e.fluids_count do
+            if e.has_fluid_segment(i) then
+                local id = e.get_fluid_segment_id(i)
+                if not seen[id] then
+                    seen[id] = true
+                    segment_count = segment_count + 1
+                    local f = e.get_fluid_segment_fluid(i)
+                    if f then totals[f.name] = (totals[f.name] or 0) + f.amount end
+                end
+            end
+        end
+    end
+    return {
+        pipeToGroundCount = counts["pipe-to-ground"], pipeCount = counts.pipe, pumpCount = counts.pump,
+        segmentCount = segment_count,
+        lightOilTotal = totals["light-oil"] or 0,
+        petroleumGasTotal = totals["petroleum-gas"] or 0,
+    }
+end
+
+-- ACTIVE-STATE PARITY. Counts entities that arrive INACTIVE among classes that are natively active,
+-- so the pin is 0 and any regression shows as a non-zero count on the destination board.
+--
+-- Why these three: they are the exact classes the three disable passes disagreed about. infinity-pipe
+-- and spider-vehicle are frozen by entity_creation but were outside ACTIVATABLE_ENTITY_TYPES, so
+-- nothing woke them (measured 2026-07-28: a spidertron arrived disabled). beacon is the opposite
+-- corner — never frozen at create, but disabled by the pre-validation re-pause, so it needs the
+-- restore pass to wake it; an exclusion list that skipped beacons left one dead, caught while
+-- verifying the fix for the first case. A count of anything but zero means a disable set and the
+-- restore set have drifted apart again.
+--
+-- Deliberately NOT a total inactive count: 486 of the gallery's 542 entities are natively inactive
+-- (pipes, belts, containers, poles, the hub), so a total would be noise that swamps the signal.
+local function measure_active_state(surface)
+    -- Class TOTALS ride alongside the inactive counts (review should-fix A): all three inactive
+    -- pins are 0, and 0 is also what an ABSENT class reads — without the totals, the fixture that
+    -- certifies "entities arrive in the active state they left" would pass green if the
+    -- spidertrons, infinity-pipes and beacons did not arrive at all.
+    local out = {}
+    local function count_pair(key, filter)
+        local total, inactive = 0, 0
+        for _, e in pairs(surface.find_entities_filtered(filter)) do
+            if e.valid then
+                total = total + 1
+                -- intentional probe: a type without .active is not a finding, it is not in scope here
+                local ok, active = pcall(function() return e.active end)
+                if ok and active == false then inactive = inactive + 1 end
+            end
+        end
+        out[key] = total
+        out[key .. "Inactive"] = inactive
+    end
+    count_pair("spiderVehicles", { type = "spider-vehicle" })
+    count_pair("infinityPipes", { name = "infinity-pipe" })
+    count_pair("beacons", { type = "beacon" })
+    return out
 end
 
 local function measure_energy(surface)
@@ -563,6 +677,15 @@ end
 local tolerant_double_fields = { progress = true, bonusProgress = true }
 
 local function approx_equal(key, a, b)
+    -- A 2-number array expectation is an INCLUSIVE RANGE. Added 2026-07-29 because the unfrozen
+    -- doctrine makes bounded quantities a recurring need: some readings are not constants on a
+    -- running world, and the alternatives are both worse than a range — pinning an exact value that
+    -- a lossless transfer fails, or dropping the check and measuring nothing. The bound must be
+    -- MECHANISM-derived and the fixture must say what derives it; a band fitted around an observed
+    -- failure is exactly what this must not become.
+    if type(b) == "table" and #b == 2 and type(b[1]) == "number" and type(b[2]) == "number" then
+        return type(a) == "number" and a >= b[1] and a <= b[2]
+    end
     if tolerant_double_fields[key] and type(a) == "number" and type(b) == "number" then
         return math.abs(a - b) <= 1e-9
     end
@@ -593,6 +716,7 @@ M.measure_belt_combined = measure_belt_combined
 M.measure_mining_drill_acid = measure_mining_drill_acid
 M.measure_omnibus_schedule = measure_omnibus_schedule
 M.measure_energy = measure_energy
+M.measure_active_state = measure_active_state
 M.measure_belt_corner = measure_belt_corner
 M.measure_belt_loop = measure_belt_loop
 
@@ -606,6 +730,8 @@ M.measure_thruster_pair = measure_thruster_pair
 
 M.approx_equal = approx_equal
 M.tolerant_double_fields = tolerant_double_fields
+M.count_stable_entities = count_stable_entities
+M.measure_fluid_segments = measure_fluid_segments
 
 
 

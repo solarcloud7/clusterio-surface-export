@@ -4,6 +4,32 @@
 
 local BeltRestoration = require("modules/surface_export/import_phases/belt_restoration")
 
+-- ONE belt-type list for every scan in this file. The old inline lists omitted loaders, which made
+-- this instrument read 372 where the engine (and production export, via GameUtils.BELT_ENTITY_TYPES)
+-- reads 380 on the belt pad — the "380-vs-372 mystery", resolved 2026-07-27. Loaders are belts here.
+local BELT_TYPES = { "transport-belt", "underground-belt", "splitter", "loader", "loader-1x1" }
+
+-- Rebuild `live` belt geometry onto `surface` translated by (dx, dy). Returns emap keyed by the
+-- SOURCE position key ("x,y" — matching capture_side_groups pair ids) plus the create-failure
+-- count. Shared by dup_kill (dx=dy=0 scratch) and the iso protocol (scratch or an open pad slot on
+-- the platform itself).
+local function rebuild_on(surface, live, dx, dy)
+  local emap, cfails = {}, 0
+  for _, e in ipairs(live) do
+    local args = {
+      name = e.name,
+      position = { e.position.x + dx, e.position.y + dy },
+      direction = e.direction,
+      force = "player",
+    }
+    if e.type == "underground-belt" then args.type = e.belt_to_ground_type end
+    if e.type == "loader" or e.type == "loader-1x1" then args.type = e.loader_type end
+    local c = surface.create_entity(args)
+    if c and c.valid then emap[e.position.x .. "," .. e.position.y] = c else cfails = cfails + 1 end
+  end
+  return emap, cfails
+end
+
 --- DUP-KILL mode (BELT-R14, 2026-07-19): run the PRODUCTION capture_side_groups +
 --- restore_side_groups against a REAL platform's belts in ONE execution — capture the live
 --- side partition, rebuild the belt geometry on a scratch surface, restore, verdict by
@@ -19,7 +45,7 @@ local function dup_kill(opts)
   end
   if not plat then return { success = false, error = "platform not found: " .. tostring(opts.platform) } end
   local s = plat.surface
-  local live = s.find_entities_filtered({ type = { "transport-belt", "underground-belt", "splitter" } })
+  local live = s.find_entities_filtered({ type = BELT_TYPES })
   local out = { success = true, belt_count = #live }
 
   local pairs_list = {}
@@ -60,20 +86,14 @@ local function dup_kill(opts)
   end
   sc.set_tiles(tiles, true, false, true, false)
 
-  local emap, cfails = {}, 0
-  for _, e in ipairs(live) do
-    local args = { name = e.name, position = { e.position.x, e.position.y }, direction = e.direction, force = "player" }
-    if e.type == "underground-belt" then args.type = e.belt_to_ground_type end
-    local c = sc.create_entity(args)
-    if c and c.valid then emap[e.position.x .. "," .. e.position.y] = c else cfails = cfails + 1 end
-  end
+  local emap, cfails = rebuild_on(sc, live, 0, 0)
   out.create_fails = cfails
   if cfails > 0 then
     game.delete_surface(sc)
     return { success = false, error = "rebuild create failures: " .. cfails }
   end
   local zero = 0
-  for _, e in ipairs(sc.find_entities_filtered({ type = { "transport-belt", "underground-belt", "splitter" } })) do
+  for _, e in ipairs(sc.find_entities_filtered({ type = BELT_TYPES })) do
     zero = zero + e.get_item_count()
   end
   if zero ~= 0 then
@@ -81,10 +101,9 @@ local function dup_kill(opts)
     return { success = false, error = "scratch not empty pre-restore" }
   end
 
-  local placed, unplaced, leaks_undone, anomalies = BeltRestoration.restore_side_groups(groups, emap)
+  local placed, unplaced, anomalies = BeltRestoration.restore_side_groups(groups, emap)
   out.placed = placed
   out.unplaced = unplaced
-  out.leaks_undone = leaks_undone
   out.anomalies = anomalies
 
   local all_exact = true
@@ -123,7 +142,7 @@ local function dup_kill(opts)
   out.inexact_sides = inexact
 
   local suid, stotal = {}, 0
-  for _, e in ipairs(sc.find_entities_filtered({ type = { "transport-belt", "underground-belt", "splitter" } })) do
+  for _, e in ipairs(sc.find_entities_filtered({ type = BELT_TYPES })) do
     for li = 1, e.get_max_transport_line_index() do
       for _, it in ipairs(e.get_transport_line(li).get_detailed_contents()) do
         local id = tostring(it.unique_id)
@@ -193,7 +212,7 @@ local function dup_kill_batched(opts)
     end
     if not plat then return { success = false, error = "platform not found: " .. tostring(opts.platform) } end
     local s = plat.surface
-    local live = s.find_entities_filtered({ type = { "transport-belt", "underground-belt", "splitter" } })
+    local live = s.find_entities_filtered({ type = BELT_TYPES })
     local pairs_list = {}
     for _, e in ipairs(live) do
       pairs_list[#pairs_list + 1] = { entity = e, id = e.position.x .. "," .. e.position.y }
@@ -244,7 +263,7 @@ local function dup_kill_batched(opts)
       groups = groups, emap = emap, cursor = 0,
       captured_total = captured_total, slots = slots,
       start_tick = game.tick,
-      placed = 0, unplaced = 0, leaks_undone = 0, anomalies = 0,
+      placed = 0, unplaced = 0, anomalies = 0,
       per_side = {}, inexact = {},
     }
     return { success = true, belt_count = #live, groups = #groups, slots = slots,
@@ -259,10 +278,9 @@ local function dup_kill_batched(opts)
     if from > to then return { success = false, error = "cursor past end" } end
     local slice = {}
     for i = from, to do slice[#slice + 1] = batched.groups[i] end
-    local placed, unplaced, leaks_undone, anomalies = BeltRestoration.restore_side_groups(slice, batched.emap)
+    local placed, unplaced, anomalies = BeltRestoration.restore_side_groups(slice, batched.emap)
     batched.placed = batched.placed + placed
     batched.unplaced = batched.unplaced + unplaced
-    batched.leaks_undone = batched.leaks_undone + leaks_undone
     batched.anomalies = batched.anomalies + anomalies
     -- Verdict (c): each side's both-direction multiset at ITS completion instant, same execution.
     local batch_exact = 0
@@ -286,7 +304,7 @@ local function dup_kill_batched(opts)
     end
     batched.cursor = to
     return { success = true, tick = game.tick, from = from, to = to,
-      placed = placed, unplaced = unplaced, leaks_undone = leaks_undone, anomalies = anomalies,
+      placed = placed, unplaced = unplaced, anomalies = anomalies,
       batch_exact = batch_exact, batch_inexact = batch_inexact, done = to >= #batched.groups }
   end
 
@@ -298,7 +316,7 @@ local function dup_kill_batched(opts)
     local sc = game.surfaces["belt-r15-scratch"]
     local suid, stotal = {}, 0
     if sc then
-      for _, e in ipairs(sc.find_entities_filtered({ type = { "transport-belt", "underground-belt", "splitter" } })) do
+      for _, e in ipairs(sc.find_entities_filtered({ type = BELT_TYPES })) do
         for li = 1, e.get_max_transport_line_index() do
           for _, it in ipairs(e.get_transport_line(li).get_detailed_contents()) do
             local id = tostring(it.unique_id)
@@ -329,8 +347,7 @@ local function dup_kill_batched(opts)
       success = true, tick = game.tick,
       sides = #batched.groups, sides_exact_at_completion = exact_at_completion,
       inexact_sides = batched.inexact,
-      placed = batched.placed, unplaced = batched.unplaced,
-      leaks_undone = batched.leaks_undone, anomalies = batched.anomalies,
+      placed = batched.placed, unplaced = batched.unplaced, anomalies = batched.anomalies,
       captured_total = batched.captured_total, scratch_census = stotal,
       drifted_after_completion = drifted, drift_abs = drift_abs,
       elapsed_ticks = game.tick - batched.start_tick,
@@ -343,11 +360,152 @@ local function dup_kill_batched(opts)
   return { success = false, error = "unknown batched op: " .. tostring(opts.op) }
 end
 
+--- ISO protocol (2026-07-27, owner-approved plan): capture the clean compression-loop fixture
+--- ONCE into storage, then restore the IDENTICAL side-group data under one varied condition per
+--- leg — context (scratch normal surface vs an open pad slot on the platform itself) x order
+--- (forward vs reversed group iteration; the owner's sideload-order theory). The multiset is the
+--- law's unit and the frozen-feed loop's side multisets are tick-invariant, so every leg judges
+--- the same apples. Zero leftovers on every path including errors.
+local function iso(opts)
+  if opts.op == "clear" then
+    storage.belt_iso = nil
+    return { success = true, cleared = true }
+  end
+
+  if opts.op == "capture" then
+    local plat
+    for _, p in pairs(game.forces.player.platforms) do
+      if p.valid and p.name == opts.platform then plat = p end
+    end
+    if not plat then return { success = false, error = "platform not found: " .. tostring(opts.platform) } end
+    local area = opts.area
+    if type(area) ~= "table" then return { success = false, error = "iso capture needs opts.area" } end
+    local live = plat.surface.find_entities_filtered({ type = BELT_TYPES, area = area })
+    if #live == 0 then return { success = false, error = "no belts in area" } end
+    local pairs_list = {}
+    for _, e in ipairs(live) do
+      pairs_list[#pairs_list + 1] = { entity = e, id = e.position.x .. "," .. e.position.y }
+    end
+    local groups = BeltRestoration.capture_side_groups(pairs_list)
+    if not groups then return { success = false, error = "capture returned nil" } end
+    local slots, total = 0, 0
+    for _, g in ipairs(groups) do
+      for _, sl in ipairs(g.slots) do slots = slots + 1 total = total + sl.ct end
+    end
+    -- groups are storage-safe by contract (plain members/slots tables, no handles).
+    storage.belt_iso = { groups = groups, platform = opts.platform, area = area,
+      captured_total = total, tick = game.tick }
+    return { success = true, belts = #live, groups = #groups, slots = slots, captured_total = total }
+  end
+
+  if opts.op == "restore" then
+    local iso_data = storage.belt_iso
+    if not iso_data then return { success = false, error = "no iso capture in storage — run capture first" } end
+    local plat
+    for _, p in pairs(game.forces.player.platforms) do
+      if p.valid and p.name == iso_data.platform then plat = p end
+    end
+    if not plat then return { success = false, error = "capture platform gone: " .. tostring(iso_data.platform) } end
+    -- Geometry is static (belts do not move; only items do) — re-scan the SOURCE area live so the
+    -- rebuild positions match the stored groups' member ids exactly.
+    local live = plat.surface.find_entities_filtered({ type = BELT_TYPES, area = iso_data.area })
+    if #live == 0 then return { success = false, error = "source belts gone from area" } end
+
+    local order = opts.order or "forward"
+    local groups = iso_data.groups
+    if order == "reversed" then
+      local rev = {}
+      for i = #groups, 1, -1 do rev[#rev + 1] = groups[i] end
+      groups = rev
+    end
+
+    -- Build the target context.
+    local context = opts.context or "scratch"
+    local target, dx, dy, cleanup
+    if context == "scratch" then
+      local old = game.surfaces["belt-iso-scratch"]
+      if old then game.delete_surface(old) end
+      local sc = game.create_surface("belt-iso-scratch", { width = 128, height = 128 })
+      sc.request_to_generate_chunks({ 0, 0 }, 3)
+      sc.force_generate_chunk_requests()
+      local a = iso_data.area
+      local tiles = {}
+      for x = math.floor(a[1][1]) - 3, math.ceil(a[2][1]) + 3 do
+        for y = math.floor(a[1][2]) - 3, math.ceil(a[2][2]) + 3 do
+          tiles[#tiles + 1] = { name = "lab-dark-1", position = { x, y } }
+        end
+      end
+      sc.set_tiles(tiles, true, false, true, false)
+      target, dx, dy = sc, 0, 0
+      cleanup = function() if sc.valid then game.delete_surface(sc) end end
+    elseif context == "platform" then
+      -- Rebuild at an OPEN pad slot on the platform itself: platform-surface class, zero new
+      -- surfaces. opts.slot = {x, y} interior origin; translation = slot - source area origin.
+      local slot = opts.slot
+      if type(slot) ~= "table" then return { success = false, error = "context platform needs opts.slot {x,y}" } end
+      local a = iso_data.area
+      dx = slot.x - a[1][1]
+      dy = slot.y - a[1][2]
+      target = plat.surface
+      local dest_area = { { a[1][1] + dx, a[1][2] + dy }, { a[2][1] + dx, a[2][2] + dy } }
+      if #target.find_entities_filtered({ area = dest_area }) > 0 then
+        return { success = false, error = "platform slot not empty — refusing to build over content" }
+      end
+      cleanup = function()
+        for _, e in pairs(target.find_entities_filtered({ area = dest_area, type = BELT_TYPES })) do
+          if e.valid then e.destroy() end
+        end
+      end
+    else
+      return { success = false, error = "unknown context: " .. tostring(context) }
+    end
+
+    -- From here on, EVERY exit runs cleanup (zero-leftover discipline, error paths included).
+    local ok, result = pcall(function()
+      local emap, cfails = rebuild_on(target, live, dx, dy)
+      if cfails > 0 then error("rebuild create failures: " .. cfails) end
+      local placed, unplaced, anomalies = BeltRestoration.restore_side_groups(groups, emap)
+      local all_exact, inexact = true, {}
+      for gi, g in ipairs(groups) do
+        local exp = {}
+        local expt = 0
+        for _, sl in ipairs(g.slots) do
+          local k = sl.n .. "|" .. sl.q
+          exp[k] = (exp[k] or 0) + sl.ct
+          expt = expt + sl.ct
+        end
+        local act, actt = side_multiset(g, emap)
+        if not multiset_exact(exp, act) then
+          all_exact = false
+          inexact[#inexact + 1] = { g = gi, expected = expt, actual = actt }
+        end
+      end
+      return {
+        success = true, context = context, order = order,
+        placed = placed, unplaced = unplaced, anomalies = anomalies,
+        all_sides_exact = all_exact, inexact_sides = inexact,
+        captured_total = iso_data.captured_total,
+      }
+    end)
+    cleanup()
+    if not ok then
+      log("[belt-iso] restore leg failed: " .. tostring(result))
+      return { success = false, error = tostring(result), context = context, order = order }
+    end
+    return result
+  end
+
+  return { success = false, error = "unknown iso op: " .. tostring(opts.op) }
+end
+
 local function belt_side_restore_selftest(opts)
   -- Real-world DUP-kill measurement (opts-selected); the no-arg call keeps the fake-line unit
   -- rung below unchanged.
   if type(opts) == "table" and opts.mode == "dup_kill" then
     return dup_kill(opts)
+  end
+  if type(opts) == "table" and opts.mode == "iso" then
+    return iso(opts)
   end
   if type(opts) == "table" and opts.mode == "dup_kill_batched" then
     return dup_kill_batched(opts)
@@ -424,16 +582,27 @@ local function belt_side_restore_selftest(opts)
     [3] = { valid = true, prototype = prototype, get_transport_line = function() return neighbour end },
   }
   local groups = {
+    -- item_source_positions is REQUIRED (no fallback path): the slot's captured source position
+    -- is entity 1 line 1 k 200 — the source-position scan drives the same aliased-window leak
+    -- the fake's insert redirect manufactures.
     { members = { { id = 1, li = 1 }, { id = 2, li = 1 } },
-      slots = { { n = "iron-plate", q = "legendary", ct = 1 } } },
-    { members = { { id = 3, li = 1 } }, slots = {} },
+      slots = { { n = "iron-plate", q = "legendary", ct = 1 } },
+      item_source_positions = { 1, 1, 200 } },
+    { members = { { id = 3, li = 1 } }, slots = {}, item_source_positions = {} },
   }
 
-  local placed, unplaced, leaks_undone, anomalies = BeltRestoration.restore_side_groups(groups, entity_map)
-  check("aliased_windows_do_not_double_count", placed == 1 and unplaced == 0 and anomalies == 0,
-    string.format("placed=%d unplaced=%d anomalies=%d", placed, unplaced, anomalies))
-  check("cross_side_leak_is_detected", leaks_undone == 1,
-    "expected one detected and undone leak, got " .. tostring(leaks_undone))
+  -- CONTRACT (changed 2026-07-26, owner scale ruling): the per-placement leak UNDO is gone with
+  -- the per-placement global snapshots that stalled the workhorse import (~14M engine calls). The
+  -- leak this fake manufactures is the AGED-HANDLE class, which the fresh-handle production regime
+  -- cannot produce (handles fetched in the writing execution; no topology mutation mid-restore).
+  -- What the contract now guarantees is DETECTION, never silence: a leak that somehow occurs shows
+  -- up as a restore-granularity GLOBAL BRACKET mismatch -> anomalies > 0, and every caller treats
+  -- anomalies as failure (SelectionLab errors the transaction; the import fails => 2PC revert).
+  local placed, unplaced, anomalies = BeltRestoration.restore_side_groups(groups, entity_map)
+  check("aliased_windows_do_not_double_count", placed == 1 and unplaced == 0,
+    string.format("placed=%d unplaced=%d", placed, unplaced))
+  check("leak_surfaces_as_bracket_anomaly", anomalies >= 1,
+    "a leaked placement must fail the global bracket, got anomalies=" .. tostring(anomalies))
 
   local function count(line, quality)
     local total = 0
@@ -444,8 +613,27 @@ local function belt_side_restore_selftest(opts)
   end
   check("target_receives_exact_quality", count(target, "legendary") == 1 and count(target, "normal") == 0,
     "target did not receive exactly one legendary plate")
-  check("leak_undo_preserves_neighbour_quality", count(neighbour, "normal") == 5 and count(neighbour, "legendary") == 0,
-    "leak undo changed the neighbour's mixed-quality multiset")
+  -- The leaked stack now REMAINS on the neighbour (no undo) — the point is it cannot remain
+  -- silently: the bracket anomaly above is the loud witness the callers fail on.
+  check("leak_is_visible_not_silent", count(neighbour, "legendary") == 1 and count(neighbour, "normal") == 5,
+    "expected the leaked legendary plate to sit on the neighbour, witnessed by the anomaly")
+
+  -- F1 regression (review 2026-07-27): malformed belt_side_groups must be REFUSED by the shape
+  -- validator before restore ever runs — an uncaught throw on the import's on_tick path kills the
+  -- headless server (exit 255, measured twice). These are the exact adversarial payloads from the
+  -- review: an empty group, bare scalars, and a misaligned item_source_positions array.
+  local v1 = BeltRestoration.validate_side_groups({ {} })
+  check("shape_guard_refuses_empty_group", v1 == false, "group {} must fail shape validation")
+  local v2 = BeltRestoration.validate_side_groups({ 1, 2, 3 })
+  check("shape_guard_refuses_scalars", v2 == false, "scalar groups must fail shape validation")
+  local v3 = BeltRestoration.validate_side_groups({
+    { members = { { id = 1, li = 1 } }, slots = { { n = "iron-plate", q = "normal", ct = 1 } }, item_source_positions = { 1, 1 } },
+  })
+  check("shape_guard_refuses_misaligned_source_positions", v3 == false, "item_source_positions not a multiple of 3 must fail")
+  local v4 = BeltRestoration.validate_side_groups({
+    { members = { { id = 1, li = 1 } }, slots = { { n = "iron-plate", q = "normal", ct = 1 } }, item_source_positions = { 1, 1, 64 } },
+  })
+  check("shape_guard_accepts_wellformed", v4 == true, "a well-formed group must pass shape validation")
 
   return { passed = passed, failed = failed, total = passed + failed, details = details }
 end

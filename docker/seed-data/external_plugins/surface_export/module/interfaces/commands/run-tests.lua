@@ -77,9 +77,26 @@ local function reset_cell(surface, cell)
   local comb, panel = find_trio(surface, cell.ox, cell.oy)
   if not (comb and panel) then error("status trio missing at origin (" .. cell.ox .. "," .. cell.oy .. ")") end
   local cleared = 0
-  for _, e in ipairs(surface.find_entities_filtered({ area = { { cell.ox + 14, cell.oy }, { cell.ox + 27.5, cell.oy + 11 } } })) do
-    e.destroy()
-    cleared = cleared + 1
+  -- FULL paste height including the oy+11.5 half-row (measured 2026-07-28: the thruster-pair
+  -- pad's pasted pipes at oy+11.5 sat BELOW the old oy+11 sweep edge and accumulated one
+  -- Lua-created overlapping pipe PER BOARD RUN — 12 stacked pipes per tile, physically-impossible
+  -- co-located segments, and the whole-gallery transfer's fluid clobber). Only the status trio's
+  -- own entities survive the sweep.
+  local sweep_area = { { cell.ox + 14, cell.oy }, { cell.ox + 27.5, cell.oy + 12 } }
+  for _, e in ipairs(surface.find_entities_filtered({ area = sweep_area })) do
+    if e ~= comb and e ~= panel then
+      e.destroy()
+      cleared = cleared + 1
+    end
+  end
+  -- GUARD: a sweep that leaves anything behind re-accumulates silently forever — refuse loudly
+  -- (both callers pcall this; command context, never on_tick).
+  local leftover = 0
+  for _, e in ipairs(surface.find_entities_filtered({ area = sweep_area })) do
+    if e ~= comb and e ~= panel then leftover = leftover + 1 end
+  end
+  if leftover > 0 then
+    error("paste-half sweep left " .. leftover .. " entities at origin (" .. cell.ox .. "," .. cell.oy .. ")")
   end
   set_status(cell.text_obj, comb, panel, "waiting")
   return cleared, comb, panel
@@ -155,7 +172,9 @@ end
 --   "platform" platform meter (platform object)
 --   "none"     platform meter () — resolves its own platforms by name (hold pairs)
 local FM = FixtureMeters
-local function meter_entities(surface) return { entities = #surface.find_entities_filtered({}) } end
+-- Stable STRUCTURE count (transient debris excluded) — see FixtureMeters.count_stable_entities
+-- for the rationale; a raw count on a live-factory platform flips with spills/effects.
+local function meter_entities(surface) return { entities = FM.count_stable_entities(surface) } end
 
 local DISPATCH = {
   -- omnibus pads (copy/paste-audited), anchor-scoped fingerprints
@@ -197,6 +216,7 @@ local DISPATCH = {
   ["energy-accumulator-drain"]      = { args = "surface", meter = FM.measure_energy },
   ["belt-corner-recovery"]          = { args = "surface", meter = FM.measure_belt_corner },
   ["transfer-workhorse"]            = { args = "surface", meter = meter_entities },
+  ["active-state-parity"]           = { args = "surface", meter = FM.measure_active_state },
   ["consumable-hub-1"]              = { args = "surface", meter = meter_entities },
   ["consumable-hub-2"]              = { args = "surface", meter = meter_entities },
   ["consumable-hub-3"]              = { args = "surface", meter = meter_entities },
@@ -213,7 +233,12 @@ local DISPATCH = {
 local function compare_fingerprint(reads, fingerprint, exclude)
   for key, expected in pairs(fingerprint or {}) do
     if not (exclude and exclude[key]) and not FM.approx_equal(key, reads and reads[key], expected) then
-      return string.format("%s=%s exp %s", key, tostring(reads and reads[key]), tostring(expected))
+      -- Render a 2-number range expectation readably; tostring(table) prints an address.
+      local want = tostring(expected)
+      if type(expected) == "table" and #expected == 2 then
+        want = string.format("[%s..%s]", tostring(expected[1]), tostring(expected[2]))
+      end
+      return string.format("%s=%s exp %s", key, tostring(reads and reads[key]), want)
     end
   end
   return nil
@@ -308,7 +333,7 @@ local function run_pad_body(player, surface, cell, fixture, dispatch, roster, ct
   -- transfer pad runs them too — the promotion of a pad to transfer-act is now a pure ADD.
   -- What a transfer pad does NOT run here is its DECLARED verify (d): those checks describe the
   -- dest/source ends of a REAL cross-instance transfer (arrived platform, discarded dest, preserved
-  -- source) and are owned by tests/integration/pad-transfer-suite. Evaluating them against a local
+  -- source) and are owned by tests/integration/gallery-suite. Evaluating them against a local
   -- pasted half would be meaningless and would fail honest fixtures.
   local transfer_act = has_lc and (act == "transfer" or act == "clone")
   if has_lc and type(act) == "table" then
@@ -681,6 +706,23 @@ Base.admin_command("test-run",
             else
               local d = cells_for(surface)
               local cell = match_cell(d.cells, fx)
+              if not cell and type(fx.origin) == "table" then
+                -- Renderings NEVER transfer (the transfer-strips-script-state law), so a
+                -- TRANSFERRED copy of the gallery has no discoverable name text and the board
+                -- read MISSING for every pad (measured 2026-07-28, the consolidated suite's
+                -- destination board). Recover by STRUCTURE: the status-trio ENTITIES do
+                -- transfer — find them at the roster origin and recreate the name rendering.
+                local comb, panel = find_trio(surface, fx.origin.x, fx.origin.y)
+                if comb and panel then
+                  local text_obj = rendering.draw_text({
+                    text = fx.name or id, surface = surface,
+                    target = { fx.origin.x + NAME_OFFSET_X, fx.origin.y + NAME_OFFSET_Y },
+                    color = COLORS.waiting, scale = 1.5, alignment = "center",
+                  })
+                  cell = { name = fx.name or id, text_obj = text_obj, ox = fx.origin.x, oy = fx.origin.y }
+                  d.cells[#d.cells + 1] = cell
+                end
+              end
               if not cell then
                 missing = missing + 1
                 record(id, "missing", "no pad cell on " .. surface.name)

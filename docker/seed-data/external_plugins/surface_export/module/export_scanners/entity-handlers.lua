@@ -218,7 +218,7 @@ EntityHandlers["furnace"] = function(entity)
     end
   end
 
-  -- Previous recipe (Factorio 2.0+ - for foundries and other furnaces)
+  -- Previous recipe
   if entity.previous_recipe then
     data.previous_recipe = {
       name = entity.previous_recipe.name,
@@ -610,6 +610,24 @@ EntityHandlers["mining-drill"] = function(entity)
     -- the drill's 104.4 acid).
     fluidboxes = InventoryScanner.extract_fluidboxes(entity)
   }
+
+  -- MINING PROGRESS — the drill's half-finished cycle, exactly like crafting_progress on a crafter.
+  -- A fluid-consuming drill charges the FULL cycle cost up front, so a drill that arrives at
+  -- progress 0 starts a brand new cycle and pays again. Measured 2026-07-28 on the acid-drill pad:
+  -- source mining_progress 0.0417 vs destination 1.3e-15, and the destination's acid segment came
+  -- out exactly 10 short — one uranium cycle's 10 sulfuric acid, re-charged. The exact gate cannot
+  -- see it: the gate closes pre-activation, and the drill spends the acid once it is woken.
+  -- Both fields are RW (write verified live: 0.5 written and read back).
+  -- intentional probe; not every mining-drill prototype exposes these, absence is not a finding
+  local mp_ok, mining_progress = pcall(function() return entity.mining_progress end)
+  if mp_ok and mining_progress and mining_progress > 0 then
+    data.mining_progress = mining_progress
+  end
+  -- intentional probe; same rationale as mining_progress
+  local bmp_ok, bonus_mining_progress = pcall(function() return entity.bonus_mining_progress end)
+  if bmp_ok and bonus_mining_progress and bonus_mining_progress > 0 then
+    data.bonus_mining_progress = bonus_mining_progress
+  end
 
   -- Mining target
   if entity.mining_target then
