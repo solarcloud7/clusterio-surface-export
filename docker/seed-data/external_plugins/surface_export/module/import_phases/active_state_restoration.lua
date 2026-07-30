@@ -176,6 +176,47 @@ function ActiveStateRestoration.restore(entities_to_create, entity_map, frozen_s
                 end
             end
 
+            -- MINING PROGRESS, applied immediately after the wake in the SAME execution. This is the
+            -- THIRD restore point tried and it does not hold either — the drain is NOT fixed. Kept
+            -- because it is the correct place and costs nothing, and because the comment is the
+            -- record of what has been eliminated.
+            --
+            -- The problem: a fluid-consuming drill charges its ENTIRE cycle cost up front, so a drill
+            -- that starts a fresh cycle pays again — a silent 10 sulfuric-acid drain per transfer on
+            -- the acid-drill pad, invisible to the gate because the gate closes before activation.
+            --
+            -- Measured 2026-07-29 with a 0.77 marker (mining_progress is LuaControl-inherited and RW
+            -- on 2.0+, so writability is not the obstacle):
+            --   * capture works — 0.77 is in the source payload
+            --   * restore LANDS — the pre-gate destination scan records mining_progress 0.77, so the
+            --     creation-time row and the EntityStateRestoration pass both applied correctly
+            --   * yet the drill reads ~0 once activated, having charged the acid
+            --   * this pass, after the wake and before any tick, ALSO does not hold
+            --   * BUT writing to a transferred drill that has already been RUNNING sticks perfectly
+            --     and survives deactivate -> write -> reactivate and many seconds of updates
+            -- So a FRESHLY CREATED drill discards a script-set progress on its first update, while an
+            -- established one keeps it. The distinguishing variable is the entity's age, not the
+            -- write, the phase, or activation.
+            --
+            -- UNRESOLVED, and possibly engine-bound. The next experiment is a DEFERRED write one or
+            -- more ticks after activation: if that holds, progress becomes faithful but the 10 acid
+            -- is already spent by then, so the honest options narrow to (a) accept and document a
+            -- bounded one-cycle fluid charge per transferred fluid-consuming drill and re-pin the
+            -- fixture to it, or (b) record it as an engine limit. Do NOT top the fluid back up: that
+            -- manufactures fluid the source never sent.
+            local sd = entity_data.specific_data
+            if sd then
+                for _, field in ipairs({ "mining_progress", "bonus_mining_progress" }) do
+                    if sd[field] then
+                        local mp_ok, mp_err = pcall(function() entity[field] = sd[field] end)
+                        if not mp_ok then
+                            log(string.format("[Import] %s restore failed for '%s': %s",
+                                field, tostring(entity.name), tostring(mp_err)))
+                        end
+                    end
+                end
+            end
+
             -- Idempotent held top-up (covers paths that reach restore() without the pre-gate
             -- pass; a hand already seated by restore_held_items_only is a no-op here).
             local restored, failed = restore_inserter_held(entity, entity_data)
