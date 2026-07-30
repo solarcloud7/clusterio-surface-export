@@ -362,7 +362,7 @@ For Clusterio core architecture, see [Clusterio docs](https://github.com/cluster
 
 ### General Style (partially enforced by ESLint — `npm run lint`, gated in CI)
 
-> `npm run lint` runs ten **correctness** guards, all gated in CI; an eleventh (**commit labels**,
+> `npm run lint` runs eleven **correctness** guards, all gated in CI; a twelfth (**commit labels**,
 > `scripts/lint-commit-labels.mjs`) runs as its own PR-gated CI step. Each script header carries the full
 > rationale and incident history. Every `*:allow` escape hatch MUST be enumerated in
 > `scripts/lint-allow-manifest.json` with a reason and approver — an allow is an **escalation**, never
@@ -377,6 +377,7 @@ For Clusterio core architecture, see [Clusterio docs](https://github.com/cluster
 > | Test grounding | `lint:test-grounding` | fidelity/gate tests measure PHYSICALLY, never the validator self-report alone; success-path = parse `debug_import_result` + `Assert-TransferSucceeded` before census | `lint-test-grounding:allow` |
 > | pcall logging | `lint:pcall-logging` | every `pcall` surfaces its error or is an annotated `-- intentional probe` | `-- pcall:allow` |
 > | Catch swallow | `lint:catch-swallow` | no TS catch substitutes a default without surfacing the error binding | `// catch:allow` |
+> | PS silent-failure | `lint:ps-silent` | no PowerShell-stream suppression (`2>$null`, `-ErrorAction SilentlyContinue/Ignore`, empty `catch {}`) in tools/tests ps1 unless CHECKED (`$LASTEXITCODE`/`$?` within 3 lines) or ANNOTATED (`deliberately quiet` + real reason) — the 11-broken-calls incident class | annotation IS the mechanism (reason required, reviewable) |
 > | Test hooks | `lint:test-hooks` | a `test_force_*` hook disarms in `finally`/`trap` or is enumerated in `FAIL_SAFE_HOOKS` (`scripts/fail-safe-hooks.mjs`) | `FAIL_SAFE_HOOKS` entry |
 > | Allow manifest | `lint:allow-manifest` | manifest matches reality exactly, both directions | — |
 > | Version certification | `lint:version-certification` | pinned Factorio version == `tests/labs-certified.json`; a pin bump goes red until the re-certification campaign lands | none — recertify |

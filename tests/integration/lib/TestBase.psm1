@@ -476,7 +476,13 @@ function Clear-DebugFiles {
         [string]$Pattern = "debug_*.json"
     )
     
-    docker exec $Container bash -c "rm -f /clusterio/data/instances/$Instance/script-output/$Pattern" 2>$null
+    docker exec $Container bash -c "rm -f /clusterio/data/instances/$Instance/script-output/$Pattern" 2>&1 | Out-Null
+    if ($LASTEXITCODE -ne 0) {
+        # A silently failed clear is a GROUNDING hazard: a stale debug file from a previous run can
+        # satisfy a later Wait-DebugFile poll and hand the test forged evidence. Loud, not fatal —
+        # the caller's own poll/assert remains the real gate.
+        Write-Warning "Clear-DebugFiles: docker exec failed (exit $LASTEXITCODE) — stale '$Pattern' files may survive on $Container and could satisfy a later poll."
+    }
 }
 
 <#
