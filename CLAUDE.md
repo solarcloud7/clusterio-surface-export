@@ -354,7 +354,7 @@ For Clusterio core architecture, see [Clusterio docs](https://github.com/cluster
 
 ### General Style (partially enforced by ESLint — `npm run lint`, gated in CI)
 
-> `npm run lint` runs nine **correctness** guards, all gated in CI; a tenth (**commit labels**,
+> `npm run lint` runs ten **correctness** guards, all gated in CI; an eleventh (**commit labels**,
 > `scripts/lint-commit-labels.mjs`) runs as its own PR-gated CI step. Each script header carries the full
 > rationale and incident history. Every `*:allow` escape hatch MUST be enumerated in
 > `scripts/lint-allow-manifest.json` with a reason and approver — an allow is an **escalation**, never
@@ -364,6 +364,7 @@ For Clusterio core architecture, see [Clusterio docs](https://github.com/cluster
 > |-------|---------|------|--------------|
 > | TS | `lint:js` (eslint) | never extract/cast a Link method (unnamed `no-restricted-syntax` selectors, `eslint.config.js`); no empty catch or bare `.catch(() => {})` | eslint-disable |
 > | Lua invariants | `lint:lua` | no `global.*` — `no-global-persistence-table`; no `__clusterio_lib__` — `no-clusterio-lib-mod-path`; no `platform.destroy()` — `no-platform-destroy`; no name-keyed transfer identity — `no-name-as-transfer-identity` | `-- lint-lua:allow` |
+> | Lua syntax | `lint:lua-syntax` | every module/mods-src .lua parses as Lua 5.2 AND names no undefined global (a parse error ships to a dead instance at save-load; a misspelled module-table name — the FixtureMeters-vs-M incident — surfaces as an undefined global) | none — fix the name or extend the whitelist in the script (reviewed change) |
 > | Web cache | `lint:web-cache` | webpack output filenames stay content-hashed (immutable 1y `/static` cache serves stale chunks otherwise) | `lint-webpack-cache:allow` |
 > | Test grounding | `lint:test-grounding` | fidelity/gate tests measure PHYSICALLY, never the validator self-report alone; success-path = parse `debug_import_result` + `Assert-TransferSucceeded` before census | `lint-test-grounding:allow` |
 > | pcall logging | `lint:pcall-logging` | every `pcall` surfaces its error or is an annotated `-- intentional probe` | `-- pcall:allow` |
