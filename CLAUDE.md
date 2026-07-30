@@ -107,7 +107,11 @@ The plugin uses **TypeScript** with bind-mounted source and **save patching** fo
 1. Start cluster: `docker compose up -d`
 2. Edit TypeScript files → `./tools/clusterio/build-plugin.ps1 node -RestartHosts`
 3. Edit web (`*.tsx`) files → `./tools/clusterio/build-plugin.ps1 web -RestartController` → reload browser
-4. Edit Lua files → `./tools/clusterio/patch-and-reset.ps1` (rebuild + reset saves to re-patch Lua + restart)
+4. Edit Lua files → `./tools/clusterio/patch-and-reset.ps1 -LuaOnly` (skips the ~3-min container build —
+   Lua is save-patched from source; a staleness tripwire refuses the skip if any TS/web source is newer
+   than dist/. Omit `-LuaOnly` when TS/web changed too.) Every run ends with a boot check: both
+   instances must answer RCON with the plugin loaded, so a Lua error at save-load fails the deploy
+   loudly instead of killing the instance silently.
 5. **Or use deploy script** for full rebuild: `.\tools\clusterio\deploy-cluster.ps1 -SkipIncrement`
 
 ### Cluster / transfer / RCON tools (`tools/`)

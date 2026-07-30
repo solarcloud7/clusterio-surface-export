@@ -2,7 +2,8 @@
 # Hot-reload plugin code and reset instances to seed save without full cluster rebuild
 
 param(
-    [switch]$Help = $false
+    [switch]$Help = $false,
+    [switch]$LuaOnly = $false
 )
 
 if ($Help) {
@@ -14,16 +15,25 @@ Hot-reloads plugin code (Lua + TypeScript + web) and resets instances to seed sa
 rebuilding containers. This is the one-shot for LUA changes (and any combination of changes).
 
 Usage:
-    .\patch-and-reset.ps1
+    .\patch-and-reset.ps1            # full: rebuild dist (node + web), reset saves, restart
+    .\patch-and-reset.ps1 -LuaOnly   # fast path: SKIP the ~3-min container build; Lua is
+                                     # save-patched from source, so dist/ is untouched by a
+                                     # module/*.lua-only change. REFUSES to run if any TS/web
+                                     # source is newer than the newest dist artifact (a stale
+                                     # dist would silently ship old plugin code).
 
 This script:
 1. Bumps the plugin version (cache-bust marker)
 2. Builds plugin artifacts (dist/node + dist/web) via tools/clusterio/build-plugin.ps1 — an isolated
    node:24 container, so it never pollutes the running cluster's bind-mounted node_modules
+   (skipped by -LuaOnly, guarded by the staleness tripwire above)
 3. Stops Factorio instances (keeps controller running)
 4. Resets save files to seed saves (required to apply Lua code changes)
 5. Restarts all containers (hosts + controller) — hosts load the new dist/node and re-patch
    saves with the latest Lua; the controller re-reads dist/web/manifest.json
+6. BOOT CHECK: polls until both instances report running AND answer RCON with the plugin's
+   remote interface present — a Lua error at save-load kills the headless server (exit 255),
+   and before this check the only signal was the server dying later.
 
 Note: Save reset is REQUIRED because Lua code is embedded in save files via save-patching.
       Without reset, old embedded script.dat prevents Lua code updates from taking effect.
@@ -39,9 +49,36 @@ $ErrorActionPreference = "Stop"
 Write-Host "=== Patch and Reset Instances ===" -ForegroundColor Cyan
 Write-Host ""
 
+$WorkspaceRoot = Split-Path (Split-Path $PSScriptRoot -Parent) -Parent
+
+if ($LuaOnly) {
+    # Fast path tripwire — checked FIRST, before the version bump mutates package.json (the bump
+    # would otherwise always be the "newest source" and defeat this check). Lua is save-patched
+    # from module/ SOURCE, so a Lua-only change never touches dist/; but if any TS/web source or
+    # build config is newer than the newest dist artifact, a stale dist would silently ship old
+    # plugin code — refuse instead of trusting the caller's claim.
+    $pluginRoot = Join-Path $WorkspaceRoot "docker/seed-data/external_plugins/surface_export"
+    $distNode = Join-Path $pluginRoot "dist/node"
+    $distWeb = Join-Path $pluginRoot "dist/web"
+    if (-not (Test-Path $distNode) -or -not (Test-Path $distWeb)) {
+        throw "-LuaOnly refused: dist/node or dist/web is missing. Run without -LuaOnly to build first."
+    }
+    $srcNewest = Get-ChildItem $pluginRoot -Recurse -File |
+        Where-Object { $_.FullName -notmatch '\\(dist|node_modules|module)\\' } |
+        Where-Object { $_.Extension -in '.ts', '.tsx', '.css', '.json', '.js' -or $_.Name -eq '.npmrc' } |
+        Sort-Object LastWriteTimeUtc -Descending | Select-Object -First 1
+    $distNewest = Get-ChildItem $distNode, $distWeb -Recurse -File |
+        Sort-Object LastWriteTimeUtc -Descending | Select-Object -First 1
+    if ($srcNewest -and $distNewest -and $srcNewest.LastWriteTimeUtc -gt $distNewest.LastWriteTimeUtc) {
+        throw ("-LuaOnly refused: '$($srcNewest.FullName)' ($($srcNewest.LastWriteTimeUtc)) is newer than the newest dist artifact " +
+            "'$($distNewest.Name)' ($($distNewest.LastWriteTimeUtc)). A stale dist would ship old plugin code — run without -LuaOnly.")
+    }
+    Write-Host "LuaOnly: dist/ is fresh (newest source: $($srcNewest.Name)) — container build will be skipped" -ForegroundColor Yellow
+    Write-Host ""
+}
+
 # Increment version to ensure no caching
 Write-Host "Incrementing plugin version..." -ForegroundColor Yellow
-$WorkspaceRoot = Split-Path (Split-Path $PSScriptRoot -Parent) -Parent
 $PluginJsonPath = Join-Path $WorkspaceRoot "docker/seed-data/external_plugins/surface_export/package.json"
 $ModuleJsonPath = Join-Path $WorkspaceRoot "docker/seed-data/external_plugins/surface_export/module/module.json"
 
@@ -74,13 +111,19 @@ Write-Host ""
 # IMPORTANT: build in the isolated container via build-plugin.ps1 — NEVER `npm install`/`npm run
 # build` in the live plugin dir on a running cluster: it re-adds the @clusterio/* peers into the
 # bind-mounted node_modules and breaks clusterioctl ("duplicate copy of @clusterio/lib").
-Write-Host "Building plugin artifacts (node + web)..." -ForegroundColor Yellow
-& "$PSScriptRoot/build-plugin.ps1" all
-if ($LASTEXITCODE -ne 0) {
-    throw "Plugin build failed"
+if ($LuaOnly) {
+    # Tripwire already passed (checked pre-bump, top of script) — dist/ is fresher than every source.
+    Write-Host "✓ LuaOnly: container build skipped (dist/ verified fresh before the version bump)" -ForegroundColor Green
+    Write-Host ""
+} else {
+    Write-Host "Building plugin artifacts (node + web)..." -ForegroundColor Yellow
+    & "$PSScriptRoot/build-plugin.ps1" all
+    if ($LASTEXITCODE -ne 0) {
+        throw "Plugin build failed"
+    }
+    Write-Host "✓ Plugin artifacts built" -ForegroundColor Green
+    Write-Host ""
 }
-Write-Host "✓ Plugin artifacts built" -ForegroundColor Green
-Write-Host ""
 
 # Check if cluster is running
 Write-Host "Checking cluster status..." -ForegroundColor Yellow
@@ -354,6 +397,39 @@ Invoke-InstanceLifecycle "start host-1 instance" 'already running' { docker exec
 Invoke-InstanceLifecycle "start host-2 instance" 'already running' { docker exec surface-export-controller npx clusterioctl $ctlConfig instance start "clusterio-host-2-instance-1" }
 Start-Sleep -Seconds 3
 Write-Host "✓ Instances started" -ForegroundColor Green
+
+# ---------------------------------------------------------------------------------------------
+# BOOT CHECK — did the patched save actually LOAD?
+#
+# A Lua error during save-patching/save-load kills the headless server (exit 255) — the fixture-
+# meters incident shipped exactly that through a full patch-and-reset, and the only signal was the
+# instance dying with this script long gone reporting success. Poll each instance until it answers
+# RCON with the plugin's remote interface present; a crashed instance never answers and fails loud
+# here, pointing at the log that has the actual Lua error.
+# ---------------------------------------------------------------------------------------------
+Write-Host ""
+Write-Host "Boot check: verifying the patched saves loaded and the plugin is live..." -ForegroundColor Yellow
+foreach ($h in 1, 2) {
+    $inst = "clusterio-host-$h-instance-1"
+    $bootDeadline = (Get-Date).AddSeconds(90)
+    $bootOk = $false
+    while ((Get-Date) -lt $bootDeadline) {
+        # Deliberately quiet: RCON POLL inside a bounded loop — a transient failure just means
+        # "still booting" and the loop retries; the throw below is the real gate.
+        $ping = docker exec surface-export-controller npx clusterioctl $ctlConfig --log-level error `
+            instance send-rcon $inst "/sc rcon.print(remote.interfaces['surface_export'] ~= nil)" 2>&1
+        if ($LASTEXITCODE -eq 0 -and ($ping | Out-String) -match '\btrue\b') { $bootOk = $true; break }
+        Start-Sleep -Seconds 3
+    }
+    if ($bootOk) {
+        Write-Host "  ✓ ${inst}: save loaded, plugin remote interface answering" -ForegroundColor Green
+    } else {
+        Write-Host "  X ${inst} FAILED the boot check (no RCON answer with the plugin loaded within 90s)." -ForegroundColor Red
+        Write-Host "    A Lua error at save-load kills the server — read the actual error with:" -ForegroundColor Red
+        Write-Host "    docker exec surface-export-host-$h sh -c 'tail -100 /clusterio/data/instances/$inst/factorio-current.log'" -ForegroundColor Red
+        throw "$inst did not come up with the plugin loaded. The patched save likely crashed at load — do not trust this deploy."
+    }
+}
 Write-Host ""
 Write-Host "=== Patch and Reset Complete ===" -ForegroundColor Cyan
 Write-Host ""
