@@ -20,7 +20,7 @@ const LINK_METHODS = "handle|handleRequest|handleEvent|sendTo|send|sendRequest|s
 
 module.exports = tseslint.config(
 	{
-		ignores: ["dist/**", "node_modules/**", "web/**", "**/*.js", "**/*.d.ts"],
+		ignores: ["dist/**", "node_modules/**", "web/**", "**/*.js", "**/*.d.ts", "scripts/vendor/**"],
 	},
 	{
 		files: ["**/*.ts"],

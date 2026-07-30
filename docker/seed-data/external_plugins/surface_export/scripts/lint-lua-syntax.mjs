@@ -30,7 +30,10 @@
 import { readFileSync, readdirSync, statSync, existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join, relative } from "node:path";
-import luaparse from "luaparse";
+// Vendored (scripts/vendor/luaparse.cjs), NOT a devDependency: the container boot-time npm install
+// is prod-only and prunes dev packages from the bind-mounted node_modules on every restart — a
+// deploy-time guard must run from a bare checkout with no install step.
+import luaparse from "./vendor/luaparse.cjs";
 
 const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url));
 const PLUGIN_DIR = join(SCRIPT_DIR, "..");
