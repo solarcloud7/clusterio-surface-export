@@ -153,7 +153,18 @@ if (!existsSync(TESTS_DIR)) {
 	);
 	process.exit(1);
 }
+const checkedCount = findTestFiles().length;
+if (checkedCount === 0) {
+	// Directory-present-but-empty is the RECORDED incident shape: the ps1 runners were deleted while
+	// tests/integration remained, and this guard printed "OK (0 tests checked)" — green while
+	// scanning nothing. Zero subjects is not a pass any more than a missing scan surface is.
+	console.error(
+		`lint:test-hooks — FAILED: ${TESTS_DIR} exists but contains zero run-tests.{ps1,mjs} runners.\n` +
+			"Ran 0 checks; refusing to report a pass on an empty scan surface.",
+	);
+	process.exit(1);
+}
 console.log(
-	`lint:test-hooks — OK (${findTestFiles().length} integration test(s) checked; ` +
+	`lint:test-hooks — OK (${checkedCount} integration test(s) checked; ` +
 		`${FAIL_SAFE_HOOKS.size} hook(s) whitelisted pre-gate)`,
 );
