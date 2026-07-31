@@ -66,6 +66,47 @@ function Get-InstanceByHostNumber {
     return $match
 }
 
+<#
+.SYNOPSIS
+    Read the controller's transaction-log store. The ONE path for this purpose.
+
+.DESCRIPTION
+    list-transaction-logs.ps1 and get-transaction-log.ps1 each carried their own copy of this
+    docker exec, and the copies had ALREADY DRIFTED: one appended `2>&1`, while the other carried a
+    comment explaining that `2>&1` corrupts the JSON because unrelated Docker warnings on stderr get
+    interleaved into the payload. One script documented the bug the other still had, and nothing
+    could tell you which was right. Hence one implementation.
+
+    Returns the parsed log array, an empty array when the store is present but empty, or $null when
+    the store does not exist yet (the caller decides how to phrase that).
+
+.PARAMETER Container
+    Controller container name. Defaults to this cluster's controller.
+#>
+function Get-TransactionLogStore {
+    param(
+        [string]$Container = "surface-export-controller",
+        [string]$StorePath = "/clusterio/data/database/surface_export_transaction_logs.json"
+    )
+
+    # Deliberately NO 2>&1 — stderr must stay OUT of the JSON. The exit code is the success signal.
+    $raw = docker exec $Container cat $StorePath
+    if ($LASTEXITCODE -ne 0) { return $null }
+
+    $json = ($raw -join "`n").Trim()
+    if ([string]::IsNullOrWhiteSpace($json)) { return @() }
+
+    # Keep the friendly parse diagnostic that only ONE of the two former copies had — a raw
+    # ConvertFrom-Json failure here reads as an opaque PowerShell error about the store's contents.
+    try {
+        return $json | ConvertFrom-Json
+    } catch {
+        Write-Host "Failed to parse the transaction log store ($StorePath). Content preview:" -ForegroundColor Red
+        Write-Host ($json.Substring(0, [Math]::Min(400, $json.Length))) -ForegroundColor Gray
+        throw
+    }
+}
+
 function Send-RCON {
     <#
     .SYNOPSIS

@@ -28,30 +28,16 @@ if ($TransferId -eq "latest") {
     Write-Host "Transfer ID: $TransferId`n" -ForegroundColor Yellow
 }
 
-try {
-    # Read transaction log file directly from controller container
-    # Note: We do NOT use 2>&1 here because unrelated Docker warnings on stderr would corrupt the JSON
-    $result = docker exec surface-export-controller cat /clusterio/data/database/surface_export_transaction_logs.json
+. "$PSScriptRoot\..\shared\cluster-utils.ps1"
 
-    if ($LASTEXITCODE -ne 0) {
+try {
+    # ONE reader for the store (tools/shared/cluster-utils.ps1) — including the no-2>&1 rule and the
+    # parse-preview diagnostic that originated here and is now shared with list-transaction-logs.ps1.
+    $allLogs = Get-TransactionLogStore
+
+    if ($null -eq $allLogs) {
         Write-Host "No transaction logs found yet. Transfer a platform first." -ForegroundColor Yellow
         exit 0
-    }
-
-    # Ensure result is a single string and parse JSON
-    $jsonContent = $result -join "`n"
-    
-    if ([string]::IsNullOrWhiteSpace($jsonContent)) {
-        Write-Host "Transaction log file is empty." -ForegroundColor Yellow
-        exit 0
-    }
-
-    try {
-        $allLogs = $jsonContent | ConvertFrom-Json
-    } catch {
-        Write-Host "Failed to parse transaction log JSON. Content preview:" -ForegroundColor Red
-        Write-Host ($jsonContent | Select-Object -First 5) -ForegroundColor Gray
-        throw $_
     }
 
     if (-not $allLogs -or $allLogs.Count -eq 0) {
