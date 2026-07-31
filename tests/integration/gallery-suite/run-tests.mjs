@@ -241,7 +241,10 @@ async function main() {
 
 main().catch(async error => {
 	console.error(error.stack || error.message);
-	await L.restoreLivePair(results, boundaryErrors).catch(() => {});
+	// Best-effort on the crash path — restoreLivePair catches internally, so a rejection HERE is a
+	// bug in the finalizer itself; surface it rather than exit over it silently.
+	await L.restoreLivePair(results, boundaryErrors)
+		.catch(restoreError => console.error(`restoreLivePair itself rejected: ${restoreError.stack || restoreError.message}`));
 	for (const err of boundaryErrors) console.error(err);
 	process.exit(1);
 });

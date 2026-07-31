@@ -68,19 +68,25 @@ export function loadTriageTable(root = rootPath()) {
 }
 
 /**
- * Match the diff facts against one signature cell's vocabulary. All tokens present in the cell must
- * hold; a cell using no recognized token matches nothing (reported as unmatched, never guessed).
+ * Match the diff facts against one signature cell's recognized vocabulary. All recognized tokens
+ * must hold, AND a stage token must be among them (a cell this matcher cannot read at all matches
+ * nothing). DIRECTION RULE (review must-fix M3): a row whose cell names no direction is a LOSS
+ * class — the FAQ table triages gate failures, and its only non-loss row says GAINED explicitly.
+ * Without the implicit all-LOST requirement, a fluids GAIN matched the "Real fluid loss" row and
+ * the printed operator action pointed the wrong way (measured on a constructed bundle).
  */
 function rowMatches(signature, facts) {
 	const wants = [];
-	if (signature.includes("`items`")) wants.push(facts.stage === "items");
-	if (signature.includes("`fluids`")) wants.push(facts.stage === "fluids");
+	let hasStageToken = false;
+	if (signature.includes("`items`")) { hasStageToken = true; wants.push(facts.stage === "items"); }
+	if (signature.includes("`fluids`")) { hasStageToken = true; wants.push(facts.stage === "fluids"); }
 	if (/\bone\b/.test(signature)) wants.push(facts.rowCount === 1);
 	if (/\bmany\b/.test(signature)) wants.push(facts.rowCount > 1);
 	if (signature.includes("LOST")) wants.push(facts.allNegative);
 	if (signature.includes("GAINED")) wants.push(facts.allPositive);
+	if (!signature.includes("LOST") && !signature.includes("GAINED")) wants.push(facts.allNegative);
 	if (signature.includes("single-digit")) wants.push(facts.maxAbsDelta <= 9);
-	return wants.length > 0 && wants.every(Boolean);
+	return hasStageToken && wants.every(Boolean);
 }
 
 /**
@@ -109,6 +115,14 @@ export function explainBlackBox(bundle, { root } = {}) {
 	let triage;
 	if (triageTable.unavailable) {
 		triage = { matched: false, unavailable: triageTable.unavailable };
+	} else if (rows.length === 0) {
+		// Distinct from "no class matched" (review must-fix M3): claiming unexplained-ness over an
+		// EMPTY diff would be a positive claim the vocabulary cannot support.
+		triage = { matched: false, inexpressible: "the bundle records no count mismatch at all — " +
+			"the failure was not a count-diff failure; inspect the raw bundle and the transaction log" };
+	} else if (stage === "both") {
+		triage = { matched: false, inexpressible: "items AND fluids both mismatch — the FAQ signature " +
+			"vocabulary has no combined-stage row; triage each stage by hand against the table" };
 	} else {
 		const hit = triageTable.rows.find(row => rowMatches(row.signature, facts));
 		triage = hit
@@ -202,6 +216,8 @@ export function formatExplanation(report) {
 		lines.push(`  caveat: ${report.triage.caveat}`);
 	} else if (report.triage.unavailable) {
 		lines.push(`triage UNAVAILABLE: ${report.triage.unavailable}`);
+	} else if (report.triage.inexpressible) {
+		lines.push(`triage INEXPRESSIBLE for this bundle: ${report.triage.inexpressible}`);
 	} else {
 		lines.push(`triage: ${report.triage.note}`);
 	}

@@ -9,7 +9,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
-	explainBlackBoxFile, formatExplanation, loadTriageTable,
+	explainBlackBox, explainBlackBoxFile, formatExplanation, loadTriageTable,
 } from "../../tools/tests/testkit/blackbox-explain.mjs";
 
 const FIXTURE = new URL("../../tools/tests/testkit/fixtures/failure-black-box-sample.json", import.meta.url)
@@ -62,4 +62,36 @@ test("replay payload is present and reimportable-shaped", () => {
 	assert.equal(report.replay.present, true);
 	assert.equal(report.replay.entityCount, 4);
 	assert.ok(report.replay.tileCount > 0);
+});
+
+// Constructed bundles for the triage direction rule (review must-fix M3): a direction-less FAQ row
+// is a LOSS class, so a GAIN must never match it and get told "the gate refused correctly".
+const bundleWith = (diff) => explainBlackBox({
+	transfer_id: "t", platform_name: "p", gate_tick: 2, started_tick: 1, mods: {},
+	expected: { items: {}, fluids: {} }, actual: { items: {}, fluids: {} },
+	diff, physical_entities: [], physical_fluid_segments: {},
+});
+
+test("triage: a fluids GAIN does not match the loss-class row", () => {
+	const gained = bundleWith({ items: {}, fluids: { water: { expected: 100, actual: 9000, delta: 8900 } } });
+	assert.equal(gained.triage.matched, false);
+	assert.match(gained.triage.note, /unexplained until measured/);
+});
+
+test("triage: a fluids LOSS matches the fluid-loss row", () => {
+	const lost = bundleWith({ items: {}, fluids: { "fusion-plasma": { expected: 1500, actual: 0, delta: -1500 } } });
+	assert.equal(lost.triage.matched, true);
+	assert.match(lost.triage.knownClass, /fluid loss/i);
+});
+
+test("triage: vocabulary-inexpressible bundles are labeled as such, never claimed unexplained", () => {
+	const both = bundleWith({
+		items: { "iron-plate": { expected: 2, actual: 1, delta: -1 } },
+		fluids: { water: { expected: 2, actual: 1, delta: -1 } },
+	});
+	assert.equal(both.failureStage, "both");
+	assert.match(both.triage.inexpressible, /no combined-stage row/);
+	const empty = bundleWith({ items: {}, fluids: {} });
+	assert.match(empty.triage.inexpressible, /no count mismatch/);
+	assert.match(formatExplanation(empty), /INEXPRESSIBLE/);
 });

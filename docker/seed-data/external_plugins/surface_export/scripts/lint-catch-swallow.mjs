@@ -25,10 +25,42 @@ const PLUGIN_DIR = join(SCRIPT_DIR, "..");
 const REPO_DIR = join(PLUGIN_DIR, "..", "..", "..", "..");
 const ALLOW_MARKER = "catch:allow";
 
-function maskNonCode(source) {
+// Words after which a `/` begins a REGEX literal, not division (`return /x/.test(y)`).
+const REGEX_PRECEDING_KEYWORDS = new Set([
+	"return", "typeof", "case", "in", "of", "delete", "void", "new", "do", "else", "yield", "await", "instanceof",
+]);
+
+/** Does a `/` at this point start a regex literal? Look back over the masked output so far. */
+function startsRegex(out, index) {
+	let j = index - 1;
+	while (j >= 0 && /\s/.test(out[j])) j--;
+	if (j < 0) return true;
+	const prev = out[j];
+	if (/[A-Za-z0-9_$]/.test(prev)) {
+		// Identifier-ish before the slash is division — unless the word is a keyword.
+		let start = j;
+		while (start > 0 && /[A-Za-z_$]/.test(out[start - 1])) start--;
+		return REGEX_PRECEDING_KEYWORDS.has(out.slice(start, j + 1).join(""));
+	}
+	// After a closing paren/bracket the slash divides; after operators/openers it starts a regex.
+	return prev !== ")" && prev !== "]";
+}
+
+function maskNonCode(source, filename = "<source>") {
 	const out = [...source];
 	const states = [{ kind: "code", templateDepth: null }];
 	const blank = (index) => { if (source[index] !== "\n" && source[index] !== "\r") out[index] = " "; };
+	// A quote or regex literal cannot span a raw newline in valid JS — reaching one means the lexer
+	// above desynced (that is how regex-literals-with-quotes silently blinded the whole scan of
+	// three real files while printing OK, the half-scan defect class this repo keeps closing).
+	// FAIL LOUD: extend the lexer, never skip the file.
+	const desync = (state, index) => {
+		const line = source.slice(0, state.openedAt ?? index).split("\n").length;
+		const error = new Error(`maskNonCode desynced in ${filename}: unterminated ${state.kind} from ` +
+			`line ${line} — the lexer cannot parse this construct; extend maskNonCode, do not exempt the file`);
+		error.desyncLine = line;
+		throw error;
+	};
 
 	for (let i = 0; i < source.length; i++) {
 		const state = states.at(-1);
@@ -44,9 +76,19 @@ function maskNonCode(source) {
 			continue;
 		}
 		if (state.kind === "quote") {
+			if (source[i] === "\n") desync(state, i);
 			blank(i);
 			if (source[i] === "\\") { blank(i + 1); i++; }
 			else if (source[i] === state.quote) states.pop();
+			continue;
+		}
+		if (state.kind === "regex") {
+			if (source[i] === "\n") desync(state, i);
+			blank(i);
+			if (source[i] === "\\") { blank(i + 1); i++; }
+			else if (source[i] === "[") state.inClass = true;
+			else if (source[i] === "]") state.inClass = false;
+			else if (source[i] === "/" && !state.inClass) states.pop();
 			continue;
 		}
 		if (state.kind === "template") {
@@ -63,14 +105,22 @@ function maskNonCode(source) {
 		}
 
 		if (source[i] === "/" && next === "/") { blank(i); blank(i + 1); i++; states.push({ kind: "line-comment" }); continue; }
-		if (source[i] === "/" && next === "*") { blank(i); blank(i + 1); i++; states.push({ kind: "block-comment" }); continue; }
-		if (source[i] === "'" || source[i] === '"') { blank(i); states.push({ kind: "quote", quote: source[i] }); continue; }
-		if (source[i] === "`") { blank(i); states.push({ kind: "template" }); continue; }
+		if (source[i] === "/" && next === "*") { blank(i); blank(i + 1); i++; states.push({ kind: "block-comment", openedAt: i }); continue; }
+		// JSX vetoes (TSX surface): `</div>` and `<Row/>` are tags, never regex literals.
+		if (source[i] === "/" && (source[i - 1] === "<" || next === ">")) { /* plain code */ }
+		else if (source[i] === "/" && startsRegex(out, i)) {
+			blank(i);
+			states.push({ kind: "regex", inClass: false, openedAt: i });
+			continue;
+		}
+		if (source[i] === "'" || source[i] === '"') { blank(i); states.push({ kind: "quote", quote: source[i], openedAt: i }); continue; }
+		if (source[i] === "`") { blank(i); states.push({ kind: "template", openedAt: i }); continue; }
 		if (state.templateDepth !== null) {
 			if (source[i] === "{") state.templateDepth++;
 			if (source[i] === "}" && --state.templateDepth === 0) states.pop();
 		}
 	}
+	if (states.length > 1) desync(states.at(-1), source.length);
 	return out.join("");
 }
 
@@ -109,22 +159,33 @@ function surfacedBinding(body, binding) {
 	// Escape-by-assignment: writing the error into a property (`outcome.error = err.message`) or into
 	// an outer variable declared ABOVE the catch (`lastError = err` in a deadline-retry loop that
 	// rethrows it after the loop) puts it where enclosing code reads it — the same escape rank as
-	// `return`. A write to a variable declared INSIDE the body stays local and does not count, and an
-	// assignment whose right side never mentions the binding (`allLogs = []`) is still a swallow.
-	const assignRe = /(?<![.\w$])([A-Za-z_$][\w$]*(?:\s*(?:\.\s*[A-Za-z_$][\w$]*|\[[^\]]*\]))*)\s*=(?![=>])([^;\n]+)/g;
+	// `return`. LOCALITY is the boundary (review must-fix M2): the ROOT of the target — `results` in
+	// `results.tails[host]`, `errs` in `errs.push(...)` — must NOT be declared inside the catch body,
+	// or the error only reached a container that dies at the closing brace (a swallow with extra
+	// steps: `const local = {}; local.err = error`). An assignment whose right side never mentions
+	// the binding (`allLogs = []`) is still a swallow. Compound ops (`+=`, `??=`) count as writes.
+	const declaredLocally = (root) =>
+		new RegExp(`\\b(?:const|let|var)\\s+${root.replace(/[$]/g, "\\$")}\\b`).test(body);
+	const assignRe = /(?<![.\w$])([A-Za-z_$][\w$]*(?:\s*(?:\.\s*[A-Za-z_$][\w$]*|\[[^\]]*\]))*)\s*(?:\*\*|[+\-*/%&|^]|\?\?|\|\||&&)?=(?![=>])([^;\n]+)/g;
 	for (const match of body.matchAll(assignRe)) {
-		const target = match[1];
-		if (!/[.[]/.test(target)) {
-			const declaredLocally = new RegExp(`\\b(?:const|let|var)\\s+${target.replace(/[$]/g, "\\$")}\\b`).test(body);
-			if (declaredLocally) continue;
-		}
+		const root = match[1].match(/^[A-Za-z_$][\w$]*/)[0];
+		if (declaredLocally(root)) continue;
 		if ([...names].some((name) => hasName(match[2], name))) return true;
 	}
 
-	// `.push(...)` with the binding in its arguments feeds an outer collection (findings, leftovers,
-	// boundary errors) that enclosing code reports — counted via the same argument scan as the
-	// logger-style sinks below.
-	const sinkRe = /(?:\b(?:logger|console|antMessage)\.\w+|\breject|\.\s*push)\s*\(/g;
+	// `.push(...)` with the binding in its arguments feeds an OUTER collection (findings, leftovers,
+	// boundary errors) that enclosing code reports. Same locality rule: a push onto a collection
+	// declared inside the body never leaves the catch.
+	const pushRe = /([A-Za-z_$][\w$]*)((?:\s*\.\s*[A-Za-z_$][\w$]*|\s*\[[^\]]*\])*)\s*\.\s*push\s*\(/g;
+	for (const match of body.matchAll(pushRe)) {
+		if (declaredLocally(match[1])) continue;
+		const open = match.index + match[0].lastIndexOf("(");
+		const close = matchingDelimiter(body, open, "(", ")");
+		if (close === -1) continue;
+		if ([...names].some((name) => hasName(body.slice(open + 1, close), name))) return true;
+	}
+
+	const sinkRe = /(?:\b(?:logger|console|antMessage)\.\w+|\breject)\s*\(/g;
 	for (const match of body.matchAll(sinkRe)) {
 		const open = match.index + match[0].lastIndexOf("(");
 		const close = matchingDelimiter(body, open, "(", ")");
@@ -161,6 +222,17 @@ export function findCatchSwallows(source, filename = "<source>") {
 			violations.push({ file: filename, line, reason: `caught error '${binding}' does not reach a log, user error, throw, rejection, or returned error` });
 		}
 	}
+	// Promise-side empty catch: `.catch(() => {})` discards the rejection exactly like `catch {}`.
+	// eslint bans the shape on the plugin TS surface; this covers the .mjs surface with the same
+	// allow marker (review note: without it, "the last silent-failure dialect" was an overclaim).
+	const promiseCatchRe = /\.\s*catch\s*\(\s*(?:\(\s*(?:[A-Za-z_$][\w$]*)?\s*\)|[A-Za-z_$][\w$]*)?\s*=>\s*\{\s*\}\s*\)/g;
+	for (const match of code.matchAll(promiseCatchRe)) {
+		const line = source.slice(0, match.index).split(/\r?\n/).length;
+		const catchLine = lines[line - 1] ?? "";
+		const previousLine = lines[line - 2] ?? "";
+		if (catchLine.includes(ALLOW_MARKER) || previousLine.includes(ALLOW_MARKER)) continue;
+		violations.push({ file: filename, line, reason: "promise .catch with an empty body discards the rejection" });
+	}
 	return violations;
 }
 
@@ -175,10 +247,14 @@ function walk(dir, extensions, out = []) {
 	return out;
 }
 
+// .tsx is DELIBERATELY absent: JSX text is not JS (an apostrophe in `<Text>instance's</Text>`
+// opens a phantom string), and the pre-desync-tripwire scan of web/*.tsx was provably desynced —
+// silently blind, not covered. eslint owns the JSX dialect (no-empty-catch, no bare `.catch`);
+// this guard's binding-reaches-a-sink analysis runs where the lexer is sound: .ts and .mjs.
 export function pluginSourceFiles(pluginDir = PLUGIN_DIR) {
 	const roots = ["controller.ts", "instance.ts", "index.ts", "messages.ts", "control.ts", "helpers.ts"]
 		.map((name) => join(pluginDir, name)).filter(existsSync);
-	return [...roots, ...walk(join(pluginDir, "lib"), [".ts", ".tsx"]), ...walk(join(pluginDir, "web"), [".ts", ".tsx"])];
+	return [...roots, ...walk(join(pluginDir, "lib"), [".ts"]), ...walk(join(pluginDir, "web"), [".ts"])];
 }
 
 /**
@@ -203,8 +279,14 @@ function runCli() {
 		for (const file of files) {
 			const source = readFileSync(file, "utf8");
 			const rel = relative(REPO_DIR, file).replaceAll("\\", "/");
-			violations.push(...findCatchSwallows(source, rel));
-			catchCount += (maskNonCode(source).match(/\bcatch\s*(?:\([^)]*\))?\s*\{/g) ?? []).length;
+			// A masker desync is reported as a per-file violation, not a crash: the scan of every
+			// OTHER file still completes and reports, and the desynced file fails loud by name.
+			try {
+				violations.push(...findCatchSwallows(source, rel));
+				catchCount += (maskNonCode(source, rel).match(/\bcatch\s*(?:\([^)]*\))?\s*\{/g) ?? []).length;
+			} catch (error) {
+				violations.push({ file: rel, line: error.desyncLine ?? 1, reason: error.message });
+			}
 		}
 	};
 	scan(pluginSourceFiles());
@@ -214,6 +296,9 @@ function runCli() {
 	try {
 		mjsFiles = repoRootMjsFiles();
 	} catch (err) {
+		// Surface any plugin-side violations already collected BEFORE the layout error — a broken
+		// scan dir must not bury real findings (review note).
+		for (const violation of violations) console.error(`  ${violation.file}:${violation.line}  ${violation.reason}`);
 		console.error(`lint:catch-swallow — FAILED: ${err.message}`);
 		process.exitCode = 1;
 		return;

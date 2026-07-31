@@ -61,8 +61,10 @@ if (-not $SkipIncrement) {
 # run heals pre-existing drift too; idempotent — writes only on change). See tools/shared/version-utils.ps1.
 . "$PSScriptRoot/../shared/version-utils.ps1"
 Update-PackageLockVersion -LockPath (Join-Path $PluginPath "package-lock.json") -NewVersion $NewVersion
-# Both branches likewise: the runtime version oracle (module/version.lua) must always agree with
-# package.json — the post-deploy probe below compares the LIVE module's answer against $NewVersion.
+# Both branches call the stamp writer so version.lua tracks package.json — but note the asymmetry:
+# -SkipIncrement heals lockfile+stamp drift, while module.json is only written in the bump branch
+# above. test/module-version-stamp.test.cjs goes red if the three carriers ever disagree, so a
+# pre-existing module.json drift surfaces in the suite rather than being silently healed here.
 Update-ModuleVersionStamp -ModuleDir (Join-Path $PluginPath "module") -NewVersion $NewVersion
 
 Write-Host "Using save-patched module architecture (no mod zip needed)" -ForegroundColor Cyan
@@ -277,12 +279,13 @@ foreach ($probeInstance in @("clusterio-host-1-instance-1", "clusterio-host-2-in
         throw "surface_export interface is NOT loaded on ${probeInstance} (exit $LASTEXITCODE): $probeText"
     }
     $reported = $Matches[1]
+    if ($reported -eq 'stale-module-no-version-oracle') { $reported = "a pre-oracle module (no version stamp)" }
     if ($reported -eq $NewVersion) {
         Write-Host "  OK - $probeInstance runs module version $reported" -ForegroundColor Green
     } elseif ($KeepData) {
-        Write-Host "  ~ $probeInstance runs module version $reported (deploy is $NewVersion) — EXPECTED with -KeepData: kept saves keep their old patched Lua" -ForegroundColor Yellow
+        Write-Host "  ~ $probeInstance runs $reported (deploy is $NewVersion) — EXPECTED with -KeepData: kept saves keep their old patched Lua" -ForegroundColor Yellow
     } else {
-        throw "$probeInstance runs STALE module version '$reported' after a full deploy (expected $NewVersion). The save was not re-patched — do not trust this deploy."
+        throw "$probeInstance runs STALE module code ($reported) after a full deploy (expected $NewVersion). The save was not re-patched — do not trust this deploy."
     }
 }
 

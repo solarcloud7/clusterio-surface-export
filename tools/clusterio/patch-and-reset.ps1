@@ -449,6 +449,10 @@ foreach ($h in 1, 2) {
             instance send-rcon $inst $versionProbe 2>&1
         $lastPing = ($ping | Out-String).Trim()
         if ($LASTEXITCODE -eq 0 -and $lastPing -match "(?m)^\s*$([regex]::Escape($NewVersion))\s*$") { $bootOk = $true; break }
+        # A WELL-FORMED wrong answer is final: a loaded save's stamp never changes without another
+        # patch, so a stale version/sentinel will not become $NewVersion by polling — break to the
+        # failure branch now instead of burning the full deadline (review note).
+        if ($LASTEXITCODE -eq 0 -and $lastPing -match '(?m)^\s*(\d+\.\d+\.\d+|stale-module-no-version-oracle)\s*$') { break }
         Start-Sleep -Seconds 3
     }
     if ($bootOk) {

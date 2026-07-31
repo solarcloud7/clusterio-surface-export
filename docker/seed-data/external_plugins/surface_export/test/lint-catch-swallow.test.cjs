@@ -47,6 +47,33 @@ test("catch-swallow guard accepts escape-by-assignment and .push sinks (SC-70 .m
 	assert.equal((await scan("try { a(); } catch (error) { items.push('failed'); }")).length, 1);
 });
 
+test("catch-swallow guard is not blinded by regex literals carrying quotes (the M1 desync class)", async () => {
+	// This exact shape silently desynced the lexer and hid a real `catch { size = -1; }` in
+	// tests/lab-gallery/complete-live-gallery.mjs while the guard printed OK.
+	const source = `
+		function jlit(value) { return JSON.stringify(value).replace(/'/g, "\\\\'"); }
+		try { a(); } catch { fallback = []; }
+	`;
+	assert.equal((await scan(source)).length, 1);
+	// A construct the lexer genuinely cannot parse must THROW (fail loud), never mis-scan.
+	await assert.rejects(async () => scan('const broken = "unterminated\ntry { a(); } catch {}'),
+		/maskNonCode desynced/);
+});
+
+test("catch-swallow guard requires escape targets to be OUTER (the M2 locality rule)", async () => {
+	// A container declared inside the body dies at the closing brace — a swallow with extra steps.
+	assert.equal((await scan("try { a(); } catch (error) { const errs = []; errs.push(error.message); }")).length, 1);
+	assert.equal((await scan("try { a(); } catch (error) { const local = {}; local.err = error; }")).length, 1);
+	// Compound assignment to an outer variable is a write like any other.
+	assert.deepEqual(await scan("try { a(); } catch (error) { report += error.message; }"), []);
+});
+
+test("catch-swallow guard flags empty promise .catch on its surfaces", async () => {
+	assert.equal((await scan("fetchIt().catch(() => {});")).length, 1);
+	assert.equal((await scan("fetchIt().catch(err => {});")).length, 1);
+	assert.deepEqual(await scan("fetchIt().catch(err => console.error(err));"), []);
+});
+
 test("catch-swallow guard honors catch:allow only on the catch line or line above", async () => {
 	const allowed = `
 		try { a(); }

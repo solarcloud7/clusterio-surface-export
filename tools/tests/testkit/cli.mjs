@@ -7,7 +7,8 @@
 //   node tools/tests/testkit/cli.mjs inspect <platform> --field <name>@<x>,<y>:<dotted.path>
 //   node tools/tests/testkit/cli.mjs blackbox explain <bundle.json> [--json]   # offline forensics
 //
-// Exit codes: 0 clean, 1 findings, 2 usage/operational error.
+// Exit codes: 0 clean, 1 findings, 2 usage/operational error. `blackbox explain` exits 0 whenever
+// the bundle DECODED — the failure is the bundle's content, not a finding about the repo.
 import { testkit } from "./index.mjs";
 import { probeProperty } from "./live-probe.mjs";
 import { explainBlackBoxFile, formatExplanation } from "./blackbox-explain.mjs";
