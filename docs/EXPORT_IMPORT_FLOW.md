@@ -185,8 +185,17 @@ remote.call("surface_export", "export_platform", platformIndex, forceName, targe
 
 The export job is processed across multiple ticks by the async processor and export
 pipeline. Entity structure, inventories, fluids, and tiles are scanned in batches;
-belt-item extraction is deferred to a single atomic pass at completion (see the
-belts keep moving — belt items must be extracted in ONE atomic tick). On completion the serialized export is
+belt-item extraction is deferred to a single atomic pass at completion.
+
+**Why the belt scan must be atomic (design constraint).** Belts keep moving even on a paused
+platform — there is no frozen regime; a saturated lane is only jam-stable. A scan spread across
+ticks would therefore read a world that changed underneath it and double-count or miss items. The
+single atomic tick is what makes the export trustworthy, not an optimisation. The original rung
+behind "belts keep moving" was measured pre-2.1.11 and was deleted on 2026-07-31 with the rest of
+the stale evidence; the constraint is retained because the restore is built on it, but re-measure
+before treating it as proven on this pin.
+
+On completion the serialized export is
 stored in the mod and the plugin is notified via the `surface_export_complete`
 send_json channel.
 
@@ -279,10 +288,18 @@ sends it to Lua through the same `import_platform_chunk` interface.
 ### Async import processing and validation (in Factorio)
 
 The import job runs across multiple ticks. The post-placement phase ordering is
-critical (hub inventories, belt items, entity state, beacon activation, two-pass
-inventory restoration, held-item completion, frozen fluid restoration, exact validation, activation, reporting) and
+critical (hub inventories, belt items, entity state, two-pass inventory restoration, held-item
+completion, frozen fluid restoration, exact validation, activation, reporting) and
 is documented in CLAUDE.md under "Import Phase Ordering (Critical)". On completion
 the mod emits `surface_export_import_complete` with validation and import metrics.
+
+This list used to include a "beacon activation" phase. **There is no such phase** — the same
+fiction was removed from CLAUDE.md and survived here. Beacons are never deactivated during entity
+creation, nothing fills an energy buffer, and populating `beacon_modules` in inventory Pass 1 needs
+no tick and no power. The one-tick gap between Phase 1 and Phase 2 is real, but it is a phase
+boundary, not a beacon step: the field that carries it (`job.pending_beacon_tick`) is named after
+the retired rationale, and the code comment beside it says plainly "waiting one tick before
+inventory restore".
 
 ```
 AsyncProcessor.process_tick()                     [core/async-processor.lua]
@@ -295,23 +312,50 @@ ImportCompletion.run_phase1()  (single tick)      [core/import-completion.lua]
   → PlatformHubMapping.restore_hub_inventories()  [import_phases/platform_hub_mapping.lua]
   → BeltRestoration.restore()                     [import_phases/belt_restoration.lua]
   → EntityStateRestoration.restore_all()          [import_phases/entity_state_restoration.lua]
-  → job.pending_beacon_tick = tick + 1            (wait 1 tick → Phase 2)
+  → job.pending_beacon_tick = tick + 1            (wait 1 tick → Phase 2; the field name is
+                                                   vestigial — see the note above, there is no
+                                                   beacon-activation step)
 
 ImportCompletion.run_phase2()  (single tick)      [core/import-completion.lua]
   → Deserializer.restore_inventories()  PASS 1: beacons only     [core/deserializer.lua]
      (beacon_modules populated → crafting_speed updates immediately)
   → Deserializer.restore_inventories()  PASS 2: all other entities
-     (set_stack cap now uses beacon-boosted crafting_speed)
+     (beacons first because the ordering is free; the old "set_stack cap widens with
+      beacon-boosted crafting_speed" rationale was RETRACTED 2026-07-31 - measured
+      speed-invariant on 2.1.11)
   → deactivate all entities, re-pause platform
   → ActiveStateRestoration.restore_held_items_only()   (single owner of held seating — gate counts a complete state)
   → FluidRestoration.restore()                    [import_phases/fluid_restoration.lua]  (paused/deactivated)
   → TransferValidation.validate_import(strict=true)    [validators/transfer-validation.lua]
      (ONE immutable exact item + by-name fluid verdict)
   → ActiveStateRestoration.restore()              (unfreeze + activate only after verdict success)
+  → LatchRearm.schedule()                         [import_phases/latch_rearm.lua]
+     (post-activation, non-gating: re-arms self-feedback decider latches; needs unpaused
+      ticks, so it is deferred and can never touch gate fields)
   → LossAnalysis.run()                            [validators/loss-analysis.lua]
      (reporting-only postActivationReport; cannot change verdict fields)
   → clusterio_api.send_json("surface_export_import_complete", result)
 ```
+
+**Belt restore design constraints.** Two rules the restore is built on, kept here rather than in the
+engine notes because they are properties of THIS pipeline, not of Factorio:
+
+- **Engine transport-line identity is not a cross-import key.** The same physical belt does not carry
+  a stable line identity from the source instance to the destination, so nothing may key a restore on
+  it. The side partition is instead computed from populated-source `line_equals` grouping *within one
+  execution*, where the comparison is meaningful.
+- **Every item is placed at its captured source position.** Each payload side carries a compact
+  `item_source_positions` array (source entity/line/position per stack), and `item_source_positions`
+  is REQUIRED - a payload without it is refused rather than restored approximately. Top-of-line writes
+  would otherwise trip the boundary handoff, where an item lands across the piece boundary onto the
+  downstream line; when that crosses SIDES the census reads "nothing landed", which is how a retry can
+  turn a misplacement into an excess.
+
+Both were originally measured pre-2.1.11 and their rungs were deleted on 2026-07-31 with the rest of
+the stale evidence. They are retained because the code depends on them - re-measure before treating
+either as proven on this pin. Belt PHYSICS (what a lane is, what the fidelity unit is) stays in the
+canonical belt section of [factorio-2.0-api-notes.md](factorio-2.0-api-notes.md); this section covers
+only how the pipeline uses it.
 
 For transfers, `instance.ts` → `handleImportCompleteValidation` consumes the validation
 result carried by the Lua completion event (no name-keyed refetch) and sends a

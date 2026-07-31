@@ -457,11 +457,10 @@ Project invariants that still bite if changed:
   restore/hub recovery/first-fit fallback are DELETED (owner order 2026-07-27). Why placement at captured
   positions: top-of-line writes trip the BELT-R16 boundary handoff (the item lands across the piece
   boundary; cross-side handoffs are census-invisible and retried into duplicates — the measured workhorse
-  excess). Engine transport-line identity is NOT a cross-import key; populated-source same-execution
-  `line_equals` grouping IS the side partition. The atomic single-tick export scan remains required
-  because belts keep moving. Both statements are design constraints the restore is built on; their
-  original rungs were measured pre-2.1.11 and were deleted with the rest of the stale evidence
-  (2026-07-31) — re-measure before treating either as proven on this pin.
+  excess). The pipeline's two belt design constraints — transport-line identity is NOT a cross-import
+  key, and the export scan must be atomic because belts keep moving — live with the flow they constrain,
+  in [EXPORT_IMPORT_FLOW.md](docs/EXPORT_IMPORT_FLOW.md); both are flagged there as unproven on this pin
+  (their rungs were pre-2.1.11 and were deleted 2026-07-31).
 - **Fluid restoration runs in the frozen world (`disabled_by_script`) before the exact gate.** The payload
   carries a top-level **fluid-segment registry** (one record per source segment or segmentless storage, keyed
   by our incremental id — engine segment ids differ across instances); entities reference it via
