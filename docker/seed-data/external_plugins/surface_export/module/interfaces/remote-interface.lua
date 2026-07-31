@@ -43,6 +43,7 @@ local get_source_transfer_lock_state = require("modules/surface_export/interface
 local destination_hold = require("modules/surface_export/interfaces/remote/destination-hold")
 local test_roster = require("modules/surface_export/interfaces/remote/test-roster")
 local lifecycle = require("modules/surface_export/interfaces/remote/lifecycle")
+local teleport_roster_update = require("modules/surface_export/interfaces/remote/teleport-roster")
 
 -- Expose functions for direct Lua access (not just remote interface)
 RemoteInterface.export_platform = export_platform
@@ -61,6 +62,7 @@ RemoteInterface.test_runner = test_runner
 RemoteInterface.clone_platform = clone_platform
 RemoteInterface.version_selftest = version_selftest
 RemoteInterface.get_module_version = get_module_version
+RemoteInterface.teleport_roster_update = teleport_roster_update
 RemoteInterface.selection_lab_drive = selection_lab_drive
 RemoteInterface.belt_side_restore_selftest = belt_side_restore_selftest
 RemoteInterface.gateway_selftest = gateway_selftest
@@ -126,6 +128,7 @@ function RemoteInterface.register()
     version_selftest = version_selftest,
     version_selftest_json = Base.json_wrap(version_selftest),
     get_module_version = get_module_version,
+    teleport_roster_update = teleport_roster_update,
     selection_lab_drive = selection_lab_drive,
     selection_lab_drive_json = Base.json_wrap(selection_lab_drive),
     belt_side_restore_selftest = belt_side_restore_selftest,

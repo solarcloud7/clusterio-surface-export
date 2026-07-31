@@ -879,6 +879,72 @@ export class GetGatewayConfigRequest {
 	};
 }
 
+/** One row of the /teleport roster: an instance with its client-routable address. */
+export interface RosterInstance {
+	instanceId: number;
+	name: string;
+	/** `publicAddress:gamePort` — empty when the instance has no assigned port (not running). */
+	address: string;
+	online: boolean;
+	/** True for the requesting instance itself (the GUI hides it). */
+	self: boolean;
+}
+
+const ROSTER_INSTANCES_SCHEMA: JsonSchema = {
+	type: "array",
+	items: {
+		type: "object",
+		properties: {
+			instanceId: { type: "integer" },
+			name: { type: "string" },
+			address: { type: "string" },
+			online: { type: "boolean" },
+			self: { type: "boolean" },
+		},
+		required: ["instanceId", "name", "address", "online", "self"],
+		additionalProperties: false,
+	},
+};
+
+/**
+ * instance → controller: the cluster instance roster with client-routable addresses, for the
+ * in-game /teleport GUI. Address assembly is controller-side by necessity — instance plugins
+ * cannot read host records (see docs/GATEWAY_TRANSFER_PRD.md, Layer-2 spike integration seams).
+ */
+export class GetInstanceRosterRequest {
+	declare ["constructor"]: typeof GetInstanceRosterRequest;
+	static plugin = PLUGIN_NAME;
+	static type = "request" as const;
+	static src = "instance" as const;
+	static dst = "controller" as const;
+	static jsonSchema: JsonSchema = {
+		type: "object",
+		properties: { instanceId: { type: "integer" } },
+		required: ["instanceId"],
+		additionalProperties: false,
+	};
+
+	instanceId: number;
+
+	constructor(json: { instanceId: number }) {
+		this.instanceId = json.instanceId;
+	}
+
+	static fromJSON(json: { instanceId: number }) { return new GetInstanceRosterRequest(json); }
+	toJSON() { return { instanceId: this.instanceId }; }
+
+	static Response = {
+		jsonSchema: {
+			type: "object",
+			properties: { instances: ROSTER_INSTANCES_SCHEMA },
+			required: ["instances"],
+		} as JsonSchema,
+		fromJSON(json: unknown) {
+			return json as { instances: RosterInstance[] };
+		},
+	};
+}
+
 /** controller → instance: push the resolved gateway config (on a config change). */
 export class PushGatewayConfigRequest {
 	declare ["constructor"]: typeof PushGatewayConfigRequest;

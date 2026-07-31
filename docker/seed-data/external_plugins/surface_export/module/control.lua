@@ -14,6 +14,7 @@ local Commands = require("modules/surface_export/interfaces/commands")
 local AsyncProcessor = require("modules/surface_export/core/async-processor")
 local SurfaceLock = require("modules/surface_export/utils/surface-lock")
 local TransactionDashboard = require("modules/surface_export/interfaces/gui/transaction-dashboard")
+local TeleportGui = require("modules/surface_export/interfaces/gui/teleport-gui")
 local GatewayTransferGui = require("modules/surface_export/interfaces/gui/gateway-transfer")
 local SelectionLab = require("modules/surface_export/interfaces/gui/selection-lab")
 local Gateway = require("modules/surface_export/core/gateway")
@@ -178,11 +179,13 @@ SurfaceExportModule.events = {
 	[e.on_gui_click] = function(event)
 		TransactionDashboard.on_gui_click(event)
 		GatewayTransferGui.on_gui_click(event)
+		TeleportGui.on_gui_click(event)
 	end,
 
 	[e.on_gui_closed] = function(event)
 		TransactionDashboard.on_gui_closed(event)
 		GatewayTransferGui.on_gui_closed(event)
+		TeleportGui.on_gui_closed(event)
 	end,
 
 	-- Selection Lab (debug instrument; prototype ships in the surfexp_gateways mod, all logic here).

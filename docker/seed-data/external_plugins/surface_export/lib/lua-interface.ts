@@ -77,6 +77,27 @@ export class LuaInterface {
 	}
 
 	/**
+	 * Push the /teleport instance roster into Lua storage. Same shape and rationale as
+	 * configureGateways: JSON string decoded Lua-side (instance names can never inject Lua), and a
+	 * loud size guard rather than a silently truncated RCON command. The roster is one small row
+	 * per instance, so the cap is generous.
+	 */
+	async pushTeleportRoster(rosterJson: string): Promise<void> {
+		const script = `/sc ` +
+			`if remote.interfaces["surface_export"] and remote.interfaces["surface_export"]["teleport_roster_update"] then ` +
+			`remote.call("surface_export", "teleport_roster_update", "${escapeString(rosterJson)}") ` +
+			`end`;
+		const MAX_RCON_COMMAND_BYTES = 7000;
+		if (Buffer.byteLength(script, "utf8") > MAX_RCON_COMMAND_BYTES) {
+			throw new Error(
+				`Teleport roster command is ${Buffer.byteLength(script, "utf8")} bytes (> ${MAX_RCON_COMMAND_BYTES}); ` +
+				`too large for a single RCON command — the cluster has an implausible number of instances.`,
+			);
+		}
+		await this.host.sendRcon(script, true);
+	}
+
+	/**
 	 * Queue an async export. `targetArg` is the already-formatted Lua literal ("nil" for export-only, or a
 	 * positive integer string for a transfer destination). Returns the RAW rcon result; the caller interprets
 	 * the `export_id` / `EXPORT_FAILED:<reason>` contract.
