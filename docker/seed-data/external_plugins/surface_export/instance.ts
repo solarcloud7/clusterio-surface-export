@@ -94,6 +94,10 @@ export class InstancePlugin extends BaseInstancePlugin {
 		// Listen for transfer requests from mod
 		this.i.server.handle("surface_transfer_request", this.handleTransferRequest.bind(this));
 
+		// The /teleport GUI asks for the instance roster via
+		// clusterio_api.send_json("surface_teleport_roster_request", {})
+		this.i.server.handle("surface_teleport_roster_request", this.handleTeleportRosterRequest.bind(this));
+
 		// Register message handlers
 		this.i.handle(messages.ExportPlatformRequest, this.handleExportPlatformRequest.bind(this));
 		this.i.handle(messages.ImportPlatformRequest, this.handleImportPlatformRequest.bind(this));
@@ -154,6 +158,24 @@ export class InstancePlugin extends BaseInstancePlugin {
 			keyed[g.gatewayName] = { targets: g.targets || [] };
 		}
 		await this.lua.configureGateways(JSON.stringify(keyed));
+	}
+
+	/**
+	 * The /teleport GUI's roster round-trip: Lua asked via send_json; ask the controller for the
+	 * roster (addresses are assembled controller-side) and push the answer back into Lua storage.
+	 */
+	async handleTeleportRosterRequest(): Promise<void> {
+		try {
+			const resp = (await this.link.sendTo(
+				"controller",
+				new messages.GetInstanceRosterRequest({ instanceId: this.i.id }),
+			)) as unknown as { instances?: messages.RosterInstance[] };
+			const instances = resp?.instances || [];
+			await this.lua.pushTeleportRoster(JSON.stringify({ instances }));
+			this.logger.info(`Teleport roster pushed to Lua: ${instances.length} instance(s)`);
+		} catch (err: unknown) {
+			this.logger.error(`Teleport roster request failed: ${getErrorMessage(err)}`);
+		}
 	}
 
 	/** Pull the resolved gateway config from the controller on start (catch-up for a fresh instance). */

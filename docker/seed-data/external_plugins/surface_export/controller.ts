@@ -146,6 +146,7 @@ export class ControllerPlugin extends BaseControllerPlugin {
 		this.c.handle(messages.GetGatewaysRequest, this.handleGetGatewaysRequest.bind(this));
 		this.c.handle(messages.SetGatewayLinkRequest, this.handleSetGatewayLinkRequest.bind(this));
 		this.c.handle(messages.GetGatewayConfigRequest, this.handleGetGatewayConfigRequest.bind(this));
+		this.c.handle(messages.GetInstanceRosterRequest, this.handleGetInstanceRosterRequest.bind(this));
 
 		this.logger.info("Surface Export controller plugin initialized");
 	}
@@ -984,6 +985,39 @@ export class ControllerPlugin extends BaseControllerPlugin {
 	/** instance → controller: pull the requesting instance's own resolved gateway config on instance start. */
 	async handleGetGatewayConfigRequest(request: { instanceId: number }) {
 		return { gateways: this.resolveGateways(Number(request.instanceId)) };
+	}
+
+	/**
+	 * The /teleport roster: every live instance with its client-routable address
+	 * (`host.publicAddress:instance.gamePort`, the join the Layer-2 spike mapped). `address` is
+	 * empty when the instance has no assigned game port (not running) — the GUI refuses to
+	 * connect to those. `publicAddress` defaults to "localhost" when the host never set one —
+	 * correct for a same-machine client; distributed deployments must configure
+	 * `host.public_address` (deployment config, not a code path). Same caveat for PORT REMAPPING:
+	 * `gamePort` is the port as the host knows it — a docker deployment that publishes a
+	 * different host port (the atlas cluster on this machine maps 34300→34100) hands the client
+	 * an unroutable address; align the published port with the instance port, as this cluster does.
+	 */
+	async handleGetInstanceRosterRequest(request: { instanceId: number }) {
+		const requesterId = Number(request.instanceId);
+		const instances: messages.RosterInstance[] = [];
+		for (const inst of this.c.instances.values()) {
+			if (inst.isDeleted) {
+				continue;
+			}
+			const hostId = Number(inst.config.get("instance.assigned_host"));
+			const host = Number.isInteger(hostId) ? this.c.hosts.get(hostId) : null;
+			const publicAddress = host?.publicAddress || "localhost";
+			const gamePort = inst.gamePort;
+			instances.push({
+				instanceId: inst.id,
+				name: String(inst.config.get("instance.name") ?? inst.id),
+				address: gamePort ? `${publicAddress}:${gamePort}` : "",
+				online: this.isInstanceOnline(inst.id),
+				self: inst.id === requesterId,
+			});
+		}
+		return { instances };
 	}
 }
 

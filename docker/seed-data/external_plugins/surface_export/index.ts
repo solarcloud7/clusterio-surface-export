@@ -113,6 +113,7 @@ export const plugin = {
 		messages.GetGatewaysRequest,
 		messages.SetGatewayLinkRequest,
 		messages.GetGatewayConfigRequest,
+		messages.GetInstanceRosterRequest,
 		messages.PushGatewayConfigRequest,
 	],
 	ctlEntrypoint: "dist/node/control",

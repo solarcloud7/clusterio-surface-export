@@ -25,6 +25,7 @@ local command_modules = {
   require("modules/surface_export/interfaces/commands/unlock-platform"),
   require("modules/surface_export/interfaces/commands/lock-status"),
   require("modules/surface_export/interfaces/commands/transaction-dashboard"),
+  require("modules/surface_export/interfaces/commands/teleport"),
   -- Debug/testing commands
   require("modules/surface_export/interfaces/commands/test-entity"),
   require("modules/surface_export/interfaces/commands/run-tests"),
