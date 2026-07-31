@@ -427,9 +427,13 @@ inventory resize/override, the epsilon rule — live in
 restoration.
 
 Project invariants that still bite if changed:
-- **Beacon-before-crafter inventory order.** `crafting_speed` (which sets the `set_stack()` cap) only
-  reflects beacon bonuses once the beacon's `beacon_modules` inventory is populated, so Phase 3 restores
-  beacons first, then everything else. See [Import Phase Ordering](#import-phase-ordering-critical).
+- **Beacon-before-crafter inventory order.** Phase 3 restores beacons first, then everything else. The
+  mechanism this ordering was documented to protect — a `set_stack()` cap that widens once beacon modules
+  are populated — did NOT reproduce when probed on 2.1.11: the crafter-input cap measured stack-derived and
+  speed-invariant (164 for stack-100 ingredients, 264 for stack-200) across seven recipes and speeds from
+  1.25 to 11.00. The ordering is retained (it is free, and `crafting_speed` genuinely does propagate in the
+  same execution), but do NOT cite the cap as its justification until a rung isolates that variable. See
+  [Import Phase Ordering](#import-phase-ordering-critical).
 - **Belt restoration truth lives in ONE place**: the "Belt transport-line laws (CANONICAL)" section of
   [factorio-2.0-api-notes.md](docs/factorio-2.0-api-notes.md) — recreated 2026-07-17 after a fact-regression
   incident; do not restate belt physics elsewhere, point there. Summary only: the fidelity unit is one
@@ -471,7 +475,7 @@ The order of post-processing steps in `ImportCompletion.run_phase1` / `run_phase
                             the current conservative implementation (see the canonical belt section)
 3. Entity state           — control behavior, filters, circuit connections
 4. Inventories (2 passes) — Pass 1: beacons (populates beacon_modules, crafting_speed updates immediately)
-                            Pass 2: everything else (set_stack cap now reflects beacon-boosted cs)
+                            Pass 2: everything else (ordering retained; the cap rationale is retracted)
 5. Held-item completion   — inserter-only synchronous pass (single owner of held seating; activation-independent, inserter-lab B6); no tick advances
 6. Fluid restoration      — write the payload's fluid-segment registry (one set_fluid_segment_fluid per
                             segment; segmentless storages via set_fluid) while the platform stays paused and
@@ -483,7 +487,7 @@ The order of post-processing steps in `ImportCompletion.run_phase1` / `run_phase
 
 **Why this order matters**:
 - There is **no beacon-activation step** — this list used to claim one. Beacons are simply never deactivated during entity creation (`module/import_phases/entity_creation.lua:116`), and nothing fills an energy buffer. `import-completion.lua:211-213` states it directly: populating `beacon_modules` in Pass 1 "immediately updates crafting_speed on nearby machines — no pre-activation needed."
-- Step 4 (inventories, 2 passes): The two-pass approach is critical. `crafting_speed` on a machine updates **immediately** when its nearby beacon's `beacon_modules` inventory is populated — no tick delay, no power required. Pass 1 populates all beacon modules. Pass 2 then restores crafter inputs with `set_stack()`, which uses the now-correct beacon-boosted cap (e.g. cs=17.375 → 12 slots instead of cs=2.5 → 7 slots). Machines remain deactivated throughout — they cannot consume items.
+- Step 4 (inventories, 2 passes): Pass 1 populates all beacon modules, Pass 2 restores everything else. `crafting_speed` on a machine does update **immediately** when its nearby beacon's `beacon_modules` inventory is populated — no tick delay, no power required (engine-repin B8, reproduced on 2.1.11). What this section used to claim beyond that — that Pass 2's `set_stack()` therefore gets a wider beacon-boosted cap, "cs=17.375 → 12 slots instead of cs=2.5 → 7 slots" — did NOT reproduce: probed 2026-07-31 on 2.1.11, the crafter-input cap is stack-derived and speed-invariant (164 for stack-100 ingredients, 264 for stack-200) from cs=1.25 through cs=11.00, across seven recipes, an assembling-machine-3 and an electromagnetic-plant. The ordering stays because it costs nothing, not because that cap effect is known to exist. Machines remain deactivated throughout — they cannot consume items.
 - Steps 5→7 are one synchronous frozen-world completion and verdict pass. Fluids are restored from the payload's fluid-segment registry (one `set_fluid_segment_fluid` write per segment) into the paused, `disabled_by_script` destination before the gate; there is no failed-member fluid accounting, so any missing member fails the exact gate and the source is preserved (fail => revert). A failure banks an always-on black box, then discards the destination unless the debug-gated preserve flag is explicitly armed. The historical ~15% pre-activation loss is retired (historical pre-activation fluid loss); the pad-transfer-suite workhorse census and strict gate exercise this ordering on 2.1.11.
 
 ## Factorio 2.0 Fluid API & Simulation Behavior

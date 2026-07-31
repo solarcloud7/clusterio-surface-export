@@ -285,10 +285,13 @@ a segment) — they are not a capture blind spot at 2.1.11.
   `productivity_bonus`, which aggregates force + beacon/module bonuses). Set them during
   `create_entity`, not after, and wrap optional writes in `pcall`. **[empirical]**
 - **`crafting_speed` updates instantly** when a nearby beacon's `beacon_modules` inventory is
-  populated — no tick delay, no power needed. This is why import restores beacon module inventories
-  before crafter inputs, so `set_stack()` caps reflect the beacon-boosted speed. LAB-I B8 measured
+  populated — no tick delay, no power needed. LAB-I B8 measured
   `1.25→3.125` in the same module-population execution with two speed-module-3 modules, both powered and
   unpowered; the first elapsed read stayed 3.125. **[empirical, 2.0.77, engine-repin-lab B8]**
+  This entry used to continue "…so `set_stack()` caps reflect the beacon-boosted speed", offered as the
+  reason import restores beacons first. B8 measured the speed propagation only — never a cap — and the
+  cap consequence did not reproduce when probed on 2.1.11. Deleted rather than demoted: there is no
+  [hypothesis] tier here, and re-establishing it needs a rung that isolates the cap variable.
 
 - **Unknown inventory items are skipped with a warning while valid siblings restore.** LAB-I B9 imported an
   iron chest containing `iron-plate x10` plus a nonexistent item. The remote completed without error, the chest
