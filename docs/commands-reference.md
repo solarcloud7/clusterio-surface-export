@@ -39,7 +39,7 @@ All commands except `/plugin-import-file` require admin privileges. `[param]` is
 | `/test-entity` | `<json>` | Import a single entity from JSON for debugging |
 | `/test-entity-at` | `<x> <y> <json>` | Import a single entity at a specific position |
 | `/transaction-dashboard` | `[limit]` | Open the in-game transaction history GUI |
-| `/teleport` | | Admin GUI: pick another cluster instance and connect to it (native client prompt; needs a real connected client) |
+| `/teleport` | | GUI: pick another cluster instance and connect to it (native client prompt; needs a real connected client). Access: admins + the `Teleport` permission group (pre-created; manage via `/permissions`) |
 | `/test-run` | `[name-filter]` | Reconcile the pushed manifest roster against the live map and run each fixture |
 | `/test-clear` | `[name-filter]` | Reset every gallery test cell on this surface (right-half sweep + waiting status) |
 

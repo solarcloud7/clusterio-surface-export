@@ -16,6 +16,30 @@ local clusterio_api = require("modules/clusterio/api")
 
 local TeleportGui = {}
 
+-- WHO MAY TELEPORT: admins, plus members of this Factorio-native permission group — save-persisted
+-- and managed through the stock /permissions GUI (create nothing by hand; ensure_permission_group
+-- below pre-creates it at startup). Measured 2026-07-31 on 2.1.11: a fresh permission group allows
+-- every input action by default, so membership is behaviorally neutral — the group is purely a
+-- teleport pass. Factorio's one-group-per-player rule is the known trade: a player in "Teleport"
+-- is not in any other custom group.
+TeleportGui.PERMISSION_GROUP = "Teleport"
+
+--- May this player use /teleport (and press Connect)?
+function TeleportGui.is_allowed(player)
+	if player.admin then return true end
+	local group = player.permission_group
+	return group ~= nil and group.name == TeleportGui.PERMISSION_GROUP
+end
+
+--- Pre-create the pass group so admins find it ready in /permissions (idempotent, every startup).
+function TeleportGui.ensure_permission_group()
+	if not game.permissions.get_group(TeleportGui.PERMISSION_GROUP) then
+		game.permissions.create_group(TeleportGui.PERMISSION_GROUP)
+		log(string.format("[Teleport] created permission group '%s' (manage members via /permissions)",
+			TeleportGui.PERMISSION_GROUP))
+	end
+end
+
 -- Module-local state for open GUIs (runtime only, rebuilt on demand)
 -- player_index → { frame = LuaGuiElement, dropdown = LuaGuiElement, entries = array }
 local open_guis = {}
@@ -165,6 +189,15 @@ function TeleportGui.on_gui_click(event)
 	elseif element.name == CONNECT_NAME then
 		local player = game.get_player(event.player_index)
 		if not player then return end
+		-- Re-check at the moment of truth: a player pulled from the group (or de-admined) with the
+		-- GUI already open must not connect off a stale pass.
+		if not TeleportGui.is_allowed(player) then
+			player.print(string.format(
+				"You are no longer allowed to teleport (admins or the '%s' permission group).",
+				TeleportGui.PERMISSION_GROUP))
+			close(event.player_index)
+			return
+		end
 		local dropdown = state.dropdown
 		local entry = dropdown and dropdown.valid and state.entries[dropdown.selected_index]
 		if not entry then

@@ -90,6 +90,8 @@ SurfaceExportModule.events = {
 		initialize_storage()
 		-- Unlock gateway space-locations on every startup (covers every save load). Caches nothing.
 		Gateway.discover_and_unlock()
+		-- Pre-create the /teleport pass group so it is ready in the /permissions GUI (idempotent).
+		TeleportGui.ensure_permission_group()
 		log("[Surface Export] Connected to Clusterio controller")
 	end,
 
