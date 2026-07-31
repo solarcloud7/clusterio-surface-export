@@ -1,3 +1,4 @@
+# IMPLEMENTATION for deploy.ps1 — prefer that entry point.
 param (
     [switch]$SkipIncrement,
     [switch]$KeepData

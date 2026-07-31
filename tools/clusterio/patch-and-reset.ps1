@@ -1,3 +1,4 @@
+# IMPLEMENTATION for deploy.ps1 — prefer that entry point.
 # Patch and Reset Instances
 # Hot-reload plugin code and reset instances to seed save without full cluster rebuild
 
@@ -39,7 +40,11 @@ Note: Save reset is REQUIRED because Lua code is embedded in save files via save
       Without reset, old embedded script.dat prevents Lua code updates from taking effect.
 
       For a web-ONLY or TypeScript-ONLY change you do NOT need this heavy reset — use
-      `tools/clusterio/build-plugin.ps1 web -RestartController` or `... node -RestartHosts` instead.
+      ./tools/clusterio/deploy.ps1 -Scope artifacts -Target web -RestartController
+      (or -Target node -RestartHosts) instead.
+      NB: never use backticks in this help text. It is an expandable here-string, so PowerShell
+      reads a backtick as its ESCAPE character: a markdown-style quote around 'tools/...' printed
+      as a literal TAB followed by 'ools/...' for months before anyone ran -Help and noticed.
 "@
     exit 0
 }

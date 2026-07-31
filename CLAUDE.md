@@ -71,12 +71,31 @@ docker exec surface-export-controller npx clusterioctl --log-level error instanc
 
 ## Development Tools
 
-### Primary Deployment Script
+### Deploying — ONE entry point, pick a scope
+
+`tools/clusterio/deploy.ps1` is the only deploy command. `-Scope` is REQUIRED (no default: every
+sensible default is someone else's accident), and the scopes are a ladder from cheapest to most
+destructive. A switch that does not belong to the chosen scope is REFUSED, not ignored.
+
 ```powershell
-./tools/clusterio/deploy-cluster.ps1                 # Full deployment: increment version, pull images, start cluster
-./tools/clusterio/deploy-cluster.ps1 -SkipIncrement  # Deploy without version bump
-./tools/clusterio/deploy-cluster.ps1 -SkipIncrement -KeepData  # Restart without wiping volumes
+./tools/clusterio/deploy.ps1 -Scope artifacts -Target node -RestartHosts   # TS change: build + reload hosts
+./tools/clusterio/deploy.ps1 -Scope artifacts -Target web -RestartController  # web change: build + reload controller
+./tools/clusterio/deploy.ps1 -Scope lua                                    # Lua change: skip build, reset saves
+./tools/clusterio/deploy.ps1 -Scope plugin                                 # Lua + TS changed: build AND reset saves
+./tools/clusterio/deploy.ps1 -Scope cluster                                # full rebuild (DESTROYS volumes)
+./tools/clusterio/deploy.ps1 -Scope cluster -KeepData -SkipIncrement       # restart without wiping or bumping
 ```
+
+| Scope | Builds | Resets saves | Destroys volumes |
+|---|---|---|---|
+| `artifacts` | yes | no | no |
+| `lua` | no (refuses if dist is stale) | YES | no |
+| `plugin` | yes | YES | no |
+| `cluster` | yes | n/a (fresh) | YES unless `-KeepData` |
+
+Resetting saves disconnects anyone in-game; `predeploy-*.zip` rescue saves are taken first. The
+per-scope implementations (`build-plugin.ps1`, `patch-and-reset.ps1`, `deploy-cluster.ps1`) still
+exist and still work, but they are implementation detail — deploy.ps1 is the documented path.
 
 ### Hot Reload Development (Recommended)
 
@@ -87,32 +106,32 @@ The plugin uses **TypeScript** with bind-mounted source and **save patching** fo
 - Build output: `dist/node/` (Node.js runtime), `dist/web/` (browser bundle)
 
 **Plugin Changes** (TypeScript):
-- Edit `*.ts` files in plugin root or `lib/` → `./tools/clusterio/build-plugin.ps1 node -RestartHosts` (rebuild + reload the hosts)
+- Edit `*.ts` files in plugin root or `lib/` → `./tools/clusterio/deploy.ps1 -Scope artifacts -Target node -RestartHosts` (rebuild + reload the hosts)
 - Build generates `dist/node/*.js` from TypeScript sources
 - Deploy script automatically rebuilds before Docker startup
 - Host Node (24.x, matching CI) is available in shells — but **do not** `npm install`/`npm run build` in the live plugin dir while the cluster runs (see the next bullet: it re-adds the `@clusterio` peers and breaks `clusterioctl`; the cluster also strips them, so an in-place build can't resolve `@clusterio` anyway). Use **`./tools/clusterio/build-plugin.ps1 [all|node|web] [-RestartController] [-RestartHosts]`** — it builds in an isolated `node:24` container (CI parity) with a named volume shadowing `node_modules`, writing `dist/` back to the host; pass `-RestartController` for web changes (the controller caches each plugin's `manifest.json` at startup), or `-RestartHosts` for node changes (the hosts load `dist/node` at startup). Quick node-only compile alternative: `docker exec surface-export-host-1 sh -c 'cd /clusterio/external_plugins/surface_export && npx tsc -p tsconfig.node.json'` then `docker restart surface-export-host-1 surface-export-host-2`.
 - **DO NOT** run `npm install`/`npm install --include=dev`/`npm prune` in the plugin dir on a running cluster: the plugin lists `@clusterio/*` as **peer+dev** deps and npm 7+ auto-installs peers, so a second copy of `@clusterio/lib` lands in the shared (bind-mounted) `node_modules` and breaks `clusterioctl` with `Error: Attempt to import duplicate copy of @clusterio/lib`. The base-image entrypoint avoids this by deleting them after install (log line "Removing local @clusterio packages"). **Recover with** `docker exec surface-export-host-1 sh -c 'rm -rf /clusterio/external_plugins/surface_export/node_modules/@clusterio'` (NOT `npm prune` — that re-adds the peers). To lint/build locally, install only the tool you need (`npm install --no-save eslint typescript-eslint`) then remove `@clusterio` again. CI is unaffected — it runs `npm ci` in a clean runner.
 
 **Web UI Changes** (React):
-- Edit `*.tsx`/`*.css` files in `web/` → `./tools/clusterio/build-plugin.ps1 web -RestartController` → reload browser (chunks are content-hashed, so a normal reload suffices — no hard-refresh)
+- Edit `*.tsx`/`*.css` files in `web/` → `./tools/clusterio/deploy.ps1 -Scope artifacts -Target web -RestartController` → reload browser (chunks are content-hashed, so a normal reload suffices — no hard-refresh)
 - Build generates `dist/web/` bundle via Webpack Module Federation
 - Deploy script automatically rebuilds before Docker startup
 
 **Module Changes** (Lua - Save Patched):
-- Edit `*.lua` files in `module/` directory → `./tools/clusterio/patch-and-reset.ps1` (rebuilds the plugin, resets saves so Clusterio re-patches the Lua, restarts the cluster)
+- Edit `*.lua` files in `module/` directory → `./tools/clusterio/deploy.ps1 -Scope plugin` (rebuilds the plugin, resets saves so Clusterio re-patches the Lua, restarts the cluster)
 - Clusterio automatically injects Lua code into saves at startup
-- No compile step for Lua itself — but the save MUST be reset (a plain restart reuses the old patched `script.dat`); `patch-and-reset.ps1` does that for you
+- No compile step for Lua itself — but the save MUST be reset (a plain restart reuses the old patched `script.dat`); the `lua`/`plugin` scopes do that for you
 
 **Development Workflow**:
 1. Start cluster: `docker compose up -d`
-2. Edit TypeScript files → `./tools/clusterio/build-plugin.ps1 node -RestartHosts`
-3. Edit web (`*.tsx`) files → `./tools/clusterio/build-plugin.ps1 web -RestartController` → reload browser
-4. Edit Lua files → `./tools/clusterio/patch-and-reset.ps1 -LuaOnly` (skips the ~3-min container build —
+2. Edit TypeScript files → `./tools/clusterio/deploy.ps1 -Scope artifacts -Target node -RestartHosts`
+3. Edit web (`*.tsx`) files → `./tools/clusterio/deploy.ps1 -Scope artifacts -Target web -RestartController` → reload browser
+4. Edit Lua files → `./tools/clusterio/deploy.ps1 -Scope lua` (skips the ~3-min container build —
    Lua is save-patched from source; a staleness tripwire refuses the skip if any TS/web source is newer
    than dist/. Omit `-LuaOnly` when TS/web changed too.) Every run ends with a boot check: both
    instances must answer RCON with the plugin loaded, so a Lua error at save-load fails the deploy
    loudly instead of killing the instance silently.
-5. **Or use deploy script** for full rebuild: `.\tools\clusterio\deploy-cluster.ps1 -SkipIncrement`
+5. **Or full rebuild**: `./tools/clusterio/deploy.ps1 -Scope cluster -SkipIncrement`
 
 ### Cluster / transfer / RCON tools (`tools/`)
 
@@ -242,7 +261,7 @@ opt-in fork override); all environment config in gitignored `.env`.
 - **Runtime entrypoints**: `index.ts` declares `instanceEntrypoint: "dist/node/instance"`, etc.
 - **Build pipeline**: `npm run build` compiles TypeScript → `dist/node/*.js` and bundles React → `dist/web/*`
 - **Clean source tree**: Only `.ts` and `.tsx` files in source directories; all generated artifacts in `dist/`
-- **Deploy integration**: `deploy-cluster.ps1` runs `npm run build` before Docker compose up
+- **Deploy integration**: `deploy.ps1 -Scope cluster` builds via `build-plugin.ps1` (isolated container) before Docker compose up
 - **Git hygiene**: `dist/` is gitignored; fresh builds ensure consistency
 - **Tests**: `npm test` (gated in CI) builds `dist/node` then runs **17 test files** under built-in
   `node --test` (zero deps) — not just the wire contract. They include transfer-orchestrator rollback,
