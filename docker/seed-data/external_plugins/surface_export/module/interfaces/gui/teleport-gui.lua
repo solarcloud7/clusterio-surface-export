@@ -51,8 +51,17 @@ local function dropdown_items(entries)
 	return items
 end
 
---- Build (or rebuild) the GUI content for one player.
+--- Build (or rebuild) the GUI content for one player. A rebuild preserves the player's dropdown
+--- selection by instanceId — the roster refresh fired at /teleport-open lands moments later, and
+--- silently resetting a made selection to row 1 would connect somewhere the admin did not pick.
 local function build(player)
+	local prior = open_guis[player.index]
+	local prior_id = nil
+	if prior and prior.dropdown and prior.dropdown.valid and prior.entries then
+		local prior_entry = prior.entries[prior.dropdown.selected_index]
+		prior_id = prior_entry and prior_entry.instanceId
+	end
+
 	local existing = player.gui.screen[FRAME_NAME]
 	if existing then existing.destroy() end
 
@@ -76,12 +85,18 @@ local function build(player)
 				"Fetching the instance roster from the controller…"
 		}
 	else
+		local selected = 1
+		if prior_id then
+			for i, inst in ipairs(entries) do
+				if inst.instanceId == prior_id then selected = i end
+			end
+		end
 		content.add{type = "label", caption = "Destination instance:"}
 		dropdown = content.add{
 			type = "drop-down",
 			name = DROPDOWN_NAME,
 			items = dropdown_items(entries),
-			selected_index = 1
+			selected_index = selected
 		}
 		dropdown.style.minimal_width = 320
 	end
@@ -122,10 +137,21 @@ local function close(player_index)
 end
 
 function TeleportGui.on_gui_click(event)
-	local state = open_guis[event.player_index]
-	if not state then return end
 	local element = event.element
 	if not (element and element.valid) then return end
+	local name = element.name
+	if name ~= CLOSE_NAME and name ~= REFRESH_NAME and name ~= CONNECT_NAME then return end
+
+	local state = open_guis[event.player_index]
+	if not state then
+		-- Our frame exists but module-local state was lost (it does not survive save/load, the
+		-- frame does) — destroy the orphan so the buttons are never dead. Same shape as the
+		-- gateway-transfer GUI, which fixed this exact class before this file existed.
+		local player = game.get_player(event.player_index)
+		local orphan = player and player.gui.screen[FRAME_NAME]
+		if orphan then orphan.destroy() end
+		return
+	end
 
 	if element.name == CLOSE_NAME then
 		close(event.player_index)
@@ -162,10 +188,15 @@ function TeleportGui.on_gui_click(event)
 end
 
 function TeleportGui.on_gui_closed(event)
+	local element = event.element
+	if not (element and element.valid and element.name == FRAME_NAME) then return end
 	local state = open_guis[event.player_index]
-	if state and event.element and state.frame and state.frame.valid
-		and event.element.index == state.frame.index then
+	if state and state.frame and state.frame.valid and element.index == state.frame.index then
 		close(event.player_index)
+	else
+		-- Orphaned frame (state lost on save/load): Esc must actually close it.
+		element.destroy()
+		open_guis[event.player_index] = nil
 	end
 end
 

@@ -6,4 +6,4 @@
 -- check proved only that SOME plugin answers RCON — a plain restart reuses the old patched
 -- script.dat, so stale module code passed it. remote.call('surface_export','get_module_version')
 -- returns this stamp, and the boot check compares it against the version just deployed.
-return "0.10.204"
+return "0.10.205"

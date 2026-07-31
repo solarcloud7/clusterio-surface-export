@@ -993,7 +993,10 @@ export class ControllerPlugin extends BaseControllerPlugin {
 	 * empty when the instance has no assigned game port (not running) — the GUI refuses to
 	 * connect to those. `publicAddress` defaults to "localhost" when the host never set one —
 	 * correct for a same-machine client; distributed deployments must configure
-	 * `host.public_address` (deployment config, not a code path).
+	 * `host.public_address` (deployment config, not a code path). Same caveat for PORT REMAPPING:
+	 * `gamePort` is the port as the host knows it — a docker deployment that publishes a
+	 * different host port (the atlas cluster on this machine maps 34300→34100) hands the client
+	 * an unroutable address; align the published port with the instance port, as this cluster does.
 	 */
 	async handleGetInstanceRosterRequest(request: { instanceId: number }) {
 		const requesterId = Number(request.instanceId);

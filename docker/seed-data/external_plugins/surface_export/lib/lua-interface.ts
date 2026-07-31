@@ -87,11 +87,15 @@ export class LuaInterface {
 			`if remote.interfaces["surface_export"] and remote.interfaces["surface_export"]["teleport_roster_update"] then ` +
 			`remote.call("surface_export", "teleport_roster_update", "${escapeString(rosterJson)}") ` +
 			`end`;
+		// ~128 escaped bytes per roster row means this caps out around 50 instances — a size real
+		// Clusterio clusters do reach. Past it the push needs chunking (the import path has the
+		// pattern); until then, fail loud here rather than send a truncated command. The catch in
+		// handleTeleportRosterRequest logs it host-side; the GUI keeps its "fetching…" label.
 		const MAX_RCON_COMMAND_BYTES = 7000;
 		if (Buffer.byteLength(script, "utf8") > MAX_RCON_COMMAND_BYTES) {
 			throw new Error(
 				`Teleport roster command is ${Buffer.byteLength(script, "utf8")} bytes (> ${MAX_RCON_COMMAND_BYTES}); ` +
-				`too large for a single RCON command — the cluster has an implausible number of instances.`,
+				`too many instances for a single RCON push — chunk the roster (see import_platform_chunk).`,
 			);
 		}
 		await this.host.sendRcon(script, true);
