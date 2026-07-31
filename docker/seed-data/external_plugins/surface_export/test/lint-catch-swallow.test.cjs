@@ -32,6 +32,21 @@ test("catch-swallow guard accepts throw, rejection, returned errors, and user-vi
 	assert.deepEqual(await scan(source), []);
 });
 
+test("catch-swallow guard accepts escape-by-assignment and .push sinks (SC-70 .mjs surface)", async () => {
+	// Outer-variable retry pattern: lastError is declared ABOVE the catch and rethrown after the loop.
+	assert.deepEqual(await scan("let lastError; try { a(); } catch (error) { lastError = error; }"), []);
+	// Property write into an object the caller reads.
+	assert.deepEqual(await scan("try { a(); } catch (error) { outcome.error = error.message; }"), []);
+	// Push into an outer findings collection.
+	assert.deepEqual(await scan("try { a(); } catch (error) { leftovers.push(`gone: ${error.message}`); }"), []);
+	// Still swallows: assignment whose right side never mentions the binding.
+	assert.equal((await scan("try { a(); } catch (error) { allLogs = []; }")).length, 1);
+	// Still swallows: the error only reaches a variable declared INSIDE the body.
+	assert.equal((await scan("try { a(); } catch (error) { const msg = error.message; }")).length, 1);
+	// Still swallows: push without the binding in its arguments.
+	assert.equal((await scan("try { a(); } catch (error) { items.push('failed'); }")).length, 1);
+});
+
 test("catch-swallow guard honors catch:allow only on the catch line or line above", async () => {
 	const allowed = `
 		try { a(); }

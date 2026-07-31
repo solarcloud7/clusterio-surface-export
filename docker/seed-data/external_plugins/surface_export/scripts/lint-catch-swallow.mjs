@@ -1,10 +1,19 @@
 #!/usr/bin/env node
 /**
- * lint-catch-swallow.mjs — caught TypeScript errors must reach an observable sink.
+ * lint-catch-swallow.mjs — caught errors must reach an observable sink.
  *
  * A non-empty catch is not automatically safe: `catch { value = [] }` silently converts a read failure
- * into valid-looking empty state. Every catch in plugin TS/TSX must propagate, log, or show its error, or
- * carry an owner-approved `catch:allow <reason>` on the catch line or the line immediately above it.
+ * into valid-looking empty state. Every catch must propagate, log, or show its error, or carry an
+ * owner-approved `catch:allow <reason>` on the catch line or the line immediately above it.
+ *
+ * Two surfaces, one rule:
+ *   - plugin TS/TSX (root entrypoints + lib/ + web/) — the original surface;
+ *   - repo-root .mjs under tools/ and tests/ — the sole integration runner, the testkit, and the
+ *     gallery lifecycle engine all live there, OUTSIDE the plugin's eslint scope. This was the last
+ *     ungated silent-failure dialect (recorded as a known gap in PR #147; closed by SC-70).
+ * The repo-root surface is absent in the sanctioned plugin-only container mount — same positive-path
+ * bypass as lint-ps-silent; ANY other missing scan dir fails (half-scan-printing-OK was a
+ * review-caught defect class).
  */
 
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
@@ -97,7 +106,25 @@ function surfacedBinding(body, binding) {
 		if (new RegExp(`\\breturn\\b[\\s\\S]*?\\b${escaped}\\b`).test(body)) return true;
 	}
 
-	const sinkRe = /(?:\b(?:logger|console|antMessage)\.\w+|\breject)\s*\(/g;
+	// Escape-by-assignment: writing the error into a property (`outcome.error = err.message`) or into
+	// an outer variable declared ABOVE the catch (`lastError = err` in a deadline-retry loop that
+	// rethrows it after the loop) puts it where enclosing code reads it — the same escape rank as
+	// `return`. A write to a variable declared INSIDE the body stays local and does not count, and an
+	// assignment whose right side never mentions the binding (`allLogs = []`) is still a swallow.
+	const assignRe = /(?<![.\w$])([A-Za-z_$][\w$]*(?:\s*(?:\.\s*[A-Za-z_$][\w$]*|\[[^\]]*\]))*)\s*=(?![=>])([^;\n]+)/g;
+	for (const match of body.matchAll(assignRe)) {
+		const target = match[1];
+		if (!/[.[]/.test(target)) {
+			const declaredLocally = new RegExp(`\\b(?:const|let|var)\\s+${target.replace(/[$]/g, "\\$")}\\b`).test(body);
+			if (declaredLocally) continue;
+		}
+		if ([...names].some((name) => hasName(match[2], name))) return true;
+	}
+
+	// `.push(...)` with the binding in its arguments feeds an outer collection (findings, leftovers,
+	// boundary errors) that enclosing code reports — counted via the same argument scan as the
+	// logger-style sinks below.
+	const sinkRe = /(?:\b(?:logger|console|antMessage)\.\w+|\breject|\.\s*push)\s*\(/g;
 	for (const match of body.matchAll(sinkRe)) {
 		const open = match.index + match[0].lastIndexOf("(");
 		const close = matchingDelimiter(body, open, "(", ")");
@@ -154,14 +181,55 @@ export function pluginSourceFiles(pluginDir = PLUGIN_DIR) {
 	return [...roots, ...walk(join(pluginDir, "lib"), [".ts", ".tsx"]), ...walk(join(pluginDir, "web"), [".ts", ".tsx"])];
 }
 
+/**
+ * Repo-root .mjs surface (tools/ + tests/). Returns null ONLY in the sanctioned plugin-only
+ * container mount (repo tools/ and tests/ not present there); throws if any scan dir is missing
+ * anywhere else, so a re-layout can never silently shrink the surface.
+ */
+export function repoRootMjsFiles(repoDir = REPO_DIR) {
+	const scanDirs = [join(repoDir, "tools"), join(repoDir, "tests")];
+	const missing = scanDirs.filter((dir) => !existsSync(dir));
+	if (missing.length > 0) {
+		if (/^([a-z]:)?\/clusterio\/external_plugins\//i.test(SCRIPT_DIR.replace(/\\/g, "/"))) return null;
+		throw new Error(`repo-root scan dir(s) missing: ${missing.map((dir) => relative(repoDir, dir)).join(", ")}`);
+	}
+	return scanDirs.flatMap((dir) => walk(dir, [".mjs"]));
+}
+
 function runCli() {
 	const violations = [];
 	let catchCount = 0;
-	for (const file of pluginSourceFiles()) {
-		const source = readFileSync(file, "utf8");
-		const rel = relative(REPO_DIR, file).replaceAll("\\", "/");
-		violations.push(...findCatchSwallows(source, rel));
-		catchCount += (maskNonCode(source).match(/\bcatch\s*(?:\([^)]*\))?\s*\{/g) ?? []).length;
+	const scan = (files) => {
+		for (const file of files) {
+			const source = readFileSync(file, "utf8");
+			const rel = relative(REPO_DIR, file).replaceAll("\\", "/");
+			violations.push(...findCatchSwallows(source, rel));
+			catchCount += (maskNonCode(source).match(/\bcatch\s*(?:\([^)]*\))?\s*\{/g) ?? []).length;
+		}
+	};
+	scan(pluginSourceFiles());
+
+	let surfaceNote = "";
+	let mjsFiles;
+	try {
+		mjsFiles = repoRootMjsFiles();
+	} catch (err) {
+		console.error(`lint:catch-swallow — FAILED: ${err.message}`);
+		process.exitCode = 1;
+		return;
+	}
+	if (mjsFiles === null) {
+		surfaceNote = "; repo-root .mjs skipped (plugin-only container mount)";
+	} else if (mjsFiles.length === 0) {
+		// Zero-subject fail-loud: tools/ and tests/ exist but hold no .mjs — the runner, testkit, and
+		// lifecycle engine are all .mjs, so an empty scan means discovery broke, not a clean repo.
+		console.error("lint:catch-swallow — FAILED: repo-root tools/ and tests/ contain zero .mjs files; " +
+			"the integration runner and testkit are .mjs, so an empty scan surface means discovery is broken.");
+		process.exitCode = 1;
+		return;
+	} else {
+		scan(mjsFiles);
+		surfaceNote = `; incl. ${mjsFiles.length} repo-root .mjs file(s)`;
 	}
 	if (violations.length) {
 		console.error("lint:catch-swallow — FAILED\n");
@@ -170,7 +238,7 @@ function runCli() {
 		process.exitCode = 1;
 		return;
 	}
-	console.log(`lint:catch-swallow — OK (${catchCount} catch block(s) surface their errors or are approved)`);
+	console.log(`lint:catch-swallow — OK (${catchCount} catch block(s) surface their errors or are approved${surfaceNote})`);
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) runCli();

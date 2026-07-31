@@ -211,21 +211,29 @@ export function createBatchLifecycle({ goldenSourceSave, goldenDestSave, markerP
 			return docker(["exec", HOSTS[host].container, "sh", "-c",
 				`find ${instancePath(host, "script-output")} -maxdepth 1 -name '${glob}' -newer ${marker} 2>/dev/null || true`])
 				.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
-		} catch { return []; }
+		} catch (error) {
+			// A failed docker exec (container down, instance mid-restart) must not read as a quiet
+			// "no new files yet" — the caller's poll would then time out blaming the wrong thing.
+			console.error(`filesNewerThanMarker(host ${host}): ${error.message}`);
+			return [];
+		}
 	}
 
 	async function waitForImportResult(host, marker, timeoutMs = 240_000) {
 		const deadline = Date.now() + timeoutMs;
+		let lastReadError;
 		while (Date.now() < deadline) {
 			const fresh = filesNewerThanMarker(host, marker, "debug_import_result_*.json");
 			if (fresh.length) {
-				// The file may be mid-write when first seen — retry the read on a parse failure.
+				// The file may be mid-write when first seen — retry the read on a parse failure. A
+				// PERSISTENT failure (truncated or corrupt JSON) surfaces in the timeout error below.
 				try { return { path: fresh.at(-1), result: readContainerJson(host, fresh.at(-1)) }; }
-				catch { /* mid-write; poll again */ }
+				catch (error) { lastReadError = error; }
 			}
 			await sleep(3000);
 		}
-		throw new Error(`no fresh debug_import_result on host ${host} within ${timeoutMs} ms`);
+		throw new Error(`no fresh debug_import_result on host ${host} within ${timeoutMs} ms` +
+			(lastReadError ? ` (last read attempt failed: ${lastReadError.message})` : ""));
 	}
 
 	// The unconditional restore finalizer body: capture evidence FIRST, restore the pre-batch live
@@ -286,7 +294,7 @@ export function createBatchLifecycle({ goldenSourceSave, goldenDestSave, markerP
 				const path = instancePath(host, `saves/${name}`);
 				docker(["exec", HOSTS[host].container, "sh", "-c", `rm -f -- ${path}`]);
 				try { docker(["exec", HOSTS[host].container, "test", "!", "-e", path]); }
-				catch { leftovers.push(`${name} still on host ${host} filesystem`); }
+				catch (error) { leftovers.push(`${name} still on host ${host} filesystem (${error.message.split(/\r?\n/)[0]})`); }
 			}
 			for (const host of [1, 2]) {
 				docker(["exec", HOSTS[host].container, "sh", "-c", `rm -f /tmp/${markerPrefix}-*`]);
