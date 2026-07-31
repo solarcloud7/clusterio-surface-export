@@ -220,12 +220,13 @@ save-loaded world are not automatically identical — save/load changes entity r
 they become permanent regressions. Labs iterate freely with disposable state while investigating; the baked
 lifecycle binds the permanent layers (integration and drift), and this gate is the bridge between the two.
 
-An engine-version change requires a re-certification campaign before lab conclusions are enabled at the new pin:
-restore the archived runners from the `labs-archive-2026-07-19` git tag (or author fresh probes), re-measure every
-law production depends on, and record the resulting evidence commits in
-[`tests/labs-certified.json`](../tests/labs-certified.json) — the engine-pin certificate that
-`lint:version-certification` holds equal to the pinned Factorio version. Promotion never upgrades a hypothesis or
-unexplained observation into law.
+An engine-version change invalidates every measurement taken on the old pin. Re-measure the law you are about to
+rely on, in the PR that relies on it, against the engine actually running — restoring an archived runner from the
+`labs-archive-2026-07-19` git tag or authoring a fresh probe. **There is no certificate file and no
+version-certification lint** (both deleted 2026-07-31, owner ruling): a committed record asserting that a campaign
+re-measured "every law production depends on" is unfalsifiable, and the last one was caught claiming laws whose
+cited pads never exercised them. A measurement stands on its own or not at all. Promotion never upgrades a
+hypothesis or unexplained observation into law.
 
 See [`tests/README.md`](../tests/README.md) for the repository test layout and entry points.
 
@@ -348,8 +349,8 @@ Consequences of the boundary:
   stated unqualified.
 - Both tiers ultimately trust the engine's own meters. That trust is not axiomatic: the
   load-bearing engine facts above were measured in lab rungs before the gate was allowed to rely
-  on them, and an engine pin bump requires the re-certification campaign recorded in
-  `tests/labs-certified.json` (`lint:version-certification`).
+  on them, and those measurements are only as current as the pin they were taken on — re-measure
+  at a bump rather than looking for a record that says someone already did.
 
 ---
 

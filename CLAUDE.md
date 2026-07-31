@@ -181,11 +181,12 @@ hands-on E2E checklist, one doc); repository test layout and entry points are in
   the real production path, no cleanup between fixtures, reload the paired golden saves
   (`docker/seed-data/lab-saves/`) in an unconditional batch finalizer.
 - **The standing lab suite was removed 2026-07-19** (owner ruling; runners archived at git tag
-  `labs-archive-2026-07-19`). Engine re-certification is a calculated campaign at version-update time: restore
-  runners from the archive tag (or author fresh probes), re-measure every law production depends on, record the
-  evidence commits in `tests/labs-certified.json`, and bump the pin — all in the bump PR.
-  `npm run lint:version-certification` keeps the pin and the certificate equal; between pin bumps, the pads +
-  integration suite are the standing coverage.
+  `labs-archive-2026-07-19`). The pads + integration suite are the standing coverage, full stop. **There is no
+  engine-pin certificate and no version-certification lint** — both were DELETED 2026-07-31 by owner ruling.
+  They asserted that a campaign had re-measured "every law production depends on" while checking nothing but a
+  version string, and the 2.1.11 certificate was caught claiming laws its own cited pads never exercised. A
+  green certificate was permission to assume; if a law matters at a new pin, re-measure it and let the measurement
+  stand on its own, in the PR that needs it.
 - **Ad-hoc probes that mutate the shared cluster** still owe zero-leftover cleanup (surfaces AND persistent
   `storage.*` records, game unpaused) and must scope every predicate to `surface-export-*` containers — the
   unrelated `atlas-*` cluster shares this machine.
@@ -194,9 +195,19 @@ hands-on E2E checklist, one doc); repository test layout and entry points are in
   cannot be lost during teeth testing); leave `package-lock.json` byte-identical outside approved dependency
   updates.
 
-**Evidence discipline** (mechanized by `lint:version-certification`):
-engine-behavior knowledge carries evidence tags in [docs/factorio-2.0-api-notes.md](docs/factorio-2.0-api-notes.md)
-— **[API]** / **[empirical, <pin>, <citation>]**. There is NO [hypothesis] tier in api-notes: a claim whose only evidence is an undocumented one-off probe is DELETED, not demoted (git history keeps it). Elsewhere, a mechanism EXPLANATION is a lead until its
+**Evidence discipline** (deliberately NOT mechanized — owner ruling 2026-07-31: we do not add lint rules to
+prop up bad infrastructure, and a guard that checks a version string while claiming to check evidence is worse
+than none): [docs/factorio-2.0-api-notes.md](docs/factorio-2.0-api-notes.md) carries **only measured behavior
+the official Lua API documentation does not state** — timing, ordering, save/load survival, how the engine
+reacts to a write. Two hard deletion rules, both owner-issued after a false `[empirical]` claim shipped:
+- **If upstream documents it, we do not.** A claim that restates <https://lua-api.factorio.com/> is presumed
+  copied from there and dressed as an experiment. Link the upstream page at the point of use; never mirror it.
+  The old **[API]** tier existed to do exactly that mirroring and is abolished.
+- **Documentation citing documentation is a feedback loop.** Evidence is a measurement or an upstream source,
+  never another of our own docs. A claim whose support is "see our other doc" is deleted, not re-pointed.
+Surviving claims carry **[empirical, <pin>, <citation>]**, and the tag covers ONE claim — a bullet that bundles
+a measured fact with a "so/therefore" consequence is two claims wearing one citation, which is precisely how a
+false cap rationale rode a real `crafting_speed` measurement for months. There is NO [hypothesis] tier: a claim whose only evidence is an undocumented one-off probe is DELETED, not demoted (git history keeps it). Elsewhere, a mechanism EXPLANATION is a lead until its
 *predictions* are tested — a behavioral rule can be [empirical] while its explanation is lore, and an
 unverifiable source ("expert analysis" of closed-source internals) must NEVER be cited as "Confirmed by."
 Rung IDs cited in code and docs (fluid-lab R11, inserter-lab B6, …) point at evidence commits reachable via the
@@ -367,7 +378,7 @@ For Clusterio core architecture, see [Clusterio docs](https://github.com/cluster
 
 ### General Style (partially enforced by ESLint — `npm run lint`, gated in CI)
 
-> `npm run lint` runs eleven **correctness** guards, all gated in CI; a twelfth (**commit labels**,
+> `npm run lint` runs ten **correctness** guards, all gated in CI; an eleventh (**commit labels**,
 > `scripts/lint-commit-labels.mjs`) runs as its own PR-gated CI step. Each script header carries the full
 > rationale and incident history. Every `*:allow` escape hatch MUST be enumerated in
 > `scripts/lint-allow-manifest.json` with a reason and approver — an allow is an **escalation**, never
@@ -385,7 +396,6 @@ For Clusterio core architecture, see [Clusterio docs](https://github.com/cluster
 > | PS silent-failure | `lint:ps-silent` | no PowerShell-stream suppression (`2>$null`, `-ErrorAction SilentlyContinue/Ignore`, empty `catch {}`) in tools/tests ps1 unless CHECKED (`$LASTEXITCODE`/`$?` within 3 lines) or ANNOTATED (`deliberately quiet` + real reason) — the 11-broken-calls incident class | annotation IS the mechanism (reason required, reviewable) |
 > | Test hooks | `lint:test-hooks` | a `test_force_*` hook disarms in `finally`/`trap` or is enumerated in `FAIL_SAFE_HOOKS` (`scripts/fail-safe-hooks.mjs`) | `FAIL_SAFE_HOOKS` entry |
 > | Allow manifest | `lint:allow-manifest` | manifest matches reality exactly, both directions | — |
-> | Version certification | `lint:version-certification` | pinned Factorio version == `tests/labs-certified.json`; a pin bump goes red until the re-certification campaign lands | none — recertify |
 > | Commit labels | (own CI step) | a `docs:`-labeled commit touches only doc paths — labels are audit boundaries | — |
 >
 > Discipline the guards cannot fully mechanize: ship the adversarial fixture WITH the fix, and run

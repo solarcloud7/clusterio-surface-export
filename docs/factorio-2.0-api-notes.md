@@ -21,9 +21,23 @@ Every entry must carry a citation that **resolves to something checkable**: an i
 (`tests/integration/<name>`, `pad <fixture-id>`), or a lab NOTEBOOK rung at tag `labs-archive-2026-07-19`
 *qualified by lab* (`fluid-lab R12` — bare `R12` is ambiguous across labs). **There is no [hypothesis] tier.**
 A claim whose only evidence is an undocumented one-off probe gets **deleted**, not demoted: an unprovable
-claim in a reference doc is a liability, and the git history keeps it if anyone ever needs it. Tags are
-**[API]** (Wube-documented, kept only where a subtlety bites us) and **[empirical, `<pin>`, `<citation>`]**.
-When the official docs and our pinned engine disagree, the pinned-engine measurement wins.
+claim in a reference doc is a liability, and the git history keeps it if anyone ever needs it.
+
+The only tag is **[empirical, `<pin>`, `<citation>`]**, and it covers **exactly one claim**. A bullet that
+states a measurement and then draws a "so/therefore" consequence is two claims wearing one citation — that is
+how a false `set_stack` cap rationale rode a real `crafting_speed` measurement (retracted 2026-07-31).
+
+Two owner deletion rules (2026-07-31), both absolute:
+- **If <https://lua-api.factorio.com/> documents it, this file does not.** The abolished **[API]** tier existed
+  to mirror upstream, and mirroring is how a doc rots: the upstream page moves, our copy doesn't. Link the
+  upstream page where the code needs it. An `[empirical]` claim that merely restates upstream is presumed
+  copied from the docs and dressed as an experiment — delete it.
+- **Documentation citing documentation is a feedback loop.** Evidence is a measurement or an upstream source,
+  never another of our docs. "See our other doc" is not support; such a claim is deleted, not re-pointed.
+
+What survives here is only what the docs do NOT tell you and a measurement had to: timing, ordering, what
+survives a save/load, how the engine answers a write. When upstream and our pinned engine disagree, the
+pinned-engine measurement wins — and that disagreement is exactly the kind of claim worth keeping.
 
 ## Contents
 
@@ -38,9 +52,7 @@ When the official docs and our pinned engine disagree, the pinned-engine measure
 
 ## Fluid model at 2.1.11
 
-> The dev cluster and the plugin's fluid layer run **Factorio 2.1.11** (all instances since 2026-07-21),
-> and `tests/labs-certified.json` is certified at 2.1.11 (`certified_at` 2026-07-21) — the
-> re-certification campaign landed, so `lint:version-certification` is green rather than pending.
+> The dev cluster and the plugin's fluid layer run **Factorio 2.1.11** (all instances since 2026-07-21).
 > The laws below were measured by live fluid-law experiments on 2.1.11; the running instrument is
 > `tests/instruments/fluid-segment-law/run-tests.mjs`, which re-measures them on demand.
 
