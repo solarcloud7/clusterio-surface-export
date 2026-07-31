@@ -42,6 +42,8 @@ function startsRegex(out, index) {
 		while (start > 0 && /[A-Za-z_$]/.test(out[start - 1])) start--;
 		return REGEX_PRECEDING_KEYWORDS.has(out.slice(start, j + 1).join(""));
 	}
+	// Postfix `i++ / 2` and `i-- / 2` divide (whitespace-insensitive, unlike the raw JSX vetoes).
+	if ((prev === "+" && out[j - 1] === "+") || (prev === "-" && out[j - 1] === "-")) return false;
 	// After a closing paren/bracket the slash divides; after operators/openers it starts a regex.
 	return prev !== ")" && prev !== "]";
 }
@@ -106,18 +108,22 @@ function maskNonCode(source, filename = "<source>") {
 
 		if (source[i] === "/" && next === "/") { blank(i); blank(i + 1); i++; states.push({ kind: "line-comment" }); continue; }
 		if (source[i] === "/" && next === "*") { blank(i); blank(i + 1); i++; states.push({ kind: "block-comment", openedAt: i }); continue; }
-		// JSX vetoes (TSX surface): `</div>` and `<Row/>` are tags, never regex literals; `i++ / 2`
-		// and `i-- / 2` are division after a postfix operator.
-		if (source[i] === "/" && (source[i - 1] === "<" || next === ">" ||
-			(source[i - 1] === "+" && source[i - 2] === "+") || (source[i - 1] === "-" && source[i - 2] === "-"))) { /* plain code */ }
+		// JSX vetoes (TSX surface): `</div>` and `<Row/>` are tags, never regex literals. These stay
+		// ADJACENCY checks deliberately — `a < /re/.test(b)` is a real comparison-then-regex, so a
+		// whitespace-skipping `<` veto would be wrong. Postfix ++/-- division lives in startsRegex,
+		// which does skip whitespace.
+		if (source[i] === "/" && (source[i - 1] === "<" || next === ">")) { /* plain code */ }
 		else if (source[i] === "/" && startsRegex(out, i)) {
 			blank(i);
 			states.push({ kind: "regex", inClass: false, openedAt: i });
 			continue;
 		}
-		// Contraction veto (SOUND, not heuristic): an identifier character directly before a quote
-		// (`instance's` in JSX text) is a syntax error in real JS — `foo'bar'` cannot occur in code —
-		// so this apostrophe is prose, not a string delimiter. This is what makes JSX text lexable.
+		// Contraction veto: an identifier character directly before a quote (`instance's` in JSX
+		// text) is invalid JS EXCEPT directly after a keyword (`typeof'x'`, `import x from'./y'` —
+		// review-constructed counter-examples). This repo writes spaces after keywords, and every
+		// counter-example either still lexes correctly (both quotes vetoed symmetrically, contents
+		// scanned as code — a following swallow still flags) or hits the desync tripwire LOUDLY.
+		// The veto is what makes JSX prose lexable; it is a corpus-safe rule, not a soundness proof.
 		if ((source[i] === "'" || source[i] === '"') && /[A-Za-z0-9_$]/.test(source[i - 1] ?? "")) { continue; }
 		if (source[i] === "'" || source[i] === '"') { blank(i); states.push({ kind: "quote", quote: source[i], openedAt: i }); continue; }
 		if (source[i] === "`") { blank(i); states.push({ kind: "template", openedAt: i }); continue; }
