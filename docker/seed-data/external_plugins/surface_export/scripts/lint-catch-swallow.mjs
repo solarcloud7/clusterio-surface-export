@@ -106,13 +106,19 @@ function maskNonCode(source, filename = "<source>") {
 
 		if (source[i] === "/" && next === "/") { blank(i); blank(i + 1); i++; states.push({ kind: "line-comment" }); continue; }
 		if (source[i] === "/" && next === "*") { blank(i); blank(i + 1); i++; states.push({ kind: "block-comment", openedAt: i }); continue; }
-		// JSX vetoes (TSX surface): `</div>` and `<Row/>` are tags, never regex literals.
-		if (source[i] === "/" && (source[i - 1] === "<" || next === ">")) { /* plain code */ }
+		// JSX vetoes (TSX surface): `</div>` and `<Row/>` are tags, never regex literals; `i++ / 2`
+		// and `i-- / 2` are division after a postfix operator.
+		if (source[i] === "/" && (source[i - 1] === "<" || next === ">" ||
+			(source[i - 1] === "+" && source[i - 2] === "+") || (source[i - 1] === "-" && source[i - 2] === "-"))) { /* plain code */ }
 		else if (source[i] === "/" && startsRegex(out, i)) {
 			blank(i);
 			states.push({ kind: "regex", inClass: false, openedAt: i });
 			continue;
 		}
+		// Contraction veto (SOUND, not heuristic): an identifier character directly before a quote
+		// (`instance's` in JSX text) is a syntax error in real JS — `foo'bar'` cannot occur in code —
+		// so this apostrophe is prose, not a string delimiter. This is what makes JSX text lexable.
+		if ((source[i] === "'" || source[i] === '"') && /[A-Za-z0-9_$]/.test(source[i - 1] ?? "")) { continue; }
 		if (source[i] === "'" || source[i] === '"') { blank(i); states.push({ kind: "quote", quote: source[i], openedAt: i }); continue; }
 		if (source[i] === "`") { blank(i); states.push({ kind: "template", openedAt: i }); continue; }
 		if (state.templateDepth !== null) {
@@ -247,14 +253,15 @@ function walk(dir, extensions, out = []) {
 	return out;
 }
 
-// .tsx is DELIBERATELY absent: JSX text is not JS (an apostrophe in `<Text>instance's</Text>`
-// opens a phantom string), and the pre-desync-tripwire scan of web/*.tsx was provably desynced —
-// silently blind, not covered. eslint owns the JSX dialect (no-empty-catch, no bare `.catch`);
-// this guard's binding-reaches-a-sink analysis runs where the lexer is sound: .ts and .mjs.
+// .tsx stays IN scope: eslint globally ignores web/** (eslint.config.js) and scopes its rules to
+// **/*.ts, so this guard is the ONLY catch guard the web tree has — dropping .tsx would leave it
+// with zero coverage (review-verified). JSX is lexable here because of two sound rules above: the
+// tag vetoes on `/`, and the contraction veto (identifier-char + quote is invalid JS, so it is
+// prose). Anything JSX invents beyond that hits the desync tripwire and fails LOUD by file+line.
 export function pluginSourceFiles(pluginDir = PLUGIN_DIR) {
 	const roots = ["controller.ts", "instance.ts", "index.ts", "messages.ts", "control.ts", "helpers.ts"]
 		.map((name) => join(pluginDir, name)).filter(existsSync);
-	return [...roots, ...walk(join(pluginDir, "lib"), [".ts"]), ...walk(join(pluginDir, "web"), [".ts"])];
+	return [...roots, ...walk(join(pluginDir, "lib"), [".ts", ".tsx"]), ...walk(join(pluginDir, "web"), [".ts", ".tsx"])];
 }
 
 /**

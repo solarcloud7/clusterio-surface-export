@@ -60,6 +60,19 @@ test("catch-swallow guard is not blinded by regex literals carrying quotes (the 
 		/maskNonCode desynced/);
 });
 
+test("catch-swallow guard lexes JSX soundly (tags, self-closers, contractions in text)", async () => {
+	// The contraction veto: an identifier char directly before a quote is invalid JS, so the
+	// apostrophe in JSX prose is text — the shape that silently desynced the OLD lexer on
+	// web/GatewaysTab.tsx. A swallow after such JSX must still be found.
+	const source = `
+		const view = <Text type="secondary">Link each instance's gateways to a destination.</Text>;
+		const row = <Row key={x}/>;
+		const closed = <div>done</div>;
+		try { a(); } catch { fallback = []; }
+	`;
+	assert.equal((await scan(source)).length, 1);
+});
+
 test("catch-swallow guard requires escape targets to be OUTER (the M2 locality rule)", async () => {
 	// A container declared inside the body dies at the closing brace — a swallow with extra steps.
 	assert.equal((await scan("try { a(); } catch (error) { const errs = []; errs.push(error.message); }")).length, 1);
