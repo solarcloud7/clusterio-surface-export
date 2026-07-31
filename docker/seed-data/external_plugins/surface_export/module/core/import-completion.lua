@@ -725,10 +725,11 @@ function ImportCompletion.run_phase2(job)
 			ActiveStateRestoration.restore(job.entities_to_create or {}, job.entity_map or {}, job.frozen_states or {})
 			PhaseProfiler.stop(job.job_id, "activation")
 
-			-- LATCH RE-ARM (post-activation, non-gating): deciders whose CAPTURED output register
-			-- was non-zero get a deferred force->evaluate->restore pass over the next few ticks
-			-- (circuit-latch-rearm R3; serviced from AsyncProcessor.process_tick). Outcomes are
-			-- verified physically and banked in storage.latch_rearm_results — never gate fields.
+			-- LATCH RE-ARM (post-activation, non-gating): SELF-FEEDBACK deciders whose captured
+			-- output register was non-zero get a deferred preflight->force->restore->verify
+			-- (->clear on mismatch) pass over the next ticks (circuit-latch-rearm R3; serviced
+			-- from AsyncProcessor.process_tick). Re-arm and clear are both physically verified;
+			-- outcomes land in the log + storage.latch_rearm_results — never gate fields.
 			local rearm_count = LatchRearm.schedule(job)
 			if rearm_count > 0 then
 				result.latchRearmScheduled = rearm_count

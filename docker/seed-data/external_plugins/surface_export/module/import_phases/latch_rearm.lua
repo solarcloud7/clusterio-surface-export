@@ -78,14 +78,27 @@ end
 
 local COMBINATOR_OUTPUTS = {}
 local COMBINATOR_INPUTS = {}
+local connector_sets_built = false
 
 local function connector_sets()
   -- Built lazily: defines is available at control-stage runtime; module load order stays trivial.
-  if next(COMBINATOR_OUTPUTS) == nil then
-    COMBINATOR_OUTPUTS[defines.wire_connector_id.combinator_output_red] = true
-    COMBINATOR_OUTPUTS[defines.wire_connector_id.combinator_output_green] = true
-    COMBINATOR_INPUTS[defines.wire_connector_id.combinator_input_red] = true
-    COMBINATOR_INPUTS[defines.wire_connector_id.combinator_input_green] = true
+  -- GUARDED (review R2): schedule() runs on the one on_tick path the process_tick backstop does
+  -- not cover, so a nil define on a future engine must DISABLE detection loudly, never throw
+  -- (`t[nil] = true` is server death there). Version drift belongs in utils/version-compat.
+  if not connector_sets_built then
+    connector_sets_built = true
+    local wc = defines.wire_connector_id
+    local out_red, out_green = wc.combinator_output_red, wc.combinator_output_green
+    local in_red, in_green = wc.combinator_input_red, wc.combinator_input_green
+    if out_red and out_green and in_red and in_green then
+      COMBINATOR_OUTPUTS[out_red] = true
+      COMBINATOR_OUTPUTS[out_green] = true
+      COMBINATOR_INPUTS[in_red] = true
+      COMBINATOR_INPUTS[in_green] = true
+    else
+      log("[LatchRearm] combinator wire-connector defines missing on this engine — latch "
+        .. "detection DISABLED (version drift; extend utils/version-compat and re-certify)")
+    end
   end
   return COMBINATOR_OUTPUTS, COMBINATOR_INPUTS
 end
@@ -322,9 +335,33 @@ local function run_stage(job_key, record)
   elseif record.stage == "clear_restore" then
     write_stage(record.items, function(item) return item.captured_parameters end, "clear restore",
       function(item) return item.needs_clear and item.entity and item.entity.valid end)
+    record.stage = "clear_verify"
+    record.at_tick = game.tick + RESTORE_TO_VERIFY_TICKS
+  elseif record.stage == "clear_verify" then
+    -- MEASURED, not asserted (review R1): the clear only earns its outcome if the register
+    -- physically reads empty for the captured signals after the captured condition is back.
     for _, item in ipairs(record.items) do
-      if item.needs_clear then
-        item.outcome = (item.outcome or "mismatch") .. " — cleared to 0"
+      if item.needs_clear and item.entity and item.entity.valid then
+        local ok, sigs = pcall(function() return item.entity.get_control_behavior().signals_last_tick end)
+        local still_held = nil
+        if ok then
+          for _, s in pairs(sigs or {}) do
+            if s.signal and s.signal.name then
+              for _, captured in ipairs(item.captured_outputs) do
+                if signal_key(s.signal) == signal_key(captured.signal) then still_held = s.count end
+              end
+            end
+          end
+        end
+        if not ok then
+          item.outcome = (item.outcome or "mismatch") .. " — clear UNVERIFIED (read failed: "
+            .. tostring(sigs) .. ")"
+        elseif still_held then
+          item.outcome = (item.outcome or "mismatch") .. " — clear FAILED (register still holds "
+            .. tostring(still_held) .. ")"
+        else
+          item.outcome = (item.outcome or "mismatch") .. " — cleared to 0 (verified)"
+        end
       end
     end
     finalize(job_key, record, "completed with mismatches cleared")
