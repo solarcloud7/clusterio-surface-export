@@ -318,7 +318,8 @@ platform to the destination (`connect_to_server` + `enter_space_platform`) is a 
 a reachability spike. The dedicated `passenger-evacuate` runner was RETIRED 2026-07-27 (owner
 consolidation): evacuation happens at the single source-delete chokepoint named above, which every
 gallery-suite transfer executes, but no standing test puts a player aboard first — the evacuation
-branch itself is currently uncovered.
+branch itself is currently uncovered. Design in
+[docs/GATEWAY_TRANSFER_PRD.md](docs/GATEWAY_TRANSFER_PRD.md).
 
 ## Export/Import Workflow Notes (Current)
 

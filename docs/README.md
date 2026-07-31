@@ -171,6 +171,7 @@ Plugin root: `docker/seed-data/external_plugins/surface_export/`. The full proje
 | `scripts/` | Build/lint helpers (Lua-invariant and webpack-cache guards) |
 | `dist/` | Build output (`dist/node/`, `dist/web/`), gitignored |
 
+| [GATEWAY_TRANSFER_PRD.md](GATEWAY_TRANSFER_PRD.md) | In-game gateway transfer — design + current state (what is shipped, and what is not yet built) |
 For the detailed Lua module breakdown, see the Code Reference Map in [EXPORT_IMPORT_FLOW.md](EXPORT_IMPORT_FLOW.md).
 
 ## Documentation

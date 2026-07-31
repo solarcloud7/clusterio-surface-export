@@ -14,7 +14,7 @@ drift:
 It is a **pure data-stage mod** (no `control.lua`): it only adds surfaceless gateway
 `space-location`s + short `space-connection`s from nauvis. All gateway *logic* (discovery, unlock,
 arrival detection, transfer trigger, hop-strip) lives in the save-patched `surface_export` module, not
-here.
+here. See `docs/GATEWAY_TRANSFER_PRD.md`.
 
 Because it is data-only, it can be added to a running cluster without a `docker compose down -v`
 (upload + `mod-pack edit` + restart hosts — what `-Upload` does). The `down -v` reseed is only needed
