@@ -17,6 +17,7 @@
 // machinery rather than shipping a stub. A stub that quietly succeeds is a vacuous pass, which is
 // the exact failure mode this repo keeps closing — a testkit that lies is worse than no testkit.
 import { exportInspect, inspectPayloadFile, resolvePlatformIndex } from "./export-inspect.mjs";
+import { explainBlackBox, explainBlackBoxFile, formatExplanation } from "./blackbox-explain.mjs";
 import {
 	formatFindings, referentialIntegrityAnchors, referentialIntegrityStatic,
 } from "./referential-integrity.mjs";
@@ -36,6 +37,11 @@ export const testkit = {
 	inspectPayloadFile,
 	/** Platform names collide; resolve to the unique per-force index, failing loud on ambiguity. */
 	resolvePlatformIndex,
+
+	/** Explain a banked failure black box, offline: diff rows, self-report vs physical scan, FAQ triage hint. */
+	explainBlackBox,
+	explainBlackBoxFile,
+	formatExplanation,
 
 	/**
 	 * Cross-reference integrity. `mode: "static"` needs no cluster (CI-safe).
@@ -67,4 +73,7 @@ export const testkit = {
 };
 
 export default testkit;
-export { exportInspect, inspectPayloadFile, resolvePlatformIndex, formatFindings };
+export {
+	exportInspect, inspectPayloadFile, resolvePlatformIndex, formatFindings,
+	explainBlackBox, explainBlackBoxFile, formatExplanation,
+};

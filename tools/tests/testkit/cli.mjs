@@ -5,10 +5,12 @@
 //   node tools/tests/testkit/cli.mjs check --live               # + anchors resolve against a real payload
 //   node tools/tests/testkit/cli.mjs inspect <platform>         # payload summary + record types
 //   node tools/tests/testkit/cli.mjs inspect <platform> --field <name>@<x>,<y>:<dotted.path>
+//   node tools/tests/testkit/cli.mjs blackbox explain <bundle.json> [--json]   # offline forensics
 //
 // Exit codes: 0 clean, 1 findings, 2 usage/operational error.
 import { testkit } from "./index.mjs";
 import { probeProperty } from "./live-probe.mjs";
+import { explainBlackBoxFile, formatExplanation } from "./blackbox-explain.mjs";
 
 const [, , command, ...rest] = process.argv;
 const flag = name => rest.includes(name);
@@ -86,7 +88,19 @@ async function cmdProbe() {
 	process.exit(0);
 }
 
-const COMMANDS = { check: cmdCheck, inspect: cmdInspect, probe: cmdProbe };
+async function cmdBlackbox() {
+	const [sub, path] = rest.filter(a => !a.startsWith("--"));
+	if (sub !== "explain" || !path) fail("usage: blackbox explain <bundle.json> [--json]");
+	const report = explainBlackBoxFile(path);
+	if (flag("--json")) {
+		console.log(JSON.stringify(report, null, 2));
+	} else {
+		console.log(formatExplanation(report));
+	}
+	process.exit(0);
+}
+
+const COMMANDS = { check: cmdCheck, inspect: cmdInspect, probe: cmdProbe, blackbox: cmdBlackbox };
 if (!COMMANDS[command]) {
 	fail(`usage: node tools/tests/testkit/cli.mjs <${Object.keys(COMMANDS).join("|")}> [...]`);
 }
