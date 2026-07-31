@@ -7,6 +7,13 @@ local RemoteInterface = {}
 -- Load base utilities
 local Base = require("modules/surface_export/interfaces/remote/base")
 
+-- Runtime version oracle (SC-72): the stamp is rewritten by the version bump, so the value the
+-- LIVE module returns proves which module version the save was patched with.
+local module_version = require("modules/surface_export/version")
+local function get_module_version()
+  return module_version
+end
+
 -- Load individual remote interface functions
 local export_platform = require("modules/surface_export/interfaces/remote/export-platform")
 local get_export = require("modules/surface_export/interfaces/remote/get-export")
@@ -53,6 +60,7 @@ RemoteInterface.test_import_entity = test_import_entity
 RemoteInterface.test_runner = test_runner
 RemoteInterface.clone_platform = clone_platform
 RemoteInterface.version_selftest = version_selftest
+RemoteInterface.get_module_version = get_module_version
 RemoteInterface.selection_lab_drive = selection_lab_drive
 RemoteInterface.belt_side_restore_selftest = belt_side_restore_selftest
 RemoteInterface.gateway_selftest = gateway_selftest
@@ -117,6 +125,7 @@ function RemoteInterface.register()
     clone_platform_json = Base.json_wrap(clone_platform),
     version_selftest = version_selftest,
     version_selftest_json = Base.json_wrap(version_selftest),
+    get_module_version = get_module_version,
     selection_lab_drive = selection_lab_drive,
     selection_lab_drive_json = Base.json_wrap(selection_lab_drive),
     belt_side_restore_selftest = belt_side_restore_selftest,

@@ -61,6 +61,9 @@ if (-not $SkipIncrement) {
 # run heals pre-existing drift too; idempotent — writes only on change). See tools/shared/version-utils.ps1.
 . "$PSScriptRoot/../shared/version-utils.ps1"
 Update-PackageLockVersion -LockPath (Join-Path $PluginPath "package-lock.json") -NewVersion $NewVersion
+# Both branches likewise: the runtime version oracle (module/version.lua) must always agree with
+# package.json — the post-deploy probe below compares the LIVE module's answer against $NewVersion.
+Update-ModuleVersionStamp -ModuleDir (Join-Path $PluginPath "module") -NewVersion $NewVersion
 
 Write-Host "Using save-patched module architecture (no mod zip needed)" -ForegroundColor Cyan
 Write-Host "Lua code in module/ directory will be patched into saves by Clusterio" -ForegroundColor Green
@@ -243,34 +246,44 @@ if ($instancesDone) {
     throw "Instances did not reach running within ${instanceTimeout}s. The cluster is NOT deployed; do not trust a later success message."
 }
 
-# ---- POST-DEPLOY LIVENESS PROBE ----
+# ---- POST-DEPLOY VERSION PROBE ----
 # What this proves, and what it does NOT, stated plainly.
 #
-# The previous version of this block claimed to "verify the running cluster loaded $NewVersion" by
-# cat-ing module.json out of host-1. It was wrong twice over:
-#   1. docker-compose.yml bind-mounts ./docker/seed-data/external_plugins into BOTH hosts, so that
-#      cat re-read the exact file this script had just written at the top. A tautology, not a check.
-#   2. `docker exec ... 2>&1` yields a string ARRAY. `-match` against a collection FILTERS and does
-#      not populate $Matches, so it silently reused the capture from the instance poll loop above
-#      and compared the version against an instance NAME — hard-failing every single deploy.
+# An earlier version of this block claimed to "verify the running cluster loaded $NewVersion" by
+# cat-ing module.json out of host-1 — a tautology (the bind mount re-read the file this script had
+# just written), broken further by `-match` on a string ARRAY (filters, never populates $Matches).
+# Its replacement could only assert liveness, because there was no runtime version oracle.
 #
-# There is no runtime version oracle to fix this with: no Lua reads module.json, and clusterioctl
-# prints no plugin version. So assert only what is genuinely observable — that each instance is up
-# and its save-patched module answers RCON.
+# The oracle exists now (SC-72): module/version.lua is rewritten by the bump above and the LIVE
+# module returns it via remote.call('surface_export','get_module_version') — an answer from inside
+# the patched save, not from the file this script wrote. `-match` runs on Out-String output (a
+# single string), so $Matches is populated correctly.
 #
-# LIMIT: this is a LIVENESS check, not a freshness check. On `-SkipIncrement -KeepData` the volumes
-# and their already-patched saves survive, so Lua edits do NOT take and this probe still goes green.
-# Only the default `down -v` path re-seeds and re-patches.
+# LIMIT, honestly held: on `-KeepData` the volumes and their already-patched saves survive, so Lua
+# edits do NOT take and a version MISMATCH is the expected outcome — reported as a loud warning,
+# not a failure. Every other path hard-fails on mismatch.
 Write-Host ""
-Write-Host "Verifying the save-patched module answers on both instances..." -ForegroundColor Cyan
+Write-Host "Verifying the save-patched module VERSION on both instances..." -ForegroundColor Cyan
+$versionProbe = "/sc local i = remote.interfaces['surface_export'] " +
+    "if not i then rcon.print('plugin-missing') " +
+    "elseif not i['get_module_version'] then rcon.print('stale-module-no-version-oracle') " +
+    "else rcon.print(remote.call('surface_export','get_module_version')) end"
 foreach ($probeInstance in @("clusterio-host-1-instance-1", "clusterio-host-2-instance-1")) {
     $probe = docker exec surface-export-controller npx clusterioctl --config /clusterio/tokens/config-control.json `
-        --log-level error instance send-rcon $probeInstance "/sc rcon.print(remote.interfaces['surface_export'] ~= nil)" 2>&1
+        --log-level error instance send-rcon $probeInstance $versionProbe 2>&1
     $probeText = ($probe | Out-String).Trim()
-    if ($LASTEXITCODE -ne 0 -or $probeText -notmatch 'true') {
+    if ($LASTEXITCODE -ne 0 -or $probeText -match 'plugin-missing' -or
+        -not ($probeText -match '(?m)^\s*(\d+\.\d+\.\d+|stale-module-no-version-oracle)\s*$')) {
         throw "surface_export interface is NOT loaded on ${probeInstance} (exit $LASTEXITCODE): $probeText"
     }
-    Write-Host "  OK - $probeInstance has the surface_export interface loaded" -ForegroundColor Green
+    $reported = $Matches[1]
+    if ($reported -eq $NewVersion) {
+        Write-Host "  OK - $probeInstance runs module version $reported" -ForegroundColor Green
+    } elseif ($KeepData) {
+        Write-Host "  ~ $probeInstance runs module version $reported (deploy is $NewVersion) — EXPECTED with -KeepData: kept saves keep their old patched Lua" -ForegroundColor Yellow
+    } else {
+        throw "$probeInstance runs STALE module version '$reported' after a full deploy (expected $NewVersion). The save was not re-patched — do not trust this deploy."
+    }
 }
 
 # 10. Retrieve admin token
