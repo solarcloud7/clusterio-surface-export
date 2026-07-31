@@ -28,9 +28,11 @@ docker/server-settings.json
 !.vscode/settings.json
 !.vscode/extensions.json
 .vscode
-# Ignore local .claude state, but TRACK shared project skills (committed dev-env helpers):
+# Ignore local .claude state, but TRACK shared project skills and the dev-preview launch
+# config (committed dev-env helpers):
 .claude/*
 !.claude/skills/
+!.claude/launch.json
 # Codex agent tooling (the .claude analogue for Codex) — local dev config, not tracked
 /.agents/
 /.codex/
