@@ -56,11 +56,8 @@ pinned-engine measurement wins — and that disagreement is exactly the kind of 
 > The laws below were measured by live fluid-law experiments on 2.1.11; the running instrument is
 > `tests/instruments/fluid-segment-law/run-tests.mjs`, which re-measures them on demand.
 
-- **`entity.fluidbox` is HARD-REMOVED — reading the attribute THROWS.** **[API]** Fluid access is index-based LuaEntity/LuaFluidBox methods: `fluids_count`, `get_fluid(i)`,
-  `set_fluid(i, fluid)`, `has_fluid_segment(i)`, `get_fluid_segment_id(i)`, `get_fluid_segment_fluid(i)`,
-  `set_fluid_segment_fluid(i, fluid)`, `get_fluid_segment_capacity(i)`, `get_fluid_box_prototype(i)`,
-  `fluidbox_neighbours`. **Segment getters THROW on a segmentless box** (2.0 returned `nil`) — always guard
-  with `has_fluid_segment(i)` before any `get_fluid_segment_*` call.
+- **Segment getters THROW on a segmentless fluid box** (2.0 returned `nil`) — always guard with
+  `has_fluid_segment(i)` before any `get_fluid_segment_*` call.
   **[empirical, 2.1.11, tests/instruments/fluid-segment-law]** (rung: segment getters throw on segmentless)
 - **The buffer/window duality is GONE.** **[empirical, 2.1.11, tests/instruments/fluid-segment-law]**
   `get_fluid_segment_fluid(i)` returns the EXACT single-fluid segment total from ANY member box at ANY
@@ -104,8 +101,6 @@ a segment) — they are not a capture blind spot at 2.1.11.
 
 ## Inventory sizing
 
-- **[`LuaInventory.resize(size)`](https://lua-api.factorio.com/latest/classes/LuaInventory.html#method_resize)
-  works only on inventories created by `create_inventory`** — not entity inventories. **[API]**
 - **Entity inventory size override is partial — it does NOT help crafter inputs.**
   `LuaEntity.set_inventory_size_override` / `get_inventory_size_override` exist, but verified on **2.0.76**:
   the runtime arg order is `(inventory_index, size_override, overflow)` — the
@@ -371,11 +366,6 @@ state-dimensions-lab NOTEBOOK, archived at git tag `labs-archive-2026-07-19`, an
   type filter (it restores captured state, so it must cover anything any pass disabled), and the
   `active-state-parity` fixture pins the corner classes with totals on both boards. The gate cannot
   see this class — it counts items and fluids, not activity.
-- **A decider combinator's OUTPUT REGISTER is not script-writable.**
-  **[empirical, 2.1.11, circuit-latch-rearm R1]**
-  `LuaDeciderCombinatorControlBehavior` has no `set_signal` ("doesn't contain key"). So a self-feedback (SR) latch cannot
-  be restored by any serializer: it arrives with its register at 0, reads its own 0 through the
-  feedback wire, and is stable at 0 — the source's held signal is LOST on transfer.
 - **`disabled_by_script` does NOT stop a combinator evaluating.** **[empirical, 2.1.11,
   circuit-latch-rearm R2 (behavioral rewrite 2026-07-30)]** Measured as a TRANSITION, not a property
   readback: a decider with condition `A > 0` and empty output was set `disabled_by_script = true`,
@@ -410,9 +400,3 @@ state-dimensions-lab NOTEBOOK, archived at git tag `labs-archive-2026-07-19`, an
   `energy_usage = 16.666…`, while the constant combinator's is nil. An unpowered decider reports
   `status = no_power` and never evaluates, so any circuit probe built without a power source measures
   a vacuous zero — the rung asserts `status == "working"` before trusting a single later reading.
-- **Recipe quality is `get_recipe()`'s SECOND return; `get_recipe_quality()` and the `recipe_quality`
-  attribute do NOT exist.** **[empirical, 2.0.77, state-dimensions-lab + pad omnibus-adversarial-inventory]** Both
-  `entity.get_recipe_quality()` and `entity.recipe_quality` throw "doesn't contain key" — a pcall-probed
-  capture or a safecall'd attribute write silently never works. Read quality via
-  `local recipe, quality = entity.get_recipe()`; set it ATOMICALLY via `entity.set_recipe(name, quality)` —
-  `set_recipe(name)` without the argument resets the pair to normal quality.

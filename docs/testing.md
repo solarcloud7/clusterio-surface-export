@@ -188,12 +188,17 @@ black box for symmetry.
 
 Engine knowledge keeps the evidence tags defined in the "Testing discipline" section of [CLAUDE.md](../CLAUDE.md):
 
-- **[API]** establishes that the pinned public API exposes a field, method, role, or signature.
-- **[empirical, `<pin>`]** records behavior measured by a valid live rung at that engine pin.
-- **[hypothesis]** labels an unproven behavioral prediction or mechanism explanation.
+- **[empirical, `<pin>`]** records behavior measured by a valid live rung at that engine pin. It covers exactly
+  one claim — a bullet whose measurement is followed by a "so/therefore" consequence is two claims sharing one
+  citation, and the consequence is uncited.
+- **[hypothesis]** labels an unproven behavioral prediction or mechanism explanation. It is usable in design
+  notes and plans; it does NOT exist in api-notes, where an unprovable claim is deleted instead.
 
-API shape is not behavioral certification. A negative result is evidence, and an eliminated symptom without an
-isolated mechanism remains unexplained rather than being retconned into a proven fix.
+The **[API]** tier was abolished 2026-07-31 (owner ruling). If <https://lua-api.factorio.com/> documents
+something, we link it where the code needs it and never mirror it into our docs — a mirror rots when upstream
+moves, and an `[empirical]` claim that merely restates upstream is presumed copied from the docs rather than
+measured. API shape was never behavioral certification anyway. A negative result is evidence, and an eliminated
+symptom without an isolated mechanism remains unexplained rather than being retconned into a proven fix.
 
 **Citation-variable match.** An `[empirical]` tag on a MECHANISM claim must cite a rung that isolated **that
 claim's variable** — citation presence is not citation match. The refuted "set_stack fails while deactivated"
