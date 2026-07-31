@@ -372,12 +372,17 @@ state-dimensions-lab NOTEBOOK, archived at git tag `labs-archive-2026-07-19`, an
 - **A cleared latch CAN be re-armed by temporarily rewriting the decider's CONDITION.**
   **[empirical, 2.1.11, circuit-latch-rearm R3]** Control behaviour IS writable: forcing the condition
   true, letting it evaluate, then restoring the captured condition leaves the latch holding itself
-  (measured `(empty)` → `signal-S=1` → `signal-S=1` after restore). NOT IMPLEMENTED in production, and
-  two caveats gate it: (a) it needs at least one UNPAUSED tick, so it cannot run inside the frozen
-  pre-gate window — it would have to be a post-activation pass, which is lawful only because circuit
-  signals are not part of the exact gate (items + fluids); (b) an output with
-  `copy_count_from_input=false` always emits 1, so a source register holding a count other than 1 is
-  still not reproduced, and forcing a condition true momentarily pulses whatever the network drives.
+  (measured `(empty)` → `signal-S=1` → `signal-S=1` after restore). IMPLEMENTED in production as the
+  post-activation latch re-arm pass (`module/import_phases/latch-rearm.lua`; export captures the live
+  register via `signals_last_tick`, decider-only) — first live kill-measurement 2026-07-30: the
+  `omnibus-decider-latch` pad's anti-rot exemption tripped "KNOWN GAP NOW PASS" on a real transfer,
+  `rearmed=1 mismatched=0 failed=0`. The two caveats are handled, not waved away: (a) the pass runs
+  post-activation as a deferred multi-tick stage machine (lawful because circuit signals are not part
+  of the exact gate; a paused platform — gateway park — is waited on for 30 s then reported
+  not-re-armed, honestly); (b) an output with `copy_count_from_input=false` always emits 1, so a
+  source register holding another count may not be reproduced, and the forced tick can pulse the
+  output network — the pass never predicts this; it VERIFIES `signals_last_tick` against the captured
+  register after restore and reports any mismatch per decider in `storage.latch_rearm_results`.
 - **Decider and arithmetic combinators DRAW POWER (16.67 J/tick); constant combinators do not.**
   **[empirical, 2.1.11, circuit-latch-rearm build guard]** Read off the prototypes:
   `prototypes.entity["decider-combinator"].electric_energy_source_prototype` is non-nil with

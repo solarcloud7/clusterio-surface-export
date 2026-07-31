@@ -519,6 +519,25 @@ EntityHandlers["combinator"] = function(entity)
       data.parameters = params
     end
 
+    -- LATCH RE-ARM CAPTURE (decider only): the output REGISTER is not script-writable
+    -- (circuit-latch-rearm R1), so restoration cannot write it back — but the post-activation
+    -- re-arm pass (import_phases/latch-rearm.lua) re-derives it IF it knows which deciders held
+    -- non-zero output at export. signals_last_tick IS that register, read live. Captured only
+    -- when non-empty so silent-register deciders add nothing to the payload.
+    if entity.type == "decider-combinator" then
+      local sig_ok, sigs = pcall(function() return cb.signals_last_tick end)
+      if not sig_ok then
+        log(string.format("[EntityHandlers] signals_last_tick read failed on %s: %s",
+          entity.name, tostring(sigs)))
+      elseif sigs and #sigs > 0 then
+        local captured = {}
+        for _, s in pairs(sigs) do
+          captured[#captured + 1] = { signal = s.signal, count = s.count }
+        end
+        data.output_signals = captured
+      end
+    end
+
     -- Other combinator types can be added here
   end
 

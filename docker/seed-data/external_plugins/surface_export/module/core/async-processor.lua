@@ -8,6 +8,7 @@ local ExportPipeline = require("modules/surface_export/core/export-pipeline")
 local ImportPipeline = require("modules/surface_export/core/import-pipeline")
 local ImportCompletion = require("modules/surface_export/core/import-completion")
 local ActiveStateRestoration = require("modules/surface_export/import_phases/active_state_restoration")
+local LatchRearm = require("modules/surface_export/import_phases/latch-rearm")
 
 local AsyncProcessor = {}
 
@@ -155,6 +156,9 @@ function AsyncProcessor.process_tick()
 	-- import job (the drill's mining_target binds a tick or more after the job completes), and the
 	-- paste path feeds it with no async job in flight at all.
 	ActiveStateRestoration.service_pending_mining_progress()
+	-- Latch re-arm stage machine drains here too, and for the same reason: the re-arm outlives
+	-- the import job that scheduled it (force -> evaluate -> restore spans several ticks).
+	LatchRearm.process_tick()
 	if not storage.async_jobs then return end
 	ImportSession.prune()
 

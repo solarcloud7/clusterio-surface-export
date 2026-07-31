@@ -14,6 +14,7 @@ local FluidRestoration = require("modules/surface_export/import_phases/fluid_res
 local EntityStateRestoration = require("modules/surface_export/import_phases/entity_state_restoration")
 local BeltRestoration = require("modules/surface_export/import_phases/belt_restoration")
 local ActiveStateRestoration = require("modules/surface_export/import_phases/active_state_restoration")
+local LatchRearm = require("modules/surface_export/import_phases/latch-rearm")
 local PlatformHubMapping = require("modules/surface_export/import_phases/platform_hub_mapping")
 local TransferValidation = require("modules/surface_export/validators/transfer-validation")
 local LossAnalysis = require("modules/surface_export/validators/loss-analysis")
@@ -723,6 +724,15 @@ function ImportCompletion.run_phase2(job)
 			PhaseProfiler.start(job.job_id, "activation")
 			ActiveStateRestoration.restore(job.entities_to_create or {}, job.entity_map or {}, job.frozen_states or {})
 			PhaseProfiler.stop(job.job_id, "activation")
+
+			-- LATCH RE-ARM (post-activation, non-gating): deciders whose CAPTURED output register
+			-- was non-zero get a deferred force->evaluate->restore pass over the next few ticks
+			-- (circuit-latch-rearm R3; serviced from AsyncProcessor.process_tick). Outcomes are
+			-- verified physically and banked in storage.latch_rearm_results — never gate fields.
+			local rearm_count = LatchRearm.schedule(job)
+			if rearm_count > 0 then
+				result.latchRearmScheduled = rearm_count
+			end
 
 			if result.totalExpectedItems then
 				PhaseProfiler.start(job.job_id, "loss_analysis")
