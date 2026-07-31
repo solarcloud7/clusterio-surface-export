@@ -8,7 +8,7 @@ local ExportPipeline = require("modules/surface_export/core/export-pipeline")
 local ImportPipeline = require("modules/surface_export/core/import-pipeline")
 local ImportCompletion = require("modules/surface_export/core/import-completion")
 local ActiveStateRestoration = require("modules/surface_export/import_phases/active_state_restoration")
-local LatchRearm = require("modules/surface_export/import_phases/latch-rearm")
+local LatchRearm = require("modules/surface_export/import_phases/latch_rearm")
 
 local AsyncProcessor = {}
 

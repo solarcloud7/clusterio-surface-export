@@ -381,7 +381,7 @@
 				"surfexp_gateways": "0.4.0",
 				"maraxsis": "1.34.51"
 			},
-			"invariant": "The decider-combinator's red output network carries signal-S = 1 from its own feedback. This holds on any world that has RUN, and since revision 3 it also survives a transfer: the output register itself is not script-writable (see note), but the post-activation latch re-arm pass (module/import_phases/latch-rearm.lua, circuit-latch-rearm R3) re-derives it by forcing the captured condition true for one evaluated tick and restoring it. The destination board asserts the transferred latch arrives ARMED.",
+			"invariant": "The decider-combinator's red output network carries signal-S = 1 from its own feedback. This holds on any world that has RUN, and since revision 3 it also survives a transfer: the output register itself is not script-writable (see note), but the post-activation latch re-arm pass (module/import_phases/latch_rearm.lua, circuit-latch-rearm R3) re-derives it by forcing the captured condition true for one evaluated tick and restoring it. The destination board asserts the transferred latch arrives ARMED.",
 			"independentOracleRequired": true,
 			"fingerprint": {
 				"signalS": 1
@@ -396,7 +396,7 @@
 			"pasteExclude": [
 				"signalS"
 			],
-			"note": " pasteExclude signalS [empirical 2.0.77, live probe 2026-07-20]: the decider output register is not script-writable (signals_last_tick nil on fresh entities, writes rejected), so the self-held signal cannot ride a frozen paste/transfer — engine limit, per-field exclusion, never a blanket skip.",
+			"note": " pasteExclude signalS [empirical 2.0.77, live probe 2026-07-20]: the decider output register is not script-writable (signals_last_tick nil on fresh entities, writes rejected), so the self-held signal cannot ride a frozen paste (the transfer path re-arms it post-activation since revision 3) — engine limit, per-field exclusion, never a blanket skip.",
 			"owningRunnerWaiver": "Absorbed onto this pad; the original runner (tests/integration/circuit-latch-state/run-tests.ps1) was deleted; deletions are accounted by problem class in the class ledger in tests/integration/gallery-suite/run-tests.mjs. The law is now baked state run by /test-run (the pad system), not a standalone runner."
 		},
 		{
