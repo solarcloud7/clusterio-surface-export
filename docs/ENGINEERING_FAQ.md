@@ -220,15 +220,22 @@ black box, discards the destination, reports `failedStage=items|fluids`, and pre
 Post-activation recounts are reporting only and cannot rewrite the verdict.
 
 **Q: What if I have circuit LATCHES, counters, or other circuit-network SIGNAL STATE?**
-A: ⚠️ Circuit-network SIGNAL STATE does NOT survive a transfer — only circuit STRUCTURE does (wires,
-combinator parameters, conditions all arrive verbatim). Measured live (2.0.77, `circuit-latch-state`): a
-self-feeding SR latch holding signal-S=1 on the source (verified holding with its seed removed, two reads
-apart) arrived with signal-S=0 — the latch RESETS. The serializer captures structure and parameters only
-(connection-scanner); network signal values are engine simulation state with no capture/restore API used.
-Any base whose behavior depends on a held latch value or an accumulated counter must expect that state to
-re-derive or reset after transfer. (An earlier "latch value survived" reading was an instrument bug — the
-seed combinator was never actually removed and kept feeding the latch; retracted in the state-dimensions-lab
-NOTEBOOK, archived at git tag `labs-archive-2026-07-19`.)
+A: ✅ for self-feedback DECIDER latches; ⚠️ for everything else. Circuit STRUCTURE always arrives verbatim
+(wires, combinator parameters, conditions). The decider's output register itself is not script-writable
+(circuit-latch-rearm R1), so raw signal state cannot be restored — but since 2026-07-30 the
+**post-activation latch re-arm pass** (`module/import_phases/latch_rearm.lua`) re-derives it for TRUE
+latches only (deciders whose own output is wired back into their own input — ordinary deciders re-derive
+naturally and are never touched): export captures the live register (`signals_last_tick`), and the import
+preflights that the captured config writes, briefly forces the condition true for one evaluated tick,
+restores it, then PHYSICALLY verifies the register against the capture (quality-keyed). On a count
+mismatch (an output with `copy_count_from_input=false` emits 1, so a register holding e.g. 47 is not
+reproducible) the latch is CLEARED back to the pre-fix predictable 0 and the mismatch is reported per
+decider — nothing fake stays in the network. The `omnibus-decider-latch` pad asserts a transferred latch
+arrives ARMED on the destination board. Honest limits: an INDIRECT feedback loop (through a pole) is not
+detected and keeps the old arrives-at-0 behavior; every gateway-parked transfer arrives paused, so its
+latches are reported not-re-armed after a 30 s patience window (gateway transfers do not get the re-arm).
+Non-latch signal state (accumulated counters in networks, arithmetic-combinator derived values) still
+re-derives or resets after transfer — engine simulation state with no capture/restore API.
 
 **Q: What if some entities fail to place on the destination (missing mod)?**
 A: ✅ Their items/fluids are tallied as failed-entity-loss and subtracted from expected totals so validation is

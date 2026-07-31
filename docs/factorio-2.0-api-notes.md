@@ -372,12 +372,23 @@ state-dimensions-lab NOTEBOOK, archived at git tag `labs-archive-2026-07-19`, an
 - **A cleared latch CAN be re-armed by temporarily rewriting the decider's CONDITION.**
   **[empirical, 2.1.11, circuit-latch-rearm R3]** Control behaviour IS writable: forcing the condition
   true, letting it evaluate, then restoring the captured condition leaves the latch holding itself
-  (measured `(empty)` → `signal-S=1` → `signal-S=1` after restore). NOT IMPLEMENTED in production, and
-  two caveats gate it: (a) it needs at least one UNPAUSED tick, so it cannot run inside the frozen
-  pre-gate window — it would have to be a post-activation pass, which is lawful only because circuit
-  signals are not part of the exact gate (items + fluids); (b) an output with
-  `copy_count_from_input=false` always emits 1, so a source register holding a count other than 1 is
-  still not reproduced, and forcing a condition true momentarily pulses whatever the network drives.
+  (measured `(empty)` → `signal-S=1` → `signal-S=1` after restore). IMPLEMENTED in production as the
+  post-activation latch re-arm pass (`module/import_phases/latch_rearm.lua`; export captures the live
+  register via `signals_last_tick`, decider-only) — first live kill-measurement 2026-07-30: the
+  `omnibus-decider-latch` pad's anti-rot exemption tripped "KNOWN GAP NOW PASS" on a real transfer,
+  `rearmed=1` with zero mismatches. Scope and caveats (owner-adjudicated 2026-07-30): the pass touches
+  ONLY true latches — deciders whose captured connections show a direct output→own-input loop;
+  ordinary deciders re-derive from live inputs and are never forced (an INDIRECT loop through a pole
+  is not detected and keeps the pre-fix arrives-at-0 behavior, logged at schedule time). (a) It runs
+  post-activation as a deferred multi-tick stage machine, preflighting that the captured parameters
+  WRITE before any force (never force what you cannot restore); circuit signals are not part of the
+  exact gate, so nothing can touch the verdict. A gateway-parked transfer arrives paused and
+  combinators cannot evaluate while paused, so its latches are reported not-re-armed after a 30 s
+  patience window — gateway transfers currently do not get the re-arm. (b) An output with
+  `copy_count_from_input=false` emits its constant (usually 1), so a source register holding another
+  count is not reproducible — the pass VERIFIES `signals_last_tick` against the captured register
+  (quality-keyed) and on mismatch CLEARS the latch back to the pre-fix predictable 0, reporting per
+  decider in the log and `storage.latch_rearm_results`.
 - **Decider and arithmetic combinators DRAW POWER (16.67 J/tick); constant combinators do not.**
   **[empirical, 2.1.11, circuit-latch-rearm build guard]** Read off the prototypes:
   `prototypes.entity["decider-combinator"].electric_energy_source_prototype` is non-nil with
