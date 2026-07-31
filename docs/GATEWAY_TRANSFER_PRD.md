@@ -117,5 +117,7 @@ section of [CLAUDE.md](../CLAUDE.md).
   [control.lua](../docker/seed-data/external_plugins/surface_export/module/control.lua)
   (the `on_space_platform_changed_state` handler),
   [transfer-orchestrator.ts](../docker/seed-data/external_plugins/surface_export/lib/transfer-orchestrator.ts)
-  (two-phase commit), and [factorio-2.0-api-notes.md](factorio-2.0-api-notes.md). Platform deletion uses
-  `game.delete_surface` (platform.destroy is a no-op — use game.delete_surface).
+  (two-phase commit), and [factorio-2.0-api-notes.md](factorio-2.0-api-notes.md). Platform deletion goes
+  through `GameUtils.delete_platform`, whose comment carries the measurement for why it uses
+  `game.delete_surface` rather than the platform's own destroy method — read it there rather than
+  trusting a second copy here.
