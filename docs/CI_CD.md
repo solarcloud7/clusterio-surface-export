@@ -144,7 +144,7 @@ logs, and each host's `factorio-current.log`.
 
 ## Running the integration tests locally
 
-Bring up the cluster with `tools/clusterio/deploy-cluster.ps1` (or `docker compose up -d`), then run the whole
+Bring up the cluster with `./tools/clusterio/deploy.ps1 -Scope cluster` (or `docker compose up -d`), then run the whole
 suite the same way CI does:
 
 ```powershell

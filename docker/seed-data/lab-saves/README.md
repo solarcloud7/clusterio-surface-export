@@ -57,4 +57,4 @@ re-bank carrying wrong entity or chunk counts passes every gate in this repo. Th
 
 The seed files were renamed from `test1.zip` / `test2.zip` on 2026-07-25. A cluster seeded before that
 still has the old names in its instance saves directory. Run `docker compose down -v` (or
-`tools/clusterio/patch-and-reset.ps1`) before the gallery runners will resolve them.
+`./tools/clusterio/deploy.ps1 -Scope plugin`) before the gallery runners will resolve them.
