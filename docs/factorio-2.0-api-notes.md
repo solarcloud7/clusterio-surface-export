@@ -99,12 +99,6 @@ a segment) — they are not a capture blind spot at 2.1.11.
 
 ## Inventory sizing
 
-- **Entity inventory size override is partial — it does NOT help crafter inputs.**
-  `LuaEntity.set_inventory_size_override` / `get_inventory_size_override` exist, but verified on **2.0.76**:
-  it overrides **container** inventory sizes (iron-chest 32->48, `get_inventory_size_override`->48) but is a
-  **no-op for crafting-machine input inventories**: the call returns ok, yet size and override stay unchanged.
-  **[empirical, 2.0.76 — NOT re-measured on the 2.1.11 pin]**
-
 ## Item counting
 
 - **`LuaEntity.get_item_count(item)` is a per-entity total that INCLUDES that entity's belt-line and
@@ -134,14 +128,6 @@ a segment) — they are not a capture blind spot at 2.1.11.
   never merge) — the partition that BELT-R11/R12 reconstruction is built on. The grouping is state-dependent
   (an empty, topologically identical target groups differently) and is only valid same-execution,
   same-surface, populated; it is NOT a cross-import key (see BELT-R9 below).
-- **[empirical, 2.0.77, BELT-R9] Engine transport-line identity is not a durable cross-import restoration
-  key.** On five DUP-233855 baseline replays, the known belt-phase deficit was exactly five items before
-  recovery. Owner-narrowed `line_equals` resolution produced multiple matches on both known loss components,
-  and three identical imports produced different component/ambiguity/resolved-edge counts. This does not
-  invalidate `get_item_count` or unique-ID enumeration as physical meters; it invalidates using the engine
-  line graph to certify that a source and imported line represent the same continuous physical lane/side. See
-  BELT-R9 in the belt-lab NOTEBOOK (archived at git tag `labs-archive-2026-07-19`).
-
 ## Belt transport-line laws (CANONICAL — 2026-07-17 recreation)
 
 > This section is the single source of truth for belt insertion/restoration physics. Other docs must POINT
@@ -150,14 +136,6 @@ a segment) — they are not a capture blind spot at 2.1.11.
 > (a briefly-held "frozen platform" claim and an "insert_at duplication" claim were instrument artifacts —
 > the RCON-global lab hazard — and never reached law).
 
-- **[empirical, 2.0.77, BELT-R10] `insert_at`'s write frame is offset from the `get_detailed_contents` read
-  frame by exactly one tick of that entity's `belt_speed`** (transport 1/32, fast 2/32, express 3/32, turbo
-  4/32 — `prototypes.entity[name].belt_speed` exactly; tier-parametric, NEVER a constant). Writing below
-  `belt_speed` returns TRUE and lands the item clamped at `max(0, write − belt_speed)` on a fresh separate
-  line (measured; fresh adjacent belts do NOT merge lines) — while in aged/merged-handle frames the landing
-  can be attributed to a downstream window (the BELT-R11 leak class; regime-dependent, do not conflate).
-  Writing beyond `line_length` honestly rejects. Any belt write must therefore use positions
-  `>= belt_speed` (in /256 grid: `k >= belt_speed*256`).
 - **[empirical, 2.1.11, BELT-R16 — live workhorse transfer 2026-07-27] BOUNDARY HANDOFF: an `insert_at`
   near the TOP of a line (within one write-frame of `line_length`) seats the item ACROSS the piece
   boundary on the downstream entity's line** — measured landings: turbo-underground-belt INTERNAL lines
@@ -182,35 +160,6 @@ a segment) — they are not a capture blind spot at 2.1.11.
   remaining refusal on live sources. Frozen sources (paused platforms, frozen-feed fixtures) never
   produce the class at all. Kill-measured: 6/6 consecutive live-clone transfers with the merge
   witness firing.
-- **[empirical, 2.0.77, BELT-R11/R12] Side-scoped reverse first-fit reconstructs belt contents exactly**
-  — on underground-free topologies; at scale the top-of-line writes it leans on trip BELT-R16 handoffs,
-  so production placement puts each slot back onto its captured entity/line/position (via the payload's
-  compact per-side `item_source_positions` array, requesting `src.k − belt_speed·256` per R10).
-  `item_source_positions` is REQUIRED and there is NO fallback placement (owner order 2026-07-27: the
-  reverse first-fit fallback, the legacy consolidation restore, and hub-deficit recovery are DELETED; a
-  payload without it is refused at import; a slot whose captured position cannot place is honest
-  unplaced loss the exact gate refuses — the
-  BELT-R3/R5 hub-recovery lesson, anything inserted into the hub before inventory Pass 2 is wiped by the
-  clear()+refill, is retained here). Measured captured-source-position placement at
-  workhorse scale [empirical, 2.1.11, 2026-07-27]: 5777/5777 stacks traced same-line, BORN 0, VANISHED 0,
-  source-position offset avg 19.3/256, full frozen-world exact gate PASS. The rest of the R11/R12 recipe is
-  unchanged and load-bearing: the fidelity unit is the continuous lane side (owner contract:
-  `(name, quality, stack count)` multiset; position/order/window are NOT invariants —
-  restoring position is a COURTESY and a handoff-avoidance measure, not a new invariant). Partition
-  the populated source by same-execution `line_equals` (= the lane sides); bridge to the destination by
-  belt ordinal + line index (no engine graph — the empty target's input/output_lines BFS shatters on
-  real topologies); validate every placement by physical side-census delta, never return values.
-  Measured: 243/243 (saturated mixed omnibus) and 431/431 with **21/21 filtered-pure sides staying
-  pure** (purity holds by construction). Splitter filter/priorities, loader filters, and infinity-chest
-  settings all copy cleanly entity-to-entity.
-- **[empirical, 2.0.77, BELT-R11] Fetch transport-line handles in the SAME execution that writes them.**
-  On an aged clone, writes through stale window handles landed li-preserving in a downstream window's frame
-  (864 detected-and-undone events); fresh same-execution handles produced zero. Same-side landing makes the
-  class contract-benign, but production code must not cache line handles across ticks.
-- **[empirical, 2.0.77, BELT-R13] Paused-platform belt physics: belts MOVE (items flow; there is no frozen
-  regime — saturated lanes are still only jam-stable), and `insert_at` conserves exactly
-  (distinct-unique_id controls on platform and nauvis; no duplication).** This re-confirms the long-standing
-  "belts keep moving" law.
 - **`LuaEntity.active` is READ-ONLY at 2.1.11 — assignment throws `LuaEntity::active is read only.`**
   **[empirical, 2.1.11, direct probe 2026-07-31: assembling-machine-3 and loader on a scratch surface]**
   It was `RW` at 2.0.77. Write `disabled_by_script = true` instead (measured: `active` then reads false).
@@ -222,52 +171,12 @@ a segment) — they are not a capture blind spot at 2.1.11.
   the untested risk is items crossing SIDE boundaries (through splitters/sideloads) mid-restore before the
   gate. Incremental (multi-tick) belt restore is a design candidate gated on that rung — do not assert
   either "must be single-tick" or "safe to batch" beyond this.
-- **[empirical, 2.0.77, BELT-R15] AGED-TARGET leak class: `insert_at` onto belt targets created in a
-  PRIOR Lua execution enters the leak-undo path; identical fresh same-execution targets measure zero
-  leaks (BELT-R14 2x green, R11/R12 — same topology/basis, target age the only variable).** The
-  "fresh same-execution targets" precondition in belt_restoration.lua is LOAD-BEARING: any restore
-  design must create its belts and write their lines in the SAME execution (per batch, side-closed,
-  for incremental shapes). R15 also exposed a LATENT crash in `undo_inserted_delta`
-  (belt_restoration.lua:506): it iterates stack handles fetched before `remove_item` invalidates
-  them — a hard crash the first time a real leak fires; unreachable on shipped fresh-target paths,
-  MUST be fixed (/di-change) before any design that can reach the leak path.
 - **Standard fill instrument**: infinity chest (filtered, at-least N) + filtered loader saturates a belt
   circuit to a deterministic steady state; loaders stay active on paused platforms (deactivate them to
   freeze the feed). See the Physical Truth Lab Standard's fixture-contract section.
 
-- **[empirical, 2.0.77, no-tick-sync-lab PR-0B/LAB-B5]** The strict-gate synchronous pass
-  (`restore_held_items_only` → `validate_import(..., strict=true)`) does not advance `game.tick`, does not move
-  a deactivated assembler's `crafting_progress`, and does not change the restored inserter hand before the strict
-  count. Measured by the no-tick-sync-lab PR0b runner (archived at git tag `labs-archive-2026-07-19`): tick 187755→187755, crafting_progress
-  0.42000000000000004→0.42000000000000004, held `iron-plate x1` unchanged after restore, strict validation green.
-  LAB-B5 repeated the boundary on a mid-craft furnace: reactivation plus an immediate read in one Lua execution
-  kept tick, progress, input, and output identical; progress and output changed only after ticks elapsed.
-
-- **[empirical, 2.0.77, inserter-lab B1-B4]** A player-force control and an adversarial platform containing a
-  legendary bulk inserter on a destination force initialized at bonus 0 both transferred a physical held stack
-  of 8 exactly. Phase-0 raised that entity force to source bonus 11 before restoration. Separately, an already
-  seated hand stayed at 8 when its force bonus dropped 11→0, through elapsed ticks and
-  `reset_technology_effects()`; no items appeared on the ground. Raise-only remains the import policy because
-  an import should not lower unrelated destination state, not because a seated hand was observed ejecting.
-
-- **[empirical, 2.0.77, inserter-lab B6 + pad inserter-held-capacity]** `held_stack.set_stack()` seating is **activation-independent**:
-  a DEACTIVATED inserter (freshly created AND after 300+ ticks of settled deactivation) seats a full hand
-  when force capacity allows (legendary bulk 8/8 at bulk bonus 11; plain 4/4 at stack bonus 3), and on a
-  bonus-0 force the clamp is IDENTICAL inactive vs active (both 8→1). The prior lore — "set_stack silently
-  fails/under-fills on a settled-deactivated inserter", "bulk capacity only applies when active" — is
-  REFUTED; no rung had ever isolated activation as its own variable (D3 ran briefly-active; B1-B4 isolated
-  force bonus). The historical missing-held phantom traces to the deserializer's DEAD held-restore
-  (unreachable behind `restore_inventories`' has_inventories early-return) plus the force-bonus clamp.
-
 ## Space platform deletion
 
-- **`LuaSpacePlatform.destroy()` behavior changed between 2.0.76 and 2.0.77.** At 2.0.76, `destroy()`,
-  `destroy(0)`, and `destroy(60)` all returned success but remained valid after 100+ ticks. **[empirical, 2.0.76]**
-  LAB-I B7 on 2.0.77 measured `destroy()` with no argument still as a no-op, while `destroy(0)` deleted after
-  an elapsed tick and `destroy(60)` deleted on schedule. **[empirical, 2.0.77, engine-repin-lab B7]** Use
-  `game.delete_surface` through `GameUtils.delete_platform` for deterministic project teardown.
-  The [latest docs](https://lua-api.factorio.com/latest/classes/LuaSpacePlatform.html#method_destroy) show
-  `destroy(ticks)` scheduling deferred deletion, matching the measured 2.0.77 ticked forms. **[API, latest]**
 - **This project uses
   [`game.delete_surface(platform.surface)`](https://lua-api.factorio.com/latest/classes/LuaGameScript.html#method_delete_surface)**
   for immediate, deterministic teardown of a platform and all its entities. Route all platform
@@ -276,39 +185,11 @@ a segment) — they are not a capture blind spot at 2.1.11.
 
 ## Read-only entity properties
 
-- **`crafting_speed` updates instantly** when a nearby beacon's `beacon_modules` inventory is
-  populated — no tick delay, no power needed. LAB-I B8 measured
-  `1.25→3.125` in the same module-population execution with two speed-module-3 modules, both powered and
-  unpowered; the first elapsed read stayed 3.125. **[empirical, 2.0.77, engine-repin-lab B8]**
-  This entry used to continue "…so `set_stack()` caps reflect the beacon-boosted speed", offered as the
-  reason import restores beacons first. B8 measured the speed propagation only — never a cap — and the
-  cap consequence did not reproduce when probed on 2.1.11. Deleted rather than demoted: there is no
-  [hypothesis] tier here, and re-establishing it needs a rung that isolates the cap variable.
-
-- **Unknown inventory items are skipped with a warning while valid siblings restore.** LAB-I B9 imported an
-  iron chest containing `iron-plate x10` plus a nonexistent item. The remote completed without error, the chest
-  physically held all ten valid plates, and the host log gained the expected "Skipped unknown item" warning.
-  **[empirical, 2.0.77, engine-repin-lab B9]**
-
 ## Deactivated-entity state writes and control-behavior / equipment restore
 
 These drive the import restore path (all measured by the state-dimensions closer run; see the
 state-dimensions-lab NOTEBOOK, archived at git tag `labs-archive-2026-07-19`, and the matching integration tests).
 
-- **Burner, energy, and heat writes are ACCEPTED while the entity is DEACTIVATED.** **[empirical, 2.0.77, state-dimensions-lab + pads omnibus-burner-fuel/omnibus-heat-temperature]** A deactivated burner reads back
-  `currently_burning` / `remaining_burning_fuel` exactly; setting `currently_burning` does not mutate the fuel
-  inventory (so it may run before `restore_inventories` clear+refill). A deactivated accumulator/machine
-  accepts `entity.energy = v` exactly; a deactivated reactor accepts `entity.temperature = v` exactly. None of
-  these are item-counted, so they do not perturb the pre-activation exact gate. No relocation to activation.
-- **`LuaEquipment.shield` (and `.energy`) READS 0 on equipment with no such buffer, but WRITING throws.**
-  **[empirical, 2.0.77, pad omnibus-adversarial-inventory]** Reading `.shield` on non-shield equipment returns `0`
-  (truthy in Lua), so a `~= nil` guard is a FALSE guard; writing `equipment.shield = v` on non-shield
-  equipment throws `"Equipment is not shields."` and killed an import on_tick. Guard the write with pcall and
-  capture shield/energy on export only when `> 0`.
-- **A `small-lamp` has NO control behavior until it is wired; `get_control_behavior()` returns nil.**
-  **[empirical, 2.0.77, pad omnibus-circuit-config]** Restoring control-behavior config (circuit_condition,
-  circuit_enable_disable) must use `get_or_create_control_behavior()`, or the settings are silently dropped
-  for any entity whose CB is not yet instantiated at restore time (wires restore in a separate phase).
 - **A drill's `mining_progress` is defined RELATIVE TO `mining_target`, which is read-only and nil
   until the drill's first update — so restore must be deferred until the target binds.**
   **[empirical, 2.1.11, gallery acid-drill pad + marker transfers 2026-07-29]** The clause is in

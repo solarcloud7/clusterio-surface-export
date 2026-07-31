@@ -909,7 +909,7 @@ const ROSTER_INSTANCES_SCHEMA: JsonSchema = {
 /**
  * instance → controller: the cluster instance roster with client-routable addresses, for the
  * in-game /teleport GUI. Address assembly is controller-side by necessity — instance plugins
- * cannot read host records (see docs/GATEWAY_TRANSFER_PRD.md, Layer-2 spike integration seams).
+ * cannot read host records.
  */
 export class GetInstanceRosterRequest {
 	declare ["constructor"]: typeof GetInstanceRosterRequest;

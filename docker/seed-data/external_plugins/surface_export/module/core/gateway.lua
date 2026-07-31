@@ -6,7 +6,7 @@
 -- prototypes are always queryable at runtime, so a stored gateway set would just be redundant state.
 --
 -- All gateway *logic* (arrival detection, transfer trigger, hop-strip) lives in the save-patched
--- module, not the data mod. See docs/GATEWAY_TRANSFER_PRD.md.
+-- module, not the data mod.
 
 local Gateway = {}
 

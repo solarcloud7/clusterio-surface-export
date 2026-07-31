@@ -187,4 +187,3 @@ For the detailed Lua module breakdown, see the Code Reference Map in [EXPORT_IMP
 | [async-processing.md](async-processing.md) | Async batch-processing architecture for large exports/imports |
 | [factorio-2.0-api-notes.md](factorio-2.0-api-notes.md) | Measured simulation behavior Wube does NOT document, scoped to zero-loss/zero-gain transfer (fluid segments, belt transport-line laws, item counting, inventory sizing) |
 | [CI_CD.md](CI_CD.md) | CI pipeline, integration-test flow, and how Factorio is provisioned in CI |
-| [GATEWAY_TRANSFER_PRD.md](GATEWAY_TRANSFER_PRD.md) | In-game gateway transfer — design + current state (what's shipped, verified 2.0.77 API facts, planned work) |

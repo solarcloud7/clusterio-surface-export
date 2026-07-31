@@ -153,7 +153,7 @@ function DestinationHold.stage(transfer_id, platform, force)
 		-- platform.paused = true, so pausing/hiding/deactivating alone does not make a hold inert.
 		-- That is the whole reason this call exists — complete the pods (overflow spills to the
 		-- platform as item-on-ground when the hub is full) so a staged hold is pod-free.
-		-- [empirical, 2.0.77, hold-lab PR-0A] (archived at tag labs-archive-2026-07-19)
+		--
 		local descending, ascending, items_recovered = SurfaceLock.complete_cargo_pods(surface, hub)
 		pod_completion = { descending = descending, ascending = ascending, items_recovered = items_recovered }
 	end)

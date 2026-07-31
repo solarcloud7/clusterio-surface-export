@@ -13,7 +13,7 @@ local ACTIVATABLE_ENTITY_TYPES = GameUtils.ACTIVATABLE_ENTITY_TYPES
 
 --- Restore an inserter's held item from its serialized data.
 --- Works regardless of entity.active — set_stack seating is ACTIVATION-INDEPENDENT
---- [empirical, 2.0.77, inserter-lab B6 2026-07-18]: a deactivated inserter (fresh or settled)
+---: a deactivated inserter (fresh or settled)
 --- seats fully when force capacity allows, and at bonus 0 it clamps identically active or
 --- inactive. (The old "silently fails on a settled-deactivated inserter" claim was refuted;
 --- the historical missing-held phantom was the deserializer's DEAD held-restore — stranded
@@ -58,7 +58,7 @@ end
 --- gate count a COMPLETE state without opening a craft window (the gate counts BEFORE activation: machines must stay
 --- inactive through validation so they cannot consume/produce between activation and counting).
 --- No activation is needed for seating — set_stack is ACTIVATION-INDEPENDENT
---- [empirical, 2.0.77, inserter-lab B6 2026-07-18]; the former wake-toggle ritual was removed.
+---; the former wake-toggle ritual was removed.
 --- Idempotent with restore(): its top-up guard makes the later held-restore a no-op for hands
 --- filled here.
 --- @param entities_to_create table: List of entity data objects
@@ -268,7 +268,7 @@ function ActiveStateRestoration.restore(entities_to_create, entity_map, frozen_s
         else
             -- Entity was inactive before export - keep it inactive. Held items are STILL
             -- restored for inactive inserters — seating needs no activation (set_stack is
-            -- activation-independent [empirical, 2.0.77, inserter-lab B6 2026-07-18]; the old
+            -- activation-independent; the old
             -- activate->set_stack->deactivate ritual here was refuted cargo and was removed).
             -- Without this, the frozen_states fix above would convert a state-only bug into a
             -- held-item LOSS for inactive inserters.

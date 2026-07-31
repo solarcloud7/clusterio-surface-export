@@ -318,8 +318,7 @@ platform to the destination (`connect_to_server` + `enter_space_platform`) is a 
 a reachability spike. The dedicated `passenger-evacuate` runner was RETIRED 2026-07-27 (owner
 consolidation): evacuation happens at the single source-delete chokepoint named above, which every
 gallery-suite transfer executes, but no standing test puts a player aboard first — the evacuation
-branch itself is currently uncovered. Design in
-[docs/GATEWAY_TRANSFER_PRD.md](docs/GATEWAY_TRANSFER_PRD.md).
+branch itself is currently uncovered.
 
 ## Export/Import Workflow Notes (Current)
 
@@ -451,15 +450,17 @@ Project invariants that still bite if changed:
   invariants — restoring position is handoff avoidance, not a new invariant). The production restore
   places every item **at its captured source position** (2026-07-27): each payload side carries a compact
   `item_source_positions` array (source entity/line/position per stack, ~12 bytes/stack) and each item is
-  placed back onto its own line at its own captured position, request offset one write-frame per BELT-R10
-  (re-isolated at 2.1.11: the landing comes out at request + one tick of `belt_speed`, clamped inward).
+  placed back onto its own line at its own captured position, request offset one write-frame (the landing
+  comes out at request + one tick of `belt_speed`, clamped inward).
   `item_source_positions` is REQUIRED — payloads without it are refused; the legacy consolidation
   restore/hub recovery/first-fit fallback are DELETED (owner order 2026-07-27). Why placement at captured
   positions: top-of-line writes trip the BELT-R16 boundary handoff (the item lands across the piece
   boundary; cross-side handoffs are census-invisible and retried into duplicates — the measured workhorse
-  excess). Engine transport-line identity is still NOT a cross-import key (BELT-R9); populated-source
-  same-execution `line_equals` grouping IS the side partition. The atomic single-tick export scan
-  remains required (atomic belt scan; belts keep moving — BELT-R13).
+  excess). Engine transport-line identity is NOT a cross-import key; populated-source same-execution
+  `line_equals` grouping IS the side partition. The atomic single-tick export scan remains required
+  because belts keep moving. Both statements are design constraints the restore is built on; their
+  original rungs were measured pre-2.1.11 and were deleted with the rest of the stale evidence
+  (2026-07-31) — re-measure before treating either as proven on this pin.
 - **Fluid restoration runs in the frozen world (`disabled_by_script`) before the exact gate.** The payload
   carries a top-level **fluid-segment registry** (one record per source segment or segmentless storage, keyed
   by our incremental id — engine segment ids differ across instances); entities reference it via
@@ -480,7 +481,7 @@ The order of post-processing steps in `ImportCompletion.run_phase1` / `run_phase
 
 ```
 1. Hub inventories        — restore after cargo bays exist (inventory size scales with bays)
-2. Belt items             — belts keep moving (active-writes rejected, BELT-R13); single-tick restore is
+2. Belt items             — belts keep moving; single-tick restore is
                             the current conservative implementation (see the canonical belt section)
 3. Entity state           — control behavior, filters, circuit connections
 4. Inventories (2 passes) — Pass 1: beacons (populates beacon_modules, crafting_speed updates immediately)

@@ -396,7 +396,7 @@
 			"pasteExclude": [
 				"signalS"
 			],
-			"note": " pasteExclude signalS [empirical 2.0.77, live probe 2026-07-20]: the decider output register is not script-writable (signals_last_tick nil on fresh entities, writes rejected), so the self-held signal cannot ride a frozen paste (the transfer path re-arms it post-activation since revision 3) — engine limit, per-field exclusion, never a blanket skip.",
+			"note": " pasteExclude signalS: the decider output register is not script-writable (signals_last_tick nil on fresh entities, writes rejected), so the self-held signal cannot ride a frozen paste (the transfer path re-arms it post-activation since revision 3) — engine limit, per-field exclusion, never a blanket skip.",
 			"owningRunnerWaiver": "Absorbed onto this pad; the original runner (tests/integration/circuit-latch-state/run-tests.ps1) was deleted; deletions are accounted by problem class in the class ledger in tests/integration/gallery-suite/run-tests.mjs. The law is now baked state run by /test-run (the pad system), not a standalone runner."
 		},
 		{

@@ -575,7 +575,7 @@ local function execute_create_and_restore(surface, recs, player, side_groups, fl
 	-- (stranded behind restore_inventories' has_inventories early-return), so without this pass
 	-- a pasted inserter's hand is silently empty — measured on the inserter-held-capacity fixture
 	-- (capture 8, physical 0), the same cherry-picking class the header warns about. Seating is
-	-- activation-independent [empirical, 2.0.77, inserter-lab B6 2026-07-18]; no wake ritual.
+	-- activation-independent; no wake ritual.
 	ActiveStateRestoration.restore_held_items_only(records, entity_map)
 	-- FluidRestoration writes SEGMENT totals: a pasted pipe merging into a live network would set the
 	-- whole segment to the captured amount, silently clobbering pre-existing fluid. Only restore when
