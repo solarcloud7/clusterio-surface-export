@@ -144,6 +144,8 @@ node tools/tests/run-integration-tests.mjs                 # or:  --only 'gatewa
 node tools/tests/testkit/cli.mjs check                 # cross-refs resolve (no cluster needed)
 node tools/tests/testkit/cli.mjs check --live          # + every fixture anchor resolves in a real payload
 node tools/tests/testkit/cli.mjs inspect <platform> --field 'infinity-pipe@40.5,46.5:infinity_pipe_filter'
+node tools/tests/testkit/cli.mjs blackbox explain <bundle.json>   # offline forensics on a banked failure
+#   ^ diff rows by |delta|, gate self-report vs physical dest scan (labeled), FAQ triage hint (+--json)
 # Exit 1 = absent (cannot survive). Exit 2 = your query path is wrong (it tells you the real one).
 # "Present" NEVER means "survives" — restoration is only proven by a transfer + physical dest read.
 
@@ -379,7 +381,7 @@ For Clusterio core architecture, see [Clusterio docs](https://github.com/cluster
 > | Web cache | `lint:web-cache` | webpack output filenames stay content-hashed (immutable 1y `/static` cache serves stale chunks otherwise) | `lint-webpack-cache:allow` |
 > | Test grounding | `lint:test-grounding` | fidelity/gate tests measure PHYSICALLY, never the validator self-report alone; success-path = parse `debug_import_result` + `Assert-TransferSucceeded` before census | `lint-test-grounding:allow` |
 > | pcall logging | `lint:pcall-logging` | every `pcall` surfaces its error or is an annotated `-- intentional probe` | `-- pcall:allow` |
-> | Catch swallow | `lint:catch-swallow` | no TS catch substitutes a default without surfacing the error binding | `// catch:allow` |
+> | Catch swallow | `lint:catch-swallow` | no catch (incl. empty promise `.catch`) substitutes a default without surfacing the error binding — plugin `.ts`/`.tsx` AND repo-root `tools/`+`tests/` `.mjs` (NB: eslint ignores `web/**` entirely, so this guard is the web tree's ONLY catch guard); surfacing = log/throw/return/reject or a write/`.push` whose target ROOT is declared OUTSIDE the catch body; a lexer desync fails loud, never mis-scans | `// catch:allow` |
 > | PS silent-failure | `lint:ps-silent` | no PowerShell-stream suppression (`2>$null`, `-ErrorAction SilentlyContinue/Ignore`, empty `catch {}`) in tools/tests ps1 unless CHECKED (`$LASTEXITCODE`/`$?` within 3 lines) or ANNOTATED (`deliberately quiet` + real reason) — the 11-broken-calls incident class | annotation IS the mechanism (reason required, reviewable) |
 > | Test hooks | `lint:test-hooks` | a `test_force_*` hook disarms in `finally`/`trap` or is enumerated in `FAIL_SAFE_HOOKS` (`scripts/fail-safe-hooks.mjs`) | `FAIL_SAFE_HOOKS` entry |
 > | Allow manifest | `lint:allow-manifest` | manifest matches reality exactly, both directions | — |

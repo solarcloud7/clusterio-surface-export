@@ -122,6 +122,9 @@ if (Test-Path $ModuleJsonPath) {
 # Keep the lockfile's version metadata in step with package.json; see tools/shared/version-utils.ps1.
 . "$PSScriptRoot/../shared/version-utils.ps1"
 Update-PackageLockVersion -LockPath (Join-Path $WorkspaceRoot "docker/seed-data/external_plugins/surface_export/package-lock.json") -NewVersion $NewVersion
+# Rewrite the runtime version oracle (module/version.lua) so the boot check below can prove THIS
+# version is what actually loaded — not merely that some plugin answers (SC-72).
+Update-ModuleVersionStamp -ModuleDir (Join-Path $WorkspaceRoot "docker/seed-data/external_plugins/surface_export/module") -NewVersion $NewVersion
 Write-Host "✓ Version updated" -ForegroundColor Green
 Write-Host ""
 
@@ -417,35 +420,53 @@ Start-Sleep -Seconds 3
 Write-Host "✓ Instances started" -ForegroundColor Green
 
 # ---------------------------------------------------------------------------------------------
-# BOOT CHECK — did the patched save actually LOAD?
+# BOOT CHECK — did the patched save actually LOAD, and is it running THIS version?
 #
 # A Lua error during save-patching/save-load kills the headless server (exit 255) — the fixture-
 # meters incident shipped exactly that through a full patch-and-reset, and the only signal was the
 # instance dying with this script long gone reporting success. Poll each instance until it answers
-# RCON with the plugin's remote interface present; a crashed instance never answers and fails loud
-# here, pointing at the log that has the actual Lua error.
+# RCON; a crashed instance never answers and fails loud here, pointing at the log with the error.
+#
+# VERSION, not just presence (SC-72): a plain restart reuses the old patched script.dat, so "the
+# plugin answers" is satisfiable by STALE code. The probe asks the module for its version stamp
+# (module/version.lua, rewritten by the bump above) and only $NewVersion passes.
 # ---------------------------------------------------------------------------------------------
 Write-Host ""
-Write-Host "Boot check: verifying the patched saves loaded and the plugin is live..." -ForegroundColor Yellow
+Write-Host "Boot check: verifying the patched saves loaded with module version $NewVersion..." -ForegroundColor Yellow
+$versionProbe = "/sc local i = remote.interfaces['surface_export'] " +
+    "if not i then rcon.print('plugin-missing') " +
+    "elseif not i['get_module_version'] then rcon.print('stale-module-no-version-oracle') " +
+    "else rcon.print(remote.call('surface_export','get_module_version')) end"
 foreach ($h in 1, 2) {
     $inst = "clusterio-host-$h-instance-1"
     $bootDeadline = (Get-Date).AddSeconds(90)
     $bootOk = $false
+    $lastPing = ""
     while ((Get-Date) -lt $bootDeadline) {
         # Deliberately quiet: RCON POLL inside a bounded loop — a transient failure just means
         # "still booting" and the loop retries; the throw below is the real gate.
         $ping = docker exec surface-export-controller npx clusterioctl $ctlConfig --log-level error `
-            instance send-rcon $inst "/sc rcon.print(remote.interfaces['surface_export'] ~= nil)" 2>&1
-        if ($LASTEXITCODE -eq 0 -and ($ping | Out-String) -match '(?m)^\s*true\s*$') { $bootOk = $true; break }
+            instance send-rcon $inst $versionProbe 2>&1
+        $lastPing = ($ping | Out-String).Trim()
+        if ($LASTEXITCODE -eq 0 -and $lastPing -match "(?m)^\s*$([regex]::Escape($NewVersion))\s*$") { $bootOk = $true; break }
+        # A WELL-FORMED wrong answer is final: a loaded save's stamp never changes without another
+        # patch, so a stale version/sentinel will not become $NewVersion by polling — break to the
+        # failure branch now instead of burning the full deadline (review note).
+        if ($LASTEXITCODE -eq 0 -and $lastPing -match '(?m)^\s*(\d+\.\d+\.\d+|stale-module-no-version-oracle)\s*$') { break }
         Start-Sleep -Seconds 3
     }
     if ($bootOk) {
-        Write-Host "  ✓ ${inst}: save loaded, plugin remote interface answering" -ForegroundColor Green
+        Write-Host "  ✓ ${inst}: patched save loaded, module version $NewVersion answering" -ForegroundColor Green
     } else {
-        Write-Host "  X ${inst} FAILED the boot check (no RCON answer with the plugin loaded within 90s)." -ForegroundColor Red
-        Write-Host "    A Lua error at save-load kills the server — read the actual error with:" -ForegroundColor Red
-        Write-Host "    docker exec surface-export-host-$h sh -c 'tail -100 /clusterio/data/instances/$inst/factorio-current.log'" -ForegroundColor Red
-        throw "$inst did not come up with the plugin loaded. The patched save likely crashed at load — do not trust this deploy."
+        Write-Host "  X ${inst} FAILED the boot check (no answer with module version $NewVersion within 90s)." -ForegroundColor Red
+        if ($lastPing -match '(?m)^\s*(\d+\.\d+\.\d+|stale-module-no-version-oracle)\s*$') {
+            Write-Host "    The instance IS answering — but with STALE module code (reported: $($Matches[1]))." -ForegroundColor Red
+            Write-Host "    The save was not re-patched (a plain restart reuses old script.dat) — rerun patch-and-reset." -ForegroundColor Red
+        } else {
+            Write-Host "    A Lua error at save-load kills the server — read the actual error with:" -ForegroundColor Red
+            Write-Host "    docker exec surface-export-host-$h sh -c 'tail -100 /clusterio/data/instances/$inst/factorio-current.log'" -ForegroundColor Red
+        }
+        throw "$inst did not come up with module version $NewVersion loaded. Do not trust this deploy."
     }
 }
 Write-Host ""

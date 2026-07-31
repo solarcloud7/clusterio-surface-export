@@ -456,7 +456,11 @@ async function main() {
 			await sleep(1500);
 			let size = -1;
 			try { size = Number(docker(["exec", container, "sh", "-c", `stat -c %s '${savePath}' 2>/dev/null || echo -1`]).trim()); }
-			catch { size = -1; }
+			catch (error) {
+				// A failed docker exec must not read as "save not written yet" — say so while polling.
+				console.error(`checkpoint stat failed: ${error.message}`);
+				size = -1;
+			}
 			if (size > 0 && size === prev) stableReads += 1; else stableReads = 0;
 			prev = size;
 		}
