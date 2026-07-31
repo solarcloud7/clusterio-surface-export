@@ -473,8 +473,7 @@ Project invariants that still bite if changed:
   fluids (`epsilon=1e-6`). See docs/factorio-2.0-api-notes.md fluid section.
 - **Entity inventory size** isn't changed by `LuaInventory.resize` (custom inventories only).
   `LuaEntity.set_inventory_size_override` overrides **container** sizes but is a **no-op for crafter inputs**
-  at 2.0.76 (verified there; **not re-verified on the 2.1.11 pin**) — so it is *not* a lever for overloaded-crafter-input loss (already handled by the
-  beacon-first ordering). See the API notes.
+  at 2.0.76 (verified there; **not re-verified on the 2.1.11 pin**). See the API notes.
 
 ### Import Phase Ordering (Critical)
 The order of post-processing steps in `ImportCompletion.run_phase1` / `run_phase2` (`module/core/import-completion.lua:180,222`) is critical for correctness:

@@ -67,8 +67,6 @@ pinned-engine measurement wins — and that disagreement is exactly the kind of 
   the segment (float32: 12 pipes on one 1000-unit segment summed to `999.9999997615814`; a thruster:pipe share
   ratio was 10:1 by capacity), which the registry keeps for census attribution and split-segment
   proportioning.
-- **`set_fluid_segment_fluid(i, fluid)` writes a WHOLE segment in one call.** **[empirical, 2.1.11, tests/instruments/fluid-segment-law]** Writing 400 coolant to a segment read back 400 exact — no highest-capacity-member
-  workaround. A segmentless storage is written with `set_fluid(i, fluid)`, which returns the accepted amount.
 - **Plasma writes STICK, clamped to box capacity.** **[empirical, 2.1.11, tests/instruments/fluid-segment-law]**
   `set_fluid` of 50 plasma onto a fusion-reactor OUTPUT box read back 10 (capacity clamp); 25 onto a
   fusion-generator INPUT box read back 10. **Fusion-generator boxes are segmentless.** Plasma rides transfers
@@ -103,14 +101,9 @@ a segment) — they are not a capture blind spot at 2.1.11.
 
 - **Entity inventory size override is partial — it does NOT help crafter inputs.**
   `LuaEntity.set_inventory_size_override` / `get_inventory_size_override` exist, but verified on **2.0.76**:
-  the runtime arg order is `(inventory_index, size_override, overflow)` — the
-  [latest docs](https://lua-api.factorio.com/latest/classes/LuaEntity.html#method_set_inventory_size_override)
-  show `(inventory_index, overflow, size_override)`, so the order changed post-2.0.76 — and `overflow` must
-  be a real `LuaInventory` (e.g. from `create_inventory`). It overrides **container** inventory sizes
-  (iron-chest 32→48, `get_inventory_size_override`→48) but is a **no-op for crafting-machine input
-  inventories** (the call returns ok, yet size and override stay unchanged). So it is **not** a lever for the
-  overloaded-crafter-input item loss — that case is already handled by the beacon-first `set_stack` ordering.
-  **[empirical, 2.0.76]**
+  it overrides **container** inventory sizes (iron-chest 32->48, `get_inventory_size_override`->48) but is a
+  **no-op for crafting-machine input inventories**: the call returns ok, yet size and override stay unchanged.
+  **[empirical, 2.0.76 — NOT re-measured on the 2.1.11 pin]**
 
 ## Item counting
 
@@ -148,9 +141,6 @@ a segment) — they are not a capture blind spot at 2.1.11.
   invalidate `get_item_count` or unique-ID enumeration as physical meters; it invalidates using the engine
   line graph to certify that a source and imported line represent the same continuous physical lane/side. See
   BELT-R9 in the belt-lab NOTEBOOK (archived at git tag `labs-archive-2026-07-19`).
-- **[empirical, 2.0.76]** `tests/instruments/engine-invariants` grounds the belt meter against the unique-stack
-  physical total (catches both belt-item drop → meter < physical and a whole-line double-count → meter >
-  physical) and asserts held-item inclusion whenever an inserter is holding.
 
 ## Belt transport-line laws (CANONICAL — 2026-07-17 recreation)
 
@@ -174,15 +164,10 @@ a segment) — they are not a capture blind spot at 2.1.11.
   (3/4) at k=31 ≈ one write-frame, for placements requested at feeding-line tops (k 255/294). Item count
   conserves per handoff, but position and line do not. When the landing line is in the SAME side, a
   side-census validation passes (wrong-position only: 248 born = 248 vanished pairs per key in the
-  placement-ledger reconciliation); when it crosses SIDES, the census reads "nothing landed" and a
-  retry loop DUPLICATES (net +34 items across exactly the 6 bracket-mismatch keys). The cross-side
-  retry-duplication step is a strong inference fitting all data (an underground-free fixture measured
-  exact in every leg; the underground-riddled workhorse always drifted), not yet isolated as its own
-  rung. Consequence: never write at line tops near piece boundaries — the production restore is
+  placement-ledger reconciliation); when it crosses SIDES, the census reads "nothing landed". Consequence: never write at line tops near piece boundaries — the production restore is
   placement at captured source positions (below) precisely to avoid this class.
 - **[empirical, 2.1.11, black box on the passenger-evacuate refusal 2026-07-27] IN-TRANSIT BOUNDARY
-  ITEM: a line captured MID-MOTION can carry ONE MORE item than its rest capacity** — the front item
-  is in transit across the piece boundary at the capture instant. Measured from the banked black
+  ITEM: a line captured MID-MOTION can carry ONE MORE item than its rest capacity.** Measured from the banked black
   box: a 1-tile turbo line (rest capacity 4) captured with FIVE items, the front one at position
   0.9375 only 14/256 behind its neighbour (overlapping by rest-spacing rules). That fifth item
   cannot be placed at any free position on its captured line. **Production behavior (owner ruling
@@ -223,11 +208,15 @@ a segment) — they are not a capture blind spot at 2.1.11.
   (864 detected-and-undone events); fresh same-execution handles produced zero. Same-side landing makes the
   class contract-benign, but production code must not cache line handles across ticks.
 - **[empirical, 2.0.77, BELT-R13] Paused-platform belt physics: belts MOVE (items flow; there is no frozen
-  regime — saturated lanes are still only jam-stable), belt-class `active=true`/`false` writes are REJECTED
-  (reads stay false; loaders' flag IS writable — freeze feeders by deactivating loaders), and `insert_at`
-  conserves exactly (distinct-unique_id controls on platform and nauvis; no duplication).** This re-confirms
-  the long-standing "belts keep moving" law and is why the export-side atomic single-tick belt scan
-  (atomic belt scan) remains REQUIRED.
+  regime — saturated lanes are still only jam-stable), and `insert_at` conserves exactly
+  (distinct-unique_id controls on platform and nauvis; no duplication).** This re-confirms the long-standing
+  "belts keep moving" law.
+- **`LuaEntity.active` is READ-ONLY at 2.1.11 — assignment throws `LuaEntity::active is read only.`**
+  **[empirical, 2.1.11, direct probe 2026-07-31: assembling-machine-3 and loader on a scratch surface]**
+  It was `RW` at 2.0.77. Write `disabled_by_script = true` instead (measured: `active` then reads false).
+  This retires the BELT-R13 rider "loaders' flag IS writable — freeze feeders by deactivating loaders":
+  the loader throws exactly like every other entity, so any instrument built on that recipe is broken at
+  this pin. No production write sites exist (`.active =` appears only on `LuaLogisticSection`, still RW).
 - **Import-side single-tick belt restore is the current conservative implementation, not a proven
   requirement.** Movement within a lane side between restore batches is contract-harmless (multiset unit);
   the untested risk is items crossing SIDE boundaries (through splitters/sideloads) mid-restore before the
@@ -287,10 +276,6 @@ a segment) — they are not a capture blind spot at 2.1.11.
 
 ## Read-only entity properties
 
-- **`LuaEntity.frozen` is read-only on 2.0.77.** **[empirical, 2.0.77, fluid-lab R1/R8]** Direct assignment (`entity.frozen = true` or `false`) fails with `LuaEntity::frozen is read only.` A module-tree grep found no production `.frozen =` assignments, so the current drift is documentation/API-note wording rather than a live write site. Code that needs frozen-state changes must go through entity creation/import seams that the engine permits, not post-create assignment.
-- **Many entity properties became read-only in 2.0** (e.g. quality, computed bonuses like
-  `productivity_bonus`, which aggregates force + beacon/module bonuses). Set them during
-  `create_entity`, not after, and wrap optional writes in `pcall`. **[empirical]**
 - **`crafting_speed` updates instantly** when a nearby beacon's `beacon_modules` inventory is
   populated — no tick delay, no power needed. LAB-I B8 measured
   `1.25→3.125` in the same module-population execution with two speed-module-3 modules, both powered and
