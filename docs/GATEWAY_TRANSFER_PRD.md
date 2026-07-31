@@ -14,7 +14,6 @@ a feature of this repo, not a separate project.
 - [How a gateway transfer runs](#how-a-gateway-transfer-runs)
 - [The gateway mod](#the-gateway-mod)
 - [Where each piece lives](#where-each-piece-lives)
-- [Verified Factorio API behavior](#verified-factorio-api-behavior)
 - [Passenger handling](#passenger-handling)
 - [Planned work](#planned-work)
 - [References](#references)
@@ -80,31 +79,6 @@ The split works because the save-patched module runs in the *same* Factorio game
 sees the mod's prototypes by name (`game.space_location_prototypes[...]`,
 `platform.space_location.name == "surfexp_gateway_1"`). The mod stays pure data; all logic lives in the plugin.
 
-## Verified Factorio API behavior
-
-Load-bearing facts (verified empirically on the live cluster and on Factorio 2.0.77 — do not re-derive):
-
-- A **surfaceless-but-parkable destination is a `space-location` prototype** (a `planet` would generate a
-  surface). Vanilla precedent: `solar-system-edge`. A platform routed to a location with **no `fly_condition`**
-  reaches `waiting_at_station` and parks; a fly-by location (`shattered-planet`, `fly_condition = true`) never
-  parks. `fly_condition` and `hidden` are **data-stage only — not runtime-readable** on
-  `LuaSpaceLocationPrototype`.
-- **Prototypes are data-stage and cannot be created at runtime**, so a `space-location` / `space-connection`
-  requires a mod in the mod pack. Clusterio save-patching is control-stage only.
-- **`hidden` and `unlocked` are independent axes.** Reveal a gateway with
-  `LuaForce.unlock_space_location(name)`; there is no runtime single-location **re-lock** API, so functional
-  gating is plugin-side regardless of visibility.
-- **Placement / schedule primitives:** `platform.space_location = "<name>"` (string; teleports/places, cancels
-  pending item requests); `platform.get_schedule().go_to_station(index)` routes to a record; `platform.schedule`
-  is a read-only plain-table copy while `get_schedule()` returns the live `LuaSchedule`. A gateway "station" is a
-  schedule record whose `station` is the gateway's space-location name.
-- **`defines.space_platform_state`:** paused = 7, waiting_at_station = 6, on_the_path = 2, no_schedule = 4,
-  no_path = 5, waiting_for_departure = 3.
-- **`on_space_platform_changed_state` fires** on the park transition. Its success path does **not** `log()` (it
-  `send_json`s `surface_platform_state_changed`), so observe it via its `storage.platform_flight_data` side
-  effect or the controller event — not `factorio-current.log`.
-- `force.is_space_location_unlocked("<name>")` reports unlock state.
-
 ## Passenger handling
 
 A transfer is **not** blocked when players are aboard. A platform passenger is hub-locked in remote view with
@@ -121,92 +95,14 @@ section of [CLAUDE.md](../CLAUDE.md).
   instance only knows its own space-locations, so vanilla schedule routing cannot target another server's
   destination. Likely needs plugin-injected schedule/interrupt logic or config-driven auto-transfer on arrival.
 - **Follow-your-platform (Layer 2)** — carry the player with the platform to the destination via
-  `LuaPlayer.connect_to_server` + `LuaPlayer.enter_space_platform` (no `inventory_sync`). **Spike done
-  (2026-07-03, engine 2.0.77): CONDITIONAL GO** — primitives, reachability, and permissions all clear; the
-  build is gated on the #86 export-stall fix plus a handoff-choreography decision. See
-  **[Layer 2 — spike findings](#layer-2-followyourplatform--spike-findings)** below. Layer 1 (evacuate to
-  Nauvis) remains the fallback for every Layer-2 abort.
+  `LuaPlayer.connect_to_server` + `LuaPlayer.enter_space_platform` (no `inventory_sync`). The spike that scoped
+  this ran on an engine we no longer run, and its findings were deleted with the rest of the pre-pin evidence — re-scope on the current pin before building. What IS proven on 2.1.11 is the
+  `/teleport` GUI (admins + the `Teleport` permission group), which fires `connect_to_server` without
+  carrying the platform. Layer 1 (evacuate to Nauvis) remains the fallback for every Layer-2 abort.
 - **Richer trigger conditions and policy** — the "conditions met" set beyond "parked at a gateway" (target
   instance online, no in-flight transfer for this platform, fuel/thrust state); who may trigger versus
   configure; `space-connection` length tuning; a re-lock workaround for a disabled gateway; per-force versus
   global unlock.
-
-## Layer 2 (follow-your-platform) — spike findings
-
-Spike run 2026-07-03 against the live dev cluster (engine **2.0.77**). **Verdict: CONDITIONAL GO** — the engine
-primitives, client reachability, and permission model all clear; no blocker kills the feature. The *build* is
-gated on task #86 (the export tick-stall drop) and a handoff-choreography decision (below).
-
-**Primitives** (primary source, `lua-api.factorio.com/2.0.77/classes/LuaPlayer.html`):
-
-- `LuaPlayer.connect_to_server{address, name?, description?, password?}` — a client **prompt** ("Asks the
-  player if they would like to connect…"). `address` is `"host:port"` (default Factorio port if the port is
-  omitted). *"This only does anything when used on a multiplayer peer. Single player and server hosts will
-  ignore the prompt."* → it **no-ops headlessly**, so it can only be exercised with a real connected client. No
-  engine permission/admin gate; raises no event; engine API since 2.0.47.
-- `LuaPlayer.enter_space_platform(space_platform) → boolean` — seats the player in a **`LuaSpacePlatform`
-  object** (not a name), returns whether they entered. (Corrects the earlier "by name" assumption.)
-
-**C1 — reachability (GO on the dev cluster).** A target instance's client endpoint = its host's
-`host.public_address` : the instance's `factorio.game_port`. Both are tracked on the **controller**:
-
-- `host.public_address` (Clusterio `definitions.ts:359`, default `"localhost"`) → `HostRecord.publicAddress`.
-  Live: `host list` shows `publicAddress=localhost` for both hosts.
-- `factorio.game_port` (`definitions.ts:532`, optional → auto-assigned from `host.factorio_port_range`
-  `"34100-34199"`) → `InstanceRecord.gamePort`. Live: host-2's game port is `34200` (docker-mapped to the
-  Windows host).
-- So a **same-machine client reaches host-2 at `localhost:34200`.**
-- **Hardest real-world caveat:** `public_address` defaults to `"localhost"` — only routable for a same-machine
-  client. A **distributed** deployment must set each host's `host.public_address` to a client-routable
-  hostname/IP. Deployment config, not a code blocker.
-
-**C2 — permissions (RESOLVED, no engine work).** `connect_to_server` has no Factorio permission/admin gate (the
-player accepts a prompt); `enter_space_platform` likewise. "Who may trigger a follow" stays the plugin's own
-Clusterio permission (admin-default). No Factorio permission-group plumbing required.
-
-**Precedent — none to reuse.** `connect_to_server` appears **nowhere** in Clusterio core or its bundled plugins
-(verified against the `../clusterio` fork — the only hits are in Factorio's own changelog). `inventory_sync`
-moves inventory *data* via a controller-held DB and uses `enter_space_platform` only *same-instance*; it is not
-a client server-hop. The community `@hornwitser/server_select` plugin (referenced in the create-wizard, not
-bundled) is the closest prior art to study. **Layer 2 would be the first connected-player server-hop in this
-cluster — build it in-plugin.**
-
-**Integration seams (where a build lands):**
-
-- **Address assembly is CONTROLLER-side.** Instance-side plugin code cannot read `this.controller`, and no core
-  message delivers a host's `public_address` to an instance (`HostListRequest` is control→controller only). So
-  Layer 2 must add its **own** plugin request: instance A → its controller entrypoint computes
-  `${HostRecord.publicAddress}:${InstanceRecord.gamePort}` for instance B (join on `instance.assigned_host`)
-  and returns it to A.
-- **Source (host-1):** `Gateway.evacuate_passengers` ([gateway.lua:146](../docker/seed-data/external_plugins/surface_export/module/core/gateway.lua)) —
-  for **connected** aboard players, offer `connect_to_server` first; Nauvis-evacuate stays the fallback
-  (declined/failed) and the only path for disconnected/abandoned characters.
-- **Dest (host-2):** a **new** `on_player_joined_game` handler seats an expected follower via
-  `enter_space_platform(new_platform)` once the platform lands
-  ([import-pipeline.lua](../docker/seed-data/external_plugins/surface_export/module/core/import-pipeline.lua),
-  ~the transfer-pause block — arrives paused at `gateway_target`). Requires a controller-mediated "pending
-  follow" handshake (source → controller → dest: "player X follows platform Y to instance B").
-
-**The decisive risk (why CONDITIONAL, why #86 gates the build).** `connect_to_server` would fire at the
-source-delete chokepoint — **after** the export completes. But the export tick-stall already
-heartbeat-**drops** a connected client (**#86**, verified 2026-07-02) *before* that point, so the handoff would
-be offered to an already-booted client. Layer 2 is therefore gated on **#86** (reduce the export stall) **or** a
-re-choreographed early-connect: connect the player to host-2 *before* the stall and have the dest hold them
-until the platform arrives (trades the drop for a "waiting" UX). Either way, **#86 lands first.**
-
-**Manual confirmation test** (needs a real graphical client — `connect_to_server` no-ops without a peer, so this
-cannot be automated headlessly):
-
-1. Join a Factorio client to host-1 (`localhost:34100`); stand on a platform parked at a gateway whose
-   configured target is host-2.
-2. RCON on the player: `/sc game.players[1].connect_to_server{address="localhost:34200", name="host-2"}` →
-   confirm the client shows the connect **prompt**, and on accept disconnects from host-1 and joins host-2. (If
-   the instances use a game password, pass `password=`.)
-3. After the platform is imported on host-2 (paused at its gateway):
-   `/sc rcon.print(tostring(game.players[1].enter_space_platform(<platform>)))` → expect `true` and the player
-   seated in the platform (hub / remote view).
-4. Note timing: does the prompt survive the export stall, or must the connect fire *before* export? → decides
-   the choreography and confirms the #86 dependency.
 
 ## References
 
@@ -221,5 +117,7 @@ cannot be automated headlessly):
   [control.lua](../docker/seed-data/external_plugins/surface_export/module/control.lua)
   (the `on_space_platform_changed_state` handler),
   [transfer-orchestrator.ts](../docker/seed-data/external_plugins/surface_export/lib/transfer-orchestrator.ts)
-  (two-phase commit), and [factorio-2.0-api-notes.md](factorio-2.0-api-notes.md). Platform deletion uses
-  `game.delete_surface` (platform.destroy is a no-op — use game.delete_surface).
+  (two-phase commit), and [factorio-2.0-api-notes.md](factorio-2.0-api-notes.md). Platform deletion goes
+  through `GameUtils.delete_platform`, whose comment carries the measurement for why it uses
+  `game.delete_surface` rather than the platform's own destroy method — read it there rather than
+  trusting a second copy here.

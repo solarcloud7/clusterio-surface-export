@@ -8,9 +8,9 @@ import { loadGalleryManifest, renderExpectFromLifecycle, validateGalleryManifest
 const repoRoot = new URL("../../", import.meta.url);
 
 test("gallery manifest labs are the fixture-referenced categories (lab dirs removed 2026-07-19)", () => {
-	// The standing tests/*-lab suite was removed by owner ruling: engine re-certification is a
-	// CALCULATED campaign at version-update time (restore runners from the labs-archive-* git tag;
-	// the version-certification guard goes red on a pin bump until the campaign re-certifies).
+	// The standing tests/*-lab suite was removed by owner ruling: at an engine bump, re-measure the
+	// law you are relying on in the PR that relies on it (restore runners from the labs-archive-* git
+	// tag or author a fresh probe). The certificate + version-certification lint were deleted 2026-07-31.
 	// manifest.labs is now the category catalog: exactly the set fixtures reference.
 	const manifest = loadGalleryManifest(repoRoot);
 	const referenced = [...new Set(manifest.fixtures.map(fixture => fixture.labId))].sort();

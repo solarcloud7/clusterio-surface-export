@@ -4,6 +4,9 @@
     isolated Node container — no host Node required, and without corrupting the running cluster.
 
 .DESCRIPTION
+    IMPLEMENTATION for `deploy.ps1 -Scope artifacts`. Prefer that entry point; it is the one
+    documented deploy command and it refuses flags that do not belong to the chosen scope.
+
     Why this exists (see the Web cache guard entry and build notes in CLAUDE.md):
       * Building in the live plugin dir is unsafe while the cluster runs: `npm install` there
         re-adds the `@clusterio/*` peers into the bind-mounted node_modules and breaks

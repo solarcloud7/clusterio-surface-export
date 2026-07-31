@@ -229,9 +229,9 @@ isolated `node:24` container, so it never touches the running cluster's `node_mo
 
 | Changed | Command |
 |---------|---------|
-| Web UI (`*.tsx` / `*.css`) | `.\tools\clusterio\build-plugin.ps1 web -RestartController` |
-| TypeScript (`*.ts`) | `.\tools\clusterio\build-plugin.ps1 node -RestartHosts` |
-| Lua (`module/`) | `.\tools\clusterio\patch-and-reset.ps1` |
+| Web UI (`*.tsx` / `*.css`) | `.\tools\clusterio\deploy.ps1 -Scope artifacts -Target web -RestartController` |
+| TypeScript (`*.ts`) | `.\tools\clusterio\deploy.ps1 -Scope artifacts -Target node -RestartHosts` |
+| Lua (`module/`) | `.\tools\clusterio\deploy.ps1 -Scope plugin` (or `-Scope lua` to skip the build) |
 
 Lua is **save-patched**, so a Lua change needs the save reset that `patch-and-reset.ps1` performs (it
 also rebuilds the plugin and restarts the cluster — the one-shot for a mixed change). A plain container

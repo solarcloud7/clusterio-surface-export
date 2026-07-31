@@ -210,7 +210,7 @@ A: ✅ Import replicates the source force's inserter bonuses onto the dest force
 A: ✅ Measured exact and enforced exact. R10/R11 grounded aggregate-by-name conservation, including frozen-world
 injection at 1,359 entities (historical pre-activation fluid loss). The single gate requires zero
 volume drift within `1e-6`; fusion plasma is currently excluded on both sides (fusion plasma
-handling — revision queued; write rejection does not reproduce at 2.0.77, fluid-lab R14). Temperature remains
+handling — revision queued). Temperature remains
 diagnostic fidelity data (temperature merge and key boundaries).
 
 **Q: What if fluids are lost after the item check?**

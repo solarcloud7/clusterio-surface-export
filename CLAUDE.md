@@ -71,12 +71,31 @@ docker exec surface-export-controller npx clusterioctl --log-level error instanc
 
 ## Development Tools
 
-### Primary Deployment Script
+### Deploying — ONE entry point, pick a scope
+
+`tools/clusterio/deploy.ps1` is the only deploy command. `-Scope` is REQUIRED (no default: every
+sensible default is someone else's accident), and the scopes are a ladder from cheapest to most
+destructive. A switch that does not belong to the chosen scope is REFUSED, not ignored.
+
 ```powershell
-./tools/clusterio/deploy-cluster.ps1                 # Full deployment: increment version, pull images, start cluster
-./tools/clusterio/deploy-cluster.ps1 -SkipIncrement  # Deploy without version bump
-./tools/clusterio/deploy-cluster.ps1 -SkipIncrement -KeepData  # Restart without wiping volumes
+./tools/clusterio/deploy.ps1 -Scope artifacts -Target node -RestartHosts   # TS change: build + reload hosts
+./tools/clusterio/deploy.ps1 -Scope artifacts -Target web -RestartController  # web change: build + reload controller
+./tools/clusterio/deploy.ps1 -Scope lua                                    # Lua change: skip build, reset saves
+./tools/clusterio/deploy.ps1 -Scope plugin                                 # Lua + TS changed: build AND reset saves
+./tools/clusterio/deploy.ps1 -Scope cluster                                # full rebuild (DESTROYS volumes)
+./tools/clusterio/deploy.ps1 -Scope cluster -KeepData -SkipIncrement       # restart without wiping or bumping
 ```
+
+| Scope | Builds | Resets saves | Destroys volumes |
+|---|---|---|---|
+| `artifacts` | yes | no | no |
+| `lua` | no (refuses if dist is stale) | YES | no |
+| `plugin` | yes | YES | no |
+| `cluster` | yes | n/a (fresh) | YES unless `-KeepData` |
+
+Resetting saves disconnects anyone in-game; `predeploy-*.zip` rescue saves are taken first. The
+per-scope implementations (`build-plugin.ps1`, `patch-and-reset.ps1`, `deploy-cluster.ps1`) still
+exist and still work, but they are implementation detail — deploy.ps1 is the documented path.
 
 ### Hot Reload Development (Recommended)
 
@@ -87,32 +106,32 @@ The plugin uses **TypeScript** with bind-mounted source and **save patching** fo
 - Build output: `dist/node/` (Node.js runtime), `dist/web/` (browser bundle)
 
 **Plugin Changes** (TypeScript):
-- Edit `*.ts` files in plugin root or `lib/` → `./tools/clusterio/build-plugin.ps1 node -RestartHosts` (rebuild + reload the hosts)
+- Edit `*.ts` files in plugin root or `lib/` → `./tools/clusterio/deploy.ps1 -Scope artifacts -Target node -RestartHosts` (rebuild + reload the hosts)
 - Build generates `dist/node/*.js` from TypeScript sources
 - Deploy script automatically rebuilds before Docker startup
 - Host Node (24.x, matching CI) is available in shells — but **do not** `npm install`/`npm run build` in the live plugin dir while the cluster runs (see the next bullet: it re-adds the `@clusterio` peers and breaks `clusterioctl`; the cluster also strips them, so an in-place build can't resolve `@clusterio` anyway). Use **`./tools/clusterio/build-plugin.ps1 [all|node|web] [-RestartController] [-RestartHosts]`** — it builds in an isolated `node:24` container (CI parity) with a named volume shadowing `node_modules`, writing `dist/` back to the host; pass `-RestartController` for web changes (the controller caches each plugin's `manifest.json` at startup), or `-RestartHosts` for node changes (the hosts load `dist/node` at startup). Quick node-only compile alternative: `docker exec surface-export-host-1 sh -c 'cd /clusterio/external_plugins/surface_export && npx tsc -p tsconfig.node.json'` then `docker restart surface-export-host-1 surface-export-host-2`.
 - **DO NOT** run `npm install`/`npm install --include=dev`/`npm prune` in the plugin dir on a running cluster: the plugin lists `@clusterio/*` as **peer+dev** deps and npm 7+ auto-installs peers, so a second copy of `@clusterio/lib` lands in the shared (bind-mounted) `node_modules` and breaks `clusterioctl` with `Error: Attempt to import duplicate copy of @clusterio/lib`. The base-image entrypoint avoids this by deleting them after install (log line "Removing local @clusterio packages"). **Recover with** `docker exec surface-export-host-1 sh -c 'rm -rf /clusterio/external_plugins/surface_export/node_modules/@clusterio'` (NOT `npm prune` — that re-adds the peers). To lint/build locally, install only the tool you need (`npm install --no-save eslint typescript-eslint`) then remove `@clusterio` again. CI is unaffected — it runs `npm ci` in a clean runner.
 
 **Web UI Changes** (React):
-- Edit `*.tsx`/`*.css` files in `web/` → `./tools/clusterio/build-plugin.ps1 web -RestartController` → reload browser (chunks are content-hashed, so a normal reload suffices — no hard-refresh)
+- Edit `*.tsx`/`*.css` files in `web/` → `./tools/clusterio/deploy.ps1 -Scope artifacts -Target web -RestartController` → reload browser (chunks are content-hashed, so a normal reload suffices — no hard-refresh)
 - Build generates `dist/web/` bundle via Webpack Module Federation
 - Deploy script automatically rebuilds before Docker startup
 
 **Module Changes** (Lua - Save Patched):
-- Edit `*.lua` files in `module/` directory → `./tools/clusterio/patch-and-reset.ps1` (rebuilds the plugin, resets saves so Clusterio re-patches the Lua, restarts the cluster)
+- Edit `*.lua` files in `module/` directory → `./tools/clusterio/deploy.ps1 -Scope plugin` (rebuilds the plugin, resets saves so Clusterio re-patches the Lua, restarts the cluster)
 - Clusterio automatically injects Lua code into saves at startup
-- No compile step for Lua itself — but the save MUST be reset (a plain restart reuses the old patched `script.dat`); `patch-and-reset.ps1` does that for you
+- No compile step for Lua itself — but the save MUST be reset (a plain restart reuses the old patched `script.dat`); the `lua`/`plugin` scopes do that for you
 
 **Development Workflow**:
 1. Start cluster: `docker compose up -d`
-2. Edit TypeScript files → `./tools/clusterio/build-plugin.ps1 node -RestartHosts`
-3. Edit web (`*.tsx`) files → `./tools/clusterio/build-plugin.ps1 web -RestartController` → reload browser
-4. Edit Lua files → `./tools/clusterio/patch-and-reset.ps1 -LuaOnly` (skips the ~3-min container build —
+2. Edit TypeScript files → `./tools/clusterio/deploy.ps1 -Scope artifacts -Target node -RestartHosts`
+3. Edit web (`*.tsx`) files → `./tools/clusterio/deploy.ps1 -Scope artifacts -Target web -RestartController` → reload browser
+4. Edit Lua files → `./tools/clusterio/deploy.ps1 -Scope lua` (skips the ~3-min container build —
    Lua is save-patched from source; a staleness tripwire refuses the skip if any TS/web source is newer
    than dist/. Omit `-LuaOnly` when TS/web changed too.) Every run ends with a boot check: both
    instances must answer RCON with the plugin loaded, so a Lua error at save-load fails the deploy
    loudly instead of killing the instance silently.
-5. **Or use deploy script** for full rebuild: `.\tools\clusterio\deploy-cluster.ps1 -SkipIncrement`
+5. **Or full rebuild**: `./tools/clusterio/deploy.ps1 -Scope cluster -SkipIncrement`
 
 ### Cluster / transfer / RCON tools (`tools/`)
 
@@ -181,11 +200,12 @@ hands-on E2E checklist, one doc); repository test layout and entry points are in
   the real production path, no cleanup between fixtures, reload the paired golden saves
   (`docker/seed-data/lab-saves/`) in an unconditional batch finalizer.
 - **The standing lab suite was removed 2026-07-19** (owner ruling; runners archived at git tag
-  `labs-archive-2026-07-19`). Engine re-certification is a calculated campaign at version-update time: restore
-  runners from the archive tag (or author fresh probes), re-measure every law production depends on, record the
-  evidence commits in `tests/labs-certified.json`, and bump the pin — all in the bump PR.
-  `npm run lint:version-certification` keeps the pin and the certificate equal; between pin bumps, the pads +
-  integration suite are the standing coverage.
+  `labs-archive-2026-07-19`). The pads + integration suite are the standing coverage, full stop. **There is no
+  engine-pin certificate and no version-certification lint** — both were DELETED 2026-07-31 by owner ruling.
+  They asserted that a campaign had re-measured "every law production depends on" while checking nothing but a
+  version string, and the 2.1.11 certificate was caught claiming laws its own cited pads never exercised. A
+  green certificate was permission to assume; if a law matters at a new pin, re-measure it and let the measurement
+  stand on its own, in the PR that needs it.
 - **Ad-hoc probes that mutate the shared cluster** still owe zero-leftover cleanup (surfaces AND persistent
   `storage.*` records, game unpaused) and must scope every predicate to `surface-export-*` containers — the
   unrelated `atlas-*` cluster shares this machine.
@@ -194,9 +214,19 @@ hands-on E2E checklist, one doc); repository test layout and entry points are in
   cannot be lost during teeth testing); leave `package-lock.json` byte-identical outside approved dependency
   updates.
 
-**Evidence discipline** (mechanized by `lint:version-certification`):
-engine-behavior knowledge carries evidence tags in [docs/factorio-2.0-api-notes.md](docs/factorio-2.0-api-notes.md)
-— **[API]** / **[empirical, <pin>, <citation>]**. There is NO [hypothesis] tier in api-notes: a claim whose only evidence is an undocumented one-off probe is DELETED, not demoted (git history keeps it). Elsewhere, a mechanism EXPLANATION is a lead until its
+**Evidence discipline** (deliberately NOT mechanized — owner ruling 2026-07-31: we do not add lint rules to
+prop up bad infrastructure, and a guard that checks a version string while claiming to check evidence is worse
+than none): [docs/factorio-2.0-api-notes.md](docs/factorio-2.0-api-notes.md) carries **only measured behavior
+the official Lua API documentation does not state** — timing, ordering, save/load survival, how the engine
+reacts to a write. Two hard deletion rules, both owner-issued after a false `[empirical]` claim shipped:
+- **If upstream documents it, we do not.** A claim that restates <https://lua-api.factorio.com/> is presumed
+  copied from there and dressed as an experiment. Link the upstream page at the point of use; never mirror it.
+  The old **[API]** tier existed to do exactly that mirroring and is abolished.
+- **Documentation citing documentation is a feedback loop.** Evidence is a measurement or an upstream source,
+  never another of our own docs. A claim whose support is "see our other doc" is deleted, not re-pointed.
+Surviving claims carry **[empirical, <pin>, <citation>]**, and the tag covers ONE claim — a bullet that bundles
+a measured fact with a "so/therefore" consequence is two claims wearing one citation, which is precisely how a
+false cap rationale rode a real `crafting_speed` measurement for months. There is NO [hypothesis] tier: a claim whose only evidence is an undocumented one-off probe is DELETED, not demoted (git history keeps it). Elsewhere, a mechanism EXPLANATION is a lead until its
 *predictions* are tested — a behavioral rule can be [empirical] while its explanation is lore, and an
 unverifiable source ("expert analysis" of closed-source internals) must NEVER be cited as "Confirmed by."
 Rung IDs cited in code and docs (fluid-lab R11, inserter-lab B6, …) point at evidence commits reachable via the
@@ -231,7 +261,7 @@ opt-in fork override); all environment config in gitignored `.env`.
 - **Runtime entrypoints**: `index.ts` declares `instanceEntrypoint: "dist/node/instance"`, etc.
 - **Build pipeline**: `npm run build` compiles TypeScript → `dist/node/*.js` and bundles React → `dist/web/*`
 - **Clean source tree**: Only `.ts` and `.tsx` files in source directories; all generated artifacts in `dist/`
-- **Deploy integration**: `deploy-cluster.ps1` runs `npm run build` before Docker compose up
+- **Deploy integration**: `deploy.ps1 -Scope cluster` builds via `build-plugin.ps1` (isolated container) before Docker compose up
 - **Git hygiene**: `dist/` is gitignored; fresh builds ensure consistency
 - **Tests**: `npm test` (gated in CI) builds `dist/node` then runs **17 test files** under built-in
   `node --test` (zero deps) — not just the wire contract. They include transfer-orchestrator rollback,
@@ -367,7 +397,7 @@ For Clusterio core architecture, see [Clusterio docs](https://github.com/cluster
 
 ### General Style (partially enforced by ESLint — `npm run lint`, gated in CI)
 
-> `npm run lint` runs eleven **correctness** guards, all gated in CI; a twelfth (**commit labels**,
+> `npm run lint` runs ten **correctness** guards, all gated in CI; an eleventh (**commit labels**,
 > `scripts/lint-commit-labels.mjs`) runs as its own PR-gated CI step. Each script header carries the full
 > rationale and incident history. Every `*:allow` escape hatch MUST be enumerated in
 > `scripts/lint-allow-manifest.json` with a reason and approver — an allow is an **escalation**, never
@@ -385,7 +415,6 @@ For Clusterio core architecture, see [Clusterio docs](https://github.com/cluster
 > | PS silent-failure | `lint:ps-silent` | no PowerShell-stream suppression (`2>$null`, `-ErrorAction SilentlyContinue/Ignore`, empty `catch {}`) in tools/tests ps1 unless CHECKED (`$LASTEXITCODE`/`$?` within 3 lines) or ANNOTATED (`deliberately quiet` + real reason) — the 11-broken-calls incident class | annotation IS the mechanism (reason required, reviewable) |
 > | Test hooks | `lint:test-hooks` | a `test_force_*` hook disarms in `finally`/`trap` or is enumerated in `FAIL_SAFE_HOOKS` (`scripts/fail-safe-hooks.mjs`) | `FAIL_SAFE_HOOKS` entry |
 > | Allow manifest | `lint:allow-manifest` | manifest matches reality exactly, both directions | — |
-> | Version certification | `lint:version-certification` | pinned Factorio version == `tests/labs-certified.json`; a pin bump goes red until the re-certification campaign lands | none — recertify |
 > | Commit labels | (own CI step) | a `docs:`-labeled commit touches only doc paths — labels are audit boundaries | — |
 >
 > Discipline the guards cannot fully mechanize: ship the adversarial fixture WITH the fix, and run
@@ -427,9 +456,13 @@ inventory resize/override, the epsilon rule — live in
 restoration.
 
 Project invariants that still bite if changed:
-- **Beacon-before-crafter inventory order.** `crafting_speed` (which sets the `set_stack()` cap) only
-  reflects beacon bonuses once the beacon's `beacon_modules` inventory is populated, so Phase 3 restores
-  beacons first, then everything else. See [Import Phase Ordering](#import-phase-ordering-critical).
+- **Beacon-before-crafter inventory order.** Phase 3 restores beacons first, then everything else. The
+  mechanism this ordering was documented to protect — a `set_stack()` cap that widens once beacon modules
+  are populated — did NOT reproduce when probed on 2.1.11: the crafter-input cap measured stack-derived and
+  speed-invariant (164 for stack-100 ingredients, 264 for stack-200) across seven recipes and speeds from
+  1.25 to 11.00. The ordering is retained (it is free, and `crafting_speed` genuinely does propagate in the
+  same execution), but do NOT cite the cap as its justification until a rung isolates that variable. See
+  [Import Phase Ordering](#import-phase-ordering-critical).
 - **Belt restoration truth lives in ONE place**: the "Belt transport-line laws (CANONICAL)" section of
   [factorio-2.0-api-notes.md](docs/factorio-2.0-api-notes.md) — recreated 2026-07-17 after a fact-regression
   incident; do not restate belt physics elsewhere, point there. Summary only: the fidelity unit is one
@@ -437,15 +470,16 @@ Project invariants that still bite if changed:
   invariants — restoring position is handoff avoidance, not a new invariant). The production restore
   places every item **at its captured source position** (2026-07-27): each payload side carries a compact
   `item_source_positions` array (source entity/line/position per stack, ~12 bytes/stack) and each item is
-  placed back onto its own line at its own captured position, request offset one write-frame per BELT-R10
-  (re-isolated at 2.1.11: the landing comes out at request + one tick of `belt_speed`, clamped inward).
+  placed back onto its own line at its own captured position, request offset one write-frame (the landing
+  comes out at request + one tick of `belt_speed`, clamped inward).
   `item_source_positions` is REQUIRED — payloads without it are refused; the legacy consolidation
   restore/hub recovery/first-fit fallback are DELETED (owner order 2026-07-27). Why placement at captured
   positions: top-of-line writes trip the BELT-R16 boundary handoff (the item lands across the piece
   boundary; cross-side handoffs are census-invisible and retried into duplicates — the measured workhorse
-  excess). Engine transport-line identity is still NOT a cross-import key (BELT-R9); populated-source
-  same-execution `line_equals` grouping IS the side partition. The atomic single-tick export scan
-  remains required (atomic belt scan; belts keep moving — BELT-R13).
+  excess). The pipeline's two belt design constraints — transport-line identity is NOT a cross-import
+  key, and the export scan must be atomic because belts keep moving — live with the flow they constrain,
+  in [EXPORT_IMPORT_FLOW.md](docs/EXPORT_IMPORT_FLOW.md); both are flagged there as unproven on this pin
+  (their rungs were pre-2.1.11 and were deleted 2026-07-31).
 - **Fluid restoration runs in the frozen world (`disabled_by_script`) before the exact gate.** The payload
   carries a top-level **fluid-segment registry** (one record per source segment or segmentless storage, keyed
   by our incremental id — engine segment ids differ across instances); entities reference it via
@@ -459,19 +493,18 @@ Project invariants that still bite if changed:
   fluids (`epsilon=1e-6`). See docs/factorio-2.0-api-notes.md fluid section.
 - **Entity inventory size** isn't changed by `LuaInventory.resize` (custom inventories only).
   `LuaEntity.set_inventory_size_override` overrides **container** sizes but is a **no-op for crafter inputs**
-  at 2.0.76 (verified there; **not re-verified on the 2.1.11 pin**) — so it is *not* a lever for overloaded-crafter-input loss (already handled by the
-  beacon-first ordering). See the API notes.
+  at 2.0.76 (verified there; **not re-verified on the 2.1.11 pin**). See the API notes.
 
 ### Import Phase Ordering (Critical)
 The order of post-processing steps in `ImportCompletion.run_phase1` / `run_phase2` (`module/core/import-completion.lua:180,222`) is critical for correctness:
 
 ```
 1. Hub inventories        — restore after cargo bays exist (inventory size scales with bays)
-2. Belt items             — belts keep moving (active-writes rejected, BELT-R13); single-tick restore is
+2. Belt items             — belts keep moving; single-tick restore is
                             the current conservative implementation (see the canonical belt section)
 3. Entity state           — control behavior, filters, circuit connections
 4. Inventories (2 passes) — Pass 1: beacons (populates beacon_modules, crafting_speed updates immediately)
-                            Pass 2: everything else (set_stack cap now reflects beacon-boosted cs)
+                            Pass 2: everything else (ordering retained; the cap rationale is retracted)
 5. Held-item completion   — inserter-only synchronous pass (single owner of held seating; activation-independent, inserter-lab B6); no tick advances
 6. Fluid restoration      — write the payload's fluid-segment registry (one set_fluid_segment_fluid per
                             segment; segmentless storages via set_fluid) while the platform stays paused and
@@ -483,7 +516,7 @@ The order of post-processing steps in `ImportCompletion.run_phase1` / `run_phase
 
 **Why this order matters**:
 - There is **no beacon-activation step** — this list used to claim one. Beacons are simply never deactivated during entity creation (`module/import_phases/entity_creation.lua:116`), and nothing fills an energy buffer. `import-completion.lua:211-213` states it directly: populating `beacon_modules` in Pass 1 "immediately updates crafting_speed on nearby machines — no pre-activation needed."
-- Step 4 (inventories, 2 passes): The two-pass approach is critical. `crafting_speed` on a machine updates **immediately** when its nearby beacon's `beacon_modules` inventory is populated — no tick delay, no power required. Pass 1 populates all beacon modules. Pass 2 then restores crafter inputs with `set_stack()`, which uses the now-correct beacon-boosted cap (e.g. cs=17.375 → 12 slots instead of cs=2.5 → 7 slots). Machines remain deactivated throughout — they cannot consume items.
+- Step 4 (inventories, 2 passes): Pass 1 populates all beacon modules, Pass 2 restores everything else. `crafting_speed` on a machine does update **immediately** when its nearby beacon's `beacon_modules` inventory is populated — no tick delay, no power required (engine-repin B8, reproduced on 2.1.11). What this section used to claim beyond that — that Pass 2's `set_stack()` therefore gets a wider beacon-boosted cap, "cs=17.375 → 12 slots instead of cs=2.5 → 7 slots" — did NOT reproduce: probed 2026-07-31 on 2.1.11, the crafter-input cap is stack-derived and speed-invariant (164 for stack-100 ingredients, 264 for stack-200) from cs=1.25 through cs=11.00, across seven recipes, an assembling-machine-3 and an electromagnetic-plant. The ordering stays because it costs nothing, not because that cap effect is known to exist. Machines remain deactivated throughout — they cannot consume items.
 - Steps 5→7 are one synchronous frozen-world completion and verdict pass. Fluids are restored from the payload's fluid-segment registry (one `set_fluid_segment_fluid` write per segment) into the paused, `disabled_by_script` destination before the gate; there is no failed-member fluid accounting, so any missing member fails the exact gate and the source is preserved (fail => revert). A failure banks an always-on black box, then discards the destination unless the debug-gated preserve flag is explicitly armed. The historical ~15% pre-activation loss is retired (historical pre-activation fluid loss); the pad-transfer-suite workhorse census and strict gate exercise this ordering on 2.1.11.
 
 ## Factorio 2.0 Fluid API & Simulation Behavior

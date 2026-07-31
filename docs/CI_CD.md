@@ -27,10 +27,10 @@ Two jobs:
 ## Integration test flow
 
 1. **Build plugin** — `npm ci && npm run build` (TypeScript → `dist/node`, webpack → `dist/web`).
-2. **Lint** — `npm run lint` (nine correctness guards: TS/eslint, Lua invariants, webpack-cache,
-   test-grounding, pcall-logging, catch-swallow, test-hooks, version-certification, allow-manifest — see
-   the guard list in CLAUDE.md "General Style"). A tenth, `lint-commit-labels`, runs as its own PR-gated
-   step (docs commits must touch only doc paths). (`doc-refs` and `evidence-claims` were deleted with the
+2. **Lint** — `npm run lint` (correctness guards: TS/eslint, Lua invariants, webpack-cache,
+   test-grounding, pcall-logging, catch-swallow, test-hooks, allow-manifest — see
+   the guard table in CLAUDE.md "General Style", which is the one place that enumerates them).
+   `lint-commit-labels` runs as its own PR-gated step (docs commits must touch only doc paths). (`doc-refs` and `evidence-claims` were deleted with the
    pitfall/evidence corpus they policed.)
 3. **Test** — `npm test` (message round-trip + wire contract).
 4. **Verify the pins** — `CLUSTERIO_IMAGE_TAG` is set in `.env`, and both instances pin the same
@@ -144,7 +144,7 @@ logs, and each host's `factorio-current.log`.
 
 ## Running the integration tests locally
 
-Bring up the cluster with `tools/clusterio/deploy-cluster.ps1` (or `docker compose up -d`), then run the whole
+Bring up the cluster with `./tools/clusterio/deploy.ps1 -Scope cluster` (or `docker compose up -d`), then run the whole
 suite the same way CI does:
 
 ```powershell

@@ -8,10 +8,10 @@ The canonical testing taxonomy, baked-fixture lifecycle, measurement rules, and 
 - `tests/integration/` contains live regressions for established production contracts. Discover and run them with
   `node tools/tests/run-integration-tests.mjs --list` and `node tools/tests/run-integration-tests.mjs` from the repository root.
 - The standing lab suite was removed 2026-07-19 (owner ruling); its runners and notebooks are archived at git tag
-  `labs-archive-2026-07-19`. Engine re-certification is a calculated campaign at version-update time — restore
-  runners from the archive tag or author fresh probes, then record the evidence in the certificate.
-- [`labs-certified.json`](labs-certified.json) records the engine pin and evidence commits covered by version
-  certification.
+  `labs-archive-2026-07-19`. At an engine bump, re-measure the law you are about to rely on in the PR that
+  relies on it — restore a runner from the archive tag or author a fresh probe. The `labs-certified.json`
+  certificate and its lint were deleted 2026-07-31 (owner ruling): a green certificate was permission to
+  assume, and the last one asserted laws its own cited pads never exercised.
 - [`runner-inventory.md`](runner-inventory.md) records each executable's evidence-backed category and disposition;
   absent rows are unclassified while SC-41 remains in progress.
 - `docker/seed-data/external_plugins/surface_export/test/` contains Node unit and contract tests for the plugin.

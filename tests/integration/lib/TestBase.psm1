@@ -39,6 +39,17 @@ $script:ProtectedFixtures = @(
 	'test', 'spikedoom08', 'ptB'
 )
 
+<#
+.SYNOPSIS
+    The protected-fixture names, so callers can CLASSIFY without duplicating the list.
+.DESCRIPTION
+    Deletion paths already refuse these names; this exposes the same list for reporting, keeping one
+    source of truth instead of a second copy in the sweep tool.
+#>
+function Get-ProtectedFixtures {
+    return @($script:ProtectedFixtures)
+}
+
 # Escape a string for safe embedding inside a Lua single-quoted '...' literal. Send-Rcon passes the
 # command to `docker exec` as a single argv element (no shell layer), so the only quoting that matters
 # is Lua's: backslash first, then the single quote. A no-op for ordinary names; stops a name with a
@@ -323,6 +334,57 @@ function Get-Platforms {
 .OUTPUTS
     Hashtable @{ deleted = <int>; names = <string[]> }
 #>
+<#
+.SYNOPSIS
+    Inventory EVERY space platform on an instance, including surfaceless stubs.
+
+.DESCRIPTION
+    Enumerates platforms via each force's platform list rather than by walking game.surfaces, which
+    is what the deletion path does. The difference matters: a platform whose starter pack has not
+    materialized has NO surface, so a surfaces-walk cannot see it at all — and it is exactly the
+    leftover class that cannot be removed (game.delete_surface has nothing to delete, and
+    platform.destroy() is inert; measured on 2.1.11 across the no-arg, (0) and (60) forms).
+    A sweeper that cannot SEE a leak reports "clean" while the leak sits there.
+
+    Returns one object per platform: Name, Force, HasSurface, HasHub, Entities.
+#>
+function Get-PlatformInventory {
+    param(
+        [Parameter(Mandatory=$true)]
+        [string]$Instance
+    )
+
+    $lua = @"
+local out = {}
+for _, force in pairs(game.forces) do
+    for _, p in pairs(force.platforms or {}) do
+        if p and p.valid then
+            local s = p.surface
+            local live = (s ~= nil and s.valid)
+            out[#out+1] = {
+                name = p.name,
+                force = force.name,
+                hasSurface = live,
+                hasHub = (p.hub ~= nil and p.hub.valid) or false,
+                entities = live and #s.find_entities_filtered{} or 0,
+            }
+        end
+    end
+end
+rcon.print(helpers.table_to_json({platforms = out}))
+"@
+    $result = Invoke-Lua -Instance $Instance -Code $lua
+    try {
+        $parsed = $result | ConvertFrom-Json
+        # Same empty-table trap as Remove-PlatformSurfacesWhere: Lua serializes {} as a JSON object,
+        # so filter to real records instead of trusting the wrapped count.
+        return @($parsed.platforms) | Where-Object { $_.name }
+    } catch {
+        Write-Warning "Failed to parse platform inventory: $result"
+        return @()
+    }
+}
+
 function Remove-PlatformSurfacesWhere {
     param(
         [Parameter(Mandatory=$true)]
@@ -350,7 +412,12 @@ rcon.print(helpers.table_to_json({deleted = deleted, names = names}))
     $result = Invoke-Lua -Instance $Instance -Code $lua
     try {
         $parsed = $result | ConvertFrom-Json
-        return @{ deleted = [int]$parsed.deleted; names = @($parsed.names) }
+        # An EMPTY Lua table serializes as {} (a JSON object), not [] — Lua cannot tell an empty array
+        # from an empty map. @($parsed.names) then wraps that single PSCustomObject into a 1-element
+        # array, so ZERO matches reported as ONE on every host (the dry run claimed phantom leftovers
+        # that did not exist). Keep only real name strings.
+        $names = @($parsed.names) | Where-Object { $_ -is [string] -and $_.Length -gt 0 }
+        return @{ deleted = [int]$parsed.deleted; names = @($names) }
     } catch {
         Write-Warning "Failed to parse delete result: $result"
         return @{ deleted = 0; names = @() }
@@ -969,6 +1036,8 @@ Export-ModuleMember -Function @(
     'Resolve-PlatformHost',
     'Get-Platforms',
     'Remove-PlatformSurfacesWhere',
+    'Get-PlatformInventory',
+    'Get-ProtectedFixtures',
     # Surface Management
     'Remove-TestSurfaces',
     

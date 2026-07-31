@@ -13,17 +13,18 @@ $ErrorActionPreference = "Stop"
 Write-Host "`n=== Available Transaction Logs ===" -ForegroundColor Cyan
 Write-Host "Showing up to last 10 transfers`n" -ForegroundColor Yellow
 
-try {
-    # Read the transaction log file directly from the controller container
-    $result = docker exec surface-export-controller cat /clusterio/data/database/surface_export_transaction_logs.json 2>&1
+. "$PSScriptRoot\..\shared\cluster-utils.ps1"
 
-    if ($LASTEXITCODE -ne 0) {
+try {
+    # ONE reader for the store (tools/shared/cluster-utils.ps1). This used to be a local copy of the
+    # docker exec that appended 2>&1 — which interleaves Docker's stderr warnings into the JSON and
+    # breaks the parse. The sibling get-transaction-log.ps1 had already found and documented that.
+    $logs = Get-TransactionLogStore
+
+    if ($null -eq $logs) {
         Write-Host "No transaction logs found yet." -ForegroundColor Yellow
         exit 0
     }
-
-    # Parse JSON
-    $logs = $result | ConvertFrom-Json
 
     if ($logs.Count -eq 0) {
         Write-Host "No transaction logs found." -ForegroundColor Yellow

@@ -3,7 +3,7 @@
 -- Admin GUI: pick another cluster instance from a dropdown and press Connect. Connect fires
 -- LuaPlayer.connect_to_server, which shows the player Factorio's NATIVE "connect to this
 -- server?" prompt — consent is built in, and the call no-ops for non-multiplayer-peer contexts
--- (engine behavior; see docs/GATEWAY_TRANSFER_PRD.md Layer-2 spike findings).
+-- (engine behavior; see docs/GATEWAY_TRANSFER_PRD.md).
 --
 -- The roster (instance name + client-routable address + online flag) comes from the CONTROLLER:
 -- /teleport fires a send_json request; the instance plugin asks the controller (which joins each

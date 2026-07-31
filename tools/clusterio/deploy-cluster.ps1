@@ -1,3 +1,4 @@
+# IMPLEMENTATION for deploy.ps1 — prefer that entry point.
 param (
     [switch]$SkipIncrement,
     [switch]$KeepData
@@ -100,31 +101,23 @@ if (-not $KeepData) {
 }
 
 # 5. Build plugin artifacts (node + web)
+# ONE build path for the whole repo: build-plugin.ps1. This step used to carry its own `npm ci` +
+# `npm run build` run directly in the live plugin dir — a second implementation of the same purpose,
+# using the method the plugin docs explicitly forbid: installing there re-adds the `@clusterio/*`
+# peers into the bind-mounted node_modules (npm 7+ auto-installs peers) and breaks clusterioctl with
+# "duplicate copy of @clusterio/lib". It also required host Node, which build-plugin.ps1 exists to
+# avoid. Two copies of one purpose is how the methods drift apart unnoticed — they already had.
+# build-plugin.ps1 needs only a running Docker daemon (it builds in a throwaway node:24 container
+# with a named volume shadowing node_modules), so it is safe here with the cluster torn down.
+#
+# Failure propagates as a TERMINATING ERROR, not an exit code: build-plugin.ps1 reports every
+# failure with `throw` and never calls `exit`, and this script runs under $ErrorActionPreference =
+# "Stop". Do NOT add a `$LASTEXITCODE -ne 0` check here — after the call that variable still holds
+# whatever the last native command inside left behind, so the check would be a coin flip that can
+# fail a perfectly good deploy.
 Write-Host "Building plugin artifacts (node + web)..." -ForegroundColor Cyan
-Push-Location $PluginPath
-try {
-    # These used to end in `2>$null` with NO exit check. A failed dependency install was totally
-    # silent, and the NEXT command (npm run build) then failed against missing deps — so a broken
-    # install masqueraded as "Plugin build failed" with its stderr already discarded.
-    if (Test-Path (Join-Path $PluginPath "package-lock.json")) {
-        $installCmd = "npm ci"
-        $installOut = npm ci 2>&1
-    } else {
-        $installCmd = "npm install"
-        $installOut = npm install 2>&1
-    }
-    if ($LASTEXITCODE -ne 0) {
-        Write-Host ($installOut | Out-String) -ForegroundColor Red
-        throw "$installCmd failed (exit $LASTEXITCODE) — dependencies are NOT installed; the build below would fail for the wrong reason."
-    }
-    npm run build
-    if ($LASTEXITCODE -ne 0) {
-        throw "Plugin build failed"
-    }
-    Write-Host "Plugin artifacts built successfully" -ForegroundColor Green
-} finally {
-    Pop-Location
-}
+& (Join-Path $PSScriptRoot "build-plugin.ps1") all
+Write-Host "Plugin artifacts built successfully" -ForegroundColor Green
 
 # 6. Pull latest base images
 Write-Host "Pulling latest base images..." -ForegroundColor Cyan

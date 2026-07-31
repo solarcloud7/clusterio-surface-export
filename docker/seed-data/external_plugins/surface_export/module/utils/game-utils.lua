@@ -243,20 +243,21 @@ function GameUtils.pcall_warn(context, fn)
 end
 
 --- Reliably remove a space platform (its surface and all entities).
---- platform.destroy is a no-op: LuaSpacePlatform.destroy() is a SILENT no-op in Factorio 2.0 Space Age — it
---- returns without error but leaves the platform and surface fully intact (verified empirically:
---- after `platform.destroy()`, `platform.valid` is still true and the platform count is unchanged).
---- `game.delete_surface()` is the ONLY API that actually tears a platform down. Always route
---- platform removal through this helper; never call `platform.destroy()` directly. The
---- scripts/lint-lua-invariants.mjs guard fails CI if a raw `*platform*.destroy()` call is reintroduced.
+--- The platform's own destroy method is not a removal primitive we can depend on. Measured 2026-07-31
+--- on 2.1.11: the NO-ARG form returns without error and changes nothing — the platform is still valid
+--- and still listed, immediately and after ticks. A ticks-argument form DOES eventually remove it, but
+--- on a deferred schedule still pending 4s after the call, so it is useless for a synchronous teardown.
+--- `game.delete_surface()` is the removal route: it is deferred only to end of tick. Always route
+--- platform removal through this helper. The scripts/lint-lua-invariants.mjs guard fails CI if a raw
+--- destroy call is reintroduced.
 --- @param platform LuaSpacePlatform
 --- @return boolean: true if a surface deletion was issued, false if nothing could be removed
 function GameUtils.delete_platform(platform)
   if not (platform and platform.valid) then return false end
   local surface = platform.surface
   if surface and surface.valid then
-    -- Version-correct teardown primitive (2.0.76: game.delete_surface; platform.destroy() is a
-    -- no-op — platform.destroy is a no-op). Routed through VersionCompat so an engine bump can change just the seam.
+    -- Teardown primitive: game.delete_surface (see the measurement above). Routed through
+    -- VersionCompat so an engine bump can change just the seam.
     VersionCompat.delete_platform(platform)  -- deferred to end of tick; fully removes platform + surface
     return true
   end

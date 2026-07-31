@@ -94,9 +94,11 @@ a filtered loader** onto the circuit. It saturates the circuit to a deterministi
 exemplars: the green-belt omnibus and the filtered-splitter fixture on `lab-omnibus-platform-v1`), needs no
 hand-seeding, and reproduces natural kinetic compression — the hardest restore case. Operational facts
 (canonical citations in the belt section of [factorio-2.0-api-notes.md](factorio-2.0-api-notes.md)):
-loaders keep running on paused platforms and their `active` flag IS writable — deactivate the loaders to
-freeze the feed for a measurement window; belt-class `active` writes are rejected and belts keep moving
-(BELT-R13), so census reads must be same-execution. Clone the chests WITH the fixture
+loaders keep running on paused platforms, and belts keep moving, so census reads must be same-execution.
+**Freeze the feed with `disabled_by_script = true`, NOT by writing `active`.** This paragraph used to say
+the loader's `active` flag is writable and to deactivate loaders for a measurement window; that is FALSE at
+the 2.1.11 pin — measured 2026-07-31, assignment throws `LuaEntity::active is read only.` on a loader and on
+a crafter alike (it was `RW` at 2.0.77). Any instrument still built on the old recipe does not work. Clone the chests WITH the fixture
 (`infinity_container_filters` + `remove_unfiltered_items` copy cleanly) so a cloned fixture remains
 self-sustaining.
 
@@ -188,12 +190,17 @@ black box for symmetry.
 
 Engine knowledge keeps the evidence tags defined in the "Testing discipline" section of [CLAUDE.md](../CLAUDE.md):
 
-- **[API]** establishes that the pinned public API exposes a field, method, role, or signature.
-- **[empirical, `<pin>`]** records behavior measured by a valid live rung at that engine pin.
-- **[hypothesis]** labels an unproven behavioral prediction or mechanism explanation.
+- **[empirical, `<pin>`]** records behavior measured by a valid live rung at that engine pin. It covers exactly
+  one claim — a bullet whose measurement is followed by a "so/therefore" consequence is two claims sharing one
+  citation, and the consequence is uncited.
+- **[hypothesis]** labels an unproven behavioral prediction or mechanism explanation. It is usable in design
+  notes and plans; it does NOT exist in api-notes, where an unprovable claim is deleted instead.
 
-API shape is not behavioral certification. A negative result is evidence, and an eliminated symptom without an
-isolated mechanism remains unexplained rather than being retconned into a proven fix.
+The **[API]** tier was abolished 2026-07-31 (owner ruling). If <https://lua-api.factorio.com/> documents
+something, we link it where the code needs it and never mirror it into our docs — a mirror rots when upstream
+moves, and an `[empirical]` claim that merely restates upstream is presumed copied from the docs rather than
+measured. API shape was never behavioral certification anyway. A negative result is evidence, and an eliminated
+symptom without an isolated mechanism remains unexplained rather than being retconned into a proven fix.
 
 **Citation-variable match.** An `[empirical]` tag on a MECHANISM claim must cite a rung that isolated **that
 claim's variable** — citation presence is not citation match. The refuted "set_stack fails while deactivated"
@@ -220,12 +227,13 @@ save-loaded world are not automatically identical — save/load changes entity r
 they become permanent regressions. Labs iterate freely with disposable state while investigating; the baked
 lifecycle binds the permanent layers (integration and drift), and this gate is the bridge between the two.
 
-An engine-version change requires a re-certification campaign before lab conclusions are enabled at the new pin:
-restore the archived runners from the `labs-archive-2026-07-19` git tag (or author fresh probes), re-measure every
-law production depends on, and record the resulting evidence commits in
-[`tests/labs-certified.json`](../tests/labs-certified.json) — the engine-pin certificate that
-`lint:version-certification` holds equal to the pinned Factorio version. Promotion never upgrades a hypothesis or
-unexplained observation into law.
+An engine-version change invalidates every measurement taken on the old pin. Re-measure the law you are about to
+rely on, in the PR that relies on it, against the engine actually running — restoring an archived runner from the
+`labs-archive-2026-07-19` git tag or authoring a fresh probe. **There is no certificate file and no
+version-certification lint** (both deleted 2026-07-31, owner ruling): a committed record asserting that a campaign
+re-measured "every law production depends on" is unfalsifiable, and the last one was caught claiming laws whose
+cited pads never exercised them. A measurement stands on its own or not at all. Promotion never upgrades a
+hypothesis or unexplained observation into law.
 
 See [`tests/README.md`](../tests/README.md) for the repository test layout and entry points.
 
@@ -348,8 +356,8 @@ Consequences of the boundary:
   stated unqualified.
 - Both tiers ultimately trust the engine's own meters. That trust is not axiomatic: the
   load-bearing engine facts above were measured in lab rungs before the gate was allowed to rely
-  on them, and an engine pin bump requires the re-certification campaign recorded in
-  `tests/labs-certified.json` (`lint:version-certification`).
+  on them, and those measurements are only as current as the pin they were taken on — re-measure
+  at a bump rather than looking for a record that says someone already did.
 
 ---
 
@@ -382,7 +390,7 @@ A transfer is **correct** when, on the destination, all of the following hold an
 
 ```pwsh
 docker volume create factorio-client-2111     # one-time
-docker compose up -d                            # or: ./tools/clusterio/deploy-cluster.ps1 -SkipIncrement -KeepData
+docker compose up -d                            # or: ./tools/clusterio/deploy.ps1 -Scope cluster -SkipIncrement -KeepData
 ./tools/clusterio/show-cluster-status.ps1                 # controller healthy + both instances running
 ```
 
@@ -390,8 +398,8 @@ Expect: `surface-export-controller`, `surface-export-host-1`, `surface-export-ho
 and both instances `running`.
 
 If you changed plugin code first:
-- **TS only:** `./tools/clusterio/build-plugin.ps1 node -RestartHosts` (controller changes also need `-RestartController`)
-- **Lua / full:** `./tools/clusterio/patch-and-reset.ps1` (rebuilds + resets saves to re-patch Lua + restarts)
+- **TS only:** `./tools/clusterio/deploy.ps1 -Scope artifacts -Target node -RestartHosts` (controller changes also need `-RestartController`)
+- **Lua / full:** `./tools/clusterio/deploy.ps1 -Scope plugin` (rebuilds + resets saves to re-patch Lua + restarts)
 
 ### 2. Smoke test — plugin loaded, debug on
 
@@ -641,7 +649,7 @@ manual refresh needed). Tick each feature:
 ./tools/clusterio/rcon.ps1 21 "/sc local p=game.forces['player'].platforms[<idx>]; if p then game.delete_surface(p.surface) end"
 
 # Full clean re-seed (wipes runtime state back to the seed saves):
-./tools/clusterio/patch-and-reset.ps1
+./tools/clusterio/deploy.ps1 -Scope plugin
 # Hard wipe (volumes):  docker compose down -v   then   docker compose up -d
 ```
 
@@ -656,4 +664,4 @@ manual refresh needed). Tick each feature:
 | List platforms | `./tools/clusterio/rcon.ps1 11 "/list-platforms"` |
 | Validation result | `./tools/surface-export/get-transaction-log.ps1 [-TransferId <canonical-id>]` |
 | Trace a failure | `./tools/clusterio/check-cluster-logs.ps1 -Grep "..."` |
-| Reset cluster | `./tools/clusterio/patch-and-reset.ps1` |
+| Reset cluster | `./tools/clusterio/deploy.ps1 -Scope plugin` |

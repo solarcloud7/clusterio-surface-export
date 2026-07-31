@@ -604,8 +604,8 @@ function Deserializer.restore_entity_state(entity, entity_data)
   -- Resolve the serialized item name to a prototype so an unknown mod item is skipped (not crashed).
   -- currently_burning is burn-progress, NOT an inventory slot, so neither the expected-count
   -- (Verification.count_all_items) nor the dest census (SurfaceCounter.count_items) reads it directly.
-  -- VERIFIED [empirical, 2.0.77] by the closer run (tests/state-dimensions-lab/NOTEBOOK.md + the passing
-  -- entity-burner-roundtrip; api-notes): (a) the write is ACCEPTED while the entity is DEACTIVATED — a deactivated
+  -- Verified by the closer run (tests/state-dimensions-lab/NOTEBOOK.md + the passing
+  -- entity-burner-roundtrip): (a) the write is ACCEPTED while the entity is DEACTIVATED — a deactivated
   -- burner reads back currently_burning/remaining_burning_fuel exactly; (b) setting currently_burning does
   -- NOT mutate the fuel inventory, and this running before restore_inventories' clear()+refill leaves the
   -- burn state undisturbed. No relocation to the activation pass needed.
@@ -632,8 +632,8 @@ function Deserializer.restore_entity_state(entity, entity_data)
   end
 
   -- Restore entity energy buffer (accumulator charge, machine energy store).
-  -- VERIFIED [empirical, 2.0.77] by the closer run (state-dimensions-lab NOTEBOOK + passing
-  -- energy-roundtrip; api-notes): a write to `.energy` is ACCEPTED while the entity is DEACTIVATED (accumulator
+  -- Verified by the closer run (state-dimensions-lab NOTEBOOK + passing
+  -- energy-roundtrip): a write to `.energy` is ACCEPTED while the entity is DEACTIVATED (accumulator
   -- 0->123456 read back exactly; machine buffer written in-range read back exactly). Energy is not
   -- item-counted, so it does not perturb the exact gate census. No relocation to the activation pass.
   if data.energy ~= nil then
@@ -642,7 +642,7 @@ function Deserializer.restore_entity_state(entity, entity_data)
   end
 
   -- Restore entity heat buffer temperature (reactors, heat pipes, heat-consumers).
-  -- VERIFIED [empirical, 2.0.77] by the closer run (state-dimensions-lab NOTEBOOK + passing heat-roundtrip; api-notes):
+  -- Verified by the closer run (state-dimensions-lab NOTEBOOK + passing heat-roundtrip):
   -- a write to `.temperature` is ACCEPTED while the entity is DEACTIVATED (reactor 15->500 read back
   -- exactly). Not item-counted; no gate perturbation; no relocation to the activation pass.
   if data.temperature ~= nil then
