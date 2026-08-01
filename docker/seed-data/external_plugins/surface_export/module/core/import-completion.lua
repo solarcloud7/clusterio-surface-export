@@ -27,6 +27,7 @@ local Gateway = require("modules/surface_export/core/gateway")
 local Util = require("modules/surface_export/utils/util")
 local clusterio_api = require("modules/clusterio/api")
 local PhaseProfiler = require("modules/surface_export/utils/phase-profiler")
+local PhaseRecorder = require("modules/surface_export/utils/phase-recorder")
 local TransactionHistory = require("modules/surface_export/utils/transaction-history")
 local JobResults = require("modules/surface_export/core/job-results")
 
@@ -80,20 +81,6 @@ local function subtract_fluids_by_name(counts, subtractions)
 		end
 	end
 	return adjusted
-end
-
---- Build a waterfall phase span {name, start_offset_ms, duration_ms} from two game.tick marks,
---- relative to the import job's t0 (job.started_tick). Returns nil if either boundary is missing
---- (e.g. validation on non-transfer imports) so the phase is simply omitted from the trace.
---- This is pure arithmetic over already-recorded tick reads — it adds no game state and never
---- gates the freeze/count/populate logic.
-local function build_phase_span(name, started_tick, completed_tick, t0)
-	if not started_tick or not completed_tick then return nil end
-	return {
-		name = name,
-		start_offset_ms = math.max(0, math.floor((started_tick - t0) * 16.67)),
-		duration_ms = math.max(0, math.floor((completed_tick - started_tick) * 16.67)),
-	}
 end
 
 local function emit_debug_import_result(job, validation_result, duration_seconds)
@@ -184,17 +171,14 @@ function ImportCompletion.run_phase1(job)
 
 	-- Step 0: Restore hub inventories (DEFERRED from platform_hub_mapping)
 	-- The hub's inventory size scales with cargo bays, which are now placed.
-	job.metrics.hub_started_tick = game.tick
-	PhaseProfiler.start(job.job_id, "hub_restore")
+	PhaseRecorder.start(job, "hub")
 	PlatformHubMapping.restore_hub_inventories(job)
-	PhaseProfiler.stop(job.job_id, "hub_restore")
-	job.metrics.hub_completed_tick = game.tick
+	PhaseRecorder.stop(job, "hub")
 
 	-- Step 0a: Restore belt items synchronously
 	-- CRITICAL: Belts are always active and cannot be deactivated.
 	-- Must restore all belt items in a single tick to prevent partial restoration
-	job.metrics.belts_started_tick = game.tick
-	PhaseProfiler.start(job.job_id, "belts")
+	PhaseRecorder.start(job, "belts")
 	local belts_result
 	local side_groups = job.platform_data and job.platform_data.belt_side_groups
 	if side_groups and #side_groups > 0 then
@@ -270,16 +254,13 @@ function ImportCompletion.run_phase1(job)
 		end
 		belts_result = { items_restored = 0 }
 	end
-	PhaseProfiler.stop(job.job_id, "belts")
-	job.metrics.belts_completed_tick = game.tick
+	PhaseRecorder.stop(job, "belts")
 	job.metrics.belt_items_restored = belts_result and belts_result.items_restored or 0
 
 	-- Steps 1-5: Restore localized entity state (Control Behavior, Filters, Connections)
-	job.metrics.state_started_tick = game.tick
-	PhaseProfiler.start(job.job_id, "state")
+	PhaseRecorder.start(job, "state")
 	local state_result = EntityStateRestoration.restore_all(entities_to_create, entity_map)
-	PhaseProfiler.stop(job.job_id, "state")
-	job.metrics.state_completed_tick = game.tick
+	PhaseRecorder.stop(job, "state")
 	job.metrics.circuits_connected = state_result and state_result.circuits_connected or 0
 
 	-- Phase 1 complete. Schedule Phase 2 (inventory restoration) for the next tick.
@@ -312,8 +293,7 @@ function ImportCompletion.run_phase2(job)
 	if not job.inventory_overflow_losses then
 		job.inventory_overflow_losses = { total = 0, items = {}, entities = {} }
 	end
-	job.metrics.inventories_started_tick = game.tick
-	PhaseProfiler.start(job.job_id, "inventories")
+	PhaseRecorder.start(job, "inventories")
 	local inv_restored = 0
 	local inv_skipped = 0
 	-- Pass 1: beacons only
@@ -337,8 +317,7 @@ function ImportCompletion.run_phase2(job)
 			end
 		end
 	end
-	PhaseProfiler.stop(job.job_id, "inventories")
-	job.metrics.inventories_completed_tick = game.tick
+	PhaseRecorder.stop(job, "inventories")
 	log(string.format("[Import] Inventory restoration: %d entities restored, %d skipped (failed/missing)", inv_restored, inv_skipped))
 	if job.inventory_overflow_losses.total > 0 then
 		log(string.format("[Import] Inventory overflow losses: %d items lost (set_stack API cap)", job.inventory_overflow_losses.total))
@@ -373,17 +352,13 @@ function ImportCompletion.run_phase2(job)
 	-- instrument of any kind — no profiler bracket, no tick marks — so it was invisible in the
 	-- waterfall AND in the dashboard, sitting in dead space between inventories_completed_tick and
 	-- fluids_started_tick.
-	job.metrics.held_items_started_tick = game.tick
-	PhaseProfiler.start(job.job_id, "held_items")
+	PhaseRecorder.start(job, "held_items")
 	ActiveStateRestoration.restore_held_items_only(entities_to_create, entity_map)
-	PhaseProfiler.stop(job.job_id, "held_items")
-	job.metrics.held_items_completed_tick = game.tick
-	job.metrics.fluids_started_tick = game.tick
-	PhaseProfiler.start(job.job_id, "fluids")
+	PhaseRecorder.stop(job, "held_items")
+	PhaseRecorder.start(job, "fluids")
 	local fluids_result = FluidRestoration.restore(entities_to_create, entity_map,
 		job.platform_data and job.platform_data.fluid_segments)
-	PhaseProfiler.stop(job.job_id, "fluids")
-	job.metrics.fluids_completed_tick = game.tick
+	PhaseRecorder.stop(job, "fluids")
 	job.metrics.fluids_restored = fluids_result and fluids_result.count or 0
 	log(string.format("[Import] Frozen-world fluid restoration: %d fluids restored", job.metrics.fluids_restored))
 
@@ -393,11 +368,9 @@ function ImportCompletion.run_phase2(job)
 		-- TEST-ONLY: fluids are restored, but the clone remains deactivated for a pristine census.
 		log("[Import][TEST] test_defer_clone_activation set — clone left DEACTIVATED with frozen fluids restored")
 	else
-		job.metrics.activation_started_tick = game.tick
-		PhaseProfiler.start(job.job_id, "activation")
+		PhaseRecorder.start(job, "activation")
 		ActiveStateRestoration.restore(entities_to_create, entity_map, frozen_states)
-		PhaseProfiler.stop(job.job_id, "activation")
-		job.metrics.activation_completed_tick = game.tick
+		PhaseRecorder.stop(job, "activation")
 	end
 
 	log("[Import] Post-processing complete")
@@ -414,6 +387,12 @@ function ImportCompletion.run_phase2(job)
 	end
 
 	-- Perform validation if this is a transfer (has verification data and transfer ID)
+	--
+	-- NOT PhaseRecorder.start: validation is the one phase whose span and profiler deliberately bound
+	-- DIFFERENT windows. This mark opens the span here, for every import; the profiler starts much
+	-- later and only on the transfer path, wrapping just the validate_import call. Collapsing them
+	-- into one call would silently widen the profiler. The registry still owns validation's name and
+	-- its span boundaries (from validation_started_tick to validation_done_tick).
 	job.metrics.validation_started_tick = game.tick
 
 	local validation_result = nil
@@ -733,11 +712,9 @@ function ImportCompletion.run_phase2(job)
 				job.target_platform.paused = false
 				log(string.format("[Validation] Platform %s UNPAUSED after successful validation", job.platform_name))
 			end
-			job.metrics.activation_started_tick = game.tick
-			PhaseProfiler.start(job.job_id, "activation")
+			PhaseRecorder.start(job, "activation")
 			ActiveStateRestoration.restore(job.entities_to_create or {}, job.entity_map or {}, job.frozen_states or {})
-			PhaseProfiler.stop(job.job_id, "activation")
-			job.metrics.activation_completed_tick = game.tick
+			PhaseRecorder.stop(job, "activation")
 
 			-- LATCH RE-ARM (post-activation, non-gating): SELF-FEEDBACK deciders whose captured
 			-- output register was non-zero get a deferred preflight->force->restore->verify
@@ -750,11 +727,9 @@ function ImportCompletion.run_phase2(job)
 			end
 
 			if result.totalExpectedItems then
-				job.metrics.loss_analysis_started_tick = game.tick
-				PhaseProfiler.start(job.job_id, "loss_analysis")
+				PhaseRecorder.start(job, "loss_analysis")
 				LossAnalysis.run(job.target_surface, entities_to_create, result, fluids_result and fluids_result.segment_temps)
-				PhaseProfiler.stop(job.job_id, "loss_analysis")
-				job.metrics.loss_analysis_completed_tick = game.tick
+				PhaseRecorder.stop(job, "loss_analysis")
 				local post_counts = result.postActivationReport and result.postActivationReport.actualFluidCounts or {}
 				local post_diff = build_count_diff(
 					aggregate_fluid_counts_by_name(result.actualFluidCounts),
@@ -852,31 +827,10 @@ function ImportCompletion.run_phase2(job)
 		-- Unified t0 = first-chunk arrival when available (so delivery/queue/phases share one origin),
 		-- else the job start tick.
 		local t0 = m.delivery_started_tick or job.started_tick or 0
-		local phase_spans = {}
-		local function add_span(name, started_tick, completed_tick)
-			local sp = build_phase_span(name, started_tick, completed_tick, t0)
-			if sp then phase_spans[#phase_spans + 1] = sp end
-		end
-		-- Cross-machine front of the import: chunked-RCON delivery, then the async-queue wait.
-		add_span("delivery", m.delivery_started_tick, m.delivery_completed_tick)
-		add_span("queue", job.started_tick, m.tiles_started_tick)
-		add_span("tiles", m.tiles_started_tick, m.tiles_completed_tick)
-		add_span("entities", m.entities_started_tick, m.entities_completed_tick)
-		add_span("hub", m.hub_started_tick, m.hub_completed_tick)
-		add_span("belts", m.belts_started_tick, m.belts_completed_tick)
-		add_span("state", m.state_started_tick, m.state_completed_tick)
-		add_span("inventories", m.inventories_started_tick, m.inventories_completed_tick)
-		add_span("held_items", m.held_items_started_tick, m.held_items_completed_tick)
-		add_span("fluids", m.fluids_started_tick, m.fluids_completed_tick)
-		add_span("validation", m.validation_started_tick, m.validation_done_tick)
-		-- Post-verdict, and therefore AFTER the validation span ends. Without these the waterfall
-		-- stopped at the gate while the job kept working, so every tick between validation_done_tick
-		-- and validation_completed_tick was unaccounted for. Both run on exactly one path per job
-		-- (activation before the gate for non-transfer imports, after it for transfers), so the
-		-- absolute offsets place them correctly either way.
-		add_span("activation", m.activation_started_tick, m.activation_completed_tick)
-		add_span("loss_analysis", m.loss_analysis_started_tick, m.loss_analysis_completed_tick)
-
+		-- Built from the phase registry, in its declared order. This used to be a hand-maintained
+		-- list of add_span calls that had to be kept in sync with the tick marks and the profiler
+		-- init list by hand — three lists, no link, and all three had drifted.
+		local phase_spans = PhaseRecorder.build_spans(job, t0)
 		emit_debug_import_result(job, validation_result, duration_seconds)
 
 		local event_payload = {

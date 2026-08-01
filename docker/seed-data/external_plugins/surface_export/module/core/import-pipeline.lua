@@ -8,6 +8,7 @@ local TileRestoration = require("modules/surface_export/import_phases/tile_resto
 local PlatformHubMapping = require("modules/surface_export/import_phases/platform_hub_mapping")
 local EntityCreation = require("modules/surface_export/import_phases/entity_creation")
 local PhaseProfiler = require("modules/surface_export/utils/phase-profiler")
+local PhaseRecorder = require("modules/surface_export/utils/phase-recorder")
 local GameUtils = require("modules/surface_export/utils/game-utils")
 local VersionCompat = require("modules/surface_export/utils/version-compat")
 local Gateway = require("modules/surface_export/core/gateway")
@@ -50,11 +51,12 @@ function ImportPipeline.queue(json_data, new_platform_name, force_name, requeste
 	end
 
 	-- Initialize phase profilers and measure decompression + platform setup time
-	PhaseProfiler.init(job_id, {
-		"queue_setup", "beacons",
-		"hub_restore", "belts", "state",
-		"inventories", "validation", "activation", "fluids", "loss_analysis",
-	})
+	-- Derived from the phase registry, never hand-listed. This list used to be maintained by hand and
+	-- had already drifted: held_items had a start/stop bracket but was absent here, which makes
+	-- PhaseProfiler.start a SILENT no-op (it only touches profilers created by init).
+	PhaseProfiler.init(job_id, PhaseRecorder.profiler_names())
+	-- Straight to PhaseProfiler, not PhaseRecorder: the job table does not exist yet (it is built
+	-- below), and queue_setup is profile-only — it has no tick marks. The registry still owns its name.
 	PhaseProfiler.start(job_id, "queue_setup")
 
 	-- First, parse if it's a JSON string
@@ -482,14 +484,17 @@ function ImportPipeline.process_batch(job, get_batch_size, should_show_progress)
 	end
 
 	-- Phase 1: Tile Restoration (track timing)
+	-- The guards matter: tiles and entities are restored across MANY ticks, so start must stamp only
+	-- on the first pass and stop only on the last. PhaseRecorder.start would otherwise re-stamp the
+	-- start mark every batch and collapse the span to nothing.
 	if not job.tiles_placed then
 		if not job.metrics.tiles_started_tick then
-			job.metrics.tiles_started_tick = game.tick
+			PhaseRecorder.start(job, "tiles")
 		end
 	end
 	TileRestoration.process(job)
 	if job.tiles_placed and not job.metrics.tiles_completed_tick then
-		job.metrics.tiles_completed_tick = game.tick
+		PhaseRecorder.stop(job, "tiles")
 		job.metrics.tiles_placed = #(job.tiles_to_place or {})
 	end
 
@@ -503,7 +508,7 @@ function ImportPipeline.process_batch(job, get_batch_size, should_show_progress)
 	-- This phase places ALL beacons (including modded types) in one tick, unconditionally.
 	-- Uses prototypes[name].type to detect beacons so any mod's beacon variant is covered.
 	if not job.beacons_placed and job.tiles_placed then
-		PhaseProfiler.start(job.job_id, "beacons")
+		PhaseRecorder.start(job, "beacons")
 		local beacons_created = 0
 		local beacons_skipped = 0
 		for _, entity_data in ipairs(job.entities_to_create) do
@@ -524,7 +529,7 @@ function ImportPipeline.process_batch(job, get_batch_size, should_show_progress)
 			end
 		end
 		job.beacons_placed = true
-		PhaseProfiler.stop(job.job_id, "beacons")
+		PhaseRecorder.stop(job, "beacons")
 		if beacons_created > 0 or beacons_skipped > 0 then
 			log(string.format("[Import] Beacon pre-placement: %d placed, %d failed (tick %d)", beacons_created, beacons_skipped, game.tick))
 		end
@@ -532,11 +537,11 @@ function ImportPipeline.process_batch(job, get_batch_size, should_show_progress)
 
 	-- Phase 3: Entity Creation Batch (track timing)
 	if not job.metrics.entities_started_tick and job.tiles_placed then
-		job.metrics.entities_started_tick = game.tick
+		PhaseRecorder.start(job, "entities")
 	end
 	local complete = EntityCreation.process_batch(job, get_batch_size, should_show_progress)
 	if complete and not job.metrics.entities_completed_tick then
-		job.metrics.entities_completed_tick = game.tick
+		PhaseRecorder.stop(job, "entities")
 		-- entities_created / entities_failed / entities_skipped are accumulated from the MEASURED
 		-- per-batch tallies in EntityCreation.process_batch. They used to be derived here instead, as
 		-- `entities_failed = job.total_entities - <size of entity_map>`, and that was wrong in a way
