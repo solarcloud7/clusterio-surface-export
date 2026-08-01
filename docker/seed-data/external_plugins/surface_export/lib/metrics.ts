@@ -40,7 +40,21 @@ const operationDurationSeconds = new lib.Histogram(
 	{ labels: ["operation", "result", "failure_stage"], buckets: [0.5, 1, 2, 5, 10, 20, 40, 60, 120, 300] },
 );
 
-/** Entities placed on the destination across successful imports/transfers (throughput). */
+/**
+ * Entities placed on the destination across successful imports/transfers (throughput).
+ *
+ * SERIES BREAK at plugin 0.10.211. This counter sums `importMetrics.entities_created`, and that
+ * field changed meaning in the same deploy: it used to be the size of `job.entity_map` (an
+ * ADDRESSABILITY index — entities needing later state/inventory restoration), and it is now the
+ * measured per-batch placement tally from entity_creation.lua.
+ *
+ * Ground items are placed without ever being mapped, so the new value is strictly HIGHER than the
+ * old one for the same platform — on the transfer that motivated the fix, by 106. The rate is
+ * therefore discontinuous at the deploy timestamp: a step up in this series is a definition change,
+ * not a throughput change. Do not compare across it without saying so. (The old field also
+ * populated `entities_failed` as `total_entities - entities_created`, which is why it read 106
+ * placement failures on a transfer that placed everything at exact item parity.)
+ */
 const entitiesTransferredTotal = new lib.Counter(
 	"surface_export_entities_transferred_total",
 	"Total entities created on the destination across successful Surface Export imports and transfers.",
