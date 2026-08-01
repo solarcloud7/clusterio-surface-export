@@ -26,7 +26,13 @@
 
 .PARAMETER RestartController
     After building, restart the controller so it re-reads dist/web/manifest.json. Required for
-    web changes to show up, because the controller caches each plugin's manifest at startup.
+    web changes to show up, because the controller caches each plugin's manifest at startup — and
+    a rebuild DELETES the old content-hashed chunks, so a controller left on the stale manifest
+    serves 404s and the plugin UI dies with "Error loading module", not merely stale content.
+
+    Calling THIS script directly does not check that for you: it restarts if you pass the switch and
+    not otherwise. `deploy.ps1 -Scope artifacts` reconciles automatically (Sync-ControllerWebBundle
+    in tools/shared/cluster-utils.ps1) and is the documented path for exactly this reason.
 
 .PARAMETER RestartHosts
     After building, restart both hosts so they reload dist/node/*.js. Required for TypeScript

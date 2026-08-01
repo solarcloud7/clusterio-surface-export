@@ -5,6 +5,7 @@
 #>
 
 $script:ControlConfig = "/clusterio/tokens/config-control.json"
+$script:RepoRoot = (Resolve-Path "$PSScriptRoot/../..").Path
 
 function ConvertTo-LuaLiteral {
     <#
@@ -105,6 +106,126 @@ function Get-TransactionLogStore {
         Write-Host ($json.Substring(0, [Math]::Min(400, $json.Length))) -ForegroundColor Gray
         throw
     }
+}
+
+<#
+.SYNOPSIS
+    Make the controller serve the web bundle that is actually on disk; restart it if it does not.
+
+.DESCRIPTION
+    The controller reads each plugin's dist/web/manifest.json ONCE, at startup, and thereafter
+    advertises the chunk filenames it found there. Webpack output is content-hashed and a rebuild
+    DELETES the old chunks. So rebuilding the web bundle against a running controller does not leave
+    the UI stale — it leaves it BROKEN: the controller keeps advertising a filename that no longer
+    exists, every client 404s on it, and the plugin renders as "Error loading module" in the plugin
+    table with "Failed to load plugin info for surface_export" in the browser console.
+
+    Measured on this cluster 2026-07-31: /api/plugins advertised surface_export.96c2ec22….js (404 —
+    the controller had been up since before the rebuild) while disk held surface_export.db7298f5….js
+    (200). Restarting the controller fixed it.
+
+    This MEASURES the invariant — what the controller serves vs what is on disk — instead of
+    inferring it from which build target ran. That matters twice over: a build can rewrite dist/web
+    even when you asked for `node` (on a cold deps volume build-plugin.ps1 runs `npm ci`, whose
+    `prepare` lifecycle runs the FULL build), and a mismatch left behind by some earlier build that
+    never restarted anything gets healed here too.
+
+.PARAMETER Force
+    Restart even when the bundles already agree — for controller-side dist/node changes, which this
+    function cannot detect (the controller loads its own node entrypoint at startup as well).
+#>
+function Sync-ControllerWebBundle {
+    param(
+        [switch]$Force,
+        [string]$Container = "surface-export-controller",
+        [int]$TimeoutSec = 90
+    )
+
+    $manifestPath = Join-Path $script:RepoRoot "docker/seed-data/external_plugins/surface_export/dist/web/manifest.json"
+    if (-not (Test-Path $manifestPath)) {
+        throw "No web manifest at $manifestPath — the build did not produce dist/web."
+    }
+    $onDisk = (Get-Content $manifestPath -Raw | ConvertFrom-Json).'surface_export.js'
+    if (-not $onDisk) {
+        throw "dist/web/manifest.json has no 'surface_export.js' entry — the web build output is malformed."
+    }
+
+    $running = docker ps --filter "name=$Container" --format "{{.Names}}"
+    if ($LASTEXITCODE -ne 0) { throw "docker ps failed (exit $LASTEXITCODE) while looking for $Container." }
+    if (-not $running) {
+        Write-Host "Controller is not running — nothing to reconcile (it will read the new manifest when it starts)." -ForegroundColor Yellow
+        return
+    }
+
+    $advertised = Get-ControllerAdvertisedWebBundle -Container $Container
+    if ($advertised -eq $onDisk -and -not $Force) {
+        Write-Host "Controller already serves the built bundle ($onDisk)." -ForegroundColor Green
+        return
+    }
+
+    if ($Force -and $advertised -eq $onDisk) {
+        Write-Host "Bundles agree; restarting anyway as requested (controller-side node code)." -ForegroundColor Cyan
+    } else {
+        Write-Host "Controller is serving a bundle that is no longer on disk — restarting it." -ForegroundColor Yellow
+        Write-Host "  serving: $advertised" -ForegroundColor Gray
+        Write-Host "  on disk: $onDisk" -ForegroundColor Gray
+    }
+
+    docker restart $Container | Out-Null
+    if ($LASTEXITCODE -ne 0) { throw "Controller restart failed (exit $LASTEXITCODE) — the new bundle is not being served." }
+
+    # Re-read the manifest every iteration instead of comparing against the snapshot taken above.
+    # The container's boot `npm install` runs the plugin's `prepare` script, which is a full
+    # `npm run build` — so starting the controller REWRITES dist/web before it serves anything, and
+    # the bundle we built a moment ago may no longer be the bundle on disk. Measured 2026-07-31: the
+    # isolated build produced surface_export.db7298f5….js (webpack 5.105.2, lockfile-pinned via
+    # `npm ci`) and the controller's boot build replaced it with surface_export.0dd67d36….js
+    # (webpack 5.108.4, resolved by `npm install`). Pinning the comparison to the pre-restart
+    # snapshot made this function fail on a cluster that was in fact perfectly consistent.
+    # The invariant that matters is the live one: what the controller serves == what is on disk now.
+    $deadline = (Get-Date).AddSeconds($TimeoutSec)
+    while ((Get-Date) -lt $deadline) {
+        # Deliberately quiet: bounded poll while the controller boots. $null just means "not up
+        # yet" and the loop retries; the throw below is the real gate, never a silent pass.
+        $advertised = Get-ControllerAdvertisedWebBundle -Container $Container
+        if ($advertised) {
+            # /api/plugins answering means the entrypoint (install + build) already finished, so the
+            # manifest is settled by the time we read it here.
+            $onDisk = (Get-Content $manifestPath -Raw | ConvertFrom-Json).'surface_export.js'
+            if ($advertised -eq $onDisk) {
+                Write-Host "Controller restarted and is serving $onDisk." -ForegroundColor Green
+                return
+            }
+        }
+        Start-Sleep -Seconds 3
+    }
+    throw ("Controller did not serve the bundle on disk within ${TimeoutSec}s. " +
+        "On disk $onDisk, still advertising '$advertised'.")
+}
+
+<#
+.SYNOPSIS
+    The surface_export web chunk the controller is currently advertising, or $null if unavailable.
+    Helper for Sync-ControllerWebBundle; /api/plugins needs no auth.
+#>
+function Get-ControllerAdvertisedWebBundle {
+    param([string]$Container = "surface-export-controller")
+
+    # Deliberately NO 2>&1 — stderr must stay OUT of the JSON (see Get-TransactionLogStore: merging
+    # the streams is how a Docker warning ends up interleaved into a payload we then fail to parse).
+    $raw = docker exec $Container sh -c 'curl -s --max-time 5 http://localhost:8080/api/plugins'
+    if ($LASTEXITCODE -ne 0) { return $null }
+
+    $json = ($raw -join "`n").Trim()
+    if ([string]::IsNullOrWhiteSpace($json)) { return $null }
+
+    try {
+        $plugins = $json | ConvertFrom-Json
+    } catch {
+        Write-Host "Could not parse /api/plugins from ${Container}: $($_.Exception.Message)" -ForegroundColor Yellow
+        return $null
+    }
+    return ($plugins | Where-Object { $_.name -eq 'surface_export' }).web.main
 }
 
 function Send-RCON {

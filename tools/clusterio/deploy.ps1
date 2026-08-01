@@ -11,8 +11,9 @@
     The scopes form a ladder. Each does everything the one above it does, plus more:
 
       -Scope artifacts   Build dist/node + dist/web only. Nothing is stopped, no save is touched.
-                         Use for TypeScript or web changes; add -RestartHosts / -RestartController
-                         to make the running cluster pick them up.
+                         Use for TypeScript or web changes; add -RestartHosts to make the running
+                         hosts pick up dist/node. The CONTROLLER is reconciled automatically — see
+                         -RestartController.
 
       -Scope lua         FAST Lua redeploy: SKIPS the container build and resets the saves so
                          Clusterio re-patches the Lua from source. Refuses (loudly) if any TS/web
@@ -47,7 +48,13 @@
     -Scope artifacts only: drop the cached deps volume and run a clean npm ci.
 
 .PARAMETER RestartController
-    -Scope artifacts only: restart the controller afterwards (needed for web changes).
+    -Scope artifacts only, and rarely needed: force a controller restart even when it is already
+    serving the built web bundle. You do NOT need this for web changes — after every artifacts build
+    this script compares what the controller advertises against dist/web/manifest.json and restarts
+    it when they differ. That is not a nicety: webpack deletes the old content-hashed chunks, so a
+    controller left holding the previous manifest serves 404s and the plugin's UI dies with "Error
+    loading module". Pass this only when CONTROLLER-side dist/node changed, which no manifest
+    comparison can see. The other scopes restart the controller as part of their own sequence.
 
 .PARAMETER RestartHosts
     -Scope artifacts only: restart both hosts afterwards (needed for TypeScript changes).
@@ -99,14 +106,24 @@ if ($rejected.Count -gt 0) {
 }
 
 $here = $PSScriptRoot
+. (Join-Path $here '../shared/cluster-utils.ps1')
 
 switch ($Scope) {
     'artifacts' {
         $childArgs = @($Target)
         if ($Fresh) { $childArgs += '-Fresh' }
-        if ($RestartController) { $childArgs += '-RestartController' }
         if ($RestartHosts) { $childArgs += '-RestartHosts' }
+        # -RestartController is deliberately NOT forwarded to build-plugin.ps1. The controller
+        # restart is decided below by MEASURING whether it still serves the bundle on disk, so an
+        # explicit request and a mandatory reconcile collapse into one restart instead of two.
         & (Join-Path $here 'build-plugin.ps1') @childArgs
+
+        # The only scope that could leave the controller serving a deleted chunk. lua/plugin restart
+        # it inside patch-and-reset.ps1; cluster gets a fresh one from compose up. Doing this here
+        # rather than inside build-plugin.ps1 is deliberate: patch-and-reset.ps1 calls that script
+        # mid-sequence and then issues clusterioctl commands, which a surprise controller restart
+        # would break.
+        Sync-ControllerWebBundle -Force:$RestartController
     }
     'lua' {
         & (Join-Path $here 'patch-and-reset.ps1') -LuaOnly
