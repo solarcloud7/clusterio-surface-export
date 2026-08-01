@@ -263,8 +263,10 @@ opt-in fork override); all environment config in gitignored `.env`.
 - **Clean source tree**: Only `.ts` and `.tsx` files in source directories; all generated artifacts in `dist/`
 - **Deploy integration**: `deploy.ps1 -Scope cluster` builds via `build-plugin.ps1` (isolated container) before Docker compose up
 - **Git hygiene**: `dist/` is gitignored; fresh builds ensure consistency
-- **Tests**: `npm test` (gated in CI) builds `dist/node` then runs **17 test files** under built-in
-  `node --test` (zero deps) — not just the wire contract. They include transfer-orchestrator rollback,
+- **Tests**: `npm test` (gated in CI) builds `dist/node` then runs **every `test/*.test.cjs`** under
+  built-in `node --test` (zero deps; the glob is the selection — a new test file is picked up with no
+  edit, which is how `module-version-stamp.test.cjs` came to run nowhere while two tools files cited it
+  as gating) — not just the wire contract. They include transfer-orchestrator rollback,
   transfer-lock state, canonical identity, destination-hold, persistence-read-failure, census-meter,
   verdict-aware fidelity and the guard self-tests, so a regression in any of those fires here.
   The message round-trip harness (`test/messages.roundtrip.test.cjs`) self-discovers every
