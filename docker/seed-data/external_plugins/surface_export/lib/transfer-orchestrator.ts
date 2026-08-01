@@ -156,6 +156,23 @@ export class TransferOrchestrator {
 		});
 		operation.payloadMetrics = payloadMetrics;
 		operation.exportMetrics = mergedExportMetrics;
+
+		// EXPORT PHASE. The transaction log's waterfall used to begin at "transmission", so the
+		// entire source-side export was missing from it — the one span whose stall is significant
+		// enough to carry its own Prometheus histogram (surface_export_export_stall_seconds).
+		// startPhase/endPhase cannot bracket it: they look the transfer up in activeTransfers, and
+		// the export has to finish before this record can be built. The duration is already measured,
+		// so record it as an ALREADY-COMPLETE phase rather than leaving a hole.
+		// controllerExportPrepTotalMs is the orchestrator-side total (request + source lock + wait
+		// for the controller store); the in-game async span stays available as instanceAsyncExportMs.
+		const exportPrepMs = mergedExportMetrics?.controllerExportPrepTotalMs;
+		if (typeof exportPrepMs === "number" && Number.isFinite(exportPrepMs) && exportPrepMs >= 0) {
+			const exportEndMs = Date.now();
+			operation.phases = {
+				...(operation.phases ?? {}),
+				export: { startMs: exportEndMs - exportPrepMs, endMs: exportEndMs, durationMs: exportPrepMs },
+			};
+		}
 		operation.sourceVerification = { itemCounts, fluidCounts };
 		this.plugin.activeTransfers.set(transferId, operation);
 

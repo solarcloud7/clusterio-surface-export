@@ -283,6 +283,7 @@ export default function TransactionLogsTab({ plugin, state }: { plugin: SurfaceE
 	const failureStage = validation ? getProp(validation, "failedStage", null) as string | null : null;
 	const failureBlackBox = validation ? getProp(validation, "failureBlackBox", null) as JsonObject | null : null;
 	const failureBlackBoxFile = failureBlackBox ? String(getProp(failureBlackBox, "file", "")) : "";
+	const latchRearmScheduled = validation ? Number(getProp(validation, "latchRearmScheduled", 0)) : 0;
 
 	const expectedItems = (validation ? getProp(validation, "expectedItemCounts", null) as Record<string, number> | null : null)
 		|| (detailedSummary?.sourceVerification ? getProp(detailedSummary.sourceVerification as JsonObject, "itemCounts", null) as Record<string, number> | null : null)
@@ -292,8 +293,6 @@ export default function TransactionLogsTab({ plugin, state }: { plugin: SurfaceE
 		|| (detailedSummary?.sourceVerification ? getProp(detailedSummary.sourceVerification as JsonObject, "fluidCounts", null) as Record<string, number> | null : null)
 		|| {};
 	const actualFluids = (validation ? getProp(validation, "actualFluidCounts", {}) as Record<string, number> : {});
-	const engineOwnedFluids = (validation ? getProp(validation, "engineOwnedFluids", {}) as Record<string, number> : {});
-	const engineOwnedTotal = Object.values(engineOwnedFluids).reduce((sum, amount) => sum + Number(amount || 0), 0);
 
 	const itemRows = useMemo(() => buildExpectedActualRows(expectedItems, actualItems), [expectedItems, actualItems]);
 	const fluidReconciliation = validation ? getProp(validation, "fluidReconciliation", null) as JsonObject | null : null;
@@ -308,15 +307,6 @@ export default function TransactionLogsTab({ plugin, state }: { plugin: SurfaceE
 		),
 		[expectedFluids, actualFluids, highTempThreshold, highTempAggregates],
 	);
-	const engineOwnedFluidAlert = engineOwnedTotal > 0 ? (
-		<Tooltip title={Object.entries(engineOwnedFluids).map(([name, amount]) => `${name}: ${formatNumeric(Number(amount), 3)}`).join("\n")}>
-			<Alert
-				type="info"
-				showIcon
-				message={`${formatNumeric(engineOwnedTotal, 3)} engine-owned fluid excluded symmetrically from transfer accounting`}
-			/>
-		</Tooltip>
-	) : null;
 
 	type InventoryOverflowEntity = {
 		name?: string;
@@ -587,6 +577,11 @@ export default function TransactionLogsTab({ plugin, state }: { plugin: SurfaceE
 									{detailedSummary.error ? <span>{String(detailedSummary.error)}</span> : null}
 									{selectedResult === "FAILED" && failureStage ? <span>{`Failure stage: ${failureStage}`}</span> : null}
 									{failureBlackBoxFile ? <span>{`Failure evidence: ${failureBlackBoxFile}`}</span> : null}
+									{latchRearmScheduled > 0 ? (
+										<Tooltip title={"Queued after activation, outside the gate. Per-decider outcomes finalise later into storage.latch_rearm_results in-game and are not carried back to this log."}>
+											<span>{`Circuit latch re-arm: ${latchRearmScheduled} decider(s) scheduled`}</span>
+										</Tooltip>
+									) : null}
 								</Space>
 							)}
 						/>
@@ -679,7 +674,6 @@ export default function TransactionLogsTab({ plugin, state }: { plugin: SurfaceE
 												<Empty description="No item details available" />
 											)}
 											{inventoryOverflowAlert}
-											{engineOwnedFluidAlert}
 											{forceBonusAlert}
 										</Space>
 									) : (

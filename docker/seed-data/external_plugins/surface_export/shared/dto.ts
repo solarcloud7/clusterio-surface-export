@@ -187,8 +187,6 @@ export interface ValidationResult {
 	actualItemCounts?: Record<string, number>;
 	expectedFluidCounts?: Record<string, number>;
 	actualFluidCounts?: Record<string, number>;
-	/** Informational source amounts excluded symmetrically because the engine owns their output boxes. */
-	engineOwnedFluids?: Record<string, number>;
 	entityTypeBreakdown?: Record<string, number>;
 	failedEntityLosses?: { items: Record<string, number>; fluids: Record<string, number> };
 	highTempAggregates?: Record<string, { expectedEnergy: number; actualEnergy: number; reconciled: boolean }>;
@@ -220,6 +218,16 @@ export interface ValidationResult {
 		fluidReconciliation?: Record<string, unknown>;
 	};
 	failureBlackBox?: { file: string; tick: number };
+	/**
+	 * How many self-feedback deciders were SCHEDULED for post-activation latch re-arm
+	 * (import-completion.lua:733). Non-gating: set after the verdict, never an input to it.
+	 *
+	 * This is the count queued, NOT the result. The re-arm pass runs over later ticks and finalises
+	 * into `storage.latch_rearm_results` (latch_rearm.lua:228) without emitting anything, so the
+	 * per-decider rearmed/cleared/failed outcome never reaches the controller — by the time it
+	 * exists, this transfer's log has already been persisted and marked terminal.
+	 */
+	latchRearmScheduled?: number;
 	cleanup_failed?: boolean;
 	cleanup_error?: string;
 	[key: string]: unknown;

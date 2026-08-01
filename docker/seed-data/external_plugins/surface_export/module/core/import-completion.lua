@@ -184,9 +184,11 @@ function ImportCompletion.run_phase1(job)
 
 	-- Step 0: Restore hub inventories (DEFERRED from platform_hub_mapping)
 	-- The hub's inventory size scales with cargo bays, which are now placed.
+	job.metrics.hub_started_tick = game.tick
 	PhaseProfiler.start(job.job_id, "hub_restore")
 	PlatformHubMapping.restore_hub_inventories(job)
 	PhaseProfiler.stop(job.job_id, "hub_restore")
+	job.metrics.hub_completed_tick = game.tick
 
 	-- Step 0a: Restore belt items synchronously
 	-- CRITICAL: Belts are always active and cannot be deactivated.
@@ -367,7 +369,15 @@ function ImportCompletion.run_phase2(job)
 	local frozen_states = job.frozen_states or {}
 	local _dbg_cfg = storage.surface_export_config
 	local defer_clone = _dbg_cfg and _dbg_cfg.debug_mode and _dbg_cfg.test_defer_clone_activation
+	-- Held-item completion (import ordering step 5): the single owner of held seating. It had no
+	-- instrument of any kind — no profiler bracket, no tick marks — so it was invisible in the
+	-- waterfall AND in the dashboard, sitting in dead space between inventories_completed_tick and
+	-- fluids_started_tick.
+	job.metrics.held_items_started_tick = game.tick
+	PhaseProfiler.start(job.job_id, "held_items")
 	ActiveStateRestoration.restore_held_items_only(entities_to_create, entity_map)
+	PhaseProfiler.stop(job.job_id, "held_items")
+	job.metrics.held_items_completed_tick = game.tick
 	job.metrics.fluids_started_tick = game.tick
 	PhaseProfiler.start(job.job_id, "fluids")
 	local fluids_result = FluidRestoration.restore(entities_to_create, entity_map,
@@ -383,9 +393,11 @@ function ImportCompletion.run_phase2(job)
 		-- TEST-ONLY: fluids are restored, but the clone remains deactivated for a pristine census.
 		log("[Import][TEST] test_defer_clone_activation set — clone left DEACTIVATED with frozen fluids restored")
 	else
+		job.metrics.activation_started_tick = game.tick
 		PhaseProfiler.start(job.job_id, "activation")
 		ActiveStateRestoration.restore(entities_to_create, entity_map, frozen_states)
 		PhaseProfiler.stop(job.job_id, "activation")
+		job.metrics.activation_completed_tick = game.tick
 	end
 
 	log("[Import] Post-processing complete")
@@ -721,9 +733,11 @@ function ImportCompletion.run_phase2(job)
 				job.target_platform.paused = false
 				log(string.format("[Validation] Platform %s UNPAUSED after successful validation", job.platform_name))
 			end
+			job.metrics.activation_started_tick = game.tick
 			PhaseProfiler.start(job.job_id, "activation")
 			ActiveStateRestoration.restore(job.entities_to_create or {}, job.entity_map or {}, job.frozen_states or {})
 			PhaseProfiler.stop(job.job_id, "activation")
+			job.metrics.activation_completed_tick = game.tick
 
 			-- LATCH RE-ARM (post-activation, non-gating): SELF-FEEDBACK deciders whose captured
 			-- output register was non-zero get a deferred preflight->force->restore->verify
@@ -736,9 +750,11 @@ function ImportCompletion.run_phase2(job)
 			end
 
 			if result.totalExpectedItems then
+				job.metrics.loss_analysis_started_tick = game.tick
 				PhaseProfiler.start(job.job_id, "loss_analysis")
 				LossAnalysis.run(job.target_surface, entities_to_create, result, fluids_result and fluids_result.segment_temps)
 				PhaseProfiler.stop(job.job_id, "loss_analysis")
+				job.metrics.loss_analysis_completed_tick = game.tick
 				local post_counts = result.postActivationReport and result.postActivationReport.actualFluidCounts or {}
 				local post_diff = build_count_diff(
 					aggregate_fluid_counts_by_name(result.actualFluidCounts),
@@ -846,11 +862,20 @@ function ImportCompletion.run_phase2(job)
 		add_span("queue", job.started_tick, m.tiles_started_tick)
 		add_span("tiles", m.tiles_started_tick, m.tiles_completed_tick)
 		add_span("entities", m.entities_started_tick, m.entities_completed_tick)
+		add_span("hub", m.hub_started_tick, m.hub_completed_tick)
 		add_span("belts", m.belts_started_tick, m.belts_completed_tick)
 		add_span("state", m.state_started_tick, m.state_completed_tick)
 		add_span("inventories", m.inventories_started_tick, m.inventories_completed_tick)
+		add_span("held_items", m.held_items_started_tick, m.held_items_completed_tick)
 		add_span("fluids", m.fluids_started_tick, m.fluids_completed_tick)
 		add_span("validation", m.validation_started_tick, m.validation_done_tick)
+		-- Post-verdict, and therefore AFTER the validation span ends. Without these the waterfall
+		-- stopped at the gate while the job kept working, so every tick between validation_done_tick
+		-- and validation_completed_tick was unaccounted for. Both run on exactly one path per job
+		-- (activation before the gate for non-transfer imports, after it for transfers), so the
+		-- absolute offsets place them correctly either way.
+		add_span("activation", m.activation_started_tick, m.activation_completed_tick)
+		add_span("loss_analysis", m.loss_analysis_started_tick, m.loss_analysis_completed_tick)
 
 		emit_debug_import_result(job, validation_result, duration_seconds)
 
@@ -867,7 +892,12 @@ function ImportCompletion.run_phase2(job)
 				fluids_ticks = (job.metrics.fluids_completed_tick or 0) - (job.metrics.fluids_started_tick or 0),
 				belts_ticks = (job.metrics.belts_completed_tick or 0) - (job.metrics.belts_started_tick or 0),
 				state_ticks = (job.metrics.state_completed_tick or 0) - (job.metrics.state_started_tick or 0),
-				validation_ticks = (job.metrics.validation_completed_tick or 0) - (job.metrics.validation_started_tick or 0),
+				-- The GATE window only. This used to subtract from validation_completed_tick, which is
+				-- set at the very end of the completion routine — so a field named validation_ticks
+				-- silently also counted activation, latch-rearm scheduling and loss analysis, and
+				-- disagreed with the "validation" span in phase_spans right beside it. Two numbers
+				-- with one name meaning different windows. The tail now has its own spans.
+				validation_ticks = (job.metrics.validation_done_tick or 0) - (job.metrics.validation_started_tick or 0),
 				total_ticks = duration_ticks,
 				-- Counts
 				tiles_placed = job.metrics.tiles_placed or 0,
