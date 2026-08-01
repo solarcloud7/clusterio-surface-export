@@ -146,7 +146,24 @@ async function main() {
 
 	const ids = L.instanceIds();
 	try {
-		await L.loadGoldenPair(manifest, "load");
+		const counters = await L.loadGoldenPair(manifest, "load");
+
+		// Canonical transfer-ID collision preflight. A colliding ID is refused correctly and named
+		// clearly, but ~90 s in — after the boards are built. Report it here instead, with the remedy.
+		// BOTH legs: the forward transfer exports from host 1, the refusal leg from host 2.
+		const collision = L.checkTransferIdCollisions({
+			candidates: [
+				...L.predictCanonicalIds({ instanceId: ids[1], counter: counters[1], platformName }),
+				...L.predictCanonicalIds({ instanceId: ids[2], counter: counters[2], platformName }),
+			],
+			summaries: L.fetchTransferSummaries({ limit: 200 }),
+		});
+		console.log(collision.message);
+		// Only a live activeTransfers hit is fatal. A persisted-only record is history the retry guard
+		// never reads; an unknown-provenance hit is unprovable, and failing the run on an unprovable
+		// signal is the same error as ignoring a provable one. A diagnostic never fails the suite.
+		if (collision.fatal) throw new Error(collision.message);
+
 		for (const host of [1, 2]) console.log(`roster: ${pushRoster(L.HOSTS[host].instance)}`);
 
 		// A. The board on the live source world.

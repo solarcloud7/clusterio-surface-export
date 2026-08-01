@@ -156,17 +156,37 @@ export class TransactionLogger {
 		};
 	}
 
-	/** Merge active (in-memory) and persisted (on-disk) transfers into one list, active taking priority. */
+	/**
+	 * Merge active (in-memory) and persisted (on-disk) transfers into one list, active taking priority.
+	 *
+	 * Each summary is stamped with `registrySource`, and that stamp is load-bearing: this merge is a
+	 * strict SUPERSET of what the retry guard actually consults. `transferPlatform` refuses a
+	 * same-ID retry based on `activeTransfers` ALONE (transfer-orchestrator.ts:89-118), while
+	 * `persistedTransactionLogs` is reloaded from disk at every controller boot
+	 * (loadTransactionLogs). So the advertised remedy for a colliding ID — restart the controller —
+	 * clears the half that refuses and RELOADS the half that does not.
+	 *
+	 * Without the stamp the two branches emit identical key sets, so a caller asking "would this ID
+	 * be refused?" cannot tell a live blocker from a historical record, and a preflight built on it
+	 * would keep reporting a collision forever after the remedy was correctly applied. Optional on
+	 * the model so an un-redeployed controller degrades to "provenance unknown" rather than lying.
+	 */
 	getTransferSummaries(limit = 50) {
 		const byId = new Map();
 
 		// Active transfers are inserted first so they win over persisted duplicates
 		for (const [transferId, transfer] of this.plugin.activeTransfers) {
-			byId.set(transferId, this.buildTransferSummary(
-				transferId,
-				transfer,
-				this.getLastEventTimestamp(transferId),
-			));
+			byId.set(transferId, {
+				...this.buildTransferSummary(
+					transferId,
+					transfer,
+					this.getLastEventTimestamp(transferId),
+				),
+				// Stamped HERE, not inside buildTransferSummary: that helper also builds the payload for
+				// SurfaceExportTransferUpdateEvent, where an entry is active by construction and the
+				// field would be noise on the wire.
+				registrySource: "active" as const,
+			});
 		}
 
 		for (const persistedLog of this.plugin.persistedTransactionLogs) {
@@ -191,6 +211,9 @@ export class TransactionLogger {
 					failedAt: transferInfo.failedAt || null,
 					error: transferInfo.error || null,
 					lastEventAt: lastEvent?.timestampMs || null,
+					// On disk only. The retry guard never reads this half, so an ID that appears ONLY
+					// here will not be refused — see the method doc.
+					registrySource: "persisted" as const,
 				});
 			}
 		}

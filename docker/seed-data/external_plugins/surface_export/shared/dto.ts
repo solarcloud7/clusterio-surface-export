@@ -50,6 +50,23 @@ export interface TransferSummaryModel {
 	failedAt: number | null;
 	error: string | null;
 	lastEventAt: number | null;
+	/**
+	 * Which registry this summary came out of — stamped only by `getTransferSummaries`, which merges
+	 * two stores that are NOT equivalent:
+	 *
+	 *   "active"     the controller's in-memory `activeTransfers`. This is the ONLY store the retry
+	 *                guard consults (transfer-orchestrator.ts:89-118), so a settled entry here WILL
+	 *                refuse a same-ID retry. Cleared by a controller restart. Pruned above 100
+	 *                entries, so its absence proves nothing.
+	 *   "persisted"  the on-disk transaction log, reloaded at every controller boot. The retry guard
+	 *                never reads it, so an ID appearing only here is history, not a blocker — and a
+	 *                controller restart will NOT make it go away.
+	 *
+	 * Optional because an un-redeployed controller omits it: treat `undefined` as "provenance
+	 * unknown", never as either value. Absent from `buildTransferSummary`, so it does not ride on
+	 * SurfaceExportTransferUpdateEvent where every entry is active by construction.
+	 */
+	registrySource?: "active" | "persisted";
 }
 export interface StoredExportSummaryModel {
 	exportId: string;

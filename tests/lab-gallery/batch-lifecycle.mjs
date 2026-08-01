@@ -150,6 +150,141 @@ export function bumpExportIdCounter(host, floor = exportIdFloor()) {
 	return bumped.counter;
 }
 
+// --- Canonical transfer-ID collision preflight ---------------------------------------------------
+//
+// A colliding ID is refused correctly and reported clearly (waitForImportResult names the refusal),
+// but it is reported ~90 s into the run, after the boards have already been built. These helpers move
+// the report to the front — before any physical work — with the remedy attached.
+//
+// The ID format is DUPLICATED here rather than imported. Importing it would mean reaching into
+// dist/node, which is gitignored and not present in the plugin container where test/*.test.cjs runs;
+// id-format-pin.test.mjs asserts the two producers still emit these exact templates instead.
+
+/** Mirrors export-pipeline.lua:184 — `platform.name:gsub("[^%w%-]", "-")`. */
+export function sanitizePlatformName(name) {
+	return String(name).replace(/[^0-9A-Za-z-]/g, "-");
+}
+
+/** Mirrors export-pipeline.lua:189 — `string.format("%03d_%s", job_counter, safe_name)`. */
+export function makeExportJobId(counter, platformName) {
+	return `${String(counter).padStart(3, "0")}_${sanitizePlatformName(platformName)}`;
+}
+
+/** Mirrors shared/utils.ts makeCanonicalTransferId — `${sourceInstanceId}:${jobId}`. */
+export function canonicalTransferId(instanceId, jobId) {
+	return `${instanceId}:${jobId}`;
+}
+
+/**
+ * The IDs a run is about to generate from `counter`, as a WINDOW rather than a point.
+ *
+ * The exact draw is not predictable: the counter is shared with import jobs
+ * (import-pipeline.lua:44-45), so anything queued between the bump and the export shifts it. A window
+ * that is too wide only risks a false positive, which the message below already handles honestly; a
+ * point that is off by one misses the collision entirely.
+ */
+export function predictCanonicalIds({ instanceId, counter, platformName, count = 10 }) {
+	const ids = [];
+	for (let i = 1; i <= count; i++) {
+		ids.push(canonicalTransferId(instanceId, makeExportJobId(counter + i, platformName)));
+	}
+	return ids;
+}
+
+/**
+ * Ask the controller which transfer records it holds. Returns null — never throws — when the query
+ * is unavailable, because a DIAGNOSTIC must not be able to fail the run it is diagnosing.
+ */
+export function fetchTransferSummaries({ limit = 200 } = {}) {
+	let out;
+	try {
+		out = ctl("surface-export", "list-transfers", String(limit));
+	} catch (error) {
+		// Surfaced, not swallowed: an unavailable query is a legitimate degradation (an older
+		// controller build, or a control token without surface_export.logs.view), but it must be
+		// visible so "no collision reported" is never mistaken for "checked and clear".
+		console.error(`preflight: transfer-registry query unavailable — ${error.message}`);
+		return null;
+	}
+	// Take the last JSON-parsable line, not blindly the last line: --log-level error should keep
+	// stdout clean, but this removes the dependency on that (the runBoard convention).
+	const parseFailures = [];
+	const lines = String(out).split(/\r?\n/).map(line => line.trim()).filter(Boolean).reverse();
+	for (const line of lines) {
+		try {
+			const parsed = JSON.parse(line);
+			if (Array.isArray(parsed)) return parsed;
+			parseFailures.push(`parsed but not an array: ${line.slice(0, 80)}`);
+		} catch (parseError) {
+			parseFailures.push(`${line.slice(0, 80)} -> ${parseError.message}`);
+		}
+	}
+	console.error("preflight: transfer-registry query returned no JSON array; tried "
+		+ `${lines.length} line(s): ${parseFailures.join(" | ") || "(no output)"}`);
+	return null;
+}
+
+/**
+ * Adjudicate predicted IDs against the controller's records. PURE — no I/O, so the decision table
+ * below is unit-testable without a cluster.
+ *
+ * The certainty here is genuinely limited, and the messages must not overstate it:
+ *   - `limit` windows the query, so an older settled record is invisible
+ *   - activeTransfers is pruned above 100, so an evicted ID neither shows up NOR refuses
+ * A CLEAR result therefore asserts nothing. Only a HIT asserts, and only `registrySource: "active"`
+ * means the run will actually be refused — a persisted-only record is history the retry guard never
+ * reads, and a controller restart would not remove it anyway.
+ */
+export function checkTransferIdCollisions({ candidates, summaries, limit = 200 }) {
+	const scope = `${candidates.length} predicted ID(s), ${candidates[0]} .. ${candidates.at(-1)}`;
+	const caveat = `BEST-EFFORT: the query is windowed at ${limit} records and activeTransfers is `
+		+ "pruned above 100, so a clear result does not prove the IDs are free.";
+
+	if (summaries === null) {
+		return {
+			status: "skipped", fatal: false, hits: [],
+			message: "preflight SKIPPED (not passed): could not query the controller transfer registry. "
+				+ "Proceeding — a settled-ID collision would surface later as a refused transfer.",
+		};
+	}
+
+	const byId = new Map(summaries.map(summary => [summary.transferId, summary]));
+	const hits = candidates.filter(id => byId.has(id)).map(id => byId.get(id));
+	if (!hits.length) {
+		return { status: "clear", fatal: false, hits: [], message: `preflight: ${scope} — none present. ${caveat}` };
+	}
+
+	const describe = hit => `${hit.transferId} (status=${hit.status}, registry=${hit.registrySource ?? "unknown"})`;
+	const active = hits.filter(hit => hit.registrySource === "active");
+	if (active.length) {
+		return {
+			status: "collision", fatal: true, hits,
+			message: `preflight COLLISION: ${active.map(describe).join(", ")} already settled in the `
+				+ "controller's IN-MEMORY activeTransfers — the store the retry guard actually consults. "
+				+ "This run WILL be refused. Remedy: docker restart surface-export-controller (that clears "
+				+ "activeTransfers), then re-run. The persisted transaction log is reloaded on restart but "
+				+ "is NOT consulted by the guard, so it does not need clearing.",
+		};
+	}
+
+	const unknown = hits.filter(hit => hit.registrySource === undefined);
+	if (unknown.length) {
+		return {
+			status: "unknown", fatal: false, hits,
+			message: `preflight POSSIBLE COLLISION (provenance unknown — this controller build predates `
+				+ `registrySource): ${unknown.map(describe).join(", ")}. It may or may not be refused. `
+				+ "Remedy if it is: docker restart surface-export-controller, then re-run; if it persists "
+				+ "after a restart the record is historical only. Not failing on an unprovable signal.",
+		};
+	}
+
+	return {
+		status: "historical", fatal: false, hits,
+		message: `preflight NOTE (no action needed): ${hits.map(describe).join(", ")} exist only in the `
+			+ "PERSISTED transaction log, which the retry guard never reads. They will not refuse this run.",
+	};
+}
+
 // --- Lease / preflight ---------------------------------------------------------------------------
 
 // The exclusive-lease reading. Refuses (never repairs) hostile state: connected players, a paused
@@ -435,6 +570,11 @@ export function createBatchLifecycle({ goldenSourceSave, goldenDestSave, markerP
 		// generic primitives
 		sleep, lastLine, docker, ctl, rcon, lua, instanceIds, instancePath,
 		preflightState, assertLeaseClean, loadedSave, waitReady, assignSave, readContainerJson,
+		// export-ID uniquifier + canonical-ID collision preflight (run-shape-agnostic; the CALLER
+		// decides how many transfers it makes and from which host, so it composes these itself)
+		exportIdFloor, bumpExportIdCounter,
+		sanitizePlatformName, makeExportJobId, canonicalTransferId,
+		predictCanonicalIds, fetchTransferSummaries, checkTransferIdCollisions,
 		// config-bound lifecycle
 		loadGoldenPair, dropMarker, filesNewerThanMarker, waitForImportResult, restoreLivePair,
 	};

@@ -79,6 +79,14 @@ Registered under `clusterioctl surface-export` in `control.ts`:
 # List stored exports on the controller
 npx clusterioctl surface-export list
 
+# List recent transfer RECORDS as JSON (machine-readable; used by the gallery suite's
+# canonical-ID collision preflight). Best-effort: `limit` windows the result, and the
+# in-memory registry is pruned above 100 entries, so a CLEAR answer proves nothing —
+# only a hit does. Each record carries `registrySource`: "active" means the retry guard
+# will refuse that ID (a controller restart clears it); "persisted" means the guard never
+# reads it, so it is history and a restart will NOT remove it.
+npx clusterioctl surface-export list-transfers [limit]   # 1-500, default 50
+
 # Download a stored export payload as JSON
 npx clusterioctl surface-export get-export <exportId> [outputFile]
 
