@@ -163,14 +163,23 @@ export class TransferOrchestrator {
 		// startPhase/endPhase cannot bracket it: they look the transfer up in activeTransfers, and
 		// the export has to finish before this record can be built. The duration is already measured,
 		// so record it as an ALREADY-COMPLETE phase rather than leaving a hole.
-		// controllerExportPrepTotalMs is the orchestrator-side total (request + source lock + wait
-		// for the controller store); the in-game async span stays available as instanceAsyncExportMs.
-		const exportPrepMs = mergedExportMetrics?.controllerExportPrepTotalMs;
-		if (typeof exportPrepMs === "number" && Number.isFinite(exportPrepMs) && exportPrepMs >= 0) {
+		// Which duration: controllerExportPrepTotalMs is the fuller window (request + source lock +
+		// wait for the controller store), but it is only populated when the CONTROLLER drove the
+		// export. A transfer kicked off at the source instance — the RCON path, and what
+		// transfer-platform.ps1 does — arrives with only the instance-side timings, so preferring it
+		// unconditionally left the phase absent on the common path. Measured on a live 1to2 transfer:
+		// exportMetrics carried instanceAsyncExportMs=166 and no controllerExportPrepTotalMs at all.
+		// Fall back to the in-game async span, which is the source-side cost that actually matters
+		// (it is the tick-stall window surface_export_export_stall_seconds tracks).
+		const exportMs = [
+			mergedExportMetrics?.controllerExportPrepTotalMs,
+			mergedExportMetrics?.instanceAsyncExportMs,
+		].find(value => typeof value === "number" && Number.isFinite(value) && value >= 0);
+		if (exportMs !== undefined) {
 			const exportEndMs = Date.now();
 			operation.phases = {
 				...(operation.phases ?? {}),
-				export: { startMs: exportEndMs - exportPrepMs, endMs: exportEndMs, durationMs: exportPrepMs },
+				export: { startMs: exportEndMs - exportMs, endMs: exportEndMs, durationMs: exportMs },
 			};
 		}
 		operation.sourceVerification = { itemCounts, fluidCounts };
