@@ -21,7 +21,9 @@
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
-import { CONTROLLER, CTL_CONFIG, docker, lastLine, lua, rcon, sleep } from "./batch-lifecycle.mjs";
+import {
+	CONTROLLER, CTL_CONFIG, bumpExportIdCounter, docker, lastLine, lua, rcon, sleep,
+} from "./batch-lifecycle.mjs";
 
 const GALLERY_INSTANCE = "surface-export-lab-gallery";
 const GALLERY_INSTANCE_ID = 907164846;
@@ -225,12 +227,10 @@ async function main() {
 		ctl("instance", "start", HOST1_INSTANCE, "--save", DELIVER_SAVE);
 		await waitHost1Ready();
 
-		// Export-ID uniquifier (ONCE — jobs self-increment from the bumped base over the whole wave).
-		const offset = 500 + (Date.now() % 100_000);
-		const bumped = lua(1, `storage.async_job_id_counter=(storage.async_job_id_counter or 0)+${offset};` +
-			`return {success=true,counter=storage.async_job_id_counter}`);
-		if (bumped.success === false) throw new Error(`export-ID uniquifier failed: ${bumped.error}`);
-		summary.counterBumpedTo = bumped.counter;
+		// Export-ID uniquifier (ONCE — jobs self-increment from the raised base over the whole wave).
+		// This was `500 + (Date.now() % 100_000)`, which aliased every 100 SECONDS — the worse of the
+		// two copies. Shares batch-lifecycle's monotone floor now; see exportIdFloor for the measurement.
+		summary.counterBumpedTo = bumpExportIdCounter(1);
 
 		// The delivery set = golden-source platforms MINUS what the gallery already holds.
 		const sourcePlatforms = platformsOnHost1();
