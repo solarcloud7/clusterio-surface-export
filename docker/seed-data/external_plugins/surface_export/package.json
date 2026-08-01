@@ -6,8 +6,10 @@
   "types": "dist/node/index.d.ts",
   "scripts": {
     "build:node": "tsc -p tsconfig.node.json",
+    "postbuild:node": "node scripts/prepare-build.mjs --stamp node",
     "build:browser": "tsc -p tsconfig.browser.json --noEmit",
     "build:web": "webpack-cli --mode production",
+    "postbuild:web": "node scripts/prepare-build.mjs --stamp web",
     "build": "npm run build:node && npm run build:browser && npm run build:web",
     "prepare": "node scripts/prepare-build.mjs",
     "lint": "npm run lint:js && npm run lint:lua && npm run lint:lua-syntax && npm run lint:web-cache && npm run lint:test-grounding && npm run lint:pcall-logging && npm run lint:catch-swallow && npm run lint:ps-silent && npm run lint:test-hooks && npm run lint:allow-manifest",

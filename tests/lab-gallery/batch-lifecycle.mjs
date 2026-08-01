@@ -231,10 +231,38 @@ export function fetchTransferSummaries({ limit = 200 } = {}) {
  * The certainty here is genuinely limited, and the messages must not overstate it:
  *   - `limit` windows the query, so an older settled record is invisible
  *   - activeTransfers is pruned above 100, so an evicted ID neither shows up NOR refuses
- * A CLEAR result therefore asserts nothing. Only a HIT asserts, and only `registrySource: "active"`
- * means the run will actually be refused — a persisted-only record is history the retry guard never
- * reads, and a controller restart would not remove it anyway.
+ * A CLEAR result therefore asserts nothing. Only a HIT asserts anything.
+ *
+ * And a hit is not enough on its own. `registrySource: "active"` means "the retry guard can SEE this
+ * record" — NOT "the guard will refuse it". transferPlatform (transfer-orchestrator.ts:104-118) makes
+ * a THREE-way decision on status, and only the third refuses:
+ *
+ *   LIVE_STATUSES     transporting / awaiting_validation / awaiting_completion / in_progress
+ *                     -> idempotent success, the transfer is in flight. NOT refused.
+ *   "failed"          -> the ONLY replaceable settled state: its rollback DISCARDED the destination,
+ *                     so a re-run cannot duplicate. Explicitly replaced, and the orchestrator's own
+ *                     comment names our exact case: "golden-save batches reset the Lua export
+ *                     counter and legitimately regenerate identical IDs after a failure".
+ *   anything else     completed / cleanup_failed / unknown -> REFUSED.
+ *
+ * This mattered immediately: the suite's refusal leg (step D) manufactures an active+failed record
+ * on host 2's export ID on EVERY run. Treating any active hit as fatal would abort the next run of a
+ * suite that was working perfectly — a false alarm stated in capitals, demanding a controller restart
+ * nobody needed. Caught in review; the first version of this function did exactly that.
  */
+
+/** Statuses transferPlatform treats as in-flight (transfer-orchestrator.ts:104-107). */
+const LIVE_TRANSFER_STATUSES = new Set([
+	"transporting", "awaiting_validation", "awaiting_completion", "in_progress",
+]);
+
+/** Would a record with this status actually make transferPlatform refuse a same-ID retry? */
+function wouldRefuse(hit) {
+	if (hit.registrySource !== "active") return false;   // the guard never reads the persisted log
+	if (LIVE_TRANSFER_STATUSES.has(hit.status)) return false;
+	return hit.status !== "failed";
+}
+
 export function checkTransferIdCollisions({ candidates, summaries, limit = 200 }) {
 	const scope = `${candidates.length} predicted ID(s), ${candidates[0]} .. ${candidates.at(-1)}`;
 	const caveat = `BEST-EFFORT: the query is windowed at ${limit} records and activeTransfers is `
@@ -255,26 +283,43 @@ export function checkTransferIdCollisions({ candidates, summaries, limit = 200 }
 	}
 
 	const describe = hit => `${hit.transferId} (status=${hit.status}, registry=${hit.registrySource ?? "unknown"})`;
-	const active = hits.filter(hit => hit.registrySource === "active");
-	if (active.length) {
+	const refusing = hits.filter(wouldRefuse);
+	if (refusing.length) {
 		return {
 			status: "collision", fatal: true, hits,
-			message: `preflight COLLISION: ${active.map(describe).join(", ")} already settled in the `
-				+ "controller's IN-MEMORY activeTransfers — the store the retry guard actually consults. "
-				+ "This run WILL be refused. Remedy: docker restart surface-export-controller (that clears "
+			message: `preflight COLLISION: ${refusing.map(describe).join(", ")} is settled in the `
+				+ "controller's IN-MEMORY activeTransfers in a status the retry guard REFUSES. This run "
+				+ "will be refused. Remedy: docker restart surface-export-controller (that clears "
 				+ "activeTransfers), then re-run. The persisted transaction log is reloaded on restart but "
 				+ "is NOT consulted by the guard, so it does not need clearing.",
 		};
 	}
 
-	const unknown = hits.filter(hit => hit.registrySource === undefined);
+	// Present and live-in-memory, but NOT refused. Worth saying out loud rather than reporting
+	// "clear", because the ID really is taken — it just does not block.
+	const replaceable = hits.filter(hit => hit.registrySource === "active");
+	if (replaceable.length) {
+		return {
+			status: "replaceable", fatal: false, hits,
+			message: `preflight NOTE (no action needed): ${replaceable.map(describe).join(", ")} is in the `
+				+ "in-memory registry, but in a status transferPlatform does NOT refuse — a live status "
+				+ "dedupes, and 'failed' is explicitly replaced because its rollback discarded the "
+				+ "destination. The suite's own refusal leg manufactures exactly this every run.",
+		};
+	}
+
+	// Anything that is neither of the two known provenance values — undefined (an older controller
+	// build) or a value added later — is UNKNOWN, not history. Defaulting an unrecognised value into
+	// the reassuring branch is how a check starts lying by omission.
+	const unknown = hits.filter(hit => hit.registrySource !== "persisted");
 	if (unknown.length) {
 		return {
 			status: "unknown", fatal: false, hits,
-			message: `preflight POSSIBLE COLLISION (provenance unknown — this controller build predates `
-				+ `registrySource): ${unknown.map(describe).join(", ")}. It may or may not be refused. `
-				+ "Remedy if it is: docker restart surface-export-controller, then re-run; if it persists "
-				+ "after a restart the record is historical only. Not failing on an unprovable signal.",
+			message: "preflight POSSIBLE COLLISION (provenance unknown — an older controller build, or a "
+				+ `registrySource value this checker does not know): ${unknown.map(describe).join(", ")}. `
+				+ "It may or may not be refused. Remedy if it is: docker restart "
+				+ "surface-export-controller, then re-run; if it persists after a restart the record is "
+				+ "historical only. Not failing on an unprovable signal.",
 		};
 	}
 
@@ -357,6 +402,22 @@ export function createBatchLifecycle({ goldenSourceSave, goldenDestSave, markerP
 	// Set the instant a load begins, so ANY later failure restores from the pinned artifacts. While it
 	// is null the live pair has not been touched and there is nothing to restore.
 	let restoreArtifacts = null;
+
+	// The restore is IDEMPOTENT-BY-LATCH, and this is a data-loss guard, not tidiness.
+	//
+	// run-tests.mjs calls restoreLivePair from its `finally` AND again from `main().catch` — the
+	// first swallows its own errors and never rethrows, so the original error keeps propagating and
+	// both fire. Restore #1's rescue copy holds the PRE-SUITE live world (loadGoldenPair's exit-save),
+	// which is the only copy of any hand-built pad not yet banked. Restore #2 then `rm -f`s that
+	// rescue and re-copies the pristine artifact restore #1 had just written — i.e. it replaces the
+	// irreplaceable with the reproducible. The loss this rescue exists to prevent (the 92,50 pairing
+	// rig) happens anyway, one call later.
+	//
+	// The latch is separate from `restoreArtifacts` deliberately: nulling that would make the second
+	// call print "golden pair never loaded; live pair untouched", which is a different and false
+	// statement. Found in review; the trigger this change newly adds is the fatal collision preflight,
+	// whose whole job is to throw early.
+	let livePairRestored = false;
 
 	async function loadGoldenPair(manifest, phase) {
 		const repoRoot = REPO_ROOT;
@@ -493,6 +554,15 @@ export function createBatchLifecycle({ goldenSourceSave, goldenDestSave, markerP
 				results.restored = { skipped: "golden pair never loaded; live pair untouched" };
 				return;
 			}
+			if (livePairRestored) {
+				// Second call in the same run — see the latch's declaration. Running the rescue block
+				// again would DELETE the pre-suite rescue and replace it with a copy of the pristine
+				// artifact the first call just wrote.
+				results.restored = { skipped: "live pair already restored this run; refusing to re-run "
+					+ "the rescue-and-overwrite (it would destroy the pre-suite rescue save)" };
+				return;
+			}
+			livePairRestored = true;
 			// EVIDENCE FIRST: restarting an instance rotates factorio-current.log — capture the
 			// golden sessions' logs into the results before the restore destroys them (paid for:
 			// run 1's stall evidence was lost to exactly this rotation).

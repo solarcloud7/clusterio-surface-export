@@ -25,6 +25,49 @@ const summary = (transferId, registrySource, status = "completed") => ({
 	transferId, status, registrySource, platformName: "lab-omnibus-state-v1", startedAt: 1,
 });
 
+test("an active FAILED record is NOT fatal — the orchestrator replaces it", () => {
+	// The defect this pins, caught in review. `failed` is the ONE replaceable settled state
+	// (transfer-orchestrator.ts:111-117): its rollback discarded the destination, so a re-run cannot
+	// duplicate, and the orchestrator's own comment names our case — "golden-save batches reset the
+	// Lua export counter and legitimately regenerate identical IDs after a failure".
+	//
+	// This is not a corner case: the suite's refusal leg (step D) manufactures an active+failed record
+	// on host 2's export ID on EVERY run. The first version of this checker treated any active hit as
+	// fatal, so it would have aborted the next run of a suite that was working perfectly — a false
+	// alarm in capital letters, demanding a controller restart nobody needed.
+	const verdict = checkTransferIdCollisions({
+		candidates: CANDIDATES,
+		summaries: [summary(CANDIDATES[1], "active", "failed")],
+	});
+	assert.equal(verdict.fatal, false);
+	assert.equal(verdict.status, "replaceable");
+	assert.match(verdict.message, /does NOT refuse/);
+});
+
+test("an active LIVE record is NOT fatal — the orchestrator dedupes", () => {
+	for (const status of ["transporting", "awaiting_validation", "awaiting_completion", "in_progress"]) {
+		const verdict = checkTransferIdCollisions({
+			candidates: CANDIDATES,
+			summaries: [summary(CANDIDATES[0], "active", status)],
+		});
+		assert.equal(verdict.fatal, false, `status=${status} returns idempotent success, it does not refuse`);
+		assert.equal(verdict.status, "replaceable");
+	}
+});
+
+test("an UNRECOGNISED registrySource is UNKNOWN, not history", () => {
+	// The old code fell through to `historical`, which states affirmatively "they will not refuse this
+	// run" — the most reassuring branch, reached by default. A value this checker does not know must
+	// never be answered with confidence.
+	const verdict = checkTransferIdCollisions({
+		candidates: CANDIDATES,
+		summaries: [summary(CANDIDATES[0], "both")],
+	});
+	assert.equal(verdict.status, "unknown");
+	assert.equal(verdict.fatal, false);
+	assert.match(verdict.message, /provenance unknown/);
+});
+
 test("an ACTIVE hit is fatal and names the restart remedy", () => {
 	const verdict = checkTransferIdCollisions({
 		candidates: CANDIDATES,
@@ -103,6 +146,7 @@ test("every branch produces a DISTINCT message", () => {
 	// active-vs-persisted distinction would quietly stop being made.
 	const verdicts = [
 		checkTransferIdCollisions({ candidates: CANDIDATES, summaries: [summary(CANDIDATES[0], "active")] }),
+		checkTransferIdCollisions({ candidates: CANDIDATES, summaries: [summary(CANDIDATES[0], "active", "failed")] }),
 		checkTransferIdCollisions({ candidates: CANDIDATES, summaries: [summary(CANDIDATES[0], "persisted")] }),
 		checkTransferIdCollisions({ candidates: CANDIDATES, summaries: [{ transferId: CANDIDATES[0], status: "completed" }] }),
 		checkTransferIdCollisions({ candidates: CANDIDATES, summaries: [] }),

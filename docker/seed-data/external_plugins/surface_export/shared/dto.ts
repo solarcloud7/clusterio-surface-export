@@ -55,9 +55,17 @@ export interface TransferSummaryModel {
 	 * two stores that are NOT equivalent:
 	 *
 	 *   "active"     the controller's in-memory `activeTransfers`. This is the ONLY store the retry
-	 *                guard consults (transfer-orchestrator.ts:89-118), so a settled entry here WILL
-	 *                refuse a same-ID retry. Cleared by a controller restart. Pruned above 100
-	 *                entries, so its absence proves nothing.
+	 *                guard consults (transfer-orchestrator.ts:89-118). Cleared by a controller
+	 *                restart. Pruned above 100 entries, so its absence proves nothing.
+	 *
+	 *                "active" means the guard can SEE the record — NOT that it will refuse it. The
+	 *                guard makes a THREE-way decision on `status` (:104-118): a LIVE status
+	 *                (transporting / awaiting_validation / awaiting_completion / in_progress) dedupes
+	 *                to idempotent success, "failed" is explicitly REPLACED because its rollback
+	 *                discarded the destination, and only everything else refuses. A caller deciding
+	 *                whether a retry is blocked must read `status` too — reading `registrySource`
+	 *                alone reports a false blocker on the failed record every gallery-suite run
+	 *                manufactures (caught in review).
 	 *   "persisted"  the on-disk transaction log, reloaded at every controller boot. The retry guard
 	 *                never reads it, so an ID appearing only here is history, not a blocker — and a
 	 *                controller restart will NOT make it go away.
@@ -263,15 +271,26 @@ export interface ValidationResult {
 	 * at its cap. Attached only when `total > 0` (import-completion.lua:605). These are SUBTRACTED
 	 * from expected counts before the gate (`import-completion.lua:429-442`), so they are not a gate
 	 * failure — the UI surfaces them as an info alert so an excluded item is never silent.
-	 * `entities` records where each loss happened; `items` is keyed by item name.
+	 *
+	 * `items` is keyed by QUALITY KEY, not by item name: `Util.make_quality_key` (game-utils.lua)
+	 * returns the bare `item_name` at normal quality and `"<item_name>:<quality_name>"` otherwise.
+	 * A consumer looking up `items["electronic-circuit"]` therefore misses every non-normal loss and
+	 * reports zero, while the gate's own subtraction used the quality key and did not. The first
+	 * version of this declaration said "keyed by item name" — a declared shape that is WRONG is worse
+	 * than none, which is the argument this whole change rests on. Caught in review.
+	 * (`failedEntityLosses` above is quality-keyed the same way.)
 	 */
 	inventoryOverflowLosses?: {
+		/** The authoritative loss count. Use this, not `entities.length` — see below. */
 		total: number;
 		items: Record<string, number>;
+		/** CAPPED AT 50 by the producer (deserializer.lua:782). A sample of where losses happened, not a count. */
 		entities: Array<{
 			name?: string;
 			position?: { x?: number; y?: number };
 			item?: string;
+			/** Present on the wire (deserializer.lua) — omitted by the web UI's local type, not by Lua. */
+			quality?: string;
 			expected?: number;
 			actual?: number;
 			lost?: number;

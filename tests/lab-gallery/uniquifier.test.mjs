@@ -71,8 +71,14 @@ test("the floor carries no modulus — it is the raw millisecond", () => {
 	// A future "just make the period longer" edit fails here instead of aliasing quietly in a year.
 	assert.equal(exportIdFloor(T), T);
 	assert.equal(exportIdFloor(T + 1), T + 1);
-	assert.ok(exportIdFloor(T) > 1e12,
-		"a floor small enough to fit a modulus is a floor that will eventually wrap");
+	// Review found this test overstated itself: it claimed "any modulus, of any size" fails here, and
+	// `nowMs => nowMs % 2_000_000_000_000` passed all five — it only aliases from 2033. So does
+	// `Math.min(nowMs, 1_900_000_000_000)`, which goes CONSTANT in 2030. Probing far past any
+	// plausible modulus is what makes the claim true.
+	assert.equal(exportIdFloor(8_000_000_000_000), 8_000_000_000_000,
+		"a value beyond any plausible modulus must pass through untouched — a clamp or a large "
+		+ "modulus reads as monotone for years and then silently aliases forever");
+	assert.equal(exportIdFloor(Number.MAX_SAFE_INTEGER - 1), Number.MAX_SAFE_INTEGER - 1);
 });
 
 test("the floor is an integer — it becomes a Lua number and a %03d-formatted id", () => {

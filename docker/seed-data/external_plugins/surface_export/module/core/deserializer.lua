@@ -654,7 +654,13 @@ end
 --- Restore inventories to an entity
 --- @param entity LuaEntity: The entity to restore inventories to
 --- @param entity_data table: Serialized entity data
---- @param overflow_losses table|nil: Optional { items={name->count}, total=n, entities={...} } to accumulate set_stack partial losses into
+--- @param overflow_losses table|nil: Optional accumulator for set_stack partial losses:
+---   { items = { [quality_key] = count }, total = n, entities = { ... } }
+---   `items` is keyed by Util.make_quality_key (bare item name at normal quality,
+---   "<name>:<quality>" otherwise) — NOT by item name. This docstring said `name->count`
+---   and a DTO declaration was written from it; a consumer following that would miss every
+---   non-normal-quality loss. `entities` is capped at 50 (see below), so its length is a
+---   sample, not a count — `total` is the count.
 function Deserializer.restore_inventories(entity, entity_data, overflow_losses)
   if not entity.valid or not entity_data.specific_data then
     return

@@ -34,6 +34,19 @@ export function normalizeKey(key) {
 
 const isPlainObject = value => value !== null && typeof value === "object" && !Array.isArray(value);
 
+/**
+ * Join path segments, tolerating an empty prefix.
+ *
+ * Naive template joining produced `events..2.importMetrics` when the search started at the document
+ * root — a path this module's OWN walker then rejects as `malformed-path`. A tool whose entire
+ * product is "the path it names is the right one" cannot emit paths that do not resolve, so every
+ * path this file constructs goes through here. The invariant is enforced by test: every entry in
+ * `nearMisses` and `relocations` must itself resolve against the same root.
+ */
+function joinPath(...parts) {
+	return parts.filter(part => part !== "" && part !== null && part !== undefined).join(".");
+}
+
 /** Cap on how many distinct element keys are unioned before reporting truncation. */
 const ELEMENT_KEY_CAP = 200;
 
@@ -67,14 +80,22 @@ export function describeContainer(value) {
  * Search a subtree for a key matching `target` after normalization — the wrong-SUBTREE case
  * (`summary.phaseSpans` really lives at `summary.import.phaseSpans`).
  *
- * DEPTH BOUND: 3 OBJECT levels below the start container. Array-element descent does NOT consume a
- * level, so `a.b[].c` is reachable at depth 3. Three is where the real shapes land:
- *   summary.phaseSpans        -> summary.import.phaseSpans                                (2)
- *   summary.durationMs        -> summary.import.phaseSpans[].durationMs                   (3)
- *   summary.fluidPreservedPct -> summary.validation.fluidReconciliation.fluidPreservedPct  (3)
- * Depth 5 starts returning hits from summary.validation.expectedItemCounts / actualFluidCounts,
- * which are keyed by ITEM AND FLUID NAMES — user data, not schema. Relocating into user data
- * manufactures garbage paths, which is the one thing this module must never do.
+ * DEPTH BOUND, stated so it can be counted: a relocated path is AT MOST 3 SEGMENTS long, measured
+ * from the start container. Array indices are free — they do not consume a segment of the budget —
+ * so `a.b.0.c.target` is reachable.
+ *
+ * Three is where the real shapes land:
+ *   summary.phaseSpans        -> import.phaseSpans                                (2 segments)
+ *   summary.fluidPreservedPct -> validation.fluidReconciliation.fluidPreservedPct (3 segments)
+ * and four is where the schema stops and user data starts:
+ *   (root).iron-plate         -> summary.validation.expectedItemCounts.iron-plate (4 — EXCLUDED)
+ * `expectedItemCounts` / `actualFluidCounts` are keyed by ITEM AND FLUID NAMES. A query for a
+ * quality name (`normal`, `rare`) or an item name would otherwise relocate into game data and
+ * present it as schema — manufacturing a path, the one thing this module must never do.
+ *
+ * The bound was off by one when first written (`depth > maxDepth` examined keys AT maxDepth, giving
+ * four segments) so the paragraph above was false at the shipped setting. Found in review; the test
+ * now enumerates every level explicitly rather than sampling two.
  */
 function relocate(root, target, { maxDepth = 3, maxResults = 8, nodeBudget = 50_000 }) {
 	const wanted = normalizeKey(target);
@@ -100,20 +121,25 @@ function relocate(root, target, { maxDepth = 3, maxResults = 8, nodeBudget = 50_
 			if (hitIndices.length) {
 				const key = Object.keys(node[hitIndices[0]]).find(k => normalizeKey(k) === wanted);
 				found.push({
-					path: `${prefix}.${hitIndices[0]}.${key}`,
+					path: joinPath(prefix, hitIndices[0], key),
 					note: `present on ${hitIndices.length} of ${node.length} elements`,
 				});
 				if (found.length >= maxResults) { resultsTruncated = true; return; }
 			}
 			for (const [index, element] of node.entries()) {
-				if (isPlainObject(element) || Array.isArray(element)) walk(element, `${prefix}.${index}`, depth);
+				if (isPlainObject(element) || Array.isArray(element)) walk(element, joinPath(prefix, index), depth);
 			}
 			return;
 		}
 
-		if (!isPlainObject(node) || depth > maxDepth) return;
+		// `>=`, not `>`. With `>` this examined node's keys at depth === maxDepth, i.e. it reached
+		// maxDepth + 1 = FOUR object levels while the docstring, the reported `searchDepth` and the
+		// miss message all said three — and the docstring's own rationale ("depth 5 starts returning
+		// hits from expectedItemCounts") was therefore already false at the shipped setting: a query
+		// for a quality name like `normal` relocated into item-keyed user data. Measured in review.
+		if (!isPlainObject(node) || depth >= maxDepth) return;
 		for (const [key, value] of Object.entries(node)) {
-			const path = prefix ? `${prefix}.${key}` : key;
+			const path = joinPath(prefix, key);
 			if (depth >= 1 && normalizeKey(key) === wanted) {
 				found.push({ path, note: null });
 				if (found.length >= maxResults) { resultsTruncated = true; return; }
@@ -160,19 +186,27 @@ export function resolvePath(root, path, options = {}) {
 		const miss = (reason, detail) => {
 			const container = describeContainer(cursor);
 			const wanted = normalizeKey(segment);
-			const nearMisses = container.keys
-				.filter(key => normalizeKey(key) === wanted)
-				.map(key => (stoppedAt === "(root)" ? key : `${stoppedAt}.${key}`));
+			// ONLY an object has keys at this level. An array's `container.keys` is the UNION OF ITS
+			// ELEMENTS' keys — those are not addressable here, and treating them as same-level matches
+			// produced the worst output this module can produce: querying `events.importMetrics`
+			// suggested `events.importMetrics`, the identical failing path, in an infinite loop of
+			// advice. Worse, a non-empty nearMisses SUPPRESSES relocation, so the correct answer
+			// (`events.2.importMetrics`) was computed and thrown away. Caught in review.
+			const nearMisses = container.kind === "object"
+				? container.keys.filter(key => normalizeKey(key) === wanted)
+					.map(key => joinPath(stoppedAt === "(root)" ? "" : stoppedAt, key))
+				: [];
 			// Relocation only when the same level offered nothing: a same-level hit is the higher
-			// confidence answer and the camel/snake case this module was built for.
+			// confidence answer and the camel/snake case this module was built for. For an array stop
+			// it ALWAYS runs, and it is what turns the element key into a concrete indexed path.
 			const relocated = nearMisses.length
 				? { hits: [], budgetExhausted: false, resultsTruncated: false }
 				: relocate(cursor, segment, options);
-			const prefix = stoppedAt === "(root)" ? "" : `${stoppedAt}.`;
+			const prefix = stoppedAt === "(root)" ? "" : stoppedAt;
 			return {
 				ok: false, reason, stoppedAt, failedSegment: segment, container, detail,
 				nearMisses,
-				relocations: relocated.hits.map(hit => ({ ...hit, path: `${prefix}${hit.path}` })),
+				relocations: relocated.hits.map(hit => ({ ...hit, path: joinPath(prefix, hit.path) })),
 				searchDepth: options.maxDepth ?? 3,
 				searchTruncated: relocated.budgetExhausted,
 				relocationsTruncated: relocated.resultsTruncated,
@@ -212,8 +246,13 @@ export function formatMiss(result, { query, subject } = {}) {
 
 	const { container } = result;
 	if (container.kind === "array") {
-		lines.push(`  \`${result.stoppedAt}\` is an array of ${container.count}, not an object — index it, `
-			+ `e.g. ${result.stoppedAt === "(root)" ? "0" : `${result.stoppedAt}.0`}.${result.failedSegment}`);
+		// Deliberately NOT "e.g. <path>.0.<segment>" when a relocation exists: index 0 frequently does
+		// not carry the key (in a real transaction log `importMetrics` is on exactly one event of
+		// several), and naming a concrete index that does not resolve is the failure this tool exists
+		// to prevent. The relocation block below prints the index that actually has it.
+		lines.push(`  \`${result.stoppedAt}\` is an array of ${container.count}, not an object — index it`
+			+ (result.relocations.length ? "; the element(s) carrying that key are listed below" : `, `
+				+ `e.g. ${joinPath(result.stoppedAt === "(root)" ? "" : result.stoppedAt, 0, result.failedSegment)}`));
 		if (container.keys.length) {
 			lines.push(`  element keys (union over ${container.count})${container.keysTruncated ? ", truncated" : ""}: `
 				+ container.keys.join(", "));

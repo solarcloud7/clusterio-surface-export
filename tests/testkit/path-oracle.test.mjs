@@ -110,29 +110,40 @@ test("AMBIGUOUS relocation reports every candidate and picks none", () => {
 	assert.match(formatMiss(result, { query: "summary.validationMs" }), /Not picking for you/);
 });
 
-test("an exact key in a user-keyed map IS named — that is the real path, not garbage", () => {
-	// Worth stating, because the instinct is to suppress this. `expectedItemCounts` is keyed by ITEM
-	// NAME, and a query for `iron-plate` really does resolve there. Naming it is correct: the rule is
-	// exact-after-normalization, so a hit is a hit regardless of whether the key came from a schema
-	// or from game data. What must never happen is MANUFACTURING a path, and schema names (camelCase)
-	// cannot normalize onto item names (lowercase-hyphenated), so the two spaces do not collide.
-	const result = miss("iron-plate");
-	assert.deepEqual(result.relocations.map(r => r.path), ["summary.validation.expectedItemCounts.iron-plate"]);
+test("the search does not reach into user-keyed count maps", () => {
+	// `expectedItemCounts` and `actualFluidCounts` are keyed by ITEM AND FLUID NAMES — game data, not
+	// schema. They sit 4 segments from the root, one past the bound, and that is deliberate: a query
+	// for a quality name (`normal`, `rare`) or an item name would otherwise be answered with a path
+	// into game data presented as though it were a field. An earlier version of this test asserted
+	// the opposite, on the reasoning that "an exact hit is an exact hit" — review pointed out that the
+	// bound was ALSO off by one at the time, so the tool really was trawling user data. Both fixed.
+	assert.deepEqual(miss("iron-plate").relocations.map(r => r.path), []);
+	assert.deepEqual(miss("copper-cable").relocations.map(r => r.path), []);
+	// Reachable from closer in, where it is unambiguously the caller's intent.
+	assert.deepEqual(resolvePath(ENTRY.summary.validation, "iron-plate").relocations.map(r => r.path),
+		["expectedItemCounts.iron-plate"]);
 });
 
-test("the depth bound is a defined boundary, not an accident", () => {
-	// Beyond the bound the search stops rather than trawling the whole document. Pinned with a
-	// synthetic shape so the assertion does not drift when the real store gains a level.
-	const deep = { a: { b: { c: { d: { target: 1 } } } } };
-	assert.deepEqual(resolvePath(deep, "target").relocations.map(r => r.path), [],
-		"4 object levels is beyond the 3-level bound");
-	const shallow = { a: { b: { target: 1 } } };
-	assert.deepEqual(resolvePath(shallow, "target").relocations.map(r => r.path), ["a.b.target"],
-		"3 object levels is inside it");
-	// And the array-is-free rule: a.b[].target is 3 OBJECT levels, so it stays reachable.
+test("the depth bound is EXACTLY three object levels — counted, not approximated", () => {
+	// This test previously mislabelled its own fixture ("4 object levels" for a 5-level shape) and so
+	// pinned nothing: the shipped bound actually reached FOUR levels while the docstring, the reported
+	// searchDepth and the miss message all said three. Every level is now enumerated explicitly.
+	// Counted in PATH SEGMENTS from the start container, which is the only framing that can be
+	// checked without ambiguity.
+	assert.deepEqual(resolvePath({ a: { target: 1 } }, "target").relocations.map(r => r.path),
+		["a.target"], "2 segments");
+	assert.deepEqual(resolvePath({ a: { b: { target: 1 } } }, "target").relocations.map(r => r.path),
+		["a.b.target"], "3 segments — the documented bound, inside it");
+	assert.deepEqual(resolvePath({ a: { b: { c: { target: 1 } } } }, "target").relocations, [],
+		"4 segments — OUTSIDE the bound. This is what stops a query for a quality name like `normal` "
+		+ "relocating into summary.validation.expectedItemCounts, which is keyed by user data.");
+
+	// The array-is-free rule: indices do not spend the budget, so a.b.0.target stays reachable even
+	// though it is 4 tokens long.
 	const viaArray = { a: { b: [{ target: 1 }] } };
-	assert.equal(resolvePath(viaArray, "target").relocations.length, 1,
-		"array-element descent must not consume a depth level");
+	assert.deepEqual(resolvePath(viaArray, "target").relocations.map(r => r.path), ["a.b.0.target"],
+		"array-element descent must not consume a segment of the depth budget");
+	assert.equal(resolvePath(viaArray, "a.b.0.target").ok, true, "and the path it names must resolve");
 });
 
 // ── Falsy values, arrays, and the exit-0 hole ───────────────────────────────────────────────
@@ -201,6 +212,63 @@ test("a genuine absence says it is about the PATH, not about the data", () => {
 	assert.match(text, /PATH does not exist in THIS record/);
 	assert.doesNotMatch(text, /data loss|CANNOT survive/,
 		"this module makes no claim about the transfer — that conflation is the original incident");
+});
+
+// ── THE invariant: a path this module names must be a path this module resolves ──────────────
+//
+// This is the contract, and it had no test. Two blockers shipped underneath the gap and both were
+// found by review, not here:
+//   - an array stop offered the ELEMENT key as a same-level match, so `events.importMetrics`
+//     suggested `events.importMetrics` — byte-identical to the query that just failed — while
+//     suppressing the relocation that had already computed the right answer.
+//   - relocation from the document root emitted `events..2.importMetrics`, which this module's own
+//     walker rejects as `malformed-path`.
+// For a tool whose entire product is "the path it names is the right one", one assertion covers both.
+
+test("EVERY suggested path resolves — near-misses and relocations alike", () => {
+	const queries = [
+		"summary.import.totalTicks", "summary.validation.cleanupFailed", "summary.phaseSpans",
+		"summary.durationMs", "summary.validationMs", "iron-plate", "events.importMetrics",
+		"events.eventType", "events.entities_created", "phaseSpans", "startOffsetMs",
+		"cleanup_failed", "total_ticks", "expectedItemCounts", "highTempThreshold",
+	];
+	let suggestionsChecked = 0;
+	for (const query of queries) {
+		const result = resolvePath(ENTRY, query);
+		if (result.ok) continue;
+		for (const suggested of [...result.nearMisses, ...result.relocations.map(r => r.path)]) {
+			suggestionsChecked++;
+			const round = resolvePath(ENTRY, suggested);
+			assert.equal(round.ok, true,
+				`query "${query}" suggested "${suggested}", which does not resolve `
+				+ `(${round.reason}). Naming a path that 404s is the failure this module exists to prevent.`);
+			assert.notEqual(suggested, query,
+				`query "${query}" suggested ITSELF — an infinite loop of advice`);
+		}
+	}
+	assert.ok(suggestionsChecked >= 8,
+		`only ${suggestionsChecked} suggestions exercised; the invariant needs real coverage to mean anything`);
+});
+
+test("an array stop relocates to the element that actually has the key", () => {
+	// `importMetrics` is on exactly one of the two events. The suggestion must name THAT index, not
+	// index 0 and not the bare array path.
+	const result = resolvePath(ENTRY, "events.importMetrics");
+	assert.deepEqual(result.nearMisses, [],
+		"element keys are not addressable at the array level — offering them as same-level matches is "
+		+ "what made the tool suggest the failing query back to the caller");
+	assert.deepEqual(result.relocations.map(r => r.path), ["events.1.importMetrics"]);
+	assert.equal(resolvePath(ENTRY, "events.1.importMetrics").ok, true);
+});
+
+test("relocation from the document root emits no doubled dots", () => {
+	const result = resolvePath(ENTRY, "eventType");
+	for (const hit of result.relocations) {
+		assert.doesNotMatch(hit.path, /\.\./, `"${hit.path}" has a doubled dot`);
+		assert.doesNotMatch(hit.path, /^\./, `"${hit.path}" has a leading dot`);
+		assert.equal(resolvePath(ENTRY, hit.path).ok, true);
+	}
+	assert.ok(result.relocations.length > 0, "expected the events array to be searched");
 });
 
 test("normalizeKey and describeContainer behave as documented", () => {
