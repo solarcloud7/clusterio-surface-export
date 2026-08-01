@@ -1,0 +1,23 @@
+{
+  "_comment": [
+    "The one place the controller's transaction-log store address lives. Read by BOTH languages:",
+    "PowerShell via Get-TransactionLogStore (tools/shared/cluster-utils.ps1) and Node via",
+    "tools/tests/testkit/log-query.mjs. JSON because it is the only format both read natively with",
+    "no build step and no parser to keep in sync.",
+    "",
+    "Each side keeps its OWN small reader — the drift incident that made Get-TransactionLogStore",
+    "declare itself 'The ONE path' was duplicated LOGIC (one copy carried a 2>&1 that corrupted the",
+    "JSON), not a duplicated constant. What must not diverge is the address and the read rule, and",
+    "those are here."
+  ],
+  "transactionLogStore": {
+    "container": "surface-export-controller",
+    "path": "/clusterio/data/database/surface_export_transaction_logs.json",
+    "readRule": "docker exec <container> cat <path> — NEVER merge stderr (2>&1). Docker's stderr warnings interleave into the JSON and break the parse; the exit code is the success signal. Use argv (no sh -c) unless globbing is required.",
+    "shape": "A JSON array. Each element: { transferId, transferInfo, summary, events, savedAt }."
+  },
+  "instanceScriptOutput": {
+    "pathTemplate": "/clusterio/data/instances/<instance>/script-output",
+    "note": "debug_* dumps are written ONLY when the plugin's debug_mode is on (module/utils/debug-export.lua). A missing dump is an operational condition, never evidence that a value is absent."
+  }
+}

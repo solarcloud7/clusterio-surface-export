@@ -164,6 +164,14 @@ node tools/tests/testkit/cli.mjs check                 # cross-refs resolve (no 
 node tools/tests/testkit/cli.mjs check --live          # + every fixture anchor resolves in a real payload
 node tools/tests/testkit/cli.mjs inspect <platform> --field 'infinity-pipe@40.5,46.5:infinity_pipe_filter'
 node tools/tests/testkit/cli.mjs blackbox explain <bundle.json>   # offline forensics on a banked failure
+# QUERY-PATH ORACLE — a wrong path exits 2 and NAMES THE REAL PATH, instead of returning an empty
+# value that reads as "the field is absent" and then as "the feature is broken". `log` never exits 1.
+node tools/tests/testkit/cli.mjs log latest --field summary.import.total_ticks
+node tools/tests/testkit/cli.mjs log <transferId> --list          # what records exist
+node tools/tests/testkit/cli.mjs log dump 2 'debug_import_result_*.json' --field validation_result.itemCountMatch --newest
+#   ^ `summary.import` is snake_case (from Lua) inside an otherwise camelCase log — the oracle
+#     matches across that boundary, and reports BOTH candidates when a name is genuinely ambiguous
+#     (summary.phases.validationMs is the controller's wait; summary.import.validation_ms is the gate).
 #   ^ diff rows by |delta|, gate self-report vs physical dest scan (labeled), FAQ triage hint (+--json)
 # Exit 1 = absent (cannot survive). Exit 2 = your query path is wrong (it tells you the real one).
 # "Present" NEVER means "survives" — restoration is only proven by a transfer + physical dest read.
