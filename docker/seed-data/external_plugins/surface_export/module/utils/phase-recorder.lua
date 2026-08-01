@@ -34,14 +34,25 @@ local PhaseRecorder = {}
 ---                 start is job creation -- before any phase mark exists.
 --- `external`      the marks are written by another subsystem, not by start/stop here. `delivery` is
 ---                 stamped by the chunked-RCON receiver; `queue` is derived from two other marks.
+--- `profiled`      false => NO LuaProfiler. A profiler that is created but never started reads
+---                 0.000 ms forever, and both consumers (transaction-history, transaction-dashboard)
+---                 iterate every key they are given -- so an unstarted profiler does not show up as
+---                 absent, it shows up as INSTANT. For `delivery` that would put "0 ms" next to the
+---                 span that is routinely the longest in the whole trace.
 --- `profiler`      LuaProfiler key when it differs from the span name.
 PhaseRecorder.IMPORT_PHASES = {
 	{ name = "queue_setup" },
-	{ name = "delivery",      from = "delivery_started_tick",      to = "delivery_completed_tick",      external = true },
-	{ name = "queue",         from_job = "started_tick",           to = "tiles_started_tick",           external = true },
-	{ name = "tiles",         from = "tiles_started_tick",         to = "tiles_completed_tick" },
+	{ name = "delivery",      from = "delivery_started_tick",      to = "delivery_completed_tick",      external = true, profiled = false },
+	{ name = "queue",         from_job = "started_tick",           to = "tiles_started_tick",           external = true, profiled = false },
+	-- tiles and entities are restored across MANY ticks and have never had profilers. Whether a
+	-- LuaProfiler left running across ticks accumulates only the bracketed Lua time or all engine
+	-- update time in those ticks is NOT measured anywhere in this repo, and every other profiler here
+	-- brackets a synchronous within-one-tick section. Giving these two profilers would silently put a
+	-- different quantity in the same table as the other eleven. Their waterfall spans already report
+	-- the cross-tick cost from tick marks, which is the right instrument for a multi-tick phase.
+	{ name = "tiles",         from = "tiles_started_tick",         to = "tiles_completed_tick",         profiled = false },
 	{ name = "beacons" },
-	{ name = "entities",      from = "entities_started_tick",      to = "entities_completed_tick" },
+	{ name = "entities",      from = "entities_started_tick",      to = "entities_completed_tick",      profiled = false },
 	{ name = "hub",           from = "hub_started_tick",           to = "hub_completed_tick",           profiler = "hub_restore" },
 	{ name = "belts",         from = "belts_started_tick",         to = "belts_completed_tick" },
 	{ name = "state",         from = "state_started_tick",         to = "state_completed_tick" },
@@ -60,11 +71,15 @@ PhaseRecorder.IMPORT_PHASES = {
 local by_name = {}
 for _, spec in ipairs(PhaseRecorder.IMPORT_PHASES) do by_name[spec.name] = spec end
 
---- Every profiler key, for PhaseProfiler.init. Derived, so a phase can never be missing from it.
+--- Every profiler key, for PhaseProfiler.init. Derived, so a phase can never be missing from it —
+--- and, just as importantly, so a phase that is never bracketed can never be PRESENT in it. Creating
+--- a profiler nothing starts does not read as missing data downstream; it reads as 0.000 ms.
 function PhaseRecorder.profiler_names()
 	local names = {}
 	for _, spec in ipairs(PhaseRecorder.IMPORT_PHASES) do
-		names[#names + 1] = spec.profiler or spec.name
+		if spec.profiled ~= false then
+			names[#names + 1] = spec.profiler or spec.name
+		end
 	end
 	return names
 end
@@ -87,7 +102,7 @@ function PhaseRecorder.start(job, name)
 	if not spec then return end
 	job.metrics = job.metrics or {}
 	if spec.from then job.metrics[spec.from] = game.tick end
-	PhaseProfiler.start(job.job_id, spec.profiler or spec.name)
+	if spec.profiled ~= false then PhaseProfiler.start(job.job_id, spec.profiler or spec.name) end
 end
 
 --- Close a phase: stamp its end tick AND stop its profiler.
@@ -96,7 +111,7 @@ function PhaseRecorder.stop(job, name)
 	if not spec then return end
 	job.metrics = job.metrics or {}
 	if spec.to then job.metrics[spec.to] = game.tick end
-	PhaseProfiler.stop(job.job_id, spec.profiler or spec.name)
+	if spec.profiled ~= false then PhaseProfiler.stop(job.job_id, spec.profiler or spec.name) end
 end
 
 --- Build the waterfall: {name, start_offset_ms, duration_ms} per phase, in IMPORT_PHASES order,

@@ -153,7 +153,13 @@ export interface ImportMetrics {
 	entities_created: number;
 	/** MEASURED placement failures (the batch tally), not total-minus-something. */
 	entities_failed: number;
-	/** Skipped by design — e.g. space-platform-hub, which is pre-created with the platform. Optional: absent on logs written before these were split out of entities_failed. */
+	/**
+	 * Entities the create loop did not attempt. TWO causes share this counter, and only one is benign:
+	 * space-platform-hub (pre-created with the platform, inventories restored in platform_hub_mapping),
+	 * and a NIL HOLE in entities_to_create, which means the payload lost an element. The hole case is
+	 * logged loudly in entity_creation.lua — do not read a non-zero value here as "by design" without
+	 * checking the log. Optional: absent on logs written before these were split out of entities_failed.
+	 */
 	entities_skipped?: number;
 	/** Entities indexed in entity_map, i.e. addressable for later state/inventory restoration. NOT a success count — ground items are placed without being mapped. */
 	entities_mapped?: number;

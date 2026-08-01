@@ -224,7 +224,14 @@ function EntityCreation.process_batch(job, get_batch_size, should_show_progress)
           end
         end
       else
+        -- entities_to_create[i] is NIL: a HOLE in the array, which is not "skipped by design" like
+        -- the pre-created hub. It means the payload lost an element (truncated chunk reassembly, a
+        -- serializer that skipped an index, a JSON round-trip that dropped one). Nothing tallies its
+        -- items into failed_entity_losses, so without this line the run reads as clean and the loss
+        -- surfaces only as an unattributed gate mismatch. Never let a hole be silent.
         batch_skipped = batch_skipped + 1
+        log(string.format("[Entity Creation] HOLE in entities_to_create at index %d/%d (job=%s) — "
+          .. "a payload element is missing, not skipped by design", i, job.total_entities, job.job_id))
       end
     end
     

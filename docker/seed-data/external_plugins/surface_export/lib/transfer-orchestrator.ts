@@ -163,23 +163,42 @@ export class TransferOrchestrator {
 		// startPhase/endPhase cannot bracket it: they look the transfer up in activeTransfers, and
 		// the export has to finish before this record can be built. The duration is already measured,
 		// so record it as an ALREADY-COMPLETE phase rather than leaving a hole.
-		// Which duration: controllerExportPrepTotalMs is the fuller window (request + source lock +
-		// wait for the controller store), but it is only populated when the CONTROLLER drove the
-		// export. A transfer kicked off at the source instance — the RCON path, and what
-		// transfer-platform.ps1 does — arrives with only the instance-side timings, so preferring it
-		// unconditionally left the phase absent on the common path. Measured on a live 1to2 transfer:
-		// exportMetrics carried instanceAsyncExportMs=166 and no controllerExportPrepTotalMs at all.
-		// Fall back to the in-game async span, which is the source-side cost that actually matters
-		// (it is the tick-stall window surface_export_export_stall_seconds tracks).
-		const exportMs = [
-			mergedExportMetrics?.controllerExportPrepTotalMs,
-			mergedExportMetrics?.instanceAsyncExportMs,
-		].find(value => typeof value === "number" && Number.isFinite(value) && value >= 0);
-		if (exportMs !== undefined) {
+		// TWO DIFFERENT QUANTITIES can fill this slot, so they get DIFFERENT NAMES. Collapsing them
+		// under one "export" label would be the exact defect the sibling commits exist to remove: a
+		// number whose name implies a measurement it did not make.
+		//
+		//   controllerExportPrepTotalMs — WALL CLOCK (Date.now deltas: request + source lock + wait
+		//     for the controller store). Only populated when the CONTROLLER drove the export.
+		//   instanceAsyncExportMs — NOT wall clock. It is `math.floor(duration_ticks * 16.67)`
+		//     (export-pipeline.lua), a tick count scaled by a nominal 60 UPS. It therefore cannot see
+		//     wall-clock cost inside a single tick, and cannot see the game running BELOW 60 UPS —
+		//     which is exactly what a large export causes. A tick-derived number is structurally
+		//     blind to a tick stall, so this must NOT be described as measuring one.
+		//
+		// A transfer kicked off at the source instance (the RCON path, which transfer-platform.ps1
+		// and the in-game command both use) carries only the instance-side timings — measured on a
+		// live transfer: instanceAsyncExportMs=166, controllerExportPrepTotalMs absent entirely — so
+		// preferring the wall-clock value unconditionally left the phase missing on the common path.
+		// The fallback stays; it just stops pretending to be the same measurement.
+		const finiteMs = (value: unknown): value is number =>
+			typeof value === "number" && Number.isFinite(value) && value >= 0;
+		const prepMs = mergedExportMetrics?.controllerExportPrepTotalMs;
+		const inGameMs = mergedExportMetrics?.instanceAsyncExportMs;
+		const exportPhase = finiteMs(prepMs) ? { name: "export", ms: prepMs }
+			: finiteMs(inGameMs) ? { name: "exportTickEstimate", ms: inGameMs }
+				: null;
+		if (exportPhase) {
+			// The end boundary is only real on the wall-clock path. On the tick-estimate path the
+			// export finished on the instance some time before this record existed, so the bar's
+			// absolute placement is approximate — another reason it carries its own name.
 			const exportEndMs = Date.now();
 			operation.phases = {
 				...(operation.phases ?? {}),
-				export: { startMs: exportEndMs - exportMs, endMs: exportEndMs, durationMs: exportMs },
+				[exportPhase.name]: {
+					startMs: exportEndMs - exportPhase.ms,
+					endMs: exportEndMs,
+					durationMs: exportPhase.ms,
+				},
 			};
 		}
 		operation.sourceVerification = { itemCounts, fluidCounts };

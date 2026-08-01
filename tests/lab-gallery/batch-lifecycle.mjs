@@ -230,11 +230,21 @@ export function createBatchLifecycle({ goldenSourceSave, goldenDestSave, markerP
 		}
 	}
 
-	// Count the controller's transfer-failure lines. A REFUSED transfer never reaches the destination,
-	// so it produces no debug_import_result at all — and the wait below would otherwise sit out its
-	// full timeout and then blame a missing file, which is the symptom, not the cause. Counting lines
-	// rather than comparing timestamps is deliberate: the JSON logs are batch-flushed, so a
-	// "timestamp" is flush time and cannot order events within a run.
+	// Count transfer-failure lines in the cluster-aggregated log. A REFUSED transfer never reaches the
+	// destination, so it produces no debug_import_result at all — and the wait below would otherwise
+	// sit out its full timeout and then blame a missing file, which is the symptom, not the cause.
+	//
+	// Counting lines rather than comparing timestamps is deliberate: these JSON logs are
+	// batch-flushed, so a "timestamp" is flush time and cannot order events within a run.
+	//
+	// Provenance: the message is emitted by the SOURCE INSTANCE plugin and merely lands in the
+	// controller's aggregated log — do not report it as something the controller said.
+	//
+	// Scope, honestly: this is cluster-global. It filters by neither instance nor platform nor
+	// transfer id, so an unrelated transfer failing during the wait would abort with a confident but
+	// wrong diagnosis. Acceptable here because the suite owns the cluster for the run and is
+	// strictly sequential. If date-rotated files are pruned mid-wait the count can DROP, which loses
+	// detection rather than inventing one — the timeout stays the backstop.
 	function transferFailureLines() {
 		try {
 			const out = docker(["exec", CONTROLLER, "sh", "-c",
@@ -266,7 +276,7 @@ export function createBatchLifecycle({ goldenSourceSave, goldenDestSave, markerP
 				if (now && now.length > baseline) {
 					const added = now.slice(baseline);
 					throw new Error(`transfer FAILED before any import reached host ${host} — waiting for a `
-						+ `debug_import_result it can never produce. The controller said:\n  `
+						+ `debug_import_result it can never produce. The source instance reported:\n  `
 						+ added.map(l => (l.match(/"message":"([^"]+)"/) || [null, l])[1]).join("\n  "));
 				}
 			}
