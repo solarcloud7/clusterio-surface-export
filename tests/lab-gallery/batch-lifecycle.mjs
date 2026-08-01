@@ -191,10 +191,21 @@ export function createBatchLifecycle({ goldenSourceSave, goldenDestSave, markerP
 		// controller correctly REFUSES a same-ID retry once a prior record settled with a committed
 		// destination (transfer-orchestrator retry semantics, 2026-07-18). Offsetting the counter after
 		// each load gives every batch run collision-free IDs without weakening that production guard.
+		//
+		// BOTH hosts, not just the forward-transfer source. This used to bump host 1 only, which left
+		// the refusal leg — which transfers back FROM host 2 — generating deterministic IDs. Any
+		// earlier host-2 transfer of the same platform (a manual one while debugging, or a previous
+		// run) settles that ID as `completed` in the controller's activeTransfers, which survives a
+		// save reset because it is in-memory on the controller while the export counter lives in the
+		// save. The refusal leg is then refused for the WRONG reason, produces no import at all, and
+		// the wait below times out 240 s later blaming a missing file. Measured 2026-07-31, and the
+		// cluster log shows the same collision on 2026-07-29 and 07-30.
 		const offset = 100 + (Date.now() % 1_000_000);
-		const bumped = lua(1, `storage.async_job_id_counter=(storage.async_job_id_counter or 0)+${offset};` +
-			`return {success=true,counter=storage.async_job_id_counter}`);
-		if (!bumped.success) throw new Error(`export-id uniquifier failed: ${bumped.error}`);
+		for (const host of [1, 2]) {
+			const bumped = lua(host, `storage.async_job_id_counter=(storage.async_job_id_counter or 0)+${offset};` +
+				`return {success=true,counter=storage.async_job_id_counter}`);
+			if (!bumped.success) throw new Error(`export-id uniquifier failed on host ${host}: ${bumped.error}`);
+		}
 	}
 
 	// Deterministic golden worlds regenerate IDENTICAL debug filenames (same platform, same tick), so a
@@ -219,9 +230,29 @@ export function createBatchLifecycle({ goldenSourceSave, goldenDestSave, markerP
 		}
 	}
 
+	// Count the controller's transfer-failure lines. A REFUSED transfer never reaches the destination,
+	// so it produces no debug_import_result at all — and the wait below would otherwise sit out its
+	// full timeout and then blame a missing file, which is the symptom, not the cause. Counting lines
+	// rather than comparing timestamps is deliberate: the JSON logs are batch-flushed, so a
+	// "timestamp" is flush time and cannot order events within a run.
+	function transferFailureLines() {
+		try {
+			const out = docker(["exec", CONTROLLER, "sh", "-c",
+				"grep -h 'Transfer failed:' /clusterio/logs/cluster/cluster-*.log 2>/dev/null || true"]);
+			return out.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+		} catch (error) {
+			// Never let a log-read problem masquerade as "no refusal happened" — say so and let the
+			// caller's own timeout be the gate.
+			console.error(`transferFailureLines: ${error.message}`);
+			return null;
+		}
+	}
+
 	async function waitForImportResult(host, marker, timeoutMs = 240_000) {
 		const deadline = Date.now() + timeoutMs;
 		let lastReadError;
+		const failuresBefore = transferFailureLines();
+		const baseline = failuresBefore ? failuresBefore.length : null;
 		while (Date.now() < deadline) {
 			const fresh = filesNewerThanMarker(host, marker, "debug_import_result_*.json");
 			if (fresh.length) {
@@ -230,10 +261,20 @@ export function createBatchLifecycle({ goldenSourceSave, goldenDestSave, markerP
 				try { return { path: fresh.at(-1), result: readContainerJson(host, fresh.at(-1)) }; }
 				catch (error) { lastReadError = error; }
 			}
+			if (baseline !== null) {
+				const now = transferFailureLines();
+				if (now && now.length > baseline) {
+					const added = now.slice(baseline);
+					throw new Error(`transfer FAILED before any import reached host ${host} — waiting for a `
+						+ `debug_import_result it can never produce. The controller said:\n  `
+						+ added.map(l => (l.match(/"message":"([^"]+)"/) || [null, l])[1]).join("\n  "));
+				}
+			}
 			await sleep(3000);
 		}
 		throw new Error(`no fresh debug_import_result on host ${host} within ${timeoutMs} ms` +
-			(lastReadError ? ` (last read attempt failed: ${lastReadError.message})` : ""));
+			(lastReadError ? ` (last read attempt failed: ${lastReadError.message})` : "")
+			+ (baseline === null ? " (could not read the controller log to check for a refused transfer)" : ""));
 	}
 
 	// The unconditional restore finalizer body: capture evidence FIRST, restore the pre-batch live
