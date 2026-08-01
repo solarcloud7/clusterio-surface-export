@@ -241,5 +241,44 @@ export interface ValidationResult {
 	latchRearmScheduled?: number;
 	cleanup_failed?: boolean;
 	cleanup_error?: string;
-	[key: string]: unknown;
+	/**
+	 * Items the engine's `set_stack` API refused to place because the destination stack was already
+	 * at its cap. Attached only when `total > 0` (import-completion.lua:605). These are SUBTRACTED
+	 * from expected counts before the gate (`import-completion.lua:429-442`), so they are not a gate
+	 * failure — the UI surfaces them as an info alert so an excluded item is never silent.
+	 * `entities` records where each loss happened; `items` is keyed by item name.
+	 */
+	inventoryOverflowLosses?: {
+		total: number;
+		items: Record<string, number>;
+		entities: Array<{
+			name?: string;
+			position?: { x?: number; y?: number };
+			item?: string;
+			expected?: number;
+			actual?: number;
+			lost?: number;
+		}>;
+	};
+	/**
+	 * Non-fatal notice: the destination force was under-researched relative to the source, so its
+	 * inserter-capacity bonuses were RAISED on import to preserve held items
+	 * (import-pipeline.lua:468-471). Raise-only — lowering would eject items from OTHER platforms'
+	 * inserters on the same force. Attached only when at least one property was raised
+	 * (import-completion.lua:612). Does NOT affect the verdict.
+	 *
+	 * `synced_to` is snake_case because it is a Lua-native key that survives the wire unchanged.
+	 */
+	forceDataMismatches?: Array<{
+		force?: string;
+		property?: string;
+		source?: number;
+		destination?: number;
+		synced_to?: number;
+	}>;
+	// NO index signature. `[key: string]: unknown` used to live here, and it is how
+	// `latchRearmScheduled` rode untyped and unrendered: a producer could attach any field and
+	// nothing — not the compiler, not a reviewer reading this interface — would notice it existed.
+	// The two fields above were in exactly that state, live in production data and rendered by the
+	// UI while invisible here. If Lua starts sending something new, declare it.
 }
