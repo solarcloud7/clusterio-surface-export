@@ -269,3 +269,45 @@ test("R9: entities_mapped counts entity_map membership, not placement success", 
 		"entities_mapped must be counted by walking entity_map — it is an ADDRESSABILITY index. Ground "
 		+ "items are placed without being mapped, which is why the old subtraction misread them as failures.");
 });
+
+// ── Per-phase durations: read the registry, never subtract by hand ───────────────────────────
+//
+// Each `<phase>_ticks` in the import-complete payload was a hand-written
+// `(m.x_completed_tick or 0) - (m.x_started_tick or 0)`. That shape shipped a defect: validation's
+// two boundaries live under DIFFERENT guards — `validation_started_tick` is stamped unconditionally
+// (import-completion.lua:396) while `validation_done_tick` is assigned only inside
+// `if is_transfer and has_verification`. On a plain file/upload import the subtraction therefore ran
+// as `0 - game.tick` and shipped a large NEGATIVE number to the controller, where the TS side's
+// `Number(x || 0)` passes a negative straight through.
+//
+// The `or 0` is what makes it invisible: it reads as a safe default while manufacturing a measured-
+// looking number out of a missing boundary. PhaseRecorder.phase_ticks reads both boundaries off the
+// SAME registry entry that declares the phase and returns nil when either is absent.
+
+test("R10: every per-phase duration comes from the registry, not a hand subtraction", () => {
+	const phases = PHASES.filter((spec) => spec.to && (spec.from || spec.from_job)).map((s) => s.name);
+	const lines = completionSrc.split(/\r?\n/);
+	for (const [i, line] of lines.entries()) {
+		if (line.trimStart().startsWith("--")) continue;
+		const assignment = /\b(\w+)_ticks\s*=\s*([^,\n]+)/.exec(line);
+		if (!assignment || !phases.includes(assignment[1])) continue;
+		assert.match(assignment[2], /PhaseRecorder\.phase_ticks\s*\(/,
+			`import-completion.lua:${i + 1} computes ${assignment[1]}_ticks by hand. Use `
+			+ `PhaseRecorder.phase_ticks(job, "${assignment[1]}") — a hand subtraction with 'or 0' on `
+			+ "boundaries that sit under different guards is how validation_ticks came to ship a large "
+			+ "NEGATIVE number on every non-transfer import.");
+	}
+});
+
+test("R11: phase_ticks returns nil for a missing boundary, never a subtraction of zero", () => {
+	const body = recorderSrc.slice(recorderSrc.indexOf("function PhaseRecorder.phase_ticks"),
+		recorderSrc.indexOf("function PhaseRecorder.build_spans"));
+	assert.ok(body.length > 0, "PhaseRecorder.phase_ticks must exist");
+	assert.match(body, /if\s+not\s+started\s+or\s+not\s+completed\s+then\s+return\s+nil\s+end/,
+		"phase_ticks must return nil when either boundary is missing — the same rule build_spans "
+		+ "applies to the waterfall. A phase that did not run has no duration; it does not have a "
+		+ "duration of zero.");
+	assert.doesNotMatch(body, /or\s+0\s*\)/,
+		"phase_ticks must not default a missing boundary to 0 — that is precisely the shape that "
+		+ "manufactured the negative validation_ticks.");
+});

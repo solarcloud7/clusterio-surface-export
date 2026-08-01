@@ -840,18 +840,32 @@ function ImportCompletion.run_phase2(job)
 			duration_ticks = duration_ticks,
 			-- Include detailed phase metrics
 			metrics = {
-				-- Timing in ticks (can convert to ms on JS side: ticks / 60 * 1000)
-				tiles_ticks = (job.metrics.tiles_completed_tick or 0) - (job.metrics.tiles_started_tick or 0),
-				entities_ticks = (job.metrics.entities_completed_tick or job.metrics.entities_started_tick or 0) - (job.metrics.entities_started_tick or 0),
-				fluids_ticks = (job.metrics.fluids_completed_tick or 0) - (job.metrics.fluids_started_tick or 0),
-				belts_ticks = (job.metrics.belts_completed_tick or 0) - (job.metrics.belts_started_tick or 0),
-				state_ticks = (job.metrics.state_completed_tick or 0) - (job.metrics.state_started_tick or 0),
-				-- The GATE window only. This used to subtract from validation_completed_tick, which is
-				-- set at the very end of the completion routine — so a field named validation_ticks
-				-- silently also counted activation, latch-rearm scheduling and loss analysis, and
-				-- disagreed with the "validation" span in phase_spans right beside it. Two numbers
-				-- with one name meaning different windows. The tail now has its own spans.
-				validation_ticks = (job.metrics.validation_done_tick or 0) - (job.metrics.validation_started_tick or 0),
+				-- Timing in ticks (can convert to ms on JS side: ticks / 60 * 1000).
+				--
+				-- Every one of these was a hand-written `(completed or 0) - (started or 0)`, and that
+				-- shape shipped a real defect: `validation_started_tick` is stamped unconditionally at
+				-- :396 while `validation_done_tick` is only assigned inside `if is_transfer and
+				-- has_verification`, so on a plain file/upload import the subtraction ran as
+				-- `0 - game.tick` and sent a large NEGATIVE validation_ticks to the controller. The
+				-- `or 0` looks like a safe default and does the opposite — it manufactures a number
+				-- from a missing boundary. (entities_ticks already carried a bespoke
+				-- `or entities_started_tick` patch for the same class; it is subsumed here.)
+				--
+				-- PhaseRecorder.phase_ticks reads both boundaries off the SAME registry entry that
+				-- defines the phase and returns nil when either is missing — the rule build_spans
+				-- already applies to the waterfall. A phase that did not run reports nothing;
+				-- phaseSpans is the instrument that distinguishes "did not run" from "took no time".
+				tiles_ticks = PhaseRecorder.phase_ticks(job, "tiles"),
+				entities_ticks = PhaseRecorder.phase_ticks(job, "entities"),
+				fluids_ticks = PhaseRecorder.phase_ticks(job, "fluids"),
+				belts_ticks = PhaseRecorder.phase_ticks(job, "belts"),
+				state_ticks = PhaseRecorder.phase_ticks(job, "state"),
+				-- The GATE window only (validation_started_tick → validation_done_tick). It used to
+				-- subtract from validation_completed_tick, which is set at the very end of the
+				-- completion routine — so a field named validation_ticks silently also counted
+				-- activation, latch-rearm scheduling and loss analysis, and disagreed with the
+				-- "validation" span in phase_spans right beside it. The tail now has its own spans.
+				validation_ticks = PhaseRecorder.phase_ticks(job, "validation"),
 				total_ticks = duration_ticks,
 				-- Counts
 				tiles_placed = job.metrics.tiles_placed or 0,

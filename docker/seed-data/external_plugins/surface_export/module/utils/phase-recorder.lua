@@ -114,6 +114,28 @@ function PhaseRecorder.stop(job, name)
 	if spec.profiled ~= false then PhaseProfiler.stop(job.job_id, spec.profiler or spec.name) end
 end
 
+--- Elapsed ticks for one phase, or NIL when either boundary is missing.
+---
+--- nil, not zero, and not a subtraction. `(m.x_completed_tick or 0) - (m.x_started_tick or 0)` is
+--- how `validation_ticks` came to ship a large NEGATIVE number to the controller on every
+--- non-transfer import: `validation_started_tick` is stamped unconditionally
+--- (import-completion.lua:396) but `validation_done_tick` only inside `if is_transfer and
+--- has_verification`, so the subtraction ran as `0 - game.tick`. The `or 0` reads as a safe default
+--- and is the opposite — it turns a missing boundary into a number that looks measured.
+---
+--- Same rule as build_spans below, which omits a span missing either boundary rather than emitting
+--- a zero-width one: a phase that did not run has no duration. It does not have a duration of zero.
+function PhaseRecorder.phase_ticks(job, name)
+	local spec = spec_for(name, "phase_ticks")
+	if not spec then return nil end
+	if not spec.to or not (spec.from or spec.from_job) then return nil end
+	local metrics = job.metrics or {}
+	local started = spec.from_job and job[spec.from_job] or metrics[spec.from]
+	local completed = metrics[spec.to]
+	if not started or not completed then return nil end
+	return math.max(0, completed - started)
+end
+
 --- Build the waterfall: {name, start_offset_ms, duration_ms} per phase, in IMPORT_PHASES order,
 --- offsets relative to t0. A phase missing either boundary is omitted rather than emitted as a
 --- zero-width span (validation is absent on non-transfer imports, delivery on non-chunked ones).
