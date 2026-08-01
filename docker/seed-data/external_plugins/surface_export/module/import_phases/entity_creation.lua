@@ -229,7 +229,17 @@ function EntityCreation.process_batch(job, get_batch_size, should_show_progress)
     end
     
     job.current_index = end_index
-    
+
+    -- Accumulate the MEASURED tallies onto the job. These used to be per-batch locals that were
+    -- logged and discarded, which left the pipeline with no cumulative count of what actually
+    -- happened — so entities_failed was reconstructed by subtraction instead, and misreported every
+    -- successfully-placed ground item as a failure (see import-pipeline.lua).
+    job.metrics = job.metrics or {}
+    job.metrics.entities_created = (job.metrics.entities_created or 0) + batch_created
+    job.metrics.entities_failed = (job.metrics.entities_failed or 0) + batch_failed
+    job.metrics.entities_skipped = (job.metrics.entities_skipped or 0) + batch_skipped
+
+
     -- Log batch summary (every batch for first 5 and every 10th after)
     local batch_num = math.floor(end_index / batch_size)
     if batch_num <= 5 or batch_num % 10 == 0 or end_index >= job.total_entities then

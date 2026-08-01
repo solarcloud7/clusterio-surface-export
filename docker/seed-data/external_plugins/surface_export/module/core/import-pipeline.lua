@@ -399,6 +399,8 @@ function ImportPipeline.queue(json_data, new_platform_name, force_name, requeste
 			tiles_placed = 0,
 			entities_created = 0,
 			entities_failed = 0,
+			entities_skipped = 0,
+			entities_mapped = 0,
 			fluids_restored = 0,
 			belt_items_restored = 0,
 			circuits_connected = 0,
@@ -535,11 +537,21 @@ function ImportPipeline.process_batch(job, get_batch_size, should_show_progress)
 	local complete = EntityCreation.process_batch(job, get_batch_size, should_show_progress)
 	if complete and not job.metrics.entities_completed_tick then
 		job.metrics.entities_completed_tick = game.tick
-		-- Count created entities from entity_map
-		local created = 0
-		for _ in pairs(job.entity_map or {}) do created = created + 1 end
-		job.metrics.entities_created = created
-		job.metrics.entities_failed = job.total_entities - created
+		-- entities_created / entities_failed / entities_skipped are accumulated from the MEASURED
+		-- per-batch tallies in EntityCreation.process_batch. They used to be derived here instead, as
+		-- `entities_failed = job.total_entities - <size of entity_map>`, and that was wrong in a way
+		-- that cost real debugging time: entity_map is only written for entities that need to be
+		-- addressable later (entity_creation.lua), and ground items are deliberately NOT mapped — so
+		-- every successfully-placed item-on-ground counted as a failure. Measured on a live transfer:
+		-- 106 reported failed, 106 item-on-ground in the type breakdown, ZERO "FAILED to place ground
+		-- item" log lines, and no failed_entity_losses tally at all (which the failure path always
+		-- creates). A subtraction cannot tell "not created" from "not indexed".
+		--
+		-- entity_map size is still worth reporting, but as what it IS: how many entities are
+		-- addressable for state/inventory restoration, which is not a success count.
+		local mapped = 0
+		for _ in pairs(job.entity_map or {}) do mapped = mapped + 1 end
+		job.metrics.entities_mapped = mapped
 	end
 
 	return complete

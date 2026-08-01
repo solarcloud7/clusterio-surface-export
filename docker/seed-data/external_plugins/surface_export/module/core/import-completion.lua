@@ -902,7 +902,12 @@ function ImportCompletion.run_phase2(job)
 				-- Counts
 				tiles_placed = job.metrics.tiles_placed or 0,
 				entities_created = job.metrics.entities_created or 0,
+				-- Measured placement failures. Previously a subtraction that counted every
+				-- deliberately-unmapped entity (ground items) as a failure; skipped-by-design and
+				-- addressable-entity counts are now their own fields instead of being folded in here.
 				entities_failed = job.metrics.entities_failed or 0,
+				entities_skipped = job.metrics.entities_skipped or 0,
+				entities_mapped = job.metrics.entities_mapped or 0,
 				fluids_restored = job.metrics.fluids_restored or 0,
 				belt_items_restored = job.metrics.belt_items_restored or 0,
 				circuits_connected = job.metrics.circuits_connected or 0,

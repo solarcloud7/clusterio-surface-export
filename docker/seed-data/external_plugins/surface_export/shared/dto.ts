@@ -151,7 +151,12 @@ export interface ImportMetrics {
 	total_ms: number;
 	tiles_placed: number;
 	entities_created: number;
+	/** MEASURED placement failures (the batch tally), not total-minus-something. */
 	entities_failed: number;
+	/** Skipped by design — e.g. space-platform-hub, which is pre-created with the platform. Optional: absent on logs written before these were split out of entities_failed. */
+	entities_skipped?: number;
+	/** Entities indexed in entity_map, i.e. addressable for later state/inventory restoration. NOT a success count — ground items are placed without being mapped. */
+	entities_mapped?: number;
 	fluids_restored: number;
 	belt_items_restored: number;
 	circuits_connected: number;
