@@ -10,7 +10,7 @@ import type { Instance } from "@clusterio/host";
 import { wait } from "@clusterio/lib";
 import type { ExportData, ExportResult, ImportResult, PendingTransfer } from "./messages";
 import * as messages from "./messages";
-import { getErrorMessage, coercePlatformIndex, EXPORT_POLL_TIMEOUT_MS, EXPORT_POLL_INTERVAL_MS, makeCanonicalTransferId } from "./helpers";
+import { getErrorMessage, coercePlatformIndex, isBenignUnlockError, EXPORT_POLL_TIMEOUT_MS, EXPORT_POLL_INTERVAL_MS, makeCanonicalTransferId } from "./helpers";
 import { LuaInterface } from "./lib/lua-interface";
 import { parseSourceTransferLockStateJson } from "./lib/source-lock-state";
 
@@ -23,7 +23,7 @@ import { parseSourceTransferLockStateJson } from "./lib/source-lock-state";
  */
 type PermissiveLink = {
 	handle(messageClass: unknown, handler: (...args: never[]) => unknown): void;
-	sendTo(dst: "controller", message: unknown): Promise<messages.SimpleResponse & { transferId?: string }>;
+	sendTo(dst: "controller", message: unknown): Promise<messages.SimpleResponse & { transferId?: string; safeToUnlockSource?: boolean }>;
 };
 
 /**
@@ -257,26 +257,7 @@ export class InstancePlugin extends BaseInstancePlugin {
 					return;
 				}
 				this.logger.info(`Auto-transfer requested: dest_instance_id=${data.destination_instance_id} (type=${typeof data.destination_instance_id})`);
-				const canonicalExportId = makeCanonicalTransferId(this.i.id, exportId);
-				this.logger.info(`  Sending TransferPlatformRequest to controller: exportId=${canonicalExportId}, targetInstanceId=${data.destination_instance_id}`);
-
-				// Send transfer request to controller through the permissive `this.link` view (see
-				// PermissiveLink) — a BOUND call on the object, never an extracted/cast method (never extract a Clusterio Link method — call it bound).
-				const transferResponse = await this.link.sendTo(
-					"controller",
-					new messages.TransferPlatformRequest({
-						exportId: canonicalExportId,
-						targetInstanceId: Number(data.destination_instance_id),
-						sourceInstanceId: this.i.id,
-						sourceExportId: exportId,
-					}),
-				);
-
-				if (transferResponse.success) {
-					this.logger.info(`Transfer initiated: ${transferResponse.transferId}`);
-				} else {
-					this.logger.error(`Transfer failed: ${transferResponse.error}`);
-				}
+				await this.startControllerTransfer(exportId, Number(data.destination_instance_id), Number(data.platform_index));
 				return;
 			}
 
@@ -288,40 +269,83 @@ export class InstancePlugin extends BaseInstancePlugin {
 					this.pendingTransfer = null;
 					return;
 				}
-				const canonicalExportId = makeCanonicalTransferId(this.i.id, exportId);
 				this.logger.info(`Transfer export complete, initiating transfer to instance ${this.pendingTransfer.destination_instance_id}`);
-
-				// Send transfer request to controller through the permissive `this.link` view (see note above).
-				const transferResponse = await this.link.sendTo(
-					"controller",
-					new messages.TransferPlatformRequest({
-						exportId: canonicalExportId,
-						targetInstanceId: Number(pendingTargetId),
-						sourceInstanceId: this.i.id,
-						sourceExportId: exportId,
-					}),
-				);
-
-				if (transferResponse.success) {
-					this.logger.info(`Transfer initiated: ${transferResponse.transferId}`);
-				} else {
-					this.logger.error(`Transfer failed: ${transferResponse.error}`);
-
-					// Unlock the source on failure, by its unique index (pendingTransfer carries it from the
-					// transfer request). Guard: only unlock when we actually have a valid index.
-					const idx = this.pendingTransfer.platform_index;
-					if (Number.isInteger(idx)) {
-						await this.lua.unlockViaSurfaceLock(idx as number);
-					} else {
-						this.logger.warn("Cannot unlock after failed transfer — pendingTransfer has no valid platform_index");
-					}
-				}
-
+				await this.startControllerTransfer(exportId, pendingTargetId, Number(this.pendingTransfer.platform_index));
 				// Clear pending transfer
 				this.pendingTransfer = null;
 			}
 		} catch (err: unknown) {
 			this.logger.error(`Error handling export completion: ${getErrorMessage(err)}`);
+		}
+	}
+
+	/**
+	 * Ask the controller to run a transfer for a completed export, and UNLOCK the source when the
+	 * controller refuses.
+	 *
+	 * ONE helper for both initiation paths, extracted 2026-08-02 after a live probe caught the
+	 * mirrored-path defect the di-change checklist names: the auto-transfer path was a hand-copied
+	 * mirror of the legacy pendingTransfer path that silently dropped the unlock-on-failure side
+	 * effect. Every controller-side refusal on the auto path — an offline destination, a settled-ID
+	 * retry, an unknown instance — logged "Transfer failed" and left the source LOCKED until the TTL
+	 * expired, while the refusal message told the player to retry. Measured: locked=1 after a
+	 * preflight refusal whose text promised "the source platform is unchanged".
+	 */
+	private async startControllerTransfer(exportId: string, targetInstanceId: number, platformIndex: number) {
+		const canonicalExportId = makeCanonicalTransferId(this.i.id, exportId);
+		this.logger.info(`  Sending TransferPlatformRequest to controller: exportId=${canonicalExportId}, targetInstanceId=${targetInstanceId}`);
+
+		// Send transfer request to controller through the permissive `this.link` view (see
+		// PermissiveLink) — a BOUND call on the object, never an extracted/cast method (never extract a Clusterio Link method — call it bound).
+		const transferResponse = await this.link.sendTo(
+			"controller",
+			new messages.TransferPlatformRequest({
+				exportId: canonicalExportId,
+				targetInstanceId,
+				sourceInstanceId: this.i.id,
+				sourceExportId: exportId,
+			}),
+		);
+
+		if (transferResponse.success) {
+			this.logger.info(`Transfer initiated: ${transferResponse.transferId}`);
+			return;
+		}
+		this.logger.error(`Transfer failed: ${transferResponse.error}`);
+		// The refusal must reach the PLAYER who initiated the transfer in-game — the host's JSON log
+		// (the only place this.logger writes) is invisible even to `docker logs`. Red, matching the
+		// transfer-failure convention.
+		await this.lua.printToGame(`[Transfer] ${String(transferResponse.error)}`, "{1, 0.3, 0.3}");
+
+		// Unlock ONLY when the controller proved the refusal was delivery-free. `success:false` alone
+		// is NOT that proof: one failure return (a throw AFTER the destination accepted the import)
+		// must keep the lock, because clearing it lets a later validation SUCCESS meet a source-delete
+		// gate that refuses on "not locked" — destination committed, source alive, permanent
+		// duplicate. Review finding; the flag is opt-in true at each proven-safe site in
+		// transferPlatform, so an unannotated future refusal defaults to the safe direction (keep the
+		// lock, TTL backstop).
+		if (transferResponse.safeToUnlockSource !== true) {
+			return;
+		}
+		// Through the SAME remote-interface path the controller's rollback uses — and CHECK the
+		// answer. The old helper here (unlockViaSurfaceLock) had never worked: its /sc used a runtime
+		// `require`, which Factorio forbids, and the fire-and-forget swallowed the error on every
+		// call. The lock "recovered" only because the TTL eventually fired.
+		if (Number.isInteger(platformIndex)) {
+			const unlockResult = String(await this.lua.unlockPlatform(platformIndex)).trim();
+			if (unlockResult.startsWith("SUCCESS")) {
+				this.logger.info(`Source platform ${platformIndex} unlocked after refused transfer`);
+			} else if (isBenignUnlockError(unlockResult)) {
+				// Already unlocked (e.g. the controller's own rollback got there first) — the goal
+				// state, not a failure. Without this the most common refusal path logged a spurious
+				// ERROR about a stranded lock that did not exist (review finding).
+				this.logger.info(`Source platform ${platformIndex} was already unlocked (${unlockResult})`);
+			} else {
+				this.logger.error(`Unlock after refused transfer did NOT succeed (${unlockResult}); `
+					+ "the source-side TTL remains the backstop");
+			}
+		} else {
+			this.logger.warn("Cannot unlock after failed transfer — no valid platform_index available");
 		}
 	}
 

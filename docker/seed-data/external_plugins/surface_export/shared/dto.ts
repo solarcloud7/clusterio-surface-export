@@ -264,8 +264,23 @@ export interface ValidationResult {
 	 * exists, this transfer's log has already been persisted and marked terminal.
 	 */
 	latchRearmScheduled?: number;
+	/**
+	 * A platform was LEFT BEHIND that automation could not remove — on the failure path, the failed
+	 * destination's own delete was refused by the engine, so an orphan exists on the target instance
+	 * (import-completion.lua). This is the ONLY meaning; it is deliberately NOT set for a failed
+	 * source unlock (TTL self-heals, nothing is left behind — owner ruling 2026-08-02), and a
+	 * forensics/black-box write failure never sets it (observability never gates the contract).
+	 * snake_case: Lua-native keys that survive the wire unchanged.
+	 */
 	cleanup_failed?: boolean;
 	cleanup_error?: string;
+	/**
+	 * The failed destination was KEPT — paused — by the deliberate one-shot, debug-gated
+	 * `preserve_failed_destination` flag (consumed on use; configure.lua). The only preservation
+	 * path: the accidental ones (bank-failure, evacuation-guard-failure) were removed 2026-08-02.
+	 * An operator who armed the flag owes the cleanup of this surface.
+	 */
+	destinationPreserved?: boolean;
 	/**
 	 * Items the engine's `set_stack` API refused to place because the destination stack was already
 	 * at its cap. Attached only when `total > 0` (import-completion.lua:605). These are SUBTRACTED

@@ -20,7 +20,17 @@ const TERMINAL_RESULT: Record<string, string> = {
 	completed: "success",
 	failed: "failure",
 	error: "failure",
-	cleanup_failed: "cleanup_failed", // import landed on destination but source platform delete failed
+	// A platform was LEFT BEHIND that automation could not remove: a committed transfer whose source
+	// delete failed (a DUPLICATE exists until the source is removed), or a failed transfer whose
+	// destination discard was refused by the engine (an ORPHAN exists on the target). The error text
+	// on the transfer says which. Deliberately NOT emitted for a failed source unlock — the
+	// source-side TTL self-heals that, nothing is left behind (owner ruling 2026-08-02).
+	//
+	// TWO SERIES NOTES from that ruling's deploy: (1) failed-unlock transfers moved from this bucket
+	// into result="failure", so both series step at the deploy; (2) a transfer REFUSED by the
+	// offline-destination preflight creates no ActiveTransfer at all, so the refusal produces NO
+	// sample in any bucket — "destination offline" is visible in logs and to the player, not here.
+	cleanup_failed: "cleanup_failed",
 };
 
 /** Operations that reached a terminal state, by operation type and result. The headline metric. */

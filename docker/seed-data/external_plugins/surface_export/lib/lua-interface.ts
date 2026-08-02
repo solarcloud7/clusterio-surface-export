@@ -205,13 +205,13 @@ export class LuaInterface {
 		);
 	}
 
-	/** Fire-and-forget unlock via the SurfaceLock util directly (the transfer-failure rollback path), by index. */
-	async unlockViaSurfaceLock(platformIndex: number): Promise<void> {
-		await this.host.sendRcon(
-			`/sc local SurfaceLock = require("modules/surface_export/utils/surface-lock"); ` +
-			`SurfaceLock.unlock_platform(${Math.trunc(platformIndex)})`,
-		);
-	}
+	// unlockViaSurfaceLock is DELETED (2026-08-02). It sent `local SurfaceLock = require(...)` via
+	// /sc — and Factorio's `require` is parse-time only, so the command threw
+	// "Require can't be used outside of control.lua parsing." on EVERY invocation, which the
+	// fire-and-forget void swallowed. It had never worked: every transfer-refusal unlock that went
+	// through it left the source locked until the TTL. Measured live against the running cluster.
+	// The one unlock is unlockPlatform above — the remote-interface path the controller's own
+	// rollback uses, which reports SUCCESS/ERROR so a caller cannot ignore the outcome by accident.
 
 	/** Print an in-game message. `colorCode` is a pre-formatted Lua RGB literal, e.g. "{0, 1, 0}". */
 	async printToGame(message: string, colorCode: string): Promise<void> {

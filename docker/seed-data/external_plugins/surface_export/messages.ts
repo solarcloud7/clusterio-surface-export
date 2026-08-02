@@ -1479,6 +1479,13 @@ export interface IControllerPlugin {
 	/** #106: add/remove a persisted awaiting_validation intent (the orchestrator calls these). */
 	persistPendingTransfer(intent: PendingTransferIntent): void;
 	removePendingTransfer(transferId: string): void;
+	/**
+	 * The single definition of "online" (present, on a connected host, AND running) — implemented
+	 * once on the controller plugin and shared with the Gateways editor's "(offline)" label. The
+	 * transfer preflight uses it to REFUSE a transfer to an offline destination up front (owner
+	 * ruling 2026-08-02: prevent the failure, don't build recovery for it).
+	 */
+	isInstanceOnline(instanceId: number): boolean;
 	controller: {
 		wsServer: { controlConnections: Map<number, unknown> };
 		sendTo: (target: { instanceId: number }, message: unknown) => Promise<any>;

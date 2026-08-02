@@ -666,44 +666,59 @@ function ImportCompletion.run_phase2(job)
 				result.mismatchDetails or "Unknown error"
 			), {1, 0, 0})
 
-			-- BLACK-BOX DISCARD: evidence is banked before the failed destination is destroyed.
-			-- A black-box write failure is itself cleanup_failed: preserve the surface rather than
-			-- destroying the only remaining evidence.
+			-- BLACK-BOX DISCARD (owner ruling 2026-08-02: OBSERVABILITY NEVER GATES THE CONTRACT).
+			-- Evidence is banked before the discard, but a black-box WRITE failure is a failure of our
+			-- debugging and the game does not suffer for it: log loudly, discard anyway. The old
+			-- preserve-on-bank-failure branch inverted that priority — and no evidence is actually
+			-- lost by discarding, because on failure the SOURCE is preserved (fail => revert): the
+			-- authoritative copy of everything the black box describes still exists.
 			local black_box_ok, black_box_result = pcall(bank_failure_black_box, job, result)
 			if not black_box_ok or black_box_result ~= true then
-				result.cleanup_failed = true
-				result.cleanup_error = string.format("Failed to bank failure black box: %s", tostring(black_box_result))
-				log(string.format("[Validation] ERROR: %s; destination preserved paused", result.cleanup_error))
+				log(string.format("[Validation] ERROR: failed to bank failure black box: %s — "
+					.. "discarding the destination anyway (observability never gates the contract; "
+					.. "the preserved source is the authoritative evidence)", tostring(black_box_result)))
+			end
+
+			local config = storage.surface_export_config or {}
+			local preserve_failed = config.debug_mode == true and config.preserve_failed_destination == true
+			-- Validity FIRST: an already-invalid platform is a COMPLETED discard, and it must not
+			-- consume the one-shot preserve flag — burning the flag on nothing would both report a
+			-- preservation that never happened and disarm the debug session that armed it (review
+			-- finding). The flag stays armed for the next real failed destination.
+			if not job.target_platform or not job.target_platform.valid then
+				-- Already gone = already discarded. This used to be reported as cleanup_failed — the
+				-- only cleanup_failed this cluster ever recorded was "Platform no longer exists", a
+				-- completed cleanup reported as a failed one.
+				log("[Validation] Failed destination already invalid — nothing to discard"
+					.. (preserve_failed and "; preserve_failed_destination stays ARMED (nothing to preserve)" or ""))
+			elseif preserve_failed then
+				-- The DELIBERATE escape hatch: one-shot, debug-gated, visible in the verdict. This is
+				-- the only preservation path; the accidental ones are gone.
+				config.preserve_failed_destination = nil
+				result.destinationPreserved = true
+				log("[Validation] Failed destination preserved paused by one-shot debug configuration; flag consumed")
 			else
-				local config = storage.surface_export_config or {}
-				local preserve_failed = config.debug_mode == true and config.preserve_failed_destination == true
-				if preserve_failed then
-					config.preserve_failed_destination = nil
-					result.destinationPreserved = true
-					log("[Validation] Failed destination preserved paused by one-shot debug configuration; flag consumed")
+				-- Evacuation is ATTEMPTED first (players routed home deliberately) but its failure
+				-- does not block the delete: the engine natively returns a player to a planet on hub
+				-- loss, so the guard's failure must not manufacture the orphan it guards against.
+				local evacuated, evacuation_err = pcall(Gateway.evacuate_passengers, job.target_platform)
+				if not evacuated then
+					log(string.format("[Validation] WARNING: passenger evacuation failed (%s) — proceeding "
+						.. "with discard; the engine returns players to a planet on hub loss natively",
+						tostring(evacuation_err)))
+				end
+				local delete_ok, delete_result = pcall(GameUtils.delete_platform, job.target_platform)
+				if delete_ok and delete_result == true then
+					log("[Validation] Failed destination discarded after black-box capture")
 				else
-					local evacuated, evacuation_err = pcall(function()
-						if not job.target_platform or not job.target_platform.valid then
-							error("target platform is not valid")
-						end
-						Gateway.evacuate_passengers(job.target_platform)
-					end)
-					local discarded = false
-					if evacuated then
-						local delete_ok, delete_result = pcall(GameUtils.delete_platform, job.target_platform)
-						discarded = delete_ok and delete_result == true
-						if not delete_ok then evacuation_err = delete_result end
-					end
-					if discarded then
-						log("[Validation] Failed destination discarded after black-box capture")
-					else
-						result.cleanup_failed = true
-						result.cleanup_error = evacuated
-							and string.format("GameUtils.delete_platform failed: %s", tostring(evacuation_err or "returned false"))
-							or string.format("Passenger evacuation failed: %s", tostring(evacuation_err))
-						log(string.format("[Validation] ERROR: cleanup_failed for %s: %s",
-							tostring(job.platform_name), result.cleanup_error))
-					end
+					-- The one honest residual: the engine itself refused the delete, so an orphaned
+					-- surface really does exist on this instance. cleanup_failed now means exactly
+					-- this — a platform was left behind that automation could not remove.
+					result.cleanup_failed = true
+					result.cleanup_error = string.format("GameUtils.delete_platform failed: %s",
+						tostring(delete_ok and (delete_result or "returned false") or delete_result))
+					log(string.format("[Validation] ERROR: cleanup_failed for %s: %s",
+						tostring(job.platform_name), result.cleanup_error))
 				end
 			end
 		else

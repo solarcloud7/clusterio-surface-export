@@ -888,8 +888,10 @@ export class ControllerPlugin extends BaseControllerPlugin {
 	 * Is the instance reachable for a transfer — present, on a connected host, AND running? This is the
 	 * single definition of "online"; the web Gateways editor's "(offline)" label MUST use the same
 	 * (connected && status==="running"), or the editor and the pushed config disagree.
+	 * Public (IControllerPlugin) since 2026-08-02: the transfer preflight refuses an offline
+	 * destination up front with this same definition — a second implementation would drift.
 	 */
-	private isInstanceOnline(instanceId: number): boolean {
+	isInstanceOnline(instanceId: number): boolean {
 		const inst = this.c.instances.get(instanceId);
 		if (!inst || inst.isDeleted) {
 			return false;

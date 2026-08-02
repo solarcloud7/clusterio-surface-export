@@ -120,6 +120,8 @@ function makeTransferHarness() {
 		logger: { error() {}, warn() {}, info() {}, verbose() {} },
 		persistPendingTransfer: () => {},
 		removePendingTransfer: () => {},
+		// Always online here — the preflight has its own tests; these exercise identity semantics.
+		isInstanceOnline: () => true,
 		persistStorage: async () => {},
 		platformStorage: {
 			get: (id) => id === "1:001_test" ? stored : null,
