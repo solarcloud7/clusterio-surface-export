@@ -658,8 +658,13 @@ export class TransferPlatformRequest {
 	toJSON() { return { exportId: this.exportId, targetInstanceId: this.targetInstanceId, sourceInstanceId: this.sourceInstanceId, sourceExportId: this.sourceExportId }; }
 
 	static Response = {
-		jsonSchema: { type: "object", properties: { success: { type: "boolean" }, error: { type: "string" }, transferId: { type: "string" }, message: { type: "string" } }, required: ["success"] } as JsonSchema,
-		fromJSON(json: unknown) { return json as SimpleResponse & { transferId?: string; message?: string }; },
+		// safeToUnlockSource is the WIRE CONTRACT the instance-side unlock authority rides on
+		// (instance.ts startControllerTransfer): true only where the controller proved the refusal
+		// was delivery-free. It is declared here deliberately — the reconciliation review found it
+		// crossing the wire only because this schema happens to omit additionalProperties:false, so a
+		// well-meaning schema tightening would have silently disarmed every instance-side unlock.
+		jsonSchema: { type: "object", properties: { success: { type: "boolean" }, error: { type: "string" }, transferId: { type: "string" }, message: { type: "string" }, safeToUnlockSource: { type: "boolean" } }, required: ["success"] } as JsonSchema,
+		fromJSON(json: unknown) { return json as SimpleResponse & { transferId?: string; message?: string; safeToUnlockSource?: boolean }; },
 	};
 }
 
@@ -703,8 +708,11 @@ export class StartPlatformTransferRequest {
 	}
 
 	static Response = {
-		jsonSchema: { type: "object", properties: { success: { type: "boolean" }, error: { type: "string" }, transferId: { type: "string" }, exportId: { type: "string" }, message: { type: "string" } }, required: ["success"] } as JsonSchema,
-		fromJSON(json: unknown) { return json as SimpleResponse & { transferId?: string; exportId?: string; message?: string }; },
+		// safeToUnlockSource declared for the same reason as TransferPlatformRequest.Response above —
+		// handleStartPlatformTransferRequest passes transferPlatform's result through, and web/ctl
+		// callers may consume the field.
+		jsonSchema: { type: "object", properties: { success: { type: "boolean" }, error: { type: "string" }, transferId: { type: "string" }, exportId: { type: "string" }, message: { type: "string" }, safeToUnlockSource: { type: "boolean" } }, required: ["success"] } as JsonSchema,
+		fromJSON(json: unknown) { return json as SimpleResponse & { transferId?: string; exportId?: string; message?: string; safeToUnlockSource?: boolean }; },
 	};
 }
 

@@ -377,6 +377,9 @@ test("the discard contract is unconditional — observability and guards never g
 	assert.doesNotMatch(evacuateSegment, /if\s+evacuated\s+then/,
 		"the delete must not be conditioned on evacuation success — that guard manufactured the "
 		+ "orphan it guarded against");
+	assert.doesNotMatch(evacuateSegment, /\breturn\b/,
+		"nor may an evacuation failure EXIT before the delete — an `if not evacuated then return` "
+		+ "re-gate is the same orphan through the other door (reconciliation-review note)");
 	assert.match(importCompletion.slice(deleteAt - 60, deleteAt + 50),
 		/local\s+delete_ok\s*,\s*delete_result\s*=\s*pcall\(GameUtils\.delete_platform/,
 		"the delete must be an unconditional direct pcall assignment");

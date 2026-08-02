@@ -140,10 +140,13 @@ export class TransferOrchestrator {
 			if (existingTransfer.status !== "failed") {
 				// Unlocking the SOURCE here is safe even though the refusal names a committed
 				// DESTINATION copy: nothing was sent on THIS attempt, and a fresh source lock from a
-				// replayed export holds a platform this refusal just declined to move. (For the
-				// settled statuses themselves the unlock is a no-op — a completed transfer's source
-				// is deleted, and a cleanup_failed source was already unlocked before its delete was
-				// attempted.) Verified branch by branch in review.
+				// replayed export holds a platform this refusal just declined to move. For the settled
+				// statuses themselves the unlock is a no-op or benign: a completed transfer's source
+				// is deleted ("no longer exists"), a failure-path cleanup_failed source was unlocked
+				// before its delete was attempted, and a SUCCESS-path cleanup_failed source (delete
+				// refused post-commit) is still locked — where unlocking merely restores visibility of
+				// a duplicate an operator must resolve anyway; it cannot create one, the copy already
+				// exists. Verified branch by branch in review.
 				return { success: false, safeToUnlockSource: true, error:
 					`Refusing retry of settled transfer ${transferId} (status=${existingTransfer.status}): `
 					+ "the destination may hold a committed copy; create a NEW export to transfer again" };
@@ -687,7 +690,12 @@ export class TransferOrchestrator {
 	async handleTransferPlatformRequest(request: { exportId: string; targetInstanceId: number; sourceInstanceId?: number | null; sourceExportId?: string | null }) {
 		const resolved = this.plugin.platformTree.resolveTargetInstance(request.targetInstanceId);
 		if (!resolved) {
-			return { success: false, error: `Unknown instance ${request.targetInstanceId}` };
+			// Provably pre-send — nothing exists to have been delivered to — so the refusal carries
+			// the unlock authority. The reconciliation review caught this handler sitting OUTSIDE the
+			// flag taxonomy: it refuses before transferPlatform is ever reached, so an in-game
+			// `/transfer-platform <idx> <bogus-id>` stranded its export lock for the full TTL while
+			// the instance-side gate (correctly, per contract) declined to unlock an unflagged refusal.
+			return { success: false, safeToUnlockSource: true, error: `Unknown instance ${request.targetInstanceId}` };
 		}
 		try {
 			const exportId = this.plugin.platformStorage.get(request.exportId)

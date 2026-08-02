@@ -312,10 +312,13 @@ export class InstancePlugin extends BaseInstancePlugin {
 			return;
 		}
 		this.logger.error(`Transfer failed: ${transferResponse.error}`);
-		// The refusal must reach the PLAYER who initiated the transfer in-game — the host's JSON log
-		// (the only place this.logger writes) is invisible even to `docker logs`. Red, matching the
-		// transfer-failure convention.
-		await this.lua.printToGame(`[Transfer] ${String(transferResponse.error)}`, "{1, 0.3, 0.3}");
+
+		// THE CONTRACT FIRST, the print second — order is load-bearing. The reconciliation review
+		// caught the first version printing BEFORE unlocking: printToGame's sendRcon(expectEmpty)
+		// THROWS on any non-empty response (a Lua error, an unconfirmed console, an RCON blip), the
+		// throw lands in handleExportComplete's catch, and the unlock never runs — the exact
+		// stranded-lock defect this method exists to eliminate, reintroduced by the observability
+		// call placed in front of it. Observability never gates the contract, including here.
 
 		// Unlock ONLY when the controller proved the refusal was delivery-free. `success:false` alone
 		// is NOT that proof: one failure return (a throw AFTER the destination accepted the import)
@@ -324,28 +327,37 @@ export class InstancePlugin extends BaseInstancePlugin {
 		// duplicate. Review finding; the flag is opt-in true at each proven-safe site in
 		// transferPlatform, so an unannotated future refusal defaults to the safe direction (keep the
 		// lock, TTL backstop).
-		if (transferResponse.safeToUnlockSource !== true) {
-			return;
-		}
-		// Through the SAME remote-interface path the controller's rollback uses — and CHECK the
-		// answer. The old helper here (unlockViaSurfaceLock) had never worked: its /sc used a runtime
-		// `require`, which Factorio forbids, and the fire-and-forget swallowed the error on every
-		// call. The lock "recovered" only because the TTL eventually fired.
-		if (Number.isInteger(platformIndex)) {
-			const unlockResult = String(await this.lua.unlockPlatform(platformIndex)).trim();
-			if (unlockResult.startsWith("SUCCESS")) {
-				this.logger.info(`Source platform ${platformIndex} unlocked after refused transfer`);
-			} else if (isBenignUnlockError(unlockResult)) {
-				// Already unlocked (e.g. the controller's own rollback got there first) — the goal
-				// state, not a failure. Without this the most common refusal path logged a spurious
-				// ERROR about a stranded lock that did not exist (review finding).
-				this.logger.info(`Source platform ${platformIndex} was already unlocked (${unlockResult})`);
+		if (transferResponse.safeToUnlockSource === true) {
+			// Through the SAME remote-interface path the controller's rollback uses — and CHECK the
+			// answer. The old helper here (unlockViaSurfaceLock) had never worked: its /sc used a
+			// runtime `require`, which Factorio forbids, and the fire-and-forget swallowed the error
+			// on every call. The lock "recovered" only because the TTL eventually fired.
+			if (Number.isInteger(platformIndex)) {
+				const unlockResult = String(await this.lua.unlockPlatform(platformIndex)).trim();
+				if (unlockResult.startsWith("SUCCESS")) {
+					this.logger.info(`Source platform ${platformIndex} unlocked after refused transfer`);
+				} else if (isBenignUnlockError(unlockResult)) {
+					// Already unlocked (e.g. the controller's own rollback got there first) — the goal
+					// state, not a failure. Without this the most common refusal path logged a spurious
+					// ERROR about a stranded lock that did not exist (review finding).
+					this.logger.info(`Source platform ${platformIndex} was already unlocked (${unlockResult})`);
+				} else {
+					this.logger.error(`Unlock after refused transfer did NOT succeed (${unlockResult}); `
+						+ "the source-side TTL remains the backstop");
+				}
 			} else {
-				this.logger.error(`Unlock after refused transfer did NOT succeed (${unlockResult}); `
-					+ "the source-side TTL remains the backstop");
+				this.logger.warn("Cannot unlock after failed transfer — no valid platform_index available");
 			}
-		} else {
-			this.logger.warn("Cannot unlock after failed transfer — no valid platform_index available");
+		}
+
+		// The refusal must reach the PLAYER who initiated the transfer in-game — the host's JSON log
+		// (the only place this.logger writes) is invisible even to `docker logs`. Red, matching the
+		// transfer-failure convention. Best-effort by design (mirrors handleTransferStatusUpdate's
+		// guarded print): its failure is logged, never propagated past the contract above.
+		try {
+			await this.lua.printToGame(`[Transfer] ${String(transferResponse.error)}`, "{1, 0.3, 0.3}");
+		} catch (printErr: unknown) {
+			this.logger.warn(`Could not print the transfer refusal in game: ${getErrorMessage(printErr)}`);
 		}
 	}
 
