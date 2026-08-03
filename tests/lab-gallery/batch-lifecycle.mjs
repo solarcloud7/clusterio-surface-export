@@ -93,6 +93,243 @@ export function instancePath(host, suffix) {
 	return `/clusterio/data/instances/${HOSTS[host].instance}/${suffix}`;
 }
 
+// --- Export-ID uniquifier ------------------------------------------------------------------------
+
+/**
+ * The floor the export-ID counter is raised to: raw epoch milliseconds, NO modulus.
+ *
+ * This used to be `100 + (Date.now() % 1_000_000)` — an ADDITIVE offset, and `% 1_000_000` wraps
+ * every 1,000,000 ms = 16 minutes 40 seconds. The golden save reloads to a PINNED counter on every
+ * run, so the post-bump value was fully determined by the offset: two runs any multiple of ~16m40s
+ * apart drew the same offset and regenerated the SAME transfer IDs. (deliver-all-fixtures used
+ * `% 100_000` — 100 seconds.) That aliasing is why collisions kept RECURRING rather than being
+ * one-off contamination from a stray manual transfer.
+ *
+ * A monotone floor cannot alias: strictly increasing in wall clock at 1 ms granularity, and
+ * docker-exec latency alone puts consecutive runs orders of magnitude further apart than the job
+ * count of any single run.
+ *
+ * MEASURED on 2.1.11 before adopting, because a 13-digit counter is a real change to a
+ * save-resident value and the formatting is the least likely link to break:
+ *   - `string.format("%03d", 1785604898997)` formats clean (no padding artifact)
+ *   - the resulting job id `1785604898997_lab-omnibus-state-v1` round-trips through
+ *     job-results.lua:12's `^(%d+)_` parse EXACTLY (< 2^53, so the double is lossless)
+ *   - a real `export_platform_to_file` produced its entry and wrote its file
+ *   - the counter AND its async_job_results key both survived a full instance stop/start
+ *     save-load cycle — the link the rest of the chain rests on
+ *
+ * Does NOT protect against a clock rewind (NTP correction, VM snapshot restore): nothing remembers
+ * the previous run's high-water mark, and the golden load resets the save's counter to its small
+ * pinned value. That residual is what the collision preflight covers.
+ */
+export function exportIdFloor(nowMs = Date.now()) {
+	return Math.floor(nowMs);
+}
+
+/**
+ * Raise one host's export-ID counter to `floor` — SET-if-lower, not ADD, so both hosts land on the
+ * SAME base no matter how far each has drifted. (They do drift: the counter is shared with import
+ * jobs, import-pipeline.lua:44-45, so the destination side advances during a run too.) A shared base
+ * is what lets a collision preflight predict both legs' IDs from one number.
+ *
+ * THROWS when the floor did not apply. That means the golden save was banked carrying a wall-clock
+ * counter, which makes this a permanent no-op and silently restores the aliasing it exists to
+ * prevent — invisible unless checked right here.
+ */
+export function bumpExportIdCounter(host, floor = exportIdFloor()) {
+	const bumped = lua(host, `local floor=${floor}; local before=storage.async_job_id_counter or 0;`
+		+ " if before < floor then storage.async_job_id_counter = floor end;"
+		+ " return {success=true,before=before,counter=storage.async_job_id_counter,floorApplied=(before<floor)}");
+	if (!bumped.success) throw new Error(`export-id uniquifier failed on host ${host}: ${bumped.error}`);
+	if (!bumped.floorApplied) {
+		throw new Error(`export-id uniquifier did not apply on host ${host}: the save's counter is already `
+			+ `${bumped.before}, at or above the wall-clock floor ${floor}. A golden save banked with a `
+			+ "wall-clock counter makes this bump a permanent no-op and silently restores the ID aliasing "
+			+ "it exists to prevent. Re-bank the golden pair from a save with a small counter.");
+	}
+	return bumped.counter;
+}
+
+// --- Canonical transfer-ID collision preflight ---------------------------------------------------
+//
+// A colliding ID is refused correctly and reported clearly (waitForImportResult names the refusal),
+// but it is reported ~90 s into the run, after the boards have already been built. These helpers move
+// the report to the front — before any physical work — with the remedy attached.
+//
+// The ID format is DUPLICATED here rather than imported. Importing it would mean reaching into
+// dist/node, which is gitignored and not present in the plugin container where test/*.test.cjs runs;
+// id-format-pin.test.mjs asserts the two producers still emit these exact templates instead.
+
+/** Mirrors export-pipeline.lua:184 — `platform.name:gsub("[^%w%-]", "-")`. */
+export function sanitizePlatformName(name) {
+	return String(name).replace(/[^0-9A-Za-z-]/g, "-");
+}
+
+/** Mirrors export-pipeline.lua:189 — `string.format("%03d_%s", job_counter, safe_name)`. */
+export function makeExportJobId(counter, platformName) {
+	return `${String(counter).padStart(3, "0")}_${sanitizePlatformName(platformName)}`;
+}
+
+/** Mirrors shared/utils.ts makeCanonicalTransferId — `${sourceInstanceId}:${jobId}`. */
+export function canonicalTransferId(instanceId, jobId) {
+	return `${instanceId}:${jobId}`;
+}
+
+/**
+ * The IDs a run is about to generate from `counter`, as a WINDOW rather than a point.
+ *
+ * The exact draw is not predictable: the counter is shared with import jobs
+ * (import-pipeline.lua:44-45), so anything queued between the bump and the export shifts it. A window
+ * that is too wide only risks a false positive, which the message below already handles honestly; a
+ * point that is off by one misses the collision entirely.
+ */
+export function predictCanonicalIds({ instanceId, counter, platformName, count = 10 }) {
+	const ids = [];
+	for (let i = 1; i <= count; i++) {
+		ids.push(canonicalTransferId(instanceId, makeExportJobId(counter + i, platformName)));
+	}
+	return ids;
+}
+
+/**
+ * Ask the controller which transfer records it holds. Returns null — never throws — when the query
+ * is unavailable, because a DIAGNOSTIC must not be able to fail the run it is diagnosing.
+ */
+export function fetchTransferSummaries({ limit = 200 } = {}) {
+	let out;
+	try {
+		out = ctl("surface-export", "list-transfers", String(limit));
+	} catch (error) {
+		// Surfaced, not swallowed: an unavailable query is a legitimate degradation (an older
+		// controller build, or a control token without surface_export.logs.view), but it must be
+		// visible so "no collision reported" is never mistaken for "checked and clear".
+		console.error(`preflight: transfer-registry query unavailable — ${error.message}`);
+		return null;
+	}
+	// Take the last JSON-parsable line, not blindly the last line: --log-level error should keep
+	// stdout clean, but this removes the dependency on that (the runBoard convention).
+	const parseFailures = [];
+	const lines = String(out).split(/\r?\n/).map(line => line.trim()).filter(Boolean).reverse();
+	for (const line of lines) {
+		try {
+			const parsed = JSON.parse(line);
+			if (Array.isArray(parsed)) return parsed;
+			parseFailures.push(`parsed but not an array: ${line.slice(0, 80)}`);
+		} catch (parseError) {
+			parseFailures.push(`${line.slice(0, 80)} -> ${parseError.message}`);
+		}
+	}
+	console.error("preflight: transfer-registry query returned no JSON array; tried "
+		+ `${lines.length} line(s): ${parseFailures.join(" | ") || "(no output)"}`);
+	return null;
+}
+
+/**
+ * Adjudicate predicted IDs against the controller's records. PURE — no I/O, so the decision table
+ * below is unit-testable without a cluster.
+ *
+ * The certainty here is genuinely limited, and the messages must not overstate it:
+ *   - `limit` windows the query, so an older settled record is invisible
+ *   - activeTransfers is pruned above 100, so an evicted ID neither shows up NOR refuses
+ * A CLEAR result therefore asserts nothing. Only a HIT asserts anything.
+ *
+ * And a hit is not enough on its own. `registrySource: "active"` means "the retry guard can SEE this
+ * record" — NOT "the guard will refuse it". transferPlatform (transfer-orchestrator.ts:104-118) makes
+ * a THREE-way decision on status, and only the third refuses:
+ *
+ *   LIVE_STATUSES     transporting / awaiting_validation / awaiting_completion / in_progress
+ *                     -> idempotent success, the transfer is in flight. NOT refused.
+ *   "failed"          -> the ONLY replaceable settled state: its rollback DISCARDED the destination,
+ *                     so a re-run cannot duplicate. Explicitly replaced, and the orchestrator's own
+ *                     comment names our exact case: "golden-save batches reset the Lua export
+ *                     counter and legitimately regenerate identical IDs after a failure".
+ *   anything else     completed / cleanup_failed / unknown -> REFUSED.
+ *
+ * This mattered immediately: the suite's refusal leg (step D) manufactures an active+failed record
+ * on host 2's export ID on EVERY run. Treating any active hit as fatal would abort the next run of a
+ * suite that was working perfectly — a false alarm stated in capitals, demanding a controller restart
+ * nobody needed. Caught in review; the first version of this function did exactly that.
+ */
+
+/** Statuses transferPlatform treats as in-flight (transfer-orchestrator.ts:104-107). */
+const LIVE_TRANSFER_STATUSES = new Set([
+	"transporting", "awaiting_validation", "awaiting_completion", "in_progress",
+]);
+
+/** Would a record with this status actually make transferPlatform refuse a same-ID retry? */
+function wouldRefuse(hit) {
+	if (hit.registrySource !== "active") return false;   // the guard never reads the persisted log
+	if (LIVE_TRANSFER_STATUSES.has(hit.status)) return false;
+	return hit.status !== "failed";
+}
+
+export function checkTransferIdCollisions({ candidates, summaries, limit = 200 }) {
+	const scope = `${candidates.length} predicted ID(s), ${candidates[0]} .. ${candidates.at(-1)}`;
+	const caveat = `BEST-EFFORT: the query is windowed at ${limit} records and activeTransfers is `
+		+ "pruned above 100, so a clear result does not prove the IDs are free.";
+
+	if (summaries === null) {
+		return {
+			status: "skipped", fatal: false, hits: [],
+			message: "preflight SKIPPED (not passed): could not query the controller transfer registry. "
+				+ "Proceeding — a settled-ID collision would surface later as a refused transfer.",
+		};
+	}
+
+	const byId = new Map(summaries.map(summary => [summary.transferId, summary]));
+	const hits = candidates.filter(id => byId.has(id)).map(id => byId.get(id));
+	if (!hits.length) {
+		return { status: "clear", fatal: false, hits: [], message: `preflight: ${scope} — none present. ${caveat}` };
+	}
+
+	const describe = hit => `${hit.transferId} (status=${hit.status}, registry=${hit.registrySource ?? "unknown"})`;
+	const refusing = hits.filter(wouldRefuse);
+	if (refusing.length) {
+		return {
+			status: "collision", fatal: true, hits,
+			message: `preflight COLLISION: ${refusing.map(describe).join(", ")} is settled in the `
+				+ "controller's IN-MEMORY activeTransfers in a status the retry guard REFUSES. This run "
+				+ "will be refused. Remedy: docker restart surface-export-controller (that clears "
+				+ "activeTransfers), then re-run. The persisted transaction log is reloaded on restart but "
+				+ "is NOT consulted by the guard, so it does not need clearing.",
+		};
+	}
+
+	// Present and live-in-memory, but NOT refused. Worth saying out loud rather than reporting
+	// "clear", because the ID really is taken — it just does not block.
+	const replaceable = hits.filter(hit => hit.registrySource === "active");
+	if (replaceable.length) {
+		return {
+			status: "replaceable", fatal: false, hits,
+			message: `preflight NOTE (no action needed): ${replaceable.map(describe).join(", ")} is in the `
+				+ "in-memory registry, but in a status transferPlatform does NOT refuse — a live status "
+				+ "dedupes, and 'failed' is explicitly replaced because its rollback discarded the "
+				+ "destination. The suite's own refusal leg manufactures exactly this every run.",
+		};
+	}
+
+	// Anything that is neither of the two known provenance values — undefined (an older controller
+	// build) or a value added later — is UNKNOWN, not history. Defaulting an unrecognised value into
+	// the reassuring branch is how a check starts lying by omission.
+	const unknown = hits.filter(hit => hit.registrySource !== "persisted");
+	if (unknown.length) {
+		return {
+			status: "unknown", fatal: false, hits,
+			message: "preflight POSSIBLE COLLISION (provenance unknown — an older controller build, or a "
+				+ `registrySource value this checker does not know): ${unknown.map(describe).join(", ")}. `
+				+ "It may or may not be refused. Remedy if it is: docker restart "
+				+ "surface-export-controller, then re-run; if it persists after a restart the record is "
+				+ "historical only. Not failing on an unprovable signal.",
+		};
+	}
+
+	return {
+		status: "historical", fatal: false, hits,
+		message: `preflight NOTE (no action needed): ${hits.map(describe).join(", ")} exist only in the `
+			+ "PERSISTED transaction log, which the retry guard never reads. They will not refuse this run.",
+	};
+}
+
 // --- Lease / preflight ---------------------------------------------------------------------------
 
 // The exclusive-lease reading. Refuses (never repairs) hostile state: connected players, a paused
@@ -166,6 +403,22 @@ export function createBatchLifecycle({ goldenSourceSave, goldenDestSave, markerP
 	// is null the live pair has not been touched and there is nothing to restore.
 	let restoreArtifacts = null;
 
+	// The restore is IDEMPOTENT-BY-LATCH, and this is a data-loss guard, not tidiness.
+	//
+	// run-tests.mjs calls restoreLivePair from its `finally` AND again from `main().catch` — the
+	// first swallows its own errors and never rethrows, so the original error keeps propagating and
+	// both fire. Restore #1's rescue copy holds the PRE-SUITE live world (loadGoldenPair's exit-save),
+	// which is the only copy of any hand-built pad not yet banked. Restore #2 then `rm -f`s that
+	// rescue and re-copies the pristine artifact restore #1 had just written — i.e. it replaces the
+	// irreplaceable with the reproducible. The loss this rescue exists to prevent (the 92,50 pairing
+	// rig) happens anyway, one call later.
+	//
+	// The latch is separate from `restoreArtifacts` deliberately: nulling that would make the second
+	// call print "golden pair never loaded; live pair untouched", which is a different and false
+	// statement. Found in review; the trigger this change newly adds is the fatal collision preflight,
+	// whose whole job is to throw early.
+	let livePairRestored = false;
+
 	async function loadGoldenPair(manifest, phase) {
 		const repoRoot = REPO_ROOT;
 		restoreArtifacts = { 1: manifest.saves.source.artifact, 2: manifest.saves.destination.artifact };
@@ -189,7 +442,7 @@ export function createBatchLifecycle({ goldenSourceSave, goldenDestSave, markerP
 		// EXPORT-ID UNIQUIFIER (instrumentation-level, no physical state touched): the golden world's
 		// deterministic job counter regenerates IDENTICAL export/transfer IDs every load, and the
 		// controller correctly REFUSES a same-ID retry once a prior record settled with a committed
-		// destination (transfer-orchestrator retry semantics, 2026-07-18). Offsetting the counter after
+		// destination (transfer-orchestrator retry semantics, 2026-07-18). Raising the counter after
 		// each load gives every batch run collision-free IDs without weakening that production guard.
 		//
 		// BOTH hosts, not just the forward-transfer source. This used to bump host 1 only, which left
@@ -200,12 +453,14 @@ export function createBatchLifecycle({ goldenSourceSave, goldenDestSave, markerP
 		// save. The refusal leg is then refused for the WRONG reason, produces no import at all, and
 		// the wait below times out 240 s later blaming a missing file. Measured 2026-07-31, and the
 		// cluster log shows the same collision on 2026-07-29 and 07-30.
-		const offset = 100 + (Date.now() % 1_000_000);
-		for (const host of [1, 2]) {
-			const bumped = lua(host, `storage.async_job_id_counter=(storage.async_job_id_counter or 0)+${offset};` +
-				`return {success=true,counter=storage.async_job_id_counter}`);
-			if (!bumped.success) throw new Error(`export-id uniquifier failed on host ${host}: ${bumped.error}`);
-		}
+		//
+		// The bump is a monotone FLOOR, not the modular offset it used to be — see exportIdFloor for
+		// why `% 1_000_000` made these collisions recur on a 16m40s cycle rather than be one-offs.
+		// One floor for both hosts, so they land on a shared base a preflight can predict from.
+		const floor = exportIdFloor();
+		const counters = {};
+		for (const host of [1, 2]) counters[host] = bumpExportIdCounter(host, floor);
+		return counters;
 	}
 
 	// Deterministic golden worlds regenerate IDENTICAL debug filenames (same platform, same tick), so a
@@ -299,6 +554,15 @@ export function createBatchLifecycle({ goldenSourceSave, goldenDestSave, markerP
 				results.restored = { skipped: "golden pair never loaded; live pair untouched" };
 				return;
 			}
+			if (livePairRestored) {
+				// Second call in the same run — see the latch's declaration. Running the rescue block
+				// again would DELETE the pre-suite rescue and replace it with a copy of the pristine
+				// artifact the first call just wrote.
+				results.restored = { skipped: "live pair already restored this run; refusing to re-run "
+					+ "the rescue-and-overwrite (it would destroy the pre-suite rescue save)" };
+				return;
+			}
+			livePairRestored = true;
 			// EVIDENCE FIRST: restarting an instance rotates factorio-current.log — capture the
 			// golden sessions' logs into the results before the restore destroys them (paid for:
 			// run 1's stall evidence was lost to exactly this rotation).
@@ -376,6 +640,11 @@ export function createBatchLifecycle({ goldenSourceSave, goldenDestSave, markerP
 		// generic primitives
 		sleep, lastLine, docker, ctl, rcon, lua, instanceIds, instancePath,
 		preflightState, assertLeaseClean, loadedSave, waitReady, assignSave, readContainerJson,
+		// export-ID uniquifier + canonical-ID collision preflight (run-shape-agnostic; the CALLER
+		// decides how many transfers it makes and from which host, so it composes these itself)
+		exportIdFloor, bumpExportIdCounter,
+		sanitizePlatformName, makeExportJobId, canonicalTransferId,
+		predictCanonicalIds, fetchTransferSummaries, checkTransferIdCollisions,
 		// config-bound lifecycle
 		loadGoldenPair, dropMarker, filesNewerThanMarker, waitForImportResult, restoreLivePair,
 	};

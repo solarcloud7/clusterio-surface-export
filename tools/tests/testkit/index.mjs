@@ -18,6 +18,8 @@
 // the exact failure mode this repo keeps closing — a testkit that lies is worse than no testkit.
 import { exportInspect, inspectPayloadFile, resolvePlatformIndex } from "./export-inspect.mjs";
 import { explainBlackBox, explainBlackBoxFile, formatExplanation } from "./blackbox-explain.mjs";
+import { readTransactionLogStore } from "./log-query.mjs";
+import { resolvePath } from "./path-oracle.mjs";
 import {
 	formatFindings, referentialIntegrityAnchors, referentialIntegrityStatic,
 } from "./referential-integrity.mjs";
@@ -37,6 +39,15 @@ export const testkit = {
 	inspectPayloadFile,
 	/** Platform names collide; resolve to the unique per-force index, failing loud on ambiguity. */
 	resolvePlatformIndex,
+
+	/**
+	 * Resolve a dotted path through a transaction-log entry or debug dump, and when it MISSES, name
+	 * the REAL path. A wrong path returning an empty value is what made a typo read as a missing
+	 * feature; `resolvePath` never does that — check `.ok`, which is strictly boolean.
+	 */
+	resolvePath,
+	/** The controller transaction-log store, as an array. Throws with a diagnosis, never returns []. */
+	readTransactionLogStore,
 
 	/** Explain a banked failure black box, offline: diff rows, self-report vs physical scan, FAQ triage hint. */
 	explainBlackBox,
@@ -76,4 +87,5 @@ export default testkit;
 export {
 	exportInspect, inspectPayloadFile, resolvePlatformIndex, formatFindings,
 	explainBlackBox, explainBlackBoxFile, formatExplanation,
+	resolvePath, readTransactionLogStore,
 };

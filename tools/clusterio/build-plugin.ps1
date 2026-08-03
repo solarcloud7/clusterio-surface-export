@@ -16,7 +16,10 @@
       * the plugin dir bind-mounted  -> dist/ lands back on the host, so the cluster picks it up;
       * a NAMED VOLUME over node_modules -> the cluster's bind-mounted node_modules is never
         touched, and deps persist between runs for speed.
-    It mirrors CI (npm ci against package-lock.json).
+    It mirrors CI (npm ci against package-lock.json) — re-installing whenever the lockfile is newer
+    than the tree npm last wrote into the cached volume, so a warm volume cannot silently serve a
+    dependency set the lockfile no longer describes. That claim used to be conditional and unstated:
+    the install ran ONLY when the volume was empty.
 
 .PARAMETER Target
     all (default) | node | web — which build script to run.
@@ -83,12 +86,22 @@ if ($Fresh) {
     docker volume rm $DepsVolume 2>$null | Out-Null
 }
 
-# Inside the container: if deps are missing, `npm ci` installs them AND builds (its `prepare`
-# lifecycle runs a full `npm run build`); if deps are already cached, run the requested build
-# directly. The if/else avoids building twice on a fresh install.
+# Inside the container. Two independent decisions, deliberately no longer folded together:
+#
+#   INSTALL  when the cached deps volume is empty OR package-lock.json is newer than the tree npm
+#            last wrote (npm maintains node_modules/.package-lock.json, so this is npm's own signal,
+#            not a guess). The old condition was "deps missing" alone, which meant a warm volume
+#            NEVER re-ran `npm ci` — a long-lived se_plugin_build_nm could carry a dependency tree
+#            matching neither the current lockfile nor anything else, while the header claimed CI
+#            parity.
+#   BUILD    always, explicitly. This used to rely on `npm ci` firing the `prepare` lifecycle, which
+#            is no longer safe to assume: prepare is now guarded (scripts/prepare-build.mjs) and
+#            legitimately SKIPS when dist/ is already newer than every source. Relying on a
+#            lifecycle hook to produce this script's entire output was a hidden coupling either way.
 $Inner = "set -e; echo '[node] '`$(node -v); " +
-         "if [ ! -x node_modules/.bin/webpack-cli ]; then echo '[deps] npm ci (prepare runs a full build)'; npm ci --no-audit --no-fund; " +
-         "else echo '[build] $BuildScript'; $BuildScript; fi; echo '[ok] build complete'"
+         "if [ ! -x node_modules/.bin/webpack-cli ] || [ package-lock.json -nt node_modules/.package-lock.json ]; then " +
+         "echo '[deps] npm ci'; npm ci --no-audit --no-fund; fi; " +
+         "echo '[build] $BuildScript'; $BuildScript; echo '[ok] build complete'"
 
 Write-Host "Building plugin ($Target) in $Image ..." -ForegroundColor Cyan
 docker run --rm `

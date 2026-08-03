@@ -50,6 +50,31 @@ export interface TransferSummaryModel {
 	failedAt: number | null;
 	error: string | null;
 	lastEventAt: number | null;
+	/**
+	 * Which registry this summary came out of — stamped only by `getTransferSummaries`, which merges
+	 * two stores that are NOT equivalent:
+	 *
+	 *   "active"     the controller's in-memory `activeTransfers`. This is the ONLY store the retry
+	 *                guard consults (transfer-orchestrator.ts:89-118). Cleared by a controller
+	 *                restart. Pruned above 100 entries, so its absence proves nothing.
+	 *
+	 *                "active" means the guard can SEE the record — NOT that it will refuse it. The
+	 *                guard makes a THREE-way decision on `status` (:104-118): a LIVE status
+	 *                (transporting / awaiting_validation / awaiting_completion / in_progress) dedupes
+	 *                to idempotent success, "failed" is explicitly REPLACED because its rollback
+	 *                discarded the destination, and only everything else refuses. A caller deciding
+	 *                whether a retry is blocked must read `status` too — reading `registrySource`
+	 *                alone reports a false blocker on the failed record every gallery-suite run
+	 *                manufactures (caught in review).
+	 *   "persisted"  the on-disk transaction log, reloaded at every controller boot. The retry guard
+	 *                never reads it, so an ID appearing only here is history, not a blocker — and a
+	 *                controller restart will NOT make it go away.
+	 *
+	 * Optional because an un-redeployed controller omits it: treat `undefined` as "provenance
+	 * unknown", never as either value. Absent from `buildTransferSummary`, so it does not ride on
+	 * SurfaceExportTransferUpdateEvent where every entry is active by construction.
+	 */
+	registrySource?: "active" | "persisted";
 }
 export interface StoredExportSummaryModel {
 	exportId: string;
@@ -241,5 +266,55 @@ export interface ValidationResult {
 	latchRearmScheduled?: number;
 	cleanup_failed?: boolean;
 	cleanup_error?: string;
-	[key: string]: unknown;
+	/**
+	 * Items the engine's `set_stack` API refused to place because the destination stack was already
+	 * at its cap. Attached only when `total > 0` (import-completion.lua:605). These are SUBTRACTED
+	 * from expected counts before the gate (`import-completion.lua:429-442`), so they are not a gate
+	 * failure — the UI surfaces them as an info alert so an excluded item is never silent.
+	 *
+	 * `items` is keyed by QUALITY KEY, not by item name: `Util.make_quality_key` (game-utils.lua)
+	 * returns the bare `item_name` at normal quality and `"<item_name>:<quality_name>"` otherwise.
+	 * A consumer looking up `items["electronic-circuit"]` therefore misses every non-normal loss and
+	 * reports zero, while the gate's own subtraction used the quality key and did not. The first
+	 * version of this declaration said "keyed by item name" — a declared shape that is WRONG is worse
+	 * than none, which is the argument this whole change rests on. Caught in review.
+	 * (`failedEntityLosses` above is quality-keyed the same way.)
+	 */
+	inventoryOverflowLosses?: {
+		/** The authoritative loss count. Use this, not `entities.length` — see below. */
+		total: number;
+		items: Record<string, number>;
+		/** CAPPED AT 50 by the producer (deserializer.lua:782). A sample of where losses happened, not a count. */
+		entities: Array<{
+			name?: string;
+			position?: { x?: number; y?: number };
+			item?: string;
+			/** Present on the wire (deserializer.lua) — omitted by the web UI's local type, not by Lua. */
+			quality?: string;
+			expected?: number;
+			actual?: number;
+			lost?: number;
+		}>;
+	};
+	/**
+	 * Non-fatal notice: the destination force was under-researched relative to the source, so its
+	 * inserter-capacity bonuses were RAISED on import to preserve held items
+	 * (import-pipeline.lua:468-471). Raise-only — lowering would eject items from OTHER platforms'
+	 * inserters on the same force. Attached only when at least one property was raised
+	 * (import-completion.lua:612). Does NOT affect the verdict.
+	 *
+	 * `synced_to` is snake_case because it is a Lua-native key that survives the wire unchanged.
+	 */
+	forceDataMismatches?: Array<{
+		force?: string;
+		property?: string;
+		source?: number;
+		destination?: number;
+		synced_to?: number;
+	}>;
+	// NO index signature. `[key: string]: unknown` used to live here, and it is how
+	// `latchRearmScheduled` rode untyped and unrendered: a producer could attach any field and
+	// nothing — not the compiler, not a reviewer reading this interface — would notice it existed.
+	// The two fields above were in exactly that state, live in production data and rendered by the
+	// UI while invisible here. If Lua starts sending something new, declare it.
 }

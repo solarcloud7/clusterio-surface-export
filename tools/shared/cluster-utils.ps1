@@ -86,9 +86,25 @@ function Get-InstanceByHostNumber {
 #>
 function Get-TransactionLogStore {
     param(
-        [string]$Container = "surface-export-controller",
-        [string]$StorePath = "/clusterio/data/database/surface_export_transaction_logs.json"
+        [string]$Container,
+        [string]$StorePath
     )
+
+    # Resolved from tools/shared/cluster-paths.json, the one address BOTH languages read (Node reads
+    # it in tools/tests/testkit/log-query.mjs). Read INSIDE the function, not at dot-source time: a
+    # missing or malformed JSON must break only this function, not every script that dot-sources this
+    # library — Get-InstanceList and Sync-ControllerWebBundle have no business failing over a
+    # constant they never use. Literal fallbacks keep it working if the file is ever unreadable.
+    if (-not $Container -or -not $StorePath) {
+        $pathsFile = Join-Path $PSScriptRoot 'cluster-paths.json'
+        if (Test-Path $pathsFile) {
+            $store = (Get-Content $pathsFile -Raw | ConvertFrom-Json).transactionLogStore
+            if (-not $Container) { $Container = $store.container }
+            if (-not $StorePath) { $StorePath = $store.path }
+        }
+        if (-not $Container) { $Container = "surface-export-controller" }
+        if (-not $StorePath) { $StorePath = "/clusterio/data/database/surface_export_transaction_logs.json" }
+    }
 
     # Deliberately NO 2>&1 — stderr must stay OUT of the JSON. The exit code is the success signal.
     $raw = docker exec $Container cat $StorePath

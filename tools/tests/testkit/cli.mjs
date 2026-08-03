@@ -6,12 +6,20 @@
 //   node tools/tests/testkit/cli.mjs inspect <platform>         # payload summary + record types
 //   node tools/tests/testkit/cli.mjs inspect <platform> --field <name>@<x>,<y>:<dotted.path>
 //   node tools/tests/testkit/cli.mjs blackbox explain <bundle.json> [--json]   # offline forensics
+//   node tools/tests/testkit/cli.mjs log <transferId|latest> --field <dotted.path>   # transaction log
+//   node tools/tests/testkit/cli.mjs log <transferId|latest> --list                  # what logs exist
+//   node tools/tests/testkit/cli.mjs log dump <host> <name-or-glob> --field <path>   # instance debug_* dump
+//   node tools/tests/testkit/cli.mjs log --from-file <store.json> <id> --field <path>  # offline
 //
 // Exit codes: 0 clean, 1 findings, 2 usage/operational error. `blackbox explain` exits 0 whenever
 // the bundle DECODED — the failure is the bundle's content, not a finding about the repo.
+// `log` NEVER exits 1: it makes no finding about the repo, so a path that does not resolve is exit 2
+// AND NAMES THE REAL PATH. An empty answer for a mistyped path is the failure it exists to prevent.
 import { testkit } from "./index.mjs";
 import { probeProperty } from "./live-probe.mjs";
 import { explainBlackBoxFile, formatExplanation } from "./blackbox-explain.mjs";
+import * as logq from "./log-query.mjs";
+import { formatMiss } from "./path-oracle.mjs";
 
 const [, , command, ...rest] = process.argv;
 const flag = name => rest.includes(name);
@@ -101,7 +109,96 @@ async function cmdBlackbox() {
 	process.exit(0);
 }
 
-const COMMANDS = { check: cmdCheck, inspect: cmdInspect, probe: cmdProbe, blackbox: cmdBlackbox };
+// `log` is a QUERY-PATH ORACLE, not a log viewer. Its entire value is what it does when the path is
+// WRONG: exit 2 and name the real path. A wrong path used to return an empty value, which reads as
+// "the field is absent", which reads as "the feature is broken" — that chain produced a false
+// conclusion about the transaction log in one session. Hence: NEVER exit 1 here, and never exit 0 on
+// anything but a resolved value.
+//
+// `dump` is a SUB-VERB rather than a --dump flag because the two address spaces are different: the
+// store is keyed by transferId, a dump by (host, kind, platform, tick). `log latest --dump 2` would
+// have no defensible meaning, and an argv shape that means two things is how a wrong address gets a
+// plausible answer.
+async function cmdLog() {
+	// Positionals must exclude flag VALUES, not just the flags. The other commands here filter with a
+	// bare `!a.startsWith("--")`, which is fine for them because none takes a positional AFTER a
+	// value-flag — `log` does, and `--from-file <path> latest` silently made the PATH the selector.
+	const VALUE_FLAGS = new Set(["--field", "--from-file"]);
+	const positionals = [];
+	for (let i = 0; i < rest.length; i++) {
+		if (VALUE_FLAGS.has(rest[i])) { i++; continue; }
+		if (rest[i].startsWith("--")) continue;
+		positionals.push(rest[i]);
+	}
+	const field = valueOf("--field");
+	const asJson = flag("--json");
+	const usage = "usage:\n"
+		+ "  log <transferId|latest> --field <dotted.path> [--json]\n"
+		+ "  log <transferId|latest> --list\n"
+		+ "  log dump <host> <name-or-glob> [--field <path>] [--newest]\n"
+		+ "  log --from-file <store.json> <transferId|latest> --field <path>";
+
+	if (positionals[0] === "dump") {
+		const [, hostArg, glob] = positionals;
+		if (!hostArg || !glob) fail(usage);
+		const host = Number(hostArg);
+		if (!Number.isInteger(host)) fail(`log dump: host must be 1 or 2, got "${hostArg}"`);
+		const matches = logq.listDumps(host, glob);
+		if (!matches.length) {
+			fail(`log dump: no file matching "${glob}" in host ${host}'s script-output.\n`
+				+ "  A MISSING DUMP IS NOT AN ABSENT VALUE: every debug_* write is gated on the plugin's\n"
+				+ "  debug_mode (module/utils/debug-export.lua). Enable it and re-run the operation.");
+		}
+		if (flag("--list") || !field) {
+			for (const m of matches) console.log(`${m.size.toString().padStart(10)}  ${m.path}`);
+			process.exit(0);
+		}
+		if (matches.length > 1 && !flag("--newest")) {
+			fail(`log dump: "${glob}" matches ${matches.length} files — refusing to guess. Name one, or\n`
+				+ `pass --newest.\n  ${matches.map(m => m.path).join("\n  ")}`);
+		}
+		const chosen = matches[0];
+		const doc = logq.readDump(host, chosen.path);
+		const result = logq.resolvePath(doc, field);
+		if (!result.ok) fail(formatMiss(result, { query: field, subject: chosen.path }), 2);
+		console.log(chosen.path);
+		console.log(logq.formatValue(field, result.value));
+		process.exit(0);
+	}
+
+	const fromFile = valueOf("--from-file");
+	const store = fromFile ? logq.readStoreFile(fromFile) : logq.readTransactionLogStore();
+	const selector = positionals[0];
+
+	if (flag("--list")) {
+		const source = fromFile || `${logq.STORE.container}:${logq.STORE.path}`;
+		console.log(`${store.length} transaction log entr${store.length === 1 ? "y" : "ies"} in ${source}`);
+		for (const [index, entry] of store.entries()) {
+			console.log(`  ${String(index).padStart(3)}  ${logq.describeEntry(entry, index, store.length)}`);
+		}
+		if (store.length) console.log(`(\`latest\` resolves to #${store.length - 1}, ${store.at(-1).transferId})`);
+		process.exit(0);
+	}
+
+	if (!selector || !field) fail(usage);
+	const { entry, index } = logq.selectEntry(store, selector);
+	const result = logq.resolvePath(entry, field);
+	if (!result.ok) {
+		if (asJson) console.log(JSON.stringify({ ok: false, query: field, transferId: entry.transferId, miss: result }, null, 2));
+		fail(formatMiss(result, { query: field, subject: entry.transferId }), 2);
+	}
+	if (asJson) {
+		console.log(JSON.stringify({ ok: true, query: field, transferId: entry.transferId, value: result.value }, null, 2));
+		process.exit(0);
+	}
+	// The header is load-bearing: without it, a correct-looking value from the WRONG record is
+	// indistinguishable from the right answer.
+	console.log(logq.describeEntry(entry, index, store.length));
+	console.log(logq.formatValue(field, result.value));
+	process.exit(0);
+}
+
+const COMMANDS = { check: cmdCheck, inspect: cmdInspect, probe: cmdProbe, blackbox: cmdBlackbox, log: cmdLog };
 if (!COMMANDS[command]) {
 	fail(`usage: node tools/tests/testkit/cli.mjs <${Object.keys(COMMANDS).join("|")}> [...]`);
 }

@@ -30,6 +30,41 @@ surfaceExportCommands.add(new Command({
 	},
 }));
 
+// JSON-only, deliberately. This exists so a NON-INTERACTIVE caller (the gallery suite's collision
+// preflight) can ask which transfer IDs the controller already holds; the human-readable path is
+// tools/surface-export/list-transaction-logs.ps1 and is unchanged. A table here would just be a
+// second format to keep in sync.
+//
+// TWO CAVEATS the caller must honour, because the answer is BEST-EFFORT:
+//   1. `limit` windows the result — getTransferSummaries sorts by startedAt desc and slices, so a
+//      settled record older than the newest `limit` is simply invisible. Even 500 is a window.
+//   2. activeTransfers is pruned above 100 entries (transfer-orchestrator.ts:483-489), so an
+//      evicted ID neither appears here NOR refuses a retry.
+// A CLEAR result therefore asserts nothing. Only a HIT asserts anything, and even then
+// `registrySource` decides whether it would actually refuse — see TransferSummaryModel.
+surfaceExportCommands.add(new Command({
+	definition: [
+		"list-transfers [limit]",
+		"List recent transfer records as JSON (machine-readable; best-effort registry view)",
+		(yargs: YargsLike) => {
+			yargs.positional("limit", { describe: "Maximum records to return (1-500)", type: "number", default: 50 });
+		},
+	],
+	handler: async function(args: { limit?: number | string }, control: ControlLike) {
+		// Validated here rather than left to the message default: both ListTransactionLogsRequest and
+		// the controller handler use `|| 50`, so a caller passing 0 would silently get 50 back and
+		// believe it had asked for none.
+		const limit = Number(args.limit ?? 50);
+		if (!Number.isInteger(limit) || limit < 1 || limit > 500) {
+			throw new Error(`limit must be an integer between 1 and 500 (got ${JSON.stringify(args.limit)})`);
+		}
+		const summaries = await control.sendTo("controller",
+			new messages.ListTransactionLogsRequest({ limit })) as messages.TransferSummaryModel[];
+		// One line, so a caller can take the last JSON-parsable line of stdout.
+		console.log(JSON.stringify(summaries));
+	},
+}));
+
 surfaceExportCommands.add(new Command({
 	definition: [
 		"get-export <exportId> [outputFile]",
