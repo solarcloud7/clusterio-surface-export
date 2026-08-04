@@ -10,17 +10,23 @@
 // with the surface (raw-engine probe, 2026-08-03 — that measurement is why evacuation exists), so
 // a +1 Nauvis character count is evidence the protective route ran, not luck.
 //
-// Identity note: the lock is created without a transfer_job_id, and the delete passes nil —
-// the gate then degrades to the surface.index check by design (lua-interface.ts documents this).
-// Zero leftovers: the platform is deleted by the test itself; the evacuated body is identified by
-// unit_number against a pre-test baseline (never "all characters") and destroyed at the end.
+// Identity note: the lock is created without a transfer_job_id, and the delete passes nil — the
+// gate then degrades to the surface.index check by design (lua-interface.ts documents this).
+//
+// CLEANUP IS UNCONDITIONAL (review finding on PR #157: the first version leaked on EVERY failure
+// path — an ERROR from the delete left the probe platform LOCKED, an rconJson throw left
+// everything, and the fixed probe name then made every later run permanently red). The finally
+// block sweeps ALL platforms wearing this run's probe name (best-effort unlock first, so a locked
+// leftover is still removable) and destroys every Nauvis character not in the pre-test baseline —
+// which also covers the stale-second-body case. The probe name is UNIQUE PER RUN, and the
+// `evac-coverage-probe` prefix is in cleanup-test-surfaces.ps1's sweep list as the backstop.
 
 import { execFileSync } from "node:child_process";
 
 const CONTROLLER = "surface-export-controller";
 const CTL_CONFIG = "/clusterio/tokens/config-control.json";
 const INSTANCE = process.env.SE_LAB_INSTANCE || "clusterio-host-1-instance-1";
-const PROBE = "evac-coverage-probe";
+const PROBE = `evac-coverage-probe-${Date.now().toString(36)}`;
 
 function rcon(luaBody) {
 	const cmd = `npx clusterioctl --config ${CTL_CONFIG} --log-level error instance send-rcon `
@@ -43,56 +49,76 @@ const check = (ok, label, detail = "") => {
 	if (!ok) failed++;
 };
 
-console.log("=== evacuation-coverage: a body aboard survives the source-delete chokepoint ===");
+console.log(`=== evacuation-coverage: a body aboard survives the source-delete chokepoint (${PROBE}) ===`);
 
 // Baseline: every character unit_number on Nauvis BEFORE the test (never assume zero).
 const baseline = rconJson(
 	`(function() local t={} for _,c in pairs(game.surfaces['nauvis'].find_entities_filtered{type='character'}) do t[#t+1]=c.unit_number end return {units=t} end)()`,
 );
 const baselineUnits = new Set(asArray(baseline.units));
+// A Lua SET literal of the baseline, for the finally sweep ({} when empty).
+const baselineLuaSet = baselineUnits.size
+	? `{${[...baselineUnits].map(u => `[${u}]=true`).join(",")}}`
+	: "{}";
 
-// Setup: throwaway platform + hub, one unattached character body aboard.
-const setup = rconJson(
-	`(function() local p=game.forces.player.create_space_platform{name='${PROBE}', planet='nauvis', starter_pack='space-platform-starter-pack'} `
-	+ `p.apply_starter_pack() `
-	+ `local body=p.surface.create_entity{name='character', position={2,3}, force='player'} `
-	+ `return {index=p.index, body_ok=(body~=nil and body.valid), chars_aboard=p.surface.count_entities_filtered{type='character'}} end)()`,
-);
-check(setup.body_ok === true && setup.chars_aboard === 1, "probe platform carries one character body");
-
-// Drive the REAL chokepoint: production lock, then the sole source-delete path.
-const driven = rconJson(
-	`(function() local ok, err = remote.call('surface_export', 'lock_platform_for_transfer', ${setup.index}, 'player') `
-	+ `if not ok then return {locked=false, err=tostring(err)} end `
-	+ `local result = remote.call('surface_export', 'delete_platform_for_transfer', ${setup.index}, '${PROBE}', 'player', nil) `
-	+ `return {locked=true, result=result} end)()`,
-);
-check(driven.locked === true, "production transfer lock acquired", driven.err);
-check(driven.result === "SUCCESS", "delete chokepoint returned SUCCESS", String(driven.result));
-
-// Next execution (delete_surface is deferred to end of tick): platform gone, body ARRIVED.
-const after = rconJson(
-	`(function() local present=false for _,q in pairs(game.forces.player.platforms) do if q.name=='${PROBE}' then present=true end end `
-	+ `local units={} for _,c in pairs(game.surfaces['nauvis'].find_entities_filtered{type='character'}) do units[#units+1]=c.unit_number end `
-	+ `return {platform_present=present, nauvis_units=units} end)()`,
-);
-check(after.platform_present === false, "probe platform fully deleted");
-const arrived = asArray(after.nauvis_units).filter(u => !baselineUnits.has(u));
-check(arrived.length === 1,
-	"the body was EVACUATED to Nauvis (the engine destroys un-evacuated bodies with the surface — measured)",
-	`new characters on nauvis: ${arrived.length}`);
-
-// Zero leftovers: remove exactly the evacuated body, verify the baseline is restored.
-if (arrived.length > 0) {
-	const cleaned = rconJson(
-		`(function() local removed=0 for _,c in pairs(game.surfaces['nauvis'].find_entities_filtered{type='character'}) do `
-		+ `if c.unit_number == ${arrived[0]} then c.destroy() removed=removed+1 end end `
-		+ `local remaining=game.surfaces['nauvis'].count_entities_filtered{type='character'} `
-		+ `return {removed=removed, remaining=remaining} end)()`,
+try {
+	// Setup: throwaway platform + hub, one unattached character body aboard.
+	const setup = rconJson(
+		`(function() local p=game.forces.player.create_space_platform{name='${PROBE}', planet='nauvis', starter_pack='space-platform-starter-pack'} `
+		+ `p.apply_starter_pack() `
+		+ `local body=p.surface.create_entity{name='character', position={2,3}, force='player'} `
+		+ `return {index=p.index, body_ok=(body~=nil and body.valid), chars_aboard=p.surface.count_entities_filtered{type='character'}} end)()`,
 	);
-	check(cleaned.removed === arrived.length && cleaned.remaining === baselineUnits.size,
-		"zero leftovers: evacuated body removed, baseline restored",
-		JSON.stringify(cleaned));
+	check(setup.body_ok === true && setup.chars_aboard === 1, "probe platform carries one character body");
+
+	// Drive the REAL chokepoint: production lock, then the sole source-delete path.
+	const driven = rconJson(
+		`(function() local ok, err = remote.call('surface_export', 'lock_platform_for_transfer', ${setup.index}, 'player') `
+		+ `if not ok then return {locked=false, err=tostring(err)} end `
+		+ `local result = remote.call('surface_export', 'delete_platform_for_transfer', ${setup.index}, '${PROBE}', 'player', nil) `
+		+ `return {locked=true, result=result} end)()`,
+	);
+	check(driven.locked === true, "production transfer lock acquired", driven.err);
+	check(driven.result === "SUCCESS", "delete chokepoint returned SUCCESS", String(driven.result));
+
+	// Next execution (delete_surface is deferred to end of tick): platform gone, body ARRIVED.
+	const after = rconJson(
+		`(function() local present=false for _,q in pairs(game.forces.player.platforms) do if q.name=='${PROBE}' then present=true end end `
+		+ `local units={} for _,c in pairs(game.surfaces['nauvis'].find_entities_filtered{type='character'}) do units[#units+1]=c.unit_number end `
+		+ `return {platform_present=present, nauvis_units=units} end)()`,
+	);
+	check(after.platform_present === false, "probe platform fully deleted");
+	const arrived = asArray(after.nauvis_units).filter(u => !baselineUnits.has(u));
+	check(arrived.length === 1,
+		"the body was EVACUATED to Nauvis (the engine destroys un-evacuated bodies with the surface — measured)",
+		`new characters on nauvis: ${arrived.length}`);
+} finally {
+	// Unconditional sweep: every probe-named platform (unlock best-effort first, so even a locked
+	// leftover is removable) and every non-baseline character on Nauvis. Its own try/catch so a
+	// sweep failure is REPORTED without masking the primary failure above.
+	try {
+		const swept = rconJson(
+			`(function() local baseline=${baselineLuaSet} local plats=0 `
+			+ `for _,q in pairs(game.forces.player.platforms) do if q.name=='${PROBE}' then `
+			+ `pcall(function() remote.call('surface_export', 'unlock_platform', q.index) end) `
+			+ `if q.surface and q.surface.valid then game.delete_surface(q.surface) plats=plats+1 end end end `
+			+ `local chars=0 for _,c in pairs(game.surfaces['nauvis'].find_entities_filtered{type='character'}) do `
+			+ `if not baseline[c.unit_number] then c.destroy() chars=chars+1 end end `
+			+ `return {platforms=plats, characters=chars} end)()`,
+		);
+		// The normal green path expects: platform already deleted by the chokepoint (0 swept), the
+		// one evacuated body removed here (1 character). Anything else is visible in the line below.
+		console.log(`  cleanup: swept ${swept.platforms} leftover platform(s), ${swept.characters} non-baseline character(s)`);
+		const remaining = rconJson(
+			`(function() return {chars=game.surfaces['nauvis'].count_entities_filtered{type='character'}} end)()`,
+		);
+		check(remaining.chars === baselineUnits.size, "zero leftovers: Nauvis character baseline restored",
+			`baseline=${baselineUnits.size} now=${remaining.chars}`);
+	} catch (sweepErr) {
+		failed++;
+		console.error(`  FAIL cleanup sweep threw: ${sweepErr && sweepErr.message ? sweepErr.message : sweepErr}`);
+		console.error(`  hand-clean with: tools/tests/cleanup-test-surfaces.ps1 (probe prefix evac-coverage-probe is in its sweep list)`);
+	}
 }
 
 if (failed) {

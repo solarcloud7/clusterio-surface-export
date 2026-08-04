@@ -304,6 +304,23 @@ test("R10: every per-phase duration comes from the registry, not a hand subtract
 	}
 });
 
+test("R10b: the '(boundary or 0)' subtraction SHAPE is banned anywhere, not just in assignments", () => {
+	// Review finding on the R10 widening: the assignment-shaped scan above is blind to the same
+	// subtraction written INLINE (inside a game.print call, a table constructor, a function arg) or
+	// laundered through a _ticks-named variable. This scans for the DEFECT SHAPE itself — a raw
+	// tick BOUNDARY read defaulted with `or 0` — which is exactly the construct that turns a
+	// missing boundary into a number that looks measured. phase-recorder.lua is the one lawful
+	// reader of raw boundaries, and it refuses the default (returns nil) rather than wearing one.
+	const lines = completionSrc.split(/\r?\n/);
+	for (const [i, line] of lines.entries()) {
+		if (line.trimStart().startsWith("--")) continue;
+		assert.doesNotMatch(line, /\w+_(?:started|completed|done)_tick\s+or\s+0\b/,
+			`import-completion.lua:${i + 1} defaults a phase boundary with 'or 0' — a missing boundary `
+			+ "is not zero, it is ABSENT. Read PhaseRecorder.phase_ticks (nil for a missing boundary) "
+			+ "and render absence as absence.");
+	}
+});
+
 test("R11: phase_ticks returns nil for a missing boundary, never a subtraction of zero", () => {
 	const body = recorderSrc.slice(recorderSrc.indexOf("function PhaseRecorder.phase_ticks"),
 		recorderSrc.indexOf("function PhaseRecorder.build_spans"));

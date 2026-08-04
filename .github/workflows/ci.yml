@@ -107,9 +107,12 @@ jobs:
         # npm ci stalled twice on 2026-07-19 (registry metadata hangs) and, with no step timeout,
         # each stall ate the full job budget before cancellation. Fail the step fast instead, give
         # npm aggressive fetch retries, and allow one whole-command retry before going red.
+        # --ignore-scripts here too (review finding): on a clean runner the prepare lifecycle sees
+        # no dist/ and builds, then the explicit `npm run build` builds AGAIN — the known double
+        # build. The explicit build is the one this job means.
         timeout-minutes: 10
         run: |
-          NPM_FLAGS="--fetch-retries=5 --fetch-timeout=120000 --fetch-retry-maxtimeout=60000"
+          NPM_FLAGS="--ignore-scripts --fetch-retries=5 --fetch-timeout=120000 --fetch-retry-maxtimeout=60000"
           npm ci $NPM_FLAGS || { echo "::warning::npm ci stalled/failed once — retrying"; npm ci $NPM_FLAGS; }
           npm run build
 

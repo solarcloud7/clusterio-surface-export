@@ -595,7 +595,7 @@ docker exec surface-export-controller sh -c 'npx clusterioctl --config /clusteri
 The JSON log shape is `{"instance_id":…,"instance_name":…,"level":"info|error|server","message":"…","plugin":"surface_export","timestamp":"…"}`. Filter a single plugin with `grep '"plugin":"surface_export"'`. The `cluster-*.log` file is the single best place to trace a cross-instance transfer end-to-end (it has the host-1 export, the controller routing, AND the host-2 import in one stream).
 
 **Prometheus metrics are LIVE**: the `statistics_exporter` plugin exposes `http://localhost:8080/metrics` on the controller (process + cluster metrics, ~45 KB). **Custom surface_export transfer metrics are now implemented** — `lib/metrics.ts` defines collectors that register to Clusterio's default registry (so they surface on the same `/metrics` with no extra wiring) and `recordOperationOutcome()` is called from `SubscriptionManager.emitTransferUpdate` (the universal terminal chokepoint, idempotent per operation):
-- `surface_export_operations_total{operation,result,failure_stage}` — counter; `operation` ∈ transfer/export/import, `result` ∈ success/failure/cleanup_failed, `failure_stage` ∈ items/fluids/none
+- `surface_export_operations_total{operation,result,failure_stage}` — counter; `operation` ∈ transfer/export/import, `result` ∈ success/failure/cleanup_failed, `failure_stage` ∈ items/fluids/belts/none
 - `surface_export_operation_duration_seconds{operation,result,failure_stage}` — histogram (buckets 0.5s…300s)
 - `surface_export_entities_transferred_total{operation}` — counter (entities placed on the destination)
 - `surface_export_export_stall_seconds` — histogram; the source-side async export span (the tick-stall window that can heartbeat-drop a connected player)

@@ -225,6 +225,12 @@ export interface ValidationResult {
 	/** The one-shot test hooks' self-identification (import-completion.lua:556,565). */
 	testForcedFailure?: boolean;
 	testForcedEntityFailure?: boolean;
+	/** Per-item-name loss map + its total (transfer-validation.lua:330-331). The gallery manifest
+	 * asserts on totalItemLoss as a live contract — these were the two fields the first "enumerated
+	 * at the emitter" pass MISSED (review finding on PR #157: the enumeration rule was violated in
+	 * the PR introducing it). */
+	itemLossByType?: Record<string, number>;
+	totalItemLoss?: number;
 	entityCount?: number;
 	// Informational (display-only): the SOURCE payload's entity total. `entityCount` above is the live
 	// destination count (from validate_import). These legitimately differ (failed-to-place / serialization-

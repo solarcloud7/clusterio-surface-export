@@ -20,7 +20,7 @@
  * `--decide` (verdict as JSON, executes nothing). Zero deps: node:test only.
  */
 
-const { test } = require("node:test");
+const { test, after } = require("node:test");
 const assert = require("node:assert/strict");
 const { execFileSync } = require("node:child_process");
 const fs = require("node:fs");
@@ -30,9 +30,17 @@ const path = require("node:path");
 const SCRIPT = path.join(__dirname, "..", "scripts", "prepare-build.mjs");
 const STAMP = ".prepare-build-stamp";
 
+// Zero-leftover discipline applies to temp trees too (review finding: four mkdtemp trees leaked
+// per run). Every tree is tracked and removed after the file's tests complete, pass or fail.
+const madeTrees = [];
+after(() => {
+	for (const dir of madeTrees) fs.rmSync(dir, { recursive: true, force: true });
+});
+
 /** Minimal plugin shape: one source feeding each tree, both expected outputs present. */
 function makeTree() {
 	const dir = fs.mkdtempSync(path.join(os.tmpdir(), "prepare-build-inv-"));
+	madeTrees.push(dir);
 	fs.mkdirSync(path.join(dir, "lib"), { recursive: true });
 	fs.mkdirSync(path.join(dir, "web"), { recursive: true });
 	fs.mkdirSync(path.join(dir, "dist", "node"), { recursive: true });

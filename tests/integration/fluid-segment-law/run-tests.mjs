@@ -15,4 +15,9 @@ const instrument = path.join(
 	"..", "..", "instruments", "fluid-segment-law", "run-tests.mjs",
 );
 const result = spawnSync(process.execPath, [instrument], { stdio: "inherit" });
+if (result.error) {
+	// A spawn failure (ENOENT etc.) has no child output — surface it, or the runner reports a bare
+	// exit 1 with nothing to diagnose (review finding).
+	console.error(`fluid-segment-law shim: failed to spawn the instrument at ${instrument}: ${result.error.message}`);
+}
 process.exit(result.status ?? 1);
