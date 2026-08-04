@@ -212,7 +212,19 @@ export interface PayloadMetrics {
 export interface ValidationResult {
 	itemCountMatch: boolean;
 	fluidCountMatch: boolean;
-	failedStage?: 'items' | 'fluids' | 'test_hook' | null;
+	/** The Lua verdict's own success flag (transfer-validation.lua:336 / import-completion.lua's
+	 * forced-failure hooks). The wire event's top-level `success` mirrors it; declared here because
+	 * the object physically carries it. */
+	success?: boolean;
+	/** Set by the test-hook path only (import-completion.lua:555). */
+	message?: string;
+	/** 'belts' is set when the belt side-census refuses (import-completion.lua:577,811) — it was
+	 * emitted for months while this union omitted it: declared-but-wrong is worse than undeclared
+	 * (a reader narrowing on the union silently drops the belts case). Enumerated at the emitter. */
+	failedStage?: 'items' | 'fluids' | 'belts' | 'test_hook' | null;
+	/** The one-shot test hooks' self-identification (import-completion.lua:556,565). */
+	testForcedFailure?: boolean;
+	testForcedEntityFailure?: boolean;
 	entityCount?: number;
 	// Informational (display-only): the SOURCE payload's entity total. `entityCount` above is the live
 	// destination count (from validate_import). These legitimately differ (failed-to-place / serialization-

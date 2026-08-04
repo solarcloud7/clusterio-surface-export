@@ -931,14 +931,20 @@ function ImportCompletion.run_phase2(job)
 	-- Performance summary (profiler values are display-only, not serializable to JSON)
 	local perf = PhaseProfiler.get(job.job_id)
 	if perf then
-		local tiles_ms = math.floor(((job.metrics.tiles_completed_tick or 0) - (job.metrics.tiles_started_tick or 0)) * 16.67)
-		local entities_ms = math.floor(((job.metrics.entities_completed_tick or 0) - (job.metrics.entities_started_tick or 0)) * 16.67)
+		-- Through the registry (R10): phase_ticks returns NIL for a missing boundary, never the
+		-- `(completed or 0) - (started or 0)` subtraction shape that shipped negative
+		-- validation_ticks. A phase that did not run prints "n/a", not a number that looks measured.
+		local function phase_ms_display(name)
+			local ticks = PhaseRecorder.phase_ticks(job, name)
+			if not ticks then return "n/a" end
+			return string.format("%dms", math.floor(ticks * 16.67))
+		end
 		-- CRITICAL: Each print must stay below the 20-parameter LocalisedString limit.
 		game.print({"", "[Perf] Import '", job.platform_name, "' (", job.total_entities, " entities)"})
 		game.print({"", "  Setup:         ", perf.queue_setup})
-		game.print({"", "  Tiles:         ", tiles_ms, "ms"})
+		game.print({"", "  Tiles:         ", phase_ms_display("tiles")})
 		game.print({"", "  Beacons:       ", perf.beacons})
-		game.print({"", "  Entities:      ", entities_ms, "ms"})
+		game.print({"", "  Entities:      ", phase_ms_display("entities")})
 		game.print({"", "  Hub restore:   ", perf.hub_restore})
 		game.print({"", "  Belts:         ", perf.belts})
 		game.print({"", "  State:         ", perf.state})

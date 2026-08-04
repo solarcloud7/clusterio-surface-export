@@ -1410,7 +1410,7 @@ export interface ActiveTransfer {
 	exportMetrics?: ExportMetrics | null;
 	importMetrics?: ImportMetrics | null;
 	validationResult?: ValidationResult | null;
-	failedStage?: 'items' | 'fluids' | 'test_hook' | null;
+	failedStage?: 'items' | 'fluids' | 'belts' | 'test_hook' | null;
 	sourceVerification?: { itemCounts: Record<string, number>; fluidCounts: Record<string, number> };
 	validationTimeout?: ReturnType<typeof setTimeout> | null;
 	/** The ms actually armed for this attempt's validation timer (single source for logs + tests —
