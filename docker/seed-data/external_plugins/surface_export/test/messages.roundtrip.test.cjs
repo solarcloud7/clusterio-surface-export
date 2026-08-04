@@ -96,6 +96,15 @@ for (const { name, cls } of messageClasses) {
 		for (const key of (cls.jsonSchema.required || [])) {
 			assert.ok(key in json, `${name}.toJSON omits required field "${key}"`);
 		}
+		// ...and so must every OPTIONAL one. Checking only `required` left a silent hole: a property
+		// declared in the schema and set by the constructor, but missing from toJSON, never reaches
+		// the wire — the sender fills it, the receiver always sees the default, and every existing
+		// assertion still passes (extras-only drift check, stable round-trip, required present).
+		// Measured: dropping the then-new StartPlatformTransferRequest.targetPlanet from toJSON kept
+		// this file fully green, which is what prompted widening it.
+		for (const key of Object.keys(props)) {
+			assert.ok(key in json, `${name}.toJSON omits declared field "${key}" — it can never reach the wire`);
+		}
 	});
 
 	if (cls.Response) {
