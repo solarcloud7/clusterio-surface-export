@@ -149,6 +149,14 @@ The plugin uses **TypeScript** with bind-mounted source and **save patching** fo
 # Find what happened (plugin errors, transfer traces) — reads the JSON logs docker logs hides:
 ./tools/clusterio/check-cluster-logs.ps1                   # or -Grep "sendRequest|validation|fail"
 
+# Log an automated browser session into the web UI WITHOUT the token passing through a transcript.
+# The web UI is token-only (localStorage["controller_token"]; no cookie, no anonymous mode, no
+# ?token= path). This serves the token once, to the page, over loopback — so the automation writes
+# only the fetch URL and verifies success by LENGTH, never by value. Single-use, expires on its own.
+node tools/clusterio/serve-admin-token.mjs                 # prints ONE line: the URL to fetch
+#   then, in the page:  localStorage.setItem("controller_token", await (await fetch("<url>")).text())
+# For a HUMAN pasting into the login form, use ./tools/clusterio/get-admin-token.ps1 instead.
+
 # Transfer a platform between instances (then prints post-transfer state):
 ./tools/surface-export/transfer-platform.ps1 -PlatformIndex <idx> -Direction 2to1   # or 1to2
 
