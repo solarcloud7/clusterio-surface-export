@@ -343,13 +343,95 @@ test("W1 guard: a late genuine SUCCESS after a validation timeout must NOT drive
 	});
 
 	assert.equal(calls.deleteSends, 0,
-		"THE DEFECT: a late SUCCESS on a settled transfer must never send DeleteSourcePlatformRequest "
+		"a late SUCCESS on a settled transfer must never send DeleteSourcePlatformRequest "
 		+ "- the source was already unlocked and returned to the player");
-	assert.equal(transfer.status, "failed", "the settled status must not change");
+	assert.equal(transfer.status, "cleanup_failed",
+		"REVIEW FINDING: the late-live destination is a platform left behind, so the record must wear "
+		+ "cleanup_failed (its one meaning) - leaving it 'failed' (the one status retries may replace) "
+		+ "turned the 'retry works' guidance into a second copy imported beside the orphan");
 	assert.match(String(transfer.validationResult && transfer.validationResult.mismatchDetails),
 		/timeout/i, "the settled record's verdict must not be overwritten by the late one");
 	assert.ok(calls.events.includes("validation_after_settle"),
 		"the refusal must be LOUD: a validation_after_settle event names the live-destination residual");
+
+	// THE REAL INVARIANT (commensurate check, not the delete-send proxy): a retry against the
+	// accounted duplicate must be REFUSED - no second import may be sent while a live copy exists.
+	const importSendsBefore = calls.importSends;
+	const retry = await orch.transferPlatform("export_1", 2);
+	assert.equal(retry.success, false, "retrying beside a live destination copy must be refused");
+	assert.equal(calls.importSends, importSendsBefore, "no second import may be sent");
+});
+
+test("W1 guard: a late genuine FAILURE carrying destinationPreserved is ADOPTED (retry guard reads it)", async () => {
+	// The fabricated timeout verdict has no destinationPreserved field; the genuine late FAILURE is
+	// its only carrier. Dropping it fed the preserved-destination retry guard a now-unreachable
+	// input - a retry would land beside a deliberately preserved, paused destination.
+	const { orch, activeTransfers, calls } = makeHarness(() => ({ success: true }));
+	const res = await orch.transferPlatform("export_1", 2);
+	const transfer = onlyTransfer(activeTransfers);
+	if (transfer.validationTimeout) clearTimeout(transfer.validationTimeout);
+
+	// Timeout settles the transfer as failed (fabricated verdict, no destinationPreserved).
+	await orch.handleTransferValidation({
+		transferId: res.transferId, success: false,
+		platformName: transfer.platformName, sourceInstanceId: transfer.sourceInstanceId,
+		validation: { itemCountMatch: false, fluidCountMatch: false, mismatchDetails: "Validation timeout - no response received within 30s" },
+	});
+	assert.equal(transfer.status, "failed");
+
+	// The genuine late FAILURE arrives, carrying destinationPreserved.
+	await orch.handleTransferValidation({
+		transferId: res.transferId, success: false,
+		platformName: transfer.platformName, sourceInstanceId: transfer.sourceInstanceId,
+		validation: { itemCountMatch: false, fluidCountMatch: false, mismatchDetails: "item mismatch", destinationPreserved: true },
+	});
+
+	assert.equal(transfer.status, "failed", "a self-resolved destination leaves nothing behind - status stays failed");
+	assert.equal(transfer.validationResult && transfer.validationResult.destinationPreserved, true,
+		"the genuine verdict (the only destinationPreserved carrier) must be adopted onto the record");
+	const importSendsBefore = calls.importSends;
+	const retry = await orch.transferPlatform("export_1", 2);
+	assert.equal(retry.success, false, "the preserved-destination retry guard must now see the flag and refuse");
+	assert.equal(calls.importSends, importSendsBefore);
+});
+
+test("validation timeout ceiling: 120s cap protects the source-lock TTL budget (and setTimeout)", async () => {
+	const { orch, plugin } = makeHarness(() => ({ success: true }));
+	plugin.controller.config = { get: () => 900 };
+	assert.equal(orch.getValidationTimeoutMs(), 120_000,
+		"above the Lua validation budget the lock could TTL-expire mid-wait - clamp to 120s");
+	plugin.controller.config = { get: () => 1e12 };
+	assert.equal(orch.getValidationTimeoutMs(), 120_000,
+		"a huge value must clamp, never overflow setTimeout into a 1ms insta-timeout");
+	plugin.controller.config = { get: () => 120 };
+	assert.equal(orch.getValidationTimeoutMs(), 120_000, "the ceiling itself is allowed");
+});
+
+test("per-arm read is PINNED: the armed delay on the record equals the configured value", async () => {
+	// Mutation this kills (review finding): scheduleValidationTimeout ignoring config and arming the
+	// default would still pass a call-count assertion; the armed value on the record cannot lie.
+	const { orch, plugin, activeTransfers } = makeHarness(() => ({ success: true }));
+	plugin.controller.config = { get: () => 45 };
+	await orch.transferPlatform("export_1", 2);
+	const transfer = onlyTransfer(activeTransfers);
+	if (transfer.validationTimeout) clearTimeout(transfer.validationTimeout);
+	assert.equal(transfer.armedValidationTimeoutMs, 45_000,
+		"the timer must be armed with the live config value, not a cached or default one");
+});
+
+test("a throwing config accessor cannot strand a transfer outside awaiting_validation", async () => {
+	// Review finding: the config read runs inside the arming path. If it could throw after import
+	// acceptance, the record would stick in a status the late-verdict guard makes terminal - a
+	// permanent duplicate. The read must fall back LOUDLY to the default instead.
+	const { orch, activeTransfers, plugin } = makeHarness(() => ({ success: true }));
+	plugin.controller.config = { get: () => { throw new Error("InvalidField: not registered"); } };
+	const res = await orch.transferPlatform("export_1", 2);
+	assert.equal(res.success, true, "the transfer must proceed on the default timeout");
+	const transfer = onlyTransfer(activeTransfers);
+	if (transfer.validationTimeout) clearTimeout(transfer.validationTimeout);
+	assert.equal(transfer.status, "awaiting_validation",
+		"the record must reach awaiting_validation - anything else is terminal under the guard");
+	assert.equal(transfer.armedValidationTimeoutMs, 30_000, "default armed when the accessor throws");
 });
 
 test("W1 guard: a late FAILURE after a completed transfer must not roll back", async () => {

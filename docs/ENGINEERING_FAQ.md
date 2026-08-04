@@ -160,17 +160,20 @@ A: ✅ Deliberately does **not** unlock — the import may have landed, and unlo
 TTL backstop instead. A recoverable stuck-then-unlock beats a dup.
 
 **Q: What if my import is slow and the validation timer expires before the destination reports?**
-A: ✅ The transfer is rolled back on expiry: source unlocked and returned to you, nothing lost, retry works.
-The window is the **"Transfer validation timeout (seconds)"** setting
-(`surface_export.transfer_validation_timeout_seconds`, default 30 s, floor 5 s, read per-transfer — no restart
-needed); raise it if large platforms report timeouts (a ~235 KB platform takes ~40 s just to deliver over
-RCON). A **status guard** makes the short default safe: if the destination finishes AFTER the timeout and
-sends its genuine verdict late, that verdict is refused — logged loudly as `validation_after_settle` — and
-never drives a source delete (pre-guard, a late SUCCESS deleted the source of an already-rolled-back
-transfer: live copies on both instances). Honest residual: the late-finishing destination itself went live
-before its verdict was refused, so a timed-out-then-completed import leaves a live copy on the destination
-alongside your restored source — the `validation_after_settle` event names it; delete the copy you don't
-want. Only the handshake epic's hold-gated go-live removes that residual.
+A: ✅ The transfer is rolled back on expiry: source unlocked and returned to you, nothing lost. The window
+is the **"Transfer validation timeout (seconds)"** setting
+(`surface_export.transfer_validation_timeout_seconds`, default 30 s, range 5–120 s — the ceiling protects
+the source lock's 120 s validation budget — read per-transfer, no restart needed). The clock starts AFTER
+the payload is delivered and accepted: it covers the destination's import + validation, not RCON delivery,
+so size it to import time, not payload size. A **status guard** makes the short default safe: if the
+destination finishes AFTER the timeout and sends its genuine verdict late, that verdict never drives a
+source delete or a rollback — it is logged loudly as `validation_after_settle` and used only to correct the
+record's leftover accounting. Two outcomes from there: if the late verdict is a genuine FAILURE, the
+destination resolved itself and a plain **retry works**; if it is a late SUCCESS, the destination went live
+before its verdict was refused, so a **live copy exists on the destination alongside your restored
+source** — the transfer is re-marked `cleanup_failed` (its one meaning: a platform was left behind), the
+retry guard refuses further attempts, and you delete the copy you don't want before trying again. Only the
+handshake epic's hold-gated go-live removes that residual.
 
 **Q: What if validation fails AND the rollback unlock also fails?**
 A: ✅ The transfer is `failed`, the unlock error rides in the record, the observability intent is kept, and the

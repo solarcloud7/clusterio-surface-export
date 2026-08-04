@@ -1413,6 +1413,9 @@ export interface ActiveTransfer {
 	failedStage?: 'items' | 'fluids' | 'test_hook' | null;
 	sourceVerification?: { itemCounts: Record<string, number>; fluidCounts: Record<string, number> };
 	validationTimeout?: ReturnType<typeof setTimeout> | null;
+	/** The ms actually armed for this attempt's validation timer (single source for logs + tests —
+	 * the per-arm config read happens exactly once, in scheduleValidationTimeout). */
+	armedValidationTimeoutMs?: number | null;
 	phases?: Record<string, PhaseRecord>;
 	/** Set once recordOperationOutcome() has counted this operation's terminal result (Prometheus idempotency guard). */
 	metricsRecorded?: boolean;

@@ -12,15 +12,22 @@ export const RCON_CHUNK_SIZE = 100_000;
 export const EXPORT_POLL_TIMEOUT_MS = 30_000;
 export const EXPORT_POLL_INTERVAL_MS = 500;
 /**
- * Default + floor for `surface_export.transfer_validation_timeout_seconds` (declared in index.ts;
- * read PER-ARM by the orchestrator, so a settings change applies to the next transfer with no
- * restart). Default 30 s (owner ruling); floor 5 s so a typo cannot make every transfer
- * insta-timeout. With the late-verdict status guard in handleTransferValidation, an undersized
- * timeout costs a spurious rollback (fail ⇒ revert, source preserved, retry works) — never a
- * duplicate-by-delete.
+ * Default + floor + CEILING for `surface_export.transfer_validation_timeout_seconds` (declared in
+ * index.ts; read PER-ARM by the orchestrator, so a settings change applies to the next transfer
+ * with no restart). Default 30 s (owner ruling); floor 5 s so a typo cannot make every transfer
+ * insta-timeout. The ceiling is NOT arbitrary: surface-lock.lua's source-lock TTL floor budgets
+ * exactly 120 s for validation (VALIDATION_TIMEOUT_TICKS = 7200) — a timeout above that lets the
+ * source lock TTL-expire MID-WAIT, after which a genuine SUCCESS meets a released lock, the delete
+ * gate refuses, and live copies exist on both instances. (An uncapped value also overflows
+ * setTimeout past ~2^31 ms, which Node clamps to 1 ms — every transfer would insta-fail.) With the
+ * late-verdict status guard in handleTransferValidation, an undersized timeout costs a spurious
+ * rollback (fail ⇒ revert, source preserved); if the destination later completes anyway the
+ * transfer is re-marked cleanup_failed so the retry guard refuses until an operator removes the
+ * leftover copy — never a silent duplicate.
  */
 export const DEFAULT_VALIDATION_TIMEOUT_SECONDS = 30;
 export const MIN_VALIDATION_TIMEOUT_SECONDS = 5;
+export const MAX_VALIDATION_TIMEOUT_SECONDS = 120;
 export const STORAGE_FILENAME = "surface_export_storage.json";
 
 // getErrorMessage + generateOperationId live in the shared (Node + web) module so they aren't duplicated
