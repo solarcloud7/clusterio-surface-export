@@ -795,16 +795,20 @@ function ImportCompletion.run_phase2(job)
 				job.platform_name), {0, 1, 0})
 
 			-- GATEWAY TRANSFER: the platform was PARKED at the gateway AT CREATION
-			-- (import-pipeline.lua — the space_location write cancels item-request proxies, so it
-			-- must precede restoration; adversarial fixture: tests/integration/gateway-park-proxies).
-			-- Here, after the activation unpause above, RE-PAUSE so it arrives parked instead of
-			-- flying the stripped schedule (the unpause and this run in one synchronous tick — no
-			-- flight in between), and VERIFY the parked location rather than ever writing it again
-			-- post-restoration. nil gateway_target = normal transfer — keeps the unpause above.
+			-- (import-pipeline.lua carries the ordering rationale — a documented-destructive write
+			-- is kept away from restored, verdict-passed state; standing pin:
+			-- tests/integration/gateway-park-proxies). Here, after the activation unpause above,
+			-- RE-PAUSE so it arrives parked instead of flying the stripped schedule (the unpause
+			-- and this run in one synchronous tick — no flight in between), and VERIFY the parked
+			-- location rather than ever writing it again post-restoration. The outcome rides the
+			-- result as gatewayParked — NON-GATING observability (set after the verdict, never an
+			-- input to it), so a failed creation-park is visible in the record, not only in a log
+			-- line. nil gateway_target = normal transfer — keeps the unpause above.
 			if success and job.gateway_target and job.target_platform and job.target_platform.valid then
 				local tp = job.target_platform
 				local ok_pause, err_pause = pcall(function() tp.paused = true end)
 				local at_gateway = tp.space_location ~= nil and tp.space_location.name == job.gateway_target
+				result.gatewayParked = (ok_pause and at_gateway) or false
 				if ok_pause and at_gateway then
 					log(string.format("[Gateway] Platform %s arrived PAUSED at gateway '%s' (parked at creation)",
 						job.platform_name, job.gateway_target))

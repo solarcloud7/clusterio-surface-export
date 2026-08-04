@@ -270,22 +270,29 @@ function ImportPipeline.queue(json_data, new_platform_name, force_name, requeste
 		gateway_target = nil
 	end
 
-	-- PARK AT CREATION (post-verdict-write hardening, 2026-08-04). The `space_location` write
-	-- "will cancel pending item requests" (upstream-documented), and the park used to run it as the
-	-- LAST import step — after restoration and after the exact gate. Measured family enumeration on
-	-- 2.1.11 (both members, full production path): the write destroys HUB-targeted item-request
-	-- proxies (1 → 0) but entity-targeted proxies SURVIVE it. Today that makes the old ordering's
-	-- loss unreachable — the only shape the write destroys is the shape the exporter never carries
-	-- (hub-targeted proxies do not ride the payload; that serializer gap is filed separately). The
-	-- ordering is still moved HERE because a post-verdict destructive write is a standing hazard:
-	-- the moment the hub-proxy export gap is fixed, the old ordering would silently destroy those
-	-- restored proxies after the gate passed. Parking at creation — platform fresh, paused, its
-	-- surface carrying nothing but the hub — leaves nothing to cancel, ever (a paused, empty
-	-- platform accepts the write and lands at the gateway: measured 2026-08-03). The end-of-import
+	-- PARK AT CREATION (2026-08-04). The upstream docs say the `space_location` write "will cancel
+	-- pending item requests"; the park used to run that write as the LAST import step — after
+	-- restoration and after the exact gate, i.e. a documented cancellation acting on restored,
+	-- verdict-passed state. What the cancellation actually cancels we could NOT pin down: a
+	-- one-off observation of it destroying a hub-targeted item-request proxy (1 → 0, 2026-08-03)
+	-- never reproduced — six survivals since, across proxy shapes, execution timings, and BOTH park
+	-- orderings end-to-end — and is RETRACTED as unexplained (full account in
+	-- GATEWAY_TRANSFER_PRD.md). The ordering still moves HERE, on the categorical argument: a
+	-- freshly created platform — paused, its surface carrying nothing but the hub — has nothing for
+	-- the documented cancellation to act on, whatever its scope is; running any destructive-by-doc
+	-- write AFTER the verdict grants it restored state to act on for no benefit. Behavior-neutral
+	-- by measurement (both orderings green through the full production path). The end-of-import
 	-- step now only re-pauses and VERIFIES the location; it never writes it again. Standing pin:
-	-- tests/integration/gateway-park-proxies (physical proxy count on the destination through a
-	-- real gateway transfer).
+	-- tests/integration/gateway-park-proxies (both proxy shapes, physical count on the
+	-- destination, verdict-grounded).
 	if gateway_target then
+		-- A NON-transfer import carrying a gateway_target (a re-imported gateway payload via
+		-- file/upload) is not covered by the transfer pause above; unpaused, it would fly its
+		-- stripped schedule DURING the multi-tick import and end up re-paused somewhere else
+		-- (review finding). Gateway imports stay parked from creation regardless of origin.
+		if not is_transfer then
+			new_platform.paused = true
+		end
 		-- Prerequisite for the write: the location must be unlocked for this force (a force created
 		-- after the startup discover_and_unlock pass wouldn't have it). Log on failure — a silent
 		-- miss here surfaces only as a mysterious park failure with no root cause.
@@ -411,8 +418,8 @@ function ImportPipeline.queue(json_data, new_platform_name, force_name, requeste
 		-- Store platform reference for unpausing after validation
 		target_platform = new_platform,
 		imported_schedule = imported_schedule,
-		-- Gateway to park at (nil for normal transfers; explicit, from the payload). When set, import
-		-- completion parks the platform AT this gateway, paused, instead of unpausing it to fly.
+		-- Gateway parked at (nil for normal transfers; explicit, from the payload). The park WRITE
+		-- happened above at creation; import completion only RE-PAUSES and VERIFIES this location.
 		gateway_target = gateway_target,
 
 		-- ========== PHASE METRICS TRACKING ==========

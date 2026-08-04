@@ -111,27 +111,33 @@ linked, not restated — only unstated behavior gets a claim here.
   only the record. **[empirical, 2.1.11, delete-under-record probe 2026-08-03 — record restored
   byte-exact afterward]**
 
-### The park write and item-request proxies (hardened 2026-08-04; the record, corrected)
+### The park write and item-request proxies (2026-08-04 — two retractions, one ordering change)
 
-The `space_location` write "will cancel pending item requests" (upstream-documented). Measured
-family enumeration on 2.1.11 — both proxy-target members, through the full production path:
-the write destroys **hub-targeted** item-request proxies (1 → 0) but **entity-targeted** proxies
-**survive** it (a real gateway transfer of an assembler-targeted proxy arrived intact under the
-old post-verdict park). The first measurement probed only the hub-targeted member and wrongly
-claimed the family — the enumerate-at-the-emitter discipline, violated in the measurement that
-motivated it.
+Upstream documents that writing `space_location` "will cancel pending item requests." What that
+cancellation actually touches, we could not pin down — and two of our own measurements along the
+way turned out to be artifacts, recorded here so they cannot be re-derived:
 
-Production consequence today: **no reachable loss** — the only shape the write destroys is the
-shape the exporter never carries (hub-targeted proxies do not ride the payload at all; that
-serializer gap is filed as its own task). The park was still moved from the LAST import step to
-platform **creation** (import-pipeline.lua), because a post-verdict destructive write is a
-standing hazard: fixing the hub-proxy export gap would have silently re-opened it. At creation
-the platform is fresh, paused, and carries nothing but the hub — nothing to cancel, ever. The
-end-of-import step now only re-pauses and verifies. Standing pin:
-`tests/integration/gateway-park-proxies` — a real gateway transfer with a payload-verified
-entity-targeted proxy, physical proxy count on the destination (the gate is structurally blind to
-proxies, so the count is physical by design); it gains the hub-targeted case when the export gap
-lands.
+- **RETRACTED: "the write destroys hub-targeted item-request proxies (1 → 0)."** Observed once
+  (2026-08-03) and never reproduced: six survivals since, across valid and malformed proxy
+  shapes, same-execution and deferred writes, and BOTH park orderings through full production
+  gateway transfers. Unexplained, not fixed — the git history keeps the original observation.
+- **RETRACTED: "hub-targeted proxies never ride the export."** An artifact of a malformed probe:
+  insert-plan stacks are 1-based, and a `stack=0` plan creates a proxy that sits on the surface
+  but exports nothing. A well-formed hub-targeted proxy **rides, restores against the remapped
+  destination hub, and survives arrival** — measured end-to-end under both orderings.
+
+What is actually true, measured: **both proxy-target shapes (entity- and hub-targeted) transfer
+losslessly through gateway parks, under either ordering.** The park write was still moved from
+the LAST import step to platform **creation** (import-pipeline.lua) on the categorical argument:
+the write is documented-destructive with a scope we could not determine, and running it after the
+verdict grants it restored, verdict-passed state to act on for no benefit — at creation the
+surface carries nothing but the hub. Behavior-neutral by measurement; cheap by construction.
+
+Standing pin: `tests/integration/gateway-park-proxies` — a real gateway transfer carrying BOTH
+proxy shapes, terminal-2PC readiness (destination present AND source deleted), the destination's
+own `debug_import_result` verdict read before any census claim, and physical per-shape proxy
+counts (the exact gate is structurally blind to proxies, so the count is physical by design).
+The completion-side verify also rides the result as non-gating `gatewayParked`.
 
 ## Passenger handling
 
