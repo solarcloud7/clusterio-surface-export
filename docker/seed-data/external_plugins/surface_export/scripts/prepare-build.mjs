@@ -38,10 +38,15 @@
 
 import { execFileSync } from "node:child_process";
 import { readdirSync, statSync, existsSync, mkdirSync, writeFileSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-const PLUGIN_DIR = join(dirname(fileURLToPath(import.meta.url)), "..");
+// Test seam: the purpose-invariant tests (test/prepare-build.invariant.test.cjs) drive this script
+// against a TEMP tree via the env override + `--decide` (prints the verdict as JSON, executes
+// nothing). Production never sets the variable, so the real plugin dir stays the default.
+const PLUGIN_DIR = process.env.PREPARE_BUILD_PLUGIN_DIR
+	? resolve(process.env.PREPARE_BUILD_PLUGIN_DIR)
+	: join(dirname(fileURLToPath(import.meta.url)), "..");
 
 // --- The build clock -----------------------------------------------------------------------------
 //
@@ -225,6 +230,11 @@ function decide() {
 }
 
 const verdict = decide();
+// `--decide` reports the verdict without acting on it (the invariant tests' observation channel).
+if (process.argv.includes("--decide")) {
+	console.log(JSON.stringify(verdict));
+	process.exit(0);
+}
 if (!verdict.build) {
 	console.log(`[prepare] SKIPPING build — ${verdict.why}.`);
 	console.log("[prepare] The existing dist/ is kept deliberately: rebuilding here would replace an "
