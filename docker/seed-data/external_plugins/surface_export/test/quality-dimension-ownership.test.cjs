@@ -109,8 +109,14 @@ const domains = [
 	{
 		id: "logistic-request-slot",
 		status: "static-owned",
-		producer: ["export_scanners/connection-scanner.lua", /extract_logistic_requests[\s\S]*quality\s*=\s*request\.quality and request\.quality\.name/],
-		consumer: ["core/deserializer.lua", /entity\.set_request_slot\(\{[\s\S]*quality\s*=\s*request\.quality or Util\.QUALITY_NORMAL/],
+		// Re-anchored 2026-08-04: the old anchors named the 1.1 request-slot pair
+		// (extract_logistic_requests / set_request_slot), retired as dead code — request_slot_count
+		// does not exist on this pin (measured: every 1.1 request-slot key absent on LuaEntity), so
+		// the extractor's pcall always failed and returned {}, and the restore was unreachable. The
+		// SAME dimension (a request slot's quality) now rides manual logistic sections: quality is
+		// captured inside each section filter's value and applied whole via section.set_slot.
+		producer: ["export_scanners/connection-scanner.lua", /extract_logistic_sections[\s\S]*?quality\s*=\s*filter\.value\.quality/],
+		consumer: ["core/deserializer.lua", /restore_logistic_sections[\s\S]*?local slot = \{ value = f\.value, min = f\.min, max = f\.max[\s\S]{0,200}?section\.set_slot\(f\.index, slot\)/],
 	},
 	{
 		id: "infinity-filter",
