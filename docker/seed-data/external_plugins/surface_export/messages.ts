@@ -1497,6 +1497,9 @@ export interface IControllerPlugin {
 	controller: {
 		wsServer: { controlConnections: Map<number, unknown> };
 		sendTo: (target: { instanceId: number }, message: unknown) => Promise<any>;
+		/** Controller config accessor (lib Config). Optional so unit-test harnesses can omit it —
+		 * readers must fall back to their declared default when absent, never throw. */
+		config?: { get(field: string): unknown };
 		// alpha.25: controller.instances is an InstanceManager, not a plain Map. Expose only the
 		// members we use (get/values returning Readonly records); avoids accidental Map-only calls
 		// like entry-iteration or .size, which InstanceManager does not support.

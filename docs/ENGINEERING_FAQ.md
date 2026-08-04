@@ -159,6 +159,19 @@ A: ✅ A normal (non-session) error triggers controller rollback → source unlo
 A: ✅ Deliberately does **not** unlock — the import may have landed, and unlocking could duplicate. Falls to the
 TTL backstop instead. A recoverable stuck-then-unlock beats a dup.
 
+**Q: What if my import is slow and the validation timer expires before the destination reports?**
+A: ✅ The transfer is rolled back on expiry: source unlocked and returned to you, nothing lost, retry works.
+The window is the **"Transfer validation timeout (seconds)"** setting
+(`surface_export.transfer_validation_timeout_seconds`, default 30 s, floor 5 s, read per-transfer — no restart
+needed); raise it if large platforms report timeouts (a ~235 KB platform takes ~40 s just to deliver over
+RCON). A **status guard** makes the short default safe: if the destination finishes AFTER the timeout and
+sends its genuine verdict late, that verdict is refused — logged loudly as `validation_after_settle` — and
+never drives a source delete (pre-guard, a late SUCCESS deleted the source of an already-rolled-back
+transfer: live copies on both instances). Honest residual: the late-finishing destination itself went live
+before its verdict was refused, so a timed-out-then-completed import leaves a live copy on the destination
+alongside your restored source — the `validation_after_settle` event names it; delete the copy you don't
+want. Only the handshake epic's hold-gated go-live removes that residual.
+
 **Q: What if validation fails AND the rollback unlock also fails?**
 A: ✅ The transfer is `failed`, the unlock error rides in the record, the observability intent is kept, and the
 source-side TTL backstops the unlock. Nothing is left behind, so it does not wear `cleanup_failed` — that status

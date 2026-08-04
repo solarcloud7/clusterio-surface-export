@@ -83,6 +83,18 @@ export const plugin = {
 			type: "number",
 			initialValue: 20,
 		},
+		[`${PLUGIN_NAME}.transfer_validation_timeout_seconds`]: {
+			title: "Transfer validation timeout (seconds)",
+			description: "How long the controller waits for the destination to validate a transfer "
+				+ "before treating it as failed. On expiry the transfer is rolled back: the source "
+				+ "platform is unlocked and stays on its instance — nothing is lost, and a retry works. "
+				+ "Large platforms can legitimately need longer (a ~235 KB platform takes ~40 s to "
+				+ "deliver over RCON); raise this if big transfers report validation timeouts. "
+				+ "Minimum 5 seconds; applies to the next transfer, no restart needed.",
+			type: "number",
+			initialValue: 30,
+			optional: true,
+		},
 	},
 	messages: [
 		messages.ExportPlatformRequest,

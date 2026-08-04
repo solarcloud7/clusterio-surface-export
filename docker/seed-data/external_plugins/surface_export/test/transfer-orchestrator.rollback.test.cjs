@@ -299,3 +299,112 @@ test("#106: validation fails but source unlock SUCCEEDS → failed drops the int
 	assert.equal(transfer.status, "failed", "failed validation + successful unlock is 'failed'");
 	assert.equal(calls.pendingRemoved, res.transferId, "the recovery intent is dropped once the source is unlocked");
 });
+
+// ── W1: the timeout-vs-late-verdict duplication window ──────────────────────────────────────────
+//
+// The window: the controller times out waiting for validation, fabricates a failed verdict, and
+// rolls back (source unlocked, status settled as "failed"). The destination never heard about the
+// timeout — it finishes importing on its own clock and sends a late GENUINE verdict. Pre-guard,
+// handleTransferValidation had no status check, so a late SUCCESS re-entered the success handler
+// and sent a source DELETE against a rolled-back (live, unlocked) source: the delete gate refuses,
+// and live copies exist on BOTH instances. These tests drive the timeout DISPATCH directly (the
+// timer callback body is exactly "dispatch a fabricated failed verdict"), so nothing here waits on
+// a real timer.
+
+test("W1 guard: a late genuine SUCCESS after a validation timeout must NOT drive a source delete", async () => {
+	const { orch, activeTransfers, calls, plugin } = makeHarness(() => ({ success: true }));
+	const res = await orch.transferPlatform("export_1", 2); // ACK path -> awaiting_validation
+	const transfer = onlyTransfer(activeTransfers);
+	assert.equal(transfer.status, "awaiting_validation");
+	if (transfer.validationTimeout) clearTimeout(transfer.validationTimeout); // dispatch directly instead
+
+	// Count source-delete sends from here on (the thing the guard must prevent).
+	calls.deleteSends = 0;
+	const origSendTo = plugin.controller.sendTo;
+	plugin.controller.sendTo = async (dst, msg) => {
+		if (msg && msg.constructor && msg.constructor.name === "DeleteSourcePlatformRequest") calls.deleteSends++;
+		return origSendTo(dst, msg);
+	};
+
+	// The timeout path, invoked directly: the fabricated failed verdict (same shape the timer builds).
+	await orch.handleTransferValidation({
+		transferId: res.transferId, success: false,
+		platformName: transfer.platformName, sourceInstanceId: transfer.sourceInstanceId,
+		validation: { itemCountMatch: false, fluidCountMatch: false, mismatchDetails: "Validation timeout - no response received within 30s" },
+	});
+	assert.equal(transfer.status, "failed", "the timeout settles the transfer as failed (rollback ran)");
+	assert.equal(calls.unlockRouteTaken, 1, "the rollback unlocked the source");
+
+	// The destination finishes late and reports genuine SUCCESS.
+	await orch.handleTransferValidation({
+		transferId: res.transferId, success: true,
+		platformName: transfer.platformName, sourceInstanceId: transfer.sourceInstanceId,
+		validation: { itemCountMatch: true, fluidCountMatch: true },
+	});
+
+	assert.equal(calls.deleteSends, 0,
+		"THE DEFECT: a late SUCCESS on a settled transfer must never send DeleteSourcePlatformRequest "
+		+ "- the source was already unlocked and returned to the player");
+	assert.equal(transfer.status, "failed", "the settled status must not change");
+	assert.match(String(transfer.validationResult && transfer.validationResult.mismatchDetails),
+		/timeout/i, "the settled record's verdict must not be overwritten by the late one");
+	assert.ok(calls.events.includes("validation_after_settle"),
+		"the refusal must be LOUD: a validation_after_settle event names the live-destination residual");
+});
+
+test("W1 guard: a late FAILURE after a completed transfer must not roll back", async () => {
+	const { orch, activeTransfers, calls } = makeHarness(() => ({ success: true }));
+	const res = await orch.transferPlatform("export_1", 2);
+	const transfer = onlyTransfer(activeTransfers);
+	if (transfer.validationTimeout) clearTimeout(transfer.validationTimeout);
+
+	// Genuine SUCCESS completes the transfer (harness delete send succeeds -> status completed).
+	await orch.handleTransferValidation({
+		transferId: res.transferId, success: true,
+		platformName: transfer.platformName, sourceInstanceId: transfer.sourceInstanceId,
+		validation: { itemCountMatch: true, fluidCountMatch: true },
+	});
+	assert.equal(transfer.status, "completed");
+	const unlocksAfterCompletion = calls.unlockRouteTaken;
+
+	// A late (duplicate/replayed) FAILURE verdict arrives.
+	await orch.handleTransferValidation({
+		transferId: res.transferId, success: false,
+		platformName: transfer.platformName, sourceInstanceId: transfer.sourceInstanceId,
+		validation: { itemCountMatch: false, fluidCountMatch: false, mismatchDetails: "late duplicate" },
+	});
+
+	assert.equal(transfer.status, "completed", "a completed transfer must stay completed");
+	assert.equal(calls.unlockRouteTaken, unlocksAfterCompletion,
+		"no rollback: unlocking a deleted source is at best a spurious error, and the record must not flip");
+	assert.ok(calls.events.includes("validation_after_settle"), "the late verdict is loudly logged, not silently dropped");
+});
+
+test("validation timeout config: default 30s, floor 5s, junk-safe, read per-arm", async () => {
+	const { orch, plugin, activeTransfers } = makeHarness(() => ({ success: true }));
+
+	assert.equal(orch.getValidationTimeoutMs(), 30_000, "no config accessor (unit harness) -> declared default");
+
+	plugin.controller.config = { get: (field) => {
+		assert.equal(field, "surface_export.transfer_validation_timeout_seconds");
+		return 45;
+	} };
+	assert.equal(orch.getValidationTimeoutMs(), 45_000, "configured value is used");
+
+	plugin.controller.config = { get: () => 2 };
+	assert.equal(orch.getValidationTimeoutMs(), 5_000, "floor 5s: a typo cannot make every transfer insta-timeout");
+
+	plugin.controller.config = { get: () => "banana" };
+	assert.equal(orch.getValidationTimeoutMs(), 30_000, "junk -> default");
+
+	plugin.controller.config = { get: () => 0 };
+	assert.equal(orch.getValidationTimeoutMs(), 30_000, "0 would disable the timeout entirely -> default");
+
+	// Per-arm read: arming a transfer consults the CURRENT config (no restart, no cached value).
+	let reads = 0;
+	plugin.controller.config = { get: () => { reads++; return 45; } };
+	await orch.transferPlatform("export_1", 2);
+	const transfer = onlyTransfer(activeTransfers);
+	if (transfer.validationTimeout) clearTimeout(transfer.validationTimeout);
+	assert.ok(reads >= 1, "scheduleValidationTimeout must read the live config at arm time");
+});

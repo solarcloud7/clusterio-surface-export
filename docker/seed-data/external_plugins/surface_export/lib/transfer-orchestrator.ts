@@ -1,6 +1,6 @@
 
 import { wait } from "@clusterio/lib";
-import { normalizeExportMetrics, TICKS_TO_MS, getErrorMessage, isSessionLostError, isBenignUnlockError, coercePlatformIndex, VALIDATION_TIMEOUT_MS, buildPayloadMetrics, buildImportMetrics, makeCanonicalTransferId, parseCanonicalTransferId } from "../helpers";
+import { normalizeExportMetrics, TICKS_TO_MS, getErrorMessage, isSessionLostError, isBenignUnlockError, coercePlatformIndex, DEFAULT_VALIDATION_TIMEOUT_SECONDS, MIN_VALIDATION_TIMEOUT_SECONDS, buildPayloadMetrics, buildImportMetrics, makeCanonicalTransferId, parseCanonicalTransferId } from "../helpers";
 import { createOperationRecord } from "./operation-record";
 import type { IControllerPlugin, ActiveTransfer, SimpleResponse, TransferValidationEvent, StoredExport, ValidationResult, ImportMetrics, ExportMetrics } from "../messages";
 function mergeExportMetrics(storedMetrics: ExportMetrics | null | undefined, runtimeMetrics: Record<string, unknown> | null | undefined) {
@@ -288,7 +288,7 @@ export class TransferOrchestrator {
 			importAccepted = true;
 			this.enterAwaitingValidation(transfer, transferId);
 			this.txLogger.logTransactionEvent(transferId, "import_started",
-				`Awaiting validation (timeout: ${VALIDATION_TIMEOUT_MS / 1000}s)`, { transmissionMs });
+				`Awaiting validation (timeout: ${this.getValidationTimeoutMs() / 1000}s)`, { transmissionMs });
 
 			return { success: true, transferId, message: `Transfer initiated: ${transferId}` };
 
@@ -388,16 +388,34 @@ export class TransferOrchestrator {
 		});
 	}
 
+	/**
+	 * The validation timeout, read PER-ARM from controller config
+	 * (`surface_export.transfer_validation_timeout_seconds`) so a settings change applies to the next
+	 * transfer with no restart. Guarded: absent/non-numeric/non-positive → the declared default
+	 * (30 s); floored at MIN so a typo cannot make every transfer insta-timeout. The harness-facing
+	 * fallback (plugin.controller.config may be absent in unit tests) uses the same default.
+	 */
+	getValidationTimeoutMs(): number {
+		const raw = this.plugin.controller.config?.get("surface_export.transfer_validation_timeout_seconds");
+		const seconds = Number(raw);
+		if (!Number.isFinite(seconds) || seconds <= 0) {
+			return DEFAULT_VALIDATION_TIMEOUT_SECONDS * 1000;
+		}
+		return Math.max(MIN_VALIDATION_TIMEOUT_SECONDS, Math.floor(seconds)) * 1000;
+	}
+
 	scheduleValidationTimeout(transferId: string) {
 		const transfer = this.plugin.activeTransfers.get(transferId);
 		if (!transfer) return;
+		const timeoutMs = this.getValidationTimeoutMs();
 
 		transfer.validationTimeout = setTimeout(async () => {
 			const current = this.plugin.activeTransfers.get(transferId);
 			if (!current || current.status !== "awaiting_validation") return;
 
 			this.txLogger.logTransactionEvent(transferId, "validation_timeout",
-				"No validation response within 2 minutes", {});
+				`No validation response within ${timeoutMs / 1000}s `
+				+ "(setting: surface_export.transfer_validation_timeout_seconds)", { timeoutMs });
 			await this.handleTransferValidation(new this.messages.TransferValidationEvent({
 				transferId,
 				success: false,
@@ -406,15 +424,42 @@ export class TransferOrchestrator {
 				validation: {
 					itemCountMatch: false,
 					fluidCountMatch: false,
-					mismatchDetails: "Validation timeout - no response received within 2 minutes",
+					mismatchDetails: `Validation timeout - no response received within ${timeoutMs / 1000}s`,
 				},
 			}));
-		}, VALIDATION_TIMEOUT_MS);
+		}, timeoutMs);
 	}
 
 	// ── Validation handling ─────────────────────────────────────────────
 
 	async handleTransferValidation(event: TransferValidationEvent) {
+		// W1 STATUS GUARD: a verdict may only drive a transfer that is awaiting one. After the
+		// timeout fabricates a failed verdict (rollback: source unlocked, status settled), the
+		// destination — which never heard about the timeout — can still finish on its own clock and
+		// send a late GENUINE verdict. Pre-guard, that late SUCCESS re-entered the success handler
+		// and sent a source DELETE against a rolled-back (live, unlocked) source: the delete gate
+		// refuses, and live copies exist on BOTH instances (the W1 duplication window). A late
+		// verdict must not mutate the settled record either — the retry guard reads
+		// validationResult.destinationPreserved from it. Honest residual: a timed-out transfer whose
+		// destination later completes leaves that destination LIVE (it activates before emitting its
+		// verdict); this guard converts a silent source-delete into the loud event below. Only the
+		// handshake epic's hold-gated go-live removes that residual.
+		const settled = this.plugin.activeTransfers.get(event.transferId);
+		if (settled && settled.status !== "awaiting_validation") {
+			const verdict = event.success ? "SUCCESS" : "FAILURE";
+			this.txLogger.logTransactionEvent(event.transferId, "validation_after_settle",
+				`Late validation ${verdict} arrived after this transfer settled as '${settled.status}' — `
+				+ "ignored: no source delete, no rollback. If this is a late import SUCCESS, the "
+				+ "destination holds a LIVE copy of a platform whose source was already returned to the "
+				+ "player — resolve manually (delete one copy).",
+				{ lateVerdictSuccess: event.success, settledStatus: settled.status, validation: event.validation ?? null });
+			this.logger.warn(
+				`Late validation ${verdict} for settled transfer ${event.transferId} `
+				+ `(status=${settled.status}) — refused by the status guard`);
+			await this.txLogger.persistTransactionLog(event.transferId);
+			return;
+		}
+
 		const validationMs = this.txLogger.endPhase(event.transferId, "validation");
 		const importMetrics = buildImportMetrics(event.metrics);
 

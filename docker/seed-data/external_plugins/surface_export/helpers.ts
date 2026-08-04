@@ -11,7 +11,16 @@ export const TICKS_TO_MS = 16.67;
 export const RCON_CHUNK_SIZE = 100_000;
 export const EXPORT_POLL_TIMEOUT_MS = 30_000;
 export const EXPORT_POLL_INTERVAL_MS = 500;
-export const VALIDATION_TIMEOUT_MS = 120_000;
+/**
+ * Default + floor for `surface_export.transfer_validation_timeout_seconds` (declared in index.ts;
+ * read PER-ARM by the orchestrator, so a settings change applies to the next transfer with no
+ * restart). Default 30 s (owner ruling); floor 5 s so a typo cannot make every transfer
+ * insta-timeout. With the late-verdict status guard in handleTransferValidation, an undersized
+ * timeout costs a spurious rollback (fail ⇒ revert, source preserved, retry works) — never a
+ * duplicate-by-delete.
+ */
+export const DEFAULT_VALIDATION_TIMEOUT_SECONDS = 30;
+export const MIN_VALIDATION_TIMEOUT_SECONDS = 5;
 export const STORAGE_FILENAME = "surface_export_storage.json";
 
 // getErrorMessage + generateOperationId live in the shared (Node + web) module so they aren't duplicated
