@@ -11,9 +11,12 @@
 -- mod — there is no control.lua; all gateway logic lives in the plugin module.
 
 -- One portal colour per gateway, so a destination is identifiable at a glance rather than by reading
--- the label. This list IS the gateway count: adding a colour adds a gateway, which makes it
--- structurally impossible to ship a gateway with no art. Shipped mapping: 1=blue, 2=green, 3=orange,
--- 4=purple.
+-- the label. This list is the single source of the gateway COUNT — there is no second literal that
+-- can drift from it. It does NOT guarantee the art exists: adding a colour here adds a gateway that
+-- references graphics/icons/gateway-<colour>.png AND starmap-gateway-<colour>.png AND needs a
+-- locale.cfg entry (which today covers 1..4 only) — and nothing checks any of the three, since the
+-- build script only zips. Add all of them together.
+-- Shipped mapping: 1=blue, 2=green, 3=orange, 4=purple.
 local GATEWAY_COLOURS = { "blue", "green", "orange", "purple" }
 local GATEWAY_COUNT = #GATEWAY_COLOURS
 
