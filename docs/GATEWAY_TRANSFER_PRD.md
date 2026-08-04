@@ -111,18 +111,33 @@ linked, not restated — only unstated behavior gets a claim here.
   only the record. **[empirical, 2.1.11, delete-under-record probe 2026-08-03 — record restored
   byte-exact afterward]**
 
-### Known defect — the park write cancels restored item-request proxies
+### The park write and item-request proxies (2026-08-04 — two retractions, one ordering change)
 
-Writing `space_location` destroys item-request proxies on the platform surface (measured 1 → 0 on
-2.1.11; the upstream-documented "will cancel pending item requests" is literal). The import's gateway
-park performs exactly that write as the LAST import step — after restoration re-creates proxies and
-after the exact gate has already issued its verdict. A gateway-parked import of a proxy-carrying
-platform therefore silently loses its proxies, post-verdict; detection is latent by construction (the
-gate cannot see past its own verdict, and no standing test transfers a proxy-carrying platform with
-gateway park requested). **Planned fix: park BEFORE restoration** — a paused, empty, freshly-created
-platform accepts the `space_location` write and lands at the gateway (measured), so parking first
-leaves nothing to cancel — shipped with an adversarial fixture (gateway-parked transfer of a
-proxy-carrying platform, physical proxy count on the destination, RED on pre-fix code).
+Upstream documents that writing `space_location` "will cancel pending item requests." What that
+cancellation actually touches, we could not pin down — and two of our own measurements along the
+way turned out to be artifacts, recorded here so they cannot be re-derived:
+
+- **RETRACTED: "the write destroys hub-targeted item-request proxies (1 → 0)."** Observed once
+  (2026-08-03) and never reproduced: six survivals since, across valid and malformed proxy
+  shapes, same-execution and deferred writes, and BOTH park orderings through full production
+  gateway transfers. Unexplained, not fixed — the git history keeps the original observation.
+- **RETRACTED: "hub-targeted proxies never ride the export."** An artifact of a malformed probe:
+  insert-plan stacks are 1-based, and a `stack=0` plan creates a proxy that sits on the surface
+  but exports nothing. A well-formed hub-targeted proxy **rides, restores against the remapped
+  destination hub, and survives arrival** — measured end-to-end under both orderings.
+
+What is actually true, measured: **both proxy-target shapes (entity- and hub-targeted) transfer
+losslessly through gateway parks, under either ordering.** The park write was still moved from
+the LAST import step to platform **creation** (import-pipeline.lua) on the categorical argument:
+the write is documented-destructive with a scope we could not determine, and running it after the
+verdict grants it restored, verdict-passed state to act on for no benefit — at creation the
+surface carries nothing but the hub. Behavior-neutral by measurement; cheap by construction.
+
+Standing pin: `tests/integration/gateway-park-proxies` — a real gateway transfer carrying BOTH
+proxy shapes, terminal-2PC readiness (destination present AND source deleted), the destination's
+own `debug_import_result` verdict read before any census claim, and physical per-shape proxy
+counts (the exact gate is structurally blind to proxies, so the count is physical by design).
+The completion-side verify also rides the result as non-gating `gatewayParked`.
 
 ## Passenger handling
 

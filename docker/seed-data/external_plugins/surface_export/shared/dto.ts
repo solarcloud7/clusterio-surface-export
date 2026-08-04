@@ -288,6 +288,15 @@ export interface ValidationResult {
 	};
 	failureBlackBox?: { file: string; tick: number };
 	/**
+	 * Gateway transfers only: whether the completion-side re-pause + location verify found the
+	 * platform parked at its gateway_target (import-completion.lua). NON-GATING observability —
+	 * set after the verdict, never an input to it; false means the creation-park failed (the
+	 * instance log carries the cause). Absent on non-gateway operations AND on failed/invalid
+	 * gateway transfers (the emitter sits in the success branch) — undefined does not mean
+	 * "not a gateway op".
+	 */
+	gatewayParked?: boolean;
+	/**
 	 * How many self-feedback deciders were SCHEDULED for post-activation latch re-arm
 	 * (import-completion.lua:733). Non-gating: set after the verdict, never an input to it.
 	 *

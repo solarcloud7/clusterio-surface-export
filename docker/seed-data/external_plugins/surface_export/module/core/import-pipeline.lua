@@ -257,8 +257,9 @@ function ImportPipeline.queue(json_data, new_platform_name, force_name, requeste
 
 	-- Gateway transfer: the source carries an EXPLICIT gateway_target in the payload (a sibling of
 	-- platform.schedule — NOT inferred from the schedule's current record). When present, strip the
-	-- gateway hop(s) from the itinerary; the platform is placed at gateway_target, paused, at the very
-	-- end of import (see import-completion.lua) so it arrives parked instead of flying the schedule.
+	-- gateway hop(s) from the itinerary; the platform is PARKED at gateway_target HERE, at creation
+	-- (see the park block below), and re-paused/verified at the very end of import
+	-- (import-completion.lua) so it arrives parked instead of flying the schedule.
 	-- Absent ⇒ ordinary transfer, schedule untouched (so a normal /transfer-platform of a gateway-parked
 	-- platform is NOT treated as a gateway arrival — fixes the over-/under-fire of schedule inference).
 	local gateway_target = platform_data and platform_data.platform and platform_data.platform.gateway_target or nil
@@ -267,6 +268,50 @@ function ImportPipeline.queue(json_data, new_platform_name, force_name, requeste
 		log(string.format("[Gateway] Ignoring gateway_target '%s' — not a gateway on this instance",
 			tostring(gateway_target)))
 		gateway_target = nil
+	end
+
+	-- PARK AT CREATION (2026-08-04). The upstream docs say the `space_location` write "will cancel
+	-- pending item requests"; the park used to run that write as the LAST import step — after
+	-- restoration and after the exact gate, i.e. a documented cancellation acting on restored,
+	-- verdict-passed state. What the cancellation actually cancels we could NOT pin down: a
+	-- one-off observation of it destroying a hub-targeted item-request proxy (1 → 0, 2026-08-03)
+	-- never reproduced — six survivals since, across proxy shapes, execution timings, and BOTH park
+	-- orderings end-to-end — and is RETRACTED as unexplained (full account in
+	-- GATEWAY_TRANSFER_PRD.md). The ordering still moves HERE, on the categorical argument: a
+	-- freshly created platform — paused, its surface carrying nothing but the hub — has nothing for
+	-- the documented cancellation to act on, whatever its scope is; running any destructive-by-doc
+	-- write AFTER the verdict grants it restored state to act on for no benefit. Behavior-neutral
+	-- by measurement (both orderings green through the full production path). The end-of-import
+	-- step now only re-pauses and VERIFIES the location; it never writes it again. Standing pin:
+	-- tests/integration/gateway-park-proxies (both proxy shapes, physical count on the
+	-- destination, verdict-grounded).
+	if gateway_target then
+		-- A NON-transfer import carrying a gateway_target (a re-imported gateway payload via
+		-- file/upload) is not covered by the transfer pause above; unpaused, it would fly its
+		-- stripped schedule DURING the multi-tick import and end up re-paused somewhere else
+		-- (review finding). Gateway imports stay parked from creation regardless of origin.
+		if not is_transfer then
+			new_platform.paused = true
+		end
+		-- Prerequisite for the write: the location must be unlocked for this force (a force created
+		-- after the startup discover_and_unlock pass wouldn't have it). Log on failure — a silent
+		-- miss here surfaces only as a mysterious park failure with no root cause.
+		local ok_unlock, err_unlock = pcall(function() force.unlock_space_location(gateway_target) end)
+		if not ok_unlock then
+			log(string.format("[Gateway] unlock_space_location('%s') failed before creation-park for %s: %s",
+				tostring(gateway_target), final_name, tostring(err_unlock)))
+		end
+		local ok_loc, err_loc = pcall(function() new_platform.space_location = gateway_target end)
+		if ok_loc then
+			log(string.format("[Gateway] Platform %s parked at gateway '%s' at CREATION (pre-restoration)",
+				final_name, gateway_target))
+		else
+			-- No data risk either way: the platform is paused (transfers pause above) and the
+			-- end-of-import re-pause keeps it parked wherever it sits; the completion-side
+			-- verification reports the miss loudly.
+			log(string.format("[Gateway] CREATION park FAILED for %s at '%s': %s — platform remains paused at its default location",
+				final_name, tostring(gateway_target), tostring(err_loc)))
+		end
 	end
 	if gateway_target and imported_schedule then
 		local stripped = Gateway.strip_gateway_records(imported_schedule)
@@ -373,8 +418,8 @@ function ImportPipeline.queue(json_data, new_platform_name, force_name, requeste
 		-- Store platform reference for unpausing after validation
 		target_platform = new_platform,
 		imported_schedule = imported_schedule,
-		-- Gateway to park at (nil for normal transfers; explicit, from the payload). When set, import
-		-- completion parks the platform AT this gateway, paused, instead of unpausing it to fly.
+		-- Gateway parked at (nil for normal transfers; explicit, from the payload). The park WRITE
+		-- happened above at creation; import completion only RE-PAUSES and VERIFIES this location.
 		gateway_target = gateway_target,
 
 		-- ========== PHASE METRICS TRACKING ==========
