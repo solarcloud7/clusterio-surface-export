@@ -335,7 +335,74 @@ test("failed destination discard evacuates passengers before deletion", () => {
 	assert.ok(evacuateAt > failureAt && discardAt > evacuateAt,
 		"black-box discard must route passengers through evacuation before deleting the destination");
 	assert.match(importCompletion.slice(evacuateAt, discardAt), /pcall/,
-		"passenger evacuation must be protected so a failure preserves the destination");
+		"passenger evacuation must be pcall-protected — a raw error() in event context kills the "
+		+ "headless server. Its FAILURE no longer blocks the delete (see the discard-contract test).");
+});
+
+test("the discard contract is unconditional — observability and guards never gate it", () => {
+	// Owner ruling 2026-08-02. First shipped as prose assertions (matching log() strings), and the
+	// review MUTATION-TESTED them: re-nesting the delete inside the evacuation branch passed, and
+	// reinstating preserve-on-bank-failure with different wording passed. Three of four claims had
+	// no teeth. These are CONTROL-FLOW assertions now — they pin the shapes those two mutations
+	// changed, with the prose kept only as secondary documentation.
+	const importCompletion = fs.readFileSync(path.join(moduleRoot, "core", "import-completion.lua"), "utf8");
+
+	// Anchor the failure-discard block once; every segment below is carved from real positions so a
+	// vanished anchor fails loudly instead of matching elsewhere in the file.
+	const bankAt = importCompletion.indexOf("pcall(bank_failure_black_box");
+	const configAt = importCompletion.indexOf("local config = storage.surface_export_config", bankAt);
+	const evacuateAt = importCompletion.indexOf("pcall(Gateway.evacuate_passengers", bankAt);
+	const deleteAt = importCompletion.indexOf("pcall(GameUtils.delete_platform", bankAt);
+	assert.ok(bankAt !== -1 && configAt > bankAt && evacuateAt > configAt && deleteAt > evacuateAt,
+		"the failure-discard block must keep its shape: bank -> config/preserve -> evacuate -> delete");
+
+	// 1. Black-box write failure must not GATE anything. Problem class the old branch was installed
+	//    against: evidence loss. Re-covered: on failure the SOURCE is preserved (fail => revert), so
+	//    the authoritative evidence still exists; the black box is a convenience copy.
+	//    CONTROL FLOW: between the bank pcall and the preserve/config block there is no early return
+	//    and no verdict mutation — a bank failure can only log. (This catches the review's Mutation
+	//    B, which reinstated the preserve with different wording.)
+	const bankSegment = importCompletion.slice(bankAt, configAt);
+	assert.doesNotMatch(bankSegment, /\breturn\b/,
+		"a bank failure must not exit the discard block — observability never gates the contract");
+	assert.doesNotMatch(bankSegment, /cleanup_failed|destinationPreserved/,
+		"a bank failure must not mutate the verdict — it may only log");
+
+	// 2. The evacuation guard's failure must not BLOCK the delete. Problem class: player harm on
+	//    delete-with-passenger. Re-covered: the engine natively returns a player to a planet on hub
+	//    loss; evacuation is still attempted first.
+	//    CONTROL FLOW: the delete is a DIRECT pcall assignment, not nested under `if evacuated`.
+	//    (This catches the review's Mutation A, which re-nested it with the log lines untouched.)
+	const evacuateSegment = importCompletion.slice(evacuateAt, deleteAt);
+	assert.doesNotMatch(evacuateSegment, /if\s+evacuated\s+then/,
+		"the delete must not be conditioned on evacuation success — that guard manufactured the "
+		+ "orphan it guarded against");
+	assert.doesNotMatch(evacuateSegment, /\breturn\b/,
+		"nor may an evacuation failure EXIT before the delete — an `if not evacuated then return` "
+		+ "re-gate is the same orphan through the other door (reconciliation-review note)");
+	assert.match(importCompletion.slice(deleteAt - 60, deleteAt + 50),
+		/local\s+delete_ok\s*,\s*delete_result\s*=\s*pcall\(GameUtils\.delete_platform/,
+		"the delete must be an unconditional direct pcall assignment");
+
+	// 3. An already-invalid platform is a COMPLETED discard, and it must be decided BEFORE the
+	//    preserve flag so an armed one-shot is not burned on nothing.
+	const invalidAt = importCompletion.indexOf("nothing to discard", bankAt);
+	const consumeAt = importCompletion.indexOf("config.preserve_failed_destination = nil", bankAt);
+	assert.ok(invalidAt !== -1 && consumeAt !== -1 && invalidAt < consumeAt,
+		"the validity branch must precede the preserve branch — an invalid platform must not consume "
+		+ "the one-shot flag");
+	assert.doesNotMatch(importCompletion.slice(invalidAt, consumeAt), /=\s*nil/,
+		"the nothing-to-discard branch must not consume the preserve flag");
+
+	// Secondary prose markers (documentation, not the teeth).
+	assert.match(importCompletion, /discarding the destination anyway/);
+	assert.match(importCompletion, /proceeding[\s\S]{0,40}with discard/);
+	assert.doesNotMatch(importCompletion, /cleanup_error\s*=\s*string\.format\("Failed to bank failure black box/);
+
+	// What remains of cleanup_failed on this path is the one honest residual: the engine itself
+	// refused the delete, so an orphaned surface really exists.
+	assert.match(importCompletion, /GameUtils\.delete_platform failed/,
+		"a real engine delete failure must still be reported — an orphan genuinely exists then");
 });
 
 test("exact fluid parity is strict-transfer-only", () => {

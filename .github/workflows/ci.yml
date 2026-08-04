@@ -4,8 +4,12 @@ on:
   push:
     branches: [main]
     tags: ['v*']
+  # No branch filter on pull_request, DELIBERATELY: with `branches: [main]` a STACKED PR (base = another
+  # feature branch) ran no CI at all — the cleanup-contract PR sat with zero checks while its base PR was
+  # open, and nothing said so. Every PR now runs the suite regardless of base; the merge-into-main gate is
+  # unchanged (the push run on main is still the authoritative post-merge check), and publishing is
+  # separately gated on v* tags, so a PR run can never publish.
   pull_request:
-    branches: [main]
   workflow_dispatch:
 
 # Cancel in-progress runs for the same ref (branch/PR)

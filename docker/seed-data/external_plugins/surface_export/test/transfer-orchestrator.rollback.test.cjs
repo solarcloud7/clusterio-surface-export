@@ -45,6 +45,9 @@ function makeHarness(importSendResult, sourceSendResult = () => ({ success: true
 		// #106 hooks the orchestrator calls on enter/exit of awaiting_validation (recorded for assertions).
 		persistPendingTransfer: (intent) => { calls.pendingPersisted = intent; },
 		removePendingTransfer: (id) => { calls.pendingRemoved = id; },
+		// The transfer preflight (owner ruling 2026-08-02) refuses an offline destination up front.
+		// Online by default so every pre-existing scenario reaches the code it was written to test.
+		isInstanceOnline: (id) => (calls.offlineInstances ? !calls.offlineInstances.has(id) : true),
 		persistStorage: async () => { calls.persistStorageCalls = (calls.persistStorageCalls || 0) + 1; },
 		platformStorage: {
 			get: () => ({
@@ -141,11 +144,15 @@ test("Non-session-loss throw on import send: source IS rolled back (unlock route
 	if (transfer.validationTimeout) clearTimeout(transfer.validationTimeout);
 });
 
-test("#106: validation fails AND source unlock fails → cleanup_failed KEEPS the recovery intent (not dropped)", async () => {
-	// Adversarial (review #106 orch:310, a CONFIRMED data-loss defect): reverting handleValidationFailure to
-	// an unconditional status='failed' makes handleTransferValidation's removal condition DROP the persisted
-	// intent while the source is STILL locked-and-hidden (the unlock failed) — losing the observability/re-adoption
-	// record for a source that only the source-side TTL will recover. This test goes RED on that revert.
+test("#106: validation fails AND source unlock fails → status is plain 'failed', intent still KEPT", async () => {
+	// The #106 protection, re-keyed (owner ruling 2026-08-02). The DEFECT #106 guards against is
+	// dropping the persisted intent while the source is still locked-and-hidden — losing the
+	// observability record for a source only the source-side TTL will recover. The old code proved
+	// "source unresolved" by proxy: it flipped the STATUS to cleanup_failed so the status-keyed
+	// removal condition wouldn't fire. The ruling reserves cleanup_failed for an actual leftover
+	// platform (a TTL-recoverable lock leaves nothing behind), so the intent-keeping now keys on the
+	// CONDITION itself — handleValidationFailure returns sourceResolved:false. This test goes RED if
+	// either half regresses: the status decoration coming back, OR the intent being dropped.
 	const { orch, activeTransfers, calls } = makeHarness(() => { throw sessionLost("Session Closed"); });
 	const res = await orch.transferPlatform("export_1", 2); // arm awaiting_validation (persists the intent)
 	const transfer = onlyTransfer(activeTransfers);
@@ -159,8 +166,122 @@ test("#106: validation fails AND source unlock fails → cleanup_failed KEEPS th
 
 	await orch.handleTransferValidation({ transferId: res.transferId, success: false, validation: { mismatchDetails: "item mismatch" } });
 
-	assert.equal(transfer.status, "cleanup_failed", "failed validation + failed unlock must be cleanup_failed, not failed");
+	assert.equal(transfer.status, "failed",
+		"a failed unlock is TTL-self-healing and leaves no platform behind — it must not wear the "
+		+ "leftover-platform status");
+	assert.match(String(transfer.error), /unlock failed: source offline/,
+		"the unlock failure still rides in the error text");
 	assert.equal(calls.pendingRemoved, undefined, "the recovery intent must be KEPT until bounded retention pruning");
+});
+
+test("a failed DESTINATION discard is cleanup_failed — a platform was left behind", async () => {
+	// The one meaning cleanup_failed retains on the failure path: the Lua side reports the discard
+	// itself failed (validation.cleanup_failed), so an orphaned half-built platform exists on the
+	// target. Distinct from the unlock case above: something real is left for an operator.
+	const { orch, activeTransfers, calls } = makeHarness(() => { throw sessionLost("Session Closed"); });
+	const res = await orch.transferPlatform("export_1", 2);
+	const transfer = onlyTransfer(activeTransfers);
+	if (transfer.validationTimeout) clearTimeout(transfer.validationTimeout);
+
+	orch.tryUnlockSource = async () => { calls.unlockRouteTaken++; return null; }; // unlock succeeds
+	calls.pendingRemoved = undefined;
+
+	await orch.handleTransferValidation({ transferId: res.transferId, success: false, validation: {
+		mismatchDetails: "item mismatch",
+		cleanup_failed: true,
+		cleanup_error: "GameUtils.delete_platform failed: returned false",
+	} });
+
+	assert.equal(transfer.status, "cleanup_failed");
+	assert.match(String(transfer.error), /delete_platform failed/);
+	assert.equal(calls.pendingRemoved, res.transferId,
+		"the SOURCE is resolved (unlocked), so the intent is dropped — the orphan is on the target "
+		+ "side and stays visible through the cleanup_failed record itself");
+});
+
+test("preflight: an offline destination is refused BEFORE any record exists", async () => {
+	// Owner ruling 2026-08-02, case 1: prevent the failure, don't build recovery for it. The refusal
+	// must happen before the ActiveTransfer record is created — a record would burn the canonical ID
+	// and put a phantom entry in front of the retry guard.
+	const { orch, activeTransfers, calls } = makeHarness(() => {
+		throw new Error("import send must never be reached when the preflight refuses");
+	});
+	calls.offlineInstances = new Set([2]);
+
+	const res = await orch.transferPlatform("export_1", 2);
+
+	assert.equal(res.success, false);
+	assert.match(String(res.error), /offline/, "the player-facing message names the cause");
+	assert.match(String(res.error), /unchanged/, "and says the source platform is safe");
+	assert.equal(res.safeToUnlockSource, true,
+		"the refusal must carry the unlock authority: nothing was sent, so the CALLERS — the "
+		+ "instance's refusal path AND handleStartPlatformTransferRequest, whichever holds the "
+		+ "source lock — may release it. (Review finding: without this flag the web/ctl path "
+		+ "stranded its export-time lock for the full TTL.)");
+	assert.equal(activeTransfers.size, 0,
+		"NO record: a refused preflight must not burn the canonical ID or feed the retry guard");
+	assert.equal(calls.importSends, 0, "nothing was sent anywhere");
+	assert.equal(calls.unlockRouteTaken, 0,
+		"transferPlatform itself does not unlock on the preflight — the LOCK HOLDER does, keyed on "
+		+ "safeToUnlockSource (the instance path and the web path lock at different times, and only "
+		+ "they know whether a lock exists to release)");
+
+	// And once the destination is back online the SAME export proceeds past the preflight — the
+	// refusal is stateless. (This harness's import send throws by design, so the proof that the
+	// preflight admitted the transfer is that the send was REACHED at all.)
+	calls.offlineInstances.clear();
+	await orch.transferPlatform("export_1", 2);
+	assert.equal(calls.importSends, 1, "back online, the preflight admits the transfer to the import send");
+	const transfer = onlyTransfer(activeTransfers);
+	if (transfer.validationTimeout) clearTimeout(transfer.validationTimeout);
+});
+
+test("a throw AFTER the destination accepted must NOT authorize an unlock", async () => {
+	// THE duplication guard, adversarial (review blocker). transferPlatform has exactly one failure
+	// return that follows a DELIVERED import: a throw between the destination's ACK and the success
+	// return (here: persistPendingTransfer throwing inside enterAwaitingValidation). If that return
+	// carried safeToUnlockSource, the instance-side caller would clear the lock the source-delete
+	// gate requires — a later validation SUCCESS then finds "source is not locked-for-transfer",
+	// refuses the delete, and a PERMANENT DUPLICATE exists. This test goes RED if anyone makes that
+	// return "safe", or resurrects an unconditional unlock in the catch.
+	const { orch, activeTransfers, calls } = makeHarness(() => ({ success: true }));
+	const plugin = orch.plugin;
+	plugin.persistPendingTransfer = () => { throw new Error("disk full persisting intent"); };
+
+	const res = await orch.transferPlatform("export_1", 2);
+
+	assert.equal(calls.importSends, 1, "the import was delivered and accepted");
+	assert.equal(res.success, false, "the throw still fails the call");
+	assert.notEqual(res.safeToUnlockSource, true,
+		"a post-acceptance failure must NEVER authorize an unlock — the destination holds the copy");
+	assert.equal(calls.unlockRouteTaken, 0,
+		"and the orchestrator itself must not unlock either (the armed validation timeout resolves it)");
+	const transfer = onlyTransfer(activeTransfers);
+	if (transfer.validationTimeout) clearTimeout(transfer.validationTimeout);
+});
+
+test("a failed transfer whose destination was deliberately PRESERVED is not replayable", async () => {
+	// Review finding: "failed" is the replaceable settled state BECAUSE its rollback discarded the
+	// destination. The one-shot debug preserve flag breaks that premise — the destination still
+	// exists, paused — so a same-ID re-run would import a second copy beside it.
+	const { orch, activeTransfers, calls } = makeHarness(() => { throw sessionLost("Session Closed"); });
+	const res = await orch.transferPlatform("export_1", 2);
+	const transfer = onlyTransfer(activeTransfers);
+	if (transfer.validationTimeout) clearTimeout(transfer.validationTimeout);
+	orch.tryUnlockSource = async () => { calls.unlockRouteTaken++; return null; };
+
+	await orch.handleTransferValidation({ transferId: res.transferId, success: false, validation: {
+		mismatchDetails: "forced failure with preserve armed",
+		destinationPreserved: true,
+	} });
+	assert.equal(transfer.status, "failed", "preservation is deliberate, not a leftover — status stays failed");
+
+	const sendsBefore = calls.importSends;
+	const retry = await orch.transferPlatform("export_1", 2);
+	assert.equal(retry.success, false, "the replay must be refused");
+	assert.match(String(retry.error), /PRESERVED/,
+		"and the refusal must say WHY — the preserved copy is what a re-run would duplicate beside");
+	assert.equal(calls.importSends, sendsBefore, "nothing may be sent on the refused replay");
 });
 
 test("#106: validation fails but source unlock SUCCEEDS → failed drops the intent (source resolved)", async () => {

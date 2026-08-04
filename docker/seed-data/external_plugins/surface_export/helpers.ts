@@ -37,6 +37,17 @@ export function isSessionLostError(err: unknown): boolean {
 }
 
 /**
+ * Unlock responses that mean "there was nothing locked" — benign for every rollback caller, because
+ * a rollback's goal is an unlocked source and an already-unlocked source IS that goal. ONE
+ * definition, shared by the controller's sendUnlockRequest and the instance's refusal path: review
+ * caught the instance-side check treating these as failures and logging "the source-side TTL
+ * remains the backstop" for a stranded lock that did not exist.
+ */
+export function isBenignUnlockError(text: string): boolean {
+	return /platform not locked|no locked platforms/i.test(text);
+}
+
+/**
  * Convert a value to a finite number, returning null for non-finite values.
  */
 export function toFiniteNumber(value: unknown): number | null {

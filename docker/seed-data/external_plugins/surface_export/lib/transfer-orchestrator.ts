@@ -1,6 +1,6 @@
 
 import { wait } from "@clusterio/lib";
-import { normalizeExportMetrics, TICKS_TO_MS, getErrorMessage, isSessionLostError, coercePlatformIndex, VALIDATION_TIMEOUT_MS, buildPayloadMetrics, buildImportMetrics, makeCanonicalTransferId, parseCanonicalTransferId } from "../helpers";
+import { normalizeExportMetrics, TICKS_TO_MS, getErrorMessage, isSessionLostError, isBenignUnlockError, coercePlatformIndex, VALIDATION_TIMEOUT_MS, buildPayloadMetrics, buildImportMetrics, makeCanonicalTransferId, parseCanonicalTransferId } from "../helpers";
 import { createOperationRecord } from "./operation-record";
 import type { IControllerPlugin, ActiveTransfer, SimpleResponse, TransferValidationEvent, StoredExport, ValidationResult, ImportMetrics, ExportMetrics } from "../messages";
 function mergeExportMetrics(storedMetrics: ExportMetrics | null | undefined, runtimeMetrics: Record<string, unknown> | null | undefined) {
@@ -78,10 +78,39 @@ export class TransferOrchestrator {
 
 	// ── Transfer initiation ─────────────────────────────────────────────
 
-	async transferPlatform(exportId: string, targetInstanceId: number, exportMetrics: Record<string, unknown> | null = null, transferStartedAt: number | null = null) {
+	/**
+	 * `safeToUnlockSource` on a failure return is the callers' unlock authority, and it is OPT-IN:
+	 * true ONLY where this method can prove nothing was delivered to the destination, absent (falsy)
+	 * everywhere else — including any future return someone adds without thinking about it. The
+	 * review that mandated it found the inverse defect armed and loaded: the instance-side caller
+	 * unlocked on ANY success:false, and one success:false return here follows a DELIVERED import
+	 * (the post-acceptance throw below) — unlock there and a later validation success finds the
+	 * source lock gone, the delete gate refuses, and a permanent duplicate exists. For a
+	 * source-deleting protocol the fail-safe direction is "don't unlock unless proven safe",
+	 * exactly like the retry guard's unknown-status rule.
+	 */
+	async transferPlatform(exportId: string, targetInstanceId: number, exportMetrics: Record<string, unknown> | null = null, transferStartedAt: number | null = null): Promise<{
+		success: boolean; error?: string; transferId?: string; message?: string;
+		/** See the doc comment above — opt-in unlock authority, absent means DO NOT unlock. */
+		safeToUnlockSource?: boolean;
+	}> {
 		const exportData = this.plugin.platformStorage.get(exportId);
 		if (!exportData) {
-			return { success: false, error: `Export not found: ${exportId}` };
+			return { success: false, error: `Export not found: ${exportId}`, safeToUnlockSource: true };
+		}
+
+		// PREFLIGHT (owner ruling 2026-08-02: prevent the failure, don't build recovery for it): an
+		// offline destination is refused HERE — before any ActiveTransfer record exists, so the
+		// canonical ID is not burned and the retry guard never sees this attempt. The source instance
+		// prints the error to the player and unlocks the platform through its existing failure path;
+		// no new message, no new recovery flow. The residual (an instance dying MID-transfer) stays
+		// possible and lands in the same place it always did: a loud cleanup_failed with the reason.
+		if (!this.plugin.isInstanceOnline(targetInstanceId)) {
+			const name = this.plugin.platformTree.resolveInstanceName(targetInstanceId);
+			return { success: false, safeToUnlockSource: true, error:
+				`Destination instance ${name ? `"${name}" ` : ""}(${targetInstanceId}) is offline — `
+				+ "transfer refused before starting. The source platform is unchanged; retry when the "
+				+ "destination is running." };
 		}
 
 		const transferId = exportData.exportId || exportId;
@@ -109,9 +138,28 @@ export class TransferOrchestrator {
 				return { success: true, transferId, message: `Transfer already active: ${transferId}` };
 			}
 			if (existingTransfer.status !== "failed") {
-				return { success: false, error:
+				// Unlocking the SOURCE here is safe even though the refusal names a committed
+				// DESTINATION copy: nothing was sent on THIS attempt, and a fresh source lock from a
+				// replayed export holds a platform this refusal just declined to move. For the settled
+				// statuses themselves the unlock is a no-op or benign: a completed transfer's source
+				// is deleted ("no longer exists"), a failure-path cleanup_failed source was unlocked
+				// before its delete was attempted, and a SUCCESS-path cleanup_failed source (delete
+				// refused post-commit) is still locked — where unlocking merely restores visibility of
+				// a duplicate an operator must resolve anyway; it cannot create one, the copy already
+				// exists. Verified branch by branch in review.
+				return { success: false, safeToUnlockSource: true, error:
 					`Refusing retry of settled transfer ${transferId} (status=${existingTransfer.status}): `
 					+ "the destination may hold a committed copy; create a NEW export to transfer again" };
+			}
+			if (existingTransfer.validationResult?.destinationPreserved === true) {
+				// "failed" is replaceable BECAUSE its rollback discarded the destination — the one-shot
+				// debug preserve flag breaks that premise: the destination still exists, paused, and a
+				// re-run would import a second copy beside it. Refuse like any other settled status.
+				return { success: false, safeToUnlockSource: true, error:
+					`Refusing retry of failed transfer ${transferId}: its destination was deliberately `
+					+ "PRESERVED by the debug preserve_failed_destination flag, so a re-run would "
+					+ "duplicate beside it. Remove the preserved platform (or restart the controller "
+					+ "to clear the record), then create a NEW export." };
 			}
 			this.plugin.logger.info(
 				`Replacing failed (destination-discarded) transfer record for retried export ${transferId}`);
@@ -133,7 +181,7 @@ export class TransferOrchestrator {
 		const sourcePlatformIndex = Number.isInteger(topLevelIndex) ? (topLevelIndex as number)
 			: (Number.isInteger(payloadIndex) ? payloadIndex : null);
 		if (sourcePlatformIndex === null || sourcePlatformIndex < 1) {
-			return { success: false, error: `Transfer aborted: source platform index unavailable (top-level=${String(topLevelIndex)}, payload=${String(platformInfo.index)})` };
+			return { success: false, safeToUnlockSource: true, error: `Transfer aborted: source platform index unavailable (top-level=${String(topLevelIndex)}, payload=${String(platformInfo.index)})` };
 		}
 
 		// Shared skeleton via the common factory. Values are pre-resolved here so the
@@ -206,7 +254,7 @@ export class TransferOrchestrator {
 
 		const transfer = this.plugin.activeTransfers.get(transferId);
 		if (!transfer) {
-			return { success: false, error: "Failed to initialize transfer state" };
+			return { success: false, safeToUnlockSource: true, error: "Failed to initialize transfer state" };
 		}
 		this.txLogger.logTransactionEvent(transferId, "transfer_created",
 			`${transfer.platformName}: ${transfer.sourceInstanceName || transfer.sourceInstanceId} → ${transfer.targetInstanceName || targetInstanceId}`, {
@@ -250,7 +298,12 @@ export class TransferOrchestrator {
 			if (importAccepted) {
 				// Throw AFTER the destination accepted the import: do NOT unlock the source — it would coexist
 				// with the destination copy (duplication). The validation timeout armed above will resolve it.
-				return { success: false, error: errMsg };
+				// safeToUnlockSource stays FALSE here, explicitly: this is the one failure return that follows
+				// a DELIVERED import, and it is exactly the return the review caught the instance-side caller
+				// unlocking on. An unlock here clears the lock the source-delete gate requires, so a
+				// subsequent validation SUCCESS finds "source is not locked-for-transfer", refuses the
+				// delete, and a permanent duplicate exists.
+				return { success: false, safeToUnlockSource: false, error: errMsg };
 			}
 			if (isSessionLostError(err)) {
 				// AMBIGUOUS delivery (#80): the import send was rejected by a controller↔host session drop
@@ -279,7 +332,9 @@ export class TransferOrchestrator {
 				return { success: true, transferId, message: `Transfer initiated (delivery unconfirmed after a session interruption; awaiting validation): ${transferId}` };
 			}
 			// Throw BEFORE accept with a definite non-delivery error: the source is locked but the destination
-			// has nothing — safe to roll back (mirrors handleImportFailure).
+			// has nothing — safe to roll back (mirrors handleImportFailure). The unlock happens HERE, so
+			// safeToUnlockSource stays falsy on the return: a caller unlocking again would be a benign no-op
+			// that logs a spurious "not locked" error.
 			const rollbackError = await this.tryUnlockSource(transferId, transfer);
 			if (rollbackError) {
 				return { success: false, error: `${errMsg}; rollback failed: ${rollbackError}` };
@@ -298,6 +353,8 @@ export class TransferOrchestrator {
 		this.txLogger.logTransactionEvent(transferId, "import_failed",
 			`Import failed: ${error}`, { error, transmissionMs });
 
+		// The unlock happens here (controller-side); safeToUnlockSource stays falsy on the return so
+		// the instance caller does not re-unlock and log a spurious "not locked" error.
 		const rollbackError = await this.tryUnlockSource(transferId, transfer);
 		if (rollbackError) transfer.error = `${transfer.error}; rollback failed: ${rollbackError}`;
 
@@ -382,15 +439,23 @@ export class TransferOrchestrator {
 		}
 
 		try {
+			// #106: whether the SOURCE is definitively resolved (deleted on success, unlocked on
+			// failure). BOTH handlers report it directly. It used to be inferred from a status set
+			// ("completed"/"failed"/"error"), which was a proxy twice over: a failed unlock had to
+			// wear cleanup_failed just to dodge the removal, and a destination-orphan (source fully
+			// unlocked, status cleanup_failed for the TARGET-side leftover) kept a pending intent
+			// for a source that owed nothing. The condition is now the condition.
+			let sourceResolved;
 			if (event.success) {
-				await this.handleValidationSuccess(event.transferId, transfer);
+				({ sourceResolved } = await this.handleValidationSuccess(event.transferId, transfer));
 			} else {
-				await this.handleValidationFailure(event.transferId, transfer, event.validation);
+				({ sourceResolved } = await this.handleValidationFailure(event.transferId, transfer, event.validation));
 			}
-			// Drop the bounded observability record once the SOURCE is definitively resolved (deleted on success,
-			// unlocked on failure). Keep cleanup_failed visible until retention pruning; Phase 1 recovery remains
-			// source-side TTL unlock, never controller auto-delete on restart.
-			if (transfer.status === "completed" || transfer.status === "failed" || transfer.status === "error") {
+			// Drop the bounded observability record once the SOURCE is definitively resolved. A
+			// still-locked source (unlock failed, TTL pending — or a post-commit delete failure)
+			// KEEPS its intent until bounded retention pruning; Phase 1 recovery remains source-side
+			// TTL unlock, never controller auto-delete on restart.
+			if (sourceResolved) {
 				this.plugin.removePendingTransfer(event.transferId);
 			}
 			this.pruneOldTransfers();
@@ -437,13 +502,18 @@ export class TransferOrchestrator {
 			}
 			await this.plugin.persistStorage();
 			this.subscriptions.queueTreeBroadcast(transfer.forceName || "player");
-		} else {
-			this.logger.error(`Failed to delete source platform: ${deleteResponse.error}`);
-			transfer.status = "cleanup_failed";
-			transfer.error = deleteResponse.error;
-			this.updateTransfer(transfer);
-			await this.broadcastTransferStatus(transfer, `⚠ Cleanup failed: ${deleteResponse.error}`, "yellow");
+			return { sourceResolved: true };
 		}
+		// cleanup_failed in its one remaining post-commit meaning: the destination holds the
+		// committed copy and the SOURCE could not be deleted — a DUPLICATE exists until an operator
+		// (or a later delete) removes the source. The preflight makes this rare (an instance has to
+		// die MID-transfer); it cannot make it impossible. Source unresolved: keep the intent.
+		this.logger.error(`Failed to delete source platform: ${deleteResponse.error}`);
+		transfer.status = "cleanup_failed";
+		transfer.error = deleteResponse.error;
+		this.updateTransfer(transfer);
+		await this.broadcastTransferStatus(transfer, `⚠ Cleanup failed: ${deleteResponse.error}`, "yellow");
+		return { sourceResolved: false };
 	}
 
 	async handleValidationFailure(transferId: string, transfer: ActiveTransfer, validation: ValidationResult | undefined) {
@@ -463,11 +533,16 @@ export class TransferOrchestrator {
 			await this.broadcastTransferStatus(transfer, `Rolled back. Error: ${errorMsg}`, "red");
 		}
 
-		// #106: if the source unlock ALSO failed, the source is NOT resolved (still locked) — mark it
-		// cleanup_failed (not failed) so handleTransferValidation KEEPS the observability intent. Recovery is the
-		// SOURCE-SIDE TTL auto-unlock (the controller does not reconcile/retry on boot). Mirrors the success
-		// path's cleanup_failed on a failed source delete.
-		transfer.status = rollbackError || destinationCleanupError ? "cleanup_failed" : "failed";
+		// Status semantics (owner ruling 2026-08-02, contract-over-recovery): `cleanup_failed` means
+		// exactly one thing — A PLATFORM WAS LEFT BEHIND that automation could not remove (here: the
+		// failed destination's discard failed, so an orphan exists on the target). A failed source
+		// UNLOCK is deliberately NOT that status: the source-side TTL auto-unlock is the designed
+		// recovery, so the distinct status was decoration — handling that exists only to make the
+		// record look different is not handling. The unlock failure still rides in the error text,
+		// and the #106 protection (keep the persisted intent while the source is still locked) now
+		// keys on the CONDITION itself via this method's return value, not on the status that used
+		// to proxy for it.
+		transfer.status = destinationCleanupError ? "cleanup_failed" : "failed";
 		transfer.error = [errorMsg, rollbackError, destinationCleanupError].filter(Boolean).join("; ");
 		transfer.completedAt = Date.now();
 		this.txLogger.logTransactionEvent(transferId, "transfer_failed",
@@ -478,6 +553,10 @@ export class TransferOrchestrator {
 			});
 		this.updateTransfer(transfer);
 		await this.txLogger.persistTransactionLog(transferId);
+		// #106: the caller keeps the persisted awaiting_validation intent while the source is still
+		// locked (unlock failed → only the source-side TTL will recover it — the record must outlive
+		// this method so that state stays observable).
+		return { sourceResolved: !rollbackError };
 	}
 
 	pruneOldTransfers() {
@@ -513,6 +592,19 @@ export class TransferOrchestrator {
 			return { success: false, error: `Invalid platform index ${request.sourcePlatformIndex}` };
 		}
 
+		// PREFLIGHT, BEFORE the export request: on this path the EXPORT is what locks the source
+		// (kind="transfer" deliberately skips the completion unlock), so refusing after it means a
+		// locked-and-hidden platform, a wasted export stall, and — review finding — no rollback,
+		// because transferPlatform's refusal is a RETURN and the rollback below lives in the catch.
+		// Refusing here costs nothing and leaves nothing to clean up.
+		if (!this.plugin.isInstanceOnline(resolvedTarget.id)) {
+			const name = this.plugin.platformTree.resolveInstanceName(resolvedTarget.id);
+			return { success: false, error:
+				`Destination instance ${name ? `"${name}" ` : ""}(${resolvedTarget.id}) is offline — `
+				+ "transfer refused before starting. Nothing was locked or exported; retry when the "
+				+ "destination is running." };
+		}
+
 		try {
 			const t0 = Date.now();
 			const exportResponse = await this.plugin.controller.sendTo(
@@ -539,6 +631,20 @@ export class TransferOrchestrator {
 				waitForControllerStoreMs: waitForStoredMs,
 				controllerExportPrepTotalMs: exportRequestMs + waitForStoredMs,
 			}, t0);
+			// A refusal that transferPlatform proves delivery-free must UNLOCK the source on THIS
+			// path too: the export above locked it, this handler owns that lock, and the instance's
+			// own unlock-on-refusal never fires here (controllerManagedTransferExports suppresses
+			// its handleExportComplete continuation). Review finding: without this, a refusal —
+			// offline destination raced past the preflight, or a settled-ID collision — stranded the
+			// platform locked-and-hidden for the full TTL while the message said "unchanged".
+			if (!result.success && result.safeToUnlockSource) {
+				const rollbackError = await this.sendUnlockRequest(sourceInstanceId, sourcePlatformIndex, forceName);
+				if (rollbackError) {
+					this.logger.error(`Unlock after refused transfer of #${sourcePlatformIndex} failed: ${rollbackError}`);
+					return { ...result, error: `${result.error}; rollback failed: ${rollbackError}`,
+						exportId: canonicalExportId, sourceExportId: exportResponse.exportId };
+				}
+			}
 			return { ...result, exportId: canonicalExportId, sourceExportId: exportResponse.exportId };
 		} catch (err: unknown) {
 			const errMsg = getErrorMessage(err);
@@ -574,7 +680,7 @@ export class TransferOrchestrator {
 			);
 			if (resp?.success) return null;
 			const err = resp?.error || "Unknown unlock error";
-			if (/platform not locked|no locked platforms/i.test(err)) return null;
+			if (isBenignUnlockError(err)) return null;
 			return err;
 		} catch (err: unknown) {
 			return getErrorMessage(err);
@@ -584,7 +690,12 @@ export class TransferOrchestrator {
 	async handleTransferPlatformRequest(request: { exportId: string; targetInstanceId: number; sourceInstanceId?: number | null; sourceExportId?: string | null }) {
 		const resolved = this.plugin.platformTree.resolveTargetInstance(request.targetInstanceId);
 		if (!resolved) {
-			return { success: false, error: `Unknown instance ${request.targetInstanceId}` };
+			// Provably pre-send — nothing exists to have been delivered to — so the refusal carries
+			// the unlock authority. The reconciliation review caught this handler sitting OUTSIDE the
+			// flag taxonomy: it refuses before transferPlatform is ever reached, so an in-game
+			// `/transfer-platform <idx> <bogus-id>` stranded its export lock for the full TTL while
+			// the instance-side gate (correctly, per contract) declined to unlock an unflagged refusal.
+			return { success: false, safeToUnlockSource: true, error: `Unknown instance ${request.targetInstanceId}` };
 		}
 		try {
 			const exportId = this.plugin.platformStorage.get(request.exportId)

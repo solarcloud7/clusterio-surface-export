@@ -81,11 +81,17 @@ it. Inventing a solution per failure reason is over-engineering: the contract is
 
 **Q: What if the destination host/instance isn't ready (offline, stopped, still booting) when the transfer needs
 it?**
-A: ✅ / ⚠️ OPEN (handshake wiring queued). TODAY: the `sendTo`/`sendRequest` to an unreachable destination
-instance rejects, the controller rolls back and unlocks the source at once (`tryUnlockSource`), and a retry is a
-NEW transfer — no resume machinery. The "discard the staged copy if the destination shook hands then failed by a
-deadline" half depends on the unbuilt handshake; until it lands, a destination that goes live on its
-own validation is not deadline-discarded.
+A: ✅ / ⚠️ OPEN (handshake wiring queued). TODAY: the transfer is **refused up front**, twice over (owner ruling
+2026-08-02: prevent the failure, don't build recovery for it). The web/ctl path preflights in
+`handleStartPlatformTransferRequest` BEFORE the export request — nothing is locked or exported. The in-game
+path preflights in `transferPlatform` before any transfer record exists; the refusal is printed IN GAME (red)
+and the source is unlocked immediately — the refusal response carries `safeToUnlockSource`, the opt-in unlock
+authority that is true only where the controller proved nothing was delivered (a post-acceptance failure must
+keep the lock, or a validation success meets a delete gate with no lock and a duplicate survives). The
+residual — an instance dying MID-transfer — still lands on the old path: the send rejects, the controller
+rolls back and unlocks the source at once, and a retry is a NEW transfer. The "discard the staged copy if the
+destination shook hands then failed by a deadline" half depends on the unbuilt handshake; until it lands, a
+destination that goes live on its own validation is not deadline-discarded.
 
 **Q: What if a controller persistence store (`exports.json` / `transactions.json`) becomes unreadable
 (partial write, disk fault, hand-editing)?**
@@ -154,19 +160,25 @@ A: ✅ Deliberately does **not** unlock — the import may have landed, and unlo
 TTL backstop instead. A recoverable stuck-then-unlock beats a dup.
 
 **Q: What if validation fails AND the rollback unlock also fails?**
-A: ✅ Marked `cleanup_failed`, the observability record is kept, and the source-side TTL backstops the unlock.
-Symmetric on the destination side: if the black-box *banking itself* fails, the instance does NOT delete the
-destination — it preserves the failed surface paused (also `cleanup_failed`) rather than destroy the only
-remaining evidence.
+A: ✅ The transfer is `failed`, the unlock error rides in the record, the observability intent is kept, and the
+source-side TTL backstops the unlock. Nothing is left behind, so it does not wear `cleanup_failed` — that status
+means exactly one thing: **a platform was left behind that automation could not remove** (a source that outlived
+a committed transfer, or a failed destination whose delete the engine refused). On the destination side,
+observability never gates the contract (owner ruling 2026-08-02): if the black-box *banking itself* fails, that
+is a failure of our debugging — it is logged loudly and the discard proceeds anyway. No evidence is lost: on
+failure the SOURCE is preserved (fail => revert), and the source is the authoritative copy of everything the
+black box describes.
 
 **Q: What happens to my platform if a transfer fails validation?**
 A: ✅ You keep your original — nothing is lost. The single exact gate runs in a paused, deactivated destination
 BEFORE activation, so a mismatch is caught before the destination ever goes live. On failure: the source stays
 put (unlocked, restored to your list), and the half-built destination is banked to a forensic black box and then
 discarded (`failedStage` in the transaction log tells you whether items or fluids didn't reconcile). There is no
-"partial" platform to clean up and no duplicate. (For deliberate post-mortem, an admin can arm the one-shot,
-debug-gated `preserve_failed_destination` flag to keep the failed surface paused instead of discarding it — it is
-consumed after a single use; mutating test hooks must be fail-safe on leak.)
+"partial" platform to clean up and no duplicate — the discard is unconditional; the sole residual is the engine
+itself refusing the delete (never observed), which is flagged loudly as `cleanup_failed` with the reason. (For
+deliberate post-mortem, an admin can arm the one-shot, debug-gated `preserve_failed_destination` flag to keep the
+failed surface paused instead of discarding it — it is consumed after a single use; mutating test hooks must be
+fail-safe on leak.)
 
 **Q: How should I triage a failure black box?**
 A: Start with `failedStage`, then compare the expected/actual per-name rows. These signatures are known classes;
