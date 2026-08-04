@@ -156,8 +156,14 @@ fluids) plus the enumerated tier-2 dimensions.
 A: ✅ A normal (non-session) error triggers controller rollback → source unlocked at once.
 
 **Q: What if the network hiccups and we're unsure the import landed (`SessionLost`)?**
-A: ✅ Deliberately does **not** unlock — the import may have landed, and unlocking could duplicate. Falls to the
-TTL backstop instead. A recoverable stuck-then-unlock beats a dup.
+A: ✅ Deliberately does **not** unlock — the import may have landed, and unlocking could duplicate. The
+transfer enters `awaiting_validation` and is resolved by the **validation timer** (next question); the
+source-side TTL remains the backstop if the controller restarts. One interaction worth knowing: the
+controller↔host reconnect backoff can reach **60 s** (`host.max_reconnect_delay`), which is longer than the
+timer's 30 s default — a link blip that outlasts the timer settles the transfer as failed before the link
+recovers, and the destination's verdict then arrives late (loudly refused and accounted, never silent). If
+link blips are common on your network, set the validation timeout to 60 s or more to clear the backoff
+window. A recoverable stuck-then-unlock beats a dup.
 
 **Q: What if my import is slow and the validation timer expires before the destination reports?**
 A: ✅ The transfer is rolled back on expiry: source unlocked and returned to you, nothing lost. The window
@@ -168,12 +174,16 @@ the payload is delivered and accepted: it covers the destination's import + vali
 so size it to import time, not payload size. A **status guard** makes the short default safe: if the
 destination finishes AFTER the timeout and sends its genuine verdict late, that verdict never drives a
 source delete or a rollback — it is logged loudly as `validation_after_settle` and used only to correct the
-record's leftover accounting. Two outcomes from there: if the late verdict is a genuine FAILURE, the
-destination resolved itself and a plain **retry works**; if it is a late SUCCESS, the destination went live
-before its verdict was refused, so a **live copy exists on the destination alongside your restored
-source** — the transfer is re-marked `cleanup_failed` (its one meaning: a platform was left behind), the
-retry guard refuses further attempts, and you delete the copy you don't want before trying again. Only the
-handshake epic's hold-gated go-live removes that residual.
+record's leftover accounting. Outcomes from there: if the late verdict is a genuine FAILURE **and the
+destination discarded itself cleanly**, a plain retry works; if that FAILURE reports `cleanup_failed` (the
+discard itself failed) or `destinationPreserved` (the deliberate debug orphan), an orphan copy remains on
+the target and the record is marked so the retry guard refuses until you remove it; if it is a late
+SUCCESS, the destination went live before its verdict was refused, so a **live copy exists on the
+destination alongside your restored source** — the transfer is re-marked `cleanup_failed` (its one meaning:
+a platform was left behind), the retry guard refuses further attempts, and you delete the copy you don't
+want before trying again. One sizing note: an import that genuinely needs more than the 120 s ceiling will
+time out on every attempt — the handshake epic's hold-gated go-live is the real fix for imports that slow,
+and it also removes the late-live residual entirely.
 
 **Q: What if validation fails AND the rollback unlock also fails?**
 A: ✅ The transfer is `failed`, the unlock error rides in the record, the observability intent is kept, and the

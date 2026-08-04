@@ -490,3 +490,62 @@ test("validation timeout config: default 30s, floor 5s, junk-safe, read per-arm"
 	if (transfer.validationTimeout) clearTimeout(transfer.validationTimeout);
 	assert.ok(reads >= 1, "scheduleValidationTimeout must read the live config at arm time");
 });
+
+test("W1 guard: a late FAILURE reporting cleanup_failed marks the ACCIDENTAL orphan like the deliberate one", async () => {
+	// Reconciliation finding: the sibling of the late-SUCCESS hole. The destination discard itself
+	// FAILED - an orphan (left paused) exists on the target - yet the record wore "failed", the one
+	// status a retry may replace, so a retry imported a second copy beside the orphan.
+	const { orch, activeTransfers, calls } = makeHarness(() => ({ success: true }));
+	const res = await orch.transferPlatform("export_1", 2);
+	const transfer = onlyTransfer(activeTransfers);
+	if (transfer.validationTimeout) clearTimeout(transfer.validationTimeout);
+
+	await orch.handleTransferValidation({
+		transferId: res.transferId, success: false,
+		platformName: transfer.platformName, sourceInstanceId: transfer.sourceInstanceId,
+		validation: { itemCountMatch: false, fluidCountMatch: false, mismatchDetails: "Validation timeout - no response received within 30s" },
+	});
+	assert.equal(transfer.status, "failed");
+
+	await orch.handleTransferValidation({
+		transferId: res.transferId, success: false,
+		platformName: transfer.platformName, sourceInstanceId: transfer.sourceInstanceId,
+		validation: { itemCountMatch: false, fluidCountMatch: false, mismatchDetails: "item mismatch",
+			cleanup_failed: true, cleanup_error: "GameUtils.delete_platform failed: returned false" },
+	});
+
+	assert.equal(transfer.status, "cleanup_failed",
+		"an engine-refused discard leaves an orphan - the accidental orphan must refuse retries "
+		+ "exactly like the deliberate destinationPreserved one");
+	assert.match(String(transfer.error), /orphan copy remains/);
+	const importSendsBefore = calls.importSends;
+	const retry = await orch.transferPlatform("export_1", 2);
+	assert.equal(retry.success, false, "retrying beside the orphan must be refused");
+	assert.equal(calls.importSends, importSendsBefore, "no second import may be sent");
+});
+
+test("timeout config warnings: junk SET values warn, in-range fractionals do not", async () => {
+	// Reconciliation finding: the first warn compared against the unfloored value, so 30.5 warned
+	// falsely while a set-but-junk value defaulted in silence.
+	const { orch, plugin } = makeHarness(() => ({ success: true }));
+	const warns = [];
+	plugin.logger.warn = (msg) => { warns.push(String(msg)); };
+
+	plugin.controller.config = { get: () => 30.5 };
+	assert.equal(orch.getValidationTimeoutMs(), 30_000);
+	assert.equal(warns.length, 0, "an in-range fractional is not a misconfiguration - no false warn");
+
+	plugin.controller.config = { get: () => "banana" };
+	assert.equal(orch.getValidationTimeoutMs(), 30_000);
+	assert.equal(warns.length, 1, "a SET junk value must be visible, not silently corrected");
+	assert.match(warns[0], /not a positive number/);
+
+	plugin.controller.config = { get: () => 900 };
+	assert.equal(orch.getValidationTimeoutMs(), 120_000);
+	assert.equal(warns.length, 2, "an out-of-range value warns");
+	assert.match(warns[1], /outside/);
+
+	plugin.controller.config = { get: () => undefined };
+	assert.equal(orch.getValidationTimeoutMs(), 30_000);
+	assert.equal(warns.length, 2, "UNSET is the normal default case - silent");
+});

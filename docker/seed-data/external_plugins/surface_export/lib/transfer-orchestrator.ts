@@ -396,14 +396,14 @@ export class TransferOrchestrator {
 	/**
 	 * The validation timeout, read PER-ARM from controller config
 	 * (`surface_export.transfer_validation_timeout_seconds`) so a settings change applies to the next
-	 * transfer with no restart. Guarded four ways: absent/non-numeric/non-positive → the declared
-	 * default (30 s); floored at MIN (a typo cannot insta-timeout every transfer); CEILINGED at MAX
-	 * (the source-lock TTL budgets exactly 120 s for validation — see helpers.ts — and an uncapped
-	 * value also overflows setTimeout to 1 ms); and a config-accessor THROW falls back to the default
-	 * LOUDLY instead of propagating — this method runs inside the arming path, where a throw after
-	 * import acceptance would strand the transfer in a status the late-verdict guard makes terminal.
-	 * The harness-facing fallback (plugin.controller.config may be absent in unit tests) is the same
-	 * default. Clamps are logged so an out-of-range setting is visible, not silently corrected.
+	 * transfer with no restart. Guarded four ways: absent → default silently; SET-but-junk
+	 * (non-numeric/non-positive) → default LOUDLY; floored at MIN (a typo cannot insta-timeout every
+	 * transfer); CEILINGED at MAX (the validation share the source-lock TTL floor BUDGETS — see
+	 * helpers.ts for the honest mechanism; an uncapped value would also overflow setTimeout to 1 ms);
+	 * and a config-accessor THROW falls back to the default LOUDLY instead of propagating — this
+	 * method runs inside the arming path, where a throw after import acceptance would strand the
+	 * transfer in a status the late-verdict guard makes terminal. The harness-facing fallback
+	 * (plugin.controller.config may be absent in unit tests) is the same default.
 	 */
 	getValidationTimeoutMs(): number {
 		let raw: unknown;
@@ -417,14 +417,23 @@ export class TransferOrchestrator {
 		}
 		const seconds = Number(raw);
 		if (!Number.isFinite(seconds) || seconds <= 0) {
+			// Unset (undefined/null) is the normal "use the default" case — silent. A SET value that is
+			// junk or non-positive is a misconfiguration and must be visible, not silently corrected.
+			if (raw !== undefined && raw !== null) {
+				this.logger.warn(
+					`surface_export.transfer_validation_timeout_seconds=${String(raw)} is not a positive `
+					+ `number — using the default ${DEFAULT_VALIDATION_TIMEOUT_SECONDS}s`);
+			}
 			return DEFAULT_VALIDATION_TIMEOUT_SECONDS * 1000;
 		}
-		const clamped = Math.min(MAX_VALIDATION_TIMEOUT_SECONDS, Math.max(MIN_VALIDATION_TIMEOUT_SECONDS, Math.floor(seconds)));
-		if (clamped !== seconds) {
+		// Compare against the FLOORED value so an in-range fractional (30.5 → 30) never false-warns.
+		const floored = Math.floor(seconds);
+		const clamped = Math.min(MAX_VALIDATION_TIMEOUT_SECONDS, Math.max(MIN_VALIDATION_TIMEOUT_SECONDS, floored));
+		if (clamped !== floored) {
 			this.logger.warn(
 				`surface_export.transfer_validation_timeout_seconds=${String(raw)} is outside `
 				+ `[${MIN_VALIDATION_TIMEOUT_SECONDS}, ${MAX_VALIDATION_TIMEOUT_SECONDS}] — using ${clamped}s `
-				+ "(the ceiling protects the source-lock TTL's 120s validation budget)");
+				+ "(the ceiling is the validation share budgeted by the source-lock TTL floor)");
 		}
 		return clamped * 1000;
 	}
@@ -484,10 +493,12 @@ export class TransferOrchestrator {
 			//   automation could not remove — and cleanup_failed is exactly what the pre-guard code
 			//   surfaced here (its delete was refused by the Lua lock gate). The retry guard refuses
 			//   cleanup_failed, so no second copy can be imported until an operator deletes one.
-			// - Late genuine FAILURE on a "failed" record: the destination resolved itself (discarded,
-			//   or deliberately preserved under the debug flag). Adopt the GENUINE verdict over the
-			//   fabricated timeout one — it carries destinationPreserved, which the retry guard reads;
-			//   status stays "failed" (nothing live was left behind).
+			// - Late genuine FAILURE on a "failed" record: usually the destination resolved itself
+			//   (discarded) and status stays "failed" — but if the verdict reports cleanup_failed (the
+			//   discard itself failed → an orphan remains) or destinationPreserved (deliberate debug
+			//   orphan), the record must account the leftover: re-mark / adopt so the retry guard
+			//   refuses. The fabricated timeout verdict never carries either flag — the genuine late
+			//   verdict is their only carrier.
 			// - Any verdict on "completed"/"cleanup_failed"/"error": record untouched.
 			// Known residuals, accepted deliberately (contract-over-recovery): a late SUCCESS whose
 			// rollback unlock had FAILED could in principle still complete the handoff (lock intact) —
@@ -495,23 +506,38 @@ export class TransferOrchestrator {
 			// verdicts; and the guard keys on status, not attempt identity, so a same-ID retry armed
 			// BEFORE a stale verdict arrives cannot be distinguished (needs the handshake epic's
 			// attempt nonce).
+			let disposition = "Record unchanged.";
 			if (event.success && priorStatus === "failed") {
 				settled.status = "cleanup_failed";
 				settled.error = [settled.error, "late import SUCCESS after rollback: the destination holds a live copy — delete one copy before retrying"]
 					.filter(Boolean).join("; ");
 				this.updateTransfer(settled);
+				disposition = "The destination holds a LIVE copy of a platform whose source was already "
+					+ "returned to the player; the transfer is re-marked cleanup_failed so retries are "
+					+ "refused — resolve manually (delete one copy).";
+			} else if (!event.success && priorStatus === "failed" && event.validation?.cleanup_failed) {
+				// Reconciliation finding — the SIBLING of the late-SUCCESS case: the genuine late FAILURE
+				// reports the destination discard itself FAILED, so an orphan (left paused) exists on the
+				// target — the structural twin of the destinationPreserved orphan below. Re-mark + adopt
+				// so the retry guard refuses the ACCIDENTAL orphan exactly like the deliberate one.
+				settled.status = "cleanup_failed";
+				settled.validationResult = event.validation;
+				settled.error = [settled.error,
+					`late FAILURE reported the destination discard itself failed (${String(event.validation.cleanup_error || "no reason given")}) — an orphan copy remains on the target; remove it before retrying`]
+					.filter(Boolean).join("; ");
+				this.updateTransfer(settled);
+				disposition = "The destination's own discard FAILED — an orphan copy remains on the "
+					+ "target; the transfer is re-marked cleanup_failed so retries are refused until it "
+					+ "is removed.";
 			} else if (!event.success && priorStatus === "failed" && event.validation?.destinationPreserved === true) {
 				settled.validationResult = event.validation;
 				this.updateTransfer(settled);
+				disposition = "Adopted the genuine verdict onto the record (it carries "
+					+ "destinationPreserved, which the retry guard reads); status unchanged.";
 			}
 			this.txLogger.logTransactionEvent(event.transferId, "validation_after_settle",
 				`Late validation ${verdict} arrived after this transfer settled as '${priorStatus}' — `
-				+ "no source delete, no rollback. "
-				+ (event.success && priorStatus === "failed"
-					? "The destination holds a LIVE copy of a platform whose source was already returned "
-					+ "to the player; the transfer is re-marked cleanup_failed so retries are refused — "
-					+ "resolve manually (delete one copy)."
-					: "Record unchanged."),
+				+ `no source delete, no rollback. ${disposition}`,
 				{ lateVerdictSuccess: event.success, settledStatus: priorStatus, newStatus: settled.status, validation: event.validation ?? null });
 			this.logger.warn(
 				`Late validation ${verdict} for settled transfer ${event.transferId} `

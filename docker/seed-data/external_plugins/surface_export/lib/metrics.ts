@@ -109,6 +109,14 @@ function exportStallSecondsValue(exportMetrics: unknown): number | null {
  * `operation.metricsRecorded` and later calls no-op, so this is safe to call on every operation
  * update — it also no-ops while the operation is still in a non-terminal state.
  *
+ * KNOWN, DELIBERATE GAP (reconciliation review, PR #156): the late-verdict guard can RE-MARK an
+ * already-settled "failed" transfer as cleanup_failed (a leftover copy surfaced after the timeout
+ * rollback). That re-mark does NOT re-fire here — the one-sample-per-operation invariant wins
+ * (counters cannot be corrected, only double-counted), so the counter keeps the settle-time
+ * `result="failure"` while the record, the web UI, and the loud `validation_after_settle`
+ * transaction event carry the leftover. Alert on the LOG/record for W1 leftovers, not on the
+ * `result="cleanup_failed"` series alone.
+ *
  * @param operation - the ActiveTransfer whose current status to (maybe) record.
  */
 export function recordOperationOutcome(operation: ActiveTransfer | null | undefined): void {
