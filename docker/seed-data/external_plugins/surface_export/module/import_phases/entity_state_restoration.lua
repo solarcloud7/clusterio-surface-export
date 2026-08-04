@@ -41,7 +41,23 @@ function EntityStateRestoration.restore_all(entities_to_create, entity_map)
         Deserializer.restore_logistic_requests(entity, entity_data)
       end
     end
-    
+
+    -- Step 3b: Restore MANUAL logistic sections (2.0 sections API). The hub is in entity_map
+    -- (PlatformHubMapping), so the platform's pending item requests are restored here too.
+    -- Force-level logistic groups CREATED by this restore are collected for the discard path:
+    -- a group outlives its sections, so a failed import that just deleted its destination would
+    -- otherwise leave orphan groups accumulating on the force with every failed attempt.
+    log("[Import] Restoring logistic sections...")
+    local created_logistic_groups = {}
+    for _, entity_data in ipairs(entities_to_create) do
+      local entity = entity_map[entity_data.entity_id]
+      if entity and entity.valid then
+        for _, group_name in ipairs(Deserializer.restore_logistic_sections(entity, entity_data)) do
+          table.insert(created_logistic_groups, group_name)
+        end
+      end
+    end
+
     -- Step 4: Restore circuit connections (red/green wires)
     log("[Import] Restoring circuit connections...")
     for _, entity_data in ipairs(entities_to_create) do
@@ -62,7 +78,11 @@ function EntityStateRestoration.restore_all(entities_to_create, entity_map)
       end
     end
     
-    return { circuits_connected = circuits_connected, power_connected = power_connected }
+    return {
+      circuits_connected = circuits_connected,
+      power_connected = power_connected,
+      created_logistic_groups = created_logistic_groups,
+    }
 end
 
 return EntityStateRestoration

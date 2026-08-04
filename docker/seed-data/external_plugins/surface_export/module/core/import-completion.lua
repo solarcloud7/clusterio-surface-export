@@ -114,6 +114,38 @@ local function build_count_diff(expected, actual)
 	return rows
 end
 
+--- Sweep force-level logistic groups the sections restore CREATED (add_section side effect).
+--- A group outlives its sections (measured 2.1.11), so a discarded destination would otherwise
+--- leave orphan groups accumulating on the force with every failed attempt. Called ONLY on the
+--- discard outcomes (destination gone/deleted) — never on preserve_failed or cleanup_failed,
+--- where the surviving destination's sections still reference these groups.
+--- delete_logistic_group works even while sections still reference the group (measured — the
+--- section's group link clears), so end-of-tick surface-teardown ordering does not matter here.
+--- @param job table: the import job (created_logistic_groups stamped by run_phase1)
+local function sweep_created_logistic_groups(job)
+	local names = job.created_logistic_groups
+	if type(names) ~= "table" or #names == 0 then
+		return
+	end
+	local force = game.forces[job.force_name]
+	if not force then
+		log(string.format("[Validation] Cannot sweep %d import-created logistic group(s): force '%s' not found",
+			#names, tostring(job.force_name)))
+		return
+	end
+	local swept = 0
+	for _, name in ipairs(names) do
+		local ok, err = pcall(function() force.delete_logistic_group(name) end)
+		if ok then
+			swept = swept + 1
+		else
+			log(string.format("[Validation] delete_logistic_group('%s') failed during discard sweep: %s",
+				tostring(name), tostring(err)))
+		end
+	end
+	log(string.format("[Validation] Swept %d/%d import-created logistic group(s) after discard", swept, #names))
+end
+
 local function bank_failure_black_box(job, result)
 	local force_names = { [job.force_name or "player"] = true }
 	for _, entity_data in ipairs(job.entities_to_create or {}) do
@@ -262,6 +294,10 @@ function ImportCompletion.run_phase1(job)
 	local state_result = EntityStateRestoration.restore_all(entities_to_create, entity_map)
 	PhaseRecorder.stop(job, "state")
 	job.metrics.circuits_connected = state_result and state_result.circuits_connected or 0
+	-- Force-level logistic groups the sections restore CREATED; the failure-discard path sweeps
+	-- them (a group outlives its sections — measured 2.1.11 — so a discarded destination would
+	-- otherwise leave orphan groups on the force after every failed attempt).
+	job.created_logistic_groups = state_result and state_result.created_logistic_groups or nil
 
 	-- Phase 1 complete. Schedule Phase 2 (inventory restoration) for the next tick.
 	-- Beacon modules are restored first in Phase 2 (Pass 1 of inventory loop), which
@@ -691,6 +727,7 @@ function ImportCompletion.run_phase2(job)
 				-- completed cleanup reported as a failed one.
 				log("[Validation] Failed destination already invalid — nothing to discard"
 					.. (preserve_failed and "; preserve_failed_destination stays ARMED (nothing to preserve)" or ""))
+				sweep_created_logistic_groups(job)
 			elseif preserve_failed then
 				-- The DELIBERATE escape hatch: one-shot, debug-gated, visible in the verdict. This is
 				-- the only preservation path; the accidental ones are gone.
@@ -710,6 +747,7 @@ function ImportCompletion.run_phase2(job)
 				local delete_ok, delete_result = pcall(GameUtils.delete_platform, job.target_platform)
 				if delete_ok and delete_result == true then
 					log("[Validation] Failed destination discarded after black-box capture")
+					sweep_created_logistic_groups(job)
 				else
 					-- The one honest residual: the engine itself refused the delete, so an orphaned
 					-- surface really does exist on this instance. cleanup_failed now means exactly

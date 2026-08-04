@@ -48,7 +48,7 @@
 [CmdletBinding()]
 param(
     [int[]]$Hosts = @(1, 2),
-    [string[]]$Prefixes = @('reprotest_', 'integration-test-', 'entity-test-', 'engineinv-', 'destroyprobe', 'mytestclone', 'mytestname', 'evac-coverage-probe'),
+    [string[]]$Prefixes = @('reprotest_', 'integration-test-', 'entity-test-', 'engineinv-', 'destroyprobe', 'mytestclone', 'mytestname', 'evac-coverage-probe', 'hub-req-sections-'),
     [switch]$IncludeUnknown,
     [switch]$DryRun
 )
@@ -108,9 +108,37 @@ foreach ($h in $Hosts) {
     Write-Host ("    {0} {1}: {2}" -f $verb, $res.names.Count, ($res.names -join ", ")) -ForegroundColor Green
 }
 
+# Force-level logistic groups are leftovers too: a group OUTLIVES the last entity/section that
+# referenced it (measured 2.1.11 — docs/factorio-2.0-api-notes.md "Hub item requests"), so a test
+# that died before its own cleanup strands its run-unique groups invisibly, and each stranded group
+# is a live adoption candidate for a later import. Prefix-matched groups are THROWAWAY and swept;
+# anything else is a player's own and left alone. Runs even on hosts with zero platforms.
+$groupsRemovedTotal = 0
+foreach ($h in $Hosts) {
+    $instance = "clusterio-host-$h-instance-1"
+    $prefixLua = ($Prefixes | ForEach-Object { "'" + ($_ -replace "'", "\'") + "'" }) -join ","
+    $deleteLua = if ($DryRun) { "" } else { "for _, name in ipairs(doomed) do game.forces.player.delete_logistic_group(name) end " }
+    $code = "local prefixes={$prefixLua} local doomed={} " +
+        "for _, name in pairs(game.forces.player.get_logistic_groups()) do " +
+        "for _, prefix in ipairs(prefixes) do " +
+        "if name:sub(1, #prefix) == prefix then doomed[#doomed+1]=name break end end end " +
+        $deleteLua +
+        "rcon.print(helpers.table_to_json({count=#doomed, names=doomed}))"
+    $raw = (Invoke-Lua -Instance $instance -Code $code) -join " "
+    $jsonMatch = [regex]::Match($raw, '\{.*\}')
+    if (-not $jsonMatch.Success) { throw "group sweep on host-$h returned no JSON: $raw" }
+    $groups = $jsonMatch.Value | ConvertFrom-Json
+    if ($groups.count -gt 0) {
+        $names = @($groups.names)
+        $verb = if ($DryRun) { "would remove" } else { "removed" }
+        $groupsRemovedTotal += $groups.count
+        Write-Host ("  host-{0} logistic groups: {1} {2}: {3}" -f $h, $verb, $groups.count, ($names -join ", ")) -ForegroundColor Green
+    }
+}
+
 Write-Host ""
 $verb = if ($DryRun) { "Would remove" } else { "Removed" }
-Write-Host ("  {0} {1} platform(s) across host(s) {2}." -f $verb, $removedTotal, ($Hosts -join ', ')) -ForegroundColor Cyan
+Write-Host ("  {0} {1} platform(s) and {2} logistic group(s) across host(s) {3}." -f $verb, $removedTotal, $groupsRemovedTotal, ($Hosts -join ', ')) -ForegroundColor Cyan
 if ($unknownTotal -and -not $IncludeUnknown) {
     Write-Host ("  {0} UNKNOWN platform(s) left alone — re-run with -IncludeUnknown to sweep them." -f $unknownTotal) -ForegroundColor Red
 }
