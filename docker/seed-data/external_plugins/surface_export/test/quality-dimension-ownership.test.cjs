@@ -115,6 +115,7 @@ const domains = [
 		// the extractor's pcall always failed and returned {}, and the restore was unreachable. The
 		// SAME dimension (a request slot's quality) now rides manual logistic sections: quality is
 		// captured inside each section filter's value and applied whole via section.set_slot.
+		// Physical evidence: the hub-request-sections dest re-read, pinned by the dedicated test below.
 		producer: ["export_scanners/connection-scanner.lua", /extract_logistic_sections[\s\S]*?quality\s*=\s*filter\.value\.quality/],
 		consumer: ["core/deserializer.lua", /restore_logistic_sections[\s\S]*?local slot = \{ value = f\.value, min = f\.min, max = f\.max[\s\S]{0,200}?section\.set_slot\(f\.index, slot\)/],
 	},
@@ -198,6 +199,21 @@ test("the authorized live spot checks remain explicit", () => {
 	]);
 	// The mining-drill spot check was RETIRED with its row: the live probe ran 2026-07-17 and
 	// refuted the dimension (no quality on EntityID filters; vanilla drills have zero slots).
+});
+
+test("the logistic-request-slot physical evidence stays pinned to the sections suite", { skip: repoSkip }, () => {
+	// Re-anchored with the row above (2026-08-04): the row's only PHYSICAL proof is the
+	// hub-request-sections integration fixture — a rare-quality requester-chest slot written at the
+	// source and re-read on the destination after a real transfer. The integration runner discovers
+	// suites by glob, so gutting that directory would erase the row's empirical basis while every
+	// static anchor stayed green; this pin makes that deletion RED here, the same job the
+	// splitter-filter pin below does for its pad.
+	const suiteSource = fs.readFileSync(path.join(__dirname, "..", "..", "..", "..", "..",
+		"tests", "integration", "hub-request-sections", "run-tests.mjs"), "utf8");
+	assert.match(suiteSource, /quality='rare'/,
+		"the fixture must keep writing a rare-quality request slot");
+	assert.match(suiteSource, /quality === "rare"/,
+		"the destination re-read must keep asserting the non-normal (rare) slot quality");
 });
 
 test("the splitter-quality-filter law lives on the adversarial pad (entity-roundtrip retired)", { skip: repoSkip }, () => {

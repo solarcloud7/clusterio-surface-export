@@ -37,8 +37,10 @@ function EntityStateRestoration.restore_all(entities_to_create, entity_map)
     -- the 1.1 request-slot API (request_slot_count / get/set/clear_request_slot) — does not exist on
     -- this pin (measured 2026-08-04: every key absent on LuaEntity), so no export this plugin ever
     -- produced on a 2.x engine emitted the field; requester/buffer-chest request state rides
-    -- logistic_sections below. A payload that DOES carry it is a 1.1-era or hand-built export whose
-    -- request slots cannot be restored on this engine — notice it loudly, never drop it in silence.
+    -- logistic_sections below. A payload carrying it here is HAND-BUILT: a genuine 1.1-era export
+    -- cannot reach this code at all (VersionCompat.check_payload_schema refuses any payload not
+    -- stamped 2.0.0, before restoration reads). Its request slots cannot be restored on this
+    -- engine — notice loudly, never drop in silence.
     local legacy_request_entities = 0
     for _, entity_data in ipairs(entities_to_create) do
       if entity_data.logistic_requests ~= nil then
