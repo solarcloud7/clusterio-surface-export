@@ -14,6 +14,7 @@
 import React from "react";
 import { FactorioIcon, useDefaultModPack, useExportPrototypeMetadata } from "@clusterio/web_ui";
 import type { PrototypeMetadataEntry } from "@clusterio/web_ui";
+import { selectPlanetNames } from "../shared/planets";
 
 type Metadata = Map<string, Map<string, PrototypeMetadataEntry>> | undefined;
 
@@ -50,17 +51,54 @@ function useProtoLookup() {
 	return { modPackId: modPack?.id, metadata };
 }
 
+/**
+ * The intrinsic size `FactorioIcon` renders at. It emits a bare `<span class="factorio-icon">` and
+ * the spritesheet CSS injected by `useExportPrototypeMetadata` sizes it — MEASURED at 32x32 with
+ * `background-size: auto` on the live UI (getComputedStyle, 2026-08-04, alpha.27 web_ui).
+ *
+ * This matters because the size cannot be set by giving the element a smaller width/height: the
+ * sprite is a BACKGROUND at a fixed offset into a sheet, so shrinking the box crops rather than
+ * scales. Transform is the only lever that actually resizes it, and a transform needs to know the
+ * size it is scaling FROM — hence this constant rather than a CSS-only fix.
+ *
+ * If a future web_ui changes the intrinsic size, icons render at the wrong scale (cosmetic, not
+ * broken). Re-measure with:
+ *   getComputedStyle(document.querySelector(".factorio-icon")).width
+ */
+const FACTORIO_ICON_NATURAL_PX = 32;
+
 type ProtoIconProps = { name: string; size?: number; title?: string; preferTypes?: string[] };
 
-export function ProtoIcon({ name, size = 32, title, preferTypes }: ProtoIconProps) {
+export function ProtoIcon({ name, size = FACTORIO_ICON_NATURAL_PX, title, preferTypes }: ProtoIconProps) {
 	const { modPackId, metadata } = useProtoLookup();
 	const prototype = findEntry(metadata, name, preferTypes);
+	const scale = size / FACTORIO_ICON_NATURAL_PX;
 	return (
+		// Outer box occupies exactly `size` in layout and CLIPS: without overflow:hidden a sprite
+		// larger than its box silently spills over neighbouring content instead of being contained,
+		// which is how a 32px icon in a 20px box read as "the icons are too big".
 		<span
 			title={title ?? name}
-			style={{ display: "inline-block", width: size, height: size, verticalAlign: "middle", flexShrink: 0 }}
+			style={{
+				display: "inline-block",
+				width: size,
+				height: size,
+				overflow: "hidden",
+				verticalAlign: "middle",
+				flexShrink: 0,
+			}}
 		>
-			<FactorioIcon modPackId={modPackId} prototype={prototype} />
+			<span
+				style={{
+					display: "block",
+					width: FACTORIO_ICON_NATURAL_PX,
+					height: FACTORIO_ICON_NATURAL_PX,
+					transform: `scale(${scale})`,
+					transformOrigin: "top left",
+				}}
+			>
+				<FactorioIcon modPackId={modPackId} prototype={prototype} />
+			</span>
 		</span>
 	);
 }
@@ -72,3 +110,32 @@ export const ItemIcon = (props: IconProps) => <ProtoIcon preferTypes={["item"]} 
 export const FluidIcon = (props: IconProps) => <ProtoIcon preferTypes={["fluid"]} {...props} />;
 // Entity base_types vary (assembling-machine, furnace, mining-drill, ...); rely on the name scan.
 export const EntityIcon = (props: IconProps) => <ProtoIcon {...props} />;
+
+/**
+ * Every planet the mod pack actually defines, as antd Select options with an icon.
+ *
+ * Read from prototype metadata rather than a hand-kept list: a literal array silently omits modded
+ * planets (this cluster runs maraxsis and PlanetsLib, which contribute `maraxsis` and
+ * `maraxsis-trench` — neither appeared in the five-planet array this replaced), and cannot drift
+ * back into correctness on its own.
+ *
+ * Which entries count as planets is decided by `selectPlanetNames` — the rule is subtler than it
+ * looks (there is no "planet" bucket; gateways share one with the planets), so it lives in
+ * shared/planets.ts with the measured metadata shape and a test, rather than being restated here.
+ */
+export function usePlanetOptions() {
+	const { metadata } = useProtoLookup();
+	return React.useMemo(() => {
+		const buckets = [...(metadata?.values() ?? [])].map(typeMap => typeMap.values());
+		return selectPlanetNames(buckets)
+			.map(name => ({
+				value: name,
+				label: (
+					<span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+						<PlanetIcon name={name} size={20} />
+						<span>{name}</span>
+					</span>
+				),
+			}));
+	}, [metadata]);
+}

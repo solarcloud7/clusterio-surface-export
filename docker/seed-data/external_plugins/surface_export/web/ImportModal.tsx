@@ -12,7 +12,7 @@ import {
 import type { UploadChangeParam, UploadFile } from "antd/es/upload/interface";
 import { UploadOutlined } from "@ant-design/icons";
 
-import { PlanetIcon } from "./icons";
+import { usePlanetOptions } from "./icons";
 import { parseJsonFile, getErrorMessage, getProp } from "./utils";
 import type { JsonObject, SurfaceExportPlugin, SurfaceExportState } from "./view-models";
 
@@ -36,30 +36,25 @@ export default function ImportModal({ open, onClose, plugin, state }: ImportModa
 	const instanceOptions = useMemo(() => {
 		const tree = state.tree;
 		if (!tree) return [];
+		// Label carries the game port for the same reason the platform table does: instance names
+		// differ by a single digit here, and the port is what actually tells them apart.
+		const label = (inst: { instanceName: string; gamePort: number | null }) =>
+			(inst.gamePort ? `${inst.instanceName} :${inst.gamePort}` : inst.instanceName);
 		const nodes: Array<{ label: string; value: number }> = [];
 		for (const host of tree.hosts || []) {
 			for (const inst of host.instances || []) {
-				nodes.push({ label: inst.instanceName, value: inst.instanceId });
+				nodes.push({ label: label(inst), value: inst.instanceId });
 			}
 		}
 		for (const inst of tree.unassignedInstances || []) {
-			nodes.push({ label: inst.instanceName, value: inst.instanceId });
+			nodes.push({ label: label(inst), value: inst.instanceId });
 		}
 		return nodes.sort((a, b) => a.label.localeCompare(b.label));
 	}, [state.tree]);
 
-	const planetOptions = useMemo(() => {
-		const validPlanets = ["aquilo", "fulgora", "gleba", "nauvis", "vulcanus"];
-		return validPlanets.map(name => ({
-			value: name,
-			label: (
-				<Space size={6} align="center">
-					<PlanetIcon name={name} size={20} />
-					<span>{name}</span>
-				</Space>
-			),
-		}));
-	}, []);
+	// Was a literal ["aquilo", "fulgora", "gleba", "nauvis", "vulcanus"], which silently omitted
+	// every modded planet on the cluster. Now read from the mod pack's own prototypes.
+	const planetOptions = usePlanetOptions();
 
 
 	function resetState() {

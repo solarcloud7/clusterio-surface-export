@@ -116,6 +116,16 @@ export interface InstanceNodeModel {
 	instanceId: number;
 	instanceName: string;
 	hostId: number | null;
+	/**
+	 * The game port the instance is actually listening on, or null when unassigned (the instance
+	 * has never started, so no port has been allocated). Distinguishes otherwise same-looking
+	 * instances in the UI.
+	 *
+	 * NOT read from the `factorio.game_port` CONFIG: on this cluster the base image auto-derives
+	 * ports at start, leaving that config value null while the instance really is serving on 34100.
+	 * The assigned port lives on the controller's runtime InstanceRecord.
+	 */
+	gamePort: number | null;
 	status: string;
 	connected: boolean;
 	platforms: PlatformModel[];

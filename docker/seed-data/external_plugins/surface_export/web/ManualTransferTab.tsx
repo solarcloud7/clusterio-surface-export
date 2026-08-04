@@ -1,20 +1,10 @@
 import React, { useEffect, useMemo, useState } from "react";
-import {
-	Alert,
-	Button,
-	Card,
-	Empty,
-	Select,
-	Space,
-	Spin,
-	Tag,
-	Tooltip,
-	Typography,
-	message as antMessage,
-} from "antd";
+import { Alert, Button, Card, Empty, Spin, Tag, Tooltip, Typography, message as antMessage } from "antd";
 
-import { DownloadOutlined } from "@ant-design/icons";
+import { DownloadOutlined, PlayCircleOutlined } from "@ant-design/icons";
 import { PlanetIcon } from "./icons";
+import TransferModal from "./TransferModal";
+import type { TransferSource } from "./TransferModal";
 import { sanitizeTimestamp, downloadJsonFile, getErrorMessage, getProp } from "./utils";
 import type { HostNodeModel, InstanceNodeModel, JsonObject, PlatformModel, SurfaceExportPlugin, SurfaceExportState } from "./view-models";
 
@@ -31,27 +21,42 @@ type PlatformRow = {
 	platformIndex: number;
 	platformName: string;
 	forceName: string;
-	locationText: string;
 };
 
-function locationLabel(platform: PlatformModel, nowMs?: number | null) {
+/**
+ * What the platform is DOING, for the status column. Deliberately not the parked location name:
+ * that is already carried by the row's destination icon, so repeating it as text would spend a
+ * column on information the row already shows.
+ *
+ * Ordered most-urgent-first — an in-flight transfer outranks the lock it took out, which outranks
+ * ordinary travel.
+ */
+function statusLabel(platform: PlatformModel, nowMs: number): { text: string; tag?: string } {
+	if (platform.transferStatus && platform.transferStatus !== "idle") {
+		return { text: platform.transferStatus.replace(/_/g, " "), tag: "processing" };
+	}
+	if (platform.isLocked) {
+		return { text: "locked", tag: "orange" };
+	}
+	// A set `spaceLocation` means PARKED, and it takes precedence over `currentTarget`: a parked
+	// platform retains the target of the journey it already finished, so testing currentTarget first
+	// reports a stationary platform as "→ nauvis" forever. Caught by reading the live UI — both
+	// parked fixtures claimed to be in flight.
 	if (platform.spaceLocation) {
-		return platform.spaceLocation;
+		return { text: "parked" };
 	}
 	if (platform.currentTarget) {
 		if (platform.departureDateMs != null && platform.estimatedDurationTicks != null) {
 			const totalMs = (platform.estimatedDurationTicks / 60) * 1000;
-			const elapsedMs = (nowMs ?? Date.now()) - platform.departureDateMs;
-			const remainingMs = Math.max(0, totalMs - elapsedMs);
-			const remainingMin = Math.round(remainingMs / 60000);
-			return `→ ${platform.currentTarget} (ETA ~${remainingMin}min)`;
+			const remainingMs = Math.max(0, totalMs - (nowMs - platform.departureDateMs));
+			return { text: `→ ${platform.currentTarget} (ETA ~${Math.round(remainingMs / 60000)}min)`, tag: "blue" };
 		}
-		return `→ ${platform.currentTarget}`;
+		return { text: `→ ${platform.currentTarget}`, tag: "blue" };
 	}
 	if (platform.speed && platform.speed > 0) {
-		return "in transit";
+		return { text: "in transit", tag: "blue" };
 	}
-	return "—";
+	return { text: "—" };
 }
 
 function buildHostSections(tree: SurfaceExportState["tree"]) {
@@ -81,9 +86,7 @@ function buildHostSections(tree: SurfaceExportState["tree"]) {
 }
 
 export default function ManualTransferTab({ plugin, state }: { plugin: SurfaceExportPlugin; state: SurfaceExportState }) {
-	const [selectedPlatformKey, setSelectedPlatformKey] = useState<string | null>(null);
-	const [selectedTargetInstance, setSelectedTargetInstance] = useState<number | null>(null);
-	const [isSubmitting, setIsSubmitting] = useState(false);
+	const [transferSource, setTransferSource] = useState<TransferSource | null>(null);
 	const [nowMs, setNowMs] = useState(Date.now());
 	const [exportingPlatformKey, setExportingPlatformKey] = useState<string | null>(null);
 
@@ -115,65 +118,15 @@ export default function ManualTransferTab({ plugin, state }: { plugin: SurfaceEx
 						platformIndex: platform.platformIndex,
 						platformName: platform.platformName,
 						forceName: platform.forceName || tree?.forceName || "player",
-						locationText: locationLabel(platform, nowMs),
 					});
 				}
 			}
 		}
 		return lookup;
-	}, [hostSections, nowMs, tree]);
-	const selectedSource = selectedPlatformKey ? platformLookup.get(selectedPlatformKey) : null;
+	}, [hostSections, tree]);
 
-	const destinationOptions = useMemo(() => {
-		if (!tree) {
-			return [];
-		}
-		const nodes: InstanceNodeModel[] = [];
-		for (const host of tree.hosts || []) {
-			for (const instance of host.instances || []) {
-				nodes.push(instance);
-			}
-		}
-		for (const instance of tree.unassignedInstances || []) {
-			nodes.push(instance);
-		}
-		return nodes
-			.filter(inst => inst.instanceId !== selectedSource?.instanceId)
-			.map(inst => ({
-				label: inst.instanceName,
-				value: inst.instanceId,
-			}));
-	}, [tree, selectedSource]);
-
-	async function submitTransfer() {
-		if (!selectedSource || selectedTargetInstance === null) {
-			return;
-		}
-		setIsSubmitting(true);
-		try {
-			const response = await plugin.startTransfer({
-				sourceInstanceId: selectedSource.instanceId,
-				sourcePlatformIndex: selectedSource.platformIndex,
-				targetInstanceId: Number(selectedTargetInstance),
-				forceName: selectedSource.forceName || "player",
-			});
-			const responseObj = response as JsonObject;
-			if (!getProp(responseObj, "success", false)) {
-				throw new Error(String(getProp(responseObj, "error", "Transfer start failed")));
-			}
-			antMessage.success(`Transfer started: ${getProp(responseObj, "transferId", "")}`, 5);
-		} catch (err: unknown) {
-			antMessage.error(getErrorMessage(err, "Failed to start transfer"), 10);
-		} finally {
-			setIsSubmitting(false);
-		}
-	}
-
-	async function handleExportPlatform(source = selectedSource) {
-		if (!source) {
-			return;
-		}
-		setExportingPlatformKey(`platform:${source.instanceId}:${source.platformIndex}`);
+	async function handleExportPlatform(source: PlatformRow) {
+		setExportingPlatformKey(source.key);
 		try {
 			const response = await plugin.exportPlatformForDownload({
 				sourceInstanceId: source.instanceId,
@@ -210,62 +163,57 @@ export default function ManualTransferTab({ plugin, state }: { plugin: SurfaceEx
 
 	return (
 		<div className="surface-export-tab-body">
-				<div className="surface-export-tree-panel">
-					{loadingTree ? <Spin style={{ margin: "24px auto", display: "block" }} /> : null}
-					{treeError ? <Alert type="error" showIcon message={treeError} style={{ marginBottom: 12 }} /> : null}
-					{!loadingTree && hostSections.length === 0 ? (
-						<Empty description="No instances available" />
-					) : null}
-					{hostSections.map((section) => {
-						const sectionRows = section.instances
-							.flatMap(instance =>
-								(instance.platforms || [])
-									.filter(platform => platform.hasSpaceHub)
-									.map(platform => platformLookup.get(`platform:${instance.instanceId}:${platform.platformIndex}`))
-									.filter(Boolean) as PlatformRow[]
-							)
-							.sort((a, b) => a.instanceName.localeCompare(b.instanceName) || a.locationText.localeCompare(b.locationText));
-						return (
-							<Card
-								key={section.key}
-								title={<Tag color={section.host?.connected ? "blue" : "default"}>{section.hostName}</Tag>}
-								size="small"
-								style={{ marginBottom: 12 }}
-								styles={{ body: { padding: 0 } }}
-							>
-							{groupByInstance(sectionRows).map(instanceRows => (
+			{loadingTree ? <Spin style={{ margin: "24px auto", display: "block" }} /> : null}
+			{treeError ? <Alert type="error" showIcon message={treeError} style={{ marginBottom: 12 }} /> : null}
+			{!loadingTree && hostSections.length === 0 ? <Empty description="No instances available" /> : null}
+
+			{hostSections.map((section) => {
+				const sectionRows = section.instances
+					.flatMap(instance =>
+						(instance.platforms || [])
+							.filter(platform => platform.hasSpaceHub)
+							.map(platform => platformLookup.get(`platform:${instance.instanceId}:${platform.platformIndex}`))
+							.filter(Boolean) as PlatformRow[]
+					)
+					.sort((a, b) => a.instanceName.localeCompare(b.instanceName) || a.platformName.localeCompare(b.platformName));
+				return (
+					<Card
+						key={section.key}
+						title={<Tag color={section.host?.connected ? "blue" : "default"}>{section.hostName}</Tag>}
+						size="small"
+						style={{ marginBottom: 12 }}
+						styles={{ body: { padding: 0 } }}
+					>
+						{groupByInstance(sectionRows).map(instanceRows => {
+							const instance = instanceRows[0].instance;
+							return (
 								<div key={`inst:${instanceRows[0].instanceId}`}>
 									<div className="surface-export-instance-header">
 										<Text strong>{instanceRows[0].instanceName}</Text>
-										{instanceRows[0].instance?.platformError ? <Tag color="warning">error</Tag> : null}
+										{/* The port disambiguates instances whose names differ only by a digit. Absent
+										    until the instance has started, since that is when a port is assigned. */}
+										{instance?.gamePort ? (
+											<Text type="secondary" style={{ fontSize: 12 }}>:{instance.gamePort}</Text>
+										) : null}
+										{instance?.platformError ? <Tag color="warning">error</Tag> : null}
 									</div>
 									{instanceRows.map(row => {
-										const moving = !row.platform?.spaceLocation && (row.platform?.currentTarget || (row.platform?.speed || 0) > 0);
+										// The icon shows where the platform IS, or where it is heading while in flight.
 										const locationName = row.platform?.spaceLocation || row.platform?.currentTarget;
+										const status = statusLabel(row.platform, nowMs);
 										return (
-											<div
-												key={row.key}
-												className={row.key === selectedPlatformKey
-													? "surface-export-platform-row surface-export-platform-row-selected"
-													: "surface-export-platform-row"
-												}
-												onClick={() => {
-													setSelectedPlatformKey(row.key);
-													setSelectedTargetInstance(null);
-												}}
-											>
+											<div key={row.key} className="surface-export-platform-row">
 												<div className="surface-export-platform-row-name">
+													{locationName
+														? <PlanetIcon name={locationName} size={20} title={locationName} />
+														: <span className="surface-export-icon-placeholder" />}
 													<Text>{row.platformName}</Text>
-													<Text type="secondary" style={{ fontSize: 11, marginLeft: 4 }}>
-														#{row.platformIndex}
-													</Text>
-													{row.platform?.isLocked ? <Tag color="orange">locked</Tag> : null}
+													<Text type="secondary" style={{ fontSize: 11 }}>#{row.platformIndex}</Text>
 												</div>
-												<div className="surface-export-platform-row-location">
-													{locationName ? <PlanetIcon name={locationName} size={20} /> : null}
-													<Text type={moving ? "secondary" : undefined} italic={moving ? true : undefined}>
-														{row.locationText}
-													</Text>
+												<div className="surface-export-platform-row-status">
+													{status.tag
+														? <Tag color={status.tag}>{status.text}</Tag>
+														: <Text type="secondary">{status.text}</Text>}
 												</div>
 												<div className="surface-export-platform-row-actions">
 													<Tooltip title="Export JSON">
@@ -273,10 +221,21 @@ export default function ManualTransferTab({ plugin, state }: { plugin: SurfaceEx
 															icon={<DownloadOutlined />}
 															size="small"
 															loading={exportingPlatformKey === row.key}
-															onClick={(event: React.MouseEvent<HTMLElement>) => {
-																event.stopPropagation();
-																handleExportPlatform(row);
-															}}
+															onClick={() => handleExportPlatform(row)}
+														/>
+													</Tooltip>
+													<Tooltip title="Transfer to another instance">
+														<Button
+															icon={<PlayCircleOutlined />}
+															size="small"
+															type="primary"
+															onClick={() => setTransferSource({
+																instanceId: row.instanceId,
+																instanceName: row.instanceName,
+																platformIndex: row.platformIndex,
+																platformName: row.platformName,
+																forceName: row.forceName,
+															})}
 														/>
 													</Tooltip>
 												</div>
@@ -284,45 +243,18 @@ export default function ManualTransferTab({ plugin, state }: { plugin: SurfaceEx
 										);
 									})}
 								</div>
-							))}
-							</Card>
-						);
-					})}
-				</div>
-
-				<div className="surface-export-action-panel">
-					<Card title="Manual Transfer">
-						<Space direction="vertical" size="middle" style={{ width: "100%" }}>
-							{selectedSource ? (
-								<Alert
-									type="info"
-									showIcon
-									message={`Source: ${selectedSource.platformName}`}
-									description={`${selectedSource.instanceName} — ${selectedSource.locationText}`}
-								/>
-							) : (
-								<Alert type="warning" showIcon message="Select a source platform in the table" />
-							)}
-							<Select
-								placeholder="Select destination instance"
-								options={destinationOptions}
-								value={selectedTargetInstance}
-								onChange={value => setSelectedTargetInstance(value)}
-								disabled={!selectedSource}
-								style={{ width: "100%" }}
-							/>
-							<Button
-								type="primary"
-								onClick={submitTransfer}
-								disabled={!selectedSource || selectedTargetInstance === null}
-								loading={isSubmitting}
-								block
-							>
-								Start Transfer
-							</Button>
-						</Space>
+							);
+						})}
 					</Card>
-				</div>
+				);
+			})}
+
+			<TransferModal
+				source={transferSource}
+				onClose={() => setTransferSource(null)}
+				plugin={plugin}
+				state={state}
+			/>
 		</div>
 	);
 }
