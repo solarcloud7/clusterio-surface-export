@@ -291,7 +291,9 @@ export interface ValidationResult {
 	 * Gateway transfers only: whether the completion-side re-pause + location verify found the
 	 * platform parked at its gateway_target (import-completion.lua). NON-GATING observability —
 	 * set after the verdict, never an input to it; false means the creation-park failed (the
-	 * instance log carries the cause). Absent on non-gateway operations.
+	 * instance log carries the cause). Absent on non-gateway operations AND on failed/invalid
+	 * gateway transfers (the emitter sits in the success branch) — undefined does not mean
+	 * "not a gateway op".
 	 */
 	gatewayParked?: boolean;
 	/**

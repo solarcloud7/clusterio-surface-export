@@ -28,6 +28,13 @@
 // mid-import. The verdict itself is then read from the destination's debug_import_result file
 // (validation_success + platform name) before any census claim.
 //
+// Environmental preconditions, stated (delta findings NF5/NF6): the verdict read requires
+// debug_mode ON (default true at first init; a configure() that clears it makes this pin RED with
+// "no debug_import_result found" — a config problem, not a transfer problem), and the
+// newest-debug-file selection assumes the integration suite's SEQUENTIAL execution (a concurrent
+// import from any other source yields a false RED, never a false green — the platform-name match
+// refuses foreign records).
+//
 // Zero leftovers: source deleted by the transfer's own 2PC; the arrived copy finally-swept on
 // both instances; unique per-run probe name; `gwpark-probe` prefix in cleanup-test-surfaces.ps1.
 
@@ -91,7 +98,8 @@ console.log(`=== gateway-park-proxies: BOTH proxy shapes must SURVIVE the park (
 const dstId = resolveInstanceId(DST_INSTANCE);
 
 try {
-	// SOURCE: create, park (the write that would kill a hub proxy — done before any exist), then
+	// SOURCE: create, park FIRST (defense in depth against whatever the upstream-documented
+	// cancellation cancels — and the /gateway-transfer gate needs a parked source anyway), then
 	// create BOTH proxy shapes.
 	const setup = rconJson(SRC_INSTANCE,
 		`(function() local force=game.forces.player `
@@ -135,27 +143,35 @@ try {
 
 	// TERMINAL readiness (review finding B1): destination present AND source GONE. The 2PC deletes
 	// the source only after the destination's verdict, so this pair cannot be observed mid-import.
+	// The census snapshot is taken AFTER the terminal pair is confirmed (delta finding NF1: a
+	// snapshot taken before the source-gone confirmation could be a mid-import read wearing a
+	// data-loss label — the exact class the terminal pair exists to remove).
+	const destScanLua =
+		`(function() for _,q in pairs(game.forces.player.platforms) do if q.name=='${PROBE}' then `
+		+ `return {present=true, entities=q.surface.count_entities_filtered{}, `
+		+ `proxies=q.surface.count_entities_filtered{name='item-request-proxy'}, `
+		+ `hub_proxies=(function() local n=0 for _,pr in pairs(q.surface.find_entities_filtered{name='item-request-proxy'}) do `
+		+ `if pr.proxy_target and pr.proxy_target.valid and pr.proxy_target.name=='space-platform-hub' then n=n+1 end end return n end)(), `
+		+ `paused=q.paused, state=q.state, state_paused=(q.state==defines.space_platform_state.paused), `
+		+ `at_gateway=(q.space_location~=nil and q.space_location.name=='${GATEWAY}')} end end `
+		+ `return {present=false} end)()`;
 	let arrived = null;
 	const deadline = Date.now() + 120_000;
 	while (Date.now() < deadline) {
 		await sleep(3000);
-		const dst = rconJson(DST_INSTANCE,
-			`(function() for _,q in pairs(game.forces.player.platforms) do if q.name=='${PROBE}' then `
-			+ `return {present=true, entities=q.surface.count_entities_filtered{}, `
-			+ `proxies=q.surface.count_entities_filtered{name='item-request-proxy'}, `
-			+ `hub_proxies=(function() local n=0 for _,pr in pairs(q.surface.find_entities_filtered{name='item-request-proxy'}) do `
-			+ `if pr.proxy_target and pr.proxy_target.valid and pr.proxy_target.name=='space-platform-hub' then n=n+1 end end return n end)(), `
-			+ `paused=q.paused, state=q.state, state_paused=(q.state==defines.space_platform_state.paused), `
-			+ `at_gateway=(q.space_location~=nil and q.space_location.name=='${GATEWAY}')} end end `
-			+ `return {present=false} end)()`,
-		);
+		const dst = rconJson(DST_INSTANCE, destScanLua);
 		if (!dst.present) continue;
 		const src = rconJson(SRC_INSTANCE,
 			`(function() for _,q in pairs(game.forces.player.platforms) do if q.name=='${PROBE}' then return {present=true} end end return {present=false} end)()`,
 		);
-		if (!src.present) { arrived = dst; break; }
+		if (!src.present) {
+			// Terminal pair confirmed — NOW take the snapshot every assertion reads.
+			arrived = rconJson(DST_INSTANCE, destScanLua);
+			break;
+		}
 	}
-	check(arrived !== null, "TERMINAL: destination present AND source deleted (the 2PC completed) within 120s");
+	check(arrived !== null && arrived.present === true,
+		"TERMINAL: destination present AND source deleted (the 2PC completed) within 120s");
 
 	if (arrived) {
 		// Verdict grounding (review finding B2): the import's own terminal record, not just the census.
@@ -171,6 +187,12 @@ try {
 			`physical proxy count on destination: ${arrived.proxies} (hub-targeted: ${arrived.hub_proxies})`);
 		check(arrived.hub_proxies === 1,
 			"the hub-targeted proxy specifically survived (the shape two retracted measurements implicated)");
+		// defines.space_platform_state.paused OBSERVED, not assumed (delta finding NF4): every green
+		// run of this fixture — both park orderings, modules 0.10.217/218/219 — read state_paused
+		// true on arrival, so the member exists and an arrived-parked platform reports it. Note the
+		// product wrinkle this pins: Gateway.parked_at_gateway requires waiting_at_station, so a
+		// just-arrived (paused) platform is NOT gateway-parked by the product's own predicate until
+		// a player unpauses it — pre-existing behavior, first made visible here.
 		check(arrived.paused === true && arrived.state_paused === true,
 			"arrived PAUSED (parked, not flying the schedule)", `state=${arrived.state}`);
 		check(arrived.at_gateway === true, "arrived AT the gateway location");
