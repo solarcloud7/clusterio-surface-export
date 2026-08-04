@@ -270,17 +270,21 @@ function ImportPipeline.queue(json_data, new_platform_name, force_name, requeste
 		gateway_target = nil
 	end
 
-	-- PARK AT CREATION (proxy-cancellation fix, 2026-08-04): writing `space_location` destroys
-	-- item-request proxies on the platform surface (upstream-documented — the write "will cancel
-	-- pending item requests"; measured 1 → 0 on 2.1.11). The park used to run as the LAST import
-	-- step, AFTER restoration re-created proxies (the 9326ca8 loss class) and AFTER the exact gate
-	-- had passed — silently destroying them post-verdict on every gateway-parked import, invisible
-	-- to the gate by construction. Parking HERE — platform freshly created, paused, its surface
-	-- carrying nothing but the hub — leaves nothing to cancel (a paused, empty platform accepts the
-	-- write and lands at the gateway: measured 2026-08-03). The end-of-import step now only
-	-- re-pauses and VERIFIES the location; it never writes it again. Adversarial fixture:
-	-- tests/integration/gateway-park-proxies (physical proxy count on the destination — RED on the
-	-- old ordering).
+	-- PARK AT CREATION (post-verdict-write hardening, 2026-08-04). The `space_location` write
+	-- "will cancel pending item requests" (upstream-documented), and the park used to run it as the
+	-- LAST import step — after restoration and after the exact gate. Measured family enumeration on
+	-- 2.1.11 (both members, full production path): the write destroys HUB-targeted item-request
+	-- proxies (1 → 0) but entity-targeted proxies SURVIVE it. Today that makes the old ordering's
+	-- loss unreachable — the only shape the write destroys is the shape the exporter never carries
+	-- (hub-targeted proxies do not ride the payload; that serializer gap is filed separately). The
+	-- ordering is still moved HERE because a post-verdict destructive write is a standing hazard:
+	-- the moment the hub-proxy export gap is fixed, the old ordering would silently destroy those
+	-- restored proxies after the gate passed. Parking at creation — platform fresh, paused, its
+	-- surface carrying nothing but the hub — leaves nothing to cancel, ever (a paused, empty
+	-- platform accepts the write and lands at the gateway: measured 2026-08-03). The end-of-import
+	-- step now only re-pauses and VERIFIES the location; it never writes it again. Standing pin:
+	-- tests/integration/gateway-park-proxies (physical proxy count on the destination through a
+	-- real gateway transfer).
 	if gateway_target then
 		-- Prerequisite for the write: the location must be unlocked for this force (a force created
 		-- after the startup discover_and_unlock pass wouldn't have it). Log on failure — a silent

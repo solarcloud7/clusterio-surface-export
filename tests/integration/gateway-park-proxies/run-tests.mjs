@@ -1,14 +1,17 @@
 #!/usr/bin/env node
-// Gateway-park proxy survival — the adversarial fixture for the proxy-cancellation defect
-// (measured 2026-08-03): writing `space_location` destroys item-request proxies on the platform
-// surface (upstream-documented "will cancel pending item requests"; measured 1 → 0 on 2.1.11).
-// The gateway park used to perform that write as the LAST import step — after restoration
-// re-created proxies (the 9326ca8 loss class) and after the exact gate had passed — so every
-// gateway-parked import of a proxy-carrying platform silently lost its proxies, post-verdict,
-// invisible to the gate by construction. The fix parks at CREATION (empty surface, nothing to
-// cancel); this fixture is the physical teeth: a real gateway transfer of a proxy-carrying
-// platform, PHYSICAL proxy count on the destination. RED on pre-fix code (count 0), GREEN on the
-// fix (count 1 + parked paused at the gateway).
+// Gateway-park proxy survival — the standing pin for proxies riding a GATEWAY transfer, counted
+// PHYSICALLY on the destination (the exact gate is structurally blind to proxies: they are
+// requests, not items — the class that dropped them silently until 9326ca8).
+//
+// HONEST TEETH ACCOUNTING (measured 2026-08-04, both orderings deployed in turn): this fixture is
+// GREEN on the old post-verdict park ordering too, because the `space_location` write destroys
+// HUB-targeted proxies (measured 1 → 0) but entity-targeted proxies SURVIVE it — and hub-targeted
+// proxies never ride the export at all (serializer gap, filed separately). So the park-at-creation
+// ordering is a HARDENING (a post-verdict destructive write that becomes a live loss the moment
+// the export gap is fixed), and this fixture's teeth are against PROXY LOSS IN GATEWAY TRANSFERS
+// generally, not against the ordering specifically. When the hub-proxy export gap lands, add the
+// hub-targeted case here — under the OLD ordering that case would go red; under park-at-creation
+// it stays green.
 //
 // Probe choreography note: the SOURCE park write (which makes /gateway-transfer's parked_at_gateway
 // gate pass) itself cancels proxies — so the source proxy is created AFTER the park write.
