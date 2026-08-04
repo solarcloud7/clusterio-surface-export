@@ -41,7 +41,8 @@ local function restore_inserter_held(entity, entity_data)
     -- inserter-capacity research (bulk_inserter_capacity_bonus / inserter_stack_size_bonus). That bonus is now
     -- synced from the source force BEFORE hydration (import-pipeline Phase 0), so a legally-captured amount
     -- seats in full. A direct `held_stack.count = want` write does NOT bypass this — it clamps to the same
-    -- capacity (verified on 2.0.76: at bonus 0, count=8 → 1). That earlier "no-cap" write was a disproven
+    -- capacity (measured: at bonus 0, count=8 → 1; the force-sync fix is exercised by every import's
+    -- held pass at the current pin). That earlier "no-cap" write was a disproven
     -- dead-end and was removed. The set_stack bool lies, so we read back and return any genuine shortfall as a
     -- VISIBLE loss (never silent).
     local got = entity.held_stack.valid_for_read and entity.held_stack.count or 0
@@ -210,7 +211,8 @@ function ActiveStateRestoration.restore(entities_to_create, entity_map, frozen_s
         -- entity wrongly defaults to active below — silently flipping inactive entities to
         -- active on the destination. Fall back to the string key. (Same-instance/clone paths
         -- keep numeric keys and hit the first lookup; stable-id entity_ids are already strings,
-        -- so tostring is a no-op there.) Verified via a helpers.table_to_json round-trip on 2.0.76.
+        -- so tostring is a no-op there.) Verified via a helpers.table_to_json round-trip; every
+        -- cross-instance transfer exercises the numeric-key coercion at the current pin.
         local was_active = frozen_states[entity_data.entity_id]
         if was_active == nil and entity_data.entity_id ~= nil then
             was_active = frozen_states[tostring(entity_data.entity_id)]

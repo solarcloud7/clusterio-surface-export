@@ -743,7 +743,11 @@ function ImportCompletion.run_phase2(job)
 
 			-- GATEWAY TRANSFER: park the platform AT the gateway, paused, instead of letting the
 			-- restored schedule fly it there. The unpause above and this all run in one synchronous
-			-- tick, so no flight happens in between. Placement is instant (verified on 2.0.76); pausing
+			-- tick, so no flight happens in between. Placement is instant (re-measured at the 2.1.11 pin
+			-- 2026-08-03: the space_location write is readable same-execution). KNOWN DEFECT: this write
+			-- cancels item-request proxies on the surface (upstream-documented) — restored proxies are
+			-- destroyed post-verdict on gateway-parked imports; fix planned (park BEFORE restoration).
+			-- See GATEWAY_TRANSFER_PRD.md "Known defect". Pausing
 			-- holds it until the player resumes. nil for normal transfers — they keep the unpause above.
 			-- PAUSE FIRST (its own pcall), THEN place: if the space_location write throws, the platform
 			-- is still safely parked-paused rather than flying off next tick.

@@ -25,7 +25,8 @@ const categories = [
 	"programmable-speaker", "lamp", "display-panel", "entity-ghost", "tile-ghost", "item-request-proxy",
 	"train-stop", "resource",
 ];
-// Independent prototype/placement evidence from Factorio 2.0.77. This is deliberately
+// Independent prototype/placement evidence from live probes (one row since corrected by the
+// mining-drill-acid-feed pad at the current pin — see below). This is deliberately
 // not derived from handlerFluidOwners: capability is the question, ownership is the answer.
 const specializedFluidCapabilities = new Map([
 	["assembling-machine", { platformReachable: true, evidence: "chemical-plant: 4 fluidboxes, can_place=true" }],

@@ -38,7 +38,7 @@ function EntityHandlers.extract_entity_burner(entity)
   local currently_burning = nil
   local burning = burner.currently_burning
   if burning then
-    -- 2.0.77: LuaBurner.currently_burning reads as an ItemIDAndQualityIDPair whose `.name` is a
+    -- LuaBurner.currently_burning reads as an ItemIDAndQualityIDPair whose `.name` is a
     -- LuaItemPrototype and `.quality` a LuaQualityPrototype. Resolve both to plain strings (the only
     -- JSON-safe form); stay defensive if a build ever returns bare-string ids instead.
     local name = burning.name
@@ -164,7 +164,8 @@ EntityHandlers["assembling-machine"] = function(entity)
     end
   end
 
-  -- RECIPE QUALITY — measured on 2.0.77 (state-dimensions-lab notebook, closer probe):
+  -- RECIPE QUALITY — measured (state-dimensions-lab notebook, closer probe; the quality-keyed
+  -- gallery pads hold it at the current pin):
   -- LuaEntity.get_recipe_quality() does NOT exist (the old probe here silently never captured), and
   -- quality is get_recipe()'s SECOND return value. Restore passes it atomically via set_recipe(name, q).
   if entity.get_recipe then
@@ -198,7 +199,7 @@ EntityHandlers["furnace"] = function(entity)
   -- Fluids (foundries have fluidboxes for molten metals)
   data.fluidboxes = InventoryScanner.extract_fluidboxes(entity)
 
-  -- Recipe (smelting recipe; quality is get_recipe()'s SECOND return at 2.0.77 — see the
+  -- Recipe (smelting recipe; quality is get_recipe()'s SECOND return — see the
   -- assembling-machine handler)
   if entity.get_recipe then
     local recipe, recipe_quality = entity.get_recipe()
@@ -265,7 +266,7 @@ EntityHandlers["splitter"] = function(entity)
   -- Filter settings — capture quality too ({name,quality} table; the deserializer's splitter rule
   -- assigns either shape directly, and legacy name-string exports still restore).
   if entity.splitter_filter then
-    -- 2.0.77: splitter_filter.quality reads as a plain STRING (measured live); stay defensive if a
+    -- splitter_filter.quality reads as a plain STRING (measured live, state-dimensions lab); stay defensive if a
     -- build returns a LuaQualityPrototype instead — resolve either shape to the JSON-safe string.
     local sf = entity.splitter_filter
     local quality = sf.quality
@@ -661,7 +662,7 @@ EntityHandlers["mining-drill"] = function(entity)
     data.drop_target = Util.round_position(entity.drop_target.position, 2)
   end
   
-  -- FILTER (resource filter for mining drills). Measured 2026-07-17 at 2.0.77 (see the
+  -- FILTER (resource filter for mining drills). Measured 2026-07-17 (state-dimensions lab; see the
   -- mining-drill filter overload of LuaEntity.set_filter in the official API): get_filter REQUIRES the slot
   -- index (the old zero-arg call ALWAYS threw, silently killing this capture), every vanilla
   -- drill has filter_slot_count == 0 (only modded drills can reach the read), and a drill
@@ -717,7 +718,7 @@ EntityHandlers["rocket-silo"] = function(entity)
     inventories = InventoryScanner.extract_all_inventories(entity)
   }
   
-  -- RECIPE (+ quality — get_recipe()'s SECOND return at 2.0.77; get_recipe_quality() does not exist,
+  -- RECIPE (+ quality — get_recipe()'s SECOND return; get_recipe_quality() does not exist,
   -- so the old probe here silently never captured quality. See the assembling-machine handler.)
   if entity.get_recipe then
     local recipe, recipe_quality = entity.get_recipe()
