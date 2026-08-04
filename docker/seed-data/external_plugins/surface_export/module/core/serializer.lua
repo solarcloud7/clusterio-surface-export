@@ -160,7 +160,6 @@ function Serializer.export_platform(platform_index, force_name)
     }
   })
 
-
   -- Same cap as the async path (export-pipeline.lua). This entry is written as a side effect —
   -- Serializer.export_platform's only caller, clone_platform, uses the RETURN value and never reads
   -- storage.platform_exports — so without a prune the clone path grew the save with entries nothing

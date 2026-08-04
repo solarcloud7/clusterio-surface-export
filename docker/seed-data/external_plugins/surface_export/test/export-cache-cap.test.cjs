@@ -44,7 +44,13 @@ function readModule(rel) {
  * Source pins must not match their own explanatory comments. Commenting out a call site left the
  * "does this file call prune?" assertion GREEN, because the surrounding comment names the function
  * it describes — verified by mutation, and the reason this helper exists rather than matching raw
- * source. Only line comments are stripped; the modules pinned here use no long-bracket comments.
+ * source.
+ *
+ * Deliberately naive: it strips from the first `--` on each line, so it also truncates at a `--`
+ * that appears INSIDE a Lua string literal, and it does not handle long-bracket comments. No module
+ * pinned here contains either. For assert.match that only risks a false failure; the two
+ * assert.doesNotMatch pins below would be the ones to re-check if a pinned module ever grows a
+ * string containing `--`.
  */
 function code(rel) {
 	return readModule(rel).split("\n").map(line => line.replace(/--.*$/, "")).join("\n");

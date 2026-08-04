@@ -122,11 +122,18 @@ function ExportCache.record(export_id, entry)
 	return entry
 end
 
---- Ids that must never be pruned: an export whose platform still holds its lock is either being
---- transmitted right now or is mid-transfer. The lock is taken before the scan (export-pipeline.lua
---- passes `job_id` as lock_opts.job_id, stored as transfer_job_id) and released at completion,
---- rollback or the TTL reaper, and the export id IS the job id — so the lock table is a direct,
+--- Ids that must never be pruned: an export whose platform still holds its lock is mid-TRANSFER.
+--- The lock is taken before the scan (export-pipeline.lua passes `job_id` as lock_opts.job_id, stored
+--- as transfer_job_id) and the export id IS the job id, so the lock table is a direct,
 --- reference-based answer to "is anyone still using this entry?", which a count-based cap cannot be.
+---
+--- SCOPE, precisely — this covers TRANSFERS and nothing else. ExportPipeline.complete unlocks a
+--- non-transfer export (`if not job.destination_instance_id then … unlock_platform`) BEFORE reaching
+--- the prune, so an export-for-download is never in this set; it survives its own prune only because
+--- cache_seq makes it newest, and is governed by the plain count cap while the controller fetches it.
+--- The clone/serializer path takes no lock at all (nothing reads those entries). Covering downloads
+--- too would mean holding the lock past the prune or tracking "fetched" — deliberately not done here.
+--- The operator-facing setting description states this limit rather than implying blanket protection.
 --- @return table set of protected export ids
 local function protected_export_ids()
 	local protected = {}

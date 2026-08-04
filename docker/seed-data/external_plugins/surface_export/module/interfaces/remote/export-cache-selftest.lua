@@ -147,19 +147,29 @@ local function export_cache_selftest()
 		"cap 5 with a per-tick limit of 9 must resolve to 10, got " ..
 		tostring(scaled) .. " raised=" .. tostring(scaled_raised))
 
-	local live_keep, live_raised = ExportCache.resolve_keep_count()
-	local expected_keep, expected_raised =
-		ExportCache.resolve_keep_count_for(ExportCache.get_cap(), ExportCache.get_concurrency())
-	check("resolve_composes_inputs", live_keep == expected_keep and live_raised == expected_raised,
-		"resolve_keep_count must pass (cap, concurrency) in that order: got " .. tostring(live_keep) ..
-		"/" .. tostring(live_raised) .. ", expected " .. tostring(expected_keep) .. "/" .. tostring(expected_raised))
+	-- This kills an argument swap in resolve_keep_count — but ONLY while the two inputs differ. With
+	-- cap == concurrency the correct and swapped calls are both f(n, n) and agree, so the degenerate
+	-- configuration is reported as a failure rather than passing quietly with no teeth.
+	local live_cap, live_concurrency = ExportCache.get_cap(), ExportCache.get_concurrency()
+	if live_cap == live_concurrency then
+		check("resolve_composes_inputs", false,
+			"cap and per-tick limit are both " .. tostring(live_cap) .. ", so this check cannot " ..
+			"distinguish a swapped argument order — configure them differently to restore its teeth")
+	else
+		local live_keep, live_raised = ExportCache.resolve_keep_count()
+		local expected_keep, expected_raised = ExportCache.resolve_keep_count_for(live_cap, live_concurrency)
+		check("resolve_composes_inputs", live_keep == expected_keep and live_raised == expected_raised,
+			"resolve_keep_count must pass (cap, concurrency) in that order: got " .. tostring(live_keep) ..
+			"/" .. tostring(live_raised) .. ", expected " .. tostring(expected_keep) .. "/" .. tostring(expected_raised))
+	end
 
-	-- NOT ASSERTED HERE, deliberately: that set_cap actually persists the value and get_cap reads it
-	-- back — the ORIGINAL defect one hop later, a knob read and validated then never enforced. Any
-	-- assertion available from inside this process compares the policy against get_cap(), so an
-	-- emptied set_cap satisfies both sides and the check cannot fail. It is pinned where it can
-	-- fail instead: test/export-cache-cap.test.cjs pins the storage write in set_cap, the storage
-	-- read in get_cap, and AsyncProcessor.set_max_export_cache_size forwarding to set_cap.
+	-- NOT ASSERTED HERE: that set_cap persists the value and get_cap reads it back — the ORIGINAL
+	-- defect one hop later, a knob read and validated then never enforced. It is pinned where it can
+	-- fail instead: test/export-cache-cap.test.cjs pins the storage write in set_cap, the storage read
+	-- in get_cap, and AsyncProcessor.set_max_export_cache_size forwarding to set_cap, all three
+	-- mutation-verified. An in-process version IS possible — give the accessors an optional config
+	-- table, the way clear_old_exports takes an optional target — and would be worth adding if this
+	-- file ever needs to stand alone; the offline pins simply got there first.
 
 	return { passed = passed, failed = failed, total = passed + failed, details = details }
 end

@@ -596,6 +596,12 @@ function ExportPipeline.complete(job)
 			tostring(job.export_data.verification and job.export_data.verification.fluid_counts ~= nil)))
 	else
 		-- Fallback to uncompressed if compression fails (verification already in export_data)
+		-- NOTE: here the stored entry IS the payload table, so record's `cache_seq` stamp lands on
+		-- export_data itself and rides both this entry and any file handle_pending_file_write writes
+		-- from it. Harmless — the import side keys off schema_version and whitelists no keys — but it
+		-- is an internal ordering field on a payload, so: not stamping it is not an option (an
+		-- unstamped entry sorts oldest and deletes itself), and copying the table to avoid it would
+		-- duplicate a whole platform payload on the failure path. Recorded rather than hidden.
 		ExportCache.record(export_id, job.export_data)
 		log(string.format("[Compression Warning] Failed to compress export %s, storing uncompressed", export_id))
 	end
