@@ -257,8 +257,9 @@ function ImportPipeline.queue(json_data, new_platform_name, force_name, requeste
 
 	-- Gateway transfer: the source carries an EXPLICIT gateway_target in the payload (a sibling of
 	-- platform.schedule — NOT inferred from the schedule's current record). When present, strip the
-	-- gateway hop(s) from the itinerary; the platform is placed at gateway_target, paused, at the very
-	-- end of import (see import-completion.lua) so it arrives parked instead of flying the schedule.
+	-- gateway hop(s) from the itinerary; the platform is PARKED at gateway_target HERE, at creation
+	-- (see the park block below), and re-paused/verified at the very end of import
+	-- (import-completion.lua) so it arrives parked instead of flying the schedule.
 	-- Absent ⇒ ordinary transfer, schedule untouched (so a normal /transfer-platform of a gateway-parked
 	-- platform is NOT treated as a gateway arrival — fixes the over-/under-fire of schedule inference).
 	local gateway_target = platform_data and platform_data.platform and platform_data.platform.gateway_target or nil
@@ -267,6 +268,39 @@ function ImportPipeline.queue(json_data, new_platform_name, force_name, requeste
 		log(string.format("[Gateway] Ignoring gateway_target '%s' — not a gateway on this instance",
 			tostring(gateway_target)))
 		gateway_target = nil
+	end
+
+	-- PARK AT CREATION (proxy-cancellation fix, 2026-08-04): writing `space_location` destroys
+	-- item-request proxies on the platform surface (upstream-documented — the write "will cancel
+	-- pending item requests"; measured 1 → 0 on 2.1.11). The park used to run as the LAST import
+	-- step, AFTER restoration re-created proxies (the 9326ca8 loss class) and AFTER the exact gate
+	-- had passed — silently destroying them post-verdict on every gateway-parked import, invisible
+	-- to the gate by construction. Parking HERE — platform freshly created, paused, its surface
+	-- carrying nothing but the hub — leaves nothing to cancel (a paused, empty platform accepts the
+	-- write and lands at the gateway: measured 2026-08-03). The end-of-import step now only
+	-- re-pauses and VERIFIES the location; it never writes it again. Adversarial fixture:
+	-- tests/integration/gateway-park-proxies (physical proxy count on the destination — RED on the
+	-- old ordering).
+	if gateway_target then
+		-- Prerequisite for the write: the location must be unlocked for this force (a force created
+		-- after the startup discover_and_unlock pass wouldn't have it). Log on failure — a silent
+		-- miss here surfaces only as a mysterious park failure with no root cause.
+		local ok_unlock, err_unlock = pcall(function() force.unlock_space_location(gateway_target) end)
+		if not ok_unlock then
+			log(string.format("[Gateway] unlock_space_location('%s') failed before creation-park for %s: %s",
+				tostring(gateway_target), final_name, tostring(err_unlock)))
+		end
+		local ok_loc, err_loc = pcall(function() new_platform.space_location = gateway_target end)
+		if ok_loc then
+			log(string.format("[Gateway] Platform %s parked at gateway '%s' at CREATION (pre-restoration)",
+				final_name, gateway_target))
+		else
+			-- No data risk either way: the platform is paused (transfers pause above) and the
+			-- end-of-import re-pause keeps it parked wherever it sits; the completion-side
+			-- verification reports the miss loudly.
+			log(string.format("[Gateway] CREATION park FAILED for %s at '%s': %s — platform remains paused at its default location",
+				final_name, tostring(gateway_target), tostring(err_loc)))
+		end
 	end
 	if gateway_target and imported_schedule then
 		local stripped = Gateway.strip_gateway_records(imported_schedule)

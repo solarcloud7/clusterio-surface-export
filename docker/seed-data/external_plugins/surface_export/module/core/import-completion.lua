@@ -794,41 +794,27 @@ function ImportCompletion.run_phase2(job)
 			game.print(string.format("[Validation] Validation passed - entities activated on platform %s!",
 				job.platform_name), {0, 1, 0})
 
-			-- GATEWAY TRANSFER: park the platform AT the gateway, paused, instead of letting the
-			-- restored schedule fly it there. The unpause above and this all run in one synchronous
-			-- tick, so no flight happens in between. Placement is instant (re-measured at the 2.1.11 pin
-			-- 2026-08-03: the space_location write is readable same-execution). KNOWN DEFECT: this write
-			-- cancels item-request proxies on the surface (upstream-documented) — restored proxies are
-			-- destroyed post-verdict on gateway-parked imports; fix planned (park BEFORE restoration).
-			-- See GATEWAY_TRANSFER_PRD.md "Known defect". Pausing
-			-- holds it until the player resumes. nil for normal transfers — they keep the unpause above.
-			-- PAUSE FIRST (its own pcall), THEN place: if the space_location write throws, the platform
-			-- is still safely parked-paused rather than flying off next tick.
+			-- GATEWAY TRANSFER: the platform was PARKED at the gateway AT CREATION
+			-- (import-pipeline.lua — the space_location write cancels item-request proxies, so it
+			-- must precede restoration; adversarial fixture: tests/integration/gateway-park-proxies).
+			-- Here, after the activation unpause above, RE-PAUSE so it arrives parked instead of
+			-- flying the stripped schedule (the unpause and this run in one synchronous tick — no
+			-- flight in between), and VERIFY the parked location rather than ever writing it again
+			-- post-restoration. nil gateway_target = normal transfer — keeps the unpause above.
 			if success and job.gateway_target and job.target_platform and job.target_platform.valid then
 				local tp = job.target_platform
-				-- Unlock the gateway for the platform's force first (a force created after the startup
-				-- discover_and_unlock pass wouldn't have it; placement needs a reachable location).
-				-- Log on failure: this unlock is a PREREQUISITE for the space_location write below, so a
-				-- silent failure here surfaces only as a mysterious "Park INCOMPLETE / location unreachable"
-				-- with no root cause. (No data loss either way — pause-first keeps the platform safe.)
-				local ok_unlock, err_unlock = pcall(function() tp.force.unlock_space_location(job.gateway_target) end)
-				if not ok_unlock then
-					log(string.format("[Gateway] unlock_space_location('%s') failed before park for %s: %s",
-						tostring(job.gateway_target), tostring(job.platform_name), tostring(err_unlock)))
-				end
-				-- Pause FIRST so a placement throw leaves it safely parked-paused, not flying the stripped route.
-				-- pcall:allow — err_pause and err_loc are BOTH logged jointly in the else branch below; the
-				-- pcall-logging linter's scan just stops at the adjacent pcall on the next line and can't see it.
 				local ok_pause, err_pause = pcall(function() tp.paused = true end)
-				local ok_loc, err_loc = pcall(function() tp.space_location = job.gateway_target end)
-				if ok_pause and ok_loc then
-					log(string.format("[Gateway] Platform %s arrived PAUSED at gateway '%s'",
+				local at_gateway = tp.space_location ~= nil and tp.space_location.name == job.gateway_target
+				if ok_pause and at_gateway then
+					log(string.format("[Gateway] Platform %s arrived PAUSED at gateway '%s' (parked at creation)",
 						job.platform_name, job.gateway_target))
 				else
-					-- Report BOTH outcomes — a silent pause failure would leave the platform unpaused.
-					log(string.format("[Gateway] Park INCOMPLETE for %s at '%s' — paused=%s (%s), placed=%s (%s)",
+					-- Report BOTH outcomes — a silent pause failure would leave the platform flying;
+					-- a location mismatch means the creation-park failed (its own log has the cause).
+					log(string.format("[Gateway] Park INCOMPLETE for %s at '%s' — paused=%s (%s), at_gateway=%s (location=%s)",
 						job.platform_name, job.gateway_target,
-						tostring(ok_pause), tostring(err_pause), tostring(ok_loc), tostring(err_loc)))
+						tostring(ok_pause), tostring(err_pause), tostring(at_gateway),
+						tostring(tp.space_location and tp.space_location.name)))
 				end
 			end
 			-- ========================================
