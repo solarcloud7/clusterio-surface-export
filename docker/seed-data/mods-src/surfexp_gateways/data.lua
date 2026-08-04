@@ -10,19 +10,30 @@
 -- gateway per-force at runtime via `force.unlock_space_location(name)`. This is a PURE DATA-STAGE
 -- mod — there is no control.lua; all gateway logic lives in the plugin module.
 
-local GATEWAY_COUNT = 4
+-- One portal colour per gateway, so a destination is identifiable at a glance rather than by reading
+-- the label. This list IS the gateway count: adding a colour adds a gateway, which makes it
+-- structurally impossible to ship a gateway with no art. Shipped mapping: 1=blue, 2=green, 3=orange,
+-- 4=purple.
+local GATEWAY_COLOURS = { "blue", "green", "orange", "purple" }
+local GATEWAY_COUNT = #GATEWAY_COLOURS
 
 local locations = {}
 local connections = {}
 
-for i = 1, GATEWAY_COUNT do
+for i, colour in ipairs(GATEWAY_COLOURS) do
 	local name = "surfexp_gateway_" .. i
 	locations[#locations + 1] = {
 		type = "space-location",
 		name = name,
-		-- Reuse the solar-system-edge icon (this mod hard-depends on space-age). Cosmetic only;
-		-- distinct gateway art is a later-polish concern, not part of the transfer mechanic.
-		icon = "__space-age__/graphics/icons/solar-system-edge.png",
+		-- The vanilla two-icon split, copied from space-age's own planets: `icon` (64px, icon_size
+		-- defaults to 64) is what the schedule/station picker, tooltips and item lists render, while
+		-- `starmap_icon` (512px) is what the starmap draws. Shipping only the 512 would put a 512px
+		-- texture in the icon atlas for every list row; shipping only the 64 would leave the starmap
+		-- upscaling a thumbnail. Sizes are not free-form — a mismatch against the actual PNG is a
+		-- hard data-stage load error.
+		icon = "__surfexp_gateways__/graphics/icons/gateway-" .. colour .. ".png",
+		starmap_icon = "__surfexp_gateways__/graphics/icons/starmap-gateway-" .. colour .. ".png",
+		starmap_icon_size = 512,
 		subgroup = "planets",
 		order = "z[surfexp-gateway]-" .. i,
 		gravity_pull = -10,
