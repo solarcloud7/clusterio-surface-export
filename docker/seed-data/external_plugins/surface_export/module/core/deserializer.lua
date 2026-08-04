@@ -1249,73 +1249,145 @@ end
 --- platform paused — measured 2.1.11, 2026-08-04), so this runs pre-gate like the other settings.
 --- @param entity LuaEntity: The entity to restore sections to
 --- @param entity_data table: Serialized entity data (top-level logistic_sections field)
+--- @return table: names of force-level logistic groups this restore CREATED (the discard path
+---         sweeps them — a group outlives its sections, so a failed import would otherwise leave
+---         orphan groups accumulating on the destination force)
 function Deserializer.restore_logistic_sections(entity, entity_data)
-  if not entity.valid or not entity_data.logistic_sections then
-    return
+  local created_groups = {}
+  if not entity.valid or entity_data.logistic_sections == nil then
+    return created_groups
+  end
+  -- TYPE-GUARD everything read off entity_data before ipairs()/indexing: this field arrives from
+  -- user-suppliable JSON (upload-import validates no shape here), and an ipairs() on a non-table
+  -- inside the on_tick import driver would raise uncaught and KILL the headless server (the
+  -- error()-in-event-context class). Malformed shapes are skipped LOUDLY, never fatally.
+  if type(entity_data.logistic_sections) ~= "table" then
+    log(string.format("[Deserializer Error] logistic_sections on %s is a %s, not a table — field skipped",
+      entity.name, type(entity_data.logistic_sections)))
+    return created_groups
+  end
+
+  -- Read the force's group registry BEFORE any add_section: add_section(<existing group>) ADOPTS
+  -- the force-level group's filters (measured 2.1.11), and pre-existence-in-the-registry is the
+  -- only correct "do not write filters" signal — a pre-existing group can be legitimately EMPTY
+  -- (a placeholder other platforms on this force reference), so section.filters_count cannot
+  -- distinguish "I just created this group" from "it exists, empty" (review finding: keying on
+  -- filters_count would clobber such a placeholder force-wide).
+  local existing_groups = {}
+  local registry_ok, registry_err = pcall(function()
+    for _, name in pairs(entity.force.get_logistic_groups()) do
+      existing_groups[name] = true
+    end
+  end)
+  if not registry_ok then
+    -- Fail-safe direction: an unreadable registry must mean "write into NO group" (treat every
+    -- grouped section as pre-existing), never "every group is new" — the latter would write
+    -- payload filters into groups that may be shared force-level state.
+    log(string.format("[Deserializer Error] get_logistic_groups for %s: %s — grouped sections will be linked but no group filters written",
+      entity.name, tostring(registry_err)))
   end
 
   for _, point_data in ipairs(entity_data.logistic_sections) do
-    local pt_ok, point = pcall(function() return entity.get_logistic_point(point_data.point_index) end)
-    if not pt_ok or not point then
-      log(string.format("[Deserializer Error] logistic point %s missing on %s: %s",
-        tostring(point_data.point_index), entity.name, tostring(pt_ok and "nil point" or point)))
+    if type(point_data) ~= "table" or type(point_data.sections) ~= "table" then
+      log(string.format("[Deserializer Error] malformed logistic_sections point record on %s (%s) — point skipped",
+        entity.name, type(point_data)))
     else
-      -- Exact fidelity: a fresh destination entity arrives with its own default manual section(s)
-      -- (a fresh hub has one empty one), so REPLACE the manual set instead of appending to it.
-      -- Derived sections (is_manual=false, e.g. the construction-needs tracker) are engine-owned,
-      -- regenerate from the destination surface, and are never touched.
-      local rm_ok, rm_err = pcall(function()
-        for i = point.sections_count, 1, -1 do
-          local section = point.sections[i]
-          if section and section.is_manual then
-            point.remove_section(i)
-          end
-        end
-      end)
-      if not rm_ok then
-        log(string.format("[Deserializer Error] clearing manual sections on %s: %s", entity.name, tostring(rm_err)))
-      end
-
-      for _, sec_data in ipairs(point_data.sections) do
-        local add_ok, section = pcall(function() return point.add_section(sec_data.group) end)
-        if not add_ok or not section then
-          log(string.format("[Deserializer Error] add_section(%s) failed on %s: %s",
-            tostring(sec_data.group), entity.name, tostring(add_ok and "nil section" or section)))
-        else
-          -- add_section(<existing group>) ADOPTS the destination force's group filters (measured
-          -- 2.1.11: the joined section arrived pre-populated). Only write filters into an EMPTY
-          -- group — overwriting a pre-existing one would mutate force-level state shared by
-          -- unrelated platforms on the destination. Ungrouped sections always get their filters.
-          local adopted = sec_data.group ~= nil and section.filters_count > 0
-          if not adopted then
-            for _, f in ipairs(sec_data.filters or {}) do
-              local slot = { value = f.value, min = f.min, max = f.max, import_from = f.import_from }
-              local slot_ok, slot_err = pcall(function() section.set_slot(f.index, slot) end)
-              if not slot_ok and f.import_from then
-                -- Graceful mod-content mismatch: the import_from location may not exist on this
-                -- instance. Keep the request itself, drop only the unknown source location.
-                log(string.format("[Deserializer] set_slot with import_from='%s' failed on %s (%s) — retrying without import_from",
-                  tostring(f.import_from), entity.name, tostring(slot_err)))
-                slot.import_from = nil
-                slot_ok, slot_err = pcall(function() section.set_slot(f.index, slot) end)
-              end
-              if not slot_ok then
-                log(string.format("[Deserializer Error] set_slot(%s) for %s on %s: %s",
-                  tostring(f.index), tostring(f.value and f.value.name), entity.name, tostring(slot_err)))
-              end
+      local pt_ok, point = pcall(function() return entity.get_logistic_point(point_data.point_index) end)
+      if not pt_ok or not point then
+        log(string.format("[Deserializer Error] logistic point %s missing on %s: %s",
+          tostring(point_data.point_index), entity.name, tostring(pt_ok and "nil point" or point)))
+      else
+        -- Exact fidelity: a fresh destination entity arrives with its own default manual
+        -- section(s) (a fresh hub has one empty one), so REPLACE the manual set instead of
+        -- appending to it. Derived sections (is_manual=false, e.g. the construction-needs
+        -- tracker) are engine-owned, regenerate from the destination surface, and are never
+        -- touched. remove_section returns false on refusal (measured 2.1.11) — refusals and
+        -- throws both land in the post-condition below.
+        local rm_ok, rm_err = pcall(function()
+          for i = point.sections_count, 1, -1 do
+            local section = point.sections[i]
+            if section and section.is_manual then
+              point.remove_section(i)
             end
           end
-          local prop_ok, prop_err = pcall(function()
-            section.multiplier = sec_data.multiplier or 1
-            section.active = sec_data.active ~= false
-          end)
-          if not prop_ok then
-            log(string.format("[Deserializer Error] section multiplier/active on %s: %s", entity.name, tostring(prop_err)))
+        end)
+        if not rm_ok then
+          log(string.format("[Deserializer Error] clearing manual sections on %s: %s", entity.name, tostring(rm_err)))
+        end
+        -- POST-CONDITION on the physical state before any add: if manual sections survived the
+        -- clear (a throw OR a remove_section refusal), appending the payload's sections would
+        -- DUPLICATE requests — and the exact gate is structurally blind to settings, so a doubled
+        -- request set would commit GREEN. Leave the point untouched and say so loudly instead.
+        local remaining = 0
+        local count_ok, count_err = pcall(function()
+          for _, section in pairs(point.sections or {}) do
+            if section.is_manual then remaining = remaining + 1 end
+          end
+        end)
+        if not count_ok or remaining > 0 then
+          log(string.format(
+            "[Deserializer Error] %s manual section(s) still present on %s point %s after clear (%s) — payload sections NOT applied to this point (a partial replace would duplicate requests)",
+            tostring(remaining), entity.name, tostring(point_data.point_index),
+            count_ok and "remove refused/failed" or tostring(count_err)))
+        else
+          for _, sec_data in ipairs(point_data.sections) do
+            if type(sec_data) ~= "table" then
+              log(string.format("[Deserializer Error] malformed section record on %s (%s) — section skipped",
+                entity.name, type(sec_data)))
+            else
+              local add_ok, section = pcall(function() return point.add_section(sec_data.group) end)
+              if not add_ok or not section then
+                log(string.format("[Deserializer Error] add_section(%s) failed on %s: %s",
+                  tostring(sec_data.group), entity.name, tostring(add_ok and "nil section" or section)))
+              else
+                -- The destination's groups always WIN over the payload's: filters are written only
+                -- into a group this restore just CREATED (or an ungrouped section). A group that
+                -- pre-existed — populated or empty — is force-level state shared by unrelated
+                -- platforms and is adopted as-is.
+                local is_new_group = sec_data.group ~= nil and registry_ok
+                  and not existing_groups[sec_data.group]
+                if is_new_group then
+                  existing_groups[sec_data.group] = true
+                  table.insert(created_groups, sec_data.group)
+                end
+                local adopted = sec_data.group ~= nil and not is_new_group
+                if not adopted and type(sec_data.filters) == "table" then
+                  for _, f in ipairs(sec_data.filters) do
+                    if type(f) ~= "table" or type(f.value) ~= "table" then
+                      log(string.format("[Deserializer Error] malformed section filter on %s — filter skipped", entity.name))
+                    else
+                      local slot = { value = f.value, min = f.min, max = f.max, import_from = f.import_from }
+                      local slot_ok, slot_err = pcall(function() section.set_slot(f.index, slot) end)
+                      if not slot_ok and f.import_from then
+                        -- Graceful mod-content mismatch: the import_from location may not exist on
+                        -- this instance. Keep the request itself, drop only the unknown location.
+                        log(string.format("[Deserializer] set_slot with import_from='%s' failed on %s (%s) — retrying without import_from",
+                          tostring(f.import_from), entity.name, tostring(slot_err)))
+                        slot.import_from = nil
+                        slot_ok, slot_err = pcall(function() section.set_slot(f.index, slot) end)
+                      end
+                      if not slot_ok then
+                        log(string.format("[Deserializer Error] set_slot(%s) for %s on %s: %s",
+                          tostring(f.index), tostring(f.value and f.value.name), entity.name, tostring(slot_err)))
+                      end
+                    end
+                  end
+                end
+                local prop_ok, prop_err = pcall(function()
+                  section.multiplier = sec_data.multiplier or 1
+                  section.active = sec_data.active ~= false
+                end)
+                if not prop_ok then
+                  log(string.format("[Deserializer Error] section multiplier/active on %s: %s", entity.name, tostring(prop_err)))
+                end
+              end
+            end
           end
         end
       end
     end
   end
+  return created_groups
 end
 
 --- Slot-filter restoration (filter inserters, loaders, cargo wagons). Split from

@@ -202,13 +202,23 @@ These are why the export carries the hub's pending item requests as **manual log
   reads back as a `LuaSpaceLocationPrototype`; its `name` is the portable form.
 - **`LuaLogisticPoint.add_section(<group>)` with a group name that already exists on the force
   ADOPTS the group's existing filters — the new section arrives pre-populated.**
-  **[empirical, 2.1.11, tests/integration/hub-request-sections adoption case]** Writing slots into
-  such a section would mutate the group force-wide, which is why the import only writes filters
-  into a group it found empty (the destination's groups win over the payload's).
+  **[empirical, 2.1.11, tests/integration/hub-request-sections adoption cases]** Writing slots into
+  such a section mutates the group force-wide, which is why the import writes filters only into a
+  group it just CREATED — pre-existence checked against `LuaForce.get_logistic_groups()` before the
+  `add_section`, never against `filters_count`, because a pre-existing group can be legitimately
+  EMPTY (a placeholder other platforms reference). The destination's groups win over the payload's,
+  populated or empty.
 - **A logistic group persists in the force's registry after the last entity referencing it is
   gone.** **[empirical, 2.1.11, tests/integration/hub-request-sections pre-state + cleanup
   asserts]** Test-created groups are therefore leftovers to sweep
-  (`LuaForce.delete_logistic_group`), the same zero-leftover class as `storage.*` records.
+  (`LuaForce.delete_logistic_group`), the same zero-leftover class as `storage.*` records — and an
+  import that ran `add_section` before its destination was gate-refused must sweep the groups it
+  created at the discard (the refusal leg of the same test asserts this).
+- **`LuaForce.delete_logistic_group(name)` succeeds while live sections still reference the group;
+  the sections' group link clears (reads back `""`).** **[empirical, 2.1.11, direct probe
+  2026-08-04 on a requester chest; exercised by the discard sweep in
+  tests/integration/hub-request-sections refusal leg]** The discard-path sweep therefore does not
+  depend on end-of-tick surface-teardown ordering.
 
 The non-manual section observed on the hub requester point (`type == 3`, `is_manual == false`)
 tracked the surface's pending construction requests in probes (its `min` fell when a pending proxy

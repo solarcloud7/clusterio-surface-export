@@ -283,7 +283,12 @@ function ConnectionScanner.extract_logistic_sections(entity)
 
   local out = {}
   for _, point in pairs(points) do
-    local sections = {}
+    -- ATOMIC per-point capture: publish this point's sections only if the WHOLE scan succeeded.
+    -- The restore REPLACES the destination's manual sections, so a partially-captured point
+    -- (a mid-loop throw after some sections landed) published as complete would TRUNCATE the
+    -- destination's set — a fail-open in the loss direction. A wholly-omitted point is fail-safe:
+    -- the restore's early-return leaves the destination's sections untouched (review finding).
+    local captured = {}
     local scan_ok, scan_err = pcall(function()
       for _, section in pairs(point.sections or {}) do
         if section.is_manual then
@@ -306,7 +311,7 @@ function ConnectionScanner.extract_logistic_sections(entity)
               })
             end
           end
-          table.insert(sections, {
+          table.insert(captured, {
             group = (section.group ~= "" and section.group) or nil,
             multiplier = section.multiplier,
             active = section.active,
@@ -316,10 +321,10 @@ function ConnectionScanner.extract_logistic_sections(entity)
       end
     end)
     if not scan_ok then
-      log(string.format("[connection-scanner] logistic section scan failed on %s: %s", entity.name, tostring(scan_err)))
-    end
-    if #sections > 0 then
-      table.insert(out, { point_index = point.logistic_member_index, sections = sections })
+      log(string.format("[connection-scanner] logistic section scan failed on %s: %s — point OMITTED from payload (a partial capture would truncate the destination's sections on restore)",
+        entity.name, tostring(scan_err)))
+    elseif #captured > 0 then
+      table.insert(out, { point_index = point.logistic_member_index, sections = captured })
     end
   end
 
