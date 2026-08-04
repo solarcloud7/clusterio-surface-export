@@ -52,9 +52,11 @@ export const plugin = {
 				"Export cache size: how many completed platform exports each instance keeps in its save. " +
 				"Older exports beyond this count are discarded when a new export completes; a discarded " +
 				"export can no longer be re-downloaded or re-sent and must be re-exported from the platform. " +
-				"Each retained export costs roughly the compressed size of that platform, so a high value " +
-				"grows the save file. Values below max_concurrent_jobs + 1 are raised to it automatically, " +
-				"because an export must survive long enough for the controller to finish reading it.",
+				"An export whose platform is still locked (a transfer in flight, or a download the " +
+				"controller has not finished reading) is never discarded, whatever this is set to. " +
+				"Each retained export costs roughly the compressed size of that platform — exports made " +
+				"by the clone path cost more, being stored uncompressed — so a high value grows the save " +
+				"file. Values below max_concurrent_jobs + 1 are raised to it as a sanity floor.",
 			type: "number",
 			initialValue: 10,
 		},

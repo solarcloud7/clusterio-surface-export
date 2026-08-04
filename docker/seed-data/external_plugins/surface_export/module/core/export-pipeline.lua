@@ -577,7 +577,7 @@ function ExportPipeline.complete(job)
 	if compressed then
 		-- Store compressed data with metadata
 		-- CRITICAL: Include verification as top-level field (not compressed) for transfer validation
-		storage.platform_exports[export_id] = {
+		ExportCache.record(export_id, {
 			compressed = true,
 			compression = "deflate",
 			payload = compressed,
@@ -588,7 +588,7 @@ function ExportPipeline.complete(job)
 			stats = job.export_data.stats,
 			-- CRITICAL: Verification data must be accessible without decompression for transfers
 			verification = job.export_data.verification
-		}
+		})
 		log(string.format("[Compression] Export %s: %d bytes → %d bytes (%.1f%% reduction)",
 			export_id, #json_string, #compressed, (1 - #compressed / #json_string) * 100))
 		log(string.format("[Export] Stored verification: item_counts=%s, fluid_counts=%s",
@@ -596,16 +596,9 @@ function ExportPipeline.complete(job)
 			tostring(job.export_data.verification and job.export_data.verification.fluid_counts ~= nil)))
 	else
 		-- Fallback to uncompressed if compression fails (verification already in export_data)
-		storage.platform_exports[export_id] = job.export_data
+		ExportCache.record(export_id, job.export_data)
 		log(string.format("[Compression Warning] Failed to compress export %s, storing uncompressed", export_id))
 	end
-
-	-- Cap the retained-export cache. Before this call nothing ever removed an entry, so every export
-	-- stayed in the save permanently. Pruning happens HERE, at the point of growth, rather than via a
-	-- Node-side clear_old_exports RCON call, so the bound holds even if the config push never lands.
-	-- The entry just written is the newest and is always kept; see ExportCache.resolve_keep_count for
-	-- why the floor (not just Node's >= 1 validation) is what protects an export still being read.
-	ExportCache.prune_to_configured_cap()
 
 	-- Stop completion profiler
 	PhaseProfiler.stop(job.job_id, "completion")
@@ -739,6 +732,16 @@ function ExportPipeline.complete(job)
 	else
 		log(string.format("[Export] Skipping unlock for transfer - platform %s will be deleted", job.platform_name))
 	end
+
+	-- Cap the retained-export cache. Before this call nothing ever removed an entry, so every export
+	-- stayed in the save permanently. Pruning happens in Lua at the point of growth, rather than via a
+	-- Node-side clear_old_exports RCON call, so the bound holds even if the config push never lands.
+	--
+	-- LAST in this function, deliberately: handle_pending_file_write above reads back
+	-- storage.platform_exports[export_id] and, finding nothing, writes no file and logs nothing while
+	-- still consuming the request. Pruning after every reader in this execution has run means no
+	-- ordering bug here can turn into a silent no-op there.
+	ExportCache.prune_to_configured_cap()
 
 	-- Cleanup
 	storage.async_jobs[job.job_id] = nil
