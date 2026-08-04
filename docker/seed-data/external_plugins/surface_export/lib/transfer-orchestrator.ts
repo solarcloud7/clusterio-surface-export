@@ -1,6 +1,6 @@
 
 import { wait } from "@clusterio/lib";
-import { normalizeExportMetrics, TICKS_TO_MS, getErrorMessage, isSessionLostError, isBenignUnlockError, coercePlatformIndex, VALIDATION_TIMEOUT_MS, buildPayloadMetrics, buildImportMetrics, makeCanonicalTransferId, parseCanonicalTransferId } from "../helpers";
+import { normalizeExportMetrics, TICKS_TO_MS, getErrorMessage, isSessionLostError, isBenignUnlockError, coercePlatformIndex, DEFAULT_VALIDATION_TIMEOUT_SECONDS, MIN_VALIDATION_TIMEOUT_SECONDS, MAX_VALIDATION_TIMEOUT_SECONDS, buildPayloadMetrics, buildImportMetrics, makeCanonicalTransferId, parseCanonicalTransferId } from "../helpers";
 import { createOperationRecord } from "./operation-record";
 import type { IControllerPlugin, ActiveTransfer, SimpleResponse, TransferValidationEvent, StoredExport, ValidationResult, ImportMetrics, ExportMetrics } from "../messages";
 function mergeExportMetrics(storedMetrics: ExportMetrics | null | undefined, runtimeMetrics: Record<string, unknown> | null | undefined) {
@@ -288,7 +288,7 @@ export class TransferOrchestrator {
 			importAccepted = true;
 			this.enterAwaitingValidation(transfer, transferId);
 			this.txLogger.logTransactionEvent(transferId, "import_started",
-				`Awaiting validation (timeout: ${VALIDATION_TIMEOUT_MS / 1000}s)`, { transmissionMs });
+				`Awaiting validation (timeout: ${(transfer.armedValidationTimeoutMs ?? DEFAULT_VALIDATION_TIMEOUT_SECONDS * 1000) / 1000}s)`, { transmissionMs });
 
 			return { success: true, transferId, message: `Transfer initiated: ${transferId}` };
 
@@ -371,8 +371,13 @@ export class TransferOrchestrator {
 	 */
 	enterAwaitingValidation(transfer: ActiveTransfer, transferId: string) {
 		this.txLogger.startPhase(transferId, "validation");
-		this.scheduleValidationTimeout(transferId);
+		// Status FIRST, then arm (review finding on this PR): scheduleValidationTimeout now touches
+		// the config accessor, and a throw between "import accepted" and "status = awaiting_validation"
+		// would strand the record in a status the late-verdict guard treats as settled — a genuine
+		// verdict could then never resolve it. With this ordering (plus the guarded config read), the
+		// record is always in awaiting_validation by the time anything can fail.
 		transfer.status = "awaiting_validation";
+		this.scheduleValidationTimeout(transferId);
 		this.updateTransfer(transfer);
 		// #106 Phase 1: persist an observability record while source-side Lua TTL is the recovery authority.
 		// A restarted controller must not auto-delete or auto-unlock from this record.
@@ -388,16 +393,64 @@ export class TransferOrchestrator {
 		});
 	}
 
+	/**
+	 * The validation timeout, read PER-ARM from controller config
+	 * (`surface_export.transfer_validation_timeout_seconds`) so a settings change applies to the next
+	 * transfer with no restart. Guarded four ways: absent → default silently; SET-but-junk
+	 * (non-numeric/non-positive) → default LOUDLY; floored at MIN (a typo cannot insta-timeout every
+	 * transfer); CEILINGED at MAX (the validation share the source-lock TTL floor BUDGETS — see
+	 * helpers.ts for the honest mechanism; an uncapped value would also overflow setTimeout to 1 ms);
+	 * and a config-accessor THROW falls back to the default LOUDLY instead of propagating — this
+	 * method runs inside the arming path, where a throw after import acceptance would strand the
+	 * transfer in a status the late-verdict guard makes terminal. The harness-facing fallback
+	 * (plugin.controller.config may be absent in unit tests) is the same default.
+	 */
+	getValidationTimeoutMs(): number {
+		let raw: unknown;
+		try {
+			raw = this.plugin.controller.config?.get("surface_export.transfer_validation_timeout_seconds");
+		} catch (err: unknown) {
+			this.logger.error(
+				`Reading surface_export.transfer_validation_timeout_seconds threw (${getErrorMessage(err)}) — `
+				+ `using the default ${DEFAULT_VALIDATION_TIMEOUT_SECONDS}s`);
+			return DEFAULT_VALIDATION_TIMEOUT_SECONDS * 1000;
+		}
+		const seconds = Number(raw);
+		if (!Number.isFinite(seconds) || seconds <= 0) {
+			// Unset (undefined/null) is the normal "use the default" case — silent. A SET value that is
+			// junk or non-positive is a misconfiguration and must be visible, not silently corrected.
+			if (raw !== undefined && raw !== null) {
+				this.logger.warn(
+					`surface_export.transfer_validation_timeout_seconds=${String(raw)} is not a positive `
+					+ `number — using the default ${DEFAULT_VALIDATION_TIMEOUT_SECONDS}s`);
+			}
+			return DEFAULT_VALIDATION_TIMEOUT_SECONDS * 1000;
+		}
+		// Compare against the FLOORED value so an in-range fractional (30.5 → 30) never false-warns.
+		const floored = Math.floor(seconds);
+		const clamped = Math.min(MAX_VALIDATION_TIMEOUT_SECONDS, Math.max(MIN_VALIDATION_TIMEOUT_SECONDS, floored));
+		if (clamped !== floored) {
+			this.logger.warn(
+				`surface_export.transfer_validation_timeout_seconds=${String(raw)} is outside `
+				+ `[${MIN_VALIDATION_TIMEOUT_SECONDS}, ${MAX_VALIDATION_TIMEOUT_SECONDS}] — using ${clamped}s `
+				+ "(the ceiling is the validation share budgeted by the source-lock TTL floor)");
+		}
+		return clamped * 1000;
+	}
+
 	scheduleValidationTimeout(transferId: string) {
 		const transfer = this.plugin.activeTransfers.get(transferId);
 		if (!transfer) return;
+		const timeoutMs = this.getValidationTimeoutMs();
+		transfer.armedValidationTimeoutMs = timeoutMs;
 
 		transfer.validationTimeout = setTimeout(async () => {
 			const current = this.plugin.activeTransfers.get(transferId);
 			if (!current || current.status !== "awaiting_validation") return;
 
 			this.txLogger.logTransactionEvent(transferId, "validation_timeout",
-				"No validation response within 2 minutes", {});
+				`No validation response within ${timeoutMs / 1000}s `
+				+ "(setting: surface_export.transfer_validation_timeout_seconds)", { timeoutMs });
 			await this.handleTransferValidation(new this.messages.TransferValidationEvent({
 				transferId,
 				success: false,
@@ -406,15 +459,93 @@ export class TransferOrchestrator {
 				validation: {
 					itemCountMatch: false,
 					fluidCountMatch: false,
-					mismatchDetails: "Validation timeout - no response received within 2 minutes",
+					mismatchDetails: `Validation timeout - no response received within ${timeoutMs / 1000}s`,
 				},
 			}));
-		}, VALIDATION_TIMEOUT_MS);
+		}, timeoutMs);
 	}
 
 	// ── Validation handling ─────────────────────────────────────────────
 
 	async handleTransferValidation(event: TransferValidationEvent) {
+		// W1 STATUS GUARD: a verdict may only drive a transfer that is awaiting one. After the
+		// timeout fabricates a failed verdict (rollback: source unlocked, status settled), the
+		// destination — which never heard about the timeout — can still finish on its own clock and
+		// send a late GENUINE verdict. Pre-guard, that late SUCCESS re-entered the success handler
+		// and sent a source DELETE against a rolled-back (live, unlocked) source: the delete gate
+		// refuses, and live copies exist on BOTH instances (the W1 duplication window). A late
+		// verdict must not mutate the settled record either — the retry guard reads
+		// validationResult.destinationPreserved from it. Honest residual: a timed-out transfer whose
+		// destination later completes leaves that destination LIVE (it activates before emitting its
+		// verdict); this guard converts a silent source-delete into the loud event below. Only the
+		// handshake epic's hold-gated go-live removes that residual.
+		const settled = this.plugin.activeTransfers.get(event.transferId);
+		if (settled && settled.status !== "awaiting_validation") {
+			const verdict = event.success ? "SUCCESS" : "FAILURE";
+			const priorStatus = settled.status;
+			// A late verdict NEVER drives the success/failure handlers (no delete send, no rollback) —
+			// but it must still correct the record's LEFTOVER ACCOUNTING, because the retry guard
+			// reads this record (review finding on this PR — the guard's first version left a
+			// late-live destination wearing "failed", the one status a retry may replace, so the
+			// operator guidance "retry works" steered straight into a duplicate):
+			// - Late SUCCESS on a rolled-back transfer: the destination went LIVE beside the restored
+			//   source. That is cleanup_failed's one meaning — a platform was left behind that
+			//   automation could not remove — and cleanup_failed is exactly what the pre-guard code
+			//   surfaced here (its delete was refused by the Lua lock gate). The retry guard refuses
+			//   cleanup_failed, so no second copy can be imported until an operator deletes one.
+			// - Late genuine FAILURE on a "failed" record: usually the destination resolved itself
+			//   (discarded) and status stays "failed" — but if the verdict reports cleanup_failed (the
+			//   discard itself failed → an orphan remains) or destinationPreserved (deliberate debug
+			//   orphan), the record must account the leftover: re-mark / adopt so the retry guard
+			//   refuses. The fabricated timeout verdict never carries either flag — the genuine late
+			//   verdict is their only carrier.
+			// - Any verdict on "completed"/"cleanup_failed"/"error": record untouched.
+			// Known residuals, accepted deliberately (contract-over-recovery): a late SUCCESS whose
+			// rollback unlock had FAILED could in principle still complete the handoff (lock intact) —
+			// we refuse it anyway and account the duplicate rather than drive deletes from late
+			// verdicts; and the guard keys on status, not attempt identity, so a same-ID retry armed
+			// BEFORE a stale verdict arrives cannot be distinguished (needs the handshake epic's
+			// attempt nonce).
+			let disposition = "Record unchanged.";
+			if (event.success && priorStatus === "failed") {
+				settled.status = "cleanup_failed";
+				settled.error = [settled.error, "late import SUCCESS after rollback: the destination holds a live copy — delete one copy before retrying"]
+					.filter(Boolean).join("; ");
+				this.updateTransfer(settled);
+				disposition = "The destination holds a LIVE copy of a platform whose source was already "
+					+ "returned to the player; the transfer is re-marked cleanup_failed so retries are "
+					+ "refused — resolve manually (delete one copy).";
+			} else if (!event.success && priorStatus === "failed" && event.validation?.cleanup_failed) {
+				// Reconciliation finding — the SIBLING of the late-SUCCESS case: the genuine late FAILURE
+				// reports the destination discard itself FAILED, so an orphan (left paused) exists on the
+				// target — the structural twin of the destinationPreserved orphan below. Re-mark + adopt
+				// so the retry guard refuses the ACCIDENTAL orphan exactly like the deliberate one.
+				settled.status = "cleanup_failed";
+				settled.validationResult = event.validation;
+				settled.error = [settled.error,
+					`late FAILURE reported the destination discard itself failed (${String(event.validation.cleanup_error || "no reason given")}) — an orphan copy remains on the target; remove it before retrying`]
+					.filter(Boolean).join("; ");
+				this.updateTransfer(settled);
+				disposition = "The destination's own discard FAILED — an orphan copy remains on the "
+					+ "target; the transfer is re-marked cleanup_failed so retries are refused until it "
+					+ "is removed.";
+			} else if (!event.success && priorStatus === "failed" && event.validation?.destinationPreserved === true) {
+				settled.validationResult = event.validation;
+				this.updateTransfer(settled);
+				disposition = "Adopted the genuine verdict onto the record (it carries "
+					+ "destinationPreserved, which the retry guard reads); status unchanged.";
+			}
+			this.txLogger.logTransactionEvent(event.transferId, "validation_after_settle",
+				`Late validation ${verdict} arrived after this transfer settled as '${priorStatus}' — `
+				+ `no source delete, no rollback. ${disposition}`,
+				{ lateVerdictSuccess: event.success, settledStatus: priorStatus, newStatus: settled.status, validation: event.validation ?? null });
+			this.logger.warn(
+				`Late validation ${verdict} for settled transfer ${event.transferId} `
+				+ `(status=${priorStatus}${settled.status !== priorStatus ? ` → ${settled.status}` : ""}) — refused by the status guard`);
+			await this.txLogger.persistTransactionLog(event.transferId);
+			return;
+		}
+
 		const validationMs = this.txLogger.endPhase(event.transferId, "validation");
 		const importMetrics = buildImportMetrics(event.metrics);
 

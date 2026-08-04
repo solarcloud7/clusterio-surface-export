@@ -11,7 +11,28 @@ export const TICKS_TO_MS = 16.67;
 export const RCON_CHUNK_SIZE = 100_000;
 export const EXPORT_POLL_TIMEOUT_MS = 30_000;
 export const EXPORT_POLL_INTERVAL_MS = 500;
-export const VALIDATION_TIMEOUT_MS = 120_000;
+/**
+ * Default + floor + CEILING for `surface_export.transfer_validation_timeout_seconds` (declared in
+ * index.ts; read PER-ARM by the orchestrator, so a settings change applies to the next transfer
+ * with no restart). Default 30 s (owner ruling); floor 5 s so a typo cannot make every transfer
+ * insta-timeout. THE CEILING'S HONEST MECHANISM (corrected by the reconciliation review — the
+ * first version claimed the lock "TTL-expires mid-wait" past 120 s, which surface-lock.lua's own
+ * numbers refute: the TTL is 600 s): 120 s is the validation SHARE that surface-lock.lua's derived
+ * worst-case TTL floor budgets (VALIDATION_TIMEOUT_TICKS = 7200, one component of the 320 s floor
+ * under the 600 s TTL). Nothing links the live setting back to those Lua constants, so a window
+ * above the budgeted share consumes TTL slack the floor's derivation does not account for — the
+ * cap keeps the floor's math honest rather than guarding an imminent expiry. (An uncapped value
+ * would also overflow setTimeout past ~2^31 ms, which Node clamps to 1 ms — every transfer would
+ * insta-fail.) Operational consequence, stated plainly: an import that genuinely needs more than
+ * 120 s times out on every attempt under this cap; if its destination then completes late, the
+ * transfer is re-marked cleanup_failed (leftover accounted, retries refused) — the handshake
+ * epic's hold-gated go-live is the real fix for imports that slow. With the late-verdict status
+ * guard, an undersized timeout costs a spurious rollback (fail ⇒ revert, source preserved) —
+ * never a silent duplicate.
+ */
+export const DEFAULT_VALIDATION_TIMEOUT_SECONDS = 30;
+export const MIN_VALIDATION_TIMEOUT_SECONDS = 5;
+export const MAX_VALIDATION_TIMEOUT_SECONDS = 120;
 export const STORAGE_FILENAME = "surface_export_storage.json";
 
 // getErrorMessage + generateOperationId live in the shared (Node + web) module so they aren't duplicated

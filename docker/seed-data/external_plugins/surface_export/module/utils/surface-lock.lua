@@ -11,7 +11,12 @@ local DEFAULT_TRANSFER_LOCK_TTL_TICKS = 36000 -- 10 minutes at 60 UPS
 -- R6: the worst-case-TOTAL-transfer floor, DERIVED from named components (NOT a duplicate of DEFAULT) so the
 -- selftest's `DEFAULT >= MIN` is a real check — lowering DEFAULT below the real worst case now fails, and each
 -- component is independently visible/tunable.
-local VALIDATION_TIMEOUT_TICKS     = 7200  -- 120s validation timeout (helpers.ts VALIDATION_TIMEOUT_MS) at 60 UPS
+-- Validation-timeout BUDGET in the floor, not a mirror of the live value: the controller's actual
+-- timeout is config (surface_export.transfer_validation_timeout_seconds, default 30s, floor 5s).
+-- The budget stays at the conservative 120s so the floor holds for operators raising the setting up
+-- to that; raising it PAST 120s should raise the lock TTL too (nothing enforces that link — the
+-- selftest checks DEFAULT >= MIN against these named components, not against the live setting).
+local VALIDATION_TIMEOUT_TICKS     = 7200  -- 120s at 60 UPS (budget; see above)
 local WORST_CASE_RCON_TICKS        = 3000  -- ~50s: a 235KB platform @ ~6KB/s chunked RCON, rounded up
 local WORST_CASE_SCAN_IMPORT_TICKS = 6000  -- ~100s: async export scan + destination import (~100 entities/tick each)
 local WORST_CASE_MARGIN_TICKS      = 3000  -- ~50s controller queue / round-trip / jitter slack

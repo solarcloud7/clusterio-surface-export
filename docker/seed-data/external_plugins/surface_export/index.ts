@@ -83,6 +83,20 @@ export const plugin = {
 			type: "number",
 			initialValue: 20,
 		},
+		[`${PLUGIN_NAME}.transfer_validation_timeout_seconds`]: {
+			title: "Transfer validation timeout (seconds)",
+			description: "How long the controller waits for the destination to validate a transfer. "
+				+ "The clock starts AFTER the payload is delivered and accepted — it covers the "
+				+ "destination's import and validation, not delivery. On expiry the transfer is rolled "
+				+ "back: the source platform is unlocked and stays on its instance. If the destination "
+				+ "later finishes its import anyway, the transfer is re-marked cleanup_failed — a live "
+				+ "copy exists on the destination; delete the copy you don't want before retrying. "
+				+ "Range 5–120 seconds (the ceiling protects the source lock's validation budget); "
+				+ "out-of-range values are clamped. Applies to the next transfer, no restart needed.",
+			type: "number",
+			initialValue: 30,
+			optional: true,
+		},
 	},
 	messages: [
 		messages.ExportPlatformRequest,

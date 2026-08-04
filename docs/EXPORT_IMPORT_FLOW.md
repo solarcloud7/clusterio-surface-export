@@ -418,7 +418,9 @@ messages read from this store.
 Common event progression: `transfer_created` → `import_started` → `validation_received` →
 `transfer_completed`. The failure path includes rollback events (`rollback_attempt`,
 `rollback_success`, `transfer_failed`); the timeout path records `validation_timeout`
-then rollback.
+then rollback, and if the destination finishes after the timeout its late verdict is
+refused with a `validation_after_settle` event (a late SUCCESS also re-marks the
+transfer `cleanup_failed` — the destination went live beside the restored source).
 
 ```powershell
 # Latest transaction
