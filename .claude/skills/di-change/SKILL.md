@@ -20,13 +20,29 @@ physical count** (`get_item_count(...)` over source AND dest). `npm run lint:tes
 `*fidelity*` tests and self-report reads. Rule of thumb: *if the thing under test could be wrong and the test
 would still pass, it's grounded in the wrong place.* (memory: `data-integrity-test-grounding`.)
 
-## 2. Did you ship the ADVERSARIAL fixture WITH the fix?
+## 2. Did you state the PURPOSE as an invariant BEFORE writing the instrument?
+Before writing a guard/meter/branch, write the test that states its **purpose as an invariant over its
+output** (a round-trip or agreement property) — then implement until it passes. Derive contracts from the
+**artifact**, not your reading of it. Four corollaries, each paid for (PR #156's three review rounds):
+- **Enumerate the flag family at the EMITTER before writing a flag-keyed branch.** A fix keyed on the
+  reproduction in hand (late SUCCESS) missed the sibling flag (`cleanup_failed`) in the same verdict
+  object — twice in one PR. The emitter (the Lua that builds the verdict; the DTO) is the complete
+  list; your reproduction is one sample.
+- **A "because X at threshold Y" comment must name Y's actual value, read this session.** A ceiling
+  rationale claimed a TTL expiry that constants in a file the same PR edited refute.
+- **Test pins use PRODUCTION-shaped values, verified against the actual library.** A null-vs-undefined
+  pin shaped by the harness left a green suite over a shippable regression.
+- **Mutation-kill the DI tests.** Break the protective branch → suite must go RED; then break each
+  SIBLING protection alone (e.g. the retry guard with the branch intact) to prove every assertion
+  carries its own weight rather than proxying for another.
+
+## 3. Did you ship the ADVERSARIAL fixture WITH the fix?
 Not a happy-path test — one that FAILS on the pre-fix code. Inject the real defect (a shortfall, an inactive
 inserter, a failed entity, a non-normal quality, a Session-Closed rejection) and assert the protective route
 runs. Verify TEETH: confirm the test goes RED when the fix is reverted (or the guard's `FAIL_SAFE`/allow entry
 is removed). A green safety test must prove the guard — not luck — prevented the bad outcome.
 
-## 3. If the change adds a debug/test hook that MUTATES state — is it fail-safe on LEAK?
+## 4. If the change adds a debug/test hook that MUTATES state — is it fail-safe on LEAK?
 `debug_mode` defaults true on the always-up shared cluster, and flags persist in `storage`. A leaked flag fires
 on the NEXT transfer. So the hook must be **pre-gate/self-protecting** (a leak makes the next transfer FAIL its
 gate + PRESERVE its source) OR the arming test must disarm in a **guaranteed `finally`/`trap`** (never only the
@@ -34,21 +50,21 @@ success path). Prefer a **non-destructive** hook (inflate the *expected* value) 
 `npm run lint:test-hooks` enforces the arm→guaranteed-disarm rule; a new pre-gate hook goes in its
 `FAIL_SAFE_HOOKS` list (a reviewable act). (memory: `test-hook-mutating-must-be-fail-safe`; CLAUDE.md: a mutating test hook must be fail-safe on leak.)
 
-## 4. If the change adds a "catch"/validation next to an authoritative gate — is it COMMENSURATE and NON-REDUNDANT?
+## 5. If the change adds a "catch"/validation next to an authoritative gate — is it COMMENSURATE and NON-REDUNDANT?
 Two sides you compare must be commensurate (a source entity-total vs a dest entity-total is NOT — failed-to-
 place / serialization-filtered / belt-surplus make them legitimately differ, so it false-REDs a lossless
 transfer). And is it redundant — does the item/fluid gate already detect this loss? A false-alarming check
 erodes trust in the real gate; downgrade it to a neutral INFORMATIONAL display instead of a verdict.
 (memory: `check-commensurate-not-redundant`.)
 
-## 5. Does the change preserve the two-phase-commit invariant?
+## 6. Does the change preserve the two-phase-commit invariant?
 Source is deleted **only after** the destination validates SUCCESS; on failure the source is unlocked and the
 dest copy is discarded. Watch the timing traps: the gate must count a **COMPLETE** state (the gate must count a COMPLETE frozen world — held
 items restore post-activation), never a mid-process snapshot; an ambiguous `SessionLost` on the import send is
 **possibly-delivered** — do NOT unlock (that duplicates). When in doubt, a recoverable stuck-lock beats an
 unrecoverable duplication. (memories: `validation-timing-trilemma`, `held-item-loss-is-dest-force-research`.)
 
-## 6. Run `/code-review` — at AUTHORING time, not just before merge.
+## 7. Run `/code-review` — at AUTHORING time, not just before merge.
 Non-negotiable for these paths. It has caught what manual review + the author missed (the `sendTo` unbound
 method, `test_force_entity_loss`, the mislabeled tightening, and #106: **16 defects across 3 passes, ALL in the
 stateful integration, none in the exhaustively-tested pure core**). Writing a source-delete/rollback/gate/
@@ -68,17 +84,19 @@ Two failure classes #106 kept reproducing — check for them explicitly (memory:
   parity/lifecycle bugs in a hand-rolled stateful path, STOP patching — the design is reimplementation instead
   of reuse.
 
-## 7. Does the change rest on an UNTESTED engine belief? (lab gate)
+## 8. Does the change rest on an UNTESTED engine belief? (lab gate)
 Check every engine-behavior assumption the change depends on against
-[docs/factorio-2.0-api-notes.md](../../../docs/factorio-2.0-api-notes.md): if it is not **[API]** or
-**[empirical, <current pin>]**, it is a **[hypothesis]** — run a lab rung BEFORE designing on it
-(pattern + triggers: CLAUDE.md § "Testing discipline"; the standing lab runners are archived at git tag
+[docs/factorio-2.0-api-notes.md](../../../docs/factorio-2.0-api-notes.md): the only evidence tiers are
+**upstream-documented** (link lua-api.factorio.com/<pin>/ at the point of use — never mirror it) and
+**[empirical, <current pin>, <citation>]**. Anything else is an untested belief — measure it BEFORE
+designing on it (the old [API] and [hypothesis] tiers are ABOLISHED, owner ruling 2026-07-31: mirrored
+docs rot, and an unprovable claim is deleted, not demoted; the archived lab runners live at git tag
 `labs-archive-2026-07-19` — restore from the tag or author a fresh probe). A mechanism
 EXPLANATION is not a law until its predictions are tested; never cite an unverifiable source as "Confirmed by."
 Paid for: the ghost-buffer legend survived 4 months and nearly caused two unnecessary primitive redesigns; a
 one-afternoon lab killed it and fixed CI with a meter change instead.
 
-## 8. Owner hygiene
+## 9. Owner hygiene
 - Ship as a focused PR; **omit** the `Claude-Session:` trailer and the session URL (owner rule).
 - Prefer `@clusterio/lib` (TS) / `require("modules/clusterio/api")` (Lua) over reinventing.
 - Look up platforms/instances by unique per-force **index**, never collidable names.

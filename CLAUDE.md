@@ -217,10 +217,21 @@ hands-on E2E checklist, one doc); repository test layout and entry points are in
 - **Ad-hoc probes that mutate the shared cluster** still owe zero-leftover cleanup (surfaces AND persistent
   `storage.*` records, game unpaused) and must scope every predicate to `surface-export-*` containers — the
   unrelated `atlas-*` cluster shares this machine.
+- **Purpose-invariant discipline** (measured: the prepare-build audit + PR #156's three review rounds):
+  before writing an instrument/guard/branch, write the test stating its PURPOSE as an invariant over its
+  OUTPUT (round-trip or agreement property); derive contracts from the ARTIFACT, not your reading of it.
+  Corollaries, each paid for: enumerate a flag FAMILY at its emitter before writing a flag-keyed branch
+  (your reproduction is one sample; the emitter is the list — a fix keyed on late-SUCCESS missed the
+  sibling cleanup_failed flag in the same verdict, twice in one PR); a "because X at threshold Y" comment
+  names Y's actual value, read this session; test pins use PRODUCTION-shaped values verified against the
+  real library; DI tests get MUTATION-KILL verification (break the branch AND each sibling protection
+  alone — every assertion must carry its own weight). Full checklist: the `/di-change` skill.
 - **Working hygiene:** run `./tools/check-pr-scope.ps1` before editing and again before opening a PR; commit
   the real change before deliberately reverting/mutating it for a regression-teeth check (so the implementation
   cannot be lost during teeth testing); leave `package-lock.json` byte-identical outside approved dependency
-  updates.
+  updates. **Subagents never switch this checkout's branch** — the checkout IS the live cluster's
+  bind-mounted plugin source; agents that need to build or mutate code work in isolated copies outside the
+  repo (a reviewer agent switched the checkout to main mid-review, 2026-08-04).
 
 **Evidence discipline** (deliberately NOT mechanized — owner ruling 2026-07-31: we do not add lint rules to
 prop up bad infrastructure, and a guard that checks a version string while claiming to check evidence is worse
