@@ -45,6 +45,7 @@ pinned-engine measurement wins — and that disagreement is exactly the kind of 
 - [Item counting (get_item_count includes belts)](#item-counting)
 - [Belt transport-line laws (CANONICAL)](#belt-transport-line-laws-canonical--2026-07-17-recreation)
 - [Space platform deletion](#space-platform-deletion)
+- [Hub item requests: proxies vs manual logistic sections](#hub-item-requests-proxies-vs-manual-logistic-sections)
 - [Deactivated-entity state writes and control-behavior / equipment restore](#deactivated-entity-state-writes-and-control-behavior--equipment-restore)
 
 ## Fluid model at 2.1.11
@@ -176,6 +177,43 @@ a segment) — they are not a capture blind spot at 2.1.11.
   for immediate, deterministic teardown of a platform and all its entities. Route all platform
   removal through `GameUtils.delete_platform` (`module/utils/game-utils.lua`); a lint guard
   (`npm run lint:lua`) blocks direct `*platform*.destroy()` calls.
+
+## Hub item requests: proxies vs manual logistic sections
+
+These are why the export carries the hub's pending item requests as **manual logistic sections**
+(`entity_data.logistic_sections`) and why no proxy record for the hub can ever exist to carry.
+
+- **A hub-targeted `item-request-proxy` is destroyed by the engine within a few ticks of creation,
+  and its request is annihilated — no items delivered, nothing merged into the hub's manual
+  sections; paused platform or unpaused, frozen (`disabled_by_script`) hub or live.**
+  **[empirical, 2.1.11, tests/instruments/engine-invariants `hub-proxy-annihilation`]** The proxy
+  creates `valid == true` and is gone by the next execution with the hub's iron count and
+  manual-section filter count unchanged. Consequence for serialization: there is no persistent
+  hub-targeted proxy state — an export that runs even one tick after such a proxy is created is
+  faithfully serializing a world that no longer contains it.
+- **An otherwise-identical proxy targeting a container or crafter persists indefinitely.**
+  **[empirical, 2.1.11, tests/instruments/engine-invariants `hub-proxy-annihilation` (the in-probe
+  control)]** The annihilation is hub-specific, not a general property of script-created proxies.
+- **Manual (`is_manual == true`) sections on the hub's requester logistic point — the hub GUI
+  "Requests" tab — are fully writable while the hub is `disabled_by_script` on a paused platform,
+  including grouped sections, `multiplier`, `active = false`, slot gaps, `min`/`max`, and
+  `import_from`.** **[empirical, 2.1.11, tests/integration/hub-request-sections — the destination
+  restore runs inside the frozen import window and every field arrives intact]** `import_from`
+  reads back as a `LuaSpaceLocationPrototype`; its `name` is the portable form.
+- **`LuaLogisticPoint.add_section(<group>)` with a group name that already exists on the force
+  ADOPTS the group's existing filters — the new section arrives pre-populated.**
+  **[empirical, 2.1.11, tests/integration/hub-request-sections adoption case]** Writing slots into
+  such a section would mutate the group force-wide, which is why the import only writes filters
+  into a group it found empty (the destination's groups win over the payload's).
+- **A logistic group persists in the force's registry after the last entity referencing it is
+  gone.** **[empirical, 2.1.11, tests/integration/hub-request-sections pre-state + cleanup
+  asserts]** Test-created groups are therefore leftovers to sweep
+  (`LuaForce.delete_logistic_group`), the same zero-leftover class as `storage.*` records.
+
+The non-manual section observed on the hub requester point (`type == 3`, `is_manual == false`)
+tracked the surface's pending construction requests in probes (its `min` fell when a pending proxy
+was destroyed) and is engine-owned; the export serializes only manual sections, so it regenerates
+from the destination surface instead of double-counting.
 
 ## Deactivated-entity state writes and control-behavior / equipment restore
 

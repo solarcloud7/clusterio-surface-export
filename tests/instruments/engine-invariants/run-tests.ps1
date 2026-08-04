@@ -3,7 +3,7 @@
     Engine API invariant checks — pins the Factorio behaviors our transfer/cleanup code depends on.
 
 .DESCRIPTION
-    Two independent invariants, asserted on a disposable clone:
+    Three independent invariants, asserted on a disposable clone:
 
     1. get_item_count is a COMPLETE, non-double-counting physical meter (a standing ENGINE-FACT
        regression, not tied to any one meter — the production census reads through InventoryScanner,
@@ -14,7 +14,15 @@
        by a whole-line counting change) — NOT against a sibling belt API that moves in lockstep
        with get_item_count. See docs/factorio-2.0-api-notes.md "Item counting".
 
-    2. game.delete_surface() removes a space platform, because LuaSpacePlatform.destroy() is a no-op
+    2. A hub-targeted item-request-proxy is DESTROYED by the engine within a few ticks and its
+       request is NOT preserved (no delivery, no merge into the hub's manual logistic sections) —
+       while an otherwise-identical container-targeted CONTROL proxy persists. This is the engine
+       fact behind serializing hub requests as MANUAL SECTIONS instead of proxy records
+       (docs/factorio-2.0-api-notes.md, tests/integration/hub-request-sections). Either direction
+       of drift goes RED: a persisting hub proxy would be exportable state the sections-only model
+       misses; a vanishing control proxy means the probe (or proxy transfer support) is broken.
+
+    3. game.delete_surface() removes a space platform, because LuaSpacePlatform.destroy() is a no-op
        at our pinned Factorio version (re-asserted by this instrument on every run; green at 2.1.11
        2026-08-03). destroy() is probed WARN-ONLY
        (a benign upstream fix that makes it functional must never fail the build); delete_surface is
@@ -150,6 +158,69 @@ if ($meterRaw -match 'bchecked=(\d+) bmeter=(\d+) bphys=(\d+) hchecked=(\d+) hba
     # Fail CLOSED: an unparseable probe (e.g. a Lua API change that breaks the probe itself) must go
     # RED, never degrade to a green warning — that is the exact engine-drift this guard exists to catch.
     Write-TestResult -TestId "get-item-count-belt-meter" -TestName "get_item_count meter invariant" -Status "failed" -Message "Unexpected probe output (Lua probe errored or returned an unparseable string): $meterRaw"
+    $failed++
+}
+Write-Host ""
+
+# 2b. INVARIANT: hub-targeted item-request-proxy annihilation (measured 2026-08-04 on 2.1.11, paused
+#     AND unpaused, frozen hub or live). Create one proxy targeting the HUB and one identical CONTROL
+#     proxy targeting a container, wait a few ticks, then assert: hub proxy GONE, control proxy
+#     PRESENT, and the hub's manual-section filter count + iron-plate count UNCHANGED (annihilated,
+#     not delivered/merged). All probe-shape failures fail CLOSED.
+$proxySetupLua = @"
+local p for _,x in pairs(game.forces.player.platforms) do if x.name=='$cloneName' then p=x end end
+if not p then rcon.print('RESULT err=noplatform') return end
+local s=p.surface local hub=p.hub
+if not (hub and hub.valid) then rcon.print('RESULT err=nohub') return end
+local ctl local ctl_inv
+for _,e in ipairs(s.find_entities_filtered({type={'container','logistic-container'}})) do if e.valid then ctl=e ctl_inv=defines.inventory.chest break end end
+if not ctl then for _,e in ipairs(s.find_entities_filtered({type={'assembling-machine','furnace'}})) do if e.valid then ctl=e ctl_inv=defines.inventory.crafter_input break end end end
+if not ctl then rcon.print('RESULT err=noctl') return end
+local hp=s.create_entity{name='item-request-proxy', position=hub.position, force=p.force, target=hub, modules={{id={name='iron-plate'}, items={in_inventory={{inventory=defines.inventory.hub_main, stack=0, count=10}}}}}}
+local cp=s.create_entity{name='item-request-proxy', position=ctl.position, force=p.force, target=ctl, modules={{id={name='iron-plate'}, items={in_inventory={{inventory=ctl_inv, stack=0, count=10}}}}}}
+local mf=0 for _,pt in pairs(hub.get_logistic_point()) do for _,sec in pairs(pt.sections or {}) do if sec.is_manual then mf=mf+sec.filters_count end end end
+rcon.print('RESULT created_hub='..tostring(hp~=nil and hp.valid)..' created_ctl='..tostring(cp~=nil and cp.valid)..' ctl_unit='..tostring(ctl.unit_number)..' mf0='..mf..' iron0='..hub.get_item_count('iron-plate'))
+"@
+$proxySetupRaw = (Invoke-Lua -Instance $instance -Code $proxySetupLua) -join " "
+if ($proxySetupRaw -match 'created_hub=true created_ctl=true ctl_unit=(\d+) mf0=(\d+) iron0=(\d+)') {
+    $ctlUnit = [int]$Matches[1]; $mf0 = [int]$Matches[2]; $iron0 = [int]$Matches[3]
+    Step-Tick -Instance $instance -Ticks 10 | Out-Null
+    Start-Sleep -Seconds 1
+    $proxyMeasureLua = @"
+local p for _,x in pairs(game.forces.player.platforms) do if x.name=='$cloneName' then p=x end end
+if not p then rcon.print('RESULT err=noplatform') return end
+local s=p.surface local hub=p.hub
+local hubp=0 local ctlp=0
+for _,pr in ipairs(s.find_entities_filtered({type='item-request-proxy'})) do
+  local t=pr.valid and pr.proxy_target or nil
+  if t and t.name=='space-platform-hub' then hubp=hubp+1 elseif t and t.unit_number==$ctlUnit then ctlp=ctlp+1 end
+end
+local mf=0 for _,pt in pairs(hub.get_logistic_point()) do for _,sec in pairs(pt.sections or {}) do if sec.is_manual then mf=mf+sec.filters_count end end end
+rcon.print('RESULT hubp='..hubp..' ctlp='..ctlp..' mf1='..mf..' iron1='..hub.get_item_count('iron-plate'))
+"@
+    $proxyMeasureRaw = (Invoke-Lua -Instance $instance -Code $proxyMeasureLua) -join " "
+    if ($proxyMeasureRaw -match 'hubp=(\d+) ctlp=(\d+) mf1=(\d+) iron1=(\d+)') {
+        $hubP = [int]$Matches[1]; $ctlP = [int]$Matches[2]; $mf1 = [int]$Matches[3]; $iron1 = [int]$Matches[4]
+        if ($hubP -eq 0 -and $ctlP -ge 1 -and $mf1 -eq $mf0 -and $iron1 -eq $iron0) {
+            Write-TestResult -TestId "hub-proxy-annihilation" -TestName "hub-targeted item-request-proxy is engine-destroyed, request NOT preserved (control proxy survives)" -Status "passed"
+            $passed++
+        } elseif ($hubP -gt 0) {
+            Write-TestResult -TestId "hub-proxy-annihilation" -TestName "hub-targeted item-request-proxy is engine-destroyed" -Status "failed" -Message "hub-targeted proxy PERSISTED ($hubP present after 10 ticks) — the engine now keeps them, so a pending hub proxy is exportable state the sections-only model (hub-request-sections) does not carry; revisit docs/factorio-2.0-api-notes.md"
+            $failed++
+        } elseif ($ctlP -eq 0) {
+            Write-TestResult -TestId "hub-proxy-annihilation" -TestName "hub-targeted item-request-proxy is engine-destroyed (control proxy survives)" -Status "failed" -Message "the CONTROL container-targeted proxy ALSO vanished — the differential is invalid (probe broken, or proxies no longer persist at all, which breaks proxy transfer support)"
+            $failed++
+        } else {
+            Write-TestResult -TestId "hub-proxy-annihilation" -TestName "hub-targeted proxy request is annihilated (not delivered/merged)" -Status "failed" -Message "hub state CHANGED after the proxy died: manual filters $mf0 -> $mf1, iron $iron0 -> $iron1 — the request was preserved somewhere; the sections-only serialization model needs re-measuring"
+            $failed++
+        }
+    } else {
+        Write-TestResult -TestId "hub-proxy-annihilation" -TestName "hub proxy annihilation invariant" -Status "failed" -Message "Unexpected measure-probe output: $proxyMeasureRaw"
+        $failed++
+    }
+} else {
+    # Fail CLOSED: creation failed or fixture lacks a hub/container — the invariant was not exercised.
+    Write-TestResult -TestId "hub-proxy-annihilation" -TestName "hub proxy annihilation invariant" -Status "failed" -Message "Unexpected setup-probe output (both proxies must CREATE valid on the clone): $proxySetupRaw"
     $failed++
 }
 Write-Host ""

@@ -19,6 +19,7 @@ This project provides tools for exporting and importing Factorio Space Age platf
 - In-game transaction dashboard with persistent profiler snapshots
 - Platform schedule + interrupts preserved (stations, wait conditions, train group inheritance)
 - Ghost entities, tile ghosts, and item request proxies preserved
+- Hub pending item requests preserved (manual logistic sections; a hub-targeted item-request-proxy cannot persist — see docs/factorio-2.0-api-notes.md)
 
 **Performance**: Small platforms (<8KB): ~1-2s | Large platforms (235KB): ~40s (RCON bottleneck)
 
