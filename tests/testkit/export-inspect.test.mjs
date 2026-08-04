@@ -105,3 +105,32 @@ test("countsByType covers the anchorless fixtures", () => {
 	assert.equal(counts.container, 2);
 	assert.equal(counts.beacon, 1);
 });
+
+test("INVARIANT: every suggested pathHint itself resolves, and never equals the failed query", () => {
+	// The oracle's invariant applied to its sibling (Workstream A): the per-case pins above check two
+	// exact hint arrays, but a hint-scanner change could start suggesting paths in a NEW case class
+	// without touching either pin. This is the property those pins are instances of: a hint that does
+	// not resolve lends the tool's authority to a second wrong path, and a hint equal to the query
+	// would offer the failure as its own remedy. A leaf that exists nowhere stays silent (pinned
+	// above) - here, every hint that IS emitted must be followable to a real value.
+	const missCases = [
+		{ anchor: { entity: "infinity-pipe", x: 40.5, y: 46.5 }, query: "specific_data.infinity_pipe_filter" },
+		{ anchor: { entity: "heat-pipe", x: 43, y: -13 }, query: "platform.temperature" },
+		{ anchor: { entity: "infinity-pipe", x: 40.5, y: 46.5 }, query: "specific_data.name" },
+	];
+	let hintsSeen = 0;
+	for (const { anchor, query } of missCases) {
+		const res = inspector.field(anchor, query);
+		assert.equal(res.inPayload, false, `'${query}' is a deliberate miss`);
+		for (const hint of res.pathHints ?? []) {
+			hintsSeen++;
+			assert.notEqual(hint, query, `a hint must never equal the failed query ('${hint}')`);
+			const followed = inspector.field(anchor, hint);
+			assert.equal(followed.inPayload, true,
+				`suggested hint '${hint}' for failed query '${query}' must itself resolve`);
+		}
+	}
+	assert.ok(hintsSeen >= 3,
+		`expected hints across the miss cases (got ${hintsSeen}) - a hint feature that stopped `
+		+ "emitting would leave this property vacuously green");
+});
