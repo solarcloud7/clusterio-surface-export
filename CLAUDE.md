@@ -356,10 +356,12 @@ surface is torn down — never orphaned, never duplicated (native-aligned with h
 to a planet on hub-loss). This replaced an earlier passenger hard-block. Carrying the player **with** the
 platform to the destination (`connect_to_server` + `enter_space_platform`) is a future Layer-2 feature gated on
 a reachability spike. The dedicated `passenger-evacuate` runner was RETIRED 2026-07-27 (owner
-consolidation): evacuation happens at the single source-delete chokepoint named above, which every
-gallery-suite transfer executes, but no standing test puts a player aboard first — the evacuation
-branch itself is currently uncovered. Design in
-[docs/GATEWAY_TRANSFER_PRD.md](docs/GATEWAY_TRANSFER_PRD.md).
+consolidation): evacuation happens at the single source-delete chokepoint named above. The
+character-body half of the branch is covered again since 2026-08-04 by
+`tests/integration/evacuation-coverage` — a body aboard a throwaway platform must ARRIVE on Nauvis
+through the real chokepoint (the engine measurably destroys un-evacuated bodies with the surface,
+so arrival proves the route ran). The connected-player half still awaits the L2 client session.
+Design in [docs/GATEWAY_TRANSFER_PRD.md](docs/GATEWAY_TRANSFER_PRD.md).
 
 ## Export/Import Workflow Notes (Current)
 
