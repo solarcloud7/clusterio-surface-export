@@ -187,7 +187,10 @@ test("the atomic belt scan pairs each belt AFTER its serialized items are patche
 test("census verdict is computed BEFORE the export is stored/sent, and the transfer abort references it", () => {
 	const src = exportPipelineSource();
 	const verdictIdx = src.indexOf("CensusAccumulator.verdict(job.census)");
-	const storeIdx = src.indexOf("storage.platform_exports[export_id] =");
+	// The store marker is `ExportCache.record(export_id, ...)`, not a bare assignment into
+	// storage.platform_exports: write sites go through record() so the entry cannot be stored without
+	// its monotonic ordering stamp. The ordering invariant this test protects is unchanged.
+	const storeIdx = src.indexOf("ExportCache.record(export_id");
 	assert.notEqual(verdictIdx, -1, "complete() must compute CensusAccumulator.verdict(job.census)");
 	assert.notEqual(storeIdx, -1, "complete() must store the export somewhere");
 	assert.ok(verdictIdx < storeIdx,

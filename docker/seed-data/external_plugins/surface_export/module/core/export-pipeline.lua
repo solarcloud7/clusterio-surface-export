@@ -19,6 +19,7 @@ local PhaseProfiler = require("modules/surface_export/utils/phase-profiler")
 local TransactionHistory = require("modules/surface_export/utils/transaction-history")
 local JobResults = require("modules/surface_export/core/job-results")
 local CensusAccumulator = require("modules/surface_export/export_scanners/census-accumulator")
+local ExportCache = require("modules/surface_export/utils/export-cache")
 
 local ExportPipeline = {}
 
@@ -576,7 +577,7 @@ function ExportPipeline.complete(job)
 	if compressed then
 		-- Store compressed data with metadata
 		-- CRITICAL: Include verification as top-level field (not compressed) for transfer validation
-		storage.platform_exports[export_id] = {
+		ExportCache.record(export_id, {
 			compressed = true,
 			compression = "deflate",
 			payload = compressed,
@@ -587,7 +588,7 @@ function ExportPipeline.complete(job)
 			stats = job.export_data.stats,
 			-- CRITICAL: Verification data must be accessible without decompression for transfers
 			verification = job.export_data.verification
-		}
+		})
 		log(string.format("[Compression] Export %s: %d bytes → %d bytes (%.1f%% reduction)",
 			export_id, #json_string, #compressed, (1 - #compressed / #json_string) * 100))
 		log(string.format("[Export] Stored verification: item_counts=%s, fluid_counts=%s",
@@ -595,7 +596,13 @@ function ExportPipeline.complete(job)
 			tostring(job.export_data.verification and job.export_data.verification.fluid_counts ~= nil)))
 	else
 		-- Fallback to uncompressed if compression fails (verification already in export_data)
-		storage.platform_exports[export_id] = job.export_data
+		-- NOTE: here the stored entry IS the payload table, so record's `cache_seq` stamp lands on
+		-- export_data itself and rides both this entry and any file handle_pending_file_write writes
+		-- from it. Harmless — the import side keys off schema_version and whitelists no keys — but it
+		-- is an internal ordering field on a payload, so: not stamping it is not an option (an
+		-- unstamped entry sorts oldest and deletes itself), and copying the table to avoid it would
+		-- duplicate a whole platform payload on the failure path. Recorded rather than hidden.
+		ExportCache.record(export_id, job.export_data)
 		log(string.format("[Compression Warning] Failed to compress export %s, storing uncompressed", export_id))
 	end
 
@@ -731,6 +738,16 @@ function ExportPipeline.complete(job)
 	else
 		log(string.format("[Export] Skipping unlock for transfer - platform %s will be deleted", job.platform_name))
 	end
+
+	-- Cap the retained-export cache. Before this call nothing ever removed an entry, so every export
+	-- stayed in the save permanently. Pruning happens in Lua at the point of growth, rather than via a
+	-- Node-side clear_old_exports RCON call, so the bound holds even if the config push never lands.
+	--
+	-- LAST in this function, deliberately: handle_pending_file_write above reads back
+	-- storage.platform_exports[export_id] and, finding nothing, writes no file and logs nothing while
+	-- still consuming the request. Pruning after every reader in this execution has run means no
+	-- ordering bug here can turn into a silent no-op there.
+	ExportCache.prune_to_configured_cap()
 
 	-- Cleanup
 	storage.async_jobs[job.job_id] = nil

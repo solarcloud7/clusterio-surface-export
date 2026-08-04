@@ -4,6 +4,9 @@
 
 local SurfaceLock = require("modules/surface_export/utils/surface-lock")
 local ImportSession = require("modules/surface_export/core/import-session")
+-- Required BEFORE export-pipeline (which also requires it) purely for reading order; export-cache is
+-- a leaf and never requires back into this module, so no ordering is load-bearing here.
+local ExportCache = require("modules/surface_export/utils/export-cache")
 local ExportPipeline = require("modules/surface_export/core/export-pipeline")
 local ImportPipeline = require("modules/surface_export/core/import-pipeline")
 local ImportCompletion = require("modules/surface_export/core/import-completion")
@@ -19,6 +22,13 @@ local config = {
 	show_progress = true,
 	sync_mode = false,  -- If true, process all entities in a single tick (for debugging)
 }
+
+-- The retained-export cap lives in ExportCache, not in the table above: the two values INTERACT
+-- (an export stays cached until Node finishes its chunked RCON read, which happens AFTER the job
+-- leaves storage.async_jobs, so only a cap larger than the number of exports completable during one
+-- read keeps a still-being-read export alive), and ExportCache cannot require this module back —
+-- see the dependency-inversion note in export-cache.lua. So we push into it instead.
+ExportCache.set_concurrency(config.max_concurrent_jobs)
 
 --- Initialize storage for async jobs
 function AsyncProcessor.init()
@@ -56,12 +66,34 @@ end
 --- @param value number: Maximum number of jobs to process simultaneously
 function AsyncProcessor.set_max_concurrent_jobs(value)
 	config.max_concurrent_jobs = value
+	-- Single mutation point, so the ExportCache mirror cannot drift from this value. The export-cache
+	-- floor is DERIVED from concurrency; raising this without raising the floor would let a prune
+	-- evict an export the controller is still reading.
+	ExportCache.set_concurrency(value)
 end
 
 --- Set show progress flag
 --- @param value boolean: Whether to show progress messages
 function AsyncProcessor.set_show_progress(value)
 	config.show_progress = value
+end
+
+--- Set the retained-export cache cap. Forwards to ExportCache, which OWNS the value — this seam
+--- exists only so configure.lua routes every setting through one module, like its siblings.
+--- @param value number: Maximum entries kept in storage.platform_exports
+function AsyncProcessor.set_max_export_cache_size(value)
+	ExportCache.set_cap(value)
+end
+
+--- Get the configured retained-export cache cap (UNCLAMPED — callers wanting the
+--- safe effective value must go through ExportCache.resolve_keep_count).
+function AsyncProcessor.get_max_export_cache_size()
+	return ExportCache.get_cap()
+end
+
+--- Get max concurrent jobs.
+function AsyncProcessor.get_max_concurrent_jobs()
+	return config.max_concurrent_jobs
 end
 
 local function get_batch_size()
@@ -72,7 +104,7 @@ local function get_batch_size()
 end
 
 local function get_max_concurrent_jobs()
-	return config.max_concurrent_jobs
+	return AsyncProcessor.get_max_concurrent_jobs()
 end
 
 local function should_show_progress()

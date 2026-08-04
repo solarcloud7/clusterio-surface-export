@@ -137,9 +137,10 @@ export class InstancePlugin extends BaseInstancePlugin {
 			const maxConcurrentJobs = this.cfg<number>("surface_export.max_concurrent_jobs");
 			const showProgress = this.cfg<boolean>("surface_export.show_progress");
 			const debugMode = this.cfg<boolean>("surface_export.debug_mode");
+			const maxExportCacheSize = this.cfg<number>("surface_export.max_export_cache_size");
 
-			await this.lua.configure({ batchSize, maxConcurrentJobs, showProgress, debugMode });
-			this.logger.info(`Configuration sent to Lua: batch_size=${batchSize}, max_concurrent_jobs=${maxConcurrentJobs}, show_progress=${showProgress}, debug_mode=${debugMode}`);
+			await this.lua.configure({ batchSize, maxConcurrentJobs, showProgress, debugMode, maxExportCacheSize });
+			this.logger.info(`Configuration sent to Lua: batch_size=${batchSize}, max_concurrent_jobs=${maxConcurrentJobs}, show_progress=${showProgress}, debug_mode=${debugMode}, max_export_cache_size=${maxExportCacheSize}`);
 		} catch (err: unknown) {
 			this.logger.warn(`Failed to send configuration to Lua: ${getErrorMessage(err)}`);
 		}

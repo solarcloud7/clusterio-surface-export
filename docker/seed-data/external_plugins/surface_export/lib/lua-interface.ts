@@ -33,6 +33,7 @@ export interface LuaConfigure {
 	maxConcurrentJobs: number;
 	showProgress: boolean;
 	debugMode: boolean;
+	maxExportCacheSize: number;
 }
 
 export class LuaInterface {
@@ -46,7 +47,8 @@ export class LuaInterface {
 			`batch_size=${cfg.batchSize}, ` +
 			`max_concurrent_jobs=${cfg.maxConcurrentJobs}, ` +
 			`show_progress=${cfg.showProgress}, ` +
-			`debug_mode=${cfg.debugMode}` +
+			`debug_mode=${cfg.debugMode}, ` +
+			`max_export_cache_size=${cfg.maxExportCacheSize}` +
 			`}) ` +
 			`end`;
 		await this.host.sendRcon(script, true);
