@@ -51,9 +51,11 @@ const check = (ok, label, detail = "") => {
 
 console.log(`=== evacuation-coverage: a body aboard survives the source-delete chokepoint (${PROBE}) ===`);
 
-// Baseline: every character unit_number on Nauvis BEFORE the test (never assume zero).
+// Baseline: every UNATTACHED character body on Nauvis BEFORE the test (never assume zero).
+// Unattached-only, consistently with the sweep's player guard: attached characters are connected
+// players — outside this test's accounting in both directions.
 const baseline = rconJson(
-	`(function() local t={} for _,c in pairs(game.surfaces['nauvis'].find_entities_filtered{type='character'}) do t[#t+1]=c.unit_number end return {units=t} end)()`,
+	`(function() local t={} for _,c in pairs(game.surfaces['nauvis'].find_entities_filtered{type='character'}) do if c.player == nil then t[#t+1]=c.unit_number end end return {units=t} end)()`,
 );
 const baselineUnits = new Set(asArray(baseline.units));
 // A Lua SET literal of the baseline, for the finally sweep ({} when empty).
@@ -61,6 +63,7 @@ const baselineLuaSet = baselineUnits.size
 	? `{${[...baselineUnits].map(u => `[${u}]=true`).join(",")}}`
 	: "{}";
 
+let probeIndex = null;
 try {
 	// Setup: throwaway platform + hub, one unattached character body aboard.
 	const setup = rconJson(
@@ -69,6 +72,7 @@ try {
 		+ `local body=p.surface.create_entity{name='character', position={2,3}, force='player'} `
 		+ `return {index=p.index, body_ok=(body~=nil and body.valid), chars_aboard=p.surface.count_entities_filtered{type='character'}} end)()`,
 	);
+	probeIndex = setup.index ?? null;
 	check(setup.body_ok === true && setup.chars_aboard === 1, "probe platform carries one character body");
 
 	// Drive the REAL chokepoint: production lock, then the sole source-delete path.
@@ -98,22 +102,44 @@ try {
 	// sweep failure is REPORTED without masking the primary failure above.
 	try {
 		const swept = rconJson(
-			`(function() local baseline=${baselineLuaSet} local plats=0 `
+			`(function() local baseline=${baselineLuaSet} local plats=0 local refusals={} `
 			+ `for _,q in pairs(game.forces.player.platforms) do if q.name=='${PROBE}' then `
-			+ `pcall(function() remote.call('surface_export', 'unlock_platform', q.index) end) `
+			// unlock_platform reports a SOFT refusal via return values, not a throw — capture both
+			// channels and surface them (delta-pass finding: a bare pcall read a refusal as success,
+			// then the raw surface delete orphaned the lock record).
+			+ `local okc, uok, ureason = pcall(remote.call, 'surface_export', 'unlock_platform', q.index) `
+			+ `if not okc or uok == false then refusals[#refusals+1] = tostring(ureason or uok) end `
 			+ `if q.surface and q.surface.valid then game.delete_surface(q.surface) plats=plats+1 end end end `
+			// PLAYER GUARD (delta-pass finding, the severe one): destroy ONLY unattached bodies. A
+			// character with c.player attached is a CONNECTED PLAYER on this always-up shared
+			// cluster — never sweepable, baseline or not. The probe's evacuee is always unattached.
 			+ `local chars=0 for _,c in pairs(game.surfaces['nauvis'].find_entities_filtered{type='character'}) do `
-			+ `if not baseline[c.unit_number] then c.destroy() chars=chars+1 end end `
-			+ `return {platforms=plats, characters=chars} end)()`,
+			+ `if (not baseline[c.unit_number]) and c.player == nil then c.destroy() chars=chars+1 end end `
+			+ `local lock_residue = false `
+			+ (probeIndex !== null
+				? `if storage.locked_platforms and storage.locked_platforms[${probeIndex}] ~= nil then lock_residue = true end `
+				: "")
+			+ `return {platforms=plats, characters=chars, refusals=refusals, lock_residue=lock_residue} end)()`,
 		);
 		// The normal green path expects: platform already deleted by the chokepoint (0 swept), the
 		// one evacuated body removed here (1 character). Anything else is visible in the line below.
 		console.log(`  cleanup: swept ${swept.platforms} leftover platform(s), ${swept.characters} non-baseline character(s)`);
+		for (const refusal of asArray(swept.refusals)) {
+			failed++;
+			console.error(`  FAIL unlock refused during sweep: ${refusal} — a lock record may be orphaned`);
+		}
+		check(swept.lock_residue === false,
+			"zero leftovers: no storage.locked_platforms residue for the probe index",
+			"a lock record outlived its platform — persistent storage.* records are leftovers too");
 		const remaining = rconJson(
-			`(function() return {chars=game.surfaces['nauvis'].count_entities_filtered{type='character'}} end)()`,
+			`(function() local unattached=0 for _,c in pairs(game.surfaces['nauvis'].find_entities_filtered{type='character'}) do `
+			+ `if c.player == nil then unattached = unattached + 1 end end return {chars=unattached} end)()`,
 		);
-		check(remaining.chars === baselineUnits.size, "zero leftovers: Nauvis character baseline restored",
-			`baseline=${baselineUnits.size} now=${remaining.chars}`);
+		// Compare UNATTACHED counts only: a player connecting mid-run adds an attached character that
+		// is neither ours to count nor ours to remove.
+		const baselineUnattached = baselineUnits.size;
+		check(remaining.chars <= baselineUnattached, "zero leftovers: no unattached character added to Nauvis",
+			`baseline=${baselineUnattached} now=${remaining.chars}`);
 	} catch (sweepErr) {
 		failed++;
 		console.error(`  FAIL cleanup sweep threw: ${sweepErr && sweepErr.message ? sweepErr.message : sweepErr}`);
