@@ -543,7 +543,7 @@ outputs → pipe-to-ground → regular entities. Ties broken by position for det
 
 Each entity carries: `entity_id` (unit_number or stable ID), name/type/position/direction/force,
 health/quality/mirror/orientation, `specific_data` (per-type handler output), circuit/power connections,
-control behavior, logistic requests, entity filters, backer_name, and tags.
+control behavior, manual logistic sections, entity filters, backer_name, and tags.
 
 **Stable entity IDs**: entities without `unit_number` (belts, poles, pipes, …) use a position-based stable ID
 `"name@x.xxx,y.yyy#dir[:orient]"`, used consistently across export `frozen_states` keys, import `entity_map`

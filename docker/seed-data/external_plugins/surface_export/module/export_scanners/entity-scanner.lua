@@ -167,12 +167,6 @@ function EntityScanner.serialize_entity(entity)
     entity_data.control_behavior = control_behavior
   end
 
-  -- Extract logistic requests (requester/buffer chests)
-  local logistic_requests = ConnectionScanner.extract_logistic_requests(entity)
-  if #logistic_requests > 0 then
-    entity_data.logistic_requests = logistic_requests
-  end
-
   -- Extract MANUAL logistic sections (2.0 sections API) — on the hub these are the platform's
   -- pending item requests; a setting, invisible to the exact gate, lost silently without this.
   local logistic_sections = ConnectionScanner.extract_logistic_sections(entity)

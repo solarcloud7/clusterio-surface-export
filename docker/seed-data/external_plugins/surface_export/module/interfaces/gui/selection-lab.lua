@@ -545,7 +545,7 @@ local function execute_create_and_restore(surface, recs, player, side_groups, fl
 	end
 	-- Entity state: same two production steps, same order — the per-entity property restore
 	-- (creation-adjacent) then the FULL production phase (control behavior, entity filters —
-	-- splitter/loader/inserter/slot —, logistic requests, circuit + power connections).
+	-- splitter/loader/inserter/slot —, manual logistic sections, circuit + power connections).
 	-- Calling the phase module keeps the tool identical to the transfer pipeline; cherry-picking
 	-- Deserializer functions here is how paste silently lost loader/splitter filters.
 	for _, rec in ipairs(records) do
