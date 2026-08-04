@@ -548,4 +548,10 @@ test("timeout config warnings: junk SET values warn, in-range fractionals do not
 	plugin.controller.config = { get: () => undefined };
 	assert.equal(orch.getValidationTimeoutMs(), 30_000);
 	assert.equal(warns.length, 2, "UNSET is the normal default case - silent");
+
+	// null is the PRODUCTION-reachable cleared value (an optional lib-Config field cleared via set
+	// stores null; undefined only occurs in harnesses) - it must be as silent as unset.
+	plugin.controller.config = { get: () => null };
+	assert.equal(orch.getValidationTimeoutMs(), 30_000);
+	assert.equal(warns.length, 2, "a CLEARED optional field (null) is not a misconfiguration - silent");
 });
