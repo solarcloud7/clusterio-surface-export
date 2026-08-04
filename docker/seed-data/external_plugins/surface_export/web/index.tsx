@@ -304,7 +304,7 @@ export class WebPlugin extends BaseWebPlugin {
 		return this.link.send(new ImportUploadedExportRequest(payload));
 	}
 
-	async startTransfer(payload: { sourceInstanceId: number; sourcePlatformIndex: number; targetInstanceId: number; forceName?: string }) {
+	async startTransfer(payload: { sourceInstanceId: number; sourcePlatformIndex: number; targetInstanceId: number; forceName?: string; targetPlanet?: string | null }) {
 		return this.link.send(new StartPlatformTransferRequest(payload));
 	}
 

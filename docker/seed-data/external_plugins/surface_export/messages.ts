@@ -682,6 +682,10 @@ export class StartPlatformTransferRequest {
 			sourcePlatformIndex: { type: "integer" },
 			targetInstanceId: { type: "integer" },
 			forceName: { type: "string", default: "player" },
+			// Where the platform is re-created on the destination. Optional and null-by-default:
+			// Lua (import-pipeline.lua) falls back to "nauvis" when absent, which is exactly what
+			// every transfer did before this field existed — so omitting it preserves behaviour.
+			targetPlanet: { type: ["string", "null"], default: null },
 		},
 		required: ["sourceInstanceId", "sourcePlatformIndex", "targetInstanceId"],
 		additionalProperties: false,
@@ -691,20 +695,22 @@ export class StartPlatformTransferRequest {
 	sourcePlatformIndex: number;
 	targetInstanceId: number;
 	forceName: string;
+	targetPlanet: string | null;
 
-	constructor(json: { sourceInstanceId: number; sourcePlatformIndex: number; targetInstanceId: number; forceName?: string }) {
+	constructor(json: { sourceInstanceId: number; sourcePlatformIndex: number; targetInstanceId: number; forceName?: string; targetPlanet?: string | null }) {
 		this.sourceInstanceId = json.sourceInstanceId;
 		this.sourcePlatformIndex = json.sourcePlatformIndex;
 		this.targetInstanceId = json.targetInstanceId;
 		this.forceName = json.forceName || "player";
+		this.targetPlanet = json.targetPlanet ?? null;
 	}
 
-	static fromJSON(json: { sourceInstanceId: number; sourcePlatformIndex: number; targetInstanceId: number; forceName?: string }) {
+	static fromJSON(json: { sourceInstanceId: number; sourcePlatformIndex: number; targetInstanceId: number; forceName?: string; targetPlanet?: string | null }) {
 		return new StartPlatformTransferRequest(json);
 	}
 
 	toJSON() {
-		return { sourceInstanceId: this.sourceInstanceId, sourcePlatformIndex: this.sourcePlatformIndex, targetInstanceId: this.targetInstanceId, forceName: this.forceName };
+		return { sourceInstanceId: this.sourceInstanceId, sourcePlatformIndex: this.sourcePlatformIndex, targetInstanceId: this.targetInstanceId, forceName: this.forceName, targetPlanet: this.targetPlanet };
 	}
 
 	static Response = {

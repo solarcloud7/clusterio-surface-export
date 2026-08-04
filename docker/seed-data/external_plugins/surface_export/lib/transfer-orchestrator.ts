@@ -89,7 +89,10 @@ export class TransferOrchestrator {
 	 * source-deleting protocol the fail-safe direction is "don't unlock unless proven safe",
 	 * exactly like the retry guard's unknown-status rule.
 	 */
-	async transferPlatform(exportId: string, targetInstanceId: number, exportMetrics: Record<string, unknown> | null = null, transferStartedAt: number | null = null): Promise<{
+	// targetPlanet is trailing and defaults to null so the existing callers keep their behaviour
+	// exactly: null means the field is absent on the wire, and import-pipeline.lua falls back to
+	// "nauvis" — which is where every transfer landed before this parameter existed.
+	async transferPlatform(exportId: string, targetInstanceId: number, exportMetrics: Record<string, unknown> | null = null, transferStartedAt: number | null = null, targetPlanet: string | null = null): Promise<{
 		success: boolean; error?: string; transferId?: string; message?: string;
 		/** See the doc comment above — opt-in unlock authority, absent means DO NOT unlock. */
 		safeToUnlockSource?: boolean;
@@ -273,6 +276,7 @@ export class TransferOrchestrator {
 					exportId,
 					exportData: { ...innerData, _transferId: transferId, _sourceInstanceId: exportData.instanceId },
 					forceName: "player",
+					targetPlanet,
 				}),
 			);
 			const transmissionMs = this.txLogger.endPhase(transferId, "transmission");
@@ -701,7 +705,7 @@ export class TransferOrchestrator {
 
 	// ── Request handlers ────────────────────────────────────────────────
 
-	async handleStartPlatformTransferRequest(request: { sourceInstanceId: number; sourcePlatformIndex: number; targetInstanceId: number; forceName?: string }) {
+	async handleStartPlatformTransferRequest(request: { sourceInstanceId: number; sourcePlatformIndex: number; targetInstanceId: number; forceName?: string; targetPlanet?: string | null }) {
 		const sourceInstanceId = Number(request.sourceInstanceId);
 		if (!Number.isInteger(sourceInstanceId)) {
 			return { success: false, error: `Invalid source instance: ${request.sourceInstanceId}` };
@@ -761,7 +765,7 @@ export class TransferOrchestrator {
 				requestExportAndLockMs: exportRequestMs,
 				waitForControllerStoreMs: waitForStoredMs,
 				controllerExportPrepTotalMs: exportRequestMs + waitForStoredMs,
-			}, t0);
+			}, t0, request.targetPlanet ?? null);
 			// A refusal that transferPlatform proves delivery-free must UNLOCK the source on THIS
 			// path too: the export above locked it, this handler owns that lock, and the instance's
 			// own unlock-on-refusal never fires here (controllerManagedTransferExports suppresses

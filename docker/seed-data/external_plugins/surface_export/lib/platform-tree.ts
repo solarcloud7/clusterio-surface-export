@@ -142,10 +142,15 @@ export class PlatformTree {
 			const parsedHostId = Number(rawHostId);
 			const hostId = Number.isInteger(parsedHostId) ? parsedHostId : null;
 			const host = hostId !== null ? this.plugin.controller.hosts.get(hostId) : null;
+			// gamePort is runtime state on the InstanceRecord, assigned when the instance starts —
+			// deliberately not `instance.config.get("factorio.game_port")`, which reads null here
+			// because the base image derives ports at start rather than storing them in config.
+			const rawGamePort = (instance as { gamePort?: number }).gamePort;
 			const node: InstanceNodeModel = {
 				instanceId,
 				instanceName: String(instance.config.get("instance.name") || ""),
 				hostId,
+				gamePort: Number.isInteger(rawGamePort) ? rawGamePort as number : null,
 				status: String(instance.status || ""),
 				connected: Boolean(host?.connected),
 				platforms: [],

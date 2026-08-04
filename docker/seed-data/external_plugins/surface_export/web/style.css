@@ -1,18 +1,7 @@
+/* Single column: the transfer form used to sit in a second column, and now lives in a per-row
+   modal, so there is no longer a second thing to place beside the table. */
 .surface-export-tab-body {
-	display: grid;
-	grid-template-columns: 1fr;
-	gap: 16px;
-}
-
-@media (min-width: 1200px) {
-	.surface-export-tab-body {
-		grid-template-columns: 1.2fr 0.8fr;
-		align-items: start;
-	}
-}
-
-.surface-export-tree-panel,
-.surface-export-action-panel {
+	display: block;
 	min-width: 0;
 }
 
@@ -43,7 +32,6 @@
 	align-items: center;
 	gap: 8px;
 	padding: 6px 12px 6px 24px;
-	cursor: pointer;
 	border-bottom: 1px solid #f0f0f0;
 	transition: background 0.15s;
 }
@@ -56,26 +44,38 @@
 	background: rgba(0, 0, 0, 0.02);
 }
 
-.surface-export-platform-row-selected {
-	background: rgba(24, 144, 255, 0.12) !important;
-}
-
+/* Destination icon leads the row, then the platform name. */
 .surface-export-platform-row-name {
-	flex: 1;
+	flex: 1 1 auto;
+	min-width: 0;
 	display: flex;
 	align-items: center;
 	gap: 6px;
 }
 
-.surface-export-platform-row-location {
-	flex: 1;
+/* Keeps names aligned on rows whose platform has no resolvable destination icon — without it
+   those rows start 26px to the left of every other row. */
+.surface-export-icon-placeholder {
+	display: inline-block;
+	width: 20px;
+	height: 20px;
+	flex-shrink: 0;
+}
+
+.surface-export-platform-row-status {
+	flex: 0 1 auto;
 	display: flex;
 	align-items: center;
 	gap: 6px;
+	margin-left: auto;
+	padding-right: 8px;
 }
 
 .surface-export-platform-row-actions {
 	flex-shrink: 0;
+	display: flex;
+	align-items: center;
+	gap: 6px;
 }
 .surface-export-summary-platform-title {
 	font-size: 18px;
