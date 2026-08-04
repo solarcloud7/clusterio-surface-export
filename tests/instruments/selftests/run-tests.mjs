@@ -32,6 +32,7 @@ const SELFTESTS = [
 	"transfer_lock",
 	"no_tick_sync",
 	"hold_aware_unlock",
+	"export_cache",
 ];
 
 const instanceArg = process.argv.indexOf("--instance");

@@ -21,6 +21,11 @@ local function configure(config)
   if config.show_progress ~= nil then
     AsyncProcessor.set_show_progress(config.show_progress)
   end
+  if config.max_export_cache_size then
+    -- How many entries storage.platform_exports retains. The cap is enforced in Lua at each write
+    -- site (ExportCache.prune_to_configured_cap), so it stays real even if this push never arrives.
+    AsyncProcessor.set_max_export_cache_size(config.max_export_cache_size)
+  end
   if config.debug_mode ~= nil then
     storage.surface_export_config.debug_mode = config.debug_mode
   end
@@ -78,11 +83,12 @@ local function configure(config)
     end
   end
 
-  log(string.format("[FactorioSurfaceExport] Configuration updated: batch_size=%s, max_concurrent_jobs=%s, show_progress=%s, debug_mode=%s",
+  log(string.format("[FactorioSurfaceExport] Configuration updated: batch_size=%s, max_concurrent_jobs=%s, show_progress=%s, debug_mode=%s, max_export_cache_size=%s",
     config.batch_size or "unchanged",
     config.max_concurrent_jobs or "unchanged",
     tostring(config.show_progress),
-    tostring(config.debug_mode)))
+    tostring(config.debug_mode),
+    config.max_export_cache_size or "unchanged"))
 end
 
 return configure

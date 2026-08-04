@@ -9,6 +9,7 @@ local TileScanner = require("modules/surface_export/export_scanners/tile_scanner
 local Verification = require("modules/surface_export/validators/verification")
 local PlatformSchedule = require("modules/surface_export/utils/platform-schedule")
 local VersionCompat = require("modules/surface_export/utils/version-compat")
+local ExportCache = require("modules/surface_export/utils/export-cache")
 
 local Serializer = {}
 
@@ -159,6 +160,14 @@ function Serializer.export_platform(platform_index, force_name)
     }
   }
   
+  -- Same cap as the async path (export-pipeline.lua). This entry is written as a side effect —
+  -- Serializer.export_platform's only caller, clone_platform, uses the RETURN value and never reads
+  -- storage.platform_exports — so without a prune the clone path grew the save with entries nothing
+  -- would ever read. NOTE: this shape stores the payload TWICE (`data` and `json_string`); shrinking
+  -- it is deliberately out of scope here (see the PR body) because get_export serves both this shape
+  -- and the compressed one, and which field a reader depends on needs its own check.
+  ExportCache.prune_to_configured_cap()
+
   game.print(string.format("Export complete: %s", export_id))
   game.print(string.format("  Entities: %d", #entity_data))
   game.print(string.format("  Items: %d", total_items))

@@ -19,6 +19,7 @@ local PhaseProfiler = require("modules/surface_export/utils/phase-profiler")
 local TransactionHistory = require("modules/surface_export/utils/transaction-history")
 local JobResults = require("modules/surface_export/core/job-results")
 local CensusAccumulator = require("modules/surface_export/export_scanners/census-accumulator")
+local ExportCache = require("modules/surface_export/utils/export-cache")
 
 local ExportPipeline = {}
 
@@ -598,6 +599,13 @@ function ExportPipeline.complete(job)
 		storage.platform_exports[export_id] = job.export_data
 		log(string.format("[Compression Warning] Failed to compress export %s, storing uncompressed", export_id))
 	end
+
+	-- Cap the retained-export cache. Before this call nothing ever removed an entry, so every export
+	-- stayed in the save permanently. Pruning happens HERE, at the point of growth, rather than via a
+	-- Node-side clear_old_exports RCON call, so the bound holds even if the config push never lands.
+	-- The entry just written is the newest and is always kept; see ExportCache.resolve_keep_count for
+	-- why the floor (not just Node's >= 1 validation) is what protects an export still being read.
+	ExportCache.prune_to_configured_cap()
 
 	-- Stop completion profiler
 	PhaseProfiler.stop(job.job_id, "completion")
