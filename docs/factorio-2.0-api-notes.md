@@ -42,13 +42,10 @@ pinned-engine measurement wins — and that disagreement is exactly the kind of 
 ## Contents
 
 - [Fluid model at 2.1.11](#fluid-model-at-2111)
-- [Inventory sizing](#inventory-sizing)
 - [Item counting (get_item_count includes belts)](#item-counting)
 - [Belt transport-line laws (CANONICAL)](#belt-transport-line-laws-canonical--2026-07-17-recreation)
 - [Space platform deletion](#space-platform-deletion)
-- [Read-only entity properties](#read-only-entity-properties)
 - [Deactivated-entity state writes and control-behavior / equipment restore](#deactivated-entity-state-writes-and-control-behavior--equipment-restore)
-- [Read-only entity properties](#read-only-entity-properties)
 
 ## Fluid model at 2.1.11
 
@@ -97,37 +94,34 @@ Notes: the big-mining-drill's fluidbox count is **dynamic** — 0 when off a res
 ("burner fluid") boxes ARE runtime-enumerable and index-reachable (the maraxsis fluid-burner input box carries
 a segment) — they are not a capture blind spot at 2.1.11.
 
-## Inventory sizing
-
 ## Item counting
 
 - **`LuaEntity.get_item_count(item)` is a per-entity total that INCLUDES that entity's belt-line and
-  inserter-held items.** Verified on **2.0.76**:
-  - On a belt it returns *exactly* that belt's `Σ get_transport_line(i).get_item_count(item)` (measured
-    104=104, 4=4, 8=8). Each belt exposes its **own per-belt** transport line, so it counts only **its own
-    tile** — adjacent belts on the same run report **independent** counts (measured 8 vs 16 on two neighbours).
-    Therefore **summing `get_item_count` over every belt entity does NOT double-count** a shared run; each belt
-    contributes only its own items. Cross-checked against an independent physical total (the count of unique
-    `get_detailed_contents().unique_id` stacks): `Σ get_item_count` over 193 belts = 5277 = the unique-stack
-    total, exactly.
-  - On an inserter it **includes the held hand** (`held_stack`): measured `get_item_count(held.name) == held.count`
-    across 8 holding inserters.
+  inserter-held items, and summing it over every entity does NOT double-count shared belt runs** —
+  each belt exposes its own per-tile transport lines, so adjacent belts on one run report independent
+  counts. Grounded against an independent physical truth: the count of unique
+  `get_detailed_contents().unique_id` stacks (which a whole-line counting change cannot inflate), plus
+  inserter `held_stack` inclusion.
+  **[empirical, 2.1.11, tests/instruments/engine-invariants — re-run 2026-08-03: Σ get_item_count over
+  77 belts == 1178 == the unique-physical-stack total; held hands included across 102 holding inserters]**
 - **So a physical total computed as `get_item_count` over every entity is complete** — inventories **+** belt
-  lines **+** inserter-held — and is not inflated by shared belt runs (a general engine fact, guarded by
-  `tests/instruments/engine-invariants`). NOTE: the production paired-reads source census does NOT use
+  lines **+** inserter-held. NOTE: the production paired-reads source census does NOT use
   `get_item_count` as its physical oracle — it reads through `InventoryScanner.extract_all_inventories`
   (the same primitive the serializer uses); this completeness fact is what a `get_item_count`-based meter
   would rely on, retained here as engine truth.
 - **Do NOT add a separate `get_transport_line` pass on top of a `get_item_count` total — that double-counts the
   belts** (`get_item_count` already includes them).
 - **`line_equals` is neither identity nor content equality — but it IS the same-execution side partition
-  on a populated source.** At 2.0.76 it was observed returning `true` for two belts whose lines hold
-  different counts, so never ground belt TOTALS on `line_equals` dedup (use `get_item_count` or unique
-  `get_detailed_contents().unique_id` stacks). At 2.0.77, however, grouping a POPULATED surface's transport
-  lines by `line_equals` within ONE Lua execution partitions them into physical lane sides (left/right lanes
-  never merge) — the partition that BELT-R11/R12 reconstruction is built on. The grouping is state-dependent
-  (an empty, topologically identical target groups differently) and is only valid same-execution,
-  same-surface, populated; it is NOT a cross-import key (see BELT-R9 below).
+  on a populated source.** It has been observed returning `true` for two belts whose lines hold
+  different counts (2026-07-17 measurement), so never ground belt TOTALS on `line_equals` dedup (use
+  `get_item_count` or unique `get_detailed_contents().unique_id` stacks). Grouping a POPULATED surface's
+  transport lines by `line_equals` within ONE Lua execution, however, partitions them into physical lane
+  sides (left/right lanes never merge) — the partition the production belt restore stands on
+  (`belt_restoration.lua` groups source lines by it, then places items at captured positions). The grouping
+  is state-dependent (an empty, topologically identical target groups differently) and is only valid
+  same-execution, same-surface, populated; it is NOT a cross-import key.
+  **[empirical, 2.1.11, every green belt-carrying pad/workhorse transfer — a wrong side partition places
+  items onto the other lane and fails the per-side census, so the standing suites re-assert it]**
 ## Belt transport-line laws (CANONICAL — 2026-07-17 recreation)
 
 > This section is the single source of truth for belt insertion/restoration physics. Other docs must POINT
@@ -182,8 +176,6 @@ a segment) — they are not a capture blind spot at 2.1.11.
   for immediate, deterministic teardown of a platform and all its entities. Route all platform
   removal through `GameUtils.delete_platform` (`module/utils/game-utils.lua`); a lint guard
   (`npm run lint:lua`) blocks direct `*platform*.destroy()` calls.
-
-## Read-only entity properties
 
 ## Deactivated-entity state writes and control-behavior / equipment restore
 
