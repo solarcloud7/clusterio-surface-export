@@ -212,7 +212,27 @@ export interface PayloadMetrics {
 export interface ValidationResult {
 	itemCountMatch: boolean;
 	fluidCountMatch: boolean;
-	failedStage?: 'items' | 'fluids' | 'test_hook' | null;
+	/** The Lua verdict's own success flag (transfer-validation.lua:336 / import-completion.lua's
+	 * forced-failure hooks). The wire event's top-level `success` mirrors it; declared here because
+	 * the object physically carries it. */
+	success?: boolean;
+	/** Set by the test-hook path only (import-completion.lua:555). */
+	message?: string;
+	/** 'belts' is set when the belt side-census refuses (import-completion.lua:577,811) — it was
+	 * emitted for months while this union omitted it: declared-but-wrong is worse than undeclared
+	 * (a reader narrowing on the union silently drops the belts case). Enumerated at the emitter. */
+	failedStage?: 'items' | 'fluids' | 'belts' | 'test_hook' | null;
+	/** The one-shot test hooks' self-identification (import-completion.lua:556,565). */
+	testForcedFailure?: boolean;
+	testForcedEntityFailure?: boolean;
+	/** Per-item-name loss detail + the total (transfer-validation.lua:322-331). The gallery
+	 * manifest asserts on totalItemLoss as a live contract — these were the two fields the first
+	 * "enumerated at the emitter" pass MISSED (review finding on PR #157), and the first
+	 * declaration of THIS one had the wrong value type (Record<string, number> for what the
+	 * emitter builds as {expected, actual, loss} records — the delta pass caught the fix layer
+	 * repeating the exact incident the inventoryOverflowLosses comment below memorializes). */
+	itemLossByType?: Record<string, { expected: number; actual: number; loss: number }>;
+	totalItemLoss?: number;
 	entityCount?: number;
 	// Informational (display-only): the SOURCE payload's entity total. `entityCount` above is the live
 	// destination count (from validate_import). These legitimately differ (failed-to-place / serialization-
@@ -224,7 +244,20 @@ export interface ValidationResult {
 	expectedFluidCounts?: Record<string, number>;
 	actualFluidCounts?: Record<string, number>;
 	entityTypeBreakdown?: Record<string, number>;
-	failedEntityLosses?: { items: Record<string, number>; fluids: Record<string, number> };
+	/** Losses from entities that failed to PLACE (entity_creation.lua:57,209-215): quality-keyed
+	 * item/fluid tallies plus totals, and a detail SAMPLE capped at 50 entries (`entities` is
+	 * diagnostic, never a complete list — the totals are the accounting). The manifest asserts on
+	 * total_items as a live contract; this was under-declared by four fields until the PR #157
+	 * delta pass (the emitter-enumeration sweep had stopped at the top level). snake_case: Lua-
+	 * native keys that survive the wire unchanged. */
+	failedEntityLosses?: {
+		entity_count: number;
+		total_items: number;
+		total_fluids: number;
+		items: Record<string, number>;
+		fluids: Record<string, number>;
+		entities: Array<{ name: string; type: string; position?: { x: number; y: number }; items: number; fluids: number }>;
+	};
 	highTempAggregates?: Record<string, { expectedEnergy: number; actualEnergy: number; reconciled: boolean }>;
 	// Frozen-gate totals. Post-activation telemetry lives under postActivationReport.
 	totalExpectedItems?: number;

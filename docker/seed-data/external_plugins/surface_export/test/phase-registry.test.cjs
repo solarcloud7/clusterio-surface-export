@@ -289,13 +289,35 @@ test("R10: every per-phase duration comes from the registry, not a hand subtract
 	const lines = completionSrc.split(/\r?\n/);
 	for (const [i, line] of lines.entries()) {
 		if (line.trimStart().startsWith("--")) continue;
-		const assignment = /\b(\w+)_ticks\s*=\s*([^,\n]+)/.exec(line);
+		// Widened to `_ms` too (Workstream A): the tiles_ms/entities_ms perf prints carried the exact
+		// same `(completed or 0) - (started or 0)` shape after the _ticks sweep closed — a duration is
+		// a duration whatever unit it wears. An RHS is legitimate if it reads the registry directly or
+		// derives from a `*_ticks` variable (which itself can only pass this test via the registry);
+		// raw `*_tick` metric reads have no `_ticks` word and fail.
+		const assignment = /\b(\w+)_(?:ticks|ms)\s*=\s*([^,\n]+)/.exec(line);
 		if (!assignment || !phases.includes(assignment[1])) continue;
-		assert.match(assignment[2], /PhaseRecorder\.phase_ticks\s*\(/,
-			`import-completion.lua:${i + 1} computes ${assignment[1]}_ticks by hand. Use `
-			+ `PhaseRecorder.phase_ticks(job, "${assignment[1]}") — a hand subtraction with 'or 0' on `
-			+ "boundaries that sit under different guards is how validation_ticks came to ship a large "
-			+ "NEGATIVE number on every non-transfer import.");
+		assert.match(assignment[2], /PhaseRecorder\.phase_ticks\s*\(|\b\w+_ticks\b/,
+			`import-completion.lua:${i + 1} computes a ${assignment[1]} duration by hand. Use `
+			+ `PhaseRecorder.phase_ticks(job, "${assignment[1]}") (or derive from its result) — a hand `
+			+ "subtraction with 'or 0' on boundaries that sit under different guards is how "
+			+ "validation_ticks came to ship a large NEGATIVE number on every non-transfer import.");
+	}
+});
+
+test("R10b: the '(boundary or 0)' subtraction SHAPE is banned anywhere, not just in assignments", () => {
+	// Review finding on the R10 widening: the assignment-shaped scan above is blind to the same
+	// subtraction written INLINE (inside a game.print call, a table constructor, a function arg) or
+	// laundered through a _ticks-named variable. This scans for the DEFECT SHAPE itself — a raw
+	// tick BOUNDARY read defaulted with `or 0` — which is exactly the construct that turns a
+	// missing boundary into a number that looks measured. phase-recorder.lua is the one lawful
+	// reader of raw boundaries, and it refuses the default (returns nil) rather than wearing one.
+	const lines = completionSrc.split(/\r?\n/);
+	for (const [i, line] of lines.entries()) {
+		if (line.trimStart().startsWith("--")) continue;
+		assert.doesNotMatch(line, /\w+_(?:started|completed|done)_tick\s+or\s+0\b/,
+			`import-completion.lua:${i + 1} defaults a phase boundary with 'or 0' — a missing boundary `
+			+ "is not zero, it is ABSENT. Read PhaseRecorder.phase_ticks (nil for a missing boundary) "
+			+ "and render absence as absence.");
 	}
 });
 

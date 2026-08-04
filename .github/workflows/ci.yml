@@ -22,14 +22,14 @@ env:
 
 jobs:
   # ===========================================================================
-  # Integration Tests — spin up the full Docker cluster and run both test suites
+  # Fast checks — lint + both unit-test packages, in PARALLEL with the cluster
+  # job so a broken lint or unit test reports in under a minute instead of
+  # after the ~4-minute cluster cycle (2026-08-04 audit item).
   # ===========================================================================
-  integration-tests:
-    name: Integration Tests
+  fast-checks:
+    name: Fast checks (lint + unit)
     runs-on: ubuntu-latest
-    # 25, not 15: the suite outgrew 15 min when belt-corner-recovery (+2 min) landed — a job timeout
-    # surfaces as conclusion "cancelled" with zero failing steps, which reads as a mystery cancellation.
-    timeout-minutes: 25
+    timeout-minutes: 10
 
     steps:
       - name: Checkout
@@ -53,41 +53,68 @@ jobs:
           cache: 'npm'
           cache-dependency-path: ${{ env.PLUGIN_DIR }}/package-lock.json
 
+      # --ignore-scripts: this job's OWN install must not fire the `prepare` lifecycle — `npm test`
+      # below runs its explicit build:node anyway, so letting prepare build too was the known
+      # double-build. (npm ci stall handling mirrors the integration job's, same 2026-07-19 incident.)
+      - name: Install (plugin, no lifecycle scripts)
+        working-directory: ${{ env.PLUGIN_DIR }}
+        timeout-minutes: 10
+        run: |
+          NPM_FLAGS="--ignore-scripts --fetch-retries=5 --fetch-timeout=120000 --fetch-retry-maxtimeout=60000"
+          npm ci $NPM_FLAGS || { echo "::warning::npm ci stalled/failed once — retrying"; npm ci $NPM_FLAGS; }
+
+      - name: Lint (all correctness guards)
+        working-directory: ${{ env.PLUGIN_DIR }}
+        run: npm run lint
+
+      # TWO DIFFERENT PACKAGES, deliberately both here (the trap this split had to not fall into):
+      # the plugin dir's npm test (builds dist/node, runs test/*.test.cjs) and the REPO ROOT's
+      # npm test (tests/**/*.test.mjs — lab-gallery manifest/meters/pins + testkit; pure node
+      # builtins, no install). The root glob is deliberate: `node --test tests/` would also execute
+      # tests/lab-gallery/test-foundation.mjs — a captured-layout DATA module, not a test.
+      - name: Test (plugin unit — message round-trip + wire contract)
+        working-directory: ${{ env.PLUGIN_DIR }}
+        run: npm test
+
+      - name: Test (repo root — manifest, meters, pins, testkit)
+        run: npm test
+
+  # ===========================================================================
+  # Integration Tests — spin up the full Docker cluster and run the suite
+  # ===========================================================================
+  integration-tests:
+    name: Integration Tests
+    runs-on: ubuntu-latest
+    # 25, not 15: the suite outgrew 15 min when belt-corner-recovery (+2 min) landed — a job timeout
+    # surfaces as conclusion "cancelled" with zero failing steps, which reads as a mystery cancellation.
+    timeout-minutes: 25
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+          cache: 'npm'
+          cache-dependency-path: ${{ env.PLUGIN_DIR }}/package-lock.json
+
+      # Lint + unit moved to the parallel fast-checks job; this job builds because the CLUSTER
+      # mounts the plugin and must find a fresh dist/ (the container's prepare guard then skips).
       - name: Build plugin
         working-directory: ${{ env.PLUGIN_DIR }}
         # npm ci stalled twice on 2026-07-19 (registry metadata hangs) and, with no step timeout,
         # each stall ate the full job budget before cancellation. Fail the step fast instead, give
         # npm aggressive fetch retries, and allow one whole-command retry before going red.
+        # --ignore-scripts here too (review finding): on a clean runner the prepare lifecycle sees
+        # no dist/ and builds, then the explicit `npm run build` builds AGAIN — the known double
+        # build. The explicit build is the one this job means.
         timeout-minutes: 10
         run: |
-          NPM_FLAGS="--fetch-retries=5 --fetch-timeout=120000 --fetch-retry-maxtimeout=60000"
+          NPM_FLAGS="--ignore-scripts --fetch-retries=5 --fetch-timeout=120000 --fetch-retry-maxtimeout=60000"
           npm ci $NPM_FLAGS || { echo "::warning::npm ci stalled/failed once — retrying"; npm ci $NPM_FLAGS; }
           npm run build
-
-      - name: Lint (TS Link-method binding guard + Lua invariant guard)
-        working-directory: ${{ env.PLUGIN_DIR }}
-        run: npm run lint
-
-      - name: Test (message round-trip + wire contract)
-        working-directory: ${{ env.PLUGIN_DIR }}
-        run: npm test
-
-      # Repo-root tests: the lab-gallery manifest/meter checks. These are pure (node builtins +
-      # repo-relative imports only — no install needed here, which is why this runs with no npm ci)
-      # and take ~100ms, so they belong BEFORE the cluster spins up: a manifest defect should fail
-      # in seconds, not 9 minutes in.
-      #
-      # They ran NOWHERE until now. `manifest.test.mjs` caught a dangling owningRunner during the
-      # self-test consolidation (#138) and CI missed it, because the only thing that ever invoked
-      # this file was a human reading docker/seed-data/lab-saves/README.md. A test written and never
-      # invoked is the same shape as the two orphaned self-tests that consolidation picked up.
-      #
-      # The glob is deliberate. `node --test tests/` would ALSO match Node's `**/test-*.?(c|m)js`
-      # discovery pattern and execute tests/lab-gallery/test-foundation.mjs — a captured-layout DATA
-      # module, not a test. `tests/**/*.test.mjs` matches exactly the intended files and auto-wires
-      # any future *.test.mjs, so the next one cannot become an orphan the same way.
-      - name: Test (lab-gallery manifest + fixture meters)
-        run: npm test
 
       - name: Create env file from example
         run: |
@@ -404,7 +431,7 @@ jobs:
   # ===========================================================================
   publish:
     name: Publish to npm
-    needs: integration-tests
+    needs: [integration-tests, fast-checks]
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     timeout-minutes: 5

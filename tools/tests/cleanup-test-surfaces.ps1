@@ -48,7 +48,7 @@
 [CmdletBinding()]
 param(
     [int[]]$Hosts = @(1, 2),
-    [string[]]$Prefixes = @('reprotest_', 'integration-test-', 'entity-test-', 'engineinv-', 'destroyprobe', 'mytestclone', 'mytestname'),
+    [string[]]$Prefixes = @('reprotest_', 'integration-test-', 'entity-test-', 'engineinv-', 'destroyprobe', 'mytestclone', 'mytestname', 'evac-coverage-probe'),
     [switch]$IncludeUnknown,
     [switch]$DryRun
 )

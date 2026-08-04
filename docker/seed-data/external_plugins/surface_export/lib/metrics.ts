@@ -130,7 +130,14 @@ export function recordOperationOutcome(operation: ActiveTransfer | null | undefi
 	operation.metricsRecorded = true;
 
 	const operationLabel = operation.operationType || "unknown";
-	const failureStage = operation.failedStage === "items" || operation.failedStage === "fluids" ? operation.failedStage : "none";
+	// The label set mirrors the ValidationResult.failedStage union's PRODUCTION stages: items,
+	// fluids, belts (review finding on PR #157 — 'belts' was declared in the union while this, the
+	// only narrowing reader, still collapsed it to "none": a belt-census refusal was
+	// indistinguishable in Prometheus from an unclassified failure). test_hook deliberately stays
+	// "none" — a forced test failure is not a production stage. Adding a NEW label value creates a
+	// new series; it does not rename or re-scale an existing one (the series-break class).
+	const failureStage = operation.failedStage === "items" || operation.failedStage === "fluids" || operation.failedStage === "belts"
+		? operation.failedStage : "none";
 	operationsTotal.labels({ operation: operationLabel, result, failure_stage: failureStage }).inc();
 
 	const endMs = operation.completedAt || operation.failedAt || Date.now();

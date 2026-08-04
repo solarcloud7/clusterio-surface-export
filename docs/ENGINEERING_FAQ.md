@@ -130,7 +130,7 @@ is never resolved by a non-unique key alone.
 ## C. Failure & rollback
 
 **Q: What if the destination rejects my platform (mod / prototype mismatch)?**
-A: ✅ The single exact gate fails (`failedStage` = the mismatched category, `items` or `fluids`). The **instance**
+A: ✅ The single exact gate fails (`failedStage` = the mismatched category: `items`, `fluids`, or `belts` for a belt-census refusal). The **instance**
 (Lua) then runs BLACK-BOX DISCARD: it banks an always-on forensic bundle to
 `script-output/failure_black_box_<platform>_<tick>.json` (expected/actual/diff, dest force state, mods, a physical
 entity scan of the dest), evacuates any passengers to Nauvis, and deletes the failed destination. The **controller**
@@ -199,7 +199,7 @@ black box describes.
 A: ✅ You keep your original — nothing is lost. The single exact gate runs in a paused, deactivated destination
 BEFORE activation, so a mismatch is caught before the destination ever goes live. On failure: the source stays
 put (unlocked, restored to your list), and the half-built destination is banked to a forensic black box and then
-discarded (`failedStage` in the transaction log tells you whether items or fluids didn't reconcile). There is no
+discarded (`failedStage` in the transaction log names the stage that refused: items, fluids, or belts). There is no
 "partial" platform to clean up and no duplicate — the discard is unconditional; the sole residual is the engine
 itself refusing the delete (never observed), which is flagged loudly as `cleanup_failed` with the reason. (For
 deliberate post-mortem, an admin can arm the one-shot, debug-gated `preserve_failed_destination` flag to keep the
@@ -254,7 +254,7 @@ diagnostic fidelity data (temperature merge and key boundaries).
 **Q: What if fluids are lost after the item check?**
 A: There is no second check. Lua completes held items and fluid restoration while the destination is paused and
 deactivated, then emits one exact item+fluid verdict before activation. Any mismatch banks an always-on physical
-black box, discards the destination, reports `failedStage=items|fluids`, and preserves/rolls back the source.
+black box, discards the destination, reports `failedStage=items|fluids|belts`, and preserves/rolls back the source.
 Post-activation recounts are reporting only and cannot rewrite the verdict.
 
 **Q: What if I have circuit LATCHES, counters, or other circuit-network SIGNAL STATE?**

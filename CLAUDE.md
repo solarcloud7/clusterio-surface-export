@@ -217,10 +217,21 @@ hands-on E2E checklist, one doc); repository test layout and entry points are in
 - **Ad-hoc probes that mutate the shared cluster** still owe zero-leftover cleanup (surfaces AND persistent
   `storage.*` records, game unpaused) and must scope every predicate to `surface-export-*` containers — the
   unrelated `atlas-*` cluster shares this machine.
+- **Purpose-invariant discipline** (measured: the prepare-build audit + PR #156's three review rounds):
+  before writing an instrument/guard/branch, write the test stating its PURPOSE as an invariant over its
+  OUTPUT (round-trip or agreement property); derive contracts from the ARTIFACT, not your reading of it.
+  Corollaries, each paid for: enumerate a flag FAMILY at its emitter before writing a flag-keyed branch
+  (your reproduction is one sample; the emitter is the list — a fix keyed on late-SUCCESS missed the
+  sibling cleanup_failed flag in the same verdict, twice in one PR); a "because X at threshold Y" comment
+  names Y's actual value, read this session; test pins use PRODUCTION-shaped values verified against the
+  real library; DI tests get MUTATION-KILL verification (break the branch AND each sibling protection
+  alone — every assertion must carry its own weight). Full checklist: the `/di-change` skill.
 - **Working hygiene:** run `./tools/check-pr-scope.ps1` before editing and again before opening a PR; commit
   the real change before deliberately reverting/mutating it for a regression-teeth check (so the implementation
   cannot be lost during teeth testing); leave `package-lock.json` byte-identical outside approved dependency
-  updates.
+  updates. **Subagents never switch this checkout's branch** — the checkout IS the live cluster's
+  bind-mounted plugin source; agents that need to build or mutate code work in isolated copies outside the
+  repo (a reviewer agent switched the checkout to main mid-review, 2026-08-04).
 
 **Evidence discipline** (deliberately NOT mechanized — owner ruling 2026-07-31: we do not add lint rules to
 prop up bad infrastructure, and a guard that checks a version string while claiming to check evidence is worse
@@ -345,10 +356,12 @@ surface is torn down — never orphaned, never duplicated (native-aligned with h
 to a planet on hub-loss). This replaced an earlier passenger hard-block. Carrying the player **with** the
 platform to the destination (`connect_to_server` + `enter_space_platform`) is a future Layer-2 feature gated on
 a reachability spike. The dedicated `passenger-evacuate` runner was RETIRED 2026-07-27 (owner
-consolidation): evacuation happens at the single source-delete chokepoint named above, which every
-gallery-suite transfer executes, but no standing test puts a player aboard first — the evacuation
-branch itself is currently uncovered. Design in
-[docs/GATEWAY_TRANSFER_PRD.md](docs/GATEWAY_TRANSFER_PRD.md).
+consolidation): evacuation happens at the single source-delete chokepoint named above. The
+character-body half of the branch is covered again since 2026-08-04 by
+`tests/integration/evacuation-coverage` — a body aboard a throwaway platform must ARRIVE on Nauvis
+through the real chokepoint (the engine measurably destroys un-evacuated bodies with the surface,
+so arrival proves the route ran). The connected-player half still awaits the L2 client session.
+Design in [docs/GATEWAY_TRANSFER_PRD.md](docs/GATEWAY_TRANSFER_PRD.md).
 
 ## Export/Import Workflow Notes (Current)
 
@@ -582,7 +595,7 @@ docker exec surface-export-controller sh -c 'npx clusterioctl --config /clusteri
 The JSON log shape is `{"instance_id":…,"instance_name":…,"level":"info|error|server","message":"…","plugin":"surface_export","timestamp":"…"}`. Filter a single plugin with `grep '"plugin":"surface_export"'`. The `cluster-*.log` file is the single best place to trace a cross-instance transfer end-to-end (it has the host-1 export, the controller routing, AND the host-2 import in one stream).
 
 **Prometheus metrics are LIVE**: the `statistics_exporter` plugin exposes `http://localhost:8080/metrics` on the controller (process + cluster metrics, ~45 KB). **Custom surface_export transfer metrics are now implemented** — `lib/metrics.ts` defines collectors that register to Clusterio's default registry (so they surface on the same `/metrics` with no extra wiring) and `recordOperationOutcome()` is called from `SubscriptionManager.emitTransferUpdate` (the universal terminal chokepoint, idempotent per operation):
-- `surface_export_operations_total{operation,result,failure_stage}` — counter; `operation` ∈ transfer/export/import, `result` ∈ success/failure/cleanup_failed, `failure_stage` ∈ items/fluids/none
+- `surface_export_operations_total{operation,result,failure_stage}` — counter; `operation` ∈ transfer/export/import, `result` ∈ success/failure/cleanup_failed, `failure_stage` ∈ items/fluids/belts/none
 - `surface_export_operation_duration_seconds{operation,result,failure_stage}` — histogram (buckets 0.5s…300s)
 - `surface_export_entities_transferred_total{operation}` — counter (entities placed on the destination)
 - `surface_export_export_stall_seconds` — histogram; the source-side async export span (the tick-stall window that can heartbeat-drop a connected player)
