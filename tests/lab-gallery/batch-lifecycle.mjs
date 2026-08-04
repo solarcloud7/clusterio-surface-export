@@ -162,16 +162,18 @@ export function bumpExportIdCounter(host, floor = exportIdFloor()) {
 
 /** Mirrors export-pipeline.lua:184 — `platform.name:gsub("[^%w%-]", "-")`. BYTE-faithful
  * (Workstream A): Lua's gsub walks UTF-8 BYTES, so a non-ASCII character emits one dash PER BYTE
- * ("é" → 2 dashes, "🚀" → 4). The old per-code-unit mirror emitted one dash per character, so the
- * collision preflight predicted a different ID than Lua actually produces for any non-ASCII
- * platform name — a silently wrong prediction on exactly the names a player is most likely to
- * type. Allowed bytes per Lua's default-locale %w + literal dash: ASCII digits/letters/'-'. */
+ * (e-acute is 2 bytes, so 2 dashes; a 4-byte emoji, 4). The old per-code-unit mirror emitted one
+ * dash per character, so the collision preflight predicted a different ID than Lua actually
+ * produces for any non-ASCII platform name. Allowed bytes per Lua's default-locale %w plus the
+ * literal dash: ASCII digits, letters, and 0x2d. */
 export function sanitizePlatformName(name) {
-	return Array.from(Buffer.from(String(name), "utf8"), (b) =>
-		((b >= 0x30 && b <= 0x39) || (b >= 0x41 && b <= 0x5a) || (b >= 0x61 && b <= 0x7a) || b === 0x2d)
-			? String.fromCharCode(b)
-			: "-",
-	).join("");
+	const bytes = Buffer.from(String(name), "utf8");
+	let out = "";
+	for (const b of bytes) {
+		const keep = (b >= 0x30 && b <= 0x39) || (b >= 0x41 && b <= 0x5a) || (b >= 0x61 && b <= 0x7a) || b === 0x2d;
+		out += keep ? String.fromCharCode(b) : "-";
+	}
+	return out;
 }
 
 /** Mirrors export-pipeline.lua:189 — `string.format("%03d_%s", job_counter, safe_name)`. */
