@@ -166,7 +166,8 @@ export class LuaInterface {
 	 * Routes through the `delete_platform_for_transfer` remote, which (atomically, one tick): unlocks,
 	 * EVACUATES any aboard players/characters to a planet (so a passenger is never orphaned when the surface
 	 * vanishes), then tears down via `GameUtils.delete_platform` (version-correct; `game.delete_surface`
-	 * under the hood — `LuaSpacePlatform.destroy()` is a NO-OP at 2.0.76, platform.destroy is a no-op). Keeping all of that
+	 * under the hood — `LuaSpacePlatform.destroy()` is a NO-OP, re-asserted by the engine-invariants
+	 * instrument on every run). Keeping all of that
 	 * in one remote (a) makes evacuation atomic with the delete and (b) fixes the prior inline-RCON that
 	 * bypassed GameUtils.delete_platform.
 	 */

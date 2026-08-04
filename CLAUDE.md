@@ -502,8 +502,10 @@ Project invariants that still bite if changed:
   (`dropped_fluids`) remains a gate failure. One pre-activation verdict covers exact items and aggregate-by-name
   fluids (`epsilon=1e-6`). See docs/factorio-2.0-api-notes.md fluid section.
 - **Entity inventory size** isn't changed by `LuaInventory.resize` (custom inventories only).
-  `LuaEntity.set_inventory_size_override` overrides **container** sizes but is a **no-op for crafter inputs**
-  at 2.0.76 (verified there; **not re-verified on the 2.1.11 pin**). See the API notes.
+  `LuaEntity.set_inventory_size_override` overrides **container** sizes (measured 16→30 on a wooden-chest)
+  but is a **silent no-op for crafter inputs** (the call "succeeds"; the input inventory stays at
+  ingredient count) — re-measured at the 2.1.11 pin 2026-08-03. No production call sites; this is a
+  don't-reach-for-it note.
 
 ### Import Phase Ordering (Critical)
 The order of post-processing steps in `ImportCompletion.run_phase1` / `run_phase2` (`module/core/import-completion.lua:180,222`) is critical for correctness:

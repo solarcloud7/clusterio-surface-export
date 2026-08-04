@@ -34,7 +34,8 @@
 -- to an entity outside the pasted set, fluid restore is skipped (it writes SEGMENT totals and would
 -- clobber a live network; activatable entities expose no own segment id — connection-
 -- walking, not segment ids, is the detection). Known gaps: no circuit-wire reconnection, no rotation.
--- Cross-surface paste measured WORKING at 2.0.77 (2026-07-17, gallery migration): paste plans
+-- Cross-surface paste measured WORKING 2026-07-17 (gallery migration; not re-measured at the
+-- current pin — this is a dev tool, not a transfer path): paste plans
 -- against event.surface, so dragging on any surface pastes there. `active` is preserved via the
 -- lab-only `lab_active` record field (the production serializer deliberately does not carry it).
 

@@ -15,7 +15,8 @@
        with get_item_count. See docs/factorio-2.0-api-notes.md "Item counting".
 
     2. game.delete_surface() removes a space platform, because LuaSpacePlatform.destroy() is a no-op
-       at our pinned Factorio version (verified 2.0.76). destroy() is probed WARN-ONLY
+       at our pinned Factorio version (re-asserted by this instrument on every run; green at 2.1.11
+       2026-08-03). destroy() is probed WARN-ONLY
        (a benign upstream fix that makes it functional must never fail the build); delete_surface is
        the MUST-PASS our code actually relies on, and is asserted UNCONDITIONALLY on a live clone.
 
@@ -34,7 +35,9 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
-$ModulePath = Join-Path (Split-Path -Parent $PSScriptRoot) "lib\TestBase.psm1"
+# TestBase lives with the integration suite (tests/integration/lib), not under tests/instruments —
+# the tools reorg moved it and this path silently rotted until the instrument was next run.
+$ModulePath = Join-Path (Split-Path -Parent (Split-Path -Parent $PSScriptRoot)) "integration\lib\TestBase.psm1"
 Import-Module $ModulePath -Force
 if (-not $SourcePlatform) { $SourcePlatform = Get-TransferFixturePlatform }
 

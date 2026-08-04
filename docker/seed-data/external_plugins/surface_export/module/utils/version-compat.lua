@@ -13,13 +13,15 @@
 -- On import you READ per the source shape, WRITE per the runtime engine's API, and MIGRATE the shape
 -- in between when they differ.
 --
--- Phase 1 supports only the 2.0 bucket (the certified pin in tests/labs-certified.json, currently 2.0.77; lint-version-certification fails CI when pin and certification drift). Every
--- dispatch resolves to today's verified behavior. Phase 2 adds PROFILES["2.1"] + cross-version
--- migrate() entries after each candidate site is checked against lua-api.factorio.com/2.1.10/.
+-- The cluster pin is Factorio 2.1.11 and PROFILES["2.1"] is the live profile. There is NO
+-- certification file and NO version-certification lint (both deleted 2026-07-31 by owner ruling —
+-- a green certificate was permission to assume while checking nothing but a version string): when a
+-- law matters at a new pin, re-measure it in the PR that needs it and let the measurement stand on
+-- its own.
 --
--- SIGNATURE SOURCE OF TRUTH: lua-api.factorio.com/<version>/ — NEVER the "latest" docs (they have
--- drifted; e.g. they reorder insert_at's params). The factorio-ai-tools MCP only serves "latest" and
--- must not be trusted for signatures.
+-- SIGNATURE SOURCE OF TRUTH: lua-api.factorio.com/<pinned version>/ (currently /2.1.11/) — NEVER
+-- the "latest" docs (they have drifted; e.g. they reorder insert_at's params). The factorio-ai-tools
+-- MCP only serves "latest" and must not be trusted for signatures.
 
 local VersionCompat = {}
 
@@ -57,7 +59,7 @@ end
 -- ---------------------------------------------------------------------------
 
 --- Parse a Factorio version string "major.minor.patch" into components + a "major.minor" bucket.
---- @param version_string string|nil: e.g. "2.0.76"
+--- @param version_string string|nil: e.g. "2.1.11"
 --- @return table|nil: { major, minor, patch (may be nil), bucket="major.minor" }, or nil if unparseable
 function VersionCompat.parse(version_string)
   local s = tostring(version_string or "")
@@ -99,27 +101,31 @@ end
 local PROFILES = {}
 
 PROFILES["2.0"] = {
-  -- LuaTransportLine insertion. 2.0.76 signature (lua-api.factorio.com/2.0.76/): the position comes
-  -- FIRST and belt_stack_size (max items per slot, OPTIONAL — turbo belts cap at 4) comes LAST. The
-  -- "latest" docs reorder these; using that order on 2.0.76 places nothing. Thin signature wrappers:
-  -- the caller keeps the pcall + error logging so failures stay grounded at the richer call site.
+  -- LuaTransportLine insertion: the position comes FIRST and belt_stack_size (max items per slot,
+  -- OPTIONAL — turbo belts cap at 4) comes LAST, per lua-api.factorio.com/<pinned version>/. The
+  -- "latest" docs have reordered these, and the reversed order places nothing. Thin signature
+  -- wrappers: the caller keeps the pcall + error logging so failures stay grounded at the richer
+  -- call site.
   belt_insert_at = function(line, position, stack, belt_stack_size)
     return line.insert_at(position, stack, belt_stack_size)
   end,
   belt_insert_at_back = function(line, stack, belt_stack_size)
     return line.insert_at_back(stack, belt_stack_size)
   end,
-  -- Platform teardown. LuaSpacePlatform.destroy() is a SILENT no-op (measured 2.0.76; RE-MEASURED at the 2.1.11 pin 2026-07-25: destroy() returns without error and the platform is STILL present) (platform.destroy is a no-op) — the
-  -- only API that actually removes a platform is game.delete_surface(). The caller (GameUtils.
-  -- delete_platform) owns the validity checks and the surfaceless-leak logging.
+  -- Platform teardown. LuaSpacePlatform.destroy() is a SILENT no-op (re-measured at the 2.1.11 pin
+  -- 2026-07-25, and probed on every engine-invariants instrument run: destroy() returns without
+  -- error and the platform is STILL present) — the only API that actually removes a platform is
+  -- game.delete_surface(). The caller (GameUtils.delete_platform) owns the validity checks and the
+  -- surfaceless-leak logging.
   delete_platform = function(platform)
     game.delete_surface(platform.surface)
   end,
 }
 
 PROFILES["2.1"] = {
-  -- Belt insertion signatures NOT yet re-certified on 2.1.x — carried from 2.0 as best-effort
-  -- pending the belt-lab re-certification leg of the 2.1 campaign. [hypothesis until re-measured]
+  -- Belt insertion signatures carried from the 2.0 profile — held at the 2.1.11 pin by every green
+  -- belt-carrying transfer (all production belt restores dispatch through these aliases; a
+  -- reordered signature places nothing and fails the per-side census).
   belt_insert_at = PROFILES["2.0"].belt_insert_at,
   belt_insert_at_back = PROFILES["2.0"].belt_insert_at_back,
   -- game.delete_surface remains the deterministic platform-removal route on 2.1.11 (used live by

@@ -121,12 +121,12 @@ const domains = [
 	{
 		id: "splitter-filter",
 		status: "static-owned",
-		// Defensive both-shapes capture (string at 2.0.77, prototype-safe): resolves sf.quality to a
+		// Defensive both-shapes capture (measured as a plain string; prototype-safe either way): resolves sf.quality to a
 		// plain string, then falls back to QUALITY_NORMAL.
 		producer: ["export_scanners/entity-handlers.lua", /local sf = entity\.splitter_filter[\s\S]*if type\(quality\) ~= "string" and quality then[\s\S]*data\.filter\s*=\s*\{ name = sf\.name, quality = quality or GameUtils\.QUALITY_NORMAL \}/],
 		consumer: ["core/deserializer.lua", /field\s*=\s*"filter",\s*prop\s*=\s*"splitter_filter"/],
 	},
-	// mining-drill-filter row REMOVED (2026-07-17, measured at 2.0.77 + API-confirmed): a mining-drill
+	// mining-drill-filter row REMOVED (measured 2026-07-17, state-dimensions lab + API-confirmed): a mining-drill
 	// filter is an EntityID — a resource name with NO quality component — so there is no quality
 	// dimension to own here. Every vanilla drill also measures filter_slot_count == 0 (the capture
 	// only ever fires for modded drills with filter slots). The original row asserted a quality-keyed
@@ -155,7 +155,7 @@ test("the quality ownership matrix independently covers every approved item-doma
 		"infinity-filter", "splitter-filter", "ghost-and-proxy-requests",
 	]);
 	// mining-drill-filter is intentionally ABSENT: drill filters are quality-less EntityIDs
-	// (measured 2.0.77 + API — see the removed-row comment above and api-notes).
+	// (measured + API — see the removed-row comment above and api-notes).
 	assert.equal(domains.some(row => row.id.includes("fluid")), false, "fluids have no quality dimension");
 });
 

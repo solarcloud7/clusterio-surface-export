@@ -31,7 +31,8 @@ local COLOR_OFFLINE = {r = 0.9, g = 0.6, b = 0.3}
 local COLOR_WARN = {r = 1.0, g = 0.5, b = 0.4}
 
 -- ============================================================================
--- Passenger detection (the safety-critical inputs — verified on 2.0.76)
+-- Passenger detection (the safety-critical inputs — exercised live at the current pin by the
+-- evacuation on every transfer's source delete)
 -- ============================================================================
 
 -- Passenger detection (the safety-critical input) lives in core/gateway.lua (Gateway.collect_passengers)

@@ -173,7 +173,7 @@ function InventoryScanner.extract_equipment_grid(grid)
   local equipment = {}
 
   for _, equip in ipairs(grid.equipment) do
-    -- Measured on 2.0.77 (state-dimensions-lab notebook, closer probe): `energy = v` (including 0) is
+    -- Measured (state-dimensions-lab notebook, closer probe; archived tag): `energy = v` (including 0) is
     -- ACCEPTED on every equipment type tested (battery/solar/shield/roboport), so energy is captured
     -- UNCONDITIONALLY — an explicitly-drained buffer restores as drained. `shield = v` THROWS
     -- ("Equipment is not shields.") on non-shield equipment even for 0, and `max_shield` reads 0 on
@@ -190,7 +190,7 @@ function InventoryScanner.extract_equipment_grid(grid)
     -- Burner equipment (fuel items)
     if equip.burner then
       local burner = equip.burner
-      -- 2.0.77: currently_burning reads as ItemIDAndQualityIDPair whose .name is a PROTOTYPE (and
+      -- currently_burning reads as ItemIDAndQualityIDPair whose .name is a PROTOTYPE (and
       -- .quality a LuaQualityPrototype), not strings — resolve both to plain strings (JSON-safe),
       -- TRULY mirroring EntityHandlers.extract_entity_burner's {name, quality} shape (review finding:
       -- the old capture dropped quality, silently resetting quality fuel to normal on restore).
@@ -264,7 +264,8 @@ function InventoryScanner.extract_belt_items(entity)
   local lines = {}
 
   -- Transport lines vary by belt type — iterate EXACTLY the belt's real line count via
-  -- get_max_transport_line_index() (verified on 2.0.77: transport-belt=2, underground-belt=4, splitter=8),
+  -- get_max_transport_line_index() (measured: transport-belt=2, underground-belt=4, splitter=8 —
+  -- exercised by every belt export at the current pin, where an over-iteration throws loudly),
   -- so get_transport_line() is never called out of range. The old `max_lines=8` pcall-until-throw
   -- over-iterated and THREW on the surplus indices, dumping ~500-600 synchronous log() writes + ~2000
   -- pcall/closure allocations into the export-completion tick — a #86 heartbeat-stall contributor. The

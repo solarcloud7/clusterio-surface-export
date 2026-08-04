@@ -73,7 +73,8 @@ local function delete_platform_for_transfer(platform_index, platform_name, force
     Gateway.evacuate_passengers(platform)
   end)
 
-  -- Version-correct teardown (game.delete_surface under the hood; raw platform.destroy() is a no-op at 2.0.76).
+  -- Version-correct teardown (game.delete_surface under the hood; raw platform.destroy() is a no-op —
+  -- re-measured at the 2.1.11 pin, probed on every engine-invariants instrument run).
   -- GUARDED so a delete throw returns the "ERROR:<reason>" contract the instance plugin parses, not a raw Lua
   -- error that escapes remote.call and leaves the caller with no usable result.
   local ok, deleted = pcall(function() return GameUtils.delete_platform(platform) end)

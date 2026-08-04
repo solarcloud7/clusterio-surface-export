@@ -14,6 +14,7 @@ a feature of this repo, not a separate project.
 - [How a gateway transfer runs](#how-a-gateway-transfer-runs)
 - [The gateway mod](#the-gateway-mod)
 - [Where each piece lives](#where-each-piece-lives)
+- [Empirical foundations (2.1.11)](#empirical-foundations-2111)
 - [Passenger handling](#passenger-handling)
 - [Planned work](#planned-work)
 - [References](#references)
@@ -79,6 +80,50 @@ The split works because the save-patched module runs in the *same* Factorio game
 sees the mod's prototypes by name (`game.space_location_prototypes[...]`,
 `platform.space_location.name == "surfexp_gateway_1"`). The mod stays pure data; all logic lives in the plugin.
 
+## Empirical foundations (2.1.11)
+
+The feature was originally built on pre-pin evidence that was purged with the rest of the 2.0.x
+documentation; these are the re-certification measurements from the 2026-08-03 headless spike. Each is
+a one-line RCON `/sc` probe reproducible on the dev cluster (probe platforms swept after every run).
+Per the api-notes charter, anything the [official docs](https://lua-api.factorio.com/2.1.11/) state is
+linked, not restated — only unstated behavior gets a claim here.
+
+- **Platform creation is STAGED: `create_space_platform` builds nothing** — no surface, no hub,
+  `paused = false`, state `waiting_for_starter_pack`. **`apply_starter_pack()` creates the surface + hub
+  AND pauses the platform** (upstream documents the apply, not the pause; the `paused` attribute doc
+  states no initial value). Activation is a separate, explicit unpause.
+  **[empirical, 2.1.11, staged create/apply probe 2026-08-03]**
+- **A schedule-record edit targeting the platform's current location yields `waiting_at_station`
+  WITHOUT travel, and the `on_space_platform_changed_state` arrival handler fires on that transition —
+  and RE-FIRES on `go_to_station` re-selection of the same station.** A schedule-less platform reads
+  `no_schedule`; the `space_location =` write itself is immediate (readable same execution). Upstream
+  documents the pieces (the write, the states, the event), not this composition.
+  **[empirical, 2.1.11, park/event probe 2026-08-03]**
+- **`enter_space_platform` returns `false` for disconnected players** in every variant probed
+  (controller types, paused and unpaused platforms) — upstream says only "if possible". The destination
+  can never pre-seat an offline player; this is what forces the seat-on-join design below.
+  **[empirical, 2.1.11, L2 headless probe 2026-08-03]**
+- **`game.delete_surface` under an OFFLINE characterless player record RELOCATES the record to `nauvis`
+  {0,0}, controller preserved — no crash, no dangling reference, and the engine accepts the delete with
+  the record aboard** (upstream documents only entity deletion). Character bodies aboard are DESTROYED
+  with the surface — that half IS upstream-documented ("all entities on it") and is the measured reason
+  evacuation-before-delete is the only thing protecting a passenger's body and gear; the engine protects
+  only the record. **[empirical, 2.1.11, delete-under-record probe 2026-08-03 — record restored
+  byte-exact afterward]**
+
+### Known defect — the park write cancels restored item-request proxies
+
+Writing `space_location` destroys item-request proxies on the platform surface (measured 1 → 0 on
+2.1.11; the upstream-documented "will cancel pending item requests" is literal). The import's gateway
+park performs exactly that write as the LAST import step — after restoration re-creates proxies and
+after the exact gate has already issued its verdict. A gateway-parked import of a proxy-carrying
+platform therefore silently loses its proxies, post-verdict; detection is latent by construction (the
+gate cannot see past its own verdict, and no standing test transfers a proxy-carrying platform with
+gateway park requested). **Planned fix: park BEFORE restoration** — a paused, empty, freshly-created
+platform accepts the `space_location` write and lands at the gateway (measured), so parking first
+leaves nothing to cancel — shipped with an adversarial fixture (gateway-parked transfer of a
+proxy-carrying platform, physical proxy count on the destination, RED on pre-fix code).
+
 ## Passenger handling
 
 A transfer is **not** blocked when players are aboard. A platform passenger is hub-locked in remote view with
@@ -95,10 +140,19 @@ section of [CLAUDE.md](../CLAUDE.md).
   instance only knows its own space-locations, so vanilla schedule routing cannot target another server's
   destination. Likely needs plugin-injected schedule/interrupt logic or config-driven auto-transfer on arrival.
 - **Follow-your-platform (Layer 2)** — carry the player with the platform to the destination via
-  `LuaPlayer.connect_to_server` + `LuaPlayer.enter_space_platform` (no `inventory_sync`). The spike that scoped
-  this ran on an engine we no longer run, and its findings were deleted with the rest of the pre-pin evidence — re-scope on the current pin before building. What IS proven on 2.1.11 is the
-  `/teleport` GUI (admins + the `Teleport` permission group), which fires `connect_to_server` without
-  carrying the platform. Layer 1 (evacuate to Nauvis) remains the fallback for every Layer-2 abort.
+  `LuaPlayer.connect_to_server` + `LuaPlayer.enter_space_platform` (no `inventory_sync`). The headless
+  half of the re-scope ran 2026-08-03 (see [Empirical foundations](#empirical-foundations-2111));
+  the client half is scripted in [l2-client-session-script.md](l2-client-session-script.md) and awaits
+  an owner session at a real game client. **Owner design ruling 2026-08-03 — seat-on-join, one shot,
+  native fallback**: the destination records a pending-seat intent at import go-live (player name +
+  the destination platform identity resolved at completion — never the source index, never a join-time
+  name lookup); an on-join hook makes ONE seat attempt; if the platform is gone the intent is dropped
+  and the game's native spawn places the player — no recovery flow. The failure mode degrades to
+  Layer 1's outcome for free (native spawn is where evacuation sends people), and the raw-engine
+  fallback on the source side is measured safe (record relocation, above). What IS proven on 2.1.11 is
+  the `/teleport` GUI (admins + the `Teleport` permission group), which fires `connect_to_server`
+  without carrying the platform. Layer 1 (evacuate to Nauvis) remains the fallback for every Layer-2
+  abort.
 - **Richer trigger conditions and policy** — the "conditions met" set beyond "parked at a gateway" (target
   instance online, no in-flight transfer for this platform, fuel/thrust state); who may trigger versus
   configure; `space-connection` length tuning; a re-lock workaround for a disabled gateway; per-force versus

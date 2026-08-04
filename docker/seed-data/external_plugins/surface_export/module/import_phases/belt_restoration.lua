@@ -310,7 +310,8 @@ function BeltRestoration.restore_side_groups(side_groups, entity_map)
             if not line.can_insert_at(k / 256) then return nil end
             local sb = side_total()
             -- Through the version seam (review F3): the seam exists because "latest" docs reorder
-            -- insert_at's parameters and using that order on 2.0.76 places nothing — production
+            -- insert_at's parameters and the reversed order places nothing (see version-compat.lua;
+            -- held at the current pin by every green belt-carrying transfer) — production
             -- belt writes must not bypass it. slot.ct as belt_stack_size seats an oversized
             -- (fossil) stack as ONE stack — the multi-stack owner requirement.
             VersionCompat.belt_insert_at(line, k / 256, { name = slot.n, quality = slot.q, count = slot.ct }, slot.ct)

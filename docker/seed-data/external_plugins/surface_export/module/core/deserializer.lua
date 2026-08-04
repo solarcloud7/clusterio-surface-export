@@ -107,7 +107,7 @@ local SIMPLE_RESTORE_RULES = {
   -- Splitter filter: gated by TYPE, not by current value — a fresh splitter's splitter_filter
   -- reads nil when unset, so the generic entity[prop] ~= nil guard silently SKIPPED this rule and
   -- filters were lost on every transfer/paste (caught live 2026-07-17 via the selection-lab
-  -- filtered fixture; string and {name,quality} table writes both measured to stick at 2.0.77).
+  -- filtered fixture; string and {name,quality} table writes both measured to stick — state-dimensions lab).
   -- Mining-drill data.filter ({name,quality}) is unaffected: drills are not in the types gate.
   { field = "filter", prop = "splitter_filter", types = { ["splitter"] = true, ["lane-splitter"] = true } },
   { field = "input_priority", prop = "splitter_input_priority", safecall = true },
@@ -116,7 +116,7 @@ local SIMPLE_RESTORE_RULES = {
   { field = "always_on", present = true, safecall = true },
   { field = "auto_launch", present = true },
   { field = "rocket_parts" },
-  -- (recipe_quality was removed: LuaEntity.recipe_quality does not exist at 2.0.77 — the row ALWAYS
+  -- (recipe_quality was removed: LuaEntity.recipe_quality does not exist — the row ALWAYS
   -- threw into its safecall and quality silently reset to normal. Quality now rides set_recipe(name, q)
   -- atomically at both restore sites; measured in the state-dimensions-lab notebook.)
   { field = "switch_state", present = true, safecall = true },
@@ -298,7 +298,7 @@ function Deserializer.create_entity(surface, entity_data)
   if entity.valid and (entity.type == "assembling-machine" or entity.type == "furnace" or entity.type == "rocket-silo")
     and entity_data.specific_data and entity_data.specific_data.recipe then
     -- Quality is passed ATOMICALLY here: set_recipe(name) without it defaults the pair to normal, and
-    -- there is no post-hoc fix-up — LuaEntity.recipe_quality does not exist at 2.0.77 (measured; the old
+    -- there is no post-hoc fix-up — LuaEntity.recipe_quality does not exist (measured; the old
     -- SIMPLE_RESTORE_RULES row for it always threw into its safecall). nil quality = normal, correct for
     -- exports that captured no quality.
     local recipe_success = safe_call(
@@ -408,7 +408,7 @@ function Deserializer.restore_entity_state(entity, entity_data)
   -- Restore recipe (skip if already set during create_entity for fluid port alignment)
   -- We check if the (name, quality) PAIR is already set to avoid overwriting and potentially breaking
   -- direction. Quality is get_recipe()'s second return and must be passed atomically to set_recipe —
-  -- see the create-time site above (LuaEntity.recipe_quality does not exist at 2.0.77).
+  -- see the create-time site above (LuaEntity.recipe_quality does not exist).
   -- TYPE gate, not method presence: set_recipe/get_recipe are LuaEntity METHODS and exist on every
   -- entity, so `entity.set_recipe` is always truthy — calling get_recipe() on a non-crafting entity
   -- (e.g. an entity-GHOST whose inner record carries data.recipe) throws
@@ -482,7 +482,7 @@ function Deserializer.restore_entity_state(entity, entity_data)
       function() entity.set_fluid_filter(data.fluid_filter) end)
   end
 
-  -- Restore mining drill resource filter. Measured 2026-07-17 at 2.0.77 (see the mining-drill
+  -- Restore mining drill resource filter. Measured 2026-07-17 (state-dimensions lab; see the mining-drill
   -- filter overload of LuaEntity.set_filter in the official API): a drill filter is an EntityID — a resource
   -- NAME string, no quality component (the {name,quality} table form throws "Invalid EntityID") —
   -- and set_filter is "callable only on entities that have filters" (every vanilla drill measures
@@ -600,7 +600,7 @@ function Deserializer.restore_entity_state(entity, entity_data)
   end
 
   -- Restore burner (fuel) energy-source state. Set currently_burning FIRST: writing
-  -- remaining_burning_fuel silently no-ops when there is no currently_burning item (2.0.77 LuaBurner).
+  -- remaining_burning_fuel silently no-ops when there is no currently_burning item (measured, state-dimensions lab).
   -- Resolve the serialized item name to a prototype so an unknown mod item is skipped (not crashed).
   -- currently_burning is burn-progress, NOT an inventory slot, so neither the expected-count
   -- (Verification.count_all_items) nor the dest census (SurfaceCounter.count_items) reads it directly.
@@ -764,7 +764,8 @@ function Deserializer.restore_inventories(entity, entity_data, overflow_losses)
             -- restore_item_properties entirely (only the no-slot insert fallback ran it), silently dropping
             -- spoilage decay, health, durability, ammo, labels — AND equipment grids / nested inventories
             -- (a slotted power armor arrived with an EMPTY grid; review finding at deserializer.lua:642).
-            -- EMPIRICAL (2.0.77, spoilage-roundtrip): bioflux spoil_percent 0.5003 -> 0 pre-fix.
+            -- EMPIRICAL (spoilage-roundtrip, retired into the spoilage pad which holds it at the
+            -- current pin): bioflux spoil_percent 0.5003 -> 0 pre-fix.
             -- Gate-neutrality of grid/nested restoration VERIFIED against both gate counters: the expected
             -- side (Verification.count_all_items, verification.lua) sums only top-level
             -- specific_data.inventories[].items[].count, and the dest census (SurfaceCounter.count_items ->
@@ -858,7 +859,7 @@ function Deserializer.restore_equipment_grid(grid, grid_data)
     })
 
     if equipment then
-      -- Restore energy / shield. EMPIRICAL (2.0.77, equipment-burner-roundtrip crash at tick 138282,
+      -- Restore energy / shield. EMPIRICAL (equipment-burner-roundtrip crash at tick 138282,
       -- this file's restore_equipment_grid): LuaEquipment.shield (and .energy) READS 0 on equipment
       -- that has no shield/energy buffer, so the old `equipment.X ~= nil` guard is a FALSE guard (a
       -- read never returns nil) and export captures a truthy 0; the WRITE then throws "Equipment is not
@@ -1076,7 +1077,7 @@ function Deserializer.restore_control_behavior(entity, entity_data)
 
   -- get_or_create (NOT get): an entity may not have instantiated its control behavior yet at restore time
   -- (a lamp has NO control behavior until it is wired, and wires are restored separately), so plain
-  -- get_control_behavior() returns nil and every setting below is silently skipped. EMPIRICAL (2.0.77,
+  -- get_control_behavior() returns nil and every setting below is silently skipped. EMPIRICAL (archived
   -- circuit-config-roundtrip): an unwired lamp's get_control_behavior()=nil, so its restored
   -- circuit_condition/circuit_enable_disable were dropped. The entity_data.control_behavior guard above
   -- means we only ever create a CB on an entity that HAD one at export, so no spurious CB is created.

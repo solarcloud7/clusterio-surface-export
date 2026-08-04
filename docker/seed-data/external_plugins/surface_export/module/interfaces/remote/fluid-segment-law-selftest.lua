@@ -255,7 +255,7 @@ local function exp_prototype_sweep(force)
 		{ name = "chemical-plant", boxes = { { "input", false }, { "input", false }, { "output", false }, { "output", false } } },
 		-- 2.1.11 drift caught by this instrument's first live run (2026-07-21): the turret's
 		-- documented internal buffer became a second enumerable box (b2: get_fluid_box_prototype
-		-- returns nil, no segment). The 2.0.77 sweep measured a single box. "?" = expect a nil
+		-- returns nil, no segment). The pre-2.1 sweep measured a single box. "?" = expect a nil
 		-- box prototype.
 		{ name = "flamethrower-turret", boxes = { { "none", true }, { "nil", false } } },
 		{ name = "big-mining-drill", boxes = {} },
