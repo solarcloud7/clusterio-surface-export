@@ -60,10 +60,14 @@ test("the mirrors reproduce the producers on the shapes that actually occur", ()
 	assert.equal(makeExportJobId(1785604898997, "lab-omnibus-state-v1"), "1785604898997_lab-omnibus-state-v1");
 
 	// The sanitizer's character class: alphanumerics and hyphen survive, everything else becomes "-",
-	// one dash per character (gsub is per-character, not per-run).
+	// one dash per BYTE — Lua's gsub walks UTF-8 bytes, so a non-ASCII character emits one dash per
+	// byte it occupies, and the mirror must agree or the preflight predicts IDs Lua never produces.
 	assert.equal(sanitizePlatformName("lab-omnibus-state-v1"), "lab-omnibus-state-v1");
 	assert.equal(sanitizePlatformName("my platform #1"), "my-platform--1");
 	assert.equal(sanitizePlatformName("a_b.c"), "a-b-c");
+	assert.equal(sanitizePlatformName("é"), "--", "é is 2 UTF-8 bytes → 2 dashes (per-BYTE, not per-character)");
+	assert.equal(sanitizePlatformName("café"), "caf--");
+	assert.equal(sanitizePlatformName("🚀pad"), "----pad", "a 4-byte emoji → 4 dashes");
 
 	assert.equal(canonicalTransferId(2, "001_test"), "2:001_test");
 });

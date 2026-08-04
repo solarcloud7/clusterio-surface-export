@@ -21,6 +21,7 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 
 import { exportIdFloor } from "./batch-lifecycle.mjs";
 
@@ -90,4 +91,18 @@ test("the floor is an integer — it becomes a Lua number and a %03d-formatted i
 	}
 	assert.ok(exportIdFloor(T) < Number.MAX_SAFE_INTEGER,
 		"the counter is a Lua double; above 2^53 the `^(%d+)_` parse would stop round-tripping exactly");
+});
+
+test("the counter bump is SET-if-lower, never ADD (source-text pin on the embedded Lua)", () => {
+	// The bump Lua is an embedded string, invisible to every runtime test: reverting SET-if-lower to
+	// an ADD passes the whole offline suite while silently restoring the additive aliasing above
+	// (both hosts drift apart again and the collision preflight predicts from a base neither host
+	// has). Pin the protective shape in the source text, id-format-pin style.
+	const src = readFileSync(new URL("./batch-lifecycle.mjs", import.meta.url), "utf8");
+	assert.match(src, /if before < floor then storage\.async_job_id_counter = floor end/,
+		"bumpExportIdCounter's embedded Lua no longer sets the counter TO the floor when lower - "
+		+ "SET-if-lower is what lands both hosts on the SAME base regardless of drift");
+	assert.doesNotMatch(src, /async_job_id_counter\s*=\s*(?:before|storage\.async_job_id_counter)\s*\+/,
+		"an ADDITIVE counter bump is the aliasing defect this uniquifier replaced - "
+		+ "it must not reappear in any form");
 });

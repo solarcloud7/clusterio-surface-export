@@ -160,9 +160,18 @@ export function bumpExportIdCounter(host, floor = exportIdFloor()) {
 // dist/node, which is gitignored and not present in the plugin container where test/*.test.cjs runs;
 // id-format-pin.test.mjs asserts the two producers still emit these exact templates instead.
 
-/** Mirrors export-pipeline.lua:184 — `platform.name:gsub("[^%w%-]", "-")`. */
+/** Mirrors export-pipeline.lua:184 — `platform.name:gsub("[^%w%-]", "-")`. BYTE-faithful
+ * (Workstream A): Lua's gsub walks UTF-8 BYTES, so a non-ASCII character emits one dash PER BYTE
+ * ("é" → 2 dashes, "🚀" → 4). The old per-code-unit mirror emitted one dash per character, so the
+ * collision preflight predicted a different ID than Lua actually produces for any non-ASCII
+ * platform name — a silently wrong prediction on exactly the names a player is most likely to
+ * type. Allowed bytes per Lua's default-locale %w + literal dash: ASCII digits/letters/'-'. */
 export function sanitizePlatformName(name) {
-	return String(name).replace(/[^0-9A-Za-z-]/g, "-");
+	return Array.from(Buffer.from(String(name), "utf8"), (b) =>
+		((b >= 0x30 && b <= 0x39) || (b >= 0x41 && b <= 0x5a) || (b >= 0x61 && b <= 0x7a) || b === 0x2d)
+			? String.fromCharCode(b)
+			: "-",
+	).join("");
 }
 
 /** Mirrors export-pipeline.lua:189 — `string.format("%03d_%s", job_counter, safe_name)`. */
