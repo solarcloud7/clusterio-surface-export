@@ -254,6 +254,78 @@ function ConnectionScanner.extract_logistic_requests(entity)
   return requests
 end
 
+--- Extract MANUAL logistic sections from every logistic point on an entity (2.0 sections API).
+--- This is the persistent, player-set request state — on a space-platform-hub these ARE the
+--- platform's pending item requests (the hub GUI "Requests" tab). Measured 2.1.11 (2026-08-04):
+--- a hub-targeted item-request-proxy is destroyed by the engine within one tick of creation
+--- (paused or not) and its request is annihilated, so manual sections are the ONLY persistent
+--- form a pending hub request can take. The exact gate cannot see them (a request is a setting,
+--- not an item) — the same silent-loss class as the infinity-pipe filter and chest slot filters.
+--- Derived sections (is_manual=false, e.g. the type-3 construction-needs section that tracks
+--- pending proxies/ghosts on the surface) are engine-owned and regenerate on the destination;
+--- serializing them would double the requests, so only manual sections ride.
+--- @param entity LuaEntity: The entity to extract sections from
+--- @return table: Array of {point_index, sections={{group, multiplier, active, filters}}}
+function ConnectionScanner.extract_logistic_sections(entity)
+  if not entity or not entity.valid then
+    return {}
+  end
+
+  -- Returns {} for entities without logistic points (measured 2.1.11 on assembler/hub) — no throw.
+  local ok, points = pcall(function() return entity.get_logistic_point() end)
+  if not ok then
+    log(string.format("[connection-scanner] get_logistic_point failed on %s: %s", entity.name, tostring(points)))
+    return {}
+  end
+  if not points then
+    return {}
+  end
+
+  local out = {}
+  for _, point in pairs(points) do
+    local sections = {}
+    local scan_ok, scan_err = pcall(function()
+      for _, section in pairs(point.sections or {}) do
+        if section.is_manual then
+          local filters = {}
+          for i = 1, section.filters_count do
+            local filter = section.get_slot(i)
+            if filter and filter.value then
+              table.insert(filters, {
+                index = i,
+                value = {
+                  type = filter.value.type,
+                  name = filter.value.name,
+                  quality = filter.value.quality,
+                  comparator = filter.value.comparator,
+                },
+                min = filter.min,
+                max = filter.max,
+                -- import_from reads back as a LuaSpaceLocationPrototype; the NAME is the portable form
+                import_from = filter.import_from and filter.import_from.name or nil,
+              })
+            end
+          end
+          table.insert(sections, {
+            group = (section.group ~= "" and section.group) or nil,
+            multiplier = section.multiplier,
+            active = section.active,
+            filters = filters,
+          })
+        end
+      end
+    end)
+    if not scan_ok then
+      log(string.format("[connection-scanner] logistic section scan failed on %s: %s", entity.name, tostring(scan_err)))
+    end
+    if #sections > 0 then
+      table.insert(out, { point_index = point.logistic_member_index, sections = sections })
+    end
+  end
+
+  return out
+end
+
 --- Extract filter slots from filter inserters, loaders, etc.
 --- @param entity LuaEntity: The entity with filters
 --- @return table: Array of filter definitions

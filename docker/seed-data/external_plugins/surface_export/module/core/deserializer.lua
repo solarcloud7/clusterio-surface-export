@@ -1241,6 +1241,83 @@ function Deserializer.restore_logistic_requests(entity, entity_data)
   end
 end
 
+--- Restore MANUAL logistic sections (2.0 sections API) — pairs with
+--- ConnectionScanner.extract_logistic_sections. On the space-platform-hub these are the platform's
+--- pending item requests (the hub GUI "Requests" tab); the hub reaches here through the SAME
+--- restore_all loop as every other entity because PlatformHubMapping put the remapped hub in
+--- entity_map under the old entity_id. All writes work on a frozen entity (disabled_by_script,
+--- platform paused — measured 2.1.11, 2026-08-04), so this runs pre-gate like the other settings.
+--- @param entity LuaEntity: The entity to restore sections to
+--- @param entity_data table: Serialized entity data (top-level logistic_sections field)
+function Deserializer.restore_logistic_sections(entity, entity_data)
+  if not entity.valid or not entity_data.logistic_sections then
+    return
+  end
+
+  for _, point_data in ipairs(entity_data.logistic_sections) do
+    local pt_ok, point = pcall(function() return entity.get_logistic_point(point_data.point_index) end)
+    if not pt_ok or not point then
+      log(string.format("[Deserializer Error] logistic point %s missing on %s: %s",
+        tostring(point_data.point_index), entity.name, tostring(pt_ok and "nil point" or point)))
+    else
+      -- Exact fidelity: a fresh destination entity arrives with its own default manual section(s)
+      -- (a fresh hub has one empty one), so REPLACE the manual set instead of appending to it.
+      -- Derived sections (is_manual=false, e.g. the construction-needs tracker) are engine-owned,
+      -- regenerate from the destination surface, and are never touched.
+      local rm_ok, rm_err = pcall(function()
+        for i = point.sections_count, 1, -1 do
+          local section = point.sections[i]
+          if section and section.is_manual then
+            point.remove_section(i)
+          end
+        end
+      end)
+      if not rm_ok then
+        log(string.format("[Deserializer Error] clearing manual sections on %s: %s", entity.name, tostring(rm_err)))
+      end
+
+      for _, sec_data in ipairs(point_data.sections) do
+        local add_ok, section = pcall(function() return point.add_section(sec_data.group) end)
+        if not add_ok or not section then
+          log(string.format("[Deserializer Error] add_section(%s) failed on %s: %s",
+            tostring(sec_data.group), entity.name, tostring(add_ok and "nil section" or section)))
+        else
+          -- add_section(<existing group>) ADOPTS the destination force's group filters (measured
+          -- 2.1.11: the joined section arrived pre-populated). Only write filters into an EMPTY
+          -- group — overwriting a pre-existing one would mutate force-level state shared by
+          -- unrelated platforms on the destination. Ungrouped sections always get their filters.
+          local adopted = sec_data.group ~= nil and section.filters_count > 0
+          if not adopted then
+            for _, f in ipairs(sec_data.filters or {}) do
+              local slot = { value = f.value, min = f.min, max = f.max, import_from = f.import_from }
+              local slot_ok, slot_err = pcall(function() section.set_slot(f.index, slot) end)
+              if not slot_ok and f.import_from then
+                -- Graceful mod-content mismatch: the import_from location may not exist on this
+                -- instance. Keep the request itself, drop only the unknown source location.
+                log(string.format("[Deserializer] set_slot with import_from='%s' failed on %s (%s) — retrying without import_from",
+                  tostring(f.import_from), entity.name, tostring(slot_err)))
+                slot.import_from = nil
+                slot_ok, slot_err = pcall(function() section.set_slot(f.index, slot) end)
+              end
+              if not slot_ok then
+                log(string.format("[Deserializer Error] set_slot(%s) for %s on %s: %s",
+                  tostring(f.index), tostring(f.value and f.value.name), entity.name, tostring(slot_err)))
+              end
+            end
+          end
+          local prop_ok, prop_err = pcall(function()
+            section.multiplier = sec_data.multiplier or 1
+            section.active = sec_data.active ~= false
+          end)
+          if not prop_ok then
+            log(string.format("[Deserializer Error] section multiplier/active on %s: %s", entity.name, tostring(prop_err)))
+          end
+        end
+      end
+    end
+  end
+end
+
 --- Slot-filter restoration (filter inserters, loaders, cargo wagons). Split from
 --- restore_entity_filters so its entity_filters guard cannot swallow the INFINITY restore below —
 --- the old combined guard early-returned for a pure infinity chest (no inserter-style slots) and

@@ -173,6 +173,13 @@ function EntityScanner.serialize_entity(entity)
     entity_data.logistic_requests = logistic_requests
   end
 
+  -- Extract MANUAL logistic sections (2.0 sections API) — on the hub these are the platform's
+  -- pending item requests; a setting, invisible to the exact gate, lost silently without this.
+  local logistic_sections = ConnectionScanner.extract_logistic_sections(entity)
+  if #logistic_sections > 0 then
+    entity_data.logistic_sections = logistic_sections
+  end
+
   -- Extract entity filters (filter inserters, loaders, cargo wagons)
   local entity_filters = ConnectionScanner.extract_entity_filters(entity)
   if #entity_filters > 0 then
