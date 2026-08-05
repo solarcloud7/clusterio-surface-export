@@ -13,6 +13,7 @@ import type {
 	GatewayLink,
 	ResolvedGatewayTarget,
 	ResolvedGateway,
+	AuditRow,
 } from "./shared/dto";
 export type {
 	HostNodeModel,
@@ -29,6 +30,7 @@ export type {
 	GatewayLink,
 	ResolvedGatewayTarget,
 	ResolvedGateway,
+	AuditRow,
 } from "./shared/dto";
 export { GATEWAY_NAMES, GATEWAY_PREFIX } from "./shared/dto";
 const PLUGIN_NAME = "surface_export";
@@ -1491,11 +1493,6 @@ export interface SourceCommitMarker {
 	forceName?: string;
 	committedAt: number;
 }
-
-// Imported as well as re-exported: `export type ... from` forwards the name without binding it in
-// this file's scope, and IControllerPlugin below refers to it directly.
-import type { AuditRow } from "./lib/audit-ledger";
-export type { AuditRow } from "./lib/audit-ledger";
 
 export interface IControllerPlugin {
 	/** #106: add/remove a persisted awaiting_validation intent (the orchestrator calls these). */

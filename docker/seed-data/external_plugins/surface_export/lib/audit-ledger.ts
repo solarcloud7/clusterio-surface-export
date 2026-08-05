@@ -1,5 +1,9 @@
 import fs from "fs/promises";
 import { enqueueWrite } from "./persist-queue";
+import type { AuditRow, AuditRowKind } from "../shared/dto";
+
+// Re-exported so callers can take the row type from the module that owns the behaviour.
+export type { AuditRow, AuditRowKind } from "../shared/dto";
 
 /**
  * The transfer audit ledger: an append-only JSONL record of every transfer, one slim row per
@@ -48,32 +52,6 @@ export const AUDIT_ROW_VERSION = 1;
 
 /** Long errors are truncated in the ledger; the untruncated text stays in the detail entry. */
 export const AUDIT_ERROR_MAX_CHARS = 512;
-
-export type AuditRowKind = "start" | "terminal";
-
-export interface AuditRow {
-	v: number;
-	transferId: string;
-	rowKind: AuditRowKind;
-	savedAt: number;
-	operationType: string;
-	platformName: string;
-	platformIndex: number | null;
-	sourceInstanceId: number;
-	sourceInstanceName: string | null;
-	targetInstanceId: number;
-	targetInstanceName: string | null;
-	exportId: string | null;
-	artifactSizeBytes: number | null;
-	status: string;
-	startedAt: number | null;
-	completedAt: number | null;
-	failedAt: number | null;
-	lastEventAt: number | null;
-	eventCount: number;
-	error: string | null;
-	errorTruncated?: boolean;
-}
 
 export interface LedgerLoadResult {
 	rows: AuditRow[];

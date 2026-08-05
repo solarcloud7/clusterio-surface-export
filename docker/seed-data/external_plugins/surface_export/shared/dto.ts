@@ -138,6 +138,44 @@ export interface HostNodeModel {
 	instances: InstanceNodeModel[];
 }
 
+// ── Transfer audit ledger row ───────────────────────────────────────────────
+// Lives HERE, not beside its implementation in lib/audit-ledger.ts, because messages.ts references
+// it and messages.ts is compiled into the BROWSER bundle (tsconfig.browser.json includes messages.ts
+// and shared/** but deliberately not lib/**, which is node-only and reaches for fs). Putting the
+// type in lib would drag the whole node-only subtree into the web build.
+
+/** `start` when a transfer begins, `terminal` when it reaches a verdict. */
+export type AuditRowKind = "start" | "terminal";
+
+/**
+ * One row of the append-only transfer audit ledger. Scalars only — deliberately no item/fluid count
+ * maps, which are what make a detail entry ~9.3 KB and would make keeping every transfer forever
+ * unaffordable. See lib/audit-ledger.ts for the read/write rules.
+ */
+export interface AuditRow {
+	v: number;
+	transferId: string;
+	rowKind: AuditRowKind;
+	savedAt: number;
+	operationType: string;
+	platformName: string;
+	platformIndex: number | null;
+	sourceInstanceId: number;
+	sourceInstanceName: string | null;
+	targetInstanceId: number;
+	targetInstanceName: string | null;
+	exportId: string | null;
+	artifactSizeBytes: number | null;
+	status: string;
+	startedAt: number | null;
+	completedAt: number | null;
+	failedAt: number | null;
+	lastEventAt: number | null;
+	eventCount: number;
+	error: string | null;
+	errorTruncated?: boolean;
+}
+
 // ── Transaction payload types (shared by the node controller/instance and the web UI) ───────────
 // These describe the export/import/validation payloads carried on the wire and rendered in the
 // transaction-log UI. They live here (not in messages.ts) so the browser bundle can import them
