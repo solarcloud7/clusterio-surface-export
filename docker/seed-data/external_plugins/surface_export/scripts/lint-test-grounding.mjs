@@ -8,10 +8,17 @@
  * blind spot measured in W3: a success-path runner saw a failed verdict, Black-Box Discard removed the
  * destination, and the runner then misreported the missing destination as physical item loss.
  *
- * Rules per tests/integration/<name>/run-tests.ps1, with comments stripped:
- *   1. A fidelity test performs an independent physical item count.
- *   2. Validator fidelity self-reports are cross-grounded physically.
- *   3. A success-path destination census follows Read-DebugFile -> Assert-TransferSucceeded.
+ * Rules per tests/integration/<name>/run-tests.{ps1,mjs}, with comments stripped (dialect-aware —
+ * `#` for PowerShell, `//` for JavaScript, so a commented-out marker never satisfies a rule):
+ *   1. A fidelity test performs an independent physical item count.        [both dialects]
+ *   2. Validator fidelity self-reports are cross-grounded physically.      [both dialects]
+ *   3. A success-path destination census follows the verdict adjudication. [dialect-specific markers:
+ *      ps1 Read-DebugFile -> Assert-TransferSucceeded; mjs validation_success before any board/census]
+ *
+ * Rules 1 and 2 covered ps1 only until 2026-08-05, because this guard predated mjs runners. No mjs
+ * runner violates them today, so their mjs coverage is preventative — which is exactly why each has a
+ * self-test proving it FIRES on a synthetic violator (test/lint-test-grounding.test.cjs). A
+ * preventative rule nobody has watched fire is indistinguishable from one that does not work.
  *
  * Escape hatch: lint-test-grounding:allow with an owner-approved manifest entry. An allow is an escalation,
  * never a self-service response to a firing guard.
@@ -29,7 +36,15 @@ const SELF_REPORT_FIELDS = ["totalItemLoss", "expectedItemCounts", "actualItemCo
 const PHYSICAL_COUNT = "get_item_count(";
 const DESTINATION_CENSUS_RE = /\bCount-[A-Za-z0-9_-]+\b[^\r\n]*(?:\$(?:dest|dst)\w*|-Destination(?:Instance|Host|Platform)?\b)/gi;
 
-function stripComments(source) {
+function stripComments(source, dialect = "ps1") {
+	// Dialect-aware, because the shared rules below now run over BOTH runner kinds. Stripping from
+	// `#` in a JavaScript file would truncate every line containing one (a private field, a URL
+	// fragment) and could hide a marker that really is there; stripping `//` in PowerShell would do
+	// nothing useful. Line comments only either way — the markers this guard looks for are code
+	// identifiers, and anything cleverer risks mangling a string that merely contains one.
+	if (dialect === "mjs") {
+		return source.replace(/^\s*\/\/.*$/gm, "");
+	}
 	return source
 		.split(/\r?\n/)
 		.map((line) => {
@@ -102,9 +117,8 @@ function firstDestinationCensusAfter(source, startIndex) {
 export function findGroundingViolations(files) {
 	const violations = [];
 	for (const { name, dialect, path, source } of files) {
-		if (dialect === "mjs") continue; // mjs rules live in findMjsGroundingViolations
 		if (source.includes(ALLOW_MARKER)) continue;
-		const code = stripComments(source);
+		const code = stripComments(source, dialect);
 		const hasPhysical = code.includes(PHYSICAL_COUNT);
 
 		if (/fidelity/i.test(name) && !hasPhysical) {
@@ -123,6 +137,18 @@ export function findGroundingViolations(files) {
 				message: `reads validator self-report '${usedReportField}' without an independent physical count`,
 			});
 		}
+
+		// Rules 1 and 2 above are dialect-INDEPENDENT. "Measure the invariant yourself rather than
+		// believe the validator's self-report" is a property of the assertion, not of the language it
+		// is written in, and `name` is the test DIRECTORY, so a fidelity-named mjs suite is detected
+		// exactly the same way. They were ps1-only because this guard predated mjs runners, not by
+		// design — measured when extending: zero of the six current mjs runners trips either rule, so
+		// this is preventative rather than corrective, and the self-tests below are what give it teeth
+		// in the absence of a live subject.
+		//
+		// Rule 3's markers below ARE PowerShell-specific (Read-DebugFile / Assert-TransferSucceeded);
+		// the mjs equivalent of that ordering rule lives in findMjsGroundingViolations.
+		if (dialect === "mjs") continue;
 
 		const debugIndex = code.indexOf("debug_import_result");
 		if (debugIndex === -1) continue;
