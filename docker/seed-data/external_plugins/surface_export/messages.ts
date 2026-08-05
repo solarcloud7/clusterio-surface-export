@@ -1492,6 +1492,11 @@ export interface SourceCommitMarker {
 	committedAt: number;
 }
 
+// Imported as well as re-exported: `export type ... from` forwards the name without binding it in
+// this file's scope, and IControllerPlugin below refers to it directly.
+import type { AuditRow } from "./lib/audit-ledger";
+export type { AuditRow } from "./lib/audit-ledger";
+
 export interface IControllerPlugin {
 	/** #106: add/remove a persisted awaiting_validation intent (the orchestrator calls these). */
 	persistPendingTransfer(intent: PendingTransferIntent): void;
@@ -1537,6 +1542,14 @@ export interface IControllerPlugin {
 	transactionLogs: Map<string, TransactionLogEntryModel[]>;
 	persistedTransactionLogs: PersistedTransactionLog[];
 	transactionLogPath: string;
+	/** Append-only audit ledger of every transfer (see lib/audit-ledger.ts). */
+	auditLedgerPath: string;
+	/** Folded ledger: one row per transfer, terminal beating start. The LIST source. */
+	auditIndex: Map<string, AuditRow>;
+	/** Terminal-row count per transfer — how many distinct verdicts it has recorded. */
+	auditRevisions: Map<string, number>;
+	/** Append one ledger row and update the index. Never throws. */
+	recordAuditRow(row: AuditRow): Promise<void>;
 	lastTreeForceName: string;
 	treeRevision: number;
 	transferRevision: number;

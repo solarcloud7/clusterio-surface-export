@@ -410,10 +410,41 @@ In-game status messages are pushed to the source instance with
 
 Transaction logs are managed by the controller's `TransactionLogger`
 (`lib/transaction-logger.ts`). Every operation (`transfer`, `export`, `import`) is
-recorded as an operation record with a sequence of events and persisted as a single
-JSON file under the controller's `controller.database_directory`. The web UI's
-Transaction Logs tab and the `ListTransactionLogsRequest` / `GetTransactionLogRequest`
-messages read from this store.
+recorded as an operation record with a sequence of events. Two files under the
+controller's `controller.database_directory` hold the result, with different jobs:
+
+| File | Shape | Holds | Bounded |
+|---|---|---|---|
+| `surface_export_transaction_audit.jsonl` | append-only JSONL, one slim row per lifecycle event | every transfer, for good — scalars only, no count maps | no (rotation is future work) |
+| `surface_export_transaction_logs.json` | single JSON array, upserted per transfer | the fat detail: events, phase timings, validation maps | not yet — bounding it is future work |
+
+The split exists because the two requirements pull apart. The detail store is read,
+parsed, re-serialised and rewritten IN FULL on every persist, so its cost grows with
+total history and cannot be left unbounded — but it is also the only record that a
+transfer happened, and users need to see every transfer to satisfy themselves no
+duplication occurred. Capping it alone would trade a cost problem for a trust problem.
+The ledger answers "did it happen, and what was the verdict" in rows small enough to keep
+forever; the detail store can then become a recent window without erasing history.
+
+`ListTransactionLogsRequest` (the Transaction Logs tab's list) is served from the
+ledger, folded one row per transfer. `GetTransactionLogRequest` (the per-transfer
+detail view) still reads the detail store.
+
+Two ledger rules worth knowing before changing it:
+
+- A **terminal row beats a start row regardless of file position**. Transfer IDs are
+  reused — `transferPlatform` replaces a failed record under the same ID, and the gallery
+  batch suites reset the Lua counter and regenerate identical IDs — so a stale start row
+  can legitimately appear after a terminal one.
+- A **damaged line is skipped, not fatal**. It is reported with its line number and byte
+  offset. This is deliberately unlike the detail store, where one bad byte makes the
+  loader surface zero history and the writer refuse every future write until a human
+  intervenes.
+
+On first run after upgrade the ledger is derived from the existing detail entries and
+written with a single atomic replace, so it either exists complete or not at all — a
+crash partway leaves no ledger and the next boot re-derives. The migration never modifies
+the detail store.
 
 Common event progression: `transfer_created` → `import_started` → `validation_received` →
 `transfer_completed`. The failure path includes rollback events (`rollback_attempt`,

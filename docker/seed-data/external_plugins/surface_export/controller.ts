@@ -15,6 +15,8 @@ import { PlatformTree } from "./lib/platform-tree";
 import { TransactionLogger } from "./lib/transaction-logger";
 import { SubscriptionManager } from "./lib/subscription-manager";
 import { enqueueWrite } from "./lib/persist-queue";
+import { appendAuditRow, buildAuditRow, foldAuditRows, countRevisions, loadAuditLedger } from "./lib/audit-ledger";
+import type { AuditRow } from "./lib/audit-ledger";
 import { TransferOrchestrator } from "./lib/transfer-orchestrator";
 import { createOperationRecord as buildOperationRecord } from "./lib/operation-record";
 import type {
@@ -64,6 +66,10 @@ export class ControllerPlugin extends BaseControllerPlugin {
 	/** Consecutive failed persistStorage writes; reset on success. Drives escalation only. */
 	consecutiveStorageWriteFailures!: number;
 	transactionLogPath!: string;
+	auditLedgerPath!: string;
+	/** Folded ledger, one row per transfer. The source for the transfer LIST. */
+	auditIndex!: Map<string, AuditRow>;
+	auditRevisions!: Map<string, number>;
 	platformTree!: PlatformTree;
 	txLogger!: TransactionLogger;
 	subscriptions!: SubscriptionManager;
@@ -103,6 +109,12 @@ export class ControllerPlugin extends BaseControllerPlugin {
 			String(this.c.config.get("controller.database_directory")),
 			"surface_export_transaction_logs.json",
 		);
+		this.auditLedgerPath = path.resolve(
+			String(this.c.config.get("controller.database_directory")),
+			"surface_export_transaction_audit.jsonl",
+		);
+		this.auditIndex = new Map();
+		this.auditRevisions = new Map();
 		this.gatewayLinks = new Map();
 		this.gatewayConfigPath = path.resolve(
 			String(this.c.config.get("controller.database_directory")),
@@ -128,6 +140,7 @@ export class ControllerPlugin extends BaseControllerPlugin {
 
 		await this.loadStorage();
 		await this.txLogger.loadTransactionLogs();
+		await this.loadAuditIndex();
 		await this.loadGatewayConfig();
 		await this.loadPendingTransfers();
 		await this.loadSourceCommitMarkers();
@@ -704,6 +717,105 @@ export class ControllerPlugin extends BaseControllerPlugin {
 			return null;
 		}
 		return { sourceInstanceId, gatewayName };
+	}
+
+	/**
+	 * Load the audit ledger into the in-memory index, migrating from the detail store on first run.
+	 *
+	 * Runs AFTER loadTransactionLogs because the migration derives its rows from the detail entries
+	 * that call just loaded — on an existing cluster that is the only place the history exists.
+	 */
+	async loadAuditIndex() {
+		try {
+			let { rows, skipped } = await loadAuditLedger(this.auditLedgerPath);
+			if (!rows.length && this.persistedTransactionLogs.length) {
+				rows = await this.migrateAuditLedger();
+			}
+			for (const drop of skipped) {
+				// Named precisely enough to find by hand. A torn final line is the expected shape
+				// after power loss and costs exactly that line, rather than the whole history.
+				this.logger.warn(
+					`Audit ledger: skipped unreadable line ${drop.lineNumber} at byte ${drop.byteOffset} `
+					+ `(${drop.reason}). Every other row was loaded.`,
+				);
+			}
+			this.auditIndex = foldAuditRows(rows);
+			this.auditRevisions = countRevisions(rows);
+			this.logger.info(
+				`Audit ledger: ${this.auditIndex.size} transfer(s) from ${rows.length} row(s)`
+				+ (skipped.length ? `, ${skipped.length} unreadable line(s) skipped` : ""),
+			);
+		} catch (err: unknown) {
+			// Deliberately NOT fatal and deliberately not latching: the ledger is an observability
+			// record, and a controller that refuses to start because it cannot read its history would
+			// be a worse failure than one that starts with an empty index and says so. New rows still
+			// append, so the ledger repairs itself going forward.
+			this.auditIndex = new Map();
+			this.auditRevisions = new Map();
+			this.logger.error(
+				`Audit ledger at ${this.auditLedgerPath} could not be read (${getErrorMessage(err)}). `
+				+ "Transfer history for the LIST will be incomplete until the next controller restart; "
+				+ "the detail store is untouched and new transfers are still recorded.",
+			);
+		}
+	}
+
+	/**
+	 * First-run migration: derive one terminal row per existing detail entry.
+	 *
+	 * Written with a single atomic replace rather than appended row by row, so the ledger either
+	 * exists complete or does not exist at all. That is what makes re-running safe: a crash partway
+	 * through leaves no ledger, and the next boot re-derives from the detail store, which this
+	 * migration never modifies.
+	 */
+	async migrateAuditLedger(): Promise<AuditRow[]> {
+		const rows = [...this.persistedTransactionLogs]
+			.sort((a, b) => (a.savedAt || 0) - (b.savedAt || 0))
+			.map(entry => {
+				const events = Array.isArray(entry.events) ? entry.events : [];
+				const lastEvent = events.length ? events[events.length - 1] : null;
+				return buildAuditRow({
+					transferId: entry.transferId,
+					rowKind: "terminal",
+					savedAt: entry.savedAt || 0,
+					eventCount: events.length,
+					lastEventAt: lastEvent?.timestampMs ?? null,
+					info: entry.transferInfo || {},
+				});
+			});
+		const payload = rows.map(row => `${JSON.stringify(row)}
+`).join("");
+		await enqueueWrite(this.auditLedgerPath, () => lib.safeOutputFile(this.auditLedgerPath, payload));
+		this.logger.info(
+			`Audit ledger: migrated ${rows.length} transfer(s) from the detail store into `
+			+ `${this.auditLedgerPath}. The detail store was not modified.`,
+		);
+		return rows;
+	}
+
+	/**
+	 * Record one transfer in the ledger and update the in-memory index.
+	 *
+	 * Failure is logged, never thrown: this is called from the persist path at terminal resolution,
+	 * and a ledger write must not be able to fail a transfer that has already succeeded.
+	 */
+	async recordAuditRow(row: AuditRow) {
+		try {
+			await appendAuditRow(this.auditLedgerPath, row);
+			const existing = this.auditIndex.get(row.transferId);
+			if (!(existing && existing.rowKind === "terminal" && row.rowKind === "start")) {
+				this.auditIndex.set(row.transferId, row);
+			}
+			if (row.rowKind === "terminal") {
+				this.auditRevisions.set(row.transferId, (this.auditRevisions.get(row.transferId) ?? 0) + 1);
+			}
+		} catch (err: unknown) {
+			this.logger.error(
+				`Audit ledger: failed to record ${row.rowKind} row for ${row.transferId} `
+				+ `(${getErrorMessage(err)}). The transfer itself is unaffected; its detail entry still `
+				+ "carries the full record.",
+			);
+		}
 	}
 
 	async loadGatewayConfig() {

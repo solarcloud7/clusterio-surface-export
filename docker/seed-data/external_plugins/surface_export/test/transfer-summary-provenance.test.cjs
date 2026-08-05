@@ -43,12 +43,40 @@ Module._load = function patchedLoad(request, parent, isMain) {
 
 const distNode = path.join(__dirname, "..", "dist", "node");
 const { TransactionLogger } = require(path.join(distNode, "lib", "transaction-logger.js"));
+const { buildAuditRow, foldAuditRows, countRevisions } = require(path.join(distNode, "lib", "audit-ledger.js"));
 
 const ACTIVE_ID = "2:001_alpha";
 const PERSISTED_ID = "2:002_beta";
 const BOTH_ID = "2:003_gamma";
 
-function makeLogger({ active = [], persisted = [] } = {}) {
+function makeLogger({ active = [], persisted = [], extraRows = [] } = {}) {
+	const persistedEntries = persisted.map(entry => ({
+		transferId: entry.transferId,
+		savedAt: entry.startedAt || 2_000,
+		events: [],
+		transferInfo: {
+			platformName: entry.platformName || "pad",
+			operationType: "transfer",
+			sourceInstanceId: 2,
+			targetInstanceId: 1,
+			status: entry.status || "completed",
+			startedAt: entry.startedAt || 2_000,
+		},
+	}));
+	// The historical half of the merge now reads the AUDIT LEDGER, not the detail store. Fixture rows
+	// are built with the production builder rather than hand-shaped, so this test cannot drift into
+	// pinning a row shape that `persistTransactionLog` never actually emits.
+	const auditRows = [
+		...persistedEntries.map(entry => buildAuditRow({
+			transferId: entry.transferId,
+			rowKind: "terminal",
+			savedAt: entry.savedAt,
+			eventCount: entry.events.length,
+			lastEventAt: null,
+			info: entry.transferInfo,
+		})),
+		...extraRows,
+	];
 	const plugin = {
 		activeTransfers: new Map(active.map(entry => [entry.transferId, {
 			platformName: entry.platformName || "pad",
@@ -58,19 +86,9 @@ function makeLogger({ active = [], persisted = [] } = {}) {
 			startedAt: entry.startedAt || 1_000,
 			exportId: null,
 		}])),
-		persistedTransactionLogs: persisted.map(entry => ({
-			transferId: entry.transferId,
-			savedAt: entry.startedAt || 2_000,
-			events: [],
-			transferInfo: {
-				platformName: entry.platformName || "pad",
-				operationType: "transfer",
-				sourceInstanceId: 2,
-				targetInstanceId: 1,
-				status: entry.status || "completed",
-				startedAt: entry.startedAt || 2_000,
-			},
-		})),
+		persistedTransactionLogs: persistedEntries,
+		auditIndex: foldAuditRows(auditRows),
+		auditRevisions: countRevisions(auditRows),
 		platformStorage: new Map(),
 		transactionLogs: new Map(),
 		// buildTransferInfo resolves display names through the platform tree for any transfer whose
@@ -130,4 +148,73 @@ test("registrySource does NOT ride on buildTransferSummary", () => {
 	}, null);
 	assert.equal(built.registrySource, undefined,
 		"the stamp belongs to the merge, not to the per-transfer builder");
+});
+
+const LEDGER_ONLY_ID = "2:005_epsilon";
+
+test("a transfer present ONLY in the audit ledger still appears in the list", () => {
+	// THE property that makes bounding the detail store safe. Once the detail file becomes a recent
+	// window, most transfers will exist only as a ledger row — and the owner's requirement is that
+	// users can still see every transfer to satisfy themselves no duplication occurred. If this
+	// fails, trimming detail silently erases history from the UI.
+	const row = buildAuditRow({
+		transferId: LEDGER_ONLY_ID,
+		rowKind: "terminal",
+		savedAt: 5_000,
+		eventCount: 4,
+		lastEventAt: 5_100,
+		info: {
+			platformName: "evicted-pad",
+			operationType: "transfer",
+			sourceInstanceId: 2,
+			targetInstanceId: 1,
+			status: "completed",
+			startedAt: 5_000,
+		},
+	});
+	// persisted is empty on purpose: no detail entry exists for this transfer at all.
+	const summaries = makeLogger({ extraRows: [row] }).getTransferSummaries();
+	const summary = byId(summaries).get(LEDGER_ONLY_ID);
+
+	assert.ok(summary, "a transfer whose detail was evicted must still be listed");
+	assert.equal(summary.platformName, "evicted-pad");
+	assert.equal(summary.status, "completed");
+	assert.equal(summary.registrySource, "persisted",
+		"history, not a live blocker — the retry guard never reads the ledger");
+});
+
+test("a second terminal row is visible as a revision, not silently collapsed", () => {
+	// The late-verdict path genuinely records two different verdicts for one transfer. The array
+	// format overwrote the first; append-only keeps both, and the count is how an operator sees that
+	// a verdict landed after the transfer had already settled.
+	const base = {
+		rowKind: "terminal",
+		info: { platformName: "pad", operationType: "transfer", sourceInstanceId: 2, targetInstanceId: 1, startedAt: 6_000 },
+	};
+	const first = buildAuditRow({ ...base, transferId: "2:006_zeta", savedAt: 6_000, eventCount: 3, lastEventAt: 6_010,
+		info: { ...base.info, status: "failed" } });
+	const second = buildAuditRow({ ...base, transferId: "2:006_zeta", savedAt: 6_500, eventCount: 5, lastEventAt: 6_510,
+		info: { ...base.info, status: "completed" } });
+
+	const summaries = makeLogger({ extraRows: [first, second] }).getTransferSummaries();
+	const summary = byId(summaries).get("2:006_zeta");
+
+	assert.equal(summary.revisions, 2, "both verdicts must be counted");
+	assert.equal(summary.status, "completed", "the later terminal row is the current one");
+});
+
+test("a terminal row is never buried by a start row that lands after it", () => {
+	// Fold order is NOT file position. Transfer IDs are reused — transferPlatform replaces a failed
+	// record under the same ID, and the gallery batch suites reset the Lua counter and regenerate
+	// identical IDs — so a stale start row can legitimately appear after a terminal one. Position
+	// last-wins would report a finished transfer as still starting.
+	const shared = { transferId: "2:007_eta", info: { platformName: "pad", sourceInstanceId: 2, targetInstanceId: 1 } };
+	const terminal = buildAuditRow({ ...shared, rowKind: "terminal", savedAt: 7_000, eventCount: 4, lastEventAt: 7_010,
+		info: { ...shared.info, status: "completed", startedAt: 7_000 } });
+	const lateStart = buildAuditRow({ ...shared, rowKind: "start", savedAt: 7_500, eventCount: 0, lastEventAt: null,
+		info: { ...shared.info, status: "awaiting_validation", startedAt: 7_500 } });
+
+	const summaries = makeLogger({ extraRows: [terminal, lateStart] }).getTransferSummaries();
+	assert.equal(byId(summaries).get("2:007_eta").status, "completed",
+		"a start row must never supersede a terminal one, whatever the file order");
 });
