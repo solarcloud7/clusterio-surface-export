@@ -90,7 +90,15 @@ export const plugin = {
 	},
 	controllerConfigFields: {
 		[`${PLUGIN_NAME}.max_storage_size`]: {
-			description: "Maximum number of platform exports to store on controller",
+			title: "Stored export payloads to keep",
+			description: "How many platform export payloads the controller keeps on disk. Once the cap is "
+				+ "reached, the OLDEST export is discarded to make room — nothing is lost from a transfer "
+				+ "in progress, because a transfer reads its payload long before it could be evicted. "
+				+ "What eviction does end is the ability to DOWNLOAD that export again: the Transaction "
+				+ "Logs tab keeps showing the transfer, but its download button goes away once the payload "
+				+ "is gone. Raise this if you want players to be able to send you the payload from older "
+				+ "transfers for debugging; each stored export is roughly the size of the platform it "
+				+ "captured (tens to hundreds of KB).",
 			type: "number",
 			initialValue: 20,
 		},
