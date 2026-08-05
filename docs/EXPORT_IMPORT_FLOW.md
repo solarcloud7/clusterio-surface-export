@@ -416,7 +416,15 @@ controller's `controller.database_directory` hold the result, with different job
 | File | Shape | Holds | Bounded |
 |---|---|---|---|
 | `surface_export_transaction_audit.jsonl` | append-only JSONL, one slim row per lifecycle event | every transfer, for good — scalars only, no count maps | no (rotation is future work) |
-| `surface_export_transaction_logs.json` | single JSON array, upserted per transfer | the fat detail: events, phase timings, validation maps | not yet — bounding it is future work |
+| `surface_export_transaction_logs.json` | single JSON array, upserted per transfer | the fat detail: events, phase timings, validation maps | yes — `surface_export.transaction_log_detail_entries`, default 100 |
+
+Retention keeps detail preferentially: transfers whose export payload is still downloadable (so the
+download button never outlives its data), then failures, then recent successes — with at least 25
+slots reserved for successes so a burst of failures cannot erase every healthy example to compare
+against. A missing or nonsensical cap keeps EVERYTHING rather than emptying the store.
+
+Measured on a real store when retention first ran: 453 entries / 7.6 MB → 100 entries / 2.0 MB, while
+the ledger went 453 → 454 rows and the transfer list still returned all 454.
 
 The split exists because the two requirements pull apart. The detail store is read,
 parsed, re-serialised and rewritten IN FULL on every persist, so its cost grows with

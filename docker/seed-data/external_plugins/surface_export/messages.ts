@@ -1325,11 +1325,13 @@ export class GetTransactionLogRequest {
 	toJSON() { return { transferId: this.transferId }; }
 
 	static Response = {
-		jsonSchema: { type: "object", properties: { success: { type: "boolean" }, transferId: { type: "string" }, events: { type: "array" }, transferInfo: { type: ["object", "null"] }, summary: { type: ["object", "null"] }, error: { type: "string" } }, required: ["success"] } as JsonSchema,
+		jsonSchema: { type: "object", properties: { success: { type: "boolean" }, transferId: { type: "string" }, events: { type: "array" }, detailRetained: { type: "boolean" }, transferInfo: { type: ["object", "null"] }, summary: { type: ["object", "null"] }, error: { type: "string" } }, required: ["success"] } as JsonSchema,
 		fromJSON(json: unknown) {
 			return json as SimpleResponse & {
 				transferId?: string;
 				events?: TransactionLogEntryModel[];
+				/** Absent means retained. False means the detail was evicted; events will be empty. */
+				detailRetained?: boolean;
 				transferInfo?: Record<string, unknown> | null;
 				summary?: Record<string, unknown> | null;
 			};
@@ -1445,7 +1447,17 @@ export interface StoredExport {
 
 export interface PersistedTransactionLog {
 	transferId: string;
-	transferInfo: Partial<ActiveTransfer> & { status: string };
+	/**
+	 * What `TransactionLogger.buildTransferInfo` actually writes: every ActiveTransfer field is
+	 * optional AND explicitly nullable, because that builder normalises missing timestamps to `null`
+	 * rather than leaving them absent (`startedAt: transfer.startedAt || null`, and the same for
+	 * completedAt / failedAt / error).
+	 *
+	 * This was `Partial<ActiveTransfer>`, which says `| undefined` and not `| null` — a
+	 * declared-but-wrong shape. It went unchecked for as long as it did because the persist path read
+	 * the file back with `JSON.parse`, so the array was `any` and nothing compared the two.
+	 */
+	transferInfo: { [K in keyof ActiveTransfer]?: ActiveTransfer[K] | null } & { status: string };
 	summary: Record<string, unknown>;
 	events: TransactionLogEntryModel[];
 	savedAt: number;
@@ -1547,6 +1559,10 @@ export interface IControllerPlugin {
 	auditRevisions: Map<string, number>;
 	/** Append one ledger row and update the index. Never throws. */
 	recordAuditRow(row: AuditRow): Promise<void>;
+	/** Append a `start` row for a transfer that has just been created. Never throws. */
+	recordTransferStarted(transfer: ActiveTransfer): Promise<void>;
+	/** Latched at boot; persistTransactionLog refuses to write while set. */
+	transactionLogLoadError: string | null;
 	lastTreeForceName: string;
 	treeRevision: number;
 	transferRevision: number;

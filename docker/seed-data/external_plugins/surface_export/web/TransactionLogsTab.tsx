@@ -555,6 +555,25 @@ export default function TransactionLogsTab({ plugin, state }: { plugin: SurfaceE
 				</Card>
 			) : null}
 
+			{selectedDetails && selectedDetails.detailRetained === false ? (
+				// The transfer is NOT missing — the audit ledger still has it, which is why it is listed
+				// at all. Only the expensive per-transfer detail was evicted by retention. Saying so
+				// beats rendering an empty timeline that reads like a bug.
+				<Card title="Transfer Details">
+					<Alert
+						type="info"
+						showIcon
+						message="Detail not retained for this transfer"
+						description={
+							"This transfer is kept permanently in the audit ledger — status, platform, instances "
+							+ "and timestamps are shown above. Its event timeline and validation counts were "
+							+ "discarded to bound the detail store. Raise \"Transfers keeping full detail\" in the "
+							+ "plugin settings to keep detail for more transfers."
+						}
+					/>
+				</Card>
+			) : null}
+
 			{detailLoaded && detailedSummary ? (
 				<>
 					<Card title="Transfer Summary">

@@ -264,6 +264,23 @@ export class TransferOrchestrator {
 				exportMetrics: mergedExportMetrics,
 				payloadMetrics,
 			});
+
+		// Record a START row now, not only a terminal row at the end. Without it a transfer that never
+		// reaches a verdict leaves NO evidence it existed at all — and for an audit whose purpose is
+		// "see every transfer so you can be sure nothing was duplicated", a missing row is
+		// indistinguishable from a transfer that never happened. Two real ways that occurred:
+		//   * pruneOldTransfers evicts from activeTransfers past 100 by age WITHOUT checking whether a
+		//     transfer is still in flight, and persistTransactionLog silently returns when the record
+		//     is gone — so the terminal row is never written.
+		//   * a controller restart mid-transfer, since the only persist happens at terminal resolution.
+		// Placed HERE deliberately: after the ActiveTransfer record exists and after the offline-
+		// destination preflight, which refuses before any record is created specifically so the
+		// canonical ID is not burned. Appending a row ahead of that guard would burn it in the audit.
+		// Transfers build their record through the standalone createOperationRecord helper rather than
+		// the controller method, so this path records its own start row. Import and export go through
+		// ControllerPlugin.createOperationRecord, which does it for them.
+		await this.plugin.recordTransferStarted(transfer);
+
 		this.updateTransfer(transfer);
 
 		let importAccepted = false;

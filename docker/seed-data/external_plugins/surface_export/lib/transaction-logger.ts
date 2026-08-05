@@ -3,8 +3,9 @@ import fs from "fs/promises";
 import { safeOutputFile } from "@clusterio/lib";
 import { enqueueWrite } from "./persist-queue";
 import { buildAuditRow } from "./audit-ledger";
+import { selectRetainedDetail, MIN_DETAIL_ENTRIES, MAX_DETAIL_ENTRIES } from "./detail-retention";
 import type { IControllerPlugin, ActiveTransfer, PersistedTransactionLog, TransactionLogEntryModel } from "../messages";
-import { getErrorMessage } from "../helpers";
+import { getErrorMessage, PLUGIN_NAME } from "../helpers";
 
 /**
  * Transaction logging, phase timing, persistence, and transfer summary building.
@@ -223,7 +224,10 @@ export class TransactionLogger {
 					lastEventAt: row.lastEventAt ?? null,
 					registrySource: "persisted" as const,
 					/** How many distinct verdicts this transfer recorded; >1 means a late verdict landed. */
-					revisions: this.plugin.auditRevisions.get(row.transferId) ?? 1,
+					// `?? 0`, not 1: countRevisions counts TERMINAL rows only, and a start-only row now
+					// reaches this index. Defaulting to 1 claimed a verdict for a transfer that had
+					// recorded none — which is exactly the interrupted case start rows exist to expose.
+					revisions: this.plugin.auditRevisions.get(row.transferId) ?? 0,
 				});
 			}
 		}
@@ -300,21 +304,23 @@ export class TransactionLogger {
 
 			if (!events || !transfer) return;
 
-			let allLogs = [];
-			try {
-				const content = await fs.readFile(this.plugin.transactionLogPath, "utf8");
-				allLogs = JSON.parse(content);
-			} catch (err: unknown) {
-				if ((err as { code?: string }).code === "ENOENT") {
-					allLogs = [];
-				} else {
-					this.plugin.logger.error(
-						`Transaction history file ${this.plugin.transactionLogPath} is unreadable (${getErrorMessage(err)}); `
-						+ "skipping this write so the existing history is not destroyed. New transfers will not be recorded "
-						+ "to disk until you repair or move the file aside and restart the controller.",
-					);
-					return;
-				}
+			// The boot load is the gate now, not a re-read on every write.
+			//
+			// This used to read + parse the ENTIRE file before every write purely to detect corruption
+			// — 7.62 MB and 17 ms to add ~9 KB, and the in-memory array it then discarded was already
+			// authoritative. The protection it bought is preserved by refusing when the BOOT load
+			// failed; what it gives up is detecting corruption introduced by something outside this
+			// process mid-session. That trade is only acceptable because the audit ledger now exists:
+			// every transfer keeps a row there, so a damaged detail store is a loss of timelines, not
+			// a loss of history.
+			if (this.plugin.transactionLogLoadError) {
+				this.plugin.logger.error(
+					`Refusing to write ${this.plugin.transactionLogPath}: the startup load failed `
+					+ `(${this.plugin.transactionLogLoadError}) and the file is being preserved as-is. `
+					+ "Transfers are still recorded in the audit ledger, so no transfer is being lost — "
+					+ "only its detail. Repair or move the file aside and restart the controller.",
+				);
+				return;
 			}
 
 			const transferInfo = this.buildTransferInfo(transfer);
@@ -323,37 +329,116 @@ export class TransactionLogger {
 				transferId,
 				transferInfo,
 				summary,
-				events,
+				// A SNAPSHOT, not the live array. `events` is the same array the transactionLogs Map
+				// holds and logTransactionEvent keeps pushing to, so storing it by reference let the
+				// already-persisted entry keep growing in memory — the in-memory history then disagreed
+				// with the bytes on disk for the same transfer.
+				events: [...events],
 				savedAt: Date.now(),
 			};
 
-			// Upsert: replace existing entry for this transfer, or append if new
+			// ── SYNCHRONOUS SECTION: read, upsert, retain and PUBLISH with no await in between ──
+			//
+			// Every statement from here to the assignment must stay synchronous. Two transfers can
+			// resolve at once, and an await anywhere in this window lets both snapshot the same
+			// pre-state: each then writes a payload missing the other's entry, the later write wins,
+			// and one transfer's detail is silently absent from the file. pruneTransactionLogsMap
+			// below would then delete that transfer's in-memory events too — because it is neither
+			// active nor retained — while the ledger carries a terminal row claiming a verdict for it.
+			//
+			// This is not theoretical: the ledger append below is an awaited fs.appendFile chained
+			// behind a shared write queue, so it is a guaranteed yield point. It used to sit ABOVE
+			// this snapshot.
+			const allLogs = [...this.plugin.persistedTransactionLogs];
 			const existingIndex = allLogs.findIndex((log: PersistedTransactionLog) => log.transferId === transferId);
 			if (existingIndex !== -1) {
 				allLogs.splice(existingIndex, 1, entry);
 			} else {
 				allLogs.push(entry);
 			}
+			const retained = this.applyDetailRetention(allLogs);
+			this.plugin.persistedTransactionLogs = retained;
+			this.pruneTransactionLogsMap(retained);
+			// ── end synchronous section ──
 
-			await enqueueWrite(this.plugin.transactionLogPath,
-				() => safeOutputFile(this.plugin.transactionLogPath, JSON.stringify(allLogs, null, 2)));
-			this.plugin.persistedTransactionLogs = allLogs;
-
-			// Record the transfer in the append-only audit ledger. This is the row that outlives the
-			// detail entry: the detail store becomes a bounded window, while the ledger keeps one slim
-			// row per transfer for good, so "show me every transfer that ever ran" stays answerable.
-			// Awaited so a ledger write and a detail write for the same transfer cannot be reordered;
-			// recordAuditRow swallows nothing but never throws, so it cannot fail a completed transfer.
+			// LEDGER FIRST, detail file second. Retention can delete a detail entry, and the ledger row
+			// is what survives — so a detail entry must never reach disk without its row. Ordered this
+			// way a crash between the two loses a timeline; reversed, it would lose the record that the
+			// transfer happened at all.
 			await this.plugin.recordAuditRow(buildAuditRow({
 				transferId,
 				rowKind: "terminal",
 				savedAt: entry.savedAt,
-				eventCount: events.length,
+				eventCount: entry.events.length,
 				lastEventAt: this.getLastEventTimestamp(transferId),
 				info: transferInfo,
 			}));
+
+			await enqueueWrite(this.plugin.transactionLogPath,
+				() => safeOutputFile(this.plugin.transactionLogPath, JSON.stringify(retained, null, 2)));
 		} catch (err: unknown) {
 			this.plugin.logger.error(`Failed to persist transaction log: ${getErrorMessage(err)}`);
+		}
+	}
+
+	/**
+	 * Apply the retained-detail window. Split out so the policy is testable on its own and so the
+	 * config read has exactly one home.
+	 */
+	applyDetailRetention(entries: PersistedTransactionLog[]): PersistedTransactionLog[] {
+		const raw = this.plugin.controller.config?.get(`${PLUGIN_NAME}.transaction_log_detail_entries`);
+		// An ABSENT field (un-migrated controller) keeps everything: deleting detail because a lookup
+		// returned undefined is the worst available reading of a missing setting.
+		//
+		// A PRESENT but out-of-range number is CLAMPED and logged, rather than reinterpreted. Zero used
+		// to fall into the "absent" branch, so an operator typing 0 to mean "keep no detail" silently
+		// got "keep everything, unbounded" — the exact problem this cap exists to fix, re-armed by a
+		// plausible input with no warning. The sibling timeout field clamps its range the same way.
+		const configured = Number(raw);
+		if (raw === undefined || raw === null || !Number.isFinite(configured)) {
+			return selectRetainedDetail(entries, { cap: 0, isPinned: () => false });
+		}
+		const cap = Math.min(MAX_DETAIL_ENTRIES, Math.max(MIN_DETAIL_ENTRIES, Math.floor(configured)));
+		if (cap !== configured) {
+			this.plugin.logger.warn(
+				`${PLUGIN_NAME}.transaction_log_detail_entries is ${configured}; using ${cap} `
+				+ `(allowed range ${MIN_DETAIL_ENTRIES}-${MAX_DETAIL_ENTRIES}).`,
+			);
+		}
+		return selectRetainedDetail(entries, {
+			cap,
+			isPinned: entry => Boolean(
+				entry.transferInfo?.exportId && this.plugin.platformStorage.get(entry.transferInfo.exportId)?.exportData,
+			),
+		});
+	}
+
+	/**
+	 * Drop in-memory event arrays nothing can still reach.
+	 *
+	 * `transactionLogs` was never pruned — one entry per transfer for the life of the process, each
+	 * holding every event, aliased into the persisted array. Keep only what is still reachable: live
+	 * transfers, and transfers whose detail is retained on disk. Both are capped, so the Map is now
+	 * bounded too.
+	 */
+	pruneTransactionLogsMap(retained: PersistedTransactionLog[]) {
+		// Absence from activeTransfers does NOT mean finished: pruneOldTransfers evicts by startedAt
+		// past 100 entries with no in-flight check. A transfer still awaiting validation can therefore
+		// be missing from activeTransfers AND have no detail entry yet (persist runs only at terminal
+		// resolution) — dropping its events mid-flight would silently truncate the timeline it is still
+		// writing. A ledger row that is still `start` is the durable "has not resolved" signal.
+		const unresolved = [...this.plugin.auditIndex.values()]
+			.filter(row => row.rowKind === "start")
+			.map(row => row.transferId);
+		const reachable = new Set<string>([
+			...this.plugin.activeTransfers.keys(),
+			...retained.map(entry => entry.transferId),
+			...unresolved,
+		]);
+		for (const transferId of [...this.plugin.transactionLogs.keys()]) {
+			if (!reachable.has(transferId)) {
+				this.plugin.transactionLogs.delete(transferId);
+			}
 		}
 	}
 
@@ -361,13 +446,34 @@ export class TransactionLogger {
 		try {
 			const content = await fs.readFile(this.plugin.transactionLogPath, "utf8");
 			const logs = JSON.parse(content);
-			this.plugin.persistedTransactionLogs = Array.isArray(logs) ? logs : [];
+			if (!Array.isArray(logs)) {
+				// Parsing successfully is NOT the same as being usable. A file holding an object (a
+				// partial hand-edit, or a tool writing the wrong shape) used to be coerced to [] with no
+				// latch, which left the write gate open so the next transfer overwrote the original
+				// contents entirely. The removed pre-write re-read used to catch this by throwing on
+				// `.findIndex`; the gate has to catch it now.
+				this.plugin.persistedTransactionLogs = [];
+				this.plugin.transactionLogLoadError = `expected a JSON array, found ${typeof logs}`;
+				this.plugin.logger.error(
+					`Transaction history at ${this.plugin.transactionLogPath} is valid JSON but is not an array `
+					+ `(found ${typeof logs}). The file is being preserved as-is and detail writes are disabled `
+					+ "for this session; transfers are still recorded in the audit ledger. Repair or move the "
+					+ "file aside and restart the controller.",
+				);
+				return;
+			}
+			this.plugin.persistedTransactionLogs = logs;
+			this.plugin.transactionLogLoadError = null;
 			this.plugin.logger.info(`Loaded ${this.plugin.persistedTransactionLogs.length} transaction logs`);
 		} catch (err: unknown) {
 			if ((err as { code?: string }).code === "ENOENT") {
 				this.plugin.persistedTransactionLogs = [];
+				this.plugin.transactionLogLoadError = null;
 				return;
 			}
+			// Latched for the session: persistTransactionLog reads this instead of re-reading the file
+			// before every write.
+			this.plugin.transactionLogLoadError = getErrorMessage(err);
 			this.plugin.logger.error(
 				`Failed to load transaction history from ${this.plugin.transactionLogPath}: ${getErrorMessage(err)}. `
 				+ "The file was left untouched; the Transaction Logs tab will appear empty this session. "

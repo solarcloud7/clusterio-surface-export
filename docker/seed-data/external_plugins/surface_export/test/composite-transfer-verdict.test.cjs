@@ -167,6 +167,10 @@ function makeTransferHarness() {
 	const plugin = {
 		logger: { error() {}, warn() {}, info() {}, verbose() {} },
 		activeTransfers,
+		// The orchestrator records a `start` row the moment a transfer is created, so a transfer
+		// that never reaches a verdict still leaves evidence it existed. Counted, not ignored:
+		// some tests assert it fired.
+		recordTransferStarted: async () => { calls.startRows = (calls.startRows || 0) + 1; },
 		txLogger: {
 			logTransactionEvent: noop,
 			startPhase: noop,
