@@ -1,6 +1,7 @@
 
 import fs from "fs/promises";
 import { safeOutputFile } from "@clusterio/lib";
+import { enqueueWrite } from "./persist-queue";
 import type { IControllerPlugin, ActiveTransfer, PersistedTransactionLog, TransactionLogEntryModel } from "../messages";
 import { getErrorMessage } from "../helpers";
 
@@ -325,7 +326,8 @@ export class TransactionLogger {
 				allLogs.push(entry);
 			}
 
-			await safeOutputFile(this.plugin.transactionLogPath, JSON.stringify(allLogs, null, 2));
+			await enqueueWrite(this.plugin.transactionLogPath,
+				() => safeOutputFile(this.plugin.transactionLogPath, JSON.stringify(allLogs, null, 2)));
 			this.plugin.persistedTransactionLogs = allLogs;
 		} catch (err: unknown) {
 			this.plugin.logger.error(`Failed to persist transaction log: ${getErrorMessage(err)}`);

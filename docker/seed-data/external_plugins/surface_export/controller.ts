@@ -14,6 +14,7 @@ import * as lib from "@clusterio/lib";
 import { PlatformTree } from "./lib/platform-tree";
 import { TransactionLogger } from "./lib/transaction-logger";
 import { SubscriptionManager } from "./lib/subscription-manager";
+import { enqueueWrite } from "./lib/persist-queue";
 import { TransferOrchestrator } from "./lib/transfer-orchestrator";
 import { createOperationRecord as buildOperationRecord } from "./lib/operation-record";
 import type {
@@ -60,6 +61,8 @@ export class ControllerPlugin extends BaseControllerPlugin {
 	lastTreeForceName!: string;
 	storagePath!: string;
 	storageLoadError!: string | null;
+	/** Consecutive failed persistStorage writes; reset on success. Drives escalation only. */
+	consecutiveStorageWriteFailures!: number;
 	transactionLogPath!: string;
 	platformTree!: PlatformTree;
 	txLogger!: TransactionLogger;
@@ -90,6 +93,7 @@ export class ControllerPlugin extends BaseControllerPlugin {
 		this.logRevision = 0;
 		this.lastTreeForceName = "player";
 		this.storageLoadError = null;
+		this.consecutiveStorageWriteFailures = 0;
 
 		this.storagePath = path.resolve(
 			String(this.c.config.get("controller.database_directory")),
@@ -242,9 +246,15 @@ export class ControllerPlugin extends BaseControllerPlugin {
 		}
 
 		this.logger.info(`Cleaned up ${toRemove} old exports, now at ${this.platformStorage.size}`);
-		this.persistStorage().catch((err: unknown) => {
-			this.logger.error(`Failed to persist after cleanup: ${getErrorMessage(err)}`);
-		});
+		// Deliberately does NOT persist. The sole caller (handlePlatformExport) awaits persistStorage
+		// on the line after this returns, UNCONDITIONALLY — outside the size check that gated the call
+		// to here — so this method's own fire-and-forget persist wrote the same snapshot a moment
+		// before that one, and the two raced on safeOutputFile's shared temp path. That collision was
+		// deterministic rather than occasional: with max_storage_size at 20 and the store sitting at
+		// its cap, eviction fires on essentially every export, so it produced roughly one
+		// "ENOENT ... rename 'surface_export_storage.tmp.json'" per export (143 of them since
+		// 2026-07-26). If a future caller invokes cleanup WITHOUT persisting after, it must persist
+		// itself — do not restore a write here.
 		this.subscriptions.queueTreeBroadcast("player");
 	}
 
@@ -647,9 +657,30 @@ export class ControllerPlugin extends BaseControllerPlugin {
 		}
 		try {
 			const payload = JSON.stringify(Array.from(this.platformStorage.values()), null, 2);
-			await lib.safeOutputFile(this.storagePath, payload);
+			await enqueueWrite(this.storagePath, () => lib.safeOutputFile(this.storagePath, payload));
+			this.consecutiveStorageWriteFailures = 0;
 		} catch (err: unknown) {
-			this.logger.error(`Failed to persist Surface Export storage: ${getErrorMessage(err)}`);
+			// A WRITE failure is not latched the way a READ failure is: the read path sets
+			// storageLoadError and refuses forever to protect a file it could not understand, but a
+			// write failure may be transient (a full disk that gets cleared, a transient EBUSY), and
+			// latching would throw away exports we could still have saved.
+			//
+			// The cost of that choice is silence: before this counter, a permanently failing write
+			// logged one identical line per export and never escalated, so a controller that had
+			// stopped persisting entirely looked exactly like one that hiccuped once. Count the run
+			// and say so, which is the part that was missing.
+			// `?? 0` rather than a bare increment: tests construct the plugin with
+			// Object.create(ControllerPlugin.prototype) and never run init(), so the field can be
+			// undefined here — and `undefined + 1` is NaN, which would silently disable the
+			// escalation instead of failing loudly.
+			this.consecutiveStorageWriteFailures = (this.consecutiveStorageWriteFailures ?? 0) + 1;
+			const run = this.consecutiveStorageWriteFailures;
+			const suffix = run > 1
+				? ` This is failure #${run} in a row — stored exports have not reached disk since the last `
+					+ "success, so nothing created in that window will survive a controller restart. "
+					+ "Check free space and permissions on the database directory."
+				: "";
+			this.logger.error(`Failed to persist Surface Export storage: ${getErrorMessage(err)}.${suffix}`);
 		}
 	}
 
@@ -742,7 +773,7 @@ export class ControllerPlugin extends BaseControllerPlugin {
 	async persistGatewayConfig() {
 		try {
 			const payload = JSON.stringify(Array.from(this.gatewayLinks.entries()), null, 2);
-			await lib.safeOutputFile(this.gatewayConfigPath, payload);
+			await enqueueWrite(this.gatewayConfigPath, () => lib.safeOutputFile(this.gatewayConfigPath, payload));
 		} catch (err: unknown) {
 			this.logger.error(`Failed to persist gateway config: ${getErrorMessage(err)}`);
 		}
@@ -781,7 +812,7 @@ export class ControllerPlugin extends BaseControllerPlugin {
 	async persistPendingTransfers() {
 		try {
 			const payload = JSON.stringify(Array.from(this.pendingTransfers.values()), null, 2);
-			await lib.safeOutputFile(this.pendingTransfersPath, payload);
+			await enqueueWrite(this.pendingTransfersPath, () => lib.safeOutputFile(this.pendingTransfersPath, payload));
 		} catch (err: unknown) {
 			this.logger.error(`Failed to persist pending transfers: ${getErrorMessage(err)}`);
 		}
@@ -848,7 +879,7 @@ export class ControllerPlugin extends BaseControllerPlugin {
 	async persistSourceCommitMarkers() {
 		try {
 			const payload = JSON.stringify(Array.from(this.sourceCommitMarkers.values()), null, 2);
-			await lib.safeOutputFile(this.sourceCommitMarkersPath, payload);
+			await enqueueWrite(this.sourceCommitMarkersPath, () => lib.safeOutputFile(this.sourceCommitMarkersPath, payload));
 		} catch (err: unknown) {
 			this.logger.error(`Failed to persist source COMMIT markers: ${getErrorMessage(err)}`);
 		}
