@@ -126,3 +126,64 @@ test("pinned entries alone cannot overflow the cap", () => {
 	const kept = selectRetainedDetail(all, { cap: 10, isPinned: () => true });
 	assert.equal(kept.length, 10);
 });
+
+// ── Regressions for defects found in review ──────────────────────────────────
+
+test("a small cap does NOT let successes evict every failure", () => {
+	// The headline defect. `reserved` was claimed off the top, so at any cap <= 25 successes took the
+	// whole window and every failure's detail was deleted — the inverse of the documented priority,
+	// reachable by an operator simply lowering the cap as the config text invites.
+	const successes = Array.from({ length: 40 }, (_u, i) => entry(i + 1, { savedAt: i + 1 }));
+	const failures = Array.from({ length: 5 }, (_u, i) => entry(900 + i, { status: "failed", savedAt: 0.1 * i }));
+
+	const kept = selectRetainedDetail([...successes, ...failures], { cap: 20, isPinned: neverPinned });
+
+	assert.equal(kept.length, 20);
+	assert.equal(kept.filter(e => e.transferInfo.status === "failed").length, 5,
+		"every failure must survive a cap of 20 — they are older than every success and still outrank them");
+});
+
+test("the guarantee holds at the smallest allowed cap", () => {
+	const successes = Array.from({ length: 30 }, (_u, i) => entry(i + 1, { savedAt: i + 1 }));
+	const failures = Array.from({ length: 8 }, (_u, i) => entry(900 + i, { status: "failed", savedAt: 0.1 * i }));
+
+	const kept = selectRetainedDetail([...successes, ...failures], { cap: 10, isPinned: neverPinned });
+
+	assert.equal(kept.length, 10);
+	const keptFailures = kept.filter(e => e.transferInfo.status === "failed").length;
+	const keptSuccesses = kept.length - keptFailures;
+	assert.ok(keptFailures > 0, "failures must not be wiped out");
+	assert.ok(keptSuccesses > 0, "nor may successes be — both classes survive a tiny window");
+});
+
+test("downloadable entries cannot starve the other classes", () => {
+	// isPinned was its own class claiming the window first, justified by max_storage_size's DEFAULT —
+	// a bound resting on a different, operator-tunable field. Raise that field and no failure detail
+	// survived at all.
+	const successes = Array.from({ length: 200 }, (_u, i) => entry(i + 1, { savedAt: i + 1 }));
+	const failures = Array.from({ length: 10 }, (_u, i) => entry(900 + i, { status: "failed", savedAt: 0.1 * i }));
+
+	// Every success is downloadable — i.e. max_storage_size raised well above the detail cap.
+	const kept = selectRetainedDetail([...successes, ...failures], {
+		cap: 100,
+		isPinned: e => e.transferInfo.status === "completed",
+	});
+
+	assert.equal(kept.length, 100);
+	assert.equal(kept.filter(e => e.transferInfo.status === "failed").length, 10,
+		"failures keep their share regardless of how many downloadable successes exist");
+});
+
+test("within a class, a downloadable entry is preferred over a newer one", () => {
+	// Pinning still MEANS something — it is a tiebreak inside the class, not a separate claim.
+	const older = entry(1, { savedAt: 1 });
+	const newer = Array.from({ length: 10 }, (_u, i) => entry(i + 2, { savedAt: i + 2 }));
+
+	const kept = selectRetainedDetail([older, ...newer], {
+		cap: 5,
+		isPinned: e => e.transferId === older.transferId,
+		reservedSuccessSlots: 0,
+	});
+
+	assert.ok(kept.includes(older), "the downloadable entry wins its class despite being oldest");
+});

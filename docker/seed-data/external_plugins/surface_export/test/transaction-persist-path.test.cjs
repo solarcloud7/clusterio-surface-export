@@ -11,14 +11,21 @@
  *  - the transactionLogs Map must be pruned, because nothing ever deleted from it.
  */
 
-const { test } = require("node:test");
+const { test, beforeEach, after } = require("node:test");
 const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
 
-/** Shared ordering trace: the safeOutputFile stub and the ledger fake both append to it. */
+/**
+ * Ordering trace: the safeOutputFile stub and the ledger fake both append to it.
+ *
+ * Reset per test rather than inside one of them. Resetting inside the first test made the ordering
+ * assertion order-DEPENDENT: adding a case above it, or reordering the file, left `trace`
+ * pre-populated and failed the assertion for a reason unrelated to the invariant it guards.
+ */
 const trace = [];
+beforeEach(() => { trace.length = 0; });
 
 const Module = require("node:module");
 const originalLoad = Module._load;
@@ -38,8 +45,15 @@ Module._load = function patchedLoad(request, parent, isMain) {
 	return originalLoad.call(this, request, parent, isMain);
 };
 
+// Restore the loader when this file is done, so the stub cannot leak into any other test that shares
+// the process — a patch this global has no business outliving the file that installed it.
+after(() => { Module._load = originalLoad; });
+
 const distNode = path.join(__dirname, "..", "dist", "node");
 const { TransactionLogger } = require(path.join(distNode, "lib", "transaction-logger.js"));
+
+const warnings = [];
+beforeEach(() => { warnings.length = 0; });
 
 function makeHarness({ detailCap, extraLogIds = [] } = {}) {
 	const dir = fs.mkdtempSync(path.join(os.tmpdir(), "surface-export-persist-"));
@@ -67,6 +81,10 @@ function makeHarness({ detailCap, extraLogIds = [] } = {}) {
 		activeTransfers: new Map([[transferId, transfer]]),
 		platformStorage: new Map(),
 		transactionLogLoadError: null,
+		// pruneTransactionLogsMap consults the ledger to tell "finished" from "evicted from
+		// activeTransfers while still in flight" — absence there does not mean resolved.
+		auditIndex: new Map(),
+		auditRevisions: new Map(),
 		auditRows: [],
 		recordAuditRow: async function (row) { trace.push("ledger"); this.auditRows.push(row); },
 		controller: {
@@ -76,7 +94,7 @@ function makeHarness({ detailCap, extraLogIds = [] } = {}) {
 		},
 		platformTree: { resolveInstanceName: (id) => `instance-${id}` },
 		subscriptions: { emitLogUpdate() {} },
-		logger: { error() {}, info() {}, verbose() {}, warn() {} },
+		logger: { error() {}, info() {}, verbose() {}, warn: (m) => warnings.push(m) },
 	};
 	return { txLogger: new TransactionLogger(plugin), plugin, transferId, file };
 }
@@ -85,7 +103,6 @@ test("the ledger row is written BEFORE the detail entry", async () => {
 	// Ordering is the whole safety argument for retention: a detail entry may be deleted later, so it
 	// must never exist without the ledger row that outlives it. Reversed, a crash between the two
 	// would lose the record that the transfer happened at all — not merely its timeline.
-	trace.length = 0;
 	const { txLogger, transferId } = makeHarness();
 
 	await txLogger.persistTransactionLog(transferId);
@@ -121,18 +138,31 @@ test("the transactionLogs Map is pruned to what is still reachable", async () =>
 });
 
 test("retention trims the detail store on write", async () => {
-	const { txLogger, plugin, transferId, file } = makeHarness({ detailCap: 2 });
-	plugin.persistedTransactionLogs = [
-		{ transferId: "old-1", savedAt: 1, events: [], transferInfo: { status: "completed" } },
-		{ transferId: "old-2", savedAt: 2, events: [], transferInfo: { status: "completed" } },
-		{ transferId: "old-3", savedAt: 3, events: [], transferInfo: { status: "completed" } },
-	];
+	const { txLogger, plugin, transferId, file } = makeHarness({ detailCap: 10 });
+	plugin.persistedTransactionLogs = Array.from({ length: 15 }, (_u, i) => ({
+		transferId: `old-${i}`, savedAt: i + 1, events: [], transferInfo: { status: "completed" },
+	}));
 
 	await txLogger.persistTransactionLog(transferId);
 
 	const onDisk = JSON.parse(fs.readFileSync(file, "utf8"));
-	assert.equal(onDisk.length, 2, "the cap is enforced against what is actually written");
+	assert.equal(onDisk.length, 10, "the cap is enforced against what is actually written");
 	assert.ok(onDisk.some(e => e.transferId === transferId), "the entry just written must be among them");
+});
+
+test("a cap below the allowed minimum is clamped and warned, NOT read as 'no cap'", async () => {
+	// 0 is the input an operator would type meaning "keep no detail". It used to land in the
+	// no-cap-configured branch and produce unbounded growth — the opposite of the intent, silently.
+	const { txLogger, plugin, transferId, file } = makeHarness({ detailCap: 0 });
+	plugin.persistedTransactionLogs = Array.from({ length: 40 }, (_u, i) => ({
+		transferId: `old-${i}`, savedAt: i + 1, events: [], transferInfo: { status: "completed" },
+	}));
+
+	await txLogger.persistTransactionLog(transferId);
+
+	assert.equal(JSON.parse(fs.readFileSync(file, "utf8")).length, 10, "clamped to the minimum, not ignored");
+	assert.ok(warnings.some(m => /transaction_log_detail_entries is 0/.test(m)),
+		"an out-of-range cap must say so rather than be silently reinterpreted");
 });
 
 test("with no cap configured the store is not trimmed", async () => {
@@ -146,4 +176,63 @@ test("with no cap configured the store is not trimmed", async () => {
 	await txLogger.persistTransactionLog(transferId);
 
 	assert.equal(JSON.parse(fs.readFileSync(file, "utf8")).length, 41);
+});
+
+// ── Regressions for defects found in review ──────────────────────────────────
+
+test("two concurrent persists both survive — neither entry is lost", async () => {
+	// The snapshot/upsert/publish sequence must be SYNCHRONOUS. With an await between reading
+	// persistedTransactionLogs and writing it back, both transfers snapshot the same pre-state, the
+	// later write wins, and one transfer's detail is silently absent from the file — after which
+	// pruneTransactionLogsMap drops its in-memory events too, while the ledger carries a terminal row
+	// claiming a verdict for it.
+	const { txLogger, plugin, file } = makeHarness();
+	const second = "1:002_rival";
+	plugin.transactionLogs.set(second, [{ timestampMs: 1_020, eventType: "transfer_created", message: "x" }]);
+	plugin.activeTransfers.set(second, {
+		transferId: second, operationType: "transfer", platformName: "pad-2", platformIndex: 4,
+		forceName: "player", sourceInstanceId: 1, targetInstanceId: 2, status: "completed", startedAt: 1_000,
+	});
+
+	await Promise.all([
+		txLogger.persistTransactionLog("1:001_subject"),
+		txLogger.persistTransactionLog(second),
+	]);
+
+	const onDisk = JSON.parse(fs.readFileSync(file, "utf8")).map(e => e.transferId);
+	assert.ok(onDisk.includes("1:001_subject"), "the first transfer's detail must be on disk");
+	assert.ok(onDisk.includes(second), "and so must the second's — neither may be lost to the race");
+});
+
+test("an unresolved transfer keeps its events even when evicted from activeTransfers", async () => {
+	// pruneOldTransfers evicts by age with no in-flight check, so absence from activeTransfers does
+	// NOT mean finished. Treating it as unreachable truncated the timeline of a transfer that was
+	// still writing one. A `start` ledger row is the durable "has not resolved yet" signal.
+	const { txLogger, plugin, transferId } = makeHarness();
+	const inFlight = "1:777_inflight";
+	plugin.transactionLogs.set(inFlight, [{ timestampMs: 800, eventType: "transfer_created", message: "x" }]);
+	plugin.auditIndex.set(inFlight, { transferId: inFlight, rowKind: "start", status: "awaiting_validation" });
+
+	await txLogger.persistTransactionLog(transferId);
+
+	assert.ok(plugin.transactionLogs.has(inFlight),
+		"a transfer whose ledger row is still `start` has not resolved — its events must not be dropped");
+});
+
+test("a history file that parses but is not an array latches instead of being overwritten", async () => {
+	// Coercing a non-array to [] left transactionLogLoadError null, so the write gate stayed open and
+	// the next persist overwrote the original contents entirely. The removed pre-write re-read used to
+	// catch this by throwing on .findIndex.
+	const dir = fs.mkdtempSync(path.join(os.tmpdir(), "surface-export-persist-"));
+	const file = path.join(dir, "transactions.json");
+	const original = '{"transferId":"hand-edited"}\n';
+	fs.writeFileSync(file, original);
+	const { txLogger, plugin, transferId } = makeHarness();
+	plugin.transactionLogPath = file;
+
+	await txLogger.loadTransactionLogs();
+	assert.ok(plugin.transactionLogLoadError, "a non-array history must latch the gate");
+
+	await txLogger.persistTransactionLog(transferId);
+	assert.equal(fs.readFileSync(file, "utf8"), original, "the original bytes must be preserved");
 });

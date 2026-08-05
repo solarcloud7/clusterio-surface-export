@@ -62,6 +62,10 @@ function makeTransactionHarness(file) {
 		platformStorage: new Map(),
 		// Latched by loadTransactionLogs; persistTransactionLog refuses while it is set.
 		transactionLogLoadError: null,
+		// pruneTransactionLogsMap consults the ledger to tell "finished" from "evicted from
+		// activeTransfers while still in flight" — absence there does not mean resolved.
+		auditIndex: new Map(),
+		auditRevisions: new Map(),
 		// The detail write is preceded by a ledger append, so the fake records rows rather than
 		// discarding them — ordering is a property worth being able to assert.
 		auditRows: [],

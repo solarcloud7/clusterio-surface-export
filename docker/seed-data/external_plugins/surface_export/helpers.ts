@@ -7,6 +7,14 @@
 import { escapeString as libEscapeString } from "@clusterio/lib";
 import type { ExportData, ExportVerification, ImportMetrics, PhaseSpan } from "./messages";
 
+/**
+ * The plugin name, and the prefix of every config key. Exported from here because it was being
+ * re-declared as a local const in controller.ts, index.ts, messages.ts and transaction-logger.ts —
+ * four independent edit sites for one rename, where a missed one yields a config key that resolves
+ * to nothing at RUNTIME rather than failing to compile.
+ */
+export const PLUGIN_NAME = "surface_export";
+
 export const TICKS_TO_MS = 16.67;
 export const RCON_CHUNK_SIZE = 100_000;
 export const EXPORT_POLL_TIMEOUT_MS = 30_000;

@@ -308,12 +308,21 @@ export class ControllerPlugin extends BaseControllerPlugin {
 		};
 	}
 
-	createOperationRecord(operationType: OperationType, options: OperationOptions = {}) {
+	/**
+	 * The single place an operation record is born — import, export and transfer all pass through it.
+	 *
+	 * The audit START row is recorded HERE rather than at each caller. Recorded per-caller it covered
+	 * transfers only, so an upload-import whose destination died before the completion callback, or a
+	 * controller restart mid-import, still left zero rows in the ledger — the exact failure start rows
+	 * were introduced to close, for two of the three operation types.
+	 */
+	async createOperationRecord(operationType: OperationType, options: OperationOptions = {}) {
 		const operation = buildOperationRecord(operationType, {
 			...options,
 			resolveInstanceName: (instanceId: number) => this.platformTree.resolveInstanceName(instanceId),
 		});
 		this.activeTransfers.set(operation.transferId, operation);
+		await this.recordTransferStarted(operation);
 		return operation;
 	}
 
@@ -335,7 +344,7 @@ export class ControllerPlugin extends BaseControllerPlugin {
 			importData.platform_name = String(platformName).trim();
 		}
 		const resolvedForceName = forceName || importData?.platform?.force || "player";
-		const operation = this.createOperationRecord("import", {
+		const operation = await this.createOperationRecord("import", {
 			platformName: importData.platform_name || "Uploaded platform",
 			forceName: resolvedForceName,
 			sourceInstanceId: -1,
@@ -414,7 +423,7 @@ export class ControllerPlugin extends BaseControllerPlugin {
 		if (!sourceInstance || sourceInstance.isDeleted) {
 			return { success: false, error: `Unknown source instance ${sourceInstanceId}` };
 		}
-		const operation = this.createOperationRecord("export", {
+		const operation = await this.createOperationRecord("export", {
 			platformName: `platform #${sourcePlatformIndex}`,
 			platformIndex: sourcePlatformIndex,
 			forceName,
@@ -501,7 +510,7 @@ export class ControllerPlugin extends BaseControllerPlugin {
 
 		let operation = this.activeTransfers.get(operationId);
 		if (!operation) {
-			operation = this.createOperationRecord("import", {
+			operation = await this.createOperationRecord("import", {
 				operationId,
 				platformName: event.platformName || "Imported platform",
 				sourceInstanceId: -1,
@@ -608,6 +617,44 @@ export class ControllerPlugin extends BaseControllerPlugin {
 				events: persistedLog.events,
 				transferInfo: persistedLog.transferInfo,
 				summary: persistedLog.summary || null,
+			};
+		}
+
+		// The detail was evicted by retention, but the transfer itself is not gone — the ledger still
+		// has it, and it is still listed in the UI. Returning success:false here made the web client
+		// throw and show a red error toast (web/index.tsx rejects on !success), which flatly
+		// contradicted the shipped config text promising that lowering the cap "never hides a
+		// transfer, it only means older ones open without a timeline". After the measured migration
+		// that was 353 of 453 rows: every one of them an error on click.
+		//
+		// `events: []` rather than null is required, not stylistic: the response schema declares
+		// events as a non-nullable array, and the web client only replaces its cached events when it
+		// receives an array — null would silently leave the PREVIOUS transfer's timeline on screen.
+		const auditRow = this.auditIndex.get(transferId);
+		if (auditRow) {
+			return {
+				success: true,
+				transferId,
+				events: [],
+				detailRetained: false,
+				transferInfo: {
+					transferId: auditRow.transferId,
+					operationType: auditRow.operationType,
+					exportId: auditRow.exportId,
+					artifactSizeBytes: auditRow.artifactSizeBytes,
+					platformName: auditRow.platformName,
+					platformIndex: auditRow.platformIndex,
+					sourceInstanceId: auditRow.sourceInstanceId,
+					sourceInstanceName: auditRow.sourceInstanceName,
+					targetInstanceId: auditRow.targetInstanceId,
+					targetInstanceName: auditRow.targetInstanceName,
+					status: auditRow.status,
+					startedAt: auditRow.startedAt,
+					completedAt: auditRow.completedAt,
+					failedAt: auditRow.failedAt,
+					error: auditRow.error,
+				},
+				summary: null,
 			};
 		}
 

@@ -276,6 +276,9 @@ export class TransferOrchestrator {
 		// Placed HERE deliberately: after the ActiveTransfer record exists and after the offline-
 		// destination preflight, which refuses before any record is created specifically so the
 		// canonical ID is not burned. Appending a row ahead of that guard would burn it in the audit.
+		// Transfers build their record through the standalone createOperationRecord helper rather than
+		// the controller method, so this path records its own start row. Import and export go through
+		// ControllerPlugin.createOperationRecord, which does it for them.
 		await this.plugin.recordTransferStarted(transfer);
 
 		this.updateTransfer(transfer);

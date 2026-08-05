@@ -218,3 +218,22 @@ test("a terminal row is never buried by a start row that lands after it", () => 
 	assert.equal(byId(summaries).get("2:007_eta").status, "completed",
 		"a start row must never supersede a terminal one, whatever the file order");
 });
+
+test("a start-only transfer reports ZERO recorded verdicts, not one", () => {
+	// `revisions` defaulted to 1, which was correct only while every indexed row was terminal — an
+	// invariant start rows break. A transfer interrupted before any verdict claimed to have recorded
+	// one, contradicting the field's own meaning and hiding exactly the case start rows expose.
+	const started = buildAuditRow({
+		transferId: "2:008_theta",
+		rowKind: "start",
+		savedAt: 8_000,
+		eventCount: 1,
+		lastEventAt: 8_010,
+		info: { platformName: "pad", sourceInstanceId: 2, targetInstanceId: 1, status: "awaiting_validation", startedAt: 8_000 },
+	});
+
+	const summary = byId(makeLogger({ extraRows: [started] }).getTransferSummaries()).get("2:008_theta");
+
+	assert.ok(summary, "an interrupted transfer must still be listed");
+	assert.equal(summary.revisions, 0, "no terminal row means no verdict was ever recorded");
+});

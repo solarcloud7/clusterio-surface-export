@@ -1325,11 +1325,13 @@ export class GetTransactionLogRequest {
 	toJSON() { return { transferId: this.transferId }; }
 
 	static Response = {
-		jsonSchema: { type: "object", properties: { success: { type: "boolean" }, transferId: { type: "string" }, events: { type: "array" }, transferInfo: { type: ["object", "null"] }, summary: { type: ["object", "null"] }, error: { type: "string" } }, required: ["success"] } as JsonSchema,
+		jsonSchema: { type: "object", properties: { success: { type: "boolean" }, transferId: { type: "string" }, events: { type: "array" }, detailRetained: { type: "boolean" }, transferInfo: { type: ["object", "null"] }, summary: { type: ["object", "null"] }, error: { type: "string" } }, required: ["success"] } as JsonSchema,
 		fromJSON(json: unknown) {
 			return json as SimpleResponse & {
 				transferId?: string;
 				events?: TransactionLogEntryModel[];
+				/** Absent means retained. False means the detail was evicted; events will be empty. */
+				detailRetained?: boolean;
 				transferInfo?: Record<string, unknown> | null;
 				summary?: Record<string, unknown> | null;
 			};

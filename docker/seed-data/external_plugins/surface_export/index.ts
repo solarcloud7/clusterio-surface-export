@@ -108,9 +108,10 @@ export const plugin = {
 				+ "timings and validation counts shown when you open a transfer. Every transfer stays "
 				+ "listed for good regardless of this number: the audit ledger keeps a slim row per "
 				+ "transfer permanently, so lowering this never hides a transfer, it only means older "
-				+ "ones open without a timeline. Detail is kept preferentially for transfers whose "
-				+ "export is still downloadable, then for failures, then for recent successes. Raise "
-				+ "it if you investigate old transfers often; each retained entry is roughly 10 KB.",
+				+ "ones open with their status but no timeline. Detail is kept preferentially for "
+				+ "failures, then recent successes, preferring transfers whose export is still "
+				+ "downloadable. Range 10–5000; out-of-range values are clamped and logged. Raise it if "
+				+ "you investigate old transfers often; each retained entry is roughly 10 KB.",
 			type: "number",
 			initialValue: 100,
 		},

@@ -15,21 +15,44 @@ import type { PersistedTransactionLog } from "../messages";
  */
 
 /**
- * Successes are guaranteed this many slots. Without a floor, a burst of failures would evict every
- * example of a healthy transfer — and comparing a reported failure against a known-good run of the
- * same platform is the first thing anyone does when debugging one.
+ * Successes are guaranteed up to this many slots. Without a floor, a burst of failures would evict
+ * every example of a healthy transfer — and comparing a reported failure against a known-good run of
+ * the same platform is the first thing anyone does when debugging one.
+ *
+ * It is a CEILING on the guarantee, not a first claim on the window: see `successFloorFor`.
  */
 export const RESERVED_SUCCESS_SLOTS = 25;
+
+/**
+ * Bounds for the configured cap. A present-but-out-of-range value is clamped rather than
+ * reinterpreted — notably 0, which an operator would reasonably type meaning "keep no detail" and
+ * which used to be indistinguishable from "no cap configured", i.e. unbounded growth.
+ */
+export const MIN_DETAIL_ENTRIES = 10;
+export const MAX_DETAIL_ENTRIES = 5000;
+
+/**
+ * How many slots successes are guaranteed, given the window size.
+ *
+ * The `budget / 2` term is what makes this a floor rather than a first claim, and it is load-bearing.
+ * Claiming `RESERVED_SUCCESS_SLOTS` off the top inverts the documented priority whenever the cap is
+ * at or below 25: at cap 20 with 40 successes and 5 failures, successes took all 20 and every
+ * failure's detail was deleted — the exact class the window exists to preserve, destroyed by the
+ * rule meant to protect the other class. The config description invites operators to lower this cap,
+ * so that is a reachable setting, not a pathological one.
+ */
+function successFloorFor(budget: number, availableSuccesses: number, reserved: number): number {
+	return Math.max(0, Math.min(reserved, availableSuccesses, Math.floor(budget / 2)));
+}
 
 const FAILURE_STATUSES = new Set(["failed", "cleanup_failed", "error"]);
 
 export type RetentionOptions = {
 	cap: number;
 	/**
-	 * Whether this entry's export payload is still downloadable. Such entries are PINNED: the
-	 * Transaction Logs tab offers a download for them, and dropping the detail while the payload is
-	 * still there would revoke a button that was working a moment ago. Bounded in practice by
-	 * `max_storage_size` (default 20), so this can never crowd out the whole window.
+	 * Whether this entry's export payload is still downloadable. Used as a PREFERENCE within each
+	 * class (a downloadable transfer's timeline is the more useful one to keep), never as a class of
+	 * its own — see the tiebreak note in `selectRetainedDetail`. The name is kept for the call sites.
 	 */
 	isPinned: (entry: PersistedTransactionLog) => boolean;
 	reservedSuccessSlots?: number;
@@ -44,13 +67,13 @@ function isFailure(entry: PersistedTransactionLog): boolean {
 }
 
 /**
- * Pick the entries to keep, newest-first within each class.
+ * Pick the entries to keep.
  *
- * Order of claim on the budget:
- *   1. PINNED — payload still downloadable, so the detail must not disappear from under it.
- *   2. SUCCESSES up to the reserved floor — so a failure burst cannot erase every healthy example.
- *   3. FAILURES, newest first — the debug-and-report workflow.
- *   4. whatever is left, newest first regardless of class.
+ * Two classes share the window:
+ *   FAILURES  take `cap - successFloor` — the debug-and-report workflow has priority.
+ *   SUCCESSES take at least `successFloor`, then fill whatever failures did not use.
+ * Within each class, entries whose payload is still downloadable come first, then newest first.
+ * Any remaining slack goes to whoever is newest, regardless of class.
  *
  * Returns entries in their ORIGINAL order, not selection order: the file is an array that other
  * readers index into, and reordering it would be a gratuitous diff for every consumer.
@@ -70,7 +93,34 @@ export function selectRetainedDetail(
 	}
 
 	const reserved = options.reservedSuccessSlots ?? RESERVED_SUCCESS_SLOTS;
-	const newestFirst = [...entries].sort((a, b) => savedAtOf(b) - savedAtOf(a));
+
+	// ONE pass to partition and one isPinned call per entry. It used to be three filter passes each
+	// calling isPinned — three platformStorage lookups per entry, ~1359 of them per persist on a
+	// 453-entry store, on the critical path of every transfer's terminal resolution.
+	const failures: PersistedTransactionLog[] = [];
+	const successes: PersistedTransactionLog[] = [];
+	const pinnedSet = new Set<PersistedTransactionLog>();
+	for (const entry of entries) {
+		if (options.isPinned(entry)) {
+			pinnedSet.add(entry);
+		}
+		(isFailure(entry) ? failures : successes).push(entry);
+	}
+
+	// Being pinned is a TIEBREAK INSIDE a class, not a class of its own.
+	//
+	// It used to be its own class claiming the window first, justified by "bounded in practice by
+	// max_storage_size (default 20)" — a safety property resting on the DEFAULT of a different,
+	// operator-tunable field whose own description invites raising it. At max_storage_size=200 with
+	// this cap at 100, pinned entries took every slot and no failure detail survived at all.
+	//
+	// Demoting it is safe because the download does NOT depend on the detail entry: `downloadable` is
+	// derived from platformStorage (transaction-logger.ts), and the download handler reads the payload
+	// from there. Losing a detail entry costs a timeline, never a button.
+	const preferPinnedThenNewest = (a: PersistedTransactionLog, b: PersistedTransactionLog) =>
+		(Number(pinnedSet.has(b)) - Number(pinnedSet.has(a))) || (savedAtOf(b) - savedAtOf(a));
+	failures.sort(preferPinnedThenNewest);
+	successes.sort(preferPinnedThenNewest);
 
 	const keep = new Set<PersistedTransactionLog>();
 	const claim = (candidates: PersistedTransactionLog[], slots: number) => {
@@ -85,14 +135,13 @@ export function selectRetainedDetail(
 		}
 	};
 
-	const pinned = newestFirst.filter(options.isPinned);
-	const successes = newestFirst.filter(entry => !options.isPinned(entry) && !isFailure(entry));
-	const failures = newestFirst.filter(entry => !options.isPinned(entry) && isFailure(entry));
-
-	claim(pinned, cap);
-	claim(successes, Math.min(reserved, Math.max(0, cap - keep.size)));
-	claim(failures, Math.max(0, cap - keep.size));
-	claim(newestFirst, Math.max(0, cap - keep.size));
+	// Failures take the window MINUS the successes' floor, so they keep their documented priority
+	// without being able to erase every healthy example; successes then take at least that floor.
+	const successFloor = successFloorFor(cap, successes.length, reserved);
+	claim(failures, cap - successFloor);
+	claim(successes, Math.max(0, cap - keep.size));
+	// Slack (e.g. fewer failures than their share) goes to whoever is newest, regardless of class.
+	claim([...failures, ...successes].sort(preferPinnedThenNewest), Math.max(0, cap - keep.size));
 
 	return entries.filter(entry => keep.has(entry));
 }

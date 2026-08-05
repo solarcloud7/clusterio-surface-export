@@ -330,6 +330,9 @@ export class WebPlugin extends BaseWebPlugin {
 			transferInfo,
 			summary: getProp(response, "summary", null) as JsonObject | null || existing.summary || null,
 			events,
+			// Absent on an un-redeployed controller, which is why the default is true rather than false:
+			// an unknown answer must not render a "detail was discarded" notice over a real timeline.
+			detailRetained: getProp(response, "detailRetained", true) as boolean,
 		};
 
 		const transferSummary = summaryFromTransferInfo(transferInfo, events.length ? events[events.length - 1].timestampMs : null);
