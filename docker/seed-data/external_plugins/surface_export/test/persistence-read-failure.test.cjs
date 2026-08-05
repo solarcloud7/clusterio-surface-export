@@ -60,6 +60,15 @@ function makeTransactionHarness(file) {
 		persistedTransactionLogs: [{ transferId: "memory-entry" }],
 		activeTransfers: new Map([[transferId, transfer]]),
 		platformStorage: new Map(),
+		// Latched by loadTransactionLogs; persistTransactionLog refuses while it is set.
+		transactionLogLoadError: null,
+		// The detail write is preceded by a ledger append, so the fake records rows rather than
+		// discarding them — ordering is a property worth being able to assert.
+		auditRows: [],
+		recordAuditRow: async function (row) { this.auditRows.push(row); },
+		// No config here => retention keeps everything, which is the safe default for an
+		// un-migrated controller.
+		controller: { config: undefined },
 		platformTree: { resolveInstanceName: (id) => `instance-${id}` },
 		subscriptions: { emitLogUpdate() {} },
 		logger,
@@ -68,21 +77,65 @@ function makeTransactionHarness(file) {
 }
 
 test("transaction write-back preserves a corrupt on-disk history", async () => {
+	// The invariant is unchanged — a corrupt history is never overwritten, and the operator is told
+	// why — but the MECHANISM moved. It used to be a full re-read before every write (7.62 MB and
+	// 17 ms to detect corruption, then discard the parse). It is now latched at the BOOT load, so the
+	// gate has to be armed the way production arms it: by loading first.
 	const dir = fs.mkdtempSync(path.join(os.tmpdir(), "surface-export-history-"));
 	const file = path.join(dir, "transactions.json");
 	const corruptBytes = "{not valid json\n";
 	fs.writeFileSync(file, corruptBytes);
-	const { txLogger, errors, transferId } = makeTransactionHarness(file);
+	const { txLogger, plugin, errors, transferId } = makeTransactionHarness(file);
+
+	await txLogger.loadTransactionLogs();
+	assert.ok(plugin.transactionLogLoadError, "the boot load must latch the failure");
+	errors.length = 0; // isolate the write-path message from the load-path one
 
 	await txLogger.persistTransactionLog(transferId);
 
-	assert.equal(fs.readFileSync(file, "utf8"), corruptBytes);
+	assert.equal(fs.readFileSync(file, "utf8"), corruptBytes, "the corrupt file must not be overwritten");
 	const message = errors.join("\n");
 	assert.match(message, new RegExp(file.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
-	assert.match(message, /unreadable/);
-	assert.match(message, /skipping this write/);
+	assert.match(message, /startup load failed/);
+	assert.match(message, /preserved as-is/);
 	assert.match(message, /repair or move the file aside/i);
 	assert.match(message, /restart/);
+	// New, and the reason the trade is acceptable at all: a damaged detail store no longer loses the
+	// record that a transfer happened, only its timeline.
+	assert.match(message, /audit ledger/i);
+});
+
+test("a CLEAN boot load leaves the write path open", async () => {
+	// The other half of the gate, and the one a too-eager check would break: latching on a load that
+	// succeeded would silently stop all persistence. Fails if the gate keys on anything but a real
+	// load failure.
+	const dir = fs.mkdtempSync(path.join(os.tmpdir(), "surface-export-history-"));
+	const file = path.join(dir, "transactions.json");
+	fs.writeFileSync(file, "[]");
+	const { txLogger, plugin, transferId } = makeTransactionHarness(file);
+
+	await txLogger.loadTransactionLogs();
+	assert.equal(plugin.transactionLogLoadError, null);
+
+	await txLogger.persistTransactionLog(transferId);
+
+	const written = JSON.parse(fs.readFileSync(file, "utf8"));
+	assert.equal(written.length, 1, "the write must go through after a clean load");
+	assert.equal(written[0].transferId, transferId);
+});
+
+test("an ABSENT history is not a failure — first boot must still persist", async () => {
+	// ENOENT is the ordinary first-run case, not corruption. Treating it as a load failure would mean
+	// a brand-new controller never wrote a transaction log at all.
+	const dir = fs.mkdtempSync(path.join(os.tmpdir(), "surface-export-history-"));
+	const file = path.join(dir, "transactions.json");
+	const { txLogger, plugin, transferId } = makeTransactionHarness(file);
+
+	await txLogger.loadTransactionLogs();
+	assert.equal(plugin.transactionLogLoadError, null, "a missing file is not a corrupt one");
+
+	await txLogger.persistTransactionLog(transferId);
+	assert.equal(JSON.parse(fs.readFileSync(file, "utf8")).length, 1);
 });
 
 test("transaction load failure keeps the history already served from memory", async () => {

@@ -62,6 +62,10 @@ function makeHarness(importSendResult, sourceSendResult = () => ({ success: true
 		},
 		platformTree: { resolveInstanceName: (id) => `instance-${id}` },
 		activeTransfers,
+		// The orchestrator records a `start` row the moment a transfer is created, so a transfer
+		// that never reaches a verdict still leaves evidence it existed. Counted, not ignored:
+		// some tests assert it fired.
+		recordTransferStarted: async () => { calls.startRows = (calls.startRows || 0) + 1; },
 		txLogger: {
 			logTransactionEvent: (_id, type) => { calls.events.push(type); },
 			startPhase: (_id, name) => { calls.openPhases.add(name); },

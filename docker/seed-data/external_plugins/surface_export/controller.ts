@@ -70,6 +70,8 @@ export class ControllerPlugin extends BaseControllerPlugin {
 	/** Folded ledger, one row per transfer. The source for the transfer LIST. */
 	auditIndex!: Map<string, AuditRow>;
 	auditRevisions!: Map<string, number>;
+	/** Latched at boot: refuses detail writes when the store could not be read. */
+	transactionLogLoadError!: string | null;
 	platformTree!: PlatformTree;
 	txLogger!: TransactionLogger;
 	subscriptions!: SubscriptionManager;
@@ -115,6 +117,7 @@ export class ControllerPlugin extends BaseControllerPlugin {
 		);
 		this.auditIndex = new Map();
 		this.auditRevisions = new Map();
+		this.transactionLogLoadError = null;
 		this.gatewayLinks = new Map();
 		this.gatewayConfigPath = path.resolve(
 			String(this.c.config.get("controller.database_directory")),
@@ -816,6 +819,21 @@ export class ControllerPlugin extends BaseControllerPlugin {
 				+ "carries the full record.",
 			);
 		}
+	}
+
+	/**
+	 * Record that a transfer STARTED. Owns the row shape so the orchestrator does not have to, which
+	 * also keeps the plugin surface the orchestrator depends on to one method rather than four.
+	 */
+	async recordTransferStarted(transfer: ActiveTransfer) {
+		await this.recordAuditRow(buildAuditRow({
+			transferId: transfer.transferId,
+			rowKind: "start",
+			savedAt: Date.now(),
+			eventCount: this.transactionLogs.get(transfer.transferId)?.length ?? 0,
+			lastEventAt: this.txLogger.getLastEventTimestamp(transfer.transferId),
+			info: this.txLogger.buildTransferInfo(transfer),
+		}));
 	}
 
 	async loadGatewayConfig() {

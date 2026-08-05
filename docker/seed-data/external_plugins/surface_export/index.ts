@@ -102,6 +102,18 @@ export const plugin = {
 			type: "number",
 			initialValue: 20,
 		},
+		[`${PLUGIN_NAME}.transaction_log_detail_entries`]: {
+			title: "Transfers keeping full detail",
+			description: "How many transfers keep their EXPENSIVE detail — the event timeline, phase "
+				+ "timings and validation counts shown when you open a transfer. Every transfer stays "
+				+ "listed for good regardless of this number: the audit ledger keeps a slim row per "
+				+ "transfer permanently, so lowering this never hides a transfer, it only means older "
+				+ "ones open without a timeline. Detail is kept preferentially for transfers whose "
+				+ "export is still downloadable, then for failures, then for recent successes. Raise "
+				+ "it if you investigate old transfers often; each retained entry is roughly 10 KB.",
+			type: "number",
+			initialValue: 100,
+		},
 		[`${PLUGIN_NAME}.transfer_validation_timeout_seconds`]: {
 			title: "Transfer validation timeout (seconds)",
 			description: "How long the controller waits for the destination to validate a transfer. "
