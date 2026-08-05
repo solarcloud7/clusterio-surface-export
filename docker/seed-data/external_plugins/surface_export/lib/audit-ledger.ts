@@ -65,17 +65,23 @@ type RowInput = {
 	savedAt: number;
 	eventCount: number;
 	lastEventAt: number | null;
+	/**
+	 * Every field is optional AND nullable, matching what `buildTransferInfo` actually produces: it
+	 * normalises absent values to `null` rather than leaving them undefined. `buildAuditRow` already
+	 * collapses both to a default, so the only thing a narrower type would buy is a compile error at
+	 * the real call sites.
+	 */
 	info: {
-		operationType?: string;
-		platformName?: string;
+		operationType?: string | null;
+		platformName?: string | null;
 		platformIndex?: number | null;
-		sourceInstanceId?: number;
+		sourceInstanceId?: number | null;
 		sourceInstanceName?: string | null;
-		targetInstanceId?: number;
+		targetInstanceId?: number | null;
 		targetInstanceName?: string | null;
 		exportId?: string | null;
 		artifactSizeBytes?: number | null;
-		status?: string;
+		status?: string | null;
 		startedAt?: number | null;
 		completedAt?: number | null;
 		failedAt?: number | null;
