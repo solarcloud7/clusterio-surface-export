@@ -13,6 +13,7 @@ import type {
 	GatewayLink,
 	ResolvedGatewayTarget,
 	ResolvedGateway,
+	AuditRow,
 } from "./shared/dto";
 export type {
 	HostNodeModel,
@@ -29,6 +30,7 @@ export type {
 	GatewayLink,
 	ResolvedGatewayTarget,
 	ResolvedGateway,
+	AuditRow,
 } from "./shared/dto";
 export { GATEWAY_NAMES, GATEWAY_PREFIX } from "./shared/dto";
 const PLUGIN_NAME = "surface_export";
@@ -1537,6 +1539,14 @@ export interface IControllerPlugin {
 	transactionLogs: Map<string, TransactionLogEntryModel[]>;
 	persistedTransactionLogs: PersistedTransactionLog[];
 	transactionLogPath: string;
+	/** Append-only audit ledger of every transfer (see lib/audit-ledger.ts). */
+	auditLedgerPath: string;
+	/** Folded ledger: one row per transfer, terminal beating start. The LIST source. */
+	auditIndex: Map<string, AuditRow>;
+	/** Terminal-row count per transfer — how many distinct verdicts it has recorded. */
+	auditRevisions: Map<string, number>;
+	/** Append one ledger row and update the index. Never throws. */
+	recordAuditRow(row: AuditRow): Promise<void>;
 	lastTreeForceName: string;
 	treeRevision: number;
 	transferRevision: number;

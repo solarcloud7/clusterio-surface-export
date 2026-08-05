@@ -2,6 +2,7 @@
 import fs from "fs/promises";
 import { safeOutputFile } from "@clusterio/lib";
 import { enqueueWrite } from "./persist-queue";
+import { buildAuditRow } from "./audit-ledger";
 import type { IControllerPlugin, ActiveTransfer, PersistedTransactionLog, TransactionLogEntryModel } from "../messages";
 import { getErrorMessage } from "../helpers";
 
@@ -190,31 +191,39 @@ export class TransactionLogger {
 			});
 		}
 
-		for (const persistedLog of this.plugin.persistedTransactionLogs) {
-			const transferInfo = persistedLog.transferInfo || {};
-			const events = Array.isArray(persistedLog.events) ? persistedLog.events : [];
-			const lastEvent = events.length ? events[events.length - 1] : null;
-			if (!byId.has(persistedLog.transferId)) {
-				byId.set(persistedLog.transferId, {
-					transferId: persistedLog.transferId,
-					operationType: transferInfo.operationType ?? "transfer",
-					exportId: transferInfo.exportId || null,
-					artifactSizeBytes: transferInfo.artifactSizeBytes ?? null,
+		// Historical half comes from the AUDIT LEDGER, not the detail store. The two agree today, but
+		// they are about to diverge on purpose: the detail store becomes a bounded window, while the
+		// ledger keeps one row per transfer for good. Reading the list from the ledger is what makes
+		// that bounding safe — trim the detail store and the transfer still appears here, which is the
+		// whole point of "see every transfer".
+		//
+		// registrySource stays "persisted" rather than gaining a third value. Its definition — the
+		// retry guard never reads it, so an ID appearing only here is history rather than a blocker —
+		// is true of a ledger row in every clause. A new value would also be routed to a loud
+		// POSSIBLE-COLLISION warning by the gallery preflight, which treats anything it does not
+		// recognise as unknown provenance.
+		for (const row of this.plugin.auditIndex.values()) {
+			if (!byId.has(row.transferId)) {
+				byId.set(row.transferId, {
+					transferId: row.transferId,
+					operationType: row.operationType ?? "transfer",
+					exportId: row.exportId || null,
+					artifactSizeBytes: row.artifactSizeBytes ?? null,
 					downloadable: false,
-					platformName: transferInfo.platformName || "Unknown",
-					sourceInstanceId: transferInfo.sourceInstanceId ?? -1,
-					sourceInstanceName: transferInfo.sourceInstanceName ?? null,
-					targetInstanceId: transferInfo.targetInstanceId ?? -1,
-					targetInstanceName: transferInfo.targetInstanceName ?? null,
-					status: transferInfo.status || "unknown",
-					startedAt: transferInfo.startedAt || persistedLog.savedAt || Date.now(),
-					completedAt: transferInfo.completedAt || null,
-					failedAt: transferInfo.failedAt || null,
-					error: transferInfo.error || null,
-					lastEventAt: lastEvent?.timestampMs || null,
-					// On disk only. The retry guard never reads this half, so an ID that appears ONLY
-					// here will not be refused — see the method doc.
+					platformName: row.platformName || "Unknown",
+					sourceInstanceId: row.sourceInstanceId ?? -1,
+					sourceInstanceName: row.sourceInstanceName ?? null,
+					targetInstanceId: row.targetInstanceId ?? -1,
+					targetInstanceName: row.targetInstanceName ?? null,
+					status: row.status || "unknown",
+					startedAt: row.startedAt || row.savedAt || Date.now(),
+					completedAt: row.completedAt || null,
+					failedAt: row.failedAt || null,
+					error: row.error || null,
+					lastEventAt: row.lastEventAt ?? null,
 					registrySource: "persisted" as const,
+					/** How many distinct verdicts this transfer recorded; >1 means a late verdict landed. */
+					revisions: this.plugin.auditRevisions.get(row.transferId) ?? 1,
 				});
 			}
 		}
@@ -329,6 +338,20 @@ export class TransactionLogger {
 			await enqueueWrite(this.plugin.transactionLogPath,
 				() => safeOutputFile(this.plugin.transactionLogPath, JSON.stringify(allLogs, null, 2)));
 			this.plugin.persistedTransactionLogs = allLogs;
+
+			// Record the transfer in the append-only audit ledger. This is the row that outlives the
+			// detail entry: the detail store becomes a bounded window, while the ledger keeps one slim
+			// row per transfer for good, so "show me every transfer that ever ran" stays answerable.
+			// Awaited so a ledger write and a detail write for the same transfer cannot be reordered;
+			// recordAuditRow swallows nothing but never throws, so it cannot fail a completed transfer.
+			await this.plugin.recordAuditRow(buildAuditRow({
+				transferId,
+				rowKind: "terminal",
+				savedAt: entry.savedAt,
+				eventCount: events.length,
+				lastEventAt: this.getLastEventTimestamp(transferId),
+				info: transferInfo,
+			}));
 		} catch (err: unknown) {
 			this.plugin.logger.error(`Failed to persist transaction log: ${getErrorMessage(err)}`);
 		}
