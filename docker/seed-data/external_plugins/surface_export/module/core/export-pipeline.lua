@@ -315,7 +315,14 @@ function ExportPipeline.queue(platform_index, force_name, requester_name, destin
 		}
 	}
 
-	PhaseProfiler.init(job_id, {"completion"})
+	-- "total" is left RUNNING from here until complete() stops it, so it measures the export's real
+	-- WALL-CLOCK span — including the idle between ticks. That is deliberately a different quantity
+	-- from `duration_ticks * 16.67`, which is a tick COUNT scaled by a nominal 60 UPS and therefore
+	-- cannot see a tick running long (see the note at the duration calculation in complete()).
+	-- A LuaProfiler cannot be read as a number in Lua, only rendered into a LocalisedString — which
+	-- is exactly why this is logged rather than shipped as a metric field.
+	PhaseProfiler.init(job_id, {"completion", "total"})
+	PhaseProfiler.start(job_id, "total")
 	return job_id
 end
 
@@ -608,8 +615,17 @@ function ExportPipeline.complete(job)
 
 	-- Stop completion profiler
 	PhaseProfiler.stop(job.job_id, "completion")
+	PhaseProfiler.stop(job.job_id, "total")
 
 	-- Calculate duration
+	--
+	-- `duration_ms` here is a TICK COUNT scaled by a nominal 60 UPS. It is structurally blind to a
+	-- tick stall: a stall means ticks take LONGER than 16.67 ms, so this number does not grow when
+	-- the game slows down — it is anti-correlated with the thing its consumers want. Everything
+	-- downstream inherits that (`export_metrics.async_export_ms` → the controller's
+	-- `exportTickEstimateMs`, which is named for the estimate it is). The honest wall-clock number
+	-- is the "total" profiler, logged below; it cannot travel as a number because LuaProfiler is not
+	-- readable in Lua, so the LOG is the only place the two can be compared.
 	local duration_ticks = game.tick - job.started_tick
 	local duration_seconds = duration_ticks / 60
 	local duration_ms = math.floor(duration_ticks * 16.67)
@@ -651,6 +667,16 @@ function ExportPipeline.complete(job)
 			"  Scanning:   ", math.floor(duration_ticks * 16.67), "ms (", duration_ticks, " ticks)\n",
 			"  Completion (belt+verify+compress): ", perf.completion}
 		game.print(msg)
+		-- log(), not only game.print(): the profiler values are the only WALL-CLOCK measurement of an
+		-- export that exists, and until now they reached the chat and nothing else, while the line that
+		-- did reach the log file (above) carried the tick estimate. Diagnosing "did the server freeze
+		-- long enough to drop a connected player" needs the real number in factorio-current.log, where
+		-- it can be read after the fact and correlated against the client's own log. Two lines per
+		-- export, not per entity.
+		log({"", "[Perf] Export '", job.platform_name, "' (", job.total_entities, " entities, ",
+			duration_ticks, " ticks) WALL CLOCK total: ", perf.total})
+		log({"", "[Perf] Export '", job.platform_name, "' completion phase (belt+verify+compress): ",
+			perf.completion})
 		
 		-- Record to transaction history BEFORE discarding profilers
 		TransactionHistory.record_export(job, perf)
