@@ -49,7 +49,7 @@ const ACTIVE_ID = "2:001_alpha";
 const PERSISTED_ID = "2:002_beta";
 const BOTH_ID = "2:003_gamma";
 
-function makeLogger({ active = [], persisted = [], extraRows = [] } = {}) {
+function makeLogger({ active = [], persisted = [], extraRows = [], dropLedgerRows = false } = {}) {
 	const persistedEntries = persisted.map(entry => ({
 		transferId: entry.transferId,
 		savedAt: entry.startedAt || 2_000,
@@ -66,7 +66,11 @@ function makeLogger({ active = [], persisted = [], extraRows = [] } = {}) {
 	// The historical half of the merge now reads the AUDIT LEDGER, not the detail store. Fixture rows
 	// are built with the production builder rather than hand-shaped, so this test cannot drift into
 	// pinning a row shape that `persistTransactionLog` never actually emits.
-	const auditRows = [
+	//
+	// `dropLedgerRows` reproduces the two ways a detail entry outlives its row in production:
+	// recordAuditRow catching an append failure (one transfer), and loadAuditIndex catching so the
+	// whole index is empty. Both are the failure paths, not hypotheticals — see the fallback tests.
+	const auditRows = dropLedgerRows ? [...extraRows] : [
 		...persistedEntries.map(entry => buildAuditRow({
 			transferId: entry.transferId,
 			rowKind: "terminal",
@@ -236,4 +240,85 @@ test("a start-only transfer reports ZERO recorded verdicts, not one", () => {
 
 	assert.ok(summary, "an interrupted transfer must still be listed");
 	assert.equal(summary.revisions, 0, "no terminal row means no verdict was ever recorded");
+});
+
+// ── Detail-store fallback ────────────────────────────────────────────────────
+// Reading the historical half from the ledger made a ledger failure erase history the controller
+// still physically holds. Both failure paths log and return rather than throwing, so neither is
+// visible to any other assertion in this suite — they are only reachable through these fixtures.
+
+test("a transfer whose LEDGER ROW FAILED TO WRITE is still listed", () => {
+	// recordAuditRow catches append failures and returns, while persistTransactionLog goes on to write
+	// the detail entry. That transfer therefore exists on disk with no row. It stayed visible only
+	// while it was in activeTransfers; once pruneOldTransfers evicted it, it vanished from the list
+	// entirely — a completed transfer with a full detail entry, reported as if it never happened.
+	const summaries = makeLogger({
+		persisted: [{ transferId: PERSISTED_ID, status: "completed" }],
+		dropLedgerRows: true,
+	}).getTransferSummaries();
+
+	const summary = byId(summaries).get(PERSISTED_ID);
+	assert.ok(summary, "the detail entry is the only surviving evidence — it must reach the list");
+	assert.equal(summary.status, "completed", "and carry its real verdict, not a placeholder");
+	assert.equal(summary.registrySource, "persisted",
+		"still history rather than a live blocker: the retry guard reads neither store");
+});
+
+test("an EMPTY audit index falls back to the whole detail window", () => {
+	// loadAuditIndex's catch installs an empty Map. Most reachably that fires on migrateAuditLedger's
+	// WRITE failing — loadAuditLedger already tolerates a missing file and damaged lines by itself.
+	// Before the fallback the tab showed nothing but in-flight transfers while a full detail store sat
+	// on disk, and the error message said "the detail store is untouched", which read as reassurance.
+	const summaries = makeLogger({
+		persisted: [
+			{ transferId: "2:010_kappa", startedAt: 10_000 },
+			{ transferId: "2:011_lambda", startedAt: 11_000 },
+		],
+		dropLedgerRows: true,
+	}).getTransferSummaries();
+
+	assert.deepEqual(summaries.map(s => s.transferId), ["2:011_lambda", "2:010_kappa"],
+		"every retained detail entry must be listed, newest first");
+});
+
+test("the LEDGER still wins where the two disagree", () => {
+	// The fallback must stay a safety net, not a second source of truth. If the passes were reordered
+	// — or the fallback stopped checking byId — the detail store would start overriding the ledger,
+	// and #166's guarantee (trim the detail store, the transfer still appears correctly) would invert
+	// into the detail store silently outranking the permanent record.
+	const ledgerRow = buildAuditRow({
+		transferId: "2:012_mu",
+		rowKind: "terminal",
+		savedAt: 12_000,
+		eventCount: 1,
+		lastEventAt: 12_010,
+		info: { platformName: "pad", sourceInstanceId: 2, targetInstanceId: 1, status: "completed", startedAt: 12_000 },
+	});
+	const summaries = makeLogger({
+		persisted: [{ transferId: "2:012_mu", status: "failed", startedAt: 12_000 }],
+		extraRows: [ledgerRow],
+		dropLedgerRows: true,
+	}).getTransferSummaries();
+
+	assert.equal(summaries.filter(s => s.transferId === "2:012_mu").length, 1, "and must not duplicate");
+	assert.equal(byId(summaries).get("2:012_mu").status, "completed",
+		"the ledger row is the permanent record; the detail entry only fills gaps it leaves");
+});
+
+test("a LEDGER-ONLY transfer — trimmed out of the detail window — is still listed", () => {
+	// The normal steady state once retention runs, and the reason the ledger exists. Asserted here so
+	// the fallback cannot be "fixed" by making the detail store authoritative again.
+	const trimmed = buildAuditRow({
+		transferId: "2:013_nu",
+		rowKind: "terminal",
+		savedAt: 13_000,
+		eventCount: 4,
+		lastEventAt: 13_010,
+		info: { platformName: "pad", sourceInstanceId: 2, targetInstanceId: 1, status: "completed", startedAt: 13_000 },
+	});
+
+	const summaries = makeLogger({ extraRows: [trimmed] }).getTransferSummaries();
+
+	assert.ok(byId(summaries).get("2:013_nu"),
+		"no detail entry, and it must still appear — bounding the detail store depends on this");
 });
