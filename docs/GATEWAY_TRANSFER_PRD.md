@@ -183,16 +183,34 @@ pass. Note the ordering the measurement suggests — prompt at trigger time, pla
 export stall happens on a server they have already left — which may remove the need for the prompt to
 survive a stall at all.
 
+### Stall tolerance (same session, controlled stall)
+
+The stall was generated deliberately rather than by a clone, so its duration is a set value rather
+than an inference: a busy loop in one `/sc` execution, calibrated at ~2.14e8 iterations/second
+against a measured 2.01 s RCON baseline. This blocks the main thread by construction.
+
+- **A 7.43 s main-thread block does NOT disconnect a connected client.** Client latency climbed
+  `3 → 30 → 32 → 149 → 254` and the connection held; no `WaitingForUserToSaveOrQuitAfterServerLeft`
+  on either side. **[empirical, 2.1.11, controlled-stall probe 2026-08-06]**
+- **A `connect_to_server` dialog created in the SAME tick the server blocks for 7.43 s reaches the
+  client, survives the freeze, and remains actionable** — the owner accepted it afterward and the
+  jump completed via the ordinary `WaitingForDisconnectConfirmation` path, not a drop. This closes
+  the stall-race cell of Q2. **[empirical, 2.1.11, controlled-stall probe 2026-08-06]**
+
+Consequence for the design: the prompt does **not** need to be moved pre-transfer to survive the
+export stall. Both orderings are now measured safe.
+
 **Not established, deliberately left open:**
-- **The "dialog survives a concurrent stall" cell.** Attempted twice; the owner accepted the prompt
-  before the stall both times. Untested, not passed.
 - **Q3's manual seat-on-arrival and Q4's native fallback** were not run.
-- **One client disconnect has no established cause.** During an unrelated 1359-entity clone the client
-  declared `WaitingForUserToSaveOrQuitAfterServerLeft` with the client 38 ticks (~0.63 s) behind, the
-  server measuring 55.3 TPS over 10.19 s (~0.8 s of lost ticks), and the clone self-reporting 0.5 s.
-  Three consistent numbers that bound the event as sub-second and rule out prior drift — and name no
-  mechanism. Recorded as a measurement, not a finding. See [/client-logs](../.claude/skills/client-logs/SKILL.md)
-  for why the server-side instruments cannot settle this: RCON and the instance log both ride the
+- **One client disconnect has no established cause, and the obvious explanation is now the least
+  likely.** During an unrelated 1359-entity clone the client declared
+  `WaitingForUserToSaveOrQuitAfterServerLeft` with the client 38 ticks (~0.63 s) behind, the server
+  measuring 55.3 TPS over 10.19 s (~0.8 s of lost ticks), and the clone self-reporting 0.5 s. Those
+  three numbers agree with each other, which is what made "the stall dropped the client" attractive
+  — but the controlled probe above held a client through a stall **9x longer**. So a sub-second
+  stall is not a sufficient cause, and the mechanism is unknown rather than merely unproven.
+  Recorded as a measurement, not a finding. See [/client-logs](../.claude/skills/client-logs/SKILL.md)
+  for why the server-side instruments cannot settle it: RCON and the instance log both ride the
   Factorio main thread, so their silence during a stall is the symptom, not evidence of its absence.
 
 ## Passenger handling
