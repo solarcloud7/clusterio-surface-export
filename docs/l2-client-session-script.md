@@ -1,5 +1,13 @@
 # Layer-2 client session — script of record
 
+> **RUN 2026-08-06. Q1 and Q2 PASS — seat-on-join is a GO.** Results and their evidence tags live in
+> [GATEWAY_TRANSFER_PRD.md → The client half](GATEWAY_TRANSFER_PRD.md#the-client-half-2026-08-06--seat-on-join-is-a-go),
+> not here; this file stays the procedure. Still open after that run: the **stall-race cell** of Q2
+> (attempted twice, the prompt was accepted before the stall both times — untested, NOT passed), and
+> **Q3 and Q4**, which were not run. One client disconnect during setup has no established cause.
+> Use [/client-logs](../.claude/skills/client-logs/SKILL.md) for the client half of any drop — it was
+> written during this session precisely because the server-side logs cannot see a main-thread stall.
+
 > The headless half of the Layer-2 re-scope ran 2026-08-03 (measurements in
 > [GATEWAY_TRANSFER_PRD.md → Empirical foundations](GATEWAY_TRANSFER_PRD.md#empirical-foundations-2111)).
 > This script is the client half: everything below needs a real game client and an owner at the
