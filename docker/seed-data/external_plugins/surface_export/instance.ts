@@ -631,24 +631,15 @@ export class InstancePlugin extends BaseInstancePlugin {
 
 			this.logger.info("Platform import chunks sent successfully");
 
-			// Step 3: Wait a moment for async processing to start
-			await wait(500);
-
-			// Step 4: Verify the import was queued
-			try {
-				const result = await this.sendRcon(
-					"/sc rcon.print('{\"success\":true}')",
-				);
-				const response = JSON.parse(result);
-
-				if (response.success) {
-					this.logger.info("Platform import queued for async processing");
-					return { success: true };
-				}
-			} catch (verifyErr: unknown) {
-				this.logger.warn(`Could not verify import: ${getErrorMessage(verifyErr)}`);
-			}
-
+			// Success here means CHUNKS SENT, not import finished — the actual outcome arrives
+			// asynchronously via ImportOperationCompleteEvent, which is what callers adjudicate.
+			//
+			// There used to be a "Step 4: Verify the import was queued" here that sent
+			// `/sc rcon.print('{"success":true}')`, parsed that constant, and branched on it. The RCON
+			// payload was a literal, so the check could not fail and read no queue state whatsoever; it
+			// only logged "Platform import queued for async processing" unconditionally, which is worse
+			// than silence because it reads as a confirmation. A preceding 500 ms sleep existed solely to
+			// give that check something to observe, so it went with it.
 			return { success: true };
 
 		} catch (err: unknown) {
