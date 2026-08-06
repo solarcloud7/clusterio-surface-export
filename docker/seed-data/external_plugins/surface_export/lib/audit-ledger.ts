@@ -55,8 +55,11 @@ export const AUDIT_ERROR_MAX_CHARS = 512;
 
 export interface LedgerLoadResult {
 	rows: AuditRow[];
-	/** Lines that could not be used, with enough detail to find them by hand. */
-	skipped: Array<{ lineNumber: number; byteOffset: number; reason: string }>;
+	/**
+	 * Lines that could not be used, with enough detail to find them by hand. `file` names WHICH
+	 * generation the damage is in — without it a byte offset is ambiguous once rotation exists.
+	 */
+	skipped: Array<{ lineNumber: number; byteOffset: number; reason: string; file?: string }>;
 }
 
 type RowInput = {
@@ -133,9 +136,87 @@ export function buildAuditRow(input: RowInput): AuditRow {
  * interleave. Appends must NEVER be coalesced — each row is distinct history, unlike the snapshot
  * writers where collapsing a burst would be harmless.
  */
-export async function appendAuditRow(ledgerPath: string, row: AuditRow): Promise<void> {
+export async function appendAuditRow(
+	ledgerPath: string,
+	row: AuditRow,
+	rotation: RotationOptions = {},
+): Promise<void> {
 	const line = `${JSON.stringify(row)}\n`;
-	await enqueueWrite(ledgerPath, () => fs.appendFile(ledgerPath, line, "utf8"));
+	await enqueueWrite(ledgerPath, async () => {
+		// Rotation happens INSIDE the queued unit of work, so a rename can never interleave with an
+		// append to the same path — the rotation and the write that follows it are one step as far as
+		// any other writer is concerned.
+		await rotateIfNeeded(ledgerPath, rotation);
+		await fs.appendFile(ledgerPath, line, "utf8");
+	});
+}
+
+export type RotationOptions = {
+	/** Rotate once the live file exceeds this. */
+	maxBytes?: number;
+	/** How many rotated generations to keep. The oldest beyond this is deleted. */
+	maxFiles?: number;
+};
+
+/** Live file plus `maxFiles` generations, so the ceiling is (maxFiles + 1) x maxBytes. */
+export const DEFAULT_LEDGER_MAX_BYTES = 32 * 1024 * 1024;
+export const DEFAULT_LEDGER_MAX_FILES = 8;
+
+/** `…audit.jsonl` → `…audit.1.jsonl`. Generation 1 is the newest rotated file. */
+export function generationPath(ledgerPath: string, generation: number): string {
+	return ledgerPath.replace(/\.jsonl$/, `.${generation}.jsonl`);
+}
+
+/**
+ * Roll the live file aside once it exceeds `maxBytes`, shifting existing generations down.
+ *
+ * Rotation is the ONLY thing in this design that can delete audit history, so the ceiling is stated
+ * in bytes rather than left implicit: at the defaults it is 9 x 32 MB ≈ 288 MB, which at the measured
+ * ~614 bytes per row is on the order of half a million transfers. "Forever" is honest at that scale,
+ * and the config makes it a stated bound rather than a hope.
+ *
+ * Deliberately size-based, not age-based: the cost this bounds is disk, and rows arrive at whatever
+ * rate the cluster transfers. An age rule would delete a quiet cluster's entire history and fail to
+ * bound a busy one.
+ */
+export async function rotateIfNeeded(ledgerPath: string, options: RotationOptions = {}): Promise<boolean> {
+	const maxBytes = options.maxBytes ?? DEFAULT_LEDGER_MAX_BYTES;
+	const maxFiles = options.maxFiles ?? DEFAULT_LEDGER_MAX_FILES;
+	if (!Number.isFinite(maxBytes) || maxBytes <= 0) {
+		return false;
+	}
+
+	let size: number;
+	try {
+		({ size } = await fs.stat(ledgerPath));
+	} catch (err: unknown) {
+		if ((err as { code?: string }).code === "ENOENT") {
+			return false;
+		}
+		throw err;
+	}
+	if (size < maxBytes) {
+		return false;
+	}
+
+	// Shift downward from the oldest so a generation is never overwritten while it is still needed.
+	// The one beyond maxFiles is dropped — the only deletion of audit history anywhere in this design.
+	for (let generation = maxFiles; generation >= 1; generation -= 1) {
+		const from = generationPath(ledgerPath, generation);
+		if (generation === maxFiles) {
+			await fs.rm(from, { force: true });
+			continue;
+		}
+		try {
+			await fs.rename(from, generationPath(ledgerPath, generation + 1));
+		} catch (err: unknown) {
+			if ((err as { code?: string }).code !== "ENOENT") {
+				throw err;
+			}
+		}
+	}
+	await fs.rename(ledgerPath, generationPath(ledgerPath, 1));
+	return true;
 }
 
 /**
@@ -146,7 +227,36 @@ export async function appendAuditRow(ledgerPath: string, row: AuditRow): Promise
  * future write until a human intervenes — the sharpest contradiction of "see every transfer" in the
  * codebase. Here a torn final line (the plausible power-loss shape) costs exactly that line.
  */
-export async function loadAuditLedger(ledgerPath: string): Promise<LedgerLoadResult> {
+export async function loadAuditLedger(
+	ledgerPath: string,
+	options: RotationOptions = {},
+): Promise<LedgerLoadResult> {
+	const maxFiles = options.maxFiles ?? DEFAULT_LEDGER_MAX_FILES;
+	const combined: LedgerLoadResult = { rows: [], skipped: [] };
+	// OLDEST generation first, live file last, so file order stays chronological across a rotation
+	// boundary and the fold's "later row of the same kind wins" keeps meaning what it means.
+	//
+	// Reading the generations is not optional: rotation moves rows out of the live file, so a loader
+	// that read only that file would drop every rotated transfer out of the index — silently deleting
+	// the history this ledger exists to keep, which is the exact failure mode the whole split was
+	// built to avoid.
+	const paths: string[] = [];
+	for (let generation = maxFiles; generation >= 1; generation -= 1) {
+		paths.push(generationPath(ledgerPath, generation));
+	}
+	paths.push(ledgerPath);
+
+	for (const path of paths) {
+		const one = await readLedgerFile(path);
+		combined.rows.push(...one.rows);
+		for (const drop of one.skipped) {
+			combined.skipped.push({ ...drop, file: path });
+		}
+	}
+	return combined;
+}
+
+async function readLedgerFile(ledgerPath: string): Promise<LedgerLoadResult> {
 	const result: LedgerLoadResult = { rows: [], skipped: [] };
 	let content: string;
 	try {

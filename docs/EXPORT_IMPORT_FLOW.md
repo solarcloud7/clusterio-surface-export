@@ -415,7 +415,7 @@ controller's `controller.database_directory` hold the result, with different job
 
 | File | Shape | Holds | Bounded |
 |---|---|---|---|
-| `surface_export_transaction_audit.jsonl` | append-only JSONL, one slim row per lifecycle event | every transfer, for good — scalars only, no count maps | no (rotation is future work) |
+| `surface_export_transaction_audit.jsonl` | append-only JSONL, one slim row per lifecycle event | every transfer — scalars only, no count maps | yes, by size: rotates at 32 MB keeping 8 generations (~288 MB ceiling, ~half a million transfers at the measured ~614 bytes/row) |
 | `surface_export_transaction_logs.json` | single JSON array, upserted per transfer | the fat detail: events, phase timings, validation maps | yes — `surface_export.transaction_log_detail_entries`, default 100 |
 
 Retention keeps detail preferentially: transfers whose export payload is still downloadable (so the
@@ -453,6 +453,13 @@ On first run after upgrade the ledger is derived from the existing detail entrie
 written with a single atomic replace, so it either exists complete or not at all — a
 crash partway leaves no ledger and the next boot re-derives. The migration never modifies
 the detail store.
+
+Rotated generations are named `…audit.1.jsonl`, `…audit.2.jsonl` and so on, generation 1 being the
+newest. **The loader reads every generation, oldest first**, so a rotated transfer stays in the index
+— a loader that read only the live file would silently delete the history the ledger exists to keep.
+Rotation is size-based rather than age-based because the cost it bounds is disk, and rows arrive at
+whatever rate the cluster transfers: an age rule would erase a quiet cluster's whole history while
+failing to bound a busy one.
 
 Common event progression: `transfer_created` → `import_started` → `validation_received` →
 `transfer_completed`. The failure path includes rollback events (`rollback_attempt`,

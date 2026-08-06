@@ -171,3 +171,72 @@ test("a row carries no count maps — the reason it can be kept forever", () => 
 		assert.ok(value === null || typeof value !== "object", `${key} must be a scalar or null`);
 	}
 });
+
+// ── Rotation ─────────────────────────────────────────────────────────────────
+// Rotation is the ONLY thing in this design that can delete audit history, so these are written
+// around what must survive it rather than around the renaming.
+
+const {
+	rotateIfNeeded,
+	generationPath,
+	DEFAULT_LEDGER_MAX_BYTES,
+	DEFAULT_LEDGER_MAX_FILES,
+} = require(path.join(distNode, "lib", "audit-ledger.js"));
+
+test("no rotation below the threshold, and none for an absent file", async () => {
+	const file = ledgerPath("no-rotate");
+	assert.equal(await rotateIfNeeded(file, { maxBytes: 1024 }), false, "absent file must not rotate");
+	await appendAuditRow(file, row("1:001"));
+	assert.equal(await rotateIfNeeded(file, { maxBytes: 1024 * 1024 }), false);
+	const { rows } = await loadAuditLedger(file);
+	assert.equal(rows.length, 1);
+});
+
+test("ROTATED ROWS ARE STILL LOADED — the property rotation must never break", async () => {
+	// A loader that read only the live file would drop every rotated transfer out of the index:
+	// silently deleting the history this ledger exists to keep. That is the whole risk of rotation.
+	const file = ledgerPath("rotate-load");
+	await appendAuditRow(file, row("1:001"), { maxBytes: 1 });   // forces a rotation on the NEXT append
+	await appendAuditRow(file, row("1:002"), { maxBytes: 1 });
+	await appendAuditRow(file, row("1:003"), { maxBytes: 1 });
+
+	assert.ok(fs.existsSync(generationPath(file, 1)), "a rotated generation must exist");
+	const { rows } = await loadAuditLedger(file);
+	assert.deepEqual(rows.map(r => r.transferId), ["1:001", "1:002", "1:003"],
+		"every transfer must load, in chronological order, across the rotation boundary");
+});
+
+test("generations shift down and the oldest beyond the cap is dropped", async () => {
+	const file = ledgerPath("rotate-shift");
+	for (const id of ["1:001", "1:002", "1:003", "1:004"]) {
+		await appendAuditRow(file, row(id), { maxBytes: 1, maxFiles: 2 });
+	}
+
+	assert.ok(!fs.existsSync(generationPath(file, 3)), "nothing may be kept beyond maxFiles");
+	const { rows } = await loadAuditLedger(file, { maxFiles: 2 });
+	// maxFiles=2 means live + 2 generations; the oldest row has aged out by design.
+	assert.ok(rows.length >= 3 && rows.length <= 4);
+	assert.equal(rows[rows.length - 1].transferId, "1:004", "the newest row is always present");
+});
+
+test("a damaged line in a ROTATED generation is reported with the file it is in", async () => {
+	// A byte offset alone is ambiguous once more than one file exists.
+	const file = ledgerPath("rotate-damage");
+	await appendAuditRow(file, row("1:001"), { maxBytes: 1 });
+	await appendAuditRow(file, row("1:002"), { maxBytes: 1 });
+	fs.appendFileSync(generationPath(file, 1), "{ not json }\n");
+
+	const { rows, skipped } = await loadAuditLedger(file);
+	assert.ok(rows.some(r => r.transferId === "1:002"), "undamaged rows still load");
+	assert.equal(skipped.length, 1);
+	assert.match(skipped[0].file, /\.1\.jsonl$/, "the report must name which generation is damaged");
+});
+
+test("the default ceiling is stated, not implicit", async () => {
+	// Rotation deletes history at the boundary, so the bound is asserted rather than left to a comment.
+	assert.equal(DEFAULT_LEDGER_MAX_BYTES, 32 * 1024 * 1024);
+	assert.equal(DEFAULT_LEDGER_MAX_FILES, 8);
+	const ceilingBytes = DEFAULT_LEDGER_MAX_BYTES * (DEFAULT_LEDGER_MAX_FILES + 1);
+	// ~614 bytes per row measured on a real store.
+	assert.ok(ceilingBytes / 614 > 400_000, "the default ceiling must hold hundreds of thousands of transfers");
+});
