@@ -232,6 +232,54 @@ export class TransactionLogger {
 			}
 		}
 
+		// SAFETY NET, not a second source of truth. In a healthy cluster every detail entry has a ledger
+		// row, so this pass adds nothing and costs one Map lookup per retained entry (bounded by
+		// transaction_log_detail_entries, default 100).
+		//
+		// It earns its place on two failure paths that otherwise erase history the plugin still holds:
+		//   - loadAuditIndex catching — most reachably migrateAuditLedger's WRITE failing, since
+		//     loadAuditLedger already swallows ENOENT and per-line damage — leaves an EMPTY index, and
+		//     without this pass the list showed nothing but in-flight transfers while a full detail
+		//     store sat on disk.
+		//   - recordAuditRow catching leaves one transfer with a detail entry and no row. That transfer
+		//     vanished from the list the moment pruneOldTransfers dropped it from activeTransfers.
+		//
+		// Reading the detail store SECOND is what keeps #166's guarantee intact: the ledger still wins
+		// every disagreement, and a transfer trimmed out of the detail window still appears from its row.
+		for (const persistedLog of this.plugin.persistedTransactionLogs) {
+			if (byId.has(persistedLog.transferId)) {
+				continue;
+			}
+			const transferInfo = persistedLog.transferInfo || {};
+			const events = Array.isArray(persistedLog.events) ? persistedLog.events : [];
+			const lastEvent = events.length ? events[events.length - 1] : null;
+			byId.set(persistedLog.transferId, {
+				transferId: persistedLog.transferId,
+				operationType: transferInfo.operationType ?? "transfer",
+				exportId: transferInfo.exportId || null,
+				artifactSizeBytes: transferInfo.artifactSizeBytes ?? null,
+				downloadable: false,
+				platformName: transferInfo.platformName || "Unknown",
+				sourceInstanceId: transferInfo.sourceInstanceId ?? -1,
+				sourceInstanceName: transferInfo.sourceInstanceName ?? null,
+				targetInstanceId: transferInfo.targetInstanceId ?? -1,
+				targetInstanceName: transferInfo.targetInstanceName ?? null,
+				status: transferInfo.status || "unknown",
+				startedAt: transferInfo.startedAt || persistedLog.savedAt || Date.now(),
+				completedAt: transferInfo.completedAt || null,
+				failedAt: transferInfo.failedAt || null,
+				error: transferInfo.error || null,
+				lastEventAt: lastEvent?.timestampMs || null,
+				// Same value as the ledger half, for the same reason: the retry guard reads neither, so
+				// an ID reaching the list only from here is history rather than a live blocker. A third
+				// value would also trip the gallery preflight's unknown-provenance warning.
+				registrySource: "persisted" as const,
+				// No ledger row means no terminal row was ever counted. Claiming 1 here would assert a
+				// verdict this transfer has no durable evidence of.
+				revisions: this.plugin.auditRevisions.get(persistedLog.transferId) ?? 0,
+			});
+		}
+
 		// Enrich all summaries with current platformStorage state (export may have been
 		// uploaded or deleted since the summary was built or persisted)
 		return Array.from(byId.values())
@@ -407,9 +455,25 @@ export class TransactionLogger {
 		}
 		return selectRetainedDetail(entries, {
 			cap,
-			isPinned: entry => Boolean(
-				entry.transferInfo?.exportId && this.plugin.platformStorage.get(entry.transferInfo.exportId)?.exportData,
-			),
+			isPinned: entry => {
+				// An entry with NO ledger row is the only surviving evidence that transfer happened —
+				// recordAuditRow logs its failures and returns, so the detail file can outlive its row.
+				// Evicting it destroys the record rather than a timeline, which is the one thing the
+				// ledger was built to make impossible.
+				//
+				// Deliberately a preference inside its class, NOT a class of its own: a sustained ledger
+				// outage would mark every entry, and a class that can cover the whole window is exactly
+				// the failure `selectRetainedDetail` documents at the pinned-tiebreak comment. So this
+				// buys ordering, never a guarantee — the durable fix for a broken ledger is to fix the
+				// ledger, and recordAuditRow says so at error level.
+				if (!this.plugin.auditIndex.has(entry.transferId)) {
+					return true;
+				}
+				return Boolean(
+					entry.transferInfo?.exportId
+					&& this.plugin.platformStorage.get(entry.transferInfo.exportId)?.exportData,
+				);
+			},
 		});
 	}
 

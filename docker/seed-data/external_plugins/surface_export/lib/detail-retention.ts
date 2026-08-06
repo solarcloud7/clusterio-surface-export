@@ -50,9 +50,13 @@ const FAILURE_STATUSES = new Set(["failed", "cleanup_failed", "error"]);
 export type RetentionOptions = {
 	cap: number;
 	/**
-	 * Whether this entry's export payload is still downloadable. Used as a PREFERENCE within each
-	 * class (a downloadable transfer's timeline is the more useful one to keep), never as a class of
-	 * its own — see the tiebreak note in `selectRetainedDetail`. The name is kept for the call sites.
+	 * Whether this entry is worth keeping over a same-class sibling. Used as a PREFERENCE within each
+	 * class, never as a class of its own — see the tiebreak note in `selectRetainedDetail`.
+	 *
+	 * The production call site (`applyDetailRetention`) answers yes for two reasons, documented there:
+	 * the export payload is still downloadable, or the transfer has NO audit-ledger row and this entry
+	 * is therefore the only evidence it happened. The name predates the second reason and is kept
+	 * because it reads correctly at the sort site.
 	 */
 	isPinned: (entry: PersistedTransactionLog) => boolean;
 	reservedSuccessSlots?: number;

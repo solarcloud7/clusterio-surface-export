@@ -804,8 +804,11 @@ export class ControllerPlugin extends BaseControllerPlugin {
 			this.auditRevisions = new Map();
 			this.logger.error(
 				`Audit ledger at ${this.auditLedgerPath} could not be read (${getErrorMessage(err)}). `
-				+ "Transfer history for the LIST will be incomplete until the next controller restart; "
-				+ "the detail store is untouched and new transfers are still recorded.",
+				+ "The LIST falls back to the detail store, so history is limited to the retention window "
+				+ "(transaction_log_detail_entries) instead of every transfer ever run, until this is fixed "
+				+ "and the controller restarts. New transfers are still recorded. NOTE: the most likely "
+				+ "cause is not a read at all — migrateAuditLedger WRITES inside this same block, and "
+				+ "loadAuditLedger already tolerates a missing file and damaged lines on its own.",
 			);
 		}
 	}
@@ -838,7 +841,10 @@ export class ControllerPlugin extends BaseControllerPlugin {
 		await enqueueWrite(this.auditLedgerPath, () => lib.safeOutputFile(this.auditLedgerPath, payload));
 		this.logger.info(
 			`Audit ledger: migrated ${rows.length} transfer(s) from the detail store into `
-			+ `${this.auditLedgerPath}. The detail store was not modified.`,
+			+ `${this.auditLedgerPath}. The detail store was not modified. NOTE: that store is a BOUNDED `
+			+ "window (transaction_log_detail_entries), so this migration recovers only the transfers "
+			+ "still inside it. Any older than the window are not represented — this is the full set the "
+			+ "controller still holds, not necessarily the full set that ever ran.",
 		);
 		return rows;
 	}
@@ -860,10 +866,19 @@ export class ControllerPlugin extends BaseControllerPlugin {
 				this.auditRevisions.set(row.transferId, (this.auditRevisions.get(row.transferId) ?? 0) + 1);
 			}
 		} catch (err: unknown) {
+			// This message used to end "its detail entry still carries the full record" — true at this
+			// instant and false once retention runs, with nothing reconciling the two. The detail entry
+			// is a WINDOW; the row was the permanent record, and it is the one that just failed.
+			//
+			// Two mitigations now hold the line, and neither is a substitute for fixing the write:
+			// getTransferSummaries falls back to the detail store so the transfer stays listed, and
+			// applyDetailRetention prefers row-less entries when it trims. Both are bounded.
 			this.logger.error(
 				`Audit ledger: failed to record ${row.rowKind} row for ${row.transferId} `
-				+ `(${getErrorMessage(err)}). The transfer itself is unaffected; its detail entry still `
-				+ "carries the full record.",
+				+ `(${getErrorMessage(err)}). The transfer itself is unaffected and its detail entry is `
+				+ "intact, but this transfer now has NO permanent audit row — it will disappear from the "
+				+ `history when its detail entry ages out of the retention window. Check that `
+				+ `${this.auditLedgerPath} is writable.`,
 			);
 		}
 	}

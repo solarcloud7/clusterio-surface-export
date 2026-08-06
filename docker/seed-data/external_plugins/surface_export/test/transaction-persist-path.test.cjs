@@ -236,3 +236,39 @@ test("a history file that parses but is not an array latches instead of being ov
 	await txLogger.persistTransactionLog(transferId);
 	assert.equal(fs.readFileSync(file, "utf8"), original, "the original bytes must be preserved");
 });
+
+test("a detail entry with NO LEDGER ROW outranks a same-class sibling when the window trims", () => {
+	// recordAuditRow logs append failures and returns, so a detail entry can outlive its row. That
+	// entry is then the ONLY evidence the transfer happened — losing it destroys the record, not a
+	// timeline, which is the one outcome the ledger was built to prevent. Retention therefore prefers
+	// row-less entries within their class.
+	//
+	// Deliberately a preference and not a class: a sustained ledger outage marks every entry, and a
+	// class that can claim the whole window is the failure selectRetainedDetail documents at its
+	// pinned-tiebreak comment. This test pins the ordering, not a survival guarantee.
+	const { txLogger, plugin } = makeHarness({ detailCap: 10 });
+
+	const entries = [];
+	for (let i = 0; i < 12; i += 1) {
+		const transferId = `1:1${String(i).padStart(2, "0")}`;
+		// All twelve are successes, so class cannot be what decides this — only the row can.
+		entries.push({
+			transferId,
+			savedAt: 1_000 + i,
+			events: [],
+			transferInfo: { status: "completed", startedAt: 1_000 + i },
+		});
+		// Every entry gets a row EXCEPT the oldest — the one plain newest-first drops first.
+		if (i > 0) {
+			plugin.auditIndex.set(transferId, { transferId, rowKind: "terminal" });
+		}
+	}
+
+	const retained = txLogger.applyDetailRetention(entries);
+
+	assert.equal(retained.length, 10, "the cap must still bind");
+	assert.ok(retained.some(e => e.transferId === "1:100"),
+		"the row-less entry must survive a sibling that still has its permanent row");
+	assert.ok(!retained.some(e => e.transferId === "1:101"),
+		"and it must have DISPLACED one — otherwise the cap simply fit everything and this proves nothing");
+});
