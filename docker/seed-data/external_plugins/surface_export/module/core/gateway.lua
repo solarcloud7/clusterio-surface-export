@@ -59,32 +59,51 @@ function Gateway.is_active_gateway(name)
 	return false
 end
 
---- Unlock every ACTIVE gateway space-location for every force so platforms can route to them.
---- Idempotent and cheap — safe to call on every server startup. pcall-guarded per (force, gateway) so
---- one bad force (e.g. a force without space travel) can't abort the rest.
+--- RECONCILE every gateway space-location against the active set, for every force: the active ones
+--- unlocked so platforms can route to them, the rest LOCKED so they never appear on the starmap.
 ---
---- Gateways outside the active set are deliberately left LOCKED rather than unlocked-but-unconfigured:
---- an unlocked gateway with no config is a destination a player can fly to and then be told nothing
---- happens, which is worse than one that was never offered.
+--- Both directions are needed, and the reason is an ordering fact rather than a preference. This runs
+--- at startup (control.lua), which is BEFORE the controller has pushed the active set — so the first
+--- pass necessarily unlocks everything. Filtering alone would therefore leave every gateway unlocked
+--- forever, since nothing else ever locks one; measured on the live cluster, where all five stayed
+--- unlocked in one-gate mode until this became a two-way reconcile. `configure` re-runs it whenever
+--- the active set arrives or changes, and that later pass is what actually takes effect.
+---
+--- Inactive gateways are LOCKED rather than left unlocked-but-unconfigured because an unlocked
+--- gateway with no config is a destination a player can fly to and then be told nothing happens,
+--- which is worse than one that was never offered.
+---
+--- Idempotent and cheap — safe on every startup. pcall-guarded per (force, gateway) so one bad force
+--- (e.g. one without space travel) can't abort the rest.
 --- @return number unlocked The number of (force, gateway) unlocks that succeeded.
 function Gateway.discover_and_unlock()
 	local unlocked = 0
+	local locked = 0
 	for name, _ in pairs(prototypes.space_location) do
-		if Gateway.is_gateway(name) and Gateway.is_active_gateway(name) then
+		if Gateway.is_gateway(name) then
+			local should_unlock = Gateway.is_active_gateway(name)
 			for _, force in pairs(game.forces) do
 				local ok, err = pcall(function()
-					force.unlock_space_location(name)
+					if should_unlock then
+						force.unlock_space_location(name)
+					else
+						force.lock_space_location(name)
+					end
 				end)
 				if ok then
-					unlocked = unlocked + 1
+					if should_unlock then
+						unlocked = unlocked + 1
+					else
+						locked = locked + 1
+					end
 				else
-					log(string.format("[Gateway] unlock '%s' for force '%s' failed: %s",
-						name, tostring(force.name), tostring(err)))
+					log(string.format("[Gateway] %s '%s' for force '%s' failed: %s",
+						should_unlock and "unlock" or "lock", name, tostring(force.name), tostring(err)))
 				end
 			end
 		end
 	end
-	log(string.format("[Gateway] discover_and_unlock: %d gateway/force unlocks", unlocked))
+	log(string.format("[Gateway] discover_and_unlock: %d gateway/force unlocks, %d locks", unlocked, locked))
 	return unlocked
 end
 

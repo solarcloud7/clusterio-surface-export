@@ -3,6 +3,7 @@
 
 local AsyncProcessor = require("modules/surface_export/core/async-processor")
 local Util = require("modules/surface_export/utils/util")
+local Gateway = require("modules/surface_export/core/gateway")
 
 --- Configure plugin settings (called from Node.js plugin on startup)
 --- @param config table: Configuration parameters {batch_size, max_concurrent_jobs, show_progress, debug_mode}
@@ -77,6 +78,13 @@ local function configure(config)
     local decoded = Util.json_to_table_compat(config.active_gateways_json)
     if type(decoded) == "table" then
       storage.surface_export_config.active_gateways = decoded
+      -- Re-reconcile NOW. The startup pass ran before this arrived and therefore unlocked every
+      -- gateway; this is the pass that actually takes effect, and without it the setting would look
+      -- applied (the value is stored) while the starmap still showed the other mode's gateways.
+      local ok, err = pcall(Gateway.discover_and_unlock)
+      if not ok then
+        log(string.format("[FactorioSurfaceExport] configure: gateway re-unlock failed: %s", tostring(err)))
+      end
       log(string.format("[FactorioSurfaceExport] Active gateway set: %d name(s)", #decoded))
     else
       log("[FactorioSurfaceExport] configure: active_gateways_json did not decode to a table")
