@@ -37,14 +37,40 @@ function Gateway.get_gateway_config(gateway_name)
 	return (cfg and cfg.gateways and cfg.gateways[gateway_name]) or nil
 end
 
---- Unlock every gateway space-location for every force so platforms can route to them. Idempotent and
---- cheap — safe to call on every server startup. pcall-guarded per (force, gateway) so one bad force
---- (e.g. a force without space travel) can't abort the rest.
+--- Whether a gateway belongs to the cluster's ACTIVE mode.
+---
+--- The controller pushes the active name list (`active_gateways_json`); a cluster runs either the
+--- single hub gate or the four numbered ones. Nil means the controller has not told us — an
+--- un-updated controller, or an instance that started before the first push — and the honest answer
+--- there is the pre-mode behaviour, "every gateway", NOT "none". Returning false on nil would leave
+--- an instance with no reachable gateways at all and no way for the operator to see why.
+--- @param name string
+--- @return boolean
+function Gateway.is_active_gateway(name)
+	local active = storage.surface_export_config and storage.surface_export_config.active_gateways
+	if type(active) ~= "table" or #active == 0 then
+		return true
+	end
+	for _, active_name in ipairs(active) do
+		if active_name == name then
+			return true
+		end
+	end
+	return false
+end
+
+--- Unlock every ACTIVE gateway space-location for every force so platforms can route to them.
+--- Idempotent and cheap — safe to call on every server startup. pcall-guarded per (force, gateway) so
+--- one bad force (e.g. a force without space travel) can't abort the rest.
+---
+--- Gateways outside the active set are deliberately left LOCKED rather than unlocked-but-unconfigured:
+--- an unlocked gateway with no config is a destination a player can fly to and then be told nothing
+--- happens, which is worse than one that was never offered.
 --- @return number unlocked The number of (force, gateway) unlocks that succeeded.
 function Gateway.discover_and_unlock()
 	local unlocked = 0
 	for name, _ in pairs(prototypes.space_location) do
-		if Gateway.is_gateway(name) then
+		if Gateway.is_gateway(name) and Gateway.is_active_gateway(name) then
 			for _, force in pairs(game.forces) do
 				local ok, err = pcall(function()
 					force.unlock_space_location(name)

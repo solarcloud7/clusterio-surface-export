@@ -1171,15 +1171,34 @@ export class ControllerPlugin extends BaseControllerPlugin {
 	}
 
 	/** Push ONE source instance its own resolved gateway config (best-effort; no-op if offline). */
-	private async pushGatewayConfigToInstance(sourceInstanceId: number): Promise<void> {
+	/**
+	 * Push ONE source instance its own resolved gateway config.
+	 *
+	 * Returns the failure REASON instead of swallowing it. The push can fail for a reason the
+	 * operator must act on — most sharply, `configureGateways` throws above 7000 bytes of assembled
+	 * /sc command, which one-gate mode makes reachable because every destination concentrates onto a
+	 * single key. This used to be caught into a `logger.warn`, so the config was persisted, the UI
+	 * said “saved”, and the instance quietly kept running the PREVIOUS gateway config with the only
+	 * trace in a host log nobody was reading. Saved-but-not-applied is exactly the state that has to
+	 * be visible.
+	 *
+	 * An OFFLINE instance is not a failure: it pulls its config on start (GetGatewayConfigRequest).
+	 */
+	private async pushGatewayConfigToInstance(sourceInstanceId: number): Promise<string | null> {
 		if (!this.isInstanceOnline(sourceInstanceId)) {
-			return;
+			return null;
 		}
 		try {
 			const gateways = this.resolveGateways(sourceInstanceId);
-			await this.c.sendTo({ instanceId: sourceInstanceId }, new messages.PushGatewayConfigRequest({ gateways }));
+			await this.c.sendTo({ instanceId: sourceInstanceId }, new messages.PushGatewayConfigRequest({
+				gateways,
+				activeGatewayNames: messages.gatewayNamesFor(this.gatewayMode()),
+			}));
+			return null;
 		} catch (err: unknown) {
-			this.logger.warn(`Failed to push gateway config to instance ${sourceInstanceId}: ${getErrorMessage(err)}`);
+			const reason = getErrorMessage(err);
+			this.logger.error(`Failed to push gateway config to instance ${sourceInstanceId}: ${reason}`);
+			return reason;
 		}
 	}
 
@@ -1249,14 +1268,25 @@ export class ControllerPlugin extends BaseControllerPlugin {
 			this.gatewayLinks.delete(key);
 		}
 		await this.persistGatewayConfig();
-		await this.pushGatewayConfigToInstance(sourceInstanceId);
+		const pushError = await this.pushGatewayConfigToInstance(sourceInstanceId);
 		this.logger.info(`Gateway '${gatewayName}' on instance ${sourceInstanceId} links set: ${targets.length} target(s)`);
+		if (pushError) {
+			// The config IS saved — reporting failure here would invite a retry that changes nothing.
+			// What the operator needs to know is that the running instance has not picked it up.
+			return {
+				success: true,
+				error: `Saved, but instance ${sourceInstanceId} is still running the previous gateway config: ${pushError}`,
+			};
+		}
 		return { success: true };
 	}
 
 	/** instance → controller: pull the requesting instance's own resolved gateway config on instance start. */
 	async handleGetGatewayConfigRequest(request: { instanceId: number }) {
-		return { gateways: this.resolveGateways(Number(request.instanceId)) };
+		return {
+			gateways: this.resolveGateways(Number(request.instanceId)),
+			activeGatewayNames: messages.gatewayNamesFor(this.gatewayMode()),
+		};
 	}
 
 	/**

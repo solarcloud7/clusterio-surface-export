@@ -899,9 +899,9 @@ export class GetGatewayConfigRequest {
 	toJSON() { return { instanceId: this.instanceId }; }
 
 	static Response = {
-		jsonSchema: { type: "object", properties: { gateways: RESOLVED_GATEWAYS_SCHEMA }, required: ["gateways"] } as JsonSchema,
+		jsonSchema: { type: "object", properties: { gateways: RESOLVED_GATEWAYS_SCHEMA, activeGatewayNames: { type: "array", items: { type: "string" } } }, required: ["gateways"] } as JsonSchema,
 		fromJSON(json: unknown) {
-			return json as { gateways: ResolvedGateway[] };
+			return json as { gateways: ResolvedGateway[]; activeGatewayNames?: string[] };
 		},
 	};
 }
@@ -981,21 +981,31 @@ export class PushGatewayConfigRequest {
 	static dst = "instance" as const;
 	static jsonSchema: JsonSchema = {
 		type: "object",
-		properties: { gateways: RESOLVED_GATEWAYS_SCHEMA },
+		properties: { gateways: RESOLVED_GATEWAYS_SCHEMA, activeGatewayNames: { type: "array", items: { type: "string" } } },
 		required: ["gateways"],
 		additionalProperties: false,
 	};
 
 	gateways: ResolvedGateway[];
+	/**
+	 * Every gateway the active mode exposes — NOT merely the ones that have links.
+	 *
+	 * Sent separately because `gateways` only carries CONFIGURED gateways: deriving the active set
+	 * from it would unlock nothing on a fresh cluster, leaving the operator unable to fly to a
+	 * gateway in order to link it. Optional so an un-updated instance keeps today’s behaviour of
+	 * unlocking everything with the prefix.
+	 */
+	activeGatewayNames?: string[];
 
-	constructor(json: { gateways: ResolvedGateway[] }) {
+	constructor(json: { gateways: ResolvedGateway[]; activeGatewayNames?: string[] }) {
 		this.gateways = json.gateways;
+		this.activeGatewayNames = json.activeGatewayNames;
 	}
 
-	static fromJSON(json: { gateways: ResolvedGateway[] }) {
+	static fromJSON(json: { gateways: ResolvedGateway[]; activeGatewayNames?: string[] }) {
 		return new PushGatewayConfigRequest(json);
 	}
-	toJSON() { return { gateways: this.gateways }; }
+	toJSON() { return { gateways: this.gateways, activeGatewayNames: this.activeGatewayNames }; }
 
 	static Response = {
 		jsonSchema: { type: "object", properties: { success: { type: "boolean" }, error: { type: "string" } }, required: ["success"] } as JsonSchema,

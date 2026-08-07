@@ -69,6 +69,19 @@ local function configure(config)
     storage.surface_export_config.preserve_failed_destination = debug_enabled
       and config.preserve_failed_destination == true or false
   end
+  if config.active_gateways_json then
+    -- Which gateway prototypes this cluster's MODE exposes. Gateway.discover_and_unlock unlocks only
+    -- these, so the other mode's gateways never appear on the starmap. Absent (an un-updated
+    -- controller) leaves the field nil, and the unlock falls back to "everything with the prefix" —
+    -- the pre-mode behaviour — rather than unlocking nothing.
+    local decoded = Util.json_to_table_compat(config.active_gateways_json)
+    if type(decoded) == "table" then
+      storage.surface_export_config.active_gateways = decoded
+      log(string.format("[FactorioSurfaceExport] Active gateway set: %d name(s)", #decoded))
+    else
+      log("[FactorioSurfaceExport] configure: active_gateways_json did not decode to a table")
+    end
+  end
   if config.gateways_json then
     -- Replace the whole gateway link map (controller is the source of truth). Decoded from JSON,
     -- never built as a Lua table literal, so arbitrary instance names cannot inject Lua.
