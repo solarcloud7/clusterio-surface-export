@@ -1,4 +1,18 @@
 ---------------------------------------------------------------------------------------------------
+Version: 0.6.0
+Date: 2026-08-06
+  Changes:
+    - Add surfexp_gateway_hub, a single gateway for the plugin's new "1 Gate Cluster" mode. It is a
+      separate set rather than a fifth colour: a cluster runs either the one hub gate or the four
+      numbered ones, and the plugin unlocks only the active set, so the other never appears on the
+      starmap. Its name keeps the surfexp_gateway_ prefix because the module's is_gateway test is a
+      prefix compare and Lua's string.sub clamps — a shorter name would render on the starmap and be
+      invisible to unlocking, arrival detection and the transfer trigger alike.
+    - Its 64px icon is derived from the 512px starmap art by tools/surface-export/downscale-icon.mjs,
+      which is new: the existing four were downscaled out-of-band with only the outputs committed, so
+      the method was unreproducible. The script's --verify reproduces all four committed icons to
+      within 6/255, against 67 for the nearest alternative method.
+---------------------------------------------------------------------------------------------------
 Version: 0.5.0
 Date: 2026-08-04
   Changes:
