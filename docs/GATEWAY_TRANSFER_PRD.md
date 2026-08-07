@@ -139,6 +139,80 @@ own `debug_import_result` verdict read before any census claim, and physical per
 counts (the exact gate is structurally blind to proxies, so the count is physical by design).
 The completion-side verify also rides the result as non-gating `gatewayParked`.
 
+### The client half (2026-08-06 — seat-on-join is a GO)
+
+The headless spike above could not answer anything requiring a real game client. These are from the
+owner-at-the-keyboard session against host-1/host-2 on the dev cluster. Upstream documents the
+signatures and the hub-repositioning; only unstated behavior is claimed here.
+
+- **`enter_space_platform` returns `true` for a CONNECTED player**, sets the controller to
+  `remote` (7) from `character` (1), and moves BOTH the view and the character's
+  `physical_surface` onto the platform. The 2026-08-03 headless `false` is specific to
+  *disconnected* players; connected is the other half of that pair.
+  **[empirical, 2.1.11, L2 client session 2026-08-06]**
+- **A PAUSED platform does not refuse the seat** — same `true`, same resulting state, measured from a
+  genuinely off-platform start. This is the join-during-import cell, since a platform is paused for
+  the duration of its import. **[empirical, 2.1.11, L2 client session 2026-08-06]**
+- **`leave_space_platform`'s effect is NOT visible within the calling `/sc` execution** — the
+  controller still reads `remote` immediately after the call and transitions to `character` later.
+  What it waits on was not isolated. Upstream documents the hub repositioning itself, which is not
+  restated. Practical consequence: any probe that reads state synchronously after this call will
+  conclude, wrongly, that it did nothing. **[empirical, 2.1.11, L2 client session 2026-08-06]**
+- **A character standing at the hub's own position is clipped inside the hub's collision box** and
+  cannot walk out. Reachable by any un-seat path that drops a player at the hub coordinate; use
+  `find_non_colliding_position` instead. **[empirical, 2.1.11, L2 client session 2026-08-06]**
+- **`connect_to_server` costs 0 ticks server-side, and its dialog reaches a connected player who is
+  seated on a platform.** Accepting completes the cross-server jump.
+  **[empirical, 2.1.11, L2 client session 2026-08-06]**
+- **An arriving player lands on the destination's `nauvis` at {0,0} in `character` controller with a
+  character — never on a platform**, even when the destination holds none. This is the ordering
+  constraint on the design: the seat cannot fire at join time for a platform that has not landed
+  yet, so it must be a pending intent resolved on platform arrival.
+  **[empirical, 2.1.11, L2 client session 2026-08-06]**
+
+**The full flow was measured end to end**, on a real 1359-entity platform (a clone of
+`lab-transfer-fixture-v1`) transferred host-1 → host-2 with the player connected throughout:
+prompt → player accepts → jumps to host-2 → transfer runs on host-1 → platform arrives on host-2,
+**ZERO item loss (31305/31305) and ZERO fluid loss (149636.8/149636.8)**, source deleted. The player
+watched the arrival from the destination and was never disconnected; client latency moved
+(14 → 13 → 3, then 16 → 15 → 2) without breaking.
+**[empirical, 2.1.11, L2 client session 2026-08-06]**
+
+**GO for seat-on-join.** Q1 and Q2 of [l2-client-session-script.md](l2-client-session-script.md) both
+pass. Note the ordering the measurement suggests — prompt at trigger time, player jumps, *then* the
+export stall happens on a server they have already left — which may remove the need for the prompt to
+survive a stall at all.
+
+### Stall tolerance (same session, controlled stall)
+
+The stall was generated deliberately rather than by a clone, so its duration is a set value rather
+than an inference: a busy loop in one `/sc` execution, calibrated at ~2.14e8 iterations/second
+against a measured 2.01 s RCON baseline. This blocks the main thread by construction.
+
+- **A 7.43 s main-thread block does NOT disconnect a connected client.** Client latency climbed
+  `3 → 30 → 32 → 149 → 254` and the connection held; no `WaitingForUserToSaveOrQuitAfterServerLeft`
+  on either side. **[empirical, 2.1.11, controlled-stall probe 2026-08-06]**
+- **A `connect_to_server` dialog created in the SAME tick the server blocks for 7.43 s reaches the
+  client, survives the freeze, and remains actionable** — the owner accepted it afterward and the
+  jump completed via the ordinary `WaitingForDisconnectConfirmation` path, not a drop. This closes
+  the stall-race cell of Q2. **[empirical, 2.1.11, controlled-stall probe 2026-08-06]**
+
+Consequence for the design: the prompt does **not** need to be moved pre-transfer to survive the
+export stall. Both orderings are now measured safe.
+
+**Not established, deliberately left open:**
+- **Q3's manual seat-on-arrival and Q4's native fallback** were not run.
+- **One client disconnect has no established cause, and the obvious explanation is now the least
+  likely.** During an unrelated 1359-entity clone the client declared
+  `WaitingForUserToSaveOrQuitAfterServerLeft` with the client 38 ticks (~0.63 s) behind, the server
+  measuring 55.3 TPS over 10.19 s (~0.8 s of lost ticks), and the clone self-reporting 0.5 s. Those
+  three numbers agree with each other, which is what made "the stall dropped the client" attractive
+  — but the controlled probe above held a client through a stall **9x longer**. So a sub-second
+  stall is not a sufficient cause, and the mechanism is unknown rather than merely unproven.
+  Recorded as a measurement, not a finding. See [/client-logs](../.claude/skills/client-logs/SKILL.md)
+  for why the server-side instruments cannot settle it: RCON and the instance log both ride the
+  Factorio main thread, so their silence during a stall is the symptom, not evidence of its absence.
+
 ## Passenger handling
 
 A transfer is **not** blocked when players are aboard. A platform passenger is hub-locked in remote view with
