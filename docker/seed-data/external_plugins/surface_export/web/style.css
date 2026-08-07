@@ -5,6 +5,18 @@
 	min-width: 0;
 }
 
+/* React Flow measures its CONTAINER and renders nothing when that container has no height. Every
+   ancestor here (PageLayout > Tabs > tab panel) is auto-height, so `height: 100%` would resolve
+   against an auto parent and collapse to zero — the canvas would mount, report no error, and paint
+   an empty box. Hence a viewport-relative height: the subtrahend is the chrome above the canvas
+   (site header, breadcrumb, page title, version line, tab bar), and min-height keeps it usable on a
+   short window where that sum would otherwise leave nothing. */
+.surface-export-canvas {
+	width: 100%;
+	height: calc(100vh - 260px);
+	min-height: 420px;
+}
+
 .surface-export-log-body {
 	display: grid;
 	grid-template-columns: 1fr;

@@ -17,7 +17,7 @@ import { UploadOutlined } from "@ant-design/icons";
 import * as messageDefs from "../messages";
 import ManualTransferTab from "./ManualTransferTab";
 import TransactionLogsTab from "./TransactionLogsTab";
-import GatewaysTab from "./GatewaysTab";
+import GatewayCanvas from "./GatewayCanvas";
 import ImportModal from "./ImportModal";
 import type { JsonObject, LogEvent, SurfaceExportPlugin, SurfaceExportState } from "./view-models";
 
@@ -107,7 +107,7 @@ function SurfaceExportPage() {
 	tabItems.push({
 		key: "gateways",
 		label: "Gateways",
-		children: <GatewaysTab plugin={plugin} state={state} />,
+		children: <GatewayCanvas plugin={plugin} state={state} />,
 	});
 
 	// Fall back to manual if the URL asks for a tab that isn't available (e.g. ?tab=logs without view perms).

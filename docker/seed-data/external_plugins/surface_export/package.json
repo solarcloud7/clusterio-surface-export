@@ -65,6 +65,7 @@
     "@types/node": "^20.11.30",
     "@types/react": "^18.2.65",
     "@types/react-dom": "^18.2.22",
+    "@xyflow/react": "^12.11.2",
     "antd": "^5.24.2",
     "eslint": "^9.39.4",
     "react": "^18.2.0",
