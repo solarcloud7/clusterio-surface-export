@@ -51,6 +51,24 @@ export class ControllerPlugin extends BaseControllerPlugin {
 	private cfg<T = unknown>(key: string): T {
 		return (this.controller.config as { get(k: string): unknown }).get(key) as T;
 	}
+
+	/**
+	 * Which gateway layout this cluster runs.
+	 *
+	 * Clusterio has no enum field type, so the setting arrives as free text and a typo would
+	 * otherwise mean "no gateways at all" rather than an error. Warns ONCE per distinct bad value
+	 * rather than on every read: this is called per request, and a misconfigured cluster would
+	 * otherwise fill the log with the same line.
+	 */
+	private lastGatewayModeWarning?: string;
+	gatewayMode(): messages.GatewayMode {
+		const { mode, warning } = messages.parseGatewayMode(this.cfg("surface_export.gateway_mode"));
+		if (warning && warning !== this.lastGatewayModeWarning) {
+			this.lastGatewayModeWarning = warning;
+			this.logger.warn(warning);
+		}
+		return mode;
+	}
 	platformStorage!: Map<string, StoredExport>;
 	activeTransfers!: Map<string, ActiveTransfer>;
 	platformDepartureTimes!: Map<string, number>;
@@ -914,15 +932,18 @@ export class ControllerPlugin extends BaseControllerPlugin {
 					const links = entry[1] as messages.GatewayLink[];
 					const parsed = this.parseGatewayKey(key);
 					if (parsed) {
-						// New per-instance composite key. Drop links for gateway names this build doesn't know
-						// (GATEWAY_COUNT shrank, or a hand-edited file) — they'd be pushed yet be invisible and
-						// unremovable in the web editor, which only renders GATEWAY_NAMES per instance.
-						if (!(messages.GATEWAY_NAMES as readonly string[]).includes(parsed.gatewayName)) {
+						// New per-instance composite key. Validated against EVERY known gateway name, NOT the
+						// active mode’s: a one-gate cluster still holds its multi-mode links on disk, and
+						// dropping them here would make switching modes a destructive, un-undoable side effect
+						// of a display setting. Names belonging to no set at all (a hand-edited file, or a
+						// gateway this build genuinely no longer has) are still dropped — they would be pushed
+						// to Lua yet be unreachable in an editor that only renders the active set.
+						if (!(messages.ALL_GATEWAY_NAMES as readonly string[]).includes(parsed.gatewayName)) {
 							this.logger.warn(`Dropping unknown gateway link '${key}'`);
 							continue;
 						}
 						this.gatewayLinks.set(key, links);
-					} else if ((messages.GATEWAY_NAMES as readonly string[]).includes(key)) {
+					} else if ((messages.ALL_GATEWAY_NAMES as readonly string[]).includes(key)) {
 						// LEGACY bare-name key from the pre-per-instance format. The old model pushed this SAME
 						// config to every instance, so faithfully migrate by replicating it to each known
 						// instance as source — dropping self-targets, which the per-instance model forbids.
@@ -1170,7 +1191,8 @@ export class ControllerPlugin extends BaseControllerPlugin {
 			return parsed ? [{ sourceInstanceId: parsed.sourceInstanceId, gatewayName: parsed.gatewayName, targets }] : [];
 		});
 		return {
-			gatewayNames: [...messages.GATEWAY_NAMES],
+			gatewayMode: this.gatewayMode(),
+			gatewayNames: messages.gatewayNamesFor(this.gatewayMode()),
 			links,
 		};
 	}
@@ -1180,8 +1202,11 @@ export class ControllerPlugin extends BaseControllerPlugin {
 	async handleSetGatewayLinkRequest(request: { sourceInstanceId: number; gatewayName: string; targets: messages.GatewayLink[] }) {
 		const { gatewayName } = request;
 		const sourceInstanceId = Number(request.sourceInstanceId);
-		if (!(messages.GATEWAY_NAMES as readonly string[]).includes(gatewayName)) {
-			return { success: false, error: `Unknown gateway: ${gatewayName}` };
+		const mode = this.gatewayMode();
+		// The ACTIVE set, unlike the load path’s union: an operator can only edit gateways their mode
+		// actually exposes, even though the other mode’s links remain safely on disk.
+		if (!messages.gatewayNamesFor(mode).includes(gatewayName)) {
+			return { success: false, error: `Unknown gateway for ${mode} mode: ${gatewayName}` };
 		}
 		// A non-integer/NaN id yields undefined from instances.get() (caught by !sourceInstance).
 		const sourceInstance = this.c.instances.get(sourceInstanceId);
@@ -1196,6 +1221,28 @@ export class ControllerPlugin extends BaseControllerPlugin {
 		const targets: messages.GatewayLink[] = (request.targets || [])
 			.filter(t => Number.isInteger(Number(t.targetInstanceId)) && Number(t.targetInstanceId) !== sourceInstanceId)
 			.map(t => ({ targetInstanceId: Number(t.targetInstanceId), targetGateway: t.targetGateway || gatewayName }));
+
+		if (mode === "multi") {
+			// Multi Cluster’s two rules, enforced HERE and not only in the canvas: the web UI is one
+			// caller, and a hand-edited config or a future import path must not be able to persist a
+			// layout the mode does not permit. Rejected with a reason rather than truncated — silently
+			// dropping the surplus is how a gateway ends up pointing somewhere nobody chose.
+			const others = new Map<string, messages.GatewayLink[]>();
+			for (const otherName of messages.MULTI_GATEWAY_NAMES) {
+				if (otherName === gatewayName) {
+					continue;
+				}
+				const existing = this.gatewayLinks.get(this.gatewayKey(sourceInstanceId, otherName));
+				if (existing?.length) {
+					others.set(otherName, existing);
+				}
+			}
+			const violation = messages.checkMultiModeLink(gatewayName, targets, others);
+			if (violation) {
+				return { success: false, error: violation };
+			}
+		}
+
 		if (targets.length > 0) {
 			this.gatewayLinks.set(key, targets);
 		} else {

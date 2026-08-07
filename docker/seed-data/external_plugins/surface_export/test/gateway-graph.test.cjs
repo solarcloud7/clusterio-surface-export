@@ -224,15 +224,22 @@ test("host groups precede their children in the nodes array", () => {
 	}
 });
 
-test("each instance node is parented, clamped to its host, and carries all four gateways", () => {
-	const { nodes } = buildGraph(TREE, {});
-	const instances = nodes.filter(n => n.type === "instance");
-	assert.strictEqual(instances.length, 2);
-	for (const node of instances) {
+test("each instance node is parented, clamped to its host, and carries its mode's gateways", () => {
+	// Mode is passed explicitly rather than leaning on the default: how many gateways a node carries
+	// IS the difference between the two modes, so a test that omits it is really asserting the
+	// default, and would keep passing if the default silently changed.
+	const multi = buildGraph(TREE, {}, "multi").nodes.filter(n => n.type === "instance");
+	const oneGate = buildGraph(TREE, {}, "one_gate").nodes.filter(n => n.type === "instance");
+	assert.strictEqual(multi.length, 2);
+	assert.strictEqual(oneGate.length, 2);
+	for (const node of [...multi, ...oneGate]) {
 		assert.strictEqual(node.extent, "parent", "a node must not be draggable out of its host box");
 		assert.ok(node.parentId.startsWith("host:"));
-		assert.strictEqual(Object.keys(node.data.gateways).length, 4);
 	}
+	assert.strictEqual(Object.keys(multi[0].data.gateways).length, 4, "Multi Cluster: four gates");
+	assert.strictEqual(Object.keys(oneGate[0].data.gateways).length, 1, "1 Gate Cluster: one gate");
+	assert.strictEqual(multi[0].data.mode, "multi", "the node tells the renderer which mode it is in");
+	assert.strictEqual(oneGate[0].data.mode, "one_gate");
 });
 
 test("unassigned instances get their own group rather than vanishing", () => {
@@ -270,11 +277,12 @@ test("a rebuilt graph keeps where the user dragged a node", () => {
 });
 
 test("a rebuild still refreshes server-owned data — only position and selection are preserved", () => {
-	const stale = buildGraph(TREE, {}).nodes.map(n => (n.type === "instance" ? { ...n, position: { x: 5, y: 5 } } : n));
+	// Multi mode, because the links under test are on the numbered gateways.
+	const stale = buildGraph(TREE, {}, "multi").nodes.map(n => (n.type === "instance" ? { ...n, position: { x: 5, y: 5 } } : n));
 	const linked = {
 		[editKey(HOST_1_INSTANCE, GW1)]: [{ targetInstanceId: HOST_2_INSTANCE, targetGateway: GW3 }],
 	};
-	const rebuilt = preservePositions(stale, buildGraph(TREE, linked).nodes);
+	const rebuilt = preservePositions(stale, buildGraph(TREE, linked, "multi").nodes);
 	const host1 = rebuilt.find(n => n.id === instanceNodeId(HOST_1_INSTANCE));
 	assert.strictEqual(host1.data.gateways[GW1].outgoing, 1, "new config must reach the node");
 	assert.deepStrictEqual(host1.position, { x: 5, y: 5 }, "...without resetting the drag");

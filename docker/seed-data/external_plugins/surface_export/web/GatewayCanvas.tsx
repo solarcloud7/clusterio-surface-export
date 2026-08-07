@@ -33,6 +33,8 @@ import {
 	preservePositions,
 } from "../shared/gateway-graph";
 import type { ConnectRequest, GatewayEdits } from "../shared/gateway-graph";
+import { DEFAULT_GATEWAY_MODE, checkMultiModeLink } from "../shared/dto";
+import type { GatewayMode } from "../shared/dto";
 import { CANVAS_NODE_TYPES } from "./canvas-nodes";
 import { getErrorMessage, getProp } from "./utils";
 import type { JsonObject, SurfaceExportPlugin, SurfaceExportState } from "./view-models";
@@ -91,6 +93,9 @@ export default function GatewayCanvas({ plugin, state }: {
 	const [saving, setSaving] = useState(false);
 	const [loadError, setLoadError] = useState<string | null>(null);
 	const [edits, setEdits] = useState<GatewayEdits>({});
+	// The controller owns the mode; the canvas is told which one is active on load rather than
+	// reading a setting it cannot see.
+	const [mode, setMode] = useState<GatewayMode>(DEFAULT_GATEWAY_MODE);
 	// What the controller last told us. Every dirty check is against this, so a reload after a save
 	// is not required to clear the pending count.
 	const [baseline, setBaseline] = useState<GatewayEdits>({});
@@ -107,6 +112,7 @@ export default function GatewayCanvas({ plugin, state }: {
 			const loaded = editsFromLinks(getProp(response, "links", []) as never);
 			setEdits(loaded);
 			setBaseline(loaded);
+			setMode(getProp(response, "gatewayMode", DEFAULT_GATEWAY_MODE) as GatewayMode);
 			setLoadError(null);
 		} catch (err: unknown) {
 			const messageText = getErrorMessage(err, "Failed to load gateways");
@@ -119,7 +125,7 @@ export default function GatewayCanvas({ plugin, state }: {
 
 	useEffect(() => { void load(); }, [load]);
 
-	const graph = useMemo(() => buildGraph(tree, edits), [tree, edits]);
+	const graph = useMemo(() => buildGraph(tree, edits, mode), [tree, edits, mode]);
 	const pending = useMemo(() => dirtyKeys(edits, baseline), [edits, baseline]);
 
 	useEffect(() => {
@@ -155,10 +161,41 @@ export default function GatewayCanvas({ plugin, state }: {
 			antMessage.warning("An instance cannot gateway to itself.", 4);
 			return;
 		}
-		// Stages BOTH directions: a drawn edge is a two-way portal (owner ruling). Nothing is sent
-		// until Save, so the two writes are reviewable as a pending count first.
-		setEdits(previous => applyConnect(previous, request));
-	}, []);
+		setEdits(previous => {
+			if (mode === "multi") {
+				// Multi Cluster's rules, checked on BOTH ends. The controller enforces them too — it has
+				// to, since the canvas is only one caller — but refusing here means the operator sees why
+				// the moment they draw, instead of watching an edge appear and then vanish on save.
+				//
+				// The reverse end is checked as well because a drawn edge writes both directions: a link
+				// that is legal outbound can still be illegal inbound, and staging half of it would leave
+				// a pending change that can never save.
+				for (const end of [
+					{ instanceId: request.sourceInstanceId, gateway: request.sourceGateway,
+						link: { targetInstanceId: request.targetInstanceId, targetGateway: request.targetGateway } },
+					{ instanceId: request.targetInstanceId, gateway: request.targetGateway,
+						link: { targetInstanceId: request.sourceInstanceId, targetGateway: request.sourceGateway } },
+				]) {
+					const others = new Map<string, Array<{ targetInstanceId: number; targetGateway: string }>>();
+					for (const [key, targets] of Object.entries(previous)) {
+						const parsed = parseEditKey(key);
+						if (parsed && parsed.sourceInstanceId === end.instanceId && parsed.gatewayName !== end.gateway && targets.length) {
+							others.set(parsed.gatewayName, targets);
+						}
+					}
+					const existing = previous[`${end.instanceId}:${end.gateway}`] || [];
+					const violation = checkMultiModeLink(end.gateway, [...existing, end.link], others);
+					if (violation) {
+						antMessage.warning(violation, 6);
+						return previous;
+					}
+				}
+			}
+			// Stages BOTH directions: a drawn edge is a two-way portal (owner ruling). Nothing is sent
+			// until Save, so the two writes are reviewable as a pending count first.
+			return applyConnect(previous, request);
+		});
+	}, [mode]);
 
 	const onEdgesDelete = useCallback((deleted: Edge[]) => {
 		setEdits(previous => deleted.reduce((acc, edge) => {

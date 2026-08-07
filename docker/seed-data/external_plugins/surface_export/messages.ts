@@ -32,7 +32,18 @@ export type {
 	ResolvedGateway,
 	AuditRow,
 } from "./shared/dto";
-export { GATEWAY_NAMES, GATEWAY_PREFIX } from "./shared/dto";
+export {
+	ALL_GATEWAY_NAMES,
+	DEFAULT_GATEWAY_MODE,
+	GATEWAY_PREFIX,
+	MULTI_GATEWAY_NAMES,
+	ONE_GATE_NAME,
+	ONE_GATE_NAMES,
+	checkMultiModeLink,
+	gatewayNamesFor,
+	parseGatewayMode,
+} from "./shared/dto";
+export type { GatewayMode } from "./shared/dto";
 const PLUGIN_NAME = "surface_export";
 
 export const PERMISSIONS = {

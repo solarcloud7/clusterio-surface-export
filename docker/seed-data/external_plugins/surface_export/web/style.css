@@ -100,6 +100,25 @@
 	pointer-events: none;
 }
 
+/* One-gate mode: the rim handles carry no icon (the gate is drawn once at the node's centre), so
+   they shrink to plain connection points. Kept comfortably larger than React Flow's 6px default —
+   they are still the thing you drag. */
+.surface-export-gw-handle-bare {
+	width: 18px;
+	height: 18px;
+	background: #1f1f1f;
+	border-color: #1668dc;
+}
+
+/* One-gate mode's centre gate. Larger than a rim icon because in this mode the gateway IS the
+   instance's identity, not one of four options. */
+.surface-export-instance-gate {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	margin-bottom: 2px;
+}
+
 /* Zero outgoing links = a platform parked here cannot leave. The old tab said so in words; here it
    has to be visible, or "nothing drawn yet" and "switched off" look identical. */
 .surface-export-gw-idle {

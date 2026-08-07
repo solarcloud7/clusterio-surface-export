@@ -89,6 +89,22 @@ export const plugin = {
 		},
 	},
 	controllerConfigFields: {
+		[`${PLUGIN_NAME}.gateway_mode`]: {
+			title: "Gateway mode",
+			description: "Which gateway layout the cluster uses. \"one_gate\" (the default, \"1 Gate "
+				+ "Cluster\") gives every instance a SINGLE gateway that can link to any number of other "
+				+ "instances; a platform parked there is offered every destination to choose from. "
+				+ "\"multi\" (\"Multi Cluster\", advanced) gives every instance FOUR colour-coded gateways, "
+				+ "each carrying exactly one destination and no two pointing at the same instance — so the "
+				+ "gateway a platform flies to decides where it lands, with nothing to choose on arrival. "
+				+ "Only the active mode's gateways are unlocked in game, so the others never appear on the "
+				+ "starmap. Switching is NOT destructive: each mode's links are kept while the other is "
+				+ "active and come back on switching back. Instances must be restarted to pick up the "
+				+ "change, because the unlock happens at startup. Unrecognised values fall back to "
+				+ "\"one_gate\" and are logged.",
+			type: "string",
+			initialValue: messages.DEFAULT_GATEWAY_MODE,
+		},
 		[`${PLUGIN_NAME}.max_storage_size`]: {
 			title: "Stored export payloads to keep",
 			description: "How many platform export payloads the controller keeps on disk. Once the cap is "

@@ -14,8 +14,8 @@
  * what will be saved.
  */
 
-import type { GatewayLink } from "./dto";
-import { GATEWAY_NAMES } from "./dto";
+import type { GatewayLink, GatewayMode } from "./dto";
+import { DEFAULT_GATEWAY_MODE, gatewayNamesFor } from "./dto";
 
 // ── Structural inputs ───────────────────────────────────────────────────────
 // Declared structurally rather than imported from the DTO so a test can build one without inventing
@@ -94,13 +94,23 @@ export function hostNodeId(hostKey: number | string): string {
  * A gateway needs BOTH handles: links are directional, and the same gateway can be an origin for one
  * link and a destination for another. React Flow only starts a connection from a source handle and
  * only completes it on a target handle, so the two are never ambiguous despite sharing a position.
+ *
+ * Handle ids optionally carry the SIDE of the node they sit on: `s:surfexp_gateway_hub@right`.
+ *
+ * Multi mode needs no side — each of the four gateways owns one side, so its name already says where
+ * it is. One-gate mode has a single gateway and four sides, and React Flow requires every handle on a
+ * node to have a distinct id, so the side is what distinguishes them. It is presentation only: every
+ * side decodes back to the same gateway, and edge identity is built from instance+gateway rather
+ * than from handles, so which side a link was drawn from never changes what is stored.
  */
-export function sourceHandleId(gatewayName: string): string {
-	return `s:${gatewayName}`;
+export type HandleSide = "top" | "right" | "bottom" | "left";
+
+export function sourceHandleId(gatewayName: string, side?: HandleSide): string {
+	return side ? `s:${gatewayName}@${side}` : `s:${gatewayName}`;
 }
 
-export function targetHandleId(gatewayName: string): string {
-	return `t:${gatewayName}`;
+export function targetHandleId(gatewayName: string, side?: HandleSide): string {
+	return side ? `t:${gatewayName}@${side}` : `t:${gatewayName}`;
 }
 
 export function gatewayFromHandleId(handleId: string | null | undefined): string | null {
@@ -111,7 +121,12 @@ export function gatewayFromHandleId(handleId: string | null | undefined): string
 	if (prefix !== "s:" && prefix !== "t:") {
 		return null;
 	}
-	return handleId.slice(2);
+	const body = handleId.slice(2);
+	// A gateway name never contains "@" (they are `surfexp_gateway_<suffix>`), so the last "@" is
+	// unambiguously the side separator when one is present.
+	const at = body.lastIndexOf("@");
+	const name = at === -1 ? body : body.slice(0, at);
+	return name || null;
 }
 
 // ── Edges ───────────────────────────────────────────────────────────────────
@@ -185,7 +200,12 @@ function directedLinks(edits: GatewayEdits): Array<{ from: Endpoint; to: Endpoin
 	return out;
 }
 
-export function buildEdges(edits: GatewayEdits): GatewayEdgeModel[] {
+export function buildEdges(edits: GatewayEdits, mode: GatewayMode = DEFAULT_GATEWAY_MODE): GatewayEdgeModel[] {
+	// One-gate nodes carry four handle pairs for one gateway, so an emitted edge must name a SIDE or
+	// it addresses a handle that does not exist. The choice is canonical (out the right, in the left)
+	// purely so rendering is stable; a user may still draw from any side.
+	const sourceSide: HandleSide | undefined = mode === "multi" ? undefined : "right";
+	const targetSide: HandleSide | undefined = mode === "multi" ? undefined : "left";
 	const byPair = new Map<string, GatewayEdgeModel>();
 	for (const link of directedLinks(edits)) {
 		const { low, high, flipped } = orient(link.from, link.to);
@@ -195,9 +215,9 @@ export function buildEdges(edits: GatewayEdits): GatewayEdgeModel[] {
 			edge = {
 				id,
 				source: instanceNodeId(low.instanceId),
-				sourceHandle: sourceHandleId(low.gatewayName),
+				sourceHandle: sourceHandleId(low.gatewayName, sourceSide),
 				target: instanceNodeId(high.instanceId),
-				targetHandle: targetHandleId(high.gatewayName),
+				targetHandle: targetHandleId(high.gatewayName, targetSide),
 				sourceInstanceId: low.instanceId,
 				sourceGateway: low.gatewayName,
 				targetInstanceId: high.instanceId,
@@ -389,7 +409,11 @@ function isOnline(instance: InstanceLike): boolean {
  * cluster) and a stable layout means a node is where the operator last saw it. Sorting mirrors the
  * old tab's ordering so the canvas does not silently reshuffle relative to the list it replaces.
  */
-export function buildGraph(tree: TreeLike | null | undefined, edits: GatewayEdits): {
+export function buildGraph(
+	tree: TreeLike | null | undefined,
+	edits: GatewayEdits,
+	mode: GatewayMode = DEFAULT_GATEWAY_MODE,
+): {
 	nodes: GraphNodeModel[];
 	edges: GatewayEdgeModel[];
 } {
@@ -437,7 +461,7 @@ export function buildGraph(tree: TreeLike | null | undefined, edits: GatewayEdit
 
 		group.instances.forEach((instance, index) => {
 			const perGateway: Record<string, GatewayUsage> = {};
-			for (const gatewayName of GATEWAY_NAMES) {
+			for (const gatewayName of gatewayNamesFor(mode)) {
 				perGateway[gatewayName] = usage.get(instance.instanceId)?.get(gatewayName) || { outgoing: 0, incoming: 0 };
 			}
 			instanceNodes.push({
@@ -451,6 +475,7 @@ export function buildGraph(tree: TreeLike | null | undefined, edits: GatewayEdit
 				parentId: hostNodeId(group.key),
 				extent: "parent",
 				data: {
+					mode,
 					instanceId: instance.instanceId,
 					instanceName: instance.instanceName,
 					gamePort: instance.gamePort ?? null,
@@ -465,7 +490,7 @@ export function buildGraph(tree: TreeLike | null | undefined, edits: GatewayEdit
 
 	// Parents MUST precede their children in the array or React Flow does not resolve parentId.
 	// This concatenation is the guarantee, and is asserted by the unit tests.
-	return { nodes: [...groupNodes, ...instanceNodes], edges: buildEdges(edits) };
+	return { nodes: [...groupNodes, ...instanceNodes], edges: buildEdges(edits, mode) };
 }
 
 export type PositionedNode = {
