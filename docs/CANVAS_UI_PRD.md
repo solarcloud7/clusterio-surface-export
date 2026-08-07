@@ -1,8 +1,21 @@
 # Canvas UI — replacing the Manual Transfer and Gateways tabs with a node graph
 
-> Status: **PLAN — not approved, nothing implemented.** Prerequisite audit done 2026-08-06 against
-> the live checkout at plugin v0.10.223, Clusterio `2.0.0-alpha.27`, React 18.
-> Library under evaluation: [`@xyflow/react`](https://github.com/xyflow/xyflow) v12.11.2 (React Flow).
+> Status: **SHIPPED** for the Gateways tab (2026-08-06). Plugin v0.10.223, Clusterio
+> `2.0.0-alpha.27`, React 18, [`@xyflow/react`](https://github.com/xyflow/xyflow) v12.11.2.
+> `web/GatewaysTab.tsx` is deleted. Manual Transfer is untouched and remains a table.
+>
+> **Verified end to end on the live cluster:** one drag from `clusterio-host-1-instance-1`'s
+> `surfexp_gateway_2` to `clusterio-host-2-instance-1`'s `surfexp_gateway_4`, saved, then read back
+> from Lua on BOTH instances — each holds the link pointing at the other. Deleting the edge and
+> saving cleared both sides back to `{}`.
+>
+> **Two things this did NOT verify, stated plainly:**
+> - The read-only path was never exercised with a real `UI_VIEW`-only account. The gate is
+>   typechecked and the flag is derived correctly, but no restricted user was created to prove the
+>   handles actually refuse a drag.
+> - No gateway *transfer* was run over a canvas-created link. The config provably reaches Lua; that
+>   a platform then moves is the existing gateway feature's contract, not this change's, but the
+>   combination is untested.
 
 ## What this replaces, precisely
 
@@ -224,16 +237,32 @@ questions:
 
 ## Proposed staging
 
-| PR | Content | Verification |
+| Commit | Content | Status |
 |---|---|---|
-| 1 | Add the dep; bare canvas shell behind the existing tab; container height (B); auto-layout (D) | `build:browser`, preview screenshot |
-| 2 | Gateway graph: instance nodes, 4 handles, edges from `getGateways`, `onConnect`/`onEdgesDelete` → full-list `setGatewayLink`; disabled-handle affordance | preview + a real gateway transfer |
-| 3 | Platform nodes + `reconcileNodes` (A) + its `.cjs` test; status/`PlanetIcon` port | `npm test` (reconcile), preview |
-| 4 | Actions: transfer/export/import entry points per the decisions above; `canEdit` gating (E) | preview as both permission levels |
-| 5 | Layout persistence (C); retire the two old tabs | preview |
+| 1 | Add the dep; canvas shell; container height (B) | shipped |
+| 2 | `shared/gateway-graph.ts` + node components + host sub-flows, read-only; 25 unit tests | shipped |
+| 3 | Editing: bidirectional staging, Save/Revert panel, `canEdit` gating (E) | shipped |
+| 4 | Delete `GatewaysTab.tsx` | shipped |
 
-Landing PR 1 alone matches the `max_export_cache_size` precedent (#161): the dependency and the
-lockfile change get their own reviewable commit, separate from the feature.
+**Deferred, deliberately:** layout persistence (C) — node positions survive a session but not a
+reload, which is a `localStorage` follow-up. `React.lazy` for the canvas chunk. And the whole Manual
+Transfer half, which the owner scoped out with "start with this".
+
+### What the tests actually cover
+
+25 tests in `test/gateway-graph.test.cjs` against `dist/node/shared/gateway-graph.js`. Green tests on
+new code prove nothing on their own, so five load-bearing ones were **mutation-killed** — each
+mutation killed exactly one test, and the right one:
+
+| Mutation | Test that died |
+|---|---|
+| always set both directions | the one-way link renders one-way |
+| reverse the node array | host groups precede their children |
+| a new target replaces the previous | multi-target survives |
+| disarm the self-link guard | an instance cannot gateway to itself |
+
+A sixth attempt produced empty output rather than a failure — that is an unknown, not a kill, and it
+was redone as the "always set both directions" row above rather than counted.
 
 ## What this plan does **not** claim
 
