@@ -120,8 +120,19 @@ function SurfaceExportPage() {
 	// Fall back to manual if the URL asks for a tab that isn't available (e.g. ?tab=logs without view perms).
 	const effectiveTab = tabItems.some(t => t.key === activeTab) ? activeTab : "manual";
 
+	// Paints Clusterio's page frame to match the canvas. Applied as a body class this page adds and
+	// removes — NOT as a bare selector in our stylesheet, which is global from the moment our web
+	// module loads and would restyle every other plugin's page too.
+	useEffect(() => {
+		document.body.classList.add("surface-export-page");
+		return () => document.body.classList.remove("surface-export-page");
+	}, []);
+
 	return (
-		<PageLayout nav={[{ name: "Surface Export" }]}>
+		// `nav={[]}` — no breadcrumb. It rendered "Surface Export" immediately above PageHeader's
+		// "Surface Export", so the page opened by saying its own name twice; the heading is the one
+		// that carries weight, and this page is one level deep with nowhere to navigate back to.
+		<PageLayout nav={[]}>
 			<PageHeader title="Surface Export" />
 			{pluginVersion ? (
 				<Text type="secondary" style={{ fontSize: 12, display: "block", marginBottom: 12 }}>

@@ -1,3 +1,16 @@
+/* ── This page's own chrome ───────────────────────────────────────────────── */
+
+/* Clusterio's page frame is pure black (measured rgb(0,0,0)) around a rgb(20,20,20) content card,
+   and the canvas is rgb(20,20,20) too — so on the Gateways tab the frame reads as a black border
+   drawn around the map. Matching it makes the page one surface.
+
+   SCOPED TO A BODY CLASS this page adds on mount and removes on unmount. web/style.css is global
+   once our web module loads, so a bare `.site-layout-content-container` rule would repaint the
+   layout of every other plugin's page for as long as the session lasts. */
+body.surface-export-page .site-layout-content-container {
+	background: #141414;
+}
+
 /* Single column: the transfer form used to sit in a second column, and now lives in a per-row
    modal, so there is no longer a second thing to place beside the table. */
 .surface-export-tab-body {
@@ -92,6 +105,37 @@
 @keyframes surface-export-ship-pulse {
 	0%, 100% { opacity: 1; box-shadow: 0 0 8px currentColor; }
 	50% { opacity: 0.4; box-shadow: 0 0 2px currentColor; }
+}
+
+/* The ship's colour IS its phase, so the key is part of the feature. Kept low-contrast: it is a
+   reference, not a control, and it sits over the canvas the whole time. */
+.surface-export-legend {
+	display: flex;
+	align-items: center;
+	gap: 14px;
+	padding: 4px 12px;
+	border: 1px solid #303030;
+	border-radius: 999px;
+	background: rgba(20, 20, 20, 0.85);
+	font-size: 11px;
+	color: rgba(255, 255, 255, 0.55);
+}
+
+.surface-export-legend-item {
+	display: inline-flex;
+	align-items: center;
+	gap: 5px;
+	white-space: nowrap;
+}
+
+/* Inherits its colour from the same `surface-export-ship-<tone>` classes the ships use, so the key
+   cannot show one colour while the canvas draws another. */
+.surface-export-legend-dot {
+	width: 9px;
+	height: 9px;
+	border-radius: 50%;
+	background: currentColor;
+	box-shadow: 0 0 5px currentColor;
 }
 
 /* ── Canvas: instance circles, gateway handles ────────────────────────────── */

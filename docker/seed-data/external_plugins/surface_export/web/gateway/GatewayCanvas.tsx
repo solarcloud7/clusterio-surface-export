@@ -42,7 +42,7 @@ import {
 import type { ConnectRequest, GatewayEdits } from "./gateway-graph";
 import { NodeActionsContext, platformActionKey } from "./node-actions";
 import { applySavedLayout, loadLayout, saveLayout } from "./layout-store";
-import { instancePairKey, noteLiveSeen, noteTerminalSeen, shipExpiryMs, shipPhaseFor, shipsInFlight, transientEdgeId } from "./transfer-motion";
+import { SHIP_LEGEND, instancePairKey, noteLiveSeen, noteTerminalSeen, shipExpiryMs, shipPhaseFor, shipsInFlight, transientEdgeId } from "./transfer-motion";
 import { DEFAULT_GATEWAY_MODE, checkMultiModeLink, gatewayNamesFor } from "../../shared/dto";
 import type { GatewayMode } from "../../shared/dto";
 import { CANVAS_EDGE_TYPES, CANVAS_NODE_TYPES, GATEWAY_EDGE_TYPE } from "./node-types";
@@ -522,6 +522,20 @@ export default function GatewayCanvas({ plugin, state, onOpenImport }: {
 								<Button size="small" icon={<UploadOutlined />} onClick={onOpenImport}>Import</Button>
 							</Tooltip>
 						</Space>
+					</Panel>
+					{/* The colour key for the transfer ships. Bottom-CENTRE is the only edge left free —
+					    Controls sit bottom-left, the MiniMap bottom-right, the toolbar top-left and the
+					    save state top-right. Always on rather than only while a transfer is running: a
+					    key you consult must be there before you need it, and a legend that appears and
+					    vanishes is a distraction in its own right. Derived from the phase model, so it
+					    cannot describe a colour the canvas no longer draws. */}
+					<Panel position="bottom-center" className="surface-export-legend">
+						{SHIP_LEGEND.map(entry => (
+							<span key={entry.tone} className="surface-export-legend-item">
+								<span className={`surface-export-legend-dot surface-export-ship-${entry.tone}`} />
+								{entry.label}
+							</span>
+						))}
 					</Panel>
 					<Panel position="top-right">
 						<Space>

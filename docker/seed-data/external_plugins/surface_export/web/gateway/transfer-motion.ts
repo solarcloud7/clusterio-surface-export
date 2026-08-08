@@ -91,6 +91,30 @@ export function shipPhaseFor(status: string | null | undefined): ShipPhase | nul
 }
 
 /**
+ * The colour key drawn on the canvas.
+ *
+ * The ship is a bare circle, so the colour IS the reading — which makes a legend part of the
+ * feature rather than decoration.
+ *
+ * `Record<ShipTone, string>` is doing real work here: it forces every tone to have a label at COMPILE
+ * TIME, so adding a phase colour without saying what it means cannot build. A hand-written array
+ * would have let the legend fall silently out of step with the phases it describes — and a key that
+ * is missing an entry is worse than none, because it reads as complete.
+ *
+ * `failure` covers three statuses (failed, error, cleanup_failed) whose ships differ in where they
+ * end up, so its label says what the colour means rather than naming one of them.
+ */
+const LEGEND_LABELS: Record<ShipTone, string> = {
+	active: "in transit",
+	holding: "validating",
+	success: "arrived",
+	failure: "failed",
+};
+
+export const SHIP_LEGEND: Array<{ tone: ShipTone; label: string }> =
+	(Object.keys(LEGEND_LABELS) as ShipTone[]).map(tone => ({ tone, label: LEGEND_LABELS[tone] }));
+
+/**
  * How long a finished ship stays on the canvas.
  *
  * Long enough to watch it arrive (or come back) after the status that moved it, short enough that
