@@ -1,5 +1,5 @@
-import React from "react";
-import { Handle, NodeToolbar, Position } from "@xyflow/react";
+import React, { useCallback, useEffect, useState } from "react";
+import { Handle, NodeToolbar, Position, useStore } from "@xyflow/react";
 import type { NodeProps } from "@xyflow/react";
 import { Button, Tag, Tooltip, Typography } from "antd";
 import { DownloadOutlined, PlayCircleOutlined } from "@ant-design/icons";
@@ -32,6 +32,70 @@ const NODE_FACE_ART: Record<string, string> = {
 /** Multi mode only: one gateway per side, in prototype order (1=blue, 2=green, 3=orange, 4=purple). */
 const MULTI_HANDLE_POSITIONS = [Position.Top, Position.Right, Position.Bottom, Position.Left];
 
+/**
+ * How far below the node's box the platform toolbar sits, in FLOW units — multiply by zoom.
+ *
+ * The toolbar hangs UNDER the gate, so it has to clear the instance caption, which is NOT inside the
+ * node's measured box: the caption is absolutely positioned at `top: 100%` with a 12px margin, so
+ * React Flow's own offset knows nothing about it. Measured at zoom 1: the caption is 40.9px tall and
+ * its bottom edge sits 52.9px below the node's, so 64 clears it with about the gap React Flow's
+ * default offset (10) would give.
+ *
+ * THE MULTIPLY IS THE POINT, and it was measured, not assumed: `offset` is applied in SCREEN pixels
+ * and does NOT scale with zoom, while the caption does. A flat 64 read correctly at zoom 1 and then
+ * landed on top of the caption the moment `fitView` picked ~2x — where the caption occupied 106
+ * screen px and the toolbar was still only 64 below the node. Any constant is wrong at some zoom.
+ */
+const CAPTION_CLEARANCE = 64;
+
+/** How long the toolbar stays up before getting out of the way. */
+const TOOLBAR_VISIBLE_MS = 5000;
+
+/**
+ * Show while `active`, then hide after `delayMs` — unless the pointer is on it, or it is re-armed.
+ *
+ * Two things this has to survive, both found by driving the real canvas rather than reasoning about
+ * it:
+ *
+ * `hold` — a toolbar that vanishes out from under a cursor that came to click it is worse than one
+ * that never auto-hides. Leaving restarts the clock rather than hiding at once, so a pointer that
+ * strays and comes back does not lose it.
+ *
+ * `rearm` — WITHOUT THIS THE FEATURE IS A DEAD END. Selection is the only thing that re-shows a
+ * toolbar, so once it expires, clicking the SAME node changes nothing: `active` was already true and
+ * stays true, and the platform actions are unreachable until the operator clicks elsewhere and back.
+ * Measured: node `selected: true`, toolbars in the DOM `0`, and clicking it again did nothing.
+ * So any pointer press on the node restarts the clock, whatever the selection does.
+ */
+function useAutoHide(active: boolean, delayMs: number) {
+	const [expired, setExpired] = useState(false);
+	const [held, setHeld] = useState(false);
+	// Bumped to restart the timer even when neither `active` nor `held` has changed — which is
+	// exactly the re-click case, where nothing else in the dependency list moves.
+	const [rearmCount, setRearmCount] = useState(0);
+
+	useEffect(() => {
+		if (!active) {
+			setExpired(false);
+			setHeld(false);
+			return undefined;
+		}
+		if (held) {
+			return undefined;
+		}
+		setExpired(false);
+		const timer = setTimeout(() => setExpired(true), delayMs);
+		return () => clearTimeout(timer);
+	}, [active, held, delayMs, rearmCount]);
+
+	return {
+		visible: active && !expired,
+		hold: useCallback(() => setHeld(true), []),
+		release: useCallback(() => setHeld(false), []),
+		rearm: useCallback(() => setRearmCount(count => count + 1), []),
+	};
+}
+
 export type InstanceNodeData = {
 	mode?: GatewayMode;
 	instanceId: number;
@@ -52,8 +116,9 @@ export type InstanceNodeData = {
  * are shared code (`web/platform-actions.ts`) rather than a second implementation, so a change to
  * what "export a platform" means reaches both.
  *
- * `Position.Top`: the instance caption is absolutely positioned BELOW the node's measured box, and a
- * bottom toolbar would land on top of it. Nothing occupies the space above the arch.
+ * It hangs UNDER the gate, below the caption — see `TOOLBAR_OFFSET` for why 64 and not the default
+ * 10 (the caption lives outside the node's measured box, so React Flow's offset does not know about
+ * it).
  *
  * `nodrag nopan`: the toolbar renders inside React Flow's own wrapper, so without these a press on a
  * button would also be a press on the canvas — the click still lands, but the pane pans out from
@@ -175,6 +240,13 @@ function MultiGatewayHandle({ gatewayName, position, usage, connectable }: {
  */
 export function InstanceNode({ data, selected, isConnectable }: NodeProps) {
 	const node = data as unknown as InstanceNodeData;
+	// `Boolean(selected)`, not `selected`: NodeProps types it optional, and undefined would hand React
+	// Flow's own default back instead of meaning "not selected".
+	const toolbar = useAutoHide(Boolean(selected), TOOLBAR_VISIBLE_MS);
+	// Selects ONLY the zoom out of the store, not the whole transform: panning changes transform on
+	// every frame, and a node that re-rendered on each of those would be paying for a value it does
+	// not use. See CAPTION_CLEARANCE for why the zoom is needed at all.
+	const zoom = useStore(state => state.transform[2]);
 	const mode = node.mode || DEFAULT_GATEWAY_MODE;
 	const names = gatewayNamesFor(mode);
 	const oneGate = mode !== "multi";
@@ -182,16 +254,24 @@ export function InstanceNode({ data, selected, isConnectable }: NodeProps) {
 	const usage = node.gateways?.[gateway] || { outgoing: 0, incoming: 0 };
 
 	return (
-		<div className={
-			`surface-export-instance-node${node.online ? " surface-export-instance-node-online" : " surface-export-instance-node-offline"}`
-			+ (oneGate ? " surface-export-instance-node-shaped" : "")
-		}>
-			{/* `Boolean(selected)`, not `selected`: NodeProps types it optional, and passing undefined
-			    hands React Flow's own default back instead of meaning "hidden". */}
+		<div
+			className={
+				`surface-export-instance-node${node.online ? " surface-export-instance-node-online" : " surface-export-instance-node-offline"}`
+				+ (oneGate ? " surface-export-instance-node-shaped" : "")
+			}
+			// Any press ANYWHERE on the node restarts the toolbar's clock — including on the portal
+			// handle, which is a child and so bubbles. `pointerdown` rather than `click` so it also
+			// covers a press that turns into a drag or a link, both of which are still the operator
+			// working on this node.
+			onPointerDown={toolbar.rearm}
+		>
 			<NodeToolbar
-				isVisible={Boolean(selected)}
-				position={Position.Top}
+				isVisible={toolbar.visible}
+				position={Position.Bottom}
+				offset={CAPTION_CLEARANCE * zoom}
 				className="surface-export-node-toolbar nodrag nopan"
+				onMouseEnter={toolbar.hold}
+				onMouseLeave={toolbar.release}
 			>
 				<PlatformActionRows node={node} />
 			</NodeToolbar>
