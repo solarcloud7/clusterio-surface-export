@@ -333,9 +333,13 @@ export function InstanceNode({ data, selected, isConnectable }: NodeProps) {
 				</Text>
 				<div className="surface-export-instance-node-meta">
 					{/* The port disambiguates instances whose names differ only by a digit. Absent until
-					    the instance has started, which is when a port is assigned. */}
+					    the instance has started, which is when a port is assigned.
+
+					    NO online/offline tag: the gate art already carries it — lit with a glow when
+					    online, greyed and faded when not (see the two -online/-offline face rules in
+					    web/style.css). The tag was the same fact a second time, in the row that has the
+					    least space for it. */}
 					{node.gamePort ? <Text type="secondary" className="surface-export-instance-node-port">:{node.gamePort}</Text> : null}
-					<Tag color={node.online ? "blue" : "default"}>{node.online ? "online" : "offline"}</Tag>
 				</div>
 			</div>
 		</div>

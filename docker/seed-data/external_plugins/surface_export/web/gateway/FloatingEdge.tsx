@@ -83,19 +83,26 @@ export default function FloatingEdge({
 			}}
 			className="surface-export-edge"
 		/>
-		{shipPhase && edgeData?.transfer ? (
-			<EdgeLabelRenderer>
-				{/* Keyed on the transfer so a NEW transfer gets a fresh component — and therefore a fresh
-				    first-sight decision — rather than sliding in from wherever the last one ended. */}
-				<TransferShip
-					key={edgeData.transfer.transferId}
-					path={path}
-					phase={shipPhase}
-					reversed={Boolean(edgeData.transferReversed)}
-					summary={edgeData.transfer}
-				/>
-			</EdgeLabelRenderer>
-		) : null}
+		{/* ALWAYS MOUNTED, even with no transfer to draw — TransferShip hides itself instead.
+		    A `cond ? <ship/> : null` here is what made the ship teleport: the moment `data.transfer`
+		    was absent for a single render the element was destroyed, and the replacement came back
+		    already at its new target with no transition left to run. Measured with tagged DOM nodes:
+		    the edge's own path element kept tag 1 through a whole node drag while the ship's node
+		    went 1 -> 2 -> 3 across one transfer, which is what localised it here rather than in
+		    React Flow or in EdgeLabelRenderer.
+
+		    Keyed on the transfer id so a genuinely NEW transfer still gets a fresh component, and
+		    therefore a fresh first-sight decision, instead of sliding in from wherever the last one
+		    finished. */}
+		<EdgeLabelRenderer>
+			<TransferShip
+				key={edgeData?.transfer?.transferId || "idle"}
+				path={path}
+				phase={shipPhase}
+				reversed={Boolean(edgeData?.transferReversed)}
+				summary={edgeData?.transfer}
+			/>
+		</EdgeLabelRenderer>
 		</>
 	);
 }

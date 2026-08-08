@@ -103,28 +103,24 @@ export const TERMINAL_LINGER_MS = 6000;
 export const SHIP_TRAVEL_MS = 900;
 
 /**
- * What we remember about a ship BETWEEN RENDERS OF ITS COMPONENT.
+ * What we remember about a transfer BEYOND what its summary says.
  *
- * Both fields exist because of something measured on the live canvas, not by preference:
+ * Both fields are about WHEN WE SAW THINGS, which the wire cannot tell us:
  *
- * `lastDistance` — React Flow REMOUNTS the edge (and therefore the ship) on every update. Tagging
- * the DOM node showed a fresh element at each phase: tag 1 → 2 → 3 through one transfer. Component
- * state cannot survive that, so a ship initialised from `useState` re-appeared already sitting at
- * its new target and the CSS transition had nothing to travel from — it teleported between phases
- * instead of animating. Holding the last rendered distance out here is what lets a remounted ship
- * pick up where the old one left off.
+ * `seenLive` — we watched it in flight. Only such a transfer earns an arrival animation.
+ * `terminalSeenAt` — when we first saw it finish, which is not any timestamp on the wire.
  *
- * `terminalSeenAt` — when WE first saw the transfer finish, which is not the same as any timestamp
- * on the wire. `shipExpiryMs` used to fall back to `startedAt`, so a transfer that took longer than
- * TERMINAL_LINGER_MS computed a deadline already in the past and the ship VANISHED at the moment it
- * should have been arriving. Measured: an 18 s transfer went from holding at 50% straight to gone,
- * never showing 100%.
+ * There is deliberately no "last position" here. An earlier version carried one, to let a ship
+ * remounted mid-journey resume from where the old element was — but the remounting turned out to be
+ * self-inflicted (a conditional in FloatingEdge), and once the element simply stays mounted the
+ * position lives where it belongs: in the DOM node the CSS transition is running on. Keeping the
+ * memory as a fallback would have been a second, quietly diverging answer to "where is the ship".
  *
- * Bounded rather than cleaned up: entries are two numbers, a canvas holds a handful of live
+ * Bounded rather than cleaned up: entries are a number and a flag, a canvas holds a handful of live
  * transfers, and eviction by insertion order cannot strand anything that is still being drawn.
  */
 const SHIP_MEMORY_CAP = 32;
-const shipMemory = new Map<string, { lastDistance?: number; terminalSeenAt?: number; seenLive?: boolean }>();
+const shipMemory = new Map<string, { terminalSeenAt?: number; seenLive?: boolean }>();
 
 function shipMemoryFor(transferId: string) {
 	let entry = shipMemory.get(transferId);
@@ -140,14 +136,6 @@ function shipMemoryFor(transferId: string) {
 		}
 	}
 	return entry;
-}
-
-export function rememberShipDistance(transferId: string, distance: number): void {
-	shipMemoryFor(transferId).lastDistance = distance;
-}
-
-export function recallShipDistance(transferId: string): number | undefined {
-	return shipMemory.get(transferId)?.lastDistance;
 }
 
 /**

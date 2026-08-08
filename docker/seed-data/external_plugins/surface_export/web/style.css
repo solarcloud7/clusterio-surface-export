@@ -53,59 +53,45 @@
 
    `pointer-events: none` — it is a readout, not a control. Without it the ship would swallow clicks
    meant for the edge underneath, and clicking an edge is how a link is removed. */
+/* A bare circle. It used to be a chip carrying the platform name; two ships on nearby edges then
+   overlapped into an unreadable pile on a real cluster, and the name is available on hover and in
+   the transaction log. What the canvas is uniquely good at is WHERE and WHAT PHASE, so that is all
+   it says: position and colour. */
 .surface-export-ship {
 	position: absolute;
 	top: 0;
 	left: 0;
-	display: flex;
-	align-items: center;
-	gap: 5px;
-	padding: 2px 8px 2px 5px;
-	border-radius: 999px;
-	border: 1px solid #303030;
-	background: rgba(20, 20, 20, 0.92);
-	font-size: 11px;
-	line-height: 1.5;
-	white-space: nowrap;
+	width: 14px;
+	height: 14px;
+	border-radius: 50%;
+	border: 2px solid rgba(10, 10, 10, 0.9);
+	background: currentColor;
+	box-shadow: 0 0 8px currentColor;
 	pointer-events: none;
 	transition-property: offset-distance;
 	transition-timing-function: ease-in-out;
 }
 
-.surface-export-ship-dot {
-	width: 8px;
-	height: 8px;
-	border-radius: 50%;
-	flex: 0 0 auto;
-	background: currentColor;
-	box-shadow: 0 0 6px currentColor;
-}
-
-.surface-export-ship-name {
-	max-width: 160px;
-	overflow: hidden;
-	text-overflow: ellipsis;
-	color: rgba(255, 255, 255, 0.85);
-}
-
 /* Tone tracks the PHASE, not success alone — an operator watching a transfer needs to tell "moving"
    from "waiting on the gate" at a glance, since those two look identical if only the position
    changes and the position is deliberately still while validating. */
-.surface-export-ship-active { color: #1668dc; border-color: #1668dc; }
-.surface-export-ship-holding { color: #d89614; border-color: #d89614; }
-.surface-export-ship-success { color: #49aa19; border-color: #49aa19; }
-.surface-export-ship-failure { color: #dc4446; border-color: #dc4446; }
+.surface-export-ship-active { color: #1668dc; }
+.surface-export-ship-holding { color: #d89614; }
+.surface-export-ship-success { color: #49aa19; }
+.surface-export-ship-failure { color: #dc4446; }
 
 /* Held at the midpoint while the destination's frozen-world gate runs. The pulse is the ONLY signal
    that anything is still happening: the ship deliberately does not move during validation, because
    we do not measure progress through it, and a motionless dot with no pulse reads as stalled. */
-.surface-export-ship-holding .surface-export-ship-dot {
+.surface-export-ship-holding {
 	animation: surface-export-ship-pulse 1.1s ease-in-out infinite;
 }
 
+/* Opacity and glow only, deliberately NOT `transform`: the element is positioned by a motion path,
+   which works through the same transform channel. Pulsing brightness cannot collide with it. */
 @keyframes surface-export-ship-pulse {
-	0%, 100% { opacity: 1; transform: scale(1); }
-	50% { opacity: 0.35; transform: scale(0.7); }
+	0%, 100% { opacity: 1; box-shadow: 0 0 8px currentColor; }
+	50% { opacity: 0.4; box-shadow: 0 0 2px currentColor; }
 }
 
 /* ── Canvas: instance circles, gateway handles ────────────────────────────── */
@@ -272,11 +258,17 @@
    Invisible on purpose — the glow is the affordance. */
 .surface-export-gw-cover {
 	position: absolute;
+	/* `inset: auto` FIRST. It is the shorthand for top/right/bottom/left, so placing it after them —
+	   as this rule did — silently wiped the two values below it, and the disc fell back to the
+	   library's own `top`. It is here to clear React Flow's handle insets, not ours. */
+	inset: auto;
 	width: 60%;
 	height: 60%;
 	left: 20%;
+	/* 20% of the node, less the measured gap between the node box's centre and the PORTAL's centre
+	   (GATE_CENTRE_OFFSET_Y in gateway/edge-geometry.ts, which anchors the edges to the same point).
+	   On a 150px node that is 14px — square, so `border-radius: 50%` makes it a true circle. */
 	top: calc(20% - 16px);
-	inset: auto;
 	border-radius: 50%;
 	background: transparent;
 	border: none;
