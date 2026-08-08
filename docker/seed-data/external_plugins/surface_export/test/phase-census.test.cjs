@@ -146,6 +146,45 @@ test("the belts phase records an externally-measured delta with its line-set lab
 		+ "all platform belts — comparing them would make a scope mismatch look like a defect.");
 });
 
+// ---------------------------------------------------------------------------------------------
+// Call-site contracts in import-completion.lua. These pin the two legs where a wrong census
+// reading would be actively misleading rather than merely absent.
+
+const importCompletion = stripLuaComments(
+	fs.readFileSync(path.join(moduleRoot, "core", "import-completion.lua"), "utf8"),
+);
+
+test("a belt restore that THREW records the belts subject as unmeasured, not as zero", () => {
+	// The throw leg is the worst place to guess: the restore may have written before it died, so
+	// "no delta" is unknown, not nothing. Reporting a clean zero there would state that the belts
+	// phase moved nothing on precisely the run where it most likely moved something.
+	const throwLeg = importCompletion.slice(
+		importCompletion.indexOf("belt_restore_error"),
+		importCompletion.indexOf("PhaseCensus.record_external"),
+	);
+	assert.ok(throwLeg.length > 0, "the belt-restore throw leg must exist");
+	assert.match(throwLeg, /PhaseCensus\.close\(job,\s*"belts"/,
+		"the throw leg must close the belts phase (which, with no matching open, marks it unmeasured)");
+	assert.doesNotMatch(throwLeg, /record_external/,
+		"the throw leg must NOT record an externally-measured delta — there is no trustworthy measurement");
+});
+
+test("the belts delta is re-keyed into census key format before it is recorded", () => {
+	assert.match(importCompletion,
+		/PhaseCensus\.record_external\(job,\s*"belts",[\s\S]{0,120}?belt_delta_to_census_keys\(/,
+		"the belt bracket keys items name\\0quality while every census uses make_quality_key; "
+		+ "recording the raw delta would double normal-quality keys instead of cancelling them");
+});
+
+test("the census report is reached on the failure path (no early return can skip it)", () => {
+	const phase2 = importCompletion.slice(importCompletion.indexOf("function ImportCompletion.run_phase2"));
+	const report = phase2.indexOf("PHASE CENSUS: ");
+	assert.ok(report > 0, "run_phase2 must emit the phase census line");
+	assert.doesNotMatch(phase2.slice(0, report), /(^|[^_\w])return([^_\w]|$)/,
+		"no early return may sit between run_phase2's start and the census report — the line must "
+		+ "emit on exactly the failing imports it was built to explain");
+});
+
 test("the module is report-only: it never renders a verdict or mutates success", () => {
 	assert.doesNotMatch(phaseCensus, /\bsuccess\s*=\s*(true|false)\b/,
 		"PhaseCensus is an instrument. Wiring it into the verdict makes it a data-integrity gate "
