@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Alert, Button, Empty, Select, Space, Spin, Tooltip, Typography, message as antMessage } from "antd";
 import { UploadOutlined } from "@ant-design/icons";
 import {
@@ -41,6 +41,7 @@ import {
 } from "./gateway-graph";
 import type { ConnectRequest, GatewayEdits } from "./gateway-graph";
 import { NodeActionsContext, platformActionKey } from "./node-actions";
+import { applySavedLayout, loadLayout, saveLayout } from "./layout-store";
 import { instancePairKey, noteLiveSeen, noteTerminalSeen, shipExpiryMs, shipPhaseFor, shipsInFlight, transientEdgeId } from "./transfer-motion";
 import { DEFAULT_GATEWAY_MODE, checkMultiModeLink, gatewayNamesFor } from "../../shared/dto";
 import type { GatewayMode } from "../../shared/dto";
@@ -119,6 +120,29 @@ export default function GatewayCanvas({ plugin, state, onOpenImport }: {
 	const [nodes, setNodes, onNodesChange] = useNodesState<Node>([]);
 	const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
 
+	// Read ONCE, into a ref: the saved layout is a starting position, not a live input. Re-reading it
+	// on every rebuild would let a stale copy fight `preservePositions` for a node being dragged.
+	const savedLayout = useRef(loadLayout());
+
+	/**
+	 * Node positions save THEMSELVES, on drop.
+	 *
+	 * Deliberately not routed through the Save button. That button exists for changes that alter what
+	 * the cluster can DO — a gateway link lets a platform fly somewhere it previously could not — and
+	 * it earns its pending count and its Revert. Where a node sits alters nothing but the picture, so
+	 * asking for confirmation would be ceremony, and counting it as an "unsaved change" would make
+	 * that number mean two incomparable things at once.
+	 *
+	 * On drop rather than during the drag: one write per gesture instead of one per frame.
+	 */
+	const onNodeDragStop = useCallback(() => {
+		setNodes(current => {
+			saveLayout(current);
+			savedLayout.current = Object.fromEntries(current.map(node => [node.id, { ...node.position }]));
+			return current;
+		});
+	}, [setNodes]);
+
 	const tree = state?.tree;
 
 	const load = useCallback(async () => {
@@ -186,8 +210,13 @@ export default function GatewayCanvas({ plugin, state, onOpenImport }: {
 	useEffect(() => {
 		// preservePositions keeps the user's drags and selection across this rebuild. The tree is
 		// re-pushed on every platform status change, so without it a node would snap back to its
-		// layout position roughly once a second.
-		setNodes(previous => preservePositions(previous, graph.nodes as unknown as Node[]));
+		// layout position roughly once a second. The saved layout is applied UNDER it: a node moved
+		// this session keeps its live position, and one appearing for the first time starts where it
+		// was last left.
+		setNodes(previous => preservePositions(
+			previous,
+			applySavedLayout(graph.nodes as unknown as Node[], savedLayout.current),
+		));
 		setEdges(previous => {
 			const selected = new Set(previous.filter(edge => edge.selected).map(edge => edge.id));
 			// Which instances the host filter is focused on, taken from the SAME `dimmed` boolean
@@ -442,6 +471,7 @@ export default function GatewayCanvas({ plugin, state, onOpenImport }: {
 					onConnect={onConnect}
 					onEdgesDelete={onEdgesDelete}
 					onEdgeClick={onEdgeClick}
+					onNodeDragStop={onNodeDragStop}
 					nodeTypes={CANVAS_NODE_TYPES}
 					edgeTypes={CANVAS_EDGE_TYPES}
 					connectionLineComponent={ConnectionLine}

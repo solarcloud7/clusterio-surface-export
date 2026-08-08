@@ -225,16 +225,19 @@
 	filter: grayscale(1);
 }
 
-/* With the art filling the node, the label cannot sit on top of it — it moves BELOW, anchored to the
-   node's bottom edge by `top: 100%` and centred without needing to know its own width. It is WIDER
+/* With the art filling the node, the label cannot sit on top of it — it goes ABOVE, anchored to the
+   node's top edge by `bottom: 100%` and centred without needing to know its own width. It is WIDER
    than the node on purpose: instance names do not fit in 150px, and the layout reserves the extra
-   width (CAPTION_WIDTH in gateway/gateway-graph.ts) so neighbours never overlap it. */
+   width (CAPTION_WIDTH in gateway/gateway-graph.ts) so neighbours never overlap it.
+
+   Above rather than below so the reading order is name → address → gate → actions, and so the
+   caption is not competing for the space under the node with the platform toolbar. */
 .surface-export-instance-node-caption {
 	position: absolute;
-	top: 100%;
+	bottom: 100%;
 	left: 50%;
 	transform: translateX(-50%);
-	margin-top: 12px;
+	margin-bottom: 10px;
 	/* Overrides the body rule's 108px cap, which is sized for text INSIDE the circle. */
 	max-width: none;
 	width: 190px;

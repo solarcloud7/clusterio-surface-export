@@ -11,7 +11,7 @@ import path from "path";
 import { BaseControllerPlugin } from "@clusterio/controller";
 import type { Controller } from "@clusterio/controller";
 import * as lib from "@clusterio/lib";
-import { PlatformTree } from "./lib/platform-tree";
+import { PlatformTree, instanceAddress } from "./lib/platform-tree";
 import { TransactionLogger } from "./lib/transaction-logger";
 import { SubscriptionManager } from "./lib/subscription-manager";
 import { enqueueWrite } from "./lib/persist-queue";
@@ -1291,14 +1291,10 @@ export class ControllerPlugin extends BaseControllerPlugin {
 
 	/**
 	 * The /teleport roster: every live instance with its client-routable address
-	 * (`host.publicAddress:instance.gamePort`, the join the Layer-2 spike mapped). `address` is
-	 * empty when the instance has no assigned game port (not running) — the GUI refuses to
-	 * connect to those. `publicAddress` defaults to "localhost" when the host never set one —
-	 * correct for a same-machine client; distributed deployments must configure
-	 * `host.public_address` (deployment config, not a code path). Same caveat for PORT REMAPPING:
-	 * `gamePort` is the port as the host knows it — a docker deployment that publishes a
-	 * different host port (the atlas cluster on this machine maps 34300→34100) hands the client
-	 * an unroutable address; align the published port with the instance port, as this cluster does.
+	 * (`host.publicAddress:instance.gamePort`, the join the Layer-2 spike mapped). The address is
+	 * built by `instanceAddress`, shared with the platform tree — see that function for the
+	 * publicAddress and port-remapping caveats. Empty means no assigned game port, i.e. not
+	 * running; the GUI refuses to connect to those.
 	 */
 	async handleGetInstanceRosterRequest(request: { instanceId: number }) {
 		const requesterId = Number(request.instanceId);
@@ -1309,12 +1305,10 @@ export class ControllerPlugin extends BaseControllerPlugin {
 			}
 			const hostId = Number(inst.config.get("instance.assigned_host"));
 			const host = Number.isInteger(hostId) ? this.c.hosts.get(hostId) : null;
-			const publicAddress = host?.publicAddress || "localhost";
-			const gamePort = inst.gamePort;
 			instances.push({
 				instanceId: inst.id,
 				name: String(inst.config.get("instance.name") ?? inst.id),
-				address: gamePort ? `${publicAddress}:${gamePort}` : "",
+				address: instanceAddress(host?.publicAddress, inst.gamePort ?? null),
 				online: this.isInstanceOnline(inst.id),
 				self: inst.id === requesterId,
 			});

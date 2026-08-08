@@ -213,6 +213,16 @@ export interface InstanceNodeModel {
 	 * The assigned port lives on the controller's runtime InstanceRecord.
 	 */
 	gamePort: number | null;
+	/**
+	 * `publicAddress:gamePort` — what a client actually connects to — or "" when the instance has no
+	 * assigned port because it is not running.
+	 *
+	 * Built by the same helper as the /teleport roster (`instanceAddress`), not a second derivation:
+	 * the two would otherwise be free to disagree about the address of the same instance, and the
+	 * roster's caveats (publicAddress defaults to "localhost"; a docker port remap makes this
+	 * unroutable) apply identically here.
+	 */
+	address: string;
 	status: string;
 	connected: boolean;
 	platforms: PlatformModel[];

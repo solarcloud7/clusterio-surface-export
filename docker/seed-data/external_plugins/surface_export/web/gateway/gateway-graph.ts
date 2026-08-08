@@ -32,6 +32,8 @@ export type InstanceLike = {
 	instanceId: number;
 	instanceName: string;
 	gamePort?: number | null;
+	/** `publicAddress:gamePort`, or "" when the instance has no port because it is not running. */
+	address?: string;
 	status?: string;
 	connected?: boolean;
 	platforms?: PlatformLike[];
@@ -511,7 +513,7 @@ export function buildGraph(
 					mode,
 					instanceId: instance.instanceId,
 					instanceName: instance.instanceName,
-					gamePort: instance.gamePort ?? null,
+					address: instance.address || "",
 					online: isOnline(instance),
 					hostKey: column.key,
 					hostName: column.name,

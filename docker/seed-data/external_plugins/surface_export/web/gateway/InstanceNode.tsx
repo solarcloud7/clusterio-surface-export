@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState } from "react";
-import { Handle, NodeToolbar, Position, useStore } from "@xyflow/react";
+import { Handle, NodeToolbar, Position } from "@xyflow/react";
 import type { NodeProps } from "@xyflow/react";
 import { Button, Tag, Tooltip, Typography } from "antd";
 import { DownloadOutlined, PlayCircleOutlined } from "@ant-design/icons";
@@ -33,20 +33,15 @@ const NODE_FACE_ART: Record<string, string> = {
 const MULTI_HANDLE_POSITIONS = [Position.Top, Position.Right, Position.Bottom, Position.Left];
 
 /**
- * How far below the node's box the platform toolbar sits, in FLOW units — multiply by zoom.
+ * Gap between the node's bottom edge and the platform toolbar, in SCREEN pixels.
  *
- * The toolbar hangs UNDER the gate, so it has to clear the instance caption, which is NOT inside the
- * node's measured box: the caption is absolutely positioned at `top: 100%` with a 12px margin, so
- * React Flow's own offset knows nothing about it. Measured at zoom 1: the caption is 40.9px tall and
- * its bottom edge sits 52.9px below the node's, so 64 clears it with about the gap React Flow's
- * default offset (10) would give.
- *
- * THE MULTIPLY IS THE POINT, and it was measured, not assumed: `offset` is applied in SCREEN pixels
- * and does NOT scale with zoom, while the caption does. A flat 64 read correctly at zoom 1 and then
- * landed on top of the caption the moment `fitView` picked ~2x — where the caption occupied 106
- * screen px and the toolbar was still only 64 below the node. Any constant is wrong at some zoom.
+ * A plain constant now, and that is only safe because the space below the node is EMPTY: the caption
+ * moved above the gate. While it sat below, this had to be `clearance * zoom` — `offset` is applied
+ * in screen pixels and does not scale, but the caption does, so any fixed number that cleared the
+ * caption at zoom 1 landed on top of it at zoom 2 (measured). With nothing to clear, a constant gap
+ * is what it appears to be.
  */
-const CAPTION_CLEARANCE = 64;
+const TOOLBAR_OFFSET = 12;
 
 /** How long the toolbar stays up before getting out of the way. */
 const TOOLBAR_VISIBLE_MS = 5000;
@@ -100,7 +95,8 @@ export type InstanceNodeData = {
 	mode?: GatewayMode;
 	instanceId: number;
 	instanceName: string;
-	gamePort: number | null;
+	/** `publicAddress:gamePort` — what you would actually connect to. "" when not running. */
+	address: string;
 	online: boolean;
 	hostKey: string;
 	hostName: string;
@@ -116,9 +112,7 @@ export type InstanceNodeData = {
  * are shared code (`web/platform-actions.ts`) rather than a second implementation, so a change to
  * what "export a platform" means reaches both.
  *
- * It hangs UNDER the gate, below the caption — see `TOOLBAR_OFFSET` for why 64 and not the default
- * 10 (the caption lives outside the node's measured box, so React Flow's offset does not know about
- * it).
+ * It hangs UNDER the gate. The caption sits ABOVE, so the two never compete for the same strip.
  *
  * `nodrag nopan`: the toolbar renders inside React Flow's own wrapper, so without these a press on a
  * button would also be a press on the canvas — the click still lands, but the pane pans out from
@@ -243,10 +237,6 @@ export function InstanceNode({ data, selected, isConnectable }: NodeProps) {
 	// `Boolean(selected)`, not `selected`: NodeProps types it optional, and undefined would hand React
 	// Flow's own default back instead of meaning "not selected".
 	const toolbar = useAutoHide(Boolean(selected), TOOLBAR_VISIBLE_MS);
-	// Selects ONLY the zoom out of the store, not the whole transform: panning changes transform on
-	// every frame, and a node that re-rendered on each of those would be paying for a value it does
-	// not use. See CAPTION_CLEARANCE for why the zoom is needed at all.
-	const zoom = useStore(state => state.transform[2]);
 	const mode = node.mode || DEFAULT_GATEWAY_MODE;
 	const names = gatewayNamesFor(mode);
 	const oneGate = mode !== "multi";
@@ -268,7 +258,7 @@ export function InstanceNode({ data, selected, isConnectable }: NodeProps) {
 			<NodeToolbar
 				isVisible={toolbar.visible}
 				position={Position.Bottom}
-				offset={CAPTION_CLEARANCE * zoom}
+				offset={TOOLBAR_OFFSET}
 				className="surface-export-node-toolbar nodrag nopan"
 				onMouseEnter={toolbar.hold}
 				onMouseLeave={toolbar.release}
@@ -332,14 +322,17 @@ export function InstanceNode({ data, selected, isConnectable }: NodeProps) {
 					{node.instanceName}
 				</Text>
 				<div className="surface-export-instance-node-meta">
-					{/* The port disambiguates instances whose names differ only by a digit. Absent until
-					    the instance has started, which is when a port is assigned.
+					{/* ADDRESS AND PORT AS ONE STRING, because that is how they are used — it is what you
+					    paste into a client, not two facts to reassemble. Empty until the instance has
+					    started, which is when a port is assigned.
 
 					    NO online/offline tag: the gate art already carries it — lit with a glow when
 					    online, greyed and faded when not (see the two -online/-offline face rules in
 					    web/style.css). The tag was the same fact a second time, in the row that has the
 					    least space for it. */}
-					{node.gamePort ? <Text type="secondary" className="surface-export-instance-node-port">:{node.gamePort}</Text> : null}
+					{node.address
+						? <Text type="secondary" className="surface-export-instance-node-port">{node.address}</Text>
+						: <Text type="secondary" className="surface-export-instance-node-port">no port assigned</Text>}
 				</div>
 			</div>
 		</div>
