@@ -5,8 +5,8 @@ import { Tag, Typography } from "antd";
 
 import { DEFAULT_GATEWAY_MODE, gatewayNamesFor } from "../../shared/dto";
 import type { GatewayMode } from "../../shared/dto";
-import { sourceHandleId, targetHandleId } from "../../shared/gateway-graph";
-import type { GatewayUsage } from "../../shared/gateway-graph";
+import { sourceHandleId, targetHandleId } from "./gateway-graph";
+import type { GatewayUsage } from "./gateway-graph";
 import { PlanetIcon } from "../icons";
 import gatewayHubArt from "./assets/gateway-hub-128.png";
 
@@ -84,7 +84,7 @@ function MultiGatewayHandle({ gatewayName, position, usage, connectable }: {
  * ONE-GATE: the gateway art IS the node, and the WHOLE node is a connection handle — "easy connect".
  * Drag from anywhere on the gate to link it; no aiming at a 26px dot. React Flow is explicit about
  * the cost ("you need to define separate drag handles in this case to still be able to drag the
- * node"), so the caption below the node is the grip — see `dragHandle` in shared/gateway-graph.ts.
+ * node"), so the caption below the node is the grip — see `dragHandle` in gateway-graph.ts.
  *
  * MULTI: four gateways, one per side, each its own handle — there the side IS the gateway's identity,
  * so a node-wide handle would throw away the only thing distinguishing them.

@@ -2,8 +2,8 @@ import React from "react";
 import { BaseEdge, getBezierPath, useInternalNode } from "@xyflow/react";
 import type { EdgeProps, Position } from "@xyflow/react";
 
-import { NODE_DIAMETER } from "../../shared/gateway-graph";
-import { endpointSide, floatingEdgeEndpoints, nodeCircle } from "../../shared/edge-geometry";
+import { NODE_DIAMETER } from "./gateway-graph";
+import { endpointSide, floatingEdgeEndpoints, nodeCircle } from "./edge-geometry";
 import { DEFAULT_EDGE_COLOUR, gatewayColour } from "./gateway-colours";
 
 /**
@@ -13,9 +13,8 @@ import { DEFAULT_EDGE_COLOUR, gatewayColour } from "./gateway-colours";
  * loops out of the top and back down; drag them around and it only gets worse. Floating keeps the
  * link reading as a link at any layout.
  *
- * The geometry is in shared/edge-geometry.ts, not here: it is pure, it is easy to get wrong by a
- * sign or an axis while still rendering something plausible, and shared/ is the only part of the web
- * tree that a unit test can reach.
+ * The geometry is in edge-geometry.ts next door rather than inline here, so this file stays about
+ * rendering and that one stays about maths.
  */
 export default function FloatingEdge({
 	id, source, target, markerStart, markerEnd, style, selected, data,

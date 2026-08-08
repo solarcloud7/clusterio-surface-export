@@ -2,7 +2,7 @@ import React from "react";
 import { useConnection } from "@xyflow/react";
 import type { ConnectionLineComponentProps } from "@xyflow/react";
 
-import { gatewayFromHandleId } from "../../shared/gateway-graph";
+import { gatewayFromHandleId } from "./gateway-graph";
 import { gatewayColour } from "./gateway-colours";
 
 /**

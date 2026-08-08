@@ -32,8 +32,8 @@ import {
 	instanceIdFromNodeId,
 	parseEditKey,
 	preservePositions,
-} from "../../shared/gateway-graph";
-import type { ConnectRequest, GatewayEdits } from "../../shared/gateway-graph";
+} from "./gateway-graph";
+import type { ConnectRequest, GatewayEdits } from "./gateway-graph";
 import { DEFAULT_GATEWAY_MODE, checkMultiModeLink } from "../../shared/dto";
 import type { GatewayMode } from "../../shared/dto";
 import { CANVAS_EDGE_TYPES, CANVAS_NODE_TYPES, GATEWAY_EDGE_TYPE } from "./node-types";
@@ -55,7 +55,7 @@ function miniMapNodeColor(node: Node) {
  * Decode a React Flow connection (or an existing edge) back into instance ids and gateway names.
  *
  * Returns null rather than a half-filled request when any part fails to parse: every id here was
- * built by shared/gateway-graph, so a miss means something changed shape, and staging a link with a
+ * built by gateway-graph.ts next door, so a miss means something changed shape, and staging a link with a
  * NaN instance id would send the controller a write we cannot describe.
  */
 function toConnectRequest(link: Connection | Edge): ConnectRequest | null {
@@ -75,7 +75,7 @@ function toConnectRequest(link: Connection | Edge): ConnectRequest | null {
  * Edits stage locally and flush on Save, matching what the form tab did. The model is the edits map
  * (keyed as the controller keys its config); nodes and edges are a projection of it, so there is no
  * second source of truth to reconcile. Everything with a decision in it lives in
- * shared/gateway-graph.ts, which is unit-tested — this file is the wiring.
+ * gateway-graph.ts next door; this file is the wiring.
  */
 export default function GatewayCanvas({ plugin, state }: {
 	plugin: SurfaceExportPlugin;

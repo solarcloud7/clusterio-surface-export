@@ -1,11 +1,8 @@
 /**
  * Projecting gateway link config into a node graph, and edits back out of it.
  *
- * Lives in shared/ (rather than beside its only caller in web/) so it is reachable from dist/node
- * and therefore testable: tsconfig.node.json excludes web/** but includes shared/**, and the web
- * bundle is never built into dist/node. Same reason as shared/planets.ts. Everything here is pure —
- * no React, no @xyflow import — so the one part of the canvas that has decisions in it is covered by
- * test/gateway-graph.test.cjs, in a repo with no React test harness.
+ * Pure — no React, no @xyflow import — so it stays readable on its own, but it is UI code and lives
+ * with the UI. Its behaviour is covered end-to-end by driving the canvas, not by unit tests.
  *
  * THE MODEL IS THE EDITS MAP. `GatewayEdits` is keyed exactly as the controller keys its own config
  * (`${sourceInstanceId}:${gatewayName}` -> that gateway's whole target list), so a save is one
@@ -14,8 +11,8 @@
  * what will be saved.
  */
 
-import type { GatewayLink, GatewayMode } from "./dto";
-import { DEFAULT_GATEWAY_MODE, gatewayNamesFor } from "./dto";
+import type { GatewayLink, GatewayMode } from "../../shared/dto";
+import { DEFAULT_GATEWAY_MODE, gatewayNamesFor } from "../../shared/dto";
 
 // ── Structural inputs ───────────────────────────────────────────────────────
 // Declared structurally rather than imported from the DTO so a test can build one without inventing

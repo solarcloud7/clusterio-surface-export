@@ -10,9 +10,6 @@
  * are circles — an instance node is a round gateway — so the intersection is just
  * `centre + unit-vector * radius`, with none of the four-edge case analysis. Simpler, and correct
  * for the shape we actually draw.
- *
- * Lives in shared/ so it is reachable from dist/node and therefore testable: geometry is exactly the
- * kind of thing that is wrong by a sign or an axis and still renders something plausible.
  */
 
 /** A node reduced to what the geometry needs: its centre and how far its edge sits from it. */
