@@ -219,20 +219,39 @@ local function belt_delta_to_census_keys(delta)
 	return out
 end
 
+--- The destination SURFACE — the census scope, because it is the gate's scope.
+--- Counting the import's entity_map instead leaves everything on the surface that the import did
+--- not create (the hub, created with the platform) outside the census while the gate counts it,
+--- and the reconciliation then cannot close.
+local function census_scope(job)
+	local platform = job and job.target_platform
+	if platform and platform.valid and platform.surface and platform.surface.valid then
+		return platform.surface
+	end
+	return nil
+end
+
 function ImportCompletion.run_phase1(job)
 	local entity_map = job.entity_map or {}
 	local entities_to_create = job.entities_to_create or {}
 
-	-- Arm the per-phase census. Always on: each phase counts only the SUBJECT it owns, so the
-	-- added work is ~2 inventory-only sweeps for the whole import, not a full census per phase.
+	-- Arm the per-phase census and record the ENTITY-CREATION baseline.
+	-- Entity creation runs upstream of this function, so by now the destination already holds every
+	-- restored inventory stack, belt item, held stack and loose GROUND item (the export captures
+	-- ground items in its own atomic scan and they arrive as ordinary entity records). Without this
+	-- baseline those items belong to no phase, the sum silently under-reports, and the census
+	-- measures a different set than the gate — which makes it broken, not partial.
 	job.phase_census = job.phase_census or {}
+	PhaseCensus.record_baseline(job, "entity_creation", census_scope(job))
 
 	log("[Import] Phase 1 post-processing: hub inventories, belts, entity state...")
 
 	-- Step 0: Restore hub inventories (DEFERRED from platform_hub_mapping)
 	-- The hub's inventory size scales with cargo bays, which are now placed.
 	PhaseRecorder.start(job, "hub")
+	PhaseCensus.open(job, "hub", PhaseCensus.SUBJECT_INVENTORIES, census_scope(job))
 	PlatformHubMapping.restore_hub_inventories(job)
+	PhaseCensus.close(job, "hub", PhaseCensus.SUBJECT_INVENTORIES, census_scope(job))
 	PhaseRecorder.stop(job, "hub")
 
 	-- Step 0a: Restore belt items synchronously
@@ -366,7 +385,7 @@ function ImportCompletion.run_phase2(job)
 		job.inventory_overflow_losses = { total = 0, items = {}, entities = {} }
 	end
 	PhaseRecorder.start(job, "inventories")
-	PhaseCensus.open(job, "inventories", PhaseCensus.SUBJECT_INVENTORIES, entity_map)
+	PhaseCensus.open(job, "inventories", PhaseCensus.SUBJECT_INVENTORIES, census_scope(job))
 	local inv_restored = 0
 	local inv_skipped = 0
 	-- Pass 1: beacons only
@@ -390,7 +409,7 @@ function ImportCompletion.run_phase2(job)
 			end
 		end
 	end
-	PhaseCensus.close(job, "inventories", PhaseCensus.SUBJECT_INVENTORIES, entity_map)
+	PhaseCensus.close(job, "inventories", PhaseCensus.SUBJECT_INVENTORIES, census_scope(job))
 	PhaseRecorder.stop(job, "inventories")
 	log(string.format("[Import] Inventory restoration: %d entities restored, %d skipped (failed/missing)", inv_restored, inv_skipped))
 	if job.inventory_overflow_losses.total > 0 then
@@ -427,9 +446,9 @@ function ImportCompletion.run_phase2(job)
 	-- waterfall AND in the dashboard, sitting in dead space between inventories_completed_tick and
 	-- fluids_started_tick.
 	PhaseRecorder.start(job, "held_items")
-	PhaseCensus.open(job, "held_items", PhaseCensus.SUBJECT_HELD, entity_map)
+	PhaseCensus.open(job, "held_items", PhaseCensus.SUBJECT_HELD, census_scope(job))
 	ActiveStateRestoration.restore_held_items_only(entities_to_create, entity_map)
-	PhaseCensus.close(job, "held_items", PhaseCensus.SUBJECT_HELD, entity_map)
+	PhaseCensus.close(job, "held_items", PhaseCensus.SUBJECT_HELD, census_scope(job))
 	PhaseRecorder.stop(job, "held_items")
 	PhaseRecorder.start(job, "fluids")
 	local fluids_result = FluidRestoration.restore(entities_to_create, entity_map,
@@ -439,15 +458,12 @@ function ImportCompletion.run_phase2(job)
 	log(string.format("[Import] Frozen-world fluid restoration: %d fluids restored", job.metrics.fluids_restored))
 
 	-- PER-PHASE ITEM ACCOUNTING (report-only; the exact gate remains the sole verdict).
-	-- Turns "the import gained N of X somewhere across nine phases" into a per-phase attribution.
-	-- COVERAGE, stated honestly: belts / inventories / held_items are bracketed. The `hub` phase
-	-- restores hub inventories in phase 1 and is NOT yet bracketed, so it is recorded as unmeasured
-	-- rather than omitted — an unrecorded phase and a phase that moved nothing must not read the
-	-- same. `state` has no item subject. Fluids are a different unit entirely and are accounted by
-	-- the gate's fluid side, not here.
-	if job.phase_census and job.phase_census["hub"] == nil then
-		PhaseCensus.close(job, "hub", PhaseCensus.SUBJECT_INVENTORIES, nil)
-	end
+	-- Turns "the import gained N of X somewhere" into a per-phase attribution.
+	-- COVERAGE is total by construction: entity_creation (baseline) + hub + belts + inventories +
+	-- held_items span every item the gate counts, over the gate's own scope (the surface) and the
+	-- gate's own four locations (inventories, belt lines, held stacks, loose ground items). `state`
+	-- has no item subject. Fluids are a different unit and are accounted by the gate's fluid side.
+	-- The reconciliation below is what PROVES that span — see the assertion after validation.
 	local phase_total, phase_complete = PhaseCensus.total(job)
 	job.metrics.phase_census = job.phase_census
 	job.metrics.phase_census_total = phase_total
@@ -680,6 +696,28 @@ function ImportCompletion.run_phase2(job)
 		end
 
 		PhaseProfiler.stop(job.job_id, "validation")
+
+		-- CENSUS RECONCILIATION (report-only). The phases are supposed to span every item the gate
+		-- counts, so Σ(phase deltas) must equal the gate's actual counts exactly, key for key. A
+		-- non-zero residual means items reached the destination through a path no phase brackets —
+		-- which is the same class of blindness the census was built to remove, so it must be LOUD
+		-- rather than quietly absorbed. This is the only check that proves the decomposition is
+		-- complete; without it the per-phase numbers look authoritative while measuring a
+		-- different set than the verdict does.
+		local census_sum = job.metrics.phase_census_total or {}
+		local residual = build_count_diff(census_sum, result.actualItemCounts)
+		job.metrics.phase_census_residual = residual
+		if next(residual) == nil then
+			log("[Import] CENSUS RECONCILED: phase deltas account for the gate's item counts exactly")
+		else
+			local parts = {}
+			for key, row in pairs(residual) do
+				parts[#parts + 1] = string.format("%s census=%s gate=%s (%+d)", key, row.expected, row.actual, row.delta)
+			end
+			table.sort(parts)
+			log("[Import] CENSUS RESIDUAL (items the phases do not account for): " .. table.concat(parts, ", "))
+		end
+
 		-- Clean validation-only boundary for the waterfall span (the existing
 		-- validation_completed_tick at the end of run_phase2 also covers activation/fluids/loss).
 		job.metrics.validation_done_tick = game.tick

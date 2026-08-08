@@ -100,12 +100,49 @@ test("phase-census never CALLS SurfaceCounter (the gate's counting path stays un
 		+ "must not change — into the blast radius of every instrument change.");
 });
 
-test("all three subjects are addressable and distinct", () => {
+test("the subjects span EXACTLY what the gate counts — including ground items", () => {
 	const subjects = new Set(
 		Array.from(phaseCensus.matchAll(/PhaseCensus\.SUBJECT_(\w+)\s*=\s*"(\w+)"/g)).map((m) => m[2]),
 	);
-	assert.deepEqual([...subjects].sort(), ["belts", "held", "inventories"],
-		"exactly the three item-bearing subjects must be addressable");
+	assert.deepEqual([...subjects].sort(), ["belts", "ground", "held", "inventories"],
+		"the gate's count_items reads four item locations: entity inventories, belt lines, inserter "
+		+ "held stacks, and loose item-entity ground stacks. A census missing any of them measures a "
+		+ "different set than the verdict and can never reconcile — broken, not partial.");
+});
+
+test("the ground subject reads item-entity stacks, which the per-entity meter deliberately omits", () => {
+	assert.match(subjectMeterBody, /entity\.type\s*==\s*"item-entity"/,
+		"ground counting must key off the item-entity type");
+	assert.match(subjectMeterBody, /valid_for_read/,
+		"a ground stack must be checked with valid_for_read before it is read, as the gate's ground pass does");
+	// The gate's PER-ENTITY meter has no ground branch on purpose (ground is handled in its
+	// surface-level fold), so this is the one subject where the two meters legitimately differ.
+	assert.doesNotMatch(gateMeterBody, /item-entity/,
+		"count_entity_items is expected to have NO ground branch — if it grows one, the primitive "
+		+ "agreement test above needs revisiting rather than this one being deleted");
+});
+
+test("scope resolves a LuaSurface live, so the census sees what the gate sees", () => {
+	assert.match(phaseCensus, /object_name\s*==\s*"LuaSurface"/,
+		"a surface scope must be detected and resolved via find_entities_filtered at each snapshot");
+	assert.match(phaseCensus, /find_entities_filtered/,
+		"the surface scope must use the same enumeration the gate uses");
+});
+
+test("the entity-creation baseline is recorded, or upstream-created items belong to no phase", () => {
+	assert.match(phaseCensus, /function PhaseCensus\.record_baseline\(/,
+		"a baseline recorder must exist: entity creation runs before any bracket opens, so without "
+		+ "it every item it produced (including all ground items) is unattributed and the sum under-reports");
+	assert.match(importCompletion, /PhaseCensus\.record_baseline\(job,\s*"entity_creation"/,
+		"run_phase1 must record the entity_creation baseline");
+});
+
+test("the census is reconciled against the gate's actual counts, loudly", () => {
+	assert.match(importCompletion, /phase_census_residual/,
+		"the residual must be recorded");
+	assert.match(importCompletion, /CENSUS RESIDUAL/,
+		"a non-empty residual must be logged — silently absorbing it recreates the exact blindness "
+		+ "this instrument exists to remove");
 });
 
 test("close() persists the delta and DROPS the raw snapshots (storage-safe)", () => {

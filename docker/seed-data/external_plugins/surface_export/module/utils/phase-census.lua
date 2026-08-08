@@ -41,9 +41,15 @@ local Util = require("modules/surface_export/utils/util")
 local PhaseCensus = {}
 
 --- The subjects a phase can own. A phase with no item subject records nothing.
+--- These four are EXHAUSTIVE over what the destination gate counts: SurfaceCounter.count_items
+--- folds count_entity_items (inventories + belt lines + inserter held stack) over every entity on
+--- the surface, then adds a separate item-entity ground pass. Miss one and the reconciliation
+--- cannot close, which makes the whole instrument a decoration — a census that measures a different
+--- set than the gate is broken, not partial (owner ruling 2026-08-08).
 PhaseCensus.SUBJECT_INVENTORIES = "inventories"
 PhaseCensus.SUBJECT_BELTS = "belts"
 PhaseCensus.SUBJECT_HELD = "held"
+PhaseCensus.SUBJECT_GROUND = "ground"
 
 --- Fold one contribution map into a running total map.
 local function add_into(totals, contribution)
@@ -90,6 +96,28 @@ function PhaseCensus.count_entity_subject(entity, subject)
 			end
 		end
 
+	elseif subject == PhaseCensus.SUBJECT_GROUND then
+		-- Loose stacks on the floor. The gate counts these (surface-counter's ground pass); the
+		-- per-entity meter deliberately does NOT, so this branch has no counterpart to mirror and
+		-- reads the stack directly — exactly as surface-counter's ground pass does.
+		-- Ground items are created by ENTITY CREATION, not by any post-processing phase: the export
+		-- captures them in its own atomic single-tick scan and appends them to export_data.entities
+		-- (export-pipeline.lua). They therefore land in the entity_creation baseline, not in a
+		-- later bracket.
+		if entity.type == "item-entity" then
+			local ok, err = pcall(function()
+				local stack = entity.stack
+				if stack and stack.valid_for_read then
+					local quality = (stack.quality and stack.quality.name) or Util.QUALITY_NORMAL
+					local key = Util.make_quality_key(stack.name, quality)
+					totals[key] = (totals[key] or 0) + stack.count
+				end
+			end)
+			if not ok then
+				log(string.format("[PhaseCensus] Error counting ground item %s: %s", entity.name, err))
+			end
+		end
+
 	elseif subject == PhaseCensus.SUBJECT_HELD then
 		if entity.type == "inserter" then
 			local ok, err = pcall(function()
@@ -108,22 +136,75 @@ function PhaseCensus.count_entity_subject(entity, subject)
 	return totals
 end
 
---- Count a SET of entities for one subject.
---- The caller supplies the entity set (a phase already holds its own entity_map), which is what
---- keeps this off the whole-surface sweep.
---- @param entities table: array or map whose VALUES are LuaEntity
+--- Resolve a SCOPE to an entity list.
+--- A scope is either a LuaSurface (resolved LIVE at every snapshot, matching the gate's
+--- find_entities_filtered({}) scope) or a plain table of entities.
+---
+--- SCOPE IS A CORRECTNESS PROPERTY, not an optimisation knob. The gate counts the SURFACE; an
+--- import's entity_map holds only what the import CREATED. Anything on the surface but outside that
+--- map — the hub, which is created with the platform — is then invisible to the census while the
+--- gate counts it, and the reconciliation can never close. Narrow a scope only when the bracketed
+--- phase provably mutates nothing outside it; if that is ever wrong the reconciliation residual
+--- catches it, which is the whole point of keeping the residual.
+local function resolve_entities(scope)
+	if scope == nil then return {} end
+	if scope.object_name == "LuaSurface" then
+		if not scope.valid then return {} end
+		return scope.find_entities_filtered({})
+	end
+	return scope
+end
+
+--- Count a scope for one subject.
+--- @param scope table|LuaSurface
 --- @param subject string
 --- @return table, number: quality_key -> count, grand total
-function PhaseCensus.count_subject(entities, subject)
+function PhaseCensus.count_subject(scope, subject)
 	local totals = {}
 	local total = 0
-	for _, entity in pairs(entities or {}) do
+	for _, entity in pairs(resolve_entities(scope)) do
 		for key, count in pairs(PhaseCensus.count_entity_subject(entity, subject)) do
 			totals[key] = (totals[key] or 0) + count
 			total = total + count
 		end
 	end
 	return totals, total
+end
+
+--- Count EVERY subject over a scope, in ONE entity pass.
+--- This is the commensurate-with-the-gate reading: same scope, same four item locations. Used for
+--- the entity_creation baseline, which is where ground items and the freshly-populated entities
+--- land before any post-processing phase opens a bracket.
+--- @return table, number
+function PhaseCensus.count_all(scope)
+	local totals = {}
+	local total = 0
+	local subjects = {
+		PhaseCensus.SUBJECT_INVENTORIES,
+		PhaseCensus.SUBJECT_BELTS,
+		PhaseCensus.SUBJECT_HELD,
+		PhaseCensus.SUBJECT_GROUND,
+	}
+	for _, entity in pairs(resolve_entities(scope)) do
+		for _, subject in ipairs(subjects) do
+			for key, count in pairs(PhaseCensus.count_entity_subject(entity, subject)) do
+				totals[key] = (totals[key] or 0) + count
+				total = total + count
+			end
+		end
+	end
+	return totals, total
+end
+
+--- Record the state that already existed before ANY bracketed phase ran.
+--- Entity creation happens upstream of import post-processing, so everything it produced — every
+--- restored inventory stack, every belt item, every held stack, every loose ground item — is
+--- present before the first bracket opens. Attributing it to a named phase is what makes
+--- Σ(phase deltas) == the destination's final contents, and therefore comparable to the gate.
+function PhaseCensus.record_baseline(job, phase, scope)
+	if not job or not job.phase_census then return end
+	local counts = PhaseCensus.count_all(scope)
+	job.phase_census[phase] = { subject = "all", delta = counts, baseline = true }
 end
 
 --- Key-for-key delta of two count maps, keeping ONLY non-zero entries.
