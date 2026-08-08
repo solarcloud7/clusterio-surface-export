@@ -983,12 +983,24 @@ export class ControllerPlugin extends BaseControllerPlugin {
 		}
 	}
 
-	async persistGatewayConfig() {
+	/**
+	 * Write the gateway config. Returns the failure reason, or null when it really was written.
+	 *
+	 * It used to log and return normally, which made the caller's "Saved" a claim nobody had checked:
+	 * a full disk or a permission error left the new link in the in-memory map — so the UI and every
+	 * later read agreed with each other — and the edit vanished at the next controller restart with
+	 * nothing user-visible ever having said so. `enqueueWrite` resolves THIS write's own promise
+	 * (lib/persist-queue.ts), so the failure was always observable; it simply was not observed.
+	 */
+	async persistGatewayConfig(): Promise<string | null> {
 		try {
 			const payload = JSON.stringify(Array.from(this.gatewayLinks.entries()), null, 2);
 			await enqueueWrite(this.gatewayConfigPath, () => lib.safeOutputFile(this.gatewayConfigPath, payload));
+			return null;
 		} catch (err: unknown) {
-			this.logger.error(`Failed to persist gateway config: ${getErrorMessage(err)}`);
+			const reason = getErrorMessage(err);
+			this.logger.error(`Failed to persist gateway config: ${reason}`);
+			return reason;
 		}
 	}
 
@@ -1190,10 +1202,27 @@ export class ControllerPlugin extends BaseControllerPlugin {
 		}
 		try {
 			const gateways = this.resolveGateways(sourceInstanceId);
-			await this.c.sendTo({ instanceId: sourceInstanceId }, new messages.PushGatewayConfigRequest({
-				gateways,
-				activeGatewayNames: messages.gatewayNamesFor(this.gatewayMode()),
-			}));
+			// THE RESPONSE IS THE FAILURE CHANNEL, and ignoring it made this whole function inert for
+			// the one case it was written for. `handlePushGatewayConfig` (instance.ts) catches its own
+			// errors and RESOLVES with `{ success: false, error }` — so an RCON-size refusal, or any
+			// other Lua-side failure, arrives as a perfectly successful `sendTo`. Awaiting and
+			// discarding it meant the catch below only ever fired on transport failure, and the
+			// operator was told "Saved" while the instance kept running the previous config: exactly
+			// the silent-stale-config bug this was supposed to end. Every other `sendTo` in this
+			// plugin already reads `.success` (see handleImportUploadedExportRequest and
+			// lib/transfer-orchestrator.ts) — this one was the outlier.
+			const response = await this.c.sendTo(
+				{ instanceId: sourceInstanceId },
+				new messages.PushGatewayConfigRequest({
+					gateways,
+					activeGatewayNames: messages.gatewayNamesFor(this.gatewayMode()),
+				}),
+			) as { success?: boolean; error?: string } | undefined;
+			if (!response?.success) {
+				const reason = response?.error || "the instance rejected the gateway config";
+				this.logger.error(`Instance ${sourceInstanceId} did not apply the gateway config: ${reason}`);
+				return reason;
+			}
 			return null;
 		} catch (err: unknown) {
 			const reason = getErrorMessage(err);
@@ -1267,7 +1296,13 @@ export class ControllerPlugin extends BaseControllerPlugin {
 		} else {
 			this.gatewayLinks.delete(key);
 		}
-		await this.persistGatewayConfig();
+		// A write failure is a REAL failure, not a warning: the in-memory map already holds the new
+		// link, so the UI and every later read agree with each other and the operator has no way to
+		// tell the edit will be gone at the next controller restart.
+		const persistError = await this.persistGatewayConfig();
+		if (persistError) {
+			return { success: false, error: `Gateway config could not be written to disk: ${persistError}` };
+		}
 		const pushError = await this.pushGatewayConfigToInstance(sourceInstanceId);
 		this.logger.info(`Gateway '${gatewayName}' on instance ${sourceInstanceId} links set: ${targets.length} target(s)`);
 		if (pushError) {

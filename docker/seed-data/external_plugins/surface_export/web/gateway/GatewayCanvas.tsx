@@ -462,6 +462,8 @@ export default function GatewayCanvas({ plugin, state, onOpenImport }: {
 	const save = useCallback(async () => {
 		setSaving(true);
 		const failures: string[] = [];
+		/** Saved, but the running instance did not take it — see where this is pushed. */
+		const warnings: string[] = [];
 		try {
 			// One call per dirty key, each carrying that gateway's WHOLE target list — which is the
 			// contract setGatewayLink already has. Sequential rather than parallel so a partial failure
@@ -481,8 +483,18 @@ export default function GatewayCanvas({ plugin, state, onOpenImport }: {
 							targetGateway: target.targetGateway || parsed.gatewayName,
 						})),
 					})) as JsonObject;
+					const reason = String(getProp(response, "error", "") || "");
 					if (!getProp(response, "success", false)) {
-						failures.push(`${parsed.gatewayName}: ${String(getProp(response, "error", "save failed"))}`);
+						failures.push(`${parsed.gatewayName}: ${reason || "save failed"}`);
+					} else if (reason) {
+						// SUCCESS CAN STILL CARRY A WARNING, and reading `error` only on failure threw
+						// away the one case the controller added it for: the config is persisted but the
+						// running instance REJECTED it (an oversized /sc, an RCON failure), so it is still
+						// serving the previous gateway layout. That is `{ success: true, error: "Saved,
+						// but instance N is still running the previous gateway config" }`. Treating a
+						// truthy `error` as absent turned that into a green "Saved 1 gateway." while a
+						// platform parked at that gate would still fly to the old destination.
+						warnings.push(reason);
 					}
 				} catch (err: unknown) {
 					failures.push(`${parsed.gatewayName}: ${getErrorMessage(err, "save failed")}`);
@@ -496,6 +508,14 @@ export default function GatewayCanvas({ plugin, state, onOpenImport }: {
 				return;
 			}
 			setBaseline(edits);
+			if (warnings.length) {
+				// Re-baselined deliberately: the config IS saved, so the board is genuinely clean and a
+				// retry would change nothing. What is not true is that the cluster is running it, and
+				// that is what this says — held on screen far longer than the success toast, because it
+				// is the one an operator must not miss.
+				antMessage.warning(warnings.join("; "), 15);
+				return;
+			}
 			antMessage.success(`Saved ${pending.length} gateway${pending.length === 1 ? "" : "s"}.`, 4);
 		} finally {
 			setSaving(false);
@@ -537,6 +557,18 @@ export default function GatewayCanvas({ plugin, state, onOpenImport }: {
 					nodesConnectable={canEdit}
 					edgesFocusable={canEdit}
 					elementsSelectable
+					// A NODE IS AN INSTANCE. The canvas has no business deleting one, and letting React
+					// Flow try was a link-destroying trap: selecting a node and pressing Backspace
+					// cascaded into `onEdgesDelete` for every edge touching it, which staged
+					// applyDisconnect on each. MEASURED on the live canvas — one keystroke on a selected
+					// node took the drawn edges from 1 to 0 and the pending count to "2 unsaved changes",
+					// while the node itself reappeared from the next platform-tree push. So the board
+					// looked untouched with two link deletions queued behind it, and the next Save — even
+					// one meant for an unrelated edit — would have destroyed the gateway link.
+					//
+					// `deleteKeyCode` still arms Backspace/Delete, because deleting an EDGE is the
+					// intended unlink gesture; only nodes are made undeletable, per-node in buildGraph
+					// (`deletable: false`) — React Flow 12 has no canvas-wide `nodesDeletable` prop.
 					deleteKeyCode={canEdit ? ["Backspace", "Delete"] : null}
 					// Unconditional, not "system": Clusterio hardcodes antd's darkAlgorithm
 					// (@clusterio/web_ui/src/components/App.tsx) and ships no light mode, so following the

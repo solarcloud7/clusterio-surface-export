@@ -410,6 +410,17 @@ export interface GraphNodeModel {
 	position: { x: number; y: number };
 	data: Record<string, unknown>;
 	style?: Record<string, number | string>;
+	/**
+	 * Always false. A node is an INSTANCE — nothing on this canvas may delete one, and letting React
+	 * Flow try was a link-destroying trap: deleting a node cascades into `onEdgesDelete` for every
+	 * edge touching it, which stages an `applyDisconnect` for each. Measured on the live canvas:
+	 * selecting a node and pressing Backspace took the drawn edges from 1 to 0 and the pending count
+	 * to "2 unsaved changes", while the node itself came straight back on the next platform-tree
+	 * push — so the board looked untouched with two link deletions queued behind it.
+	 *
+	 * Per-node rather than a canvas-wide prop because React Flow 12 has no `nodesDeletable`.
+	 */
+	deletable: false;
 }
 
 /** One entry per host in the tree, for the canvas's host filter. */
@@ -494,6 +505,7 @@ export function buildGraph(
 			nodes.push({
 				id: instanceNodeId(instance.instanceId),
 				type: "instance",
+				deletable: false,
 				position: {
 					x: columnIndex * columnPitch + columnInset,
 					// Every node owns its diameter PLUS its caption; the gap sits between those blocks.
