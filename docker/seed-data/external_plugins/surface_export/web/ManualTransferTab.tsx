@@ -1,12 +1,12 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { Alert, Button, Card, Empty, Spin, Tag, Tooltip, Typography, message as antMessage } from "antd";
+import { Alert, Button, Card, Empty, Spin, Tag, Tooltip, Typography } from "antd";
 
 import { DownloadOutlined, PlayCircleOutlined } from "@ant-design/icons";
 import { PlanetIcon } from "./icons";
 import TransferModal from "./TransferModal";
-import type { TransferSource } from "./TransferModal";
-import { sanitizeTimestamp, downloadJsonFile, getErrorMessage, getProp } from "./utils";
-import type { HostNodeModel, InstanceNodeModel, JsonObject, PlatformModel, SurfaceExportPlugin, SurfaceExportState } from "./view-models";
+import { exportPlatformToDownload, platformStatus } from "./platform-actions";
+import type { PlatformActionSource } from "./platform-actions";
+import type { HostNodeModel, InstanceNodeModel, PlatformModel, SurfaceExportPlugin, SurfaceExportState } from "./view-models";
 
 const { Text } = Typography;
 
@@ -22,42 +22,6 @@ type PlatformRow = {
 	platformName: string;
 	forceName: string;
 };
-
-/**
- * What the platform is DOING, for the status column. Deliberately not the parked location name:
- * that is already carried by the row's destination icon, so repeating it as text would spend a
- * column on information the row already shows.
- *
- * Ordered most-urgent-first — an in-flight transfer outranks the lock it took out, which outranks
- * ordinary travel.
- */
-function statusLabel(platform: PlatformModel, nowMs: number): { text: string; tag?: string } {
-	if (platform.transferStatus && platform.transferStatus !== "idle") {
-		return { text: platform.transferStatus.replace(/_/g, " "), tag: "processing" };
-	}
-	if (platform.isLocked) {
-		return { text: "locked", tag: "orange" };
-	}
-	// A set `spaceLocation` means PARKED, and it takes precedence over `currentTarget`: a parked
-	// platform retains the target of the journey it already finished, so testing currentTarget first
-	// reports a stationary platform as "→ nauvis" forever. Caught by reading the live UI — both
-	// parked fixtures claimed to be in flight.
-	if (platform.spaceLocation) {
-		return { text: "parked" };
-	}
-	if (platform.currentTarget) {
-		if (platform.departureDateMs != null && platform.estimatedDurationTicks != null) {
-			const totalMs = (platform.estimatedDurationTicks / 60) * 1000;
-			const remainingMs = Math.max(0, totalMs - (nowMs - platform.departureDateMs));
-			return { text: `→ ${platform.currentTarget} (ETA ~${Math.round(remainingMs / 60000)}min)`, tag: "blue" };
-		}
-		return { text: `→ ${platform.currentTarget}`, tag: "blue" };
-	}
-	if (platform.speed && platform.speed > 0) {
-		return { text: "in transit", tag: "blue" };
-	}
-	return { text: "—" };
-}
 
 function buildHostSections(tree: SurfaceExportState["tree"]) {
 	const sections: Array<{ key: string; host: HostNodeModel | null; hostName: string; instances: InstanceNodeModel[] }> = [];
@@ -86,7 +50,7 @@ function buildHostSections(tree: SurfaceExportState["tree"]) {
 }
 
 export default function ManualTransferTab({ plugin, state }: { plugin: SurfaceExportPlugin; state: SurfaceExportState }) {
-	const [transferSource, setTransferSource] = useState<TransferSource | null>(null);
+	const [transferSource, setTransferSource] = useState<PlatformActionSource | null>(null);
 	const [nowMs, setNowMs] = useState(Date.now());
 	const [exportingPlatformKey, setExportingPlatformKey] = useState<string | null>(null);
 
@@ -128,23 +92,9 @@ export default function ManualTransferTab({ plugin, state }: { plugin: SurfaceEx
 	async function handleExportPlatform(source: PlatformRow) {
 		setExportingPlatformKey(source.key);
 		try {
-			const response = await plugin.exportPlatformForDownload({
-				sourceInstanceId: source.instanceId,
-				sourcePlatformIndex: source.platformIndex,
-				forceName: source.forceName || tree?.forceName || "player",
-			});
-			const responseObj = response as JsonObject;
-			if (!getProp(responseObj, "success", false)) {
-				throw new Error(String(getProp(responseObj, "error", "Export failed")));
-			}
-			const platformName = String(getProp(responseObj, "platformName", "") || source.platformName || "platform");
-			const timestamp = getProp(responseObj, "timestamp", null) as string | number | null;
-			const filename = `${platformName}_${sanitizeTimestamp(timestamp)}.json`;
-			const exportData = getProp(responseObj, "exportData", {}) as Record<string, unknown>;
-			downloadJsonFile(exportData, filename);
-			antMessage.success(`Export downloaded: ${getProp(responseObj, "exportId", "")}`, 6);
-		} catch (err: unknown) {
-			antMessage.error(getErrorMessage(err, "Failed to export platform"), 10);
+			// The flow itself is shared with the gateway canvas's node toolbar (web/platform-actions.ts).
+			// It reports its own success and failure; all this owns is the row's spinner.
+			await exportPlatformToDownload(plugin, source);
 		} finally {
 			setExportingPlatformKey(null);
 		}
@@ -200,7 +150,7 @@ export default function ManualTransferTab({ plugin, state }: { plugin: SurfaceEx
 									{instanceRows.map(row => {
 										// The icon shows where the platform IS, or where it is heading while in flight.
 										const locationName = row.platform?.spaceLocation || row.platform?.currentTarget;
-										const status = statusLabel(row.platform, nowMs);
+										const status = platformStatus(row.platform, nowMs);
 										return (
 											<div key={row.key} className="surface-export-platform-row">
 												<div className="surface-export-platform-row-name">

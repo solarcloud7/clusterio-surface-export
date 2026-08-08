@@ -3,6 +3,24 @@ import type { IControllerPlugin, HostNodeModel, PlatformModel, InstanceNodeModel
 import { getErrorMessage } from "../helpers";
 
 /**
+ * The client-routable address of an instance, or "" when it has no assigned game port because it
+ * is not running.
+ *
+ * ONE derivation, shared by the platform tree and the /teleport roster. They describe the same
+ * instance to two different audiences, and two copies of this join would be free to disagree.
+ *
+ * `publicAddress` falls back to "localhost" when the host never set one — correct for a same-machine
+ * client; distributed deployments must configure `host.public_address` (deployment config, not a
+ * code path). Same caveat for PORT REMAPPING: `gamePort` is the port as the HOST knows it, so a
+ * docker deployment publishing a different host port (the atlas cluster on this machine maps
+ * 34300→34100) yields an address the client cannot reach. Align the published port with the
+ * instance port, as this cluster does.
+ */
+export function instanceAddress(publicAddress: string | null | undefined, gamePort: number | null): string {
+	return gamePort ? `${publicAddress || "localhost"}:${gamePort}` : "";
+}
+
+/**
  * Platform tree building and instance resolution.
  * Queries connected instances for their platforms and builds
  * the hierarchical host → instance → platform tree used by the web UI.
@@ -146,11 +164,13 @@ export class PlatformTree {
 			// deliberately not `instance.config.get("factorio.game_port")`, which reads null here
 			// because the base image derives ports at start rather than storing them in config.
 			const rawGamePort = (instance as { gamePort?: number }).gamePort;
+			const gamePort = Number.isInteger(rawGamePort) ? rawGamePort as number : null;
 			const node: InstanceNodeModel = {
 				instanceId,
 				instanceName: String(instance.config.get("instance.name") || ""),
 				hostId,
-				gamePort: Number.isInteger(rawGamePort) ? rawGamePort as number : null,
+				gamePort,
+				address: instanceAddress((host as { publicAddress?: string } | null)?.publicAddress, gamePort),
 				status: String(instance.status || ""),
 				connected: Boolean(host?.connected),
 				platforms: [],

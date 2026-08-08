@@ -153,12 +153,23 @@ export class InstancePlugin extends BaseInstancePlugin {
 	 * their camelCase field names (instanceId/instanceName/targetGateway/online) — the in-game chooser
 	 * reads the SAME shape, so there is no second per-field map to drift from the controller's resolve.
 	 */
-	private async applyGatewaysToLua(gateways: messages.ResolvedGateway[]): Promise<void> {
+	private async applyGatewaysToLua(
+		gateways: messages.ResolvedGateway[],
+		activeGatewayNames?: string[],
+	): Promise<void> {
 		const keyed: Record<string, { targets: messages.ResolvedGatewayTarget[] }> = {};
 		for (const g of gateways || []) {
 			keyed[g.gatewayName] = { targets: g.targets || [] };
 		}
-		await this.lua.configureGateways(JSON.stringify(keyed));
+		// The active set is sent by the controller and NOT derived from `keyed`: the controller only
+		// resolves gateways that HAVE links, so on a fresh cluster `keyed` is empty. Deriving from it
+		// would unlock nothing, leaving the operator unable to fly to a gateway in order to link one.
+		// Undefined (an un-updated controller) means “unlock everything with the prefix”, i.e. the old
+		// behaviour, rather than nothing.
+		await this.lua.configureGateways(
+			JSON.stringify(keyed),
+			activeGatewayNames ? JSON.stringify(activeGatewayNames) : undefined,
+		);
 	}
 
 	/**
@@ -185,8 +196,8 @@ export class InstancePlugin extends BaseInstancePlugin {
 			const resp = (await this.link.sendTo(
 				"controller",
 				new messages.GetGatewayConfigRequest({ instanceId: this.i.id }),
-			)) as unknown as { gateways?: messages.ResolvedGateway[] };
-			await this.applyGatewaysToLua(resp?.gateways || []);
+			)) as unknown as { gateways?: messages.ResolvedGateway[]; activeGatewayNames?: string[] };
+			await this.applyGatewaysToLua(resp?.gateways || [], resp?.activeGatewayNames);
 			this.logger.info(`Gateway config pulled from controller: ${(resp?.gateways || []).length} gateway(s)`);
 		} catch (err: unknown) {
 			this.logger.warn(`Failed to pull gateway config: ${getErrorMessage(err)}`);
@@ -194,9 +205,9 @@ export class InstancePlugin extends BaseInstancePlugin {
 	}
 
 	/** controller → instance: a gateway config push (on a config change). */
-	async handlePushGatewayConfig(request: { gateways: messages.ResolvedGateway[] }) {
+	async handlePushGatewayConfig(request: { gateways: messages.ResolvedGateway[]; activeGatewayNames?: string[] }) {
 		try {
-			await this.applyGatewaysToLua(request.gateways || []);
+			await this.applyGatewaysToLua(request.gateways || [], request.activeGatewayNames);
 			return { success: true };
 		} catch (err: unknown) {
 			return { success: false, error: getErrorMessage(err) };

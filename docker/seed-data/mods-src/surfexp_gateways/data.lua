@@ -10,12 +10,15 @@
 -- gateway per-force at runtime via `force.unlock_space_location(name)`. This is a PURE DATA-STAGE
 -- mod — there is no control.lua; all gateway logic lives in the plugin module.
 
--- One portal colour per gateway, so a destination is identifiable at a glance rather than by reading
--- the label. This list is the single source of the gateway COUNT — there is no second literal that
--- can drift from it. It does NOT guarantee the art exists: adding a colour here adds a gateway that
--- references graphics/icons/gateway-<colour>.png AND starmap-gateway-<colour>.png AND needs a
--- locale.cfg entry (which today covers 1..4 only) — and nothing checks any of the three, since the
--- build script only zips. Add all of them together.
+-- The MULTI-CLUSTER set: one portal colour per gateway, so a destination is identifiable at a glance
+-- rather than by reading the label. This list is the single source of the NUMBERED gateway count —
+-- there is no second literal that can drift from it. (The single `surfexp_gateway_hub` below is a
+-- separate set, not a fifth colour; see its comment.)
+--
+-- It does NOT guarantee the art exists: adding a colour here adds a gateway that references
+-- graphics/icons/gateway-<colour>.png AND starmap-gateway-<colour>.png AND needs two locale.cfg
+-- entries — and nothing checks any of the three, since the build script only zips. Add them
+-- together. The 64px icon is derived from the 512px one by tools/surface-export/downscale-icon.mjs.
 -- Shipped mapping: 1=blue, 2=green, 3=orange, 4=purple.
 local GATEWAY_COLOURS = { "blue", "green", "orange", "purple" }
 local GATEWAY_COUNT = #GATEWAY_COLOURS
@@ -59,6 +62,51 @@ for i, colour in ipairs(GATEWAY_COLOURS) do
 		length = 3000,
 	}
 end
+
+-- ── The single gate, for "1 Gate Cluster" mode ───────────────────────────────
+-- Declared OUTSIDE the colour loop on purpose: it is not a fifth member of the numbered set, it is
+-- the whole gateway set of a different cluster mode. Exactly one of the two sets is unlocked at
+-- runtime (the plugin pushes the active names and Gateway.discover_and_unlock filters by them), so a
+-- 1-gate cluster shows this alone on the starmap and a multi-gate cluster shows only 1..4.
+--
+-- THE NAME MUST KEEP THE `surfexp_gateway_` PREFIX. Gateway.is_gateway compares
+-- `name:sub(1, #Gateway.PREFIX)` (module/core/gateway.lua), and Lua's `sub` CLAMPS rather than
+-- failing — so a shorter name like "surfexp_gate" returns itself, the compare fails, and the
+-- location becomes invisible to unlocking, to arrival detection and to the transfer trigger alike.
+-- It would render perfectly on the starmap and do nothing at all.
+local HUB_NAME = "surfexp_gateway_hub"
+
+locations[#locations + 1] = {
+	type = "space-location",
+	name = HUB_NAME,
+	-- gateway-hub.png is DERIVED from starmap-gateway-hub.png by tools/surface-export/downscale-icon.mjs
+	-- (alpha-weighted 8:1 area average). Regenerate it with that script rather than by hand if the art
+	-- changes — `--verify` checks the reduction against the four committed colour pairs.
+	icon = "__surfexp_gateways__/graphics/icons/gateway-hub.png",
+	starmap_icon = "__surfexp_gateways__/graphics/icons/starmap-gateway-hub.png",
+	starmap_icon_size = 512,
+	subgroup = "planets",
+	-- Sorts BEFORE the numbered gateways: in one-gate mode it is the only gate there is.
+	order = "z[surfexp-gateway]-0",
+	gravity_pull = -10,
+	distance = 45,
+	-- Its own slice of the ring, clear of the four numbered gateways' orientations (0.05, 0.30,
+	-- 0.55, 0.80) so the two sets do not overlap on the starmap when both are installed.
+	orientation = 0.925,
+	magnitude = 1.0,
+	label_orientation = 0.15,
+	-- NO fly_condition -> a routed platform PARKS here, same as the numbered gateways.
+}
+
+connections[#connections + 1] = {
+	type = "space-connection",
+	name = "surfexp_gateway_link_hub",
+	subgroup = "planet-connections",
+	from = "nauvis",
+	to = HUB_NAME,
+	order = "z[surfexp-gateway]-0",
+	length = 3000,
+}
 
 data:extend(locations)
 data:extend(connections)

@@ -60,10 +60,16 @@ export class LuaInterface {
 	 * Lua table — so arbitrary instance names in the config can never inject Lua. `escapeString` makes
 	 * the JSON safe to embed in the surrounding Lua double-quoted literal.
 	 */
-	async configureGateways(gatewaysJson: string): Promise<void> {
+	async configureGateways(gatewaysJson: string, activeGatewaysJson?: string): Promise<void> {
+		// The ACTIVE gateway name list rides with the config rather than in its own call: the two are
+		// read together (which gateways exist, and where each leads), and splitting them across two
+		// RCON commands would leave a window where Lua has one and not the other.
+		const activeClause = activeGatewaysJson
+			? `, active_gateways_json="${escapeString(activeGatewaysJson)}"`
+			: "";
 		const script = `/sc ` +
 			`if remote.interfaces["surface_export"] and remote.interfaces["surface_export"]["configure"] then ` +
-			`remote.call("surface_export", "configure", {gateways_json="${escapeString(gatewaysJson)}"}) ` +
+			`remote.call("surface_export", "configure", {gateways_json="${escapeString(gatewaysJson)}"${activeClause}}) ` +
 			`end`;
 		// A single /sc command is bounded by Factorio's ~8KB RCON limit. Gateway config is tiny in
 		// practice (a few gateways × targets), but fail LOUDLY rather than send a truncated/dropped

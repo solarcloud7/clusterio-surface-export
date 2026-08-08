@@ -11,7 +11,7 @@ import path from "path";
 import { BaseControllerPlugin } from "@clusterio/controller";
 import type { Controller } from "@clusterio/controller";
 import * as lib from "@clusterio/lib";
-import { PlatformTree } from "./lib/platform-tree";
+import { PlatformTree, instanceAddress } from "./lib/platform-tree";
 import { TransactionLogger } from "./lib/transaction-logger";
 import { SubscriptionManager } from "./lib/subscription-manager";
 import { enqueueWrite } from "./lib/persist-queue";
@@ -50,6 +50,24 @@ export class ControllerPlugin extends BaseControllerPlugin {
 	 */
 	private cfg<T = unknown>(key: string): T {
 		return (this.controller.config as { get(k: string): unknown }).get(key) as T;
+	}
+
+	/**
+	 * Which gateway layout this cluster runs.
+	 *
+	 * Clusterio has no enum field type, so the setting arrives as free text and a typo would
+	 * otherwise mean "no gateways at all" rather than an error. Warns ONCE per distinct bad value
+	 * rather than on every read: this is called per request, and a misconfigured cluster would
+	 * otherwise fill the log with the same line.
+	 */
+	private lastGatewayModeWarning?: string;
+	gatewayMode(): messages.GatewayMode {
+		const { mode, warning } = messages.parseGatewayMode(this.cfg("surface_export.gateway_mode"));
+		if (warning && warning !== this.lastGatewayModeWarning) {
+			this.lastGatewayModeWarning = warning;
+			this.logger.warn(warning);
+		}
+		return mode;
 	}
 	platformStorage!: Map<string, StoredExport>;
 	activeTransfers!: Map<string, ActiveTransfer>;
@@ -914,15 +932,18 @@ export class ControllerPlugin extends BaseControllerPlugin {
 					const links = entry[1] as messages.GatewayLink[];
 					const parsed = this.parseGatewayKey(key);
 					if (parsed) {
-						// New per-instance composite key. Drop links for gateway names this build doesn't know
-						// (GATEWAY_COUNT shrank, or a hand-edited file) — they'd be pushed yet be invisible and
-						// unremovable in the web editor, which only renders GATEWAY_NAMES per instance.
-						if (!(messages.GATEWAY_NAMES as readonly string[]).includes(parsed.gatewayName)) {
+						// New per-instance composite key. Validated against EVERY known gateway name, NOT the
+						// active mode’s: a one-gate cluster still holds its multi-mode links on disk, and
+						// dropping them here would make switching modes a destructive, un-undoable side effect
+						// of a display setting. Names belonging to no set at all (a hand-edited file, or a
+						// gateway this build genuinely no longer has) are still dropped — they would be pushed
+						// to Lua yet be unreachable in an editor that only renders the active set.
+						if (!(messages.ALL_GATEWAY_NAMES as readonly string[]).includes(parsed.gatewayName)) {
 							this.logger.warn(`Dropping unknown gateway link '${key}'`);
 							continue;
 						}
 						this.gatewayLinks.set(key, links);
-					} else if ((messages.GATEWAY_NAMES as readonly string[]).includes(key)) {
+					} else if ((messages.ALL_GATEWAY_NAMES as readonly string[]).includes(key)) {
 						// LEGACY bare-name key from the pre-per-instance format. The old model pushed this SAME
 						// config to every instance, so faithfully migrate by replicating it to each known
 						// instance as source — dropping self-targets, which the per-instance model forbids.
@@ -962,12 +983,24 @@ export class ControllerPlugin extends BaseControllerPlugin {
 		}
 	}
 
-	async persistGatewayConfig() {
+	/**
+	 * Write the gateway config. Returns the failure reason, or null when it really was written.
+	 *
+	 * It used to log and return normally, which made the caller's "Saved" a claim nobody had checked:
+	 * a full disk or a permission error left the new link in the in-memory map — so the UI and every
+	 * later read agreed with each other — and the edit vanished at the next controller restart with
+	 * nothing user-visible ever having said so. `enqueueWrite` resolves THIS write's own promise
+	 * (lib/persist-queue.ts), so the failure was always observable; it simply was not observed.
+	 */
+	async persistGatewayConfig(): Promise<string | null> {
 		try {
 			const payload = JSON.stringify(Array.from(this.gatewayLinks.entries()), null, 2);
 			await enqueueWrite(this.gatewayConfigPath, () => lib.safeOutputFile(this.gatewayConfigPath, payload));
+			return null;
 		} catch (err: unknown) {
-			this.logger.error(`Failed to persist gateway config: ${getErrorMessage(err)}`);
+			const reason = getErrorMessage(err);
+			this.logger.error(`Failed to persist gateway config: ${reason}`);
+			return reason;
 		}
 	}
 
@@ -1150,78 +1183,212 @@ export class ControllerPlugin extends BaseControllerPlugin {
 	}
 
 	/** Push ONE source instance its own resolved gateway config (best-effort; no-op if offline). */
-	private async pushGatewayConfigToInstance(sourceInstanceId: number): Promise<void> {
+	/**
+	 * Push ONE source instance its own resolved gateway config.
+	 *
+	 * Returns the failure REASON instead of swallowing it. The push can fail for a reason the
+	 * operator must act on — most sharply, `configureGateways` throws above 7000 bytes of assembled
+	 * /sc command, which one-gate mode makes reachable because every destination concentrates onto a
+	 * single key. This used to be caught into a `logger.warn`, so the config was persisted, the UI
+	 * said “saved”, and the instance quietly kept running the PREVIOUS gateway config with the only
+	 * trace in a host log nobody was reading. Saved-but-not-applied is exactly the state that has to
+	 * be visible.
+	 *
+	 * An OFFLINE instance is not a failure: it pulls its config on start (GetGatewayConfigRequest).
+	 */
+	private async pushGatewayConfigToInstance(sourceInstanceId: number): Promise<string | null> {
 		if (!this.isInstanceOnline(sourceInstanceId)) {
-			return;
+			return null;
 		}
 		try {
 			const gateways = this.resolveGateways(sourceInstanceId);
-			await this.c.sendTo({ instanceId: sourceInstanceId }, new messages.PushGatewayConfigRequest({ gateways }));
+			// THE RESPONSE IS THE FAILURE CHANNEL, and ignoring it made this whole function inert for
+			// the one case it was written for. `handlePushGatewayConfig` (instance.ts) catches its own
+			// errors and RESOLVES with `{ success: false, error }` — so an RCON-size refusal, or any
+			// other Lua-side failure, arrives as a perfectly successful `sendTo`. Awaiting and
+			// discarding it meant the catch below only ever fired on transport failure, and the
+			// operator was told "Saved" while the instance kept running the previous config: exactly
+			// the silent-stale-config bug this was supposed to end. Every other `sendTo` in this
+			// plugin already reads `.success` (see handleImportUploadedExportRequest and
+			// lib/transfer-orchestrator.ts) — this one was the outlier.
+			const response = await this.c.sendTo(
+				{ instanceId: sourceInstanceId },
+				new messages.PushGatewayConfigRequest({
+					gateways,
+					activeGatewayNames: messages.gatewayNamesFor(this.gatewayMode()),
+				}),
+			) as { success?: boolean; error?: string } | undefined;
+			if (!response?.success) {
+				const reason = response?.error || "the instance rejected the gateway config";
+				this.logger.error(`Instance ${sourceInstanceId} did not apply the gateway config: ${reason}`);
+				return reason;
+			}
+			return null;
 		} catch (err: unknown) {
-			this.logger.warn(`Failed to push gateway config to instance ${sourceInstanceId}: ${getErrorMessage(err)}`);
+			const reason = getErrorMessage(err);
+			this.logger.error(`Failed to push gateway config to instance ${sourceInstanceId}: ${reason}`);
+			return reason;
 		}
 	}
 
 	/** control → controller: raw links (each tagged with its source instance) + the pinned gateway-name
 	 * list (for the web editor, which groups by source instance). */
+	/**
+	 * The gateway config AS THE ACTIVE MODE SEES IT.
+	 *
+	 * Links are filtered to the active gateway set. The disk keeps both modes' links — that is what
+	 * makes a mode switch lossless, and it is deliberate — but handing the inactive ones to the editor
+	 * made them undeletable phantoms: `buildEdges` drew a full line for a link whose handles do not
+	 * exist on the node in this mode, and deleting it staged a key that `handleSetGatewayLinkRequest`
+	 * then refused as "Unknown gateway for one_gate mode". The board stayed permanently dirty and
+	 * every later save re-sent and re-failed that key, dragging legitimate edits into a failure banner
+	 * with no way out but a reload.
+	 *
+	 * Filtering here rather than in the canvas keeps one answer to "what may be edited": the same
+	 * active set the write path validates against.
+	 */
 	async handleGetGatewaysRequest(_request: Record<string, never>) {
+		const activeNames = messages.gatewayNamesFor(this.gatewayMode());
 		const links = Array.from(this.gatewayLinks.entries()).flatMap(([key, targets]) => {
 			const parsed = this.parseGatewayKey(key);
-			return parsed ? [{ sourceInstanceId: parsed.sourceInstanceId, gatewayName: parsed.gatewayName, targets }] : [];
+			if (!parsed || !activeNames.includes(parsed.gatewayName)) {
+				return [];
+			}
+			return [{ sourceInstanceId: parsed.sourceInstanceId, gatewayName: parsed.gatewayName, targets }];
 		});
 		return {
-			gatewayNames: [...messages.GATEWAY_NAMES],
+			gatewayMode: this.gatewayMode(),
+			gatewayNames: activeNames,
 			links,
 		};
 	}
 
 	/** control → controller: replace the entire target list for one (source instance, gateway), persist,
 	 * push the affected instance its own updated config. */
-	async handleSetGatewayLinkRequest(request: { sourceInstanceId: number; gatewayName: string; targets: messages.GatewayLink[] }) {
-		const { gatewayName } = request;
+	/**
+	 * Apply every changed gateway on ONE instance as a single unit.
+	 *
+	 * ATOMIC BY DESIGN. Multi mode's second rule — no two gates on an instance aimed at the same
+	 * destination — is a statement about the instance's whole layout, so it is checked against the
+	 * PROPOSED layout (persisted, overlaid with everything in this request) rather than against
+	 * whatever happens to be on disk part-way through a batch. Validating key-by-key judged states the
+	 * operator never asked for: moving a destination from gate 2 to gate 1 was rejected on gate 1
+	 * (gate 2 still held it) and then applied on gate 2, deleting the link; swapping two gates'
+	 * destinations was rejected on both halves on every retry, making a legal layout unreachable.
+	 *
+	 * Nothing is written until every gateway in the request passes, so a rejected batch leaves the
+	 * config exactly as it was.
+	 */
+	async handleSetGatewayLinkRequest(request: {
+		sourceInstanceId: number;
+		gateways: Array<{ gatewayName: string; targets: messages.GatewayLink[] }>;
+	}) {
 		const sourceInstanceId = Number(request.sourceInstanceId);
-		if (!(messages.GATEWAY_NAMES as readonly string[]).includes(gatewayName)) {
-			return { success: false, error: `Unknown gateway: ${gatewayName}` };
+		const mode = this.gatewayMode();
+		const activeNames = messages.gatewayNamesFor(mode);
+		const submitted = request.gateways || [];
+		if (!submitted.length) {
+			return { success: false, error: "No gateways in the request" };
 		}
 		// A non-integer/NaN id yields undefined from instances.get() (caught by !sourceInstance).
 		const sourceInstance = this.c.instances.get(sourceInstanceId);
 		if (!sourceInstance || sourceInstance.isDeleted) {
 			return { success: false, error: `Unknown source instance: ${request.sourceInstanceId}` };
 		}
-		const key = this.gatewayKey(sourceInstanceId, gatewayName);
-		// Normalize: keep only links with a valid integer instance id that is NOT the source itself (an
-		// instance can't gateway-transfer to its own instance — enforced here, not just in the web dropdown,
-		// so a hand-edited config or future import path can't persist a self-referential target); default a
-		// blank target gateway to the source gateway name (the 1:1 default).
-		const targets: messages.GatewayLink[] = (request.targets || [])
-			.filter(t => Number.isInteger(Number(t.targetInstanceId)) && Number(t.targetInstanceId) !== sourceInstanceId)
-			.map(t => ({ targetInstanceId: Number(t.targetInstanceId), targetGateway: t.targetGateway || gatewayName }));
-		if (targets.length > 0) {
-			this.gatewayLinks.set(key, targets);
-		} else {
-			this.gatewayLinks.delete(key);
+
+		// Normalize first, reject second, write third. Normalize: keep only links with a valid integer
+		// instance id that is NOT the source itself (an instance can't gateway-transfer to its own
+		// instance — enforced here, not just in the web dropdown, so a hand-edited config or future
+		// import path can't persist a self-referential target); default a blank target gateway to the
+		// source gateway name (the 1:1 default).
+		const normalized = new Map<string, messages.GatewayLink[]>();
+		for (const entry of submitted) {
+			const gatewayName = entry?.gatewayName;
+			// The ACTIVE set, unlike the load path's union: an operator can only edit gateways their
+			// mode actually exposes, even though the other mode's links remain safely on disk.
+			if (!gatewayName || !activeNames.includes(gatewayName)) {
+				return { success: false, error: `Unknown gateway for ${mode} mode: ${gatewayName}` };
+			}
+			if (normalized.has(gatewayName)) {
+				return { success: false, error: `Gateway '${gatewayName}' appears twice in one request` };
+			}
+			normalized.set(gatewayName, (entry.targets || [])
+				.filter(t => Number.isInteger(Number(t.targetInstanceId)) && Number(t.targetInstanceId) !== sourceInstanceId)
+				.map(t => ({ targetInstanceId: Number(t.targetInstanceId), targetGateway: t.targetGateway || gatewayName })));
 		}
-		await this.persistGatewayConfig();
-		await this.pushGatewayConfigToInstance(sourceInstanceId);
-		this.logger.info(`Gateway '${gatewayName}' on instance ${sourceInstanceId} links set: ${targets.length} target(s)`);
+
+		if (mode === "multi") {
+			// Multi Cluster's two rules, enforced HERE and not only in the canvas: the web UI is one
+			// caller, and a hand-edited config or a future import path must not be able to persist a
+			// layout the mode does not permit. Rejected with a reason rather than truncated — silently
+			// dropping the surplus is how a gateway ends up pointing somewhere nobody chose.
+			//
+			// `proposed` is the END state: what is on disk for the gateways this request does NOT touch,
+			// plus what the request asks for. That is what makes a swap legal and a move safe.
+			const proposed = new Map<string, messages.GatewayLink[]>();
+			for (const name of messages.MULTI_GATEWAY_NAMES) {
+				const next = normalized.has(name)
+					? normalized.get(name)
+					: this.gatewayLinks.get(this.gatewayKey(sourceInstanceId, name));
+				if (next?.length) {
+					proposed.set(name, next);
+				}
+			}
+			for (const [gatewayName, targets] of normalized) {
+				const others = new Map(proposed);
+				others.delete(gatewayName);
+				const violation = messages.checkMultiModeLink(gatewayName, targets, others);
+				if (violation) {
+					return { success: false, error: violation };
+				}
+			}
+		}
+
+		for (const [gatewayName, targets] of normalized) {
+			const key = this.gatewayKey(sourceInstanceId, gatewayName);
+			if (targets.length > 0) {
+				this.gatewayLinks.set(key, targets);
+			} else {
+				this.gatewayLinks.delete(key);
+			}
+		}
+		// A write failure is a REAL failure, not a warning: the in-memory map already holds the new
+		// link, so the UI and every later read agree with each other and the operator has no way to
+		// tell the edit will be gone at the next controller restart.
+		const persistError = await this.persistGatewayConfig();
+		if (persistError) {
+			return { success: false, error: `Gateway config could not be written to disk: ${persistError}` };
+		}
+		const pushError = await this.pushGatewayConfigToInstance(sourceInstanceId);
+		this.logger.info(
+			`Instance ${sourceInstanceId} gateways set: `
+			+ [...normalized].map(([name, targets]) => `${name}=${targets.length}`).join(", "),
+		);
+		if (pushError) {
+			// The config IS saved — reporting failure here would invite a retry that changes nothing.
+			// What the operator needs to know is that the running instance has not picked it up.
+			return {
+				success: true,
+				error: `Saved, but instance ${sourceInstanceId} is still running the previous gateway config: ${pushError}`,
+			};
+		}
 		return { success: true };
 	}
 
 	/** instance → controller: pull the requesting instance's own resolved gateway config on instance start. */
 	async handleGetGatewayConfigRequest(request: { instanceId: number }) {
-		return { gateways: this.resolveGateways(Number(request.instanceId)) };
+		return {
+			gateways: this.resolveGateways(Number(request.instanceId)),
+			activeGatewayNames: messages.gatewayNamesFor(this.gatewayMode()),
+		};
 	}
 
 	/**
 	 * The /teleport roster: every live instance with its client-routable address
-	 * (`host.publicAddress:instance.gamePort`, the join the Layer-2 spike mapped). `address` is
-	 * empty when the instance has no assigned game port (not running) — the GUI refuses to
-	 * connect to those. `publicAddress` defaults to "localhost" when the host never set one —
-	 * correct for a same-machine client; distributed deployments must configure
-	 * `host.public_address` (deployment config, not a code path). Same caveat for PORT REMAPPING:
-	 * `gamePort` is the port as the host knows it — a docker deployment that publishes a
-	 * different host port (the atlas cluster on this machine maps 34300→34100) hands the client
-	 * an unroutable address; align the published port with the instance port, as this cluster does.
+	 * (`host.publicAddress:instance.gamePort`, the join the Layer-2 spike mapped). The address is
+	 * built by `instanceAddress`, shared with the platform tree — see that function for the
+	 * publicAddress and port-remapping caveats. Empty means no assigned game port, i.e. not
+	 * running; the GUI refuses to connect to those.
 	 */
 	async handleGetInstanceRosterRequest(request: { instanceId: number }) {
 		const requesterId = Number(request.instanceId);
@@ -1232,12 +1399,10 @@ export class ControllerPlugin extends BaseControllerPlugin {
 			}
 			const hostId = Number(inst.config.get("instance.assigned_host"));
 			const host = Number.isInteger(hostId) ? this.c.hosts.get(hostId) : null;
-			const publicAddress = host?.publicAddress || "localhost";
-			const gamePort = inst.gamePort;
 			instances.push({
 				instanceId: inst.id,
 				name: String(inst.config.get("instance.name") ?? inst.id),
-				address: gamePort ? `${publicAddress}:${gamePort}` : "",
+				address: instanceAddress(host?.publicAddress, inst.gamePort ?? null),
 				online: this.isInstanceOnline(inst.id),
 				self: inst.id === requesterId,
 			});

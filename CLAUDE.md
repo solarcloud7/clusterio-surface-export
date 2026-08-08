@@ -429,7 +429,7 @@ For Clusterio core architecture, see [Clusterio docs](https://github.com/cluster
 
 ### General Style (partially enforced by ESLint — `npm run lint`, gated in CI)
 
-> `npm run lint` runs ten **correctness** guards, all gated in CI; an eleventh (**commit labels**,
+> `npm run lint` runs eleven **correctness** guards, all gated in CI; a twelfth (**commit labels**,
 > `scripts/lint-commit-labels.mjs`) runs as its own PR-gated CI step. Each script header carries the full
 > rationale and incident history. Every `*:allow` escape hatch MUST be enumerated in
 > `scripts/lint-allow-manifest.json` with a reason and approver — an allow is an **escalation**, never
@@ -446,6 +446,7 @@ For Clusterio core architecture, see [Clusterio docs](https://github.com/cluster
 > | Catch swallow | `lint:catch-swallow` | no catch (incl. empty promise `.catch`) substitutes a default without surfacing the error binding — plugin `.ts`/`.tsx` AND repo-root `tools/`+`tests/` `.mjs` (NB: eslint ignores `web/**` entirely, so this guard is the web tree's ONLY catch guard); surfacing = log/throw/return/reject or a write/`.push` whose target ROOT is declared OUTSIDE the catch body; a lexer desync fails loud, never mis-scans | `// catch:allow` |
 > | PS silent-failure | `lint:ps-silent` | no PowerShell-stream suppression (`2>$null`, `-ErrorAction SilentlyContinue/Ignore`, empty `catch {}`) in tools/tests ps1 unless CHECKED (`$LASTEXITCODE`/`$?` within 3 lines) or ANNOTATED (`deliberately quiet` + real reason) — the 11-broken-calls incident class | annotation IS the mechanism (reason required, reviewable) |
 > | Test hooks | `lint:test-hooks` | a `test_force_*` hook disarms in `finally`/`trap` or is enumerated in `FAIL_SAFE_HOOKS` (`scripts/fail-safe-hooks.mjs`) | `FAIL_SAFE_HOOKS` entry |
+> | Derived art | `lint:derived-art` | every image in `web/assets` still matches its source art re-derived (the bundled gateway icon is a SECOND copy of mod art, and a stale copy shows last month’s art with no error anywhere); an undeclared image in that dir is refused rather than trusted | — |
 > | Allow manifest | `lint:allow-manifest` | manifest matches reality exactly, both directions | — |
 > | Commit labels | (own CI step) | a `docs:`-labeled commit touches only doc paths — labels are audit boundaries | — |
 >
