@@ -79,13 +79,13 @@ test("the stub reproduces the real race — UNGUARDED concurrent writes corrupt 
 	// Timing alone cannot be trusted to exhibit the hazard, in either direction. Left to the
 	// scheduler, the writers can serialize completely (writer B's open lands after writer A's
 	// rename, recreating the temp — observed clean 4-in-5 on Windows), and even with the opens
-	// synchronized Windows shows NO rename failure: a measured probe (2026-08-08) found the
-	// second writer's handle FOLLOWS the renamed file, both renames report success, and the only
-	// symptom left is mixed content — which strict-alternation scheduling can cancel out. So pin
-	// one concrete corrupting interleaving both platforms must honour: B opens the shared temp,
-	// A writes everything and renames, then B's chunks land through its still-open handle inside
-	// the renamed target. Guaranteed mixed content everywhere; on POSIX, B's rename also throws
-	// the loud ENOENT from the original incident.
+	// synchronized Windows can show no rename failure (a measured concurrent probe, 2026-08-08,
+	// found the second writer's handle FOLLOWS the renamed file and both renames report success).
+	// So pin one concrete interleaving: B opens the shared temp, A writes everything and renames,
+	// then B's chunks land through its still-open handle inside the renamed target. B then writes
+	// its FULL same-length payload, so the content ends intact (pure B) — the licensing symptom
+	// under this schedule is B's rename hitting the vanished temp path: the loud ENOENT from the
+	// original incident, measured firing 10/10 on Windows and inherent on POSIX.
 	let releaseBOpened;
 	const bOpened = new Promise(resolve => { releaseBOpened = resolve; });
 	let releaseADone;

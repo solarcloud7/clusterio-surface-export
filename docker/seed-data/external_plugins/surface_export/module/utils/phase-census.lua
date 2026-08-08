@@ -53,19 +53,26 @@ function PhaseCensus.diff(before, after)
 end
 
 --- Snapshot a phase's subject BEFORE it runs. No-op when the census is not armed.
+--- A nil scope means nothing could be measured (invalid platform/surface) — record UNMEASURED,
+--- never an empty snapshot that close() would read as a measured zero.
 function PhaseCensus.open(job, phase, subject, scope)
 	if not job or not job.phase_census then return end
+	if scope == nil then
+		job.phase_census[phase] = { subject = subject, unmeasured = true }
+		return
+	end
 	local counts = PhaseCensus.count_subject(scope, subject)
 	job.phase_census[phase] = { subject = subject, before = counts }
 end
 
 --- Snapshot AFTER, store the signed delta, drop the raw snapshots.
---- close() without a matching open() records the phase as unmeasured, never as a zero delta —
---- an unmeasured phase and a phase that moved nothing are different facts.
+--- close() without a matching open(), or with a scope that vanished since open(), records the
+--- phase as unmeasured, never as a zero (or fabricated mass-negative) delta — an unmeasured
+--- phase and a phase that moved nothing are different facts.
 function PhaseCensus.close(job, phase, subject, scope)
 	if not job or not job.phase_census then return {} end
 	local record = job.phase_census[phase]
-	if not record or record.before == nil then
+	if not record or record.before == nil or scope == nil then
 		job.phase_census[phase] = { subject = subject, unmeasured = true }
 		return {}
 	end
@@ -84,11 +91,16 @@ function PhaseCensus.record_external(job, phase, subject, delta, line_set)
 end
 
 --- Record the state that existed before any bracketed phase ran (entity creation's output),
---- over every subject including ground.
+--- over every subject including ground. One surface enumeration, not one per subject.
 function PhaseCensus.record_baseline(job, phase, scope)
 	if not job or not job.phase_census then return end
-	local counts = PhaseCensus.count_subject(scope, nil)
-	add_into(counts, PhaseCensus.count_subject(scope, PhaseCensus.SUBJECT_GROUND))
+	if scope == nil then
+		job.phase_census[phase] = { subject = "all", unmeasured = true }
+		return
+	end
+	local entities = resolve_entities(scope)
+	local counts = PhaseCensus.count_subject(entities, nil)
+	add_into(counts, PhaseCensus.count_subject(entities, PhaseCensus.SUBJECT_GROUND))
 	job.phase_census[phase] = { subject = "all", delta = counts, baseline = true }
 end
 

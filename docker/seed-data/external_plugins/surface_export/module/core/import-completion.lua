@@ -192,9 +192,6 @@ local function bank_failure_black_box(job, result)
 	return written ~= nil
 end
 
---- Phase 1: Restore hub inventories, belt items, and entity state.
---- Schedules Phase 2 for the next tick via job.pending_beacon_tick.
---- @param job table: Job data
 --- Re-key a belt-restoration delta (name\0quality, normal always present) into census key format
 --- (make_quality_key, which omits the suffix for normal quality).
 local function belt_delta_to_census_keys(delta)
@@ -202,11 +199,12 @@ local function belt_delta_to_census_keys(delta)
 	for key, value in pairs(delta or {}) do
 		local name, quality = key:match("^(.-)%z(.*)$")
 		if name then
-			out[Util.make_quality_key(name, quality)] = value
+			local census_key = Util.make_quality_key(name, quality)
+			out[census_key] = (out[census_key] or 0) + value
 		else
 			-- Unparseable key: carry it through unconverted rather than dropping it. A dropped
 			-- key would quietly shrink the belts row and make the residual look smaller than it is.
-			out[key] = value
+			out[key] = (out[key] or 0) + value
 			log(string.format(
 				"[PhaseCensus] belt delta key %q did not match name\\0quality — carried through unconverted", key))
 		end
@@ -223,6 +221,9 @@ local function census_scope(job)
 	return nil
 end
 
+--- Phase 1: Restore hub inventories, belt items, and entity state.
+--- Schedules Phase 2 for the next tick via job.pending_beacon_tick.
+--- @param job table: Job data
 function ImportCompletion.run_phase1(job)
 	local entity_map = job.entity_map or {}
 	local entities_to_create = job.entities_to_create or {}
@@ -236,9 +237,16 @@ function ImportCompletion.run_phase1(job)
 	-- Step 0: Restore hub inventories (DEFERRED from platform_hub_mapping)
 	-- The hub's inventory size scales with cargo bays, which are now placed.
 	PhaseRecorder.start(job, "hub")
-	PhaseCensus.open(job, "hub", PhaseCensus.SUBJECT_INVENTORIES, census_scope(job))
+	-- The hub phase writes exactly one entity; a whole-surface inventory sweep to bracket it is
+	-- the single most wasteful census read. Typed find: the hub, nothing else.
+	local hub_scope
+	do
+		local surf = census_scope(job)
+		hub_scope = surf and surf.find_entities_filtered({ type = "space-platform-hub" }) or nil
+	end
+	PhaseCensus.open(job, "hub", PhaseCensus.SUBJECT_INVENTORIES, hub_scope)
 	PlatformHubMapping.restore_hub_inventories(job)
-	PhaseCensus.close(job, "hub", PhaseCensus.SUBJECT_INVENTORIES, census_scope(job))
+	PhaseCensus.close(job, "hub", PhaseCensus.SUBJECT_INVENTORIES, hub_scope)
 	PhaseRecorder.stop(job, "hub")
 
 	-- Step 0a: Restore belt items synchronously
@@ -264,6 +272,9 @@ function ImportCompletion.run_phase1(job)
 			log(string.format("[Import] belt_side_groups REFUSED (malformed payload): %s", tostring(shape_err)))
 			job.metrics.belt_shape_error = tostring(shape_err)
 			placed, unplaced, anomalies = 0, 0, 1
+			-- Refused = unmeasured, same as the throw leg below: absent-from-census would read
+			-- as "platform had no belts" on exactly the import the census exists to explain.
+			PhaseCensus.close(job, "belts", PhaseCensus.SUBJECT_BELTS, nil)
 		else
 			-- Bound to a local so the capture stays on ONE line: the pcall-logging guard reads a
 			-- wrapped `pcall(` as fire-and-forget, and the error here IS handled below.
@@ -325,6 +336,7 @@ function ImportCompletion.run_phase1(job)
 				.. " — re-export from the source with the current version")
 			job.metrics.belt_shape_error = "payload predates captured source positions (no belt_side_groups); the legacy restore is deleted"
 			job.metrics.belt_anomalies = 1
+			PhaseCensus.close(job, "belts", PhaseCensus.SUBJECT_BELTS, nil)
 		end
 		belts_result = { items_restored = 0 }
 	end
@@ -433,9 +445,15 @@ function ImportCompletion.run_phase2(job)
 	-- waterfall AND in the dashboard, sitting in dead space between inventories_completed_tick and
 	-- fluids_started_tick.
 	PhaseRecorder.start(job, "held_items")
-	PhaseCensus.open(job, "held_items", PhaseCensus.SUBJECT_HELD, census_scope(job))
+	-- Only inserters carry held stacks; enumerate them, not the whole surface.
+	local held_scope
+	do
+		local surf = census_scope(job)
+		held_scope = surf and surf.find_entities_filtered({ type = "inserter" }) or nil
+	end
+	PhaseCensus.open(job, "held_items", PhaseCensus.SUBJECT_HELD, held_scope)
 	ActiveStateRestoration.restore_held_items_only(entities_to_create, entity_map)
-	PhaseCensus.close(job, "held_items", PhaseCensus.SUBJECT_HELD, census_scope(job))
+	PhaseCensus.close(job, "held_items", PhaseCensus.SUBJECT_HELD, held_scope)
 	PhaseRecorder.stop(job, "held_items")
 	PhaseRecorder.start(job, "fluids")
 	local fluids_result = FluidRestoration.restore(entities_to_create, entity_map,

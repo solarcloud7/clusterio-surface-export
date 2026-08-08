@@ -253,7 +253,7 @@ export class TransferOrchestrator {
 			};
 		}
 		operation.sourceVerification = { itemCounts, fluidCounts };
-		this.txLogger.archiveRecycledTransferId(transferId, operation.startedAt);
+		await this.txLogger.archiveRecycledTransferId(transferId, operation.startedAt);
 		this.plugin.activeTransfers.set(transferId, operation);
 
 		const transfer = this.plugin.activeTransfers.get(transferId);

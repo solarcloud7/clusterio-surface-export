@@ -143,14 +143,19 @@ function TransferValidation.validate_import(surface, expected_verification, opti
                 end
             end
 
-            -- Belts and held stacks are "storage" — in transit, expected preserved.
-            for key, count in pairs(SurfaceCounter.count_entity_items(entity, "belts")) do
-                total_item_counts[key] = (total_item_counts[key] or 0) + count
-                storage_item_counts[key] = (storage_item_counts[key] or 0) + count
+            -- Belts and held stacks are "storage" — in transit, expected preserved. Type-gated so
+            -- the majority of entities pay no meter call for subjects they cannot carry.
+            if GameUtils.BELT_ENTITY_TYPES[entity_type] then
+                for key, count in pairs(SurfaceCounter.count_entity_items(entity, "belts")) do
+                    total_item_counts[key] = (total_item_counts[key] or 0) + count
+                    storage_item_counts[key] = (storage_item_counts[key] or 0) + count
+                end
             end
-            for key, count in pairs(SurfaceCounter.count_entity_items(entity, "held")) do
-                total_item_counts[key] = (total_item_counts[key] or 0) + count
-                storage_item_counts[key] = (storage_item_counts[key] or 0) + count
+            if entity_type == "inserter" then
+                for key, count in pairs(SurfaceCounter.count_entity_items(entity, "held")) do
+                    total_item_counts[key] = (total_item_counts[key] or 0) + count
+                    storage_item_counts[key] = (storage_item_counts[key] or 0) + count
+                end
             end
         end
     end

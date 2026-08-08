@@ -286,7 +286,7 @@ test("a recycled transferId archives the old record and starts the live id clean
 	assert.equal(plugin.persistedTransactionLogs.length, 1);
 
 	// A new operation (different startedAt) claims the same id.
-	txLogger.archiveRecycledTransferId(transferId, 9_999);
+	await txLogger.archiveRecycledTransferId(transferId, 9_999);
 
 	const archived = plugin.persistedTransactionLogs[0];
 	assert.match(archived.transferId, new RegExp(`^${transferId}@\\d+$`),
@@ -296,6 +296,10 @@ test("a recycled transferId archives the old record and starts the live id clean
 	assert.ok(!plugin.transactionLogs.has(transferId),
 		"stale in-memory events must go — logTransactionEvent reuses an existing array, so leaving "
 		+ "them would MERGE two operations' event streams");
+	assert.ok(plugin.auditRows.some(r => r.transferId === archived.transferId && r.rowKind === "terminal"),
+		"the archived record needs a ledger row under its archival id — without one, retention's "
+		+ "isPinned treats it as 'only surviving evidence' and keeps it FOREVER, and the list shows "
+		+ "revisions:0 for an operation that recorded a verdict");
 
 	// The new operation runs and persists: it must append, never replace.
 	plugin.activeTransfers.set(transferId, {
@@ -303,7 +307,8 @@ test("a recycled transferId archives the old record and starts the live id clean
 		forceName: "player", sourceInstanceId: 1, targetInstanceId: 2,
 		status: "completed", startedAt: 9_999,
 	});
-	plugin.transactionLogs.set(transferId, [{ timestampMs: 10_000, eventType: "transfer_created", message: "new run" }]);
+	plugin.transactionLogs.set(transferId,
+		[{ timestampMs: 10_000, eventType: "transfer_created", message: "new run" }]);
 	await txLogger.persistTransactionLog(transferId);
 
 	assert.equal(plugin.persistedTransactionLogs.length, 2, "two operations, two records");
@@ -315,7 +320,7 @@ test("the same operation re-registering does NOT archive its own record", async 
 	const { txLogger, plugin, transferId } = makeHarness();
 	await txLogger.persistTransactionLog(transferId);
 
-	txLogger.archiveRecycledTransferId(transferId, 1_000); // matches the harness transfer's startedAt
+	await txLogger.archiveRecycledTransferId(transferId, 1_000); // matches the harness transfer's startedAt
 
 	assert.equal(plugin.persistedTransactionLogs[0].transferId, transferId,
 		"a matching startedAt is the same operation; its record must stay live");
@@ -324,7 +329,8 @@ test("the same operation re-registering does NOT archive its own record", async 
 test("both operation-registration sites archive before claiming the id (source contract)", () => {
 	// The behavior tests above drive the method directly, so a DROPPED CALL SITE would not fail
 	// them. Pin both registration paths: archive must run before activeTransfers.set.
-	for (const [file, label] of [["controller.ts", "controller"], [path.join("lib", "transfer-orchestrator.ts"), "orchestrator"]]) {
+	const sites = [["controller.ts", "controller"], [path.join("lib", "transfer-orchestrator.ts"), "orchestrator"]];
+	for (const [file, label] of sites) {
 		const source = fs.readFileSync(path.join(__dirname, "..", file), "utf8");
 		assert.match(source, /archiveRecycledTransferId\([^)]*\);\s*\n\s*this(?:\.plugin)?\.activeTransfers\.set\(/,
 			`${label} must archive a recycled id immediately before registering the new operation`);

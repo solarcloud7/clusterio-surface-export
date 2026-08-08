@@ -16,12 +16,12 @@ function SurfaceCounter.count_ground_items(surface)
     if not surface or not surface.valid then
         return totals, total
     end
+    -- One ground-stack reader: the meter's explicit "ground" subject. A second inline read here
+    -- would be the duplicate-drift class this file was unified to delete.
     for _, item_entity in ipairs(surface.find_entities_filtered({type = "item-entity"})) do
-        if item_entity.valid and item_entity.stack and item_entity.stack.valid_for_read then
-            local stack = item_entity.stack
-            local key = Util.make_quality_key(stack.name, (stack.quality and stack.quality.name) or Util.QUALITY_NORMAL)
-            totals[key] = (totals[key] or 0) + stack.count
-            total = total + stack.count
+        for key, count in pairs(SurfaceCounter.count_entity_items(item_entity, "ground")) do
+            totals[key] = (totals[key] or 0) + count
+            total = total + count
         end
     end
     return totals, total

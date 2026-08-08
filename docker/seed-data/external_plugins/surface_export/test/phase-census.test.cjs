@@ -70,6 +70,22 @@ test("the three default subjects are individually addressable and jointly the de
 		"belts must run at nil and at its own subject, gated on the belt type set");
 	assert.match(meterBody, /\(subject == nil or subject == "held"\) and etype == "inserter"/,
 		"held must run at nil and at its own subject, gated on the inserter type");
+	assert.equal(countOccurrences(stripLuaComments(meterBody), "subject == nil"), 3,
+		"exactly three nil-reachable blocks — a NEW nil-reachable subject would silently change "
+		+ "the verdict-bearing default read at every gate and source-census call site");
+});
+
+test("a nil scope records UNMEASURED in open, close, and baseline — never a measured zero", () => {
+	const openBody = functionBody(phaseCensus, "function PhaseCensus.open(", "function PhaseCensus.close(");
+	const closeBody = functionBody(phaseCensus, "function PhaseCensus.close(", "function PhaseCensus.record_external(");
+	const baselineBody = functionBody(phaseCensus, "function PhaseCensus.record_baseline(", "function PhaseCensus.total(");
+	for (const [label, body] of [["open", openBody], ["close", closeBody], ["record_baseline", baselineBody]]) {
+		assert.match(body, /scope == nil/,
+			`${label} must branch on a nil scope — resolve_entities(nil) returns {} which would `
+			+ `otherwise record a measured zero (or a fabricated mass delta) on invalid platforms`);
+		assert.match(body, /unmeasured\s*=\s*true/,
+			`${label}'s nil-scope branch must record the phase as unmeasured`);
+	}
 });
 
 test("the meter keys items uniformly", () => {
@@ -110,10 +126,12 @@ test("scope resolves a LuaSurface live, so the census sees what the gate sees", 
 
 test("the entity-creation baseline is recorded over every subject including ground", () => {
 	const body = functionBody(phaseCensus, "function PhaseCensus.record_baseline(", "function PhaseCensus.total(");
-	assert.match(body, /count_subject\(scope,\s*nil\)/, "baseline must take the default read");
-	assert.match(body, /count_subject\(scope,\s*PhaseCensus\.SUBJECT_GROUND\)/,
+	assert.match(body, /count_subject\(entities,\s*nil\)/, "baseline must take the default read");
+	assert.match(body, /count_subject\(entities,\s*PhaseCensus\.SUBJECT_GROUND\)/,
 		"baseline must add the ground read — ground items arrive via entity creation and belong to "
 		+ "no later phase");
+	assert.equal(countOccurrences(body, "resolve_entities("), 1,
+		"one surface enumeration for the whole baseline — the per-subject reads share it");
 });
 
 test("close() without open() records UNMEASURED, never a zero delta", () => {
@@ -133,7 +151,8 @@ test("diff() keeps negative deltas (a destroyed item is not an absent key)", () 
 });
 
 test("record_external carries the line-set its delta was measured over", () => {
-	const body = functionBody(phaseCensus, "function PhaseCensus.record_external(", "function PhaseCensus.record_baseline(");
+	const body = functionBody(phaseCensus,
+		"function PhaseCensus.record_external(", "function PhaseCensus.record_baseline(");
 	assert.match(body, /line_set\s*=\s*line_set/,
 		"a belt delta measured over the side-group lines is not commensurate with a whole-platform "
 		+ "count; the label prevents a scope mismatch reading as a defect");
@@ -166,13 +185,23 @@ const ITEM_NEUTRAL_PHASES = {
 	fluids: "fluids are a different unit; accounted by the gate's fluid side, not the item census",
 	activation: "flips entity active flags; moves nothing",
 	loss_analysis: "post-activation reporting only",
+	tiles: "tiles are not items",
+	beacons: "entity creation batch; its item output is captured by the entity_creation baseline",
+	entities: "entity creation batch; its item output is captured by the entity_creation baseline",
 };
 
 test("EVERY recorded phase is either census-bracketed or declared item-neutral", () => {
-	const recorded = new Set(
-		Array.from(importCompletion.matchAll(/PhaseRecorder\.start\(job,\s*"(\w+)"/g)).map((m) => m[1]),
+	// Enumerate phases at their EMITTERS — every file that calls PhaseRecorder.start — not from
+	// one consumer file. Scanning import-completion alone let import-pipeline's phases escape
+	// both the census and this judgement entirely.
+	const importPipeline = stripLuaComments(
+		fs.readFileSync(path.join(moduleRoot, "core", "import-pipeline.lua"), "utf8"),
 	);
-	assert.ok(recorded.size >= 5, `expected the import's phases to be discoverable, found ${recorded.size}`);
+	const recorded = new Set([
+		...Array.from(importCompletion.matchAll(/PhaseRecorder\.start\(job,\s*"(\w+)"/g)).map((m) => m[1]),
+		...Array.from(importPipeline.matchAll(/PhaseRecorder\.start\(job,\s*"(\w+)"/g)).map((m) => m[1]),
+	]);
+	assert.ok(recorded.size >= 8, `expected the import's phases to be discoverable, found ${recorded.size}`);
 
 	const bracketed = new Set([
 		...Array.from(importCompletion.matchAll(/PhaseCensus\.open\(job,\s*"(\w+)"/g)).map((m) => m[1]),
