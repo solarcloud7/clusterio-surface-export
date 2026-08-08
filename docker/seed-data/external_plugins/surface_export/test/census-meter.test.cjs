@@ -224,7 +224,9 @@ test("ground items are intentionally NOT census-paired (documented deviation fro
 	assert.match(body, /table\.insert\(job\.export_data\.entities, ground_item\)/,
 		"the ground-item scan must still append ground items to the payload");
 	assert.doesNotMatch(body, /CensusAccumulator\.record\s*\(\s*job\.census\s*,\s*(?:live_ground|ground_live|ground_item|ground_entity)/,
-		"ground items must NOT be census-paired: count_entity_items has no item-entity branch → phys=0/ser=N spurious abort");
+		"ground items must NOT be census-paired: the paired read's default (nil-subject) meter "
+		+ "excludes ground, so pairing a loose stack reads physical=0 vs serialized=N and aborts "
+		+ "every transfer carrying one");
 });
 
 test("test_force_census_omission is registered in the configure allowlist and consumed by the walk", () => {

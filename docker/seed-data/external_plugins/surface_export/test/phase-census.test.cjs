@@ -1,18 +1,16 @@
 "use strict";
 
-// Source-contract test for the per-phase, subject-scoped census (module/utils/phase-census.lua).
-// Same fs.readFileSync + structural-regex style as census-meter.test.cjs: plain `node --test`,
-// zero dependencies.
+// Source-contract tests for the phase census (module/utils/phase-census.lua) and the shared
+// subject meter it delegates to (module/validators/surface-counter.lua). Plain `node --test`,
+// zero dependencies, fs.readFileSync + structural assertions.
 //
-// THE PROPERTY THAT MATTERS. PhaseCensus splits the item count into per-subject pieces so a phase
-// can measure only what it owns. That split is only trustworthy if the pieces SUM to the whole —
-// i.e. if per-subject counting and SurfaceCounter.count_entity_items (the destination gate's
-// meter) read the same things by the same rules. There is no Lua runtime here, so the executable
-// form of that property lives in-game; what IS pinnable offline, and what actually regresses, is
-// the structural agreement: both must call the SAME InventoryScanner primitives and use the SAME
-// quality-key rule. If someone teaches the gate's meter about a fourth item location and does not
-// teach PhaseCensus, the per-phase deltas silently stop summing to the gate — and that is exactly
-// the blind spot this instrument was built to remove. These tests fail when that happens.
+// HISTORY THAT SHAPES THIS FILE. This file used to hold drift-detection tests keeping a SECOND
+// counting implementation aligned with SurfaceCounter (primitive-set equality, subject-set
+// equality, a never-calls-SurfaceCounter ban). Those were deleted 2026-08-08 with the duplicate
+// itself: PhaseCensus now delegates to the one meter, so there is nothing left to drift. The
+// ban test's own message had enshrined a born-false contract comment ("the destination gate's
+// meter ... its readings must not change" — the gate's item loop never called it), which is why
+// cross-file behavior claims in this repo live in tests, never in prose.
 
 const { test } = require("node:test");
 const assert = require("node:assert/strict");
@@ -33,112 +31,136 @@ function functionBody(source, header, nextHeader) {
 	return source.slice(start, end === -1 ? source.length : end);
 }
 
-/**
- * Strip Lua comments so a dependency assertion reads CODE, not prose.
- * phase-census.lua's header explains at length why it deliberately does NOT build on
- * SurfaceCounter — naming it in order to disclaim it. A raw text search cannot tell that apart
- * from a real call, and deleting the explanation to satisfy the guard would trade the reason
- * away to keep the rule. Strip block comments first (they may span `--` lines), then line ones.
- */
 function stripLuaComments(source) {
 	return source
 		.replace(/--\[(=*)\[[\s\S]*?\]\1\]/g, "")
 		.replace(/--[^\n]*/g, "");
 }
 
-/** Set of InventoryScanner.<name> primitives referenced in a chunk of Lua source. */
-function scannerPrimitives(source) {
-	return new Set(
-		Array.from(source.matchAll(/InventoryScanner\.(\w+)/g)).map((m) => m[1]),
-	);
+function countOccurrences(source, needle) {
+	return source.split(needle).length - 1;
 }
 
-const gateMeterBody = functionBody(
+// ---------------------------------------------------------------------------------------------
+// The shared subject meter (SurfaceCounter.count_entity_items).
+
+const meterBody = functionBody(
 	surfaceCounter,
-	"function SurfaceCounter.count_entity_items(entity)",
+	"function SurfaceCounter.count_entity_items(entity, subject)",
 	"function SurfaceCounter.count_items(surface)",
 );
-const subjectMeterBody = functionBody(
-	phaseCensus,
-	"function PhaseCensus.count_entity_subject(entity, subject)",
-	"function PhaseCensus.count_subject(",
-);
 
-test("the per-subject meter reads the SAME item locations as the gate's per-entity meter", () => {
-	const gate = scannerPrimitives(gateMeterBody);
-	const subject = scannerPrimitives(subjectMeterBody);
-	assert.ok(gate.size > 0, "the gate meter must call InventoryScanner primitives");
-	assert.deepEqual(
-		[...subject].sort(),
-		[...gate].sort(),
-		"PhaseCensus.count_entity_subject and SurfaceCounter.count_entity_items must read the same "
-		+ "item locations. A primitive in one and not the other means the per-phase deltas no longer "
-		+ "sum to the gate's total, which silently reintroduces the unattributable-loss blind spot.",
+test("the default (nil-subject) read excludes ground items", () => {
+	// The source paired census calls this meter one-arg and compares it against serialized data
+	// that deliberately excludes ground items. A ground count reachable at subject == nil makes
+	// physical > serialized for every loose stack and aborts every transfer carrying one.
+	assert.match(stripLuaComments(meterBody), /if subject == "ground" and etype == "item-entity" then/,
+		"the ground block must be reachable ONLY under the explicit \"ground\" subject");
+	assert.doesNotMatch(meterBody, /subject\s*==\s*nil\s+or\s+subject\s*==\s*"ground"/,
+		"ground must never join the nil default");
+	assert.equal(countOccurrences(stripLuaComments(meterBody), '"item-entity"'), 1,
+		"exactly one item-entity read in the meter body — a second one would be an unguarded path "
+		+ "into the default read");
+});
+
+test("the three default subjects are individually addressable and jointly the default", () => {
+	assert.match(meterBody, /subject == nil or subject == "inventories"/,
+		"inventories must run at nil and at its own subject");
+	assert.match(meterBody, /\(subject == nil or subject == "belts"\) and GameUtils\.BELT_ENTITY_TYPES\[/,
+		"belts must run at nil and at its own subject, gated on the belt type set");
+	assert.match(meterBody, /\(subject == nil or subject == "held"\) and etype == "inserter"/,
+		"held must run at nil and at its own subject, gated on the inserter type");
+});
+
+test("the meter keys items uniformly", () => {
+	assert.match(meterBody, /Util\.make_quality_key\(/, "items must key via Util.make_quality_key");
+	assert.match(meterBody, /Util\.QUALITY_NORMAL/, "unqualified items must fall back to Util.QUALITY_NORMAL");
+});
+
+test("count_items folds the per-entity meter plus the one ground pass", () => {
+	const body = functionBody(
+		surfaceCounter,
+		"function SurfaceCounter.count_items(surface)",
+		"function SurfaceCounter.count_entity_fluids",
 	);
+	assert.match(body, /SurfaceCounter\.count_entity_items\s*\(/,
+		"count_items must delegate to the per-entity meter");
+	assert.match(body, /SurfaceCounter\.count_ground_items\s*\(/,
+		"count_items must take ground from the shared ground pass, not an inline loop");
 });
 
-test("the per-subject meter uses the same quality-key rule as the gate meter", () => {
-	for (const [label, body] of [["gate", gateMeterBody], ["subject", subjectMeterBody]]) {
-		assert.match(body, /Util\.make_quality_key\(/,
-			`${label} meter must key items via Util.make_quality_key`);
-		assert.match(body, /Util\.QUALITY_NORMAL/,
-			`${label} meter must fall back to Util.QUALITY_NORMAL so unqualified items key identically`);
-	}
-});
+// ---------------------------------------------------------------------------------------------
+// PhaseCensus owns bracketing only — counting is delegated.
 
-test("the per-subject meter gates belts and held items on the same predicates as the gate meter", () => {
-	assert.match(subjectMeterBody, /GameUtils\.BELT_ENTITY_TYPES\[/,
-		"belt counting must be gated on GameUtils.BELT_ENTITY_TYPES, as the gate meter does");
-	assert.match(subjectMeterBody, /entity\.type\s*==\s*"inserter"/,
-		"held-item counting must be gated on the inserter type, as the gate meter does");
-});
-
-test("phase-census never CALLS SurfaceCounter (the gate's counting path stays untouched)", () => {
-	assert.doesNotMatch(stripLuaComments(phaseCensus), /SurfaceCounter/,
-		"PhaseCensus must build on the InventoryScanner primitives directly. Reaching into "
-		+ "SurfaceCounter would put the destination gate's meter — whose contract says its readings "
-		+ "must not change — into the blast radius of every instrument change.");
-});
-
-test("the subjects span EXACTLY what the gate counts — including ground items", () => {
-	const subjects = new Set(
-		Array.from(phaseCensus.matchAll(/PhaseCensus\.SUBJECT_(\w+)\s*=\s*"(\w+)"/g)).map((m) => m[2]),
-	);
-	assert.deepEqual([...subjects].sort(), ["belts", "ground", "held", "inventories"],
-		"the gate's count_items reads four item locations: entity inventories, belt lines, inserter "
-		+ "held stacks, and loose item-entity ground stacks. A census missing any of them measures a "
-		+ "different set than the verdict and can never reconcile — broken, not partial.");
-});
-
-test("the ground subject reads item-entity stacks, which the per-entity meter deliberately omits", () => {
-	assert.match(subjectMeterBody, /entity\.type\s*==\s*"item-entity"/,
-		"ground counting must key off the item-entity type");
-	assert.match(subjectMeterBody, /valid_for_read/,
-		"a ground stack must be checked with valid_for_read before it is read, as the gate's ground pass does");
-	// The gate's PER-ENTITY meter has no ground branch on purpose (ground is handled in its
-	// surface-level fold), so this is the one subject where the two meters legitimately differ.
-	assert.doesNotMatch(gateMeterBody, /item-entity/,
-		"count_entity_items is expected to have NO ground branch — if it grows one, the primitive "
-		+ "agreement test above needs revisiting rather than this one being deleted");
+test("phase-census contains no counting implementation of its own", () => {
+	const code = stripLuaComments(phaseCensus);
+	assert.match(code, /SurfaceCounter\.count_entity_items\(/,
+		"per-subject reads must come from the shared meter");
+	assert.doesNotMatch(code, /InventoryScanner/,
+		"a direct InventoryScanner call here would be the seed of a second meter — the duplicate "
+		+ "this file carried until 2026-08-08, whose drift produced a wrong-scope, missing-subject census");
 });
 
 test("scope resolves a LuaSurface live, so the census sees what the gate sees", () => {
 	assert.match(phaseCensus, /object_name\s*==\s*"LuaSurface"/,
-		"a surface scope must be detected and resolved via find_entities_filtered at each snapshot");
+		"a surface scope must be detected and resolved at each snapshot");
 	assert.match(phaseCensus, /find_entities_filtered/,
-		"the surface scope must use the same enumeration the gate uses");
+		"the surface scope must use live enumeration");
 });
 
-test("the entity-creation baseline is recorded, or upstream-created items belong to no phase", () => {
-	assert.match(phaseCensus, /function PhaseCensus\.record_baseline\(/,
-		"a baseline recorder must exist: entity creation runs before any bracket opens, so without "
-		+ "it every item it produced (including all ground items) is unattributed and the sum under-reports");
-	assert.match(importCompletion, /PhaseCensus\.record_baseline\(job,\s*"entity_creation"/,
-		"run_phase1 must record the entity_creation baseline");
+test("the entity-creation baseline is recorded over every subject including ground", () => {
+	const body = functionBody(phaseCensus, "function PhaseCensus.record_baseline(", "function PhaseCensus.total(");
+	assert.match(body, /count_subject\(scope,\s*nil\)/, "baseline must take the default read");
+	assert.match(body, /count_subject\(scope,\s*PhaseCensus\.SUBJECT_GROUND\)/,
+		"baseline must add the ground read — ground items arrive via entity creation and belong to "
+		+ "no later phase");
 });
 
-// Phases that move no ITEMS, so they need no census bracket. Each is exempt for a stated reason;
-// this list is the reviewable record of that judgement, not a convenience.
+test("close() without open() records UNMEASURED, never a zero delta", () => {
+	const body = functionBody(phaseCensus, "function PhaseCensus.close(", "function PhaseCensus.record_external(");
+	assert.match(body, /unmeasured\s*=\s*true/,
+		"a blind phase and a phase that moved nothing must not read the same");
+	assert.match(body, /job\.phase_census\[phase\]\s*=\s*\{\s*subject\s*=\s*subject,\s*delta\s*=\s*delta/,
+		"close() must store the delta as the phase's record");
+	assert.doesNotMatch(body, /before\s*=\s*record\.before/,
+		"close() must not persist the raw before/after snapshots");
+});
+
+test("diff() keeps negative deltas (a destroyed item is not an absent key)", () => {
+	const body = functionBody(phaseCensus, "function PhaseCensus.diff(", "function PhaseCensus.open(");
+	assert.match(body, /for\s+key\s+in\s+pairs\(before/, "diff must union the BEFORE keys");
+	assert.match(body, /if\s+d\s*~=\s*0\s+then/, "diff must keep every non-zero delta");
+});
+
+test("record_external carries the line-set its delta was measured over", () => {
+	const body = functionBody(phaseCensus, "function PhaseCensus.record_external(", "function PhaseCensus.record_baseline(");
+	assert.match(body, /line_set\s*=\s*line_set/,
+		"a belt delta measured over the side-group lines is not commensurate with a whole-platform "
+		+ "count; the label prevents a scope mismatch reading as a defect");
+});
+
+test("total() reports incompleteness when any phase went unmeasured", () => {
+	const body = functionBody(phaseCensus, "function PhaseCensus.total(", "function PhaseCensus.format(");
+	assert.match(body, /complete\s*=\s*false/,
+		"a partial sum must never be read as an exact reconciliation");
+});
+
+test("phase-census is report-only: it never renders a verdict", () => {
+	assert.doesNotMatch(phaseCensus, /\bsuccess\s*=\s*(true|false)\b/,
+		"wiring the instrument into the verdict is a data-integrity gate change (/di-change)");
+	assert.doesNotMatch(phaseCensus, /failedStage/,
+		"the exact gate remains the sole verdict");
+});
+
+// ---------------------------------------------------------------------------------------------
+// Call-site contracts in import-completion.lua.
+
+const importCompletion = stripLuaComments(
+	fs.readFileSync(path.join(moduleRoot, "core", "import-completion.lua"), "utf8"),
+);
+
+// Phases that move no ITEMS, so they need no census bracket. The reviewable record of that
+// judgement, not a convenience.
 const ITEM_NEUTRAL_PHASES = {
 	state: "control behaviour, filters and circuit connections — no item movement",
 	fluids: "fluids are a different unit; accounted by the gate's fluid side, not the item census",
@@ -147,11 +169,6 @@ const ITEM_NEUTRAL_PHASES = {
 };
 
 test("EVERY recorded phase is either census-bracketed or declared item-neutral", () => {
-	// This replaces the runtime census/gate reconciliation (deleted 2026-08-08). That check
-	// compared two derivations of one number — an identity that holds by construction, so it could
-	// only ever fail on a code bug. The failure it actually protected against is a NEW phase that
-	// moves items and never gets bracketed, silently shrinking the attribution. That is structural,
-	// so it belongs here, where it fails in CI rather than in a customer's transfer.
 	const recorded = new Set(
 		Array.from(importCompletion.matchAll(/PhaseRecorder\.start\(job,\s*"(\w+)"/g)).map((m) => m[1]),
 	);
@@ -170,81 +187,29 @@ test("EVERY recorded phase is either census-bracketed or declared item-neutral",
 		+ `with the reason it cannot move items.`);
 });
 
-test("no runtime reconciliation was reintroduced", () => {
-	assert.doesNotMatch(importCompletion, /phase_census_residual|CENSUS RESIDUAL|CENSUS RECONCILED/,
-		"the census sum reproduces the gate's own number; comparing them re-adds a duplicate fact "
-		+ "guarded by an agreement check. The decomposition's correctness is pinned structurally by "
-		+ "the tests in this file instead.");
-	assert.doesNotMatch(importCompletion, /phase_census_total/,
-		"no combined total should be published — its only consumer was the deleted reconciliation");
+test("run_phase1 records the entity_creation baseline", () => {
+	assert.match(importCompletion, /PhaseCensus\.record_baseline\(job,\s*"entity_creation"/,
+		"entity creation runs before any bracket opens; without the baseline everything it produced "
+		+ "belongs to no phase and the attribution silently under-reports");
 });
-
-test("close() persists the delta and DROPS the raw snapshots (storage-safe)", () => {
-	const body = functionBody(phaseCensus, "function PhaseCensus.close(", "function PhaseCensus.record_external(");
-	assert.match(body, /job\.phase_census\[phase\]\s*=\s*\{\s*subject\s*=\s*subject,\s*delta\s*=\s*delta/,
-		"close() must store the delta as the phase's record");
-	assert.doesNotMatch(body, /before\s*=\s*record\.before/,
-		"close() must not persist the raw before/after maps — the delta is the product");
-});
-
-test("a phase closed without an open is recorded UNMEASURED, never as a zero delta", () => {
-	const body = functionBody(phaseCensus, "function PhaseCensus.close(", "function PhaseCensus.record_external(");
-	assert.match(body, /unmeasured\s*=\s*true/,
-		"close() without a matching open() must mark the phase unmeasured. Reporting it as a zero "
-		+ "delta would make a blind phase indistinguishable from a phase that moved nothing.");
-});
-
-test("total() reports incompleteness when any phase went unmeasured", () => {
-	const body = functionBody(phaseCensus, "function PhaseCensus.total(", "function PhaseCensus.format(");
-	assert.match(body, /complete\s*=\s*false/,
-		"total() must flag the sum as incomplete when a phase is unmeasured, so a partial sum is "
-		+ "never read as an exact reconciliation");
-});
-
-test("diff() keeps negative deltas (a destroyed item is not an absent key)", () => {
-	const body = functionBody(phaseCensus, "function PhaseCensus.diff(", "function PhaseCensus.open(");
-	assert.match(body, /for\s+key\s+in\s+pairs\(before/,
-		"diff() must union the BEFORE keys, or a key that vanished entirely reports no delta");
-	assert.match(body, /if\s+d\s*~=\s*0\s+then/,
-		"diff() must keep every non-zero delta, negative ones included");
-});
-
-test("the belts phase records an externally-measured delta with its line-set labelled", () => {
-	const body = functionBody(phaseCensus, "function PhaseCensus.record_external(", "function PhaseCensus.total(");
-	assert.match(body, /line_set\s*=\s*line_set/,
-		"record_external must carry the line-set the delta was measured over. Belts never freeze, so "
-		+ "a belt delta measured over the side-group lines is not commensurate with one measured over "
-		+ "all platform belts — comparing them would make a scope mismatch look like a defect.");
-});
-
-// ---------------------------------------------------------------------------------------------
-// Call-site contracts in import-completion.lua. These pin the two legs where a wrong census
-// reading would be actively misleading rather than merely absent.
-
-const importCompletion = stripLuaComments(
-	fs.readFileSync(path.join(moduleRoot, "core", "import-completion.lua"), "utf8"),
-);
 
 test("a belt restore that THREW records the belts subject as unmeasured, not as zero", () => {
-	// The throw leg is the worst place to guess: the restore may have written before it died, so
-	// "no delta" is unknown, not nothing. Reporting a clean zero there would state that the belts
-	// phase moved nothing on precisely the run where it most likely moved something.
 	const throwLeg = importCompletion.slice(
 		importCompletion.indexOf("belt_restore_error"),
 		importCompletion.indexOf("PhaseCensus.record_external"),
 	);
 	assert.ok(throwLeg.length > 0, "the belt-restore throw leg must exist");
 	assert.match(throwLeg, /PhaseCensus\.close\(job,\s*"belts"/,
-		"the throw leg must close the belts phase (which, with no matching open, marks it unmeasured)");
+		"the throw leg must close the belts phase (no matching open ⇒ unmeasured)");
 	assert.doesNotMatch(throwLeg, /record_external/,
-		"the throw leg must NOT record an externally-measured delta — there is no trustworthy measurement");
+		"the throw leg must NOT record a delta — the restore may have written before it died");
 });
 
 test("the belts delta is re-keyed into census key format before it is recorded", () => {
 	assert.match(importCompletion,
 		/PhaseCensus\.record_external\(job,\s*"belts",[\s\S]{0,120}?belt_delta_to_census_keys\(/,
-		"the belt bracket keys items name\\0quality while every census uses make_quality_key; "
-		+ "recording the raw delta would double normal-quality keys instead of cancelling them");
+		"the belt bracket keys items name\\0quality; every census read uses make_quality_key, which "
+		+ "drops the suffix for normal quality — summing the raw formats doubles every normal key");
 });
 
 test("the census report is reached on the failure path (no early return can skip it)", () => {
@@ -252,14 +217,13 @@ test("the census report is reached on the failure path (no early return can skip
 	const report = phase2.indexOf("PHASE CENSUS: ");
 	assert.ok(report > 0, "run_phase2 must emit the phase census line");
 	assert.doesNotMatch(phase2.slice(0, report), /(^|[^_\w])return([^_\w]|$)/,
-		"no early return may sit between run_phase2's start and the census report — the line must "
-		+ "emit on exactly the failing imports it was built to explain");
+		"the line must emit on exactly the failing imports it was built to explain");
 });
 
-test("the module is report-only: it never renders a verdict or mutates success", () => {
-	assert.doesNotMatch(phaseCensus, /\bsuccess\s*=\s*(true|false)\b/,
-		"PhaseCensus is an instrument. Wiring it into the verdict makes it a data-integrity gate "
-		+ "change (/di-change), which this pass deliberately is not.");
-	assert.doesNotMatch(phaseCensus, /failedStage/,
-		"PhaseCensus must not set a failure stage — the exact gate remains the sole verdict");
+test("no runtime census/gate reconciliation exists", () => {
+	assert.doesNotMatch(importCompletion, /phase_census_residual|CENSUS RESIDUAL|CENSUS RECONCILED/,
+		"the census sum reproduces the gate's own number; comparing them at runtime re-adds a "
+		+ "duplicate fact guarded by an agreement check");
+	assert.doesNotMatch(importCompletion, /phase_census_total/,
+		"no combined total — its only consumer was the deleted reconciliation");
 });

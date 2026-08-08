@@ -480,15 +480,8 @@ function ExportPipeline.complete(job)
 	-- ========================================
 	-- Loose ground items (item-entity / "item-on-ground") are skipped by the async loop (which
 	-- would emit a stackless, unrestorable record). Capture them here in one tick WITH their item
-	-- payload, BEFORE verification, so they are both counted and restorable. Fixes silent
-	-- ground-item loss on transfer.
-	-- DEVIATION (Task 4 item 4): ground items are intentionally NOT census-paired. count_entity_items
-	-- (validators/surface-counter.lua) has no item-entity branch, so a paired read of an item-entity
-	-- would be physical=0 vs serialized=N => a spurious census abort on EVERY loose ground item. There
-	-- is also no handler-dispatch layer to omit here (scan_items_on_ground reads stack.name/count directly),
-	-- so the census has no omission surface to catch; ground-item conservation is covered by the dest gate.
-	-- Making it commensurate would require editing the gate-feeding validator (out of scope) — adjudicate
-	-- at /di-change if independent ground coverage is wanted.
+	-- payload, BEFORE verification, so they are both counted and restorable. Ground items are not
+	-- census-paired (the guard test in census-meter.test.cjs carries that invariant).
 	local ground_items = EntityScanner.scan_items_on_ground(job.surface)
 	for _, ground_item in ipairs(ground_items) do
 		table.insert(job.export_data.entities, ground_item)

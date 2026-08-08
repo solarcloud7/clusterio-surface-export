@@ -520,7 +520,7 @@ test("source-position restore is guarded on the on_tick path and anomalies fail 
 		"item_source_positions must be REQUIRED: a payload without it is refused, never routed to a fallback");
 	assert.match(completion, /validate_side_groups\(side_groups\)/,
 		"the import must shape-validate belt_side_groups before restoring");
-	assert.match(completion, /pcall\(BeltRestoration\.restore_side_groups/,
+	assert.match(completion, /local restore_fn = BeltRestoration\.restore_side_groups[\s\S]{0,200}?pcall\(restore_fn/,
 		"the restore call must be pcall-wrapped: a throw becomes a verdict refusal, never server death");
 	assert.match(completion, /belt_anomalies[\s\S]*failedStage = result\.failedStage or "belts"/,
 		"belt anomalies must refuse the transfer verdict without clobbering an earlier failure stage");
