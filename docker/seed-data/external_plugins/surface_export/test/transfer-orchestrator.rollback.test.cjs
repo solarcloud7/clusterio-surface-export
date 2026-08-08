@@ -68,6 +68,7 @@ function makeHarness(importSendResult, sourceSendResult = () => ({ success: true
 		recordTransferStarted: async () => { calls.startRows = (calls.startRows || 0) + 1; },
 		txLogger: {
 			logTransactionEvent: (_id, type) => { calls.events.push(type); },
+			archiveRecycledTransferId() {},
 			startPhase: (_id, name) => { calls.openPhases.add(name); },
 			endPhase: (_id, name) => { calls.openPhases.delete(name); return 0; },
 			persistTransactionLog: async () => {},

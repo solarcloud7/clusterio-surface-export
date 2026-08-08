@@ -173,6 +173,7 @@ function makeTransferHarness() {
 		recordTransferStarted: async () => { calls.startRows = (calls.startRows || 0) + 1; },
 		txLogger: {
 			logTransactionEvent: noop,
+			archiveRecycledTransferId() {},
 			startPhase: noop,
 			endPhase: () => 0,
 			persistTransactionLog: async () => {},
