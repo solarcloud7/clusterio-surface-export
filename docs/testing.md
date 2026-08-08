@@ -253,7 +253,7 @@ disjoint failure modes**:
 | Meter | What it does | Where it lives | Natural failure mode |
 |---|---|---|---|
 | **Serializer walk** | Structured extraction: dispatches every entity to a per-category handler that decides which state to capture (inventories, fluids, belt lines, held items, settings) | [entity-handlers.lua](../docker/seed-data/external_plugins/surface_export/module/export_scanners/entity-handlers.lua), [inventory-scanner.lua](../docker/seed-data/external_plugins/surface_export/module/export_scanners/inventory-scanner.lua) | **Omission** — a handler forgets that a container of state exists |
-| **Physical census** | Flat engine count: `surface.find_entities_filtered({})` enumerates every entity that exists; `entity.get_item_count(name)` returns the engine's total for that item anywhere inside the entity | [surface-counter.lua](../docker/seed-data/external_plugins/surface_export/module/validators/surface-counter.lua) (`count_items`, `count_fluids`) | Engine-level miscount only — the loop contains no per-category logic, so it cannot forget a container |
+| **Physical census** | Flat engine count: `surface.find_entities_filtered({})` enumerates every entity that exists | [surface-counter.lua](../docker/seed-data/external_plugins/surface_export/module/validators/surface-counter.lua) | Engine-level miscount only — the loop contains no per-category logic, so it cannot forget a container |
 
 The census's independence is structural: the per-category handler taxonomy (the code that can
 forget things) never appears in the census loop. A serializer omission therefore shows up as a
@@ -268,9 +268,6 @@ census-vs-census comparisons across the transfer boundary, never ledger-vs-same-
 Evidence tags and measurement details are in
 [factorio-2.0-api-notes.md](factorio-2.0-api-notes.md) (see "Item counting").
 
-- `LuaEntity.get_item_count(item)` is a per-entity total that **includes belt-line and held-stack
-  items**; on a belt it equals that belt's own transport-line sum, so summing over every belt does
-  not double-count a shared run.
 - Ground items are entities (`item-entity`) and are counted by the same enumeration
   (`count_items` has a dedicated ground-item pass).
 - Quality is a dimension of every item-domain reference (entities, stacks, held items, filters,

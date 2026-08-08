@@ -1618,6 +1618,7 @@ export interface IControllerPlugin {
 		buildDetailedTransferSummary(transferId: string, transfer: ActiveTransfer, lastEventAt: number | null): Record<string, unknown>;
 		getLastEventTimestamp(transferId: string): number | null;
 		persistTransactionLog(transferId: string): Promise<void>;
+		archiveRecycledTransferId(transferId: string, startedAt: number | null | undefined): Promise<void>;
 		startPhase(transferId: string, phaseName: string): void;
 		endPhase(transferId: string, phaseName: string): number;
 		buildPhaseSummary(transfer: ActiveTransfer): Record<string, number>;

@@ -1,6 +1,5 @@
 -- FactorioSurfaceExport - Surface Counter
--- Unified live-surface counting for items and fluids.
--- Single source of truth used by verification, transfer-validation, and loss analysis.
+-- Live-surface counting for items and fluids.
 
 local InventoryScanner = require("modules/surface_export/export_scanners/inventory-scanner")
 local GameUtils = require("modules/surface_export/utils/game-utils")
@@ -8,15 +7,34 @@ local Util = require("modules/surface_export/utils/util")
 
 local SurfaceCounter = {}
 
---- Count all items held by a SINGLE entity.
---- Pure per-entity meter with no cross-entity state: scans indexed inventories (aliased
---- defines already deduplicated by InventoryScanner), belt transport lines, and the
---- inserter held stack. Preserves the pcall-with-logged-error pattern so one unreadable
---- entity cannot abort a surface-wide census (the pcall-logging lint guard forbids a
---- silent swallow). Independent of the export-side entity-handler dispatch by design.
---- @param entity LuaEntity: The entity to count items for
+--- Count loose item-entity stacks on a surface.
+--- @param surface LuaSurface
+--- @return table, number: quality_key→count map, total
+function SurfaceCounter.count_ground_items(surface)
+    local totals = {}
+    local total = 0
+    if not surface or not surface.valid then
+        return totals, total
+    end
+    -- One ground-stack reader: the meter's explicit "ground" subject. A second inline read here
+    -- would be the duplicate-drift class this file was unified to delete.
+    for _, item_entity in ipairs(surface.find_entities_filtered({type = "item-entity"})) do
+        for key, count in pairs(SurfaceCounter.count_entity_items(item_entity, "ground")) do
+            totals[key] = (totals[key] or 0) + count
+            total = total + count
+        end
+    end
+    return totals, total
+end
+
+--- Count items held by a SINGLE entity, optionally restricted to one subject.
+--- subject nil = inventories + belts + held (the default read); "inventories" | "belts" | "held"
+--- select one block; "ground" reads a loose item-entity stack and is counted ONLY under this
+--- explicit subject — the nil default excludes it.
+--- @param entity LuaEntity
+--- @param subject string|nil
 --- @return table: quality_key→count map for this entity (empty if invalid)
-function SurfaceCounter.count_entity_items(entity)
+function SurfaceCounter.count_entity_items(entity, subject)
     local totals = {}
     if not entity or not entity.valid then
         return totals
@@ -24,21 +42,21 @@ function SurfaceCounter.count_entity_items(entity)
 
     local etype = entity.type
 
-    -- Inventory items (pcall-protected: some entities may not support inventory access)
-    local success, err = pcall(function()
-        local inventories = InventoryScanner.extract_all_inventories(entity)
-        local inv_totals = InventoryScanner.count_all_items(inventories)
-        for key, count in pairs(inv_totals) do
-            totals[key] = (totals[key] or 0) + count
-        end
-    end)
+    if subject == nil or subject == "inventories" then
+        local success, err = pcall(function()
+            local inventories = InventoryScanner.extract_all_inventories(entity)
+            local inv_totals = InventoryScanner.count_all_items(inventories)
+            for key, count in pairs(inv_totals) do
+                totals[key] = (totals[key] or 0) + count
+            end
+        end)
 
-    if not success then
-        log(string.format("[SurfaceCounter] Error counting inventories for entity %s: %s", entity.name, err))
+        if not success then
+            log(string.format("[SurfaceCounter] Error counting inventories for entity %s: %s", entity.name, err))
+        end
     end
 
-    -- Belt items
-    if GameUtils.BELT_ENTITY_TYPES[etype] then
+    if (subject == nil or subject == "belts") and GameUtils.BELT_ENTITY_TYPES[etype] then
         local ok, belt_err = pcall(function()
             local belt_lines = InventoryScanner.extract_belt_items(entity)
             for _, line_data in ipairs(belt_lines) do
@@ -56,8 +74,7 @@ function SurfaceCounter.count_entity_items(entity)
         end
     end
 
-    -- Inserter held items
-    if etype == "inserter" then
+    if (subject == nil or subject == "held") and etype == "inserter" then
         local ok, ins_err = pcall(function()
             local held = InventoryScanner.extract_inserter_held_item(entity)
             if held then
@@ -71,14 +88,24 @@ function SurfaceCounter.count_entity_items(entity)
         end
     end
 
+    if subject == "ground" and etype == "item-entity" then
+        local ok, ground_err = pcall(function()
+            local stack = entity.stack
+            if stack and stack.valid_for_read then
+                local key = Util.make_quality_key(stack.name, (stack.quality and stack.quality.name) or Util.QUALITY_NORMAL)
+                totals[key] = (totals[key] or 0) + stack.count
+            end
+        end)
+
+        if not ok then
+            log(string.format("[SurfaceCounter] Error counting ground item %s: %s", entity.name, ground_err))
+        end
+    end
+
     return totals
 end
 
---- Count all items on a live surface
---- Folds count_entity_items over every entity, then adds the ground-item pass.
---- Behavior-identical to the previous inline scan (item counts are integers, so the
---- per-entity fold is exact regardless of grouping); the destination transfer gate
---- consumes this map, so its readings must not change.
+--- Count all items on a live surface: fold of count_entity_items plus the ground pass.
 --- @param surface LuaSurface: The surface to count items on
 --- @return table, number: item_key→count map, total item count
 function SurfaceCounter.count_items(surface)
@@ -101,16 +128,11 @@ function SurfaceCounter.count_items(surface)
         end
     end
 
-    -- Ground items
-    local ground_items = surface.find_entities_filtered({type = "item-entity"})
-    for _, item_entity in ipairs(ground_items) do
-        if item_entity.valid and item_entity.stack and item_entity.stack.valid_for_read then
-            local stack = item_entity.stack
-            local key = Util.make_quality_key(stack.name, (stack.quality and stack.quality.name) or Util.QUALITY_NORMAL)
-            item_totals[key] = (item_totals[key] or 0) + stack.count
-            total = total + stack.count
-        end
+    local ground_totals, ground_total = SurfaceCounter.count_ground_items(surface)
+    for key, count in pairs(ground_totals) do
+        item_totals[key] = (item_totals[key] or 0) + count
     end
+    total = total + ground_total
 
     return item_totals, total
 end

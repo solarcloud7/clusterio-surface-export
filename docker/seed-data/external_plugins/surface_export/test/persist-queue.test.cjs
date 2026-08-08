@@ -37,10 +37,16 @@ const { enqueueWrite, resetWriteQueuesForTest } = require(path.join(distNode, "l
  * for a payload of this size, but it does not hand control back at a point this test can rely on;
  * chunking makes the same interleaving deterministic instead of timing-dependent.
  */
-async function racySafeOutputFile(file, data) {
+async function racySafeOutputFile(file, data, openedBarrier) {
 	const { dir, name, ext } = path.parse(file);
 	const temporary = path.join(dir, `${name}.tmp${ext}`);
 	const handle = await fsp.open(temporary, "w");
+	// Optional post-open hook: the race-proof test uses it to pin one specific corrupting
+	// interleaving (see there for why timing alone cannot be trusted to produce one). Queue-path
+	// tests pass nothing: the queue serializes writers by design, and a rendezvous would deadlock.
+	if (openedBarrier) {
+		await openedBarrier();
+	}
 	try {
 		const chunkSize = Math.ceil(data.length / 8);
 		for (let offset = 0; offset < data.length; offset += chunkSize) {
@@ -70,7 +76,27 @@ test("the stub reproduces the real race — UNGUARDED concurrent writes corrupt 
 	const file = tempTarget("race-proof");
 	const [a, b] = payloads();
 
-	const results = await Promise.allSettled([racySafeOutputFile(file, a), racySafeOutputFile(file, b)]);
+	// Timing alone cannot be trusted to exhibit the hazard, in either direction. Left to the
+	// scheduler, the writers can serialize completely (writer B's open lands after writer A's
+	// rename, recreating the temp — observed clean 4-in-5 on Windows), and even with the opens
+	// synchronized Windows can show no rename failure (a measured concurrent probe, 2026-08-08,
+	// found the second writer's handle FOLLOWS the renamed file and both renames report success).
+	// So pin one concrete interleaving: B opens the shared temp, A writes everything and renames,
+	// then B's chunks land through its still-open handle inside the renamed target. B then writes
+	// its FULL same-length payload, so the content ends intact (pure B) — the licensing symptom
+	// under this schedule is B's rename hitting the vanished temp path: the loud ENOENT from the
+	// original incident, measured firing 10/10 on Windows and inherent on POSIX.
+	let releaseBOpened;
+	const bOpened = new Promise(resolve => { releaseBOpened = resolve; });
+	let releaseADone;
+	const aDone = new Promise(resolve => { releaseADone = resolve; });
+
+	const writerB = racySafeOutputFile(file, b, () => { releaseBOpened(); return aDone; });
+	const writerA = racySafeOutputFile(file, a, () => bOpened);
+	const resultA = await writerA.then(() => ({ status: "fulfilled" }), e => ({ status: "rejected", reason: e }));
+	releaseADone();
+	const resultB = await writerB.then(() => ({ status: "fulfilled" }), e => ({ status: "rejected", reason: e }));
+	const results = [resultA, resultB];
 	const rejected = results.filter(r => r.status === "rejected");
 	const onDisk = fs.readFileSync(file, "utf8");
 	const intact = onDisk === a || onDisk === b;

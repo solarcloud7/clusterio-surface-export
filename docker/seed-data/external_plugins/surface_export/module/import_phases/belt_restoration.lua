@@ -493,12 +493,21 @@ function BeltRestoration.restore_side_groups(side_groups, entity_map)
     -- EVERY key, gains and absences alike. This is what catches anything the per-side deltas
     -- cannot attribute — including the mechanism-impossible-but-never-trusted cross-side leak.
     local global_after = snapshot(fresh_all_lines())
+    -- The PHYSICAL delta this restore produced, key-for-key. Returned to the caller (4th value) so
+    -- the per-phase census can report the belts phase WITHOUT re-counting: belts never freeze, so a
+    -- second bracket taken later would fold engine movement into what looks like a phase effect.
+    -- This bracket is the only belt measurement taken in the same execution as the writes.
+    -- Line-set: the side groups' member lines (what fresh_all_lines covers) — NOT every belt on the
+    -- platform. The caller must label it as such; comparing it against a whole-platform belt count
+    -- would report a scope mismatch as a discrepancy.
+    local physical_delta = {}
     local keys = {}
     for key in pairs(global_before.by_key) do keys[key] = true end
     for key in pairs(global_after.by_key) do keys[key] = true end
     for key in pairs(expected_by_key) do keys[key] = true end
     for key in pairs(keys) do
         local delta = (global_after.by_key[key] or 0) - (global_before.by_key[key] or 0)
+        if delta ~= 0 then physical_delta[key] = delta end
         if delta ~= (expected_by_key[key] or 0) then
             anomalies = anomalies + 1
             log(string.format("[BeltRestoration] GLOBAL BRACKET MISMATCH %q: physical delta %d ~= placed %d",
@@ -655,7 +664,8 @@ function BeltRestoration.restore_side_groups(side_groups, entity_map)
             stats.preexisting, stats.born, stats.vanished, stats.ct_drift, stats.aliased,
             #unplaced_list, dk_n > 0 and dk_sum / dk_n or 0, dk_max, dk_n))
     end
-    return placed, unplaced, anomalies
+    -- 4th value is additive: every existing caller destructures three and is unaffected.
+    return placed, unplaced, anomalies, physical_delta
 end
 
 return BeltRestoration

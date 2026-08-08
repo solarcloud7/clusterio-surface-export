@@ -18,7 +18,6 @@ local LatchRearm = require("modules/surface_export/import_phases/latch_rearm")
 local PlatformHubMapping = require("modules/surface_export/import_phases/platform_hub_mapping")
 local TransferValidation = require("modules/surface_export/validators/transfer-validation")
 local LossAnalysis = require("modules/surface_export/validators/loss-analysis")
-local SurfaceCounter = require("modules/surface_export/validators/surface-counter")
 local DebugExport = require("modules/surface_export/utils/debug-export")
 local PlatformSchedule = require("modules/surface_export/utils/platform-schedule")
 local EntityScanner = require("modules/surface_export/export_scanners/entity-scanner")
@@ -28,6 +27,7 @@ local Util = require("modules/surface_export/utils/util")
 local clusterio_api = require("modules/clusterio/api")
 local PhaseProfiler = require("modules/surface_export/utils/phase-profiler")
 local PhaseRecorder = require("modules/surface_export/utils/phase-recorder")
+local PhaseCensus = require("modules/surface_export/utils/phase-census")
 local TransactionHistory = require("modules/surface_export/utils/transaction-history")
 local JobResults = require("modules/surface_export/core/job-results")
 
@@ -192,6 +192,35 @@ local function bank_failure_black_box(job, result)
 	return written ~= nil
 end
 
+--- Re-key a belt-restoration delta (name\0quality, normal always present) into census key format
+--- (make_quality_key, which omits the suffix for normal quality).
+local function belt_delta_to_census_keys(delta)
+	local out = {}
+	for key, value in pairs(delta or {}) do
+		local name, quality = key:match("^(.-)%z(.*)$")
+		if name then
+			local census_key = Util.make_quality_key(name, quality)
+			out[census_key] = (out[census_key] or 0) + value
+		else
+			-- Unparseable key: carry it through unconverted rather than dropping it. A dropped
+			-- key would quietly shrink the belts row and make the residual look smaller than it is.
+			out[key] = (out[key] or 0) + value
+			log(string.format(
+				"[PhaseCensus] belt delta key %q did not match name\\0quality — carried through unconverted", key))
+		end
+	end
+	return out
+end
+
+--- The census scope: the destination surface, resolved live.
+local function census_scope(job)
+	local platform = job and job.target_platform
+	if platform and platform.valid and platform.surface and platform.surface.valid then
+		return platform.surface
+	end
+	return nil
+end
+
 --- Phase 1: Restore hub inventories, belt items, and entity state.
 --- Schedules Phase 2 for the next tick via job.pending_beacon_tick.
 --- @param job table: Job data
@@ -199,12 +228,25 @@ function ImportCompletion.run_phase1(job)
 	local entity_map = job.entity_map or {}
 	local entities_to_create = job.entities_to_create or {}
 
+	-- Arm the census and record what entity creation already produced, before any bracket opens.
+	job.phase_census = job.phase_census or {}
+	PhaseCensus.record_baseline(job, "entity_creation", census_scope(job))
+
 	log("[Import] Phase 1 post-processing: hub inventories, belts, entity state...")
 
 	-- Step 0: Restore hub inventories (DEFERRED from platform_hub_mapping)
 	-- The hub's inventory size scales with cargo bays, which are now placed.
 	PhaseRecorder.start(job, "hub")
+	-- The hub phase writes exactly one entity; a whole-surface inventory sweep to bracket it is
+	-- the single most wasteful census read. Typed find: the hub, nothing else.
+	local hub_scope
+	do
+		local surf = census_scope(job)
+		hub_scope = surf and surf.find_entities_filtered({ type = "space-platform-hub" }) or nil
+	end
+	PhaseCensus.open(job, "hub", PhaseCensus.SUBJECT_INVENTORIES, hub_scope)
 	PlatformHubMapping.restore_hub_inventories(job)
+	PhaseCensus.close(job, "hub", PhaseCensus.SUBJECT_INVENTORIES, hub_scope)
 	PhaseRecorder.stop(job, "hub")
 
 	-- Step 0a: Restore belt items synchronously
@@ -230,15 +272,26 @@ function ImportCompletion.run_phase1(job)
 			log(string.format("[Import] belt_side_groups REFUSED (malformed payload): %s", tostring(shape_err)))
 			job.metrics.belt_shape_error = tostring(shape_err)
 			placed, unplaced, anomalies = 0, 0, 1
+			-- Refused = unmeasured, same as the throw leg below: absent-from-census would read
+			-- as "platform had no belts" on exactly the import the census exists to explain.
+			PhaseCensus.close(job, "belts", PhaseCensus.SUBJECT_BELTS, nil)
 		else
-			local ok_restore, r_placed, r_unplaced, r_anomalies = pcall(BeltRestoration.restore_side_groups, side_groups, entity_map)
+			-- Bound to a local so the capture stays on ONE line: the pcall-logging guard reads a
+			-- wrapped `pcall(` as fire-and-forget, and the error here IS handled below.
+			local restore_fn = BeltRestoration.restore_side_groups
+			local ok_restore, r_placed, r_unplaced, r_anomalies, r_delta = pcall(restore_fn, side_groups, entity_map)
 			if not ok_restore then
 				log(string.format("[Import] belt side-restore THREW (routed to verdict, never error()): %s",
 					tostring(r_placed)))
 				job.metrics.belt_restore_error = tostring(r_placed)
 				placed, unplaced, anomalies = 0, 0, 1
+				-- A throw leaves the belt subject genuinely unmeasured: the restore may have written
+				-- before it died, so recording a zero delta here would assert something we do not know.
+				PhaseCensus.close(job, "belts", PhaseCensus.SUBJECT_BELTS, nil)
 			else
 				placed, unplaced, anomalies = r_placed, r_unplaced, r_anomalies
+				PhaseCensus.record_external(job, "belts", PhaseCensus.SUBJECT_BELTS,
+					belt_delta_to_census_keys(r_delta), "side-group member lines")
 			end
 		end
 		belts_result = { items_restored = placed, attribution = nil }
@@ -283,6 +336,7 @@ function ImportCompletion.run_phase1(job)
 				.. " — re-export from the source with the current version")
 			job.metrics.belt_shape_error = "payload predates captured source positions (no belt_side_groups); the legacy restore is deleted"
 			job.metrics.belt_anomalies = 1
+			PhaseCensus.close(job, "belts", PhaseCensus.SUBJECT_BELTS, nil)
 		end
 		belts_result = { items_restored = 0 }
 	end
@@ -330,6 +384,7 @@ function ImportCompletion.run_phase2(job)
 		job.inventory_overflow_losses = { total = 0, items = {}, entities = {} }
 	end
 	PhaseRecorder.start(job, "inventories")
+	PhaseCensus.open(job, "inventories", PhaseCensus.SUBJECT_INVENTORIES, census_scope(job))
 	local inv_restored = 0
 	local inv_skipped = 0
 	-- Pass 1: beacons only
@@ -353,6 +408,7 @@ function ImportCompletion.run_phase2(job)
 			end
 		end
 	end
+	PhaseCensus.close(job, "inventories", PhaseCensus.SUBJECT_INVENTORIES, census_scope(job))
 	PhaseRecorder.stop(job, "inventories")
 	log(string.format("[Import] Inventory restoration: %d entities restored, %d skipped (failed/missing)", inv_restored, inv_skipped))
 	if job.inventory_overflow_losses.total > 0 then
@@ -389,7 +445,15 @@ function ImportCompletion.run_phase2(job)
 	-- waterfall AND in the dashboard, sitting in dead space between inventories_completed_tick and
 	-- fluids_started_tick.
 	PhaseRecorder.start(job, "held_items")
+	-- Only inserters carry held stacks; enumerate them, not the whole surface.
+	local held_scope
+	do
+		local surf = census_scope(job)
+		held_scope = surf and surf.find_entities_filtered({ type = "inserter" }) or nil
+	end
+	PhaseCensus.open(job, "held_items", PhaseCensus.SUBJECT_HELD, held_scope)
 	ActiveStateRestoration.restore_held_items_only(entities_to_create, entity_map)
+	PhaseCensus.close(job, "held_items", PhaseCensus.SUBJECT_HELD, held_scope)
 	PhaseRecorder.stop(job, "held_items")
 	PhaseRecorder.start(job, "fluids")
 	local fluids_result = FluidRestoration.restore(entities_to_create, entity_map,
@@ -397,6 +461,16 @@ function ImportCompletion.run_phase2(job)
 	PhaseRecorder.stop(job, "fluids")
 	job.metrics.fluids_restored = fluids_result and fluids_result.count or 0
 	log(string.format("[Import] Frozen-world fluid restoration: %d fluids restored", job.metrics.fluids_restored))
+
+	-- Per-phase item attribution (report-only; the exact gate remains the sole verdict).
+	local _, phase_complete = PhaseCensus.total(job)
+	job.metrics.phase_census = job.phase_census
+	job.metrics.phase_census_complete = phase_complete
+	log(string.format("[Import] PHASE CENSUS: %s", PhaseCensus.format(job)))
+	if not phase_complete then
+		log("[Import] PHASE CENSUS is a LOWER BOUND — at least one phase went unmeasured; "
+			.. "do not read the sum as an exact reconciliation against the gate.")
+	end
 
 	if job.transfer_id then
 		log("[Import] Deferring active state restoration until after the exact transfer gate")
@@ -620,6 +694,7 @@ function ImportCompletion.run_phase2(job)
 		end
 
 		PhaseProfiler.stop(job.job_id, "validation")
+
 		-- Clean validation-only boundary for the waterfall span (the existing
 		-- validation_completed_tick at the end of run_phase2 also covers activation/fluids/loss).
 		job.metrics.validation_done_tick = game.tick

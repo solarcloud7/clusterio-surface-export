@@ -339,6 +339,7 @@ export class ControllerPlugin extends BaseControllerPlugin {
 			...options,
 			resolveInstanceName: (instanceId: number) => this.platformTree.resolveInstanceName(instanceId),
 		});
+		await this.txLogger.archiveRecycledTransferId(operation.transferId, operation.startedAt);
 		this.activeTransfers.set(operation.transferId, operation);
 		await this.recordTransferStarted(operation);
 		return operation;

@@ -345,6 +345,57 @@ export class TransactionLogger {
 		return 0;
 	}
 
+	/**
+	 * Rotate a finished operation's record out of a transferId that a NEW operation is about to
+	 * reuse. Save resets restart the source's export counter, so recycled ids are routine on the
+	 * dev cluster; left alone, the new operation appends events onto the old operation's in-memory
+	 * array and its persist overwrites the old detail entry in place — history silently rewritten,
+	 * and `latest` ordering lies. The old entry keeps its history under `<transferId>@<savedAt>`;
+	 * the live id starts clean and always means the current operation.
+	 * Call before registering the new operation in activeTransfers.
+	 */
+	async archiveRecycledTransferId(transferId: string, startedAt: number | null | undefined) {
+		const existing = this.plugin.persistedTransactionLogs.find(
+			(log: PersistedTransactionLog) => log.transferId === transferId,
+		);
+		// Same operation re-registering keeps its record. A falsy startedAt cannot distinguish
+		// same-op from recycled, and self-archiving a LIVE operation (renaming its record and
+		// truncating its event stream) is worse than a rare merge — so missing startedAt refuses
+		// to archive.
+		if (existing && (!startedAt
+			|| (existing.transferInfo && existing.transferInfo.startedAt === startedAt))) {
+			return;
+		}
+		if (existing) {
+			const archivalId = `${transferId}@${existing.savedAt || Date.now()}`;
+			existing.transferId = archivalId;
+			if (existing.transferInfo) {
+				existing.transferInfo.transferId = archivalId;
+			}
+			if (existing.summary) {
+				existing.summary.transferId = archivalId;
+			}
+			// The archived record needs a ledger row under its new id: without one, retention's
+			// isPinned treats it as "only surviving evidence" and keeps it FOREVER (crowding real
+			// timelines out of the bounded window), and the list shows revisions:0 — "no verdict
+			// evidence" — for an operation that recorded one.
+			await this.plugin.recordAuditRow(buildAuditRow({
+				transferId: archivalId,
+				rowKind: "terminal",
+				savedAt: existing.savedAt || Date.now(),
+				eventCount: (existing.events || []).length,
+				lastEventAt: null,
+				info: existing.transferInfo,
+			}));
+			this.plugin.logger.info(
+				`[Transaction ${transferId}] id recycled by a new operation — prior record archived as ${archivalId}`,
+			);
+		}
+		// Stale in-memory events under this id would otherwise MERGE into the new operation's
+		// stream (logTransactionEvent reuses an existing array).
+		this.plugin.transactionLogs.delete(transferId);
+	}
+
 	async persistTransactionLog(transferId: string) {
 		try {
 			const events = this.plugin.transactionLogs.get(transferId);

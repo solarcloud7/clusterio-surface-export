@@ -65,8 +65,16 @@ if ($LuaOnly) {
     $pluginRoot = Join-Path $WorkspaceRoot "docker/seed-data/external_plugins/surface_export"
     $distNode = Join-Path $pluginRoot "dist/node"
     $distWeb = Join-Path $pluginRoot "dist/web"
+    # Remediation names BOTH entry points. `deploy.ps1 -Scope lua` delegates here with -LuaOnly, so
+    # a caller who used the documented path cannot "run without -LuaOnly" — they never passed it,
+    # and the advice reads as nonsense at exactly the moment they are stuck (observed 2026-08-08).
+    # The tree is named too: these scripts resolve everything from their OWN location, so running a
+    # git worktree's copy checks the WORKTREE's dist, not the live bind-mount's — which is precisely
+    # how a stale-dist refusal appeared on a tree whose dist was fine.
+    $remedy = ("Use 'deploy.ps1 -Scope plugin' (builds AND resets), or call this script directly " +
+        "without -LuaOnly. Tree being checked: $WorkspaceRoot")
     if (-not (Test-Path $distNode) -or -not (Test-Path $distWeb)) {
-        throw "-LuaOnly refused: dist/node or dist/web is missing. Run without -LuaOnly to build first."
+        throw "-LuaOnly refused: dist/node or dist/web is missing. $remedy"
     }
     # The source set is the ENUMERATED build inputs (lib/, web/, plugin-root *.ts, tsconfig*.json,
     # webpack.config.js, .npmrc) — NOT a recursive walk of the plugin root. Review-caught defect:
@@ -87,14 +95,14 @@ if ($LuaOnly) {
     # Empty dist dirs (interrupted build, wiped contents) must REFUSE, not fall through the
     # comparison as "fresh" — that fail-open was a review-caught defect.
     if (-not $distNewest) {
-        throw "-LuaOnly refused: dist/node and dist/web exist but contain no files. Run without -LuaOnly to build first."
+        throw "-LuaOnly refused: dist/node and dist/web exist but contain no files. $remedy"
     }
     if (-not $srcNewest) {
         throw "-LuaOnly refused: found zero TS/web build inputs to compare against — this tree looks wrong; refusing to guess."
     }
     if ($srcNewest.LastWriteTimeUtc -gt $distNewest.LastWriteTimeUtc) {
         throw ("-LuaOnly refused: '$($srcNewest.FullName)' ($($srcNewest.LastWriteTimeUtc)) is newer than the newest dist artifact " +
-            "'$($distNewest.Name)' ($($distNewest.LastWriteTimeUtc)). A stale dist would ship old plugin code — run without -LuaOnly.")
+            "'$($distNewest.Name)' ($($distNewest.LastWriteTimeUtc)). A stale dist would ship old plugin code. $remedy")
     }
     Write-Host "LuaOnly: dist/ is fresh (newest build input: $($srcNewest.Name)) — container build will be skipped" -ForegroundColor Yellow
     Write-Host ""
