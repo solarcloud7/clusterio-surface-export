@@ -195,7 +195,41 @@ function TransferValidation.validate_import(surface, expected_verification, opti
             storage_item_counts[key] = (storage_item_counts[key] or 0) + stack.count
         end
     end
-    
+
+    -- MIGRATION DUAL-READ (time-boxed; deleted at cutover): recompute the item totals through the
+    -- shared meter in this same execution and log any divergence. The verdict below still reads
+    -- total_item_counts from the inline loop above.
+    do
+        local meter_totals = {}
+        for _, entity in ipairs(entities) do
+            if entity.valid then
+                for key, count in pairs(SurfaceCounter.count_entity_items(entity)) do
+                    meter_totals[key] = (meter_totals[key] or 0) + count
+                end
+            end
+        end
+        local ground_totals = SurfaceCounter.count_ground_items(surface)
+        for key, count in pairs(ground_totals) do
+            meter_totals[key] = (meter_totals[key] or 0) + count
+        end
+        local dual_keys = {}
+        for key in pairs(total_item_counts) do dual_keys[key] = true end
+        for key in pairs(meter_totals) do dual_keys[key] = true end
+        local divergence = 0
+        for key in pairs(dual_keys) do
+            local legacy = total_item_counts[key] or 0
+            local shared = meter_totals[key] or 0
+            if legacy ~= shared then
+                divergence = divergence + 1
+                log(string.format("[TransferValidation] DUAL-READ DIVERGENCE %q: legacy %d, shared meter %d",
+                    key, legacy, shared))
+            end
+        end
+        if divergence == 0 then
+            log("[TransferValidation] DUAL-READ: legacy and shared meter agree on every item key")
+        end
+    end
+
     local strict = options.strict == true
     -- 2.1 segment reads count EVERYTHING — no engine-owned exclusion exists (owner ruling
     -- 2026-07-20: the classification is deleted; plasma rides and is gated like any fluid).
