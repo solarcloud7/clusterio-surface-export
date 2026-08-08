@@ -195,12 +195,8 @@ end
 --- Phase 1: Restore hub inventories, belt items, and entity state.
 --- Schedules Phase 2 for the next tick via job.pending_beacon_tick.
 --- @param job table: Job data
---- Re-key a belt-restoration delta into the census key format.
---- The belt bracket keys items `name .. "\0" .. quality` with QUALITY_NORMAL always present;
---- every census in this pipeline keys them via Util.make_quality_key, which OMITS the quality
---- suffix for normal items ("iron-plate", not "iron-plate\0normal"). Summing the two formats
---- unconverted would double every normal-quality key instead of cancelling it — a reconciliation
---- residual manufactured entirely by notation. Convert at the boundary, once, here.
+--- Re-key a belt-restoration delta (name\0quality, normal always present) into census key format
+--- (make_quality_key, which omits the suffix for normal quality).
 local function belt_delta_to_census_keys(delta)
 	local out = {}
 	for key, value in pairs(delta or {}) do
@@ -218,10 +214,7 @@ local function belt_delta_to_census_keys(delta)
 	return out
 end
 
---- The destination SURFACE — the census scope, because it is the gate's scope.
---- Counting the import's entity_map instead leaves everything on the surface that the import did
---- not create (the hub, created with the platform) outside the census while the gate counts it,
---- and the reconciliation then cannot close.
+--- The census scope: the destination surface, resolved live.
 local function census_scope(job)
 	local platform = job and job.target_platform
 	if platform and platform.valid and platform.surface and platform.surface.valid then
@@ -234,12 +227,7 @@ function ImportCompletion.run_phase1(job)
 	local entity_map = job.entity_map or {}
 	local entities_to_create = job.entities_to_create or {}
 
-	-- Arm the per-phase census and record the ENTITY-CREATION baseline.
-	-- Entity creation runs upstream of this function, so by now the destination already holds every
-	-- restored inventory stack, belt item, held stack and loose GROUND item (the export captures
-	-- ground items in its own atomic scan and they arrive as ordinary entity records). Without this
-	-- baseline those items belong to no phase, the sum silently under-reports, and the census
-	-- measures a different set than the gate — which makes it broken, not partial.
+	-- Arm the census and record what entity creation already produced, before any bracket opens.
 	job.phase_census = job.phase_census or {}
 	PhaseCensus.record_baseline(job, "entity_creation", census_scope(job))
 
@@ -456,15 +444,7 @@ function ImportCompletion.run_phase2(job)
 	job.metrics.fluids_restored = fluids_result and fluids_result.count or 0
 	log(string.format("[Import] Frozen-world fluid restoration: %d fluids restored", job.metrics.fluids_restored))
 
-	-- PER-PHASE ITEM ACCOUNTING (report-only; the exact gate remains the sole verdict).
-	-- Turns "the import gained N of X somewhere" into a per-phase attribution.
-	-- COVERAGE is total by construction: entity_creation (baseline) + hub + belts + inventories +
-	-- held_items span every item the gate counts, over the gate's own scope (the surface) and the
-	-- gate's own four locations (inventories, belt lines, held stacks, loose ground items). `state`
-	-- has no item subject. Fluids are a different unit and are accounted by the gate's fluid side.
-	-- The reconciliation below is what PROVES that span — see the assertion after validation.
-	-- The per-phase deltas are the product. There is deliberately no combined total: summing them
-	-- reproduces the gate's own number, and a second copy of a fact is a liability, not a check.
+	-- Per-phase item attribution (report-only; the exact gate remains the sole verdict).
 	local _, phase_complete = PhaseCensus.total(job)
 	job.metrics.phase_census = job.phase_census
 	job.metrics.phase_census_complete = phase_complete
@@ -696,17 +676,6 @@ function ImportCompletion.run_phase2(job)
 		end
 
 		PhaseProfiler.stop(job.job_id, "validation")
-
-		-- (No runtime census/gate reconciliation here, deliberately — owner ruling 2026-08-08.)
-		-- Σ(phase deltas) == final − initial, and the destination starts empty, so the sum IS the
-		-- gate's measurement computed the long way. Comparing them checks an identity that holds by
-		-- construction: it can only fail if this code is wrong, which makes it a unit test scheduled
-		-- to run forever in production. The repo's standing rule covers exactly this shape —
-		-- agreement-checks are confessions; delete the duplicated fact rather than guard it.
-		-- What the identity actually depends on is STRUCTURAL (the census must span the gate's four
-		-- item locations, over the gate's scope, with every item-moving phase bracketed), and every
-		-- one of those is pinned offline in test/phase-census.test.cjs, where a regression fails in
-		-- CI instead of in a customer's transfer.
 
 		-- Clean validation-only boundary for the waterfall span (the existing
 		-- validation_completed_tick at the end of run_phase2 also covers activation/fluids/loss).
