@@ -500,8 +500,14 @@ export function buildGraph(
 				// Dimming is a node STYLE rather than a class on the inner element so it covers the
 				// caption too — the caption is positioned outside the node's own box, and fading the
 				// gate while its label stayed bright would read as a rendering fault.
+				//
+				// The style is DERIVED from data.dimmed, and the canvas dims edges from data.dimmed as
+				// well — one boolean, decided here. Reading it back off the rendered opacity instead
+				// would be a second representation of the same fact, and a falsy opacity (0) would then
+				// read as "focused".
 				style: dimmed ? { opacity: DIMMED_OPACITY } : undefined,
 				data: {
+					dimmed,
 					mode,
 					instanceId: instance.instanceId,
 					instanceName: instance.instanceName,

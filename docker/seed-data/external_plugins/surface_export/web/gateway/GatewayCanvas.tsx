@@ -147,10 +147,11 @@ export default function GatewayCanvas({ plugin, state, onOpenImport }: {
 		setNodes(previous => preservePositions(previous, graph.nodes as unknown as Node[]));
 		setEdges(previous => {
 			const selected = new Set(previous.filter(edge => edge.selected).map(edge => edge.id));
-			// Which instances the host filter is focused on, read back off the freshly built nodes so
-			// there is one answer to "is this dimmed" rather than two that can disagree.
+			// Which instances the host filter is focused on, taken from the SAME `dimmed` boolean
+			// buildGraph used for the node styles. Deriving it from the rendered opacity instead would
+			// be a second representation of one fact — and a falsy opacity would read as "focused".
 			const focused = new Set(
-				graph.nodes.filter(node => !node.style?.opacity).map(node => instanceIdFromNodeId(node.id)),
+				graph.nodes.filter(node => !node.data.dimmed).map(node => instanceIdFromNodeId(node.id)),
 			);
 			return graph.edges.map(edge => ({
 				id: edge.id,
