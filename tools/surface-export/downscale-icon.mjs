@@ -180,7 +180,7 @@ function chunk(type, data) {
 	return Buffer.concat([length, typeAndData, crc]);
 }
 
-function encodePng(width, height, pixels) {
+export function encodePng(width, height, pixels) {
 	const ihdr = Buffer.alloc(13);
 	ihdr.writeUInt32BE(width, 0);
 	ihdr.writeUInt32BE(height, 4);

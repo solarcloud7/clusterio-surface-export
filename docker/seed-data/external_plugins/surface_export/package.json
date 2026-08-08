@@ -12,7 +12,7 @@
     "postbuild:web": "node scripts/prepare-build.mjs --stamp web",
     "build": "npm run build:node && npm run build:browser && npm run build:web",
     "prepare": "node scripts/prepare-build.mjs",
-    "lint": "npm run lint:js && npm run lint:lua && npm run lint:lua-syntax && npm run lint:web-cache && npm run lint:test-grounding && npm run lint:pcall-logging && npm run lint:catch-swallow && npm run lint:ps-silent && npm run lint:test-hooks && npm run lint:allow-manifest",
+    "lint": "npm run lint:js && npm run lint:lua && npm run lint:lua-syntax && npm run lint:web-cache && npm run lint:test-grounding && npm run lint:pcall-logging && npm run lint:catch-swallow && npm run lint:ps-silent && npm run lint:test-hooks && npm run lint:derived-art && npm run lint:allow-manifest",
     "lint:js": "eslint . --max-warnings 0",
     "lint:lua": "node scripts/lint-lua-invariants.mjs",
     "lint:lua-syntax": "node scripts/lint-lua-syntax.mjs",
@@ -22,6 +22,7 @@
     "lint:catch-swallow": "node scripts/lint-catch-swallow.mjs",
     "lint:ps-silent": "node scripts/lint-ps-silent.mjs",
     "lint:test-hooks": "node scripts/lint-test-hooks.mjs",
+    "lint:derived-art": "node scripts/lint-derived-art.mjs",
     "lint:allow-manifest": "node scripts/lint-allow-manifest.mjs",
     "test": "npm run build:node && node --test \"test/*.test.cjs\""
   },

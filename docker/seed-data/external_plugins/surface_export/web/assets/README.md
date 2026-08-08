@@ -28,9 +28,16 @@ node tools/surface-export/downscale-icon.mjs \
 128 px, not 256 or 512: at a 150 px node it is a 1.17x upscale (effectively sharp) for 40 KB, where
 256 would be ~4x the bytes to fix a difference nobody can see.
 
-## The hazard, stated
+## The hazard, and the check for it
 
-This is a SECOND COPY of art whose source of truth is the mod. Change
-`starmap-gateway-hub.png` and this goes stale silently — nothing checks them against each other. If
-that ever bites, the fix is to check it in `scripts/`, not to remember harder. Re-run the command
-above whenever the gateway art changes.
+This is a SECOND COPY of art whose source of truth is the mod, so changing
+`starmap-gateway-hub.png` would leave this stale — showing last month’s art with no error anywhere.
+
+`scripts/lint-derived-art.mjs` (in `npm run lint`) re-derives every entry here from its source in
+memory and demands byte equality, printing the regeneration command when it drifts. Byte equality is
+fair here precisely because the committed file came from this same code path — unlike
+`downscale-icon --verify`, which compares against art made by an unknown external tool and therefore
+allows a measured tolerance.
+
+A new image dropped into this directory without a `DERIVED` entry is REFUSED, not silently trusted,
+so the guard cannot quietly cover less than the directory it claims to.
