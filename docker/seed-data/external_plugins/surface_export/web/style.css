@@ -5,6 +5,117 @@
 	min-width: 0;
 }
 
+/* React Flow measures its CONTAINER and renders nothing when that container has no height. Every
+   ancestor here (PageLayout > Tabs > tab panel) is auto-height, so `height: 100%` would resolve
+   against an auto parent and collapse to zero — the canvas would mount, report no error, and paint
+   an empty box. Hence a viewport-relative height: the subtrahend is the chrome above the canvas
+   (site header, breadcrumb, page title, version line, tab bar), and min-height keeps it usable on a
+   short window where that sum would otherwise leave nothing. */
+.surface-export-canvas {
+	width: 100%;
+	height: calc(100vh - 260px);
+	min-height: 420px;
+}
+
+/* ── Canvas: host boxes, instance circles, gateway handles ────────────────── */
+
+/* The group node's box is sized by React Flow from the node's `style`; this fills it. Dashed and
+   unfilled so it reads as a container rather than a thing you can act on — host boxes are scenery,
+   and are not selectable or draggable. */
+.surface-export-host-group {
+	width: 100%;
+	height: 100%;
+	border: 1px dashed #434343;
+	border-radius: 12px;
+	background: rgba(255, 255, 255, 0.02);
+}
+
+.surface-export-host-group-label {
+	position: absolute;
+	top: 10px;
+	left: 12px;
+}
+
+.surface-export-instance-node {
+	width: 150px;
+	height: 150px;
+	border-radius: 50%;
+	border: 2px solid #1668dc;
+	background: #1f1f1f;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	text-align: center;
+	box-sizing: border-box;
+}
+
+.surface-export-instance-node-offline {
+	border-color: #434343;
+	opacity: 0.75;
+}
+
+.surface-export-instance-node-body {
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	gap: 2px;
+	/* Kept clear of the circle's edge so long instance names do not run under the handles. */
+	max-width: 108px;
+}
+
+.surface-export-instance-node-name {
+	font-size: 12px;
+	line-height: 1.25;
+	overflow-wrap: anywhere;
+}
+
+.surface-export-instance-node-port {
+	font-size: 10px;
+}
+
+/* React Flow positions handles itself (top/right/bottom/left, centred by its own transform), so
+   only the size and skin are set here — overriding position would fight the library. Enlarged from
+   the 6px default to hold a 26px gateway icon and to give a comfortable drag target. */
+.surface-export-gw-handle {
+	width: 32px;
+	height: 32px;
+	border-radius: 50%;
+	border: 1px solid #434343;
+	background: #141414;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+}
+
+/* The target handle sits under the source one and is never seen; it exists so a gateway can be a
+   destination as well as an origin. Same size, so the drop target matches what is drawn. */
+.surface-export-gw-handle-target {
+	background: transparent;
+	border-color: transparent;
+}
+
+/* The icon is decoration on top of the handle's hit area. Without this it swallows the pointer and
+   the handle becomes undraggable exactly where it looks most clickable. */
+.surface-export-gw-handle-source > span {
+	pointer-events: none;
+}
+
+/* Zero outgoing links = a platform parked here cannot leave. The old tab said so in words; here it
+   has to be visible, or "nothing drawn yet" and "switched off" look identical. */
+.surface-export-gw-idle {
+	opacity: 0.35;
+	filter: grayscale(1);
+}
+
+/* Arrival-only: reachable, but not a departure point. Dimmed, not greyed. */
+.surface-export-gw-arrival-only {
+	opacity: 0.7;
+}
+
+.surface-export-gw-active {
+	border-color: #1668dc;
+}
+
 .surface-export-log-body {
 	display: grid;
 	grid-template-columns: 1fr;
