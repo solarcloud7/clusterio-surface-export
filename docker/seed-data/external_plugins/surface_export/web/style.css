@@ -185,7 +185,7 @@
 /* With the art filling the node, the label cannot sit on top of it — it moves BELOW, anchored to the
    node's bottom edge by `top: 100%` and centred without needing to know its own width. It is WIDER
    than the node on purpose: instance names do not fit in 150px, and the layout reserves the extra
-   width (CAPTION_WIDTH in shared/gateway-graph.ts) so neighbours never overlap it. */
+   width (CAPTION_WIDTH in gateway/gateway-graph.ts) so neighbours never overlap it. */
 .surface-export-instance-node-caption {
 	position: absolute;
 	top: 100%;
@@ -195,8 +195,7 @@
 	/* Overrides the body rule's 108px cap, which is sized for text INSIDE the circle. */
 	max-width: none;
 	width: 190px;
-	/* The grip. Easy connect turns the gate into one big connection handle, so the node can only be
-	   MOVED by something outside it — this caption (see dragHandle in shared/gateway-graph.ts). */
+	/* Part of the move surface, like everything outside the portal. */
 	cursor: grab;
 	text-align: center;
 }
@@ -205,46 +204,28 @@
 	cursor: grabbing;
 }
 
-/* The MOVE zone: the middle of the gate, sitting above the connect handles.
+/* The PORTAL is the connection zone: a disc over the glowing part of the art, sized and placed
+   from the measurement in gateway/edge-geometry.ts (60% of the node, raised 16px so it is
+   concentric with the glow rather than with the node box). Everything outside it moves the node.
 
-   Easy connect covering the whole node left nowhere to grab it — every press started a link. So the
-   node is split by radius: this core moves, and the ring outside it connects. That division is not
-   arbitrary, it matches the drawing — a floating edge attaches at the node's BOUNDARY, so the place
-   you drag a link from is the place the link appears.
+   Two earlier shapes were wrong and are worth naming so they are not retried: covering the WHOLE
+   node left nowhere to grab it, and a concentric RING left the connect area thin over the portal
+   and thick over the pedestal, because the box centre is not the portal centre.
 
-   60% of a 150px node leaves a ~30px ring, comfortably larger than the 26px icon handles that Multi
-   mode still uses, so the connect target did not get harder in exchange. */
-.surface-export-instance-core {
-	position: absolute;
-	/* Raised by the measured gate offset so the move/connect boundary is concentric with the PORTAL
-	   rather than with the node box. The art stands on a pedestal, so its glowing ring sits 14px above
-	   the box centre — keep this in step with GATE_CENTRE_OFFSET_Y in gateway/edge-geometry.ts, which
-	   carries the measurement and moves the edge attachment point by the same amount. */
-	top: calc(20% - 14px);
-	left: 20%;
-	width: 60%;
-	height: 60%;
-	border-radius: 50%;
-	cursor: grab;
-}
-
-.surface-export-instance-core:active {
-	cursor: grabbing;
-}
-
-/* Easy connect: the handle covers the whole node, and the core above it takes back the middle, so
-   what remains live for connecting is the outer ring. Invisible on purpose — the art is the
-   affordance. */
+   Invisible on purpose — the glow is the affordance. */
 .surface-export-gw-cover {
 	position: absolute;
-	inset: 0;
-	width: 100%;
-	height: 100%;
+	width: 60%;
+	height: 60%;
+	left: 20%;
+	top: calc(20% - 16px);
+	inset: auto;
 	border-radius: 50%;
 	background: transparent;
 	border: none;
 	transform: none;
 	opacity: 0;
+	cursor: crosshair;
 }
 
 /* Zero outgoing links = a platform parked here cannot leave. The old tab said so in words; here it

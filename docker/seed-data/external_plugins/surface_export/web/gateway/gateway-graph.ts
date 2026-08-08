@@ -494,12 +494,6 @@ export function buildGraph(
 				// EASY CONNECT trade-off, stated by React Flow itself: a handle covering the node means
 				// “you need to define separate drag handles ... to still be able to drag the node”. In
 				// one-gate mode the gate IS the handle, so the caption underneath becomes the grip.
-				// Two grips, because easy connect claims the rest of the node: the core of the gate and
-				// the caption under it. React Flow resolves this with closest(), which takes a selector
-				// list, so both work.
-				dragHandle: mode === "multi"
-					? undefined
-					: ".surface-export-instance-core, .surface-export-instance-node-caption",
 				data: {
 					mode,
 					instanceId: instance.instanceId,

@@ -13,19 +13,30 @@
  */
 
 /**
- * How far the drawn GATE sits above the middle of its node box, in node pixels.
+ * How far the portal sits above the middle of its node box, in node pixels.
  *
- * The art is a portal standing on a pedestal, so its visible mass is bottom-heavy and the glowing
- * ring — the thing a person reads as “the gateway” — is higher than the box centre. MEASURED on
- * gateway-hub-128.png rather than eyeballed: the luminance-weighted centroid of the bright pixels
- * sits at y=51.6 of 128, against a box centre of 63.5, which is 14px once scaled to the 150px node.
- * (The alpha centroid of ALL pixels is +4.4px the other way, and the opaque bounding box is dead
- * centre — both are dominated by the pedestal, which is why neither is the right anchor.)
+ * The art is a portal standing on a pedestal, so the glowing disc — the thing a person points at
+ * when they say “the middle of the portal” — is well above the box centre. MEASURED on
+ * gateway-hub-128.png: the luminance-weighted centroid of the bright, blue-dominant, saturated
+ * pixels (3854 of 16384) sits at y=50.1 of 128 against a box centre of 63.5, which is 15.7px scaled
+ * to the 150px node. Rounded to 16.
  *
- * NEGATIVE is up, matching screen coordinates. Used for BOTH the connect ring and the point an edge
- * attaches to, so a link leaves from where it looks like it should.
+ * Isolating the GLOW matters: the alpha centroid of every visible pixel lands +4.4px the other way
+ * and the opaque bounding box is dead centre, both dragged down by the pedestal, and both would
+ * anchor the gateway on its base instead of its portal.
+ *
+ * NEGATIVE is up, matching screen coordinates. Used for BOTH the portal hit-zone and the point an
+ * edge attaches to, so a link leaves from where it looks like it should.
  */
-export const GATE_CENTRE_OFFSET_Y = -14;
+export const GATE_CENTRE_OFFSET_Y = -16;
+
+/**
+ * Diameter of the portal, as a fraction of the node.
+ *
+ * From the same measurement: 90% of the glow lies within radius 38.1 of 128, i.e. 44.7px on a 150px
+ * node — so a disc of 60% covers the glow and stops before the stone rim around it.
+ */
+export const PORTAL_DIAMETER_FRACTION = 0.6;
 
 /** A node reduced to what the geometry needs: its centre and how far its edge sits from it. */
 export type NodeCircle = {
