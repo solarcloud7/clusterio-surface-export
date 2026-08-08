@@ -229,6 +229,22 @@ test("ground items are intentionally NOT census-paired (documented deviation fro
 		+ "every transfer carrying one");
 });
 
+test("the destination gate has no counting implementation of its own", () => {
+	const transferValidation = fs.readFileSync(
+		path.join(moduleRoot, "validators", "transfer-validation.lua"),
+		"utf8",
+	);
+	assert.doesNotMatch(transferValidation, /InventoryScanner/,
+		"the gate's item reads must come from SurfaceCounter's subject meter. An inline "
+		+ "InventoryScanner loop here is the return of a second meter — the four-implementations "
+		+ "state unified 2026-08-08, where two verdict-bearing counters could drift with nothing "
+		+ "reporting it.");
+	assert.match(transferValidation, /SurfaceCounter\.count_entity_items\(entity,\s*"inventories"\)/,
+		"the gate must take its inventory reads from the shared subject meter");
+	assert.match(transferValidation, /SurfaceCounter\.count_ground_items\(surface\)/,
+		"the gate must take ground from the shared ground pass");
+});
+
 test("test_force_census_omission is registered in the configure allowlist and consumed by the walk", () => {
 	assert.match(configureSource(), /config\.test_force_census_omission\s*~=\s*nil/,
 		"unregistered configure keys are silently dropped — the one-shot hook must be in the allowlist");

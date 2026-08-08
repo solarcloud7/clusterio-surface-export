@@ -2,7 +2,6 @@
 -- Validates imported platforms against source verification data
 
 local Verification = require("modules/surface_export/validators/verification")
-local InventoryScanner = require("modules/surface_export/export_scanners/inventory-scanner")
 local Util = require("modules/surface_export/utils/util")
 local GameUtils = require("modules/surface_export/utils/game-utils")
 local SurfaceCounter = require("modules/surface_export/validators/surface-counter")
@@ -125,6 +124,8 @@ function TransferValidation.validate_import(surface, expected_verification, opti
     -- so the web UI can resolve CSS spritesheet classes like entity-small-lamp correctly.
     local entity_type_counts = {}
 
+    -- Item counting is the shared meter's (SurfaceCounter); this loop owns only the
+    -- storage/consumer categorization and the entity-name breakdown.
     for _, entity in ipairs(entities) do
         if entity.valid then
             local entity_name = entity.name
@@ -132,102 +133,32 @@ function TransferValidation.validate_import(surface, expected_verification, opti
             local entity_type = entity.type
             local is_storage = STORAGE_ENTITY_TYPES[entity_type]
             local is_consumer = CONSUMER_ENTITY_TYPES[entity_type]
-            
-            -- Count items in this entity's inventories
-            local success, err = pcall(function()
-                local inventories = InventoryScanner.extract_all_inventories(entity)
-                local inv_totals = InventoryScanner.count_all_items(inventories)
-                
-                for key, count in pairs(inv_totals) do
-                    total_item_counts[key] = (total_item_counts[key] or 0) + count
-                    
-                    if is_storage then
-                        storage_item_counts[key] = (storage_item_counts[key] or 0) + count
-                    elseif is_consumer then
-                        consumer_item_counts[key] = (consumer_item_counts[key] or 0) + count
-                    end
+
+            for key, count in pairs(SurfaceCounter.count_entity_items(entity, "inventories")) do
+                total_item_counts[key] = (total_item_counts[key] or 0) + count
+                if is_storage then
+                    storage_item_counts[key] = (storage_item_counts[key] or 0) + count
+                elseif is_consumer then
+                    consumer_item_counts[key] = (consumer_item_counts[key] or 0) + count
                 end
-            end)
-            
-            if not success then
-                log(string.format("[TransferValidation] Error counting inventories for entity %s: %s", entity_name, err))
             end
 
-            -- Count belt items
-            if GameUtils.BELT_ENTITY_TYPES[entity_type] then
-                Util.pcall_warn("[TransferValidation] Belt scan on " .. entity_name, function()
-                    local belt_lines = InventoryScanner.extract_belt_items(entity)
-                    for _, line_data in ipairs(belt_lines) do
-                        if line_data.items then
-                            for _, item in ipairs(line_data.items) do
-                                local key = Util.make_quality_key(item.name, item.quality or Util.QUALITY_NORMAL)
-                                total_item_counts[key] = (total_item_counts[key] or 0) + item.count
-                                -- Belts are considered "storage" - items should be preserved
-                                storage_item_counts[key] = (storage_item_counts[key] or 0) + item.count
-                            end
-                        end
-                    end
-                end)
+            -- Belts and held stacks are "storage" — in transit, expected preserved.
+            for key, count in pairs(SurfaceCounter.count_entity_items(entity, "belts")) do
+                total_item_counts[key] = (total_item_counts[key] or 0) + count
+                storage_item_counts[key] = (storage_item_counts[key] or 0) + count
             end
-
-            -- Count inserter held items
-            if entity_type == "inserter" then
-                Util.pcall_warn("[TransferValidation] Inserter scan on " .. entity_name, function()
-                    local held = InventoryScanner.extract_inserter_held_item(entity)
-                    if held then
-                        local key = Util.make_quality_key(held.name, held.quality or Util.QUALITY_NORMAL)
-                        total_item_counts[key] = (total_item_counts[key] or 0) + held.count
-                        -- Inserters are "in transit" - use storage validation
-                        storage_item_counts[key] = (storage_item_counts[key] or 0) + held.count
-                    end
-                end)
+            for key, count in pairs(SurfaceCounter.count_entity_items(entity, "held")) do
+                total_item_counts[key] = (total_item_counts[key] or 0) + count
+                storage_item_counts[key] = (storage_item_counts[key] or 0) + count
             end
         end
     end
-    
-    -- Count ground items
-    local ground_items = surface.find_entities_filtered({type = "item-entity"})
-    for _, item_entity in ipairs(ground_items) do
-        if item_entity.valid and item_entity.stack and item_entity.stack.valid_for_read then
-            local stack = item_entity.stack
-            local key = Util.make_quality_key(stack.name, (stack.quality and stack.quality.name) or Util.QUALITY_NORMAL)
-            total_item_counts[key] = (total_item_counts[key] or 0) + stack.count
-            storage_item_counts[key] = (storage_item_counts[key] or 0) + stack.count
-        end
-    end
 
-    -- MIGRATION DUAL-READ (time-boxed; deleted at cutover): recompute the item totals through the
-    -- shared meter in this same execution and log any divergence. The verdict below still reads
-    -- total_item_counts from the inline loop above.
-    do
-        local meter_totals = {}
-        for _, entity in ipairs(entities) do
-            if entity.valid then
-                for key, count in pairs(SurfaceCounter.count_entity_items(entity)) do
-                    meter_totals[key] = (meter_totals[key] or 0) + count
-                end
-            end
-        end
-        local ground_totals = SurfaceCounter.count_ground_items(surface)
-        for key, count in pairs(ground_totals) do
-            meter_totals[key] = (meter_totals[key] or 0) + count
-        end
-        local dual_keys = {}
-        for key in pairs(total_item_counts) do dual_keys[key] = true end
-        for key in pairs(meter_totals) do dual_keys[key] = true end
-        local divergence = 0
-        for key in pairs(dual_keys) do
-            local legacy = total_item_counts[key] or 0
-            local shared = meter_totals[key] or 0
-            if legacy ~= shared then
-                divergence = divergence + 1
-                log(string.format("[TransferValidation] DUAL-READ DIVERGENCE %q: legacy %d, shared meter %d",
-                    key, legacy, shared))
-            end
-        end
-        if divergence == 0 then
-            log("[TransferValidation] DUAL-READ: legacy and shared meter agree on every item key")
-        end
+    local ground_totals = SurfaceCounter.count_ground_items(surface)
+    for key, count in pairs(ground_totals) do
+        total_item_counts[key] = (total_item_counts[key] or 0) + count
+        storage_item_counts[key] = (storage_item_counts[key] or 0) + count
     end
 
     local strict = options.strict == true
