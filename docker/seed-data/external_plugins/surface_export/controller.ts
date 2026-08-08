@@ -1233,68 +1233,124 @@ export class ControllerPlugin extends BaseControllerPlugin {
 
 	/** control → controller: raw links (each tagged with its source instance) + the pinned gateway-name
 	 * list (for the web editor, which groups by source instance). */
+	/**
+	 * The gateway config AS THE ACTIVE MODE SEES IT.
+	 *
+	 * Links are filtered to the active gateway set. The disk keeps both modes' links — that is what
+	 * makes a mode switch lossless, and it is deliberate — but handing the inactive ones to the editor
+	 * made them undeletable phantoms: `buildEdges` drew a full line for a link whose handles do not
+	 * exist on the node in this mode, and deleting it staged a key that `handleSetGatewayLinkRequest`
+	 * then refused as "Unknown gateway for one_gate mode". The board stayed permanently dirty and
+	 * every later save re-sent and re-failed that key, dragging legitimate edits into a failure banner
+	 * with no way out but a reload.
+	 *
+	 * Filtering here rather than in the canvas keeps one answer to "what may be edited": the same
+	 * active set the write path validates against.
+	 */
 	async handleGetGatewaysRequest(_request: Record<string, never>) {
+		const activeNames = messages.gatewayNamesFor(this.gatewayMode());
 		const links = Array.from(this.gatewayLinks.entries()).flatMap(([key, targets]) => {
 			const parsed = this.parseGatewayKey(key);
-			return parsed ? [{ sourceInstanceId: parsed.sourceInstanceId, gatewayName: parsed.gatewayName, targets }] : [];
+			if (!parsed || !activeNames.includes(parsed.gatewayName)) {
+				return [];
+			}
+			return [{ sourceInstanceId: parsed.sourceInstanceId, gatewayName: parsed.gatewayName, targets }];
 		});
 		return {
 			gatewayMode: this.gatewayMode(),
-			gatewayNames: messages.gatewayNamesFor(this.gatewayMode()),
+			gatewayNames: activeNames,
 			links,
 		};
 	}
 
 	/** control → controller: replace the entire target list for one (source instance, gateway), persist,
 	 * push the affected instance its own updated config. */
-	async handleSetGatewayLinkRequest(request: { sourceInstanceId: number; gatewayName: string; targets: messages.GatewayLink[] }) {
-		const { gatewayName } = request;
+	/**
+	 * Apply every changed gateway on ONE instance as a single unit.
+	 *
+	 * ATOMIC BY DESIGN. Multi mode's second rule — no two gates on an instance aimed at the same
+	 * destination — is a statement about the instance's whole layout, so it is checked against the
+	 * PROPOSED layout (persisted, overlaid with everything in this request) rather than against
+	 * whatever happens to be on disk part-way through a batch. Validating key-by-key judged states the
+	 * operator never asked for: moving a destination from gate 2 to gate 1 was rejected on gate 1
+	 * (gate 2 still held it) and then applied on gate 2, deleting the link; swapping two gates'
+	 * destinations was rejected on both halves on every retry, making a legal layout unreachable.
+	 *
+	 * Nothing is written until every gateway in the request passes, so a rejected batch leaves the
+	 * config exactly as it was.
+	 */
+	async handleSetGatewayLinkRequest(request: {
+		sourceInstanceId: number;
+		gateways: Array<{ gatewayName: string; targets: messages.GatewayLink[] }>;
+	}) {
 		const sourceInstanceId = Number(request.sourceInstanceId);
 		const mode = this.gatewayMode();
-		// The ACTIVE set, unlike the load path’s union: an operator can only edit gateways their mode
-		// actually exposes, even though the other mode’s links remain safely on disk.
-		if (!messages.gatewayNamesFor(mode).includes(gatewayName)) {
-			return { success: false, error: `Unknown gateway for ${mode} mode: ${gatewayName}` };
+		const activeNames = messages.gatewayNamesFor(mode);
+		const submitted = request.gateways || [];
+		if (!submitted.length) {
+			return { success: false, error: "No gateways in the request" };
 		}
 		// A non-integer/NaN id yields undefined from instances.get() (caught by !sourceInstance).
 		const sourceInstance = this.c.instances.get(sourceInstanceId);
 		if (!sourceInstance || sourceInstance.isDeleted) {
 			return { success: false, error: `Unknown source instance: ${request.sourceInstanceId}` };
 		}
-		const key = this.gatewayKey(sourceInstanceId, gatewayName);
-		// Normalize: keep only links with a valid integer instance id that is NOT the source itself (an
-		// instance can't gateway-transfer to its own instance — enforced here, not just in the web dropdown,
-		// so a hand-edited config or future import path can't persist a self-referential target); default a
-		// blank target gateway to the source gateway name (the 1:1 default).
-		const targets: messages.GatewayLink[] = (request.targets || [])
-			.filter(t => Number.isInteger(Number(t.targetInstanceId)) && Number(t.targetInstanceId) !== sourceInstanceId)
-			.map(t => ({ targetInstanceId: Number(t.targetInstanceId), targetGateway: t.targetGateway || gatewayName }));
+
+		// Normalize first, reject second, write third. Normalize: keep only links with a valid integer
+		// instance id that is NOT the source itself (an instance can't gateway-transfer to its own
+		// instance — enforced here, not just in the web dropdown, so a hand-edited config or future
+		// import path can't persist a self-referential target); default a blank target gateway to the
+		// source gateway name (the 1:1 default).
+		const normalized = new Map<string, messages.GatewayLink[]>();
+		for (const entry of submitted) {
+			const gatewayName = entry?.gatewayName;
+			// The ACTIVE set, unlike the load path's union: an operator can only edit gateways their
+			// mode actually exposes, even though the other mode's links remain safely on disk.
+			if (!gatewayName || !activeNames.includes(gatewayName)) {
+				return { success: false, error: `Unknown gateway for ${mode} mode: ${gatewayName}` };
+			}
+			if (normalized.has(gatewayName)) {
+				return { success: false, error: `Gateway '${gatewayName}' appears twice in one request` };
+			}
+			normalized.set(gatewayName, (entry.targets || [])
+				.filter(t => Number.isInteger(Number(t.targetInstanceId)) && Number(t.targetInstanceId) !== sourceInstanceId)
+				.map(t => ({ targetInstanceId: Number(t.targetInstanceId), targetGateway: t.targetGateway || gatewayName })));
+		}
 
 		if (mode === "multi") {
-			// Multi Cluster’s two rules, enforced HERE and not only in the canvas: the web UI is one
+			// Multi Cluster's two rules, enforced HERE and not only in the canvas: the web UI is one
 			// caller, and a hand-edited config or a future import path must not be able to persist a
 			// layout the mode does not permit. Rejected with a reason rather than truncated — silently
 			// dropping the surplus is how a gateway ends up pointing somewhere nobody chose.
-			const others = new Map<string, messages.GatewayLink[]>();
-			for (const otherName of messages.MULTI_GATEWAY_NAMES) {
-				if (otherName === gatewayName) {
-					continue;
-				}
-				const existing = this.gatewayLinks.get(this.gatewayKey(sourceInstanceId, otherName));
-				if (existing?.length) {
-					others.set(otherName, existing);
+			//
+			// `proposed` is the END state: what is on disk for the gateways this request does NOT touch,
+			// plus what the request asks for. That is what makes a swap legal and a move safe.
+			const proposed = new Map<string, messages.GatewayLink[]>();
+			for (const name of messages.MULTI_GATEWAY_NAMES) {
+				const next = normalized.has(name)
+					? normalized.get(name)
+					: this.gatewayLinks.get(this.gatewayKey(sourceInstanceId, name));
+				if (next?.length) {
+					proposed.set(name, next);
 				}
 			}
-			const violation = messages.checkMultiModeLink(gatewayName, targets, others);
-			if (violation) {
-				return { success: false, error: violation };
+			for (const [gatewayName, targets] of normalized) {
+				const others = new Map(proposed);
+				others.delete(gatewayName);
+				const violation = messages.checkMultiModeLink(gatewayName, targets, others);
+				if (violation) {
+					return { success: false, error: violation };
+				}
 			}
 		}
 
-		if (targets.length > 0) {
-			this.gatewayLinks.set(key, targets);
-		} else {
-			this.gatewayLinks.delete(key);
+		for (const [gatewayName, targets] of normalized) {
+			const key = this.gatewayKey(sourceInstanceId, gatewayName);
+			if (targets.length > 0) {
+				this.gatewayLinks.set(key, targets);
+			} else {
+				this.gatewayLinks.delete(key);
+			}
 		}
 		// A write failure is a REAL failure, not a warning: the in-memory map already holds the new
 		// link, so the UI and every later read agree with each other and the operator has no way to
@@ -1304,7 +1360,10 @@ export class ControllerPlugin extends BaseControllerPlugin {
 			return { success: false, error: `Gateway config could not be written to disk: ${persistError}` };
 		}
 		const pushError = await this.pushGatewayConfigToInstance(sourceInstanceId);
-		this.logger.info(`Gateway '${gatewayName}' on instance ${sourceInstanceId} links set: ${targets.length} target(s)`);
+		this.logger.info(
+			`Instance ${sourceInstanceId} gateways set: `
+			+ [...normalized].map(([name, targets]) => `${name}=${targets.length}`).join(", "),
+		);
 		if (pushError) {
 			// The config IS saved — reporting failure here would invite a retry that changes nothing.
 			// What the operator needs to know is that the running instance has not picked it up.

@@ -330,7 +330,10 @@ export class WebPlugin extends BaseWebPlugin {
 		return this.link.send(new GetGatewaysRequest({}));
 	}
 
-	async setGatewayLink(payload: { sourceInstanceId: number; gatewayName: string; targets: Array<{ targetInstanceId: number; targetGateway: string }> }) {
+	async setGatewayLink(payload: {
+		sourceInstanceId: number;
+		gateways: Array<{ gatewayName: string; targets: Array<{ targetInstanceId: number; targetGateway: string }> }>;
+	}) {
 		return this.link.send(new SetGatewayLinkRequest(payload));
 	}
 

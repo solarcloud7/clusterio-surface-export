@@ -465,27 +465,38 @@ export default function GatewayCanvas({ plugin, state, onOpenImport }: {
 		/** Saved, but the running instance did not take it — see where this is pushed. */
 		const warnings: string[] = [];
 		try {
-			// One call per dirty key, each carrying that gateway's WHOLE target list — which is the
-			// contract setGatewayLink already has. Sequential rather than parallel so a partial failure
-			// leaves a comprehensible trail in the controller log.
+			// ONE CALL PER INSTANCE, carrying every changed gateway on it. Not one call per gateway:
+			// Multi mode's "no two gates at the same destination" rule is about an instance's whole
+			// layout, so splitting the save let the controller judge half-applied states — a swap was
+			// refused on both halves forever, and a move from one gate to another deleted the link.
+			// Grouping here makes the unit of saving the same as the unit of validation.
+			//
+			// Sequential across instances so a partial failure leaves a comprehensible trail.
+			const byInstance = new Map<number, Array<{ gatewayName: string; targets: Array<{ targetInstanceId: number; targetGateway: string }> }>>();
 			for (const key of pending) {
 				const parsed = parseEditKey(key);
 				if (!parsed) {
 					failures.push(`${key}: unreadable key`);
 					continue;
 				}
+				const group = byInstance.get(parsed.sourceInstanceId) || [];
+				group.push({
+					gatewayName: parsed.gatewayName,
+					targets: (edits[key] || []).map(target => ({
+						targetInstanceId: Number(target.targetInstanceId),
+						targetGateway: target.targetGateway || parsed.gatewayName,
+					})),
+				});
+				byInstance.set(parsed.sourceInstanceId, group);
+			}
+
+			for (const [sourceInstanceId, gateways] of byInstance) {
+				const label = gateways.map(entry => entry.gatewayName).join(", ");
 				try {
-					const response = (await plugin.setGatewayLink({
-						sourceInstanceId: parsed.sourceInstanceId,
-						gatewayName: parsed.gatewayName,
-						targets: (edits[key] || []).map(target => ({
-							targetInstanceId: Number(target.targetInstanceId),
-							targetGateway: target.targetGateway || parsed.gatewayName,
-						})),
-					})) as JsonObject;
+					const response = (await plugin.setGatewayLink({ sourceInstanceId, gateways })) as JsonObject;
 					const reason = String(getProp(response, "error", "") || "");
 					if (!getProp(response, "success", false)) {
-						failures.push(`${parsed.gatewayName}: ${reason || "save failed"}`);
+						failures.push(`${label}: ${reason || "save failed"}`);
 					} else if (reason) {
 						// SUCCESS CAN STILL CARRY A WARNING, and reading `error` only on failure threw
 						// away the one case the controller added it for: the config is persisted but the
@@ -497,7 +508,7 @@ export default function GatewayCanvas({ plugin, state, onOpenImport }: {
 						warnings.push(reason);
 					}
 				} catch (err: unknown) {
-					failures.push(`${parsed.gatewayName}: ${getErrorMessage(err, "save failed")}`);
+					failures.push(`${label}: ${getErrorMessage(err, "save failed")}`);
 				}
 			}
 
