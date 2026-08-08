@@ -44,3 +44,39 @@ export function selectPlanetNames(buckets: Iterable<Iterable<PrototypeLike>>): s
 	}
 	return [...names].sort((a, b) => a.localeCompare(b));
 }
+
+/** A `space-connection` prototype, reduced to the two fields that define the route. */
+export type SpaceConnectionLike = { from?: unknown; to?: unknown };
+
+/**
+ * Everywhere a platform can actually FLY, as the endpoints of the space-connection graph.
+ *
+ * MEASURED RULE, not a taxonomy guess. Probed on the live cluster at the 2.1.11 pin: 15
+ * space-locations, 16 space-connections, and the endpoint set separates them exactly —
+ *
+ *     endpoints    nauvis, vulcanus, gleba, fulgora, maraxsis, aquilo, solar-system-edge,
+ *                  shattered-planet, and all five surfexp gateways
+ *     never an
+ *     endpoint     maraxsis-trench, space-location-unknown
+ *
+ * which is precisely the two that must not be offered. `maraxsis-trench` is a `planet` prototype —
+ * it is a real surface you can stand on — but no route reaches it, because it is the bottom of an
+ * ocean rather than a place you fly a platform to. That is why selecting on `type === "planet"`
+ * (see above) both OFFERS the trench and OMITS every gateway: type describes what a location IS,
+ * and this question is about what it is CONNECTED to.
+ *
+ * Deliberately not a hardcoded exclusion list. A mod that adds another unreachable surface is
+ * excluded by the same rule with no edit here, and a mod that adds a real destination appears
+ * without one either.
+ */
+export function selectNavigableLocationNames(connections: Iterable<SpaceConnectionLike>): string[] {
+	const names = new Set<string>();
+	for (const connection of connections) {
+		for (const end of [connection?.from, connection?.to]) {
+			if (typeof end === "string" && end) {
+				names.add(end);
+			}
+		}
+	}
+	return [...names].sort((a, b) => a.localeCompare(b));
+}

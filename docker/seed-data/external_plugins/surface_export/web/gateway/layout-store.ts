@@ -72,6 +72,15 @@ export function saveLayout(nodes: readonly LayoutNode[]): void {
 	}
 }
 
+/** Forget every saved position, so the computed layout takes over again on the next rebuild. */
+export function clearLayout(): void {
+	try {
+		window.localStorage.removeItem(STORAGE_KEY);
+	} catch (err: unknown) {
+		console.warn("surface_export: could not clear the saved gateway layout", err);
+	}
+}
+
 /**
  * Put each node where it was last left, leaving the computed layout for ones never moved.
  *

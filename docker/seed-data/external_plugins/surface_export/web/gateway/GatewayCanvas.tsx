@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Alert, Button, Empty, Select, Space, Spin, Tooltip, Typography, message as antMessage } from "antd";
-import { UploadOutlined } from "@ant-design/icons";
+import { ReloadOutlined, UploadOutlined } from "@ant-design/icons";
 import {
 	Background,
 	Controls,
@@ -26,6 +26,7 @@ import { PERMISSIONS } from "../../messages";
 import {
 	ALL_HOSTS,
 	DIMMED_OPACITY,
+	NODE_DIAMETER,
 	applyConnect,
 	applyDisconnect,
 	buildGraph,
@@ -41,7 +42,7 @@ import {
 } from "./gateway-graph";
 import type { ConnectRequest, GatewayEdits } from "./gateway-graph";
 import { NodeActionsContext, platformActionKey } from "./node-actions";
-import { applySavedLayout, loadLayout, saveLayout } from "./layout-store";
+import { applySavedLayout, clearLayout, loadLayout, saveLayout } from "./layout-store";
 import { SHIP_LEGEND, instancePairKey, noteLiveSeen, noteTerminalSeen, shipExpiryMs, shipPhaseFor, shipsInFlight, transientEdgeId } from "./transfer-motion";
 import { DEFAULT_GATEWAY_MODE, checkMultiModeLink, gatewayNamesFor } from "../../shared/dto";
 import type { GatewayMode } from "../../shared/dto";
@@ -123,6 +124,19 @@ export default function GatewayCanvas({ plugin, state, onOpenImport }: {
 	// Read ONCE, into a ref: the saved layout is a starting position, not a live input. Re-reading it
 	// on every rebuild would let a stale copy fight `preservePositions` for a node being dragged.
 	const savedLayout = useRef(loadLayout());
+	// Captured from onInit because this component RENDERS <ReactFlow> rather than sitting inside it,
+	// so `useReactFlow()` has no provider to read here.
+	const flow = useRef<{
+		fitView: (options?: { padding?: number; duration?: number }) => void;
+		setCenter?: (x: number, y: number, options?: { zoom?: number; duration?: number }) => void;
+	} | null>(null);
+	const [fitRequest, setFitRequest] = useState(0);
+
+	useEffect(() => {
+		if (fitRequest) {
+			flow.current?.fitView({ padding: 0.2, duration: 300 });
+		}
+	}, [fitRequest]);
 
 	/**
 	 * Node positions save THEMSELVES, on drop.
@@ -135,6 +149,7 @@ export default function GatewayCanvas({ plugin, state, onOpenImport }: {
 	 *
 	 * On drop rather than during the drag: one write per gesture instead of one per frame.
 	 */
+
 	const onNodeDragStop = useCallback(() => {
 		setNodes(current => {
 			saveLayout(current);
@@ -167,6 +182,43 @@ export default function GatewayCanvas({ plugin, state, onOpenImport }: {
 
 	const graph = useMemo(() => buildGraph(tree, edits, mode, hostFilter), [tree, edits, mode, hostFilter]);
 	const pending = useMemo(() => dirtyKeys(edits, baseline), [edits, baseline]);
+
+	/**
+	 * Put every node back on the computed layout and frame them all.
+	 *
+	 * Both halves are needed and neither is enough alone: forgetting the saved positions without
+	 * re-fitting leaves the viewport wherever it was, and fitting without forgetting re-frames the
+	 * same scattered arrangement. `setNodes([])` forces the graph effect to rebuild from scratch —
+	 * `preservePositions` would otherwise keep the very positions we are discarding.
+	 */
+	const resetLayout = useCallback(() => {
+		clearLayout();
+		savedLayout.current = {};
+		// Straight to the computed layout rather than clearing and waiting for the next tree push,
+		// which would blank the canvas for up to a second.
+		setNodes(graph.nodes as unknown as Node[]);
+		// The frame has to happen AFTER those positions commit, so it is requested here and performed
+		// in an effect rather than called inline against stale node state.
+		setFitRequest(request => request + 1);
+	}, [graph, setNodes]);
+
+	/**
+	 * Centre the view on one instance and select it.
+	 *
+	 * Selecting rather than only panning, because selection is what opens that node's platform
+	 * toolbar — so finding an instance and acting on it are the same gesture rather than two.
+	 */
+	const focusNode = useCallback((nodeId: string) => {
+		setNodes(current => current.map(node => ({ ...node, selected: node.id === nodeId })));
+		const target = nodes.find(node => node.id === nodeId);
+		if (target) {
+			flow.current?.setCenter?.(
+				target.position.x + NODE_DIAMETER / 2,
+				target.position.y + NODE_DIAMETER / 2,
+				{ zoom: 1.2, duration: 400 },
+			);
+		}
+	}, [nodes, setNodes]);
 
 	/**
 	 * The transfers currently worth drawing a ship for.
@@ -472,6 +524,9 @@ export default function GatewayCanvas({ plugin, state, onOpenImport }: {
 					onEdgesDelete={onEdgesDelete}
 					onEdgeClick={onEdgeClick}
 					onNodeDragStop={onNodeDragStop}
+					// This component renders <ReactFlow>, so it is outside the provider `useReactFlow()`
+					// needs; onInit is the supported way to get the instance from here.
+					onInit={instance => { flow.current = instance as unknown as typeof flow.current; }}
 					nodeTypes={CANVAS_NODE_TYPES}
 					edgeTypes={CANVAS_EDGE_TYPES}
 					connectionLineComponent={ConnectionLine}
@@ -518,6 +573,30 @@ export default function GatewayCanvas({ plugin, state, onOpenImport }: {
 									...graph.hosts.map(host => ({ value: host.key, label: host.name })),
 								]}
 							/>
+							{/* Jump to an instance by name. On two nodes this is redundant; on a real cluster
+							    the whole point of a canvas — that everything has a place — is what makes
+							    finding one thing hard. Selecting also opens that node's platform toolbar,
+							    so "find it" and "act on it" are one gesture. */}
+							<Select
+								size="small"
+								showSearch
+								allowClear
+								value={null}
+								placeholder="Find an instance"
+								style={{ minWidth: 190 }}
+								popupMatchSelectWidth={false}
+								filterOption={(input, option) =>
+									String(option?.label ?? "").toLowerCase().includes(input.toLowerCase())
+								}
+								options={graph.nodes.map(node => ({
+									value: node.id,
+									label: String(node.data.instanceName || node.id),
+								}))}
+								onChange={value => value && focusNode(String(value))}
+							/>
+							<Tooltip title="Forget the saved positions and frame every instance">
+								<Button size="small" icon={<ReloadOutlined />} onClick={resetLayout}>Reset</Button>
+							</Tooltip>
 							<Tooltip title="Import a platform from a JSON export file">
 								<Button size="small" icon={<UploadOutlined />} onClick={onOpenImport}>Import</Button>
 							</Tooltip>
