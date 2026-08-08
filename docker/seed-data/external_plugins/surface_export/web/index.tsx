@@ -17,7 +17,7 @@ import { UploadOutlined } from "@ant-design/icons";
 import * as messageDefs from "../messages";
 import ManualTransferTab from "./ManualTransferTab";
 import TransactionLogsTab from "./TransactionLogsTab";
-import GatewayCanvas from "./GatewayCanvas";
+import GatewayCanvas from "./gateway/GatewayCanvas";
 import ImportModal from "./ImportModal";
 import type { JsonObject, LogEvent, SurfaceExportPlugin, SurfaceExportState } from "./view-models";
 

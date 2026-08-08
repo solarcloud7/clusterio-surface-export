@@ -6,6 +6,7 @@ import {
 	MarkerType,
 	MiniMap,
 	Panel,
+	ConnectionMode,
 	ReactFlow,
 	useEdgesState,
 	useNodesState,
@@ -20,7 +21,7 @@ import { useAccount } from "@clusterio/web_ui";
 // include/exclude and so already covers node_modules.
 import "@xyflow/react/dist/style.css";
 
-import { PERMISSIONS } from "../messages";
+import { PERMISSIONS } from "../../messages";
 import {
 	applyConnect,
 	applyDisconnect,
@@ -31,13 +32,14 @@ import {
 	instanceIdFromNodeId,
 	parseEditKey,
 	preservePositions,
-} from "../shared/gateway-graph";
-import type { ConnectRequest, GatewayEdits } from "../shared/gateway-graph";
-import { DEFAULT_GATEWAY_MODE, checkMultiModeLink } from "../shared/dto";
-import type { GatewayMode } from "../shared/dto";
-import { CANVAS_NODE_TYPES } from "./canvas-nodes";
-import { getErrorMessage, getProp } from "./utils";
-import type { JsonObject, SurfaceExportPlugin, SurfaceExportState } from "./view-models";
+} from "../../shared/gateway-graph";
+import type { ConnectRequest, GatewayEdits } from "../../shared/gateway-graph";
+import { DEFAULT_GATEWAY_MODE, checkMultiModeLink } from "../../shared/dto";
+import type { GatewayMode } from "../../shared/dto";
+import { CANVAS_EDGE_TYPES, CANVAS_NODE_TYPES, GATEWAY_EDGE_TYPE } from "./node-types";
+import ConnectionLine from "./ConnectionLine";
+import { getErrorMessage, getProp } from "../utils";
+import type { JsonObject, SurfaceExportPlugin, SurfaceExportState } from "../view-models";
 
 const { Text } = Typography;
 
@@ -141,12 +143,13 @@ export default function GatewayCanvas({ plugin, state }: {
 				sourceHandle: edge.sourceHandle,
 				target: edge.target,
 				targetHandle: edge.targetHandle,
+				type: GATEWAY_EDGE_TYPE,
 				selected: selected.has(edge.id),
 				// Direction is drawn, not implied. A config link may be one-way, and an edge that could
 				// only say "connected" would render that as a two-way portal.
 				markerEnd: edge.forward ? { type: MarkerType.ArrowClosed } : undefined,
 				markerStart: edge.reverse ? { type: MarkerType.ArrowClosed } : undefined,
-				data: { forward: edge.forward, reverse: edge.reverse },
+				data: { forward: edge.forward, reverse: edge.reverse, sourceGateway: edge.sourceGateway },
 			}));
 		});
 	}, [graph, setNodes, setEdges]);
@@ -196,6 +199,25 @@ export default function GatewayCanvas({ plugin, state }: {
 			return applyConnect(previous, request);
 		});
 	}, [mode]);
+
+	/**
+	 * Clicking an edge REMOVES the link, in both directions.
+	 *
+	 * Safe to make a single click because nothing is sent until Save: a mis-click costs a Revert,
+	 * not a gateway. Select-then-Delete still works too — this is the discoverable path, not the
+	 * only one.
+	 */
+	const onEdgeClick = useCallback((_event: React.MouseEvent, edge: Edge) => {
+		if (!canEdit) {
+			return;
+		}
+		const request = toConnectRequest(edge);
+		if (!request) {
+			antMessage.error("Could not read that edge — nothing was removed.", 6);
+			return;
+		}
+		setEdits(previous => applyDisconnect(previous, request));
+	}, [canEdit]);
 
 	const onEdgesDelete = useCallback((deleted: Edge[]) => {
 		setEdits(previous => deleted.reduce((acc, edge) => {
@@ -266,7 +288,14 @@ export default function GatewayCanvas({ plugin, state }: {
 					onEdgesChange={onEdgesChange}
 					onConnect={onConnect}
 					onEdgesDelete={onEdgesDelete}
+					onEdgeClick={onEdgeClick}
 					nodeTypes={CANVAS_NODE_TYPES}
+					edgeTypes={CANVAS_EDGE_TYPES}
+					connectionLineComponent={ConnectionLine}
+					// Loose lets a drag END on a source-type handle. Each gateway stacks a source and a
+					// target handle at one point, and Strict would refuse the drop whenever the pointer
+					// landed on the source of the pair — a coin flip the operator cannot see or aim around.
+					connectionMode={ConnectionMode.Loose}
 					nodesConnectable={canEdit}
 					edgesFocusable={canEdit}
 					elementsSelectable

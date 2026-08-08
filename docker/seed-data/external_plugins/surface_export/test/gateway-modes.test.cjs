@@ -150,19 +150,21 @@ test("a side-qualified handle id still decodes to its gateway", () => {
 });
 
 test("edges name handles that actually exist on the node they attach to", () => {
-	// A one-gate node renders only side-qualified handles, so an edge emitted without a side would
-	// address a handle that is not there and silently fail to render.
-	const oneGateEdges = buildEdges({
-		[editKey(HOST_1, ONE_GATE_NAME)]: [{ targetInstanceId: HOST_2, targetGateway: ONE_GATE_NAME }],
-	}, "one_gate");
-	assert.ok(oneGateEdges[0].sourceHandle.includes("@"), "one-gate edges must name a side");
-	assert.ok(oneGateEdges[0].targetHandle.includes("@"));
-
-	const multiEdges = buildEdges({
-		[editKey(HOST_1, MULTI_GATEWAY_NAMES[0])]: [{ targetInstanceId: HOST_2, targetGateway: MULTI_GATEWAY_NAMES[2] }],
-	}, "multi");
-	assert.ok(!multiEdges[0].sourceHandle.includes("@"), "multi edges address the gateway's own side");
-	assert.ok(!multiEdges[0].targetHandle.includes("@"));
+	// Handle ids carry no side in EITHER mode. Multi gives each gateway its own pair (unique by
+	// name); one-gate has a single easy-connect pair covering the whole node. An id that named a side
+	// would address a handle that is not rendered, and React Flow drops such an edge silently.
+	for (const [mode, gateway, otherGateway] of [
+		["one_gate", ONE_GATE_NAME, ONE_GATE_NAME],
+		["multi", MULTI_GATEWAY_NAMES[0], MULTI_GATEWAY_NAMES[2]],
+	]) {
+		const edges = buildEdges({
+			[editKey(HOST_1, gateway)]: [{ targetInstanceId: HOST_2, targetGateway: otherGateway }],
+		}, mode);
+		assert.strictEqual(edges.length, 1);
+		assert.strictEqual(edges[0].sourceHandle, sourceHandleId(edges[0].sourceGateway), `${mode} source handle`);
+		assert.strictEqual(edges[0].targetHandle, targetHandleId(edges[0].targetGateway), `${mode} target handle`);
+		assert.ok(!edges[0].sourceHandle.includes("@"), `${mode}: no side suffix is emitted`);
+	}
 });
 
 test("which side a link was drawn from does not change the edge's identity", () => {

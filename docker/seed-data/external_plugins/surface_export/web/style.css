@@ -17,6 +17,30 @@
 	min-height: 420px;
 }
 
+/* ── Canvas: edges ────────────────────────────────────────────────────────── */
+
+/* Clicking an edge removes the link, so it advertises that with a pointer and brightens on hover.
+   The widened hit area is set on the edge component (interactionWidth), not here — thickening the
+   drawn line to make it clickable would make every edge shout. */
+.surface-export-edge {
+	transition: opacity 120ms ease;
+}
+
+.react-flow__edge:hover .surface-export-edge {
+	opacity: 0.65;
+}
+
+/* The connection line drawn WHILE dragging. Dashes march toward the cursor so an in-progress link
+   reads as in-progress rather than as an edge that already exists. */
+.react-flow__connectionline .animated {
+	stroke-dasharray: 6 4;
+	animation: surface-export-dash 500ms linear infinite;
+}
+
+@keyframes surface-export-dash {
+	to { stroke-dashoffset: -10; }
+}
+
 /* ── Canvas: host boxes, instance circles, gateway handles ────────────────── */
 
 /* The group node's box is sized by React Flow from the node's `style`; this fills it. Dashed and
@@ -63,10 +87,26 @@
 	max-width: 108px;
 }
 
+/* ONE line. Instance names are long and near-identical (“clusterio-host-1-instance-1”), so
+   wrapping pushed four lines of mostly-shared prefix under a shape it was meant to label. The full
+   name is on the element’s title for hover. */
 .surface-export-instance-node-name {
 	font-size: 12px;
-	line-height: 1.25;
-	overflow-wrap: anywhere;
+	line-height: 1.3;
+	display: block;
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	max-width: 100%;
+}
+
+/* Port and status share a second line — both are small qualifiers on the name above. */
+.surface-export-instance-node-meta {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	gap: 6px;
+	margin-top: 2px;
 }
 
 .surface-export-instance-node-port {
@@ -100,16 +140,6 @@
 	pointer-events: none;
 }
 
-/* One-gate mode: the rim handles carry no icon (the gate is drawn once at the node's centre), so
-   they shrink to plain connection points. Kept comfortably larger than React Flow's 6px default —
-   they are still the thing you drag. */
-.surface-export-gw-handle-bare {
-	width: 18px;
-	height: 18px;
-	background: #1f1f1f;
-	border-color: #1668dc;
-}
-
 /* One-gate mode: the node is the GATEWAY'S OWN SILHOUETTE, not a circle with art inside it. The
    circle, its border and its fill are all removed here so the PNG's alpha defines the shape —
    clipping the square art to a circle cropped the pedestal off the bottom and filled the corners
@@ -131,43 +161,62 @@
 	display: flex;
 	align-items: center;
 	justify-content: center;
+	/* The art is DECORATION painted over the easy-connect handle, and it is declared after the
+	   handles so it stacks above them. Without this it swallows every pointer that lands on the
+	   gateway — which is the whole node — and a drag pans the canvas instead of starting a link.
+	   Measured: elementFromPoint at the node centre returned this div, not the handle. */
+	pointer-events: none;
 }
 
-/* Online/offline is carried by a GLOW rather than a ring, because `drop-shadow` follows the image's
-   alpha — so the indicator traces the gateway's actual outline instead of drawing a circle around
-   art that is not circular. That is the whole reason the ring had to go. */
-.surface-export-instance-face.surface-export-gw-active {
+/* LIT vs FADED tracks ONLINE, not whether the gateway has links. An offline instance may well
+   still hold links, and showing it bright because it is configured says the wrong thing about the
+   thing an operator needs to see. `drop-shadow` follows the image alpha, so the glow traces the
+   gateway’s real outline rather than boxing non-circular art in a circle. */
+.surface-export-instance-node-online .surface-export-instance-face {
 	opacity: 1;
-	filter: drop-shadow(0 0 7px rgba(22, 104, 220, 0.9));
-}
-
-/* The disabled affordance is tuned DOWN at node scale. The rim-icon values (opacity .35, full
-   greyscale) were chosen for a 26px dot, where they read as "switched off"; on art filling a 150px
-   node the same values read as "this failed to load". Enough desaturation to be obviously inactive,
-   not enough to look broken. */
-.surface-export-instance-face.surface-export-gw-idle {
-	opacity: 0.75;
-	filter: grayscale(0.7) drop-shadow(0 0 5px rgba(0, 0, 0, 0.8));
+	filter: drop-shadow(0 0 8px rgba(22, 104, 220, 0.85));
 }
 
 .surface-export-instance-node-offline .surface-export-instance-face {
-	opacity: 0.5;
+	opacity: 0.45;
 	filter: grayscale(1);
 }
 
-/* With the art filling the node, the label cannot sit on top of it. It moves BELOW the circle;
-   `top: 100%` anchors it to the node's bottom edge, and the negative-margin centering keeps it
-   centred without knowing the label's width. Not part of the node's hit area, so it never competes
-   with the rim handles for a drag. */
+/* With the art filling the node, the label cannot sit on top of it — it moves BELOW, anchored to the
+   node's bottom edge by `top: 100%` and centred without needing to know its own width. It is WIDER
+   than the node on purpose: instance names do not fit in 150px, and the layout reserves the extra
+   width (CAPTION_WIDTH in shared/gateway-graph.ts) so neighbours never overlap it. */
 .surface-export-instance-node-caption {
 	position: absolute;
 	top: 100%;
 	left: 50%;
 	transform: translateX(-50%);
 	margin-top: 12px;
-	max-width: 180px;
-	pointer-events: none;
+	/* Overrides the body rule's 108px cap, which is sized for text INSIDE the circle. */
+	max-width: none;
+	width: 190px;
+	/* The grip. Easy connect turns the gate into one big connection handle, so the node can only be
+	   MOVED by something outside it — this caption (see dragHandle in shared/gateway-graph.ts). */
+	cursor: grab;
 	text-align: center;
+}
+
+.surface-export-instance-node-caption:active {
+	cursor: grabbing;
+}
+
+/* Easy connect: the handle covers the whole node so a drag can start or land anywhere on the
+   gate. Invisible on purpose — the art is the affordance. */
+.surface-export-gw-cover {
+	position: absolute;
+	inset: 0;
+	width: 100%;
+	height: 100%;
+	border-radius: 50%;
+	background: transparent;
+	border: none;
+	transform: none;
+	opacity: 0;
 }
 
 /* Zero outgoing links = a platform parked here cannot leave. The old tab said so in words; here it

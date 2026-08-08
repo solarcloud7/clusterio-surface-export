@@ -22,7 +22,7 @@ rather than a hand-export:
 ```bash
 node tools/surface-export/downscale-icon.mjs \
   docker/seed-data/mods-src/surfexp_gateways/graphics/icons/starmap-gateway-hub.png \
-  docker/seed-data/external_plugins/surface_export/web/assets/gateway-hub-128.png --factor=4
+  docker/seed-data/external_plugins/surface_export/web/gateway/assets/gateway-hub-128.png --factor=4
 ```
 
 128 px, not 256 or 512: at a 150 px node it is a 1.17x upscale (effectively sharp) for 40 KB, where

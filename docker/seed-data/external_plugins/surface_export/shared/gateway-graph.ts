@@ -200,12 +200,11 @@ function directedLinks(edits: GatewayEdits): Array<{ from: Endpoint; to: Endpoin
 	return out;
 }
 
-export function buildEdges(edits: GatewayEdits, mode: GatewayMode = DEFAULT_GATEWAY_MODE): GatewayEdgeModel[] {
-	// One-gate nodes carry four handle pairs for one gateway, so an emitted edge must name a SIDE or
-	// it addresses a handle that does not exist. The choice is canonical (out the right, in the left)
-	// purely so rendering is stable; a user may still draw from any side.
-	const sourceSide: HandleSide | undefined = mode === "multi" ? undefined : "right";
-	const targetSide: HandleSide | undefined = mode === "multi" ? undefined : "left";
+export function buildEdges(edits: GatewayEdits, _mode: GatewayMode = DEFAULT_GATEWAY_MODE): GatewayEdgeModel[] {
+	// Handle ids carry no side. Multi mode gives each gateway its own pair (unique by name), and
+	// one-gate mode has a single easy-connect pair covering the whole node — so in both modes the
+	// gateway name alone identifies the handle. Edges float anyway, so the id is only an anchor for
+	// React Flow’s bookkeeping, never a position.
 	const byPair = new Map<string, GatewayEdgeModel>();
 	for (const link of directedLinks(edits)) {
 		const { low, high, flipped } = orient(link.from, link.to);
@@ -215,9 +214,9 @@ export function buildEdges(edits: GatewayEdits, mode: GatewayMode = DEFAULT_GATE
 			edge = {
 				id,
 				source: instanceNodeId(low.instanceId),
-				sourceHandle: sourceHandleId(low.gatewayName, sourceSide),
+				sourceHandle: sourceHandleId(low.gatewayName),
 				target: instanceNodeId(high.instanceId),
-				targetHandle: targetHandleId(high.gatewayName, targetSide),
+				targetHandle: targetHandleId(high.gatewayName),
 				sourceInstanceId: low.instanceId,
 				sourceGateway: low.gatewayName,
 				targetInstanceId: high.instanceId,
@@ -405,6 +404,14 @@ export interface GraphNodeModel {
 	draggable?: boolean;
 	selectable?: boolean;
 	connectable?: boolean;
+	/**
+	 * CSS selector for the sub-element that initiates a node drag.
+	 *
+	 * Needed only where the node itself is a connection handle (easy connect): React Flow states
+	 * that in that case “you need to define separate drag handles ... to still be able to drag the
+	 * node”, because the handle swallows the pointer that would otherwise start a move.
+	 */
+	dragHandle?: string;
 }
 
 function isOnline(instance: InstanceLike): boolean {
@@ -487,6 +494,10 @@ export function buildGraph(
 				},
 				parentId: hostNodeId(group.key),
 				extent: "parent",
+				// EASY CONNECT trade-off, stated by React Flow itself: a handle covering the node means
+				// “you need to define separate drag handles ... to still be able to drag the node”. In
+				// one-gate mode the gate IS the handle, so the caption underneath becomes the grip.
+				dragHandle: mode === "multi" ? undefined : ".surface-export-instance-node-caption",
 				data: {
 					mode,
 					instanceId: instance.instanceId,

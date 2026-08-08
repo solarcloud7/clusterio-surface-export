@@ -36,7 +36,7 @@ const REPO = path.resolve(PLUGIN, "../../../..");
  */
 const DERIVED = [
 	{
-		asset: "web/assets/gateway-hub-128.png",
+		asset: "web/gateway/assets/gateway-hub-128.png",
 		source: "docker/seed-data/mods-src/surfexp_gateways/graphics/icons/starmap-gateway-hub.png",
 		factor: 4,
 	},
@@ -47,14 +47,14 @@ function fail(message) {
 	process.exit(1);
 }
 
-const assetDir = path.join(PLUGIN, "web/assets");
+const assetDir = path.join(PLUGIN, "web/gateway/assets");
 const present = fs.existsSync(assetDir)
 	? fs.readdirSync(assetDir).filter(name => /\.(png|svg|jpe?g|gif|webp)$/i.test(name))
 	: [];
 const declared = new Set(DERIVED.map(entry => path.basename(entry.asset)));
 const unchecked = present.filter(name => !declared.has(name));
 if (unchecked.length) {
-	fail(`web/assets holds image(s) this guard does not cover: ${unchecked.join(", ")}. `
+	fail(`web/gateway/assets holds image(s) this guard does not cover: ${unchecked.join(", ")}. `
 		+ "Add them to DERIVED (with their source art) so drift is caught.");
 }
 
