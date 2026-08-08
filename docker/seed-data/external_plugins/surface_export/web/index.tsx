@@ -74,12 +74,17 @@ function SurfaceExportPage() {
 	const plugin = useSurfaceExportPlugin(control);
 	const state = useSurfaceExportState(plugin);
 	const [importModalOpen, setImportModalOpen] = useState(false);
-	// Tab is URL-synced so the view is deep-linkable, e.g. /surface-export?tab=logs — read on mount,
-	// updated on change. Uses the native History API (no react-router import) to avoid bundling a
-	// non-shared web dep (see the in-container web build model / why mermaid was removed).
+	// Tab is URL-synced so the view is deep-linkable, e.g. /surface-export?tab=gateways — read on
+	// mount, updated on change. Uses the native History API (no react-router import) to avoid
+	// bundling a non-shared web dep (see the in-container web build model / why mermaid was removed).
+	//
+	// Reads against the full set, not a single hard-coded name: this used to accept only "logs", so
+	// handleTabChange would WRITE ?tab=gateways and a reload of that exact URL would land on Manual
+	// Transfer — the round trip the comment above claims silently did not close. Availability (logs
+	// needs a permission) is a separate question, settled by `effectiveTab` below.
 	const [activeTab, setActiveTab] = useState<string>(() => {
 		const t = new URLSearchParams(window.location.search).get("tab");
-		return t === "logs" ? "logs" : "manual";
+		return t && ["manual", "logs", "gateways"].includes(t) ? t : "manual";
 	});
 	function handleTabChange(key: string) {
 		setActiveTab(key);
@@ -107,7 +112,9 @@ function SurfaceExportPage() {
 	tabItems.push({
 		key: "gateways",
 		label: "Gateways",
-		children: <GatewayCanvas plugin={plugin} state={state} />,
+		// The canvas opens the page's ONE ImportModal rather than mounting its own. Tabs keep their
+		// panes mounted (removeOnLeave: false), so a second copy would be a second live modal.
+		children: <GatewayCanvas plugin={plugin} state={state} onOpenImport={() => setImportModalOpen(true)} />,
 	});
 
 	// Fall back to manual if the URL asks for a tab that isn't available (e.g. ?tab=logs without view perms).

@@ -1,12 +1,15 @@
 import React from "react";
-import { Handle, Position } from "@xyflow/react";
+import { Handle, NodeToolbar, Position } from "@xyflow/react";
 import type { NodeProps } from "@xyflow/react";
-import { Tag, Typography } from "antd";
+import { Button, Tag, Tooltip, Typography } from "antd";
+import { DownloadOutlined, PlayCircleOutlined } from "@ant-design/icons";
 
 import { DEFAULT_GATEWAY_MODE, gatewayNamesFor } from "../../shared/dto";
 import type { GatewayMode } from "../../shared/dto";
 import { sourceHandleId, targetHandleId } from "./gateway-graph";
-import type { GatewayUsage } from "./gateway-graph";
+import type { GatewayUsage, PlatformLike } from "./gateway-graph";
+import { platformActionKey, useNodeActions } from "./node-actions";
+import { platformStatus } from "../platform-actions";
 import { PlanetIcon } from "../icons";
 import gatewayHubArt from "./assets/gateway-hub-128.png";
 
@@ -35,8 +38,83 @@ export type InstanceNodeData = {
 	instanceName: string;
 	gamePort: number | null;
 	online: boolean;
+	hostKey: string;
+	hostName: string;
+	/** Already filtered to hub-bearing platforms by buildGraph — the only ones that can be acted on. */
+	platforms: PlatformLike[];
 	gateways: Record<string, GatewayUsage>;
 };
+
+/**
+ * Export and Transfer for each of this instance's platforms, in a toolbar over the gate.
+ *
+ * The same pair of buttons the Manual Transfer table offers per row, on the same rows — the actions
+ * are shared code (`web/platform-actions.ts`) rather than a second implementation, so a change to
+ * what "export a platform" means reaches both.
+ *
+ * `Position.Top`: the instance caption is absolutely positioned BELOW the node's measured box, and a
+ * bottom toolbar would land on top of it. Nothing occupies the space above the arch.
+ *
+ * `nodrag nopan`: the toolbar renders inside React Flow's own wrapper, so without these a press on a
+ * button would also be a press on the canvas — the click still lands, but the pane pans out from
+ * under it if the pointer moves at all.
+ *
+ * NO ETA in the status tag (`platformStatus(…, null)`). The countdown needs a per-second timer, and
+ * a timer here would re-render every node on the canvas once a second for a suffix on a tag that is
+ * only visible while a node is selected.
+ */
+function PlatformActionRows({ node }: { node: InstanceNodeData }) {
+	const actions = useNodeActions();
+
+	if (!node.platforms.length) {
+		return <Text type="secondary" style={{ fontSize: 12 }}>No platforms with a space hub</Text>;
+	}
+
+	return (
+		<>
+			{node.platforms.map(platform => {
+				const status = platformStatus(platform, null);
+				const key = platformActionKey(node.instanceId, platform.platformIndex);
+				const source = {
+					instanceId: node.instanceId,
+					instanceName: node.instanceName,
+					platformIndex: platform.platformIndex,
+					platformName: platform.platformName,
+					forceName: platform.forceName || "player",
+				};
+				return (
+					<div key={key} className="surface-export-node-toolbar-row">
+						<Text className="surface-export-node-toolbar-name" title={platform.platformName}>
+							{platform.platformName}
+						</Text>
+						<Text type="secondary" style={{ fontSize: 11 }}>#{platform.platformIndex}</Text>
+						{status.tag
+							? <Tag color={status.tag}>{status.text}</Tag>
+							: <Text type="secondary" style={{ fontSize: 11 }}>{status.text}</Text>}
+						<Tooltip title="Export JSON">
+							<Button
+								icon={<DownloadOutlined />}
+								size="small"
+								disabled={!actions}
+								loading={actions?.exportingKey === key}
+								onClick={() => actions?.onExport(source)}
+							/>
+						</Tooltip>
+						<Tooltip title="Transfer to another instance">
+							<Button
+								icon={<PlayCircleOutlined />}
+								size="small"
+								type="primary"
+								disabled={!actions}
+								onClick={() => actions?.onTransfer(source)}
+							/>
+						</Tooltip>
+					</div>
+				);
+			})}
+		</>
+	);
+}
 
 function MultiGatewayHandle({ gatewayName, position, usage, connectable }: {
 	gatewayName: string;
@@ -81,10 +159,8 @@ function MultiGatewayHandle({ gatewayName, position, usage, connectable }: {
 /**
  * One instance.
  *
- * ONE-GATE: the gateway art IS the node, and the WHOLE node is a connection handle — "easy connect".
- * Drag from anywhere on the gate to link it; no aiming at a 26px dot. React Flow is explicit about
- * the cost ("you need to define separate drag handles in this case to still be able to drag the
- * node"), so the caption below the node is the grip — see `dragHandle` in gateway-graph.ts.
+ * ONE-GATE: the gateway art IS the node, and the PORTAL is a connection handle. Drag through the
+ * glow to link; drag anywhere else — stone base, rim, caption — to move the node.
  *
  * MULTI: four gateways, one per side, each its own handle — there the side IS the gateway's identity,
  * so a node-wide handle would throw away the only thing distinguishing them.
@@ -92,8 +168,12 @@ function MultiGatewayHandle({ gatewayName, position, usage, connectable }: {
  * LIT vs FADED tracks ONLINE, not link count. An offline instance may well still hold links, and
  * showing it bright because it is configured would say the wrong thing about the thing an operator
  * actually needs to see.
+ *
+ * SELECTED reveals the platform toolbar. Measured on the live canvas before wiring it: a plain click
+ * selects the node from the portal handle AND from the pedestal, so nothing about the connect zone
+ * puts the toolbar out of reach.
  */
-export function InstanceNode({ data, isConnectable }: NodeProps) {
+export function InstanceNode({ data, selected, isConnectable }: NodeProps) {
 	const node = data as unknown as InstanceNodeData;
 	const mode = node.mode || DEFAULT_GATEWAY_MODE;
 	const names = gatewayNamesFor(mode);
@@ -106,6 +186,16 @@ export function InstanceNode({ data, isConnectable }: NodeProps) {
 			`surface-export-instance-node${node.online ? " surface-export-instance-node-online" : " surface-export-instance-node-offline"}`
 			+ (oneGate ? " surface-export-instance-node-shaped" : "")
 		}>
+			{/* `Boolean(selected)`, not `selected`: NodeProps types it optional, and passing undefined
+			    hands React Flow's own default back instead of meaning "hidden". */}
+			<NodeToolbar
+				isVisible={Boolean(selected)}
+				position={Position.Top}
+				className="surface-export-node-toolbar nodrag nopan"
+			>
+				<PlatformActionRows node={node} />
+			</NodeToolbar>
+
 			{oneGate ? (
 				<>
 					{/* The PORTAL is the connection zone — drag through the glowing disc to link, which is
@@ -128,7 +218,7 @@ export function InstanceNode({ data, isConnectable }: NodeProps) {
 						id={sourceHandleId(gateway)}
 						isConnectable={Boolean(isConnectable)}
 						className="surface-export-gw-cover"
-						title={`${gateway} — ${usage.outgoing} out, ${usage.incoming} in. Drag anywhere on the gate to link.`}
+						title={`${gateway} — ${usage.outgoing} out, ${usage.incoming} in. Drag through the portal to link.`}
 					/>
 					<div
 						className="surface-export-instance-face"
@@ -151,8 +241,14 @@ export function InstanceNode({ data, isConnectable }: NodeProps) {
 			<div className={`surface-export-instance-node-body${oneGate ? " surface-export-instance-node-caption" : ""}`}>
 				{/* One line, truncated. Instance names are long and similar ("clusterio-host-1-instance-1"),
 				    so wrapping them to four lines pushed the meaningful part off the shape it labels.
-				    The full name stays available on hover. */}
-				<Text strong className="surface-export-instance-node-name" title={node.instanceName}>
+				    The full name stays available on hover — and the HOST rides along there rather than
+				    taking a third line, now that the host box is gone: the toolbar's host filter is the
+				    affordance for "which host is this", not the caption. */}
+				<Text
+					strong
+					className="surface-export-instance-node-name"
+					title={node.hostName ? `${node.instanceName} — on ${node.hostName}` : node.instanceName}
+				>
 					{node.instanceName}
 				</Text>
 				<div className="surface-export-instance-node-meta">

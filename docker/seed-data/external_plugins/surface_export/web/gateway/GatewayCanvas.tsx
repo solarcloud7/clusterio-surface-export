@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from "react";
-import { Alert, Button, Empty, Space, Spin, Typography, message as antMessage } from "antd";
+import { Alert, Button, Empty, Select, Space, Spin, Tooltip, Typography, message as antMessage } from "antd";
+import { UploadOutlined } from "@ant-design/icons";
 import {
 	Background,
 	Controls,
@@ -23,6 +24,8 @@ import "@xyflow/react/dist/style.css";
 
 import { PERMISSIONS } from "../../messages";
 import {
+	ALL_HOSTS,
+	DIMMED_OPACITY,
 	applyConnect,
 	applyDisconnect,
 	buildGraph,
@@ -34,20 +37,21 @@ import {
 	preservePositions,
 } from "./gateway-graph";
 import type { ConnectRequest, GatewayEdits } from "./gateway-graph";
+import { NodeActionsContext, platformActionKey } from "./node-actions";
 import { DEFAULT_GATEWAY_MODE, checkMultiModeLink } from "../../shared/dto";
 import type { GatewayMode } from "../../shared/dto";
 import { CANVAS_EDGE_TYPES, CANVAS_NODE_TYPES, GATEWAY_EDGE_TYPE } from "./node-types";
 import ConnectionLine from "./ConnectionLine";
+import TransferModal from "../TransferModal";
+import { exportPlatformToDownload } from "../platform-actions";
+import type { PlatformActionSource } from "../platform-actions";
 import { getErrorMessage, getProp } from "../utils";
 import type { JsonObject, SurfaceExportPlugin, SurfaceExportState } from "../view-models";
 
 const { Text } = Typography;
 
-/** A MiniMap dot per instance; host boxes stay neutral so the instances read as the content. */
+/** A MiniMap dot per instance — every node is one, since the host boxes are gone. */
 function miniMapNodeColor(node: Node) {
-	if (node.type !== "instance") {
-		return "#2a2a2a";
-	}
 	return (node.data as { online?: boolean }).online ? "#1668dc" : "#5a5a5a";
 }
 
@@ -77,9 +81,11 @@ function toConnectRequest(link: Connection | Edge): ConnectRequest | null {
  * second source of truth to reconcile. Everything with a decision in it lives in
  * gateway-graph.ts next door; this file is the wiring.
  */
-export default function GatewayCanvas({ plugin, state }: {
+export default function GatewayCanvas({ plugin, state, onOpenImport }: {
 	plugin: SurfaceExportPlugin;
 	state: SurfaceExportState;
+	/** Opens the page's ONE ImportModal. Mounting a second copy here would leave two live modals. */
+	onOpenImport: () => void;
 }) {
 	const account = useAccount();
 	// Reads need UI_VIEW; every mutation needs TRANSFER_EXPORTS. The web UI never checked this before,
@@ -101,6 +107,10 @@ export default function GatewayCanvas({ plugin, state }: {
 	// What the controller last told us. Every dirty check is against this, so a reload after a save
 	// is not required to clear the pending count.
 	const [baseline, setBaseline] = useState<GatewayEdits>({});
+	// Which host to FOCUS. Dims the rest rather than hiding them — see buildGraph.
+	const [hostFilter, setHostFilter] = useState<string>(ALL_HOSTS);
+	const [transferSource, setTransferSource] = useState<PlatformActionSource | null>(null);
+	const [exportingKey, setExportingKey] = useState<string | null>(null);
 
 	const [nodes, setNodes, onNodesChange] = useNodesState<Node>([]);
 	const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
@@ -127,7 +137,7 @@ export default function GatewayCanvas({ plugin, state }: {
 
 	useEffect(() => { void load(); }, [load]);
 
-	const graph = useMemo(() => buildGraph(tree, edits, mode), [tree, edits, mode]);
+	const graph = useMemo(() => buildGraph(tree, edits, mode, hostFilter), [tree, edits, mode, hostFilter]);
 	const pending = useMemo(() => dirtyKeys(edits, baseline), [edits, baseline]);
 
 	useEffect(() => {
@@ -137,6 +147,11 @@ export default function GatewayCanvas({ plugin, state }: {
 		setNodes(previous => preservePositions(previous, graph.nodes as unknown as Node[]));
 		setEdges(previous => {
 			const selected = new Set(previous.filter(edge => edge.selected).map(edge => edge.id));
+			// Which instances the host filter is focused on, read back off the freshly built nodes so
+			// there is one answer to "is this dimmed" rather than two that can disagree.
+			const focused = new Set(
+				graph.nodes.filter(node => !node.style?.opacity).map(node => instanceIdFromNodeId(node.id)),
+			);
 			return graph.edges.map(edge => ({
 				id: edge.id,
 				source: edge.source,
@@ -145,6 +160,11 @@ export default function GatewayCanvas({ plugin, state }: {
 				targetHandle: edge.targetHandle,
 				type: GATEWAY_EDGE_TYPE,
 				selected: selected.has(edge.id),
+				// Dimmed only when NEITHER end is in focus. A link that leaves the focused host is part of
+				// what the operator asked to look at, even though it lands somewhere faded.
+				style: focused.has(edge.sourceInstanceId) || focused.has(edge.targetInstanceId)
+					? undefined
+					: { opacity: DIMMED_OPACITY },
 				// Direction is drawn, not implied. A config link may be one-way, and an edge that could
 				// only say "connected" would render that as a two-way portal.
 				markerEnd: edge.forward ? { type: MarkerType.ArrowClosed } : undefined,
@@ -153,6 +173,27 @@ export default function GatewayCanvas({ plugin, state }: {
 			}));
 		});
 	}, [graph, setNodes, setEdges]);
+
+	/**
+	 * Export and Transfer, offered per platform from a selected node's toolbar.
+	 *
+	 * The export flow itself lives in web/platform-actions.ts, shared with the Manual Transfer table:
+	 * two implementations of "export a platform" would be two filename conventions and two error
+	 * messages waiting to drift. All this owns is the button's spinner.
+	 */
+	const nodeActions = useMemo(() => ({
+		exportingKey,
+		onExport: (source: PlatformActionSource) => {
+			setExportingKey(platformActionKey(source.instanceId, source.platformIndex));
+			void exportPlatformToDownload(plugin, source).finally(() => setExportingKey(null));
+		},
+		onTransfer: (source: PlatformActionSource) => setTransferSource(source),
+	}), [exportingKey, plugin]);
+
+	// A host that has left the tree since it was picked must not leave the filter stuck on a value
+	// nothing matches. buildGraph already dims nothing in that case; this keeps the control agreeing
+	// with what is drawn instead of showing a selection that has no effect.
+	const effectiveHostFilter = graph.hosts.some(host => host.key === hostFilter) ? hostFilter : ALL_HOSTS;
 
 	const onConnect = useCallback((connection: Connection) => {
 		const request = toConnectRequest(connection);
@@ -276,6 +317,7 @@ export default function GatewayCanvas({ plugin, state }: {
 	}
 
 	return (
+		<NodeActionsContext.Provider value={nodeActions}>
 		<div className="surface-export-canvas">
 			{loadError ? <Alert type="error" showIcon message={loadError} style={{ marginBottom: 8 }} /> : null}
 			{!loading && !nodes.length ? (
@@ -318,6 +360,28 @@ export default function GatewayCanvas({ plugin, state }: {
 						maskColor="rgba(0, 0, 0, 0.6)"
 						nodeBorderRadius={20}
 					/>
+					{/* Canvas toolbar. Top-LEFT is the only free corner: Controls sit bottom-left, the
+					    MiniMap bottom-right, and the save state top-right. */}
+					<Panel position="top-left">
+						<Space size="small">
+							<Select
+								size="small"
+								value={effectiveHostFilter}
+								onChange={setHostFilter}
+								// Wider than the trigger so long host names are readable in the list without
+								// stretching the toolbar across the canvas.
+								popupMatchSelectWidth={false}
+								style={{ minWidth: 160 }}
+								options={[
+									{ value: ALL_HOSTS, label: "All hosts" },
+									...graph.hosts.map(host => ({ value: host.key, label: host.name })),
+								]}
+							/>
+							<Tooltip title="Import a platform from a JSON export file">
+								<Button size="small" icon={<UploadOutlined />} onClick={onOpenImport}>Import</Button>
+							</Tooltip>
+						</Space>
+					</Panel>
 					<Panel position="top-right">
 						<Space>
 							{canEdit ? (
@@ -347,6 +411,13 @@ export default function GatewayCanvas({ plugin, state }: {
 					</Panel>
 				</ReactFlow>
 			)}
+			<TransferModal
+				source={transferSource}
+				onClose={() => setTransferSource(null)}
+				plugin={plugin}
+				state={state}
+			/>
 		</div>
+		</NodeActionsContext.Provider>
 	);
 }

@@ -240,29 +240,33 @@ questions:
 | Commit | Content | Status |
 |---|---|---|
 | 1 | Add the dep; canvas shell; container height (B) | shipped |
-| 2 | `shared/gateway-graph.ts` + node components + host sub-flows, read-only; 25 unit tests | shipped |
+| 2 | `shared/gateway-graph.ts` + node components + host sub-flows, read-only; 25 unit tests | **superseded — see below** |
 | 3 | Editing: bidirectional staging, Save/Revert panel, `canEdit` gating (E) | shipped |
 | 4 | Delete `GatewaysTab.tsx` | shipped |
 
 **Deferred, deliberately:** layout persistence (C) — node positions survive a session but not a
-reload, which is a `localStorage` follow-up. `React.lazy` for the canvas chunk. And the whole Manual
-Transfer half, which the owner scoped out with "start with this".
+reload, which is a `localStorage` follow-up. `React.lazy` for the canvas chunk.
 
-### What the tests actually cover
+### Three owner decisions that overtook commit 2
 
-25 tests in `test/gateway-graph.test.cjs` against `dist/node/shared/gateway-graph.js`. Green tests on
-new code prove nothing on their own, so five load-bearing ones were **mutation-killed** — each
-mutation killed exactly one test, and the right one:
+Recorded here rather than edited into the rows above, so the plan stays readable as what was planned
+and this stays readable as what happened.
 
-| Mutation | Test that died |
-|---|---|
-| always set both directions | the one-way link renders one-way |
-| reverse the node array | host groups precede their children |
-| a new target replaces the previous | multi-target survives |
-| disarm the self-link guard | an instance cannot gateway to itself |
-
-A sixth attempt produced empty output rather than a failure — that is an unknown, not a kill, and it
-was redone as the "always set both directions" row above rather than counted.
+1. **The graph model moved out of `shared/`** into `web/gateway/`. It is UI code; `shared/` is for
+   things the controller and the browser both compile.
+2. **The 25 unit tests were deleted** (owner: *"if we do a test here it wont be unit it will be a
+   playwrite test"*). The canvas is verified by driving the real thing. **This leaves the direction
+   property — a one-way link renders one-way, and saving does not invent the return link — covered by
+   nothing**, which is the first thing a Playwright suite should assert. The mutation-kill table that
+   used to sit here described tests that no longer exist and has been removed rather than left to
+   imply coverage.
+3. **Host sub-flows were removed.** Instances were React Flow children of a `group` node with
+   `extent: "parent"`, which drew a box per host and refused to let a node be dragged out of it. The
+   host is a **filter** now — a dropdown on the canvas toolbar, with an "All hosts" default, that
+   fades the instances it is not focused on. Host locality survives as the column layout: a starting
+   position, not a fence. The same toolbar carries **Import**, and each node carries a `NodeToolbar`
+   with the Export/Transfer pair per platform — the manual-transfer half the section above left to
+   decide, answered by putting the actions on the node rather than in a second table.
 
 ## What this plan does **not** claim
 

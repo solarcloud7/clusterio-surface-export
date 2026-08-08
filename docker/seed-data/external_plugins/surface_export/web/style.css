@@ -41,23 +41,13 @@
 	to { stroke-dashoffset: -10; }
 }
 
-/* ── Canvas: host boxes, instance circles, gateway handles ────────────────── */
+/* ── Canvas: instance circles, gateway handles ────────────────────────────── */
 
-/* The group node's box is sized by React Flow from the node's `style`; this fills it. Dashed and
-   unfilled so it reads as a container rather than a thing you can act on — host boxes are scenery,
-   and are not selectable or draggable. */
-.surface-export-host-group {
-	width: 100%;
-	height: 100%;
-	border: 1px dashed #434343;
-	border-radius: 12px;
-	background: rgba(255, 255, 255, 0.02);
-}
-
-.surface-export-host-group-label {
-	position: absolute;
-	top: 10px;
-	left: 12px;
+/* The host filter fades the nodes it is not focused on (React Flow applies the opacity to the node
+   wrapper, so the caption fades with the gate). Transitioned so switching the filter reads as a
+   change of focus rather than as nodes appearing and disappearing. */
+.react-flow__node-instance {
+	transition: opacity 160ms ease;
 }
 
 .surface-export-instance-node {
@@ -226,6 +216,41 @@
 	transform: none;
 	opacity: 0;
 	cursor: crosshair;
+}
+
+/* ── Canvas: the per-node platform toolbar ────────────────────────────────── */
+
+/* Shown above a SELECTED node, carrying the same Export/Transfer pair the Manual Transfer table
+   offers per row. React Flow renders it outside the node's own wrapper, so it needs its own
+   background — and it does NOT inherit the node's dimming, which is correct: you can only select one
+   node, and its toolbar should be readable whatever the host filter is doing to the rest. */
+.surface-export-node-toolbar {
+	display: flex;
+	flex-direction: column;
+	gap: 4px;
+	padding: 6px 8px;
+	border: 1px solid #303030;
+	border-radius: 8px;
+	background: #1f1f1f;
+	box-shadow: 0 4px 14px rgba(0, 0, 0, 0.55);
+}
+
+.surface-export-node-toolbar-row {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+}
+
+/* One line, ellipsised. Platform names are user-supplied and can be any length; wrapping one would
+   grow the toolbar sideways over the neighbouring nodes. Full name on hover. */
+.surface-export-node-toolbar-name {
+	flex: 1 1 auto;
+	min-width: 0;
+	max-width: 180px;
+	font-size: 12px;
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
 }
 
 /* Zero outgoing links = a platform parked here cannot leave. The old tab said so in words; here it

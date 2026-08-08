@@ -13,10 +13,20 @@
 
 import type { GatewayLink, GatewayMode } from "../../shared/dto";
 import { DEFAULT_GATEWAY_MODE, gatewayNamesFor } from "../../shared/dto";
+import type { PlatformStatusFields } from "../platform-actions";
 
 // ── Structural inputs ───────────────────────────────────────────────────────
-// Declared structurally rather than imported from the DTO so a test can build one without inventing
-// platform arrays it does not exercise. These are subsets of InstanceNodeModel / HostNodeModel.
+// Declared structurally rather than imported from the DTO so this file states exactly which fields
+// it reads: the platform tree is re-pushed on every status change and re-projected each time, so
+// what a node carries is a performance decision as well as a typing one. These are subsets of
+// InstanceNodeModel / HostNodeModel / PlatformModel.
+
+export type PlatformLike = PlatformStatusFields & {
+	platformIndex: number;
+	platformName: string;
+	forceName?: string;
+	hasSpaceHub?: boolean;
+};
 
 export type InstanceLike = {
 	instanceId: number;
@@ -24,6 +34,7 @@ export type InstanceLike = {
 	gamePort?: number | null;
 	status?: string;
 	connected?: boolean;
+	platforms?: PlatformLike[];
 };
 
 export type HostLike = {
@@ -34,6 +45,7 @@ export type HostLike = {
 };
 
 export type TreeLike = {
+	forceName?: string;
 	hosts?: HostLike[];
 	unassignedInstances?: InstanceLike[];
 };
@@ -81,11 +93,11 @@ export function instanceIdFromNodeId(nodeId: string | null | undefined): number 
 	return Number.isFinite(id) ? id : null;
 }
 
+/** The host filter's key for instances the controller reports with no host assignment. */
 export const UNASSIGNED_HOST_KEY = "unassigned";
 
-export function hostNodeId(hostKey: number | string): string {
-	return `host:${hostKey}`;
-}
+/** The host filter's "don't dim anything" value. Not a host key, so it can never collide with one. */
+export const ALL_HOSTS = "all";
 
 /**
  * A gateway needs BOTH handles: links are directional, and the same gateway can be an origin for one
@@ -381,34 +393,28 @@ export const NODE_DIAMETER = 150;
  * switch never reflows the graph.
  */
 export const CAPTION_HEIGHT = 76;
-/** Labels are wider than the circle they sit under; the host box is sized to whichever is bigger. */
+/** Labels are wider than the circle they sit under; the column is as wide as whichever is bigger. */
 export const CAPTION_WIDTH = 190;
-/** Room inside a host box: symmetric sides/bottom, extra on top for the host's own label. */
-export const GROUP_PADDING = 48;
-export const GROUP_LABEL_SPACE = 40;
-/** Gap between stacked instances inside one host, and between host boxes. */
+/** Gap between stacked instances in one host's column, and between the columns themselves. */
 export const INSTANCE_GAP = 70;
-export const GROUP_GAP = 90;
+export const COLUMN_GAP = 90;
+
+/** How much of its own opacity a node keeps when the host filter is pointed somewhere else. */
+export const DIMMED_OPACITY = 0.12;
 
 export interface GraphNodeModel {
 	id: string;
-	type: "group" | "instance";
+	type: "instance";
 	position: { x: number; y: number };
 	data: Record<string, unknown>;
-	parentId?: string;
-	extent?: "parent";
 	style?: Record<string, number | string>;
-	draggable?: boolean;
-	selectable?: boolean;
-	connectable?: boolean;
-	/**
-	 * CSS selector for the sub-element that initiates a node drag.
-	 *
-	 * Needed only where the node itself is a connection handle (easy connect): React Flow states
-	 * that in that case “you need to define separate drag handles ... to still be able to drag the
-	 * node”, because the handle swallows the pointer that would otherwise start a move.
-	 */
-	dragHandle?: string;
+}
+
+/** One entry per host in the tree, for the canvas's host filter. */
+export interface GraphHostModel {
+	key: string;
+	name: string;
+	connected: boolean;
 }
 
 function isOnline(instance: InstanceLike): boolean {
@@ -418,24 +424,37 @@ function isOnline(instance: InstanceLike): boolean {
 }
 
 /**
- * Hosts as columns, their instances stacked inside.
+ * Every instance as a free-floating node, laid out one column per host.
+ *
+ * NO SUB-FLOWS. Instances used to be React Flow children of a host `group` node with
+ * `extent: "parent"`, which drew a box per host and — the part that mattered — refused to let a node
+ * be dragged out of it. The host is now a FILTER (see `hostFilter` below) rather than a fence, so
+ * the operator can arrange the graph however the cluster's topology actually reads. Host locality
+ * survives as the column layout; it is a starting position now, not a constraint.
  *
  * Deterministic rather than force-directed: this graph is small (one instance per host on the dev
  * cluster) and a stable layout means a node is where the operator last saw it. Sorting mirrors the
  * old tab's ordering so the canvas does not silently reshuffle relative to the list it replaces.
+ *
+ * `hostFilter` DIMS, it does not remove: a hidden node would take its edges with it, and an edge
+ * that vanishes on a display setting is indistinguishable from one that was never configured. An
+ * unrecognised value (a host that has left the tree since it was picked) dims nothing, so the filter
+ * heals itself rather than fading the whole canvas out.
  */
 export function buildGraph(
 	tree: TreeLike | null | undefined,
 	edits: GatewayEdits,
 	mode: GatewayMode = DEFAULT_GATEWAY_MODE,
+	hostFilter: string = ALL_HOSTS,
 ): {
 	nodes: GraphNodeModel[];
 	edges: GatewayEdgeModel[];
+	hosts: GraphHostModel[];
 } {
-	const groups: Array<{ key: string; name: string; connected: boolean; instances: InstanceLike[] }> = [];
+	const columns: Array<{ key: string; name: string; connected: boolean; instances: InstanceLike[] }> = [];
 
 	for (const host of [...(tree?.hosts || [])].sort((a, b) => String(a.hostName || "").localeCompare(String(b.hostName || "")))) {
-		groups.push({
+		columns.push({
 			key: String(host.hostId),
 			name: host.hostName,
 			connected: Boolean(host.connected),
@@ -447,70 +466,65 @@ export function buildGraph(
 		String(a.instanceName || "").localeCompare(String(b.instanceName || "")),
 	);
 	if (unassigned.length) {
-		groups.push({ key: UNASSIGNED_HOST_KEY, name: "Unassigned", connected: false, instances: unassigned });
+		columns.push({ key: UNASSIGNED_HOST_KEY, name: "Unassigned", connected: false, instances: unassigned });
 	}
 
+	const hosts: GraphHostModel[] = columns.map(column => ({
+		key: column.key,
+		name: column.name,
+		connected: column.connected,
+	}));
+	const filtering = hostFilter !== ALL_HOSTS && hosts.some(host => host.key === hostFilter);
+
 	const usage = gatewayUsage(edits);
-	const groupNodes: GraphNodeModel[] = [];
-	const instanceNodes: GraphNodeModel[] = [];
-	let cursorX = 0;
+	const nodes: GraphNodeModel[] = [];
+	const columnPitch = Math.max(NODE_DIAMETER, CAPTION_WIDTH) + COLUMN_GAP;
+	// Centres the circle under a column as wide as the caption, which is wider than the circle.
+	const columnInset = Math.max(0, (CAPTION_WIDTH - NODE_DIAMETER) / 2);
 
-	for (const group of groups) {
-		const count = Math.max(group.instances.length, 1);
-		const innerWidth = Math.max(NODE_DIAMETER, CAPTION_WIDTH);
-		// Every node owns its diameter PLUS its caption; the gap sits between those blocks.
-		const innerHeight = count * (NODE_DIAMETER + CAPTION_HEIGHT) + (count - 1) * INSTANCE_GAP;
-		const width = innerWidth + GROUP_PADDING * 2;
-		const height = innerHeight + GROUP_PADDING * 2 + GROUP_LABEL_SPACE;
-
-		groupNodes.push({
-			id: hostNodeId(group.key),
-			type: "group",
-			position: { x: cursorX, y: 0 },
-			data: { hostName: group.name, connected: group.connected },
-			style: { width, height },
-			// A host box is scenery: dragging it would drag its instances and buys nothing, and
-			// selecting it only competes with selecting the nodes inside.
-			draggable: false,
-			selectable: false,
-		});
-
-		group.instances.forEach((instance, index) => {
+	columns.forEach((column, columnIndex) => {
+		column.instances.forEach((instance, index) => {
 			const perGateway: Record<string, GatewayUsage> = {};
 			for (const gatewayName of gatewayNamesFor(mode)) {
 				perGateway[gatewayName] = usage.get(instance.instanceId)?.get(gatewayName) || { outgoing: 0, incoming: 0 };
 			}
-			instanceNodes.push({
+			const dimmed = filtering && column.key !== hostFilter;
+			nodes.push({
 				id: instanceNodeId(instance.instanceId),
 				type: "instance",
-				// Child coordinates are PARENT-RELATIVE: {0,0} is the host box's top-left corner.
 				position: {
-					// Centred horizontally: the box is as wide as the caption, which is wider than the circle.
-					x: GROUP_PADDING + Math.max(0, (CAPTION_WIDTH - NODE_DIAMETER) / 2),
-					y: GROUP_PADDING + GROUP_LABEL_SPACE + index * (NODE_DIAMETER + CAPTION_HEIGHT + INSTANCE_GAP),
+					x: columnIndex * columnPitch + columnInset,
+					// Every node owns its diameter PLUS its caption; the gap sits between those blocks.
+					y: index * (NODE_DIAMETER + CAPTION_HEIGHT + INSTANCE_GAP),
 				},
-				parentId: hostNodeId(group.key),
-				extent: "parent",
-				// EASY CONNECT trade-off, stated by React Flow itself: a handle covering the node means
-				// “you need to define separate drag handles ... to still be able to drag the node”. In
-				// one-gate mode the gate IS the handle, so the caption underneath becomes the grip.
+				// Dimming is a node STYLE rather than a class on the inner element so it covers the
+				// caption too — the caption is positioned outside the node's own box, and fading the
+				// gate while its label stayed bright would read as a rendering fault.
+				style: dimmed ? { opacity: DIMMED_OPACITY } : undefined,
 				data: {
 					mode,
 					instanceId: instance.instanceId,
 					instanceName: instance.instanceName,
 					gamePort: instance.gamePort ?? null,
 					online: isOnline(instance),
+					hostKey: column.key,
+					hostName: column.name,
+					// Only hub-bearing platforms: a platform without a space hub cannot be exported or
+					// transferred, and the controller refuses one. Offering the buttons anyway would put
+					// the refusal after the click instead of before it.
+					platforms: (instance.platforms || [])
+						.filter(platform => platform && platform.hasSpaceHub)
+						.map(platform => ({
+							...platform,
+							forceName: platform.forceName || tree?.forceName || "player",
+						})),
 					gateways: perGateway,
 				},
 			});
 		});
+	});
 
-		cursorX += width + GROUP_GAP;
-	}
-
-	// Parents MUST precede their children in the array or React Flow does not resolve parentId.
-	// This concatenation is the guarantee, and is asserted by the unit tests.
-	return { nodes: [...groupNodes, ...instanceNodes], edges: buildEdges(edits, mode) };
+	return { nodes, edges: buildEdges(edits, mode), hosts };
 }
 
 export type PositionedNode = {
