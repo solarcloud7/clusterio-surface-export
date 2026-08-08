@@ -110,13 +110,64 @@
 	border-color: #1668dc;
 }
 
-/* One-gate mode's centre gate. Larger than a rim icon because in this mode the gateway IS the
-   instance's identity, not one of four options. */
-.surface-export-instance-gate {
-	display: inline-flex;
+/* One-gate mode: the node is the GATEWAY'S OWN SILHOUETTE, not a circle with art inside it. The
+   circle, its border and its fill are all removed here so the PNG's alpha defines the shape —
+   clipping the square art to a circle cropped the pedestal off the bottom and filled the corners
+   with node background. */
+.surface-export-instance-node-shaped {
+	background: none;
+	border: none;
+	border-radius: 0;
+}
+
+/* One-gate mode: the gate art fills the ENTIRE node rather than sitting inside it as a thumbnail.
+   `contain` not `cover` — the source is square and already framed, so cover would crop its rim. */
+.surface-export-instance-face {
+	position: absolute;
+	inset: 0;
+	background-repeat: no-repeat;
+	background-position: center;
+	background-size: contain;
+	display: flex;
 	align-items: center;
 	justify-content: center;
-	margin-bottom: 2px;
+}
+
+/* Online/offline is carried by a GLOW rather than a ring, because `drop-shadow` follows the image's
+   alpha — so the indicator traces the gateway's actual outline instead of drawing a circle around
+   art that is not circular. That is the whole reason the ring had to go. */
+.surface-export-instance-face.surface-export-gw-active {
+	opacity: 1;
+	filter: drop-shadow(0 0 7px rgba(22, 104, 220, 0.9));
+}
+
+/* The disabled affordance is tuned DOWN at node scale. The rim-icon values (opacity .35, full
+   greyscale) were chosen for a 26px dot, where they read as "switched off"; on art filling a 150px
+   node the same values read as "this failed to load". Enough desaturation to be obviously inactive,
+   not enough to look broken. */
+.surface-export-instance-face.surface-export-gw-idle {
+	opacity: 0.75;
+	filter: grayscale(0.7) drop-shadow(0 0 5px rgba(0, 0, 0, 0.8));
+}
+
+.surface-export-instance-node-offline .surface-export-instance-face {
+	opacity: 0.5;
+	filter: grayscale(1);
+}
+
+/* With the art filling the node, the label cannot sit on top of it. It moves BELOW the circle;
+   `top: 100%` anchors it to the node's bottom edge, and the negative-margin centering keeps it
+   centred without knowing the label's width. Not part of the node's hit area, so it never competes
+   with the rim handles for a drag. */
+.surface-export-instance-node-caption {
+	position: absolute;
+	top: 100%;
+	left: 50%;
+	transform: translateX(-50%);
+	margin-top: 12px;
+	max-width: 180px;
+	pointer-events: none;
+	text-align: center;
 }
 
 /* Zero outgoing links = a platform parked here cannot leave. The old tab said so in words; here it

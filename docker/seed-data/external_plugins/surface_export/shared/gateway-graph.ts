@@ -376,6 +376,17 @@ export function dirtyKeys(edits: GatewayEdits, baseline: GatewayEdits): string[]
 // ── Layout ──────────────────────────────────────────────────────────────────
 
 export const NODE_DIAMETER = 150;
+/**
+ * Room under each node for its label.
+ *
+ * In one-gate mode the gateway art fills the whole circle, so the instance name cannot sit inside
+ * it and is drawn BELOW instead. The layout has to reserve that space or the label spills out of
+ * the host box and collides with whatever is stacked underneath. Reserved in BOTH modes so a mode
+ * switch never reflows the graph.
+ */
+export const CAPTION_HEIGHT = 76;
+/** Labels are wider than the circle they sit under; the host box is sized to whichever is bigger. */
+export const CAPTION_WIDTH = 190;
 /** Room inside a host box: symmetric sides/bottom, extra on top for the host's own label. */
 export const GROUP_PADDING = 48;
 export const GROUP_LABEL_SPACE = 40;
@@ -442,8 +453,9 @@ export function buildGraph(
 
 	for (const group of groups) {
 		const count = Math.max(group.instances.length, 1);
-		const innerWidth = NODE_DIAMETER;
-		const innerHeight = count * NODE_DIAMETER + (count - 1) * INSTANCE_GAP;
+		const innerWidth = Math.max(NODE_DIAMETER, CAPTION_WIDTH);
+		// Every node owns its diameter PLUS its caption; the gap sits between those blocks.
+		const innerHeight = count * (NODE_DIAMETER + CAPTION_HEIGHT) + (count - 1) * INSTANCE_GAP;
 		const width = innerWidth + GROUP_PADDING * 2;
 		const height = innerHeight + GROUP_PADDING * 2 + GROUP_LABEL_SPACE;
 
@@ -469,8 +481,9 @@ export function buildGraph(
 				type: "instance",
 				// Child coordinates are PARENT-RELATIVE: {0,0} is the host box's top-left corner.
 				position: {
-					x: GROUP_PADDING,
-					y: GROUP_PADDING + GROUP_LABEL_SPACE + index * (NODE_DIAMETER + INSTANCE_GAP),
+					// Centred horizontally: the box is as wide as the caption, which is wider than the circle.
+					x: GROUP_PADDING + Math.max(0, (CAPTION_WIDTH - NODE_DIAMETER) / 2),
+					y: GROUP_PADDING + GROUP_LABEL_SPACE + index * (NODE_DIAMETER + CAPTION_HEIGHT + INSTANCE_GAP),
 				},
 				parentId: hostNodeId(group.key),
 				extent: "parent",
