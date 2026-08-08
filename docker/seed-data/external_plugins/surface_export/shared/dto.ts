@@ -2,15 +2,102 @@ export type JsonObject = Record<string, unknown>;
 
 // ── Gateway link config (WS2) ───────────────────────────────────────────────
 // Gateways are surfaceless `space-location`s added by the surfexp_gateways data mod. The controller is
-// Node and CANNOT read Factorio prototypes, so the gateway-name list is pinned here, DERIVED from the
-// prefix + count (mirror surfexp_gateways/data.lua's GATEWAY_COUNT and module/core/gateway.lua's
-// Gateway.PREFIX — keep GATEWAY_COUNT below in sync with data.lua).
+// Node and CANNOT read Factorio prototypes, so the gateway names are pinned here — they mirror
+// surfexp_gateways/data.lua, and the prefix mirrors module/core/gateway.lua's Gateway.PREFIX.
+//
+// A cluster runs ONE of two gateway sets, chosen by the `gateway_mode` controller setting:
+//
+//   one_gate ("1 Gate Cluster")  — a single hub gate per instance, any number of destinations.
+//   multi    ("Multi Cluster")   — the four numbered gates, one destination each.
+//
+// Only the active set is unlocked in-game and offered in the editor, but BOTH are legal on load —
+// see ALL_GATEWAY_NAMES.
 export const GATEWAY_PREFIX = "surfexp_gateway_";
-export const GATEWAY_COUNT = 4;
-export const GATEWAY_NAMES: string[] = Array.from(
-	{ length: GATEWAY_COUNT },
+
+export type GatewayMode = "one_gate" | "multi";
+export const DEFAULT_GATEWAY_MODE: GatewayMode = "one_gate";
+
+/** The advanced set: `surfexp_gateway_1..4`, one colour each. */
+export const MULTI_GATEWAY_NAMES: string[] = Array.from(
+	{ length: 4 },
 	(_unused, i) => `${GATEWAY_PREFIX}${i + 1}`,
 );
+
+/**
+ * The simple set's only member.
+ *
+ * The `surfexp_gateway_` prefix is REQUIRED, not stylistic: `Gateway.is_gateway` compares
+ * `name:sub(1, #Gateway.PREFIX)` and Lua's `sub` clamps rather than failing, so a shorter name
+ * returns itself, fails the compare, and becomes invisible to unlocking, arrival detection and the
+ * transfer trigger alike.
+ */
+export const ONE_GATE_NAME = `${GATEWAY_PREFIX}hub`;
+export const ONE_GATE_NAMES: string[] = [ONE_GATE_NAME];
+
+/**
+ * Every name that is legal to hold in the persisted config, regardless of the current mode.
+ *
+ * Load-time validation uses THIS, not the active set. Switching modes must not delete the other
+ * mode's links: they are simply not rendered while that mode is inactive, and come back on switching
+ * back. Validating the stored file against the active set instead would silently discard them at the
+ * next boot — a destructive, un-undoable side effect of changing a display setting.
+ */
+export const ALL_GATEWAY_NAMES: string[] = [...MULTI_GATEWAY_NAMES, ...ONE_GATE_NAMES];
+
+/** The gateway names a given mode exposes — the set the editor offers and the game unlocks. */
+export function gatewayNamesFor(mode: GatewayMode): string[] {
+	return mode === "multi" ? [...MULTI_GATEWAY_NAMES] : [...ONE_GATE_NAMES];
+}
+
+/**
+ * Coerce an arbitrary config string to a mode.
+ *
+ * Clusterio has no enum field type, so this value arrives as free text and a typo would otherwise
+ * propagate into "no gateways at all". Falls back to the default and reports what it saw, matching
+ * the clamp-and-warn precedent used for the numeric settings.
+ */
+export function parseGatewayMode(value: unknown): { mode: GatewayMode; warning: string | null } {
+	if (value === "one_gate" || value === "multi") {
+		return { mode: value, warning: null };
+	}
+	return {
+		mode: DEFAULT_GATEWAY_MODE,
+		warning: `Unknown gateway_mode ${JSON.stringify(value)} — falling back to ${DEFAULT_GATEWAY_MODE}`,
+	};
+}
+
+/**
+ * Multi mode's link rules, which have no equivalent in one-gate mode.
+ *
+ * Owner ruling: each of the four gates carries exactly ONE destination, and no two gates on the same
+ * instance may point at the same destination instance — so an instance reaches at most four others,
+ * each by its own gate, and the gate you fly to fully determines where you land.
+ *
+ * Returns a reason string, never a silently truncated list: dropping an over-quota target is how a
+ * gateway quietly becomes something other than what the operator drew.
+ */
+export function checkMultiModeLink(
+	gatewayName: string,
+	targets: readonly GatewayLink[],
+	otherGateways: ReadonlyMap<string, readonly GatewayLink[]>,
+): string | null {
+	if (targets.length > 1) {
+		return `In Multi Cluster mode each gateway carries one destination (${gatewayName} was given ${targets.length}).`;
+	}
+	const target = targets[0];
+	if (!target) {
+		return null;
+	}
+	for (const [otherName, otherTargets] of otherGateways) {
+		if (otherName === gatewayName) {
+			continue;
+		}
+		if (otherTargets.some(other => other.targetInstanceId === target.targetInstanceId)) {
+			return `In Multi Cluster mode each destination gets one gateway (${otherName} already links to instance ${target.targetInstanceId}).`;
+		}
+	}
+	return null;
+}
 
 /** A raw gateway→destination link (controller source of truth; persisted). */
 export interface GatewayLink {
@@ -126,6 +213,16 @@ export interface InstanceNodeModel {
 	 * The assigned port lives on the controller's runtime InstanceRecord.
 	 */
 	gamePort: number | null;
+	/**
+	 * `publicAddress:gamePort` — what a client actually connects to — or "" when the instance has no
+	 * assigned port because it is not running.
+	 *
+	 * Built by the same helper as the /teleport roster (`instanceAddress`), not a second derivation:
+	 * the two would otherwise be free to disagree about the address of the same instance, and the
+	 * roster's caveats (publicAddress defaults to "localhost"; a docker port remap makes this
+	 * unroutable) apply identically here.
+	 */
+	address: string;
 	status: string;
 	connected: boolean;
 	platforms: PlatformModel[];

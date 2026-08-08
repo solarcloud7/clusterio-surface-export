@@ -32,7 +32,18 @@ export type {
 	ResolvedGateway,
 	AuditRow,
 } from "./shared/dto";
-export { GATEWAY_NAMES, GATEWAY_PREFIX } from "./shared/dto";
+export {
+	ALL_GATEWAY_NAMES,
+	DEFAULT_GATEWAY_MODE,
+	GATEWAY_PREFIX,
+	MULTI_GATEWAY_NAMES,
+	ONE_GATE_NAME,
+	ONE_GATE_NAMES,
+	checkMultiModeLink,
+	gatewayNamesFor,
+	parseGatewayMode,
+} from "./shared/dto";
+export type { GatewayMode } from "./shared/dto";
 const PLUGIN_NAME = "surface_export";
 
 export const PERMISSIONS = {
@@ -834,29 +845,52 @@ export class SetGatewayLinkRequest {
 	static src = "control" as const;
 	static dst = "controller" as const;
 	static permission = PERMISSIONS.TRANSFER_EXPORTS;
+	/**
+	 * EVERY changed gateway on ONE instance, in a single request — not one request per gateway.
+	 *
+	 * The shape is the fix for a real defect. Multi mode forbids two gates on an instance pointing at
+	 * the same destination, which is a rule about the instance's WHOLE layout; validating it one
+	 * gateway at a time against already-persisted state judges an intermediate state that the operator
+	 * never asked for. Moving a destination from gate 2 to gate 1 was rejected on gate 1 (gate 2 still
+	 * held it on disk) and then applied on gate 2 (clearing it) — a move that deleted the link. A swap
+	 * of two gates' destinations was rejected on both halves, every time, forever: a legal end state
+	 * unreachable through the UI.
+	 *
+	 * One request per instance makes the unit of validation the same as the unit of intent.
+	 */
 	static jsonSchema: JsonSchema = {
 		type: "object",
 		properties: {
 			sourceInstanceId: { type: "integer" },
-			gatewayName: { type: "string" },
-			targets: { type: "array", items: GATEWAY_LINK_SCHEMA },
+			gateways: {
+				type: "array",
+				items: {
+					type: "object",
+					properties: {
+						gatewayName: { type: "string" },
+						targets: { type: "array", items: GATEWAY_LINK_SCHEMA },
+					},
+					required: ["gatewayName", "targets"],
+					additionalProperties: false,
+				},
+			},
 		},
-		required: ["sourceInstanceId", "gatewayName", "targets"],
+		required: ["sourceInstanceId", "gateways"],
 		additionalProperties: false,
 	};
 
 	sourceInstanceId: number;
-	gatewayName: string;
-	targets: GatewayLink[];
+	gateways: Array<{ gatewayName: string; targets: GatewayLink[] }>;
 
-	constructor(json: { sourceInstanceId: number; gatewayName: string; targets: GatewayLink[] }) {
+	constructor(json: { sourceInstanceId: number; gateways: Array<{ gatewayName: string; targets: GatewayLink[] }> }) {
 		this.sourceInstanceId = json.sourceInstanceId;
-		this.gatewayName = json.gatewayName;
-		this.targets = json.targets;
+		this.gateways = json.gateways;
 	}
 
-	static fromJSON(json: { sourceInstanceId: number; gatewayName: string; targets: GatewayLink[] }) { return new SetGatewayLinkRequest(json); }
-	toJSON() { return { sourceInstanceId: this.sourceInstanceId, gatewayName: this.gatewayName, targets: this.targets }; }
+	static fromJSON(json: { sourceInstanceId: number; gateways: Array<{ gatewayName: string; targets: GatewayLink[] }> }) {
+		return new SetGatewayLinkRequest(json);
+	}
+	toJSON() { return { sourceInstanceId: this.sourceInstanceId, gateways: this.gateways }; }
 
 	static Response = {
 		jsonSchema: { type: "object", properties: { success: { type: "boolean" }, error: { type: "string" } }, required: ["success"] } as JsonSchema,
@@ -888,9 +922,9 @@ export class GetGatewayConfigRequest {
 	toJSON() { return { instanceId: this.instanceId }; }
 
 	static Response = {
-		jsonSchema: { type: "object", properties: { gateways: RESOLVED_GATEWAYS_SCHEMA }, required: ["gateways"] } as JsonSchema,
+		jsonSchema: { type: "object", properties: { gateways: RESOLVED_GATEWAYS_SCHEMA, activeGatewayNames: { type: "array", items: { type: "string" } } }, required: ["gateways"] } as JsonSchema,
 		fromJSON(json: unknown) {
-			return json as { gateways: ResolvedGateway[] };
+			return json as { gateways: ResolvedGateway[]; activeGatewayNames?: string[] };
 		},
 	};
 }
@@ -970,21 +1004,31 @@ export class PushGatewayConfigRequest {
 	static dst = "instance" as const;
 	static jsonSchema: JsonSchema = {
 		type: "object",
-		properties: { gateways: RESOLVED_GATEWAYS_SCHEMA },
+		properties: { gateways: RESOLVED_GATEWAYS_SCHEMA, activeGatewayNames: { type: "array", items: { type: "string" } } },
 		required: ["gateways"],
 		additionalProperties: false,
 	};
 
 	gateways: ResolvedGateway[];
+	/**
+	 * Every gateway the active mode exposes — NOT merely the ones that have links.
+	 *
+	 * Sent separately because `gateways` only carries CONFIGURED gateways: deriving the active set
+	 * from it would unlock nothing on a fresh cluster, leaving the operator unable to fly to a
+	 * gateway in order to link it. Optional so an un-updated instance keeps today’s behaviour of
+	 * unlocking everything with the prefix.
+	 */
+	activeGatewayNames?: string[];
 
-	constructor(json: { gateways: ResolvedGateway[] }) {
+	constructor(json: { gateways: ResolvedGateway[]; activeGatewayNames?: string[] }) {
 		this.gateways = json.gateways;
+		this.activeGatewayNames = json.activeGatewayNames;
 	}
 
-	static fromJSON(json: { gateways: ResolvedGateway[] }) {
+	static fromJSON(json: { gateways: ResolvedGateway[]; activeGatewayNames?: string[] }) {
 		return new PushGatewayConfigRequest(json);
 	}
-	toJSON() { return { gateways: this.gateways }; }
+	toJSON() { return { gateways: this.gateways, activeGatewayNames: this.activeGatewayNames }; }
 
 	static Response = {
 		jsonSchema: { type: "object", properties: { success: { type: "boolean" }, error: { type: "string" } }, required: ["success"] } as JsonSchema,

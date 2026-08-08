@@ -3,6 +3,7 @@
 
 local AsyncProcessor = require("modules/surface_export/core/async-processor")
 local Util = require("modules/surface_export/utils/util")
+local Gateway = require("modules/surface_export/core/gateway")
 
 --- Configure plugin settings (called from Node.js plugin on startup)
 --- @param config table: Configuration parameters {batch_size, max_concurrent_jobs, show_progress, debug_mode}
@@ -68,6 +69,26 @@ local function configure(config)
     local debug_enabled = config.debug_mode == true or storage.surface_export_config.debug_mode == true
     storage.surface_export_config.preserve_failed_destination = debug_enabled
       and config.preserve_failed_destination == true or false
+  end
+  if config.active_gateways_json then
+    -- Which gateway prototypes this cluster's MODE exposes. Gateway.discover_and_unlock unlocks only
+    -- these, so the other mode's gateways never appear on the starmap. Absent (an un-updated
+    -- controller) leaves the field nil, and the unlock falls back to "everything with the prefix" —
+    -- the pre-mode behaviour — rather than unlocking nothing.
+    local decoded = Util.json_to_table_compat(config.active_gateways_json)
+    if type(decoded) == "table" then
+      storage.surface_export_config.active_gateways = decoded
+      -- Re-reconcile NOW. The startup pass ran before this arrived and therefore unlocked every
+      -- gateway; this is the pass that actually takes effect, and without it the setting would look
+      -- applied (the value is stored) while the starmap still showed the other mode's gateways.
+      local ok, err = pcall(Gateway.discover_and_unlock)
+      if not ok then
+        log(string.format("[FactorioSurfaceExport] configure: gateway re-unlock failed: %s", tostring(err)))
+      end
+      log(string.format("[FactorioSurfaceExport] Active gateway set: %d name(s)", #decoded))
+    else
+      log("[FactorioSurfaceExport] configure: active_gateways_json did not decode to a table")
+    end
   end
   if config.gateways_json then
     -- Replace the whole gateway link map (controller is the source of truth). Decoded from JSON,

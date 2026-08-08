@@ -3,6 +3,7 @@ import { Alert, Modal, Select, Space, message as antMessage } from "antd";
 
 import { usePlanetOptions } from "./icons";
 import { getErrorMessage, getProp } from "./utils";
+import type { PlatformActionSource } from "./platform-actions";
 import type { JsonObject, SurfaceExportPlugin, SurfaceExportState } from "./view-models";
 
 /**
@@ -11,17 +12,13 @@ import type { JsonObject, SurfaceExportPlugin, SurfaceExportState } from "./view
  * Deliberately narrower than ImportModal: there is no force field and no platform-name override,
  * because a transfer carries an existing platform's own force and name rather than constructing a
  * new one from an uploaded file. The only two decisions left are where it goes and where it lands.
+ *
+ * Its input is `PlatformActionSource` — the same shape the export action takes, declared once in
+ * platform-actions.ts. This file used to declare its own identical `TransferSource`, which meant two
+ * callers (the Manual Transfer table and the canvas toolbar) could satisfy one and not the other.
  */
-export type TransferSource = {
-	instanceId: number;
-	instanceName: string;
-	platformIndex: number;
-	platformName: string;
-	forceName: string;
-};
-
 type TransferModalProps = {
-	source: TransferSource | null;
+	source: PlatformActionSource | null;
 	onClose: () => void;
 	plugin: SurfaceExportPlugin;
 	state: SurfaceExportState;

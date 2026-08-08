@@ -17,7 +17,7 @@ import { UploadOutlined } from "@ant-design/icons";
 import * as messageDefs from "../messages";
 import ManualTransferTab from "./ManualTransferTab";
 import TransactionLogsTab from "./TransactionLogsTab";
-import GatewayCanvas from "./GatewayCanvas";
+import GatewayCanvas from "./gateway/GatewayCanvas";
 import ImportModal from "./ImportModal";
 import type { JsonObject, LogEvent, SurfaceExportPlugin, SurfaceExportState } from "./view-models";
 
@@ -74,12 +74,17 @@ function SurfaceExportPage() {
 	const plugin = useSurfaceExportPlugin(control);
 	const state = useSurfaceExportState(plugin);
 	const [importModalOpen, setImportModalOpen] = useState(false);
-	// Tab is URL-synced so the view is deep-linkable, e.g. /surface-export?tab=logs — read on mount,
-	// updated on change. Uses the native History API (no react-router import) to avoid bundling a
-	// non-shared web dep (see the in-container web build model / why mermaid was removed).
+	// Tab is URL-synced so the view is deep-linkable, e.g. /surface-export?tab=gateways — read on
+	// mount, updated on change. Uses the native History API (no react-router import) to avoid
+	// bundling a non-shared web dep (see the in-container web build model / why mermaid was removed).
+	//
+	// Reads against the full set, not a single hard-coded name: this used to accept only "logs", so
+	// handleTabChange would WRITE ?tab=gateways and a reload of that exact URL would land on Manual
+	// Transfer — the round trip the comment above claims silently did not close. Availability (logs
+	// needs a permission) is a separate question, settled by `effectiveTab` below.
 	const [activeTab, setActiveTab] = useState<string>(() => {
 		const t = new URLSearchParams(window.location.search).get("tab");
-		return t === "logs" ? "logs" : "manual";
+		return t && ["manual", "logs", "gateways"].includes(t) ? t : "manual";
 	});
 	function handleTabChange(key: string) {
 		setActiveTab(key);
@@ -107,14 +112,27 @@ function SurfaceExportPage() {
 	tabItems.push({
 		key: "gateways",
 		label: "Gateways",
-		children: <GatewayCanvas plugin={plugin} state={state} />,
+		// The canvas opens the page's ONE ImportModal rather than mounting its own. Tabs keep their
+		// panes mounted (removeOnLeave: false), so a second copy would be a second live modal.
+		children: <GatewayCanvas plugin={plugin} state={state} onOpenImport={() => setImportModalOpen(true)} />,
 	});
 
 	// Fall back to manual if the URL asks for a tab that isn't available (e.g. ?tab=logs without view perms).
 	const effectiveTab = tabItems.some(t => t.key === activeTab) ? activeTab : "manual";
 
+	// Paints Clusterio's page frame to match the canvas. Applied as a body class this page adds and
+	// removes — NOT as a bare selector in our stylesheet, which is global from the moment our web
+	// module loads and would restyle every other plugin's page too.
+	useEffect(() => {
+		document.body.classList.add("surface-export-page");
+		return () => document.body.classList.remove("surface-export-page");
+	}, []);
+
 	return (
-		<PageLayout nav={[{ name: "Surface Export" }]}>
+		// `nav={[]}` — no breadcrumb. It rendered "Surface Export" immediately above PageHeader's
+		// "Surface Export", so the page opened by saying its own name twice; the heading is the one
+		// that carries weight, and this page is one level deep with nowhere to navigate back to.
+		<PageLayout nav={[]}>
 			<PageHeader title="Surface Export" />
 			{pluginVersion ? (
 				<Text type="secondary" style={{ fontSize: 12, display: "block", marginBottom: 12 }}>
@@ -312,7 +330,10 @@ export class WebPlugin extends BaseWebPlugin {
 		return this.link.send(new GetGatewaysRequest({}));
 	}
 
-	async setGatewayLink(payload: { sourceInstanceId: number; gatewayName: string; targets: Array<{ targetInstanceId: number; targetGateway: string }> }) {
+	async setGatewayLink(payload: {
+		sourceInstanceId: number;
+		gateways: Array<{ gatewayName: string; targets: Array<{ targetInstanceId: number; targetGateway: string }> }>;
+	}) {
 		return this.link.send(new SetGatewayLinkRequest(payload));
 	}
 

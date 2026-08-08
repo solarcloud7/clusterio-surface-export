@@ -14,7 +14,8 @@
 import React from "react";
 import { FactorioIcon, useDefaultModPack, useExportPrototypeMetadata } from "@clusterio/web_ui";
 import type { PrototypeMetadataEntry } from "@clusterio/web_ui";
-import { selectPlanetNames } from "../shared/planets";
+import { selectNavigableLocationNames, selectPlanetNames } from "../shared/planets";
+import type { SpaceConnectionLike } from "../shared/planets";
 
 type Metadata = Map<string, Map<string, PrototypeMetadataEntry>> | undefined;
 
@@ -48,7 +49,67 @@ function findEntry(metadata: Metadata, name: string, preferTypes?: string[]): Pr
 function useProtoLookup() {
 	const modPack = useDefaultModPack();
 	const metadata = useExportPrototypeMetadata(modPack);
-	return { modPackId: modPack?.id, metadata };
+	return { modPack, modPackId: modPack?.id, metadata };
+}
+
+/**
+ * Every place a platform can be flown to, read from the space-connection graph.
+ *
+ * WHY A SECOND FETCH. `useExportPrototypeMetadata` serves the SPRITESHEET metadata, which is
+ * bucketed for icon lookup and carries only name/type/icon across eight buckets — measured: item,
+ * fluid, recipe, virtual-signal, technology, space-location, quality, entity, and NO
+ * space-connection. The routes exist only in the pack's raw `prototypes` asset, served from the same
+ * /static directory and named by the pack's own export manifest.
+ *
+ * FALLS BACK TO PLANETS, loudly. If the manifest, the asset or the bucket is missing — an older
+ * controller, an export that predates this asset — this returns null and the caller keeps today's
+ * planet list. Degrading to a list that is merely too broad beats degrading to an empty one, and the
+ * reason is logged rather than swallowed so "the gates disappeared from the dropdown" is diagnosable.
+ */
+function useNavigableLocationNames(): string[] | null {
+	const { modPack } = useProtoLookup();
+	const [names, setNames] = React.useState<string[] | null>(null);
+
+	// The export manifest's asset map is the only thing that knows the content-hashed filename, and
+	// the shape is read defensively because it belongs to Clusterio, not to us.
+	const asset = (modPack as { exportManifest?: { assets?: Record<string, string> } } | undefined)
+		?.exportManifest?.assets?.prototypes;
+
+	React.useEffect(() => {
+		if (!asset) {
+			setNames(null);
+			return undefined;
+		}
+		let live = true;
+		void (async () => {
+			try {
+				const response = await fetch(`/static/${asset}`);
+				if (!response.ok) {
+					throw new Error(`HTTP ${response.status}`);
+				}
+				const prototypes = await response.json() as Record<string, Record<string, SpaceConnectionLike>>;
+				const connections = prototypes["space-connection"];
+				if (!connections) {
+					throw new Error("the export has no space-connection prototypes");
+				}
+				if (live) {
+					setNames(selectNavigableLocationNames(Object.values(connections)));
+				}
+			} catch (err: unknown) {
+				console.warn(
+					"surface_export: could not read the space-connection graph; "
+					+ "falling back to listing planets, which offers unreachable surfaces and omits gateways",
+					err,
+				);
+				if (live) {
+					setNames(null);
+				}
+			}
+		})();
+		return () => { live = false; };
+	}, [asset]);
+
+	return names;
 }
 
 /**
@@ -125,9 +186,13 @@ export const EntityIcon = (props: IconProps) => <ProtoIcon {...props} />;
  */
 export function usePlanetOptions() {
 	const { metadata } = useProtoLookup();
+	const navigable = useNavigableLocationNames();
 	return React.useMemo(() => {
 		const buckets = [...(metadata?.values() ?? [])].map(typeMap => typeMap.values());
-		return selectPlanetNames(buckets)
+		// Where a platform can actually FLY, when the route graph is readable; the old
+		// every-planet list otherwise. See useNavigableLocationNames for why the fallback exists and
+		// selectNavigableLocationNames for the measurement behind the rule.
+		return (navigable ?? selectPlanetNames(buckets))
 			.map(name => ({
 				value: name,
 				label: (
@@ -137,5 +202,5 @@ export function usePlanetOptions() {
 					</span>
 				),
 			}));
-	}, [metadata]);
+	}, [metadata, navigable]);
 }
