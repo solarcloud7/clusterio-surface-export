@@ -133,6 +133,15 @@ export function InstanceNode({ data, isConnectable }: NodeProps) {
 						{/* Fallback for a gateway with no bundled art: soft, but correct, beats a blank node. */}
 						{NODE_FACE_ART[gateway] ? null : <PlanetIcon name={gateway} size={96} title={gateway} />}
 					</div>
+					{/*
+					  * The MOVE zone, sitting on top of the connect handles.
+					  *
+					  * Easy connect covering the entire node meant there was nowhere left to grab it: every
+					  * press started a link. So the node splits — the outer RING connects (which is where a
+					  * floating edge actually attaches, so the target is where the line appears), and this
+					  * core moves. Rendered last so it stacks above the handles; `dragHandle` names it.
+					  */}
+					<div className="surface-export-instance-core" title={`${node.instanceName} — drag to move; drag from the outer ring to link`} />
 				</>
 			) : names.map((gatewayName, index) => (
 				<MultiGatewayHandle

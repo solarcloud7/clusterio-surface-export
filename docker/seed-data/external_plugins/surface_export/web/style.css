@@ -205,8 +205,32 @@
 	cursor: grabbing;
 }
 
-/* Easy connect: the handle covers the whole node so a drag can start or land anywhere on the
-   gate. Invisible on purpose — the art is the affordance. */
+/* The MOVE zone: the middle of the gate, sitting above the connect handles.
+
+   Easy connect covering the whole node left nowhere to grab it — every press started a link. So the
+   node is split by radius: this core moves, and the ring outside it connects. That division is not
+   arbitrary, it matches the drawing — a floating edge attaches at the node's BOUNDARY, so the place
+   you drag a link from is the place the link appears.
+
+   60% of a 150px node leaves a ~30px ring, comfortably larger than the 26px icon handles that Multi
+   mode still uses, so the connect target did not get harder in exchange. */
+.surface-export-instance-core {
+	position: absolute;
+	top: 20%;
+	left: 20%;
+	width: 60%;
+	height: 60%;
+	border-radius: 50%;
+	cursor: grab;
+}
+
+.surface-export-instance-core:active {
+	cursor: grabbing;
+}
+
+/* Easy connect: the handle covers the whole node, and the core above it takes back the middle, so
+   what remains live for connecting is the outer ring. Invisible on purpose — the art is the
+   affordance. */
 .surface-export-gw-cover {
 	position: absolute;
 	inset: 0;
