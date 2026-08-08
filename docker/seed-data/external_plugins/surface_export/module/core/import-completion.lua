@@ -464,9 +464,10 @@ function ImportCompletion.run_phase2(job)
 	-- gate's own four locations (inventories, belt lines, held stacks, loose ground items). `state`
 	-- has no item subject. Fluids are a different unit and are accounted by the gate's fluid side.
 	-- The reconciliation below is what PROVES that span — see the assertion after validation.
-	local phase_total, phase_complete = PhaseCensus.total(job)
+	-- The per-phase deltas are the product. There is deliberately no combined total: summing them
+	-- reproduces the gate's own number, and a second copy of a fact is a liability, not a check.
+	local _, phase_complete = PhaseCensus.total(job)
 	job.metrics.phase_census = job.phase_census
-	job.metrics.phase_census_total = phase_total
 	job.metrics.phase_census_complete = phase_complete
 	log(string.format("[Import] PHASE CENSUS: %s", PhaseCensus.format(job)))
 	if not phase_complete then
@@ -697,26 +698,16 @@ function ImportCompletion.run_phase2(job)
 
 		PhaseProfiler.stop(job.job_id, "validation")
 
-		-- CENSUS RECONCILIATION (report-only). The phases are supposed to span every item the gate
-		-- counts, so Σ(phase deltas) must equal the gate's actual counts exactly, key for key. A
-		-- non-zero residual means items reached the destination through a path no phase brackets —
-		-- which is the same class of blindness the census was built to remove, so it must be LOUD
-		-- rather than quietly absorbed. This is the only check that proves the decomposition is
-		-- complete; without it the per-phase numbers look authoritative while measuring a
-		-- different set than the verdict does.
-		local census_sum = job.metrics.phase_census_total or {}
-		local residual = build_count_diff(census_sum, result.actualItemCounts)
-		job.metrics.phase_census_residual = residual
-		if next(residual) == nil then
-			log("[Import] CENSUS RECONCILED: phase deltas account for the gate's item counts exactly")
-		else
-			local parts = {}
-			for key, row in pairs(residual) do
-				parts[#parts + 1] = string.format("%s census=%s gate=%s (%+d)", key, row.expected, row.actual, row.delta)
-			end
-			table.sort(parts)
-			log("[Import] CENSUS RESIDUAL (items the phases do not account for): " .. table.concat(parts, ", "))
-		end
+		-- (No runtime census/gate reconciliation here, deliberately — owner ruling 2026-08-08.)
+		-- Σ(phase deltas) == final − initial, and the destination starts empty, so the sum IS the
+		-- gate's measurement computed the long way. Comparing them checks an identity that holds by
+		-- construction: it can only fail if this code is wrong, which makes it a unit test scheduled
+		-- to run forever in production. The repo's standing rule covers exactly this shape —
+		-- agreement-checks are confessions; delete the duplicated fact rather than guard it.
+		-- What the identity actually depends on is STRUCTURAL (the census must span the gate's four
+		-- item locations, over the gate's scope, with every item-moving phase bracketed), and every
+		-- one of those is pinned offline in test/phase-census.test.cjs, where a regression fails in
+		-- CI instead of in a customer's transfer.
 
 		-- Clean validation-only boundary for the waterfall span (the existing
 		-- validation_completed_tick at the end of run_phase2 also covers activation/fluids/loss).

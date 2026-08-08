@@ -137,12 +137,46 @@ test("the entity-creation baseline is recorded, or upstream-created items belong
 		"run_phase1 must record the entity_creation baseline");
 });
 
-test("the census is reconciled against the gate's actual counts, loudly", () => {
-	assert.match(importCompletion, /phase_census_residual/,
-		"the residual must be recorded");
-	assert.match(importCompletion, /CENSUS RESIDUAL/,
-		"a non-empty residual must be logged — silently absorbing it recreates the exact blindness "
-		+ "this instrument exists to remove");
+// Phases that move no ITEMS, so they need no census bracket. Each is exempt for a stated reason;
+// this list is the reviewable record of that judgement, not a convenience.
+const ITEM_NEUTRAL_PHASES = {
+	state: "control behaviour, filters and circuit connections — no item movement",
+	fluids: "fluids are a different unit; accounted by the gate's fluid side, not the item census",
+	activation: "flips entity active flags; moves nothing",
+	loss_analysis: "post-activation reporting only",
+};
+
+test("EVERY recorded phase is either census-bracketed or declared item-neutral", () => {
+	// This replaces the runtime census/gate reconciliation (deleted 2026-08-08). That check
+	// compared two derivations of one number — an identity that holds by construction, so it could
+	// only ever fail on a code bug. The failure it actually protected against is a NEW phase that
+	// moves items and never gets bracketed, silently shrinking the attribution. That is structural,
+	// so it belongs here, where it fails in CI rather than in a customer's transfer.
+	const recorded = new Set(
+		Array.from(importCompletion.matchAll(/PhaseRecorder\.start\(job,\s*"(\w+)"/g)).map((m) => m[1]),
+	);
+	assert.ok(recorded.size >= 5, `expected the import's phases to be discoverable, found ${recorded.size}`);
+
+	const bracketed = new Set([
+		...Array.from(importCompletion.matchAll(/PhaseCensus\.open\(job,\s*"(\w+)"/g)).map((m) => m[1]),
+		...Array.from(importCompletion.matchAll(/PhaseCensus\.record_external\(job,\s*"(\w+)"/g)).map((m) => m[1]),
+		...Array.from(importCompletion.matchAll(/PhaseCensus\.record_baseline\(job,\s*"(\w+)"/g)).map((m) => m[1]),
+	]);
+
+	const unaccounted = [...recorded].filter((p) => !bracketed.has(p) && !(p in ITEM_NEUTRAL_PHASES));
+	assert.deepEqual(unaccounted, [],
+		`these phases are recorded but neither census-bracketed nor declared item-neutral: `
+		+ `${unaccounted.join(", ")}. Either bracket the phase, or add it to ITEM_NEUTRAL_PHASES `
+		+ `with the reason it cannot move items.`);
+});
+
+test("no runtime reconciliation was reintroduced", () => {
+	assert.doesNotMatch(importCompletion, /phase_census_residual|CENSUS RESIDUAL|CENSUS RECONCILED/,
+		"the census sum reproduces the gate's own number; comparing them re-adds a duplicate fact "
+		+ "guarded by an agreement check. The decomposition's correctness is pinned structurally by "
+		+ "the tests in this file instead.");
+	assert.doesNotMatch(importCompletion, /phase_census_total/,
+		"no combined total should be published — its only consumer was the deleted reconciliation");
 });
 
 test("close() persists the delta and DROPS the raw snapshots (storage-safe)", () => {
