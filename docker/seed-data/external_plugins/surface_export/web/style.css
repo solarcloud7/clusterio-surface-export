@@ -216,7 +216,11 @@
    mode still uses, so the connect target did not get harder in exchange. */
 .surface-export-instance-core {
 	position: absolute;
-	top: 20%;
+	/* Raised by the measured gate offset so the move/connect boundary is concentric with the PORTAL
+	   rather than with the node box. The art stands on a pedestal, so its glowing ring sits 14px above
+	   the box centre — keep this in step with GATE_CENTRE_OFFSET_Y in gateway/edge-geometry.ts, which
+	   carries the measurement and moves the edge attachment point by the same amount. */
+	top: calc(20% - 14px);
 	left: 20%;
 	width: 60%;
 	height: 60%;

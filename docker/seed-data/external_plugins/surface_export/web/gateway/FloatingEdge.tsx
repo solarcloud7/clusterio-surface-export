@@ -3,7 +3,7 @@ import { BaseEdge, getBezierPath, useInternalNode } from "@xyflow/react";
 import type { EdgeProps, Position } from "@xyflow/react";
 
 import { NODE_DIAMETER } from "./gateway-graph";
-import { endpointSide, floatingEdgeEndpoints, nodeCircle } from "./edge-geometry";
+import { GATE_CENTRE_OFFSET_Y, endpointSide, floatingEdgeEndpoints, nodeCircle } from "./edge-geometry";
 import { DEFAULT_EDGE_COLOUR, gatewayColour } from "./gateway-colours";
 
 /**
@@ -29,8 +29,10 @@ export default function FloatingEdge({
 		return null;
 	}
 
-	const sourceCircle = nodeCircle(sourceNode.internals?.positionAbsolute, sourceNode.measured, NODE_DIAMETER);
-	const targetCircle = nodeCircle(targetNode.internals?.positionAbsolute, targetNode.measured, NODE_DIAMETER);
+	// Anchored on the GATE, not the node box: the art is bottom-heavy, so a box-centred edge leaves
+	// from below the portal it is supposed to come out of.
+	const sourceCircle = nodeCircle(sourceNode.internals?.positionAbsolute, sourceNode.measured, NODE_DIAMETER, GATE_CENTRE_OFFSET_Y);
+	const targetCircle = nodeCircle(targetNode.internals?.positionAbsolute, targetNode.measured, NODE_DIAMETER, GATE_CENTRE_OFFSET_Y);
 	if (!sourceCircle || !targetCircle) {
 		return null;
 	}

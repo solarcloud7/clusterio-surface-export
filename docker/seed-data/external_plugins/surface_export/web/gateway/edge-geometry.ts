@@ -12,6 +12,21 @@
  * for the shape we actually draw.
  */
 
+/**
+ * How far the drawn GATE sits above the middle of its node box, in node pixels.
+ *
+ * The art is a portal standing on a pedestal, so its visible mass is bottom-heavy and the glowing
+ * ring — the thing a person reads as “the gateway” — is higher than the box centre. MEASURED on
+ * gateway-hub-128.png rather than eyeballed: the luminance-weighted centroid of the bright pixels
+ * sits at y=51.6 of 128, against a box centre of 63.5, which is 14px once scaled to the 150px node.
+ * (The alpha centroid of ALL pixels is +4.4px the other way, and the opaque bounding box is dead
+ * centre — both are dominated by the pedestal, which is why neither is the right anchor.)
+ *
+ * NEGATIVE is up, matching screen coordinates. Used for BOTH the connect ring and the point an edge
+ * attaches to, so a link leaves from where it looks like it should.
+ */
+export const GATE_CENTRE_OFFSET_Y = -14;
+
 /** A node reduced to what the geometry needs: its centre and how far its edge sits from it. */
 export type NodeCircle = {
 	x: number;
@@ -31,6 +46,7 @@ export function nodeCircle(
 	position: { x: number; y: number } | null | undefined,
 	measured: { width?: number; height?: number } | null | undefined,
 	fallbackDiameter: number,
+	offsetY = 0,
 ): NodeCircle | null {
 	if (!position || !Number.isFinite(position.x) || !Number.isFinite(position.y)) {
 		return null;
@@ -41,7 +57,7 @@ export function nodeCircle(
 	const height = measured?.height || fallbackDiameter;
 	return {
 		x: position.x + width / 2,
-		y: position.y + height / 2,
+		y: position.y + height / 2 + offsetY,
 		// Inscribed, not circumscribed: the drawn circle fits INSIDE the square node box, so half the
 		// smaller side is where the visible edge actually is.
 		radius: Math.min(width, height) / 2,
