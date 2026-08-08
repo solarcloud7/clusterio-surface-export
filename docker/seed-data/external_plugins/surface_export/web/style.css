@@ -44,6 +44,70 @@
 	to { stroke-dashoffset: -10; }
 }
 
+/* ── Canvas: the transfer ship ────────────────────────────────────────────── */
+
+/* A platform, drawn where its transfer actually is. Rides the edge via CSS motion path — the
+   `offset-path` and `offset-distance` are set inline from the edge's own path string, and THIS is
+   the transition that moves it. Keep the duration in step with SHIP_TRAVEL_MS in
+   gateway/transfer-motion.ts; the constant is what the phase model reasons about.
+
+   `pointer-events: none` — it is a readout, not a control. Without it the ship would swallow clicks
+   meant for the edge underneath, and clicking an edge is how a link is removed. */
+.surface-export-ship {
+	position: absolute;
+	top: 0;
+	left: 0;
+	display: flex;
+	align-items: center;
+	gap: 5px;
+	padding: 2px 8px 2px 5px;
+	border-radius: 999px;
+	border: 1px solid #303030;
+	background: rgba(20, 20, 20, 0.92);
+	font-size: 11px;
+	line-height: 1.5;
+	white-space: nowrap;
+	pointer-events: none;
+	transition-property: offset-distance;
+	transition-timing-function: ease-in-out;
+}
+
+.surface-export-ship-dot {
+	width: 8px;
+	height: 8px;
+	border-radius: 50%;
+	flex: 0 0 auto;
+	background: currentColor;
+	box-shadow: 0 0 6px currentColor;
+}
+
+.surface-export-ship-name {
+	max-width: 160px;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	color: rgba(255, 255, 255, 0.85);
+}
+
+/* Tone tracks the PHASE, not success alone — an operator watching a transfer needs to tell "moving"
+   from "waiting on the gate" at a glance, since those two look identical if only the position
+   changes and the position is deliberately still while validating. */
+.surface-export-ship-active { color: #1668dc; border-color: #1668dc; }
+.surface-export-ship-holding { color: #d89614; border-color: #d89614; }
+.surface-export-ship-success { color: #49aa19; border-color: #49aa19; }
+.surface-export-ship-failure { color: #dc4446; border-color: #dc4446; }
+
+/* Held at the midpoint while the destination's frozen-world gate runs. The pulse is the ONLY signal
+   that anything is still happening: the ship deliberately does not move during validation, because
+   we do not measure progress through it, and a motionless dot with no pulse reads as stalled. */
+.surface-export-ship-holding .surface-export-ship-dot {
+	animation: surface-export-ship-pulse 1.1s ease-in-out infinite;
+}
+
+@keyframes surface-export-ship-pulse {
+	0%, 100% { opacity: 1; transform: scale(1); }
+	50% { opacity: 0.35; transform: scale(0.7); }
+}
+
 /* ── Canvas: instance circles, gateway handles ────────────────────────────── */
 
 /* The host filter fades the nodes it is not focused on (React Flow applies the opacity to the node

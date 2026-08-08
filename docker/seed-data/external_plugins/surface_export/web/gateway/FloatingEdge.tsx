@@ -1,10 +1,13 @@
 import React from "react";
-import { BaseEdge, getBezierPath, useInternalNode } from "@xyflow/react";
+import { BaseEdge, EdgeLabelRenderer, getBezierPath, useInternalNode } from "@xyflow/react";
 import type { EdgeProps, Position } from "@xyflow/react";
 
 import { NODE_DIAMETER } from "./gateway-graph";
 import { GATE_CENTRE_OFFSET_Y, endpointSide, floatingEdgeEndpoints, nodeCircle } from "./edge-geometry";
 import { DEFAULT_EDGE_COLOUR, gatewayColour } from "./gateway-colours";
+import { shipPhaseFor } from "./transfer-motion";
+import type { ShipTransfer } from "./transfer-motion";
+import TransferShip from "./TransferShip";
 
 /**
  * An edge that attaches wherever the two nodes FACE each other, rather than to a fixed handle.
@@ -47,9 +50,20 @@ export default function FloatingEdge({
 		targetPosition: endpointSide(targetCircle, sourceCircle) as Position,
 	});
 
-	const colour = gatewayColour((data as { sourceGateway?: string } | undefined)?.sourceGateway) || DEFAULT_EDGE_COLOUR;
+	const edgeData = data as {
+		sourceGateway?: string;
+		/** The transfer riding this edge right now, assigned by GatewayCanvas. */
+		transfer?: ShipTransfer;
+		/** True when that transfer runs against this edge's canonical orientation. */
+		transferReversed?: boolean;
+	} | undefined;
+	const colour = gatewayColour(edgeData?.sourceGateway) || DEFAULT_EDGE_COLOUR;
+	// A status with no mapped phase draws NO ship. A position we cannot justify from a measured
+	// status would be worse than none — see transfer-motion.ts.
+	const shipPhase = shipPhaseFor(edgeData?.transfer?.status);
 
 	return (
+		<>
 		<BaseEdge
 			id={id}
 			path={path}
@@ -69,5 +83,19 @@ export default function FloatingEdge({
 			}}
 			className="surface-export-edge"
 		/>
+		{shipPhase && edgeData?.transfer ? (
+			<EdgeLabelRenderer>
+				{/* Keyed on the transfer so a NEW transfer gets a fresh component — and therefore a fresh
+				    first-sight decision — rather than sliding in from wherever the last one ended. */}
+				<TransferShip
+					key={edgeData.transfer.transferId}
+					path={path}
+					phase={shipPhase}
+					reversed={Boolean(edgeData.transferReversed)}
+					summary={edgeData.transfer}
+				/>
+			</EdgeLabelRenderer>
+		) : null}
+		</>
 	);
 }

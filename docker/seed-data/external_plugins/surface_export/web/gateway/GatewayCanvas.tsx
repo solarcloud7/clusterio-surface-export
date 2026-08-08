@@ -33,12 +33,16 @@ import {
 	editsFromLinks,
 	gatewayFromHandleId,
 	instanceIdFromNodeId,
+	instanceNodeId,
 	parseEditKey,
 	preservePositions,
+	sourceHandleId,
+	targetHandleId,
 } from "./gateway-graph";
 import type { ConnectRequest, GatewayEdits } from "./gateway-graph";
 import { NodeActionsContext, platformActionKey } from "./node-actions";
-import { DEFAULT_GATEWAY_MODE, checkMultiModeLink } from "../../shared/dto";
+import { instancePairKey, noteLiveSeen, noteTerminalSeen, shipExpiryMs, shipPhaseFor, shipsInFlight, transientEdgeId } from "./transfer-motion";
+import { DEFAULT_GATEWAY_MODE, checkMultiModeLink, gatewayNamesFor } from "../../shared/dto";
 import type { GatewayMode } from "../../shared/dto";
 import { CANVAS_EDGE_TYPES, CANVAS_NODE_TYPES, GATEWAY_EDGE_TYPE } from "./node-types";
 import ConnectionLine from "./ConnectionLine";
@@ -140,6 +144,45 @@ export default function GatewayCanvas({ plugin, state, onOpenImport }: {
 	const graph = useMemo(() => buildGraph(tree, edits, mode, hostFilter), [tree, edits, mode, hostFilter]);
 	const pending = useMemo(() => dirtyKeys(edits, baseline), [edits, baseline]);
 
+	/**
+	 * The transfers currently worth drawing a ship for.
+	 *
+	 * `shipClock` exists because a FINISHED transfer has to leave the canvas on a timer rather than on
+	 * an event — nothing else is coming for it. It is bumped by a single timeout scheduled for the
+	 * next expiry, NOT by a polling interval: an interval would re-render every node forever to
+	 * service a case that is usually empty.
+	 */
+	const [shipClock, setShipClock] = useState(() => Date.now());
+	const ships = useMemo(
+		() => shipsInFlight(state?.transferSummaries, shipClock),
+		[state?.transferSummaries, shipClock],
+	);
+
+	useEffect(() => {
+		// Stamp "we have now seen this one finish" BEFORE reading the deadlines, so a transfer that
+		// went terminal this render gets its full linger window rather than one derived from a wire
+		// timestamp that may be missing. Writing it here, not in the filter, keeps render pure.
+		const now = Date.now();
+		for (const ship of ships) {
+			if (shipPhaseFor(ship.status)?.terminal) {
+				noteTerminalSeen(ship.transferId, now);
+			} else {
+				// Seen in flight — this is what earns it an arrival animation later, and what keeps the
+				// transaction log's history off the canvas.
+				noteLiveSeen(ship.transferId);
+			}
+		}
+		const expiries = ships.map(ship => shipExpiryMs(ship, now)).filter((at): at is number => at !== null);
+		if (!expiries.length) {
+			return undefined;
+		}
+		// +50ms so the wake-up lands after the expiry rather than exactly on it, where a re-run would
+		// compute the same deadline again and schedule a zero-length timeout.
+		const wakeIn = Math.max(0, Math.min(...expiries) - Date.now()) + 50;
+		const timer = setTimeout(() => setShipClock(Date.now()), wakeIn);
+		return () => clearTimeout(timer);
+	}, [ships]);
+
 	useEffect(() => {
 		// preservePositions keeps the user's drags and selection across this rebuild. The tree is
 		// re-pushed on every platform status change, so without it a node would snap back to its
@@ -153,27 +196,88 @@ export default function GatewayCanvas({ plugin, state, onOpenImport }: {
 			const focused = new Set(
 				graph.nodes.filter(node => !node.data.dimmed).map(node => instanceIdFromNodeId(node.id)),
 			);
-			return graph.edges.map(edge => ({
-				id: edge.id,
-				source: edge.source,
-				sourceHandle: edge.sourceHandle,
-				target: edge.target,
-				targetHandle: edge.targetHandle,
-				type: GATEWAY_EDGE_TYPE,
-				selected: selected.has(edge.id),
+			const drawn = new Set(graph.nodes.map(node => node.id));
+			const dimStyle = (a: number, b: number) => (
 				// Dimmed only when NEITHER end is in focus. A link that leaves the focused host is part of
 				// what the operator asked to look at, even though it lands somewhere faded.
-				style: focused.has(edge.sourceInstanceId) || focused.has(edge.targetInstanceId)
-					? undefined
-					: { opacity: DIMMED_OPACITY },
-				// Direction is drawn, not implied. A config link may be one-way, and an edge that could
-				// only say "connected" would render that as a two-way portal.
-				markerEnd: edge.forward ? { type: MarkerType.ArrowClosed } : undefined,
-				markerStart: edge.reverse ? { type: MarkerType.ArrowClosed } : undefined,
-				data: { forward: edge.forward, reverse: edge.reverse, sourceGateway: edge.sourceGateway },
-			}));
+				focused.has(a) || focused.has(b) ? undefined : { opacity: DIMMED_OPACITY }
+			);
+
+			// Each ship rides EXACTLY ONE edge. Multi mode can legitimately hold two gateway links
+			// between the same pair of instances, and a transfer names instances rather than a gateway —
+			// so without claiming one edge per ship, one transfer would be drawn as two. Edges arrive
+			// sorted by id, which makes "the first match" a stable choice rather than an arbitrary one.
+			const unassigned = new Map(ships.map(ship => [ship.transferId, ship]));
+			const shipFor = (a: number, b: number) => {
+				const wanted = instancePairKey(a, b);
+				for (const [transferId, ship] of unassigned) {
+					if (instancePairKey(ship.sourceInstanceId, ship.targetInstanceId) === wanted) {
+						unassigned.delete(transferId);
+						return ship;
+					}
+				}
+				return null;
+			};
+
+			const edges: Edge[] = graph.edges.map(edge => {
+				const ship = shipFor(edge.sourceInstanceId, edge.targetInstanceId);
+				return {
+					id: edge.id,
+					source: edge.source,
+					sourceHandle: edge.sourceHandle,
+					target: edge.target,
+					targetHandle: edge.targetHandle,
+					type: GATEWAY_EDGE_TYPE,
+					selected: selected.has(edge.id),
+					style: dimStyle(edge.sourceInstanceId, edge.targetInstanceId),
+					// Direction is drawn, not implied. A config link may be one-way, and an edge that could
+					// only say "connected" would render that as a two-way portal.
+					markerEnd: edge.forward ? { type: MarkerType.ArrowClosed } : undefined,
+					markerStart: edge.reverse ? { type: MarkerType.ArrowClosed } : undefined,
+					data: {
+						forward: edge.forward,
+						reverse: edge.reverse,
+						sourceGateway: edge.sourceGateway,
+						transfer: ship || undefined,
+						// The edge is drawn in ONE canonical orientation, which has nothing to do with which
+						// way this transfer runs.
+						transferReversed: Boolean(ship && ship.sourceInstanceId !== edge.sourceInstanceId),
+					},
+				};
+			});
+
+			// A transfer between two instances with NO gateway link still has to be visible — the node
+			// toolbar's Transfer button can target any instance. Its edge exists only while it is in
+			// flight, is dashed so it never reads as configuration, and lives in its own id namespace so
+			// it can never collide with (and silently replace) a real link.
+			// Every handle on these nodes carries an explicit id, so there is no null-id handle for React
+			// Flow to fall back to — an edge that names none cannot be resolved to an endpoint and is
+			// DROPPED, silently, with no error anywhere. Measured: the transient edge produced zero
+			// `.react-flow__edge` elements through a whole live transfer whose data was correct at every
+			// other step. A transfer names no gateway, so the anchor is the active mode's first one; it
+			// is presentation only, since FloatingEdge takes its geometry from the node circles.
+			const anchorGateway = gatewayNamesFor(mode)[0];
+			for (const ship of unassigned.values()) {
+				const source = instanceNodeId(ship.sourceInstanceId);
+				const target = instanceNodeId(ship.targetInstanceId);
+				if (!drawn.has(source) || !drawn.has(target)) {
+					continue;
+				}
+				edges.push({
+					id: transientEdgeId(ship.transferId),
+					source,
+					sourceHandle: sourceHandleId(anchorGateway),
+					target,
+					targetHandle: targetHandleId(anchorGateway),
+					type: GATEWAY_EDGE_TYPE,
+					style: { ...dimStyle(ship.sourceInstanceId, ship.targetInstanceId), strokeDasharray: "6 4" },
+					markerEnd: { type: MarkerType.ArrowClosed },
+					data: { transient: true, transfer: ship, transferReversed: false },
+				});
+			}
+			return edges;
 		});
-	}, [graph, setNodes, setEdges]);
+	}, [graph, ships, mode, setNodes, setEdges]);
 
 	/**
 	 * Export and Transfer, offered per platform from a selected node's toolbar.
@@ -253,6 +357,12 @@ export default function GatewayCanvas({ plugin, state, onOpenImport }: {
 		if (!canEdit) {
 			return;
 		}
+		// A transient edge is a transfer in flight, not a link — there is nothing to unlink, and
+		// falling through would report "could not read that edge" for an edge that is behaving
+		// exactly as designed.
+		if (edge.data?.transient) {
+			return;
+		}
 		const request = toConnectRequest(edge);
 		if (!request) {
 			antMessage.error("Could not read that edge — nothing was removed.", 6);
@@ -262,7 +372,7 @@ export default function GatewayCanvas({ plugin, state, onOpenImport }: {
 	}, [canEdit]);
 
 	const onEdgesDelete = useCallback((deleted: Edge[]) => {
-		setEdits(previous => deleted.reduce((acc, edge) => {
+		setEdits(previous => deleted.filter(edge => !edge.data?.transient).reduce((acc, edge) => {
 			const request = toConnectRequest(edge);
 			return request ? applyDisconnect(acc, request) : acc;
 		}, previous));
