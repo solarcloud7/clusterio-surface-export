@@ -91,7 +91,7 @@ const domains = [
 		id: "inserter-loader-wagon-filter",
 		status: "live-pending",
 		producer: ["export_scanners/connection-scanner.lua", /extract_entity_filters[\s\S]*quality\s*=\s*filter\.quality and filter\.quality\.name/],
-		consumer: ["core/deserializer.lua", /restore_entity_filters[\s\S]*quality\s*=\s*filter\.quality or Util\.QUALITY_NORMAL/],
+		consumer: ["core/deserializer.lua", /function restore_slot_filters[\s\S]*quality\s*=\s*filter\.quality or Util\.QUALITY_NORMAL[\s\S]*function Deserializer\.restore_entity_filters[\s\S]*restore_slot_filters\(entity, entity_data\)/],
 	},
 	{
 		id: "constant-combinator-slot",

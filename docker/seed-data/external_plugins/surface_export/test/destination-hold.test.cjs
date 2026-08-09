@@ -136,8 +136,11 @@ test("unlock_platform defers not-live ownership to an active destination hold", 
 	assert.doesNotMatch(holdBranch, /unfreeze_entities/);
 	assert.doesNotMatch(holdBranch, /set_surface_hidden/);
 	assert.doesNotMatch(holdBranch, /platform\.paused/);
-	const helper = lock.slice(lock.indexOf("function SurfaceLock.destination_hold_owns_surface"), lock.indexOf("--- Lock a platform surface"));
-	assert.doesNotMatch(helper, /force_name/);
+	const helperAt = lock.indexOf("function SurfaceLock.destination_hold_owns_surface");
+	assert.notEqual(helperAt, -1, "destination_hold_owns_surface must exist");
+	const helperEnd = lock.indexOf("\nfunction SurfaceLock.lock_platform", helperAt);
+	assert.notEqual(helperEnd, -1, "the helper must be bounded by the next function, not by a comment");
+	assert.doesNotMatch(lock.slice(helperAt, helperEnd), /force_name/);
 });
 
 test("hold-aware unlock selftest traces held and non-held lifecycle cases", () => {

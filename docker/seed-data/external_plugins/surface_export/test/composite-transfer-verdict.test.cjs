@@ -446,8 +446,8 @@ test("fluid-loss hook is allowlisted and fires before the single gate", () => {
 		"integration probe needs a direct log witness that the hook fired");
 	assert.match(configure, /config\.test_force_fluid_loss[\s\S]*storage\.surface_export_config\.test_force_fluid_loss\s*=\s*tonumber\(config\.test_force_fluid_loss\)/,
 		"configure allowlist must accept test_force_fluid_loss");
-	assert.match(hookLint, /"test_force_fluid_loss"[\s\S]*pre-gate/,
-		"test_force_fluid_loss must be explicitly listed as a reviewed fail-safe hook");
+	assert.match(hookLint, /FAIL_SAFE_HOOKS = new Set\(\[[\s\S]*?"test_force_fluid_loss"[\s\S]*?\]\)/,
+		"test_force_fluid_loss must be enumerated in the FAIL_SAFE_HOOKS set");
 });
 
 

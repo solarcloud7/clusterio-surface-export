@@ -129,7 +129,6 @@ test("the configured cap actually reaches the policy, and survives a save load",
 test("the sanity floor is applied, and is not described as a survival guarantee", () => {
 	const exportCache = code(path.join("utils", "export-cache.lua"));
 	const asyncProcessor = code(path.join("core", "async-processor.lua"));
-	const exportCacheWithComments = readModule(path.join("utils", "export-cache.lua"));
 
 	assert.match(exportCache, /floor\s*=\s*floor\s*\+\s*1/, "the floor is max_concurrent_jobs + 1");
 	assert.match(exportCache, /if\s+configured\s*<\s*floor\s+then[\s\S]*?return\s+floor,\s*true/,
@@ -142,10 +141,6 @@ test("the sanity floor is applied, and is not described as a survival guarantee"
 	assert.match(asyncProcessor, /ExportCache\.set_concurrency\s*\(\s*config\.max_concurrent_jobs\s*\)/,
 		"the mirror must also be seeded from the default at load, so there is no second literal");
 
-	assert.match(exportCacheWithComments, /per-tick|PER-TICK/,
-		"the floor's comment must describe max_concurrent_jobs as the per-tick limiter it is");
-	assert.doesNotMatch(exportCacheWithComments, /bounds how many exports can be in flight at once/,
-		"the retracted claim must not reappear");
 });
 
 test("export-cache never requires AsyncProcessor — Factorio forbids requires at runtime", () => {

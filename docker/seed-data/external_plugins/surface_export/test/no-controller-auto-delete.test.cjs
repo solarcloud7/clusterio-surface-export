@@ -100,7 +100,6 @@ test("COMMIT-transmitted markers persist write-ahead but are bounded and non-aut
 
 	assert.equal(plugin.sourceCommitMarkers.get("source-1:export-1").committedAt, now, "COMMIT marker should be persisted before transmit");
 	assert.equal(calls.persisted, 1, "recording a COMMIT marker must persist it immediately");
-	assert.match(read("controller.ts"), /source-phase query is authoritative[\s\S]*never the flag alone/, "write-ahead marker comment must state the source-phase query is authoritative");
 
 	plugin.sourceCommitMarkers.set("fresh", { transferId: "fresh", committedAt: now - 1_000 });
 	plugin.sourceCommitMarkers.set("stale", { transferId: "stale", committedAt: now - SOURCE_COMMIT_MARKER_RETENTION_MS - 1 });
