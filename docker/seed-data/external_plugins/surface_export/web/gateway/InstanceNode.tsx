@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState } from "react";
-import { Handle, Position } from "@xyflow/react";
+import { Handle, Position, useUpdateNodeInternals } from "@xyflow/react";
 import type { NodeProps } from "@xyflow/react";
 import { Typography } from "antd";
 
@@ -212,12 +212,32 @@ function MultiGatewayHandle({ gatewayName, position, usage, connectable }: {
  * auto-hide has to be careful in a way it did not when this was only buttons — see `useAutoHide`,
  * whose third rule exists entirely because a platform drag leaves the list and outlasts the timeout.
  */
-export function InstanceNode({ data, selected, isConnectable }: NodeProps) {
+export function InstanceNode({ id, data, selected, isConnectable }: NodeProps) {
 	const node = data as unknown as InstanceNodeData;
 	const { showGeometry } = useGatewayDebug();
 	// `Boolean(selected)`, not `selected`: NodeProps types it optional, and undefined would hand React
 	// Flow's own default back instead of meaning "not selected".
 	const list = useAutoHide(Boolean(selected), PLATFORM_LIST_VISIBLE_MS);
+
+	/**
+	 * TELL REACT FLOW THE HANDLE SET CHANGED. Without this the platform rows are decorative: you can
+	 * see the drag circle and you cannot drag from it.
+	 *
+	 * `XYHandle.onPointerDown` resolves the pressed handle through the node's cached `handleBounds`,
+	 * and React Flow only rebuilds that cache when it MEASURES the node. The platform list is
+	 * absolutely positioned outside the node's box — deliberately, so the node stays a 150px circle and
+	 * the edges keep meeting the portal — so mounting it never changes the node's size, never trips the
+	 * ResizeObserver, and the `p:` handles never enter the cache. The press then finds no handle and
+	 * returns before `isValidConnection` is ever consulted, which is why the rules all looked correct.
+	 *
+	 * This is the exact case `useUpdateNodeInternals` exists for: handles added after the first render.
+	 * It went unnoticed because the list was ALWAYS VISIBLE when the drag was first verified — it was
+	 * present at measure time — and making it open-on-click is what moved it out of that window.
+	 */
+	const updateNodeInternals = useUpdateNodeInternals();
+	useEffect(() => {
+		updateNodeInternals(id);
+	}, [id, list.visible, node.platforms.length, updateNodeInternals]);
 	const mode = node.mode || DEFAULT_GATEWAY_MODE;
 	const names = gatewayNamesFor(mode);
 	const oneGate = mode !== "multi";
