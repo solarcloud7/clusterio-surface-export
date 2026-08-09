@@ -191,6 +191,22 @@ export default function GatewayCanvas({ plugin, state, onOpenImport }: {
 	// cluster would be indistinguishable from the real one having gone strange.
 	const [scenario, setScenario] = useState<DebugScenario | null>(null);
 
+	/**
+	 * A LOADED SCENARIO DOES NOT RE-FRAME THE VIEW — press Reset, or the fit control, to frame it.
+	 *
+	 * Not an oversight; an attempt was measured and removed. Bumping the fit request when a scenario
+	 * loads DOES fire a fitView — the viewport translates — but it keeps zoom at 1 and so leaves a
+	 * tall scenario hanging off the pane, because React Flow needs the new nodes MEASURED before it
+	 * can compute a zoom, and they are not measured yet at that point. Measured: viewport went
+	 * `scale(1) translate(392)` -> `scale(1) translate(532)` on load, and `scale(0.543)` when the fit
+	 * control was pressed two seconds later.
+	 *
+	 * A half-working re-fit that moves the view without framing it is worse than none, so the canvas
+	 * does nothing and `canvas-shot.mjs` fits explicitly once everything has settled. Doing it in-app
+	 * needs to wait for measurement rather than for paint — the same timing family as the handle
+	 * bounds that broke the platform drag.
+	 */
+
 	const [nodes, setNodes, onNodesChange] = useNodesState<Node>([]);
 	const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
 

@@ -195,10 +195,22 @@ node tools/tests/testkit/cli.mjs log dump 2 'debug_import_result_*.json' --field
 
 # Import an export file: use the web UI "Import JSON" (Manual Transfer tab) or the in-game
 # /plugin-import-file <file> <name> command — both chunk automatically. There is no CLI import script.
+
+# GATEWAY CANVAS (the Gateways tab). It is GEOMETRY — React Flow decides what can be dragged and
+# where an edge attaches from MEASURED DOM boxes — so hand-rolled DOM probes return confident wrong
+# answers rather than failing. Read the /canvas-debug skill BEFORE measuring it by hand.
+node tools/surface-export/canvas-shot.mjs --scenario hub --geometry --out /tmp/canvas.png
+node tools/surface-export/canvas-shot.mjs --replay 3      # the 3 most recent REAL transfers as ships
+node tools/surface-export/canvas-shot.mjs --list-transfers
+node tools/tests/run-integration-tests.mjs --only canvas-drag   # the one browser regression
+#   In the page itself:  surfaceExportCanvas.help()  — the console API (mocks, scenarios, ships,
+#   geometry, replay). It is self-documenting; do not mirror it into a doc that will drift.
 ```
 
-**Skills** (invoke with `/<name>`): `/cluster-logs` (find logs / trace a failure) and
-`/repro-transfer` (reproduce a transfer end-to-end locally). Prefer local repro over CI logs.
+**Skills** (invoke with `/<name>`): `/cluster-logs` (find logs / trace a failure),
+`/repro-transfer` (reproduce a transfer end-to-end locally), and `/canvas-debug` (drive, photograph
+and verify the gateway canvas — and the six ways probing it produces false findings). Prefer local
+repro over CI logs.
 
 ### Testing discipline
 
