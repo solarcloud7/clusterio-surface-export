@@ -6,6 +6,7 @@
 //           geometry, or prove the lock survives a reload — it is deliberately per-session UI state
 
 import { execFileSync } from "node:child_process";
+import { readFileSync } from "node:fs";
 import { chromium } from "playwright";
 
 import { assertPageMatchesDisk } from "../../../tools/surface-export/canvas-bundle.mjs";
@@ -14,7 +15,23 @@ const CONTROLLER_CONTAINER = "surface-export-controller";
 const CTL_CONFIG = "/clusterio/tokens/config-control.json";
 const BASE_URL = process.env.SE_WEB_URL || "http://localhost:8080";
 const CANVAS_URL = `${BASE_URL}/surface-export?tab=gateways`;
-const FALLBACK_BLUE = "rgb(22, 102, 220)";
+
+const COLOURS_SRC = new URL(
+	"../../../docker/seed-data/external_plugins/surface_export/web/gateway/gateway-colours.ts",
+	import.meta.url,
+);
+
+function fallbackEdgeColour() {
+	const source = readFileSync(COLOURS_SRC, "utf8");
+	const hex = source.match(/DEFAULT_EDGE_COLOUR\s*=\s*"(#[0-9a-fA-F]{6})"/)?.[1];
+	if (!hex) {
+		throw new Error(`could not read DEFAULT_EDGE_COLOUR from ${COLOURS_SRC.pathname} — a hand-copied `
+			+ "colour that drifts from the constant fails OPEN, so this refuses to guess");
+	}
+	return `rgb(${parseInt(hex.slice(1, 3), 16)}, ${parseInt(hex.slice(3, 5), 16)}, ${parseInt(hex.slice(5, 7), 16)})`;
+}
+
+const FALLBACK_BLUE = fallbackEdgeColour();
 
 let failed = 0;
 const check = (ok, label, detail = "") => {
@@ -118,17 +135,28 @@ try {
 		throw new Error("could not obtain a gateway edge — neither configured nor stageable");
 	}
 
+	// Markers render once into a shared <defs> and edges reference them by url(#id), so the first
+	// marker in the document need not belong to the first edge — with two links on different
+	// gateways that pairing is simply wrong.
 	const colours = await page.evaluate(() => {
 		const path = document.querySelector(".react-flow__edge-path");
-		const marker = document.querySelector("marker.react-flow__arrowhead polyline, marker.react-flow__arrowhead path");
+		const ref = path?.getAttribute("marker-end") || path?.getAttribute("marker-start");
+		const id = ref?.match(/url\(["']?#(.+?)["']?\)/)?.[1];
+		const shape = id && document.querySelector(`#${CSS.escape(id)} polyline, #${CSS.escape(id)} path`);
 		return {
+			markerRef: id || null,
 			edge: path ? getComputedStyle(path).stroke : null,
-			arrow: marker ? getComputedStyle(marker).fill : null,
+			arrow: shape ? getComputedStyle(shape).fill : null,
 		};
 	});
 	check(
+		Boolean(colours.markerRef),
+		"the edge references a marker by id (control arm for the colour check below)",
+		`marker-end/-start was ${colours.markerRef === null ? "absent" : colours.markerRef}`,
+	);
+	check(
 		Boolean(colours.arrow) && colours.arrow === colours.edge,
-		"arrowheads are drawn in their edge's colour, not React Flow's grey default",
+		"that edge's own arrowhead is drawn in its colour, not React Flow's grey default",
 		`edge ${colours.edge}, arrow ${colours.arrow}`,
 	);
 
@@ -167,13 +195,21 @@ try {
 	}
 	check(!/unsaved change/.test(await panelText()), "nothing was left staged, nothing saved");
 
+	const edgesBeforeShips = await edges.count();
 	await page.evaluate(() => window.surfaceExportCanvas?.ships?.());
 	await page.waitForTimeout(1200);
+	const edgesAfterShips = await edges.count();
+	check(
+		edgesAfterShips > edgesBeforeShips,
+		"ships() actually drew ship edges (control arm)",
+		`${edgesBeforeShips} edges before, ${edgesAfterShips} after — with no new edge the colour `
+		+ "check below measures the same set that already existed",
+	);
 	const strokes = await page.evaluate(() => [...document.querySelectorAll(".react-flow__edge-path")]
 		.map(p => getComputedStyle(p).stroke));
 	check(
 		strokes.length > 0 && !strokes.includes(FALLBACK_BLUE),
-		"no edge falls back to DEFAULT_EDGE_COLOUR once ship edges are drawn",
+		`no edge falls back to DEFAULT_EDGE_COLOUR ${FALLBACK_BLUE} once ship edges are drawn`,
 		`strokes: ${[...new Set(strokes)].join(", ")}`,
 	);
 } catch (err) {

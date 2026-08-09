@@ -13,7 +13,7 @@ import {
 	useEdgesState,
 	useNodesState,
 } from "@xyflow/react";
-import type { Connection, Edge, FitViewOptions, Node } from "@xyflow/react";
+import type { Connection, Edge, FinalConnectionState, FitViewOptions, Node } from "@xyflow/react";
 import { useAccount } from "@clusterio/web_ui";
 
 import "@xyflow/react/dist/style.css";
@@ -440,15 +440,28 @@ export default function GatewayCanvas({ plugin, state, onOpenImport }: {
 			antMessage.error("Could not read that connection — nothing was staged.", 6);
 			return;
 		}
-		if (mode === "multi") {
-			const violation = multiModeViolation(edits, request);
-			if (violation) {
-				antMessage.warning(violation, 6);
-				return;
-			}
-		}
 		setEdits(previous => applyConnect(previous, request));
-	}, [edits, mode, platformFromHandle]);
+	}, [platformFromHandle]);
+
+	const onConnectEnd = useCallback((_event: MouseEvent | TouchEvent, connection: FinalConnectionState) => {
+		if (connection.isValid || mode !== "multi") {
+			return;
+		}
+		const { fromNode, toNode, fromHandle, toHandle } = connection;
+		if (!fromNode || !toNode || !fromHandle || !toHandle) {
+			return;
+		}
+		const request = toConnectRequest({
+			source: fromNode.id,
+			sourceHandle: fromHandle.id ?? null,
+			target: toNode.id,
+			targetHandle: toHandle.id ?? null,
+		});
+		const violation = request && multiModeViolation(edits, request);
+		if (violation) {
+			antMessage.warning(violation, 6);
+		}
+	}, [edits, mode]);
 
 	const onEdgeClick = useCallback((_event: React.MouseEvent, edge: Edge) => {
 		if (!interactive) {
@@ -584,6 +597,7 @@ export default function GatewayCanvas({ plugin, state, onOpenImport }: {
 					onNodesChange={onNodesChange}
 					onEdgesChange={onEdgesChange}
 					onConnect={onConnect}
+					onConnectEnd={onConnectEnd}
 					isValidConnection={isValidConnection}
 					onEdgesDelete={onEdgesDelete}
 					onEdgeClick={onEdgeClick}
