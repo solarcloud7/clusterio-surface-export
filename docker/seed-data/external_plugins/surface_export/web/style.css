@@ -46,6 +46,39 @@ body.surface-export-page .site-layout-content-container {
 	transition-timing-function: ease-in-out;
 }
 
+.surface-export-edge-status {
+	position: absolute;
+	top: 0;
+	left: 0;
+	min-width: 16px;
+	height: 16px;
+	padding: 0 3px;
+	box-sizing: border-box;
+	border-radius: 8px;
+	border: 2px solid rgba(10, 10, 10, 0.9);
+	background: currentColor;
+	box-shadow: 0 0 8px currentColor;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	pointer-events: auto;
+	cursor: default;
+	animation: surface-export-status-fade 10s ease-out forwards;
+}
+
+.surface-export-edge-status-count {
+	font-size: 10px;
+	line-height: 1;
+	font-weight: 700;
+	color: #0a0a0a;
+	font-variant-numeric: tabular-nums;
+}
+
+@keyframes surface-export-status-fade {
+	0%, 80% { opacity: 1; }
+	100% { opacity: 0; }
+}
+
 .surface-export-ship-active { color: #1668dc; }
 .surface-export-ship-holding { color: #d89614; }
 .surface-export-ship-success { color: #49aa19; }

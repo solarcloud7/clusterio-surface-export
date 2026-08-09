@@ -332,19 +332,20 @@ export default function GatewayCanvas({ plugin, state, onOpenImport }: {
 			);
 
 			const unassigned = new Map(ships.map(ship => [ship.transferId, ship]));
-			const shipFor = (a: number, b: number) => {
+			const shipsFor = (a: number, b: number) => {
 				const wanted = instancePairKey(a, b);
+				const taken: typeof ships = [];
 				for (const [transferId, ship] of unassigned) {
 					if (instancePairKey(ship.sourceInstanceId, ship.targetInstanceId) === wanted) {
 						unassigned.delete(transferId);
-						return ship;
+						taken.push(ship);
 					}
 				}
-				return null;
+				return taken;
 			};
 
 			const edges: Edge[] = graph.edges.map(edge => {
-				const ship = shipFor(edge.sourceInstanceId, edge.targetInstanceId);
+				const riding = shipsFor(edge.sourceInstanceId, edge.targetInstanceId);
 				return {
 					id: edge.id,
 					source: edge.source,
@@ -366,30 +367,47 @@ export default function GatewayCanvas({ plugin, state, onOpenImport }: {
 						reverse: edge.reverse,
 						sourceGateway: edge.sourceGateway,
 						shape: edgeShape,
-						transfer: ship || undefined,
-						transferReversed: Boolean(ship && ship.sourceInstanceId !== edge.sourceInstanceId),
+						sourceInstanceId: edge.sourceInstanceId,
+						transfers: riding,
 					},
 				};
 			});
 
 			const anchorGateway = gatewayNamesFor(mode)[0];
+			const byPair = new Map<string, typeof ships>();
 			for (const ship of unassigned.values()) {
-				const source = instanceNodeId(ship.sourceInstanceId);
-				const target = instanceNodeId(ship.targetInstanceId);
+				const key = instancePairKey(ship.sourceInstanceId, ship.targetInstanceId);
+				const group = byPair.get(key);
+				if (group) {
+					group.push(ship);
+				} else {
+					byPair.set(key, [ship]);
+				}
+			}
+			for (const group of byPair.values()) {
+				const [first] = group;
+				const source = instanceNodeId(first.sourceInstanceId);
+				const target = instanceNodeId(first.targetInstanceId);
 				if (!drawn.has(source) || !drawn.has(target)) {
 					continue;
 				}
 				edges.push({
-					id: transientEdgeId(ship.transferId),
+					id: transientEdgeId(instancePairKey(first.sourceInstanceId, first.targetInstanceId)),
 					source,
 					sourceHandle: sourceHandleId(anchorGateway),
 					target,
 					targetHandle: targetHandleId(anchorGateway),
 					type: GATEWAY_EDGE_TYPE,
 					deletable: false,
-					style: { ...dimStyle(ship.sourceInstanceId, ship.targetInstanceId), strokeDasharray: "6 4" },
+					style: { ...dimStyle(first.sourceInstanceId, first.targetInstanceId), strokeDasharray: "6 4" },
 					markerEnd: { type: MarkerType.ArrowClosed, color: gatewayColour(anchorGateway) },
-					data: { transient: true, sourceGateway: anchorGateway, shape: edgeShape, transfer: ship, transferReversed: false },
+					data: {
+						transient: true,
+						sourceGateway: anchorGateway,
+						shape: edgeShape,
+						sourceInstanceId: first.sourceInstanceId,
+						transfers: group,
+					},
 				});
 			}
 			return edges;

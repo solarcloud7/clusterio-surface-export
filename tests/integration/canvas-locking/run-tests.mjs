@@ -187,15 +187,27 @@ try {
 	}
 	check(!/unsaved change/.test(await panelText()), "nothing was left staged, nothing saved");
 
-	const edgesBeforeShips = await edges.count();
+	// Mock ships ride CONFIGURED links, so they add status markers to existing edges rather than new
+	// edges. Counting edges would report no change and prove nothing about whether ships drew.
+	const drawnShips = () => page.evaluate(() => ({
+		markers: document.querySelectorAll(".surface-export-edge-status").length,
+		moving: [...document.querySelectorAll(".surface-export-ship")]
+			.filter(el => el.style.visibility !== "hidden").length,
+	}));
+	const beforeShips = await drawnShips();
 	await page.evaluate(() => window.surfaceExportCanvas?.ships?.());
-	await page.waitForTimeout(1200);
-	const edgesAfterShips = await edges.count();
+	await page.waitForTimeout(1500);
+	const afterShips = await drawnShips();
 	check(
-		edgesAfterShips > edgesBeforeShips,
-		"ships() actually drew ship edges (control arm)",
-		`${edgesBeforeShips} edges before, ${edgesAfterShips} after — with no new edge the colour `
-		+ "check below measures the same set that already existed",
+		afterShips.markers + afterShips.moving > beforeShips.markers + beforeShips.moving,
+		"ships() actually drew transfers (control arm)",
+		`before ${JSON.stringify(beforeShips)}, after ${JSON.stringify(afterShips)} — with nothing `
+		+ "drawn the colour check below measures the same set that already existed",
+	);
+	check(
+		afterShips.markers >= 3,
+		"a busy edge shows one marker per phase, not one per transfer",
+		`markers: ${afterShips.markers}`,
 	);
 	const strokes = await page.evaluate(() => [...document.querySelectorAll(".react-flow__edge-path")]
 		.map(p => getComputedStyle(p).stroke));
