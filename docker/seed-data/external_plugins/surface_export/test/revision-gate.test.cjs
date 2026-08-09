@@ -79,13 +79,28 @@ test("across a session boundary, the new session's revisions are applied", () =>
 	assert.deepEqual(cleared.applied, [1, 2, 3], "clearing on reconnect restores delivery");
 });
 
-test("the page clears its watermarks before resubscribing", () => {
+test("only a fresh connect clears the watermarks, and it clears them before resubscribing", () => {
 	// Not reachable from dist/node: pinned against the source, like the transfer-id archival
 	// call-ordering pin in transaction-persist-path.test.cjs.
+	//
+	// Scoped to connect on purpose. A resume continues a session the controller still holds, so its
+	// counters never restarted; the connector also replays only unacknowledged messages, and
+	// handleLogUpdate dedupes against the last timeline entry alone — clearing on resume would let
+	// an already-applied replay append a duplicate audit row.
 	assert.match(
 		webIndex,
-		/freshRevisionWatermarks\(\)\);[\s\S]{0,120}?this\.syncLiveState\(\)/,
-		"onControllerConnectionEvent must clear the watermarks before it resubscribes",
+		/if\s*\(event === "connect"\)\s*\{[^}]*freshRevisionWatermarks\(\)/,
+		"the reset must sit in the connect-only branch, not the shared connect/resume one",
+	);
+	assert.match(
+		webIndex,
+		/freshRevisionWatermarks\(\)\);[\s\S]{0,200}?this\.syncLiveState\(\)/,
+		"the watermarks must be cleared before the resubscribe",
+	);
+	assert.equal(
+		(webIndex.match(/freshRevisionWatermarks\(/g) || []).length,
+		1,
+		"one reset site — a second would be a second answer to where the session boundary is",
 	);
 });
 

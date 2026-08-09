@@ -201,10 +201,12 @@ export class WebPlugin extends BaseWebPlugin {
 	}
 
 	onControllerConnectionEvent(event: string) {
-		if (event === "connect" || event === "resume") {
-			// Watermarks are scoped to one controller session, so this reconnect starts them over.
-			// Carrying them across would gate the new session's revisions against the old one's.
+		// Watermarks belong to one controller session. Only a fresh connect starts a new one —
+		// resume continues the session they were taken from, and keeps them.
+		if (event === "connect") {
 			this.setState(freshRevisionWatermarks());
+		}
+		if (event === "connect" || event === "resume") {
 			this.syncLiveState().catch(notifyErrorHandler("Failed to resubscribe Surface Export live updates"));
 		}
 	}
