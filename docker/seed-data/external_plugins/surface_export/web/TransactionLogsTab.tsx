@@ -14,6 +14,7 @@ import {
 	Typography,
 	message as antMessage,
 } from "antd";
+import { describeAttribution } from "../shared/transfer-timeline";
 import type { ColumnsType } from "antd/es/table";
 import { InfoCircleOutlined, DownloadOutlined } from "@ant-design/icons";
 import {
@@ -32,7 +33,9 @@ import {
 type ExpectedActualRow,
 type FluidInventoryRow,
 } from "./utils";
-import type { JsonObject, LogEvent, SurfaceExportPlugin, SurfaceExportState, TransferSummary, GanttRow } from "./view-models";
+import type {
+	JsonObject, LogEvent, SurfaceExportPlugin, SurfaceExportState, TransferSummary, GanttRow, TimelineAttribution,
+} from "./view-models";
 
 const { Text } = Typography;
 
@@ -50,9 +53,11 @@ const TIMELINE_COLORS: Record<string, string> = {
 	inventories: "#2f54eb", validation: "#85a5ff", fluids: "#08979c",
 	// Transfer-level segments
 	transmission: "#13c2c2", cleanup: "#73d13d",
-	// Cross-machine gap decomposition: delivery (RCON bottleneck, prominent), queue (async wait),
-	// roundtrip (muted slate — derived residual, not a direct measurement).
-	delivery: "#1d39c4", queue: "#adc6ff", roundtrip: "#737d8c",
+	// Cross-machine gap decomposition: delivery (chunk receive window), queue (async wait).
+	delivery: "#1d39c4", queue: "#adc6ff",
+	// The controller's measured wall-clock wait on the destination, and the wall-clock time no span
+	// accounts for. Amber, not muted grey: unattributed time is a finding, not decoration.
+	destImport: "#0958d9", residual: "#faad14",
 	// Export sub-phases (when an exportMetrics block is present)
 	exportPrep: "#bae0ff", exportQueue: "#91caff", exportAsync: "#69c0ff", exportStore: "#4096ff",
 };
@@ -60,12 +65,24 @@ const TIMELINE_COLORS: Record<string, string> = {
 // Lightweight CSS bar timeline. Each row is positioned from the ganttStartPct/ganttWidthPct/
 // ganttMarkerPct that buildGanttRows already computes — duration phases render as bars, events as
 // markers. Replaces the former mermaid gantt (a multi-MB dep for one diagram).
-function PhaseTimeline({ rows, totalMs }: { rows: GanttRow[]; totalMs: number }) {
+function PhaseTimeline({ rows, totalMs, attribution }: {
+	rows: GanttRow[]; totalMs: number; attribution?: TimelineAttribution;
+}) {
 	if (!rows || rows.length === 0 || totalMs <= 0) {
 		return <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="No transfer flow events available" />;
 	}
+	const notice = attribution ? describeAttribution(attribution) : null;
 	return (
 		<div className="surface-export-timeline">
+			{notice ? (
+				<Alert
+					type="warning"
+					showIcon
+					style={{ marginBottom: 8 }}
+					message={notice.headline}
+					description={notice.detail}
+				/>
+			) : null}
 			{rows.map((row) => {
 				const isEvent = row.isEvent;
 				const label = row.label;
@@ -77,10 +94,18 @@ function PhaseTimeline({ rows, totalMs }: { rows: GanttRow[]; totalMs: number })
 				const markerPct = row.ganttMarkerPct;
 				const endMs = row.endMs;
 				const timeLabel = durationMs != null ? formatMsLabel(durationMs) : "";
+				// A tick-derived bar is hatched so it can never be mistaken for elapsed time at a glance.
+				const isTickDerived = row.kind === "tickDerived";
+				const background = isTickDerived
+					? `repeating-linear-gradient(135deg, ${color} 0 4px, transparent 4px 8px)`
+					: color;
+				const tooltip = [`${label}${timeLabel ? ` — ${timeLabel}` : ""}`, row.note].filter(Boolean).join("\n");
 				return (
 					<div key={row.key} className="surface-export-timeline-row">
-						<div className="surface-export-timeline-label" style={{ paddingLeft: 4 + indent * 14 }} title={label}>
-							<Text strong={isEvent} style={{ fontSize: 12 }}>{label}</Text>
+						<div className="surface-export-timeline-label" style={{ paddingLeft: 4 + indent * 14 }} title={tooltip}>
+							<Text strong={isEvent} type={row.kind === "residual" ? "warning" : undefined} style={{ fontSize: 12 }}>
+								{label}
+							</Text>
 						</div>
 						<div className="surface-export-timeline-track">
 							{isEvent ? (
@@ -92,8 +117,11 @@ function PhaseTimeline({ rows, totalMs }: { rows: GanttRow[]; totalMs: number })
 							) : (
 								<span
 									className="surface-export-timeline-bar"
-									style={{ left: `${startPct}%`, width: `${Math.max(widthPct, 0.6)}%`, background: color }}
-									title={`${label}${timeLabel ? ` — ${timeLabel}` : ""}`}
+									style={{
+										left: `${startPct}%`, width: `${Math.max(widthPct, 0.6)}%`, background,
+										border: isTickDerived ? `1px solid ${color}` : undefined,
+									}}
+									title={tooltip}
 								/>
 							)}
 						</div>
@@ -611,7 +639,11 @@ export default function TransactionLogsTab({ plugin, state }: { plugin: SurfaceE
 									<InfoCircleOutlined />
 								</Tooltip>
 							</Space>
-							<PhaseTimeline rows={flowTimeline?.rows || []} totalMs={flowTimeline?.totalMs || 0} />
+							<PhaseTimeline
+								rows={flowTimeline?.rows || []}
+								totalMs={flowTimeline?.totalMs || 0}
+								attribution={flowTimeline?.attribution}
+							/>
 						</Space>
 					</Card>
 

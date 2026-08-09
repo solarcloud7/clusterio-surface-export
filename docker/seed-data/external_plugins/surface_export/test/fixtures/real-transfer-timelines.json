@@ -1,0 +1,503 @@
+[
+	{
+		"label": "workhorse-120kb",
+		"transferId": "1285554351:003_lab-transfer-fixture-v1",
+		"platformName": "lab-transfer-fixture-v1",
+		"artifactSizeBytes": 123056,
+		"events": [
+			{
+				"eventType": "transfer_created",
+				"elapsedMs": 1776,
+				"exportMetrics": {
+					"requestExportAndLockMs": 472,
+					"waitForControllerStoreMs": 1301,
+					"instanceAsyncExportMs": 450,
+					"instanceAsyncExportTicks": 27,
+					"controllerExportPrepTotalMs": 1773
+				}
+			},
+			{
+				"eventType": "import_started",
+				"elapsedMs": 2083,
+				"transmissionMs": 303
+			},
+			{
+				"eventType": "validation_received",
+				"elapsedMs": 24114,
+				"validationMs": 22031,
+				"importMetrics": {
+					"total_ms": 467,
+					"total_ticks": 28,
+					"tiles_placed": 4350,
+					"entities_created": 1358,
+					"fluids_restored": 39,
+					"belt_items_restored": 19702,
+					"circuits_connected": 166,
+					"phaseSpans": [
+						{
+							"name": "delivery",
+							"startOffsetMs": 0,
+							"durationMs": 16
+						},
+						{
+							"name": "queue",
+							"startOffsetMs": 16,
+							"durationMs": 0
+						},
+						{
+							"name": "tiles",
+							"startOffsetMs": 16,
+							"durationMs": 0
+						},
+						{
+							"name": "entities",
+							"startOffsetMs": 16,
+							"durationMs": 450
+						},
+						{
+							"name": "hub",
+							"startOffsetMs": 466,
+							"durationMs": 0
+						},
+						{
+							"name": "belts",
+							"startOffsetMs": 466,
+							"durationMs": 0
+						},
+						{
+							"name": "state",
+							"startOffsetMs": 466,
+							"durationMs": 0
+						},
+						{
+							"name": "inventories",
+							"startOffsetMs": 483,
+							"durationMs": 0
+						},
+						{
+							"name": "held_items",
+							"startOffsetMs": 483,
+							"durationMs": 0
+						},
+						{
+							"name": "fluids",
+							"startOffsetMs": 483,
+							"durationMs": 0
+						},
+						{
+							"name": "validation",
+							"startOffsetMs": 483,
+							"durationMs": 0
+						},
+						{
+							"name": "activation",
+							"startOffsetMs": 483,
+							"durationMs": 0
+						},
+						{
+							"name": "loss_analysis",
+							"startOffsetMs": 483,
+							"durationMs": 0
+						}
+					]
+				}
+			},
+			{
+				"eventType": "transfer_completed",
+				"elapsedMs": 24376,
+				"phases": {
+					"exportMs": 1773,
+					"transmissionMs": 303,
+					"validationMs": 22031,
+					"cleanupMs": 260
+				}
+			}
+		]
+	},
+	{
+		"label": "omnibus-87kb",
+		"transferId": "472806668:1786227179163_lab-omnibus-state-v1",
+		"platformName": "lab-omnibus-state-v1",
+		"artifactSizeBytes": 88904,
+		"events": [
+			{
+				"eventType": "transfer_created",
+				"elapsedMs": 0,
+				"exportMetrics": {
+					"instanceAsyncExportMs": 166,
+					"instanceAsyncExportTicks": 10
+				}
+			},
+			{
+				"eventType": "import_started",
+				"elapsedMs": 78,
+				"transmissionMs": 77
+			},
+			{
+				"eventType": "validation_received",
+				"elapsedMs": 634,
+				"validationMs": 556,
+				"importMetrics": {
+					"total_ms": 183,
+					"total_ticks": 11,
+					"tiles_placed": 12339,
+					"entities_created": 525,
+					"fluids_restored": 32,
+					"belt_items_restored": 854,
+					"circuits_connected": 34,
+					"phaseSpans": [
+						{
+							"name": "delivery",
+							"startOffsetMs": 0,
+							"durationMs": 0
+						},
+						{
+							"name": "queue",
+							"startOffsetMs": 0,
+							"durationMs": 0
+						},
+						{
+							"name": "tiles",
+							"startOffsetMs": 0,
+							"durationMs": 0
+						},
+						{
+							"name": "entities",
+							"startOffsetMs": 0,
+							"durationMs": 166
+						},
+						{
+							"name": "hub",
+							"startOffsetMs": 166,
+							"durationMs": 0
+						},
+						{
+							"name": "belts",
+							"startOffsetMs": 166,
+							"durationMs": 0
+						},
+						{
+							"name": "state",
+							"startOffsetMs": 166,
+							"durationMs": 0
+						},
+						{
+							"name": "inventories",
+							"startOffsetMs": 183,
+							"durationMs": 0
+						},
+						{
+							"name": "held_items",
+							"startOffsetMs": 183,
+							"durationMs": 0
+						},
+						{
+							"name": "fluids",
+							"startOffsetMs": 183,
+							"durationMs": 0
+						},
+						{
+							"name": "validation",
+							"startOffsetMs": 183,
+							"durationMs": 0
+						},
+						{
+							"name": "activation",
+							"startOffsetMs": 183,
+							"durationMs": 0
+						},
+						{
+							"name": "loss_analysis",
+							"startOffsetMs": 183,
+							"durationMs": 0
+						}
+					]
+				}
+			},
+			{
+				"eventType": "transfer_completed",
+				"elapsedMs": 679,
+				"phases": {
+					"exportTickEstimateMs": 166,
+					"transmissionMs": 77,
+					"validationMs": 556,
+					"cleanupMs": 44
+				}
+			}
+		]
+	},
+	{
+		"label": "tiny-2kb",
+		"transferId": "472806668:047_hub-req-sections-mskxlaqx",
+		"platformName": "hub-req-sections-mskxlaqx",
+		"artifactSizeBytes": 1750,
+		"events": [
+			{
+				"eventType": "transfer_created",
+				"elapsedMs": 0,
+				"exportMetrics": {
+					"instanceAsyncExportMs": 0,
+					"instanceAsyncExportTicks": 0
+				}
+			},
+			{
+				"eventType": "import_started",
+				"elapsedMs": 50,
+				"transmissionMs": 49
+			},
+			{
+				"eventType": "validation_received",
+				"elapsedMs": 57,
+				"validationMs": 7,
+				"importMetrics": {
+					"total_ms": 17,
+					"total_ticks": 1,
+					"tiles_placed": 100,
+					"entities_created": 1,
+					"fluids_restored": 0,
+					"belt_items_restored": 0,
+					"circuits_connected": 0,
+					"phaseSpans": [
+						{
+							"name": "delivery",
+							"startOffsetMs": 0,
+							"durationMs": 0
+						},
+						{
+							"name": "queue",
+							"startOffsetMs": 0,
+							"durationMs": 0
+						},
+						{
+							"name": "tiles",
+							"startOffsetMs": 0,
+							"durationMs": 0
+						},
+						{
+							"name": "entities",
+							"startOffsetMs": 0,
+							"durationMs": 0
+						},
+						{
+							"name": "hub",
+							"startOffsetMs": 0,
+							"durationMs": 0
+						},
+						{
+							"name": "belts",
+							"startOffsetMs": 0,
+							"durationMs": 0
+						},
+						{
+							"name": "state",
+							"startOffsetMs": 0,
+							"durationMs": 0
+						},
+						{
+							"name": "inventories",
+							"startOffsetMs": 16,
+							"durationMs": 0
+						},
+						{
+							"name": "held_items",
+							"startOffsetMs": 16,
+							"durationMs": 0
+						},
+						{
+							"name": "fluids",
+							"startOffsetMs": 16,
+							"durationMs": 0
+						},
+						{
+							"name": "validation",
+							"startOffsetMs": 16,
+							"durationMs": 0
+						},
+						{
+							"name": "activation",
+							"startOffsetMs": 16,
+							"durationMs": 0
+						},
+						{
+							"name": "loss_analysis",
+							"startOffsetMs": 16,
+							"durationMs": 0
+						}
+					]
+				}
+			},
+			{
+				"eventType": "transfer_completed",
+				"elapsedMs": 109,
+				"phases": {
+					"exportTickEstimateMs": 0,
+					"transmissionMs": 49,
+					"validationMs": 7,
+					"cleanupMs": 50
+				}
+			}
+		]
+	},
+	{
+		"label": "failed-timeout",
+		"transferId": "472806668:049_w1-stall-probe",
+		"platformName": "w1-stall-probe",
+		"artifactSizeBytes": 93320,
+		"events": [
+			{
+				"eventType": "transfer_created",
+				"elapsedMs": 0,
+				"exportMetrics": {
+					"instanceAsyncExportMs": 450,
+					"instanceAsyncExportTicks": 27
+				}
+			},
+			{
+				"eventType": "import_started",
+				"elapsedMs": 95,
+				"transmissionMs": 94
+			},
+			{
+				"eventType": "validation_timeout",
+				"elapsedMs": 5095
+			},
+			{
+				"eventType": "validation_received",
+				"elapsedMs": 5095,
+				"validationMs": 5000
+			},
+			{
+				"eventType": "validation_failed",
+				"elapsedMs": 5096
+			},
+			{
+				"eventType": "rollback_attempt",
+				"elapsedMs": 5114
+			},
+			{
+				"eventType": "rollback_success",
+				"elapsedMs": 5127
+			},
+			{
+				"eventType": "transfer_failed",
+				"elapsedMs": 5147
+			},
+			{
+				"eventType": "validation_after_settle",
+				"elapsedMs": 40698
+			}
+		]
+	},
+	{
+		"label": "slow-transmission",
+		"transferId": "472806668:050_reprotest-l2q2",
+		"platformName": "reprotest_l2q2",
+		"artifactSizeBytes": 108826,
+		"events": [
+			{
+				"eventType": "transfer_created",
+				"elapsedMs": 0,
+				"exportMetrics": {
+					"instanceAsyncExportMs": 450,
+					"instanceAsyncExportTicks": 27
+				}
+			},
+			{
+				"eventType": "import_started",
+				"elapsedMs": 13136,
+				"transmissionMs": 13133
+			},
+			{
+				"eventType": "validation_received",
+				"elapsedMs": 28420,
+				"validationMs": 15285,
+				"importMetrics": {
+					"total_ms": 467,
+					"total_ticks": 28,
+					"tiles_placed": 4350,
+					"entities_created": 1358,
+					"fluids_restored": 39,
+					"belt_items_restored": 16610,
+					"circuits_connected": 166,
+					"phaseSpans": [
+						{
+							"name": "delivery",
+							"startOffsetMs": 0,
+							"durationMs": 1116
+						},
+						{
+							"name": "queue",
+							"startOffsetMs": 1116,
+							"durationMs": 0
+						},
+						{
+							"name": "tiles",
+							"startOffsetMs": 1116,
+							"durationMs": 0
+						},
+						{
+							"name": "entities",
+							"startOffsetMs": 1116,
+							"durationMs": 450
+						},
+						{
+							"name": "hub",
+							"startOffsetMs": 1566,
+							"durationMs": 0
+						},
+						{
+							"name": "belts",
+							"startOffsetMs": 1566,
+							"durationMs": 0
+						},
+						{
+							"name": "state",
+							"startOffsetMs": 1566,
+							"durationMs": 0
+						},
+						{
+							"name": "inventories",
+							"startOffsetMs": 1583,
+							"durationMs": 0
+						},
+						{
+							"name": "held_items",
+							"startOffsetMs": 1583,
+							"durationMs": 0
+						},
+						{
+							"name": "fluids",
+							"startOffsetMs": 1583,
+							"durationMs": 0
+						},
+						{
+							"name": "validation",
+							"startOffsetMs": 1583,
+							"durationMs": 0
+						},
+						{
+							"name": "activation",
+							"startOffsetMs": 1583,
+							"durationMs": 0
+						},
+						{
+							"name": "loss_analysis",
+							"startOffsetMs": 1583,
+							"durationMs": 0
+						}
+					]
+				}
+			},
+			{
+				"eventType": "transfer_completed",
+				"elapsedMs": 28504,
+				"phases": {
+					"exportTickEstimateMs": 450,
+					"transmissionMs": 13133,
+					"validationMs": 15285,
+					"cleanupMs": 83
+				}
+			}
+		]
+	}
+]
