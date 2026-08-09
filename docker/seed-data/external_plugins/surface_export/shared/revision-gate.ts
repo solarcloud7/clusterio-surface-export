@@ -1,5 +1,6 @@
 /**
- * Ordering rule for the web UI's live-update channels (tree, transfers, logs).
+ * Rules for reconciling the web UI's live pushes with the snapshots it fetches
+ * (tree, transfers, logs).
  *
  * Each update carries a revision, and the page applies one only when it is newer than what it has
  * already applied. A watermark is meaningful only against the counter that issued it, so it belongs
@@ -29,4 +30,44 @@ export function freshRevisionWatermarks(): RevisionWatermarks {
 export function isFreshRevision(revision: unknown, watermark: number): boolean {
 	const value = Number(revision);
 	return Number.isFinite(value) && value > watermark;
+}
+
+/** What to do with a fetched snapshot: whether to show it, and what watermark it establishes. */
+export type SnapshotDecision = {
+	apply: boolean;
+	/** The revision the snapshot establishes, or null when it carries none to establish. */
+	watermark: number | null;
+};
+
+/**
+ * Whether a fetched snapshot should replace what the page is showing.
+ *
+ * A push is one step of a stream and must be ordered to be meaningful. A snapshot is the whole
+ * state, fetched on demand, so it is refused only when a push has already delivered something
+ * strictly newer. One that carries no orderable revision is still shown: refusing it would blank
+ * the page to protect an ordering that cannot be computed either way.
+ */
+export function decideSnapshot(revision: unknown, watermark: number): SnapshotDecision {
+	// Only a finite number orders anything. Coercing first would read null and "" as revision zero,
+	// which every watermark outranks — the exact reading that blanked the tree.
+	if (typeof revision !== "number" || !Number.isFinite(revision)) {
+		return { apply: true, watermark: null };
+	}
+	return revision > watermark ? { apply: true, watermark: revision } : { apply: false, watermark: null };
+}
+
+/**
+ * The entries a live push rewrote while a snapshot fetch was in flight.
+ *
+ * A fetched list answers the question as of the moment it was requested, so applying it wholesale
+ * rolls back anything that changed after that. The merge helpers replace only the entry they touch
+ * and leave the rest of the array's elements identical, so an entry that is absent from `before`,
+ * or no longer the same object, is exactly one a push rewrote inside the window. Those must survive
+ * the fetch.
+ */
+export function entriesChangedSince<T extends { transferId: string }>(
+	before: Map<string, T>,
+	current: readonly T[],
+): T[] {
+	return current.filter(entry => before.get(entry.transferId) !== entry);
 }

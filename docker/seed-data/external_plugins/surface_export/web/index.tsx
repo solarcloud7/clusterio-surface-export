@@ -21,7 +21,7 @@ import ImportModal from "./ImportModal";
 import type { JsonObject, LogEvent, SurfaceExportPlugin, SurfaceExportState } from "./view-models";
 
 import { summaryFromTransferInfo, mergeTransferSummary, getErrorMessage, getProp } from "./utils";
-import { freshRevisionWatermarks, isFreshRevision } from "../shared/revision-gate";
+import { decideSnapshot, entriesChangedSince, freshRevisionWatermarks, isFreshRevision } from "../shared/revision-gate";
 import "./style.css";
 
 const {
@@ -201,10 +201,12 @@ export class WebPlugin extends BaseWebPlugin {
 	}
 
 	onControllerConnectionEvent(event: string) {
-		if (event === "connect" || event === "resume") {
-			// Watermarks are scoped to one controller session, so this reconnect starts them over.
-			// Carrying them across would gate the new session's revisions against the old one's.
+		// Watermarks belong to one controller session. Only a fresh connect starts a new one —
+		// resume continues the session they were taken from, and keeps them.
+		if (event === "connect") {
 			this.setState(freshRevisionWatermarks());
+		}
+		if (event === "connect" || event === "resume") {
 			this.syncLiveState().catch(notifyErrorHandler("Failed to resubscribe Surface Export live updates"));
 		}
 	}
@@ -266,6 +268,9 @@ export class WebPlugin extends BaseWebPlugin {
 
 	async refreshSnapshots() {
 		this.setState({ loadingTree: true, treeError: null });
+		// Everything a push rewrites from here on is newer than the responses below, which answer as
+		// of the moment they were requested.
+		const summariesBeforeFetch = new Map(this.state.transferSummaries.map(summary => [summary.transferId, summary]));
 		try {
 			const treeResponse = await this.link.send(new GetPlatformTreeRequest({ forceName: "player" })) as JsonObject;
 			let transferSummaries = this.state.transferSummaries;
@@ -275,6 +280,9 @@ export class WebPlugin extends BaseWebPlugin {
 					transferSummaries = Array.isArray(logSummaries)
 						? [...logSummaries].sort((a, b) => (b.startedAt || 0) - (a.startedAt || 0))
 						: [];
+					for (const pushed of entriesChangedSince(summariesBeforeFetch, this.state.transferSummaries)) {
+						transferSummaries = mergeTransferSummary(transferSummaries, pushed);
+					}
 				} catch (err: unknown) {
 					if (/permission denied/i.test(getErrorMessage(err))) {
 						this.setState({ canViewLogs: false });
@@ -286,18 +294,21 @@ export class WebPlugin extends BaseWebPlugin {
 			}
 
 			// A pushed update that landed while this request was in flight carries a newer revision
-			// than the snapshot, and keeps its place.
-			const snapshotRevision = Number(getProp(treeResponse, "revision", 0));
-			const snapshotState = isFreshRevision(snapshotRevision, this.state.lastTreeRevision)
+			// than the snapshot, and keeps its place. The fallback is NaN, not 0: a response with no
+			// revision must read as "carries no order", which decideSnapshot still shows, and not as
+			// revision zero, which every watermark outranks.
+			const snapshotRevision = Number(getProp<number>(treeResponse, "revision", NaN));
+			const snapshot = decideSnapshot(snapshotRevision, this.state.lastTreeRevision);
+			const snapshotState = snapshot.apply
 				? {
 					tree: {
 						forceName: String(getProp(treeResponse, "forceName", "player")),
 						hosts: getProp(treeResponse, "hosts", []) as NonNullable<SurfaceExportState["tree"]>["hosts"],
 						unassignedInstances: getProp(treeResponse, "unassignedInstances", []) as NonNullable<SurfaceExportState["tree"]>["unassignedInstances"],
-						revision: snapshotRevision,
+						revision: snapshot.watermark ?? 0,
 						generatedAt: Number(getProp(treeResponse, "generatedAt", Date.now())),
 					},
-					lastTreeRevision: snapshotRevision,
+					...(snapshot.watermark !== null ? { lastTreeRevision: snapshot.watermark } : {}),
 				}
 				: {};
 
@@ -433,6 +444,7 @@ export class WebPlugin extends BaseWebPlugin {
 		}
 
 		const detail = {
+			...existing,
 			transferInfo: (event.transferInfo as JsonObject) || existing.transferInfo || null,
 			summary: (event.summary as JsonObject) || existing.summary || null,
 			events,
