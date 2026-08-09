@@ -1,4 +1,8 @@
 #!/usr/bin/env node
+// canvas-shot — screenshot the gateway canvas in a chosen state.
+// requires: live cluster (controller on localhost:8080), built dist/web, playwright chromium
+// produces: PNG at --out; stdout: the canvas state photographed, as JSON
+// does not: assert anything, verify layout, or establish that the page is correct
 
 import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";

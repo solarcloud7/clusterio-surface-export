@@ -1,4 +1,7 @@
-
+// canvas-bundle — compare the built web bundle against the one a page loaded.
+// requires: dist/web/manifest.json, a playwright page with the plugin UI mounted
+// produces: bundleOnDisk(), bundleInPage(page), assertPageMatchesDisk(page) — throws on mismatch
+// does not: identify WHY they differ, or check any behaviour of either build
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";

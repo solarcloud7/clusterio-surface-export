@@ -437,6 +437,31 @@ For Clusterio core architecture, see [Clusterio docs](https://github.com/cluster
 - **Clusterio send_json event channel (Lua→Node)**: `clusterio_api.send_json("channel_name", data_table)` — plugin listens via `server.handle("channel_name", handler)`
 - **RCON transport (Node→Lua)**: `this.sendRcon("/sc ...")` to execute Lua via RCON
 
+## Prose policy (HARD RULE — owner ruling 2026-08-09)
+
+Prose is the vector. Every false claim in the session that produced this rule was written while
+composing explanatory text; none were in the numbers, which came from tool output. Writing "why"
+opens a slot that gets filled from plausibility. Removing the slot removes the class.
+
+- **Code files carry no prose.** No rationale, no incident history, no "why", no retrospectives.
+  Names, types and structure carry the meaning. Applies to new and changed code; do NOT sweep
+  existing files unless asked.
+- **Prose goes to the owner in chat.** Not code comments, not commit-message essays, not new docs.
+- **`docs/*.md` is the only home for explanation, and it is by request only.** Existing docs carry
+  drift that further editing does not fix. Do not add or expand unprompted — suggest, and wait.
+- **Tools declare outputs and NON-outputs as metadata**, not narrative: `requires:`, `produces:`,
+  `does not:`. The `does not:` line is the load-bearing half — it is what stops a tool's output
+  being read as proof of something it never measured.
+- **No causal claim without a citation.** A "because" requires a measurement that isolated THAT
+  variable, an upstream source, or the words **"cause not isolated"** — a complete finding, not an
+  admission. This already applied to Lua facts; it applies to all prose.
+- **Control arm before the claim, not after.** A measurement with no control cannot separate a
+  broken feature from a broken probe. Run it first, report second.
+- **graphify is the search engine over this code**, not an authority on it:
+  `graphify query "<question>"`, `graphify update` after code changes. It indexes what the code says
+  about itself and returns a bug as faithfully as a feature. Oracles are the Factorio Lua API docs,
+  a measurement on the running cluster, and the owner.
+
 ## Code Style and Conventions
 
 ### General Style (partially enforced by ESLint — `npm run lint`, gated in CI)
