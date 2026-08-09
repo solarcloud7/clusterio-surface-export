@@ -212,6 +212,21 @@ export class ControllerPlugin extends BaseControllerPlugin {
 		}
 	}
 
+	// The tree carries each instance's connected/status pair, and every other broadcast site is a
+	// plugin-domain event — an export, a platform state change, a transfer. Cluster membership moves
+	// on its own schedule, so without these two the tree a subscriber holds goes stale the moment a
+	// host drops or returns, and stays that way until a transfer happens to rebuild it.
+	// Both hooks take no arguments: the broadcast rebuilds the whole tree, so which host or instance
+	// moved does not change what is sent. queueTreeBroadcast is rate-limited (treeBroadcastLimiter),
+	// which is what makes it safe to call from events this chatty.
+	onHostConnectionEvent() {
+		this.subscriptions.queueTreeBroadcast(this.lastTreeForceName || "player");
+	}
+
+	async onInstanceStatusChanged() {
+		this.subscriptions.queueTreeBroadcast(this.lastTreeForceName || "player");
+	}
+
 	async handlePlatformExport(event: { exportId: string; platformName: string; platformIndex?: number | null; instanceId: number; exportData: ExportData; exportMetrics?: messages.ExportMetrics; timestamp: number }) {
 		const sourceExportId = event.exportId;
 		const canonicalExportId = makeCanonicalTransferId(event.instanceId, sourceExportId);
