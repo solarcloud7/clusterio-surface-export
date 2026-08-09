@@ -68,6 +68,9 @@ docker/seed-data/external_plugins/surface_export/lib/*.d.ts.map
 # Node dependencies
 **/node_modules/
 
+# Graphify knowledge-graph output (generated locally; rebuild with /graphify)
+graphify-out/
+
 # OS files
 .DS_Store
 Thumbs.db
