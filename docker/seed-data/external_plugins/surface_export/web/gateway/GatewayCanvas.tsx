@@ -492,6 +492,20 @@ export default function GatewayCanvas({ plugin, state, onOpenImport }: {
 				antMessage.error("Could not read the destination — no transfer was started.", 6);
 				return;
 			}
+			// THE TARGET HANDLE IS CHECKED HERE TOO, not only in isValidConnection. A drag that landed
+			// on another PLATFORM row names an instance perfectly well, so without this the dialog would
+			// open offering a real, sendable transfer for a gesture that meant nothing of the kind —
+			// the destination is a platform, and platforms do not receive platforms. Defending at the
+			// point that acts rather than only at the point that previews, because `isValidConnection`
+			// is React Flow's to call and Loose mode decides which end is "source" after the fact.
+			if (platformIndexFromHandleId(connection.targetHandle) != null) {
+				antMessage.warning("Drop a platform on another instance's PORTAL, not on one of its platforms.", 5);
+				return;
+			}
+			if (dragged.instanceId === targetInstanceId) {
+				antMessage.warning("A platform cannot transfer to the instance it is already on.", 4);
+				return;
+			}
 			setTransfer({
 				source: {
 					instanceId: dragged.instanceId,
