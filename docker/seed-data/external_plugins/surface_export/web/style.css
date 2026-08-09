@@ -324,39 +324,122 @@ body.surface-export-page .site-layout-content-container {
 	cursor: crosshair;
 }
 
-/* ── Canvas: the per-node platform toolbar ────────────────────────────────── */
+/* ── Canvas: the per-node platform list ───────────────────────────────────── */
 
-/* Shown above a SELECTED node, carrying the same Export/Transfer pair the Manual Transfer table
-   offers per row. React Flow renders it outside the node's own wrapper, so it needs its own
-   background — and it does NOT inherit the node's dimming, which is correct: you can only select one
-   node, and its toolbar should be readable whatever the host filter is doing to the rest. */
-.surface-export-node-toolbar {
+/* The platforms this instance is carrying, ALWAYS ON, hanging under the gate — modelled on React
+   Flow's database-schema node, where each row is an addressable thing with its own handle.
+
+   ABSOLUTELY POSITIONED, and that is correctness rather than styling. React Flow measures the node
+   element, and gateway/edge-geometry.ts puts the node's centre at `position + measured.height / 2`;
+   a list that grew the node's border box would drag that centre down and every edge would detach
+   from the portal glow. Hanging outside the box — the same trick the caption uses at `bottom: 100%`
+   — keeps the measured node a 150px circle, and the LAYOUT reserves the room instead
+   (`platformListHeight` in gateway/gateway-graph.ts). The two must agree: 28px rows, 22px of chrome.
+
+   `inset: auto` FIRST, for the reason recorded on .surface-export-gw-cover: it is the shorthand for
+   top/right/bottom/left, so placing it after them silently wipes whatever they set.
+
+   Unlike the NodeToolbar this replaces, it lives INSIDE the node wrapper and so inherits the host
+   filter's dimming along with the gate. That is the consistent behaviour: a faded instance's
+   platforms are part of what was faded. */
+.surface-export-platform-list {
+	position: absolute;
+	inset: auto;
+	top: 100%;
+	left: 50%;
+	transform: translateX(-50%);
+	margin-top: 8px;
+	/* Wider than the 150px node on purpose, and the layout knows it: CAPTION_WIDTH (190) already
+	   reserves more than the circle, and the column pitch is sized from whichever is bigger. */
+	width: 264px;
 	display: flex;
 	flex-direction: column;
-	gap: 4px;
-	padding: 6px 8px;
+	padding: 5px 6px;
 	border: 1px solid #303030;
 	border-radius: 8px;
 	background: #1f1f1f;
 	box-shadow: 0 4px 14px rgba(0, 0, 0, 0.55);
+	text-align: left;
 }
 
-.surface-export-node-toolbar-row {
+/* An instance with nothing to list still shows the panel rather than nothing, so "no platforms" and
+   "the list failed to render" do not look identical. */
+.surface-export-platform-list-empty {
+	justify-content: center;
+	align-items: center;
+	min-height: 28px;
+	padding: 4px 6px;
+}
+
+/* FIXED HEIGHT, matching PLATFORM_ROW_HEIGHT. The layout reserves space by counting rows, so a row
+   that sized itself to its content would let a long name push the list over the node below it. */
+/* POSITIONED, so each row's handle resolves against ITS OWN row. Without this the handles resolve
+   against the panel (the nearest positioned ancestor) and every one of them stacks at the panel's
+   vertical midpoint — the same collapse the multi-gateway handles are warned about in
+   gateway/InstanceNode.tsx, arrived at from the opposite direction. Safe here, and required, because
+   the handle's position is fully overridden below rather than left to React Flow. */
+.surface-export-platform-node-row {
+	position: relative;
 	display: flex;
 	align-items: center;
 	gap: 6px;
+	height: 28px;
+	flex-shrink: 0;
 }
 
 /* One line, ellipsised. Platform names are user-supplied and can be any length; wrapping one would
-   grow the toolbar sideways over the neighbouring nodes. Full name on hover. */
-.surface-export-node-toolbar-name {
+   grow the list over the neighbouring nodes. Full name and index on hover. */
+.surface-export-platform-node-name {
 	flex: 1 1 auto;
 	min-width: 0;
-	max-width: 180px;
 	font-size: 12px;
 	white-space: nowrap;
 	overflow: hidden;
 	text-overflow: ellipsis;
+}
+
+/* THE NAME IS THE ONLY FLEXIBLE COLUMN. `flex-shrink: 0` here, because with the status shrinking too
+   a six-character "parked" was ellipsised to "park…" while the name beside it still had room —
+   measured on the live canvas. Names are long, user-supplied and available on hover; a status is
+   short, fixed-vocabulary and meaningless once cut. The cap still catches the long ones
+   ("awaiting validation"), which is what it is for. */
+.surface-export-platform-node-tag {
+	flex-shrink: 0;
+	max-width: 96px;
+	overflow: hidden;
+	white-space: nowrap;
+	text-overflow: ellipsis;
+	font-size: 11px;
+	margin-inline-end: 0;
+}
+
+/* The "+k more" line. Not interactive and carrying no handle — it stands for several platforms, so
+   there is nothing a single drag from it could mean. */
+.surface-export-platform-node-more {
+	justify-content: center;
+	opacity: 0.7;
+}
+
+/* A platform row's drag handle: the affordance for "send this somewhere". Sits ON the panel's right
+   edge, small and unobtrusive until hovered, because there is one per row and four of them shouting
+   would read as damage. */
+.surface-export-platform-handle {
+	position: absolute;
+	inset: auto;
+	right: -5px;
+	top: 50%;
+	width: 10px;
+	height: 10px;
+	border-radius: 50%;
+	border: 1px solid #434343;
+	background: #1668dc;
+	opacity: 0.55;
+	transform: translateY(-50%);
+	cursor: crosshair;
+}
+
+.surface-export-platform-node-row:hover .surface-export-platform-handle {
+	opacity: 1;
 }
 
 /* Zero outgoing links = a platform parked here cannot leave. The old tab said so in words; here it

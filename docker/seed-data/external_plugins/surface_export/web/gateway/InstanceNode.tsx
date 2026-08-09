@@ -1,15 +1,13 @@
-import React, { useCallback, useEffect, useState } from "react";
-import { Handle, NodeToolbar, Position } from "@xyflow/react";
+import React from "react";
+import { Handle, Position } from "@xyflow/react";
 import type { NodeProps } from "@xyflow/react";
-import { Button, Tag, Tooltip, Typography } from "antd";
-import { DownloadOutlined, PlayCircleOutlined } from "@ant-design/icons";
+import { Typography } from "antd";
 
 import { DEFAULT_GATEWAY_MODE, gatewayNamesFor } from "../../shared/dto";
 import type { GatewayMode } from "../../shared/dto";
 import { sourceHandleId, targetHandleId } from "./gateway-graph";
 import type { GatewayUsage, PlatformLike } from "./gateway-graph";
-import { platformActionKey, useNodeActions } from "./node-actions";
-import { platformStatus } from "../platform-actions";
+import PlatformRows from "./PlatformRows";
 import { PlanetIcon } from "../icons";
 import gatewayHubArt from "./assets/gateway-hub-128.png";
 
@@ -32,65 +30,6 @@ const NODE_FACE_ART: Record<string, string> = {
 /** Multi mode only: one gateway per side, in prototype order (1=blue, 2=green, 3=orange, 4=purple). */
 const MULTI_HANDLE_POSITIONS = [Position.Top, Position.Right, Position.Bottom, Position.Left];
 
-/**
- * Gap between the node's bottom edge and the platform toolbar, in SCREEN pixels.
- *
- * A plain constant now, and that is only safe because the space below the node is EMPTY: the caption
- * moved above the gate. While it sat below, this had to be `clearance * zoom` — `offset` is applied
- * in screen pixels and does not scale, but the caption does, so any fixed number that cleared the
- * caption at zoom 1 landed on top of it at zoom 2 (measured). With nothing to clear, a constant gap
- * is what it appears to be.
- */
-const TOOLBAR_OFFSET = 12;
-
-/** How long the toolbar stays up before getting out of the way. */
-const TOOLBAR_VISIBLE_MS = 5000;
-
-/**
- * Show while `active`, then hide after `delayMs` — unless the pointer is on it, or it is re-armed.
- *
- * Two things this has to survive, both found by driving the real canvas rather than reasoning about
- * it:
- *
- * `hold` — a toolbar that vanishes out from under a cursor that came to click it is worse than one
- * that never auto-hides. Leaving restarts the clock rather than hiding at once, so a pointer that
- * strays and comes back does not lose it.
- *
- * `rearm` — WITHOUT THIS THE FEATURE IS A DEAD END. Selection is the only thing that re-shows a
- * toolbar, so once it expires, clicking the SAME node changes nothing: `active` was already true and
- * stays true, and the platform actions are unreachable until the operator clicks elsewhere and back.
- * Measured: node `selected: true`, toolbars in the DOM `0`, and clicking it again did nothing.
- * So any pointer press on the node restarts the clock, whatever the selection does.
- */
-function useAutoHide(active: boolean, delayMs: number) {
-	const [expired, setExpired] = useState(false);
-	const [held, setHeld] = useState(false);
-	// Bumped to restart the timer even when neither `active` nor `held` has changed — which is
-	// exactly the re-click case, where nothing else in the dependency list moves.
-	const [rearmCount, setRearmCount] = useState(0);
-
-	useEffect(() => {
-		if (!active) {
-			setExpired(false);
-			setHeld(false);
-			return undefined;
-		}
-		if (held) {
-			return undefined;
-		}
-		setExpired(false);
-		const timer = setTimeout(() => setExpired(true), delayMs);
-		return () => clearTimeout(timer);
-	}, [active, held, delayMs, rearmCount]);
-
-	return {
-		visible: active && !expired,
-		hold: useCallback(() => setHeld(true), []),
-		release: useCallback(() => setHeld(false), []),
-		rearm: useCallback(() => setRearmCount(count => count + 1), []),
-	};
-}
-
 export type InstanceNodeData = {
 	mode?: GatewayMode;
 	instanceId: number;
@@ -104,76 +43,6 @@ export type InstanceNodeData = {
 	platforms: PlatformLike[];
 	gateways: Record<string, GatewayUsage>;
 };
-
-/**
- * Export and Transfer for each of this instance's platforms, in a toolbar over the gate.
- *
- * The same pair of buttons the Manual Transfer table offers per row, on the same rows — the actions
- * are shared code (`web/platform-actions.ts`) rather than a second implementation, so a change to
- * what "export a platform" means reaches both.
- *
- * It hangs UNDER the gate. The caption sits ABOVE, so the two never compete for the same strip.
- *
- * `nodrag nopan`: the toolbar renders inside React Flow's own wrapper, so without these a press on a
- * button would also be a press on the canvas — the click still lands, but the pane pans out from
- * under it if the pointer moves at all.
- *
- * NO ETA in the status tag (`platformStatus(…, null)`). The countdown needs a per-second timer, and
- * a timer here would re-render every node on the canvas once a second for a suffix on a tag that is
- * only visible while a node is selected.
- */
-function PlatformActionRows({ node }: { node: InstanceNodeData }) {
-	const actions = useNodeActions();
-
-	if (!node.platforms.length) {
-		return <Text type="secondary" style={{ fontSize: 12 }}>No platforms with a space hub</Text>;
-	}
-
-	return (
-		<>
-			{node.platforms.map(platform => {
-				const status = platformStatus(platform, null);
-				const key = platformActionKey(node.instanceId, platform.platformIndex);
-				const source = {
-					instanceId: node.instanceId,
-					instanceName: node.instanceName,
-					platformIndex: platform.platformIndex,
-					platformName: platform.platformName,
-					forceName: platform.forceName || "player",
-				};
-				return (
-					<div key={key} className="surface-export-node-toolbar-row">
-						<Text className="surface-export-node-toolbar-name" title={platform.platformName}>
-							{platform.platformName}
-						</Text>
-						<Text type="secondary" style={{ fontSize: 11 }}>#{platform.platformIndex}</Text>
-						{status.tag
-							? <Tag color={status.tag}>{status.text}</Tag>
-							: <Text type="secondary" style={{ fontSize: 11 }}>{status.text}</Text>}
-						<Tooltip title="Export JSON">
-							<Button
-								icon={<DownloadOutlined />}
-								size="small"
-								disabled={!actions}
-								loading={actions?.exportingKey === key}
-								onClick={() => actions?.onExport(source)}
-							/>
-						</Tooltip>
-						<Tooltip title="Transfer to another instance">
-							<Button
-								icon={<PlayCircleOutlined />}
-								size="small"
-								type="primary"
-								disabled={!actions}
-								onClick={() => actions?.onTransfer(source)}
-							/>
-						</Tooltip>
-					</div>
-				);
-			})}
-		</>
-	);
-}
 
 function MultiGatewayHandle({ gatewayName, position, usage, connectable }: {
 	gatewayName: string;
@@ -228,15 +97,13 @@ function MultiGatewayHandle({ gatewayName, position, usage, connectable }: {
  * showing it bright because it is configured would say the wrong thing about the thing an operator
  * actually needs to see.
  *
- * SELECTED reveals the platform toolbar. Measured on the live canvas before wiring it: a plain click
- * selects the node from the portal handle AND from the pedestal, so nothing about the connect zone
- * puts the toolbar out of reach.
+ * THE PLATFORM LIST IS ALWAYS ON, hanging under the gate. It used to be a NodeToolbar that appeared
+ * on selection and hid itself after five seconds; a permanent list is what the database-schema-node
+ * pattern it now follows actually is, and it is what makes a platform something you can drag. The
+ * caption sits ABOVE the gate, so the two never compete for the same strip.
  */
-export function InstanceNode({ data, selected, isConnectable }: NodeProps) {
+export function InstanceNode({ data, isConnectable }: NodeProps) {
 	const node = data as unknown as InstanceNodeData;
-	// `Boolean(selected)`, not `selected`: NodeProps types it optional, and undefined would hand React
-	// Flow's own default back instead of meaning "not selected".
-	const toolbar = useAutoHide(Boolean(selected), TOOLBAR_VISIBLE_MS);
 	const mode = node.mode || DEFAULT_GATEWAY_MODE;
 	const names = gatewayNamesFor(mode);
 	const oneGate = mode !== "multi";
@@ -249,23 +116,7 @@ export function InstanceNode({ data, selected, isConnectable }: NodeProps) {
 				`surface-export-instance-node${node.online ? " surface-export-instance-node-online" : " surface-export-instance-node-offline"}`
 				+ (oneGate ? " surface-export-instance-node-shaped" : "")
 			}
-			// Any press ANYWHERE on the node restarts the toolbar's clock — including on the portal
-			// handle, which is a child and so bubbles. `pointerdown` rather than `click` so it also
-			// covers a press that turns into a drag or a link, both of which are still the operator
-			// working on this node.
-			onPointerDown={toolbar.rearm}
 		>
-			<NodeToolbar
-				isVisible={toolbar.visible}
-				position={Position.Bottom}
-				offset={TOOLBAR_OFFSET}
-				className="surface-export-node-toolbar nodrag nopan"
-				onMouseEnter={toolbar.hold}
-				onMouseLeave={toolbar.release}
-			>
-				<PlatformActionRows node={node} />
-			</NodeToolbar>
-
 			{oneGate ? (
 				<>
 					{/* The PORTAL is the connection zone — drag through the glowing disc to link, which is
@@ -335,6 +186,15 @@ export function InstanceNode({ data, selected, isConnectable }: NodeProps) {
 						: <Text type="secondary" className="surface-export-instance-node-port">no port assigned</Text>}
 				</div>
 			</div>
+
+			{/* `isConnectable` gates the row handles for the same reason it gates the gateway ones: a
+			    read-only account must not be offered a drag that would be refused server-side. */}
+			<PlatformRows
+				platforms={node.platforms}
+				instanceId={node.instanceId}
+				instanceName={node.instanceName}
+				canEdit={Boolean(isConnectable)}
+			/>
 		</div>
 	);
 }

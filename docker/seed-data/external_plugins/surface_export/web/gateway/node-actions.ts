@@ -17,7 +17,14 @@ export type GatewayNodeActions = {
 	/** `${instanceId}:${platformIndex}` of the export currently running, or null. Drives one spinner. */
 	exportingKey: string | null;
 	onExport: (source: PlatformActionSource) => void;
-	onTransfer: (source: PlatformActionSource) => void;
+	/**
+	 * `presetTargetInstanceId` is the destination the gesture already chose, or null when it did not.
+	 *
+	 * The button in a row cannot know where the platform should go, so it passes null and the dialog
+	 * asks. Dragging the row onto another instance's portal HAS named a destination, and re-asking for
+	 * it would throw away the only thing that gesture said.
+	 */
+	onTransfer: (source: PlatformActionSource, presetTargetInstanceId: number | null) => void;
 };
 
 /**
