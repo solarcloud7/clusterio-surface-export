@@ -54,6 +54,8 @@ import {
 	loadDebugState,
 	mockLeaksInPayload,
 	mockShips,
+	replayCandidates,
+	replayShips,
 	saveDebugState,
 	scenarioToEdits,
 	scenarioToShips,
@@ -415,8 +417,16 @@ export default function GatewayCanvas({ plugin, state, onOpenImport }: {
 		const instanceIds = graph.nodes
 			.map(node => instanceIdFromNodeId(node.id))
 			.filter((id): id is number => id !== null);
-		return [...realShips, ...mockShips(instanceIds, debug.shipPhases)];
-	}, [realShips, debug.enabled, debug.shipPhases, scenario, graph]);
+		// REPLAYED transfers are real summaries, passed through untouched — the endpoints, the status
+		// and the id are the controller's. They are listed BEFORE the synthetic ones so that when both
+		// are on, a real transfer wins the per-edge claim in the assignment below: the whole point of
+		// replay is to look at the real thing, and a fake sitting on the edge you came to inspect
+		// would defeat it. Deduped against `realShips` so a transfer that is BOTH live and named for
+		// replay is not drawn twice.
+		const replayed = replayShips(state?.transferSummaries, debug.replayTransferIds)
+			.filter(ship => !realShips.some(live => live.transferId === ship.transferId));
+		return [...replayed, ...realShips, ...mockShips(instanceIds, debug.shipPhases)];
+	}, [realShips, debug.enabled, debug.shipPhases, debug.replayTransferIds, state?.transferSummaries, scenario, graph]);
 
 	useEffect(() => {
 		// REAL ships only — see the memo above for why a fake must not be timed, and note that letting
@@ -834,13 +844,14 @@ export default function GatewayCanvas({ plugin, state, onOpenImport }: {
 	 * state through them. Installing it with the state captured would give a console that reports
 	 * whatever was true when the page loaded and silently overwrites anything changed since.
 	 */
-	const liveRef = useRef({ debug, scenario, graph, mode });
-	liveRef.current = { debug, scenario, graph, mode };
+	const liveRef = useRef({ debug, scenario, graph, mode, summaries: state?.transferSummaries });
+	liveRef.current = { debug, scenario, graph, mode, summaries: state?.transferSummaries };
 	useEffect(() => installCanvasDebugApi({
 		getState: () => liveRef.current.debug,
 		setState: setDebug,
 		getScenario: () => liveRef.current.scenario,
 		setScenario,
+		getReplayCandidates: () => replayCandidates(liveRef.current.summaries),
 		describe: () => {
 			const { debug: state, scenario: loaded, graph: current } = liveRef.current;
 			return {
@@ -851,6 +862,7 @@ export default function GatewayCanvas({ plugin, state, onOpenImport }: {
 				links: current.edges.length,
 				debugMode: state.enabled,
 				shipPhases: state.shipPhases,
+				replaying: state.replayTransferIds.length,
 				geometry: state.showGeometry,
 			};
 		},

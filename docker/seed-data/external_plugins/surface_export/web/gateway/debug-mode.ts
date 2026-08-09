@@ -34,7 +34,9 @@ import { createContext, useContext } from "react";
 
 import type { GatewayEdits, InstanceLike, TreeLike } from "./gateway-graph";
 import { parseEditKey } from "./gateway-graph";
+import { shipPhaseFor } from "./transfer-motion";
 import type { ShipTransfer } from "./transfer-motion";
+import type { TransferSummary } from "../view-models";
 
 /** The one place the on/off state is remembered. Separate from the layout key; different lifetime. */
 const STORAGE_KEY = "surface_export.gateway_debug";
@@ -56,6 +58,15 @@ export type DebugState = {
 	 * five ships up and left you picking one out of the pile.
 	 */
 	shipPhases: string[];
+	/**
+	 * REAL transfers, by id, drawn as ships regardless of age.
+	 *
+	 * The canvas deliberately refuses to draw history: `shipExpiryMs` returns 0 for a terminal transfer
+	 * it never saw in flight, which is what stops a page load from putting every row of the transaction
+	 * log on screen at once (measured: 51 edges on a two-instance canvas). Replay is the one case where
+	 * you DO want that — naming specific transfers is the opt-in that keeps the general rule intact.
+	 */
+	replayTransferIds: string[];
 	/** Outline the measured node box, the portal hit-zone and the edge anchor. */
 	showGeometry: boolean;
 };
@@ -65,6 +76,7 @@ export const DEFAULT_DEBUG_STATE: DebugState = {
 	mockInstances: 4,
 	mockPlatforms: 3,
 	shipPhases: [],
+	replayTransferIds: [],
 	showGeometry: false,
 };
 
@@ -136,6 +148,12 @@ export function loadDebugState(): DebugState {
 					shipPhases: Array.isArray(parsed.shipPhases)
 						? parsed.shipPhases.filter(name => (SHIP_PHASE_NAMES as readonly string[]).includes(name))
 						: ((parsed as { showShips?: boolean }).showShips ? [...SHIP_PHASE_NAMES] : []),
+					// NOT persisted across sessions in spirit — but harmless if it is, because a replayed
+					// id that no longer exists in the log simply draws nothing. Filtered to strings so a
+					// mangled value cannot reach the ship lookup.
+					replayTransferIds: Array.isArray(parsed.replayTransferIds)
+						? parsed.replayTransferIds.filter(id => typeof id === "string")
+						: [],
 					showGeometry: Boolean(parsed.showGeometry),
 				};
 			}
@@ -275,6 +293,64 @@ export function mockShips(instanceIds: readonly number[], phases: readonly strin
 			targetInstanceId,
 		};
 	}).filter(ship => ship.sourceInstanceId !== ship.targetInstanceId) as ShipTransfer[];
+}
+
+// ── Replay: real transfers, drawn from the transaction log ───────────────────
+
+/**
+ * A transfer the canvas COULD draw, for picking one to replay.
+ *
+ * Only transfers, and only ones the phase model maps to a position: an export has no destination to
+ * travel to and an import has no source, so drawing either as a journey would be a picture of
+ * something that did not happen — the same rule `shipsInFlight` applies, stated once here so the
+ * chooser cannot offer something the canvas would then refuse to draw.
+ */
+export type ReplayCandidate = {
+	transferId: string;
+	status: string;
+	sourceInstanceId: number;
+	targetInstanceId: number;
+	platformName?: string;
+};
+
+export function replayCandidates(summaries: readonly TransferSummary[] | null | undefined): ReplayCandidate[] {
+	return (summaries || [])
+		.filter(summary =>
+			summary.operationType === "transfer"
+			&& Number.isFinite(summary.sourceInstanceId)
+			&& Number.isFinite(summary.targetInstanceId)
+			&& shipPhaseFor(summary.status) !== null)
+		.map(summary => ({
+			transferId: summary.transferId,
+			status: String(summary.status),
+			sourceInstanceId: Number(summary.sourceInstanceId),
+			targetInstanceId: Number(summary.targetInstanceId),
+			platformName: summary.platformName,
+		}));
+}
+
+/**
+ * The chosen transfers, as ships — REAL summaries, passed through untouched.
+ *
+ * Nothing is synthesized here and that is the entire point: the endpoints, the status and the id are
+ * the ones the controller recorded, so what you are looking at is the path an operator sees rather
+ * than a drawing of it. A banked failure gets replayed with the real transfer behind it, and its
+ * ship sits where the two-phase commit actually left the platform.
+ */
+export function replayShips(
+	summaries: readonly TransferSummary[] | null | undefined,
+	transferIds: readonly string[],
+): ShipTransfer[] {
+	if (!transferIds.length) {
+		return [];
+	}
+	const wanted = new Set(transferIds);
+	return (summaries || [])
+		.filter(summary => wanted.has(summary.transferId))
+		.filter(summary =>
+			Number.isFinite(summary.sourceInstanceId)
+			&& Number.isFinite(summary.targetInstanceId)
+			&& shipPhaseFor(summary.status) !== null) as ShipTransfer[];
 }
 
 // ── Scenarios: an arbitrary canvas, described in one object ──────────────────

@@ -21,7 +21,7 @@
  */
 
 import { DEFAULT_DEBUG_STATE, SHIP_PHASE_NAMES } from "./debug-mode";
-import type { DebugScenario, DebugState } from "./debug-mode";
+import type { DebugScenario, DebugState, ReplayCandidate } from "./debug-mode";
 
 /** What the canvas hands the API so it can drive it. */
 export type CanvasDebugControls = {
@@ -29,6 +29,8 @@ export type CanvasDebugControls = {
 	setState: (next: DebugState) => void;
 	getScenario: () => DebugScenario | null;
 	setScenario: (scenario: DebugScenario | null) => void;
+	/** Real transfers the canvas could draw, newest last — the page's own summaries. */
+	getReplayCandidates: () => ReplayCandidate[];
 	/** A short, human-readable summary of what is currently drawn. */
 	describe: () => Record<string, unknown>;
 };
@@ -49,6 +51,9 @@ const HELP = `surfaceExportCanvas — gateway canvas debug API
 
   ships(...phases)            draw a fake transfer per phase; no args = all, ships(false) = none
                               phases: ${SHIP_PHASE_NAMES.join(", ")}
+
+  transfers()                 REAL transfers this page can draw (pick one to replay)
+  replay(n | ...ids)          draw REAL transfers as ships, whatever their age; replay(false) stops
 
   load(scenario)              REPLACE the canvas with a scenario (see below)
   reset()                     back to the live cluster
@@ -158,6 +163,52 @@ export function installCanvasDebugApi(controls: CanvasDebugControls): () => void
 			}
 			controls.setScenario(scenario);
 			return patch({});
+		},
+
+		/**
+		 * Real transfers the canvas can draw, newest last — pick one and `replay()` it.
+		 *
+		 * Filtered to what is actually drawable (a transfer, two endpoints, a status the phase model
+		 * maps) rather than the whole log, so nothing offered here can be selected and then not appear.
+		 */
+		transfers(limit = 20) {
+			const all = controls.getReplayCandidates();
+			const shown = all.slice(-Math.max(1, Number(limit) || 20));
+			console.table(shown);
+			return { drawable: all.length, showing: shown.length, transfers: shown };
+		},
+
+		/**
+		 * Draw REAL transfers as ships, whatever their age.
+		 *
+		 * `replay()` takes the most recent few, `replay(id, …)` takes those, `replay(false)` stops.
+		 * Nothing is synthesized: the endpoints, the status and the id are the ones the controller
+		 * recorded, so a banked failure is replayed with the real transfer behind it and its ship sits
+		 * where the two-phase commit actually left the platform.
+		 */
+		replay(...ids: Array<string | number | boolean>) {
+			if (ids.length === 1 && ids[0] === false) {
+				return patch({ replayTransferIds: [] });
+			}
+			const candidates = controls.getReplayCandidates();
+			if (!candidates.length) {
+				throw new Error("no drawable transfers — this page has seen no transfer summaries with two endpoints");
+			}
+			if (!ids.length || typeof ids[0] === "number") {
+				const count = ids.length ? Math.max(1, Number(ids[0])) : 3;
+				return patch({ replayTransferIds: candidates.slice(-count).map(candidate => candidate.transferId) });
+			}
+			const wanted = ids.map(String);
+			const known = new Set(candidates.map(candidate => candidate.transferId));
+			const missing = wanted.filter(id => !known.has(id));
+			if (missing.length) {
+				throw new Error(
+					`not drawable: ${missing.join(", ")}. `
+					+ "Call transfers() for the list — an id is missing here if it is not a transfer, "
+					+ "lacks an endpoint, or has a status the canvas does not map to a position.",
+				);
+			}
+			return patch({ replayTransferIds: wanted });
 		},
 
 		reset() {
