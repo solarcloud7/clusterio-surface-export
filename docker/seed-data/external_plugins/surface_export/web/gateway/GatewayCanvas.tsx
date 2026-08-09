@@ -26,9 +26,9 @@ import { PERMISSIONS } from "../../messages";
 import {
 	ALL_HOSTS,
 	CAPTION_HEIGHT,
+	CAPTION_WIDTH,
 	DIMMED_OPACITY,
 	NODE_DIAMETER,
-	PLATFORM_LIST_WIDTH,
 	applyConnect,
 	applyDisconnect,
 	buildGraph,
@@ -39,7 +39,6 @@ import {
 	instanceNodeId,
 	parseEditKey,
 	platformIndexFromHandleId,
-	platformListHeight,
 	preservePositions,
 	sourceHandleId,
 	targetHandleId,
@@ -52,7 +51,7 @@ import {
 	isMockEditKey,
 	isMockInstanceId,
 	loadDebugState,
-	mockLeakIn,
+	mockLeaksInPayload,
 	mockShips,
 	saveDebugState,
 	withMockInstances,
@@ -251,13 +250,20 @@ export default function GatewayCanvas({ plugin, state, onOpenImport }: {
 		[effectiveTree, edits, mode, hostFilter],
 	);
 
+	/**
+	 * EVERY staged change, mock or not. This is what Revert acts on.
+	 *
+	 * Kept separate from `pending` because the two answer different questions. Revert asks "is there
+	 * anything to undo", and a mock link IS something to undo — an operator who drew one between two
+	 * mock instances must be able to clear it. Gating Revert on `pending` left mock edits with no way
+	 * out at all.
+	 */
+	const allDirty = useMemo(() => dirtyKeys(edits, baseline), [edits, baseline]);
+
 	// MOCK EDITS ARE NOT PENDING CHANGES. Dropping them here means they are never counted, never
 	// enable Save, and never reach the write — the whole partition rests on `isValidConnection`
 	// refusing mock<->real links, so a surviving key is wholly-real. `save` re-checks anyway.
-	const pending = useMemo(
-		() => dirtyKeys(edits, baseline).filter(key => !isMockEditKey(key)),
-		[edits, baseline],
-	);
+	const pending = useMemo(() => allDirty.filter(key => !isMockEditKey(key)), [allDirty]);
 	const mockCount = useMemo(
 		() => graph.nodes.filter(node => isMockInstanceId(node.data.instanceId as number)).length,
 		[graph],
@@ -267,24 +273,22 @@ export default function GatewayCanvas({ plugin, state, onOpenImport }: {
 	 * Framing that accounts for what hangs OUTSIDE the node boxes.
 	 *
 	 * `fitView` frames `position + measured`, and measured is deliberately just the 150px circle — the
-	 * caption above and the platform list below are absolutely positioned so they cannot drag the
-	 * node's centre around (see PlatformRows.tsx). The cost is that fitView cannot see them, and it
-	 * framed the circles with both platform panels hanging 59px off the pane. Measured, on this
-	 * cluster, at the zoom fitView chose.
+	 * caption is absolutely positioned so it cannot drag the node's centre around (see
+	 * PlatformRows.tsx for the same trick and why it matters). The cost is that fitView cannot see the
+	 * caption either, and it framed the circles with the overhanging parts off the pane. Measured on
+	 * this cluster at 59px, at the zoom fitView chose.
 	 *
 	 * PADDING IS IN SCREEN PIXELS but the overhang is in FLOW pixels, and those two only agree at
 	 * zoom 1 — which is why the zoom is pinned rather than the padding merely being made generous. A
 	 * proportional padding would have to be sized for the worst zoom and would waste the viewport at
 	 * every other one.
 	 *
-	 * The bottom is sized from the LONGEST list actually present rather than the 6-row maximum, so a
-	 * cluster of one-platform instances is not framed around room it never uses.
+	 * SIZED FOR THE CAPTION ONLY. The platform list overhangs further, but it opens on click and hides
+	 * itself again — framing every load around a strip that is almost never drawn zoomed the whole
+	 * canvas out permanently. An open list near the pane edge can sit partly off-screen; it is
+	 * transient, and panning or moving the node fixes it.
 	 */
 	const fitViewOptions = useMemo((): FitViewOptions => {
-		const longestList = graph.nodes.reduce(
-			(most, node) => Math.max(most, ((node.data.platforms as unknown[]) || []).length),
-			0,
-		);
 		const breathingRoom = 12;
 		// The return annotation is what holds these to React Flow's `${number}px` literal type instead
 		// of letting them widen to plain `string`, which the option does not accept.
@@ -292,12 +296,12 @@ export default function GatewayCanvas({ plugin, state, onOpenImport }: {
 		return {
 			maxZoom: 1,
 			padding: {
-				x: px((PLATFORM_LIST_WIDTH - NODE_DIAMETER) / 2 + breathingRoom),
+				x: px((CAPTION_WIDTH - NODE_DIAMETER) / 2 + breathingRoom),
 				top: px(CAPTION_HEIGHT + breathingRoom),
-				bottom: px(platformListHeight(longestList) + breathingRoom),
+				bottom: px(breathingRoom),
 			},
 		};
-	}, [graph]);
+	}, []);
 
 	// Deps are `fitRequest` ALONE, deliberately: this fires when something ASKS to be re-framed, not
 	// whenever the framing options change — the graph is rebuilt on every platform status push, and
@@ -693,20 +697,6 @@ export default function GatewayCanvas({ plugin, state, onOpenImport }: {
 	}, []);
 
 	const save = useCallback(async () => {
-		// THE LAST CHECK, at the point that actually writes. `pending` already excludes mock keys and
-		// `isValidConnection` already refuses mock<->real links, so reaching this means one of those
-		// two invariants has broken — and the cost of being wrong here is a gateway link in the
-		// cluster's real config naming an instance id that cannot exist. Refuse the whole save rather
-		// than silently stripping: a save that quietly wrote less than it was asked to is how a
-		// gateway becomes disabled without anyone seeing it.
-		const leak = mockLeakIn(edits, pending);
-		if (leak) {
-			antMessage.error(
-				`Refusing to save: ${leak} names a mock instance. This is a bug — no gateway config was written.`,
-				15,
-			);
-			return;
-		}
 		setSaving(true);
 		const failures: string[] = [];
 		/** Saved, but the running instance did not take it — see where this is pushed. */
@@ -737,6 +727,20 @@ export default function GatewayCanvas({ plugin, state, onOpenImport }: {
 				byInstance.set(parsed.sourceInstanceId, group);
 			}
 
+			// THE LAST CHECK, on the PAYLOAD about to go on the wire — see mockLeaksInPayload for why
+			// the payload and not the key list. Refuses the whole save rather than stripping the
+			// offender: a save that quietly wrote less than it was asked to is how a gateway becomes
+			// disabled with nobody seeing it.
+			const leaks = mockLeaksInPayload(byInstance);
+			if (leaks.length) {
+				antMessage.error(
+					`Refusing to save: ${leaks.join("; ")} names a mock instance. `
+					+ "This is a bug — no gateway config was written.",
+					15,
+				);
+				return;
+			}
+
 			for (const [sourceInstanceId, gateways] of byInstance) {
 				const label = gateways.map(entry => entry.gatewayName).join(", ");
 				try {
@@ -765,7 +769,14 @@ export default function GatewayCanvas({ plugin, state, onOpenImport }: {
 				antMessage.error(`${failures.length} of ${pending.length} failed — ${failures.join("; ")}`, 12);
 				return;
 			}
-			setBaseline(edits);
+			// MOCK KEYS ARE LEFT OUT OF THE NEW BASELINE. A save says "the controller now holds this",
+			// which is true of every real key and of no mock one — adopting them would make a mock link
+			// permanently clean, and since it is also permanently unsaveable, there would be nothing
+			// left that could clear it: Revert compares against the baseline, and the baseline would
+			// already agree. Keeping them out leaves them dirty, so Revert stays available.
+			setBaseline(Object.fromEntries(
+				Object.entries(edits).filter(([key]) => !isMockEditKey(key)),
+			));
 			if (warnings.length) {
 				// Re-baselined deliberately: the config IS saved, so the board is genuinely clean and a
 				// retry would change nothing. What is not true is that the cluster is running it, and
@@ -926,7 +937,10 @@ export default function GatewayCanvas({ plugin, state, onOpenImport }: {
 							) : (
 								<Text type="secondary" style={{ fontSize: 12 }}>read-only</Text>
 							)}
-							{canEdit && pending.length ? (
+							{/* Gated on allDirty, not pending: a mock link is unsaveable but still UNDOABLE,
+							    and Revert is the only thing that can clear one. Gating on `pending` left an
+							    operator who drew a mock link with no way to remove it. */}
+							{canEdit && allDirty.length ? (
 								<Button size="small" onClick={revert} disabled={saving}>Revert</Button>
 							) : null}
 							{canEdit ? (

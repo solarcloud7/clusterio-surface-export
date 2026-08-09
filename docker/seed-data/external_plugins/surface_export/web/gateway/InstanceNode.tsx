@@ -47,27 +47,37 @@ const PLATFORM_LIST_VISIBLE_MS = 3000;
  * Measured on the live canvas: node `selected: true`, list in the DOM `0`, clicking it again did
  * nothing. So any pointer press on the node restarts the clock, whatever the selection does.
  *
- * `hold` / `release` — a list that vanishes out from under a cursor that came to click it is worse
- * than one that never hides. Leaving restarts the clock rather than hiding at once, so a pointer that
- * strays and comes back does not lose it.
+ * `hovering` — a list that vanishes out from under a cursor that came to click it is worse than one
+ * that never hides. Leaving restarts the clock rather than hiding at once, so a pointer that strays
+ * and comes back does not lose it.
  *
- * `holdUntilPointerUp` — A DRAG LEAVES THE LIST. Dragging a platform onto another instance's portal
- * takes longer than the timeout and moves the pointer far away, so `hold`-on-hover alone would delete
- * the element mid-gesture and cancel the connection. Pressing anywhere on the list therefore freezes
- * the clock until the pointer is released ANYWHERE, which is the only event that reliably ends a
- * drag — `pointerup` on the list itself never arrives when the drop lands on another node.
+ * `pressing` — A DRAG LEAVES THE LIST. Dragging a platform onto another instance's portal takes
+ * longer than the timeout and moves the pointer far away, so hover alone would delete the element
+ * mid-gesture and cancel the connection. A press therefore freezes the clock until the pointer is
+ * released ANYWHERE, which is the only event that reliably ends a drag — `pointerup` on the list
+ * itself never arrives when the drop lands on another node.
+ *
+ * THE TWO HOLDS ARE SEPARATE FLAGS, not one shared boolean, and that is the whole point of this
+ * shape. Sharing one meant either source could clear the other's hold: the window `pointerup` at the
+ * end of a drag switched off a hover that was still true, so the list vanished under a stationary
+ * cursor 3s later; and `mouseleave` during a drag switched off the press-hold that existed precisely
+ * to survive leaving. Holding while EITHER is true is the only reading that lets each mean what it
+ * says.
  */
 function useAutoHide(active: boolean, delayMs: number) {
 	const [expired, setExpired] = useState(false);
-	const [held, setHeld] = useState(false);
-	// Bumped to restart the timer even when neither `active` nor `held` has changed — which is
-	// exactly the re-click case, where nothing else in the dependency list moves.
+	const [hovering, setHovering] = useState(false);
+	const [pressing, setPressing] = useState(false);
+	// Bumped to restart the timer even when nothing else in the dependency list has changed — which is
+	// exactly the re-click case.
 	const [rearmCount, setRearmCount] = useState(0);
+	const held = hovering || pressing;
 
 	useEffect(() => {
 		if (!active) {
 			setExpired(false);
-			setHeld(false);
+			setHovering(false);
+			setPressing(false);
 			return undefined;
 		}
 		if (held) {
@@ -79,20 +89,21 @@ function useAutoHide(active: boolean, delayMs: number) {
 	}, [active, held, delayMs, rearmCount]);
 
 	const holdUntilPointerUp = useCallback(() => {
-		setHeld(true);
+		setPressing(true);
 		// `once` so it cleans itself up, and on `window` so a drop outside the document body still ends
 		// the hold. Releasing also bumps the rearm count, which restarts the clock from the moment the
-		// gesture finished rather than from whenever it began.
+		// gesture finished rather than from whenever it began — and clears ONLY the press, leaving a
+		// hover that is still genuinely true to keep holding on its own account.
 		window.addEventListener("pointerup", () => {
-			setHeld(false);
+			setPressing(false);
 			setRearmCount(count => count + 1);
 		}, { once: true });
 	}, []);
 
 	return {
 		visible: active && !expired,
-		hold: useCallback(() => setHeld(true), []),
-		release: useCallback(() => setHeld(false), []),
+		hold: useCallback(() => setHovering(true), []),
+		release: useCallback(() => setHovering(false), []),
 		rearm: useCallback(() => setRearmCount(count => count + 1), []),
 		holdUntilPointerUp,
 	};
