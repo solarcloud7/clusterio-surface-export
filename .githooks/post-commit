@@ -1,0 +1,53 @@
+#!/bin/sh
+# post-commit — refresh the graphify code graph after a commit.
+# requires: graphify-out/graph.json already built in this working tree; a resolvable graphify binary
+# produces: rebuilt graphify-out/{graph.json,graph.html,GRAPH_REPORT.md}; an appended graphify-out/update.log
+# does not: block or fail the commit, build a graph where none exists, run during rebase/merge/cherry-pick,
+#           or overwrite a graph whose rebuild has fewer nodes (graphify refuses; the log records it)
+
+set -u
+
+[ -n "${SKIP_GRAPHIFY:-}" ] && exit 0
+
+repo_root=$(git rev-parse --show-toplevel 2>/dev/null) || exit 0
+cd "$repo_root" || exit 0
+[ -f graphify-out/graph.json ] || exit 0
+
+git_dir=$(git rev-parse --git-dir 2>/dev/null) || exit 0
+for state in rebase-merge rebase-apply CHERRY_PICK_HEAD MERGE_HEAD BISECT_LOG; do
+	[ -e "$git_dir/$state" ] && exit 0
+done
+
+graphify_bin=""
+if command -v graphify >/dev/null 2>&1; then
+	graphify_bin=$(command -v graphify)
+elif [ -f graphify-out/.graphify_python ]; then
+	scripts_dir=$(dirname "$(cygpath -u "$(cat graphify-out/.graphify_python)" 2>/dev/null || cat graphify-out/.graphify_python)")
+	[ -x "$scripts_dir/graphify" ] && graphify_bin="$scripts_dir/graphify"
+	[ -x "$scripts_dir/graphify.exe" ] && graphify_bin="$scripts_dir/graphify.exe"
+fi
+
+log=graphify-out/update.log
+if [ -z "$graphify_bin" ]; then
+	printf '%s  SKIP no graphify binary on PATH or beside .graphify_python\n' \
+		"$(date -u +%Y-%m-%dT%H:%M:%SZ)" >>"$log"
+	exit 0
+fi
+
+lock=graphify-out/.update.lock
+mkdir "$lock" 2>/dev/null || exit 0
+
+if [ -f "$log" ] && [ "$(wc -c <"$log")" -gt 200000 ]; then
+	tail -c 100000 "$log" >"$log.tmp" && mv "$log.tmp" "$log"
+fi
+
+{
+	printf '%s  commit %s on %s\n' \
+		"$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+		"$(git rev-parse --short HEAD)" \
+		"$(git rev-parse --abbrev-ref HEAD)"
+	"$graphify_bin" update . 2>&1 | sed 's/^/    /'
+	rmdir "$lock" 2>/dev/null
+} >>"$log" 2>&1 &
+
+exit 0

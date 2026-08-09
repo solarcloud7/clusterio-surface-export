@@ -247,6 +247,11 @@ hands-on E2E checklist, one doc); repository test layout and entry points are in
   names Y's actual value, read this session; test pins use PRODUCTION-shaped values verified against the
   real library; DI tests get MUTATION-KILL verification (break the branch AND each sibling protection
   alone — every assertion must carry its own weight). Full checklist: the `/di-change` skill.
+- **Graphify freshness is a git hook**, not a habit: `git config core.hooksPath .githooks` once per clone, and
+  `.githooks/post-commit` rebuilds the code graph in the background after every commit. It no-ops where no
+  `graphify-out/graph.json` exists (fresh clones, CI, worktrees), never fails a commit, and appends every run
+  to `graphify-out/update.log` — read that log, not the graph's mtime, to see whether a rebuild was refused.
+  `SKIP_GRAPHIFY=1 git commit …` opts out.
 - **Working hygiene:** run `./tools/check-pr-scope.ps1` before editing and again before opening a PR; commit
   the real change before deliberately reverting/mutating it for a regression-teeth check (so the implementation
   cannot be lost during teeth testing); leave `package-lock.json` byte-identical outside approved dependency
