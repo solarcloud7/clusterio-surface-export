@@ -1,6 +1,7 @@
 
-import type { JsonObject, LogEvent, TransferSummary, ExportMetrics, ImportMetrics } from "./view-models";
-import type { GanttRowInput, GanttRow } from "./view-models";
+import type { JsonObject, LogEvent, TransferSummary } from "./view-models";
+import type { GanttRow, TimelineAttribution } from "./view-models";
+import { buildTransferTimeline, toGanttGeometry, type TimelineEventInput } from "../shared/transfer-timeline";
 
 // Type-safe helpers for accessing JsonObject properties
 function getString(obj: JsonObject, key: string, fallback: string): string;
@@ -87,15 +88,6 @@ export function mergeTransferSummary(existing: TransferSummary[], incoming: Tran
 	return Array.from(byId.values()).sort((a, b) => (b.startedAt || 0) - (a.startedAt || 0));
 }
 
-export function humanizeMetricKey(key: string) {
-	return String(key || "")
-		.replace(/_/g, " ")
-		.replace(/([a-z])([A-Z])/g, "$1 $2")
-		.replace(/\s+/g, " ")
-		.trim()
-		.replace(/^./, text => text.toUpperCase());
-}
-
 export function formatDuration(durationMs: number | null) {
 	if (typeof durationMs !== "number" || Number.isNaN(durationMs)) {
 		return "-";
@@ -163,231 +155,23 @@ export function buildOperationCountRows(exportData: JsonObject | null | undefine
 	return rows;
 }
 
-export function buildGanttRows(events: Array<LogEvent>, detailedSummary: JsonObject | null): { totalMs: number; rows: GanttRow[] } {
-	// Produce one row per named phase across all events.
-	// Each row: { key, label, isEvent, indent, startMs, endMs, durationMs, color }
-	// All times are absolute ms from transfer start (elapsedMs of first event = 0).
-	const rows: GanttRowInput[] = [];
-	let totalMs = 0;
-
-	// Pre-pass: map eventType → elapsedMs so the import waterfall can anchor its sub-phases to the
-	// "import_started" event (the true segment start) and lay them FORWARD, instead of back-anchoring
-	// each phase to where the segment ended (which made phases overlap).
-	const eventElapsedMs: Record<string, number> = {};
-	for (const ev of events || []) {
-		if (ev && typeof ev.elapsedMs === "number" && ev.eventType) {
-			eventElapsedMs[String(ev.eventType)] = ev.elapsedMs;
-		}
-	}
-
-	for (const event of events || []) {
-		const elapsedMs = typeof event?.elapsedMs === "number" ? event.elapsedMs : null;
-		const isFailure = String(event?.eventType || "").includes("failed") || String(event?.eventType || "").includes("error");
-		const isSuccess = String(event?.eventType || "").includes("completed") || String(event?.eventType || "").includes("success");
-		const color = isFailure ? "red" : isSuccess ? "green" : "blue";
-
-		// Event anchor row (marker only, no duration bar)
-		rows.push({ key: `event:${event?.eventType}:${elapsedMs}`, label: event?.eventType || "event",
-			isEvent: true, indent: 0, startMs: elapsedMs ?? 0, endMs: elapsedMs ?? 0,
-			durationMs: null, color });
-		if (elapsedMs !== null) totalMs = Math.max(totalMs, elapsedMs);
-
-		// Export sub-phases (on transfer_created)
-		// These phases all ENDED at transfer_created — place them backward from eventStart.
-		// Sequential order: [lock (includes async export)] → [wait for store] → transfer_created marker.
-		// instanceAsyncExportMs is a sub-component of requestExportAndLockMs (async export runs
-		// inside the lock RTT), shown as an indented sub-bar at the end of the lock phase.
-		const exportMetrics = event?.exportMetrics
-			|| (event?.eventType === "transfer_created" ? detailedSummary?.export || null : null);
-		if (exportMetrics && typeof exportMetrics === "object") {
-			const eventStart = elapsedMs ?? 0;
-			const em = exportMetrics as Partial<ExportMetrics>;
-			// Number(... ?? 0): typed access catches field-name drift, while the explicit coercion keeps
-			// the old getProp robustness — legacy persisted logs may store these as numeric strings, and
-			// an unconverted string would break the timeline math below (e.g. string concat in cursor + dur).
-			const lockMs = Number(em.requestExportAndLockMs ?? 0);
-			const storeMs = Number(em.waitForControllerStoreMs ?? 0);
-			const asyncMs = Number(em.instanceAsyncExportMs ?? 0);
-			const ticks = Number(em.instanceAsyncExportTicks ?? 0);
-			// storeMs ends at eventStart; lockMs ends where storeMs begins.
-			const lockEnd = eventStart - storeMs;
-			const lockStart = lockEnd - lockMs;
-			// Controller prep fills the gap from t=0 to lockStart, anchoring the chart origin.
-			if (lockStart > 1) {
-				rows.push({ key: `export:prep:${eventStart}`, label: "Controller prep",
-					isEvent: false, indent: 1, startMs: 0, endMs: lockStart,
-					durationMs: lockStart, color: "exportPrep" });
-			}
-			if (lockMs > 0) {
-				// Split lock into sequential non-overlapping bars: RCON overhead → async export
-				const overheadMs = asyncMs > 0 ? Math.max(0, lockMs - asyncMs) : lockMs;
-				const asyncStart = lockStart + overheadMs;
-				if (overheadMs > 0) {
-					rows.push({ key: `export:queue:${eventStart}`, label: "Queue + RCON",
-						isEvent: false, indent: 1, startMs: lockStart, endMs: asyncStart,
-						durationMs: overheadMs, color: "exportQueue" });
-				}
-				if (asyncMs > 0) {
-					const asyncLabel = ticks > 0 ? `Async export (${ticks.toLocaleString()} ticks)` : "Async export";
-					rows.push({ key: `export:async:${eventStart}`, label: asyncLabel,
-						isEvent: false, indent: 1, startMs: asyncStart, endMs: lockEnd,
-						durationMs: asyncMs, color: "exportAsync" });
-				}
-				totalMs = Math.max(totalMs, lockEnd);
-			}
-			if (storeMs > 0) {
-				rows.push({ key: `export:store:${eventStart}`, label: "Wait for store",
-					isEvent: false, indent: 1, startMs: lockEnd, endMs: eventStart,
-					durationMs: storeMs, color: "exportStore" });
-				totalMs = Math.max(totalMs, eventStart);
-			}
-		}
-
-		// Import sub-phases. Preferred path: real per-phase start offsets (phaseSpans) laid FORWARD
-		// from the import_started segment anchor — a true waterfall. Fallback (legacy logs with no
-		// spans): the old back-anchored cursor that ends tiles→entities→fluids at this event.
-		if (event?.importMetrics && typeof event.importMetrics === "object") {
-			const m = event.importMetrics as Partial<ImportMetrics>;
-			const eventStart = elapsedMs ?? 0;
-			const spans = Array.isArray(m.phaseSpans) ? m.phaseSpans : null;
-			if (spans && spans.length) {
-				const totalImportMs = Number(m.total_ms ?? 0);
-				// Start-anchor the import block at import_started; it begins with the chunked-delivery span, then
-				// queue and the import phases; a derived Round-trip bar (below) absorbs the cross-clock residual.
-				// The gap before the block is platform-data delivery to the target. Clamp to import_started
-				// so the block can never start before the import actually began.
-				const importStartedMs = typeof eventElapsedMs["import_started"] === "number"
-					? eventElapsedMs["import_started"] : null;
-				const segStart = importStartedMs != null ? importStartedMs : eventStart - totalImportMs;
-				const countLabel = (base: string, count: number) =>
-					count > 0 ? `${base} (${count.toLocaleString()})` : base;
-				const spanLabel = (name: string) => {
-					switch (name) {
-						case "delivery": return "Delivery";
-						case "queue": return "Queue wait";
-						case "tiles": return countLabel("Tiles", Number(m.tiles_placed ?? 0));
-						case "entities": return countLabel("Entities", Number(m.entities_created ?? 0));
-						case "fluids": return countLabel("Fluids", Number(m.fluids_restored ?? 0));
-						case "belts": return countLabel("Belts", Number(m.belt_items_restored ?? 0));
-						case "state": return countLabel("State", Number(m.circuits_connected ?? 0));
-						case "inventories": return "Inventories";
-						case "validation": return "Validation";
-						default: return humanizeMetricKey(name);
-					}
-				};
-				for (const sp of [...spans].sort((a, b) => a.startOffsetMs - b.startOffsetMs)) {
-					const startMs = segStart + Number(sp.startOffsetMs || 0);
-					const dur = Number(sp.durationMs || 0);
-					// Floor the bar to >=1ms so single-tick (0ms) phases remain visible as a sliver.
-					const endMs = startMs + Math.max(dur, 1);
-					rows.push({ key: `import:${sp.name}:${eventStart}`, label: spanLabel(sp.name),
-						isEvent: false, indent: 1, startMs, endMs,
-						durationMs: dur || null, color: sp.name });
-					totalMs = Math.max(totalMs, endMs);
-				}
-				const lastSpanEnd = segStart + spans.reduce((mx, s) => Math.max(mx, Number(s.startOffsetMs || 0) + Number(s.durationMs || 0)), 0);
-				// Derived round-trip residual: validation_received (eventStart) is logged after the Lua
-				// super-block finishes; the leftover = network round-trip + finalize tail + clock skew.
-				// Render a muted bar so the segments sum to the total instead of leaving a blank.
-				const roundtripMs = eventStart - lastSpanEnd;
-				if (roundtripMs > 2) {
-					rows.push({ key: `import:roundtrip:${eventStart}`, label: "Round-trip",
-						isEvent: false, indent: 1, startMs: lastSpanEnd, endMs: eventStart,
-						durationMs: roundtripMs, color: "roundtrip" });
-				}
-				totalMs = Math.max(totalMs, eventStart);
-			} else {
-				// Legacy fallback (no phaseSpans): back-anchored cursor ending at eventStart.
-				const tilesMs = Number(m.tiles_ms ?? 0);
-				const tilesCount = Number(m.tiles_placed ?? 0);
-				const entitiesMs = Number(m.entities_ms ?? 0);
-				const entitiesCount = Number(m.entities_created ?? 0);
-				const fluidsMs = Number(m.fluids_ms ?? 0);
-				const fluidsCount = Number(m.fluids_restored ?? 0);
-				const totalImportMs = Number(m.total_ms ?? 0);
-				if (totalImportMs > 0) {
-					totalMs = Math.max(totalMs, eventStart);
-					let cursor = eventStart - totalImportMs;
-					if (tilesMs > 0 || tilesCount > 0) {
-						const label = tilesCount > 0 ? `Tiles (${tilesCount.toLocaleString()})` : "Tiles";
-						const dur = tilesMs || 1;
-						rows.push({ key: `import:tiles:${eventStart}`, label,
-							isEvent: false, indent: 1, startMs: cursor, endMs: cursor + dur,
-							durationMs: tilesMs || null, color: "tiles" });
-						cursor += dur;
-					}
-					if (entitiesMs > 0 || entitiesCount > 0) {
-						const label = entitiesCount > 0 ? `Entities (${entitiesCount.toLocaleString()})` : "Entities";
-						const dur = entitiesMs || 1;
-						rows.push({ key: `import:entities:${eventStart}`, label,
-							isEvent: false, indent: 1, startMs: cursor, endMs: cursor + dur,
-							durationMs: entitiesMs || null, color: "entities" });
-						cursor += dur;
-					}
-					if (fluidsMs > 0 || fluidsCount > 0) {
-						const label = fluidsCount > 0 ? `Fluids (${fluidsCount.toLocaleString()})` : "Fluids";
-						const dur = fluidsMs || 1;
-						rows.push({ key: `import:fluids:${eventStart}`, label,
-							isEvent: false, indent: 1, startMs: cursor, endMs: cursor + dur,
-							durationMs: fluidsMs || null, color: "fluids" });
-					}
-				}
-			}
-		}
-
-		// Transfer-level phases (transmission, validation, cleanup)
-		if (typeof event?.transmissionMs === "number" && event.transmissionMs > 0) {
-			const eventStart = elapsedMs ?? 0;
-			rows.push({ key: `phase:transmission:${eventStart}`, label: "Transmission",
-				isEvent: false, indent: 1, startMs: eventStart - event.transmissionMs, endMs: eventStart,
-				durationMs: event.transmissionMs, color: "transmission" });
-			totalMs = Math.max(totalMs, eventStart);
-		}
-		// Skip the legacy back-anchored validation bar when the import waterfall already positions a
-		// "validation" span (otherwise validation would be drawn twice).
-		const importSpansForGuard = (event?.importMetrics as Partial<ImportMetrics> | undefined)?.phaseSpans;
-		const hasValidationSpan = Array.isArray(importSpansForGuard)
-			&& importSpansForGuard.some((s) => s.name === "validation");
-		if (typeof event?.validationMs === "number" && event.validationMs > 0 && !hasValidationSpan) {
-			const eventStart = elapsedMs ?? 0;
-			rows.push({ key: `phase:validation:${eventStart}`, label: "Validation",
-				isEvent: false, indent: 1, startMs: eventStart - event.validationMs, endMs: eventStart,
-				durationMs: event.validationMs, color: "validation" });
-			totalMs = Math.max(totalMs, eventStart);
-		}
-		if (event?.phases && typeof event.phases === "object") {
-			const eventStart = elapsedMs ?? 0;
-			// Skip phases already captured by individual event fields at correct timeline positions:
-			// transmissionMs comes from import_started.transmissionMs
-			// validationMs comes from validation_received.validationMs
-			const skipFromPhaseSummary = new Set(["transmissionMs", "validationMs"]);
-			for (const [k, v] of Object.entries(event.phases)) {
-				if (skipFromPhaseSummary.has(k)) continue;
-				if (typeof v === "number" && v > 0) {
-					const phaseKey = String(k).replace(/Ms$/, "");
-					rows.push({ key: `phase:${k}:${eventStart}`, label: humanizeMetricKey(phaseKey),
-						isEvent: false, indent: 1, startMs: eventStart - v, endMs: eventStart,
-						durationMs: v, color: phaseKey });
-					totalMs = Math.max(totalMs, eventStart);
-				}
-			}
-		}
-	}
-
-	const scale = totalMs > 0 ? totalMs : 1;
+// Thin wrapper over shared/transfer-timeline.ts: attaches the shared bar geometry and a
+// render-unique key. Assembly rules, palette and wording all live in the shared module.
+export function buildGanttRows(events: Array<LogEvent>, detailedSummary: JsonObject | null): {
+	totalMs: number; rows: GanttRow[]; attribution: TimelineAttribution;
+} {
+	const timeline = buildTransferTimeline(events as TimelineEventInput[], detailedSummary);
 	return {
-		totalMs,
-		rows: rows.map((row, i): GanttRow => {
-			const startMs = row.startMs;
-			const endMs = row.endMs;
+		totalMs: timeline.totalMs,
+		attribution: timeline.attribution,
+		rows: timeline.rows.map((row, i): GanttRow => {
+			const geometry = toGanttGeometry(row, timeline.totalMs);
 			return {
 				...row,
 				key: `${row.key}#${i}`,
-				ganttStartPct: Math.max(0, Math.min(100, (startMs / scale) * 100)),
-				ganttWidthPct: endMs > startMs
-					? Math.max(0.8, Math.min(100 - (startMs / scale) * 100, ((endMs - startMs) / scale) * 100))
-					: 0,
-				ganttMarkerPct: Math.max(0, Math.min(100, (endMs / scale) * 100)),
+				ganttStartPct: geometry.startPct,
+				ganttWidthPct: geometry.widthPct,
+				ganttMarkerPct: geometry.markerPct,
 			};
 		}),
 	};

@@ -14,6 +14,8 @@ import {
 	Typography,
 	message as antMessage,
 } from "antd";
+import { describeAttribution, TIMELINE_PALETTE, tickHatch } from "../shared/transfer-timeline";
+import { formatMs } from "../shared/utils";
 import type { ColumnsType } from "antd/es/table";
 import { InfoCircleOutlined, DownloadOutlined } from "@ant-design/icons";
 import {
@@ -32,68 +34,71 @@ import {
 type ExpectedActualRow,
 type FluidInventoryRow,
 } from "./utils";
-import type { JsonObject, LogEvent, SurfaceExportPlugin, SurfaceExportState, TransferSummary, GanttRow } from "./view-models";
+import type {
+	JsonObject, LogEvent, SurfaceExportPlugin, SurfaceExportState, TransferSummary, GanttRow, TimelineAttribution,
+} from "./view-models";
 
 const { Text } = Typography;
 
-function formatMsLabel(ms: number | null) {
-	if (ms == null) return "";
-	return ms >= 1000 ? `${(ms / 1000).toFixed(1)}s` : `${Math.round(ms)}ms`;
-}
-
-
-const TIMELINE_COLORS: Record<string, string> = {
-	red: "#ff4d4f", green: "#52c41a", blue: "#1890ff",
-	// Import waterfall — distinct hues of blue/cyan→indigo in pipeline order so the cascade reads
-	// segment-by-segment. Unknown color keys fall back to blue (see PhaseTimeline lookup).
-	tiles: "#36cfc9", entities: "#1890ff", belts: "#40a9ff", state: "#597ef7",
-	inventories: "#2f54eb", validation: "#85a5ff", fluids: "#08979c",
-	// Transfer-level segments
-	transmission: "#13c2c2", cleanup: "#73d13d",
-	// Cross-machine gap decomposition: delivery (RCON bottleneck, prominent), queue (async wait),
-	// roundtrip (muted slate — derived residual, not a direct measurement).
-	delivery: "#1d39c4", queue: "#adc6ff", roundtrip: "#737d8c",
-	// Export sub-phases (when an exportMetrics block is present)
-	exportPrep: "#bae0ff", exportQueue: "#91caff", exportAsync: "#69c0ff", exportStore: "#4096ff",
-};
-
-// Lightweight CSS bar timeline. Each row is positioned from the ganttStartPct/ganttWidthPct/
-// ganttMarkerPct that buildGanttRows already computes — duration phases render as bars, events as
-// markers. Replaces the former mermaid gantt (a multi-MB dep for one diagram).
-function PhaseTimeline({ rows, totalMs }: { rows: GanttRow[]; totalMs: number }) {
+// Lightweight CSS bar timeline. Palette, hatch, geometry and warning wording all come from the
+// shared timeline module — this component only renders them. Replaces the former mermaid gantt
+// (a multi-MB dep for one diagram).
+function PhaseTimeline({ rows, totalMs, attribution }: {
+	rows: GanttRow[]; totalMs: number; attribution?: TimelineAttribution;
+}) {
 	if (!rows || rows.length === 0 || totalMs <= 0) {
 		return <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="No transfer flow events available" />;
 	}
+	const notice = attribution ? describeAttribution(attribution) : null;
 	return (
 		<div className="surface-export-timeline">
+			{notice ? (
+				<Alert
+					type="warning"
+					showIcon
+					style={{ marginBottom: 8 }}
+					message={notice.headline}
+					description={notice.detail}
+				/>
+			) : null}
 			{rows.map((row) => {
-				const isEvent = row.isEvent;
+				const isEvent = row.kind === "event";
 				const label = row.label;
 				const durationMs = row.durationMs;
 				const indent = row.indent;
-				const color = TIMELINE_COLORS[row.color] ?? TIMELINE_COLORS.blue;
+				const color = TIMELINE_PALETTE[row.color] ?? TIMELINE_PALETTE.blue;
 				const startPct = row.ganttStartPct;
 				const widthPct = row.ganttWidthPct;
 				const markerPct = row.ganttMarkerPct;
 				const endMs = row.endMs;
-				const timeLabel = durationMs != null ? formatMsLabel(durationMs) : "";
+				const timeLabel = formatMs(durationMs);
+				// A tick-derived bar is hatched so it can never be mistaken for elapsed time at a glance.
+				const isTickDerived = row.kind === "tickDerived";
+				const isGap = row.kind === "residual" || row.kind === "detailGap";
+				const background = isTickDerived ? tickHatch(color) : color;
+				const tooltip = [`${label}${timeLabel ? ` — ${timeLabel}` : ""}`, row.note].filter(Boolean).join("\n");
 				return (
 					<div key={row.key} className="surface-export-timeline-row">
-						<div className="surface-export-timeline-label" style={{ paddingLeft: 4 + indent * 14 }} title={label}>
-							<Text strong={isEvent} style={{ fontSize: 12 }}>{label}</Text>
+						<div className="surface-export-timeline-label" style={{ paddingLeft: 4 + indent * 14 }} title={tooltip}>
+							<Text strong={isEvent} type={isGap ? "warning" : undefined} style={{ fontSize: 12 }}>
+								{label}
+							</Text>
 						</div>
 						<div className="surface-export-timeline-track">
 							{isEvent ? (
 								<span
 									className="surface-export-timeline-marker"
 									style={{ left: `${markerPct}%`, background: color }}
-									title={`${label} @ ${formatMsLabel(endMs)}`}
+									title={`${label} @ ${formatMs(endMs)}`}
 								/>
 							) : (
 								<span
 									className="surface-export-timeline-bar"
-									style={{ left: `${startPct}%`, width: `${Math.max(widthPct, 0.6)}%`, background: color }}
-									title={`${label}${timeLabel ? ` — ${timeLabel}` : ""}`}
+									style={{
+										left: `${startPct}%`, width: `${widthPct}%`, background,
+										border: isTickDerived ? `1px solid ${color}` : undefined,
+									}}
+									title={tooltip}
 								/>
 							)}
 						</div>
@@ -105,7 +110,7 @@ function PhaseTimeline({ rows, totalMs }: { rows: GanttRow[]; totalMs: number })
 			})}
 			<div className="surface-export-timeline-axis">
 				<Text type="secondary" style={{ fontSize: 11 }}>0</Text>
-				<Text type="secondary" style={{ fontSize: 11 }}>{formatMsLabel(totalMs)}</Text>
+				<Text type="secondary" style={{ fontSize: 11 }}>{formatMs(totalMs)}</Text>
 			</div>
 		</div>
 	);
@@ -611,7 +616,11 @@ export default function TransactionLogsTab({ plugin, state }: { plugin: SurfaceE
 									<InfoCircleOutlined />
 								</Tooltip>
 							</Space>
-							<PhaseTimeline rows={flowTimeline?.rows || []} totalMs={flowTimeline?.totalMs || 0} />
+							<PhaseTimeline
+								rows={flowTimeline?.rows || []}
+								totalMs={flowTimeline?.totalMs || 0}
+								attribution={flowTimeline?.attribution}
+							/>
 						</Space>
 					</Card>
 

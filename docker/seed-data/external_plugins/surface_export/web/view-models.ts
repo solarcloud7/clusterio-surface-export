@@ -18,17 +18,11 @@ export type LogEvent = {
 	message?: string;
 };
 
-/** A timeline row as pushed inside buildGanttRows, before the percentage columns are computed. */
-export interface GanttRowInput {
-	key: string;
-	label: string;
-	isEvent: boolean;
-	indent: number;
-	startMs: number;
-	endMs: number;
-	durationMs: number | null;
-	color: string;
-}
+export type { SpanKind, TimelineRow, TimelineAttribution } from "../shared/transfer-timeline";
+import type { TimelineRow } from "../shared/transfer-timeline";
+
+/** A timeline row before the percentage columns are computed. */
+export type GanttRowInput = TimelineRow;
 
 /** A timeline row as returned by buildGanttRows — the input plus its computed gantt percentages. */
 export interface GanttRow extends GanttRowInput {
