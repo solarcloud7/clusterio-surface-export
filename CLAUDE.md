@@ -240,7 +240,18 @@ hands-on E2E checklist, one doc); repository test layout and entry points are in
   cannot be lost during teeth testing); leave `package-lock.json` byte-identical outside approved dependency
   updates. **Subagents never switch this checkout's branch** — the checkout IS the live cluster's
   bind-mounted plugin source; agents that need to build or mutate code work in isolated copies outside the
-  repo (a reviewer agent switched the checkout to main mid-review, 2026-08-04).
+  repo (a reviewer agent switched the checkout to main mid-review, 2026-08-04). **The same rule covers
+  BUILDS, DEPLOYS and RESTARTS** — `deploy.ps1`, `build-plugin.ps1` and `docker restart` all act on whatever
+  that checkout holds right now, which may be another agent's half-finished edit. Before any of them, check
+  the checkout is idle (`git status`, plus `git reflog --date=iso -3` for commits in the last few minutes);
+  if it is not, do not touch it. A measurement taken while someone else owns that checkout is not evidence
+  (2026-08-09: a deploy + two controller restarts landed under an agent mid-feature, and the confounded run
+  reported the opposite of the clean rerun).
+- **Reproduce the reported symptom before trusting the diagnosis.** Phase A of any bug fix is the repro, not
+  the fix — the same ordering [docs/testing.md](docs/testing.md) already requires of a known loss class,
+  widened to any report. A cheap decisive check outranks the most plausible explanation whenever one is
+  available (2026-08-09: three merged PRs, each fixing a real bug, none fixing the reported one — the ten
+  minute repro afterwards showed the update was never broadcast at all).
 
 **Evidence discipline** (deliberately NOT mechanized — owner ruling 2026-07-31: we do not add lint rules to
 prop up bad infrastructure, and a guard that checks a version string while claiming to check evidence is worse
