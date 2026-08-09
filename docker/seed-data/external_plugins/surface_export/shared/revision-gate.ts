@@ -30,3 +30,27 @@ export function isFreshRevision(revision: unknown, watermark: number): boolean {
 	const value = Number(revision);
 	return Number.isFinite(value) && value > watermark;
 }
+
+/** What to do with a fetched snapshot: whether to show it, and what watermark it establishes. */
+export type SnapshotDecision = {
+	apply: boolean;
+	/** The revision the snapshot establishes, or null when it carries none to establish. */
+	watermark: number | null;
+};
+
+/**
+ * Whether a fetched snapshot should replace what the page is showing.
+ *
+ * A push is one step of a stream and must be ordered to be meaningful. A snapshot is the whole
+ * state, fetched on demand, so it is refused only when a push has already delivered something
+ * strictly newer. One that carries no orderable revision is still shown: refusing it would blank
+ * the page to protect an ordering that cannot be computed either way.
+ */
+export function decideSnapshot(revision: unknown, watermark: number): SnapshotDecision {
+	// Only a finite number orders anything. Coercing first would read null and "" as revision zero,
+	// which every watermark outranks — the exact reading that blanked the tree.
+	if (typeof revision !== "number" || !Number.isFinite(revision)) {
+		return { apply: true, watermark: null };
+	}
+	return revision > watermark ? { apply: true, watermark: revision } : { apply: false, watermark: null };
+}

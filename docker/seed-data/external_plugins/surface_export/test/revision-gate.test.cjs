@@ -22,7 +22,11 @@ const fs = require("node:fs");
 const path = require("node:path");
 
 const distNode = path.join(__dirname, "..", "dist", "node");
-const { freshRevisionWatermarks, isFreshRevision } = require(path.join(distNode, "shared", "revision-gate.js"));
+const {
+	decideSnapshot,
+	freshRevisionWatermarks,
+	isFreshRevision,
+} = require(path.join(distNode, "shared", "revision-gate.js"));
 
 const webIndex = fs.readFileSync(path.join(__dirname, "..", "web", "index.tsx"), "utf8");
 
@@ -79,13 +83,28 @@ test("across a session boundary, the new session's revisions are applied", () =>
 	assert.deepEqual(cleared.applied, [1, 2, 3], "clearing on reconnect restores delivery");
 });
 
-test("the page clears its watermarks before resubscribing", () => {
+test("only a fresh connect clears the watermarks, and it clears them before resubscribing", () => {
 	// Not reachable from dist/node: pinned against the source, like the transfer-id archival
 	// call-ordering pin in transaction-persist-path.test.cjs.
+	//
+	// Scoped to connect on purpose. A resume continues a session the controller still holds, so its
+	// counters never restarted; the connector also replays only unacknowledged messages, and
+	// handleLogUpdate dedupes against the last timeline entry alone — clearing on resume would let
+	// an already-applied replay append a duplicate audit row.
 	assert.match(
 		webIndex,
-		/freshRevisionWatermarks\(\)\);[\s\S]{0,120}?this\.syncLiveState\(\)/,
-		"onControllerConnectionEvent must clear the watermarks before it resubscribes",
+		/if\s*\(event === "connect"\)\s*\{[^}]*freshRevisionWatermarks\(\)/,
+		"the reset must sit in the connect-only branch, not the shared connect/resume one",
+	);
+	assert.match(
+		webIndex,
+		/freshRevisionWatermarks\(\)\);[\s\S]{0,200}?this\.syncLiveState\(\)/,
+		"the watermarks must be cleared before the resubscribe",
+	);
+	assert.equal(
+		(webIndex.match(/freshRevisionWatermarks\(/g) || []).length,
+		1,
+		"one reset site — a second would be a second answer to where the session boundary is",
 	);
 });
 
@@ -95,8 +114,40 @@ test("every live channel gates through the shared rule", () => {
 		/revision\s*<=\s*this\.state\.last/,
 		"a bare revision comparison bypasses the session-boundary rule",
 	);
-	const gateUses = (webIndex.match(/isFreshRevision\(/g) || []).length;
-	assert.equal(gateUses, 4, "three live channels plus the snapshot fetch must each gate on the rule");
+	const pushGates = (webIndex.match(/isFreshRevision\(/g) || []).length;
+	assert.equal(pushGates, 3, "each of the three live channels must gate its pushes on the rule");
+	const snapshotGates = (webIndex.match(/decideSnapshot\(/g) || []).length;
+	assert.equal(snapshotGates, 1, "the snapshot fetch gates on the snapshot rule, not the push rule");
+});
+
+test("a snapshot is refused only when a push already delivered something newer", () => {
+	assert.deepEqual(decideSnapshot(6, 5), { apply: true, watermark: 6 }, "newer snapshot is shown and sets the mark");
+	assert.deepEqual(decideSnapshot(5, 5), { apply: false, watermark: null }, "a push at this revision already won");
+	assert.deepEqual(decideSnapshot(4, 5), { apply: false, watermark: null }, "an overtaken snapshot stays refused");
+});
+
+test("a snapshot carrying no orderable revision is still shown", () => {
+	// The whole tree renders from this response. Refusing it because its revision cannot be ordered
+	// would leave the page blank with no error — protecting an ordering that is unavailable either
+	// way. It is shown, and it establishes no watermark.
+	for (const value of [undefined, null, "", "abc", NaN, Infinity]) {
+		assert.deepEqual(
+			decideSnapshot(value, 47),
+			{ apply: true, watermark: null },
+			`${String(value)} must not blank the tree`,
+		);
+	}
+});
+
+test("the snapshot fetch reads a missing revision as unorderable, not as zero", () => {
+	// The defect this replaced: `getProp(treeResponse, "revision", 0)` turned an absent revision
+	// into 0, which every watermark outranks, so the tree was silently discarded.
+	assert.doesNotMatch(
+		webIndex,
+		/getProp[^\n]*"revision",\s*0\s*\)/,
+		"a zero fallback makes an absent revision look older than everything and drops the tree",
+	);
+	assert.match(webIndex, /getProp<number>\(treeResponse, "revision", NaN\)/);
 });
 
 test("the snapshot fetch advances the tree watermark it consumed", () => {
@@ -104,7 +155,7 @@ test("the snapshot fetch advances the tree watermark it consumed", () => {
 	// measured against a watermark the page has already moved past on screen.
 	assert.match(
 		webIndex,
-		/lastTreeRevision:\s*snapshotRevision/,
+		/lastTreeRevision:\s*snapshot\.watermark/,
 		"refreshSnapshots must record the revision it applied",
 	);
 });
