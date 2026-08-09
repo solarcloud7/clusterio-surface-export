@@ -21,7 +21,7 @@
 import React from "react";
 import { Handle, Position } from "@xyflow/react";
 import { Button, Tag, Tooltip, Typography } from "antd";
-import { DownloadOutlined, PlayCircleOutlined } from "@ant-design/icons";
+import { CaretRightOutlined, DownloadOutlined } from "@ant-design/icons";
 
 import { PLATFORM_LIST_MAX_ROWS, platformHandleId } from "./gateway-graph";
 import type { PlatformLike } from "./gateway-graph";
@@ -82,27 +82,33 @@ function PlatformRow({ platform, instanceId, instanceName, canEdit }: {
 					onClick={() => actions?.onExport(source)}
 				/>
 			</Tooltip>
-			<Tooltip title="Transfer to another instance — or drag this row onto another instance's portal">
-				<Button
-					icon={<PlayCircleOutlined />}
-					size="small"
-					type="primary"
-					disabled={!actions}
-					onClick={() => actions?.onTransfer(source, null)}
-				/>
-			</Tooltip>
-			{/* SOURCE ONLY, and never a target: a platform is a thing you send, not a place you send
+			{/* THE HANDLE IS THE PLAY BUTTON. There used to be both — an antd primary button that opened
+			    the Transfer dialog, and a small dot beside it to drag from — which is two controls for
+			    one action, and the dot was too small to read as an affordance at all. Now the circle
+			    does both: DRAG it onto another instance's portal to transfer there, or CLICK it to open
+			    the dialog and pick a destination (the only route when the destination is off-screen, or
+			    when there is nowhere to drop yet).
+
+			    SOURCE ONLY, and never a target: a platform is a thing you send, not a place you send
 			    something to. Its own `p:` id namespace is what keeps a drag that ends here from being
 			    read as a gateway endpoint — see platformHandleId in gateway-graph.ts, and
 			    isValidConnection on the canvas, which refuses the combination outright. */}
-			<Handle
-				type="source"
-				position={Position.Right}
-				id={platformHandleId(platform.platformIndex)}
-				isConnectable={canEdit}
-				className="surface-export-platform-handle"
-				title={`Drag ${platform.platformName} onto another instance's portal to transfer it`}
-			/>
+			<Tooltip title={`Drag onto another instance's portal to transfer ${platform.platformName} there — or click to choose a destination`}>
+				<Handle
+					type="source"
+					position={Position.Right}
+					id={platformHandleId(platform.platformIndex)}
+					isConnectable={canEdit}
+					className={`surface-export-platform-handle${canEdit ? "" : " surface-export-platform-handle-readonly"}`}
+					onClick={() => actions?.onTransfer(source, null)}
+				>
+					{/* pointer-events are disabled on the caret in CSS, for the same reason the gateway
+					    handles disable them on their icon: it is decoration sitting on the handle's hit
+					    area, and letting it swallow the pointer would make the handle undraggable exactly
+					    where it looks most clickable. */}
+					<CaretRightOutlined />
+				</Handle>
+			</Tooltip>
 		</div>
 	);
 }

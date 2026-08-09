@@ -12,7 +12,7 @@ import {
 	useEdgesState,
 	useNodesState,
 } from "@xyflow/react";
-import type { Connection, Edge, Node } from "@xyflow/react";
+import type { Connection, Edge, FitViewOptions, Node } from "@xyflow/react";
 import { useAccount } from "@clusterio/web_ui";
 
 // React Flow ships its own stylesheet. `dist/style.css` = the required base styles PLUS the default
@@ -25,8 +25,10 @@ import "@xyflow/react/dist/style.css";
 import { PERMISSIONS } from "../../messages";
 import {
 	ALL_HOSTS,
+	CAPTION_HEIGHT,
 	DIMMED_OPACITY,
 	NODE_DIAMETER,
+	PLATFORM_LIST_WIDTH,
 	applyConnect,
 	applyDisconnect,
 	buildGraph,
@@ -37,6 +39,7 @@ import {
 	instanceNodeId,
 	parseEditKey,
 	platformIndexFromHandleId,
+	platformListHeight,
 	preservePositions,
 	sourceHandleId,
 	targetHandleId,
@@ -169,16 +172,15 @@ export default function GatewayCanvas({ plugin, state, onOpenImport }: {
 	// Captured from onInit because this component RENDERS <ReactFlow> rather than sitting inside it,
 	// so `useReactFlow()` has no provider to read here.
 	const flow = useRef<{
-		fitView: (options?: { padding?: number; duration?: number }) => void;
+		// `padding` matches React Flow's own `Padding`: a bare number is a fraction of the viewport, a
+		// `<n>px` string is screen pixels, and the per-side object mixes them. We pass the object form,
+		// because the thing being cleared (the caption above, the platform list below and to the sides)
+		// is a different size on every side.
+		fitView: (options?: FitViewOptions) => void;
 		setCenter?: (x: number, y: number, options?: { zoom?: number; duration?: number }) => void;
 	} | null>(null);
 	const [fitRequest, setFitRequest] = useState(0);
 
-	useEffect(() => {
-		if (fitRequest) {
-			flow.current?.fitView({ padding: 0.2, duration: 300 });
-		}
-	}, [fitRequest]);
 
 	/**
 	 * Node positions save THEMSELVES, on drop.
@@ -224,6 +226,54 @@ export default function GatewayCanvas({ plugin, state, onOpenImport }: {
 
 	const graph = useMemo(() => buildGraph(tree, edits, mode, hostFilter), [tree, edits, mode, hostFilter]);
 	const pending = useMemo(() => dirtyKeys(edits, baseline), [edits, baseline]);
+
+	/**
+	 * Framing that accounts for what hangs OUTSIDE the node boxes.
+	 *
+	 * `fitView` frames `position + measured`, and measured is deliberately just the 150px circle — the
+	 * caption above and the platform list below are absolutely positioned so they cannot drag the
+	 * node's centre around (see PlatformRows.tsx). The cost is that fitView cannot see them, and it
+	 * framed the circles with both platform panels hanging 59px off the pane. Measured, on this
+	 * cluster, at the zoom fitView chose.
+	 *
+	 * PADDING IS IN SCREEN PIXELS but the overhang is in FLOW pixels, and those two only agree at
+	 * zoom 1 — which is why the zoom is pinned rather than the padding merely being made generous. A
+	 * proportional padding would have to be sized for the worst zoom and would waste the viewport at
+	 * every other one.
+	 *
+	 * The bottom is sized from the LONGEST list actually present rather than the 6-row maximum, so a
+	 * cluster of one-platform instances is not framed around room it never uses.
+	 */
+	const fitViewOptions = useMemo((): FitViewOptions => {
+		const longestList = graph.nodes.reduce(
+			(most, node) => Math.max(most, ((node.data.platforms as unknown[]) || []).length),
+			0,
+		);
+		const breathingRoom = 12;
+		// The return annotation is what holds these to React Flow's `${number}px` literal type instead
+		// of letting them widen to plain `string`, which the option does not accept.
+		const px = (value: number): `${number}px` => `${Math.round(value)}px`;
+		return {
+			maxZoom: 1,
+			padding: {
+				x: px((PLATFORM_LIST_WIDTH - NODE_DIAMETER) / 2 + breathingRoom),
+				top: px(CAPTION_HEIGHT + breathingRoom),
+				bottom: px(platformListHeight(longestList) + breathingRoom),
+			},
+		};
+	}, [graph]);
+
+	// Deps are `fitRequest` ALONE, deliberately: this fires when something ASKS to be re-framed, not
+	// whenever the framing options change — the graph is rebuilt on every platform status push, and
+	// listing the options here would yank the viewport back roughly once a second. It still reads the
+	// current options, because React invokes the callback from the render whose deps changed.
+	useEffect(() => {
+		if (fitRequest) {
+			// The SAME options the initial fit uses. Reset means "frame everything", and framing it
+			// differently from how the canvas opens would be two answers to one question.
+			flow.current?.fitView({ ...fitViewOptions, duration: 300 });
+		}
+	}, [fitRequest]);
 
 	/**
 	 * Put every node back on the computed layout and frame them all.
@@ -705,6 +755,7 @@ export default function GatewayCanvas({ plugin, state, onOpenImport }: {
 					// OS preference would render a light canvas inside a permanently dark page.
 					colorMode="dark"
 					fitView
+					fitViewOptions={fitViewOptions}
 					minZoom={0.2}
 				>
 					<Background />

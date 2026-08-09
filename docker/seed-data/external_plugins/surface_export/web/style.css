@@ -385,6 +385,10 @@ body.surface-export-page .site-layout-content-container {
 	gap: 6px;
 	height: 28px;
 	flex-shrink: 0;
+	/* The play/drag circle is absolutely positioned, so it is outside the flex flow and would
+	   otherwise sit ON TOP of the Export button. This reserves its slot: 24px of circle plus the
+	   same 6px gap the flex row uses between everything else. */
+	padding-right: 30px;
 }
 
 /* One line, ellipsised. Platform names are user-supplied and can be any length; wrapping one would
@@ -418,28 +422,60 @@ body.surface-export-page .site-layout-content-container {
 .surface-export-platform-node-more {
 	justify-content: center;
 	opacity: 0.7;
+	/* Spans the full width: it carries no play circle, so there is no slot to reserve. */
+	padding-right: 0;
 }
 
-/* A platform row's drag handle: the affordance for "send this somewhere". Sits ON the panel's right
-   edge, small and unobtrusive until hovered, because there is one per row and four of them shouting
-   would read as damage. */
+/* THE PLAY BUTTON IS THE DRAG HANDLE. It used to be a 10px dot NEXT TO an antd primary button that
+   did the same thing — two controls for one action, and at 10px the dot did not read as an
+   affordance at all. One circle now: drag it to a portal, or click it to pick a destination.
+
+   Sized like an antd `size="small"` control (24px) so it sits level with the Export button beside
+   it rather than looking like a different class of thing. */
 .surface-export-platform-handle {
 	position: absolute;
 	inset: auto;
-	right: -5px;
+	right: 0;
 	top: 50%;
-	width: 10px;
-	height: 10px;
+	width: 24px;
+	height: 24px;
 	border-radius: 50%;
-	border: 1px solid #434343;
+	border: 1px solid #1668dc;
 	background: #1668dc;
-	opacity: 0.55;
+	color: #fff;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	font-size: 13px;
 	transform: translateY(-50%);
-	cursor: crosshair;
+	cursor: grab;
+	transition: box-shadow 120ms ease, background 120ms ease;
 }
 
-.surface-export-platform-node-row:hover .surface-export-platform-handle {
-	opacity: 1;
+.surface-export-platform-handle:hover {
+	background: #3c89e8;
+	box-shadow: 0 0 0 3px rgba(22, 104, 220, 0.28);
+}
+
+.surface-export-platform-handle:active {
+	cursor: grabbing;
+}
+
+/* A read-only account still SEES the control — hiding it would leave the row looking unfinished —
+   but it is inert, and says so. React Flow already refuses the drag via isConnectable. */
+.surface-export-platform-handle-readonly {
+	background: #434343;
+	border-color: #434343;
+	cursor: not-allowed;
+	opacity: 0.5;
+}
+
+/* The caret is decoration on the handle's hit area. Without this it swallows the pointer and the
+   circle becomes undraggable exactly in the middle, where it looks most clickable. Nudged right by
+   a pixel because a triangle centred by its bounding box reads as sitting left of centre. */
+.surface-export-platform-handle > span {
+	pointer-events: none;
+	margin-left: 1px;
 }
 
 /* Zero outgoing links = a platform parked here cannot leave. The old tab said so in words; here it
