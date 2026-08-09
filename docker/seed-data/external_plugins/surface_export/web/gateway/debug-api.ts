@@ -1,41 +1,16 @@
-/**
- * The canvas's console API — `window.surfaceExportCanvas`.
- *
- * WHY A JS COMMAND AND NOT JUST THE PANEL. The panel can only offer what someone thought to put a
- * control on: a number of mock instances, a set of phases. The interesting questions are shapes —
- * a hub and spokes, a chain, two disconnected clusters, one instance with twelve platforms beside
- * one with none, a transfer stuck mid-validation between two named nodes. No number goes up to
- * "that". `load()` takes the whole picture as an object, so the canvas becomes something you can put
- * into an arbitrary state and then look at.
- *
- * It is also what makes the canvas testable without a cluster that happens to be shaped correctly.
- *
- * INSTALLED ALWAYS, not only in debug mode — you need a way to TURN debug mode on, and gating the
- * switch behind itself is a locked door with the key inside. Nothing here is privileged: every
- * object it creates carries a NEGATIVE instance id, which `pending` filters out of the save and
- * `mockLeaksInPayload` re-checks at the write, so the whole API is incapable of changing cluster
- * config. It only changes what this browser draws.
- *
- * Deliberately plain data in, plain data out: a scenario is a literal you can paste into a console,
- * keep in a snippet, or hand to someone else in a bug report.
- */
 
 import { DEFAULT_DEBUG_STATE, SHIP_PHASE_NAMES } from "./debug-mode";
 import type { DebugScenario, DebugState, ReplayCandidate } from "./debug-mode";
 
-/** What the canvas hands the API so it can drive it. */
 export type CanvasDebugControls = {
 	getState: () => DebugState;
 	setState: (next: DebugState) => void;
 	getScenario: () => DebugScenario | null;
 	setScenario: (scenario: DebugScenario | null) => void;
-	/** Real transfers the canvas could draw, newest last — the page's own summaries. */
 	getReplayCandidates: () => ReplayCandidate[];
-	/** A short, human-readable summary of what is currently drawn. */
 	describe: () => Record<string, unknown>;
 };
 
-/** The global name. Long and specific: `window.debug` would be a collision waiting to happen. */
 export const CANVAS_API_GLOBAL = "surfaceExportCanvas";
 
 const HELP = `surfaceExportCanvas — gateway canvas debug API
@@ -73,32 +48,13 @@ A scenario is one object. Instances are referred to by index:
 Nothing here can change cluster config: every scenario instance gets a negative id, which the save
 path filters and then re-checks. It only changes what this browser draws.`;
 
-/**
- * Install the API, returning an uninstall function.
- *
- * Uninstalls on unmount so a stale closure over a dead React tree cannot be called from a console
- * that is still open — the symptom would be commands that "work" and change nothing.
- */
 export function installCanvasDebugApi(controls: CanvasDebugControls): () => void {
-	/**
-	 * The state AFTER React has re-rendered, not before.
-	 *
-	 * Every command here is a `setState`, which does not take effect synchronously — so returning
-	 * `describe()` straight away reported the state the command REPLACED. Measured: `load()` printed
-	 * "live cluster, 2 instances" for a scenario that had just put four on screen, which reads exactly
-	 * like the command silently failing.
-	 *
-	 * Two frames, because one is not enough: the first commits the state, the second is after the
-	 * layout effects that follow it. In a console the promise resolves and prints on its own.
-	 */
 	const settled = () => new Promise<Record<string, unknown>>(resolve => {
 		requestAnimationFrame(() => requestAnimationFrame(() => resolve(controls.describe())));
 	});
 
 	const patch = (fields: Partial<DebugState>) => {
 		const next = { ...controls.getState(), ...fields };
-		// Any command implies wanting to SEE the result. Turning the mode on as a side effect of using
-		// the API avoids the "I called mocks(6) and nothing happened" dead end.
 		controls.setState({ ...next, enabled: true });
 		return settled();
 	};
@@ -124,13 +80,6 @@ export function installCanvasDebugApi(controls: CanvasDebugControls): () => void
 			return patch({ showGeometry: Boolean(on) });
 		},
 
-		/**
-		 * `ships()` = every phase, `ships(false)` = none, `ships("failed", …)` = those.
-		 *
-		 * An unknown phase is REFUSED rather than ignored: `transfer-motion.ts` draws nothing for a
-		 * status it does not map, so a typo would silently produce an empty canvas and look like a bug
-		 * in the ships feature.
-		 */
 		ships(...phases: Array<string | boolean>) {
 			if (phases.length === 1 && phases[0] === false) {
 				return patch({ shipPhases: [] });
@@ -165,12 +114,6 @@ export function installCanvasDebugApi(controls: CanvasDebugControls): () => void
 			return patch({});
 		},
 
-		/**
-		 * Real transfers the canvas can draw, newest last — pick one and `replay()` it.
-		 *
-		 * Filtered to what is actually drawable (a transfer, two endpoints, a status the phase model
-		 * maps) rather than the whole log, so nothing offered here can be selected and then not appear.
-		 */
 		transfers(limit = 20) {
 			const all = controls.getReplayCandidates();
 			const shown = all.slice(-Math.max(1, Number(limit) || 20));
@@ -178,14 +121,6 @@ export function installCanvasDebugApi(controls: CanvasDebugControls): () => void
 			return { drawable: all.length, showing: shown.length, transfers: shown };
 		},
 
-		/**
-		 * Draw REAL transfers as ships, whatever their age.
-		 *
-		 * `replay()` takes the most recent few, `replay(id, …)` takes those, `replay(false)` stops.
-		 * Nothing is synthesized: the endpoints, the status and the id are the ones the controller
-		 * recorded, so a banked failure is replayed with the real transfer behind it and its ship sits
-		 * where the two-phase commit actually left the platform.
-		 */
 		replay(...ids: Array<string | number | boolean>) {
 			if (ids.length === 1 && ids[0] === false) {
 				return patch({ replayTransferIds: [] });
