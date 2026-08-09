@@ -1,21 +1,13 @@
-/**
- * The debug row: controls for the things a real cluster cannot show you.
- *
- * Deliberately a separate strip below the normal toolbar rather than more buttons in it. These are
- * not operator controls — everything here draws something that is not true of the cluster — so they
- * should never be one mis-click away from Reset or Import, and they should be obvious about what
- * they are. Hence the "debug" tag and the ✕ that turns the whole thing off.
- */
 import React from "react";
-import { Button, Space, Switch, Tag, Tooltip, Typography } from "antd";
+import { Button, Checkbox, Space, Switch, Tag, Tooltip, Typography } from "antd";
 import { CloseOutlined, MinusOutlined, PlusOutlined } from "@ant-design/icons";
 
-import { MAX_MOCK_INSTANCES, MAX_MOCK_PLATFORMS } from "./debug-mode";
+import { MAX_MOCK_INSTANCES, MAX_MOCK_PLATFORMS, SHIP_PHASE_NAMES } from "./debug-mode";
+import { shipPhaseFor } from "./transfer-motion";
 import type { DebugState } from "./debug-mode";
 
 const { Text } = Typography;
 
-/** A ± pair around a live count. The count is the label, so the row reads as one control. */
 function Stepper({ label, value, min, max, onChange, tooltip }: {
 	label: string;
 	value: number;
@@ -50,7 +42,6 @@ function Stepper({ label, value, min, max, onChange, tooltip }: {
 export default function DebugPanel({ state, onChange, mockCount }: {
 	state: DebugState;
 	onChange: (next: DebugState) => void;
-	/** How many mock instances are actually on the canvas, for the "not real" warning's count. */
 	mockCount: number;
 }) {
 	const set = (patch: Partial<DebugState>) => onChange({ ...state, ...patch });
@@ -85,10 +76,18 @@ export default function DebugPanel({ state, onChange, mockCount }: {
 					}
 				/>
 
-				<Tooltip title="Draw one ship per transfer phase — in transit, validating, arrived, failed, cleanup failed — without running a transfer. They spread across the available instances, so add mock instances to stop them sharing edges.">
+				<Tooltip title="Draw a fake ship for each selected transfer phase, without running a transfer. They spread across the available instances, so add mock instances to stop them sharing edges.">
 					<span className="surface-export-debug-switch">
-						<Switch size="small" checked={state.showShips} onChange={showShips => set({ showShips })} />
 						<Text className="surface-export-debug-label">ships</Text>
+						<Checkbox.Group
+							className="surface-export-debug-phases"
+							value={state.shipPhases}
+							onChange={shipPhases => set({ shipPhases: shipPhases as string[] })}
+							options={SHIP_PHASE_NAMES.map(name => ({
+								label: shipPhaseFor(name)?.label ?? name,
+								value: name,
+							}))}
+						/>
 					</span>
 				</Tooltip>
 

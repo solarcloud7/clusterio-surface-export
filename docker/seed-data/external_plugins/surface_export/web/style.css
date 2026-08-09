@@ -1,43 +1,19 @@
-/* ── This page's own chrome ───────────────────────────────────────────────── */
 
-/* Clusterio's page frame is pure black (measured rgb(0,0,0)) around a rgb(20,20,20) content card,
-   and the canvas is rgb(20,20,20) too — so on the Gateways tab the frame reads as a black border
-   drawn around the map. Matching it makes the page one surface.
-
-   SCOPED TO A BODY CLASS this page adds on mount and removes on unmount. web/style.css is global
-   once our web module loads, so a bare `.site-layout-content-container` rule would repaint the
-   layout of every other plugin's page for as long as the session lasts. */
 body.surface-export-page .site-layout-content-container {
 	background: #141414;
 }
 
-/* Single column: the transfer form used to sit in a second column, and now lives in a per-row
-   modal, so there is no longer a second thing to place beside the table. */
 .surface-export-tab-body {
 	display: block;
 	min-width: 0;
 }
 
-/* React Flow measures its CONTAINER and renders nothing when that container has no height. Every
-   ancestor here (PageLayout > Tabs > tab panel) is auto-height, so `height: 100%` would resolve
-   against an auto parent and collapse to zero — the canvas would mount, report no error, and paint
-   an empty box. Hence a viewport-relative height.
-
-   The subtrahend is the chrome above the canvas (site header, breadcrumb, page title, version line,
-   tab bar) PLUS deliberate slack: at the old 260px the canvas ran flush to the bottom of the window
-   — measured 1005px tall on a 1265px viewport for a two-node graph, most of it empty. min-height
-   keeps it usable on a short window where the subtraction would otherwise leave nothing. */
 .surface-export-canvas {
 	width: 100%;
 	height: calc(100vh - 380px);
 	min-height: 380px;
 }
 
-/* ── Canvas: edges ────────────────────────────────────────────────────────── */
-
-/* Clicking an edge removes the link, so it advertises that with a pointer and brightens on hover.
-   The widened hit area is set on the edge component (interactionWidth), not here — thickening the
-   drawn line to make it clickable would make every edge shout. */
 .surface-export-edge {
 	transition: opacity 120ms ease;
 }
@@ -46,8 +22,6 @@ body.surface-export-page .site-layout-content-container {
 	opacity: 0.65;
 }
 
-/* The connection line drawn WHILE dragging. Dashes march toward the cursor so an in-progress link
-   reads as in-progress rather than as an edge that already exists. */
 .react-flow__connectionline .animated {
 	stroke-dasharray: 6 4;
 	animation: surface-export-dash 500ms linear infinite;
@@ -57,19 +31,6 @@ body.surface-export-page .site-layout-content-container {
 	to { stroke-dashoffset: -10; }
 }
 
-/* ── Canvas: the transfer ship ────────────────────────────────────────────── */
-
-/* A platform, drawn where its transfer actually is. Rides the edge via CSS motion path — the
-   `offset-path` and `offset-distance` are set inline from the edge's own path string, and THIS is
-   the transition that moves it. Keep the duration in step with SHIP_TRAVEL_MS in
-   gateway/transfer-motion.ts; the constant is what the phase model reasons about.
-
-   `pointer-events: none` — it is a readout, not a control. Without it the ship would swallow clicks
-   meant for the edge underneath, and clicking an edge is how a link is removed. */
-/* A bare circle. It used to be a chip carrying the platform name; two ships on nearby edges then
-   overlapped into an unreadable pile on a real cluster, and the name is available on hover and in
-   the transaction log. What the canvas is uniquely good at is WHERE and WHAT PHASE, so that is all
-   it says: position and colour. */
 .surface-export-ship {
 	position: absolute;
 	top: 0;
@@ -85,30 +46,20 @@ body.surface-export-page .site-layout-content-container {
 	transition-timing-function: ease-in-out;
 }
 
-/* Tone tracks the PHASE, not success alone — an operator watching a transfer needs to tell "moving"
-   from "waiting on the gate" at a glance, since those two look identical if only the position
-   changes and the position is deliberately still while validating. */
 .surface-export-ship-active { color: #1668dc; }
 .surface-export-ship-holding { color: #d89614; }
 .surface-export-ship-success { color: #49aa19; }
 .surface-export-ship-failure { color: #dc4446; }
 
-/* Held at the midpoint while the destination's frozen-world gate runs. The pulse is the ONLY signal
-   that anything is still happening: the ship deliberately does not move during validation, because
-   we do not measure progress through it, and a motionless dot with no pulse reads as stalled. */
 .surface-export-ship-holding {
 	animation: surface-export-ship-pulse 1.1s ease-in-out infinite;
 }
 
-/* Opacity and glow only, deliberately NOT `transform`: the element is positioned by a motion path,
-   which works through the same transform channel. Pulsing brightness cannot collide with it. */
 @keyframes surface-export-ship-pulse {
 	0%, 100% { opacity: 1; box-shadow: 0 0 8px currentColor; }
 	50% { opacity: 0.4; box-shadow: 0 0 2px currentColor; }
 }
 
-/* The ship's colour IS its phase, so the key is part of the feature. Kept low-contrast: it is a
-   reference, not a control, and it sits over the canvas the whole time. */
 .surface-export-legend {
 	display: flex;
 	align-items: center;
@@ -128,8 +79,6 @@ body.surface-export-page .site-layout-content-container {
 	white-space: nowrap;
 }
 
-/* Inherits its colour from the same `surface-export-ship-<tone>` classes the ships use, so the key
-   cannot show one colour while the canvas draws another. */
 .surface-export-legend-dot {
 	width: 9px;
 	height: 9px;
@@ -138,11 +87,6 @@ body.surface-export-page .site-layout-content-container {
 	box-shadow: 0 0 5px currentColor;
 }
 
-/* ── Canvas: instance circles, gateway handles ────────────────────────────── */
-
-/* The host filter fades the nodes it is not focused on (React Flow applies the opacity to the node
-   wrapper, so the caption fades with the gate). Transitioned so switching the filter reads as a
-   change of focus rather than as nodes appearing and disappearing. */
 .react-flow__node-instance {
 	transition: opacity 160ms ease;
 }
@@ -170,13 +114,9 @@ body.surface-export-page .site-layout-content-container {
 	flex-direction: column;
 	align-items: center;
 	gap: 2px;
-	/* Kept clear of the circle's edge so long instance names do not run under the handles. */
 	max-width: 108px;
 }
 
-/* ONE line. Instance names are long and near-identical (“clusterio-host-1-instance-1”), so
-   wrapping pushed four lines of mostly-shared prefix under a shape it was meant to label. The full
-   name is on the element’s title for hover. */
 .surface-export-instance-node-name {
 	font-size: 12px;
 	line-height: 1.3;
@@ -187,7 +127,6 @@ body.surface-export-page .site-layout-content-container {
 	max-width: 100%;
 }
 
-/* Port and status share a second line — both are small qualifiers on the name above. */
 .surface-export-instance-node-meta {
 	display: flex;
 	align-items: center;
@@ -200,9 +139,6 @@ body.surface-export-page .site-layout-content-container {
 	font-size: 10px;
 }
 
-/* React Flow positions handles itself (top/right/bottom/left, centred by its own transform), so
-   only the size and skin are set here — overriding position would fight the library. Enlarged from
-   the 6px default to hold a 26px gateway icon and to give a comfortable drag target. */
 .surface-export-gw-handle {
 	width: 32px;
 	height: 32px;
@@ -214,31 +150,21 @@ body.surface-export-page .site-layout-content-container {
 	justify-content: center;
 }
 
-/* The target handle sits under the source one and is never seen; it exists so a gateway can be a
-   destination as well as an origin. Same size, so the drop target matches what is drawn. */
 .surface-export-gw-handle-target {
 	background: transparent;
 	border-color: transparent;
 }
 
-/* The icon is decoration on top of the handle's hit area. Without this it swallows the pointer and
-   the handle becomes undraggable exactly where it looks most clickable. */
 .surface-export-gw-handle-source > span {
 	pointer-events: none;
 }
 
-/* One-gate mode: the node is the GATEWAY'S OWN SILHOUETTE, not a circle with art inside it. The
-   circle, its border and its fill are all removed here so the PNG's alpha defines the shape —
-   clipping the square art to a circle cropped the pedestal off the bottom and filled the corners
-   with node background. */
 .surface-export-instance-node-shaped {
 	background: none;
 	border: none;
 	border-radius: 0;
 }
 
-/* One-gate mode: the gate art fills the ENTIRE node rather than sitting inside it as a thumbnail.
-   `contain` not `cover` — the source is square and already framed, so cover would crop its rim. */
 .surface-export-instance-face {
 	position: absolute;
 	inset: 0;
@@ -248,17 +174,9 @@ body.surface-export-page .site-layout-content-container {
 	display: flex;
 	align-items: center;
 	justify-content: center;
-	/* The art is DECORATION painted over the easy-connect handle, and it is declared after the
-	   handles so it stacks above them. Without this it swallows every pointer that lands on the
-	   gateway — which is the whole node — and a drag pans the canvas instead of starting a link.
-	   Measured: elementFromPoint at the node centre returned this div, not the handle. */
 	pointer-events: none;
 }
 
-/* LIT vs FADED tracks ONLINE, not whether the gateway has links. An offline instance may well
-   still hold links, and showing it bright because it is configured says the wrong thing about the
-   thing an operator needs to see. `drop-shadow` follows the image alpha, so the glow traces the
-   gateway’s real outline rather than boxing non-circular art in a circle. */
 .surface-export-instance-node-online .surface-export-instance-face {
 	opacity: 1;
 	filter: drop-shadow(0 0 8px rgba(22, 104, 220, 0.85));
@@ -269,23 +187,14 @@ body.surface-export-page .site-layout-content-container {
 	filter: grayscale(1);
 }
 
-/* With the art filling the node, the label cannot sit on top of it — it goes ABOVE, anchored to the
-   node's top edge by `bottom: 100%` and centred without needing to know its own width. It is WIDER
-   than the node on purpose: instance names do not fit in 150px, and the layout reserves the extra
-   width (CAPTION_WIDTH in gateway/gateway-graph.ts) so neighbours never overlap it.
-
-   Above rather than below so the reading order is name → address → gate → actions, and so the
-   caption is not competing for the space under the node with the platform toolbar. */
 .surface-export-instance-node-caption {
 	position: absolute;
 	bottom: 100%;
 	left: 50%;
 	transform: translateX(-50%);
 	margin-bottom: 10px;
-	/* Overrides the body rule's 108px cap, which is sized for text INSIDE the circle. */
 	max-width: none;
 	width: 190px;
-	/* Part of the move surface, like everything outside the portal. */
 	cursor: grab;
 	text-align: center;
 }
@@ -294,27 +203,12 @@ body.surface-export-page .site-layout-content-container {
 	cursor: grabbing;
 }
 
-/* The PORTAL is the connection zone: a disc over the glowing part of the art, sized and placed
-   from the measurement in gateway/edge-geometry.ts (60% of the node, raised 16px so it is
-   concentric with the glow rather than with the node box). Everything outside it moves the node.
-
-   Two earlier shapes were wrong and are worth naming so they are not retried: covering the WHOLE
-   node left nowhere to grab it, and a concentric RING left the connect area thin over the portal
-   and thick over the pedestal, because the box centre is not the portal centre.
-
-   Invisible on purpose — the glow is the affordance. */
 .surface-export-gw-cover {
 	position: absolute;
-	/* `inset: auto` FIRST. It is the shorthand for top/right/bottom/left, so placing it after them —
-	   as this rule did — silently wiped the two values below it, and the disc fell back to the
-	   library's own `top`. It is here to clear React Flow's handle insets, not ours. */
 	inset: auto;
 	width: 60%;
 	height: 60%;
 	left: 20%;
-	/* 20% of the node, less the measured gap between the node box's centre and the PORTAL's centre
-	   (GATE_CENTRE_OFFSET_Y in gateway/edge-geometry.ts, which anchors the edges to the same point).
-	   On a 150px node that is 14px — square, so `border-radius: 50%` makes it a true circle. */
 	top: calc(20% - 16px);
 	border-radius: 50%;
 	background: transparent;
@@ -324,24 +218,6 @@ body.surface-export-page .site-layout-content-container {
 	cursor: crosshair;
 }
 
-/* ── Canvas: the per-node platform list ───────────────────────────────────── */
-
-/* The platforms this instance is carrying, ALWAYS ON, hanging under the gate — modelled on React
-   Flow's database-schema node, where each row is an addressable thing with its own handle.
-
-   ABSOLUTELY POSITIONED, and that is correctness rather than styling. React Flow measures the node
-   element, and gateway/edge-geometry.ts puts the node's centre at `position + measured.height / 2`;
-   a list that grew the node's border box would drag that centre down and every edge would detach
-   from the portal glow. Hanging outside the box — the same trick the caption uses at `bottom: 100%`
-   — keeps the measured node a 150px circle, and the LAYOUT reserves the room instead
-   (`platformListHeight` in gateway/gateway-graph.ts). The two must agree: 28px rows, 22px of chrome.
-
-   `inset: auto` FIRST, for the reason recorded on .surface-export-gw-cover: it is the shorthand for
-   top/right/bottom/left, so placing it after them silently wipes whatever they set.
-
-   Unlike the NodeToolbar this replaces, it lives INSIDE the node wrapper and so inherits the host
-   filter's dimming along with the gate. That is the consistent behaviour: a faded instance's
-   platforms are part of what was faded. */
 .surface-export-platform-list {
 	position: absolute;
 	inset: auto;
@@ -349,8 +225,6 @@ body.surface-export-page .site-layout-content-container {
 	left: 50%;
 	transform: translateX(-50%);
 	margin-top: 8px;
-	/* Wider than the 150px node on purpose, and the layout knows it: CAPTION_WIDTH (190) already
-	   reserves more than the circle, and the column pitch is sized from whichever is bigger. */
 	width: 264px;
 	display: flex;
 	flex-direction: column;
@@ -362,8 +236,6 @@ body.surface-export-page .site-layout-content-container {
 	text-align: left;
 }
 
-/* An instance with nothing to list still shows the panel rather than nothing, so "no platforms" and
-   "the list failed to render" do not look identical. */
 .surface-export-platform-list-empty {
 	justify-content: center;
 	align-items: center;
@@ -371,13 +243,6 @@ body.surface-export-page .site-layout-content-container {
 	padding: 4px 6px;
 }
 
-/* FIXED HEIGHT, matching PLATFORM_ROW_HEIGHT. The layout reserves space by counting rows, so a row
-   that sized itself to its content would let a long name push the list over the node below it. */
-/* POSITIONED, so each row's handle resolves against ITS OWN row. Without this the handles resolve
-   against the panel (the nearest positioned ancestor) and every one of them stacks at the panel's
-   vertical midpoint — the same collapse the multi-gateway handles are warned about in
-   gateway/InstanceNode.tsx, arrived at from the opposite direction. Safe here, and required, because
-   the handle's position is fully overridden below rather than left to React Flow. */
 .surface-export-platform-node-row {
 	position: relative;
 	display: flex;
@@ -385,15 +250,9 @@ body.surface-export-page .site-layout-content-container {
 	gap: 6px;
 	height: 28px;
 	flex-shrink: 0;
-	/* The play/drag circle is absolutely positioned, so it is outside the flex flow and would
-	   otherwise sit ON TOP of the Export button. This reserves its slot: the 10px of the circle that
-	   still falls inside the row (24 wide, offset −14) plus the same 6px gap the flex row uses
-	   between everything else. */
 	padding-right: 16px;
 }
 
-/* One line, ellipsised. Platform names are user-supplied and can be any length; wrapping one would
-   grow the list over the neighbouring nodes. Full name and index on hover. */
 .surface-export-platform-node-name {
 	flex: 1 1 auto;
 	min-width: 0;
@@ -403,11 +262,6 @@ body.surface-export-page .site-layout-content-container {
 	text-overflow: ellipsis;
 }
 
-/* THE NAME IS THE ONLY FLEXIBLE COLUMN. `flex-shrink: 0` here, because with the status shrinking too
-   a six-character "parked" was ellipsised to "park…" while the name beside it still had room —
-   measured on the live canvas. Names are long, user-supplied and available on hover; a status is
-   short, fixed-vocabulary and meaningless once cut. The cap still catches the long ones
-   ("awaiting validation"), which is what it is for. */
 .surface-export-platform-node-tag {
 	flex-shrink: 0;
 	max-width: 96px;
@@ -418,32 +272,15 @@ body.surface-export-page .site-layout-content-container {
 	margin-inline-end: 0;
 }
 
-/* The "+k more" line. Not interactive and carrying no handle — it stands for several platforms, so
-   there is nothing a single drag from it could mean. */
 .surface-export-platform-node-more {
 	justify-content: center;
 	opacity: 0.7;
-	/* Spans the full width: it carries no play circle, so there is no slot to reserve. */
 	padding-right: 0;
 }
 
-/* THE PLAY BUTTON IS THE DRAG HANDLE. It used to be a 10px dot NEXT TO an antd primary button that
-   did the same thing — two controls for one action, and at 10px the dot did not read as an
-   affordance at all. One circle now: drag it to a portal, or click it to pick a destination.
-
-   Sized like an antd `size="small"` control (24px) so it sits level with the Export button beside
-   it rather than looking like a different class of thing. */
 .surface-export-platform-handle {
 	position: absolute;
 	inset: auto;
-	/* OVERHANGS THE PANEL EDGE by about a third of itself. Sitting flush inside, it read as one more
-	   button in the row; breaking the border is what says "this one comes off" — the same reason a
-	   React Flow handle sits on its node's boundary rather than within it.
-
-	   −14, not −8, and the difference is the whole point of measuring: `right` resolves against the
-	   ROW, which is the nearest positioned ancestor, and the row sits inside the panel's 6px padding
-	   and 1px border. So −8 bought 1.3px of visible overhang (measured). −14 clears the panel's own
-	   chrome first and leaves ~7px proud of the edge. */
 	right: -14px;
 	top: 50%;
 	width: 24px;
@@ -470,8 +307,6 @@ body.surface-export-page .site-layout-content-container {
 	cursor: grabbing;
 }
 
-/* A read-only account still SEES the control — hiding it would leave the row looking unfinished —
-   but it is inert, and says so. React Flow already refuses the drag via isConnectable. */
 .surface-export-platform-handle-readonly {
 	background: #434343;
 	border-color: #434343;
@@ -479,19 +314,11 @@ body.surface-export-page .site-layout-content-container {
 	opacity: 0.5;
 }
 
-/* The caret is decoration on the handle's hit area. Without this it swallows the pointer and the
-   circle becomes undraggable exactly in the middle, where it looks most clickable. Nudged right by
-   a pixel because a triangle centred by its bounding box reads as sitting left of centre. */
 .surface-export-platform-handle > span {
 	pointer-events: none;
 	margin-left: 1px;
 }
 
-/* ── Canvas: debug mode ───────────────────────────────────────────────────── */
-
-/* A separate strip UNDER the operator toolbar, not more buttons in it. Everything here draws
-   something that is not true of the cluster, so it must never be one mis-click away from Reset or
-   Import, and it should be obvious about what it is. Purple-tinted for the same reason. */
 .surface-export-debug-panel {
 	margin-top: 6px;
 	padding: 5px 8px;
@@ -511,7 +338,6 @@ body.surface-export-page .site-layout-content-container {
 	gap: 6px;
 }
 
-/* Tabular figures so the ± buttons do not shuffle sideways as the count crosses 9. */
 .surface-export-debug-count,
 .surface-export-debug-label {
 	font-size: 11px;
@@ -523,9 +349,18 @@ body.surface-export-page .site-layout-content-container {
 	font-size: 11px;
 }
 
-/* The geometry overlay: the invisible things that decide behaviour, drawn. Sits above the gate art
-   (which is itself absolutely positioned) and swallows no pointer — an overlay that ate clicks would
-   break the very connect zone it exists to explain. */
+.surface-export-debug-phases {
+	display: inline-flex;
+	align-items: center;
+	gap: 2px;
+	font-size: 11px;
+}
+
+.surface-export-debug-phases .ant-checkbox-wrapper {
+	font-size: 11px;
+	margin-inline-start: 0;
+}
+
 .surface-export-geometry-overlay {
 	position: absolute;
 	inset: 0;
@@ -533,8 +368,6 @@ body.surface-export-page .site-layout-content-container {
 	z-index: 5;
 }
 
-/* What React Flow MEASURES, and so what nodeCircle halves and fitView frames. Exactly the node box:
-   if the platform list ever grew it, this outline is where that would show up first. */
 .surface-export-geometry-box {
 	position: absolute;
 	inset: 0;
@@ -542,9 +375,6 @@ body.surface-export-page .site-layout-content-container {
 	border-radius: 0;
 }
 
-/* The connect zone, mirroring .surface-export-gw-cover exactly — 60%, raised by the measured
-   GATE_CENTRE_OFFSET_Y. If these two rules ever disagree, the overlay is lying, so they are worth
-   reading together. */
 .surface-export-geometry-portal {
 	position: absolute;
 	inset: auto;
@@ -556,7 +386,6 @@ body.surface-export-page .site-layout-content-container {
 	border-radius: 50%;
 }
 
-/* Where edges actually attach: node centre + GATE_CENTRE_OFFSET_Y. */
 .surface-export-geometry-anchor {
 	position: absolute;
 	inset: auto;
@@ -565,7 +394,6 @@ body.surface-export-page .site-layout-content-container {
 	width: 7px;
 	height: 7px;
 	margin-left: -3.5px;
-	/* -3.5 to centre the dot, -16 for the anchor offset itself. */
 	margin-top: -19.5px;
 	border-radius: 50%;
 	background: #ff4d4f;
@@ -588,14 +416,11 @@ body.surface-export-page .site-layout-content-container {
 	transform: translateX(-50%);
 }
 
-/* Zero outgoing links = a platform parked here cannot leave. The old tab said so in words; here it
-   has to be visible, or "nothing drawn yet" and "switched off" look identical. */
 .surface-export-gw-idle {
 	opacity: 0.35;
 	filter: grayscale(1);
 }
 
-/* Arrival-only: reachable, but not a departure point. Dimmed, not greyed. */
 .surface-export-gw-arrival-only {
 	opacity: 0.7;
 }
@@ -643,7 +468,6 @@ body.surface-export-page .site-layout-content-container {
 	background: rgba(0, 0, 0, 0.02);
 }
 
-/* Destination icon leads the row, then the platform name. */
 .surface-export-platform-row-name {
 	flex: 1 1 auto;
 	min-width: 0;
@@ -652,8 +476,6 @@ body.surface-export-page .site-layout-content-container {
 	gap: 6px;
 }
 
-/* Keeps names aligned on rows whose platform has no resolvable destination icon — without it
-   those rows start 26px to the left of every other row. */
 .surface-export-icon-placeholder {
 	display: inline-block;
 	width: 20px;
@@ -682,7 +504,6 @@ body.surface-export-page .site-layout-content-container {
 	line-height: 1.2;
 }
 
-/* Transfer flow timeline (replaces the former mermaid gantt) */
 .surface-export-timeline {
 	display: flex;
 	flex-direction: column;
