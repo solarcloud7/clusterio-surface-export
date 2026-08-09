@@ -24,6 +24,7 @@ const path = require("node:path");
 const distNode = path.join(__dirname, "..", "dist", "node");
 const {
 	decideSnapshot,
+	entriesChangedSince,
 	freshRevisionWatermarks,
 	isFreshRevision,
 } = require(path.join(distNode, "shared", "revision-gate.js"));
@@ -81,6 +82,62 @@ test("across a session boundary, the new session's revisions are applied", () =>
 
 	const cleared = applySequence([1, 2, 3], freshRevisionWatermarks().lastTreeRevision);
 	assert.deepEqual(cleared.applied, [1, 2, 3], "clearing on reconnect restores delivery");
+});
+
+test("a fetched list may not roll back what a push rewrote while it was in flight", () => {
+	// The list answers as of the moment it was requested. Applying it wholesale reverted any row a
+	// push had updated since — and because the push had already advanced the watermark, the same
+	// revision could not be replayed to correct it.
+	const stale = { transferId: "t1", status: "running" };
+	const untouched = { transferId: "t2", status: "completed" };
+	const before = new Map([["t1", stale], ["t2", untouched]]);
+
+	// A push replaces the entry it touches and leaves the others identical.
+	const pushed = { transferId: "t1", status: "completed" };
+	const current = [pushed, untouched];
+
+	assert.deepEqual(entriesChangedSince(before, current), [pushed], "only the rewritten row survives the fetch");
+});
+
+test("a row the fetch introduces is not mistaken for one a push rewrote", () => {
+	const known = { transferId: "t1", status: "running" };
+	const brandNew = { transferId: "t2", status: "running" };
+	assert.deepEqual(
+		entriesChangedSince(new Map([["t1", known]]), [known, brandNew]),
+		[brandNew],
+		"an entry absent from the pre-fetch map arrived during the window and must survive too",
+	);
+	assert.deepEqual(
+		entriesChangedSince(new Map([["t1", known]]), [known]),
+		[],
+		"an untouched entry must not be re-applied over the fetch, or the fetch can never refresh it",
+	);
+});
+
+test("the fetch captures the pre-fetch summaries before it issues a request", () => {
+	// The capture has to happen before the first await, or a push that lands during the fetch is
+	// already folded into the map it is being compared against and looks untouched.
+	assert.match(
+		webIndex,
+		/summariesBeforeFetch = new Map[\s\S]{0,240}?const treeResponse = await/,
+		"the pre-fetch snapshot of the summaries must be taken before the first request",
+	);
+	assert.match(
+		webIndex,
+		/entriesChangedSince\(summariesBeforeFetch, this\.state\.transferSummaries\)/,
+		"the fetched list must be reconciled against what pushes rewrote during the window",
+	);
+});
+
+test("a log update keeps the fields it is not carrying", () => {
+	// detailRetained records that a timeline was truncated by retention, and absent reads as
+	// retained — so rebuilding the detail without it silently upgrades a partial record to a
+	// complete-looking one, in the audit surface.
+	assert.match(
+		webIndex,
+		/const detail = \{\s*\n\s*\.\.\.existing,/,
+		"handleLogUpdate must carry the existing detail forward rather than rebuild it field by field",
+	);
 });
 
 test("only a fresh connect clears the watermarks, and it clears them before resubscribing", () => {

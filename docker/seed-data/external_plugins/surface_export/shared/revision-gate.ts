@@ -1,5 +1,6 @@
 /**
- * Ordering rule for the web UI's live-update channels (tree, transfers, logs).
+ * Rules for reconciling the web UI's live pushes with the snapshots it fetches
+ * (tree, transfers, logs).
  *
  * Each update carries a revision, and the page applies one only when it is newer than what it has
  * already applied. A watermark is meaningful only against the counter that issued it, so it belongs
@@ -53,4 +54,20 @@ export function decideSnapshot(revision: unknown, watermark: number): SnapshotDe
 		return { apply: true, watermark: null };
 	}
 	return revision > watermark ? { apply: true, watermark: revision } : { apply: false, watermark: null };
+}
+
+/**
+ * The entries a live push rewrote while a snapshot fetch was in flight.
+ *
+ * A fetched list answers the question as of the moment it was requested, so applying it wholesale
+ * rolls back anything that changed after that. The merge helpers replace only the entry they touch
+ * and leave the rest of the array's elements identical, so an entry that is absent from `before`,
+ * or no longer the same object, is exactly one a push rewrote inside the window. Those must survive
+ * the fetch.
+ */
+export function entriesChangedSince<T extends { transferId: string }>(
+	before: Map<string, T>,
+	current: readonly T[],
+): T[] {
+	return current.filter(entry => before.get(entry.transferId) !== entry);
 }

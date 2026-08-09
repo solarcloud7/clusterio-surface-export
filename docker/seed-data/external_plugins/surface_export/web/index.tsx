@@ -21,7 +21,7 @@ import ImportModal from "./ImportModal";
 import type { JsonObject, LogEvent, SurfaceExportPlugin, SurfaceExportState } from "./view-models";
 
 import { summaryFromTransferInfo, mergeTransferSummary, getErrorMessage, getProp } from "./utils";
-import { decideSnapshot, freshRevisionWatermarks, isFreshRevision } from "../shared/revision-gate";
+import { decideSnapshot, entriesChangedSince, freshRevisionWatermarks, isFreshRevision } from "../shared/revision-gate";
 import "./style.css";
 
 const {
@@ -268,6 +268,9 @@ export class WebPlugin extends BaseWebPlugin {
 
 	async refreshSnapshots() {
 		this.setState({ loadingTree: true, treeError: null });
+		// Everything a push rewrites from here on is newer than the responses below, which answer as
+		// of the moment they were requested.
+		const summariesBeforeFetch = new Map(this.state.transferSummaries.map(summary => [summary.transferId, summary]));
 		try {
 			const treeResponse = await this.link.send(new GetPlatformTreeRequest({ forceName: "player" })) as JsonObject;
 			let transferSummaries = this.state.transferSummaries;
@@ -277,6 +280,9 @@ export class WebPlugin extends BaseWebPlugin {
 					transferSummaries = Array.isArray(logSummaries)
 						? [...logSummaries].sort((a, b) => (b.startedAt || 0) - (a.startedAt || 0))
 						: [];
+					for (const pushed of entriesChangedSince(summariesBeforeFetch, this.state.transferSummaries)) {
+						transferSummaries = mergeTransferSummary(transferSummaries, pushed);
+					}
 				} catch (err: unknown) {
 					if (/permission denied/i.test(getErrorMessage(err))) {
 						this.setState({ canViewLogs: false });
@@ -438,6 +444,7 @@ export class WebPlugin extends BaseWebPlugin {
 		}
 
 		const detail = {
+			...existing,
 			transferInfo: (event.transferInfo as JsonObject) || existing.transferInfo || null,
 			summary: (event.summary as JsonObject) || existing.summary || null,
 			events,
