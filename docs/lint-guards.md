@@ -1,6 +1,6 @@
 # Lint guards — rationale and incident history
 
-The eleven correctness guards (plus the PR-gated commit-labels step) are MECHANISM, not style:
+The eleven correctness guards are MECHANISM, not style:
 each was built after a paid-for incident, and each holds an invariant that in-code prose used to
 merely describe. When the code-comment purge landed (PR #190, 2026-08-09, owner policy: code
 carries no prose), the guard scripts' rationale headers moved HERE — the scripts keep only their
@@ -262,31 +262,11 @@ annotation).
 Run:   node scripts/lint-allow-manifest.mjs        (also: npm run lint:allow-manifest)
 There is deliberately NO escape hatch on this guard.
 
-## lint-commit-labels
+## lint-commit-labels (RETIRED 2026-08-09)
 
-- **Run:** `node scripts/lint-commit-labels.mjs (own PR-gated CI step)`
-- **Escape hatch:** —
-
-lint-commit-labels.mjs — commit labels are audit boundaries; this makes that mechanical.
-
-Reviewers and auditors allocate attention by commit label. A `docs(...)` commit that carries a
-code-file diff is a rider that evades review — this class of defect shipped once through two
-review passes (the original incident behind the CLAUDE.md rule), and then RECURRED in an agent's
-lab-findings commit within days of the rule being restated in a brief. A rule that well-briefed
-authors break twice is a machine's job.
-
-Rule enforced: any commit whose subject is labeled `docs:` / `docs(...)` may touch ONLY
-documentation paths — `*.md` files anywhere, or anything under a `docs/` directory. Everything
-else (a .lua/.ts/.mjs/.json/config diff) must live in its own honestly-labeled commit, even when
-it is "comment-only": the label, not the diff's innocence, is what review attention keys on.
-
-Runs in CI as a dedicated PR step (checkout needs fetch-depth: 0) over `origin/<base>..HEAD`;
-locally, run from anywhere in the repo — it diffs `origin/main..HEAD` (or `main..HEAD`).
-If the range cannot be resolved the guard FAILS LOUDLY — it never silently passes.
-
-There is deliberately NO escape hatch: a genuinely mixed change is always splittable.
-Note: on a squash-merge repo the PR TITLE becomes main's commit subject — the same rule applies
-to PR titles at merge time; that half stays human (the owner merges).
+Retired by owner ruling: it enforced that a `docs:`-labeled commit touches only doc paths — an
+audit boundary that stopped earning its CI step once rationale moved out of code into
+maintained .md files. The script and its PR-gated CI step are deleted; git history keeps both.
 
 ## fail-safe-hooks
 
