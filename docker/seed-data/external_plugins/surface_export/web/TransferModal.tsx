@@ -19,23 +19,33 @@ import type { JsonObject, SurfaceExportPlugin, SurfaceExportState } from "./view
  */
 type TransferModalProps = {
 	source: PlatformActionSource | null;
+	/**
+	 * The destination the OPENING GESTURE already chose, or null when it chose none.
+	 *
+	 * Set when a platform row was dragged onto another instance's portal on the gateway canvas: that
+	 * drag named a destination, and re-asking for it would discard the only thing it said. Null from
+	 * every button, which names a platform and nothing else.
+	 */
+	presetTargetInstanceId?: number | null;
 	onClose: () => void;
 	plugin: SurfaceExportPlugin;
 	state: SurfaceExportState;
 };
 
-export default function TransferModal({ source, onClose, plugin, state }: TransferModalProps) {
+export default function TransferModal({ source, presetTargetInstanceId = null, onClose, plugin, state }: TransferModalProps) {
 	const [targetInstanceId, setTargetInstanceId] = useState<number | null>(null);
 	const [targetPlanet, setTargetPlanet] = useState<string | null>(null);
 	const [submitting, setSubmitting] = useState(false);
 	const planetOptions = usePlanetOptions();
 
 	// Clear the previous platform's choices when the modal is re-opened for a different row —
-	// otherwise a destination picked for one platform silently pre-fills for the next.
+	// otherwise a destination picked for one platform silently pre-fills for the next. The preset is
+	// in the dependency list so that re-opening for the SAME platform with a different destination
+	// (drag it one way, then the other) takes the new one rather than keeping the first.
 	useEffect(() => {
-		setTargetInstanceId(null);
+		setTargetInstanceId(presetTargetInstanceId);
 		setTargetPlanet(null);
-	}, [source?.instanceId, source?.platformIndex]);
+	}, [source?.instanceId, source?.platformIndex, presetTargetInstanceId]);
 
 	const instanceOptions = useMemo(() => {
 		const tree = state.tree;

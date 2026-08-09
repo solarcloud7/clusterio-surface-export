@@ -71,7 +71,6 @@ export type SurfaceExportState = {
 	lastTransferRevision: number;
 	lastLogRevision: number;
 	canViewLogs: boolean;
-	pluginVersion: string | null;
 };
 
 export type SurfaceExportPlugin = {

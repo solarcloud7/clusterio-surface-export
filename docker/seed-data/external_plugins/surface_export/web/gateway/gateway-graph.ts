@@ -124,6 +124,29 @@ export function targetHandleId(gatewayName: string, side?: HandleSide): string {
 	return side ? `t:${gatewayName}@${side}` : `t:${gatewayName}`;
 }
 
+/**
+ * A PLATFORM ROW's drag handle — a THIRD namespace, deliberately not a gateway handle.
+ *
+ * Dragging from a platform row to another instance's portal starts a TRANSFER, which is a one-shot
+ * operation, not a link that gets staged and saved. Giving it its own `p:` prefix is what keeps the
+ * two apart at the one place it matters: `gatewayFromHandleId` returns null for it, so a platform
+ * handle can never be mistaken for a gateway endpoint and silently written into the config.
+ *
+ * Keyed on the platform INDEX, not its name: names collide across a force, the index does not
+ * (see the lookup-by-unique-ID rule this repo enforces elsewhere).
+ */
+export function platformHandleId(platformIndex: number): string {
+	return `p:${platformIndex}`;
+}
+
+export function platformIndexFromHandleId(handleId: string | null | undefined): number | null {
+	if (!handleId || !handleId.startsWith("p:")) {
+		return null;
+	}
+	const index = Number(handleId.slice(2));
+	return Number.isFinite(index) ? index : null;
+}
+
 export function gatewayFromHandleId(handleId: string | null | undefined): string | null {
 	if (!handleId || handleId.length < 3) {
 		return null;
@@ -401,6 +424,45 @@ export const CAPTION_WIDTH = 190;
 export const INSTANCE_GAP = 70;
 export const COLUMN_GAP = 90;
 
+// ── The platform list hanging under each node ───────────────────────────────
+// Kept here rather than in CSS because the LAYOUT has to know it: the list is absolutely positioned
+// (so React Flow keeps measuring the node as a 150px circle and the edges stay anchored to the
+// portal), which means it contributes nothing to the node's own box and would otherwise be drawn
+// straight over whatever the column stacks underneath. These constants and the CSS must agree —
+// see `.surface-export-platform-list` in web/style.css.
+
+/** Height of one platform row, matching the CSS. */
+export const PLATFORM_ROW_HEIGHT = 28;
+/**
+ * Width of the panel, matching the CSS — and WIDER than both the node and its caption.
+ *
+ * It has to be in the column-pitch calculation for the same reason CAPTION_WIDTH is: the panel is
+ * centred on a 150px node and overhangs it on both sides, so a pitch computed from the circle alone
+ * would let one instance's platform list run into the next column's.
+ */
+export const PLATFORM_LIST_WIDTH = 264;
+/** Panel padding + border + the gap between it and the node above. */
+export const PLATFORM_LIST_CHROME = 22;
+/**
+ * How many rows are drawn before the list stops and says how many it is not showing.
+ *
+ * NOT a scroll container. React Flow measures handle positions once, when the node is measured — a
+ * row scrolled out of view and back would drag from a stale origin, which reads as the connection
+ * line starting from nowhere. A hard cap with an honest "+k more" line has no such failure mode, and
+ * the overflow row is deliberately NOT a handle: what it stands for is several platforms, so there is
+ * no single thing a drag from it could mean.
+ */
+export const PLATFORM_LIST_MAX_ROWS = 6;
+
+/** How much vertical room this instance's platform list needs, in node pixels. */
+export function platformListHeight(platformCount: number): number {
+	if (platformCount <= 0) {
+		return 0;
+	}
+	const rows = Math.min(platformCount, PLATFORM_LIST_MAX_ROWS) + (platformCount > PLATFORM_LIST_MAX_ROWS ? 1 : 0);
+	return PLATFORM_LIST_CHROME + rows * PLATFORM_ROW_HEIGHT;
+}
+
 /** How much of its own opacity a node keeps when the host filter is pointed somewhere else. */
 export const DIMMED_OPACITY = 0.12;
 
@@ -491,25 +553,45 @@ export function buildGraph(
 
 	const usage = gatewayUsage(edits);
 	const nodes: GraphNodeModel[] = [];
-	const columnPitch = Math.max(NODE_DIAMETER, CAPTION_WIDTH) + COLUMN_GAP;
-	// Centres the circle under a column as wide as the caption, which is wider than the circle.
-	const columnInset = Math.max(0, (CAPTION_WIDTH - NODE_DIAMETER) / 2);
+	// As wide as the WIDEST thing a column draws — the circle, its caption, or its platform list.
+	const columnWidth = Math.max(NODE_DIAMETER, CAPTION_WIDTH, PLATFORM_LIST_WIDTH);
+	const columnPitch = columnWidth + COLUMN_GAP;
+	// Centres the circle under that column, since the things overhanging it are centred on it too.
+	const columnInset = Math.max(0, (columnWidth - NODE_DIAMETER) / 2);
 
 	columns.forEach((column, columnIndex) => {
+		// A RUNNING total, not `index * pitch`: each instance's block is as tall as ITS OWN platform
+		// list, so a fixed pitch would either waste a screen of space under every one-platform instance
+		// or let a six-platform list sit on top of the node below it. Both were reachable on the dev
+		// cluster with two instances.
+		let y = 0;
 		column.instances.forEach((instance, index) => {
 			const perGateway: Record<string, GatewayUsage> = {};
 			for (const gatewayName of gatewayNamesFor(mode)) {
 				perGateway[gatewayName] = usage.get(instance.instanceId)?.get(gatewayName) || { outgoing: 0, incoming: 0 };
 			}
 			const dimmed = filtering && column.key !== hostFilter;
+			// Only hub-bearing platforms: a platform without a space hub cannot be exported or
+			// transferred, and the controller refuses one. Offering the rows anyway would put the
+			// refusal after the click instead of before it. Resolved BEFORE the position so the block
+			// below this node is sized from the list that will actually be drawn.
+			const platforms = (instance.platforms || [])
+				.filter(platform => platform && platform.hasSpaceHub)
+				.map(platform => ({
+					...platform,
+					forceName: platform.forceName || tree?.forceName || "player",
+				}));
+			if (index > 0) {
+				// The caption of THIS node hangs above it, so it is charged to the gap before it.
+				y += INSTANCE_GAP + CAPTION_HEIGHT;
+			}
 			nodes.push({
 				id: instanceNodeId(instance.instanceId),
 				type: "instance",
 				deletable: false,
 				position: {
 					x: columnIndex * columnPitch + columnInset,
-					// Every node owns its diameter PLUS its caption; the gap sits between those blocks.
-					y: index * (NODE_DIAMETER + CAPTION_HEIGHT + INSTANCE_GAP),
+					y,
 				},
 				// Dimming is a node STYLE rather than a class on the inner element so it covers the
 				// caption too — the caption is positioned outside the node's own box, and fading the
@@ -529,18 +611,11 @@ export function buildGraph(
 					online: isOnline(instance),
 					hostKey: column.key,
 					hostName: column.name,
-					// Only hub-bearing platforms: a platform without a space hub cannot be exported or
-					// transferred, and the controller refuses one. Offering the buttons anyway would put
-					// the refusal after the click instead of before it.
-					platforms: (instance.platforms || [])
-						.filter(platform => platform && platform.hasSpaceHub)
-						.map(platform => ({
-							...platform,
-							forceName: platform.forceName || tree?.forceName || "player",
-						})),
+					platforms,
 					gateways: perGateway,
 				},
 			});
+			y += NODE_DIAMETER + platformListHeight(platforms.length);
 		});
 	});
 

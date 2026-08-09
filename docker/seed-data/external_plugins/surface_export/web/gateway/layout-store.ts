@@ -13,7 +13,22 @@
  * and a persistence path for something nobody else needs to agree with.
  */
 
-const STORAGE_KEY = "surface_export.gateway_layout";
+/**
+ * VERSIONED, and the version is bumped whenever the computed layout's PITCH changes.
+ *
+ * A saved position is only meaningful against the spacing it was chosen under. When the platform list
+ * was added below every node, each node grew a block underneath it that the old pitch left no room
+ * for — so a layout saved before that change loads with every node sitting on top of the next one's
+ * platform list. Reset fixes it, but nobody knows to press Reset for a mess they did not make, and
+ * "the canvas is broken" is what it looks like.
+ *
+ * Bumping the key discards those positions exactly once, silently, on the first load after the
+ * change. Cheaper than a migration that would have to guess which pitch each stored point came from.
+ */
+const STORAGE_KEY = "surface_export.gateway_layout.v2";
+
+/** Superseded keys, cleared on load so a bump does not leave dead bytes behind forever. */
+const LEGACY_STORAGE_KEYS = ["surface_export.gateway_layout"];
 
 export type SavedLayout = Record<string, { x: number; y: number }>;
 
@@ -29,6 +44,9 @@ export type LayoutNode = { id: string; position: { x: number; y: number } };
  */
 export function loadLayout(): SavedLayout {
 	try {
+		for (const legacy of LEGACY_STORAGE_KEYS) {
+			window.localStorage.removeItem(legacy);
+		}
 		const raw = window.localStorage.getItem(STORAGE_KEY);
 		if (!raw) {
 			return {};

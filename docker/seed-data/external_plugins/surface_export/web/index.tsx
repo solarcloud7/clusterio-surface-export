@@ -3,7 +3,6 @@ import {
 	Button,
 	Tabs,
 	Tooltip,
-	Typography,
 } from "antd";
 
 import {
@@ -40,8 +39,6 @@ const {
 	SurfaceExportTransferUpdateEvent,
 	SurfaceExportLogUpdateEvent,
 } = messageDefs;
-
-const { Text } = Typography;
 
 type ControlLike = {
 	plugins: Map<string, unknown>;
@@ -94,7 +91,6 @@ function SurfaceExportPage() {
 	}
 	// Icon spritesheet CSS is injected on demand by the FactorioIcon wrappers in web/icons.tsx
 	// (via useExportPrototypeMetadata) when icons render.
-	const pluginVersion = state?.pluginVersion || null;
 	const tabItems = [
 		{
 			key: "manual",
@@ -133,12 +129,10 @@ function SurfaceExportPage() {
 		// "Surface Export", so the page opened by saying its own name twice; the heading is the one
 		// that carries weight, and this page is one level deep with nowhere to navigate back to.
 		<PageLayout nav={[]}>
+			{/* NO VERSION LINE. The plugin's version is already on Clusterio's own plugins page, which is
+			    where someone goes to ask what is installed; repeating it under the heading spent the
+			    first line of every visit on a number nobody came for. */}
 			<PageHeader title="Surface Export" />
-			{pluginVersion ? (
-				<Text type="secondary" style={{ fontSize: 12, display: "block", marginBottom: 12 }}>
-					v{pluginVersion}
-				</Text>
-			) : null}
 			<Tabs
 				activeKey={effectiveTab}
 				onChange={handleTabChange}
@@ -187,9 +181,6 @@ export class WebPlugin extends BaseWebPlugin {
 			lastTransferRevision: 0,
 			lastLogRevision: 0,
 			canViewLogs: true,
-			pluginVersion: (packageData && typeof packageData === "object" && "version" in packageData && typeof packageData.version === "string")
-				? packageData.version
-				: null,
 		};
 	}
 
