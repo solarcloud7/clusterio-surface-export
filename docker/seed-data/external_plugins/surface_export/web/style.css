@@ -386,9 +386,10 @@ body.surface-export-page .site-layout-content-container {
 	height: 28px;
 	flex-shrink: 0;
 	/* The play/drag circle is absolutely positioned, so it is outside the flex flow and would
-	   otherwise sit ON TOP of the Export button. This reserves its slot: 24px of circle plus the
-	   same 6px gap the flex row uses between everything else. */
-	padding-right: 30px;
+	   otherwise sit ON TOP of the Export button. This reserves its slot: the 10px of the circle that
+	   still falls inside the row (24 wide, offset −14) plus the same 6px gap the flex row uses
+	   between everything else. */
+	padding-right: 16px;
 }
 
 /* One line, ellipsised. Platform names are user-supplied and can be any length; wrapping one would
@@ -435,7 +436,15 @@ body.surface-export-page .site-layout-content-container {
 .surface-export-platform-handle {
 	position: absolute;
 	inset: auto;
-	right: 0;
+	/* OVERHANGS THE PANEL EDGE by about a third of itself. Sitting flush inside, it read as one more
+	   button in the row; breaking the border is what says "this one comes off" — the same reason a
+	   React Flow handle sits on its node's boundary rather than within it.
+
+	   −14, not −8, and the difference is the whole point of measuring: `right` resolves against the
+	   ROW, which is the nearest positioned ancestor, and the row sits inside the panel's 6px padding
+	   and 1px border. So −8 bought 1.3px of visible overhang (measured). −14 clears the panel's own
+	   chrome first and leaves ~7px proud of the edge. */
+	right: -14px;
 	top: 50%;
 	width: 24px;
 	height: 24px;
@@ -476,6 +485,107 @@ body.surface-export-page .site-layout-content-container {
 .surface-export-platform-handle > span {
 	pointer-events: none;
 	margin-left: 1px;
+}
+
+/* ── Canvas: debug mode ───────────────────────────────────────────────────── */
+
+/* A separate strip UNDER the operator toolbar, not more buttons in it. Everything here draws
+   something that is not true of the cluster, so it must never be one mis-click away from Reset or
+   Import, and it should be obvious about what it is. Purple-tinted for the same reason. */
+.surface-export-debug-panel {
+	margin-top: 6px;
+	padding: 5px 8px;
+	border: 1px dashed #642ab5;
+	border-radius: 6px;
+	background: rgba(100, 42, 181, 0.10);
+}
+
+.surface-export-debug-tag {
+	margin-inline-end: 0;
+}
+
+.surface-export-debug-stepper,
+.surface-export-debug-switch {
+	display: inline-flex;
+	align-items: center;
+	gap: 6px;
+}
+
+/* Tabular figures so the ± buttons do not shuffle sideways as the count crosses 9. */
+.surface-export-debug-count,
+.surface-export-debug-label {
+	font-size: 11px;
+	white-space: nowrap;
+	font-variant-numeric: tabular-nums;
+}
+
+.surface-export-debug-warning {
+	font-size: 11px;
+}
+
+/* The geometry overlay: the invisible things that decide behaviour, drawn. Sits above the gate art
+   (which is itself absolutely positioned) and swallows no pointer — an overlay that ate clicks would
+   break the very connect zone it exists to explain. */
+.surface-export-geometry-overlay {
+	position: absolute;
+	inset: 0;
+	pointer-events: none;
+	z-index: 5;
+}
+
+/* What React Flow MEASURES, and so what nodeCircle halves and fitView frames. Exactly the node box:
+   if the platform list ever grew it, this outline is where that would show up first. */
+.surface-export-geometry-box {
+	position: absolute;
+	inset: 0;
+	border: 1px dashed #52c41a;
+	border-radius: 0;
+}
+
+/* The connect zone, mirroring .surface-export-gw-cover exactly — 60%, raised by the measured
+   GATE_CENTRE_OFFSET_Y. If these two rules ever disagree, the overlay is lying, so they are worth
+   reading together. */
+.surface-export-geometry-portal {
+	position: absolute;
+	inset: auto;
+	width: 60%;
+	height: 60%;
+	left: 20%;
+	top: calc(20% - 16px);
+	border: 1px dashed #faad14;
+	border-radius: 50%;
+}
+
+/* Where edges actually attach: node centre + GATE_CENTRE_OFFSET_Y. */
+.surface-export-geometry-anchor {
+	position: absolute;
+	inset: auto;
+	left: 50%;
+	top: 50%;
+	width: 7px;
+	height: 7px;
+	margin-left: -3.5px;
+	/* -3.5 to centre the dot, -16 for the anchor offset itself. */
+	margin-top: -19.5px;
+	border-radius: 50%;
+	background: #ff4d4f;
+	box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.6);
+}
+
+.surface-export-geometry-tag {
+	position: absolute;
+	top: -14px;
+	left: 0;
+	font-size: 9px;
+	line-height: 1;
+	color: #52c41a;
+	white-space: nowrap;
+}
+
+.surface-export-geometry-tag-portal {
+	color: #faad14;
+	left: 50%;
+	transform: translateX(-50%);
 }
 
 /* Zero outgoing links = a platform parked here cannot leave. The old tab said so in words; here it
