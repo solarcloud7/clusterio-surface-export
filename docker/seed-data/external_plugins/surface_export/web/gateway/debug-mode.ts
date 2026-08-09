@@ -8,8 +8,11 @@
  * edge anchor) that three separate bugs have now hidden in. Those were checked with throwaway
  * probes, which prove a number and then evaporate. This puts the same things on screen.
  *
- * NOTHING HERE MAY REACH THE CONTROLLER. That is the one hard rule, and it is held by two structural
- * invariants rather than by care:
+ * NOTHING MOCK MAY REACH THE CONTROLLER. That is the one hard rule, and it has to be held at EVERY
+ * path out of the canvas — there are two, and an earlier version of this comment claimed the rule
+ * while covering only one of them.
+ *
+ * STAGED GATEWAY EDITS — the path that could corrupt cluster config:
  *
  *   1. A mock instance id is NEGATIVE. Clusterio's own ids are unsigned (the live cluster's are
  *      472806668 and 1285554351), so the two sets cannot collide — no seeding, no coordination, no
@@ -17,9 +20,14 @@
  *   2. Mock and real may never LINK. `isValidConnection` refuses any pairing that crosses the
  *      boundary, so every staged edit is wholly-mock or wholly-real, and dropping the mock ones is
  *      then a clean partition rather than a per-target rewrite.
+ *   3. `save` re-checks at the point that actually writes (`mockLeakIn`), because the two above are
+ *      refusals in the UI layer and the write is where the damage would be.
  *
- * The canvas adds a third check at the point that actually writes (see `save`), because these two
- * are both refusals in the UI layer and the write is where the damage would be.
+ * PER-PLATFORM ACTIONS — the path those three do NOT cover. Export and Transfer are requests sent
+ * straight from a row, carrying whatever instance id the row holds; no staging, no Save, so nothing
+ * above sees them. Export on a mock row would send `sourceInstanceId: -1` to the controller, and
+ * Transfer would offer real destinations for a platform that does not exist. Those controls are
+ * therefore disabled on mock rows, in PlatformRows.tsx, where the click is.
  */
 
 import { createContext, useContext } from "react";
@@ -150,8 +158,14 @@ export function saveDebugState(state: DebugState): void {
 
 // ── Mock tree ───────────────────────────────────────────────────────────────
 
-/** The host column mock instances are stacked into. Its key cannot collide: real keys are host ids. */
-export const MOCK_HOST_KEY = "mock";
+/**
+ * The host id the mock column is stacked under. NEGATIVE, for the same reason the instance ids are:
+ * `buildGraph` keys each column by `String(host.hostId)`, and no real Clusterio host id is negative.
+ *
+ * (There was a `MOCK_HOST_KEY = "mock"` constant here that nothing read — the key has always been
+ * `String(-1)` — carrying a comment explaining a collision-safety mechanism that was not in play.)
+ */
+const MOCK_HOST_ID = -1;
 
 /**
  * The real tree with fake instances appended as one extra host column.
@@ -203,7 +217,7 @@ export function withMockInstances(tree: TreeLike | null | undefined, state: Debu
 		...tree,
 		hosts: [
 			...(tree?.hosts || []),
-			{ hostId: -1, hostName: "mock (debug)", connected: true, instances },
+			{ hostId: MOCK_HOST_ID, hostName: "mock (debug)", connected: true, instances },
 		],
 	};
 }
@@ -259,32 +273,44 @@ export function mockShips(instanceIds: readonly number[]): ShipTransfer[] {
  *
  * Only the SOURCE is checked, and that is sufficient rather than lazy: `isValidConnection` refuses
  * any link that crosses the mock/real boundary, so a real key can never hold a mock target. The
- * canvas re-checks the targets at the write itself, where being wrong about that would cost
- * something.
+ * payload check below re-tests both ends at the write itself.
  */
 export function isMockEditKey(key: string): boolean {
 	const parsed = parseEditKey(key);
 	return parsed ? isMockInstanceId(parsed.sourceInstanceId) : false;
 }
 
+/** The shape `setGatewayLink` is called with — one instance, its changed gateways, their targets. */
+export type GatewaySavePayload = ReadonlyMap<number, ReadonlyArray<{
+	gatewayName: string;
+	targets: ReadonlyArray<{ targetInstanceId: number; targetGateway: string }>;
+}>>;
+
 /**
- * Does this set of edits name a mock instance anywhere — as a source OR as a target?
+ * Every mock instance named by the payload that is ABOUT TO BE SENT, as readable reasons.
  *
- * The belt-and-braces check, run at the save. If it ever returns true for something already filtered
- * by `isMockEditKey`, an invariant above has broken and the save must not proceed: writing a
- * negative instance id into the cluster's gateway config would create a link naming an instance that
- * cannot exist.
+ * THE INPUT IS THE PAYLOAD, deliberately, and not the list of pending keys. Those keys have already
+ * had every mock-sourced one removed by `isMockEditKey`; re-asking that same predicate about that
+ * same list is a tautology, and a backstop that cannot fail is not a backstop. The payload is built
+ * from them by grouping per instance and mapping each target — steps no filter upstream has looked
+ * at — so this is the first place both ends can be tested against what will actually be written.
+ *
+ * Returns every offender rather than the first: if this ever fires it is a bug report, and knowing
+ * whether one link leaked or all of them is the difference between a slip and a broken invariant.
  */
-export function mockLeakIn(edits: GatewayEdits, keys: readonly string[]): string | null {
-	for (const key of keys) {
-		if (isMockEditKey(key)) {
-			return key;
+export function mockLeaksInPayload(payload: GatewaySavePayload): string[] {
+	const leaks: string[] = [];
+	for (const [sourceInstanceId, gateways] of payload) {
+		if (isMockInstanceId(sourceInstanceId)) {
+			leaks.push(`source instance ${sourceInstanceId}`);
 		}
-		for (const target of edits[key] || []) {
-			if (isMockInstanceId(target?.targetInstanceId)) {
-				return `${key} -> ${target.targetInstanceId}`;
+		for (const entry of gateways) {
+			for (const target of entry.targets) {
+				if (isMockInstanceId(target?.targetInstanceId)) {
+					leaks.push(`${entry.gatewayName} -> instance ${target.targetInstanceId}`);
+				}
 			}
 		}
 	}
-	return null;
+	return leaks;
 }

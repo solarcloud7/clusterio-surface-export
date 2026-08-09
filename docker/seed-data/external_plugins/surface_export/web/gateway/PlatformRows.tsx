@@ -6,17 +6,25 @@
  * transfer — drag it onto another instance's portal and the Transfer dialog opens with that instance
  * already chosen.
  *
- * ALWAYS VISIBLE. This replaces the auto-hiding NodeToolbar that used to carry the same two buttons:
- * a permanent list is what the reference component is, and "a list that disappears after five
- * seconds" was a contradiction that needed a re-arm hack to stay usable at all (clicking the same
- * node again did nothing once its toolbar had expired, because selection had not changed).
+ * OPENS ON CLICK and hides itself again — see `useAutoHide` in InstanceNode.tsx, which owns the
+ * timing and the three rules it has to survive.
  *
  * ABSOLUTELY POSITIONED, and that is load-bearing rather than cosmetic. React Flow measures the node
  * element and `nodeCircle` (gateway/edge-geometry.ts) puts the node's centre at
  * `position + measured.height / 2`. A list that grew the node's border box would drag that centre
  * down and every edge would detach from the portal glow and re-attach somewhere near the pedestal.
  * Hanging outside the box — the same trick the caption already uses at `bottom: 100%` — keeps the
- * measured node a 150px circle. The layout reserves the room instead (`platformListHeight`).
+ * measured node a 150px circle. Nothing in the LAYOUT reserves room for it: like the toolbar it
+ * replaced, it is a transient overlay, and it may briefly cover the node below.
+ *
+ * A MOCK INSTANCE'S ROWS ARE INERT. They are drawn, because drawing them is the entire point of mock
+ * instances — the list's height, the six-row cap, the "+k more" line and the column pitch are what
+ * they exist to exercise — but every control on them is disabled. Export and Transfer both go
+ * STRAIGHT TO THE CONTROLLER with whatever instance id they are handed, and a mock id is negative:
+ * Export would send `exportPlatformForDownload({ sourceInstanceId: -1 })`, and the play button would
+ * open the Transfer dialog offering REAL destinations for a platform that does not exist. Neither of
+ * debug mode's two structural invariants covers this path — both are about staged gateway edits — so
+ * the refusal has to be here, at the controls themselves.
  */
 import React from "react";
 import { Handle, Position } from "@xyflow/react";
@@ -25,6 +33,7 @@ import { CaretRightOutlined, DownloadOutlined } from "@ant-design/icons";
 
 import { PLATFORM_LIST_MAX_ROWS, platformHandleId } from "./gateway-graph";
 import type { PlatformLike } from "./gateway-graph";
+import { isMockInstanceId } from "./debug-mode";
 import { platformActionKey, useNodeActions } from "./node-actions";
 import { platformStatus } from "../platform-actions";
 import { PlanetIcon } from "../icons";
@@ -54,6 +63,11 @@ function PlatformRow({ platform, instanceId, instanceName, canEdit }: {
 	const status = platformStatus(platform, null);
 	const key = platformActionKey(instanceId, platform.platformIndex);
 	const locationName = platform.spaceLocation || platform.currentTarget;
+	// A mock platform has no counterpart on any instance, and both controls below talk STRAIGHT to
+	// the controller with whatever id they are given. See the file header.
+	const isMock = isMockInstanceId(instanceId);
+	const inert = isMock || !actions;
+	const mockNote = "This is a mock platform — it does not exist on any instance, so it cannot be exported or transferred.";
 	const source = {
 		instanceId,
 		instanceName,
@@ -73,11 +87,11 @@ function PlatformRow({ platform, instanceId, instanceName, canEdit }: {
 			{status.tag
 				? <Tag color={status.tag} className="surface-export-platform-node-tag">{status.text}</Tag>
 				: <Text type="secondary" className="surface-export-platform-node-tag">{status.text}</Text>}
-			<Tooltip title="Export JSON">
+			<Tooltip title={isMock ? mockNote : "Export JSON"}>
 				<Button
 					icon={<DownloadOutlined />}
 					size="small"
-					disabled={!actions}
+					disabled={inert}
 					loading={actions?.exportingKey === key}
 					onClick={() => actions?.onExport(source)}
 				/>
@@ -93,14 +107,19 @@ function PlatformRow({ platform, instanceId, instanceName, canEdit }: {
 			    something to. Its own `p:` id namespace is what keeps a drag that ends here from being
 			    read as a gateway endpoint — see platformHandleId in gateway-graph.ts, and
 			    isValidConnection on the canvas, which refuses the combination outright. */}
-			<Tooltip title={`Drag onto another instance's portal to transfer ${platform.platformName} there — or click to choose a destination`}>
+			<Tooltip title={isMock
+				? mockNote
+				: `Drag onto another instance's portal to transfer ${platform.platformName} there — or click to choose a destination`}>
 				<Handle
 					type="source"
 					position={Position.Right}
 					id={platformHandleId(platform.platformIndex)}
-					isConnectable={canEdit}
-					className={`surface-export-platform-handle${canEdit ? "" : " surface-export-platform-handle-readonly"}`}
-					onClick={() => actions?.onTransfer(source, null)}
+					// Both halves are refused for a mock: `isConnectable` stops the DRAG, and the click
+					// handler is simply not attached. Disabling only one would leave the other reaching the
+					// controller by the route nobody was looking at.
+					isConnectable={canEdit && !isMock}
+					className={`surface-export-platform-handle${canEdit && !isMock ? "" : " surface-export-platform-handle-readonly"}`}
+					onClick={inert ? undefined : () => actions?.onTransfer(source, null)}
 				>
 					{/* pointer-events are disabled on the caret in CSS, for the same reason the gateway
 					    handles disable them on their icon: it is decoration sitting on the handle's hit

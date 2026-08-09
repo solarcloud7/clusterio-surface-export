@@ -425,24 +425,13 @@ export const INSTANCE_GAP = 70;
 export const COLUMN_GAP = 90;
 
 // ── The platform list hanging under each node ───────────────────────────────
-// Kept here rather than in CSS because the LAYOUT has to know it: the list is absolutely positioned
-// (so React Flow keeps measuring the node as a 150px circle and the edges stay anchored to the
-// portal), which means it contributes nothing to the node's own box and would otherwise be drawn
-// straight over whatever the column stacks underneath. These constants and the CSS must agree —
-// see `.surface-export-platform-list` in web/style.css.
+// These describe the list's SHAPE, and must agree with `.surface-export-platform-list` in
+// web/style.css. They are deliberately NOT part of the layout pitch: the list opens on click and
+// hides itself again, so it is a transient overlay — exactly like the NodeToolbar it replaced, which
+// also reserved nothing. Reserving a block under every node for a strip that is almost never drawn
+// cost permanent dead space in the column and made fitView zoom out for it. The price is that an
+// open list can briefly cover the node below, which resolves itself in three seconds.
 
-/** Height of one platform row, matching the CSS. */
-export const PLATFORM_ROW_HEIGHT = 28;
-/**
- * Width of the panel, matching the CSS — and WIDER than both the node and its caption.
- *
- * It has to be in the column-pitch calculation for the same reason CAPTION_WIDTH is: the panel is
- * centred on a 150px node and overhangs it on both sides, so a pitch computed from the circle alone
- * would let one instance's platform list run into the next column's.
- */
-export const PLATFORM_LIST_WIDTH = 264;
-/** Panel padding + border + the gap between it and the node above. */
-export const PLATFORM_LIST_CHROME = 22;
 /**
  * How many rows are drawn before the list stops and says how many it is not showing.
  *
@@ -451,17 +440,11 @@ export const PLATFORM_LIST_CHROME = 22;
  * line starting from nowhere. A hard cap with an honest "+k more" line has no such failure mode, and
  * the overflow row is deliberately NOT a handle: what it stands for is several platforms, so there is
  * no single thing a drag from it could mean.
+ *
+ * The cap is also what keeps an open list from being unboundedly tall, which matters more now that
+ * nothing reserves room for one.
  */
 export const PLATFORM_LIST_MAX_ROWS = 6;
-
-/** How much vertical room this instance's platform list needs, in node pixels. */
-export function platformListHeight(platformCount: number): number {
-	if (platformCount <= 0) {
-		return 0;
-	}
-	const rows = Math.min(platformCount, PLATFORM_LIST_MAX_ROWS) + (platformCount > PLATFORM_LIST_MAX_ROWS ? 1 : 0);
-	return PLATFORM_LIST_CHROME + rows * PLATFORM_ROW_HEIGHT;
-}
 
 /** How much of its own opacity a node keeps when the host filter is pointed somewhere else. */
 export const DIMMED_OPACITY = 0.12;
@@ -553,18 +536,16 @@ export function buildGraph(
 
 	const usage = gatewayUsage(edits);
 	const nodes: GraphNodeModel[] = [];
-	// As wide as the WIDEST thing a column draws — the circle, its caption, or its platform list.
-	const columnWidth = Math.max(NODE_DIAMETER, CAPTION_WIDTH, PLATFORM_LIST_WIDTH);
+	// As wide as the widest thing a column draws PERMANENTLY — the circle or its caption. The platform
+	// list is wider than both but transient, and only one is ever open (only one node is selected), so
+	// two of them cannot collide; widening every column for it was permanent cost for a transient
+	// overlap that cannot happen.
+	const columnWidth = Math.max(NODE_DIAMETER, CAPTION_WIDTH);
 	const columnPitch = columnWidth + COLUMN_GAP;
 	// Centres the circle under that column, since the things overhanging it are centred on it too.
 	const columnInset = Math.max(0, (columnWidth - NODE_DIAMETER) / 2);
 
 	columns.forEach((column, columnIndex) => {
-		// A RUNNING total, not `index * pitch`: each instance's block is as tall as ITS OWN platform
-		// list, so a fixed pitch would either waste a screen of space under every one-platform instance
-		// or let a six-platform list sit on top of the node below it. Both were reachable on the dev
-		// cluster with two instances.
-		let y = 0;
 		column.instances.forEach((instance, index) => {
 			const perGateway: Record<string, GatewayUsage> = {};
 			for (const gatewayName of gatewayNamesFor(mode)) {
@@ -573,25 +554,23 @@ export function buildGraph(
 			const dimmed = filtering && column.key !== hostFilter;
 			// Only hub-bearing platforms: a platform without a space hub cannot be exported or
 			// transferred, and the controller refuses one. Offering the rows anyway would put the
-			// refusal after the click instead of before it. Resolved BEFORE the position so the block
-			// below this node is sized from the list that will actually be drawn.
+			// refusal after the click instead of before it.
 			const platforms = (instance.platforms || [])
 				.filter(platform => platform && platform.hasSpaceHub)
 				.map(platform => ({
 					...platform,
 					forceName: platform.forceName || tree?.forceName || "player",
 				}));
-			if (index > 0) {
-				// The caption of THIS node hangs above it, so it is charged to the gap before it.
-				y += INSTANCE_GAP + CAPTION_HEIGHT;
-			}
 			nodes.push({
 				id: instanceNodeId(instance.instanceId),
 				type: "instance",
 				deletable: false,
 				position: {
 					x: columnIndex * columnPitch + columnInset,
-					y,
+					// Every node owns its diameter PLUS its caption; the gap sits between those blocks.
+					// The platform list is NOT in this sum — it is a transient overlay, see the note on
+					// PLATFORM_LIST_MAX_ROWS above.
+					y: index * (NODE_DIAMETER + CAPTION_HEIGHT + INSTANCE_GAP),
 				},
 				// Dimming is a node STYLE rather than a class on the inner element so it covers the
 				// caption too — the caption is positioned outside the node's own box, and fading the
@@ -615,7 +594,6 @@ export function buildGraph(
 					gateways: perGateway,
 				},
 			});
-			y += NODE_DIAMETER + platformListHeight(platforms.length);
 		});
 	});
 
