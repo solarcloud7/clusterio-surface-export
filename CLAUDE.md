@@ -483,10 +483,11 @@ opens a slot that gets filled from plausibility. Removing the slot removes the c
 ### General Style (partially enforced by ESLint — `npm run lint`, gated in CI)
 
 > `npm run lint` runs eleven **correctness** guards, all gated in CI; a twelfth (**commit labels**,
-> `scripts/lint-commit-labels.mjs`) runs as its own PR-gated CI step. Each script header carries the full
-> rationale and incident history. Every `*:allow` escape hatch MUST be enumerated in
-> `scripts/lint-allow-manifest.json` with a reason and approver — an allow is an **escalation**, never
-> self-approved.
+> `scripts/lint-commit-labels.mjs`) runs as its own PR-gated CI step. Each guard's full rationale and
+> incident history lives in [docs/lint-guards.md](docs/lint-guards.md) (relocated from the script
+> headers by the code-comment purge — scripts carry enforcement only). Every `*:allow` escape hatch
+> MUST be enumerated in `scripts/lint-allow-manifest.json` with a reason and approver — an allow is
+> an **escalation**, never self-approved.
 >
 > | Guard | Command | Rule | Allow marker |
 > |-------|---------|------|--------------|
@@ -508,6 +509,12 @@ opens a slot that gets filled from plausibility. Removing the slot removes the c
 >
 > The cosmetic conventions below (indentation, quotes, naming) are **conventions, not yet all machine-enforced** — match the surrounding code.
 
+- **Comments: code carries NO prose** (owner policy 2026-08-09, executed by the comment purge).
+  Rationale, incident history, and behavior claims live in `docs/*.md`, commit messages, and
+  tests — never in code comments, where they rot into misdirection (the born-false "gate consumes
+  this map" comment caused a fourth duplicate meter). The ONLY comments that belong in code are
+  machine-read markers the guards enforce (`*:allow`, `intentional probe`, `deliberately quiet`)
+  and directives (`eslint-disable`, shebangs). A cross-file behavior claim exists ONLY as a test.
 - **Indentation**: Tabs (not spaces, except in Markdown)
 - **Line length**: 120 characters (tabs count as 4)
 - **Strings**: Double quotes `"` (single quotes `'` if string contains double quotes)
