@@ -7,10 +7,11 @@
  * they are. Hence the "debug" tag and the ✕ that turns the whole thing off.
  */
 import React from "react";
-import { Button, Space, Switch, Tag, Tooltip, Typography } from "antd";
+import { Button, Checkbox, Space, Switch, Tag, Tooltip, Typography } from "antd";
 import { CloseOutlined, MinusOutlined, PlusOutlined } from "@ant-design/icons";
 
-import { MAX_MOCK_INSTANCES, MAX_MOCK_PLATFORMS } from "./debug-mode";
+import { MAX_MOCK_INSTANCES, MAX_MOCK_PLATFORMS, SHIP_PHASE_NAMES } from "./debug-mode";
+import { shipPhaseFor } from "./transfer-motion";
 import type { DebugState } from "./debug-mode";
 
 const { Text } = Typography;
@@ -85,10 +86,22 @@ export default function DebugPanel({ state, onChange, mockCount }: {
 					}
 				/>
 
-				<Tooltip title="Draw one ship per transfer phase — in transit, validating, arrived, failed, cleanup failed — without running a transfer. They spread across the available instances, so add mock instances to stop them sharing edges.">
+				{/* PER PHASE, not one switch. Comparing "validating" against "failed — returned" means
+				    having exactly those two on screen; all-or-nothing put five ships up and left you
+				    picking one out of the pile. Names come from the phase model, so a phase the canvas
+				    stops drawing cannot linger here as a checkbox that does nothing. */}
+				<Tooltip title="Draw a fake ship for each selected transfer phase, without running a transfer. They spread across the available instances, so add mock instances to stop them sharing edges.">
 					<span className="surface-export-debug-switch">
-						<Switch size="small" checked={state.showShips} onChange={showShips => set({ showShips })} />
 						<Text className="surface-export-debug-label">ships</Text>
+						<Checkbox.Group
+							className="surface-export-debug-phases"
+							value={state.shipPhases}
+							onChange={shipPhases => set({ shipPhases: shipPhases as string[] })}
+							options={SHIP_PHASE_NAMES.map(name => ({
+								label: shipPhaseFor(name)?.label ?? name,
+								value: name,
+							}))}
+						/>
 					</span>
 				</Tooltip>
 

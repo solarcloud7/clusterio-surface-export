@@ -523,6 +523,20 @@ body.surface-export-page .site-layout-content-container {
 	font-size: 11px;
 }
 
+/* The per-phase ship checkboxes. Kept on one line with the rest of the row — five short labels are
+   narrower than the stepper beside them, and wrapping them would break the strip into two rows. */
+.surface-export-debug-phases {
+	display: inline-flex;
+	align-items: center;
+	gap: 2px;
+	font-size: 11px;
+}
+
+.surface-export-debug-phases .ant-checkbox-wrapper {
+	font-size: 11px;
+	margin-inline-start: 0;
+}
+
 /* The geometry overlay: the invisible things that decide behaviour, drawn. Sits above the gate art
    (which is itself absolutely positioned) and swallows no pointer — an overlay that ate clicks would
    break the very connect zone it exists to explain. */

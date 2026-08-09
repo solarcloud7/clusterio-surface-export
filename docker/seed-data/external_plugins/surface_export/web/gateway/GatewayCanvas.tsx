@@ -1,8 +1,9 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Alert, Button, Empty, Select, Space, Spin, Tooltip, Typography, message as antMessage } from "antd";
-import { ReloadOutlined, UploadOutlined } from "@ant-design/icons";
+import { BugOutlined, ReloadOutlined, UploadOutlined } from "@ant-design/icons";
 import {
 	Background,
+	ControlButton,
 	Controls,
 	MarkerType,
 	MiniMap,
@@ -54,9 +55,13 @@ import {
 	mockLeaksInPayload,
 	mockShips,
 	saveDebugState,
+	scenarioToEdits,
+	scenarioToShips,
+	scenarioToTree,
 	withMockInstances,
 } from "./debug-mode";
-import type { DebugState } from "./debug-mode";
+import type { DebugScenario, DebugState } from "./debug-mode";
+import { installCanvasDebugApi } from "./debug-api";
 import { applySavedLayout, clearLayout, loadLayout, saveLayout } from "./layout-store";
 import { SHIP_LEGEND, instancePairKey, noteLiveSeen, noteTerminalSeen, shipExpiryMs, shipPhaseFor, shipsInFlight, transientEdgeId } from "./transfer-motion";
 import { DEFAULT_GATEWAY_MODE, checkMultiModeLink, gatewayNamesFor } from "../../shared/dto";
@@ -179,6 +184,10 @@ export default function GatewayCanvas({ plugin, state, onOpenImport }: {
 		setDebugState(next);
 		saveDebugState(next);
 	}, []);
+	// A loaded scenario REPLACES the live cluster on this canvas. Deliberately not persisted: a
+	// scenario is something you are looking at right now, and a reload silently restoring a synthetic
+	// cluster would be indistinguishable from the real one having gone strange.
+	const [scenario, setScenario] = useState<DebugScenario | null>(null);
 
 	const [nodes, setNodes, onNodesChange] = useNodesState<Node>([]);
 	const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
@@ -241,13 +250,32 @@ export default function GatewayCanvas({ plugin, state, onOpenImport }: {
 
 	useEffect(() => { void load(); }, [load]);
 
-	// Mock instances are injected INTO THE TREE, upstream of buildGraph, so they go through exactly
-	// the same projection, layout and rendering a real instance does. A mock that took a shortcut
-	// would be exercising the shortcut.
-	const effectiveTree = useMemo(() => withMockInstances(tree, debug), [tree, debug]);
+	// A scenario REPLACES the tree; mock instances APPEND to it. Both are injected upstream of
+	// buildGraph so they go through exactly the same projection, layout and rendering a real instance
+	// does — a mock that took a shortcut would be exercising the shortcut.
+	const effectiveTree = useMemo(
+		() => (scenario ? scenarioToTree(scenario) : withMockInstances(tree, debug)),
+		[scenario, tree, debug],
+	);
+
+	/**
+	 * A scenario's links, kept OUT of `edits` entirely.
+	 *
+	 * They are merged only here, at the projection, so they are drawn without ever being staged. The
+	 * mock-id filter would have caught them at the save anyway, but that would have made them show up
+	 * as changes to revert — and a scenario is a picture, not an edit someone made.
+	 */
+	const scenarioEdits = useMemo(
+		() => (scenario ? scenarioToEdits(scenario, gatewayNamesFor(mode)[0]) : null),
+		[scenario, mode],
+	);
+	// A scenario's links REPLACE the cluster's, they do not merge with them. Merging left the real
+	// cluster's links in the graph with their nodes gone — React Flow silently dropped the edges, so
+	// nothing looked wrong, but every count derived from the graph was one too high. "Replace" has to
+	// be total or it is just a confusing overlay.
 	const graph = useMemo(
-		() => buildGraph(effectiveTree, edits, mode, hostFilter),
-		[effectiveTree, edits, mode, hostFilter],
+		() => buildGraph(effectiveTree, scenarioEdits ?? edits, mode, hostFilter),
+		[effectiveTree, edits, scenarioEdits, mode, hostFilter],
 	);
 
 	/**
@@ -375,14 +403,20 @@ export default function GatewayCanvas({ plugin, state, onOpenImport }: {
 	 * wake-up 50ms out, and do it again on every re-render, forever.
 	 */
 	const ships = useMemo(() => {
-		if (!debug.enabled || !debug.showShips) {
+		// A scenario names its own transfers and REPLACES the live ones — the whole point of writing one
+		// is to say exactly which journeys are in flight, and a real transfer riding in alongside would
+		// be a journey between instances the scenario says do not exist.
+		if (scenario) {
+			return scenarioToShips(scenario);
+		}
+		if (!debug.enabled) {
 			return realShips;
 		}
 		const instanceIds = graph.nodes
 			.map(node => instanceIdFromNodeId(node.id))
 			.filter((id): id is number => id !== null);
-		return [...realShips, ...mockShips(instanceIds)];
-	}, [realShips, debug.enabled, debug.showShips, graph]);
+		return [...realShips, ...mockShips(instanceIds, debug.shipPhases)];
+	}, [realShips, debug.enabled, debug.shipPhases, scenario, graph]);
 
 	useEffect(() => {
 		// REAL ships only — see the memo above for why a fake must not be timed, and note that letting
@@ -793,6 +827,35 @@ export default function GatewayCanvas({ plugin, state, onOpenImport }: {
 
 	const revert = useCallback(() => setEdits(baseline), [baseline]);
 
+	/**
+	 * `window.surfaceExportCanvas`, live for as long as this tab is mounted.
+	 *
+	 * The refs are what keep the API honest: it is installed once, but every command reads the CURRENT
+	 * state through them. Installing it with the state captured would give a console that reports
+	 * whatever was true when the page loaded and silently overwrites anything changed since.
+	 */
+	const liveRef = useRef({ debug, scenario, graph, mode });
+	liveRef.current = { debug, scenario, graph, mode };
+	useEffect(() => installCanvasDebugApi({
+		getState: () => liveRef.current.debug,
+		setState: setDebug,
+		getScenario: () => liveRef.current.scenario,
+		setScenario,
+		describe: () => {
+			const { debug: state, scenario: loaded, graph: current } = liveRef.current;
+			return {
+				source: loaded ? "scenario" : "live cluster",
+				instances: current.nodes.length,
+				mockInstances: current.nodes.filter(n => isMockInstanceId(n.data.instanceId as number)).length,
+				platforms: current.nodes.reduce((n, node) => n + ((node.data.platforms as unknown[]) || []).length, 0),
+				links: current.edges.length,
+				debugMode: state.enabled,
+				shipPhases: state.shipPhases,
+				geometry: state.showGeometry,
+			};
+		},
+	}), [setDebug]);
+
 	if (loading && !nodes.length) {
 		return <Spin style={{ margin: "24px auto", display: "block" }} />;
 	}
@@ -850,7 +913,19 @@ export default function GatewayCanvas({ plugin, state, onOpenImport }: {
 					minZoom={0.2}
 				>
 					<Background />
-					<Controls />
+					{/* The debug toggle lives WITH the other view controls — zoom, fit, lock — because that
+					    is what it is: a way of changing what you are shown, not something that acts on the
+					    cluster. `?debug=1` still works and is still what a fresh session uses; this is the
+					    handle for someone already looking at the canvas. */}
+					<Controls>
+						<ControlButton
+							onClick={() => setDebug({ ...debug, enabled: !debug.enabled })}
+							title={debug.enabled ? "Turn debug mode off" : "Turn debug mode on (also: surfaceExportCanvas.help())"}
+							aria-label="toggle debug mode"
+						>
+							<BugOutlined style={debug.enabled ? { color: "#b37feb" } : undefined} />
+						</ControlButton>
+					</Controls>
 					<MiniMap
 						pannable
 						zoomable

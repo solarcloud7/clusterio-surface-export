@@ -48,8 +48,14 @@ export type DebugState = {
 	mockInstances: number;
 	/** How many fake platforms each fake instance carries. */
 	mockPlatforms: number;
-	/** Draw one fake ship per transfer phase. */
-	showShips: boolean;
+	/**
+	 * WHICH transfer phases to draw a fake ship for — not a single on/off.
+	 *
+	 * Per-phase because the phases are what you are usually looking at: comparing "validating" against
+	 * "failed — returned" means having exactly those two on screen, and an all-or-nothing switch put
+	 * five ships up and left you picking one out of the pile.
+	 */
+	shipPhases: string[];
 	/** Outline the measured node box, the portal hit-zone and the edge anchor. */
 	showGeometry: boolean;
 };
@@ -58,7 +64,7 @@ export const DEFAULT_DEBUG_STATE: DebugState = {
 	enabled: false,
 	mockInstances: 4,
 	mockPlatforms: 3,
-	showShips: false,
+	shipPhases: [],
 	showGeometry: false,
 };
 
@@ -124,7 +130,12 @@ export function loadDebugState(): DebugState {
 					enabled: Boolean(parsed.enabled),
 					mockInstances: clamp(parsed.mockInstances, 0, MAX_MOCK_INSTANCES, DEFAULT_DEBUG_STATE.mockInstances),
 					mockPlatforms: clamp(parsed.mockPlatforms, 0, MAX_MOCK_PLATFORMS, DEFAULT_DEBUG_STATE.mockPlatforms),
-					showShips: Boolean(parsed.showShips),
+					// Filtered against the live phase list rather than trusted: a stored phase name that no
+					// longer exists would draw nothing and look like a broken toggle. Also absorbs the
+					// older `showShips: true` shape, which meant "all of them".
+					shipPhases: Array.isArray(parsed.shipPhases)
+						? parsed.shipPhases.filter(name => (SHIP_PHASE_NAMES as readonly string[]).includes(name))
+						: ((parsed as { showShips?: boolean }).showShips ? [...SHIP_PHASE_NAMES] : []),
 					showGeometry: Boolean(parsed.showGeometry),
 				};
 			}
@@ -241,7 +252,7 @@ export function withMockInstances(tree: TreeLike | null | undefined, state: Debu
  * only two instances they necessarily share, which is itself an argument for turning on mock
  * instances alongside this.
  */
-const MOCK_SHIP_STATUSES = [
+export const SHIP_PHASE_NAMES = [
 	"transporting",
 	"awaiting_validation",
 	"completed",
@@ -249,11 +260,11 @@ const MOCK_SHIP_STATUSES = [
 	"cleanup_failed",
 ] as const;
 
-export function mockShips(instanceIds: readonly number[]): ShipTransfer[] {
+export function mockShips(instanceIds: readonly number[], phases: readonly string[]): ShipTransfer[] {
 	if (instanceIds.length < 2) {
 		return [];
 	}
-	return MOCK_SHIP_STATUSES.map((status, index) => {
+	return phases.map((status, index) => {
 		const sourceInstanceId = instanceIds[(index * 2) % instanceIds.length];
 		const targetInstanceId = instanceIds[(index * 2 + 1) % instanceIds.length];
 		return {
@@ -264,6 +275,113 @@ export function mockShips(instanceIds: readonly number[]): ShipTransfer[] {
 			targetInstanceId,
 		};
 	}).filter(ship => ship.sourceInstanceId !== ship.targetInstanceId) as ShipTransfer[];
+}
+
+// ── Scenarios: an arbitrary canvas, described in one object ──────────────────
+
+/**
+ * A whole canvas, written by hand.
+ *
+ * This is the thing the console API exists to load. Mock instances answer "what does the layout do
+ * with more nodes"; a scenario answers "what does the canvas do with THIS shape" — a hub and spokes,
+ * a chain, two disconnected clusters, an instance with twelve platforms and one with none, a
+ * transfer mid-validation between two specific nodes. None of those are reachable by turning a
+ * number up, and none of them exist on the dev cluster.
+ *
+ * Instances are addressed by their INDEX in the array (0-based) everywhere else in the scenario, so
+ * a scenario is readable and reorderable without bookkeeping ids by hand. They become negative
+ * instance ids on the way in, which is what keeps every safety invariant in this file intact: a
+ * scenario cannot be saved, cannot link to a real instance, and cannot be exported or transferred.
+ */
+export type DebugScenario = {
+	instances: Array<{
+		name?: string;
+		host?: string;
+		online?: boolean;
+		/** Platform names, or richer rows when the status/location matter. */
+		platforms?: Array<string | { name?: string; location?: string; status?: string; locked?: boolean }>;
+	}>;
+	/** Gateway links, as `[fromIndex, toIndex]` pairs. Drawn, never saveable. */
+	links?: Array<[number, number]>;
+	/** Transfers to draw, as `{ from, to, status }` with instance INDEXES. */
+	ships?: Array<{ from: number; to: number; status: string }>;
+};
+
+const SCENARIO_HOST = "scenario (debug)";
+
+/** A scenario's instances as a platform tree, with the same negative-id rule as every other mock. */
+export function scenarioToTree(scenario: DebugScenario): TreeLike {
+	const byHost = new Map<string, InstanceLike[]>();
+	scenario.instances.forEach((spec, index) => {
+		const host = spec.host || SCENARIO_HOST;
+		const platforms = (spec.platforms || []).map((platform, platformIndex) => {
+			const row = typeof platform === "string" ? { name: platform } : platform;
+			return {
+				platformIndex: platformIndex + 1,
+				platformName: row.name || `pad-${platformIndex + 1}`,
+				forceName: "player",
+				hasSpaceHub: true,
+				spaceLocation: row.location ?? "nauvis",
+				transferStatus: row.status,
+				isLocked: Boolean(row.locked),
+			};
+		});
+		const list = byHost.get(host) || [];
+		list.push({
+			instanceId: mockInstanceId(index),
+			instanceName: spec.name || `scenario-${index + 1}`,
+			address: `scenario:${34000 + index}`,
+			connected: spec.online !== false,
+			status: spec.online === false ? "stopped" : "running",
+			platforms,
+		});
+		byHost.set(host, list);
+	});
+	return {
+		hosts: [...byHost.entries()].map(([hostName, instances], hostIndex) => ({
+			hostId: -(hostIndex + 1),
+			hostName,
+			connected: true,
+			instances,
+		})),
+	};
+}
+
+/**
+ * A scenario's links as gateway edits.
+ *
+ * BOTH DIRECTIONS, matching `applyConnect` — a drawn edge is a two-way portal, and a scenario that
+ * produced one-way links would render arrowheads the real editor never makes.
+ */
+export function scenarioToEdits(scenario: DebugScenario, gatewayName: string): GatewayEdits {
+	const edits: GatewayEdits = {};
+	const push = (from: number, to: number) => {
+		const key = `${mockInstanceId(from)}:${gatewayName}`;
+		const targets = edits[key] || [];
+		targets.push({ targetInstanceId: mockInstanceId(to), targetGateway: gatewayName });
+		edits[key] = targets;
+	};
+	for (const [from, to] of scenario.links || []) {
+		if (from === to) {
+			continue;
+		}
+		push(from, to);
+		push(to, from);
+	}
+	return edits;
+}
+
+/** A scenario's transfers as ships. Indexes resolve to the same negative ids as the instances. */
+export function scenarioToShips(scenario: DebugScenario): ShipTransfer[] {
+	return (scenario.ships || [])
+		.filter(ship => ship.from !== ship.to)
+		.map((ship, index) => ({
+			transferId: `${MOCK_SHIP_PREFIX}scenario-${index}-${ship.status}`,
+			operationType: "transfer" as const,
+			status: ship.status,
+			sourceInstanceId: mockInstanceId(ship.from),
+			targetInstanceId: mockInstanceId(ship.to),
+		})) as ShipTransfer[];
 }
 
 // ── The safety partition ────────────────────────────────────────────────────
