@@ -289,9 +289,7 @@ Rung IDs cited in code and docs (fluid-lab R11, inserter-lab B6, …) point at e
 archive tag. Record negative and unexplained results honestly — an eliminated failure whose root cause was never
 isolated is UNEXPLAINED, not fixed.
 
-**Two audit-boundary rules:**
-- **Commit labels are audit boundaries.** A `docs:` commit must never carry code (CI-enforced by
-  `scripts/lint-commit-labels.mjs`).
+**Audit-boundary rule:**
 - **A merge isn't done until main's own post-merge run is green.** PR runs get watched; push runs don't —
   watch the post-merge run, every time.
 
@@ -482,12 +480,13 @@ opens a slot that gets filled from plausibility. Removing the slot removes the c
 
 ### General Style (partially enforced by ESLint — `npm run lint`, gated in CI)
 
-> `npm run lint` runs eleven **correctness** guards, all gated in CI; a twelfth (**commit labels**,
-> `scripts/lint-commit-labels.mjs`) runs as its own PR-gated CI step. Each guard's full rationale and
+> `npm run lint` runs eleven **correctness** guards, all gated in CI. Each guard's full rationale and
 > incident history lives in [docs/lint-guards.md](docs/lint-guards.md) (relocated from the script
 > headers by the code-comment purge — scripts carry enforcement only). Every `*:allow` escape hatch
 > MUST be enumerated in `scripts/lint-allow-manifest.json` with a reason and approver — an allow is
-> an **escalation**, never self-approved.
+> an **escalation**, never self-approved. (The commit-labels guard was RETIRED 2026-08-09, owner
+> ruling: with rationale moving out of code into maintained .md, the docs-commit boundary no longer
+> earns its CI step.)
 >
 > | Guard | Command | Rule | Allow marker |
 > |-------|---------|------|--------------|
@@ -502,7 +501,6 @@ opens a slot that gets filled from plausibility. Removing the slot removes the c
 > | Test hooks | `lint:test-hooks` | a `test_force_*` hook disarms in `finally`/`trap` or is enumerated in `FAIL_SAFE_HOOKS` (`scripts/fail-safe-hooks.mjs`) | `FAIL_SAFE_HOOKS` entry |
 > | Derived art | `lint:derived-art` | every image in `web/assets` still matches its source art re-derived (the bundled gateway icon is a SECOND copy of mod art, and a stale copy shows last month’s art with no error anywhere); an undeclared image in that dir is refused rather than trusted | — |
 > | Allow manifest | `lint:allow-manifest` | manifest matches reality exactly, both directions | — |
-> | Commit labels | (own CI step) | a `docs:`-labeled commit touches only doc paths — labels are audit boundaries | — |
 >
 > Discipline the guards cannot fully mechanize: ship the adversarial fixture WITH the fix, and run
 > `/di-change` (or `/code-review`) before merging any gate/validation/rollback/source-delete/test-hook change.
