@@ -1,29 +1,5 @@
 "use strict";
 
-// Offline contract test for the import phase registry (module/utils/phase-recorder.lua).
-//
-// WHY THIS FILE EXISTS. The registry was introduced to make a phase declarable in ONE place
-// instead of five. That makes it the file where a bad edit does the most silent damage — and it
-// shipped with two defects of exactly the class it was written to prevent, caught only by review:
-//
-//   1. `delivery` and `queue` were returned by profiler_names() but are bracketed by nobody. A
-//      LuaProfiler that is created and never started reads 0.000 ms forever, and both consumers
-//      (transaction-history, transaction-dashboard) iterate every key they are handed — so the
-//      phantom does not render as ABSENT, it renders as INSTANT. That would have put "0 ms" next
-//      to `delivery`, routinely the longest span in the trace.
-//   2. `tiles` and `entities` were silently given cross-tick profilers, mixing a different
-//      quantity into a table where every other entry brackets one synchronous section.
-//
-// Neither is visible in a green transfer: the numbers are simply wrong, and wrong quietly. The
-// live suite cannot see them either — it asserts fidelity, not that a timing label measures the
-// window it names. So the guard has to be here, offline, in the shape of the invariants.
-//
-// Style follows census-meter.test.cjs (plain `node --test`, zero deps). IMPORT_PHASES itself is
-// read as DATA via the vendored luaparse rather than by regex, so `profiled = false` and the
-// from/to pairing are checked as values, not as text that happens to appear in the file.
-//
-// Deliberately NOT executed: there is no Lua VM in the build container (scoop's lua.exe is this
-// developer's machine only), and a skip-if-absent test is the vacuous pass this repo rejects.
 
 const { test } = require("node:test");
 const assert = require("node:assert/strict");
@@ -39,16 +15,12 @@ const pipelineSrc = read("core", "import-pipeline.lua");
 const completionSrc = read("core", "import-completion.lua");
 const entityCreationSrc = read("import_phases", "entity_creation.lua");
 
-// The bracketing scan covers the IMPORT path only. export-pipeline.lua brackets a `completion`
-// profiler that is deliberately not an import phase; including it would fail rule R4 forever.
 const IMPORT_CALL_SITES = [
 	["import-pipeline.lua", pipelineSrc],
 	["import-completion.lua", completionSrc],
 ];
 
-// ── Read IMPORT_PHASES as data ──────────────────────────────────────────────────────────────
 
-/** Unwrap a luaparse literal to a JS value; returns undefined for anything else. */
 function literal(node) {
 	if (!node) return undefined;
 	if (node.type === "StringLiteral") {
@@ -90,17 +62,9 @@ function parseImportPhases(source) {
 
 const PHASES = parseImportPhases(recorderSrc);
 
-/** The LuaProfiler key for a phase — `profiler` when it differs from the span name (hub/hub_restore). */
 const profilerKey = (spec) => spec.profiler || spec.name;
 const profiledPhases = PHASES.filter((spec) => spec.profiled !== false);
 
-// ── The expected registry, pinned ───────────────────────────────────────────────────────────
-//
-// These two lists are the point of the file. They are not a restatement of the source — they are
-// the shape verified on a live 2.1.11 transfer (11 profilers in the dashboard snapshot, 13 spans
-// in the waterfall; `delivery` is the 14th span-capable phase and is absent on a non-chunked
-// import). Adding or removing a phase must be a DELIBERATE edit here, reviewed against what the
-// dashboard and the waterfall will actually show.
 
 const EXPECTED_PROFILERS = [
 	"activation", "beacons", "belts", "fluids", "held_items", "hub_restore",
@@ -150,15 +114,7 @@ test("R3: build_spans emits exactly the expected spans, in pipeline order", () =
 		+ "and the web stitches these onto the transfer timeline");
 });
 
-// ── Bracketing: the defect that shipped ─────────────────────────────────────────────────────
-//
-// Two mechanisms bracket a profiler, and both are legitimate today:
-//   PhaseRecorder.start(job, "<span name>")      — 9 phases; resolves through `profiler or name`
-//   PhaseProfiler.start(job_id, "<profiler>")    — queue_setup and validation, which bracket a
-//                                                  narrower region than their tick marks cover
-// The union is what matters: a profiler is real if SOMETHING starts and stops it.
 
-/** Phase names passed to PhaseRecorder.start/stop. These are SPAN names, profiled or not. */
 function recorderNames(kind) {
 	const re = new RegExp(String.raw`PhaseRecorder\.${kind}\s*\(\s*job\s*,\s*"([^"]+)"`, "g");
 	const found = new Set();
@@ -168,7 +124,6 @@ function recorderNames(kind) {
 	return found;
 }
 
-/** Profiler keys passed to PhaseProfiler.start/stop directly, bypassing the recorder. */
 function rawProfilerKeys(kind) {
 	const re = new RegExp(String.raw`PhaseProfiler\.${kind}\s*\(\s*[\w.]+\s*,\s*"([^"]+)"`, "g");
 	const found = new Set();
@@ -178,7 +133,6 @@ function rawProfilerKeys(kind) {
 	return found;
 }
 
-/** Profiler keys a phase actually gets started/stopped under, via either mechanism. */
 function bracketedProfilers(kind) {
 	const found = new Set(rawProfilerKeys(kind));
 	for (const name of recorderNames(kind)) {
@@ -226,12 +180,6 @@ test("R6: a raw PhaseProfiler bracket names a declared profiler", () => {
 	}
 });
 
-// ── The entity counters: measured tallies, never a subtraction ───────────────────────────────
-//
-// `entities_failed` used to be `job.total_entities - <created>`, which counted every deliberately
-// unmapped ground item as a placement failure — it reported 106 failures on a transfer with zero,
-// at exact item parity. The fix was to report the per-batch tally the create loop already had.
-// Regressing to arithmetic here is invisible: the number still looks like a number.
 
 test("R7: entity outcome counters are accumulated from measured batch tallies", () => {
 	for (const counter of ["entities_created", "entities_failed", "entities_skipped"]) {
@@ -270,30 +218,12 @@ test("R9: entities_mapped counts entity_map membership, not placement success", 
 		+ "items are placed without being mapped, which is why the old subtraction misread them as failures.");
 });
 
-// ── Per-phase durations: read the registry, never subtract by hand ───────────────────────────
-//
-// Each `<phase>_ticks` in the import-complete payload was a hand-written
-// `(m.x_completed_tick or 0) - (m.x_started_tick or 0)`. That shape shipped a defect: validation's
-// two boundaries live under DIFFERENT guards — `validation_started_tick` is stamped unconditionally
-// (import-completion.lua:396) while `validation_done_tick` is assigned only inside
-// `if is_transfer and has_verification`. On a plain file/upload import the subtraction therefore ran
-// as `0 - game.tick` and shipped a large NEGATIVE number to the controller, where the TS side's
-// `Number(x || 0)` passes a negative straight through.
-//
-// The `or 0` is what makes it invisible: it reads as a safe default while manufacturing a measured-
-// looking number out of a missing boundary. PhaseRecorder.phase_ticks reads both boundaries off the
-// SAME registry entry that declares the phase and returns nil when either is absent.
 
 test("R10: every per-phase duration comes from the registry, not a hand subtraction", () => {
 	const phases = PHASES.filter((spec) => spec.to && (spec.from || spec.from_job)).map((s) => s.name);
 	const lines = completionSrc.split(/\r?\n/);
 	for (const [i, line] of lines.entries()) {
 		if (line.trimStart().startsWith("--")) continue;
-		// Widened to `_ms` too (Workstream A): the tiles_ms/entities_ms perf prints carried the exact
-		// same `(completed or 0) - (started or 0)` shape after the _ticks sweep closed — a duration is
-		// a duration whatever unit it wears. An RHS is legitimate if it reads the registry directly or
-		// derives from a `*_ticks` variable (which itself can only pass this test via the registry);
-		// raw `*_tick` metric reads have no `_ticks` word and fail.
 		const assignment = /\b(\w+)_(?:ticks|ms)\s*=\s*([^,\n]+)/.exec(line);
 		if (!assignment || !phases.includes(assignment[1])) continue;
 		assert.match(assignment[2], /PhaseRecorder\.phase_ticks\s*\(|\b\w+_ticks\b/,
@@ -305,12 +235,6 @@ test("R10: every per-phase duration comes from the registry, not a hand subtract
 });
 
 test("R10b: the '(boundary or 0)' subtraction SHAPE is banned anywhere, not just in assignments", () => {
-	// Review finding on the R10 widening: the assignment-shaped scan above is blind to the same
-	// subtraction written INLINE (inside a game.print call, a table constructor, a function arg) or
-	// laundered through a _ticks-named variable. This scans for the DEFECT SHAPE itself — a raw
-	// tick BOUNDARY read defaulted with `or 0` — which is exactly the construct that turns a
-	// missing boundary into a number that looks measured. phase-recorder.lua is the one lawful
-	// reader of raw boundaries, and it refuses the default (returns nil) rather than wearing one.
 	const lines = completionSrc.split(/\r?\n/);
 	for (const [i, line] of lines.entries()) {
 		if (line.trimStart().startsWith("--")) continue;

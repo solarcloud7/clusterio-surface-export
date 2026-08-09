@@ -1,21 +1,3 @@
-// The gallery test-foundation template, captured tile-exact from the live omnibus
-// (lab-omnibus-platform-v1, cell origin (34,-128), 2026-07-18). One cell is 26x12:
-//   - left half: the 12x12 tutorial-grid fixture pad inside a refined-hazard border
-//   - col 13: the hazard-concrete-left divider strip
-//   - right half: the refined-concrete emblem pad
-//   - display panel ON the border at origin+(13,11) (tile), i.e. entity pos +(13.5,11.5)
-//   - test-name rendering text above the pad at origin+(6,-1.5), scale 2.5, cyan
-// Grid pitch between cells: 28 horizontal, 14 vertical.
-// Tutorial-grid cannot ride a blueprint (not blueprintable), which is why this template
-// is recorded as data here instead of a blueprint string.
-//
-// Usage (stamp a new cell live):
-//   node tests/lab-gallery/test-foundation.mjs <originX> <originY> <test-name> [instance]
-// The stamp is REFUSED unless every target tile is empty-space or plain walkway foundation
-// (the only-onto-empty rule; fill_walkways lays reclaimable foundation over every empty grid
-// slot, so it stamps like empty space) or the cell already matches the template exactly
-// (idempotent re-stamp).
-
 import { execFileSync } from "node:child_process";
 import { pathToFileURL } from "node:url";
 
@@ -24,8 +6,6 @@ export const CELL_HEIGHT = 12;
 export const CELL_PITCH = { x: 28, y: 14 };
 export const PANEL_TILE_OFFSET = { x: 13, y: 11 };
 export const NAME_TEXT_OFFSET = { x: 6, y: -1.5 };
-// Name-text color IS the test status (owner-designed runner display, 2026-07-18):
-// waiting = blue, pass = green, fail = red (driven by test-status.mjs). New stamps start waiting.
 export const NAME_TEXT_STYLE = { scale: 2.5, color: { r: 0.3, g: 0.85, b: 1, a: 1 } };
 
 export const LEGEND = {
@@ -36,7 +16,6 @@ export const LEGEND = {
 	C: "refined-concrete",
 };
 
-// 12 rows x 26 cols, top-left = cell origin. Read from the world, byte-exact.
 export const TEMPLATE_ROWS = [
 	"LLLLLRRRRRRRRRLLLLLLRRRRRR",
 	"LTTTTTTTTTTTThLTTTTLRTTTTR",
@@ -52,12 +31,6 @@ export const TEMPLATE_ROWS = [
 	"RRRRRRLLLLLRRRRRRRRRLLLLLL",
 ];
 
-/**
- * Emit the one-shot /sc Lua that stamps a foundation cell at (originX, originY) on the
- * player's current surface (falls back to lab-omnibus-platform-v1 headless), places the
- * description display-panel, and draws the name text. Refuses on any non-empty collision
- * unless the cell already matches the template (idempotent).
- */
 export function buildFoundationLua(originX, originY, testName) {
 	const rows = TEMPLATE_ROWS.join(",");
 	const legend = Object.entries(LEGEND).map(([k, v]) => `${k}="${v}"`).join(",");

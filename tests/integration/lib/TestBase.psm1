@@ -1,82 +1,27 @@
-<#
-.SYNOPSIS
-    Shared integration test infrastructure for clusterio-surface-export.
-
-.DESCRIPTION
-    This module provides common functions for:
-    - RCON communication with Clusterio instances
-    - Platform cloning for isolated test surfaces
-    - Debug file retrieval and parsing
-    - Tick stepping for paused games
-    - Test result reporting
-
-    Each test uses its own cloned platform surface to avoid interference.
-#>
-
-# Module-level variables
 $script:DefaultController = "surface-export-controller"
 $script:ControlConfig = "/clusterio/tokens/config-control.json"
 
-# ---- Seeded fixture platform names — THE single source of truth. ----
-# The seed saves ARE the banked gallery pair, so host-1 boots with the pad grid and the 1359-entity
-# transfer fixture. These names were previously hardcoded in six places across five test scripts; a
-# rename then failed one test at a time (belt-loss-replay had it inline rather than as a parameter
-# default, so a grep for the parameter form missed it entirely). Never re-inline these — take them
-# from Get-TransferFixturePlatform / Get-PadGridPlatform.
-$script:TransferFixturePlatform = 'lab-transfer-fixture-v1'  # 1359 entities; the clone source for transfer tests
-$script:PadGridPlatform         = 'lab-omnibus-state-v1'     # the pad grid /test-run reconciles
+$script:TransferFixturePlatform = 'lab-transfer-fixture-v1'
+$script:PadGridPlatform         = 'lab-omnibus-state-v1'
 
 function Get-TransferFixturePlatform { return $script:TransferFixturePlatform }
 function Get-PadGridPlatform { return $script:PadGridPlatform }
 
-# Real platforms that must NEVER be deleted by any cleanup/sweep — consumed by
-# Remove-PlatformSurfacesWhere (and thus by every deletion path here and in the sweep tool).
-# DERIVED from the constants above so the protection list can never drift from the fixtures it guards.
-# 'test'/'spikedoom08' are the retired legacy seed names, kept so a not-yet-reseeded cluster (the seed
-# is written on FIRST seed only — seeding is idempotent) is still protected.
 $script:ProtectedFixtures = @(
 	$script:TransferFixturePlatform, $script:PadGridPlatform,
 	'test', 'spikedoom08', 'ptB'
 )
 
-<#
-.SYNOPSIS
-    The protected-fixture names, so callers can CLASSIFY without duplicating the list.
-.DESCRIPTION
-    Deletion paths already refuse these names; this exposes the same list for reporting, keeping one
-    source of truth instead of a second copy in the sweep tool.
-#>
 function Get-ProtectedFixtures {
     return @($script:ProtectedFixtures)
 }
 
-# Escape a string for safe embedding inside a Lua single-quoted '...' literal. Send-Rcon passes the
-# command to `docker exec` as a single argv element (no shell layer), so the only quoting that matters
-# is Lua's: backslash first, then the single quote. A no-op for ordinary names; stops a name with a
-# quote from breaking the literal (or injecting Lua). Module-internal — not exported.
 function ConvertTo-LuaLiteral {
     param([Parameter(Mandatory=$true)][AllowEmptyString()][string]$Value)
     return $Value.Replace('\', '\\').Replace("'", "\'")
 }
 
-#region RCON Communication
 
-<#
-.SYNOPSIS
-    Send an RCON command to a Clusterio instance.
-
-.PARAMETER Instance
-    Instance name (e.g., "clusterio-host-1-instance-1") or numeric ID (e.g., 1)
-
-.PARAMETER Command
-    The RCON command to execute
-
-.PARAMETER Controller
-    Docker container name of the controller (default: clusterio-controller)
-
-.EXAMPLE
-    Send-Rcon -Instance 1 -Command "/list-platforms"
-#>
 function Send-Rcon {
     param(
         [Parameter(Mandatory=$true)]
@@ -90,19 +35,6 @@ function Send-Rcon {
     return $output
 }
 
-<#
-.SYNOPSIS
-    Execute Lua code on an instance via /sc command.
-
-.PARAMETER Instance
-    Instance name or ID
-
-.PARAMETER Code
-    Lua code to execute (will be wrapped with /sc)
-
-.PARAMETER ReturnJson
-    If specified, expects JSON result and parses it
-#>
 function Invoke-Lua {
     param(
         [Parameter(Mandatory=$true)]
@@ -128,35 +60,10 @@ function Invoke-Lua {
     return $result
 }
 
-#endregion
 
-#region Version Audit
 
-# The engine version every test is written and verified against. Export/import API behavior drifts
-# between Factorio versions (belt insert_at param order, platform destroy(), fluidbox writes, ...), so a
-# silent engine bump must fail LOUDLY rather than let a test pass on untested behavior. Bump this in
-# lockstep with the instances' factorio.version (and the version-compat.lua PROFILES) when upgrading.
 $script:ExpectedFactorioVersion = "2.1.11"
 
-<#
-.SYNOPSIS
-    Audit the running Factorio engine version and fail loudly if it is not the expected one.
-
-.DESCRIPTION
-    Reads active_mods.base from the instance and compares it to $script:ExpectedFactorioVersion. Throws
-    on mismatch so an engine upgrade can never silently change export/import API behavior under the tests
-    (the version-drift trap: insert_at order, destroy() no-op, set_inventory_size_override args, ...).
-    Authoritative signatures live at lua-api.factorio.com/<version>/ — NOT the "latest" docs/MCP.
-
-.PARAMETER Instance
-    Instance name or ID to query.
-
-.PARAMETER Expected
-    Override the expected version (defaults to $script:ExpectedFactorioVersion).
-
-.OUTPUTS
-    The detected version string.
-#>
 function Assert-FactorioVersion {
     param(
         [Parameter(Mandatory=$true)]
@@ -178,26 +85,8 @@ function Assert-FactorioVersion {
     return $detected
 }
 
-#endregion
 
-#region Platform Management
 
-<#
-.SYNOPSIS
-    Clone a platform to create an isolated test surface.
-
-.PARAMETER Instance
-    Instance name or ID where the platform exists
-
-.PARAMETER SourcePlatform
-    Name of the platform to clone
-
-.PARAMETER DestPlatform
-    Name for the cloned platform (default: auto-generated with timestamp)
-
-.OUTPUTS
-    PSCustomObject with clone result including job_id and platform_name
-#>
 function New-TestPlatform {
     param(
         [Parameter(Mandatory=$true)]
@@ -212,13 +101,10 @@ function New-TestPlatform {
         $DestPlatform = "test-$timestamp"
     }
     
-    # clone_platform keys the SOURCE on the unique per-force index, not a (collidable) name.
-    # Resolve our known fixture name -> index here (Get-PlatformIndex errors if the name is ambiguous).
     $srcIndex = Get-PlatformIndex -Instance $Instance -PlatformName $SourcePlatform
     if ($null -eq $srcIndex) {
         return @{ success = $false; error = "Source platform '$SourcePlatform' not found" }
     }
-    # Index emitted UNQUOTED so it arrives as a Lua number (force.platforms["2"] would miss).
     $destLua = ConvertTo-LuaLiteral $DestPlatform
     $luaCode = "local result = remote.call('surface_export', 'clone_platform', $srcIndex, '$destLua') rcon.print(helpers.table_to_json(result))"
     $result = Invoke-Lua -Instance $Instance -Code $luaCode -ReturnJson
@@ -230,16 +116,6 @@ function New-TestPlatform {
     return $result
 }
 
-<#
-.SYNOPSIS
-    Get the index of a platform by name.
-
-.PARAMETER Instance
-    Instance name or ID
-
-.PARAMETER PlatformName
-    Name of the platform to look up
-#>
 function Get-PlatformIndex {
     param(
         [Parameter(Mandatory=$true)]
@@ -248,8 +124,6 @@ function Get-PlatformIndex {
         [string]$PlatformName
     )
     
-    # Platform names are NOT unique. Count every match and fail loudly on ambiguity instead of
-    # silently returning the first — a first-match resolver is the bad practice we're avoiding.
     $nameLua = ConvertTo-LuaLiteral $PlatformName
     $luaCode = "local idx, count = nil, 0 for i, p in pairs(game.forces.player.platforms) do if p.name == '$nameLua' then idx = i; count = count + 1 end end if count == 0 then rcon.print('NOT_FOUND') elseif count > 1 then rcon.print('AMBIGUOUS ' .. count) else rcon.print(idx) end"
     $result = Invoke-Lua -Instance $Instance -Code $luaCode
@@ -264,21 +138,6 @@ function Get-PlatformIndex {
     return [int]$result
 }
 
-<#
-.SYNOPSIS
-    Find which host (1 or 2) currently holds a platform by name.
-
-.DESCRIPTION
-    Returns the host number, or $null if the platform isn't on either host. Lets the suites work
-    whether the source platform is seeded on host-1 (CI) or host-2 (dev cluster) without a hardcoded
-    default that fails on the wrong cluster layout.
-
-.PARAMETER PlatformName
-    Name of the platform to locate.
-
-.PARAMETER Hosts
-    Host numbers to check (default: 1, 2).
-#>
 function Resolve-PlatformHost {
     param(
         [Parameter(Mandatory=$true)]
@@ -294,13 +153,6 @@ function Resolve-PlatformHost {
     return $null
 }
 
-<#
-.SYNOPSIS
-    List all platforms on an instance.
-
-.PARAMETER Instance
-    Instance name or ID
-#>
 function Get-Platforms {
     param(
         [Parameter(Mandatory=$true)]
@@ -311,43 +163,6 @@ function Get-Platforms {
     return $output
 }
 
-<#
-.SYNOPSIS
-    Delete platform surfaces matching a Lua predicate, via game.delete_surface — the single source of
-    truth for removing test/throwaway platforms.
-
-.DESCRIPTION
-    Protected fixtures ($script:ProtectedFixtures) are never deleted. platform.destroy() is a no-op at
-    our pinned Factorio (platform.destroy is a no-op), so removal goes through game.delete_surface, which is deferred to
-    end of tick — step a tick afterward to finalize.
-
-.PARAMETER Instance
-    Instance name or ID.
-
-.PARAMETER PredicateLua
-    A Lua boolean expression over `p` (the LuaSpacePlatform) and `s` (its surface) selecting which
-    platforms to remove, e.g. "string.find(p.name, 'entity-test-', 1, true)".
-
-.PARAMETER WhatIf
-    List matching platforms without deleting them.
-
-.OUTPUTS
-    Hashtable @{ deleted = <int>; names = <string[]> }
-#>
-<#
-.SYNOPSIS
-    Inventory EVERY space platform on an instance, including surfaceless stubs.
-
-.DESCRIPTION
-    Enumerates platforms via each force's platform list rather than by walking game.surfaces, which
-    is what the deletion path does. The difference matters: a platform whose starter pack has not
-    materialized has NO surface, so a surfaces-walk cannot see it at all — and it is exactly the
-    leftover class that cannot be removed (game.delete_surface has nothing to delete, and
-    platform.destroy() is inert; measured on 2.1.11 across the no-arg, (0) and (60) forms).
-    A sweeper that cannot SEE a leak reports "clean" while the leak sits there.
-
-    Returns one object per platform: Name, Force, HasSurface, HasHub, Entities.
-#>
 function Get-PlatformInventory {
     param(
         [Parameter(Mandatory=$true)]
@@ -376,8 +191,6 @@ rcon.print(helpers.table_to_json({platforms = out}))
     $result = Invoke-Lua -Instance $Instance -Code $lua
     try {
         $parsed = $result | ConvertFrom-Json
-        # Same empty-table trap as Remove-PlatformSurfacesWhere: Lua serializes {} as a JSON object,
-        # so filter to real records instead of trusting the wrapped count.
         return @($parsed.platforms) | Where-Object { $_.name }
     } catch {
         Write-Warning "Failed to parse platform inventory: $result"
@@ -412,10 +225,6 @@ rcon.print(helpers.table_to_json({deleted = deleted, names = names}))
     $result = Invoke-Lua -Instance $Instance -Code $lua
     try {
         $parsed = $result | ConvertFrom-Json
-        # An EMPTY Lua table serializes as {} (a JSON object), not [] — Lua cannot tell an empty array
-        # from an empty map. @($parsed.names) then wraps that single PSCustomObject into a 1-element
-        # array, so ZERO matches reported as ONE on every host (the dry run claimed phantom leftovers
-        # that did not exist). Keep only real name strings.
         $names = @($parsed.names) | Where-Object { $_ -is [string] -and $_.Length -gt 0 }
         return @{ deleted = [int]$parsed.deleted; names = @($names) }
     } catch {
@@ -424,31 +233,6 @@ rcon.print(helpers.table_to_json({deleted = deleted, names = names}))
     }
 }
 
-<#
-.SYNOPSIS
-    Delete test surfaces matching a name pattern.
-
-.DESCRIPTION
-    Deletes all platform surfaces whose names contain the specified pattern, via
-    game.delete_surface (platform.destroy() is a no-op at our pinned Factorio).
-    Only affects space platform surfaces.
-
-    After calling this function, you must step at least one tick for the deletions
-    to take effect (game.delete_surface is deferred to end of current tick).
-
-.PARAMETER Instance
-    Instance name or ID
-
-.PARAMETER TestName
-    The test name pattern to match (e.g., "entity-test-" or "integration-test-")
-    Surfaces with names containing this string will be deleted.
-
-.OUTPUTS
-    Hashtable with:
-    - deleted: Number of surfaces scheduled for deletion
-    - failed: Number that failed to delete
-    - names: Array of surface names that were scheduled for deletion
-#>
 function Remove-TestSurfaces {
     param(
         [Parameter(Mandatory=$true)]
@@ -457,29 +241,13 @@ function Remove-TestSurfaces {
         [string]$TestName
     )
     
-    # Test surfaces are named by platform.name (e.g. "entity-test-<ts>"); match it as a substring.
     $luaPat = $TestName -replace "'", ""
     $res = Remove-PlatformSurfacesWhere -Instance $Instance -PredicateLua "string.find(p.name, '$luaPat', 1, true)"
     return @{ deleted = $res.deleted; failed = 0; names = $res.names }
 }
 
-#endregion
 
-#region Tick Control
 
-<#
-.SYNOPSIS
-    Step game ticks on an instance (for paused games).
-
-.PARAMETER Instance
-    Instance name or ID
-
-.PARAMETER Ticks
-    Number of ticks to step (default: 60)
-
-.PARAMETER EnsurePaused
-    If true, pause the game first if not already paused
-#>
 function Step-Tick {
     param(
         [Parameter(Mandatory=$true)]
@@ -496,16 +264,6 @@ function Step-Tick {
     return $output
 }
 
-<#
-.SYNOPSIS
-    Pause or unpause the game on an instance.
-
-.PARAMETER Instance
-    Instance name or ID
-
-.PARAMETER Pause
-    True to pause, false to unpause
-#>
 function Set-GamePaused {
     param(
         [Parameter(Mandatory=$true)]
@@ -517,23 +275,8 @@ function Set-GamePaused {
     Invoke-Lua -Instance $Instance -Code "game.tick_paused = $value" | Out-Null
 }
 
-#endregion
 
-#region Debug Files
 
-<#
-.SYNOPSIS
-    Clear debug files from an instance.
-
-.PARAMETER Instance
-    Instance name (e.g., "clusterio-host-1-instance-1")
-
-.PARAMETER Container
-    Docker container name (e.g., "clusterio-host-1")
-
-.PARAMETER Pattern
-    File pattern to clear (default: "debug_*.json")
-#>
 function Clear-DebugFiles {
     param(
         [Parameter(Mandatory=$true)]
@@ -545,29 +288,10 @@ function Clear-DebugFiles {
     
     docker exec $Container bash -c "rm -f /clusterio/data/instances/$Instance/script-output/$Pattern" 2>&1 | Out-Null
     if ($LASTEXITCODE -ne 0) {
-        # A silently failed clear is a GROUNDING hazard: a stale debug file from a previous run can
-        # satisfy a later Wait-DebugFile poll and hand the test forged evidence. Loud, not fatal —
-        # the caller's own poll/assert remains the real gate.
         Write-Warning "Clear-DebugFiles: docker exec failed (exit $LASTEXITCODE) — stale '$Pattern' files may survive on $Container and could satisfy a later poll."
     }
 }
 
-<#
-.SYNOPSIS
-    Get debug files from an instance.
-
-.PARAMETER Instance
-    Instance name
-
-.PARAMETER Container
-    Docker container name
-
-.PARAMETER Pattern
-    File pattern to list (default: "debug_*.json")
-
-.OUTPUTS
-    Array of filenames
-#>
 function Get-DebugFiles {
     param(
         [Parameter(Mandatory=$true)]
@@ -586,19 +310,6 @@ function Get-DebugFiles {
     return $result
 }
 
-<#
-.SYNOPSIS
-    Read and parse a debug JSON file from an instance.
-
-.PARAMETER Instance
-    Instance name
-
-.PARAMETER Container
-    Docker container name
-
-.PARAMETER Filename
-    Full path or just filename in script-output
-#>
 function Read-DebugFile {
     param(
         [Parameter(Mandatory=$true)]
@@ -609,7 +320,6 @@ function Read-DebugFile {
         [string]$Filename
     )
     
-    # If just a filename, prepend path
     if (-not $Filename.StartsWith("/")) {
         $Filename = "/clusterio/data/instances/$Instance/script-output/$Filename"
     }
@@ -627,17 +337,8 @@ function Read-DebugFile {
     }
 }
 
-#endregion
 
-#region Test Infrastructure
 
-<#
-.SYNOPSIS
-    Load test cases from a JSON file.
-
-.PARAMETER Path
-    Path to test-cases.json file
-#>
 function Get-TestCases {
     param(
         [Parameter(Mandatory=$true)]
@@ -651,19 +352,6 @@ function Get-TestCases {
     return Get-Content $Path -Raw | ConvertFrom-Json
 }
 
-<#
-.SYNOPSIS
-    Filter test cases by ID and/or category.
-
-.PARAMETER TestSuite
-    The test suite object (from Get-TestCases)
-
-.PARAMETER TestId
-    Filter by specific test ID
-
-.PARAMETER Category
-    Filter by category
-#>
 function Select-Tests {
     param(
         [Parameter(Mandatory=$true)]
@@ -682,16 +370,6 @@ function Select-Tests {
     return $filtered
 }
 
-<#
-.SYNOPSIS
-    Safely get a property value from a PSObject, returning $null if not present.
-
-.PARAMETER Object
-    The object to query
-
-.PARAMETER PropertyName
-    The property name to look up
-#>
 function Get-SafeProperty {
     param(
         [Parameter(Mandatory=$false)]
@@ -709,10 +387,6 @@ function Get-SafeProperty {
     }
     return $null
 }
-<#
-.SYNOPSIS
-    Stop a success-path integration test before destination census when the transfer verdict failed.
-#>
 function Assert-TransferSucceeded {
     param(
         [Parameter(Mandatory=$false)]
@@ -748,17 +422,8 @@ function Assert-TransferSucceeded {
     throw "$Context failed before destination census: validation_success=$success; failedStage=$failedStage; error=$errorText; blackBox=$blackBoxPath"
 }
 
-#endregion
 
-#region Output Formatting
 
-<#
-.SYNOPSIS
-    Write a test header banner.
-
-.PARAMETER Title
-    The test suite title
-#>
 function Write-TestHeader {
     param(
         [Parameter(Mandatory=$true)]
@@ -772,22 +437,6 @@ function Write-TestHeader {
     Write-Host ""
 }
 
-<#
-.SYNOPSIS
-    Write a test result line.
-
-.PARAMETER TestId
-    The test ID
-
-.PARAMETER TestName
-    The test name
-
-.PARAMETER Status
-    Status: passed, failed, skipped, error
-
-.PARAMETER Message
-    Optional failure message
-#>
 function Write-TestResult {
     param(
         [Parameter(Mandatory=$true)]
@@ -817,7 +466,6 @@ function Write-TestResult {
     Write-Host "  $icon $TestId`: $TestName" -ForegroundColor $color
     
     if ($Message -and ($Status -eq "failed" -or $Status -eq "error")) {
-        # Split multi-part messages (semicolon-separated) onto individual lines
         $parts = $Message -split ';'
         foreach ($part in $parts) {
             $trimmed = $part.Trim()
@@ -828,19 +476,6 @@ function Write-TestResult {
     }
 }
 
-<#
-.SYNOPSIS
-    Write a test summary.
-
-.PARAMETER Passed
-    Number of passed tests
-
-.PARAMETER Failed
-    Number of failed tests
-
-.PARAMETER Skipped
-    Number of skipped tests
-#>
 function Write-TestSummary {
     param(
         [int]$Passed = 0,
@@ -867,16 +502,6 @@ function Write-TestSummary {
     Write-Host ""
 }
 
-<#
-.SYNOPSIS
-    Write a status message with icon.
-
-.PARAMETER Message
-    The message to display
-
-.PARAMETER Type
-    Message type: info, success, warning, error
-#>
 function Write-Status {
     param(
         [Parameter(Mandatory=$true)]
@@ -902,23 +527,8 @@ function Write-Status {
     Write-Host "  $icon $Message" -ForegroundColor $color
 }
 
-#endregion
 
-#region Transfer Operations
 
-<#
-.SYNOPSIS
-    Wait for an async job to complete by stepping ticks.
-
-.PARAMETER Instances
-    Array of instance names/IDs to step ticks on
-
-.PARAMETER MaxWaitSeconds
-    Maximum time to wait (default: 30)
-
-.PARAMETER CheckScript
-    Optional Lua code that returns "true" when job is complete
-#>
 function Wait-ForJob {
     param(
         [Parameter(Mandatory=$true)]
@@ -931,7 +541,6 @@ function Wait-ForJob {
     $done = $false
     
     while (-not $done -and ((Get-Date) - $startTime).TotalSeconds -lt $MaxWaitSeconds) {
-        # Wait for async processing (game ticks continuously on headless server)
         Start-Sleep -Seconds 1
         
         if ($CheckScript) {
@@ -940,7 +549,6 @@ function Wait-ForJob {
                 $done = $true
             }
         } else {
-            # If no check script, just wait for ticks to process
             $done = $true
         }
     }
@@ -948,19 +556,6 @@ function Wait-ForJob {
     return $done
 }
 
-<#
-.SYNOPSIS
-    Initiate a platform transfer between instances.
-
-.PARAMETER SourceInstance
-    Source instance name or ID
-
-.PARAMETER DestInstanceId
-    Destination instance ID (numeric)
-
-.PARAMETER PlatformIndex
-    Index of the platform to transfer
-#>
 function Start-PlatformTransfer {
     param(
         [Parameter(Mandatory=$true)]
@@ -987,20 +582,6 @@ function Start-PlatformTransfer {
     return $output
 }
 
-<#
-.SYNOPSIS
-    Resolve a Clusterio instance name to its numeric instance ID.
-
-.PARAMETER InstanceName
-    The instance name (e.g., "clusterio-host-2-instance-1")
-
-.PARAMETER Controller
-    Docker container name of the controller
-
-.EXAMPLE
-    Get-ClusterioInstanceId -InstanceName "clusterio-host-2-instance-1"
-    # Returns: 96699824
-#>
 function Get-ClusterioInstanceId {
     param(
         [Parameter(Mandatory=$true)]
@@ -1019,18 +600,13 @@ function Get-ClusterioInstanceId {
     return $null
 }
 
-#endregion
 
-# Export module members
 Export-ModuleMember -Function @(
-    # RCON
     'Send-Rcon',
     'Invoke-Lua',
 
-    # Version Audit
     'Assert-FactorioVersion',
 
-    # Platform Management
     'New-TestPlatform',
     'Get-PlatformIndex',
     'Resolve-PlatformHost',
@@ -1038,38 +614,30 @@ Export-ModuleMember -Function @(
     'Remove-PlatformSurfacesWhere',
     'Get-PlatformInventory',
     'Get-ProtectedFixtures',
-    # Surface Management
     'Remove-TestSurfaces',
     
-    # Tick Control
     'Step-Tick',
     'Set-GamePaused',
     
-    # Debug Files
     'Clear-DebugFiles',
     'Get-DebugFiles',
     'Read-DebugFile',
     
-    # Test Infrastructure
     'Get-TestCases',
     'Select-Tests',
     'Get-SafeProperty',
     'Assert-TransferSucceeded',
     
-    # Output
     'Write-TestHeader',
     'Write-TestResult',
     'Write-TestSummary',
     'Write-Status',
     
-    # Transfer
     'Wait-ForJob',
     'Start-PlatformTransfer',
     
-    # Instance Resolution
     'Get-ClusterioInstanceId',
 
-    # Seeded fixture platform names (single source of truth — never re-inline these)
     'Get-TransferFixturePlatform',
     'Get-PadGridPlatform'
 )

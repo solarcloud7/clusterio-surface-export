@@ -1,37 +1,15 @@
--- FactorioSurfaceExport - Teleport GUI (/teleport)
---
--- Admin GUI: pick another cluster instance from a dropdown and press Connect. Connect fires
--- LuaPlayer.connect_to_server, which shows the player Factorio's NATIVE "connect to this
--- server?" prompt — consent is built in, and the call no-ops for non-multiplayer-peer contexts
--- (engine behavior; see docs/GATEWAY_TRANSFER_PRD.md).
---
--- The roster (instance name + client-routable address + online flag) comes from the CONTROLLER:
--- /teleport fires a send_json request; the instance plugin asks the controller (which joins each
--- instance's assigned host's public_address with its game port) and pushes the result back into
--- storage.teleport_roster via the remote interface. The GUI renders whatever roster is stored and
--- refreshes live when a fresh one lands. Address caveat, deployment not code: host.public_address
--- defaults to localhost — a distributed cluster must set it to something client-routable.
-
 local clusterio_api = require("modules/clusterio/api")
 
 local TeleportGui = {}
 
--- WHO MAY TELEPORT: admins, plus members of this Factorio-native permission group — save-persisted
--- and managed through the stock /permissions GUI (create nothing by hand; ensure_permission_group
--- below pre-creates it at startup). Measured 2026-07-31 on 2.1.11: a fresh permission group allows
--- every input action by default, so membership is behaviorally neutral — the group is purely a
--- teleport pass. Factorio's one-group-per-player rule is the known trade: a player in "Teleport"
--- is not in any other custom group.
 TeleportGui.PERMISSION_GROUP = "Teleport"
 
---- May this player use /teleport (and press Connect)?
 function TeleportGui.is_allowed(player)
 	if player.admin then return true end
 	local group = player.permission_group
 	return group ~= nil and group.name == TeleportGui.PERMISSION_GROUP
 end
 
---- Pre-create the pass group so admins find it ready in /permissions (idempotent, every startup).
 function TeleportGui.ensure_permission_group()
 	if not game.permissions.get_group(TeleportGui.PERMISSION_GROUP) then
 		game.permissions.create_group(TeleportGui.PERMISSION_GROUP)
@@ -40,8 +18,6 @@ function TeleportGui.ensure_permission_group()
 	end
 end
 
--- Module-local state for open GUIs (runtime only, rebuilt on demand)
--- player_index → { frame = LuaGuiElement, dropdown = LuaGuiElement, entries = array }
 local open_guis = {}
 
 local FRAME_NAME = "surface_export_teleport"
@@ -50,7 +26,6 @@ local CONNECT_NAME = "surface_export_teleport_connect"
 local CLOSE_NAME = "surface_export_teleport_close"
 local REFRESH_NAME = "surface_export_teleport_refresh"
 
---- Selectable = other instances, online first, each labeled honestly.
 local function roster_entries()
 	local roster = storage.teleport_roster
 	local entries = {}
@@ -75,9 +50,6 @@ local function dropdown_items(entries)
 	return items
 end
 
---- Build (or rebuild) the GUI content for one player. A rebuild preserves the player's dropdown
---- selection by instanceId — the roster refresh fired at /teleport-open lands moments later, and
---- silently resetting a made selection to row 1 would connect somewhere the admin did not pick.
 local function build(player)
 	local prior = open_guis[player.index]
 	local prior_id = nil
@@ -135,12 +107,10 @@ local function build(player)
 	open_guis[player.index] = { frame = frame, dropdown = dropdown, entries = entries }
 end
 
---- Open the GUI for a player (the /teleport command entry point).
 function TeleportGui.open(player)
 	build(player)
 end
 
---- A fresh roster arrived (remote teleport_roster_update) — rebuild every open GUI in place.
 function TeleportGui.refresh_all()
 	for player_index in pairs(open_guis) do
 		local player = game.get_player(player_index)
@@ -168,9 +138,6 @@ function TeleportGui.on_gui_click(event)
 
 	local state = open_guis[event.player_index]
 	if not state then
-		-- Our frame exists but module-local state was lost (it does not survive save/load, the
-		-- frame does) — destroy the orphan so the buttons are never dead. Same shape as the
-		-- gateway-transfer GUI, which fixed this exact class before this file existed.
 		local player = game.get_player(event.player_index)
 		local orphan = player and player.gui.screen[FRAME_NAME]
 		if orphan then orphan.destroy() end
@@ -180,7 +147,6 @@ function TeleportGui.on_gui_click(event)
 	if element.name == CLOSE_NAME then
 		close(event.player_index)
 	elseif element.name == REFRESH_NAME then
-		-- The command module re-fires the roster request; the GUI rebuilds when it lands.
 		local player = game.get_player(event.player_index)
 		if player then
 			TeleportGui.request_roster()
@@ -189,8 +155,6 @@ function TeleportGui.on_gui_click(event)
 	elseif element.name == CONNECT_NAME then
 		local player = game.get_player(event.player_index)
 		if not player then return end
-		-- Re-check at the moment of truth: a player pulled from the group (or de-admined) with the
-		-- GUI already open must not connect off a stale pass.
 		if not TeleportGui.is_allowed(player) then
 			player.print(string.format(
 				"You are no longer allowed to teleport (admins or the '%s' permission group).",
@@ -227,14 +191,11 @@ function TeleportGui.on_gui_closed(event)
 	if state and state.frame and state.frame.valid and element.index == state.frame.index then
 		close(event.player_index)
 	else
-		-- Orphaned frame (state lost on save/load): Esc must actually close it.
 		element.destroy()
 		open_guis[event.player_index] = nil
 	end
 end
 
---- Ask the instance plugin for a fresh roster (it asks the controller and pushes the result back
---- via the teleport_roster_update remote). Fire-and-forget; the GUI rebuilds when data lands.
 function TeleportGui.request_roster()
 	clusterio_api.send_json("surface_teleport_roster_request", {})
 end

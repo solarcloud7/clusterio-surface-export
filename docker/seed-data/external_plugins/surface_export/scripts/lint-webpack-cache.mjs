@@ -1,24 +1,4 @@
 #!/usr/bin/env node
-/**
- * lint-webpack-cache.mjs — static guard that the plugin's webpack output stays content-hashed.
- *
- * The controller serves /static/* with `Cache-Control: immutable, max-age=1y`, which is ONLY safe
- * for content-hashed filenames (a content change must yield a new URL). @clusterio/web_ui's shared
- * webpack.common already hashes by default (static/[name].[contenthash].js); a local
- * `output.filename`/`chunkFilename` — or a ModuleFederation `filename` — override WITHOUT a hash
- * token silently defeats that and pins stale chunks on returning users for up to a year. That exact
- * regression shipped once (commit 94e1b8c, "major refactor, WIP") and wasn't caught until it hit
- * prod. This guard is the catch (see the "Web cache" guard entry in CLAUDE.md).
- *
- * Rule: every `filename:`/`chunkFilename:` string literal in webpack.config.js must contain a
- *       content-hash token ([contenthash] / [chunkhash] / [hash]). Omitting the keys entirely (to
- *       inherit the hashed default) is fine — only an explicit non-hashed override trips it.
- *
- * Scope: the plugin's webpack.config.js.
- * Run:   node scripts/lint-webpack-cache.mjs            (also: npm run lint:web-cache)
- *        node scripts/lint-webpack-cache.mjs <file>     (lint an alternate config — used to self-test)
- * Escape hatch: append a `lint-webpack-cache:allow` comment on a line to suppress it (with a reason).
- */
 
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
@@ -29,14 +9,9 @@ const PLUGIN_DIR = join(SCRIPT_DIR, "..");
 const TARGET = process.argv[2] ?? join(PLUGIN_DIR, "webpack.config.js");
 const ALLOW_MARKER = "lint-webpack-cache:allow";
 
-// `filename:` / `chunkFilename:` set to a string literal (single/double/back-quoted).
 const ASSIGN = /\b(filename|chunkFilename)\s*:\s*(["'`])([^"'`]*)\2/g;
-// Any webpack content-hash token makes immutable caching safe.
 const HASH = /\[(contenthash|chunkhash|hash)(:\d+)?\]/;
 
-/** Strip a JS line comment (`// ...`) so the rule only sees code — the explanatory comment in
- *  webpack.config.js that MENTIONS the old "static/[name].js" override must not trip the guard.
- *  (We split on the first `//`; the config has no string literals containing `//`.) */
 function stripLineComment(line) {
 	const idx = line.indexOf("//");
 	return idx === -1 ? line : line.slice(0, idx);
@@ -55,7 +30,7 @@ function main() {
 	const violations = [];
 
 	lines.forEach((rawLine, i) => {
-		if (rawLine.includes(ALLOW_MARKER)) return; // explicit per-line suppression
+		if (rawLine.includes(ALLOW_MARKER)) return;
 		const code = stripLineComment(rawLine);
 		for (const m of code.matchAll(ASSIGN)) {
 			const [, key, , value] = m;

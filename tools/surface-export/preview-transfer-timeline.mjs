@@ -1,23 +1,4 @@
 #!/usr/bin/env node
-// Render the Transfer Flow waterfall to a standalone HTML file — no cluster, no controller, no
-// webpack, no docker.
-//
-// Why this exists: the Transaction Logs tab can only be seen by deploying the web bundle to the
-// controller, which rebuilds dist/ from the canonical checkout and bounces the controller. That is
-// exactly the operation the working-hygiene rule forbids while another agent owns that checkout, and
-// it is a slow loop besides. The timeline is a PURE function of recorded events
-// (shared/transfer-timeline.ts), so it can be rendered from banked data by itself.
-//
-// The row set, widths, palette, hatch, geometry and warning wording all come from the SAME compiled
-// module the browser consumes (dist/node/shared) — this file contributes no timeline logic of its
-// own, so a preview that looks wrong means the builder is wrong.
-//
-//   node tools/surface-export/preview-transfer-timeline.mjs                    # bundled fixtures
-//   node tools/surface-export/preview-transfer-timeline.mjs --log <txlogs.json>  # any real log
-//   node tools/surface-export/preview-transfer-timeline.mjs --out timeline.html
-//
-// To pull a live log without touching the plugin source (read-only, safe on a busy checkout):
-//   docker cp surface-export-controller:/clusterio/data/database/surface_export_transaction_logs.json .
 
 import { readFileSync, writeFileSync, existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
@@ -47,7 +28,6 @@ const argOf = name => {
 const logPath = argOf("--log");
 const outPath = argOf("--out") || path.join(PLUGIN, "dist/transfer-timeline-preview.html");
 
-// Two accepted inputs: the bundled fixture list, or a raw controller transaction-log dump.
 let cases;
 if (logPath) {
 	const raw = JSON.parse(readFileSync(logPath, "utf8"));
@@ -96,7 +76,6 @@ function renderCase(testCase) {
 		</div>`;
 	}).join("\n");
 
-	// Same wording as the browser tab — describeAttribution is the single source for it.
 	const notice = describeAttribution(attribution);
 	const warn = notice ? `<div class="warn"><b>${esc(notice.headline)}.</b> ${esc(notice.detail)}</div>` : "";
 

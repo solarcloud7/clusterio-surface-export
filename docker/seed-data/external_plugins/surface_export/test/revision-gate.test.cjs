@@ -1,20 +1,5 @@
 "use strict";
 
-/**
- * Live-update ordering across a controller restart.
- *
- * The web page gates every tree/transfer/log update on a revision watermark, and the controller's
- * revision counters start from zero each time it boots. A page that keeps its watermark across a
- * reconnect therefore measures a new session's revisions against an old session's high-water mark
- * and drops them — the observed symptom (2026-08-08) was an instance rendered offline in the
- * Gateways canvas while the cluster reported it connected and running, healing only on a manual
- * page reload.
- *
- * The rule lives in shared/ rather than web/ because `npm test` runs against dist/node, which the
- * web tree is excluded from. What the pure rule cannot reach — that the page actually clears the
- * watermarks on reconnect, and that the snapshot fetch advances them — is pinned against the
- * source below.
- */
 
 const { test } = require("node:test");
 const assert = require("node:assert/strict");
@@ -31,7 +16,6 @@ const {
 
 const webIndex = fs.readFileSync(path.join(__dirname, "..", "web", "index.tsx"), "utf8");
 
-/** The page's apply-loop, reduced to the decision under test. */
 function applySequence(revisions, watermark = 0) {
 	const applied = [];
 	for (const revision of revisions) {
@@ -50,8 +34,6 @@ test("only a strictly newer revision is applied", () => {
 });
 
 test("a revision that carries no order is refused, not applied", () => {
-	// `Number(undefined) > watermark` is false for NaN, but so is `NaN <= watermark` — a bare
-	// comparison lets an unorderable revision through in one direction and not the other.
 	for (const value of [undefined, null, "", "abc", NaN, Infinity, -Infinity, {}]) {
 		assert.equal(isFreshRevision(value, 0), false, `${String(value)} carries no order`);
 	}
@@ -66,14 +48,12 @@ test("a reconnected session starts with every channel cleared", () => {
 });
 
 test("within one session, exactly the increasing revisions are applied", () => {
-	// Duplicates and reordered arrivals are dropped; the watermark only ever climbs.
 	const { applied, watermark } = applySequence([1, 2, 2, 5, 3, 6]);
 	assert.deepEqual(applied, [1, 2, 5, 6]);
 	assert.equal(watermark, 6);
 });
 
 test("across a session boundary, the new session's revisions are applied", () => {
-	// This is the defect. The controller's counter restarts at 1 while the page still holds 47.
 	const beforeRestart = applySequence([45, 46, 47]);
 	assert.equal(beforeRestart.watermark, 47);
 
@@ -85,14 +65,10 @@ test("across a session boundary, the new session's revisions are applied", () =>
 });
 
 test("a fetched list may not roll back what a push rewrote while it was in flight", () => {
-	// The list answers as of the moment it was requested. Applying it wholesale reverted any row a
-	// push had updated since — and because the push had already advanced the watermark, the same
-	// revision could not be replayed to correct it.
 	const stale = { transferId: "t1", status: "running" };
 	const untouched = { transferId: "t2", status: "completed" };
 	const before = new Map([["t1", stale], ["t2", untouched]]);
 
-	// A push replaces the entry it touches and leaves the others identical.
 	const pushed = { transferId: "t1", status: "completed" };
 	const current = [pushed, untouched];
 
@@ -115,8 +91,6 @@ test("a row the fetch introduces is not mistaken for one a push rewrote", () => 
 });
 
 test("the fetch captures the pre-fetch summaries before it issues a request", () => {
-	// The capture has to happen before the first await, or a push that lands during the fetch is
-	// already folded into the map it is being compared against and looks untouched.
 	assert.match(
 		webIndex,
 		/summariesBeforeFetch = new Map[\s\S]{0,240}?const treeResponse = await/,
@@ -130,9 +104,6 @@ test("the fetch captures the pre-fetch summaries before it issues a request", ()
 });
 
 test("a log update keeps the fields it is not carrying", () => {
-	// detailRetained records that a timeline was truncated by retention, and absent reads as
-	// retained — so rebuilding the detail without it silently upgrades a partial record to a
-	// complete-looking one, in the audit surface.
 	assert.match(
 		webIndex,
 		/const detail = \{\s*\n\s*\.\.\.existing,/,
@@ -141,13 +112,6 @@ test("a log update keeps the fields it is not carrying", () => {
 });
 
 test("only a fresh connect clears the watermarks, and it clears them before resubscribing", () => {
-	// Not reachable from dist/node: pinned against the source, like the transfer-id archival
-	// call-ordering pin in transaction-persist-path.test.cjs.
-	//
-	// Scoped to connect on purpose. A resume continues a session the controller still holds, so its
-	// counters never restarted; the connector also replays only unacknowledged messages, and
-	// handleLogUpdate dedupes against the last timeline entry alone — clearing on resume would let
-	// an already-applied replay append a duplicate audit row.
 	assert.match(
 		webIndex,
 		/if\s*\(event === "connect"\)\s*\{[^}]*freshRevisionWatermarks\(\)/,
@@ -184,9 +148,6 @@ test("a snapshot is refused only when a push already delivered something newer",
 });
 
 test("a snapshot carrying no orderable revision is still shown", () => {
-	// The whole tree renders from this response. Refusing it because its revision cannot be ordered
-	// would leave the page blank with no error — protecting an ordering that is unavailable either
-	// way. It is shown, and it establishes no watermark.
 	for (const value of [undefined, null, "", "abc", NaN, Infinity]) {
 		assert.deepEqual(
 			decideSnapshot(value, 47),
@@ -197,8 +158,6 @@ test("a snapshot carrying no orderable revision is still shown", () => {
 });
 
 test("the snapshot fetch reads a missing revision as unorderable, not as zero", () => {
-	// The defect this replaced: `getProp(treeResponse, "revision", 0)` turned an absent revision
-	// into 0, which every watermark outranks, so the tree was silently discarded.
 	assert.doesNotMatch(
 		webIndex,
 		/getProp[^\n]*"revision",\s*0\s*\)/,
@@ -208,8 +167,6 @@ test("the snapshot fetch reads a missing revision as unorderable, not as zero", 
 });
 
 test("the snapshot fetch advances the tree watermark it consumed", () => {
-	// Without this the snapshot's revision is displayed but never recorded, so the next push is
-	// measured against a watermark the page has already moved past on screen.
 	assert.match(
 		webIndex,
 		/lastTreeRevision:\s*snapshot\.watermark/,

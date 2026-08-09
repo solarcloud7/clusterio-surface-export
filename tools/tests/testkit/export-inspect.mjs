@@ -1,32 +1,7 @@
-// testkit / exportInspect — decode a real export payload and ask what it actually carries.
-//
-// WHY THIS EXISTS. A transferred property survives only if a serializer handler puts it in the
-// payload; the payload is everything the destination ever sees. That makes "is field X in the
-// payload for entity Y" the cheapest possible screen for the repo's most expensive failure class —
-// silent serializer omission. The exact gate cannot catch it: a filter or a setting is not an item
-// or a fluid, so the platform arrives counting clean and the property is simply gone. That is how
-// the infinity-pipe filter was dropped on EVERY transfer until 2026-07-26, and how the chest's
-// slot filters went unnoticed before it. Both would have shown up here as ABSENT, in one command,
-// with no transfer and no destination.
-//
-// WHAT IT DELIBERATELY WILL NOT TELL YOU. Presence is necessary, never sufficient. Item-request
-// proxies rode the payload correctly and were still dropped at entity-create until 2026-07-19. So
-// `field()` never returns a bare boolean: it returns `restorationTested: false` alongside every
-// hit, because the only thing that proves restoration is a real transfer with a physical read on
-// the destination. A caller that wants "does this survive" must go to executeTransfer, not here.
-//
-// Read-only: exports to a scratch file, reads it back, deletes it. No lock, no source delete, no
-// mutation of the platform.
 import { docker, instancePath, lua } from "../../../tests/lab-gallery/batch-lifecycle.mjs";
 import { readFileSync } from "node:fs";
 import { inflateSync } from "node:zlib";
 
-// Anchors in the manifest are recorded in a MIX of tile-corner and entity-center conventions, and
-// the engine resolves them by bounding-box containment (which we cannot reproduce from the payload,
-// since it carries centers and not prototype sizes). So we match nearest-same-name within a
-// tolerance and REPORT the delta and any ambiguity rather than silently picking. Measured on the
-// live gallery: exact hits for centered anchors, 0.71 (half-tile diagonal) for tile-corner ones,
-// 1.58 for a big-mining-drill whose anchor sits inside its footprint.
 const DEFAULT_TOLERANCE = 2.0;
 
 function decodePayload(raw) {
@@ -38,16 +13,6 @@ function decodePayload(raw) {
 	return JSON.parse(inflateSync(Buffer.from(outer.payload, "base64")).toString("utf8"));
 }
 
-/**
- * Look up a dotted path. On a miss, report WHERE it stopped and what was actually available there.
- *
- * This is not a nicety. A bare "absent" is indistinguishable from "you typed the wrong path", and
- * this tool renders absence as "CANNOT survive a transfer" — i.e. a data-loss finding. Measured on
- * 2026-07-26 while building it: querying `specific_data.infinity_pipe_filter` printed a confident
- * loss report for a field that is present and correct at TOP level (`infinity_pipe_filter`). A tool
- * that manufactures false loss findings is worse than no tool, so a miss now hands back the keys
- * that exist at the deepest resolved level, plus a hint if the leaf name lives elsewhere.
- */
 function dig(object, path) {
 	const keys = path.split(".");
 	let cursor = object;
@@ -55,7 +20,6 @@ function dig(object, path) {
 		if (cursor === null || typeof cursor !== "object" || !(keys[i] in cursor)) {
 			const availableKeys = (cursor && typeof cursor === "object") ? Object.keys(cursor) : [];
 			const leaf = keys.at(-1);
-			// Is the leaf name reachable by some other route on this record? Cheap one-level scan.
 			const hints = [];
 			if (leaf in object) hints.push(leaf);
 			for (const [k, v] of Object.entries(object)) {
@@ -75,11 +39,6 @@ class PayloadInspector {
 		this.entities = payload.entities || [];
 	}
 
-	/**
-	 * Resolve a manifest anchor against the payload.
-	 * Returns { ok, record, delta, ambiguous, candidates } — never throws on a miss, because a miss
-	 * is a RESULT (it is how the dead infinity-chest anchor was found), not an error.
-	 */
 	resolveAnchor({ entity, x, y }, tolerance = DEFAULT_TOLERANCE) {
 		const sameName = this.entities.filter(e => e.name === entity && e.position);
 		if (sameName.length === 0) {
@@ -95,7 +54,6 @@ class PayloadInspector {
 				delta: Number(best.d.toFixed(3)), nearestAt: best.e.position, candidates: sameName.length,
 			};
 		}
-		// Two same-name entities equally close means the anchor does not identify one entity.
 		const ambiguous = next !== undefined && Math.abs(next.d - best.d) < 1e-6;
 		return {
 			ok: true, record: best.e, delta: Number(best.d.toFixed(3)),
@@ -103,11 +61,6 @@ class PayloadInspector {
 		};
 	}
 
-	/**
-	 * Does the payload carry `fieldPath` for the entity at `anchor`?
-	 * The shape is deliberate: `inPayload` is the ONLY thing measured here, and `restorationTested`
-	 * is always false so no caller can read this as "it survives".
-	 */
 	field(anchor, fieldPath, tolerance = DEFAULT_TOLERANCE) {
 		const hit = this.resolveAnchor(anchor, tolerance);
 		if (!hit.ok) {
@@ -127,12 +80,10 @@ class PayloadInspector {
 			...base,
 			stoppedAt: found.stoppedAt,
 			availableKeys: found.availableKeys,
-			// Non-empty means the field EXISTS under a different path — the query is wrong, not the payload.
 			pathHints: found.pathHints,
 		};
 	}
 
-	/** Records by `type`, for the anchorless fixtures (ghosts, proxies, ground items). */
 	countsByType() {
 		const counts = {};
 		for (const e of this.entities) counts[e.type] = (counts[e.type] || 0) + 1;
@@ -155,15 +106,6 @@ class PayloadInspector {
 	}
 }
 
-/**
- * Export `platform` on `host` and return an inspector over the decoded payload.
- * The scratch artifact is deleted unless `keepArtifact` is set.
- */
-/**
- * Wait until `path` exists and its size stops changing. Throws on timeout — a partial payload must
- * never be inspected as if it were complete (it would report fields ABSENT that are merely unwritten,
- * i.e. manufacture a false data-loss finding).
- */
 async function waitForStableFile(host, path, timeoutMs, settleMs = 400) {
 	const container = `surface-export-host-${host}`;
 	const deadline = Date.now() + timeoutMs;
@@ -194,8 +136,6 @@ export async function exportInspect({ platform, host = 1, force = "player", keep
 	const filename = `testkit_inspect_${String(platform).replace(/[^a-zA-Z0-9_-]/g, "_")}`;
 	const artifact = instancePath(host, `script-output/${filename}`);
 
-	// Remove any artifact from a previous run FIRST, so the size-stability poll below cannot latch
-	// onto a stale file and hand back yesterday's payload as if it were this export.
 	docker(["exec", `surface-export-host-${host}`, "sh", "-c", `rm -f ${artifact}`]);
 
 	const exported = lua(host, `return {success=remote.call('surface_export','export_platform_to_file',` +
@@ -204,10 +144,6 @@ export async function exportInspect({ platform, host = 1, force = "player", keep
 		throw new Error(`export_platform_to_file failed for ${platform}: ${JSON.stringify(exported)}`);
 	}
 
-	// export_platform_to_file returns true when the job is QUEUED, not when the file is written —
-	// the export is batched across ticks (AsyncProcessor). Reading immediately is a race: measured
-	// 2026-07-26, back-to-back calls had one succeed and the next fail with "No such file". Poll for
-	// existence AND size stability, the same shape patch-and-reset uses for save flushes.
 	await waitForStableFile(host, artifact, timeoutMs);
 
 	const raw = docker(["exec", `surface-export-host-${host}`, "sh", "-c", `cat ${artifact}`],
@@ -218,18 +154,15 @@ export async function exportInspect({ platform, host = 1, force = "player", keep
 	return new PayloadInspector(decodePayload(raw), { bytes: raw.length, artifact: keepArtifact ? artifact : null });
 }
 
-/** Inspect a payload already on disk (a CI `debug_source_platform_*.json`, a banked black box). */
 export function inspectPayloadFile(path) {
 	const raw = readFileSync(path, "utf8");
 	return new PayloadInspector(decodePayload(raw), { bytes: raw.length, artifact: path });
 }
 
-/** Inspect an already-decoded payload object. The cluster-free entry point (and what tests use). */
 export function inspectPayloadObject(payload) {
 	return new PayloadInspector(payload, { bytes: null, artifact: null });
 }
 
-/** Platform names collide across forces; the per-force index is the identity (lookup-by-unique-id). */
 export function resolvePlatformIndex(host, name, force = "player") {
 	const found = lua(host, `local out={} for _,p in pairs(game.forces['${force}'].platforms or {}) do ` +
 		`if p.name=='${name}' then out[#out+1]=p.index end end return {success=true,indices=out}`);

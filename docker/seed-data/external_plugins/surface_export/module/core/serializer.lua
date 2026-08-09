@@ -1,6 +1,3 @@
--- FactorioSurfaceExport - Serializer
--- Main export logic - orchestrates platform serialization
-
 local Util = require("modules/surface_export/utils/util")
 local EntityScanner = require("modules/surface_export/export_scanners/entity-scanner")
 local InventoryScanner = require("modules/surface_export/export_scanners/inventory-scanner")
@@ -13,18 +10,7 @@ local ExportCache = require("modules/surface_export/utils/export-cache")
 
 local Serializer = {}
 
---- Synchronous single-tick export. NOT deprecated — actively used by clone-platform (it needs the
---- export_data in-hand to rewrite platform.name before queuing the async import) and therefore by the
---- integration-test fixture (New-TestPlatform), plus /export-sync-mode for debugging.
---- Production transfer/export uses the async ExportPipeline (AsyncProcessor.queue_export()), which adds
---- multi-tick batching + the atomic single-tick belt scan that this path lacks (so this path has the
---- belt rolling-snapshot limitation: belts keep moving — belt items must be extracted in ONE atomic tick). Collapsing to one path would require an async clone —
---- deferred. Do NOT delete this without first making clone async (it would break the test fixture).
---- @param platform_index number: Index of the platform to export (1-based)
---- @param force_name string|nil: Optional force name the platform belongs to
---- @return table|nil, string: Export data and filename on success, nil and error message on failure
 function Serializer.export_platform(platform_index, force_name)
-  -- Step 1: Validate platform exists
   local resolved_force_name = force_name or "player"
   local force = game.forces[resolved_force_name]
   if not force then
@@ -40,7 +26,6 @@ function Serializer.export_platform(platform_index, force_name)
     return nil, "Platform not valid"
   end
 
-  -- Step 2: Get surface
   local surface = platform.surface
   if not surface or not surface.valid then
     return nil, "Platform surface not valid"
@@ -54,8 +39,6 @@ function Serializer.export_platform(platform_index, force_name)
   log(string.format("[FactorioSurfaceExport] Starting export of platform '%s' (index %d)", platform.name, platform_index))
   game.print(string.format("Exporting platform '%s'...", platform.name))
 
-  -- Step 3: Scan all entities (fluid registry armed for the whole sync scan — ONE discipline;
-  -- cleared in a pcall-safe wrap so an error can never leave a stale registry armed).
   game.print("Scanning entities...")
   local fluid_registry = FluidRegistry.new()
   InventoryScanner.fluid_registry = fluid_registry
@@ -66,25 +49,21 @@ function Serializer.export_platform(platform_index, force_name)
   end
   log(string.format("[FactorioSurfaceExport] Scanned %d entities", #entity_data))
 
-  -- Step 3.5: Scan all tiles
   game.print("Scanning tiles...")
   local tile_data = TileScanner.scan_surface(surface)
   log(string.format("[FactorioSurfaceExport] Scanned %d tiles", #tile_data))
 
-  -- Step 4: Count items for verification
   game.print("Counting items...")
   local item_counts = Verification.count_all_items(entity_data)
   local total_items = Util.sum_items(item_counts)
   log(string.format("[FactorioSurfaceExport] Counted %d total items across %d types", total_items, table_size(item_counts)))
 
-  -- Step 5: Count fluids (from the segment registry — the payload's fluid truth)
   game.print("Counting fluids...")
   local fluid_segments = FluidRegistry.list(fluid_registry)
   local fluid_counts = Verification.count_fluid_segments(fluid_segments)
   local total_fluids = Util.sum_fluids(fluid_counts)
   log(string.format("[FactorioSurfaceExport] Counted %.1f total fluid volume across %d types", total_fluids, table_size(fluid_counts)))
 
-  -- Step 6: Build export structure
   local active_mods = (script and script.active_mods) or (game and game.active_mods) or {}
 
   local export_data = {
@@ -97,9 +76,8 @@ function Serializer.export_platform(platform_index, force_name)
       force = platform.force.name,
       index = platform_index,
       surface_index = surface.index,
-      -- Full schedule payload from LuaSpacePlatform (records, wait_conditions, interrupts, group)
       schedule = platform_schedule,
-      paused = platform.paused  -- Thrust mode (automatic vs paused)
+      paused = platform.paused
     },
     metadata = {
       total_entity_count = #entity_data,
@@ -116,7 +94,6 @@ function Serializer.export_platform(platform_index, force_name)
     }
   }
 
-  -- Step 7: Verify internal consistency
   game.print("Verifying data integrity...")
   log(string.format("[Serializer] Verification data created: item_counts=%d types, fluid_counts=%d types",
     export_data.verification and export_data.verification.item_counts and #(table.keys and table.keys(export_data.verification.item_counts) or {}) or 0,
@@ -127,7 +104,6 @@ function Serializer.export_platform(platform_index, force_name)
     return nil, string.format("Verification failed: %s", error)
   end
 
-  -- Step 8: Serialize to JSON
   game.print("Serializing to JSON...")
   local success, json_string = pcall(Util.encode_json_compat, export_data)
 
@@ -136,10 +112,8 @@ function Serializer.export_platform(platform_index, force_name)
     return nil, string.format("JSON serialization failed: %s", json_string)
   end
 
-  -- Step 9: Store export data for Clusterio transmission
   log(string.format("[FactorioSurfaceExport] Export complete: platform %s (%d KB)", platform.name, math.floor(#json_string / 1024)))
   
-  -- Store export in global for retrieval by Clusterio plugin
   if not storage.platform_exports then
     storage.platform_exports = {}
   end
@@ -160,12 +134,6 @@ function Serializer.export_platform(platform_index, force_name)
     }
   })
 
-  -- Same cap as the async path (export-pipeline.lua). This entry is written as a side effect —
-  -- Serializer.export_platform's only caller, clone_platform, uses the RETURN value and never reads
-  -- storage.platform_exports — so without a prune the clone path grew the save with entries nothing
-  -- would ever read. NOTE: this shape stores the payload TWICE (`data` and `json_string`); shrinking
-  -- it is deliberately out of scope here (see the PR body) because get_export serves both this shape
-  -- and the compressed one, and which field a reader depends on needs its own check.
   ExportCache.prune_to_configured_cap()
 
   game.print(string.format("Export complete: %s", export_id))

@@ -1,23 +1,15 @@
--- FactorioSurfaceExport - Surface Counter
--- Live-surface counting for items and fluids.
-
 local InventoryScanner = require("modules/surface_export/export_scanners/inventory-scanner")
 local GameUtils = require("modules/surface_export/utils/game-utils")
 local Util = require("modules/surface_export/utils/util")
 
 local SurfaceCounter = {}
 
---- Count loose item-entity stacks on a surface.
---- @param surface LuaSurface
---- @return table, number: quality_key→count map, total
 function SurfaceCounter.count_ground_items(surface)
     local totals = {}
     local total = 0
     if not surface or not surface.valid then
         return totals, total
     end
-    -- One ground-stack reader: the meter's explicit "ground" subject. A second inline read here
-    -- would be the duplicate-drift class this file was unified to delete.
     for _, item_entity in ipairs(surface.find_entities_filtered({type = "item-entity"})) do
         for key, count in pairs(SurfaceCounter.count_entity_items(item_entity, "ground")) do
             totals[key] = (totals[key] or 0) + count
@@ -27,13 +19,6 @@ function SurfaceCounter.count_ground_items(surface)
     return totals, total
 end
 
---- Count items held by a SINGLE entity, optionally restricted to one subject.
---- subject nil = inventories + belts + held (the default read); "inventories" | "belts" | "held"
---- select one block; "ground" reads a loose item-entity stack and is counted ONLY under this
---- explicit subject — the nil default excludes it.
---- @param entity LuaEntity
---- @param subject string|nil
---- @return table: quality_key→count map for this entity (empty if invalid)
 function SurfaceCounter.count_entity_items(entity, subject)
     local totals = {}
     if not entity or not entity.valid then
@@ -105,9 +90,6 @@ function SurfaceCounter.count_entity_items(entity, subject)
     return totals
 end
 
---- Count all items on a live surface: fold of count_entity_items plus the ground pass.
---- @param surface LuaSurface: The surface to count items on
---- @return table, number: item_key→count map, total item count
 function SurfaceCounter.count_items(surface)
     if not surface or not surface.valid then
         return {}, 0
@@ -137,22 +119,6 @@ function SurfaceCounter.count_items(surface)
     return item_totals, total
 end
 
---- Count all fluids held by a SINGLE entity (2.1 fluid API, segment-deduplicated).
---- [empirical, 2.1.11, fluid-law experiments 2026-07-21]: get_fluid_segment_fluid(i) returns the
---- EXACT segment total from any member box at any instant (the 2.0 buffer/window duality and the
---- order-dependent claim bug are gone at 2.1), so counting a segment ONCE from whichever member
---- the fold sees first is exact by construction. Segmentless boxes (machine buffers, fusion
---- generators) are counted from their own storage via get_fluid(i). Segment getters THROW on
---- segmentless boxes at 2.1 — has_fluid_segment(i) guards them.
---- Segment dedup is inherently CROSS-ENTITY, so the dedup memory lives in the caller-owned
---- `state` table passed to every entity of one fold.
---- Preserves the pcall-with-logged-error pattern (the pcall-logging lint guard forbids a
---- silent swallow). Independent of the export-side entity-handler dispatch by design.
---- @param entity LuaEntity: The entity to count fluids for
---- @param state table: Shared cross-entity fold state, built once by count_fluids:
----   state.counted_segments  seg_id set already counted (read AND mutated here — the dedup memory)
----   state.seg_temps         authoritative seg_id→{fluid,temp} from FluidRestoration.restore()
---- @return table: fluid_key→amount map contributed by this entity (empty if invalid / no storages)
 function SurfaceCounter.count_entity_fluids(entity, state)
     local totals = {}
     if not entity or not entity.valid then
@@ -185,10 +151,7 @@ function SurfaceCounter.count_entity_fluids(entity, state)
                         totals[key] = (totals[key] or 0) + seg_fluid.amount
                     end
                 end
-                -- Already-counted segments: skip (exact by construction — every member reports
-                -- the same total).
             else
-                -- Segmentless storage: the entity's own content is the whole truth for this box.
                 local fluid = entity.get_fluid(i)
                 if fluid and fluid.name and (fluid.amount or 0) > 0 then
                     local key = Util.make_fluid_temp_key(fluid.name, fluid.temperature or 15)
@@ -205,13 +168,6 @@ function SurfaceCounter.count_entity_fluids(entity, state)
     return totals
 end
 
---- Count all fluids on a live surface (2.1 segment reads).
---- Folds count_entity_fluids over every entity, sharing one cross-entity `state` so each
---- segment is counted exactly once. Segment reads carry their own temperature, so the old
---- known-temperature pre-pass is gone.
---- @param surface LuaSurface: The surface to count fluids on
---- @param segment_temps table|nil: Optional seg_id→{fluid,temp} map from FluidRestoration.restore()
---- @return table, number: fluid_key→amount map, total fluid amount
 function SurfaceCounter.count_fluids(surface, segment_temps)
     if not surface or not surface.valid then
         return {}, 0
@@ -240,11 +196,6 @@ function SurfaceCounter.count_fluids(surface, segment_temps)
     return fluid_totals, total
 end
 
---- Count both items and fluids on a live surface
---- Convenience wrapper that calls count_items and count_fluids.
---- @param surface LuaSurface: The surface to count
---- @param segment_temps table|nil: Optional seg_id→{fluid,temp} map from FluidRestoration.restore()
---- @return table: { item_counts, item_total, fluid_counts, fluid_total }
 function SurfaceCounter.count_all(surface, segment_temps)
     local item_counts, item_total = SurfaceCounter.count_items(surface)
     local fluid_counts, fluid_total = SurfaceCounter.count_fluids(surface, segment_temps)

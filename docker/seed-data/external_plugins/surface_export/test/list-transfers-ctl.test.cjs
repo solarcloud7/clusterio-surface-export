@@ -1,16 +1,5 @@
 "use strict";
 
-// `surface-export list-transfers` is the only way anything OUTSIDE the web UI can ask the controller
-// which transfer IDs it holds. ListTransactionLogsRequest has existed and been handled all along; no
-// ctl command reached it, so the gallery suite's collision preflight had no query path at all.
-//
-// It is JSON-only on purpose: its caller is a non-interactive test harness that takes the last
-// JSON-parsable line of stdout. Two things therefore have to hold and are pinned here — it emits ONE
-// parsable line, and it refuses an out-of-range limit LOUDLY rather than silently substituting 50.
-// That substitution is the real trap: both messages.ts:336 and controller.ts:542 use `|| 50`, so
-// `limit 0` would come back as fifty records and read as "the controller only has fifty".
-//
-// Caveat this test does NOT cover: clusterio's own command dispatch. It exercises our handler.
 
 const { test } = require("node:test");
 const assert = require("node:assert/strict");
@@ -62,7 +51,6 @@ const messages = require(path.join(distNode, "messages.js"));
 
 const command = registered.find(c => String(c.definition[0]).startsWith("list-transfers"));
 
-/** Run the handler against a recording control, capturing stdout. */
 async function invoke(args, summaries = []) {
 	const sent = [];
 	const printed = [];
@@ -111,13 +99,10 @@ test("it prints exactly one JSON-parsable line carrying the array", async () => 
 });
 
 test("an out-of-range or non-integer limit THROWS instead of silently becoming 50", async () => {
-	// The specific silent-substitution this guards: messages.ts:336 and controller.ts:542 both use
-	// `|| 50`, so 0 would come back as fifty records and read as a complete answer.
 	for (const bad of [0, -1, 501, 1.5, "abc", NaN]) {
 		await assert.rejects(() => invoke({ limit: bad }), /limit must be an integer between 1 and 500/,
 			`limit=${JSON.stringify(bad)} must be refused loudly`);
 	}
-	// The boundaries themselves are valid.
 	for (const good of [1, 500, "250"]) {
 		const { sent } = await invoke({ limit: good });
 		assert.equal(sent[0].message.limit, Number(good));

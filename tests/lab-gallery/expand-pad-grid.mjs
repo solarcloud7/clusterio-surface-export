@@ -1,14 +1,4 @@
 #!/usr/bin/env node
-// expand-pad-grid.mjs — add blank OPEN-SLOT rows to the live omnibus pad grid (2026-07-19).
-//
-// Owner direction: "another several rows to lab-omnibus-state-v1". Stamps empty test-foundation
-// cells (template tiles + status trio + name label, NO fixture) on new rows below the existing
-// grid, then fills the connecting walkway band. Live-RCON only (the owner is playing); stamp code
-// is the proven port from complete-live-gallery.mjs / seed-prep-ops.lua stamp_test_cell.
-// Idempotent: re-running skips already-stamped tiles/entities.
-//
-//   node tests/lab-gallery/expand-pad-grid.mjs            (stamp all open slots + walkways)
-//   node tests/lab-gallery/expand-pad-grid.mjs --dry      (report only)
 
 import { execFileSync } from "node:child_process";
 
@@ -19,7 +9,6 @@ const CTL_CONFIG = "/clusterio/tokens/config-control.json";
 const GALLERY = "surface-export-lab-gallery";
 const OMNIBUS = "lab-omnibus-state-v1";
 
-// Grid geometry (docs/testing.md pad-grid layout): columns x=8/36/64/92, row pitch 14.
 const COLUMNS = [8, 36, 64, 92];
 const NEW_ROWS = [36, 50, 64];
 const OPEN_CARD = {
@@ -103,9 +92,6 @@ function stampOpenSlot(id, ox, oy) {
 	return luaJson(body);
 }
 
-// Fill the walkway band connecting the existing bottom row (y=22 cells end ~y=34) through the new
-// rows: any empty-space tile in the band becomes plain foundation. Pads stamped above keep their
-// template tiles (set first if new rows stamp after — we stamp pads FIRST, then fill around them).
 function fillWalkways(yTop, yBottom) {
 	const body = `${OMNI}
 		local tiles={}
@@ -129,7 +115,6 @@ async function main() {
 		console.log(`${id}: ${JSON.stringify(r)}`);
 		if (r.success === false) throw new Error(`${id} stamp failed: ${r.error}`);
 	}
-	// Band from just above the first new row to just below the last new cell (cell height 13 incl. trio row).
 	const fill = fillWalkways(NEW_ROWS[0] - 2, NEW_ROWS.at(-1) + 13);
 	console.log(`walkways: ${JSON.stringify(fill)}`);
 }

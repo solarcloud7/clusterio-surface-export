@@ -1,16 +1,4 @@
 #!/usr/bin/env node
-// Distil real recorded transfers into the timing-only fixture set the timeline tests pin against
-// (test/fixtures/real-transfer-timelines.json). Only the fields the timeline reads survive — no
-// validation maps, no payloads — so the fixtures stay small and diff-reviewable.
-//
-//   docker cp surface-export-controller:/clusterio/data/database/surface_export_transaction_logs.json .
-//   node tools/surface-export/make-timeline-fixtures.mjs surface_export_transaction_logs.json
-//
-// Selection is by SHAPE, not by name alone: the five labels each pin a distinct timeline class
-// (workhorse with phase spans, mid-size, sub-tick, failed rollback, transmission outlier). If a
-// label's predicate stops matching anything in the log, this tool FAILS rather than silently
-// writing a smaller fixture set — replace the predicate deliberately, with a transfer of the same
-// class.
 
 import { readFileSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
@@ -84,15 +72,10 @@ const wall = e => {
 };
 
 const fixtures = [
-	// The workhorse class: large payload, full phase spans, multi-second import window.
 	pick("workhorse-120kb", e => kb(e) > 100 && has(e, "transfer_completed") && spans(e) && wall(e) > 5000),
-	// Mid-size with a different phase shape.
 	pick("omnibus-87kb", e => kb(e) > 50 && kb(e) <= 100 && has(e, "transfer_completed") && spans(e)),
-	// Sub-second transfer: every span at or below tick resolution.
 	pick("tiny-2kb", e => kb(e) < 4 && has(e, "transfer_completed") && spans(e)),
-	// A FAILED transfer: rollback path, validation timeout, no import breakdown.
 	pick("failed-timeout", e => has(e, "transfer_failed") && has(e, "validation_timeout")),
-	// Transmission outlier: upload wall far above the sibling norm for its size.
 	pick("slow-transmission", e => has(e, "transfer_completed")
 		&& (e.events || []).some(v => typeof v.transmissionMs === "number" && v.transmissionMs > 5000)),
 ];

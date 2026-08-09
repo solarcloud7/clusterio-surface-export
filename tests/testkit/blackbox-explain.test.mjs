@@ -1,10 +1,3 @@
-// blackboxExplain's own tests, against the REAL minted fixture — a bundle banked by an actual gate
-// failure (clone of lab-omnibus-state-v1, stripped to hub + 3 chests, transferred with the one-shot
-// `test_force_item_loss = 1` hook armed on the destination; iron-plate 200 → 199). The fixture is
-// the production writer's real output, so a schema change in `bank_failure_black_box` that the
-// explain tool cannot decode fails HERE, before it fails during a live incident.
-//
-// Cluster-free by construction: the fixture is committed; the FAQ table is read from docs/.
 import assert from "node:assert/strict";
 import test from "node:test";
 
@@ -30,7 +23,6 @@ test("explain decodes the minted bundle: stage, diff row, tick span", () => {
 });
 
 test("explain keeps the measurement boundary: self-report and physical scan are separate, labeled facts", () => {
-	// The gate's accounting lives under selfReport; the independent dest scan under physicalScan.
 	assert.ok(report.selfReport.expectedItemTypes > 0);
 	assert.equal(report.physicalScan.destEntityCount, 4, "hub + 3 seeded chests");
 	assert.equal(report.physicalScan.destFluidSegmentCount, 0,
@@ -42,8 +34,6 @@ test("explain keeps the measurement boundary: self-report and physical scan are 
 });
 
 test("triage hint reads the FAQ table and carries the not-root-cause caveat", () => {
-	// The forced-loss signature (items, one name, single-digit LOST) deliberately matches the belt
-	// class row — which is exactly why the hint must carry the caveat.
 	assert.equal(report.triage.matched, true);
 	assert.match(report.triage.caveat, /HINT/);
 	assert.match(report.triage.action, /once/i);
@@ -64,8 +54,6 @@ test("replay payload is present and reimportable-shaped", () => {
 	assert.ok(report.replay.tileCount > 0);
 });
 
-// Constructed bundles for the triage direction rule (review must-fix M3): a direction-less FAQ row
-// is a LOSS class, so a GAIN must never match it and get told "the gate refused correctly".
 const bundleWith = (diff) => explainBlackBox({
 	transfer_id: "t", platform_name: "p", gate_tick: 2, started_tick: 1, mods: {},
 	expected: { items: {}, fluids: {} }, actual: { items: {}, fluids: {} },

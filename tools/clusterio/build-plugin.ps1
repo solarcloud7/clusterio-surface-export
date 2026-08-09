@@ -1,57 +1,3 @@
-<#
-.SYNOPSIS
-    Build the surface_export plugin (TypeScript node bundle + webpack web bundle) in an
-    isolated Node container — no host Node required, and without corrupting the running cluster.
-
-.DESCRIPTION
-    IMPLEMENTATION for `deploy.ps1 -Scope artifacts`. Prefer that entry point; it is the one
-    documented deploy command and it refuses flags that do not belong to the chosen scope.
-
-    Why this exists (see the Web cache guard entry and build notes in CLAUDE.md):
-      * Building in the live plugin dir is unsafe while the cluster runs: `npm install` there
-        re-adds the `@clusterio/*` peers into the bind-mounted node_modules and breaks
-        clusterioctl with "duplicate copy of @clusterio/lib" (CLAUDE.md, Hot-Reload section).
-
-    This script sidesteps both by building in a throwaway node:24 container with:
-      * the plugin dir bind-mounted  -> dist/ lands back on the host, so the cluster picks it up;
-      * a NAMED VOLUME over node_modules -> the cluster's bind-mounted node_modules is never
-        touched, and deps persist between runs for speed.
-    It mirrors CI (npm ci against package-lock.json) — re-installing whenever the lockfile is newer
-    than the tree npm last wrote into the cached volume, so a warm volume cannot silently serve a
-    dependency set the lockfile no longer describes. That claim used to be conditional and unstated:
-    the install ran ONLY when the volume was empty.
-
-.PARAMETER Target
-    all (default) | node | web — which build script to run.
-
-.PARAMETER Fresh
-    Drop the cached deps volume and run a clean `npm ci` (use after package.json/lock changes).
-
-.PARAMETER RestartController
-    After building, restart the controller so it re-reads dist/web/manifest.json. Required for
-    web changes to show up, because the controller caches each plugin's manifest at startup — and
-    a rebuild DELETES the old content-hashed chunks, so a controller left on the stale manifest
-    serves 404s and the plugin UI dies with "Error loading module", not merely stale content.
-
-    Calling THIS script directly does not check that for you: it restarts if you pass the switch and
-    not otherwise. `deploy.ps1 -Scope artifacts` reconciles automatically (Sync-ControllerWebBundle
-    in tools/shared/cluster-utils.ps1) and is the documented path for exactly this reason.
-
-.PARAMETER RestartHosts
-    After building, restart both hosts so they reload dist/node/*.js. Required for TypeScript
-    (node) changes to show up, because the hosts load the plugin's node bundle at startup.
-
-.EXAMPLE
-    ./tools/clusterio/build-plugin.ps1 web -RestartController     # rebuild web UI and serve it live
-.EXAMPLE
-    ./tools/clusterio/build-plugin.ps1 node -RestartHosts        # rebuild TypeScript and reload it on the hosts
-.EXAMPLE
-    ./tools/clusterio/build-plugin.ps1 all -RestartController -RestartHosts   # full build + reload everything
-.EXAMPLE
-    ./tools/clusterio/build-plugin.ps1                            # full build (node + web)
-.EXAMPLE
-    ./tools/clusterio/build-plugin.ps1 -Fresh                     # clean reinstall + full build
-#>
 param(
     [ValidateSet('all', 'node', 'web')][string]$Target = 'all',
     [switch]$Fresh,
@@ -65,15 +11,9 @@ $PluginPath = (Resolve-Path "$PSScriptRoot/../../docker/seed-data/external_plugi
 $DepsVolume = 'se_plugin_build_nm'
 $Image = 'node:24-bookworm-slim'
 
-# Fail fast with a clear message if the Docker daemon isn't reachable (otherwise the docker
-# commands below fail with an opaque non-zero exit that reads like a build error).
 docker version --format '{{.Server.Version}}' 2>$null | Out-Null
 if ($LASTEXITCODE -ne 0) { throw "Docker does not appear to be running. Start Docker Desktop and retry." }
 
-# 'web' typechecks BEFORE bundling. webpack treats @clusterio/lib and @clusterio/web_ui as
-# Module-Federation externals (`import: false`), so it never checks them — a removed upstream
-# export compiles fine here and surfaces as a blank tab in the browser. `build:browser` is the
-# only thing that catches it, and `-Target web` is exactly what you run after editing .tsx.
 $BuildScript = switch ($Target) {
     'web'  { 'npm run build:browser && npm run build:web' }
     'node' { 'npm run build:node' }
@@ -86,18 +26,6 @@ if ($Fresh) {
     docker volume rm $DepsVolume 2>$null | Out-Null
 }
 
-# Inside the container. Two independent decisions, deliberately no longer folded together:
-#
-#   INSTALL  when the cached deps volume is empty OR package-lock.json is newer than the tree npm
-#            last wrote (npm maintains node_modules/.package-lock.json, so this is npm's own signal,
-#            not a guess). The old condition was "deps missing" alone, which meant a warm volume
-#            NEVER re-ran `npm ci` — a long-lived se_plugin_build_nm could carry a dependency tree
-#            matching neither the current lockfile nor anything else, while the header claimed CI
-#            parity.
-#   BUILD    always, explicitly. This used to rely on `npm ci` firing the `prepare` lifecycle, which
-#            is no longer safe to assume: prepare is now guarded (scripts/prepare-build.mjs) and
-#            legitimately SKIPS when dist/ is already newer than every source. Relying on a
-#            lifecycle hook to produce this script's entire output was a hidden coupling either way.
 $Inner = "set -e; echo '[node] '`$(node -v); " +
          "if [ ! -x node_modules/.bin/webpack-cli ] || [ package-lock.json -nt node_modules/.package-lock.json ]; then " +
          "echo '[deps] npm ci'; npm ci --no-audit --no-fund; fi; " +

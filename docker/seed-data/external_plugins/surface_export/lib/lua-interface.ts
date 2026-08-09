@@ -1,28 +1,9 @@
-/**
- * @file lib/lua-interface.ts
- * @description The typed gateway to the save-patched `surface_export` Lua module — the ONE place that
- * builds `/sc remote.call("surface_export", ...)` command strings, escapes interpolated arguments, runs the
- * chunked-JSON sends, and does the straightforward JSON.parse of RCON results. instance.ts calls these typed
- * methods instead of formatting Lua inline; it keeps the intricate result *interpretation* (export-failed
- * parsing, validation defaulting, platform mapping, SUCCESS/ERROR handling).
- *
- * Binding: this holds a reference to the RCON host (the Clusterio Instance) and calls `host.sendRcon(...)`
- * BOUND — it never extracts `sendRcon` as a bare value, which would lose `this` (the same footgun as Pitfall
- * #26 for Link methods). This mirrors how helpers.ts takes a duck-typed `{ sendRcon }`.
- */
-
 import { escapeString } from "@clusterio/lib";
 import type { ExportData } from "../messages";
 import { sendChunkedJson, RCON_CHUNK_SIZE, type FactorioInstance } from "../helpers";
 
-/**
- * The RCON host. MUST be the plugin (BaseInstancePlugin) — its `sendRcon` forwards the plugin name as the
- * `plugin` label on the RCON-size metric; the raw Instance's `sendRcon` defaults that label to "". Reuses
- * helpers.ts's `FactorioInstance` (same `{ sendRcon }` surface) rather than re-declaring it.
- */
 type RconHost = FactorioInstance;
 
-/** The subset of the plugin logger that the chunked-send path needs. */
 interface ChunkLogger {
 	info(message: string): void;
 	verbose(message: string): void;
@@ -39,7 +20,6 @@ export interface LuaConfigure {
 export class LuaInterface {
 	constructor(private readonly host: RconHost, private readonly logger: ChunkLogger) {}
 
-	/** Push plugin config into the Lua module (no-op if the remote interface isn't loaded yet). */
 	async configure(cfg: LuaConfigure): Promise<void> {
 		const script = `/sc ` +
 			`if remote.interfaces["surface_export"] and remote.interfaces["surface_export"]["configure"] then ` +
@@ -54,16 +34,7 @@ export class LuaInterface {
 		await this.host.sendRcon(script, true);
 	}
 
-	/**
-	 * Push the resolved gateway link config into Lua storage. The config is sent as a JSON STRING and
-	 * decoded in Lua (via the `configure` remote's `gateways_json` key) — NOT string-interpolated as a
-	 * Lua table — so arbitrary instance names in the config can never inject Lua. `escapeString` makes
-	 * the JSON safe to embed in the surrounding Lua double-quoted literal.
-	 */
 	async configureGateways(gatewaysJson: string, activeGatewaysJson?: string): Promise<void> {
-		// The ACTIVE gateway name list rides with the config rather than in its own call: the two are
-		// read together (which gateways exist, and where each leads), and splitting them across two
-		// RCON commands would leave a window where Lua has one and not the other.
 		const activeClause = activeGatewaysJson
 			? `, active_gateways_json="${escapeString(activeGatewaysJson)}"`
 			: "";
@@ -71,9 +42,6 @@ export class LuaInterface {
 			`if remote.interfaces["surface_export"] and remote.interfaces["surface_export"]["configure"] then ` +
 			`remote.call("surface_export", "configure", {gateways_json="${escapeString(gatewaysJson)}"${activeClause}}) ` +
 			`end`;
-		// A single /sc command is bounded by Factorio's ~8KB RCON limit. Gateway config is tiny in
-		// practice (a few gateways × targets), but fail LOUDLY rather than send a truncated/dropped
-		// command if it ever grows past a safe single-command size (escaping inflates it further).
 		const MAX_RCON_COMMAND_BYTES = 7000;
 		if (Buffer.byteLength(script, "utf8") > MAX_RCON_COMMAND_BYTES) {
 			throw new Error(
@@ -84,21 +52,11 @@ export class LuaInterface {
 		await this.host.sendRcon(script, true);
 	}
 
-	/**
-	 * Push the /teleport instance roster into Lua storage. Same shape and rationale as
-	 * configureGateways: JSON string decoded Lua-side (instance names can never inject Lua), and a
-	 * loud size guard rather than a silently truncated RCON command. The roster is one small row
-	 * per instance, so the cap is generous.
-	 */
 	async pushTeleportRoster(rosterJson: string): Promise<void> {
 		const script = `/sc ` +
 			`if remote.interfaces["surface_export"] and remote.interfaces["surface_export"]["teleport_roster_update"] then ` +
 			`remote.call("surface_export", "teleport_roster_update", "${escapeString(rosterJson)}") ` +
 			`end`;
-		// ~128 escaped bytes per roster row means this caps out around 50 instances — a size real
-		// Clusterio clusters do reach. Past it the push needs chunking (the import path has the
-		// pattern); until then, fail loud here rather than send a truncated command. The catch in
-		// handleTeleportRosterRequest logs it host-side; the GUI keeps its "fetching…" label.
 		const MAX_RCON_COMMAND_BYTES = 7000;
 		if (Buffer.byteLength(script, "utf8") > MAX_RCON_COMMAND_BYTES) {
 			throw new Error(
@@ -109,11 +67,6 @@ export class LuaInterface {
 		await this.host.sendRcon(script, true);
 	}
 
-	/**
-	 * Queue an async export. `targetArg` is the already-formatted Lua literal ("nil" for export-only, or a
-	 * positive integer string for a transfer destination). Returns the RAW rcon result; the caller interprets
-	 * the `export_id` / `EXPORT_FAILED:<reason>` contract.
-	 */
 	async exportPlatform(platformIndex: number, forceName: string, targetArg: string): Promise<string> {
 		return this.host.sendRcon(
 			`/sc local export_id, err = remote.call("surface_export", "export_platform", ${platformIndex}, "${escapeString(forceName)}", ${targetArg}); ` +
@@ -121,7 +74,6 @@ export class LuaInterface {
 		);
 	}
 
-	/** Fetch a stored export as a parsed object, or null if Lua returned empty/"null"/a non-object. */
 	async getExportJson(exportId: string): Promise<Record<string, unknown> | null> {
 		const result = await this.host.sendRcon(
 			`/sc rcon.print(remote.call("surface_export", "get_export_json", "${escapeString(exportId)}"))`,
@@ -134,7 +86,6 @@ export class LuaInterface {
 		return parsed && typeof parsed === "object" ? parsed as Record<string, unknown> : null;
 	}
 
-	/** List stored export IDs (parsed array). Throws on a malformed response; the caller decides the fallback. */
 	async listExportsJson(): Promise<string[]> {
 		const result = await this.host.sendRcon(
 			"/sc rcon.print(remote.call(\"surface_export\", \"list_exports_json\"))",
@@ -142,7 +93,6 @@ export class LuaInterface {
 		return JSON.parse(result) as string[];
 	}
 
-	/** List platforms for a force (parsed array; [] if Lua returned a non-array). Caller maps to its shape. */
 	async listPlatformsJson(forceName: string): Promise<Record<string, unknown>[]> {
 		const result = await this.host.sendRcon(
 			`/sc rcon.print(remote.call("surface_export", "list_platforms_json", "${escapeString(forceName)}"))`,
@@ -151,7 +101,6 @@ export class LuaInterface {
 		return Array.isArray(parsed) ? parsed as Record<string, unknown>[] : [];
 	}
 
-	/** Stream an export payload to Lua's `import_platform_chunk` in size-bounded chunks (reuses helpers). */
 	async importPlatformChunked(
 		targetName: string,
 		forceName: string,
@@ -159,9 +108,6 @@ export class LuaInterface {
 	): Promise<void> {
 		await sendChunkedJson(
 			this.host,
-			// rcon.print the remote's status string so sendChunkedJson can FAIL LOUD on "ERROR:..."
-			// (a queue failure — e.g. a rejected schedule — previously vanished: the Lua returned the
-			// error but nothing read it, and the caller logged "import queued" over a dead import).
 			`rcon.print(remote.call("surface_export", "import_platform_chunk", "${escapeString(targetName)}", %CHUNK%, %INDEX%, %TOTAL%, "${escapeString(forceName)}"))`,
 			exportData,
 			this.logger,
@@ -169,22 +115,7 @@ export class LuaInterface {
 		);
 	}
 
-	/**
-	 * Delete a transferred source platform. Returns RAW "SUCCESS" / "ERROR:<reason>".
-	 * Routes through the `delete_platform_for_transfer` remote, which (atomically, one tick): unlocks,
-	 * EVACUATES any aboard players/characters to a planet (so a passenger is never orphaned when the surface
-	 * vanishes), then tears down via `GameUtils.delete_platform` (version-correct; `game.delete_surface`
-	 * under the hood — `LuaSpacePlatform.destroy()` is a NO-OP, re-asserted by the engine-invariants
-	 * instrument on every run). Keeping all of that
-	 * in one remote (a) makes evacuation atomic with the delete and (b) fixes the prior inline-RCON that
-	 * bypassed GameUtils.delete_platform.
-	 */
 	async deleteSourcePlatform(platformIndex: number, platformName: string, forceName: string, exportId?: string | null): Promise<string> {
-		// Resolve+delete by the UNIQUE index (emitted unquoted → a Lua number). Identity is surface.index
-		// (rename-safe, platform identity is surface.index, never the mutable name); the 4th arg is the transfer's exportId (== the source lock's
-		// transfer_job_id) — a NAME-FREE request-vs-lock correlation so a stale/reused-index delete can't tear
-		// down an unrelated transfer. platformName is display/logging only; a missing exportId degrades to the
-		// surface.index check.
 		const jobArg = exportId ? `, "${escapeString(exportId)}"` : ", nil";
 		return this.host.sendRcon(
 			`/sc rcon.print(remote.call("surface_export", "delete_platform_for_transfer", ` +
@@ -198,9 +129,6 @@ export class LuaInterface {
 			`"${escapeString(transferId)}", ${Math.trunc(platformIndex)}, "${escapeString(platformName)}", "${escapeString(forceName)}"))`,
 		);
 	}
-	/** Unlock a platform via the remote interface (keyed by the unique index). Returns RAW "SUCCESS" /
-	 *  "ERROR:<reason>". `platformName`, when given, is a secondary display tripwire passed by the rollback/expiry
-	 *  paths; identity is the index + surface.index inside unlock_platform (not the mutable name, not any reconcile). */
 	async unlockPlatform(platformIndex: number, platformName?: string): Promise<string> {
 		const nameArg = platformName ? `, "${escapeString(platformName)}"` : "";
 		return this.host.sendRcon(
@@ -214,15 +142,7 @@ export class LuaInterface {
 		);
 	}
 
-	// unlockViaSurfaceLock is DELETED (2026-08-02). It sent `local SurfaceLock = require(...)` via
-	// /sc — and Factorio's `require` is parse-time only, so the command threw
-	// "Require can't be used outside of control.lua parsing." on EVERY invocation, which the
-	// fire-and-forget void swallowed. It had never worked: every transfer-refusal unlock that went
-	// through it left the source locked until the TTL. Measured live against the running cluster.
-	// The one unlock is unlockPlatform above — the remote-interface path the controller's own
-	// rollback uses, which reports SUCCESS/ERROR so a caller cannot ignore the outcome by accident.
 
-	/** Print an in-game message. `colorCode` is a pre-formatted Lua RGB literal, e.g. "{0, 1, 0}". */
 	async printToGame(message: string, colorCode: string): Promise<void> {
 		await this.host.sendRcon(
 			`/sc game.print("${escapeString(message)}", ${colorCode})`,
@@ -230,7 +150,6 @@ export class LuaInterface {
 		);
 	}
 
-	/** Harmless print used to confirm the Factorio Lua console (first command needs confirmation). */
 	async signalReady(): Promise<void> {
 		await this.host.sendRcon("/sc rcon.print(\"surface-export-ready\")");
 	}

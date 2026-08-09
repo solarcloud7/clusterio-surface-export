@@ -1,9 +1,3 @@
-/**
- * @file instance.ts
- * @description Instance plugin for Surface Export - runs on each Factorio host
- * @see https://github.com/clusterio/clusterio/blob/master/docs/writing-plugins.md
- */
-
 import fs from "fs";
 import { BaseInstancePlugin } from "@clusterio/host";
 import type { Instance } from "@clusterio/host";
@@ -14,36 +8,19 @@ import { getErrorMessage, coercePlatformIndex, isBenignUnlockError, EXPORT_POLL_
 import { LuaInterface } from "./lib/lua-interface";
 import { parseSourceTransferLockStateJson } from "./lib/source-lock-state";
 
-/**
- * The instance Link viewed with permissive `handle`/`sendTo` signatures. Our message classes are
- * duck-typed (they don't extend lib.Request/Event), so they don't satisfy Link's strict overloads.
- * We cast the OBJECT to this and call methods ON it — we never extract or cast a Link *method*
- * (`const h = this.i.handle` / `this.i.sendTo as ...`), which loses `this` and crashes
- * Link.handle/sendTo ("reading 'handleRequest'"/"'sendRequest'") at runtime. See CLAUDE.md: never extract a Clusterio Link method — call it bound.
- */
 type PermissiveLink = {
 	handle(messageClass: unknown, handler: (...args: never[]) => unknown): void;
 	sendTo(dst: "controller", message: unknown): Promise<messages.SimpleResponse & { transferId?: string; safeToUnlockSource?: boolean }>;
 };
 
-/**
- * Instance plugin class
- * Runs on each Clusterio host and handles communication with Factorio servers
- */
 export class InstancePlugin extends BaseInstancePlugin {
 	private get i(): Instance { return this.instance; }
-	/** `this.i` with permissive handle/sendTo signatures — see {@link PermissiveLink}. */
 	private get link(): PermissiveLink { return this.instance as unknown as PermissiveLink; }
-	/**
-	 * Read a config key that isn't in InstanceConfig's strict field union (our custom
-	 * plugin keys and a few non-typed built-ins). Bypasses the keyed Config.get typing.
-	 */
 	private cfg<T = unknown>(key: string): T {
 		return (this.instance.config as { get(k: string): unknown }).get(key) as T;
 	}
 	private controllerManagedTransferExports: Set<string> = new Set();
 	private pendingTransfer: PendingTransfer | null = null;
-	/** Typed gateway to the surface_export Lua module (command-building, escaping, chunking, parsing). */
 	private lua!: LuaInterface;
 
 	normalizeRconScalarResult(value: unknown) {
@@ -65,52 +42,30 @@ export class InstancePlugin extends BaseInstancePlugin {
 			|| lowered.startsWith("error");
 	}
 
-	/**
-	 * Initialize plugin
-	 * Called when plugin is loaded
-	 */
 	async init() {
 		this.logger.info("Surface Export plugin initializing...");
 		this.logger.info(`Instance ID: ${this.i.id}, Name: ${this.i.config.get("instance.name")}`);
 		this.validateInstanceConfiguration();
-		// Construct with `this` (the plugin), NOT this.i (the raw Instance): BaseInstancePlugin.sendRcon
-		// forwards the plugin name as the `plugin` label on the RCON-size metric; the Instance's does not.
 		this.lua = new LuaInterface(this, this.logger);
 
-		// Listen for platform export completion from Factorio mod
-		// The mod sends data via clusterio_api.send_json("surface_export_complete", data)
 		this.i.server.handle("surface_export_complete", this.handleExportComplete.bind(this));
 
-		// Listen for import file requests from mod
-		// The mod sends data via clusterio_api.send_json("surface_import_file_request", data)
 		this.i.server.handle("surface_import_file_request", this.handleImportFileRequest.bind(this));
 
-		// Listen for import completion with validation from mod
 		this.i.server.handle("surface_export_import_complete", this.handleImportCompleteValidation.bind(this));
 
-		// Listen for space platform state changes from Factorio mod
 		this.i.server.handle("surface_platform_state_changed", this.handlePlatformStateChanged.bind(this));
 
-		// Listen for transfer requests from mod
 		this.i.server.handle("surface_transfer_request", this.handleTransferRequest.bind(this));
 
-		// The /teleport GUI asks for the instance roster via
-		// clusterio_api.send_json("surface_teleport_roster_request", {})
 		this.i.server.handle("surface_teleport_roster_request", this.handleTeleportRosterRequest.bind(this));
 
-		// Register message handlers
 		this.i.handle(messages.ExportPlatformRequest, this.handleExportPlatformRequest.bind(this));
 		this.i.handle(messages.ImportPlatformRequest, this.handleImportPlatformRequest.bind(this));
 		this.i.handle(messages.ImportPlatformFromFileRequest, this.handleImportPlatformFromFileRequest.bind(this));
 		this.i.handle(messages.DeleteSourcePlatformRequest, this.handleDeleteSourcePlatform.bind(this));
-		// Cast the ARGUMENTS (never the bound method — never extract a Clusterio Link method — call it bound): the optional nullable platformName makes
-		// the duck-typed Request class miss Link.handle's strict overload.
 		this.i.handle(messages.UnlockSourcePlatformRequest as never, this.handleUnlockSourcePlatform.bind(this) as never);
 		this.i.handle(messages.GetSourceTransferLockStateRequest, this.handleGetSourceTransferLockState.bind(this));
-		// TransferStatusUpdate.color (string|null) and InstanceListPlatformsRequest's Response
-		// optionals don't line up with their handlers' declared shapes. Register them through the
-		// permissive `this.link` view (see PermissiveLink) — a BOUND method call on the object,
-		// never an extracted/cast method (never extract a Clusterio Link method — call it bound).
 		this.link.handle(messages.TransferStatusUpdate, this.handleTransferStatusUpdate.bind(this));
 		this.link.handle(messages.InstanceListPlatformsRequest, this.handleInstanceListPlatformsRequest.bind(this));
 		this.link.handle(messages.PushGatewayConfigRequest, this.handlePushGatewayConfig.bind(this));
@@ -118,9 +73,6 @@ export class InstancePlugin extends BaseInstancePlugin {
 		this.logger.info("Surface Export plugin initialized");
 	}
 
-	/**
-	 * Called when instance starts
-	 */
 	async onStart() {
 		this.logger.info("Instance started - Surface Export plugin ready");
 		await this.ensureLuaConsoleUnlocked();
@@ -128,9 +80,6 @@ export class InstancePlugin extends BaseInstancePlugin {
 		await this.sendGatewayConfigToLua();
 	}
 
-	/**
-	 * Send plugin configuration to Lua
-	 */
 	async sendConfigurationToLua() {
 		try {
 			const batchSize = this.cfg<number>("surface_export.batch_size");
@@ -146,13 +95,7 @@ export class InstancePlugin extends BaseInstancePlugin {
 		}
 	}
 
-	// ── Gateway link config (WS2) ───────────────────────────────────────────
 
-	/**
-	 * Push the resolved gateway config into Lua storage as a keyed map. The targets ride through with
-	 * their camelCase field names (instanceId/instanceName/targetGateway/online) — the in-game chooser
-	 * reads the SAME shape, so there is no second per-field map to drift from the controller's resolve.
-	 */
 	private async applyGatewaysToLua(
 		gateways: messages.ResolvedGateway[],
 		activeGatewayNames?: string[],
@@ -161,21 +104,12 @@ export class InstancePlugin extends BaseInstancePlugin {
 		for (const g of gateways || []) {
 			keyed[g.gatewayName] = { targets: g.targets || [] };
 		}
-		// The active set is sent by the controller and NOT derived from `keyed`: the controller only
-		// resolves gateways that HAVE links, so on a fresh cluster `keyed` is empty. Deriving from it
-		// would unlock nothing, leaving the operator unable to fly to a gateway in order to link one.
-		// Undefined (an un-updated controller) means “unlock everything with the prefix”, i.e. the old
-		// behaviour, rather than nothing.
 		await this.lua.configureGateways(
 			JSON.stringify(keyed),
 			activeGatewayNames ? JSON.stringify(activeGatewayNames) : undefined,
 		);
 	}
 
-	/**
-	 * The /teleport GUI's roster round-trip: Lua asked via send_json; ask the controller for the
-	 * roster (addresses are assembled controller-side) and push the answer back into Lua storage.
-	 */
 	async handleTeleportRosterRequest(): Promise<void> {
 		try {
 			const resp = (await this.link.sendTo(
@@ -190,7 +124,6 @@ export class InstancePlugin extends BaseInstancePlugin {
 		}
 	}
 
-	/** Pull the resolved gateway config from the controller on start (catch-up for a fresh instance). */
 	async sendGatewayConfigToLua() {
 		try {
 			const resp = (await this.link.sendTo(
@@ -204,7 +137,6 @@ export class InstancePlugin extends BaseInstancePlugin {
 		}
 	}
 
-	/** controller → instance: a gateway config push (on a config change). */
 	async handlePushGatewayConfig(request: { gateways: messages.ResolvedGateway[]; activeGatewayNames?: string[] }) {
 		try {
 			await this.applyGatewaysToLua(request.gateways || [], request.activeGatewayNames);
@@ -214,17 +146,10 @@ export class InstancePlugin extends BaseInstancePlugin {
 		}
 	}
 
-	/**
-	 * Called when instance stops
-	 */
 	async onStop() {
 		this.logger.info("Instance stopped - Surface Export plugin shutting down");
 	}
 
-	/**
-	 * Handle export completion event from Factorio mod
-	 * @param data - Export data from mod
-	 */
 	async handleExportComplete(data: Record<string, unknown>) {
 		const exportId = String(data.export_id || "").trim();
 		this.logger.info(`Export complete send_json event received: export_id=${exportId}, platform=${data.platform_name}`);
@@ -238,7 +163,6 @@ export class InstancePlugin extends BaseInstancePlugin {
 		}
 
 		try {
-			// Retrieve full export data from mod
 			const exportData = await this.getExportData(exportId);
 
 			if (!exportData) {
@@ -246,9 +170,6 @@ export class InstancePlugin extends BaseInstancePlugin {
 				return;
 			}
 
-			// Send export to controller for storage. Surface the source platform's unique index TOP-LEVEL
-			// (the export-complete payload carries it as data.platform_index) so it survives even when the
-			// export body is a compressed blob — the source delete is keyed on it.
 			const sourcePlatformIndex = Number(data.platform_index);
 			await this.i.sendTo("controller", new messages.PlatformExportEvent({
 				exportId,
@@ -261,7 +182,6 @@ export class InstancePlugin extends BaseInstancePlugin {
 			}));
 			this.logger.info(`Sent platform export ${exportId} to controller`);
 
-			// Check if auto-transfer was requested (destination_instance_id in send_json payload)
 			if (data.destination_instance_id) {
 				if (this.controllerManagedTransferExports.has(exportId)) {
 					this.controllerManagedTransferExports.delete(exportId);
@@ -273,7 +193,6 @@ export class InstancePlugin extends BaseInstancePlugin {
 				return;
 			}
 
-			// Check if this was part of a pending transfer request (legacy path)
 			if (this.pendingTransfer && this.pendingTransfer.job_id === data.job_id) {
 				const pendingTargetId = Number(this.pendingTransfer.destination_instance_id);
 				if (!Number.isInteger(pendingTargetId) || pendingTargetId <= 0) {
@@ -283,7 +202,6 @@ export class InstancePlugin extends BaseInstancePlugin {
 				}
 				this.logger.info(`Transfer export complete, initiating transfer to instance ${this.pendingTransfer.destination_instance_id}`);
 				await this.startControllerTransfer(exportId, pendingTargetId, Number(this.pendingTransfer.platform_index));
-				// Clear pending transfer
 				this.pendingTransfer = null;
 			}
 		} catch (err: unknown) {
@@ -291,24 +209,10 @@ export class InstancePlugin extends BaseInstancePlugin {
 		}
 	}
 
-	/**
-	 * Ask the controller to run a transfer for a completed export, and UNLOCK the source when the
-	 * controller refuses.
-	 *
-	 * ONE helper for both initiation paths, extracted 2026-08-02 after a live probe caught the
-	 * mirrored-path defect the di-change checklist names: the auto-transfer path was a hand-copied
-	 * mirror of the legacy pendingTransfer path that silently dropped the unlock-on-failure side
-	 * effect. Every controller-side refusal on the auto path — an offline destination, a settled-ID
-	 * retry, an unknown instance — logged "Transfer failed" and left the source LOCKED until the TTL
-	 * expired, while the refusal message told the player to retry. Measured: locked=1 after a
-	 * preflight refusal whose text promised "the source platform is unchanged".
-	 */
 	private async startControllerTransfer(exportId: string, targetInstanceId: number, platformIndex: number) {
 		const canonicalExportId = makeCanonicalTransferId(this.i.id, exportId);
 		this.logger.info(`  Sending TransferPlatformRequest to controller: exportId=${canonicalExportId}, targetInstanceId=${targetInstanceId}`);
 
-		// Send transfer request to controller through the permissive `this.link` view (see
-		// PermissiveLink) — a BOUND call on the object, never an extracted/cast method (never extract a Clusterio Link method — call it bound).
 		const transferResponse = await this.link.sendTo(
 			"controller",
 			new messages.TransferPlatformRequest({
@@ -325,33 +229,13 @@ export class InstancePlugin extends BaseInstancePlugin {
 		}
 		this.logger.error(`Transfer failed: ${transferResponse.error}`);
 
-		// THE CONTRACT FIRST, the print second — order is load-bearing. The reconciliation review
-		// caught the first version printing BEFORE unlocking: printToGame's sendRcon(expectEmpty)
-		// THROWS on any non-empty response (a Lua error, an unconfirmed console, an RCON blip), the
-		// throw lands in handleExportComplete's catch, and the unlock never runs — the exact
-		// stranded-lock defect this method exists to eliminate, reintroduced by the observability
-		// call placed in front of it. Observability never gates the contract, including here.
 
-		// Unlock ONLY when the controller proved the refusal was delivery-free. `success:false` alone
-		// is NOT that proof: one failure return (a throw AFTER the destination accepted the import)
-		// must keep the lock, because clearing it lets a later validation SUCCESS meet a source-delete
-		// gate that refuses on "not locked" — destination committed, source alive, permanent
-		// duplicate. Review finding; the flag is opt-in true at each proven-safe site in
-		// transferPlatform, so an unannotated future refusal defaults to the safe direction (keep the
-		// lock, TTL backstop).
 		if (transferResponse.safeToUnlockSource === true) {
-			// Through the SAME remote-interface path the controller's rollback uses — and CHECK the
-			// answer. The old helper here (unlockViaSurfaceLock) had never worked: its /sc used a
-			// runtime `require`, which Factorio forbids, and the fire-and-forget swallowed the error
-			// on every call. The lock "recovered" only because the TTL eventually fired.
 			if (Number.isInteger(platformIndex)) {
 				const unlockResult = String(await this.lua.unlockPlatform(platformIndex)).trim();
 				if (unlockResult.startsWith("SUCCESS")) {
 					this.logger.info(`Source platform ${platformIndex} unlocked after refused transfer`);
 				} else if (isBenignUnlockError(unlockResult)) {
-					// Already unlocked (e.g. the controller's own rollback got there first) — the goal
-					// state, not a failure. Without this the most common refusal path logged a spurious
-					// ERROR about a stranded lock that did not exist (review finding).
 					this.logger.info(`Source platform ${platformIndex} was already unlocked (${unlockResult})`);
 				} else {
 					this.logger.error(`Unlock after refused transfer did NOT succeed (${unlockResult}); `
@@ -362,10 +246,6 @@ export class InstancePlugin extends BaseInstancePlugin {
 			}
 		}
 
-		// The refusal must reach the PLAYER who initiated the transfer in-game — the host's JSON log
-		// (the only place this.logger writes) is invisible even to `docker logs`. Red, matching the
-		// transfer-failure convention. Best-effort by design (mirrors handleTransferStatusUpdate's
-		// guarded print): its failure is logged, never propagated past the contract above.
 		try {
 			await this.lua.printToGame(`[Transfer] ${String(transferResponse.error)}`, "{1, 0.3, 0.3}");
 		} catch (printErr: unknown) {
@@ -373,10 +253,6 @@ export class InstancePlugin extends BaseInstancePlugin {
 		}
 	}
 
-	/**
-	 * Handle space platform state change notification from Factorio mod.
-	 * Forwards a lightweight event to the controller so it can push a tree refresh.
-	 */
 	async handlePlatformStateChanged(data: Record<string, unknown>) {
 		try {
 			await this.i.sendTo("controller", new messages.PlatformStateChangedEvent({
@@ -389,16 +265,12 @@ export class InstancePlugin extends BaseInstancePlugin {
 		}
 	}
 
-	/**
-	 * Handle transfer request from Lua command
-	 */
 	async handleTransferRequest(data: Record<string, unknown>) {
 		this.logger.info(`Transfer request send_json event received: platform=${data.platform_name}, dest=${data.destination_instance_id} (type=${typeof data.destination_instance_id}), job_id=${data.job_id}`);
 
 		try {
 			const platformIndex = Number(data.platform_index);
 			const destinationInstanceId = Number(data.destination_instance_id);
-			// Store transfer request for when export completes
 			this.pendingTransfer = {
 				platform_index: Number.isInteger(platformIndex) ? platformIndex : undefined,
 				platform_name: typeof data.platform_name === "string" ? data.platform_name : undefined,
@@ -414,9 +286,6 @@ export class InstancePlugin extends BaseInstancePlugin {
 		}
 	}
 
-	/**
-	 * Handle import file request from Factorio mod
-	 */
 	async handleImportFileRequest(data: Record<string, unknown>) {
 		this.logger.info(`Received import file request: ${data.filename}`);
 
@@ -437,9 +306,6 @@ export class InstancePlugin extends BaseInstancePlugin {
 		}
 	}
 
-	/**
-	 * Export a platform by platform index
-	 */
 	async exportPlatform(platformIndex: number, forceName = "player", targetInstanceId: number | null = null): Promise<ExportResult> {
 		const resolvedTargetId = Number(targetInstanceId);
 		const hasTargetInstance = Number.isInteger(resolvedTargetId) && resolvedTargetId > 0;
@@ -447,7 +313,6 @@ export class InstancePlugin extends BaseInstancePlugin {
 		this.logger.info(`Exporting platform index ${platformIndex} for force "${forceName}" (targetInstanceId=${targetArg})`);
 
 		try {
-			// Call mod's remote interface to export platform - this returns the export_id
 			const rconResult = await this.lua.exportPlatform(platformIndex, forceName, targetArg);
 			this.logger.info(`Export RCON result: ${rconResult}`);
 			const exportResult = this.normalizeRconScalarResult(rconResult);
@@ -466,9 +331,6 @@ export class InstancePlugin extends BaseInstancePlugin {
 			}
 			this.logger.info(`Export completed with ID: ${exportId}`);
 
-			// The export data will be sent to the controller automatically via the
-			// send_json event-triggered handleExportComplete() path, which uses the real platform
-			// name from Lua (not the sanitized exportId). No need to send it here too.
 			return { success: true, exportId };
 		} catch (err: unknown) {
 			const errMsg = getErrorMessage(err);
@@ -488,7 +350,6 @@ export class InstancePlugin extends BaseInstancePlugin {
 			await wait(intervalMs);
 		}
 		this.logger.error(`Timed out waiting for export data for ${exportId} after ${timeoutMs}ms`);
-		// Log available exports for debugging once at timeout
 		try {
 			const availableExports = await this.listExports();
 			this.logger.error(`Available exports in Lua: ${JSON.stringify(availableExports)}`);
@@ -498,9 +359,6 @@ export class InstancePlugin extends BaseInstancePlugin {
 		return null;
 	}
 
-	/**
-	 * Get export data from mod
-	 */
 	async getExportData(exportId: string, options: { logOnMissing?: boolean } = {}): Promise<ExportData | null> {
 		try {
 			const { logOnMissing = true } = options;
@@ -509,12 +367,10 @@ export class InstancePlugin extends BaseInstancePlugin {
 				this.logger.warn(`Skipping getExportData for invalid export ID: ${JSON.stringify(exportId)}`);
 				return null;
 			}
-			// Call the _json version which pre-encodes the result in Lua (adapter sends + parses).
 			const exportData = await this.lua.getExportJson(safeExportId);
 			if (!exportData) {
 				if (logOnMissing) {
 					this.logger.error(`Export data not found for ${safeExportId} - Lua returned empty/null`);
-					// List available exports for debugging
 					try {
 						const availableExports = await this.listExports();
 						this.logger.error(`Available exports in Lua: ${JSON.stringify(availableExports)}`);
@@ -525,7 +381,6 @@ export class InstancePlugin extends BaseInstancePlugin {
 				return null;
 			}
 
-			// Log compression info if data is compressed
 			if (exportData.compressed && exportData.payload) {
 				const compressedSize = ((exportData.payload as string).length / 1024).toFixed(1);
 				this.logger.info(`Retrieved compressed export: ${compressedSize} KB (${exportData.compression})`);
@@ -541,9 +396,6 @@ export class InstancePlugin extends BaseInstancePlugin {
 		}
 	}
 
-	/**
-	 * List all platform exports stored in mod
-	 */
 	async listExports(): Promise<string[]> {
 		try {
 			return await this.lua.listExportsJson();
@@ -553,12 +405,8 @@ export class InstancePlugin extends BaseInstancePlugin {
 		}
 	}
 
-	/**
-	 * List all current platforms on this instance for a force
-	 */
 	async listPlatforms(forceName = "player") {
 		try {
-			// Coalesce an empty force name to "player" (the JS default param only catches undefined).
 			const parsed = await this.lua.listPlatformsJson(forceName || "player");
 			return parsed.map((platform: Record<string, unknown>) => ({
 				platformIndex: platform.platform_index,
@@ -582,16 +430,11 @@ export class InstancePlugin extends BaseInstancePlugin {
 		}
 	}
 
-	/**
-	 * Import a platform from export data using chunked RCON (like inventory_sync)
-	 */
 	async importPlatform(exportData: ExportData, forceName = "player"): Promise<ImportResult> {
 		const platformName = exportData.platform_name || `Imported_${Date.now()}`;
 		this.logger.info(`Importing platform "${platformName}" for force "${forceName}"`);
 
 		try {
-			// Keep data in its current format (compressed or uncompressed)
-			// Lua side will handle decompression in queue_import
 			const jsonData = JSON.stringify(exportData);
 			const sizeKB = (jsonData.length / 1024).toFixed(1);
 
@@ -601,7 +444,6 @@ export class InstancePlugin extends BaseInstancePlugin {
 				this.logger.info(`Import data size: ${sizeKB} KB (uncompressed)`);
 			}
 
-			// Send chunks via the adapter (same import_platform_chunk path as importPlatformFromFile).
 			await this.lua.importPlatformChunked(platformName, forceName, exportData);
 
 			this.logger.info("All chunks sent, import queued for async processing");
@@ -614,17 +456,10 @@ export class InstancePlugin extends BaseInstancePlugin {
 		}
 	}
 
-	/**
-	 * Import a platform from a file in script-output directory
-	 * FACTORIO 2.0: Lua cannot read files, so Node.js reads and sends via RCON chunks
-	 */
 	async importPlatformFromFile(filename: string, platformName: string | null = null, forceName = "player"): Promise<ImportResult> {
 		this.logger.info(`Importing platform from file "${filename}" for force "${forceName}"`);
 
 		try {
-			// Step 1: Node.js reads the file (Lua cannot do this in Factorio 2.0).
-			// Use this.instance.path(...) — `instance.directory` is not a config field in alpha.25
-			// (the old this.cfg("instance.directory") threw "No field named 'instance.directory'").
 			const scriptOutputPath = this.instance.path("script-output", filename);
 
 			this.logger.verbose(`Reading file from: ${scriptOutputPath}`);
@@ -634,23 +469,12 @@ export class InstancePlugin extends BaseInstancePlugin {
 			const sizeKB = (fileContent.length / 1024).toFixed(1);
 			this.logger.info(`File loaded: ${sizeKB} KB`);
 
-			// Use the original platform name if no custom name provided
 			const targetPlatformName = platformName || exportData.platform_name || `Imported_${Date.now()}`;
 
-			// Step 2: Send to Factorio via RCON chunking (adapter owns the import_platform_chunk template).
 			await this.lua.importPlatformChunked(targetPlatformName, forceName, exportData);
 
 			this.logger.info("Platform import chunks sent successfully");
 
-			// Success here means CHUNKS SENT, not import finished — the actual outcome arrives
-			// asynchronously via ImportOperationCompleteEvent, which is what callers adjudicate.
-			//
-			// There used to be a "Step 4: Verify the import was queued" here that sent
-			// `/sc rcon.print('{"success":true}')`, parsed that constant, and branched on it. The RCON
-			// payload was a literal, so the check could not fail and read no queue state whatsoever; it
-			// only logged "Platform import queued for async processing" unconditionally, which is worse
-			// than silence because it reads as a confirmation. A preceding 500 ms sleep existed solely to
-			// give that check something to observe, so it went with it.
 			return { success: true };
 
 		} catch (err: unknown) {
@@ -660,16 +484,11 @@ export class InstancePlugin extends BaseInstancePlugin {
 		}
 	}
 
-	/**
-	 * Factorio requires the first Lua console command to be confirmed.
-	 * Send a harmless command twice so subsequent RCON calls execute immediately.
-	 */
 	async ensureLuaConsoleUnlocked() {
 		for (let attempt = 1; attempt <= 2; attempt += 1) {
 			try {
 				await this.lua.signalReady();
 				if (attempt === 1) {
-					// First attempt may only trigger the confirmation prompt; always run twice.
 					continue;
 				}
 				this.logger.info("Lua console unlocked for Surface Export automation");
@@ -681,9 +500,6 @@ export class InstancePlugin extends BaseInstancePlugin {
 		this.logger.warn("Unable to confirm Lua console unlock; subsequent exports may require a manual command rerun.");
 	}
 
-	/**
-	 * Handle export platform request
-	 */
 	async handleExportPlatformRequest(request: { platformIndex: number; forceName?: string; targetInstanceId?: number | null }) {
 		const result = await this.exportPlatform(request.platformIndex, request.forceName, request.targetInstanceId ?? null);
 		const numericTargetInstanceId = Number(request.targetInstanceId);
@@ -693,9 +509,6 @@ export class InstancePlugin extends BaseInstancePlugin {
 		return result;
 	}
 
-	/**
-	 * Handle import platform request
-	 */
 	async handleImportPlatformRequest(request: { exportData: ExportData; forceName?: string; targetPlanet?: string | null }) {
 		const hasTransferId = Boolean(request.exportData && request.exportData._transferId);
 		const dataSize = request.exportData ? JSON.stringify(request.exportData).length : 0;
@@ -709,16 +522,10 @@ export class InstancePlugin extends BaseInstancePlugin {
 		return await this.importPlatform(request.exportData, request.forceName || "player");
 	}
 
-	/**
-	 * Handle import platform from file request
-	 */
 	async handleImportPlatformFromFileRequest(request: { filename: string; platformName?: string | null; forceName?: string }) {
 		return await this.importPlatformFromFile(request.filename, request.platformName ?? null, request.forceName || "player");
 	}
 
-	/**
-	 * Handle controller request for platform inventory on this instance
-	 */
 	async handleInstanceListPlatformsRequest(request: { forceName?: string }) {
 		const forceName = request.forceName || "player";
 		const platforms = await this.listPlatforms(forceName);
@@ -730,19 +537,13 @@ export class InstancePlugin extends BaseInstancePlugin {
 		};
 	}
 
-	/**
-	 * Handle import completion and perform validation
-	 * Called by Lua when async import completes
-	 */
 	async handleImportCompleteValidation(data: Record<string, unknown>) {
 		this.logger.info(`Import completed for ${data.platform_name}, performing validation`);
 
-		// Extract transfer metadata from platform data
 		const transferId = String(data.transfer_id || "").trim();
 		const sourceInstanceId = Number(data.source_instance_id);
 		const operationId = data.operation_id ? String(data.operation_id) : null;
 
-		// Extract metrics from send_json payload
 		const metrics = data.metrics || null;
 		if (metrics) {
 			this.logger.info(`Import metrics: ${JSON.stringify(metrics)}`);
@@ -776,9 +577,6 @@ export class InstancePlugin extends BaseInstancePlugin {
 		}
 
 		try {
-			// The Lua import-completion payload is the source of truth for the single frozen-world verdict.
-			// Do not re-fetch by platform name or re-derive success here: platform names are mutable,
-			// and Lua owns the exact item + fluid gate.
 			let validation: messages.ValidationResult = {
 				itemCountMatch: false,
 				fluidCountMatch: false,
@@ -803,22 +601,19 @@ export class InstancePlugin extends BaseInstancePlugin {
 			let normalizedMetrics: Record<string, unknown> | undefined;
 			if (metrics && typeof metrics === "object") {
 				const src = metrics as Record<string, unknown>;
-				// Keep numeric fields, plus preserve the nested `phase_spans` array (waterfall trace)
-				// which the numeric filter would otherwise strip before it reaches the controller.
 				normalizedMetrics = Object.fromEntries(
 					Object.entries(src).filter(([, v]) => typeof v === "number" && Number.isFinite(v)),
 				);
 				if (Array.isArray(src.phase_spans)) normalizedMetrics.phase_spans = src.phase_spans;
 			}
 
-			// Send validation event to controller with metrics
 			await this.i.sendTo("controller", new messages.TransferValidationEvent({
 				transferId,
 				platformName: String(data.platform_name || "Unknown"),
 				sourceInstanceId,
 				success,
 				validation,
-				metrics: normalizedMetrics, // Forward Lua import metrics to controller
+				metrics: normalizedMetrics,
 			}));
 
 			this.logger.info(`Validation event sent for transfer ${transferId}: success=${success}`);
@@ -827,7 +622,6 @@ export class InstancePlugin extends BaseInstancePlugin {
 			const errMsg = getErrorMessage(err);
 			this.logger.error(`Error during validation: ${errMsg}`);
 
-			// Send failure validation to prevent controller from hanging
 			try {
 				await this.i.sendTo("controller", new messages.TransferValidationEvent({
 					transferId,
@@ -847,15 +641,10 @@ export class InstancePlugin extends BaseInstancePlugin {
 		}
 	}
 
-	/**
-	 * Handle delete source platform request
-	 */
 	async handleDeleteSourcePlatform(request: { platformIndex: number; platformName: string; forceName?: string; exportId?: string | null }) {
 		const platformIndex = coercePlatformIndex(request.platformIndex);
 		this.logger.info(`Deleting source platform: index ${platformIndex} ('${request.platformName}', export ${request.exportId ?? "—"})`);
 
-		// Fail loud on a missing/invalid index rather than coercing — the Lua delete resolves force.platforms
-		// by this index and cross-checks the name, so a bad index here would (correctly) be refused downstream.
 		if (platformIndex === null) {
 			const error = `invalid platformIndex: ${String(request.platformIndex)}`;
 			this.logger.error(`Refusing source delete — ${error}`);
@@ -886,9 +675,6 @@ export class InstancePlugin extends BaseInstancePlugin {
 		}
 	}
 
-	/**
-	 * Handle unlock source platform request (rollback)
-	 */
 	async handleUnlockSourcePlatform(request: { platformIndex: number; platformName?: string }) {
 		const platformIndex = coercePlatformIndex(request.platformIndex);
 		this.logger.info(`Unlocking source platform for rollback: index ${platformIndex}`);
@@ -900,8 +686,6 @@ export class InstancePlugin extends BaseInstancePlugin {
 		}
 
 		try {
-			// platformName is a secondary display tripwire passed by the rollback path (identity is the unique
-			// index + surface.index inside unlock_platform); no controller reconcile supplies it.
 			const result = await this.lua.unlockPlatform(platformIndex, request.platformName);
 
 			if (result.trim() === "SUCCESS") {
@@ -936,15 +720,10 @@ export class InstancePlugin extends BaseInstancePlugin {
 			return { state: "unknown/offline", transferId: request.transferId, error: getErrorMessage(err) };
 		}
 	}
-	/**
-	 * Handle transfer status update from controller
-	 * Broadcasts status to all players in-game
-	 */
 	async handleTransferStatusUpdate(request: { message: string; color?: string }) {
 		this.logger.info(`Transfer status: ${request.message}`);
 
 		try {
-			// Map color names to RGB arrays for Factorio
 			const colorMap: Record<string, string> = {
 				green: "{0, 1, 0}",
 				yellow: "{1, 1, 0}",
@@ -955,7 +734,6 @@ export class InstancePlugin extends BaseInstancePlugin {
 
 			const colorCode = colorMap[request.color || ""] || "{1, 1, 1}";
 
-			// Send message to Factorio for in-game display
 			await this.lua.printToGame(String(request.message ?? ""), colorCode);
 
 			return { success: true };

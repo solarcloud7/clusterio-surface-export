@@ -1,11 +1,3 @@
-// log-query.mjs — the I/O half of `testkit log`: fetch a transaction-log entry or a debug dump, and
-// answer a dotted-path query against it through the oracle.
-//
-// Every outcome that is NOT a resolved value is an operational error (exit 2). There is deliberately
-// no exit 1 anywhere in this file: exit 1 in this CLI means "a finding about the repo", and a
-// transaction log is not a payload — a path that does not resolve is a wrong path or a
-// schema-version fact, never a data-loss claim. Conflating the two is the original incident.
-
 import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
@@ -17,12 +9,8 @@ const PATHS = JSON.parse(readFileSync(
 
 export const STORE = PATHS.transactionLogStore;
 
-/** Raise the error to something a caller can act on, keeping the original stderr verbatim. */
 function dockerRead(args, { what }) {
 	try {
-		// argv, NOT `sh -c`: no shell means no chance of reintroducing the `2>&1` that corrupts the
-		// JSON, and execFileSync keeps stderr on its own pipe. 256 MB because the store carries full
-		// per-transfer item-count maps.
 		return execFileSync("docker", args, {
 			encoding: "utf8", timeout: 120_000, stdio: ["ignore", "pipe", "pipe"],
 			maxBuffer: 256 * 1024 * 1024,
@@ -40,14 +28,12 @@ function dockerRead(args, { what }) {
 	}
 }
 
-/** The controller's transaction-log store, as an array. Throws with a diagnosis on any failure. */
 export function readTransactionLogStore() {
 	const raw = dockerRead(["exec", STORE.container, "cat", STORE.path],
 		{ what: `reading ${STORE.container}:${STORE.path}` });
 	return parseStore(raw, `${STORE.container}:${STORE.path}`);
 }
 
-/** Same store, from a file captured earlier — makes the CLI testable with no cluster. */
 export function readStoreFile(file) {
 	let raw;
 	try {
@@ -60,7 +46,7 @@ export function readStoreFile(file) {
 
 function parseStore(raw, source) {
 	const trimmed = raw.trim();
-	if (!trimmed) return [];   // an empty store is a real measurement: zero entries, not an error
+	if (!trimmed) return [];
 	let parsed;
 	try {
 		parsed = JSON.parse(trimmed);
@@ -74,11 +60,6 @@ function parseStore(raw, source) {
 	return parsed;
 }
 
-/**
- * Pick an entry. `latest` is the LAST element, matching how get-transaction-log.ps1 reads it — with a
- * warning when array order and savedAt disagree, because "a correct-looking value from the wrong
- * record" is exactly the failure mode this command exists to prevent.
- */
 export function selectEntry(store, selector) {
 	if (!store.length) {
 		throw new Error(`the transaction-log store is empty — no entry to query. Run a transfer first.`);
@@ -102,7 +83,6 @@ export function selectEntry(store, selector) {
 	return { entry: store[index], index };
 }
 
-/** List debug_* / failure_black_box_* dumps on one host's instance. */
 export function listDumps(host, glob = "*.json") {
 	if (!/^[A-Za-z0-9_.*?-]+$/.test(glob)) {
 		throw new Error(`refusing glob "${glob}": only [A-Za-z0-9_.*?-] are allowed. Quoting a hostile `
@@ -111,7 +91,6 @@ export function listDumps(host, glob = "*.json") {
 	const instance = `clusterio-host-${host}-instance-1`;
 	const container = `surface-export-host-${host}`;
 	const dir = PATHS.instanceScriptOutput.pathTemplate.replace("<instance>", instance);
-	// sh -c is required here for the glob; the redirect is scoped to `find` and cannot touch our JSON.
 	const raw = dockerRead(["exec", container, "sh", "-c",
 		`find ${dir} -maxdepth 1 -name '${glob}' -printf '%T@ %s %p\\n' 2>/dev/null | sort -rn`],
 	{ what: `listing dumps on host ${host}` });
@@ -121,7 +100,6 @@ export function listDumps(host, glob = "*.json") {
 	});
 }
 
-/** Read one dump by exact path inside the host container. */
 export function readDump(host, path) {
 	const container = `surface-export-host-${host}`;
 	const raw = dockerRead(["exec", container, "cat", path], { what: `reading ${container}:${path}` });
@@ -137,8 +115,6 @@ function parseJsonDoc(raw, source) {
 	}
 }
 
-/** A one-line header identifying WHICH record answered — without it, a right-looking value from the
- *  wrong record is indistinguishable from the right answer. */
 export function describeEntry(entry, index, total) {
 	const summary = entry.summary || {};
 	const bits = [entry.transferId, summary.platformName || entry.transferInfo?.platformName || "?",
@@ -148,7 +124,6 @@ export function describeEntry(entry, index, total) {
 	return bits.join("  ");
 }
 
-/** Format a resolved value for stdout. */
 export function formatValue(path, value) {
 	if (value !== null && typeof value === "object") {
 		const kind = Array.isArray(value) ? `array of ${value.length}` : "object";

@@ -1,13 +1,5 @@
--- FactorioSurfaceExport - Command Interface
--- Main loader that registers all commands from individual files
--- Each command is in its own file under interfaces/commands/
---
--- IMPORTANT: All require() calls must be at top level (Factorio 2.0 restriction).
--- require() cannot be called inside callbacks like register().
-
 local Commands = {}
 
--- Pre-load all command modules at parse time (each module self-registers via commands.add_command)
 local command_modules = {
   require("modules/surface_export/interfaces/commands/export-platform"),
   require("modules/surface_export/interfaces/commands/export-platform-file"),
@@ -26,17 +18,11 @@ local command_modules = {
   require("modules/surface_export/interfaces/commands/lock-status"),
   require("modules/surface_export/interfaces/commands/transaction-dashboard"),
   require("modules/surface_export/interfaces/commands/teleport"),
-  -- Debug/testing commands
   require("modules/surface_export/interfaces/commands/test-entity"),
   require("modules/surface_export/interfaces/commands/run-tests"),
 }
 
---- Register all console commands
---- Called from add_commands callback in event_handler interface.
---- Commands are already registered at require-time via commands.add_command,
---- so this is a no-op but kept for interface consistency.
 function Commands.register()
-  -- Commands self-register via commands.add_command at require time
 end
 
 return Commands

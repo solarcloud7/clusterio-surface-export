@@ -1,6 +1,3 @@
--- Command: /unlock-platform
--- Unlock a locked platform (restores entities and visibility)
-
 local Base = require("modules/surface_export/interfaces/commands/base")
 local SurfaceLock = require("modules/surface_export/utils/surface-lock")
 
@@ -11,7 +8,6 @@ Base.admin_command("unlock-platform",
     local platform_name = param
     local lock_key = nil
 
-    -- If no parameter, try to use player's current platform
     if not param or param == "" then
       if ctx.player then
         local surface = ctx.player.surface
@@ -31,8 +27,6 @@ Base.admin_command("unlock-platform",
         return
       end
     else
-      -- Resolve the name-or-index to the lock-registry key (unique index), failing loud on an ambiguous name.
-      -- Prefer the live platform's display name for messages; fall back to the stored lock name (orphaned lock).
       local err, display_name
       lock_key, err, display_name = Base.resolve_lock_key(ctx.force, param)
       if err then ctx.print(err); return end
@@ -41,14 +35,12 @@ Base.admin_command("unlock-platform",
       if lock_data and lock_data.platform_name then platform_name = lock_data.platform_name end
     end
 
-    -- Check if locked (can unlock even if the platform no longer exists)
     if not lock_key or not SurfaceLock.is_locked(lock_key) then
       ctx.print("Platform '" .. platform_name .. "' is not locked")
       ctx.print("Use /lock-status to see locked platforms")
       return
     end
 
-    -- Unlock the platform
     local unlock_success, unlock_err = SurfaceLock.unlock_platform(lock_key)
     
     if unlock_success then

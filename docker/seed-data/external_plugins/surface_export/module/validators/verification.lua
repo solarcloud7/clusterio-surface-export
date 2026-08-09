@@ -1,24 +1,15 @@
--- FactorioSurfaceExport - Verification
--- CRITICAL: Ensures zero item loss and zero duplication through verification
-
 local Util = require("modules/surface_export/utils/util")
 
 local Verification = {}
 
---- Count all items in serialized entity data
---- CRITICAL: This is used to verify item counts match expected values
---- @param entity_data table: Array of serialized entities
---- @return table: Table of item_key = total_count pairs
 function Verification.count_all_items(entity_data)
   local item_totals = {}
 
   for _, entity in ipairs(entity_data) do
-    -- Count items in inventories
     if entity.specific_data and entity.specific_data.inventories then
       for _, inventory in ipairs(entity.specific_data.inventories) do
         if inventory.items then
           for _, item in ipairs(inventory.items) do
-            -- Use quality-aware key
             local key = Util.make_quality_key(item.name, item.quality or Util.QUALITY_NORMAL)
             item_totals[key] = (item_totals[key] or 0) + item.count
           end
@@ -26,7 +17,6 @@ function Verification.count_all_items(entity_data)
       end
     end
 
-    -- Count items on belts (structured as lines with items array)
     if entity.specific_data and entity.specific_data.items then
       for _, line_data in ipairs(entity.specific_data.items) do
         if line_data.items then
@@ -38,14 +28,12 @@ function Verification.count_all_items(entity_data)
       end
     end
 
-    -- Count held items (inserters)
     if entity.specific_data and entity.specific_data.held_item then
       local held = entity.specific_data.held_item
       local key = Util.make_quality_key(held.name, held.quality or Util.QUALITY_NORMAL)
       item_totals[key] = (item_totals[key] or 0) + held.count
     end
 
-    -- Count items on ground
     if entity.type == "item-on-ground" then
       local key = Util.make_quality_key(entity.name, entity.quality or Util.QUALITY_NORMAL)
       item_totals[key] = (item_totals[key] or 0) + entity.count
@@ -55,10 +43,6 @@ function Verification.count_all_items(entity_data)
   return item_totals
 end
 
---- Count all fluids from the payload's fluid-segment registry (the ONLY serialized fluid truth;
---- the flat per-entity fluids list no longer exists — hard schema cut 2026-07-20).
---- @param fluid_segments table: Array of segment records {id, fluid, total, temperature, ...}
---- @return table: Table of fluid_key = total_amount pairs
 function Verification.count_fluid_segments(fluid_segments)
   local fluid_totals = {}
   for _, seg in ipairs(fluid_segments or {}) do
@@ -70,44 +54,33 @@ function Verification.count_fluid_segments(fluid_segments)
   return fluid_totals
 end
 
---- Verify export data integrity
---- CRITICAL: This ensures item counts are consistent
---- @param export_data table: Complete export data structure
---- @return boolean, string|nil: true if valid, false and error message if invalid
 function Verification.verify_export(export_data)
   if not export_data then
     return false, "Export data is nil"
   end
 
-  -- Verify schema version
   if not export_data.schema_version then
     return false, "Missing schema version"
   end
 
-  -- Verify entities exist
   if not export_data.entities or #export_data.entities == 0 then
-    -- Empty platform is valid, but should have empty verification
     if export_data.verification and next(export_data.verification.item_counts) then
       return false, "Empty platform but non-empty item counts"
     end
-    return true  -- Empty platform is valid
+    return true
   end
 
-  -- Verify metadata
   if not export_data.metadata then
     return false, "Missing metadata"
   end
 
-  -- Verify verification section
   if not export_data.verification then
     return false, "Missing verification section"
   end
 
-  -- CRITICAL: Recalculate item counts and compare
   local calculated_items = Verification.count_all_items(export_data.entities)
   local stored_items = export_data.verification.item_counts
 
-  -- Check every calculated item
   for item_key, calc_count in pairs(calculated_items) do
     local stored_count = stored_items[item_key] or 0
     if calc_count ~= stored_count then
@@ -118,7 +91,6 @@ function Verification.verify_export(export_data)
     end
   end
 
-  -- Check every stored item (ensure nothing extra in stored)
   for item_key, stored_count in pairs(stored_items) do
     local calc_count = calculated_items[item_key] or 0
     if stored_count ~= calc_count then
@@ -129,13 +101,11 @@ function Verification.verify_export(export_data)
     end
   end
 
-  -- Verify fluid counts against the segment registry (the payload's fluid truth)
   local calculated_fluids = Verification.count_fluid_segments(export_data.fluid_segments)
   local stored_fluids = export_data.verification.fluid_counts
 
   for fluid_key, calc_amount in pairs(calculated_fluids) do
     local stored_amount = stored_fluids[fluid_key] or 0
-    -- Allow small floating point differences
     if math.abs(calc_amount - stored_amount) > 0.1 then
       return false, string.format(
         "Fluid amount mismatch for '%s': calculated %.2f, stored %.2f",
@@ -148,10 +118,6 @@ function Verification.verify_export(export_data)
 end
 
 
---- Generate a verification report comparing expected vs actual counts
---- @param expected table: Expected item counts
---- @param actual table: Actual item counts
---- @return boolean, table: success flag and report details
 function Verification.generate_report(expected, actual)
   local report = {
     matches = {},
@@ -184,8 +150,6 @@ function Verification.generate_report(expected, actual)
   return success, report
 end
 
---- Print verification report to game console
---- @param report table: Report from generate_report
 function Verification.print_report(report)
   game.print("=== Verification Report ===")
 

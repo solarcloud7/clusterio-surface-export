@@ -14,7 +14,6 @@ function resolveClusterioWebpackCommon() {
 		try {
 			return require(candidate);
 		} catch (_err) {
-			// Try the next candidate.
 		}
 	}
 
@@ -32,15 +31,9 @@ module.exports = (env = {}, argv = {}) => merge(common(env, argv), {
 	},
 	output: {
 		path: path.resolve(__dirname, "dist", "web"),
-		// Content-hash every emitted chunk so the controller's immutable 1y /static cache header is
-		// actually correct: a content change yields a NEW url, so returning users can never serve a
-		// stale chunk. The Module-Federation remote entry is resolved via dist/web/manifest.json
-		// (shipped through /api/plugins — NOT the immutable /static cache), so the entry is safe to
-		// hash too. This restores @clusterio/web_ui's default; the prior fixed "static/[name].js"
-		// override silently defeated it (see the "Web cache" guard entry in CLAUDE.md).
 		filename: "static/[name].[contenthash].js",
 		chunkFilename: "static/[name].[contenthash].js",
-		clean: false, // safe: @clusterio/web_ui's CleanWebpackPlugin clears old hashes each build (no stale-file buildup)
+		clean: false,
 	},
 	plugins: [
 		new webpack.container.ModuleFederationPlugin({

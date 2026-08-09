@@ -1,33 +1,14 @@
-// testkit / blackboxExplain — decode a banked failure bundle and say what it means, offline.
-//
-// WHY THIS EXISTS (SC-71, the last open tooling-gap catalog item). Every gate failure banks an
-// always-on black-box bundle, but every ANALYSIS of one has been a hand-written jq/Lua session,
-// re-derived each time. Per the one-truth ruling, the repeated manual op becomes a testkit command.
-//
-// MEASUREMENT BOUNDARY, stated where it cannot be missed: a bundle carries TWO kinds of numbers.
-//   * `expected`/`actual`/`diff` are the GATE'S OWN ACCOUNTING — the validator's self-report.
-//   * `physical_entities`/`physical_fluid_segments` are a PHYSICAL SCAN of the destination surface
-//     taken at banking time — an independent measurement.
-// This tool reports both, labeled, and never presents the self-report as physical truth.
-//
-// TRIAGE HINT, not root cause: the known-failure-signature table lives in docs/ENGINEERING_FAQ.md
-// (the one truth for triage knowledge). This module READS that table at run time and matches the
-// bundle's diff signature against each row's vocabulary — it never restates the classes here. A
-// matched row is a hint that the signature LOOKS like a known class; the minted self-test fixture
-// itself proves the caveat (a forced-loss hook produces the same signature as the belt class).
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
 const rootPath = () => new URL("../../../", import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, "$1");
 
-/** Split a gate count key into name + quality ("iron-plate" or "iron-plate|rare"). */
 function parseCountKey(key) {
 	const bar = key.indexOf("|");
 	if (bar === -1) return { name: key, quality: "normal" };
 	return { name: key.slice(0, bar), quality: key.slice(bar + 1) };
 }
 
-/** Length of a Lua-serialized collection: array → length, {} / keyed table → key count, absent → null. */
 function countRecords(value) {
 	if (Array.isArray(value)) return value.length;
 	if (value && typeof value === "object") return Object.keys(value).length;
@@ -45,11 +26,6 @@ function diffRows(diff, kind) {
 	}));
 }
 
-/**
- * Parse the known-failure-signature table out of ENGINEERING_FAQ.md.
- * Returns [] with a reason if the table cannot be located — a missing table must surface as
- * "triage unavailable", never as a silent "no known class matched" (that would be a vacuous miss).
- */
 export function loadTriageTable(root = rootPath()) {
 	const text = readFileSync(join(root, "docs", "ENGINEERING_FAQ.md"), "utf8");
 	const anchor = text.indexOf("triage a failure black box");
@@ -57,24 +33,14 @@ export function loadTriageTable(root = rootPath()) {
 	const rows = [];
 	for (const line of text.slice(anchor).split(/\r?\n/)) {
 		const cells = line.split("|").map(c => c.trim());
-		// A data row: "| signature | class | action |" → 5 cells after split (leading/trailing empty).
 		if (cells.length >= 5 && cells[1] && !/^[-\s]+$/.test(cells[1]) && cells[1] !== "Failure signature") {
 			rows.push({ signature: cells[1], knownClass: cells[2], action: cells[3] });
 		}
-		// Stop at the first non-table line after rows started (the paragraph below the table).
 		if (rows.length > 0 && !line.trim().startsWith("|") && line.trim() !== "") break;
 	}
 	return rows.length > 0 ? { rows } : { rows: [], unavailable: "no signature rows parsed from the triage table" };
 }
 
-/**
- * Match the diff facts against one signature cell's recognized vocabulary. All recognized tokens
- * must hold, AND a stage token must be among them (a cell this matcher cannot read at all matches
- * nothing). DIRECTION RULE (review must-fix M3): a row whose cell names no direction is a LOSS
- * class — the FAQ table triages gate failures, and its only non-loss row says GAINED explicitly.
- * Without the implicit all-LOST requirement, a fluids GAIN matched the "Real fluid loss" row and
- * the printed operator action pointed the wrong way (measured on a constructed bundle).
- */
 function rowMatches(signature, facts) {
 	const wants = [];
 	let hasStageToken = false;
@@ -89,10 +55,6 @@ function rowMatches(signature, facts) {
 	return hasStageToken && wants.every(Boolean);
 }
 
-/**
- * Explain a decoded failure bundle. Pure and cluster-free; the caller supplies the parsed JSON.
- * Returns a machine-readable report; `formatExplanation` renders it for humans.
- */
 export function explainBlackBox(bundle, { root } = {}) {
 	const items = diffRows(bundle.diff?.items, "item");
 	const fluids = diffRows(bundle.diff?.fluids, "fluid");
@@ -116,8 +78,6 @@ export function explainBlackBox(bundle, { root } = {}) {
 	if (triageTable.unavailable) {
 		triage = { matched: false, unavailable: triageTable.unavailable };
 	} else if (rows.length === 0) {
-		// Distinct from "no class matched" (review must-fix M3): claiming unexplained-ness over an
-		// EMPTY diff would be a positive claim the vocabulary cannot support.
 		triage = { matched: false, inexpressible: "the bundle records no count mismatch at all — " +
 			"the failure was not a count-diff failure; inspect the raw bundle and the transaction log" };
 	} else if (stage === "both") {
@@ -142,20 +102,15 @@ export function explainBlackBox(bundle, { root } = {}) {
 			modCount: Object.keys(bundle.mods || {}).length,
 			gateTick: bundle.gate_tick ?? null,
 			startedTick: bundle.started_tick ?? null,
-			// The bundle carries no per-phase timings — those live in the controller transaction log
-			// and the in-game /transaction-dashboard. The tick span is what IS measurable here.
 			importTickSpan: bundle.gate_tick != null && bundle.started_tick != null
 				? bundle.gate_tick - bundle.started_tick : null,
 		},
 		failureStage: stage,
-		// The validator's self-report: the gate's own expected/actual accounting.
 		selfReport: {
 			diffRows: rows,
 			expectedItemTypes: Object.keys(bundle.expected?.items || {}).length,
 			expectedFluidNames: Object.keys(bundle.expected?.fluids || {}).length,
 		},
-		// Independent physical measurement taken at banking time, before the destination was discarded.
-		// An EMPTY Lua table serializes as {} (object, not array), so "zero" must not decode as null.
 		physicalScan: {
 			destEntityCount: countRecords(bundle.physical_entities),
 			destFluidSegmentCount: countRecords(bundle.physical_fluid_segments),

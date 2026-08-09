@@ -1,12 +1,4 @@
 #!/usr/bin/env pwsh
-<#
-.SYNOPSIS
-    List all available transaction logs
-.DESCRIPTION
-    Shows a summary of all persisted transaction logs (last 10)
-.EXAMPLE
-    .\tools\surface-export\list-transaction-logs.ps1
-#>
 
 $ErrorActionPreference = "Stop"
 
@@ -16,9 +8,6 @@ Write-Host "Showing up to last 10 transfers`n" -ForegroundColor Yellow
 . "$PSScriptRoot\..\shared\cluster-utils.ps1"
 
 try {
-    # ONE reader for the store (tools/shared/cluster-utils.ps1). This used to be a local copy of the
-    # docker exec that appended 2>&1 — which interleaves Docker's stderr warnings into the JSON and
-    # breaks the parse. The sibling get-transaction-log.ps1 had already found and documented that.
     $logs = Get-TransactionLogStore
 
     if ($null -eq $logs) {
@@ -33,7 +22,6 @@ try {
 
     Write-Host "Found $($logs.Count) transaction logs:`n" -ForegroundColor Green
 
-    # Display table
     $logs | ForEach-Object {
         $info = $_.transferInfo
         $timestamp = [DateTimeOffset]::FromUnixTimeMilliseconds($info.startedAt).LocalDateTime.ToString("yyyy-MM-dd HH:mm:ss")
@@ -53,9 +41,9 @@ try {
         }
         
         $statusIcon = switch ($info.status) {
-            "completed" { "`u{2705}" }  # Green check
-            "failed" { "`u{274C}" }     # X
-            default { "`u{23F3}" }      # Hourglass
+            "completed" { "`u{2705}" }
+            "failed" { "`u{274C}" }
+            default { "`u{23F3}" }
         }
         
         Write-Host "$statusIcon " -NoNewline -ForegroundColor $statusColor

@@ -1,14 +1,7 @@
--- FactorioSurfaceExport - Deserializer
--- Import/restore platform state from JSON
-
 local Util = require("modules/surface_export/utils/util")
 
 local Deserializer = {}
 
---- Safe call wrapper that logs errors but doesn't crash
---- @param context string: Description of what we're trying to do
---- @param func function: Function to call
---- @return boolean: true if successful, false if error
 local function safe_call(context, func)
   local ok, err = pcall(func)
   if not ok then
@@ -17,12 +10,6 @@ local function safe_call(context, func)
   return ok
 end
 
---- Restore COUNT-NEUTRAL scalar item metadata (health, durability, ammo, spoil_percent, label,
---- custom_description). None of these change an item count, so they are safe to apply on the set_stack
---- (slotted) restore path without perturbing the exact gate census. Grid / nested-inventory restoration
---- (which ADD items) is deliberately kept out of here and lives only in restore_item_properties below.
---- @param stack LuaItemStack: The stack to restore properties on
---- @param item_data table: Serialized item data with optional property fields
 local function restore_item_scalar_properties(stack, item_data)
   if not stack or not stack.valid_for_read then return end
 
@@ -52,10 +39,6 @@ local function restore_item_scalar_properties(stack, item_data)
   end
 end
 
---- Restore additional properties on a placed item stack
---- (health, durability, ammo, spoil_percent, label, custom_description, grid, nested_inventory)
---- @param stack LuaItemStack: The stack to restore properties on
---- @param item_data table: Serialized item data with optional property fields
 local function restore_item_properties(stack, item_data)
   if not stack or not stack.valid_for_read then return end
 
@@ -72,43 +55,16 @@ local function restore_item_properties(stack, item_data)
   end
 end
 
---- Trivial single-field restore rules for restore_entity_state, transcribed 1:1 from the explicit
---- `if data.<field> ... then entity.<prop> = data.<field> end` blocks they replaced. Each rule
---- restores `entity[prop] = data[field]` when the field is present and the entity supports it.
---- This mirrors the export-side EntityHandlers table: a new exported field gets restored by adding
---- one row here. Non-trivial restorations (recipe, filters, priority targets, equipment grids, the
---- train-stop/train/vehicle sub-blocks) deliberately stay inline in restore_entity_state.
----   field   : key in specific_data (and the entity property, unless `prop` overrides it)
----   prop    : entity property to assign (defaults to `field`)
----   present : guard is `data[field] ~= nil` (booleans, where `false` is a valid value);
----             otherwise the guard is truthy `data[field]` (tables/strings/numbers)
----   safecall: wrap the assignment in safe_call (matches the original block); default is direct
----   no_entity_guard : skip the `entity[prop] ~= nil` support check (only the read-only turret
----                     `ignore_unprioritised_targets` did this — its assignment is safe_call-wrapped)
 local SIMPLE_RESTORE_RULES = {
   { field = "crafting_progress" },
-  -- NOTE: mining_progress / bonus_mining_progress are deliberately NOT rules here. For drills the
-  -- value's range is defined by mining_target (LuaControl), which is read-only and nil until the
-  -- drill's first update — a creation-time write is unanchored and lost at cycle start (measured
-  -- 2026-07-29: a 0.77 marker arrived ~0). They ride the deferred queue in
-  -- active_state_restoration.lua (queue_mining_progress), which writes once the target binds.
   { field = "productivity_bonus", safecall = true },
-  -- safecall: not every entity that reaches here exposes this field.
   { field = "bonus_progress", safecall = true },
   { field = "player_description", prop = "entity_label", safecall = true },
   { field = "ignore_unprioritised_targets", present = true, safecall = true, no_entity_guard = true },
   { field = "use_filters", present = true },
   { field = "filter_mode", prop = "inserter_filter_mode" },
   { field = "stack_size_override", prop = "inserter_stack_size_override" },
-  -- spoil_priority previously lived ONLY in restore_inventories' dead zone (stranded behind its
-  -- has_inventories early-return, unreachable for every bare inserter) — it was never restored on
-  -- any path until this row (found in the 2026-07-18 dead-code exhumation, inserter-lab B6).
   { field = "spoil_priority", prop = "inserter_spoil_priority", safecall = true },
-  -- Splitter filter: gated by TYPE, not by current value — a fresh splitter's splitter_filter
-  -- reads nil when unset, so the generic entity[prop] ~= nil guard silently SKIPPED this rule and
-  -- filters were lost on every transfer/paste (caught live 2026-07-17 via the selection-lab
-  -- filtered fixture; string and {name,quality} table writes both measured to stick — state-dimensions lab).
-  -- Mining-drill data.filter ({name,quality}) is unaffected: drills are not in the types gate.
   { field = "filter", prop = "splitter_filter", types = { ["splitter"] = true, ["lane-splitter"] = true } },
   { field = "input_priority", prop = "splitter_input_priority", safecall = true },
   { field = "output_priority", prop = "splitter_output_priority", safecall = true },
@@ -116,9 +72,6 @@ local SIMPLE_RESTORE_RULES = {
   { field = "always_on", present = true, safecall = true },
   { field = "auto_launch", present = true },
   { field = "rocket_parts" },
-  -- (recipe_quality was removed: LuaEntity.recipe_quality does not exist — the row ALWAYS
-  -- threw into its safecall and quality silently reset to normal. Quality now rides set_recipe(name, q)
-  -- atomically at both restore sites; measured in the state-dimensions-lab notebook.)
   { field = "switch_state", present = true, safecall = true },
   { field = "artillery_auto_targeting", present = true, safecall = true },
   { field = "opened", present = true },
@@ -126,25 +79,16 @@ local SIMPLE_RESTORE_RULES = {
   { field = "autopilot_destination" },
 }
 
---- Apply SIMPLE_RESTORE_RULES to an entity. Each rule's guards are reproduced exactly so this is a
---- behavior-preserving replacement for the inline blocks.
---- @param entity LuaEntity
---- @param data table: entity_data.specific_data
 local function apply_simple_restore_rules(entity, data)
   for _, rule in ipairs(SIMPLE_RESTORE_RULES) do
     local value = data[rule.field]
     local has_value
     if rule.present then
-      has_value = value ~= nil          -- booleans: false is a value worth restoring
+      has_value = value ~= nil
     else
-      has_value = value and true or false -- truthy (these fields are never boolean)
+      has_value = value and true or false
     end
     local prop = rule.prop or rule.field
-    -- rule.types: explicit entity-type gate for properties that read nil when unset (the
-    -- entity[prop] ~= nil guard cannot distinguish "class lacks property" from "currently unset").
-    -- The guard READ itself is pcall-wrapped: on some entity classes (entity-ghosts proxying their
-    -- inner prototype's fields) reading a non-applicable property THROWS (e.g. crafting_progress →
-    -- "Entity is not crafting-machine."), which detonated before any safecall could catch the write.
     local applies
     if rule.types then
       applies = rule.types[entity.type] or false
@@ -166,19 +110,12 @@ local function apply_simple_restore_rules(entity, data)
   end
 end
 
---- Create a single entity on the surface
---- @param surface LuaSurface: Target surface
---- @param entity_data table: Serialized entity data
---- @return LuaEntity|nil: Created entity, or nil if failed
 function Deserializer.create_entity(surface, entity_data)
-  -- CRITICAL: Skip space-platform-hub - it's created automatically with the platform
-  -- and can't be created manually. The async-processor maps it to entity_map separately.
   if entity_data.name == "space-platform-hub" then
     log("[Deserializer] Skipping space-platform-hub (created automatically with platform)")
     return nil
   end
   
-  -- DEBUG: Log direction for crafting machines to debug direction issues
   if entity_data.type == "assembling-machine" or entity_data.type == "furnace" then
     log(string.format("[DEBUG] Creating %s at (%.1f, %.1f) with direction=%s (type=%s)",
       entity_data.name,
@@ -197,41 +134,27 @@ function Deserializer.create_entity(surface, entity_data)
     raise_built = false
   }
 
-  -- Add orientation for trains/vehicles
   if entity_data.orientation then
     params.orientation = entity_data.orientation
   end
 
-  -- Add quality during creation (read-only after creation in Factorio 2.0)
   if entity_data.quality then
     params.quality = entity_data.quality
   end
 
-  -- Add underground belt type (must be set during creation)
   if entity_data.type == "underground-belt" and entity_data.specific_data then
-    params.type = entity_data.specific_data.belt_to_ground_type  -- "input" or "output"
+    params.type = entity_data.specific_data.belt_to_ground_type
   end
 
-  -- resource: without an explicit amount create_entity spawns the ENGINE DEFAULT (50/tile) —
-  -- 30398 ore came back as 200 on the mining-drill-acid-feed pad (measured 2026-07-20). The
-  -- amount rides specific_data (EntityHandlers["resource"]) and must be set at creation.
   if entity_data.type == "resource" and entity_data.specific_data
       and entity_data.specific_data.amount then
     params.amount = entity_data.specific_data.amount
   end
 
-  -- item-request-proxy: the engine REQUIRES a live target entity (plus the request payload) at
-  -- creation — a bare {name, position} create throws, and the surrounding pcall turned that throw
-  -- into a silent drop on every transfer (the proxy transfer-loss bug, measured 2026-07-19 on the
-  -- delivered omnibus: dest 122/123 entities, ghosts-pad machine empty). The import orders proxy
-  -- records LAST (import-pipeline) so the target physically exists by now; resolve it at the
-  -- exported target_position.
   if entity_data.type == "item-request-proxy" then
     local sd = entity_data.specific_data or {}
     local tp = sd.target_position or entity_data.position
     local tpx, tpy = tp.x or tp[1], tp.y or tp[2]
-    -- Prefer the NAME-matched candidate (exported as target_name); fall back to the first
-    -- non-proxy candidate for legacy payloads without the field (review F2).
     local target, fallback
     for _, candidate in ipairs(surface.find_entities_filtered({
       area = { { tpx - 0.3, tpy - 0.3 }, { tpx + 0.3, tpy + 0.3 } } })) do
@@ -260,10 +183,8 @@ function Deserializer.create_entity(surface, entity_data)
     end
   end
 
-  -- Handle ghost entities (entity-ghost, tile-ghost)
   if entity_data.type == "entity-ghost" and entity_data.specific_data then
     params.inner_name = entity_data.specific_data.ghost_name
-    -- Ghost quality is separate from the ghost entity's quality
     if entity_data.specific_data.ghost_quality then
       params.quality = entity_data.specific_data.ghost_quality
     end
@@ -289,31 +210,19 @@ function Deserializer.create_entity(surface, entity_data)
     return nil
   end
 
-  -- CRITICAL: For crafting machines with fluid recipes (foundry, assemblers), 
-  -- we MUST set the recipe immediately after creation so the game respects
-  -- the direction/rotation for fluid port alignment. If recipe is set later,
-  -- the fluid ports may not align correctly with the requested direction.
-  -- TYPE gate (see the restore_entity_state recipe site): set_recipe is a method on every
-  -- LuaEntity, so `entity.set_recipe` is always truthy; only real crafters may take a recipe.
   if entity.valid and (entity.type == "assembling-machine" or entity.type == "furnace" or entity.type == "rocket-silo")
     and entity_data.specific_data and entity_data.specific_data.recipe then
-    -- Quality is passed ATOMICALLY here: set_recipe(name) without it defaults the pair to normal, and
-    -- there is no post-hoc fix-up — LuaEntity.recipe_quality does not exist (measured; the old
-    -- SIMPLE_RESTORE_RULES row for it always threw into its safecall). nil quality = normal, correct for
-    -- exports that captured no quality.
     local recipe_success = safe_call(
       string.format("set_recipe %s for %s", entity_data.specific_data.recipe, entity.name),
       function() entity.set_recipe(entity_data.specific_data.recipe, entity_data.specific_data.recipe_quality) end
     )
     if recipe_success then
-      -- After setting recipe, re-apply direction to ensure fluid ports align
       if entity_data.direction and entity.direction ~= entity_data.direction then
         entity.direction = entity_data.direction
       end
     end
   end
 
-  -- DEBUG: Verify direction was applied for crafting machines
   if (entity_data.type == "assembling-machine" or entity_data.type == "furnace") and entity.valid then
     log(string.format("[DEBUG] Created %s - requested direction=%s, actual direction=%s, recipe=%s",
       entity_data.name,
@@ -322,7 +231,6 @@ function Deserializer.create_entity(surface, entity_data)
       tostring(entity_data.specific_data and entity_data.specific_data.recipe or "none")))
   end
 
-  -- Set health
   if entity_data.health and entity.health then
     entity.health = entity_data.health
   end
@@ -330,18 +238,11 @@ function Deserializer.create_entity(surface, entity_data)
   return entity
 end
 
---- Restore entity-specific state (recipes, settings, etc.)
---- @param entity LuaEntity: The entity to restore state to
---- @param entity_data table: Serialized entity data
 function Deserializer.restore_entity_state(entity, entity_data)
   if not entity.valid then
     return
   end
 
-  -- destructible is a top-level core prop: captured only when false (the freeze convention),
-  -- restored before the specific_data guard so a fixture entity with no handler data still keeps
-  -- its freeze flag (found live 2026-07-20: pasted copies read destructible=true where the source
-  -- was false — the flag was never serialized; the transfer path shared the same gap).
   if entity_data.destructible == false then
     local ok, err = pcall(function() entity.destructible = false end)
     if not ok then log("[Deserializer] destructible restore failed for " .. entity.name .. ": " .. tostring(err)) end
@@ -353,9 +254,7 @@ function Deserializer.restore_entity_state(entity, entity_data)
 
   local data = entity_data.specific_data
 
-  -- Restore ghost-specific properties
   if entity.type == "entity-ghost" or entity.type == "tile-ghost" then
-    -- Item requests for ghosts (construction materials needed)
     if data.item_requests and #data.item_requests > 0 then
       local requests = {}
       for _, req in ipairs(data.item_requests) do
@@ -366,26 +265,22 @@ function Deserializer.restore_entity_state(entity, entity_data)
         requests[item_with_quality] = req.count
       end
     end
-    return  -- Ghosts don't have other state to restore
+    return
   end
 
-  -- Restore display-panel configuration (text + messages + visibility flags) — the export
-  -- handler pairs with this; without the pair every transferred panel arrived blank (2026-07-19).
   if entity.type == "display-panel" then
     if data.display_panel_text ~= nil then entity.display_panel_text = data.display_panel_text end
     if data.display_panel_always_show ~= nil then entity.display_panel_always_show = data.display_panel_always_show end
     if data.display_panel_show_in_chart ~= nil then entity.display_panel_show_in_chart = data.display_panel_show_in_chart end
     if data.display_panel_messages then
       safe_call(string.format("display-panel messages for %s", entity.name), function()
-        entity.get_or_create_control_behavior().records = data.display_panel_messages  -- 2.1: messages renamed to records
+        entity.get_or_create_control_behavior().records = data.display_panel_messages
       end)
     end
-    return  -- Panels have no other state to restore
+    return
   end
 
-  -- Restore item-request-proxy properties
   if entity.type == "item-request-proxy" then
-    -- Item requests
     if data.item_requests and #data.item_requests > 0 then
       local requests = {}
       for _, req in ipairs(data.item_requests) do
@@ -397,23 +292,13 @@ function Deserializer.restore_entity_state(entity, entity_data)
       end
     end
     
-    -- Insert plan (inventory positions)
     if data.insert_plan then
       entity.insert_plan = data.insert_plan
     end
     
-    return  -- Proxies don't have other state to restore
+    return
   end
 
-  -- Restore recipe (skip if already set during create_entity for fluid port alignment)
-  -- We check if the (name, quality) PAIR is already set to avoid overwriting and potentially breaking
-  -- direction. Quality is get_recipe()'s second return and must be passed atomically to set_recipe —
-  -- see the create-time site above (LuaEntity.recipe_quality does not exist).
-  -- TYPE gate, not method presence: set_recipe/get_recipe are LuaEntity METHODS and exist on every
-  -- entity, so `entity.set_recipe` is always truthy — calling get_recipe() on a non-crafting entity
-  -- (e.g. an entity-GHOST whose inner record carries data.recipe) throws
-  -- "Entity is not crafting-machine." (caught live 2026-07-17 by a selection-lab force paste of a
-  -- fixture containing a ghost; the same guard shape as the splitter-filter nil-guard defect).
   local IS_CRAFTER = { ["assembling-machine"] = true, ["furnace"] = true, ["rocket-silo"] = true }
   if data.recipe and IS_CRAFTER[entity.type] then
     local current_recipe, current_quality = entity.get_recipe()
@@ -426,7 +311,6 @@ function Deserializer.restore_entity_state(entity, entity_data)
     end
   end
 
-  -- Restore previous recipe (furnaces/foundries)
   if data.previous_recipe and entity.previous_recipe ~= nil then
     safe_call(string.format("previous_recipe for %s", entity.name), function()
       entity.previous_recipe = {
@@ -436,16 +320,12 @@ function Deserializer.restore_entity_state(entity, entity_data)
     end)
   end
 
-  -- Trivial single-field restorations (see SIMPLE_RESTORE_RULES). Placed after recipe restoration so
-  -- recipe-dependent fields (crafting_progress, bonus_progress) apply to the already-set recipe.
   apply_simple_restore_rules(entity, data)
 
-  -- Restore train schedule
   if data.schedule and entity.train then
     entity.train.schedule = data.schedule
   end
 
-  -- Restore combinator settings
   if data.parameters then
     local cb = entity.get_control_behavior()
     if cb then
@@ -454,7 +334,6 @@ function Deserializer.restore_entity_state(entity, entity_data)
     end
   end
 
-  -- Restore turret priority targets using set_priority_target(index, entity_id)
   if data.priority_targets and #data.priority_targets > 0 then
     for _, target in ipairs(data.priority_targets) do
       safe_call(string.format("set_priority_target %d=%s for %s", target.index, target.name, entity.name),
@@ -462,12 +341,7 @@ function Deserializer.restore_entity_state(entity, entity_data)
     end
   end
   
-  -- The turret control behavior settings (set_priority_list, set_ignore_unlisted_targets, etc.)
-  -- are handled in restore_control_behavior(). ignore_unprioritised_targets, the inserter
-  -- use_filters/filter_mode/stack_size_override settings, and the splitter filter/priorities are
-  -- restored by apply_simple_restore_rules above (SIMPLE_RESTORE_RULES).
 
-  -- Restore container bar (inventory limit)
   if data.bar and entity.get_inventory then
     local inv = entity.get_inventory(defines.inventory.chest)
     if inv and inv.valid then
@@ -476,26 +350,17 @@ function Deserializer.restore_entity_state(entity, entity_data)
     end
   end
 
-  -- Restore pump fluid filter
   if data.fluid_filter and entity.set_fluid_filter then
     safe_call(string.format("fluid_filter for %s", entity.name),
       function() entity.set_fluid_filter(data.fluid_filter) end)
   end
 
-  -- Restore mining drill resource filter. Measured 2026-07-17 (state-dimensions lab; see the mining-drill
-  -- filter overload of LuaEntity.set_filter in the official API): a drill filter is an EntityID — a resource
-  -- NAME string, no quality component (the {name,quality} table form throws "Invalid EntityID") —
-  -- and set_filter is "callable only on entities that have filters" (every vanilla drill measures
-  -- filter_slot_count == 0, so this only ever fires for modded drills with filter slots). The
-  -- explicit type gate also keeps this block off splitters, whose data.filter is owned by the
-  -- splitter_filter rule in SIMPLE_RESTORE_RULES.
   if data.filter and entity.type == "mining-drill" and (entity.filter_slot_count or 0) > 0 then
     local filter_name = type(data.filter) == "table" and data.filter.name or data.filter
     safe_call(string.format("set_filter for %s", entity.name),
       function() entity.set_filter(1, filter_name) end)
   end
 
-  -- Restore train station custom name and settings
   if entity.type == "train-stop" then
     if entity_data.backer_name then
       entity.backer_name = entity_data.backer_name
@@ -517,76 +382,62 @@ function Deserializer.restore_entity_state(entity, entity_data)
     end
   end
 
-  -- Restore entity tags (custom mod data)
   if entity_data.tags then
     entity.tags = entity_data.tags
   end
 
-  -- Restore equipment grid for entities (vehicles, locomotives, etc.)
   if data.equipment_grid and entity.grid and entity.grid.valid then
     Deserializer.restore_equipment_grid(entity.grid, data.equipment_grid)
   end
 
-  -- Restore rolling stock and vehicle settings
   if entity.train then
-    -- Train/wagon color
     if data.color and entity.color ~= nil then
       safe_call(string.format("train color for %s", entity.name),
         function() entity.color = data.color end)
     end
     
-    -- Train logistics
     if data.enable_logistics_while_moving ~= nil and entity.enable_logistics_while_moving ~= nil then
       safe_call(string.format("enable_logistics_while_moving for %s", entity.name),
         function() entity.enable_logistics_while_moving = data.enable_logistics_while_moving end)
     end
     
-    -- Copy color from train stop
     if data.copy_color_from_train_stop ~= nil and entity.copy_color_from_train_stop ~= nil then
       safe_call(string.format("copy_color_from_train_stop for %s", entity.name),
         function() entity.copy_color_from_train_stop = data.copy_color_from_train_stop end)
     end
   end
 
-  -- Restore vehicle settings (cars, tanks, spidertrons)
   if entity.type == "car" or entity.type == "spider-vehicle" then
-    -- Vehicle color
     if data.color and entity.color ~= nil then
       safe_call(string.format("vehicle color for %s", entity.name),
         function() entity.color = data.color end)
     end
     
-    -- Vehicle orientation
     if data.orientation and entity.orientation ~= nil then
       safe_call(string.format("vehicle orientation for %s", entity.name),
         function() entity.orientation = data.orientation end)
     end
     
-    -- Driver as main gunner
     if data.driver_is_main_gunner ~= nil and entity.driver_is_main_gunner ~= nil then
       safe_call(string.format("driver_is_main_gunner for %s", entity.name),
         function() entity.driver_is_main_gunner = data.driver_is_main_gunner end)
     end
     
-    -- Selected gun index
     if data.selected_gun_index and entity.selected_gun_index ~= nil then
       safe_call(string.format("selected_gun_index for %s", entity.name),
         function() entity.selected_gun_index = data.selected_gun_index end)
     end
     
-    -- Vehicle logistics
     if data.enable_logistics_while_moving ~= nil and entity.enable_logistics_while_moving ~= nil then
       safe_call(string.format("vehicle logistics for %s", entity.name),
         function() entity.enable_logistics_while_moving = data.enable_logistics_while_moving end)
     end
     
-    -- Spidertron label
     if data.label and entity.type == "spider-vehicle" then
       safe_call(string.format("spidertron label for %s", entity.name),
         function() entity.entity_label = data.label end)
     end
     
-    -- Automatic targeting parameters
     if data.automatic_targeting_parameters and entity.enable_logistics_while_moving ~= nil then
       safe_call(string.format("auto targeting for %s", entity.name), function()
         if data.automatic_targeting_parameters.auto_target_with_gunner ~= nil then
@@ -599,16 +450,6 @@ function Deserializer.restore_entity_state(entity, entity_data)
     end
   end
 
-  -- Restore burner (fuel) energy-source state. Set currently_burning FIRST: writing
-  -- remaining_burning_fuel silently no-ops when there is no currently_burning item (measured, state-dimensions lab).
-  -- Resolve the serialized item name to a prototype so an unknown mod item is skipped (not crashed).
-  -- currently_burning is burn-progress, NOT an inventory slot, so neither the expected-count
-  -- (Verification.count_all_items) nor the dest census (SurfaceCounter.count_items) reads it directly.
-  -- Verified by the closer run (tests/state-dimensions-lab/NOTEBOOK.md + the passing
-  -- entity-burner-roundtrip): (a) the write is ACCEPTED while the entity is DEACTIVATED — a deactivated
-  -- burner reads back currently_burning/remaining_burning_fuel exactly; (b) setting currently_burning does
-  -- NOT mutate the fuel inventory, and this running before restore_inventories' clear()+refill leaves the
-  -- burn state undisturbed. No relocation to the activation pass needed.
   if data.burner and entity.burner then
     local burner_data = data.burner
     local burning = burner_data.currently_burning
@@ -631,54 +472,28 @@ function Deserializer.restore_entity_state(entity, entity_data)
     end
   end
 
-  -- Restore entity energy buffer (accumulator charge, machine energy store).
-  -- Verified by the closer run (state-dimensions-lab NOTEBOOK + passing
-  -- energy-roundtrip): a write to `.energy` is ACCEPTED while the entity is DEACTIVATED (accumulator
-  -- 0->123456 read back exactly; machine buffer written in-range read back exactly). Energy is not
-  -- item-counted, so it does not perturb the exact gate census. No relocation to the activation pass.
   if data.energy ~= nil then
     safe_call(string.format("energy for %s", entity.name),
       function() entity.energy = data.energy end)
   end
 
-  -- Restore entity heat buffer temperature (reactors, heat pipes, heat-consumers).
-  -- Verified by the closer run (state-dimensions-lab NOTEBOOK + passing heat-roundtrip):
-  -- a write to `.temperature` is ACCEPTED while the entity is DEACTIVATED (reactor 15->500 read back
-  -- exactly). Not item-counted; no gate perturbation; no relocation to the activation pass.
   if data.temperature ~= nil then
     safe_call(string.format("temperature for %s", entity.name),
       function() entity.temperature = data.temperature end)
   end
 end
 
---- Restore inventories to an entity
---- @param entity LuaEntity: The entity to restore inventories to
---- @param entity_data table: Serialized entity data
---- @param overflow_losses table|nil: Optional accumulator for set_stack partial losses:
----   { items = { [quality_key] = count }, total = n, entities = { ... } }
----   `items` is keyed by Util.make_quality_key (bare item name at normal quality,
----   "<name>:<quality>" otherwise) — NOT by item name. This docstring said `name->count`
----   and a DTO declaration was written from it; a consumer following that would miss every
----   non-normal-quality loss. `entities` is capped at 50 (see below), so its length is a
----   sample, not a count — `total` is the count.
 function Deserializer.restore_inventories(entity, entity_data, overflow_losses)
   if not entity.valid or not entity_data.specific_data then
     return
   end
   
-  -- Check if there's anything to restore (inventories only - belt items handled in post-processing)
   local has_inventories = entity_data.specific_data.inventories ~= nil
 
   if not has_inventories then
     return
   end
 
-  -- Restore regular inventories
-  -- CRITICAL: crafter_modules MUST be restored before crafter_input/output.
-  -- The engine computes input slot caps as: recipe_amount × module_multiplier.
-  -- If input items are set_stack()'d before modules are placed, the cap reflects
-  -- no-module state, causing partial writes ("wanted 12, placed 7").
-  -- Sort so crafter_modules comes first; all other inventories follow unchanged.
   if has_inventories then
   local sorted_inventories = {}
   for _, inv_data in ipairs(entity_data.specific_data.inventories) do
@@ -689,8 +504,6 @@ function Deserializer.restore_inventories(entity, entity_data, overflow_losses)
     end
   end
   for _, inv_data in ipairs(sorted_inventories) do
-    -- Convert inventory type name (string) to numeric index
-    -- inv_data.type is a string like "crafter_input", need to convert to defines.inventory index
     local inv_index = defines.inventory[inv_data.type]
     if not inv_index then
       log(string.format("[FactorioSurfaceExport] Warning: Unknown inventory type '%s' for entity %s", inv_data.type, entity.name))
@@ -703,9 +516,7 @@ function Deserializer.restore_inventories(entity, entity_data, overflow_losses)
       inventory.clear()
 
       for _, item in ipairs(inv_data.items) do
-        -- Check if this is a blueprint/book that needs import_stack()
         if item.export_string then
-          -- Use import_stack for blueprint-like items
           local slot_index = nil
           for i = 1, #inventory do
             if not inventory[i].valid_for_read then
@@ -717,14 +528,11 @@ function Deserializer.restore_inventories(entity, entity_data, overflow_losses)
           if slot_index then
             local stack = inventory[slot_index]
             local import_result = stack.import_stack(item.export_string)
-            -- import_result: 0 = ok, 1 = ok with errors, -1 = failed
             if import_result < 0 then
               log(string.format("[FactorioSurfaceExport] Warning: Failed to import blueprint for %s", entity.name))
             end
           end
         else
-          -- Per-slot restoration using set_stack() to preserve overloaded stacks
-          -- (inserters can push items beyond normal stack_size into crafting machines)
           local stack_params = {
             name = item.name,
             count = item.count
@@ -735,20 +543,16 @@ function Deserializer.restore_inventories(entity, entity_data, overflow_losses)
 
           local ok, err
           if item.slot and item.slot <= #inventory then
-            -- Preferred: set_stack on the exact slot (preserves overloaded counts)
             ok, err = pcall(function()
               inventory[item.slot].set_stack(stack_params)
             end)
-            -- DIAG: log beacon module set_stack result
             if entity.name == "beacon" then
               local slot = inventory[item.slot]
               log(string.format("[DiagBeacon] set_stack slot=%d item=%s q=%s ok=%s err=%s valid=%s count=%s",
                 item.slot, item.name, tostring(item.quality), tostring(ok), tostring(err),
                 tostring(slot.valid_for_read), tostring(slot.valid_for_read and slot.count or "n/a")))
             end
-            -- DIAG END
           else
-            -- Fallback: bulk insert (for old export data without slot index)
             ok, err = pcall(function()
               return inventory.insert(stack_params)
             end)
@@ -758,21 +562,7 @@ function Deserializer.restore_inventories(entity, entity_data, overflow_losses)
             log(string.format("[FactorioSurfaceExport] Warning: Skipped unknown item '%s' for %s (mod missing?): %s",
               item.name, entity.name, tostring(err)))
           elseif item.slot and item.slot <= #inventory then
-            -- Verify set_stack worked
             local slot = inventory[item.slot]
-            -- Restore FULL item metadata on the slotted stack. The set_stack path historically skipped
-            -- restore_item_properties entirely (only the no-slot insert fallback ran it), silently dropping
-            -- spoilage decay, health, durability, ammo, labels — AND equipment grids / nested inventories
-            -- (a slotted power armor arrived with an EMPTY grid; review finding at deserializer.lua:642).
-            -- EMPIRICAL (spoilage-roundtrip, retired into the spoilage pad which holds it at the
-            -- current pin): bioflux spoil_percent 0.5003 -> 0 pre-fix.
-            -- Gate-neutrality of grid/nested restoration VERIFIED against both gate counters: the expected
-            -- side (Verification.count_all_items, verification.lua) sums only top-level
-            -- specific_data.inventories[].items[].count, and the dest census (SurfaceCounter.count_items ->
-            -- InventoryScanner.count_all_items) sums only top-level inv.items[].count — NEITHER recurses
-            -- into item.grid or item.nested_inventory, so restoring them cannot move either side of the
-            -- exact gate. Covered by the omnibus-equipment-grid pad (physical dest grid reads); its
-            -- former standalone runner tests/integration/item-grid-roundtrip was absorbed 2026-07-27.
             if slot.valid_for_read then
               restore_item_properties(slot, item)
             end
@@ -785,7 +575,6 @@ function Deserializer.restore_inventories(entity, entity_data, overflow_losses)
                 local item_key = Util.make_quality_key(item.name, item.quality or Util.QUALITY_NORMAL)
                 overflow_losses.items[item_key] = (overflow_losses.items[item_key] or 0) + lost
                 overflow_losses.total = overflow_losses.total + lost
-                -- Record per-entity detail (capped at 50)
                 if #overflow_losses.entities < 50 then
                   table.insert(overflow_losses.entities, {
                     name = entity.name,
@@ -800,13 +589,12 @@ function Deserializer.restore_inventories(entity, entity_data, overflow_losses)
               end
             end
           else
-            local inserted = err  -- err is actually the return value from insert()
+            local inserted = err
             if type(inserted) == "number" and inserted < item.count then
               log(string.format("[FactorioSurfaceExport] Warning: Only inserted %d/%d of %s into %s",
                 inserted, item.count, item.name, entity.name))
             end
 
-            -- Find the inserted stack to restore additional properties
             if inserted > 0 then
               local inserted_stack = inventory.find_item_stack(item.name)
               restore_item_properties(inserted_stack, item)
@@ -817,28 +605,11 @@ function Deserializer.restore_inventories(entity, entity_data, overflow_losses)
     end
     ::continue::
   end
-  end -- end of if has_inventories
+  end
 
-  -- NOTE: Belt items are NOT restored here!
-  -- Belt items are restored synchronously in the post-processing belts phase (restore_side_groups, each item placed at its captured source position)
-  -- This is CRITICAL because belts are always active and cannot be deactivated.
-  -- Items must be restored all at once to prevent partial restoration where
-  -- some items get picked up by inserters before others are placed.
 
-  -- TOMBSTONE (2026-07-18 dead-code exhumation, inserter-lab B6): four inserter blocks
-  -- (held_item, filter_mode, stack_size_override, spoil_priority) used to sit HERE — stranded
-  -- behind this function's has_inventories early-return, unreachable for every bare inserter
-  -- (an inserter record has held_item but no inventories field). They were the REAL cause of
-  -- the historical missing-held-items phantom (misattributed to "set_stack fails while
-  -- deactivated" — refuted; activation is not a variable in set_stack seating). Owners now:
-  --   held_item              -> ActiveStateRestoration.restore_held_items_only (single owner)
-  --   filter_mode / stack_size_override / spoil_priority -> SIMPLE_RESTORE_RULES
-  --                             (restore_entity_state; see the table's contract comment)
 end
 
---- Restore equipment grid (for power armor, etc.)
---- @param grid LuaEquipmentGrid: The grid to restore to
---- @param grid_data table: Serialized grid data
 function Deserializer.restore_equipment_grid(grid, grid_data)
   if not grid or not grid.valid then
     return
@@ -846,12 +617,9 @@ function Deserializer.restore_equipment_grid(grid, grid_data)
 
   grid.clear()
 
-  -- Handle both old format (array) and new format (table with equipment array)
   local equipment_list = grid_data.equipment or grid_data
   
   for _, equip_data in ipairs(equipment_list) do
-    -- quality must be passed AT put() time — grid equipment quality is not writable afterwards, so
-    -- omitting it silently downgraded every restored piece to normal (review finding, deserializer.lua:741).
     local equipment = grid.put({
       name = equip_data.name,
       position = equip_data.position,
@@ -859,12 +627,6 @@ function Deserializer.restore_equipment_grid(grid, grid_data)
     })
 
     if equipment then
-      -- Restore energy / shield. EMPIRICAL (equipment-burner-roundtrip crash at tick 138282,
-      -- this file's restore_equipment_grid): LuaEquipment.shield (and .energy) READS 0 on equipment
-      -- that has no shield/energy buffer, so the old `equipment.X ~= nil` guard is a FALSE guard (a
-      -- read never returns nil) and export captures a truthy 0; the WRITE then throws "Equipment is not
-      -- shields" and killed the import on_tick. safe_call each write (it logs) so an unsupported buffer
-      -- is skipped, not fatal. Presence check stays: only attempt when a value was captured.
       if equip_data.energy then
         safe_call(string.format("equipment energy for %s", tostring(equip_data.name)),
           function() equipment.energy = equip_data.energy end)
@@ -875,11 +637,6 @@ function Deserializer.restore_equipment_grid(grid, grid_data)
           function() equipment.shield = equip_data.shield end)
       end
       
-      -- Restore burner equipment fuel state. Mirrors the entity-burner restore pattern (see
-      -- restore_entity_state): prototype-existence check so an unknown mod fuel item is SKIPPED (not
-      -- crashed — restore_equipment_grid runs unwrapped inside the import on_tick, the tick-138282 crash
-      -- class), safe_call on every engine write, and quality carried through. Accepts both the current
-      -- {name, quality} capture shape and the legacy bare-string shape from older exports.
       if equip_data.burner and equipment.burner then
         local burner = equipment.burner
 
@@ -901,12 +658,10 @@ function Deserializer.restore_equipment_grid(grid, grid_data)
             function() burner.remaining_burning_fuel = equip_data.burner.remaining_burning_fuel end)
         end
         
-        -- Restore burner inventory
         if equip_data.burner.inventory and burner.inventory and burner.inventory.valid then
           Deserializer.restore_nested_inventory(burner.inventory, equip_data.burner.inventory)
         end
         
-        -- Restore burnt result inventory
         if equip_data.burner.burnt_result_inventory and burner.burnt_result_inventory and burner.burnt_result_inventory.valid then
           Deserializer.restore_nested_inventory(burner.burnt_result_inventory, equip_data.burner.burnt_result_inventory)
         end
@@ -915,9 +670,6 @@ function Deserializer.restore_equipment_grid(grid, grid_data)
   end
 end
 
---- Restore nested inventory (recursive for items-with-inventory)
---- @param inventory LuaInventory: The inventory to restore to
---- @param items_data table: Array of item data
 function Deserializer.restore_nested_inventory(inventory, items_data)
   if not inventory or not inventory.valid or not items_data then
     return
@@ -926,9 +678,7 @@ function Deserializer.restore_nested_inventory(inventory, items_data)
   inventory.clear()
 
   for _, item in ipairs(items_data) do
-    -- Check if this is a blueprint/book that needs import_stack()
     if item.export_string then
-      -- Use import_stack for blueprint-like items
       local slot_index = nil
       for i = 1, #inventory do
         if not inventory[i].valid_for_read then
@@ -945,7 +695,6 @@ function Deserializer.restore_nested_inventory(inventory, items_data)
         end
       end
     else
-      -- Regular item insertion
       local insert_params = {
         name = item.name,
         count = item.count
@@ -971,9 +720,6 @@ function Deserializer.restore_nested_inventory(inventory, items_data)
   end
 end
 
---- Create items on ground
---- @param surface LuaSurface: Target surface
---- @param item_data table: Serialized item data
 function Deserializer.create_ground_item(surface, item_data)
   local stack = { name = item_data.name, count = item_data.count, quality = item_data.quality }
   local ok, entity = pcall(function()
@@ -982,14 +728,10 @@ function Deserializer.create_ground_item(surface, item_data)
   if ok and entity and entity.valid then
     return entity
   end
-  -- A pcall ERROR here is a genuine fault (bad stack/signature/unknown item), NOT an expected
-  -- collision (create_entity returns nil WITHOUT erroring on collision) — surface it so such a bug
-  -- isn't masked as silent ground-item loss. Expected collisions (ok=true, entity=nil) stay quiet.
   if not ok then
     log(string.format("[Deserializer] create_ground_item '%s' x%s errored on first attempt: %s",
       tostring(item_data.name), tostring(item_data.count), tostring(entity)))
   end
-  -- Position may now be occupied by a restored building; retry at a nearby non-colliding spot.
   local pos = surface.find_non_colliding_position("item-on-ground", item_data.position, 8, 0.25)
   if pos then
     local ok2, entity2 = pcall(function()
@@ -1003,21 +745,14 @@ function Deserializer.create_ground_item(surface, item_data)
         tostring(item_data.name), tostring(item_data.count), tostring(entity2)))
     end
   end
-  return nil  -- caller (entity_creation.lua) tallies the loss
+  return nil
 end
 
---- Place tiles on a surface
---- For space platforms, foundation tiles MUST be placed before other tiles
---- @param surface LuaSurface: The surface to place tiles on
---- @param tiles table: Array of tile data
---- @return number, number: placed_count, failed_count
 function Deserializer.place_tiles(surface, tiles)
   if not surface or not surface.valid or not tiles then
     return 0, 0
   end
 
-  -- Sort tiles: foundation tiles first, then others
-  -- Platform foundations must exist before entities can be placed
   local foundation_tiles = {}
   local other_tiles = {}
   
@@ -1038,7 +773,6 @@ function Deserializer.place_tiles(surface, tiles)
   local placed_count = 0
   local failed_count = 0
 
-  -- Place foundation tiles first
   if #foundation_tiles > 0 then
     local ok, err = pcall(function()
       surface.set_tiles(foundation_tiles, true, false, true, false)
@@ -1051,7 +785,6 @@ function Deserializer.place_tiles(surface, tiles)
     end
   end
 
-  -- Then place other tiles
   if #other_tiles > 0 then
     local ok, err = pcall(function()
       surface.set_tiles(other_tiles, true, false, true, false)
@@ -1067,20 +800,11 @@ function Deserializer.place_tiles(surface, tiles)
   return placed_count, failed_count
 end
 
---- Restore control behavior settings to an entity
---- @param entity LuaEntity: The entity to restore to
---- @param entity_data table: Serialized entity data
 function Deserializer.restore_control_behavior(entity, entity_data)
   if not entity.valid or not entity_data.control_behavior then
     return
   end
 
-  -- get_or_create (NOT get): an entity may not have instantiated its control behavior yet at restore time
-  -- (a lamp has NO control behavior until it is wired, and wires are restored separately), so plain
-  -- get_control_behavior() returns nil and every setting below is silently skipped. EMPIRICAL (archived
-  -- circuit-config-roundtrip): an unwired lamp's get_control_behavior()=nil, so its restored
-  -- circuit_condition/circuit_enable_disable were dropped. The entity_data.control_behavior guard above
-  -- means we only ever create a CB on an entity that HAD one at export, so no spurious CB is created.
   local cb = entity.get_or_create_control_behavior()
   if not cb then
     return
@@ -1088,7 +812,6 @@ function Deserializer.restore_control_behavior(entity, entity_data)
 
   local cb_data = entity_data.control_behavior
 
-  -- Helper function to safely set properties with logging
   local function safe_set(prop, value)
     if value ~= nil then
       local ok, err = pcall(function() cb[prop] = value end)
@@ -1098,15 +821,12 @@ function Deserializer.restore_control_behavior(entity, entity_data)
     end
   end
 
-  -- Restore circuit conditions
   safe_set("circuit_condition", cb_data.circuit_condition)
   safe_set("logistic_condition", cb_data.logistic_condition)
   safe_set("enabled_condition", cb_data.enabled_condition)
 
-  -- Restore connection settings
   safe_set("connect_to_logistic_network", cb_data.connect_to_logistic_network)
 
-  -- Restore read settings
   safe_set("read_contents", cb_data.read_contents)
   safe_set("read_stopped_train", cb_data.read_stopped_train)
   safe_set("read_from_train", cb_data.read_from_train)
@@ -1119,7 +839,6 @@ function Deserializer.restore_control_behavior(entity, entity_data)
   safe_set("read_logistics", cb_data.read_logistics)
   safe_set("read_robot_stats", cb_data.read_robot_stats)
 
-  -- Entity-specific settings
   safe_set("circuit_stack_size", cb_data.circuit_stack_size)
   safe_set("use_colors", cb_data.use_colors)
   safe_set("trains_limit", cb_data.trains_limit)
@@ -1128,12 +847,9 @@ function Deserializer.restore_control_behavior(entity, entity_data)
   safe_set("circuit_enable_disable", cb_data.circuit_enable_disable)
   safe_set("circuit_read_resources", cb_data.circuit_read_resources)
 
-  -- Combinator parameters
   safe_set("parameters", cb_data.parameters)
 
-  -- Constant combinator sections
   if cb_data.constant_sections then
-    -- Clear existing sections
     local clear_ok, clear_err = pcall(function()
       while #cb.sections > 0 do
         cb.remove_section(1)
@@ -1143,7 +859,6 @@ function Deserializer.restore_control_behavior(entity, entity_data)
       log(string.format("[Deserializer Error] clear combinator sections for %s: %s", entity.name, tostring(clear_err)))
     end
     
-    -- Add new sections with filters
     for sec_idx, section_data in ipairs(cb_data.constant_sections) do
       local success, section = pcall(function()
         return cb.add_section(section_data.group)
@@ -1152,7 +867,6 @@ function Deserializer.restore_control_behavior(entity, entity_data)
       if not success then
         log(string.format("[Deserializer Error] add_section %d for %s: %s", sec_idx, entity.name, tostring(section)))
       elseif section then
-        -- Set filters/signals in this section
         for _, filter in ipairs(section_data.filters) do
           local slot_ok, slot_err = pcall(function()
             section.set_slot(filter.index, {
@@ -1170,7 +884,6 @@ function Deserializer.restore_control_behavior(entity, entity_data)
     end
   end
 
-  -- Legacy constant combinator signals (pre-2.0, kept for backwards compatibility)
   if cb_data.constant_signals then
     for _, signal_data in ipairs(cb_data.constant_signals) do
       local sig_ok, sig_err = pcall(function()
@@ -1185,16 +898,13 @@ function Deserializer.restore_control_behavior(entity, entity_data)
     end
   end
 
-  -- Selector combinator (2.0+)
   safe_set("operation", cb_data.operation)
   safe_set("count", cb_data.count)
   safe_set("quality", cb_data.quality)
 
-  -- Speaker parameters
   safe_set("parameters", cb_data.speaker_parameters)
   safe_set("circuit_parameters", cb_data.circuit_parameters)
   
-  -- Turret control behavior (from specific_data if present)
   if entity_data.specific_data then
     local turret_data = entity_data.specific_data
     safe_set("set_ignore_unlisted_targets", turret_data.set_ignore_unlisted_targets)
@@ -1204,38 +914,17 @@ function Deserializer.restore_control_behavior(entity, entity_data)
   end
 end
 
---- Restore MANUAL logistic sections (2.0 sections API) — pairs with
---- ConnectionScanner.extract_logistic_sections. On the space-platform-hub these are the platform's
---- pending item requests (the hub GUI "Requests" tab); the hub reaches here through the SAME
---- restore_all loop as every other entity because PlatformHubMapping put the remapped hub in
---- entity_map under the old entity_id. All writes work on a frozen entity (disabled_by_script,
---- platform paused — measured 2.1.11, 2026-08-04), so this runs pre-gate like the other settings.
---- @param entity LuaEntity: The entity to restore sections to
---- @param entity_data table: Serialized entity data (top-level logistic_sections field)
---- @return table: names of force-level logistic groups this restore CREATED (the discard path
----         sweeps them — a group outlives its sections, so a failed import would otherwise leave
----         orphan groups accumulating on the destination force)
 function Deserializer.restore_logistic_sections(entity, entity_data)
   local created_groups = {}
   if not entity.valid or entity_data.logistic_sections == nil then
     return created_groups
   end
-  -- TYPE-GUARD everything read off entity_data before ipairs()/indexing: this field arrives from
-  -- user-suppliable JSON (upload-import validates no shape here), and an ipairs() on a non-table
-  -- inside the on_tick import driver would raise uncaught and KILL the headless server (the
-  -- error()-in-event-context class). Malformed shapes are skipped LOUDLY, never fatally.
   if type(entity_data.logistic_sections) ~= "table" then
     log(string.format("[Deserializer Error] logistic_sections on %s is a %s, not a table — field skipped",
       entity.name, type(entity_data.logistic_sections)))
     return created_groups
   end
 
-  -- Read the force's group registry BEFORE any add_section: add_section(<existing group>) ADOPTS
-  -- the force-level group's filters (measured 2.1.11), and pre-existence-in-the-registry is the
-  -- only correct "do not write filters" signal — a pre-existing group can be legitimately EMPTY
-  -- (a placeholder other platforms on this force reference), so section.filters_count cannot
-  -- distinguish "I just created this group" from "it exists, empty" (review finding: keying on
-  -- filters_count would clobber such a placeholder force-wide).
   local existing_groups = {}
   local registry_ok, registry_err = pcall(function()
     for _, name in pairs(entity.force.get_logistic_groups()) do
@@ -1243,9 +932,6 @@ function Deserializer.restore_logistic_sections(entity, entity_data)
     end
   end)
   if not registry_ok then
-    -- Fail-safe direction: an unreadable registry must mean "write into NO group" (treat every
-    -- grouped section as pre-existing), never "every group is new" — the latter would write
-    -- payload filters into groups that may be shared force-level state.
     log(string.format("[Deserializer Error] get_logistic_groups for %s: %s — grouped sections will be linked but no group filters written",
       entity.name, tostring(registry_err)))
   end
@@ -1260,12 +946,6 @@ function Deserializer.restore_logistic_sections(entity, entity_data)
         log(string.format("[Deserializer Error] logistic point %s missing on %s: %s",
           tostring(point_data.point_index), entity.name, tostring(pt_ok and "nil point" or point)))
       else
-        -- Exact fidelity: a fresh destination entity arrives with its own default manual
-        -- section(s) (a fresh hub has one empty one), so REPLACE the manual set instead of
-        -- appending to it. Derived sections (is_manual=false, e.g. the construction-needs
-        -- tracker) are engine-owned, regenerate from the destination surface, and are never
-        -- touched. remove_section returns false on refusal (measured 2.1.11) — refusals and
-        -- throws both land in the post-condition below.
         local rm_ok, rm_err = pcall(function()
           for i = point.sections_count, 1, -1 do
             local section = point.sections[i]
@@ -1277,10 +957,6 @@ function Deserializer.restore_logistic_sections(entity, entity_data)
         if not rm_ok then
           log(string.format("[Deserializer Error] clearing manual sections on %s: %s", entity.name, tostring(rm_err)))
         end
-        -- POST-CONDITION on the physical state before any add: if manual sections survived the
-        -- clear (a throw OR a remove_section refusal), appending the payload's sections would
-        -- DUPLICATE requests — and the exact gate is structurally blind to settings, so a doubled
-        -- request set would commit GREEN. Leave the point untouched and say so loudly instead.
         local remaining = 0
         local count_ok, count_err = pcall(function()
           for _, section in pairs(point.sections or {}) do
@@ -1303,10 +979,6 @@ function Deserializer.restore_logistic_sections(entity, entity_data)
                 log(string.format("[Deserializer Error] add_section(%s) failed on %s: %s",
                   tostring(sec_data.group), entity.name, tostring(add_ok and "nil section" or section)))
               else
-                -- The destination's groups always WIN over the payload's: filters are written only
-                -- into a group this restore just CREATED (or an ungrouped section). A group that
-                -- pre-existed — populated or empty — is force-level state shared by unrelated
-                -- platforms and is adopted as-is.
                 local is_new_group = sec_data.group ~= nil and registry_ok
                   and not existing_groups[sec_data.group]
                 if is_new_group then
@@ -1322,8 +994,6 @@ function Deserializer.restore_logistic_sections(entity, entity_data)
                       local slot = { value = f.value, min = f.min, max = f.max, import_from = f.import_from }
                       local slot_ok, slot_err = pcall(function() section.set_slot(f.index, slot) end)
                       if not slot_ok and f.import_from then
-                        -- Graceful mod-content mismatch: the import_from location may not exist on
-                        -- this instance. Keep the request itself, drop only the unknown location.
                         log(string.format("[Deserializer] set_slot with import_from='%s' failed on %s (%s) — retrying without import_from",
                           tostring(f.import_from), entity.name, tostring(slot_err)))
                         slot.import_from = nil
@@ -1353,24 +1023,15 @@ function Deserializer.restore_logistic_sections(entity, entity_data)
   return created_groups
 end
 
---- Slot-filter restoration (filter inserters, loaders, cargo wagons). Split from
---- restore_entity_filters so its entity_filters guard cannot swallow the INFINITY restore below —
---- the old combined guard early-returned for a pure infinity chest (no inserter-style slots) and
---- silently dropped its infinity_container_filters on every transfer/paste (caught 2026-07-18 by
---- the belt fill-harness copy: pasted chests read filters=[]).
 local function restore_slot_filters(entity, entity_data)
   if not entity_data.entity_filters then
     return
   end
 
-  -- Filter inserters
   if entity.type == "inserter" then
-    -- Check if use_filters is enabled (even if no filters are set yet)
     local has_use_filters = entity_data.specific_data and entity_data.specific_data.use_filters
     
-    -- CRITICAL: Enable filter mode if use_filters is true OR if filters exist
     if (has_use_filters or #entity_data.entity_filters > 0) and entity.inserter_filter_mode ~= nil then
-      -- If filter_mode wasn't captured, default to whitelist
       local filter_mode = entity_data.specific_data and entity_data.specific_data.filter_mode or "whitelist"
       local mode_success, mode_err = pcall(function()
         entity.inserter_filter_mode = filter_mode
@@ -1381,7 +1042,6 @@ local function restore_slot_filters(entity, entity_data)
       end
     end
     
-    -- Now set the actual filters
     for _, filter in ipairs(entity_data.entity_filters) do
       local success, err = pcall(function()
         entity.set_filter(filter.index, {
@@ -1396,7 +1056,6 @@ local function restore_slot_filters(entity, entity_data)
     end
   end
 
-  -- Loaders
   if entity.type == "loader" or entity.type == "loader-1x1" then
     for _, filter in ipairs(entity_data.entity_filters) do
       local filt_ok, filt_err = pcall(function()
@@ -1411,7 +1070,6 @@ local function restore_slot_filters(entity, entity_data)
     end
   end
 
-  -- Cargo wagon filters
   if entity.type == "cargo-wagon" then
     local inventory = entity.get_inventory(defines.inventory.cargo_wagon)
     if inventory and inventory.valid then
@@ -1431,16 +1089,12 @@ local function restore_slot_filters(entity, entity_data)
 
 end
 
---- Restore entity filters (filter inserters, loaders, cargo wagons, infinity containers)
---- @param entity LuaEntity: The entity to restore to
---- @param entity_data table: Serialized entity data
 function Deserializer.restore_entity_filters(entity, entity_data)
   if not entity.valid then
     return
   end
   restore_slot_filters(entity, entity_data)
 
-  -- Infinity container filters (independent of entity_filters — see restore_slot_filters)
   if entity_data.infinity_filters then
     local inf_ok, inf_err = pcall(function()
       entity.infinity_container_filters = entity_data.infinity_filters
@@ -1449,9 +1103,6 @@ function Deserializer.restore_entity_filters(entity, entity_data)
       log(string.format("[Deserializer Error] infinity_container_filters for %s: %s", entity.name, tostring(inf_err)))
     end
   end
-  -- Infinity PIPE filter — set_infinity_pipe_filter() is a METHOD; there is no settable
-  -- `infinity_pipe_filter` property (reading one THROWS — probed on the 2.1.11 pin 2026-07-26).
-  -- The stored table carries name/percentage/temperature/mode; pass it through whole.
   if entity_data.infinity_pipe_filter then
     local pf_ok, pf_err = pcall(function()
       entity.set_infinity_pipe_filter(entity_data.infinity_pipe_filter)
@@ -1470,13 +1121,6 @@ function Deserializer.restore_entity_filters(entity, entity_data)
   end
 end
 
---- Restore circuit connections (red/green wires)
---- CRITICAL: Must be called AFTER all entities are created
---- Updated for Factorio 2.0 wire connector API
---- @param entity LuaEntity: The source entity
---- @param entity_data table: Serialized entity data
---- @param entity_map table: Map of entity_id to LuaEntity
---- @return number: Count of successful connections made
 function Deserializer.restore_circuit_connections(entity, entity_data, entity_map)
   if not entity.valid then
     return 0
@@ -1494,16 +1138,12 @@ function Deserializer.restore_circuit_connections(entity, entity_data, entity_ma
     tostring(entity_data.entity_id)))
 
   for _, conn in ipairs(entity_data.circuit_connections) do
-    -- Look up target entity by ID
     local target = entity_map[conn.target_entity_id]
 
-    -- Fallback: Try position-based lookup if entity_id not found
     if not target and type(conn.target_entity_id) == "string" and conn.target_entity_id:find("^pos_") then
-      -- Parse position from "pos_X.XX_Y.YY" format
       local x, y = conn.target_entity_id:match("pos_([%d%.%-]+)_([%d%.%-]+)")
       if x and y then
         x, y = tonumber(x), tonumber(y)
-        -- Find entity at that position
         for _, candidate in pairs(entity_map) do
           if candidate.valid then
             local pos = candidate.position
@@ -1517,14 +1157,11 @@ function Deserializer.restore_circuit_connections(entity, entity_data, entity_ma
     end
 
     if target and target.valid then
-      -- Factorio 2.0: Use get_wire_connector() and connect_to()
       local success, err = pcall(function()
         local source_connector = entity.get_wire_connector(conn.source_circuit_id, true)
         local target_connector = target.get_wire_connector(conn.target_circuit_id, true)
 
         if source_connector and target_connector then
-          -- Pass false for reach_check since we're scripting connections that may be "out of reach"
-          -- CRITICAL: Use DOT syntax, not colon syntax! connect_to() doesn't use implicit self
           local connected = source_connector.connect_to(target_connector, false)
           if connected then
             connected_count = connected_count + 1
@@ -1546,12 +1183,6 @@ function Deserializer.restore_circuit_connections(entity, entity_data, entity_ma
   return connected_count
 end
 
---- Restore power connections (copper cables between electric poles)
---- CRITICAL: Must be called AFTER all entities are created
---- @param entity LuaEntity: The source pole
---- @param entity_data table: Serialized entity data
---- @param entity_map table: Map of entity_id to LuaEntity
---- @return number: Count of successful connections made
 function Deserializer.restore_power_connections(entity, entity_data, entity_map)
   if not entity.valid or not entity_data.power_connections then
     return 0
@@ -1564,10 +1195,8 @@ function Deserializer.restore_power_connections(entity, entity_data, entity_map)
   local connected_count = 0
 
   for _, target_id in ipairs(entity_data.power_connections) do
-    -- Look up target entity by ID
     local target = entity_map[target_id]
 
-    -- Fallback: Position-based lookup
     if not target and type(target_id) == "string" and target_id:find("^pos_") then
       local x, y = target_id:match("pos_([%d%.%-]+)_([%d%.%-]+)")
       if x and y then
@@ -1585,10 +1214,6 @@ function Deserializer.restore_power_connections(entity, entity_data, entity_map)
     end
 
     if target and target.valid then
-      -- Factorio 2.1 removed LuaEntity.connect_neighbour; copper cables are now joined
-      -- through the pole_copper wire connectors. reach_check=false because scripted
-      -- restores may re-link poles that are "out of reach". origin defaults to player,
-      -- matching the old connect_neighbour behaviour.
       local ok, result = pcall(function()
         local source_connector = entity.get_wire_connector(defines.wire_connector_id.pole_copper, true)
         local target_connector = target.get_wire_connector(defines.wire_connector_id.pole_copper, true)

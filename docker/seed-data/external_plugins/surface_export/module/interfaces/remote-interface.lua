@@ -1,20 +1,12 @@
--- FactorioSurfaceExport - Remote Interface
--- Main loader that registers all remote interface methods from individual files
--- Each method is in its own file under interfaces/remote/
-
 local RemoteInterface = {}
 
--- Load base utilities
 local Base = require("modules/surface_export/interfaces/remote/base")
 
--- Runtime version oracle (SC-72): the stamp is rewritten by the version bump, so the value the
--- LIVE module returns proves which module version the save was patched with.
 local module_version = require("modules/surface_export/version")
 local function get_module_version()
   return module_version
 end
 
--- Load individual remote interface functions
 local export_platform = require("modules/surface_export/interfaces/remote/export-platform")
 local get_export = require("modules/surface_export/interfaces/remote/get-export")
 local list_exports = require("modules/surface_export/interfaces/remote/list-exports")
@@ -46,7 +38,6 @@ local test_roster = require("modules/surface_export/interfaces/remote/test-roste
 local lifecycle = require("modules/surface_export/interfaces/remote/lifecycle")
 local teleport_roster_update = require("modules/surface_export/interfaces/remote/teleport-roster")
 
--- Expose functions for direct Lua access (not just remote interface)
 RemoteInterface.export_platform = export_platform
 RemoteInterface.get_export = get_export
 RemoteInterface.list_exports = list_exports
@@ -87,16 +78,13 @@ RemoteInterface.lifecycle_verify = lifecycle.lifecycle_verify
 RemoteInterface.lifecycle_teardown = lifecycle.lifecycle_teardown
 RemoteInterface.lifecycle_leftovers = lifecycle.lifecycle_leftovers
 
--- JSON-wrapped versions for RCON access
 RemoteInterface.get_export_json = Base.json_wrap(get_export)
 RemoteInterface.list_exports_json = Base.json_wrap(list_exports)
 RemoteInterface.list_platforms_json = Base.json_wrap(list_platforms)
 RemoteInterface.get_validation_result_json = Base.json_wrap(get_validation_result)
 
---- Register all remote interface methods
 function RemoteInterface.register()
   remote.add_interface("surface_export", {
-    -- Export methods
     export_platform = export_platform,
     export_platform_to_file = export_platform_to_file,
     get_export = get_export,
@@ -107,21 +95,16 @@ function RemoteInterface.register()
     list_platforms_json = Base.json_wrap(list_platforms),
     clear_old_exports = clear_old_exports,
     
-    -- Import method
     import_platform_chunk = import_platform_chunk,
     
-    -- Configuration
     configure = configure,
     
-    -- Validation
     get_validation_result = get_validation_result,
     get_validation_result_json = Base.json_wrap(get_validation_result),
     
-    -- Platform locking
     lock_platform_for_transfer = lock_platform_for_transfer,
     unlock_platform = unlock_platform,
     
-    -- Debug/testing
     test_import_entity = test_import_entity,
     run_tests = test_runner.run_tests,
     run_tests_json = Base.json_wrap(test_runner.run_tests),
@@ -155,7 +138,6 @@ function RemoteInterface.register()
     destination_hold = destination_hold,
     destination_hold_json = Base.json_wrap(destination_hold),
 
-    -- Manifest-driven test roster (the /test-run trust anchor)
     set_test_roster = test_roster.set_test_roster,
     set_test_roster_json = Base.json_wrap(test_roster.set_test_roster),
     set_test_roster_begin = test_roster.set_test_roster_begin,
@@ -164,7 +146,6 @@ function RemoteInterface.register()
     get_test_roster_summary = test_roster.get_test_roster_summary,
     get_test_roster_summary_json = Base.json_wrap(test_roster.get_test_roster_summary),
 
-    -- Pad lifecycle transfer ends (pad-transfer-suite orchestrator, P5)
     lifecycle_setup = lifecycle.lifecycle_setup,
     lifecycle_dest_setup = lifecycle.lifecycle_dest_setup,
     lifecycle_verify = lifecycle.lifecycle_verify,

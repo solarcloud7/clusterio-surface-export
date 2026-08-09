@@ -1,17 +1,5 @@
 "use strict";
 
-/**
- * Controller export-storage eviction and durability.
- *
- * Both properties below were completely uncovered before this file: nothing exercised
- * `cleanupOldExports` or `max_storage_size`, and the only assertion on `persistStorage` anywhere was
- * the refusal path in `persistence-read-failure.test.cjs`. So "the cap works" and "what we write is
- * what we can read back" were beliefs, not tests.
- *
- * The write-count assertion is the regression guard for the ENOENT race: `cleanupOldExports` used to
- * fire an unawaited `persistStorage()` while its only caller awaited another one on the next line,
- * which collided on safeOutputFile's shared temp path once per export.
- */
 
 const { test } = require("node:test");
 const assert = require("node:assert/strict");
@@ -27,8 +15,6 @@ Module._load = function patchedLoad(request, parent, isMain) {
 	if (request === "@clusterio/lib") {
 		return {
 			escapeString: (value) => String(value),
-			// Counts AND writes: the round-trip test needs real bytes on disk, the eviction test
-			// needs to know whether a write happened at all.
 			safeOutputFile: async (file, data) => { writeCount += 1; fs.writeFileSync(file, data); },
 			wait: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
 			Counter: class {},
@@ -56,7 +42,6 @@ function makePlugin() {
 	return plugin;
 }
 
-/** Canonical `instanceId:sourceExportId` keys, so loadStorage's legacy migration path stays out of it. */
 function seed(plugin, count) {
 	for (let i = 1; i <= count; i += 1) {
 		const exportId = `1:${String(i).padStart(3, "0")}`;
@@ -68,7 +53,7 @@ function seed(plugin, count) {
 			instanceId: 1,
 			exportData: { payload: `body-${i}` },
 			exportMetrics: null,
-			timestamp: 1000 + i, // ascending: higher = newer
+			timestamp: 1000 + i,
 			size: 10,
 		});
 	}
@@ -98,22 +83,17 @@ test("eviction is a no-op when the store is at or under the cap", () => {
 });
 
 test("eviction does NOT write — its caller owns the persist", async () => {
-	// The regression guard. Restoring the fire-and-forget persistStorage() inside cleanupOldExports
-	// makes writeCount 1 here and re-opens the shared-temp-path race with the caller's own await.
 	const plugin = makePlugin();
 	seed(plugin, 5);
 	writeCount = 0;
 
 	plugin.cleanupOldExports(3);
-	// Let any unawaited promise the method might have started reach its write.
 	await new Promise(resolve => setImmediate(resolve));
 
 	assert.equal(writeCount, 0, "cleanupOldExports must not persist; handlePlatformExport does it next");
 });
 
 test("what persistStorage writes is what loadStorage reads back", async () => {
-	// The round-trip nobody was asserting. A layout change that broke read/write agreement would
-	// previously have been caught only by a live cluster losing its exports across a restart.
 	const plugin = makePlugin();
 	seed(plugin, 2);
 
@@ -137,8 +117,6 @@ test("what persistStorage writes is what loadStorage reads back", async () => {
 });
 
 test("a repeated write failure escalates instead of repeating one identical line", async () => {
-	// Before the counter, a controller that had stopped persisting entirely logged the same single
-	// line per export forever and looked exactly like one that hiccuped once.
 	const plugin = makePlugin();
 	seed(plugin, 1);
 	const errors = [];

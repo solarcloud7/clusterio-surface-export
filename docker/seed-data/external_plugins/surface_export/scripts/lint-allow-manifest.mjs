@@ -1,23 +1,4 @@
 #!/usr/bin/env node
-/**
- * lint-allow-manifest.mjs — the allow-annotations ledger guard.
- *
- * Every `*:allow` escape hatch on a data-integrity lint (lint-lua, pcall-logging, webpack-cache,
- * test-grounding) suppresses a rule that exists because of a real incident. An allow is
- * therefore an ESCALATION, not self-service (memory: lint-allows-are-escalations — an agent once
- * self-approved an allow on the source-delete spine and it survived to review by luck). This guard
- * makes every allow a REVIEWABLE ACT: the annotation must be enumerated in
- * scripts/lint-allow-manifest.json with a reason and an approver, and the manifest must match
- * reality EXACTLY — a new allow without a manifest entry fails; a stale entry whose annotation was
- * removed fails; a count drift fails. The manifest diff is what the reviewer sees.
- *
- * Scope per marker mirrors the owning lint's own scan scope (code annotations only — prose in
- * .md files that merely MENTIONS a marker, e.g. CLAUDE.md documenting the escape hatch, is not an
- * annotation).
- *
- * Run:   node scripts/lint-allow-manifest.mjs        (also: npm run lint:allow-manifest)
- * There is deliberately NO escape hatch on this guard.
- */
 
 import { readFileSync, readdirSync, statSync, existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
@@ -56,18 +37,14 @@ function mdIn(dir, recursive = false) {
 	return out;
 }
 
-// marker -> the files its owning lint actually scans (annotations only live there)
 const SCOPES = {
 	"lint-lua:allow": () => walk(join(PLUGIN_DIR, "module"), [".lua"]),
 	"pcall:allow": () => walk(join(PLUGIN_DIR, "module"), [".lua"]),
 	"lint-webpack-cache:allow": () => [join(PLUGIN_DIR, "webpack.config.js")].filter(existsSync),
 	"lint-test-grounding:allow": () => walk(join(REPO_DIR, "tests"), [".ps1", ".mjs", ".js"]),
-	// (lint-evidence-claims and lint-doc-refs were deleted with the pitfall/evidence corpus they
-	// policed; their scopes are gone too. Zero markers of either kind remain in the tree.)
 };
 
-// ---------- count reality ----------
-const actual = new Map(); // "relFile\u0000marker" -> count
+const actual = new Map();
 for (const [marker, filesOf] of Object.entries(SCOPES)) {
 	for (const file of filesOf()) {
 		const text = readFileSync(file, "utf8");
@@ -80,7 +57,6 @@ for (const [marker, filesOf] of Object.entries(SCOPES)) {
 	}
 }
 
-// ---------- load + validate the manifest ----------
 const errors = [];
 let manifest;
 try {
@@ -107,7 +83,6 @@ for (const entry of manifest.entries ?? []) {
 	listed.set(key, count);
 }
 
-// ---------- diff both directions ----------
 for (const [key, actualCount] of actual) {
 	const [file, marker] = key.split("\u0000");
 	const listedCount = listed.get(key);

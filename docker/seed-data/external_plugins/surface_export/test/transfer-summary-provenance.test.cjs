@@ -1,17 +1,5 @@
 "use strict";
 
-// getTransferSummaries merges TWO stores that are NOT equivalent, and the difference decides whether
-// a caller's transfer will actually be refused:
-//
-//   activeTransfers            in-memory. The ONLY store transferPlatform's retry guard consults
-//                              (transfer-orchestrator.ts:89-118). CLEARED by a controller restart.
-//   persistedTransactionLogs   on-disk. RELOADED at every controller boot. The guard never reads it.
-//
-// So the merged view is a strict superset of what would be refused, and the advertised remedy for a
-// colliding ID — restart the controller — clears the half that refuses and reloads the half that
-// does not. Before `registrySource`, both branches emitted identical key sets: a preflight built on
-// this query would report a collision, watch the operator correctly restart, and then report the
-// same collision forever. These tests pin the discriminator that makes the two distinguishable.
 
 const { test } = require("node:test");
 const assert = require("node:assert/strict");
@@ -63,13 +51,6 @@ function makeLogger({ active = [], persisted = [], extraRows = [], dropLedgerRow
 			startedAt: entry.startedAt || 2_000,
 		},
 	}));
-	// The historical half of the merge now reads the AUDIT LEDGER, not the detail store. Fixture rows
-	// are built with the production builder rather than hand-shaped, so this test cannot drift into
-	// pinning a row shape that `persistTransactionLog` never actually emits.
-	//
-	// `dropLedgerRows` reproduces the two ways a detail entry outlives its row in production:
-	// recordAuditRow catching an append failure (one transfer), and loadAuditIndex catching so the
-	// whole index is empty. Both are the failure paths, not hypotheticals — see the fallback tests.
 	const auditRows = dropLedgerRows ? [...extraRows] : [
 		...persistedEntries.map(entry => buildAuditRow({
 			transferId: entry.transferId,
@@ -95,8 +76,6 @@ function makeLogger({ active = [], persisted = [], extraRows = [], dropLedgerRow
 		auditRevisions: countRevisions(auditRows),
 		platformStorage: new Map(),
 		transactionLogs: new Map(),
-		// buildTransferInfo resolves display names through the platform tree for any transfer whose
-		// own *InstanceName is unset (transaction-logger.ts:28,30).
 		platformTree: { resolveInstanceName: (id) => `instance-${id}` },
 		logger: { info() {}, error() {}, warn() {} },
 	};
@@ -131,7 +110,6 @@ test("an ID in BOTH stores is stamped 'active' — active wins, and that is the 
 });
 
 test("the two branches are distinguishable in one merged result", () => {
-	// The whole point: before this field, these two entries were indistinguishable.
 	const logger = makeLogger({
 		active: [{ transferId: ACTIVE_ID }],
 		persisted: [{ transferId: PERSISTED_ID }],
@@ -142,9 +120,6 @@ test("the two branches are distinguishable in one merged result", () => {
 });
 
 test("registrySource does NOT ride on buildTransferSummary", () => {
-	// buildTransferSummary also builds the SurfaceExportTransferUpdateEvent payload, where every entry
-	// is active by construction. Stamping there would put a constant on the wire and drag the field
-	// into the event's schema contract for no information.
 	const logger = makeLogger();
 	const built = logger.buildTransferSummary("2:004_delta", {
 		platformName: "pad", sourceInstanceId: 2, targetInstanceId: 1,
@@ -157,10 +132,6 @@ test("registrySource does NOT ride on buildTransferSummary", () => {
 const LEDGER_ONLY_ID = "2:005_epsilon";
 
 test("a transfer present ONLY in the audit ledger still appears in the list", () => {
-	// THE property that makes bounding the detail store safe. Once the detail file becomes a recent
-	// window, most transfers will exist only as a ledger row — and the owner's requirement is that
-	// users can still see every transfer to satisfy themselves no duplication occurred. If this
-	// fails, trimming detail silently erases history from the UI.
 	const row = buildAuditRow({
 		transferId: LEDGER_ONLY_ID,
 		rowKind: "terminal",
@@ -176,7 +147,6 @@ test("a transfer present ONLY in the audit ledger still appears in the list", ()
 			startedAt: 5_000,
 		},
 	});
-	// persisted is empty on purpose: no detail entry exists for this transfer at all.
 	const summaries = makeLogger({ extraRows: [row] }).getTransferSummaries();
 	const summary = byId(summaries).get(LEDGER_ONLY_ID);
 
@@ -188,9 +158,6 @@ test("a transfer present ONLY in the audit ledger still appears in the list", ()
 });
 
 test("a second terminal row is visible as a revision, not silently collapsed", () => {
-	// The late-verdict path genuinely records two different verdicts for one transfer. The array
-	// format overwrote the first; append-only keeps both, and the count is how an operator sees that
-	// a verdict landed after the transfer had already settled.
 	const base = {
 		rowKind: "terminal",
 		info: { platformName: "pad", operationType: "transfer", sourceInstanceId: 2, targetInstanceId: 1, startedAt: 6_000 },
@@ -208,10 +175,6 @@ test("a second terminal row is visible as a revision, not silently collapsed", (
 });
 
 test("a terminal row is never buried by a start row that lands after it", () => {
-	// Fold order is NOT file position. Transfer IDs are reused — transferPlatform replaces a failed
-	// record under the same ID, and the gallery batch suites reset the Lua counter and regenerate
-	// identical IDs — so a stale start row can legitimately appear after a terminal one. Position
-	// last-wins would report a finished transfer as still starting.
 	const shared = { transferId: "2:007_eta", info: { platformName: "pad", sourceInstanceId: 2, targetInstanceId: 1 } };
 	const terminal = buildAuditRow({ ...shared, rowKind: "terminal", savedAt: 7_000, eventCount: 4, lastEventAt: 7_010,
 		info: { ...shared.info, status: "completed", startedAt: 7_000 } });
@@ -224,9 +187,6 @@ test("a terminal row is never buried by a start row that lands after it", () => 
 });
 
 test("a start-only transfer reports ZERO recorded verdicts, not one", () => {
-	// `revisions` defaulted to 1, which was correct only while every indexed row was terminal — an
-	// invariant start rows break. A transfer interrupted before any verdict claimed to have recorded
-	// one, contradicting the field's own meaning and hiding exactly the case start rows expose.
 	const started = buildAuditRow({
 		transferId: "2:008_theta",
 		rowKind: "start",
@@ -242,16 +202,8 @@ test("a start-only transfer reports ZERO recorded verdicts, not one", () => {
 	assert.equal(summary.revisions, 0, "no terminal row means no verdict was ever recorded");
 });
 
-// ── Detail-store fallback ────────────────────────────────────────────────────
-// Reading the historical half from the ledger made a ledger failure erase history the controller
-// still physically holds. Both failure paths log and return rather than throwing, so neither is
-// visible to any other assertion in this suite — they are only reachable through these fixtures.
 
 test("a transfer whose LEDGER ROW FAILED TO WRITE is still listed", () => {
-	// recordAuditRow catches append failures and returns, while persistTransactionLog goes on to write
-	// the detail entry. That transfer therefore exists on disk with no row. It stayed visible only
-	// while it was in activeTransfers; once pruneOldTransfers evicted it, it vanished from the list
-	// entirely — a completed transfer with a full detail entry, reported as if it never happened.
 	const summaries = makeLogger({
 		persisted: [{ transferId: PERSISTED_ID, status: "completed" }],
 		dropLedgerRows: true,
@@ -265,10 +217,6 @@ test("a transfer whose LEDGER ROW FAILED TO WRITE is still listed", () => {
 });
 
 test("an EMPTY audit index falls back to the whole detail window", () => {
-	// loadAuditIndex's catch installs an empty Map. Most reachably that fires on migrateAuditLedger's
-	// WRITE failing — loadAuditLedger already tolerates a missing file and damaged lines by itself.
-	// Before the fallback the tab showed nothing but in-flight transfers while a full detail store sat
-	// on disk, and the error message said "the detail store is untouched", which read as reassurance.
 	const summaries = makeLogger({
 		persisted: [
 			{ transferId: "2:010_kappa", startedAt: 10_000 },
@@ -282,10 +230,6 @@ test("an EMPTY audit index falls back to the whole detail window", () => {
 });
 
 test("the LEDGER still wins where the two disagree", () => {
-	// The fallback must stay a safety net, not a second source of truth. If the passes were reordered
-	// — or the fallback stopped checking byId — the detail store would start overriding the ledger,
-	// and #166's guarantee (trim the detail store, the transfer still appears correctly) would invert
-	// into the detail store silently outranking the permanent record.
 	const ledgerRow = buildAuditRow({
 		transferId: "2:012_mu",
 		rowKind: "terminal",
@@ -306,8 +250,6 @@ test("the LEDGER still wins where the two disagree", () => {
 });
 
 test("a LEDGER-ONLY transfer — trimmed out of the detail window — is still listed", () => {
-	// The normal steady state once retention runs, and the reason the ledger exists. Asserted here so
-	// the fallback cannot be "fixed" by making the detail store authoritative again.
 	const trimmed = buildAuditRow({
 		transferId: "2:013_nu",
 		rowKind: "terminal",

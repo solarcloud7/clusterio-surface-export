@@ -1,12 +1,6 @@
--- Remote Interface: list_platforms
--- List all available platforms for a given force as structured data.
-
 local SurfaceLock = require("modules/surface_export/utils/surface-lock")
 local GameUtils = require("modules/surface_export/utils/game-utils")
 
---- List all available platforms for a force.
---- @param force_name string|nil: Force name (defaults to "player")
---- @return table: Array of platform metadata
 local function list_platforms(force_name)
   local force = game.forces[force_name or "player"]
   if not force then
@@ -27,8 +21,6 @@ local function list_platforms(force_name)
         surface_name = surface.name
         entity_count = #surface.find_entities_filtered({})
       end
-      -- Transferability signal via LuaSpacePlatform.hub (name-agnostic) — single source of truth shared with
-      -- the export gate (GameUtils.platform_has_hub in export-pipeline.lua ExportPipeline.queue).
       has_space_hub = GameUtils.platform_has_hub(platform)
 
       local space_location_name = nil
@@ -36,7 +28,6 @@ local function list_platforms(force_name)
         space_location_name = platform.space_location.name
       end
 
-      -- Read destination from schedule (platform.current_target does NOT exist on LuaSpacePlatform)
       local current_target_name = nil
       local ok_sched, schedule = pcall(function() return platform.schedule end)
       if not ok_sched then
@@ -51,7 +42,6 @@ local function list_platforms(force_name)
 
       local flight_data = storage.platform_flight_data and storage.platform_flight_data[platform.name]
 
-      -- CRITICAL: Space platforms use defines.space_platform_state, NOT defines.train_state
       local platform_state = nil
       local ok_state, state_val = pcall(function() return platform.state end)
       if not ok_state then

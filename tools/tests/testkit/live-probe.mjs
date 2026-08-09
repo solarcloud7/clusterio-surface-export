@@ -1,13 +1,3 @@
-// testkit / probe — read one property off one live entity, by position, in one command.
-//
-// This exact operation was hand-written as an inline /sc snippet FIVE times in one working day
-// (pad census, anchor resolution ×2, property-path walk, multi-match count) before becoming a
-// command. Per the one-truth ruling: a repeated manual op becomes a testkit command, never a fresh
-// snippet — the lazy path and the right path must be the same path.
-//
-// Read-only. Same property-walk rules as the lifecycle engine's `property` read (identifier-only
-// segments, depth cap, indexing only, throw≠nil distinguished) so what probe reports is what a
-// fixture's declared verify would see.
 import { lua } from "../../../tests/lab-gallery/batch-lifecycle.mjs";
 import { resolvePlatformIndex } from "./export-inspect.mjs";
 
@@ -15,11 +5,6 @@ const IDENT = /^[A-Za-z_][A-Za-z0-9_]*(\.[A-Za-z_][A-Za-z0-9_]*)*$/;
 const PROTO = /^[A-Za-z0-9_-]+$/;
 const MAX_DEPTH = 8;
 
-/**
- * Parse "entity@x,y:dotted.path" (the same target syntax `inspect --field` uses).
- * Exported for tests: these checks are a trust boundary — the values are spliced into a Lua
- * string, so the charsets are what make injection unrepresentable, not a guard someone remembers.
- */
 export function parseTarget(spec) {
 	const m = String(spec).match(/^([^@]+)@(-?[\d.]+),(-?[\d.]+):(.+)$/);
 	if (!m) throw new Error('target must look like  heat-pipe@43,-13:temperature');
@@ -32,11 +17,6 @@ export function parseTarget(spec) {
 	return { entity, x, y, path };
 }
 
-/**
- * Probe the live cluster: find the single `entity` within ±0.6 of (x,y) on `platform` and walk
- * `path`. Returns { value } or throws with the same fail-loud distinctions the engine makes
- * (no match / ambiguous / threw / nil / non-scalar) — a probe that guesses is a probe that lies.
- */
 export function probeProperty({ platform, target, host = 1, force = "player" }) {
 	const { entity, x, y, path } = parseTarget(target);
 	const index = resolvePlatformIndex(host, platform, force);

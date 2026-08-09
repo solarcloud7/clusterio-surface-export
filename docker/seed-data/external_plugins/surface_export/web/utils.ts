@@ -1,9 +1,7 @@
-
 import type { JsonObject, LogEvent, TransferSummary } from "./view-models";
 import type { GanttRow, TimelineAttribution } from "./view-models";
 import { buildTransferTimeline, toGanttGeometry, type TimelineEventInput } from "../shared/transfer-timeline";
 
-// Type-safe helpers for accessing JsonObject properties
 function getString(obj: JsonObject, key: string, fallback: string): string;
 function getString(obj: JsonObject, key: string, fallback?: null): string | null;
 function getString(obj: JsonObject, key: string, fallback: string | null = null): string | null {
@@ -31,8 +29,6 @@ export function getProp<T>(obj: object | null | undefined, key: string, fallback
 	return val !== undefined && val !== null ? (val as T) : fallback;
 }
 
-// Single source in the shared (Node + web) module — see shared-utils.ts (task #97). Re-exported so web
-// call sites keep importing it from "./utils".
 export { getErrorMessage } from "../shared/utils";
 
 export function statusColor(status: string) {
@@ -130,8 +126,6 @@ export function formatSigned(value: number | null, maxFractionDigits = 1) {
 	return `${sign}${value.toLocaleString(undefined, { maximumFractionDigits: maxFractionDigits })}`;
 }
 
-// Ordered operation count definitions — merged export+import, displayed in combined table.
-// "source" indicates which data object the field comes from: "export" or "import".
 export const OPERATION_COUNT_DEFINITIONS = [
 	{ key: "exportedEntityCount",        source: "export", label: "Entities" },
 	{ key: "exportedTileCount",          source: "export", label: "Tiles" },
@@ -155,8 +149,6 @@ export function buildOperationCountRows(exportData: JsonObject | null | undefine
 	return rows;
 }
 
-// Thin wrapper over shared/transfer-timeline.ts: attaches the shared bar geometry and a
-// render-unique key. Assembly rules, palette and wording all live in the shared module.
 export function buildGanttRows(events: Array<LogEvent>, detailedSummary: JsonObject | null): {
 	totalMs: number; rows: GanttRow[]; attribution: TimelineAttribution;
 } {
@@ -345,8 +337,6 @@ export function buildFluidInventoryRows(expectedMap: Record<string, number> | nu
 		const hasThermalData = expEnergy > 0;
 
 		if (category === "High-temp" && reconciledHighTemp && hasThermalData) {
-			// High-temp with thermal energy: single row with icon+name + thermal energy values.
-			// "High-temp (V×T)" label replaces the redundant volume aggregate row.
 			const energyDelta = actEnergy - expEnergy;
 			const energyPrecision = expEnergy > 0 ? (actEnergy / expEnergy) * 100 : 100;
 			rows.push({
@@ -364,7 +354,6 @@ export function buildFluidInventoryRows(expectedMap: Record<string, number> | nu
 				reconciled: true,
 			});
 		} else if (group.buckets.length === 1) {
-			// Single bucket — flat row: icon + name + temperature inline
 			const bucket = group.buckets[0];
 			const absDelta = Math.abs(bucket.delta);
 			let status;
@@ -387,7 +376,6 @@ export function buildFluidInventoryRows(expectedMap: Record<string, number> | nu
 				reconciled: category === "High-temp" ? reconciledHighTemp : absDelta <= 0.0001,
 			});
 		} else {
-			// Multiple normal-temp buckets — aggregate row + per-bucket rows
 			const groupStatus = Math.abs(delta) <= 0.0001 ? "Match" : "Mismatch";
 			rows.push({
 				key: `fluid:group:${group.baseName}`,
@@ -424,11 +412,9 @@ export function buildFluidInventoryRows(expectedMap: Record<string, number> | nu
 	}
 
 	rows.sort((a, b) => {
-		// Keep thermal child rows immediately after their group row
 		if (a.isThermalSummary || (!a.isGroup && !a.isThermalSummary)) return 0;
 		return Math.abs(b.delta) - Math.abs(a.delta) || a.name.localeCompare(b.name);
 	});
-	// Stable sort: group rows first by delta, then thermal/bucket rows follow their group
 	const grouped = [];
 	const seen = new Set();
 	const allGroupKeys = rows.filter(r => r.isGroup).map(r => r.name);

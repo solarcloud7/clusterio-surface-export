@@ -1,25 +1,3 @@
--- surfexp_gateways — surfaceless "gateway" space-locations for the surface_export plugin.
---
--- Modeled EXACTLY on vanilla space-age `solar-system-edge` (a parkable, surfaceless
--- space-location): no `surface`/`map_gen` (so no surface is generated), and crucially NO
--- `fly_condition` — so a platform that routes here reaches a stable `waiting_at_station`
--- (it PARKS) instead of flying by. The neighbouring `shattered-planet` sets `fly_condition = true`,
--- which is the fly-by tell; we deliberately omit it. Verified empirically in Phase 0.
---
--- Shipped LOCKED (no unlocking technology). The save-patched surface_export module unlocks each
--- gateway per-force at runtime via `force.unlock_space_location(name)`. This is a PURE DATA-STAGE
--- mod — there is no control.lua; all gateway logic lives in the plugin module.
-
--- The MULTI-CLUSTER set: one portal colour per gateway, so a destination is identifiable at a glance
--- rather than by reading the label. This list is the single source of the NUMBERED gateway count —
--- there is no second literal that can drift from it. (The single `surfexp_gateway_hub` below is a
--- separate set, not a fifth colour; see its comment.)
---
--- It does NOT guarantee the art exists: adding a colour here adds a gateway that references
--- graphics/icons/gateway-<colour>.png AND starmap-gateway-<colour>.png AND needs two locale.cfg
--- entries — and nothing checks any of the three, since the build script only zips. Add them
--- together. The 64px icon is derived from the 512px one by tools/surface-export/downscale-icon.mjs.
--- Shipped mapping: 1=blue, 2=green, 3=orange, 4=purple.
 local GATEWAY_COLOURS = { "blue", "green", "orange", "purple" }
 local GATEWAY_COUNT = #GATEWAY_COLOURS
 
@@ -31,25 +9,16 @@ for i, colour in ipairs(GATEWAY_COLOURS) do
 	locations[#locations + 1] = {
 		type = "space-location",
 		name = name,
-		-- The vanilla two-icon split, copied from space-age's own planets: `icon` (64px, icon_size
-		-- defaults to 64) is what the schedule/station picker, tooltips and item lists render, while
-		-- `starmap_icon` (512px) is what the starmap draws. Shipping only the 512 would put a 512px
-		-- texture in the icon atlas for every list row; shipping only the 64 would leave the starmap
-		-- upscaling a thumbnail. Sizes are not free-form — a mismatch against the actual PNG is a
-		-- hard data-stage load error.
 		icon = "__surfexp_gateways__/graphics/icons/gateway-" .. colour .. ".png",
 		starmap_icon = "__surfexp_gateways__/graphics/icons/starmap-gateway-" .. colour .. ".png",
 		starmap_icon_size = 512,
 		subgroup = "planets",
 		order = "z[surfexp-gateway]-" .. i,
 		gravity_pull = -10,
-		-- Star-map placement only (cosmetic). Spread around an empty ring near the system edge.
 		distance = 45,
 		orientation = (i - 1) / GATEWAY_COUNT + 0.05,
 		magnitude = 1.0,
 		label_orientation = 0.15,
-		-- NO fly_condition              -> a routed platform PARKS here (the transfer trigger).
-		-- NO asteroid_spawn_definitions  -> a safe, asteroid-free gateway route.
 	}
 	connections[#connections + 1] = {
 		type = "space-connection",
@@ -58,44 +27,25 @@ for i, colour in ipairs(GATEWAY_COLOURS) do
 		from = "nauvis",
 		to = name,
 		order = "z[surfexp-gateway]-" .. i,
-		-- Short hop. Vanilla nauvis->planet is 15000; aquilo->solar-system-edge is 100000.
 		length = 3000,
 	}
 end
 
--- ── The single gate, for "1 Gate Cluster" mode ───────────────────────────────
--- Declared OUTSIDE the colour loop on purpose: it is not a fifth member of the numbered set, it is
--- the whole gateway set of a different cluster mode. Exactly one of the two sets is unlocked at
--- runtime (the plugin pushes the active names and Gateway.discover_and_unlock filters by them), so a
--- 1-gate cluster shows this alone on the starmap and a multi-gate cluster shows only 1..4.
---
--- THE NAME MUST KEEP THE `surfexp_gateway_` PREFIX. Gateway.is_gateway compares
--- `name:sub(1, #Gateway.PREFIX)` (module/core/gateway.lua), and Lua's `sub` CLAMPS rather than
--- failing — so a shorter name like "surfexp_gate" returns itself, the compare fails, and the
--- location becomes invisible to unlocking, to arrival detection and to the transfer trigger alike.
--- It would render perfectly on the starmap and do nothing at all.
 local HUB_NAME = "surfexp_gateway_hub"
 
 locations[#locations + 1] = {
 	type = "space-location",
 	name = HUB_NAME,
-	-- gateway-hub.png is DERIVED from starmap-gateway-hub.png by tools/surface-export/downscale-icon.mjs
-	-- (alpha-weighted 8:1 area average). Regenerate it with that script rather than by hand if the art
-	-- changes — `--verify` checks the reduction against the four committed colour pairs.
 	icon = "__surfexp_gateways__/graphics/icons/gateway-hub.png",
 	starmap_icon = "__surfexp_gateways__/graphics/icons/starmap-gateway-hub.png",
 	starmap_icon_size = 512,
 	subgroup = "planets",
-	-- Sorts BEFORE the numbered gateways: in one-gate mode it is the only gate there is.
 	order = "z[surfexp-gateway]-0",
 	gravity_pull = -10,
 	distance = 45,
-	-- Its own slice of the ring, clear of the four numbered gateways' orientations (0.05, 0.30,
-	-- 0.55, 0.80) so the two sets do not overlap on the starmap when both are installed.
 	orientation = 0.925,
 	magnitude = 1.0,
 	label_orientation = 0.15,
-	-- NO fly_condition -> a routed platform PARKS here, same as the numbered gateways.
 }
 
 connections[#connections + 1] = {
@@ -111,15 +61,6 @@ connections[#connections + 1] = {
 data:extend(locations)
 data:extend(connections)
 
--- ============================================================================
--- Selection Lab tool — drag-select debug instrument for the surface_export module.
--- Prototype ONLY (this mod stays data-stage); all four handlers live in the save-patched
--- module (interfaces/gui/selection-lab.lua), gated on debug_mode:
---   select              = CAPTURE selection via the real export serializer (RAM only)
---   alt_select          = APPLY capture via the real import restores (in place)
---   reverse_select      = PREVIEW: highlight ONLY blocks an apply would overwrite/conflict
---   alt_reverse_select  = CLEAR selected belts' transport lanes
--- ============================================================================
 local lab_select = function(color)
 	return {
 		border_color = color,
@@ -139,10 +80,10 @@ data:extend({
 		order = "z[selection-lab-tool]",
 		stack_size = 1,
 		flags = { "only-in-cursor", "spawnable", "not-stackable" },
-		select = lab_select({ r = 0.25, g = 0.75, b = 1 }),          -- capture: blue
-		alt_select = lab_select({ r = 0.35, g = 1, b = 0.35 }),      -- apply: green
-		reverse_select = lab_select({ r = 1, g = 0.75, b = 0.25 }),  -- preview: orange
-		alt_reverse_select = lab_select({ r = 1, g = 0.3, b = 0.3 }),-- clear lanes: red
+		select = lab_select({ r = 0.25, g = 0.75, b = 1 }),
+		alt_select = lab_select({ r = 0.35, g = 1, b = 0.35 }),
+		reverse_select = lab_select({ r = 1, g = 0.75, b = 0.25 }),
+		alt_reverse_select = lab_select({ r = 1, g = 0.3, b = 0.3 }),
 	},
 	{
 		type = "shortcut",
@@ -154,10 +95,6 @@ data:extend({
 		small_icon = "__base__/graphics/icons/blueprint.png",
 		small_icon_size = 64,
 	},
-	-- Selection Lab undo/redo hotkeys. Bound to CONTROL+ALT (unbound in vanilla) rather than
-	-- CONTROL+SHIFT: vanilla Redo defaults to BOTH "CONTROL + Y" and "CONTROL + SHIFT + Z", so the
-	-- former CONTROL+SHIFT+Z lab-undo binding collided with vanilla Redo and fired lab undo on a normal
-	-- build-redo keystroke. CONTROL+ALT+Z / CONTROL+ALT+Y do not collide with any vanilla default.
 	{
 		type = "custom-input",
 		name = "selection-lab-undo",

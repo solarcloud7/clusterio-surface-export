@@ -1,6 +1,3 @@
--- Command: /lock-status
--- Show status of locked platforms
-
 local Base = require("modules/surface_export/interfaces/commands/base")
 local SurfaceLock = require("modules/surface_export/utils/surface-lock")
 
@@ -9,7 +6,6 @@ Base.admin_command("lock-status",
   function(cmd, ctx)
     local param = ctx.param
     
-    -- If no parameter and player is on a platform, show that platform's status
     if (not param or param == "") and ctx.player then
       local surface = ctx.player.surface
       if surface and surface.platform then
@@ -18,17 +14,13 @@ Base.admin_command("lock-status",
       end
     end
     
-    -- Check if any locks exist
     if not storage.locked_platforms or next(storage.locked_platforms) == nil then
       ctx.print("No platforms are currently locked")
       ctx.print("Use /lock-platform <name> to lock a platform")
       return
     end
     
-    -- If specific platform requested
     if param and param ~= "" then
-      -- Resolve the user input (name or index) to the unique platform index (the registry key), failing loud
-      -- on an ambiguous name (≥2 platforms/locks share it).
       local lock_key, err = Base.resolve_lock_key(ctx.force, param)
       if err then ctx.print(err); return end
       local lock_data = lock_key and SurfaceLock.get_lock_data(lock_key)
@@ -50,7 +42,6 @@ Base.admin_command("lock-status",
       return
     end
     
-    -- List all locked platforms
     ctx.print("Locked platforms:")
     local count = 0
     for platform_index, lock_data in pairs(storage.locked_platforms) do

@@ -1,20 +1,4 @@
 #!/usr/bin/env node
-// testkit CLI — the one-shot front door.
-//
-//   node tools/tests/testkit/cli.mjs check                      # static referential integrity (no cluster)
-//   node tools/tests/testkit/cli.mjs check --live               # + anchors resolve against a real payload
-//   node tools/tests/testkit/cli.mjs inspect <platform>         # payload summary + record types
-//   node tools/tests/testkit/cli.mjs inspect <platform> --field <name>@<x>,<y>:<dotted.path>
-//   node tools/tests/testkit/cli.mjs blackbox explain <bundle.json> [--json]   # offline forensics
-//   node tools/tests/testkit/cli.mjs log <transferId|latest> --field <dotted.path>   # transaction log
-//   node tools/tests/testkit/cli.mjs log <transferId|latest> --list                  # what logs exist
-//   node tools/tests/testkit/cli.mjs log dump <host> <name-or-glob> --field <path>   # instance debug_* dump
-//   node tools/tests/testkit/cli.mjs log --from-file <store.json> <id> --field <path>  # offline
-//
-// Exit codes: 0 clean, 1 findings, 2 usage/operational error. `blackbox explain` exits 0 whenever
-// the bundle DECODED — the failure is the bundle's content, not a finding about the repo.
-// `log` NEVER exits 1: it makes no finding about the repo, so a path that does not resolve is exit 2
-// AND NAMES THE REAL PATH. An empty answer for a mistyped path is the failure it exists to prevent.
 import { testkit } from "./index.mjs";
 import { probeProperty } from "./live-probe.mjs";
 import { explainBlackBoxFile, formatExplanation } from "./blackbox-explain.mjs";
@@ -62,8 +46,6 @@ async function cmdInspect() {
 		const result = inspector.field({ entity, x: Number(x), y: Number(y) }, path);
 		console.log("\n" + JSON.stringify(result, null, 2));
 		if (result.inPayload === false) {
-			// A wrong query path and a real omission look identical unless we say so. Only claim loss
-			// when the field is not reachable by ANY route on this record.
 			if (result.pathHints && result.pathHints.length > 0) {
 				console.log(`\nNot at "${result.fieldPath}" — but this field EXISTS at: ${result.pathHints.join(", ")}`);
 				console.log("Your query path is wrong; the payload is fine. Re-run against the path above.");
@@ -109,20 +91,7 @@ async function cmdBlackbox() {
 	process.exit(0);
 }
 
-// `log` is a QUERY-PATH ORACLE, not a log viewer. Its entire value is what it does when the path is
-// WRONG: exit 2 and name the real path. A wrong path used to return an empty value, which reads as
-// "the field is absent", which reads as "the feature is broken" — that chain produced a false
-// conclusion about the transaction log in one session. Hence: NEVER exit 1 here, and never exit 0 on
-// anything but a resolved value.
-//
-// `dump` is a SUB-VERB rather than a --dump flag because the two address spaces are different: the
-// store is keyed by transferId, a dump by (host, kind, platform, tick). `log latest --dump 2` would
-// have no defensible meaning, and an argv shape that means two things is how a wrong address gets a
-// plausible answer.
 async function cmdLog() {
-	// Positionals must exclude flag VALUES, not just the flags. The other commands here filter with a
-	// bare `!a.startsWith("--")`, which is fine for them because none takes a positional AFTER a
-	// value-flag — `log` does, and `--from-file <path> latest` silently made the PATH the selector.
 	const VALUE_FLAGS = new Set(["--field", "--from-file"]);
 	const positionals = [];
 	for (let i = 0; i < rest.length; i++) {
@@ -191,8 +160,6 @@ async function cmdLog() {
 		console.log(JSON.stringify({ ok: true, query: field, transferId: entry.transferId, value: result.value }, null, 2));
 		process.exit(0);
 	}
-	// The header is load-bearing: without it, a correct-looking value from the WRONG record is
-	// indistinguishable from the right answer.
 	console.log(logq.describeEntry(entry, index, store.length));
 	console.log(logq.formatValue(field, result.value));
 	process.exit(0);

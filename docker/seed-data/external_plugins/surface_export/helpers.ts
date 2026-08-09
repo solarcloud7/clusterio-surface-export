@@ -1,102 +1,38 @@
-/**
- * @file helpers.ts
- * @description Helper functions for chunked RCON data transfer with hybrid escaping
- */
-
-
 import { escapeString as libEscapeString } from "@clusterio/lib";
 import type { ExportData, ExportVerification, ImportMetrics, PhaseSpan } from "./messages";
 
-/**
- * The plugin name, and the prefix of every config key. Exported from here because it was being
- * re-declared as a local const in controller.ts, index.ts, messages.ts and transaction-logger.ts —
- * four independent edit sites for one rename, where a missed one yields a config key that resolves
- * to nothing at RUNTIME rather than failing to compile.
- */
 export const PLUGIN_NAME = "surface_export";
 
 export const TICKS_TO_MS = 16.67;
 export const RCON_CHUNK_SIZE = 100_000;
 export const EXPORT_POLL_TIMEOUT_MS = 30_000;
 export const EXPORT_POLL_INTERVAL_MS = 500;
-/**
- * Default + floor + CEILING for `surface_export.transfer_validation_timeout_seconds` (declared in
- * index.ts; read PER-ARM by the orchestrator, so a settings change applies to the next transfer
- * with no restart). Default 30 s (owner ruling); floor 5 s so a typo cannot make every transfer
- * insta-timeout. THE CEILING'S HONEST MECHANISM (corrected by the reconciliation review — the
- * first version claimed the lock "TTL-expires mid-wait" past 120 s, which surface-lock.lua's own
- * numbers refute: the TTL is 600 s): 120 s is the validation SHARE that surface-lock.lua's derived
- * worst-case TTL floor budgets (VALIDATION_TIMEOUT_TICKS = 7200, one component of the 320 s floor
- * under the 600 s TTL). Nothing links the live setting back to those Lua constants, so a window
- * above the budgeted share consumes TTL slack the floor's derivation does not account for — the
- * cap keeps the floor's math honest rather than guarding an imminent expiry. (An uncapped value
- * would also overflow setTimeout past ~2^31 ms, which Node clamps to 1 ms — every transfer would
- * insta-fail.) Operational consequence, stated plainly: an import that genuinely needs more than
- * 120 s times out on every attempt under this cap; if its destination then completes late, the
- * transfer is re-marked cleanup_failed (leftover accounted, retries refused) — the handshake
- * epic's hold-gated go-live is the real fix for imports that slow. With the late-verdict status
- * guard, an undersized timeout costs a spurious rollback (fail ⇒ revert, source preserved) —
- * never a silent duplicate.
- */
 export const DEFAULT_VALIDATION_TIMEOUT_SECONDS = 30;
 export const MIN_VALIDATION_TIMEOUT_SECONDS = 5;
 export const MAX_VALIDATION_TIMEOUT_SECONDS = 120;
 export const STORAGE_FILENAME = "surface_export_storage.json";
 
-// getErrorMessage + generateOperationId live in the shared (Node + web) module so they aren't duplicated
-// across helpers.ts and web/utils.ts (task #97). Re-export so existing `.../helpers` call sites keep working.
 export { getErrorMessage, generateOperationId, makeCanonicalTransferId, parseCanonicalTransferId } from "./shared/utils";
 
-/**
- * True when `err` is a Clusterio session-loss rejection (`@clusterio/lib` `SessionLost`, which sets
- * `code = "SessionLost"` and a "Session Lost"/"Session Closed" message). A pending request rejects with
- * this when the controller↔host link drops — see `@clusterio/lib` `link.ts` `_clearPendingRequests`.
- *
- * Duck-typed on `.code` rather than `instanceof SessionLost` on purpose: this repo can end up with a
- * second copy of `@clusterio/lib` in a plugin's node_modules (CLAUDE.md Pitfalls #12/#26), and an
- * `instanceof` against the wrong copy would silently return false. The `.code` string is stable.
- *
- * Load-bearing for the transfer two-phase commit: a SessionLost on the import send is AMBIGUOUS — the
- * destination may already have started importing — so the source must NOT be unlocked (that would leave a
- * live source coexisting with the destination copy = duplication).
- */
 export function isSessionLostError(err: unknown): boolean {
 	return typeof err === "object" && err !== null
 		&& (err as { code?: unknown }).code === "SessionLost";
 }
 
-/**
- * Unlock responses that mean "there was nothing locked" — benign for every rollback caller, because
- * a rollback's goal is an unlocked source and an already-unlocked source IS that goal. ONE
- * definition, shared by the controller's sendUnlockRequest and the instance's refusal path: review
- * caught the instance-side check treating these as failures and logging "the source-side TTL
- * remains the backstop" for a stranded lock that did not exist.
- */
 export function isBenignUnlockError(text: string): boolean {
 	return /platform not locked|no locked platforms/i.test(text);
 }
 
-/**
- * Convert a value to a finite number, returning null for non-finite values.
- */
 export function toFiniteNumber(value: unknown): number | null {
 	const numeric = Number(value);
 	return Number.isFinite(numeric) ? numeric : null;
 }
 
-/**
- * Coerce a value to an integer platform index, or null if it isn't a valid integer. The single
- * "is this a usable platform index?" guard shared by the index-keyed source-delete / unlock paths.
- */
 export function coercePlatformIndex(value: unknown): number | null {
 	const numeric = Number(value);
 	return Number.isInteger(numeric) ? numeric : null;
 }
 
-/**
- * Normalize raw export metrics from Lua (which may use old or new field names)
- * to the canonical camelCase schema expected by the controller and web UI.
- */
 export function normalizeExportMetrics(raw: Record<string, unknown> | null | undefined): Record<string, number> {
 	if (!raw || typeof raw !== "object") {
 		return {};
@@ -169,9 +105,6 @@ export interface FactorioInstance {
 }
 
 
-/**
- * Split data into chunks for RCON transfer.
- */
 export function chunkify(chunkSize: number, data: string): string[] {
 	const chunks: string[] = [];
 	for (let i = 0; i < data.length; i += chunkSize) {
@@ -180,14 +113,6 @@ export function chunkify(chunkSize: number, data: string): string[] {
 	return chunks;
 }
 
-/**
- * Send large JSON data in chunks with progress reporting.
- *
- * Template placeholders:
- *   %CHUNK% - replaced with chunk data (escaped or raw)
- *   %INDEX% - replaced with chunk index (1-based)
- *   %TOTAL% - replaced with total chunk count
- */
 export async function sendChunkedJson(
 	instance: FactorioInstance,
 	luaTemplate: string,
@@ -224,15 +149,6 @@ export async function sendChunkedJson(
 			.replace(/%INDEX%/g, index.toString())
 			.replace(/%TOTAL%/g, total.toString());
 
-		// NO expectEmpty flag: the template prints a status token, and sendRcon(cmd, true) treats ANY
-		// output as a protocol error (measured: it failed the transfer on the healthy "JOB_QUEUED"
-		// reply while the Lua import kept running — a spurious controller-side rollback against a
-		// live import). Instead enforce the remote's STRICT reply protocol: exactly one CHUNK_OK: or
-		// JOB_QUEUED: token per chunk. Anything else — the remote's own "ERROR:<reason>", a raw Lua
-		// runtime error ("Cannot execute command. ..."), or an empty reply — throws. This keeps the
-		// old expectEmpty flag's full detection strength (a Lua THROW never prints the token) while
-		// accepting the healthy tokens, and a queue failure on the FINAL chunk can no longer be
-		// logged over with a success line (the swallowed-response bug behind the silent dead import).
 		const response = await instance.sendRcon(`/sc ${command}`);
 		const reply = typeof response === "string" ? response.trim() : "";
 		if (!reply.startsWith("CHUNK_OK:") && !reply.startsWith("JOB_QUEUED:")) {
@@ -253,9 +169,6 @@ export async function sendChunkedJson(
 	);
 }
 
-/**
- * Compute payload metrics from stored export data.
- */
 export function buildPayloadMetrics(exportData: ExportData | Record<string, unknown> | null | undefined) {
 	const verification = (exportData?.verification || {}) as ExportVerification;
 	const itemCounts = (verification.item_counts || {}) as Record<string, number>;
@@ -281,9 +194,6 @@ export function buildPayloadMetrics(exportData: ExportData | Record<string, unkn
 	};
 }
 
-/**
- * Convert Lua tick-based import metrics to milliseconds.
- */
 export function buildImportMetrics(raw: Record<string, unknown> | null | undefined, durationTicks: number | null = null): ImportMetrics | null {
 	if (!raw && durationTicks === null) return null;
 	const input = (raw && typeof raw === "object" ? raw : {}) as Record<string, unknown>;
@@ -298,10 +208,7 @@ export function buildImportMetrics(raw: Record<string, unknown> | null | undefin
 		result[f + "_ms"] = Math.round(ticks * TICKS_TO_MS);
 	}
 	for (const f of countFields) result[f] = Number(input[f] || 0);
-	// Builder uses dynamic keys, so the loose Record is the one legitimate place to cast through
-	// unknown. Consumers still get field-typed (typo-catching) access via the ImportMetrics interface.
 	const metrics = result as unknown as ImportMetrics;
-	// Waterfall trace: map Lua snake_case phase spans → camelCase. Absent on legacy logs.
 	if (Array.isArray(input.phase_spans)) {
 		const spans: PhaseSpan[] = [];
 		for (const entry of input.phase_spans) {

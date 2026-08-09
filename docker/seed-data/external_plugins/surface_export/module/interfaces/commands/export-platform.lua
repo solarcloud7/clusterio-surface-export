@@ -1,18 +1,13 @@
--- Command: /export-platform
--- Export a platform to JSON (async)
-
 local Base = require("modules/surface_export/interfaces/commands/base")
 local AsyncProcessor = require("modules/surface_export/core/async-processor")
 
 Base.admin_command("export-platform",
   "Export a platform to JSON (async). Usage: /export-platform [platform_index] [destination_instance_id]",
   function(cmd, ctx)
-    -- Parse parameters: platform_index [destination_instance_id]
     local params = Base.parse_params(ctx.param)
     local platform_index = tonumber(params[1])
     local destination_instance_id = tonumber(params[2])
     
-    -- Platform detection logic
     if not platform_index then
       if not ctx.player then
         ctx.print("Error: Platform index required when using RCON. Usage: /export-platform <platform_index> [destination_instance_id]")
@@ -46,7 +41,6 @@ Base.admin_command("export-platform",
       return
     end
     
-    -- Queue async export with optional destination
     local force_name = ctx.force.name
     local job_id, queue_err = AsyncProcessor.queue_export(
       platform_index,
@@ -64,7 +58,7 @@ Base.admin_command("export-platform",
       end
       log(string.format("[INFO] %s", message))
       if ctx.player then
-        game.print(message, {1, 1, 0})  -- Yellow
+        game.print(message, {1, 1, 0})
       else
         ctx.print("QUEUED:" .. job_id)
       end

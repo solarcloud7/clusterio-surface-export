@@ -36,8 +36,6 @@ export default function ImportModal({ open, onClose, plugin, state }: ImportModa
 	const instanceOptions = useMemo(() => {
 		const tree = state.tree;
 		if (!tree) return [];
-		// Label carries the game port for the same reason the platform table does: instance names
-		// differ by a single digit here, and the port is what actually tells them apart.
 		const label = (inst: { instanceName: string; gamePort: number | null }) =>
 			(inst.gamePort ? `${inst.instanceName} :${inst.gamePort}` : inst.instanceName);
 		const nodes: Array<{ label: string; value: number }> = [];
@@ -52,8 +50,6 @@ export default function ImportModal({ open, onClose, plugin, state }: ImportModa
 		return nodes.sort((a, b) => a.label.localeCompare(b.label));
 	}, [state.tree]);
 
-	// Was a literal ["aquilo", "fulgora", "gleba", "nauvis", "vulcanus"], which silently omitted
-	// every modded planet on the cluster. Now read from the mod pack's own prototypes.
 	const planetOptions = usePlanetOptions();
 
 

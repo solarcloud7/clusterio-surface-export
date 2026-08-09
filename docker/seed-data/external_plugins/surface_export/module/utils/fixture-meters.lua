@@ -1,24 +1,3 @@
--- fixture-meters.lua — the ONE fingerprint-measurement library for the lab-gallery corpus.
---
--- This file is the single source of truth for how each baked fixture is physically MEASURED. It is
--- extracted verbatim from the meter bodies that used to live in tests/lab-gallery/gallery-runtime.lua
--- so the save-patched module (via require) and the plugin-less isolated bake Factorio (via /c source
--- injection) share ONE implementation — the literal duplication between the two meters cost a bake
--- cycle on 2026-07-18 when only one copy was updated.
---
--- Dual-injection contract (do NOT break either):
---   * Module side:   require("modules/surface_export/utils/fixture-meters")
---   * Headless side: local FixtureMeters = (function() <file text> end)()   -- inlined into a /c wrapper
--- Therefore this file MUST be pure Factorio-API Lua with ZERO `require` statements, a single local
--- `M` table, and a trailing `return M`. It also must NOT contain the level-1 long-string close
--- delimiter (a right bracket, an equals, a right bracket) anywhere — it is shipped over RCON by
--- callers that guard against that delimiter, and the shipping guard rejects the whole file on sight.
---
--- Byte-faithful: the parity gate compares readings through both injection paths, so measurement logic
--- must not "improve" — only two ADDITIVE refactors are present (both preserve current behavior by
--- default): whole-surface scans take an optional `area` (nil = whole surface); `anchor_lookup` takes
--- an optional `dx` offset (default 0).
-
 local M = {}
 
 local function table_size(value)
@@ -49,8 +28,6 @@ local function detailed_census(belts, selected_line)
     return { quantity = quantity, maximumStack = maximum_stack, physicalStacks = physical_stacks }
 end
 
--- Verify-not-construct: the corpus is hand-curated in the seed. These helpers physically MEASURE
--- each baked fixture and never build or mutate it.
 local function surface_for_platform(name)
     for _, platform in pairs(game.forces.player.platforms) do
         if platform.valid and platform.name == name then return platform.surface, platform end
@@ -62,11 +39,6 @@ local function at(surface, name, x, y)
     return surface.find_entities_filtered({ name = name, area = { { x - 0.6, y - 0.6 }, { x + 0.6, y + 0.6 } } })[1]
 end
 
--- Measure anchors come from manifest.json fixture `anchors` (single source of truth). The
--- literal-coordinate duplication between the meters cost a bake cycle during the pad migration
--- (2026-07-18: one meter updated, the other not — verify-save went red on the stale copy); both
--- meters now read the same manifest field. Fail-loud on any missing entry. `dx` (default 0) offsets
--- the resolved x so a pasted right-half copy can be fingerprinted against the same anchors.
 local function anchor_lookup(manifest, fixture_id, dx)
     dx = dx or 0
     for _, fixture in ipairs(manifest and manifest.fixtures or {}) do
@@ -104,8 +76,6 @@ local function measure_omnibus_adversarial(surface, anchor)
     local recipe, quality = m.get_recipe()
     r.recipe = recipe and recipe.name or nil
     r.recipeQuality = quality and quality.name or nil
-    -- Quality-keyed splitter filter (the splitter-quality-filter law, absorbed from the retired
-    -- entity-roundtrip suite 2026-07-20): quality must ride the filter through paste AND transfer.
     local sp = anchored(surface, anchor, "splitter", "omnibus adversarial")
     local sf = sp.splitter_filter
     r.splitterFilter = sf and sf.name or "absent"
@@ -119,10 +89,6 @@ local function measure_omnibus_latch(surface, anchor)
     return { signalS = net and net.get_signal({ type = "virtual", name = "signal-S" }) or nil }
 end
 
--- (measure_omnibus_midcraft / measure_omnibus_burner / measure_omnibus_bonus /
--- measure_inserter_held are GONE: their fixtures migrated to declared lifecycle verifies, and the
--- only remaining reference — measure_corpus — turned out to be called by NOTHING. Deleted with the
--- dead census 2026-07-26; git history keeps them.)
 
 local function measure_omnibus_equipment(surface, anchor)
     local s = anchored(surface, anchor, "spidertron", "omnibus equipment")
@@ -144,8 +110,6 @@ local function measure_omnibus_circuit(surface, anchor)
     end
     local lamp = anchored(surface, anchor, "small-lamp", "omnibus circuit")
     local lb = lamp.get_control_behavior()
-    -- Explicit if: `lb and lb.use_colors or nil` would collapse a legitimate `false` reading to nil,
-    -- silently dropping the boolean from certification (the false-collapsing and/or idiom).
     if lb then r.lampUseColors = lb.use_colors end
     return r
 end
@@ -168,8 +132,6 @@ local function measure_omnibus_fluids(surface, anchor)
     return r
 end
 
--- Whole-surface scans take an optional `area` (nil = whole surface, preserving current behavior) so a
--- pasted right-half copy on the same surface is not double-counted by the /test-run paste audit.
 local function measure_omnibus_ghosts(surface, area)
     local entity_ghosts = surface.find_entities_filtered({ type = "entity-ghost", area = area })
     return {
@@ -190,16 +152,11 @@ local function measure_omnibus_ground(surface, area)
 end
 
 local function measure_omnibus_spoilage(surface, anchor)
-    -- Structural fingerprint ONLY: the chest is a lifecycle `mutable` anchor (baked EMPTY, filled by
-    -- setup each run), so its contents are excluded — presence/name is the stable baked state.
     local x, y = anchor("steel-chest")
     local chest = at(surface, "steel-chest", x, y)
     return { scratchPresent = chest ~= nil, scratchName = chest and chest.name or "absent" }
 end
 
--- Generic scratch-anchor presence meter (the protocol-teeth pads): structural fingerprint of the
--- single frozen anchor entity. Adds `held` only when the anchor is an inserter with a seated hand
--- (the force-bonus pad pins it; container pads simply omit the key).
 local function measure_scratch_anchor(surface, anchor, ename)
     local x, y = anchor(ename)
     local e = at(surface, ename, x, y)
@@ -212,16 +169,6 @@ local function measure_scratch_anchor(surface, anchor, ename)
     return out
 end
 
--- Combined belt omnibus (steady-state class): structure counts + total belt-borne items (constant
--- by saturation physics) + stacking + over-pack. DEFINITIONS (this meter is the law's instrument):
---   * steadyItems = sum of get_item_count() over every belt-class entity in the pad area
---   * maxStack    = max per-position stack count seen across all transport lines
---   * overpackedLanes = transport lines on a single entity holding MORE than 4 items (over the
---     nominal per-tile lane capacity — the owner's hand-built corner over-pack). This is a
---     DISTRIBUTION reading, diagnostic only: how many lanes are over-packed depends on where the
---     items happen to sit at the measurement instant, so it drifts on a moving world (measured
---     2026-07-28: 13 at the source bake, 15 on the transferred copy, conservation untouched).
---     Pin hasOverpackedCornerLanes — the law is that the over-pack class survives, not its tally.
 local function measure_belt_combined(surface, area)
     local belt_types = { "transport-belt", "underground-belt", "splitter", "loader", "loader-1x1" }
     local counts = { ["transport-belt"] = 0, ["underground-belt"] = 0, ["splitter"] = 0, loader = 0 }
@@ -260,15 +207,6 @@ local function measure_belt_combined(surface, area)
     }
 end
 
--- Acid-fed uranium miner (owner-hand-built): the pad's acid POOL, resources under the pad, loose
--- ground items, drill identity.
---
--- The tank and the drill sit on ONE fluid segment (measured 2026-07-28: both report segment id 12).
--- Restoration writes a segment ONCE via set_fluid_segment_fluid and the engine then redistributes it
--- across the members by capacity, so the per-entity SPLIT is an engine distribution, not a conserved
--- quantity — the transferred copy read drill 104.33 against a source bake of 104.40625 at an
--- unchanged pool. Pin the SEGMENT TOTAL (which is also what the production gate enforces: fluids
--- aggregate by name) plus the qualitative fact that the drill arrived holding acid at all.
 local function measure_mining_drill_acid(surface, area, anchor)
     local dx, dy = anchor("big-mining-drill")
     local drill = at(surface, "big-mining-drill", dx, dy)
@@ -281,8 +219,6 @@ local function measure_mining_drill_acid(surface, area, anchor)
             if f then drill_acid = drill_acid + f.amount end
         end
     end
-    -- Sum the acid pool over the anchors' segments, deduped by segment id: one shared segment counts
-    -- once, and a topology SPLIT (the pairing-defect class) still totals both halves honestly.
     local seen, acid_total = {}, 0
     local holders = {}
     if tank then holders[#holders + 1] = tank end
@@ -317,14 +253,6 @@ local function measure_omnibus_schedule(platform)
     return { records = #records, interrupts = #interrupts, interruptName = interrupts[1] and interrupts[1].name or nil }
 end
 
--- STRUCTURE entity count: every entity EXCEPT transient debris classes (spilled items, explosion
--- effects, projectiles, smoke, corpses). THE canonical counter for live-factory fixture pins: a
--- platform baked mid-production dribbles spills and effects (measured 2026-07-27 on the workhorse:
--- raw count flipped 1359<->1360 between /test-run invocations; platform pause stops travel, NOT
--- machines), so a raw-count pin measures weather. Structure is what corruption would change; the
--- transfer census still counts every physical item, ground stacks included. Consumers: the
--- meter_entities dispatch meter (run-tests.lua) and lifecycle-engine's
--- surface_entity_count_stable read — both delegate here, never a second copy.
 local function count_stable_entities(surface)
     local total = #surface.find_entities_filtered({})
     local transient = #surface.find_entities_filtered({
@@ -333,12 +261,6 @@ local function count_stable_entities(surface)
     return total - transient
 end
 
--- Fluid-segment census over an area — THE canonical meter for underground-pipe PAIRING integrity.
--- segmentCount is the pairing detector: a pipe-to-ground that pairs with the wrong counterpart at
--- creation MERGES segments the source kept apart (measured 2026-07-28: the gallery transfer's
--- thruster-fluid clobber, 10 source segments -> 9 dest). Two same-fluid segments make the merge
--- invisible to fluid names — only the count and per-fluid totals expose it. Consumers: the
--- fluid_stats lifecycle read — delegation, never a second copy.
 local function measure_fluid_segments(surface, area)
     local counts = { ["pipe-to-ground"] = 0, pipe = 0, pump = 0 }
     local seen, segment_count = {}, 0
@@ -365,24 +287,7 @@ local function measure_fluid_segments(surface, area)
     }
 end
 
--- ACTIVE-STATE PARITY. Counts entities that arrive INACTIVE among classes that are natively active,
--- so the pin is 0 and any regression shows as a non-zero count on the destination board.
---
--- Why these three: they are the exact classes the three disable passes disagreed about. infinity-pipe
--- and spider-vehicle are frozen by entity_creation but were outside ACTIVATABLE_ENTITY_TYPES, so
--- nothing woke them (measured 2026-07-28: a spidertron arrived disabled). beacon is the opposite
--- corner — never frozen at create, but disabled by the pre-validation re-pause, so it needs the
--- restore pass to wake it; an exclusion list that skipped beacons left one dead, caught while
--- verifying the fix for the first case. A count of anything but zero means a disable set and the
--- restore set have drifted apart again.
---
--- Deliberately NOT a total inactive count: 486 of the gallery's 542 entities are natively inactive
--- (pipes, belts, containers, poles, the hub), so a total would be noise that swamps the signal.
 local function measure_active_state(surface)
-    -- Class TOTALS ride alongside the inactive counts (review should-fix A): all three inactive
-    -- pins are 0, and 0 is also what an ABSENT class reads — without the totals, the fixture that
-    -- certifies "entities arrive in the active state they left" would pass green if the
-    -- spidertrons, infinity-pipes and beacons did not arrive at all.
     local out = {}
     local function count_pair(key, filter)
         local total, inactive = 0, 0
@@ -417,11 +322,6 @@ local function measure_energy(surface)
     }
 end
 
--- Re-anchored to the belt-corner PAD on the shared omnibus grid (was a dedicated-platform read at a
--- fixed (16.5,0.5)). The corner belt position comes from the manifest anchor; the belt scan is scoped
--- to a box around that anchor so the neighbouring loop pad on the SAME grid is never conflated (the
--- two belt pads sit in non-overlapping columns). The old whole-surface `entities` field is dropped —
--- meaningless once the corner shares a surface with 15 other pads.
 local function measure_belt_corner(surface, anchor)
     local cx, cy = anchor("turbo-transport-belt")
     local area = { { cx - 8, cy - 4 }, { cx + 4, cy + 4 } }
@@ -432,9 +332,6 @@ local function measure_belt_corner(surface, anchor)
             for _, row in ipairs(b.get_transport_line(line_index).get_detailed_contents()) do total = total + row.stack.count end
         end
     end
-    -- Exact-position lookup (NOT the 0.6-box `at`): on the shared grid the corner sits one tile from
-    -- its dead-end, whose collision box overlaps a 0.6 box and would be grabbed instead (measured: the
-    -- box read the straight dead-end, cornerShape=straight). find_entity keys on the exact belt centre.
     local corner = surface.find_entity("turbo-transport-belt", { cx, cy })
     local inside = corner and corner.get_transport_line(1) or nil
     local inside_count = 0
@@ -450,10 +347,6 @@ local function measure_belt_corner(surface, anchor)
     }
 end
 
--- The 5x5 unstacked loop PAD (belt-5x5-125-unstacked). Its lineQuantities array is asserted by the
--- belt special path (deepEqual), never a scalar fingerprint compare
--- gate whose approx_equal does reference-equality on arrays. Scoped to a box around the loop anchor so
--- the corner pad on the same grid is never conflated.
 local function measure_belt_loop(surface, anchor)
     local ax, ay = anchor("turbo-transport-belt")
     local area = { { ax - 1, ay - 1 }, { ax + 6, ay + 6 } }
@@ -480,8 +373,6 @@ local function measure_belt_loop(surface, anchor)
     }
 end
 
--- Ported onto the golden omnibus (lab-omnibus-state-v1) by seed-prep-ops.lua; these read the SAME
--- fields the seed-prep build/measure recorded, so the fingerprint gate is symmetric.
 local function measure_no_tick_pair(surface, anchor)
     local machine = anchored(surface, anchor, "assembling-machine-1", "no-tick")
     local inserter = anchored(surface, anchor, "inserter", "no-tick")
@@ -499,8 +390,6 @@ local function measure_no_tick_pair(surface, anchor)
 end
 
 local function measure_repin_beacon(surface, anchor)
-    -- engine-repin B8 fixture (beacon crafting_speed same-execution propagation; distinct from
-    -- no-tick-sync B8): baked as an ACTIVE empty-module beacon beside a frozen recipe-set crafter.
     local beacon = anchored(surface, anchor, "beacon", "repin beacon")
     local machine = anchored(surface, anchor, "assembling-machine-2", "repin beacon")
     local modules = beacon.get_inventory(defines.inventory.beacon_modules)
@@ -513,9 +402,6 @@ local function measure_repin_beacon(surface, anchor)
     }
 end
 
--- hold-buffer pairs (card 3): live/held mini-platform pairs, located by platform name. Fingerprint
--- fields are the STABLE subset (booleans/names/integers); spoil floats are informational only
--- (spoil_tick is engine-global and drifts every loaded session).
 local function measure_hold_spoil_pair()
     local live = surface_for_platform("lab-hold-spoil-live-v1")
     local held = surface_for_platform("lab-hold-spoil-held-v1")
@@ -579,13 +465,6 @@ local function measure_hold_pod_pair()
     }
 end
 
--- Fusion loop (owner-hand-built, ACTIVE): the plasma-and-coolant rig proving buffered fluids and
--- plasma ride the 2.1 fluid-segment registry with nothing engine-excluded. The reactors are ACTIVE,
--- so coolant/plasma AMOUNTS drift — only STABLE facts are fingerprinted: entity counts, the
--- self-refilling infinity-pipe plasma (exact 100), the generator's own-box no-segment structural fact
--- (2.1 buffer/window duality removed), and fluid-name presence booleans for plasma + coolant.
--- reactorPlasmaMax is diagnostic only (drifts, never pinned). `area` scopes the scan (nil = whole
--- surface). All segment reads are has_fluid_segment-guarded.
 local function measure_fusion_loop(surface, area)
     local function count(name) return #surface.find_entities_filtered({ name = name, area = area }) end
     local plasma_present, coolant_present, reactor_plasma_max, infinity_plasma = false, false, 0, 0
@@ -603,7 +482,6 @@ local function measure_fusion_loop(surface, area)
                         coolant_present = true
                     end
                 end
-                -- 2.1 structural fact: the generator's own plasma box exposes no fluid segment id.
                 if is_generator and f and f.name == "fusion-plasma" then
                     generator_plasma_seg_nil = (not e.has_fluid_segment(i)) or e.get_fluid_segment_id(i) == nil
                 end
@@ -629,11 +507,6 @@ local function measure_fusion_loop(surface, area)
     }
 end
 
--- Thruster pair (owner-hand-built 2026-07-21 on the south-edge slot (92,64)). The kill-measurement
--- topology of the reverted 2026-07-19 fusion/thruster fix: two thrusters sharing ONE fuel segment
--- AND one oxidizer segment (per-box locals must NOT be summed for a shared buffer). Asserts 2
--- thrusters and, per fluid, one shared segment id across both boxes plus the segment total
--- (counted ONCE per shared segment). All segment reads are has_fluid_segment-guarded.
 local function measure_thruster_pair(surface, area)
     local thrusters = surface.find_entities_filtered({ name = "thruster", area = area })
     local function shared_total(fluid_name)
@@ -671,18 +544,9 @@ local function measure_thruster_pair(surface, area)
     }
 end
 
--- ONLY the crafting-progress and module-bonus-progress doubles absorb a sub-ULP save/load drift;
--- every OTHER fingerprint field (integer counts, temperatures, energies, fluid amounts, coordinates,
--- strings, booleans) is compared with exact equality. The 1e-9 tolerance is never applied blanket.
 local tolerant_double_fields = { progress = true, bonusProgress = true }
 
 local function approx_equal(key, a, b)
-    -- A 2-number array expectation is an INCLUSIVE RANGE. Added 2026-07-29 because the unfrozen
-    -- doctrine makes bounded quantities a recurring need: some readings are not constants on a
-    -- running world, and the alternatives are both worse than a range — pinning an exact value that
-    -- a lossless transfer fails, or dropping the check and measuring nothing. The bound must be
-    -- MECHANISM-derived and the fixture must say what derives it; a band fitted around an observed
-    -- failure is exactly what this must not become.
     if type(b) == "table" and #b == 2 and type(b[1]) == "number" and type(b[2]) == "number" then
         return type(a) == "number" and a >= b[1] and a <= b[2]
     end

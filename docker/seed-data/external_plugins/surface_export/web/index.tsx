@@ -72,14 +72,6 @@ function SurfaceExportPage() {
 	const plugin = useSurfaceExportPlugin(control);
 	const state = useSurfaceExportState(plugin);
 	const [importModalOpen, setImportModalOpen] = useState(false);
-	// Tab is URL-synced so the view is deep-linkable, e.g. /surface-export?tab=gateways — read on
-	// mount, updated on change. Uses the native History API (no react-router import) to avoid
-	// bundling a non-shared web dep (see the in-container web build model / why mermaid was removed).
-	//
-	// Reads against the full set, not a single hard-coded name: this used to accept only "logs", so
-	// handleTabChange would WRITE ?tab=gateways and a reload of that exact URL would land on Manual
-	// Transfer — the round trip the comment above claims silently did not close. Availability (logs
-	// needs a permission) is a separate question, settled by `effectiveTab` below.
 	const [activeTab, setActiveTab] = useState<string>(() => {
 		const t = new URLSearchParams(window.location.search).get("tab");
 		return t && ["manual", "logs", "gateways"].includes(t) ? t : "manual";
@@ -90,8 +82,6 @@ function SurfaceExportPage() {
 		params.set("tab", key);
 		window.history.replaceState(null, "", `${window.location.pathname}?${params.toString()}`);
 	}
-	// Icon spritesheet CSS is injected on demand by the FactorioIcon wrappers in web/icons.tsx
-	// (via useExportPrototypeMetadata) when icons render.
 	const tabItems = [
 		{
 			key: "manual",
@@ -109,30 +99,19 @@ function SurfaceExportPage() {
 	tabItems.push({
 		key: "gateways",
 		label: "Gateways",
-		// The canvas opens the page's ONE ImportModal rather than mounting its own. Tabs keep their
-		// panes mounted (removeOnLeave: false), so a second copy would be a second live modal.
 		children: <GatewayCanvas plugin={plugin} state={state} onOpenImport={() => setImportModalOpen(true)} />,
 	});
 
-	// Fall back to manual if the URL asks for a tab that isn't available (e.g. ?tab=logs without view perms).
 	const effectiveTab = tabItems.some(t => t.key === activeTab) ? activeTab : "manual";
 
-	// Paints Clusterio's page frame to match the canvas. Applied as a body class this page adds and
-	// removes — NOT as a bare selector in our stylesheet, which is global from the moment our web
-	// module loads and would restyle every other plugin's page too.
 	useEffect(() => {
 		document.body.classList.add("surface-export-page");
 		return () => document.body.classList.remove("surface-export-page");
 	}, []);
 
 	return (
-		// `nav={[]}` — no breadcrumb. It rendered "Surface Export" immediately above PageHeader's
-		// "Surface Export", so the page opened by saying its own name twice; the heading is the one
-		// that carries weight, and this page is one level deep with nowhere to navigate back to.
 		<PageLayout nav={[]}>
-			{/* NO VERSION LINE. The plugin's version is already on Clusterio's own plugins page, which is
-			    where someone goes to ask what is installed; repeating it under the heading spent the
-			    first line of every visit on a number nobody came for. */}
+			{}
 			<PageHeader title="Surface Export" />
 			<Tabs
 				activeKey={effectiveTab}
@@ -159,7 +138,6 @@ function SurfaceExportPage() {
 }
 
 export class WebPlugin extends BaseWebPlugin {
-	// Escape hatch: the framework's Control type is broader than the slice we use.
 	// eslint-disable-next-line @typescript-eslint/no-explicit-any
 	private get link(): ControlLike { return this.control as unknown as ControlLike; }
 
@@ -201,8 +179,6 @@ export class WebPlugin extends BaseWebPlugin {
 	}
 
 	onControllerConnectionEvent(event: string) {
-		// Watermarks belong to one controller session. Only a fresh connect starts a new one —
-		// resume continues the session they were taken from, and keeps them.
 		if (event === "connect") {
 			this.setState(freshRevisionWatermarks());
 		}
@@ -268,8 +244,6 @@ export class WebPlugin extends BaseWebPlugin {
 
 	async refreshSnapshots() {
 		this.setState({ loadingTree: true, treeError: null });
-		// Everything a push rewrites from here on is newer than the responses below, which answer as
-		// of the moment they were requested.
 		const summariesBeforeFetch = new Map(this.state.transferSummaries.map(summary => [summary.transferId, summary]));
 		try {
 			const treeResponse = await this.link.send(new GetPlatformTreeRequest({ forceName: "player" })) as JsonObject;
@@ -293,10 +267,6 @@ export class WebPlugin extends BaseWebPlugin {
 				}
 			}
 
-			// A pushed update that landed while this request was in flight carries a newer revision
-			// than the snapshot, and keeps its place. The fallback is NaN, not 0: a response with no
-			// revision must read as "carries no order", which decideSnapshot still shows, and not as
-			// revision zero, which every watermark outranks.
 			const snapshotRevision = Number(getProp<number>(treeResponse, "revision", NaN));
 			const snapshot = decideSnapshot(snapshotRevision, this.state.lastTreeRevision);
 			const snapshotState = snapshot.apply
@@ -367,8 +337,6 @@ export class WebPlugin extends BaseWebPlugin {
 			transferInfo,
 			summary: getProp(response, "summary", null) as JsonObject | null || existing.summary || null,
 			events,
-			// Absent on an un-redeployed controller, which is why the default is true rather than false:
-			// an unknown answer must not render a "detail was discarded" notice over a real timeline.
 			detailRetained: getProp(response, "detailRetained", true) as boolean,
 		};
 

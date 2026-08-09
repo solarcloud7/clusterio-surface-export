@@ -13,22 +13,9 @@ const {
 	parseGatewayMode,
 } = require("../dist/node/shared/dto.js");
 
-/**
- * The gateway-mode CONTRACT, which is controller-side.
- *
- * Scope, deliberately: everything here is imported by controller.ts and enforced there —
- * `handleSetGatewayLinkRequest` applies the Multi rules, `loadGatewayConfig` validates against the
- * union, and `gatewayMode()` parses the setting. None of it is UI.
- *
- * The canvas's own logic (node/edge projection, layout, handle ids) is NOT unit-tested and does not
- * belong here: it is UI, and UI is verified by driving the real thing. Those unit tests existed
- * briefly and were removed rather than left to imply coverage of a layer they were never going to
- * hold up.
- */
 const HOST_2 = 1285554351;
 const HOST_3 = 999000111;
 
-// ── The name sets ───────────────────────────────────────────────────────────
 
 test("each mode exposes its own gateway set, and one_gate is the default", () => {
 	assert.strictEqual(DEFAULT_GATEWAY_MODE, "one_gate");
@@ -38,10 +25,6 @@ test("each mode exposes its own gateway set, and one_gate is the default", () =>
 });
 
 test("the hub name keeps the gateway prefix — Lua's is_gateway is a clamped prefix compare", () => {
-	// module/core/gateway.lua does name:sub(1, #Gateway.PREFIX), and Lua's sub CLAMPS instead of
-	// failing. A shorter name returns itself, the compare fails, and the location becomes invisible to
-	// unlocking, arrival detection and the transfer trigger alike — rendering on the starmap while
-	// doing nothing. This is the cheapest possible guard against reintroducing that.
 	assert.ok(ONE_GATE_NAME.startsWith(GATEWAY_PREFIX), `${ONE_GATE_NAME} must start with ${GATEWAY_PREFIX}`);
 	assert.ok(ONE_GATE_NAME.length > GATEWAY_PREFIX.length, "the name must be longer than the prefix itself");
 	for (const name of MULTI_GATEWAY_NAMES) {
@@ -50,9 +33,6 @@ test("the hub name keeps the gateway prefix — Lua's is_gateway is a clamped pr
 });
 
 test("ALL_GATEWAY_NAMES is the union — the precondition for a lossless mode switch", () => {
-	// controller.ts validates the PERSISTED file against this, not the active set. Validating against
-	// the active set would delete the other mode's links at the next boot: a destructive,
-	// un-undoable side effect of changing a display setting.
 	for (const name of [...MULTI_GATEWAY_NAMES, ONE_GATE_NAME]) {
 		assert.ok(ALL_GATEWAY_NAMES.includes(name), `${name} must survive a load in either mode`);
 	}
@@ -69,9 +49,6 @@ test("an unrecognised mode falls back to one_gate and says so", () => {
 	assert.deepStrictEqual(parseGatewayMode("one_gate"), { mode: "one_gate", warning: null });
 });
 
-// ── Multi Cluster's two rules ───────────────────────────────────────────────
-// New enforcement: nothing capped a gateway's target list before, so these tests are the only thing
-// standing between the owner's stated design and an unbounded list.
 
 test("Multi mode refuses a SECOND destination on one gateway", () => {
 	const violation = checkMultiModeLink(MULTI_GATEWAY_NAMES[0], [
@@ -110,8 +87,6 @@ test("clearing a gateway is always legal in Multi mode", () => {
 });
 
 test("the cap is Multi-only — one-gate mode is not subject to it", () => {
-	// One gate, any number of destinations. checkMultiModeLink is simply never consulted in that mode
-	// (controller.ts gates the whole block on `mode === "multi"`), which is the behaviour this pins.
 	assert.strictEqual(gatewayNamesFor("one_gate").length, 1);
 	assert.notDeepStrictEqual(gatewayNamesFor("one_gate"), gatewayNamesFor("multi"));
 });

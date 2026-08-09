@@ -1,63 +1,15 @@
-// path-oracle.mjs — resolve a dotted path through a record, and when it MISSES, name the real path.
-//
-// WHY THIS EXISTS. Querying a transaction log or a debug dump with a wrong path returned an empty
-// value, not an error. That happened three times in one session, and once it produced a false
-// conclusion — "the transaction log isn't being written" — when the log was fine and the path was a
-// typo. An empty result and an absent feature are indistinguishable, which is what makes the class
-// expensive: the tool answers, so you believe it.
-//
-// So the value of this module is entirely in the MISS path. A resolution is trivial; naming the real
-// key is the product.
-//
-// WHY IT IS A SIBLING OF export-inspect.mjs's `dig()` AND NOT AN EXTENSION OF IT. The two callers
-// have different verdict lattices. In `inspect --field`, "not found" is a legitimate exit-1 FINDING:
-// the payload is the only thing the destination ever sees, so an absent field is a data-loss claim.
-// Here, "not found" is never a finding — it is a wrong path or a schema-version fact, and always an
-// operational error. One function serving two lattices needs a flag that changes its semantics,
-// which is the construct that rots. `dig`'s deliberately-not-fuzzy rationale is also a decision
-// record earned by a real false-loss incident; widening it for a different caller's benefit would
-// change the risk profile of a tool whose stated contract is that it must not manufacture findings.
-//
-// This module is PURE: no I/O, no process.exit. It is testable with the cluster down.
-
-/**
- * Case- and underscore-insensitive key identity. `totalTicks` and `total_ticks` are the same key.
- *
- * This is EXACT-AFTER-NORMALIZATION, not fuzzy. `totalTick` does NOT match `total_ticks`, and
- * `total` does not either. That is the design, not a limitation: a fuzzy matcher will eventually
- * print a "real path" that is not the caller's field, and the sole value of this module is that the
- * path it names is the right one. A near-miss it cannot prove is reported as no match.
- */
 export function normalizeKey(key) {
 	return String(key).toLowerCase().replace(/_/g, "");
 }
 
 const isPlainObject = value => value !== null && typeof value === "object" && !Array.isArray(value);
 
-/**
- * Join path segments, tolerating an empty prefix.
- *
- * Naive template joining produced `events..2.importMetrics` when the search started at the document
- * root — a path this module's OWN walker then rejects as `malformed-path`. A tool whose entire
- * product is "the path it names is the right one" cannot emit paths that do not resolve, so every
- * path this file constructs goes through here. The invariant is enforced by test: every entry in
- * `nearMisses` and `relocations` must itself resolve against the same root.
- */
 function joinPath(...parts) {
 	return parts.filter(part => part !== "" && part !== null && part !== undefined).join(".");
 }
 
-/** Cap on how many distinct element keys are unioned before reporting truncation. */
 const ELEMENT_KEY_CAP = 200;
 
-/**
- * Describe a container for the miss message.
- *
- * For an ARRAY this never reports numeric indices — `Object.keys(events)` on a 400-event log yields
- * 400 useless numbers. It reports the length plus the UNION of element keys, union rather than
- * first-element because event objects carry a `...data` spread: `importMetrics` lives on exactly one
- * event, and a first-element sample would hide it.
- */
 export function describeContainer(value) {
 	if (Array.isArray(value)) {
 		const keys = new Set();
@@ -76,27 +28,6 @@ export function describeContainer(value) {
 	return { kind: value === null ? "null" : typeof value, keys: [] };
 }
 
-/**
- * Search a subtree for a key matching `target` after normalization — the wrong-SUBTREE case
- * (`summary.phaseSpans` really lives at `summary.import.phaseSpans`).
- *
- * DEPTH BOUND, stated so it can be counted: a relocated path is AT MOST 3 SEGMENTS long, measured
- * from the start container. Array indices are free — they do not consume a segment of the budget —
- * so `a.b.0.c.target` is reachable.
- *
- * Three is where the real shapes land:
- *   summary.phaseSpans        -> import.phaseSpans                                (2 segments)
- *   summary.fluidPreservedPct -> validation.fluidReconciliation.fluidPreservedPct (3 segments)
- * and four is where the schema stops and user data starts:
- *   (root).iron-plate         -> summary.validation.expectedItemCounts.iron-plate (4 — EXCLUDED)
- * `expectedItemCounts` / `actualFluidCounts` are keyed by ITEM AND FLUID NAMES. A query for a
- * quality name (`normal`, `rare`) or an item name would otherwise relocate into game data and
- * present it as schema — manufacturing a path, the one thing this module must never do.
- *
- * The bound was off by one when first written (`depth > maxDepth` examined keys AT maxDepth, giving
- * four segments) so the paragraph above was false at the shipped setting. Found in review; the test
- * now enumerates every level explicitly rather than sampling two.
- */
 function relocate(root, target, { maxDepth = 3, maxResults = 8, nodeBudget = 50_000 }) {
 	const wanted = normalizeKey(target);
 	const found = [];
@@ -109,9 +40,6 @@ function relocate(root, target, { maxDepth = 3, maxResults = 8, nodeBudget = 50_
 		if (++visited > nodeBudget) { budgetExhausted = true; return; }
 
 		if (Array.isArray(node)) {
-			// Arrays are traversed without consuming a depth level, and the reported path uses the
-			// FIRST concrete index plus a presence count — a concrete path is directly re-runnable,
-			// where a wildcard would just make the caller do a second lookup.
 			const hitIndices = [];
 			for (const [index, element] of node.entries()) {
 				if (isPlainObject(element) && Object.keys(element).some(k => normalizeKey(k) === wanted)) {
@@ -132,11 +60,6 @@ function relocate(root, target, { maxDepth = 3, maxResults = 8, nodeBudget = 50_
 			return;
 		}
 
-		// `>=`, not `>`. With `>` this examined node's keys at depth === maxDepth, i.e. it reached
-		// maxDepth + 1 = FOUR object levels while the docstring, the reported `searchDepth` and the
-		// miss message all said three — and the docstring's own rationale ("depth 5 starts returning
-		// hits from expectedItemCounts") was therefore already false at the shipped setting: a query
-		// for a quality name like `normal` relocated into item-keyed user data. Measured in review.
 		if (!isPlainObject(node) || depth >= maxDepth) return;
 		for (const [key, value] of Object.entries(node)) {
 			const path = joinPath(prefix, key);
@@ -149,24 +72,11 @@ function relocate(root, target, { maxDepth = 3, maxResults = 8, nodeBudget = 50_
 	};
 
 	walk(root, "", 0);
-	// Dedupe by resolved path; a key reachable twice is one answer.
 	const seen = new Set();
 	const unique = found.filter(hit => !seen.has(hit.path) && seen.add(hit.path));
 	return { hits: unique, budgetExhausted, resultsTruncated };
 }
 
-/**
- * Walk `path` through `root`.
- *
- * Returns `{ ok: true, value, path }` or `{ ok: false, reason, stoppedAt, failedSegment,
- * container, nearMisses, relocations, ... }`. `ok` is STRICTLY boolean — never null, never absent.
- * That is deliberate: cli.mjs's `inspect --field` has an exit-0 hole precisely because its
- * equivalent flag is tri-state while the dispatcher handles two states, so the third case falls
- * through to a success exit. A boolean discriminant makes that unrepresentable here.
- *
- * `stoppedAt` is the last path that DID resolve — not the segment that failed. The failed segment is
- * reported separately as `failedSegment`.
- */
 export function resolvePath(root, path, options = {}) {
 	const raw = String(path ?? "");
 	if (!raw) {
@@ -186,19 +96,10 @@ export function resolvePath(root, path, options = {}) {
 		const miss = (reason, detail) => {
 			const container = describeContainer(cursor);
 			const wanted = normalizeKey(segment);
-			// ONLY an object has keys at this level. An array's `container.keys` is the UNION OF ITS
-			// ELEMENTS' keys — those are not addressable here, and treating them as same-level matches
-			// produced the worst output this module can produce: querying `events.importMetrics`
-			// suggested `events.importMetrics`, the identical failing path, in an infinite loop of
-			// advice. Worse, a non-empty nearMisses SUPPRESSES relocation, so the correct answer
-			// (`events.2.importMetrics`) was computed and thrown away. Caught in review.
 			const nearMisses = container.kind === "object"
 				? container.keys.filter(key => normalizeKey(key) === wanted)
 					.map(key => joinPath(stoppedAt === "(root)" ? "" : stoppedAt, key))
 				: [];
-			// Relocation only when the same level offered nothing: a same-level hit is the higher
-			// confidence answer and the camel/snake case this module was built for. For an array stop
-			// it ALWAYS runs, and it is what turns the element key into a concrete indexed path.
 			const relocated = nearMisses.length
 				? { hits: [], budgetExhausted: false, resultsTruncated: false }
 				: relocate(cursor, segment, options);
@@ -232,12 +133,10 @@ export function resolvePath(root, path, options = {}) {
 	return { ok: true, value: cursor, path: raw };
 }
 
-/** 0 iff the path resolved. Never 1: this module makes no claim about the repo, only about a path. */
 export function exitCodeFor(result) {
 	return result && result.ok === true ? 0 : 2;
 }
 
-/** The human-facing miss block. */
 export function formatMiss(result, { query, subject } = {}) {
 	const lines = [`testkit: NO SUCH PATH "${query ?? "(unknown)"}"${subject ? ` in ${subject}` : ""}.`];
 	lines.push(`  resolved as far as:  ${result.stoppedAt}`);
@@ -246,10 +145,6 @@ export function formatMiss(result, { query, subject } = {}) {
 
 	const { container } = result;
 	if (container.kind === "array") {
-		// Deliberately NOT "e.g. <path>.0.<segment>" when a relocation exists: index 0 frequently does
-		// not carry the key (in a real transaction log `importMetrics` is on exactly one event of
-		// several), and naming a concrete index that does not resolve is the failure this tool exists
-		// to prevent. The relocation block below prints the index that actually has it.
 		lines.push(`  \`${result.stoppedAt}\` is an array of ${container.count}, not an object — index it`
 			+ (result.relocations.length ? "; the element(s) carrying that key are listed below" : `, `
 				+ `e.g. ${joinPath(result.stoppedAt === "(root)" ? "" : result.stoppedAt, 0, result.failedSegment)}`));

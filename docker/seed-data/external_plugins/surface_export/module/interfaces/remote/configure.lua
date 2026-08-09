@@ -1,14 +1,8 @@
--- Remote Interface: configure
--- Configure plugin settings (called from Node.js plugin on startup)
-
 local AsyncProcessor = require("modules/surface_export/core/async-processor")
 local Util = require("modules/surface_export/utils/util")
 local Gateway = require("modules/surface_export/core/gateway")
 
---- Configure plugin settings (called from Node.js plugin on startup)
---- @param config table: Configuration parameters {batch_size, max_concurrent_jobs, show_progress, debug_mode}
 local function configure(config)
-  -- Initialize storage config if needed
   if not storage.surface_export_config then
     storage.surface_export_config = {}
   end
@@ -23,64 +17,38 @@ local function configure(config)
     AsyncProcessor.set_show_progress(config.show_progress)
   end
   if config.max_export_cache_size then
-    -- How many entries storage.platform_exports retains. The cap is enforced in Lua at each write
-    -- site (ExportCache.prune_to_configured_cap), so it stays real even if this push never arrives.
     AsyncProcessor.set_max_export_cache_size(config.max_export_cache_size)
   end
   if config.debug_mode ~= nil then
     storage.surface_export_config.debug_mode = config.debug_mode
   end
   if config.test_force_validation_failure ~= nil then
-    -- Test-only: make the NEXT import deliberately fail validation (exercises the rollback path).
     storage.surface_export_config.test_force_validation_failure = config.test_force_validation_failure
   end
   if config.test_force_entity_failure ~= nil then
-    -- Test-only: make the NEXT inventory-bearing entity fail to place (exercises the
-    -- failed-entity-loss attribution + expected-count subtraction, failed-entity losses are tallied and subtracted from expected).
     storage.surface_export_config.test_force_entity_failure = config.test_force_entity_failure
   end
   if config.test_defer_clone_activation ~= nil then
-    -- Test-only: leave a CLONE/non-transfer import DEACTIVATED (skip the activation step) so the
-    -- pristine restored state can be physically counted with ZERO crafting confound — the clean
-    -- way to measure belt/inventory restoration fidelity on the same instance (no transmission).
     storage.surface_export_config.test_defer_clone_activation = config.test_defer_clone_activation
   end
   if config.test_force_item_loss ~= nil then
-    -- Test-only: remove N items of the most-abundant type from the destination on the NEXT
-    -- transfer, AFTER held-item restore but BEFORE the gate — an UNACCOUNTED loss (not routed
-    -- through failed_entity_losses/overflow). Proves the STRICT gate DETECTS real loss and the
-    -- two-phase commit preserves the source. See validation-timing-trilemma / the gate-item-loss pad fixture.
     storage.surface_export_config.test_force_item_loss = config.test_force_item_loss
   end
   if config.test_force_fluid_loss ~= nil then
-    -- Test-only: inflate expected fluid count after frozen restoration but before the single gate.
     storage.surface_export_config.test_force_fluid_loss = tonumber(config.test_force_fluid_loss)
   end
   if config.test_force_census_omission ~= nil then
-    -- Test-only ONE-SHOT: on the NEXT export, drop one serialized inventory stack post-serialization
-    -- and pre-census so the paired-read SOURCE census DETECTS the omission. Fires PRE-verdict, so a
-    -- leaked flag makes the next transfer export ABORT and PRESERVE its source (self-protecting).
-    -- Enumerated in lint:test-hooks FAIL_SAFE_HOOKS. See CLAUDE.md: a mutating test hook must be
-    -- fail-safe on leak.
     storage.surface_export_config.test_force_census_omission = config.test_force_census_omission
   end
   if config.preserve_failed_destination ~= nil then
-    -- Debug-only escape hatch. Normal failed transfers always bank evidence and discard the destination.
     local debug_enabled = config.debug_mode == true or storage.surface_export_config.debug_mode == true
     storage.surface_export_config.preserve_failed_destination = debug_enabled
       and config.preserve_failed_destination == true or false
   end
   if config.active_gateways_json then
-    -- Which gateway prototypes this cluster's MODE exposes. Gateway.discover_and_unlock unlocks only
-    -- these, so the other mode's gateways never appear on the starmap. Absent (an un-updated
-    -- controller) leaves the field nil, and the unlock falls back to "everything with the prefix" —
-    -- the pre-mode behaviour — rather than unlocking nothing.
     local decoded = Util.json_to_table_compat(config.active_gateways_json)
     if type(decoded) == "table" then
       storage.surface_export_config.active_gateways = decoded
-      -- Re-reconcile NOW. The startup pass ran before this arrived and therefore unlocked every
-      -- gateway; this is the pass that actually takes effect, and without it the setting would look
-      -- applied (the value is stored) while the starmap still showed the other mode's gateways.
       local ok, err = pcall(Gateway.discover_and_unlock)
       if not ok then
         log(string.format("[FactorioSurfaceExport] configure: gateway re-unlock failed: %s", tostring(err)))
@@ -91,8 +59,6 @@ local function configure(config)
     end
   end
   if config.gateways_json then
-    -- Replace the whole gateway link map (controller is the source of truth). Decoded from JSON,
-    -- never built as a Lua table literal, so arbitrary instance names cannot inject Lua.
     local decoded = Util.json_to_table_compat(config.gateways_json)
     if type(decoded) == "table" then
       storage.surface_export_config.gateways = decoded

@@ -1,6 +1,3 @@
--- FactorioSurfaceExport - Export Pipeline
--- Handles the full export job lifecycle: queuing, per-tick batch scanning, and completion.
-
 local EntityScanner = require("modules/surface_export/export_scanners/entity-scanner")
 local EntityHandlers = require("modules/surface_export/export_scanners/entity-handlers")
 local InventoryScanner = require("modules/surface_export/export_scanners/inventory-scanner")
@@ -23,12 +20,6 @@ local ExportCache = require("modules/surface_export/utils/export-cache")
 
 local ExportPipeline = {}
 
---- Test-only ONE-SHOT: simulate a serializer omission the paired-read source census must catch.
---- Drops one serialized inventory stack from THIS entity_data AFTER serialization and BEFORE the
---- census records it, so physical (full) > serialized (short) and the verdict fails. Fires PRE-verdict,
---- so a leaked flag makes the NEXT transfer export ABORT and PRESERVE its source (self-protecting —
---- enumerated in lint:test-hooks FAIL_SAFE_HOOKS; mutating test hooks must be fail-safe on leak).
---- @param entity_data table: the just-serialized entity form (mutated in place on a hit)
 local function maybe_inject_census_omission(entity_data)
 	local cfg = storage.surface_export_config
 	if not (cfg and cfg.test_force_census_omission) then return end
@@ -36,8 +27,8 @@ local function maybe_inject_census_omission(entity_data)
 	if not invs then return end
 	for _, inv in ipairs(invs) do
 		if inv.items and #inv.items > 0 then
-			local removed = table.remove(inv.items, 1)  -- drop one serialized stack (physical still has it)
-			cfg.test_force_census_omission = nil          -- consume: one entity, one export
+			local removed = table.remove(inv.items, 1)
+			cfg.test_force_census_omission = nil
 			log(string.format(
 				"[Census][test hook] test_force_census_omission dropped serialized stack '%s' x%d from entity_id=%s",
 				tostring(removed and removed.name),
@@ -48,50 +39,36 @@ local function maybe_inject_census_omission(entity_data)
 	end
 end
 
---- Sort entities for proper placement order
---- Underground belts, pipes, etc. need special ordering
---- @param entities table: Array of entity data or LuaEntity objects
---- @return table: Sorted array
 local function sort_entities_for_placement(entities)
-	-- Define placement priority (lower = earlier)
 	local function get_priority(entity_or_data)
-		-- Handle both LuaEntity (export) and entity_data (import fallback)
 		local name = entity_or_data.name or ""
 		local type_name = entity_or_data.type or ""
 
-		-- 1. Tiles and rails first (foundation)
 		if type_name == "straight-rail" or type_name == "curved-rail" then
 			return 1
 		end
 
-		-- 2. Underground belts - entrance before exit
-		-- Only access belt_to_ground_type if it's actually an underground belt
 		if type_name == "underground-belt" then
-			-- Safely access belt_to_ground_type (only exists on underground-belt entities)
 			local belt_type = entity_or_data.belt_to_ground_type
 			if belt_type == "input" then
-				return 2  -- Input/entrance first
+				return 2
 			else
-				return 3  -- Output/exit second
+				return 3
 			end
 		end
 
-		-- 3. Pipes and underground pipes
 		if type_name == "pipe-to-ground" then
 			return 4
 		end
 
-		-- 4. Regular entities
 		return 5
 	end
 
-	-- Create sorted copy
 	local sorted = {}
 	for _, entity in ipairs(entities) do
 		table.insert(sorted, entity)
 	end
 
-	-- Sort by priority, then by position for deterministic ordering
 	table.sort(sorted, function(a, b)
 		local priority_a = get_priority(a)
 		local priority_b = get_priority(b)
@@ -100,7 +77,6 @@ local function sort_entities_for_placement(entities)
 			return priority_a < priority_b
 		end
 
-		-- Same priority - sort by position for consistency
 		if a.position and b.position then
 			local pos_a = a.position
 			local pos_b = b.position
@@ -116,8 +92,6 @@ local function sort_entities_for_placement(entities)
 	return sorted
 end
 
---- Handle a pending file write request for a completed export
---- @param export_id string: The export ID to check for pending writes
 local function handle_pending_file_write(export_id)
 	if not storage.pending_file_writes or not storage.pending_file_writes[export_id] then
 		return
@@ -126,12 +100,10 @@ local function handle_pending_file_write(export_id)
 	local file_request = storage.pending_file_writes[export_id]
 	local filename = file_request.filename
 
-	-- Generate filename if not provided
 	if not filename then
 		filename = string.format("platform_exports/%s.json", export_id)
 	end
 
-	-- Write export to file
 	local export_entry = storage.platform_exports[export_id]
 	if export_entry then
 		local json_string = export_entry.json_string
@@ -140,9 +112,6 @@ local function handle_pending_file_write(export_id)
 		end
 
 		if json_string then
-			-- Use the pcall-guarded compat wrapper: on Factorio 2.0 `game.write_file` does not exist and even
-			-- ACCESSING the key throws ("LuaGameScript doesn't contain key write_file"), which crashed the host
-			-- instance on every /export-platform-file. write_file_compat falls back to helpers.write_file.
 			local wrote_ok, write_err = Util.write_file_compat(filename, json_string, false)
 			if wrote_ok then
 				log(string.format("[Export] File written: %s (%d bytes)", filename, #json_string))
@@ -159,16 +128,6 @@ local function handle_pending_file_write(export_id)
 	storage.pending_file_writes[export_id] = nil
 end
 
---- Queue an export job
---- @param platform_index number
---- @param force_name string
---- @param requester_name string|nil: Player name or "RCON"
---- @param destination_instance_id number|nil: If set, transfer to this instance after export
---- @param gateway_target string|nil: If set, this is a GATEWAY transfer — the destination parks the
----        imported platform at this gateway (paused) and strips the gateway hop. Stamped into the
----        payload (rides the compressed blob, opaque to the TS layers; read on the dest as
----        platform_data.platform.gateway_target). nil for ordinary transfers/exports.
---- @return string|nil, string|nil: job_id or nil + error
 function ExportPipeline.queue(platform_index, force_name, requester_name, destination_instance_id, gateway_target)
 	storage.async_job_id_counter = storage.async_job_id_counter + 1
 	local job_counter = storage.async_job_id_counter
@@ -181,12 +140,8 @@ function ExportPipeline.queue(platform_index, force_name, requester_name, destin
 
 	local platform = force.platforms[platform_index]
 
-	-- Sanitize platform name (replace non-alphanumeric with dash)
 	local safe_name = platform.name:gsub("[^%w%-]", "-")
 
-	-- Generate export_id: counter_platformName
-	-- Format: 001_test
-	-- (All timing data is in the export payload - ID is just a clean key)
 	local job_id = string.format("%03d_%s", job_counter, safe_name)
 
 	log(string.format("[Export Queue] job_id=%s, platform_index=%s, force=%s, requester=%s, dest_instance_id=%s (type=%s)",
@@ -197,22 +152,12 @@ function ExportPipeline.queue(platform_index, force_name, requester_name, destin
 		return nil, "Platform surface not valid"
 	end
 
-	-- Transferability gate — the chokepoint for the ASYNC export/transfer path (web, ctl, in-game transfers
-	-- + gateway). Only a real, materialized space platform (one with a hub) may be exported; a hub-less
-	-- source would produce a trivially-passing "green" (~0 content → ~0 loss) and misleading details.
-	-- Hub-less stubs (waiting_for_starter_pack) are already caught above by the surface==nil check; this
-	-- also covers the surface-valid-but-hub-missing edge. NOTE: the SYNCHRONOUS Serializer.export_platform
-	-- path (reached via clone_platform) is separate and NOT gated here — it neither transfers nor deletes a
-	-- source, so an empty clone is harmless; add the same guard there if it ever becomes a transfer source.
 	if not GameUtils.platform_has_hub(platform) then
 		return nil, string.format(
 			"Platform '%s' (index %d) has no hub — not a transferable platform",
 			platform.name, platform_index)
 	end
 
-	-- NOTE: passengers are NOT blocked here. A transfer is allowed with players aboard; they are evacuated to
-	-- a planet at the SOLE source-delete chokepoint (delete_platform_for_transfer → Gateway.evacuate_passengers)
-	-- so no one is orphaned and no entry point can be bypassed. See gateway.lua.
 
 	local lock_opts = {
 		kind = destination_instance_id and "transfer" or "export",
@@ -220,12 +165,8 @@ function ExportPipeline.queue(platform_index, force_name, requester_name, destin
 		expires_tick = game.tick + SurfaceLock.DEFAULT_TRANSFER_LOCK_TTL_TICKS,
 	}
 
-	-- CRITICAL: Lock the platform BEFORE scanning to ensure stable item/fluid counts
-	-- This completes cargo pods, deactivates machines, and hides surface
 	local lock_success, lock_err = SurfaceLock.lock_platform(platform, force, lock_opts)
 	if not lock_success then
-		-- If already locked by this transfer path, that's fine - just note it. A transfer targeting a platform
-		-- already locked by a non-transfer lock returns a distinct error and is refused below.
 		if lock_err ~= "Platform already locked" then
 			return nil, "Failed to lock platform: " .. (lock_err or "unknown error")
 		end
@@ -234,8 +175,6 @@ function ExportPipeline.queue(platform_index, force_name, requester_name, destin
 		game.print(string.format("[Export] Locked platform %s for stable export...", platform.name), {1, 0.8, 0})
 	end
 
-	-- CRITICAL: Capture schedule from LuaSpacePlatform (records + interrupts + group),
-	-- using hub_entity.platform as primary source.
 	local platform_schedule, schedule_err = PlatformSchedule.capture(platform, platform.hub)
 	if not platform_schedule then
 		SurfaceLock.unlock_platform(platform.index)
@@ -248,15 +187,10 @@ function ExportPipeline.queue(platform_index, force_name, requester_name, destin
 		tostring(schedule_summary.group)))
 
 	local entities = surface.find_entities_filtered({})
-	-- ONE fluid-capture discipline for the whole job (2.1 segment API): the registry dedups
-	-- segments across entities AND batches, and the census reads serialized fluids from it.
 	local fluid_registry = FluidRegistry.new()
 
-	-- Sort entities for proper placement order (inputs before outputs, etc.)
-	-- Do this once on export rather than re-sorting on every import
 	entities = sort_entities_for_placement(entities)
 
-	-- Scan tiles for platform foundation
 	local tiles = TileScanner.scan_surface(surface)
 	log(string.format("[Export] Scanned %d tiles and %d entities from platform %s (sorted for placement, locked)", #tiles, #entities, platform.name))
 
@@ -267,28 +201,17 @@ function ExportPipeline.queue(platform_index, force_name, requester_name, destin
 		platform_name = platform.name,
 		force_name = force_name,
 		requester = requester_name,
-		destination_instance_id = destination_instance_id,  -- Transfer destination
+		destination_instance_id = destination_instance_id,
 		started_tick = game.tick,
-		surface = surface,  -- Keep reference for unlock
+		surface = surface,
 
-		-- Export state
 		entities = entities,
 		total_entities = #entities,
 		current_index = 0,
-		-- Belt entities tracked for deferred atomic scan
-		-- Maps serialized entity index → live LuaEntity reference
 		belt_entities = {},
-		-- Paired-reads source census (Task 4). Storage-safe plain data — it lives here in
-		-- storage.async_jobs across the multi-tick walk; record() folds physical-vs-serialized
-		-- per entity in the SAME execution the entity is serialized in. The census shares the
-		-- job's FluidRegistry (serialized-side fluid truth) so the two can never diverge in
-		-- how fluids are folded.
 		census = CensusAccumulator.new(fluid_registry),
-		-- The job-wide fluid segment registry (armed onto InventoryScanner per batch).
 		fluid_registry = fluid_registry,
 		export_data = {
-			-- Hard schema cut (owner ruling 2026-07-20): the payload stamps its schema version and
-			-- producing engine version; import refuses absent/mismatched stamps LOUDLY before any read.
 			schema_version = VersionCompat.PAYLOAD_SCHEMA_VERSION,
 			factorio_version = script.active_mods.base,
 			platform_name = platform.name,
@@ -301,11 +224,9 @@ function ExportPipeline.queue(platform_index, force_name, requester_name, destin
 				index = platform_index,
 				paused = platform.paused == true,
 				schedule = platform_schedule,
-				-- Explicit gateway-transfer signal (nil ⇒ ordinary transfer). Rides the same payload
-				-- rails as `schedule`; the dest reads it as platform_data.platform.gateway_target.
 				gateway_target = gateway_target,
 			},
-			tiles = tiles,  -- Include platform foundation tiles
+			tiles = tiles,
 			entities = {},
 			stats = {
 				entity_count = #entities,
@@ -315,62 +236,33 @@ function ExportPipeline.queue(platform_index, force_name, requester_name, destin
 		}
 	}
 
-	-- "total" is left RUNNING from here until complete() stops it, so it measures the export's real
-	-- WALL-CLOCK span — including the idle between ticks. That is deliberately a different quantity
-	-- from `duration_ticks * 16.67`, which is a tick COUNT scaled by a nominal 60 UPS and therefore
-	-- cannot see a tick running long (see the note at the duration calculation in complete()).
-	-- A LuaProfiler cannot be read as a number in Lua, only rendered into a LocalisedString — which
-	-- is exactly why this is logged rather than shipped as a metric field.
 	PhaseProfiler.init(job_id, {"completion", "total"})
 	PhaseProfiler.start(job_id, "total")
 	return job_id
 end
 
---- Process one batch of an export job
---- @param job table: Job data
---- @param get_batch_size function: returns batch size (supports sync mode)
---- @param should_show_progress function: returns bool
---- @return boolean: true if job complete
 function ExportPipeline.process_batch(job, get_batch_size, should_show_progress)
 	local batch_size = get_batch_size()
 	local start_index = job.current_index + 1
 	local end_index = math.min(start_index + batch_size - 1, job.total_entities)
 
-	-- CRITICAL: Tell entity handlers to skip belt item extraction during async scanning.
-	-- Belt items will be captured in a single atomic tick in complete() instead.
-	-- This prevents the "rolling snapshot" problem where items move between belts during
-	-- multi-tick scanning, causing duplicates or missed items.
-	-- Also enable fluid segment dedup so each segment is captured at its weighted-average
-	-- temperature exactly once, matching what FluidRestoration.restore() will write.
-	-- Wrapped to ensure flags are always cleared even if an error occurs mid-batch.
 	EntityHandlers.skip_belt_items = true
 	InventoryScanner.fluid_registry = job.fluid_registry
 	local batch_ok, batch_err = pcall(function()
 		for i = start_index, end_index do
 			local entity = job.entities[i]
-			-- Exclude non-cargo entities (loose ground items + passengers) via the SINGLE shared predicate, so
-			-- this async transfer path and the sync EntityScanner.scan_surface cannot drift. Ground items are
-			-- captured separately WITH their payload by the atomic scan in complete(); characters are evacuated,
-			-- not copied (the cardinal-sin duplication guard — see EntityScanner.is_exportable_entity).
 			if EntityScanner.is_exportable_entity(entity) then
 				local entity_data = EntityScanner.serialize_entity(entity)
 				if entity_data then
-					-- Test-only one-shot: drop a serialized stack to simulate a serializer omission the
-					-- census must catch (post-serialization, pre-record). No-op unless armed.
 					maybe_inject_census_omission(entity_data)
 
 					table.insert(job.export_data.entities, entity_data)
 
-					-- Track belt entities for deferred atomic item scan
 					local category = Util.get_entity_category(entity)
 					if GameUtils.BELT_ENTITY_TYPES[category] then
 						local serialized_index = #job.export_data.entities
-						job.belt_entities[serialized_index] = entity  -- Live LuaEntity reference
+						job.belt_entities[serialized_index] = entity
 					else
-						-- Paired source census (Task 4): fold the PHYSICAL and SERIALIZED reads of this ONE
-						-- entity in the SAME Lua execution it was serialized in. Belt-type entities are
-						-- DEFERRED — their items are not serialized until the atomic pass in complete()
-						-- (skip_belt_items) — so they are paired there instead (atomic belt scan).
 						CensusAccumulator.record(job.census, entity, entity_data)
 					end
 				end
@@ -383,7 +275,6 @@ function ExportPipeline.process_batch(job, get_batch_size, should_show_progress)
 
 	job.current_index = end_index
 
-	-- Show progress every 10 batches
 	if should_show_progress() and end_index % (batch_size * 10) == 0 then
 		local progress = math.floor((end_index / job.total_entities) * 100)
 		game.print(string.format("[Export %s] Progress: %d%% (%d/%d entities)",
@@ -393,35 +284,15 @@ function ExportPipeline.process_batch(job, get_batch_size, should_show_progress)
 	return job.current_index >= job.total_entities
 end
 
---- Complete an export job: atomic belt scan, verification, compression, notifications, cleanup
---- @param job table: Job data
 function ExportPipeline.complete(job)
-	-- The job_id already contains the full export_id (platformName_tick_export_N)
-	-- generated at queue time to prevent race conditions
 	local export_id = job.job_id
 
-	-- Start completion profiler (belt scan + verify + serialize + compress)
 	PhaseProfiler.start(job.job_id, "completion")
 
-	-- Store completed export with compression
 	storage.platform_exports = storage.platform_exports or {}
 
-	-- ========================================
-	-- ATOMIC BELT ITEM SCAN (single-tick pass)
-	-- ========================================
-	-- During async entity scanning, belt item extraction was SKIPPED to prevent the
-	-- "rolling snapshot" problem: belts can't be deactivated, so items keep moving
-	-- between belts during multi-tick scanning, causing duplicates or missed items.
-	--
-	-- Now that all entity structure is serialized, we do a single-tick scan of ALL
-	-- belt entities' transport lines. This gives an atomic, consistent snapshot of
-	-- belt item positions — no items can move between belts within a single tick.
-	-- ========================================
 	local belt_scan_count = 0
 	local belt_item_total = 0
-	-- Phase 5B: pair every live belt with its record id INSIDE this same atomic tick — the
-	-- line_equals side partition below is valid ONLY on a populated source in the same execution
-	-- (BELT-R9: engine line identity is never a cross-import key; the partition IS the key).
 	local belt_pairs = {}
 	for serialized_index, live_entity in pairs(job.belt_entities or {}) do
 		if live_entity and live_entity.valid then
@@ -429,18 +300,10 @@ function ExportPipeline.complete(job)
 			local entity_data = job.export_data.entities[serialized_index]
 			if entity_data then
 				belt_pairs[#belt_pairs + 1] = { entity = live_entity, id = entity_data.entity_id }
-				-- Loaders ride the DEFAULT handler, which returns nil specific_data when nothing else
-				-- was captured — create it here rather than silently skipping the patch AND the census
-				-- pairing below (a skipped patch = loader line items never serialized).
 				entity_data.specific_data = entity_data.specific_data or {}
 				entity_data.specific_data.items = belt_items
-				-- Paired source census (Task 4) for belts: the physical read re-derives belt contents via
-				-- extract_belt_items INDEPENDENTLY of the just-patched serialized copy. CRITICAL: belt pairing
-				-- is ONLY valid inside this single-tick atomic pass — belts cannot be frozen, so items move
-				-- between ticks; the physical read and the serialized items must be the SAME tick (belts keep moving — belt items must be extracted in ONE atomic tick).
 				CensusAccumulator.record(job.census, live_entity, entity_data)
 				belt_scan_count = belt_scan_count + 1
-				-- Count items for logging
 				for _, line_data in ipairs(belt_items) do
 					for _ in ipairs(line_data.items or {}) do
 						belt_item_total = belt_item_total + 1
@@ -454,48 +317,25 @@ function ExportPipeline.complete(job)
 	end
 	log(string.format("[Export] Atomic belt scan: %d belts scanned, %d item stacks captured (single tick)",
 		belt_scan_count, belt_item_total))
-	-- Phase 5B: capture the side partition in the SAME atomic tick as the scan above. The payload
-	-- carries one record per lane side ({members={{id,li}...}, slots={{n,q,ct}...}}); the import
-	-- restores each side's multiset by reverse first-fit (BELT-R11/R12, R14 GO measured live
-	-- 2026-07-26: 372/372 all_sides_exact on the owner-built over-packed circuit). The per-entity
-	-- specific_data.items above still ride for the census pairing and old-importer compatibility.
 	if #belt_pairs > 0 then
 		local sg_ok, side_groups = pcall(BeltRestoration.capture_side_groups, belt_pairs)
 		if sg_ok and side_groups then
 			job.export_data.belt_side_groups = side_groups
 			log(string.format("[Export] Belt side partition: %d side groups captured (same tick)", #side_groups))
 		elseif not sg_ok then
-			-- Fail LOUD, not silent — and tell the truth about the consequence: the legacy
-			-- consolidation restore is DELETED (owner order 2026-07-27), so a belt-bearing payload
-			-- without its side partition is REFUSED at import (import-completion's
-			-- pre-positions/validate_side_groups refusal), fail => revert, source preserved.
 			log("[Export] WARNING: capture_side_groups threw: " .. tostring(side_groups)
 				.. " — payload carries NO side partition; a belt-bearing import will REFUSE it (no legacy fallback exists)")
 		end
 	end
-	-- ========================================
 
-	-- ========================================
-	-- ATOMIC GROUND-ITEM SCAN (single-tick pass)
-	-- ========================================
-	-- Loose ground items (item-entity / "item-on-ground") are skipped by the async loop (which
-	-- would emit a stackless, unrestorable record). Capture them here in one tick WITH their item
-	-- payload, BEFORE verification, so they are both counted and restorable. Ground items are not
-	-- census-paired (the guard test in census-meter.test.cjs carries that invariant).
 	local ground_items = EntityScanner.scan_items_on_ground(job.surface)
 	for _, ground_item in ipairs(ground_items) do
 		table.insert(job.export_data.entities, ground_item)
 	end
 	log(string.format("[Export] Atomic ground-item scan: %d loose item stack(s) captured", #ground_items))
-	-- ========================================
 
-	-- The fluid-segment registry IS the payload's fluid truth: one record per segment (our ids),
-	-- entities reference it via specific_data.fluidboxes. Attach it before verification so the
-	-- expected counts and the payload can never diverge.
 	job.export_data.fluid_segments = FluidRegistry.list(job.fluid_registry)
 
-	-- CRITICAL: Generate verification data from SERIALIZED data
-	-- Items now include the atomically-scanned belt items; fluids fold the segment registry.
 	local item_counts = Verification.count_all_items(job.export_data.entities)
 	local fluid_counts = Verification.count_fluid_segments(job.export_data.fluid_segments)
 	log(string.format("[Export] Generated verification from serialized data (%d item types, %d fluid types, %d fluid segments)",
@@ -505,32 +345,14 @@ function ExportPipeline.complete(job)
 		fluid_counts = fluid_counts,
 	}
 
-	-- ========================================
-	-- PAIRED-READS SOURCE CENSUS VERDICT (Task 4)
-	-- ========================================
-	-- Every entity was paired physical-vs-serialized in the SAME execution it was serialized in
-	-- (non-belts in process_batch, belts in the atomic pass above). The verdict applies the same
-	-- exact contract as the frozen transfer gate. This is a SOURCE-side omission check the destination
-	-- gate structurally cannot see: a serializer that drops an item makes BOTH the exported payload AND
-	-- the dest gate's "expected" wrong, so they agree while silently losing data.
 	job.census_verdict = CensusAccumulator.verdict(job.census)
 	if job.destination_instance_id then
-		-- TRANSFER: fail closed on a mismatch. Do NOT store or send the export; the destination is
-		-- never contacted (the surface_export_complete -> TransferPlatformRequest continuation cannot
-		-- run). The census totals are NOT attached to the transmitted payload — they would only bloat
-		-- the RCON-bottlenecked transfer path; a mismatch aborts and a clean verdict just proceeds.
 		if not job.census_verdict.ok then
 			ExportPipeline.abort_transfer_on_census_mismatch(job)
 			return
 		end
-		-- CLEAN transfer: bank a compact debug-gated census-pass witness (SC-6 Phase 4). Proves the
-		-- paired-reads census RAN and PASSED on this real transfer — the destination import result
-		-- cannot show it (a clean verdict is never attached to the transmitted payload). No payload
-		-- change; source-side only; production (debug off) writes nothing.
 		DebugExport.export_census_pass(job.census_verdict, job.platform_name)
 	else
-		-- Non-transfer export (file / clone / uploaded-source): no source-delete risk, so NEVER abort.
-		-- Attach the verdict for inspection; log a loud warning on a mismatch, export the payload anyway.
 		job.export_data.census_verdict = job.census_verdict
 		if not job.census_verdict.ok then
 			log(string.format(
@@ -539,9 +361,6 @@ function ExportPipeline.complete(job)
 		end
 	end
 
-	-- CRITICAL: Include frozen_states for restoring original active states on import
-	-- The frozen_states map contains the ORIGINAL state of each entity BEFORE freezing.
-	-- This allows import to restore entities to their pre-export active/disabled state.
 	local lock_data = storage.locked_platforms and storage.locked_platforms[job.platform_index]
 	if lock_data and lock_data.frozen_states then
 		job.export_data.frozen_states = lock_data.frozen_states
@@ -549,10 +368,6 @@ function ExportPipeline.complete(job)
 			lock_data.frozen_count or 0))
 	end
 
-	-- Source force research bonuses that govern INSERTER HAND CAPACITY. These are not entity data — they
-	-- live in the source force's tech tree — so the import side replicates them onto the destination force
-	-- BEFORE hydration; otherwise a less-researched dest physically caps each inserter hand below what the
-	-- source held, and the held items are genuinely unplaceable (see the gate must count a COMPLETE frozen world / the held-item root cause).
 	local src_force = game.forces[job.force_name]
 	if src_force and src_force.valid then
 		local force_data = {}
@@ -562,7 +377,6 @@ function ExportPipeline.complete(job)
 		job.export_data.force_data = force_data
 	end
 
-	-- Debug: Check if verification exists before compression
 	log(string.format("[Export] Before compression: has_verification=%s", tostring(job.export_data.verification ~= nil)))
 	if job.export_data.verification then
 		log(string.format("[Export] Verification has item_counts=%s, fluid_counts=%s",
@@ -570,23 +384,18 @@ function ExportPipeline.complete(job)
 			tostring(job.export_data.verification.fluid_counts ~= nil)))
 	end
 
-	-- Convert to JSON and compress using helpers.encode_string (deflate + base64)
 	local json_string = Util.encode_json_compat(job.export_data)
 	local compressed = helpers.encode_string(json_string)
 
 	if compressed then
-		-- Store compressed data with metadata
-		-- CRITICAL: Include verification as top-level field (not compressed) for transfer validation
 		ExportCache.record(export_id, {
 			compressed = true,
 			compression = "deflate",
 			payload = compressed,
-			-- Preserve metadata for list_exports
 			platform_name = job.export_data.platform_name,
 			tick = job.export_data.tick,
 			timestamp = job.export_data.timestamp,
 			stats = job.export_data.stats,
-			-- CRITICAL: Verification data must be accessible without decompression for transfers
 			verification = job.export_data.verification
 		})
 		log(string.format("[Compression] Export %s: %d bytes → %d bytes (%.1f%% reduction)",
@@ -595,30 +404,13 @@ function ExportPipeline.complete(job)
 			tostring(job.export_data.verification and job.export_data.verification.item_counts ~= nil),
 			tostring(job.export_data.verification and job.export_data.verification.fluid_counts ~= nil)))
 	else
-		-- Fallback to uncompressed if compression fails (verification already in export_data)
-		-- NOTE: here the stored entry IS the payload table, so record's `cache_seq` stamp lands on
-		-- export_data itself and rides both this entry and any file handle_pending_file_write writes
-		-- from it. Harmless — the import side keys off schema_version and whitelists no keys — but it
-		-- is an internal ordering field on a payload, so: not stamping it is not an option (an
-		-- unstamped entry sorts oldest and deletes itself), and copying the table to avoid it would
-		-- duplicate a whole platform payload on the failure path. Recorded rather than hidden.
 		ExportCache.record(export_id, job.export_data)
 		log(string.format("[Compression Warning] Failed to compress export %s, storing uncompressed", export_id))
 	end
 
-	-- Stop completion profiler
 	PhaseProfiler.stop(job.job_id, "completion")
 	PhaseProfiler.stop(job.job_id, "total")
 
-	-- Calculate duration
-	--
-	-- `duration_ms` here is a TICK COUNT scaled by a nominal 60 UPS. It is structurally blind to a
-	-- tick stall: a stall means ticks take LONGER than 16.67 ms, so this number does not grow when
-	-- the game slows down — it is anti-correlated with the thing its consumers want. Everything
-	-- downstream inherits that (`export_metrics.async_export_ms` → the controller's
-	-- `exportTickEstimateMs`, which is named for the estimate it is). The honest wall-clock number
-	-- is the "total" profiler, logged below; it cannot travel as a number because LuaProfiler is not
-	-- readable in Lua, so the LOG is the only place the two can be compared.
 	local duration_ticks = game.tick - job.started_tick
 	local duration_seconds = duration_ticks / 60
 	local duration_ms = math.floor(duration_ticks * 16.67)
@@ -633,13 +425,10 @@ function ExportPipeline.complete(job)
 		job.export_data.platform and job.export_data.platform.schedule or nil
 	)
 
-	-- Debug export: Write source platform data for comparison
 	if job.destination_instance_id then
-		-- This is a transfer export - save for comparison
 		DebugExport.export_source_platform(job.export_data, job.platform_name)
 	end
 
-	-- Notify completion
 	local message = string.format(
 		"[Export Complete] %s (%d entities in %.1fs) - ID: %s",
 		job.platform_name, job.total_entities, duration_seconds, export_id
@@ -647,38 +436,26 @@ function ExportPipeline.complete(job)
 	game.print(message, {0, 1, 0})
 	log(message)
 
-	-- Notify requester if via RCON
 	if job.requester == "RCON" then
 		rcon.print(string.format("EXPORT_COMPLETE:%s", export_id))
 	end
 
-	-- Performance summary
 	local perf = PhaseProfiler.get(job.job_id)
 	if perf then
-		-- CRITICAL: Use profiler objects directly in LocalisedString, NOT tostring().
 		local msg = {"", "[Perf] Export '", job.platform_name, "' (", job.total_entities, " entities):\n",
 			"  Scanning:   ", math.floor(duration_ticks * 16.67), "ms (", duration_ticks, " ticks)\n",
 			"  Completion (belt+verify+compress): ", perf.completion}
 		game.print(msg)
-		-- log(), not only game.print(): the profiler values are the only WALL-CLOCK measurement of an
-		-- export that exists, and until now they reached the chat and nothing else, while the line that
-		-- did reach the log file (above) carried the tick estimate. Diagnosing "did the server freeze
-		-- long enough to drop a connected player" needs the real number in factorio-current.log, where
-		-- it can be read after the fact and correlated against the client's own log. Two lines per
-		-- export, not per entity.
 		log({"", "[Perf] Export '", job.platform_name, "' (", job.total_entities, " entities, ",
 			duration_ticks, " ticks) WALL CLOCK total: ", perf.total})
 		log({"", "[Perf] Export '", job.platform_name, "' completion phase (belt+verify+compress): ",
 			perf.completion})
 		
-		-- Record to transaction history BEFORE discarding profilers
 		TransactionHistory.record_export(job, perf)
 		
 		PhaseProfiler.discard(job.job_id)
 	end
 
-	-- Send export completion notification to Clusterio plugin via send_json event channel
-	-- Note: Don't send full data - it's too large for a send_json payload. Plugin retrieves it via remote interface.
 	if clusterio_api and clusterio_api.send_json then
 		local event_payload = {
 			export_id = export_id,
@@ -687,7 +464,7 @@ function ExportPipeline.complete(job)
 			entity_count = job.total_entities,
 			duration_ticks = duration_ticks,
 			duration_seconds = duration_seconds,
-			destination_instance_id = job.destination_instance_id,  -- For auto-transfer
+			destination_instance_id = job.destination_instance_id,
 			export_metrics = {
 				async_export_ticks = duration_ticks,
 				async_export_ms = duration_ms,
@@ -737,10 +514,8 @@ function ExportPipeline.complete(job)
 	}
 	JobResults.prune(25)
 
-	-- Handle pending file write if requested
 	handle_pending_file_write(export_id)
 
-	-- Unlock platform if this is NOT a transfer (transfers will delete the platform anyway)
 	if not job.destination_instance_id then
 		local unlock_success = SurfaceLock.unlock_platform(job.platform_index)
 		if unlock_success then
@@ -758,35 +533,17 @@ function ExportPipeline.complete(job)
 		log(string.format("[Export] Skipping unlock for transfer - platform %s will be deleted", job.platform_name))
 	end
 
-	-- Cap the retained-export cache. Before this call nothing ever removed an entry, so every export
-	-- stayed in the save permanently. Pruning happens in Lua at the point of growth, rather than via a
-	-- Node-side clear_old_exports RCON call, so the bound holds even if the config push never lands.
-	--
-	-- LAST in this function, deliberately: handle_pending_file_write above reads back
-	-- storage.platform_exports[export_id] and, finding nothing, writes no file and logs nothing while
-	-- still consuming the request. Pruning after every reader in this execution has run means no
-	-- ordering bug here can turn into a silent no-op there.
 	ExportCache.prune_to_configured_cap()
 
-	-- Cleanup
 	storage.async_jobs[job.job_id] = nil
 end
 
---- Fail-closed abort for a TRANSFER export whose paired-read source census found a mismatch.
---- The destination is NEVER contacted: the export is not stored or sent, so the
---- surface_export_complete -> TransferPlatformRequest continuation cannot run. Banks an always-on
---- forensic bundle (write_failure_black_box deliberately bypasses the debug gate),
---- unlocks/preserves the source, marks the job failed, and signals the failure on the existing
---- export-completion channel with an export_failed_* id (the TS handleExportComplete recognizer
---- isInvalidExportId refuses it -> a double guard at the boundary).
---- @param job table: the export job (destination_instance_id set, census_verdict not ok)
 function ExportPipeline.abort_transfer_on_census_mismatch(job)
 	local verdict = job.census_verdict or { mismatches = {}, totals = {} }
 	local mismatch_count = #(verdict.mismatches or {})
 	local safe_name = string.gsub(job.platform_name or "unknown", "[^%w_-]", "_")
 	local filename = string.format("census_%s_%d.json", safe_name, game.tick)
 
-	-- Always-on forensic bundle (bypasses the debug gate) — must exist before we discard the transfer.
 	local bundle = {
 		reason = "source_census_mismatch",
 		platform_name = job.platform_name,
@@ -808,7 +565,6 @@ function ExportPipeline.abort_transfer_on_census_mismatch(job)
 		"[Census] Transfer of '%s' ABORTED — source serialization mismatch detected; source preserved.",
 		job.platform_name), {1, 0.3, 0})
 
-	-- Unlock (preserve) the source — the same path a non-transfer/failed export uses.
 	local unlock_success = SurfaceLock.unlock_platform(job.platform_index)
 	if unlock_success and clusterio_api and clusterio_api.send_json then
 		GameUtils.pcall_warn("[ExportPipeline] send_json surface_platform_state_changed (census abort)", function()
@@ -819,8 +575,6 @@ function ExportPipeline.abort_transfer_on_census_mismatch(job)
 		end)
 	end
 
-	-- Signal the failure on the existing export-completion channel. isInvalidExportId(export_failed*)
-	-- makes the TS handler log-and-return WITHOUT contacting the destination (double guard).
 	if clusterio_api and clusterio_api.send_json then
 		GameUtils.pcall_warn("[ExportPipeline] send_json surface_export_complete (census abort)", function()
 			clusterio_api.send_json("surface_export_complete", {
@@ -839,7 +593,6 @@ function ExportPipeline.abort_transfer_on_census_mismatch(job)
 		rcon.print(string.format("EXPORT_FAILED:census_mismatch:%s", job.platform_name))
 	end
 
-	-- Record a FAILED job result (mirror the success shape) so the job never looks green or leaks.
 	storage.async_job_results[job.job_id] = {
 		status = "failed",
 		complete = true,
@@ -853,7 +606,6 @@ function ExportPipeline.abort_transfer_on_census_mismatch(job)
 	}
 	JobResults.prune(25)
 
-	-- Discard the completion profiler and clear the job so it cannot be reprocessed.
 	PhaseProfiler.discard(job.job_id)
 	storage.async_jobs[job.job_id] = nil
 end

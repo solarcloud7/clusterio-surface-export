@@ -53,7 +53,6 @@ export const PERMISSIONS = {
 	VIEW_LOGS: `${PLUGIN_NAME}.logs.view`,
 } as const;
 
-// ── Shared JSON schema types ────────────────────────────────────────────────
 
 type JsonSchema = Record<string, unknown>;
 
@@ -75,7 +74,6 @@ export interface SourceTransferLockStateResponse {
 	transferId: string | null;
 	error: string | null;
 }
-// ── Request / Event classes ─────────────────────────────────────────────────
 
 export class ExportPlatformRequest {
 	declare ["constructor"]: typeof ExportPlatformRequest;
@@ -531,9 +529,6 @@ export class PlatformExportEvent {
 		properties: {
 			exportId: { type: "string" },
 			platformName: { type: "string" },
-			// The source platform's UNIQUE index, surfaced TOP-LEVEL (compression-proof). The index lives
-			// inside exportData.platform too, but large exports are a compressed blob whose inner platform.index
-			// is unreadable controller-side — and the source delete is keyed on this index, so it must ride here.
 			platformIndex: { type: ["integer", "null"], default: null },
 			instanceId: { type: "integer" },
 			exportData: { type: "object" },
@@ -626,7 +621,7 @@ export class ListExportsRequest {
 	static permission = PERMISSIONS.LIST_EXPORTS;
 	static jsonSchema: JsonSchema = { type: "object", properties: {}, additionalProperties: false };
 
-	constructor() { /* no fields */ }
+	constructor() { }
 	static fromJSON() { return new ListExportsRequest(); }
 	toJSON() { return {}; }
 
@@ -671,11 +666,6 @@ export class TransferPlatformRequest {
 	toJSON() { return { exportId: this.exportId, targetInstanceId: this.targetInstanceId, sourceInstanceId: this.sourceInstanceId, sourceExportId: this.sourceExportId }; }
 
 	static Response = {
-		// safeToUnlockSource is the WIRE CONTRACT the instance-side unlock authority rides on
-		// (instance.ts startControllerTransfer): true only where the controller proved the refusal
-		// was delivery-free. It is declared here deliberately — the reconciliation review found it
-		// crossing the wire only because this schema happens to omit additionalProperties:false, so a
-		// well-meaning schema tightening would have silently disarmed every instance-side unlock.
 		jsonSchema: { type: "object", properties: { success: { type: "boolean" }, error: { type: "string" }, transferId: { type: "string" }, message: { type: "string" }, safeToUnlockSource: { type: "boolean" } }, required: ["success"] } as JsonSchema,
 		fromJSON(json: unknown) { return json as SimpleResponse & { transferId?: string; message?: string; safeToUnlockSource?: boolean }; },
 	};
@@ -695,9 +685,6 @@ export class StartPlatformTransferRequest {
 			sourcePlatformIndex: { type: "integer" },
 			targetInstanceId: { type: "integer" },
 			forceName: { type: "string", default: "player" },
-			// Where the platform is re-created on the destination. Optional and null-by-default:
-			// Lua (import-pipeline.lua) falls back to "nauvis" when absent, which is exactly what
-			// every transfer did before this field existed — so omitting it preserves behaviour.
 			targetPlanet: { type: ["string", "null"], default: null },
 		},
 		required: ["sourceInstanceId", "sourcePlatformIndex", "targetInstanceId"],
@@ -727,9 +714,6 @@ export class StartPlatformTransferRequest {
 	}
 
 	static Response = {
-		// safeToUnlockSource declared for the same reason as TransferPlatformRequest.Response above —
-		// handleStartPlatformTransferRequest passes transferPlatform's result through, and web/ctl
-		// callers may consume the field.
 		jsonSchema: { type: "object", properties: { success: { type: "boolean" }, error: { type: "string" }, transferId: { type: "string" }, exportId: { type: "string" }, message: { type: "string" }, safeToUnlockSource: { type: "boolean" } }, required: ["success"] } as JsonSchema,
 		fromJSON(json: unknown) { return json as SimpleResponse & { transferId?: string; exportId?: string; message?: string; safeToUnlockSource?: boolean }; },
 	};
@@ -762,9 +746,6 @@ export class InstanceListPlatformsRequest {
 	};
 }
 
-// ── Gateway link config (WS2) ───────────────────────────────────────────────
-// Nested item schemas (the round-trip harness only samples top-level required fields, so these only
-// drive AJV runtime validation of the array contents).
 const GATEWAY_LINK_SCHEMA: JsonSchema = {
 	type: "object",
 	properties: { targetInstanceId: { type: "integer" }, targetGateway: { type: "string" } },
@@ -795,7 +776,6 @@ const RESOLVED_GATEWAYS_SCHEMA: JsonSchema = {
 	},
 };
 
-/** control → controller: read the raw gateway links + the pinned gateway-name list (web editor). */
 export class GetGatewaysRequest {
 	declare ["constructor"]: typeof GetGatewaysRequest;
 	static plugin = PLUGIN_NAME;
@@ -837,7 +817,6 @@ export class GetGatewaysRequest {
 	};
 }
 
-/** control → controller: replace the entire target list for one gateway. */
 export class SetGatewayLinkRequest {
 	declare ["constructor"]: typeof SetGatewayLinkRequest;
 	static plugin = PLUGIN_NAME;
@@ -845,19 +824,6 @@ export class SetGatewayLinkRequest {
 	static src = "control" as const;
 	static dst = "controller" as const;
 	static permission = PERMISSIONS.TRANSFER_EXPORTS;
-	/**
-	 * EVERY changed gateway on ONE instance, in a single request — not one request per gateway.
-	 *
-	 * The shape is the fix for a real defect. Multi mode forbids two gates on an instance pointing at
-	 * the same destination, which is a rule about the instance's WHOLE layout; validating it one
-	 * gateway at a time against already-persisted state judges an intermediate state that the operator
-	 * never asked for. Moving a destination from gate 2 to gate 1 was rejected on gate 1 (gate 2 still
-	 * held it on disk) and then applied on gate 2 (clearing it) — a move that deleted the link. A swap
-	 * of two gates' destinations was rejected on both halves, every time, forever: a legal end state
-	 * unreachable through the UI.
-	 *
-	 * One request per instance makes the unit of validation the same as the unit of intent.
-	 */
 	static jsonSchema: JsonSchema = {
 		type: "object",
 		properties: {
@@ -898,7 +864,6 @@ export class SetGatewayLinkRequest {
 	};
 }
 
-/** instance → controller: pull the resolved gateway config (live names + online) on instance start. */
 export class GetGatewayConfigRequest {
 	declare ["constructor"]: typeof GetGatewayConfigRequest;
 	static plugin = PLUGIN_NAME;
@@ -929,14 +894,11 @@ export class GetGatewayConfigRequest {
 	};
 }
 
-/** One row of the /teleport roster: an instance with its client-routable address. */
 export interface RosterInstance {
 	instanceId: number;
 	name: string;
-	/** `publicAddress:gamePort` — empty when the instance has no assigned port (not running). */
 	address: string;
 	online: boolean;
-	/** True for the requesting instance itself (the GUI hides it). */
 	self: boolean;
 }
 
@@ -956,11 +918,6 @@ const ROSTER_INSTANCES_SCHEMA: JsonSchema = {
 	},
 };
 
-/**
- * instance → controller: the cluster instance roster with client-routable addresses, for the
- * in-game /teleport GUI. Address assembly is controller-side by necessity — instance plugins
- * cannot read host records (see docs/GATEWAY_TRANSFER_PRD.md).
- */
 export class GetInstanceRosterRequest {
 	declare ["constructor"]: typeof GetInstanceRosterRequest;
 	static plugin = PLUGIN_NAME;
@@ -995,7 +952,6 @@ export class GetInstanceRosterRequest {
 	};
 }
 
-/** controller → instance: push the resolved gateway config (on a config change). */
 export class PushGatewayConfigRequest {
 	declare ["constructor"]: typeof PushGatewayConfigRequest;
 	static plugin = PLUGIN_NAME;
@@ -1010,14 +966,6 @@ export class PushGatewayConfigRequest {
 	};
 
 	gateways: ResolvedGateway[];
-	/**
-	 * Every gateway the active mode exposes — NOT merely the ones that have links.
-	 *
-	 * Sent separately because `gateways` only carries CONFIGURED gateways: deriving the active set
-	 * from it would unlock nothing on a fresh cluster, leaving the operator unable to fly to a
-	 * gateway in order to link it. Optional so an un-updated instance keeps today’s behaviour of
-	 * unlocking everything with the prefix.
-	 */
 	activeGatewayNames?: string[];
 
 	constructor(json: { gateways: ResolvedGateway[]; activeGatewayNames?: string[] }) {
@@ -1100,8 +1048,6 @@ export class TransferValidationEvent {
 	sourceInstanceId: number;
 	success: boolean;
 	validation?: ValidationResult;
-	// Carries the import metrics dict from Lua, which now includes a nested `phase_spans` array
-	// (waterfall trace) alongside the numeric fields — hence Record<string, unknown>, not number.
 	metrics?: Record<string, unknown>;
 
 	constructor(json: { transferId: string; platformName: string; sourceInstanceId: number; success: boolean; validation?: ValidationResult; metrics?: Record<string, unknown> }) {
@@ -1194,9 +1140,6 @@ export class DeleteSourcePlatformRequest {
 	platformIndex: number;
 	platformName: string;
 	forceName: string;
-	// The source-generated export/transfer id (== the source lock's transfer_job_id). A NAME-FREE correlation
-	// token: the Lua delete refuses if this doesn't match the lock at the index, so a stale/duplicate/reused-index
-	// delete can't unlock or tear down an UNRELATED in-flight transfer's platform (platform identity is surface.index, never the mutable name / re-audit P1).
 	exportId: string | null;
 
 	constructor(json: { platformIndex: number; platformName: string; forceName?: string; exportId?: string | null }) {
@@ -1233,10 +1176,6 @@ export class UnlockSourcePlatformRequest {
 		additionalProperties: false,
 	};
 
-	// Unlock keys on the unique platformIndex; `platformName`, when set, is a secondary DISPLAY tripwire (the
-	// rollback/expiry paths pass the stored name). Identity is the index + surface.index inside unlock_platform;
-	// the destructive delete's request-vs-lock correlation is the name-free transfer_job_id (see
-	// DeleteSourcePlatformRequest.exportId) — NOT the mutable name, and NOT any controller boot reconcile.
 	platformIndex: number;
 	platformName: string | null;
 	forceName: string;
@@ -1374,7 +1313,6 @@ export class GetTransactionLogRequest {
 			return json as SimpleResponse & {
 				transferId?: string;
 				events?: TransactionLogEntryModel[];
-				/** Absent means retained. False means the detail was evicted; events will be empty. */
 				detailRetained?: boolean;
 				transferInfo?: Record<string, unknown> | null;
 				summary?: Record<string, unknown> | null;
@@ -1417,11 +1355,6 @@ export class PlatformStateChangedEvent {
 	toJSON() { return { instanceId: this.instanceId, platformName: this.platformName, forceName: this.forceName }; }
 }
 
-// ── Shared domain types (used by node-side and web-side) ────────────────────
-// The transaction payload types (ExportMetrics, ImportMetrics, PayloadMetrics, ValidationResult)
-// now live in shared/dto.ts so the browser bundle can import them (via web/view-models.ts) without
-// pulling in node-only code. They are imported and re-exported at the top of this file, so existing
-// `import { … } from "./messages"` call sites keep working unchanged.
 
 export type OperationType = "transfer" | "export" | "import";
 
@@ -1467,11 +1400,8 @@ export interface ActiveTransfer {
 	failedStage?: 'items' | 'fluids' | 'belts' | 'test_hook' | null;
 	sourceVerification?: { itemCounts: Record<string, number>; fluidCounts: Record<string, number> };
 	validationTimeout?: ReturnType<typeof setTimeout> | null;
-	/** The ms actually armed for this attempt's validation timer (single source for logs + tests —
-	 * the per-arm config read happens exactly once, in scheduleValidationTimeout). */
 	armedValidationTimeoutMs?: number | null;
 	phases?: Record<string, PhaseRecord>;
-	/** Set once recordOperationOutcome() has counted this operation's terminal result (Prometheus idempotency guard). */
 	metricsRecorded?: boolean;
 }
 
@@ -1480,7 +1410,7 @@ export interface StoredExport {
 	exportId: string;
 	sourceExportId: string;
 	platformName: string;
-	platformIndex: number | null;  // source platform's unique index (top-level, compression-proof; keys the source delete)
+	platformIndex: number | null;
 	instanceId: number;
 	exportData: Record<string, unknown>;
 	exportMetrics: ExportMetrics | null;
@@ -1491,16 +1421,6 @@ export interface StoredExport {
 
 export interface PersistedTransactionLog {
 	transferId: string;
-	/**
-	 * What `TransactionLogger.buildTransferInfo` actually writes: every ActiveTransfer field is
-	 * optional AND explicitly nullable, because that builder normalises missing timestamps to `null`
-	 * rather than leaving them absent (`startedAt: transfer.startedAt || null`, and the same for
-	 * completedAt / failedAt / error).
-	 *
-	 * This was `Partial<ActiveTransfer>`, which says `| undefined` and not `| null` — a
-	 * declared-but-wrong shape. It went unchecked for as long as it did because the persist path read
-	 * the file back with `JSON.parse`, so the array was `any` and nothing compared the two.
-	 */
 	transferInfo: { [K in keyof ActiveTransfer]?: ActiveTransfer[K] | null } & { status: string };
 	summary: Record<string, unknown>;
 	events: TransactionLogEntryModel[];
@@ -1515,7 +1435,6 @@ export interface SubscriptionState {
 	transferId: string | null;
 }
 
-/** Minimal read-only shape of a Clusterio InstanceRecord as consumed by this plugin. */
 export type InstanceRecordLike = {
 	id: number;
 	isDeleted: boolean;
@@ -1523,12 +1442,6 @@ export type InstanceRecordLike = {
 	config: { get(key: string): unknown };
 };
 
-/** Shared interface implemented by ControllerPlugin; used by lib/ modules to avoid circular imports. */
-/**
- * The minimal, persistable "a transfer is awaiting validation" intent used for bounded Phase-1 observability
- * and future Phase-2 re-adoption. Source recovery is authoritative in Lua: transfer locks expire by game tick
- * and auto-unlock there. The controller must not auto-delete or auto-unlock from this record on restart.
- */
 export interface PendingTransferIntent {
 	transferId: string;
 	sourceInstanceId: number;
@@ -1537,7 +1450,6 @@ export interface PendingTransferIntent {
 	forceName: string;
 	targetInstanceId: number;
 	startedAt: number;
-	/** The stored export blob for this transfer. Phase 1 keeps this only as bounded observability metadata. */
 	exportId: string | null;
 }
 
@@ -1551,25 +1463,13 @@ export interface SourceCommitMarker {
 }
 
 export interface IControllerPlugin {
-	/** #106: add/remove a persisted awaiting_validation intent (the orchestrator calls these). */
 	persistPendingTransfer(intent: PendingTransferIntent): void;
 	removePendingTransfer(transferId: string): void;
-	/**
-	 * The single definition of "online" (present, on a connected host, AND running) — implemented
-	 * once on the controller plugin and shared with the Gateways editor's "(offline)" label. The
-	 * transfer preflight uses it to REFUSE a transfer to an offline destination up front (owner
-	 * ruling 2026-08-02: prevent the failure, don't build recovery for it).
-	 */
 	isInstanceOnline(instanceId: number): boolean;
 	controller: {
 		wsServer: { controlConnections: Map<number, unknown> };
 		sendTo: (target: { instanceId: number }, message: unknown) => Promise<any>;
-		/** Controller config accessor (lib Config). Optional so unit-test harnesses can omit it —
-		 * readers must fall back to their declared default when absent, never throw. */
 		config?: { get(field: string): unknown };
-		// alpha.25: controller.instances is an InstanceManager, not a plain Map. Expose only the
-		// members we use (get/values returning Readonly records); avoids accidental Map-only calls
-		// like entry-iteration or .size, which InstanceManager does not support.
 		instances: {
 			get(id: number): InstanceRecordLike | undefined;
 			values(): IterableIterator<InstanceRecordLike>;
@@ -1595,17 +1495,11 @@ export interface IControllerPlugin {
 	transactionLogs: Map<string, TransactionLogEntryModel[]>;
 	persistedTransactionLogs: PersistedTransactionLog[];
 	transactionLogPath: string;
-	/** Append-only audit ledger of every transfer (see lib/audit-ledger.ts). */
 	auditLedgerPath: string;
-	/** Folded ledger: one row per transfer, terminal beating start. The LIST source. */
 	auditIndex: Map<string, AuditRow>;
-	/** Terminal-row count per transfer — how many distinct verdicts it has recorded. */
 	auditRevisions: Map<string, number>;
-	/** Append one ledger row and update the index. Never throws. */
 	recordAuditRow(row: AuditRow): Promise<void>;
-	/** Append a `start` row for a transfer that has just been created. Never throws. */
 	recordTransferStarted(transfer: ActiveTransfer): Promise<void>;
-	/** Latched at boot; persistTransactionLog refuses to write while set. */
 	transactionLogLoadError: string | null;
 	lastTreeForceName: string;
 	treeRevision: number;
@@ -1631,19 +1525,16 @@ export interface IControllerPlugin {
 	persistStorage(): Promise<void>;
 }
 
-/** Verification counts embedded in exported platform JSON (from Lua serializer). */
 export type ExportVerification = {
 	item_counts?: Record<string, number>;
 	fluid_counts?: Record<string, number>;
 };
 
-/** Entity/tile counts embedded in exported platform JSON. */
 export type ExportStats = {
 	entity_count?: number;
 	tile_count?: number;
 };
 
-/** Exported platform payload as produced by the Lua serializer. */
 export type ExportData = {
 	compressed?: boolean;
 	compression?: string;
@@ -1658,7 +1549,6 @@ export type ExportData = {
 	[extra: string]: unknown;
 };
 
-/** Options for creating a new operation record on the controller. */
 export type OperationOptions = {
 	operationId?: string;
 	exportId?: string | null;
@@ -1684,13 +1574,10 @@ export type OperationOptions = {
 	sourceVerification?: { itemCounts?: Record<string, number>; fluidCounts?: Record<string, number> } | null;
 };
 
-/** Result returned from Lua export polling. */
 export type ExportResult = { success: boolean; exportId?: string; error?: string };
 
-/** Result returned from Lua import operation. */
 export type ImportResult = { success: boolean; error?: string };
 
-/** Pending transfer state tracked by the instance plugin. */
 export type PendingTransfer = {
 	platform_index?: number;
 	platform_name?: string;
