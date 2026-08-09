@@ -1,16 +1,5 @@
 "use strict";
 
-// Source-contract tests for the phase census (module/utils/phase-census.lua) and the shared
-// subject meter it delegates to (module/validators/surface-counter.lua). Plain `node --test`,
-// zero dependencies, fs.readFileSync + structural assertions.
-//
-// HISTORY THAT SHAPES THIS FILE. This file used to hold drift-detection tests keeping a SECOND
-// counting implementation aligned with SurfaceCounter (primitive-set equality, subject-set
-// equality, a never-calls-SurfaceCounter ban). Those were deleted 2026-08-08 with the duplicate
-// itself: PhaseCensus now delegates to the one meter, so there is nothing left to drift. The
-// ban test's own message had enshrined a born-false contract comment ("the destination gate's
-// meter ... its readings must not change" — the gate's item loop never called it), which is why
-// cross-file behavior claims in this repo live in tests, never in prose.
 
 const { test } = require("node:test");
 const assert = require("node:assert/strict");
@@ -41,8 +30,6 @@ function countOccurrences(source, needle) {
 	return source.split(needle).length - 1;
 }
 
-// ---------------------------------------------------------------------------------------------
-// The shared subject meter (SurfaceCounter.count_entity_items).
 
 const meterBody = functionBody(
 	surfaceCounter,
@@ -51,9 +38,6 @@ const meterBody = functionBody(
 );
 
 test("the default (nil-subject) read excludes ground items", () => {
-	// The source paired census calls this meter one-arg and compares it against serialized data
-	// that deliberately excludes ground items. A ground count reachable at subject == nil makes
-	// physical > serialized for every loose stack and aborts every transfer carrying one.
 	assert.match(stripLuaComments(meterBody), /if subject == "ground" and etype == "item-entity" then/,
 		"the ground block must be reachable ONLY under the explicit \"ground\" subject");
 	assert.doesNotMatch(meterBody, /subject\s*==\s*nil\s+or\s+subject\s*==\s*"ground"/,
@@ -105,8 +89,6 @@ test("count_items folds the per-entity meter plus the one ground pass", () => {
 		"count_items must take ground from the shared ground pass, not an inline loop");
 });
 
-// ---------------------------------------------------------------------------------------------
-// PhaseCensus owns bracketing only — counting is delegated.
 
 test("phase-census contains no counting implementation of its own", () => {
 	const code = stripLuaComments(phaseCensus);
@@ -171,15 +153,11 @@ test("phase-census is report-only: it never renders a verdict", () => {
 		"the exact gate remains the sole verdict");
 });
 
-// ---------------------------------------------------------------------------------------------
-// Call-site contracts in import-completion.lua.
 
 const importCompletion = stripLuaComments(
 	fs.readFileSync(path.join(moduleRoot, "core", "import-completion.lua"), "utf8"),
 );
 
-// Phases that move no ITEMS, so they need no census bracket. The reviewable record of that
-// judgement, not a convenience.
 const ITEM_NEUTRAL_PHASES = {
 	state: "control behaviour, filters and circuit connections — no item movement",
 	fluids: "fluids are a different unit; accounted by the gate's fluid side, not the item census",
@@ -191,9 +169,6 @@ const ITEM_NEUTRAL_PHASES = {
 };
 
 test("EVERY recorded phase is either census-bracketed or declared item-neutral", () => {
-	// Enumerate phases at their EMITTERS — every file that calls PhaseRecorder.start — not from
-	// one consumer file. Scanning import-completion alone let import-pipeline's phases escape
-	// both the census and this judgement entirely.
 	const importPipeline = stripLuaComments(
 		fs.readFileSync(path.join(moduleRoot, "core", "import-pipeline.lua"), "utf8"),
 	);

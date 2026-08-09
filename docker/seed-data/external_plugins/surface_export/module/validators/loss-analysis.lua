@@ -1,7 +1,3 @@
--- FactorioSurfaceExport - Loss Analysis
--- Post-activation loss analysis for platform transfers.
--- Extracted from async-processor.lua complete_import_job.
-
 local Util = require("modules/surface_export/utils/util")
 local GameUtils = require("modules/surface_export/utils/game-utils")
 local InventoryScanner = require("modules/surface_export/export_scanners/inventory-scanner")
@@ -9,27 +5,12 @@ local SurfaceCounter = require("modules/surface_export/validators/surface-counte
 
 local LossAnalysis = {}
 
--- At extreme temperatures (>1M°C), IEEE 754 doubles lose precision and the engine's
--- segment merging can shift fluid between temperature buckets.
--- Use a tolerance proportional to the expected amount (5% or 25 units, whichever is larger).
-local LOSS_TOLERANCE_PCT = 0.05  -- 5% relative tolerance for high-temp fluid comparison
-local LOSS_TOLERANCE_ABS = 25    -- minimum absolute tolerance (units) for high-temp fluid comparison
+local LOSS_TOLERANCE_PCT = 0.05
+local LOSS_TOLERANCE_ABS = 25
 
---- Reconcile high-temperature fluid counts between expected and actual.
---- At extreme temps (>10,000°C), the engine may merge packets via weighted-average
---- temperature, shifting fluid between temperature keys while preserving total volume.
---- This function aggregates by base fluid name for high-temp, and compares per-key for low-temp.
---- @param expected_counts table: fluid_key → amount (from source verification)
---- @param actual_counts table: fluid_key → amount (from live surface)
---- @param high_temp_threshold number|nil: Temperature threshold (default: Util.HIGH_TEMP_THRESHOLD)
---- @return table: Reconciliation result with fields:
----   reconciledLoss, lowTempLoss, highTempReconciledLoss,
----   expectedHighTemp, actualHighTemp, allHighTempNames,
----   totalExpected, totalActual, rawDelta, fluidPreservedPct
 function LossAnalysis.reconcile_fluids(expected_counts, actual_counts, high_temp_threshold)
     local HIGH_TEMP = high_temp_threshold or Util.HIGH_TEMP_THRESHOLD
 
-    -- Aggregate high-temp fluids by base name (volume and thermal energy)
     local expected_ht_by_name = {}
     local actual_ht_by_name = {}
     local expected_ht_energy_by_name = {}
@@ -49,7 +30,6 @@ function LossAnalysis.reconcile_fluids(expected_counts, actual_counts, high_temp
         end
     end
 
-    -- Reconciled loss for high-temp: aggregate comparison
     local ht_loss = 0
     local all_ht_names = {}
     for n, _ in pairs(expected_ht_by_name) do all_ht_names[n] = true end
@@ -60,7 +40,6 @@ function LossAnalysis.reconcile_fluids(expected_counts, actual_counts, high_temp
         ht_loss = ht_loss + math.max(0, exp - act)
     end
 
-    -- Low-temp loss: straightforward per-key
     local lt_loss = 0
     for key, exp in pairs(expected_counts or {}) do
         local _, temp = Util.parse_fluid_temp_key(key)
@@ -74,7 +53,6 @@ function LossAnalysis.reconcile_fluids(expected_counts, actual_counts, high_temp
     local total_actual = Util.sum_fluids(actual_counts or {})
     local reconciled_loss = lt_loss + ht_loss
 
-    -- Build high-temp aggregate details
     local ht_aggregates = {}
     for name, _ in pairs(all_ht_names) do
         local exp = expected_ht_by_name[name] or 0
@@ -108,9 +86,6 @@ function LossAnalysis.reconcile_fluids(expected_counts, actual_counts, high_temp
     }
 end
 
---- Build per-entity-type expected item totals from serialized entity data
---- @param entities_to_create table: Array of serialized entity data
---- @return table: entity_type → total_item_count
 local function build_expected_by_type(entities_to_create)
     local expected_by_type = {}
     for _, entity_data in ipairs(entities_to_create) do
@@ -142,9 +117,6 @@ local function build_expected_by_type(entities_to_create)
     return expected_by_type
 end
 
---- Build per-entity-type actual item totals from a live surface
---- @param surface LuaSurface: The surface to scan
---- @return table: entity_type → total_item_count
 local function build_actual_by_type(surface)
     local actual_by_type = {}
     local live_entities = surface.find_entities_filtered({})
@@ -183,35 +155,22 @@ local function build_actual_by_type(surface)
     return actual_by_type
 end
 
---- Run post-activation loss analysis.
---- Counts live surface items/fluids, compares against expected verification data,
---- logs detailed breakdown, and updates the validation result in-place.
---- @param surface LuaSurface: The imported platform surface
---- @param entities_to_create table: Array of serialized entity data (for per-type breakdown)
---- @param validation_result table: The validation result to update (modified in-place)
---- @param segment_temps table|nil: Optional seg_id→{fluid,temp} map from FluidRestoration.restore()
 function LossAnalysis.run(surface, entities_to_create, validation_result, segment_temps)
     local result = validation_result
     if not result.totalExpectedItems then
         return
     end
 
-    -- === ITEM LOSS ANALYSIS ===
     local expected_by_type = build_expected_by_type(entities_to_create)
 
-    -- Count all items and fluids on the live surface.
-    -- Pass segment_temps so fluid temperature keys match what FluidRestoration wrote,
-    -- avoiding cosmetic mismatches from proxy read lag (especially for high-temp fluids).
     local surface_counts = SurfaceCounter.count_all(surface, segment_temps)
     local actual_item_counts = surface_counts.item_counts
     local total_actual_items = surface_counts.item_total
     local actual_fluid_counts = surface_counts.fluid_counts
     local total_actual_fluids = surface_counts.fluid_total
 
-    -- Build per-entity-type actual counts for breakdown logging
     local actual_by_type = build_actual_by_type(surface)
 
-    -- Log item loss analysis
     local total_expected = result.totalExpectedItems
     local total_loss = total_expected - total_actual_items
     if total_loss ~= 0 then
@@ -236,14 +195,12 @@ function LossAnalysis.run(surface, entities_to_create, validation_result, segmen
         log(string.format("[Loss Analysis] Post-activation: ZERO item loss (expected=%d, actual=%d)", total_expected, total_actual_items))
     end
 
-    -- === FLUID LOSS ANALYSIS ===
     local recon = LossAnalysis.reconcile_fluids(result.expectedFluidCounts, actual_fluid_counts)
 
     if math.abs(recon.reconciledLoss) > 1 then
         log(string.format("[Loss Analysis] Post-activation fluid delta: %+.1f reconciled (raw %+.1f) (expected=%.1f, actual=%.1f, %.1f%% preserved)",
             -recon.reconciledLoss, -recon.rawDelta, recon.totalExpected, recon.totalActual, recon.fluidPreservedPct))
 
-        -- Per-fluid breakdown (low-temp only, high-temp shown as aggregate)
         for fluid_key, _ in pairs(result.expectedFluidCounts or {}) do
             local _, temp = Util.parse_fluid_temp_key(fluid_key)
             if temp < recon.highTempThreshold then
@@ -257,7 +214,6 @@ function LossAnalysis.run(surface, entities_to_create, validation_result, segmen
             end
         end
 
-        -- High-temp aggregate breakdown
         for name, _ in pairs(recon.allHighTempNames) do
             local exp = recon.expectedHighTemp[name] or 0
             local act = recon.actualHighTemp[name] or 0
@@ -273,7 +229,6 @@ function LossAnalysis.run(surface, entities_to_create, validation_result, segmen
     else
         log(string.format("[Loss Analysis] Post-activation: ZERO fluid loss (expected=%.1f, actual=%.1f)",
             recon.totalExpected, recon.totalActual))
-        -- Still log high-temp reconciliation if raw numbers differ
         if math.abs(recon.rawDelta) > 1 then
             for name, _ in pairs(recon.allHighTempNames) do
                 local exp = recon.expectedHighTemp[name] or 0
@@ -284,7 +239,6 @@ function LossAnalysis.run(surface, entities_to_create, validation_result, segmen
         end
     end
 
-    -- === FAILED ENTITY LOSS REPORT ===
     if result.failedEntityLosses and result.failedEntityLosses.entity_count > 0 then
         local fel = result.failedEntityLosses
         log(string.format("[Loss Analysis] %d entities failed to place — %d items, %.1f fluids unrestorable (excluded from expected totals)",
@@ -308,7 +262,6 @@ function LossAnalysis.run(surface, entities_to_create, validation_result, segmen
         end
     end
 
-    -- === INVENTORY OVERFLOW LOSS REPORT ===
     if result.inventoryOverflowLosses and result.inventoryOverflowLosses.total > 0 then
         local iol = result.inventoryOverflowLosses
         log(string.format("[Loss Analysis] Inventory overflow (API stack cap): %d items unrestorable (excluded from expected totals)",
@@ -325,7 +278,6 @@ function LossAnalysis.run(surface, entities_to_create, validation_result, segmen
         end
     end
 
-    -- Reporting only: the frozen gate fields above are immutable once the verdict is rendered.
     result.postActivationReport = {
         totalActualItems = total_actual_items,
         actualItemCounts = actual_item_counts,

@@ -1,19 +1,5 @@
 "use strict";
 
-/**
- * The concurrent-write race on the controller's database files, and the queue that closes it.
- *
- * THE INSTRUMENT IS THE HARD PART. `@clusterio/lib`'s real `safeOutputFile` writes to a temp path
- * DERIVED FROM THE TARGET (`${name}.tmp${ext}`) and then renames it. Two overlapping writes to one
- * target therefore share one temp file, interleave, and end with one rename publishing mixed bytes
- * while the other throws ENOENT.
- *
- * The stub in `persistence-read-failure.test.cjs` is `(file, data) => fs.writeFileSync(file, data)` —
- * atomic, single-syscall, no temp file. Against that stub this entire bug is invisible and every
- * assertion below would pass on unfixed code. So the stub here reproduces the real formula and
- * writes in chunks with a yield between them, and the FIRST test proves the stub can still see the
- * defect. Without that proof the rest of this file is decoration.
- */
 
 const { test } = require("node:test");
 const assert = require("node:assert/strict");
@@ -25,25 +11,10 @@ const path = require("node:path");
 const distNode = path.join(__dirname, "..", "dist", "node");
 const { enqueueWrite, resetWriteQueuesForTest } = require(path.join(distNode, "lib", "persist-queue.js"));
 
-/**
- * Faithful stand-in for `@clusterio/lib`'s safeOutputFile, pinned against the implementation read at
- * /clusterio/node_modules/@clusterio/lib/dist/node/src/file_ops.js:155-172 (alpha.27):
- *   const { dir, name, ext } = path.parse(file);
- *   const temporary = path.join(dir, `${name}.tmp${ext}`);
- *   await fs.writeFile(temporary, data, { flush: true });
- *   await fs.rename(temporary, file);
- *
- * The chunking + yield is the only deliberate divergence. The real `writeFile` is also not atomic
- * for a payload of this size, but it does not hand control back at a point this test can rely on;
- * chunking makes the same interleaving deterministic instead of timing-dependent.
- */
 async function racySafeOutputFile(file, data, openedBarrier) {
 	const { dir, name, ext } = path.parse(file);
 	const temporary = path.join(dir, `${name}.tmp${ext}`);
 	const handle = await fsp.open(temporary, "w");
-	// Optional post-open hook: the race-proof test uses it to pin one specific corrupting
-	// interleaving (see there for why timing alone cannot be trusted to produce one). Queue-path
-	// tests pass nothing: the queue serializes writers by design, and a rendezvous would deadlock.
 	if (openedBarrier) {
 		await openedBarrier();
 	}
@@ -64,28 +35,14 @@ function tempTarget(label) {
 	return path.join(dir, "surface_export_storage.json");
 }
 
-/** Two payloads that are the same length and trivially distinguishable, so a mix is detectable. */
 function payloads() {
 	return [JSON.stringify({ who: "A".repeat(4000) }), JSON.stringify({ who: "B".repeat(4000) })];
 }
 
 test("the stub reproduces the real race — UNGUARDED concurrent writes corrupt the target", async () => {
-	// This is the test that licenses every other test in this file. If concurrent unguarded writes
-	// come out clean here, the stub is not modelling safeOutputFile and the queue tests below would
-	// pass whether or not the queue works.
 	const file = tempTarget("race-proof");
 	const [a, b] = payloads();
 
-	// Timing alone cannot be trusted to exhibit the hazard, in either direction. Left to the
-	// scheduler, the writers can serialize completely (writer B's open lands after writer A's
-	// rename, recreating the temp — observed clean 4-in-5 on Windows), and even with the opens
-	// synchronized Windows can show no rename failure (a measured concurrent probe, 2026-08-08,
-	// found the second writer's handle FOLLOWS the renamed file and both renames report success).
-	// So pin one concrete interleaving: B opens the shared temp, A writes everything and renames,
-	// then B's chunks land through its still-open handle inside the renamed target. B then writes
-	// its FULL same-length payload, so the content ends intact (pure B) — the licensing symptom
-	// under this schedule is B's rename hitting the vanished temp path: the loud ENOENT from the
-	// original incident, measured firing 10/10 on Windows and inherent on POSIX.
 	let releaseBOpened;
 	const bOpened = new Promise(resolve => { releaseBOpened = resolve; });
 	let releaseADone;
@@ -106,8 +63,6 @@ test("the stub reproduces the real race — UNGUARDED concurrent writes corrupt 
 		"unguarded concurrent writes produced neither a rejection nor a corrupt file — the stub is "
 		+ "not reproducing safeOutputFile's shared temp path, so the queue tests below prove nothing",
 	);
-	// Name which symptom fired, because both are real and they have very different severity:
-	// a rejection is the loud ENOENT we saw in the logs; a corrupt file is the silent one.
 	if (rejected.length > 0) {
 		assert.match(String(rejected[0].reason && rejected[0].reason.code), /ENOENT/);
 	}
@@ -126,15 +81,10 @@ test("queued concurrent writes leave exactly one intact payload and no rejection
 	assert.deepEqual(results.map(r => r.status), ["fulfilled", "fulfilled"], "no write may fail");
 	const onDisk = fs.readFileSync(file, "utf8");
 	assert.ok(onDisk === a || onDisk === b, "target must hold one whole payload, never a mix");
-	// Enqueue order is write order, so the second write is the survivor. This is the property the
-	// callers depend on: each serialises a full snapshot immediately before enqueueing, so
-	// last-enqueued must equal most-recent-state.
 	assert.equal(onDisk, b, "the later-enqueued snapshot must win");
 });
 
 test("writes to DIFFERENT paths are not serialised against each other", async () => {
-	// Guards against the lazy fix of one global chain: correctness would survive it, throughput
-	// would not, and a single global lock would make every database file wait on every other.
 	resetWriteQueuesForTest();
 	const first = tempTarget("independent-a");
 	const second = tempTarget("independent-b");
@@ -160,8 +110,6 @@ test("writes to DIFFERENT paths are not serialised against each other", async ()
 });
 
 test("a failed write does not poison the writes queued behind it", async () => {
-	// The chain advances on SETTLEMENT, not on success. A transient failure (full disk, EBUSY) must
-	// not silently stop every later persist for the life of the process.
 	resetWriteQueuesForTest();
 	const file = tempTarget("poison");
 	const failure = new Error("disk on fire");
@@ -175,9 +123,6 @@ test("a failed write does not poison the writes queued behind it", async () => {
 });
 
 test("every queued write runs — appends are never collapsed", async () => {
-	// Snapshot writes could in principle be coalesced (each carries the whole state), but nothing
-	// here does that, and an append-style writer would be silently corrupted by it. Pin the
-	// no-coalescing behaviour now so a later optimisation has to confront this test.
 	resetWriteQueuesForTest();
 	const file = tempTarget("all-run");
 	let runs = 0;

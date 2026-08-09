@@ -1,10 +1,5 @@
 "use strict";
 
-// The runtime version oracle (module/version.lua, SC-72) has THREE version carriers with ONE
-// writer (the bump scripts, via tools/shared/version-utils.ps1). The boot checks compare the LIVE
-// module's answer against the deployed version, so a hand-edit that desynchronizes the carriers
-// would make every deploy fail — or worse, make a stale save look current. This tripwire fails the
-// suite the moment package.json, module/module.json, and module/version.lua disagree.
 
 const { test } = require("node:test");
 const assert = require("node:assert/strict");

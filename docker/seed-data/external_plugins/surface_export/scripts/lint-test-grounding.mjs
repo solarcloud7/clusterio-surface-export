@@ -1,28 +1,4 @@
 #!/usr/bin/env node
-/**
- * lint-test-grounding.mjs - mechanical guard for integration-test grounding.
- *
- * The recurring failure mode: a fidelity test that asserts on a value derived from the code under test
- * proves nothing. The original transfer-fidelity incident would have gone green on a broken loss meter;
- * independent physical counts and adversarial review caught it. Rule 3 closes the adjacent disposition
- * blind spot measured in W3: a success-path runner saw a failed verdict, Black-Box Discard removed the
- * destination, and the runner then misreported the missing destination as physical item loss.
- *
- * Rules per tests/integration/<name>/run-tests.{ps1,mjs}, with comments stripped (dialect-aware —
- * `#` for PowerShell, `//` for JavaScript, so a commented-out marker never satisfies a rule):
- *   1. A fidelity test performs an independent physical item count.        [both dialects]
- *   2. Validator fidelity self-reports are cross-grounded physically.      [both dialects]
- *   3. A success-path destination census follows the verdict adjudication. [dialect-specific markers:
- *      ps1 Read-DebugFile -> Assert-TransferSucceeded; mjs validation_success before any board/census]
- *
- * Rules 1 and 2 covered ps1 only until 2026-08-05, because this guard predated mjs runners. No mjs
- * runner violates them today, so their mjs coverage is preventative — which is exactly why each has a
- * self-test proving it FIRES on a synthetic violator (test/lint-test-grounding.test.cjs). A
- * preventative rule nobody has watched fire is indistinguishable from one that does not work.
- *
- * Escape hatch: lint-test-grounding:allow with an owner-approved manifest entry. An allow is an escalation,
- * never a self-service response to a firing guard.
- */
 
 import { readFileSync, readdirSync, statSync, existsSync } from "node:fs";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -37,11 +13,6 @@ const PHYSICAL_COUNT = "get_item_count(";
 const DESTINATION_CENSUS_RE = /\bCount-[A-Za-z0-9_-]+\b[^\r\n]*(?:\$(?:dest|dst)\w*|-Destination(?:Instance|Host|Platform)?\b)/gi;
 
 function stripComments(source, dialect = "ps1") {
-	// Dialect-aware, because the shared rules below now run over BOTH runner kinds. Stripping from
-	// `#` in a JavaScript file would truncate every line containing one (a private field, a URL
-	// fragment) and could hide a marker that really is there; stripping `//` in PowerShell would do
-	// nothing useful. Line comments only either way — the markers this guard looks for are code
-	// identifiers, and anything cleverer risks mangling a string that merely contains one.
 	if (dialect === "mjs") {
 		return source.replace(/^\s*\/\/.*$/gm, "");
 	}
@@ -60,8 +31,6 @@ function findTestFiles() {
 	for (const name of readdirSync(TESTS_DIR)) {
 		const directory = join(TESTS_DIR, name);
 		if (!statSync(directory).isDirectory()) continue;
-		// Both runner dialects are in scope (2026-07-28 consolidation): the ps1 rules below, and
-		// the mjs verdict-before-census rule in findMjsGroundingViolations.
 		for (const runner of ["run-tests.ps1", "run-tests.mjs"]) {
 			const file = join(directory, runner);
 			if (!existsSync(file)) continue;
@@ -76,9 +45,6 @@ function findTestFiles() {
 	return files;
 }
 
-// mjs runners (the consolidated gallery-suite class): the disposition blind spot rule translated —
-// a runner that reads debug_import_result must ADJUDICATE the verdict (validation_success) before
-// any destination-side board/census call, so a refused transfer is never misread as physical loss.
 export function findMjsGroundingViolations(files) {
 	const violations = [];
 	for (const { dialect, path, source } of files) {
@@ -138,16 +104,6 @@ export function findGroundingViolations(files) {
 			});
 		}
 
-		// Rules 1 and 2 above are dialect-INDEPENDENT. "Measure the invariant yourself rather than
-		// believe the validator's self-report" is a property of the assertion, not of the language it
-		// is written in, and `name` is the test DIRECTORY, so a fidelity-named mjs suite is detected
-		// exactly the same way. They were ps1-only because this guard predated mjs runners, not by
-		// design — measured when extending: zero of the six current mjs runners trips either rule, so
-		// this is preventative rather than corrective, and the self-tests below are what give it teeth
-		// in the absence of a live subject.
-		//
-		// Rule 3's markers below ARE PowerShell-specific (Read-DebugFile / Assert-TransferSucceeded);
-		// the mjs equivalent of that ordering rule lives in findMjsGroundingViolations.
 		if (dialect === "mjs") continue;
 
 		const debugIndex = code.indexOf("debug_import_result");
@@ -169,10 +125,6 @@ export function findGroundingViolations(files) {
 
 function main() {
 	if (!existsSync(TESTS_DIR)) {
-		// The ONLY sanctioned partial context is the plugin bind-mounted inside a cluster container at
-		// /clusterio/external_plugins (no repo-root tests/ there — CLAUDE.md's in-container lint flow).
-		// Positive path detection keeps the bypass reviewable: no ambient env-var can silence this
-		// guard from a broken checkout elsewhere.
 		if (/^([a-z]:)?\/clusterio\/external_plugins\//i.test(SCRIPT_DIR.replace(/\\/g, "/"))) {
 			console.log(`lint:test-grounding - SKIPPED (plugin-only container mount; tests/integration not present at ${TESTS_DIR})`);
 			return;
@@ -185,10 +137,6 @@ function main() {
 	}
 	const files = findTestFiles();
 	if (files.length === 0) {
-		// The directory-present-but-empty case is the RECORDED incident shape: the ps1 runners were
-		// deleted while tests/integration remained, and this guard printed "OK (0 tests checked)" —
-		// a green guard scanning nothing, caught only by a human reading the count. Zero subjects
-		// is not a pass any more than a missing scan surface is.
 		console.error(
 			`lint:test-grounding - FAILED: ${TESTS_DIR} exists but contains zero run-tests.{ps1,mjs} runners.\n` +
 				"Ran 0 checks; refusing to report a pass on an empty scan surface.",

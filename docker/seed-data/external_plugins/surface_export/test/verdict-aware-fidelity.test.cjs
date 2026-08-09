@@ -56,11 +56,3 @@ test("Assert-TransferSucceeded throws before census with failure diagnostics", {
 	assert.match(result.stderr, /failure_black_box_fixture\.json/);
 });
 
-// REMOVED 2026-07-28: "migrated fidelity runners adjudicate verdict before destination census".
-// It read tests/integration/belt-loss-replay/run-tests.ps1 BY PATH and hard-failed with ENOENT once
-// that runner was absorbed into gallery-suite. The class it guarded - parse the debug result, decide
-// validation_success, and only THEN census the destination, so a refused transfer is never misread
-// as physical loss - is now enforced mechanically for EVERY runner by scripts/lint-test-grounding.mjs
-// (findMjsGroundingViolations for the .mjs dialect, the ps1 rules for the other). That guard scales to
-// runners this test could never name, so the coverage moved UP, not away. The Assert-TransferSucceeded
-// cases above still cover the helper's own contract.

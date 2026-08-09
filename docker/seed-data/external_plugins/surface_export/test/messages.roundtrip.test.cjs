@@ -1,19 +1,4 @@
 "use strict";
-/**
- * Round-trip + wire-contract harness for the plugin's message classes.
- *
- * Why this exists: messages.ts hand-rolls 24 Clusterio Link message classes, each repeating a
- * static wire contract (plugin/type/src/dst/[permission]/jsonSchema/fromJSON) and a
- * constructor/toJSON pair. A drift between any of those — a toJSON field the schema doesn't
- * declare, a renamed field, a class missing from registration — surfaces only at runtime as an
- * AJV validation failure or an "Unregistered Event class" crash on controller start. This harness
- * turns those into a failing `npm test` instead.
- *
- * Zero external deps: built-in node:test + node:assert, and it require()s the COMPILED CommonJS
- * output (dist/node/messages.js), so run `npm run build:node` first (the `npm test` script does).
- * It self-discovers the message classes and generates a minimal valid sample from each class's own
- * jsonSchema, so a newly-added message is covered automatically with no edits here.
- */
 
 const { test } = require("node:test");
 const assert = require("node:assert/strict");
@@ -21,10 +6,6 @@ const path = require("node:path");
 
 const messages = require(path.join(__dirname, "..", "dist", "node", "messages.js"));
 
-// Discover message classes by the one invariant every plugin message MUST carry: `static plugin`.
-// Deliberately NOT keyed on `jsonSchema`/`type` — a class that omits those is exactly the drift this
-// harness exists to catch, so it must still be discovered here and FAIL the per-class assertions
-// below, rather than be silently skipped.
 const PLUGIN_NAME = "surface_export";
 const messageClasses = Object.entries(messages)
 	.filter(([, value]) => typeof value === "function" && value.plugin === PLUGIN_NAME)
@@ -32,7 +13,6 @@ const messageClasses = Object.entries(messages)
 
 const VALID_TYPES = new Set(["request", "event"]);
 
-/** A minimal value satisfying a single JSON-schema property's declared type. */
 function sampleForType(propSchema) {
 	const declared = propSchema && propSchema.type;
 	const type = Array.isArray(declared) ? declared[0] : declared;
@@ -48,7 +28,6 @@ function sampleForType(propSchema) {
 	}
 }
 
-/** A minimal constructor argument covering every required field of a class's jsonSchema. */
 function sampleFromSchema(schema) {
 	const props = (schema && schema.properties) || {};
 	const required = (schema && schema.required) || Object.keys(props);
@@ -86,22 +65,14 @@ for (const { name, cls } of messageClasses) {
 	test(`${name}: toJSON output agrees with jsonSchema`, () => {
 		const json = new cls(sampleFromSchema(cls.jsonSchema)).toJSON();
 		const props = (cls.jsonSchema.properties) || {};
-		// When the schema forbids extras, every emitted key must be declared (catches field drift).
 		if (cls.jsonSchema.additionalProperties === false) {
 			for (const key of Object.keys(json)) {
 				assert.ok(key in props, `${name}.toJSON emits "${key}" which is not in jsonSchema.properties`);
 			}
 		}
-		// Every required field must actually be emitted.
 		for (const key of (cls.jsonSchema.required || [])) {
 			assert.ok(key in json, `${name}.toJSON omits required field "${key}"`);
 		}
-		// ...and so must every OPTIONAL one. Checking only `required` left a silent hole: a property
-		// declared in the schema and set by the constructor, but missing from toJSON, never reaches
-		// the wire — the sender fills it, the receiver always sees the default, and every existing
-		// assertion still passes (extras-only drift check, stable round-trip, required present).
-		// Measured: dropping the then-new StartPlatformTransferRequest.targetPlanet from toJSON kept
-		// this file fully green, which is what prompted widening it.
 		for (const key of Object.keys(props)) {
 			assert.ok(key in json, `${name}.toJSON omits declared field "${key}" — it can never reach the wire`);
 		}

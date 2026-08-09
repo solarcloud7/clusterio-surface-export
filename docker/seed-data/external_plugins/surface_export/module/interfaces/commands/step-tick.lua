@@ -1,6 +1,3 @@
--- Command: /step-tick
--- Unpause the game to allow ticks to process (used by integration tests)
-
 local Base = require("modules/surface_export/interfaces/commands/base")
 
 Base.admin_command("step-tick",

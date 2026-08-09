@@ -1,48 +1,20 @@
--- FactorioSurfaceExport - Fluid Restoration (Factorio 2.1 fluid API, fluid-segment registry)
---
--- Consumes the payload's fluid-segment registry: `fluid_segments` (one record per source segment
--- or segmentless storage, keyed by OUR id) plus per-entity `specific_data.fluidboxes` membership
--- ({box_index, segment_ref, local_amount}). Engine segment ids differ across instances, so the
--- destination groups members by RE-DERIVED dest segment id and writes each group once.
---
--- 2.1 write primitives [empirical, 2.1.11, fluid-law experiments 2026-07-21]:
---   * set_fluid_segment_fluid(i, fluid) writes the WHOLE segment in one call (wrote 400 coolant,
---     read back exact) — no more highest-capacity-member workaround.
---   * set_fluid(i, fluid) writes a segmentless storage; returns the accepted amount (capacity
---     clamp measured: plasma 50 -> 10).
---   * Segment getters/setters THROW on segmentless boxes — has_fluid_segment(i) guards every use.
---
--- Failure semantics (owner ruling 2026-07-20, "failure is not an option — fail => revert"):
--- members whose entity failed to place are simply absent; no expected-count adjustment is made
--- for them. A short segment fails the exact gate and the two-phase commit preserves the source.
--- Only physically-measured shortfalls are classified: capacity overflow -> dropped_fluids (a gate
--- failure by design), engine-rejected writes -> write_rejected (subtracted from expected, the one
--- lawful subtraction).
-
 local FluidRestoration = {}
 
---- Restore fluids from the payload registry.
---- @param entities_to_create table: entity data records (with specific_data.fluidboxes)
---- @param entity_map table: entity_id -> LuaEntity
---- @param fluid_segments table: the payload's fluid_segments array (our-id keyed records)
---- @return table: { count, segments, isolated, segment_temps, write_rejected, dropped_fluids }
 function FluidRestoration.restore(entities_to_create, entity_map, fluid_segments)
 	log("[Import] Restoring fluids from the segment registry (2.1 segment writes)...")
 
-	-- Index payload segments by our id.
 	local by_id = {}
 	for _, rec in ipairs(fluid_segments or {}) do
 		by_id[rec.id] = rec
 	end
 
-	-- Collect surviving members per payload segment ref.
-	local members = {}  -- ref -> array of {entity, box_index, local_amount}
+	local members = {}
 	for _, entity_data in ipairs(entities_to_create) do
 		local sd = entity_data.specific_data
 		local boxes = sd and sd.fluidboxes
 		if boxes then
 			local entity = entity_map[entity_data.entity_id]
-				or entity_map[tostring(entity_data.entity_id)]  -- JSON numeric-key coercion (PR #29)
+				or entity_map[tostring(entity_data.entity_id)]
 			if entity and entity.valid then
 				for _, box in ipairs(boxes) do
 					local ref = box.segment_ref
@@ -69,8 +41,6 @@ function FluidRestoration.restore(entities_to_create, entity_map, fluid_segments
 	local storage_writes = 0
 	local dropped_count = 0
 
-	-- One write per (payload segment × dest segment group). Verify by re-read; retry the
-	-- remainder with insert_fluid; classify what still refuses.
 	local function write_segment_group(rec, group, share)
 		local anchor = group[1]
 		local cap_ok, cap = pcall(function()
@@ -99,7 +69,6 @@ function FluidRestoration.restore(entities_to_create, entity_map, fluid_segments
 			log(string.format("[Fluid Restore Error] segment write (%s=%.2f) on %s: %s",
 				rec.fluid, final, anchor.entity.name, tostring(err)))
 		end
-		-- Verify what the segment actually holds now.
 		local read_ok, seg_fluid = pcall(function()
 			return anchor.entity.get_fluid_segment_fluid(anchor.box_index)
 		end)
@@ -143,7 +112,6 @@ function FluidRestoration.restore(entities_to_create, entity_map, fluid_segments
 		end
 	end
 
-	-- Write a segmentless storage box.
 	local function write_storage(rec, member, amount)
 		local temperature = rec.temperature or 15
 		local ok, accepted = pcall(function()
@@ -171,8 +139,6 @@ function FluidRestoration.restore(entities_to_create, entity_map, fluid_segments
 			end
 			local still_short = shortfall - recovered
 			if still_short > 0.1 then
-				-- Storage boxes have a hard per-box capacity; a shortfall here is a capacity drop
-				-- unless the engine refused outright (both classify against the gate honestly).
 				log(string.format("[Fluid Restore Warning] storage %s on %s: wanted %.2f, seated %.2f",
 					rec.fluid, member.entity.name, amount, amount - still_short))
 				dropped_fluids[rec.fluid] = (dropped_fluids[rec.fluid] or 0) + still_short
@@ -182,17 +148,11 @@ function FluidRestoration.restore(entities_to_create, entity_map, fluid_segments
 		storage_writes = storage_writes + 1
 	end
 
-	-- DEFERRED per-destination-segment accumulation (2026-07-28, the ghost-pipe clobber class):
-	-- multiple payload records can resolve to ONE destination segment under any topology
-	-- divergence (measured live: Lua-created overlapping pipes). set_fluid_segment_fluid REPLACES
-	-- the whole segment, so per-record writes were last-write-wins. Records accumulate here and
-	-- every destination segment is written ONCE with the sum, after the records loop.
 	local pending_segments = {}
 	for ref, rec in pairs(by_id) do
 		local group = members[ref]
 		if rec.fluid and (rec.total or 0) > 0 and group and #group > 0 then
-			-- Partition surviving members by DEST reality: segment-bearing groups vs segmentless.
-			local dest_groups = {}   -- dest seg id -> { members..., sum_local }
+			local dest_groups = {}
 			local segmentless = {}
 			for _, m in ipairs(group) do
 				local has_ok, has_seg = pcall(function()
@@ -224,15 +184,6 @@ function FluidRestoration.restore(entities_to_create, entity_map, fluid_segments
 				end
 			end
 
-			-- ONE conserving split across EVERY surviving destination unit — dest segment groups
-			-- AND segmentless stragglers alike — weighted by captured member locals, so the sum
-			-- of writes is exactly rec.total in every topology. (di-change review 2026-07-21,
-			-- SHOULD-FIX: the earlier shape wrote the FULL total into the segment groups and then
-			-- ADDED straggler locals on top — a mixed segment/segmentless dest topology over-filled
-			-- and false-failed the gate as a GAIN. Fails safe, but red on a legitimate transfer.)
-			-- A failed bridging entity can split one source segment into several dest segments;
-			-- per-member locals are what make a faithful proportional split possible. The pure
-			-- storage record (source segmentless, one member) falls out as the single-unit case.
 			local units = {}
 			local total_weight = 0
 			for dest_id, g in pairs(dest_groups) do
@@ -257,10 +208,6 @@ function FluidRestoration.restore(entities_to_create, entity_map, fluid_segments
 				else
 					share = rec.total / #units
 				end
-				-- share > 0 guard (review must-fix 6): a ZERO-share contribution must not register its
-				-- fluid on the destination segment — a record whose members all captured local_amount 0
-				-- would otherwise add a second fluid name to the plan and manufacture a CONFLICT that
-				-- refuses a legitimate transfer (fail-safe direction, but a false red).
 				if unit.group and share > 0 then
 					local plan = pending_segments[unit.dest_id]
 					if not plan then
@@ -281,9 +228,6 @@ function FluidRestoration.restore(entities_to_create, entity_map, fluid_segments
 		end
 	end
 
-	-- The summed flush: ONE write per destination segment. Records of DIFFERENT fluids resolving
-	-- to one destination segment are a topology conflict — nothing is written for that segment
-	-- (loud log; the exact gate refuses => fail => revert). Never a silent last-write-wins.
 	for dest_id, plan in pairs(pending_segments) do
 		local fluid_names = {}
 		for fluid_name in pairs(plan.by_fluid) do fluid_names[#fluid_names + 1] = fluid_name end

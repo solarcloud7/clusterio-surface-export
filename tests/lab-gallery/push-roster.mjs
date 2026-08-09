@@ -1,18 +1,3 @@
-// push-roster.mjs — build the trimmed test roster from manifest.json and push it to the LIVE
-// gallery instance (P3 of the pad-lifecycle plan). The roster is the trust anchor /test-run
-// reconciles against: a rostered fixture with no live pad is a RED MISSING failure.
-//
-// Transport: always the chunked protocol (set_test_roster_begin/chunk/commit) when the payload
-// exceeds SINGLE_LIMIT, single-shot set_test_roster otherwise. Commit routes through the SAME
-// validation as the single-shot path Lua-side, so the two transports cannot drift.
-//
-// Usage:
-//   node tests/lab-gallery/push-roster.mjs                       # push to the gallery + echo-verify
-//   node tests/lab-gallery/push-roster.mjs --dry-run             # print payload stats, push nothing
-//   node tests/lab-gallery/push-roster.mjs --instance <name>     # push to another instance
-//     (the pad-transfer-suite pushes to BOTH transfer ends — dest-side lifecycle_verify resolves
-//      its fixture from the same roster)
-
 import { createHash } from "node:crypto";
 import { execFileSync } from "node:child_process";
 import { loadGalleryManifest, validateGalleryManifest } from "./manifest.mjs";
@@ -23,12 +8,9 @@ if (!GALLERY_INSTANCE) throw new Error("--instance needs a value");
 const CONTROLLER = "surface-export-controller";
 const CTL_CONFIG = "/clusterio/tokens/config-control.json";
 
-// Plan adjudication: single-shot only for tiny rosters; anything real exercises the chunk path.
 const SINGLE_LIMIT = 3_000;
 const CHUNK_SIZE = 40_000;
 
-// Only these fields ride to the runner — the manifest carries builder-time data (testCard text,
-// artifact SHAs, notes) the runner must never depend on.
 const ROSTER_FIELDS = [
 	"id", "name", "padKind", "platformName", "surfaceName", "origin", "anchors",
 	"fingerprint", "runnerExcluded", "lifecycle", "pasteExclude", "auditAggregateOnly",
@@ -42,8 +24,6 @@ function trimFixture(fixture) {
 	return out;
 }
 
-// Deterministic serialization (sorted keys, recursively) so the hash is stable across manifest
-// key-order churn. Arrays keep their order — fixture order is meaningful display order.
 function stableStringify(value) {
 	if (Array.isArray(value)) return `[${value.map(stableStringify).join(",")}]`;
 	if (value && typeof value === "object") {
@@ -59,7 +39,6 @@ function rcon(command) {
 	{ encoding: "utf8", timeout: 180_000, stdio: ["ignore", "pipe", "pipe"], maxBuffer: 32 * 1024 * 1024 }).trim();
 }
 
-// JSON-wrapped Lua op (the batch-lifecycle convention): pcall, print JSON, throw on garbage.
 function lua(body) {
 	const command = `/sc local ok,result=pcall(function() ${body} end); ` +
 		`if ok then rcon.print(helpers.table_to_json(result)) else rcon.print(helpers.table_to_json({success=false,error=tostring(result)})) end`;
@@ -68,8 +47,6 @@ function lua(body) {
 	catch (error) { throw new Error(`Invalid Lua JSON from gallery: ${raw}\n${error.message}`); }
 }
 
-// Pick a long-bracket level whose closer does not occur in the payload (JSON can legally contain
-// "]=]"-shaped substrings inside strings — never assume a fixed level).
 function bracketWrap(text) {
 	for (let level = 1; level < 10; level++) {
 		const eq = "=".repeat(level);
@@ -81,8 +58,6 @@ function bracketWrap(text) {
 function pushRoster(json, hash) {
 	const bytes = Buffer.byteLength(json, "utf8");
 	if (bytes !== json.length) {
-		// Lua # counts bytes; the commit length check compares against byte length. Fixture text is
-		// ASCII today — fail loud rather than silently mismatching if that ever changes.
 		throw new Error(`roster contains non-ASCII text (${bytes} bytes vs ${json.length} chars) — ` +
 			"commit length check would need byte-accurate chunking");
 	}
@@ -109,8 +84,6 @@ function pushRoster(json, hash) {
 function main() {
 	const dryRun = process.argv.includes("--dry-run");
 	const manifest = loadGalleryManifest(new URL("../../", import.meta.url));
-	// Artifact SHA freshness is the snapshot pipeline's concern, not the pusher's — the roster is
-	// built from fixture declarations only.
 	const problems = validateGalleryManifest(manifest, { requireArtifacts: false });
 	if (problems.length) {
 		console.error("manifest validation FAILED:");
@@ -128,7 +101,6 @@ function main() {
 	const pushed = pushRoster(json, hash);
 	console.log(`pushed via ${pushed.transport} in ${pushed.commands} command(s): ${JSON.stringify(pushed.result)}`);
 
-	// Echo-verify: the stored roster must report OUR hash and count — never trust a silent push.
 	const summary = lua(`return remote.call('surface_export','get_test_roster_summary')`);
 	if (summary.hash !== hash || summary.fixtureCount !== fixtures.length) {
 		console.error(`echo-verify FAILED: expected hash=${hash} count=${fixtures.length}, ` +

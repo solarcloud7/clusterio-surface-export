@@ -51,9 +51,6 @@ function pendingIntent(overrides = {}) {
 test("controller restart path does not auto-delete sources from persisted intents", async () => {
 	const { plugin, calls } = makeControllerHarness([pendingIntent()]);
 
-	// R3 teeth: the retired #60 spine was a setInterval poll loop whose delete/unlock sends fire as a LATER
-	// macrotask — after a synchronous sends===0 assert. Spy the schedulers around onStart so a timer-scheduled
-	// reintroduction is caught, then drain a macrotask to catch a setTimeout(…, 0) variant too.
 	const origSetInterval = global.setInterval;
 	const origSetTimeout = global.setTimeout;
 	const timers = [];
@@ -68,7 +65,7 @@ test("controller restart path does not auto-delete sources from persisted intent
 
 	assert.equal(timers.length, 0, "onStart must not SCHEDULE a timer (the retired reconcile was a setInterval poll)");
 	assert.equal(calls.sends.length, 0, "onStart must not send delete/unlock/reconcile requests for boot-leftover intents");
-	await new Promise((r) => origSetTimeout(r, 0)); // drain one macrotask round
+	await new Promise((r) => origSetTimeout(r, 0));
 	assert.equal(calls.sends.length, 0, "no delete/unlock send may fire on a later macrotask either");
 	assert.match(calls.warns.join("\n"), /source-side TTL unlock/, "restart warning should point at source-side TTL recovery");
 });
@@ -103,7 +100,6 @@ test("COMMIT-transmitted markers persist write-ahead but are bounded and non-aut
 
 	assert.equal(plugin.sourceCommitMarkers.get("source-1:export-1").committedAt, now, "COMMIT marker should be persisted before transmit");
 	assert.equal(calls.persisted, 1, "recording a COMMIT marker must persist it immediately");
-	assert.match(read("controller.ts"), /source-phase query is authoritative[\s\S]*never the flag alone/, "write-ahead marker comment must state the source-phase query is authoritative");
 
 	plugin.sourceCommitMarkers.set("fresh", { transferId: "fresh", committedAt: now - 1_000 });
 	plugin.sourceCommitMarkers.set("stale", { transferId: "stale", committedAt: now - SOURCE_COMMIT_MARKER_RETENTION_MS - 1 });

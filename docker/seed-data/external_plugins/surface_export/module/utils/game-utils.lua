@@ -1,23 +1,11 @@
--- FactorioSurfaceExport - Game Utilities
--- Helper functions specific to Factorio game mechanics
-
 local VersionCompat = require("modules/surface_export/utils/version-compat")
 
 local GameUtils = {}
 
---- The default quality name used by Factorio for non-quality items
 GameUtils.QUALITY_NORMAL = "normal"
 
---- LuaForce research bonuses that govern INSERTER HAND CAPACITY (how many items an inserter hand holds).
---- These ride in the export payload (force_data) and are replicated RAISE-ONLY onto the destination force(s)
---- before import hydration so a less-researched dest can physically hold the source's held items (inserter hand capacity is governed by the DEST force's research).
---- Single source of truth for BOTH the export capture and the import apply — keep them in lockstep here.
 GameUtils.FORCE_SYNC_PROPS = { "bulk_inserter_capacity_bonus", "inserter_stack_size_bonus" }
 
---- Round a position to specified precision
---- @param position table: {x, y} position
---- @param precision number: Decimal places (default 1)
---- @return table: Rounded position
 function GameUtils.round_position(position, precision)
   precision = precision or 1
   local multiplier = 10 ^ precision
@@ -27,13 +15,9 @@ function GameUtils.round_position(position, precision)
   }
 end
 
---- Get entity type category (for handler dispatch)
---- @param entity LuaEntity: Entity to categorize
---- @return string: Entity type category
 function GameUtils.get_entity_category(entity)
   local type = entity.type
 
-  -- Group similar entity types
   if type:find("assembling%-machine") then
     return "assembling-machine"
   elseif type:find("furnace") then
@@ -69,10 +53,6 @@ function GameUtils.get_entity_category(entity)
   end
 end
 
---- Create a quality key for item tracking
---- @param item_name string: Item name
---- @param quality_name string: Quality name (normal, rare, epic, etc.)
---- @return string: Combined key
 function GameUtils.make_quality_key(item_name, quality_name)
   if quality_name and quality_name ~= GameUtils.QUALITY_NORMAL then
     return string.format("%s:%s", item_name, quality_name)
@@ -80,17 +60,10 @@ function GameUtils.make_quality_key(item_name, quality_name)
   return item_name
 end
 
---- Create a fluid temperature key for fluid tracking
---- @param fluid_name string: Fluid name
---- @param temperature number: Fluid temperature
---- @return string: Combined key
 function GameUtils.make_fluid_temp_key(fluid_name, temperature)
   return string.format("%s@%.1fC", fluid_name, temperature)
 end
 
---- Parse a fluid temperature key back into components
---- @param key string: Fluid key (fluid_name@tempC)
---- @return string, number: fluid_name, temperature
 function GameUtils.parse_fluid_temp_key(key)
   local name, temp_str = key:match("^(.+)@([%d%.%-]+)C$")
   if name and temp_str then
@@ -99,14 +72,8 @@ function GameUtils.parse_fluid_temp_key(key)
   return key, 15
 end
 
---- Policy threshold for selecting aggregate high-temperature reconciliation.
---- R12 measured exact volume-weighted steam merging and prototype clamping at 5,000°C;
---- it did not find a floating-point precision boundary that justifies this value. Task #30 owns it.
 GameUtils.HIGH_TEMP_THRESHOLD = 10000
 
---- Parse a quality key back into components
---- @param key string: Quality key (item_name or item_name:quality)
---- @return string, string: item_name, quality_name
 function GameUtils.parse_quality_key(key)
   local parts = {}
   for part in key:gmatch("[^:]+") do
@@ -120,63 +87,38 @@ function GameUtils.parse_quality_key(key)
   end
 end
 
---- Log a debug message (only in debug mode)
---- @param message string: Message to log
 function GameUtils.debug_log(message)
-  -- Can be toggled via settings in future versions
-  -- log("[clusterio-surface-export DEBUG] " .. message)
 end
 
--- ============================================================================
--- Shared Constants
--- ============================================================================
 
---- Entity types that support entity.active (can be deactivated/frozen).
---- Used by surface-lock.lua (freeze on export) and active_state_restoration.lua (restore on import).
 GameUtils.ACTIVATABLE_ENTITY_TYPES = {
-  -- Production
   ["assembling-machine"] = true,
   ["furnace"] = true,
   ["mining-drill"] = true,
   ["lab"] = true,
   ["rocket-silo"] = true,
   ["agricultural-tower"] = true,
-  -- Power
   ["reactor"] = true,
   ["generator"] = true,
   ["burner-generator"] = true,
   ["boiler"] = true,
   ["fusion-reactor"] = true,
   ["fusion-generator"] = true,
-  -- Logistics - Item transport
   ["inserter"] = true,
-  -- Belts are absent deliberately: with inserters/loaders frozen, no items can enter or
-  -- leave a belt, so freezing the belt itself buys nothing.
   ["loader"] = true,
   ["loader-1x1"] = true,
-  -- Logistics - Fluid transport
   ["pump"] = true,
   ["offshore-pump"] = true,
-  -- Logistics - Robots
   ["roboport"] = true,
-  -- Misc
   ["beacon"] = true,
   ["radar"] = true,
-  -- Space platform specific
   ["thruster"] = true,
   ["asteroid-collector"] = true,
   ["cargo-bay"] = true,
   ["space-platform-hub"] = true,
-  -- Planet logistics (for future surface transfers)
   ["cargo-landing-pad"] = true,
 }
 
---- Belt-connectable entity types whose TRANSPORT LINES hold items (get_transport_line).
---- Consumers: the gate/audit census (SurfaceCounter.count_entity_items), transfer-validation,
---- loss-analysis, the export atomic belt scan, and belt_restoration attribution.
---- Loaders were MISSING until 2026-07-21: the lab paste path (its own list) placed loader line
---- items while every counter read 0 for them — both gate sides equally blind, so a transfer
---- would have stripped loader items silently. Found by the owner via the belt-combined pad audit.
 GameUtils.BELT_ENTITY_TYPES = {
   ["transport-belt"] = true,
   ["underground-belt"] = true,
@@ -185,15 +127,7 @@ GameUtils.BELT_ENTITY_TYPES = {
   ["loader-1x1"] = true,
 }
 
--- ============================================================================
--- Shared Helpers
--- ============================================================================
 
---- Generate a deterministic identifier for entities without unit_number.
---- Format: "name@x.xxx,y.yyy#direction[:orientation]"
---- Used by both entity-scanner.lua (export) and surface-lock.lua (frozen_states).
---- @param entity LuaEntity
---- @return string
 function GameUtils.make_stable_id(entity)
   local position = entity.position or {x = 0, y = 0}
   local orientation_part = entity.orientation and string.format(":%.3f", entity.orientation) or ""
@@ -205,11 +139,6 @@ function GameUtils.make_stable_id(entity)
     orientation_part)
 end
 
---- Safely read a property from an object, returning nil on error.
---- Replaces the common `pcall(function() return obj.prop end)` pattern.
---- @param obj table: Object to read from
---- @param property string: Property name
---- @return any|nil: Property value, or nil if read fails
 function GameUtils.safe_get(obj, property)
   -- intentional probe; failure expected (property may not exist / obj invalid), no log
   local ok, val = pcall(function() return obj[property] end)
@@ -217,10 +146,6 @@ function GameUtils.safe_get(obj, property)
   return nil
 end
 
---- Extract color from an entity, returning a normalized color table or nil.
---- Replaces the repeated pcall-color-extraction pattern in entity handlers.
---- @param entity LuaEntity
---- @return table|nil: {r, g, b, a} or nil
 function GameUtils.extract_color(entity)
   -- intentional probe; failure expected (entity may have no color), no log
   local ok, color = pcall(function() return entity.color end)
@@ -230,11 +155,6 @@ function GameUtils.extract_color(entity)
   return nil
 end
 
---- Call fn() inside pcall; log a warning with context if it fails.
---- Use this for operations that should never fail but are guarded defensively.
---- Does not propagate the error — the caller continues normally after a failure.
---- @param context string: Human-readable description for the log message (e.g. "[LossAnalysis] Belt scan on iron-chest")
---- @param fn function: Zero-argument function to call
 function GameUtils.pcall_warn(context, fn)
   local ok, err = pcall(fn)
   if not ok then
@@ -242,41 +162,19 @@ function GameUtils.pcall_warn(context, fn)
   end
 end
 
---- Reliably remove a space platform (its surface and all entities).
---- The platform's own destroy method is not a removal primitive we can depend on. Measured 2026-07-31
---- on 2.1.11: the NO-ARG form returns without error and changes nothing — the platform is still valid
---- and still listed, immediately and after ticks. A ticks-argument form DOES eventually remove it, but
---- on a deferred schedule still pending 4s after the call, so it is useless for a synchronous teardown.
---- `game.delete_surface()` is the removal route: it is deferred only to end of tick. Always route
---- platform removal through this helper. The scripts/lint-lua-invariants.mjs guard fails CI if a raw
---- destroy call is reintroduced.
---- @param platform LuaSpacePlatform
---- @return boolean: true if a surface deletion was issued, false if nothing could be removed
 function GameUtils.delete_platform(platform)
   if not (platform and platform.valid) then return false end
   local surface = platform.surface
   if surface and surface.valid then
-    -- Teardown primitive: game.delete_surface (see the measurement above). Routed through
-    -- VersionCompat so an engine bump can change just the seam.
-    VersionCompat.delete_platform(platform)  -- deferred to end of tick; fully removes platform + surface
+    VersionCompat.delete_platform(platform)
     return true
   end
-  -- No valid surface to delete (e.g. apply_starter_pack failed before the surface materialized).
-  -- platform.destroy() is a no-op, and there is no other API to remove a surfaceless platform —
-  -- log so the leak is visible rather than silent.
   log(string.format(
     "[GameUtils] delete_platform: platform '%s' has no valid surface; cannot fully remove (platform.destroy is a no-op)",
     tostring(platform.name)))
   return false
 end
 
---- Does this platform have a materialized space-platform hub? This is the transferability signal — a
---- platform with a valid hub is a real, exportable platform; a hub-less stub (waiting_for_starter_pack, or a
---- seed placeholder) is not. Uses LuaSpacePlatform.hub, which is NAME-AGNOSTIC (works for a
---- modded/renamed hub prototype) unlike a literal-name entity scan. Single source of truth for BOTH the
---- export gate (export-pipeline.lua ExportPipeline.queue) and the listing flag (list-platforms.lua).
---- @param platform LuaSpacePlatform
---- @return boolean
 function GameUtils.platform_has_hub(platform)
   if not (platform and platform.valid) then return false end
   local hub = platform.hub

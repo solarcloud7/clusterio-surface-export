@@ -1,26 +1,3 @@
--- FactorioSurfaceExport - Fluid-segment law self-test (remote)
---
--- Re-certification instrument for the Factorio 2.1 fluid-segment laws that the fluid registry
--- (export_scanners/fluid-registry.lua), the census (validators/surface-counter.lua), and the
--- restoration path (import_phases/fluid_restoration.lua) all depend on. Every law here was measured
--- LIVE on Factorio 2.1.11 (fluid-law experiments, 2026-07-21, NOTEBOOK); this selftest reproduces
--- those measurements FROM CODE so an engine bump re-certifies (or refutes) each law in one run. The
--- measured 2.1.11 reference values are baked into each assertion/comment as the baseline a future run
--- compares against.
---
--- Debug-gated: refuses with {ok=false, err="debug_mode off"} unless
--- storage.surface_export_config.debug_mode. Builds ONE scratch space platform
--- ("fluid-law-selftest-scratch"), runs every experiment, then GUARANTEES teardown even if an
--- experiment throws (each row body is pcall-isolated so one engine throw cannot hide later laws).
--- Zero-leftover is mandatory on the shared cluster: a stale scratch from a prior crashed run is swept
--- at start, and the platform this run creates is torn down through the HELD reference.
---
--- teardown_clean note: game.delete_surface is DEFERRED to end of tick (platform.destroy is a no-op; the belt selftest
--- and the delete-platform memory both rely on the surface staying enumerable within the same
--- execution), so a same-execution rescan would still see the platform. teardown_clean therefore means
--- "delete issued without error"; the driver (tests/instruments/fluid-segment-law/run-tests.mjs) does
--- the authoritative zero-leftover count on the next (later) tick.
-
 local SCRATCH_NAME = "fluid-law-selftest-scratch"
 
 local function find_scratch_platforms()
@@ -33,9 +10,6 @@ local function find_scratch_platforms()
 	return out
 end
 
--- Sweep leftovers from a PRIOR crashed run only. Those deletions finalized at that run's end-of-tick,
--- so by this (later) tick they are gone from force.platforms; sweeping here cannot double-delete the
--- platform this run creates (that one is torn down via the held reference below).
 local function sweep_prior_leftovers()
 	local swept = 0
 	for _, platform in ipairs(find_scratch_platforms()) do
@@ -61,8 +35,6 @@ local function seg_id(entity, box_index)
 	return entity.get_fluid_segment_id(box_index)
 end
 
--- get_fluid_box_prototype(i) returns a single LuaFluidBoxPrototype or an array of them (a box with
--- multiple prototypes, e.g. a fluid-energy-source box). Normalize to the production_type string.
 local function box_production_type(entity, box_index)
 	local proto = entity.get_fluid_box_prototype(box_index)
 	if not proto then return "nil" end
@@ -71,9 +43,6 @@ local function box_production_type(entity, box_index)
 	return "unknown"
 end
 
--- (a) Control: a pipe row forms ONE segment; the segment total is EXACT while per-storage reads are
--- float32 capacity shares. Measured 2.1.11: segment == 1000 (==, no epsilon); share sum ==
--- 999.9999997615814 (|delta| ~ 2.4e-7). A storage-tank alone forms a segment; a 500 insert reads 500.
 local function exp_pipe_and_tank_control(surface, force)
 	local pipes = {}
 	for k = 0, 11 do
@@ -84,14 +53,14 @@ local function exp_pipe_and_tank_control(surface, force)
 		pipes[#pipes + 1] = p
 	end
 	local inserted = pipes[1].insert_fluid({ name = "water", amount = 1000 })
-	local segment = seg_amount(pipes[6], 1) -- read from an arbitrary member
+	local segment = seg_amount(pipes[6], 1)
 	local share_sum = 0
 	for _, p in ipairs(pipes) do
 		local f = p.get_fluid(1)
 		share_sum = share_sum + (f and f.amount or 0)
 	end
-	local ok_segment = segment == 1000 -- exact, no epsilon
-	local ok_shares = math.abs(share_sum - 1000) <= 1e-5 -- float32 shares (measured |d| ~ 2.4e-7)
+	local ok_segment = segment == 1000
+	local ok_shares = math.abs(share_sum - 1000) <= 1e-5
 
 	local tank = surface.create_entity({ name = "storage-tank", position = { 12, -18 }, force = force })
 	local tank_pipe = pipe(surface, force, 14.5, -18)
@@ -111,17 +80,12 @@ local function exp_pipe_and_tank_control(surface, force)
 	}
 end
 
--- (b) Two thrusters whose WEST fuel ports are joined by an 11-pipe U share ONE fuel segment; the
--- segment total is exact (500) while storages are 10:1 (thruster:pipe) capacity shares. Measured
--- 2.1.11: thruster share 161.290323, pipe share 16.129032 (2*10 + 11*1 = 31 units; 500/31).
 local function exp_thruster_pair(surface, force)
 	local a = surface.create_entity({ name = "thruster", position = { -10, 20.5 }, force = force })
 	local b = surface.create_entity({ name = "thruster", position = { -2, 20.5 }, force = force })
 	if not (a and a.valid and b and b.valid) then
 		return { ok = false, detail = "thruster create failed (a=" .. tostring(a ~= nil) .. " b=" .. tostring(b ~= nil) .. ")" }
 	end
-	-- Measured fuel-port geometry: A fuel box1 west port target (-12.5,18.5), B (-4.5,18.5); the U
-	-- routes along row 17.5 to avoid the oxidizer box2 ports (rows 20.5/18.5 mirrored).
 	local path = {
 		{ -12.5, 18.5 }, { -12.5, 17.5 }, { -11.5, 17.5 }, { -10.5, 17.5 }, { -9.5, 17.5 },
 		{ -8.5, 17.5 }, { -7.5, 17.5 }, { -6.5, 17.5 }, { -5.5, 17.5 }, { -4.5, 17.5 }, { -4.5, 18.5 },
@@ -149,8 +113,6 @@ local function exp_thruster_pair(surface, force)
 	}
 end
 
--- (c) Fusion-reactor coolant box1 + 3 west pipes share ONE segment; insert 300 into the reactor and
--- EVERY member reads 300 exact. Measured 2.1.11 (coolant box1 ports at rows -1.5/+1.5 west/east).
 local function exp_reactor_coolant(reactor, west_pipes)
 	if not (reactor and reactor.valid) then return { ok = false, detail = "fusion-reactor missing" } end
 	if #west_pipes < 3 then return { ok = false, detail = "west coolant pipes missing (" .. #west_pipes .. "/3)" } end
@@ -171,8 +133,6 @@ local function exp_reactor_coolant(reactor, west_pipes)
 	}
 end
 
--- (d) Inject 150 more via a pipe member; the segment total is 450 EXACT the same instant (capacity
--- shares redistribute but the total is exact at every instant). Measured 2.1.11 (300 -> 450).
 local function exp_mixed_injection(reactor, west_pipes)
 	if not (reactor and reactor.valid and west_pipes[1]) then
 		return { ok = false, detail = "reactor/pipes missing" }
@@ -185,9 +145,6 @@ local function exp_mixed_injection(reactor, west_pipes)
 	}
 end
 
--- (e) Plasma writes clamp to fluidbox capacity. Reactor plasma box2 set to 50 accepts 10; a
--- standalone fusion-generator plasma box1 is segmentless and also clamps a 25 write to 10.
--- Measured 2.1.11 (plasma box2 ports on columns 8.5/11.5 north/south).
 local function exp_plasma_clamp(reactor, generator)
 	if not (reactor and reactor.valid) then return { ok = false, detail = "reactor missing" } end
 	local reactor_set = reactor.set_fluid(2, { name = "fusion-plasma", amount = 50, temperature = 1000000 })
@@ -209,8 +166,6 @@ local function exp_plasma_clamp(reactor, generator)
 	}
 end
 
--- (f) set_fluid_segment_fluid writes the WHOLE segment in one call: overwrite coolant box1 to 400 and
--- read back 400 exact. Measured 2.1.11 (450 -> 400).
 local function exp_segment_write(reactor)
 	if not (reactor and reactor.valid) then return { ok = false, detail = "reactor missing" } end
 	local set_ret = reactor.set_fluid_segment_fluid(1, { name = "fluoroketone-cold", amount = 400, temperature = -150 })
@@ -221,8 +176,6 @@ local function exp_segment_write(reactor)
 	}
 end
 
--- (g) Segment getters THROW on a segmentless box at 2.1 (2.0 returned nil). The fusion-generator's
--- plasma box1 is segmentless: has_fluid_segment(1)==false and get_fluid_segment_id(1) throws.
 local function exp_segment_getter_throws(generator)
 	if not (generator and generator.valid) then return { ok = false, detail = "generator missing" } end
 	local has = generator.has_fluid_segment(1)
@@ -235,28 +188,18 @@ local function exp_segment_getter_throws(generator)
 	}
 end
 
--- (h) Prototype coverage sweep: create one of each on Nauvis, assert the exact per-box shape
--- (fluids_count, production_type, has_fluid_segment) measured at 2.1.11, destroy each immediately.
--- A drift on any shape fails the row (the point of a re-cert sweep). big-mining-drill is dynamic:
--- 0 boxes off a fluid-requiring resource. maraxsis-regulator is mod-dependent (skipped unless present).
 local function exp_prototype_sweep(force)
 	local nauvis = (game.planets and game.planets.nauvis and game.planets.nauvis.surface) or game.surfaces["nauvis"]
 	if not nauvis then return { ok = false, detail = "nauvis surface missing" } end
-	-- Ensure the sweep strip (x 500..~656, y 0) is generated before placing.
 	nauvis.request_to_generate_chunks({ 578, 0 }, 5)
 	nauvis.force_generate_chunk_requests()
 
-	-- Each spec: name -> ordered box list of { production_type, has_fluid_segment } measured 2.1.11.
 	local specs = {
 		{ name = "boiler", boxes = { { "input", true }, { "output", false } } },
 		{ name = "steam-engine", boxes = { { "input", true } } },
 		{ name = "pump", boxes = { { "none", false } } },
 		{ name = "pipe-to-ground", boxes = { { "none", true } } },
 		{ name = "chemical-plant", boxes = { { "input", false }, { "input", false }, { "output", false }, { "output", false } } },
-		-- 2.1.11 drift caught by this instrument's first live run (2026-07-21): the turret's
-		-- documented internal buffer became a second enumerable box (b2: get_fluid_box_prototype
-		-- returns nil, no segment). The pre-2.1 sweep measured a single box. "?" = expect a nil
-		-- box prototype.
 		{ name = "flamethrower-turret", boxes = { { "none", true }, { "nil", false } } },
 		{ name = "big-mining-drill", boxes = {} },
 		{ name = "offshore-pump", boxes = { { "output", false } } },
@@ -301,8 +244,6 @@ local function exp_prototype_sweep(force)
 	}
 end
 
--- Run one experiment row pcall-isolated: an unexpected engine throw becomes a FAIL row (logged) so it
--- cannot hide the later laws. Forces the plain-English name onto whatever the experiment returned.
 local function run_row(name, fn)
 	local ok, result = pcall(fn)
 	if not ok then
@@ -337,7 +278,6 @@ local function fluid_segment_law_selftest()
 		return { ok = false, err = "no surface after apply_starter_pack", rows = {}, teardown_clean = false }
 	end
 
-	-- Foundation x/y -24..24.
 	local tiles = {}
 	for x = -24, 24 do
 		for y = -24, 24 do
@@ -350,8 +290,6 @@ local function fluid_segment_law_selftest()
 	rows[#rows + 1] = run_row("pipe and tank control", function() return exp_pipe_and_tank_control(surface, force) end)
 	rows[#rows + 1] = run_row("thruster pair shared segment", function() return exp_thruster_pair(surface, force) end)
 
-	-- Shared reactor/generator setup for (c)-(g): reactor at (10,0) 6x6, 3 west coolant pipes,
-	-- standalone generator at (-14,0).
 	local reactor = surface.create_entity({ name = "fusion-reactor", position = { 10, 0 }, force = force })
 	local west_pipes = {}
 	if reactor and reactor.valid then
@@ -369,8 +307,6 @@ local function fluid_segment_law_selftest()
 	rows[#rows + 1] = run_row("segment getters throw on segmentless", function() return exp_segment_getter_throws(generator) end)
 	rows[#rows + 1] = run_row("prototype coverage sweep", function() return exp_prototype_sweep(force) end)
 
-	-- GUARANTEED teardown via the HELD reference (never a re-find-by-name: a name match could hit a
-	-- prior-run leftover whose deferred deletion is still pending, double-deleting a marked surface).
 	local teardown_ok, teardown_err = pcall(function()
 		if platform.valid and platform.surface and platform.surface.valid then
 			game.delete_surface(platform.surface)

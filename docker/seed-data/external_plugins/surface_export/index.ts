@@ -1,9 +1,3 @@
-/**
- * @file index.ts
- * @description Clusterio plugin for exporting and importing Factorio space platforms
- * @see https://github.com/clusterio/clusterio/blob/master/docs/writing-plugins.md
- */
-
 const lib = require("@clusterio/lib") as { definePermission(opts: { name: string; title: string; description: string }): void };
 
 import * as messages from "./messages";
@@ -43,8 +37,6 @@ export const plugin = {
 	controllerEntrypoint: "dist/node/controller",
 	webEntrypoint: "./web",
 	routes: ["/surface-export"],
-	// alpha.25 (#884): plugins that save-patch a Lua module and/or run /sc script commands must
-	// declare these so the host validates the instance has both enabled before loading the plugin.
 	features: ["SavePatching", "ScriptCommands"],
 	instanceConfigFields: {
 		[`${PLUGIN_NAME}.max_export_cache_size`]: {

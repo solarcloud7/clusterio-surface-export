@@ -1,12 +1,8 @@
--- Command: /list-platforms
--- List all available space platforms
-
 local Base = require("modules/surface_export/interfaces/commands/base")
 
 Base.admin_command("list-platforms", "List all available space platforms", function(cmd, ctx)
   local platforms = ctx.force.platforms
   
-  -- Count platforms
   local count = 0
   for _ in pairs(platforms) do
     count = count + 1

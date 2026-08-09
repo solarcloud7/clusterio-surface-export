@@ -1,12 +1,3 @@
--- Command: /teleport
--- GUI to connect to another cluster instance: dropdown of instances (from the controller roster)
--- + Connect, which fires the player's native connect_to_server prompt.
---
--- ACCESS: admins, plus members of the Factorio permission group named by
--- TeleportGui.PERMISSION_GROUP ("Teleport") — save-persisted, managed via the stock /permissions
--- GUI, pre-created at startup. The gate lives in TeleportGui.is_allowed (one place; the GUI's
--- Connect button re-checks it so revocation takes effect even with the GUI open).
-
 local Base = require("modules/surface_export/interfaces/commands/base")
 local TeleportGui = require("modules/surface_export/interfaces/gui/teleport-gui")
 
@@ -24,7 +15,6 @@ Base.command("teleport",
         TeleportGui.PERMISSION_GROUP))
       return
     end
-    -- Fresh roster every open (instances start/stop; addresses are assigned at instance start).
     TeleportGui.request_roster()
     TeleportGui.open(ctx.player)
   end)

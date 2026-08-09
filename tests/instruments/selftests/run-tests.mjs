@@ -1,29 +1,10 @@
 #!/usr/bin/env node
-// selftests — every in-module self-test, in ONE RCON call.
-//
-// These pin PURE logic (a decision function, a filter, a lock sweep, a version seam) against
-// injected/fake inputs. They need the Factorio Lua runtime because `require` does not resolve from
-// the /sc sandbox — but they need NO world, NO platform and NO transfer. They are unit tests that
-// happen to live inside the engine.
-//
-// They used to be five near-identical PowerShell drivers (~250 lines total), each spawning its own
-// pwsh, each doing exactly: one RCON call -> parse JSON -> report. Two more self-tests were
-// registered in the remote interface and run by NOTHING — hold_aware_unlock (26 assertions) was
-// dead coverage until this file picked it up.
-//
-// fluid-segment-law is deliberately NOT here: it builds and tears down its own scratch platform and
-// is the fluid-law re-certification instrument, so it keeps its own driver and lifecycle.
-//
-// Usage:
-//   node tests/instruments/selftests/run-tests.mjs
-//   node tests/instruments/selftests/run-tests.mjs --instance <name>   (or env SE_LAB_INSTANCE)
 
 import { execFileSync } from "node:child_process";
 
 const CONTROLLER = "surface-export-controller";
 const CTL_CONFIG = "/clusterio/tokens/config-control.json";
 
-// Every self-test registered on the remote interface except fluid_segment_law (see header).
 const SELFTESTS = [
 	"version",
 	"belt_side_restore",
@@ -46,10 +27,6 @@ function rcon(command) {
 	{ encoding: "utf8", timeout: 300_000, stdio: ["ignore", "pipe", "pipe"], maxBuffer: 32 * 1024 * 1024 }).trim();
 }
 
-// ONE call runs all of them. Only FAILING detail rows come back — a passing run returns counts, so
-// the payload stays small regardless of how many assertions there are (95 at time of writing).
-// Each self-test is pcall'd individually: one that throws is reported as a failure rather than
-// taking the whole batch down with it.
 const LUA = `/sc local names = {${SELFTESTS.map(n => `"${n}"`).join(",")}}
 local out = {}
 for _, name in ipairs(names) do
@@ -109,8 +86,6 @@ function main() {
 		if (bad) badSuites++;
 		console.log(`  ${bad ? "FAIL" : "PASS"}  ${r.name}: ${r.passed || 0}/${r.total || 0}` +
 			(r.errored ? `  ERRORED: ${r.msg}` : ""));
-		// An EMPTY Lua table serializes to `{}` (object), not `[]` — the numeric-key coercion that
-		// bites every Lua->JSON boundary in this repo. Normalize before iterating.
 		const failures = Array.isArray(r.failures) ? r.failures : Object.values(r.failures || {});
 		for (const f of failures) console.log(`          - ${f.name}: ${f.msg}`);
 	}

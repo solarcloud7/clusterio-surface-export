@@ -1,16 +1,8 @@
--- Integration Test Runner
--- Reads test cases from JSON file and executes them
--- Returns structured results for external test harness
-
 local json = require("modules/surface_export/core/json")
 local test_import_entity = require("modules/surface_export/interfaces/remote/test-import-entity")
 
 local TestRunner = {}
 
---- Run all tests from a JSON test suite
---- @param test_suite_json string: JSON string containing test suite
---- @param options table|nil: { category = "filter", test_id = "specific_test", verbose = false }
---- @return table: Results with passed, failed, skipped, details
 function TestRunner.run_tests(test_suite_json, options)
   options = options or {}
   
@@ -23,7 +15,6 @@ function TestRunner.run_tests(test_suite_json, options)
     errors = {}
   }
   
-  -- Parse test suite JSON
   local ok, test_suite = pcall(json.decode, test_suite_json)
   if not ok then
     table.insert(results.errors, "Failed to parse test suite JSON: " .. tostring(test_suite))
@@ -35,17 +26,12 @@ function TestRunner.run_tests(test_suite_json, options)
     return results
   end
   
-  -- Position tracking
   local base_x = test_suite.basePosition and test_suite.basePosition.x or 100
   local base_y = test_suite.basePosition and test_suite.basePosition.y or 100
   local increment = test_suite.positionIncrement or 5
   local current_x = base_x
   local current_y = base_y
 
-  -- Resolve the isolated test surface. run-tests.ps1 passes test_suite.testPlatform (the cloned
-  -- platform's name); place entities THERE so each run is isolated and auto-cleaned when the clone
-  -- surface is deleted. Without this, entities land on player 1's surface and accumulate across runs,
-  -- eventually colliding (belt tests failed once absolute coords started hitting stale entities).
   local test_surface
   if test_suite.testPlatform then
     for _, s in pairs(game.surfaces) do
@@ -57,13 +43,11 @@ function TestRunner.run_tests(test_suite_json, options)
     test_surface = (p1 and p1.surface) or game.surfaces[1]
   end
   local target_surface_index = test_surface.index
-  -- Anchor placement to the platform foundation so fixed coords don't fall off a map-offset platform.
   local anchor = { x = base_x, y = base_y }
   if test_surface.platform and test_surface.platform.hub and test_surface.platform.hub.valid then
     anchor = test_surface.platform.hub.position
   end
   
-  -- Run each test
   for _, test_case in ipairs(test_suite.tests) do
     results.total = results.total + 1
     
@@ -77,7 +61,6 @@ function TestRunner.run_tests(test_suite_json, options)
       warnings = {}
     }
     
-    -- Filter by category
     if options.category and test_case.category ~= options.category then
       test_result.status = "skipped"
       test_result.message = "Filtered by category"
@@ -86,7 +69,6 @@ function TestRunner.run_tests(test_suite_json, options)
       goto continue
     end
     
-    -- Filter by test_id
     if options.test_id and test_case.id ~= options.test_id then
       test_result.status = "skipped"
       test_result.message = "Filtered by test_id"
@@ -95,7 +77,6 @@ function TestRunner.run_tests(test_suite_json, options)
       goto continue
     end
     
-    -- Skip if marked skip
     if test_case.skip then
       test_result.status = "skipped"
       test_result.message = test_case.skip_reason or "Marked as skip"
@@ -104,18 +85,13 @@ function TestRunner.run_tests(test_suite_json, options)
       goto continue
     end
     
-    -- Prepare entity data with position. Find a clear, on-foundation spot near the platform anchor
-    -- (robust to surface map-offset and to entities placed by earlier tests in this run).
     local entity_data = test_case.input
     local placed = nil
     if test_surface and entity_data.name and prototypes.entity[entity_data.name] then
       placed = test_surface.find_non_colliding_position(entity_data.name, anchor, 128, 1)
     end
-    -- Fallback (find_non_colliding_position returned nil): keep the increment pattern but ANCHOR it
-    -- to the platform foundation, not absolute coords (which may be off a map-offset clone platform).
     entity_data.position = placed or { x = anchor.x + (current_x - base_x), y = anchor.y + (current_y - base_y) }
 
-    -- Run the test on the isolated surface (not player 1's surface).
     local run_ok, result = pcall(function()
       return test_import_entity(entity_data, target_surface_index, nil)
     end)
@@ -136,18 +112,14 @@ function TestRunner.run_tests(test_suite_json, options)
       goto continue
     end
     
-    -- Copy warnings and fluid verification
     test_result.warnings = result.warnings or {}
     test_result.mismatches = result.comparison_summary and result.comparison_summary.mismatches or 0
     test_result.fluid_verification = result.fluid_verification
     
-    -- Evaluate success
     local expect = test_case.expect or { success = true, max_mismatches = 0 }
     local passed = true
     local fail_reasons = {}
     
-    -- Expected-FAILURE cases: a test may assert that creation/import fails gracefully (e.g. an
-    -- unknown prototype). When expect.success == false, a failure is the pass condition.
     if expect.success == false then
       if result.success then
         passed = false
@@ -163,7 +135,6 @@ function TestRunner.run_tests(test_suite_json, options)
             "', got: " .. table.concat(result.errors or {}, " | "))
         end
       end
-    -- Check entity creation success
     elseif expect.success and not result.success then
       passed = false
       table.insert(fail_reasons, "Entity creation failed")
@@ -174,17 +145,14 @@ function TestRunner.run_tests(test_suite_json, options)
       end
     end
     
-    -- Check fluid verification if requested
     if passed and expect.verifyFluids and result.fluid_verification then
       local fv = result.fluid_verification
       if expect.fluidWriteRejected then
-        -- We expect the engine to reject the fluid write (e.g., fusion-reactor plasma output)
         if fv.write_rejected <= 0 then
           passed = false
           table.insert(fail_reasons, "Expected fluid write rejection but none occurred")
         end
       else
-        -- Normal fluid verification — write should succeed
         if not fv.passed then
           passed = false
           table.insert(fail_reasons, string.format(
@@ -200,9 +168,7 @@ function TestRunner.run_tests(test_suite_json, options)
       end
     end
 
-    -- Check mismatch count
     if passed and test_result.mismatches > (expect.max_mismatches or 0) then
-      -- Check if mismatches are in allowed list
       local allowed = expect.allowed_mismatches or {}
       local all_allowed = true
       
@@ -227,7 +193,6 @@ function TestRunner.run_tests(test_suite_json, options)
         passed = false
         table.insert(fail_reasons, string.format("Too many mismatches: %d (max: %d)", 
           test_result.mismatches, expect.max_mismatches or 0))
-        -- Include mismatch warnings in fail reasons for diagnostics
         for _, warning in ipairs(test_result.warnings) do
           if string.find(warning, "Roundtrip mismatch") then
             table.insert(fail_reasons, warning)
@@ -248,7 +213,6 @@ function TestRunner.run_tests(test_suite_json, options)
     
     table.insert(results.details, test_result)
     
-    -- Move to next position
     current_x = current_x + increment
     if current_x > 200 then
       current_x = base_x
@@ -261,9 +225,6 @@ function TestRunner.run_tests(test_suite_json, options)
   return results
 end
 
---- Format results as a simple string for RCON output
---- @param results table: Results from run_tests
---- @return string: Formatted results
 function TestRunner.format_results(results)
   local lines = {}
   

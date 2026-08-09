@@ -1,18 +1,7 @@
--- FactorioSurfaceExport - side-scoped belt restoration self-test
--- Exercises the production helper with aliased line windows and mixed qualities. The fake lines model
--- the measured BELT-R11 leak signature while keeping the test deterministic and cluster-light.
-
 local BeltRestoration = require("modules/surface_export/import_phases/belt_restoration")
 
--- ONE belt-type list for every scan in this file. The old inline lists omitted loaders, which made
--- this instrument read 372 where the engine (and production export, via GameUtils.BELT_ENTITY_TYPES)
--- reads 380 on the belt pad — the "380-vs-372 mystery", resolved 2026-07-27. Loaders are belts here.
 local BELT_TYPES = { "transport-belt", "underground-belt", "splitter", "loader", "loader-1x1" }
 
--- Rebuild `live` belt geometry onto `surface` translated by (dx, dy). Returns emap keyed by the
--- SOURCE position key ("x,y" — matching capture_side_groups pair ids) plus the create-failure
--- count. Shared by dup_kill (dx=dy=0 scratch) and the iso protocol (scratch or an open pad slot on
--- the platform itself).
 local function rebuild_on(surface, live, dx, dy)
   local emap, cfails = {}, 0
   for _, e in ipairs(live) do
@@ -30,14 +19,6 @@ local function rebuild_on(surface, live, dx, dy)
   return emap, cfails
 end
 
---- DUP-KILL mode (BELT-R14, 2026-07-19): run the PRODUCTION capture_side_groups +
---- restore_side_groups against a REAL platform's belts in ONE execution — capture the live
---- side partition, rebuild the belt geometry on a scratch surface, restore, verdict by
---- independent both-direction per-side multisets + whole-scratch distinct-uid census against
---- the captured basis, then remove the scratch. RCON cannot require() at runtime, so this
---- remote is the lab's only path to the production functions (the no-tick measure_baked
---- pattern). Read-only on the platform; the scratch is created and deleted here.
---- @param opts table: { mode = "dup_kill", platform = <name> }
 local function dup_kill(opts)
   local plat
   for _, p in pairs(game.forces.player.platforms) do
@@ -159,16 +140,6 @@ local function dup_kill(opts)
   return out
 end
 
---- BATCHED dup-kill (BELT-R15, 2026-07-19): the INCREMENTAL-restore rung — same fixture and
---- production functions as dup_kill, but the restore is split into N-side batches across REAL
---- elapsed ticks (one remote call per batch), measuring the untested risk: items crossing SIDE
---- boundaries (splitters cannot be deactivated — belt-class active writes are engine-rejected,
---- R13) DURING the batched window. Verdicts: (a) zero unplaced/anomalies across all batches;
---- (b) whole-scratch distinct-uid census == captured basis at finish; (c) per-side both-direction
---- multiset exactness AT THE SIDE'S COMPLETION INSTANT (same execution as its final placement) —
---- post-completion drift is legitimate physics, observed separately, never a verdict.
---- Cross-execution state is MODULE-LOCAL (holds LuaEntity refs — never storage; the no-tick
---- measure_baked precedent for additive lab instrumentation; production untouched).
 local batched = nil
 
 local function side_multiset(g, emap)
@@ -282,7 +253,6 @@ local function dup_kill_batched(opts)
     batched.placed = batched.placed + placed
     batched.unplaced = batched.unplaced + unplaced
     batched.anomalies = batched.anomalies + anomalies
-    -- Verdict (c): each side's both-direction multiset at ITS completion instant, same execution.
     local batch_exact = 0
     local batch_inexact = {}
     for i = from, to do
@@ -328,8 +298,6 @@ local function dup_kill_batched(opts)
         end
       end
     end
-    -- Post-completion drift observation (physics, NOT a verdict): sides whose multiset now
-    -- differs from their completion-instant snapshot — the direct crossing observation.
     local drifted, drift_abs = 0, 0
     for i, g in ipairs(batched.groups) do
       local act = side_multiset(g, batched.emap)
@@ -360,12 +328,6 @@ local function dup_kill_batched(opts)
   return { success = false, error = "unknown batched op: " .. tostring(opts.op) }
 end
 
---- ISO protocol (2026-07-27, owner-approved plan): capture the clean compression-loop fixture
---- ONCE into storage, then restore the IDENTICAL side-group data under one varied condition per
---- leg — context (scratch normal surface vs an open pad slot on the platform itself) x order
---- (forward vs reversed group iteration; the owner's sideload-order theory). The multiset is the
---- law's unit and the frozen-feed loop's side multisets are tick-invariant, so every leg judges
---- the same apples. Zero leftovers on every path including errors.
 local function iso(opts)
   if opts.op == "clear" then
     storage.belt_iso = nil
@@ -392,7 +354,6 @@ local function iso(opts)
     for _, g in ipairs(groups) do
       for _, sl in ipairs(g.slots) do slots = slots + 1 total = total + sl.ct end
     end
-    -- groups are storage-safe by contract (plain members/slots tables, no handles).
     storage.belt_iso = { groups = groups, platform = opts.platform, area = area,
       captured_total = total, tick = game.tick }
     return { success = true, belts = #live, groups = #groups, slots = slots, captured_total = total }
@@ -406,8 +367,6 @@ local function iso(opts)
       if p.valid and p.name == iso_data.platform then plat = p end
     end
     if not plat then return { success = false, error = "capture platform gone: " .. tostring(iso_data.platform) } end
-    -- Geometry is static (belts do not move; only items do) — re-scan the SOURCE area live so the
-    -- rebuild positions match the stored groups' member ids exactly.
     local live = plat.surface.find_entities_filtered({ type = BELT_TYPES, area = iso_data.area })
     if #live == 0 then return { success = false, error = "source belts gone from area" } end
 
@@ -419,7 +378,6 @@ local function iso(opts)
       groups = rev
     end
 
-    -- Build the target context.
     local context = opts.context or "scratch"
     local target, dx, dy, cleanup
     if context == "scratch" then
@@ -439,8 +397,6 @@ local function iso(opts)
       target, dx, dy = sc, 0, 0
       cleanup = function() if sc.valid then game.delete_surface(sc) end end
     elseif context == "platform" then
-      -- Rebuild at an OPEN pad slot on the platform itself: platform-surface class, zero new
-      -- surfaces. opts.slot = {x, y} interior origin; translation = slot - source area origin.
       local slot = opts.slot
       if type(slot) ~= "table" then return { success = false, error = "context platform needs opts.slot {x,y}" } end
       local a = iso_data.area
@@ -460,7 +416,6 @@ local function iso(opts)
       return { success = false, error = "unknown context: " .. tostring(context) }
     end
 
-    -- From here on, EVERY exit runs cleanup (zero-leftover discipline, error paths included).
     local ok, result = pcall(function()
       local emap, cfails = rebuild_on(target, live, dx, dy)
       if cfails > 0 then error("rebuild create failures: " .. cfails) end
@@ -499,8 +454,6 @@ local function iso(opts)
 end
 
 local function belt_side_restore_selftest(opts)
-  -- Real-world DUP-kill measurement (opts-selected); the no-arg call keeps the fake-line unit
-  -- rung below unchanged.
   if type(opts) == "table" and opts.mode == "dup_kill" then
     return dup_kill(opts)
   end
@@ -542,9 +495,6 @@ local function belt_side_restore_selftest(opts)
       return out
     end
     line.can_insert_at = function() return true end
-    -- Default HONEST insert honoring the seam's BOOLEAN contract (version-compat normalizes any
-    -- pin drift to a boolean; a count-returning fake would validate a shape production never sees).
-    -- Fakes that lie override this.
     line.insert_at = function(_position, stack, count)
       line.contents[#line.contents + 1] = new_stack(stack.name, stack.quality, count)
       return true
@@ -585,23 +535,12 @@ local function belt_side_restore_selftest(opts)
     [3] = { valid = true, prototype = prototype, get_transport_line = function() return neighbour end },
   }
   local groups = {
-    -- item_source_positions is REQUIRED (no fallback path): the slot's captured source position
-    -- is entity 1 line 1 k 200 — the source-position scan drives the same aliased-window leak
-    -- the fake's insert redirect manufactures.
     { members = { { id = 1, li = 1 }, { id = 2, li = 1 } },
       slots = { { n = "iron-plate", q = "legendary", ct = 1 } },
       item_source_positions = { 1, 1, 200 } },
     { members = { { id = 3, li = 1 } }, slots = {}, item_source_positions = {} },
   }
 
-  -- CONTRACT (third round, 2026-08-09; predecessors 2026-07-26 owner scale ruling and the
-  -- 2026-07-27 side-scoped censuses): per-insert read-back is GONE — measured at 7,264 ms of an
-  -- 8,500 ms live import vs 102 ms with the counting stubbed. The engine's insert_at return
-  -- drives control flow, and each SIDE is verified once against its expected multiset by the
-  -- side brackets. What the contract guarantees is unchanged: DETECTION, never silence — a lying
-  -- landing fails its own side's bracket (and a cross-side landing ALSO fails the side it hit),
-  -- anomalies > 0 — the return value callers consume as their failure signal. Deliberately NOT retried: the old
-  -- census-driven rescan after a cross-side landing was itself the BELT-R16 duplication engine.
   local placed, unplaced, anomalies = BeltRestoration.restore_side_groups(groups, entity_map)
   check("aliased_windows_do_not_double_count", placed == 1 and unplaced == 0,
     string.format("placed=%d unplaced=%d", placed, unplaced))
@@ -615,20 +554,13 @@ local function belt_side_restore_selftest(opts)
     end
     return total
   end
-  -- A trusted (lying) landing is FINAL — no retry, so the target stays empty and no duplicate is
-  -- ever created. The side brackets above carry the failure to the caller.
   check("no_retry_after_trusted_landing", count(target, "legendary") == 0 and count(target, "normal") == 0,
     "a trusted landing must not be retried (the census-driven rescan was the R16 duplication engine)")
-  -- The leaked stack REMAINS on the neighbour (no undo) — the point is it cannot remain
-  -- silently: the bracket anomalies above are the loud witness the callers fail on.
   check("leak_is_visible_not_silent", count(neighbour, "legendary") == 1 and count(neighbour, "normal") == 5,
     "expected the leaked legendary plate to sit on the neighbour, witnessed by the anomaly")
 
-  -- SUCCESS-LIE fake: insert_at reports success but lands NOTHING anywhere. The trusted landing
-  -- is counted into the side's expected multiset, so the side bracket must come up short — the
-  -- exact shape the per-insert census used to catch mid-flight, now caught once per side.
   local lie_line = make_line()
-  lie_line.insert_at = function() return true end -- claims success, mutates nothing
+  lie_line.insert_at = function() return true end
   local lie_map = { [7] = { valid = true, prototype = prototype, get_transport_line = function() return lie_line end } }
   local lie_groups = {
     { members = { { id = 7, li = 1 } },
@@ -642,8 +574,6 @@ local function belt_side_restore_selftest(opts)
   check("success_lie_leaves_nothing_physical", #lie_line.contents == 0,
     "the lying insert must not have manufactured items")
 
-  -- HONEST fake: the landing is real and exact. The brackets must stay SILENT — a bracket that
-  -- false-alarms on a clean restore erodes trust in the real anomalies (check-commensurate rule).
   local honest_line = make_line()
   local honest_map = { [9] = { valid = true, prototype = prototype, get_transport_line = function() return honest_line end } }
   local honest_groups = {
@@ -656,9 +586,6 @@ local function belt_side_restore_selftest(opts)
     string.format("clean restore must place all with zero anomalies; placed=%d unplaced=%d anomalies=%d",
       hplaced, hunplaced, hanomalies))
 
-  -- OVER-COMPRESSION MERGE, success leg. can_insert_at accepts only an EMPTY line, so the second
-  -- slot's captured-position scan exhausts and routes through pending -> merge: remove the partner,
-  -- re-insert the combined count as ONE oversized stack. The line ends with a single stack of 5.
   local merge_line = make_line()
   merge_line.can_insert_at = function() return #merge_line.contents == 0 end
   local merge_map = { [11] = { valid = true, prototype = prototype, get_transport_line = function() return merge_line end } }
@@ -674,10 +601,6 @@ local function belt_side_restore_selftest(opts)
     string.format("merge must land one oversized stack of 5; placed=%d unplaced=%d anomalies=%d stacks=%d",
       mplaced, munplaced, manomalies, #merge_line.contents))
 
-  -- OVER-COMPRESSION MERGE, decline + put-back leg. The line declines any insert over 2 items, so
-  -- the merged stack of 5 cannot land anywhere (the engine's return is the refusal — can_insert_at
-  -- keeps approving); the put-back must restore the removed partner, engine-confirmed, and the
-  -- slot stays honest unplaced loss with the side bracket SILENT (nothing was lost or invented).
   local decline_line = make_line()
   decline_line.can_insert_at = function() return #decline_line.contents == 0 end
   decline_line.insert_at = function(_position, stack, count)
@@ -699,10 +622,6 @@ local function belt_side_restore_selftest(opts)
       dplaced, dunplaced, danomalies, #decline_line.contents,
       decline_line.contents[1] and tostring(decline_line.contents[1].count) or "none"))
 
-  -- F1 regression (review 2026-07-27): malformed belt_side_groups must be REFUSED by the shape
-  -- validator before restore ever runs — an uncaught throw on the import's on_tick path kills the
-  -- headless server (exit 255, measured twice). These are the exact adversarial payloads from the
-  -- review: an empty group, bare scalars, and a misaligned item_source_positions array.
   local v1 = BeltRestoration.validate_side_groups({ {} })
   check("shape_guard_refuses_empty_group", v1 == false, "group {} must fail shape validation")
   local v2 = BeltRestoration.validate_side_groups({ 1, 2, 3 })

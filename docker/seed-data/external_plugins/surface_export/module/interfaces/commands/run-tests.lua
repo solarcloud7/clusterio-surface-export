@@ -1,34 +1,9 @@
--- Commands: /test-clear and /test-run — the in-game gallery test runner pair (owner design,
--- 2026-07-18/19). Test cells are discovered by STRUCTURE (the name rendering-text + the status trio
--- at the derived origin — no registry), and RECONCILED against the pushed manifest roster: a rostered
--- fixture with no live pad/platform is a FAILURE (MISSING), never silence (owner trust requirement —
--- "do I know what tests are actually in play?").
---
---   /test-clear [name-filter]  RESET every cell: sweep the right-half compare area (the full paste
---                              footprint), status trio to WAITING (clock icon), failure template
---                              restored, name text blue. No copy/paste/audit.
---   /test-run   [name-filter]  For each roster fixture: fingerprint the baked state with the shared
---                              FixtureMeters, run its pad-kind check (pad = reset -> copy left ->
---                              paste +14 -> audit both halves -> re-fingerprint the paste; platform/
---                              surface = resolve by name + meter + fingerprint), and reconcile BOTH
---                              ways (rostered fixture with no cell = MISSING red; discovered cell with
---                              no roster id = UNKNOWN PAD yellow). A nil roster is a RED failing run.
---                              Runs headless over RCON (no player) or in-game.
---
--- Debug instrument (gated on debug_mode); pad measurement rides the selection_lab_drive remote so it
--- is byte-identical to the manual selection-tool workflow. Machine-readable evidence is ONE
--- [TESTRUN-JSON] line (log() always; rcon.print when no player drove it). Chat lines are plain
--- concatenated strings (LocalisedString 20-param cap — never a big LocalisedString).
-
 local Base = require("modules/surface_export/interfaces/commands/base")
 local SelectionLab = require("modules/surface_export/interfaces/gui/selection-lab")
 local Util = require("modules/surface_export/utils/util")
 local FixtureMeters = require("modules/surface_export/utils/fixture-meters")
 local LifecycleEngine = require("modules/surface_export/utils/lifecycle-engine")
 
--- Cell geometry (mirrors tests/lab-gallery/test-foundation.mjs — the single template source):
--- 26x12 cell; name text at origin+(6,-1.5); trio on the bottom border at +(13.5|14.5|15.5, 11.5);
--- left fixture interior cols 1-12; right compare half cols 14-25 (interior 15-24).
 local NAME_OFFSET_X, NAME_OFFSET_Y = 6, -1.5
 local TRIO_Y = 11.5
 local COLORS = {
@@ -60,7 +35,7 @@ local function set_status(text_obj, comb, panel, status, failure_message)
   s1.active = (status == "pass")
   s2.active = (status == "fail")
   local pcb = panel.get_or_create_control_behavior()
-  local msgs = pcb.records  -- 2.1: messages renamed to records
+  local msgs = pcb.records
   for _, m in ipairs(msgs) do
     if m.text and m.text:find("Failure", 1, true) == 1 then
       m.text = (status == "fail") and ("Failure " .. (failure_message or "?")) or FAILURE_TEMPLATE
@@ -70,18 +45,10 @@ local function set_status(text_obj, comb, panel, status, failure_message)
   text_obj.color = COLORS[status]
 end
 
---- The ONE reset both commands share: sweep the FULL paste footprint (the +14 offset from a left
---- rect reaching col 13 can land entities up to ox+27.5 — the old ox+26 edge missed the right-most
---- pasteable half-tile), never the trio row (y +11.5), then show WAITING.
 local function reset_cell(surface, cell)
   local comb, panel = find_trio(surface, cell.ox, cell.oy)
   if not (comb and panel) then error("status trio missing at origin (" .. cell.ox .. "," .. cell.oy .. ")") end
   local cleared = 0
-  -- FULL paste height including the oy+11.5 half-row (measured 2026-07-28: the thruster-pair
-  -- pad's pasted pipes at oy+11.5 sat BELOW the old oy+11 sweep edge and accumulated one
-  -- Lua-created overlapping pipe PER BOARD RUN — 12 stacked pipes per tile, physically-impossible
-  -- co-located segments, and the whole-gallery transfer's fluid clobber). Only the status trio's
-  -- own entities survive the sweep.
   local sweep_area = { { cell.ox + 14, cell.oy }, { cell.ox + 27.5, cell.oy + 12 } }
   for _, e in ipairs(surface.find_entities_filtered({ area = sweep_area })) do
     if e ~= comb and e ~= panel then
@@ -89,8 +56,6 @@ local function reset_cell(surface, cell)
       cleared = cleared + 1
     end
   end
-  -- GUARD: a sweep that leaves anything behind re-accumulates silently forever — refuse loudly
-  -- (both callers pcall this; command context, never on_tick).
   local leftover = 0
   for _, e in ipairs(surface.find_entities_filtered({ area = sweep_area })) do
     if e ~= comb and e ~= panel then leftover = leftover + 1 end
@@ -102,8 +67,6 @@ local function reset_cell(surface, cell)
   return cleared, comb, panel
 end
 
---- Compare two audit reports. Returns nil on match, else an icon-rich delta (renders in chat AND
---- in the status panel's {failure-message} slot).
 local function report_delta(left, right)
   if left.entity_count ~= right.entity_count then
     return string.format("entities %d vs %d", left.entity_count, right.entity_count)
@@ -140,11 +103,6 @@ local function report_delta(left, right)
   return table.concat(parts, "; ", 1, math.min(#parts, 4))
 end
 
---- Aggregate audit for LIVE steady-state fixtures (fixture.auditAggregateOnly): a saturated belt
---- loop rotates its item MIX between the copy tick and the audit tick, so a per-name compare
---- false-fails on a physically perfect paste. The class law is the conserved TOTAL (the
---- steady-state fixture class definition); per-name fidelity for frozen fixtures keeps the strict
---- report_delta above.
 local function report_delta_aggregate(left, right)
   if left.entity_count ~= right.entity_count then
     return string.format("entities %d vs %d", left.entity_count, right.entity_count)
@@ -161,28 +119,10 @@ local function report_delta_aggregate(left, right)
   return nil
 end
 
--- === fingerprint dispatch =====================================================================
---
--- Locators are code; expected values are the roster fingerprint (single source of truth). Every
--- meter is the SHARED FixtureMeters implementation the seed-prep bake and corpus gate use, so a
--- /test-run fingerprint reads the exact fields the bake certified. args:
---   "anchor"   pad meter (surface, anchor_fn) — anchor_fn from anchor_lookup(roster, id, dx)
---   "area"     pad meter (surface, area_rect) — area-scoped so a pasted right half is not double-counted
---   "surface"  platform/surface meter (surface)
---   "platform" platform meter (platform object)
---   "none"     platform meter () — resolves its own platforms by name (hold pairs)
 local FM = FixtureMeters
--- Stable STRUCTURE count (transient debris excluded) — see FixtureMeters.count_stable_entities
--- for the rationale; a raw count on a live-factory platform flips with spills/effects.
 local function meter_entities(surface) return { entities = FM.count_stable_entities(surface) } end
 
 local DISPATCH = {
-  -- omnibus pads (copy/paste-audited), anchor-scoped fingerprints
-  -- MIGRATED to declarative verifies (manifest lifecycle.verify; has_declared_reads routes them —
-  -- no entry, no bespoke /test-run meter): omnibus-heat-temperature, omnibus-midcraft-progress,
-  -- omnibus-burner-fuel, omnibus-module-bonus-progress, inserter-held-capacity. Their measure_*
-  -- functions were kept one PR on the belief measure_corpus (the census gate) consumed them —
-  -- verified false: measure_corpus itself was called by nothing. All deleted 2026-07-26.
   ["omnibus-adversarial-inventory"] = { args = "anchor", meter = FM.measure_omnibus_adversarial },
   ["omnibus-decider-latch"]         = { args = "anchor", meter = FM.measure_omnibus_latch },
   ["omnibus-equipment-grid"]        = { args = "anchor", meter = FM.measure_omnibus_equipment },
@@ -190,28 +130,19 @@ local DISPATCH = {
   ["omnibus-crafting-fluids"]       = { args = "anchor", meter = FM.measure_omnibus_fluids },
   ["no-tick-sync-frozen-pair"]      = { args = "anchor", meter = FM.measure_no_tick_pair },
   ["repin-beacon-speed"]            = { args = "anchor", meter = FM.measure_repin_beacon },
-  -- transfer-act lifecycle fixture: locally /test-run validates the LEFT fingerprint then reports
-  -- "skipped (transfer act)"; the pad-transfer-suite (P5) owns the act + verify end of it.
   ["omnibus-spoilage-midspoil"]     = { args = "anchor", meter = FM.measure_omnibus_spoilage },
-  -- protocol-teeth pads (transfer-act; local /test-run pins the LEFT fingerprint then skips)
   ["gate-item-loss"]                = { args = "anchor", meter = function(s, a) return FM.measure_scratch_anchor(s, a, "steel-chest") end },
   ["gate-fluid-loss"]               = { args = "anchor", meter = function(s, a) return FM.measure_scratch_anchor(s, a, "storage-tank") end },
   ["rollback-validation-failure"]   = { args = "anchor", meter = function(s, a) return FM.measure_scratch_anchor(s, a, "steel-chest") end },
   ["failed-entity-attribution"]     = { args = "anchor", meter = function(s, a) return FM.measure_scratch_anchor(s, a, "steel-chest") end },
   ["force-bonus-held"]              = { args = "anchor", meter = function(s, a) return FM.measure_scratch_anchor(s, a, "bulk-inserter") end },
   ["census-omission-abort"]         = { args = "anchor", meter = function(s, a) return FM.measure_scratch_anchor(s, a, "steel-chest") end },
-  -- owner-hand-built pads (previously "skipped: no meter")
   ["belt-combined-omnibus"]         = { args = "area", meter = FM.measure_belt_combined },
   ["mining-drill-acid-feed"]        = { args = "both", meter = FM.measure_mining_drill_acid },
-  -- fusion loop (owner-hand-built, ACTIVE): compacted into cols 1-12 by the owner 2026-07-21 and
-  -- un-excluded — runs the full copy/paste pad. Scans the half by name, area-scoped.
   ["fusion-loop"]                   = { args = "area", meter = FM.measure_fusion_loop },
-  -- thruster pair: script-built 2026-07-21 on the south-edge bottom-row slot (92,64) and un-excluded.
   ["thruster-pair"]                 = { args = "area", meter = FM.measure_thruster_pair },
-  -- omnibus pads, area-scoped fingerprints (whole-half scans)
   ["omnibus-ghosts-and-proxies"]    = { args = "area", meter = FM.measure_omnibus_ghosts },
   ["omnibus-ground-items"]          = { args = "area", meter = FM.measure_omnibus_ground },
-  -- platform-kind fixtures (no copy/paste; resolve by platformName)
   ["omnibus-platform-schedule"]     = { args = "platform", meter = FM.measure_omnibus_schedule },
   ["energy-accumulator-drain"]      = { args = "surface", meter = FM.measure_energy },
   ["belt-corner-recovery"]          = { args = "surface", meter = FM.measure_belt_corner },
@@ -223,17 +154,11 @@ local DISPATCH = {
   ["hold-buffer-spoil"]             = { args = "none", meter = FM.measure_hold_spoil_pair },
   ["hold-buffer-damage"]            = { args = "none", meter = FM.measure_hold_damage_pair },
   ["hold-buffer-pod"]               = { args = "none", meter = FM.measure_hold_pod_pair },
-  -- belt-5x5-125-unstacked: no meter here yet (Lane B adds measure_belt_loop) -> SKIPPED (no meter)
-  -- specialized-fluid-reachability: roster marks runnerExcluded (mutating write-probe) -> SKIPPED
 }
 
---- Compare a measured reading table against a roster fingerprint. Returns nil on match, else the
---- first drifted "key=got exp want" (approx_equal applies the bake's ULP tolerance to the double
---- fields only). Missing dispatch fields fail loudly (nil ~= expected).
 local function compare_fingerprint(reads, fingerprint, exclude)
   for key, expected in pairs(fingerprint or {}) do
     if not (exclude and exclude[key]) and not FM.approx_equal(key, reads and reads[key], expected) then
-      -- Render a 2-number range expectation readably; tostring(table) prints an address.
       local want = tostring(expected)
       if type(expected) == "table" and #expected == 2 then
         want = string.format("[%s..%s]", tostring(expected[1]), tostring(expected[2]))
@@ -244,14 +169,6 @@ local function compare_fingerprint(reads, fingerprint, exclude)
   return nil
 end
 
--- Declarative half-reading: run the fixture's OWN dest-end physical_read checks against one pad
--- half (dx 0 = left, 14 = pasted right) via the lifecycle engine — the SAME checks
--- pad-transfer-suite evaluates on a real transfer's destination. One verify list, every runner:
--- a fixture with these checks needs no DISPATCH entry and no bespoke meter, so promoting a pad
--- stops costing Lua. Returns nil on pass, else the first failure detail.
--- REFUSES a vacuous pass: zero evaluated physical reads is a FAIL, not a green — the engine skips
--- orchestrator-side checks (report_field/census_pass), so a verify list of only those must not
--- read as covered.
 local function lifecycle_reading(surface, fixture, dx)
   local result = LifecycleEngine.run_verify(surface, fixture, { captured = {} },
     { dx = dx, end_filter = "dest" })
@@ -266,7 +183,6 @@ local function lifecycle_reading(surface, fixture, dx)
   return nil
 end
 
--- A fixture whose verify list carries at least one dest-end physical_read is metered declaratively.
 local function has_declared_reads(fixture)
   for _, c in ipairs((fixture.lifecycle and fixture.lifecycle.verify) or {}) do
     if c.check == "physical_read" and (c["end"] or "dest") == "dest" then return true end
@@ -275,10 +191,7 @@ local function has_declared_reads(fixture)
 end
 local LIFECYCLE_DISPATCH = { args = "lifecycle" }
 
--- === pad reconcile (reset -> left fingerprint -> copy/paste/audit -> paste fingerprint) ========
 
---- Read a pad fixture's fingerprint on one half. dx/rect select the half: left = (dx 0, left rect),
---- paste = (dx 14, right rect). Anchor meters ignore rect; area meters ignore dx.
 local function pad_reading(surface, cell, fixture, dispatch, roster, dx, rect)
   if dispatch.args == "area" then
     return dispatch.meter(surface, rect)
@@ -288,19 +201,12 @@ local function pad_reading(surface, cell, fixture, dispatch, roster, dx, rect)
   return dispatch.meter(surface, FM.anchor_lookup(roster, fixture.id, dx))
 end
 
---- The post-setup body of a pad run: LEFT fingerprint -> act -> (paste fingerprint) -> declared
---- verify. Returns "pass"|"fail"|"skipped", detail; set_status is applied here on every terminal
---- path. run_pad wraps this in a pcall so lifecycle cleanup ALWAYS runs afterwards.
 local function run_pad_body(player, surface, cell, fixture, dispatch, roster, ctx, comb, panel)
   local has_lc = fixture.lifecycle ~= nil
 
-  -- (a) LEFT reading: the pristine baked source (unaffected by the paste, which lands right).
-  -- Declarative fixtures read their OWN verify list; dispatch fixtures keep their bespoke meter.
   local left_drift
   if dispatch.args == "lifecycle" then
     local ok_l, drift = pcall(lifecycle_reading, surface, fixture, 0)
-    -- NOT ok and drift or msg: on a PASS drift is nil, and 	rue and nil or msg = msg — the
-    -- documented and/or blind spot (pcall-catch-swallow-audit), hit live here before this comment.
     if ok_l then
       left_drift = drift
     else
@@ -321,20 +227,8 @@ local function run_pad_body(player, surface, cell, fixture, dispatch, roster, ct
     return "fail", "left " .. left_drift
   end
 
-  -- act dispatch. The default copy-paste act keeps the historical copy/paste/audit + paste
-  -- fingerprint block verbatim (verify then reads the pasted +14 half); a transfer/clone act runs
-  -- that SAME instance-local block (see below) while its declared verify stays owned by
-  -- pad-transfer-suite; an op-list act runs via the engine in place (verify reads the mutated left half).
   local act = (has_lc and fixture.lifecycle.act) or "copy-paste"
   local verify_dx = 0
-  -- A transfer/clone act used to RETURN here, which silently dropped this pad's instance-local
-  -- coverage: the copy/paste/audit delta (b) and the paste-half fingerprint (c). Only the LEFT
-  -- fingerprint above survived. Those two are instance-local and independent of the transfer, so a
-  -- transfer pad runs them too — the promotion of a pad to transfer-act is now a pure ADD.
-  -- What a transfer pad does NOT run here is its DECLARED verify (d): those checks describe the
-  -- dest/source ends of a REAL cross-instance transfer (arrived platform, discarded dest, preserved
-  -- source) and are owned by tests/integration/gallery-suite. Evaluating them against a local
-  -- pasted half would be meaningless and would fail honest fixtures.
   local transfer_act = has_lc and (act == "transfer" or act == "clone")
   if has_lc and type(act) == "table" then
     local ok_a, act_err = LifecycleEngine.run_act(surface, fixture, ctx)
@@ -343,7 +237,6 @@ local function run_pad_body(player, surface, cell, fixture, dispatch, roster, ct
       return "fail", tostring(act_err)
     end
   else
-  -- (b) the existing reset->copy->paste->audit compare (entity/item/fluid counts), unchanged.
   local player_index = (player and player.index) or 0
   local drive = function(mode, x1, y1, x2, y2)
     return remote.call("surface_export", "selection_lab_drive", mode, player_index, x1, y1, x2, y2, surface.name)
@@ -351,8 +244,6 @@ local function run_pad_body(player, surface, cell, fixture, dispatch, roster, ct
   local ox, oy = cell.ox, cell.oy
   local copy = drive("copy", ox + 1, oy, ox + 13, oy + 12)
   local copy_report = copy and copy.report or {}
-  -- Outcome check, not just ok: a "nothing_exportable" copy still returns ok, and pasting then
-  -- uses the PREVIOUS cell's clipboard (measured: the ground-items cell pasted a stale anchor).
   if not (copy and copy.ok) or copy_report.outcome ~= "copied" then
     local why = "copy " .. tostring(copy_report.outcome or (copy and copy.err) or "error")
     set_status(cell.text_obj, comb, panel, "fail", why)
@@ -371,8 +262,6 @@ local function run_pad_body(player, surface, cell, fixture, dispatch, roster, ct
     set_status(cell.text_obj, comb, panel, "fail", why)
     return "fail", why
   end
-  -- Audit windows stop at oy+11: the BORDER row carries the status trio; a naive +15..+27 right
-  -- window would count the status panel and every test fails "entities N vs N+1".
   local left = drive("audit", ox + 1, oy, ox + 13, oy + 11)
   local right = drive("audit", ox + 15, oy, ox + 27, oy + 11)
   if not (left and left.ok and left.report and right and right.ok and right.report) then
@@ -385,8 +274,6 @@ local function run_pad_body(player, surface, cell, fixture, dispatch, roster, ct
     return "fail", delta
   end
 
-  -- (c) PASTE reading: the same reads over the pasted right half (anchor +14 / right rect). The
-  -- depth catches a paste that keeps entity/item COUNTS but drops progress/signal/held state.
   local paste_drift
   if dispatch.args == "lifecycle" then
     local ok_p, drift = pcall(lifecycle_reading, surface, fixture, 14)
@@ -405,8 +292,6 @@ local function run_pad_body(player, surface, cell, fixture, dispatch, roster, ct
     end
     local paste_exclude = nil
     if fixture.pasteExclude then
-      -- Fields the ENGINE cannot carry through a frozen paste (e.g. the decider output register is
-      -- not script-writable — measured 2026-07-20). Declared per fixture, never a blanket skip.
       paste_exclude = {}
       for _, key in ipairs(fixture.pasteExclude) do paste_exclude[key] = true end
     end
@@ -419,9 +304,6 @@ local function run_pad_body(player, surface, cell, fixture, dispatch, roster, ct
     verify_dx = 14
   end
 
-  -- (d) declared verify (lifecycle only). Per-check summaries append into detail (clipped to 4 like
-  -- report_delta); a failing check flips the verdict. No-lifecycle fixtures keep the old pass path
-  -- (detail nil), so their verdicts are byte-identical to before this change.
   local detail = nil
   if has_lc and not transfer_act then
     local result = LifecycleEngine.run_verify(surface, fixture, ctx, { dx = verify_dx })
@@ -440,12 +322,6 @@ local function run_pad_body(player, surface, cell, fixture, dispatch, roster, ct
   return "pass", detail
 end
 
---- Run one pad fixture. The measurement drives the REAL selection-lab handlers (copy/paste/audit)
---- via selection_lab_drive so it is byte-identical to the manual tool; the added fingerprint depth
---- (crafting_progress / signals / held / energy) is measured on the pristine LEFT half and again on
---- the pasted right half. A lifecycle block (if present) runs setup before, verify after, and its
---- cleanup ALWAYS afterwards (armed hooks disarmed, mutated force props restored). player may be nil
---- (headless). Returns "pass"|"fail"|"skipped", detail.
 local function run_pad(player, surface, cell, fixture, dispatch, roster)
   local ctx = { armed_hooks = {}, restores = {}, captured = {} }
   local has_lc = fixture.lifecycle ~= nil
@@ -464,8 +340,6 @@ local function run_pad(player, surface, cell, fixture, dispatch, roster)
   end
 
   local body_ok, verdict, detail = pcall(run_pad_body, player, surface, cell, fixture, dispatch, roster, ctx, comb, panel)
-  -- Surface the body error BEFORE the cleanup pcall below (the pcall-logging guard stops scanning at
-  -- the next pcall). verdict holds the pcall error message on failure.
   if not body_ok then log("[test-run] run_pad_body error for " .. tostring(fixture.id) .. ": " .. tostring(verdict)) end
 
   if has_lc then
@@ -480,16 +354,12 @@ local function run_pad(player, surface, cell, fixture, dispatch, roster)
   return verdict, detail
 end
 
--- === platform / surface reconcile (resolve by name, meter, fingerprint) ========================
 
---- The live/held hold pairs carry "<live> + <held>"; the meter resolves both by hardcoded name, so
---- MISSING detection only needs the first (live) platform.
 local function first_platform_name(name)
   if type(name) ~= "string" then return nil end
   return (name:match("^([^+]+)") or name):gsub("%s+$", "")
 end
 
---- Resolve a platform-kind fixture and fingerprint it. Returns "missing"|"pass"|"fail", detail.
 local function run_platform(fixture, dispatch)
   local reads
   if dispatch.args == "none" then
@@ -514,7 +384,6 @@ local function run_platform(fixture, dispatch)
   return "pass"
 end
 
---- Resolve a surface-kind fixture (e.g. the nauvis belt loop) and fingerprint it.
 local function run_surface(fixture, dispatch)
   local surface = fixture.surfaceName and game.surfaces[fixture.surfaceName]
   if not surface then
@@ -526,9 +395,7 @@ local function run_surface(fixture, dispatch)
   return "pass"
 end
 
--- === discovery ================================================================================
 
---- Structure-discovery of the gallery test cells on one surface.
 local function discover_cells(surface, filter)
   local cells = {}
   for _, o in pairs(rendering.get_all_objects()) do
@@ -548,8 +415,6 @@ local function discover_cells(surface, filter)
   return cells
 end
 
---- Match a discovered cell to a roster fixture: prefer origin (if the roster carries it), then the
---- cell name text == fixture display name, then == fixture id.
 local function match_cell(cells, fixture)
   if type(fixture.origin) == "table" then
     for _, c in ipairs(cells) do
@@ -565,9 +430,7 @@ local function match_cell(cells, fixture)
   return nil
 end
 
--- === command context ==========================================================================
 
---- /test-clear context: player-scoped (operates on the viewer's surface). Unchanged behavior.
 local function command_context(cmd, ctx)
   if not (storage.surface_export_config and storage.surface_export_config.debug_mode) then
     ctx.print("Error: this is a debug instrument (enable debug_mode)")
@@ -584,8 +447,6 @@ local function command_context(cmd, ctx)
   return player, player.surface, cells, filter
 end
 
---- /test-run context: debug-gated, but player-LESS is allowed (RCON headless run). Returns
---- player (may be nil), filter.
 local function test_run_context(cmd, ctx)
   if not (storage.surface_export_config and storage.surface_export_config.debug_mode) then
     ctx.print("Error: this is a debug instrument (enable debug_mode)")
@@ -602,7 +463,6 @@ local function fixture_matches_filter(fixture, filter)
     or (fixture.name ~= nil and tostring(fixture.name):find(filter, 1, true) ~= nil)
 end
 
---- Emit the single machine-readable summary line: log() always; rcon.print when no player drove it.
 local function emit_summary(summary, player)
   local json = helpers.table_to_json(summary)
   log("[TESTRUN-JSON] " .. json)
@@ -648,7 +508,6 @@ Base.admin_command("test-run",
       return
     end
 
-    -- Per-surface discovery cache (pad reconcile + UNKNOWN PAD detection).
     local disc = {}
     local function cells_for(surface)
       local key = surface.name
@@ -669,8 +528,6 @@ Base.admin_command("test-run",
       if fixture_matches_filter(fx, filter) then
         considered = considered + 1
         local id = fx.id
-        -- A SKIPPED pad fixture still owns its live cell: claim it so the reverse reconcile does not
-        -- double-report a rostered-but-skipped pad as UNKNOWN (the skipped-no-meter wart, 2026-07-19).
         local function claim_pad_cell()
           if fx.padKind ~= "pad" then return end
           local surface = FM.surface_for_platform(fx.platformName)
@@ -688,8 +545,6 @@ Base.admin_command("test-run",
         else
           local dispatch = DISPATCH[id]
           if not dispatch and has_declared_reads(fx) then
-            -- MIGRATED fixture: its declared verify list IS its meter (one verify list, every
-            -- runner). No DISPATCH entry, no bespoke meter function — promotion costs no Lua.
             dispatch = LIFECYCLE_DISPATCH
           end
           if not dispatch then
@@ -707,11 +562,6 @@ Base.admin_command("test-run",
               local d = cells_for(surface)
               local cell = match_cell(d.cells, fx)
               if not cell and type(fx.origin) == "table" then
-                -- Renderings NEVER transfer (the transfer-strips-script-state law), so a
-                -- TRANSFERRED copy of the gallery has no discoverable name text and the board
-                -- read MISSING for every pad (measured 2026-07-28, the consolidated suite's
-                -- destination board). Recover by STRUCTURE: the status-trio ENTITIES do
-                -- transfer — find them at the roster origin and recreate the name rendering.
                 local comb, panel = find_trio(surface, fx.origin.x, fx.origin.y)
                 if comb and panel then
                   local text_obj = rendering.draw_text({
@@ -729,7 +579,6 @@ Base.admin_command("test-run",
                 ctx.print(string.format("%s %s: %s MISSING (no pad cell)", RUN_PREFIX, id, CROSS), CHAT_RED)
               else
                 d.matched[cell] = true
-                -- QUIET: suppress the lab's per-action chat narration for the whole run.
                 SelectionLab.set_quiet(true)
                 local run_ok, verdict, detail = pcall(run_pad, player, surface, cell, fx, dispatch, roster)
                 SelectionLab.set_quiet(false)
@@ -782,15 +631,11 @@ Base.admin_command("test-run",
       end
     end
 
-    -- Reconcile the OTHER way: a discovered cell matching no roster fixture is an UNKNOWN PAD (yellow
-    -- warning, not a failure). Include the viewer's surface so an in-game run also flags strays there.
     if player then cells_for(player.surface) end
     local open_slots = 0
     for _, d in pairs(disc) do
       for _, c in ipairs(d.cells) do
         if not d.matched[c] then
-          -- "open-slot-*" is the sanctioned empty-rack convention — infrastructure, not a stray
-          -- test. One summary count instead of a yellow warning per slot.
           if type(c.name) == "string" and c.name:find("^open%-slot%-") then
             open_slots = open_slots + 1
           else

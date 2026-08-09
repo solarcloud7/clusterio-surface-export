@@ -1,20 +1,4 @@
 #!/usr/bin/env node
-// complete-live-gallery.mjs — complete the LIVE gallery source-of-truth in place (2026-07-19).
-//
-// The owner is PLAYING on surface-export-lab-gallery (the live save is now the source of truth). This
-// script does the completion work via RCON only — it NEVER stops/restarts/loads saves and never
-// teleports the owner or deletes the omnibus platform. It ports the construction recipes from
-// tests/lab-gallery/seed-prep-ops.lua (which normally run in the isolated seed-prep Factorio) to run
-// directly against the live gallery, following the working RCON-construction patterns of
-// rig-wave-belt-rigs.mjs / rig-wave-replay.mjs.
-//
-//   node tests/lab-gallery/complete-live-gallery.mjs --phase=survey
-//   node tests/lab-gallery/complete-live-gallery.mjs --phase=build      (stamp + build the 3 missing pads)
-//   node tests/lab-gallery/complete-live-gallery.mjs --phase=repair     (4 in-place defect repairs)
-//   node tests/lab-gallery/complete-live-gallery.mjs --phase=verify     (read-only fingerprint census)
-//   node tests/lab-gallery/complete-live-gallery.mjs --phase=checkpoint (server_save the source of truth)
-//
-// Phases are independent and re-runnable; construction ops are idempotent (skip-if-present).
 
 import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
@@ -36,8 +20,6 @@ const anchorsOf = id => Object.fromEntries(((fixtureById(id) || {}).anchors || [
 const cardOf = id => {
 	const fx = fixtureById(id) || {};
 	const c = fx.testCard || {};
-	// EXPECT is GENERATED from the lifecycle verify list when one exists (single source — the
-	// declared checks ARE the description); authored testCard.expected is the fallback.
 	const generated = renderExpectFromLifecycle(fx);
 	const expect = generated && generated.length ? generated.join("; ") : (c.expected || "");
 	return { law: c.law || "", action: c.action || "", expect, forbidden: c.forbidden || "" };
@@ -61,18 +43,14 @@ function luaJson(body, timeout = 240_000) {
 }
 function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
 
-// Lua prelude: find the omnibus platform + surface by name (identity is name here only because the
-// omnibus is unique in this save; all lookups are read-first).
 const OMNI = `local plat for _,p in pairs(game.forces.player.platforms) do if p.valid and p.name=='${OMNIBUS}' then plat=p end end ` +
 	`if not plat then out.success=false out.error='omnibus platform missing' return end local s=plat.surface `;
 
-// Interior of a stamped pad: left 12x12 fixture area (matches seed-prep-ops interior_of).
 function interiorCountLua(ox, oy) {
 	return `local n=0 for _,e in ipairs(s.find_entities_filtered({area={{${ox},${oy}},{${ox}+13.5,${oy}+12}}})) do ` +
 		`local p=e.position if p.x<${ox}+13.25 and p.y<${oy}+11.25 then n=n+1 end end`;
 }
 
-// ---- survey ---------------------------------------------------------------------------------------
 function survey() {
 	const padFixtures = manifest.fixtures.filter(f => f.padKind === "pad" && f.origin);
 	const padProbe = padFixtures.map(f => {
@@ -109,11 +87,8 @@ function survey() {
 	console.log(JSON.stringify(result, null, 2));
 }
 
-// Embed a JS value as a Lua single-quoted JSON literal for helpers.json_to_table (escape ' like
-// rig-wave does). JSON.stringify already escapes newlines/quotes inside the JSON.
 function jlit(value) { return JSON.stringify(value).replace(/'/g, "\\'"); }
 
-// ---- stamp a test-foundation cell (ported from seed-prep-ops.lua stamp_test_cell) ----------------
 function stampCell(id) {
 	const { x: ox, y: oy } = originOf(id);
 	const body = `${OMNI}
@@ -168,7 +143,6 @@ function stampCell(id) {
 	return luaJson(body);
 }
 
-// ---- inline meters (fixture-meters.lua logic; the live module require path is unavailable) --------
 const AT = `local function at(name,x,y) return s.find_entities_filtered({name=name,area={{x-0.6,y-0.6},{x+0.6,y+0.6}}})[1] end `;
 
 function measureRepinBeacon() {
@@ -209,12 +183,9 @@ function buildRepinBeacon() {
 	return luaJson(body);
 }
 
-// ---- belt corner (ported build_belt_corner_pad / feed_belt_corner / measure_belt_corner) ---------
 function buildBeltCorner() {
 	const a = anchorsOf("belt-corner-recovery");
 	const { x: cx, y: cy } = a["turbo-transport-belt"];
-	// 6 belts flowing EAST into a NORTH corner + one north dead-end. Only platform.paused is touched
-	// (belt travel gate); the global game.tick_paused is left alone so the owner's session is untouched.
 	const body = `${OMNI}
 		local was_paused=plat.paused plat.paused=false
 		local cx,cy=${cx},${cy}
@@ -274,7 +245,6 @@ function measureBeltCorner() {
 	return luaJson(body);
 }
 
-// ---- belt loop (ported build_belt_loop_pad / feed_belt_loop / measure_belt_loop) -----------------
 function buildBeltLoop() {
 	const a = anchorsOf("belt-5x5-125-unstacked");
 	const ap = a["turbo-transport-belt"];
@@ -335,7 +305,6 @@ function measureBeltLoop() {
 		out.lineQuantities={q1,q2}`;
 	return luaJson(body);
 }
-// ---- inline omnibus corpus meters (ported from fixture-meters.lua measure_omnibus_*) -------------
 function measureOmnibusAll() {
 	const A = id => anchorsOf(id);
 	const adv = A("omnibus-adversarial-inventory"), heat = A("omnibus-heat-temperature");
@@ -450,14 +419,12 @@ async function main() {
 		const container = "surface-export-host-2";
 		const savePath = `/clusterio/data/instances/${GALLERY}/saves/${saveName}.zip`;
 		console.log("server_save:", rcon(`/sc game.server_save('${saveName}')`).slice(0, 200));
-		// Poll until the zip exists and its size is stable (write complete).
 		let prev = -1, stableReads = 0;
 		for (let i = 0; i < 60 && stableReads < 3; i += 1) {
 			await sleep(1500);
 			let size = -1;
 			try { size = Number(docker(["exec", container, "sh", "-c", `stat -c %s '${savePath}' 2>/dev/null || echo -1`]).trim()); }
 			catch (error) {
-				// A failed docker exec must not read as "save not written yet" — say so while polling.
 				console.error(`checkpoint stat failed: ${error.message}`);
 				size = -1;
 			}
@@ -469,10 +436,6 @@ async function main() {
 		return;
 	}
 	if (phase === "verify") {
-		// Inline per-fixture measurement (fixture-meters.lua logic, ported; the IIFE single-source path
-		// exceeds the Windows command-line limit and require is unavailable on the live save). Each read
-		// is compared in JS against the manifest fingerprint using the same tolerance policy as
-		// corpus_gate (exact, except a 1e-9 window on the crafting/bonus progress doubles).
 		const reads = { ...measureOmnibusAll(), "repin-beacon-speed": measureRepinBeacon(),
 			"belt-corner-recovery": measureBeltCorner(), "belt-5x5-125-unstacked": measureBeltLoop() };
 		const tolerant = new Set(["progress", "bonusProgress"]);
@@ -513,9 +476,6 @@ async function main() {
 		return;
 	}
 	if (phase === "latch-repair") {
-		// The decider is structurally intact (self-wired, IF signal-S>0 THEN signal-S=1) but active=false,
-		// so it emits nothing and the held signal dropped to 0. Activate it, seed signal-S=1 once, let the
-		// self-loop grab it (platform unpaused → ticks flow), remove the seed, leave the decider ACTIVE.
 		const seed = luaJson(`${OMNI}
 			local d=s.find_entities_filtered({name='decider-combinator',area={{68-0.6,-14-0.6},{68+0.6,-14+0.6}}})[1]
 			if not d then out.success=false out.error='decider missing' return end
@@ -536,19 +496,18 @@ async function main() {
 		console.log("seed:", JSON.stringify(seed));
 		if (seed.success === false) throw new Error(`latch seed: ${seed.error}`);
 		if (seed.wired !== true) throw new Error("latch seed wire did not connect");
-		await sleep(2500); // let ticks flow so the latch grabs the seed
+		await sleep(2500);
 		const grabbed = luaJson(`${OMNI}
 			local d=s.find_entities_filtered({name='decider-combinator',area={{68-0.6,-14-0.6},{68+0.6,-14+0.6}}})[1]
 			local net=d.get_circuit_network(defines.wire_connector_id.combinator_output_red)
 			out.success=true out.outSignalS=net and net.get_signal({type='virtual',name='signal-S'}) or nil`);
 		console.log("after grab (seed present):", JSON.stringify(grabbed));
-		// Remove the seed; the self-loop must hold with no external input.
 		const remove = luaJson(`${OMNI}
 			local seeds=s.find_entities_filtered({name='constant-combinator',area={{${seed.seedPos.x}-0.6,${seed.seedPos.y}-0.6},{${seed.seedPos.x}+0.6,${seed.seedPos.y}+0.6}}})
 			local removed=0 for _,e in ipairs(seeds) do if e.valid then e.destroy() removed=removed+1 end end
 			out.success=true out.removed=removed`);
 		console.log("seed remove:", JSON.stringify(remove));
-		await sleep(1800); // prove it holds after seed removal
+		await sleep(1800);
 		const held = luaJson(`${OMNI}
 			local d=s.find_entities_filtered({name='decider-combinator',area={{68-0.6,-14-0.6},{68+0.6,-14+0.6}}})[1]
 			if not d then out.success=false out.error='decider missing' return end
@@ -589,7 +548,6 @@ async function main() {
 		return;
 	}
 	if (phase === "build-belts") {
-		// Corner (64,22): 6 east belts -> north corner + dead-end; feed the entry until 2 dry rounds.
 		const corner = { id: "belt-corner-recovery" };
 		console.log("corner stamp:", JSON.stringify(stampCell(corner.id)));
 		const cbuilt = buildBeltCorner();
@@ -610,7 +568,6 @@ async function main() {
 		console.log(`corner measured (fed=${fed} rounds=${rounds}):`, JSON.stringify(cmeasured));
 		if (!(cmeasured.overpacked >= 1)) console.log("WARNING: corner not over-packed");
 
-		// Loop (92,22): 16-belt 5x5; feed toward 125, then poll until the split is stable across 3 reads.
 		const loop = { id: "belt-5x5-125-unstacked" };
 		console.log("loop stamp:", JSON.stringify(stampCell(loop.id)));
 		const lbuilt = buildBeltLoop();
@@ -638,7 +595,6 @@ async function main() {
 		}
 		console.log(`loop measured (total=${total} rounds=${lrounds} stablePolls=${lstable}):`, JSON.stringify(lmeasured));
 
-		// Restore the omnibus pause state the belt feeds cleared (jammed belts stay put once re-paused).
 		console.log("restore pause:", JSON.stringify(setOmnibusPaused(pausedBefore)));
 		return;
 	}

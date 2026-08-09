@@ -1,16 +1,5 @@
--- FactorioSurfaceExport - Transaction History
--- Persistent transaction history for in-game dashboard display.
---
--- CRITICAL: Profiler objects cannot be serialized, so we store them as LocalisedString
--- snapshots. This is the ONLY way to persist profiler time values across save/load.
---
--- LocalisedString format for profilers:
---   {"", "Phase Name: ", profiler_object}
--- This array is serializable and the game engine renders the profiler value when displayed.
-
 local TransactionHistory = {}
 
---- Initialize storage.transaction_history if not present
 local function ensure_storage()
 	if not storage.transaction_history then
 		storage.transaction_history = {
@@ -21,25 +10,15 @@ local function ensure_storage()
 	end
 end
 
---- Snapshot profiler values as LocalisedStrings (the ONLY serializable form)
---- @param perf table|nil: PhaseProfiler.get() result (phase_name → LuaProfiler)
---- @return table: { phase_name → LocalisedString }
 local function snapshot_profilers(perf)
 	if not perf then return {} end
 	local snapshot = {}
 	for phase_name, profiler_obj in pairs(perf) do
-		-- CRITICAL: Store as LocalisedString array, not tostring()
-		-- tostring() returns "userdata: 0x..." (useless)
-		-- LocalisedString array is serializable and renders correctly in GUI
 		snapshot[phase_name] = {"", profiler_obj}
 	end
 	return snapshot
 end
 
---- Record a completed import transaction
---- @param job table: Import job data
---- @param validation_result table|nil: Validation result if this was a transfer
---- @param perf table|nil: PhaseProfiler.get() result (must be called BEFORE discard)
 function TransactionHistory.record_import(job, validation_result, perf)
 	ensure_storage()
 	
@@ -54,9 +33,7 @@ function TransactionHistory.record_import(job, validation_result, perf)
 		entity_count = job.total_entities,
 		duration_ticks = game.tick - (job.started_tick or game.tick),
 		status = "complete",
-		-- Serializable phase snapshots (LocalisedString arrays)
 		phase_snapshots = snapshot_profilers(perf),
-		-- Plain data validation summary
 		validation = validation_result and {
 			success = validation_result.success,
 			mismatch_summary = validation_result.mismatchDetails,
@@ -65,16 +42,14 @@ function TransactionHistory.record_import(job, validation_result, perf)
 			cleanup_failed = validation_result.cleanup_failed,
 			cleanup_error = validation_result.cleanup_error,
 		} or nil,
-		-- Additional metadata
 		transfer_id = job.transfer_id,
 		source_instance_id = job.source_instance_id,
 		tiles_count = job.metrics.tiles_placed or 0,
 		fluids_count = job.metrics.fluids_restored or 0
 	}
 	
-	table.insert(hist.entries, 1, entry)  -- Insert at front (newest first)
+	table.insert(hist.entries, 1, entry)
 	
-	-- Prune old entries
 	while #hist.entries > hist.max_entries do
 		table.remove(hist.entries)
 	end
@@ -83,9 +58,6 @@ function TransactionHistory.record_import(job, validation_result, perf)
 		entry.seq, entry.platform_name, entry.entity_count))
 end
 
---- Record a completed export transaction
---- @param job table: Export job data
---- @param perf table|nil: PhaseProfiler.get() result (must be called BEFORE discard)
 function TransactionHistory.record_export(job, perf)
 	ensure_storage()
 	
@@ -102,16 +74,13 @@ function TransactionHistory.record_export(job, perf)
 		entity_count = job.total_entities,
 		duration_ticks = duration_ticks,
 		status = "complete",
-		-- Serializable phase snapshots (LocalisedString arrays)
 		phase_snapshots = snapshot_profilers(perf),
-		-- Additional metadata
 		destination_instance_id = job.destination_instance_id,
 		export_id = job.export_id or ("export_" .. hist.sequence)
 	}
 	
-	table.insert(hist.entries, 1, entry)  -- Insert at front (newest first)
+	table.insert(hist.entries, 1, entry)
 	
-	-- Prune old entries
 	while #hist.entries > hist.max_entries do
 		table.remove(hist.entries)
 	end
@@ -120,9 +89,6 @@ function TransactionHistory.record_export(job, perf)
 		entry.seq, entry.platform_name, entry.entity_count))
 end
 
---- Get recent transaction history
---- @param limit number|nil: Max entries to return (default: 25)
---- @return table: Array of transaction entries (newest first)
 function TransactionHistory.list(limit)
 	ensure_storage()
 	limit = limit or 25
@@ -134,7 +100,6 @@ function TransactionHistory.list(limit)
 	return result
 end
 
---- Clear all transaction history (admin only)
 function TransactionHistory.clear()
 	ensure_storage()
 	storage.transaction_history.entries = {}
@@ -142,8 +107,6 @@ function TransactionHistory.clear()
 	log("[TransactionHistory] History cleared")
 end
 
---- Get entry count
---- @return number: Total entries in history
 function TransactionHistory.count()
 	ensure_storage()
 	return #storage.transaction_history.entries

@@ -1,7 +1,5 @@
 local SurfaceLock = require("modules/surface_export/utils/surface-lock")
 
---- Return the authoritative source-side lock state for Phase-2 reconciliation.
---- Offline is a controller/transport state; this in-save query reports only states it can prove.
 local function get_source_transfer_lock_state(transfer_id, platform_index, platform_name, force_name)
   local idx = tonumber(platform_index)
   if not idx then

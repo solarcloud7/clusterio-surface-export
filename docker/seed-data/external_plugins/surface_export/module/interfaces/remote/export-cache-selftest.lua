@@ -1,33 +1,6 @@
--- FactorioSurfaceExport - Export-cache bound self-test (remote)
---
--- THE INVARIANT THIS EXISTS TO STATE, over the OUTPUT of pruning rather than over its steps:
---
---   After any number of completed exports, storage.platform_exports holds AT MOST the effective
---   keep_count entries; the entries it holds are the keep_count most recently INSERTED; and an
---   export still referenced by a platform lock is never among the discarded, at any cap.
---
--- The three halves fail differently. Losing "at most N" is the unbounded-save leak this module was
--- written for. Losing "most recently inserted" deletes the biggest export at the instant it
--- completes — ordering by `tick` does exactly that, because tick is stamped at QUEUE time, so a
--- platform that takes many ticks to scan finishes carrying the oldest tick in the table. Losing the
--- protected set deletes an export mid-transfer, which surfaces as a transfer failure far from here.
---
--- Each check dies to a DIFFERENT mutation: inverting the sort kills keeps_newest; honouring `tick`
--- instead of cache_seq kills slow_export_is_not_self_evicted; ignoring the passed cap kills
--- bounded_after_overflow (it prunes to 6, not the old literal 10); dropping the protected set kills
--- protects_locked_export; swapping resolve_keep_count's two arguments kills resolve_composes_inputs;
--- emptying set_cap kills cap_reaches_policy.
---
--- TOUCHES NO LIVE STATE. It prunes tables it owns and reads (never writes) the live cap, so there is
--- nothing to restore and no pcall standing between an error and the report. An earlier draft swapped
--- storage.platform_exports out and back, which is one unexpected error away from destroying real
--- exports; the injectable table exists to make that unnecessary.
-
 local ExportCache = require("modules/surface_export/utils/export-cache")
 local clear_old_exports = require("modules/surface_export/interfaces/remote/clear-old-exports")
 
---- Run export-cache bound self-test.
---- @return table { passed, failed, total, details = { {name, ok, msg}, ... } }
 local function export_cache_selftest()
 	local details = {}
 	local passed, failed = 0, 0
@@ -42,8 +15,6 @@ local function export_cache_selftest()
 		end
 	end
 
-	-- A cap deliberately DIFFERENT from the old hard-coded literal 10, so an implementation that
-	-- ignores its argument and always keeps 10 fails here instead of passing by coincidence.
 	local fake = {}
 	for i = 1, 25 do
 		fake["export_" .. i] = { cache_seq = i, tick = i * 100, platform_name = "p" .. i }
@@ -76,10 +47,6 @@ local function export_cache_selftest()
 		"survivors must be exactly the 6 highest cache_seq;" ..
 		(newest_detail ~= "" and newest_detail or " (no detail)"))
 
-	-- THE ORDERING DEFECT, stated as its own case. `slow` was QUEUED first (oldest tick) but INSERTED
-	-- last, which is what a large platform does: it scans for many ticks while small exports queue
-	-- after it and finish before it. Ordered by tick it is the oldest and its own completion deletes
-	-- it. Ordered by insertion it is the newest and survives.
 	local mixed = {
 		slow = { cache_seq = 99, tick = 1000, platform_name = "big" },
 		quick_a = { cache_seq = 97, tick = 5000, platform_name = "small-a" },
@@ -90,8 +57,6 @@ local function export_cache_selftest()
 		mixed.slow ~= nil and mixed.quick_a == nil and mixed.quick_b == nil,
 		"the most recently INSERTED entry must survive even though its tick is the oldest")
 
-	-- Entries written before cache_seq existed (an upgraded save) have no stamp and must sort oldest:
-	-- they are the accumulated backlog the cap was added to clear, and their ticks are large.
 	local legacy = {
 		old_a = { tick = 31000000, platform_name = "legacy-a" },
 		old_b = { tick = 31000001, platform_name = "legacy-b" },
@@ -102,8 +67,6 @@ local function export_cache_selftest()
 		legacy.fresh ~= nil and legacy.old_a == nil and legacy.old_b == nil,
 		"a stamped entry must outrank unstamped legacy entries regardless of their much larger ticks")
 
-	-- A protected id survives at ANY cap: it is an export whose platform still holds its lock, so it
-	-- is being transmitted or is mid-transfer. Count-based caps cannot express this.
 	local guarded = {
 		in_flight = { cache_seq = 1, platform_name = "locked" },
 		spare_a = { cache_seq = 2, platform_name = "a" },
@@ -115,8 +78,6 @@ local function export_cache_selftest()
 		"a protected id must survive a cap of 1 while the unprotected surplus is dropped, removed=" ..
 		tostring(guarded_removed))
 
-	-- A missing tick must not raise: pruning runs from export completion inside on_tick, where a raw
-	-- error takes the headless server down (exit 255) rather than merely sorting badly.
 	local tickless = {
 		no_tick = { platform_name = "no-tick" },
 		has_tick = { tick = 500, platform_name = "has-tick" },
@@ -130,8 +91,6 @@ local function export_cache_selftest()
 	check("no_op_under_cap", nothing_removed == 0 and under.only ~= nil,
 		"a cache under the cap must be left completely alone, removed=" .. tostring(nothing_removed))
 
-	-- POLICY. The pure form first, then the composition — without the composition check, swapping
-	-- resolve_keep_count's two arguments passes every other assertion in this file.
 	local raised, was_raised = ExportCache.resolve_keep_count_for(1, 3)
 	check("floor_raises_unsafe_cap", raised == 4 and was_raised == true,
 		"cap 1 with a per-tick limit of 3 must resolve to 4 (raised), got " ..
@@ -147,9 +106,6 @@ local function export_cache_selftest()
 		"cap 5 with a per-tick limit of 9 must resolve to 10, got " ..
 		tostring(scaled) .. " raised=" .. tostring(scaled_raised))
 
-	-- This kills an argument swap in resolve_keep_count — but ONLY while the two inputs differ. With
-	-- cap == concurrency the correct and swapped calls are both f(n, n) and agree, so the degenerate
-	-- configuration is reported as a failure rather than passing quietly with no teeth.
 	local live_cap, live_concurrency = ExportCache.get_cap(), ExportCache.get_concurrency()
 	if live_cap == live_concurrency then
 		check("resolve_composes_inputs", false,
@@ -163,13 +119,6 @@ local function export_cache_selftest()
 			"/" .. tostring(live_raised) .. ", expected " .. tostring(expected_keep) .. "/" .. tostring(expected_raised))
 	end
 
-	-- NOT ASSERTED HERE: that set_cap persists the value and get_cap reads it back — the ORIGINAL
-	-- defect one hop later, a knob read and validated then never enforced. It is pinned where it can
-	-- fail instead: test/export-cache-cap.test.cjs pins the storage write in set_cap, the storage read
-	-- in get_cap, and AsyncProcessor.set_max_export_cache_size forwarding to set_cap, all three
-	-- mutation-verified. An in-process version IS possible — give the accessors an optional config
-	-- table, the way clear_old_exports takes an optional target — and would be worth adding if this
-	-- file ever needs to stand alone; the offline pins simply got there first.
 
 	return { passed = passed, failed = failed, total = passed + failed, details = details }
 end

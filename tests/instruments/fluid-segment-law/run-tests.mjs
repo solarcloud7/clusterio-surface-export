@@ -1,20 +1,4 @@
 #!/usr/bin/env node
-// fluid-segment-law — driver for the debug-gated fluid_segment_law_selftest remote.
-//
-// Invokes the selftest (module/interfaces/remote/fluid-segment-law-selftest.lua) on the target
-// instance (default clusterio-host-1-instance-1 so it runs in CI as well as locally; the selftest
-// builds+tears down its OWN scratch platform, so no gallery pads are needed — override with
-// --instance/SE_LAB_INSTANCE to run it on the local gallery). Prints one PASS/FAIL line per
-// fluid-segment law measured live at 2.1.11, and exits 0 iff
-// every law re-certified AND teardown was clean AND zero scratch platforms leaked. The selftest owns
-// the scratch platform lifecycle; this driver only invokes, parses, and confirms zero leftovers.
-//
-// game.delete_surface is deferred to end of tick, so the selftest's teardown_clean means "delete
-// issued". The authoritative zero-leftover count runs HERE on a later tick (a separate RCON call).
-//
-// Usage:
-//   node tests/instruments/fluid-segment-law/run-tests.mjs
-//   node tests/instruments/fluid-segment-law/run-tests.mjs --instance <name>   (or env SE_LAB_INSTANCE)
 
 import { execFileSync } from "node:child_process";
 
@@ -35,8 +19,6 @@ function rcon(command) {
 	{ encoding: "utf8", timeout: 300_000, stdio: ["ignore", "pipe", "pipe"], maxBuffer: 32 * 1024 * 1024 }).trim();
 }
 
-// JSON-wrapped Lua op (the batch-lifecycle / push-roster convention): pcall, print JSON, throw on
-// garbage. The selftest also rcon.print's a human summary BEFORE returning, so take the LAST line.
 function lua(body) {
 	const command = `/sc local ok,result=pcall(function() ${body} end); ` +
 		`if ok then rcon.print(helpers.table_to_json(result)) else rcon.print(helpers.table_to_json({ok=false,error=tostring(result)})) end`;
@@ -53,9 +35,6 @@ function countLeftovers() {
 
 async function main() {
 	console.log(`fluid-segment-law: invoking fluid_segment_law_selftest on ${INSTANCE} ...`);
-	// The selftest is debug-gated. Enable debug_mode on the target instance so the driver is
-	// self-sufficient on a fresh CI seed as well as locally (debug_mode is the dev-cluster default
-	// per debug_mode lives in the save and defaults true on a FRESH save; the CI cluster is torn down after the suite, so this leaves no lasting state).
 	lua(`remote.call('surface_export','configure',{debug_mode=true}); return {ok=true}`);
 	const result = lua(`return remote.call('surface_export','fluid_segment_law_selftest')`);
 
@@ -72,8 +51,6 @@ async function main() {
 	}
 	console.log(`  teardown_clean=${result.teardown_clean}`);
 
-	// Authoritative zero-leftover check on a LATER tick. The RCON round-trips above already advanced
-	// several ticks past the deferred delete; a short bounded re-check guards against any lag.
 	let leftovers = countLeftovers();
 	for (let attempt = 0; attempt < 3 && leftovers > 0; attempt++) {
 		await sleep(2000);

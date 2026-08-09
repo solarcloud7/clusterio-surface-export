@@ -1,6 +1,3 @@
--- Command: /export-platform-file
--- Export a platform to JSON file on disk
-
 local Base = require("modules/surface_export/interfaces/commands/base")
 
 Base.admin_command("export-platform-file",
@@ -8,7 +5,6 @@ Base.admin_command("export-platform-file",
   function(cmd, ctx)
     local platform_index = tonumber(ctx.param)
     
-    -- If no parameter provided, try to detect player's current platform
     if not platform_index then
       if not ctx.player then
         ctx.print("Error: Platform index required when using RCON. Usage: /export-platform-file <platform_index>")
@@ -40,7 +36,6 @@ Base.admin_command("export-platform-file",
     
     ctx.print(string.format("Exporting platform %d to file...", platform_index))
     
-    -- Call the remote interface function (now async - returns job_id)
     local result, job_id_or_error = remote.call("surface_export", "export_platform_to_file", platform_index, ctx.force.name)
 
     if result then

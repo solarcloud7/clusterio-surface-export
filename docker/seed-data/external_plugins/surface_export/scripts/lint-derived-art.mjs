@@ -1,21 +1,4 @@
 #!/usr/bin/env node
-/**
- * Every bundled image in web/assets must still match what its source art derives to.
- *
- * WHY THIS EXISTS: `web/assets/gateway-hub-128.png` is a SECOND COPY of art whose source of truth is
- * the surfexp_gateways mod. The web bundle needs it because Factorio's spritesheet only carries a
- * 32x32 atlas cell per space-location, which is a 4.7x upscale at node size — but a second copy that
- * nothing checks goes stale silently, and the failure mode is the canvas showing last month's art
- * with no error anywhere.
- *
- * The README next to the asset said "re-run the command whenever the art changes", which is a
- * request to remember rather than a check. This is the check.
- *
- * It re-derives from source IN MEMORY and demands byte equality, which is legitimate here precisely
- * because the committed file was produced by this same code path — unlike downscale-icon's
- * `--verify`, which compares against art made by an unknown external tool and therefore allows a
- * measured tolerance.
- */
 
 import fs from "node:fs";
 import path from "node:path";
@@ -27,13 +10,6 @@ const HERE = path.dirname(url.fileURLToPath(import.meta.url));
 const PLUGIN = path.resolve(HERE, "..");
 const REPO = path.resolve(PLUGIN, "../../../..");
 
-/**
- * Bundled asset -> the art it is derived from, and how.
- *
- * A new bundled image MUST be added here. That is the point: an unlisted file in web/assets is
- * reported as unchecked rather than silently trusted, so the guard cannot quietly cover less than
- * the directory it claims to cover.
- */
 const DERIVED = [
 	{
 		asset: "web/gateway/assets/gateway-hub-128.png",

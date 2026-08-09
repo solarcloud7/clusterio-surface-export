@@ -37,11 +37,14 @@ test("transfer exports stamp transfer lock metadata and refuse manual locks", ()
 	assert.match(surfaceLock, /transfer_job_id\s*=\s*lock_opts\s+and\s+lock_opts\.job_id\s+or\s+nil/, "lock must retain source job_id correlation");
 	assert.match(surfaceLock, /expires_tick\s*=\s*lock_opts\s+and\s+lock_opts\.expires_tick\s+or\s+nil/, "lock must stamp expires_tick");
 	assert.match(surfaceLock, /already locked by a different transfer lock/, "mismatched stale transfer locks must be refused");
-	assert.match(surfaceLock, /return\s+true,\s+nil\s+--\s+same transfer lock upgraded/, "same-transfer backfill must let the universal export path continue");
+	assert.match(surfaceLock, /existing_lock\.expires_tick = lock_opts\.expires_tick or existing_lock\.expires_tick\s*\n\s*return true, nil/, "same-transfer backfill must let the universal export path continue");
 
 	assert.match(exportPipeline, /local\s+lock_opts\s*=\s*\{[\s\S]*kind\s*=\s*destination_instance_id\s+and\s+["\']transfer["\']\s+or\s+["\']export["\'][\s\S]*expires_tick\s*=\s*game\.tick\s*\+\s*SurfaceLock\.DEFAULT_TRANSFER_LOCK_TTL_TICKS/, "all async exports must get an expiring transfer/export lock");
 	assert.match(exportPipeline, /SurfaceLock\.lock_platform\s*\(\s*platform\s*,\s*force\s*,\s*lock_opts\s*\)/, "universal lock path must pass lock_opts");
-	assert.match(exportPipeline, /already locked by a non-transfer lock/, "transfer against a manual lock must be refused loudly");
+	assert.match(surfaceLock, /return false, "Platform already locked by a non-transfer lock"/,
+		"a transfer lock over a manual lock must be refused with its own distinct error");
+	assert.match(exportPipeline, /if lock_err ~= "Platform already locked" then[\s\S]{0,200}?return nil, "Failed to lock platform: "/,
+		"the export path must abort on any lock error other than the benign already-locked one");
 
 	assert.match(transferTrigger, /SurfaceLock\.lock_platform\s*\(\s*platform\s*,\s*force\s*,\s*\{[\s\S]*expires_tick\s*=\s*game\.tick\s*\+\s*SurfaceLock\.DEFAULT_TRANSFER_LOCK_TTL_TICKS/, "in-game transfer pre-lock must carry transfer metadata");
 	assert.match(remoteLock, /SurfaceLock\.lock_platform\s*\(\s*platform\s*,\s*force\s*,\s*\{[\s\S]*expires_tick\s*=\s*game\.tick\s*\+\s*SurfaceLock\.DEFAULT_TRANSFER_LOCK_TTL_TICKS/, "documented lock_platform_for_transfer remote must create an expiring transfer lock");

@@ -1,30 +1,10 @@
-
 import type { IControllerPlugin, HostNodeModel, PlatformModel, InstanceNodeModel } from "../messages";
 import { getErrorMessage } from "../helpers";
 
-/**
- * The client-routable address of an instance, or "" when it has no assigned game port because it
- * is not running.
- *
- * ONE derivation, shared by the platform tree and the /teleport roster. They describe the same
- * instance to two different audiences, and two copies of this join would be free to disagree.
- *
- * `publicAddress` falls back to "localhost" when the host never set one — correct for a same-machine
- * client; distributed deployments must configure `host.public_address` (deployment config, not a
- * code path). Same caveat for PORT REMAPPING: `gamePort` is the port as the HOST knows it, so a
- * docker deployment publishing a different host port (the atlas cluster on this machine maps
- * 34300→34100) yields an address the client cannot reach. Align the published port with the
- * instance port, as this cluster does.
- */
 export function instanceAddress(publicAddress: string | null | undefined, gamePort: number | null): string {
 	return gamePort ? `${publicAddress || "localhost"}:${gamePort}` : "";
 }
 
-/**
- * Platform tree building and instance resolution.
- * Queries connected instances for their platforms and builds
- * the hierarchical host → instance → platform tree used by the web UI.
- */
 export class PlatformTree {
 	private plugin: IControllerPlugin;
 	private messages: typeof import("../messages");
@@ -59,8 +39,6 @@ export class PlatformTree {
 		}
 		logger.info(`[resolveTargetInstance] No direct ID match for ${target}, searching by name/host...`);
 
-		// alpha.25: controller.instances is an InstanceManager (not a plain Map) — iterate via
-		// values() and read inst.id rather than entry-iteration / .size, which it does not expose.
 		let checked = 0;
 		for (const inst of this.plugin.controller.instances.values()) {
 			checked += 1;
@@ -113,8 +91,6 @@ export class PlatformTree {
 			if (transfer.sourceInstanceId !== instanceId) {
 				continue;
 			}
-			// Skip terminal transfers — their source platform no longer exists and the
-			// same name may now belong to an unrelated platform on this instance.
 			if (terminalStatuses.has(transfer.status)) {
 				continue;
 			}
@@ -160,9 +136,6 @@ export class PlatformTree {
 			const parsedHostId = Number(rawHostId);
 			const hostId = Number.isInteger(parsedHostId) ? parsedHostId : null;
 			const host = hostId !== null ? this.plugin.controller.hosts.get(hostId) : null;
-			// gamePort is runtime state on the InstanceRecord, assigned when the instance starts —
-			// deliberately not `instance.config.get("factorio.game_port")`, which reads null here
-			// because the base image derives ports at start rather than storing them in config.
 			const rawGamePort = (instance as { gamePort?: number }).gamePort;
 			const gamePort = Number.isInteger(rawGamePort) ? rawGamePort as number : null;
 			const node: InstanceNodeModel = {
@@ -191,7 +164,6 @@ export class PlatformTree {
 					const { platforms, error } = await this.requestInstancePlatforms(instanceId, forceName);
 					node.platforms = this.applyActiveTransferState(platforms, instanceId)
 						.sort((a, b) => a.platformName.localeCompare(b.platformName));
-					// Annotate in-flight platforms with wall-clock departure time for browser ETA
 					for (const platform of node.platforms) {
 						if (platform.departureTick != null) {
 							platform.departureDateMs = this.plugin.platformDepartureTimes.get(platform.platformName) ?? null;

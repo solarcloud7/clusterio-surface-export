@@ -39,11 +39,6 @@ local function neighbour_units(entity)
     return result
 end
 
---- Census serialized-vs-live belt contents by physical entity and transport-line index.
---- FORENSIC INSTRUMENT ONLY (its restore-path consumers — the legacy consolidation restore and
---- hub-deficit recovery — were DELETED 2026-07-27, owner order): the failure black box banks this
---- per-line expected-vs-actual attribution as evidence before a failed destination is discarded.
---- Insert return values are never evidence.
 function BeltRestoration.attribute_lines(entities_to_create, entity_map)
     local attribution = { rows = {}, expected = {}, actual = {}, expected_total = 0, actual_total = 0 }
     for _, entity_data in ipairs(entities_to_create or {}) do
@@ -83,20 +78,7 @@ function BeltRestoration.attribute_lines(entities_to_create, entity_map)
     attribution.delta = attribution.actual_total - attribution.expected_total
     return attribution
 end
--- === Captured-source-position side-scoped restore (BELT-R10..R12, R16) ====================================
--- The canonical belt laws live in docs/factorio-2.0-api-notes.md "Belt transport-line laws
--- (CANONICAL)". capture_side_groups + restore_side_groups are THE belt restore — the ONLY
--- placement path (owner order 2026-07-27: the legacy captured-position + consolidation restore,
--- hub-deficit recovery, and the first-fit fallback are DELETED; a payload without
--- item_source_positions is REFUSED at import). Consumers: the transfer/upload import, selection-lab paste, and the
--- selftest instruments.
 
--- Shape validator for a payload's belt_side_groups (review finding F1, 2026-07-27): the restore
--- runs in on_tick context where an uncaught throw KILLS the headless server (exit 255, measured
--- twice), and upload-import payloads are user-supplied JSON that the schema check never inspects
--- beyond schema_version. The import REFUSES a payload failing this (through the verdict, never
--- error()). Pure SHAPE only — content problems (unknown prototypes at the destination) are
--- handled gracefully inside the restore itself.
 function BeltRestoration.validate_side_groups(side_groups)
     if type(side_groups) ~= "table" then return false, "belt_side_groups is not a table" end
     for gi, g in ipairs(side_groups) do
@@ -115,9 +97,6 @@ function BeltRestoration.validate_side_groups(side_groups)
                 return false, string.format("group %d slot %d malformed", gi, si)
             end
         end
-        -- item_source_positions is REQUIRED (owner order 2026-07-27: no fallback path) — exactly
-        -- three numbers per slot. A payload without it fails here and the import refuses it;
-        -- re-export from the source with the current version.
         if type(g.item_source_positions) ~= "table" or #g.item_source_positions ~= 3 * #g.slots then
             return false, string.format("group %d item_source_positions missing or misaligned (need %d values, got %s) — payloads without captured source positions are no longer importable, re-export from the source",
                 gi, 3 * #g.slots, type(g.item_source_positions) == "table" and tostring(#g.item_source_positions) or type(g.item_source_positions))
@@ -131,20 +110,8 @@ function BeltRestoration.validate_side_groups(side_groups)
     return true
 end
 
--- Same-execution line_equals partition of a POPULATED source = the lane sides (valid ONLY
--- populated + same execution — never a cross-import key, BELT-R9). belt_pairs: array of
--- { entity = <LuaEntity>, id = <the record entity_id the paste/import will key entity_map by> }.
--- Returns storage-safe side groups: { { members = {{id=,li=},...}, slots = {{n=,q=,ct=},...} }, ... }
 function BeltRestoration.capture_side_groups(belt_pairs)
     if not belt_pairs or #belt_pairs == 0 then return nil end
-    -- CAPTURED SOURCE POSITIONS (owner ruling 2026-07-27, PRODUCTION — supersedes the earlier debug-gate
-    -- scoping): each side carries a compact flat array `item_source_positions` = { id1, li1, k1, id2, li2, k2, … },
-    -- three numbers per slot in slot order — the source entity, transport-line index, and exact
-    -- position (1/256ths) the slot was captured from. Restore seats each item back onto its OWN
-    -- line at its OWN position (each item placed back at its captured source position), which is what kills the boundary-handoff duplication
-    -- class; the reconciliation instrument reads the same data. Compact by design: numbers only,
-    -- one field name per side — the per-slot {id,li,k} object form nearly doubled the workhorse
-    -- payload. Zero extra reads: the loop already holds all three values.
     local groups = {}
     for _, bp in ipairs(belt_pairs) do
         for li = 1, bp.entity.get_max_transport_line_index() do
@@ -183,53 +150,10 @@ function BeltRestoration.capture_side_groups(belt_pairs)
     return out
 end
 
--- Place each side's (name,quality,count) multiset AT CAPTURED SOURCE POSITIONS — each slot back onto its own
--- captured line at its own captured position (rehydrated from the side's compact
--- item_source_positions array),
--- request floored at one tick of belt_speed (BELT-R10 — the write-frame law). There is NO
--- fallback placement (owner order 2026-07-27): a slot whose captured source position cannot place is honest unplaced
--- loss the exact gate refuses. Every placement is validated by a physical SIDE-census delta
--- (never insert_at return values), and the WHOLE restore is bracketed by ONE global before/after
--- census that must equal the placed sums key-for-key — any mismatch is a loud anomaly. No
--- consolidation, no recovery, no legacy path.
---
--- SCALE (owner ruling 2026-07-26; the "perf measure-first" adjudication vindicated live): the
--- original implementation took TWO global snapshots inside the innermost placement loop for
--- per-placement cross-side leak undo. At workhorse scale (5,776 slots x ~1,200 line reads per
--- snapshot) that is ~14M engine calls in one tick — measured as a hard import stall. The leak
--- class it undid is the AGED-HANDLE class (BELT-R12): a handle whose segment reshaped under it.
--- Every handle here is fetched fresh in THIS execution (below) and no belt topology mutates
--- during placement, so the aging mechanism cannot occur (R14 live 2026-07-26: 372/372,
--- leaks 0, anomalies 0). Leak detection therefore moves to the restore-granularity bracket: a
--- leak can no longer be attributed to one placement and undone, but it can NEVER pass silently —
--- the bracket mismatch is an anomaly the callers treat as failure. Cost: O(slots x side + lines).
---
--- MULTI-STACK (owner requirement 2026-07-26): a slot's ct places as ONE stack of ct — a stack of
--- 2 restores as a stack of 2. The multiset IS (name, quality, stack count); nothing clamps.
--- Line handles are fetched HERE, in the same execution that writes them (stale-handle hazard).
--- Returns placed, unplaced, anomalies.
 function BeltRestoration.restore_side_groups(side_groups, entity_map)
-    -- VERIFICATION MODEL (third round; each predecessor was measured, not guessed):
-    --   2026-07-26 owner scale ruling: per-placement GLOBAL snapshots deleted — ~14M engine calls
-    --     stalled the workhorse import. Replaced by per-insert SIDE censuses.
-    --   2026-07-27 captured-position placement made inserts per-original-stack, and those side
-    --     censuses regrew the cost quadratically: measured 2026-08-09 (LuaProfiler wall clock,
-    --     live import) at 7,264 ms of an 8,500 ms import — vs 102 ms with the censuses stubbed
-    --     and MORE stacks. The counting was ~99% of the phase; the placement ~1%.
-    --   Now: NO read-back per insert. The engine's own insert_at return drives control flow, and
-    --   each side is verified ONCE against its expected multiset by the SIDE BRACKET below. A
-    --   landing that lies cannot pass silently: success-that-landed-nothing comes up short on its
-    --   own side, and success-that-landed-elsewhere ALSO overfills the side it actually hit — a
-    --   double detection the old global bracket could not make (it summed across sides, so a
-    --   wrong-side landing conserved its per-key totals). Anomalies stay loud; the anomalies return value is the failure signal callers consume.
-    --   Deliberately NOT retried: an insert whose success report the old census contradicted used
-    --   to trigger a rescan — on a cross-side landing that retry IS the duplication engine
-    --   (BELT-R16 class). A trusted landing is final; a lying one fails the brackets.
     local function item_key(name, quality)
         return name .. "\0" .. (quality or QUALITY_NORMAL)
     end
-    -- Handle freshness is per-READ (BELT-R12): inserts split segments, and an aged handle
-    -- double-sees items. Every snapshot fetches every line handle at its own instant.
     local function side_lines(g)
         local lines = {}
         for _, m in ipairs(g.members) do
@@ -255,9 +179,6 @@ function BeltRestoration.restore_side_groups(side_groups, entity_map)
         end
         return result
     end
-    -- Per-side BEFORE brackets — one O(side) read each, taken before any write — plus the
-    -- preexisting-id union the reconciliation classifies against (paste-over contexts arrive
-    -- with items already on the lines).
     local side_before = {}
     local preexisting_ids = {}
     for gi, g in ipairs(side_groups) do
@@ -265,22 +186,11 @@ function BeltRestoration.restore_side_groups(side_groups, entity_map)
         side_before[gi] = snap
         for id in pairs(snap.by_id) do preexisting_ids[id] = true end
     end
-    -- Expected multiset per SIDE — the bracket's other half. Whole-restore sums are derived from
-    -- these; there is no second bookkeeping.
     local expected_by_side = {}
     local placed, unplaced, anomalies = 0, 0, 0
-    -- PLACEMENT LEDGER (owner direction 2026-07-27): every landing the engine reported success
-    -- for is recorded — { e = <dest entity>, li, k = <requested 1/256 position>, slot } — so the
-    -- reconciliation pass below can match each PHYSICAL destination item back to the placement
-    -- that made it (and through slot.src, back to its SOURCE seat). In-memory only, never rides
-    -- a payload.
     local ledger = {}
     local unplaced_list = {}
     local unknown_logged = 0
-    -- Rehydrate the payload's compact item_source_positions array (see capture_side_groups) into per-slot
-    -- src = { id, li, k } working form. item_source_positions is REQUIRED on the production path
-    -- (the validator refuses payloads without it); this guard covers direct callers (selftest instruments,
-    -- selection-lab) — a slot left without src is honest unplaced loss, there is no fallback.
     for _, g in ipairs(side_groups) do
         if type(g.item_source_positions) == "table" and #g.item_source_positions % 3 == 0 then
             for si, slot in ipairs(g.slots) do
@@ -295,25 +205,12 @@ function BeltRestoration.restore_side_groups(side_groups, entity_map)
                 type(g.item_source_positions) == "table" and #g.item_source_positions or -1))
         end
     end
-    -- Slots whose captured-line scan exhausted; the over-compression merge pass below owns them
-    -- (recorded with their side group so the merge lands through the same side bracket).
     local pending = {}
     for gi, g in ipairs(side_groups) do
         local exp = {}
         expected_by_side[gi] = exp
-        -- One insert, judged by the engine's OWN return. can_insert_at gates the attempt; a
-        -- false/zero insert return keeps the scan going. No read-back here — the side bracket
-        -- verifies every landing once per side (the fake-driven selftest pins both lie shapes:
-        -- success-that-landed-elsewhere and success-that-landed-nothing).
         local function try_insert(line, w_entity, w_li, k, slot, wanted_key)
             if not line.can_insert_at(k / 256) then return nil end
-            -- Through the version seam (review F3): the seam exists because "latest" docs reorder
-            -- insert_at's parameters and the reversed order places nothing (see version-compat.lua;
-            -- held at the current pin by every green belt-carrying transfer) — production
-            -- belt writes must not bypass it. slot.ct as belt_stack_size seats an oversized
-            -- (fossil) stack as ONE stack — the multi-stack owner requirement.
-            -- The seam's contract is a BOOLEAN landed (version-compat normalizes any pin drift
-            -- there, once, instead of at every call site).
             local landed = VersionCompat.belt_insert_at(line, k / 256, { name = slot.n, quality = slot.q, count = slot.ct }, slot.ct)
             if landed then
                 placed = placed + slot.ct
@@ -324,10 +221,6 @@ function BeltRestoration.restore_side_groups(side_groups, entity_map)
             return nil
         end
         for _, slot in ipairs(g.slots) do
-          -- Prototype-existence screen (review F1b): a belt item from a mod the DESTINATION lacks
-          -- must not reach insert_at (a throw here is server death in on_tick). Skip gracefully —
-          -- the shortfall is honest unplaced loss: strict transfers fail the exact gate => revert;
-          -- the loose upload path reports it (the documented mod-mismatch posture).
           if not prototypes.item[slot.n] or (slot.q and not prototypes.quality[slot.q]) then
             unplaced = unplaced + slot.ct
             unplaced_list[#unplaced_list + 1] = slot
@@ -340,16 +233,6 @@ function BeltRestoration.restore_side_groups(side_groups, entity_map)
             local done = false
             local wanted_key = item_key(slot.n, slot.q)
             if slot.src then
-                -- CAPTURED SOURCE POSITION placement (production, owner ruling 2026-07-27): scan DOWN
-                -- from the captured position — request = src.k minus one write-frame, so the landing
-                -- (request + one tick of belt_speed, BELT-R10) comes out at the captured position —
-                -- putting the item on its
-                -- OWN line as close to its original position as capacity allows. This is what kills
-                -- the boundary-handoff class: first-fit's top-of-line writes seated items across
-                -- piece boundaries (underground internal lines at k=kfloor), duplicating on
-                -- census-invisible cross-side handoffs (measured live 2026-07-27; source-position
-                -- run: 5777/5777 same-line, BORN 0, full exact gate PASS). src belongs to this same
-                -- group by construction, so the group's side bracket covers the write.
                 local se = entity_map[slot.src.id]
                 if se and se.valid then
                     local skmin = math.floor(se.prototype.belt_speed * 256 + 0.5)
@@ -363,34 +246,14 @@ function BeltRestoration.restore_side_groups(side_groups, entity_map)
                             break
                         end
                     end
-                    -- A scan-exhausted slot goes to the OVER-COMPRESSION MERGE pass below —
-                    -- never straight to unplaced.
                 end
             end
-            -- A slot whose captured line cannot hold it goes to the over-compression merge pass
-            -- below; anything that pass cannot place is honest unplaced loss. The reverse
-            -- first-fit window fallback that used to catch this is the machinery whose
-            -- top-of-line writes caused the BELT-R16 boundary-handoff duplication class — it stays
-            -- deleted.
             if not done then
                 pending[#pending + 1] = { slot = slot, gi = gi }
             end
           end
         end
     end
-    -- OVER-COMPRESSION MERGE (owner ruling 2026-07-27: a platform must transfer WHENEVER —
-    -- refusing a live capture is not acceptable — and the remedy is the ESTABLISHED oversized-stack
-    -- law, not a new placement concept). The engine under pressure packs a line tighter than
-    -- insert_at can recreate: measured from the banked black box, a 1-tile turbo line captured
-    -- with FIVE items, the front one 14/256 behind its neighbour (overlapping by rest-spacing
-    -- rules). The tested engine fact (api-notes; the fix that took that floor to zero):
-    -- insert_at accepts an arbitrary belt_stack_size and the engine KEEPS the oversized stack.
-    -- So an unplaceable slot MERGES into an already-placed stack of the SAME (name, quality) on
-    -- its OWN captured line — remove that stack, re-insert at the same position with the combined
-    -- count as ONE oversized stack — landing through the same side bracket as every other write,
-    -- and self-healing as the factory drains the lane. Same line, same item; no cross-side
-    -- placement, no graph reasoning. A slot with no same-item partner on its line stays honest
-    -- unplaced loss.
     for _, entry in ipairs(pending) do
         local slot, gi = entry.slot, entry.gi
         local done = false
@@ -404,16 +267,6 @@ function BeltRestoration.restore_side_groups(side_groups, entity_map)
                 end
             end
             if partner then
-                -- Scan-place a stack near the partner's position: down from it first, then up,
-                -- staying one write-frame short of the line end (the BELT-R16 handoff zone). A
-                -- FRESH line handle per call — remove_item reshapes the line, and both reads and
-                -- writes through a pre-mutation handle are the aged-handle class (this exact
-                -- pattern failed live with a fixed-position re-insert before this scan existed).
-                -- Returns the request k it inserted at (nil if nothing fit).
-                -- Every landing is engine-confirmed like try_insert's: can_insert_at gates the
-                -- attempt (it is COUNT-INDEPENDENT, and the merge is the one site inserting an
-                -- oversized merged count), the insert's own boolean decides. A declined position
-                -- keeps the scan going instead of being reported as a landing.
                 local function scan_place(count)
                     local mline = se.get_transport_line(slot.src.li)
                     local mkmin = math.floor(se.prototype.belt_speed * 256 + 0.5)
@@ -444,22 +297,13 @@ function BeltRestoration.restore_side_groups(side_groups, entity_map)
                     placed = placed + slot.ct
                     local exp = expected_by_side[gi]
                     exp[wanted_key] = (exp[wanted_key] or 0) + slot.ct
-                    -- One merged oversized stack now carries both slots — update the ledger entry
-                    -- so the reconciliation matches the physical stack it will actually find.
                     partner.slot = { n = slot.n, q = slot.q, ct = merged_ct, src = partner.slot.src }
-                    -- Review F4: record the merged stack's actual landing so the reconciliation
-                    -- does not report it as spurious BORN + VANISHED.
                     partner.k = landed_k
                     log(string.format(
                         "[BeltRestoration] OVER-COMPRESSION MERGE: %s x%d joined the stack near entity %s line %d (now x%d) — engine packed tighter than insert_at can recreate",
                         slot.n, slot.ct, tostring(slot.src.id), slot.src.li, merged_ct))
                     done = true
                 else
-                    -- The merge did not land (short removal, or the merged insert declined). Put
-                    -- whatever was removed back — engine-confirmed like every other write — and
-                    -- follow the ledger k so the reconciliation matches the physical stack. The
-                    -- side bracket judges the net effect either way; a shortfall the put-back
-                    -- cannot repair fails this side LOUDLY there.
                     local putback_k = nil
                     if removed > 0 then
                         putback_k = scan_place(removed)
@@ -482,18 +326,6 @@ function BeltRestoration.restore_side_groups(side_groups, entity_map)
             unplaced_list[#unplaced_list + 1] = slot
         end
     end
-    -- SIDE BRACKETS: each side's physical per-key delta must equal what was placed INTO that side —
-    -- gains and absences alike, verified once per side. This is the restore-granularity check that
-    -- catches anything the engine's insert returns cannot attribute, including cross-side landings
-    -- (the side that gained fails alongside the side that came up short). Line-set: the side
-    -- groups' member lines — NOT every belt on the platform. The caller must label it as such;
-    -- comparing it against a whole-platform belt count would report a scope mismatch as a
-    -- discrepancy. Taken in the same execution as the writes: belt lines keep moving during the import
-    -- window (canonical: the belt transport-line laws section of docs/factorio-2.0-api-notes.md),
-    -- so a bracket taken any later would fold engine movement into what looks like a restore effect.
-    -- The anomaly UNIT is one FAILED SIDE (any per-key mismatch fails the side once; every key
-    -- still gets its own log line). Counting per (side, key) would multiply one physical event —
-    -- a cross-side landing fails two sides and would read as 2+ per key involved.
     local physical_delta = {}
     for gi, g in ipairs(side_groups) do
         local before = side_before[gi]
@@ -515,25 +347,11 @@ function BeltRestoration.restore_side_groups(side_groups, entity_map)
         end
         if side_failed then anomalies = anomalies + 1 end
     end
-    -- Cross-side sums can cancel to zero; a zero entry is no delta, not a datum for the census.
     for key, delta in pairs(physical_delta) do
         if delta == 0 then physical_delta[key] = nil end
     end
-    -- RECONCILIATION (dump v3, owner direction 2026-07-27 — replaces the uid-counting attribution
-    -- dump, whose "new uid" totals rested on an unproven identity assumption): match every PHYSICAL
-    -- item on the side lines to a recorded placement by (line, position, key) — position-based, so
-    -- uid semantics never enter it. Each physical item is then exactly one of:
-    --   TRACED       — matches a placement; through slot.src it names its SOURCE seat, and the
-    --                  match says whether it stayed on its source line (same-line vs moved-line)
-    --   PREEXISTING  — was on the lines before restore began (paste-over contexts)
-    --   BORN-AT-DEST — nothing placed it (the defect's fingerprint), logged with coordinates
-    -- and each unmatched placement is VANISHED. Tolerance = one write-frame + 2 (BELT-R10: a
-    -- landing comes out at request + one tick of belt_speed, clamped inward at line ends).
     local dbg = storage.surface_export_config and storage.surface_export_config.debug_mode
     if dbg or anomalies > 0 then
-        -- Identity + location helpers tolerant of minimal entities (the selftest drives this path
-        -- with pure-Lua fakes that have no unit_number/name/position): unit_number when present,
-        -- table/userdata identity otherwise; coordinates degrade to a bare name.
         local function line_key_of(entity, li)
             return tostring(entity.unit_number or entity) .. "/" .. li
         end
@@ -669,7 +487,6 @@ function BeltRestoration.restore_side_groups(side_groups, entity_map)
             stats.preexisting, stats.born, stats.vanished, stats.ct_drift, stats.aliased,
             #unplaced_list, dk_n > 0 and dk_sum / dk_n or 0, dk_max, dk_n))
     end
-    -- 4th value is additive: every existing caller destructures three and is unaffected.
     return placed, unplaced, anomalies, physical_delta
 end
 

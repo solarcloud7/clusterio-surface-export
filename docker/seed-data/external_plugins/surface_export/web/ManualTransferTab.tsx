@@ -92,15 +92,12 @@ export default function ManualTransferTab({ plugin, state }: { plugin: SurfaceEx
 	async function handleExportPlatform(source: PlatformRow) {
 		setExportingPlatformKey(source.key);
 		try {
-			// The flow itself is shared with the gateway canvas's node toolbar (web/platform-actions.ts).
-			// It reports its own success and failure; all this owns is the row's spinner.
 			await exportPlatformToDownload(plugin, source);
 		} finally {
 			setExportingPlatformKey(null);
 		}
 	}
 
-	// Group rows by instance, preserving encounter order. Pure: allocates its own Map per call.
 	function groupByInstance(rows: PlatformRow[]): PlatformRow[][] {
 		const groups = new Map<number, PlatformRow[]>();
 		for (const row of rows) {
@@ -140,15 +137,13 @@ export default function ManualTransferTab({ plugin, state }: { plugin: SurfaceEx
 								<div key={`inst:${instanceRows[0].instanceId}`}>
 									<div className="surface-export-instance-header">
 										<Text strong>{instanceRows[0].instanceName}</Text>
-										{/* The port disambiguates instances whose names differ only by a digit. Absent
-										    until the instance has started, since that is when a port is assigned. */}
+										{}
 										{instance?.gamePort ? (
 											<Text type="secondary" style={{ fontSize: 12 }}>:{instance.gamePort}</Text>
 										) : null}
 										{instance?.platformError ? <Tag color="warning">error</Tag> : null}
 									</div>
 									{instanceRows.map(row => {
-										// The icon shows where the platform IS, or where it is heading while in flight.
 										const locationName = row.platform?.spaceLocation || row.platform?.currentTarget;
 										const status = platformStatus(row.platform, nowMs);
 										return (

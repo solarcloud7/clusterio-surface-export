@@ -1,44 +1,3 @@
--- Selection Lab v3 — copy/paste-scoped surface export/import + gate-meter audit (debug instrument).
---
--- Owner-specified semantics (v3):
---   COPY   (drag):            EntityScanner.serialize_entity per selected entity + bbox anchor.
---                             RAM only, PER-PLAYER (storage.selection_lab[player_index].export);
---                             never sent to the controller. Capture, audit baseline, and the
---                             undo/redo journals are all player-scoped; paste/force/redo are
---                             TRANSACTIONAL (any create/restore failure rolls back every created
---                             entity, resurrects force-destroyed blockers, journals nothing).
---   PASTE  (shift+drag):      ALL-OR-NOTHING. Every entity target must be unoccupied (same-name
---                             occupants included; ground item-entities and floor tiles never block).
---                             Any conflict: place NOTHING, red-box every conflict, cannot_build sound.
---                             Fully clear: create all + the REAL import restores + undo journal entry.
---   AUDIT  (ctrl+drag):       no mutation, ignores the capture. Runs the REAL transfer-gate meters
---                             (SurfaceCounter.count_entity_items / count_entity_fluids) over the
---                             dragged selection and prints entities/items/fluids totals — plus a
---                             DELTA section vs the previous audit (before/after workflow).
---   FORCE  (shift+right-drag): paste regardless — blockers are serialized (for undo), destroyed
---                             (guards: never characters, never a space-platform-hub, never another
---                             force's entities), then the paste proceeds; overlaps still red-boxed.
---   UNDO / REDO (Ctrl+Alt+Z / Ctrl+Alt+Y custom inputs): journal-based. Undo destroys what the paste
---                             created — resolved by stable unit_number (never name+position), so an
---                             unrelated same-name entity built there later is never touched — and
---                             resurrects force-destroyed blockers WITH contents and active state.
---                             Redo is MODE-FAITHFUL: a plain paste replays through the all-or-nothing
---                             plan (refuses with red boxes if the area is now occupied); a force paste
---                             replays through force_execute. Redo never exceeds the original action's
---                             destructiveness. Bindings are Ctrl+ALT (not Ctrl+Shift) so they do not
---                             collide with vanilla Undo (Ctrl+Z) / Redo (Ctrl+Y, Ctrl+Shift+Z).
---
--- Debug instrument rules: gated on debug_mode; verdicts print PHYSICAL counts (insert returns are
--- never evidence — tests/belt-lab/NOTEBOOK.md BELT-R8); no interaction with transfer jobs, locks,
--- or the controller. FluidRestoration runs only on ISOLATED pastes: if any pasted fluidbox connects
--- to an entity outside the pasted set, fluid restore is skipped (it writes SEGMENT totals and would
--- clobber a live network; activatable entities expose no own segment id — connection-
--- walking, not segment ids, is the detection). Known gaps: no circuit-wire reconnection, no rotation.
--- Cross-surface paste measured WORKING 2026-07-17 (gallery migration; not re-measured at the
--- current pin — this is a dev tool, not a transfer path): paste plans
--- against event.surface, so dragging on any surface pastes there. `active` is preserved via the
--- lab-only `lab_active` record field (the production serializer deliberately does not carry it).
-
 local EntityScanner = require("modules/surface_export/export_scanners/entity-scanner")
 local Deserializer = require("modules/surface_export/core/deserializer")
 local BeltRestoration = require("modules/surface_export/import_phases/belt_restoration")
@@ -55,32 +14,20 @@ local SelectionLab = {}
 local HIGHLIGHT_TTL = 60 * 8
 local UNDO_DEPTH = 10
 
--- QUIET mode (owner request 2026-07-18): when a batch driver (/run-tests) runs the lab, the
--- per-action chat narration is noise — the typed returns + [MODE-JSON] log lines carry everything.
--- quiet suppresses CHAT ONLY; log() evidence is never suppressed. Module-local (same-execution use).
 local quiet = false
 function SelectionLab.set_quiet(value)
 	quiet = value == true
 end
 
--- nil-safe: the headless /test-run drive (selection_lab_drive with a reserved player-less key) has
--- no player, so `player` is nil on the copy/paste/audit path. quiet is forced on for that run, but the
--- `and player` guard makes chat unconditionally safe even if a caller forgets to quiet.
 local function say(player, message, color)
 	if not quiet and player then player.print(message, color) end
 end
 
--- Resolve the acting player nil-safe: the headless /test-run drive uses a reserved player_index (0)
--- with no live player, and game.get_player rejects indices < 1 (it errors, it does not return nil).
--- Every handler resolves the acting player through this so the player-less path never crashes.
 local function event_player(event)
 	local idx = event.player_index
 	return (idx and idx >= 1) and game.get_player(idx) or nil
 end
 
--- Rich-text chat formatting (owner design 2026-07-18, wiki.factorio.com/rich_text): icon tags
--- wherever possible, bold labels, colored category words. CHAT ONLY — log() lines stay plain.
--- An invalid tag degrades to visible text in chat; it never crashes.
 local LAB_PREFIX = "[color=yellow][font=default-bold][SelectionLab][/font][/color]"
 
 local function icon_item(key, count)
@@ -119,7 +66,6 @@ end
 local function capture_item_total(records)
 	local total = 0
 	for _, rec in ipairs(records) do
-		-- Ground pseudo-records carry their stack count directly (no specific_data).
 		if rec.type == "item-on-ground" then total = total + (rec.count or 0) end
 		local sd = rec.specific_data
 		if sd then
@@ -129,9 +75,6 @@ local function capture_item_total(records)
 			for _, line_data in ipairs(sd.items or {}) do
 				for _, item in ipairs(line_data.items or {}) do total = total + (item.count or 0) end
 			end
-			-- Inserter held items (entity-handlers records specific_data.held_item = {name,count,quality});
-			-- the paste path restores them (deserializer.lua), so the capture meter must count them too —
-			-- otherwise the "capture holds N" headline undercounts vs the physical census on paste.
 			if sd.held_item and sd.held_item.count then total = total + sd.held_item.count end
 		end
 	end
@@ -147,8 +90,6 @@ local function draw_box(surface, position, color, player_index)
 	})
 end
 
--- ONE visual encoding for plan verdicts, shared by paste (refusal/success) and preview so the
--- preview can never render a verdict differently from the paste that follows it.
 local CONFLICT_RED = { r = 1, g = 0.2, b = 0.2, a = 0.9 }
 local PLACEABLE_GREEN = { r = 0.3, g = 1, b = 0.3, a = 0.6 }
 
@@ -158,10 +99,6 @@ local function draw_plan_boxes(surface, plan_list, color, player_index)
 	end
 end
 
--- Tile-bounds blocker-search area from the record's prototype collision box, translated to the
--- target position. A fixed 1x1 center probe misses the edge tiles of a multi-tile footprint (e.g. a
--- 3x3 assembler), leaving edge blockers neither destroyed nor red-boxed. Falls back to 1x1 when the
--- prototype is unavailable (logged).
 local function footprint_area(rec)
 	local proto = prototypes.entity[rec.name]
 	if proto and proto.collision_box then
@@ -178,10 +115,6 @@ local function footprint_area(rec)
 	}
 end
 
--- True if any pasted entity's fluid boxes connect to an entity OUTSIDE the pasted set.
--- FluidRestoration writes SEGMENT totals, so a pasted pipe merging into a live network would
--- clobber it. 2.1 API: LuaEntity.fluidbox_neighbours returns one array of connected entities per
--- fluid storage. Fails SAFE: a probe error returns true (skip fluids) and surfaces via log.
 local function paste_touches_live_fluid_network(entity_map)
 	local pasted = {}
 	for _, e in pairs(entity_map) do
@@ -206,19 +139,8 @@ local function paste_touches_live_fluid_network(entity_map)
 	return false
 end
 
--- Belt-connectable types whose lane sides the copy captures for the side-scoped restore
--- (single implementation: BeltRestoration.capture_side_groups / restore_side_groups — the
--- production module; this tool is a diagnostic consumer of the SAME system).
--- Aliased to the shared table (2026-07-21): this local shadow list was the ONLY place loaders
--- were belt-classified, which is how paste placed loader line items while the shared-table
--- counters (audit + gate census) read 0 for them.
 local BELT_LINE_TYPES = Util.BELT_ENTITY_TYPES
 
--- Per-player state (review P1: capture/audit/undo/redo were global storage slots — a second
--- connected admin could overwrite another player's capture and then undo/force-redo their
--- mutations). Every state family is keyed by player_index. Pre-scoping legacy globals are
--- adopted once by the first player who interacts (logged), so existing captures/undo history
--- survive the upgrade.
 local function pstate(player_index)
 	storage.selection_lab = storage.selection_lab or {}
 	local t = storage.selection_lab[player_index]
@@ -241,32 +163,21 @@ local function pstate(player_index)
 	return t
 end
 
--- Machine-readable outcome: every copy/paste exit returns a typed result table AND logs it as
--- one JSON line, so a headless driver (selection_lab_drive) and the log both carry the verdict —
--- chat is a courtesy, never the only evidence (owner rule 2026-07-18: "fix this tool so you can
--- see the results of it").
 local function lab_result(mode, result)
 	log("[SelectionLab][" .. string.upper(mode) .. "-JSON] " .. helpers.table_to_json(result))
 	return result
 end
 
--- === COPY ==================================================================================
 
 function SelectionLab.copy(event)
 	local player = event_player(event)
 	local records = {}
 	local belt_pairs = {}
 	local minx, miny = math.huge, math.huge
-	-- ONE fluid-capture discipline: the copy arms its own registry for the scan (cleared in the
-	-- pcall-safe wrap below); the capture stores the resulting segment records beside the records.
 	local fluid_registry = FluidRegistry.new()
 	InventoryScanner.fluid_registry = fluid_registry
 	local copy_ok, copy_err = pcall(function()
 	for _, entity in ipairs(event.entities) do
-		-- Loose ground items: production excludes item-entity from entity records and captures them
-		-- as {type="item-on-ground"} pseudo-records instead (PR #24 shape, scan_items_on_ground);
-		-- the lab mirrors that so the ground-items pad is copyable (was "nothing_exportable").
-		-- Synthetic entity_id keys the create/rollback map (item-entities have no unit_number).
 		if entity.valid and entity.type == "item-entity" and entity.stack and entity.stack.valid_for_read then
 			local stack = entity.stack
 			records[#records + 1] = {
@@ -282,9 +193,6 @@ function SelectionLab.copy(event)
 		elseif entity.valid and EntityScanner.is_exportable_entity(entity) then
 			local entity_data = EntityScanner.serialize_entity(entity)
 			if entity_data then
-				-- Lab-only field: the production serializer deliberately does not carry `active`
-				-- (activation is the transfer pipeline's phase); the paste path must, or frozen
-				-- fixtures (mid-craft machines) wake up and run on paste.
 				entity_data.lab_active = entity.active
 				records[#records + 1] = entity_data
 				if BELT_LINE_TYPES[entity.type] then
@@ -303,10 +211,6 @@ function SelectionLab.copy(event)
 		return lab_result("copy", { outcome = "nothing_exportable", selected = #event.entities })
 	end
 	local side_groups = BeltRestoration.capture_side_groups(belt_pairs)
-	-- WYSIWYG anchor (owner request 2026-07-18): anchor to the DRAG RECTANGLE's corner, not the
-	-- entity-bounding min — pasted entities keep their offset from where the selection box started,
-	-- so a paste drag lands exactly where the box is drawn (the old entity-min anchor produced the
-	-- surprise (+14,-1) landing). Fallback to entity-min for area-less events.
 	local lt = event.area and event.area.left_top or nil
 	local anchor = lt and { x = math.floor(lt.x), y = math.floor(lt.y) }
 		or { x = math.floor(minx), y = math.floor(miny) }
@@ -319,15 +223,11 @@ function SelectionLab.copy(event)
 		surface = event.surface.name,
 		tick = game.tick,
 	}
-	-- Persistent BLUE highlight of the copied area (owner request 2026-07-18): stays until the NEXT
-	-- copy replaces it, so the user always sees where/what the live capture came from.
 	if st.copy_box then
 		local prior = rendering.get_object_by_id(st.copy_box)
 		if prior and prior.valid then prior.destroy() end
 		st.copy_box = nil
 	end
-	-- `and player`: a player-less headless drive has no viewer for the highlight, and rendering to a
-	-- non-existent reserved player_index would error.
 	if event.area and player then
 		st.copy_box = rendering.draw_rectangle({
 			color = { r = 0.3, g = 0.6, b = 1, a = 0.8 }, width = 2, filled = false,
@@ -335,7 +235,6 @@ function SelectionLab.copy(event)
 			surface = event.surface, players = { event.player_index },
 		}).id
 	end
-	-- Single compute, used by BOTH chat and the logged result — they must never diverge.
 	local item_total = capture_item_total(records)
 	say(player, string.format(
 		"[color=yellow][font=default-bold][SelectionLab][/font][/color] COPIED %d entities (%d items%s). Shift-drag = paste (all-or-nothing); Shift+Right-drag = force.",
@@ -347,7 +246,6 @@ function SelectionLab.copy(event)
 	})
 end
 
--- === paste planning ========================================================================
 
 local function paste_offset(cap, event)
 	local lt = event.area and event.area.left_top or nil
@@ -355,15 +253,10 @@ local function paste_offset(cap, event)
 	return { x = math.floor(lt.x) - cap.anchor.x, y = math.floor(lt.y) - cap.anchor.y }
 end
 
--- Shallow record copy with translated position (specific_data shared — restores only read it).
 local function translate(rec, offset)
 	local copy = {}
 	for k, v in pairs(rec) do copy[k] = v end
 	copy.position = { x = rec.position.x + offset.x, y = rec.position.y + offset.y }
-	-- Absolute positions INSIDE specific_data must translate with the record, or the deserializer
-	-- resolves them against the ORIGINAL location. The item-request-proxy target_position was the
-	-- live case: an untranslated target made every pasted proxy name-match the SOURCE machine,
-	-- planting a duplicate proxy on the left half of the pad each run (the ghosts-pad flip).
 	local sd = rec.specific_data
 	if sd and sd.target_position then
 		copy.specific_data = {}
@@ -376,19 +269,10 @@ local function translate(rec, offset)
 	return copy
 end
 
--- Placement-check spec for a record. Ghost records (entity-ghost / tile-ghost) REQUIRE
--- inner_name — can_place_entity/create_entity reject a bare ghost name ("Unknown entity name:" /
--- "Key inner_name not found"; measured 2026-07-17 via the drive battery).
 local function place_spec(rec, player)
 	local spec = {
 		name = rec.name, position = rec.position, direction = rec.direction,
 		force = rec.force or (player and player.force) or "player",
-		-- SCRIPT check, not the default manual check: the paste creates via the production
-		-- Deserializer.create_entity (script semantics), and the manual check refuses entities the
-		-- engine restricts for HAND-building on platforms (spidertron, burner-inserter, chests)
-		-- even though script creation places them fine — measured 2026-07-19 on the delivered
-		-- omnibus (4 pads false-refused with zero blockers on buildable tiles). Same-system rule:
-		-- the preview must mirror the create path it fronts.
 		build_check_type = defines.build_check_type.script,
 	}
 	if rec.specific_data and rec.specific_data.ghost_name then
@@ -397,17 +281,9 @@ local function place_spec(rec, player)
 	return spec
 end
 
--- v3 plan over already-translated target records: every target either placeable or conflicted.
--- Same-name occupants ARE conflicts; ground item-entities and tiles never block (can_place_entity
--- ignores loose items). Blocker sweep uses the full footprint, not a 1x1 center probe.
 local function plan_targets(surface, targets, player)
 	local plan = { clear = {}, conflict = {} }
 	for _, t in ipairs(targets) do
-		-- item-request-proxy has no collision footprint and can_place_entity cannot validate one
-		-- (the create requires a live target, which only exists after the paste creates it) — the
-		-- production create path is the validator. Always planned clear; create runs proxies last.
-		-- item-on-ground pseudo-records likewise never block (loose items collide with nothing;
-		-- production create_ground_item retries at a non-colliding spot itself).
 		local placeable = t.type == "item-request-proxy" or t.type == "item-on-ground"
 			or surface.can_place_entity(place_spec(t, player))
 		if placeable then
@@ -429,21 +305,6 @@ local function plan_paste(surface, cap, offset, player)
 	return plan_targets(surface, targets, player)
 end
 
--- Create all records + run the REAL import restores (production phase order).
--- side_groups (optional): captured lane sides — belt items then restore via the side-scoped
--- BELT-R11/R12 path instead of the legacy captured-position path. Legacy captures / undo
--- resurrections pass nil and take the old path.
--- transactional (review P1 — "ALL-OR-NOTHING ends at preflight"): when true, ANY create failure
--- or restore error destroys every entity this call created and reports failure — the caller must
--- not journal or report partial success. Undo resurrection passes false (best-effort, misses
--- reported, never destroys what it managed to bring back).
--- Returns records, entity_map, created, create_failed, ok, err.
--- ACTIVATION — the paste's counterpart to the transfer's activation phase, applied LAST so every
--- restore ran against a frozen world. Keeps whatever active/inactive state the capture recorded,
--- both directions (owner ruling 2026-07-17); a nil lab_active (pre-lab_active capture) UN-freezes,
--- since freeze-at-create (2026-07-28) would otherwise strand it disabled forever. Each write is
--- guarded (review 2026-07-30): the freeze site pcalls its write, so an entity type whose write
--- throws would otherwise freeze fine and then THROW here, killing the loop for every later entity.
 local function apply_paste_activation(records, entity_map)
 	for _, rec in ipairs(records) do
 		local entity = entity_map[rec.entity_id]
@@ -455,9 +316,6 @@ local function apply_paste_activation(records, entity_map)
 				log(string.format("[SelectionLab] activation write failed for %s at (%.1f,%.1f): %s",
 					rec.name, rec.position.x, rec.position.y, tostring(err)))
 			end
-			-- Drill mining progress rides the SAME deferred queue the transfer uses: for drills the
-			-- value is defined relative to mining_target (LuaControl), which is nil until the first
-			-- update, so a same-execution write here is unanchored and lost at cycle start.
 			if entity.type == "mining-drill" and rec.specific_data
 				and rec.specific_data.mining_progress then
 				ActiveStateRestoration.queue_mining_progress(entity, rec.specific_data)
@@ -469,13 +327,7 @@ end
 local function execute_create_and_restore(surface, recs, player, side_groups, fluid_segments, transactional)
 	local records, entity_map = {}, {}
 	local created, create_failed = 0, 0
-	-- Creation goes through the PRODUCTION Deserializer.create_entity — the same function the
-	-- transfer import uses (ghost inner_name handling, underground type, recipe-at-create for
-	-- fluid port alignment). The tool must never hand-roll its own create spec (same-system rule;
-	-- the hand-rolled spec broke on ghosts).
 	for _, rec in ipairs(recs) do
-		-- Ground pseudo-records use the PRODUCTION ground-item create (same-system rule) — the
-		-- entity create path would reject a stackless item-on-ground spec.
 		local ok, entity
 		if rec.type == "item-on-ground" then
 			ok, entity = pcall(function() return Deserializer.create_ground_item(surface, rec) end)
@@ -486,14 +338,6 @@ local function execute_create_and_restore(surface, recs, player, side_groups, fl
 			created = created + 1
 			records[#records + 1] = rec
 			entity_map[rec.entity_id] = entity
-			-- FREEZE AT CREATE — the same step, the same exclusions, the same execution as the
-			-- transfer import (import_phases/entity_creation.lua). The tool exists to represent a
-			-- real transfer, and until 2026-07-28 this was the one place it did not: pasted entities
-			-- came up LIVE and only had their captured state applied after every restore, so a
-			-- pasted assembler, drill or furnace was a running machine for the whole restore window.
-			-- Beacons/radars stay live for the same reason the import keeps them live (the beacon
-			-- speed bonus must apply as crafters are placed); an item-request-proxy is never frozen
-			-- because nothing here would bring it back.
 			if entity.type ~= "beacon" and entity.type ~= "radar"
 				and entity.type ~= "item-request-proxy" then
 				local frozen_ok, frozen_err = pcall(function()
@@ -532,22 +376,12 @@ local function execute_create_and_restore(surface, recs, player, side_groups, fl
 			say(player, message, { r = 1, g = 0.6, b = 0.3 })
 		end
 	else
-		-- The legacy consolidation restore is DELETED from this path (owner order 2026-07-26): it
-		-- conserved counts but manufactured structure (oversized stacks — the maxStack 5-vs-1
-		-- incident), and with capture_side_groups running on every belt-bearing copy its only
-		-- reachable case here was belt-less selections. Refuse loudly rather than degrade silently
-		-- if a belt record somehow arrives without its side partition.
 		for _, rec in ipairs(records) do
 			if rec.type and BELT_LINE_TYPES[rec.type] and rec.specific_data and rec.specific_data.items then
 				error("[SelectionLab] belt records present but NO side partition was captured — refusing the deleted legacy consolidation restore")
 			end
 		end
 	end
-	-- Entity state: same two production steps, same order — the per-entity property restore
-	-- (creation-adjacent) then the FULL production phase (control behavior, entity filters —
-	-- splitter/loader/inserter/slot —, manual logistic sections, circuit + power connections).
-	-- Calling the phase module keeps the tool identical to the transfer pipeline; cherry-picking
-	-- Deserializer functions here is how paste silently lost loader/splitter filters.
 	for _, rec in ipairs(records) do
 		local entity = entity_map[rec.entity_id]
 		if entity and entity.valid then
@@ -555,10 +389,6 @@ local function execute_create_and_restore(surface, recs, player, side_groups, fl
 		end
 	end
 	EntityStateRestoration.restore_all(records, entity_map)
-	-- Inventories in two passes: beacons FIRST so their beacon_modules populate and the boosted
-	-- crafting_speed sets the correct set_stack cap before crafter inputs restore (production Phase 2
-	-- ordering; CLAUDE.md Import Phase Ordering). A single record-order pass clamps overloaded inputs
-	-- when a crafter's record precedes its beacon's.
 	for _, rec in ipairs(records) do
 		local entity = entity_map[rec.entity_id]
 		if entity and entity.valid and rec.type == "beacon" then
@@ -571,16 +401,7 @@ local function execute_create_and_restore(surface, recs, player, side_groups, fl
 			Deserializer.restore_inventories(entity, rec)
 		end
 	end
-	-- Held items: the SAME production Phase-6 pass transfers use — the SINGLE OWNER of held
-	-- seating. Nothing else restores hands: the deserializer's old held block was dead code
-	-- (stranded behind restore_inventories' has_inventories early-return), so without this pass
-	-- a pasted inserter's hand is silently empty — measured on the inserter-held-capacity fixture
-	-- (capture 8, physical 0), the same cherry-picking class the header warns about. Seating is
-	-- activation-independent; no wake ritual.
 	ActiveStateRestoration.restore_held_items_only(records, entity_map)
-	-- FluidRestoration writes SEGMENT totals: a pasted pipe merging into a live network would set the
-	-- whole segment to the captured amount, silently clobbering pre-existing fluid. Only restore when
-	-- the pasted fluid system is ISOLATED (no fluidbox connects to an entity outside the paste).
 	if paste_touches_live_fluid_network(entity_map) then
 		say(player, "[color=yellow][font=default-bold][SelectionLab][/font][/color] fluids skipped: pasted fluid system connects to live network — fluid restore only runs on isolated pastes",
 			{ r = 1, g = 0.7, b = 0.3 })
@@ -600,10 +421,6 @@ local function execute_create_and_restore(surface, recs, player, side_groups, fl
 		if transactional then
 			return rollback("restore error: " .. tostring(restore_err))
 		end
-		-- BEST-EFFORT path keeps the entities, so it must ALSO reach activation: a throw anywhere in
-		-- run_restores used to skip the activation loop entirely, leaving every freeze-at-create
-		-- entity disabled_by_script forever — a silently-frozen pad, exactly what the unfrozen
-		-- doctrine forbids (review 2026-07-30). Errors here are already reported above.
 		apply_paste_activation(records, entity_map)
 		if player then
 			say(player, "[color=yellow][font=default-bold][SelectionLab][/font][/color] restore error (best-effort path): " .. tostring(restore_err),
@@ -620,9 +437,6 @@ local function push_undo(st, entry)
 	st.redo = {}
 end
 
--- Journal each created entity by its STABLE unit_number (undo resolves identity by it, never by
--- name+position — which could destroy an unrelated same-name entity built there later). Position is
--- kept only as a fallback search key, matched by unit_number, never as sole identity.
 local function journal_created(records, entity_map)
 	local created = {}
 	for _, rec in ipairs(records) do
@@ -636,7 +450,6 @@ local function journal_created(records, entity_map)
 	return created
 end
 
--- === PASTE (all-or-nothing) ================================================================
 
 function SelectionLab.paste(event)
 	local player = event_player(event)
@@ -651,7 +464,6 @@ function SelectionLab.paste(event)
 	local plan = plan_paste(surface, cap, offset, player)
 
 	if #plan.conflict > 0 then
-		-- player-guarded: headless drive has no viewer/sound; the typed report below carries the verdict.
 		if player then
 			draw_plan_boxes(surface, plan.conflict, CONFLICT_RED, player.index)
 			player.play_sound({ path = "utility/cannot_build" })
@@ -659,8 +471,6 @@ function SelectionLab.paste(event)
 		say(player, string.format(
 			"[color=yellow][font=default-bold][SelectionLab][/font][/color] PASTE REFUSED: %d of %d targets occupied (red). Nothing was placed. Shift+Right-drag forces.",
 			#plan.conflict, #cap.records), { r = 1, g = 0.4, b = 0.4 })
-		-- Name the refusals (owner feedback 2026-07-19: "(1 conflicts)" says nothing) — each entry
-		-- carries the record name, its target position, and the first blocker if any.
 		local conflict_details = {}
 		for i, c in ipairs(plan.conflict) do
 			if i > 5 then
@@ -676,8 +486,6 @@ function SelectionLab.paste(event)
 			offset = offset, conflict_details = conflict_details })
 	end
 
-	-- Proxies LAST (mirrors the import-pipeline partition): their creates need the just-pasted
-	-- target entities to exist first.
 	local recs = {}
 	for _, c in ipairs(plan.clear) do if c.rec.type ~= "item-request-proxy" then recs[#recs + 1] = c.rec end end
 	for _, c in ipairs(plan.clear) do if c.rec.type == "item-request-proxy" then recs[#recs + 1] = c.rec end end
@@ -696,7 +504,6 @@ function SelectionLab.paste(event)
 	end
 	push_undo(st, { mode = "paste", surface = surface.name, created = journal_created(records, entity_map),
 		destroyed_records = {}, plan_records = recs, side_groups = cap.side_groups, fluid_segments = cap.fluid_segments })
-	-- Single compute, used by BOTH chat and the logged result — they must never diverge.
 	local physical_items = physical_census(entity_map)
 	local capture_items = capture_item_total(cap.records)
 	say(player, string.format(
@@ -709,11 +516,7 @@ function SelectionLab.paste(event)
 	})
 end
 
--- === PREVIEW (dry-run paste) ===============================================================
 
--- Renders where the capture WOULD land for this drag — green placeable, red conflicted — and
--- creates nothing (owner request 2026-07-18: "a hint of where it would be at"). Uses the same
--- planner as the real paste, so the preview can never disagree with the paste's own verdict.
 function SelectionLab.preview(event)
 	local player = event_player(event)
 	local st = pstate(event.player_index)
@@ -735,13 +538,7 @@ function SelectionLab.preview(event)
 	})
 end
 
--- === FORCE PASTE ===========================================================================
 
--- Shared by force and redo. destroyed_records are serialized BEFORE destruction so undo can
--- resurrect blockers with contents. Transactional (review P1): if the create+restore fails,
--- the created entities are rolled back AND the already-destroyed blockers are resurrected
--- best-effort; callers must not journal on failure.
--- Returns records, entity_map, created, create_failed, destroyed_records, guarded, ok, err, resurrected_on_fail.
 local function force_execute(surface, recs, player, side_groups, fluid_segments)
 	local destroyed_records, guarded = {}, 0
 	for _, rec in ipairs(recs) do
@@ -754,8 +551,6 @@ local function force_execute(surface, recs, player, side_groups, fluid_segments)
 						draw_box(surface, rec.position, CONFLICT_RED, player.index)
 						local snapshot = EntityScanner.serialize_entity(e)
 						if snapshot then
-							-- Lab-only field (like copy()): resurrection must restore the blocker's active
-							-- state, or a frozen fixture comes back active and corrupts the measured scene.
 							snapshot.lab_active = e.active
 							destroyed_records[#destroyed_records + 1] = snapshot
 						end
@@ -817,7 +612,6 @@ function SelectionLab.force(event)
 	})
 end
 
--- === AUDIT (the gate meters, made visible) =================================================
 
 local function fresh_fluid_state()
 	return { counted_segments = {}, seg_temps = {} }
@@ -833,7 +627,6 @@ function SelectionLab.audit(event)
 			entity_counts[e.name] = (entity_counts[e.name] or 0) + 1
 			entity_n = entity_n + 1
 			if e.type == "item-entity" then
-				-- Ground items: the same dedicated pass the gate's count_items uses.
 				if e.stack and e.stack.valid_for_read then
 					local key = Util.make_quality_key(e.stack.name,
 						(e.stack.quality and e.stack.quality.name) or Util.QUALITY_NORMAL)
@@ -854,8 +647,6 @@ function SelectionLab.audit(event)
 		end
 	end
 
-	-- Icon-rich audit chat (owner format): one labeled line per category, [item=]/[entity=]/[fluid=]
-	-- tags for every key, quality carried on item tags. Totals ride the header.
 	local dims = "?"
 	if event.area then
 		local w = math.ceil(event.area.right_bottom.x) - math.floor(event.area.left_top.x)
@@ -863,7 +654,6 @@ function SelectionLab.audit(event)
 		dims = w .. " x " .. h
 	end
 	say(player, string.format("%s Observing (%s)", LAB_PREFIX, dims))
-	-- One bold+cyan labeled line per NON-EMPTY category (empty categories are omitted entirely).
 	local function category_line(label, totals, render)
 		if not next(totals) then return end
 		local lines = {}
@@ -876,9 +666,6 @@ function SelectionLab.audit(event)
 	category_line("Fluids", fluid_totals, icon_fluid)
 
 
-	-- Machine-readable evidence: the audit is an INSTRUMENT (the gate's own meters) — its readings
-	-- must land in the log and be returnable to a headless driver, not live only in player chat
-	-- (owner gap 2026-07-18: an agent-driven audit had no way to read the result).
 	local report = {
 		tick = game.tick,
 		entity_count = entity_n, item_count = item_n, fluid_total = fluid_n,
@@ -888,7 +675,6 @@ function SelectionLab.audit(event)
 	return report
 end
 
--- === UNDO / REDO ===========================================================================
 
 function SelectionLab.undo(event)
 	local player = event_player(event)
@@ -908,8 +694,6 @@ function SelectionLab.undo(event)
 		if c.unit_number then
 			hit = game.get_entity_by_unit_number(c.unit_number)
 			if not (hit and hit.valid) then
-				-- fallback: search near the recorded position, match by unit_number ONLY (never by
-				-- name+position — that could destroy an unrelated entity placed here after the paste).
 				hit = nil
 				for _, e in ipairs(surface.find_entities_filtered({ position = c.position, radius = 0.4 })) do
 					if e.valid and e.unit_number == c.unit_number then hit = e break end
@@ -920,7 +704,6 @@ function SelectionLab.undo(event)
 	end
 	local resurrected = 0
 	if #entry.destroyed_records > 0 then
-		-- best-effort (non-transactional): a resurrection miss must never destroy what DID come back
 		local records = execute_create_and_restore(surface, entry.destroyed_records, player, nil, nil, false)
 		resurrected = records and #records or 0
 	end
@@ -942,8 +725,6 @@ function SelectionLab.redo(event)
 	end
 	local surface = game.surfaces[entry.surface]
 	if not surface then say(player, "[color=yellow][font=default-bold][SelectionLab][/font][/color] redo surface gone", { r = 1, g = 0.4, b = 0.4 }) return end
-	-- Mode-faithful replay: a plain paste must NEVER escalate to destructive force on redo. Legacy
-	-- journal entries (pre-mode) infer their mode from whether they destroyed blockers.
 	local mode = entry.mode
 		or ((entry.destroyed_records and #entry.destroyed_records > 0) and "force" or "paste")
 
@@ -957,7 +738,7 @@ function SelectionLab.redo(event)
 			say(player, string.format(
 				"[color=yellow][font=default-bold][SelectionLab][/font][/color] REDO REFUSED: %d of %d targets now occupied (red). Nothing re-pasted; still redoable.",
 				#plan.conflict, #entry.plan_records), { r = 1, g = 0.4, b = 0.4 })
-			table.insert(stack, entry) -- action did not happen → leave on the redo stack
+			table.insert(stack, entry)
 			return
 		end
 		local recs = {}
@@ -1000,10 +781,8 @@ function SelectionLab.redo(event)
 	end
 end
 
--- === event router ==========================================================================
 
 function SelectionLab.handle(event, mode)
-	-- Diagnostic (owner bug 1: a drag mode arriving silent): log EVERY selection event's routing.
 	log(string.format("[SelectionLab] event mode=%s item=%s entities=%d", tostring(mode),
 		tostring(event.item), event.entities and #event.entities or -1))
 	if event.item ~= "selection-lab-tool" then return end

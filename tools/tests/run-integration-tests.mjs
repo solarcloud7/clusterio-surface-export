@@ -1,23 +1,4 @@
 #!/usr/bin/env node
-// Integration-test runner — auto-discovering, OS-agnostic, zero-dependency (Node built-ins only).
-//
-// Runs every tests/integration/<name>/run-tests.{ps1,mjs} SEQUENTIALLY against an ALREADY-RUNNING cluster,
-// rolls up a pass/fail summary, and exits non-zero if any test failed. This dir set is the single source of
-// truth — drop a new test dir and it's picked up here AND (via the one CI step that calls this) in CI.
-//
-// Sequential by NECESSITY: the integration tests all mutate one shared, stateful docker cluster (same `test`
-// source, shared force.platforms / lock registry / Nauvis), so concurrent runs would corrupt each other.
-// This runner is the execution layer only — it does NOT bring the cluster up.
-//
-//   .ps1 tests → run via `pwsh` (cross-platform PowerShell 7+; CI + macOS `brew install powershell`)
-//   .mjs tests → run natively via `node` (so tests can be migrated off PowerShell one at a time)
-//
-// Usage:
-//   node tools/tests/run-integration-tests.mjs                 # run the whole suite
-//   node tools/tests/run-integration-tests.mjs --only <regex>  # only tests whose dir name matches
-//   node tools/tests/run-integration-tests.mjs --skip <regex>  # skip tests whose dir name matches
-//   node tools/tests/run-integration-tests.mjs --fail-fast     # stop at the first failure
-//   node tools/tests/run-integration-tests.mjs --list          # dry-run: list what would run (+ skip-list)
 
 import { spawnSync } from "node:child_process";
 import { readdirSync, existsSync, statSync } from "node:fs";
@@ -27,14 +8,10 @@ import { fileURLToPath } from "node:url";
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const integrationDir = join(repoRoot, "tests", "integration");
 
-// ── Single source of truth for suite-level config ──────────────────────────────────────────────
-// Intentionally-excluded tests: dirName -> reason (each entry is a deliberate, documented choice).
 const SKIP = {};
-// Extra args forwarded to a specific test's script.
 const ARGS = {
 };
 
-// ── Args ────────────────────────────────────────────────────────────────────────────────────────
 const argv = process.argv.slice(2);
 const flagValue = (name) => { const i = argv.indexOf(name); return i >= 0 && i + 1 < argv.length ? argv[i + 1] : null; };
 const onlyRe = flagValue("--only") ? new RegExp(flagValue("--only")) : null;
@@ -43,7 +20,6 @@ const failFast = argv.includes("--fail-fast");
 const listOnly = argv.includes("--list");
 const isCI = !!process.env.GITHUB_ACTIONS;
 
-// ── Discovery (dir set = source of truth) ────────────────────────────────────────────────────────
 function discover() {
 	const tests = [];
 	for (const name of readdirSync(integrationDir).sort()) {
@@ -63,7 +39,6 @@ function pwshAvailable() {
 	return r.status === 0;
 }
 
-// ── Select ────────────────────────────────────────────────────────────────────────────────────
 const skipped = [];
 const tests = discover().filter((t) => {
 	if (SKIP[t.name]) { skipped.push({ ...t, reason: SKIP[t.name] }); return false; }
@@ -92,7 +67,6 @@ if (tests.some((t) => t.kind === "ps1") && !pwshAvailable()) {
 	process.exit(2);
 }
 
-// ── Run (sequential — shared cluster) ────────────────────────────────────────────────────────────
 console.log(`Running ${tests.length} integration test(s) sequentially (shared cluster — not parallelizable)...`);
 const results = [];
 for (const t of tests) {
@@ -114,7 +88,6 @@ for (const t of tests) {
 	if (!ok && failFast) { console.log("  (--fail-fast: stopping)"); break; }
 }
 
-// ── Summary ───────────────────────────────────────────────────────────────────────────────────
 const failed = results.filter((r) => !r.ok);
 console.log(`\n${"=".repeat(60)}\n  Integration suite summary\n${"=".repeat(60)}`);
 for (const r of results) console.log(`  ${r.ok ? "PASS" : "FAIL"}  ${r.name}  (${r.durationS}s)`);

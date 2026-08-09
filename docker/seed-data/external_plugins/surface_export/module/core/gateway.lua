@@ -1,22 +1,7 @@
--- FactorioSurfaceExport - Gateway identification + unlock
---
--- Gateways are surfaceless `space-location` prototypes added by the `surfexp_gateways` data mod
--- (surfexp_gateway_1..N). A platform can route to and PARK at one (they have no fly_condition). This
--- module identifies them and unlocks them per-force so platforms can route there. It caches NOTHING:
--- prototypes are always queryable at runtime, so a stored gateway set would just be redundant state.
---
--- All gateway *logic* (arrival detection, transfer trigger, hop-strip) lives in the save-patched
--- module, not the data mod. See docs/GATEWAY_TRANSFER_PRD.md.
-
 local Gateway = {}
 
--- Every gateway space-location name starts with this. Kept in lockstep with surfexp_gateways/data.lua.
 Gateway.PREFIX = "surfexp_gateway_"
 
---- Is `name` a gateway space-location? Prefix match AND a real prototype, so a renamed/stale name
---- (or an arbitrary station that merely starts with the prefix) cannot masquerade as a gateway.
---- @param name string|nil
---- @return boolean
 function Gateway.is_gateway(name)
 	if type(name) ~= "string" then
 		return false
@@ -27,25 +12,11 @@ function Gateway.is_gateway(name)
 	return prototypes.space_location[name] ~= nil
 end
 
---- The stored config for a gateway by name (the `{ targets = {…} }` table the controller pushes via WS2),
---- or nil if unset. Nil-safe across the whole storage chain — the SINGLE accessor for the arrival handler
---- (control.lua) and the on-arrival chooser GUI, so the lookup can't drift between them.
---- @param gateway_name string
---- @return table|nil
 function Gateway.get_gateway_config(gateway_name)
 	local cfg = storage.surface_export_config
 	return (cfg and cfg.gateways and cfg.gateways[gateway_name]) or nil
 end
 
---- Whether a gateway belongs to the cluster's ACTIVE mode.
----
---- The controller pushes the active name list (`active_gateways_json`); a cluster runs either the
---- single hub gate or the four numbered ones. Nil means the controller has not told us — an
---- un-updated controller, or an instance that started before the first push — and the honest answer
---- there is the pre-mode behaviour, "every gateway", NOT "none". Returning false on nil would leave
---- an instance with no reachable gateways at all and no way for the operator to see why.
---- @param name string
---- @return boolean
 function Gateway.is_active_gateway(name)
 	local active = storage.surface_export_config and storage.surface_export_config.active_gateways
 	if type(active) ~= "table" or #active == 0 then
@@ -59,23 +30,6 @@ function Gateway.is_active_gateway(name)
 	return false
 end
 
---- RECONCILE every gateway space-location against the active set, for every force: the active ones
---- unlocked so platforms can route to them, the rest LOCKED so they never appear on the starmap.
----
---- Both directions are needed, and the reason is an ordering fact rather than a preference. This runs
---- at startup (control.lua), which is BEFORE the controller has pushed the active set — so the first
---- pass necessarily unlocks everything. Filtering alone would therefore leave every gateway unlocked
---- forever, since nothing else ever locks one; measured on the live cluster, where all five stayed
---- unlocked in one-gate mode until this became a two-way reconcile. `configure` re-runs it whenever
---- the active set arrives or changes, and that later pass is what actually takes effect.
----
---- Inactive gateways are LOCKED rather than left unlocked-but-unconfigured because an unlocked
---- gateway with no config is a destination a player can fly to and then be told nothing happens,
---- which is worse than one that was never offered.
----
---- Idempotent and cheap — safe on every startup. pcall-guarded per (force, gateway) so one bad force
---- (e.g. one without space travel) can't abort the rest.
---- @return number unlocked The number of (force, gateway) unlocks that succeeded.
 function Gateway.discover_and_unlock()
 	local unlocked = 0
 	local locked = 0
@@ -107,11 +61,6 @@ function Gateway.discover_and_unlock()
 	return unlocked
 end
 
---- The gateway a platform is currently PARKED at (waiting_at_station at a gateway space-location), or
---- nil. The single source of truth for the "is this platform at a gateway right now" predicate, shared
---- by the /gateway-transfer command and the on-arrival handler (do not re-inline the check).
---- @param platform LuaSpacePlatform|nil
---- @return string|nil gateway_name
 function Gateway.parked_at_gateway(platform)
 	if not (platform and platform.valid) then
 		return nil
@@ -126,16 +75,6 @@ function Gateway.parked_at_gateway(platform)
 	return nil
 end
 
---- Players + character entities currently aboard a platform (on its own surface). Two complementary
---- signals: a player is BODILY aboard iff `player.physical_surface_index == platform.surface.index`
---- (catches a connected pilot AND a disconnected player still standing on it), and
---- `surface.count_entities_filtered{type="character"}` catches abandoned character bodies with no player.
---- A remote-view watcher has surface_index == the platform but NOT physical_surface_index → NOT a passenger.
---- This is the input to the passenger COUNT shown in the chooser GUI and the list Gateway.evacuate_passengers
---- teleports off before a transfer deletes the surface (passengers are EVACUATED, never blocked) — one source
---- of truth, shared by the GUI display and the delete-time evacuation.
---- @param platform LuaSpacePlatform|nil
---- @return table players (array of LuaPlayer bodily aboard), number character_count
 function Gateway.collect_passengers(platform)
 	local players = {}
 	if not (platform and platform.valid and platform.surface and platform.surface.valid) then
@@ -144,15 +83,11 @@ function Gateway.collect_passengers(platform)
 	local surf_idx = platform.surface.index
 	for _, player in pairs(game.players) do
 		-- intentional probe; reading physical_surface_index can fail for an odd/transient player state,
-		-- and skipping that player is the correct fallback (they're simply not counted aboard). No log.
 		local ok, psi = pcall(function() return player.physical_surface_index end)
 		if ok and psi == surf_idx then
 			players[#players + 1] = player
 		end
 	end
-	-- The surface is validated above, so count_entities_filtered should SUCCEED. If it throws, this is a
-	-- safety check — do NOT swallow it: log so a real failure is visible rather than silently reporting
-	-- "nobody aboard". The 0 fallback is acceptable because the per-player loop above is the primary signal.
 	local ok_c, char_count = pcall(function()
 		return platform.surface.count_entities_filtered{type = "character"}
 	end)
@@ -163,31 +98,10 @@ function Gateway.collect_passengers(platform)
 	return players, (ok_c and char_count) or 0
 end
 
---- The number of distinct passengers aboard, for user-facing messages. Uses max(), NOT sum: a CONNECTED
---- player is counted both as a player (physical_surface_index) and via their character entity in
---- aboard_characters, so summing double-counts the common one-player case. max() is exact there and a safe
---- lower bound otherwise — the block decision itself fires on ANY signal, so this is display-only.
---- @param aboard_players table array of LuaPlayer
---- @param aboard_characters number
---- @return number
 function Gateway.passenger_count(aboard_players, aboard_characters)
 	return math.max(#(aboard_players or {}), aboard_characters or 0)
 end
 
---- Evacuate everyone bodily aboard a platform to a safe planetary surface, called RIGHT BEFORE the platform
---- is deleted on a transfer. A transfer ends in game.delete_surface; without this, anyone aboard is orphaned.
---- This is NATIVE-ALIGNED: the engine itself sends a player "back to the planet they were last at" on hub
---- loss. We do NOT block the transfer (the old hard-block kept finding new bypass entry points); we let it
---- proceed and evacuate at the delete — the ONE chokepoint every transfer path funnels through, so it cannot
---- be bypassed and a delete-time evacuation can never duplicate the platform (the dest copy is already
---- committed by the time the source is deleted).
----
---- Teleports aboard players (connected + disconnected) AND abandoned character bodies to a non-colliding
---- position near the force's Nauvis spawn (fallback: the first planetary surface; if none, log + skip so a
---- clean teardown still beats an orphan). Every move is pcall-guarded + logged; one failure never aborts the
---- rest, and evacuation failure NEVER blocks the delete.
---- @param platform LuaSpacePlatform
---- @return table result {players=number, characters=number, failures=number}
 function Gateway.evacuate_passengers(platform)
 	local result = { players = 0, characters = 0, failures = 0 }
 	if not (platform and platform.valid and platform.surface and platform.surface.valid) then
@@ -195,7 +109,6 @@ function Gateway.evacuate_passengers(platform)
 	end
 	local surface = platform.surface
 
-	-- Destination: a planetary (non-platform) surface — Nauvis by default, else the first planet found.
 	local dest = game.surfaces["nauvis"]
 	if not (dest and dest.valid) then
 		for _, s in pairs(game.surfaces) do
@@ -217,13 +130,7 @@ function Gateway.evacuate_passengers(platform)
 		return pos or anchor
 	end
 
-	-- 1) Aboard players first (connected + disconnected) — physical_surface_index match. teleport moves the
-	-- player AND their character together; check the boolean return so a failed placement is counted, not lost.
 	local aboard_players = Gateway.collect_passengers(platform)
-	-- teleport(), NOT land_on_planet(): the engine's landing API is useless at a SURFACELESS gateway
-	-- (there is no platform surface to descend from), so it was evaluated and rejected — do not
-	-- "simplify" back to it. Likewise the game.players scan above IS the workaround: LuaSpacePlatform
-	-- exposes no players/characters accessor, so aboard detection must scan and filter.
 	for _, player in ipairs(aboard_players) do
 		local ref = (player.character and player.character.valid and player.character.name) or "character"
 		local ok, moved = pcall(function() return player.teleport(safe_pos(ref), dest) end)
@@ -240,16 +147,11 @@ function Gateway.evacuate_passengers(platform)
 		end
 	end
 
-	-- 2) Then abandoned character bodies still on the platform (logged-off players with no controller). A
-	-- connected player's character was already moved above, so it is no longer on this surface.
 	local chars = {}
 	-- intentional probe; surface is validated above, the find should succeed — empty list on failure is fine.
 	pcall(function() chars = surface.find_entities_filtered{ type = "character" } end)
 	for _, char in ipairs(chars) do
 		if char and char.valid then
-			-- Return the teleport boolean so a FAILED placement (no room) is counted as a failure, not a
-			-- phantom success — matching the player branch above. Without the `return`, a character the engine
-			-- refuses to place is logged as evacuated and then destroyed with the surface (silent loss).
 			local ok, moved = pcall(function() return char.teleport(safe_pos(char.name), dest) end)
 			if ok and moved then
 				result.characters = result.characters + 1
@@ -268,13 +170,6 @@ function Gateway.evacuate_passengers(platform)
 	return result
 end
 
---- Return a copy of schedule_payload with EVERY gateway-station record removed, carrying `current`
---- FORWARD to the record that followed the gateway (NOT reset to 1) so a resumed itinerary continues
---- rather than re-travelling an already-visited stop. Schedules are cyclic, so a gateway in the last
---- position wraps the cursor to 1. Returns nil if removing the gateways would leave no records at all
---- (caller keeps the original schedule then — a lone-gateway schedule stays valid).
---- @param schedule_payload table
---- @return table|nil stripped
 function Gateway.strip_gateway_records(schedule_payload)
 	local records = schedule_payload.records or {}
 	local orig_current = schedule_payload.current
@@ -288,7 +183,6 @@ function Gateway.strip_gateway_records(schedule_payload)
 	for i, r in ipairs(records) do
 		if not (type(r) == "table" and Gateway.is_gateway(r.station)) then
 			kept[#kept + 1] = r
-			-- The first kept record at or after the old cursor → resume forward from here.
 			if new_current == nil and i >= orig_current then
 				new_current = #kept
 			end
@@ -298,7 +192,7 @@ function Gateway.strip_gateway_records(schedule_payload)
 		return nil
 	end
 	if new_current == nil then
-		new_current = 1 -- cursor was at/after the last kept record (e.g. gateway was last) → wrap to 1
+		new_current = 1
 	end
 	return {
 		current = new_current,

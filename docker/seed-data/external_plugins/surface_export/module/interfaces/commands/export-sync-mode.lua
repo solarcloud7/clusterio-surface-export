@@ -1,6 +1,3 @@
--- Command: /export-sync-mode
--- Toggle sync mode for debugging
-
 local Base = require("modules/surface_export/interfaces/commands/base")
 local AsyncProcessor = require("modules/surface_export/core/async-processor")
 
@@ -9,7 +6,6 @@ Base.admin_command("export-sync-mode",
   function(cmd, ctx)
     local param = ctx.param
     if not param or param == "" then
-      -- Toggle
       local current = AsyncProcessor.get_sync_mode()
       AsyncProcessor.set_sync_mode(not current)
       ctx.print(string.format("Sync mode: %s", AsyncProcessor.get_sync_mode() and "ON" or "OFF"))

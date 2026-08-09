@@ -1,12 +1,3 @@
--- Command: /gateway-transfer
--- Transfer a platform that is PARKED at a gateway to a destination instance.
---
--- Phase 1a explicit trigger. This is the stand-in for the 1b on-arrival GUI button: both gate on
--- "parked at a gateway" and both fire the same TransferTrigger.start backend. Unlike auto-firing from
--- the arrival event, this runs OUTSIDE on_space_platform_changed_state, so it never mutates a platform
--- during its own state-change. The gateway->instance mapping is supplied explicitly here; the
--- controller-sourced config + web UI is Phase 1c.
-
 local Base = require("modules/surface_export/interfaces/commands/base")
 local Gateway = require("modules/surface_export/core/gateway")
 local TransferTrigger = require("modules/surface_export/core/transfer-trigger")
@@ -31,7 +22,6 @@ Base.admin_command("gateway-transfer",
       return
     end
 
-    -- Gate: the platform must currently be parked AT a gateway (shared predicate — see gateway.lua).
     local gw_name = Gateway.parked_at_gateway(platform)
     if not gw_name then
       ctx.print(string.format("✗ Platform '%s' is not parked at a gateway (state=%s, location=%s)",
@@ -44,7 +34,6 @@ Base.admin_command("gateway-transfer",
     ctx.print(string.format("🛰  Gateway transfer: '%s' parked at '%s' → instance %d",
       platform.name, gw_name, dest_instance_id))
 
-    -- 1a default: park at the SAME gateway name on the destination (gw_name as the explicit target).
     local job_id, err = TransferTrigger.start(ctx.force, platform_index, dest_instance_id, gw_name)
     if not job_id then
       log(string.format("[Gateway Transfer] start failed for '%s' (index %d): %s",
@@ -53,7 +42,6 @@ Base.admin_command("gateway-transfer",
       return
     end
 
-    -- (TransferTrigger.start already logs the canonical "[TransferTrigger] started" line.)
     ctx.print(string.format("✓ Transfer queued: %s", job_id))
     ctx.print("⏳ The transfer continues automatically (export → controller → destination import → validate).")
   end

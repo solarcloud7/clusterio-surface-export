@@ -1,11 +1,7 @@
 local Deserializer = require("modules/surface_export/core/deserializer")
 local TileRestoration = {}
 
---- Process tile placement for an import job
---- @param job table: The import job state
---- @return boolean: true if tiles were processed (or didn't need processing)
 function TileRestoration.process(job)
-    -- Place all tiles first (before any entities)
     if job.tiles_placed then
         return true
     end

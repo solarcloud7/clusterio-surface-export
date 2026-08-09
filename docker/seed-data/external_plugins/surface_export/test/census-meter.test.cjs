@@ -1,9 +1,5 @@
 "use strict";
 
-// Source-contract test for the per-entity census meter (Task 2, Phase 1).
-// Follows the fs.readFileSync + structural-regex style of composite-transfer-verdict.test.cjs:
-// plain `node --test`, zero dependencies, asserts the SHAPE of the Lua source so the
-// per-entity extraction (and its independence from EntityHandlers) cannot silently regress.
 
 const { test } = require("node:test");
 const assert = require("node:assert/strict");
@@ -55,11 +51,6 @@ test("surface-counter never references EntityHandlers (independence is structura
 		"the census meter must stay independent of the export-side EntityHandlers dispatch");
 });
 
-// -----------------------------------------------------------------------------
-// Task 3 (Phase 1): paired-reads census accumulator — source-contract assertions.
-// Read lazily so a missing module fails ONLY these tests (clean RED), not the
-// surface-counter tests above.
-// -----------------------------------------------------------------------------
 function accumulatorSource() {
 	return fs.readFileSync(
 		path.join(moduleRoot, "export_scanners", "census-accumulator.lua"),
@@ -97,9 +88,6 @@ test("record's SERIALIZED side reuses Verification's item rules and reads fluids
 	);
 	assert.match(body, /Verification\.count_all_items\s*\(/,
 		"the serialized item count must reuse Verification.count_all_items (no re-implementation)");
-	// 2.1 registry port: the serialized FLUID truth is the job's FluidRegistry (the same segment
-	// records the payload carries), first-seer deduped over segment_ref — NOT a recount of the live
-	// surface. This keeps the two census sides commensurate (engine-vs-payload) — belts keep moving — belt items must be extracted in ONE atomic tick.
 	assert.match(body, /acc\.fluid_registry\.segments\[\s*ref\s*\]/,
 		"the serialized fluid count must read the job's FluidRegistry segment records");
 	assert.match(body, /acc\.seen_segment_refs\[\s*ref\s*\]/,
@@ -134,10 +122,6 @@ test("accumulator aggregates temp-keyed fluids to per-name totals for the verdic
 		"fluids must be re-aggregated temp-key → name via Util.parse_fluid_temp_key, as the gate does");
 });
 
-// -----------------------------------------------------------------------------
-// Task 4 (Phase 2): wire the paired reads into the export walk — source-contract
-// assertions over export-pipeline.lua / configure.lua / lint-test-hooks.mjs.
-// -----------------------------------------------------------------------------
 function exportPipelineSource() {
 	return fs.readFileSync(path.join(moduleRoot, "core", "export-pipeline.lua"), "utf8");
 }
@@ -165,8 +149,6 @@ test("process_batch records paired reads in the SAME loop as serialize_entity, b
 		"process_batch must serialize each entity");
 	assert.match(body, /CensusAccumulator\.record\s*\(\s*job\.census\s*,\s*entity\s*,\s*entity_data/,
 		"process_batch must record the paired reads for the just-serialized entity, in the same loop iteration");
-	// The record must be the ELSE of the belt-deferral branch — belt-type entities are NOT recorded
-	// during the async walk (their items aren't serialized until the atomic pass in complete()).
 	assert.match(body, /BELT_ENTITY_TYPES\[category\][\s\S]*?\belse\b[\s\S]*?CensusAccumulator\.record\s*\(\s*job\.census/,
 		"belt entities must be deferred (paired in the atomic pass); only NON-belt entities are recorded in the walk");
 });
@@ -187,9 +169,6 @@ test("the atomic belt scan pairs each belt AFTER its serialized items are patche
 test("census verdict is computed BEFORE the export is stored/sent, and the transfer abort references it", () => {
 	const src = exportPipelineSource();
 	const verdictIdx = src.indexOf("CensusAccumulator.verdict(job.census)");
-	// The store marker is `ExportCache.record(export_id, ...)`, not a bare assignment into
-	// storage.platform_exports: write sites go through record() so the entry cannot be stored without
-	// its monotonic ordering stamp. The ordering invariant this test protects is unchanged.
 	const storeIdx = src.indexOf("ExportCache.record(export_id");
 	assert.notEqual(verdictIdx, -1, "complete() must compute CensusAccumulator.verdict(job.census)");
 	assert.notEqual(storeIdx, -1, "complete() must store the export somewhere");
@@ -255,18 +234,12 @@ test("test_force_census_omission is registered in the configure allowlist and co
 });
 
 test("the census-omission hook is enumerated in lint:test-hooks FAIL_SAFE_HOOKS", () => {
-	// FAIL_SAFE_HOOKS moved to the shared declaration (scripts/fail-safe-hooks.mjs) consumed by
-	// BOTH the lint guard and the manifest lifecycle allowlist — assert the shared source.
 	const lint = fs.readFileSync(path.join(moduleRoot, "..", "scripts", "fail-safe-hooks.mjs"), "utf8");
 	assert.match(lint, /FAIL_SAFE_HOOKS[\s\S]*?"test_force_census_omission"/,
 		"the pre-verdict hook must be whitelisted as fail-safe (leak ⇒ next export aborts + source preserved)");
 });
 
 test("the census threads the job's FluidRegistry as the single serialized-fluid source (fail-loud, no silent-nil)", () => {
-	// 2.1 registry port (owner ruling 2026-07-20): the engine_owned segment exclusion is DELETED —
-	// plasma rides like any fluid. The census's serialized-fluid truth is now the job's FluidRegistry,
-	// shared by reference with the export walk so the two sides can never diverge in how a segment is
-	// folded. A nil registry would silently stop checking fluids, so new() must fail LOUD.
 	const newBody = functionBody(
 		accumulatorSource(),
 		"function CensusAccumulator.new(",

@@ -20,7 +20,6 @@ function Resolve-OptionalCommit {
     )
 
     # Deliberately quiet: this is an EXISTENCE PROBE. A missing ref is the question being asked,
-    # not a failure — the caller branches on the result.
     $output = & git -C $Repository rev-parse --verify --quiet "$Ref^{commit}" 2>$null
     if ($LASTEXITCODE -eq 0) {
         return ($output -join "`n").Trim()

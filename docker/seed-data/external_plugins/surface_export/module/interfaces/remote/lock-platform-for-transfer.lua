@@ -1,12 +1,5 @@
--- Remote Interface: lock_platform_for_transfer
--- Lock a platform for transfer (prevents modifications)
-
 local SurfaceLock = require("modules/surface_export/utils/surface-lock")
 
---- Lock a platform for transfer (prevents modifications)
---- @param platform_index number: Platform index
---- @param force_name string: Force name
---- @return boolean, string|nil: success, error_message
 local function lock_platform_for_transfer(platform_index, force_name)
   force_name = force_name or "player"
 

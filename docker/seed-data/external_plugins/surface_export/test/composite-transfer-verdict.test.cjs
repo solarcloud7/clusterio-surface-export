@@ -167,9 +167,6 @@ function makeTransferHarness() {
 	const plugin = {
 		logger: { error() {}, warn() {}, info() {}, verbose() {} },
 		activeTransfers,
-		// The orchestrator records a `start` row the moment a transfer is created, so a transfer
-		// that never reaches a verdict still leaves evidence it existed. Counted, not ignored:
-		// some tests assert it fired.
 		recordTransferStarted: async () => { calls.startRows = (calls.startRows || 0) + 1; },
 		txLogger: {
 			logTransactionEvent: noop,
@@ -242,7 +239,6 @@ test("operation outcome metrics expose bounded failure_stage label", () => {
 test("Lua import completion injects fluids and renders one verdict before activation", () => {
 	const importCompletion = fs.readFileSync(path.join(moduleRoot, "core", "import-completion.lua"), "utf8");
 	const heldAt = importCompletion.indexOf("ActiveStateRestoration.restore_held_items_only");
-	// 2.1 registry port: restore now takes the payload's fluid-segment registry as a third arg.
 	const injectAt = importCompletion.indexOf("FluidRestoration.restore(entities_to_create, entity_map,", heldAt);
 	const gateAt = importCompletion.indexOf("TransferValidation.validate_import", injectAt);
 	const activateAt = importCompletion.indexOf("ActiveStateRestoration.restore(job.entities_to_create", gateAt);
@@ -280,19 +276,12 @@ test("failed single gate banks an always-on black box before discard", () => {
 
 test("failed-entity ITEMS are subtracted, failed-entity FLUIDS are not, and only write_rejected adjusts fluids pre-gate", () => {
 	const importCompletion = fs.readFileSync(path.join(moduleRoot, "core", "import-completion.lua"), "utf8");
-	// Failed-entity ITEM losses are subtracted from expected before the gate: a failed placement can't
-	// hold its items, so counting them as expected would be a false shortfall.
 	const felItemsAt = importCompletion.indexOf("pairs(fel.items)");
 	const felGateAt = importCompletion.indexOf("TransferValidation.validate_import", felItemsAt);
 	assert.ok(felItemsAt !== -1 && felGateAt > felItemsAt,
 		"failed-entity item losses must adjust expected item counts before the verdict");
-	// Failed-entity FLUIDS are DELIBERATELY not subtracted (owner ruling 2026-07-20, "fail => revert"):
-	// a segment short of a failed member's share must FAIL the exact gate so the two-phase commit
-	// preserves the source. There is no failed-member fluid accounting.
 	assert.doesNotMatch(importCompletion, /fel\.fluids/,
 		"failed-entity fluids must NOT be subtracted — a short segment fails the exact gate (fail => revert)");
-	// The ONLY lawful fluid subtraction is write_rejected — a PHYSICAL post-write measurement, not a
-	// category prediction — and it must land before the single exact gate.
 	const rejectedAt = importCompletion.indexOf("write_rejected");
 	const gateAt = importCompletion.indexOf("TransferValidation.validate_import", rejectedAt);
 	assert.ok(rejectedAt !== -1 && gateAt > rejectedAt,
@@ -319,7 +308,7 @@ test("failed-entity and overflow item losses retain quality keys end to end", ()
 test("forced entity failure is fail-safe and preservation is one-shot and visible", () => {
 	const entityCreation = fs.readFileSync(path.join(moduleRoot, "import_phases", "entity_creation.lua"), "utf8");
 	const importCompletion = fs.readFileSync(path.join(moduleRoot, "core", "import-completion.lua"), "utf8");
-	const hookLint = fs.readFileSync(path.join(__dirname, "..", "scripts", "lint-test-hooks.mjs"), "utf8"); // reads the LINT (flag-coverage assertions); the hook ENUMERATION lives in fail-safe-hooks.mjs
+	const hookLint = fs.readFileSync(path.join(__dirname, "..", "scripts", "lint-test-hooks.mjs"), "utf8");
 	assert.match(entityCreation, /job\.test_forced_entity_failure\s*=\s*true/,
 		"the mutating entity hook must leave a fail-safe verdict marker");
 	assert.match(importCompletion, /job\.test_forced_entity_failure[\s\S]*result\.success\s*=\s*false/,
@@ -345,15 +334,8 @@ test("failed destination discard evacuates passengers before deletion", () => {
 });
 
 test("the discard contract is unconditional — observability and guards never gate it", () => {
-	// Owner ruling 2026-08-02. First shipped as prose assertions (matching log() strings), and the
-	// review MUTATION-TESTED them: re-nesting the delete inside the evacuation branch passed, and
-	// reinstating preserve-on-bank-failure with different wording passed. Three of four claims had
-	// no teeth. These are CONTROL-FLOW assertions now — they pin the shapes those two mutations
-	// changed, with the prose kept only as secondary documentation.
 	const importCompletion = fs.readFileSync(path.join(moduleRoot, "core", "import-completion.lua"), "utf8");
 
-	// Anchor the failure-discard block once; every segment below is carved from real positions so a
-	// vanished anchor fails loudly instead of matching elsewhere in the file.
 	const bankAt = importCompletion.indexOf("pcall(bank_failure_black_box");
 	const configAt = importCompletion.indexOf("local config = storage.surface_export_config", bankAt);
 	const evacuateAt = importCompletion.indexOf("pcall(Gateway.evacuate_passengers", bankAt);
@@ -361,23 +343,12 @@ test("the discard contract is unconditional — observability and guards never g
 	assert.ok(bankAt !== -1 && configAt > bankAt && evacuateAt > configAt && deleteAt > evacuateAt,
 		"the failure-discard block must keep its shape: bank -> config/preserve -> evacuate -> delete");
 
-	// 1. Black-box write failure must not GATE anything. Problem class the old branch was installed
-	//    against: evidence loss. Re-covered: on failure the SOURCE is preserved (fail => revert), so
-	//    the authoritative evidence still exists; the black box is a convenience copy.
-	//    CONTROL FLOW: between the bank pcall and the preserve/config block there is no early return
-	//    and no verdict mutation — a bank failure can only log. (This catches the review's Mutation
-	//    B, which reinstated the preserve with different wording.)
 	const bankSegment = importCompletion.slice(bankAt, configAt);
 	assert.doesNotMatch(bankSegment, /\breturn\b/,
 		"a bank failure must not exit the discard block — observability never gates the contract");
 	assert.doesNotMatch(bankSegment, /cleanup_failed|destinationPreserved/,
 		"a bank failure must not mutate the verdict — it may only log");
 
-	// 2. The evacuation guard's failure must not BLOCK the delete. Problem class: player harm on
-	//    delete-with-passenger. Re-covered: the engine natively returns a player to a planet on hub
-	//    loss; evacuation is still attempted first.
-	//    CONTROL FLOW: the delete is a DIRECT pcall assignment, not nested under `if evacuated`.
-	//    (This catches the review's Mutation A, which re-nested it with the log lines untouched.)
 	const evacuateSegment = importCompletion.slice(evacuateAt, deleteAt);
 	assert.doesNotMatch(evacuateSegment, /if\s+evacuated\s+then/,
 		"the delete must not be conditioned on evacuation success — that guard manufactured the "
@@ -389,8 +360,6 @@ test("the discard contract is unconditional — observability and guards never g
 		/local\s+delete_ok\s*,\s*delete_result\s*=\s*pcall\(GameUtils\.delete_platform/,
 		"the delete must be an unconditional direct pcall assignment");
 
-	// 3. An already-invalid platform is a COMPLETED discard, and it must be decided BEFORE the
-	//    preserve flag so an armed one-shot is not burned on nothing.
 	const invalidAt = importCompletion.indexOf("nothing to discard", bankAt);
 	const consumeAt = importCompletion.indexOf("config.preserve_failed_destination = nil", bankAt);
 	assert.ok(invalidAt !== -1 && consumeAt !== -1 && invalidAt < consumeAt,
@@ -399,13 +368,10 @@ test("the discard contract is unconditional — observability and guards never g
 	assert.doesNotMatch(importCompletion.slice(invalidAt, consumeAt), /=\s*nil/,
 		"the nothing-to-discard branch must not consume the preserve flag");
 
-	// Secondary prose markers (documentation, not the teeth).
 	assert.match(importCompletion, /discarding the destination anyway/);
 	assert.match(importCompletion, /proceeding[\s\S]{0,40}with discard/);
 	assert.doesNotMatch(importCompletion, /cleanup_error\s*=\s*string\.format\("Failed to bank failure black box/);
 
-	// What remains of cleanup_failed on this path is the one honest residual: the engine itself
-	// refused the delete, so an orphaned surface really exists.
 	assert.match(importCompletion, /GameUtils\.delete_platform failed/,
 		"a real engine delete failure must still be reported — an orphan genuinely exists then");
 });
@@ -450,11 +416,6 @@ test("fluid restoration reports dropped fluids without subtracting them", () => 
 		"real dropped fluid must fail exact parity, never be subtracted from expected");
 });
 
-// RETIRED (2.1 fluid-segment registry, owner ruling 2026-07-20): the `engine_owned` connection-category
-// classification is DELETED — plasma rides transfers like any fluid; the only lawful fluid subtraction is
-// physically-measured `write_rejected` (guarded above). The two former tests here asserted the symmetry of
-// that deleted classification across export/restore/census and the strict census's engine-owned exclusion.
-// The surviving epsilon/no-band invariant is guarded by "single gate is exact for items and by-name fluids".
 
 test("post-activation reporting cannot overwrite frozen gate fields", () => {
 	const lossAnalysis = fs.readFileSync(path.join(moduleRoot, "validators", "loss-analysis.lua"), "utf8");
@@ -473,7 +434,7 @@ test("LuaInterface has no production validation-result refetch helper", () => {
 test("fluid-loss hook is allowlisted and fires before the single gate", () => {
 	const importCompletion = fs.readFileSync(path.join(moduleRoot, "core", "import-completion.lua"), "utf8");
 	const configure = fs.readFileSync(path.join(moduleRoot, "interfaces", "remote", "configure.lua"), "utf8");
-	const hookLint = fs.readFileSync(path.join(__dirname, "..", "scripts", "fail-safe-hooks.mjs"), "utf8"); // FAIL_SAFE_HOOKS moved to the shared declaration
+	const hookLint = fs.readFileSync(path.join(__dirname, "..", "scripts", "fail-safe-hooks.mjs"), "utf8");
 	const hookIndex = importCompletion.indexOf("test_force_fluid_loss");
 	const gateIndex = importCompletion.indexOf("TransferValidation.validate_import");
 
@@ -485,18 +446,11 @@ test("fluid-loss hook is allowlisted and fires before the single gate", () => {
 		"integration probe needs a direct log witness that the hook fired");
 	assert.match(configure, /config\.test_force_fluid_loss[\s\S]*storage\.surface_export_config\.test_force_fluid_loss\s*=\s*tonumber\(config\.test_force_fluid_loss\)/,
 		"configure allowlist must accept test_force_fluid_loss");
-	assert.match(hookLint, /"test_force_fluid_loss"[\s\S]*pre-gate/,
-		"test_force_fluid_loss must be explicitly listed as a reviewed fail-safe hook");
+	assert.match(hookLint, /FAIL_SAFE_HOOKS = new Set\(\[[\s\S]*?"test_force_fluid_loss"[\s\S]*?\]\)/,
+		"test_force_fluid_loss must be enumerated in the FAIL_SAFE_HOOKS set");
 });
 
-// RETIRED (2.1 fluid-segment registry): the P2 plasma measurement hook (`test_capture_p2_plasma`) was a
-// 2.0.77 fluid-lab instrument for the buffer/window duality that no longer exists at 2.1 — plasma is no
-// longer special (owner ruling 2026-07-20). Its consumer is gone from import-completion; the hook is deleted.
 
-// REWRITTEN 2026-07-27 (owner order: legacy purge): the consolidation restore, hub-deficit
-// recovery, and the first-fit fallback are DELETED. attribute_lines survives as the
-// black box's forensic instrument; the production restore contract is captured-source-position placement with a shape
-// validator guarding the on_tick path (review F1) and anomalies failing every import path (F2).
 test("belt forensic census survives the legacy purge; recovery machinery is gone", () => {
 	const restoration = fs.readFileSync(path.join(moduleRoot, "import_phases", "belt_restoration.lua"), "utf8");
 	assert.match(restoration, /function BeltRestoration\.attribute_lines\s*\(/,

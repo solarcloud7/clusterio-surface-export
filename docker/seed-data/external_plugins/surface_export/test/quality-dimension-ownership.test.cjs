@@ -8,10 +8,6 @@ const path = require("node:path");
 const moduleRoot = path.join(__dirname, "..", "module");
 const files = new Map();
 
-// Only the plugin directory is bind-mounted into the host containers, so a test that reads a
-// REPO-level file (the gallery manifest) has nothing to read when npm test is run in the container —
-// it resolved a repo root of "/" and died on ENOENT. CI runs npm test inside a full checkout, so the
-// guarded test always executes for real there; this skip narrows a dev convenience, never CI.
 const galleryManifestPath = path.join(__dirname, "..", "..", "..", "..", "..",
 	"tests", "lab-gallery", "manifest.json");
 const repoSkip = fs.existsSync(galleryManifestPath)
@@ -46,9 +42,6 @@ const domains = [
 		id: "belt-stack",
 		status: "static-owned",
 		producer: ["export_scanners/inventory-scanner.lua", /extract_belt_items[\s\S]*quality\s*=\s*stack\.quality and stack\.quality\.name/],
-		// Re-anchored 2026-07-28: the old pattern named the CONSOLIDATION restore's insert, deleted
-		// with that path (owner order 2026-07-27). The single surviving belt write is the
-		// captured-source-position insert, and it still carries quality — as slot.q.
 		consumer: ["import_phases/belt_restoration.lua",
 			/belt_insert_at\([\s\S]{0,80}name\s*=\s*slot\.n,\s*quality\s*=\s*slot\.q,\s*count\s*=\s*slot\.ct/],
 	},
@@ -98,7 +91,7 @@ const domains = [
 		id: "inserter-loader-wagon-filter",
 		status: "live-pending",
 		producer: ["export_scanners/connection-scanner.lua", /extract_entity_filters[\s\S]*quality\s*=\s*filter\.quality and filter\.quality\.name/],
-		consumer: ["core/deserializer.lua", /restore_entity_filters[\s\S]*quality\s*=\s*filter\.quality or Util\.QUALITY_NORMAL/],
+		consumer: ["core/deserializer.lua", /function restore_slot_filters[\s\S]*quality\s*=\s*filter\.quality or Util\.QUALITY_NORMAL[\s\S]*function Deserializer\.restore_entity_filters[\s\S]*restore_slot_filters\(entity, entity_data\)/],
 	},
 	{
 		id: "constant-combinator-slot",
@@ -109,13 +102,6 @@ const domains = [
 	{
 		id: "logistic-request-slot",
 		status: "static-owned",
-		// Re-anchored 2026-08-04: the old anchors named the 1.1 request-slot pair
-		// (extract_logistic_requests / set_request_slot), retired as dead code — request_slot_count
-		// does not exist on this pin (measured: every 1.1 request-slot key absent on LuaEntity), so
-		// the extractor's pcall always failed and returned {}, and the restore was unreachable. The
-		// SAME dimension (a request slot's quality) now rides manual logistic sections: quality is
-		// captured inside each section filter's value and applied whole via section.set_slot.
-		// Physical evidence: the hub-request-sections dest re-read, pinned by the dedicated test below.
 		producer: ["export_scanners/connection-scanner.lua", /extract_logistic_sections[\s\S]*?quality\s*=\s*filter\.value\.quality/],
 		consumer: ["core/deserializer.lua", /restore_logistic_sections[\s\S]*?local slot = \{ value = f\.value, min = f\.min, max = f\.max[\s\S]{0,200}?section\.set_slot\(f\.index, slot\)/],
 	},
@@ -128,26 +114,13 @@ const domains = [
 	{
 		id: "splitter-filter",
 		status: "static-owned",
-		// Defensive both-shapes capture (measured as a plain string; prototype-safe either way): resolves sf.quality to a
-		// plain string, then falls back to QUALITY_NORMAL.
 		producer: ["export_scanners/entity-handlers.lua", /local sf = entity\.splitter_filter[\s\S]*if type\(quality\) ~= "string" and quality then[\s\S]*data\.filter\s*=\s*\{ name = sf\.name, quality = quality or GameUtils\.QUALITY_NORMAL \}/],
 		consumer: ["core/deserializer.lua", /field\s*=\s*"filter",\s*prop\s*=\s*"splitter_filter"/],
 	},
-	// mining-drill-filter row REMOVED (measured 2026-07-17, state-dimensions lab + API-confirmed): a mining-drill
-	// filter is an EntityID — a resource name with NO quality component — so there is no quality
-	// dimension to own here. Every vanilla drill also measures filter_slot_count == 0 (the capture
-	// only ever fires for modded drills with filter slots). The original row asserted a quality-keyed
-	// {name,quality} shape whose set_filter write the engine rejects ("Invalid EntityID") and whose
-	// zero-arg get_filter() capture always threw — see the mining-drill filter entry in
-	// docs/factorio-2.0-api-notes.md.
 	{
 		id: "ghost-and-proxy-requests",
 		status: "base-restoration-gap",
-		// 2.0 array-of-ItemWithQualityCount capture (the old 1.1 item_with_quality dict iteration
-		// crashed serialize_entity on every proxy; replaced 2026-07-17).
 		producer: ["export_scanners/entity-handlers.lua", /item_requests[\s\S]*item\s*=\s*req\.name,\s*quality\s*=\s*req\.quality,\s*count\s*=\s*req\.count/],
-		// Anchored to the CODE that rebuilds the quality-keyed request table (the comment this
-		// previously matched was an API restatement, swept 2026-07-30 — anchors must point at code).
 		consumer: ["core/deserializer.lua", /item_requests and #data\.item_requests > 0[\s\S]*?requests\[item_with_quality\] = req\.count/],
 		gap: "request tables are reconstructed but never applied; this is broader than quality alone",
 	},
@@ -161,8 +134,6 @@ test("the quality ownership matrix independently covers every approved item-doma
 		"inserter-loader-wagon-filter", "constant-combinator-slot", "logistic-request-slot",
 		"infinity-filter", "splitter-filter", "ghost-and-proxy-requests",
 	]);
-	// mining-drill-filter is intentionally ABSENT: drill filters are quality-less EntityIDs
-	// (measured + API — see the removed-row comment above and api-notes).
 	assert.equal(domains.some(row => row.id.includes("fluid")), false, "fluids have no quality dimension");
 });
 
@@ -197,17 +168,9 @@ test("the authorized live spot checks remain explicit", () => {
 		"inserter-loader-wagon-filter",
 		"splitter-filter",
 	]);
-	// The mining-drill spot check was RETIRED with its row: the live probe ran 2026-07-17 and
-	// refuted the dimension (no quality on EntityID filters; vanilla drills have zero slots).
 });
 
 test("the logistic-request-slot physical evidence stays pinned to the sections suite", { skip: repoSkip }, () => {
-	// Re-anchored with the row above (2026-08-04): the row's only PHYSICAL proof is the
-	// hub-request-sections integration fixture — a rare-quality requester-chest slot written at the
-	// source and re-read on the destination after a real transfer. The integration runner discovers
-	// suites by glob, so gutting that directory would erase the row's empirical basis while every
-	// static anchor stayed green; this pin makes that deletion RED here, the same job the
-	// splitter-filter pin below does for its pad.
 	const suiteSource = fs.readFileSync(path.join(__dirname, "..", "..", "..", "..", "..",
 		"tests", "integration", "hub-request-sections", "run-tests.mjs"), "utf8");
 	assert.match(suiteSource, /quality='rare'/,
@@ -217,10 +180,6 @@ test("the logistic-request-slot physical evidence stays pinned to the sections s
 });
 
 test("the splitter-quality-filter law lives on the adversarial pad (entity-roundtrip retired)", { skip: repoSkip }, () => {
-	// The law moved from the retired entity-roundtrip suite onto the omnibus-adversarial-inventory
-	// pad (2026-07-20): a legendary iron-plate splitter filter is baked state, fingerprint-pinned,
-	// and physically re-read on every /test-run paste (and rides every real transfer of the pad
-	// platform). This guard pins the manifest so the law cannot be silently dropped.
 	const manifest = JSON.parse(fs.readFileSync(path.join(__dirname, "..", "..", "..", "..", "..",
 		"tests", "lab-gallery", "manifest.json"), "utf8"));
 	const pad = manifest.fixtures.find(fixture => fixture.id === "omnibus-adversarial-inventory");

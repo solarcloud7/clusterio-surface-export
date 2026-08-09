@@ -1,6 +1,3 @@
--- Command: /transfer-platform
--- Transfer a platform to another instance
-
 local Base = require("modules/surface_export/interfaces/commands/base")
 local TransferTrigger = require("modules/surface_export/core/transfer-trigger")
 
@@ -26,7 +23,6 @@ Base.admin_command("transfer-platform",
       return
     end
 
-    -- (Clusterio-availability is checked by TransferTrigger.start, surfaced via the failure branch below.)
     local platform = ctx.force.platforms[platform_index]
     if not platform or not platform.valid then
       ctx.print(string.format("Error: Platform index %d not found", platform_index))
@@ -43,7 +39,6 @@ Base.admin_command("transfer-platform",
     ctx.print(string.format("Platform: [%d] %s", platform_index, platform_name))
     ctx.print("")
 
-    -- Lock + queue export + send transfer request (shared with /gateway-transfer).
     ctx.print("[1/2] Locking + queueing export...")
     local job_id, err = TransferTrigger.start(ctx.force, platform_index, dest_instance_id)
     if not job_id then

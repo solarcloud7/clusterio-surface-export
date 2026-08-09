@@ -1,9 +1,3 @@
--- Destination hold primitive for Phase-2 transfer staging.
---
--- This module is intentionally not wired into the normal transfer path yet. Phase 2 first needs a live-proven
--- primitive that can hold a fully-finalized destination copy in a non-live state, then release or discard it by
--- canonical transfer id.
-
 local GameUtils = require("modules/surface_export/utils/game-utils")
 local SurfaceLock = require("modules/surface_export/utils/surface-lock")
 
@@ -105,11 +99,6 @@ local function find_hold_for_platform(holds, surface_index, platform_index, exce
 	return nil, nil
 end
 
---- Stage a destination platform in a non-live hold.
---- @param transfer_id string
---- @param platform LuaSpacePlatform
---- @param force LuaForce
---- @return boolean, string|table
 function DestinationHold.stage(transfer_id, platform, force)
 	if type(transfer_id) ~= "string" or transfer_id == "" then
 		return false, "transfer_id is required"
@@ -149,11 +138,6 @@ function DestinationHold.stage(transfer_id, platform, force)
 		force.set_surface_hidden(surface, true)
 		deactivated = capture_and_deactivate(surface, active_states)
 		local hub = find_hub(surface)
-		-- Cargo-pod state machines are PAUSE-EXEMPT: a held pod kept advancing while
-		-- platform.paused = true, so pausing/hiding/deactivating alone does not make a hold inert.
-		-- That is the whole reason this call exists — complete the pods (overflow spills to the
-		-- platform as item-on-ground when the hub is full) so a staged hold is pod-free.
-		--
 		local descending, ascending, items_recovered = SurfaceLock.complete_cargo_pods(surface, hub)
 		pod_completion = { descending = descending, ascending = ascending, items_recovered = items_recovered }
 	end)
@@ -192,9 +176,6 @@ function DestinationHold.stage(transfer_id, platform, force)
 	return true, hold
 end
 
---- Release a held destination platform to live.
---- @param transfer_id string
---- @return boolean, string|table
 function DestinationHold.go_live(transfer_id)
 	local holds = ensure_storage()
 	local hold, force, platform, err = resolve_hold(transfer_id)
@@ -216,9 +197,6 @@ function DestinationHold.go_live(transfer_id)
 	}
 end
 
---- Discard a held destination platform.
---- @param transfer_id string
---- @return boolean, string|table
 function DestinationHold.discard(transfer_id)
 	local holds = ensure_storage()
 	local hold, _, platform, err = resolve_hold(transfer_id)
@@ -252,9 +230,6 @@ function DestinationHold.discard(transfer_id)
 	}
 end
 
---- Return the persisted hold state, or nil if not staged.
---- @param transfer_id string
---- @return table|nil
 function DestinationHold.get(transfer_id)
 	return ensure_storage()[transfer_id]
 end
