@@ -1,15 +1,3 @@
-// Offline pin for the query-path oracle (tools/tests/testkit/path-oracle.mjs).
-//
-// The oracle exists because querying a transaction log with a wrong path returned an EMPTY VALUE,
-// not an error — three times in one session, and once producing the false conclusion that the log
-// was not being written when the log was fine and the path was a typo. So the assertions that matter
-// here are all on the MISS path: a resolution is trivial, naming the real key is the product.
-//
-// The shape below mirrors the real store deliberately, because the hard case is real: everything the
-// TypeScript controller builds is camelCase, but `summary.import` comes straight from Lua and is
-// snake_case — with exactly one camelCase key (`phaseSpans`) inside it. That one subtree is where
-// every wrong query in the original session landed.
-
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
@@ -54,7 +42,6 @@ const ENTRY = {
 
 const miss = (path) => resolvePath(ENTRY, path);
 
-// ── The headline claim ──────────────────────────────────────────────────────────────────────
 
 test("a camel-vs-snake typo MISSES with exit 2 and names the real path", () => {
 	const result = miss("summary.import.totalTicks");
@@ -73,8 +60,6 @@ test("the inverse direction too — one snake key inside a camelCase subtree", (
 });
 
 test("it is NOT fuzzy — a near-spelling gets no suggestion", () => {
-	// The anti-regression against a future Levenshtein "improvement". A matcher that eventually names
-	// a path that is not the caller's field destroys the only thing this tool is for.
 	for (const path of ["summary.import.totalTick", "summary.import.total", "summary.import.ticks"]) {
 		const result = miss(path);
 		assert.equal(result.ok, false);
@@ -82,7 +67,6 @@ test("it is NOT fuzzy — a near-spelling gets no suggestion", () => {
 	}
 });
 
-// ── Relocation: right key, wrong subtree ────────────────────────────────────────────────────
 
 test("a key in the wrong subtree is RELOCATED, not reported absent", () => {
 	const result = miss("summary.phaseSpans");
@@ -101,8 +85,6 @@ test("relocation reaches through an array without spending a depth level", () =>
 });
 
 test("AMBIGUOUS relocation reports every candidate and picks none", () => {
-	// The strongest case for refusing to pick: summary.phases.validationMs is the CONTROLLER's wait,
-	// summary.import.validation_ms is the IN-GAME gate. Same name, different clocks, different things.
 	const result = miss("summary.validationMs");
 	const paths = result.relocations.map(r => r.path);
 	assert.ok(paths.includes("summary.phases.validationMs"), `missing controller phase: ${paths}`);
@@ -111,25 +93,13 @@ test("AMBIGUOUS relocation reports every candidate and picks none", () => {
 });
 
 test("the search does not reach into user-keyed count maps", () => {
-	// `expectedItemCounts` and `actualFluidCounts` are keyed by ITEM AND FLUID NAMES — game data, not
-	// schema. They sit 4 segments from the root, one past the bound, and that is deliberate: a query
-	// for a quality name (`normal`, `rare`) or an item name would otherwise be answered with a path
-	// into game data presented as though it were a field. An earlier version of this test asserted
-	// the opposite, on the reasoning that "an exact hit is an exact hit" — review pointed out that the
-	// bound was ALSO off by one at the time, so the tool really was trawling user data. Both fixed.
 	assert.deepEqual(miss("iron-plate").relocations.map(r => r.path), []);
 	assert.deepEqual(miss("copper-cable").relocations.map(r => r.path), []);
-	// Reachable from closer in, where it is unambiguously the caller's intent.
 	assert.deepEqual(resolvePath(ENTRY.summary.validation, "iron-plate").relocations.map(r => r.path),
 		["expectedItemCounts.iron-plate"]);
 });
 
 test("the depth bound is EXACTLY three object levels — counted, not approximated", () => {
-	// This test previously mislabelled its own fixture ("4 object levels" for a 5-level shape) and so
-	// pinned nothing: the shipped bound actually reached FOUR levels while the docstring, the reported
-	// searchDepth and the miss message all said three. Every level is now enumerated explicitly.
-	// Counted in PATH SEGMENTS from the start container, which is the only framing that can be
-	// checked without ambiguity.
 	assert.deepEqual(resolvePath({ a: { target: 1 } }, "target").relocations.map(r => r.path),
 		["a.target"], "2 segments");
 	assert.deepEqual(resolvePath({ a: { b: { target: 1 } } }, "target").relocations.map(r => r.path),
@@ -138,15 +108,12 @@ test("the depth bound is EXACTLY three object levels — counted, not approximat
 		"4 segments — OUTSIDE the bound. This is what stops a query for a quality name like `normal` "
 		+ "relocating into summary.validation.expectedItemCounts, which is keyed by user data.");
 
-	// The array-is-free rule: indices do not spend the budget, so a.b.0.target stays reachable even
-	// though it is 4 tokens long.
 	const viaArray = { a: { b: [{ target: 1 }] } };
 	assert.deepEqual(resolvePath(viaArray, "target").relocations.map(r => r.path), ["a.b.0.target"],
 		"array-element descent must not consume a segment of the depth budget");
 	assert.equal(resolvePath(viaArray, "a.b.0.target").ok, true, "and the path it names must resolve");
 });
 
-// ── Falsy values, arrays, and the exit-0 hole ───────────────────────────────────────────────
 
 test("falsy values RESOLVE — they are answers, not misses", () => {
 	for (const [path, expected] of [
@@ -188,7 +155,6 @@ test("`length` is refused rather than silently answered", () => {
 });
 
 test("every verdict has a strictly boolean `ok` and a defined exit code", () => {
-	// The direct anti-regression for cli.mjs:56-80, whose tri-state flag falls through to exit 0.
 	const queries = ["summary.import.total_ticks", "summary.import.totalTicks", "summary.phaseSpans",
 		"events.eventType", "events.length", "events.9999.x", "", "a..b", "summary.error.deeper", "nope"];
 	for (const query of queries) {
@@ -204,7 +170,6 @@ test("a malformed path is refused, not walked", () => {
 	assert.equal(resolvePath(ENTRY, "summary.error.deeper").reason, "not-a-container");
 });
 
-// ── The sentence that prevents the original false conclusion ─────────────────────────────────
 
 test("a genuine absence says it is about the PATH, not about the data", () => {
 	const text = formatMiss(miss("summary.import.somethingNeverAdded"),
@@ -214,16 +179,6 @@ test("a genuine absence says it is about the PATH, not about the data", () => {
 		"this module makes no claim about the transfer — that conflation is the original incident");
 });
 
-// ── THE invariant: a path this module names must be a path this module resolves ──────────────
-//
-// This is the contract, and it had no test. Two blockers shipped underneath the gap and both were
-// found by review, not here:
-//   - an array stop offered the ELEMENT key as a same-level match, so `events.importMetrics`
-//     suggested `events.importMetrics` — byte-identical to the query that just failed — while
-//     suppressing the relocation that had already computed the right answer.
-//   - relocation from the document root emitted `events..2.importMetrics`, which this module's own
-//     walker rejects as `malformed-path`.
-// For a tool whose entire product is "the path it names is the right one", one assertion covers both.
 
 test("EVERY suggested path resolves — near-misses and relocations alike", () => {
 	const queries = [
@@ -251,8 +206,6 @@ test("EVERY suggested path resolves — near-misses and relocations alike", () =
 });
 
 test("an array stop relocates to the element that actually has the key", () => {
-	// `importMetrics` is on exactly one of the two events. The suggestion must name THAT index, not
-	// index 0 and not the bare array path.
 	const result = resolvePath(ENTRY, "events.importMetrics");
 	assert.deepEqual(result.nearMisses, [],
 		"element keys are not addressable at the array level — offering them as same-level matches is "

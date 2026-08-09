@@ -51,11 +51,6 @@ test("Rule 3 ignores expected-failure workflows that never census the destinatio
 	assert.deepEqual(violations, []);
 });
 
-// ── Rules 1 and 2 apply to BOTH runner dialects ──────────────────────────────
-// These rules were ps1-only because the guard predated mjs runners. Measured when extending: zero of
-// the six current mjs runners trips either rule, so there is no live subject — which is exactly why
-// each rule below is proven to FIRE on a synthetic violator and to STAY SILENT on a compliant one.
-// A preventative rule nobody has watched fire is indistinguishable from one that does not work.
 
 async function mjsViolations(source, name = "fixture") {
 	const { findGroundingViolations } = await import(scriptUrl);
@@ -95,9 +90,6 @@ test("Rule 2 is satisfied when the self-report is corroborated by a physical cou
 });
 
 test("an mjs // comment is not mistaken for code", async () => {
-	// The ps1 stripper cuts at `#`, which in JavaScript would truncate real lines and could HIDE a
-	// marker. The mjs stripper removes `//` lines, so a marker that exists only in a comment must not
-	// satisfy a rule.
 	const violations = await mjsViolations(
 		"const loss = result.totalItemLoss;\n// get_item_count( is only mentioned here, in a comment\n",
 	);

@@ -1,12 +1,3 @@
-// Destination-hold PRODUCT coverage: the primitive's registration, its stage/rollback ordering,
-// its index-based lookup, and the fact that the normal transfer path is not gated on it.
-//
-// This file used to carry twelve more cases asserting the TEXT of
-// tests/integration/destination-hold/run-tests.ps1 (assertion counting, RCON scoping, TTL, ...).
-// That runner was deleted by owner ruling 2026-07-27 (destination holds are not useful to test),
-// and the deletion took its class with it. Worse, the repo-root finder probed for that very file,
-// so once it was gone the finder returned null and all twelve SKIPPED silently on every run — a
-// vacuous pass wearing a skip reason. Removed 2026-07-28 along with the plumbing.
 const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const path = require("node:path");
@@ -104,11 +95,6 @@ test("normal transfer import path is not yet gated on destination hold", () => {
 	assert.match(importCompletion, /Platform .* UNPAUSED after successful validation/);
 });
 
-// The four cases below assert LIVE production Lua (cargo-pod completion via the SurfaceLock
-// helper, recover-and-spill item conservation, hold-aware unlock ordering, and the hold-aware
-// unlock selftest). They were wrongly removed with the twelve dead script-text cases on
-// 2026-07-28 (the prune cut from the first repoOnlyTest CALL to end of file, and these sat
-// after it); restored verbatim from git 2026-07-30 per the post-block review.
 test("destination hold stage completes cargo pods by reusing SurfaceLock helper", () => {
 	const hold = read("module/core/destination-hold.lua");
 	const lock = read("module/utils/surface-lock.lua");
@@ -150,8 +136,11 @@ test("unlock_platform defers not-live ownership to an active destination hold", 
 	assert.doesNotMatch(holdBranch, /unfreeze_entities/);
 	assert.doesNotMatch(holdBranch, /set_surface_hidden/);
 	assert.doesNotMatch(holdBranch, /platform\.paused/);
-	const helper = lock.slice(lock.indexOf("function SurfaceLock.destination_hold_owns_surface"), lock.indexOf("--- Lock a platform surface"));
-	assert.doesNotMatch(helper, /force_name/);
+	const helperAt = lock.indexOf("function SurfaceLock.destination_hold_owns_surface");
+	assert.notEqual(helperAt, -1, "destination_hold_owns_surface must exist");
+	const helperEnd = lock.indexOf("\nfunction SurfaceLock.lock_platform", helperAt);
+	assert.notEqual(helperEnd, -1, "the helper must be bounded by the next function, not by a comment");
+	assert.doesNotMatch(lock.slice(helperAt, helperEnd), /force_name/);
 });
 
 test("hold-aware unlock selftest traces held and non-held lifecycle cases", () => {

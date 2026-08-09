@@ -7,8 +7,6 @@ import type {
 
 export type { JsonObject, HostNodeModel, InstanceNodeModel };
 export type { PlatformModel } from "../shared/dto";
-// Transaction payload types — let the UI read export/import/validation payloads with field types
-// instead of stringly-typed getProp() access.
 export type { ExportMetrics, ImportMetrics, PayloadMetrics, PhaseSpan, ValidationResult } from "../shared/dto";
 
 export type LogEvent = {
@@ -21,10 +19,8 @@ export type LogEvent = {
 export type { SpanKind, TimelineRow, TimelineAttribution } from "../shared/transfer-timeline";
 import type { TimelineRow } from "../shared/transfer-timeline";
 
-/** A timeline row before the percentage columns are computed. */
 export type GanttRowInput = TimelineRow;
 
-/** A timeline row as returned by buildGanttRows — the input plus its computed gantt percentages. */
 export interface GanttRow extends GanttRowInput {
 	ganttStartPct: number;
 	ganttWidthPct: number;
@@ -47,11 +43,6 @@ export type LogDetail = {
 	transferInfo?: JsonObject | null;
 	summary?: JsonObject | null;
 	events: Array<LogEvent>;
-	/**
-	 * False when retention has evicted this transfer's detail: the transfer still exists and is still
-	 * listed (the audit ledger keeps it), but its timeline is gone. Absent means retained, so an
-	 * un-redeployed controller reads as "retained" rather than showing a spurious notice.
-	 */
 	detailRetained?: boolean;
 };
 

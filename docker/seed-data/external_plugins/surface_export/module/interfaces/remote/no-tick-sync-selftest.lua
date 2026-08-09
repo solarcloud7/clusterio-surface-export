@@ -1,7 +1,3 @@
--- FactorioSurfaceExport - no-tick synchronous strict-gate self-test (remote)
--- PR-0B Phase-0 rung: prove the pre-validation held-item restore + strict count does not advance
--- the game tick, does not move crafting_progress, and does not let the restored inserter hand swing.
-
 local ActiveStateRestoration = require("modules/surface_export/import_phases/active_state_restoration")
 local TransferValidation = require("modules/surface_export/validators/transfer-validation")
 local Util = require("modules/surface_export/utils/util")
@@ -20,14 +16,6 @@ local function held_stack_row(entity)
 	return nil
 end
 
---- MEASURE-BAKED mode (owner-approved 2026-07-18, the no-tick-sync-frozen-pair card): run the SAME
---- held-restore measurement against an EXISTING baked pair — construct-free (the golden world
---- forbids construction; the bake gate exists because built-at-runtime and save-loaded worlds are
---- not automatically identical). Resolves the platform by name and the pair by exact positions.
---- Mutates ONLY the inserter hand (seats opts.held) — single-use per golden load; the pair reload
---- is the reset. Assertion set: tick unchanged, crafting_progress EXACTLY unchanged, input
---- unchanged, hand seats full, both entities stay inactive.
---- @param opts table: { platform, machine_pos={x,y}, inserter_pos={x,y}, held={name,count,quality} }
 local function measure_baked_pair(opts)
 	local surface
 	for _, p in pairs(game.forces.player.platforms) do
@@ -81,8 +69,6 @@ local function measure_baked_pair(opts)
 end
 
 local function no_tick_sync_selftest(opts)
-	-- Construct-free baked-fixture measurement (opts-selected); the no-arg call keeps the
-	-- legacy build-your-own-world rung below unchanged.
 	if type(opts) == "table" and opts.mode == "measure_baked" then
 		return measure_baked_pair(opts)
 	end

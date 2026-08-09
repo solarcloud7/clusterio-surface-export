@@ -1,22 +1,10 @@
--- FactorioSurfaceExport - Inventory Scanner
--- Uses dynamic inventory discovery via get_max_inventory_index()
-
 local Util = require("modules/surface_export/utils/util")
 local FluidRegistry = require("modules/surface_export/export_scanners/fluid-registry")
 
 local InventoryScanner = {}
 
--- THE single fluid-capture discipline (2.1 fluid API): every capture path (async transfer
--- export, sync serializer, selection-lab copy) arms a FluidRegistry here before scanning and
--- clears it after. There is deliberately NO fallback mode — capturing fluids without an armed
--- registry is a discipline violation and fails loud (the 2.0-era dual-mode extract_fluids is
--- what let three divergent fluid readers exist at once; see the fluid-law experiments,
--- NOTEBOOK 2026-07-20/21).
 InventoryScanner.fluid_registry = nil
 
---- Helper to safely extract item properties using pcall
---- @param stack LuaItemStack: The item stack
---- @return table: Item entry with all properties
 local function extract_item_properties(stack)
   local item_entry = {
     name = stack.name,
@@ -24,7 +12,6 @@ local function extract_item_properties(stack)
     quality = (stack.quality and stack.quality.name) or Util.QUALITY_NORMAL
   }
 
-  -- Blueprint/book export strings
   if stack.is_blueprint or stack.is_blueprint_book or 
      stack.is_upgrade_item or stack.is_deconstruction_item or 
      stack.is_item_with_tags then
@@ -35,42 +22,36 @@ local function extract_item_properties(stack)
     end
   end
 
-  -- Health (damaged items: armor, vehicles, etc.)
   -- intentional probe; failure expected, no log
   local health_success, health = pcall(function() return stack.health end)
   if health_success and health then
     item_entry.health = health
   end
 
-  -- Durability (for tools, armor)
   -- intentional probe; failure expected, no log
   local durability_success, durability = pcall(function() return stack.durability end)
   if durability_success and durability then
     item_entry.durability = durability
   end
 
-  -- Ammo count (partial magazines)
   -- intentional probe; failure expected, no log
   local ammo_success, ammo = pcall(function() return stack.ammo end)
   if ammo_success and ammo then
     item_entry.ammo = ammo
   end
 
-  -- Spoilage (Space Age - items that decay over time)
   -- intentional probe; failure expected, no log
   local spoil_success, spoil_percent = pcall(function() return stack.spoil_percent end)
   if spoil_success and spoil_percent then
     item_entry.spoil_percent = spoil_percent
   end
 
-  -- Spoil result (what it turns into when spoiled)
   -- intentional probe; failure expected, no log
   local result_success, spoil_result = pcall(function() return stack.spoil_result end)
   if result_success and spoil_result and spoil_result.name then
     item_entry.spoil_result = spoil_result.name
   end
 
-  -- Item labels and colors (custom-labeled items)
   if stack.is_item_with_label then
     local label_success, label_data = pcall(function()
       return {
@@ -85,21 +66,18 @@ local function extract_item_properties(stack)
     end
   end
 
-  -- Custom description (for tagged items)
   -- intentional probe; failure expected, no log
   local desc_success, custom_desc = pcall(function() return stack.custom_description end)
   if desc_success and custom_desc then
     item_entry.custom_description = custom_desc
   end
 
-  -- Grid equipment (for power armor)
   -- intentional probe; failure expected, no log
   local grid_success, grid = pcall(function() return stack.grid end)
   if grid_success and grid and grid.equipment then
     item_entry.grid = InventoryScanner.extract_equipment_grid(grid)
   end
 
-  -- Nested inventory (spidertron remote, etc.)
   if stack.is_item_with_inventory then
     local sub_inventory = stack.get_inventory(defines.inventory.item_main)
     if sub_inventory and sub_inventory.valid then
@@ -110,33 +88,25 @@ local function extract_item_properties(stack)
   return item_entry
 end
 
---- Extract all inventories from an entity using dynamic discovery
---- Uses get_max_inventory_index() to find all inventories an entity supports
---- @param entity LuaEntity: The entity to extract from
---- @return table: Array of inventory data
 function InventoryScanner.extract_all_inventories(entity)
   if not entity or not entity.valid then
     return {}
   end
 
   local inventories = {}
-  local visited_inventories = {} -- Track visited inventory objects to handle aliased defines
+  local visited_inventories = {}
 
-  -- Dynamically discover the maximum inventory index for this entity
   local max_inv_index = entity.get_max_inventory_index()
   
   for inv_index = 1, max_inv_index do
     local inventory = entity.get_inventory(inv_index)
 
     if inventory and inventory.valid and not inventory.is_empty() then
-      -- Deduplicate inventories (some defines map to the same inventory, e.g. deprecated ones)
       if not visited_inventories[inventory] then
         visited_inventories[inventory] = true
 
-        -- Get the inventory type name dynamically
         local inv_type_name = entity.get_inventory_name(inv_index)
 
-        -- Iterate slots directly for 2.0 compatibility and performance
         local inv_data = {
           type = inv_type_name,
           items = {}
@@ -145,9 +115,8 @@ function InventoryScanner.extract_all_inventories(entity)
         for i = 1, #inventory do
           local stack = inventory[i]
           if stack and stack.valid_for_read then
-              -- Use shared helper for all item property extraction
               local item_entry = extract_item_properties(stack)
-              item_entry.slot = i  -- Preserve slot index for per-slot restoration (overloaded stacks)
+              item_entry.slot = i
               table.insert(inv_data.items, item_entry)
           end
         end
@@ -162,9 +131,6 @@ function InventoryScanner.extract_all_inventories(entity)
   return inventories
 end
 
---- Extract equipment grid from power armor or vehicles
---- @param grid LuaEquipmentGrid: The equipment grid
---- @return table: Equipment grid data with dimensions and equipment
 function InventoryScanner.extract_equipment_grid(grid)
   if not grid or not grid.valid then
     return {}
@@ -173,12 +139,6 @@ function InventoryScanner.extract_equipment_grid(grid)
   local equipment = {}
 
   for _, equip in ipairs(grid.equipment) do
-    -- Measured (state-dimensions-lab notebook, closer probe; archived tag): `energy = v` (including 0) is
-    -- ACCEPTED on every equipment type tested (battery/solar/shield/roboport), so energy is captured
-    -- UNCONDITIONALLY — an explicitly-drained buffer restores as drained. `shield = v` THROWS
-    -- ("Equipment is not shields.") on non-shield equipment even for 0, and `max_shield` reads 0 on
-    -- non-shields vs the real capacity on shields — so max_shield>0 is the capture discriminator: real
-    -- shields keep explicit zeros, non-shields never attempt the throwing write.
     local equip_data = {
       name = equip.name,
       position = equip.position,
@@ -187,13 +147,8 @@ function InventoryScanner.extract_equipment_grid(grid)
       quality = equip.quality and equip.quality.name or Util.QUALITY_NORMAL
     }
     
-    -- Burner equipment (fuel items)
     if equip.burner then
       local burner = equip.burner
-      -- currently_burning reads as ItemIDAndQualityIDPair whose .name is a PROTOTYPE (and
-      -- .quality a LuaQualityPrototype), not strings — resolve both to plain strings (JSON-safe),
-      -- TRULY mirroring EntityHandlers.extract_entity_burner's {name, quality} shape (review finding:
-      -- the old capture dropped quality, silently resetting quality fuel to normal on restore).
       local eq_burning = burner.currently_burning
       local eq_burning_name = eq_burning and eq_burning.name or nil
       if eq_burning_name ~= nil and type(eq_burning_name) ~= "string" then eq_burning_name = eq_burning_name.name end
@@ -207,12 +162,10 @@ function InventoryScanner.extract_equipment_grid(grid)
         remaining_burning_fuel = burner.remaining_burning_fuel
       }
       
-      -- Burner fuel inventory
       if burner.inventory and burner.inventory.valid then
         equip_data.burner.inventory = InventoryScanner.extract_nested_inventory(burner.inventory)
       end
       
-      -- Burner result inventory
       if burner.burnt_result_inventory and burner.burnt_result_inventory.valid then
         equip_data.burner.burnt_result_inventory = InventoryScanner.extract_nested_inventory(burner.burnt_result_inventory)
       end
@@ -228,10 +181,6 @@ function InventoryScanner.extract_equipment_grid(grid)
   }
 end
 
---- Extract nested inventory (recursive for items-with-inventory)
---- Used for spidertron remotes, blueprint books, etc.
---- @param inventory LuaInventory: The nested inventory
---- @return table: Array of item data
 function InventoryScanner.extract_nested_inventory(inventory)
   if not inventory or not inventory.valid then
     return {}
@@ -242,7 +191,6 @@ function InventoryScanner.extract_nested_inventory(inventory)
   for i = 1, #inventory do
     local stack = inventory[i]
     if stack and stack.valid_for_read then
-      -- Use shared helper for all item property extraction (includes pcall protection)
       local item_entry = extract_item_properties(stack)
       table.insert(items, item_entry)
     end
@@ -251,11 +199,6 @@ function InventoryScanner.extract_nested_inventory(inventory)
   return items
 end
 
---- Extract items from transport belt lines with exact positions
---- Factorio 2.0: Uses get_detailed_contents() to capture exact item positions (0.0-1.0)
---- This allows restoration with insert_at() instead of insert_at_back() to avoid "belt full" errors
---- @param entity LuaEntity: The belt entity
---- @return table: Array of line data with positioned items
 function InventoryScanner.extract_belt_items(entity)
   if not entity or not entity.valid then
     return {}
@@ -263,18 +206,10 @@ function InventoryScanner.extract_belt_items(entity)
 
   local lines = {}
 
-  -- Transport lines vary by belt type — iterate EXACTLY the belt's real line count via
-  -- get_max_transport_line_index() (measured: transport-belt=2, underground-belt=4, splitter=8 —
-  -- exercised by every belt export at the current pin, where an over-iteration throws loudly),
-  -- so get_transport_line() is never called out of range. The old `max_lines=8` pcall-until-throw
-  -- over-iterated and THREW on the surplus indices, dumping ~500-600 synchronous log() writes + ~2000
-  -- pcall/closure allocations into the export-completion tick — a #86 heartbeat-stall contributor. The
-  -- import side already avoids blind iteration via the captured line_data.line (belt_restoration.lua).
   local max_lines = entity.get_max_transport_line_index()
   for line_index = 1, max_lines do
     local line = entity.get_transport_line(line_index)
     if line and line.valid then
-      -- get_detailed_contents(): array of {stack: LuaItemStack, position: float 0.0-1.0, unique_id}
       local detailed = line.get_detailed_contents()
       local items = {}
       for _, item_data in ipairs(detailed) do
@@ -282,8 +217,8 @@ function InventoryScanner.extract_belt_items(entity)
         if stack and stack.valid_for_read then
           table.insert(items, {
             name = stack.name,
-            position = item_data.position,  -- CRITICAL: float 0.0-1.0 along belt
-            count = stack.count,            -- Stack size (1-4 in 2.0)
+            position = item_data.position,
+            count = stack.count,
             quality = stack.quality and stack.quality.name or Util.QUALITY_NORMAL
           })
         end
@@ -297,9 +232,6 @@ function InventoryScanner.extract_belt_items(entity)
   return lines
 end
 
---- Extract item held by an inserter
---- @param entity LuaEntity: The inserter entity
---- @return table|nil: Item data, or nil if no item held
 function InventoryScanner.extract_inserter_held_item(entity)
   if not entity or not entity.valid then
     return nil
@@ -317,14 +249,6 @@ function InventoryScanner.extract_inserter_held_item(entity)
   return nil
 end
 
---- Extract fluids from an entity's fluidboxes
---- @param entity LuaEntity: The entity with fluidboxes
---- @return table: Array of fluid data
---- Capture an entity's fluid state through the armed FluidRegistry (2.1 fluid API).
---- Returns the entity-side fluidboxes array ({box_index, segment_ref, local_amount,
---- local_temperature}) or nil when the entity has no fluid storages.
---- Errors loud when no registry is armed — structural enforcement that a second capture
---- discipline can never silently exist again.
 function InventoryScanner.extract_fluidboxes(entity)
   if not entity or not entity.valid then
     return nil
@@ -337,16 +261,12 @@ function InventoryScanner.extract_fluidboxes(entity)
 end
 
 
---- Count all items in inventories (for verification)
---- @param inventories table: Array of inventory data
---- @return table: Table of item_name = total_count pairs
 function InventoryScanner.count_all_items(inventories)
   local totals = {}
 
   for _, inv in ipairs(inventories) do
     if inv.items then
       for _, item in ipairs(inv.items) do
-        -- Create quality-aware key
         local key = Util.make_quality_key(item.name, item.quality)
         totals[key] = (totals[key] or 0) + item.count
       end

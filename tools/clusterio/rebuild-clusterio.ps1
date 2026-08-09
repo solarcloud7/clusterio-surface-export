@@ -1,25 +1,9 @@
-# Build the locally-checked-out Clusterio fork and (re)start the dev cluster running it, via the
-# docker-compose.clusterio-src.yml override — so you can test a Clusterio core change alongside the
-# surface_export plugin in the full 2-host Docker cluster.
-#
-# The fork lives in the SIBLING checkout ../clusterio (override with $env:CLUSTERIO_SRC). This is the
-# "full-cluster integration" loop; for fast core iteration prefer Clusterio's native pnpm dev env.
-# See CLAUDE.md "Clusterio core development" for the full workflow + compatibility caveats.
-#
-# Usage:
-#   ./tools/clusterio/rebuild-clusterio.ps1            # pnpm build the fork, then bring the cluster up on it
-#   ./tools/clusterio/rebuild-clusterio.ps1 -SkipUp    # build only (no container recreate)
-#
-# To revert the cluster to the published image:
-#   docker compose up -d --force-recreate
-
 param(
     [switch]$SkipUp
 )
 
 $ErrorActionPreference = "Stop"
 
-# Resolve the fork checkout: $env:CLUSTERIO_SRC if set, else the sibling ../clusterio (source/clusterio).
 $forkDir = if ($env:CLUSTERIO_SRC) { $env:CLUSTERIO_SRC } else { Join-Path $PSScriptRoot "..\..\..\clusterio" }
 if (-not (Test-Path (Join-Path $forkDir "pnpm-workspace.yaml"))) {
     Write-Host "Clusterio fork not found at '$forkDir'." -ForegroundColor Red
@@ -29,9 +13,6 @@ if (-not (Test-Path (Join-Path $forkDir "pnpm-workspace.yaml"))) {
 $forkDir = (Resolve-Path $forkDir).Path
 $repoDir = (Resolve-Path (Join-Path $PSScriptRoot "..\..")).Path
 
-# Deps must be installed once before `pnpm build` works — fail fast with a clear message instead of a
-# confusing build error on a fresh checkout. (We don't run `pnpm install` here: it's slow and only
-# needed when deps change, not every rebuild.)
 if (-not (Test-Path (Join-Path $forkDir "node_modules"))) {
     Write-Host "Fork dependencies are not installed. Run 'pnpm install' in $forkDir first." -ForegroundColor Red
     exit 1
@@ -50,7 +31,7 @@ Write-Host "Build OK" -ForegroundColor Green
 if (-not $SkipUp) {
     Write-Host ""
     Write-Host "Recreating cluster with the fork override (docker-compose.clusterio-src.yml)..." -ForegroundColor Cyan
-    $env:CLUSTERIO_SRC = $forkDir   # consumed by the override's bind-mount paths
+    $env:CLUSTERIO_SRC = $forkDir
     docker compose `
         -f (Join-Path $repoDir "docker-compose.yml") `
         -f (Join-Path $repoDir "docker-compose.clusterio-src.yml") `

@@ -1,18 +1,4 @@
 #!/usr/bin/env pwsh
-<#
-.SYNOPSIS
-    Get transaction log for a specific transfer
-.DESCRIPTION
-    Retrieves all critical events for a transfer transaction from the controller
-.PARAMETER TransferId
-    The transfer ID to retrieve logs for. If not specified, shows the latest transfer.
-.EXAMPLE
-    .\tools\surface-export\get-transaction-log.ps1
-    Shows the latest transfer log
-.EXAMPLE
-    .\tools\surface-export\get-transaction-log.ps1 -TransferId "transfer_1769126198841_ghkd99"
-    Shows a specific transfer log
-#>
 
 param(
     [Parameter(Mandatory=$false)]
@@ -31,8 +17,6 @@ if ($TransferId -eq "latest") {
 . "$PSScriptRoot\..\shared\cluster-utils.ps1"
 
 try {
-    # ONE reader for the store (tools/shared/cluster-utils.ps1) — including the no-2>&1 rule and the
-    # parse-preview diagnostic that originated here and is now shared with list-transaction-logs.ps1.
     $allLogs = Get-TransactionLogStore
 
     if ($null -eq $allLogs) {
@@ -45,9 +29,7 @@ try {
         exit 0
     }
 
-    # Get the requested log
     if ($TransferId -eq "latest") {
-        # Handle case where ConvertFrom-Json returns a single object instead of array
         if ($allLogs -isnot [System.Array]) {
             $log = $allLogs
         } else {
@@ -70,7 +52,6 @@ try {
         transferInfo = $log.transferInfo
     }
 
-    # Display transfer info
     if ($response.transferInfo) {
         $info = $response.transferInfo
         Write-Host "Transfer Information:" -ForegroundColor Green
@@ -107,7 +88,6 @@ try {
         Write-Host ""
     }
 
-    # Display events
     if ($response.events -and $response.events.Count -gt 0) {
         Write-Host "Event Timeline ($($response.events.Count) events):" -ForegroundColor Green
         Write-Host "$("`u{2500}" * 80)" -ForegroundColor DarkGray
@@ -115,13 +95,11 @@ try {
         foreach ($event in $response.events) {
             $timestamp = [DateTime]::Parse($event.timestamp).ToLocalTime().ToString("HH:mm:ss.fff")
             
-            # Get elapsed time if available
             $elapsedStr = ""
             if ($event.PSObject.Properties['elapsedMs'] -and $event.elapsedMs -gt 0) {
                 $elapsedStr = "+$($event.elapsedMs)ms"
             }
             
-            # Color code by event type
             $color = switch -Wildcard ($event.eventType) {
                 "*_created"    { "Cyan" }
                 "*_started"    { "Blue" }
@@ -134,20 +112,19 @@ try {
                 default        { "White" }
             }
             
-            # Icon by event type
             $icon = switch -Wildcard ($event.eventType) {
-                "*_created"    { "`u{1F195}" } # NEW
-                "*_started"    { "`u{25B6}" }  # Play
-                "*_success*"   { "`u{2713}" }  # Checkmark
-                "*_completed"  { "`u{2705}" }  # Green check
-                "*_failed"     { "`u{274C}" }  # X
-                "*_timeout"    { "`u{23F0}" }  # Clock
-                "*_error"      { "`u{26A0}" }  # Warning
-                "*_rollback*"  { "`u{21A9}" }  # Return arrow
-                "*_deleted"    { "`u{1F5D1}" } # Wastebasket
-                "*_received"   { "`u{1F4DD}" } # Memo
-                "*_cleared"    { "`u{1F4DD}" } # Memo
-                default        { "`u{1F4DD}" } # Memo
+                "*_created"    { "`u{1F195}" }
+                "*_started"    { "`u{25B6}" }
+                "*_success*"   { "`u{2713}" }
+                "*_completed"  { "`u{2705}" }
+                "*_failed"     { "`u{274C}" }
+                "*_timeout"    { "`u{23F0}" }
+                "*_error"      { "`u{26A0}" }
+                "*_rollback*"  { "`u{21A9}" }
+                "*_deleted"    { "`u{1F5D1}" }
+                "*_received"   { "`u{1F4DD}" }
+                "*_cleared"    { "`u{1F4DD}" }
+                default        { "`u{1F4DD}" }
             }
             
             Write-Host "[$timestamp] " -NoNewline -ForegroundColor DarkGray
@@ -158,7 +135,6 @@ try {
             Write-Host "$($event.eventType)" -NoNewline -ForegroundColor $color
             Write-Host " - $($event.message)" -ForegroundColor White
             
-            # Show metrics if present
             if ($event.PSObject.Properties['metrics'] -and $event.metrics) {
                 Write-Host "    Metrics: " -NoNewline -ForegroundColor Cyan
                 $metricsStr = @()
@@ -168,7 +144,6 @@ try {
                 Write-Host ($metricsStr -join ", ") -ForegroundColor Cyan
             }
             
-            # Show payload metrics if present
             if ($event.PSObject.Properties['payloadMetrics'] -and $event.payloadMetrics) {
                 Write-Host "    Payload: " -NoNewline -ForegroundColor Magenta
                 $pm = $event.payloadMetrics
@@ -183,7 +158,6 @@ try {
                 Write-Host ($parts -join ", ") -ForegroundColor Magenta
             }
             
-            # Show phases if present (completion event)
             if ($event.PSObject.Properties['phases'] -and $event.phases) {
                 Write-Host "    Phase Timing: " -NoNewline -ForegroundColor Green
                 $phaseStr = @()
@@ -193,17 +167,14 @@ try {
                 Write-Host ($phaseStr -join ", ") -ForegroundColor Green
             }
             
-            # Show transmission time if present
             if ($event.PSObject.Properties['transmissionMs'] -and $event.transmissionMs) {
                 Write-Host "    Transmission: $($event.transmissionMs)ms" -ForegroundColor Blue
             }
             
-            # Show validation time if present
             if ($event.PSObject.Properties['validationMs'] -and $event.validationMs) {
                 Write-Host "    Validation Duration: $($event.validationMs)ms" -ForegroundColor Blue
             }
             
-            # Show import metrics if present (from Lua async processing)
             if ($event.PSObject.Properties['importMetrics'] -and $event.importMetrics) {
                 $im = $event.importMetrics
                 Write-Host "    Import Phase Timing:" -ForegroundColor Yellow
@@ -231,7 +202,6 @@ try {
                 }
             }
             
-            # Show additional data if present
             if ($event.PSObject.Properties['error'] -and $event.error) {
                 Write-Host "    Error: $($event.error)" -ForegroundColor Red
             }
@@ -250,7 +220,7 @@ try {
                     } elseif ($fr.reconciledLoss -gt 0) {
                         Write-Host " (loss=$([Math]::Round($fr.reconciledLoss, 1)))" -ForegroundColor Yellow
                     } else {
-                        Write-Host "" # newline
+                        Write-Host ""
                     }
                 }
                 if ($v.PSObject.Properties['mismatchDetails'] -and $v.mismatchDetails) {
@@ -264,7 +234,6 @@ try {
         Write-Host "No events found for this transfer." -ForegroundColor Yellow
     }
 
-    # Display summary section if present
     if ($log.PSObject.Properties['summary'] -and $log.summary) {
         $s = $log.summary
         Write-Host "`n=== Transfer Summary ===" -ForegroundColor Cyan
@@ -274,7 +243,6 @@ try {
         Write-Host "$resultIcon Result: $($s.result)" -ForegroundColor $resultColor
         Write-Host "  Duration: $($s.totalDurationStr) ($($s.totalDurationMs)ms)" -ForegroundColor White
         
-        # Phase timing
         if ($s.PSObject.Properties['phases'] -and $s.phases) {
             Write-Host "`n  Phase Timing:" -ForegroundColor Green
             $phases = $s.phases
@@ -295,7 +263,6 @@ try {
             }
         }
         
-        # Platform info
         if ($s.PSObject.Properties['platform'] -and $s.platform) {
             $p = $s.platform
             Write-Host "`n  Platform:" -ForegroundColor Green
@@ -310,7 +277,6 @@ try {
             }
         }
         
-        # Payload info
         if ($s.PSObject.Properties['payload'] -and $s.payload) {
             $pl = $s.payload
             Write-Host "`n  Payload:" -ForegroundColor Green
@@ -321,7 +287,6 @@ try {
             if ($pl.uniqueFluidTypes) { Write-Host "    Fluids: $($pl.totalFluidVolume) total ($($pl.uniqueFluidTypes) types)" -ForegroundColor White }
         }
         
-        # Import metrics
         if ($s.PSObject.Properties['import'] -and $s.import) {
             $im = $s.import
             Write-Host "`n  Import Processing:" -ForegroundColor Green
@@ -333,7 +298,6 @@ try {
             Write-Host "    Circuits: $($im.circuits_connected) connected" -ForegroundColor White
         }
         
-        # Validation details
         if ($s.PSObject.Properties['validation'] -and $s.validation) {
             $v = $s.validation
             Write-Host "`n  Validation:" -ForegroundColor Green
@@ -346,7 +310,6 @@ try {
             Write-Host "    $fluidIcon Fluids: match=$($v.fluidCountMatch)" -ForegroundColor $(if ($v.fluidCountMatch) { "Green" } else { "Red" })
             Write-Host "    Entities: $($v.entityCount)" -ForegroundColor White
             
-            # Show summary totals
             if ($v.PSObject.Properties['totalExpectedItems'] -and $v.PSObject.Properties['totalActualItems']) {
                 $itemDelta = $v.totalActualItems - $v.totalExpectedItems
                 $itemPct = if ($v.totalExpectedItems -gt 0) { [Math]::Round($v.totalActualItems / $v.totalExpectedItems * 100, 1) } else { 100 }
@@ -375,7 +338,6 @@ try {
                 }
             }
             
-            # Entity type breakdown
             if ($v.PSObject.Properties['entityTypeBreakdown'] -and $v.entityTypeBreakdown) {
                 Write-Host "`n  Entity Type Breakdown:" -ForegroundColor Green
                 $entityTypes = @{}
@@ -388,7 +350,6 @@ try {
                 }
             }
             
-            # Item counts breakdown (top items by count)
             if ($v.PSObject.Properties['expectedItemCounts'] -and $v.expectedItemCounts) {
                 Write-Host "`n  Item Inventory (expected vs actual):" -ForegroundColor Green
                 Write-Host "    $("Item".PadRight(40)) $("Expected".PadLeft(10)) $("Actual".PadLeft(10)) $("Diff".PadLeft(8))" -ForegroundColor DarkGray
@@ -418,14 +379,10 @@ try {
                 }
             }
             
-            # Fluid counts breakdown — matches validation logic:
-            # Low-temp fluids (<10,000°C) are compared per exact temp key
-            # High-temp fluids (≥10,000°C) are aggregated by base fluid name
             if ($v.PSObject.Properties['expectedFluidCounts'] -and $v.expectedFluidCounts) {
                 $fr = if ($v.PSObject.Properties['fluidReconciliation']) { $v.fluidReconciliation } else { $null }
                 $htThreshold = if ($fr -and $fr.PSObject.Properties['highTempThreshold'] -and $fr.highTempThreshold) { $fr.highTempThreshold } else { 10000 }
                 
-                # Build fluid entries with expected/actual
                 $fluidEntries = @{}
                 foreach ($prop in $v.expectedFluidCounts.PSObject.Properties) {
                     $fluidEntries[$prop.Name] = @{ Expected = $prop.Value; Actual = 0 }
@@ -440,7 +397,6 @@ try {
                     }
                 }
                 
-                # Helper to parse "name@tempC" keys
                 function Get-FluidTemp($key) {
                     if ($key -match '@([\d.]+)C$') { return [double]$Matches[1] } else { return 15 }
                 }
@@ -448,11 +404,9 @@ try {
                     if ($key -match '^(.+)@[\d.]+C$') { return $Matches[1] } else { return $key }
                 }
                 
-                # Separate low-temp and high-temp entries
                 $lowTemp = $fluidEntries.GetEnumerator() | Where-Object { (Get-FluidTemp $_.Key) -lt $htThreshold } | Sort-Object { $_.Value.Expected } -Descending
                 $highTemp = $fluidEntries.GetEnumerator() | Where-Object { (Get-FluidTemp $_.Key) -ge $htThreshold } | Sort-Object { $_.Value.Expected } -Descending
                 
-                # Low-temp fluids: per-key comparison with delta (same as items)
                 if ($lowTemp) {
                     Write-Host "`n  Fluid Inventory — Per-Key (expected vs actual):" -ForegroundColor Green
                     Write-Host "    $("Fluid".PadRight(40)) $("Expected".PadLeft(12)) $("Actual".PadLeft(12)) $("Diff".PadLeft(10))" -ForegroundColor DarkGray
@@ -469,13 +423,11 @@ try {
                     }
                 }
                 
-                # High-temp fluids: show raw per-key rows dimmed, then aggregate summary
                 if ($highTemp) {
                     Write-Host "`n  Fluid Inventory — High-Temp Aggregates (temp-merge reconciled):" -ForegroundColor Green
                     Write-Host "    Fluids `u{2265}$($htThreshold)`u{00B0}C are validated by aggregate total per fluid name" -ForegroundColor DarkGray
                     Write-Host "    (engine merges packets via weighted-avg temperature at extreme temps)" -ForegroundColor DarkGray
                     
-                    # Show aggregate from reconciliation data if available
                     if ($fr -and $fr.highTempAggregates) {
                         Write-Host "    $("Fluid".PadRight(40)) $("Expected".PadLeft(12)) $("Actual".PadLeft(12)) $("Diff".PadLeft(10)) Status" -ForegroundColor DarkGray
                         Write-Host "    $("-" * 86)" -ForegroundColor DarkGray
@@ -493,7 +445,6 @@ try {
                             Write-Host " $status" -ForegroundColor $diffColor
                         }
                     } else {
-                        # Fallback: compute aggregates from raw keys
                         Write-Host "    $("Fluid".PadRight(40)) $("Expected".PadLeft(12)) $("Actual".PadLeft(12)) $("Diff".PadLeft(10))" -ForegroundColor DarkGray
                         Write-Host "    $("-" * 76)" -ForegroundColor DarkGray
                         
@@ -517,7 +468,6 @@ try {
                         }
                     }
                     
-                    # Show the individual temp keys dimmed for reference
                     Write-Host "    Per-key breakdown (for reference):" -ForegroundColor DarkGray
                     foreach ($entry in $highTemp) {
                         $exp = [Math]::Round($entry.Value.Expected, 1)

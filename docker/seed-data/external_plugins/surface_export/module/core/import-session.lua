@@ -1,10 +1,7 @@
--- FactorioSurfaceExport - Import Session Manager
--- Handles chunked RCON import sessions for assembling large payloads
-
 local Util = require("modules/surface_export/utils/util")
 
 local MAX_IMPORT_SESSIONS = 4
-local MAX_SESSION_AGE_TICKS = 3600  -- ~60 seconds at 60 UPS
+local MAX_SESSION_AGE_TICKS = 3600
 local MAX_TOTAL_CHUNKS = 256
 
 local ImportSession = {}
@@ -25,7 +22,6 @@ local function prune()
 		end
 	end
 
-	-- Keep only newest MAX_IMPORT_SESSIONS by started_tick
 	table.sort(keys, function(a, b)
 		local sa = sessions[a]
 		local sb = sessions[b]
@@ -38,12 +34,6 @@ local function prune()
 	end
 end
 
---- Begin a chunked import session
---- @param session_id string
---- @param total_chunks number
---- @param platform_name string|nil
---- @param force_name string|nil
---- @return boolean, string|nil
 function ImportSession.begin(session_id, total_chunks, platform_name, force_name)
 	storage.import_sessions = storage.import_sessions or {}
 	prune()
@@ -87,11 +77,6 @@ function ImportSession.begin(session_id, total_chunks, platform_name, force_name
 	return true, nil
 end
 
---- Enqueue a chunk into a session
---- @param session_id string
---- @param chunk_index number
---- @param chunk_data string
---- @return boolean, string|nil
 function ImportSession.enqueue_chunk(session_id, chunk_index, chunk_data)
 	storage.import_sessions = storage.import_sessions or {}
 	prune()
@@ -118,11 +103,6 @@ function ImportSession.enqueue_chunk(session_id, chunk_index, chunk_data)
 	return true, nil
 end
 
---- Finalize a session, assemble payload, and queue async import
---- @param session_id string
---- @param checksum string|nil
---- @param queue_fn function: function(json_data, platform_name, force_name, requester) → job_id, err
---- @return string|nil, string|nil: job_id or nil + error
 function ImportSession.finalize(session_id, checksum, queue_fn)
 	storage.import_sessions = storage.import_sessions or {}
 	prune()
@@ -178,7 +158,6 @@ function ImportSession.finalize(session_id, checksum, queue_fn)
 	return job_id, nil
 end
 
---- Prune stale sessions (called from AsyncProcessor.process_tick)
 function ImportSession.prune()
 	prune()
 end

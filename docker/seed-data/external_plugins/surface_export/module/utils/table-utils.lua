@@ -1,11 +1,5 @@
--- FactorioSurfaceExport - Table Utilities
--- Helper functions for table operations
-
 local TableUtils = {}
 
---- Count total items in a table
---- @param item_table table: Table of item_name = count pairs
---- @return number: Total item count
 function TableUtils.sum_items(item_table)
   if type(item_table) ~= "table" then return 0 end
   local total = 0
@@ -15,9 +9,6 @@ function TableUtils.sum_items(item_table)
   return total
 end
 
---- Count total fluid volume in a table
---- @param fluid_table table: Table of fluid_name = amount pairs
---- @return number: Total fluid amount
 function TableUtils.sum_fluids(fluid_table)
   if type(fluid_table) ~= "table" then return 0 end
   local total = 0
@@ -27,9 +18,6 @@ function TableUtils.sum_fluids(fluid_table)
   return total
 end
 
---- Determine if a table behaves like an array (1..n integer keys)
---- @param t table
---- @return boolean
 function TableUtils.is_array(t)
   if type(t) ~= "table" then
     return false

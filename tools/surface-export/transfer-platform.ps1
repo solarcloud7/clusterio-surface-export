@@ -1,11 +1,3 @@
-<#
-.SYNOPSIS
-    Transfers a platform between Factorio instances.
-.PARAMETER PlatformIndex
-    The platform index to transfer (use list-platforms.ps1 to find it).
-.PARAMETER Direction
-    Transfer direction: "1to2" or "2to1".
-#>
 param(
     [Parameter(Mandatory=$true)]
     [int]$PlatformIndex,
@@ -17,7 +9,6 @@ param(
 
 . "$PSScriptRoot\..\shared\cluster-utils.ps1"
 
-# Discover instance names and IDs dynamically
 $Inst1 = Get-InstanceByHostNumber "1"
 $Inst2 = Get-InstanceByHostNumber "2"
 if (-not $Inst1 -or -not $Inst2) {

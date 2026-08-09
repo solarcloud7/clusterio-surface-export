@@ -1,6 +1,3 @@
--- FactorioSurfaceExport - Import Pipeline
--- Handles import job creation (queuing) and per-tick entity placement batch processing.
-
 local Deserializer = require("modules/surface_export/core/deserializer")
 local Util = require("modules/surface_export/utils/util")
 local PlatformSchedule = require("modules/surface_export/utils/platform-schedule")
@@ -15,14 +12,7 @@ local Gateway = require("modules/surface_export/core/gateway")
 
 local ImportPipeline = {}
 
---- Queue an import job from file
---- @param filename string: Filename in script-output/platform_exports/
---- @param new_platform_name string
---- @param force_name string
---- @param requester_name string|nil
---- @return string|nil, string|nil: job_id or error
 function ImportPipeline.queue_from_file(filename, new_platform_name, force_name, requester_name)
-	-- Read file from script-output/platform_exports/
 	local filepath = "platform_exports/" .. filename
 	local json_data, err = Util.read_file_compat(filepath)
 
@@ -30,16 +20,9 @@ function ImportPipeline.queue_from_file(filename, new_platform_name, force_name,
 		return nil, "Failed to read file '" .. filename .. "': " .. (err or "unknown error")
 	end
 
-	-- Use existing queue logic
 	return ImportPipeline.queue(json_data, new_platform_name, force_name, requester_name)
 end
 
---- Queue an import job from JSON string
---- @param json_data string: JSON string of platform data
---- @param new_platform_name string
---- @param force_name string
---- @param requester_name string|nil
---- @return string|nil, string|nil: job_id or error
 function ImportPipeline.queue(json_data, new_platform_name, force_name, requester_name, receive_timing)
 	storage.async_job_id_counter = storage.async_job_id_counter + 1
 	local job_id = "import_" .. storage.async_job_id_counter
@@ -50,16 +33,9 @@ function ImportPipeline.queue(json_data, new_platform_name, force_name, requeste
 		log(string.format("[Import Queue] JSON string size: %d bytes", #json_data))
 	end
 
-	-- Initialize phase profilers and measure decompression + platform setup time
-	-- Derived from the phase registry, never hand-listed. This list used to be maintained by hand and
-	-- had already drifted: held_items had a start/stop bracket but was absent here, which makes
-	-- PhaseProfiler.start a SILENT no-op (it only touches profilers created by init).
 	PhaseProfiler.init(job_id, PhaseRecorder.profiler_names())
-	-- Straight to PhaseProfiler, not PhaseRecorder: the job table does not exist yet (it is built
-	-- below), and queue_setup is profile-only — it has no tick marks. The registry still owns its name.
 	PhaseProfiler.start(job_id, "queue_setup")
 
-	-- First, parse if it's a JSON string
 	local parsed_data
 	if type(json_data) == "string" then
 		parsed_data = Util.json_to_table_compat(json_data)
@@ -67,14 +43,11 @@ function ImportPipeline.queue(json_data, new_platform_name, force_name, requeste
 			return nil, "Failed to parse JSON data"
 		end
 	else
-		-- Already a table
 		parsed_data = json_data
 	end
 
-	-- Now check if the parsed data is compressed
 	local platform_data
 	if parsed_data.compressed and parsed_data.payload then
-		-- Compressed format: decode base64 and inflate
 		log(string.format("[Decompression] Decompressing import data (%d bytes compressed)", #parsed_data.payload))
 		local decompressed_json = helpers.decode_string(parsed_data.payload)
 		if not decompressed_json then
@@ -82,12 +55,10 @@ function ImportPipeline.queue(json_data, new_platform_name, force_name, requeste
 		end
 		log(string.format("[Decompression] Decompressed to %d bytes", #decompressed_json))
 
-		-- Parse the decompressed JSON
 		platform_data = Util.json_to_table_compat(decompressed_json)
 		if not platform_data then
 			return nil, "Failed to parse decompressed JSON data"
 		end
-		-- Debug: Check if verification exists after decompression
 		log(string.format("[Import] After decompression: has_verification=%s", tostring(platform_data.verification ~= nil)))
 		if platform_data.verification then
 			log(string.format("[Import] Verification has item_counts=%s, fluid_counts=%s",
@@ -95,15 +66,9 @@ function ImportPipeline.queue(json_data, new_platform_name, force_name, requeste
 				tostring(platform_data.verification.fluid_counts ~= nil)))
 		end
 	else
-		-- Uncompressed format - data is already the platform data
 		platform_data = parsed_data
 	end
 
-	-- Version dispatch (SOURCE axis): the payload carries the engine version that produced it
-	-- (factorio_version, stamped at export). Migrate its DATA SHAPE to the runtime engine's shape
-	-- before any restoration reads it. Phase 1 is identity (only the "2.0" bucket exists), but the
-	-- seam + the both-buckets log line are built now so a future cross-version mismatch is visible
-	-- and phase 2 only has to register the migration. See utils/version-compat.lua.
 	local source_parsed = VersionCompat.parse(platform_data.factorio_version)
 	local source_bucket = source_parsed and source_parsed.bucket or nil
 	local runtime_bucket = VersionCompat.runtime_bucket()
@@ -111,17 +76,12 @@ function ImportPipeline.queue(json_data, new_platform_name, force_name, requeste
 		tostring(platform_data.factorio_version), tostring(source_bucket), tostring(runtime_bucket)))
 	platform_data = VersionCompat.migrate(platform_data, source_bucket, runtime_bucket)
 
-	-- HARD SCHEMA CUT (owner ruling 2026-07-20): refuse any payload that doesn't stamp the
-	-- current schema (fluid-segment registry). This runs BEFORE any restoration read and before
-	-- any destructive step — a refused transfer fails closed and the source is retained.
 	local schema_ok, schema_err = VersionCompat.check_payload_schema(platform_data)
 	if not schema_ok then
 		log("[Import Queue] REFUSED payload: " .. tostring(schema_err))
 		return nil, schema_err
 	end
 
-	-- Forward-only transfer schema cutover:
-	-- Transfer imports must include full platform schedule payload.
 	local is_transfer = (platform_data._transferId or parsed_data._transferId) ~= nil
 	local imported_schedule = platform_data
 		and platform_data.platform
@@ -137,12 +97,9 @@ function ImportPipeline.queue(json_data, new_platform_name, force_name, requeste
 		end
 	end
 
-	-- Entities are already sorted during export for proper placement order
-	-- No need to re-sort on import
 
 	local force = game.forces[force_name] or game.forces.player
 
-	-- Handle missing platform name
 	local original_name = new_platform_name
 	local name_was_missing = false
 	if not new_platform_name or new_platform_name == "" then
@@ -151,7 +108,6 @@ function ImportPipeline.queue(json_data, new_platform_name, force_name, requeste
 		game.print("[Import Warning] No platform name provided, assigning default name", {1, 0.5, 0})
 	end
 
-	-- Check if platform name already exists and find unique name
 	local function platform_name_exists(name)
 		for _, platform in pairs(force.platforms) do
 			if platform.name == name then
@@ -171,7 +127,6 @@ function ImportPipeline.queue(json_data, new_platform_name, force_name, requeste
 		game.print(string.format("[Import Warning] Platform '%s' already exists, renamed to '%s'",
 			new_platform_name, final_name), {1, 0.5, 0})
 	elseif name_was_missing then
-		-- Assign numbered name for missing names
 		local counter = 1
 		while platform_name_exists(string.format("Imported Platform #%d", counter)) do
 			counter = counter + 1
@@ -180,15 +135,7 @@ function ImportPipeline.queue(json_data, new_platform_name, force_name, requeste
 		game.print(string.format("[Import Warning] Assigned name: '%s'", final_name), {1, 0.5, 0})
 	end
 
-	-- Create new platform
-	-- Check both platform_data (decompressed) and parsed_data (compressed format),
-	-- mirroring the _transferId / _operationId handling below.
 	local target_planet = platform_data._targetPlanet or parsed_data._targetPlanet or "nauvis"
-	-- create_space_platform raises if the planet name is invalid or not present on this instance
-	-- (e.g. mod mismatch). Guard it so a bad destination returns a clean error instead of crashing
-	-- the instance (cf. a LocalisedString is capped at 20 parameters). The UI restricts choices, but RCON/API callers do not.
-	-- Call via a closure: force.create_space_platform binds self on access, so it takes ONLY the
-	-- table (passing force explicitly gives an "Expected 1 argument but 2 were given" error).
 	local ok_create, new_platform = pcall(function()
 		return force.create_space_platform({
 			name = final_name,
@@ -210,8 +157,6 @@ function ImportPipeline.queue(json_data, new_platform_name, force_name, requeste
 
 	log(string.format("[Import Queue] Platform created: '%s' (index=%s, planet=%s)", final_name, tostring(new_platform.index), target_planet))
 
-	-- Apply starter pack to activate surface immediately
-	-- Platform needs starter pack to have a valid surface
 	local ok, err = pcall(function()
 		new_platform.apply_starter_pack()
 	end)
@@ -223,18 +168,12 @@ function ImportPipeline.queue(json_data, new_platform_name, force_name, requeste
 		return nil, "Failed to apply starter pack: " .. tostring(err)
 	end
 
-	-- Validate surface is now accessible
 	if not new_platform.surface or not new_platform.surface.valid then
 		GameUtils.delete_platform(new_platform)
 		log(string.format("[Import Queue] FAILED: Platform '%s' surface not valid after activation", final_name))
 		return nil, "Platform surface not valid after activation"
 	end
 
-	-- CRITICAL: Destroy all starter pack entities EXCEPT the hub.
-	-- The hub is created automatically and cannot be re-created manually — we remap it via
-	-- PlatformHubMapping and restore its inventories from export data.
-	-- All other starter entities (thrusters, etc.) must be destroyed so they don't accumulate
-	-- alongside the imported entities, causing item count inflation during validation.
 	local starter_entities = new_platform.surface.find_entities_filtered({})
 	log(string.format("[Import Queue] Starter pack applied: %d entities on surface (platform '%s') — destroying non-hub starters", #starter_entities, final_name))
 	for _, ent in ipairs(starter_entities) do
@@ -248,54 +187,22 @@ function ImportPipeline.queue(json_data, new_platform_name, force_name, requeste
 		end
 	end
 
-	-- CRITICAL: For transfers, PAUSE the platform immediately to prevent thruster fuel consumption
-	-- This stops the platform from using fuel during the multi-tick import process
 	if is_transfer then
 		new_platform.paused = true
 		log(string.format("[Import] Platform %s PAUSED to prevent fuel consumption during import", new_platform.name))
 	end
 
-	-- Gateway transfer: the source carries an EXPLICIT gateway_target in the payload (a sibling of
-	-- platform.schedule — NOT inferred from the schedule's current record). When present, strip the
-	-- gateway hop(s) from the itinerary; the platform is PARKED at gateway_target HERE, at creation
-	-- (see the park block below), and re-paused/verified at the very end of import
-	-- (import-completion.lua) so it arrives parked instead of flying the schedule.
-	-- Absent ⇒ ordinary transfer, schedule untouched (so a normal /transfer-platform of a gateway-parked
-	-- platform is NOT treated as a gateway arrival — fixes the over-/under-fire of schedule inference).
 	local gateway_target = platform_data and platform_data.platform and platform_data.platform.gateway_target or nil
-	-- Defensive: ignore a stale/bogus target that isn't a real gateway on THIS instance.
 	if gateway_target and not Gateway.is_gateway(gateway_target) then
 		log(string.format("[Gateway] Ignoring gateway_target '%s' — not a gateway on this instance",
 			tostring(gateway_target)))
 		gateway_target = nil
 	end
 
-	-- PARK AT CREATION (2026-08-04). The upstream docs say the `space_location` write "will cancel
-	-- pending item requests"; the park used to run that write as the LAST import step — after
-	-- restoration and after the exact gate, i.e. a documented cancellation acting on restored,
-	-- verdict-passed state. What the cancellation actually cancels we could NOT pin down: a
-	-- one-off observation of it destroying a hub-targeted item-request proxy (1 → 0, 2026-08-03)
-	-- never reproduced — six survivals since, across proxy shapes, execution timings, and BOTH park
-	-- orderings end-to-end — and is RETRACTED as unexplained (full account in
-	-- GATEWAY_TRANSFER_PRD.md). The ordering still moves HERE, on the categorical argument: a
-	-- freshly created platform — paused, its surface carrying nothing but the hub — has nothing for
-	-- the documented cancellation to act on, whatever its scope is; running any destructive-by-doc
-	-- write AFTER the verdict grants it restored state to act on for no benefit. Behavior-neutral
-	-- by measurement (both orderings green through the full production path). The end-of-import
-	-- step now only re-pauses and VERIFIES the location; it never writes it again. Standing pin:
-	-- tests/integration/gateway-park-proxies (both proxy shapes, physical count on the
-	-- destination, verdict-grounded).
 	if gateway_target then
-		-- A NON-transfer import carrying a gateway_target (a re-imported gateway payload via
-		-- file/upload) is not covered by the transfer pause above; unpaused, it would fly its
-		-- stripped schedule DURING the multi-tick import and end up re-paused somewhere else
-		-- (review finding). Gateway imports stay parked from creation regardless of origin.
 		if not is_transfer then
 			new_platform.paused = true
 		end
-		-- Prerequisite for the write: the location must be unlocked for this force (a force created
-		-- after the startup discover_and_unlock pass wouldn't have it). Log on failure — a silent
-		-- miss here surfaces only as a mysterious park failure with no root cause.
 		local ok_unlock, err_unlock = pcall(function() force.unlock_space_location(gateway_target) end)
 		if not ok_unlock then
 			log(string.format("[Gateway] unlock_space_location('%s') failed before creation-park for %s: %s",
@@ -306,9 +213,6 @@ function ImportPipeline.queue(json_data, new_platform_name, force_name, requeste
 			log(string.format("[Gateway] Platform %s parked at gateway '%s' at CREATION (pre-restoration)",
 				final_name, gateway_target))
 		else
-			-- No data risk either way: the platform is paused (transfers pause above) and the
-			-- end-of-import re-pause keeps it parked wherever it sits; the completion-side
-			-- verification reports the miss loudly.
 			log(string.format("[Gateway] CREATION park FAILED for %s at '%s': %s — platform remains paused at its default location",
 				final_name, tostring(gateway_target), tostring(err_loc)))
 		end
@@ -325,11 +229,7 @@ function ImportPipeline.queue(json_data, new_platform_name, force_name, requeste
 		end
 	end
 
-	-- Restore platform schedule (records + interrupts + group) from payload.
 	if imported_schedule then
-		-- Strip stops that are not routable on THIS instance (phantom stops from a heterogeneous-mod source).
-		-- filter_for_import NEVER strips to empty — if every stop is unroutable it keeps the original schedule
-		-- (an empty schedule is engine-rejected). Log-only (no UI plumbing); a lone dead stop is harmless.
 		local filtered_schedule, dropped_stops = PlatformSchedule.filter_for_import(imported_schedule)
 		if dropped_stops and #(dropped_stops.stations or {}) > 0 then
 			if dropped_stops.skipped_empty then
@@ -352,12 +252,10 @@ function ImportPipeline.queue(json_data, new_platform_name, force_name, requeste
 			imported_schedule_summary.interrupt_count,
 			tostring(imported_schedule_summary.group)))
 	elseif is_transfer then
-		-- Defensive guard: transfers should never reach this state due to strict validation above.
 		GameUtils.delete_platform(new_platform)
 		return nil, "Transfer payload missing required platform schedule"
 	end
 
-	-- Calculate item and fluid totals from verification data if available
 	local total_items = 0
 	local total_fluids = 0
 	if platform_data.verification then
@@ -375,20 +273,13 @@ function ImportPipeline.queue(json_data, new_platform_name, force_name, requeste
 		requester = requester_name,
 		started_tick = game.tick,
 
-		-- Import state
 		platform_data = platform_data,
-		-- Engine version that produced this payload (SOURCE axis) vs the running engine (RUNTIME axis).
-		-- Equal in phase 1; recorded so cross-version handling/diagnostics can key off them later.
 		source_bucket = source_bucket,
 		runtime_bucket = runtime_bucket,
 		target_surface = new_platform.surface,
 		tiles_to_place = platform_data.tiles or {},
 		tiles_placed = false,
 		entities_to_create = (function()
-			-- Item-request-proxies are created LAST: surface.create_entity for a proxy REQUIRES its
-			-- live target entity, and payload order (export scan order) carries no such guarantee —
-			-- every standalone proxy was silently dropped until 2026-07-19 (dest 122/123). Stable
-			-- partition: non-proxies in payload order, then proxies.
 			local ordered, proxies = {}, {}
 			for _, record in ipairs(platform_data.entities or {}) do
 				if record.type == "item-request-proxy" then proxies[#proxies + 1] = record
@@ -399,37 +290,24 @@ function ImportPipeline.queue(json_data, new_platform_name, force_name, requeste
 		end)(),
 		total_entities = #(platform_data.entities or {}),
 		total_items = total_items,
-		total_fluids = math.floor(total_fluids),  -- Fluids can be fractional
+		total_fluids = math.floor(total_fluids),
 		current_index = 0,
 
-		-- Entity map for post-processing (circuit connections, etc.)
 		entity_map = {},
 
-		-- CRITICAL: frozen_states contains original active/disabled states from export
-		-- Used to restore entities to their pre-export state in final import step
 		frozen_states = platform_data.frozen_states or {},
 
-		-- Transfer metadata (if this is a transfer import)
-		-- Check both parsed_data (compressed format) and platform_data (decompressed)
 		transfer_id = platform_data._transferId or parsed_data._transferId,
 		source_instance_id = platform_data._sourceInstanceId or parsed_data._sourceInstanceId,
 		operation_id = platform_data._operationId or parsed_data._operationId,
 
-		-- Store platform reference for unpausing after validation
 		target_platform = new_platform,
 		imported_schedule = imported_schedule,
-		-- Gateway parked at (nil for normal transfers; explicit, from the payload). The park WRITE
-		-- happened above at creation; import completion only RE-PAUSES and VERIFIES this location.
 		gateway_target = gateway_target,
 
-		-- ========== PHASE METRICS TRACKING ==========
-		-- Track timing and counts for each import phase
 		metrics = {
-			-- Chunked-receive (delivery) window — populated only for RCON_CHUNKED imports so the
-			-- waterfall can show data delivery as its own span. Pure game.tick reads (freeze-safe).
 			delivery_started_tick = receive_timing and receive_timing.delivery_started_tick or nil,
 			delivery_completed_tick = receive_timing and receive_timing.delivery_completed_tick or nil,
-			-- Phase timing (tick numbers)
 			tiles_started_tick = nil,
 			tiles_completed_tick = nil,
 			entities_started_tick = nil,
@@ -442,7 +320,6 @@ function ImportPipeline.queue(json_data, new_platform_name, force_name, requeste
 			state_completed_tick = nil,
 			validation_started_tick = nil,
 			validation_completed_tick = nil,
-			-- Counts
 			tiles_placed = 0,
 			entities_created = 0,
 			entities_failed = 0,
@@ -463,42 +340,21 @@ function ImportPipeline.queue(json_data, new_platform_name, force_name, requeste
 	return job_id
 end
 
---- Process one batch of an import job (tile placement + entity creation)
---- @param job table: Job data
---- @param get_batch_size function: returns batch size (supports sync mode)
---- @param should_show_progress function: returns bool
---- @return boolean: true if entity creation is complete
 function ImportPipeline.process_batch(job, get_batch_size, should_show_progress)
-	-- Validate surface is still valid
 	if not job.target_surface or not job.target_surface.valid then
 		log(string.format("[Import Batch] ABORT: Target surface became invalid for job %s (platform '%s')",
 			job.job_id, job.platform_name))
 		game.print("[Import Error] Target surface became invalid", {1, 0, 0})
-		return true  -- Abort job
+		return true
 	end
 
-	-- Initialize metrics if needed
 	job.metrics = job.metrics or {}
 
-	-- Phase 0: Pre-hydration force synchronization (one-shot, RAISE-ONLY).
-	-- Inserter HAND CAPACITY is governed by the FORCE the inserter is on (its research bonuses), not by entity
-	-- data, and the plugin doesn't transfer the tech tree. The source force's bonuses ride in the payload
-	-- (export-pipeline force_data); replicate them onto the destination force(s) BEFORE any entity is created or
-	-- any held item is seated, so a less-researched dest can physically hold what the source held. Without this,
-	-- set_stack/count silently clamp to the dest's lower capacity and the held items are genuinely unplaceable
-	-- (the held-item root cause; see inserter hand capacity is governed by the DEST force's research).
-	-- Raise EVERY distinct force the entities land on (the deserializer creates each entity on
-	-- entity_data.force or "player"), not just job.force_name — they normally match, but syncing only the
-	-- platform force would leave a differently-forced inserter under-capacity → silent held-item loss.
-	-- RAISE-ONLY (math.max semantics): never LOWER a dest bonus — lowering it would eject items from OTHER
-	-- platforms' inserters already on that force. Verified durable: once seated, items are NOT ejected even if
-	-- the bonus later resets (reset_technology_effects), so no post-commit loss path.
 	if not job.force_bonuses_synced then
 		job.force_bonuses_synced = true
 		local fd = job.platform_data and job.platform_data.force_data
 		if fd then
 			job.force_bonuses_mismatch = {}
-			-- Distinct set of forces the inserters will be created on, plus the platform force defensively.
 			local force_names = {}
 			if job.force_name then force_names[job.force_name] = true end
 			for _, ed in ipairs(job.entities_to_create or {}) do
@@ -521,17 +377,11 @@ function ImportPipeline.process_batch(job, get_batch_size, should_show_progress)
 				end
 			end
 		else
-			-- Old (pre-fix) payload carries no force_data → sync skipped. One-line notice so a future gate
-			-- failure on an under-researched dest is self-explaining rather than a mystery.
 			log("[Import] payload has no force_data (pre-fix export) — dest force bonuses NOT synced; "
 				.. "held items may be capped if the dest is under-researched")
 		end
 	end
 
-	-- Phase 1: Tile Restoration (track timing)
-	-- The guards matter: tiles and entities are restored across MANY ticks, so start must stamp only
-	-- on the first pass and stop only on the last. PhaseRecorder.start would otherwise re-stamp the
-	-- start mark every batch and collapse the span to nothing.
 	if not job.tiles_placed then
 		if not job.metrics.tiles_started_tick then
 			PhaseRecorder.start(job, "tiles")
@@ -543,15 +393,8 @@ function ImportPipeline.process_batch(job, get_batch_size, should_show_progress)
 		job.metrics.tiles_placed = #(job.tiles_to_place or {})
 	end
 
-	-- Phase 2: Platform Hub Mapping
 	PlatformHubMapping.process(job)
 
-	-- Phase 2b: Beacon Pre-Placement (synchronous, runs once before entity batching)
-	-- Beacons MUST exist before the machines they affect are created. If a machine is placed
-	-- first, the engine registers it with no beacon linkage and crafting_speed stays at base
-	-- value — the beacon-boosted set_stack() cap is never applied, causing item overflow.
-	-- This phase places ALL beacons (including modded types) in one tick, unconditionally.
-	-- Uses prototypes[name].type to detect beacons so any mod's beacon variant is covered.
 	if not job.beacons_placed and job.tiles_placed then
 		PhaseRecorder.start(job, "beacons")
 		local beacons_created = 0
@@ -565,7 +408,7 @@ function ImportPipeline.process_batch(job, get_batch_size, should_show_progress)
 						if entity_data.entity_id then
 							job.entity_map[entity_data.entity_id] = entity
 						end
-						entity_data._beacon_placed = true  -- Skip in main batch loop
+						entity_data._beacon_placed = true
 						beacons_created = beacons_created + 1
 					else
 						beacons_skipped = beacons_skipped + 1
@@ -580,25 +423,12 @@ function ImportPipeline.process_batch(job, get_batch_size, should_show_progress)
 		end
 	end
 
-	-- Phase 3: Entity Creation Batch (track timing)
 	if not job.metrics.entities_started_tick and job.tiles_placed then
 		PhaseRecorder.start(job, "entities")
 	end
 	local complete = EntityCreation.process_batch(job, get_batch_size, should_show_progress)
 	if complete and not job.metrics.entities_completed_tick then
 		PhaseRecorder.stop(job, "entities")
-		-- entities_created / entities_failed / entities_skipped are accumulated from the MEASURED
-		-- per-batch tallies in EntityCreation.process_batch. They used to be derived here instead, as
-		-- `entities_failed = job.total_entities - <size of entity_map>`, and that was wrong in a way
-		-- that cost real debugging time: entity_map is only written for entities that need to be
-		-- addressable later (entity_creation.lua), and ground items are deliberately NOT mapped — so
-		-- every successfully-placed item-on-ground counted as a failure. Measured on a live transfer:
-		-- 106 reported failed, 106 item-on-ground in the type breakdown, ZERO "FAILED to place ground
-		-- item" log lines, and no failed_entity_losses tally at all (which the failure path always
-		-- creates). A subtraction cannot tell "not created" from "not indexed".
-		--
-		-- entity_map size is still worth reporting, but as what it IS: how many entities are
-		-- addressable for state/inventory restoration, which is not a success count.
 		local mapped = 0
 		for _ in pairs(job.entity_map or {}) do mapped = mapped + 1 end
 		job.metrics.entities_mapped = mapped

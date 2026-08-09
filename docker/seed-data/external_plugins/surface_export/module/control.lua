@@ -1,14 +1,5 @@
--- Surface Export Clusterio Module (Save-patched)
--- Integrates FactorioSurfaceExport with Clusterio for cross-instance platform transfers
---
--- IMPORTANT: This module uses the event_handler interface required by Clusterio.
--- Do NOT use script.on_init, script.on_event, etc. directly — that would
--- overwrite Clusterio's own event handlers and break initialization.
--- See: https://github.com/clusterio/clusterio/blob/main/docs/developing-for-clusterio.md
-
 local clusterio_api = require("modules/clusterio/api")
 
--- Import existing functionality
 local RemoteInterface = require("modules/surface_export/interfaces/remote-interface")
 local Commands = require("modules/surface_export/interfaces/commands")
 local AsyncProcessor = require("modules/surface_export/core/async-processor")
@@ -20,12 +11,8 @@ local SelectionLab = require("modules/surface_export/interfaces/gui/selection-la
 local Gateway = require("modules/surface_export/core/gateway")
 local GameUtils = require("modules/surface_export/utils/game-utils")
 
--- Top-level module table (event_handler interface)
 local SurfaceExportModule = {}
 
--- ============================================================================
--- Initialization (event_handler callbacks)
--- ============================================================================
 
 local function initialize_storage()
 	storage.platform_exports = storage.platform_exports or {}
@@ -43,24 +30,15 @@ function SurfaceExportModule.on_init()
 end
 
 function SurfaceExportModule.on_load()
-	-- Restore any necessary state (cannot modify global here in Factorio 2.0)
 end
 
 function SurfaceExportModule.on_configuration_changed(data)
 	initialize_storage()
-	-- Migrate any legacy name-keyed locks to index keys (cheap no-op once index-keyed). Also runs lazily at
-	-- SurfaceLock.lock_platform so a deploy that didn't fire this hook still migrates before the next lock.
 	SurfaceLock.ensure_index_keyed()
-	-- Unlock gateways here too so adding the surfexp_gateways mod mid-save makes them routable
-	-- without waiting for the next server startup.
 	Gateway.discover_and_unlock()
 	log("[Surface Export] Configuration changed - module state initialized")
 end
 
--- ============================================================================
--- Remote Interface & Commands Registration
--- (add_remote_interface is called before on_init/on_load per event_handler)
--- ============================================================================
 
 function SurfaceExportModule.add_remote_interface()
 	RemoteInterface.register()
@@ -70,14 +48,10 @@ function SurfaceExportModule.add_commands()
 	Commands.register()
 end
 
--- ============================================================================
--- Event Handlers (event_handler interface)
--- ============================================================================
 
 local e = defines.events
 
 SurfaceExportModule.events = {
-	-- Process async import/export jobs every tick
 	[e.on_tick] = function()
 		AsyncProcessor.process_tick()
 		if game.tick % 60 == 0 then
@@ -85,12 +59,9 @@ SurfaceExportModule.events = {
 		end
 	end,
 
-	-- Clusterio custom events
 	[clusterio_api.events.on_server_startup] = function()
 		initialize_storage()
-		-- Unlock gateway space-locations on every startup (covers every save load). Caches nothing.
 		Gateway.discover_and_unlock()
-		-- Pre-create the /teleport pass group so it is ready in the /permissions GUI (idempotent).
 		TeleportGui.ensure_permission_group()
 		log("[Surface Export] Connected to Clusterio controller")
 	end,
@@ -103,16 +74,13 @@ SurfaceExportModule.events = {
 		local platform = event.platform
 		if not (platform and platform.valid) then return end
 
-		-- CRITICAL: Space platforms use defines.space_platform_state, NOT defines.train_state
 		local sps = defines.space_platform_state
 
-		-- Track flight start time and estimated duration; clear on arrival
 		storage.platform_flight_data = storage.platform_flight_data or {}
 		if platform.state == sps.on_the_path then
 			local est_ticks = nil
 			local ok, result = pcall(function()
 				local src = platform.space_location
-				-- Read destination from schedule (platform.current_target does NOT exist)
 				local schedule = platform.schedule
 				local tgt_name = nil
 				if schedule and schedule.records and schedule.current then
@@ -138,10 +106,6 @@ SurfaceExportModule.events = {
 		elseif platform.state == sps.waiting_at_station then
 			storage.platform_flight_data[platform.name] = nil
 
-			-- Gateway arrival detection: did the platform just park at a gateway? Detect + log, and (if the
-			-- gateway has configured destinations) open the on-arrival chooser GUI for everyone VIEWING this
-			-- platform. The arrival itself NEVER fires a transfer — that is the player's explicit Transfer
-			-- click inside the GUI (a separate tick, outside this state-change). Uses the shared predicate.
 			local gw_name = Gateway.parked_at_gateway(platform)
 			if gw_name then
 				log(string.format("[Gateway] Platform '%s' (force '%s') arrived at gateway '%s'",
@@ -154,8 +118,6 @@ SurfaceExportModule.events = {
 					local surf_idx = platform.surface.index
 					for _, player in pairs(game.connected_players) do
 						-- intentional probe; a surface_index read failure just means this player doesn't get
-						-- the arrival chooser (no state/data impact), and the GUI-open below is itself
-						-- pcall_warn-logged — so skipping silently here is the correct, harmless fallback.
 						local ok, si = pcall(function() return player.surface_index end)
 						if ok and si == surf_idx then
 							GameUtils.pcall_warn("[Gateway] open arrival chooser", function()
@@ -167,7 +129,6 @@ SurfaceExportModule.events = {
 			end
 		end
 
-		-- Notify the controller so it can push a tree refresh to web subscribers
 		if not (clusterio_api and clusterio_api.send_json) then return end
 		GameUtils.pcall_warn("[Surface Export] send_json surface_platform_state_changed", function()
 			clusterio_api.send_json("surface_platform_state_changed", {
@@ -177,7 +138,6 @@ SurfaceExportModule.events = {
 		end)
 	end,
 
-	-- GUI events — routed to every plugin GUI; each acts only on its own elements.
 	[e.on_gui_click] = function(event)
 		TransactionDashboard.on_gui_click(event)
 		GatewayTransferGui.on_gui_click(event)
@@ -190,8 +150,6 @@ SurfaceExportModule.events = {
 		TeleportGui.on_gui_closed(event)
 	end,
 
-	-- Selection Lab (debug instrument; prototype ships in the surfexp_gateways mod, all logic here).
-	-- Each handler self-guards on event.item == "selection-lab-tool" and debug_mode.
 	[e.on_player_selected_area] = function(event)
 		SelectionLab.handle(event, "copy")
 	end,
@@ -210,12 +168,6 @@ SurfaceExportModule.events = {
 
 }
 
--- Selection Lab undo/redo (custom-input prototypes from the surfexp_gateways mod). Register these
--- string-keyed handlers ONLY when the prototypes exist: script.on_event raises on an unknown
--- custom-input name, so an instance still carrying a pre-0.3.0 gateway mod (or none) would crash-loop
--- on module load. `prototypes` is readable at control.lua load (only `game`/`rendering` are not), and
--- the `prototypes and` guard mirrors Clusterio's own defensive idiom (host/lua/export/control.lua).
--- The selection-tool handlers above (on_player_selected_area etc.) are engine events — unconditional.
 if prototypes and prototypes.custom_input["selection-lab-undo"] then
 	SurfaceExportModule.events["selection-lab-undo"] = function(event)
 		SelectionLab.undo(event)
@@ -227,38 +179,6 @@ if prototypes and prototypes.custom_input["selection-lab-redo"] then
 	end
 end
 
--- ============================================================================
--- API Documentation
--- ============================================================================
 
--- The remote interface "surface_export" provides these key functions:
---
--- For exports:
---   remote.call("surface_export", "export_platform", platform_index, force_name)
---   remote.call("surface_export", "export_platform_to_file", platform_index, force_name, filename)
---   remote.call("surface_export", "get_export", export_id)
---   remote.call("surface_export", "get_export_json", export_id)  -- JSON string for RCON
---   remote.call("surface_export", "list_exports")
---   remote.call("surface_export", "list_exports_json")  -- JSON string for RCON
---   remote.call("surface_export", "clear_old_exports", max_to_keep)
---
--- For imports (chunked RCON — Factorio 2.0 cannot read files at runtime):
---   remote.call("surface_export", "import_platform_chunk", platform_name, chunk_data, chunk_num, total_chunks, force_name)
---
--- For platform locking (transfer workflow):
---   remote.call("surface_export", "lock_platform_for_transfer", platform_index, force_name)
---   remote.call("surface_export", "unlock_platform", platform_index_or_name)  -- index preferred; name accepted
---
--- For validation:
---   remote.call("surface_export", "get_validation_result", platform_name)
---   remote.call("surface_export", "get_validation_result_json", platform_name)
---
--- Configuration:
---   remote.call("surface_export", "configure", config_table)
---
--- Debug/testing:
---   remote.call("surface_export", "test_import_entity", entity_json, surface_index, position)
---   remote.call("surface_export", "run_tests")
---   remote.call("surface_export", "clone_platform", source_index, dest_name)  -- source by UNIQUE per-force index, 2 args
 
 return SurfaceExportModule

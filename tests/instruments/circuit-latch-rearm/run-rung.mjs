@@ -1,35 +1,9 @@
-// INSTRUMENT (not a standing gate) — circuit latch re-arm rung, 2026-07-28, engine pin 2.1.11.
-//
-// THE PROBLEM. A transferred SR latch arrives holding nothing. On the source the decider's output
-// register carries signal-S = 1 and its own output is wired back into its input, so the condition
-// "S > 0" keeps it true forever. Recreated at the destination the register starts at 0, the feedback
-// it reads is its own 0, and the latch is stable at 0 — no serializer can put the register back
-// because the register is not script-writable.
-//
-// WHAT THIS RUNG MEASURES (re-run it on an engine bump; every claim in the api-notes circuit section
-// tagged `circuit-latch-rearm` comes from here):
-//   1. Is the decider's output register directly writable?          -> NO
-//   2. Does disabled_by_script do anything to a combinator?         -> NO (write reads back false)
-//   3. Can a cleared latch be RE-ARMED by temporarily rewriting the
-//      CONDITION (which IS writable), letting it evaluate, then
-//      restoring the captured condition?                            -> YES
-//
-// Consequence for production: a re-arm needs at least one UNPAUSED tick, so it cannot run inside the
-// frozen pre-gate window. Circuit signals are not part of the exact gate (items + fluids), so a
-// post-activation re-arm pass is lawful — but it is a deliberate mutation of a user's circuit and is
-// NOT implemented; see the api-notes entry for the open caveats (output COUNT is not reproduced by a
-// copy_count_from_input=false condition, and forcing a condition true can pulse whatever the network
-// drives).
-//
-// Zero-leftover: builds on its own scratch surface, deletes it in the finally. Run with the cluster
-// up:  node tests/instruments/circuit-latch-rearm/run-rung.mjs
 import { createBatchLifecycle } from "../../lab-gallery/batch-lifecycle.mjs";
 
 const L = createBatchLifecycle({
 	goldenSourceSave: "unused.zip", goldenDestSave: "unused.zip", markerPrefix: "latch-rung",
 });
 const HOST = 2;
-// Unique per run: game.delete_surface is deferred to end-of-tick, so create-after-delete collides.
 const SURFACE = `latch-rung-${Date.now() % 1000000}`;
 const say = (...a) => console.log(...a);
 
@@ -39,8 +13,6 @@ function lua(body) {
 	return r;
 }
 
-// Resolve the probe entities from storage on every call (fresh handles), and define the latch
-// condition once so "restore the captured condition" means exactly that.
 const PRE = `
 local st = storage.__latch_rung
 local s = game.get_surface(st.surface)
@@ -72,9 +44,6 @@ return { success = true, net = (#sigs>0) and table.concat(sigs, ',') or '(empty)
   status = status_name, energy = math.floor(dc.energy) }
 `;
 
-// A decider combinator DOES draw power (prototype: electric energy source, 16.67 J/tick) — only the
-// CONSTANT combinator is sourceless. An unpowered decider reads status=no_power and never evaluates,
-// which silently makes every reading below zero. Hence the substation + interface.
 const BUILD = `
 for name, srf in pairs(game.surfaces) do
   if name:find('^latch%-rung%-') then game.delete_surface(srf) end
@@ -134,7 +103,6 @@ async function main() {
 		say(`C. SET=0, latch HOLDS        -> ${JSON.stringify(c)}`);
 		if (!/signal-S=1/.test(c.net)) throw new Error("rung invalid: the latch did not hold after SET dropped");
 
-		// Clear it: the state a TRANSFERRED decider arrives in — register 0, feedback 0, stable.
 		lua(PRE + `dc.get_control_behavior().parameters = {
 			conditions = {{ first_signal={type='virtual',name='signal-A'}, comparator='>', constant=999 }},
 			outputs = {{ signal={type='virtual',name='signal-S'}, copy_count_from_input=false }} }
@@ -153,14 +121,6 @@ async function main() {
 		record("R1", `decider output register directly writable: ${write.wrote ? "YES" : "NO"}`,
 			String(write.err));
 
-		// R2 is BEHAVIORAL, not a property readback. The first version of this rung wrote
-		// disabled_by_script and read the property back — confounded: combinators are natively
-		// active == false, so neither the readback nor an active check can distinguish "the write
-		// was ignored" from "it was already off" (retracted 2026-07-28). The observable that CAN
-		// answer it is evaluation: give the decider a plain non-latching condition, "disable" it,
-		// change its input, and watch whether the output responds. Baseline recorded BEFORE the
-		// write, transition measured across it, latch condition restored after (the plain condition
-		// prevents the probe from arming the latch and destroying the cleared state R3 needs).
 		lua(PRE + `dc.get_control_behavior().parameters = {
 			conditions = {{ first_signal={type='virtual',name='signal-A'}, comparator='>', constant=0 }},
 			outputs = {{ signal={type='virtual',name='signal-S'}, copy_count_from_input=false }} }
@@ -187,7 +147,6 @@ async function main() {
 				? "output fired — the combinator still evaluates, the disable is ineffective"
 				: "output stayed silent — the disable is honoured"}); state restored="${disRestored.net}"`);
 
-		// THE RE-ARM: rewrite the condition so it fires from present inputs, evaluate, restore.
 		lua(PRE + `dc.get_control_behavior().parameters = {
 			conditions = {{ first_signal={type='virtual',name='signal-A'}, comparator='=', constant=0 }},
 			outputs = {{ signal={type='virtual',name='signal-S'}, copy_count_from_input=false }} }

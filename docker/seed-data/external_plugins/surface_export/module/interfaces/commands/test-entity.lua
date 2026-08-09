@@ -1,6 +1,3 @@
--- Command: /test-entity
--- Test importing a single entity from JSON for debugging
-
 local Base = require("modules/surface_export/interfaces/commands/base")
 
 Base.admin_command("test-entity",
@@ -23,12 +20,10 @@ Base.admin_command("test-entity",
     
     local entity_json
     
-    -- Check if loading from file
     if param:sub(1, 5) == "file:" then
       local filename = param:sub(6)
       ctx.print("Loading entity from file: " .. filename)
       
-      -- Try to read via remote interface (file reading is limited in Factorio)
       ctx.print("Note: File reading requires the data to be passed via RCON or remote interface")
       ctx.print("Use: remote.call('surface_export', 'test_import_entity', <json_string>)")
       return
@@ -36,10 +31,8 @@ Base.admin_command("test-entity",
       entity_json = param
     end
     
-    -- Get player's surface
     local surface_index = ctx.player and ctx.player.surface.index or 1
     
-    -- Call the remote interface
     local result = remote.call("surface_export", "test_import_entity", entity_json, surface_index, nil)
     
     if not result then
@@ -47,7 +40,6 @@ Base.admin_command("test-entity",
       return
     end
     
-    -- Print results
     ctx.print("═══════════════════════════════════════")
     ctx.print("🧪 Entity Test Result")
     ctx.print("═══════════════════════════════════════")
@@ -66,7 +58,6 @@ Base.admin_command("test-entity",
       ctx.print("✗ FAILED - Entity not created")
     end
     
-    -- Print errors
     if result.errors and #result.errors > 0 then
       ctx.print("")
       ctx.print("Errors:")
@@ -75,7 +66,6 @@ Base.admin_command("test-entity",
       end
     end
     
-    -- Print warnings
     if result.warnings and #result.warnings > 0 then
       ctx.print("")
       ctx.print("Warnings:")
@@ -84,7 +74,6 @@ Base.admin_command("test-entity",
       end
     end
     
-    -- Print debug info
     if result.debug_info then
       ctx.print("")
       ctx.print("Debug Info:")
@@ -105,7 +94,6 @@ Base.admin_command("test-entity",
   end
 )
 
--- Also add a variant that allows position override
 Base.admin_command("test-entity-at",
   "Test import entity at specific position. Usage: /test-entity-at <x> <y> <json>",
   function(cmd, ctx)
@@ -125,7 +113,6 @@ Base.admin_command("test-entity-at",
       return
     end
     
-    -- Reconstruct JSON from remaining params (in case it had spaces)
     local json_parts = {}
     for i = 3, #params do
       table.insert(json_parts, params[i])
@@ -142,7 +129,6 @@ Base.admin_command("test-entity-at",
       return
     end
     
-    -- Print condensed results
     if result.success then
       ctx.print(string.format("✓ Created %s at {%g, %g}", 
         result.debug_info.entity_name or "entity",

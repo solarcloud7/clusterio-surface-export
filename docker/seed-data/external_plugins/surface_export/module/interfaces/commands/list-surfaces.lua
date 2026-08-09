@@ -1,6 +1,3 @@
--- Command: /list-surfaces
--- List all surfaces with their indices
-
 local Base = require("modules/surface_export/interfaces/commands/base")
 
 Base.admin_command("list-surfaces", "List all surfaces with their indices (needed for import-platform)", function(cmd, ctx)
@@ -13,7 +10,6 @@ Base.admin_command("list-surfaces", "List all surfaces with their indices (neede
     })
   end
   
-  -- Sort by index
   table.sort(surfaces, function(a, b) return a.index < b.index end)
   
   if #surfaces == 0 then

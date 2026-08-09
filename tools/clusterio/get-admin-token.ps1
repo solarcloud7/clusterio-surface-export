@@ -1,6 +1,5 @@
 $ErrorActionPreference = "Stop"
 
-# Get admin username from env file or use default
 $EnvFile = Join-Path $PSScriptRoot "../../.env"
 $AdminUser = "admin"
 if (Test-Path $EnvFile) {
@@ -16,7 +15,6 @@ if (Test-Path $EnvFile) {
 Write-Host ""
 Write-Host "Retrieving admin token for user: $AdminUser" -ForegroundColor Cyan
 
-# Read token from config-control.json
 $ConfigJson = docker exec surface-export-controller cat /clusterio/tokens/config-control.json 2>&1
 
 if ($LASTEXITCODE -ne 0) {
@@ -25,7 +23,6 @@ if ($LASTEXITCODE -ne 0) {
     exit 1
 }
 
-# Parse the token from the JSON
 try {
     $Config = $ConfigJson | ConvertFrom-Json
     $Token = $Config.'control.controller_token'
@@ -43,7 +40,6 @@ Write-Host "Admin Token:" -ForegroundColor Yellow
 Write-Host $Token -ForegroundColor White
 Write-Host ""
 
-# Copy to clipboard if available
 try {
     $Token | Set-Clipboard
     Write-Host "(Copied to clipboard)" -ForegroundColor Green

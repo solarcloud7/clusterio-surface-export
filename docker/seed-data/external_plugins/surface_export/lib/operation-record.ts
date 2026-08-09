@@ -1,19 +1,6 @@
-
 import type { ActiveTransfer, OperationOptions, OperationType } from "../messages";
 import { generateOperationId } from "../helpers";
 
-/**
- * Build an {@link ActiveTransfer} record with the canonical defaults/guards shared by
- * the controller (export/import operations) and the transfer orchestrator.
- *
- * This is a pure factory: it does NOT touch `activeTransfers` — callers are responsible
- * for inserting the returned record into their map (so the existing `activeTransfers.set`
- * ordering relative to logging is preserved at each call site).
- *
- * Instance-name resolution is injected via `options.resolveInstanceName` so this module
- * stays free of plugin/controller dependencies. When omitted, source/target instance
- * names fall back to `null` (matching callers that pass explicit names).
- */
 export function createOperationRecord(
 	operationType: OperationType,
 	options: OperationOptions & { resolveInstanceName?: (instanceId: number) => string | null } = {},

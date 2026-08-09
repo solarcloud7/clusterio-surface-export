@@ -1,22 +1,4 @@
 #!/usr/bin/env node
-// Full-corpus delivery wave: ship EVERY fixture platform from the committed golden source save to
-// the LIVE gallery instance via the plugin's own /transfer-platform, so the whole lab family lands
-// on the game map the owner is playing on. Sibling of deliver-omnibus.mjs (which delivers only the
-// one omnibus platform); this one enumerates the golden source, subtracts what the gallery already
-// holds, and delivers the difference sequentially — one platform at a time, polling each for a
-// COMMITTED arrival (gallery-present + source-deleted) before starting the next.
-//
-//   node tests/lab-gallery/deliver-all-fixtures.mjs
-//
-// Sequence: displace host-1 onto the committed golden source (stop -> docker cp -> start --save),
-// bump the export-ID counter ONCE (the deterministic golden counter regenerates identical IDs every
-// load; the settled-retry guard correctly refuses a reused ID — measured 2026-07-19; each export job
-// self-increments from the bumped base, so one bump covers the whole wave), then per missing platform:
-// resolve its per-force index by NAME (tooling boundary), /transfer-platform to the gallery, poll for
-// a two-phase-committed arrival, light census. Per-platform failures are captured (cluster-*.log
-// evidence + best-effort unlock) and DO NOT abort the wave. Finally: restore host-1 to lab-gallery-source.zip and
-// remove the temp golden save with filesystem proof (unconditional finalizer). The gallery (host-2)
-// is NEVER stopped/started/loaded — arrivals via transfer are the whole point.
 
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
@@ -33,13 +15,10 @@ const HOST1_CONTAINER = "surface-export-host-1";
 const HOST1_SAVES = `/clusterio/data/instances/${HOST1_INSTANCE}/saves`;
 const DELIVER_SAVE = "lab-gallery-deliver-all.zip";
 const RESTORE_SAVE = "lab-gallery-source.zip";
-// Must match manifest.json saves.source.artifact — that pin is the one the SHA preflight enforces.
-// (This pointed at lab-gallery-source-surface-export-2.0.77.zip, a file deleted in the 2.1.11
-// migration, so the copy at line ~220 could only ever fail.)
 const GOLDEN_SOURCE = "docker/seed-data/lab-saves/lab-gallery-source-of-truth.zip";
 const MANIFEST = "tests/lab-gallery/manifest.json";
 
-const PER_PLATFORM_TIMEOUT_MS = 300_000; // small platforms clear in ~60-90 s; census-fusion is novel
+const PER_PLATFORM_TIMEOUT_MS = 300_000;
 const ARRIVAL_POLL_MS = 8000;
 
 function ctl(...args) {
@@ -53,7 +32,6 @@ function galleryRcon(command) {
 	{ timeout: 180_000 }).trim();
 }
 
-// JSON-wrapped Lua op against the GALLERY instance (same convention as batch-lifecycle.lua).
 function galleryLua(body) {
 	const command = `/sc local ok,result=pcall(function() ${body} end); ` +
 		`if ok then rcon.print(helpers.table_to_json(result)) else rcon.print(helpers.table_to_json({success=false,error=tostring(result)})) end`;
@@ -62,7 +40,6 @@ function galleryLua(body) {
 	catch (error) { throw new Error(`Invalid gallery Lua JSON: ${raw}\n${error.message}`); }
 }
 
-// name -> per-force index for every valid platform on `game.forces.player.platforms` of a host.
 function platformsOnHost1() {
 	const reading = lua(1, `local o={}; for _,p in pairs(game.forces.player.platforms) do ` +
 		`if p.valid then o[p.name]=p.index end end; return {success=true,platforms=o}`);
@@ -70,7 +47,6 @@ function platformsOnHost1() {
 	return reading.platforms || {};
 }
 
-// Resolve ONE platform's index by name on host-1, fail loud on absent/ambiguous (tooling boundary).
 function resolveHost1Index(name) {
 	const reading = lua(1, `local idx,count; for _,p in pairs(game.forces.player.platforms) do ` +
 		`if p.valid and p.name=='${name}' then count=(count or 0)+1; idx=p.index end end; ` +
@@ -80,7 +56,6 @@ function resolveHost1Index(name) {
 	return reading;
 }
 
-// Whether a named platform is still present on host-1 (source-deleted => two-phase commit finished).
 function sourceStillPresent(name) {
 	const reading = lua(1, `local present=false; for _,p in pairs(game.forces.player.platforms) do ` +
 		`if p.valid and p.name=='${name}' then present=true end end; return {success=true,present=present}`);
@@ -88,7 +63,6 @@ function sourceStillPresent(name) {
 	return reading.present;
 }
 
-// name+entity census of a named platform on the GALLERY.
 function galleryCensus(name) {
 	const reading = galleryLua(`local surf,count; for _,p in pairs(game.forces.player.platforms) do ` +
 		`if p.valid and p.name=='${name}' then count=(count or 0)+1; surf=p.surface end end; ` +
@@ -105,7 +79,6 @@ function galleryPlatformNames() {
 	return reading.names || [];
 }
 
-// Transient plugin-state leftovers on a host (jobs/locks/holds/tombstones must all be zero post-wave).
 function leftovers(runLua) {
 	const reading = runLua(`local function n(t) return table_size(t or {}) end; ` +
 		`return {success=true,jobs=n(storage.async_jobs),locks=n(storage.locked_platforms),` +
@@ -128,8 +101,6 @@ async function waitHost1Ready(timeoutMs = 180_000) {
 	throw new Error(`host-1 did not become RCON-ready: ${lastError?.message}`);
 }
 
-// Manifest source census: platformName -> entityCount (INFORMATIONAL — never a hard gate; the manifest
-// counts differently from find_entities_filtered{}, so equality would false-fail small platforms).
 function manifestCensusMap() {
 	const repoRoot = fileURLToPath(new URL("../../", import.meta.url));
 	const manifest = JSON.parse(readFileSync(`${repoRoot}${MANIFEST}`, "utf8"));
@@ -148,8 +119,6 @@ function captureFailureEvidence(name) {
 	} catch (error) { return `evidence capture failed: ${error.message}`; }
 }
 
-// Deliver ONE platform: resolve index, transfer, poll for a committed arrival, census. Returns an
-// outcome record; NEVER throws (a novel-payload red must not skip the rest of the wave).
 async function deliverOne(name, expectedEntities) {
 	const outcome = { name, expectedEntities, startedMs: Date.now() };
 	try {
@@ -160,10 +129,6 @@ async function deliverOne(name, expectedEntities) {
 
 		outcome.transferCommand = lastLine(rcon(1, `/transfer-platform ${resolved.index} ${GALLERY_INSTANCE_ID}`));
 
-		// Poll for a TWO-PHASE-COMMITTED arrival: the gallery holds the platform (entities>0) AND the
-		// source is deleted on host-1. Source deletion happens ONLY after the dest gate validates and
-		// commits, so it is the unambiguous success signal that survives the black-box-discard timing
-		// (an arrival seen mid-import can still be discarded on gate-fail; a deleted source cannot).
 		const deadline = Date.now() + PER_PLATFORM_TIMEOUT_MS;
 		let committed = false;
 		let lastCensus = { present: false };
@@ -173,14 +138,12 @@ async function deliverOne(name, expectedEntities) {
 			const srcGone = !sourceStillPresent(name);
 			if (lastCensus.present && lastCensus.entities > 0 && srcGone) { committed = true; break; }
 			if (srcGone && !lastCensus.present) {
-				// Source committed-away but the dest is absent = discarded on gate-fail. Stop early.
 				throw new Error(`source deleted but platform absent on gallery — dest discarded (gate failure)`);
 			}
 		}
 		if (!committed) throw new Error(`no committed arrival within ${PER_PLATFORM_TIMEOUT_MS / 1000} s ` +
 			`(gallery present=${lastCensus.present}, source still present=${sourceStillPresent(name)})`);
 
-		// Settle + re-confirm the platform PERSISTS (guards against a late discard just after commit).
 		await sleep(5000);
 		const settled = galleryCensus(name);
 		if (!settled.present || !(settled.entities > 0)) {
@@ -195,7 +158,6 @@ async function deliverOne(name, expectedEntities) {
 		outcome.error = error.message;
 		outcome.transferSeconds = Math.round((Date.now() - outcome.startedMs) / 1000);
 		outcome.evidence = captureFailureEvidence(name);
-		// Best-effort unlock so a preserved-and-locked source does not strand a leftover.
 		if (outcome.index !== undefined) {
 			try {
 				const unlocked = lua(1, `remote.call('surface_export','unlock_platform', ${outcome.index}); ` +
@@ -211,14 +173,11 @@ async function main() {
 	const summary = { started: new Date().toISOString(), deliveries: [] };
 	const manifestMap = manifestCensusMap();
 
-	// What the gallery already holds (skip set) — computed BEFORE displacing host-1.
 	const alreadyOnGallery = new Set(galleryPlatformNames());
 	summary.galleryBefore = [...alreadyOnGallery];
 
 	let displaced = false;
 	try {
-		// Displace host-1 onto the committed golden source (stop FIRST — stopping exit-saves the running
-		// world into its started-from file, never into our fresh copy).
 		ctl("instance", "stop", HOST1_INSTANCE);
 		displaced = true;
 		const repoRoot = fileURLToPath(new URL("../../", import.meta.url));
@@ -227,24 +186,18 @@ async function main() {
 		ctl("instance", "start", HOST1_INSTANCE, "--save", DELIVER_SAVE);
 		await waitHost1Ready();
 
-		// Export-ID uniquifier (ONCE — jobs self-increment from the raised base over the whole wave).
-		// This was `500 + (Date.now() % 100_000)`, which aliased every 100 SECONDS — the worse of the
-		// two copies. Shares batch-lifecycle's monotone floor now; see exportIdFloor for the measurement.
 		summary.counterBumpedTo = bumpExportIdCounter(1);
 
-		// The delivery set = golden-source platforms MINUS what the gallery already holds.
 		const sourcePlatforms = platformsOnHost1();
 		summary.goldenSourcePlatforms = Object.keys(sourcePlatforms).sort();
 		const toDeliver = Object.keys(sourcePlatforms).filter(name => !alreadyOnGallery.has(name)).sort();
 		summary.toDeliver = toDeliver;
 
-		// Sequential delivery — one at a time, committed-arrival gated, per-platform failures contained.
 		for (const name of toDeliver) {
 			const outcome = await deliverOne(name, manifestMap[name]);
 			summary.deliveries.push(outcome);
 		}
 	} finally {
-		// Unconditional restore: land host-1 back on lab-gallery-source.zip and PROVE the temp save is gone.
 		if (displaced) {
 			ctl("instance", "stop", HOST1_INSTANCE);
 			ctl("instance", "start", HOST1_INSTANCE, "--save", RESTORE_SAVE);
@@ -255,9 +208,6 @@ async function main() {
 		}
 	}
 
-	// Post-wave state: the final gallery platform list + zero-leftover check on BOTH ends (the gallery
-	// is the load-bearing side — host-2 is never restored, so its leftovers are the ones that matter;
-	// host-1 was just restored to lab-gallery-source.zip which wipes any mid-wave locks/jobs/holds there).
 	summary.galleryAfter = galleryPlatformNames().sort();
 	summary.galleryPlatformCount = summary.galleryAfter.length;
 	summary.leftovers = { gallery: leftovers(galleryLua), host1: leftovers(body => lua(1, body)) };

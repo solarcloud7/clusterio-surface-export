@@ -33,37 +33,25 @@ test("catch-swallow guard accepts throw, rejection, returned errors, and user-vi
 });
 
 test("catch-swallow guard accepts escape-by-assignment and .push sinks (SC-70 .mjs surface)", async () => {
-	// Outer-variable retry pattern: lastError is declared ABOVE the catch and rethrown after the loop.
 	assert.deepEqual(await scan("let lastError; try { a(); } catch (error) { lastError = error; }"), []);
-	// Property write into an object the caller reads.
 	assert.deepEqual(await scan("try { a(); } catch (error) { outcome.error = error.message; }"), []);
-	// Push into an outer findings collection.
 	assert.deepEqual(await scan("try { a(); } catch (error) { leftovers.push(`gone: ${error.message}`); }"), []);
-	// Still swallows: assignment whose right side never mentions the binding.
 	assert.equal((await scan("try { a(); } catch (error) { allLogs = []; }")).length, 1);
-	// Still swallows: the error only reaches a variable declared INSIDE the body.
 	assert.equal((await scan("try { a(); } catch (error) { const msg = error.message; }")).length, 1);
-	// Still swallows: push without the binding in its arguments.
 	assert.equal((await scan("try { a(); } catch (error) { items.push('failed'); }")).length, 1);
 });
 
 test("catch-swallow guard is not blinded by regex literals carrying quotes (the M1 desync class)", async () => {
-	// This exact shape silently desynced the lexer and hid a real `catch { size = -1; }` in
-	// tests/lab-gallery/complete-live-gallery.mjs while the guard printed OK.
 	const source = `
 		function jlit(value) { return JSON.stringify(value).replace(/'/g, "\\\\'"); }
 		try { a(); } catch { fallback = []; }
 	`;
 	assert.equal((await scan(source)).length, 1);
-	// A construct the lexer genuinely cannot parse must THROW (fail loud), never mis-scan.
 	await assert.rejects(async () => scan('const broken = "unterminated\ntry { a(); } catch {}'),
 		/maskNonCode desynced/);
 });
 
 test("catch-swallow guard lexes JSX soundly (tags, self-closers, contractions in text)", async () => {
-	// The contraction veto: an identifier char directly before a quote is invalid JS, so the
-	// apostrophe in JSX prose is text — the shape that silently desynced the OLD lexer on
-	// web/GatewaysTab.tsx. A swallow after such JSX must still be found.
 	const source = `
 		const view = <Text type="secondary">Link each instance's gateways to a destination.</Text>;
 		const row = <Row key={x}/>;
@@ -74,10 +62,8 @@ test("catch-swallow guard lexes JSX soundly (tags, self-closers, contractions in
 });
 
 test("catch-swallow guard requires escape targets to be OUTER (the M2 locality rule)", async () => {
-	// A container declared inside the body dies at the closing brace — a swallow with extra steps.
 	assert.equal((await scan("try { a(); } catch (error) { const errs = []; errs.push(error.message); }")).length, 1);
 	assert.equal((await scan("try { a(); } catch (error) { const local = {}; local.err = error; }")).length, 1);
-	// Compound assignment to an outer variable is a write like any other.
 	assert.deepEqual(await scan("try { a(); } catch (error) { report += error.message; }"), []);
 });
 

@@ -2,9 +2,6 @@ local Deserializer = require("modules/surface_export/core/deserializer")
 local Util = require("modules/surface_export/utils/util")
 local EntityCreation = {}
 
--- TEST-ONLY helper: does this serialized entity carry inventory items? The one-shot
--- `test_force_entity_failure` hook targets such an entity (a container/crafter with stable
--- counts) rather than a belt, so the failed-entity-loss attribution is exercised cleanly.
 local function carries_inventory_items(entity_data)
   local sd = entity_data.specific_data
   if not sd or not sd.inventories then return false end
@@ -23,11 +20,6 @@ local function carries_fluids(entity_data)
   return false
 end
 
---- Process a batch of entity creation
---- @param job table: The import job state
---- @param get_batch_size function: Function to get current batch size
---- @param should_show_progress function: Function to check if progress should be shown
---- @return boolean: true if job is complete for this tick (either finished or batch reached)
 function EntityCreation.process_batch(job, get_batch_size, should_show_progress)
     local batch_size = get_batch_size()
     local start_index = job.current_index + 1
@@ -41,16 +33,12 @@ function EntityCreation.process_batch(job, get_batch_size, should_show_progress)
       local entity_data = job.entities_to_create[i]
       if entity_data then
         if entity_data._beacon_placed then
-          -- Already created by the beacon pre-placement phase; skip to avoid duplicates.
-          -- The entity is already in entity_map under entity_data.entity_id.
           batch_created = batch_created + 1
         elseif entity_data.type == "item-on-ground" then
           local created = Deserializer.create_ground_item(job.target_surface, entity_data)
           if created and created.valid then
             batch_created = batch_created + 1
           else
-            -- Ground item could not be placed (tile now occupied, invalid item, etc.) — tally as a
-            -- loss so it is accounted (subtracted from expected) rather than silently dropped.
             batch_failed = batch_failed + 1
             local losses = job.failed_entity_losses
             if not losses then
@@ -66,10 +54,6 @@ function EntityCreation.process_batch(job, get_batch_size, should_show_progress)
           end
         else
           local entity
-          -- TEST HOOK (one-shot, debug-gated): simulate a failed placement for the first
-          -- inventory-bearing entity, exercising failed-entity-loss attribution + the expected-count
-          -- subtraction so validation still passes (failed-entity losses are tallied and subtracted from expected). Set via
-          -- configure({ test_force_entity_failure = true }).
           local _cfg = storage.surface_export_config
           local failure_mode = _cfg and _cfg.test_force_entity_failure
           local fluid_target = type(failure_mode) == "string"
@@ -81,8 +65,6 @@ function EntityCreation.process_batch(job, get_batch_size, should_show_progress)
           local position_matches = fluid_x and fluid_y and entity_data.position
             and math.abs((entity_data.position.x or entity_data.position[1]) - tonumber(fluid_x)) < 0.001
             and math.abs((entity_data.position.y or entity_data.position[2]) - tonumber(fluid_y)) < 0.001
-          -- An armed string mode that parses to NEITHER pattern can never match any entity:
-          -- warn once per job instead of leaving the flag silently armed forever.
           if type(failure_mode) == "string" and not fluid_target and not fluid_x
               and not job.warned_unrecognized_failure_mode then
             job.warned_unrecognized_failure_mode = true
@@ -95,7 +77,7 @@ function EntityCreation.process_batch(job, get_batch_size, should_show_progress)
             or failure_mode == true and carries_inventory_items(entity_data)
           if _cfg and _cfg.debug_mode and matches_failure_mode
               and entity_data.name ~= "space-platform-hub" then
-            _cfg.test_force_entity_failure = nil  -- consume: applies to one entity only
+            _cfg.test_force_entity_failure = nil
             job.test_forced_entity_failure = true
             entity = nil
             log(string.format("[TEST HOOK] Forcing placement failure for %s entity '%s' to exercise failed-entity-loss attribution",
@@ -105,18 +87,10 @@ function EntityCreation.process_batch(job, get_batch_size, should_show_progress)
           end
           if entity and entity.valid then
             batch_created = batch_created + 1
-            -- Store in entity_map for post-processing (circuit connections, etc.)
             if entity_data.entity_id then
               job.entity_map[entity_data.entity_id] = entity
             end
             
-            -- CRITICAL: If this is a transfer, deactivate productive entities BEFORE restoring state/inventories.
-            -- This prevents crafting machines from consuming items the moment a recipe is set.
-            -- Passive entities (beacons, radars, walls) are excluded — they hold no items/fluids
-            -- and must remain active so beacon speed bonuses apply to nearby machines as they are placed.
-            -- item-request-proxy joins the exclusions (review F1, 2026-07-19): proxies consume
-            -- nothing, and they are absent from ACTIVATABLE_ENTITY_TYPES so a deactivated proxy
-            -- would NEVER be reactivated — arriving permanently inert.
             if job.transfer_id and entity.type ~= "beacon" and entity.type ~= "radar"
                 and entity.type ~= "item-request-proxy" then
               local ok, err = pcall(function()
@@ -129,25 +103,13 @@ function EntityCreation.process_batch(job, get_batch_size, should_show_progress)
               end
             end
             
-            -- Now safely restore state with entity deactivated
-            -- NOTE: Fluids are restored in post-processing phase (complete_import_job)
-            -- This is CRITICAL because restoring fluids immediately causes fluid network
-            -- redistribution when connected pipes/tanks are created later in the batch
-            -- NOTE: Inventories are also restored in post-processing phase (complete_import_job)
-            -- This is CRITICAL because set_stack() ceiling depends on crafting_speed, which
-            -- depends on beacon effects. Beacons may not yet be placed when an entity is created
-            -- in an earlier batch — restoring inventories here would lose items to a too-low cap.
             Deserializer.restore_entity_state(entity, entity_data)
           else
-            -- space-platform-hub returns nil from create_entity deliberately:
-            -- it is pre-created with the platform and mapped in platform_hub_mapping.
-            -- Its inventories ARE restored there, so do NOT count it as lost here.
             if entity_data.name == "space-platform-hub" then
               batch_skipped = batch_skipped + 1
             else
               batch_failed = batch_failed + 1
 
-              -- Tally items/fluids lost due to failed placement
               local losses = job.failed_entity_losses
               if not losses then
                 losses = { entity_count = 0, total_items = 0, total_fluids = 0.0, items = {}, fluids = {}, entities = {} }
@@ -158,7 +120,6 @@ function EntityCreation.process_batch(job, get_batch_size, should_show_progress)
               local entity_fluids = 0.0
 
               if entity_data.specific_data then
-                -- Inventory items
                 if entity_data.specific_data.inventories then
                   for _, inv_data in ipairs(entity_data.specific_data.inventories) do
                     for _, item in ipairs(inv_data.items or {}) do
@@ -168,7 +129,6 @@ function EntityCreation.process_batch(job, get_batch_size, should_show_progress)
                     end
                   end
                 end
-                -- Belt items
                 if entity_data.specific_data.items then
                   for _, line_data in ipairs(entity_data.specific_data.items) do
                     for _, item in ipairs(line_data.items or {}) do
@@ -178,16 +138,12 @@ function EntityCreation.process_batch(job, get_batch_size, should_show_progress)
                     end
                   end
                 end
-                -- Inserter held item
                 if entity_data.specific_data.held_item then
                   local held = entity_data.specific_data.held_item
                   local item_key = Util.make_quality_key(held.name, held.quality or Util.QUALITY_NORMAL)
                   losses.items[item_key] = (losses.items[item_key] or 0) + held.count
                   entity_items = entity_items + held.count
                 end
-                -- Fluids: REPORTED only (per-box captured locals) — never subtracted from the
-                -- gate's expected counts (owner ruling 2026-07-20, fail => revert; a segment
-                -- short of a failed member's share fails the gate and the source is preserved).
                 if entity_data.specific_data.fluidboxes then
                   for _, box in ipairs(entity_data.specific_data.fluidboxes) do
                     local amount = box.local_amount or 0
@@ -204,7 +160,6 @@ function EntityCreation.process_batch(job, get_batch_size, should_show_progress)
               losses.total_items = losses.total_items + entity_items
               losses.total_fluids = losses.total_fluids + entity_fluids
 
-              -- Cap detail entries to avoid memory bloat
               if #losses.entities < 50 then
                 table.insert(losses.entities, {
                   name = entity_data.name or "?",
@@ -224,11 +179,6 @@ function EntityCreation.process_batch(job, get_batch_size, should_show_progress)
           end
         end
       else
-        -- entities_to_create[i] is NIL: a HOLE in the array, which is not "skipped by design" like
-        -- the pre-created hub. It means the payload lost an element (truncated chunk reassembly, a
-        -- serializer that skipped an index, a JSON round-trip that dropped one). Nothing tallies its
-        -- items into failed_entity_losses, so without this line the run reads as clean and the loss
-        -- surfaces only as an unattributed gate mismatch. Never let a hole be silent.
         batch_skipped = batch_skipped + 1
         log(string.format("[Entity Creation] HOLE in entities_to_create at index %d/%d (job=%s) — "
           .. "a payload element is missing, not skipped by design", i, job.total_entities, job.job_id))
@@ -237,17 +187,12 @@ function EntityCreation.process_batch(job, get_batch_size, should_show_progress)
     
     job.current_index = end_index
 
-    -- Accumulate the MEASURED tallies onto the job. These used to be per-batch locals that were
-    -- logged and discarded, which left the pipeline with no cumulative count of what actually
-    -- happened — so entities_failed was reconstructed by subtraction instead, and misreported every
-    -- successfully-placed ground item as a failure (see import-pipeline.lua).
     job.metrics = job.metrics or {}
     job.metrics.entities_created = (job.metrics.entities_created or 0) + batch_created
     job.metrics.entities_failed = (job.metrics.entities_failed or 0) + batch_failed
     job.metrics.entities_skipped = (job.metrics.entities_skipped or 0) + batch_skipped
 
 
-    -- Log batch summary (every batch for first 5 and every 10th after)
     local batch_num = math.floor(end_index / batch_size)
     if batch_num <= 5 or batch_num % 10 == 0 or end_index >= job.total_entities then
       log(string.format("[Entity Creation] Batch %d: entities %d-%d/%d, created=%d, failed=%d, skipped=%d (job=%s)",
@@ -255,7 +200,6 @@ function EntityCreation.process_batch(job, get_batch_size, should_show_progress)
         batch_created, batch_failed, batch_skipped, job.job_id))
     end
     
-    -- Show progress every 10 batches
     if should_show_progress() and end_index % (batch_size * 10) == 0 then
       local progress = math.floor((end_index / job.total_entities) * 100)
       game.print(string.format("[Import %s] Progress: %d%% (%d/%d entities)",

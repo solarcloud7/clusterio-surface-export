@@ -1,8 +1,3 @@
--- Remote Interface: list_exports
--- List all available exports
-
---- List all available exports
---- @return table: Array of export metadata
 local function list_exports()
   local exports = {}
   if storage.platform_exports then

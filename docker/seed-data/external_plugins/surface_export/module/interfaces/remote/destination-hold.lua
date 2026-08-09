@@ -1,6 +1,3 @@
--- Remote Interface: destination_hold
--- Debug/proof wrapper for the Phase-2 destination hold primitive.
-
 local DestinationHold = require("modules/surface_export/core/destination-hold")
 
 local function find_platform(platform_index, force_name)
@@ -20,12 +17,6 @@ local function find_platform(platform_index, force_name)
 	return nil, force, "Platform index not found: " .. tostring(platform_index)
 end
 
---- Execute a destination-hold action.
---- @param action string: "stage", "go_live", "discard", or "get"
---- @param transfer_id string
---- @param platform_index number|nil: required for "stage"
---- @param force_name string|nil
---- @return table
 local function destination_hold(action, transfer_id, platform_index, force_name)
 	if type(action) ~= "string" then
 		return { success = false, error = "action is required" }

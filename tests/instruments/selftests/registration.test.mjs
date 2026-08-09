@@ -1,16 +1,3 @@
-// Every self-test registered on the remote interface is actually RUN by something.
-//
-// This repo has hit the same rot twice. First: hold_aware_unlock was registered on the remote
-// interface and invoked by nothing — 26 assertions, dead, while every suite stayed green. The
-// selftests instrument was written to fix that by running them all in one call. Then it happened
-// one level up: the instrument itself had no standing caller, so anything newly added to it also
-// reported to nobody.
-//
-// A pin naming one self-test would only have caught the instance that motivated it. The invariant
-// worth stating is the general one, and it has to be DERIVED FROM THE EMITTER — the remote
-// interface's registration list is the ground truth for what exists, so adding a self-test there
-// and forgetting the runner fails HERE rather than silently shipping uncovered coverage.
-
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
@@ -22,18 +9,12 @@ const repoRoot = path.join(here, "..", "..", "..");
 const remoteInterface = path.join(repoRoot, "docker", "seed-data", "external_plugins",
 	"surface_export", "module", "interfaces", "remote-interface.lua");
 
-// Self-tests with their own dedicated driver and lifecycle, deliberately NOT in the batch runner.
-// Each entry needs a reason and a runner that actually exists — both are checked below, so this is
-// an accounted exclusion rather than a way to silence the test.
 const DEDICATED_RUNNERS = {
 	fluid_segment_law: path.join(repoRoot, "tests", "instruments", "fluid-segment-law", "run-tests.mjs"),
 };
 
 function registeredSelftests() {
 	const src = fs.readFileSync(remoteInterface, "utf8");
-	// The `interface` table passed to remote.add_interface is what remote.call can actually reach;
-	// a name registered only as a RemoteInterface.* field is not callable over RCON. Match the
-	// table-entry form (`name_selftest = name_selftest,`) and drop the _json wrappers.
 	const names = new Set();
 	for (const m of src.matchAll(/^\s{2,}(\w+)_selftest\s*=\s*\w+_selftest,\s*$/gm)) {
 		names.add(m[1]);
@@ -75,8 +56,6 @@ test("every dedicated-runner exclusion points at a runner that exists", () => {
 });
 
 test("the instrument itself has a standing caller in the integration suite", () => {
-	// The suite auto-discovers tests/integration/*/run-tests.{ps1,mjs}; without an entry there the
-	// whole batch is "invocable on demand", which in practice means never.
 	const shim = path.join(repoRoot, "tests", "integration", "selftests", "run-tests.mjs");
 	assert.ok(fs.existsSync(shim),
 		"tests/integration/selftests/run-tests.mjs must exist so the integration suite runs the batch");

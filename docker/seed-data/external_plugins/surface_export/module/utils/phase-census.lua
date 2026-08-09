@@ -1,7 +1,3 @@
--- FactorioSurfaceExport - Phase Census
--- Brackets each import phase's item delta so a count mismatch is attributed to a phase.
--- Report-only. Counting itself lives in SurfaceCounter; this module owns only the bracketing.
-
 local SurfaceCounter = require("modules/surface_export/validators/surface-counter")
 
 local PhaseCensus = {}
@@ -17,7 +13,6 @@ local function add_into(totals, contribution)
 	end
 end
 
---- A scope is a LuaSurface (resolved live at each snapshot) or a plain entity table.
 local function resolve_entities(scope)
 	if scope == nil then return {} end
 	if scope.object_name == "LuaSurface" then
@@ -27,7 +22,6 @@ local function resolve_entities(scope)
 	return scope
 end
 
---- Fold the shared meter over a scope for one subject (nil = default read).
 function PhaseCensus.count_subject(scope, subject)
 	local totals = {}
 	for _, entity in pairs(resolve_entities(scope)) do
@@ -36,8 +30,6 @@ function PhaseCensus.count_subject(scope, subject)
 	return totals
 end
 
---- Key-for-key delta, keeping ONLY non-zero entries. Absent-in-after keys yield negatives —
---- a destroyed item and an untouched item must not read the same.
 function PhaseCensus.diff(before, after)
 	local delta = {}
 	local keys = {}
@@ -52,9 +44,6 @@ function PhaseCensus.diff(before, after)
 	return delta
 end
 
---- Snapshot a phase's subject BEFORE it runs. No-op when the census is not armed.
---- A nil scope means nothing could be measured (invalid platform/surface) — record UNMEASURED,
---- never an empty snapshot that close() would read as a measured zero.
 function PhaseCensus.open(job, phase, subject, scope)
 	if not job or not job.phase_census then return end
 	if scope == nil then
@@ -65,10 +54,6 @@ function PhaseCensus.open(job, phase, subject, scope)
 	job.phase_census[phase] = { subject = subject, before = counts }
 end
 
---- Snapshot AFTER, store the signed delta, drop the raw snapshots.
---- close() without a matching open(), or with a scope that vanished since open(), records the
---- phase as unmeasured, never as a zero (or fabricated mass-negative) delta — an unmeasured
---- phase and a phase that moved nothing are different facts.
 function PhaseCensus.close(job, phase, subject, scope)
 	if not job or not job.phase_census then return {} end
 	local record = job.phase_census[phase]
@@ -82,16 +67,11 @@ function PhaseCensus.close(job, phase, subject, scope)
 	return delta
 end
 
---- Record a delta measured elsewhere, in the same execution as its writes (belts: the restore's
---- own bracket — a later re-count would fold engine movement into the phase). line_set labels
---- which lines the delta covers so it is never compared against a different line-set.
 function PhaseCensus.record_external(job, phase, subject, delta, line_set)
 	if not job or not job.phase_census then return end
 	job.phase_census[phase] = { subject = subject, delta = delta or {}, line_set = line_set }
 end
 
---- Record the state that existed before any bracketed phase ran (entity creation's output),
---- over every subject including ground. One surface enumeration, not one per subject.
 function PhaseCensus.record_baseline(job, phase, scope)
 	if not job or not job.phase_census then return end
 	if scope == nil then
@@ -104,8 +84,6 @@ function PhaseCensus.record_baseline(job, phase, scope)
 	job.phase_census[phase] = { subject = "all", delta = counts, baseline = true }
 end
 
---- Sum every recorded delta. Second return is false when any phase went unmeasured, making the
---- sum a lower bound.
 function PhaseCensus.total(job)
 	local combined = {}
 	local complete = true
@@ -122,7 +100,6 @@ function PhaseCensus.total(job)
 	return combined, complete
 end
 
---- One line, phase by phase.
 function PhaseCensus.format(job)
 	local parts = {}
 	for phase, record in pairs((job or {}).phase_census or {}) do

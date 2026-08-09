@@ -1,11 +1,5 @@
--- FactorioSurfaceExport - Async Job Processor
--- Orchestrates export/import jobs across multiple ticks to prevent game freezing.
--- Delegates all job logic to focused pipeline modules.
-
 local SurfaceLock = require("modules/surface_export/utils/surface-lock")
 local ImportSession = require("modules/surface_export/core/import-session")
--- Required BEFORE export-pipeline (which also requires it) purely for reading order; export-cache is
--- a leaf and never requires back into this module, so no ordering is load-bearing here.
 local ExportCache = require("modules/surface_export/utils/export-cache")
 local ExportPipeline = require("modules/surface_export/core/export-pipeline")
 local ImportPipeline = require("modules/surface_export/core/import-pipeline")
@@ -15,22 +9,15 @@ local LatchRearm = require("modules/surface_export/import_phases/latch_rearm")
 
 local AsyncProcessor = {}
 
--- Configuration storage (set via remote interface)
 local config = {
 	batch_size = 50,
 	max_concurrent_jobs = 3,
 	show_progress = true,
-	sync_mode = false,  -- If true, process all entities in a single tick (for debugging)
+	sync_mode = false,
 }
 
--- The retained-export cap lives in ExportCache, not in the table above: the two values INTERACT
--- (an export stays cached until Node finishes its chunked RCON read, which happens AFTER the job
--- leaves storage.async_jobs, so only a cap larger than the number of exports completable during one
--- read keeps a still-being-read export alive), and ExportCache cannot require this module back —
--- see the dependency-inversion note in export-cache.lua. So we push into it instead.
 ExportCache.set_concurrency(config.max_concurrent_jobs)
 
---- Initialize storage for async jobs
 function AsyncProcessor.init()
 	storage.async_jobs = storage.async_jobs or {}
 	storage.async_job_id_counter = storage.async_job_id_counter or 0
@@ -38,14 +25,10 @@ function AsyncProcessor.init()
 	storage.import_sessions = storage.import_sessions or {}
 end
 
---- Set batch size
---- @param value number: Entities to process per tick
 function AsyncProcessor.set_batch_size(value)
 	config.batch_size = value
 end
 
---- Set sync mode (process all entities in single tick for debugging)
---- @param value boolean: Whether to enable sync mode
 function AsyncProcessor.set_sync_mode(value)
 	config.sync_mode = value
 	if value then
@@ -57,48 +40,34 @@ function AsyncProcessor.set_sync_mode(value)
 	end
 end
 
---- Get sync mode status
 function AsyncProcessor.get_sync_mode()
 	return config.sync_mode
 end
 
---- Set max concurrent jobs
---- @param value number: Maximum number of jobs to process simultaneously
 function AsyncProcessor.set_max_concurrent_jobs(value)
 	config.max_concurrent_jobs = value
-	-- Single mutation point, so the ExportCache mirror cannot drift from this value. The export-cache
-	-- floor is DERIVED from concurrency; raising this without raising the floor would let a prune
-	-- evict an export the controller is still reading.
 	ExportCache.set_concurrency(value)
 end
 
---- Set show progress flag
---- @param value boolean: Whether to show progress messages
 function AsyncProcessor.set_show_progress(value)
 	config.show_progress = value
 end
 
---- Set the retained-export cache cap. Forwards to ExportCache, which OWNS the value — this seam
---- exists only so configure.lua routes every setting through one module, like its siblings.
---- @param value number: Maximum entries kept in storage.platform_exports
 function AsyncProcessor.set_max_export_cache_size(value)
 	ExportCache.set_cap(value)
 end
 
---- Get the configured retained-export cache cap (UNCLAMPED — callers wanting the
---- safe effective value must go through ExportCache.resolve_keep_count).
 function AsyncProcessor.get_max_export_cache_size()
 	return ExportCache.get_cap()
 end
 
---- Get max concurrent jobs.
 function AsyncProcessor.get_max_concurrent_jobs()
 	return config.max_concurrent_jobs
 end
 
 local function get_batch_size()
 	if config.sync_mode then
-		return 1000000  -- Process all entities in single tick for debugging
+		return 1000000
 	end
 	return config.batch_size
 end
@@ -118,90 +87,48 @@ local function calculate_progress(job)
 	return math.floor((job.current_index / job.total_entities) * 100)
 end
 
---- Queue an export job
---- @param platform_index number
---- @param force_name string
---- @param requester_name string|nil
---- @param destination_instance_id number|nil
---- @param gateway_target string|nil: gateway to park at on the destination (gateway transfers only)
---- @return string|nil, string|nil: job_id or error
 function AsyncProcessor.queue_export(platform_index, force_name, requester_name, destination_instance_id, gateway_target)
 	AsyncProcessor.init()
 	return ExportPipeline.queue(platform_index, force_name, requester_name, destination_instance_id, gateway_target)
 end
 
---- Begin a chunked import session
---- @param session_id string
---- @param total_chunks number
---- @param platform_name string|nil
---- @param force_name string|nil
---- @return boolean, string|nil
 function AsyncProcessor.begin_import_session(session_id, total_chunks, platform_name, force_name)
 	AsyncProcessor.init()
 	return ImportSession.begin(session_id, total_chunks, platform_name, force_name)
 end
 
---- Enqueue a chunk into a session
---- @param session_id string
---- @param chunk_index number
---- @param chunk_data string
---- @return boolean, string|nil
 function AsyncProcessor.enqueue_import_chunk(session_id, chunk_index, chunk_data)
 	AsyncProcessor.init()
 	return ImportSession.enqueue_chunk(session_id, chunk_index, chunk_data)
 end
 
---- Finalize a session, assemble payload, and queue async import
---- @param session_id string
---- @param checksum string|nil
---- @return string|nil, string|nil: job_id or error
 function AsyncProcessor.finalize_import_session(session_id, checksum)
 	AsyncProcessor.init()
 	return ImportSession.finalize(session_id, checksum, ImportPipeline.queue)
 end
 
---- Queue an import job from file
---- @param filename string: Filename in script-output/platform_exports/
---- @param new_platform_name string
---- @param force_name string
---- @param requester_name string|nil
---- @return string|nil, string|nil: job_id or error
 function AsyncProcessor.queue_import_from_file(filename, new_platform_name, force_name, requester_name)
 	AsyncProcessor.init()
 	return ImportPipeline.queue_from_file(filename, new_platform_name, force_name, requester_name)
 end
 
---- Queue an import job from JSON string
---- @param json_data string: JSON string of platform data
---- @param new_platform_name string
---- @param force_name string
---- @param requester_name string|nil
---- @return string|nil, string|nil: job_id or error
 function AsyncProcessor.queue_import(json_data, new_platform_name, force_name, requester_name, receive_timing)
 	AsyncProcessor.init()
 	return ImportPipeline.queue(json_data, new_platform_name, force_name, requester_name, receive_timing)
 end
 
---- Process all active async jobs (called on_tick)
 function AsyncProcessor.process_tick()
-	-- Deferred mining-progress writes drain BEFORE the jobs early-return: the queue outlives its
-	-- import job (the drill's mining_target binds a tick or more after the job completes), and the
-	-- paste path feeds it with no async job in flight at all.
 	ActiveStateRestoration.service_pending_mining_progress()
-	-- Latch re-arm stage machine drains here too, and for the same reason: the re-arm outlives
-	-- the import job that scheduled it (force -> evaluate -> restore spans several ticks).
 	LatchRearm.process_tick()
 	if not storage.async_jobs then return end
 	ImportSession.prune()
 
-	-- Collect jobs and sort by priority (started_tick - older jobs first)
 	local job_list = {}
 	for job_id, job in pairs(storage.async_jobs) do
 		table.insert(job_list, {id = job_id, job = job, started = job.started_tick or 0})
 	end
 	table.sort(job_list, function(a, b) return a.started < b.started end)
 
-	-- Periodic progress logging (every 60 ticks = ~1 second)
 	if #job_list > 0 and game.tick % 60 == 0 and should_show_progress() then
 		for _, entry in ipairs(job_list) do
 			local job = entry.job
@@ -214,11 +141,10 @@ function AsyncProcessor.process_tick()
 		end
 	end
 
-	-- Process only up to max_concurrent jobs per tick
 	local processed = 0
 	for _, entry in ipairs(job_list) do
 		if processed >= get_max_concurrent_jobs() then
-			break  -- Hit concurrent limit, remaining jobs wait until next tick
+			break
 		end
 
 		local job = entry.job
@@ -230,7 +156,6 @@ function AsyncProcessor.process_tick()
 			end
 		elseif job.type == "import" then
 			if job.pending_beacon_tick then
-				-- Phase 1 done (entities placed); waiting one tick before inventory restore (Phase 2).
 				if game.tick >= job.pending_beacon_tick then
 					job.pending_beacon_tick = nil
 					ImportCompletion.run_phase2(job)
@@ -239,7 +164,6 @@ function AsyncProcessor.process_tick()
 				local done = ImportPipeline.process_batch(job, get_batch_size, should_show_progress)
 				if done then
 					ImportCompletion.run_phase1(job)
-					-- Phase 2 fires next tick when job.pending_beacon_tick is set
 				end
 			end
 		end
@@ -248,8 +172,6 @@ function AsyncProcessor.process_tick()
 	end
 end
 
---- Get status of all active jobs
---- @return table: Array of job status info
 function AsyncProcessor.get_active_jobs()
 	AsyncProcessor.init()
 
@@ -269,9 +191,6 @@ function AsyncProcessor.get_active_jobs()
 	return jobs
 end
 
---- Get status for a specific job
---- @param job_id string
---- @return table|nil, string|nil
 function AsyncProcessor.get_job_status(job_id)
 	AsyncProcessor.init()
 
@@ -297,9 +216,6 @@ function AsyncProcessor.get_job_status(job_id)
 	return nil, "Job not found"
 end
 
---- Activate a platform surface (exported for use by commands)
---- @param surface LuaSurface: The platform surface
---- @return number: Number of entities activated
 function AsyncProcessor.activate_platform(surface)
 	return SurfaceLock.activate_all(surface)
 end

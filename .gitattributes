@@ -5,7 +5,7 @@
 # accumulating mixed-ending files and defeating exact-string edits. The index was already all-LF,
 # so this changes CHECKOUT ONLY — no content rewrite. After pulling this, refresh your clone:
 #   git config core.autocrlf false && git rm -rf --cached . -q && git reset --hard
-# Windows-only script types below still check out CRLF (later rules win).
+# cmd/bat below still check out CRLF (later rules win).
 * text=auto eol=lf
 
 # Scripts executed inside Linux containers MUST stay LF even on Windows checkouts
@@ -13,8 +13,15 @@
 *.sh   text eol=lf
 *.bash text eol=lf
 
-# Windows-only helper scripts keep CRLF.
-*.ps1 text eol=crlf
+# PowerShell checks out LF like everything else (2026-08-09). The index was already LF (text=auto
+# normalizes on commit); only the CHECKOUT was CRLF, which is the last remaining source of the
+# mixed-ending churn the rule above exists to stop — agents and Node tools write LF into those
+# files. pwsh reads LF natively on Windows.
+#   After pulling this:  git rm -rf --cached . -q && git reset --hard
+*.ps1  text eol=lf
+*.psm1 text eol=lf
+
+# cmd.exe is genuinely line-ending sensitive (labels, goto). No such file exists today.
 *.cmd text eol=crlf
 *.bat text eol=crlf
 

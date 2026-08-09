@@ -1,20 +1,3 @@
-/**
- * @file shared/utils.ts
- * @description Pure helpers shared by BOTH build targets — the Node build (tsc → dist/node) and the web
- * build (webpack → dist/web). Lives in `shared/` (already in both tsconfigs, alongside dto.ts) and is kept
- * strictly dependency-free (no `@clusterio`, no Node/browser-only globals beyond Date/Math) so webpack
- * bundles it directly and it can never drag `@clusterio` into the web bundle.
- *
- * This is the shared home BECAUSE `helpers.ts` imports `@clusterio/lib` (so the web must not import from it)
- * and `web/utils.ts` is inside the webpack-only tree (so Node code must not import from it). Previously these
- * functions were byte-for-byte duplicated across `helpers.ts` and `web/utils.ts` (task #97).
- */
-
-/**
- * The one compact ms formatter (">=1s → 1.5s, else 303ms"). Was independently reimplemented in the
- * transactions tab, the timeline module and the offline preview — three copies of one threshold
- * rule. Null/non-finite renders as the empty string so bar labels can pass durations straight in.
- */
 export function formatMs(ms: number | null | undefined): string {
 	if (typeof ms !== "number" || !Number.isFinite(ms)) {
 		return "";
@@ -22,9 +5,6 @@ export function formatMs(ms: number | null | undefined): string {
 	return ms >= 1000 ? `${(ms / 1000).toFixed(1)}s` : `${Math.round(ms)}ms`;
 }
 
-/**
- * Human-readable message for any thrown value (Error, string, or an object with a `message`), else `fallback`.
- */
 export function getErrorMessage(err: unknown, fallback = "Unknown error"): string {
 	if (err instanceof Error) {
 		return err.message || fallback;
@@ -41,19 +21,10 @@ export function getErrorMessage(err: unknown, fallback = "Unknown error"): strin
 	return fallback;
 }
 
-/**
- * Opaque unique operation/export id: `${prefix}_${epochMs}_${6 random base36 chars}`. Consolidates three
- * near-identical inline generators (transfer id / operation-record / uploaded-export). The random suffix is
- * a disambiguator only — the id is never parsed beyond its prefix.
- */
 export function generateOperationId(prefix: string): string {
 	return `${prefix}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
 }
 
-/**
- * Canonical controller/destination transfer id: source instance id + source save job id.
- * The source save only knows the raw job id; the controller qualifies it when adopting the export.
- */
 export function makeCanonicalTransferId(sourceInstanceId: number, sourceJobId: string): string {
 	if (!Number.isInteger(sourceInstanceId) || sourceInstanceId <= 0) {
 		throw new Error(`Invalid source instance id: ${String(sourceInstanceId)}`);
@@ -65,7 +36,6 @@ export function makeCanonicalTransferId(sourceInstanceId: number, sourceJobId: s
 	return `${sourceInstanceId}:${jobId}`;
 }
 
-/** Parse a canonical transfer id by the first colon. Returns null for legacy/upload ids. */
 export function parseCanonicalTransferId(id: string | null | undefined): { sourceInstanceId: number; sourceJobId: string } | null {
 	if (typeof id !== "string") {
 		return null;

@@ -1,9 +1,3 @@
-<#
-.SYNOPSIS
-    Lists platforms on one or both Factorio instances.
-.PARAMETER Instance
-    Instance number (1 or 2). If omitted, lists both.
-#>
 param(
     [ValidateSet("1","2","")]
     [string]$Instance = ""

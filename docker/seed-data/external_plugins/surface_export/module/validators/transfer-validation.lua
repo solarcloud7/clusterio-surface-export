@@ -1,6 +1,3 @@
--- FactorioSurfaceExport - Transfer Validation
--- Validates imported platforms against source verification data
-
 local Verification = require("modules/surface_export/validators/verification")
 local Util = require("modules/surface_export/utils/util")
 local GameUtils = require("modules/surface_export/utils/game-utils")
@@ -68,12 +65,6 @@ local function validate_fluid_counts(expected_fluid_counts, actual_fluid_counts,
     return fluid_match, fluid_mismatches, recon
 end
 
---- Validate an imported platform against expected verification data
---- Uses grouped validation: strict for storage, lenient for machines
---- @param surface LuaSurface: The imported platform surface
---- @param expected_verification table: Expected item/fluid counts from source
---- @param options table|nil: Optional settings { strict = boolean, segment_temps = table }
---- @return boolean, table: success, validation_result
 function TransferValidation.validate_import(surface, expected_verification, options)
     options = options or {}
     if not surface or not surface.valid then
@@ -85,7 +76,6 @@ function TransferValidation.validate_import(surface, expected_verification, opti
         }
     end
 
-    -- Entity types that are pure storage (strict validation)
     local STORAGE_ENTITY_TYPES = {
         ["container"] = true,
         ["logistic-container"] = true,
@@ -93,13 +83,12 @@ function TransferValidation.validate_import(surface, expected_verification, opti
         ["car"] = true,
         ["spider-vehicle"] = true,
         ["cargo-landing-pad"] = true,
-        ["cargo-bay"] = true,        -- Space platform cargo
-        ["rocket-silo"] = true,      -- Has rocket inventory
+        ["cargo-bay"] = true,
+        ["rocket-silo"] = true,
     }
     
-    -- Entity types that consume/process items (lenient validation)
     local CONSUMER_ENTITY_TYPES = {
-        ["assembling-machine"] = true,  -- Includes foundry
+        ["assembling-machine"] = true,
         ["furnace"] = true,
         ["mining-drill"] = true,
         ["lab"] = true,
@@ -108,24 +97,17 @@ function TransferValidation.validate_import(surface, expected_verification, opti
         ["burner-generator"] = true,
         ["generator"] = true,
         ["agricultural-tower"] = true,
-        ["rocket-silo"] = true,  -- Also processes items
+        ["rocket-silo"] = true,
     }
 
-    -- Get all entities on imported surface
     local entities = surface.find_entities_filtered({})
     
-    -- Count items separately for storage vs consumer entities
     local storage_item_counts = {}
     local consumer_item_counts = {}
     local total_item_counts = {}
     
-    -- Track entity name breakdown for detailed stats.
-    -- Uses entity.name (prototype name, e.g. "small-lamp") not entity.type (base type, e.g. "lamp")
-    -- so the web UI can resolve CSS spritesheet classes like entity-small-lamp correctly.
     local entity_type_counts = {}
 
-    -- Item counting is the shared meter's (SurfaceCounter); this loop owns only the
-    -- storage/consumer categorization and the entity-name breakdown.
     for _, entity in ipairs(entities) do
         if entity.valid then
             local entity_name = entity.name
@@ -143,8 +125,6 @@ function TransferValidation.validate_import(surface, expected_verification, opti
                 end
             end
 
-            -- Belts and held stacks are "storage" — in transit, expected preserved. Type-gated so
-            -- the majority of entities pay no meter call for subjects they cannot carry.
             if GameUtils.BELT_ENTITY_TYPES[entity_type] then
                 for key, count in pairs(SurfaceCounter.count_entity_items(entity, "belts")) do
                     total_item_counts[key] = (total_item_counts[key] or 0) + count
@@ -167,28 +147,19 @@ function TransferValidation.validate_import(surface, expected_verification, opti
     end
 
     local strict = options.strict == true
-    -- 2.1 segment reads count EVERYTHING — no engine-owned exclusion exists (owner ruling
-    -- 2026-07-20: the classification is deleted; plasma rides and is gated like any fluid).
     local actual_fluid_counts = SurfaceCounter.count_fluids(surface, options.segment_temps)
 
-    -- VALIDATION LOGIC:
-    -- For total items: actual should be <= expected (we can lose items to machine limits, but not gain)
-    -- For storage items: should match closely (these are passive containers)
-    -- For consumer items: very lenient (machines may have consumed items or have inventory limits)
     
     local item_mismatches = {}
     local item_match = true
     
-    -- strict=true (transfers): LAB-A measured zero source-export residual for both items and fluids.
-    -- The complete frozen world is therefore exact: any per-key item gain/loss fails. The loose path
-    -- predates the destructive transfer gate and remains for non-transfer callers only.
-    local STORAGE_TOLERANCE = 5          -- loose: gain headroom
-    local TOTAL_LOSS_TOLERANCE = 0.95    -- loose: up to 95% loss
-    local MIN_ABSOLUTE_LOSS = 100        -- loose: and >100 absolute
+    local STORAGE_TOLERANCE = 5
+    local TOTAL_LOSS_TOLERANCE = 0.95
+    local MIN_ABSOLUTE_LOSS = 100
 
     for item_name, expected_count in pairs(expected_verification.item_counts or {}) do
         local actual_count = total_item_counts[item_name] or 0
-        local diff = expected_count - actual_count  -- Positive = items lost
+        local diff = expected_count - actual_count
 
         if strict then
             if actual_count > expected_count then
@@ -205,16 +176,13 @@ function TransferValidation.validate_import(surface, expected_verification, opti
                 ))
             end
         else
-            -- Check if we gained items (should never happen)
             if actual_count > expected_count + STORAGE_TOLERANCE then
                 item_match = false
                 table.insert(item_mismatches, string.format(
                     "%s: GAINED items - expected %d, got %d",
                     item_name, expected_count, actual_count
                 ))
-            -- Check if we lost more than tolerance allows
             elseif diff > expected_count * TOTAL_LOSS_TOLERANCE and diff > MIN_ABSOLUTE_LOSS then
-                -- Only flag if we lost more than 95% AND more than 100 absolute items
                 item_match = false
                 table.insert(item_mismatches, string.format(
                     "%s: excessive loss - expected %d, got %d (lost %d, %.0f%%)",
@@ -224,7 +192,6 @@ function TransferValidation.validate_import(surface, expected_verification, opti
         end
     end
 
-    -- Check for unexpected items (items that shouldn't exist at all)
     for item_name, actual_count in pairs(total_item_counts) do
         if not expected_verification.item_counts[item_name] then
             if strict or actual_count > 20 then
@@ -242,7 +209,6 @@ function TransferValidation.validate_import(surface, expected_verification, opti
     fluid_match, fluid_mismatches, fluid_reconciliation = validate_fluid_counts(
         expected_verification.fluid_counts or {}, actual_fluid_counts or {}, strict)
 
-    -- Build mismatch details
     local mismatch_details = nil
     if not item_match or not fluid_match then
         local details_parts = {}
@@ -258,14 +224,11 @@ function TransferValidation.validate_import(surface, expected_verification, opti
         mismatch_details = table.concat(details_parts, " | ")
     end
 
-    -- Compute summary totals for detailed stats
     local total_expected_items = Util.sum_items(expected_verification.item_counts or {})
     local total_actual_items = Util.sum_items(total_item_counts)
     local total_expected_fluids = Util.sum_fluids(expected_verification.fluid_counts or {})
     local total_actual_fluids = Util.sum_fluids(actual_fluid_counts)
 
-    -- Per-item loss breakdown (instrumentation): exactly which items fall short. Under the strict
-    -- transfer gate this is verdict input; loose non-transfer callers retain their legacy policy.
     local item_loss_by_type = {}
     local total_item_loss = 0
     for item_name, exp in pairs(expected_verification.item_counts or {}) do
@@ -281,13 +244,11 @@ function TransferValidation.validate_import(surface, expected_verification, opti
         fluidCountMatch = fluid_match,
         entityCount = #entities,
         mismatchDetails = mismatch_details,
-        -- Detailed counts for transaction log
         expectedItemCounts = expected_verification.item_counts or {},
         actualItemCounts = total_item_counts,
         expectedFluidCounts = expected_verification.fluid_counts or {},
         actualFluidCounts = actual_fluid_counts,
         entityTypeBreakdown = entity_type_counts,
-        -- Summary totals
         itemTypesExpected = table_size(expected_verification.item_counts or {}),
         itemTypesActual = table_size(total_item_counts),
         fluidTypesExpected = table_size(expected_verification.fluid_counts or {}),
@@ -296,7 +257,6 @@ function TransferValidation.validate_import(surface, expected_verification, opti
         totalActualItems = total_actual_items,
         totalExpectedFluids = total_expected_fluids,
         totalActualFluids = total_actual_fluids,
-        -- Per-item loss instrumentation (non-gating)
         itemLossByType = item_loss_by_type,
         totalItemLoss = total_item_loss,
         fluidReconciliation = fluid_reconciliation,
@@ -328,9 +288,6 @@ function TransferValidation.validate_import(surface, expected_verification, opti
     return success, validation_result
 end
 
---- Store validation result for a transfer/job id (debug remote only; production uses import-complete payload).
---- @param result_id string: Canonical transfer id or job id
---- @param validation_result table: Validation result data
 function TransferValidation.store_validation_result(result_id, validation_result)
     if type(result_id) ~= "string" or result_id == "" then
         return false, "result_id is required"
@@ -346,17 +303,12 @@ function TransferValidation.store_validation_result(result_id, validation_result
     return true
 end
 
---- Clear a validation result by transfer/job id.
---- @param result_id string
 function TransferValidation.clear_validation_result(result_id)
     if storage.validation_results and type(result_id) == "string" then
         storage.validation_results[result_id] = nil
     end
 end
 
---- Get validation result by transfer/job id.
---- @param result_id string: Canonical transfer id or job id
---- @return table|nil: Validation result or nil if not found
 function TransferValidation.get_validation_result(result_id)
     if type(result_id) ~= "string" or result_id == "" then
         error("validation result id is required")
@@ -373,14 +325,12 @@ function TransferValidation.get_validation_result(result_id)
     return nil
 end
 
---- Clean up old validation results
---- @param max_age_ticks number: Maximum age in ticks before cleanup
 function TransferValidation.cleanup_old_results(max_age_ticks)
     if not storage.validation_results then
         return
     end
 
-    max_age_ticks = max_age_ticks or 36000  -- Default: 10 minutes at 60 UPS
+    max_age_ticks = max_age_ticks or 36000
 
     for result_id, stored in pairs(storage.validation_results) do
         local age = game.tick - stored.timestamp

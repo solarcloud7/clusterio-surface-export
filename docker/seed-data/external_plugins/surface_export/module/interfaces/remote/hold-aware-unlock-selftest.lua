@@ -1,6 +1,3 @@
--- FactorioSurfaceExport - hold-aware unlock self-test (remote)
--- PR-1: destination holds own visibility/entity-active/platform-pause until go_live/discard clears the hold.
-
 local SurfaceLock = require("modules/surface_export/utils/surface-lock")
 local DestinationHold = require("modules/surface_export/core/destination-hold")
 

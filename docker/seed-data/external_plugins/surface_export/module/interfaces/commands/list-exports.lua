@@ -1,10 +1,6 @@
--- Command: /list-exports
--- List available platform exports (from async exports)
-
 local Base = require("modules/surface_export/interfaces/commands/base")
 
 Base.admin_command("list-exports", "List available platform exports (from async exports)", function(cmd, ctx)
-  -- List exports from memory (async export system)
   if not storage.platform_exports then
     ctx.print("No exports found. Use /export-platform <index> to export a platform")
     return
@@ -27,7 +23,6 @@ Base.admin_command("list-exports", "List available platform exports (from async 
     return
   end
   
-  -- Sort by timestamp
   table.sort(exports_list, function(a, b) return (a.timestamp or "") > (b.timestamp or "") end)
   
   ctx.print(string.format("Found %d export(s) in memory:", count))

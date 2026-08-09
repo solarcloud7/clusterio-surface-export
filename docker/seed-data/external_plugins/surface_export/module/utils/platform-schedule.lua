@@ -1,13 +1,7 @@
--- FactorioSurfaceExport - Platform Schedule Utilities
--- Captures and restores full LuaSpacePlatform schedule data (records + interrupts + group)
-
 local Util = require("modules/surface_export/utils/util")
 
 local PlatformSchedule = {}
 
---- Deep clone a value through JSON to guarantee compatibility with send_json payloads/storage.
---- @param value any
---- @return table|nil, string|nil
 local function json_clone(value)
 	local encoded, encode_err = Util.encode_json_compat(value)
 	if not encoded then
@@ -19,21 +13,14 @@ local function json_clone(value)
 		return nil, "JSON decode failed: " .. tostring(decode_err)
 	end
 
-	-- JSON null decodes to nil; callers treat nil as empty payload where appropriate.
 	return decoded, nil
 end
 
---- Return a full schedule payload with records + interrupts + group.
---- Uses hub_entity.platform when provided so schedule source matches hub context.
---- @param platform LuaSpacePlatform
---- @param hub_entity LuaEntity|nil
---- @return table|nil, string|nil
 function PlatformSchedule.capture(platform, hub_entity)
 	local schedule_platform = platform
 
 	if hub_entity and hub_entity.valid then
 		-- intentional probe; failure expected (best-effort preference for the hub's platform view),
-		-- benign fallback to the passed-in platform below, no log
 		local ok_hub_platform, hub_platform = pcall(function()
 			return hub_entity.platform
 		end)
@@ -118,9 +105,6 @@ function PlatformSchedule.capture(platform, hub_entity)
 	}, nil
 end
 
---- Strict validation for transfer payload cutover.
---- @param schedule_payload table|nil
---- @return boolean, string|nil
 function PlatformSchedule.validate_transfer_payload(schedule_payload)
 	if type(schedule_payload) ~= "table" then
 		return false, "platform.schedule must be a table"
@@ -142,18 +126,6 @@ function PlatformSchedule.validate_transfer_payload(schedule_payload)
 	return true, nil
 end
 
---- Filter a schedule payload for import onto THIS instance: drop records whose `station` is not a routable
---- space-location here (phantom stops carried from a heterogeneous-mod source — the engine ACCEPTS an invalid
---- station name, so these would otherwise sit as dead stops). Detection mirrors Gateway.is_gateway:
---- `prototypes.space_location[station] == nil` ⇒ not routable here.
----
---- NEVER strips records to empty: an empty `records = {}` is engine-rejected ("Index out of bounds"), so if
---- EVERY record is unroutable the ORIGINAL payload is returned untouched (a lone dead stop is safer than a
---- filter that INTRODUCES an invalid/empty schedule — the load-bearing safety of WS1). A record with no
---- string `station` is kept (defensive — never strip what we don't understand).
---- @param schedule_payload table  { current, records, interrupts, group }
---- @return table filtered  a NEW payload when stops were stripped; the SAME payload on identity / skip-to-empty
---- @return table dropped   { stations = { name, ... }, skipped_empty = boolean }
 function PlatformSchedule.filter_for_import(schedule_payload)
 	local dropped = { stations = {}, skipped_empty = false }
 	if type(schedule_payload) ~= "table" or type(schedule_payload.records) ~= "table" then
@@ -178,7 +150,6 @@ function PlatformSchedule.filter_for_import(schedule_payload)
 			dropped.stations[#dropped.stations + 1] = r.station
 		else
 			kept[#kept + 1] = r
-			-- The first kept record at or after the old cursor → resume forward from here.
 			if new_current == nil and i >= orig_current then
 				new_current = #kept
 			end
@@ -186,18 +157,16 @@ function PlatformSchedule.filter_for_import(schedule_payload)
 	end
 
 	if #dropped.stations == 0 then
-		return schedule_payload, dropped -- nothing unroutable → identity
+		return schedule_payload, dropped
 	end
 
 	if #kept == 0 then
-		-- Refuse to strip to empty (see the header): keep the original schedule, flag it, still report the
-		-- stations we DECLINED to strip so the caller's warning is truthful.
 		dropped.skipped_empty = true
 		return schedule_payload, dropped
 	end
 
 	if new_current == nil then
-		new_current = 1 -- cursor was at/after the last kept record → wrap to 1
+		new_current = 1
 	end
 	return {
 		current = new_current,
@@ -207,10 +176,6 @@ function PlatformSchedule.filter_for_import(schedule_payload)
 	}, dropped
 end
 
---- Apply a full schedule payload to a platform, including interrupts and group.
---- @param platform LuaSpacePlatform
---- @param schedule_payload table
---- @return boolean, string|nil
 function PlatformSchedule.apply(platform, schedule_payload)
 	if not platform or not platform.valid then
 		return false, "Target platform is not valid"
@@ -239,23 +204,11 @@ function PlatformSchedule.apply(platform, schedule_payload)
 		current = schedule_payload.current
 	end
 
-	-- A SCHEDULE-LESS platform round-trips as {current=1, records={}} (capture reads the engine's
-	-- default cursor), and assigning an EMPTY records array is engine-rejected ("Index out of
-	-- bounds" — the same hazard the filter_for_import header refuses to introduce). On the first
-	-- schedule-less platform ever production-transferred (census-fusion R2 batch, 2026-07-18) this
-	-- hard-failed BOTH sides: the import queue deleted the destination before the job existed, and
-	-- the source unlock's schedule restore left the rollback stuck. Nothing to apply is SUCCESS:
-	-- skip the base assignment; interrupts/group below still apply when a LuaSchedule exists.
 	if #(records_copy or {}) == 0 then
 		log("[Schedule] Empty schedule payload (no records) — skipping base platform.schedule assignment")
 		if #(interrupts_copy or {}) == 0 and schedule_payload.group == nil then
-			-- Nothing at all to apply — done. (get_schedule() behavior on a platform that never had
-			-- a schedule assigned is unmeasured; do not touch it when there is no reason to.)
 			return true, nil
 		end
-		-- Degenerate payload: interrupts/group with ZERO records. Fall through and TRY get_schedule()
-		-- (it may exist on the hub), but if it is unavailable the failure message below must say the
-		-- base assignment was SKIPPED — not claim an assignment happened (/code-review, 2026-07-18).
 	else
 		local base_schedule = {
 			current = current,
@@ -306,9 +259,6 @@ function PlatformSchedule.apply(platform, schedule_payload)
 	return true, nil
 end
 
---- Lightweight summary for logs/metrics.
---- @param schedule_payload table|nil
---- @return table
 function PlatformSchedule.summarize(schedule_payload)
 	local summary = {
 		record_count = 0,

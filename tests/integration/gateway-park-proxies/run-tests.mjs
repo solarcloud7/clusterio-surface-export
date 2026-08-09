@@ -1,42 +1,4 @@
 #!/usr/bin/env node
-// Gateway-park proxy survival — proxies riding a GATEWAY transfer, counted PHYSICALLY on the
-// destination (the exact gate is structurally blind to proxies: they are requests, not items —
-// the class that dropped them silently until 9326ca8). This is the standing pin for the whole
-// chain: both proxy-target shapes export, restore, and survive arrival at a gateway park.
-//
-// TWO proxy shapes ride, deliberately — the family, enumerated at the emitter: an
-// ASSEMBLER-targeted proxy (modules into a machine) and a HUB-targeted one (items owed to the
-// platform hub). Both measured surviving under BOTH park orderings through the full production
-// path — this fixture has NO ordering-specific teeth, and says so.
-//
-// Measurement history, paid for while building this (the full account is in
-// GATEWAY_TRANSFER_PRD.md):
-//   - insert-plan stacks are 1-BASED. A stack=0 plan creates a proxy that sits on the surface but
-//     never rides the export — an artifact that masqueraded first as a serializer gap and then as
-//     a park-cancellation law, inverting this PR's severity label twice. Use valid stacks.
-//   - the "space_location write destroys hub-targeted proxies (1 → 0)" observation is RETRACTED:
-//     measured once (2026-08-03) and never reproduced — six survivals since across valid/malformed
-//     shapes, same/deferred execution, and both orderings end-to-end. Upstream's documented
-//     "will cancel pending item requests" evidently refers to something other than proxy entities.
-//   - the SOURCE choreography still writes space_location BEFORE creating the proxies: cheap
-//     defense in depth against whatever the upstream cancellation does cancel, and a parked source
-//     is what the /gateway-transfer gate requires anyway.
-//
-// Readiness/verdict grounding (review findings B1/B2/B4): arrival is detected by the TERMINAL
-// 2PC signal pair — destination platform present AND source platform GONE (the source is deleted
-// only after the destination's verdict) — never by surface-content heuristics, which are true
-// mid-import. The verdict itself is then read from the destination's debug_import_result file
-// (validation_success + platform name) before any census claim.
-//
-// Environmental preconditions, stated (delta findings NF5/NF6): the verdict read requires
-// debug_mode ON (default true at first init; a configure() that clears it makes this pin RED with
-// "no debug_import_result found" — a config problem, not a transfer problem), and the
-// newest-debug-file selection assumes the integration suite's SEQUENTIAL execution (a concurrent
-// import from any other source yields a false RED, never a false green — the platform-name match
-// refuses foreign records).
-//
-// Zero leftovers: source deleted by the transfer's own 2PC; the arrived copy finally-swept on
-// both instances; unique per-run probe name; `gwpark-probe` prefix in cleanup-test-surfaces.ps1.
 
 import { execFileSync } from "node:child_process";
 
@@ -60,8 +22,6 @@ function rconJson(instance, luaExpr) {
 	try {
 		return JSON.parse(line);
 	} catch (parseErr) {
-		// A Lua throw comes back as an engine error line, not JSON — surface the RAW output so the
-		// failure names the actual Lua problem instead of "Unexpected token" (review finding N5).
 		throw new Error(`rconJson: expected JSON, got:\n${out}\n(parse error: ${parseErr.message})`);
 	}
 }
@@ -78,7 +38,6 @@ function resolveInstanceId(name) {
 	if (!m) throw new Error(`could not resolve instance id for ${name}`);
 	return Number(m[1]);
 }
-/** Newest debug_import_result on the destination — the import's own terminal verdict record. */
 function readDestImportResult() {
 	const file = execFileSync("docker", ["exec", DST_CONTAINER, "sh", "-c",
 		`ls -t ${DST_SCRIPT_OUTPUT}/debug_import_result_*.json 2>/dev/null | head -1`], { encoding: "utf8" }).trim();
@@ -98,9 +57,6 @@ console.log(`=== gateway-park-proxies: BOTH proxy shapes must SURVIVE the park (
 const dstId = resolveInstanceId(DST_INSTANCE);
 
 try {
-	// SOURCE: create, park FIRST (defense in depth against whatever the upstream-documented
-	// cancellation cancels — and the /gateway-transfer gate needs a parked source anyway), then
-	// create BOTH proxy shapes.
 	const setup = rconJson(SRC_INSTANCE,
 		`(function() local force=game.forces.player `
 		+ `local p=force.create_space_platform{name='${PROBE}', planet='nauvis', starter_pack='space-platform-starter-pack'} `
@@ -122,8 +78,6 @@ try {
 		"source carries BOTH proxy shapes (assembler- and hub-targeted, valid 1-based stacks)",
 		`proxies=${setup.proxies}`);
 
-	// Parked-state precheck in a LATER execution: the /gateway-transfer gate is
-	// state == waiting_at_station, which settles after the same-execution location write.
 	const parked = rconJson(SRC_INSTANCE,
 		`(function() for _,q in pairs(game.forces.player.platforms) do if q.name=='${PROBE}' then `
 		+ `return {state=q.state, parked=(q.state==defines.space_platform_state.waiting_at_station), `
@@ -134,18 +88,11 @@ try {
 		"source reads waiting_at_station AT the gateway (the real /gateway-transfer gate)",
 		`state=${parked.state}`);
 
-	// Drive the REAL gateway transfer and assert the trigger ACCEPTED (review finding B4: the
-	// command reports refusals by print and returns normally — the output is the contract).
 	const trigger = rawCommand(SRC_INSTANCE, `/gateway-transfer ${setup.index} ${dstId}`);
 	console.log(`  trigger: ${trigger.split("\n")[0] || "(no output)"}`);
 	check(/Transfer queued|Gateway transfer/.test(trigger) && !/not parked|✗/.test(trigger),
 		"the trigger accepted the transfer", trigger);
 
-	// TERMINAL readiness (review finding B1): destination present AND source GONE. The 2PC deletes
-	// the source only after the destination's verdict, so this pair cannot be observed mid-import.
-	// The census snapshot is taken AFTER the terminal pair is confirmed (delta finding NF1: a
-	// snapshot taken before the source-gone confirmation could be a mid-import read wearing a
-	// data-loss label — the exact class the terminal pair exists to remove).
 	const destScanLua =
 		`(function() for _,q in pairs(game.forces.player.platforms) do if q.name=='${PROBE}' then `
 		+ `return {present=true, entities=q.surface.count_entities_filtered{}, `
@@ -165,7 +112,6 @@ try {
 			`(function() for _,q in pairs(game.forces.player.platforms) do if q.name=='${PROBE}' then return {present=true} end end return {present=false} end)()`,
 		);
 		if (!src.present) {
-			// Terminal pair confirmed — NOW take the snapshot every assertion reads.
 			arrived = rconJson(DST_INSTANCE, destScanLua);
 			break;
 		}
@@ -174,25 +120,16 @@ try {
 		"TERMINAL: destination present AND source deleted (the 2PC completed) within 120s");
 
 	if (arrived) {
-		// Verdict grounding (review finding B2): the import's own terminal record, not just the census.
 		const verdict = readDestImportResult();
 		check(verdict !== null && verdict.platform_name === PROBE && verdict.validation_success === true,
 			"the destination's debug_import_result reports validation_success for THIS platform",
 			verdict ? `platform=${verdict.platform_name} success=${verdict.validation_success}` : "no debug_import_result found");
 
-		// The physical census, per shape. A miss here is proxy loss SOMEWHERE in the chain
-		// (export, restore, or arrival) — the gate cannot see it, which is why this pin exists.
 		check(arrived.proxies === 2,
 			"BOTH restored proxies survived the gateway transfer (physical count, per the gate-blind class)",
 			`physical proxy count on destination: ${arrived.proxies} (hub-targeted: ${arrived.hub_proxies})`);
 		check(arrived.hub_proxies === 1,
 			"the hub-targeted proxy specifically survived (the shape two retracted measurements implicated)");
-		// defines.space_platform_state.paused OBSERVED, not assumed (delta finding NF4): every green
-		// run of this fixture — both park orderings, modules 0.10.217/218/219 — read state_paused
-		// true on arrival, so the member exists and an arrived-parked platform reports it. Note the
-		// product wrinkle this pins: Gateway.parked_at_gateway requires waiting_at_station, so a
-		// just-arrived (paused) platform is NOT gateway-parked by the product's own predicate until
-		// a player unpauses it — pre-existing behavior, first made visible here.
 		check(arrived.paused === true && arrived.state_paused === true,
 			"arrived PAUSED (parked, not flying the schedule)", `state=${arrived.state}`);
 		check(arrived.at_gateway === true, "arrived AT the gateway location");

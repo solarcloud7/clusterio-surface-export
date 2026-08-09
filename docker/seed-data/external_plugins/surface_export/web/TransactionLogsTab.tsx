@@ -40,9 +40,6 @@ import type {
 
 const { Text } = Typography;
 
-// Lightweight CSS bar timeline. Palette, hatch, geometry and warning wording all come from the
-// shared timeline module — this component only renders them. Replaces the former mermaid gantt
-// (a multi-MB dep for one diagram).
 function PhaseTimeline({ rows, totalMs, attribution }: {
 	rows: GanttRow[]; totalMs: number; attribution?: TimelineAttribution;
 }) {
@@ -72,7 +69,6 @@ function PhaseTimeline({ rows, totalMs, attribution }: {
 				const markerPct = row.ganttMarkerPct;
 				const endMs = row.endMs;
 				const timeLabel = formatMs(durationMs);
-				// A tick-derived bar is hatched so it can never be mistaken for elapsed time at a glance.
 				const isTickDerived = row.kind === "tickDerived";
 				const isGap = row.kind === "residual" || row.kind === "detailGap";
 				const background = isTickDerived ? tickHatch(color) : color;
@@ -346,8 +342,6 @@ export default function TransactionLogsTab({ plugin, state }: { plugin: SurfaceE
 		destination?: number;
 		synced_to?: number;
 	};
-	// Non-fatal notice: the destination force was under-researched relative to the source platform, so its
-	// inserter-capacity bonuses were RAISED on import to preserve held items (a global, raise-only side effect).
 	const forceBonusAlert = useMemo(() => {
 		if (!validation) return null;
 		const mismatches = (getProp(validation, "forceDataMismatches", null) as ForceDataMismatch[] | null);
@@ -561,9 +555,6 @@ export default function TransactionLogsTab({ plugin, state }: { plugin: SurfaceE
 			) : null}
 
 			{selectedDetails && selectedDetails.detailRetained === false ? (
-				// The transfer is NOT missing — the audit ledger still has it, which is why it is listed
-				// at all. Only the expensive per-transfer detail was evicted by retention. Saying so
-				// beats rendering an empty timeline that reads like a bug.
 				<Card title="Transfer Details">
 					<Alert
 						type="info"
@@ -655,9 +646,6 @@ export default function TransactionLogsTab({ plugin, state }: { plugin: SurfaceE
 									children: hasValidation ? (
 										<Space direction="vertical" style={{ width: "100%" }} size="small">
 											{(() => {
-												// Informational (display-only): live destination count (result.entityCount)
-												// vs the source payload total. They legitimately differ (failed-to-place /
-												// filtered / belt surplus) — no verdict; the item/fluid gate detects loss.
 												const reported = getProp(validation as JsonObject, "reportedEntityCount", null) as number | null;
 												const actual = getProp(validation as JsonObject, "entityCount", null) as number | null;
 												if (reported == null || actual == null) {

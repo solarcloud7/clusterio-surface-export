@@ -1,10 +1,5 @@
--- FactorioSurfaceExport - Transfer-lock expiry self-test (remote)
--- Pure storage-level checks for SurfaceLock.scan_transfer_expiries.
-
 local SurfaceLock = require("modules/surface_export/utils/surface-lock")
 
---- Run transfer-lock expiry self-test.
---- @return table { passed, failed, total, details = { {name, ok, msg}, ... } }
 local function transfer_lock_selftest()
 	local details = {}
 	local passed, failed = 0, 0
@@ -125,8 +120,6 @@ local function transfer_lock_selftest()
 		details[#details + 1] = { name = "selftest_exception", ok = false, msg = tostring(err) }
 	end
 
--- platform identity is surface.index, never the mutable name — the source-delete identity gate keys on surface.index, NEVER platform.name. Exercise the pure
-	-- SurfaceLock.transfer_delete_identity_ok directly (no storage/game state needed).
 	local function fake_surface(index, valid) return { index = index, valid = valid ~= false } end
 	check("delete_identity_same_surface_ok",
 		SurfaceLock.transfer_delete_identity_ok({ kind = "transfer", surface_index = 7 }, fake_surface(7)) == true,
@@ -146,8 +139,6 @@ local function transfer_lock_selftest()
 	check("delete_identity_refuses_invalid_surface",
 		SurfaceLock.transfer_delete_identity_ok({ kind = "transfer", surface_index = 7 }, fake_surface(7, false)) == false,
 		"an invalid current surface must REFUSE the delete")
-	-- Request-vs-lock correlation (re-audit P1): the request's job id (== exportId) must match the lock's
-	-- transfer_job_id, else a stale/reused-index delete would tear down a DIFFERENT in-flight transfer.
 	check("delete_identity_job_id_match_ok",
 		SurfaceLock.transfer_delete_identity_ok({ kind = "transfer", surface_index = 7, transfer_job_id = "job_A" }, fake_surface(7), "job_A") == true,
 		"a matching job_id (same transfer) must be deletable")
@@ -158,10 +149,6 @@ local function transfer_lock_selftest()
 		SurfaceLock.transfer_delete_identity_ok({ kind = "transfer", surface_index = 7 }, fake_surface(7), "job_A") == true,
 		"an old-save lock with no transfer_job_id degrades to the surface.index check (no correlation available)")
 
-	-- re-audit P1 (both PR reviews): the SAME-transfer backfill in lock_platform must only upgrade the SAME
-	-- transfer (existing token unset or equal); a DIFFERENT/second transfer must be REJECTED so it can't
-	-- overwrite the first transfer's correlation token → a live-source + committed-dest dup. Universal — covers
-	-- the in-game trigger AND the web/ctl export_platform route (both lock through lock_platform).
 	check("lock_upgrade_same_handoff_ok",
 		SurfaceLock.is_same_transfer_upgrade(nil, "job_A") == true,
 		"the transfer-trigger→export-pipeline handoff (existing token unset) may upgrade")
