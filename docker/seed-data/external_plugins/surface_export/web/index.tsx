@@ -22,6 +22,7 @@ import ImportModal from "./ImportModal";
 import type { JsonObject, LogEvent, SurfaceExportPlugin, SurfaceExportState } from "./view-models";
 
 import { summaryFromTransferInfo, mergeTransferSummary, getErrorMessage, getProp } from "./utils";
+import { freshRevisionWatermarks, isFreshRevision } from "../shared/revision-gate";
 import "./style.css";
 
 const {
@@ -210,6 +211,9 @@ export class WebPlugin extends BaseWebPlugin {
 
 	onControllerConnectionEvent(event: string) {
 		if (event === "connect" || event === "resume") {
+			// Watermarks are scoped to one controller session, so this reconnect starts them over.
+			// Carrying them across would gate the new session's revisions against the old one's.
+			this.setState(freshRevisionWatermarks());
 			this.syncLiveState().catch(notifyErrorHandler("Failed to resubscribe Surface Export live updates"));
 		}
 	}
@@ -290,14 +294,24 @@ export class WebPlugin extends BaseWebPlugin {
 				}
 			}
 
+			// A pushed update that landed while this request was in flight carries a newer revision
+			// than the snapshot, and keeps its place.
+			const snapshotRevision = Number(getProp(treeResponse, "revision", 0));
+			const snapshotState = isFreshRevision(snapshotRevision, this.state.lastTreeRevision)
+				? {
+					tree: {
+						forceName: String(getProp(treeResponse, "forceName", "player")),
+						hosts: getProp(treeResponse, "hosts", []) as NonNullable<SurfaceExportState["tree"]>["hosts"],
+						unassignedInstances: getProp(treeResponse, "unassignedInstances", []) as NonNullable<SurfaceExportState["tree"]>["unassignedInstances"],
+						revision: snapshotRevision,
+						generatedAt: Number(getProp(treeResponse, "generatedAt", Date.now())),
+					},
+					lastTreeRevision: snapshotRevision,
+				}
+				: {};
+
 			this.setState({
-				tree: {
-					forceName: String(getProp(treeResponse, "forceName", "player")),
-					hosts: getProp(treeResponse, "hosts", []) as NonNullable<SurfaceExportState["tree"]>["hosts"],
-					unassignedInstances: getProp(treeResponse, "unassignedInstances", []) as NonNullable<SurfaceExportState["tree"]>["unassignedInstances"],
-					revision: Number(getProp(treeResponse, "revision", 0)),
-					generatedAt: Number(getProp(treeResponse, "generatedAt", Date.now())),
-				},
+				...snapshotState,
 				transferSummaries,
 				loadingTree: false,
 				treeError: null,
@@ -374,7 +388,7 @@ export class WebPlugin extends BaseWebPlugin {
 
 	async handleTreeUpdate(event: JsonObject) {
 		const revision = Number(event.revision ?? 0);
-		if (revision <= this.state.lastTreeRevision) {
+		if (!isFreshRevision(revision, this.state.lastTreeRevision)) {
 			return;
 		}
 		const tree = (event.tree ?? {}) as { hosts?: Array<unknown>; unassignedInstances?: Array<unknown> };
@@ -395,7 +409,7 @@ export class WebPlugin extends BaseWebPlugin {
 
 	async handleTransferUpdate(event: JsonObject) {
 		const revision = Number(event.revision ?? 0);
-		if (revision <= this.state.lastTransferRevision) {
+		if (!isFreshRevision(revision, this.state.lastTransferRevision)) {
 			return;
 		}
 
@@ -407,7 +421,7 @@ export class WebPlugin extends BaseWebPlugin {
 
 	async handleLogUpdate(event: JsonObject) {
 		const revision = Number(event.revision ?? 0);
-		if (revision <= this.state.lastLogRevision) {
+		if (!isFreshRevision(revision, this.state.lastLogRevision)) {
 			return;
 		}
 		const transferId = String(event.transferId || "");
