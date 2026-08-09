@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Alert, Button, Empty, Select, Space, Spin, Tooltip, Typography, message as antMessage } from "antd";
-import { BugOutlined, ReloadOutlined, UploadOutlined } from "@ant-design/icons";
+import { BugOutlined, LockOutlined, ReloadOutlined, UnlockOutlined, UploadOutlined } from "@ant-design/icons";
 import {
 	Background,
 	ControlButton,
@@ -39,6 +39,7 @@ import {
 	sourceHandleId,
 	targetHandleId,
 } from "./gateway-graph";
+import { gatewayColour } from "./gateway-colours";
 import type { ConnectRequest, GatewayEdits, PlatformLike } from "./gateway-graph";
 import { NodeActionsContext, platformActionKey } from "./node-actions";
 import DebugPanel from "./DebugPanel";
@@ -118,6 +119,8 @@ export default function GatewayCanvas({ plugin, state, onOpenImport }: {
 }) {
 	const account = useAccount();
 	const canEdit = account.hasPermission(PERMISSIONS.TRANSFER_EXPORTS) === true;
+	const [locked, setLocked] = useState(false);
+	const interactive = canEdit && !locked;
 
 	const [loading, setLoading] = useState(true);
 	const [saving, setSaving] = useState(false);
@@ -253,9 +256,11 @@ export default function GatewayCanvas({ plugin, state, onOpenImport }: {
 		const instanceIds = graph.nodes
 			.map(node => instanceIdFromNodeId(node.id))
 			.filter((id): id is number => id !== null);
+		const mockIds = instanceIds.filter(isMockInstanceId);
+		const shipPool = mockIds.length >= 2 ? mockIds : instanceIds.filter(id => !isMockInstanceId(id));
 		const replayed = replayShips(state?.transferSummaries, debug.replayTransferIds)
 			.filter(ship => !realShips.some(live => live.transferId === ship.transferId));
-		return [...replayed, ...realShips, ...mockShips(instanceIds, debug.shipPhases)];
+		return [...replayed, ...realShips, ...mockShips(shipPool, debug.shipPhases)];
 	}, [realShips, debug.enabled, debug.shipPhases, debug.replayTransferIds, state?.transferSummaries, scenario, graph]);
 
 	useEffect(() => {
@@ -313,9 +318,14 @@ export default function GatewayCanvas({ plugin, state, onOpenImport }: {
 					targetHandle: edge.targetHandle,
 					type: GATEWAY_EDGE_TYPE,
 					selected: selected.has(edge.id),
+					deletable: interactive,
 					style: dimStyle(edge.sourceInstanceId, edge.targetInstanceId),
-					markerEnd: edge.forward ? { type: MarkerType.ArrowClosed } : undefined,
-					markerStart: edge.reverse ? { type: MarkerType.ArrowClosed } : undefined,
+					markerEnd: edge.forward
+						? { type: MarkerType.ArrowClosed, color: gatewayColour(edge.sourceGateway) }
+						: undefined,
+					markerStart: edge.reverse
+						? { type: MarkerType.ArrowClosed, color: gatewayColour(edge.sourceGateway) }
+						: undefined,
 					data: {
 						forward: edge.forward,
 						reverse: edge.reverse,
@@ -340,14 +350,15 @@ export default function GatewayCanvas({ plugin, state, onOpenImport }: {
 					target,
 					targetHandle: targetHandleId(anchorGateway),
 					type: GATEWAY_EDGE_TYPE,
+					deletable: false,
 					style: { ...dimStyle(ship.sourceInstanceId, ship.targetInstanceId), strokeDasharray: "6 4" },
-					markerEnd: { type: MarkerType.ArrowClosed },
-					data: { transient: true, transfer: ship, transferReversed: false },
+					markerEnd: { type: MarkerType.ArrowClosed, color: gatewayColour(anchorGateway) },
+					data: { transient: true, sourceGateway: anchorGateway, transfer: ship, transferReversed: false },
 				});
 			}
 			return edges;
 		});
-	}, [graph, ships, mode, setNodes, setEdges]);
+	}, [graph, ships, mode, interactive, setNodes, setEdges]);
 
 	const nodeActions = useMemo(() => ({
 		exportingKey,
@@ -393,8 +404,15 @@ export default function GatewayCanvas({ plugin, state, onOpenImport }: {
 		if (sourceIsPlatform) {
 			return gatewayFromHandleId(link.targetHandle) != null;
 		}
-		return gatewayFromHandleId(link.sourceHandle) != null && gatewayFromHandleId(link.targetHandle) != null;
-	}, []);
+		if (gatewayFromHandleId(link.sourceHandle) == null || gatewayFromHandleId(link.targetHandle) == null) {
+			return false;
+		}
+		if (mode === "multi") {
+			const request = toConnectRequest(link);
+			return request !== null && multiModeViolation(edits, request) === null;
+		}
+		return true;
+	}, [edits, mode]);
 
 	const onConnect = useCallback((connection: Connection) => {
 		const dragged = platformFromHandle(connection.source, connection.sourceHandle);
@@ -402,14 +420,6 @@ export default function GatewayCanvas({ plugin, state, onOpenImport }: {
 			const targetInstanceId = instanceIdFromNodeId(connection.target);
 			if (targetInstanceId == null) {
 				antMessage.error("Could not read the destination — no transfer was started.", 6);
-				return;
-			}
-			if (platformIndexFromHandleId(connection.targetHandle) != null) {
-				antMessage.warning("Drop a platform on another instance's PORTAL, not on one of its platforms.", 5);
-				return;
-			}
-			if (dragged.instanceId === targetInstanceId) {
-				antMessage.warning("A platform cannot transfer to the instance it is already on.", 4);
 				return;
 			}
 			setTransfer({
@@ -430,10 +440,6 @@ export default function GatewayCanvas({ plugin, state, onOpenImport }: {
 			antMessage.error("Could not read that connection — nothing was staged.", 6);
 			return;
 		}
-		if (request.sourceInstanceId === request.targetInstanceId) {
-			antMessage.warning("An instance cannot gateway to itself.", 4);
-			return;
-		}
 		if (mode === "multi") {
 			const violation = multiModeViolation(edits, request);
 			if (violation) {
@@ -445,7 +451,7 @@ export default function GatewayCanvas({ plugin, state, onOpenImport }: {
 	}, [edits, mode, platformFromHandle]);
 
 	const onEdgeClick = useCallback((_event: React.MouseEvent, edge: Edge) => {
-		if (!canEdit) {
+		if (!interactive) {
 			return;
 		}
 		if (edge.data?.transient) {
@@ -457,14 +463,17 @@ export default function GatewayCanvas({ plugin, state, onOpenImport }: {
 			return;
 		}
 		setEdits(previous => applyDisconnect(previous, request));
-	}, [canEdit]);
+	}, [interactive]);
 
 	const onEdgesDelete = useCallback((deleted: Edge[]) => {
+		if (!interactive) {
+			return;
+		}
 		setEdits(previous => deleted.filter(edge => !edge.data?.transient).reduce((acc, edge) => {
 			const request = toConnectRequest(edge);
 			return request ? applyDisconnect(acc, request) : acc;
 		}, previous));
-	}, []);
+	}, [interactive]);
 
 	const save = useCallback(async () => {
 		setSaving(true);
@@ -584,17 +593,29 @@ export default function GatewayCanvas({ plugin, state, onOpenImport }: {
 					edgeTypes={CANVAS_EDGE_TYPES}
 					connectionLineComponent={ConnectionLine}
 					connectionMode={ConnectionMode.Loose}
-					nodesConnectable={canEdit}
-					edgesFocusable={canEdit}
+					nodesConnectable={interactive}
+					edgesFocusable={interactive}
+					nodesDraggable={!locked}
 					elementsSelectable
-					deleteKeyCode={canEdit ? ["Backspace", "Delete"] : null}
+					deleteKeyCode={interactive ? ["Backspace", "Delete"] : null}
 					colorMode="dark"
 					fitView
 					fitViewOptions={fitViewOptions}
 					minZoom={0.2}
 				>
 					<Background />
-					<Controls>
+					<Controls showInteractive={false}>
+						<ControlButton
+							onClick={() => setLocked(!locked)}
+							title={locked
+								? "Unlock the canvas — allow connecting, deleting and dragging"
+								: "Lock the canvas — no connecting, no edge deletion, no dragging"}
+							aria-label={locked ? "unlock the canvas" : "lock the canvas"}
+							data-testid="canvas-lock"
+							data-locked={locked ? "true" : "false"}
+						>
+							{locked ? <LockOutlined style={{ color: "#fa8c16" }} /> : <UnlockOutlined />}
+						</ControlButton>
 						<ControlButton
 							onClick={() => setDebug({ ...debug, enabled: !debug.enabled })}
 							title={debug.enabled ? "Turn debug mode off" : "Turn debug mode on (also: surfaceExportCanvas.help())"}
