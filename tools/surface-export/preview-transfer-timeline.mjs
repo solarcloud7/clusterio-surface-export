@@ -8,9 +8,9 @@
 // it is a slow loop besides. The timeline is a PURE function of recorded events
 // (shared/transfer-timeline.ts), so it can be rendered from banked data by itself.
 //
-// The colours and bar geometry mirror web/TransactionLogsTab.tsx. This is a debugging lens, not a
-// second implementation: the row set, the widths and the attribution all come from the SAME builder
-// the browser calls, so a preview that looks wrong means the builder is wrong.
+// The row set, widths, palette, hatch, geometry and warning wording all come from the SAME compiled
+// module the browser consumes (dist/node/shared) — this file contributes no timeline logic of its
+// own, so a preview that looks wrong means the builder is wrong.
 //
 //   node tools/surface-export/preview-transfer-timeline.mjs                    # bundled fixtures
 //   node tools/surface-export/preview-transfer-timeline.mjs --log <txlogs.json>  # any real log
@@ -27,6 +27,7 @@ import { createRequire } from "node:module";
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const PLUGIN = path.resolve(HERE, "../../docker/seed-data/external_plugins/surface_export");
 const BUILDER = path.join(PLUGIN, "dist/node/shared/transfer-timeline.js");
+const SHARED_UTILS = path.join(PLUGIN, "dist/node/shared/utils.js");
 
 if (!existsSync(BUILDER)) {
 	console.error(`Timeline builder not built: ${BUILDER}\n`
@@ -34,7 +35,9 @@ if (!existsSync(BUILDER)) {
 		+ "  ./tools/clusterio/build-plugin.ps1 node");
 	process.exit(1);
 }
-const { buildTransferTimeline, describeAttribution } = createRequire(import.meta.url)(BUILDER);
+const req = createRequire(import.meta.url);
+const { buildTransferTimeline, describeAttribution, TIMELINE_PALETTE, tickHatch, toGanttGeometry } = req(BUILDER);
+const { formatMs } = req(SHARED_UTILS);
 
 const argv = process.argv.slice(2);
 const argOf = name => {
@@ -67,41 +70,29 @@ if (!cases.length) {
 	process.exit(1);
 }
 
-const COLORS = {
-	red: "#ff4d4f", green: "#52c41a", blue: "#1890ff",
-	tiles: "#36cfc9", entities: "#1890ff", belts: "#40a9ff", state: "#597ef7",
-	inventories: "#2f54eb", validation: "#85a5ff", fluids: "#08979c",
-	transmission: "#13c2c2", cleanup: "#73d13d",
-	delivery: "#1d39c4", queue: "#adc6ff",
-	destImport: "#0958d9", residual: "#faad14",
-	exportPrep: "#bae0ff", exportQueue: "#91caff", exportAsync: "#69c0ff", exportStore: "#4096ff",
-};
-const fmt = ms => (ms == null ? "" : ms >= 1000 ? `${(ms / 1000).toFixed(1)}s` : `${Math.round(ms)}ms`);
 const esc = s => String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "\"": "&quot;" }[c]));
 
 function renderCase(testCase) {
-	const { totalMs, rows, attribution } = buildTransferTimeline(testCase.events, null);
-	const scale = totalMs > 0 ? totalMs : 1;
+	const timeline = buildTransferTimeline(testCase.events, null);
+	const { totalMs, rows, attribution } = timeline;
 	const kb = testCase.artifactSizeBytes ? `${Math.round(testCase.artifactSizeBytes / 1024)} KB` : "";
 
 	const bars = rows.map(row => {
-		const color = COLORS[row.color] || COLORS.blue;
-		const startPct = Math.max(0, Math.min(100, (row.startMs / scale) * 100));
-		const widthPct = row.endMs > row.startMs
-			? Math.max(0.8, Math.min(100 - startPct, ((row.endMs - row.startMs) / scale) * 100))
-			: 0;
-		const tip = esc([`${row.label}${row.durationMs != null ? ` — ${fmt(row.durationMs)}` : ""}`, row.note]
+		const color = TIMELINE_PALETTE[row.color] || TIMELINE_PALETTE.blue;
+		const { startPct, widthPct, markerPct } = toGanttGeometry(row, totalMs);
+		const tip = esc([`${row.label}${row.durationMs != null ? ` — ${formatMs(row.durationMs)}` : ""}`, row.note]
 			.filter(Boolean).join("\n"));
 		const bg = row.kind === "tickDerived"
-			? `repeating-linear-gradient(135deg, ${color} 0 4px, transparent 4px 8px); border:1px solid ${color}`
+			? `${tickHatch(color)}; border:1px solid ${color}`
 			: color;
-		const mark = row.isEvent
-			? `<span class="marker" style="left:${startPct}%;background:${color}" title="${tip}"></span>`
+		const isGap = row.kind === "residual" || row.kind === "detailGap";
+		const mark = row.kind === "event"
+			? `<span class="marker" style="left:${markerPct}%;background:${color}" title="${tip}"></span>`
 			: `<span class="bar" style="left:${startPct}%;width:${widthPct}%;background:${bg}" title="${tip}"></span>`;
 		return `<div class="row">
-			<div class="label" style="padding-left:${4 + row.indent * 14}px${row.isEvent ? ";font-weight:600" : ""}${row.kind === "residual" ? ";color:#d48806" : ""}" title="${tip}">${esc(row.label)}</div>
+			<div class="label" style="padding-left:${4 + row.indent * 14}px${row.kind === "event" ? ";font-weight:600" : ""}${isGap ? ";color:#d48806" : ""}" title="${tip}">${esc(row.label)}</div>
 			<div class="track">${mark}</div>
-			<div class="time">${fmt(row.durationMs)}</div>
+			<div class="time">${formatMs(row.durationMs)}</div>
 		</div>`;
 	}).join("\n");
 
@@ -109,14 +100,19 @@ function renderCase(testCase) {
 	const notice = describeAttribution(attribution);
 	const warn = notice ? `<div class="warn"><b>${esc(notice.headline)}.</b> ${esc(notice.detail)}</div>` : "";
 
-	return `<section>
-		<h2>${esc(testCase.platformName || testCase.label)} <small>${esc(testCase.label)} · ${kb} · total ${fmt(totalMs)}</small></h2>
+	return {
+		timeline,
+		html: `<section>
+		<h2>${esc(testCase.platformName || testCase.label)} <small>${esc(testCase.label)} · ${kb} · total ${formatMs(totalMs)}</small></h2>
 		${warn}
 		<div class="timeline">${bars}
-			<div class="axis"><span>0</span><span>${fmt(totalMs)}</span></div>
+			<div class="axis"><span>0</span><span>${formatMs(totalMs)}</span></div>
 		</div>
-	</section>`;
+	</section>`,
+	};
 }
+
+const rendered = cases.map(testCase => ({ testCase, ...renderCase(testCase) }));
 
 const html = `<!doctype html>
 <meta charset="utf-8"><title>Transfer Flow timeline preview</title>
@@ -140,15 +136,16 @@ const html = `<!doctype html>
 <div class="legend">
 	Solid bars are <b>wall-clock measurements</b>. Hatched bars are <b>tick-derived</b>: a game.tick
 	count scaled by a nominal 60 UPS, which cannot grow when a tick runs long. Amber is
-	<b>unattributed</b> wall clock. Source: ${esc(logPath || "test/fixtures/real-transfer-timelines.json")}
+	<b>unattributed</b> wall clock; dark orange is <b>measured time with no phase detail</b>.
+	Source: ${esc(logPath || "test/fixtures/real-transfer-timelines.json")}
 </div>
-${cases.map(renderCase).join("\n")}
+${rendered.map(r => r.html).join("\n")}
 `;
 
 writeFileSync(outPath, html);
-console.log(`Rendered ${cases.length} transfer(s) -> ${outPath}`);
-for (const testCase of cases) {
-	const { totalMs, attribution } = buildTransferTimeline(testCase.events, null);
+console.log(`Rendered ${rendered.length} transfer(s) -> ${outPath}`);
+for (const { testCase, timeline } of rendered) {
 	console.log(`  ${String(testCase.platformName || testCase.label).slice(0, 28).padEnd(30)} `
-		+ `total ${String(fmt(totalMs)).padStart(7)}  unattributed ${attribution.residualPct.toFixed(0).padStart(3)}%`);
+		+ `total ${String(formatMs(timeline.totalMs)).padStart(7)}  unattributed ${timeline.attribution.residualPct.toFixed(0).padStart(3)}%`
+		+ `  detail-gap ${formatMs(timeline.attribution.detailGapMs) || "0ms"}`);
 }

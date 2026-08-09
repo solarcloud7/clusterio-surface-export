@@ -1,7 +1,6 @@
-// Transfer Flow timeline assembly.
-//
-// Lives in shared/ (not web/) for the same reason as revision-gate.ts: tsconfig.node.json excludes
-// web/**, so a rule that lives there is unreachable from `npm test`, which only sees dist/node.
+// Transfer Flow timeline assembly. Lives in shared/ (not web/) so `npm test` can reach it via
+// dist/node; the browser tab, the offline preview and the tests all consume THIS module — the
+// palette, the bar geometry and the wording exported below are the single copies.
 //
 // THE RULE THIS FILE EXISTS TO ENFORCE: a bar's width on the wall-clock axis must be a wall-clock
 // measurement. Every other quantity is drawn, named and coloured as something else.
@@ -9,22 +8,23 @@
 // Two clocks feed this chart and they are not interchangeable:
 //
 //   WALL CLOCK   Date.now() deltas taken on the controller (transmissionMs, validationMs, the
-//                export prep/lock/store trio, cleanupMs). These are real elapsed time.
+//                export lock/store pair, cleanupMs). These are real elapsed time.
 //   TICK-DERIVED `game.tick` deltas scaled by a nominal 60 UPS (every import phaseSpan, every
-//                *_ticks/_ms pair, instanceAsyncExportMs, exportTickEstimateMs). These count TICKS.
-//                A tick is not 16.67 ms when the game is busy: it is however long its work takes.
+//                *_ticks/_ms pair, instanceAsyncExportMs). These count TICKS. A tick is not
+//                16.67 ms when the game is busy: it is however long its work takes.
 //
 // Measured on this cluster (2026-08-09, 120 KB lab-transfer-fixture-v1, host-2 factorio-current.log):
 // the import job was created at log t=47.988 and completed at t=63.502 — 15.5 s of real time — while
 // its own instrument reported 28 ticks = 467 ms. A 33x understatement, and the log line the game
-// prints ("1359 entities in 0.5s") inherits it. One single tick spanned 62.280 -> 63.494 = 1.2 s.
-// The destination idles at a healthy 60 UPS, so this is the import stalling the server, not a slow
-// host. Drawing those 467 ms as if they were the 15.5 s window is the defect this file removes.
+// prints ("1359 entities in 0.5s") inherits it. Drawing those 467 ms as if they were the 15.5 s
+// window is the defect this file removes.
 //
-// So tick-derived spans keep their tick-derived WIDTH and sit inside the measured window they belong
-// to. The time they cannot account for becomes an explicit `residual` row rather than silently
-// inflating a neighbour or hiding in a muted "Round-trip" bar. Unmeasured is not zero, and in the
-// time domain it is not somebody else's milliseconds either.
+// So tick-derived spans keep their tick-derived WIDTH, sit inside the measured window they belong
+// to, and NEVER move the axis: totalMs comes from events and measured spans only — a tick count
+// that overruns its window is clamped back in, not allowed to manufacture wall-clock time past the
+// last real event. The time no measured span covers becomes an explicit `residual` row; the part of
+// a measured window its tick breakdown does not reach becomes a `detailGap` row. Unmeasured is not
+// zero, and in the time domain it is not somebody else's milliseconds either.
 
 export type TimelineEventInput = {
 	eventType?: string;
@@ -51,7 +51,6 @@ export type SpanKind = "measured" | "tickDerived" | "residual" | "detailGap" | "
 export type TimelineRow = {
 	key: string;
 	label: string;
-	isEvent: boolean;
 	indent: number;
 	startMs: number;
 	endMs: number;
@@ -70,20 +69,23 @@ export type TimelineAttribution = {
 	residualMs: number;
 	residualPct: number;
 	/**
-	 * Total ms trimmed to stop adjacent measured spans overlapping. Adjacent phases are bracketed by
-	 * SEPARATE Date.now() samples, so a handoff can read as a sub-millisecond overlap (measured: 1 ms
-	 * between Transmission and Destination import on a real 28.5 s transfer). Trimming keeps the bars
-	 * tiling; publishing the amount keeps it honest — a large value means the MODEL is wrong, not the
-	 * clock, and the tests assert it stays negligible on real transfers.
+	 * Total ms trimmed to stop measured spans double-painting the same time. Adjacent phases are
+	 * bracketed by SEPARATE Date.now() samples, so a handoff can read as a sub-millisecond overlap
+	 * (measured: 1 ms between Transmission and Destination import on a real 28.5 s transfer); a span
+	 * fully contained in an earlier one is collapsed and counted whole. Publishing the amount keeps
+	 * it honest — a large value means the MODEL is wrong, not the clock, and the tests assert it
+	 * stays negligible on real transfers.
 	 */
 	overlapTrimmedMs: number;
 	/**
-	 * Measured ms inside the destination-import window that its tick-derived phase breakdown does not
-	 * reach. This is the understatement itself, as a number: the window is real elapsed time, the
-	 * phases inside it count ticks, and a tick that runs long moves the former and not the latter.
+	 * Measured ms inside a measured window (the destination import, the export envelope) that its
+	 * tick-derived breakdown does not reach. This is the understatement itself, as a number: the
+	 * window is real elapsed time, the spans inside it count ticks, and a tick that runs long moves
+	 * the former and not the latter. Only windows that HAVE a breakdown contribute — a window with
+	 * no tick spans at all is simply an unbroken measured bar, not a gap.
 	 */
 	detailGapMs: number;
-	/** detailGapMs as a share of the measured window it sits in — 0 when there is no such window. */
+	/** detailGapMs as a share of the windows it was measured against — 0 when there are none. */
 	detailGapPct: number;
 };
 
@@ -92,6 +94,46 @@ export type TransferTimeline = {
 	rows: TimelineRow[];
 	attribution: TimelineAttribution;
 };
+
+// ---------------------------------------------------------------------------------------------
+// Presentation constants — exported so the browser tab and the offline preview render from the
+// SAME tables instead of hand-mirrored copies (the mirrored copies drifted inside one PR).
+// ---------------------------------------------------------------------------------------------
+
+/** One palette for every color key the builder emits. Unknown keys fall back to `blue`. */
+export const TIMELINE_PALETTE: Record<string, string> = {
+	red: "#ff4d4f", green: "#52c41a", blue: "#1890ff",
+	// Import waterfall — blue/cyan→indigo in pipeline order so the cascade reads segment-by-segment.
+	tiles: "#36cfc9", entities: "#1890ff", belts: "#40a9ff", state: "#597ef7",
+	inventories: "#2f54eb", validation: "#85a5ff", fluids: "#08979c",
+	transmission: "#13c2c2", cleanup: "#73d13d",
+	delivery: "#1d39c4", queue: "#adc6ff",
+	// destImport: the measured wall-clock wait on the destination. residual: unattributed wall
+	// clock (amber). detailGap: measured-but-unbroken time (dark orange) — a different statement
+	// than residual, so a different color.
+	destImport: "#0958d9", residual: "#faad14", detailGap: "#d46b08",
+	exportQueue: "#91caff", exportAsync: "#69c0ff", exportStore: "#4096ff",
+};
+
+/** The hatch that marks a bar as tick-derived — never mistakable for elapsed time at a glance. */
+export function tickHatch(color: string): string {
+	return `repeating-linear-gradient(135deg, ${color} 0 4px, transparent 4px 8px)`;
+}
+
+export type GanttGeometry = { startPct: number; widthPct: number; markerPct: number };
+
+/** Bar geometry both renderers use: zero-width spans stay invisible; real spans get a 0.8% floor. */
+export function toGanttGeometry(row: { startMs: number; endMs: number }, totalMs: number): GanttGeometry {
+	const scale = totalMs > 0 ? totalMs : 1;
+	const startPct = Math.max(0, Math.min(100, (row.startMs / scale) * 100));
+	return {
+		startPct,
+		widthPct: row.endMs > row.startMs
+			? Math.max(0.8, Math.min(100 - startPct, ((row.endMs - row.startMs) / scale) * 100))
+			: 0,
+		markerPct: Math.max(0, Math.min(100, (row.endMs / scale) * 100)),
+	};
+}
 
 /** Anything above this share is worth saying out loud rather than leaving to be noticed. */
 const NOTICE_THRESHOLD_PCT = 5;
@@ -105,33 +147,37 @@ const NOTICE_THRESHOLD_PCT = 5;
  */
 const DETAIL_GAP_FLOOR_MS = 1000;
 
-function formatMs(ms: number) {
-	return ms >= 1000 ? `${(ms / 1000).toFixed(1)}s` : `${Math.round(ms)}ms`;
-}
+import { formatMs } from "./utils";
 
 /**
  * The one wording for "this chart cannot account for its own time", so the browser tab and the
  * offline preview cannot drift into describing the same numbers differently.
- * Returns null when the timeline accounts for itself.
+ * Returns null when the timeline accounts for itself. When both findings fire, the headline
+ * carries the unattributed time (the more serious statement) and the detail carries both.
  */
 export function describeAttribution(attribution: TimelineAttribution): { headline: string; detail: string } | null {
+	const notices: Array<{ headline: string; detail: string }> = [];
 	if (attribution.residualPct > NOTICE_THRESHOLD_PCT) {
-		return {
+		notices.push({
 			headline: `${formatMs(attribution.residualMs)} of ${formatMs(attribution.totalMs)} `
 				+ `(${attribution.residualPct.toFixed(0)}%) is unattributed`,
 			detail: "No measured span covers this time. It is bounded by the spans on either side of it.",
-		};
+		});
 	}
 	if (attribution.detailGapPct > NOTICE_THRESHOLD_PCT && attribution.detailGapMs >= DETAIL_GAP_FLOOR_MS) {
-		return {
-			headline: `${formatMs(attribution.detailGapMs)} of the destination import `
+		notices.push({
+			headline: `${formatMs(attribution.detailGapMs)} of measured work `
 				+ `(${attribution.detailGapPct.toFixed(0)}%) has no phase detail`,
-			detail: "The import window is measured wall clock, but the phases inside it are game.tick "
-				+ "deltas scaled by a nominal 60 UPS. A tick that runs long does not widen them, so the "
-				+ "breakdown stops short of the window it sits in. The amber bar is the difference, not idle time.",
-		};
+			detail: "The window is measured wall clock, but the spans inside it are game.tick deltas "
+				+ "scaled by a nominal 60 UPS. A tick that runs long does not widen them, so the "
+				+ "breakdown stops short of the window it sits in. The dark-orange bar is the difference, not idle time.",
+		});
 	}
-	return null;
+	if (notices.length === 0) return null;
+	return {
+		headline: notices[0].headline,
+		detail: notices.map(notice => notices.length > 1 ? `${notice.headline}: ${notice.detail}` : notice.detail).join(" "),
+	};
 }
 
 /** Gaps below this are rendering noise (clock granularity), not missing measurement. */
@@ -193,6 +239,9 @@ function humanize(key: string) {
 		.replace(/^./, c => c.toUpperCase());
 }
 
+/** A measured window whose tick-derived children owe it a breakdown. */
+type DetailWindow = { startMs: number; endMs: number; children: TimelineRow[] };
+
 /**
  * Assemble the transfer timeline. Pure: no clock, no DOM, no I/O — so `npm test` can pin its
  * invariants against real recorded transfers.
@@ -202,14 +251,12 @@ export function buildTransferTimeline(
 	detailedSummary: Record<string, unknown> | null,
 ): TransferTimeline {
 	const rows: TimelineRow[] = [];
-	// The import phase breakdown, tracked explicitly. Selecting it later by indent would also catch
-	// the export's async sub-bar, which is likewise tick-derived and likewise indented — that mistake
-	// clamped the export INTO the import window and inverted the timeline.
-	const importPhaseRows: TimelineRow[] = [];
-	// Likewise held explicitly rather than found later by colour: colour is styling, and a timeline
-	// can carry more than one event with a validationMs (a late verdict after settle, a redelivered
-	// one). The FIRST is the import window the phases belong to.
-	let importWindow: TimelineRow | null = null;
+	// Measured windows and the tick-derived rows nested inside them, tracked EXPLICITLY at push
+	// time. Selecting children later by indent once clamped the export's async bar into the import
+	// window; selecting the window by colour would break on a second validationMs-carrying event
+	// (a late or redelivered verdict) — the FIRST window is the one the phases belong to.
+	const detailWindows: DetailWindow[] = [];
+	let importWindow: DetailWindow | null = null;
 	const list = (events || []).filter(Boolean);
 	let totalMs = 0;
 
@@ -219,7 +266,6 @@ export function buildTransferTimeline(
 		if (at !== null && ev.eventType) eventAt[String(ev.eventType)] = at;
 	}
 
-
 	for (const event of list) {
 		const at = finite(event.elapsedMs) ?? 0;
 		const type = String(event.eventType || "event");
@@ -227,7 +273,7 @@ export function buildTransferTimeline(
 		const isSuccess = /completed|success/.test(type);
 
 		rows.push({
-			key: `event:${type}:${at}`, label: type, isEvent: true, indent: 0,
+			key: `event:${type}:${at}`, label: type, indent: 0,
 			startMs: at, endMs: at, durationMs: null,
 			color: isFailure ? "red" : isSuccess ? "green" : "blue", kind: "event",
 		});
@@ -245,34 +291,41 @@ export function buildTransferTimeline(
 			const lockStart = lockEnd - lockMs;
 			if (lockMs > 0) {
 				rows.push({
-					key: `export:lock:${at}`, label: "Request export + lock source", isEvent: false, indent: 1,
+					key: `export:lock:${at}`, label: "Request export + lock source", indent: 1,
 					startMs: lockStart, endMs: lockEnd, durationMs: lockMs, color: "exportQueue", kind: "measured",
 					note: "Controller wall clock: export request through source lock.",
 				});
 			}
 			if (storeMs > 0) {
 				rows.push({
-					key: `export:store:${at}`, label: "Wait for store", isEvent: false, indent: 1,
+					key: `export:store:${at}`, label: "Wait for store", indent: 1,
 					startMs: lockEnd, endMs: at, durationMs: storeMs, color: "exportStore", kind: "measured",
 					note: "Controller wall clock: waiting for the export to land in the controller store.",
 				});
 			}
 			// Tick-derived: math.floor(duration_ticks * 16.67) from export-pipeline.lua. Structurally
-			// blind to a tick stall — it cannot grow when the game slows down. Drawn at the export's
-			// real position (before transfer_created) rather than back-anchored to transfer_completed,
-			// where it used to sit: the export finishes BEFORE the transfer record exists.
+			// blind to a tick stall — it cannot grow when the game slows down. The async export runs
+			// somewhere inside the WHOLE lock+store envelope (the export request returns at export_id
+			// creation; the store wait is where the async span actually elapses), so its bar anchors
+			// at the envelope start and the envelope — not the lock span alone — is the measured
+			// parent its detail gap is judged against.
 			const asyncMs = positive(exportMetrics.instanceAsyncExportMs);
 			const ticks = positive(exportMetrics.instanceAsyncExportTicks);
+			const envelopeStart = lockMs > 0 || storeMs > 0 ? lockStart : at;
 			if (asyncMs !== null) {
-				const asyncEnd = lockMs > 0 ? lockEnd : at;
-				rows.push({
+				const asyncRow: TimelineRow = {
 					key: `export:async:${at}`, label: ticks !== null
 						? `Async export (${ticks.toLocaleString()} ticks)` : "Async export",
-					isEvent: false, indent: lockMs > 0 ? 2 : 1,
-					startMs: Math.max(0, asyncEnd - asyncMs), endMs: asyncEnd,
+					indent: lockMs > 0 || storeMs > 0 ? 2 : 1,
+					startMs: Math.max(0, envelopeStart === at ? at - asyncMs : envelopeStart),
+					endMs: envelopeStart === at ? at : Math.min(envelopeStart + asyncMs, at),
 					durationMs: asyncMs, color: "exportAsync", kind: "tickDerived",
 					note: `${ticks ?? "?"} ticks x 16.67 ms nominal — a tick count, not elapsed time.`,
-				});
+				};
+				rows.push(asyncRow);
+				if (lockMs > 0 || storeMs > 0) {
+					detailWindows.push({ startMs: lockStart, endMs: at, children: [asyncRow] });
+				}
 			}
 		}
 
@@ -283,7 +336,7 @@ export function buildTransferTimeline(
 		const transmissionMs = positive(event.transmissionMs);
 		if (transmissionMs !== null) {
 			rows.push({
-				key: `phase:transmission:${at}`, label: "Transmission + payload upload", isEvent: false, indent: 1,
+				key: `phase:transmission:${at}`, label: "Transmission + payload upload", indent: 1,
 				startMs: at - transmissionMs, endMs: at, durationMs: transmissionMs,
 				color: "transmission", kind: "measured",
 				note: "Controller wall clock: import request sent until the destination accepted it (its RCON chunk feed runs inside).",
@@ -298,13 +351,15 @@ export function buildTransferTimeline(
 		const validationMs = positive(event.validationMs);
 		if (validationMs !== null) {
 			const start = at - validationMs;
-			const windowRow: TimelineRow = {
-				key: `phase:destimport:${at}`, label: "Destination import", isEvent: false, indent: 1,
+			rows.push({
+				key: `phase:destimport:${at}`, label: "Destination import", indent: 1,
 				startMs: start, endMs: at, durationMs: validationMs, color: "destImport", kind: "measured",
 				note: "Controller wall clock: destination accepted the import until its verdict arrived.",
-			};
-			rows.push(windowRow);
-			if (!importWindow) importWindow = windowRow;
+			});
+			if (!importWindow) {
+				importWindow = { startMs: start, endMs: at, children: [] };
+				detailWindows.push(importWindow);
+			}
 		}
 
 		// ---- Import phases: tick-derived, nested INSIDE the measured window above. ----
@@ -320,24 +375,25 @@ export function buildTransferTimeline(
 				state: importMetrics.circuits_connected,
 			};
 			if (spans && spans.length) {
-				const pushImportPhase = (row: TimelineRow) => { rows.push(row); importPhaseRows.push(row); };
 				for (const span of [...spans].sort((a, b) => (finite(a.startOffsetMs) ?? 0) - (finite(b.startOffsetMs) ?? 0))) {
 					const name = String(span.name || "phase");
 					const startMs = segStart + (finite(span.startOffsetMs) ?? 0);
 					const dur = finite(span.durationMs) ?? 0;
 					const count = positive(counts[name]);
 					const base = IMPORT_SPAN_LABELS[name] || humanize(name);
-					pushImportPhase({
+					const row: TimelineRow = {
 						key: `import:${name}:${at}`, label: count !== null ? `${base} (${count.toLocaleString()})` : base,
-						isEvent: false, indent: 2,
+						indent: 2,
 						// Floor to 1 ms so a sub-tick phase stays visible as a sliver rather than vanishing.
+						// Tick spans NEVER extend totalMs — a tick count must not manufacture axis time.
 						startMs, endMs: startMs + Math.max(dur, 1), durationMs: dur || null,
 						color: name, kind: "tickDerived",
 						note: dur === 0
 							? "Under one tick — below what game.tick can resolve, not instant."
 							: "Tick count x 16.67 ms nominal — not elapsed time.",
-					});
-					totalMs = Math.max(totalMs, startMs + Math.max(dur, 1));
+					};
+					rows.push(row);
+					if (importWindow) importWindow.children.push(row);
 				}
 			}
 		}
@@ -354,7 +410,7 @@ export function buildTransferTimeline(
 				if (ms === null) continue;
 				const name = key.replace(/Ms$/, "");
 				rows.push({
-					key: `phase:${key}:${at}`, label: humanize(name), isEvent: false, indent: 1,
+					key: `phase:${key}:${at}`, label: humanize(name), indent: 1,
 					startMs: at - ms, endMs: at, durationMs: ms, color: name, kind: "measured",
 					note: "Controller wall clock.",
 				});
@@ -363,14 +419,22 @@ export function buildTransferTimeline(
 	}
 
 	// ---- Attribution: every measured ms belongs to a named span, or to an explicit residual. ----
-	// Tile the measured spans first. `measured` recorded the intervals as they were pushed; the rows
-	// themselves are the ones drawn, so trim THEM and derive the intervals from the trimmed rows —
-	// otherwise attribution and the picture could disagree.
+	// Tile the measured spans. The rows themselves are the ones drawn, so trim THEM and derive the
+	// intervals from the trimmed rows — otherwise attribution and the picture could disagree. A
+	// straddling span is trimmed to start at the prior end; a fully CONTAINED span is collapsed
+	// (its whole width counted as trimmed) — both keep the honesty metric complete.
 	let overlapTrimmedMs = 0;
 	const measuredRows = rows.filter(row => row.kind === "measured").sort((a, b) => a.startMs - b.startMs);
 	let priorEnd = 0;
 	for (const row of measuredRows) {
-		if (row.startMs < priorEnd && row.endMs > priorEnd) {
+		if (row.endMs <= priorEnd && row.startMs < priorEnd) {
+			// Fully contained: collapse to a zero-width row parked at the prior end (not at its own
+			// end, which would leave a marker stranded inside the containing bar).
+			overlapTrimmedMs += row.endMs - row.startMs;
+			row.startMs = priorEnd;
+			row.endMs = priorEnd;
+			row.durationMs = 0;
+		} else if (row.startMs < priorEnd && row.endMs > priorEnd) {
 			overlapTrimmedMs += priorEnd - row.startMs;
 			row.startMs = priorEnd;
 			row.durationMs = row.endMs - row.startMs;
@@ -378,49 +442,54 @@ export function buildTransferTimeline(
 		priorEnd = Math.max(priorEnd, row.endMs);
 	}
 
-	const covered = mergeIntervals(measuredRows.map(row => [row.startMs, row.endMs] as [number, number]))
-		.map(([a, b]) => [Math.max(0, a), Math.min(b, totalMs)] as [number, number]);
+	// Disjoint and sorted after the trim; clamping to [0, totalMs] preserves both.
+	const covered = measuredRows
+		.map(row => [Math.max(0, row.startMs), Math.min(row.endMs, totalMs)] as [number, number])
+		.filter(([a, b]) => b > a);
 	for (const [start, end] of gapsWithin(covered, totalMs)) {
 		rows.push({
-			key: `residual:${start}`, label: "Unattributed", isEvent: false, indent: 1,
+			key: `residual:${start}`, label: "Unattributed", indent: 1,
 			startMs: start, endMs: end, durationMs: end - start, color: "residual", kind: "residual",
 			note: "Wall-clock time no measured span covers. Bounded by the spans on either side.",
 		});
 	}
 
-	// ---- Detail gap: measured import window minus what its tick-derived phases reach. ----
+	// ---- Detail gaps: each measured window minus what its tick-derived children reach. ----
 	// Without this the chart looks fully attributed — a 22 s measured bar with 0.5 s of hatched
-	// phases at its left edge and no statement anywhere that the other 21.5 s has no breakdown.
+	// spans at its left edge and no statement anywhere that the other 21.5 s has no breakdown.
+	// A window with NO children contributes nothing: an unbroken measured bar already says,
+	// honestly, that nothing reported a breakdown — fabricating a "phases stopped short" row there
+	// mislabeled every validation-timeout wait.
 	let detailGapMs = 0;
-	let detailGapPct = 0;
-	if (importWindow) {
-		// A phase offset is a tick count, so on a short import it can land PAST the measured window it
-		// describes (seen on a 7 ms import whose later phases claim a 16 ms offset — one tick). Drawing
-		// it outside its own parent would say the destination worked after it reported its verdict, so
-		// clamp; the width was never elapsed time, but the containment is real.
-		for (const row of importPhaseRows) {
-			row.startMs = Math.min(Math.max(row.startMs, importWindow.startMs), importWindow.endMs);
-			row.endMs = Math.min(Math.max(row.endMs, row.startMs), importWindow.endMs);
+	let windowTotalMs = 0;
+	for (const window of detailWindows) {
+		if (window.children.length === 0) continue;
+		// A tick offset can land PAST the measured window it describes (a 7 ms import whose later
+		// phases claim a 16 ms — one tick — offset). Drawing it outside its own parent would say
+		// the work continued after the window closed, so clamp; the width was never elapsed time,
+		// but the containment is real.
+		for (const row of window.children) {
+			row.startMs = Math.min(Math.max(row.startMs, window.startMs), window.endMs);
+			row.endMs = Math.min(Math.max(row.endMs, row.startMs), window.endMs);
 			row.durationMs = row.durationMs === null ? null : Math.min(row.durationMs, row.endMs - row.startMs);
 		}
-		const inside = importPhaseRows
-			.map(row => [row.startMs, row.endMs] as [number, number]);
-		const windowMs = importWindow.endMs - importWindow.startMs;
+		const windowMs = window.endMs - window.startMs;
+		windowTotalMs += windowMs;
 		for (const [start, end] of gapsWithin(
-			mergeIntervals(inside).map(([a, b]) => [a - importWindow.startMs, b - importWindow.startMs] as [number, number]),
+			window.children.map(row => [row.startMs - window.startMs, row.endMs - window.startMs] as [number, number]),
 			windowMs,
 		)) {
 			detailGapMs += end - start;
 			rows.push({
-				key: `detailgap:${start}`, label: "No phase detail", isEvent: false, indent: 2,
-				startMs: importWindow.startMs + start, endMs: importWindow.startMs + end,
-				durationMs: end - start, color: "residual", kind: "detailGap",
-				note: "Inside the measured import window, but past where the tick-derived phases reach. "
-					+ "Phase marks are game.tick deltas; a tick that runs long does not widen them.",
+				key: `detailgap:${window.startMs}:${start}`, label: "No phase detail", indent: 2,
+				startMs: window.startMs + start, endMs: window.startMs + end,
+				durationMs: end - start, color: "detailGap", kind: "detailGap",
+				note: "Inside a measured window, but past where its tick-derived spans reach. "
+					+ "Span marks are game.tick deltas; a tick that runs long does not widen them.",
 			});
 		}
-		detailGapPct = windowMs > 0 ? (detailGapMs / windowMs) * 100 : 0;
 	}
+	const detailGapPct = windowTotalMs > 0 ? (detailGapMs / windowTotalMs) * 100 : 0;
 
 	const attributedMs = mergeIntervals(covered).reduce((sum, [a, b]) => sum + (b - a), 0);
 	const residualMs = Math.max(0, totalMs - attributedMs);

@@ -25,7 +25,7 @@ const FIXTURES = JSON.parse(fs.readFileSync(
 	path.join(__dirname, "fixtures", "real-transfer-timelines.json"), "utf8"));
 const byLabel = label => {
 	const found = FIXTURES.find(f => f.label === label);
-	assert.ok(found, `fixture '${label}' missing — regenerate test/fixtures/real-transfer-timelines.json`);
+	assert.ok(found, `fixture '${label}' missing — regenerate with: node tools/surface-export/make-timeline-fixtures.mjs <surface_export_transaction_logs.json>`);
 	return found;
 };
 
@@ -192,7 +192,7 @@ test("import phases never escape the measured window they describe", () => {
 test("the export tick estimate is drawn before transfer_created, not after the import", () => {
 	const fixture = byLabel("workhorse-120kb");
 	const { rows } = buildTransferTimeline(fixture.events, null);
-	const created = rows.find(r => r.isEvent && r.label === "transfer_created");
+	const created = rows.find(r => r.kind === "event" && r.label === "transfer_created");
 	assert.ok(created, "fixture must contain transfer_created");
 	for (const row of rows.filter(r => /async export/i.test(r.label))) {
 		assert.ok(
@@ -234,19 +234,114 @@ test("describeAttribution stays silent when the timeline accounts for itself", (
 		totalMs: 1000, attributedMs: 1000, residualMs: 0, residualPct: 0,
 		overlapTrimmedMs: 0, detailGapMs: 0, detailGapPct: 0,
 	}), null);
-	// Residual outranks detail gap: unattributed wall clock is the more serious of the two.
+	// When both findings fire, the headline carries the unattributed time (the more serious one)
+	// and the detail carries BOTH — a marginal residual must not suppress a dominant detail gap
+	// (review 2026-08-09: a 6% residual used to hide a 21 s / 98% gap entirely).
 	const both = describeAttribution({
-		totalMs: 1000, attributedMs: 500, residualMs: 500, residualPct: 50,
-		overlapTrimmedMs: 0, detailGapMs: 400, detailGapPct: 80,
+		totalMs: 100_000, attributedMs: 94_000, residualMs: 6_000, residualPct: 6,
+		overlapTrimmedMs: 0, detailGapMs: 21_000, detailGapPct: 98,
 	});
 	assert.match(both.headline, /unattributed/i);
+	assert.match(both.detail, /no phase detail/i, "the second finding must survive into the detail text");
+});
+
+test("truncated timelines never fabricate wall clock from tick counts", () => {
+	// Every live-watched transfer passes through the last-event=validation_received state (events
+	// arrive one at a time), and 76/453 persisted entries end before transfer_completed. Tick-span
+	// ends used to extend totalMs past the last real event, and the residual pass then invented an
+	// amber "Unattributed" row over time that never existed (review 2026-08-09, CONFIRMED).
+	const fixture = byLabel("workhorse-120kb");
+	const truncated = fixture.events.filter(e => e.eventType !== "transfer_completed");
+	const lastEventMs = Math.max(...truncated.map(e => e.elapsedMs ?? 0));
+	const { totalMs, rows } = buildTransferTimeline(truncated, null);
+	assert.equal(totalMs, lastEventMs,
+		`the axis must end at the last real event (${lastEventMs}ms), not at a tick-derived offset (got ${totalMs}ms)`);
+	assert.ok(
+		!rows.some(r => r.kind === "residual" && r.endMs > lastEventMs + 0.0001),
+		"no residual row may claim time past the last real event",
+	);
+});
+
+test("a window with no phase breakdown gets no fabricated detail-gap row", () => {
+	// The failed-timeout fixture's import window is a controller timeout: the destination never
+	// reported ANY phase spans. Emitting a full-window "No phase detail" row there claimed that
+	// tick-derived phases stopped short — phases that never existed (review 2026-08-09, CONFIRMED
+	// on a real 113 s timeout entry). An unbroken measured bar already says, honestly, that nothing
+	// reported a breakdown.
+	const fixture = byLabel("failed-timeout");
+	const { rows, attribution } = buildTransferTimeline(fixture.events, null);
+	assert.equal(rows.filter(r => r.kind === "detailGap").length, 0,
+		"no detailGap rows may exist when no tick-derived children were reported");
+	assert.equal(attribution.detailGapMs, 0, "a breakdown-less window contributes no detail gap");
+});
+
+test("the export envelope owes a detail gap too, and the async bar sits inside it", () => {
+	// The export has the identical structure to the import — a measured envelope (lock + store)
+	// containing a tick-derived span — and the export side is where the one MEASURED client drop
+	// lives. Review 2026-08-09 (CONFIRMED): the async bar was drawn under the lock span alone
+	// (the wrong parent — the async work elapses during the store wait) and the gap machinery
+	// ignored the export entirely, so export-side tick understatement rendered fully attributed.
+	const fixture = byLabel("workhorse-120kb");
+	const { rows, attribution } = buildTransferTimeline(fixture.events, null);
+	const lock = rows.find(r => r.key.startsWith("export:lock:"));
+	const store = rows.find(r => r.key.startsWith("export:store:"));
+	const asyncBar = rows.find(r => r.key.startsWith("export:async:"));
+	assert.ok(lock && store && asyncBar, "workhorse fixture must carry the full export block");
+	assert.ok(
+		asyncBar.startMs >= lock.startMs - 0.0001 && asyncBar.endMs <= store.endMs + 0.0001,
+		"the async bar must sit inside the lock+store envelope",
+	);
+	const exportGaps = rows.filter(r => r.kind === "detailGap" && r.startMs >= lock.startMs - 0.0001 && r.endMs <= store.endMs + 0.0001);
+	assert.ok(exportGaps.length > 0,
+		"the export envelope's unbroken remainder must be drawn as a detail gap");
+	const importWindow = rows.find(r => r.label === "Destination import");
+	const importGapMs = rows.filter(r => r.kind === "detailGap"
+		&& r.startMs >= importWindow.startMs - 0.0001 && r.endMs <= importWindow.endMs + 0.0001)
+		.reduce((sum, r) => sum + (r.endMs - r.startMs), 0);
+	const exportGapMs = exportGaps.reduce((sum, r) => sum + (r.endMs - r.startMs), 0);
+	assert.ok(Math.abs(attribution.detailGapMs - importGapMs - exportGapMs) < 1,
+		"detailGapMs must be exactly the sum of the drawn gap rows across both windows");
+});
+
+test("a measured span fully contained in another is trimmed and counted", () => {
+	// The straddle-only trim missed containment: two solid bars double-painted the same time while
+	// overlapTrimmedMs read 0 — the honesty metric blind on exactly the large-overlap case it
+	// exists to expose (review 2026-08-09). No current emitter produces containment, so this is a
+	// synthetic input pinning the guard for the input shape the type permits.
+	const events = [
+		{ eventType: "transfer_created", elapsedMs: 0 },
+		{ eventType: "import_started", elapsedMs: 1000, transmissionMs: 1000 },
+		// A second measured span nested wholly inside the transmission span above.
+		{ eventType: "validation_received", elapsedMs: 800, validationMs: 500 },
+	];
+	const { rows, attribution } = buildTransferTimeline(events, null);
+	assert.equal(attribution.overlapTrimmedMs, 500,
+		`the contained span's full width must be counted as trimmed (got ${attribution.overlapTrimmedMs}ms)`);
+	const measured = rows.filter(r => r.kind === "measured").sort((a, b) => a.startMs - b.startMs);
+	for (let i = 1; i < measured.length; i++) {
+		assert.ok(measured[i].startMs >= measured[i - 1].endMs - 0.0001,
+			"after trimming, no two measured bars may still overlap");
+	}
+});
+
+test("detailedSummary.export supplies the export block when the event carries no exportMetrics", () => {
+	// The browser wrapper feeds detailedSummary; every fixture assertion passes null, so this
+	// fallback branch had zero coverage (review 2026-08-09).
+	const events = [
+		{ eventType: "transfer_created", elapsedMs: 2000 },
+		{ eventType: "transfer_completed", elapsedMs: 3000 },
+	];
+	const summary = { export: { requestExportAndLockMs: 400, waitForControllerStoreMs: 1100, instanceAsyncExportMs: 450, instanceAsyncExportTicks: 27 } };
+	const { rows } = buildTransferTimeline(events, summary);
+	assert.ok(rows.some(r => r.key.startsWith("export:lock:")), "lock span must come from detailedSummary.export");
+	assert.ok(rows.some(r => r.key.startsWith("export:async:")), "async bar must come from detailedSummary.export");
 });
 
 test("a failed transfer still attributes its time", () => {
 	const fixture = byLabel("failed-timeout");
 	const { rows, attribution } = buildTransferTimeline(fixture.events, null);
 	assert.equal(attribution.attributedMs + attribution.residualMs, attribution.totalMs);
-	assert.ok(rows.some(r => r.isEvent && r.label === "transfer_failed"), "failure markers survive");
+	assert.ok(rows.some(r => r.kind === "event" && r.label === "transfer_failed"), "failure markers survive");
 	assert.ok(rows.every(r => r.endMs >= r.startMs), "no inverted span on the rollback path");
 
 	// This fixture's 87% unattributed is CORRECT and should stay. The transfer settled as failed and a

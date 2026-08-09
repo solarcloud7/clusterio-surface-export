@@ -1,7 +1,7 @@
 
 import type { JsonObject, LogEvent, TransferSummary } from "./view-models";
 import type { GanttRow, TimelineAttribution } from "./view-models";
-import { buildTransferTimeline, type TimelineEventInput } from "../shared/transfer-timeline";
+import { buildTransferTimeline, toGanttGeometry, type TimelineEventInput } from "../shared/transfer-timeline";
 
 // Type-safe helpers for accessing JsonObject properties
 function getString(obj: JsonObject, key: string, fallback: string): string;
@@ -155,26 +155,25 @@ export function buildOperationCountRows(exportData: JsonObject | null | undefine
 	return rows;
 }
 
-// Timeline assembly is in shared/transfer-timeline.ts, where `npm test` can pin its invariants
-// against real recorded transfers (tsconfig.node.json excludes web/**). This wrapper only turns
-// absolute ms into the percentage columns the CSS bars need.
+// Thin wrapper over shared/transfer-timeline.ts: attaches the shared bar geometry and a
+// render-unique key. Assembly rules, palette and wording all live in the shared module.
 export function buildGanttRows(events: Array<LogEvent>, detailedSummary: JsonObject | null): {
 	totalMs: number; rows: GanttRow[]; attribution: TimelineAttribution;
 } {
 	const timeline = buildTransferTimeline(events as TimelineEventInput[], detailedSummary);
-	const scale = timeline.totalMs > 0 ? timeline.totalMs : 1;
 	return {
 		totalMs: timeline.totalMs,
 		attribution: timeline.attribution,
-		rows: timeline.rows.map((row, i): GanttRow => ({
-			...row,
-			key: `${row.key}#${i}`,
-			ganttStartPct: Math.max(0, Math.min(100, (row.startMs / scale) * 100)),
-			ganttWidthPct: row.endMs > row.startMs
-				? Math.max(0.8, Math.min(100 - (row.startMs / scale) * 100, ((row.endMs - row.startMs) / scale) * 100))
-				: 0,
-			ganttMarkerPct: Math.max(0, Math.min(100, (row.endMs / scale) * 100)),
-		})),
+		rows: timeline.rows.map((row, i): GanttRow => {
+			const geometry = toGanttGeometry(row, timeline.totalMs);
+			return {
+				...row,
+				key: `${row.key}#${i}`,
+				ganttStartPct: geometry.startPct,
+				ganttWidthPct: geometry.widthPct,
+				ganttMarkerPct: geometry.markerPct,
+			};
+		}),
 	};
 }
 

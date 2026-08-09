@@ -18,7 +18,6 @@ export type LogEvent = {
 	message?: string;
 };
 
-// Timeline assembly lives in shared/ so `npm test` can reach it (tsconfig.node.json excludes web/**).
 export type { SpanKind, TimelineRow, TimelineAttribution } from "../shared/transfer-timeline";
 import type { TimelineRow } from "../shared/transfer-timeline";
 

@@ -11,6 +11,18 @@
  */
 
 /**
+ * The one compact ms formatter (">=1s → 1.5s, else 303ms"). Was independently reimplemented in the
+ * transactions tab, the timeline module and the offline preview — three copies of one threshold
+ * rule. Null/non-finite renders as the empty string so bar labels can pass durations straight in.
+ */
+export function formatMs(ms: number | null | undefined): string {
+	if (typeof ms !== "number" || !Number.isFinite(ms)) {
+		return "";
+	}
+	return ms >= 1000 ? `${(ms / 1000).toFixed(1)}s` : `${Math.round(ms)}ms`;
+}
+
+/**
  * Human-readable message for any thrown value (Error, string, or an object with a `message`), else `fallback`.
  */
 export function getErrorMessage(err: unknown, fallback = "Unknown error"): string {

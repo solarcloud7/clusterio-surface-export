@@ -14,7 +14,8 @@ import {
 	Typography,
 	message as antMessage,
 } from "antd";
-import { describeAttribution } from "../shared/transfer-timeline";
+import { describeAttribution, TIMELINE_PALETTE, tickHatch } from "../shared/transfer-timeline";
+import { formatMs } from "../shared/utils";
 import type { ColumnsType } from "antd/es/table";
 import { InfoCircleOutlined, DownloadOutlined } from "@ant-design/icons";
 import {
@@ -39,32 +40,9 @@ import type {
 
 const { Text } = Typography;
 
-function formatMsLabel(ms: number | null) {
-	if (ms == null) return "";
-	return ms >= 1000 ? `${(ms / 1000).toFixed(1)}s` : `${Math.round(ms)}ms`;
-}
-
-
-const TIMELINE_COLORS: Record<string, string> = {
-	red: "#ff4d4f", green: "#52c41a", blue: "#1890ff",
-	// Import waterfall — distinct hues of blue/cyan→indigo in pipeline order so the cascade reads
-	// segment-by-segment. Unknown color keys fall back to blue (see PhaseTimeline lookup).
-	tiles: "#36cfc9", entities: "#1890ff", belts: "#40a9ff", state: "#597ef7",
-	inventories: "#2f54eb", validation: "#85a5ff", fluids: "#08979c",
-	// Transfer-level segments
-	transmission: "#13c2c2", cleanup: "#73d13d",
-	// Cross-machine gap decomposition: delivery (chunk receive window), queue (async wait).
-	delivery: "#1d39c4", queue: "#adc6ff",
-	// The controller's measured wall-clock wait on the destination, and the wall-clock time no span
-	// accounts for. Amber, not muted grey: unattributed time is a finding, not decoration.
-	destImport: "#0958d9", residual: "#faad14",
-	// Export sub-phases (when an exportMetrics block is present)
-	exportPrep: "#bae0ff", exportQueue: "#91caff", exportAsync: "#69c0ff", exportStore: "#4096ff",
-};
-
-// Lightweight CSS bar timeline. Each row is positioned from the ganttStartPct/ganttWidthPct/
-// ganttMarkerPct that buildGanttRows already computes — duration phases render as bars, events as
-// markers. Replaces the former mermaid gantt (a multi-MB dep for one diagram).
+// Lightweight CSS bar timeline. Palette, hatch, geometry and warning wording all come from the
+// shared timeline module — this component only renders them. Replaces the former mermaid gantt
+// (a multi-MB dep for one diagram).
 function PhaseTimeline({ rows, totalMs, attribution }: {
 	rows: GanttRow[]; totalMs: number; attribution?: TimelineAttribution;
 }) {
@@ -84,26 +62,25 @@ function PhaseTimeline({ rows, totalMs, attribution }: {
 				/>
 			) : null}
 			{rows.map((row) => {
-				const isEvent = row.isEvent;
+				const isEvent = row.kind === "event";
 				const label = row.label;
 				const durationMs = row.durationMs;
 				const indent = row.indent;
-				const color = TIMELINE_COLORS[row.color] ?? TIMELINE_COLORS.blue;
+				const color = TIMELINE_PALETTE[row.color] ?? TIMELINE_PALETTE.blue;
 				const startPct = row.ganttStartPct;
 				const widthPct = row.ganttWidthPct;
 				const markerPct = row.ganttMarkerPct;
 				const endMs = row.endMs;
-				const timeLabel = durationMs != null ? formatMsLabel(durationMs) : "";
+				const timeLabel = formatMs(durationMs);
 				// A tick-derived bar is hatched so it can never be mistaken for elapsed time at a glance.
 				const isTickDerived = row.kind === "tickDerived";
-				const background = isTickDerived
-					? `repeating-linear-gradient(135deg, ${color} 0 4px, transparent 4px 8px)`
-					: color;
+				const isGap = row.kind === "residual" || row.kind === "detailGap";
+				const background = isTickDerived ? tickHatch(color) : color;
 				const tooltip = [`${label}${timeLabel ? ` — ${timeLabel}` : ""}`, row.note].filter(Boolean).join("\n");
 				return (
 					<div key={row.key} className="surface-export-timeline-row">
 						<div className="surface-export-timeline-label" style={{ paddingLeft: 4 + indent * 14 }} title={tooltip}>
-							<Text strong={isEvent} type={row.kind === "residual" ? "warning" : undefined} style={{ fontSize: 12 }}>
+							<Text strong={isEvent} type={isGap ? "warning" : undefined} style={{ fontSize: 12 }}>
 								{label}
 							</Text>
 						</div>
@@ -112,13 +89,13 @@ function PhaseTimeline({ rows, totalMs, attribution }: {
 								<span
 									className="surface-export-timeline-marker"
 									style={{ left: `${markerPct}%`, background: color }}
-									title={`${label} @ ${formatMsLabel(endMs)}`}
+									title={`${label} @ ${formatMs(endMs)}`}
 								/>
 							) : (
 								<span
 									className="surface-export-timeline-bar"
 									style={{
-										left: `${startPct}%`, width: `${Math.max(widthPct, 0.6)}%`, background,
+										left: `${startPct}%`, width: `${widthPct}%`, background,
 										border: isTickDerived ? `1px solid ${color}` : undefined,
 									}}
 									title={tooltip}
@@ -133,7 +110,7 @@ function PhaseTimeline({ rows, totalMs, attribution }: {
 			})}
 			<div className="surface-export-timeline-axis">
 				<Text type="secondary" style={{ fontSize: 11 }}>0</Text>
-				<Text type="secondary" style={{ fontSize: 11 }}>{formatMsLabel(totalMs)}</Text>
+				<Text type="secondary" style={{ fontSize: 11 }}>{formatMs(totalMs)}</Text>
 			</div>
 		</div>
 	);
