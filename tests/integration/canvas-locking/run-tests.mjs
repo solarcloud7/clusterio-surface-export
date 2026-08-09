@@ -39,24 +39,29 @@ try {
 	const page = await context.newPage();
 	page.on("pageerror", err => console.log(`  [page error] ${err.message}`));
 
+	let lastLoadError = null;
 	const load = async (url) => {
 		for (let attempt = 0; attempt < 15; attempt += 1) {
 			try {
 				await page.goto(url, { waitUntil: "domcontentloaded", timeout: 10000 });
 				return true;
-			} catch {
+			} catch (err) {
+				lastLoadError = err;
 				await page.waitForTimeout(1000);
 			}
 		}
 		return false;
 	};
+	const loadFailure = (url) => new Error(
+		`could not load ${url} after 15 attempts: ${lastLoadError?.message?.split("\n")[0] || "no error recorded"}`,
+	);
 
 	if (!await load(BASE_URL)) {
-		throw new Error(`could not load ${BASE_URL} — is the controller running?`);
+		throw loadFailure(BASE_URL);
 	}
 	await page.evaluate(value => window.localStorage.setItem("controller_token", value), adminToken());
 	if (!await load(CANVAS_URL)) {
-		throw new Error(`could not load ${CANVAS_URL}`);
+		throw loadFailure(CANVAS_URL);
 	}
 
 	await page.locator(".react-flow__node-instance").first().waitFor({ state: "visible", timeout: 30000 });
