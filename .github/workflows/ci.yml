@@ -293,6 +293,21 @@ jobs:
           echo "Both instances are RCON/plugin ready"
           $CTL instance list
 
+      # The REPO-ROOT dependencies, which the plugin's own `npm ci` above does not cover — they are a
+      # separate package.json (tools/tests territory, never bind-mounted into a container). Only the
+      # browser-driving canvas test needs them today, and it needs a real browser: every canvas bug
+      # that has bitten is geometry, and jsdom returns zeros from getBoundingClientRect, so a fake DOM
+      # would go green on exactly the class of bug this is here to catch.
+      #
+      # `--with-deps` pulls the OS libraries Chromium needs on a bare runner. Chromium only — nothing
+      # here is cross-browser, and the other two would triple the download for no assertion.
+      - name: Install repo-root test dependencies and browser
+        timeout-minutes: 10
+        run: |
+          NPM_FLAGS="--fetch-retries=5 --fetch-timeout=120000 --fetch-retry-maxtimeout=60000"
+          npm ci $NPM_FLAGS || { echo "::warning::root npm ci stalled/failed once — retrying"; npm ci $NPM_FLAGS; }
+          npx playwright install --with-deps chromium
+
       # One auto-discovering runner over tests/integration/*/run-tests.{ps1,mjs} — the dir set is the single
       # source of truth, so adding a test dir auto-wires it here (no per-test step to maintain; this replaced
       # ~13 hand-listed steps that had already drifted — version-dispatch/name-collision-delete were missing).
