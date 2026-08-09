@@ -591,18 +591,20 @@ local function belt_side_restore_selftest(opts)
     { members = { { id = 3, li = 1 } }, slots = {}, item_source_positions = {} },
   }
 
-  -- CONTRACT (changed 2026-07-26, owner scale ruling): the per-placement leak UNDO is gone with
-  -- the per-placement global snapshots that stalled the workhorse import (~14M engine calls). The
-  -- leak this fake manufactures is the AGED-HANDLE class, which the fresh-handle production regime
-  -- cannot produce (handles fetched in the writing execution; no topology mutation mid-restore).
-  -- What the contract now guarantees is DETECTION, never silence: a leak that somehow occurs shows
-  -- up as a restore-granularity GLOBAL BRACKET mismatch -> anomalies > 0, and every caller treats
-  -- anomalies as failure (SelectionLab errors the transaction; the import fails => 2PC revert).
+  -- CONTRACT (third round, 2026-08-09; predecessors 2026-07-26 owner scale ruling and the
+  -- 2026-07-27 side-scoped censuses): per-insert read-back is GONE — measured at 7,264 ms of an
+  -- 8,500 ms live import vs 102 ms with the counting stubbed. The engine's insert_at return
+  -- drives control flow, and each SIDE is verified once against its expected multiset by the
+  -- side brackets. What the contract guarantees is unchanged: DETECTION, never silence — a lying
+  -- landing fails its own side's bracket (and a cross-side landing ALSO fails the side it hit),
+  -- anomalies > 0, and every caller treats anomalies as failure (SelectionLab errors the
+  -- transaction; the import fails => 2PC revert). Deliberately NOT retried: the old
+  -- census-driven rescan after a cross-side landing was itself the BELT-R16 duplication engine.
   local placed, unplaced, anomalies = BeltRestoration.restore_side_groups(groups, entity_map)
   check("aliased_windows_do_not_double_count", placed == 1 and unplaced == 0,
     string.format("placed=%d unplaced=%d", placed, unplaced))
-  check("leak_surfaces_as_bracket_anomaly", anomalies >= 1,
-    "a leaked placement must fail the global bracket, got anomalies=" .. tostring(anomalies))
+  check("cross_side_landing_fails_both_sides", anomalies == 2,
+    "a wrong-side landing must fail its own side (short) AND the side it hit (over); got anomalies=" .. tostring(anomalies))
 
   local function count(line, quality)
     local total = 0
@@ -611,12 +613,50 @@ local function belt_side_restore_selftest(opts)
     end
     return total
   end
-  check("target_receives_exact_quality", count(target, "legendary") == 1 and count(target, "normal") == 0,
-    "target did not receive exactly one legendary plate")
-  -- The leaked stack now REMAINS on the neighbour (no undo) — the point is it cannot remain
-  -- silently: the bracket anomaly above is the loud witness the callers fail on.
+  -- A trusted (lying) landing is FINAL — no retry, so the target stays empty and no duplicate is
+  -- ever created. The side brackets above carry the failure to the caller.
+  check("no_retry_after_trusted_landing", count(target, "legendary") == 0 and count(target, "normal") == 0,
+    "a trusted landing must not be retried (the census-driven rescan was the R16 duplication engine)")
+  -- The leaked stack REMAINS on the neighbour (no undo) — the point is it cannot remain
+  -- silently: the bracket anomalies above are the loud witness the callers fail on.
   check("leak_is_visible_not_silent", count(neighbour, "legendary") == 1 and count(neighbour, "normal") == 5,
     "expected the leaked legendary plate to sit on the neighbour, witnessed by the anomaly")
+
+  -- SUCCESS-LIE fake: insert_at reports success but lands NOTHING anywhere. The trusted landing
+  -- is counted into the side's expected multiset, so the side bracket must come up short — the
+  -- exact shape the per-insert census used to catch mid-flight, now caught once per side.
+  local lie_line = make_line()
+  lie_line.insert_at = function() return 1 end -- claims success, mutates nothing
+  local lie_map = { [7] = { valid = true, prototype = prototype, get_transport_line = function() return lie_line end } }
+  local lie_groups = {
+    { members = { { id = 7, li = 1 } },
+      slots = { { n = "iron-plate", q = "normal", ct = 3 } },
+      item_source_positions = { 7, 1, 128 } },
+  }
+  local lplaced, lunplaced, lanomalies = BeltRestoration.restore_side_groups(lie_groups, lie_map)
+  check("success_lie_fails_its_side_bracket", lanomalies >= 1,
+    string.format("an insert that lies about landing must fail the side bracket; placed=%d unplaced=%d anomalies=%d",
+      lplaced, lunplaced, lanomalies))
+  check("success_lie_leaves_nothing_physical", #lie_line.contents == 0,
+    "the lying insert must not have manufactured items")
+
+  -- HONEST fake: the landing is real and exact. The brackets must stay SILENT — a bracket that
+  -- false-alarms on a clean restore erodes trust in the real anomalies (check-commensurate rule).
+  local honest_line = make_line()
+  honest_line.insert_at = function(_position, stack, count_arg)
+    honest_line.contents[#honest_line.contents + 1] = new_stack(stack.name, stack.quality, count_arg)
+    return count_arg
+  end
+  local honest_map = { [9] = { valid = true, prototype = prototype, get_transport_line = function() return honest_line end } }
+  local honest_groups = {
+    { members = { { id = 9, li = 1 } },
+      slots = { { n = "iron-plate", q = "normal", ct = 2 }, { n = "iron-plate", q = "legendary", ct = 1 } },
+      item_source_positions = { 9, 1, 200, 9, 1, 100 } },
+  }
+  local hplaced, hunplaced, hanomalies = BeltRestoration.restore_side_groups(honest_groups, honest_map)
+  check("honest_restore_is_bracket_silent", hplaced == 3 and hunplaced == 0 and hanomalies == 0,
+    string.format("clean restore must place all with zero anomalies; placed=%d unplaced=%d anomalies=%d",
+      hplaced, hunplaced, hanomalies))
 
   -- F1 regression (review 2026-07-27): malformed belt_side_groups must be REFUSED by the shape
   -- validator before restore ever runs — an uncaught throw on the import's on_tick path kills the
