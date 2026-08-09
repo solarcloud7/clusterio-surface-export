@@ -112,6 +112,37 @@ function multiModeViolation(edits: GatewayEdits, request: ConnectRequest): strin
 	return null;
 }
 
+function connectionRefusal(link: Connection | Edge, edits: GatewayEdits, mode: GatewayMode): string | null {
+	const sourceInstanceId = instanceIdFromNodeId(link.source);
+	const targetInstanceId = instanceIdFromNodeId(link.target);
+	const fromPlatform = platformIndexFromHandleId(link.sourceHandle) != null;
+	if (sourceInstanceId == null || targetInstanceId == null) {
+		return "Could not read that connection — nothing was staged.";
+	}
+	if (sourceInstanceId === targetInstanceId) {
+		return fromPlatform
+			? "A platform cannot transfer to the instance it is already on."
+			: "An instance cannot gateway to itself.";
+	}
+	if (isMockInstanceId(sourceInstanceId) !== isMockInstanceId(targetInstanceId)) {
+		return "A mock instance can only link to another mock instance.";
+	}
+	if (platformIndexFromHandleId(link.targetHandle) != null) {
+		return "Drop it on the other instance's PORTAL, not on one of its platforms.";
+	}
+	if (fromPlatform) {
+		return gatewayFromHandleId(link.targetHandle) != null ? null : "Drop a platform on a gateway portal.";
+	}
+	if (gatewayFromHandleId(link.sourceHandle) == null || gatewayFromHandleId(link.targetHandle) == null) {
+		return "Both ends of a gateway link must be gateway portals.";
+	}
+	if (mode === "multi") {
+		const request = toConnectRequest(link);
+		return request ? multiModeViolation(edits, request) : "Could not read that connection — nothing was staged.";
+	}
+	return null;
+}
+
 export default function GatewayCanvas({ plugin, state, onOpenImport }: {
 	plugin: SurfaceExportPlugin;
 	state: SurfaceExportState;
@@ -387,32 +418,10 @@ export default function GatewayCanvas({ plugin, state, onOpenImport }: {
 		return platform ? { platform, instanceId, instanceName: String(node.data.instanceName || "") } : null;
 	}, [graph]);
 
-	const isValidConnection = useCallback((link: Connection | Edge) => {
-		const sourceInstanceId = instanceIdFromNodeId(link.source);
-		const targetInstanceId = instanceIdFromNodeId(link.target);
-		if (sourceInstanceId == null || targetInstanceId == null || sourceInstanceId === targetInstanceId) {
-			return false;
-		}
-		if (isMockInstanceId(sourceInstanceId) !== isMockInstanceId(targetInstanceId)) {
-			return false;
-		}
-		const sourceIsPlatform = platformIndexFromHandleId(link.sourceHandle) != null;
-		const targetIsPlatform = platformIndexFromHandleId(link.targetHandle) != null;
-		if (targetIsPlatform) {
-			return false;
-		}
-		if (sourceIsPlatform) {
-			return gatewayFromHandleId(link.targetHandle) != null;
-		}
-		if (gatewayFromHandleId(link.sourceHandle) == null || gatewayFromHandleId(link.targetHandle) == null) {
-			return false;
-		}
-		if (mode === "multi") {
-			const request = toConnectRequest(link);
-			return request !== null && multiModeViolation(edits, request) === null;
-		}
-		return true;
-	}, [edits, mode]);
+	const isValidConnection = useCallback(
+		(link: Connection | Edge) => connectionRefusal(link, edits, mode) === null,
+		[edits, mode],
+	);
 
 	const onConnect = useCallback((connection: Connection) => {
 		const dragged = platformFromHandle(connection.source, connection.sourceHandle);
@@ -444,30 +453,40 @@ export default function GatewayCanvas({ plugin, state, onOpenImport }: {
 	}, [platformFromHandle]);
 
 	const onConnectEnd = useCallback((_event: MouseEvent | TouchEvent, connection: FinalConnectionState) => {
-		if (connection.isValid || mode !== "multi") {
+		if (connection.isValid) {
 			return;
 		}
 		const { fromNode, toNode, fromHandle, toHandle } = connection;
 		if (!fromNode || !toNode || !fromHandle || !toHandle) {
 			return;
 		}
-		const request = toConnectRequest({
+		const refusal = connectionRefusal({
 			source: fromNode.id,
 			sourceHandle: fromHandle.id ?? null,
 			target: toNode.id,
 			targetHandle: toHandle.id ?? null,
-		});
-		const violation = request && multiModeViolation(edits, request);
-		if (violation) {
-			antMessage.warning(violation, 6);
+		}, edits, mode);
+		if (refusal) {
+			antMessage.warning({ content: refusal, key: "canvas-refusal", duration: 6 });
 		}
 	}, [edits, mode]);
 
 	const onEdgeClick = useCallback((_event: React.MouseEvent, edge: Edge) => {
-		if (!interactive) {
+		if (edge.data?.transient) {
+			antMessage.info({
+				content: "That is a transfer in flight, not a configured link — it clears itself.",
+				key: "canvas-edge-click", duration: 4,
+			});
 			return;
 		}
-		if (edge.data?.transient) {
+		if (!canEdit) {
+			return;
+		}
+		if (locked) {
+			antMessage.info({
+				content: "The canvas is locked. Use the padlock in the controls to unlock it.",
+				key: "canvas-edge-click", duration: 4,
+			});
 			return;
 		}
 		const request = toConnectRequest(edge);
@@ -476,7 +495,7 @@ export default function GatewayCanvas({ plugin, state, onOpenImport }: {
 			return;
 		}
 		setEdits(previous => applyDisconnect(previous, request));
-	}, [interactive]);
+	}, [canEdit, locked]);
 
 	const onEdgesDelete = useCallback((deleted: Edge[]) => {
 		if (!interactive) {
