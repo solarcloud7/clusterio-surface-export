@@ -46,6 +46,18 @@ import {
 } from "./gateway-graph";
 import type { ConnectRequest, GatewayEdits, PlatformLike } from "./gateway-graph";
 import { NodeActionsContext, platformActionKey } from "./node-actions";
+import DebugPanel from "./DebugPanel";
+import {
+	GatewayDebugContext,
+	isMockEditKey,
+	isMockInstanceId,
+	loadDebugState,
+	mockLeakIn,
+	mockShips,
+	saveDebugState,
+	withMockInstances,
+} from "./debug-mode";
+import type { DebugState } from "./debug-mode";
 import { applySavedLayout, clearLayout, loadLayout, saveLayout } from "./layout-store";
 import { SHIP_LEGEND, instancePairKey, noteLiveSeen, noteTerminalSeen, shipExpiryMs, shipPhaseFor, shipsInFlight, transientEdgeId } from "./transfer-motion";
 import { DEFAULT_GATEWAY_MODE, checkMultiModeLink, gatewayNamesFor } from "../../shared/dto";
@@ -162,6 +174,12 @@ export default function GatewayCanvas({ plugin, state, onOpenImport }: {
 		{ source: PlatformActionSource; presetTargetInstanceId: number | null } | null
 	>(null);
 	const [exportingKey, setExportingKey] = useState<string | null>(null);
+	// Read once at mount (the URL parameter is only meaningful on the way in), then owned by the panel.
+	const [debug, setDebugState] = useState<DebugState>(loadDebugState);
+	const setDebug = useCallback((next: DebugState) => {
+		setDebugState(next);
+		saveDebugState(next);
+	}, []);
 
 	const [nodes, setNodes, onNodesChange] = useNodesState<Node>([]);
 	const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
@@ -224,8 +242,26 @@ export default function GatewayCanvas({ plugin, state, onOpenImport }: {
 
 	useEffect(() => { void load(); }, [load]);
 
-	const graph = useMemo(() => buildGraph(tree, edits, mode, hostFilter), [tree, edits, mode, hostFilter]);
-	const pending = useMemo(() => dirtyKeys(edits, baseline), [edits, baseline]);
+	// Mock instances are injected INTO THE TREE, upstream of buildGraph, so they go through exactly
+	// the same projection, layout and rendering a real instance does. A mock that took a shortcut
+	// would be exercising the shortcut.
+	const effectiveTree = useMemo(() => withMockInstances(tree, debug), [tree, debug]);
+	const graph = useMemo(
+		() => buildGraph(effectiveTree, edits, mode, hostFilter),
+		[effectiveTree, edits, mode, hostFilter],
+	);
+
+	// MOCK EDITS ARE NOT PENDING CHANGES. Dropping them here means they are never counted, never
+	// enable Save, and never reach the write — the whole partition rests on `isValidConnection`
+	// refusing mock<->real links, so a surviving key is wholly-real. `save` re-checks anyway.
+	const pending = useMemo(
+		() => dirtyKeys(edits, baseline).filter(key => !isMockEditKey(key)),
+		[edits, baseline],
+	);
+	const mockCount = useMemo(
+		() => graph.nodes.filter(node => isMockInstanceId(node.data.instanceId as number)).length,
+		[graph],
+	);
 
 	/**
 	 * Framing that accounts for what hangs OUTSIDE the node boxes.
@@ -321,18 +357,39 @@ export default function GatewayCanvas({ plugin, state, onOpenImport }: {
 	 * service a case that is usually empty.
 	 */
 	const [shipClock, setShipClock] = useState(() => Date.now());
-	const ships = useMemo(
+	const realShips = useMemo(
 		() => shipsInFlight(state?.transferSummaries, shipClock),
 		[state?.transferSummaries, shipClock],
 	);
 
+	/**
+	 * Real ships plus, in debug mode, one fake per phase.
+	 *
+	 * The fakes join AFTER `shipsInFlight`, never through it, and that is not tidiness. Every fake is
+	 * a TERMINAL status that was never seen live, and `shipExpiryMs` returns 0 for exactly that case —
+	 * so a fake inside the expiry bookkeeping below would compute a deadline already past, schedule a
+	 * wake-up 50ms out, and do it again on every re-render, forever.
+	 */
+	const ships = useMemo(() => {
+		if (!debug.enabled || !debug.showShips) {
+			return realShips;
+		}
+		const instanceIds = graph.nodes
+			.map(node => instanceIdFromNodeId(node.id))
+			.filter((id): id is number => id !== null);
+		return [...realShips, ...mockShips(instanceIds)];
+	}, [realShips, debug.enabled, debug.showShips, graph]);
+
 	useEffect(() => {
-		// Stamp "we have now seen this one finish" BEFORE reading the deadlines, so a transfer that
-		// went terminal this render gets its full linger window rather than one derived from a wire
-		// timestamp that may be missing. Writing it here, not in the filter, keeps render pure.
+		// REAL ships only — see the memo above for why a fake must not be timed, and note that letting
+		// one into `shipMemory` would also evict a real entry from a 32-slot cache.
 		const now = Date.now();
-		for (const ship of ships) {
+		for (const ship of realShips) {
 			if (shipPhaseFor(ship.status)?.terminal) {
+				// Stamp "we have now seen this one finish" BEFORE reading the deadlines, so a transfer
+				// that went terminal this render gets its full linger window rather than one derived from
+				// a wire timestamp that may be missing. Writing it here, not in the filter, keeps render
+				// pure.
 				noteTerminalSeen(ship.transferId, now);
 			} else {
 				// Seen in flight — this is what earns it an arrival animation later, and what keeps the
@@ -340,7 +397,7 @@ export default function GatewayCanvas({ plugin, state, onOpenImport }: {
 				noteLiveSeen(ship.transferId);
 			}
 		}
-		const expiries = ships.map(ship => shipExpiryMs(ship, now)).filter((at): at is number => at !== null);
+		const expiries = realShips.map(ship => shipExpiryMs(ship, now)).filter((at): at is number => at !== null);
 		if (!expiries.length) {
 			return undefined;
 		}
@@ -349,7 +406,7 @@ export default function GatewayCanvas({ plugin, state, onOpenImport }: {
 		const wakeIn = Math.max(0, Math.min(...expiries) - Date.now()) + 50;
 		const timer = setTimeout(() => setShipClock(Date.now()), wakeIn);
 		return () => clearTimeout(timer);
-	}, [ships]);
+	}, [realShips]);
 
 	useEffect(() => {
 		// preservePositions keeps the user's drags and selection across this rebuild. The tree is
@@ -514,6 +571,14 @@ export default function GatewayCanvas({ plugin, state, onOpenImport }: {
 			// platform cannot transfer to the instance it is already on.
 			return false;
 		}
+		// MOCK AND REAL MAY NEVER LINK, and this is the invariant the whole debug-mode safety story
+		// rests on. It makes every staged edit wholly-mock or wholly-real, so dropping the mock ones is
+		// a clean partition — without it, a real->mock link would leave a REAL key holding a mock
+		// target, which is a save that writes a negative instance id into the cluster's gateway config.
+		// Mocks still link freely to each other, which is all a layout needs to be exercised.
+		if (isMockInstanceId(sourceInstanceId) !== isMockInstanceId(targetInstanceId)) {
+			return false;
+		}
 		const sourceIsPlatform = platformIndexFromHandleId(link.sourceHandle) != null;
 		const targetIsPlatform = platformIndexFromHandleId(link.targetHandle) != null;
 		if (targetIsPlatform) {
@@ -628,6 +693,20 @@ export default function GatewayCanvas({ plugin, state, onOpenImport }: {
 	}, []);
 
 	const save = useCallback(async () => {
+		// THE LAST CHECK, at the point that actually writes. `pending` already excludes mock keys and
+		// `isValidConnection` already refuses mock<->real links, so reaching this means one of those
+		// two invariants has broken — and the cost of being wrong here is a gateway link in the
+		// cluster's real config naming an instance id that cannot exist. Refuse the whole save rather
+		// than silently stripping: a save that quietly wrote less than it was asked to is how a
+		// gateway becomes disabled without anyone seeing it.
+		const leak = mockLeakIn(edits, pending);
+		if (leak) {
+			antMessage.error(
+				`Refusing to save: ${leak} names a mock instance. This is a bug — no gateway config was written.`,
+				15,
+			);
+			return;
+		}
 		setSaving(true);
 		const failures: string[] = [];
 		/** Saved, but the running instance did not take it — see where this is pushed. */
@@ -709,6 +788,7 @@ export default function GatewayCanvas({ plugin, state, onOpenImport }: {
 
 	return (
 		<NodeActionsContext.Provider value={nodeActions}>
+		<GatewayDebugContext.Provider value={{ showGeometry: debug.enabled && debug.showGeometry }}>
 		<div className="surface-export-canvas">
 			{loadError ? <Alert type="error" showIcon message={loadError} style={{ marginBottom: 8 }} /> : null}
 			{!loading && !nodes.length ? (
@@ -814,6 +894,12 @@ export default function GatewayCanvas({ plugin, state, onOpenImport }: {
 								<Button size="small" icon={<UploadOutlined />} onClick={onOpenImport}>Import</Button>
 							</Tooltip>
 						</Space>
+						{/* Debug mode has NO button to turn it on — it is asked for with ?debug=1 and then
+						    remembered (see loadDebugState). A normal operator never sees a way in, which is
+						    the point: everything behind it draws something that is not true of the cluster. */}
+						{debug.enabled ? (
+							<DebugPanel state={debug} onChange={setDebug} mockCount={mockCount} />
+						) : null}
 					</Panel>
 					{/* The colour key for the transfer ships. Bottom-CENTRE is the only edge left free —
 					    Controls sit bottom-left, the MiniMap bottom-right, the toolbar top-left and the
@@ -866,6 +952,7 @@ export default function GatewayCanvas({ plugin, state, onOpenImport }: {
 				state={state}
 			/>
 		</div>
+		</GatewayDebugContext.Provider>
 		</NodeActionsContext.Provider>
 	);
 }

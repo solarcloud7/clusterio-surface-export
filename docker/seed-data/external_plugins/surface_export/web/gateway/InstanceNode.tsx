@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import { Handle, Position } from "@xyflow/react";
 import type { NodeProps } from "@xyflow/react";
 import { Typography } from "antd";
@@ -8,6 +8,7 @@ import type { GatewayMode } from "../../shared/dto";
 import { sourceHandleId, targetHandleId } from "./gateway-graph";
 import type { GatewayUsage, PlatformLike } from "./gateway-graph";
 import PlatformRows from "./PlatformRows";
+import { useGatewayDebug } from "./debug-mode";
 import { PlanetIcon } from "../icons";
 import gatewayHubArt from "./assets/gateway-hub-128.png";
 
@@ -29,6 +30,104 @@ const NODE_FACE_ART: Record<string, string> = {
 
 /** Multi mode only: one gateway per side, in prototype order (1=blue, 2=green, 3=orange, 4=purple). */
 const MULTI_HANDLE_POSITIONS = [Position.Top, Position.Right, Position.Bottom, Position.Left];
+
+/** How long the platform list stays up after the node is clicked. */
+const PLATFORM_LIST_VISIBLE_MS = 3000;
+
+/**
+ * Show while `active`, then hide after `delayMs` — unless something says to keep it.
+ *
+ * Three things this has to survive. The first two were found by driving the real canvas rather than
+ * reasoning about it; the third is new, and is what makes auto-hide safe now that the list contains a
+ * DRAG handle rather than only buttons.
+ *
+ * `rearm` — WITHOUT THIS THE FEATURE IS A DEAD END. Selection is the only thing that re-shows the
+ * list, so once it expires, clicking the SAME node changes nothing: `active` was already true and
+ * stays true, and the platform actions are unreachable until the operator clicks elsewhere and back.
+ * Measured on the live canvas: node `selected: true`, list in the DOM `0`, clicking it again did
+ * nothing. So any pointer press on the node restarts the clock, whatever the selection does.
+ *
+ * `hold` / `release` — a list that vanishes out from under a cursor that came to click it is worse
+ * than one that never hides. Leaving restarts the clock rather than hiding at once, so a pointer that
+ * strays and comes back does not lose it.
+ *
+ * `holdUntilPointerUp` — A DRAG LEAVES THE LIST. Dragging a platform onto another instance's portal
+ * takes longer than the timeout and moves the pointer far away, so `hold`-on-hover alone would delete
+ * the element mid-gesture and cancel the connection. Pressing anywhere on the list therefore freezes
+ * the clock until the pointer is released ANYWHERE, which is the only event that reliably ends a
+ * drag — `pointerup` on the list itself never arrives when the drop lands on another node.
+ */
+function useAutoHide(active: boolean, delayMs: number) {
+	const [expired, setExpired] = useState(false);
+	const [held, setHeld] = useState(false);
+	// Bumped to restart the timer even when neither `active` nor `held` has changed — which is
+	// exactly the re-click case, where nothing else in the dependency list moves.
+	const [rearmCount, setRearmCount] = useState(0);
+
+	useEffect(() => {
+		if (!active) {
+			setExpired(false);
+			setHeld(false);
+			return undefined;
+		}
+		if (held) {
+			return undefined;
+		}
+		setExpired(false);
+		const timer = setTimeout(() => setExpired(true), delayMs);
+		return () => clearTimeout(timer);
+	}, [active, held, delayMs, rearmCount]);
+
+	const holdUntilPointerUp = useCallback(() => {
+		setHeld(true);
+		// `once` so it cleans itself up, and on `window` so a drop outside the document body still ends
+		// the hold. Releasing also bumps the rearm count, which restarts the clock from the moment the
+		// gesture finished rather than from whenever it began.
+		window.addEventListener("pointerup", () => {
+			setHeld(false);
+			setRearmCount(count => count + 1);
+		}, { once: true });
+	}, []);
+
+	return {
+		visible: active && !expired,
+		hold: useCallback(() => setHeld(true), []),
+		release: useCallback(() => setHeld(false), []),
+		rearm: useCallback(() => setRearmCount(count => count + 1), []),
+		holdUntilPointerUp,
+	};
+}
+
+/**
+ * Draw the things that decide behaviour and are otherwise invisible.
+ *
+ * Every one of these has hidden a bug that took a DOM probe to find:
+ *
+ * - the MEASURED BOX is what React Flow observes and what `nodeCircle` halves to place the node's
+ *   centre; keeping the platform list out of it is why edges still meet the portal. It is also what
+ *   `fitView` frames, which is why the list needed its own padding.
+ * - the PORTAL is the connect zone. It is 60% of the node raised 16px, and it is invisible by design
+ *   (the glow is the affordance) — so "I cannot start a link here" has no visible explanation until
+ *   you draw it.
+ * - the ANCHOR is where edges actually attach: the node's centre plus GATE_CENTRE_OFFSET_Y, measured
+ *   from the art's luminance-weighted glow centroid rather than from the box.
+ *
+ * `pointer-events: none` throughout — an overlay that swallowed the pointer would break the very
+ * connect zone it is drawn to explain.
+ */
+function GeometryOverlay() {
+	return (
+		<div className="surface-export-geometry-overlay">
+			<div className="surface-export-geometry-box">
+				<span className="surface-export-geometry-tag">measured 150×150</span>
+			</div>
+			<div className="surface-export-geometry-portal">
+				<span className="surface-export-geometry-tag surface-export-geometry-tag-portal">portal</span>
+			</div>
+			<div className="surface-export-geometry-anchor" />
+		</div>
+	);
+}
 
 export type InstanceNodeData = {
 	mode?: GatewayMode;
@@ -97,13 +196,17 @@ function MultiGatewayHandle({ gatewayName, position, usage, connectable }: {
  * showing it bright because it is configured would say the wrong thing about the thing an operator
  * actually needs to see.
  *
- * THE PLATFORM LIST IS ALWAYS ON, hanging under the gate. It used to be a NodeToolbar that appeared
- * on selection and hid itself after five seconds; a permanent list is what the database-schema-node
- * pattern it now follows actually is, and it is what makes a platform something you can drag. The
- * caption sits ABOVE the gate, so the two never compete for the same strip.
+ * THE PLATFORM LIST OPENS ON CLICK and hides itself again, so a busy canvas is not a wall of lists.
+ * It hangs under the gate; the caption sits ABOVE, so the two never compete for the same strip. The
+ * auto-hide has to be careful in a way it did not when this was only buttons — see `useAutoHide`,
+ * whose third rule exists entirely because a platform drag leaves the list and outlasts the timeout.
  */
-export function InstanceNode({ data, isConnectable }: NodeProps) {
+export function InstanceNode({ data, selected, isConnectable }: NodeProps) {
 	const node = data as unknown as InstanceNodeData;
+	const { showGeometry } = useGatewayDebug();
+	// `Boolean(selected)`, not `selected`: NodeProps types it optional, and undefined would hand React
+	// Flow's own default back instead of meaning "not selected".
+	const list = useAutoHide(Boolean(selected), PLATFORM_LIST_VISIBLE_MS);
 	const mode = node.mode || DEFAULT_GATEWAY_MODE;
 	const names = gatewayNamesFor(mode);
 	const oneGate = mode !== "multi";
@@ -116,6 +219,10 @@ export function InstanceNode({ data, isConnectable }: NodeProps) {
 				`surface-export-instance-node${node.online ? " surface-export-instance-node-online" : " surface-export-instance-node-offline"}`
 				+ (oneGate ? " surface-export-instance-node-shaped" : "")
 			}
+			// Any press ANYWHERE on the node restarts the list's clock — including on the portal handle,
+			// which is a child and so bubbles. `pointerdown` rather than `click` so it also covers a press
+			// that turns into a drag or a link, both of which are still the operator working on this node.
+			onPointerDown={list.rearm}
 		>
 			{oneGate ? (
 				<>
@@ -189,12 +296,19 @@ export function InstanceNode({ data, isConnectable }: NodeProps) {
 
 			{/* `isConnectable` gates the row handles for the same reason it gates the gateway ones: a
 			    read-only account must not be offered a drag that would be refused server-side. */}
-			<PlatformRows
-				platforms={node.platforms}
-				instanceId={node.instanceId}
-				instanceName={node.instanceName}
-				canEdit={Boolean(isConnectable)}
-			/>
+			{list.visible ? (
+				<PlatformRows
+					platforms={node.platforms}
+					instanceId={node.instanceId}
+					instanceName={node.instanceName}
+					canEdit={Boolean(isConnectable)}
+					onHold={list.hold}
+					onRelease={list.release}
+					onPressed={list.holdUntilPointerUp}
+				/>
+			) : null}
+
+			{showGeometry ? <GeometryOverlay /> : null}
 		</div>
 	);
 }

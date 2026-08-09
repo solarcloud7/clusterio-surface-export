@@ -113,16 +113,35 @@ function PlatformRow({ platform, instanceId, instanceName, canEdit }: {
 	);
 }
 
-export default function PlatformRows({ platforms, instanceId, instanceName, canEdit }: {
+export default function PlatformRows({ platforms, instanceId, instanceName, canEdit, onHold, onRelease, onPressed }: {
 	/** Already filtered to hub-bearing platforms by buildGraph — the only ones that can be acted on. */
 	platforms: PlatformLike[];
 	instanceId: number;
 	instanceName: string;
 	canEdit: boolean;
+	/** Pointer is over the list: freeze the auto-hide clock. */
+	onHold: () => void;
+	onRelease: () => void;
+	/**
+	 * Pointer went DOWN on the list: freeze until it comes back up, wherever that happens.
+	 *
+	 * Separate from `onHold` because a drag leaves: dragging a platform onto another instance's portal
+	 * moves the pointer off this element entirely, which fires `onRelease` and lets the list delete
+	 * itself mid-gesture — cancelling the very connection it was being dragged to make.
+	 */
+	onPressed: () => void;
 }) {
+	// `onMouseLeave` rather than `onPointerLeave` on purpose: a pointer capture during a connection
+	// drag suppresses pointerleave, so the two would disagree about whether the cursor had gone.
+	const holdProps = {
+		onMouseEnter: onHold,
+		onMouseLeave: onRelease,
+		onPointerDown: onPressed,
+	};
+
 	if (!platforms.length) {
 		return (
-			<div className="surface-export-platform-list surface-export-platform-list-empty nodrag nopan">
+			<div className="surface-export-platform-list surface-export-platform-list-empty nodrag nopan" {...holdProps}>
 				<Text type="secondary" style={{ fontSize: 11 }}>No platforms with a space hub</Text>
 			</div>
 		);
@@ -135,7 +154,7 @@ export default function PlatformRows({ platforms, instanceId, instanceName, canE
 		// `nodrag nopan`: this renders inside React Flow's node wrapper, so without them a press on a
 		// button is also a press on the canvas — the click still lands, but the node drags out from
 		// under the pointer the moment it moves.
-		<div className="surface-export-platform-list nodrag nopan">
+		<div className="surface-export-platform-list nodrag nopan" {...holdProps}>
 			{shown.map(platform => (
 				<PlatformRow
 					key={platformActionKey(instanceId, platform.platformIndex)}
