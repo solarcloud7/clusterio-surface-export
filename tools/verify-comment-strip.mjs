@@ -4,8 +4,9 @@
 //           (the container that has typescript cannot see this repo's .git); scripts/vendor/luaparse.cjs
 //           for .lua; a resolvable `typescript` for .ts/.tsx/.js/.mjs/.cjs (NODE_PATH is honoured)
 // produces: exit 0 only when every changed file's parse is identical before and after; a per-file verdict
-// does not: check that comments were actually removed, that the KEEP list was right, or that
-//           anything still runs — it proves equivalence, not correctness
+// does not: check that comments were actually removed, that the KEEP list was right, that anything
+//           still runs, or that line endings are unchanged (CRLF is normalized to LF on both sides
+//           before parsing) — it proves code equivalence, not correctness
 
 import { createRequire } from "node:module";
 import { execFileSync } from "node:child_process";
@@ -38,8 +39,12 @@ function changedFiles() {
 		walk(BEFORE_DIR);
 		return found;
 	}
-	const out = execFileSync("git", ["diff", "--name-only", ref], { cwd: REPO_DIR, encoding: "utf8" });
+	const out = execFileSync("git", ["diff", "--name-only", "--diff-filter=M", ref], { cwd: REPO_DIR, encoding: "utf8" });
 	return out.split("\n").map(l => l.trim()).filter(Boolean);
+}
+
+function lf(source) {
+	return source.split("\r\n").join("\n");
 }
 
 function relativePosix(from, to) {
@@ -118,7 +123,7 @@ const extractTo = process.argv.includes("--extract-before")
 	: null;
 if (extractTo) {
 	const { mkdirSync, writeFileSync } = require("node:fs");
-	const changed = execFileSync("git", ["diff", "--name-only", ref], { cwd: REPO_DIR, encoding: "utf8" })
+	const changed = execFileSync("git", ["diff", "--name-only", "--diff-filter=M", ref], { cwd: REPO_DIR, encoding: "utf8" })
 		.split("\n").map(l => l.trim()).filter(Boolean);
 	for (const path of changed) {
 		const bytes = execFileSync("git", ["show", `${ref}:${path}`], { cwd: REPO_DIR, maxBuffer: 64 * 1024 * 1024 });
@@ -141,8 +146,8 @@ for (const path of files) {
 				: null;
 	if (!shape) { skipped++; continue; }
 	try {
-		const before = shape(original(path), path);
-		const after = shape(readFileSync(join(REPO_DIR, path), "utf8"), path);
+		const before = shape(lf(original(path)), path);
+		const after = shape(lf(readFileSync(join(REPO_DIR, path), "utf8")), path);
 		if (before === after) checked++;
 		else mismatches.push(path);
 	} catch (err) {
