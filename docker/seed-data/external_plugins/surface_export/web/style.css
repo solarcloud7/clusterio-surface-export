@@ -416,6 +416,50 @@ body.surface-export-page .site-layout-content-container {
 	transform: translateX(-50%);
 }
 
+/* React Flow v12 puts these on the handle UNPREFIXED — connectingfrom / connectingto / valid.
+   The v11 names (react-flow__handle-connecting) match nothing here. */
+.react-flow__handle.connectingto {
+	box-shadow: 0 0 0 3px rgba(220, 68, 70, 0.55);
+	border-color: #dc4446 !important;
+}
+
+.react-flow__handle.connectingto.valid {
+	box-shadow: 0 0 0 3px rgba(82, 196, 26, 0.55);
+	border-color: #52c41a !important;
+}
+
+.surface-export-gw-cover.connectingto {
+	opacity: 1;
+	border-radius: 50%;
+	background: rgba(220, 68, 70, 0.22);
+	border: 2px solid #dc4446;
+}
+
+.surface-export-gw-cover.connectingto.valid {
+	background: rgba(82, 196, 26, 0.22);
+	border-color: #52c41a;
+}
+
+.surface-export-gw-cover.connectingfrom {
+	opacity: 1;
+	border-radius: 50%;
+	background: rgba(255, 255, 255, 0.08);
+}
+
+.react-flow__node-instance.selected .surface-export-instance-face {
+	filter: drop-shadow(0 0 10px rgba(82, 196, 26, 0.95));
+}
+
+.react-flow__node-instance.selected .surface-export-instance-node-name {
+	color: #52c41a;
+}
+
+.surface-export-select-hint {
+	font-size: 11px;
+	color: rgba(255, 255, 255, 0.55);
+	white-space: nowrap;
+}
+
 .surface-export-gw-idle {
 	opacity: 0.35;
 	filter: grayscale(1);

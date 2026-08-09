@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState } from "react";
-import { Handle, Position, useUpdateNodeInternals } from "@xyflow/react";
+import { Handle, Position, useStore, useUpdateNodeInternals } from "@xyflow/react";
 import type { NodeProps } from "@xyflow/react";
 import { Typography } from "antd";
 
@@ -124,7 +124,14 @@ function MultiGatewayHandle({ gatewayName, position, usage, connectable }: {
 export function InstanceNode({ id, data, selected, isConnectable }: NodeProps) {
 	const node = data as unknown as InstanceNodeData;
 	const { showGeometry } = useGatewayDebug();
-	const list = useAutoHide(Boolean(selected), PLATFORM_LIST_VISIBLE_MS);
+	const multiSelected = useStore(store => {
+		let seen = 0;
+		for (const node of store.nodeLookup.values()) {
+			if (node.selected && ++seen > 1) return true;
+		}
+		return false;
+	});
+	const list = useAutoHide(Boolean(selected) && !multiSelected, PLATFORM_LIST_VISIBLE_MS);
 
 	const updateNodeInternals = useUpdateNodeInternals();
 	useEffect(() => {

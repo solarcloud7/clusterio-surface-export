@@ -110,9 +110,6 @@ try {
 		await page.waitForTimeout(500);
 	};
 
-	// A fresh cluster has no saved gateway link, so the subject is staged here rather than assumed.
-	// Staged and saved links are both real edges on the canvas and both route through onEdgeClick,
-	// which is what this test is about.
 	if (!await edges.count()) {
 		const nodeCount = await nodes.count();
 		if (nodeCount < 2) {
@@ -135,9 +132,6 @@ try {
 		throw new Error("could not obtain a gateway edge — neither configured nor stageable");
 	}
 
-	// Markers render once into a shared <defs> and edges reference them by url(#id), so the first
-	// marker in the document need not belong to the first edge — with two links on different
-	// gateways that pairing is simply wrong.
 	const colours = await page.evaluate(() => {
 		const path = document.querySelector(".react-flow__edge-path");
 		const ref = path?.getAttribute("marker-end") || path?.getAttribute("marker-start");
@@ -160,8 +154,6 @@ try {
 		`edge ${colours.edge}, arrow ${colours.arrow}`,
 	);
 
-	// The panel text is the observable, whichever way it moves: disconnecting a SAVED link adds
-	// pending changes, disconnecting a STAGED one removes them. Both are "the click did something".
 	const baseline = await panelText();
 
 	await lock.click();

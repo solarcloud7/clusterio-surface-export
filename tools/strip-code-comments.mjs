@@ -19,6 +19,16 @@ const require = createRequire(import.meta.url);
 const { maskNonCode } = await import(
 	`file://${join(PLUGIN_DIR, "scripts/lint-catch-swallow.mjs").split(sep).join("/")}`
 );
+if (typeof maskNonCode !== "function") {
+	console.error(
+		"maskNonCode is not exported from scripts/lint-catch-swallow.mjs.\n"
+		+ "That export IS this tool's safety cross-check: every range it deletes must already be blank\n"
+		+ "in that proven lexer's mask, which is what stops a string or regex literal being deleted as\n"
+		+ "a comment. Without it the JS/TS pass has no guard and must not run.\n"
+		+ "Fix: re-add `export` to `function maskNonCode` in scripts/lint-catch-swallow.mjs.",
+	);
+	process.exit(1);
+}
 
 const SKIP_DIRS = new Set([
 	".git", "node_modules", "dist", "graphify-out", ".claude", "raw",

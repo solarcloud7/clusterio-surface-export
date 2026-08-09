@@ -1,10 +1,14 @@
 import React from "react";
-import { BaseEdge, EdgeLabelRenderer, getBezierPath, useInternalNode } from "@xyflow/react";
+import {
+	BaseEdge, EdgeLabelRenderer, getBezierPath, getSmoothStepPath, getStraightPath, useInternalNode,
+} from "@xyflow/react";
 import type { EdgeProps, Position } from "@xyflow/react";
 
 import { NODE_DIAMETER } from "./gateway-graph";
 import { GATE_CENTRE_OFFSET_Y, endpointSide, floatingEdgeEndpoints, nodeCircle } from "./edge-geometry";
 import { DEFAULT_EDGE_COLOUR, gatewayColour } from "./gateway-colours";
+import { DEFAULT_EDGE_SHAPE } from "./layout-store";
+import type { EdgeShape } from "./layout-store";
 import { shipPhaseFor } from "./transfer-motion";
 import type { ShipTransfer } from "./transfer-motion";
 import TransferShip from "./TransferShip";
@@ -26,14 +30,19 @@ export default function FloatingEdge({
 	}
 
 	const { sourceX, sourceY, targetX, targetY } = floatingEdgeEndpoints(sourceCircle, targetCircle);
-	const [path] = getBezierPath({
+	const geometry = {
 		sourceX,
 		sourceY,
 		targetX,
 		targetY,
 		sourcePosition: endpointSide(sourceCircle, targetCircle) as Position,
 		targetPosition: endpointSide(targetCircle, sourceCircle) as Position,
-	});
+	};
+	const shape = (data as { shape?: EdgeShape } | undefined)?.shape ?? DEFAULT_EDGE_SHAPE;
+	const [path] = shape === "straight" ? getStraightPath({ sourceX, sourceY, targetX, targetY })
+		: shape === "step" ? getSmoothStepPath({ ...geometry, borderRadius: 0 })
+			: shape === "smoothstep" ? getSmoothStepPath(geometry)
+				: getBezierPath(geometry);
 
 	const edgeData = data as {
 		sourceGateway?: string;

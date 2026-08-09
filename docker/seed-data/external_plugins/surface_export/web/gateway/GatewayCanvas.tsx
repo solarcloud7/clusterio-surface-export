@@ -60,7 +60,10 @@ import {
 } from "./debug-mode";
 import type { DebugScenario, DebugState } from "./debug-mode";
 import { installCanvasDebugApi } from "./debug-api";
-import { applySavedLayout, clearLayout, loadLayout, saveLayout } from "./layout-store";
+import {
+	EDGE_SHAPES, applySavedLayout, clearLayout, loadEdgeShape, loadLayout, saveEdgeShape, saveLayout,
+} from "./layout-store";
+import type { EdgeShape } from "./layout-store";
 import { SHIP_LEGEND, instancePairKey, noteLiveSeen, noteTerminalSeen, shipExpiryMs, shipPhaseFor, shipsInFlight, transientEdgeId } from "./transfer-motion";
 import { DEFAULT_GATEWAY_MODE, checkMultiModeLink, gatewayNamesFor } from "../../shared/dto";
 import type { GatewayMode } from "../../shared/dto";
@@ -170,6 +173,11 @@ export default function GatewayCanvas({ plugin, state, onOpenImport }: {
 		saveDebugState(next);
 	}, []);
 	const [scenario, setScenario] = useState<DebugScenario | null>(null);
+	const [edgeShape, setEdgeShape] = useState<EdgeShape>(loadEdgeShape);
+	const changeEdgeShape = useCallback((shape: EdgeShape) => {
+		setEdgeShape(shape);
+		saveEdgeShape(shape);
+	}, []);
 
 	const [nodes, setNodes, onNodesChange] = useNodesState<Node>([]);
 	const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
@@ -284,14 +292,10 @@ export default function GatewayCanvas({ plugin, state, onOpenImport }: {
 		if (!debug.enabled) {
 			return realShips;
 		}
-		const instanceIds = graph.nodes
-			.map(node => instanceIdFromNodeId(node.id))
-			.filter((id): id is number => id !== null);
-		const mockIds = instanceIds.filter(isMockInstanceId);
-		const shipPool = mockIds.length >= 2 ? mockIds : instanceIds.filter(id => !isMockInstanceId(id));
+		const routes = graph.edges.map(edge => [edge.sourceInstanceId, edge.targetInstanceId] as const);
 		const replayed = replayShips(state?.transferSummaries, debug.replayTransferIds)
 			.filter(ship => !realShips.some(live => live.transferId === ship.transferId));
-		return [...replayed, ...realShips, ...mockShips(shipPool, debug.shipPhases)];
+		return [...replayed, ...realShips, ...mockShips(routes, debug.shipPhases)];
 	}, [realShips, debug.enabled, debug.shipPhases, debug.replayTransferIds, state?.transferSummaries, scenario, graph]);
 
 	useEffect(() => {
@@ -361,6 +365,7 @@ export default function GatewayCanvas({ plugin, state, onOpenImport }: {
 						forward: edge.forward,
 						reverse: edge.reverse,
 						sourceGateway: edge.sourceGateway,
+						shape: edgeShape,
 						transfer: ship || undefined,
 						transferReversed: Boolean(ship && ship.sourceInstanceId !== edge.sourceInstanceId),
 					},
@@ -384,12 +389,12 @@ export default function GatewayCanvas({ plugin, state, onOpenImport }: {
 					deletable: false,
 					style: { ...dimStyle(ship.sourceInstanceId, ship.targetInstanceId), strokeDasharray: "6 4" },
 					markerEnd: { type: MarkerType.ArrowClosed, color: gatewayColour(anchorGateway) },
-					data: { transient: true, sourceGateway: anchorGateway, transfer: ship, transferReversed: false },
+					data: { transient: true, sourceGateway: anchorGateway, shape: edgeShape, transfer: ship, transferReversed: false },
 				});
 			}
 			return edges;
 		});
-	}, [graph, ships, mode, interactive, setNodes, setEdges]);
+	}, [graph, ships, mode, interactive, edgeShape, setNodes, setEdges]);
 
 	const nodeActions = useMemo(() => ({
 		exportingKey,
@@ -402,6 +407,57 @@ export default function GatewayCanvas({ plugin, state, onOpenImport }: {
 	}), [exportingKey, plugin]);
 
 	const effectiveHostFilter = graph.hosts.some(host => host.key === hostFilter) ? hostFilter : ALL_HOSTS;
+
+	const platformOptions = useMemo(() => graph.nodes.flatMap(node => {
+		const instanceName = String(node.data.instanceName || node.id);
+		return ((node.data.platforms || []) as PlatformLike[]).map(platform => ({
+			value: node.id,
+			key: `${node.id}:${platform.platformIndex}`,
+			label: `${platform.platformName || `platform ${platform.platformIndex}`} — ${instanceName}`,
+		}));
+	}), [graph]);
+
+	const selectedInstanceIds = useMemo(
+		() => nodes.filter(node => node.selected)
+			.map(node => instanceIdFromNodeId(node.id))
+			.filter((id): id is number => id !== null),
+		[nodes],
+	);
+
+	const bulkLink = useCallback((connect: boolean) => {
+		const gateway = gatewayNamesFor(mode)[0];
+		const refused: string[] = [];
+		setEdits(previous => {
+			let next = previous;
+			for (let a = 0; a < selectedInstanceIds.length; a += 1) {
+				for (let b = a + 1; b < selectedInstanceIds.length; b += 1) {
+					const request = {
+						sourceInstanceId: selectedInstanceIds[a],
+						sourceGateway: gateway,
+						targetInstanceId: selectedInstanceIds[b],
+						targetGateway: gateway,
+					};
+					if (connect) {
+						const violation = mode === "multi" ? multiModeViolation(next, request) : null;
+						if (violation) {
+							refused.push(violation);
+							continue;
+						}
+						next = applyConnect(next, request);
+					} else {
+						next = applyDisconnect(next, request);
+					}
+				}
+			}
+			return next;
+		});
+		if (refused.length) {
+			antMessage.warning({
+				content: `${refused.length} pair(s) refused: ${[...new Set(refused)].join(" ")}`,
+				key: "canvas-bulk", duration: 8,
+			});
+		}
+	}, [mode, selectedInstanceIds]);
 
 	const platformFromHandle = useCallback((nodeId: string | null | undefined, handleId: string | null | undefined) => {
 		const platformIndex = platformIndexFromHandleId(handleId);
@@ -630,6 +686,7 @@ export default function GatewayCanvas({ plugin, state, onOpenImport }: {
 					edgesFocusable={interactive}
 					nodesDraggable={!locked}
 					elementsSelectable
+					multiSelectionKeyCode={["Control", "Meta"]}
 					deleteKeyCode={interactive ? ["Backspace", "Delete"] : null}
 					colorMode="dark"
 					fitView
@@ -694,6 +751,30 @@ export default function GatewayCanvas({ plugin, state, onOpenImport }: {
 								}))}
 								onChange={value => value && focusNode(String(value))}
 							/>
+							<Select
+								size="small"
+								showSearch
+								allowClear
+								value={null}
+								placeholder="Find a platform"
+								style={{ minWidth: 190 }}
+								popupMatchSelectWidth={false}
+								filterOption={(input, option) =>
+									String(option?.label ?? "").toLowerCase().includes(input.toLowerCase())
+								}
+								options={platformOptions}
+								onChange={value => value && focusNode(String(value))}
+							/>
+							<Tooltip title="The shape every gateway link is drawn with">
+								<Select
+									size="small"
+									value={edgeShape}
+									style={{ minWidth: 110 }}
+									popupMatchSelectWidth={false}
+									onChange={changeEdgeShape}
+									options={EDGE_SHAPES.map(shape => ({ value: shape, label: shape }))}
+								/>
+							</Tooltip>
 							<Tooltip title="Forget the saved positions and frame every instance">
 								<Button size="small" icon={<ReloadOutlined />} onClick={resetLayout}>Reset</Button>
 							</Tooltip>
@@ -724,6 +805,22 @@ export default function GatewayCanvas({ plugin, state, onOpenImport }: {
 							) : (
 								<Text type="secondary" style={{ fontSize: 12 }}>read-only</Text>
 							)}
+							{interactive && selectedInstanceIds.length >= 2 ? (
+								<>
+									<Text className="surface-export-select-hint">
+										{selectedInstanceIds.length} selected · Ctrl+click to select more
+									</Text>
+									<Tooltip title="Link every selected instance to every other one">
+										<Button size="small" onClick={() => bulkLink(true)}>Link selected</Button>
+									</Tooltip>
+									<Tooltip title="Remove the links between the selected instances">
+										<Button size="small" onClick={() => bulkLink(false)}>Unlink selected</Button>
+									</Tooltip>
+								</>
+							) : null}
+							{interactive && selectedInstanceIds.length === 1 ? (
+								<Text className="surface-export-select-hint">Ctrl+click another instance to link them</Text>
+							) : null}
 							{canEdit && allDirty.length ? (
 								<Button size="small" onClick={revert} disabled={saving}>Revert</Button>
 							) : null}
