@@ -221,8 +221,7 @@ function BeltRestoration.restore_side_groups(side_groups, entity_map)
     --   landing that lies cannot pass silently: success-that-landed-nothing comes up short on its
     --   own side, and success-that-landed-elsewhere ALSO overfills the side it actually hit — a
     --   double detection the old global bracket could not make (it summed across sides, so a
-    --   wrong-side landing conserved its per-key totals). Anomalies stay loud, and every caller
-    --   treats anomalies as failure (the import's exact gate refuses => 2PC revert).
+    --   wrong-side landing conserved its per-key totals). Anomalies stay loud; the anomalies return value is the failure signal callers consume.
     --   Deliberately NOT retried: an insert whose success report the old census contradicted used
     --   to trigger a rescan — on a cross-side landing that retry IS the duplication engine
     --   (BELT-R16 class). A trusted landing is final; a lying one fails the brackets.
@@ -313,13 +312,13 @@ function BeltRestoration.restore_side_groups(side_groups, entity_map)
             -- held at the current pin by every green belt-carrying transfer) — production
             -- belt writes must not bypass it. slot.ct as belt_stack_size seats an oversized
             -- (fossil) stack as ONE stack — the multi-stack owner requirement.
+            -- The seam's contract is a BOOLEAN landed (version-compat normalizes any pin drift
+            -- there, once, instead of at every call site).
             local landed = VersionCompat.belt_insert_at(line, k / 256, { name = slot.n, quality = slot.q, count = slot.ct }, slot.ct)
-            -- Engine contract is a boolean; the selftest fakes historically return a count.
-            -- 0 is truthy in Lua, so both are normalized explicitly.
-            if landed == true or (type(landed) == "number" and landed > 0) then
+            if landed then
                 placed = placed + slot.ct
                 exp[wanted_key] = (exp[wanted_key] or 0) + slot.ct
-                ledger[#ledger + 1] = { e = w_entity, li = w_li, k = k, slot = slot }
+                ledger[#ledger + 1] = { e = w_entity, li = w_li, k = k, slot = slot, key = wanted_key }
                 return true
             end
             return nil
@@ -374,7 +373,7 @@ function BeltRestoration.restore_side_groups(side_groups, entity_map)
             -- top-of-line writes caused the BELT-R16 boundary-handoff duplication class — it stays
             -- deleted.
             if not done then
-                pending[#pending + 1] = { slot = slot, g = g, gi = gi }
+                pending[#pending + 1] = { slot = slot, gi = gi }
             end
           end
         end
@@ -400,8 +399,7 @@ function BeltRestoration.restore_side_groups(side_groups, entity_map)
             local wanted_key = item_key(slot.n, slot.q)
             local partner
             for _, ledger_entry in ipairs(ledger) do
-                if ledger_entry.e == se and ledger_entry.li == slot.src.li
-                    and item_key(ledger_entry.slot.n, ledger_entry.slot.q) == wanted_key then
+                if ledger_entry.e == se and ledger_entry.li == slot.src.li and ledger_entry.key == wanted_key then
                     partner = ledger_entry
                 end
             end
@@ -412,21 +410,25 @@ function BeltRestoration.restore_side_groups(side_groups, entity_map)
                 -- writes through a pre-mutation handle are the aged-handle class (this exact
                 -- pattern failed live with a fixed-position re-insert before this scan existed).
                 -- Returns the request k it inserted at (nil if nothing fit).
+                -- Every landing is engine-confirmed like try_insert's: can_insert_at gates the
+                -- attempt (it is COUNT-INDEPENDENT, and the merge is the one site inserting an
+                -- oversized merged count), the insert's own boolean decides. A declined position
+                -- keeps the scan going instead of being reported as a landing.
                 local function scan_place(count)
                     local mline = se.get_transport_line(slot.src.li)
                     local mkmin = math.floor(se.prototype.belt_speed * 256 + 0.5)
                     local mtop = math.floor(mline.line_length * 256 + 0.5)
                     for k = math.min(partner.k, mtop - mkmin), mkmin, -1 do
-                        if mline.can_insert_at(k / 256) then
-                            VersionCompat.belt_insert_at(mline, k / 256,
-                                { name = slot.n, quality = slot.q, count = count }, count)
+                        if mline.can_insert_at(k / 256)
+                            and VersionCompat.belt_insert_at(mline, k / 256,
+                                { name = slot.n, quality = slot.q, count = count }, count) then
                             return k
                         end
                     end
                     for k = partner.k + 1, mtop - mkmin do
-                        if mline.can_insert_at(k / 256) then
-                            VersionCompat.belt_insert_at(mline, k / 256,
-                                { name = slot.n, quality = slot.q, count = count }, count)
+                        if mline.can_insert_at(k / 256)
+                            and VersionCompat.belt_insert_at(mline, k / 256,
+                                { name = slot.n, quality = slot.q, count = count }, count) then
                             return k
                         end
                     end
@@ -453,15 +455,25 @@ function BeltRestoration.restore_side_groups(side_groups, entity_map)
                         slot.n, slot.ct, tostring(slot.src.id), slot.src.li, merged_ct))
                     done = true
                 else
-                    -- The merge did not land (short removal, or no free position). Put whatever
-                    -- was removed back; the side bracket judges the net effect either way — a
-                    -- shortfall the put-back cannot repair fails this side LOUDLY there.
+                    -- The merge did not land (short removal, or the merged insert declined). Put
+                    -- whatever was removed back — engine-confirmed like every other write — and
+                    -- follow the ledger k so the reconciliation matches the physical stack. The
+                    -- side bracket judges the net effect either way; a shortfall the put-back
+                    -- cannot repair fails this side LOUDLY there.
+                    local putback_k = nil
                     if removed > 0 then
-                        scan_place(removed)
+                        putback_k = scan_place(removed)
                     end
-                    log(string.format(
-                        "[BeltRestoration] OVER-COMPRESSION MERGE could not land for %s x%d — partner re-placed, slot stays unplaced",
-                        slot.n, slot.ct))
+                    if putback_k and removed == partner.slot.ct then
+                        partner.k = putback_k
+                        log(string.format(
+                            "[BeltRestoration] OVER-COMPRESSION MERGE could not land for %s x%d — partner re-placed (engine-confirmed), slot stays unplaced",
+                            slot.n, slot.ct))
+                    else
+                        log(string.format(
+                            "[BeltRestoration] OVER-COMPRESSION MERGE could not land for %s x%d (removed=%d, put-back %s) — the side bracket owns the discrepancy",
+                            slot.n, slot.ct, removed, putback_k and "partial" or "did not land"))
+                    end
                 end
             end
         end
@@ -476,9 +488,12 @@ function BeltRestoration.restore_side_groups(side_groups, entity_map)
     -- (the side that gained fails alongside the side that came up short). Line-set: the side
     -- groups' member lines — NOT every belt on the platform. The caller must label it as such;
     -- comparing it against a whole-platform belt count would report a scope mismatch as a
-    -- discrepancy. Taken in the same execution as the writes: belts never freeze
-    -- (measured 2026-08-09: pause and disabled_by_script both leave lines running), so a bracket
-    -- taken any later would fold engine movement into what looks like a restore effect.
+    -- discrepancy. Taken in the same execution as the writes: belt lines keep moving during the import
+    -- window (canonical: the belt transport-line laws section of docs/factorio-2.0-api-notes.md),
+    -- so a bracket taken any later would fold engine movement into what looks like a restore effect.
+    -- The anomaly UNIT is one FAILED SIDE (any per-key mismatch fails the side once; every key
+    -- still gets its own log line). Counting per (side, key) would multiply one physical event —
+    -- a cross-side landing fails two sides and would read as 2+ per key involved.
     local physical_delta = {}
     for gi, g in ipairs(side_groups) do
         local before = side_before[gi]
@@ -488,15 +503,21 @@ function BeltRestoration.restore_side_groups(side_groups, entity_map)
         for key in pairs(before.by_key) do keys[key] = true end
         for key in pairs(after.by_key) do keys[key] = true end
         for key in pairs(exp) do keys[key] = true end
+        local side_failed = false
         for key in pairs(keys) do
             local delta = (after.by_key[key] or 0) - (before.by_key[key] or 0)
             if delta ~= 0 then physical_delta[key] = (physical_delta[key] or 0) + delta end
             if delta ~= (exp[key] or 0) then
-                anomalies = anomalies + 1
+                side_failed = true
                 log(string.format("[BeltRestoration] SIDE BRACKET MISMATCH group %d %q: physical delta %d ~= placed %d",
                     gi, key, delta, exp[key] or 0))
             end
         end
+        if side_failed then anomalies = anomalies + 1 end
+    end
+    -- Cross-side sums can cancel to zero; a zero entry is no delta, not a datum for the census.
+    for key, delta in pairs(physical_delta) do
+        if delta == 0 then physical_delta[key] = nil end
     end
     -- RECONCILIATION (dump v3, owner direction 2026-07-27 — replaces the uid-counting attribution
     -- dump, whose "new uid" totals rested on an unproven identity assumption): match every PHYSICAL

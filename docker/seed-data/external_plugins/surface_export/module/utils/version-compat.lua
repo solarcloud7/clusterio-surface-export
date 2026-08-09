@@ -106,8 +106,12 @@ PROFILES["2.0"] = {
   -- "latest" docs have reordered these, and the reversed order places nothing. Thin signature
   -- wrappers: the caller keeps the pcall + error logging so failures stay grounded at the richer
   -- call site.
+  -- Profile CONTRACT: belt_insert_at returns a BOOLEAN landed. insert_at returns a boolean at
+  -- this pin, so == true is identity here; a future pin whose insert_at returns a count must
+  -- normalize HERE (0 is truthy in Lua — a raw count return would read every failed insert as
+  -- landed at every call site).
   belt_insert_at = function(line, position, stack, belt_stack_size)
-    return line.insert_at(position, stack, belt_stack_size)
+    return line.insert_at(position, stack, belt_stack_size) == true
   end,
   belt_insert_at_back = function(line, stack, belt_stack_size)
     return line.insert_at_back(stack, belt_stack_size)

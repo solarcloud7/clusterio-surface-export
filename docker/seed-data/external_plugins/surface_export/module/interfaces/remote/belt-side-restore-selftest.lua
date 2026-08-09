@@ -542,6 +542,13 @@ local function belt_side_restore_selftest(opts)
       return out
     end
     line.can_insert_at = function() return true end
+    -- Default HONEST insert honoring the seam's BOOLEAN contract (version-compat normalizes any
+    -- pin drift to a boolean; a count-returning fake would validate a shape production never sees).
+    -- Fakes that lie override this.
+    line.insert_at = function(_position, stack, count)
+      line.contents[#line.contents + 1] = new_stack(stack.name, stack.quality, count)
+      return true
+    end
     line.remove_item = function(spec)
       local remaining, removed = spec.count, 0
       local i = 1
@@ -568,11 +575,7 @@ local function belt_side_restore_selftest(opts)
     insert_count = insert_count + 1
     local destination = insert_count == 1 and neighbour or target
     destination.contents[#destination.contents + 1] = new_stack(stack.name, stack.quality, count)
-    return count
-  end
-  neighbour.insert_at = function(_position, stack, count)
-    neighbour.contents[#neighbour.contents + 1] = new_stack(stack.name, stack.quality, count)
-    return count
+    return true
   end
 
   local prototype = { belt_speed = 1 / 256 }
@@ -597,8 +600,7 @@ local function belt_side_restore_selftest(opts)
   -- drives control flow, and each SIDE is verified once against its expected multiset by the
   -- side brackets. What the contract guarantees is unchanged: DETECTION, never silence — a lying
   -- landing fails its own side's bracket (and a cross-side landing ALSO fails the side it hit),
-  -- anomalies > 0, and every caller treats anomalies as failure (SelectionLab errors the
-  -- transaction; the import fails => 2PC revert). Deliberately NOT retried: the old
+  -- anomalies > 0 — the return value callers consume as their failure signal. Deliberately NOT retried: the old
   -- census-driven rescan after a cross-side landing was itself the BELT-R16 duplication engine.
   local placed, unplaced, anomalies = BeltRestoration.restore_side_groups(groups, entity_map)
   check("aliased_windows_do_not_double_count", placed == 1 and unplaced == 0,
@@ -626,7 +628,7 @@ local function belt_side_restore_selftest(opts)
   -- is counted into the side's expected multiset, so the side bracket must come up short — the
   -- exact shape the per-insert census used to catch mid-flight, now caught once per side.
   local lie_line = make_line()
-  lie_line.insert_at = function() return 1 end -- claims success, mutates nothing
+  lie_line.insert_at = function() return true end -- claims success, mutates nothing
   local lie_map = { [7] = { valid = true, prototype = prototype, get_transport_line = function() return lie_line end } }
   local lie_groups = {
     { members = { { id = 7, li = 1 } },
@@ -643,10 +645,6 @@ local function belt_side_restore_selftest(opts)
   -- HONEST fake: the landing is real and exact. The brackets must stay SILENT — a bracket that
   -- false-alarms on a clean restore erodes trust in the real anomalies (check-commensurate rule).
   local honest_line = make_line()
-  honest_line.insert_at = function(_position, stack, count_arg)
-    honest_line.contents[#honest_line.contents + 1] = new_stack(stack.name, stack.quality, count_arg)
-    return count_arg
-  end
   local honest_map = { [9] = { valid = true, prototype = prototype, get_transport_line = function() return honest_line end } }
   local honest_groups = {
     { members = { { id = 9, li = 1 } },
@@ -657,6 +655,49 @@ local function belt_side_restore_selftest(opts)
   check("honest_restore_is_bracket_silent", hplaced == 3 and hunplaced == 0 and hanomalies == 0,
     string.format("clean restore must place all with zero anomalies; placed=%d unplaced=%d anomalies=%d",
       hplaced, hunplaced, hanomalies))
+
+  -- OVER-COMPRESSION MERGE, success leg. can_insert_at accepts only an EMPTY line, so the second
+  -- slot's captured-position scan exhausts and routes through pending -> merge: remove the partner,
+  -- re-insert the combined count as ONE oversized stack. The line ends with a single stack of 5.
+  local merge_line = make_line()
+  merge_line.can_insert_at = function() return #merge_line.contents == 0 end
+  local merge_map = { [11] = { valid = true, prototype = prototype, get_transport_line = function() return merge_line end } }
+  local merge_groups = {
+    { members = { { id = 11, li = 1 } },
+      slots = { { n = "iron-plate", q = "normal", ct = 2 }, { n = "iron-plate", q = "normal", ct = 3 } },
+      item_source_positions = { 11, 1, 200, 11, 1, 100 } },
+  }
+  local mplaced, munplaced, manomalies = BeltRestoration.restore_side_groups(merge_groups, merge_map)
+  check("merge_lands_single_oversized_stack",
+    mplaced == 5 and munplaced == 0 and manomalies == 0
+      and #merge_line.contents == 1 and merge_line.contents[1].count == 5,
+    string.format("merge must land one oversized stack of 5; placed=%d unplaced=%d anomalies=%d stacks=%d",
+      mplaced, munplaced, manomalies, #merge_line.contents))
+
+  -- OVER-COMPRESSION MERGE, decline + put-back leg. The line declines any insert over 2 items, so
+  -- the merged stack of 5 cannot land anywhere (the engine's return is the refusal — can_insert_at
+  -- keeps approving); the put-back must restore the removed partner, engine-confirmed, and the
+  -- slot stays honest unplaced loss with the side bracket SILENT (nothing was lost or invented).
+  local decline_line = make_line()
+  decline_line.can_insert_at = function() return #decline_line.contents == 0 end
+  decline_line.insert_at = function(_position, stack, count)
+    if count > 2 then return false end
+    decline_line.contents[#decline_line.contents + 1] = new_stack(stack.name, stack.quality, count)
+    return true
+  end
+  local decline_map = { [13] = { valid = true, prototype = prototype, get_transport_line = function() return decline_line end } }
+  local decline_groups = {
+    { members = { { id = 13, li = 1 } },
+      slots = { { n = "iron-plate", q = "normal", ct = 2 }, { n = "iron-plate", q = "normal", ct = 3 } },
+      item_source_positions = { 13, 1, 200, 13, 1, 100 } },
+  }
+  local dplaced, dunplaced, danomalies = BeltRestoration.restore_side_groups(decline_groups, decline_map)
+  check("merge_decline_restores_partner",
+    dplaced == 2 and dunplaced == 3 and danomalies == 0
+      and #decline_line.contents == 1 and decline_line.contents[1].count == 2,
+    string.format("a declined merge must put the partner back and stay bracket-silent; placed=%d unplaced=%d anomalies=%d stacks=%d count=%s",
+      dplaced, dunplaced, danomalies, #decline_line.contents,
+      decline_line.contents[1] and tostring(decline_line.contents[1].count) or "none"))
 
   -- F1 regression (review 2026-07-27): malformed belt_side_groups must be REFUSED by the shape
   -- validator before restore ever runs — an uncaught throw on the import's on_tick path kills the
