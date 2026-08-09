@@ -154,6 +154,37 @@ try {
 		`edge ${colours.edge}, arrow ${colours.arrow}`,
 	);
 
+	// Ships are checked while an edge still EXISTS. On a fresh cluster the only edge is the one this
+	// test stages, the revert below removes it, and mock ships ride CONFIGURED links — so after the
+	// revert there is nothing for them to ride and the checks would measure an empty canvas.
+	const drawnShips = () => page.evaluate(() => ({
+		markers: document.querySelectorAll(".surface-export-edge-status").length,
+		moving: [...document.querySelectorAll(".surface-export-ship")]
+			.filter(el => el.style.visibility !== "hidden").length,
+	}));
+	const beforeShips = await drawnShips();
+	await page.evaluate(() => window.surfaceExportCanvas?.ships?.());
+	await page.waitForTimeout(1500);
+	const afterShips = await drawnShips();
+	check(
+		afterShips.markers + afterShips.moving > beforeShips.markers + beforeShips.moving,
+		"ships() actually drew transfers (control arm)",
+		`before ${JSON.stringify(beforeShips)}, after ${JSON.stringify(afterShips)} — with nothing `
+		+ "drawn the marker check below measures an empty canvas",
+	);
+	check(
+		afterShips.markers >= 3,
+		"a busy edge shows one marker per phase, not one per transfer",
+		`markers: ${afterShips.markers}`,
+	);
+	const strokes = await page.evaluate(() => [...document.querySelectorAll(".react-flow__edge-path")]
+		.map(p => getComputedStyle(p).stroke));
+	check(
+		strokes.length > 0 && !strokes.includes(FALLBACK_BLUE),
+		`no edge falls back to DEFAULT_EDGE_COLOUR ${FALLBACK_BLUE} once ship edges are drawn`,
+		`strokes: ${[...new Set(strokes)].join(", ")}`,
+	);
+
 	const baseline = await panelText();
 
 	await lock.click();
@@ -187,35 +218,6 @@ try {
 	}
 	check(!/unsaved change/.test(await panelText()), "nothing was left staged, nothing saved");
 
-	// Mock ships ride CONFIGURED links, so they add status markers to existing edges rather than new
-	// edges. Counting edges would report no change and prove nothing about whether ships drew.
-	const drawnShips = () => page.evaluate(() => ({
-		markers: document.querySelectorAll(".surface-export-edge-status").length,
-		moving: [...document.querySelectorAll(".surface-export-ship")]
-			.filter(el => el.style.visibility !== "hidden").length,
-	}));
-	const beforeShips = await drawnShips();
-	await page.evaluate(() => window.surfaceExportCanvas?.ships?.());
-	await page.waitForTimeout(1500);
-	const afterShips = await drawnShips();
-	check(
-		afterShips.markers + afterShips.moving > beforeShips.markers + beforeShips.moving,
-		"ships() actually drew transfers (control arm)",
-		`before ${JSON.stringify(beforeShips)}, after ${JSON.stringify(afterShips)} — with nothing `
-		+ "drawn the colour check below measures the same set that already existed",
-	);
-	check(
-		afterShips.markers >= 3,
-		"a busy edge shows one marker per phase, not one per transfer",
-		`markers: ${afterShips.markers}`,
-	);
-	const strokes = await page.evaluate(() => [...document.querySelectorAll(".react-flow__edge-path")]
-		.map(p => getComputedStyle(p).stroke));
-	check(
-		strokes.length > 0 && !strokes.includes(FALLBACK_BLUE),
-		`no edge falls back to DEFAULT_EDGE_COLOUR ${FALLBACK_BLUE} once ship edges are drawn`,
-		`strokes: ${[...new Set(strokes)].join(", ")}`,
-	);
 } catch (err) {
 	console.log(`  FAIL harness error — ${err && err.message ? err.message : err}`);
 	failed += 1;
