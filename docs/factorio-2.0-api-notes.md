@@ -169,6 +169,26 @@ a segment) — they are not a capture blind spot at 2.1.11.
 - **Standard fill instrument**: infinity chest (filtered, at-least N) + filtered loader saturates a belt
   circuit to a deterministic steady state; loaders stay active on paused platforms (deactivate them to
   freeze the feed). See the Physical Truth Lab Standard's fixture-contract section.
+- **A paused platform's transport lines keep advancing.** **[empirical, 2.1.11, freeze-probe
+  2026-08-09 — four-arm live probe on an omnibus clone (control arm proved the instrument sees
+  motion first); committed instrument owed with the incremental-restore work]** With
+  `platform.paused = true`, item positions kept moving over 120-tick windows; belt `status` stayed
+  `working`, `frozen` stayed false. Consistent with the property's own doc ("paused thrust and does
+  not advance its schedule" — thrust and schedule only).
+- **`disabled_by_script = true` on a transport-belt is a SILENT NO-OP.** **[empirical, 2.1.11,
+  freeze-probe 2026-08-09 (same probe)]** Written on 118 belt entities: readback `false`, lines kept
+  moving, `status` stayed `working`. Separately observed in the same probe: a belt reading
+  `active == false` still moved items — belt line simulation is independent of entity active state.
+  Consequence: the import's frozen window (`disabled_by_script` on every entity) has NEVER frozen
+  belts; single-tick belt restore is what stands between placement and drift.
+- **The one measured belt freeze is circuit enable/disable — and it needs a REAL wire.**
+  **[empirical, 2.1.11, freeze-probe 2026-08-09 (same probe)]** `circuit_enable_disable = true` plus
+  a false condition with NO wire connection is ignored (`status` stays `working`); with a red wire
+  connected (belt↔belt suffices) the condition evaluates on the NEXT tick, `status` becomes
+  `disabled_by_control_behavior`, and the wired belts' lines measured 0 moved. Hazard observed in
+  the same probe: freezing belts while feeders stay live compacts a circulating loop to zero gaps —
+  a gap-free loop is permanently deadlocked even after re-enable (vanilla mechanic; absent during
+  import, where nothing feeds and items restore with captured gaps).
 
 ## Space platform deletion
 
