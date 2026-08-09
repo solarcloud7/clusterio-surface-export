@@ -96,6 +96,15 @@ export type TransferTimeline = {
 /** Anything above this share is worth saying out loud rather than leaving to be noticed. */
 const NOTICE_THRESHOLD_PCT = 5;
 
+/**
+ * A detail gap must ALSO clear this before it is worth a warning. Share alone cries wolf: on a
+ * same-tick import one tick IS the resolution floor, so the breakdown is structurally unable to fill
+ * the window and the percentage is meaningless. Measured on real transfers here — 2 KB: 6 ms gap
+ * (86%), 87 KB: 388 ms (70%), 120 KB: 21.6 s (98%). A one-second floor names the last and stays
+ * quiet on the first two, which are healthy sub-second transfers.
+ */
+const DETAIL_GAP_FLOOR_MS = 1000;
+
 function formatMs(ms: number) {
 	return ms >= 1000 ? `${(ms / 1000).toFixed(1)}s` : `${Math.round(ms)}ms`;
 }
@@ -113,7 +122,7 @@ export function describeAttribution(attribution: TimelineAttribution): { headlin
 			detail: "No measured span covers this time. It is bounded by the spans on either side of it.",
 		};
 	}
-	if (attribution.detailGapPct > NOTICE_THRESHOLD_PCT) {
+	if (attribution.detailGapPct > NOTICE_THRESHOLD_PCT && attribution.detailGapMs >= DETAIL_GAP_FLOOR_MS) {
 		return {
 			headline: `${formatMs(attribution.detailGapMs)} of the destination import `
 				+ `(${attribution.detailGapPct.toFixed(0)}%) has no phase detail`,
@@ -197,6 +206,10 @@ export function buildTransferTimeline(
 	// the export's async sub-bar, which is likewise tick-derived and likewise indented — that mistake
 	// clamped the export INTO the import window and inverted the timeline.
 	const importPhaseRows: TimelineRow[] = [];
+	// Likewise held explicitly rather than found later by colour: colour is styling, and a timeline
+	// can carry more than one event with a validationMs (a late verdict after settle, a redelivered
+	// one). The FIRST is the import window the phases belong to.
+	let importWindow: TimelineRow | null = null;
 	const list = (events || []).filter(Boolean);
 	let totalMs = 0;
 
@@ -285,11 +298,13 @@ export function buildTransferTimeline(
 		const validationMs = positive(event.validationMs);
 		if (validationMs !== null) {
 			const start = at - validationMs;
-			rows.push({
+			const windowRow: TimelineRow = {
 				key: `phase:destimport:${at}`, label: "Destination import", isEvent: false, indent: 1,
 				startMs: start, endMs: at, durationMs: validationMs, color: "destImport", kind: "measured",
 				note: "Controller wall clock: destination accepted the import until its verdict arrived.",
-			});
+			};
+			rows.push(windowRow);
+			if (!importWindow) importWindow = windowRow;
 		}
 
 		// ---- Import phases: tick-derived, nested INSIDE the measured window above. ----
@@ -378,7 +393,6 @@ export function buildTransferTimeline(
 	// phases at its left edge and no statement anywhere that the other 21.5 s has no breakdown.
 	let detailGapMs = 0;
 	let detailGapPct = 0;
-	const importWindow = rows.find(row => row.kind === "measured" && row.color === "destImport");
 	if (importWindow) {
 		// A phase offset is a tick count, so on a short import it can land PAST the measured window it
 		// describes (seen on a 7 ms import whose later phases claim a 16 ms offset — one tick). Drawing

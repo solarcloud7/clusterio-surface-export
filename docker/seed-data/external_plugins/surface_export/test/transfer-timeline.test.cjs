@@ -248,6 +248,31 @@ test("a failed transfer still attributes its time", () => {
 	assert.equal(attribution.attributedMs + attribution.residualMs, attribution.totalMs);
 	assert.ok(rows.some(r => r.isEvent && r.label === "transfer_failed"), "failure markers survive");
 	assert.ok(rows.every(r => r.endMs >= r.startMs), "no inverted span on the rollback path");
+
+	// This fixture's 87% unattributed is CORRECT and should stay. The transfer settled as failed and a
+	// late verdict arrived 35 s later (validation_after_settle); nothing runs in between, so the gap is
+	// genuinely empty time, not missing instrumentation. If a future change starts modelling that
+	// stretch this assertion will fail — the fix is to re-read this comment, not to relax the number.
+	assert.ok(attribution.residualPct > 50,
+		"the post-settle wait for a late verdict is real empty time and must read as unattributed");
+});
+
+test("the detail-gap warning stays quiet on healthy sub-second transfers", () => {
+	// Share alone cries wolf: a same-tick import cannot fill its window because one tick IS the
+	// resolution floor, so tiny transfers report a huge PERCENTAGE over a handful of ms. A warning
+	// that fires on every healthy transfer is one the owner learns to ignore.
+	for (const label of ["tiny-2kb", "omnibus-87kb"]) {
+		const { attribution } = buildTransferTimeline(byLabel(label).events, null);
+		const notice = describeAttribution(attribution);
+		assert.ok(
+			notice === null || !/no phase detail/i.test(notice.headline),
+			`[${label}] warned about a ${Math.round(attribution.detailGapMs)}ms detail gap — `
+			+ "below the floor, this is tick resolution, not a finding",
+		);
+	}
+	// ...and still speaks up on the one that matters.
+	const workhorse = describeAttribution(buildTransferTimeline(byLabel("workhorse-120kb").events, null).attribution);
+	assert.match(workhorse.headline, /no phase detail/i, "a 21.6 s gap must still be reported");
 });
 
 test("an empty timeline is a zero, not a crash", () => {
