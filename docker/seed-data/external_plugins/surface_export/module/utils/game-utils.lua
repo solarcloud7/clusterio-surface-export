@@ -139,10 +139,17 @@ function GameUtils.make_stable_id(entity)
     orientation_part)
 end
 
+local reported_bad_reads = {}
+
 function GameUtils.safe_get(obj, property)
-  -- intentional probe; failure expected (property may not exist / obj invalid), no log
   local ok, val = pcall(function() return obj[property] end)
   if ok then return val end
+  if not reported_bad_reads[property] then
+    reported_bad_reads[property] = true
+    log(string.format("[GameUtils][WARN] safe_get('%s') THREW: %s — a throw means the key does not exist "
+      .. "on this class (a legitimately absent value returns nil without throwing). Reported once per name.",
+      tostring(property), tostring(val)))
+  end
   return nil
 end
 

@@ -1,0 +1,79 @@
+#!/usr/bin/env node
+// extract-factorio-api-index — derive the vendored API-name index from Wube's machine-readable docs.
+// requires: network access to lua-api.factorio.com (run at repin time, not in CI)
+// produces: scripts/factorio-api-index.json — every class's attribute/method names with read/write flags
+// does not: run in CI, validate anything itself (lint-api-names.mjs consumes the output), or shrink
+//          types — names and rw flags only, so the index stays small enough to vendor
+
+import { writeFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+import path from "node:path";
+
+const PIN = process.argv[2];
+if (!PIN) {
+	console.error("usage: node scripts/extract-factorio-api-index.mjs <factorio-version>   e.g. 2.1.11");
+	process.exit(1);
+}
+
+const url = `https://lua-api.factorio.com/${PIN}/runtime-api.json`;
+const response = await fetch(url);
+if (!response.ok) {
+	console.error(`fetch failed: ${response.status} ${response.statusText} for ${url}`);
+	process.exit(1);
+}
+const api = await response.json();
+if (api.application_version !== PIN) {
+	console.error(`refusing: the served document says application_version=${api.application_version}, not ${PIN}`);
+	process.exit(1);
+}
+
+const byName = new Map(api.classes.map(cls => [cls.name, cls]));
+
+function ownMembers(cls) {
+	const members = {};
+	for (const attribute of cls.attributes) {
+		members[attribute.name] = {
+			kind: "attribute",
+			read: Boolean(attribute.read_type),
+			write: Boolean(attribute.write_type),
+		};
+	}
+	for (const method of cls.methods) {
+		members[method.name] = { kind: "method" };
+	}
+	return members;
+}
+
+const classes = {};
+for (const cls of api.classes) {
+	const members = {};
+	let current = cls;
+	const seen = new Set();
+	while (current) {
+		if (seen.has(current.name)) {
+			console.error(`refusing: inheritance cycle at ${current.name}`);
+			process.exit(1);
+		}
+		seen.add(current.name);
+		for (const [name, info] of Object.entries(ownMembers(current))) {
+			if (!(name in members)) {
+				members[name] = current === cls ? info : { ...info, inherited_from: current.name };
+			}
+		}
+		current = current.parent ? byName.get(current.parent) : null;
+	}
+	classes[cls.name] = members;
+}
+
+const index = {
+	source: url,
+	application_version: api.application_version,
+	api_version: api.api_version,
+	classes,
+};
+
+const out = path.join(path.dirname(fileURLToPath(import.meta.url)), "factorio-api-index.json");
+writeFileSync(out, JSON.stringify(index));
+const classCount = Object.keys(classes).length;
+const memberCount = Object.values(classes).reduce((n, m) => n + Object.keys(m).length, 0);
+console.log(`wrote ${out}: ${classCount} classes, ${memberCount} members, pin ${api.application_version}`);
