@@ -51,6 +51,30 @@ local function blueprint_diff_selftest()
 	check("type_scoped_alias_does_not_leak_to_other_types", properties(combinator).control_behavior == true,
 		"a combinator missing control_behavior must still be reported — the display-panel alias must not apply")
 
+	local belt_covered = BlueprintDiff.findings_for(
+		{ name = "underground-belt", type = "output" },
+		{ entity_id = 20, type = "underground-belt", specific_data = { belt_to_ground_type = "output" } },
+		"underground-belt", { x = 0, y = 0 }, 20)
+	check("type_scoped_alias_reads_the_real_key_not_the_colliding_one", #belt_covered == 0,
+		"BeltConnectionType must resolve to belt_to_ground_type, got " .. #belt_covered)
+
+	local belt_missing = BlueprintDiff.findings_for(
+		{ name = "underground-belt", type = "output" },
+		{ entity_id = 21, type = "underground-belt" },
+		"underground-belt", { x = 0, y = 0 }, 21)
+	check("colliding_entity_type_key_does_not_satisfy_BeltConnectionType",
+		properties(belt_missing).type == true,
+		"entity_data.type holds the ENTITY type ('underground-belt'), not the blueprint's "
+		.. "BeltConnectionType ('output') — a payload without belt_to_ground_type must still be reported")
+
+	local loader = BlueprintDiff.findings_for(
+		{ name = "turbo-loader", type = "output" },
+		{ entity_id = 22, type = "loader", specific_data = {} }, "loader", { x = 0, y = 0 }, 22)
+	check("alias_only_field_is_never_satisfied_by_its_own_name",
+		properties(loader).type == true,
+		"a loader has no type-scoped alias and we do not capture loader_type, so BeltConnectionType "
+		.. "must be REPORTED — entity_data.type ('loader') must not silently satisfy it")
+
 	local structural = BlueprintDiff.findings_for(
 		{ name = "steel-chest", position = { x = 1, y = 1 }, direction = 2, entity_number = 7 },
 		{ entity_id = 6 }, "container", { x = 0, y = 0 }, 6)

@@ -5,8 +5,6 @@ BlueprintDiff.STRUCTURAL = {
     name = true,
     position = true,
     direction = true,
-    mirror = true,
-    type = true,
 }
 
 BlueprintDiff.ALIASES = {
@@ -33,6 +31,13 @@ BlueprintDiff.TYPE_ALIASES = {
     ["car"] = {
         driver_is_main_gunner = "driver_is_gunner",
     },
+    ["underground-belt"] = {
+        type = "belt_to_ground_type",
+    },
+}
+
+BlueprintDiff.ALIAS_ONLY = {
+    type = true,
 }
 
 BlueprintDiff.PLATFORM_LEVEL = {
@@ -63,12 +68,15 @@ local function payload_has(entity_data, key)
 end
 
 function BlueprintDiff.covered(entity_data, field, entity_type)
-    if payload_has(entity_data, field) then
-        return true
-    end
     local by_type = entity_type and BlueprintDiff.TYPE_ALIASES[entity_type]
     local scoped = by_type and by_type[field]
-    if scoped ~= nil and payload_has(entity_data, scoped) then
+    if scoped ~= nil then
+        return payload_has(entity_data, scoped)
+    end
+    if BlueprintDiff.ALIAS_ONLY[field] then
+        return false
+    end
+    if payload_has(entity_data, field) then
         return true
     end
     local alias = BlueprintDiff.ALIASES[field]
