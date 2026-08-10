@@ -318,7 +318,7 @@ EntityHandlers["car"] = function(entity)
   
   data.enable_logistics_while_moving = GameUtils.safe_get(entity, "enable_logistics_while_moving")
   
-  data.driver_is_main_gunner = GameUtils.safe_get(entity, "driver_is_main_gunner")
+  data.driver_is_gunner = GameUtils.safe_get(entity, "driver_is_gunner")
   
   -- intentional probe; failure expected, no log
   local gun_success, selected_gun_index = pcall(function() return entity.selected_gun_index end)
@@ -363,7 +363,7 @@ EntityHandlers["spider-vehicle"] = function(entity)
     data.selected_gun_index = selected_gun_index
   end
   
-  data.driver_is_main_gunner = GameUtils.safe_get(entity, "driver_is_main_gunner")
+  data.driver_is_gunner = GameUtils.safe_get(entity, "driver_is_gunner")
   
   data.enable_logistics_while_moving = GameUtils.safe_get(entity, "enable_logistics_while_moving")
   
@@ -668,6 +668,16 @@ EntityHandlers["item-request-proxy"] = function(entity)
   end
   
   return next(data) and data or nil
+end
+
+EntityHandlers["space-platform-hub"] = function(entity)
+  local data = {
+    inventories = InventoryScanner.extract_all_inventories(entity)
+  }
+  data.providing_to_other_platforms = GameUtils.safe_get(entity, "providing_to_other_platforms")
+  data.request_missing_construction_materials = GameUtils.safe_get(entity, "request_missing_construction_materials")
+  data.request_from_buffers = GameUtils.safe_get(entity, "request_from_buffers")
+  return data
 end
 
 EntityHandlers["display-panel"] = function(entity)

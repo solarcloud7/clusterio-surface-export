@@ -23,6 +23,18 @@ BlueprintDiff.ALIASES = {
     items = "inventories",
 }
 
+BlueprintDiff.TYPE_ALIASES = {
+    ["display-panel"] = {
+        control_behavior = "display_panel_messages",
+    },
+    ["spider-vehicle"] = {
+        driver_is_main_gunner = "driver_is_gunner",
+    },
+    ["car"] = {
+        driver_is_main_gunner = "driver_is_gunner",
+    },
+}
+
 BlueprintDiff.PLATFORM_LEVEL = {
     schedule = true,
 }
@@ -50,8 +62,13 @@ local function payload_has(entity_data, key)
     return specific ~= nil and specific[key] ~= nil
 end
 
-function BlueprintDiff.covered(entity_data, field)
+function BlueprintDiff.covered(entity_data, field, entity_type)
     if payload_has(entity_data, field) then
+        return true
+    end
+    local by_type = entity_type and BlueprintDiff.TYPE_ALIASES[entity_type]
+    local scoped = by_type and by_type[field]
+    if scoped ~= nil and payload_has(entity_data, scoped) then
         return true
     end
     local alias = BlueprintDiff.ALIASES[field]
@@ -121,7 +138,7 @@ function BlueprintDiff.scan(surface, force, entities_by_id)
                     and not BlueprintDiff.STRUCTURAL[field]
                     and not BlueprintDiff.PLATFORM_LEVEL[field]
                     and BlueprintDiff.DEFAULT_VALUE[field] ~= value
-                    and not BlueprintDiff.covered(entity_data, field)
+                    and not BlueprintDiff.covered(entity_data, field, world.type)
                 then
                     findings[#findings + 1] = {
                         property = field,
