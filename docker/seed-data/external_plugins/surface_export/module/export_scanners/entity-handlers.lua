@@ -46,6 +46,10 @@ function EntityHandlers.extract_common_state(entity, data)
     data.burner = EntityHandlers.extract_entity_burner(entity)
   end
 
+  if entity.type == "loader" or entity.type == "loader-1x1" then
+    data.loader_type = entity.loader_type
+  end
+
   -- intentional probe; failure expected on entities without an energy buffer, no log
   local energy_ok, energy = pcall(function() return entity.energy end)
   if energy_ok and energy and (entity.type == "accumulator" or energy > 0) then

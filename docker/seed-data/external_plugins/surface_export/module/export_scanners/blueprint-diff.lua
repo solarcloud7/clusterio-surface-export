@@ -34,6 +34,12 @@ BlueprintDiff.TYPE_ALIASES = {
     ["underground-belt"] = {
         type = "belt_to_ground_type",
     },
+    ["loader"] = {
+        type = "loader_type",
+    },
+    ["loader-1x1"] = {
+        type = "loader_type",
+    },
 }
 
 BlueprintDiff.ALIAS_ONLY = {
