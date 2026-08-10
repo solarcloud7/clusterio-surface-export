@@ -11,7 +11,7 @@ const source = fs.readFileSync(handlersPath, "utf8");
 const handlerInventoryOwners = new Set([
 	"assembling-machine", "furnace", "container", "train", "car", "spider-vehicle",
 	"turret", "mining-drill", "lab", "roboport", "artillery-turret", "rocket-silo",
-	"agricultural-tower",
+	"agricultural-tower", "space-platform-hub",
 ]);
 const handlerFluidOwners = new Set([
 	"assembling-machine", "furnace", "fluid-storage", "pipe", "pipe-to-ground", "pump",
@@ -23,7 +23,7 @@ const categories = [
 	"car", "spider-vehicle", "combinator", "turret", "mining-drill", "lab", "roboport",
 	"artillery-turret", "rocket-silo", "gate", "power-switch", "agricultural-tower",
 	"programmable-speaker", "lamp", "display-panel", "entity-ghost", "tile-ghost", "item-request-proxy",
-	"train-stop", "resource",
+	"train-stop", "resource", "space-platform-hub",
 ];
 const specializedFluidCapabilities = new Map([
 	["assembling-machine", { platformReachable: true, evidence: "chemical-plant: 4 fluidboxes, can_place=true" }],
