@@ -1,7 +1,6 @@
 local SurfaceCounter = require("modules/surface_export/validators/surface-counter")
 local Verification = require("modules/surface_export/validators/verification")
 local Util = require("modules/surface_export/utils/util")
-local PropertyProbes = require("modules/surface_export/export_scanners/property-probes")
 
 local CensusAccumulator = {}
 
@@ -117,10 +116,6 @@ function CensusAccumulator.record(acc, entity, entity_data, fluid_state)
     if next(item_delta) ~= nil then
         acc.mismatches[#acc.mismatches + 1] =
             build_row(entity, entity_data, phys_items, ser_items, item_delta)
-    end
-
-    for _, finding in ipairs(PropertyProbes.compare(entity, entity_data) or {}) do
-        acc.property_findings[#acc.property_findings + 1] = finding
     end
 end
 
