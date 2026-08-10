@@ -40,19 +40,6 @@ local function maybe_inject_census_omission(entity_data)
 	end
 end
 
-local function maybe_inject_property_omission(entity_data)
-	local cfg = storage.surface_export_config
-	if not (cfg and cfg.test_force_property_omission) then return end
-	if entity_data and entity_data.infinity_pipe_filter then
-		local dropped = entity_data.infinity_pipe_filter
-		entity_data.infinity_pipe_filter = nil
-		cfg.test_force_property_omission = nil
-		log(string.format(
-			"[PropertyCensus][test hook] test_force_property_omission dropped serialized infinity_pipe_filter '%s' from entity_id=%s",
-			tostring(dropped.name), tostring(entity_data.entity_id)))
-	end
-end
-
 local function sort_entities_for_placement(entities)
 	local function get_priority(entity_or_data)
 		local name = entity_or_data.name or ""
@@ -269,7 +256,6 @@ function ExportPipeline.process_batch(job, get_batch_size, should_show_progress)
 				local entity_data = EntityScanner.serialize_entity(entity)
 				if entity_data then
 					maybe_inject_census_omission(entity_data)
-					maybe_inject_property_omission(entity_data)
 
 					table.insert(job.export_data.entities, entity_data)
 
@@ -571,19 +557,28 @@ function ExportPipeline.run_blueprint_diff(job)
 		end
 	end
 
-	local started = game.tick
 	local result, err = BlueprintDiff.scan(surface, force, by_id)
 	if not result then
-		log(string.format("[BlueprintDiff] scan unavailable for '%s': %s — property diff skipped, transfer unaffected",
+		log(string.format("[BlueprintDiff] status=UNAVAILABLE for '%s': %s — no property comparison was made; "
+			.. "this is NOT a clean bill of health. Transfer unaffected.",
 			tostring(job.platform_name), tostring(err)))
+		job.export_data.blueprint_diff = { status = "UNAVAILABLE", error = tostring(err) }
 		return
 	end
 
 	job.export_data.blueprint_diff = {
+		status = result.status,
 		blueprint_entity_count = result.blueprint_entity_count,
 		unpaired_entity_count = result.unpaired_entity_count,
-		ticks = game.tick - started,
 	}
+	log({ "", string.format("[BlueprintDiff] status=%s '%s': compared %d blueprint entities, %d unpaired, elapsed ",
+		result.status, tostring(job.platform_name), result.blueprint_entity_count, result.unpaired_entity_count),
+		result.profiler })
+	if result.status == "UNKNOWN" then
+		log(string.format("[BlueprintDiff][WARN] status=UNKNOWN for '%s': %d blueprint entities could not be paired "
+			.. "to serialized data, so their properties were compared against NOTHING. Zero findings here does not "
+			.. "mean zero loss.", tostring(job.platform_name), result.unpaired_entity_count))
+	end
 	local verdict = job.census_verdict or {}
 	verdict.property_findings = verdict.property_findings or {}
 	for _, finding in ipairs(result.findings) do

@@ -95,18 +95,37 @@ function BlueprintDiff.bounding_area(entities_by_id)
     return { { min_x - pad, min_y - pad }, { max_x + pad, max_y + pad } }
 end
 
-function BlueprintDiff.scan(surface, force, entities_by_id)
-    local area = BlueprintDiff.bounding_area(entities_by_id)
-    if not area then
-        return nil, "no positioned entities to bound the blueprint area"
+function BlueprintDiff.findings_for(blueprint_entity, entity_data, entity_type, position, unit_number)
+    local findings = {}
+    for field, value in pairs(blueprint_entity) do
+        if value ~= nil
+            and not BlueprintDiff.STRUCTURAL[field]
+            and not BlueprintDiff.PLATFORM_LEVEL[field]
+            and BlueprintDiff.DEFAULT_VALUE[field] ~= value
+            and not BlueprintDiff.covered(entity_data, field, entity_type)
+        then
+            findings[#findings + 1] = {
+                property = field,
+                kind = "not_in_payload",
+                entity_name = blueprint_entity.name,
+                entity_type = entity_type,
+                unit_number = unit_number,
+                position = position,
+                source = "engine_blueprint",
+                engine_value = describe_value(value),
+            }
+        end
     end
+    return findings
+end
 
+local function scan_unprotected(surface, force, entities_by_id, area)
     local inventory = game.create_inventory(1)
-    local stack = inventory[1]
-    stack.set_stack({ name = "blueprint" })
-
-    local ok, mapping = pcall(function()
-        return stack.create_blueprint({
+    local ok, result = pcall(function()
+        local profiler = helpers.create_profiler()
+        local stack = inventory[1]
+        stack.set_stack({ name = "blueprint" })
+        local mapping = stack.create_blueprint({
             surface = surface,
             force = force,
             area = area,
@@ -116,51 +135,55 @@ function BlueprintDiff.scan(surface, force, entities_by_id)
             include_trains = true,
             include_fuel = true,
         })
-    end)
-    if not ok then
-        log(string.format("[BlueprintDiff] create_blueprint failed on '%s': %s", surface.name, tostring(mapping)))
-        inventory.destroy()
-        return nil, tostring(mapping)
-    end
-
-    local blueprint_entities = stack.get_blueprint_entities() or {}
-    local findings = {}
-    local unpaired = 0
-
-    for index, blueprint_entity in ipairs(blueprint_entities) do
-        local world = mapping[index]
-        local entity_data = (world and world.valid and world.unit_number) and entities_by_id[world.unit_number] or nil
-        if not entity_data then
-            unpaired = unpaired + 1
-        else
-            for field, value in pairs(blueprint_entity) do
-                if value ~= nil
-                    and not BlueprintDiff.STRUCTURAL[field]
-                    and not BlueprintDiff.PLATFORM_LEVEL[field]
-                    and BlueprintDiff.DEFAULT_VALUE[field] ~= value
-                    and not BlueprintDiff.covered(entity_data, field, world.type)
-                then
-                    findings[#findings + 1] = {
-                        property = field,
-                        kind = "omitted",
-                        entity_name = blueprint_entity.name,
-                        entity_type = world.type,
-                        unit_number = world.unit_number,
-                        position = { x = world.position.x, y = world.position.y },
-                        source = "engine_blueprint",
-                        live = describe_value(value),
-                    }
+        local blueprint_entities = stack.get_blueprint_entities() or {}
+        local findings = {}
+        local unpaired = 0
+        for index, blueprint_entity in ipairs(blueprint_entities) do
+            local world = mapping[index]
+            local entity_data = (world and world.valid and world.unit_number)
+                and entities_by_id[world.unit_number] or nil
+            if not entity_data then
+                unpaired = unpaired + 1
+            else
+                local rows = BlueprintDiff.findings_for(blueprint_entity, entity_data, world.type,
+                    { x = world.position.x, y = world.position.y }, world.unit_number)
+                for _, row in ipairs(rows) do
+                    findings[#findings + 1] = row
                 end
             end
         end
-    end
-
+        profiler.stop()
+        return {
+            findings = findings,
+            blueprint_entity_count = #blueprint_entities,
+            unpaired_entity_count = unpaired,
+            profiler = profiler,
+        }
+    end)
     inventory.destroy()
-    return {
-        findings = findings,
-        blueprint_entity_count = #blueprint_entities,
-        unpaired_entity_count = unpaired,
-    }
+    return ok, result
+end
+
+function BlueprintDiff.scan(surface, force, entities_by_id)
+    local ok, result = pcall(function()
+        local area = BlueprintDiff.bounding_area(entities_by_id)
+        if not area then
+            return nil
+        end
+        local scanned, scan_result = scan_unprotected(surface, force, entities_by_id, area)
+        if not scanned then
+            error(tostring(scan_result), 0)
+        end
+        scan_result.status = scan_result.unpaired_entity_count > 0 and "UNKNOWN" or "COMPARED"
+        return scan_result
+    end)
+    if not ok then
+        return nil, tostring(result)
+    end
+    if not result then
+        return nil, "no positioned entities to bound the blueprint area"
+    end
+    return result
 end
 
 return BlueprintDiff

@@ -14,6 +14,7 @@ const SELFTESTS = [
 	"no_tick_sync",
 	"hold_aware_unlock",
 	"export_cache",
+	"blueprint_diff",
 ];
 
 const instanceArg = process.argv.indexOf("--instance");

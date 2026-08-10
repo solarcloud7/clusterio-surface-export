@@ -8,7 +8,6 @@ local ALLOWED_HOOKS = {
 	test_force_validation_failure = true,
 	test_force_entity_failure = true,
 	test_force_census_omission = true,
-	test_force_property_omission = true,
 	test_defer_clone_activation = true,
 }
 
