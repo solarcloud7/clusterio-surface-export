@@ -40,6 +40,9 @@ local function configure(config)
   if config.test_force_census_omission ~= nil then
     storage.surface_export_config.test_force_census_omission = config.test_force_census_omission
   end
+  if config.test_force_property_omission ~= nil then
+    storage.surface_export_config.test_force_property_omission = config.test_force_property_omission
+  end
   if config.preserve_failed_destination ~= nil then
     local debug_enabled = config.debug_mode == true or storage.surface_export_config.debug_mode == true
     storage.surface_export_config.preserve_failed_destination = debug_enabled

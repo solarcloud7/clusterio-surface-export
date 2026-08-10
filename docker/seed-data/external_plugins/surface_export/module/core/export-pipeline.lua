@@ -39,6 +39,19 @@ local function maybe_inject_census_omission(entity_data)
 	end
 end
 
+local function maybe_inject_property_omission(entity_data)
+	local cfg = storage.surface_export_config
+	if not (cfg and cfg.test_force_property_omission) then return end
+	if entity_data and entity_data.infinity_pipe_filter then
+		local dropped = entity_data.infinity_pipe_filter
+		entity_data.infinity_pipe_filter = nil
+		cfg.test_force_property_omission = nil
+		log(string.format(
+			"[PropertyCensus][test hook] test_force_property_omission dropped serialized infinity_pipe_filter '%s' from entity_id=%s",
+			tostring(dropped.name), tostring(entity_data.entity_id)))
+	end
+end
+
 local function sort_entities_for_placement(entities)
 	local function get_priority(entity_or_data)
 		local name = entity_or_data.name or ""
@@ -255,6 +268,7 @@ function ExportPipeline.process_batch(job, get_batch_size, should_show_progress)
 				local entity_data = EntityScanner.serialize_entity(entity)
 				if entity_data then
 					maybe_inject_census_omission(entity_data)
+					maybe_inject_property_omission(entity_data)
 
 					table.insert(job.export_data.entities, entity_data)
 
@@ -346,6 +360,7 @@ function ExportPipeline.complete(job)
 	}
 
 	job.census_verdict = CensusAccumulator.verdict(job.census)
+	ExportPipeline.report_property_findings(job)
 	if job.destination_instance_id then
 		if not job.census_verdict.ok then
 			ExportPipeline.abort_transfer_on_census_mismatch(job)
@@ -536,6 +551,34 @@ function ExportPipeline.complete(job)
 	ExportCache.prune_to_configured_cap()
 
 	storage.async_jobs[job.job_id] = nil
+end
+
+function ExportPipeline.report_property_findings(job)
+	local findings = (job.census_verdict or {}).property_findings or {}
+	job.export_data.property_findings = findings
+	if #findings == 0 then
+		return
+	end
+	local by_property = {}
+	for _, finding in ipairs(findings) do
+		local key = finding.property .. ":" .. finding.kind
+		by_property[key] = (by_property[key] or 0) + 1
+	end
+	local parts = {}
+	for key, count in pairs(by_property) do
+		parts[#parts + 1] = key .. "=" .. count
+	end
+	table.sort(parts)
+	log(string.format(
+		"[PropertyCensus][WARN] '%s': %d property finding(s) — %s. The transfer is NOT blocked: "
+		.. "items and fluids are exact, but this entity state did not reach the payload intact.",
+		job.platform_name, #findings, table.concat(parts, " ")))
+	for _, finding in ipairs(findings) do
+		log(string.format("[PropertyCensus][WARN]   %s %s on %s @%s,%s live=%s serialized=%s",
+			finding.kind, finding.property, finding.entity_name,
+			finding.position.x, finding.position.y,
+			tostring(finding.live), tostring(finding.serialized)))
+	end
 end
 
 function ExportPipeline.abort_transfer_on_census_mismatch(job)

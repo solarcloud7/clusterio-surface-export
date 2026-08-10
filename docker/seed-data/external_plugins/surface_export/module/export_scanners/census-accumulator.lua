@@ -1,6 +1,7 @@
 local SurfaceCounter = require("modules/surface_export/validators/surface-counter")
 local Verification = require("modules/surface_export/validators/verification")
 local Util = require("modules/surface_export/utils/util")
+local PropertyProbes = require("modules/surface_export/export_scanners/property-probes")
 
 local CensusAccumulator = {}
 
@@ -74,6 +75,7 @@ function CensusAccumulator.new(fluid_registry)
         physical_fluids = {},
         serialized_fluids = {},
         mismatches = {},
+        property_findings = {},
         entity_count = 0,
         fluid_registry = fluid_registry,
         seen_segment_refs = {},
@@ -116,6 +118,10 @@ function CensusAccumulator.record(acc, entity, entity_data, fluid_state)
         acc.mismatches[#acc.mismatches + 1] =
             build_row(entity, entity_data, phys_items, ser_items, item_delta)
     end
+
+    for _, finding in ipairs(PropertyProbes.compare(entity, entity_data) or {}) do
+        acc.property_findings[#acc.property_findings + 1] = finding
+    end
 end
 
 function CensusAccumulator.verdict(acc)
@@ -131,6 +137,7 @@ function CensusAccumulator.verdict(acc)
     return {
         ok = ok,
         mismatches = acc.mismatches,
+        property_findings = acc.property_findings,
         totals = {
             entity_count = acc.entity_count,
             physical_items = acc.physical_items,
