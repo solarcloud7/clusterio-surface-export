@@ -29,13 +29,11 @@ const sh = (container, script) =>
 const containerStartedMs = (container) => Date.parse(
 	execFileSync("docker", ["inspect", "-f", "{{.State.StartedAt}}", container], { encoding: "utf8" }).trim());
 
-/** Newest mtime (ms) under `dir` matching `find` predicates, or null when nothing matches. */
 function newestMs(container, dir, predicate) {
 	const out = sh(container, `find ${dir} ${predicate} -type f -printf '%T@\\n' 2>/dev/null | sort -rn | head -1`).trim();
 	return out ? Math.round(parseFloat(out) * 1000) : null;
 }
 
-/** Instance session start, from the log banner Factorio writes on boot. */
 function instanceStartedMs(container, instance) {
 	const line = sh(container, `head -1 /clusterio/data/instances/${instance}/factorio-current.log 2>/dev/null`).trim();
 	const stamp = line.match(/(\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2})/)?.[1];
@@ -48,17 +46,11 @@ const age = ms => {
 	return h >= 1 ? `${h.toFixed(1)}h` : `${Math.round(ms / 60_000)}m`;
 };
 
-/**
- * A layer is STALE when disk moved after the layer loaded it. An unreadable timestamp is UNKNOWN,
- * never FRESH — a probe that could not measure is not evidence of freshness, and both callers
- * treat UNKNOWN as a failure.
- */
 export function driftStatus(loadedMs, diskMs) {
 	if (!Number.isFinite(loadedMs) || !Number.isFinite(diskMs)) { return "UNKNOWN"; }
 	return diskMs > loadedMs ? "STALE" : "FRESH";
 }
 
-// Importing this module (the unit test does) must not shell out to docker.
 if (process.argv[1] && process.argv[1].endsWith("check-cluster-drift.mjs")) { main(); }
 
 function main() {
@@ -67,7 +59,6 @@ const add = (layer, loadedMs, diskMs, fix, note) => {
 	rows.push({ layer, status: driftStatus(loadedMs, diskMs), loadedMs, diskMs, fix, note });
 };
 
-// --- Lua: save-patched into each instance at its start -------------------------------------
 for (const host of HOSTS) {
 	const instances = sh(host, "ls /clusterio/data/instances 2>/dev/null").trim().split("\n").filter(Boolean);
 	for (const instance of instances) {
@@ -81,7 +72,6 @@ for (const host of HOSTS) {
 	}
 }
 
-// --- node: dist/node, required when the host loads the plugin ------------------------------
 for (const host of HOSTS) {
 	add(
 		`node ${host}`,
@@ -92,7 +82,6 @@ for (const host of HOSTS) {
 	);
 }
 
-// --- web: dist/web, served and manifest-cached by the controller ----------------------------
 add(
 	"web  controller",
 	containerStartedMs(CONTROLLER),
