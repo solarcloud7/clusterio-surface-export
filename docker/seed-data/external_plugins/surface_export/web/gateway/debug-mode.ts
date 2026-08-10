@@ -144,13 +144,14 @@ export const SHIP_PHASE_NAMES = [
 	"cleanup_failed",
 ] as const;
 
-export function mockShips(instanceIds: readonly number[], phases: readonly string[]): ShipTransfer[] {
-	if (instanceIds.length < 2) {
+export type MockShipRoute = readonly [number, number];
+
+export function mockShips(routes: readonly MockShipRoute[], phases: readonly string[]): ShipTransfer[] {
+	if (!routes.length) {
 		return [];
 	}
 	return phases.map((status, index) => {
-		const sourceInstanceId = instanceIds[(index * 2) % instanceIds.length];
-		const targetInstanceId = instanceIds[(index * 2 + 1) % instanceIds.length];
+		const [sourceInstanceId, targetInstanceId] = routes[index % routes.length];
 		return {
 			transferId: `${MOCK_SHIP_PREFIX}${status}`,
 			operationType: "transfer" as const,

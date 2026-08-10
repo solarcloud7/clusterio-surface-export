@@ -1,46 +1,9 @@
 import type { TransferSummary } from "../view-models";
+import { shipPhaseFor } from "../../shared/transfer-status";
+import type { ShipTone } from "../../shared/transfer-status";
 
-export type ShipTone = "active" | "holding" | "success" | "failure";
-
-export interface ShipPhase {
-	distance: number;
-	holding: boolean;
-	opening: boolean;
-	terminal: boolean;
-	tone: ShipTone;
-	label: string;
-}
-
-const PHASES: Record<string, ShipPhase> = {
-	transporting: {
-		distance: 0.5, holding: false, opening: true, terminal: false,
-		tone: "active", label: "in transit",
-	},
-	awaiting_validation: {
-		distance: 0.5, holding: true, opening: false, terminal: false,
-		tone: "holding", label: "validating",
-	},
-	completed: {
-		distance: 1, holding: false, opening: false, terminal: true,
-		tone: "success", label: "arrived",
-	},
-	failed: {
-		distance: 0, holding: false, opening: false, terminal: true,
-		tone: "failure", label: "failed — returned",
-	},
-	error: {
-		distance: 0, holding: false, opening: false, terminal: true,
-		tone: "failure", label: "timed out — returned",
-	},
-	cleanup_failed: {
-		distance: 1, holding: false, opening: false, terminal: true,
-		tone: "failure", label: "arrived — cleanup failed",
-	},
-};
-
-export function shipPhaseFor(status: string | null | undefined): ShipPhase | null {
-	return (status && PHASES[status]) || null;
-}
+export { groupEdgeShips, shipPhaseFor } from "../../shared/transfer-status";
+export type { EdgeShipGroups, EdgeStatusMarker, ShipPhase, ShipTone } from "../../shared/transfer-status";
 
 const LEGEND_LABELS: Record<ShipTone, string> = {
 	active: "in transit",
@@ -52,7 +15,7 @@ const LEGEND_LABELS: Record<ShipTone, string> = {
 export const SHIP_LEGEND: Array<{ tone: ShipTone; label: string }> =
 	(Object.keys(LEGEND_LABELS) as ShipTone[]).map(tone => ({ tone, label: LEGEND_LABELS[tone] }));
 
-export const TERMINAL_LINGER_MS = 6000;
+export const TERMINAL_LINGER_MS = 10000;
 
 export const SHIP_TRAVEL_MS = 900;
 

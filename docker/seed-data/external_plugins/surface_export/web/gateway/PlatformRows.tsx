@@ -3,7 +3,7 @@ import { Handle, Position } from "@xyflow/react";
 import { Button, Tag, Tooltip, Typography } from "antd";
 import { CaretRightOutlined, DownloadOutlined } from "@ant-design/icons";
 
-import { PLATFORM_LIST_MAX_ROWS, platformHandleId } from "./gateway-graph";
+import { platformHandleId } from "./gateway-graph";
 import type { PlatformLike } from "./gateway-graph";
 import { isMockInstanceId } from "./debug-mode";
 import { platformActionKey, useNodeActions } from "./node-actions";
@@ -96,12 +96,9 @@ export default function PlatformRows({ platforms, instanceId, instanceName, canE
 		);
 	}
 
-	const shown = platforms.slice(0, PLATFORM_LIST_MAX_ROWS);
-	const hidden = platforms.length - shown.length;
-
 	return (
 		<div className="surface-export-platform-list nodrag nopan" {...holdProps}>
-			{shown.map(platform => (
+			{platforms.map(platform => (
 				<PlatformRow
 					key={platformActionKey(instanceId, platform.platformIndex)}
 					platform={platform}
@@ -110,14 +107,6 @@ export default function PlatformRows({ platforms, instanceId, instanceName, canE
 					canEdit={canEdit}
 				/>
 			))}
-			{}
-			{hidden > 0 ? (
-				<div className="surface-export-platform-node-row surface-export-platform-node-more">
-					<Text type="secondary" style={{ fontSize: 11 }}>
-						+{hidden} more — see Manual Transfer
-					</Text>
-				</div>
-			) : null}
 		</div>
 	);
 }

@@ -373,8 +373,8 @@ A transfer combines an export and an import. It is driven by the controller's
 controller for `TransferPlatformRequest`, `StartPlatformTransferRequest`, and
 `TransferValidationEvent`.
 
-1. **Start.** `StartPlatformTransferRequest` (from the UI — `web/ManualTransferTab.tsx`
-   `submitTransfer()` → `SurfaceExportPlugin.startTransfer` in `web/index.tsx`) or
+1. **Start.** `StartPlatformTransferRequest` (from the UI — `web/TransferModal.tsx`
+   `handleSubmit()` → `SurfaceExportPlugin.startTransfer` in `web/index.tsx`) or
    `TransferPlatformRequest` (from an instance whose export carried a
    `destination_instance_id`) opens a transfer operation on the controller.
 2. **Export.** The source platform is exported and locked (see

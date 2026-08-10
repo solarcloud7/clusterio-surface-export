@@ -110,9 +110,6 @@ try {
 		await page.waitForTimeout(500);
 	};
 
-	// A fresh cluster has no saved gateway link, so the subject is staged here rather than assumed.
-	// Staged and saved links are both real edges on the canvas and both route through onEdgeClick,
-	// which is what this test is about.
 	if (!await edges.count()) {
 		const nodeCount = await nodes.count();
 		if (nodeCount < 2) {
@@ -135,9 +132,6 @@ try {
 		throw new Error("could not obtain a gateway edge — neither configured nor stageable");
 	}
 
-	// Markers render once into a shared <defs> and edges reference them by url(#id), so the first
-	// marker in the document need not belong to the first edge — with two links on different
-	// gateways that pairing is simply wrong.
 	const colours = await page.evaluate(() => {
 		const path = document.querySelector(".react-flow__edge-path");
 		const ref = path?.getAttribute("marker-end") || path?.getAttribute("marker-start");
@@ -160,8 +154,34 @@ try {
 		`edge ${colours.edge}, arrow ${colours.arrow}`,
 	);
 
-	// The panel text is the observable, whichever way it moves: disconnecting a SAVED link adds
-	// pending changes, disconnecting a STAGED one removes them. Both are "the click did something".
+	const drawnShips = () => page.evaluate(() => ({
+		markers: document.querySelectorAll(".surface-export-edge-status").length,
+		moving: [...document.querySelectorAll(".surface-export-ship")]
+			.filter(el => el.style.visibility !== "hidden").length,
+	}));
+	const beforeShips = await drawnShips();
+	await page.evaluate(() => window.surfaceExportCanvas?.ships?.());
+	await page.waitForTimeout(1500);
+	const afterShips = await drawnShips();
+	check(
+		afterShips.markers + afterShips.moving > beforeShips.markers + beforeShips.moving,
+		"ships() actually drew transfers (control arm)",
+		`before ${JSON.stringify(beforeShips)}, after ${JSON.stringify(afterShips)} — with nothing `
+		+ "drawn the marker check below measures an empty canvas",
+	);
+	check(
+		afterShips.markers >= 3,
+		"a busy edge shows one marker per phase, not one per transfer",
+		`markers: ${afterShips.markers}`,
+	);
+	const strokes = await page.evaluate(() => [...document.querySelectorAll(".react-flow__edge-path")]
+		.map(p => getComputedStyle(p).stroke));
+	check(
+		strokes.length > 0 && !strokes.includes(FALLBACK_BLUE),
+		`no edge falls back to DEFAULT_EDGE_COLOUR ${FALLBACK_BLUE} once ship edges are drawn`,
+		`strokes: ${[...new Set(strokes)].join(", ")}`,
+	);
+
 	const baseline = await panelText();
 
 	await lock.click();
@@ -176,15 +196,13 @@ try {
 		`panel went from "${baseline}" to "${whileLocked}"`,
 	);
 
-	// Control arm. Without it the check above would pass just as well on a canvas where clicking an
-	// edge never does anything. Locked runs first so the edge still exists for this step.
 	await lock.click();
 	await page.waitForTimeout(300);
 	await clickEdge();
 	const whileUnlocked = await panelText();
 	check(
 		whileUnlocked !== baseline,
-		"the same click UNLOCKED does change the staged state",
+		"the same click UNLOCKED does change the staged state (control arm for the locked check)",
 		`panel still reads "${whileUnlocked}"`,
 	);
 
@@ -195,23 +213,6 @@ try {
 	}
 	check(!/unsaved change/.test(await panelText()), "nothing was left staged, nothing saved");
 
-	const edgesBeforeShips = await edges.count();
-	await page.evaluate(() => window.surfaceExportCanvas?.ships?.());
-	await page.waitForTimeout(1200);
-	const edgesAfterShips = await edges.count();
-	check(
-		edgesAfterShips > edgesBeforeShips,
-		"ships() actually drew ship edges (control arm)",
-		`${edgesBeforeShips} edges before, ${edgesAfterShips} after — with no new edge the colour `
-		+ "check below measures the same set that already existed",
-	);
-	const strokes = await page.evaluate(() => [...document.querySelectorAll(".react-flow__edge-path")]
-		.map(p => getComputedStyle(p).stroke));
-	check(
-		strokes.length > 0 && !strokes.includes(FALLBACK_BLUE),
-		`no edge falls back to DEFAULT_EDGE_COLOUR ${FALLBACK_BLUE} once ship edges are drawn`,
-		`strokes: ${[...new Set(strokes)].join(", ")}`,
-	);
 } catch (err) {
 	console.log(`  FAIL harness error — ${err && err.message ? err.message : err}`);
 	failed += 1;

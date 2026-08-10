@@ -47,6 +47,30 @@ export function saveLayout(nodes: readonly LayoutNode[]): void {
 	}
 }
 
+export const EDGE_SHAPES = ["bezier", "smoothstep", "step", "straight"] as const;
+export type EdgeShape = typeof EDGE_SHAPES[number];
+export const DEFAULT_EDGE_SHAPE: EdgeShape = "bezier";
+
+const EDGE_SHAPE_KEY = "surface_export.gateway_edge_shape.v1";
+
+export function loadEdgeShape(): EdgeShape {
+	try {
+		const raw = window.localStorage.getItem(EDGE_SHAPE_KEY);
+		return EDGE_SHAPES.includes(raw as EdgeShape) ? raw as EdgeShape : DEFAULT_EDGE_SHAPE;
+	} catch (err: unknown) {
+		console.warn("surface_export: could not read the saved edge shape; using the default one", err);
+		return DEFAULT_EDGE_SHAPE;
+	}
+}
+
+export function saveEdgeShape(shape: EdgeShape): void {
+	try {
+		window.localStorage.setItem(EDGE_SHAPE_KEY, shape);
+	} catch (err: unknown) {
+		console.warn("surface_export: could not save the edge shape; it will reset on reload", err);
+	}
+}
+
 export function clearLayout(): void {
 	try {
 		window.localStorage.removeItem(STORAGE_KEY);

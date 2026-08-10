@@ -3,11 +3,6 @@ body.surface-export-page .site-layout-content-container {
 	background: #141414;
 }
 
-.surface-export-tab-body {
-	display: block;
-	min-width: 0;
-}
-
 .surface-export-canvas {
 	width: 100%;
 	height: calc(100vh - 380px);
@@ -44,6 +39,39 @@ body.surface-export-page .site-layout-content-container {
 	pointer-events: none;
 	transition-property: offset-distance;
 	transition-timing-function: ease-in-out;
+}
+
+.surface-export-edge-status {
+	position: absolute;
+	top: 0;
+	left: 0;
+	min-width: 16px;
+	height: 16px;
+	padding: 0 3px;
+	box-sizing: border-box;
+	border-radius: 8px;
+	border: 2px solid rgba(10, 10, 10, 0.9);
+	background: currentColor;
+	box-shadow: 0 0 8px currentColor;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	pointer-events: auto;
+	cursor: default;
+	animation: surface-export-status-fade 10s ease-out forwards;
+}
+
+.surface-export-edge-status-count {
+	font-size: 10px;
+	line-height: 1;
+	font-weight: 700;
+	color: #0a0a0a;
+	font-variant-numeric: tabular-nums;
+}
+
+@keyframes surface-export-status-fade {
+	0%, 80% { opacity: 1; }
+	100% { opacity: 0; }
 }
 
 .surface-export-ship-active { color: #1668dc; }
@@ -272,12 +300,6 @@ body.surface-export-page .site-layout-content-container {
 	margin-inline-end: 0;
 }
 
-.surface-export-platform-node-more {
-	justify-content: center;
-	opacity: 0.7;
-	padding-right: 0;
-}
-
 .surface-export-platform-handle {
 	position: absolute;
 	inset: auto;
@@ -416,6 +438,50 @@ body.surface-export-page .site-layout-content-container {
 	transform: translateX(-50%);
 }
 
+/* React Flow v12 puts these on the handle UNPREFIXED — connectingfrom / connectingto / valid.
+   The v11 names (react-flow__handle-connecting) match nothing here. */
+.react-flow__handle.connectingto {
+	box-shadow: 0 0 0 3px rgba(220, 68, 70, 0.55);
+	border-color: #dc4446 !important;
+}
+
+.react-flow__handle.connectingto.valid {
+	box-shadow: 0 0 0 3px rgba(82, 196, 26, 0.55);
+	border-color: #52c41a !important;
+}
+
+.surface-export-gw-cover.connectingto {
+	opacity: 1;
+	border-radius: 50%;
+	background: rgba(220, 68, 70, 0.22);
+	border: 2px solid #dc4446;
+}
+
+.surface-export-gw-cover.connectingto.valid {
+	background: rgba(82, 196, 26, 0.22);
+	border-color: #52c41a;
+}
+
+.surface-export-gw-cover.connectingfrom {
+	opacity: 1;
+	border-radius: 50%;
+	background: rgba(255, 255, 255, 0.08);
+}
+
+.react-flow__node-instance.selected .surface-export-instance-face {
+	filter: drop-shadow(0 0 10px rgba(82, 196, 26, 0.95));
+}
+
+.react-flow__node-instance.selected .surface-export-instance-node-name {
+	color: #52c41a;
+}
+
+.surface-export-select-hint {
+	font-size: 11px;
+	color: rgba(255, 255, 255, 0.55);
+	white-space: nowrap;
+}
+
 .surface-export-gw-idle {
 	opacity: 0.35;
 	filter: grayscale(1);
@@ -443,39 +509,6 @@ body.surface-export-page .site-layout-content-container {
 	background: rgba(24, 144, 255, 0.12) !important;
 }
 
-.surface-export-instance-header {
-	display: flex;
-	align-items: center;
-	gap: 6px;
-	padding: 4px 12px;
-	border-bottom: 1px solid #f0f0f0;
-}
-
-.surface-export-platform-row {
-	display: flex;
-	align-items: center;
-	gap: 8px;
-	padding: 6px 12px 6px 24px;
-	border-bottom: 1px solid #f0f0f0;
-	transition: background 0.15s;
-}
-
-.surface-export-platform-row:last-child {
-	border-bottom: none;
-}
-
-.surface-export-platform-row:hover {
-	background: rgba(0, 0, 0, 0.02);
-}
-
-.surface-export-platform-row-name {
-	flex: 1 1 auto;
-	min-width: 0;
-	display: flex;
-	align-items: center;
-	gap: 6px;
-}
-
 .surface-export-icon-placeholder {
 	display: inline-block;
 	width: 20px;
@@ -483,21 +516,6 @@ body.surface-export-page .site-layout-content-container {
 	flex-shrink: 0;
 }
 
-.surface-export-platform-row-status {
-	flex: 0 1 auto;
-	display: flex;
-	align-items: center;
-	gap: 6px;
-	margin-left: auto;
-	padding-right: 8px;
-}
-
-.surface-export-platform-row-actions {
-	flex-shrink: 0;
-	display: flex;
-	align-items: center;
-	gap: 6px;
-}
 .surface-export-summary-platform-title {
 	font-size: 18px;
 	font-weight: 700;
