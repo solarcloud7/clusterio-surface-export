@@ -75,7 +75,7 @@ export function groupEdgeShips<T extends PositionedTransfer>(
 			continue;
 		}
 		const distance = isReversed(ship) ? 1 - phase.distance : phase.distance;
-		const key = `${phase.tone}@${distance}`;
+		const key = `${ship.status}@${distance}`;
 		const marker = byPosition.get(key);
 		if (marker) {
 			marker.count += 1;

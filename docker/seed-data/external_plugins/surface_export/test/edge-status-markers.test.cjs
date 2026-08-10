@@ -74,6 +74,22 @@ test("a failure that returned and one that arrived are separate markers, both re
 	assert.deepEqual(markers.map(m => m.distance).sort(), [0, 1]);
 });
 
+test("two failure kinds at the same spot stay separate, each keeping its own words", () => {
+	const { markers } = groupEdgeShips([
+		ship("a", "failed", 1, "alpha"),
+		ship("b", "error", 1, "beta"),
+	], forward);
+
+	assert.equal(markers.length, 2,
+		"failed and error are both tone 'failure' at distance 0 — keying on tone+distance merged them");
+	const labels = markers.map(m => m.label).sort();
+	assert.deepEqual(labels, ["failed — returned", "timed out — returned"],
+		"a timeout must not be reported as a plain failure, or the reverse");
+	for (const marker of markers) {
+		assert.equal(marker.count, 1, "neither may absorb the other's transfer into its count");
+	}
+});
+
 test("a transfer running against the edge's orientation is mirrored", () => {
 	const reversed = () => true;
 	const { markers } = groupEdgeShips([ship("a", "completed", 2)], reversed);
