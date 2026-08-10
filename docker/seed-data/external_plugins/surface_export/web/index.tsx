@@ -6,16 +6,17 @@ import {
 	ControlContext,
 	PageHeader,
 	PageLayout,
-	notifyErrorHandler,
 } from "@clusterio/web_ui";
 import * as messageDefs from "../messages";
 import TransactionLogsTab from "./TransactionLogsTab";
 import GatewayCanvas from "./gateway/GatewayCanvas";
 import ImportModal from "./ImportModal";
-import type { JsonObject, LiveStatus, LogEvent, SurfaceExportPlugin, SurfaceExportState } from "./view-models";
+import type { JsonObject, LogEvent, SurfaceExportPlugin, SurfaceExportState } from "./view-models";
 
 import { summaryFromTransferInfo, mergeTransferSummary, getErrorMessage, getProp } from "./utils";
 import { decideSnapshot, entriesChangedSince, freshRevisionWatermarks, isFreshRevision } from "../shared/revision-gate";
+import { nextLiveStatus, resubscribeDelayMs, shouldRetryResubscribe } from "../shared/live-status";
+import type { ConnectionEvent, LiveStatus, SyncOutcome } from "../shared/live-status";
 import "./style.css";
 
 const {
@@ -60,9 +61,6 @@ function useSurfaceExportState(plugin: SurfaceExportPlugin) {
 
 	return state;
 }
-
-const RESUBSCRIBE_BASE_DELAY_MS = 1000;
-const RESUBSCRIBE_MAX_DELAY_MS = 30000;
 
 const LIVE_STATUS_DISPLAY: Record<LiveStatus, { status: "success" | "processing" | "default" | "warning"; text: string; hint: string }> = {
 	live: { status: "success", text: "live", hint: "Subscribed — the page updates on its own." },
@@ -147,6 +145,7 @@ export class WebPlugin extends BaseWebPlugin {
 	private liveUpdatesEnabled: boolean;
 	private state: SurfaceExportState;
 	private resubscribeTimer: number | null = null;
+	private lastConnectionEvent: ConnectionEvent | null = null;
 
 	constructor(container: unknown, packageData: JsonObject, info: JsonObject, control: ControlLike, logger: unknown) {
 		// eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -183,7 +182,8 @@ export class WebPlugin extends BaseWebPlugin {
 		this.link.handle(SurfaceExportLogUpdateEvent, payload => this.handleLogUpdate(payload as JsonObject));
 	}
 
-	onControllerConnectionEvent(event: "connect" | "drop" | "resume" | "close") {
+	onControllerConnectionEvent(event: ConnectionEvent) {
+		this.lastConnectionEvent = event;
 		if (event === "connect") {
 			this.setState(freshRevisionWatermarks());
 		}
@@ -192,10 +192,7 @@ export class WebPlugin extends BaseWebPlugin {
 			return;
 		}
 		this.clearResubscribeTimer();
-		this.setState({
-			liveStatus: event === "drop" ? "reconnecting" : "offline",
-			liveError: null,
-		});
+		this.applyLiveStatus(null, null);
 	}
 
 	private clearResubscribeTimer() {
@@ -205,18 +202,36 @@ export class WebPlugin extends BaseWebPlugin {
 		}
 	}
 
+	applyLiveStatus(outcome: SyncOutcome | null, error: string | null) {
+		const status = nextLiveStatus({
+			previous: this.state.liveStatus,
+			connected: this.link.connector.connected,
+			lastEvent: this.lastConnectionEvent,
+			outcome,
+		});
+		this.setState({ liveStatus: status, liveError: error });
+		return status;
+	}
+
+	syncAndReport(): Promise<SyncOutcome | null> {
+		return this.syncLiveState().then(
+			outcome => { this.applyLiveStatus(outcome, null); return outcome; },
+			(err: unknown) => {
+				const message = getErrorMessage(err, "live subscription failed");
+				this.applyLiveStatus("failed", message);
+				console.warn(`Surface Export live updates: ${message}`);
+				return null;
+			},
+		);
+	}
+
 	resubscribeUntilLive(attempt = 0) {
 		this.clearResubscribeTimer();
-		this.syncLiveState().then(() => {
-			this.setState({ liveStatus: "live", liveError: null });
-		}, (err: unknown) => {
-			const message = getErrorMessage(err, "resubscribe failed");
-			this.setState({ liveStatus: "degraded", liveError: message });
-			if (!this.link.connector.connected) {
+		this.syncAndReport().then(() => {
+			if (!shouldRetryResubscribe(this.state.liveStatus, this.link.connector.connected)) {
 				return;
 			}
-			const delayMs = Math.min(RESUBSCRIBE_MAX_DELAY_MS, RESUBSCRIBE_BASE_DELAY_MS * 2 ** attempt);
-			console.warn(`Surface Export live updates degraded (attempt ${attempt + 1}), retrying in ${delayMs}ms: ${message}`);
+			const delayMs = resubscribeDelayMs(attempt);
 			this.resubscribeTimer = setTimeout(() => {
 				this.resubscribeTimer = null;
 				this.resubscribeUntilLive(attempt + 1);
@@ -237,7 +252,7 @@ export class WebPlugin extends BaseWebPlugin {
 
 	onUpdate(callback: () => void) {
 		this.callbacks.push(callback);
-		this.syncLiveState().catch(notifyErrorHandler("Failed to start Surface Export live updates"));
+		this.syncAndReport();
 	}
 
 	offUpdate(callback: () => void) {
@@ -245,14 +260,14 @@ export class WebPlugin extends BaseWebPlugin {
 		if (index !== -1) {
 			this.callbacks.splice(index, 1);
 		}
-		this.syncLiveState().catch(notifyErrorHandler("Failed to update Surface Export subscription"));
+		this.syncAndReport();
 	}
 
-	async syncLiveState() {
+	async syncLiveState(): Promise<SyncOutcome> {
 		const shouldEnable = this.callbacks.length > 0;
 		if (!this.link.connector.connected) {
 			this.liveUpdatesEnabled = shouldEnable;
-			return;
+			return "skipped";
 		}
 		const trySubscribe = (logs: boolean) => this.link.send(new SetSurfaceExportSubscriptionRequest({
 			tree: shouldEnable,
@@ -276,7 +291,9 @@ export class WebPlugin extends BaseWebPlugin {
 		this.liveUpdatesEnabled = shouldEnable;
 		if (shouldEnable) {
 			await this.refreshSnapshots();
+			return "subscribed";
 		}
+		return "unsubscribed";
 	}
 
 	async refreshSnapshots() {
