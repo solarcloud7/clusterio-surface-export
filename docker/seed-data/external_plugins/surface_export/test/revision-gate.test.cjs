@@ -119,8 +119,15 @@ test("only a fresh connect clears the watermarks, and it clears them before resu
 	);
 	assert.match(
 		webIndex,
-		/freshRevisionWatermarks\(\)\);[\s\S]{0,200}?this\.syncLiveState\(\)/,
+		/freshRevisionWatermarks\(\)\);[\s\S]{0,200}?this\.resubscribeUntilLive\(\)/,
 		"the watermarks must be cleared before the resubscribe",
+	);
+	assert.match(
+		webIndex,
+		/resubscribeUntilLive\([^)]*\)\s*\{[\s\S]{0,240}?this\.syncAndReport\(\)/,
+		"resubscribeUntilLive is the only route from connect to the subscription, so it must reach "
+		+ "syncAndReport — without this the ordering assertion above would pass while nothing resubscribed "
+		+ "at all. syncAndReport's own link to syncLiveState is pinned in live-status.test.cjs.",
 	);
 	assert.equal(
 		(webIndex.match(/freshRevisionWatermarks\(/g) || []).length,
