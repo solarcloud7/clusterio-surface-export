@@ -309,8 +309,6 @@ export const INSTANCE_GAP = 70;
 export const COLUMN_GAP = 90;
 
 
-export const PLATFORM_LIST_MAX_ROWS = 6;
-
 export const DIMMED_OPACITY = 0.12;
 
 export interface GraphNodeModel {

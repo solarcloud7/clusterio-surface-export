@@ -497,7 +497,7 @@ docker exec surface-export-host-2 sh -c 'ls -t /clusterio/data/instances/cluster
 ./tools/clusterio/rcon.ps1 21 "/plugin-import-file <filename> <new_platform_name>"
 ```
 
-Or use the **web UI** (§11) → Manual Transfer per-platform **Export JSON**, or the global **Import JSON** button.
+Or use the **web UI** (§11) → the Gateways canvas: per-platform **Export JSON**, or the **Import** button.
 
 ### 7. Gateway transfer (Phase 1a)
 
@@ -565,42 +565,39 @@ Log homes (see [CLAUDE.md](../CLAUDE.md) "Observability"): controller `/clusteri
 ### 11. Web UI walkthrough (per-feature checklist)
 
 Open `http://localhost:8080` → **Surface Export** in the sidebar (auth: `./tools/clusterio/get-admin-token.ps1` copies a
-login token). The page has three tabs — **Manual Transfer**, **Transaction Logs**, **Gateways** — plus an
-**Import JSON** button (top-right, shown **only on the Manual Transfer tab**) and a live WebSocket feed (no
-manual refresh needed). Tick each feature:
+login token). The page has two tabs — **Transaction Logs** and **Gateways** — and a live WebSocket feed (no
+manual refresh needed). Export and import live on the Gateways canvas: per-platform **Export JSON** in an
+instance's platform list, and the top-left **Import** button. Tick each feature:
 
 #### 11.1 Page shell & live updates
 - [ ] Page loads; the plugin **version** shows under the title; the **Surface Export** sidebar entry is present.
-- [ ] All three tabs render. Switching tabs updates the URL (`?tab=manual` / `?tab=logs` / `?tab=gateways`);
-      pasting `…/surface-export?tab=logs` opens straight to that tab.
-- [ ] **Live**: start a transfer from RCON/CLI and watch the Manual Transfer tree **and** the Logs tab update on
+- [ ] Both tabs render. Switching tabs updates the URL (`?tab=logs` / `?tab=gateways`); pasting
+      `…/surface-export?tab=logs` opens straight to that tab, and an unknown `?tab=` lands on Gateways.
+- [ ] **Live**: start a transfer from RCON/CLI and watch the Gateways canvas **and** the Logs tab update on
       their own, with no page reload (WebSocket subscription).
 - [ ] **Permissions**: a user without the log-view permission sees the **Transaction Logs** tab hidden and the
       page still loads (the subscription downgrades gracefully — no error toast).
 
-#### 11.2 Manual Transfer tab — platform tree (left panel)
-- [ ] Tree is grouped **Host → Instance → platform**. A connected host shows a **blue** tag, a disconnected one a
-      grey tag; an instance that failed to list platforms shows an **error** tag.
-- [ ] Only platforms with a space hub appear. Each row shows the platform **name** with its unique **`#index`**
-      (disambiguates same-named platforms — two `test`s are distinguishable), its **location** (a space
-      body, `→ <target> (ETA ~N min)` while flying, or *in transit*) with a **planet icon**, and an **orange
-      "locked" tag** when the platform is locked (e.g. mid-transfer).
-- [ ] Click a row → it highlights as the selected **source**.
+#### 11.2 Gateways canvas — platform list
+- [ ] Clicking or hovering an instance opens its platform list; it auto-hides a few seconds after release.
+- [ ] Only platforms with a space hub appear, and **every** one is listed — there is no row cap and no
+      "+N more" row.
+- [ ] Each row shows the platform **name**, its **location** (a space body, `→ <target> (ETA ~N min)` while
+      flying, or *in transit*) with a **planet icon**, and an **orange "locked" tag** when the platform is
+      locked (e.g. mid-transfer).
 - [ ] **Export JSON** (download icon on each row) → a `<platform>_<timestamp>.json` file downloads and a success
       toast shows the export id. Source is **not** deleted (export-only).
 
-#### 11.3 Manual Transfer tab — transfer panel (right panel)
-- [ ] With no source selected, the card shows a "Select a source platform" warning and both the destination
-      picker and **Start Transfer** are disabled.
-- [ ] Select a source → the card shows a source info alert; the **destination instance** dropdown lists every
-      instance **except the source's own**.
+#### 11.3 Gateways canvas — starting a transfer
+- [ ] Drag a platform row's handle onto another instance's gateway → the Transfer dialog opens with that
+      instance **preselected**. Clicking the handle instead opens the dialog with no destination chosen.
+- [ ] The **destination instance** dropdown lists every instance **except the source's own**.
 - [ ] Pick a destination → **Start Transfer** enables. Click it → success toast with a transfer id (or an error
       toast on rejection); the new operation appears in **Transaction Logs**.
+- [ ] A platform drag stages **no** gateway config change (the Save panel stays clean).
 
-#### 11.4 Import JSON (Manual Transfer tab only)
-- [ ] The **Import JSON** button appears **only** on the Manual Transfer tab — it is **absent** on Transaction
-      Logs and Gateways (it lives in the tab bar, gated to the active tab).
-- [ ] Click **Import JSON** (top-right). Choose a `.json` export file → a green "JSON parsed" alert shows the
+#### 11.4 Import
+- [ ] Click **Import** (Gateways canvas, top-left). Choose a `.json` export file → a green "JSON parsed" alert shows the
       file's `platform_name` (or warns if it's missing); a malformed file shows a red parse-error alert.
 - [ ] Fields: **Target instance** (required), **destination planet** (optional — aquilo/fulgora/gleba/nauvis/
       vulcanus, with icons, clearable), **force name** (default `player`), optional **platform-name override**.

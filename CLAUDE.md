@@ -193,7 +193,7 @@ node tools/tests/testkit/cli.mjs log dump 2 'debug_import_result_*.json' --field
 # Sweep leftover throwaway test/clone surfaces (zero-leftover discipline; protected fixtures never touched):
 ./tools/tests/cleanup-test-surfaces.ps1 -DryRun          # then rerun without -DryRun to delete
 
-# Import an export file: use the web UI "Import JSON" (Manual Transfer tab) or the in-game
+# Import an export file: use the web UI "Import" button (Gateways tab) or the in-game
 # /plugin-import-file <file> <name> command — both chunk automatically. There is no CLI import script.
 
 # GATEWAY CANVAS (the Gateways tab). React Flow decides what can be dragged and where an edge
@@ -401,13 +401,13 @@ Design in [docs/GATEWAY_TRANSFER_PRD.md](docs/GATEWAY_TRANSFER_PRD.md).
 ## Export/Import Workflow Notes (Current)
 
 ### Export for download
-- UI path: Manual Transfer per-platform **Export JSON**. (There is no "Exports" tab — the tabs are Manual Transfer / Transaction Logs / Gateways.)
+- UI path: Gateways canvas → an instance's platform list → per-platform **Export JSON**. (The tabs are Transaction Logs / Gateways; the Manual Transfer tab was removed 2026-08-09.)
 - Controller path: `ExportPlatformForDownloadRequest` sends `ExportPlatformRequest` with `targetInstanceId: null`.
 - Instance/Lua path: destination must be Lua `nil` for export-only; otherwise export is treated as transfer.
 - Export-only jobs unlock the source platform after completion; transfer jobs keep source locked until cleanup.
 
 ### Upload-import JSON
-- UI path: Manual Transfer per-instance **Import JSON**.
+- UI path: Gateways canvas top-left **Import** button.
 - Controller path: `ImportUploadedExportRequest` forwards payload via `ImportPlatformRequest` to target instance.
 - Controller injects `_operationId` into payload; Lua emits completion with `operation_id`.
 - Instance forwards `ImportOperationCompleteEvent` to controller so non-transfer imports can complete their transaction logs.

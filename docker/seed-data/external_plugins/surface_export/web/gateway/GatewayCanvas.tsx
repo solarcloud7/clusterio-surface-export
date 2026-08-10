@@ -739,8 +739,8 @@ export default function GatewayCanvas({ plugin, state, onOpenImport }: {
 						maskColor="rgba(0, 0, 0, 0.6)"
 						nodeBorderRadius={20}
 					/>
-					<Panel position="top-left">
-						<Space size="small">
+					<Panel position="top-left" style={{ maxWidth: "calc(100% - 260px)" }}>
+						<Space size="small" wrap>
 							<Select
 								size="small"
 								value={effectiveHostFilter}
@@ -813,7 +813,7 @@ export default function GatewayCanvas({ plugin, state, onOpenImport }: {
 						))}
 					</Panel>
 					<Panel position="top-right">
-						<Space>
+						<Space direction="vertical" size={4} align="end">
 							{canEdit ? (
 								<Text type="secondary" style={{ fontSize: 12 }}>
 									{pending.length
@@ -824,34 +824,40 @@ export default function GatewayCanvas({ plugin, state, onOpenImport }: {
 								<Text type="secondary" style={{ fontSize: 12 }}>read-only</Text>
 							)}
 							{interactive && selectedInstanceIds.length >= 2 ? (
-								<>
-									<Text className="surface-export-select-hint">
-										{selectedInstanceIds.length} selected · Ctrl+click to select more
-									</Text>
-									<Tooltip title="Link every selected instance to every other one">
-										<Button size="small" onClick={() => bulkLink(true)}>Link selected</Button>
-									</Tooltip>
-									<Tooltip title="Remove the links between the selected instances">
-										<Button size="small" onClick={() => bulkLink(false)}>Unlink selected</Button>
-									</Tooltip>
-								</>
+								<Text className="surface-export-select-hint">
+									{selectedInstanceIds.length} selected · Ctrl+click to select more
+								</Text>
 							) : null}
 							{interactive && selectedInstanceIds.length === 1 ? (
 								<Text className="surface-export-select-hint">Ctrl+click another instance to link them</Text>
 							) : null}
-							{canEdit && allDirty.length ? (
-								<Button size="small" onClick={revert} disabled={saving}>Revert</Button>
-							) : null}
-							{canEdit ? (
-								<Button
-									type="primary"
-									size="small"
-									loading={saving}
-									disabled={!pending.length}
-									onClick={() => void save()}
-								>
-									Save
-								</Button>
+							{canEdit || (interactive && selectedInstanceIds.length >= 2) ? (
+								<Space size="small">
+									{interactive && selectedInstanceIds.length >= 2 ? (
+										<>
+											<Tooltip title="Link every selected instance to every other one">
+												<Button size="small" onClick={() => bulkLink(true)}>Link selected</Button>
+											</Tooltip>
+											<Tooltip title="Remove the links between the selected instances">
+												<Button size="small" onClick={() => bulkLink(false)}>Unlink selected</Button>
+											</Tooltip>
+										</>
+									) : null}
+									{canEdit && allDirty.length ? (
+										<Button size="small" onClick={revert} disabled={saving}>Revert</Button>
+									) : null}
+									{canEdit ? (
+										<Button
+											type="primary"
+											size="small"
+											loading={saving}
+											disabled={!pending.length}
+											onClick={() => void save()}
+										>
+											Save
+										</Button>
+									) : null}
+								</Space>
 							) : null}
 						</Space>
 					</Panel>

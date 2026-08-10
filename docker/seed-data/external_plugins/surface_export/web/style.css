@@ -3,11 +3,6 @@ body.surface-export-page .site-layout-content-container {
 	background: #141414;
 }
 
-.surface-export-tab-body {
-	display: block;
-	min-width: 0;
-}
-
 .surface-export-canvas {
 	width: 100%;
 	height: calc(100vh - 380px);
@@ -305,12 +300,6 @@ body.surface-export-page .site-layout-content-container {
 	margin-inline-end: 0;
 }
 
-.surface-export-platform-node-more {
-	justify-content: center;
-	opacity: 0.7;
-	padding-right: 0;
-}
-
 .surface-export-platform-handle {
 	position: absolute;
 	inset: auto;
@@ -520,39 +509,6 @@ body.surface-export-page .site-layout-content-container {
 	background: rgba(24, 144, 255, 0.12) !important;
 }
 
-.surface-export-instance-header {
-	display: flex;
-	align-items: center;
-	gap: 6px;
-	padding: 4px 12px;
-	border-bottom: 1px solid #f0f0f0;
-}
-
-.surface-export-platform-row {
-	display: flex;
-	align-items: center;
-	gap: 8px;
-	padding: 6px 12px 6px 24px;
-	border-bottom: 1px solid #f0f0f0;
-	transition: background 0.15s;
-}
-
-.surface-export-platform-row:last-child {
-	border-bottom: none;
-}
-
-.surface-export-platform-row:hover {
-	background: rgba(0, 0, 0, 0.02);
-}
-
-.surface-export-platform-row-name {
-	flex: 1 1 auto;
-	min-width: 0;
-	display: flex;
-	align-items: center;
-	gap: 6px;
-}
-
 .surface-export-icon-placeholder {
 	display: inline-block;
 	width: 20px;
@@ -560,21 +516,6 @@ body.surface-export-page .site-layout-content-container {
 	flex-shrink: 0;
 }
 
-.surface-export-platform-row-status {
-	flex: 0 1 auto;
-	display: flex;
-	align-items: center;
-	gap: 6px;
-	margin-left: auto;
-	padding-right: 8px;
-}
-
-.surface-export-platform-row-actions {
-	flex-shrink: 0;
-	display: flex;
-	align-items: center;
-	gap: 6px;
-}
 .surface-export-summary-platform-title {
 	font-size: 18px;
 	font-weight: 700;

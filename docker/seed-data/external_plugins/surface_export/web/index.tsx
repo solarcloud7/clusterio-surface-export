@@ -1,9 +1,5 @@
 import React, { useContext, useEffect, useState } from "react";
-import {
-	Button,
-	Tabs,
-	Tooltip,
-} from "antd";
+import { Tabs } from "antd";
 
 import {
 	BaseWebPlugin,
@@ -12,9 +8,7 @@ import {
 	PageLayout,
 	notifyErrorHandler,
 } from "@clusterio/web_ui";
-import { UploadOutlined } from "@ant-design/icons";
 import * as messageDefs from "../messages";
-import ManualTransferTab from "./ManualTransferTab";
 import TransactionLogsTab from "./TransactionLogsTab";
 import GatewayCanvas from "./gateway/GatewayCanvas";
 import ImportModal from "./ImportModal";
@@ -74,7 +68,7 @@ function SurfaceExportPage() {
 	const [importModalOpen, setImportModalOpen] = useState(false);
 	const [activeTab, setActiveTab] = useState<string>(() => {
 		const t = new URLSearchParams(window.location.search).get("tab");
-		return t && ["manual", "logs", "gateways"].includes(t) ? t : "manual";
+		return t && ["logs", "gateways"].includes(t) ? t : "gateways";
 	});
 	function handleTabChange(key: string) {
 		setActiveTab(key);
@@ -82,13 +76,7 @@ function SurfaceExportPage() {
 		params.set("tab", key);
 		window.history.replaceState(null, "", `${window.location.pathname}?${params.toString()}`);
 	}
-	const tabItems = [
-		{
-			key: "manual",
-			label: "Manual Transfer",
-			children: <ManualTransferTab plugin={plugin} state={state} />,
-		},
-	];
+	const tabItems: Array<{ key: string; label: string; children: React.ReactNode }> = [];
 	if (state.canViewLogs !== false) {
 		tabItems.push({
 			key: "logs",
@@ -102,7 +90,7 @@ function SurfaceExportPage() {
 		children: <GatewayCanvas plugin={plugin} state={state} onOpenImport={() => setImportModalOpen(true)} />,
 	});
 
-	const effectiveTab = tabItems.some(t => t.key === activeTab) ? activeTab : "manual";
+	const effectiveTab = tabItems.some(t => t.key === activeTab) ? activeTab : "gateways";
 
 	useEffect(() => {
 		document.body.classList.add("surface-export-page");
@@ -117,15 +105,6 @@ function SurfaceExportPage() {
 				activeKey={effectiveTab}
 				onChange={handleTabChange}
 				items={tabItems}
-				tabBarExtraContent={effectiveTab === "manual" ? (
-					<Tooltip title="Import JSON">
-						<Button
-							icon={<UploadOutlined />}
-							size="small"
-							onClick={() => setImportModalOpen(true)}
-						/>
-					</Tooltip>
-				) : null}
 			/>
 			<ImportModal
 				open={importModalOpen}

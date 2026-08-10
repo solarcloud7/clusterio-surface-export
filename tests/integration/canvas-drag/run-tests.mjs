@@ -93,6 +93,30 @@ try {
 
 	await page.waitForTimeout(2500);
 
+	const gateway = await centreOf(sourceNode.locator(".surface-export-gw-cover").first());
+	await page.mouse.move(gateway.x, gateway.y);
+	await page.mouse.down();
+	await page.mouse.move(gateway.x + 120, gateway.y + 90);
+	await page.mouse.move(gateway.x + 240, gateway.y + 180);
+	await page.waitForTimeout(120);
+	const dragPath = await page.evaluate(
+		() => document.querySelector(".react-flow__connectionline path")?.getAttribute("d") ?? null,
+	);
+	await page.mouse.up();
+	await page.waitForTimeout(300);
+	await page.keyboard.press("Escape");
+
+	check(
+		Boolean(dragPath),
+		"a gateway drag renders a connection line (control arm)",
+		"no .react-flow__connectionline path existed mid-drag — the shape check below would pass vacuously",
+	);
+	check(
+		Boolean(dragPath) && / L /.test(dragPath) && !/[CQAS]/.test(dragPath),
+		"the gateway drag line is straight, not a curve",
+		`connection line d="${dragPath ?? "(absent)"}"`,
+	);
+
 	const handle = sourceNode.locator(".surface-export-platform-handle").first();
 	await sourceNode.locator(".surface-export-instance-node").click();
 	const listOpened = await handle.waitFor({ state: "visible", timeout: 2000 })

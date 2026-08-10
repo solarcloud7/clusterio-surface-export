@@ -22,7 +22,7 @@ export default function ConnectionLine({ fromX, fromY, toX, toY, connectionStatu
 				stroke={colour}
 				strokeWidth={connectionStatus ? 3 : 2}
 				className="animated"
-				d={`M${fromX},${fromY} C ${fromX} ${toY} ${fromX} ${toY} ${toX},${toY}`}
+				d={`M${fromX},${fromY} L ${toX},${toY}`}
 			/>
 			<circle
 				cx={toX}
