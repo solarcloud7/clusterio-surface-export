@@ -75,6 +75,39 @@ local function blueprint_diff_selftest()
 		"a loader has no type-scoped alias and we do not capture loader_type, so BeltConnectionType "
 		.. "must be REPORTED — entity_data.type ('loader') must not silently satisfy it")
 
+	local loader_covered = BlueprintDiff.findings_for(
+		{ name = "turbo-loader", type = "output" },
+		{ entity_id = 23, type = "loader", specific_data = { loader_type = "output" } },
+		"loader", { x = 0, y = 0 }, 23)
+	check("loader_BeltConnectionType_resolves_to_the_captured_loader_type", #loader_covered == 0,
+		"a loader carrying loader_type must be covered — without the capture this field is lost on every "
+		.. "transfer and every loader arrives at the create-time default, got " .. #loader_covered)
+
+	local loader1x1_covered = BlueprintDiff.findings_for(
+		{ name = "loader-1x1", type = "input" },
+		{ entity_id = 24, type = "loader-1x1", specific_data = { loader_type = "input" } },
+		"loader-1x1", { x = 0, y = 0 }, 24)
+	check("loader_1x1_is_aliased_too_not_just_loader", #loader1x1_covered == 0,
+		"loader-1x1 is a separate entity type with the same field — registering only 'loader' would leave "
+		.. "every loader-1x1 reported forever, got " .. #loader1x1_covered)
+
+	local ghost_loader = BlueprintDiff.findings_for(
+		{ name = "turbo-loader", type = "input" },
+		{ entity_id = 25, type = "entity-ghost", specific_data = { ghost_name = "turbo-loader", loader_type = "input" } },
+		"entity-ghost", { x = 0, y = 0 }, 25)
+	check("ghost_loader_direction_is_seen_through_the_ghost_wrapper", #ghost_loader == 0,
+		"the blueprint names a ghost by its INNER entity, but world.type is entity-ghost — without an alias "
+		.. "on entity-ghost a correctly captured ghost loader is reported forever, got " .. #ghost_loader)
+
+	local ghost_underground = BlueprintDiff.findings_for(
+		{ name = "underground-belt", type = "output" },
+		{ entity_id = 26, type = "entity-ghost", specific_data = { ghost_name = "underground-belt" } },
+		"entity-ghost", { x = 0, y = 0 }, 26)
+	check("ghost_underground_belt_direction_is_still_reported",
+		properties(ghost_underground).type == true,
+		"we capture loader_type for loader ghosts only — a ghost underground-belt's direction is NOT "
+		.. "captured, and the entity-ghost alias must not paper over that")
+
 	local structural = BlueprintDiff.findings_for(
 		{ name = "steel-chest", position = { x = 1, y = 1 }, direction = 2, entity_number = 7 },
 		{ entity_id = 6 }, "container", { x = 0, y = 0 }, 6)

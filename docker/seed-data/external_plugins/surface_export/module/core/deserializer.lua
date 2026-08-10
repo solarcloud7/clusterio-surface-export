@@ -146,6 +146,11 @@ function Deserializer.create_entity(surface, entity_data)
     params.type = entity_data.specific_data.belt_to_ground_type
   end
 
+  if (entity_data.type == "loader" or entity_data.type == "loader-1x1")
+      and entity_data.specific_data and entity_data.specific_data.loader_type then
+    params.type = entity_data.specific_data.loader_type
+  end
+
   if entity_data.type == "resource" and entity_data.specific_data
       and entity_data.specific_data.amount then
     params.amount = entity_data.specific_data.amount
@@ -187,6 +192,9 @@ function Deserializer.create_entity(surface, entity_data)
     params.inner_name = entity_data.specific_data.ghost_name
     if entity_data.specific_data.ghost_quality then
       params.quality = entity_data.specific_data.ghost_quality
+    end
+    if entity_data.specific_data.loader_type then
+      params.type = entity_data.specific_data.loader_type
     end
   elseif entity_data.type == "tile-ghost" and entity_data.specific_data then
     params.inner_name = entity_data.specific_data.ghost_name
