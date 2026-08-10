@@ -115,6 +115,38 @@ function multiModeViolation(edits: GatewayEdits, request: ConnectRequest): strin
 	return null;
 }
 
+export function planBulkLink(
+	edits: GatewayEdits,
+	instanceIds: readonly number[],
+	gateway: string,
+	mode: GatewayMode,
+	connect: boolean,
+): { next: GatewayEdits; refused: string[] } {
+	let next = edits;
+	const refused: string[] = [];
+	for (let a = 0; a < instanceIds.length; a += 1) {
+		for (let b = a + 1; b < instanceIds.length; b += 1) {
+			const request = {
+				sourceInstanceId: instanceIds[a],
+				sourceGateway: gateway,
+				targetInstanceId: instanceIds[b],
+				targetGateway: gateway,
+			};
+			if (!connect) {
+				next = applyDisconnect(next, request);
+				continue;
+			}
+			const violation = mode === "multi" ? multiModeViolation(next, request) : null;
+			if (violation) {
+				refused.push(violation);
+				continue;
+			}
+			next = applyConnect(next, request);
+		}
+	}
+	return { next, refused };
+}
+
 function connectionRefusal(link: Connection | Edge, edits: GatewayEdits, mode: GatewayMode): string | null {
 	const sourceInstanceId = instanceIdFromNodeId(link.source);
 	const targetInstanceId = instanceIdFromNodeId(link.target);
@@ -292,7 +324,15 @@ export default function GatewayCanvas({ plugin, state, onOpenImport }: {
 		if (!debug.enabled) {
 			return realShips;
 		}
-		const routes = graph.edges.map(edge => [edge.sourceInstanceId, edge.targetInstanceId] as const);
+		const linked = graph.edges.map(edge => [edge.sourceInstanceId, edge.targetInstanceId] as const);
+		const drawnIds = graph.nodes
+			.map(node => instanceIdFromNodeId(node.id))
+			.filter((id): id is number => id !== null);
+		const pairs: Array<readonly [number, number]> = [];
+		for (let a = 0; a < drawnIds.length; a += 1) {
+			for (let b = a + 1; b < drawnIds.length; b += 1) { pairs.push([drawnIds[a], drawnIds[b]] as const); }
+		}
+		const routes = linked.length ? linked : pairs;
 		const replayed = replayShips(state?.transferSummaries, debug.replayTransferIds)
 			.filter(ship => !realShips.some(live => live.transferId === ship.transferId));
 		return [...replayed, ...realShips, ...mockShips(routes, debug.shipPhases)];
@@ -429,8 +469,7 @@ export default function GatewayCanvas({ plugin, state, onOpenImport }: {
 	const platformOptions = useMemo(() => graph.nodes.flatMap(node => {
 		const instanceName = String(node.data.instanceName || node.id);
 		return ((node.data.platforms || []) as PlatformLike[]).map(platform => ({
-			value: node.id,
-			key: `${node.id}:${platform.platformIndex}`,
+			value: `${node.id}:${platform.platformIndex}`,
 			label: `${platform.platformName || `platform ${platform.platformIndex}`} — ${instanceName}`,
 		}));
 	}), [graph]);
@@ -444,38 +483,15 @@ export default function GatewayCanvas({ plugin, state, onOpenImport }: {
 
 	const bulkLink = useCallback((connect: boolean) => {
 		const gateway = gatewayNamesFor(mode)[0];
-		const refused: string[] = [];
-		setEdits(previous => {
-			let next = previous;
-			for (let a = 0; a < selectedInstanceIds.length; a += 1) {
-				for (let b = a + 1; b < selectedInstanceIds.length; b += 1) {
-					const request = {
-						sourceInstanceId: selectedInstanceIds[a],
-						sourceGateway: gateway,
-						targetInstanceId: selectedInstanceIds[b],
-						targetGateway: gateway,
-					};
-					if (connect) {
-						const violation = mode === "multi" ? multiModeViolation(next, request) : null;
-						if (violation) {
-							refused.push(violation);
-							continue;
-						}
-						next = applyConnect(next, request);
-					} else {
-						next = applyDisconnect(next, request);
-					}
-				}
-			}
-			return next;
-		});
+		const { next, refused } = planBulkLink(edits, selectedInstanceIds, gateway, mode, connect);
+		setEdits(next);
 		if (refused.length) {
 			antMessage.warning({
 				content: `${refused.length} pair(s) refused: ${[...new Set(refused)].join(" ")}`,
 				key: "canvas-bulk", duration: 8,
 			});
 		}
-	}, [mode, selectedInstanceIds]);
+	}, [edits, mode, selectedInstanceIds]);
 
 	const platformFromHandle = useCallback((nodeId: string | null | undefined, handleId: string | null | undefined) => {
 		const platformIndex = platformIndexFromHandleId(handleId);
@@ -781,7 +797,7 @@ export default function GatewayCanvas({ plugin, state, onOpenImport }: {
 									String(option?.label ?? "").toLowerCase().includes(input.toLowerCase())
 								}
 								options={platformOptions}
-								onChange={value => value && focusNode(String(value))}
+								onChange={value => value && focusNode(String(value).split(":").slice(0, -1).join(":"))}
 							/>
 							<Tooltip title="The shape every gateway link is drawn with">
 								<Select
