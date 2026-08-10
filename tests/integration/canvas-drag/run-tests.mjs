@@ -116,8 +116,6 @@ try {
 		"the gateway drag line is straight, not a curve",
 		`connection line d="${dragPath ?? "(absent)"}"`,
 	);
-	// The drop point is offset blind. If a future layout puts another gate there, the drag LINKS
-	// instead of aborting, and the mutation would otherwise surface as the unrelated staging check below.
 	const afterAbort = (await page.locator(".react-flow__panel.top.right").innerText()).trim();
 	check(
 		!/unsaved change/.test(afterAbort),

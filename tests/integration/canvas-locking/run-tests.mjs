@@ -154,9 +154,6 @@ try {
 		`edge ${colours.edge}, arrow ${colours.arrow}`,
 	);
 
-	// Ships are checked while an edge still EXISTS. On a fresh cluster the only edge is the one this
-	// test stages, the revert below removes it, and mock ships ride CONFIGURED links — so after the
-	// revert there is nothing for them to ride and the checks would measure an empty canvas.
 	const drawnShips = () => page.evaluate(() => ({
 		markers: document.querySelectorAll(".surface-export-edge-status").length,
 		moving: [...document.querySelectorAll(".surface-export-ship")]
@@ -199,15 +196,13 @@ try {
 		`panel went from "${baseline}" to "${whileLocked}"`,
 	);
 
-	// Control arm. Without it the check above would pass just as well on a canvas where clicking an
-	// edge never does anything. Locked runs first so the edge still exists for this step.
 	await lock.click();
 	await page.waitForTimeout(300);
 	await clickEdge();
 	const whileUnlocked = await panelText();
 	check(
 		whileUnlocked !== baseline,
-		"the same click UNLOCKED does change the staged state",
+		"the same click UNLOCKED does change the staged state (control arm for the locked check)",
 		`panel still reads "${whileUnlocked}"`,
 	);
 
