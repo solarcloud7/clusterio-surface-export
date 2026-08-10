@@ -193,6 +193,9 @@ function Deserializer.create_entity(surface, entity_data)
     if entity_data.specific_data.ghost_quality then
       params.quality = entity_data.specific_data.ghost_quality
     end
+    if entity_data.specific_data.loader_type then
+      params.type = entity_data.specific_data.loader_type
+    end
   elseif entity_data.type == "tile-ghost" and entity_data.specific_data then
     params.inner_name = entity_data.specific_data.ghost_name
   end

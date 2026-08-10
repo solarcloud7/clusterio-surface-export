@@ -46,7 +46,11 @@ function EntityHandlers.extract_common_state(entity, data)
     data.burner = EntityHandlers.extract_entity_burner(entity)
   end
 
-  if entity.type == "loader" or entity.type == "loader-1x1" then
+  local carries_loader_type = entity.type == "loader" or entity.type == "loader-1x1"
+  if not carries_loader_type and entity.type == "entity-ghost" then
+    carries_loader_type = entity.ghost_type == "loader" or entity.ghost_type == "loader-1x1"
+  end
+  if carries_loader_type then
     data.loader_type = entity.loader_type
   end
 

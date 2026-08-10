@@ -40,6 +40,9 @@ BlueprintDiff.TYPE_ALIASES = {
     ["loader-1x1"] = {
         type = "loader_type",
     },
+    ["entity-ghost"] = {
+        type = "loader_type",
+    },
 }
 
 BlueprintDiff.ALIAS_ONLY = {
