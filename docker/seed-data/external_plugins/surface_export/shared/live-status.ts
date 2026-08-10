@@ -12,6 +12,12 @@ export type LiveStatusInput = {
 };
 
 export function nextLiveStatus(input: LiveStatusInput): LiveStatus {
+	if (input.outcome === null && input.lastEvent === "close") {
+		return "offline";
+	}
+	if (input.outcome === null && input.lastEvent === "drop") {
+		return "reconnecting";
+	}
 	if (!input.connected) {
 		return input.lastEvent === "close" ? "offline" : "reconnecting";
 	}

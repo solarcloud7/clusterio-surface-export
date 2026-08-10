@@ -37,6 +37,29 @@ test("close is offline, drop is reconnecting", () => {
 	assert.equal(nextLiveStatus({ ...base, connected: false, lastEvent: "drop", outcome: null }), "reconnecting");
 });
 
+test("the event that just arrived outranks the connected flag", () => {
+	assert.equal(
+		nextLiveStatus({ previous: "live", connected: true, lastEvent: "drop", outcome: null }),
+		"reconnecting",
+		"drop is the authoritative signal; whether Clusterio has flipped connector.connected yet is an "
+		+ "assumption, and trusting the flag over the event leaves the badge reading live on a dead socket",
+	);
+	assert.equal(
+		nextLiveStatus({ previous: "live", connected: true, lastEvent: "close", outcome: null }),
+		"offline",
+		"same for close — the handler path is identified by outcome === null, so it never guesses",
+	);
+});
+
+test("a later sync outcome is not overridden by the stale connection event", () => {
+	assert.equal(
+		nextLiveStatus({ previous: "reconnecting", connected: true, lastEvent: "drop", outcome: "subscribed" }),
+		"live",
+		"lastEvent stays 'drop' until the next connect fires, so the event-first rule must apply ONLY to "
+		+ "the connection-handler path (outcome === null) or a genuine resubscribe could never reach live",
+	);
+});
+
 test("a real subscribe is the only route to live", () => {
 	assert.equal(nextLiveStatus({ ...base, previous: "reconnecting", outcome: "subscribed" }), "live");
 	assert.notEqual(nextLiveStatus({ ...base, previous: "reconnecting", outcome: "unsubscribed" }), "live");

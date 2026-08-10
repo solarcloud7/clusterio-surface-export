@@ -146,6 +146,7 @@ export class WebPlugin extends BaseWebPlugin {
 	private state: SurfaceExportState;
 	private resubscribeTimer: number | null = null;
 	private lastConnectionEvent: ConnectionEvent | null = null;
+	private resubscribeGeneration = 0;
 
 	constructor(container: unknown, packageData: JsonObject, info: JsonObject, control: ControlLike, logger: unknown) {
 		// eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -191,6 +192,7 @@ export class WebPlugin extends BaseWebPlugin {
 			this.resubscribeUntilLive();
 			return;
 		}
+		this.resubscribeGeneration += 1;
 		this.clearResubscribeTimer();
 		this.applyLiveStatus(null, null);
 	}
@@ -225,16 +227,19 @@ export class WebPlugin extends BaseWebPlugin {
 		);
 	}
 
-	resubscribeUntilLive(attempt = 0) {
+	resubscribeUntilLive(attempt = 0, generation = ++this.resubscribeGeneration) {
 		this.clearResubscribeTimer();
 		this.syncAndReport().then(() => {
+			if (generation !== this.resubscribeGeneration) {
+				return;
+			}
 			if (!shouldRetryResubscribe(this.state.liveStatus, this.link.connector.connected)) {
 				return;
 			}
 			const delayMs = resubscribeDelayMs(attempt);
 			this.resubscribeTimer = setTimeout(() => {
 				this.resubscribeTimer = null;
-				this.resubscribeUntilLive(attempt + 1);
+				this.resubscribeUntilLive(attempt + 1, generation);
 			}, delayMs) as unknown as number;
 		});
 	}
