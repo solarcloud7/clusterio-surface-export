@@ -16,6 +16,7 @@ local PhaseProfiler = require("modules/surface_export/utils/phase-profiler")
 local TransactionHistory = require("modules/surface_export/utils/transaction-history")
 local JobResults = require("modules/surface_export/core/job-results")
 local CensusAccumulator = require("modules/surface_export/export_scanners/census-accumulator")
+local BlueprintDiff = require("modules/surface_export/export_scanners/blueprint-diff")
 local ExportCache = require("modules/surface_export/utils/export-cache")
 
 local ExportPipeline = {}
@@ -360,6 +361,7 @@ function ExportPipeline.complete(job)
 	}
 
 	job.census_verdict = CensusAccumulator.verdict(job.census)
+	ExportPipeline.run_blueprint_diff(job)
 	ExportPipeline.report_property_findings(job)
 	if job.destination_instance_id then
 		if not job.census_verdict.ok then
@@ -551,6 +553,43 @@ function ExportPipeline.complete(job)
 	ExportCache.prune_to_configured_cap()
 
 	storage.async_jobs[job.job_id] = nil
+end
+
+function ExportPipeline.run_blueprint_diff(job)
+	local force = game.forces[job.force_name]
+	local platform = force and force.platforms[job.platform_index]
+	local surface = platform and platform.surface
+	if not (surface and surface.valid) then
+		log(string.format("[BlueprintDiff] no surface for '%s' — property diff skipped", tostring(job.platform_name)))
+		return
+	end
+
+	local by_id = {}
+	for _, entity_data in ipairs(job.export_data.entities or {}) do
+		if entity_data.entity_id ~= nil then
+			by_id[entity_data.entity_id] = entity_data
+		end
+	end
+
+	local started = game.tick
+	local result, err = BlueprintDiff.scan(surface, force, by_id)
+	if not result then
+		log(string.format("[BlueprintDiff] scan unavailable for '%s': %s — property diff skipped, transfer unaffected",
+			tostring(job.platform_name), tostring(err)))
+		return
+	end
+
+	job.export_data.blueprint_diff = {
+		blueprint_entity_count = result.blueprint_entity_count,
+		unpaired_entity_count = result.unpaired_entity_count,
+		ticks = game.tick - started,
+	}
+	local verdict = job.census_verdict or {}
+	verdict.property_findings = verdict.property_findings or {}
+	for _, finding in ipairs(result.findings) do
+		verdict.property_findings[#verdict.property_findings + 1] = finding
+	end
+	job.census_verdict = verdict
 end
 
 function ExportPipeline.report_property_findings(job)
