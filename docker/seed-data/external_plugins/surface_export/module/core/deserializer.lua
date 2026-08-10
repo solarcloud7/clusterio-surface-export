@@ -407,6 +407,19 @@ function Deserializer.restore_entity_state(entity, entity_data)
     end
   end
 
+  if entity.type == "space-platform-hub" then
+    for _, hub_field in ipairs({
+      "providing_to_other_platforms",
+      "request_missing_construction_materials",
+      "request_from_buffers",
+    }) do
+      if data[hub_field] ~= nil then
+        safe_call(string.format("%s for %s", hub_field, entity.name),
+          function() entity[hub_field] = data[hub_field] end)
+      end
+    end
+  end
+
   if entity.type == "car" or entity.type == "spider-vehicle" then
     if data.color and entity.color ~= nil then
       safe_call(string.format("vehicle color for %s", entity.name),
@@ -418,9 +431,9 @@ function Deserializer.restore_entity_state(entity, entity_data)
         function() entity.orientation = data.orientation end)
     end
     
-    if data.driver_is_main_gunner ~= nil and entity.driver_is_main_gunner ~= nil then
-      safe_call(string.format("driver_is_main_gunner for %s", entity.name),
-        function() entity.driver_is_main_gunner = data.driver_is_main_gunner end)
+    if data.driver_is_gunner ~= nil then
+      safe_call(string.format("driver_is_gunner for %s", entity.name),
+        function() entity.driver_is_gunner = data.driver_is_gunner end)
     end
     
     if data.selected_gun_index and entity.selected_gun_index ~= nil then

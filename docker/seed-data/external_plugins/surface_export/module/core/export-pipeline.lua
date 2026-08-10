@@ -16,6 +16,7 @@ local PhaseProfiler = require("modules/surface_export/utils/phase-profiler")
 local TransactionHistory = require("modules/surface_export/utils/transaction-history")
 local JobResults = require("modules/surface_export/core/job-results")
 local CensusAccumulator = require("modules/surface_export/export_scanners/census-accumulator")
+local BlueprintDiff = require("modules/surface_export/export_scanners/blueprint-diff")
 local ExportCache = require("modules/surface_export/utils/export-cache")
 
 local ExportPipeline = {}
@@ -346,6 +347,8 @@ function ExportPipeline.complete(job)
 	}
 
 	job.census_verdict = CensusAccumulator.verdict(job.census)
+	ExportPipeline.run_blueprint_diff(job)
+	ExportPipeline.report_property_findings(job)
 	if job.destination_instance_id then
 		if not job.census_verdict.ok then
 			ExportPipeline.abort_transfer_on_census_mismatch(job)
@@ -536,6 +539,80 @@ function ExportPipeline.complete(job)
 	ExportCache.prune_to_configured_cap()
 
 	storage.async_jobs[job.job_id] = nil
+end
+
+function ExportPipeline.run_blueprint_diff(job)
+	local force = game.forces[job.force_name]
+	local platform = force and force.platforms[job.platform_index]
+	local surface = platform and platform.surface
+	if not (surface and surface.valid) then
+		log(string.format("[BlueprintDiff] no surface for '%s' — property diff skipped", tostring(job.platform_name)))
+		return
+	end
+
+	local by_id = {}
+	for _, entity_data in ipairs(job.export_data.entities or {}) do
+		if entity_data.entity_id ~= nil then
+			by_id[entity_data.entity_id] = entity_data
+		end
+	end
+
+	local result, err = BlueprintDiff.scan(surface, force, by_id)
+	if not result then
+		log(string.format("[BlueprintDiff] status=UNAVAILABLE for '%s': %s — no property comparison was made; "
+			.. "this is NOT a clean bill of health. Transfer unaffected.",
+			tostring(job.platform_name), tostring(err)))
+		job.export_data.blueprint_diff = { status = "UNAVAILABLE", error = tostring(err) }
+		return
+	end
+
+	job.export_data.blueprint_diff = {
+		status = result.status,
+		blueprint_entity_count = result.blueprint_entity_count,
+		unpaired_entity_count = result.unpaired_entity_count,
+	}
+	log({ "", string.format("[BlueprintDiff] status=%s '%s': compared %d blueprint entities, %d unpaired, elapsed ",
+		result.status, tostring(job.platform_name), result.blueprint_entity_count, result.unpaired_entity_count),
+		result.profiler })
+	if result.status == "UNKNOWN" then
+		log(string.format("[BlueprintDiff][WARN] status=UNKNOWN for '%s': %d blueprint entities could not be paired "
+			.. "to serialized data, so their properties were compared against NOTHING. Zero findings here does not "
+			.. "mean zero loss.", tostring(job.platform_name), result.unpaired_entity_count))
+	end
+	local verdict = job.census_verdict or {}
+	verdict.property_findings = verdict.property_findings or {}
+	for _, finding in ipairs(result.findings) do
+		verdict.property_findings[#verdict.property_findings + 1] = finding
+	end
+	job.census_verdict = verdict
+end
+
+function ExportPipeline.report_property_findings(job)
+	local findings = (job.census_verdict or {}).property_findings or {}
+	job.export_data.property_findings = findings
+	if #findings == 0 then
+		return
+	end
+	local by_property = {}
+	for _, finding in ipairs(findings) do
+		local key = finding.property .. ":" .. finding.kind
+		by_property[key] = (by_property[key] or 0) + 1
+	end
+	local parts = {}
+	for key, count in pairs(by_property) do
+		parts[#parts + 1] = key .. "=" .. count
+	end
+	table.sort(parts)
+	log(string.format(
+		"[PropertyCensus][WARN] '%s': %d property finding(s) — %s. The transfer is NOT blocked: "
+		.. "items and fluids are exact, but this entity state did not reach the payload intact.",
+		job.platform_name, #findings, table.concat(parts, " ")))
+	for _, finding in ipairs(findings) do
+		log(string.format("[PropertyCensus][WARN]   %s %s on %s @%s,%s live=%s serialized=%s",
+			finding.kind, finding.property, finding.entity_name,
+			finding.position.x, finding.position.y,
+			tostring(finding.live), tostring(finding.serialized)))
+	end
 end
 
 function ExportPipeline.abort_transfer_on_census_mismatch(job)

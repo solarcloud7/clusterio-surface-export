@@ -11,7 +11,7 @@ const source = fs.readFileSync(handlersPath, "utf8");
 const handlerInventoryOwners = new Set([
 	"assembling-machine", "furnace", "container", "train", "car", "spider-vehicle",
 	"turret", "mining-drill", "lab", "roboport", "artillery-turret", "rocket-silo",
-	"agricultural-tower",
+	"agricultural-tower", "space-platform-hub",
 ]);
 const handlerFluidOwners = new Set([
 	"assembling-machine", "furnace", "fluid-storage", "pipe", "pipe-to-ground", "pump",
@@ -23,7 +23,7 @@ const categories = [
 	"car", "spider-vehicle", "combinator", "turret", "mining-drill", "lab", "roboport",
 	"artillery-turret", "rocket-silo", "gate", "power-switch", "agricultural-tower",
 	"programmable-speaker", "lamp", "display-panel", "entity-ghost", "tile-ghost", "item-request-proxy",
-	"train-stop", "resource",
+	"train-stop", "resource", "space-platform-hub",
 ];
 const specializedFluidCapabilities = new Map([
 	["assembling-machine", { platformReachable: true, evidence: "chemical-plant: 4 fluidboxes, can_place=true" }],
@@ -34,6 +34,7 @@ const specializedFluidCapabilities = new Map([
 	["train", { platformReachable: false, evidence: "fluid-wagon requires gravity>=1; platform gravity=0" }],
 	["turret", { platformReachable: false, evidence: "flamethrower-turret requires pressure>=10; platform pressure=0" }],
 	["mining-drill", { platformReachable: true, evidence: "big-mining-drill on the omnibus pad: live fluidbox amount 104.40625 measured 2026-07-20" }],
+	["space-platform-hub", { platformReachable: false, evidence: "hub on platform-1 and platform-2: fluids_count=0 and the .fluidbox accessor does not exist on the entity (LuaEntity doesn't contain key fluidbox), measured 2026-08-10 — the pre-handler fallback reached FluidRegistry.capture_entity, which returns nil at fluids_count==0, so the handler captures the same nothing" }],
 ]);
 const ownership = new Map(categories.map(category => [category, {
 	inventories: handlerInventoryOwners.has(category) ? "handler" : "shared-dispatcher",
@@ -50,6 +51,29 @@ function extractFunctionBody(category) {
 	assert.notEqual(end, -1, `handler ${category} must have a bounded body`);
 	return source.slice(start, end);
 }
+
+const fluidboxOptOut = new Set([
+	"transport-belt", "underground-belt", "splitter", "inserter", "container", "train", "car",
+	"spider-vehicle", "combinator", "turret", "resource", "lab", "roboport", "artillery-turret",
+	"rocket-silo", "gate", "power-switch", "agricultural-tower", "programmable-speaker", "lamp",
+	"entity-ghost", "tile-ghost", "item-request-proxy", "space-platform-hub", "display-panel",
+	"train-stop",
+]);
+
+test("adding a handler cannot silently drop a type's fluidbox capture", () => {
+	const actual = new Set([...source.matchAll(/EntityHandlers\["([^"]+)"\]\s*=\s*function\(entity\)/g)]
+		.map(match => match[1])
+		.filter(category => !extractFunctionBody(category).includes("extract_fluidboxes")));
+	assert.deepEqual([...actual].sort(), [...fluidboxOptOut].sort(),
+		"handle_entity attaches fluidboxes ONLY on the no-handler fallback, so giving a previously "
+		+ "unhandled type a handler silently stops its fluidbox capture. A change to this set means a "
+		+ "type crossed that line: either call InventoryScanner.extract_fluidboxes in the handler, or "
+		+ "add it here WITH a specializedFluidCapabilities entry carrying the measurement that says none exist.");
+	for (const category of fluidboxOptOut) {
+		assert.ok(!handlerFluidOwners.has(category),
+			`${category} cannot both opt out of fluidbox capture and be declared a handler fluid owner`);
+	}
+});
 
 test("every specialized handler has explicit inventory and fluid ownership", () => {
 	const actual = [...source.matchAll(/EntityHandlers\["([^"]+)"\]\s*=\s*function\(entity\)/g)]

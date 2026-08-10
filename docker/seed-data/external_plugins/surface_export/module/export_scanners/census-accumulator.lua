@@ -74,6 +74,7 @@ function CensusAccumulator.new(fluid_registry)
         physical_fluids = {},
         serialized_fluids = {},
         mismatches = {},
+        property_findings = {},
         entity_count = 0,
         fluid_registry = fluid_registry,
         seen_segment_refs = {},
@@ -131,6 +132,7 @@ function CensusAccumulator.verdict(acc)
     return {
         ok = ok,
         mismatches = acc.mismatches,
+        property_findings = acc.property_findings,
         totals = {
             entity_count = acc.entity_count,
             physical_items = acc.physical_items,
