@@ -622,14 +622,24 @@ instance's platform list, and the top-left **Import** button. Tick each feature:
   - [ ] **Fluids** — per fluid/bucket table with thermal (Volume×Temperature) validation for high-temp fluids
         (gold tags) and status tags (Match / Thermal match / Reconciled / Mismatch).
 
-#### 11.6 Gateways tab
-- [ ] Lists every gateway (from the `surfexp_gateways` mod). If none, an Empty state explains the mod isn't
-      loaded on the cluster.
-- [ ] Per-gateway card: add **target** rows (destination instance — **offline instances are flagged**; a
-      `→ gateway` picker), delete a row, **Add target**, **Save**.
-- [ ] A gateway with **no targets** reads "disabled". Saving a row with **no instance picked** is refused with a
-      toast (no silent-disable). Save → success toast; the resolved config is pushed to the instances (the
-      in-game on-arrival chooser reads it).
+#### 11.6 Gateways canvas — linking gateways
+- [ ] Every instance renders as a node with its gateway(s). If the `surfexp_gateways` mod isn't loaded on the
+      cluster, an Empty state explains that rather than drawing an empty canvas.
+- [ ] Drag from one instance's gateway to another's → a link stages **both** directions, and the panel counts
+      the unsaved change. **Save** pushes it (the in-game on-arrival chooser reads the resolved config);
+      **Revert** drops every staged change.
+- [ ] The drag line is **straight**, and it turns **green** over a legal target and **red** over an illegal one
+      (same instance, a platform row, a mock node, or a Multi-Cluster-mode rule violation). Releasing over an
+      illegal target names the refusal instead of silently snapping back.
+- [ ] Click an edge to stage its removal; **the padlock in the Controls stack blocks that** — locked, clicking
+      an edge changes nothing. The canvas owns this padlock; React Flow's own interactivity toggle is gone.
+- [ ] Ctrl+click a second instance → both read green and **Link selected** / **Unlink selected** appear.
+      Bulk-linking refuses Multi-mode violations **by name** rather than truncating silently.
+- [ ] The edge-shape dropdown (bezier / straight / step / smoothstep) redraws every link and survives a reload,
+      as do node positions; **Reset** forgets the saved layout and re-frames.
+- [ ] A live transfer rides its edge: a ship animates while in transit, then one marker per phase parks at its
+      position — **validating** mid-edge, **arrived** at the destination end, **failed** back at the source —
+      carrying a count when more than one transfer is in that phase. Terminal markers hold ~10s, then fade.
 
 #### 11.7 Icons / export-data sanity
 - [ ] Item / entity / fluid / planet icons render everywhere they appear (Logs details, tree, Import planet
