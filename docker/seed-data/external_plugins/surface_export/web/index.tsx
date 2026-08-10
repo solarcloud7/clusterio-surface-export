@@ -1,5 +1,5 @@
 import React, { useContext, useEffect, useState } from "react";
-import { Tabs } from "antd";
+import { Badge, Tabs, Tooltip } from "antd";
 
 import {
 	BaseWebPlugin,
@@ -12,7 +12,7 @@ import * as messageDefs from "../messages";
 import TransactionLogsTab from "./TransactionLogsTab";
 import GatewayCanvas from "./gateway/GatewayCanvas";
 import ImportModal from "./ImportModal";
-import type { JsonObject, LogEvent, SurfaceExportPlugin, SurfaceExportState } from "./view-models";
+import type { JsonObject, LiveStatus, LogEvent, SurfaceExportPlugin, SurfaceExportState } from "./view-models";
 
 import { summaryFromTransferInfo, mergeTransferSummary, getErrorMessage, getProp } from "./utils";
 import { decideSnapshot, entriesChangedSince, freshRevisionWatermarks, isFreshRevision } from "../shared/revision-gate";
@@ -61,6 +61,28 @@ function useSurfaceExportState(plugin: SurfaceExportPlugin) {
 	return state;
 }
 
+const RESUBSCRIBE_BASE_DELAY_MS = 1000;
+const RESUBSCRIBE_MAX_DELAY_MS = 30000;
+
+const LIVE_STATUS_DISPLAY: Record<LiveStatus, { status: "success" | "processing" | "default" | "warning"; text: string; hint: string }> = {
+	live: { status: "success", text: "live", hint: "Subscribed — the page updates on its own." },
+	reconnecting: { status: "processing", text: "reconnecting", hint: "The controller connection dropped. Reconnecting; this page is not updating." },
+	offline: { status: "default", text: "offline", hint: "The controller connection is closed. What you see is the last state received, not current." },
+	degraded: { status: "warning", text: "not updating", hint: "Connected, but the live subscription failed. Retrying — what you see may be stale." },
+};
+
+function LiveStatusBadge({ state }: { state: SurfaceExportState }) {
+	const display = LIVE_STATUS_DISPLAY[state.liveStatus];
+	const hint = state.liveError ? `${display.hint} (${state.liveError})` : display.hint;
+	return (
+		<Tooltip title={hint}>
+			<span data-testid="live-status" data-live-status={state.liveStatus} style={{ fontSize: 12 }}>
+				<Badge status={display.status} text={display.text} />
+			</span>
+		</Tooltip>
+	);
+}
+
 function SurfaceExportPage() {
 	const control = useContext(ControlContext) as unknown as ControlLike;
 	const plugin = useSurfaceExportPlugin(control);
@@ -105,6 +127,7 @@ function SurfaceExportPage() {
 				activeKey={effectiveTab}
 				onChange={handleTabChange}
 				items={tabItems}
+				tabBarExtraContent={<LiveStatusBadge state={state} />}
 			/>
 			<ImportModal
 				open={importModalOpen}
@@ -123,6 +146,7 @@ export class WebPlugin extends BaseWebPlugin {
 	private callbacks: Array<() => void>;
 	private liveUpdatesEnabled: boolean;
 	private state: SurfaceExportState;
+	private resubscribeTimer: number | null = null;
 
 	constructor(container: unknown, packageData: JsonObject, info: JsonObject, control: ControlLike, logger: unknown) {
 		// eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -139,6 +163,8 @@ export class WebPlugin extends BaseWebPlugin {
 			lastTransferRevision: 0,
 			lastLogRevision: 0,
 			canViewLogs: true,
+			liveStatus: "reconnecting",
+			liveError: null,
 		};
 	}
 
@@ -157,13 +183,45 @@ export class WebPlugin extends BaseWebPlugin {
 		this.link.handle(SurfaceExportLogUpdateEvent, payload => this.handleLogUpdate(payload as JsonObject));
 	}
 
-	onControllerConnectionEvent(event: string) {
+	onControllerConnectionEvent(event: "connect" | "drop" | "resume" | "close") {
 		if (event === "connect") {
 			this.setState(freshRevisionWatermarks());
 		}
 		if (event === "connect" || event === "resume") {
-			this.syncLiveState().catch(notifyErrorHandler("Failed to resubscribe Surface Export live updates"));
+			this.resubscribeUntilLive();
+			return;
 		}
+		this.clearResubscribeTimer();
+		this.setState({
+			liveStatus: event === "drop" ? "reconnecting" : "offline",
+			liveError: null,
+		});
+	}
+
+	private clearResubscribeTimer() {
+		if (this.resubscribeTimer !== null) {
+			clearTimeout(this.resubscribeTimer);
+			this.resubscribeTimer = null;
+		}
+	}
+
+	resubscribeUntilLive(attempt = 0) {
+		this.clearResubscribeTimer();
+		this.syncLiveState().then(() => {
+			this.setState({ liveStatus: "live", liveError: null });
+		}, (err: unknown) => {
+			const message = getErrorMessage(err, "resubscribe failed");
+			this.setState({ liveStatus: "degraded", liveError: message });
+			if (!this.link.connector.connected) {
+				return;
+			}
+			const delayMs = Math.min(RESUBSCRIBE_MAX_DELAY_MS, RESUBSCRIBE_BASE_DELAY_MS * 2 ** attempt);
+			console.warn(`Surface Export live updates degraded (attempt ${attempt + 1}), retrying in ${delayMs}ms: ${message}`);
+			this.resubscribeTimer = setTimeout(() => {
+				this.resubscribeTimer = null;
+				this.resubscribeUntilLive(attempt + 1);
+			}, delayMs) as unknown as number;
+		});
 	}
 
 	getState() {

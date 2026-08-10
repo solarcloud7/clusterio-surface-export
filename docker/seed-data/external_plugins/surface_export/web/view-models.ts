@@ -46,6 +46,8 @@ export type LogDetail = {
 	detailRetained?: boolean;
 };
 
+export type LiveStatus = "live" | "reconnecting" | "offline" | "degraded";
+
 export type SurfaceExportState = {
 	tree: PlatformTreeState | null;
 	loadingTree: boolean;
@@ -56,6 +58,8 @@ export type SurfaceExportState = {
 	lastTransferRevision: number;
 	lastLogRevision: number;
 	canViewLogs: boolean;
+	liveStatus: LiveStatus;
+	liveError: string | null;
 };
 
 export type SurfaceExportPlugin = {
