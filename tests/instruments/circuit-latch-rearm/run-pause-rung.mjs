@@ -51,6 +51,7 @@ end
 local p = game.forces.player.create_space_platform{ name='${PLATFORM}',
   planet='nauvis', starter_pack='space-platform-starter-pack' }
 if not p then return { success=false, error='create_space_platform failed' } end
+storage.__pause_rung = { platform = p.index }
 p.apply_starter_pack()
 local s, force = p.surface, game.forces.player
 local tiles = {}
@@ -77,7 +78,8 @@ dc.get_control_behavior().parameters = {
 cc.get_wire_connector(defines.wire_connector_id.circuit_red, true)
   .connect_to(dc.get_wire_connector(defines.wire_connector_id.combinator_input_red, true))
 p.paused = false
-storage.__pause_rung = { platform = p.index, cc = cc.unit_number, dc = dc.unit_number }
+storage.__pause_rung.cc = cc.unit_number
+storage.__pause_rung.dc = dc.unit_number
 return { success = true, platform_index = p.index }
 `;
 

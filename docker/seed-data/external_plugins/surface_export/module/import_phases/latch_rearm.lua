@@ -8,7 +8,7 @@ local CLEAR_TICKS = 2
 local MAX_KEPT_RESULTS = 8
 
 LatchRearm.SAMPLE_COUNT = 5
-LatchRearm.SAMPLE_SPACING_TICKS = 16
+LatchRearm.SAMPLE_GAPS = { 13, 17, 19, 23 }
 
 function LatchRearm.forced_parameters(item)
   local params = {}
@@ -237,7 +237,8 @@ local function run_stage(job_key, record)
     end
     if any_mismatch then
       record.stage = "stability_sample"
-      record.at_tick = game.tick + LatchRearm.SAMPLE_SPACING_TICKS
+      record.gap_index = 1
+      record.at_tick = game.tick + LatchRearm.SAMPLE_GAPS[1]
     else
       finalize(job_key, record, "completed")
     end
@@ -260,7 +261,8 @@ local function run_stage(job_key, record)
       end
     end
     if pending then
-      record.at_tick = game.tick + LatchRearm.SAMPLE_SPACING_TICKS
+      record.gap_index = math.min((record.gap_index or 1) + 1, #LatchRearm.SAMPLE_GAPS)
+      record.at_tick = game.tick + LatchRearm.SAMPLE_GAPS[record.gap_index]
       return
     end
     local any_clear = false
@@ -343,9 +345,17 @@ function LatchRearm.process_tick()
         end
         log(string.format("[LatchRearm] post-throw restore wrote captured parameters to %d decider(s)",
           restored))
+        local details = {}
+        for _, item in ipairs(record.items or {}) do
+          details[#details + 1] = {
+            entity_id = item.entity_id,
+            position = item.position,
+            outcome = item.outcome or ("stage '" .. tostring(record.stage) .. "' threw"),
+          }
+        end
         storage.latch_rearm_results = storage.latch_rearm_results or {}
         storage.latch_rearm_results[job_key] = {
-          rearmed = 0, cleared = 0, moving = 0, failed = #(record.items or {}), details = {},
+          rearmed = 0, cleared = 0, moving = 0, failed = #details, details = details,
           platform_name = record.platform_name,
           transfer_id = record.transfer_id,
           finished_tick = game.tick,

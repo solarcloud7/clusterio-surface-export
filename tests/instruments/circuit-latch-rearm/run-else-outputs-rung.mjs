@@ -57,12 +57,12 @@ async function main() {
 		say(`probe -> ${JSON.stringify(r)}`);
 		if (r.write_accepted === false) {
 			record("E0", "cb.parameters write REFUSES else_outputs at 2.1.11", r.write_err);
-			return;
+		} else {
+			record("E1", `cb.parameters getter emits else_outputs: ${r.e1_emitted ? "YES" : "NO"}`,
+				`set else_outputs={signal-R}; readback else_outputs[1].signal.name=${r.e1_signal}`);
+			record("E2", `a {conditions, outputs}-only write clears a previously-set else_outputs: ${r.e2_cleared ? "YES" : "NO"}`,
+				`rewrote parameters without else_outputs; readback ${r.e2_cleared ? "empty" : "STILL PRESENT"}`);
 		}
-		record("E1", `cb.parameters getter emits else_outputs: ${r.e1_emitted ? "YES" : "NO"}`,
-			`set else_outputs={signal-R}; readback else_outputs[1].signal.name=${r.e1_signal}`);
-		record("E2", `a {conditions, outputs}-only write clears a previously-set else_outputs: ${r.e2_cleared ? "YES" : "NO"}`,
-			`rewrote parameters without else_outputs; readback ${r.e2_cleared ? "empty" : "STILL PRESENT"}`);
 	} finally {
 		say("cleanup:", JSON.stringify(L.lua(HOST, `local st=storage.__else_rung
 			if st then local s=game.get_surface(st.surface) if s then game.delete_surface(s) end end

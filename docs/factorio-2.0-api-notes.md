@@ -331,10 +331,13 @@ state-dimensions-lab NOTEBOOK, archived at git tag `labs-archive-2026-07-19`, an
   (quality-keyed). A mismatch alone no longer licenses the clear: wiring cannot distinguish a latch
   from a self-fed COUNTER (measured live 2026-08-06 — a counter's moving register can never match
   its capture snapshot, and the old pass wrote clearing parameters onto healthy state), so the pass
-  samples the register 5 times, 16 ticks apart (`utils/signal-stability.lua`), and clears ONLY a
-  register that held still across the whole window — a moving register is classified "not a latch,
-  no clear" and left untouched (`moving` bucket in `storage.latch_rearm_results`). Residual: a
-  register clocked slower than the 64-tick window can still read stable. The force write is a
+  samples the register five times at pairwise-coprime gaps (13/17/19/23 ticks, ~72-tick window;
+  uniform spacing would alias any register whose period divides the gap —
+  `utils/signal-stability.lua`) and clears ONLY a register that held still across every sample — a
+  moving register is classified "not a latch" and receives NO clearing write (`moving` bucket in
+  `storage.latch_rearm_results`; like every scheduled decider it was still briefly forced and
+  restored before classification). Residual: a register whose period exceeds the sampling window can
+  hold still across all five samples and read stable. The force write is a
   shallow copy of the captured parameters with only `conditions` overridden — `cb.parameters` emits
   `else_outputs` at this pin **[empirical, 2.1.11, else-outputs-rung E1]** and the old table rebuild
   wiped it **[E2]**; the clearing write deliberately KEEPS else_outputs stripped, because under its

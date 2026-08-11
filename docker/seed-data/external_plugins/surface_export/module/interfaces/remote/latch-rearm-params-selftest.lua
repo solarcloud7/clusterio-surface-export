@@ -30,11 +30,32 @@ local function latch_rearm_params_selftest()
 		}
 	end
 
+	local function gcd(a, b)
+		while b ~= 0 do a, b = b, a % b end
+		return a
+	end
+	local gaps = LatchRearm.SAMPLE_GAPS
+	local coprime = #gaps == LatchRearm.SAMPLE_COUNT - 1
+	for i = 1, #gaps do
+		for j = i + 1, #gaps do
+			if gcd(gaps[i], gaps[j]) ~= 1 then coprime = false end
+		end
+	end
+	check("sample_gaps_are_pairwise_coprime_and_cover_every_sample",
+		coprime,
+		"uniform spacing aliases any register whose period divides the gap — pairwise-coprime gaps "
+			.. "catch every periodic register with period > 1")
+
 	local item = make_item()
 	local forced = LatchRearm.forced_parameters(item)
-	check("forced_preserves_outputs", forced.outputs == item.captured_parameters.outputs,
-		"forced_parameters must carry the captured outputs through untouched")
-	check("forced_preserves_else_outputs", forced.else_outputs == item.captured_parameters.else_outputs,
+	check("forced_preserves_outputs",
+		forced.outputs ~= nil and #forced.outputs == 1
+			and forced.outputs[1].signal.name == "signal-S"
+			and forced.outputs[1].copy_count_from_input == false,
+		"forced_parameters must carry the captured outputs through by value")
+	check("forced_preserves_else_outputs",
+		forced.else_outputs ~= nil and #forced.else_outputs == 1
+			and forced.else_outputs[1].signal.name == "signal-R",
 		"a rebuilt table drops else_outputs — the E-rung measured the getter emits it at 2.1.11")
 	check("forced_preserves_unknown_future_fields", forced.future_field == "must-survive",
 		"shallow-copy semantics must carry fields this code has never heard of")
@@ -57,7 +78,9 @@ local function latch_rearm_params_selftest()
 	check("clearing_strips_else_outputs_even_when_captured_carries_one",
 		clearing.else_outputs == nil,
 		"under an always-false condition a preserved else_outputs would FIRE for the whole clear window")
-	check("clearing_preserves_outputs", clearing.outputs == item2.captured_parameters.outputs,
+	check("clearing_preserves_outputs",
+		clearing.outputs ~= nil and #clearing.outputs == 1
+			and clearing.outputs[1].signal.name == "signal-S",
 		"the cleared latch must keep its own output shape for the restore that follows")
 	check("clearing_does_not_mutate_the_captured_table",
 		item2.captured_parameters.else_outputs ~= nil
