@@ -11,6 +11,31 @@ export const DEFAULT_VALIDATION_TIMEOUT_SECONDS = 30;
 export const MIN_VALIDATION_TIMEOUT_SECONDS = 5;
 export const MAX_VALIDATION_TIMEOUT_SECONDS = 120;
 export const STORAGE_FILENAME = "surface_export_storage.json";
+export const GATEWAY_CONFIG_SINGLE_LIMIT = 7000;
+export const GATEWAY_CONFIG_CHUNK_SIZE = 40_000;
+
+export function toAsciiJson(json: string): string {
+	return json.replace(/[\u007f-\uffff]/g,
+		ch => `\\u${ch.charCodeAt(0).toString(16).padStart(4, "0")}`);
+}
+
+export function simpleChecksum(ascii: string): string {
+	let hash = 0;
+	for (let i = 0; i < ascii.length; i++) {
+		hash = (hash * 31 + ascii.charCodeAt(i)) % 4294967296;
+	}
+	return hash.toString(16).padStart(8, "0");
+}
+
+export function bracketWrap(text: string): string {
+	for (let level = 1; level < 10; level++) {
+		const eq = "=".repeat(level);
+		if (!(text + "]").includes(`]${eq}]`)) {
+			return `[${eq}[${text}]${eq}]`;
+		}
+	}
+	throw new Error("no safe long-bracket level found for payload");
+}
 
 export { getErrorMessage, generateOperationId, makeCanonicalTransferId, parseCanonicalTransferId } from "./shared/utils";
 

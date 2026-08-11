@@ -99,12 +99,12 @@ export class InstancePlugin extends BaseInstancePlugin {
 	private async applyGatewaysToLua(
 		gateways: messages.ResolvedGateway[],
 		activeGatewayNames?: string[],
-	): Promise<void> {
+	): Promise<{ gateways: number }> {
 		const keyed: Record<string, { targets: messages.ResolvedGatewayTarget[] }> = {};
 		for (const g of gateways || []) {
 			keyed[g.gatewayName] = { targets: g.targets || [] };
 		}
-		await this.lua.configureGateways(
+		return await this.lua.configureGateways(
 			JSON.stringify(keyed),
 			activeGatewayNames ? JSON.stringify(activeGatewayNames) : undefined,
 		);
@@ -125,21 +125,36 @@ export class InstancePlugin extends BaseInstancePlugin {
 	}
 
 	async sendGatewayConfigToLua() {
-		try {
+		const pullAndApply = async () => {
 			const resp = (await this.link.sendTo(
 				"controller",
 				new messages.GetGatewayConfigRequest({ instanceId: this.i.id }),
 			)) as unknown as { gateways?: messages.ResolvedGateway[]; activeGatewayNames?: string[] };
-			await this.applyGatewaysToLua(resp?.gateways || [], resp?.activeGatewayNames);
-			this.logger.info(`Gateway config pulled from controller: ${(resp?.gateways || []).length} gateway(s)`);
+			const applied = await this.applyGatewaysToLua(resp?.gateways || [], resp?.activeGatewayNames);
+			this.logger.info(`Gateway config pulled from controller: ${applied.gateways} gateway(s) applied`);
+		};
+		try {
+			await pullAndApply();
+			return;
 		} catch (err: unknown) {
-			this.logger.warn(`Failed to pull gateway config: ${getErrorMessage(err)}`);
+			this.logger.warn(`Gateway config pull failed, retrying in 10s: ${getErrorMessage(err)}`);
 		}
+		void (async () => {
+			await wait(10_000);
+			try {
+				await pullAndApply();
+			} catch (err: unknown) {
+				this.logger.error(
+					`Gateway config pull FAILED after retry — this instance is running NO gateway config: `
+					+ getErrorMessage(err));
+			}
+		})();
 	}
 
 	async handlePushGatewayConfig(request: { gateways: messages.ResolvedGateway[]; activeGatewayNames?: string[] }) {
 		try {
-			await this.applyGatewaysToLua(request.gateways || [], request.activeGatewayNames);
+			const applied = await this.applyGatewaysToLua(request.gateways || [], request.activeGatewayNames);
+			this.logger.info(`Gateway config applied: ${applied.gateways} gateway(s)`);
 			return { success: true };
 		} catch (err: unknown) {
 			return { success: false, error: getErrorMessage(err) };
