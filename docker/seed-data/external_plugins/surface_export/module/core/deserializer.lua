@@ -59,7 +59,7 @@ local SIMPLE_RESTORE_RULES = {
   { field = "crafting_progress" },
   { field = "productivity_bonus", safecall = true },
   { field = "bonus_progress", safecall = true },
-  { field = "player_description", prop = "entity_label", safecall = true },
+  { field = "player_description", prop = "combinator_description", safecall = true },
   { field = "ignore_unprioritised_targets", present = true, safecall = true, no_entity_guard = true },
   { field = "use_filters", present = true },
   { field = "filter_mode", prop = "inserter_filter_mode" },
@@ -239,6 +239,11 @@ function Deserializer.create_entity(surface, entity_data)
       tostring(entity_data.specific_data and entity_data.specific_data.recipe or "none")))
   end
 
+  if entity_data.mirror then
+    safe_call(string.format("mirroring for %s", entity.name),
+      function() entity.mirroring = true end)
+  end
+
   if entity_data.health and entity.health then
     entity.health = entity_data.health
   end
@@ -379,9 +384,9 @@ function Deserializer.restore_entity_state(entity, entity_data)
         function() entity.trains_limit = data.manual_trains_limit end)
     end
     
-    if data.priority and entity.priority ~= nil then
+    if data.priority ~= nil then
       safe_call(string.format("train-stop priority for %s", entity.name),
-        function() entity.priority = data.priority end)
+        function() entity.train_stop_priority = data.priority end)
     end
     
     if data.color and entity.color ~= nil then

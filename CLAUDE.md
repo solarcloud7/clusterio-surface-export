@@ -148,6 +148,9 @@ The plugin uses **TypeScript** with bind-mounted source and **save patching** fo
 
 # Find what happened (plugin errors, transfer traces) — reads the JSON logs docker logs hides:
 ./tools/clusterio/check-cluster-logs.ps1                   # or -Grep "sendRequest|validation|fail"
+# Is each instance's MAIN THREAD alive? The container healthcheck and the stall metric live on the
+# thread being asked about, so a wedge reports healthy — this samples game.tick from outside:
+node tools/clusterio/tick-liveness.mjs                     # ADVANCING / PAUSED / FROZEN / STALLED / STOPPED
 
 # Log an automated browser session into the web UI WITHOUT the token passing through a transcript.
 # The web UI is token-only (localStorage["controller_token"]; no cookie, no anonymous mode, no
@@ -170,6 +173,9 @@ node tools/tests/run-integration-tests.mjs                 # or:  --only 'gatewa
 # the cheapest screen for silent serializer omission (the class that dropped the infinity-pipe
 # filter on every transfer). Read-only: no lock, no source delete.
 node tools/tests/testkit/cli.mjs check                 # cross-refs resolve (no cluster needed)
+node tools/tests/testkit/cli.mjs api LuaEntity.driver_is_gunner   # does this member EXIST at the pin?
+#   A miss exits 2 and names the near-misses AND the classes that DO have it — cheaper than guessing,
+#   which is how game.create_profiler (it is on LuaHelpers) killed an instance.
 node tools/tests/testkit/cli.mjs check --live          # + every fixture anchor resolves in a real payload
 node tools/tests/testkit/cli.mjs inspect <platform> --field 'infinity-pipe@40.5,46.5:infinity_pipe_filter'
 node tools/tests/testkit/cli.mjs blackbox explain <bundle.json>   # offline forensics on a banked failure
@@ -252,6 +258,14 @@ hands-on E2E checklist, one doc); repository test layout and entry points are in
   `graphify-out/graph.json` exists (fresh clones, CI, worktrees), never fails a commit, and appends every run
   to `graphify-out/update.log` — read that log, not the graph's mtime, to see whether a rebuild was refused.
   `SKIP_GRAPHIFY=1 git commit …` opts out.
+- **Name and value discipline (the dominant failure class, measured 2026-08-10):** an API name is
+  LOOKED UP (`testkit api`, or the lua-api page), never typed from memory — three guessed names in one
+  session cost an instance kill, a blind profiler, and two aliases that would have hidden the gap they
+  were written for. A value a probe measured is the value the code ships, cited to the probe. `gh` PR
+  bodies go through `--body-file`, never inline shell. Container commands go through
+  `build-plugin.ps1` (incl. `lint`), never a hand-rolled `docker run`. No `|| fallback` on branch
+  operations — check `git status` first. "Ready for review" includes checking the head SHA actually
+  has CI runs (squash-merging a base orphans them silently).
 - **Working hygiene:** run `./tools/check-pr-scope.ps1` before editing and again before opening a PR; commit
   the real change before deliberately reverting/mutating it for a regression-teeth check (so the implementation
   cannot be lost during teeth testing); leave `package-lock.json` byte-identical outside approved dependency
@@ -493,6 +507,7 @@ opens a slot that gets filled from plausibility. Removing the slot removes the c
 > | TS | `lint:js` (eslint) | never extract/cast a Link method (unnamed `no-restricted-syntax` selectors, `eslint.config.js`); no empty catch or bare `.catch(() => {})` | eslint-disable |
 > | Lua invariants | `lint:lua` | no `global.*` — `no-global-persistence-table`; no `__clusterio_lib__` — `no-clusterio-lib-mod-path`; no `platform.destroy()` — `no-platform-destroy`; no name-keyed transfer identity — `no-name-as-transfer-identity` | `-- lint-lua:allow` |
 > | Lua syntax | `lint:lua-syntax` | every module/mods-src .lua parses as Lua 5.2 AND names no undefined global (a parse error ships to a dead instance at save-load; a misspelled module-table name — the FixtureMeters-vs-M incident — surfaces as an undefined global) | none — fix the name or extend the whitelist in the script (reviewed change) |
+> | API names | `lint:api-names` | every `safe_get(entity, "…")` literal and `entity.*` pcall-probe names a member that EXISTS at the pin (checked against the vendored `scripts/factorio-api-index.json`; regenerate at repin with `extract-factorio-api-index.mjs`) — a wrong name reads as nil forever, which is how `driver_is_main_gunner` shipped silent for months | none — use `testkit api <Class.member>` to find the real name |
 > | Web cache | `lint:web-cache` | webpack output filenames stay content-hashed (immutable 1y `/static` cache serves stale chunks otherwise) | `lint-webpack-cache:allow` |
 > | Test grounding | `lint:test-grounding` | fidelity/gate tests measure PHYSICALLY, never the validator self-report alone; success-path = parse `debug_import_result` + `Assert-TransferSucceeded` before census | `lint-test-grounding:allow` |
 > | pcall logging | `lint:pcall-logging` | every `pcall` surfaces its error or is an annotated `-- intentional probe` | `-- pcall:allow` |

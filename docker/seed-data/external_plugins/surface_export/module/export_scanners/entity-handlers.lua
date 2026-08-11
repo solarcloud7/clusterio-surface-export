@@ -378,7 +378,7 @@ EntityHandlers["spider-vehicle"] = function(entity)
   data.color = GameUtils.extract_color(entity)
   
   -- intentional probe; failure expected, no log
-  local label_success, label = pcall(function() return entity.label end)
+  local label_success, label = pcall(function() return entity.entity_label end)
   if label_success and label and label ~= "" then
     data.label = label
   end
@@ -390,7 +390,7 @@ EntityHandlers["combinator"] = function(entity)
   local data = {}
   
   -- intentional probe; failure expected, no log
-  local desc_success, description = pcall(function() return entity.entity_description end)
+  local desc_success, description = pcall(function() return entity.combinator_description end)
   if desc_success and description and description ~= "" then
     data.player_description = description
   end
@@ -713,7 +713,7 @@ EntityHandlers["train-stop"] = function(entity)
   end
   
   -- intentional probe; failure expected, no log
-  local priority_success, priority = pcall(function() return entity.priority end)
+  local priority_success, priority = pcall(function() return entity.train_stop_priority end)
   if priority_success and priority then
     data.priority = priority
   end

@@ -42,7 +42,7 @@ export class InstancePlugin extends BaseInstancePlugin {
 			|| lowered.startsWith("error");
 	}
 
-	async init() {
+	override async init() {
 		this.logger.info("Surface Export plugin initializing...");
 		this.logger.info(`Instance ID: ${this.i.id}, Name: ${this.i.config.get("instance.name")}`);
 		this.validateInstanceConfiguration();
@@ -73,7 +73,7 @@ export class InstancePlugin extends BaseInstancePlugin {
 		this.logger.info("Surface Export plugin initialized");
 	}
 
-	async onStart() {
+	override async onStart() {
 		this.logger.info("Instance started - Surface Export plugin ready");
 		await this.ensureLuaConsoleUnlocked();
 		await this.sendConfigurationToLua();
@@ -146,7 +146,7 @@ export class InstancePlugin extends BaseInstancePlugin {
 		}
 	}
 
-	async onStop() {
+	override async onStop() {
 		this.logger.info("Instance stopped - Surface Export plugin shutting down");
 	}
 

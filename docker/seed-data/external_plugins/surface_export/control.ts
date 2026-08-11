@@ -174,7 +174,7 @@ surfaceExportCommands.add(new Command({
 }));
 
 export class CtlPlugin extends BaseCtlPlugin {
-	async addCommands(rootCommand: CommandTree) {
+	override async addCommands(rootCommand: CommandTree) {
 		rootCommand.add(surfaceExportCommands);
 	}
 }

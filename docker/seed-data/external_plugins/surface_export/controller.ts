@@ -78,7 +78,7 @@ export class ControllerPlugin extends BaseControllerPlugin {
 	sourceCommitMarkers!: Map<string, messages.SourceCommitMarker>;
 	sourceCommitMarkersPath!: string;
 
-	async init() {
+	override async init() {
 		this.logger.info("Surface Export controller plugin initializing...");
 
 		this.platformStorage = new Map();
@@ -169,12 +169,12 @@ export class ControllerPlugin extends BaseControllerPlugin {
 		}
 	}
 
-	async onShutdown() {
+	override async onShutdown() {
 		this.subscriptions.treeBroadcastLimiter.cancel();
 		this.logger.info(`Shutting down - ${this.platformStorage.size} platforms in storage`);
 	}
 
-	onControlConnectionEvent(connection: unknown, event: string) {
+	override onControlConnectionEvent(connection: unknown, event: string) {
 		if (event === "close") {
 			this.surfaceExportSubscriptions.delete(
 				connection as { send: (event: unknown) => void; user: { checkPermission: (permission: string) => void } },
@@ -182,11 +182,11 @@ export class ControllerPlugin extends BaseControllerPlugin {
 		}
 	}
 
-	onHostConnectionEvent() {
+	override onHostConnectionEvent() {
 		this.subscriptions.queueTreeBroadcast(this.lastTreeForceName || "player");
 	}
 
-	async onInstanceStatusChanged() {
+	override async onInstanceStatusChanged() {
 		this.subscriptions.queueTreeBroadcast(this.lastTreeForceName || "player");
 	}
 
