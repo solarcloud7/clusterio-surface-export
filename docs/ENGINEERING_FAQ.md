@@ -267,13 +267,18 @@ naturally and are never touched): export captures the live register (`signals_la
 preflights that the captured config writes, briefly forces the condition true for one evaluated tick,
 restores it, then PHYSICALLY verifies the register against the capture (quality-keyed). On a count
 mismatch (an output with `copy_count_from_input=false` emits 1, so a register holding e.g. 47 is not
-reproducible) the latch is CLEARED back to the pre-fix predictable 0 and the mismatch is reported per
-decider — nothing fake stays in the network. The `omnibus-decider-latch` pad asserts a transferred latch
-arrives ARMED on the destination board. Honest limits: an INDIRECT feedback loop (through a pole) is not
-detected and keeps the old arrives-at-0 behavior; every gateway-parked transfer arrives paused, so its
-latches are reported not-re-armed after a 30 s patience window (gateway transfers do not get the re-arm).
-Non-latch signal state (accumulated counters in networks, arithmetic-combinator derived values) still
-re-derives or resets after transfer — engine simulation state with no capture/restore API.
+reproducible) the pass first samples the register across a 64-tick window (`utils/signal-stability.lua`)
+— wiring cannot distinguish a latch from a self-fed COUNTER, and a moving register is "not a latch, no
+clear", left untouched. Only a register that held still across the window is CLEARED back to the pre-fix
+predictable 0, reported per decider — nothing fake stays in the network. The `omnibus-decider-latch` pad
+asserts a transferred latch arrives ARMED on the destination board; `tests/integration/latch-rearm-adversarial`
+asserts a latch and a counter on one platform get told apart. Honest limits: an INDIRECT feedback loop
+(through a pole) is not detected and keeps the old arrives-at-0 behavior; a register clocked slower than
+the 64-tick sampling window can still read stable and be cleared. Gateway-parked transfers get the re-arm
+— combinators evaluate on paused platforms (pause-rung, 2026-08-11; the old 30 s patience wait guarded
+nothing and is deleted). Non-latch signal state (accumulated counters in networks, arithmetic-combinator
+derived values) still re-derives or resets after transfer — engine simulation state with no
+capture/restore API.
 
 **Q: What if some entities fail to place on the destination (missing mod)?**
 A: ✅ Their items/fluids are tallied as failed-entity-loss and subtracted from expected totals so validation is

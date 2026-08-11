@@ -295,11 +295,22 @@ state-dimensions-lab NOTEBOOK, archived at git tag `labs-archive-2026-07-19`, an
 - **`disabled_by_script` does NOT stop a combinator evaluating.** **[empirical, 2.1.11,
   circuit-latch-rearm R2 (behavioral rewrite 2026-07-30)]** Measured as a TRANSITION, not a property
   readback: a decider with condition `A > 0` and empty output was set `disabled_by_script = true`,
-  its input raised 0→5, and the output FIRED (`signal-S=1`). Combinators cannot be script-disabled;
-  during the import window only the platform pause stops them. (The first version of this rung wrote
+  its input raised 0→5, and the output FIRED (`signal-S=1`). Combinators cannot be script-disabled.
+  (The first version of this rung wrote
   the property and read it back — confounded, since combinators are natively `active == false`, so a
   readback cannot distinguish "ignored" from "already off". Retracted 2026-07-28; re-established
   behaviorally with a pre-write baseline.)
+- **Combinators EVALUATE on a PAUSED platform.** **[empirical, 2.1.11, circuit-latch-rearm
+  pause-rung P0–P3, 2026-08-11]** With `platform.paused = true` on a powered platform: the input
+  wire network propagated a fresh value (P1), the decider's own register (`signals_last_tick`, output
+  connector deliberately unwired to exclude the network-sum confound) fired on that input (P1),
+  CLEARED when the input dropped (P2a — ongoing evaluation, not a held value), and re-fired from an
+  empty register when the condition was rewritten always-true and cleared again on restore (P2 — the
+  exact production force→restore mechanism), bracketed by unpaused control arms (P0, P3). The prior
+  claim that platform pause stops combinator evaluation was an inference never measured; it is
+  retracted, consistent with the paused-platform freeze-probe above (pause suspends thrust and
+  schedule only). Consequence: the latch re-arm pass runs regardless of pause — the former 30 s
+  patience wait guarded nothing, and gateway-parked transfers get the re-arm.
 - **A cleared latch CAN be re-armed by temporarily rewriting the decider's CONDITION.**
   **[empirical, 2.1.11, circuit-latch-rearm R3]** Control behaviour IS writable: forcing the condition
   true, letting it evaluate, then restoring the captured condition leaves the latch holding itself
@@ -313,13 +324,21 @@ state-dimensions-lab NOTEBOOK, archived at git tag `labs-archive-2026-07-19`, an
   is not detected and keeps the pre-fix arrives-at-0 behavior, logged at schedule time). (a) It runs
   post-activation as a deferred multi-tick stage machine, preflighting that the captured parameters
   WRITE before any force (never force what you cannot restore); circuit signals are not part of the
-  exact gate, so nothing can touch the verdict. A gateway-parked transfer arrives paused and
-  combinators cannot evaluate while paused, so its latches are reported not-re-armed after a 30 s
-  patience window — gateway transfers currently do not get the re-arm. (b) An output with
+  exact gate, so nothing can touch the verdict. It runs regardless of platform pause (pause-rung
+  above); gateway-parked transfers get the re-arm. (b) An output with
   `copy_count_from_input=false` emits its constant (usually 1), so a source register holding another
   count is not reproducible — the pass VERIFIES `signals_last_tick` against the captured register
-  (quality-keyed) and on mismatch CLEARS the latch back to the pre-fix predictable 0, reporting per
-  decider in the log and `storage.latch_rearm_results`.
+  (quality-keyed). A mismatch alone no longer licenses the clear: wiring cannot distinguish a latch
+  from a self-fed COUNTER (measured live 2026-08-06 — a counter's moving register can never match
+  its capture snapshot, and the old pass wrote clearing parameters onto healthy state), so the pass
+  samples the register 5 times, 16 ticks apart (`utils/signal-stability.lua`), and clears ONLY a
+  register that held still across the whole window — a moving register is classified "not a latch,
+  no clear" and left untouched (`moving` bucket in `storage.latch_rearm_results`). Residual: a
+  register clocked slower than the 64-tick window can still read stable. The force write is a
+  shallow copy of the captured parameters with only `conditions` overridden — `cb.parameters` emits
+  `else_outputs` at this pin **[empirical, 2.1.11, else-outputs-rung E1]** and the old table rebuild
+  wiped it **[E2]**; the clearing write deliberately KEEPS else_outputs stripped, because under its
+  always-false condition a preserved else_outputs would fire for the whole clear window.
 - **Decider and arithmetic combinators DRAW POWER (16.67 J/tick); constant combinators do not.**
   **[empirical, 2.1.11, circuit-latch-rearm build guard]** Read off the prototypes:
   `prototypes.entity["decider-combinator"].electric_energy_source_prototype` is non-nil with

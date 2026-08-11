@@ -330,8 +330,8 @@ ImportCompletion.run_phase2()  (single tick)      [core/import-completion.lua]
      (ONE immutable exact item + by-name fluid verdict)
   → ActiveStateRestoration.restore()              (unfreeze + activate only after verdict success)
   → LatchRearm.schedule()                         [import_phases/latch_rearm.lua]
-     (post-activation, non-gating: re-arms self-feedback decider latches; needs unpaused
-      ticks, so it is deferred and can never touch gate fields)
+     (post-activation, non-gating: re-arms self-feedback decider latches; deferred
+      multi-tick stage machine, runs paused or not, can never touch gate fields)
   → LossAnalysis.run()                            [validators/loss-analysis.lua]
      (reporting-only postActivationReport; cannot change verdict fields)
   → clusterio_api.send_json("surface_export_import_complete", result)
