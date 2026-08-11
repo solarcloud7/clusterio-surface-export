@@ -130,24 +130,36 @@ async function main() {
 			`input-driven evaluation ${evaluatesPaused ? "FIRES" : "SILENT"}`,
 			`input="${p1.input}" register="${p1.register}" paused=${p1.paused} status=${p1.status}`);
 
+		lua(PRE + "setA(0) return { success=true }");
+		await L.sleep(3000);
+		const p2base = lua(READ);
+		say(`P2a. paused, A back to 0       -> ${JSON.stringify(p2base)}`);
+		if (/signal-S/.test(p2base.register)) {
+			throw new Error("rung invalid: register held S=1 at A=0 while paused — cannot attribute a later " +
+				"S=1 to the forced write");
+		}
+		record("P2a", "paused platform: register CLEARED when the input dropped (ongoing evaluation while paused)",
+			`A 5->0 while paused; register="${p2base.register}"`);
 		lua(PRE + `dc.get_control_behavior().parameters = {
 			conditions = {{ first_signal={type='virtual',name='signal-A'}, comparator='>=', constant=-2147483648 }},
 			outputs = {{ signal={type='virtual',name='signal-S'}, copy_count_from_input=false }} }
 			return { success=true }`);
 		await L.sleep(3000);
 		const p2forced = lua(READ);
-		say(`P2a. paused, condition FORCED  -> ${JSON.stringify(p2forced)}`);
+		say(`P2b. paused, condition FORCED from empty register -> ${JSON.stringify(p2forced)}`);
 		lua(PRE + `dc.get_control_behavior().parameters = {
 			conditions = {{ first_signal={type='virtual',name='signal-A'}, comparator='>', constant=0 }},
 			outputs = {{ signal={type='virtual',name='signal-S'}, copy_count_from_input=false }} }
 			return { success=true }`);
 		await L.sleep(3000);
 		const p2restored = lua(READ);
-		say(`P2b. paused, condition restored -> ${JSON.stringify(p2restored)}`);
+		say(`P2c. paused, condition restored (A=0, should clear) -> ${JSON.stringify(p2restored)}`);
 		const forcedFires = /signal-S=1/.test(p2forced.register);
-		record("P2", `paused platform: the force->restore mechanism ${forcedFires ? "EVALUATES" : "does NOT evaluate"}`,
-			`forced always-true register="${p2forced.register}"; restored register="${p2restored.register}" ` +
-			`(A still 5, so restored condition is also true if evaluating)`);
+		const restoredClears = !/signal-S/.test(p2restored.register);
+		record("P2", `paused platform: the force->restore mechanism ${forcedFires ? "EVALUATES" : "does NOT evaluate"}` +
+			` (forced write fired from an EMPTY register; restore ${restoredClears ? "re-evaluated too" : "did NOT re-evaluate"})`,
+			`baseline empty -> forced always-true register="${p2forced.register}" -> restored A>0 with A=0 ` +
+			`register="${p2restored.register}"`);
 
 		lua(PRE + "p.paused = false setA(0) return { success=true }");
 		await L.sleep(3000);
