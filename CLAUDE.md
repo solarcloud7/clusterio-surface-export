@@ -163,6 +163,18 @@ node tools/clusterio/serve-admin-token.mjs                 # prints ONE line: th
 # Transfer a platform between instances (then prints post-transfer state):
 ./tools/surface-export/transfer-platform.ps1 -PlatformIndex <idx> -Direction 2to1   # or 1to2
 
+# The clone -> transfer -> verify -> sweep probe loop as ONE command (transfers a CLONE, never the
+# fixture; sweeps unconditionally unless --keep; exit 0 only on gate SUCCESS + zero leftovers):
+node tools/surface-export/probe-transfer.mjs --fixture 21 [--lua "<prep snippet>"] [--keep]
+
+# The mutate -> build -> test -> restore ritual with a restore that CANNOT be skipped (sidecar
+# backup; a killed run makes the next invocation refuse). Exit 0 = mutation KILLED >=1 test,
+# exit 1 = SURVIVED (missing teeth). module/ Lua is refused — use the package.loaded rebind:
+node tools/tests/testkit/cli.mjs mutation --file <path> --find "<exact>" --replace "<mutant>" [--baseline]
+
+# Re-park a stacked branch after its base squash-merged; ends with the CI-orphaning reminder:
+pwsh -File tools/shared/rebase-stacked.ps1 -OldBaseTip <sha-of-squashed-tip> [-Push]
+
 # Run the WHOLE integration suite (auto-discovers tests/integration/*/run-tests.{ps1,mjs}; cluster must be
 # UP). One source of truth — also the single CI step. Node spawns pwsh per .ps1 test (macOS: brew install
 # powershell). Filter with --only <regex>; dry-run with --list.

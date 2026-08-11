@@ -5,6 +5,7 @@ import { explainBlackBoxFile, formatExplanation } from "./blackbox-explain.mjs";
 import * as logq from "./log-query.mjs";
 import { formatMiss } from "./path-oracle.mjs";
 import { lookup, formatLookup } from "./api-oracle.mjs";
+import { mutationRun } from "./mutation-run.mjs";
 
 const [, , command, ...rest] = process.argv;
 const flag = name => rest.includes(name);
@@ -179,7 +180,18 @@ async function cmdApi() {
 	process.exit(result.ok ? 0 : 2);
 }
 
-const COMMANDS = { check: cmdCheck, inspect: cmdInspect, probe: cmdProbe, blackbox: cmdBlackbox, log: cmdLog, api: cmdApi };
+async function cmdMutation() {
+	const file = valueOf("--file");
+	const find = valueOf("--find");
+	const replace = valueOf("--replace");
+	if (!file || find === null || replace === null) {
+		fail("usage: mutation --file <path> --find <exact string> --replace <mutant string> [--baseline]");
+	}
+	const killed = mutationRun({ file, find, replace, baseline: flag("--baseline") });
+	process.exit(killed && process.exitCode !== 1 ? 0 : 1);
+}
+
+const COMMANDS = { check: cmdCheck, inspect: cmdInspect, probe: cmdProbe, blackbox: cmdBlackbox, log: cmdLog, api: cmdApi, mutation: cmdMutation };
 if (!COMMANDS[command]) {
 	fail(`usage: node tools/tests/testkit/cli.mjs <${Object.keys(COMMANDS).join("|")}> [...]`);
 }
