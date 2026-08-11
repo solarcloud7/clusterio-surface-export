@@ -159,7 +159,7 @@ export class PlatformTree {
 				unassignedInstances.push(node);
 			}
 
-			if (host?.connected) {
+			if (host?.connected && node.status === "running") {
 				platformLoads.push((async () => {
 					const { platforms, error } = await this.requestInstancePlatforms(instanceId, forceName);
 					node.platforms = this.applyActiveTransferState(platforms, instanceId)

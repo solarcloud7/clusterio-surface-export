@@ -126,11 +126,6 @@ EntityHandlers["assembling-machine"] = function(entity)
     data.crafting_progress = entity.crafting_progress
   end
 
-  if entity.productivity_bonus then
-    data.productivity_bonus = entity.productivity_bonus
-  end
-
-
   return data
 end
 

@@ -28,7 +28,9 @@ function New-DisposableClone {
     $c = New-TestPlatform -Instance $instance -SourcePlatform $SourcePlatform -DestPlatform $name
     if (-not $c.success) { Write-Status "Clone failed: $($c.error)" -Type error; exit 1 }
     if ($c.job_id) {
-        $check = "local j=(storage.async_jobs or {})['$($c.job_id)']; rcon.print(j == nil and 'true' or 'false')"
+        $check = "local jobs=(storage.async_jobs or {}) local busy=jobs['$($c.job_id)'] ~= nil " +
+            "if not busy then for _, j in pairs(jobs) do if j.platform_name == '$name' then busy = true end end end " +
+            "rcon.print(busy and 'false' or 'true')"
         Wait-ForJob -Instances @($instance) -MaxWaitSeconds 90 -CheckScript $check | Out-Null
     }
     Start-Sleep -Seconds 1

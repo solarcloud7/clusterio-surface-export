@@ -9,6 +9,7 @@ local PhaseRecorder = require("modules/surface_export/utils/phase-recorder")
 local GameUtils = require("modules/surface_export/utils/game-utils")
 local VersionCompat = require("modules/surface_export/utils/version-compat")
 local Gateway = require("modules/surface_export/core/gateway")
+local ImportTarget = require("modules/surface_export/core/import-target")
 
 local ImportPipeline = {}
 
@@ -135,7 +136,16 @@ function ImportPipeline.queue(json_data, new_platform_name, force_name, requeste
 		game.print(string.format("[Import Warning] Assigned name: '%s'", final_name), {1, 0.5, 0})
 	end
 
-	local target_planet = platform_data._targetPlanet or parsed_data._targetPlanet or "nauvis"
+	local requested_target = platform_data._targetPlanet or parsed_data._targetPlanet
+	local target_planet, requested_park, target_err = ImportTarget.resolve(requested_target)
+	if target_err then
+		log(string.format("[Import Queue] REFUSED: %s", target_err))
+		return nil, string.format("Failed to create platform: %s", target_err)
+	end
+	if requested_park then
+		log(string.format("[Import Queue] Target '%s' is a space location, not a planet — creating on '%s', parking at '%s'",
+			requested_park, target_planet, requested_park))
+	end
 	local ok_create, new_platform = pcall(function()
 		return force.create_space_platform({
 			name = final_name,
@@ -198,34 +208,35 @@ function ImportPipeline.queue(json_data, new_platform_name, force_name, requeste
 			tostring(gateway_target)))
 		gateway_target = nil
 	end
+	local park_target = requested_park or gateway_target
 
-	if gateway_target then
+	if park_target then
 		if not is_transfer then
 			new_platform.paused = true
 		end
-		local ok_unlock, err_unlock = pcall(function() force.unlock_space_location(gateway_target) end)
+		local ok_unlock, err_unlock = pcall(function() force.unlock_space_location(park_target) end)
 		if not ok_unlock then
 			log(string.format("[Gateway] unlock_space_location('%s') failed before creation-park for %s: %s",
-				tostring(gateway_target), final_name, tostring(err_unlock)))
+				tostring(park_target), final_name, tostring(err_unlock)))
 		end
-		local ok_loc, err_loc = pcall(function() new_platform.space_location = gateway_target end)
+		local ok_loc, err_loc = pcall(function() new_platform.space_location = park_target end)
 		if ok_loc then
-			log(string.format("[Gateway] Platform %s parked at gateway '%s' at CREATION (pre-restoration)",
-				final_name, gateway_target))
+			log(string.format("[Gateway] Platform %s parked at '%s' at CREATION (pre-restoration)",
+				final_name, park_target))
 		else
 			log(string.format("[Gateway] CREATION park FAILED for %s at '%s': %s — platform remains paused at its default location",
-				final_name, tostring(gateway_target), tostring(err_loc)))
+				final_name, tostring(park_target), tostring(err_loc)))
 		end
 	end
-	if gateway_target and imported_schedule then
+	if park_target and Gateway.is_gateway(park_target) and imported_schedule then
 		local stripped = Gateway.strip_gateway_records(imported_schedule)
 		if stripped then
 			log(string.format("[Gateway] Gateway transfer to '%s' — stripping gateway hop (records %d -> %d)",
-				gateway_target, #(imported_schedule.records or {}), #stripped.records))
+				park_target, #(imported_schedule.records or {}), #stripped.records))
 			imported_schedule = stripped
 		else
 			log(string.format("[Gateway] Gateway transfer to '%s' — gateway is the only schedule record, keeping it",
-				gateway_target))
+				park_target))
 		end
 	end
 
@@ -303,7 +314,7 @@ function ImportPipeline.queue(json_data, new_platform_name, force_name, requeste
 
 		target_platform = new_platform,
 		imported_schedule = imported_schedule,
-		gateway_target = gateway_target,
+		park_target = park_target,
 
 		metrics = {
 			delivery_started_tick = receive_timing and receive_timing.delivery_started_tick or nil,

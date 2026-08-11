@@ -1,4 +1,3 @@
-local Serializer = require("modules/surface_export/core/serializer")
 local AsyncProcessor = require("modules/surface_export/core/async-processor")
 
 local function clone_platform(source_index, dest_name)
@@ -34,43 +33,32 @@ local function clone_platform(source_index, dest_name)
       return { success = false, error = "Destination platform '" .. dest_name .. "' already exists" }
     end
   end
-  
+
   local source_surface = source_platform.surface
   if not source_surface then
     log(string.format("[Clone Platform] FAILED: Source platform '%s' has no surface", source_name))
     return { success = false, error = "Source platform has no surface" }
   end
-  
-  log(string.format("[Clone Platform] Exporting source platform '%s' (index=%d)...", source_name, source_index))
-  local export_data, error_msg = Serializer.export_platform(source_index, "player")
-  if not export_data then
-    log(string.format("[Clone Platform] FAILED: Export failed: %s", error_msg or "unknown"))
-    return { success = false, error = "Failed to export source platform: " .. (error_msg or "unknown") }
-  end
-  
-  local entity_count = #(export_data.entities or {})
-  local tile_count = #(export_data.tiles or {})
-  log(string.format("[Clone Platform] Export complete: %d entities, %d tiles", entity_count, tile_count))
-  
-  export_data.platform.name = dest_name
-  
-  log(string.format("[Clone Platform] Queuing import job for '%s' (%d entities)...", dest_name, entity_count))
-  local job_id, import_error = AsyncProcessor.queue_import(export_data, dest_name, "player", "clone")
-  
+
+  log(string.format("[Clone Platform] Queuing full-pipeline export of '%s' (index=%d) for clone '%s'...",
+    source_name, source_index, dest_name))
+  local job_id, export_err = AsyncProcessor.queue_export(source_index, "player", "CLONE", nil, nil, dest_name)
   if not job_id then
-    log(string.format("[Clone Platform] FAILED: Import queue failed: %s", import_error or "unknown"))
-    return { success = false, error = "Failed to start import job: " .. (import_error or "unknown") }
+    log(string.format("[Clone Platform] FAILED: Export queue failed: %s", export_err or "unknown"))
+    return { success = false, error = "Failed to queue clone export: " .. (export_err or "unknown") }
   end
-  
-  log(string.format("[Clone Platform] SUCCESS: job_id=%s, platform='%s', entities=%d", job_id, dest_name, entity_count))
-  
+
+  local entity_count = storage.async_jobs[job_id] and storage.async_jobs[job_id].total_entities or nil
+  log(string.format("[Clone Platform] SUCCESS: export job_id=%s, platform='%s', entities=%s",
+    job_id, dest_name, tostring(entity_count)))
+
   return {
     success = true,
     job_id = job_id,
     platform_name = dest_name,
     source_platform = source_name,
     entity_count = entity_count,
-    message = "Clone job started - use /step-tick to process"
+    message = "Clone export queued - the import is queued automatically when it completes"
   }
 end
 

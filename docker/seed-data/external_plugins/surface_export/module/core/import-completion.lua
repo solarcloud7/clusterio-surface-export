@@ -689,18 +689,18 @@ function ImportCompletion.run_phase2(job)
 			game.print(string.format("[Validation] Validation passed - entities activated on platform %s!",
 				job.platform_name), {0, 1, 0})
 
-			if success and job.gateway_target and job.target_platform and job.target_platform.valid then
+			if success and job.park_target and job.target_platform and job.target_platform.valid then
 				local tp = job.target_platform
 				local ok_pause, err_pause = pcall(function() tp.paused = true end)
-				local at_gateway = tp.space_location ~= nil and tp.space_location.name == job.gateway_target
-				result.gatewayParked = (ok_pause and at_gateway) or false
-				if ok_pause and at_gateway then
-					log(string.format("[Gateway] Platform %s arrived PAUSED at gateway '%s' (parked at creation)",
-						job.platform_name, job.gateway_target))
+				local at_park = tp.space_location ~= nil and tp.space_location.name == job.park_target
+				result.gatewayParked = (ok_pause and at_park) or false
+				if ok_pause and at_park then
+					log(string.format("[Gateway] Platform %s arrived PAUSED at '%s' (parked at creation)",
+						job.platform_name, job.park_target))
 				else
-					log(string.format("[Gateway] Park INCOMPLETE for %s at '%s' — paused=%s (%s), at_gateway=%s (location=%s)",
-						job.platform_name, job.gateway_target,
-						tostring(ok_pause), tostring(err_pause), tostring(at_gateway),
+					log(string.format("[Gateway] Park INCOMPLETE for %s at '%s' — paused=%s (%s), at_park=%s (location=%s)",
+						job.platform_name, job.park_target,
+						tostring(ok_pause), tostring(err_pause), tostring(at_park),
 						tostring(tp.space_location and tp.space_location.name)))
 				end
 			end
