@@ -1,5 +1,5 @@
 param(
-    [ValidateSet('all', 'node', 'web')][string]$Target = 'all',
+    [ValidateSet('all', 'node', 'web', 'lint')][string]$Target = 'all',
     [switch]$Fresh,
     [switch]$RestartController,
     [switch]$RestartHosts
@@ -17,6 +17,7 @@ if ($LASTEXITCODE -ne 0) { throw "Docker does not appear to be running. Start Do
 $BuildScript = switch ($Target) {
     'web'  { 'npm run build:browser && npm run build:web' }
     'node' { 'npm run build:node' }
+    'lint' { 'npm run lint' }
     default { 'npm run build' }
 }
 
@@ -31,11 +32,22 @@ $Inner = "set -e; echo '[node] '`$(node -v); " +
          "echo '[deps] npm ci'; npm ci --no-audit --no-fund; fi; " +
          "echo '[build] $BuildScript'; $BuildScript; echo '[ok] build complete'"
 
+if ($Target -eq 'lint') {
+    $RepoPath = (Resolve-Path "$PSScriptRoot/../..").Path
+    $MountSrc = $RepoPath
+    $MountDst = '/repo'
+    $WorkDir = '/repo/docker/seed-data/external_plugins/surface_export'
+} else {
+    $MountSrc = $PluginPath
+    $MountDst = '/app'
+    $WorkDir = '/app'
+}
+
 Write-Host "Building plugin ($Target) in $Image ..." -ForegroundColor Cyan
 docker run --rm `
-    --mount "type=bind,src=$PluginPath,dst=/app" `
-    -v "${DepsVolume}:/app/node_modules" `
-    -w /app `
+    --mount "type=bind,src=$MountSrc,dst=$MountDst" `
+    -v "${DepsVolume}:$WorkDir/node_modules" `
+    -w $WorkDir `
     $Image `
     sh -c $Inner
 

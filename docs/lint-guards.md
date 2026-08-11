@@ -318,3 +318,27 @@ outdated one.
 NOTE FOR build-plugin.ps1: it must run its build command EXPLICITLY. It used to rely on this
 lifecycle firing during `npm ci`, which this guard can now legitimately skip.
 
+
+## lint:api-names (`scripts/lint-api-names.mjs`)
+
+Every Factorio API member name written as a string literal or probe must exist at the pin, checked
+against the vendored `scripts/factorio-api-index.json` (regenerated from Wube's
+`runtime-api.json` by `scripts/extract-factorio-api-index.mjs` at repin time; the index flattens the
+inheritance chain — the first draft dropped parents and false-flagged `get_inventory`, which is
+`LuaControl`'s).
+
+The incident class: `LuaEntity` throws on unknown keys, but `GameUtils.safe_get` and the
+`-- intentional probe` pcall pattern swallow the throw, so a wrong name is indistinguishable from a
+legitimately-nil value. `safe_get(entity, "driver_is_main_gunner")` — a key that has never existed —
+shipped silent for months on both car and spider-vehicle. The lint's own first run found four more in
+the live tree: `entity.label` (spider labels, real name `entity_label`), `entity.entity_description`
+(combinator descriptions, real name `combinator_description`, whose restore rule also wrote the wrong
+member), `entity.priority` (train-stop priority, real name `train_stop_priority`, wrong at both ends),
+and `entity.mirrored` (real name `mirroring`, restore missing entirely).
+
+Scope: `safe_get(entity, "…")` literals and `pcall(function() return entity.NAME` probes in
+`module/`, checked against `LuaEntity` (all receivers are entities today). A miss names the file:line,
+the near-misses, and whether the name exists on another class. The runtime half of the fix lives in
+`safe_get` itself: a THROW now logs once per property name.
+
+No allow marker — a wrong name has no legitimate use; `testkit api <Class.member>` finds the real one.

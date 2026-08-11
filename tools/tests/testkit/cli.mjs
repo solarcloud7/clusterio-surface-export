@@ -4,6 +4,7 @@ import { probeProperty } from "./live-probe.mjs";
 import { explainBlackBoxFile, formatExplanation } from "./blackbox-explain.mjs";
 import * as logq from "./log-query.mjs";
 import { formatMiss } from "./path-oracle.mjs";
+import { lookup, formatLookup } from "./api-oracle.mjs";
 
 const [, , command, ...rest] = process.argv;
 const flag = name => rest.includes(name);
@@ -165,7 +166,20 @@ async function cmdLog() {
 	process.exit(0);
 }
 
-const COMMANDS = { check: cmdCheck, inspect: cmdInspect, probe: cmdProbe, blackbox: cmdBlackbox, log: cmdLog };
+
+async function cmdApi() {
+	const query = rest[0];
+	if (!query) fail("usage: api <Class[.member]>   e.g. api LuaEntity.driver_is_gunner");
+	const result = lookup(query);
+	if (flag("--json")) {
+		console.log(JSON.stringify(result, null, 2));
+	} else {
+		console.log(formatLookup(result));
+	}
+	process.exit(result.ok ? 0 : 2);
+}
+
+const COMMANDS = { check: cmdCheck, inspect: cmdInspect, probe: cmdProbe, blackbox: cmdBlackbox, log: cmdLog, api: cmdApi };
 if (!COMMANDS[command]) {
 	fail(`usage: node tools/tests/testkit/cli.mjs <${Object.keys(COMMANDS).join("|")}> [...]`);
 }

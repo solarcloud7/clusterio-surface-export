@@ -168,7 +168,7 @@ export class WebPlugin extends BaseWebPlugin {
 		};
 	}
 
-	async init() {
+	override async init() {
 		this.pages = [
 			{
 				path: "/surface-export",
@@ -183,7 +183,7 @@ export class WebPlugin extends BaseWebPlugin {
 		this.link.handle(SurfaceExportLogUpdateEvent, payload => this.handleLogUpdate(payload as JsonObject));
 	}
 
-	onControllerConnectionEvent(event: ConnectionEvent) {
+	override onControllerConnectionEvent(event: ConnectionEvent) {
 		this.lastConnectionEvent = event;
 		if (event === "connect") {
 			this.setState(freshRevisionWatermarks());
