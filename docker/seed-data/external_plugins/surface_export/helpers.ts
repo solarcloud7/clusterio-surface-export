@@ -30,7 +30,7 @@ export function simpleChecksum(ascii: string): string {
 export function bracketWrap(text: string): string {
 	for (let level = 1; level < 10; level++) {
 		const eq = "=".repeat(level);
-		if (!text.includes(`]${eq}]`)) {
+		if (!(text + "]").includes(`]${eq}]`)) {
 			return `[${eq}[${text}]${eq}]`;
 		}
 	}

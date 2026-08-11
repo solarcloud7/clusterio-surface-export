@@ -125,26 +125,30 @@ export class InstancePlugin extends BaseInstancePlugin {
 	}
 
 	async sendGatewayConfigToLua() {
-		for (let attempt = 1; attempt <= 2; attempt++) {
-			try {
-				const resp = (await this.link.sendTo(
-					"controller",
-					new messages.GetGatewayConfigRequest({ instanceId: this.i.id }),
-				)) as unknown as { gateways?: messages.ResolvedGateway[]; activeGatewayNames?: string[] };
-				const applied = await this.applyGatewaysToLua(resp?.gateways || [], resp?.activeGatewayNames);
-				this.logger.info(`Gateway config pulled from controller: ${applied.gateways} gateway(s) applied`);
-				return;
-			} catch (err: unknown) {
-				if (attempt === 1) {
-					this.logger.warn(`Gateway config pull failed, retrying in 10s: ${getErrorMessage(err)}`);
-					await wait(10_000);
-				} else {
-					this.logger.error(
-						`Gateway config pull FAILED after retry — this instance is running NO gateway config: `
-						+ getErrorMessage(err));
-				}
-			}
+		const pullAndApply = async () => {
+			const resp = (await this.link.sendTo(
+				"controller",
+				new messages.GetGatewayConfigRequest({ instanceId: this.i.id }),
+			)) as unknown as { gateways?: messages.ResolvedGateway[]; activeGatewayNames?: string[] };
+			const applied = await this.applyGatewaysToLua(resp?.gateways || [], resp?.activeGatewayNames);
+			this.logger.info(`Gateway config pulled from controller: ${applied.gateways} gateway(s) applied`);
+		};
+		try {
+			await pullAndApply();
+			return;
+		} catch (err: unknown) {
+			this.logger.warn(`Gateway config pull failed, retrying in 10s: ${getErrorMessage(err)}`);
 		}
+		void (async () => {
+			await wait(10_000);
+			try {
+				await pullAndApply();
+			} catch (err: unknown) {
+				this.logger.error(
+					`Gateway config pull FAILED after retry — this instance is running NO gateway config: `
+					+ getErrorMessage(err));
+			}
+		})();
 	}
 
 	async handlePushGatewayConfig(request: { gateways: messages.ResolvedGateway[]; activeGatewayNames?: string[] }) {

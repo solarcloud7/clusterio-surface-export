@@ -61,7 +61,7 @@ function simpleChecksum(ascii) {
 function bracketWrap(text) {
 	for (let level = 1; level < 10; level++) {
 		const eq = "=".repeat(level);
-		if (!text.includes(`]${eq}]`)) return `[${eq}[${text}]${eq}]`;
+		if (!(text + "]").includes(`]${eq}]`)) return `[${eq}[${text}]${eq}]`;
 	}
 	throw new Error("no safe long-bracket level found");
 }
@@ -162,8 +162,15 @@ async function main() {
 		const echo = lua(
 			"return { ok = true, gateways = helpers.table_to_json(storage.surface_export_config "
 			+ "and storage.surface_export_config.gateways or {}) }");
-		const same = JSON.stringify(JSON.parse(echo.gateways)) === JSON.stringify(JSON.parse(snapshot.gateways));
-		check(same, "cleanup: restored config deep-equals the snapshot (zero leftover)");
+		const sortedStringify = (value) => {
+			if (Array.isArray(value)) return `[${value.map(sortedStringify).join(",")}]`;
+			if (value && typeof value === "object") {
+				return `{${Object.keys(value).sort().map(k => `${JSON.stringify(k)}:${sortedStringify(value[k])}`).join(",")}}`;
+			}
+			return JSON.stringify(value);
+		};
+		const same = sortedStringify(JSON.parse(echo.gateways)) === sortedStringify(JSON.parse(snapshot.gateways));
+		check(same, "cleanup: restored config deep-equals the snapshot key-order-independently (zero leftover)");
 	}
 
 	if (failed) {

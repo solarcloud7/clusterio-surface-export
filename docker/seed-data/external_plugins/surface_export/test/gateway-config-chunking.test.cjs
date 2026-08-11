@@ -147,13 +147,15 @@ test("simpleChecksum matches known vectors and the Lua source still implements t
 	assert.match(luaSource, /"%08x"/, "the Lua side formats as %08x");
 });
 
-test("bracketWrap picks a non-colliding level and round-trips hostile payloads", () => {
-	for (const payload of ["plain", "a]]b", "a]=]b", "a]]b]=]c]==]d"]) {
+test("bracketWrap picks a level whose FIRST closing delimiter is the real end (the Lua lexer does not backtrack)", () => {
+	for (const payload of ["plain", "a]]b", "a]=]b", "a]]b]=]c]==]d", "a]=", "a]==", "]=", "a]", "]"]) {
 		const wrapped = helpers.bracketWrap(payload);
-		const m = /^\[(=*)\[([\s\S]*)\]\1\]$/.exec(wrapped);
-		assert.ok(m, `wrapped form parses for ${JSON.stringify(payload)}`);
-		assert.equal(m[2], payload);
-		assert.ok(!payload.includes(`]${m[1]}]`), "chosen level cannot appear in the payload");
+		const level = /^\[(=*)\[/.exec(wrapped)[1];
+		const closer = `]${level}]`;
+		assert.equal(wrapped.indexOf(closer), `[${level}[`.length + payload.length,
+			`for ${JSON.stringify(payload)} the first ${closer} must be the terminator — an earlier one `
+			+ "closes the Lua long string early and the remainder is a parse error");
+		assert.equal(wrapped.slice(`[${level}[`.length, -closer.length), payload, "payload survives verbatim");
 	}
 });
 
@@ -196,7 +198,7 @@ test("handlePushGatewayConfig maps an apply failure to {success:false} and succe
 	assert.ok(infos.some(m => /applied: 3 gateway/.test(m)));
 });
 
-test("the boot pull retries exactly once and lands at error level, not warn", async () => {
+test("the boot pull warns fast, retries once OFF the onStart hook, then lands at error level", async () => {
 	const plugin = Object.create(InstancePlugin.prototype);
 	const warns = [];
 	const errors = [];
@@ -207,8 +209,12 @@ test("the boot pull retries exactly once and lands at error level, not warn", as
 	});
 	Object.defineProperty(plugin, "i", { value: { id: 42 } });
 	await plugin.sendGatewayConfigToLua();
-	assert.equal(attempts, 2, "one retry, no more");
+	assert.equal(attempts, 1,
+		"onStart's await must see only the first attempt — Clusterio hard-caps the hook at 15s, "
+		+ "and a 10s in-hook wait would consume two-thirds of every plugin's shared budget");
 	assert.equal(warns.length, 1);
+	for (let i = 0; i < 4; i++) { await new Promise((resolve) => setImmediate(resolve)); }
+	assert.equal(attempts, 2, "one detached retry, no more");
 	assert.equal(errors.length, 1);
 	assert.match(errors[0], /running NO gateway config/);
 });

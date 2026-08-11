@@ -71,6 +71,7 @@ function GatewayConfigStaging.add_chunk(token, index, part)
 	end
 	staging.parts[index] = part
 	staging.received_count = staging.received_count + 1
+	staging.started_tick = game.tick
 	return staging.received_count
 end
 
