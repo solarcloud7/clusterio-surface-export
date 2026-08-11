@@ -692,7 +692,22 @@ function ImportCompletion.run_phase2(job)
 			if success and job.park_target and job.target_platform and job.target_platform.valid then
 				local tp = job.target_platform
 				local ok_pause, err_pause = pcall(function() tp.paused = true end)
+				if not ok_pause then
+					log(string.format("[Gateway] Pause write failed for %s: %s", job.platform_name, tostring(err_pause)))
+				end
 				local at_park = tp.space_location ~= nil and tp.space_location.name == job.park_target
+				if ok_pause and not at_park then
+					local ok_repark, err_repark = pcall(function() tp.space_location = job.park_target end)
+					if not ok_repark then
+						log(string.format("[Gateway] Re-park write failed for %s at '%s': %s",
+							job.platform_name, job.park_target, tostring(err_repark)))
+					end
+					at_park = tp.valid and tp.space_location ~= nil and tp.space_location.name == job.park_target
+					if at_park then
+						log(string.format("[Gateway] Platform %s RE-PARKED at '%s' after activation — the schedule had pulled it off the park",
+							job.platform_name, job.park_target))
+					end
+				end
 				result.gatewayParked = (ok_pause and at_park) or false
 				if ok_pause and at_park then
 					log(string.format("[Gateway] Platform %s arrived PAUSED at '%s' (parked at creation)",
