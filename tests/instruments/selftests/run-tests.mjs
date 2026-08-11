@@ -18,6 +18,7 @@ const SELFTESTS = [
 	"import_target",
 	"signal_stability",
 	"latch_rearm_params",
+	"gateway_config_staging",
 ];
 
 const instanceArg = process.argv.indexOf("--instance");

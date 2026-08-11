@@ -1,6 +1,11 @@
 import { escapeString } from "@clusterio/lib";
 import type { ExportData } from "../messages";
-import { sendChunkedJson, RCON_CHUNK_SIZE, type FactorioInstance } from "../helpers";
+import {
+	sendChunkedJson, chunkify, RCON_CHUNK_SIZE,
+	GATEWAY_CONFIG_SINGLE_LIMIT, GATEWAY_CONFIG_CHUNK_SIZE,
+	toAsciiJson, simpleChecksum, bracketWrap, getErrorMessage,
+	type FactorioInstance,
+} from "../helpers";
 
 type RconHost = FactorioInstance;
 
@@ -34,22 +39,69 @@ export class LuaInterface {
 		await this.host.sendRcon(script, true);
 	}
 
-	async configureGateways(gatewaysJson: string, activeGatewaysJson?: string): Promise<void> {
-		const activeClause = activeGatewaysJson
-			? `, active_gateways_json="${escapeString(activeGatewaysJson)}"`
-			: "";
-		const script = `/sc ` +
-			`if remote.interfaces["surface_export"] and remote.interfaces["surface_export"]["configure"] then ` +
-			`remote.call("surface_export", "configure", {gateways_json="${escapeString(gatewaysJson)}"${activeClause}}) ` +
-			`end`;
-		const MAX_RCON_COMMAND_BYTES = 7000;
-		if (Buffer.byteLength(script, "utf8") > MAX_RCON_COMMAND_BYTES) {
-			throw new Error(
-				`Gateway config command is ${Buffer.byteLength(script, "utf8")} bytes (> ${MAX_RCON_COMMAND_BYTES}); ` +
-				`too large for a single RCON command — reduce the number of gateway targets.`,
-			);
+	async configureGateways(gatewaysJson: string, activeGatewaysJson?: string): Promise<{ gateways: number }> {
+		const asciiJson = toAsciiJson(gatewaysJson);
+		const activeArg = activeGatewaysJson ? `, ${bracketWrap(toAsciiJson(activeGatewaysJson))}` : "";
+		const expectedGateways = Object.keys(JSON.parse(gatewaysJson) as Record<string, unknown>).length;
+		const expectedBytes = asciiJson.length;
+
+		const singleScript = this.gatewayRemoteScript(
+			`remote.call("surface_export", "configure_gateways", ${bracketWrap(asciiJson)}${activeArg})`);
+		if (Buffer.byteLength(singleScript, "utf8") <= GATEWAY_CONFIG_SINGLE_LIMIT) {
+			const reply = await this.callGatewayRemote(singleScript, "apply");
+			this.verifyGatewayEcho(reply, expectedGateways, expectedBytes);
+			return { gateways: expectedGateways };
 		}
-		await this.host.sendRcon(script, true);
+
+		const token = `gwcfg_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+		const chunks = chunkify(GATEWAY_CONFIG_CHUNK_SIZE, asciiJson);
+		const checksum = simpleChecksum(asciiJson);
+		await this.callGatewayRemote(this.gatewayRemoteScript(
+			`remote.call("surface_export", "configure_gateways_begin", "${token}", ${chunks.length}, "${checksum}")`),
+		"begin");
+		for (let i = 0; i < chunks.length; i++) {
+			await this.callGatewayRemote(this.gatewayRemoteScript(
+				`remote.call("surface_export", "configure_gateways_chunk", "${token}", ${i + 1}, ${bracketWrap(chunks[i])})`),
+			`chunk ${i + 1}/${chunks.length}`);
+		}
+		const commit = await this.callGatewayRemote(this.gatewayRemoteScript(
+			`remote.call("surface_export", "configure_gateways_commit", "${token}"${activeArg})`), "commit");
+		this.verifyGatewayEcho(commit, expectedGateways, expectedBytes);
+		this.logger.info(`Gateway config pushed in ${chunks.length} chunk(s): `
+			+ `${expectedGateways} gateway(s), ${expectedBytes} bytes`);
+		return { gateways: expectedGateways };
+	}
+
+	private gatewayRemoteScript(remoteCallExpr: string): string {
+		return `/sc if not (remote.interfaces["surface_export"] `
+			+ `and remote.interfaces["surface_export"]["configure_gateways"]) then `
+			+ `rcon.print('{"ok":false,"error":"surface_export configure_gateways remote missing (module not loaded)"}') `
+			+ `else local ok, res = pcall(function() return ${remoteCallExpr} end) `
+			+ `if ok then rcon.print(helpers.table_to_json(res)) `
+			+ `else rcon.print(helpers.table_to_json({ ok = false, error = tostring(res) })) end end`;
+	}
+
+	private async callGatewayRemote(script: string, phase: string): Promise<Record<string, unknown>> {
+		const raw = await this.host.sendRcon(script);
+		const line = String(raw || "").split(/\r?\n/).map(l => l.trim()).filter(Boolean).at(-1) || "";
+		let parsed: Record<string, unknown>;
+		try {
+			parsed = JSON.parse(line) as Record<string, unknown>;
+		} catch (err: unknown) {
+			throw new Error(`gateway config ${phase}: non-JSON reply "${line.slice(0, 200)}" (${getErrorMessage(err)})`);
+		}
+		if (parsed.ok !== true) {
+			throw new Error(`gateway config ${phase} failed: ${String(parsed.error ?? "unknown")}`);
+		}
+		return parsed;
+	}
+
+	private verifyGatewayEcho(reply: Record<string, unknown>, gateways: number, bytes: number): void {
+		if (reply.gateways !== gateways || reply.bytes !== bytes) {
+			throw new Error(`gateway config echo-verify failed: instance applied `
+				+ `gateways=${String(reply.gateways)} bytes=${String(reply.bytes)}, `
+				+ `expected gateways=${gateways} bytes=${bytes}`);
+		}
 	}
 
 	async pushTeleportRoster(rosterJson: string): Promise<void> {
@@ -61,7 +113,7 @@ export class LuaInterface {
 		if (Buffer.byteLength(script, "utf8") > MAX_RCON_COMMAND_BYTES) {
 			throw new Error(
 				`Teleport roster command is ${Buffer.byteLength(script, "utf8")} bytes (> ${MAX_RCON_COMMAND_BYTES}); ` +
-				`too many instances for a single RCON push — chunk the roster (see import_platform_chunk).`,
+				`too many instances for a single RCON push — chunk the roster (see configure_gateways_begin).`,
 			);
 		}
 		await this.host.sendRcon(script, true);

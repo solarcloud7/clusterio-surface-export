@@ -6,6 +6,7 @@ local ImportPipeline = require("modules/surface_export/core/import-pipeline")
 local ImportCompletion = require("modules/surface_export/core/import-completion")
 local ActiveStateRestoration = require("modules/surface_export/import_phases/active_state_restoration")
 local LatchRearm = require("modules/surface_export/import_phases/latch_rearm")
+local GatewayConfigStaging = require("modules/surface_export/core/gateway-config-staging")
 
 local AsyncProcessor = {}
 
@@ -120,6 +121,7 @@ end
 function AsyncProcessor.process_tick()
 	ActiveStateRestoration.service_pending_mining_progress()
 	LatchRearm.process_tick()
+	GatewayConfigStaging.prune()
 	if not storage.async_jobs then return end
 	ImportSession.prune()
 
