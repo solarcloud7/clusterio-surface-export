@@ -13,6 +13,8 @@ local GameUtils = require("modules/surface_export/utils/game-utils")
 
 local SurfaceExportModule = {}
 
+local deleting_platform_surface_forces = {}
+
 
 local function initialize_storage()
 	storage.platform_exports = storage.platform_exports or {}
@@ -134,6 +136,27 @@ SurfaceExportModule.events = {
 			clusterio_api.send_json("surface_platform_state_changed", {
 				platform_name = platform.name,
 				force_name = platform.force and platform.force.name or "player",
+			})
+		end)
+	end,
+
+	[e.on_pre_surface_deleted] = function(event)
+		local surface = game.get_surface(event.surface_index)
+		local platform = surface and surface.platform
+		if not (platform and platform.valid) then return end
+		deleting_platform_surface_forces[event.surface_index] =
+			platform.force and platform.force.name or "player"
+	end,
+
+	[e.on_surface_deleted] = function(event)
+		local force_name = deleting_platform_surface_forces[event.surface_index]
+		if not force_name then return end
+		deleting_platform_surface_forces[event.surface_index] = nil
+
+		if not (clusterio_api and clusterio_api.send_json) then return end
+		GameUtils.pcall_warn("[Surface Export] send_json surface_platform_state_changed (surface deleted)", function()
+			clusterio_api.send_json("surface_platform_state_changed", {
+				force_name = force_name,
 			})
 		end)
 	end,

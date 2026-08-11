@@ -1,5 +1,5 @@
 param(
-    [ValidateSet('all', 'node', 'web', 'lint')][string]$Target = 'all',
+    [ValidateSet('all', 'node', 'web', 'lint', 'test')][string]$Target = 'all',
     [switch]$Fresh,
     [switch]$RestartController,
     [switch]$RestartHosts
@@ -18,6 +18,7 @@ $BuildScript = switch ($Target) {
     'web'  { 'npm run build:browser && npm run build:web' }
     'node' { 'npm run build:node' }
     'lint' { 'npm run lint' }
+    'test' { 'npm test' }
     default { 'npm run build' }
 }
 
