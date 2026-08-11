@@ -18,6 +18,7 @@ local JobResults = require("modules/surface_export/core/job-results")
 local CensusAccumulator = require("modules/surface_export/export_scanners/census-accumulator")
 local BlueprintDiff = require("modules/surface_export/export_scanners/blueprint-diff")
 local ExportCache = require("modules/surface_export/utils/export-cache")
+local ImportPipeline = require("modules/surface_export/core/import-pipeline")
 
 local ExportPipeline = {}
 
@@ -129,7 +130,7 @@ local function handle_pending_file_write(export_id)
 	storage.pending_file_writes[export_id] = nil
 end
 
-function ExportPipeline.queue(platform_index, force_name, requester_name, destination_instance_id, gateway_target)
+function ExportPipeline.queue(platform_index, force_name, requester_name, destination_instance_id, gateway_target, clone_dest_name)
 	storage.async_job_id_counter = storage.async_job_id_counter + 1
 	local job_counter = storage.async_job_id_counter
 
@@ -203,6 +204,7 @@ function ExportPipeline.queue(platform_index, force_name, requester_name, destin
 		force_name = force_name,
 		requester = requester_name,
 		destination_instance_id = destination_instance_id,
+		clone_dest_name = clone_dest_name,
 		started_tick = game.tick,
 		surface = surface,
 
@@ -537,6 +539,21 @@ function ExportPipeline.complete(job)
 	end
 
 	ExportCache.prune_to_configured_cap()
+
+	if job.clone_dest_name then
+		job.export_data.platform_name = job.clone_dest_name
+		job.export_data.platform.name = job.clone_dest_name
+		local import_job_id, import_err = ImportPipeline.queue(job.export_data, job.clone_dest_name, job.force_name, "clone")
+		if import_job_id then
+			log(string.format("[Clone Platform] Import queued from completed export %s: job=%s, platform='%s'",
+				export_id, import_job_id, job.clone_dest_name))
+		else
+			log(string.format("[Clone Platform] FAILED to queue import for '%s': %s",
+				job.clone_dest_name, tostring(import_err)))
+			game.print(string.format("[Clone Platform] Import FAILED for '%s': %s",
+				job.clone_dest_name, tostring(import_err)), {1, 0, 0})
+		end
+	end
 
 	storage.async_jobs[job.job_id] = nil
 end

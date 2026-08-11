@@ -15,6 +15,7 @@ const SELFTESTS = [
 	"hold_aware_unlock",
 	"export_cache",
 	"blueprint_diff",
+	"import_target",
 ];
 
 const instanceArg = process.argv.indexOf("--instance");

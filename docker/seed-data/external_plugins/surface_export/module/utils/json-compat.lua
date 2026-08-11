@@ -78,32 +78,17 @@ function JsonCompat.to_json(value)
 end
 
 function JsonCompat.encode_json_compat(value)
-  if game then
-    local ok, result = pcall(function()
-      if game.table_to_json then
-        return game.table_to_json(value)
-      end
-      return nil
-    end)
+  if helpers and helpers.table_to_json then
+    local ok, result = pcall(helpers.table_to_json, value)
     if ok and result ~= nil then
       return result
     end
     if not ok then
-      log(string.format("[JsonCompat] game.table_to_json failed, falling back: %s", tostring(result)))
+      log(string.format("[JsonCompat] helpers.table_to_json failed, falling back to the internal encoder: %s",
+        tostring(result)))
     end
-  end
-
-  local ok_helpers, helpers_result = pcall(function()
-    if helpers and helpers.table_to_json then
-      return helpers.table_to_json(value)
-    end
-    return nil
-  end)
-  if ok_helpers and helpers_result ~= nil then
-    return helpers_result
-  end
-  if not ok_helpers then
-    log(string.format("[JsonCompat] helpers.table_to_json failed, falling back: %s", tostring(helpers_result)))
+  else
+    log("[JsonCompat] helpers.table_to_json unavailable, falling back to the internal encoder")
   end
 
   local ok, result = pcall(JsonCompat.to_json, value)
@@ -122,58 +107,23 @@ function JsonCompat.json_to_table_compat(json_string)
     if not ok then
       log(string.format("[JsonCompat] helpers.json_to_table failed: %s", tostring(result)))
     end
+    return nil, "helpers.json_to_table could not decode the input"
   end
 
-  if game then
-    -- intentional probe; failure expected (game.json_to_table is absent in 2.0 and the key access errors), no log
-    local status, has_func = pcall(function() return game.json_to_table end)
-    if status and has_func then
-      local ok, result = pcall(game.json_to_table, json_string)
-      if ok and result then return result end
-      if not ok then
-        log(string.format("[JsonCompat] game.json_to_table failed: %s", tostring(result)))
-      end
-    end
-  end
-
-  return nil, "No JSON decoder available (missing helpers.json_to_table and game.json_to_table)"
+  return nil, "No JSON decoder available (helpers.json_to_table missing)"
 end
 
 function JsonCompat.write_file_compat(filename, contents, append, for_player)
-  if game then
-    local ok, result = pcall(function()
-      if game.write_file then
-        game.write_file(filename, contents, append)
-        return true
-      end
-      return false, "write_file API unavailable on game"
-    end)
-    if ok and result == true then
+  if helpers and helpers.write_file then
+    local ok, err = pcall(helpers.write_file, filename, contents, append, for_player)
+    if ok then
       return true
     end
-    if ok and type(result) == "table" and result[1] == false then
-      return false, result[2]
-    end
-    if not ok then
-      log(string.format("[JsonCompat] game.write_file failed, falling back: %s", tostring(result)))
-    end
+    log(string.format("[JsonCompat] helpers.write_file failed: %s", tostring(err)))
+    return false, tostring(err)
   end
 
-  local ok_helpers, helpers_error = pcall(function()
-    if helpers and helpers.write_file then
-      helpers.write_file(filename, contents, append, for_player)
-      return true
-    end
-    return false, "helpers.write_file API unavailable"
-  end)
-  if ok_helpers and helpers_error == true then
-    return true
-  end
-  if not ok_helpers then
-    log(string.format("[JsonCompat] helpers.write_file failed: %s", tostring(helpers_error)))
-  end
-
-  return false, "No available write_file implementation"
+  return false, "No available write_file implementation (helpers.write_file missing)"
 end
 
 function JsonCompat.read_file_compat(filename)

@@ -57,7 +57,6 @@ end
 
 local SIMPLE_RESTORE_RULES = {
   { field = "crafting_progress" },
-  { field = "productivity_bonus", safecall = true },
   { field = "bonus_progress", safecall = true },
   { field = "player_description", prop = "combinator_description", safecall = true },
   { field = "ignore_unprioritised_targets", present = true, safecall = true, no_entity_guard = true },

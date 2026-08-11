@@ -312,7 +312,7 @@ function ConnectionScanner.extract_infinity_filters(entity)
     return {}
   end
 
-  if not entity.prototype.name:find("infinity") then
+  if entity.type ~= "infinity-container" and entity.type ~= "infinity-cargo-wagon" then
     return {}
   end
 
