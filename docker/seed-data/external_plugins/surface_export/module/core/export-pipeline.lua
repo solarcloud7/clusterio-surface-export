@@ -18,6 +18,7 @@ local JobResults = require("modules/surface_export/core/job-results")
 local CensusAccumulator = require("modules/surface_export/export_scanners/census-accumulator")
 local BlueprintDiff = require("modules/surface_export/export_scanners/blueprint-diff")
 local ExportCache = require("modules/surface_export/utils/export-cache")
+local ImportPipeline = require("modules/surface_export/core/import-pipeline")
 
 local ExportPipeline = {}
 
@@ -540,7 +541,6 @@ function ExportPipeline.complete(job)
 	ExportCache.prune_to_configured_cap()
 
 	if job.clone_dest_name then
-		local ImportPipeline = require("modules/surface_export/core/import-pipeline")
 		job.export_data.platform_name = job.clone_dest_name
 		job.export_data.platform.name = job.clone_dest_name
 		local import_job_id, import_err = ImportPipeline.queue(job.export_data, job.clone_dest_name, job.force_name, "clone")

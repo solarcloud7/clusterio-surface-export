@@ -64,26 +64,23 @@ test("the configure remote accepts the key (unregistered keys are dropped in sil
 		"the branch must apply the value it received");
 });
 
-test("both export write sites prune the cache", () => {
+test("the export write site prunes the cache, and the synchronous bypass stays deleted", () => {
 	const exportPipeline = code(path.join("core", "export-pipeline.lua"));
-	const serializer = code(path.join("core", "serializer.lua"));
 
 	assert.match(exportPipeline, /ExportCache\.prune_to_configured_cap\s*\(\s*\)/,
 		"the async/production export path must prune after storing its entry");
-	assert.match(serializer, /ExportCache\.prune_to_configured_cap\s*\(\s*\)/,
-		"the synchronous/clone export path must prune too — it writes an entry nothing ever reads");
+	assert.equal(fs.existsSync(path.join(pluginDir, "module", "core", "serializer.lua")), false,
+		"core/serializer.lua was the synchronous export bypass — its payloads skipped the completion "
+		+ "phase (no belt_side_groups, no force_data), which is how clones lost their belt items; "
+		+ "a second export path must not come back");
 });
 
 test("every write site goes through record(), so the ordering stamp cannot be forgotten", () => {
 	const exportPipeline = code(path.join("core", "export-pipeline.lua"));
-	const serializer = code(path.join("core", "serializer.lua"));
 
 	assert.doesNotMatch(exportPipeline, /storage\.platform_exports\s*\[[^\]]+\]\s*=/,
 		"export-pipeline must not assign into storage.platform_exports directly — use ExportCache.record");
-	assert.doesNotMatch(serializer, /storage\.platform_exports\s*\[[^\]]+\]\s*=/,
-		"serializer must not assign into storage.platform_exports directly — use ExportCache.record");
 	assert.match(exportPipeline, /ExportCache\.record\s*\(/, "export-pipeline must store via record()");
-	assert.match(serializer, /ExportCache\.record\s*\(/, "serializer must store via record()");
 });
 
 test("ordering is by insertion, never by the queue-time tick", () => {
