@@ -16,6 +16,8 @@ const SELFTESTS = [
 	"export_cache",
 	"blueprint_diff",
 	"import_target",
+	"signal_stability",
+	"latch_rearm_params",
 ];
 
 const instanceArg = process.argv.indexOf("--instance");

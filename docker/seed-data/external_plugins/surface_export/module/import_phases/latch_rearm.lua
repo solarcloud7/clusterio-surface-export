@@ -1,21 +1,25 @@
+local SignalStability = require("modules/surface_export/utils/signal-stability")
+
 local LatchRearm = {}
 
 local FORCE_TO_RESTORE_TICKS = 2
 local RESTORE_TO_VERIFY_TICKS = 2
 local CLEAR_TICKS = 2
-local PATIENCE_TICKS = 1800
 local MAX_KEPT_RESULTS = 8
 
-local function forced_parameters(item)
-  return {
-    conditions = {
-      { first_signal = item.captured_outputs[1].signal, comparator = ">=", constant = -2147483648 },
-    },
-    outputs = item.captured_parameters.outputs,
+LatchRearm.SAMPLE_COUNT = 5
+LatchRearm.SAMPLE_SPACING_TICKS = 16
+
+function LatchRearm.forced_parameters(item)
+  local params = {}
+  for k, v in pairs(item.captured_parameters) do params[k] = v end
+  params.conditions = {
+    { first_signal = item.captured_outputs[1].signal, comparator = ">=", constant = -2147483648 },
   }
+  return params
 end
 
-local function clearing_parameters(item)
+function LatchRearm.clearing_parameters(item)
   return {
     conditions = {
       { first_signal = item.captured_outputs[1].signal, comparator = "<", constant = -2147483648 },
@@ -24,9 +28,7 @@ local function clearing_parameters(item)
   }
 end
 
-local function signal_key(signal)
-  return (signal.type or "item") .. "|" .. tostring(signal.name) .. "|" .. (signal.quality or "normal")
-end
+local signal_key = SignalStability.signal_key
 
 local COMBINATOR_OUTPUTS = {}
 local COMBINATOR_INPUTS = {}
@@ -99,22 +101,11 @@ function LatchRearm.schedule(job)
     transfer_id = job.transfer_id,
     stage = "preflight",
     at_tick = game.tick + 1,
-    patience_deadline = game.tick + PATIENCE_TICKS,
     items = items,
   }
   log(string.format("[LatchRearm] scheduled %d self-feedback latch(es) on %s for post-activation re-arm",
     #items, tostring(job.platform_name)))
   return #items
-end
-
-local function platform_paused(items)
-  for _, item in ipairs(items) do
-    if item.entity and item.entity.valid then
-      local platform = item.entity.surface and item.entity.surface.platform
-      return platform ~= nil and platform.valid and platform.paused
-    end
-  end
-  return false
 end
 
 local function write_stage(items, make_params, what, filter)
@@ -142,7 +133,7 @@ local function write_stage(items, make_params, what, filter)
 end
 
 local function finalize(job_key, record, reason)
-  local summary = { rearmed = 0, cleared = 0, failed = 0, details = {} }
+  local summary = { rearmed = 0, cleared = 0, failed = 0, moving = 0, details = {} }
   for _, item in ipairs(record.items) do
     local outcome = item.outcome or "unknown"
     summary.details[#summary.details + 1] = {
@@ -152,6 +143,7 @@ local function finalize(job_key, record, reason)
     }
     if outcome == "rearmed" then summary.rearmed = summary.rearmed + 1
     elseif outcome:find("cleared to 0", 1, true) then summary.cleared = summary.cleared + 1
+    elseif outcome:find("register moving", 1, true) then summary.moving = summary.moving + 1
     else summary.failed = summary.failed + 1 end
     if outcome ~= "rearmed" then
       log(string.format("[LatchRearm]   latch %s at (%s,%s): %s", tostring(item.entity_id),
@@ -173,8 +165,9 @@ local function finalize(job_key, record, reason)
   end
 
   storage.latch_rearm_jobs[job_key] = nil
-  log(string.format("[LatchRearm] %s on %s: rearmed=%d cleared=%d failed=%d (%s)",
-    job_key, tostring(record.platform_name), summary.rearmed, summary.cleared, summary.failed, reason))
+  log(string.format("[LatchRearm] %s on %s: rearmed=%d cleared=%d moving=%d failed=%d (%s)",
+    job_key, tostring(record.platform_name), summary.rearmed, summary.cleared, summary.moving,
+    summary.failed, reason))
 end
 
 local function verify_item(item)
@@ -197,7 +190,8 @@ local function verify_item(item)
   for _, captured in ipairs(item.captured_outputs) do
     local live = now[signal_key(captured.signal)]
     if live ~= captured.count then
-      item.needs_clear = true
+      item.mismatch = true
+      item.samples = { SignalStability.snapshot(sigs) }
       item.outcome = string.format("mismatch: %s=%s after re-arm (captured %s)",
         tostring(captured.signal.name), tostring(live), tostring(captured.count))
       return
@@ -223,16 +217,7 @@ local function run_stage(job_key, record)
       record.at_tick = game.tick + 1
     end
   elseif record.stage == "force" then
-    if platform_paused(record.items) then
-      if game.tick >= (record.patience_deadline or 0) then
-        for _, item in ipairs(record.items) do
-          item.outcome = item.outcome or "not re-armed: platform stayed paused (gateway park)"
-        end
-        finalize(job_key, record, "platform never unpaused within patience window")
-      end
-      return
-    end
-    local any = write_stage(record.items, forced_parameters, "force")
+    local any = write_stage(record.items, LatchRearm.forced_parameters, "force")
     if any > 0 then
       record.stage = "restore"
       record.at_tick = game.tick + FORCE_TO_RESTORE_TICKS
@@ -245,18 +230,57 @@ local function run_stage(job_key, record)
     record.stage = "verify"
     record.at_tick = game.tick + RESTORE_TO_VERIFY_TICKS
   elseif record.stage == "verify" then
-    local any_clear = false
+    local any_mismatch = false
     for _, item in ipairs(record.items) do
       verify_item(item)
-      any_clear = any_clear or (item.needs_clear == true)
+      any_mismatch = any_mismatch or (item.mismatch == true)
+    end
+    if any_mismatch then
+      record.stage = "stability_sample"
+      record.at_tick = game.tick + LatchRearm.SAMPLE_SPACING_TICKS
+    else
+      finalize(job_key, record, "completed")
+    end
+  elseif record.stage == "stability_sample" then
+    local pending = false
+    for _, item in ipairs(record.items) do
+      if item.mismatch and not item.sample_read_failed and item.entity and item.entity.valid then
+        local ok, sigs = pcall(function() return item.entity.get_control_behavior().signals_last_tick end)
+        if ok then
+          item.samples[#item.samples + 1] = SignalStability.snapshot(sigs)
+          if #item.samples < LatchRearm.SAMPLE_COUNT then
+            pending = true
+          end
+        else
+          item.sample_read_failed = true
+          item.outcome = (item.outcome or "mismatch") .. " — sampling read failed: " .. tostring(sigs)
+          log(string.format("[LatchRearm] stability sample read failed for latch %s: %s",
+            tostring(item.entity_id), tostring(sigs)))
+        end
+      end
+    end
+    if pending then
+      record.at_tick = game.tick + LatchRearm.SAMPLE_SPACING_TICKS
+      return
+    end
+    local any_clear = false
+    for _, item in ipairs(record.items) do
+      if item.mismatch and not item.sample_read_failed and item.entity and item.entity.valid then
+        if SignalStability.should_clear(item.samples, LatchRearm.SAMPLE_COUNT) then
+          item.needs_clear = true
+          any_clear = true
+        else
+          item.outcome = (item.outcome or "mismatch") .. " — register moving, not a latch, no clear"
+        end
+      end
     end
     if any_clear then
-      write_stage(record.items, clearing_parameters, "clear",
+      write_stage(record.items, LatchRearm.clearing_parameters, "clear",
         function(item) return item.needs_clear and item.entity and item.entity.valid end)
       record.stage = "clear_restore"
       record.at_tick = game.tick + CLEAR_TICKS
     else
-      finalize(job_key, record, "completed")
+      finalize(job_key, record, "completed — no stable mismatch to clear")
     end
   elseif record.stage == "clear_restore" then
     write_stage(record.items, function(item) return item.captured_parameters end, "clear restore",
@@ -300,9 +324,34 @@ function LatchRearm.process_tick()
     if game.tick >= (record.at_tick or 0) then
       local ok, err = pcall(run_stage, job_key, record)
       if not ok then
-        log(string.format("[LatchRearm] stage '%s' for %s THREW: %s — dropping the job "
-          .. "(deciders keep whatever parameters the last completed stage wrote)",
+        log(string.format("[LatchRearm] stage '%s' for %s THREW: %s — restoring captured parameters, "
+          .. "then dropping the job",
           tostring(record.stage), tostring(job_key), tostring(err)))
+        local restored = 0
+        for _, item in ipairs(record.items or {}) do
+          if item.entity and item.entity.valid and item.captured_parameters then
+            local rok, rerr = pcall(function()
+              item.entity.get_control_behavior().parameters = item.captured_parameters
+            end)
+            if rok then
+              restored = restored + 1
+            else
+              log(string.format("[LatchRearm] post-throw captured restore failed for %s: %s",
+                tostring(item.entity_id), tostring(rerr)))
+            end
+          end
+        end
+        log(string.format("[LatchRearm] post-throw restore wrote captured parameters to %d decider(s)",
+          restored))
+        storage.latch_rearm_results = storage.latch_rearm_results or {}
+        storage.latch_rearm_results[job_key] = {
+          rearmed = 0, cleared = 0, moving = 0, failed = #(record.items or {}), details = {},
+          platform_name = record.platform_name,
+          transfer_id = record.transfer_id,
+          finished_tick = game.tick,
+          reason = string.format("stage '%s' threw: %s (%d decider(s) restored to captured parameters)",
+            tostring(record.stage), tostring(err), restored),
+        }
         storage.latch_rearm_jobs[job_key] = nil
       end
     end
