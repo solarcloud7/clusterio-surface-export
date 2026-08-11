@@ -202,8 +202,10 @@ test("the boot pull retries exactly once and lands at error level, not warn", as
 	const errors = [];
 	let attempts = 0;
 	plugin.logger = { ...noopLogger, warn: (m) => warns.push(m), error: (m) => errors.push(m) };
-	plugin.link = { async sendTo() { attempts++; throw new Error("controller unreachable"); } };
-	plugin.i = { id: 42 };
+	Object.defineProperty(plugin, "link", {
+		value: { async sendTo() { attempts++; throw new Error("controller unreachable"); } },
+	});
+	Object.defineProperty(plugin, "i", { value: { id: 42 } });
 	await plugin.sendGatewayConfigToLua();
 	assert.equal(attempts, 2, "one retry, no more");
 	assert.equal(warns.length, 1);
