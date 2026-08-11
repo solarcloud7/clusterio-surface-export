@@ -10,6 +10,35 @@ local MAX_KEPT_RESULTS = 8
 LatchRearm.SAMPLE_COUNT = 5
 LatchRearm.SAMPLE_GAPS = { 13, 17, 19, 23 }
 
+LatchRearm.POWER_WAIT_TICKS = 1800
+LatchRearm.POWER_POLL_TICKS = 60
+
+LatchRearm.LIVE_STATUSES = { working = true }
+
+LatchRearm.UNPOWERED_SAMPLE_OUTCOME = " — unpowered, stability unknown, no clear"
+LatchRearm.UNPOWERED_FORCE_OUTCOME = "unpowered — re-arm not evaluated"
+
+function LatchRearm.status_is_live(status_name)
+  return LatchRearm.LIVE_STATUSES[status_name] == true
+end
+
+local status_names = nil
+
+function LatchRearm.status_name(entity)
+  if not status_names then
+    status_names = {}
+    for name, id in pairs(defines.entity_status) do status_names[id] = name end
+  end
+  local ok, status = pcall(function() return entity.status end)
+  if not ok then return nil end
+  return status_names[status]
+end
+
+function LatchRearm.instrument_live(entity)
+  local name = LatchRearm.status_name(entity)
+  return LatchRearm.status_is_live(name), name
+end
+
 function LatchRearm.forced_parameters(item)
   local params = {}
   for k, v in pairs(item.captured_parameters) do params[k] = v end
@@ -217,6 +246,31 @@ local function run_stage(job_key, record)
       record.at_tick = game.tick + 1
     end
   elseif record.stage == "force" then
+    local unpowered = 0
+    for _, item in ipairs(record.items) do
+      if not item.outcome and item.entity and item.entity.valid
+        and not LatchRearm.instrument_live(item.entity) then
+        unpowered = unpowered + 1
+      end
+    end
+    if unpowered > 0 then
+      record.power_deadline = record.power_deadline or (game.tick + LatchRearm.POWER_WAIT_TICKS)
+      if game.tick < record.power_deadline then
+        record.at_tick = game.tick + LatchRearm.POWER_POLL_TICKS
+        return
+      end
+      for _, item in ipairs(record.items) do
+        if not item.outcome and item.entity and item.entity.valid then
+          local live, status_name = LatchRearm.instrument_live(item.entity)
+          if not live then
+            item.outcome = LatchRearm.UNPOWERED_FORCE_OUTCOME
+            log(string.format("[LatchRearm] latch %s never powered within %d ticks (status %s) — "
+              .. "captured parameters left in place, no force, no clear",
+              tostring(item.entity_id), LatchRearm.POWER_WAIT_TICKS, tostring(status_name)))
+          end
+        end
+      end
+    end
     local any = write_stage(record.items, LatchRearm.forced_parameters, "force")
     if any > 0 then
       record.stage = "restore"
@@ -245,18 +299,28 @@ local function run_stage(job_key, record)
   elseif record.stage == "stability_sample" then
     local pending = false
     for _, item in ipairs(record.items) do
-      if item.mismatch and not item.sample_read_failed and item.entity and item.entity.valid then
-        local ok, sigs = pcall(function() return item.entity.get_control_behavior().signals_last_tick end)
-        if ok then
-          item.samples[#item.samples + 1] = SignalStability.snapshot(sigs)
-          if #item.samples < LatchRearm.SAMPLE_COUNT then
-            pending = true
-          end
+      if item.mismatch and not item.sample_read_failed and not item.instrument_dead
+        and item.entity and item.entity.valid then
+        local live, status_name = LatchRearm.instrument_live(item.entity)
+        if not live then
+          item.instrument_dead = true
+          item.outcome = (item.outcome or "mismatch") .. LatchRearm.UNPOWERED_SAMPLE_OUTCOME
+            .. " (status " .. tostring(status_name) .. ")"
+          log(string.format("[LatchRearm] latch %s not evaluating (status %s) — register unreadable, "
+            .. "no clear", tostring(item.entity_id), tostring(status_name)))
         else
-          item.sample_read_failed = true
-          item.outcome = (item.outcome or "mismatch") .. " — sampling read failed: " .. tostring(sigs)
-          log(string.format("[LatchRearm] stability sample read failed for latch %s: %s",
-            tostring(item.entity_id), tostring(sigs)))
+          local ok, sigs = pcall(function() return item.entity.get_control_behavior().signals_last_tick end)
+          if ok then
+            item.samples[#item.samples + 1] = SignalStability.snapshot(sigs)
+            if #item.samples < LatchRearm.SAMPLE_COUNT then
+              pending = true
+            end
+          else
+            item.sample_read_failed = true
+            item.outcome = (item.outcome or "mismatch") .. " — sampling read failed: " .. tostring(sigs)
+            log(string.format("[LatchRearm] stability sample read failed for latch %s: %s",
+              tostring(item.entity_id), tostring(sigs)))
+          end
         end
       end
     end
@@ -267,7 +331,8 @@ local function run_stage(job_key, record)
     end
     local any_clear = false
     for _, item in ipairs(record.items) do
-      if item.mismatch and not item.sample_read_failed and item.entity and item.entity.valid then
+      if item.mismatch and not item.sample_read_failed and not item.instrument_dead
+        and item.entity and item.entity.valid then
         if SignalStability.should_clear(item.samples, LatchRearm.SAMPLE_COUNT) then
           item.needs_clear = true
           any_clear = true

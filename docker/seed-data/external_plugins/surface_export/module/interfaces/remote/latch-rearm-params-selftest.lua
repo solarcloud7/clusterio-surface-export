@@ -87,6 +87,34 @@ local function latch_rearm_params_selftest()
 			and #item2.captured_parameters.conditions == 2,
 		"clear_restore writes captured_parameters back verbatim — mutating it corrupts the restore")
 
+	check("only_working_counts_as_a_live_instrument",
+		LatchRearm.status_is_live("working") == true,
+		"a powered decider reports status 'working' — measured 14/14 on lab-transfer-fixture-v1")
+
+	local dead_statuses = { "no_power", "low_power", "not_plugged_in_electric_network",
+		"recharging_after_power_outage", "disabled_by_script", "disabled_by_control_behavior",
+		"marked_for_deconstruction", "normal" }
+	local live_dead = {}
+	for _, name in ipairs(dead_statuses) do
+		if LatchRearm.status_is_live(name) then live_dead[#live_dead + 1] = name end
+	end
+	check("a_decider_not_working_is_not_a_live_instrument",
+		#live_dead == 0,
+		"these statuses must not license a clear; 'normal' is included deliberately — it is a live status "
+			.. "for other entity types but combinators report 'working', so treating it as live would widen "
+			.. "the gate past what was measured. Leaked: " .. table.concat(live_dead, ", "))
+
+	check("an_unreadable_status_is_not_a_live_instrument",
+		LatchRearm.status_is_live(nil) == false,
+		"status_name returns nil when the read throws — an unknown instrument must never read as alive")
+
+	for _, outcome in ipairs({ LatchRearm.UNPOWERED_SAMPLE_OUTCOME, LatchRearm.UNPOWERED_FORCE_OUTCOME }) do
+		check("unpowered_outcome_buckets_as_failed_not_cleared",
+			outcome:find("cleared to 0", 1, true) == nil and outcome:find("register moving", 1, true) == nil,
+			"finalize buckets by substring in order (rearmed / cleared to 0 / register moving / failed); an "
+				.. "unpowered outcome containing either phrase would be counted as a successful clear: " .. outcome)
+	end
+
 	return { passed = passed, failed = failed, total = passed + failed, details = details }
 end
 
