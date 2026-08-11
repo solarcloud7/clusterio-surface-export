@@ -89,7 +89,7 @@ mod dependency and no second settings surface for operators to discover.
 | `waitForStoredExport` timeout | 10 000 / **60 000 override!** | transfer-orchestrator.ts:31 / controller.ts:426 | `surface_export.await_stored_export_timeout_ms` (controller) | Controller store-wait timeout | "Timed out waiting for export" and no transfer starts. **DECIDED: ONE field, default 60 s** — both call sites wait for the same event, and raising a timeout cannot break a working transfer, only change how long a broken one takes to report. |
 | web log-list fetch depth | 100 | web/index.tsx:261 | `surface_export.web_log_page_size` (controller) | Web UI transaction-log fetch size | Older transfers invisible in the web UI with no indication; bounded by the wire max 500. |
 | `RateLimiter maxRate` | 2 | subscription-manager.ts:25 | `surface_export.tree_broadcast_max_rate` (controller) | Web UI tree broadcast rate limit (/s) | Bursts coalesce; the platform tree lags reality by up to 1/rate seconds. |
-| `PATIENCE_TICKS` | 1800 | latch_rearm.lua:48 | `surface_export.latch_rearm_patience_ticks` (instance→Lua) | Latch re-arm patience for paused platforms (ticks) | Paused platform not unpaused in time → the circuit latch arrives un-rearmed (recorded, non-gating). |
+| ~~`PATIENCE_TICKS`~~ | ~~1800~~ | DELETED 2026-08-11 | — (the proposed `latch_rearm_patience_ticks` was never implemented and is withdrawn) | Was: latch re-arm patience for paused platforms | The pause-rung measured combinators evaluating on paused platforms at 2.1.11 — the wait guarded nothing and gateway-parked transfers now re-arm; there is no constant left to make configurable. |
 
 ## LAW — deliberately NOT knobs (each with the reason)
 
