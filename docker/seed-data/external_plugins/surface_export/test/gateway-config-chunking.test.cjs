@@ -7,11 +7,12 @@ const path = require("node:path");
 
 const Module = require("node:module");
 const originalLoad = Module._load;
+let waitGate = () => Promise.resolve();
 Module._load = function patchedLoad(request, parent, isMain) {
 	if (request === "@clusterio/lib") {
 		return {
 			escapeString: (value) => String(value),
-			wait: () => Promise.resolve(),
+			wait: (...args) => waitGate(...args),
 		};
 	}
 	if (request === "@clusterio/host") {
@@ -208,15 +209,22 @@ test("the boot pull warns fast, retries once OFF the onStart hook, then lands at
 		value: { async sendTo() { attempts++; throw new Error("controller unreachable"); } },
 	});
 	Object.defineProperty(plugin, "i", { value: { id: 42 } });
-	await plugin.sendGatewayConfigToLua();
-	assert.equal(attempts, 1,
-		"onStart's await must see only the first attempt — Clusterio hard-caps the hook at 15s, "
-		+ "and a 10s in-hook wait would consume two-thirds of every plugin's shared budget");
-	assert.equal(warns.length, 1);
-	for (let i = 0; i < 4; i++) { await new Promise((resolve) => setImmediate(resolve)); }
-	assert.equal(attempts, 2, "one detached retry, no more");
-	assert.equal(errors.length, 1);
-	assert.match(errors[0], /running NO gateway config/);
+	let releaseRetry;
+	waitGate = () => new Promise((resolve) => { releaseRetry = resolve; });
+	try {
+		await plugin.sendGatewayConfigToLua();
+		assert.equal(attempts, 1,
+			"onStart's await must see only the first attempt — Clusterio hard-caps the hook at 15s, "
+			+ "and a 10s in-hook wait would consume two-thirds of every plugin's shared budget");
+		assert.equal(warns.length, 1);
+		releaseRetry();
+		for (let i = 0; i < 4; i++) { await new Promise((resolve) => setImmediate(resolve)); }
+		assert.equal(attempts, 2, "one detached retry, no more");
+		assert.equal(errors.length, 1);
+		assert.match(errors[0], /running NO gateway config/);
+	} finally {
+		waitGate = () => Promise.resolve();
+	}
 });
 
 test("Lua source grounding: staging refusals, registration, prune placement, no debug gate", () => {
