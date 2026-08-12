@@ -29,39 +29,51 @@ const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 let failures = 0;
 const check = (ok, label, detail = "") => {
 	console.log(`  ${ok ? "PASS" : "FAIL"}  ${label}${detail ? ` — ${detail}` : ""}`);
-	if (!ok) { failures += 1; }
+	// Set at the point of failure, not only at the terminal exit(): an early return past that exit
+	// would otherwise report a recorded FAILURE as a green run — the vacuous-pass class again.
+	if (!ok) { failures += 1; process.exitCode = 1; }
 };
 
 async function main() {
 	console.log(`=== surface-delete rebroadcast (probe ${PROBE}) ===`);
+	let platformIndex = null;
 
-	const created = rcon(`/sc local p = game.forces.player.create_space_platform({name=[[${PROBE}]], `
-		+ `planet=[[nauvis]], starter_pack=[[space-platform-starter-pack]]}) p.apply_starter_pack() `
-		+ `rcon.print(p.index .. [[|]] .. p.surface.index)`);
-	const [platformIndex, surfaceIndex] = created.split("|").map(Number);
-	check(Number.isInteger(platformIndex) && Number.isInteger(surfaceIndex),
-		"probe platform created", created);
-	if (!Number.isInteger(platformIndex)) { return; }
+	try {
+		const created = rcon(`/sc local p = game.forces.player.create_space_platform({name=[[${PROBE}]], `
+			+ `planet=[[nauvis]], starter_pack=[[space-platform-starter-pack]]}) p.apply_starter_pack() `
+			+ `rcon.print(p.index .. [[|]] .. p.surface.index)`);
+		const [index, surfaceIndex] = created.split("|").map(Number);
+		platformIndex = index;
+		check(Number.isInteger(index) && Number.isInteger(surfaceIndex), "probe platform created", created);
+		if (!Number.isInteger(index)) { return; }
 
-	const before = hostLog().length;
+		const before = hostLog().length;
 
-	// The name guard is the whole safety story for a destructive call on a shared cluster: the index
-	// is resolved fresh and the delete only runs if it still names the throwaway.
-	const deleted = rcon(`/sc local p = game.forces.player.platforms[${platformIndex}] `
-		+ `if p and p.valid and p.name == [[${PROBE}]] then game.delete_surface(p.surface) `
-		+ `rcon.print([[deleted]]) else rcon.print([[REFUSED: ]] .. tostring(p and p.name)) end`);
-	check(deleted === "deleted", "probe surface deleted", deleted);
+		// The name guard is the whole safety story for a destructive call on a shared cluster: the index
+		// is resolved fresh and the delete only runs if it still names the throwaway.
+		const deleted = rcon(`/sc local p = game.forces.player.platforms[${index}] `
+			+ `if p and p.valid and p.name == [[${PROBE}]] then game.delete_surface(p.surface) `
+			+ `rcon.print([[deleted]]) else rcon.print([[REFUSED: ]] .. tostring(p and p.name)) end`);
+		check(deleted === "deleted", "probe surface deleted", deleted);
 
-	await sleep(6000);
+		await sleep(6000);
 
-	const emitted = hostLog().slice(before);
-	check(emitted.includes(`Tree rebroadcast requested: surface ${surfaceIndex} deleted`),
-		"the deletion emitted a tree rebroadcast",
-		"this is the assertion #206 lacked: its handler never fired and nothing noticed");
-
-	const still = rcon(`/sc local names = {} for _, p in pairs(game.forces.player.platforms) do `
-		+ `names[#names+1] = p.name end rcon.print(table.concat(names, [[,]]))`);
-	check(!still.includes(PROBE), "probe swept", `platforms now: ${still || "(none)"}`);
+		const emitted = hostLog().slice(before);
+		check(emitted.includes(`Tree rebroadcast requested: surface ${surfaceIndex} deleted`),
+			"the deletion emitted a tree rebroadcast",
+			"this is the assertion #206 lacked: its handler never fired and nothing noticed");
+	} finally {
+		// The happy path deletes the probe as its subject; this is the FAILURE path's net. Without it a
+		// failed run leaks a platform, and cleanup-test-surfaces.ps1 only sweeps registered prefixes.
+		if (Number.isInteger(platformIndex)) {
+			rcon(`/sc local p = game.forces.player.platforms[${platformIndex}] `
+				+ `if p and p.valid and p.name == [[${PROBE}]] then game.delete_surface(p.surface) end `
+				+ `rcon.print([[cleanup done]])`);
+		}
+		const still = rcon(`/sc local names = {} for _, p in pairs(game.forces.player.platforms) do `
+			+ `names[#names+1] = p.name end rcon.print(table.concat(names, [[,]]))`);
+		check(!still.includes(PROBE), "probe swept", `platforms now: ${still || "(none)"}`);
+	}
 
 	console.log(failures === 0 ? "\nsurface-delete-rebroadcast: PASS" : `\nsurface-delete-rebroadcast: ${failures} FAILURE(S)`);
 	process.exit(failures === 0 ? 0 : 1);
