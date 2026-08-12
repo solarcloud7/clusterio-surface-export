@@ -27,7 +27,7 @@ a feature of this repo, not a separate project.
 | **Gateway logic** | [gateway.lua](../docker/seed-data/external_plugins/surface_export/module/core/gateway.lua) | discovery + per-force unlock, arrival detection, passenger evacuation, schedule hop-strip |
 | **Commands** | `module/interfaces/commands/{gateway-transfer,gateway-gui}.lua` | `/gateway-transfer <index> <dest_id>`, `/gateway-gui <index>` |
 | **On-arrival chooser GUI** | [gui/gateway-transfer.lua](../docker/seed-data/external_plugins/surface_export/module/interfaces/gui/gateway-transfer.lua) | opens for viewers when a platform parks at a gateway that has configured targets |
-| **Web Gateways tab** | [GatewaysTab.tsx](../docker/seed-data/external_plugins/surface_export/web/GatewaysTab.tsx) + `GetGatewaysRequest` / `SetGatewayLinkRequest` in [messages.ts](../docker/seed-data/external_plugins/surface_export/messages.ts) | edit each gateway's destination links; controller is the source of truth; an empty target list disables the gateway |
+| **Web Gateways tab** | [GatewayCanvas.tsx](../docker/seed-data/external_plugins/surface_export/web/gateway/GatewayCanvas.tsx) + `GetGatewaysRequest` / `SetGatewayLinkRequest` in [messages.ts](../docker/seed-data/external_plugins/surface_export/messages.ts) | edit each gateway's destination links; controller is the source of truth; an empty target list disables the gateway |
 
 A transfer triggered at a gateway runs the existing **two-phase commit** pipeline — the source platform is
 deleted only after the destination validates. The destination is resolved either explicitly (the command
