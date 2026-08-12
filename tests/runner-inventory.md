@@ -4,8 +4,10 @@ This is the canonical SC-41 inventory of executable tests and guards. The taxono
 [`docs/testing.md`](../docs/testing.md). The inventory is intentionally incomplete while SC-41 is in progress;
 an absent runner has not yet been classified.
 
-> The standing lab suite was removed 2026-07-19 (owner ruling); rows below that link `tests/*-lab/` paths refer
-> to runners now archived at git tag `labs-archive-2026-07-19`, not to files in the working tree.
+> The standing lab suite was removed 2026-07-19 (owner ruling); rows below that name `tests/*-lab/` paths refer
+> to runners now archived at git tag `labs-archive-2026-07-19`, not to files in the working tree. Those paths
+> are deliberately plain text, not links: resolve one with
+> `git show labs-archive-2026-07-19:tests/<path>` (line anchors like `#L21` index into that archived file).
 
 Each row owns exactly one current category and one final disposition. When one executable mixes unrelated
 questions, the row classifies the executable as `obsolete/duplicate`; the section table records the replacement
@@ -19,8 +21,8 @@ and `obsolete/duplicate`. Allowed final dispositions are `retain`, `bake`, `simp
 
 | Executable | Current category | Contract or invariant | Setup and production path | Production-analytics overlap | Independent oracle | Lifecycle flags | Final disposition |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| [`tests/ops-lab/run-lab-tail.mjs`](ops-lab/run-lab-tail.mjs) | `obsolete/duplicate` | Mixed: T2 transfer-duration sampling, T3 RCON command-capacity discovery, and T4 export-readiness scaling. | T2 invokes `/transfer-platform`; T3 sends direct RCON `/sc`; T4 calls the production `export_platform` interface. T2/T4 construct fixtures at runtime. | Yes for T2/T4: custom wall clocks, entity totals, payload bytes, worst-case margins, and pseudo-percentiles overlap the production transfer record. T3 measures a separate infrastructure boundary. | No. T2/T4 read production state and verdicts; they do not independently audit the production analytics. | Runtime clone: yes. Runtime construction: yes. Between-run cleanup: yes. Artificial large fixture: yes. Direct storage clear: yes. Unconditional unpause: yes. | `retire` after the approved T2 and T3 replacements exist; T4 has no replacement by default. |
-| [`tests/specialized-inventory-lab/run-reachability.test.mjs`](specialized-inventory-lab/run-reachability.test.mjs) | `unit/contract` | The evidence classifier, section parser, tick handling, Lua failure boundary, manifest fixture-fingerprint verification, and BLOCKED-vs-FAILED lease classification reject invalid or incomplete evidence. | Node process-local fixtures; no Factorio process or production operation. | No. | Not applicable; this test validates software contracts around already-banked evidence. | No live fixture lifecycle behavior. | `retain`. |
+| `tests/ops-lab/run-lab-tail.mjs` | `obsolete/duplicate` | Mixed: T2 transfer-duration sampling, T3 RCON command-capacity discovery, and T4 export-readiness scaling. | T2 invokes `/transfer-platform`; T3 sends direct RCON `/sc`; T4 calls the production `export_platform` interface. T2/T4 construct fixtures at runtime. | Yes for T2/T4: custom wall clocks, entity totals, payload bytes, worst-case margins, and pseudo-percentiles overlap the production transfer record. T3 measures a separate infrastructure boundary. | No. T2/T4 read production state and verdicts; they do not independently audit the production analytics. | Runtime clone: yes. Runtime construction: yes. Between-run cleanup: yes. Artificial large fixture: yes. Direct storage clear: yes. Unconditional unpause: yes. | `retire` after the approved T2 and T3 replacements exist; T4 has no replacement by default. |
+| `tests/specialized-inventory-lab/run-reachability.test.mjs` | `unit/contract` | The evidence classifier, section parser, tick handling, Lua failure boundary, manifest fixture-fingerprint verification, and BLOCKED-vs-FAILED lease classification reject invalid or incomplete evidence. | Node process-local fixtures; no Factorio process or production operation. | No. | Not applicable; this test validates software contracts around already-banked evidence. | No live fixture lifecycle behavior. | `retain`. |
 
 ### `ops-lab` section disposition
 
@@ -30,13 +32,14 @@ and `obsolete/duplicate`. Allowed final dispositions are `retain`, `bake`, `simp
 | T3 | `integration regression` | `retain` in a separate executable | A deterministic end-to-end assertion that the deployed RCON transport carries the production chunk size. | Split it from save and platform lifecycle code. Keep the fixed production threshold, not open-ended boundary discovery. It needs no baked fixture and must not inherit T2/T4 cleanup. |
 | T4 | `obsolete/duplicate` | `retire` | Nothing by default. Reconsider only if scale or payload size becomes an explicitly justified experimental variable. | Remove the small/normal/large runtime construction and the duplicate latency recommendation. Use production export and payload analytics for routine drift. |
 
-The current runner's mixed entry point is visible in its [`t2`, `t3`, and `t4` section list](ops-lab/run-lab-tail.mjs#L6).
+The current runner's mixed entry point is visible in its `t2`, `t3`, and `t4` section list
+(`ops-lab/run-lab-tail.mjs#L6`).
 T2 clones five platforms, deletes state between samples, creates an artificial large arm, and computes a
-five-sample worst-case proxy rather than a percentile ([T2](ops-lab/run-lab-tail.mjs#L21)). T3 is a direct RCON
-capacity search with no physical fixture ([T3](ops-lab/run-lab-tail.mjs#L23)). T4 constructs small, normal, and
-large platforms at runtime and times export visibility ([T4](ops-lab/run-lab-tail.mjs#L24)). The shared cleanup
+five-sample worst-case proxy rather than a percentile (T2: `ops-lab/run-lab-tail.mjs#L21`). T3 is a direct RCON
+capacity search with no physical fixture (T3: `ops-lab/run-lab-tail.mjs#L23`). T4 constructs small, normal, and
+large platforms at runtime and times export visibility (T4: `ops-lab/run-lab-tail.mjs#L24`). The shared cleanup
 deletes matching surfaces and exports, clears `storage.ops_lab`, and unconditionally writes
-`game.tick_paused=false` ([cleanup](ops-lab/run-lab-tail.mjs#L18)); no repository producer of `storage.ops_lab`
+`game.tick_paused=false` (cleanup: `ops-lab/run-lab-tail.mjs#L18`); no repository producer of `storage.ops_lab`
 exists at this inventory revision.
 
 The production transfer summary already records total duration, phase durations, export metrics, payload metrics,
@@ -51,25 +54,25 @@ their measurements.
 
 The T2 notebook's fifth transfer failed the exact item gate by four items. That result remains a **hard-stop,
 unexplained conservation failure**, not timeout evidence, and the unexecuted scale arms remain unexecuted
-([notebook](ops-lab/NOTEBOOK.md#L6-L33)). Preserve that notebook and its referenced production failure black box;
+(notebook: `ops-lab/NOTEBOOK.md#L6-L33`). Preserve that notebook and its referenced production failure black box;
 do not use the failed run as a performance baseline or promote a mechanism that it did not establish.
 
 ### Specialized reachability disposition
 
 The baked meter's prototype rung records pressure/gravity controls, prototype fluidbox counts, surface conditions,
-and placement capability ([prototype rung](specialized-inventory-lab/baked-reachability-meter.cjs#L16-L32)). Its placement
+and placement capability (prototype rung: `specialized-inventory-lab/baked-reachability-meter.cjs#L16-L32`). Its placement
 rung reads the single baked mining drill and proves that the live entity has no readable or writable fluidbox on the platform
-([placement rung](specialized-inventory-lab/baked-reachability-meter.cjs#L33-L43)). Both rungs answer the same engine-
+(placement rung: `specialized-inventory-lab/baked-reachability-meter.cjs#L33-L43`). Both rungs answer the same engine-
 behavior question, so they remain one physical lab rather than being split by section.
 
 The runner verifies the committed source hash, loads it in a prefix-owned disposable Factorio process, and discards
-that loaded process for reset ([loaded-save boundary](specialized-inventory-lab/run-reachability.mjs#L55-L94)).
+that loaded process for reset (loaded-save boundary: `specialized-inventory-lab/run-reachability.mjs#L55-L94`).
 It performs no fixture construction, storage clearing, or game unpause. The baked replacement keeps the tick/version
 stamp and direct physical readings while making the manifest fixture and paired-save reload the lifecycle boundary.
 It still does not invoke transfer code: this is the retained engine-recertification rung, not an integration test.
 
 The append-only notebook documents the controls-driven correction: prototype capability initially suggested an
 omission, while the live entity proved `mining_target=nil` and `#entity.fluidbox=0`; the provisional shared-fluid
-repair was retracted ([conclusion](specialized-inventory-lab/NOTEBOOK.md#L69-L94)). The separate Node test retains
+repair was retracted (conclusion: `specialized-inventory-lab/NOTEBOOK.md#L69-L94`). The separate Node test retains
 the deterministic evidence and safety contracts, including tick zero and rejection of transfer or silent-unpause
-logic ([contract tests](specialized-inventory-lab/run-reachability.test.mjs#L54-L165)).
+logic (contract tests: `specialized-inventory-lab/run-reachability.test.mjs#L54-L165`).
