@@ -51,7 +51,11 @@ local function signal_stability_selftest()
 	local empties = { S{}, S{}, S{}, S{}, S{} }
 	check("five_empty_registers_classify_stable",
 		SignalStability.classify(empties, 5) == "stable",
-		"got " .. SignalStability.classify(empties, 5))
+		"five identical empty registers ARE stable and this classifier is right to say so — it compares "
+			.. "registers and cannot see power. Distinguishing 'no signal' from 'steady signal' needs the "
+			.. "instrument's status, which lives one layer up: LatchRearm.status_is_live gates the clear, "
+			.. "asserted in latch_rearm_params_selftest. Do not teach this function about liveness. Got "
+			.. SignalStability.classify(empties, 5))
 
 	check("snapshot_is_nil_safe_and_returns_an_empty_register",
 		next(SignalStability.snapshot(nil)) == nil,
