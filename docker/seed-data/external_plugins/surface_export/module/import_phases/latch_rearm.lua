@@ -276,7 +276,17 @@ local function run_stage(job_key, record)
       record.stage = "restore"
       record.at_tick = game.tick + FORCE_TO_RESTORE_TICKS
     else
-      finalize(job_key, record, "no live latch survived to the force stage")
+      local timed_out = 0
+      for _, item in ipairs(record.items) do
+        if item.outcome == LatchRearm.UNPOWERED_FORCE_OUTCOME then timed_out = timed_out + 1 end
+      end
+      if timed_out > 0 then
+        finalize(job_key, record, string.format(
+          "no latch powered up within %d ticks — %d left un-evaluated at captured parameters",
+          LatchRearm.POWER_WAIT_TICKS, timed_out))
+      else
+        finalize(job_key, record, "no live latch survived to the force stage")
+      end
     end
   elseif record.stage == "restore" then
     write_stage(record.items, function(item) return item.captured_parameters end, "restore",
