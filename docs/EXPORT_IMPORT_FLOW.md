@@ -354,7 +354,7 @@ engine notes because they are properties of THIS pipeline, not of Factorio:
 Both were originally measured pre-2.1.11 and their rungs were deleted on 2026-07-31 with the rest of
 the stale evidence. They are retained because the code depends on them - re-measure before treating
 either as proven on this pin. Belt PHYSICS (what a lane is, what the fidelity unit is) stays in the
-canonical belt section of [factorio-2.0-api-notes.md](factorio-2.0-api-notes.md); this section covers
+canonical belt section of a measurement taken now (the engine-notes doc was deleted 2026-08-11); this section covers
 only how the pipeline uses it.
 
 For transfers, `instance.ts` → `handleImportCompleteValidation` consumes the validation

@@ -93,7 +93,7 @@ The standard instrument for populating a belt fixture is an **infinity chest (fi
 a filtered loader** onto the circuit. It saturates the circuit to a deterministic steady state, needs no
 hand-seeding, and reproduces natural kinetic compression — the hardest restore case. The recipe is buildable
 from script: `tests/instruments/loader-freeze/run-rung.mjs` constructs it on a throwaway clone. Operational facts
-(canonical citations in the belt section of [factorio-2.0-api-notes.md](factorio-2.0-api-notes.md)):
+(canonical citations in the belt section of a measurement taken now (the engine-notes doc was deleted 2026-08-11)):
 loaders keep running on paused platforms, and belts keep moving, so census reads must be same-execution.
 **Freeze the feed with `disabled_by_script = true`, NOT by writing `active`.** [empirical, 2.1.11,
 tests/instruments/loader-freeze/run-rung.mjs 2026-08-12: on a turbo-loader the write reads back `true`,
@@ -269,7 +269,7 @@ census-vs-census comparisons across the transfer boundary, never ledger-vs-same-
 ### Verified engine facts the census relies on
 
 Evidence tags and measurement details are in
-[factorio-2.0-api-notes.md](factorio-2.0-api-notes.md) (see "Item counting").
+a measurement taken now (the engine-notes doc was deleted 2026-08-11) (see "Item counting").
 
 - Ground items are entities (`item-entity`) and are counted by the same enumeration
   (`count_items` has a dedicated ground-item pass).

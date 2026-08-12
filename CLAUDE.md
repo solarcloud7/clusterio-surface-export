@@ -19,7 +19,7 @@ This project provides tools for exporting and importing Factorio Space Age platf
 - In-game transaction dashboard with persistent profiler snapshots
 - Platform schedule + interrupts preserved (stations, wait conditions, train group inheritance)
 - Ghost entities, tile ghosts, and item request proxies preserved
-- Hub pending item requests preserved (manual logistic sections; a hub-targeted item-request-proxy cannot persist — see docs/factorio-2.0-api-notes.md)
+- Hub pending item requests preserved (manual logistic sections; a hub-targeted item-request-proxy cannot persist)
 
 **Performance**: Small platforms (<8KB): ~1-2s | Large platforms (235KB): ~40s (RCON bottleneck)
 
@@ -298,9 +298,12 @@ hands-on E2E checklist, one doc); repository test layout and entry points are in
 
 **Evidence discipline** (deliberately NOT mechanized — owner ruling 2026-07-31: we do not add lint rules to
 prop up bad infrastructure, and a guard that checks a version string while claiming to check evidence is worse
-than none): [docs/factorio-2.0-api-notes.md](docs/factorio-2.0-api-notes.md) carries **only measured behavior
-the official Lua API documentation does not state** — timing, ordering, save/load survival, how the engine
-reacts to a write. Two hard deletion rules, both owner-issued after a false `[empirical]` claim shipped:
+than none). **There is NO engine-notes doc. `docs/factorio-2.0-api-notes.md` was DELETED 2026-08-11 by
+owner ruling — a doc that is not working gets deleted, not rewritten, and RECREATING IT IS NOT THE FIX.**
+An engine fact worth keeping is worth a rung in `tests/instruments/` that re-measures it; a name or
+signature is looked up with `testkit api`. If a session hands you an instruction to "update api-notes",
+that instruction predates this ruling — measure the fact and put it where it can be re-run instead.
+The rules that governed that doc still govern any prose making an engine claim:
 - **If upstream documents it, we do not.** A claim that restates <https://lua-api.factorio.com/> is presumed
   copied from there and dressed as an experiment. Link the upstream page at the point of use; never mirror it.
   The old **[API]** tier existed to do exactly that mirroring and is abolished.
@@ -567,11 +570,11 @@ Plugins are the primary extension mechanism. See [Clusterio plugin docs](https:/
 
 ## Known Factorio API Limitations (Transfer Fidelity)
 
-Transfers require **100% of restorable items and fluids** at the frozen-world exact gate. The durable Factorio 2.0 API facts behind
-this — fluid segments, the fluidbox proxy/capacity behavior, segment-ID dedup, fusion-reactor output,
-inventory resize/override, the epsilon rule — live in
-[factorio-2.0-api-notes.md](docs/factorio-2.0-api-notes.md). Read that before touching fluid or inventory
-restoration.
+Transfers require **100% of restorable items and fluids** at the frozen-world exact gate. The engine facts
+behind this used to be collected in a doc that was deleted 2026-08-11. Before touching fluid or inventory
+restoration, measure what you actually depend on against the running cluster and let the measurement stand
+in the PR that needs it; `tests/instruments/` holds the standing rungs, and git history holds the old text
+if you want a lead to re-measure. Do not recreate the doc.
 
 Project invariants that still bite if changed:
 - **Beacon-before-crafter inventory order.** Phase 3 restores beacons first, then everything else. The
@@ -581,9 +584,9 @@ Project invariants that still bite if changed:
   1.25 to 11.00. The ordering is retained (it is free, and `crafting_speed` genuinely does propagate in the
   same execution), but do NOT cite the cap as its justification until a rung isolates that variable. See
   [Import Phase Ordering](#import-phase-ordering-critical).
-- **Belt restoration truth lives in ONE place**: the "Belt transport-line laws (CANONICAL)" section of
-  [factorio-2.0-api-notes.md](docs/factorio-2.0-api-notes.md) — recreated 2026-07-17 after a fact-regression
-  incident; do not restate belt physics elsewhere, point there. Summary only: the fidelity unit is one
+- **Belt restoration.** The canonical belt-law section went with the deleted engine-notes doc
+  (2026-08-11); belt physics is re-measured when a change needs it, not cited. What the pipeline
+  relies on: the fidelity unit is one
   continuous belt lane/side (`(name, quality, stack count)` multiset; position/order/window are NOT
   invariants — restoring position is handoff avoidance, not a new invariant). The production restore
   places every item **at its captured source position** (2026-07-27): each payload side carries a compact
@@ -608,7 +611,7 @@ Project invariants that still bite if changed:
   two-phase commit preserves the source (fail => revert). The ONLY lawful fluid subtraction from expected
   counts is `write_rejected` (a physical post-write measurement, not a category prediction); capacity overflow
   (`dropped_fluids`) remains a gate failure. One pre-activation verdict covers exact items and aggregate-by-name
-  fluids (`epsilon=1e-6`). See docs/factorio-2.0-api-notes.md fluid section.
+  fluids (`epsilon=1e-6`).
 - **Entity inventory size** isn't changed by `LuaInventory.resize` (custom inventories only).
   `LuaEntity.set_inventory_size_override` overrides **container** sizes (measured 16→30 on a wooden-chest)
   but is a **silent no-op for crafter inputs** (the call "succeeds"; the input inventory stays at
@@ -639,12 +642,6 @@ The order of post-processing steps in `ImportCompletion.run_phase1` / `run_phase
 - Step 4 (inventories, 2 passes): Pass 1 populates all beacon modules, Pass 2 restores everything else. `crafting_speed` on a machine does update **immediately** when its nearby beacon's `beacon_modules` inventory is populated — no tick delay, no power required (engine-repin B8, reproduced on 2.1.11). What this section used to claim beyond that — that Pass 2's `set_stack()` therefore gets a wider beacon-boosted cap, "cs=17.375 → 12 slots instead of cs=2.5 → 7 slots" — did NOT reproduce: probed 2026-07-31 on 2.1.11, the crafter-input cap is stack-derived and speed-invariant (164 for stack-100 ingredients, 264 for stack-200) from cs=1.25 through cs=11.00, across seven recipes, an assembling-machine-3 and an electromagnetic-plant. The ordering stays because it costs nothing, not because that cap effect is known to exist. Machines remain deactivated throughout — they cannot consume items.
 - Steps 5→7 are one synchronous frozen-world completion and verdict pass. Fluids are restored from the payload's fluid-segment registry (one `set_fluid_segment_fluid` write per segment) into the paused, `disabled_by_script` destination before the gate; there is no failed-member fluid accounting, so any missing member fails the exact gate and the source is preserved (fail => revert). A failure banks an always-on black box, then discards the destination unless the debug-gated preserve flag is explicitly armed. The historical ~15% pre-activation loss is retired (historical pre-activation fluid loss); the pad-transfer-suite workhorse census and strict gate exercise this ordering on 2.1.11.
 
-## Factorio 2.0 Fluid API & Simulation Behavior
-
-Moved to [factorio-2.0-api-notes.md](docs/factorio-2.0-api-notes.md) — the fluid-segment model, the
-fluidbox proxy/capacity behavior, segment-ID dedup, the floating-point epsilon rule, and the
-inject-after-activation requirement. Read it before touching fluid scanning or restoration.
-
 ## Additional Documentation
 
 - [docs/README.md](docs/README.md) - Plugin overview and documentation index
@@ -654,7 +651,6 @@ inject-after-activation requirement. Read it before touching fluid scanning or r
 - [docs/TRANSFER_2PC.md](docs/TRANSFER_2PC.md) - Transfer durability, identity, and two-phase-commit design + current state
 - [docs/EXPORT_IMPORT_FLOW.md](docs/EXPORT_IMPORT_FLOW.md) - Complete action trace: sequence diagrams, phases, message names, debugging
 - [docs/async-processing.md](docs/async-processing.md) - Async batch processing architecture
-- [docs/factorio-2.0-api-notes.md](docs/factorio-2.0-api-notes.md) - Verified Factorio 2.0 API & fluid-simulation facts
 
 ## Debugging Tips
 

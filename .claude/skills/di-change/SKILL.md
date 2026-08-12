@@ -85,14 +85,17 @@ Two failure classes #106 kept reproducing — check for them explicitly (memory:
   of reuse.
 
 ## 8. Does the change rest on an UNTESTED engine belief? (lab gate)
-Check every engine-behavior assumption the change depends on against
-[docs/factorio-2.0-api-notes.md](../../../docs/factorio-2.0-api-notes.md): the only evidence tiers are
-**upstream-documented** (link lua-api.factorio.com/<pin>/ at the point of use — never mirror it) and
-**[empirical, <current pin>, <citation>]**. Anything else is an untested belief — measure it BEFORE
-designing on it (the old [API] and [hypothesis] tiers are ABOLISHED, owner ruling 2026-07-31: mirrored
-docs rot, and an unprovable claim is deleted, not demoted; the archived lab runners live at git tag
-`labs-archive-2026-07-19` — restore from the tag or author a fresh probe). A mechanism
-EXPLANATION is not a law until its predictions are tested; never cite an unverifiable source as "Confirmed by."
+**There is no engine-notes doc to check against — it was DELETED 2026-08-11 by owner ruling, and
+recreating it is not the fix.** Measure the assumption yourself, now, on the running cluster, and let
+the measurement stand in the PR that needs it. The only evidence tiers are **upstream-documented**
+(link lua-api.factorio.com/<pin>/ at the point of use — never mirror it) and **[empirical, <current
+pin>, <citation>]** where the citation is a rung or a probe you can re-run. Anything else is an
+untested belief — measure it BEFORE designing on it (the old [API] and [hypothesis] tiers are
+ABOLISHED, owner ruling 2026-07-31: mirrored docs rot, and an unprovable claim is deleted, not
+demoted; the archived lab runners live at git tag `labs-archive-2026-07-19` — restore from the tag or
+author a fresh probe). `tests/instruments/` holds the standing measurements; a fact worth keeping is
+worth a rung that re-measures it, not a paragraph that remembers it. A mechanism EXPLANATION is not a
+law until its predictions are tested; never cite an unverifiable source as "Confirmed by."
 Paid for: the ghost-buffer legend survived 4 months and nearly caused two unnecessary primitive redesigns; a
 one-afternoon lab killed it and fixed CI with a meter change instead.
 
