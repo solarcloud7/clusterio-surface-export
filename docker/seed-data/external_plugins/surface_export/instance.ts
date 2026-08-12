@@ -269,14 +269,18 @@ export class InstancePlugin extends BaseInstancePlugin {
 	}
 
 	async handlePlatformStateChanged(data: Record<string, unknown>) {
+		const origin = data.surface_index !== undefined
+			? `surface ${String(data.surface_index)} deleted`
+			: `platform '${String(data.platform_name || "")}'`;
 		try {
 			await this.i.sendTo("controller", new messages.PlatformStateChangedEvent({
 				instanceId: this.i.id,
 				platformName: String(data.platform_name || ""),
 				forceName: String(data.force_name || "player"),
 			}));
+			this.logger.info(`Tree rebroadcast requested: ${origin}`);
 		} catch (err: unknown) {
-			this.logger.warn(`Platform state change notification failed: ${getErrorMessage(err)}`);
+			this.logger.warn(`Platform state change notification failed (${origin}): ${getErrorMessage(err)}`);
 		}
 	}
 
