@@ -279,7 +279,26 @@ apart. Honest limits: an INDIRECT feedback loop (through a pole) is not detected
 arrives-at-0 behavior; a register whose period exceeds the ~72-tick sampling window can still read
 stable and be cleared. Gateway-parked transfers get the re-arm
 — combinators evaluate on paused platforms (pause-rung, 2026-08-11; the old 30 s patience wait guarded
-nothing and is deleted). Non-latch signal state (accumulated counters in networks, arithmetic-combinator
+nothing and is deleted).
+
+**A dark decider is not a still one.** The sampler compares registers and cannot see power, so an
+unpowered decider — which returns an empty register on every sample — used to classify "stable",
+license the clear, and then be recorded `cleared to 0 (verified)` on a read that returned nothing.
+Since 2026-08-12 liveness is required at both moments a decider can be dark. Before the force write the
+job DEFERS on a bounded deadline (1800 ticks, polled every 60) and on timeout finalizes
+`unpowered — re-arm not evaluated` with the captured parameters preflight already wrote — no force, no
+clear, and never a `rearmed` claim for a decider that never evaluated. During sampling, a decider that
+stops evaluating is excluded from the clear entirely. Only `status == "working"` counts as a live
+instrument.
+
+Measured on 2.1.11 and **asserted by `tests/integration/latch-rearm-liveness` rather than recorded
+here**: a powered decider reports `working` including while its platform is PAUSED — which is why this
+gate does not break parked transfers — and a dark one reports `no_power` when the platform never had a
+producer, or `low_power` when its producer was removed. That test also mutation-kills the guard:
+rebinding `status_is_live` to always-true reproduces the false `cleared to 0 (verified)` on a real
+unpowered decider.
+
+Non-latch signal state (accumulated counters in networks, arithmetic-combinator
 derived values) still re-derives or resets after transfer — engine simulation state with no
 capture/restore API.
 

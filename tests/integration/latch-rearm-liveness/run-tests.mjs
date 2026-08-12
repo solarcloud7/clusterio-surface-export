@@ -133,6 +133,13 @@ rcon.print(r.reason .. ' || rearmed=' .. r.rearmed .. ' cleared=' .. r.cleared
   .. ' failed=' .. r.failed .. ' || ' .. table.concat(outcomes, ' ~~ '))
 `;
 
+const pauseLua = (name, paused) => `
+local st = storage.__latchlive['${name}']
+for _,pl in pairs(game.forces.player.platforms) do
+  if pl.index == st.platform then pl.paused = ${paused} end end
+rcon.print('paused=${paused}')
+`;
+
 const statusLua = (name) => `
 local st = storage.__latchlive['${name}']
 local p for _,pl in pairs(game.forces.player.platforms) do if pl.index == st.platform then p = pl end end
@@ -163,6 +170,19 @@ async function main() {
 		check(DARK_STATUSES.some(s => darkStatus.startsWith(`${s}|`)),
 			"dark decider reports a known unpowered status", darkStatus);
 		const darkConditionsBefore = Number(darkStatus.split("conditions=")[1]);
+
+		// Gateway-parked transfers re-pause the platform, and the force write gates on
+		// status == "working". If pausing changed the status, every parked transfer would burn the full
+		// deferral and finalize "unpowered" — the regression this guard would otherwise introduce. The
+		// fact is asserted here rather than written down, so a future engine pin re-measures it.
+		rcon(pauseLua(LIT, true));
+		await sleep(2500);
+		const litPaused = rcon(statusLua(LIT));
+		rcon(pauseLua(LIT, false));
+		if (answered(litPaused, "paused decider status readable")) {
+			check(litPaused.startsWith("working|"),
+				"a POWERED decider still reports working while its platform is PAUSED", litPaused);
+		}
 
 		check(rcon(scheduleLua(LIT)) === "scheduled=1", "powered latch scheduled");
 		check(rcon(scheduleLua(DARK)) === "scheduled=1", "dark latch scheduled");
